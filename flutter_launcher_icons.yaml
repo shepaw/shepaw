@@ -1,0 +1,29 @@
+# Flutter Launcher Icons 配置
+flutter_launcher_icons:
+  android: true
+  ios: true
+  image_path: "assets/shepaw_icon_1024.png"
+
+  # Android 自适应图标
+  adaptive_icon_background: "#1e64c8"
+  adaptive_icon_foreground: "assets/shepaw_icon_1024.png"
+
+  # iOS 配置
+  remove_alpha_ios: true
+
+  # macOS 配置
+  macos:
+    generate: true
+    image_path: "assets/shepaw_icon_1024.png"
+
+  # Web 配置
+  web:
+    generate: true
+    image_path: "assets/shepaw_icon_1024.png"
+    background_color: "#1e64c8"
+    theme_color: "#1e64c8"
+
+  # Windows 配置
+  windows:
+    generate: true
+    image_path: "assets/shepaw_icon_1024.png"

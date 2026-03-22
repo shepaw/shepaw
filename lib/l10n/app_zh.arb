@@ -1,0 +1,1386 @@
+{
+  "@@locale": "zh",
+
+  "appTitle": "ShePaw",
+  "appVersion": "ShePaw v1.0.0",
+  "appDescription": "安全 AI Agent 管理平台",
+
+  "common_cancel": "取消",
+  "common_confirm": "确认",
+  "common_save": "保存",
+  "common_delete": "删除",
+  "common_edit": "编辑",
+  "common_close": "关闭",
+  "common_loading": "正在加载...",
+  "common_retry": "重试",
+  "common_ok": "知道了",
+  "common_copy": "复制",
+  "common_reply": "回复",
+  "common_search": "搜索",
+  "common_refresh": "刷新",
+  "common_clear": "清除",
+  "common_optional": "可选",
+  "common_featureComingSoon": "功能即将推出",
+  "common_operationFailed": "操作失败: {error}",
+  "@common_operationFailed": {
+    "placeholders": {
+      "error": { "type": "String" }
+    }
+  },
+  "common_error": "错误: {error}",
+  "@common_error": {
+    "placeholders": {
+      "error": { "type": "String" }
+    }
+  },
+
+  "splash_loading": "正在加载...",
+
+  "login_title": "ShePaw",
+  "login_subtitle": "请输入密码解锁",
+  "login_password": "密码",
+  "login_passwordHint": "请输入您的密码",
+  "login_button": "登录",
+  "login_forgotPassword": "忘记密码？",
+  "login_emptyPassword": "请输入密码",
+  "login_tooManyAttempts": "密码错误次数过多，请稍后再试",
+  "login_wrongPassword": "密码错误，请重试 ({attempts}/3)",
+  "@login_wrongPassword": {
+    "placeholders": {
+      "attempts": { "type": "int" }
+    }
+  },
+  "login_failed": "登录失败: {error}",
+  "@login_failed": {
+    "placeholders": {
+      "error": { "type": "String" }
+    }
+  },
+  "login_resetPasswordTitle": "重置密码",
+  "login_resetPasswordContent": "重置密码将清除所有本地数据。\n\n如果需要重置密码，请联系管理员或重新安装应用。",
+  "login_confirmReset": "确认重置",
+
+  "passwordSetup_title": "设置登录密码",
+  "passwordSetup_subtitle": "请设置一个安全的密码来保护您的账户",
+  "passwordSetup_password": "设置密码",
+  "passwordSetup_passwordHint": "至少6位，包含字母和数字",
+  "passwordSetup_confirmPassword": "确认密码",
+  "passwordSetup_confirmPasswordHint": "请再次输入密码",
+  "passwordSetup_submit": "完成设置",
+  "passwordSetup_requirementsTitle": "密码要求：",
+  "passwordSetup_reqLength": "长度6-20位",
+  "passwordSetup_reqAlphaNum": "包含字母和数字",
+  "passwordSetup_reqSpecialChars": "建议使用特殊字符增强安全性",
+  "passwordSetup_emptyPassword": "请输入密码",
+  "passwordSetup_tooShort": "密码长度至少6位",
+  "passwordSetup_tooLong": "密码长度不超过20位",
+  "passwordSetup_needAlphaNum": "密码必须包含字母和数字",
+  "passwordSetup_mismatch": "两次输入的密码不一致",
+  "passwordSetup_setFailed": "密码设置失败，请重试",
+  "passwordSetup_errorOccurred": "发生错误: {error}",
+  "passwordSetup_agreePrefix": "我已阅读并同意",
+  "passwordSetup_and": "和",
+  "passwordSetup_termsNotAccepted": "请先阅读并同意服务条款和隐私政策",
+  "@passwordSetup_errorOccurred": {
+    "placeholders": {
+      "error": { "type": "String" }
+    }
+  },
+
+  "changePassword_title": "修改密码",
+  "changePassword_currentPassword": "当前密码",
+  "changePassword_currentPasswordHint": "请输入当前密码",
+  "changePassword_newPassword": "新密码",
+  "changePassword_newPasswordHint": "至少6位，包含字母和数字",
+  "changePassword_confirmNewPassword": "确认新密码",
+  "changePassword_confirmNewPasswordHint": "请再次输入新密码",
+  "changePassword_submit": "确认修改",
+  "changePassword_requirementsTitle": "新密码要求：",
+  "changePassword_reqLength": "长度6-20位",
+  "changePassword_reqAlphaNum": "包含字母和数字",
+  "changePassword_reqDifferent": "不能与当前密码相同",
+  "changePassword_emptyCurrentPassword": "请输入当前密码",
+  "changePassword_sameAsOld": "新密码不能与当前密码相同",
+  "changePassword_newMismatch": "两次输入的新密码不一致",
+  "changePassword_success": "密码修改成功",
+  "changePassword_wrongCurrent": "当前密码错误，请重试",
+  "changePassword_failed": "修改失败: {error}",
+  "@changePassword_failed": {
+    "placeholders": {
+      "error": { "type": "String" }
+    }
+  },
+
+  "home_noAgents": "暂无 Agent",
+  "home_noAgentsHint": "点击菜单添加 Agent",
+  "home_noMessages": "暂无消息",
+  "home_typing": "对方正在输入...",
+  "home_statusOnline": "在线",
+  "home_statusOffline": "离线",
+  "home_statusThinking": "思考中",
+  "home_yesterday": "昨天",
+  "home_weekMon": "周一",
+  "home_weekTue": "周二",
+  "home_weekWed": "周三",
+  "home_weekThu": "周四",
+  "home_weekFri": "周五",
+  "home_weekSat": "周六",
+  "home_weekSun": "周日",
+  "home_addAgent": "添加 Agent",
+  "home_createGroup": "创建群组",
+  "home_agentsCount": "{count} agents",
+  "@home_agentsCount": {
+    "placeholders": {
+      "count": { "type": "int" }
+    }
+  },
+
+  "drawer_myProfile": "我的资料",
+  "drawer_newAgent": "新建 Agent",
+  "drawer_newGroup": "新建群组",
+  "drawer_settings": "设置",
+  "drawer_logout": "退出登录",
+
+  "logout_confirmTitle": "确认退出",
+  "logout_confirmContent": "确定要退出登录吗？",
+
+  "settings_title": "设置",
+  "settings_security": "安全",
+  "settings_changePassword": "修改密码",
+  "settings_changePasswordSub": "修改您的登录密码",
+  "settings_biometric": "生物识别认证",
+  "settings_biometricSub": "使用指纹或面容 ID",
+  "settings_biometricComingSoon": "生物识别认证即将推出",
+  "settings_biometricNotSupported": "此设备不支持生物识别认证",
+  "settings_biometricEnablePrompt": "请先验证身份以启用生物识别",
+  "settings_biometricEnabled": "生物识别已启用",
+  "settings_biometricDisabled": "生物识别已关闭",
+  "login_biometricPrompt": "验证身份以登录 ShePaw",
+  "login_useBiometric": "使用生物识别登录",
+  "settings_account": "账户",
+  "settings_profile": "个人资料",
+  "settings_profileSub": "管理您的个人信息",
+  "settings_notifications": "通知",
+  "settings_notificationsSub": "管理推送通知",
+  "settings_dataManagement": "数据管理",
+  "settings_exportData": "导出数据",
+  "settings_exportDataSub": "备份所有应用数据到文件",
+  "settings_clearAllData": "清除所有数据",
+  "settings_clearAllDataSub": "删除所有 Agent、消息和文件",
+  "settings_about": "关于",
+  "settings_aboutVersion": "版本 1.0.0",
+  "settings_privacyPolicy": "隐私政策",
+  "settings_termsOfService": "服务条款",
+
+  "settings_language": "语言",
+  "settings_languageSub": "更改应用显示语言",
+  "settings_languageFollowSystem": "跟随系统",
+  "settings_languageEnglish": "English",
+  "settings_languageChinese": "中文",
+  "settings_languageDialogTitle": "选择语言",
+
+  "settings_exportDataTitle": "导出数据",
+  "settings_exportDataContent": "将导出所有应用数据（包括 Agent 配置、聊天记录、文件等）为一个备份文件。\n\n导出完成后可以通过系统分享发送到其他位置。",
+  "settings_exportingData": "正在导出数据...",
+  "settings_exportSuccess": "数据导出成功",
+  "settings_exportFailed": "导出失败: {error}",
+  "@settings_exportFailed": {
+    "placeholders": {
+      "error": { "type": "String" }
+    }
+  },
+  "settings_clearAllDataTitle": "清除所有数据",
+  "settings_clearAllDataContent": "这将删除所有数据，包括：\n\n• 所有 Agent 配置\n• 所有聊天记录和消息\n• 所有文件和图片\n\n此操作不可恢复！建议先导出备份。\n\n是否继续？",
+  "settings_clearAllDataButton": "清除所有数据",
+  "settings_clearingAllData": "正在清除所有数据...",
+  "settings_clearAllDataSuccess": "所有数据已清除",
+  "settings_clearAllDataFailed": "清除数据失败: {error}",
+  "@settings_clearAllDataFailed": {
+    "placeholders": {
+      "error": { "type": "String" }
+    }
+  },
+
+  "addAgent_connectTitle": "连接远端助手",
+  "addAgent_createTitle": "创建助手配置",
+  "addAgent_modeConnect": "连接远端 Agent",
+  "addAgent_modeCreate": "创建本地配置",
+  "addAgent_basicInfo": "基本信息",
+  "addAgent_agentName": "助手名称",
+  "addAgent_agentNameHint": "例如：我的 AI 助手",
+  "addAgent_agentNameRequired": "请输入助手名称",
+  "addAgent_agentBio": "助手描述（可选）",
+  "addAgent_agentBioHint": "简单描述这个助手的功能",
+  "addAgent_systemPrompt": "系统提示词（可选）",
+  "addAgent_systemPromptHint": "定义 Agent 的角色和能力范围",
+  "addAgent_connectConfig": "连接配置",
+  "addAgent_tokenAuth": "Token 认证",
+  "addAgent_tokenHint": "输入 Token 或点击右侧按钮随机生成",
+  "addAgent_generateToken": "随机生成 Token",
+  "addAgent_tokenRequired": "请输入或生成 Token",
+  "addAgent_endpointUrl": "端点 URL",
+  "addAgent_endpointUrlHint": "ws://example.com:8080/acp/ws",
+  "addAgent_endpointHelper": "远端 Agent 的服务地址",
+  "addAgent_endpointRequired": "请输入端点 URL",
+  "addAgent_endpointInvalid": "请输入有效的 URL（http://, https://, ws://, wss://）",
+  "addAgent_modelConfig": "模型配置",
+  "addAgent_modelConfigHint": "选择 LLM 服务商，将自动填充默认配置",
+  "addAgent_modelName": "模型名称",
+  "addAgent_modelNameHint": "输入模型名称",
+  "addAgent_selectModel": "选择模型",
+  "addAgent_apiKeyNotRequired": "本地服务无需 API Key",
+  "addAgent_apiKeyHint": "输入 API Key",
+  "addAgent_connectSteps": "连接步骤",
+  "addAgent_connectStep1": "输入远端 Agent 提供的 Token 或随机生成",
+  "addAgent_connectStep2": "填写远端 Agent 的服务地址",
+  "addAgent_connectStep3": "连接成功后可以开始对话",
+  "addAgent_connectButton": "连接远端助手",
+  "addAgent_createButton": "创建助手配置",
+  "addAgent_createFailed": "创建失败: {error}",
+  "@addAgent_createFailed": {
+    "placeholders": {
+      "error": { "type": "String" }
+    }
+  },
+  "addAgent_testingConnection": "正在测试 Agent 连接...",
+  "addAgent_connectSuccess": "连接成功！Agent 在线可用",
+  "addAgent_createSuccess": "助手创建成功！",
+  "addAgent_connectFailTitle": "连接测试失败",
+  "addAgent_connectFailContent": "Agent 健康检查失败，无法建立连接。\n\n可能的原因：\n• Endpoint URL 不正确\n• Token 无效\n• Agent 服务未运行\n• 网络连接问题\n\n是否仍要保留此 Agent 配置？",
+  "addAgent_deleteConfig": "删除配置",
+  "addAgent_keepConfig": "保留配置",
+  "addAgent_configDeleted": "已删除 Agent 配置",
+  "addAgent_configKeptOffline": "已保留 Agent 配置（离线状态）",
+  "addAgent_operationFailed": "操作失败: {error}",
+  "@addAgent_operationFailed": {
+    "placeholders": {
+      "error": { "type": "String" }
+    }
+  },
+  "addAgent_duplicateTitle": "Agent 已存在",
+  "addAgent_existingInfo": "已有 Agent 信息：",
+  "addAgent_existingName": "名称: {name}",
+  "@addAgent_existingName": {
+    "placeholders": {
+      "name": { "type": "String" }
+    }
+  },
+  "addAgent_existingProtocol": "协议: {protocol}",
+  "@addAgent_existingProtocol": {
+    "placeholders": {
+      "protocol": { "type": "String" }
+    }
+  },
+  "addAgent_selectAvatar": "选择头像",
+  "addAgent_endpointConfigTitle": "端点配置",
+  "addAgent_endpointOptional": "端点 URL（可选）",
+  "addAgent_endpointOptionalHelper": "可以稍后配置",
+  "addAgent_remoteAgentId": "远端 Agent ID",
+  "addAgent_remoteAgentIdHint": "可选，对方 Agent 的 ID",
+  "addAgent_remoteAgentIdHelper": "填写后可精确连接指定 Agent（可选）",
+
+  "createGroup_title": "创建群聊",
+  "createGroup_create": "创建",
+  "createGroup_groupName": "群聊名称",
+  "createGroup_purpose": "群聊目的（可选）",
+  "createGroup_purposeHint": "例如：协作完成前端开发任务",
+  "createGroup_selectAgent": "选择 Agent",
+  "createGroup_agentCount": "({selected}/{total} 个)",
+  "@createGroup_agentCount": {
+    "placeholders": {
+      "selected": { "type": "int" },
+      "total": { "type": "int" }
+    }
+  },
+  "createGroup_noAgents": "暂无 Agent，请先添加 Agent",
+  "createGroup_setAsAdmin": "设为管理员",
+  "createGroup_nameRequired": "请输入群聊名称",
+  "createGroup_agentRequired": "请至少选择一个 Agent",
+  "createGroup_adminRequired": "请选择一个 Admin（管理员）",
+  "createGroup_button": "创建群聊",
+  "createGroup_systemPrompt": "系统提示词（可选）",
+  "createGroup_systemPromptHint": "为群内 Agent 定义约束或指令",
+  "createGroup_groupRole": "群内职责（可选）",
+  "createGroup_groupRoleHint": "描述该 Agent 在本群中的职责",
+  "createGroup_maxLoopRounds": "最大编排轮次",
+  "createGroup_maxLoopRoundsHint": "管理员循环编排的最大轮次（默认 50）",
+
+  "permission_title": "权限请求管理",
+  "permission_filterLabel": "状态筛选：",
+  "permission_noRequests": "暂无权限请求",
+  "permission_noRequestsOfType": "暂无{status}的权限请求",
+  "@permission_noRequestsOfType": {
+    "placeholders": {
+      "status": { "type": "String" }
+    }
+  },
+  "permission_loadFailed": "加载失败: {error}",
+  "@permission_loadFailed": {
+    "placeholders": {
+      "error": { "type": "String" }
+    }
+  },
+  "permission_approved": "权限已批准",
+  "permission_rejected": "权限已拒绝",
+  "permission_typeLabel": "权限类型",
+  "permission_reasonLabel": "请求原因",
+  "permission_timeLabel": "请求时间",
+  "permission_expiryLabel": "有效期至",
+  "permission_reject": "拒绝",
+  "permission_approve": "批准",
+  "permission_revoke": "撤销",
+  "permission_approveTitle": "批准权限",
+  "permission_approveContent": "确定要批准 {agentName} 的 {permissionType} 权限吗？",
+  "@permission_approveContent": {
+    "placeholders": {
+      "agentName": { "type": "String" },
+      "permissionType": { "type": "String" }
+    }
+  },
+  "permission_rejectTitle": "拒绝权限",
+  "permission_rejectContent": "确定要拒绝 {agentName} 的权限请求吗？",
+  "@permission_rejectContent": {
+    "placeholders": {
+      "agentName": { "type": "String" }
+    }
+  },
+  "permission_revokeTitle": "撤销权限",
+  "permission_revokeContent": "确定要撤销 {agentName} 的权限吗？撤销后该 Agent 将无法继续访问相关功能。",
+  "@permission_revokeContent": {
+    "placeholders": {
+      "agentName": { "type": "String" }
+    }
+  },
+  "permission_statusPending": "待审批",
+  "permission_statusApproved": "已批准",
+  "permission_statusRejected": "已拒绝",
+  "permission_statusExpired": "已过期",
+  "permission_typeInitiateChat": "发起聊天",
+  "permission_typeGetAgentList": "获取 Agent 列表",
+  "permission_typeGetCapabilities": "获取 Agent 能力",
+  "permission_typeSubscribeChannel": "订阅 Channel",
+  "permission_typeSendFile": "发送文件",
+  "permission_typeGetSessions": "获取会话列表",
+  "permission_typeGetSessionMessages": "获取会话消息",
+  "permission_typeGetAttachmentContent": "获取附件内容",
+
+  "permissionDialog_title": "权限请求",
+  "permissionDialog_agent": "Agent",
+  "permissionDialog_action": "操作",
+  "permissionDialog_reason": "原因",
+  "permissionDialog_time": "时间",
+  "permissionDialog_reject": "拒绝",
+  "permissionDialog_approve": "批准",
+
+  "log_title": "系统日志",
+  "log_filterTooltip": "筛选日志级别",
+  "log_all": "全部",
+  "log_enableAutoScroll": "启用自动滚动",
+  "log_disableAutoScroll": "禁用自动滚动",
+  "log_export": "导出日志",
+  "log_exported": "日志已导出",
+  "log_clearTitle": "清除日志",
+  "log_clearContent": "确定要清除所有日志吗？此操作不可恢复。",
+  "log_clearButton": "清除",
+  "log_noLogs": "暂无日志",
+  "log_total": "总计",
+
+  "agentDetail_title": "Agent 详情",
+  "agentDetail_editTitle": "编辑 Agent",
+  "agentDetail_editTooltip": "编辑",
+  "agentDetail_startConversation": "发起对话",
+  "agentDetail_deleteAgent": "删除 Agent",
+  "agentDetail_confirmDelete": "确认删除",
+  "agentDetail_deleteContent": "确定要删除助手「{name}」吗？\n\n删除后将无法恢复，相关的聊天记录也可能受到影响。",
+  "@agentDetail_deleteContent": {
+    "placeholders": {
+      "name": { "type": "String" }
+    }
+  },
+  "agentDetail_deleted": "已删除「{name}」",
+  "@agentDetail_deleted": {
+    "placeholders": {
+      "name": { "type": "String" }
+    }
+  },
+  "agentDetail_deleteFailed": "删除失败: {error}",
+  "@agentDetail_deleteFailed": {
+    "placeholders": {
+      "error": { "type": "String" }
+    }
+  },
+  "agentDetail_connectionInfo": "连接信息",
+  "agentDetail_protocol": "协议",
+  "agentDetail_connectionType": "连接方式",
+  "agentDetail_endpoint": "端点",
+  "agentDetail_capabilities": "能力",
+  "agentDetail_systemPrompt": "系统提示词",
+  "agentDetail_llmConfig": "LLM 配置",
+  "agentDetail_provider": "服务商",
+  "agentDetail_model": "模型",
+  "agentDetail_lastActive": "最后活跃",
+  "agentDetail_createdAt": "创建时间",
+  "agentDetail_authToken": "认证 Token",
+  "agentDetail_copyToken": "复制 Token",
+  "agentDetail_tokenCopied": "Token 已复制到剪贴板",
+  "agentDetail_nameRequired": "助手名称不能为空",
+  "agentDetail_tokenRequired": "Token 不能为空",
+  "agentDetail_tokenHint": "粘贴远端 Agent 提供的 Token",
+  "agentDetail_saveSuccess": "保存成功",
+  "agentDetail_saveFailed": "保存失败: {error}",
+  "@agentDetail_saveFailed": {
+    "placeholders": {
+      "error": { "type": "String" }
+    }
+  },
+  "agentDetail_changeAvatar": "更换头像",
+  "agentDetail_selectBuiltinAvatar": "选择内置图标",
+  "agentDetail_selectFromGallery": "从相册选择",
+  "agentDetail_takePhoto": "拍照",
+  "agentDetail_galleryFailed": "选择图片失败: {error}",
+  "@agentDetail_galleryFailed": {
+    "placeholders": {
+      "error": { "type": "String" }
+    }
+  },
+  "agentDetail_cameraFailed": "拍照失败: {error}",
+  "@agentDetail_cameraFailed": {
+    "placeholders": {
+      "error": { "type": "String" }
+    }
+  },
+  "agentDetail_saveImageFailed": "保存图片失败: {error}",
+  "@agentDetail_saveImageFailed": {
+    "placeholders": {
+      "error": { "type": "String" }
+    }
+  },
+  "agentDetail_protocolType": "协议类型",
+  "agentDetail_connectionTypeLabel": "连接方式",
+  "agentDetail_custom": "自定义",
+  "agentDetail_copyTokenTooltip": "复制 Token",
+  "agentDetail_justNow": "刚刚",
+  "agentDetail_minutesAgo": "{minutes} 分钟前",
+  "@agentDetail_minutesAgo": {
+    "placeholders": {
+      "minutes": { "type": "int" }
+    }
+  },
+  "agentDetail_hoursAgo": "{hours} 小时前",
+  "@agentDetail_hoursAgo": {
+    "placeholders": {
+      "hours": { "type": "int" }
+    }
+  },
+
+  "profile_title": "我的资料",
+  "profile_email": "邮箱",
+  "profile_phone": "电话",
+  "profile_birthday": "生日",
+  "profile_location": "位置",
+  "profile_notSet": "未设置",
+  "profile_agents": "Agent",
+  "profile_groups": "群组",
+  "profile_messages": "消息",
+  "profile_editProfile": "编辑资料",
+
+  "collaboration_title": "Agent 协作",
+  "collaboration_description": "让多个 Agent 协作完成复杂任务，支持多种协作策略。",
+  "collaboration_taskName": "任务名称",
+  "collaboration_taskNameHint": "例: 市场调研报告",
+  "collaboration_taskNameRequired": "请输入任务名称",
+  "collaboration_taskDescription": "任务描述",
+  "collaboration_taskDescriptionHint": "详细描述要完成的任务",
+  "collaboration_taskDescriptionRequired": "请输入任务描述",
+  "collaboration_initialMessage": "初始消息",
+  "collaboration_initialMessageHint": "开始协作的消息",
+  "collaboration_initialMessageRequired": "请输入初始消息",
+  "collaboration_strategy": "协作策略",
+  "collaboration_selectAgent": "选择 Agent",
+  "collaboration_selectedCount": "已选择 {selected}/{total}",
+  "@collaboration_selectedCount": {
+    "placeholders": {
+      "selected": { "type": "int" },
+      "total": { "type": "int" }
+    }
+  },
+  "collaboration_noAgents": "暂无可用的 Agent",
+  "collaboration_noDescription": "无描述",
+  "collaboration_start": "开始协作",
+  "collaboration_result": "协作结果",
+  "collaboration_finalOutput": "最终输出",
+  "collaboration_agentResults": "各 Agent 结果",
+  "collaboration_success": "协作任务执行成功",
+  "collaboration_taskFailed": "协作任务执行失败: {error}",
+  "@collaboration_taskFailed": {
+    "placeholders": {
+      "error": { "type": "String" }
+    }
+  },
+  "collaboration_loadAgentFailed": "加载 Agent 失败",
+  "collaboration_executeFailed": "执行协作任务失败",
+  "collaboration_selectAgentWarning": "请至少选择一个 Agent",
+  "collaboration_strategySequential": "顺序执行",
+  "collaboration_strategyParallel": "并行执行",
+  "collaboration_strategyVoting": "投票机制",
+  "collaboration_strategyPipeline": "流水线",
+  "collaboration_strategySequentialDesc": "Agent 按顺序依次处理，上一个的输出作为下一个的输入",
+  "collaboration_strategyParallelDesc": "所有 Agent 同时处理相同的输入",
+  "collaboration_strategyVotingDesc": "多个 Agent 投票选择最佳结果",
+  "collaboration_strategyPipelineDesc": "每个 Agent 处理特定阶段",
+  "collaboration_helpTitle": "协作策略说明",
+  "collaboration_helpSequential": "Agent 按顺序依次处理，适合需要逐步优化的任务。",
+  "collaboration_helpParallel": "所有 Agent 同时处理，适合需要多角度分析的任务。",
+  "collaboration_helpVoting": "多个 Agent 投票选择最佳方案，适合决策类任务。",
+  "collaboration_helpPipeline": "每个 Agent 处理特定阶段，适合复杂的分步任务。",
+
+  "incoming_title": "主动消息",
+  "incoming_unreadCount": "{count} 条未读",
+  "@incoming_unreadCount": {
+    "placeholders": {
+      "count": { "type": "int" }
+    }
+  },
+  "incoming_clearAll": "清空所有消息",
+  "incoming_noMessages": "暂无主动消息",
+  "incoming_noMessagesHint": "当 Agent 主动联系您时，消息会显示在这里",
+  "incoming_markAsRead": "标记已读",
+  "incoming_view": "查看",
+  "incoming_time": "时间: {time}",
+  "@incoming_time": {
+    "placeholders": {
+      "time": { "type": "String" }
+    }
+  },
+  "incoming_clearAllTitle": "清空所有消息",
+  "incoming_clearAllContent": "确定要清空所有消息吗？此操作不可撤销。",
+  "incoming_clearButton": "清空",
+  "incoming_justNow": "刚刚",
+  "incoming_minutesAgo": "{minutes} 分钟前",
+  "@incoming_minutesAgo": {
+    "placeholders": {
+      "minutes": { "type": "int" }
+    }
+  },
+  "incoming_hoursAgo": "{hours} 小时前",
+  "@incoming_hoursAgo": {
+    "placeholders": {
+      "hours": { "type": "int" }
+    }
+  },
+  "incoming_daysAgo": "{days} 天前",
+  "@incoming_daysAgo": {
+    "placeholders": {
+      "days": { "type": "int" }
+    }
+  },
+
+  "chat_noAgentSelected": "未选择 Agent",
+  "chat_loadFailed": "加载消息失败: {error}",
+  "@chat_loadFailed": {
+    "placeholders": {
+      "error": { "type": "String" }
+    }
+  },
+  "chat_checkingHealth": "正在检查 Agent 状态...",
+  "chat_responseError": "获取 {agentName} 的回复失败",
+  "@chat_responseError": {
+    "placeholders": {
+      "agentName": { "type": "String" }
+    }
+  },
+  "chat_voiceTooShort": "语音消息太短",
+  "chat_historyRequestTitle": "Agent 请求查看更多聊天记录",
+  "chat_historyIgnore": "忽略",
+  "chat_historyApprove": "同意",
+  "chat_loadingHistory": "正在加载更多聊天记录...",
+  "chat_noMoreHistory": "没有更多历史记录可加载",
+  "chat_historyLoaded": "历史记录已加载，Agent 正在重新回答...",
+  "chat_historyLoadFailed": "加载历史记录失败: {error}",
+  "@chat_historyLoadFailed": {
+    "placeholders": {
+      "error": { "type": "String" }
+    }
+  },
+  "chat_historyIgnored": "已忽略历史记录请求",
+  "chat_messageHint": "输入消息...",
+  "chat_holdToRecord": "按住录制语音消息",
+  "chat_holdToTalk": "按住 说话",
+  "chat_releaseToSend": "松开 发送",
+  "chat_releaseToCancel": "松开 取消",
+  "chat_micNotAvailable": "无法开始录音，麦克风可能不可用。",
+  "chat_photoLibrary": "相册",
+  "chat_camera": "相机",
+  "chat_file": "文件",
+  "chat_sendImageError": "发送图片失败: {error}",
+  "@chat_sendImageError": {
+    "placeholders": {
+      "error": { "type": "String" }
+    }
+  },
+  "chat_sendFileError": "发送文件失败: {error}",
+  "@chat_sendFileError": {
+    "placeholders": {
+      "error": { "type": "String" }
+    }
+  },
+  "chat_searchError": "搜索出错: {error}",
+  "@chat_searchError": {
+    "placeholders": {
+      "error": { "type": "String" }
+    }
+  },
+  "chat_cannotDelete": "无法删除此消息",
+  "chat_deleteTitle": "删除消息",
+  "chat_deleteContent": "确定要删除这条消息吗？",
+  "chat_deleted": "消息已删除",
+  "chat_rollbackTitle": "回滚消息",
+  "chat_reEditTitle": "重新编辑消息",
+  "chat_rollbackContent": "这将删除此消息及之后的所有消息，此操作不可撤销。",
+  "chat_rollbackSuccess": "已回滚 {count} 条消息",
+  "@chat_rollbackSuccess": {
+    "placeholders": {
+      "count": { "type": "int" }
+    }
+  },
+  "chat_reEditSuccess": "重新编辑消息：已回滚 {count} 条消息",
+  "@chat_reEditSuccess": {
+    "placeholders": {
+      "count": { "type": "int" }
+    }
+  },
+  "chat_rollbackFailed": "回滚失败: {error}",
+  "@chat_rollbackFailed": {
+    "placeholders": {
+      "error": { "type": "String" }
+    }
+  },
+  "chat_copiedToClipboard": "已复制到剪贴板",
+  "chat_download": "下载",
+  "chat_rollback": "回滚",
+  "chat_rollbackSub": "删除此消息及之后的所有消息",
+  "chat_reEdit": "重新编辑",
+  "chat_reEditSub": "回滚并编辑此消息",
+
+  "chat_editGroupInfo": "编辑群组信息",
+  "chat_groupName": "群组名称",
+  "chat_groupDescription": "描述（可选）",
+  "chat_groupNameEmpty": "群组名称不能为空",
+  "chat_groupMembers": "群组成员",
+  "chat_groupMembersCount": "{count} 个 Agent",
+  "@chat_groupMembersCount": {
+    "placeholders": {
+      "count": { "type": "int" }
+    }
+  },
+  "chat_addMember": "添加成员",
+  "chat_noMoreAgents": "没有更多可添加的 Agent",
+  "chat_changeAdmin": "更换管理员",
+  "chat_currentAdmin": "当前: {name}",
+  "@chat_currentAdmin": {
+    "placeholders": {
+      "name": { "type": "String" }
+    }
+  },
+  "chat_adminChanged": "{name} 已成为管理员",
+  "@chat_adminChanged": {
+    "placeholders": {
+      "name": { "type": "String" }
+    }
+  },
+  "chat_removeMember": "移除成员",
+  "chat_removeMemberContent": "确定要将 {name} 移出群组吗？",
+  "@chat_removeMemberContent": {
+    "placeholders": {
+      "name": { "type": "String" }
+    }
+  },
+  "chat_removeButton": "移除",
+  "chat_cannotRemoveLast": "无法移除最后一个成员",
+  "chat_waitingForAction": "等待你的操作",
+  "chat_searchMessages": "搜索消息",
+  "chat_newSession": "新建会话",
+  "chat_sessionList": "会话列表",
+  "chat_clearSessionHistory": "清除会话历史",
+  "chat_clearSessionSub": "清除当前会话并重置 Agent",
+  "chat_clearSessionSubSingle": "清除当前会话并重置远端 Agent",
+  "chat_clearAllSessions": "清除所有会话",
+  "chat_clearAllSessionsSub": "清除所有会话并重置 Agent",
+  "chat_clearAllSessionsSubSingle": "清除所有会话并重置远端 Agent",
+  "chat_resetSession": "重置会话",
+  "chat_viewDetails": "查看详情",
+  "chat_customSystemPrompt": "自定义系统提示词",
+  "chat_systemPromptTitle": "自定义系统提示词",
+  "chat_systemPromptHint": "为本会话覆盖 Agent 的系统提示词",
+  "chat_systemPromptSaved": "系统提示词已保存",
+  "chat_moreActions": "更多操作",
+
+  "chat_clearSessionTitle": "清除会话历史",
+  "chat_clearSessionContent": "这将删除当前会话的所有消息并重置远端 Agent 连接，此操作不可撤销。",
+  "chat_clearSessionGroupContent": "这将删除当前会话的所有消息并重置所有 Agent 连接，此操作不可撤销。",
+  "chat_sessionCleared": "会话历史已清除",
+  "chat_clearSessionFailed": "清除会话失败: {error}",
+  "@chat_clearSessionFailed": {
+    "placeholders": {
+      "error": { "type": "String" }
+    }
+  },
+  "chat_clearAllSessionsTitle": "清除所有会话",
+  "chat_clearAllSessionsContent": "这将删除所有会话及其消息，仅保留默认会话，此操作不可撤销。",
+  "chat_clearAllGroupSessionsContent": "这将删除此群组的所有会话及其消息，仅保留默认会话，此操作不可撤销。",
+  "chat_allSessionsCleared": "所有会话历史已清除",
+  "chat_allGroupSessionsCleared": "所有群组会话已清除",
+  "chat_groupSessionCleared": "群组会话历史已清除",
+  "chat_clearGroupSessionFailed": "清除群组会话失败: {error}",
+  "@chat_clearGroupSessionFailed": {
+    "placeholders": {
+      "error": { "type": "String" }
+    }
+  },
+  "chat_clearAllGroupSessionsFailed": "清除所有群组会话失败: {error}",
+  "@chat_clearAllGroupSessionsFailed": {
+    "placeholders": {
+      "error": { "type": "String" }
+    }
+  },
+  "chat_clearingSession": "正在清除会话...",
+  "chat_clearingAllSessions": "正在清除所有会话...",
+  "chat_clearingGroupSession": "正在清除群组会话...",
+  "chat_clearingAllGroupSessions": "正在清除所有群组会话...",
+  "chat_noAdminSet": "未设置管理员",
+  "chat_groupSessions": "群组会话",
+  "chat_sessions": "会话",
+  "chat_sessionsCount": "{count} 个会话",
+  "@chat_sessionsCount": {
+    "placeholders": {
+      "count": { "type": "int" }
+    }
+  },
+  "chat_mentionAll": "全部",
+  "chat_mentionAllSub": "提及全部 {count} 个 Agent",
+  "@chat_mentionAllSub": {
+    "placeholders": {
+      "count": { "type": "int" }
+    }
+  },
+  "chat_mentionNotify": "通知 TA（触发回复）",
+  "chat_mentionCcOnly": "仅提及（不触发回复）",
+  "chat_add": "添加",
+  "chat_resetSession": "重置会话",
+  "chat_viewDetails": "查看详情",
+  "chat_groupName": "群组名称",
+  "chat_groupDescriptionOptional": "描述（可选）",
+  "chat_groupSystemPrompt": "系统提示词（可选）",
+  "chat_groupSystemPromptHint": "为群内 Agent 定义约束或指令",
+  "chat_groupNameEmpty": "群组名称不能为空",
+  "chat_switchSession": "会话已清除，切换至 {sessionId}",
+  "@chat_switchSession": {
+    "placeholders": {
+      "sessionId": { "type": "String" }
+    }
+  },
+  "chat_allSessionsSwitched": "所有会话已清除，切换至 {sessionId}",
+  "@chat_allSessionsSwitched": {
+    "placeholders": {
+      "sessionId": { "type": "String" }
+    }
+  },
+  "chat_clearAllSessionsFailed": "清除所有会话失败: {error}",
+  "@chat_clearAllSessionsFailed": {
+    "placeholders": {
+      "error": { "type": "String" }
+    }
+  },
+  "chat_deleteSession": "删除会话",
+  "chat_deleteSessionContent": "这将删除此会话及其所有消息，此操作不可撤销。",
+  "chat_deleteAllSessions": "删除所有会话",
+  "chat_deleteAllSessionsContent": "这将删除所有会话及其消息，仅保留默认会话，此操作不可撤销。",
+  "chat_deleteAllGroupSessionsContent": "这将删除此群组的所有会话及其消息，仅保留默认会话，此操作不可撤销。",
+  "chat_newSessionFailed": "创建新会话失败: {error}",
+  "@chat_newSessionFailed": {
+    "placeholders": {
+      "error": { "type": "String" }
+    }
+  },
+  "chat_newGroupSessionFailed": "创建新群组会话失败: {error}",
+  "@chat_newGroupSessionFailed": {
+    "placeholders": {
+      "error": { "type": "String" }
+    }
+  },
+  "chat_loadSessionsFailed": "加载会话失败: {error}",
+  "@chat_loadSessionsFailed": {
+    "placeholders": {
+      "error": { "type": "String" }
+    }
+  },
+  "chat_loadGroupSessionsFailed": "加载群组会话失败: {error}",
+  "@chat_loadGroupSessionsFailed": {
+    "placeholders": {
+      "error": { "type": "String" }
+    }
+  },
+  "chat_groupRoleTitle": "{name} - 群组角色",
+  "@chat_groupRoleTitle": {
+    "placeholders": {
+      "name": { "type": "String" }
+    }
+  },
+  "chat_groupCapabilityLabel": "群组能力描述",
+  "chat_groupCapabilityHint": "留空则使用 Agent 的默认描述",
+  "chat_resetButton": "重置",
+  "chat_add": "添加",
+  "chat_stopped": "已停止",
+  "chat_groupChatError": "群聊出错: {error}",
+  "@chat_groupChatError": {
+    "placeholders": {
+      "error": { "type": "String" }
+    }
+  },
+  "chat_fileMessageFailed": "文件消息失败: {error}",
+  "@chat_fileMessageFailed": {
+    "placeholders": {
+      "error": { "type": "String" }
+    }
+  },
+
+  "status_online": "在线",
+  "status_offline": "离线",
+  "status_connecting": "连接中...",
+  "status_error": "错误",
+  "status_protocolAcp": "ACP",
+  "status_protocolCustom": "自定义",
+
+  "widget_typing": "正在输入...",
+  "widget_stop": "停止",
+  "widget_cannotOpenLink": "无法打开链接: {url}",
+  "@widget_cannotOpenLink": {
+    "placeholders": {
+      "url": { "type": "String" }
+    }
+  },
+  "widget_originalMessageUnavailable": "原消息不可用",
+  "widget_retry": "重试",
+  "widget_formSubmitted": "表单已提交",
+  "widget_submit": "提交",
+  "widget_confirm": "确认",
+  "widget_changeFiles": "更换文件",
+  "widget_details": "详情",
+
+  "privacy_title": "隐私政策",
+  "privacy_content": "隐私政策\n\n最后更新：2026-02-28\n\nPaw（以下简称\u201c我们\u201d）致力于保护您的隐私。Paw 是一款完全本地化的应用程序，我们不会收集、上传或存储您的任何个人数据。您的所有数据始终保留在您的设备上，完全由您掌控。\n\n1. 数据存储\n\nPaw 不设有服务器，不收集任何用户数据。您在使用过程中产生的所有数据，包括：\n- 账户凭证\n- Agent 配置数据\n- 聊天消息和对话历史记录\n\n均仅存储在您的设备本地，我们无法也不会访问这些数据。\n\n2. 数据安全\n\n我们通过以下措施保护您的本地数据安全：\n- 本地数据加密\n- 安全的 WebSocket 连接（WSS）用于远程通信\n- 生物识别认证支持\n- 密码保护访问\n\n3. 第三方服务\n\n当您主动配置并连接远端 AI Agent 时，您的消息将直接在您的设备和您配置的 Agent 端点之间传输，不经过我们的任何服务器。我们不对第三方 Agent 服务的数据处理行为负责。\n\n4. 您的权利\n\n由于所有数据均存储在您的设备本地，您可以随时：\n- 查看您的所有数据\n- 通过清除应用数据或卸载应用来彻底删除数据\n- 使用应用内导出功能导出数据\n\n5. 政策变更\n\n我们可能会不时更新本隐私政策。我们将通过更新\u201c最后更新\u201d日期来通知您任何变更。\n\n6. 联系我们\n\n如果您对本隐私政策有任何疑问，请通过以下方式联系我们：\nsupport@metamessager.com",
+
+  "terms_title": "服务条款",
+  "terms_content": "服务条款\n\n最后更新：2026-02-28\n\n请在使用 Paw 应用程序之前仔细阅读这些服务条款。\n\n1. 条款接受\n\n访问或使用 Paw 即表示您同意受这些条款的约束。如果您不同意，请勿使用本应用程序。\n\n2. 服务描述\n\nPaw 是一个 AI Agent 管理平台，允许您：\n- 连接和与 AI Agent 通信\n- 管理多个 Agent 配置\n- 促进 Agent 之间的协作\n- 与 Agent 传输文件和媒体\n\n3. 用户责任\n\n您同意：\n- 遵守所有适用法律使用本应用\n- 不将本应用用于任何非法或未经授权的目的\n- 不试图干扰应用的功能\n- 对您的账户凭证安全负责\n- 对您通过应用发送的内容负责\n\n4. 知识产权\n\n本应用及其原创内容、功能和特性归我们所有，受国际版权、商标和其他知识产权法律保护。\n\n5. 第三方 Agent 服务\n\n我们的应用允许您连接第三方 AI Agent 服务。我们不控制这些服务，也不对其内容、隐私政策或实践负责。\n\n6. 免责声明\n\n本应用按\u201c原样\u201d提供，不提供任何形式的保证。我们不保证应用会不间断、安全或无错误地运行。\n\n7. 责任限制\n\n在任何情况下，我们均不对因您使用本应用而产生的任何间接、偶发、特殊、后果性或惩罚性损害承担责任。\n\n8. 条款变更\n\n我们保留随时修改这些条款的权利。您在变更后继续使用应用即表示接受新条款。\n\n9. 联系我们\n\n如果您对这些条款有任何疑问，请通过以下方式联系我们：\nsupport@metamessager.com",
+
+  "notif_enableAll": "启用通知",
+  "notif_enableAllSub": "接收 Agent 消息通知",
+  "notif_sound": "声音",
+  "notif_soundSub": "通知时播放提示音",
+  "notif_showPreview": "显示预览",
+  "notif_showPreviewSub": "在通知中显示消息内容",
+  "notif_permissionDenied": "通知权限被拒绝，请在系统设置中开启。",
+  "notif_newMessage": "新消息",
+  "notif_newMessageFrom": "来自 {name} 的新消息",
+  "@notif_newMessageFrom": {
+    "placeholders": {
+      "name": { "type": "String" }
+    }
+  },
+
+  "osTool_configTitle": "OS 工具",
+  "osTool_configHint": "启用 OS 级别工具，让 Agent 可以操作您的本地设备（文件、命令、剪贴板等）。",
+  "osTool_selectAll": "全选",
+  "osTool_deselectAll": "全不选",
+  "osTool_catCommand": "命令与系统",
+  "osTool_catFile": "文件操作",
+  "osTool_catApp": "应用与浏览器",
+  "osTool_catClipboard": "剪贴板",
+  "osTool_catMacos": "macOS 专属",
+  "osTool_catProcess": "进程管理",
+  "osTool_notSupported": "当前平台 ({platform}) 不支持",
+  "@osTool_notSupported": {
+    "placeholders": {
+      "platform": { "type": "String" }
+    }
+  },
+  "osTool_confirmTitle": "确认操作",
+  "osTool_confirmDescription": "此操作将在您的设备上执行。是否继续？",
+  "osTool_highRisk": "高风险",
+  "osTool_tool": "工具",
+  "osTool_approve": "批准",
+  "osTool_deny": "拒绝",
+
+  "skill_configTitle": "技能",
+  "skill_configHint": "启用基于 Markdown 的技能，引导 Agent 完成复杂的多步骤任务。",
+  "skill_selectAll": "全选",
+  "skill_deselectAll": "全不选",
+  "skill_rescan": "重新扫描",
+  "skill_noSkillsFound": "未找到技能。可导入技能 ZIP 包或将技能子目录添加到技能文件夹。",
+  "settings_agentConfig": "Agent 配置",
+  "settings_skillDirectory": "技能管理",
+
+  "skillMgmt_title": "技能管理",
+  "skillMgmt_importZip": "导入技能 (ZIP)",
+  "skillMgmt_importing": "正在导入技能...",
+  "skillMgmt_importSuccess": "技能「{name}」导入成功",
+  "@skillMgmt_importSuccess": {
+    "placeholders": {
+      "name": { "type": "String" }
+    }
+  },
+  "skillMgmt_importFailed": "导入失败: {error}",
+  "@skillMgmt_importFailed": {
+    "placeholders": {
+      "error": { "type": "String" }
+    }
+  },
+  "skillMgmt_deleteTitle": "删除技能",
+  "skillMgmt_deleteContent": "确定要删除技能「{name}」吗？这将删除技能目录中的所有文件，且不可恢复。",
+  "@skillMgmt_deleteContent": {
+    "placeholders": {
+      "name": { "type": "String" }
+    }
+  },
+  "skillMgmt_deleted": "技能「{name}」已删除",
+  "@skillMgmt_deleted": {
+    "placeholders": {
+      "name": { "type": "String" }
+    }
+  },
+  "skillMgmt_deleteFailed": "删除失败: {error}",
+  "@skillMgmt_deleteFailed": {
+    "placeholders": {
+      "error": { "type": "String" }
+    }
+  },
+  "skillMgmt_noSkills": "未找到技能",
+  "skillMgmt_noSkillsHint": "导入技能 ZIP 包，或将技能子目录添加到配置的目录中。",
+  "skillMgmt_fileCount": "{count, plural, other{{count} 个文件}}",
+  "@skillMgmt_fileCount": {
+    "placeholders": {
+      "count": { "type": "int" }
+    }
+  },
+  "skillMgmt_skillCount": "{count, plural, other{{count} 个技能}}",
+  "@skillMgmt_skillCount": {
+    "placeholders": {
+      "count": { "type": "int" }
+    }
+  },
+  "skillMgmt_conflictTitle": "技能已存在",
+  "skillMgmt_conflictContent": "名为「{name}」的技能已存在。是否替换？",
+  "@skillMgmt_conflictContent": {
+    "placeholders": {
+      "name": { "type": "String" }
+    }
+  },
+  "skillMgmt_replace": "替换",
+  "skillMgmt_rescan": "重新扫描",
+  "skillMgmt_openDirectory": "打开技能目录",
+  "skillMgmt_importUrl": "从 URL 导入",
+  "skillMgmt_importUrlTitle": "从 URL 导入技能",
+  "skillMgmt_importUrlHint": "输入 .zip 或 .md 文件的直链 URL",
+  "skillMgmt_downloading": "下载中... {percent}%",
+  "@skillMgmt_downloading": {
+    "placeholders": {
+      "percent": { "type": "int" }
+    }
+  },
+  "skillMgmt_downloadingIndeterminate": "下载中...",
+  "skillMgmt_invalidUrl": "URL 无效，请输入 .zip 或 .md 文件的 http/https 直链",
+
+  "agentDetail_noOsToolsEnabled": "未启用任何 OS 工具",
+  "agentDetail_noSkillsEnabled": "未启用任何技能",
+
+  "settings_developerTools": "开发者工具",
+  "settings_inferenceLog": "推理日志",
+  "settings_inferenceLogSub": "查看 LLM 请求/响应详情",
+  "settings_systemLog": "系统日志",
+  "settings_systemLogSub": "查看应用系统日志",
+
+  "inferenceLog_title": "推理日志",
+  "inferenceLog_empty": "暂无推理日志",
+  "inferenceLog_emptyHint": "与本地 LLM Agent 对话后，日志将显示在这里",
+  "inferenceLog_filterAll": "全部",
+  "inferenceLog_filterCompleted": "已完成",
+  "inferenceLog_filterError": "错误",
+  "inferenceLog_filterInProgress": "进行中",
+  "inferenceLog_total": "总计",
+  "inferenceLog_completed": "已完成",
+  "inferenceLog_errors": "错误",
+  "inferenceLog_inProgress": "进行中",
+  "inferenceLog_rounds": "{count} 轮",
+  "@inferenceLog_rounds": {
+    "placeholders": {
+      "count": { "type": "int" }
+    }
+  },
+  "inferenceLog_toolCalls": "{count} 次工具调用",
+  "@inferenceLog_toolCalls": {
+    "placeholders": {
+      "count": { "type": "int" }
+    }
+  },
+  "inferenceLog_clearTitle": "清除推理日志",
+  "inferenceLog_clearContent": "确定要清除所有推理日志吗？此操作不可恢复。",
+  "inferenceLog_clearButton": "清除",
+  "inferenceLog_cleared": "推理日志已清除",
+  "inferenceLog_exported": "推理日志已导出",
+  "inferenceLog_exportFailed": "导出失败: {error}",
+  "@inferenceLog_exportFailed": {
+    "placeholders": {
+      "error": { "type": "String" }
+    }
+  },
+  "inferenceLog_loggingEnabled": "推理日志记录已启用",
+  "inferenceLog_loggingDisabled": "推理日志记录已关闭",
+  "inferenceLog_userMessage": "用户消息",
+  "inferenceLog_systemPrompt": "系统提示词",
+  "inferenceLog_roundLabel": "第 {number} 轮",
+  "@inferenceLog_roundLabel": {
+    "placeholders": {
+      "number": { "type": "int" }
+    }
+  },
+  "inferenceLog_response": "响应",
+  "inferenceLog_toolCall": "工具调用: {name}",
+  "@inferenceLog_toolCall": {
+    "placeholders": {
+      "name": { "type": "String" }
+    }
+  },
+  "inferenceLog_toolResult": "工具结果: {name}",
+  "@inferenceLog_toolResult": {
+    "placeholders": {
+      "name": { "type": "String" }
+    }
+  },
+  "inferenceLog_stopReason": "停止原因",
+  "inferenceLog_error": "错误",
+  "inferenceLog_detailTitle": "推理详情",
+  "inferenceLog_timeline": "时间线",
+  "inferenceLog_noText": "（无文本）",
+
+  "chat_selectSessions": "选择会话",
+  "chat_selectedCount": "已选 {count} 个",
+  "@chat_selectedCount": {
+    "placeholders": {
+      "count": { "type": "int" }
+    }
+  },
+  "chat_invertSelection": "反选",
+  "chat_deleteSelected": "删除 ({count})",
+  "@chat_deleteSelected": {
+    "placeholders": {
+      "count": { "type": "int" }
+    }
+  },
+  "chat_batchDeleteContent": "确定删除 {count} 个会话及其所有消息？此操作不可撤销。",
+  "@chat_batchDeleteContent": {
+    "placeholders": {
+      "count": { "type": "int" }
+    }
+  },
+  "chat_batchDeleteSuccess": "已删除 {count} 个会话",
+  "@chat_batchDeleteSuccess": {
+    "placeholders": {
+      "count": { "type": "int" }
+    }
+  },
+
+  "chat_maxAttachments": "最多只能添加 {count} 个附件",
+  "@chat_maxAttachments": {
+    "placeholders": {
+      "count": { "type": "int" }
+    }
+  },
+
+  "chat_connectionInterrupted": "后台运行期间连接中断",
+  "chat_connectionInterruptedRetry": "重试",
+  "chat_loopRoundLimitReached": "编排循环已达到最大轮次 {count} 次，已自动停止。",
+  "@chat_loopRoundLimitReached": {
+    "placeholders": {
+      "count": { "type": "int" }
+    }
+  },
+
+  "modelRouting_title": "多模态模型路由",
+  "modelRouting_hint": "为不同内容类型配置不同的模型，未配置的项使用上方的默认模型。",
+  "modelRouting_text": "文本聊天",
+  "modelRouting_image": "图片理解",
+  "modelRouting_audio": "音频理解",
+  "modelRouting_video": "视频理解",
+  "modelRouting_modelHint": "模型名称（留空则继承默认）",
+  "modelRouting_providerHint": "服务商（留空则继承默认）",
+  "modelRouting_apiBaseHint": "API Base（留空则继承默认）",
+  "modelRouting_apiKeyHint": "API Key（留空则继承默认）",
+  "modelRouting_advanced": "高级",
+  "modelRouting_selectFromRegistry": "从模型列表选择",
+  "modelRouting_usingDefault": "使用默认模型",
+  "modelRouting_configured": "已配置",
+
+  "modelRouting_enableStreaming": "启用流式传输 (SSE)",
+  "modelRouting_apiPath": "API 路径",
+  "modelRouting_apiPathHint": "覆盖端点路径（如 /images/generations）",
+  "modelRouting_requestBodyTemplate": "请求体模板",
+  "modelRouting_requestBodyTemplateHint": "JSON 模板，支持 $model、$prompt 变量替换",
+  "modelRouting_responseBodyPath": "响应提取路径",
+  "modelRouting_responseBodyPathHint": "JSON 路径提取内容（如 data[0].url）",
+
+  "modelRouting_customModalities": "自定义模态",
+  "modelRouting_customModalitiesHint": "定义自定义任务类型，通过意图识别自动路由",
+  "modelRouting_addCustomModality": "添加自定义模态",
+  "modelRouting_modalityKey": "标识符",
+  "modelRouting_modalityKeyHint": "如 image_gen、tts",
+  "modelRouting_modalityLabel": "显示名称",
+  "modelRouting_modalityLabelHint": "如 图片生成",
+  "modelRouting_modalityDescription": "意图描述",
+  "modelRouting_modalityDescriptionHint": "描述何时使用此模态（用于意图分类）",
+  "modelRouting_deleteModality": "删除",
+
+  "addAgent_osToolsCount": "已启用 {count} 个工具",
+  "@addAgent_osToolsCount": {
+    "placeholders": {
+      "count": { "type": "int" }
+    }
+  },
+  "addAgent_noOsTools": "未选择工具",
+  "addAgent_skillsCount": "已启用 {count} 个技能",
+  "@addAgent_skillsCount": {
+    "placeholders": {
+      "count": { "type": "int" }
+    }
+  },
+  "addAgent_noSkills": "未选择技能",
+  "addAgent_modelRoutingCount": "已配置 {count} 个模态",
+  "@addAgent_modelRoutingCount": {
+    "placeholders": {
+      "count": { "type": "int" }
+    }
+  },
+  "addAgent_noModelRouting": "未配置",
+  "addAgent_configureTools": "配置工具",
+  "addAgent_configureSkills": "配置技能",
+  "addAgent_configureModelRouting": "配置模型路由",
+
+  "contacts_title": "通讯录",
+  "contacts_agents": "Agent",
+  "contacts_groups": "群组",
+  "contacts_noAgents": "暂无 Agent",
+  "contacts_noGroups": "暂无群组",
+  "contacts_agentCount": "{count} 个 Agent",
+  "@contacts_agentCount": {
+    "placeholders": {
+      "count": { "type": "int" }
+    }
+  },
+  "contacts_groupCount": "{count} 个群组",
+  "@contacts_groupCount": {
+    "placeholders": {
+      "count": { "type": "int" }
+    }
+  },
+  "contacts_memberCount": "{count} 个成员",
+  "@contacts_memberCount": {
+    "placeholders": {
+      "count": { "type": "int" }
+    }
+  },
+  "groupDetail_title": "群组详情",
+  "groupDetail_editTitle": "编辑群组",
+  "groupDetail_editGroup": "编辑",
+  "groupDetail_members": "成员",
+  "groupDetail_admin": "管理员",
+  "groupDetail_member": "成员",
+  "groupDetail_systemPrompt": "系统提示词",
+  "groupDetail_maxLoopRounds": "最大编排轮次",
+  "groupDetail_startChat": "发起聊天",
+  "groupDetail_deleteGroup": "删除群组",
+  "groupDetail_confirmDelete": "删除群组？",
+  "groupDetail_deleteContent": "确定要删除群组「{name}」吗？这将删除所有消息。",
+  "@groupDetail_deleteContent": {
+    "placeholders": {
+      "name": { "type": "String" }
+    }
+  },
+  "groupDetail_deleted": "群组「{name}」已删除",
+  "@groupDetail_deleted": {
+    "placeholders": {
+      "name": { "type": "String" }
+    }
+  },
+  "groupDetail_deleteFailed": "删除群组失败: {error}",
+  "@groupDetail_deleteFailed": {
+    "placeholders": {
+      "error": { "type": "String" }
+    }
+  },
+  "drawer_contacts": "通讯录",
+
+  "toolModel_managementTitle": "模型管理",
+  "toolModel_configTitle": "模型",
+  "toolModel_configHint": "为此 Agent 选择模型。作为工具模型时，主 LLM 可通过工具调用委派任务；也可用于多模态路由。",
+  "toolModel_configureTitle": "选择模型",
+  "toolModel_addTitle": "添加模型",
+  "toolModel_editTitle": "编辑模型",
+  "toolModel_displayName": "显示名称",
+  "toolModel_displayNameHint": "例如：图片生成、GPT-4o",
+  "toolModel_displayNameRequired": "请输入显示名称",
+  "toolModel_description": "描述",
+  "toolModel_descriptionHint": "作为工具模型时，此描述帮助 LLM 判断何时调用（可选）",
+  "toolModel_descriptionRequired": "请输入描述",
+  "toolModel_model": "模型",
+  "toolModel_modelHint": "例如：dall-e-3、gpt-4o",
+  "toolModel_modelRequired": "请输入模型名称",
+  "toolModel_apiBase": "API 地址",
+  "toolModel_apiBaseHint": "例如：https://api.openai.com/v1",
+  "toolModel_apiBaseRequired": "请输入 API 地址",
+  "toolModel_apiKey": "API Key",
+  "toolModel_apiKeyHint": "输入 API Key（可选）",
+  "toolModel_provider": "服务商",
+  "toolModel_providerHint": "例如：openai",
+  "toolModel_selectProvider": "选择服务商（自动填充 API 地址）",
+  "toolModel_customProvider": "自定义",
+  "toolModel_noModels": "暂无模型",
+  "toolModel_noModelsHint": "点击 + 添加模型配置，可供各 Agent 复用。",
+  "toolModel_noModelsAvailable": "尚未配置模型。请在设置 > 模型管理中添加。",
+  "toolModel_count": "{count} 个模型",
+  "@toolModel_count": {
+    "placeholders": {
+      "count": { "type": "int" }
+    }
+  },
+  "toolModel_deleteTitle": "删除模型",
+  "toolModel_deleteContent": "确定要删除模型 {name} 吗？",
+  "@toolModel_deleteContent": {
+    "placeholders": {
+      "name": { "type": "String" }
+    }
+  },
+  "toolModel_deleted": "模型 {name} 已删除",
+  "@toolModel_deleted": {
+    "placeholders": {
+      "name": { "type": "String" }
+    }
+  },
+  "toolModel_selectAll": "全选",
+  "toolModel_deselectAll": "取消全选",
+  "toolModel_scenarioLabel": "使用场景",
+  "toolModel_scenarioHint": "描述何时应调用此模型（覆盖全局描述）",
+  "toolModel_scenarioPlaceholder": "例如：用于图片生成任务",
+  "addAgent_noToolModels": "未选择模型",
+  "addAgent_toolModelsCount": "已启用 {count} 个模型",
+  "@addAgent_toolModelsCount": {
+    "placeholders": {
+      "count": { "type": "int" }
+    }
+  },
+  "agentDetail_noToolModelsEnabled": "未启用模型",
+
+  "chat_mentionMode": "提及模式",
+  "chat_mentionModeAdminOnly": "仅管理员",
+  "chat_mentionModeAllMembers": "所有成员",
+  "chat_mentionModeAdminOnlyDesc": "仅管理员可以 @提及并激活其他成员",
+  "chat_mentionModeAllMembersDesc": "任何成员都可以 @提及并激活其他成员",
+  "createGroup_mentionMode": "提及模式",
+  "chat_planningMode": "计划模式",
+  "chat_planningModeDesc": "启用后 Admin 会先生成任务计划，用户确认后再执行",
+  "chat_flowMode": "Flow 模式",
+  "chat_flowModeDesc": "Admin 生成阶段化 FlowPlan，各阶段串行、阶段内步骤并行执行",
+
+  "chat_viewTrace": "查看 Trace",
+
+  "modelType_sectionLabel": "模型类型",
+  "modelType_sectionHint": "选择此模型支持的能力类型（可多选）",
+  "modelType_text": "文本",
+  "modelType_imageUnderstanding": "图片理解",
+  "modelType_audioUnderstanding": "语音理解",
+  "modelType_videoUnderstanding": "视频理解",
+  "modelType_imageGeneration": "图片生成",
+  "modelType_tts": "语音合成",
+  "modelType_videoGeneration": "视频生成",
+
+  "common_required": "必填",
+  "addAgent_modelRequired": "请选择模型",
+  "addAgent_noModels": "未配置模型，请先在设置中添加模型",
+  "toolModel_goToManagement": "前往模型管理",
+
+  "settings_disableServiceTitle": "关闭本地服务",
+  "settings_disableServiceContent": "关闭后，所有已配置「允许外部访问」的 Agent 将无法接受外网连接，正在连接的客户端也会立即断开。\n\n确认关闭？",
+  "settings_disableServiceConfirm": "确认关闭",
+
+  "settings_localService": "本地服务",
+  "settings_localServiceDesc": "允许内网或外网设备以 Remote Agent 形式连接",
+  "settings_lanAddress": "内网连接地址",
+  "settings_lanAddressSub": "同局域网设备可通过以下地址连接",
+  "settings_channelTunnel": "Channel Tunnel（外网穿透）",
+  "settings_tunnelNotConfigured": "未配置",
+  "settings_tunnelConnected": "已连接",
+  "settings_tunnelConnecting": "连接中",
+  "settings_tunnelDisconnected": "已断开",
+  "settings_tunnelError": "连接错误",
+  "settings_configureTunnel": "配置 Tunnel",
+  "settings_copyLanAddress": "复制内网地址",
+  "settings_copyPublicAddress": "复制外网地址",
+  "settings_acpServerRunning": "ACP Server 运行中",
+  "settings_acpServerStopped": "ACP Server 未运行",
+  "settings_tunnelServerUrl": "Channel 服务地址",
+  "settings_tunnelChannelId": "Channel ID",
+  "settings_tunnelSecret": "Secret",
+  "settings_tunnelAutoConnect": "自动连接",
+  "settings_tunnelPublicAddress": "外网访问地址",
+  "settings_tunnelConfigRequiredFields": "请填写所有必填字段",
+  "settings_deleteTunnelConfig": "删除配置",
+  "settings_noLanAddress": "暂未获取到局域网地址",
+
+  "settings_acpPort": "端口",
+  "settings_acpPortSuffix": "（1024-65535）",
+  "settings_acpChangePort": "修改端口",
+  "settings_acpPortHint": "修改端口后需要重启 App 才能生效。其他设备需使用新端口重新连接。",
+  "settings_acpPortInvalid": "端口号无效，请输入 1024-65535 之间的数字",
+  "settings_acpPortRestarting": "正在重启 ACP Server...",
+  "settings_acpPortRestartRequired": "端口已保存，重启 App 后生效",
+
+  "settings_acpToken": "连接 Token",
+  "settings_acpTokenCopy": "复制 Token",
+  "settings_acpTokenRefresh": "刷新 Token",
+  "settings_acpTokenRefreshed": "Token 已刷新，旧连接需重新连接",
+
+  "agent_enableExternalAccessTitle": "开启外网访问",
+  "agent_enableExternalAccessNeedService": "当前「本地服务总控开关」已关闭，外网访问功能无法使用。\n\n是否同时开启本地服务？",
+  "agent_enableServiceAndContinue": "开启本地服务",
+  "agent_keepDisabled": "仅保存设置",
+
+  "agent_allowExternalAccess": "允许外部访问",
+  "agent_allowExternalAccessDesc": "开启后，外部 App 可通过 Remote Agent 方式加入对话",
+  "agent_externalAccessUrl": "访问地址",
+  "agent_externalAccessUrlLan": "局域网访问地址",
+  "agent_externalAccessUrlPublic": "公网访问地址",
+  "agent_externalAccessDisabled": "外部访问已关闭",
+  "agent_externalAccessNeedsService": "需先在「设置」中开启本地服务",
+  "agent_copyAccessUrl": "复制访问地址",
+  "agent_accessUrlCopied": "访问地址已复制",
+  "agent_accessUrlCopiedHint": "可粘贴到端点 URL 处进行连接",
+  "agent_regenerateToken": "刷新 Token",
+  "agent_regenerateTokenConfirmTitle": "确认刷新 Token",
+  "agent_regenerateTokenConfirmBody": "刷新后旧 Token 将立即失效，已连接的客户端需使用新 Token 重新连接。确认继续吗？",
+  "agent_tokenRegenerated": "Token 已更新",
+  "agent_tokenRegenerateFailed": "刷新失败: {error}",
+  "@agent_tokenRegenerateFailed": {
+    "placeholders": {
+      "error": {"type": "String"}
+    }
+  },
+
+  "agent_channelConfig": "公网 Channel 配置",
+  "agent_channelServerUrl": "Server 地址",
+  "agent_channelId": "Channel ID",
+  "agent_channelSecret": "Channel 密钥",
+  "agent_channelEndpoint": "Channel Endpoint（可选）",
+  "agent_channelNotConfigured": "未配置公网 Channel",
+  "agent_channelConfigure": "去配置",
+
+  "she_pinned_label": "置顶",
+  "she_bio": "你的专属守护者"
+}

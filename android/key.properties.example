@@ -1,0 +1,7 @@
+# Release keystore configuration
+# Copy this file to key.properties and fill in actual values
+# DO NOT commit key.properties to version control
+storePassword=<your-store-password>
+keyPassword=<your-key-password>
+keyAlias=<your-key-alias>
+storeFile=<path-to-your-keystore.jks>
