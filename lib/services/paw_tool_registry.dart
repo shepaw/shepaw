@@ -23,6 +23,7 @@ import '../models/remote_agent.dart';
 ///   messages  频道消息
 ///   skills    技能列表
 ///   tools     系统工具（OS tools）
+///   datetime  当前日期与时间
 ///   help      顶层帮助
 
 /// Minimal interface that PawToolRegistry needs to send messages as She.
@@ -61,29 +62,31 @@ class PawToolRegistry {
             'properties': {
               'namespace': {
                 'type': 'string',
-                'enum': [
-                  'profile',
-                  'memory',
-                  'agents',
-                  'channels',
-                  'messages',
-                  'skills',
-                  'tools',
-                  'help',
-                ],
+              'enum': [
+                'profile',
+                'memory',
+                'agents',
+                'channels',
+                'messages',
+                'skills',
+                'tools',
+                'datetime',
+                'help',
+              ],
                 'description': '命令命名空间',
-              },
-              'subcommand': {
-                'type': 'string',
-                'description':
-                    '子命令。profile: fields|query|write|delete；'
-                    'memory: query|write|append；'
-                    'agents: list|get|channels|messages|chat；'
-                    'channels: list；'
-                    'messages: query；'
-                    'skills: list；'
-                    'tools: list；'
-                    'help: （无需子命令）',
+            },
+            'subcommand': {
+              'type': 'string',
+              'description':
+                  '子命令。profile: fields|query|write|delete；'
+                  'memory: query|write|append；'
+                  'agents: list|get|channels|messages|chat；'
+                  'channels: list；'
+                  'messages: query；'
+                  'skills: list；'
+                  'tools: list；'
+                  'datetime: now（无需子命令，直接返回当前时间）；'
+                  'help: （无需子命令）',
               },
               'flags': {
                 'type': 'object',
@@ -122,6 +125,7 @@ class PawToolRegistry {
                 'messages',
                 'skills',
                 'tools',
+                'datetime',
                 'help',
               ],
               'description': '命令命名空间',
@@ -136,6 +140,7 @@ class PawToolRegistry {
                   'messages: query；'
                   'skills: list；'
                   'tools: list；'
+                  'datetime: now（无需子命令，直接返回当前时间）；'
                   'help: （无需子命令）',
             },
             'flags': {
@@ -206,6 +211,8 @@ class PawToolRegistry {
         return _skills(subcommand, flags);
       case 'tools':
         return _tools(subcommand, flags);
+      case 'datetime':
+        return _datetime();
       case 'help':
       default:
         return _help();
@@ -629,6 +636,28 @@ class PawToolRegistry {
     return {'platform': platform, 'tools': list, 'count': list.length};
   }
 
+  // ── datetime ──────────────────────────────────────────────────────────────────
+
+  Map<String, dynamic> _datetime() {
+    final now = DateTime.now();
+    final weekdays = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+    final weekdaysCN = ['星期一', '星期二', '星期三', '星期四', '星期五', '星期六', '星期日'];
+    final offset = now.timeZoneOffset;
+    final sign = offset.isNegative ? '-' : '+';
+    final hh = offset.inHours.abs().toString().padLeft(2, '0');
+    final mm = (offset.inMinutes.abs() % 60).toString().padLeft(2, '0');
+    return {
+      'iso8601': now.toIso8601String(),
+      'date': '${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}',
+      'time': '${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}:${now.second.toString().padLeft(2, '0')}',
+      'weekday_en': weekdays[now.weekday - 1],
+      'weekday_cn': weekdaysCN[now.weekday - 1],
+      'timezone_offset': '$sign$hh:$mm',
+      'timezone_name': now.timeZoneName,
+      'unix_ms': now.millisecondsSinceEpoch,
+    };
+  }
+
   // ── help ─────────────────────────────────────────────────────────────────────
 
   Map<String, dynamic> _help() => {
@@ -680,6 +709,10 @@ class PawToolRegistry {
             'desc': '当前平台可用的系统工具',
             'subcommands': {'list': '列出工具'},
           },
+          'datetime': {
+            'desc': '当前日期与时间（设备本地时区）',
+            'subcommands': {'（无需子命令）': '直接返回当前时间'},
+          },
         },
         'examples': [
           'shepaw help',
@@ -696,6 +729,7 @@ class PawToolRegistry {
           'shepaw agents chat --id <agent_id> --message "你好，有个问题想问你"',
           'shepaw messages query --channel abc123 --limit 10',
           'shepaw messages query --agent <agent_id> --limit 20 --offset 0',
+          'shepaw datetime',
         ],
       };
 }

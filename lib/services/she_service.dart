@@ -10,6 +10,7 @@ import 'logger_service.dart';
 ///   [She 核心身份]                    ← 不可覆盖
 ///   [She 的灵魂（自我认知，随时间成长）] ← soul 字段，可由 `shepaw memory write --key soul` 更新
 ///   [shepaw CLI 工具说明]             ← 告知 She 可用 shepaw 工具读写本地数据
+///   [当前时间]                        ← 设备实时时间，每次对话动态注入
 ///   [主人的个性化设定（若有）]          ← 用户在详情页填写的 system_prompt（同时是灵魂种子）
 ///   [认识主人策略 + 当前缺失字段提示]   ← 驱动 She 主动了解用户
 ///   [用户档案快照（分层注入）]          ← 核心层 + 有值的扩展层 + 近期动态
@@ -235,6 +236,9 @@ class SheService {
     // ③ shepaw CLI 工具说明
     parts.add(_pawCliPrompt());
 
+    // ③.5 当前时间信息
+    parts.add(_currentTimePrompt());
+
     // ④ 主人的个性化设定（若有）
     if (userSetPrompt.trim().isNotEmpty) {
       parts.add(_wrapUserCustomPrompt(userSetPrompt.trim()));
@@ -314,6 +318,24 @@ $soul
 - 主人让你"记住某件事" → 必须调用 `shepaw memory append` 或 `shepaw profile write` 才算真正写入
 - 只有工具调用返回 `ok: true` 才代表操作成功，否则视为未执行''';
 
+  static String _currentTimePrompt() {
+    final now = DateTime.now();
+    final weekdays = ['一', '二', '三', '四', '五', '六', '日'];
+    final weekday = weekdays[now.weekday - 1];
+    final offset = now.timeZoneOffset;
+    final sign = offset.isNegative ? '-' : '+';
+    final hh = offset.inHours.abs().toString().padLeft(2, '0');
+    final mm = (offset.inMinutes.abs() % 60).toString().padLeft(2, '0');
+    final timeStr =
+        '${now.year} 年 ${now.month} 月 ${now.day} 日 星期$weekday '
+        '${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')} '
+        '(UTC$sign$hh:$mm)';
+    return '''
+## 当前时间
+$timeStr
+
+（以上是设备实际时间，你谈论"今天""现在""最近"时请以此为准）''';
+  }
 
   static String _knowUserStrategyPrompt(Map<String, String> profile) {
     // 找出核心层中还未填写的字段
