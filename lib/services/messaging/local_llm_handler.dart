@@ -5,7 +5,7 @@ import '../os_tool_registry.dart';
 import '../skill_registry.dart';
 import '../model_registry.dart';
 import '../ui_component_registry.dart';
-import '../paw_tool_registry.dart';
+import '../../clis/shepaw/shepaw_cli.dart';
 import '../task/task_models.dart';
 
 /// Utility helpers for the local LLM execution path.
@@ -27,7 +27,7 @@ class LocalLLMHelpers {
     final osRegistry = OsToolRegistry.instance;
     final skillRegistry = SkillRegistry.instance;
     final toolModelRegistry = ModelRegistry.instance;
-    final pawRegistry = PawToolRegistry.instance;
+    final pawRegistry = ShepawCLI.instance;
 
     if (isClaude) {
       return [

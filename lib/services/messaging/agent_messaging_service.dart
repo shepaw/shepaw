@@ -21,7 +21,7 @@ import '../inference_log_service.dart';
 import '../foreground_task_service.dart';
 import '../logger_service.dart';
 import '../she_service.dart';
-import '../paw_tool_registry.dart';
+import '../../clis/shepaw/shepaw_cli.dart';
 import '../session/session_history_service.dart';
 import 'local_llm_handler.dart';
 
@@ -732,7 +732,7 @@ class AgentMessagingService {
           if (hasOsTools) ...osRegistry.claudeTools(enabledTools: enabledOsTools),
           if (hasSkills) ...skillRegistry.claudeTools(enabledSkills: enabledSkills),
           if (hasToolModels) ...toolModelRegistry.claudeTools(enabledToolModels: enabledToolModels, scenarioOverrides: toolModelScenarios),
-          if (isShe) PawToolRegistry.instance.claudeTool(),
+          if (isShe) ShepawCLI.instance.claudeTool(),
         ];
       } else {
         combinedTools = [
@@ -740,7 +740,7 @@ class AgentMessagingService {
           if (hasOsTools) ...osRegistry.openAITools(enabledTools: enabledOsTools),
           if (hasSkills) ...skillRegistry.openAITools(enabledSkills: enabledSkills),
           if (hasToolModels) ...toolModelRegistry.openAITools(enabledToolModels: enabledToolModels, scenarioOverrides: toolModelScenarios),
-          if (isShe) PawToolRegistry.instance.openAITool(),
+          if (isShe) ShepawCLI.instance.openAITool(),
         ];
       }
 
@@ -914,7 +914,7 @@ class AgentMessagingService {
             skillToolCalls.add(tc);
           } else if (toolModelRegistry.isToolModelTool(tc.name)) {
             toolModelCalls.add(tc);
-          } else if (PawToolRegistry.instance.isPawTool(tc.name)) {
+          } else if (ShepawCLI.instance.isPawTool(tc.name)) {
             pawToolCalls.add(tc);
           }
         }
@@ -1063,8 +1063,8 @@ class AgentMessagingService {
             }
 
             // Check if this is a paw tool call (shepaw CLI)
-            if (PawToolRegistry.instance.isPawTool(tc.name)) {
-              final result = await PawToolRegistry.instance.execute(tc.arguments);
+            if (ShepawCLI.instance.isPawTool(tc.name)) {
+              final result = await ShepawCLI.instance.execute(tc.arguments);
               toolResults.add({
                 'tool_call_id': tc.id,
                 'name': tc.name,

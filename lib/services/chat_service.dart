@@ -30,7 +30,8 @@ import 'logger_service.dart';
 import 'flow_executor.dart';
 import 'os_tool_executor.dart' as os_exec;
 import 'she_service.dart';
-import 'paw_tool_registry.dart';
+import '../clis/shepaw/shepaw_cli.dart';
+import '../clis/cli_base.dart';
 
 /// Result of a history supplement request, carrying both the agent's
 /// re-answer message and how many history entries were actually sent.
@@ -179,7 +180,7 @@ class ChatService implements IPawChatSender {
   ChatService._internal(this._databaseService, this._toolResultService) {
     // Register this instance as the IPawChatSender so She can dispatch
     // `shepaw agents chat` commands.
-    PawToolRegistry.instance.chatSender = this;
+    ShepawCLI.instance.chatSender = this;
   }
 
   /// Notification provider, injected from the widget layer.
@@ -196,7 +197,7 @@ class ChatService implements IPawChatSender {
   ///
   /// Fire-and-forget: we do NOT await ret1's LLM response here.
   /// Awaiting would deadlock She's own tool-calling loop, because She is
-  /// suspended inside PawToolRegistry.execute() waiting for this method to
+  /// suspended inside ShepawCLI.execute() waiting for this method to
   /// return, while ret1's LLM is waiting for resources on the same thread.
   @override
   Future<void> sendAsSheTo({
