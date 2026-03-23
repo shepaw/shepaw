@@ -2,6 +2,9 @@
 build/
 .dart_tool/
 
+# Android Gradle 缓存
+android/.gradle/
+
 # Flutter 自动生成的插件文件（包含本机绝对路径，不应提交）
 .flutter-plugins
 .flutter-plugins-dependencies

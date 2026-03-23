@@ -433,16 +433,13 @@ class RemoteAgentService {
     Duration timeout = const Duration(seconds: 5),
   }) async {
     final allAgents = await getAllAgents();
-    int onlineCount = 0;
 
-    for (final agent in allAgents) {
-      final isOnline = await checkAgentHealth(agent.id, timeout: timeout);
-      if (isOnline) {
-        onlineCount++;
-      }
-    }
+    final results = await Future.wait(
+      allAgents.map((agent) => checkAgentHealth(agent.id, timeout: timeout)),
+      eagerError: false,
+    );
 
-    return onlineCount;
+    return results.where((online) => online).length;
   }
 
   /// 检查所有助手的心跳超时

@@ -404,6 +404,28 @@ class HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateMi
     }
   }
 
+  /// 后台执行健康检查，完成后静默更新在线状态（不显示 loading）
+  void _runHealthCheckInBackground() {
+    () async {
+      try {
+        final tokenService = TokenService(_databaseService);
+        final remoteAgentService = RemoteAgentService(_databaseService, tokenService);
+        await remoteAgentService.checkAllAgentsHealth(timeout: const Duration(seconds: 3));
+
+        if (!mounted) return;
+        final freshAgents = await _apiService.getAgents();
+        if (!mounted) return;
+        setState(() {
+          _agents = freshAgents;
+          _filteredAgents = _applySearchFilter(freshAgents);
+          _sortedConversations = _buildSortedConversations();
+        });
+      } catch (e) {
+        LoggerService().error('Background health check failed', tag: 'Home', error: e);
+      }
+    }();
+  }
+
   /// 加载Agent列表
   Future<void> _loadAgents() async {
     setState(() {
@@ -411,21 +433,13 @@ class HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateMi
     });
 
     try {
-      // 先执行所有 Agent 的健康检查，更新数据库中的状态
-      final databaseService = LocalDatabaseService();
-      final tokenService = TokenService(databaseService);
-      final remoteAgentService = RemoteAgentService(databaseService, tokenService);
-      await remoteAgentService.checkAllAgentsHealth(
-        timeout: const Duration(seconds: 3),
-      );
-
-      // 然后加载最新的 Agent 列表
+      // 直接从数据库加载最新的 Agent 列表（毫秒级，立即展示）
       final agents = await _apiService.getAgents();
       // 加载每个 agent 的最新消息和未读数
       await _loadAgentPreviews(agents);
 
       // Load group channels (only show parent groups, not child sessions)
-      final allChannels = await databaseService.getAllChannels();
+      final allChannels = await _databaseService.getAllChannels();
       final groups = allChannels.where((c) => c.isGroup && c.parentGroupId == null).toList();
       await _loadGroupPreviews(groups);
 
@@ -439,6 +453,7 @@ class HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateMi
         });
       }
       LoggerService().info('Loaded ${agents.length} agents, ${groups.length} groups', tag: 'Home');
+      _runHealthCheckInBackground(); // 后台异步健康检查，不阻塞列表展示
     } catch (e) {
       LoggerService().error('Failed to load agents', tag: 'Home', error: e);
       if (mounted) {
@@ -452,17 +467,10 @@ class HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateMi
   /// 静默刷新 Agent 状态（不显示 loading 状态）
   Future<void> _refreshAgentStatus() async {
     try {
-      final databaseService = LocalDatabaseService();
-      final tokenService = TokenService(databaseService);
-      final remoteAgentService = RemoteAgentService(databaseService, tokenService);
-      await remoteAgentService.checkAllAgentsHealth(
-        timeout: const Duration(seconds: 3),
-      );
-
       final agents = await _apiService.getAgents();
       await _loadAgentPreviews(agents);
 
-      final allChannels = await databaseService.getAllChannels();
+      final allChannels = await _databaseService.getAllChannels();
       final groups = allChannels.where((c) => c.isGroup && c.parentGroupId == null).toList();
       await _loadGroupPreviews(groups);
 
@@ -474,6 +482,7 @@ class HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateMi
           _sortedConversations = _buildSortedConversations();
         });
       }
+      _runHealthCheckInBackground(); // 后台健康检查
     } catch (e) {
       LoggerService().error('Failed to refresh agent status', tag: 'Home', error: e);
     }
