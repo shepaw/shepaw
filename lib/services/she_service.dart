@@ -1,4 +1,5 @@
 import 'package:uuid/uuid.dart';
+import '../models/prompt_stack_config.dart';
 import '../models/remote_agent.dart';
 import 'local_database_service.dart';
 import 'she_profile_database_service.dart';
@@ -208,7 +209,65 @@ class SheService {
     return count % 10 == 0;
   }
 
-  // ── System Prompt Construction (core) ──────────────────────────────
+  // ── System Prompt Construction (public building blocks) ──────────────
+  //
+  // These methods are used by AgentPromptBuilder to assemble the prompt in a
+  // unified way for all agents.  They used to be private (_xxxPrompt); making
+  // them public lets AgentPromptBuilder delegate to SheService without
+  // duplicating logic.
+
+  /// Whether this is She's first interaction with the user (profile still empty).
+  Future<bool> isFirstMeeting() async {
+    final flag = await _profileDb.getUserProfile(_profileInitKey);
+    return flag != 'true';
+  }
+
+  /// Section ①: She's core identity (immutable).
+  String buildCoreIdentityBlock() => _coreIdentityPrompt();
+
+  /// Section ②: She's soul (self-awareness, grows over time).
+  /// Reads the current soul value from the database.
+  Future<String> buildMemoryContextBlock() async {
+    final soul = await _profileDb.getSheMemory(_soulKey) ?? _defaultSoul;
+    // Deliberately omit long_term_memory / userInfo / heartbeat here;
+    // they are included in the profile snapshot block to avoid duplication.
+    return _soulPrompt(soul);
+  }
+
+  /// Section ③: shepaw CLI tool reference, filtered by [SheStackConfig].
+  ///
+  /// Passing `null` returns the full table (backwards-compat for tests).
+  String buildShepawCliBlock([SheStackConfig? config]) =>
+      _pawCliPrompt(config ?? const SheStackConfig());
+
+  /// Section ⑤: strategy for knowing the user + missing-field hints.
+  Future<String> buildUserStrategyBlock() async {
+    final profile = await _profileDb.getAllUserProfile();
+    return _knowUserStrategyPrompt(profile);
+  }
+
+  /// Section ⑥: user-profile snapshot (layered injection).
+  Future<String> buildProfileSnapshotBlock() async {
+    final profile = await _profileDb.getAllUserProfile();
+    final userInfo =
+        await _profileDb.getSheMemory('user_info') ?? '(not yet known)';
+    final longTermMemory =
+        await _profileDb.getSheMemory('long_term_memory') ?? '(no memories yet)';
+    final heartbeat =
+        await _profileDb.getSheMemory('heartbeat') ?? '(no record)';
+    return _buildProfileSnapshot(profile, userInfo, longTermMemory, heartbeat);
+  }
+
+  /// Section ⑦: first-meeting instruction.
+  String buildFirstMeetingBlock() => _firstMeetingInstruction();
+
+  /// Section ⑧: session-end write instructions.
+  String buildSessionEndBlock() => _sessionInstructions();
+
+  /// Section ③.5: current device time (always injected for She).
+  String buildCurrentTimeBlock() => _currentTimePrompt();
+
+  // ── System Prompt Construction (legacy, kept for backwards compat) ──────
 
   /// Build the complete system prompt; see file-top comment for stacking order.
   Future<String> buildSystemPromptWithMemory(String userSetPrompt) async {
@@ -261,7 +320,7 @@ class SheService {
     return parts.join('\n\n');
   }
 
-  // ── Prompt Sections ──────────────────────────────────────────────────
+  // ── Private prompt-section helpers ─────────────────────────────────────
 
   static String _coreIdentityPrompt() => '''
 You are She, the dedicated guardian AI for your master on ShePaw.
@@ -289,7 +348,49 @@ $soul
 
 This is your understanding of yourself, which grows over time with your master. When you have new self-awareness or insights, call `shepaw memory write --key soul --value "(complete new self-awareness)"` to update it (full replacement, not append).''';
 
-  static String _pawCliPrompt() => '''
+  // ignore: unused_element  (called via public buildShepawCliBlock)
+  static String _pawCliPrompt([SheStackConfig config = const SheStackConfig()]) {
+    final rows = <String>[];
+
+    if (config.enableProfileCommand) {
+      rows
+        ..add('| `shepaw profile query` | Query master profile |')
+        ..add('| `shepaw profile write --field name --value John` | Write a profile field |');
+    }
+    if (config.enableMemoryCommand) {
+      rows
+        ..add('| `shepaw memory query --keys soul,user_info` | Query specific memories |')
+        ..add('| `shepaw memory write --key soul --value "..."` | Update self-awareness |')
+        ..add('| `shepaw memory append --key long_term_memory --value "..."` | Append to long-term memory |');
+    }
+    if (config.enableMessagesCommand) {
+      rows
+        ..add('| `shepaw agents list` | List all agents |')
+        ..add('| `shepaw agents channels --id <agent_id>` | View channels of an agent |')
+        ..add('| `shepaw agents messages --id <agent_id> [--channel <id>] [--limit 20] [--offset 0]` | Read agent channel messages (supports pagination) |')
+        ..add('| `shepaw messages query --channel <id>` | Query channel messages |')
+        ..add('| `shepaw messages query --agent <agent_id> [--limit 20] [--offset 0]` | Query messages for a specific agent (supports pagination) |')
+        ..add('| `shepaw skills list` | List skills |');
+    }
+    if (config.enableAgentChatCommand) {
+      rows.add('| `shepaw agents chat --id <agent_id> --message "..."` | Send a message to an agent as She |');
+    }
+
+    if (rows.isEmpty) return '';
+
+    final table = rows.join('\n');
+
+    final actionWarnings = <String>[];
+    if (config.enableAgentChatCommand) {
+      actionWarnings.add('- Master asks you to "send a message to an agent" → you must call `shepaw agents chat --id <agent_id> --message "..."` — saying "I have sent it" in text does nothing');
+    }
+    if (config.enableMemoryCommand || config.enableProfileCommand) {
+      actionWarnings.add('- Master asks you to "remember something" → you must call `shepaw memory append` or `shepaw profile write` to actually save it');
+    }
+    actionWarnings.add('- Only a tool call returning `ok: true` means the operation succeeded; otherwise treat it as not executed');
+    final warnings = actionWarnings.join('\n');
+
+    return '''
 ## shepaw Tool (Your Data Access CLI)
 
 You have a `shepaw` tool to query and write to the ShePaw local database. Call it on demand; no need to keep it in context when not in use.
@@ -298,25 +399,13 @@ You have a `shepaw` tool to query and write to the ShePaw local database. Call i
 
 | Command | Description |
 |---------|-------------|
-| `shepaw profile query` | Query master profile |
-| `shepaw profile write --field name --value John` | Write a profile field |
-| `shepaw memory query --keys soul,user_info` | Query specific memories |
-| `shepaw memory write --key soul --value "..."` | Update self-awareness |
-| `shepaw memory append --key long_term_memory --value "..."` | Append to long-term memory |
-| `shepaw agents list` | List all agents |
-| `shepaw agents channels --id <agent_id>` | View channels of an agent |
-| `shepaw agents messages --id <agent_id> [--channel <id>] [--limit 20] [--offset 0]` | Read agent channel messages (supports pagination) |
-| `shepaw agents chat --id <agent_id> --message "..."` | Send a message to an agent as She |
-| `shepaw messages query --channel <id>` | Query channel messages |
-| `shepaw messages query --agent <agent_id> [--limit 20] [--offset 0]` | Query messages for a specific agent (supports pagination) |
-| `shepaw skills list` | List skills |
+$table
 
 **When to use**: Proactively call when you need to view the full master profile, query agent details, or look up message history. Once you learn something about your master, immediately write it with `shepaw profile write`.
 
 **⚠️ Important: Action commands must be executed via tool call, not described in text**
-- Master asks you to "send a message to an agent" → you must call `shepaw agents chat --id <agent_id> --message "..."` — saying "I have sent it" in text does nothing
-- Master asks you to "remember something" → you must call `shepaw memory append` or `shepaw profile write` to actually save it
-- Only a tool call returning `ok: true` means the operation succeeded; otherwise treat it as not executed''';
+$warnings''';
+  }
 
   static String _currentTimePrompt() {
     final now = DateTime.now();

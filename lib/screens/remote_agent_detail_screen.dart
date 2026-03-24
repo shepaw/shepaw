@@ -5,6 +5,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../l10n/app_localizations.dart';
 import '../models/remote_agent.dart';
+import '../models/prompt_stack_config.dart';
 import '../services/remote_agent_service.dart';
 import '../services/local_database_service.dart';
 import '../services/local_file_storage_service.dart';
@@ -85,6 +86,17 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
   late TextEditingController _channelIdController;
   late TextEditingController _channelSecretController;
   late TextEditingController _channelEndpointController;
+
+  // She-exclusive feature toggles (编辑模式)
+  bool _editingSheMemory = true;
+  bool _editingUserStrategy = true;
+  bool _editingProfileSnapshot = true;
+  bool _editingFirstMeeting = true;
+  bool _editingSessionEnd = true;
+  bool _editingProfileCommand = true;
+  bool _editingMemoryCommand = true;
+  bool _editingAgentChatCommand = true;
+  bool _editingMessagesCommand = true;
 
   final ImagePicker _imagePicker = ImagePicker();
   final LocalFileStorageService _fileStorage = LocalFileStorageService();
@@ -179,6 +191,21 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
     _channelIdController = TextEditingController(text: cfg?.channelId ?? '');
     _channelSecretController = TextEditingController(text: cfg?.secret ?? '');
     _channelEndpointController = TextEditingController(text: cfg?.channelEndpoint ?? '');
+
+    // Load She-exclusive feature toggles from PromptStackConfig
+    if (_agent.isShe) {
+      final stackConfig = _agent.promptStackConfig;
+      final sheConfig = stackConfig.she;
+      _editingSheMemory = sheConfig.includeSheMemory;
+      _editingUserStrategy = sheConfig.includeUserStrategy;
+      _editingProfileSnapshot = sheConfig.includeProfileSnapshot;
+      _editingFirstMeeting = sheConfig.includeFirstMeeting;
+      _editingSessionEnd = sheConfig.includeSessionEnd;
+      _editingProfileCommand = sheConfig.enableProfileCommand;
+      _editingMemoryCommand = sheConfig.enableMemoryCommand;
+      _editingAgentChatCommand = sheConfig.enableAgentChatCommand;
+      _editingMessagesCommand = sheConfig.enableMessagesCommand;
+    }
   }
 
   @override
@@ -361,6 +388,33 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
         metadata['target_agent_id'] = remoteAgentId;
       } else {
         metadata.remove('target_agent_id');
+      }
+
+      // Save She-exclusive prompt stack configuration
+      if (_agent.isShe) {
+        final toolsConfig = ToolsStackConfig(
+          includeUI: true, // Always include UI tools
+          includeOsTools: true,
+          includeSkills: true,
+          includeToolModels: true,
+          includeShepawCli: true,
+        );
+        final sheConfig = SheStackConfig(
+          includeSheMemory: _editingSheMemory,
+          includeUserStrategy: _editingUserStrategy,
+          includeProfileSnapshot: _editingProfileSnapshot,
+          includeFirstMeeting: _editingFirstMeeting,
+          includeSessionEnd: _editingSessionEnd,
+          enableProfileCommand: _editingProfileCommand,
+          enableMemoryCommand: _editingMemoryCommand,
+          enableAgentChatCommand: _editingAgentChatCommand,
+          enableMessagesCommand: _editingMessagesCommand,
+        );
+        final promptStackConfig = PromptStackConfig(
+          tools: toolsConfig,
+          she: sheConfig,
+        );
+        metadata['prompt_stack_config'] = promptStackConfig.toJson();
       }
 
       final updatedAgent = _agent.copyWith(
@@ -787,6 +841,14 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
 
   Widget _buildDetailBody() {
     final l10n = AppLocalizations.of(context);
+    // DEBUG: Check if this is She
+    if (_agent.name == 'She' || _agent.metadata['is_she'] == true) {
+      debugPrint('DEBUG: She Agent found! '
+          'isPinned=${_agent.isPinned}, '
+          'name=${_agent.name}, '
+          'isShe=${_agent.isShe}, '
+          'metadata[is_she]=${_agent.metadata['is_she']}');
+    }
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -805,6 +867,11 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
           // 外部访问卡片（仅本地 agent 显示）
           const SizedBox(height: 16),
           _buildExternalAccessCard(),
+        ],
+        // She 专属功能卡片（仅对 She 显示）
+        if (_agent.isShe) ...[
+          const SizedBox(height: 16),
+          _buildSheDetailCard(),
         ],
         // Token 卡片（仅远端 agent 显示）
         if (!_isLocalMode) ...[
@@ -2060,6 +2127,12 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
           ],
         ],
 
+        // 卡片：She 专属功能开关（仅对 She 显示）
+        if (_agent.isShe) ...[
+          const SizedBox(height: 16),
+          _buildEditSheFeatureTogglesCard(colorScheme),
+        ],
+
         // 卡片 5: OS 工具 / 技能 / 模型路由导航入口（仅在选择了主模型时显示）
         if (_selectedMainModelId != null) ...[
           const SizedBox(height: 16),
@@ -2552,5 +2625,271 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
       return '${time.year}-${time.month.toString().padLeft(2, '0')}-${time.day.toString().padLeft(2, '0')} '
           '${time.hour.toString().padLeft(2, '0')}:${time.minute.toString().padLeft(2, '0')}';
     }
+  }
+
+  Widget _buildEditSheFeatureTogglesCard(ColorScheme colorScheme) {
+    return Card(
+      elevation: 0,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12),
+        side: BorderSide(color: colorScheme.outlineVariant),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(Icons.settings, size: 18, color: colorScheme.primary),
+                const SizedBox(width: 8),
+                Text(
+                  'She 专属功能',
+                  style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                    color: colorScheme.onSurface,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            // ── 数据读取范围 ──
+            Text(
+              '数据读取范围',
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+                color: colorScheme.onSurfaceVariant,
+              ),
+            ),
+            const SizedBox(height: 8),
+            _buildToggle(
+              '灵魂记忆（soul）',
+              '注入 She 的自我意识和成长历程',
+              _editingSheMemory,
+              (val) => setState(() => _editingSheMemory = val),
+            ),
+            const SizedBox(height: 8),
+            _buildToggle(
+              '用户档案感知',
+              '注入用户档案快照和最近活动',
+              _editingProfileSnapshot,
+              (val) => setState(() => _editingProfileSnapshot = val),
+            ),
+            const SizedBox(height: 8),
+            _buildToggle(
+              '主动学习策略',
+              '主动了解用户、记录新信息的能力',
+              _editingUserStrategy,
+              (val) => setState(() => _editingUserStrategy = val),
+            ),
+            const SizedBox(height: 8),
+            _buildToggle(
+              '会话自动记录',
+              '每次对话结束自动更新心跳摘要',
+              _editingSessionEnd,
+              (val) => setState(() => _editingSessionEnd = val),
+            ),
+            const SizedBox(height: 8),
+            _buildToggle(
+              '首次见面处理',
+              '新用户首次交互的特殊指引',
+              _editingFirstMeeting,
+              (val) => setState(() => _editingFirstMeeting = val),
+            ),
+            const SizedBox(height: 16),
+            // ── 工具权限 ──
+            Text(
+              '工具权限',
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+                color: colorScheme.onSurfaceVariant,
+              ),
+            ),
+            const SizedBox(height: 8),
+            _buildToggle(
+              '个人档案命令',
+              '允许读写 shepaw profile 命令',
+              _editingProfileCommand,
+              (val) => setState(() => _editingProfileCommand = val),
+            ),
+            const SizedBox(height: 8),
+            _buildToggle(
+              '长期记忆命令',
+              '允许读写 shepaw memory 命令',
+              _editingMemoryCommand,
+              (val) => setState(() => _editingMemoryCommand = val),
+            ),
+            const SizedBox(height: 8),
+            _buildToggle(
+              '代理聊天命令',
+              '允许 shepaw agents chat 命令',
+              _editingAgentChatCommand,
+              (val) => setState(() => _editingAgentChatCommand = val),
+            ),
+            const SizedBox(height: 8),
+            _buildToggle(
+              '历史消息命令',
+              '允许查询 shepaw messages/agents 命令',
+              _editingMessagesCommand,
+              (val) => setState(() => _editingMessagesCommand = val),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// She 功能详情卡片（详情模式下显示，不可编辑）
+  Widget _buildSheDetailCard() {
+    final colorScheme = Theme.of(context).colorScheme;
+    final config = _agent.promptStackConfig;
+    final sheConfig = config.she;
+
+    return Card(
+      elevation: 0,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12),
+        side: BorderSide(color: colorScheme.outlineVariant),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(Icons.settings, size: 18, color: colorScheme.primary),
+                const SizedBox(width: 8),
+                Text(
+                  'She 专属功能',
+                  style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                    color: colorScheme.onSurface,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            // ── 数据读取范围 ──
+            Text(
+              '数据读取范围',
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+                color: colorScheme.onSurfaceVariant,
+              ),
+            ),
+            const SizedBox(height: 8),
+            _buildDetailToggle('灵魂记忆（soul）', sheConfig.includeSheMemory),
+            const SizedBox(height: 8),
+            _buildDetailToggle('用户档案感知', sheConfig.includeProfileSnapshot),
+            const SizedBox(height: 8),
+            _buildDetailToggle('主动学习策略', sheConfig.includeUserStrategy),
+            const SizedBox(height: 8),
+            _buildDetailToggle('会话自动记录', sheConfig.includeSessionEnd),
+            const SizedBox(height: 8),
+            _buildDetailToggle('首次见面处理', sheConfig.includeFirstMeeting),
+            const SizedBox(height: 16),
+            // ── 工具权限 ──
+            Text(
+              '工具权限',
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+                color: colorScheme.onSurfaceVariant,
+              ),
+            ),
+            const SizedBox(height: 8),
+            _buildDetailToggle('个人档案命令', sheConfig.enableProfileCommand),
+            const SizedBox(height: 8),
+            _buildDetailToggle('长期记忆命令', sheConfig.enableMemoryCommand),
+            const SizedBox(height: 8),
+            _buildDetailToggle('代理聊天命令', sheConfig.enableAgentChatCommand),
+            const SizedBox(height: 8),
+            _buildDetailToggle('历史消息命令', sheConfig.enableMessagesCommand),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// Helper widget to build a toggle row with label and description (edit mode).
+  Widget _buildToggle(
+    String label,
+    String description,
+    bool value,
+    ValueChanged<bool> onChanged,
+  ) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        color: Theme.of(context).colorScheme.surfaceContainerLow,
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  label,
+                  style: const TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  description,
+                  style: TextStyle(
+                    fontSize: 11,
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Switch(
+            value: value,
+            onChanged: onChanged,
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Helper widget to build a read-only toggle row (detail mode).
+  Widget _buildDetailToggle(String label, bool value) {
+    final colorScheme = Theme.of(context).colorScheme;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        color: colorScheme.surfaceContainerLow,
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(
+              label,
+              style: const TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ),
+          Icon(
+            value ? Icons.check_circle : Icons.cancel,
+            size: 20,
+            color: value ? colorScheme.primary : colorScheme.onSurfaceVariant,
+          ),
+        ],
+      ),
+    );
   }
 }

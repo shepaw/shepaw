@@ -10,6 +10,7 @@ import '../../models/tool_execution_result.dart';
 import '../local_database_service.dart';
 import '../tool_result_database_service.dart';
 import '../acp_agent_connection.dart';
+import '../agent_prompt_builder.dart';
 import '../local_llm_agent_service.dart';
 import '../task/task_models.dart';
 import '../os_tool_executor.dart' as os_exec;
@@ -724,39 +725,34 @@ class AgentMessagingService {
       final toolModelScenarios = agent.toolModelScenarios;
 
       // Build combined tool list (UI + OS + Skills + Tool Models + Paw for She)
-      final isShe = agent.metadata['is_she'] == true;
+      final isShe = agent.isShe;
+      final promptConfig = agent.promptStackConfig;
+      final includeShepawCli = isShe && promptConfig.tools.includeShepawCli;
       final List<Map<String, dynamic>> combinedTools;
       if (isClaude) {
         combinedTools = [
           ...UIComponentRegistry.instance.claudeTools(),
-          if (hasOsTools) ...osRegistry.claudeTools(enabledTools: enabledOsTools),
-          if (hasSkills) ...skillRegistry.claudeTools(enabledSkills: enabledSkills),
-          if (hasToolModels) ...toolModelRegistry.claudeTools(enabledToolModels: enabledToolModels, scenarioOverrides: toolModelScenarios),
-          if (isShe) ShepawCLI.instance.claudeTool(),
+          if (hasOsTools && promptConfig.tools.includeOsTools) ...osRegistry.claudeTools(enabledTools: enabledOsTools),
+          if (hasSkills && promptConfig.tools.includeSkills) ...skillRegistry.claudeTools(enabledSkills: enabledSkills),
+          if (hasToolModels && promptConfig.tools.includeToolModels) ...toolModelRegistry.claudeTools(enabledToolModels: enabledToolModels, scenarioOverrides: toolModelScenarios),
+          if (includeShepawCli) ShepawCLI.instance.claudeTool(),
         ];
       } else {
         combinedTools = [
           ...UIComponentRegistry.instance.openAITools(),
-          if (hasOsTools) ...osRegistry.openAITools(enabledTools: enabledOsTools),
-          if (hasSkills) ...skillRegistry.openAITools(enabledSkills: enabledSkills),
-          if (hasToolModels) ...toolModelRegistry.openAITools(enabledToolModels: enabledToolModels, scenarioOverrides: toolModelScenarios),
-          if (isShe) ShepawCLI.instance.openAITool(),
+          if (hasOsTools && promptConfig.tools.includeOsTools) ...osRegistry.openAITools(enabledTools: enabledOsTools),
+          if (hasSkills && promptConfig.tools.includeSkills) ...skillRegistry.openAITools(enabledSkills: enabledSkills),
+          if (hasToolModels && promptConfig.tools.includeToolModels) ...toolModelRegistry.openAITools(enabledToolModels: enabledToolModels, scenarioOverrides: toolModelScenarios),
+          if (includeShepawCli) ShepawCLI.instance.openAITool(),
         ];
       }
 
-      // Build system prompt — dmSystemPrompt overrides the agent's default when set
-      final baseSystemPrompt = (dmSystemPrompt != null && dmSystemPrompt.isNotEmpty)
-          ? dmSystemPrompt
-          : (agent.metadata['system_prompt'] as String? ?? '');
-      // For She agent, inject memory context (soul, profile, know-user strategy, etc.)
-      final resolvedBasePrompt = agent.metadata['is_she'] == true
-          ? await SheService.instance.buildSystemPromptWithMemory(baseSystemPrompt)
-          : baseSystemPrompt;
-      final systemPrompt = '$resolvedBasePrompt'
-          '${UIComponentRegistry.instance.systemPromptSuffix}'
-          '${hasOsTools ? osRegistry.systemPromptSuffix(enabledOsTools) : ''}'
-          '${hasSkills ? skillRegistry.systemPromptSuffix(enabledSkills) : ''}'
-          '${hasToolModels ? toolModelRegistry.systemPromptSuffix(enabledToolModels, scenarioOverrides: toolModelScenarios) : ''}';
+      // Build system prompt via AgentPromptBuilder (handles She and all other
+      // agents uniformly; dmSystemPrompt is passed as the DM-channel override).
+      final systemPrompt = await AgentPromptBuilder(
+        agent: agent,
+        dmSystemPromptOverride: dmSystemPrompt,
+      ).buildSystemPrompt();
 
       // Load history — include attachment messages for context
       const historyLimit = 20;

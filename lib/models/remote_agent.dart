@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'model_routing_config.dart';
 import 'llm_provider_config.dart';
+import 'prompt_stack_config.dart';
 import '../services/channel_tunnel_service.dart';
 
 /// Detect and repair a string corrupted by a UTF-16 encoding bug.
@@ -346,7 +347,31 @@ class RemoteAgent {
   bool get isOnline => status == AgentStatus.online;
 
   /// 是否是 She（内置守护 Agent）
-  bool get isShe => isPinned && name == 'She';
+  bool get isShe {
+    // Primary check: metadata flag
+    if (metadata['is_she'] == true) {
+      return true;
+    }
+    // Fallback check: name-based (for backward compat)
+    if (isPinned && name == 'She') {
+      return true;
+    }
+    return false;
+  }
+
+  /// Prompt-stack configuration (controls which prompt sections are active).
+  ///
+  /// Read from `metadata['prompt_stack_config']` when present; otherwise the
+  /// default is derived from [isShe]:
+  /// - She  → [PromptStackConfig.forShe]   (all sections enabled)
+  /// - others → [PromptStackConfig.forOtherAgent] (She sections off)
+  PromptStackConfig get promptStackConfig {
+    final raw = metadata['prompt_stack_config'];
+    if (raw is Map<String, dynamic>) {
+      return PromptStackConfig.fromJson(raw);
+    }
+    return isShe ? PromptStackConfig.forShe : PromptStackConfig.forOtherAgent;
+  }
 
   /// 是否离线
   bool get isOffline => status == AgentStatus.offline;
