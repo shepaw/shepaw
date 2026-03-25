@@ -2628,34 +2628,32 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
   }
 
   Widget _buildEditSheFeatureTogglesCard(ColorScheme colorScheme) {
+    final theme = Theme.of(context);
     return Card(
       elevation: 0,
+      clipBehavior: Clip.antiAlias,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(12),
         side: BorderSide(color: colorScheme.outlineVariant),
       ),
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Icon(Icons.settings, size: 18, color: colorScheme.primary),
-                const SizedBox(width: 8),
-                Text(
-                  'She 专属功能',
-                  style: TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w600,
-                    color: colorScheme.onSurface,
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 16),
-            // ── 数据读取范围 ──
-            Text(
+      child: ExpansionTile(
+        leading: Icon(Icons.settings, size: 18, color: colorScheme.primary),
+        title: Text(
+          'She 专属功能',
+          style: theme.textTheme.titleMedium?.copyWith(
+            fontWeight: FontWeight.bold,
+            color: colorScheme.primary,
+          ),
+        ),
+        tilePadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+        childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+        initiallyExpanded: false,
+        children: [
+          const SizedBox(height: 8),
+          // ── 数据读取范围 ──
+          Align(
+            alignment: Alignment.centerLeft,
+            child: Text(
               '数据读取范围',
               style: TextStyle(
                 fontSize: 12,
@@ -2663,44 +2661,47 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
                 color: colorScheme.onSurfaceVariant,
               ),
             ),
-            const SizedBox(height: 8),
-            _buildToggle(
-              '灵魂记忆（soul）',
-              '注入 She 的自我意识和成长历程',
-              _editingSheMemory,
-              (val) => setState(() => _editingSheMemory = val),
-            ),
-            const SizedBox(height: 8),
-            _buildToggle(
-              '用户档案感知',
-              '注入用户档案快照和最近活动',
-              _editingProfileSnapshot,
-              (val) => setState(() => _editingProfileSnapshot = val),
-            ),
-            const SizedBox(height: 8),
-            _buildToggle(
-              '主动学习策略',
-              '主动了解用户、记录新信息的能力',
-              _editingUserStrategy,
-              (val) => setState(() => _editingUserStrategy = val),
-            ),
-            const SizedBox(height: 8),
-            _buildToggle(
-              '会话自动记录',
-              '每次对话结束自动更新心跳摘要',
-              _editingSessionEnd,
-              (val) => setState(() => _editingSessionEnd = val),
-            ),
-            const SizedBox(height: 8),
-            _buildToggle(
-              '首次见面处理',
-              '新用户首次交互的特殊指引',
-              _editingFirstMeeting,
-              (val) => setState(() => _editingFirstMeeting = val),
-            ),
-            const SizedBox(height: 16),
-            // ── 工具权限 ──
-            Text(
+          ),
+          const SizedBox(height: 8),
+          _buildToggle(
+            '灵魂记忆（soul）',
+            '注入 She 的自我意识和成长历程',
+            _editingSheMemory,
+            (val) => setState(() => _editingSheMemory = val),
+          ),
+          const SizedBox(height: 8),
+          _buildToggle(
+            '用户档案感知',
+            '注入用户档案快照和最近活动',
+            _editingProfileSnapshot,
+            (val) => setState(() => _editingProfileSnapshot = val),
+          ),
+          const SizedBox(height: 8),
+          _buildToggle(
+            '主动学习策略',
+            '主动了解用户、记录新信息的能力',
+            _editingUserStrategy,
+            (val) => setState(() => _editingUserStrategy = val),
+          ),
+          const SizedBox(height: 8),
+          _buildToggle(
+            '会话自动记录',
+            '每次对话结束自动更新心跳摘要',
+            _editingSessionEnd,
+            (val) => setState(() => _editingSessionEnd = val),
+          ),
+          const SizedBox(height: 8),
+          _buildToggle(
+            '首次见面处理',
+            '新用户首次交互的特殊指引',
+            _editingFirstMeeting,
+            (val) => setState(() => _editingFirstMeeting = val),
+          ),
+          const SizedBox(height: 16),
+          // ── 工具权限 ──
+          Align(
+            alignment: Alignment.centerLeft,
+            child: Text(
               '工具权限',
               style: TextStyle(
                 fontSize: 12,
@@ -2708,74 +2709,72 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
                 color: colorScheme.onSurfaceVariant,
               ),
             ),
-            const SizedBox(height: 8),
-            _buildToggle(
-              '个人档案命令',
-              '允许读写 shepaw profile 命令',
-              _editingProfileCommand,
-              (val) => setState(() => _editingProfileCommand = val),
-            ),
-            const SizedBox(height: 8),
-            _buildToggle(
-              '长期记忆命令',
-              '允许读写 shepaw memory 命令',
-              _editingMemoryCommand,
-              (val) => setState(() => _editingMemoryCommand = val),
-            ),
-            const SizedBox(height: 8),
-            _buildToggle(
-              '代理聊天命令',
-              '允许 shepaw agents chat 命令',
-              _editingAgentChatCommand,
-              (val) => setState(() => _editingAgentChatCommand = val),
-            ),
-            const SizedBox(height: 8),
-            _buildToggle(
-              '历史消息命令',
-              '允许查询 shepaw messages/agents 命令',
-              _editingMessagesCommand,
-              (val) => setState(() => _editingMessagesCommand = val),
-            ),
-          ],
-        ),
+          ),
+          const SizedBox(height: 8),
+          _buildToggle(
+            '个人档案命令',
+            '允许读写 shepaw profile 命令',
+            _editingProfileCommand,
+            (val) => setState(() => _editingProfileCommand = val),
+          ),
+          const SizedBox(height: 8),
+          _buildToggle(
+            '长期记忆命令',
+            '允许读写 shepaw memory 命令',
+            _editingMemoryCommand,
+            (val) => setState(() => _editingMemoryCommand = val),
+          ),
+          const SizedBox(height: 8),
+          _buildToggle(
+            '代理聊天命令',
+            '允许 shepaw agents chat 命令',
+            _editingAgentChatCommand,
+            (val) => setState(() => _editingAgentChatCommand = val),
+          ),
+          const SizedBox(height: 8),
+          _buildToggle(
+            '历史消息命令',
+            '允许查询 shepaw messages/agents 命令',
+            _editingMessagesCommand,
+            (val) => setState(() => _editingMessagesCommand = val),
+          ),
+        ],
       ),
     );
   }
 
   /// She 功能详情卡片（详情模式下显示，不可编辑）
   Widget _buildSheDetailCard() {
-    final colorScheme = Theme.of(context).colorScheme;
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
     final config = _agent.promptStackConfig;
     final sheConfig = config.she;
 
     return Card(
       elevation: 0,
+      clipBehavior: Clip.antiAlias,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(12),
         side: BorderSide(color: colorScheme.outlineVariant),
       ),
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Icon(Icons.settings, size: 18, color: colorScheme.primary),
-                const SizedBox(width: 8),
-                Text(
-                  'She 专属功能',
-                  style: TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w600,
-                    color: colorScheme.onSurface,
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 16),
-            // ── 数据读取范围 ──
-            Text(
+      child: ExpansionTile(
+        leading: Icon(Icons.settings, size: 18, color: colorScheme.primary),
+        title: Text(
+          'She 专属功能',
+          style: theme.textTheme.titleMedium?.copyWith(
+            fontWeight: FontWeight.bold,
+            color: colorScheme.primary,
+          ),
+        ),
+        tilePadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+        childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+        initiallyExpanded: false,
+        children: [
+          const SizedBox(height: 8),
+          // ── 数据读取范围 ──
+          Align(
+            alignment: Alignment.centerLeft,
+            child: Text(
               '数据读取范围',
               style: TextStyle(
                 fontSize: 12,
@@ -2783,19 +2782,22 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
                 color: colorScheme.onSurfaceVariant,
               ),
             ),
-            const SizedBox(height: 8),
-            _buildDetailToggle('灵魂记忆（soul）', sheConfig.includeSheMemory),
-            const SizedBox(height: 8),
-            _buildDetailToggle('用户档案感知', sheConfig.includeProfileSnapshot),
-            const SizedBox(height: 8),
-            _buildDetailToggle('主动学习策略', sheConfig.includeUserStrategy),
-            const SizedBox(height: 8),
-            _buildDetailToggle('会话自动记录', sheConfig.includeSessionEnd),
-            const SizedBox(height: 8),
-            _buildDetailToggle('首次见面处理', sheConfig.includeFirstMeeting),
-            const SizedBox(height: 16),
-            // ── 工具权限 ──
-            Text(
+          ),
+          const SizedBox(height: 8),
+          _buildDetailToggle('灵魂记忆（soul）', sheConfig.includeSheMemory),
+          const SizedBox(height: 8),
+          _buildDetailToggle('用户档案感知', sheConfig.includeProfileSnapshot),
+          const SizedBox(height: 8),
+          _buildDetailToggle('主动学习策略', sheConfig.includeUserStrategy),
+          const SizedBox(height: 8),
+          _buildDetailToggle('会话自动记录', sheConfig.includeSessionEnd),
+          const SizedBox(height: 8),
+          _buildDetailToggle('首次见面处理', sheConfig.includeFirstMeeting),
+          const SizedBox(height: 16),
+          // ── 工具权限 ──
+          Align(
+            alignment: Alignment.centerLeft,
+            child: Text(
               '工具权限',
               style: TextStyle(
                 fontSize: 12,
@@ -2803,16 +2805,16 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
                 color: colorScheme.onSurfaceVariant,
               ),
             ),
-            const SizedBox(height: 8),
-            _buildDetailToggle('个人档案命令', sheConfig.enableProfileCommand),
-            const SizedBox(height: 8),
-            _buildDetailToggle('长期记忆命令', sheConfig.enableMemoryCommand),
-            const SizedBox(height: 8),
-            _buildDetailToggle('代理聊天命令', sheConfig.enableAgentChatCommand),
-            const SizedBox(height: 8),
-            _buildDetailToggle('历史消息命令', sheConfig.enableMessagesCommand),
-          ],
-        ),
+          ),
+          const SizedBox(height: 8),
+          _buildDetailToggle('个人档案命令', sheConfig.enableProfileCommand),
+          const SizedBox(height: 8),
+          _buildDetailToggle('长期记忆命令', sheConfig.enableMemoryCommand),
+          const SizedBox(height: 8),
+          _buildDetailToggle('代理聊天命令', sheConfig.enableAgentChatCommand),
+          const SizedBox(height: 8),
+          _buildDetailToggle('历史消息命令', sheConfig.enableMessagesCommand),
+        ],
       ),
     );
   }
