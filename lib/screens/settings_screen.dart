@@ -23,6 +23,7 @@ import '../services/local_network_service.dart';
 import '../services/channel_tunnel_service.dart';
 import '../services/remote_agent_service.dart';
 import '../services/token_service.dart';
+import '../widgets/update_dialog.dart';
 import '../main.dart' show globalACPServer, kAcpServerPortKey, kAcpServerDefaultPort, kAcpServerEnabledKey;
 import 'dart:io' show Platform;
 import 'package:flutter/foundation.dart' show kIsWeb;
@@ -456,6 +457,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
               );
             },
           ),
+
+          const CheckForUpdatesListTile(),
 
           ListTile(
             leading: const Icon(Icons.privacy_tip_outlined),

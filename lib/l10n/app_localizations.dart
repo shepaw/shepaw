@@ -842,6 +842,144 @@ abstract class AppLocalizations {
   /// **'版本 1.0.0'**
   String get settings_aboutVersion;
 
+  /// No description provided for @settings_checkForUpdates.
+  ///
+  /// In zh, this message translates to:
+  /// **'检查更新'**
+  String get settings_checkForUpdates;
+
+  /// No description provided for @settings_checkForUpdatesSub.
+  ///
+  /// In zh, this message translates to:
+  /// **'检查是否有最新版本'**
+  String get settings_checkForUpdatesSub;
+
+  /// No description provided for @update_checking.
+  ///
+  /// In zh, this message translates to:
+  /// **'正在检查更新...'**
+  String get update_checking;
+
+  /// No description provided for @update_upToDate.
+  ///
+  /// In zh, this message translates to:
+  /// **'已是最新版本'**
+  String get update_upToDate;
+
+  /// No description provided for @update_upToDateSub.
+  ///
+  /// In zh, this message translates to:
+  /// **'Paw {version} 已是最新版本。'**
+  String update_upToDateSub(String version);
+
+  /// No description provided for @update_available.
+  ///
+  /// In zh, this message translates to:
+  /// **'发现新版本'**
+  String get update_available;
+
+  /// No description provided for @update_availableVersion.
+  ///
+  /// In zh, this message translates to:
+  /// **'Paw {version} 现在可用'**
+  String update_availableVersion(String version);
+
+  /// No description provided for @update_mandatoryTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'强制更新'**
+  String get update_mandatoryTitle;
+
+  /// No description provided for @update_mandatoryMessage.
+  ///
+  /// In zh, this message translates to:
+  /// **'此更新为必须更新，请升级到 {version} 版本才能继续使用 Paw。'**
+  String update_mandatoryMessage(String version);
+
+  /// No description provided for @update_releaseNotes.
+  ///
+  /// In zh, this message translates to:
+  /// **'更新内容'**
+  String get update_releaseNotes;
+
+  /// No description provided for @update_downloadNow.
+  ///
+  /// In zh, this message translates to:
+  /// **'立即下载'**
+  String get update_downloadNow;
+
+  /// No description provided for @update_remindLater.
+  ///
+  /// In zh, this message translates to:
+  /// **'稍后提醒'**
+  String get update_remindLater;
+
+  /// No description provided for @update_skipVersion.
+  ///
+  /// In zh, this message translates to:
+  /// **'跳过此版本'**
+  String get update_skipVersion;
+
+  /// No description provided for @update_checkFailed.
+  ///
+  /// In zh, this message translates to:
+  /// **'无法检查更新，请检查网络连接。'**
+  String get update_checkFailed;
+
+  /// No description provided for @update_currentVersion.
+  ///
+  /// In zh, this message translates to:
+  /// **'当前版本：{version}'**
+  String update_currentVersion(String version);
+
+  /// No description provided for @update_downloading.
+  ///
+  /// In zh, this message translates to:
+  /// **'正在下载...'**
+  String get update_downloading;
+
+  /// No description provided for @update_downloadingFile.
+  ///
+  /// In zh, this message translates to:
+  /// **'正在下载 {fileName}'**
+  String update_downloadingFile(String fileName);
+
+  /// No description provided for @update_downloadProgress.
+  ///
+  /// In zh, this message translates to:
+  /// **'{downloaded} / {total}'**
+  String update_downloadProgress(String downloaded, String total);
+
+  /// No description provided for @update_downloadSpeed.
+  ///
+  /// In zh, this message translates to:
+  /// **'{speed}/秒'**
+  String update_downloadSpeed(String speed);
+
+  /// No description provided for @update_downloadTimeRemaining.
+  ///
+  /// In zh, this message translates to:
+  /// **'剩余 {time}'**
+  String update_downloadTimeRemaining(String time);
+
+  /// No description provided for @update_downloadCompleted.
+  ///
+  /// In zh, this message translates to:
+  /// **'下载完成'**
+  String get update_downloadCompleted;
+
+  /// No description provided for @update_downloadFailed.
+  ///
+  /// In zh, this message translates to:
+  /// **'下载失败'**
+  String get update_downloadFailed;
+
+  /// No description provided for @update_retryDownload.
+  ///
+  /// In zh, this message translates to:
+  /// **'重试下载'**
+  String get update_retryDownload;
+
   /// No description provided for @settings_privacyPolicy.
   ///
   /// In zh, this message translates to:

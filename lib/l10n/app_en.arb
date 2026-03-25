@@ -134,6 +134,70 @@
   "settings_clearAllDataSub": "Delete all agents, messages, and files",
   "settings_about": "About",
   "settings_aboutVersion": "Version 1.0.0",
+  "settings_checkForUpdates": "Check for Updates",
+  "settings_checkForUpdatesSub": "Check for the latest version",
+  "update_checking": "Checking for updates...",
+  "update_upToDate": "You're up to date!",
+  "update_upToDateSub": "Paw {version} is the latest version.",
+  "@update_upToDateSub": {
+    "placeholders": {
+      "version": { "type": "String" }
+    }
+  },
+  "update_available": "Update Available",
+  "update_availableVersion": "Paw {version} is now available",
+  "@update_availableVersion": {
+    "placeholders": {
+      "version": { "type": "String" }
+    }
+  },
+  "update_mandatoryTitle": "Required Update",
+  "update_mandatoryMessage": "This update is required to continue using Paw. Please update to version {version}.",
+  "@update_mandatoryMessage": {
+    "placeholders": {
+      "version": { "type": "String" }
+    }
+  },
+  "update_releaseNotes": "Release Notes",
+  "update_downloadNow": "Download Now",
+  "update_remindLater": "Remind Me Later",
+  "update_skipVersion": "Skip This Version",
+  "update_checkFailed": "Unable to check for updates. Please check your network connection.",
+  "update_currentVersion": "Current version: {version}",
+  "@update_currentVersion": {
+    "placeholders": {
+      "version": { "type": "String" }
+    }
+  },
+  "update_downloading": "Downloading...",
+  "update_downloadingFile": "Downloading {fileName}",
+  "@update_downloadingFile": {
+    "placeholders": {
+      "fileName": { "type": "String" }
+    }
+  },
+  "update_downloadProgress": "{downloaded} / {total}",
+  "@update_downloadProgress": {
+    "placeholders": {
+      "downloaded": { "type": "String" },
+      "total": { "type": "String" }
+    }
+  },
+  "update_downloadSpeed": "{speed}/s",
+  "@update_downloadSpeed": {
+    "placeholders": {
+      "speed": { "type": "String" }
+    }
+  },
+  "update_downloadTimeRemaining": "{time} remaining",
+  "@update_downloadTimeRemaining": {
+    "placeholders": {
+      "time": { "type": "String" }
+    }
+  },
+  "update_downloadCompleted": "Download completed",
+  "update_downloadFailed": "Download failed",
+  "update_retryDownload": "Retry Download",
   "settings_privacyPolicy": "Privacy Policy",
   "settings_termsOfService": "Terms of Service",
 

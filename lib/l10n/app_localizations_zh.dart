@@ -396,6 +396,91 @@ class AppLocalizationsZh extends AppLocalizations {
   String get settings_aboutVersion => '版本 1.0.0';
 
   @override
+  String get settings_checkForUpdates => '检查更新';
+
+  @override
+  String get settings_checkForUpdatesSub => '检查是否有最新版本';
+
+  @override
+  String get update_checking => '正在检查更新...';
+
+  @override
+  String get update_upToDate => '已是最新版本';
+
+  @override
+  String update_upToDateSub(String version) {
+    return 'Paw $version 已是最新版本。';
+  }
+
+  @override
+  String get update_available => '发现新版本';
+
+  @override
+  String update_availableVersion(String version) {
+    return 'Paw $version 现在可用';
+  }
+
+  @override
+  String get update_mandatoryTitle => '强制更新';
+
+  @override
+  String update_mandatoryMessage(String version) {
+    return '此更新为必须更新，请升级到 $version 版本才能继续使用 Paw。';
+  }
+
+  @override
+  String get update_releaseNotes => '更新内容';
+
+  @override
+  String get update_downloadNow => '立即下载';
+
+  @override
+  String get update_remindLater => '稍后提醒';
+
+  @override
+  String get update_skipVersion => '跳过此版本';
+
+  @override
+  String get update_checkFailed => '无法检查更新，请检查网络连接。';
+
+  @override
+  String update_currentVersion(String version) {
+    return '当前版本：$version';
+  }
+
+  @override
+  String get update_downloading => '正在下载...';
+
+  @override
+  String update_downloadingFile(String fileName) {
+    return '正在下载 $fileName';
+  }
+
+  @override
+  String update_downloadProgress(String downloaded, String total) {
+    return '$downloaded / $total';
+  }
+
+  @override
+  String update_downloadSpeed(String speed) {
+    return '$speed/秒';
+  }
+
+  @override
+  String update_downloadTimeRemaining(String time) {
+    return '剩余 $time';
+  }
+
+  @override
+  String get update_downloadCompleted => '下载完成';
+
+  @override
+  String get update_downloadFailed => '下载失败';
+
+  @override
+  String get update_retryDownload => '重试下载';
+
+  @override
   String get settings_privacyPolicy => '隐私政策';
 
   @override

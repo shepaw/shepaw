@@ -412,6 +412,92 @@ class AppLocalizationsEn extends AppLocalizations {
   String get settings_aboutVersion => 'Version 1.0.0';
 
   @override
+  String get settings_checkForUpdates => 'Check for Updates';
+
+  @override
+  String get settings_checkForUpdatesSub => 'Check for the latest version';
+
+  @override
+  String get update_checking => 'Checking for updates...';
+
+  @override
+  String get update_upToDate => 'You\'re up to date!';
+
+  @override
+  String update_upToDateSub(String version) {
+    return 'Paw $version is the latest version.';
+  }
+
+  @override
+  String get update_available => 'Update Available';
+
+  @override
+  String update_availableVersion(String version) {
+    return 'Paw $version is now available';
+  }
+
+  @override
+  String get update_mandatoryTitle => 'Required Update';
+
+  @override
+  String update_mandatoryMessage(String version) {
+    return 'This update is required to continue using Paw. Please update to version $version.';
+  }
+
+  @override
+  String get update_releaseNotes => 'Release Notes';
+
+  @override
+  String get update_downloadNow => 'Download Now';
+
+  @override
+  String get update_remindLater => 'Remind Me Later';
+
+  @override
+  String get update_skipVersion => 'Skip This Version';
+
+  @override
+  String get update_checkFailed =>
+      'Unable to check for updates. Please check your network connection.';
+
+  @override
+  String update_currentVersion(String version) {
+    return 'Current version: $version';
+  }
+
+  @override
+  String get update_downloading => 'Downloading...';
+
+  @override
+  String update_downloadingFile(String fileName) {
+    return 'Downloading $fileName';
+  }
+
+  @override
+  String update_downloadProgress(String downloaded, String total) {
+    return '$downloaded / $total';
+  }
+
+  @override
+  String update_downloadSpeed(String speed) {
+    return '$speed/s';
+  }
+
+  @override
+  String update_downloadTimeRemaining(String time) {
+    return '$time remaining';
+  }
+
+  @override
+  String get update_downloadCompleted => 'Download completed';
+
+  @override
+  String get update_downloadFailed => 'Download failed';
+
+  @override
+  String get update_retryDownload => 'Retry Download';
+
+  @override
   String get settings_privacyPolicy => 'Privacy Policy';
 
   @override

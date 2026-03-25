@@ -80,6 +80,9 @@ dependencies:
   url_launcher: ^6.2.2
   scrollable_positioned_list: ^0.3.8
 
+  # 应用版本信息
+  package_info_plus: ^8.0.0
+
   # 桌面端多窗口
   desktop_multi_window: ^0.3.0
 
