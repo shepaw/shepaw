@@ -2866,4 +2866,246 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get she_bio => 'Your personal guardian';
+
+  @override
+  String get settings_userProfile => 'Personal Profile';
+
+  @override
+  String get settings_userProfileSub => 'Manage your personal information';
+
+  @override
+  String get settings_agentMemories => 'Agent Memories';
+
+  @override
+  String get settings_agentMemoriesSub =>
+      'View and manage memories for each agent';
+
+  @override
+  String get memory_title => 'Memories';
+
+  @override
+  String get memory_add => 'Add Note';
+
+  @override
+  String get memory_structured => 'Structured';
+
+  @override
+  String get memory_timeline => 'Timeline';
+
+  @override
+  String get memory_export => 'Export';
+
+  @override
+  String get memory_json => 'JSON';
+
+  @override
+  String get memory_markdown => 'Markdown';
+
+  @override
+  String get memory_clearAll => 'Clear All';
+
+  @override
+  String get memory_delete => 'Delete';
+
+  @override
+  String get memory_noMemories => 'No Memories Yet';
+
+  @override
+  String get memory_addNoteHint => 'Add notes to store memories';
+
+  @override
+  String get memory_view => 'View';
+
+  @override
+  String get memory_noAgents => 'No Agents Available';
+
+  @override
+  String get memory_addAgents => 'Add agents to manage their memories';
+
+  @override
+  String get memory_created => 'Created';
+
+  @override
+  String get memory_updated => 'Updated';
+
+  @override
+  String get profile_personalTitle => 'Personal Profile';
+
+  @override
+  String get profile_coreInfo => 'Core Information';
+
+  @override
+  String get profile_extendedInfo => 'Additional Information';
+
+  @override
+  String get profile_customAttrs => 'Custom Attributes';
+
+  @override
+  String get profile_add => 'Add';
+
+  @override
+  String get profile_reset => 'Reset All';
+
+  @override
+  String get profile_nameField => 'Name';
+
+  @override
+  String get profile_ageField => 'Age';
+
+  @override
+  String get profile_genderField => 'Gender';
+
+  @override
+  String get profile_occupationField => 'Occupation';
+
+  @override
+  String get profile_cityField => 'City';
+
+  @override
+  String get profile_interestsField => 'Interests';
+
+  @override
+  String get profile_interestsHint => 'Comma separated';
+
+  @override
+  String get profile_valuesField => 'Values';
+
+  @override
+  String get profile_valuesHint => 'What matters most to you';
+
+  @override
+  String get profile_goalsField => 'Goals & Needs';
+
+  @override
+  String get profile_goalsHint => 'Your aspirations';
+
+  @override
+  String get profile_communicationStyleField => 'Communication Style';
+
+  @override
+  String get profile_communicationStyleHint => 'How you prefer to communicate';
+
+  @override
+  String get profile_workStyleField => 'Work Style';
+
+  @override
+  String get profile_workStyleHint => 'Your work preferences';
+
+  @override
+  String get profile_lifeStageField => 'Life Stage';
+
+  @override
+  String get profile_lifeStageHint =>
+      'e.g., student, working professional, retired';
+
+  @override
+  String get profile_importantPeopleField => 'Important People';
+
+  @override
+  String get profile_importantPeopleHint => 'Family, friends, mentors';
+
+  @override
+  String get profile_healthField => 'Health';
+
+  @override
+  String get profile_healthHint => 'Health conditions, allergies';
+
+  @override
+  String get profile_languageField => 'Language Preference';
+
+  @override
+  String get profile_languageHint => 'e.g., English, Chinese, Spanish';
+
+  @override
+  String get profile_timezoneField => 'Timezone';
+
+  @override
+  String get profile_timezoneHint => 'e.g., EST, PST, UTC+8';
+
+  @override
+  String get profile_notesField => 'Other Notes';
+
+  @override
+  String get profile_notesHint => 'Any additional information';
+
+  @override
+  String get profile_addCustomTitle => 'Add Custom Attribute';
+
+  @override
+  String get profile_attributeName => 'Attribute Name';
+
+  @override
+  String get profile_attributeNameHint => 'e.g., pet_name, favorite_food';
+
+  @override
+  String get profile_attributeValue => 'Value';
+
+  @override
+  String get profile_attributeValueHint => 'Enter the value';
+
+  @override
+  String get profile_removeAttrTitle => 'Remove Attribute';
+
+  @override
+  String profile_removeAttrContent(String name) {
+    return 'Remove \"$name\"?';
+  }
+
+  @override
+  String get profile_customLabel => 'Custom';
+
+  @override
+  String get profile_noCustomAttrs =>
+      'No custom attributes yet. Tap \"Add\" to create one.';
+
+  @override
+  String get profile_resetTitle => 'Reset Profile';
+
+  @override
+  String get profile_resetContent =>
+      'This will clear all personal information. This cannot be undone.';
+
+  @override
+  String get profile_saved => 'Profile saved';
+
+  @override
+  String profile_saveFailed(String error) {
+    return 'Error: $error';
+  }
+
+  @override
+  String get profile_loadFailed => 'Failed to load profile';
+
+  @override
+  String get profile_resetSuccess => 'Profile reset';
+
+  @override
+  String get profile_resetFailed => 'Failed to reset profile';
+
+  @override
+  String get profile_nameEmpty => 'Name cannot be empty';
+
+  @override
+  String profile_nameReserved(String name) {
+    return '\"$name\" is a reserved field name';
+  }
+
+  @override
+  String profile_nameDuplicate(String name) {
+    return '\"$name\" already exists';
+  }
+
+  @override
+  String get profile_nameStartWithUnderscore =>
+      'Name cannot start with underscore';
+
+  @override
+  String get profile_nameInvalidChars =>
+      'Only letters, numbers and underscore allowed';
+
+  @override
+  String get profile_nameTooLong => 'Name too long (max 50 chars)';
+
+  @override
+  String get profile_loadingProfile => 'Loading profile...';
 }

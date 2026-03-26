@@ -35,7 +35,7 @@ class LocalDatabaseService {
       // Web平台使用sqflite_common_ffi
       return await openDatabase(
         'shepaw',
-        version: 15,
+        version: 16,
         onCreate: _onCreate,
         onUpgrade: _onUpgrade,
       );
@@ -45,7 +45,7 @@ class LocalDatabaseService {
       path = join(directory.path, 'shepaw.db');
       return await openDatabase(
         path,
-        version: 15,
+        version: 16,
         onCreate: _onCreate,
         onUpgrade: _onUpgrade,
       );
@@ -56,7 +56,7 @@ class LocalDatabaseService {
 
       return await openDatabase(
         path,
-        version: 15,
+        version: 16,
         onCreate: _onCreate,
         onUpgrade: _onUpgrade,
       );
@@ -65,15 +65,11 @@ class LocalDatabaseService {
 
   /// 创建数据库表
   Future<void> _onCreate(Database db, int version) async {
-    // 用户表
+    // 用户敏感信息 KV 存储表
     await db.execute('''
-      CREATE TABLE users (
-        id TEXT PRIMARY KEY,
-        username TEXT UNIQUE NOT NULL,
-        password_hash TEXT NOT NULL,
-        salt TEXT NOT NULL,
-        email TEXT,
-        avatar_path TEXT,
+      CREATE TABLE user (
+        key TEXT PRIMARY KEY,
+        value TEXT NOT NULL,
         created_at TEXT NOT NULL,
         updated_at TEXT NOT NULL
       )
@@ -283,31 +279,37 @@ class LocalDatabaseService {
       // 版本 13 -> 14: user_profile 表已迁移到 she_profile.db，此处无操作
     }
 
+    if (oldVersion < 16) {
+      // 版本 15 -> 16: users 表改为 user KV 存储
+      // 删除旧 users 表，创建新 user KV 表
+      try {
+        await db.execute('DROP TABLE IF EXISTS users');
+      } catch (_) {}
+      try {
+        await db.execute('''
+          CREATE TABLE IF NOT EXISTS user (
+            key TEXT PRIMARY KEY,
+            value TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+          )
+        ''');
+      } catch (_) {}
+    }
+
   }
 
-  // ==================== 用户操作 ====================
+  // ==================== 用户敏感信息 KV 操作 ====================
 
-  /// 创建用户
-  Future<void> createUser({
-    required String id,
-    required String username,
-    required String passwordHash,
-    required String salt,
-    String? email,
-    String? avatarPath,
-  }) async {
+  /// 写入用户敏感信息（key-value）
+  Future<void> setUserValue(String key, String value) async {
     final db = await database;
     final now = DateTime.now().toIso8601String();
-
     await db.insert(
-      'users',
+      'user',
       {
-        'id': id,
-        'username': username,
-        'password_hash': passwordHash,
-        'salt': salt,
-        'email': email,
-        'avatar_path': avatarPath,
+        'key': key,
+        'value': value,
         'created_at': now,
         'updated_at': now,
       },
@@ -315,30 +317,38 @@ class LocalDatabaseService {
     );
   }
 
-  /// 根据用户名获取用户
-  Future<Map<String, dynamic>?> getUserByUsername(String username) async {
+  /// 读取用户敏感信息
+  Future<String?> getUserValue(String key) async {
     final db = await database;
     final results = await db.query(
-      'users',
-      where: 'username = ?',
-      whereArgs: [username],
+      'user',
+      columns: ['value'],
+      where: 'key = ?',
+      whereArgs: [key],
     );
-    return results.isEmpty ? null : results.first;
+    return results.isEmpty ? null : results.first['value'] as String?;
   }
 
-  /// 更新用户密码
-  Future<void> updateUserPassword(String userId, String newPasswordHash, String newSalt) async {
+  /// 删除某个用户敏感信息 key
+  Future<void> deleteUserValue(String key) async {
     final db = await database;
-    await db.update(
-      'users',
-      {
-        'password_hash': newPasswordHash,
-        'salt': newSalt,
-        'updated_at': DateTime.now().toIso8601String(),
-      },
-      where: 'id = ?',
-      whereArgs: [userId],
-    );
+    await db.delete('user', where: 'key = ?', whereArgs: [key]);
+  }
+
+  /// 获取所有用户敏感信息 KV 对
+  Future<Map<String, String>> getAllUserValues() async {
+    final db = await database;
+    final results = await db.query('user');
+    return {
+      for (final row in results)
+        row['key'] as String: row['value'] as String,
+    };
+  }
+
+  /// 清空所有用户敏感信息
+  Future<void> clearUserValues() async {
+    final db = await database;
+    await db.delete('user');
   }
 
   // ==================== Agent 操作 ====================
@@ -1050,7 +1060,7 @@ class LocalDatabaseService {
   /// 清空所有数据（用于测试或重置）
   Future<void> clearAllData() async {
     final db = await database;
-    await db.delete('users');
+    await db.delete('user');
     await db.delete('agents');
     await db.delete('channels');
     await db.delete('channel_members');

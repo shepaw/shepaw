@@ -5119,6 +5119,462 @@ abstract class AppLocalizations {
   /// In zh, this message translates to:
   /// **'你的专属守护者'**
   String get she_bio;
+
+  /// No description provided for @settings_userProfile.
+  ///
+  /// In zh, this message translates to:
+  /// **'个人档案'**
+  String get settings_userProfile;
+
+  /// No description provided for @settings_userProfileSub.
+  ///
+  /// In zh, this message translates to:
+  /// **'管理你的个人信息'**
+  String get settings_userProfileSub;
+
+  /// No description provided for @settings_agentMemories.
+  ///
+  /// In zh, this message translates to:
+  /// **'Agent 记忆'**
+  String get settings_agentMemories;
+
+  /// No description provided for @settings_agentMemoriesSub.
+  ///
+  /// In zh, this message translates to:
+  /// **'查看和管理每个 Agent 的记忆'**
+  String get settings_agentMemoriesSub;
+
+  /// No description provided for @memory_title.
+  ///
+  /// In zh, this message translates to:
+  /// **'记忆'**
+  String get memory_title;
+
+  /// No description provided for @memory_add.
+  ///
+  /// In zh, this message translates to:
+  /// **'添加笔记'**
+  String get memory_add;
+
+  /// No description provided for @memory_structured.
+  ///
+  /// In zh, this message translates to:
+  /// **'结构化视图'**
+  String get memory_structured;
+
+  /// No description provided for @memory_timeline.
+  ///
+  /// In zh, this message translates to:
+  /// **'时间线'**
+  String get memory_timeline;
+
+  /// No description provided for @memory_export.
+  ///
+  /// In zh, this message translates to:
+  /// **'导出'**
+  String get memory_export;
+
+  /// No description provided for @memory_json.
+  ///
+  /// In zh, this message translates to:
+  /// **'JSON'**
+  String get memory_json;
+
+  /// No description provided for @memory_markdown.
+  ///
+  /// In zh, this message translates to:
+  /// **'Markdown'**
+  String get memory_markdown;
+
+  /// No description provided for @memory_clearAll.
+  ///
+  /// In zh, this message translates to:
+  /// **'清除全部'**
+  String get memory_clearAll;
+
+  /// No description provided for @memory_delete.
+  ///
+  /// In zh, this message translates to:
+  /// **'删除'**
+  String get memory_delete;
+
+  /// No description provided for @memory_noMemories.
+  ///
+  /// In zh, this message translates to:
+  /// **'暂无记忆'**
+  String get memory_noMemories;
+
+  /// No description provided for @memory_addNoteHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'添加笔记以保存记忆'**
+  String get memory_addNoteHint;
+
+  /// No description provided for @memory_view.
+  ///
+  /// In zh, this message translates to:
+  /// **'查看'**
+  String get memory_view;
+
+  /// No description provided for @memory_noAgents.
+  ///
+  /// In zh, this message translates to:
+  /// **'没有可用的 Agent'**
+  String get memory_noAgents;
+
+  /// No description provided for @memory_addAgents.
+  ///
+  /// In zh, this message translates to:
+  /// **'添加 Agent 以管理其记忆'**
+  String get memory_addAgents;
+
+  /// No description provided for @memory_created.
+  ///
+  /// In zh, this message translates to:
+  /// **'创建于'**
+  String get memory_created;
+
+  /// No description provided for @memory_updated.
+  ///
+  /// In zh, this message translates to:
+  /// **'更新于'**
+  String get memory_updated;
+
+  /// No description provided for @profile_personalTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'个人档案'**
+  String get profile_personalTitle;
+
+  /// No description provided for @profile_coreInfo.
+  ///
+  /// In zh, this message translates to:
+  /// **'核心信息'**
+  String get profile_coreInfo;
+
+  /// No description provided for @profile_extendedInfo.
+  ///
+  /// In zh, this message translates to:
+  /// **'附加信息'**
+  String get profile_extendedInfo;
+
+  /// No description provided for @profile_customAttrs.
+  ///
+  /// In zh, this message translates to:
+  /// **'自定义属性'**
+  String get profile_customAttrs;
+
+  /// No description provided for @profile_add.
+  ///
+  /// In zh, this message translates to:
+  /// **'添加'**
+  String get profile_add;
+
+  /// No description provided for @profile_reset.
+  ///
+  /// In zh, this message translates to:
+  /// **'重置全部'**
+  String get profile_reset;
+
+  /// No description provided for @profile_nameField.
+  ///
+  /// In zh, this message translates to:
+  /// **'姓名'**
+  String get profile_nameField;
+
+  /// No description provided for @profile_ageField.
+  ///
+  /// In zh, this message translates to:
+  /// **'年龄'**
+  String get profile_ageField;
+
+  /// No description provided for @profile_genderField.
+  ///
+  /// In zh, this message translates to:
+  /// **'性别'**
+  String get profile_genderField;
+
+  /// No description provided for @profile_occupationField.
+  ///
+  /// In zh, this message translates to:
+  /// **'职业'**
+  String get profile_occupationField;
+
+  /// No description provided for @profile_cityField.
+  ///
+  /// In zh, this message translates to:
+  /// **'城市'**
+  String get profile_cityField;
+
+  /// No description provided for @profile_interestsField.
+  ///
+  /// In zh, this message translates to:
+  /// **'兴趣爱好'**
+  String get profile_interestsField;
+
+  /// No description provided for @profile_interestsHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'用逗号分隔'**
+  String get profile_interestsHint;
+
+  /// No description provided for @profile_valuesField.
+  ///
+  /// In zh, this message translates to:
+  /// **'价值观'**
+  String get profile_valuesField;
+
+  /// No description provided for @profile_valuesHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'对你最重要的是什么'**
+  String get profile_valuesHint;
+
+  /// No description provided for @profile_goalsField.
+  ///
+  /// In zh, this message translates to:
+  /// **'目标和需求'**
+  String get profile_goalsField;
+
+  /// No description provided for @profile_goalsHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'你的愿景和抱负'**
+  String get profile_goalsHint;
+
+  /// No description provided for @profile_communicationStyleField.
+  ///
+  /// In zh, this message translates to:
+  /// **'沟通风格'**
+  String get profile_communicationStyleField;
+
+  /// No description provided for @profile_communicationStyleHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'你偏好的沟通方式'**
+  String get profile_communicationStyleHint;
+
+  /// No description provided for @profile_workStyleField.
+  ///
+  /// In zh, this message translates to:
+  /// **'工作风格'**
+  String get profile_workStyleField;
+
+  /// No description provided for @profile_workStyleHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'你的工作习惯和偏好'**
+  String get profile_workStyleHint;
+
+  /// No description provided for @profile_lifeStageField.
+  ///
+  /// In zh, this message translates to:
+  /// **'人生阶段'**
+  String get profile_lifeStageField;
+
+  /// No description provided for @profile_lifeStageHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'如：学生、职场人士、退休人员'**
+  String get profile_lifeStageHint;
+
+  /// No description provided for @profile_importantPeopleField.
+  ///
+  /// In zh, this message translates to:
+  /// **'重要的人'**
+  String get profile_importantPeopleField;
+
+  /// No description provided for @profile_importantPeopleHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'家人、朋友、导师'**
+  String get profile_importantPeopleHint;
+
+  /// No description provided for @profile_healthField.
+  ///
+  /// In zh, this message translates to:
+  /// **'健康状况'**
+  String get profile_healthField;
+
+  /// No description provided for @profile_healthHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'健康问题、过敏情况'**
+  String get profile_healthHint;
+
+  /// No description provided for @profile_languageField.
+  ///
+  /// In zh, this message translates to:
+  /// **'语言偏好'**
+  String get profile_languageField;
+
+  /// No description provided for @profile_languageHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'如：中文、English、日本語'**
+  String get profile_languageHint;
+
+  /// No description provided for @profile_timezoneField.
+  ///
+  /// In zh, this message translates to:
+  /// **'时区'**
+  String get profile_timezoneField;
+
+  /// No description provided for @profile_timezoneHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'如：CST、PST、UTC+8'**
+  String get profile_timezoneHint;
+
+  /// No description provided for @profile_notesField.
+  ///
+  /// In zh, this message translates to:
+  /// **'其他备注'**
+  String get profile_notesField;
+
+  /// No description provided for @profile_notesHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'其他任何补充信息'**
+  String get profile_notesHint;
+
+  /// No description provided for @profile_addCustomTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'添加自定义属性'**
+  String get profile_addCustomTitle;
+
+  /// No description provided for @profile_attributeName.
+  ///
+  /// In zh, this message translates to:
+  /// **'属性名称'**
+  String get profile_attributeName;
+
+  /// No description provided for @profile_attributeNameHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'如：宠物名、最喜欢的食物'**
+  String get profile_attributeNameHint;
+
+  /// No description provided for @profile_attributeValue.
+  ///
+  /// In zh, this message translates to:
+  /// **'值'**
+  String get profile_attributeValue;
+
+  /// No description provided for @profile_attributeValueHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'输入属性值'**
+  String get profile_attributeValueHint;
+
+  /// No description provided for @profile_removeAttrTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'删除属性'**
+  String get profile_removeAttrTitle;
+
+  /// No description provided for @profile_removeAttrContent.
+  ///
+  /// In zh, this message translates to:
+  /// **'删除「{name}」？'**
+  String profile_removeAttrContent(String name);
+
+  /// No description provided for @profile_customLabel.
+  ///
+  /// In zh, this message translates to:
+  /// **'自定义'**
+  String get profile_customLabel;
+
+  /// No description provided for @profile_noCustomAttrs.
+  ///
+  /// In zh, this message translates to:
+  /// **'暂无自定义属性，点击「添加」创建'**
+  String get profile_noCustomAttrs;
+
+  /// No description provided for @profile_resetTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'重置档案'**
+  String get profile_resetTitle;
+
+  /// No description provided for @profile_resetContent.
+  ///
+  /// In zh, this message translates to:
+  /// **'这将清除所有个人信息，此操作不可撤销。'**
+  String get profile_resetContent;
+
+  /// No description provided for @profile_saved.
+  ///
+  /// In zh, this message translates to:
+  /// **'档案已保存'**
+  String get profile_saved;
+
+  /// No description provided for @profile_saveFailed.
+  ///
+  /// In zh, this message translates to:
+  /// **'保存出错: {error}'**
+  String profile_saveFailed(String error);
+
+  /// No description provided for @profile_loadFailed.
+  ///
+  /// In zh, this message translates to:
+  /// **'加载档案失败'**
+  String get profile_loadFailed;
+
+  /// No description provided for @profile_resetSuccess.
+  ///
+  /// In zh, this message translates to:
+  /// **'档案已重置'**
+  String get profile_resetSuccess;
+
+  /// No description provided for @profile_resetFailed.
+  ///
+  /// In zh, this message translates to:
+  /// **'重置档案失败'**
+  String get profile_resetFailed;
+
+  /// No description provided for @profile_nameEmpty.
+  ///
+  /// In zh, this message translates to:
+  /// **'属性名称不能为空'**
+  String get profile_nameEmpty;
+
+  /// No description provided for @profile_nameReserved.
+  ///
+  /// In zh, this message translates to:
+  /// **'「{name}」是保留字段名'**
+  String profile_nameReserved(String name);
+
+  /// No description provided for @profile_nameDuplicate.
+  ///
+  /// In zh, this message translates to:
+  /// **'「{name}」已存在'**
+  String profile_nameDuplicate(String name);
+
+  /// No description provided for @profile_nameStartWithUnderscore.
+  ///
+  /// In zh, this message translates to:
+  /// **'名称不能以下划线开头'**
+  String get profile_nameStartWithUnderscore;
+
+  /// No description provided for @profile_nameInvalidChars.
+  ///
+  /// In zh, this message translates to:
+  /// **'只允许使用字母、数字和下划线'**
+  String get profile_nameInvalidChars;
+
+  /// No description provided for @profile_nameTooLong.
+  ///
+  /// In zh, this message translates to:
+  /// **'名称过长（最多 50 个字符）'**
+  String get profile_nameTooLong;
+
+  /// No description provided for @profile_loadingProfile.
+  ///
+  /// In zh, this message translates to:
+  /// **'正在加载档案...'**
+  String get profile_loadingProfile;
 }
 
 class _AppLocalizationsDelegate

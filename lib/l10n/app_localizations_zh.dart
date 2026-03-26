@@ -2763,4 +2763,240 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get she_bio => '你的专属守护者';
+
+  @override
+  String get settings_userProfile => '个人档案';
+
+  @override
+  String get settings_userProfileSub => '管理你的个人信息';
+
+  @override
+  String get settings_agentMemories => 'Agent 记忆';
+
+  @override
+  String get settings_agentMemoriesSub => '查看和管理每个 Agent 的记忆';
+
+  @override
+  String get memory_title => '记忆';
+
+  @override
+  String get memory_add => '添加笔记';
+
+  @override
+  String get memory_structured => '结构化视图';
+
+  @override
+  String get memory_timeline => '时间线';
+
+  @override
+  String get memory_export => '导出';
+
+  @override
+  String get memory_json => 'JSON';
+
+  @override
+  String get memory_markdown => 'Markdown';
+
+  @override
+  String get memory_clearAll => '清除全部';
+
+  @override
+  String get memory_delete => '删除';
+
+  @override
+  String get memory_noMemories => '暂无记忆';
+
+  @override
+  String get memory_addNoteHint => '添加笔记以保存记忆';
+
+  @override
+  String get memory_view => '查看';
+
+  @override
+  String get memory_noAgents => '没有可用的 Agent';
+
+  @override
+  String get memory_addAgents => '添加 Agent 以管理其记忆';
+
+  @override
+  String get memory_created => '创建于';
+
+  @override
+  String get memory_updated => '更新于';
+
+  @override
+  String get profile_personalTitle => '个人档案';
+
+  @override
+  String get profile_coreInfo => '核心信息';
+
+  @override
+  String get profile_extendedInfo => '附加信息';
+
+  @override
+  String get profile_customAttrs => '自定义属性';
+
+  @override
+  String get profile_add => '添加';
+
+  @override
+  String get profile_reset => '重置全部';
+
+  @override
+  String get profile_nameField => '姓名';
+
+  @override
+  String get profile_ageField => '年龄';
+
+  @override
+  String get profile_genderField => '性别';
+
+  @override
+  String get profile_occupationField => '职业';
+
+  @override
+  String get profile_cityField => '城市';
+
+  @override
+  String get profile_interestsField => '兴趣爱好';
+
+  @override
+  String get profile_interestsHint => '用逗号分隔';
+
+  @override
+  String get profile_valuesField => '价值观';
+
+  @override
+  String get profile_valuesHint => '对你最重要的是什么';
+
+  @override
+  String get profile_goalsField => '目标和需求';
+
+  @override
+  String get profile_goalsHint => '你的愿景和抱负';
+
+  @override
+  String get profile_communicationStyleField => '沟通风格';
+
+  @override
+  String get profile_communicationStyleHint => '你偏好的沟通方式';
+
+  @override
+  String get profile_workStyleField => '工作风格';
+
+  @override
+  String get profile_workStyleHint => '你的工作习惯和偏好';
+
+  @override
+  String get profile_lifeStageField => '人生阶段';
+
+  @override
+  String get profile_lifeStageHint => '如：学生、职场人士、退休人员';
+
+  @override
+  String get profile_importantPeopleField => '重要的人';
+
+  @override
+  String get profile_importantPeopleHint => '家人、朋友、导师';
+
+  @override
+  String get profile_healthField => '健康状况';
+
+  @override
+  String get profile_healthHint => '健康问题、过敏情况';
+
+  @override
+  String get profile_languageField => '语言偏好';
+
+  @override
+  String get profile_languageHint => '如：中文、English、日本語';
+
+  @override
+  String get profile_timezoneField => '时区';
+
+  @override
+  String get profile_timezoneHint => '如：CST、PST、UTC+8';
+
+  @override
+  String get profile_notesField => '其他备注';
+
+  @override
+  String get profile_notesHint => '其他任何补充信息';
+
+  @override
+  String get profile_addCustomTitle => '添加自定义属性';
+
+  @override
+  String get profile_attributeName => '属性名称';
+
+  @override
+  String get profile_attributeNameHint => '如：宠物名、最喜欢的食物';
+
+  @override
+  String get profile_attributeValue => '值';
+
+  @override
+  String get profile_attributeValueHint => '输入属性值';
+
+  @override
+  String get profile_removeAttrTitle => '删除属性';
+
+  @override
+  String profile_removeAttrContent(String name) {
+    return '删除「$name」？';
+  }
+
+  @override
+  String get profile_customLabel => '自定义';
+
+  @override
+  String get profile_noCustomAttrs => '暂无自定义属性，点击「添加」创建';
+
+  @override
+  String get profile_resetTitle => '重置档案';
+
+  @override
+  String get profile_resetContent => '这将清除所有个人信息，此操作不可撤销。';
+
+  @override
+  String get profile_saved => '档案已保存';
+
+  @override
+  String profile_saveFailed(String error) {
+    return '保存出错: $error';
+  }
+
+  @override
+  String get profile_loadFailed => '加载档案失败';
+
+  @override
+  String get profile_resetSuccess => '档案已重置';
+
+  @override
+  String get profile_resetFailed => '重置档案失败';
+
+  @override
+  String get profile_nameEmpty => '属性名称不能为空';
+
+  @override
+  String profile_nameReserved(String name) {
+    return '「$name」是保留字段名';
+  }
+
+  @override
+  String profile_nameDuplicate(String name) {
+    return '「$name」已存在';
+  }
+
+  @override
+  String get profile_nameStartWithUnderscore => '名称不能以下划线开头';
+
+  @override
+  String get profile_nameInvalidChars => '只允许使用字母、数字和下划线';
+
+  @override
+  String get profile_nameTooLong => '名称过长（最多 50 个字符）';
+
+  @override
+  String get profile_loadingProfile => '正在加载档案...';
 }

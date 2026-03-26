@@ -26,11 +26,6 @@ class _ChangePasswordScreenState extends State<ChangePasswordScreen> {
   @override
   void initState() {
     super.initState();
-    _initService();
-  }
-
-  Future<void> _initService() async {
-    await _passwordService.init();
   }
 
   @override

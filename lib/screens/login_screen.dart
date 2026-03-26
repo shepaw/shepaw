@@ -29,7 +29,6 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   Future<void> _initService() async {
-    await _passwordService.init();
     await _checkBiometric();
   }
 

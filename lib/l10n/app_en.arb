@@ -1098,5 +1098,104 @@
   "agent_channelConfigure": "Configure",
 
   "she_pinned_label": "Pinned",
-  "she_bio": "Your personal guardian"
+  "she_bio": "Your personal guardian",
+
+  "settings_userProfile": "Personal Profile",
+  "settings_userProfileSub": "Manage your personal information",
+  "settings_agentMemories": "Agent Memories",
+  "settings_agentMemoriesSub": "View and manage memories for each agent",
+
+  "memory_title": "Memories",
+  "memory_add": "Add Note",
+  "memory_structured": "Structured",
+  "memory_timeline": "Timeline",
+  "memory_export": "Export",
+  "memory_json": "JSON",
+  "memory_markdown": "Markdown",
+  "memory_clearAll": "Clear All",
+  "memory_delete": "Delete",
+  "memory_noMemories": "No Memories Yet",
+  "memory_addNoteHint": "Add notes to store memories",
+  "memory_view": "View",
+  "memory_noAgents": "No Agents Available",
+  "memory_addAgents": "Add agents to manage their memories",
+  "memory_created": "Created",
+  "memory_updated": "Updated",
+
+  "profile_personalTitle": "Personal Profile",
+  "profile_coreInfo": "Core Information",
+  "profile_extendedInfo": "Additional Information",
+  "profile_customAttrs": "Custom Attributes",
+  "profile_add": "Add",
+  "profile_reset": "Reset All",
+  "profile_nameField": "Name",
+  "profile_ageField": "Age",
+  "profile_genderField": "Gender",
+  "profile_occupationField": "Occupation",
+  "profile_cityField": "City",
+  "profile_interestsField": "Interests",
+  "profile_interestsHint": "Comma separated",
+  "profile_valuesField": "Values",
+  "profile_valuesHint": "What matters most to you",
+  "profile_goalsField": "Goals & Needs",
+  "profile_goalsHint": "Your aspirations",
+  "profile_communicationStyleField": "Communication Style",
+  "profile_communicationStyleHint": "How you prefer to communicate",
+  "profile_workStyleField": "Work Style",
+  "profile_workStyleHint": "Your work preferences",
+  "profile_lifeStageField": "Life Stage",
+  "profile_lifeStageHint": "e.g., student, working professional, retired",
+  "profile_importantPeopleField": "Important People",
+  "profile_importantPeopleHint": "Family, friends, mentors",
+  "profile_healthField": "Health",
+  "profile_healthHint": "Health conditions, allergies",
+  "profile_languageField": "Language Preference",
+  "profile_languageHint": "e.g., English, Chinese, Spanish",
+  "profile_timezoneField": "Timezone",
+  "profile_timezoneHint": "e.g., EST, PST, UTC+8",
+  "profile_notesField": "Other Notes",
+  "profile_notesHint": "Any additional information",
+  "profile_addCustomTitle": "Add Custom Attribute",
+  "profile_attributeName": "Attribute Name",
+  "profile_attributeNameHint": "e.g., pet_name, favorite_food",
+  "profile_attributeValue": "Value",
+  "profile_attributeValueHint": "Enter the value",
+  "profile_removeAttrTitle": "Remove Attribute",
+  "profile_removeAttrContent": "Remove \"{name}\"?",
+  "@profile_removeAttrContent": {
+    "placeholders": {
+      "name": { "type": "String" }
+    }
+  },
+  "profile_customLabel": "Custom",
+  "profile_noCustomAttrs": "No custom attributes yet. Tap \"Add\" to create one.",
+  "profile_resetTitle": "Reset Profile",
+  "profile_resetContent": "This will clear all personal information. This cannot be undone.",
+  "profile_saved": "Profile saved",
+  "profile_saveFailed": "Error: {error}",
+  "@profile_saveFailed": {
+    "placeholders": {
+      "error": { "type": "String" }
+    }
+  },
+  "profile_loadFailed": "Failed to load profile",
+  "profile_resetSuccess": "Profile reset",
+  "profile_resetFailed": "Failed to reset profile",
+  "profile_nameEmpty": "Name cannot be empty",
+  "profile_nameReserved": "\"{name}\" is a reserved field name",
+  "@profile_nameReserved": {
+    "placeholders": {
+      "name": { "type": "String" }
+    }
+  },
+  "profile_nameDuplicate": "\"{name}\" already exists",
+  "@profile_nameDuplicate": {
+    "placeholders": {
+      "name": { "type": "String" }
+    }
+  },
+  "profile_nameStartWithUnderscore": "Name cannot start with underscore",
+  "profile_nameInvalidChars": "Only letters, numbers and underscore allowed",
+  "profile_nameTooLong": "Name too long (max 50 chars)",
+  "profile_loadingProfile": "Loading profile..."
 }

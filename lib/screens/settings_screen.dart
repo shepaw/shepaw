@@ -11,6 +11,8 @@ import 'notification_settings_screen.dart';
 import 'language_settings_screen.dart';
 import 'inference_log_screen.dart';
 import 'log_viewer_screen.dart';
+import 'user_profile_settings_screen.dart';
+import 'agent_memory_management_screen.dart';
 import '../utils/layout_utils.dart';
 import '../services/local_database_service.dart';
 import '../services/she_profile_database_service.dart';
@@ -332,6 +334,40 @@ class _SettingsScreenState extends State<SettingsScreen> {
               ),
             ),
           ),
+
+          ListTile(
+            leading: const Icon(Icons.person),
+            title: const Text('Personal Profile'),
+            subtitle: const Text('Manage your personal information'),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => const UserProfileSettingsScreen(),
+                ),
+              );
+            },
+          ),
+
+          const Divider(),
+
+          ListTile(
+            leading: const Icon(Icons.memory),
+            title: const Text('Agent Memories'),
+            subtitle: const Text('View and manage memories for each agent'),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => const AgentMemoryManagementScreen(),
+                ),
+              );
+            },
+          ),
+
+          const Divider(),
 
           ListTile(
             leading: const Icon(Icons.file_download_outlined),

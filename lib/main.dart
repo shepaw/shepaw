@@ -571,9 +571,6 @@ class _SplashScreenState extends State<SplashScreen> {
   }
 
   Future<void> _checkPasswordStatus() async {
-    // 初始化服务
-    await _passwordService.init();
-    
     // 短暂延迟，显示启动画面
     await Future.delayed(const Duration(seconds: 1));
     

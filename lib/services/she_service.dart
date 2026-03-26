@@ -355,7 +355,7 @@ This is your understanding of yourself, which grows over time with your master. 
     if (config.enableProfileCommand) {
       rows
         ..add('| `shepaw profile query` | Query master profile |')
-        ..add('| `shepaw profile write --field name --value John` | Write a profile field |');
+        ..add('| `shepaw profile write --field name --value xxx` | Write a profile field |');
     }
     if (config.enableMemoryCommand) {
       rows

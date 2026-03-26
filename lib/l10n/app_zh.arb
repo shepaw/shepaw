@@ -1446,5 +1446,104 @@
   "agent_channelConfigure": "去配置",
 
   "she_pinned_label": "置顶",
-  "she_bio": "你的专属守护者"
+  "she_bio": "你的专属守护者",
+
+  "settings_userProfile": "个人档案",
+  "settings_userProfileSub": "管理你的个人信息",
+  "settings_agentMemories": "Agent 记忆",
+  "settings_agentMemoriesSub": "查看和管理每个 Agent 的记忆",
+
+  "memory_title": "记忆",
+  "memory_add": "添加笔记",
+  "memory_structured": "结构化视图",
+  "memory_timeline": "时间线",
+  "memory_export": "导出",
+  "memory_json": "JSON",
+  "memory_markdown": "Markdown",
+  "memory_clearAll": "清除全部",
+  "memory_delete": "删除",
+  "memory_noMemories": "暂无记忆",
+  "memory_addNoteHint": "添加笔记以保存记忆",
+  "memory_view": "查看",
+  "memory_noAgents": "没有可用的 Agent",
+  "memory_addAgents": "添加 Agent 以管理其记忆",
+  "memory_created": "创建于",
+  "memory_updated": "更新于",
+
+  "profile_personalTitle": "个人档案",
+  "profile_coreInfo": "核心信息",
+  "profile_extendedInfo": "附加信息",
+  "profile_customAttrs": "自定义属性",
+  "profile_add": "添加",
+  "profile_reset": "重置全部",
+  "profile_nameField": "姓名",
+  "profile_ageField": "年龄",
+  "profile_genderField": "性别",
+  "profile_occupationField": "职业",
+  "profile_cityField": "城市",
+  "profile_interestsField": "兴趣爱好",
+  "profile_interestsHint": "用逗号分隔",
+  "profile_valuesField": "价值观",
+  "profile_valuesHint": "对你最重要的是什么",
+  "profile_goalsField": "目标和需求",
+  "profile_goalsHint": "你的愿景和抱负",
+  "profile_communicationStyleField": "沟通风格",
+  "profile_communicationStyleHint": "你偏好的沟通方式",
+  "profile_workStyleField": "工作风格",
+  "profile_workStyleHint": "你的工作习惯和偏好",
+  "profile_lifeStageField": "人生阶段",
+  "profile_lifeStageHint": "如：学生、职场人士、退休人员",
+  "profile_importantPeopleField": "重要的人",
+  "profile_importantPeopleHint": "家人、朋友、导师",
+  "profile_healthField": "健康状况",
+  "profile_healthHint": "健康问题、过敏情况",
+  "profile_languageField": "语言偏好",
+  "profile_languageHint": "如：中文、English、日本語",
+  "profile_timezoneField": "时区",
+  "profile_timezoneHint": "如：CST、PST、UTC+8",
+  "profile_notesField": "其他备注",
+  "profile_notesHint": "其他任何补充信息",
+  "profile_addCustomTitle": "添加自定义属性",
+  "profile_attributeName": "属性名称",
+  "profile_attributeNameHint": "如：宠物名、最喜欢的食物",
+  "profile_attributeValue": "值",
+  "profile_attributeValueHint": "输入属性值",
+  "profile_removeAttrTitle": "删除属性",
+  "profile_removeAttrContent": "删除「{name}」？",
+  "@profile_removeAttrContent": {
+    "placeholders": {
+      "name": { "type": "String" }
+    }
+  },
+  "profile_customLabel": "自定义",
+  "profile_noCustomAttrs": "暂无自定义属性，点击「添加」创建",
+  "profile_resetTitle": "重置档案",
+  "profile_resetContent": "这将清除所有个人信息，此操作不可撤销。",
+  "profile_saved": "档案已保存",
+  "profile_saveFailed": "保存出错: {error}",
+  "@profile_saveFailed": {
+    "placeholders": {
+      "error": { "type": "String" }
+    }
+  },
+  "profile_loadFailed": "加载档案失败",
+  "profile_resetSuccess": "档案已重置",
+  "profile_resetFailed": "重置档案失败",
+  "profile_nameEmpty": "属性名称不能为空",
+  "profile_nameReserved": "「{name}」是保留字段名",
+  "@profile_nameReserved": {
+    "placeholders": {
+      "name": { "type": "String" }
+    }
+  },
+  "profile_nameDuplicate": "「{name}」已存在",
+  "@profile_nameDuplicate": {
+    "placeholders": {
+      "name": { "type": "String" }
+    }
+  },
+  "profile_nameStartWithUnderscore": "名称不能以下划线开头",
+  "profile_nameInvalidChars": "只允许使用字母、数字和下划线",
+  "profile_nameTooLong": "名称过长（最多 50 个字符）",
+  "profile_loadingProfile": "正在加载档案..."
 }
