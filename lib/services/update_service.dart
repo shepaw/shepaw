@@ -51,8 +51,14 @@ class UpdateService {
   factory UpdateService() => _instance;
   UpdateService._internal();
 
-  static const String _baseUrl = 'https://release.shepaw.com';
-  static const String _checkEndpoint = '/api/v1/check-update';
+  static const String _baseUrl = String.fromEnvironment(
+    'UPDATE_BASE_URL',
+    defaultValue: 'https://release.shepaw.com',
+  );
+  static const String _checkEndpoint = String.fromEnvironment(
+    'UPDATE_CHECK_ENDPOINT',
+    defaultValue: '/api/v1/check-update',
+  );
 
   static const String _prefLastCheckTimeKey = 'update_last_check_time';
   static const String _prefSkippedVersionKey = 'update_skipped_version';
