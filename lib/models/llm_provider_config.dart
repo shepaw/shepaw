@@ -123,4 +123,14 @@ const List<LLMProviderConfig> llmProviders = [
     requiresApiKey: false,
     icon: '⚪',
   ),
+  LLMProviderConfig(
+    name: 'OpenRouter',
+    providerType: 'openai',
+    defaultApiBase: 'https://openrouter.ai/api/v1',
+    defaultModel: 'openai/gpt-4o',
+    defaultVisionModel: 'openai/gpt-4-vision',
+    models: [],
+    requiresApiKey: true,
+    icon: '🔄',
+  ),
 ];
