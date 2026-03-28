@@ -1,9 +1,9 @@
 import '../../cli_base.dart';
-import '../../../services/she_profile_database_service.dart';
+import '../../../services/she_memory_db_service.dart';
 
 /// 查询 She 的记忆
 class QueryCommand extends CliCommand {
-  final _profileDb = SheProfileDatabaseService();
+  final _sheMemoryDb = SheMemoryDbService.instance;
 
   @override
   String get name => 'query';
@@ -13,7 +13,7 @@ class QueryCommand extends CliCommand {
 
   @override
   Future<Map<String, dynamic>> execute(Map<String, String> flags) async {
-    final allMemory = await _profileDb.getAllSheMemory();
+    final allMemory = await _sheMemoryDb.getAllSheMemory();
     final keysArg = flags['keys'];
     if (keysArg != null && keysArg.isNotEmpty) {
       final requested = keysArg.split(',').map((s) => s.trim()).toSet();

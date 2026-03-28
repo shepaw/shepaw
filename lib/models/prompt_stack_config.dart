@@ -86,6 +86,77 @@ class ToolsStackConfig {
       );
 }
 
+// ── Non-She Agent layer ───────────────────────────────────────────────────────
+
+/// Controls context-injection sections that apply to **all non-She agents**.
+///
+/// These sections are silently ignored when the agent is She (`isShe == true`).
+class AgentStackConfig {
+  /// Inject a condensed user-profile block (core fields only: name, age,
+  /// gender, occupation, city). Omitted when all core fields are empty.
+  final bool includeUserProfile;
+
+  /// Inject the agent's own recent memories (sorted by `memory_time` desc).
+  final bool includeAgentMemory;
+
+  /// Inject the agent's self-cognition (soul) from minds.db.
+  final bool includeAgentSelfCognition;
+
+  /// Inject the agent's user-cognition (impression/notes) from minds.db.
+  final bool includeAgentUserCognition;
+
+  /// Maximum number of recent memories to inject.
+  final int memoryLimit;
+
+  const AgentStackConfig({
+    this.includeUserProfile = true,
+    this.includeAgentMemory = true,
+    this.includeAgentSelfCognition = true,
+    this.includeAgentUserCognition = true,
+    this.memoryLimit = 10,
+  });
+
+  /// All agent context sections disabled.
+  static const AgentStackConfig disabled = AgentStackConfig(
+    includeUserProfile: false,
+    includeAgentMemory: false,
+    includeAgentSelfCognition: false,
+    includeAgentUserCognition: false,
+  );
+
+  factory AgentStackConfig.fromJson(Map<String, dynamic> json) =>
+      AgentStackConfig(
+        includeUserProfile: json['include_user_profile'] as bool? ?? true,
+        includeAgentMemory: json['include_agent_memory'] as bool? ?? true,
+        includeAgentSelfCognition: json['include_agent_self_cognition'] as bool? ?? true,
+        includeAgentUserCognition: json['include_agent_user_cognition'] as bool? ?? true,
+        memoryLimit: json['memory_limit'] as int? ?? 10,
+      );
+
+  Map<String, dynamic> toJson() => {
+        'include_user_profile': includeUserProfile,
+        'include_agent_memory': includeAgentMemory,
+        'include_agent_self_cognition': includeAgentSelfCognition,
+        'include_agent_user_cognition': includeAgentUserCognition,
+        'memory_limit': memoryLimit,
+      };
+
+  AgentStackConfig copyWith({
+    bool? includeUserProfile,
+    bool? includeAgentMemory,
+    bool? includeAgentSelfCognition,
+    bool? includeAgentUserCognition,
+    int? memoryLimit,
+  }) =>
+      AgentStackConfig(
+        includeUserProfile: includeUserProfile ?? this.includeUserProfile,
+        includeAgentMemory: includeAgentMemory ?? this.includeAgentMemory,
+        includeAgentSelfCognition: includeAgentSelfCognition ?? this.includeAgentSelfCognition,
+        includeAgentUserCognition: includeAgentUserCognition ?? this.includeAgentUserCognition,
+        memoryLimit: memoryLimit ?? this.memoryLimit,
+      );
+}
+
 // ── She-exclusive layer ───────────────────────────────────────────────────────
 
 /// Controls She-exclusive prompt sections and which shepaw sub-commands
@@ -97,6 +168,12 @@ class SheStackConfig {
 
   /// Inject soul + user_info + heartbeat memory into the prompt.
   final bool includeSheMemory;
+
+  /// Inject She's self-cognition (self_notes and updated soul from minds.db).
+  final bool includeSheSelfCognition;
+
+  /// Inject She's user-cognition (user_impression and user_notes from minds.db).
+  final bool includeUserCognition;
 
   /// Inject the "proactive user-understanding strategy" section.
   final bool includeUserStrategy;
@@ -129,6 +206,8 @@ class SheStackConfig {
 
   const SheStackConfig({
     this.includeSheMemory = true,
+    this.includeSheSelfCognition = true,
+    this.includeUserCognition = true,
     this.includeUserStrategy = true,
     this.includeProfileSnapshot = true,
     this.includeFirstMeeting = true,
@@ -142,6 +221,8 @@ class SheStackConfig {
   /// All She features disabled — essentially treats She like a plain agent.
   static const SheStackConfig disabled = SheStackConfig(
     includeSheMemory: false,
+    includeSheSelfCognition: false,
+    includeUserCognition: false,
     includeUserStrategy: false,
     includeProfileSnapshot: false,
     includeFirstMeeting: false,
@@ -154,6 +235,8 @@ class SheStackConfig {
 
   factory SheStackConfig.fromJson(Map<String, dynamic> json) => SheStackConfig(
         includeSheMemory: json['include_she_memory'] as bool? ?? true,
+        includeSheSelfCognition: json['include_she_self_cognition'] as bool? ?? true,
+        includeUserCognition: json['include_user_cognition'] as bool? ?? true,
         includeUserStrategy: json['include_user_strategy'] as bool? ?? true,
         includeProfileSnapshot:
             json['include_profile_snapshot'] as bool? ?? true,
@@ -169,6 +252,8 @@ class SheStackConfig {
 
   Map<String, dynamic> toJson() => {
         'include_she_memory': includeSheMemory,
+        'include_she_self_cognition': includeSheSelfCognition,
+        'include_user_cognition': includeUserCognition,
         'include_user_strategy': includeUserStrategy,
         'include_profile_snapshot': includeProfileSnapshot,
         'include_first_meeting': includeFirstMeeting,
@@ -181,6 +266,8 @@ class SheStackConfig {
 
   SheStackConfig copyWith({
     bool? includeSheMemory,
+    bool? includeSheSelfCognition,
+    bool? includeUserCognition,
     bool? includeUserStrategy,
     bool? includeProfileSnapshot,
     bool? includeFirstMeeting,
@@ -192,6 +279,8 @@ class SheStackConfig {
   }) =>
       SheStackConfig(
         includeSheMemory: includeSheMemory ?? this.includeSheMemory,
+        includeSheSelfCognition: includeSheSelfCognition ?? this.includeSheSelfCognition,
+        includeUserCognition: includeUserCognition ?? this.includeUserCognition,
         includeUserStrategy: includeUserStrategy ?? this.includeUserStrategy,
         includeProfileSnapshot:
             includeProfileSnapshot ?? this.includeProfileSnapshot,
@@ -234,16 +323,22 @@ class PromptStackConfig {
   /// She-exclusive sections. Ignored when `isShe == false`.
   final SheStackConfig she;
 
+  /// Non-She agent context sections. Ignored when `isShe == true`.
+  final AgentStackConfig agent;
+
   const PromptStackConfig({
     this.includeIdentity = true,
     this.includeDescription = true,
     this.includeCustomPrompt = true,
     this.tools = const ToolsStackConfig(),
     this.she = const SheStackConfig(),
+    this.agent = const AgentStackConfig(),
   });
 
   /// Full configuration for She — all sections active.
-  static const PromptStackConfig forShe = PromptStackConfig();
+  static const PromptStackConfig forShe = PromptStackConfig(
+    agent: AgentStackConfig.disabled,
+  );
 
   /// Standard configuration for non-She agents — She sections silently off.
   static const PromptStackConfig forOtherAgent = PromptStackConfig(
@@ -262,6 +357,9 @@ class PromptStackConfig {
         she: json['she'] is Map<String, dynamic>
             ? SheStackConfig.fromJson(json['she'] as Map<String, dynamic>)
             : const SheStackConfig(),
+        agent: json['agent'] is Map<String, dynamic>
+            ? AgentStackConfig.fromJson(json['agent'] as Map<String, dynamic>)
+            : const AgentStackConfig(),
       );
 
   Map<String, dynamic> toJson() => {
@@ -270,6 +368,7 @@ class PromptStackConfig {
         'include_custom_prompt': includeCustomPrompt,
         'tools': tools.toJson(),
         'she': she.toJson(),
+        'agent': agent.toJson(),
       };
 
   PromptStackConfig copyWith({
@@ -278,6 +377,7 @@ class PromptStackConfig {
     bool? includeCustomPrompt,
     ToolsStackConfig? tools,
     SheStackConfig? she,
+    AgentStackConfig? agent,
   }) =>
       PromptStackConfig(
         includeIdentity: includeIdentity ?? this.includeIdentity,
@@ -285,5 +385,6 @@ class PromptStackConfig {
         includeCustomPrompt: includeCustomPrompt ?? this.includeCustomPrompt,
         tools: tools ?? this.tools,
         she: she ?? this.she,
+        agent: agent ?? this.agent,
       );
 }

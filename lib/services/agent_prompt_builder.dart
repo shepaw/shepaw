@@ -1,5 +1,7 @@
 import '../models/prompt_stack_config.dart';
 import '../models/remote_agent.dart';
+import 'agent_memory_db_service.dart';
+import 'cognition_service.dart';
 import 'she_service.dart';
 import 'ui_component_registry.dart';
 import 'os_tool_registry.dart';
@@ -20,12 +22,17 @@ import 'model_registry.dart';
 ///  ⑤  Custom prompt           ← DM override or user-set system_prompt
 ///  ⑥  User-strategy block     ← [She-only, optional]
 ///  ⑦  Profile snapshot        ← [She-only, optional]
+///  ⑦' User profile (brief)    ← [non-She, optional] core fields only
 ///  ⑧  First-meeting block     ← [She-only, conditional]
+///  ⑧' Agent memories          ← [non-She, optional] recent N memories
 ///  ⑨  Session-end block       ← [She-only, optional]
 /// ```
 ///
 /// She-specific sections are delegated entirely to [SheService] so that the
 /// soul / memory / profile logic stays in one place.
+///
+/// Non-She sections are built from [CognitionService] (user profile) and
+/// [AgentMemoryDbService] (per-agent memories).
 class AgentPromptBuilder {
   final RemoteAgent agent;
 
@@ -104,10 +111,47 @@ class AgentPromptBuilder {
       if (snapshot.isNotEmpty) parts.add(snapshot);
     }
 
+    // ⑦' She-only: self-cognition (self_notes from minds.db)
+    if (agent.isShe && config.she.includeSheSelfCognition) {
+      final selfCog = await SheService.instance.buildSheSelfCognitionBlock();
+      if (selfCog.isNotEmpty) parts.add(selfCog);
+    }
+
+    // ⑦'' She-only: user-cognition (impression/notes from minds.db)
+    if (agent.isShe && config.she.includeUserCognition) {
+      final userCog = await SheService.instance.buildUserCognitionBlock();
+      if (userCog.isNotEmpty) parts.add(userCog);
+    }
+
+    // ⑦''' Non-She: brief user profile (core fields only)
+    if (!agent.isShe && config.agent.includeUserProfile) {
+      final profileBlock = await _buildAgentUserProfileBlock();
+      if (profileBlock.isNotEmpty) parts.add(profileBlock);
+    }
+
     // ⑧ She-only: first-meeting instruction (conditional)
     if (agent.isShe && config.she.includeFirstMeeting) {
       final isFirst = await SheService.instance.isFirstMeeting();
       if (isFirst) parts.add(SheService.instance.buildFirstMeetingBlock());
+    }
+
+    // ⑧' Non-She: agent's own soul (self-cognition from minds.db)
+    if (!agent.isShe && config.agent.includeAgentSelfCognition) {
+      final selfCog = await _buildAgentSelfCognitionBlock();
+      if (selfCog.isNotEmpty) parts.add(selfCog);
+    }
+
+    // ⑧'' Non-She: agent's user-cognition (impression/notes from minds.db)
+    if (!agent.isShe && config.agent.includeAgentUserCognition) {
+      final userCog = await _buildAgentUserCognitionBlock();
+      if (userCog.isNotEmpty) parts.add(userCog);
+    }
+
+    // ⑧''' Non-She: agent's own recent memories
+    if (!agent.isShe && config.agent.includeAgentMemory) {
+      final memoriesBlock =
+          await _buildAgentMemoriesBlock(config.agent.memoryLimit);
+      if (memoriesBlock.isNotEmpty) parts.add(memoriesBlock);
     }
 
     // ⑨ She-only: session-end write instructions
@@ -161,6 +205,93 @@ class AgentPromptBuilder {
 $prompt
 
 (Please follow the above settings without violating your core identity.)''';
+
+  // ── Non-She context blocks ─────────────────────────────────────────────────
+
+  /// ⑦' Build the agent's self-cognition block (soul) from minds.db.
+  Future<String> _buildAgentSelfCognitionBlock() async {
+    final self = await CognitionService.instance.getSelfCognition(agent.id);
+    if (self == null || self.soul.isEmpty) return '';
+
+    return '''
+## Your Core Purpose & Principles
+${self.soul}''';
+  }
+
+  /// ⑦'' Build the agent's user-cognition block (impression/notes) from minds.db.
+  Future<String> _buildAgentUserCognitionBlock() async {
+    final user = await CognitionService.instance.getUserCognition(agent.id);
+    if (user == null) return '';
+
+    final parts = <String>[];
+    if (user.userImpression?.isNotEmpty ?? false) {
+      parts.add('**Your Impression**: ${user.userImpression}');
+    }
+    if (user.userNotes?.isNotEmpty ?? false) {
+      parts.add('**Your Notes**: ${user.userNotes}');
+    }
+    if (parts.isEmpty) return '';
+
+    return '''
+## How I Understand My Master
+${parts.join('\n')}''';
+  }
+  ///
+  /// Injects only non-empty core fields (name/age/gender/occupation/city)
+  /// so the agent has basic context about the user without overwhelming the
+  /// prompt with She-level detail.
+  Future<String> _buildAgentUserProfileBlock() async {
+    const coreKeys = ['name', 'age', 'gender', 'occupation', 'city'];
+    final profile = await CognitionService.instance.getAllUserProfile();
+
+    final lines = <String>[];
+    for (final key in coreKeys) {
+      final val = profile[key];
+      if (val != null && val.isNotEmpty) {
+        lines.add('- **${_profileLabel(key)}**: $val');
+      }
+    }
+    if (lines.isEmpty) return '';
+
+    return '''
+## About Your Master
+${lines.join('\n')}''';
+  }
+
+  /// ⑧' Build the recent-memories block for non-She agents.
+  ///
+  /// Fetches up to [limit] memories sorted by `memory_time` descending.
+  /// Returns empty string when the agent has no memories yet.
+  Future<String> _buildAgentMemoriesBlock(int limit) async {
+    final memories = await AgentMemoryDbService.forAgent(agent.id)
+        .getAllMemories(limit: limit);
+    if (memories.isEmpty) return '';
+
+    final buffer = StringBuffer('## Your Memory\n');
+    for (final m in memories) {
+      final timeStr = DateTime.fromMillisecondsSinceEpoch(m.memoryTime)
+          .toLocal()
+          .toString()
+          .substring(0, 16);
+      final keywords =
+          m.memoryKeywords.isNotEmpty ? ' [${m.memoryKeywords.join(', ')}]' : '';
+      buffer.writeln('- [$timeStr]$keywords ${m.memoryContent}');
+    }
+    buffer.write('\nWhen you learn new things about the user or have new observations, use `shepaw agents memory write --id ${agent.id}` to record them.');
+    return buffer.toString();
+  }
+
+  /// Human-readable label for core profile field keys.
+  static String _profileLabel(String key) {
+    const labels = {
+      'name': 'Name',
+      'age': 'Age',
+      'gender': 'Gender',
+      'occupation': 'Occupation',
+      'city': 'City',
+    };
+    return labels[key] ?? key;
+  }
 
   /// Build all tool-documentation sections according to [ToolsStackConfig]
   /// and [SheStackConfig] (for the shepaw CLI).

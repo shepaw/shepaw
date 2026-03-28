@@ -1,10 +1,10 @@
 import '../../cli_base.dart';
 import '../../../services/she_service.dart';
-import '../../../services/she_profile_database_service.dart';
+import '../../../services/she_memory_db_service.dart';
 
 /// 写入 She 的记忆
 class WriteCommand extends CliCommand {
-  final _profileDb = SheProfileDatabaseService();
+  final _sheMemoryDb = SheMemoryDbService.instance;
 
   @override
   String get name => 'write';
@@ -26,7 +26,7 @@ class WriteCommand extends CliCommand {
     if (key == 'soul') {
       await SheService.instance.updateSoul(value);
     } else {
-      await _profileDb.setSheMemory(key, value);
+      await _sheMemoryDb.setSheMemory(key, value);
     }
     return {'ok': true, 'key': key};
   }

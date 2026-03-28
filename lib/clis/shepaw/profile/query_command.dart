@@ -1,10 +1,8 @@
 import '../../cli_base.dart';
-import '../../../services/she_profile_database_service.dart';
+import '../../../services/cognition_service.dart';
 
 /// 查询主人档案
 class QueryCommand extends CliCommand {
-  final _profileDb = SheProfileDatabaseService();
-
   @override
   String get name => 'query';
 
@@ -13,7 +11,7 @@ class QueryCommand extends CliCommand {
 
   @override
   Future<Map<String, dynamic>> execute(Map<String, String> flags) async {
-    final allProfile = await _profileDb.getAllUserProfile();
+    final allProfile = await CognitionService.instance.getAllUserProfile();
     // 过滤内部标志字段
     final visible = Map.fromEntries(
       allProfile.entries.where((e) => !e.key.startsWith('_')),

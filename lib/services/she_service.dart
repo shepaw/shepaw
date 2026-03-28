@@ -2,7 +2,8 @@ import 'package:uuid/uuid.dart';
 import '../models/prompt_stack_config.dart';
 import '../models/remote_agent.dart';
 import 'local_database_service.dart';
-import 'she_profile_database_service.dart';
+import 'she_memory_db_service.dart';
+import 'cognition_service.dart';
 import 'logger_service.dart';
 
 /// SheService — initialization, memory management, and user profile service for built-in guardian Agent "She".
@@ -86,7 +87,8 @@ class SheService {
   };
 
   final LocalDatabaseService _db = LocalDatabaseService();
-  final SheProfileDatabaseService _profileDb = SheProfileDatabaseService();
+  final SheMemoryDbService _sheMemoryDb = SheMemoryDbService();
+  final CognitionService _cognition = CognitionService.instance;
 
   // ── Initialization ──────────────────────────────────────────────
 
@@ -118,13 +120,14 @@ class SheService {
 
     await _db.createRemoteAgent(agent);
 
-    await _profileDb.setSheMemory('user_info', '(not yet known)');
-    await _profileDb.setSheMemory('long_term_memory', '(no memories yet)');
-    await _profileDb.setSheMemory('heartbeat', 'first_launch');
-    await _profileDb.setSheMemory('conversation_count', '0');
-    await _profileDb.setSheMemory(_soulKey, _defaultSoul);
-    await _profileDb.setSheMemory(_selfNotesKey, '(no self-notes yet)');
-    await _profileDb.setSheMemory('capabilities', _defaultCapabilities);
+    // 迁移到独立的 She 记忆 DB
+    await _sheMemoryDb.setSheMemory('user_info', '(not yet known)');
+    await _sheMemoryDb.setSheMemory('long_term_memory', '(no memories yet)');
+    await _sheMemoryDb.setSheMemory('heartbeat', 'first_launch');
+    await _sheMemoryDb.setSheMemory('conversation_count', '0');
+    await _sheMemoryDb.setSheMemory(_soulKey, _defaultSoul);
+    await _sheMemoryDb.setSheMemory(_selfNotesKey, '(no self-notes yet)');
+    await _sheMemoryDb.setSheMemory('capabilities', _defaultCapabilities);
 
     LoggerService().info('She agent created successfully', tag: 'She');
   }
@@ -132,25 +135,16 @@ class SheService {
   // ── User Profile ─────────────────────────────────────────────────
 
   Future<bool> isUserProfileInitialized() async {
-    final flag = await _profileDb.getUserProfile(_profileInitKey);
-    return flag == 'true';
+    return _cognition.isUserProfileInitialized();
   }
 
   Future<void> updateUserProfileField(String key, String value) async {
-    await _profileDb.setUserProfile(key, value);
-    if (key != _profileInitKey) {
-      await _profileDb.setUserProfile(_profileInitKey, 'true');
-    }
+    await _cognition.updateUserProfileField(key, value);
     LoggerService().info('User profile updated: $key = $value', tag: 'She');
   }
 
   Future<void> updateUserProfileFields(Map<String, String> fields) async {
-    for (final entry in fields.entries) {
-      await _profileDb.setUserProfile(entry.key, entry.value);
-    }
-    if (fields.isNotEmpty) {
-      await _profileDb.setUserProfile(_profileInitKey, 'true');
-    }
+    await _cognition.updateUserProfileFields(fields);
     LoggerService().info(
         'User profile batch updated: ${fields.keys.join(', ')}', tag: 'She');
   }
@@ -159,53 +153,53 @@ class SheService {
 
   Future<void> updateHeartbeat(String summary) async {
     final now = DateTime.now().toLocal().toString().substring(0, 19);
-    await _profileDb.setSheMemory('heartbeat', '[$now] $summary');
+    await _sheMemoryDb.setSheMemory('heartbeat', '[$now] $summary');
   }
 
   Future<void> appendMemory(String entry) async {
-    final existing = await _profileDb.getSheMemory('long_term_memory') ?? '';
+    final existing = await _sheMemoryDb.getSheMemory('long_term_memory') ?? '';
     final now = DateTime.now().toLocal().toString().substring(0, 19);
     final newContent = existing == '(no memories yet)'
         ? '[$now] $entry'
         : '$existing\n[$now] $entry';
-    await _profileDb.setSheMemory('long_term_memory', newContent);
+    await _sheMemoryDb.setSheMemory('long_term_memory', newContent);
   }
 
   Future<void> updateUserInfo(String info) async {
-    await _profileDb.setSheMemory('user_info', info);
+    await _sheMemoryDb.setSheMemory('user_info', info);
   }
 
   /// Update She's soul (self-awareness)
   Future<void> updateSoul(String content) async {
-    await _profileDb.setSheMemory(_soulKey, content);
+    await _sheMemoryDb.setSheMemory(_soulKey, content);
     LoggerService().info('She soul updated', tag: 'She');
   }
 
   /// Append a self-note for She
   Future<void> appendSelfNote(String note) async {
-    final existing = await _profileDb.getSheMemory(_selfNotesKey) ?? '';
+    final existing = await _sheMemoryDb.getSheMemory(_selfNotesKey) ?? '';
     final now = DateTime.now().toLocal().toString().substring(0, 19);
     final newContent = existing == '(no self-notes yet)'
         ? '[$now] $note'
         : '$existing\n[$now] $note';
-    await _profileDb.setSheMemory(_selfNotesKey, newContent);
+    await _sheMemoryDb.setSheMemory(_selfNotesKey, newContent);
     LoggerService().info('She self_notes updated', tag: 'She');
   }
 
   /// Seed the soul from user's system_prompt (only when soul is still the default value)
   Future<void> seedSoulFromUserPrompt(String userPrompt) async {
     if (userPrompt.trim().isEmpty) return;
-    final currentSoul = await _profileDb.getSheMemory(_soulKey) ?? '';
+    final currentSoul = await _sheMemoryDb.getSheMemory(_soulKey) ?? '';
     if (currentSoul == _defaultSoul || currentSoul.isEmpty) {
-      await _profileDb.setSheMemory(_soulKey, userPrompt.trim());
+      await _sheMemoryDb.setSheMemory(_soulKey, userPrompt.trim());
       LoggerService().info('She soul seeded from user system_prompt', tag: 'She');
     }
   }
 
   Future<bool> incrementConversationCount() async {
-    final countStr = await _profileDb.getSheMemory('conversation_count') ?? '0';
+    final countStr = await _sheMemoryDb.getSheMemory('conversation_count') ?? '0';
     final count = (int.tryParse(countStr) ?? 0) + 1;
-    await _profileDb.setSheMemory('conversation_count', count.toString());
+    await _sheMemoryDb.setSheMemory('conversation_count', count.toString());
     return count % 10 == 0;
   }
 
@@ -218,8 +212,7 @@ class SheService {
 
   /// Whether this is She's first interaction with the user (profile still empty).
   Future<bool> isFirstMeeting() async {
-    final flag = await _profileDb.getUserProfile(_profileInitKey);
-    return flag != 'true';
+    return !(await _cognition.isUserProfileInitialized());
   }
 
   /// Section ①: She's core identity (immutable).
@@ -228,7 +221,7 @@ class SheService {
   /// Section ②: She's soul (self-awareness, grows over time).
   /// Reads the current soul value from the database.
   Future<String> buildMemoryContextBlock() async {
-    final soul = await _profileDb.getSheMemory(_soulKey) ?? _defaultSoul;
+    final soul = await _sheMemoryDb.getSheMemory(_soulKey) ?? _defaultSoul;
     // Deliberately omit long_term_memory / userInfo / heartbeat here;
     // they are included in the profile snapshot block to avoid duplication.
     return _soulPrompt(soul);
@@ -242,23 +235,55 @@ class SheService {
 
   /// Section ⑤: strategy for knowing the user + missing-field hints.
   Future<String> buildUserStrategyBlock() async {
-    final profile = await _profileDb.getAllUserProfile();
+    final profile = await _cognition.getAllUserProfile();
     return _knowUserStrategyPrompt(profile);
   }
 
   /// Section ⑥: user-profile snapshot (layered injection).
   Future<String> buildProfileSnapshotBlock() async {
-    final profile = await _profileDb.getAllUserProfile();
+    final profile = await _cognition.getAllUserProfile();
     final userInfo =
-        await _profileDb.getSheMemory('user_info') ?? '(not yet known)';
+        await _sheMemoryDb.getSheMemory('user_info') ?? '(not yet known)';
     final longTermMemory =
-        await _profileDb.getSheMemory('long_term_memory') ?? '(no memories yet)';
+        await _sheMemoryDb.getSheMemory('long_term_memory') ?? '(no memories yet)';
     final heartbeat =
-        await _profileDb.getSheMemory('heartbeat') ?? '(no record)';
+        await _sheMemoryDb.getSheMemory('heartbeat') ?? '(no record)';
     return _buildProfileSnapshot(profile, userInfo, longTermMemory, heartbeat);
   }
 
-  /// Section ⑦: first-meeting instruction.
+  /// Section ⑦' (optional): She's self-cognition from minds.db.
+  /// Injects self_notes (She's reflections about herself).
+  /// Soul is already in buildMemoryContextBlock(), so we focus on self_notes here.
+  Future<String> buildSheSelfCognitionBlock() async {
+    final self = await _cognition.getSelfCognition(sheId);
+    if (self == null || (self.selfNotes?.isEmpty ?? true)) return '';
+
+    return '''
+## Your Self-Reflections
+${self.selfNotes}''';
+  }
+
+  /// Section ⑦'' (optional): She's user-cognition from minds.db.
+  /// Injects user_impression and user_notes (She's subjective understanding of the user).
+  Future<String> buildUserCognitionBlock() async {
+    final user = await _cognition.getUserCognition(sheId);
+    if (user == null) return '';
+
+    final parts = <String>[];
+    if (user.userImpression?.isNotEmpty ?? false) {
+      parts.add('**My Impression**: ${user.userImpression}');
+    }
+    if (user.userNotes?.isNotEmpty ?? false) {
+      parts.add('**Notes About You**: ${user.userNotes}');
+    }
+    if (parts.isEmpty) return '';
+
+    return '''
+## How I Understand You
+${parts.join('\n')}''';
+  }
+
+  /// Section ⑧: first-meeting instruction.
   String buildFirstMeetingBlock() => _firstMeetingInstruction();
 
   /// Section ⑧: session-end write instructions.
@@ -271,13 +296,13 @@ class SheService {
 
   /// Build the complete system prompt; see file-top comment for stacking order.
   Future<String> buildSystemPromptWithMemory(String userSetPrompt) async {
-    final profile = await _profileDb.getAllUserProfile();
+    final profile = await _cognition.getAllUserProfile();
     final isInitialized = (profile[_profileInitKey] == 'true');
-    final userInfo = await _profileDb.getSheMemory('user_info') ?? '(not yet known)';
+    final userInfo = await _sheMemoryDb.getSheMemory('user_info') ?? '(not yet known)';
     final longTermMemory =
-        await _profileDb.getSheMemory('long_term_memory') ?? '(no memories yet)';
-    final heartbeat = await _profileDb.getSheMemory('heartbeat') ?? '(no record)';
-    final soul = await _profileDb.getSheMemory(_soulKey) ?? _defaultSoul;
+        await _sheMemoryDb.getSheMemory('long_term_memory') ?? '(no memories yet)';
+    final heartbeat = await _sheMemoryDb.getSheMemory('heartbeat') ?? '(no record)';
+    final soul = await _sheMemoryDb.getSheMemory(_soulKey) ?? _defaultSoul;
 
     // If user set a system_prompt and soul is still the default, use it as soul seed
     if (userSetPrompt.trim().isNotEmpty) {
@@ -308,6 +333,14 @@ class SheService {
 
     // ⑥ user profile snapshot (layered injection)
     parts.add(_buildProfileSnapshot(profile, userInfo, longTermMemory, heartbeat));
+
+    // ⑦' (optional) She's self-cognition (self_notes from minds.db)
+    final selfCognition = await buildSheSelfCognitionBlock();
+    if (selfCognition.isNotEmpty) parts.add(selfCognition);
+
+    // ⑦'' (optional) She's user-cognition (impression/notes from minds.db)
+    final userCognition = await buildUserCognitionBlock();
+    if (userCognition.isNotEmpty) parts.add(userCognition);
 
     // ⑦ first meeting instruction (only when profile is empty)
     if (!isInitialized) {
@@ -368,6 +401,10 @@ This is your understanding of yourself, which grows over time with your master. 
         ..add('| `shepaw agents list` | List all agents |')
         ..add('| `shepaw agents channels --id <agent_id>` | View channels of an agent |')
         ..add('| `shepaw agents messages --id <agent_id> [--channel <id>] [--limit 20] [--offset 0]` | Read agent channel messages (supports pagination) |')
+        ..add('| `shepaw agents memory-query --id <agent_id> [--keywords k1,k2] [--limit 20]` | Query an agent\'s stored memories |')
+        ..add('| `shepaw agents memory-write --id <agent_id> --content "..." [--type conversation] [--keywords k1,k2]` | Write a memory for an agent |')
+        ..add('| `shepaw agents cognition-query --id <agent_id> [--type self|user]` | Query an agent\'s cognition (soul/impression/notes) |')
+        ..add('| `shepaw agents cognition-write --id <agent_id> --type self --soul "..." OR --type user --field impression|notes --value "..."` | Update an agent\'s cognition |')
         ..add('| `shepaw messages query --channel <id>` | Query channel messages |')
         ..add('| `shepaw messages query --agent <agent_id> [--limit 20] [--offset 0]` | Query messages for a specific agent (supports pagination) |')
         ..add('| `shepaw skills list` | List skills |');
@@ -385,7 +422,11 @@ This is your understanding of yourself, which grows over time with your master. 
       actionWarnings.add('- Master asks you to "send a message to an agent" → you must call `shepaw agents chat --id <agent_id> --message "..."` — saying "I have sent it" in text does nothing');
     }
     if (config.enableMemoryCommand || config.enableProfileCommand) {
-      actionWarnings.add('- Master asks you to "remember something" → you must call `shepaw memory append` or `shepaw profile write` to actually save it');
+      actionWarnings.add('- Master asks you to "remember something" → you must call `shepaw memory append` (your own memory) or `shepaw profile write` (user profile) to actually save it');
+    }
+    if (config.enableMessagesCommand) {
+      actionWarnings.add('- When you learn important things about an agent, call `shepaw agents memory-write --id <agent_id>` to help it remember');
+      actionWarnings.add('- When you form an impression about an agent, call `shepaw agents cognition-write --id <agent_id> --type user --field impression` to share your understanding');
     }
     actionWarnings.add('- Only a tool call returning `ok: true` means the operation succeeded; otherwise treat it as not executed');
     final warnings = actionWarnings.join('\n');

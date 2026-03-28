@@ -20,7 +20,6 @@ import 'package:path_provider/path_provider.dart';
 /// ### 表结构
 ///   - `she_memory`      — She 的动态记忆（soul / long_term_memory / heartbeat 等）
 ///   - `user_profile`    — 结构化用户档案（name / age / occupation 等）
-///   - `agent_memory_text` — 各 Agent 的独立记忆（name/profile/notes 等）
 class SheProfileDatabaseService {
   static final SheProfileDatabaseService _instance =
       SheProfileDatabaseService._internal();
@@ -93,23 +92,7 @@ class SheProfileDatabaseService {
   }
 
   Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
-    // v1 → v2: 添加 agent_memory_text 表（为所有 Agent 存储记忆）
-    if (oldVersion < 2 && newVersion >= 2) {
-      await db.execute('''
-        CREATE TABLE agent_memory_text (
-          id         INTEGER PRIMARY KEY AUTOINCREMENT,
-          agent_id   TEXT NOT NULL,
-          key        TEXT NOT NULL,
-          value      TEXT NOT NULL,
-          created_at INTEGER NOT NULL,
-          updated_at INTEGER NOT NULL,
-          UNIQUE(agent_id, key)
-        )
-      ''');
-      await db.execute(
-        'CREATE INDEX idx_agent_memory_agent_id ON agent_memory_text(agent_id)'
-      );
-    }
+    // No migrations needed anymore (schema is finalized)
   }
 
   // ---------------------------------------------------------------------------
@@ -200,109 +183,6 @@ class SheProfileDatabaseService {
 
   // ---------------------------------------------------------------------------
   // Agent 记忆 CRUD (v2 新增)
-  // ---------------------------------------------------------------------------
-
-  /// 读取单条 Agent 记忆。
-  Future<String?> getAgentMemory(String agentId, String key) async {
-    final db = await database;
-    final results = await db.query(
-      'agent_memory_text',
-      where: 'agent_id = ? AND key = ?',
-      whereArgs: [agentId, key],
-      limit: 1,
-    );
-    return results.isEmpty ? null : results.first['value'] as String?;
-  }
-
-  /// 写入（或覆盖）单条 Agent 记忆。
-  Future<void> setAgentMemory(String agentId, String key, String value) async {
-    final db = await database;
-    await db.insert(
-      'agent_memory_text',
-      {
-        'agent_id': agentId,
-        'key': key,
-        'value': value,
-        'created_at': DateTime.now().millisecondsSinceEpoch,
-        'updated_at': DateTime.now().millisecondsSinceEpoch,
-      },
-      conflictAlgorithm: ConflictAlgorithm.replace,
-    );
-  }
-
-  /// 获取指定 Agent 的全部记忆，返回 `Map<key, value>`。
-  Future<Map<String, String>> getAllAgentMemory(String agentId) async {
-    final db = await database;
-    final results = await db.query(
-      'agent_memory_text',
-      where: 'agent_id = ?',
-      whereArgs: [agentId],
-      orderBy: 'updated_at DESC',
-    );
-    return {
-      for (final row in results)
-        row['key'] as String: row['value'] as String,
-    };
-  }
-
-  /// 删除单条 Agent 记忆。
-  Future<void> deleteAgentMemory(String agentId, String key) async {
-    final db = await database;
-    await db.delete(
-      'agent_memory_text',
-      where: 'agent_id = ? AND key = ?',
-      whereArgs: [agentId, key],
-    );
-  }
-
-  /// 删除指定 Agent 的全部记忆。
-  Future<void> deleteAllAgentMemory(String agentId) async {
-    final db = await database;
-    await db.delete(
-      'agent_memory_text',
-      where: 'agent_id = ?',
-      whereArgs: [agentId],
-    );
-  }
-
-  /// 获取指定 Agent 的记忆数量。
-  Future<int> getAgentMemoryCount(String agentId) async {
-    final db = await database;
-    final result = await db.rawQuery(
-      'SELECT COUNT(*) as count FROM agent_memory_text WHERE agent_id = ?',
-      [agentId],
-    );
-    return Sqflite.firstIntValue(result) ?? 0;
-  }
-
-  /// 批量写入 Agent 记忆。
-  Future<void> setAgentMemoryBatch(
-    String agentId,
-    Map<String, String> memories,
-  ) async {
-    final db = await database;
-    final batch = db.batch();
-    final now = DateTime.now().millisecondsSinceEpoch;
-
-    for (final entry in memories.entries) {
-      batch.insert(
-        'agent_memory_text',
-        {
-          'agent_id': agentId,
-          'key': entry.key,
-          'value': entry.value,
-          'created_at': now,
-          'updated_at': now,
-        },
-        conflictAlgorithm: ConflictAlgorithm.replace,
-      );
-    }
-
-    await batch.commit();
-  }
-
-  // ---------------------------------------------------------------------------
-  // 批量清理（供设置页「重置 She 档案」使用）
   // ---------------------------------------------------------------------------
 
   /// 清空 She 的全部记忆（不影响用户档案）。
