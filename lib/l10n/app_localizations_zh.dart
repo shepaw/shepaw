@@ -481,7 +481,9 @@ class AppLocalizationsZh extends AppLocalizations {
   String get update_retryDownload => '重试下载';
 
   @override
-  String update_notification_availableTitle(String version) => '发现新版本 $version';
+  String update_notification_availableTitle(String version) {
+    return '发现新版本 $version';
+  }
 
   @override
   String get update_notification_availableBody => '点击查看更新详情';
@@ -490,7 +492,9 @@ class AppLocalizationsZh extends AppLocalizations {
   String get update_notification_readyTitle => '更新已就绪';
 
   @override
-  String update_notification_readyBody(String version) => '点击安装 $version';
+  String update_notification_readyBody(String version) {
+    return '点击安装 $version';
+  }
 
   @override
   String get update_action_accept => '立即下载';
@@ -508,7 +512,9 @@ class AppLocalizationsZh extends AppLocalizations {
   String get update_pendingInstallTitle => '更新已就绪';
 
   @override
-  String update_pendingInstallBody(String version) => '$version 已下载完成，是否立即安装？';
+  String update_pendingInstallBody(String version) {
+    return '$version 已下载完成，是否立即安装？';
+  }
 
   @override
   String get settings_privacyPolicy => '隐私政策';

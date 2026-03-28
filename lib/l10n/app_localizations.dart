@@ -981,33 +981,63 @@ abstract class AppLocalizations {
   String get update_retryDownload;
 
   /// No description provided for @update_notification_availableTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'发现新版本 {version}'**
   String update_notification_availableTitle(String version);
 
   /// No description provided for @update_notification_availableBody.
+  ///
+  /// In zh, this message translates to:
+  /// **'点击查看更新详情'**
   String get update_notification_availableBody;
 
   /// No description provided for @update_notification_readyTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'更新已就绪'**
   String get update_notification_readyTitle;
 
   /// No description provided for @update_notification_readyBody.
+  ///
+  /// In zh, this message translates to:
+  /// **'点击安装 {version}'**
   String update_notification_readyBody(String version);
 
   /// No description provided for @update_action_accept.
+  ///
+  /// In zh, this message translates to:
+  /// **'立即下载'**
   String get update_action_accept;
 
   /// No description provided for @update_action_decline.
+  ///
+  /// In zh, this message translates to:
+  /// **'拒绝'**
   String get update_action_decline;
 
   /// No description provided for @update_action_installNow.
+  ///
+  /// In zh, this message translates to:
+  /// **'立即安装'**
   String get update_action_installNow;
 
   /// No description provided for @update_action_installLater.
+  ///
+  /// In zh, this message translates to:
+  /// **'稍后'**
   String get update_action_installLater;
 
   /// No description provided for @update_pendingInstallTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'更新已就绪'**
   String get update_pendingInstallTitle;
 
   /// No description provided for @update_pendingInstallBody.
+  ///
+  /// In zh, this message translates to:
+  /// **'{version} 已下载完成，是否立即安装？'**
   String update_pendingInstallBody(String version);
 
   /// No description provided for @settings_privacyPolicy.

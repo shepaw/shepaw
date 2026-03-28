@@ -15,7 +15,7 @@ import 'user_profile_settings_screen.dart';
 import 'agent_memory_management_screen.dart';
 import '../utils/layout_utils.dart';
 import '../services/local_database_service.dart';
-import '../services/she_profile_database_service.dart';
+import '../services/cognition_service.dart';
 import '../services/local_file_storage_service.dart';
 import '../services/data_export_import_service.dart';
 import '../services/logger_service.dart';
@@ -1171,7 +1171,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       final db = LocalDatabaseService();
       await db.clearAllData();
 
-      await SheProfileDatabaseService().clearAll();
+      await CognitionService.instance.clearAll();
 
       InferenceLogService.instance.clearAll();
 

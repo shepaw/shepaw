@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import '../services/she_profile_database_service.dart';
+import '../services/cognition_service.dart';
 import '../services/logger_service.dart';
 import '../l10n/app_localizations.dart';
 
@@ -17,7 +17,7 @@ class UserProfileSettingsScreen extends StatefulWidget {
 }
 
 class _UserProfileSettingsScreenState extends State<UserProfileSettingsScreen> {
-  final SheProfileDatabaseService _profileDb = SheProfileDatabaseService();
+  final CognitionService _cognition = CognitionService.instance;
 
   // ── 预设字段 key 列表（顺序固定）────────────────────────────────────────────
   static const List<String> _coreFieldKeys = [
@@ -159,7 +159,7 @@ class _UserProfileSettingsScreenState extends State<UserProfileSettingsScreen> {
 
   Future<void> _loadProfile() async {
     try {
-      final profile = await _profileDb.getAllUserProfile();
+      final profile = await _cognition.getAllUserProfile();
       final customAttrs = <_CustomAttr>[];
 
       for (final entry in profile.entries) {
@@ -224,13 +224,13 @@ class _UserProfileSettingsScreenState extends State<UserProfileSettingsScreen> {
       final allKeys = {..._reservedKeys, ..._customAttrs.map((a) => a.key)};
       for (final key in allKeys) {
         if (!toSave.containsKey(key) && key != '_initialized') {
-          await _profileDb.deleteUserProfile(key);
+          await _cognition.deleteUserProfileField(key);
         }
       }
 
       // 批量写入
       for (final entry in toSave.entries) {
-        await _profileDb.setUserProfile(entry.key, entry.value);
+        await _cognition.updateUserProfileField(entry.key, entry.value);
       }
 
       if (mounted) _showSnack(l10n.profile_saved);
@@ -259,7 +259,7 @@ class _UserProfileSettingsScreenState extends State<UserProfileSettingsScreen> {
     if (confirmed != true) return;
 
     try {
-      await _profileDb.clearUserProfile();
+      await _cognition.clearUserProfile();
       for (final c in _controllers.values) {
         c.text = '';
       }

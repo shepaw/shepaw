@@ -3,13 +3,14 @@ import '../models/remote_agent.dart';
 import '../services/remote_agent_service.dart';
 import '../services/local_database_service.dart';
 import '../services/token_service.dart';
-import '../services/agent_memory_service.dart';
+import '../services/agent_memory_biz_service.dart';
 import '../services/logger_service.dart';
 import 'agent_memory_detail_screen.dart';
 
-/// Agent 记忆管理列表页面
+/// Agent 记忆管理列表页面（新版本）
 /// 
 /// 显示所有 Remote Agent 的列表，用户可以点击每个 Agent 查看和管理其记忆。
+/// 支持 pull-to-refresh 实时更新记忆计数。
 class AgentMemoryManagementScreen extends StatefulWidget {
   const AgentMemoryManagementScreen({Key? key}) : super(key: key);
 
@@ -21,7 +22,7 @@ class AgentMemoryManagementScreen extends StatefulWidget {
 class _AgentMemoryManagementScreenState
     extends State<AgentMemoryManagementScreen> {
   late RemoteAgentService _agentService;
-  final AgentMemoryService _memoryService = AgentMemoryService.instance;
+  final AgentMemoryBizService _memoryService = AgentMemoryBizService();
   
   List<RemoteAgent> _agents = [];
   Map<String, int> _memoryCounts = {};
@@ -118,8 +119,8 @@ class _AgentMemoryManagementScreenState
               Text(
                 'Add agents to manage their memories',
                 style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: Colors.grey[500],
-                    ),
+                  color: Colors.grey[500],
+                ),
               ),
             ],
           ),
@@ -133,43 +134,25 @@ class _AgentMemoryManagementScreenState
         centerTitle: true,
       ),
       body: RefreshIndicator(
-        onRefresh: () async {
-          await _loadAgents();
-        },
+        onRefresh: _loadAgents,
         child: ListView.builder(
+          padding: const EdgeInsets.all(8),
           itemCount: _agents.length,
           itemBuilder: (context, index) {
             final agent = _agents[index];
-            final memoryCount = _memoryCounts[agent.id] ?? 0;
-
-            return _buildAgentTile(agent, memoryCount, context);
+            final count = _memoryCounts[agent.id] ?? 0;
+            return _buildAgentCard(agent, count);
           },
         ),
       ),
     );
   }
 
-  Widget _buildAgentTile(
-    RemoteAgent agent,
-    int memoryCount,
-    BuildContext context,
-  ) {
+  Widget _buildAgentCard(RemoteAgent agent, int memoryCount) {
     return Card(
-      margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       child: ListTile(
-        leading: Container(
-          width: 48,
-          height: 48,
-          decoration: BoxDecoration(
-            color: Colors.blue[100],
-            borderRadius: BorderRadius.circular(8),
-          ),
-          child: Center(
-            child: Text(
-              agent.avatar,
-              style: const TextStyle(fontSize: 24),
-            ),
-          ),
+        leading: CircleAvatar(
+          child: Text(agent.avatar),
         ),
         title: Text(agent.name),
         subtitle: Text(
@@ -179,29 +162,16 @@ class _AgentMemoryManagementScreenState
         ),
         trailing: Column(
           mainAxisAlignment: MainAxisAlignment.center,
-          crossAxisAlignment: CrossAxisAlignment.end,
           children: [
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-              decoration: BoxDecoration(
-                color: memoryCount > 0 ? Colors.green[100] : Colors.grey[200],
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: Text(
-                '$memoryCount',
-                style: TextStyle(
-                  fontSize: 14,
-                  fontWeight: FontWeight.bold,
-                  color: memoryCount > 0 ? Colors.green[800] : Colors.grey[600],
-                ),
-              ),
+            Badge.count(
+              count: memoryCount,
+              backgroundColor: Colors.blue,
+              textColor: Colors.white,
             ),
             const SizedBox(height: 4),
             Text(
-              'memories',
-              style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                    color: Colors.grey[600],
-                  ),
+              'memory',
+              style: Theme.of(context).textTheme.labelSmall,
             ),
           ],
         ),
@@ -209,11 +179,10 @@ class _AgentMemoryManagementScreenState
           Navigator.push(
             context,
             MaterialPageRoute(
-              builder: (context) =>
-                  AgentMemoryDetailScreen(agent: agent),
+              builder: (context) => AgentMemoryDetailScreen(agent: agent),
             ),
           ).then((_) {
-            // 返回时刷新数据
+            // 返回时刷新计数
             _loadMemoryCounts();
           });
         },

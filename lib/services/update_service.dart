@@ -53,7 +53,7 @@ class UpdateService {
 
   static const String _baseUrl = String.fromEnvironment(
     'UPDATE_BASE_URL',
-    defaultValue: 'https://release.shepaw.com',
+    defaultValue: 'http://release.shepaw.com',
   );
   static const String _checkEndpoint = String.fromEnvironment(
     'UPDATE_CHECK_ENDPOINT',

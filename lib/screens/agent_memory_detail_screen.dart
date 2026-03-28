@@ -1,16 +1,17 @@
 import 'package:flutter/material.dart';
 import '../models/remote_agent.dart';
-import '../models/agent_memory.dart';
-import '../services/agent_memory_service.dart';
+import '../models/agent_memory_entry.dart';
+import '../services/agent_memory_biz_service.dart';
 import '../services/logger_service.dart';
 
-/// Agent 记忆详情页面
+/// Agent 记忆详情页面（新版本）
 /// 
 /// 显示指定 Agent 的所有记忆，支持：
-/// - 结构化视图（按 key 展示）
+/// - 结构化视图（按类型和来源展示）
 /// - 时间线视图（按时间展示）
-/// - 添加、编辑、删除记忆
+/// - 添加、删除记忆，支持类型/关键词/来源设置
 /// - 导出为 JSON/Markdown
+/// - 关键词搜索
 class AgentMemoryDetailScreen extends StatefulWidget {
   final RemoteAgent agent;
 
@@ -26,11 +27,13 @@ class AgentMemoryDetailScreen extends StatefulWidget {
 
 class _AgentMemoryDetailScreenState extends State<AgentMemoryDetailScreen>
     with SingleTickerProviderStateMixin {
-  final AgentMemoryService _memoryService = AgentMemoryService.instance;
+  final AgentMemoryBizService _memoryService = AgentMemoryBizService();
   late TabController _tabController;
 
-  List<AgentMemory> _memories = [];
+  List<AgentMemoryEntry> _memories = [];
   bool _isLoading = true;
+  String? _filterKeyword;
+  MemoryType? _filterType;
 
   @override
   void initState() {
@@ -45,13 +48,18 @@ class _AgentMemoryDetailScreenState extends State<AgentMemoryDetailScreen>
     super.dispose();
   }
 
-  Future<void> _loadMemories() async {
+  Future<void> _loadMemories({String? keyword, MemoryType? type}) async {
     try {
-      final memories = await _memoryService.getAgentMemories(widget.agent.id);
+      final memories = keyword != null && keyword.isNotEmpty
+          ? await _memoryService.queryByKeyword(widget.agent.id, keyword)
+          : await _memoryService.getAllMemories(widget.agent.id, type: type);
+      
       if (mounted) {
         setState(() {
           _memories = memories;
           _isLoading = false;
+          _filterKeyword = keyword;
+          _filterType = type;
         });
       }
     } catch (e) {
@@ -69,67 +77,139 @@ class _AgentMemoryDetailScreenState extends State<AgentMemoryDetailScreen>
     }
   }
 
-  Future<void> _addNote() async {
-    final noteController = TextEditingController();
+  Future<void> _addMemory() async {
+    final contentController = TextEditingController();
+    MemoryType selectedType = MemoryType.conversation;
+    final keywordsController = TextEditingController();
 
-    final result = await showDialog<String>(
+    final result = await showDialog<Map<String, dynamic>>(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Add Memory Note'),
-        content: TextField(
-          controller: noteController,
-          minLines: 3,
-          maxLines: 5,
-          decoration: const InputDecoration(
-            hintText: 'Enter memory note...',
-            border: OutlineInputBorder(),
+      builder: (context) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: const Text('Add New Memory'),
+          content: SingleChildScrollView(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // Content
+                const Text('Content'),
+                const SizedBox(height: 8),
+                TextField(
+                  controller: contentController,
+                  minLines: 3,
+                  maxLines: 5,
+                  decoration: const InputDecoration(
+                    hintText: 'Enter memory content...',
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+                const SizedBox(height: 16),
+                
+                // Type
+                const Text('Type'),
+                const SizedBox(height: 8),
+                DropdownButton<MemoryType>(
+                  value: selectedType,
+                  isExpanded: true,
+                  items: MemoryType.values.map((type) {
+                    return DropdownMenuItem(
+                      value: type,
+                      child: Text(type.displayName),
+                    );
+                  }).toList(),
+                  onChanged: (type) {
+                    if (type != null) {
+                      setDialogState(() => selectedType = type);
+                    }
+                  },
+                ),
+                const SizedBox(height: 16),
+
+                // Keywords
+                const Text('Keywords (comma separated)'),
+                const SizedBox(height: 8),
+                TextField(
+                  controller: keywordsController,
+                  decoration: const InputDecoration(
+                    hintText: 'keyword1, keyword2, ...',
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+              ],
+            ),
           ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cancel'),
+            ),
+            TextButton(
+              onPressed: () {
+                final content = contentController.text.trim();
+                if (content.isEmpty) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Content cannot be empty')),
+                  );
+                  return;
+                }
+                final keywords = keywordsController.text
+                    .split(',')
+                    .map((k) => k.trim())
+                    .where((k) => k.isNotEmpty)
+                    .toList();
+                Navigator.pop(context, {
+                  'content': content,
+                  'type': selectedType,
+                  'keywords': keywords,
+                });
+              },
+              child: const Text('Add'),
+            ),
+          ],
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(context, noteController.text),
-            child: const Text('Add'),
-          ),
-        ],
       ),
     );
 
-    if (result != null && result.trim().isNotEmpty) {
+    if (result != null) {
       try {
-        await _memoryService.appendNote(widget.agent.id, result);
+        await _memoryService.addMemory(
+          agentId: widget.agent.id,
+          content: result['content'] as String,
+          type: result['type'] as MemoryType,
+          keywords: result['keywords'] as List<String>?,
+          sourceType: MemorySourceType.system, // 手动添加标记为 system
+        );
         await _loadMemories();
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Note added')),
+            const SnackBar(content: Text('Memory added')),
           );
         }
       } catch (e) {
         LoggerService().error(
-          'Failed to add note',
+          'Failed to add memory',
           tag: 'AgentMemoryDetail',
           error: e,
         );
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Failed to add note')),
+            const SnackBar(content: Text('Failed to add memory')),
           );
         }
       }
     }
 
-    noteController.dispose();
+    contentController.dispose();
+    keywordsController.dispose();
   }
 
-  Future<void> _deleteMemory(String key) async {
+  Future<void> _deleteMemory(int memoryId) async {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('Delete Memory'),
-        content: Text('Delete "$key"?'),
+        content: const Text('Delete this memory?'),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
@@ -147,7 +227,7 @@ class _AgentMemoryDetailScreenState extends State<AgentMemoryDetailScreen>
     if (confirmed != true) return;
 
     try {
-      await _memoryService.deleteNote(widget.agent.id, key);
+      await _memoryService.deleteMemory(widget.agent.id, memoryId);
       await _loadMemories();
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -211,11 +291,10 @@ class _AgentMemoryDetailScreenState extends State<AgentMemoryDetailScreen>
           : await _memoryService.exportAsMarkdown(widget.agent.id);
 
       if (mounted) {
-        // 显示导出内容（可根据需要保存到文件）
         showDialog(
           context: context,
           builder: (context) => AlertDialog(
-            title: Text('Export as $format'),
+            title: Text('Export as ${format.toUpperCase()}'),
             content: SingleChildScrollView(
               child: SelectableText(content),
             ),
@@ -258,16 +337,38 @@ class _AgentMemoryDetailScreenState extends State<AgentMemoryDetailScreen>
       ),
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
-          : TabBarView(
-              controller: _tabController,
+          : Column(
               children: [
-                _buildStructuredView(),
-                _buildTimelineView(),
+                // 搜索栏
+                Padding(
+                  padding: const EdgeInsets.all(8),
+                  child: SearchBar(
+                    hintText: 'Search memories...',
+                    onChanged: (keyword) {
+                      if (keyword.isEmpty) {
+                        _loadMemories();
+                      }
+                    },
+                    onSubmitted: (keyword) {
+                      _loadMemories(keyword: keyword);
+                    },
+                  ),
+                ),
+                // 内容
+                Expanded(
+                  child: TabBarView(
+                    controller: _tabController,
+                    children: [
+                      _buildStructuredView(),
+                      _buildTimelineView(),
+                    ],
+                  ),
+                ),
               ],
             ),
       floatingActionButton: FloatingActionButton(
-        onPressed: _addNote,
-        tooltip: 'Add Note',
+        onPressed: _addMemory,
+        tooltip: 'Add Memory',
         child: const Icon(Icons.add),
       ),
       bottomNavigationBar: Container(
@@ -275,25 +376,27 @@ class _AgentMemoryDetailScreenState extends State<AgentMemoryDetailScreen>
         decoration: BoxDecoration(
           border: Border(top: BorderSide(color: Colors.grey[300]!)),
         ),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-          children: [
-            TextButton.icon(
-              onPressed: () => _exportMemories('json'),
-              icon: const Icon(Icons.download),
-              label: const Text('JSON'),
-            ),
-            TextButton.icon(
-              onPressed: () => _exportMemories('markdown'),
-              icon: const Icon(Icons.download),
-              label: const Text('Markdown'),
-            ),
-            TextButton.icon(
-              onPressed: _clearAllMemories,
-              icon: const Icon(Icons.delete_forever, color: Colors.red),
-              label: const Text('Clear All'),
-            ),
-          ],
+        child: SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          child: Row(
+            children: [
+              TextButton.icon(
+                onPressed: () => _exportMemories('json'),
+                icon: const Icon(Icons.download),
+                label: const Text('JSON'),
+              ),
+              TextButton.icon(
+                onPressed: () => _exportMemories('markdown'),
+                icon: const Icon(Icons.download),
+                label: const Text('Markdown'),
+              ),
+              TextButton.icon(
+                onPressed: _clearAllMemories,
+                icon: const Icon(Icons.delete_forever, color: Colors.red),
+                label: const Text('Clear All'),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -308,14 +411,14 @@ class _AgentMemoryDetailScreenState extends State<AgentMemoryDetailScreen>
             Icon(Icons.memory, size: 64, color: Colors.grey[400]),
             const SizedBox(height: 16),
             Text(
-              'No Memories Yet',
+              'No Memories Found',
               style: Theme.of(context).textTheme.titleMedium?.copyWith(
                     color: Colors.grey[600],
                   ),
             ),
             const SizedBox(height: 8),
             Text(
-              'Add notes to store memories',
+              _filterKeyword != null ? 'Try different keywords' : 'Add memories to get started',
               style: Theme.of(context).textTheme.bodySmall?.copyWith(
                     color: Colors.grey[500],
                   ),
@@ -325,25 +428,30 @@ class _AgentMemoryDetailScreenState extends State<AgentMemoryDetailScreen>
       );
     }
 
+    // 按类型分组
+    final grouped = <MemoryType, List<AgentMemoryEntry>>{};
+    for (final memory in _memories) {
+      grouped.putIfAbsent(memory.memoryType, () => []).add(memory);
+    }
+
     return ListView.builder(
       padding: const EdgeInsets.all(8),
-      itemCount: _memories.length,
-      itemBuilder: (context, index) {
-        final memory = _memories[index];
-        return Card(
-          child: ListTile(
-            title: Text(memory.key),
-            subtitle: Text(
-              memory.value,
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
+      itemCount: grouped.length,
+      itemBuilder: (context, groupIndex) {
+        final type = grouped.keys.elementAt(groupIndex);
+        final memories = grouped[type]!;
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+              child: Text(
+                type.displayName,
+                style: Theme.of(context).textTheme.titleMedium,
+              ),
             ),
-            trailing: IconButton(
-              icon: const Icon(Icons.delete, color: Colors.red),
-              onPressed: () => _deleteMemory(memory.key),
-            ),
-            onTap: () => _showMemoryDetail(memory),
-          ),
+            ...memories.map((memory) => _buildMemoryCard(memory)).toList(),
+          ],
         );
       },
     );
@@ -383,14 +491,27 @@ class _AgentMemoryDetailScreenState extends State<AgentMemoryDetailScreen>
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
                     Expanded(
-                      child: Text(
-                        memory.key,
-                        style: Theme.of(context).textTheme.titleSmall,
-                        overflow: TextOverflow.ellipsis,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            memory.memoryType.displayName,
+                            style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                          if (memory.sourceType != null)
+                            Text(
+                              '${memory.sourceType}${memory.sourceId != null ? ' (${memory.sourceId})' : ''}',
+                              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                color: Colors.grey[600],
+                              ),
+                            ),
+                        ],
                       ),
                     ),
                     Text(
-                      memory.createdAtFormatted,
+                      memory.memoryTimeFormatted,
                       style: Theme.of(context).textTheme.bodySmall?.copyWith(
                             color: Colors.grey[600],
                           ),
@@ -399,10 +520,22 @@ class _AgentMemoryDetailScreenState extends State<AgentMemoryDetailScreen>
                 ),
                 const SizedBox(height: 8),
                 Text(
-                  memory.value,
+                  memory.memoryContent,
                   maxLines: 3,
                   overflow: TextOverflow.ellipsis,
                 ),
+                if (memory.memoryKeywords.isNotEmpty) ...[
+                  const SizedBox(height: 8),
+                  Wrap(
+                    spacing: 4,
+                    children: memory.memoryKeywords
+                        .map((kw) => Chip(
+                          label: Text(kw, style: const TextStyle(fontSize: 12)),
+                          visualDensity: VisualDensity.compact,
+                        ))
+                        .toList(),
+                  ),
+                ],
                 const SizedBox(height: 8),
                 Row(
                   mainAxisAlignment: MainAxisAlignment.end,
@@ -413,7 +546,7 @@ class _AgentMemoryDetailScreenState extends State<AgentMemoryDetailScreen>
                       label: const Text('View'),
                     ),
                     TextButton.icon(
-                      onPressed: () => _deleteMemory(memory.key),
+                      onPressed: () => _deleteMemory(memory.memoryId!),
                       icon: const Icon(Icons.delete, color: Colors.red),
                       label: const Text('Delete'),
                     ),
@@ -427,24 +560,77 @@ class _AgentMemoryDetailScreenState extends State<AgentMemoryDetailScreen>
     );
   }
 
-  void _showMemoryDetail(AgentMemory memory) {
+  Widget _buildMemoryCard(AgentMemoryEntry memory) {
+    return Card(
+      child: ListTile(
+        title: Text(
+          memory.memoryType.displayName,
+          style: const TextStyle(fontWeight: FontWeight.bold),
+        ),
+        subtitle: Text(
+          memory.memoryContent,
+          maxLines: 2,
+          overflow: TextOverflow.ellipsis,
+        ),
+        trailing: IconButton(
+          icon: const Icon(Icons.delete, color: Colors.red),
+          onPressed: () => _deleteMemory(memory.memoryId!),
+        ),
+        onTap: () => _showMemoryDetail(memory),
+      ),
+    );
+  }
+
+  void _showMemoryDetail(AgentMemoryEntry memory) {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        title: Text(memory.key),
+        title: Text(memory.memoryType.displayName),
         content: SingleChildScrollView(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             mainAxisSize: MainAxisSize.min,
             children: [
               Text(
-                'Created: ${memory.createdAtFormatted}',
+                'ID: ${memory.memoryId}',
                 style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: Colors.grey[600],
-                    ),
+                  color: Colors.grey[600],
+                ),
               ),
+              const SizedBox(height: 8),
+              Text(
+                'Recorded: ${memory.memoryTimeFormatted}',
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: Colors.grey[600],
+                ),
+              ),
+              if (memory.sourceType != null)
+                Text(
+                  'Source: ${memory.sourceType}${memory.sourceId != null ? ' (${memory.sourceId})' : ''}',
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: Colors.grey[600],
+                  ),
+                ),
+              if (memory.memoryKeywords.isNotEmpty) ...[
+                const SizedBox(height: 12),
+                Text(
+                  'Keywords:',
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                Wrap(
+                  spacing: 4,
+                  children: memory.memoryKeywords
+                      .map((kw) => Chip(
+                        label: Text(kw, style: const TextStyle(fontSize: 11)),
+                        visualDensity: VisualDensity.compact,
+                      ))
+                      .toList(),
+                ),
+              ],
               const SizedBox(height: 12),
-              SelectableText(memory.value),
+              SelectableText(memory.memoryContent),
             ],
           ),
         ),
