@@ -65,6 +65,7 @@ dependencies:
 
   # 通知
   flutter_local_notifications: ^18.0.1
+  local_notifier: ^0.1.6  # Windows 通知支持（flutter_local_notifications 不支持 Windows）
 
   # 权限
   permission_handler: ^11.2.0

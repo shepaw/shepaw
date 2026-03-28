@@ -20,6 +20,7 @@ import 'services/acp_server_service.dart';
 import 'services/remote_agent_service.dart';
 import 'services/token_service.dart';
 import 'services/notification_service.dart';
+import 'services/update_notification_service.dart';
 import 'services/app_lifecycle_service.dart';
 import 'services/skill_registry.dart';
 import 'services/model_registry.dart';
@@ -108,6 +109,7 @@ Future<void> main(List<String> args) async {
       // Initialize notification and lifecycle services
       AppLifecycleService().init();
       await NotificationService().init();
+      UpdateNotificationService().init(navigatorKey: navigatorKey);
       ForegroundTaskService().init();
 
       // Initialize skill registry

@@ -980,6 +980,36 @@ abstract class AppLocalizations {
   /// **'重试下载'**
   String get update_retryDownload;
 
+  /// No description provided for @update_notification_availableTitle.
+  String update_notification_availableTitle(String version);
+
+  /// No description provided for @update_notification_availableBody.
+  String get update_notification_availableBody;
+
+  /// No description provided for @update_notification_readyTitle.
+  String get update_notification_readyTitle;
+
+  /// No description provided for @update_notification_readyBody.
+  String update_notification_readyBody(String version);
+
+  /// No description provided for @update_action_accept.
+  String get update_action_accept;
+
+  /// No description provided for @update_action_decline.
+  String get update_action_decline;
+
+  /// No description provided for @update_action_installNow.
+  String get update_action_installNow;
+
+  /// No description provided for @update_action_installLater.
+  String get update_action_installLater;
+
+  /// No description provided for @update_pendingInstallTitle.
+  String get update_pendingInstallTitle;
+
+  /// No description provided for @update_pendingInstallBody.
+  String update_pendingInstallBody(String version);
+
   /// No description provided for @settings_privacyPolicy.
   ///
   /// In zh, this message translates to:

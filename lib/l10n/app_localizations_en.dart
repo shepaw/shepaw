@@ -498,6 +498,36 @@ class AppLocalizationsEn extends AppLocalizations {
   String get update_retryDownload => 'Retry Download';
 
   @override
+  String update_notification_availableTitle(String version) => 'New version $version available';
+
+  @override
+  String get update_notification_availableBody => 'Tap to view update details';
+
+  @override
+  String get update_notification_readyTitle => 'Update ready to install';
+
+  @override
+  String update_notification_readyBody(String version) => 'Tap to install $version';
+
+  @override
+  String get update_action_accept => 'Download Now';
+
+  @override
+  String get update_action_decline => 'Not Now';
+
+  @override
+  String get update_action_installNow => 'Install Now';
+
+  @override
+  String get update_action_installLater => 'Later';
+
+  @override
+  String get update_pendingInstallTitle => 'Update ready';
+
+  @override
+  String update_pendingInstallBody(String version) => '$version has been downloaded. Install now?';
+
+  @override
   String get settings_privacyPolicy => 'Privacy Policy';
 
   @override

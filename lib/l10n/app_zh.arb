@@ -233,6 +233,33 @@
   "update_downloadCompleted": "下载完成",
   "update_downloadFailed": "下载失败",
   "update_retryDownload": "重试下载",
+
+  "update_notification_availableTitle": "发现新版本 {version}",
+  "@update_notification_availableTitle": {
+    "placeholders": {
+      "version": { "type": "String" }
+    }
+  },
+  "update_notification_availableBody": "点击查看更新详情",
+  "update_notification_readyTitle": "更新已就绪",
+  "@update_notification_readyTitle": {},
+  "update_notification_readyBody": "点击安装 {version}",
+  "@update_notification_readyBody": {
+    "placeholders": {
+      "version": { "type": "String" }
+    }
+  },
+  "update_action_accept": "立即下载",
+  "update_action_decline": "拒绝",
+  "update_action_installNow": "立即安装",
+  "update_action_installLater": "稍后",
+  "update_pendingInstallTitle": "更新已就绪",
+  "update_pendingInstallBody": "{version} 已下载完成，是否立即安装？",
+  "@update_pendingInstallBody": {
+    "placeholders": {
+      "version": { "type": "String" }
+    }
+  },
   "settings_privacyPolicy": "隐私政策",
   "settings_termsOfService": "服务条款",
 

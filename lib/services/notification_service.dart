@@ -15,6 +15,15 @@ class NotificationService {
 
   bool _initialized = false;
 
+  /// 通知点击回调，payload 为通知携带的数据
+  void Function(String? payload)? _onTap;
+
+  /// 注册通知点击回调。
+  /// 在 [init] 之前或之后调用均可——回调会在点击时触发。
+  void setOnNotificationTap(void Function(String? payload) handler) {
+    _onTap = handler;
+  }
+
   /// Whether the current platform supports flutter_local_notifications.
   bool get _platformSupported =>
       !kIsWeb &&
@@ -45,7 +54,12 @@ class NotificationService {
         macOS: darwinInit,
       );
 
-      await _plugin.initialize(initSettings);
+      await _plugin.initialize(
+        initSettings,
+        onDidReceiveNotificationResponse: (details) {
+          _onTap?.call(details.payload);
+        },
+      );
 
       // Create the Android notification channel.
       if (!kIsWeb && Platform.isAndroid) {
@@ -105,11 +119,13 @@ class NotificationService {
 
   /// Show a local notification.
   /// [id] is used for dedup — same id replaces the previous notification.
+  /// [payload] is passed to the [setOnNotificationTap] callback when tapped.
   Future<void> showNotification({
     required int id,
     required String title,
     required String body,
     bool playSound = true,
+    String? payload,
   }) async {
     if (!_initialized || !_platformSupported) return;
 
@@ -134,7 +150,7 @@ class NotificationService {
       macOS: darwinDetails,
     );
 
-    await _plugin.show(id, title, body, details);
+    await _plugin.show(id, title, body, details, payload: payload);
   }
 
   /// Cancel a specific notification by id.

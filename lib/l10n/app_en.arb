@@ -198,6 +198,33 @@
   "update_downloadCompleted": "Download completed",
   "update_downloadFailed": "Download failed",
   "update_retryDownload": "Retry Download",
+
+  "update_notification_availableTitle": "New version {version} available",
+  "@update_notification_availableTitle": {
+    "placeholders": {
+      "version": { "type": "String" }
+    }
+  },
+  "update_notification_availableBody": "Tap to view update details",
+  "update_notification_readyTitle": "Update ready to install",
+  "@update_notification_readyTitle": {},
+  "update_notification_readyBody": "Tap to install {version}",
+  "@update_notification_readyBody": {
+    "placeholders": {
+      "version": { "type": "String" }
+    }
+  },
+  "update_action_accept": "Download Now",
+  "update_action_decline": "Not Now",
+  "update_action_installNow": "Install Now",
+  "update_action_installLater": "Later",
+  "update_pendingInstallTitle": "Update ready",
+  "update_pendingInstallBody": "Version {version} has been downloaded. Install now?",
+  "@update_pendingInstallBody": {
+    "placeholders": {
+      "version": { "type": "String" }
+    }
+  },
   "settings_privacyPolicy": "Privacy Policy",
   "settings_termsOfService": "Terms of Service",
 
