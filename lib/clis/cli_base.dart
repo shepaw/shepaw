@@ -67,26 +67,20 @@ abstract class CliNamespace {
 
   /// 执行子命令
   ///
-  /// - --help / -h flag → 返回当前层级帮助
-  /// - 空字符串或 "help" → 返回帮助
   /// - 直接匹配 sub-namespace 名（如 "profile"）→ 返回该 sub-namespace 帮助
+  /// - 空字符串或 "help" → 返回当前命名空间帮助
   /// - 含 "." 的字符串（如 "profile.query"）→ 路由到 sub-namespace
-  /// - 其他 → 在 [commands] 中查找
+  /// - 其他 → 在 [commands] 中查找，找到后检查 --help 并返回命令的帮助，否则执行
   Future<Map<String, dynamic>> execute(
       String subcommand, Map<String, String> flags) async {
-    // --help / -h flag → 返回当前命名空间帮助
-    if (flags.containsKey('help') || flags.containsKey('h')) {
-      return getHelp();
-    }
-
-    if (subcommand.isEmpty || subcommand == 'help') {
-      return getHelp();
-    }
-
     // 直接访问 sub-namespace（如 "profile"）→ 返回该 sub-namespace 帮助
     final directNs = subNamespaces[subcommand];
     if (directNs != null) {
       return directNs.getHelp();
+    }
+
+    if (subcommand.isEmpty || subcommand == 'help') {
+      return getHelp();
     }
 
     // 分层路由：格式 "<sub-namespace>.<action>"
@@ -108,8 +102,18 @@ abstract class CliNamespace {
     // 扁平路由：直接查 commands
     final cmd = commands[subcommand];
     if (cmd == null) {
+      // 命令不存在，检查 --help flag
+      if (flags.containsKey('help') || flags.containsKey('h')) {
+        return getHelp();
+      }
       return _unknownSubcommand(subcommand);
     }
+
+    // 找到命令，检查 --help / -h flag
+    if (flags.containsKey('help') || flags.containsKey('h')) {
+      return cmd.getHelp();
+    }
+
     return cmd.execute(flags);
   }
 
