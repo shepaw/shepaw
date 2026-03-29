@@ -28,6 +28,12 @@ class ToolsStackConfig {
   /// Ignored for non-She agents even when set to true.
   final bool includeShepawCli;
 
+  /// shepaw meta/tools CLI guidance — **non-She agents only**.
+  /// When true, injects a lightweight block that tells non-She agents about
+  /// `shepaw meta *` and `shepaw tools *` namespaces for self-discovery.
+  /// Ignored for She (she uses `includeShepawCli` + `includeMetaCognition` instead).
+  final bool includeShepawMetaCli;
+
   /// Tool description detail level injected into the system prompt.
   ///
   /// - `'names_only'`: Only the tool names (most compact).
@@ -44,6 +50,7 @@ class ToolsStackConfig {
     this.includeSkills = true,
     this.includeToolModels = true,
     this.includeShepawCli = true,
+    this.includeShepawMetaCli = true,
     this.toolDescriptionLevel = 'summary',
   });
 
@@ -53,7 +60,8 @@ class ToolsStackConfig {
       includeOsTools ||
       includeSkills ||
       includeToolModels ||
-      includeShepawCli;
+      includeShepawCli ||
+      includeShepawMetaCli;
 
   static const ToolsStackConfig all = ToolsStackConfig();
   static const ToolsStackConfig noTools = ToolsStackConfig(
@@ -62,6 +70,7 @@ class ToolsStackConfig {
     includeSkills: false,
     includeToolModels: false,
     includeShepawCli: false,
+    includeShepawMetaCli: false,
   );
 
   /// Convenience preset that forces all tool docs to name-only level.
@@ -76,6 +85,7 @@ class ToolsStackConfig {
         includeSkills: json['include_skills'] as bool? ?? true,
         includeToolModels: json['include_tool_models'] as bool? ?? true,
         includeShepawCli: json['include_shepaw_cli'] as bool? ?? true,
+        includeShepawMetaCli: json['include_shepaw_meta_cli'] as bool? ?? true,
         toolDescriptionLevel:
             json['tool_description_level'] as String? ?? 'summary',
       );
@@ -86,6 +96,7 @@ class ToolsStackConfig {
         'include_skills': includeSkills,
         'include_tool_models': includeToolModels,
         'include_shepaw_cli': includeShepawCli,
+        'include_shepaw_meta_cli': includeShepawMetaCli,
         'tool_description_level': toolDescriptionLevel,
       };
 
@@ -95,6 +106,7 @@ class ToolsStackConfig {
     bool? includeSkills,
     bool? includeToolModels,
     bool? includeShepawCli,
+    bool? includeShepawMetaCli,
     String? toolDescriptionLevel,
   }) =>
       ToolsStackConfig(
@@ -103,6 +115,7 @@ class ToolsStackConfig {
         includeSkills: includeSkills ?? this.includeSkills,
         includeToolModels: includeToolModels ?? this.includeToolModels,
         includeShepawCli: includeShepawCli ?? this.includeShepawCli,
+        includeShepawMetaCli: includeShepawMetaCli ?? this.includeShepawMetaCli,
         toolDescriptionLevel: toolDescriptionLevel ?? this.toolDescriptionLevel,
       );
 }
@@ -225,6 +238,11 @@ class SheStackConfig {
   /// `shepaw agents list / channels / messages` and `shepaw messages query`
   final bool enableMessagesCommand;
 
+  /// Inject the meta-cognition block that tells She what capabilities she has
+  /// and how to discover them on demand via `shepaw help`.
+  /// Replaces the old expanded CLI command list with a concise capability index.
+  final bool includeMetaCognition;
+
   /// When true, the shepaw CLI block uses a compact one-liner-per-command format
   /// instead of the full Markdown table.  She can call
   /// `shepaw system tools-detail --name <command>` to retrieve full parameter
@@ -240,12 +258,13 @@ class SheStackConfig {
 
   const SheStackConfig({
     this.includeSheMemory = true,
-    this.includeSheSelfCognition = true,
-    this.includeUserCognition = true,
-    this.includeUserStrategy = true,
-    this.includeProfileSnapshot = true,
+    this.includeSheSelfCognition = false,
+    this.includeUserCognition = false,
+    this.includeUserStrategy = false,
+    this.includeProfileSnapshot = false,
     this.includeFirstMeeting = true,
     this.includeSessionEnd = true,
+    this.includeMetaCognition = true,
     this.enableProfileCommand = true,
     this.enableMemoryCommand = true,
     this.enableAgentChatCommand = true,
@@ -263,6 +282,7 @@ class SheStackConfig {
     includeProfileSnapshot: false,
     includeFirstMeeting: false,
     includeSessionEnd: false,
+    includeMetaCognition: false,
     enableProfileCommand: false,
     enableMemoryCommand: false,
     enableAgentChatCommand: false,
@@ -273,13 +293,14 @@ class SheStackConfig {
 
   factory SheStackConfig.fromJson(Map<String, dynamic> json) => SheStackConfig(
         includeSheMemory: json['include_she_memory'] as bool? ?? true,
-        includeSheSelfCognition: json['include_she_self_cognition'] as bool? ?? true,
-        includeUserCognition: json['include_user_cognition'] as bool? ?? true,
-        includeUserStrategy: json['include_user_strategy'] as bool? ?? true,
+        includeSheSelfCognition: json['include_she_self_cognition'] as bool? ?? false,
+        includeUserCognition: json['include_user_cognition'] as bool? ?? false,
+        includeUserStrategy: json['include_user_strategy'] as bool? ?? false,
         includeProfileSnapshot:
-            json['include_profile_snapshot'] as bool? ?? true,
+            json['include_profile_snapshot'] as bool? ?? false,
         includeFirstMeeting: json['include_first_meeting'] as bool? ?? true,
         includeSessionEnd: json['include_session_end'] as bool? ?? true,
+        includeMetaCognition: json['include_meta_cognition'] as bool? ?? true,
         enableProfileCommand: json['enable_profile_command'] as bool? ?? true,
         enableMemoryCommand: json['enable_memory_command'] as bool? ?? true,
         enableAgentChatCommand:
@@ -300,6 +321,7 @@ class SheStackConfig {
         'include_profile_snapshot': includeProfileSnapshot,
         'include_first_meeting': includeFirstMeeting,
         'include_session_end': includeSessionEnd,
+        'include_meta_cognition': includeMetaCognition,
         'enable_profile_command': enableProfileCommand,
         'enable_memory_command': enableMemoryCommand,
         'enable_agent_chat_command': enableAgentChatCommand,
@@ -316,6 +338,7 @@ class SheStackConfig {
     bool? includeProfileSnapshot,
     bool? includeFirstMeeting,
     bool? includeSessionEnd,
+    bool? includeMetaCognition,
     bool? enableProfileCommand,
     bool? enableMemoryCommand,
     bool? enableAgentChatCommand,
@@ -332,6 +355,7 @@ class SheStackConfig {
             includeProfileSnapshot ?? this.includeProfileSnapshot,
         includeFirstMeeting: includeFirstMeeting ?? this.includeFirstMeeting,
         includeSessionEnd: includeSessionEnd ?? this.includeSessionEnd,
+        includeMetaCognition: includeMetaCognition ?? this.includeMetaCognition,
         enableProfileCommand:
             enableProfileCommand ?? this.enableProfileCommand,
         enableMemoryCommand: enableMemoryCommand ?? this.enableMemoryCommand,

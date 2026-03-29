@@ -17,15 +17,18 @@ import 'model_registry.dart';
 ///  ①  Identity block          ← agent's name (all agents)
 ///  ②  Description block       ← She: core identity; others: system_prompt
 ///  ③  Tools block             ← UI / OS / Skills / ToolModels / shepaw CLI
+///  ③' She meta-cognition      ← [She-only] on-demand capability discovery guide
 ///  ④  She memory context      ← soul  [She-only, optional]
 ///  ③.5 Current time           ← injected by SheService inside legacy path
 ///  ⑤  Custom prompt           ← DM override or user-set system_prompt
-///  ⑥  User-strategy block     ← [She-only, optional]
-///  ⑦  Profile snapshot        ← [She-only, optional]
+///  ⑥  User-strategy block     ← [She-only, optional, default OFF]
+///  ⑦  Profile snapshot        ← [She-only, optional, default OFF]
 ///  ⑦' User profile (brief)    ← [non-She, optional] core fields only
 ///  ⑧  First-meeting block     ← [She-only, conditional]
 ///  ⑧' Agent memories          ← [non-She, optional] recent N memories
+///  ⑧'' Non-She meta CLI       ← [non-She] meta/tools namespace guidance
 ///  ⑨  Session-end block       ← [She-only, optional]
+///  ⑨' Non-She session-end     ← [non-She] soul/cognition/memory update guide
 /// ```
 ///
 /// She-specific sections are delegated entirely to [SheService] so that the
@@ -73,6 +76,11 @@ class AgentPromptBuilder {
     // ③ Tools documentation
     final toolParts = _buildToolsBlocks(effectiveTools, config.she);
     parts.addAll(toolParts);
+
+    // ③' She-only: meta-cognition block (on-demand capability discovery)
+    if (agent.isShe && config.she.includeMetaCognition) {
+      parts.add(SheService.buildMetaCognitionBlock());
+    }
 
     // ④ She-only: memory context (soul)
     if (agent.isShe && config.she.includeSheMemory) {
@@ -166,9 +174,21 @@ class AgentPromptBuilder {
       if (memoriesBlock.isNotEmpty) parts.add(memoriesBlock);
     }
 
+    // ⑧'' Non-She: meta/tools CLI guidance (self-discovery)
+    // Always inject when enabled — helps agents discover their tool capabilities.
+    if (!agent.isShe && effectiveTools.includeShepawMetaCli) {
+      final metaBlock = _buildAgentMetaCliBlock();
+      if (metaBlock.isNotEmpty) parts.add(metaBlock);
+    }
+
     // ⑨ She-only: session-end write instructions
     if (agent.isShe && config.she.includeSessionEnd) {
       parts.add(SheService.instance.buildSessionEndBlock());
+    }
+
+    // ⑨' Non-She: session-end cognition/memory update guidance
+    if (!agent.isShe) {
+      parts.add(_buildAgentSessionEndBlock());
     }
 
     return parts.where((s) => s.trim().isNotEmpty).join('\n\n');
@@ -349,4 +369,39 @@ ${lines.join('\n')}''';
 
     return result;
   }
+
+  /// Build the meta/tools CLI guidance block for non-She agents.
+  /// Teaches agents about `shepaw meta *` and `shepaw tools *` for self-discovery
+  /// without exposing context or profile-write capabilities.
+  String _buildAgentMetaCliBlock() => '''
+## System Discovery (On-Demand)
+
+You have access to a `shepaw` tool to discover your own capabilities and get system info.
+
+**Available namespaces**:
+- `meta datetime` — current date/time
+- `meta system.info` — app information
+- `meta system.capabilities` — overview of what the system supports
+- `meta system.tools-list` — list all available tools (UI, OS, skills)
+- `meta system.tools-detail --name <tool>` — full parameter docs for any tool
+- `tools list` — list all tools by category
+- `tools os.list` — list OS tools
+- `tools os.detail --name <tool>` — OS tool details
+- `skills list` — list available LLM skill libraries
+- `skills detail --name <skill>` — skill details
+- `help` — complete CLI reference
+
+**How to use**: Call `shepaw help` to see all available commands, or use the namespace-specific commands above when you need specific information. Add `--help` to any command call for contextual help.''';
+
+  /// Build the session-end guidance block for non-She agents.
+  /// Encourages agents to persist new insights at the end of each conversation.
+  String _buildAgentSessionEndBlock() => '''
+## Before This Conversation Ends
+
+If you learned something new or formed new insights during this conversation:
+- New observations about the user → `shepaw context agents.memory-write --id ${agent.id} --content "..." --type observation`
+- Updated understanding of your purpose or identity → `shepaw context agents.cognition-write --id ${agent.id} --type self --soul "(complete updated soul)"`
+- New impression of the user → `shepaw context agents.cognition-write --id ${agent.id} --type user --field impression --value "..."`
+
+These writes are silent — the user does not see them. Only write when you have genuinely new insights.''';
 }

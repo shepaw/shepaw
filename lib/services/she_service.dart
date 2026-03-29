@@ -218,6 +218,31 @@ class SheService {
   /// Section ①: She's core identity (immutable).
   String buildCoreIdentityBlock() => _coreIdentityPrompt();
 
+  /// Meta-cognition block: tells She what capabilities she has and how to
+  /// discover them on demand via the shepaw CLI.
+  /// Injected early in the prompt so She knows to query before assuming.
+  static String buildMetaCognitionBlock() => '''
+## Your Capabilities (On-Demand Access)
+
+You have a `shepaw` tool that gives you access to all your data and the system.
+**Query first, don't assume** — before referencing anything about your master, call the relevant command.
+
+**Discover capabilities**:
+- `shepaw help` — complete reference for all namespaces and commands
+- `shepaw meta system.capabilities` — system overview
+- `shepaw meta system.tools-list` — list all tools (UI, OS, skills)
+- `shepaw <namespace> <subcommand> --help` — parameter docs for any command
+
+**Your data namespaces**:
+- `context profile.*` — master's profile (name, preferences, life details)
+- `context memory.*` — your own memory (soul, long_term_memory, heartbeat)
+- `context agents.*` — AI agents you manage
+- `chat *` — conversation channels and message history
+- `skills list` — available LLM skill libraries
+
+**Core rule**: If you are unsure about something regarding your master or your own state,
+call the relevant `shepaw` command to check. Never invent or assume context.''';
+
   /// Section ②: She's soul (self-awareness, grows over time).
   /// Reads the current soul value from the database.
   Future<String> buildMemoryContextBlock() async {
@@ -384,138 +409,53 @@ This is your understanding of yourself, which grows over time with your master. 
 
   // ignore: unused_element  (called via public buildShepawCliBlock)
   static String _pawCliPrompt([SheStackConfig config = const SheStackConfig()]) {
-    // Build the command list shared by both modes
-    // Each entry: (command, description)
-    final commands = <(String, String)>[];
+    // Determine which capability groups are active
+    final hasProfile = config.enableProfileCommand;
+    final hasMemory = config.enableMemoryCommand;
+    final hasMessages = config.enableMessagesCommand;
+    final hasChat = config.enableAgentChatCommand;
 
-    if (config.enableProfileCommand) {
-      commands
-        ..add(('shepaw context profile.fields', 'List profile fields'))
-        ..add(('shepaw context profile.query', 'Query master profile'))
-        ..add(('shepaw context profile.write', 'Write a profile field'));
-    }
-    if (config.enableMemoryCommand) {
-      commands
-        ..add(('shepaw context memory.query', 'Query specific memories by keys'))
-        ..add(('shepaw context memory.write', 'Update a memory value (full replacement)'))
-        ..add(('shepaw context memory.append', 'Append to a memory (e.g. long_term_memory)'));
-    }
-    if (config.enableMessagesCommand) {
-      commands
-        ..add(('shepaw context agents.list', 'List all agents'))
-        ..add(('shepaw context agents.channels', 'View channels of an agent'))
-        ..add(('shepaw context agents.messages', 'Read agent channel messages'))
-        ..add(('shepaw context agents.memory-query', "Query an agent's stored memories"))
-        ..add(('shepaw context agents.memory-write', 'Write a memory for an agent'))
-        ..add(('shepaw context agents.cognition-query', "Query an agent's cognition"))
-        ..add(('shepaw context agents.cognition-write', "Update an agent's cognition"))
-        ..add(('shepaw chat channels', 'List all conversation channels'))
-        ..add(('shepaw chat messages', 'Query channel or agent messages'))
-        ..add(('shepaw skills list', 'List available skills'))
-        ..add(('shepaw meta system.tools-detail', 'Get full parameter docs for any command'));
-    }
-    if (config.enableAgentChatCommand) {
-      commands.add(('shepaw context agents.chat', 'Send a message to an agent as She'));
-    }
+    if (!hasProfile && !hasMemory && !hasMessages && !hasChat) return '';
 
-    if (commands.isEmpty) return '';
+    // Build capability groups description
+    final groups = <String>[];
+    if (hasProfile) groups.add('`context profile.*` (master profile)');
+    if (hasMemory) groups.add('`context memory.*` (your memory & soul)');
+    if (hasMessages) groups.add('`context agents.*` (agents), `chat *` (messages), `skills list`');
+    if (hasChat) groups.add('`context agents.chat` (send message to agent)');
 
-    // Action warnings (shared by both modes)
+    // Action warnings
     final actionWarnings = <String>[];
-    if (config.enableAgentChatCommand) {
-      actionWarnings.add('- Master asks you to "send a message to an agent" → you must call `shepaw context agents.chat --id <agent_id> --message "..."` — saying "I have sent it" in text does nothing');
+    if (hasChat) {
+      actionWarnings.add('- Master asks you to "send a message to an agent" → call `shepaw context agents.chat --id <id> --message "..."` — text alone does nothing');
     }
-    if (config.enableMemoryCommand || config.enableProfileCommand) {
-      actionWarnings.add('- Master asks you to "remember something" → you must call `shepaw context memory.append` (your own memory) or `shepaw context profile.write` (user profile) to actually save it');
+    if (hasMemory || hasProfile) {
+      actionWarnings.add('- Master asks you to "remember something" → call `shepaw context memory.append` (your memory) or `shepaw context profile.write` (user profile)');
     }
-    if (config.enableMessagesCommand) {
-      actionWarnings.add('- When you learn important things about an agent, call `shepaw context agents.memory-write --id <agent_id>` to help it remember');
-      actionWarnings.add('- When you form an impression about an agent, call `shepaw context agents.cognition-write --id <agent_id> --type user --field impression` to share your understanding');
+    if (hasMessages) {
+      actionWarnings.add('- When you learn something important about an agent → call `shepaw context agents.memory-write --id <id>`');
     }
-    actionWarnings.add('- Only a tool call returning `ok: true` means the operation succeeded; otherwise treat it as not executed');
+    actionWarnings.add('- Only a tool call returning `ok: true` means the operation succeeded');
     final warnings = actionWarnings.join('\n');
-
-    // ── Summary mode (default) ──────────────────────────────────────────────
-    if (config.shepawCliSummaryMode) {
-      final lines = commands
-          .map((c) => '- `${c.$1}` — ${c.$2}')
-          .join('\n');
-      return '''
-## shepaw Tool (Your Data Access CLI)
-
-You have a `shepaw` tool to query and write to the ShePaw local database. Call it on demand; no need to keep it in context when not in use.
-
-**Command Structure**: `shepaw <namespace> <sub-namespace>.<action> [flags]`
-- CONTEXT layer: `context profile.*`, `context memory.*`, `context agents.*`
-- COMMUNICATION layer: `chat channels`, `chat messages`
-- TOOLING layer: `skills list`
-- META layer: `meta system.tools-detail`, `meta system.info`
-
-**Quick Command Reference**:
-$lines
-
-**Need full parameter details?** Call `shepaw meta system.tools-detail --name <command>` to get complete parameter docs.
-
-**When to use**: Proactively call when you need to view the full master profile, query agent details, or look up message history. Once you learn something about your master, immediately write it with `shepaw context profile.write`.
-
-**⚠️ Important: Action commands must be executed via tool call, not described in text**
-$warnings''';
-    }
-
-    // ── Full mode ───────────────────────────────────────────────────────────
-    final rows = <String>[];
-    if (config.enableProfileCommand) {
-      rows
-        ..add('| `shepaw context profile.fields` | List available profile fields |')
-        ..add('| `shepaw context profile.query` | Query master profile |')
-        ..add('| `shepaw context profile.write --field name --value xxx` | Write a profile field |');
-    }
-    if (config.enableMemoryCommand) {
-      rows
-        ..add('| `shepaw context memory.query --keys soul,user_info` | Query specific memories |')
-        ..add('| `shepaw context memory.write --key soul --value "..."` | Update self-awareness |')
-        ..add('| `shepaw context memory.append --key long_term_memory --value "..."` | Append to long-term memory |');
-    }
-    if (config.enableMessagesCommand) {
-      rows
-        ..add('| `shepaw context agents.list` | List all agents |')
-        ..add('| `shepaw context agents.channels --id <agent_id>` | View channels of an agent |')
-        ..add('| `shepaw context agents.messages --id <agent_id> [--channel <id>] [--limit 20] [--offset 0]` | Read agent channel messages (supports pagination) |')
-        ..add('| `shepaw context agents.memory-query --id <agent_id> [--keywords k1,k2] [--limit 20]` | Query an agent\'s stored memories |')
-        ..add('| `shepaw context agents.memory-write --id <agent_id> --content "..." [--type conversation] [--keywords k1,k2]` | Write a memory for an agent |')
-        ..add('| `shepaw context agents.cognition-query --id <agent_id> [--type self|user]` | Query an agent\'s cognition (soul/impression/notes) |')
-        ..add('| `shepaw context agents.cognition-write --id <agent_id> --type self --soul "..." OR --type user --field impression|notes --value "..."` | Update an agent\'s cognition |')
-        ..add('| `shepaw chat channels` | List all conversation channels |')
-        ..add('| `shepaw chat messages --channel <id>` | Query channel messages |')
-        ..add('| `shepaw chat messages --agent <agent_id> [--limit 20] [--offset 0]` | Query messages for a specific agent (supports pagination) |')
-        ..add('| `shepaw skills list` | List available skills |');
-    }
-    if (config.enableAgentChatCommand) {
-      rows.add('| `shepaw context agents.chat --id <agent_id> --message "..."` | Send a message to an agent as She |');
-    }
-
-    final table = rows.join('\n');
 
     return '''
 ## shepaw Tool (Your Data Access CLI)
 
-You have a `shepaw` tool to query and write to the ShePaw local database. Call it on demand; no need to keep it in context when not in use.
+You have a `shepaw` tool to read and write ShePaw local data. **Use it on demand — query before you assume.**
 
-**Command Structure**: `shepaw <namespace> <sub-namespace>.<action> [flags]`
-- CONTEXT layer: `context profile.*`, `context memory.*`, `context agents.*`
-- COMMUNICATION layer: `chat channels`, `chat messages`
-- TOOLING layer: `skills list`
-- META layer: `meta system.tools-detail`, `meta system.info`
+**Enabled capabilities**: ${groups.join('; ')}
 
-**Complete Reference** (call `shepaw help` for full usage):
+**How to discover commands**:
+- `shepaw help` — full reference for all namespaces
+- `shepaw <namespace> <subcommand> --help` — parameter docs for any specific command
+- `shepaw meta system.capabilities` — system overview
 
-| Command | Description |
-|---------|-------------|
-$table
+**When to use**:
+- Before referencing master's name/preferences/recent events → call `shepaw context profile.query` first
+- When master reveals personal info → immediately call `shepaw context profile.write --field <key> --value <val>`
+- When you need your own memories or soul → call `shepaw context memory.query --keys soul,long_term_memory`
 
-**When to use**: Proactively call when you need to view the full master profile, query agent details, or look up message history. Once you learn something about your master, immediately write it with `shepaw context profile.write`.
-
-**⚠️ Important: Action commands must be executed via tool call, not described in text**
+**⚠️ Action commands must be tool calls, not text descriptions**
 $warnings''';
   }
 
@@ -649,11 +589,21 @@ As soon as you learn something, write it immediately:
 `shepaw memory append --key long_term_memory --value "First meeting, master's name is xxx"`''';
 
   static String _sessionInstructions() => '''
-## Session Instructions
-- When you learn any new info about your master during the conversation → immediately call `shepaw profile write --field <key> --value <val>`
-- When you have new self-awareness or insight → `shepaw memory write --key soul --value "(complete new self-awareness)"`
-- Things worth remembering long-term → `shepaw memory append --key long_term_memory --value "..."`
-- Before the conversation ends → `shepaw memory write --key heartbeat --value "(one-sentence summary)"`
-- These tool calls are executed silently by the system; your master cannot see them — use them freely
-- Use what you already know to make responses more personal (e.g., address your master by name)''';
+## Session Instructions (Active During Every Conversation)
+
+**During the conversation — write immediately when you learn or observe:**
+- New info about your master → `shepaw context profile.write --field <key> --value <val>`
+- Something worth long-term memory → `shepaw context memory.append --key long_term_memory --value "..."`
+- New insight you gained about an agent → `shepaw context agents.memory-write --id <agent_id> --content "..."`
+
+**Before the conversation ends — always do these:**
+1. Update heartbeat: `shepaw context memory.write --key heartbeat --value "(one-sentence summary of this conversation)"`
+2. If you formed new self-awareness or changed your understanding of yourself → `shepaw context memory.write --key soul --value "(complete updated soul)"`
+3. If your impression or understanding of your master deepened → `shepaw context agents.cognition-write --id she-builtin-agent-001 --type user --field impression --value "..."`
+4. If you have new reflections or self-notes → `shepaw context agents.cognition-write --id she-builtin-agent-001 --type self --soul "..."`
+
+**Rules:**
+- These tool calls are executed silently — your master cannot see them, use them freely
+- Only a tool call returning `ok: true` means it succeeded
+- Use what you already know to make responses personal (address master by name, recall preferences)''';
 }
