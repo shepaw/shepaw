@@ -35,7 +35,7 @@ class LocalDatabaseService {
       // Web平台使用sqflite_common_ffi
       return await openDatabase(
         'shepaw',
-        version: 16,
+        version: 17,
         onCreate: _onCreate,
         onUpgrade: _onUpgrade,
       );
@@ -45,7 +45,7 @@ class LocalDatabaseService {
       path = join(directory.path, 'shepaw.db');
       return await openDatabase(
         path,
-        version: 16,
+        version: 17,
         onCreate: _onCreate,
         onUpgrade: _onUpgrade,
       );
@@ -56,7 +56,7 @@ class LocalDatabaseService {
 
       return await openDatabase(
         path,
-        version: 16,
+        version: 17,
         onCreate: _onCreate,
         onUpgrade: _onUpgrade,
       );
@@ -254,6 +254,19 @@ class LocalDatabaseService {
     // Phase 2 优化: 发送者在 Channel 中的消息
     await db.execute('CREATE INDEX idx_messages_sender_channel ON messages(sender_id, channel_id, created_at DESC)');
 
+    // 工具配置表
+    await db.execute('''
+      CREATE TABLE tool_configs (
+        tool_name TEXT PRIMARY KEY,
+        parameter_overrides TEXT,
+        has_api_key INTEGER DEFAULT 0,
+        enabled INTEGER DEFAULT 1,
+        note TEXT,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL
+      )
+    ''');
+
   }
 
   /// 数据库升级
@@ -292,6 +305,23 @@ class LocalDatabaseService {
             value TEXT NOT NULL,
             created_at TEXT NOT NULL,
             updated_at TEXT NOT NULL
+          )
+        ''');
+      } catch (_) {}
+    }
+
+    if (oldVersion < 17) {
+      // 版本 16 -> 17: 工具全局配置表
+      try {
+        await db.execute('''
+          CREATE TABLE IF NOT EXISTS tool_configs (
+            tool_name TEXT PRIMARY KEY,
+            parameter_overrides TEXT,
+            has_api_key INTEGER DEFAULT 0,
+            enabled INTEGER DEFAULT 1,
+            note TEXT,
+            created_at INTEGER NOT NULL,
+            updated_at INTEGER NOT NULL
           )
         ''');
       } catch (_) {}
@@ -1075,5 +1105,45 @@ class LocalDatabaseService {
       await _database!.close();
       _database = null;
     }
+  }
+
+  // ==================== 工具配置 CRUD ====================
+
+  /// 插入或更新工具配置（upsert）
+  Future<void> upsertToolConfig(Map<String, dynamic> data) async {
+    final db = await database;
+    await db.insert(
+      'tool_configs',
+      data,
+      conflictAlgorithm: ConflictAlgorithm.replace,
+    );
+  }
+
+  /// 查询单个工具配置
+  Future<Map<String, dynamic>?> queryToolConfig(String toolName) async {
+    final db = await database;
+    final results = await db.query(
+      'tool_configs',
+      where: 'tool_name = ?',
+      whereArgs: [toolName],
+      limit: 1,
+    );
+    return results.isEmpty ? null : results.first;
+  }
+
+  /// 查询所有工具配置
+  Future<List<Map<String, dynamic>>> queryAllToolConfigs() async {
+    final db = await database;
+    return db.query('tool_configs', orderBy: 'tool_name ASC');
+  }
+
+  /// 删除工具配置
+  Future<void> deleteToolConfig(String toolName) async {
+    final db = await database;
+    await db.delete(
+      'tool_configs',
+      where: 'tool_name = ?',
+      whereArgs: [toolName],
+    );
   }
 }

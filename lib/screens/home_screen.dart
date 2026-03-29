@@ -18,6 +18,7 @@ import 'settings_screen.dart';
 import 'contacts_screen.dart';
 import 'skill_management_screen.dart';
 import 'model_management_screen.dart';
+import 'tool_config_management_screen.dart';
 import '../services/skill_registry.dart';
 import '../services/model_registry.dart';
 import '../widgets/agent_search_delegate.dart';
@@ -701,6 +702,20 @@ class HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateMi
                         context,
                         MaterialPageRoute(
                           builder: (context) => const SkillManagementScreen(),
+                        ),
+                      );
+                      if (mounted) setState(() {});
+                    },
+                  ),
+                  ListTile(
+                    leading: const Icon(Icons.build_circle),
+                    title: Text(l10n.osTool_configTitle),
+                    onTap: () {
+                      Navigator.pop(context);
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) => const ToolConfigManagementScreen(),
                         ),
                       );
                       if (mounted) setState(() {});

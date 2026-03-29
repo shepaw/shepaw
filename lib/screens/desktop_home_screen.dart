@@ -14,6 +14,7 @@ import 'settings_screen.dart';
 import 'contacts_screen.dart';
 import 'skill_management_screen.dart';
 import 'model_management_screen.dart';
+import 'tool_config_management_screen.dart';
 import '../utils/layout_utils.dart';
 import '../services/native_window_service.dart';
 
@@ -39,6 +40,7 @@ enum _RightPanelView {
   traces,
   modelManagement,
   skillManagement,
+  toolConfigManagement,
 }
 
 /// Describes one item in the icon sidebar.
@@ -294,6 +296,9 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
       case _RightPanelView.skillManagement:
         return const SkillManagementScreen();
 
+      case _RightPanelView.toolConfigManagement:
+        return const ToolConfigManagementScreen();
+
       case _RightPanelView.empty:
         return _buildEmptyState();
     }
@@ -367,7 +372,15 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
             : iconColor,
         onTap: () => _showPanel(_RightPanelView.skillManagement),
       ),
-      // divider placeholder – index 4
+      _SidebarItemDef(
+        icon: Icons.build_circle,
+        tooltip: l10n.osTool_configTitle,
+        colorBuilder: (_) => _rightPanel == _RightPanelView.toolConfigManagement
+            ? activeColor
+            : iconColor,
+        onTap: () => _showPanel(_RightPanelView.toolConfigManagement),
+      ),
+      // divider placeholder – index 5
       _SidebarItemDef(
         icon: Icons.horizontal_rule, // sentinel, won't render directly
         tooltip: '',
@@ -388,7 +401,7 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
         onTap: _showLogoutDialog,
       ),
     ];
-    const dividerIndex = 4; // index in bottomItems that is the divider sentinel
+    const dividerIndex = 5; // index in bottomItems that is the divider sentinel
 
     return Container(
       width: _sidebarWidth,

@@ -82,8 +82,9 @@ class ShepawCLI {
       'ShePaw built-in CLI. Namespaces: '
       '[CONTEXT] context (profile.*/memory.*/agents.* — use dot notation, e.g. context profile.query); '
       '[COMMUNICATION] chat (channels: list channels, messages: query messages); '
-      '[TOOLING] tools (os.list/detail/categories | network.list/detail), skills (LLM skills: list/detail); '
+      '[TOOLING] tools (os.list/detail/categories | network.list/detail | config | <tool_name>.config), skills (LLM skills: list/detail); '
       '[META] meta (datetime | system.info/tools-list/tools-detail/capabilities), help (full docs). '
+      'Tool config: shepaw tools web_search.config [--action get|set-key|delete-key|set-param|delete-param|set-note|delete|enable|disable] [--key k] [--value v]. '
       'Add flags={"help":""} to any call for contextual help. Run "shepaw help" for complete reference.';
 
   Map<String, dynamic> _parameterSchema() => {
@@ -100,7 +101,7 @@ class ShepawCLI {
                 'Subcommand for the chosen namespace. '
                 'context: profile.<fields|query|write|delete> | memory.<query|write|append> | agents.<list|get|channels|messages|chat|memory-query|memory-write|cognition-query|cognition-write>; '
                 'chat: channels|messages; '
-                'tools: list | os.<list|detail|categories> | network.<list|detail>; '
+                'tools: list | config | os.<list|detail|categories> | network.<list|detail> | <tool_name>.config [--action get|set-key|delete-key|set-param|delete-param|set-note|delete|enable|disable]; '
                 'skills: list|detail; '
                 'meta: datetime | system.<info|tools-list|tools-detail|capabilities>; '
                 'help: (none, returns full docs)',
@@ -194,11 +195,16 @@ class ShepawCLI {
           'shepaw chat messages --agent <agent_id> --limit 20 --offset 0',
           // TOOLING
           'shepaw tools list',
+          'shepaw tools config',
           'shepaw tools os.list',
           'shepaw tools os.detail --name file_read',
           'shepaw tools os.categories --category file',
           'shepaw tools network.list',
           'shepaw tools network.detail --name web_search',
+          'shepaw tools web_search.config',
+          'shepaw tools web_search.config --action set-key --value sk-xxx',
+          'shepaw tools web_search.config --action set-param --key timeout --value 60',
+          'shepaw tools web_search.config --action disable',
           'shepaw skills list',
           'shepaw skills detail --name extract_pdf',
         ],

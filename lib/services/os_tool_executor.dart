@@ -10,6 +10,8 @@ import 'dart:io';
 import 'package:flutter/services.dart' show Clipboard, ClipboardData;
 import 'package:url_launcher/url_launcher.dart';
 
+import 'tool_config_service.dart';
+
 // ============================================================================
 // Risk levels
 // ============================================================================
@@ -255,51 +257,92 @@ String _truncate(String text, [int maxSize = _maxOutputSize]) {
 // ============================================================================
 
 /// Execute an OS tool by name. Returns a JSON-serialisable result map.
+///
+/// Before execution, global [ToolConfigService] is consulted to:
+/// 1. Apply parameter overrides (e.g. custom timeout).
+/// 2. Inject API key for tools that require one (e.g. web_search).
 Future<Map<String, dynamic>> runTool(
   String toolName,
   Map<String, dynamic> args,
 ) async {
   try {
+    // ── 注入全局工具配置 ──────────────────────────────────────────────────────
+    final resolvedArgs = await _injectToolConfig(toolName, args);
+
     switch (toolName) {
       case 'shell_exec':
-        return await _execShell(args);
+        return await _execShell(resolvedArgs);
       case 'file_read':
-        return await _execFileRead(args);
+        return await _execFileRead(resolvedArgs);
       case 'file_write':
-        return await _execFileWrite(args);
+        return await _execFileWrite(resolvedArgs);
       case 'file_delete':
-        return await _execFileDelete(args);
+        return await _execFileDelete(resolvedArgs);
       case 'file_move':
-        return await _execFileMove(args);
+        return await _execFileMove(resolvedArgs);
       case 'file_list':
-        return await _execFileList(args);
+        return await _execFileList(resolvedArgs);
       case 'app_open':
-        return await _execAppOpen(args);
+        return await _execAppOpen(resolvedArgs);
       case 'url_open':
-        return await _execUrlOpen(args);
+        return await _execUrlOpen(resolvedArgs);
       case 'screenshot':
-        return await _execScreenshot(args);
+        return await _execScreenshot(resolvedArgs);
       case 'clipboard_read':
-        return await _execClipboardRead(args);
+        return await _execClipboardRead(resolvedArgs);
       case 'clipboard_write':
-        return await _execClipboardWrite(args);
+        return await _execClipboardWrite(resolvedArgs);
       case 'system_info':
-        return await _execSystemInfo(args);
+        return await _execSystemInfo(resolvedArgs);
       case 'applescript_exec':
-        return await _execApplescript(args);
+        return await _execApplescript(resolvedArgs);
       case 'process_list':
-        return await _execProcessList(args);
+        return await _execProcessList(resolvedArgs);
       case 'process_kill':
-        return await _execProcessKill(args);
+        return await _execProcessKill(resolvedArgs);
       case 'process_detail':
-        return await _execProcessDetail(args);
+        return await _execProcessDetail(resolvedArgs);
       case 'network_connections':
-        return await _execNetworkConnections(args);
+        return await _execNetworkConnections(resolvedArgs);
       default:
         return {'success': false, 'error': 'Unknown tool: $toolName'};
     }
   } catch (e) {
     return {'success': false, 'error': 'Tool execution error: $e'};
+  }
+}
+
+/// 将工具全局配置注入到调用参数中。
+///
+/// 优先级：args 调用参数 > parameterOverrides（调用时的参数优先，
+/// 允许 LLM 在特定场景下传入不同值）。
+/// API Key 则总是从安全存储注入（不允许 LLM 覆盖）。
+Future<Map<String, dynamic>> _injectToolConfig(
+    String toolName, Map<String, dynamic> args) async {
+  try {
+    final configService = ToolConfigService.instance;
+    final config = await configService.getToolConfig(toolName);
+
+    // 1. 参数覆盖：仅填充 args 中不存在的 key
+    Map<String, dynamic> resolved = Map.from(args);
+    if (config?.parameterOverrides != null) {
+      for (final entry in config!.parameterOverrides!.entries) {
+        resolved.putIfAbsent(entry.key, () => entry.value);
+      }
+    }
+
+    // 2. API Key 注入（强制覆盖，不允许 LLM 传入密钥）
+    if (config?.hasApiKey == true) {
+      final apiKey = await configService.getToolApiKey(toolName);
+      if (apiKey != null && apiKey.isNotEmpty) {
+        resolved['api_key'] = apiKey;
+      }
+    }
+
+    return resolved;
+  } catch (_) {
+    // 配置注入失败不影响工具执行
+    return args;
   }
 }
 

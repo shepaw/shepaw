@@ -62,4 +62,32 @@ class SecureKeyManager {
     await _storage.delete(key: _encryptionKeyName);
     await _storage.delete(key: _encryptionIVName);
   }
+
+  // ── 通用 Secure KV 存储 ───────────────────────────────────────────────────
+
+  /// 安全存储任意字符串值
+  static Future<void> saveSecureValue(String key, String value) async {
+    await _storage.write(key: key, value: value);
+  }
+
+  /// 读取安全存储的字符串值
+  static Future<String?> getSecureValue(String key) async {
+    return _storage.read(key: key);
+  }
+
+  /// 删除安全存储的值
+  static Future<void> deleteSecureValue(String key) async {
+    await _storage.delete(key: key);
+  }
+
+  /// 读取所有安全存储的键值对
+  static Future<Map<String, String>> getAllSecureValues() async {
+    return _storage.readAll();
+  }
+
+  // ── 工具 API Key 命名规范 ─────────────────────────────────────────────────
+
+  /// 工具 API Key 的存储键名格式
+  static String toolApiKeyStorageKey(String toolName) =>
+      'tool_api_key_$toolName';
 }
