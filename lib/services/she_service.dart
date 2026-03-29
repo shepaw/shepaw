@@ -390,30 +390,32 @@ This is your understanding of yourself, which grows over time with your master. 
 
     if (config.enableProfileCommand) {
       commands
-        ..add(('shepaw profile query', 'Query master profile'))
-        ..add(('shepaw profile write', 'Write a profile field'));
+        ..add(('shepaw context profile.fields', 'List profile fields'))
+        ..add(('shepaw context profile.query', 'Query master profile'))
+        ..add(('shepaw context profile.write', 'Write a profile field'));
     }
     if (config.enableMemoryCommand) {
       commands
-        ..add(('shepaw memory query', 'Query specific memories by keys'))
-        ..add(('shepaw memory write', 'Update a memory value (full replacement)'))
-        ..add(('shepaw memory append', 'Append to a memory (e.g. long_term_memory)'));
+        ..add(('shepaw context memory.query', 'Query specific memories by keys'))
+        ..add(('shepaw context memory.write', 'Update a memory value (full replacement)'))
+        ..add(('shepaw context memory.append', 'Append to a memory (e.g. long_term_memory)'));
     }
     if (config.enableMessagesCommand) {
       commands
-        ..add(('shepaw agents list', 'List all agents'))
-        ..add(('shepaw agents channels', 'View channels of an agent'))
-        ..add(('shepaw agents messages', 'Read agent channel messages'))
-        ..add(('shepaw agents memory-query', "Query an agent's stored memories"))
-        ..add(('shepaw agents memory-write', 'Write a memory for an agent'))
-        ..add(('shepaw agents cognition-query', "Query an agent's cognition"))
-        ..add(('shepaw agents cognition-write', "Update an agent's cognition"))
-        ..add(('shepaw messages query', 'Query channel or agent messages'))
+        ..add(('shepaw context agents.list', 'List all agents'))
+        ..add(('shepaw context agents.channels', 'View channels of an agent'))
+        ..add(('shepaw context agents.messages', 'Read agent channel messages'))
+        ..add(('shepaw context agents.memory-query', "Query an agent's stored memories"))
+        ..add(('shepaw context agents.memory-write', 'Write a memory for an agent'))
+        ..add(('shepaw context agents.cognition-query', "Query an agent's cognition"))
+        ..add(('shepaw context agents.cognition-write', "Update an agent's cognition"))
+        ..add(('shepaw chat channels', 'List all conversation channels'))
+        ..add(('shepaw chat messages', 'Query channel or agent messages'))
         ..add(('shepaw skills list', 'List available skills'))
-        ..add(('shepaw system tools-detail', 'Get full parameter docs for any command'));
+        ..add(('shepaw meta system.tools-detail', 'Get full parameter docs for any command'));
     }
     if (config.enableAgentChatCommand) {
-      commands.add(('shepaw agents chat', 'Send a message to an agent as She'));
+      commands.add(('shepaw context agents.chat', 'Send a message to an agent as She'));
     }
 
     if (commands.isEmpty) return '';
@@ -421,14 +423,14 @@ This is your understanding of yourself, which grows over time with your master. 
     // Action warnings (shared by both modes)
     final actionWarnings = <String>[];
     if (config.enableAgentChatCommand) {
-      actionWarnings.add('- Master asks you to "send a message to an agent" → you must call `shepaw agents chat --id <agent_id> --message "..."` — saying "I have sent it" in text does nothing');
+      actionWarnings.add('- Master asks you to "send a message to an agent" → you must call `shepaw context agents.chat --id <agent_id> --message "..."` — saying "I have sent it" in text does nothing');
     }
     if (config.enableMemoryCommand || config.enableProfileCommand) {
-      actionWarnings.add('- Master asks you to "remember something" → you must call `shepaw memory append` (your own memory) or `shepaw profile write` (user profile) to actually save it');
+      actionWarnings.add('- Master asks you to "remember something" → you must call `shepaw context memory.append` (your own memory) or `shepaw context profile.write` (user profile) to actually save it');
     }
     if (config.enableMessagesCommand) {
-      actionWarnings.add('- When you learn important things about an agent, call `shepaw agents memory-write --id <agent_id>` to help it remember');
-      actionWarnings.add('- When you form an impression about an agent, call `shepaw agents cognition-write --id <agent_id> --type user --field impression` to share your understanding');
+      actionWarnings.add('- When you learn important things about an agent, call `shepaw context agents.memory-write --id <agent_id>` to help it remember');
+      actionWarnings.add('- When you form an impression about an agent, call `shepaw context agents.cognition-write --id <agent_id> --type user --field impression` to share your understanding');
     }
     actionWarnings.add('- Only a tool call returning `ok: true` means the operation succeeded; otherwise treat it as not executed');
     final warnings = actionWarnings.join('\n');
@@ -443,12 +445,18 @@ This is your understanding of yourself, which grows over time with your master. 
 
 You have a `shepaw` tool to query and write to the ShePaw local database. Call it on demand; no need to keep it in context when not in use.
 
+**Command Structure**: `shepaw <namespace> <sub-namespace>.<action> [flags]`
+- CONTEXT layer: `context profile.*`, `context memory.*`, `context agents.*`
+- COMMUNICATION layer: `chat channels`, `chat messages`
+- TOOLING layer: `skills list`
+- META layer: `meta system.tools-detail`, `meta system.info`
+
 **Quick Command Reference**:
 $lines
 
-**Need full parameter details?** Call `shepaw system tools-detail --name <command>` (e.g. `shepaw system tools-detail --name "shepaw profile write"`).
+**Need full parameter details?** Call `shepaw meta system.tools-detail --name <command>` to get complete parameter docs.
 
-**When to use**: Proactively call when you need to view the full master profile, query agent details, or look up message history. Once you learn something about your master, immediately write it with `shepaw profile write`.
+**When to use**: Proactively call when you need to view the full master profile, query agent details, or look up message history. Once you learn something about your master, immediately write it with `shepaw context profile.write`.
 
 **⚠️ Important: Action commands must be executed via tool call, not described in text**
 $warnings''';
@@ -458,30 +466,32 @@ $warnings''';
     final rows = <String>[];
     if (config.enableProfileCommand) {
       rows
-        ..add('| `shepaw profile query` | Query master profile |')
-        ..add('| `shepaw profile write --field name --value xxx` | Write a profile field |');
+        ..add('| `shepaw context profile.fields` | List available profile fields |')
+        ..add('| `shepaw context profile.query` | Query master profile |')
+        ..add('| `shepaw context profile.write --field name --value xxx` | Write a profile field |');
     }
     if (config.enableMemoryCommand) {
       rows
-        ..add('| `shepaw memory query --keys soul,user_info` | Query specific memories |')
-        ..add('| `shepaw memory write --key soul --value "..."` | Update self-awareness |')
-        ..add('| `shepaw memory append --key long_term_memory --value "..."` | Append to long-term memory |');
+        ..add('| `shepaw context memory.query --keys soul,user_info` | Query specific memories |')
+        ..add('| `shepaw context memory.write --key soul --value "..."` | Update self-awareness |')
+        ..add('| `shepaw context memory.append --key long_term_memory --value "..."` | Append to long-term memory |');
     }
     if (config.enableMessagesCommand) {
       rows
-        ..add('| `shepaw agents list` | List all agents |')
-        ..add('| `shepaw agents channels --id <agent_id>` | View channels of an agent |')
-        ..add('| `shepaw agents messages --id <agent_id> [--channel <id>] [--limit 20] [--offset 0]` | Read agent channel messages (supports pagination) |')
-        ..add('| `shepaw agents memory-query --id <agent_id> [--keywords k1,k2] [--limit 20]` | Query an agent\'s stored memories |')
-        ..add('| `shepaw agents memory-write --id <agent_id> --content "..." [--type conversation] [--keywords k1,k2]` | Write a memory for an agent |')
-        ..add('| `shepaw agents cognition-query --id <agent_id> [--type self|user]` | Query an agent\'s cognition (soul/impression/notes) |')
-        ..add('| `shepaw agents cognition-write --id <agent_id> --type self --soul "..." OR --type user --field impression|notes --value "..."` | Update an agent\'s cognition |')
-        ..add('| `shepaw messages query --channel <id>` | Query channel messages |')
-        ..add('| `shepaw messages query --agent <agent_id> [--limit 20] [--offset 0]` | Query messages for a specific agent (supports pagination) |')
-        ..add('| `shepaw skills list` | List skills |');
+        ..add('| `shepaw context agents.list` | List all agents |')
+        ..add('| `shepaw context agents.channels --id <agent_id>` | View channels of an agent |')
+        ..add('| `shepaw context agents.messages --id <agent_id> [--channel <id>] [--limit 20] [--offset 0]` | Read agent channel messages (supports pagination) |')
+        ..add('| `shepaw context agents.memory-query --id <agent_id> [--keywords k1,k2] [--limit 20]` | Query an agent\'s stored memories |')
+        ..add('| `shepaw context agents.memory-write --id <agent_id> --content "..." [--type conversation] [--keywords k1,k2]` | Write a memory for an agent |')
+        ..add('| `shepaw context agents.cognition-query --id <agent_id> [--type self|user]` | Query an agent\'s cognition (soul/impression/notes) |')
+        ..add('| `shepaw context agents.cognition-write --id <agent_id> --type self --soul "..." OR --type user --field impression|notes --value "..."` | Update an agent\'s cognition |')
+        ..add('| `shepaw chat channels` | List all conversation channels |')
+        ..add('| `shepaw chat messages --channel <id>` | Query channel messages |')
+        ..add('| `shepaw chat messages --agent <agent_id> [--limit 20] [--offset 0]` | Query messages for a specific agent (supports pagination) |')
+        ..add('| `shepaw skills list` | List available skills |');
     }
     if (config.enableAgentChatCommand) {
-      rows.add('| `shepaw agents chat --id <agent_id> --message "..."` | Send a message to an agent as She |');
+      rows.add('| `shepaw context agents.chat --id <agent_id> --message "..."` | Send a message to an agent as She |');
     }
 
     final table = rows.join('\n');
@@ -491,13 +501,19 @@ $warnings''';
 
 You have a `shepaw` tool to query and write to the ShePaw local database. Call it on demand; no need to keep it in context when not in use.
 
-**Quick Reference** (call `shepaw help` for full usage):
+**Command Structure**: `shepaw <namespace> <sub-namespace>.<action> [flags]`
+- CONTEXT layer: `context profile.*`, `context memory.*`, `context agents.*`
+- COMMUNICATION layer: `chat channels`, `chat messages`
+- TOOLING layer: `skills list`
+- META layer: `meta system.tools-detail`, `meta system.info`
+
+**Complete Reference** (call `shepaw help` for full usage):
 
 | Command | Description |
 |---------|-------------|
 $table
 
-**When to use**: Proactively call when you need to view the full master profile, query agent details, or look up message history. Once you learn something about your master, immediately write it with `shepaw profile write`.
+**When to use**: Proactively call when you need to view the full master profile, query agent details, or look up message history. Once you learn something about your master, immediately write it with `shepaw context profile.write`.
 
 **⚠️ Important: Action commands must be executed via tool call, not described in text**
 $warnings''';

@@ -427,6 +427,59 @@ class OsToolRegistry {
       supportedPlatforms: _desktop,
       category: 'process',
     ),
+
+    // --- Network ---
+    OsToolDefinition(
+      name: 'web_search',
+      description:
+          'Search the web and return a list of relevant results (title, URL, snippet). '
+          'Use when the user asks to look something up, find information, or research a topic online.',
+      parameterSchema: {
+        'type': 'object',
+        'properties': {
+          'query': {
+            'type': 'string',
+            'description': 'The search query',
+          },
+          'limit': {
+            'type': 'integer',
+            'description': 'Maximum number of results to return (default: 10)',
+          },
+        },
+        'required': ['query'],
+      },
+      defaultRiskLevel: 'safe',
+      supportedPlatforms: _all,
+      category: 'network',
+    ),
+    OsToolDefinition(
+      name: 'web_fetch',
+      description:
+          'Fetch the content of a URL and return it as plain text or markdown. '
+          'Use when the user asks to read, summarize, or extract information from a specific webpage.',
+      parameterSchema: {
+        'type': 'object',
+        'properties': {
+          'url': {
+            'type': 'string',
+            'description': 'The URL to fetch',
+          },
+          'format': {
+            'type': 'string',
+            'enum': ['text', 'markdown', 'html'],
+            'description': 'Output format (default: markdown)',
+          },
+          'timeout': {
+            'type': 'integer',
+            'description': 'Request timeout in seconds (default: 30)',
+          },
+        },
+        'required': ['url'],
+      },
+      defaultRiskLevel: 'safe',
+      supportedPlatforms: _all,
+      category: 'network',
+    ),
   ];
 
   // ---------------------------------------------------------------------------
@@ -549,6 +602,7 @@ For file/command operations, prefer using these tools over describing steps in t
     'clipboard': 'Clipboard',
     'macos': 'macOS Only',
     'process': 'Process Management',
+    'network': 'Network & Web',
   };
 
   /// Returns tools grouped by category, preserving definition order.

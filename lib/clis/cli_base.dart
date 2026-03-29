@@ -27,23 +27,65 @@ abstract class CliCommand {
 }
 
 /// 命名空间的抽象基类，管理一组子命令
+///
+/// 支持两种模式：
+///
+/// 1. **扁平模式**（单层命名空间）
+///    shepaw <namespace> <subcommand> [flags]
+///    — 实现 [commands]，[subNamespaces] 返回空 map（默认）
+///
+/// 2. **分层模式**（嵌套 sub-namespace）
+///    shepaw <namespace> <sub-namespace>.<action> [flags]
+///    — 实现 [subNamespaces]，[commands] 返回空 map（默认）
+///    — subcommand 格式：`profile.query`、`memory.write`
+///
+/// 分层模式示例：
+/// ```
+/// shepaw context profile.query
+/// shepaw context memory.write --key soul --value "..."
+/// shepaw context agents.list --status online
+/// ```
 abstract class CliNamespace {
-  /// 命名空间名（如 "profile", "memory", "agents"）
+  /// 命名空间名（如 "profile", "memory", "context"）
   String get namespace;
 
   /// 命名空间描述
   String get description;
 
-  /// 所有子命令映射（无子命令的 namespace 返回空 map）
-  Map<String, CliCommand> get commands;
+  /// 所有扁平子命令（单层模式）；分层模式返回空 map
+  Map<String, CliCommand> get commands => {};
 
-  /// 执行子命令（可被 namespace 覆盖以支持无子命令的直接执行）
-  Future<Map<String, dynamic>> execute(String subcommand, Map<String, String> flags) async {
-    // 空字符串或 "help" -> 返回帮助
+  /// 嵌套的 sub-namespace（分层模式）；扁平模式返回空 map
+  Map<String, CliNamespace> get subNamespaces => {};
+
+  /// 执行子命令
+  ///
+  /// - 空字符串或 "help" → 返回帮助
+  /// - 含 "." 的字符串（如 "profile.query"）→ 路由到 sub-namespace
+  /// - 其他 → 在 [commands] 中查找
+  Future<Map<String, dynamic>> execute(
+      String subcommand, Map<String, String> flags) async {
     if (subcommand.isEmpty || subcommand == 'help') {
       return getHelp();
     }
 
+    // 分层路由：格式 "<sub-namespace>.<action>"
+    if (subcommand.contains('.')) {
+      final dot = subcommand.indexOf('.');
+      final subNs = subcommand.substring(0, dot);
+      final action = subcommand.substring(dot + 1);
+      final ns = subNamespaces[subNs];
+      if (ns == null) {
+        return {
+          'error': 'Unknown sub-namespace: $subNs',
+          'usage': 'shepaw $namespace <sub-namespace>.<action> [flags]',
+          'available_sub_namespaces': subNamespaces.keys.toList(),
+        };
+      }
+      return ns.execute(action, flags);
+    }
+
+    // 扁平路由：直接查 commands
     final cmd = commands[subcommand];
     if (cmd == null) {
       return _unknownSubcommand(subcommand);
@@ -54,17 +96,19 @@ abstract class CliNamespace {
   /// 生成帮助信息（子类必须实现）
   Map<String, dynamic> getHelp();
 
-  /// 转换为 LLM help entry（默认从 commands 生成，可覆盖）
-  Map<String, dynamic> toHelpEntry() => {
-    'subcommands': {
-      for (final entry in commands.entries) entry.key: entry.value.description,
-    },
-  };
-
   /// 未知子命令错误
-  Map<String, dynamic> _unknownSubcommand(String sub) => {
-    'error': 'Unknown subcommand: $sub',
-    'usage': 'shepaw $namespace <${commands.keys.join("|")}>',
-    'available_subcommands': commands.keys.toList(),
-  };
+  Map<String, dynamic> _unknownSubcommand(String sub) {
+    if (subNamespaces.isNotEmpty) {
+      return {
+        'error': 'Unknown subcommand: $sub',
+        'usage': 'shepaw $namespace <sub-namespace>.<action> [flags]',
+        'available_sub_namespaces': subNamespaces.keys.toList(),
+      };
+    }
+    return {
+      'error': 'Unknown subcommand: $sub',
+      'usage': 'shepaw $namespace <${commands.keys.join("|")}>',
+      'available_subcommands': commands.keys.toList(),
+    };
+  }
 }

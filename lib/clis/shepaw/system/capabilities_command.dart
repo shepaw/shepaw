@@ -16,16 +16,12 @@ class CapabilitiesCommand extends CliCommand {
   Future<Map<String, dynamic>> execute(Map<String, String> flags) async {
     return {
       'cli_namespaces': [
-        'profile',
-        'memory',
-        'agents',
-        'channels',
-        'messages',
-        'skills',
-        'tools',
-        'datetime',
-        'system',
-        'help'
+        'context (profile.* / memory.* / agents.*)',
+        'chat (channels / messages)',
+        'tools (list / detail / categories)',
+        'skills (list / detail)',
+        'meta (datetime / system.*)',
+        'help',
       ],
       'tool_categories': {
         'ui': UIComponentRegistry.instance.components
@@ -35,8 +31,8 @@ class CapabilitiesCommand extends CliCommand {
         'skills': SkillRegistry.instance.skills.length,
         'models': ModelRegistry.instance.definitions.length,
       },
-      'hint': 'Call "shepaw system tools-list" for detailed tool inventory, '
-          'or "shepaw system tools-detail --name <tool-name>" for any tool\'s full docs',
+      'hint': 'Call "shepaw meta system.tools-list" for detailed tool inventory, '
+          'or "shepaw meta system.tools-detail --name <tool-name>" for any tool\'s full docs',
     };
   }
 }
