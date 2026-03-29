@@ -12,6 +12,20 @@ class GetCommand extends CliCommand {
   String get description => 'Get agent details, --id <agent_id>';
 
   @override
+  Map<String, dynamic> getHelp() => {
+        'command': name,
+        'description': description,
+        'flags': {
+          'id': {
+            'description': 'Agent ID to retrieve details for',
+            'required': true,
+            'type': 'string',
+          },
+        },
+        'usage': 'shepaw context agents.get --id <agent_id>',
+      };
+
+  @override
   Future<Map<String, dynamic>> execute(Map<String, String> flags) async {
     final id = flags['id'];
     if (id == null || id.isEmpty) {

@@ -17,6 +17,40 @@ class ChatMessagesCommand extends CliCommand {
       'Query messages, --channel <id> or --agent <agent_id>, optional --limit N --offset N';
 
   @override
+  Map<String, dynamic> getHelp() => {
+        'command': name,
+        'description': description,
+        'flags': {
+          'channel': {
+            'description': 'Channel ID to query messages from',
+            'required': 'one of channel or agent required',
+            'type': 'string',
+          },
+          'agent': {
+            'description': 'Agent ID — auto-finds the most recent DM channel with this agent',
+            'required': 'one of channel or agent required',
+            'type': 'string',
+          },
+          'limit': {
+            'description': 'Maximum number of messages to return',
+            'required': false,
+            'type': 'integer',
+            'default': '20',
+          },
+          'offset': {
+            'description': 'Message offset for pagination',
+            'required': false,
+            'type': 'integer',
+            'default': '0',
+          },
+        },
+        'examples': [
+          'shepaw chat messages --channel abc123 --limit 10',
+          'shepaw chat messages --agent <agent_id> --limit 20 --offset 0',
+        ],
+      };
+
+  @override
   Future<Map<String, dynamic>> execute(Map<String, String> flags) async {
     String? channelId = flags['channel'];
 

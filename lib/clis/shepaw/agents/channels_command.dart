@@ -12,6 +12,20 @@ class ChannelsCommand extends CliCommand {
   String get description => 'List agent conversation channels, --id <agent_id>';
 
   @override
+  Map<String, dynamic> getHelp() => {
+        'command': name,
+        'description': description,
+        'flags': {
+          'id': {
+            'description': 'Agent ID to list channels for',
+            'required': true,
+            'type': 'string',
+          },
+        },
+        'usage': 'shepaw context agents.channels --id <agent_id>',
+      };
+
+  @override
   Future<Map<String, dynamic>> execute(Map<String, String> flags) async {
     final id = flags['id'];
     if (id == null || id.isEmpty) {

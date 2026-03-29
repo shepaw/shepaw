@@ -15,6 +15,39 @@ class MemoryWriteCommand extends CliCommand {
       'Write agent memory, --id <agent_id> --content "..." [--type conversation|knowledge|behavior|event|emotion] [--keywords k1,k2]';
 
   @override
+  Map<String, dynamic> getHelp() => {
+        'command': name,
+        'description': description,
+        'flags': {
+          'id': {
+            'description': 'Agent ID to write memory for',
+            'required': true,
+            'type': 'string',
+          },
+          'content': {
+            'description': 'Memory text to store',
+            'required': true,
+            'type': 'string',
+          },
+          'type': {
+            'description': 'Memory type for categorization',
+            'required': false,
+            'type': 'string',
+            'enum': ['conversation', 'knowledge', 'behavior', 'event', 'emotion'],
+            'default': 'conversation',
+          },
+          'keywords': {
+            'description': 'Comma-separated keywords for future retrieval',
+            'required': false,
+            'type': 'string',
+            'example': 'user,preference,hobby',
+          },
+        },
+        'usage':
+            'shepaw context agents.memory-write --id <agent_id> --content "..." [--type conversation] [--keywords k1,k2]',
+      };
+
+  @override
   Future<Map<String, dynamic>> execute(Map<String, String> flags) async {
     final id = flags['id'];
     if (id == null || id.isEmpty) {

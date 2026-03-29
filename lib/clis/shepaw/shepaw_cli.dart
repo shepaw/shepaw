@@ -84,7 +84,7 @@ class ShepawCLI {
       '[COMMUNICATION] chat (channels: list channels, messages: query messages); '
       '[TOOLING] tools (os.list/detail/categories | network.list/detail), skills (LLM skills: list/detail); '
       '[META] meta (datetime | system.info/tools-list/tools-detail/capabilities), help (full docs). '
-      'Run "shepaw help" for complete command reference.';
+      'Add flags={"help":""} to any call for contextual help. Run "shepaw help" for complete reference.';
 
   Map<String, dynamic> _parameterSchema() => {
         'type': 'object',
@@ -109,6 +109,7 @@ class ShepawCLI {
             'type': 'object',
             'description':
                 'Command parameters as key-value pairs. '
+                'Pass {"help": ""} to get help for any namespace, sub-namespace, or command. '
                 'Common flags: name (tool/skill name), field (profile field), value (write value), '
                 'fields (comma-separated list), key (memory key), id (agent ID), '
                 'status (online|offline|all), channel (channel ID), category (tool category), '

@@ -11,6 +11,21 @@ class SkillsDetailCommand extends CliCommand {
   String get description => 'Get full documentation for a specific skill';
 
   @override
+  Map<String, dynamic> getHelp() => {
+        'command': name,
+        'description': description,
+        'flags': {
+          'name': {
+            'description': 'Skill tool_name or display_name to get documentation for',
+            'required': true,
+            'type': 'string',
+          },
+        },
+        'usage': 'shepaw skills detail --name <skill_name>',
+        'note': 'Use "shepaw skills list" to see all available skills',
+      };
+
+  @override
   Future<Map<String, dynamic>> execute(Map<String, String> flags) async {
     final name = flags['name'];
     if (name == null || name.isEmpty) {

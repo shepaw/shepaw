@@ -14,6 +14,21 @@ class ToolsDetailCommand extends CliCommand {
       'Get full parameter documentation for a specific tool (pass --name <tool-name>)';
 
   @override
+  Map<String, dynamic> getHelp() => {
+        'command': name,
+        'description': description,
+        'flags': {
+          'name': {
+            'description': 'Tool name to get full parameter documentation for',
+            'required': true,
+            'type': 'string',
+          },
+        },
+        'usage': 'shepaw meta system.tools-detail --name <tool-name>',
+        'note': 'Use "shepaw meta system.tools-list" to see all available tools',
+      };
+
+  @override
   Future<Map<String, dynamic>> execute(Map<String, String> flags) async {
     final toolName = flags['name'] ?? '';
     if (toolName.isEmpty) {

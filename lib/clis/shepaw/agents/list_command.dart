@@ -12,6 +12,22 @@ class ListCommand extends CliCommand {
   String get description => 'List agents, optional --status <online|offline|all>';
 
   @override
+  Map<String, dynamic> getHelp() => {
+        'command': name,
+        'description': description,
+        'flags': {
+          'status': {
+            'description': 'Filter agents by status',
+            'required': false,
+            'type': 'string',
+            'enum': ['online', 'offline', 'all'],
+            'default': 'all',
+          },
+        },
+        'usage': 'shepaw context agents.list [--status online|offline|all]',
+      };
+
+  @override
   Future<Map<String, dynamic>> execute(Map<String, String> flags) async {
     var agents = await _db.getAllRemoteAgents();
     final statusFilter = flags['status'];

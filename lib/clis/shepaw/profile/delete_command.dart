@@ -10,6 +10,21 @@ class DeleteCommand extends CliCommand {
   String get description => 'Delete field, --field <key>';
 
   @override
+  Map<String, dynamic> getHelp() => {
+        'command': name,
+        'description': description,
+        'flags': {
+          'field': {
+            'description': 'Profile field key to delete',
+            'required': true,
+            'type': 'string',
+            'example': 'notes',
+          },
+        },
+        'usage': 'shepaw context profile.delete --field <key>',
+      };
+
+  @override
   Future<Map<String, dynamic>> execute(Map<String, String> flags) async {
     final field = flags['field'];
     if (field == null || field.isEmpty) {

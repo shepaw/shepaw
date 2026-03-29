@@ -13,6 +13,34 @@ class WriteCommand extends CliCommand {
   String get description => 'Write memory, --key <key> --value <val>';
 
   @override
+  Map<String, dynamic> getHelp() => {
+        'command': name,
+        'description': description,
+        'flags': {
+          'key': {
+            'description': 'Memory key to write (replaces existing value)',
+            'required': true,
+            'type': 'string',
+            'available_keys': [
+              'soul (self-awareness — use write to replace entire entry)',
+              'heartbeat (last conversation summary)',
+              'user_info (overall impression of the user)',
+              'capabilities (capability index)',
+              'self_notes (prefer append command for incremental updates)',
+              'long_term_memory (prefer append command for incremental updates)',
+            ],
+          },
+          'value': {
+            'description': 'Value to set (replaces existing content)',
+            'required': true,
+            'type': 'string',
+          },
+        },
+        'usage': 'shepaw context memory.write --key <key> --value "..."',
+        'note': 'For incremental updates to self_notes or long_term_memory, use the append command instead',
+      };
+
+  @override
   Future<Map<String, dynamic>> execute(Map<String, String> flags) async {
     final key = flags['key'];
     final value = flags['value'];

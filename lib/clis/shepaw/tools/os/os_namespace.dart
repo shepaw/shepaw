@@ -66,6 +66,14 @@ class _OsListCommand extends CliCommand {
   String get description => 'List all OS tools available on current platform';
 
   @override
+  Map<String, dynamic> getHelp() => {
+        'command': name,
+        'description': description,
+        'flags': {},
+        'usage': 'shepaw tools os.list',
+      };
+
+  @override
   Future<Map<String, dynamic>> execute(Map<String, String> flags) async {
     final registry = OsToolRegistry.instance;
     final platform = registry.currentPlatform;
@@ -94,6 +102,21 @@ class _OsDetailCommand extends CliCommand {
   String get name => 'detail';
   @override
   String get description => 'Get full parameter docs for a specific OS tool';
+
+  @override
+  Map<String, dynamic> getHelp() => {
+        'command': name,
+        'description': description,
+        'flags': {
+          'name': {
+            'description': 'OS tool name to get documentation for',
+            'required': true,
+            'type': 'string',
+          },
+        },
+        'usage': 'shepaw tools os.detail --name <tool_name>',
+        'note': 'Use "shepaw tools os.list" to see available OS tools',
+      };
 
   @override
   Future<Map<String, dynamic>> execute(Map<String, String> flags) async {
@@ -130,6 +153,21 @@ class _OsCategoriesCommand extends CliCommand {
   String get name => 'categories';
   @override
   String get description => 'Browse OS tools by category';
+
+  @override
+  Map<String, dynamic> getHelp() => {
+        'command': name,
+        'description': description,
+        'flags': {
+          'category': {
+            'description': 'Filter by category (omit to list all categories)',
+            'required': false,
+            'type': 'string',
+            'enum': ['command', 'file', 'app', 'clipboard', 'process', 'macos'],
+          },
+        },
+        'usage': 'shepaw tools os.categories [--category file|command|app|...]',
+      };
 
   @override
   Future<Map<String, dynamic>> execute(Map<String, String> flags) async {

@@ -54,6 +54,14 @@ class _NetworkListCommand extends CliCommand {
   String get description => 'List all network and web tools';
 
   @override
+  Map<String, dynamic> getHelp() => {
+        'command': name,
+        'description': description,
+        'flags': {},
+        'usage': 'shepaw tools network.list',
+      };
+
+  @override
   Future<Map<String, dynamic>> execute(Map<String, String> flags) async {
     final registry = OsToolRegistry.instance;
     final platform = registry.currentPlatform;
@@ -81,6 +89,21 @@ class _NetworkDetailCommand extends CliCommand {
   String get name => 'detail';
   @override
   String get description => 'Get full parameter docs for a specific network tool';
+
+  @override
+  Map<String, dynamic> getHelp() => {
+        'command': name,
+        'description': description,
+        'flags': {
+          'name': {
+            'description': 'Network tool name to get documentation for',
+            'required': true,
+            'type': 'string',
+          },
+        },
+        'usage': 'shepaw tools network.detail --name <tool_name>',
+        'note': 'Use "shepaw tools network.list" to see available network tools',
+      };
 
   @override
   Future<Map<String, dynamic>> execute(Map<String, String> flags) async {

@@ -22,6 +22,13 @@ abstract class CliCommand {
   /// flags: 从 CLI 解析的键值对（如 {field: "name", value: "小明"}）
   Future<Map<String, dynamic>> execute(Map<String, String> flags);
 
+  /// 返回命令帮助信息
+  /// 子类可覆盖以提供详细的 flags 文档
+  Map<String, dynamic> getHelp() => {
+        'command': name,
+        'description': description,
+      };
+
   /// i18n 支持预留（当前返回 key，便于后续扩展）
   String getMessage(String key, {Map<String, String>? args}) => key;
 }
@@ -60,13 +67,26 @@ abstract class CliNamespace {
 
   /// 执行子命令
   ///
+  /// - --help / -h flag → 返回当前层级帮助
   /// - 空字符串或 "help" → 返回帮助
+  /// - 直接匹配 sub-namespace 名（如 "profile"）→ 返回该 sub-namespace 帮助
   /// - 含 "." 的字符串（如 "profile.query"）→ 路由到 sub-namespace
   /// - 其他 → 在 [commands] 中查找
   Future<Map<String, dynamic>> execute(
       String subcommand, Map<String, String> flags) async {
+    // --help / -h flag → 返回当前命名空间帮助
+    if (flags.containsKey('help') || flags.containsKey('h')) {
+      return getHelp();
+    }
+
     if (subcommand.isEmpty || subcommand == 'help') {
       return getHelp();
+    }
+
+    // 直接访问 sub-namespace（如 "profile"）→ 返回该 sub-namespace 帮助
+    final directNs = subNamespaces[subcommand];
+    if (directNs != null) {
+      return directNs.getHelp();
     }
 
     // 分层路由：格式 "<sub-namespace>.<action>"
