@@ -11,6 +11,7 @@ import 'package:flutter/services.dart' show Clipboard, ClipboardData;
 import 'package:url_launcher/url_launcher.dart';
 
 import 'tool_config_service.dart';
+import 'network/network_service.dart';
 
 // ============================================================================
 // Risk levels
@@ -304,6 +305,16 @@ Future<Map<String, dynamic>> runTool(
         return await _execProcessDetail(resolvedArgs);
       case 'network_connections':
         return await _execNetworkConnections(resolvedArgs);
+      case 'web_search':
+        final query = resolvedArgs['query'] as String? ?? '';
+        final limit = (resolvedArgs['limit'] as int?) ?? 10;
+        return await NetworkService.instance.webSearch.search(query, limit: limit);
+      case 'web_fetch':
+        final url = resolvedArgs['url'] as String? ?? '';
+        final format = (resolvedArgs['format'] as String?) ?? 'markdown';
+        final timeoutSecs = (resolvedArgs['timeout'] as int?) ?? 30;
+        return await NetworkService.instance.webFetch.fetchContent(url,
+            format: format, timeoutSecs: timeoutSecs);
       default:
         return {'success': false, 'error': 'Unknown tool: $toolName'};
     }
