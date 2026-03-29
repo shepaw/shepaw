@@ -8,6 +8,7 @@ import 'channels_namespace.dart';
 import 'skills_namespace.dart';
 import 'tools_namespace.dart';
 import 'datetime_namespace.dart';
+import 'system/system_namespace.dart';
 import 'help_namespace.dart';
 import '../../services/logger_service.dart';
 
@@ -48,6 +49,7 @@ class ShepawCLI {
     'skills': SkillsNamespace.instance,
     'tools': ToolsNamespace.instance,
     'datetime': DatetimeNamespace.instance,
+    'system': SystemNamespace.instance,
     'help': HelpNamespace.instance,
   };
 

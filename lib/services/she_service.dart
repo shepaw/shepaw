@@ -240,7 +240,7 @@ class SheService {
   }
 
   /// Section ⑥: user-profile snapshot (layered injection).
-  Future<String> buildProfileSnapshotBlock() async {
+  Future<String> buildProfileSnapshotBlock({String level = 'extended'}) async {
     final profile = await _cognition.getAllUserProfile();
     final userInfo =
         await _sheMemoryDb.getSheMemory('user_info') ?? '(not yet known)';
@@ -248,7 +248,8 @@ class SheService {
         await _sheMemoryDb.getSheMemory('long_term_memory') ?? '(no memories yet)';
     final heartbeat =
         await _sheMemoryDb.getSheMemory('heartbeat') ?? '(no record)';
-    return _buildProfileSnapshot(profile, userInfo, longTermMemory, heartbeat);
+    return _buildProfileSnapshot(profile, userInfo, longTermMemory, heartbeat,
+        level: level);
   }
 
   /// Section ⑦' (optional): She's self-cognition from minds.db.
@@ -383,8 +384,78 @@ This is your understanding of yourself, which grows over time with your master. 
 
   // ignore: unused_element  (called via public buildShepawCliBlock)
   static String _pawCliPrompt([SheStackConfig config = const SheStackConfig()]) {
-    final rows = <String>[];
+    // Build the command list shared by both modes
+    // Each entry: (command, description)
+    final commands = <(String, String)>[];
 
+    if (config.enableProfileCommand) {
+      commands
+        ..add(('shepaw profile query', 'Query master profile'))
+        ..add(('shepaw profile write', 'Write a profile field'));
+    }
+    if (config.enableMemoryCommand) {
+      commands
+        ..add(('shepaw memory query', 'Query specific memories by keys'))
+        ..add(('shepaw memory write', 'Update a memory value (full replacement)'))
+        ..add(('shepaw memory append', 'Append to a memory (e.g. long_term_memory)'));
+    }
+    if (config.enableMessagesCommand) {
+      commands
+        ..add(('shepaw agents list', 'List all agents'))
+        ..add(('shepaw agents channels', 'View channels of an agent'))
+        ..add(('shepaw agents messages', 'Read agent channel messages'))
+        ..add(('shepaw agents memory-query', "Query an agent's stored memories"))
+        ..add(('shepaw agents memory-write', 'Write a memory for an agent'))
+        ..add(('shepaw agents cognition-query', "Query an agent's cognition"))
+        ..add(('shepaw agents cognition-write', "Update an agent's cognition"))
+        ..add(('shepaw messages query', 'Query channel or agent messages'))
+        ..add(('shepaw skills list', 'List available skills'))
+        ..add(('shepaw system tools-detail', 'Get full parameter docs for any command'));
+    }
+    if (config.enableAgentChatCommand) {
+      commands.add(('shepaw agents chat', 'Send a message to an agent as She'));
+    }
+
+    if (commands.isEmpty) return '';
+
+    // Action warnings (shared by both modes)
+    final actionWarnings = <String>[];
+    if (config.enableAgentChatCommand) {
+      actionWarnings.add('- Master asks you to "send a message to an agent" → you must call `shepaw agents chat --id <agent_id> --message "..."` — saying "I have sent it" in text does nothing');
+    }
+    if (config.enableMemoryCommand || config.enableProfileCommand) {
+      actionWarnings.add('- Master asks you to "remember something" → you must call `shepaw memory append` (your own memory) or `shepaw profile write` (user profile) to actually save it');
+    }
+    if (config.enableMessagesCommand) {
+      actionWarnings.add('- When you learn important things about an agent, call `shepaw agents memory-write --id <agent_id>` to help it remember');
+      actionWarnings.add('- When you form an impression about an agent, call `shepaw agents cognition-write --id <agent_id> --type user --field impression` to share your understanding');
+    }
+    actionWarnings.add('- Only a tool call returning `ok: true` means the operation succeeded; otherwise treat it as not executed');
+    final warnings = actionWarnings.join('\n');
+
+    // ── Summary mode (default) ──────────────────────────────────────────────
+    if (config.shepawCliSummaryMode) {
+      final lines = commands
+          .map((c) => '- `${c.$1}` — ${c.$2}')
+          .join('\n');
+      return '''
+## shepaw Tool (Your Data Access CLI)
+
+You have a `shepaw` tool to query and write to the ShePaw local database. Call it on demand; no need to keep it in context when not in use.
+
+**Quick Command Reference**:
+$lines
+
+**Need full parameter details?** Call `shepaw system tools-detail --name <command>` (e.g. `shepaw system tools-detail --name "shepaw profile write"`).
+
+**When to use**: Proactively call when you need to view the full master profile, query agent details, or look up message history. Once you learn something about your master, immediately write it with `shepaw profile write`.
+
+**⚠️ Important: Action commands must be executed via tool call, not described in text**
+$warnings''';
+    }
+
+    // ── Full mode ───────────────────────────────────────────────────────────
+    final rows = <String>[];
     if (config.enableProfileCommand) {
       rows
         ..add('| `shepaw profile query` | Query master profile |')
@@ -413,23 +484,7 @@ This is your understanding of yourself, which grows over time with your master. 
       rows.add('| `shepaw agents chat --id <agent_id> --message "..."` | Send a message to an agent as She |');
     }
 
-    if (rows.isEmpty) return '';
-
     final table = rows.join('\n');
-
-    final actionWarnings = <String>[];
-    if (config.enableAgentChatCommand) {
-      actionWarnings.add('- Master asks you to "send a message to an agent" → you must call `shepaw agents chat --id <agent_id> --message "..."` — saying "I have sent it" in text does nothing');
-    }
-    if (config.enableMemoryCommand || config.enableProfileCommand) {
-      actionWarnings.add('- Master asks you to "remember something" → you must call `shepaw memory append` (your own memory) or `shepaw profile write` (user profile) to actually save it');
-    }
-    if (config.enableMessagesCommand) {
-      actionWarnings.add('- When you learn important things about an agent, call `shepaw agents memory-write --id <agent_id>` to help it remember');
-      actionWarnings.add('- When you form an impression about an agent, call `shepaw agents cognition-write --id <agent_id> --type user --field impression` to share your understanding');
-    }
-    actionWarnings.add('- Only a tool call returning `ok: true` means the operation succeeded; otherwise treat it as not executed');
-    final warnings = actionWarnings.join('\n');
 
     return '''
 ## shepaw Tool (Your Data Access CLI)
@@ -498,8 +553,9 @@ Your understanding of your master builds gradually over time — like a friendsh
     Map<String, String> profile,
     String userInfo,
     String longTermMemory,
-    String heartbeat,
-  ) {
+    String heartbeat, {
+    String level = 'extended',
+  }) {
     final buf = StringBuffer();
     buf.writeln('## About Your Master');
 
@@ -512,34 +568,36 @@ Your understanding of your master builds gradually over time — like a friendsh
     }
     buf.writeln('[Basic Info] ${coreLines.join(' | ')}');
 
-    // Extended layer: only show fields with values, compact layout
-    final extLines = <String>[];
-    for (final key in _extendedProfileKeys) {
-      final value = profile[key]?.trim();
-      if (value != null && value.isNotEmpty) {
-        final label = _profileLabels[key] ?? key;
-        extLines.add('$label: $value');
+    // Extended layer: only show fields with values, compact layout (skipped if level == 'core')
+    if (level != 'core') {
+      final extLines = <String>[];
+      for (final key in _extendedProfileKeys) {
+        final value = profile[key]?.trim();
+        if (value != null && value.isNotEmpty) {
+          final label = _profileLabels[key] ?? key;
+          extLines.add('$label: $value');
+        }
       }
-    }
-    // User-defined non-standard fields
-    final knownKeys = {
-      ..._coreProfileKeys,
-      ..._extendedProfileKeys,
-      _profileInitKey,
-    };
-    for (final entry in profile.entries) {
-      if (!knownKeys.contains(entry.key) && entry.value.trim().isNotEmpty) {
-        extLines.add('${entry.key}: ${entry.value}');
+      // User-defined non-standard fields
+      final knownKeys = {
+        ..._coreProfileKeys,
+        ..._extendedProfileKeys,
+        _profileInitKey,
+      };
+      for (final entry in profile.entries) {
+        if (!knownKeys.contains(entry.key) && entry.value.trim().isNotEmpty) {
+          extLines.add('${entry.key}: ${entry.value}');
+        }
       }
-    }
-    if (extLines.isNotEmpty) {
-      for (final line in extLines) {
-        buf.writeln(line);
+      if (extLines.isNotEmpty) {
+        for (final line in extLines) {
+          buf.writeln(line);
+        }
       }
     }
 
-    // She's subjective impression
-    if (userInfo != '(not yet known)') {
+    // She's subjective impression (skipped if level != 'full')
+    if (level == 'full' && userInfo != '(not yet known)') {
       buf.writeln('\n[Your Impression of Master] $userInfo');
     }
 

@@ -469,11 +469,29 @@ class SkillRegistry {
   }
 
   /// System prompt suffix describing available skills.
-  String systemPromptSuffix(Set<String> enabledSkills) {
+  String systemPromptSuffix(Set<String> enabledSkills) =>
+      systemPromptSuffixLayered(enabledSkills, 'summary');
+
+  /// Layered system prompt suffix for skills.
+  ///
+  /// [level] controls verbosity:
+  /// - `'names_only'`: Only skill names — minimal context.
+  /// - `'summary'` / `'full'`: Full description (skills benefit from detail).
+  String systemPromptSuffixLayered(Set<String> enabledSkills, String level) {
     final filtered = _filteredSkills(enabledSkills);
     if (filtered.isEmpty) return '';
-    final skillLines =
-        filtered.map((s) => '- ${s.toolName}: ${s.description}').join('\n');
+    final skillLines = filtered.map((s) {
+      if (level == 'names_only') return '- ${s.toolName}';
+      return '- ${s.toolName}: ${s.description}';
+    }).join('\n');
+    if (level == 'names_only') {
+      return '''
+
+You also have access to skill tools. Each skill provides detailed step-by-step instructions.
+Available skills:
+$skillLines
+For details, call: shepaw system tools-detail --name <skill-name>''';
+    }
     return '''
 
 You also have access to skill tools. Each skill provides detailed step-by-step instructions for a specific task.

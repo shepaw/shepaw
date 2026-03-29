@@ -48,6 +48,13 @@ class AgentPromptBuilder {
   /// Build the complete system prompt according to the agent's [PromptStackConfig].
   Future<String> buildSystemPrompt() async {
     final config = agent.promptStackConfig;
+
+    // In lightweight mode we force tool descriptions to 'summary' and skip
+    // heavy context blocks (memories, cognitions) that the agent can retrieve
+    // on demand via `shepaw system tools-detail` or similar commands.
+    final effectiveTools = config.lightweightMode
+        ? config.tools.copyWith(toolDescriptionLevel: 'summary')
+        : config.tools;
     final parts = <String>[];
 
     // ① Identity — always include the agent's name so the model can recognise
@@ -64,7 +71,7 @@ class AgentPromptBuilder {
     }
 
     // ③ Tools documentation
-    final toolParts = _buildToolsBlocks(config.tools, config.she);
+    final toolParts = _buildToolsBlocks(effectiveTools, config.she);
     parts.addAll(toolParts);
 
     // ④ She-only: memory context (soul)
@@ -107,7 +114,8 @@ class AgentPromptBuilder {
 
     // ⑦ She-only: user-profile snapshot
     if (agent.isShe && config.she.includeProfileSnapshot) {
-      final snapshot = await SheService.instance.buildProfileSnapshotBlock();
+      final snapshot = await SheService.instance
+          .buildProfileSnapshotBlock(level: config.she.profileSnapshotLevel);
       if (snapshot.isNotEmpty) parts.add(snapshot);
     }
 
@@ -118,7 +126,8 @@ class AgentPromptBuilder {
     }
 
     // ⑦'' She-only: user-cognition (impression/notes from minds.db)
-    if (agent.isShe && config.she.includeUserCognition) {
+    // Skipped in lightweight mode — She can query on demand.
+    if (agent.isShe && !config.lightweightMode && config.she.includeUserCognition) {
       final userCog = await SheService.instance.buildUserCognitionBlock();
       if (userCog.isNotEmpty) parts.add(userCog);
     }
@@ -136,19 +145,22 @@ class AgentPromptBuilder {
     }
 
     // ⑧' Non-She: agent's own soul (self-cognition from minds.db)
-    if (!agent.isShe && config.agent.includeAgentSelfCognition) {
+    // Skipped in lightweight mode.
+    if (!config.lightweightMode && !agent.isShe && config.agent.includeAgentSelfCognition) {
       final selfCog = await _buildAgentSelfCognitionBlock();
       if (selfCog.isNotEmpty) parts.add(selfCog);
     }
 
     // ⑧'' Non-She: agent's user-cognition (impression/notes from minds.db)
-    if (!agent.isShe && config.agent.includeAgentUserCognition) {
+    // Skipped in lightweight mode.
+    if (!config.lightweightMode && !agent.isShe && config.agent.includeAgentUserCognition) {
       final userCog = await _buildAgentUserCognitionBlock();
       if (userCog.isNotEmpty) parts.add(userCog);
     }
 
     // ⑧''' Non-She: agent's own recent memories
-    if (!agent.isShe && config.agent.includeAgentMemory) {
+    // Skipped in lightweight mode.
+    if (!config.lightweightMode && !agent.isShe && config.agent.includeAgentMemory) {
       final memoriesBlock =
           await _buildAgentMemoriesBlock(config.agent.memoryLimit);
       if (memoriesBlock.isNotEmpty) parts.add(memoriesBlock);
@@ -300,27 +312,29 @@ ${lines.join('\n')}''';
     SheStackConfig she,
   ) {
     final result = <String>[];
+    final level = tools.toolDescriptionLevel;
 
     if (tools.includeUI) {
-      final suffix = UIComponentRegistry.instance.systemPromptSuffix;
+      final suffix = UIComponentRegistry.instance.systemPromptSuffixLayered(level);
       if (suffix.isNotEmpty) result.add(suffix);
     }
 
     if (tools.includeOsTools && agent.enabledOsTools.isNotEmpty) {
-      final suffix =
-          OsToolRegistry.instance.systemPromptSuffix(agent.enabledOsTools);
+      final suffix = OsToolRegistry.instance
+          .systemPromptSuffixLayered(agent.enabledOsTools, level);
       if (suffix.isNotEmpty) result.add(suffix);
     }
 
     if (tools.includeSkills && agent.enabledSkills.isNotEmpty) {
-      final suffix =
-          SkillRegistry.instance.systemPromptSuffix(agent.enabledSkills);
+      final suffix = SkillRegistry.instance
+          .systemPromptSuffixLayered(agent.enabledSkills, level);
       if (suffix.isNotEmpty) result.add(suffix);
     }
 
     if (tools.includeToolModels && agent.enabledToolModels.isNotEmpty) {
-      final suffix = ModelRegistry.instance.systemPromptSuffix(
+      final suffix = ModelRegistry.instance.systemPromptSuffixLayered(
         agent.enabledToolModels,
+        level,
         scenarioOverrides: agent.toolModelScenarios,
       );
       if (suffix.isNotEmpty) result.add(suffix);

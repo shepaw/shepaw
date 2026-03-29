@@ -204,10 +204,27 @@ class ModelRegistry {
   String systemPromptSuffix(
     Set<String> enabledToolModels, {
     Map<String, String> scenarioOverrides = const {},
+  }) =>
+      systemPromptSuffixLayered(
+        enabledToolModels,
+        'summary',
+        scenarioOverrides: scenarioOverrides,
+      );
+
+  /// Layered system prompt suffix for tool models.
+  ///
+  /// [level] controls verbosity:
+  /// - `'names_only'`: Only tool names.
+  /// - `'summary'` / `'full'`: Name + description (model tools always need context).
+  String systemPromptSuffixLayered(
+    Set<String> enabledToolModels,
+    String level, {
+    Map<String, String> scenarioOverrides = const {},
   }) {
     final filtered = _filtered(enabledToolModels);
     if (filtered.isEmpty) return '';
     final lines = filtered.map((d) {
+      if (level == 'names_only') return '- ${d.toolName}';
       final desc = scenarioOverrides[d.toolName]?.isNotEmpty == true
           ? scenarioOverrides[d.toolName]!
           : d.description.isNotEmpty
@@ -218,6 +235,14 @@ class ModelRegistry {
           : '';
       return '- ${d.toolName}: $desc$typesSuffix';
     }).join('\n');
+    if (level == 'names_only') {
+      return '''
+
+You also have access to tool model tools. Each routes your prompt to a specialised model.
+Available tool models:
+$lines
+For details, call: shepaw system tools-detail --name <tool-name>''';
+    }
     return '''
 
 You also have access to tool model tools. Each tool model routes your prompt to a specialised model and returns the result.

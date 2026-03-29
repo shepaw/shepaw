@@ -496,12 +496,37 @@ class OsToolRegistry {
   }
 
   /// System prompt suffix describing available OS tools.
-  String systemPromptSuffix(Set<String> enabledTools) {
+  String systemPromptSuffix(Set<String> enabledTools) =>
+      systemPromptSuffixLayered(enabledTools, 'summary');
+
+  /// Layered system prompt suffix for OS tools.
+  ///
+  /// [level] controls verbosity:
+  /// - `'names_only'`: Only tool names — minimal context.
+  /// - `'summary'`: Name + one-liner (default, ~50 % tokens vs full).
+  /// - `'full'`: Complete description without truncation.
+  String systemPromptSuffixLayered(Set<String> enabledTools, String level) {
     final filtered = _filteredTools(enabledTools);
     if (filtered.isEmpty) return '';
-    final toolLines = filtered
-        .map((t) => '- ${t.name}: ${t.description.split('.').first.trim().toLowerCase()}')
-        .join('\n');
+    final toolLines = filtered.map((t) {
+      switch (level) {
+        case 'names_only':
+          return '- ${t.name}';
+        case 'full':
+          return '- ${t.name}: ${t.description}';
+        default: // 'summary'
+          return '- ${t.name}: ${t.description.split('.').first.trim().toLowerCase()}';
+      }
+    }).join('\n');
+    if (level == 'names_only') {
+      return '''
+
+You also have access to OS-level tools that let you operate the local machine.
+Available OS tools:
+$toolLines
+For full details on any tool, call: shepaw system tools-detail --name <tool-name>
+IMPORTANT: These tools execute real actions on the user's device. Always confirm destructive operations.''';
+    }
     return '''
 
 You also have access to OS-level tools that let you operate the local machine.

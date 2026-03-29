@@ -421,11 +421,29 @@ class UIComponentRegistry {
   // ---------------------------------------------------------------------------
 
   /// Brief system prompt suffix for local LLM agents listing available tools.
-  String get systemPromptSuffix {
+  String get systemPromptSuffix => systemPromptSuffixLayered('summary');
+
+  /// Layered system prompt suffix for UI components.
+  ///
+  /// [level] controls verbosity:
+  /// - `'names_only'`: Only component names.
+  /// - `'summary'` / `'full'`: Name + one-liner (components are always terse).
+  String systemPromptSuffixLayered(String level) {
     final toolNames = components
         .where((c) => c.isToolCallable)
-        .map((c) => '- ${c.name}: ${c.description.split('.').first.trim().toLowerCase()}')
+        .map((c) {
+          if (level == 'names_only') return '- ${c.name}';
+          return '- ${c.name}: ${c.description.split('.').first.trim().toLowerCase()}';
+        })
         .join('\n');
+    if (level == 'names_only') {
+      return '''
+
+You have access to interactive UI tools (use instead of plain text when appropriate):
+$toolNames
+For details, call: shepaw system tools-detail --name <tool-name>
+IMPORTANT: When the user asks you to send, share, or deliver a file, you MUST call the file_message tool.''';
+    }
     return '''
 
 You have access to interactive UI tools. When it would improve the user experience, use them instead of plain text:

@@ -28,12 +28,23 @@ class ToolsStackConfig {
   /// Ignored for non-She agents even when set to true.
   final bool includeShepawCli;
 
+  /// Tool description detail level injected into the system prompt.
+  ///
+  /// - `'names_only'`: Only the tool names (most compact).
+  /// - `'summary'`: Tool name + one-liner description (default, ~50 % savings).
+  /// - `'full'`: Complete description without truncation.
+  ///
+  /// Agents can call `shepaw system tools-detail --name <tool>` to retrieve
+  /// full parameter documentation on demand regardless of this setting.
+  final String toolDescriptionLevel;
+
   const ToolsStackConfig({
     this.includeUI = true,
     this.includeOsTools = true,
     this.includeSkills = true,
     this.includeToolModels = true,
     this.includeShepawCli = true,
+    this.toolDescriptionLevel = 'summary',
   });
 
   /// At least one tool category is enabled.
@@ -53,6 +64,11 @@ class ToolsStackConfig {
     includeShepawCli: false,
   );
 
+  /// Convenience preset that forces all tool docs to name-only level.
+  static const ToolsStackConfig namesOnly = ToolsStackConfig(
+    toolDescriptionLevel: 'names_only',
+  );
+
   factory ToolsStackConfig.fromJson(Map<String, dynamic> json) =>
       ToolsStackConfig(
         includeUI: json['include_ui'] as bool? ?? true,
@@ -60,6 +76,8 @@ class ToolsStackConfig {
         includeSkills: json['include_skills'] as bool? ?? true,
         includeToolModels: json['include_tool_models'] as bool? ?? true,
         includeShepawCli: json['include_shepaw_cli'] as bool? ?? true,
+        toolDescriptionLevel:
+            json['tool_description_level'] as String? ?? 'summary',
       );
 
   Map<String, dynamic> toJson() => {
@@ -68,6 +86,7 @@ class ToolsStackConfig {
         'include_skills': includeSkills,
         'include_tool_models': includeToolModels,
         'include_shepaw_cli': includeShepawCli,
+        'tool_description_level': toolDescriptionLevel,
       };
 
   ToolsStackConfig copyWith({
@@ -76,6 +95,7 @@ class ToolsStackConfig {
     bool? includeSkills,
     bool? includeToolModels,
     bool? includeShepawCli,
+    String? toolDescriptionLevel,
   }) =>
       ToolsStackConfig(
         includeUI: includeUI ?? this.includeUI,
@@ -83,6 +103,7 @@ class ToolsStackConfig {
         includeSkills: includeSkills ?? this.includeSkills,
         includeToolModels: includeToolModels ?? this.includeToolModels,
         includeShepawCli: includeShepawCli ?? this.includeShepawCli,
+        toolDescriptionLevel: toolDescriptionLevel ?? this.toolDescriptionLevel,
       );
 }
 
@@ -204,6 +225,19 @@ class SheStackConfig {
   /// `shepaw agents list / channels / messages` and `shepaw messages query`
   final bool enableMessagesCommand;
 
+  /// When true, the shepaw CLI block uses a compact one-liner-per-command format
+  /// instead of the full Markdown table.  She can call
+  /// `shepaw system tools-detail --name <command>` to retrieve full parameter
+  /// documentation on demand.  Default: true (saves 60-70 % of CLI block tokens).
+  final bool shepawCliSummaryMode;
+
+  /// User-profile snapshot detail level.
+  ///
+  /// - `'core'`: Only core fields (name, age, gender, occupation, city) + recent activity.
+  /// - `'extended'` (default): Core + any non-empty extended fields (interests, values, etc).
+  /// - `'full'`: Extended + She's impressions/notes.
+  final String profileSnapshotLevel;
+
   const SheStackConfig({
     this.includeSheMemory = true,
     this.includeSheSelfCognition = true,
@@ -216,6 +250,8 @@ class SheStackConfig {
     this.enableMemoryCommand = true,
     this.enableAgentChatCommand = true,
     this.enableMessagesCommand = true,
+    this.shepawCliSummaryMode = true,
+    this.profileSnapshotLevel = 'extended',
   });
 
   /// All She features disabled — essentially treats She like a plain agent.
@@ -231,6 +267,8 @@ class SheStackConfig {
     enableMemoryCommand: false,
     enableAgentChatCommand: false,
     enableMessagesCommand: false,
+    shepawCliSummaryMode: true,
+    profileSnapshotLevel: 'extended',
   );
 
   factory SheStackConfig.fromJson(Map<String, dynamic> json) => SheStackConfig(
@@ -248,6 +286,10 @@ class SheStackConfig {
             json['enable_agent_chat_command'] as bool? ?? true,
         enableMessagesCommand:
             json['enable_messages_command'] as bool? ?? true,
+        shepawCliSummaryMode:
+            json['shepaw_cli_summary_mode'] as bool? ?? true,
+        profileSnapshotLevel:
+            json['profile_snapshot_level'] as String? ?? 'extended',
       );
 
   Map<String, dynamic> toJson() => {
@@ -262,6 +304,8 @@ class SheStackConfig {
         'enable_memory_command': enableMemoryCommand,
         'enable_agent_chat_command': enableAgentChatCommand,
         'enable_messages_command': enableMessagesCommand,
+        'shepaw_cli_summary_mode': shepawCliSummaryMode,
+        'profile_snapshot_level': profileSnapshotLevel,
       };
 
   SheStackConfig copyWith({
@@ -276,6 +320,8 @@ class SheStackConfig {
     bool? enableMemoryCommand,
     bool? enableAgentChatCommand,
     bool? enableMessagesCommand,
+    bool? shepawCliSummaryMode,
+    String? profileSnapshotLevel,
   }) =>
       SheStackConfig(
         includeSheMemory: includeSheMemory ?? this.includeSheMemory,
@@ -293,6 +339,9 @@ class SheStackConfig {
             enableAgentChatCommand ?? this.enableAgentChatCommand,
         enableMessagesCommand:
             enableMessagesCommand ?? this.enableMessagesCommand,
+        shepawCliSummaryMode: shepawCliSummaryMode ?? this.shepawCliSummaryMode,
+        profileSnapshotLevel:
+            profileSnapshotLevel ?? this.profileSnapshotLevel,
       );
 }
 
@@ -326,6 +375,18 @@ class PromptStackConfig {
   /// Non-She agent context sections. Ignored when `isShe == true`.
   final AgentStackConfig agent;
 
+  /// Lightweight mode — trades context richness for fewer tokens.
+  ///
+  /// When `true`:
+  /// - Tool description level is forced to `'summary'` (overrides [tools.toolDescriptionLevel]).
+  /// - For non-She agents: agent memories, self-cognition, and user-cognition
+  ///   blocks are skipped.
+  /// - For She: the user-cognition block is skipped.
+  ///
+  /// Useful for the first message of a conversation where full context is
+  /// not yet needed.  Default: `false`.
+  final bool lightweightMode;
+
   const PromptStackConfig({
     this.includeIdentity = true,
     this.includeDescription = true,
@@ -333,6 +394,7 @@ class PromptStackConfig {
     this.tools = const ToolsStackConfig(),
     this.she = const SheStackConfig(),
     this.agent = const AgentStackConfig(),
+    this.lightweightMode = false,
   });
 
   /// Full configuration for She — all sections active.
@@ -360,6 +422,7 @@ class PromptStackConfig {
         agent: json['agent'] is Map<String, dynamic>
             ? AgentStackConfig.fromJson(json['agent'] as Map<String, dynamic>)
             : const AgentStackConfig(),
+        lightweightMode: json['lightweight_mode'] as bool? ?? false,
       );
 
   Map<String, dynamic> toJson() => {
@@ -369,6 +432,7 @@ class PromptStackConfig {
         'tools': tools.toJson(),
         'she': she.toJson(),
         'agent': agent.toJson(),
+        'lightweight_mode': lightweightMode,
       };
 
   PromptStackConfig copyWith({
@@ -378,6 +442,7 @@ class PromptStackConfig {
     ToolsStackConfig? tools,
     SheStackConfig? she,
     AgentStackConfig? agent,
+    bool? lightweightMode,
   }) =>
       PromptStackConfig(
         includeIdentity: includeIdentity ?? this.includeIdentity,
@@ -386,5 +451,6 @@ class PromptStackConfig {
         tools: tools ?? this.tools,
         she: she ?? this.she,
         agent: agent ?? this.agent,
+        lightweightMode: lightweightMode ?? this.lightweightMode,
       );
 }
