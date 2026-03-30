@@ -1060,7 +1060,7 @@ class AgentMessagingService {
 
             // Check if this is a paw tool call (shepaw CLI)
             if (ShepawCLI.instance.isPawTool(tc.name)) {
-              final result = await ShepawCLI.instance.execute(tc.arguments);
+              final result = await ShepawCLI.instance.execute(tc.arguments, isShe: isShe);
               toolResults.add({
                 'tool_call_id': tc.id,
                 'name': tc.name,

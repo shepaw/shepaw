@@ -661,7 +661,7 @@
     }
   },
 
-  "osTool_configTitle": "OS Tools",
+  "osTool_configTitle": "CLI Management",
   "osTool_configHint": "Enable OS-level tools for this agent to interact with your local machine (files, commands, clipboard, etc.).",
   "osTool_selectAll": "Select All",
   "osTool_deselectAll": "Deselect All",

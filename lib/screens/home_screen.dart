@@ -16,10 +16,9 @@ import 'create_group_screen.dart';
 import 'chat_screen.dart';
 import 'settings_screen.dart';
 import 'contacts_screen.dart';
-import 'skill_management_screen.dart';
 import 'model_management_screen.dart';
+import 'skill_management_screen.dart';
 import 'cli_config_management_screen.dart';
-import '../services/skill_registry.dart';
 import '../services/model_registry.dart';
 import '../widgets/agent_search_delegate.dart';
 import '../services/message_search_service.dart';
@@ -691,24 +690,20 @@ class HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateMi
                     },
                   ),
                   ListTile(
-                    leading: const Icon(Icons.auto_stories),
-                    title: Text(l10n.settings_skillDirectory),
-                    subtitle: Text(
-                      l10n.skillMgmt_skillCount(SkillRegistry.instance.skills.length),
-                    ),
-                    onTap: () async {
+                    leading: const Icon(Icons.auto_awesome_outlined),
+                    title: Text(l10n.skillMgmt_title),
+                    onTap: () {
                       Navigator.pop(context);
-                      await Navigator.push(
+                      Navigator.push(
                         context,
                         MaterialPageRoute(
                           builder: (context) => const SkillManagementScreen(),
                         ),
                       );
-                      if (mounted) setState(() {});
                     },
                   ),
                   ListTile(
-                    leading: const Icon(Icons.build_circle),
+                    leading: const Icon(Icons.terminal),
                     title: Text(l10n.osTool_configTitle),
                     onTap: () {
                       Navigator.pop(context);

@@ -979,7 +979,7 @@
     }
   },
 
-  "osTool_configTitle": "OS 工具",
+  "osTool_configTitle": "CLI 管理",
   "osTool_configHint": "启用 OS 级别工具，让 Agent 可以操作您的本地设备（文件、命令、剪贴板等）。",
   "osTool_selectAll": "全选",
   "osTool_deselectAll": "全不选",

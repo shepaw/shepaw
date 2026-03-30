@@ -1846,7 +1846,7 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
-  String get osTool_configTitle => 'OS 工具';
+  String get osTool_configTitle => 'CLI 管理';
 
   @override
   String get osTool_configHint => '启用 OS 级别工具，让 Agent 可以操作您的本地设备（文件、命令、剪贴板等）。';

@@ -7,6 +7,7 @@ import 'tools_namespace.dart';
 import 'meta/meta_namespace.dart';
 import 'help_namespace.dart';
 import '../../services/logger_service.dart';
+import '../../services/cli_command_config_service.dart';
 
 /// ShepawCLI — She 专属的内嵌 CLI，替代 PawToolRegistry。
 ///
@@ -125,13 +126,16 @@ class ShepawCLI {
   // ── Command Execution ────────────────────────────────────────────────────────
 
   /// 执行 shepaw 命令，返回 JSON 字符串结果（供 LLM tool_result 使用）
-  Future<String> execute(Map<String, dynamic> args) async {
+  ///
+  /// [args] 命令参数（namespace / subcommand / flags）
+  /// [isShe] 当前执行者是否为 She（默认 false，She 调用时传 true）
+  Future<String> execute(Map<String, dynamic> args, {bool isShe = false}) async {
     final namespace = args['namespace'] as String? ?? 'help';
     final subcommand = args['subcommand'] as String? ?? '';
     final flags = _parseFlags(args['flags']);
 
     LoggerService().info(
-        'shepaw $namespace ${subcommand.isNotEmpty ? subcommand : ""} $flags',
+        'shepaw $namespace ${subcommand.isNotEmpty ? subcommand : ""} $flags [isShe=$isShe]',
         tag: 'Paw');
 
     try {
@@ -145,6 +149,14 @@ class ShepawCLI {
 
       if (namespace == 'help') {
         return jsonEncode(_buildHelpResult());
+      }
+
+      // 权限检查：全局启用 / She 专属
+      final commandId = _buildCommandId(namespace, subcommand);
+      final denyReason = await CliCommandConfigService.instance
+          .checkPermission(commandId, isShe: isShe);
+      if (denyReason != null) {
+        return jsonEncode({'error': denyReason, 'command': commandId});
       }
 
       final result = await ns.execute(subcommand, flags);
@@ -211,6 +223,14 @@ class ShepawCLI {
       };
 
   // ── Helpers ──────────────────────────────────────────────────────────────────
+
+  /// 构建命令 ID（用于权限检查）
+  /// 格式：namespace.subcommand（如 'context.profile.query'）
+  String _buildCommandId(String namespace, String subcommand) {
+    if (subcommand.isEmpty) return namespace;
+    // subcommand 中的 '.' 在内部已是分隔符，保持原样
+    return '$namespace.$subcommand';
+  }
 
   Map<String, String> _parseFlags(dynamic raw) {
     if (raw == null) return {};

@@ -340,7 +340,7 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
     ];
 
     // Bottom section items (collapsed when height is insufficient)
-    // Index 0–3: before divider; after that: settings + logout
+    // Index 0–4: before divider; after that: settings + logout
     final bottomItems = [
       _SidebarItemDef(
         icon: Icons.person_add_outlined,
@@ -365,15 +365,15 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
         onTap: () => _showPanel(_RightPanelView.modelManagement),
       ),
       _SidebarItemDef(
-        icon: Icons.auto_stories,
-        tooltip: l10n.settings_skillDirectory,
+        icon: Icons.auto_awesome_outlined,
+        tooltip: l10n.skillMgmt_title,
         colorBuilder: (_) => _rightPanel == _RightPanelView.skillManagement
             ? activeColor
             : iconColor,
         onTap: () => _showPanel(_RightPanelView.skillManagement),
       ),
       _SidebarItemDef(
-        icon: Icons.build_circle,
+        icon: Icons.terminal,
         tooltip: l10n.osTool_configTitle,
         colorBuilder: (_) => _rightPanel == _RightPanelView.toolConfigManagement
             ? activeColor

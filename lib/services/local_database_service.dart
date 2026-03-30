@@ -35,7 +35,7 @@ class LocalDatabaseService {
       // Web平台使用sqflite_common_ffi
       return await openDatabase(
         'shepaw',
-        version: 17,
+        version: 18,
         onCreate: _onCreate,
         onUpgrade: _onUpgrade,
       );
@@ -45,7 +45,7 @@ class LocalDatabaseService {
       path = join(directory.path, 'shepaw.db');
       return await openDatabase(
         path,
-        version: 17,
+        version: 18,
         onCreate: _onCreate,
         onUpgrade: _onUpgrade,
       );
@@ -56,7 +56,7 @@ class LocalDatabaseService {
 
       return await openDatabase(
         path,
-        version: 17,
+        version: 18,
         onCreate: _onCreate,
         onUpgrade: _onUpgrade,
       );
@@ -267,6 +267,18 @@ class LocalDatabaseService {
       )
     ''');
 
+    // CLI 命令配置表
+    await db.execute('''
+      CREATE TABLE cli_command_configs (
+        command_id TEXT PRIMARY KEY,
+        global_enabled INTEGER DEFAULT 1,
+        she_only INTEGER DEFAULT 0,
+        note TEXT,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL
+      )
+    ''');
+
   }
 
   /// 数据库升级
@@ -319,6 +331,22 @@ class LocalDatabaseService {
             parameter_overrides TEXT,
             has_api_key INTEGER DEFAULT 0,
             enabled INTEGER DEFAULT 1,
+            note TEXT,
+            created_at INTEGER NOT NULL,
+            updated_at INTEGER NOT NULL
+          )
+        ''');
+      } catch (_) {}
+    }
+
+    if (oldVersion < 18) {
+      // 版本 17 -> 18: CLI 命令配置表（全局启用/She专属开关）
+      try {
+        await db.execute('''
+          CREATE TABLE IF NOT EXISTS cli_command_configs (
+            command_id TEXT PRIMARY KEY,
+            global_enabled INTEGER DEFAULT 1,
+            she_only INTEGER DEFAULT 0,
             note TEXT,
             created_at INTEGER NOT NULL,
             updated_at INTEGER NOT NULL
@@ -1144,6 +1172,46 @@ class LocalDatabaseService {
       'tool_configs',
       where: 'tool_name = ?',
       whereArgs: [toolName],
+    );
+  }
+
+  // ==================== CLI 命令配置 CRUD ====================
+
+  /// 插入或更新 CLI 命令配置（upsert）
+  Future<void> upsertCliCommandConfig(Map<String, dynamic> data) async {
+    final db = await database;
+    await db.insert(
+      'cli_command_configs',
+      data,
+      conflictAlgorithm: ConflictAlgorithm.replace,
+    );
+  }
+
+  /// 查询单个 CLI 命令配置
+  Future<Map<String, dynamic>?> queryCliCommandConfig(String commandId) async {
+    final db = await database;
+    final results = await db.query(
+      'cli_command_configs',
+      where: 'command_id = ?',
+      whereArgs: [commandId],
+      limit: 1,
+    );
+    return results.isEmpty ? null : results.first;
+  }
+
+  /// 查询所有 CLI 命令配置
+  Future<List<Map<String, dynamic>>> queryAllCliCommandConfigs() async {
+    final db = await database;
+    return db.query('cli_command_configs', orderBy: 'command_id ASC');
+  }
+
+  /// 删除 CLI 命令配置
+  Future<void> deleteCliCommandConfig(String commandId) async {
+    final db = await database;
+    await db.delete(
+      'cli_command_configs',
+      where: 'command_id = ?',
+      whereArgs: [commandId],
     );
   }
 }

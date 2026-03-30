@@ -1906,7 +1906,7 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
-  String get osTool_configTitle => 'OS Tools';
+  String get osTool_configTitle => 'CLI Management';
 
   @override
   String get osTool_configHint =>

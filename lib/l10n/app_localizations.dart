@@ -3449,7 +3449,7 @@ abstract class AppLocalizations {
   /// No description provided for @osTool_configTitle.
   ///
   /// In zh, this message translates to:
-  /// **'OS 工具'**
+  /// **'CLI 管理'**
   String get osTool_configTitle;
 
   /// No description provided for @osTool_configHint.
