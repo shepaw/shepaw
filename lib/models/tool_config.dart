@@ -15,6 +15,11 @@ class ToolConfig {
   /// 全局启用/禁用开关
   final bool enabled;
 
+  /// She 专属开关
+  ///
+  /// true = 仅 She 可调用此工具；false = 所有 Agent 均可调用（默认）
+  final bool sheExclusive;
+
   /// 备注说明
   final String? note;
 
@@ -29,6 +34,7 @@ class ToolConfig {
     this.hasApiKey = false,
     this.parameterOverrides,
     this.enabled = true,
+    this.sheExclusive = false,
     this.note,
     required this.createdAt,
     required this.updatedAt,
@@ -39,6 +45,7 @@ class ToolConfig {
     bool? hasApiKey,
     Map<String, dynamic>? parameterOverrides,
     bool? enabled,
+    bool? sheExclusive,
     String? note,
     int? updatedAt,
     // 使用 sentinel 表示显式清空
@@ -52,6 +59,7 @@ class ToolConfig {
           ? null
           : (parameterOverrides ?? this.parameterOverrides),
       enabled: enabled ?? this.enabled,
+      sheExclusive: sheExclusive ?? this.sheExclusive,
       note: clearNote ? null : (note ?? this.note),
       createdAt: createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
@@ -67,6 +75,7 @@ class ToolConfig {
             ? jsonEncode(parameterOverrides)
             : null,
         'enabled': enabled ? 1 : 0,
+        'she_exclusive': sheExclusive ? 1 : 0,
         'note': note,
         'created_at': createdAt,
         'updated_at': updatedAt,
@@ -86,6 +95,7 @@ class ToolConfig {
       hasApiKey: (json['has_api_key'] as int? ?? 0) == 1,
       parameterOverrides: overrides,
       enabled: (json['enabled'] as int? ?? 1) == 1,
+      sheExclusive: (json['she_exclusive'] as int? ?? 0) == 1,
       note: json['note'] as String?,
       createdAt: json['created_at'] as int,
       updatedAt: json['updated_at'] as int,
@@ -95,5 +105,5 @@ class ToolConfig {
   @override
   String toString() =>
       'ToolConfig(toolName: $toolName, hasApiKey: $hasApiKey, '
-      'enabled: $enabled)';
+      'enabled: $enabled, sheExclusive: $sheExclusive)';
 }

@@ -6,6 +6,8 @@ library;
 
 import 'dart:io' show Platform;
 
+import '../models/cli_config_field.dart';
+
 /// Describes a single OS tool that can be invoked by a local LLM agent.
 class OsToolDefinition {
   /// Tool name used in function-calling (e.g. `shell_exec`).
@@ -26,6 +28,18 @@ class OsToolDefinition {
   /// UI grouping category.
   final String category;
 
+  /// User-configurable fields for this tool.
+  ///
+  /// Empty list means the tool needs no user configuration (only enabled/sheExclusive toggles).
+  /// Non-empty list triggers a "Configure" entry in the CLI config UI, where each field
+  /// is rendered as an appropriate form widget based on its [CliConfigFieldType].
+  final List<CliConfigField> configSpec;
+
+  /// Whether this tool is restricted to She only by default.
+  ///
+  /// The user can override this per-tool in the config UI (persisted to [ToolConfig.sheExclusive]).
+  final bool sheExclusive;
+
   const OsToolDefinition({
     required this.name,
     required this.description,
@@ -33,6 +47,8 @@ class OsToolDefinition {
     required this.defaultRiskLevel,
     required this.supportedPlatforms,
     required this.category,
+    this.configSpec = const [],
+    this.sheExclusive = false,
   });
 }
 
@@ -451,6 +467,31 @@ class OsToolRegistry {
       defaultRiskLevel: 'safe',
       supportedPlatforms: _all,
       category: 'network',
+      configSpec: [
+        CliConfigField(
+          key: 'api_key',
+          label: 'API Key',
+          description:
+              'Brave Search API key (starts with BSA...) or Tavily API key (starts with tvly-). '
+              'The provider is auto-detected from the key prefix.',
+          type: CliConfigFieldType.apiKey,
+          required: true,
+        ),
+        CliConfigField(
+          key: 'max_results',
+          label: 'Max Results',
+          description: 'Maximum number of search results to return (default: 10).',
+          type: CliConfigFieldType.integer,
+          defaultValue: 10,
+        ),
+        CliConfigField(
+          key: 'timeout',
+          label: 'Timeout (seconds)',
+          description: 'Request timeout in seconds (default: 30).',
+          type: CliConfigFieldType.integer,
+          defaultValue: 30,
+        ),
+      ],
     ),
     OsToolDefinition(
       name: 'web_fetch',
@@ -588,6 +629,23 @@ Available OS tools:
 $toolLines
 IMPORTANT: These tools execute real actions on the user's device. Always confirm destructive operations.
 For file/command operations, prefer using these tools over describing steps in text.''';
+  }
+
+  /// Returns a compact CLI-reference block that tells agents OS tools exist,
+  /// without enumerating all tool names or discovery commands.
+  ///
+  /// This is the default for non-She agents ([osToolsMode] == 'cli_reference').
+  /// Discovery commands (`tools os.list`, `tools os.detail`) are intentionally
+  /// omitted here — they are already listed in the Agent Meta CLI block
+  /// (`_buildAgentMetaCliBlock`) which is injected later in the prompt.
+  String systemPromptCliReference(Set<String> enabledTools) {
+    final filtered = _filteredTools(enabledTools);
+    if (filtered.isEmpty) return '';
+    final count = filtered.length;
+    return '''
+
+You have access to $count OS-level tools that let you operate the local machine (files, terminal, screenshots, clipboard, etc.).
+IMPORTANT: These tools execute real actions on the user's device. Always confirm destructive operations.''';
   }
 
   // ---------------------------------------------------------------------------

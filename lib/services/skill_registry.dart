@@ -654,21 +654,46 @@ $skillLines''';
     String? name;
     String? description;
 
-    for (int i = 1; i < closeIndex; i++) {
-      final line = lines[i];
-      final colonIdx = line.indexOf(':');
-      if (colonIdx == -1) continue;
-      final key = line.substring(0, colonIdx).trim().toLowerCase();
-      final value = line.substring(colonIdx + 1).trim();
-      // Strip optional surrounding quotes
+    // Track which key is currently being accumulated (for multi-line values).
+    String? currentKey;
+    final buffer = StringBuffer();
+
+    void flushCurrent() {
+      if (currentKey == null) return;
+      final value = buffer.toString();
       final unquoted = value.length >= 2 &&
               ((value.startsWith('"') && value.endsWith('"')) ||
                   (value.startsWith("'") && value.endsWith("'")))
           ? value.substring(1, value.length - 1)
           : value;
-      if (key == 'name') name = unquoted;
-      if (key == 'description') description = unquoted;
+      if (currentKey == 'name') name = unquoted;
+      if (currentKey == 'description') description = unquoted;
+      currentKey = null;
+      buffer.clear();
     }
+
+    for (int i = 1; i < closeIndex; i++) {
+      final line = lines[i];
+      // A continuation line starts with whitespace (YAML indented multi-line).
+      if (currentKey != null && line.isNotEmpty && (line[0] == ' ' || line[0] == '\t')) {
+        // Append continuation line with a space separator.
+        if (buffer.isNotEmpty) buffer.write(' ');
+        buffer.write(line.trim());
+        continue;
+      }
+      // New key-value pair — flush any previously accumulated value first.
+      flushCurrent();
+      final colonIdx = line.indexOf(':');
+      if (colonIdx == -1) continue;
+      final key = line.substring(0, colonIdx).trim().toLowerCase();
+      final value = line.substring(colonIdx + 1).trim();
+      if (key == 'name' || key == 'description') {
+        currentKey = key;
+        buffer.write(value);
+      }
+    }
+    // Flush the last accumulated key-value pair.
+    flushCurrent();
 
     return _FrontMatter(name: name, description: description);
   }

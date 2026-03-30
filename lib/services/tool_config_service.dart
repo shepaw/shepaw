@@ -41,6 +41,7 @@ class ToolConfigService {
         'has_api_key': 1,
         'parameter_overrides': null,
         'enabled': 1,
+        'she_exclusive': 0,
         'note': null,
         'created_at': now,
         'updated_at': now,
@@ -82,6 +83,7 @@ class ToolConfigService {
     String toolName, {
     Map<String, dynamic>? parameterOverrides,
     bool? enabled,
+    bool? sheExclusive,
     String? note,
     bool clearParameterOverrides = false,
     bool clearNote = false,
@@ -98,6 +100,7 @@ class ToolConfigService {
             ? null
             : (parameterOverrides != null ? jsonEncode(parameterOverrides) : null),
         'enabled': (enabled ?? true) ? 1 : 0,
+        'she_exclusive': (sheExclusive ?? false) ? 1 : 0,
         'note': clearNote ? null : note,
         'created_at': now,
         'updated_at': now,
@@ -113,6 +116,7 @@ class ToolConfigService {
         data['parameter_overrides'] = jsonEncode(parameterOverrides);
       }
       if (enabled != null) data['enabled'] = enabled ? 1 : 0;
+      if (sheExclusive != null) data['she_exclusive'] = sheExclusive ? 1 : 0;
       if (clearNote) {
         data['note'] = null;
       } else if (note != null) {

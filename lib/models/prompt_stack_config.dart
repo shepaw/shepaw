@@ -18,6 +18,14 @@ class ToolsStackConfig {
   /// OS-level tools (file operations, terminal, …).
   final bool includeOsTools;
 
+  /// OS tools display mode (non-She agents only):
+  /// - `'expanded'`: Full tool names & descriptions in system prompt (legacy)
+  /// - `'cli_reference'`: CLI guidance to discover tools on-demand (default, ~60% savings)
+  ///
+  /// She agents always use expanded mode and discover tools via shepaw CLI.
+  /// This setting is ignored for She agents.
+  final String osToolsMode;
+
   /// User-defined skill tools.
   final bool includeSkills;
 
@@ -42,11 +50,13 @@ class ToolsStackConfig {
   ///
   /// Agents can call `shepaw system tools-detail --name <tool>` to retrieve
   /// full parameter documentation on demand regardless of this setting.
+  /// Only used when osToolsMode is 'expanded'.
   final String toolDescriptionLevel;
 
   const ToolsStackConfig({
     this.includeUI = true,
     this.includeOsTools = true,
+    this.osToolsMode = 'cli_reference',
     this.includeSkills = true,
     this.includeToolModels = true,
     this.includeShepawCli = true,
@@ -82,6 +92,7 @@ class ToolsStackConfig {
       ToolsStackConfig(
         includeUI: json['include_ui'] as bool? ?? true,
         includeOsTools: json['include_os_tools'] as bool? ?? true,
+        osToolsMode: json['os_tools_mode'] as String? ?? 'cli_reference',
         includeSkills: json['include_skills'] as bool? ?? true,
         includeToolModels: json['include_tool_models'] as bool? ?? true,
         includeShepawCli: json['include_shepaw_cli'] as bool? ?? true,
@@ -93,6 +104,7 @@ class ToolsStackConfig {
   Map<String, dynamic> toJson() => {
         'include_ui': includeUI,
         'include_os_tools': includeOsTools,
+        'os_tools_mode': osToolsMode,
         'include_skills': includeSkills,
         'include_tool_models': includeToolModels,
         'include_shepaw_cli': includeShepawCli,
@@ -103,6 +115,7 @@ class ToolsStackConfig {
   ToolsStackConfig copyWith({
     bool? includeUI,
     bool? includeOsTools,
+    String? osToolsMode,
     bool? includeSkills,
     bool? includeToolModels,
     bool? includeShepawCli,
@@ -112,6 +125,7 @@ class ToolsStackConfig {
       ToolsStackConfig(
         includeUI: includeUI ?? this.includeUI,
         includeOsTools: includeOsTools ?? this.includeOsTools,
+        osToolsMode: osToolsMode ?? this.osToolsMode,
         includeSkills: includeSkills ?? this.includeSkills,
         includeToolModels: includeToolModels ?? this.includeToolModels,
         includeShepawCli: includeShepawCli ?? this.includeShepawCli,

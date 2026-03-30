@@ -340,8 +340,16 @@ ${lines.join('\n')}''';
     }
 
     if (tools.includeOsTools && agent.enabledOsTools.isNotEmpty) {
-      final suffix = OsToolRegistry.instance
-          .systemPromptSuffixLayered(agent.enabledOsTools, level);
+      final isShe = agent.isShe;
+      // She uses expanded mode (her CLI reference already lists tools fully).
+      // Non-She agents default to cli_reference to reduce prompt size; they
+      // discover the full list by calling `shepaw tools os.list` when needed.
+      final useExpanded = isShe || tools.osToolsMode == 'expanded';
+      final suffix = useExpanded
+          ? OsToolRegistry.instance
+              .systemPromptSuffixLayered(agent.enabledOsTools, tools.toolDescriptionLevel)
+          : OsToolRegistry.instance
+              .systemPromptCliReference(agent.enabledOsTools);
       if (suffix.isNotEmpty) result.add(suffix);
     }
 
