@@ -1060,6 +1060,40 @@ class AgentMessagingService {
 
             // Check if this is a paw tool call (shepaw CLI)
             if (ShepawCLI.instance.isPawTool(tc.name)) {
+              // 检查该 agent 是否有权限执行此 CLI 命令
+              final enabledCliCommands = agent.enabledCliCommands;
+              if (enabledCliCommands.isNotEmpty) {
+                // Agent 有明确的 CLI 命令限制 → 检查该命令是否被允许
+                final namespace = tc.arguments['namespace'] as String? ?? '';
+                final subcommand = tc.arguments['subcommand'] as String? ?? '';
+                final commandId = subcommand.isNotEmpty ? '$namespace.$subcommand' : namespace;
+                
+                if (!enabledCliCommands.contains(commandId)) {
+                  // 命令被禁止 → 返回拒绝错误
+                  final denyResult = {
+                    'error': 'CLI command "$commandId" is not allowed for this agent. Enabled commands: ${enabledCliCommands.join(", ")}',
+                    'command': commandId,
+                  };
+                  toolResults.add({
+                    'tool_call_id': tc.id,
+                    'name': tc.name,
+                    'result': jsonEncode(denyResult),
+                  });
+                  infLog.onToolResult(activeTask.taskId, toolCallId: tc.id, name: tc.name, result: jsonEncode(denyResult));
+                  
+                  // 持久化拒绝结果
+                  await historyService.saveToolExecution(
+                    messageId: agentMessageId,
+                    channelId: effectiveChannelId,
+                    toolCallId: tc.id,
+                    toolName: tc.name,
+                    arguments: tc.arguments,
+                    result: ToolExecutionResult.text(jsonEncode(denyResult)),
+                  );
+                  continue;
+                }
+              }
+              // 命令被允许 → 继续执行
               final result = await ShepawCLI.instance.execute(tc.arguments, isShe: isShe);
               toolResults.add({
                 'tool_call_id': tc.id,

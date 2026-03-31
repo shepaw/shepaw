@@ -21,6 +21,7 @@ import '../main.dart' show globalACPServer, kAcpServerPortKey, kAcpServerDefault
 import 'os_tool_select_screen.dart';
 import 'skill_select_screen.dart';
 import 'model_select_screen.dart';
+import 'cli_command_select_screen.dart';
 import 'chat_screen.dart';
 import 'cli_config_management_screen.dart';
 import '../utils/layout_utils.dart';
@@ -75,6 +76,9 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
 
   // Tool Models 配置（toolName → 场景描述）
   Map<String, String> _toolModelScenarios = {};
+
+  // CLI 命令配置
+  Set<String> _enabledCliCommands = {};
 
   // 本地上传的头像文件路径（相对路径）
   String? _localAvatarPath;
@@ -147,6 +151,9 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
     _toolModelScenarios = {
       for (final t in _agent.enabledToolModels) t: _agent.toolModelScenarios[t] ?? '',
     };
+
+    // Load CLI commands from metadata
+    _enabledCliCommands = _agent.enabledCliCommands;
 
     // Match main model — prefer stored main_model_id, then fall back to
     // matching by llm_model + llm_api_base for legacy agents.
@@ -311,6 +318,13 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
         } else {
           metadata.remove('enabled_tool_models');
           metadata.remove('tool_model_scenarios');
+        }
+
+        // Save CLI commands
+        if (_enabledCliCommands.isNotEmpty) {
+          metadata['enabled_cli_commands'] = _enabledCliCommands.toList();
+        } else {
+          metadata.remove('enabled_cli_commands');
         }
       } else {
         // No model selected — clear LLM config
@@ -2376,6 +2390,37 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
               if (result != null) {
                 setState(() {
                   _toolModelScenarios = result;
+                });
+              }
+            },
+          ),
+          const Divider(height: 1, indent: 16, endIndent: 16),
+          ListTile(
+            leading: Icon(Icons.terminal, color: colorScheme.primary),
+            title: const Text('CLI Commands'),
+            subtitle: Text(
+              _enabledCliCommands.isEmpty
+                  ? 'Not configured (all commands available)'
+                  : '${_enabledCliCommands.length} command(s) enabled',
+              style: TextStyle(
+                color: _enabledCliCommands.isEmpty
+                    ? colorScheme.outline
+                    : colorScheme.primary,
+              ),
+            ),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () async {
+              final result = await Navigator.push<Set<String>>(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => CliCommandSelectScreen(
+                    enabledCommands: _enabledCliCommands,
+                  ),
+                ),
+              );
+              if (result != null) {
+                setState(() {
+                  _enabledCliCommands = result;
                 });
               }
             },

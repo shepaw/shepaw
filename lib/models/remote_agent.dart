@@ -287,6 +287,19 @@ class RemoteAgent {
   /// Whether any tool models are enabled.
   bool get hasToolModels => enabledToolModels.isNotEmpty;
 
+  /// Enabled CLI commands (from metadata).
+  /// 
+  /// Empty set means all CLI commands are available (default permissive).
+  /// Non-empty set means only these commands are available (restrictive).
+  Set<String> get enabledCliCommands {
+    final cmds = metadata['enabled_cli_commands'];
+    if (cmds is List) return Set<String>.from(cmds.cast<String>());
+    return {};
+  }
+
+  /// Whether any CLI commands are explicitly enabled.
+  bool get hasEnabledCliCommands => enabledCliCommands.isNotEmpty;
+
   /// Multi-modal model routing configuration parsed from metadata.
   ModelRoutingConfig get modelRouting {
     final routing = metadata['model_routing'] as Map<String, dynamic>?;
