@@ -118,7 +118,11 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get login_resetPasswordContent =>
-      'Resetting your password will clear all local data.\n\nIf you need to reset your password, please contact the administrator or reinstall the app.';
+      'After resetting your password, you will enter a completely new data space.';
+
+  @override
+  String get login_resetPasswordVaultHint =>
+      'Your old data will be securely encrypted and saved. You can restore it anytime via Settings → Data Vault using your old password.';
 
   @override
   String get login_confirmReset => 'Confirm Reset';

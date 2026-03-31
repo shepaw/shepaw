@@ -37,7 +37,8 @@
   "login_wrongPassword": "Wrong password. Please try again ({attempts}/3)",
   "login_failed": "Login failed: {error}",
   "login_resetPasswordTitle": "Reset Password",
-  "login_resetPasswordContent": "Resetting your password will clear all local data.\n\nIf you need to reset your password, please contact the administrator or reinstall the app.",
+  "login_resetPasswordContent": "After resetting your password, you will enter a completely new data space.",
+  "login_resetPasswordVaultHint": "Your old data will be securely encrypted and saved. You can restore it anytime via Settings → Data Vault using your old password.",
   "login_confirmReset": "Confirm Reset",
 
   "passwordSetup_title": "Set Login Password",

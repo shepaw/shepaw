@@ -286,9 +286,41 @@ class _LoginScreenState extends State<LoginScreen> {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        title: Text(l10n.login_resetPasswordTitle),
-        content: Text(
-          l10n.login_resetPasswordContent,
+        title: Row(
+          children: [
+            Icon(Icons.warning_amber_rounded, color: Colors.orange[700]),
+            const SizedBox(width: 8),
+            Text(l10n.login_resetPasswordTitle),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(l10n.login_resetPasswordContent),
+            const SizedBox(height: 12),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.blue[50],
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: Colors.blue[200]!),
+              ),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Icon(Icons.info_outline, color: Colors.blue[700], size: 18),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      l10n.login_resetPasswordVaultHint,
+                      style: TextStyle(color: Colors.blue[800], fontSize: 13),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
         ),
         actions: [
           TextButton(
@@ -297,7 +329,30 @@ class _LoginScreenState extends State<LoginScreen> {
           ),
           TextButton(
             onPressed: () async {
-              await _passwordService.resetPassword();
+              Navigator.pop(context);
+              if (!mounted) return;
+
+              // 显示进度对话框
+              showDialog(
+                context: context,
+                barrierDismissible: false,
+                builder: (_) => const AlertDialog(
+                  content: Row(
+                    children: [
+                      CircularProgressIndicator(),
+                      SizedBox(width: 16),
+                      Expanded(child: Text('正在安全备份数据...')),
+                    ],
+                  ),
+                ),
+              );
+
+              try {
+                await _passwordService.resetPassword();
+              } finally {
+                if (mounted) Navigator.of(context, rootNavigator: true).pop();
+              }
+
               if (mounted) {
                 Navigator.of(context).pushReplacementNamed('/setup');
               }

@@ -299,8 +299,14 @@ abstract class AppLocalizations {
   /// No description provided for @login_resetPasswordContent.
   ///
   /// In zh, this message translates to:
-  /// **'重置密码将清除所有本地数据。\n\n如果需要重置密码，请联系管理员或重新安装应用。'**
+  /// **'重置密码后将进入全新的数据空间。'**
   String get login_resetPasswordContent;
+
+  /// No description provided for @login_resetPasswordVaultHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'旧数据会被安全加密保存，您可以随时通过 设置 → 历史数据保险库 用旧密码恢复。'**
+  String get login_resetPasswordVaultHint;
 
   /// No description provided for @login_confirmReset.
   ///

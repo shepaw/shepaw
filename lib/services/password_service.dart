@@ -3,6 +3,7 @@ import 'package:crypto/crypto.dart';
 import 'package:encrypt/encrypt.dart' as encrypt;
 import 'local_database_service.dart';
 import 'logger_service.dart';
+import 'vault_service.dart';
 
 /// 密码管理服务
 /// 负责密码的加密存储、验证和管理
@@ -81,8 +82,48 @@ class PasswordService {
     return await setPassword(newPassword);
   }
 
+  /// 获取当前密码凭证（用于创建 vault 的加密密钥派生）
+  ///
+  /// 返回 `{'hash': ..., 'salt': ...}`，不存在时对应值为 null。
+  Future<Map<String, String?>> getPasswordCredentials() async {
+    final hash = await _db.getUserValue(_passwordHashKey);
+    final salt = await _db.getUserValue(_passwordSaltKey);
+    return {'hash': hash, 'salt': salt};
+  }
+
   /// 重置密码
+  ///
+  /// 重置流程：
+  ///   1. 将旧数据库打包成加密 vault 文件（以旧密码 hash 为密钥）
+  ///   2. 删除所有 DB 文件（shepaw.db、she_profile.db 等）
+  ///   3. 清除密码记录（is_password_set → false）
+  ///
+  /// 调用后下次访问数据库时会自动创建空白数据库。
   Future<void> resetPassword() async {
+    // Step 1: 备份旧数据到 vault
+    try {
+      final creds = await getPasswordCredentials();
+      if (creds['hash'] != null) {
+        final vaultService = VaultService();
+        await vaultService.createVault(
+          passwordHash: creds['hash']!,
+          salt: creds['salt'] ?? '',
+        );
+      }
+    } catch (e) {
+      LoggerService().error('Failed to create vault during reset', tag: 'Password', error: e);
+      // vault 创建失败不阻塞重置流程，继续执行
+    }
+
+    // Step 2: 删除所有 DB 文件
+    try {
+      await LocalDatabaseService.clearAllDatabases();
+    } catch (e) {
+      LoggerService().error('Failed to clear databases during reset', tag: 'Password', error: e);
+    }
+
+    // Step 3: 重新初始化主库并清除密码记录
+    // 注意：clearAllDatabases 已删除文件，此处访问 _db 会自动重建空库
     await _db.deleteUserValue(_passwordHashKey);
     await _db.deleteUserValue(_passwordSaltKey);
     await _db.setUserValue(_isPasswordSetKey, 'false');

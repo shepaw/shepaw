@@ -1,4 +1,4 @@
-import 'dart:io' show Platform;
+import 'dart:io' show Platform, File, Directory;
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:sqflite/sqflite.dart';
 import 'package:path/path.dart';
@@ -8,6 +8,10 @@ import 'package:uuid/uuid.dart';
 import '../models/agent.dart';
 import '../models/channel.dart';
 import '../models/remote_agent.dart' as remote_agent;
+import 'she_profile_database_service.dart';
+import 'she_memory_db_service.dart';
+import 'minds_database_service.dart';
+import 'agent_memory_db_service.dart';
 /// 本地数据库服务 - 使用 SQLite 存储所有数据
 class LocalDatabaseService {
   static final LocalDatabaseService _instance = LocalDatabaseService._internal();
@@ -1213,5 +1217,51 @@ class LocalDatabaseService {
       where: 'command_id = ?',
       whereArgs: [commandId],
     );
+  }
+
+  // ==================== 数据重置 ====================
+
+  /// 关闭并删除所有 DB 文件（重置密码时调用）
+  ///
+  /// 调用此方法后，所有数据库单例的 `_database` 将被置 null，
+  /// 下次访问时会重新创建空白数据库。
+  ///
+  /// 注意：调用前应已通过 [VaultService.createVault] 完成数据备份。
+  static Future<void> clearAllDatabases() async {
+    if (kIsWeb) return;
+
+    final dbDir = (await getApplicationDocumentsDirectory()).path;
+
+    // 1. 关闭所有数据库连接（将各 DB 服务的 _database 置 null）
+    await LocalDatabaseService().close();
+    await SheProfileDatabaseService().close();
+    await SheMemoryDbService.instance.close();
+    await MindsDatabaseService().close();
+    await AgentMemoryDbService.closeAll();
+
+    // 2. 删除核心 DB 文件
+    const coreNames = [
+      'shepaw.db',
+      'she_profile.db',
+      'she_memory.db',
+      'minds.db',
+    ];
+    for (final name in coreNames) {
+      final file = File(join(dbDir, name));
+      if (await file.exists()) {
+        await file.delete();
+      }
+    }
+
+    // 3. 删除所有 agent_memory_*.db 文件
+    final dir = Directory(dbDir);
+    await for (final entity in dir.list()) {
+      if (entity is File) {
+        final name = basename(entity.path);
+        if (name.startsWith('agent_memory_') && name.endsWith('.db')) {
+          await entity.delete();
+        }
+      }
+    }
   }
 }

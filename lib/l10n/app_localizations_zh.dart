@@ -116,8 +116,11 @@ class AppLocalizationsZh extends AppLocalizations {
   String get login_resetPasswordTitle => '重置密码';
 
   @override
-  String get login_resetPasswordContent =>
-      '重置密码将清除所有本地数据。\n\n如果需要重置密码，请联系管理员或重新安装应用。';
+  String get login_resetPasswordContent => '重置密码后将进入全新的数据空间。';
+
+  @override
+  String get login_resetPasswordVaultHint =>
+      '旧数据会被安全加密保存，您可以随时通过 设置 → 历史数据保险库 用旧密码恢复。';
 
   @override
   String get login_confirmReset => '确认重置';

@@ -8,6 +8,7 @@ import '../providers/locale_provider.dart';
 import 'change_password_screen.dart';
 import 'privacy_policy_screen.dart';
 import 'notification_settings_screen.dart';
+import 'vault_restore_screen.dart';
 import 'language_settings_screen.dart';
 import 'inference_log_screen.dart';
 import 'log_viewer_screen.dart';
@@ -234,6 +235,21 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 context,
                 MaterialPageRoute(
                   builder: (context) => const ChangePasswordScreen(),
+                ),
+              );
+            },
+          ),
+
+          ListTile(
+            leading: const Icon(Icons.archive_outlined),
+            title: const Text('历史数据保险库'),
+            subtitle: const Text('查看并恢复重置密码前的数据备份'),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => const VaultRestoreScreen(),
                 ),
               );
             },
