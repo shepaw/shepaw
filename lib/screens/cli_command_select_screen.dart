@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../l10n/app_localizations.dart';
+import '../services/cli_namespace_registry.dart';
 import '../widgets/cli_command_config_card.dart';
 
 /// Full-page screen for configuring CLI commands for an agent.
@@ -26,7 +27,15 @@ class _CliCommandSelectScreenState extends State<CliCommandSelectScreen> {
   @override
   void initState() {
     super.initState();
-    _enabledCommands = Set<String>.from(widget.enabledCommands);
+    // When enabledCommands is empty, it means "all allowed" in storage.
+    // Pre-populate with all commands so the UI shows all switches ON.
+    if (widget.enabledCommands.isEmpty) {
+      _enabledCommands = Set<String>.from(
+        CliNamespaceRegistry.instance.allCommandIds,
+      );
+    } else {
+      _enabledCommands = Set<String>.from(widget.enabledCommands);
+    }
   }
 
   @override
@@ -39,7 +48,14 @@ class _CliCommandSelectScreenState extends State<CliCommandSelectScreen> {
         centerTitle: true,
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(context, _enabledCommands),
+            onPressed: () {
+              // If all commands are selected, save as empty set (= all allowed)
+              final allIds = CliNamespaceRegistry.instance.allCommandIds;
+              final result = _enabledCommands.length >= allIds.length
+                  ? <String>{}
+                  : _enabledCommands;
+              Navigator.pop(context, result);
+            },
             child: Text(l10n.common_save),
           ),
         ],

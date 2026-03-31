@@ -60,7 +60,7 @@ class CliCommandConfigCard extends StatelessWidget {
             ),
             const SizedBox(height: 8),
             Text(
-              'Select CLI commands this agent can execute. Commands not selected will be blocked.',
+              'Select CLI commands this agent can execute. Unselected commands will be blocked. All selected = unrestricted.',
               style: TextStyle(fontSize: 12, color: colorScheme.outline),
             ),
             const SizedBox(height: 8),

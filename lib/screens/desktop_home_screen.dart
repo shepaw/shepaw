@@ -14,7 +14,7 @@ import 'settings_screen.dart';
 import 'contacts_screen.dart';
 import 'skill_management_screen.dart';
 import 'model_management_screen.dart';
-import 'cli_config_management_screen.dart';
+import 'agent_cli_commands_management_screen.dart';
 import '../utils/layout_utils.dart';
 import '../services/native_window_service.dart';
 
@@ -297,7 +297,7 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
         return const SkillManagementScreen();
 
       case _RightPanelView.toolConfigManagement:
-        return const CliConfigManagementScreen();
+        return const AgentCliCommandsManagementScreen();
 
       case _RightPanelView.empty:
         return _buildEmptyState();
@@ -374,7 +374,7 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
       ),
       _SidebarItemDef(
         icon: Icons.terminal,
-        tooltip: l10n.osTool_configTitle,
+        tooltip: 'CLI Commands',
         colorBuilder: (_) => _rightPanel == _RightPanelView.toolConfigManagement
             ? activeColor
             : iconColor,

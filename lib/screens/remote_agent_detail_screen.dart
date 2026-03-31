@@ -2400,12 +2400,12 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
             title: const Text('CLI Commands'),
             subtitle: Text(
               _enabledCliCommands.isEmpty
-                  ? 'Not configured (all commands available)'
-                  : '${_enabledCliCommands.length} command(s) enabled',
+                  ? 'All CLI commands available'
+                  : '${_enabledCliCommands.length} command(s) selected (restricted)',
               style: TextStyle(
                 color: _enabledCliCommands.isEmpty
-                    ? colorScheme.outline
-                    : colorScheme.primary,
+                    ? colorScheme.primary
+                    : colorScheme.outline,
               ),
             ),
             trailing: const Icon(Icons.chevron_right),
