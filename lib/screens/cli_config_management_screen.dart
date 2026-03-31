@@ -156,13 +156,32 @@ class CliConfigManagementScreen extends StatelessWidget {
   }
 }
 
-class _RootNsTile extends StatelessWidget {
+class _RootNsTile extends StatefulWidget {
   final _NsDef def;
   const _RootNsTile({required this.def});
 
   @override
+  State<_RootNsTile> createState() => _RootNsTileState();
+}
+
+class _RootNsTileState extends State<_RootNsTile> {
+  CliCommandConfig? _nsConfig;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadConfig();
+  }
+
+  Future<void> _loadConfig() async {
+    final cfg = await CliCommandConfigService.instance.getConfig(widget.def.key);
+    if (mounted) setState(() => _nsConfig = cfg);
+  }
+
+  @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
+    final def = widget.def;
 
     // 计算条目数（命令数或子命名空间数）
     final cmdCount = def.ns.commands.length;
@@ -171,20 +190,37 @@ class _RootNsTile extends StatelessWidget {
         ? '$subNsCount namespaces'
         : '$cmdCount commands';
 
+    final globalEnabled = _nsConfig?.globalEnabled ?? true;
+    final sheOnly = _nsConfig?.sheOnly ?? false;
+
     return ListTile(
       contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
       leading: Container(
         width: 40,
         height: 40,
         decoration: BoxDecoration(
-          color: colorScheme.primaryContainer,
+          color: colorScheme.primaryContainer
+              .withValues(alpha: globalEnabled ? 1 : 0.5),
           borderRadius: BorderRadius.circular(10),
         ),
-        child: Icon(def.icon, size: 20, color: colorScheme.onPrimaryContainer),
+        child: Icon(def.icon, size: 20, color: colorScheme.onPrimaryContainer
+            .withValues(alpha: globalEnabled ? 1 : 0.4)),
       ),
-      title: Text(
-        def.label,
-        style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
+      title: Row(
+        children: [
+          Text(
+            def.label,
+            style: TextStyle(
+              fontSize: 15,
+              fontWeight: FontWeight.w600,
+              color: globalEnabled ? colorScheme.onSurface : colorScheme.outline,
+            ),
+          ),
+          if (!globalEnabled || sheOnly) ...[
+            const SizedBox(width: 6),
+            _NsStatusBadges(globalEnabled: globalEnabled, sheOnly: sheOnly),
+          ],
+        ],
       ),
       subtitle: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -223,7 +259,22 @@ class _RootNsTile extends StatelessWidget {
               ),
             ),
           ),
-          const SizedBox(width: 4),
+          const SizedBox(width: 2),
+          IconButton(
+            icon: Icon(Icons.settings_outlined, size: 18, color: colorScheme.outline),
+            tooltip: 'Namespace Settings',
+            visualDensity: VisualDensity.compact,
+            onPressed: () async {
+              await _NsConfigSheet.show(
+                context: context,
+                nsId: def.key,
+                label: def.label,
+                description: def.description,
+                icon: def.icon,
+              );
+              _loadConfig();
+            },
+          ),
           Icon(Icons.chevron_right, color: colorScheme.outline),
         ],
       ),
@@ -241,7 +292,7 @@ class _RootNsTile extends StatelessWidget {
           Navigator.push(
             context,
             MaterialPageRoute(builder: (_) => _NsPage(def: def)),
-          );
+          ).then((_) => _loadConfig());
         }
       },
     );
@@ -267,19 +318,26 @@ class _NsPageState extends State<_NsPage> {
   Map<String, ToolConfig> _configs = {};
   bool _loading = true;
 
+  // 命名空间级别配置
+  CliCommandConfig? _nsConfig;
+
   @override
   void initState() {
     super.initState();
-    _loadConfigs();
+    _loadAll();
   }
 
-  Future<void> _loadConfigs() async {
+  Future<void> _loadAll() async {
     setState(() => _loading = true);
     final configs = await _service.getAllToolConfigs();
-    setState(() {
-      _configs = {for (final c in configs) c.toolName: c};
-      _loading = false;
-    });
+    final nsConfig = await CliCommandConfigService.instance.getConfig(widget.def.key);
+    if (mounted) {
+      setState(() {
+        _configs = {for (final c in configs) c.toolName: c};
+        _nsConfig = nsConfig;
+        _loading = false;
+      });
+    }
   }
 
   @override
@@ -290,6 +348,9 @@ class _NsPageState extends State<_NsPage> {
     final cmds = ns.commands;
     final isTool = _isToolNamespace(ns);
 
+    final nsGlobalEnabled = _nsConfig?.globalEnabled ?? true;
+    final nsSheOnly = _nsConfig?.sheOnly ?? false;
+
     if (_loading && isTool) {
       return Scaffold(
         appBar: AppBar(title: Text(widget.def.label)),
@@ -299,21 +360,50 @@ class _NsPageState extends State<_NsPage> {
 
     return Scaffold(
       appBar: AppBar(
-        title: Text(widget.def.label),
+        title: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(widget.def.label),
+            if (!nsGlobalEnabled || nsSheOnly) ...[
+              const SizedBox(width: 8),
+              _NsStatusBadges(globalEnabled: nsGlobalEnabled, sheOnly: nsSheOnly),
+            ],
+          ],
+        ),
         actions: [
+          IconButton(
+            icon: const Icon(Icons.settings_outlined, size: 20),
+            tooltip: 'Namespace Settings',
+            onPressed: () async {
+              await _NsConfigSheet.show(
+                context: context,
+                nsId: widget.def.key,
+                label: widget.def.label,
+                description: widget.def.description,
+                icon: widget.def.icon,
+              );
+              _loadAll();
+            },
+          ),
           if (isTool)
             IconButton(
               icon: const Icon(Icons.refresh),
               tooltip: 'Refresh',
-              onPressed: _loadConfigs,
+              onPressed: _loadAll,
             ),
         ],
       ),
       body: RefreshIndicator(
-        onRefresh: _loadConfigs,
+        onRefresh: _loadAll,
         child: ListView(
           padding: const EdgeInsets.symmetric(vertical: 8),
           children: [
+            // ── 当前命名空间自身的限制横幅 ──────────────────────────────
+            if (!nsGlobalEnabled || nsSheOnly)
+              _AncestorRestrictionBanner(
+                restrictingId: widget.def.key,
+                restrictingConfig: _nsConfig!,
+              ),
             // ── 子命名空间区块 ──────────────────────────────────────────────
             if (subNs.isNotEmpty) ...[
               _SectionHeader(label: 'Namespaces', colorScheme: colorScheme),
@@ -322,7 +412,7 @@ class _NsPageState extends State<_NsPage> {
                     subKey: e.key,
                     subNs: e.value,
                     configs: _configs,
-                    onRefresh: _loadConfigs,
+                    onRefresh: _loadAll,
                   )),
             ],
 
@@ -340,7 +430,7 @@ class _NsPageState extends State<_NsPage> {
                     nsKey: widget.def.key,
                     cmd: e.value,
                     configs: _configs,
-                    onRefresh: _loadConfigs,
+                    onRefresh: _loadAll,
                   )),
             ],
           ],
@@ -354,7 +444,7 @@ class _NsPageState extends State<_NsPage> {
 // Sub-namespace tile — navigates to a sub-namespace page
 // ═══════════════════════════════════════════════════════════════════════════════
 
-class _SubNsTile extends StatelessWidget {
+class _SubNsTile extends StatefulWidget {
   final String parentKey;
   final String subKey;
   final CliNamespace subNs;
@@ -370,15 +460,37 @@ class _SubNsTile extends StatelessWidget {
   });
 
   @override
+  State<_SubNsTile> createState() => _SubNsTileState();
+}
+
+class _SubNsTileState extends State<_SubNsTile> {
+  CliCommandConfig? _nsConfig;
+
+  String get _nsId => '${widget.parentKey}.${widget.subKey}';
+
+  @override
+  void initState() {
+    super.initState();
+    _loadConfig();
+  }
+
+  Future<void> _loadConfig() async {
+    final cfg = await CliCommandConfigService.instance.getConfig(_nsId);
+    if (mounted) setState(() => _nsConfig = cfg);
+  }
+
+  @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
-    final cmdCount = subNs.commands.length;
-    final subNsCount = subNs.subNamespaces.length;
+    final cmdCount = widget.subNs.commands.length;
+    final subNsCount = widget.subNs.subNamespaces.length;
     final countLabel =
         subNsCount > 0 ? '$subNsCount namespaces' : '$cmdCount commands';
 
     // 选取图标
-    final icon = _subNsIcon(subKey);
+    final icon = _subNsIcon(widget.subKey);
+    final globalEnabled = _nsConfig?.globalEnabled ?? true;
+    final sheOnly = _nsConfig?.sheOnly ?? false;
 
     return ListTile(
       contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
@@ -386,27 +498,41 @@ class _SubNsTile extends StatelessWidget {
         width: 36,
         height: 36,
         decoration: BoxDecoration(
-          color: colorScheme.secondaryContainer,
+          color: colorScheme.secondaryContainer
+              .withValues(alpha: globalEnabled ? 1 : 0.5),
           borderRadius: BorderRadius.circular(8),
         ),
         child:
-            Icon(icon, size: 18, color: colorScheme.onSecondaryContainer),
+            Icon(icon, size: 18, color: colorScheme.onSecondaryContainer
+                .withValues(alpha: globalEnabled ? 1 : 0.4)),
       ),
-      title: Text(
-        _capitalize(subKey),
-        style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+      title: Row(
+        children: [
+          Text(
+            _capitalize(widget.subKey),
+            style: TextStyle(
+              fontSize: 14,
+              fontWeight: FontWeight.w600,
+              color: globalEnabled ? colorScheme.onSurface : colorScheme.outline,
+            ),
+          ),
+          if (!globalEnabled || sheOnly) ...[
+            const SizedBox(width: 6),
+            _NsStatusBadges(globalEnabled: globalEnabled, sheOnly: sheOnly),
+          ],
+        ],
       ),
       subtitle: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           const SizedBox(height: 1),
           Text(
-            subNs.description,
+            widget.subNs.description,
             style: TextStyle(fontSize: 12, color: colorScheme.outline),
           ),
           const SizedBox(height: 1),
           Text(
-            'shepaw $parentKey $subKey.*',
+            'shepaw ${widget.parentKey} ${widget.subKey}.*',
             style: TextStyle(
               fontSize: 11,
               fontFamily: 'monospace',
@@ -433,33 +559,48 @@ class _SubNsTile extends StatelessWidget {
               ),
             ),
           ),
-          const SizedBox(width: 4),
+          const SizedBox(width: 2),
+          IconButton(
+            icon: Icon(Icons.settings_outlined, size: 16, color: colorScheme.outline),
+            tooltip: 'Sub-namespace Settings',
+            visualDensity: VisualDensity.compact,
+            onPressed: () async {
+              await _NsConfigSheet.show(
+                context: context,
+                nsId: _nsId,
+                label: _capitalize(widget.subKey),
+                description: widget.subNs.description,
+                icon: icon,
+              );
+              _loadConfig();
+            },
+          ),
           Icon(Icons.chevron_right, size: 18, color: colorScheme.outline),
         ],
       ),
       onTap: () {
         final isLeaf =
-            subNs.commands.isEmpty && subNs.subNamespaces.isEmpty;
+            widget.subNs.commands.isEmpty && widget.subNs.subNamespaces.isEmpty;
         if (isLeaf) {
           _CliDetailSheet.showForNamespace(
             context: context,
-            nsKey: '$parentKey $subKey',
-            label: _capitalize(subKey),
-            ns: subNs,
+            nsKey: '${widget.parentKey} ${widget.subKey}',
+            label: _capitalize(widget.subKey),
+            ns: widget.subNs,
           );
         } else {
           Navigator.push(
             context,
             MaterialPageRoute(
               builder: (_) => _SubNsPage(
-                parentKey: parentKey,
-                subKey: subKey,
-                subNs: subNs,
-                configs: configs,
-                onRefresh: onRefresh,
+                parentKey: widget.parentKey,
+                subKey: widget.subKey,
+                subNs: widget.subNs,
+                configs: widget.configs,
+                onRefresh: widget.onRefresh,
               ),
             ),
-          );
+          ).then((_) => _loadConfig());
         }
       },
     );
@@ -483,7 +624,7 @@ class _SubNsTile extends StatelessWidget {
 // Sub-namespace Page — shows commands within a sub-namespace
 // ═══════════════════════════════════════════════════════════════════════════════
 
-class _SubNsPage extends StatelessWidget {
+class _SubNsPage extends StatefulWidget {
   final String parentKey;
   final String subKey;
   final CliNamespace subNs;
@@ -499,31 +640,103 @@ class _SubNsPage extends StatelessWidget {
     required this.onRefresh,
   });
 
+  @override
+  State<_SubNsPage> createState() => _SubNsPageState();
+}
+
+class _SubNsPageState extends State<_SubNsPage> {
+  // 当前子命名空间自身的配置
+  CliCommandConfig? _nsConfig;
+  // 祖先限制
+  ({String id, CliCommandConfig config})? _ancestor;
+
+  String get _nsId => '${widget.parentKey}.${widget.subKey}';
+
   String get _title {
-    final s = subKey;
+    final s = widget.subKey;
     return s.isEmpty ? s : s[0].toUpperCase() + s.substring(1);
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _loadConfigs();
+  }
+
+  Future<void> _loadConfigs() async {
+    final nsConfig = await CliCommandConfigService.instance.getConfig(_nsId);
+    final ancestor = await CliCommandConfigService.instance.findRestrictingAncestor(_nsId);
+    if (mounted) {
+      setState(() {
+        _nsConfig = nsConfig;
+        _ancestor = ancestor;
+      });
+    }
   }
 
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
-    final cmds = subNs.commands;
-    final nestedNs = subNs.subNamespaces;
+    final cmds = widget.subNs.commands;
+    final nestedNs = widget.subNs.subNamespaces;
+
+    final nsGlobalEnabled = _nsConfig?.globalEnabled ?? true;
+    final nsSheOnly = _nsConfig?.sheOnly ?? false;
 
     return Scaffold(
-      appBar: AppBar(title: Text(_title)),
+      appBar: AppBar(
+        title: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(_title),
+            if (!nsGlobalEnabled || nsSheOnly) ...[
+              const SizedBox(width: 8),
+              _NsStatusBadges(globalEnabled: nsGlobalEnabled, sheOnly: nsSheOnly),
+            ],
+          ],
+        ),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.settings_outlined, size: 20),
+            tooltip: 'Sub-namespace Settings',
+            onPressed: () async {
+              await _NsConfigSheet.show(
+                context: context,
+                nsId: _nsId,
+                label: _title,
+                description: widget.subNs.description,
+                icon: Icons.folder_outlined,
+              );
+              _loadConfigs();
+            },
+          ),
+        ],
+      ),
       body: ListView(
         padding: const EdgeInsets.symmetric(vertical: 8),
         children: [
+          // ── 祖先限制横幅 ─────────────────────────────────────────────
+          if (_ancestor != null)
+            _AncestorRestrictionBanner(
+              restrictingId: _ancestor!.id,
+              restrictingConfig: _ancestor!.config,
+            ),
+          // ── 当前层级限制横幅 ──────────────────────────────────────────
+          if (_ancestor == null && (!nsGlobalEnabled || nsSheOnly))
+            _AncestorRestrictionBanner(
+              restrictingId: _nsId,
+              restrictingConfig: _nsConfig!,
+            ),
+
           // 嵌套子命名空间（如 meta > system）
           if (nestedNs.isNotEmpty) ...[
             _SectionHeader(label: 'Namespaces', colorScheme: colorScheme),
             ...nestedNs.entries.map((e) => _SubNsTile(
-                  parentKey: '$parentKey $subKey',
+                  parentKey: '${widget.parentKey} ${widget.subKey}',
                   subKey: e.key,
                   subNs: e.value,
-                  configs: configs,
-                  onRefresh: onRefresh,
+                  configs: widget.configs,
+                  onRefresh: widget.onRefresh,
                 )),
           ],
 
@@ -533,10 +746,10 @@ class _SubNsPage extends StatelessWidget {
               Divider(height: 1, indent: 16, endIndent: 16, color: colorScheme.outlineVariant),
             _SectionHeader(label: 'Commands', colorScheme: colorScheme),
             ...cmds.entries.map((e) => _CommandTile(
-                  nsKey: '$parentKey $subKey',
+                  nsKey: '${widget.parentKey} ${widget.subKey}',
                   cmd: e.value,
-                  configs: configs,
-                  onRefresh: onRefresh,
+                  configs: widget.configs,
+                  onRefresh: widget.onRefresh,
                 )),
           ],
         ],
@@ -568,6 +781,8 @@ class _CommandTile extends StatefulWidget {
 
 class _CommandTileState extends State<_CommandTile> {
   CliCommandConfig? _cliConfig;
+  // 祖先限制信息
+  ({String id, CliCommandConfig config})? _ancestor;
 
   // 只有 OsToolDefinition 对应的工具命令才有配置管理
   OsToolDefinition? _toolDef() {
@@ -596,7 +811,12 @@ class _CommandTileState extends State<_CommandTile> {
     // OS 工具命令用 ToolConfigService，其他 CLI 命令用 CliCommandConfigService
     if (toolDef == null) {
       final cfg = await CliCommandConfigService.instance.getConfig(_commandId);
-      if (mounted) setState(() => _cliConfig = cfg);
+      final ancestor = await CliCommandConfigService.instance.findRestrictingAncestor(_commandId);
+      if (mounted) setState(() { _cliConfig = cfg; _ancestor = ancestor; });
+    } else {
+      // 工具命令也要检查祖先限制
+      final ancestor = await CliCommandConfigService.instance.findRestrictingAncestor(_commandId);
+      if (mounted) setState(() => _ancestor = ancestor);
     }
   }
 
@@ -706,9 +926,46 @@ class _CommandTileState extends State<_CommandTile> {
           ),
           subtitle: Padding(
             padding: const EdgeInsets.only(top: 2),
-            child: Text(
-              widget.cmd.description,
-              style: TextStyle(fontSize: 11, color: colorScheme.outline),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  widget.cmd.description,
+                  style: TextStyle(fontSize: 11, color: colorScheme.outline),
+                ),
+                // 祖先限制提示
+                if (_ancestor != null) ...[
+                  const SizedBox(height: 3),
+                  Row(
+                    children: [
+                      Icon(
+                        !_ancestor!.config.globalEnabled
+                            ? Icons.block
+                            : Icons.lock_outline,
+                        size: 11,
+                        color: !_ancestor!.config.globalEnabled
+                            ? colorScheme.error
+                            : colorScheme.tertiary,
+                      ),
+                      const SizedBox(width: 4),
+                      Expanded(
+                        child: Text(
+                          !_ancestor!.config.globalEnabled
+                              ? 'Disabled by parent: ${_ancestor!.id}'
+                              : 'She-only by parent: ${_ancestor!.id}',
+                          style: TextStyle(
+                            fontSize: 10,
+                            color: !_ancestor!.config.globalEnabled
+                                ? colorScheme.error
+                                : colorScheme.tertiary,
+                            fontStyle: FontStyle.italic,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ],
             ),
           ),
           trailing: toolDef != null
@@ -827,6 +1084,377 @@ class _CommandTileState extends State<_CommandTile> {
         initialConfig: config,
         service: ToolConfigService.instance,
         onChanged: widget.onRefresh,
+      ),
+    );
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// _NsStatusBadges — 小型状态标签（用在 _RootNsTile / _SubNsTile 标题后）
+// ═══════════════════════════════════════════════════════════════════════════════
+
+class _NsStatusBadges extends StatelessWidget {
+  final bool globalEnabled;
+  final bool sheOnly;
+  const _NsStatusBadges({required this.globalEnabled, required this.sheOnly});
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        if (!globalEnabled)
+          _miniTag('OFF', cs.error, cs),
+        if (sheOnly) ...[
+          if (!globalEnabled) const SizedBox(width: 3),
+          _miniTag('She', cs.tertiary, cs),
+        ],
+      ],
+    );
+  }
+
+  Widget _miniTag(String label, Color color, ColorScheme cs) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(3),
+        border: Border.all(color: color.withValues(alpha: 0.4)),
+      ),
+      child: Text(
+        label,
+        style: TextStyle(
+          fontSize: 9,
+          fontWeight: FontWeight.w700,
+          color: color,
+          letterSpacing: 0.3,
+        ),
+      ),
+    );
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// _AncestorRestrictionBanner — 祖先限制信息横幅
+// ═══════════════════════════════════════════════════════════════════════════════
+
+class _AncestorRestrictionBanner extends StatelessWidget {
+  final String restrictingId;
+  final CliCommandConfig restrictingConfig;
+
+  const _AncestorRestrictionBanner({
+    required this.restrictingId,
+    required this.restrictingConfig,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    final messages = <_BannerMessage>[];
+
+    if (!restrictingConfig.globalEnabled) {
+      messages.add(_BannerMessage(
+        icon: Icons.block,
+        color: cs.error,
+        containerColor: cs.errorContainer,
+        onContainerColor: cs.onErrorContainer,
+        text: 'Namespace "$restrictingId" is disabled — commands below are unavailable',
+      ));
+    }
+    if (restrictingConfig.sheOnly) {
+      messages.add(_BannerMessage(
+        icon: Icons.lock_outline,
+        color: cs.tertiary,
+        containerColor: cs.tertiaryContainer,
+        onContainerColor: cs.onTertiaryContainer,
+        text: 'Namespace "$restrictingId" is She-only — other agents cannot access these commands',
+      ));
+    }
+
+    return Column(
+      children: messages.map((m) => Padding(
+        padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
+        child: Container(
+          width: double.infinity,
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+          decoration: BoxDecoration(
+            color: m.containerColor.withValues(alpha: 0.4),
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(color: m.color.withValues(alpha: 0.3)),
+          ),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Icon(m.icon, size: 16, color: m.color),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  m.text,
+                  style: TextStyle(fontSize: 12, color: m.onContainerColor),
+                ),
+              ),
+            ],
+          ),
+        ),
+      )).toList(),
+    );
+  }
+}
+
+class _BannerMessage {
+  final IconData icon;
+  final Color color;
+  final Color containerColor;
+  final Color onContainerColor;
+  final String text;
+  const _BannerMessage({
+    required this.icon,
+    required this.color,
+    required this.containerColor,
+    required this.onContainerColor,
+    required this.text,
+  });
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// _NsConfigSheet — 命名空间级别配置底部弹窗
+// ═══════════════════════════════════════════════════════════════════════════════
+
+class _NsConfigSheet extends StatefulWidget {
+  final String nsId;
+  final String label;
+  final String description;
+  final IconData icon;
+
+  const _NsConfigSheet({
+    required this.nsId,
+    required this.label,
+    required this.description,
+    required this.icon,
+  });
+
+  static Future<void> show({
+    required BuildContext context,
+    required String nsId,
+    required String label,
+    required String description,
+    required IconData icon,
+  }) {
+    return showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (_) => _NsConfigSheet(
+        nsId: nsId,
+        label: label,
+        description: description,
+        icon: icon,
+      ),
+    );
+  }
+
+  @override
+  State<_NsConfigSheet> createState() => _NsConfigSheetState();
+}
+
+class _NsConfigSheetState extends State<_NsConfigSheet> {
+  CliCommandConfig? _config;
+  bool _loading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadConfig();
+  }
+
+  Future<void> _loadConfig() async {
+    final cfg = await CliCommandConfigService.instance.getConfig(widget.nsId);
+    if (mounted) setState(() { _config = cfg; _loading = false; });
+  }
+
+  Future<void> _setGlobalEnabled(bool v) async {
+    final updated = await CliCommandConfigService.instance
+        .saveConfig(widget.nsId, globalEnabled: v);
+    if (mounted) setState(() => _config = updated);
+  }
+
+  Future<void> _setSheOnly(bool v) async {
+    final updated = await CliCommandConfigService.instance
+        .saveConfig(widget.nsId, sheOnly: v);
+    if (mounted) setState(() => _config = updated);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    final globalEnabled = _config?.globalEnabled ?? true;
+    final sheOnly = _config?.sheOnly ?? false;
+
+    // 层级信息
+    final depth = widget.nsId.split('.').length;
+    final levelLabel = depth == 1 ? 'Top-level Namespace' : 'Sub-namespace';
+    final scopeLabel = 'Affects all commands under "${widget.nsId}.*"';
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 16, 20, 20),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // ── Header ───────────────────────────────────────────────────
+          Row(children: [
+            Icon(widget.icon, size: 20, color: cs.primary),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                '${widget.label} Settings',
+                style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w600),
+              ),
+            ),
+            IconButton(
+              icon: const Icon(Icons.close),
+              visualDensity: VisualDensity.compact,
+              onPressed: () => Navigator.pop(context),
+            ),
+          ]),
+          const SizedBox(height: 4),
+          Text(
+            widget.description,
+            style: TextStyle(fontSize: 12, color: cs.outline),
+          ),
+          const SizedBox(height: 4),
+          Row(children: [
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+              decoration: BoxDecoration(
+                color: cs.primaryContainer,
+                borderRadius: BorderRadius.circular(4),
+              ),
+              child: Text(
+                levelLabel,
+                style: TextStyle(fontSize: 10, color: cs.onPrimaryContainer, fontWeight: FontWeight.w500),
+              ),
+            ),
+            const SizedBox(width: 6),
+            Text(
+              widget.nsId,
+              style: TextStyle(fontSize: 11, fontFamily: 'monospace', color: cs.primary),
+            ),
+          ]),
+          const SizedBox(height: 16),
+          Divider(height: 1, color: cs.outlineVariant),
+          const SizedBox(height: 12),
+
+          if (_loading)
+            const Center(
+              child: Padding(
+                padding: EdgeInsets.symmetric(vertical: 20),
+                child: SizedBox(
+                  width: 20,
+                  height: 20,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                ),
+              ),
+            )
+          else ...[
+            // ── Global Enabled Switch ─────────────────────────────────
+            Container(
+              decoration: BoxDecoration(
+                color: cs.surfaceContainerHighest,
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: SwitchListTile.adaptive(
+                contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
+                title: const Text('Global Enabled', style: TextStyle(fontSize: 13)),
+                subtitle: Text(
+                  globalEnabled
+                      ? 'All agents can use commands in this namespace'
+                      : 'All commands in this namespace are disabled',
+                  style: TextStyle(fontSize: 11, color: cs.outline),
+                ),
+                value: globalEnabled,
+                onChanged: _setGlobalEnabled,
+              ),
+            ),
+            const SizedBox(height: 8),
+
+            // ── She Only Switch ───────────────────────────────────────
+            Container(
+              decoration: BoxDecoration(
+                color: sheOnly
+                    ? cs.tertiaryContainer.withValues(alpha: 0.3)
+                    : cs.surfaceContainerHighest,
+                borderRadius: BorderRadius.circular(8),
+                border: sheOnly
+                    ? Border.all(color: cs.tertiary.withValues(alpha: 0.4))
+                    : null,
+              ),
+              child: SwitchListTile.adaptive(
+                contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
+                title: Row(children: [
+                  const Text('She Only', style: TextStyle(fontSize: 13)),
+                  if (sheOnly) ...[
+                    const SizedBox(width: 6),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                      decoration: BoxDecoration(
+                        color: cs.tertiary.withValues(alpha: 0.15),
+                        borderRadius: BorderRadius.circular(4),
+                        border: Border.all(color: cs.tertiary.withValues(alpha: 0.5)),
+                      ),
+                      child: Text(
+                        'She only',
+                        style: TextStyle(
+                          fontSize: 9,
+                          fontWeight: FontWeight.w600,
+                          color: cs.tertiary,
+                        ),
+                      ),
+                    ),
+                  ],
+                ]),
+                subtitle: Text(
+                  sheOnly
+                      ? 'Other agents cannot use commands in this namespace'
+                      : 'All agents can use commands in this namespace',
+                  style: TextStyle(fontSize: 11, color: cs.outline),
+                ),
+                value: sheOnly,
+                activeTrackColor: cs.tertiary,
+                onChanged: globalEnabled ? _setSheOnly : null,
+              ),
+            ),
+            const SizedBox(height: 16),
+
+            // ── Scope Info ────────────────────────────────────────────
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+              decoration: BoxDecoration(
+                color: cs.primaryContainer.withValues(alpha: 0.3),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: cs.primary.withValues(alpha: 0.2)),
+              ),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Icon(Icons.info_outline, size: 15, color: cs.primary),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      scopeLabel,
+                      style: TextStyle(fontSize: 11, color: cs.onPrimaryContainer),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ],
       ),
     );
   }

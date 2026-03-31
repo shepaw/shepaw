@@ -83,6 +83,42 @@ class CliCommandConfigService {
     await _db.deleteCliCommandConfig(commandId);
   }
 
+  // ── 层级查询 ────────────────────────────────────────────────────────────────
+
+  /// 获取某个命令 ID 从根到叶的全部层级配置
+  ///
+  /// 例如 'context.profile.query' 返回
+  /// ['context', 'context.profile', 'context.profile.query'] 三层各自的配置。
+  /// 如果某一层无自定义配置，会返回默认值（globalEnabled=true, sheOnly=false）。
+  Future<List<CliCommandConfig>> getHierarchyConfigs(String commandId) async {
+    final segments = commandId.split('.');
+    final configs = <CliCommandConfig>[];
+    for (var i = 1; i <= segments.length; i++) {
+      final id = segments.take(i).join('.');
+      configs.add(await getConfig(id));
+    }
+    return configs;
+  }
+
+  /// 查找第一个限制了当前命令 ID 的祖先配置（不包含自身）
+  ///
+  /// 返回 null 表示没有祖先层级施加限制。
+  /// 返回 (ancestorId, config) 表示该祖先层级禁用了全局开关或设置了 She 专属。
+  Future<({String id, CliCommandConfig config})?> findRestrictingAncestor(
+    String commandId,
+  ) async {
+    final segments = commandId.split('.');
+    // 只检查祖先，不含自身 → i < segments.length
+    for (var i = 1; i < segments.length; i++) {
+      final id = segments.take(i).join('.');
+      final config = await getConfig(id);
+      if (!config.globalEnabled || config.sheOnly) {
+        return (id: id, config: config);
+      }
+    }
+    return null;
+  }
+
   // ── 权限检查 ────────────────────────────────────────────────────────────────
 
   /// 检查 CLI 命令是否可被指定的调用者执行
