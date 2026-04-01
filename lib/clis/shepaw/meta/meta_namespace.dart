@@ -1,6 +1,7 @@
 import '../../cli_base.dart';
 import '../system/system_namespace.dart';
 import 'datetime_command.dart';
+import 'cli_tools_namespace.dart';
 
 /// [META 层] meta 命名空间 - 系统元信息和诊断
 ///
@@ -11,9 +12,12 @@ import 'datetime_command.dart';
 /// 1. 扁平命令（直接执行）：
 ///    `shepaw meta datetime`
 ///
-/// 2. 分层路由（system 子命名空间）：
+/// 2. 分层路由（sub-namespace）：
 ///    `shepaw meta system.<action>`
 ///    Actions: info | tools-list | tools-detail | capabilities
+///
+///    `shepaw meta cli-tools.<action>`
+///    Actions: list | install | uninstall | rescan
 ///
 /// 示例：
 /// ```
@@ -22,6 +26,10 @@ import 'datetime_command.dart';
 /// shepaw meta system.tools-list
 /// shepaw meta system.tools-detail --name file_read
 /// shepaw meta system.capabilities
+/// shepaw meta cli-tools.list
+/// shepaw meta cli-tools.install --file /path/to/tool.zip
+/// shepaw meta cli-tools.uninstall --namespace weather
+/// shepaw meta cli-tools.rescan
 /// ```
 class MetaNamespace extends CliNamespace {
   static final instance = MetaNamespace._();
@@ -39,10 +47,11 @@ class MetaNamespace extends CliNamespace {
         'datetime': MetaDatetimeCommand(),
       };
 
-  /// 分层 sub-namespace：system
+  /// 分层 sub-namespace：system + cli-tools
   @override
   Map<String, CliNamespace> get subNamespaces => {
         'system': SystemNamespace.instance,
+        'cli-tools': CliToolsSubNamespace.instance,
       };
 
   @override
@@ -55,6 +64,10 @@ class MetaNamespace extends CliNamespace {
           'system.tools-list': 'List all available tools (UI, OS, skills, models)',
           'system.tools-detail': 'Full docs for a specific tool (--name <tool_name>)',
           'system.capabilities': 'Summary of system capabilities',
+          'cli-tools.list': 'List all installed external CLI tools',
+          'cli-tools.install': 'Install external CLI tool (--file <path> or --url <url>)',
+          'cli-tools.uninstall': 'Uninstall external CLI tool (--namespace <name>)',
+          'cli-tools.rescan': 'Re-scan cli-tools directory for changes',
         },
         'examples': [
           'shepaw meta datetime',
@@ -62,6 +75,10 @@ class MetaNamespace extends CliNamespace {
           'shepaw meta system.tools-list',
           'shepaw meta system.tools-detail --name file_read',
           'shepaw meta system.capabilities',
+          'shepaw meta cli-tools.list',
+          'shepaw meta cli-tools.install --file /path/to/tool.zip',
+          'shepaw meta cli-tools.uninstall --namespace weather',
+          'shepaw meta cli-tools.rescan',
         ],
       };
 }

@@ -10,7 +10,6 @@ import '../services/remote_agent_service.dart';
 import '../services/local_database_service.dart';
 import '../services/local_file_storage_service.dart';
 import '../services/token_service.dart';
-import '../services/os_tool_registry.dart';
 import '../services/model_registry.dart';
 import '../models/model_definition.dart';
 import '../models/llm_provider_config.dart';
@@ -18,7 +17,6 @@ import '../services/skill_registry.dart';
 import '../services/channel_tunnel_service.dart';
 import '../services/local_network_service.dart';
 import '../main.dart' show globalACPServer, kAcpServerPortKey, kAcpServerDefaultPort, kAcpServerEnabledKey;
-import 'os_tool_select_screen.dart';
 import 'skill_select_screen.dart';
 import 'model_select_screen.dart';
 import 'cli_command_select_screen.dart';
@@ -67,9 +65,6 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
 
   ProtocolType _editingProtocol = ProtocolType.acp;
   ConnectionType _editingConnectionType = ConnectionType.websocket;
-
-  // OS 工具配置
-  Set<String> _enabledOsTools = {};
 
   // Skills 配置
   Set<String> _enabledSkills = {};
@@ -140,9 +135,6 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
     _editingProtocol = _agent.protocol;
     _editingConnectionType = _agent.connectionType;
     _editingAllowExternalAccess = _agent.allowExternalAccess;
-
-    // Load OS tools from metadata
-    _enabledOsTools = _agent.enabledOsTools;
 
     // Load skills from metadata
     _enabledSkills = _agent.enabledSkills;
@@ -290,13 +282,6 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
           metadata.remove('llm_api_key');
         }
 
-        // Save OS tools
-        if (_enabledOsTools.isNotEmpty) {
-          metadata['enabled_os_tools'] = _enabledOsTools.toList();
-        } else {
-          metadata.remove('enabled_os_tools');
-        }
-
         // Save skills
         if (_enabledSkills.isNotEmpty) {
           metadata['enabled_skills'] = _enabledSkills.toList();
@@ -333,7 +318,6 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
         metadata.remove('llm_model');
         metadata.remove('llm_api_base');
         metadata.remove('llm_api_key');
-        metadata.remove('enabled_os_tools');
       }
 
       // Save allow_external_access for local agents
@@ -824,8 +808,6 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
         _buildInfoCard(),
         if (_isLocalMode) ...[
           const SizedBox(height: 16),
-          _buildOsToolsCard(),
-          const SizedBox(height: 16),
           _buildSkillsCard(),
           if (_agent.hasToolModels) ...[
             const SizedBox(height: 16),
@@ -1067,118 +1049,6 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
     );
   }
 
-  Widget _buildOsToolsCard() {
-    final l10n = AppLocalizations.of(context);
-    final theme = Theme.of(context);
-    final colorScheme = theme.colorScheme;
-    final registry = OsToolRegistry.instance;
-    final enabledTools = _agent.enabledOsTools;
-
-    // Group all platform tools by category.
-    final grouped = registry.toolsByCategory;
-
-    return Card(
-      elevation: 0,
-      clipBehavior: Clip.antiAlias,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(12),
-        side: BorderSide(color: colorScheme.outlineVariant),
-      ),
-      child: ExpansionTile(
-        leading: Icon(Icons.build_circle, size: 18, color: colorScheme.primary),
-        title: Row(
-          children: [
-            Text(
-              l10n.osTool_configTitle,
-              style: theme.textTheme.titleMedium?.copyWith(
-                fontWeight: FontWeight.bold,
-                color: colorScheme.primary,
-              ),
-            ),
-            const Spacer(),
-            _buildCountBadge(
-              '${enabledTools.length}/${registry.tools.length}',
-              enabledTools.isNotEmpty,
-              colorScheme,
-            ),
-          ],
-        ),
-        tilePadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-        childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-        initiallyExpanded: false,
-        children: [
-          const SizedBox(height: 8),
-          if (enabledTools.isEmpty)
-            Padding(
-              padding: const EdgeInsets.symmetric(vertical: 8),
-              child: Text(
-                l10n.agentDetail_noOsToolsEnabled,
-                style: TextStyle(
-                  fontSize: 13,
-                  color: colorScheme.outline,
-                  fontStyle: FontStyle.italic,
-                ),
-              ),
-            )
-          else
-            ...grouped.entries.map((entry) {
-              final category = entry.key;
-              final tools = entry.value;
-              // Only show categories that have at least one enabled tool
-              final enabledInCategory = tools.where((t) => enabledTools.contains(t.name)).toList();
-              if (enabledInCategory.isEmpty) return const SizedBox.shrink();
-              return Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Padding(
-                    padding: const EdgeInsets.only(top: 4, bottom: 4),
-                    child: Text(
-                      _osCategoryLabel(category, l10n),
-                      style: TextStyle(
-                        fontSize: 12,
-                        fontWeight: FontWeight.w600,
-                        color: colorScheme.onSurfaceVariant,
-                      ),
-                    ),
-                  ),
-                  ...enabledInCategory.map((tool) => Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 4),
-                    child: Row(
-                      children: [
-                        Icon(
-                          _osToolIcon(tool.name),
-                          size: 16,
-                          color: colorScheme.onSurface,
-                        ),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                tool.name,
-                                style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500),
-                              ),
-                              Text(
-                                tool.description.split('.').first.trim(),
-                                style: TextStyle(fontSize: 11, color: colorScheme.outline),
-                              ),
-                            ],
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-                        _osRiskBadge(tool.defaultRiskLevel, colorScheme),
-                      ],
-                    ),
-                  )),
-                ],
-              );
-            }),
-        ],
-      ),
-    );
-  }
-
   Widget _buildSkillsCard() {
     final l10n = AppLocalizations.of(context);
     final theme = Theme.of(context);
@@ -1391,99 +1261,6 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
         ],
       ),
     );
-  }
-
-  Widget _osRiskBadge(String riskLevel, ColorScheme colorScheme) {
-    final Color bgColor;
-    final Color fgColor;
-    final String label;
-    switch (riskLevel) {
-      case 'safe':
-        bgColor = Colors.green.withValues(alpha: 0.1);
-        fgColor = Colors.green;
-        label = 'SAFE';
-        break;
-      case 'highRisk':
-        bgColor = colorScheme.errorContainer;
-        fgColor = colorScheme.error;
-        label = 'HIGH';
-        break;
-      default:
-        bgColor = Colors.orange.withValues(alpha: 0.1);
-        fgColor = Colors.orange;
-        label = 'LOW';
-    }
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-      decoration: BoxDecoration(
-        color: bgColor,
-        borderRadius: BorderRadius.circular(4),
-      ),
-      child: Text(
-        label,
-        style: TextStyle(fontSize: 9, fontWeight: FontWeight.bold, color: fgColor),
-      ),
-    );
-  }
-
-  String _osCategoryLabel(String category, AppLocalizations l10n) {
-    switch (category) {
-      case 'command':
-        return l10n.osTool_catCommand;
-      case 'file':
-        return l10n.osTool_catFile;
-      case 'app':
-        return l10n.osTool_catApp;
-      case 'clipboard':
-        return l10n.osTool_catClipboard;
-      case 'macos':
-        return l10n.osTool_catMacos;
-      case 'process':
-        return l10n.osTool_catProcess;
-      default:
-        return category;
-    }
-  }
-
-  IconData _osToolIcon(String name) {
-    switch (name) {
-      case 'shell_exec':
-        return Icons.terminal;
-      case 'file_read':
-        return Icons.description;
-      case 'file_write':
-        return Icons.edit_document;
-      case 'file_delete':
-        return Icons.delete_forever;
-      case 'file_move':
-        return Icons.drive_file_move;
-      case 'file_list':
-        return Icons.folder_open;
-      case 'app_open':
-        return Icons.launch;
-      case 'url_open':
-        return Icons.open_in_browser;
-      case 'screenshot':
-        return Icons.screenshot;
-      case 'clipboard_read':
-        return Icons.content_paste;
-      case 'clipboard_write':
-        return Icons.content_copy;
-      case 'system_info':
-        return Icons.info_outline;
-      case 'applescript_exec':
-        return Icons.code;
-      case 'process_list':
-        return Icons.list_alt;
-      case 'process_kill':
-        return Icons.dangerous;
-      case 'process_detail':
-        return Icons.analytics;
-      case 'network_connections':
-        return Icons.lan;
-      default:
-        return Icons.build;
-    }
   }
 
   Widget _buildTokenCard() {
@@ -2290,7 +2067,7 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
   }
 
 
-  /// Navigation tiles for OS Tools, Skills, and Model Routing sub-pages (edit mode).
+  /// Navigation tiles for Skills, Tool Models, and CLI Commands sub-pages (edit mode).
   Widget _buildEditConfigNavigationTiles(ColorScheme colorScheme) {
     final l10n = AppLocalizations.of(context);
 
@@ -2302,37 +2079,6 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
       ),
       child: Column(
         children: [
-          ListTile(
-            leading: Icon(Icons.build_circle, color: colorScheme.primary),
-            title: Text(l10n.osTool_configTitle),
-            subtitle: Text(
-              _enabledOsTools.isEmpty
-                  ? l10n.addAgent_noOsTools
-                  : l10n.addAgent_osToolsCount(_enabledOsTools.length),
-              style: TextStyle(
-                color: _enabledOsTools.isEmpty
-                    ? colorScheme.outline
-                    : colorScheme.primary,
-              ),
-            ),
-            trailing: const Icon(Icons.chevron_right),
-            onTap: () async {
-              final result = await Navigator.push<Set<String>>(
-                context,
-                MaterialPageRoute(
-                  builder: (_) => OsToolSelectScreen(
-                    enabledTools: _enabledOsTools,
-                  ),
-                ),
-              );
-              if (result != null) {
-                setState(() {
-                  _enabledOsTools = result;
-                });
-              }
-            },
-          ),
-          const Divider(height: 1, indent: 16, endIndent: 16),
           ListTile(
             leading: Icon(Icons.auto_stories, color: colorScheme.primary),
             title: Text(l10n.skill_configTitle),

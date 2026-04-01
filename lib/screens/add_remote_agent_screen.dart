@@ -7,7 +7,6 @@ import '../services/model_registry.dart';
 import '../services/remote_agent_service.dart';
 import '../services/local_database_service.dart';
 import '../services/token_service.dart';
-import 'os_tool_select_screen.dart';
 import 'skill_select_screen.dart';
 import 'model_select_screen.dart';
 import 'model_management_screen.dart';
@@ -48,9 +47,6 @@ class _AddRemoteAgentScreenState extends State<AddRemoteAgentScreen> {
 
   // 主模型选择（从 ModelRegistry 中选择）
   String? _selectedMainModelId;
-
-  // OS 工具配置
-  Set<String> _enabledOsTools = {};
 
   // Skills 配置
   Set<String> _enabledSkills = {};
@@ -176,11 +172,6 @@ class _AddRemoteAgentScreenState extends State<AddRemoteAgentScreen> {
               : 'openai';
           // Local LLM agents are always available
           initialStatus = AgentStatus.online;
-
-          // Save enabled OS tools
-          if (_enabledOsTools.isNotEmpty) {
-            metadata['enabled_os_tools'] = _enabledOsTools.toList();
-          }
 
           // Save enabled skills
           if (_enabledSkills.isNotEmpty) {
@@ -1025,37 +1016,6 @@ class _AddRemoteAgentScreenState extends State<AddRemoteAgentScreen> {
       ),
       child: Column(
         children: [
-          ListTile(
-            leading: Icon(Icons.build_circle, color: colorScheme.primary),
-            title: Text(l10n.osTool_configTitle),
-            subtitle: Text(
-              _enabledOsTools.isEmpty
-                  ? l10n.addAgent_noOsTools
-                  : l10n.addAgent_osToolsCount(_enabledOsTools.length),
-              style: TextStyle(
-                color: _enabledOsTools.isEmpty
-                    ? colorScheme.outline
-                    : colorScheme.primary,
-              ),
-            ),
-            trailing: const Icon(Icons.chevron_right),
-            onTap: () async {
-              final result = await Navigator.push<Set<String>>(
-                context,
-                MaterialPageRoute(
-                  builder: (_) => OsToolSelectScreen(
-                    enabledTools: _enabledOsTools,
-                  ),
-                ),
-              );
-              if (result != null) {
-                setState(() {
-                  _enabledOsTools = result;
-                });
-              }
-            },
-          ),
-          const Divider(height: 1, indent: 16, endIndent: 16),
           ListTile(
             leading: Icon(Icons.auto_stories, color: colorScheme.primary),
             title: Text(l10n.skill_configTitle),
