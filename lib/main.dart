@@ -23,6 +23,8 @@ import 'services/notification_service.dart';
 import 'services/update_notification_service.dart';
 import 'services/app_lifecycle_service.dart';
 import 'services/skill_registry.dart';
+import 'services/cli_tool_registry.dart';
+import 'clis/shepaw/shepaw_cli.dart';
 import 'services/model_registry.dart';
 import 'services/logger_service.dart';
 import 'services/foreground_task_service.dart';
@@ -114,6 +116,10 @@ Future<void> main(List<String> args) async {
 
       // Initialize skill registry
       await SkillRegistry.instance.initialize();
+
+      // Initialize external CLI tool registry and load into ShepawCLI
+      await CliToolRegistry.instance.initialize();
+      ShepawCLI.instance.reloadExternalTools();
 
       // Initialize tool model registry
       await ModelRegistry.instance.initialize();
