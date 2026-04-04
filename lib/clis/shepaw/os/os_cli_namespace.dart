@@ -35,6 +35,9 @@ class OsCliNamespace extends CliNamespace {
   String get description =>
       'Local OS tools — shell, file, app, clipboard, process, system';
 
+  @override
+  String get usage => 'shepaw os <category>.<command> [flags]';
+
   /// 按 category 分组的 sub-namespaces
   @override
   Map<String, CliNamespace> get subNamespaces {
@@ -65,66 +68,6 @@ class OsCliNamespace extends CliNamespace {
   Map<String, CliCommand> get commands => {
         'list': _OsListAllCommand(),
       };
-
-  @override
-  Map<String, dynamic> getHelp() {
-    final registry = OsToolRegistry.instance;
-    final platform = OsCliNamespace._currentPlatform;
-    final osTools = registry.tools
-        .where((t) =>
-            t.category != 'network' &&
-            t.supportedPlatforms.contains(platform))
-        .toList();
-
-    // 按 category 分组生成 subcommand 文档
-    final grouped = <String, List<OsToolDefinition>>{};
-    for (final tool in osTools) {
-      grouped.putIfAbsent(tool.category, () => []).add(tool);
-    }
-
-    final subcommands = <String, String>{
-      'list': 'List all OS tools on the current platform',
-    };
-    for (final entry in grouped.entries) {
-      for (final tool in entry.value) {
-        final shortName = _toolShortName(tool.name, entry.key);
-        subcommands['${entry.key}.$shortName'] = tool.description;
-      }
-    }
-
-    final examples = <String>[
-      'shepaw os list',
-      'shepaw os command.shell --command "ls -la"',
-      'shepaw os command.sysinfo --category overview',
-      'shepaw os file.read --path /tmp/test.txt',
-      'shepaw os file.write --path /tmp/test.txt --content "hello world"',
-      'shepaw os file.list --path /tmp --detail true',
-      'shepaw os file.delete --path /tmp/test.txt',
-      'shepaw os file.move --source /tmp/a.txt --destination /tmp/b.txt',
-      'shepaw os app.open --app_name Safari',
-      'shepaw os app.url --url https://dart.dev',
-      'shepaw os clipboard.read',
-      'shepaw os clipboard.write --text "copied text"',
-      'shepaw os process.list --sort_by cpu --limit 10',
-      'shepaw os process.detail --pid 1234',
-      'shepaw os process.kill --pid 1234',
-      'shepaw os process.connections --pid 1234',
-    ];
-
-    if (Platform.isMacOS) {
-      examples.addAll([
-        'shepaw os command.screenshot',
-        'shepaw os macos.applescript --script \'display dialog "Hello"\'',
-      ]);
-    }
-
-    return {
-      'namespace': namespace,
-      'description': description,
-      'subcommands': subcommands,
-      'examples': examples,
-    };
-  }
 
   static String get _currentPlatform {
     if (Platform.isMacOS) return 'macos';
@@ -186,16 +129,6 @@ class _OsCategorySubNamespace extends CliNamespace {
           _toolShortName(tool.name, _category):
               OsToolCliCommand(tool, _toolShortName(tool.name, _category)),
       };
-
-  @override
-  Map<String, dynamic> getHelp() => {
-        'namespace': 'os.$_category',
-        'description': description,
-        'subcommands': {
-          for (final tool in _tools)
-            _toolShortName(tool.name, _category): tool.description,
-        },
-      };
 }
 
 // ── 通用 OS 工具 CLI 命令 ─────────────────────────────────────────────────────
@@ -215,6 +148,17 @@ class OsToolCliCommand extends CliCommand {
 
   @override
   String get description => toolDef.description;
+
+  @override
+  String get usage {
+    final props =
+        toolDef.parameterSchema['properties'] as Map<String, dynamic>? ?? {};
+    final required = (toolDef.parameterSchema['required'] as List<dynamic>?)
+            ?.map((e) => e.toString())
+            .toSet() ??
+        {};
+    return 'shepaw os ${toolDef.category}.$_shortName${_usageString(props, required)}';
+  }
 
   @override
   Map<String, dynamic> getHelp() {
@@ -237,15 +181,11 @@ class OsToolCliCommand extends CliCommand {
       };
     }
 
-    return {
-      'command': _shortName,
-      'tool_name': toolDef.name,
-      'description': description,
-      'risk_level': toolDef.defaultRiskLevel,
-      'flags': flagDocs,
-      'usage':
-          'shepaw os ${toolDef.category}.$_shortName${_usageString(props, required)}',
-    };
+    final base = super.getHelp();
+    base['tool_name'] = toolDef.name;
+    base['risk_level'] = toolDef.defaultRiskLevel;
+    base['flags'] = flagDocs;
+    return base;
   }
 
   @override
@@ -314,11 +254,7 @@ class _OsListAllCommand extends CliCommand {
   String get description => 'List all OS tools on the current platform';
 
   @override
-  Map<String, dynamic> getHelp() => {
-        'command': name,
-        'description': description,
-        'usage': 'shepaw os list',
-      };
+  String get usage => 'shepaw os list';
 
   @override
   Future<Map<String, dynamic>> execute(Map<String, String> flags) async {

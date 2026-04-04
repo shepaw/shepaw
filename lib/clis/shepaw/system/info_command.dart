@@ -9,12 +9,7 @@ class InfoCommand extends CliCommand {
   String get description => 'Return basic app information (version, platform, current time)';
 
   @override
-  Map<String, dynamic> getHelp() => {
-        'command': name,
-        'description': description,
-        'flags': {},
-        'usage': 'shepaw meta system.info',
-      };
+  String get usage => 'shepaw meta system.info';
 
   @override
   Future<Map<String, dynamic>> execute(Map<String, String> flags) async {

@@ -16,27 +16,29 @@ class CognitionQueryCommand extends CliCommand {
       'Query agent cognition (self + user), --id <agent_id> [--type self|user]';
 
   @override
-  Map<String, dynamic> getHelp() => {
-        'command': name,
-        'description': description,
-        'flags': {
-          'id': {
-            'description': 'Agent ID to query cognition for',
-            'required': true,
-            'type': 'string',
-          },
-          'type': {
-            'description': 'Filter by cognition type (omit to query both)',
-            'required': false,
-            'type': 'string',
-            'enum': ['self', 'user'],
-            'self_returns': ['soul', 'self_notes', 'capabilities', 'updated_at'],
-            'user_returns': ['user_profile', 'user_impression', 'user_notes', 'last_updated'],
-          },
-        },
-        'usage':
-            'shepaw context agents.cognition-query --id <agent_id> [--type self|user]',
-      };
+  String get usage =>
+      'shepaw context agents.cognition-query --id <agent_id> [--type self|user]';
+
+  @override
+  Map<String, dynamic> getHelp() {
+    final base = super.getHelp();
+    base['flags'] = {
+      'id': {
+        'description': 'Agent ID to query cognition for',
+        'required': true,
+        'type': 'string',
+      },
+      'type': {
+        'description': 'Filter by cognition type (omit to query both)',
+        'required': false,
+        'type': 'string',
+        'enum': ['self', 'user'],
+        'self_returns': ['soul', 'self_notes', 'capabilities', 'updated_at'],
+        'user_returns': ['user_profile', 'user_impression', 'user_notes', 'last_updated'],
+      },
+    };
+    return base;
+  }
 
   @override
   Future<Map<String, dynamic>> execute(Map<String, String> flags) async {

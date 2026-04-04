@@ -10,26 +10,28 @@ class WriteCommand extends CliCommand {
   String get description => 'Write field, --field <key> --value <val>';
 
   @override
-  Map<String, dynamic> getHelp() => {
-        'command': name,
-        'description': description,
-        'flags': {
-          'field': {
-            'description': 'Profile field key to write (e.g., name, age, occupation, or any custom key)',
-            'required': true,
-            'type': 'string',
-            'example': 'name',
-          },
-          'value': {
-            'description': 'Value to set for the field',
-            'required': true,
-            'type': 'string',
-            'example': 'John',
-          },
-        },
-        'usage': 'shepaw context profile.write --field <key> --value <val>',
-        'note': 'Use "shepaw context profile.fields" to see predefined fields',
-      };
+  String get usage => 'shepaw context profile.write --field <key> --value <val>';
+
+  @override
+  Map<String, dynamic> getHelp() {
+    final base = super.getHelp();
+    base['flags'] = {
+      'field': {
+        'description': 'Profile field key to write (e.g., name, age, occupation, or any custom key)',
+        'required': true,
+        'type': 'string',
+        'example': 'name',
+      },
+      'value': {
+        'description': 'Value to set for the field',
+        'required': true,
+        'type': 'string',
+        'example': 'John',
+      },
+    };
+    base['note'] = 'Use "shepaw context profile.fields" to see predefined fields';
+    return base;
+  }
 
   @override
   Future<Map<String, dynamic>> execute(Map<String, String> flags) async {

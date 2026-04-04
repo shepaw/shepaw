@@ -13,12 +13,7 @@ class CapabilitiesCommand extends CliCommand {
   String get description => 'Return a summary of system capabilities';
 
   @override
-  Map<String, dynamic> getHelp() => {
-        'command': name,
-        'description': description,
-        'flags': {},
-        'usage': 'shepaw meta system.capabilities',
-      };
+  String get usage => 'shepaw meta system.capabilities';
 
   @override
   Future<Map<String, dynamic>> execute(Map<String, String> flags) async {

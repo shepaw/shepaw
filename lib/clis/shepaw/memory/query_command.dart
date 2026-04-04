@@ -12,27 +12,29 @@ class QueryCommand extends CliCommand {
   String get description => 'Query memory, optional --keys soul,heartbeat,...';
 
   @override
-  Map<String, dynamic> getHelp() => {
-        'command': name,
-        'description': description,
-        'flags': {
-          'keys': {
-            'description': 'Comma-separated memory keys to retrieve (omit for all)',
-            'required': false,
-            'type': 'string',
-            'example': 'soul,user_info',
-            'available_keys': [
-              'soul (self-awareness, replace entire entry)',
-              'self_notes (personal notes)',
-              'long_term_memory (long-term memory)',
-              'heartbeat (last conversation summary)',
-              'user_info (overall impression of the user)',
-              'capabilities (capability index)',
-            ],
-          },
-        },
-        'usage': 'shepaw context memory.query [--keys soul,user_info,...]',
-      };
+  String get usage => 'shepaw context memory.query [--keys soul,user_info,...]';
+
+  @override
+  Map<String, dynamic> getHelp() {
+    final base = super.getHelp();
+    base['flags'] = {
+      'keys': {
+        'description': 'Comma-separated memory keys to retrieve (omit for all)',
+        'required': false,
+        'type': 'string',
+        'example': 'soul,user_info',
+        'available_keys': [
+          'soul (self-awareness, replace entire entry)',
+          'self_notes (personal notes)',
+          'long_term_memory (long-term memory)',
+          'heartbeat (last conversation summary)',
+          'user_info (overall impression of the user)',
+          'capabilities (capability index)',
+        ],
+      },
+    };
+    return base;
+  }
 
   @override
   Future<Map<String, dynamic>> execute(Map<String, String> flags) async {

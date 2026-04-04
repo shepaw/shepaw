@@ -10,13 +10,7 @@ class SkillsListCommand extends CliCommand {
   String get description => 'List all loaded LLM skill modules';
 
   @override
-  Map<String, dynamic> getHelp() => {
-        'command': name,
-        'description': description,
-        'flags': {},
-        'usage': 'shepaw skills list',
-        'note': 'Use "shepaw skills detail --name <skill>" for full documentation of a skill',
-      };
+  String get usage => 'shepaw skills list';
 
   @override
   Future<Map<String, dynamic>> execute(Map<String, String> flags) async {

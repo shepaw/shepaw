@@ -41,6 +41,9 @@ class ToolsNamespace extends CliNamespace {
   @override
   String get description => 'Network and web tools — search, fetch, config management';
 
+  @override
+  String get usage => 'shepaw tools <sub-namespace>.<action> [flags]';
+
   /// 顶层扁平命令：跨分类汇总列表 + 配置汇总
   @override
   Map<String, CliCommand> get commands => {
@@ -56,55 +59,22 @@ class ToolsNamespace extends CliNamespace {
       };
 
   @override
-  Map<String, dynamic> getHelp() => {
-        'namespace': namespace,
-        'description': description,
-        'subcommands': {
-          'list': 'List all network/web tools',
-          'config': 'List all tool configuration summaries',
-          'network.list': 'List network tools (query only)',
-          'network.detail': 'Full docs for a network tool (--name <tool_name>)',
-          'note': 'OS tools: use top-level "shepaw os.*" namespace instead',
-          'web.search': 'Search the web (--query <q> [--limit n])',
-          'web.fetch': 'Fetch URL content (--url <url> [--format text|markdown|html] [--timeout n])',
-          'web.config': 'List configuration for all web tools',
-          'web.search.config': 'Manage web_search config (API key, params, enable/disable)',
-          'web.fetch.config': 'Manage web_fetch config (params, enable/disable)',
-          '<tool_name>.config': 'Manage config for a specific tool',
-        },
-        'tool_config_actions': {
-          '(default/get)': 'Show current config for the tool',
-          'set-key': 'Set API key (pass --value <key>, omit for prompt)',
-          'delete-key': 'Remove stored API key',
-          'set-param': 'Set a parameter override (--key <k> --value <v>)',
-          'delete-param': 'Clear all parameter overrides',
-          'set-note': 'Set config note (--value <text>)',
-          'delete': 'Delete all config for the tool',
-          'enable': 'Enable the tool globally',
-          'disable': 'Disable the tool globally',
-        },
-        'examples': [
-          'shepaw tools list',
-          'shepaw tools config',
-          'shepaw tools network.list',
-          '# OS tools are now at top-level: shepaw os.*',
-          'shepaw tools network.detail --name web_search',
-          'shepaw tools web.search --query "Flutter state management"',
-          'shepaw tools web.search --query "Dart 3 records" --limit 5',
-          'shepaw tools web.fetch --url https://dart.dev',
-          'shepaw tools web.fetch --url https://example.com --format text --timeout 60',
-          'shepaw tools web.config',
-          'shepaw tools web.search.config',
-          'shepaw tools web.search.config --action set-key --value sk-xxx',
-          'shepaw tools web.search.config --action delete-key',
-          'shepaw tools web.search.config --action set-param --key timeout --value 60',
-          'shepaw tools web.search.config --action delete-param',
-          'shepaw tools web.search.config --action set-note --value "Primary search key"',
-          'shepaw tools web.search.config --action delete',
-          'shepaw tools web.search.config --action disable',
-          'shepaw tools web.search.config --action enable',
-        ],
-      };
+  Map<String, dynamic> getHelp() {
+    final base = super.getHelp();
+    base['tool_config_actions'] = {
+      '(default/get)': 'Show current config for the tool',
+      'set-key': 'Set API key (pass --value <key>, omit for prompt)',
+      'delete-key': 'Remove stored API key',
+      'set-param': 'Set a parameter override (--key <k> --value <v>)',
+      'delete-param': 'Clear all parameter overrides',
+      'set-note': 'Set config note (--value <text>)',
+      'delete': 'Delete all config for the tool',
+      'enable': 'Enable the tool globally',
+      'disable': 'Disable the tool globally',
+    };
+    base['tool_config_usage'] = 'shepaw tools <tool_name>.config [--action <action>] [--key k] [--value v]';
+    return base;
+  }
 
   // ── 动态路由：拦截 {tool_name}.config ───────────────────────────────────
 
@@ -404,12 +374,7 @@ class _ToolsAllListCommand extends CliCommand {
   String get description => 'List all network/web tools';
 
   @override
-  Map<String, dynamic> getHelp() => {
-        'command': name,
-        'description': description,
-        'usage': 'shepaw tools list',
-        'note': 'For OS tools use: shepaw os list',
-      };
+  String get usage => 'shepaw tools list';
 
   @override
   Future<Map<String, dynamic>> execute(Map<String, String> flags) async {
@@ -446,13 +411,7 @@ class _ToolsConfigListCommand extends CliCommand {
   String get description => 'List configuration summary for all tools';
 
   @override
-  Map<String, dynamic> getHelp() => {
-        'command': name,
-        'description': description,
-        'flags': {},
-        'usage': 'shepaw tools config',
-        'note': 'To manage a specific tool\'s config, use: shepaw tools <tool_name>.config',
-      };
+  String get usage => 'shepaw tools config';
 
   @override
   Future<Map<String, dynamic>> execute(Map<String, String> flags) async {

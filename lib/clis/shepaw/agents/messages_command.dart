@@ -14,36 +14,38 @@ class MessagesCommand extends CliCommand {
       'Query agent channel messages, --id <agent_id> [--channel <channel_id>] [--limit 20] [--offset 0]';
 
   @override
-  Map<String, dynamic> getHelp() => {
-        'command': name,
-        'description': description,
-        'flags': {
-          'id': {
-            'description': 'Agent ID — auto-finds the most recent DM channel',
-            'required': true,
-            'type': 'string',
-          },
-          'channel': {
-            'description': 'Explicit channel ID (overrides auto-detection)',
-            'required': false,
-            'type': 'string',
-          },
-          'limit': {
-            'description': 'Maximum number of messages to return',
-            'required': false,
-            'type': 'integer',
-            'default': '20',
-          },
-          'offset': {
-            'description': 'Message offset for pagination',
-            'required': false,
-            'type': 'integer',
-            'default': '0',
-          },
-        },
-        'usage':
-            'shepaw context agents.messages --id <agent_id> [--channel <channel_id>] [--limit 20] [--offset 0]',
-      };
+  String get usage =>
+      'shepaw context agents.messages --id <agent_id> [--channel <channel_id>] [--limit 20] [--offset 0]';
+
+  @override
+  Map<String, dynamic> getHelp() {
+    final base = super.getHelp();
+    base['flags'] = {
+      'id': {
+        'description': 'Agent ID — auto-finds the most recent DM channel',
+        'required': true,
+        'type': 'string',
+      },
+      'channel': {
+        'description': 'Explicit channel ID (overrides auto-detection)',
+        'required': false,
+        'type': 'string',
+      },
+      'limit': {
+        'description': 'Maximum number of messages to return',
+        'required': false,
+        'type': 'integer',
+        'default': '20',
+      },
+      'offset': {
+        'description': 'Message offset for pagination',
+        'required': false,
+        'type': 'integer',
+        'default': '0',
+      },
+    };
+    return base;
+  }
 
   @override
   Future<Map<String, dynamic>> execute(Map<String, String> flags) async {

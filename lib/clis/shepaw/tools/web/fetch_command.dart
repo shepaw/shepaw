@@ -30,38 +30,33 @@ class WebFetchCommand extends CliCommand with WebToolConfigMixin {
   String get description => 'Fetch a URL and return content as text or markdown';
 
   @override
-  Map<String, dynamic> getHelp() => {
-        'command': name,
-        'description': description,
-        'flags': {
-          'url': {
-            'description': 'The URL to fetch',
-            'required': true,
-            'type': 'string',
-          },
-          'format': {
-            'description':
-                'Output format: text, markdown, or html (default: markdown)',
-            'required': false,
-            'type': 'string',
-            'enum': ['text', 'markdown', 'html'],
-          },
-          'timeout': {
-            'description':
-                'Request timeout in seconds (default: 30, range: 1-300)',
-            'required': false,
-            'type': 'integer',
-          },
-        },
-        'usage':
-            'shepaw tools web.fetch --url <url> [--format <format>] [--timeout <secs>]',
-        'examples': [
-          'shepaw tools web.fetch --url https://example.com',
-          'shepaw tools web.fetch --url https://dart.dev --format text',
-          'shepaw tools web.fetch --url https://api.example.com/data --format text --timeout 60',
-        ],
-        'config_subcommand': 'Use "shepaw tools web.fetch.config" to manage configuration',
-      };
+  String get usage => 'shepaw tools web.fetch --url <url> [--format <format>] [--timeout <secs>]';
+
+  @override
+  Map<String, dynamic> getHelp() {
+    final base = super.getHelp();
+    base['flags'] = {
+      'url': {
+        'description': 'The URL to fetch',
+        'required': true,
+        'type': 'string',
+      },
+      'format': {
+        'description':
+            'Output format: text, markdown, or html (default: markdown)',
+        'required': false,
+        'type': 'string',
+        'enum': ['text', 'markdown', 'html'],
+      },
+      'timeout': {
+        'description':
+            'Request timeout in seconds (default: 30, range: 1-300)',
+        'required': false,
+        'type': 'integer',
+      },
+    };
+    return base;
+  }
 
   @override
   Future<Map<String, dynamic>> execute(Map<String, String> flags) async {

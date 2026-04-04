@@ -18,44 +18,43 @@ class CognitionWriteCommand extends CliCommand {
       'Write agent cognition, --id <agent_id> --type self|user [--soul "..." | --field impression|notes --value "..."]';
 
   @override
-  Map<String, dynamic> getHelp() => {
-        'command': name,
-        'description': description,
-        'flags': {
-          'id': {
-            'description': 'Agent ID to update cognition for',
-            'required': true,
-            'type': 'string',
-          },
-          'type': {
-            'description': 'Cognition type to write',
-            'required': true,
-            'type': 'string',
-            'enum': ['self', 'user'],
-          },
-          'soul': {
-            'description': 'Soul text to set (required when --type self)',
-            'required': 'when type=self',
-            'type': 'string',
-          },
-          'field': {
-            'description': 'User cognition field to update (required when --type user)',
-            'required': 'when type=user',
-            'type': 'string',
-            'enum': ['impression', 'notes'],
-          },
-          'value': {
-            'description': 'Value to set for the chosen field (required when --type user)',
-            'required': 'when type=user',
-            'type': 'string',
-          },
-        },
-        'examples': [
-          'shepaw context agents.cognition-write --id <id> --type self --soul "I am a helpful assistant..."',
-          'shepaw context agents.cognition-write --id <id> --type user --field impression --value "User prefers concise replies"',
-          'shepaw context agents.cognition-write --id <id> --type user --field notes --value "User has a cat named Mochi"',
-        ],
-      };
+  String get usage =>
+      'shepaw context agents.cognition-write --id <agent_id> --type self|user [--soul "..." | --field impression|notes --value "..."]';
+
+  @override
+  Map<String, dynamic> getHelp() {
+    final base = super.getHelp();
+    base['flags'] = {
+      'id': {
+        'description': 'Agent ID to update cognition for',
+        'required': true,
+        'type': 'string',
+      },
+      'type': {
+        'description': 'Cognition type to write',
+        'required': true,
+        'type': 'string',
+        'enum': ['self', 'user'],
+      },
+      'soul': {
+        'description': 'Soul text to set (required when --type self)',
+        'required': 'when type=self',
+        'type': 'string',
+      },
+      'field': {
+        'description': 'User cognition field to update (required when --type user)',
+        'required': 'when type=user',
+        'type': 'string',
+        'enum': ['impression', 'notes'],
+      },
+      'value': {
+        'description': 'Value to set for the chosen field (required when --type user)',
+        'required': 'when type=user',
+        'type': 'string',
+      },
+    };
+    return base;
+  }
 
   @override
   Future<Map<String, dynamic>> execute(Map<String, String> flags) async {

@@ -10,19 +10,21 @@ class QueryCommand extends CliCommand {
   String get description => 'Query profile, optional --fields name,age,...';
 
   @override
-  Map<String, dynamic> getHelp() => {
-        'command': name,
-        'description': description,
-        'flags': {
-          'fields': {
-            'description': 'Comma-separated field names to retrieve (omit for all fields)',
-            'required': false,
-            'type': 'string',
-            'example': 'name,age,occupation',
-          },
-        },
-        'usage': 'shepaw context profile.query [--fields name,age,...]',
-      };
+  String get usage => 'shepaw context profile.query [--fields name,age,...]';
+
+  @override
+  Map<String, dynamic> getHelp() {
+    final base = super.getHelp();
+    base['flags'] = {
+      'fields': {
+        'description': 'Comma-separated field names to retrieve (omit for all fields)',
+        'required': false,
+        'type': 'string',
+        'example': 'name,age,occupation',
+      },
+    };
+    return base;
+  }
 
   @override
   Future<Map<String, dynamic>> execute(Map<String, String> flags) async {

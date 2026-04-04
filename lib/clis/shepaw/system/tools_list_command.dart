@@ -13,13 +13,7 @@ class ToolsListCommand extends CliCommand {
   String get description => 'List all available tools (UI, OS, skills, models)';
 
   @override
-  Map<String, dynamic> getHelp() => {
-        'command': name,
-        'description': description,
-        'flags': {},
-        'usage': 'shepaw meta system.tools-list',
-        'note': 'Use "shepaw meta system.tools-detail --name <tool>" for full docs of a specific tool',
-      };
+  String get usage => 'shepaw meta system.tools-list';
 
   @override
   Future<Map<String, dynamic>> execute(Map<String, String> flags) async {

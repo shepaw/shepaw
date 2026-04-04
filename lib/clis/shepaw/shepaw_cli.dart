@@ -115,15 +115,10 @@ class ShepawCLI {
 
   /// 内置 CLI 的基础描述
   static const String _builtinToolDescription =
-      'ShePaw built-in CLI. Namespaces: '
-      '[CONTEXT] context (profile.*/memory.*/agents.* — use dot notation, e.g. context profile.query); '
-      '[COMMUNICATION] chat (channels: list channels, messages: query messages); '
-      '[TOOLING] tools (network.list/network.detail | web.search/web.fetch/web.config | web.search.config/web.fetch.config | <tool_name>.config), '
-      'skills (LLM skills: list/detail), '
-      'os (local OS commands: <category>.<cmd> e.g. command.shell/file.read/file.write/app.open/clipboard.read/process.list/macos.applescript | list); '
-      '[META] meta (datetime | system.info/tools-list/tools-detail/capabilities | cli-tools.<list|install|uninstall|rescan>), help (full docs). '
-      'Web config: shepaw tools web search.config [--action get|set-key|delete-key|set-param|delete-param|set-note|delete|enable|disable] [--key k] [--value v]. '
-      'Add flags={"help":""} to any call for contextual help. Run "shepaw help" for complete reference.';
+      'ShePaw built-in CLI. Use "shepaw help" to see all namespaces. '
+      'Use "shepaw <namespace>" to see sub-commands. '
+      'Use dot notation for nested commands (e.g. "shepaw context profile.query"). '
+      'Add flags={"help":""} for detailed usage.';
 
   /// 动态生成工具描述（包含外部工具信息）
   String _buildToolDescription() {
@@ -137,13 +132,8 @@ class ShepawCLI {
     final extSubcmdDesc = CliToolRegistry.instance.externalSubcommandDescription();
     final subcommandDesc = StringBuffer(
       'Subcommand for the chosen namespace. '
-      'context: profile.<fields|query|write|delete> | memory.<query|write|append> | agents.<list|get|channels|messages|chat|memory-query|memory-write|cognition-query|cognition-write>; '
-      'chat: channels|messages; '
-      'tools: list | config | network.list | network.detail | web.search --query <q> [--limit n] | web.fetch --url <url> [--format text|markdown|html] | web.config | web.search.config | web.fetch.config | <tool_name>.config [--action get|set-key|delete-key|set-param|delete-param|set-note|delete|enable|disable]; '
-      'skills: list|detail; '
-      'os: list | <category>.<cmd> (command.shell|file.read|file.write|file.list|file.delete|file.info|app.open|app.url|clipboard.read|clipboard.write|process.list|process.kill|macos.applescript|screenshot); '
-      'meta: datetime | system.<info|tools-list|tools-detail|capabilities> | cli-tools.<list|install|uninstall|rescan>; '
-      'help: (none, returns full docs)',
+      'Use dot notation for nested namespaces (e.g. "profile.query"). '
+      'Omit to see available sub-commands for the namespace.',
     );
     if (extSubcmdDesc.isNotEmpty) {
       subcommandDesc.write('; $extSubcmdDesc');
@@ -184,7 +174,8 @@ class ShepawCLI {
   ///
   /// [args] 命令参数（namespace / subcommand / flags）
   /// [isShe] 当前执行者是否为 She（默认 false，She 调用时传 true）
-  Future<String> execute(Map<String, dynamic> args, {bool isShe = false}) async {
+  /// [isUiOperation] 是否来自 UI 操作（UI 操作跳过权限检查，默认 false）
+  Future<String> execute(Map<String, dynamic> args, {bool isShe = false, bool isUiOperation = false}) async {
     final namespace = args['namespace'] as String? ?? 'help';
     final subcommand = args['subcommand'] as String? ?? '';
     final flags = _parseFlags(args['flags']);
@@ -207,11 +198,14 @@ class ShepawCLI {
       }
 
       // 权限检查：全局启用 / She 专属
-      final commandId = _buildCommandId(namespace, subcommand);
-      final denyReason = await CliCommandConfigService.instance
-          .checkPermission(commandId, isShe: isShe);
-      if (denyReason != null) {
-        return jsonEncode({'error': denyReason, 'command': commandId});
+      // UI 操作（用户主动在界面点击执行）跳过权限检查
+      if (!isUiOperation) {
+        final commandId = _buildCommandId(namespace, subcommand);
+        final denyReason = await CliCommandConfigService.instance
+            .checkPermission(commandId, isShe: isShe);
+        if (denyReason != null) {
+          return jsonEncode({'error': denyReason, 'command': commandId});
+        }
       }
 
       final result = await ns.execute(subcommand, flags);
@@ -224,94 +218,25 @@ class ShepawCLI {
   // ── Help ─────────────────────────────────────────────────────────────────────
 
   Map<String, dynamic> _buildHelpResult() {
-    // 分离内置和外部命名空间
-    final externalNs = _namespaces.entries
-        .where((e) => e.value is ExternalCliNamespace)
-        .toList();
-
     final result = <String, dynamic>{
       'cli': 'shepaw <namespace> [subcommand] [--flag value ...]',
-      'namespace_layers': {
-        'context': 'She internal state — profile, memory, agents',
-        'communication': 'Real-time messaging — chat (channels + messages)',
-        'tooling': 'Network/web tools — tools (network.*/web.*), skills (LLM), os (local OS commands)',
-        'meta': 'System info — meta (datetime + system.* + cli-tools.*)',
-      },
+      'hint': 'Call "shepaw <namespace>" to see available sub-commands. '
+              'Add flags={"help":""} to any command for detailed usage.',
       'namespaces': {
-        for (final ns in _namespaces.values)
-          ns.namespace: {
-            'desc': ns.description,
-            ...ns.getHelp()..remove('namespace')..remove('description'),
-          }
+        for (final entry in _namespaces.entries)
+          if (entry.value is! HelpNamespace)
+            entry.key: entry.value.description,
       },
-      'examples': [
-        // META
-        'shepaw help',
-        'shepaw meta datetime',
-        'shepaw meta system.info',
-        'shepaw meta system.capabilities',
-        'shepaw meta cli-tools.list',
-        // CONTEXT
-        'shepaw context profile.fields',
-        'shepaw context profile.query',
-        'shepaw context profile.write --field name --value John',
-        'shepaw context memory.query --keys soul,user_info',
-        'shepaw context memory.write --key soul --value "I am..."',
-        'shepaw context memory.append --key long_term_memory --value "User mentioned..."',
-        'shepaw context agents.list --status online',
-        'shepaw context agents.get --id <agent_id>',
-        'shepaw context agents.chat --id <agent_id> --message "Hello, I have a question"',
-        'shepaw context agents.memory-query --id <agent_id> --limit 10',
-        'shepaw context agents.cognition-query --id <agent_id>',
-        // COMMUNICATION
-        'shepaw chat channels',
-        'shepaw chat messages --channel abc123 --limit 10',
-        'shepaw chat messages --agent <agent_id> --limit 20 --offset 0',
-        // TOOLING
-        'shepaw tools list',
-        'shepaw tools config',
-        'shepaw tools network.list',
-        'shepaw tools network.detail --name web_search',
-        // TOOLING - web
-        'shepaw tools web.search --query "Flutter state management"',
-        'shepaw tools web.search --query "Dart 3 records" --limit 5',
-        'shepaw tools web.fetch --url https://dart.dev',
-        'shepaw tools web.fetch --url https://example.com --format text --timeout 60',
-        'shepaw tools web.config',
-        'shepaw tools web.search.config',
-        'shepaw tools web.search.config --action set-key --value BSA-xxx',
-        'shepaw tools web.search.config --action set-param --key timeout --value 60',
-        'shepaw tools web.search.config --action disable',
-        'shepaw skills list',
-        'shepaw skills detail --name extract_pdf',
-        // OS
-        'shepaw os list',
-        'shepaw os shell.exec --command "ls -la"',
-        'shepaw os file.read --path /tmp/test.txt',
-        'shepaw os file.write --path /tmp/test.txt --content "hello"',
-        'shepaw os file.list --path /tmp --detail true',
-        'shepaw os app.open --app_name Safari',
-        'shepaw os clipboard.read',
-        'shepaw os clipboard.write --text "copied text"',
-        'shepaw os process.list --sort_by cpu --limit 10',
-        'shepaw os macos.applescript --script "display dialog Hello"',
-      ],
     };
 
     // 添加外部工具信息
+    final externalNs = _namespaces.entries
+        .where((e) => e.value is ExternalCliNamespace)
+        .toList();
     if (externalNs.isNotEmpty) {
-      result['namespace_layers']['external'] =
-          'External CLI tools installed under ~/shepaw/cli-tools/';
       result['external_tools'] = {
         for (final e in externalNs)
-          e.key: {
-            'description': e.value.description,
-            'commands': (e.value as ExternalCliNamespace)
-                .tool
-                .commands
-                .keys
-                .toList(),
-          },
+          e.key: e.value.description,
       };
     }
 

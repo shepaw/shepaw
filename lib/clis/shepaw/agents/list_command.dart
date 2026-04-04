@@ -12,20 +12,22 @@ class ListCommand extends CliCommand {
   String get description => 'List agents, optional --status <online|offline|all>';
 
   @override
-  Map<String, dynamic> getHelp() => {
-        'command': name,
-        'description': description,
-        'flags': {
-          'status': {
-            'description': 'Filter agents by status',
-            'required': false,
-            'type': 'string',
-            'enum': ['online', 'offline', 'all'],
-            'default': 'all',
-          },
-        },
-        'usage': 'shepaw context agents.list [--status online|offline|all]',
-      };
+  String get usage => 'shepaw context agents.list [--status online|offline|all]';
+
+  @override
+  Map<String, dynamic> getHelp() {
+    final base = super.getHelp();
+    base['flags'] = {
+      'status': {
+        'description': 'Filter agents by status',
+        'required': false,
+        'type': 'string',
+        'enum': ['online', 'offline', 'all'],
+        'default': 'all',
+      },
+    };
+    return base;
+  }
 
   @override
   Future<Map<String, dynamic>> execute(Map<String, String> flags) async {

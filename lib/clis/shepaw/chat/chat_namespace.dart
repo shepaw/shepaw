@@ -24,20 +24,4 @@ class ChatNamespace extends CliNamespace {
         'channels': ChatChannelsCommand(),
         'messages': ChatMessagesCommand(),
       };
-
-  @override
-  Map<String, dynamic> getHelp() => {
-        'namespace': namespace,
-        'description': description,
-        'subcommands': {
-          'channels': 'List all conversation channels',
-          'messages':
-              'Query messages — --channel <id> or --agent <agent_id>, optional --limit N (default 20) --offset N (default 0)',
-        },
-        'examples': [
-          'shepaw chat channels',
-          'shepaw chat messages --channel abc123 --limit 10',
-          'shepaw chat messages --agent <agent_id> --limit 20 --offset 0',
-        ],
-      };
 }

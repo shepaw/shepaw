@@ -38,23 +38,11 @@ class NetworkSubNamespace extends CliNamespace {
   Map<String, CliNamespace> get subNamespaces => {};
 
   @override
-  Map<String, dynamic> getHelp() => {
-        'namespace': namespace,
-        'description': description,
-        'subcommands': {
-          'list': 'List all network tools',
-          'detail': 'Full parameter docs for a tool (--name <tool_name>)',
-        },
-        'note': 'Web execution commands have moved to: shepaw tools web.*',
-        'examples': [
-          'shepaw tools network.list',
-          'shepaw tools network.detail --name web_search',
-          'shepaw tools network.detail --name web_fetch',
-          '# Web execution (use these instead):',
-          'shepaw tools web.search --query "Flutter state management"',
-          'shepaw tools web.fetch --url https://dart.dev',
-        ],
-      };
+  Map<String, dynamic> getHelp() {
+    final base = super.getHelp();
+    base['note'] = 'Web execution commands have moved to: shepaw tools web.*';
+    return base;
+  }
 }
 
 // ── Commands ─────────────────────────────────────────────────────────────────
@@ -66,12 +54,7 @@ class _NetworkListCommand extends CliCommand {
   String get description => 'List all network and web tools';
 
   @override
-  Map<String, dynamic> getHelp() => {
-        'command': name,
-        'description': description,
-        'flags': {},
-        'usage': 'shepaw tools network.list',
-      };
+  String get usage => 'shepaw tools network.list';
 
   @override
   Future<Map<String, dynamic>> execute(Map<String, String> flags) async {
@@ -103,19 +86,20 @@ class _NetworkDetailCommand extends CliCommand {
   String get description => 'Get full parameter docs for a specific network tool';
 
   @override
-  Map<String, dynamic> getHelp() => {
-        'command': name,
-        'description': description,
-        'flags': {
-          'name': {
-            'description': 'Network tool name to get documentation for',
-            'required': true,
-            'type': 'string',
-          },
-        },
-        'usage': 'shepaw tools network.detail --name <tool_name>',
-        'note': 'Use "shepaw tools network.list" to see available network tools',
-      };
+  String get usage => 'shepaw tools network.detail --name <tool_name>';
+
+  @override
+  Map<String, dynamic> getHelp() {
+    final base = super.getHelp();
+    base['flags'] = {
+      'name': {
+        'description': 'Network tool name to get documentation for',
+        'required': true,
+        'type': 'string',
+      },
+    };
+    return base;
+  }
 
   @override
   Future<Map<String, dynamic>> execute(Map<String, String> flags) async {

@@ -30,40 +30,11 @@ class ExternalCliNamespace extends CliNamespace {
       };
 
   @override
-  Map<String, dynamic> getHelp() => {
-        'namespace': namespace,
-        'type': 'external',
-        'description': '${tool.displayName} v${tool.version} (external CLI tool)',
-        'subcommands': {
-          for (final cmd in tool.commands.entries)
-            cmd.key: cmd.value.description,
-        },
-        'examples': [
-          for (final cmd in tool.commands.entries)
-            'shepaw ${tool.namespace} ${cmd.key}${_exampleFlags(cmd.value)}',
-        ],
-      };
-
-  /// Generate example flag string from parameter schema.
-  String _exampleFlags(CliToolCommandDef cmd) {
-    final props =
-        cmd.parameterSchema['properties'] as Map<String, dynamic>? ?? {};
-    if (props.isEmpty) return '';
-
-    final required =
-        (cmd.parameterSchema['required'] as List<dynamic>?)
-            ?.map((e) => e.toString())
-            .toSet() ??
-        {};
-
-    final parts = <String>[];
-    for (final entry in props.entries) {
-      if (required.contains(entry.key)) {
-        parts.add('--${entry.key} <${entry.key}>');
-      }
-    }
-
-    return parts.isEmpty ? '' : ' ${parts.join(" ")}';
+  Map<String, dynamic> getHelp() {
+    final base = super.getHelp();
+    base['type'] = 'external';
+    base['version'] = tool.version;
+    return base;
   }
 }
 
@@ -84,15 +55,16 @@ class ExternalCliCommand extends CliCommand {
   String get description => commandDef.description;
 
   @override
-  Map<String, dynamic> getHelp() => {
-        'command': name,
-        'description': description,
-        'namespace': tool.namespace,
-        'type': 'external',
-        'parameters': commandDef.parameterSchema,
-        'usage':
-            'shepaw ${tool.namespace} $name${_usageFlags()}',
-      };
+  String get usage => 'shepaw ${tool.namespace} $name${_usageFlags()}';
+
+  @override
+  Map<String, dynamic> getHelp() {
+    final base = super.getHelp();
+    base['namespace'] = tool.namespace;
+    base['type'] = 'external';
+    base['parameters'] = commandDef.parameterSchema;
+    return base;
+  }
 
   @override
   Future<Map<String, dynamic>> execute(Map<String, String> flags) {

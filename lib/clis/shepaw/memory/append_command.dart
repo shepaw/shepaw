@@ -10,24 +10,26 @@ class AppendCommand extends CliCommand {
   String get description => 'Append content, --key long_term_memory|self_notes --value <val>';
 
   @override
-  Map<String, dynamic> getHelp() => {
-        'command': name,
-        'description': description,
-        'flags': {
-          'key': {
-            'description': 'Memory key to append to',
-            'required': true,
-            'type': 'string',
-            'enum': ['long_term_memory', 'self_notes'],
-          },
-          'value': {
-            'description': 'Text to append (added as a new entry, not replacing existing content)',
-            'required': true,
-            'type': 'string',
-          },
-        },
-        'usage': 'shepaw context memory.append --key long_term_memory|self_notes --value "..."',
-      };
+  String get usage => 'shepaw context memory.append --key long_term_memory|self_notes --value "..."';
+
+  @override
+  Map<String, dynamic> getHelp() {
+    final base = super.getHelp();
+    base['flags'] = {
+      'key': {
+        'description': 'Memory key to append to',
+        'required': true,
+        'type': 'string',
+        'enum': ['long_term_memory', 'self_notes'],
+      },
+      'value': {
+        'description': 'Text to append (added as a new entry, not replacing existing content)',
+        'required': true,
+        'type': 'string',
+      },
+    };
+    return base;
+  }
 
   @override
   Future<Map<String, dynamic>> execute(Map<String, String> flags) async {

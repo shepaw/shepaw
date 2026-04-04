@@ -1572,11 +1572,14 @@ class _CliDetailSheet extends StatefulWidget {
         icon: Icons.code_outlined,
         help: help,
         commandId: commandId,
-        execute: (extraFlags) => ShepawCLI.instance.execute({
-          'namespace': namespace,
-          'subcommand': subcommand,
-          'flags': extraFlags,
-        }),
+        execute: (extraFlags) => ShepawCLI.instance.execute(
+          {
+            'namespace': namespace,
+            'subcommand': subcommand,
+            'flags': extraFlags,
+          },
+          isUiOperation: true,
+        ),
       ),
     );
   }
@@ -1605,11 +1608,14 @@ class _CliDetailSheet extends StatefulWidget {
         icon: Icons.terminal,
         help: help,
         commandId: commandId,
-        execute: (extraFlags) => ShepawCLI.instance.execute({
-          'namespace': namespace,
-          'subcommand': subcommand,
-          'flags': extraFlags,
-        }),
+        execute: (extraFlags) => ShepawCLI.instance.execute(
+          {
+            'namespace': namespace,
+            'subcommand': subcommand,
+            'flags': extraFlags,
+          },
+          isUiOperation: true,
+        ),
       ),
     );
   }
@@ -2177,11 +2183,14 @@ class _HelpSheetState extends State<_HelpSheet> {
   Future<void> _runHelp() async {
     setState(() { _loading = true; _result = null; });
     try {
-      final raw = await ShepawCLI.instance.execute({
-        'namespace': widget.namespace,
-        'subcommand': widget.subcommand,
-        'flags': {'help': ''},
-      });
+      final raw = await ShepawCLI.instance.execute(
+        {
+          'namespace': widget.namespace,
+          'subcommand': widget.subcommand,
+          'flags': {'help': ''},
+        },
+        isUiOperation: true,
+      );
       try {
         final decoded = jsonDecode(raw);
         _result = const JsonEncoder.withIndent('  ').convert(decoded);

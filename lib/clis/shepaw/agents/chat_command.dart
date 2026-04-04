@@ -16,29 +16,31 @@ class ChatCommand extends CliCommand {
       'Send a message to agent as She, --id <agent_id> --message <text> [--channel <channel_id>]';
 
   @override
-  Map<String, dynamic> getHelp() => {
-        'command': name,
-        'description': description,
-        'flags': {
-          'id': {
-            'description': 'Target agent ID',
-            'required': true,
-            'type': 'string',
-          },
-          'message': {
-            'description': 'Message text to send',
-            'required': true,
-            'type': 'string',
-          },
-          'channel': {
-            'description': 'Channel ID (auto-detected from most recent DM if not provided)',
-            'required': false,
-            'type': 'string',
-          },
-        },
-        'usage':
-            'shepaw context agents.chat --id <agent_id> --message "text" [--channel <channel_id>]',
-      };
+  String get usage =>
+      'shepaw context agents.chat --id <agent_id> --message "text" [--channel <channel_id>]';
+
+  @override
+  Map<String, dynamic> getHelp() {
+    final base = super.getHelp();
+    base['flags'] = {
+      'id': {
+        'description': 'Target agent ID',
+        'required': true,
+        'type': 'string',
+      },
+      'message': {
+        'description': 'Message text to send',
+        'required': true,
+        'type': 'string',
+      },
+      'channel': {
+        'description': 'Channel ID (auto-detected from most recent DM if not provided)',
+        'required': false,
+        'type': 'string',
+      },
+    };
+    return base;
+  }
 
   @override
   Future<Map<String, dynamic>> execute(Map<String, String> flags) async {

@@ -27,18 +27,4 @@ class SkillsNamespace extends CliNamespace {
         'list': SkillsListCommand(),
         'detail': SkillsDetailCommand(),
       };
-
-  @override
-  Map<String, dynamic> getHelp() => {
-        'namespace': namespace,
-        'description': description,
-        'subcommands': {
-          'list': 'List all loaded skills',
-          'detail': 'Get full documentation for a skill (--name <skill_name>)',
-        },
-        'examples': [
-          'shepaw skills list',
-          'shepaw skills detail --name extract_pdf',
-        ],
-      };
 }

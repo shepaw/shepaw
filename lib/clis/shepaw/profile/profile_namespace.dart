@@ -22,23 +22,4 @@ class ProfileNamespace extends CliNamespace {
     'write': WriteCommand(),
     'delete': DeleteCommand(),
   };
-
-  @override
-  Map<String, dynamic> getHelp() => {
-    'namespace': namespace,
-    'description': description,
-    'subcommands': {
-      'fields': 'List all predefined fields and descriptions',
-      'query': 'Query profile, optional --fields name,age,...',
-      'write': 'Write field, --field <key> --value <val>',
-      'delete': 'Delete field, --field <key>',
-    },
-    'examples': [
-      'shepaw profile fields',
-      'shepaw profile query',
-      'shepaw profile query --fields name,age,occupation',
-      'shepaw profile write --field name --value John',
-      'shepaw profile delete --field notes',
-    ],
-  };
 }

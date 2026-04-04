@@ -16,37 +16,39 @@ class MemoryQueryCommand extends CliCommand {
       'Query agent memories, --id <agent_id> [--keywords k1,k2] [--type conversation] [--limit 20]';
 
   @override
-  Map<String, dynamic> getHelp() => {
-        'command': name,
-        'description': description,
-        'flags': {
-          'id': {
-            'description': 'Agent ID to query memories for',
-            'required': true,
-            'type': 'string',
-          },
-          'keywords': {
-            'description': 'Comma-separated keywords for OR matching',
-            'required': false,
-            'type': 'string',
-            'example': 'user,preference,hobby',
-          },
-          'type': {
-            'description': 'Filter by memory type (only used when --keywords not provided)',
-            'required': false,
-            'type': 'string',
-            'enum': ['conversation', 'knowledge', 'behavior', 'event', 'emotion'],
-          },
-          'limit': {
-            'description': 'Maximum number of results to return',
-            'required': false,
-            'type': 'integer',
-            'default': '20',
-          },
-        },
-        'usage':
-            'shepaw context agents.memory-query --id <agent_id> [--keywords k1,k2] [--type conversation] [--limit 20]',
-      };
+  String get usage =>
+      'shepaw context agents.memory-query --id <agent_id> [--keywords k1,k2] [--type conversation] [--limit 20]';
+
+  @override
+  Map<String, dynamic> getHelp() {
+    final base = super.getHelp();
+    base['flags'] = {
+      'id': {
+        'description': 'Agent ID to query memories for',
+        'required': true,
+        'type': 'string',
+      },
+      'keywords': {
+        'description': 'Comma-separated keywords for OR matching',
+        'required': false,
+        'type': 'string',
+        'example': 'user,preference,hobby',
+      },
+      'type': {
+        'description': 'Filter by memory type (only used when --keywords not provided)',
+        'required': false,
+        'type': 'string',
+        'enum': ['conversation', 'knowledge', 'behavior', 'event', 'emotion'],
+      },
+      'limit': {
+        'description': 'Maximum number of results to return',
+        'required': false,
+        'type': 'integer',
+        'default': '20',
+      },
+    };
+    return base;
+  }
 
   @override
   Future<Map<String, dynamic>> execute(Map<String, String> flags) async {

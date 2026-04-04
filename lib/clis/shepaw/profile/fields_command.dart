@@ -9,13 +9,14 @@ class FieldsCommand extends CliCommand {
   String get description => 'List all predefined fields and descriptions';
 
   @override
-  Map<String, dynamic> getHelp() => {
-        'command': name,
-        'description': description,
-        'flags': {},
-        'usage': 'shepaw context profile.fields',
-        'note': 'Returns all predefined field names. Custom fields are also supported.',
-      };
+  String get usage => 'shepaw context profile.fields';
+
+  @override
+  Map<String, dynamic> getHelp() {
+    final base = super.getHelp();
+    base['note'] = 'Returns all predefined field names. Custom fields are also supported.';
+    return base;
+  }
 
   @override
   Future<Map<String, dynamic>> execute(Map<String, String> flags) async {

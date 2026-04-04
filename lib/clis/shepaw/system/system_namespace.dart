@@ -28,22 +28,4 @@ class SystemNamespace extends CliNamespace {
         'tools-detail': ToolsDetailCommand(),
         'capabilities': CapabilitiesCommand(),
       };
-
-  @override
-  Map<String, dynamic> getHelp() => {
-        'namespace': 'system',
-        'description': description,
-        'subcommands': {
-          'info': 'Display basic system information',
-          'tools-list': 'List all available tools and categories',
-          'tools-detail': 'Get full docs for any tool (requires --name flag)',
-          'capabilities': 'Summary of system capabilities',
-        },
-        'examples': [
-          'shepaw system info',
-          'shepaw system tools-list',
-          'shepaw system tools-detail --name file_read',
-          'shepaw system capabilities',
-        ],
-      };
 }

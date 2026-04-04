@@ -37,37 +37,9 @@ class WebSubNamespace extends CliNamespace {
 
   @override
   Map<String, CliCommand> get commands => {
-        'search': _searchCommand,
-        'fetch': _fetchCommand,
+        _searchCommand.name: _searchCommand,
+        _fetchCommand.name: _fetchCommand,
         'config': _WebConfigListCommand(),
-      };
-
-  @override
-  Map<String, dynamic> getHelp() => {
-        'namespace': namespace,
-        'description': description,
-        'subcommands': {
-          'search': 'Search the web (--query <q> [--limit n])',
-          'fetch':
-              'Fetch URL content (--url <url> [--format text|markdown|html] [--timeout n])',
-          'config': 'List configuration summary for all web tools',
-          'search.config':
-              'Manage web_search config (API key, params, enable/disable)',
-          'fetch.config': 'Manage web_fetch config (params, enable/disable)',
-        },
-        'examples': [
-          'shepaw tools web.search --query "Flutter state management"',
-          'shepaw tools web.search --query "Dart 3 records" --limit 5',
-          'shepaw tools web.fetch --url https://dart.dev',
-          'shepaw tools web.fetch --url https://example.com --format text --timeout 60',
-          'shepaw tools web.config',
-          'shepaw tools web.search.config',
-          'shepaw tools web.search.config --action set-key --value BSA-xxx',
-          'shepaw tools web.search.config --action set-param --key max_results --value 20',
-          'shepaw tools web.search.config --action disable',
-          'shepaw tools web.fetch.config',
-          'shepaw tools web.fetch.config --action enable',
-        ],
       };
 
   // ── 动态路由：拦截 search.config / fetch.config ─────────────────────────
@@ -100,13 +72,7 @@ class _WebConfigListCommand extends CliCommand {
   String get description => 'List configuration summary for all web tools';
 
   @override
-  Map<String, dynamic> getHelp() => {
-        'command': name,
-        'description': description,
-        'usage': 'shepaw tools web.config',
-        'note':
-            'To manage a specific tool\'s config, use: shepaw tools web.<search|fetch>.config',
-      };
+  String get usage => 'shepaw tools web.config';
 
   @override
   Future<Map<String, dynamic>> execute(Map<String, String> flags) async {

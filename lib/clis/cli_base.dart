@@ -18,6 +18,10 @@ abstract class CliCommand {
   /// 命令简短描述
   String get description;
 
+  /// 用法示例（如 'shepaw context profile.query [--fields name,age,...]'）
+  /// 子类可覆盖；默认返回空字符串
+  String get usage => '';
+
   /// 执行命令
   /// flags: 从 CLI 解析的键值对（如 {field: "name", value: "小明"}）
   Future<Map<String, dynamic>> execute(Map<String, String> flags);
@@ -27,6 +31,7 @@ abstract class CliCommand {
   Map<String, dynamic> getHelp() => {
         'command': name,
         'description': description,
+        if (usage.isNotEmpty) 'usage': usage,
       };
 
   /// i18n 支持预留（当前返回 key，便于后续扩展）
@@ -58,6 +63,10 @@ abstract class CliNamespace {
 
   /// 命名空间描述
   String get description;
+
+  /// 用法示例（如 'shepaw context <sub-namespace>.<action> [flags]'）
+  /// 子类可覆盖
+  String get usage => '';
 
   /// 所有扁平子命令（单层模式）；分层模式返回空 map
   Map<String, CliCommand> get commands => {};
@@ -117,8 +126,49 @@ abstract class CliNamespace {
     return cmd.execute(flags);
   }
 
-  /// 生成帮助信息（子类必须实现）
-  Map<String, dynamic> getHelp();
+  /// 生成帮助信息
+  /// 默认实现自动从 commands + subNamespaces 聚合
+  /// 子类可覆盖以添加额外字段（建议调用 super.getHelp() 合并）
+  Map<String, dynamic> getHelp() {
+    final result = <String, dynamic>{
+      'namespace': namespace,
+      'description': description,
+    };
+
+    if (usage.isNotEmpty) {
+      result['usage'] = usage;
+    }
+
+    // 自动聚合 sub-namespaces
+    if (subNamespaces.isNotEmpty) {
+      result['sub_namespaces'] = {
+        for (final entry in subNamespaces.entries)
+          entry.key: entry.value.description,
+      };
+    }
+
+    // 自动聚合 commands
+    if (commands.isNotEmpty) {
+      result['commands'] = {
+        for (final entry in commands.entries)
+          entry.key: entry.value.description,
+      };
+    }
+
+    // 自动生成 examples（从子命令和子空间的 usage 中收集）
+    final examples = <String>[];
+    for (final cmd in commands.values) {
+      if (cmd.usage.isNotEmpty) examples.add(cmd.usage);
+    }
+    for (final ns in subNamespaces.values) {
+      if (ns.usage.isNotEmpty) examples.add(ns.usage);
+    }
+    if (examples.isNotEmpty) {
+      result['examples'] = examples;
+    }
+
+    return result;
+  }
 
   /// 未知子命令错误
   Map<String, dynamic> _unknownSubcommand(String sub) {

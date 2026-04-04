@@ -30,30 +30,27 @@ class WebSearchCommand extends CliCommand with WebToolConfigMixin {
   String get description => 'Search the web and return relevant results';
 
   @override
-  Map<String, dynamic> getHelp() => {
-        'command': name,
-        'description': description,
-        'flags': {
-          'query': {
-            'description': 'Search query string',
-            'required': true,
-            'type': 'string',
-          },
-          'limit': {
-            'description': 'Maximum number of results to return (default: 10)',
-            'required': false,
-            'type': 'integer',
-          },
-        },
-        'usage': 'shepaw tools web.search --query <query> [--limit <n>]',
-        'examples': [
-          'shepaw tools web.search --query "Flutter async patterns"',
-          'shepaw tools web.search --query "Dart 3 records" --limit 5',
-        ],
-        'config_hint':
-            'API Key is required. Set via: shepaw tools web.search.config --action set-key --value YOUR_KEY',
-        'config_subcommand': 'Use "shepaw tools web.search.config" to manage configuration',
-      };
+  String get usage => 'shepaw tools web.search --query <query> [--limit <n>]';
+
+  @override
+  Map<String, dynamic> getHelp() {
+    final base = super.getHelp();
+    base['flags'] = {
+      'query': {
+        'description': 'Search query string',
+        'required': true,
+        'type': 'string',
+      },
+      'limit': {
+        'description': 'Maximum number of results to return (default: 10)',
+        'required': false,
+        'type': 'integer',
+      },
+    };
+    base['config_hint'] =
+        'API Key is required. Set via: shepaw tools web.search.config --action set-key --value YOUR_KEY';
+    return base;
+  }
 
   @override
   Future<Map<String, dynamic>> execute(Map<String, String> flags) async {

@@ -41,25 +41,11 @@ class CliToolsSubNamespace extends CliNamespace {
       };
 
   @override
-  Map<String, dynamic> getHelp() => {
-        'namespace': 'meta.$namespace',
-        'description': description,
-        'directory': CliToolRegistry.instance.directoryPath,
-        'subcommands': {
-          'list': 'List all installed external CLI tools',
-          'install':
-              'Install a tool from ZIP (--file <path>) or URL (--url <url>)',
-          'uninstall': 'Uninstall a tool by namespace (--namespace <name>)',
-          'rescan': 'Re-scan cli-tools directory for changes',
-        },
-        'examples': [
-          'shepaw meta cli-tools.list',
-          'shepaw meta cli-tools.install --file /path/to/tool.zip',
-          'shepaw meta cli-tools.install --url https://example.com/tool.zip',
-          'shepaw meta cli-tools.uninstall --namespace weather',
-          'shepaw meta cli-tools.rescan',
-        ],
-      };
+  Map<String, dynamic> getHelp() {
+    final base = super.getHelp();
+    base['directory'] = CliToolRegistry.instance.directoryPath;
+    return base;
+  }
 }
 
 // ── List installed tools ─────────────────────────────────────────────────────
@@ -72,11 +58,7 @@ class _CliToolsListCommand extends CliCommand {
   String get description => 'List all installed external CLI tools';
 
   @override
-  Map<String, dynamic> getHelp() => {
-        'command': name,
-        'description': description,
-        'usage': 'shepaw meta cli-tools.list',
-      };
+  String get usage => 'shepaw meta cli-tools.list';
 
   @override
   Future<Map<String, dynamic>> execute(Map<String, String> flags) async {
@@ -123,22 +105,19 @@ class _CliToolsInstallCommand extends CliCommand {
   String get description => 'Install an external CLI tool from ZIP file or URL';
 
   @override
-  Map<String, dynamic> getHelp() => {
-        'command': name,
-        'description': description,
-        'flags': {
-          'file': 'Path to a local ZIP file containing the CLI tool',
-          'url': 'URL to download a ZIP file from',
-          'overwrite':
-              'Set to "true" to overwrite an existing tool with the same namespace',
-        },
-        'usage': 'shepaw meta cli-tools.install --file <path> [--overwrite true]',
-        'examples': [
-          'shepaw meta cli-tools.install --file /path/to/tool.zip',
-          'shepaw meta cli-tools.install --url https://example.com/tool.zip',
-          'shepaw meta cli-tools.install --file /path/to/tool.zip --overwrite true',
-        ],
-      };
+  String get usage => 'shepaw meta cli-tools.install --file <path> [--overwrite true]';
+
+  @override
+  Map<String, dynamic> getHelp() {
+    final base = super.getHelp();
+    base['flags'] = {
+      'file': 'Path to a local ZIP file containing the CLI tool',
+      'url': 'URL to download a ZIP file from',
+      'overwrite':
+          'Set to "true" to overwrite an existing tool with the same namespace',
+    };
+    return base;
+  }
 
   @override
   Future<Map<String, dynamic>> execute(Map<String, String> flags) async {
@@ -203,17 +182,16 @@ class _CliToolsUninstallCommand extends CliCommand {
   String get description => 'Uninstall an external CLI tool';
 
   @override
-  Map<String, dynamic> getHelp() => {
-        'command': name,
-        'description': description,
-        'flags': {
-          'namespace': 'The namespace of the tool to uninstall (required)',
-        },
-        'usage': 'shepaw meta cli-tools.uninstall --namespace <name>',
-        'examples': [
-          'shepaw meta cli-tools.uninstall --namespace weather',
-        ],
-      };
+  String get usage => 'shepaw meta cli-tools.uninstall --namespace <name>';
+
+  @override
+  Map<String, dynamic> getHelp() {
+    final base = super.getHelp();
+    base['flags'] = {
+      'namespace': 'The namespace of the tool to uninstall (required)',
+    };
+    return base;
+  }
 
   @override
   Future<Map<String, dynamic>> execute(Map<String, String> flags) async {
@@ -254,11 +232,7 @@ class _CliToolsRescanCommand extends CliCommand {
   String get description => 'Re-scan the cli-tools directory for changes';
 
   @override
-  Map<String, dynamic> getHelp() => {
-        'command': name,
-        'description': description,
-        'usage': 'shepaw meta cli-tools.rescan',
-      };
+  String get usage => 'shepaw meta cli-tools.rescan';
 
   @override
   Future<Map<String, dynamic>> execute(Map<String, String> flags) async {

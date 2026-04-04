@@ -12,12 +12,7 @@ class ChatChannelsCommand extends CliCommand {
   String get description => 'List all conversation channels';
 
   @override
-  Map<String, dynamic> getHelp() => {
-        'command': name,
-        'description': description,
-        'flags': {},
-        'usage': 'shepaw chat channels',
-      };
+  String get usage => 'shepaw chat channels';
 
   @override
   Future<Map<String, dynamic>> execute(Map<String, String> flags) async {

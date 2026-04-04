@@ -39,44 +39,12 @@ class ContextNamespace extends CliNamespace {
   String get description => "She's internal state — profile, memory, agents";
 
   @override
+  String get usage => 'shepaw context <sub-namespace>.<action> [flags]';
+
+  @override
   Map<String, CliNamespace> get subNamespaces => {
         'profile': ProfileNamespace.instance,
         'memory': MemoryNamespace.instance,
         'agents': AgentsNamespace.instance,
-      };
-
-  @override
-  Map<String, dynamic> getHelp() => {
-        'namespace': namespace,
-        'description': description,
-        'usage': 'shepaw context <sub-namespace>.<action> [flags]',
-        'sub_namespaces': {
-          'profile': {
-            'desc': ProfileNamespace.instance.description,
-            'actions': ProfileNamespace.instance.commands.keys.toList(),
-          },
-          'memory': {
-            'desc': MemoryNamespace.instance.description,
-            'actions': MemoryNamespace.instance.commands.keys.toList(),
-          },
-          'agents': {
-            'desc': AgentsNamespace.instance.description,
-            'actions': AgentsNamespace.instance.commands.keys.toList(),
-          },
-        },
-        'examples': [
-          'shepaw context profile.fields',
-          'shepaw context profile.query',
-          'shepaw context profile.write --field name --value John',
-          'shepaw context profile.delete --field notes',
-          'shepaw context memory.query --keys soul,user_info',
-          'shepaw context memory.write --key soul --value "I am..."',
-          'shepaw context memory.append --key long_term_memory --value "User mentioned..."',
-          'shepaw context agents.list --status online',
-          'shepaw context agents.get --id <agent_id>',
-          'shepaw context agents.chat --id <agent_id> --message "Hello"',
-          'shepaw context agents.memory-query --id <agent_id> --limit 10',
-          'shepaw context agents.cognition-query --id <agent_id>',
-        ],
       };
 }

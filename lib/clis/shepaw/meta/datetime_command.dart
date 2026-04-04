@@ -9,13 +9,7 @@ class MetaDatetimeCommand extends CliCommand {
   String get description => 'Return current date, time and timezone info';
 
   @override
-  Map<String, dynamic> getHelp() => {
-        'command': name,
-        'description': description,
-        'flags': {},
-        'usage': 'shepaw meta datetime',
-        'returns': ['iso8601', 'date', 'time', 'weekday_en', 'weekday_cn', 'timezone_offset', 'timezone_name', 'unix_ms'],
-      };
+  String get usage => 'shepaw meta datetime';
 
   @override
   Future<Map<String, dynamic>> execute(Map<String, String> flags) async {
