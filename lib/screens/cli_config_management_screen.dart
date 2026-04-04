@@ -15,6 +15,7 @@ import '../clis/shepaw/os/os_cli_namespace.dart';
 import '../clis/shepaw/context/context_namespace.dart' show ContextNamespace;
 import '../models/cli_command_config.dart';
 import '../models/cli_config_field.dart';
+import '../models/command_config_schema.dart';
 import '../models/tool_config.dart';
 import '../services/cli_command_config_service.dart';
 import '../services/os_tool_registry.dart';
@@ -842,6 +843,8 @@ class _CommandTile extends StatefulWidget {
 
 class _CommandTileState extends State<_CommandTile> {
   CliCommandConfig? _cliConfig;
+  // 有 configSchema 的 CLI 命令的工具级配置（enabled/sheExclusive/apiKey/parameterOverrides）
+  ToolConfig? _cmdToolConfig;
   // 祖先限制信息
   ({String id, CliCommandConfig config})? _ancestor;
 
@@ -873,7 +876,13 @@ class _CommandTileState extends State<_CommandTile> {
     if (toolDef == null) {
       final cfg = await CliCommandConfigService.instance.getConfig(_commandId);
       final ancestor = await CliCommandConfigService.instance.findRestrictingAncestor(_commandId);
-      if (mounted) setState(() { _cliConfig = cfg; _ancestor = ancestor; });
+      // 如果命令有 configSchema，也加载工具级配置
+      final schema = widget.cmd.configSchema;
+      ToolConfig? toolCfg;
+      if (schema != null) {
+        toolCfg = await ToolConfigService.instance.getToolConfig(schema.toolName);
+      }
+      if (mounted) setState(() { _cliConfig = cfg; _ancestor = ancestor; _cmdToolConfig = toolCfg; });
     } else {
       // 工具命令也要检查祖先限制
       final ancestor = await CliCommandConfigService.instance.findRestrictingAncestor(_commandId);
@@ -912,6 +921,11 @@ class _CommandTileState extends State<_CommandTile> {
     // CLI 命令（非 OS 工具）的配置状态
     final cliGlobalEnabled = _cliConfig?.globalEnabled ?? true;
     final cliSheOnly = _cliConfig?.sheOnly ?? false;
+    // 有 configSchema 的 CLI 命令的工具级状态
+    final schema = widget.cmd.configSchema;
+    final hasCmdSchema = toolDef == null && schema != null;
+    final cmdToolEnabled = _cmdToolConfig?.enabled ?? true;
+    final cmdToolSheExclusive = _cmdToolConfig?.sheExclusive ?? false;
 
     return Column(
       mainAxisSize: MainAxisSize.min,
@@ -923,22 +937,27 @@ class _CommandTileState extends State<_CommandTile> {
             width: 32,
             height: 32,
             decoration: BoxDecoration(
-              color: (toolDef != null
+              color: (toolDef != null || hasCmdSchema
                       ? colorScheme.primaryContainer
                       : colorScheme.surfaceContainerHighest)
-                  .withValues(alpha: (toolDef != null ? isEnabled : cliGlobalEnabled) ? 1 : 0.5),
+                  .withValues(alpha: (toolDef != null ? isEnabled : hasCmdSchema ? cmdToolEnabled : cliGlobalEnabled) ? 1 : 0.5),
               borderRadius: BorderRadius.circular(6),
             ),
             child: Icon(
               toolDef != null
                   ? _toolIconFor(toolDef.name)
-                  : Icons.code_outlined,
+                  : hasCmdSchema
+                      ? Icons.settings_ethernet
+                      : Icons.code_outlined,
               size: 16,
               color: toolDef != null
                   ? colorScheme.onPrimaryContainer
                       .withValues(alpha: isEnabled ? 1 : 0.4)
-                  : colorScheme.onSurfaceVariant
-                      .withValues(alpha: cliGlobalEnabled ? 1 : 0.4),
+                  : hasCmdSchema
+                      ? colorScheme.onPrimaryContainer
+                          .withValues(alpha: cmdToolEnabled ? 1 : 0.4)
+                      : colorScheme.onSurfaceVariant
+                          .withValues(alpha: cliGlobalEnabled ? 1 : 0.4),
             ),
           ),
           title: Row(
@@ -949,7 +968,11 @@ class _CommandTileState extends State<_CommandTile> {
                   fontSize: 13,
                   fontWeight: FontWeight.w500,
                   fontFamily: toolDef != null ? null : 'monospace',
-                  color: (toolDef != null ? isEnabled : cliGlobalEnabled)
+                  color: (toolDef != null
+                          ? isEnabled
+                          : hasCmdSchema
+                              ? cmdToolEnabled
+                              : cliGlobalEnabled)
                       ? colorScheme.onSurface
                       : colorScheme.outline,
                 ),
@@ -958,8 +981,9 @@ class _CommandTileState extends State<_CommandTile> {
               // 风险等级标签（工具专属）
               if (toolDef != null)
                 _RiskBadge(risk: toolDef.defaultRiskLevel),
-              // API Key 图标
-              if (config?.hasApiKey ?? false) ...[
+              // API Key 图标（OS 工具 或 有 configSchema 的 CLI 命令）
+              if ((config?.hasApiKey ?? false) ||
+                  (_cmdToolConfig?.hasApiKey ?? false)) ...[
                 const SizedBox(width: 4),
                 Tooltip(
                   message: 'API Key configured',
@@ -967,15 +991,16 @@ class _CommandTileState extends State<_CommandTile> {
                 ),
               ],
               // 参数覆盖图标
-              if (config?.parameterOverrides != null) ...[
+              if ((config?.parameterOverrides != null) ||
+                  (_cmdToolConfig?.parameterOverrides != null)) ...[
                 const SizedBox(width: 4),
                 Tooltip(
                   message: 'Overrides set',
                   child: Icon(Icons.tune, size: 12, color: colorScheme.secondary),
                 ),
               ],
-              // flags 提示（非工具命令）
-              if (toolDef == null && hasFlags) ...[
+              // flags 提示（无 configSchema 的普通 CLI 命令）
+              if (toolDef == null && !hasCmdSchema && hasFlags) ...[
                 const SizedBox(width: 4),
                 Tooltip(
                   message: 'Has ${flags?.length} flag(s)',
@@ -1061,20 +1086,58 @@ class _CommandTileState extends State<_CommandTile> {
                     ],
                   ],
                 )
-              : Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    // CLI 命令：展示配置徽章（可快速切换）
-                    _CliConfigBadges(
-                      globalEnabled: cliGlobalEnabled,
-                      sheOnly: cliSheOnly,
-                      onToggleGlobal: _toggleGlobal,
-                      onToggleSheOnly: _toggleSheOnly,
+              : hasCmdSchema
+                  // CLI 命令有 configSchema（如 brave_search、tavily_search）：显示工具级配置控件
+                  ? Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        // She Only chip（工具级）
+                        _buildCliSchemaShOnlyChip(
+                          schema!, cmdToolSheExclusive, colorScheme, service),
+                        const SizedBox(width: 6),
+                        // Enabled switch（工具级）
+                        SizedBox(
+                          height: 24,
+                          child: Switch.adaptive(
+                            value: cmdToolEnabled,
+                            onChanged: (v) async {
+                              await service.saveToolConfig(
+                                  schema.toolName, enabled: v);
+                              final updated = await ToolConfigService.instance
+                                  .getToolConfig(schema.toolName);
+                              if (mounted) setState(() => _cmdToolConfig = updated);
+                            },
+                            materialTapTargetSize:
+                                MaterialTapTargetSize.shrinkWrap,
+                          ),
+                        ),
+                        // Configure button
+                        const SizedBox(width: 2),
+                        IconButton(
+                          icon: Icon(Icons.tune,
+                              size: 17, color: colorScheme.primary),
+                          tooltip: 'Configure',
+                          visualDensity: VisualDensity.compact,
+                          onPressed: () =>
+                              _openCliCommandConfigSheet(context, schema!),
+                        ),
+                      ],
+                    )
+                  : Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        // CLI 命令无 configSchema：展示配置徽章（可快速切换）
+                        _CliConfigBadges(
+                          globalEnabled: cliGlobalEnabled,
+                          sheOnly: cliSheOnly,
+                          onToggleGlobal: _toggleGlobal,
+                          onToggleSheOnly: _toggleSheOnly,
+                        ),
+                        const SizedBox(width: 4),
+                        Icon(Icons.chevron_right,
+                            size: 18, color: colorScheme.outlineVariant),
+                      ],
                     ),
-                    const SizedBox(width: 4),
-                    Icon(Icons.chevron_right, size: 18, color: colorScheme.outlineVariant),
-                  ],
-                ),
           onTap: () => _CliDetailSheet.showForCommand(
             context: context,
             nsKey: widget.nsKey,
@@ -1088,6 +1151,51 @@ class _CommandTileState extends State<_CommandTile> {
           color: colorScheme.outlineVariant.withValues(alpha: 0.5),
         ),
       ],
+    );
+  }
+
+  Widget _buildCliSchemaShOnlyChip(
+    CommandConfigSchema schema,
+    bool isSheExclusive,
+    ColorScheme colorScheme,
+    ToolConfigService service,
+  ) {
+    return GestureDetector(
+      onTap: () async {
+        await service.saveToolConfig(
+            schema.toolName, sheExclusive: !isSheExclusive);
+        final updated =
+            await ToolConfigService.instance.getToolConfig(schema.toolName);
+        if (mounted) setState(() => _cmdToolConfig = updated);
+      },
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 150),
+        padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+        decoration: BoxDecoration(
+          color: isSheExclusive
+              ? Theme.of(context).colorScheme.tertiary.withValues(alpha: 0.15)
+              : Theme.of(context).colorScheme.surfaceContainerHighest,
+          borderRadius: BorderRadius.circular(4),
+          border: Border.all(
+            color: isSheExclusive
+                ? Theme.of(context)
+                    .colorScheme
+                    .tertiary
+                    .withValues(alpha: 0.5)
+                : Theme.of(context).colorScheme.outlineVariant,
+          ),
+        ),
+        child: Text(
+          'She only',
+          style: TextStyle(
+            fontSize: 10,
+            fontWeight: FontWeight.w500,
+            color: isSheExclusive
+                ? Theme.of(context).colorScheme.tertiary
+                : Theme.of(context).colorScheme.outline,
+          ),
+        ),
+      ),
     );
   }
 
@@ -1126,6 +1234,29 @@ class _CommandTileState extends State<_CommandTile> {
             color: isSheOnly ? colorScheme.tertiary : colorScheme.outline,
           ),
         ),
+      ),
+    );
+  }
+
+  Future<void> _openCliCommandConfigSheet(
+      BuildContext context, CommandConfigSchema schema) async {
+    await showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) => _CliCommandConfigSheet(
+        cmd: widget.cmd,
+        schema: schema,
+        service: ToolConfigService.instance,
+        onChanged: () async {
+          final updated = await ToolConfigService.instance
+              .getToolConfig(schema.toolName);
+          if (mounted) setState(() => _cmdToolConfig = updated);
+          widget.onRefresh();
+        },
       ),
     );
   }
@@ -3057,3 +3188,566 @@ class _ToolConfigSheetState extends State<_ToolConfigSheet> {
     }
   }
 }
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// _CliCommandConfigSheet — 有 configSchema 的 CLI 命令配置底部弹窗
+//
+// 类似 _ToolConfigSheet，但数据来源于 CliCommand.configSchema（CommandConfigSchema），
+// 存储用 ToolConfigService（toolName = schema.toolName）。
+// 适用于 brave_search、tavily_search、web_search 等有配置的 CLI 命令。
+// ═══════════════════════════════════════════════════════════════════════════════
+
+class _CliCommandConfigSheet extends StatefulWidget {
+  final CliCommand cmd;
+  final CommandConfigSchema schema;
+  final ToolConfigService service;
+  final VoidCallback onChanged;
+
+  const _CliCommandConfigSheet({
+    required this.cmd,
+    required this.schema,
+    required this.service,
+    required this.onChanged,
+  });
+
+  @override
+  State<_CliCommandConfigSheet> createState() => _CliCommandConfigSheetState();
+}
+
+class _CliCommandConfigSheetState extends State<_CliCommandConfigSheet> {
+  late bool _enabled;
+  late bool _sheExclusive;
+  late Map<String, dynamic> _paramOverrides;
+
+  String? _currentApiKey;
+  bool _loadingKey = true;
+  bool _saving = false;
+
+  final Map<String, TextEditingController> _fieldControllers = {};
+  final Map<String, bool> _boolFields = {};
+  final Map<String, String?> _selectFields = {};
+  final _noteController = TextEditingController();
+
+  @override
+  void initState() {
+    super.initState();
+    // 同步初始化（用默认值），等异步加载完成后再覆盖
+    _enabled = true;
+    _sheExclusive = false;
+    _paramOverrides = {};
+    _initFieldControllersFromDefaults();
+    _initFromConfig();
+    _loadApiKey();
+  }
+
+  /// 先用 schema 默认值初始化控件，避免第一帧为空
+  void _initFieldControllersFromDefaults() {
+    for (final field in widget.schema.fields) {
+      if (field.type == CliConfigFieldType.apiKey) continue;
+      if (field.type == CliConfigFieldType.boolean) {
+        _boolFields[field.key] =
+            field.defaultValue is bool ? field.defaultValue as bool : false;
+      } else if (field.type == CliConfigFieldType.select) {
+        _selectFields[field.key] = field.defaultValue as String?;
+      } else {
+        _fieldControllers[field.key] = TextEditingController(
+          text: field.defaultValue != null ? field.defaultValue.toString() : '',
+        );
+      }
+    }
+  }
+
+  Future<void> _initFromConfig() async {
+    final c = await widget.service.getToolConfig(widget.schema.toolName);
+    if (!mounted) return;
+    setState(() {
+      _enabled = c?.enabled ?? true;
+      _sheExclusive = c?.sheExclusive ?? false;
+      _paramOverrides = Map.from(c?.parameterOverrides ?? {});
+      _noteController.text = c?.note ?? '';
+
+      for (final field in widget.schema.fields) {
+        if (field.type == CliConfigFieldType.apiKey) continue;
+        if (field.type == CliConfigFieldType.boolean) {
+          final val = _paramOverrides[field.key];
+          _boolFields[field.key] = val is bool
+              ? val
+              : (field.defaultValue is bool
+                  ? field.defaultValue as bool
+                  : false);
+        } else if (field.type == CliConfigFieldType.select) {
+          final val = _paramOverrides[field.key];
+          _selectFields[field.key] =
+              val is String ? val : (field.defaultValue as String?);
+        } else {
+          // 更新已有 controller 的 text，避免重复创建（旧 controller 已在 _initFieldControllersFromDefaults 中创建）
+          final val = _paramOverrides[field.key];
+          final text = val?.toString() ??
+              (field.defaultValue != null ? field.defaultValue.toString() : '');
+          _fieldControllers.putIfAbsent(
+              field.key, () => TextEditingController());
+          _fieldControllers[field.key]!.text = text;
+        }
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _noteController.dispose();
+    for (final c in _fieldControllers.values) {
+      c.dispose();
+    }
+    super.dispose();
+  }
+
+  Future<void> _loadApiKey() async {
+    final key = await widget.service.getToolApiKey(widget.schema.toolName);
+    if (mounted) setState(() { _currentApiKey = key; _loadingKey = false; });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+
+    return Padding(
+      padding: EdgeInsets.only(
+        left: 20, right: 20, top: 20,
+        bottom: MediaQuery.of(context).viewInsets.bottom + 20,
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // ── Header ──────────────────────────────────────────────────────────
+          Row(children: [
+            Icon(Icons.settings_ethernet, size: 20, color: colorScheme.primary),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(widget.schema.displayName,
+                      style: const TextStyle(
+                          fontSize: 18, fontWeight: FontWeight.w600)),
+                  Text(widget.cmd.name,
+                      style: TextStyle(
+                          fontSize: 11,
+                          color: colorScheme.outline,
+                          fontFamily: 'monospace')),
+                ],
+              ),
+            ),
+            IconButton(
+              icon: const Icon(Icons.close),
+              onPressed: () => Navigator.pop(context),
+            ),
+          ]),
+          if (widget.schema.description != null) ...[
+            const SizedBox(height: 4),
+            Text(widget.schema.description!,
+                style: TextStyle(fontSize: 12, color: colorScheme.outline)),
+          ],
+          const Divider(height: 24),
+          Flexible(
+            child: SingleChildScrollView(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  _buildToggles(colorScheme),
+                  const Divider(height: 24),
+                  ..._buildConfigFields(colorScheme),
+                  _buildNoteSection(colorScheme),
+                  const SizedBox(height: 20),
+                  _buildActions(colorScheme),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildToggles(ColorScheme cs) => Column(children: [
+        SwitchListTile(
+          contentPadding: EdgeInsets.zero,
+          title: const Text('Enable globally', style: TextStyle(fontSize: 14)),
+          subtitle: Text('When disabled, agents cannot use this tool',
+              style: TextStyle(fontSize: 12, color: cs.outline)),
+          value: _enabled,
+          onChanged: (v) => setState(() => _enabled = v),
+        ),
+        SwitchListTile(
+          contentPadding: EdgeInsets.zero,
+          title: Row(children: [
+            const Text('She only', style: TextStyle(fontSize: 14)),
+            const SizedBox(width: 6),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+              decoration: BoxDecoration(
+                color: cs.tertiary.withValues(alpha: 0.12),
+                borderRadius: BorderRadius.circular(4),
+              ),
+              child: Text('She',
+                  style: TextStyle(
+                      fontSize: 10,
+                      color: cs.tertiary,
+                      fontWeight: FontWeight.w500)),
+            ),
+          ]),
+          subtitle: Text('Only She can use this tool (not other agents)',
+              style: TextStyle(fontSize: 12, color: cs.outline)),
+          value: _sheExclusive,
+          onChanged: (v) => setState(() => _sheExclusive = v),
+        ),
+      ]);
+
+  List<Widget> _buildConfigFields(ColorScheme cs) {
+    final widgets = <Widget>[];
+    for (final field in widget.schema.fields) {
+      widgets.add(_buildField(field, cs));
+      widgets.add(const SizedBox(height: 16));
+    }
+    return widgets;
+  }
+
+  Widget _buildField(CliConfigField field, ColorScheme cs) =>
+      switch (field.type) {
+        CliConfigFieldType.apiKey => _buildApiKeyField(field, cs),
+        CliConfigFieldType.boolean => _buildBoolField(field, cs),
+        CliConfigFieldType.select => _buildSelectField(field, cs),
+        _ => _buildTextField(field, cs),
+      };
+
+  Widget _buildApiKeyField(CliConfigField field, ColorScheme cs) {
+    final hasKey = (_currentApiKey?.isNotEmpty) == true;
+    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      Row(children: [
+        Icon(Icons.key, size: 16, color: cs.primary),
+        const SizedBox(width: 6),
+        Text(field.label,
+            style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500)),
+        if (field.required) ...[
+          const SizedBox(width: 4),
+          Text('*', style: TextStyle(fontSize: 14, color: cs.error)),
+        ],
+        const Spacer(),
+        if (_loadingKey)
+          const SizedBox(
+              width: 16,
+              height: 16,
+              child: CircularProgressIndicator(strokeWidth: 2))
+        else
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+            decoration: BoxDecoration(
+              color: (hasKey ? cs.primary : cs.outline).withValues(alpha: 0.1),
+              borderRadius: BorderRadius.circular(4),
+            ),
+            child: Text(hasKey ? 'Configured' : 'Not set',
+                style: TextStyle(
+                    fontSize: 11,
+                    color: hasKey ? cs.primary : cs.outline,
+                    fontWeight: FontWeight.w500)),
+          ),
+      ]),
+      const SizedBox(height: 4),
+      Text(field.description,
+          style: TextStyle(fontSize: 12, color: cs.outline)),
+      if (hasKey && _currentApiKey != null) ...[
+        const SizedBox(height: 6),
+        Text(
+            '${_currentApiKey!.substring(0, _currentApiKey!.length.clamp(0, 8))}••••••••',
+            style: TextStyle(
+                fontSize: 12, color: cs.outline, fontFamily: 'monospace')),
+      ],
+      const SizedBox(height: 8),
+      Row(children: [
+        Expanded(
+          child: OutlinedButton.icon(
+            icon: Icon(hasKey ? Icons.edit : Icons.add, size: 16),
+            label: Text(hasKey ? 'Update Key' : 'Set Key'),
+            onPressed: _showSetKeyDialog,
+          ),
+        ),
+        if (hasKey) ...[
+          const SizedBox(width: 8),
+          IconButton(
+            tooltip: 'Delete API key',
+            icon: Icon(Icons.delete_outline, color: cs.error),
+            onPressed: _confirmDeleteKey,
+          ),
+        ],
+      ]),
+    ]);
+  }
+
+  Widget _buildBoolField(CliConfigField field, ColorScheme cs) =>
+      SwitchListTile(
+        contentPadding: EdgeInsets.zero,
+        title: Text(field.label, style: const TextStyle(fontSize: 14)),
+        subtitle: Text(field.description,
+            style: TextStyle(fontSize: 12, color: cs.outline)),
+        value: _boolFields[field.key] ?? false,
+        onChanged: (v) => setState(() => _boolFields[field.key] = v),
+      );
+
+  Widget _buildSelectField(CliConfigField field, ColorScheme cs) =>
+      Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Row(children: [
+          Text(field.label,
+              style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500)),
+          if (field.required) ...[
+            const SizedBox(width: 4),
+            Text('*', style: TextStyle(fontSize: 14, color: cs.error)),
+          ],
+        ]),
+        const SizedBox(height: 4),
+        Text(field.description,
+            style: TextStyle(fontSize: 12, color: cs.outline)),
+        const SizedBox(height: 8),
+        DropdownButtonFormField<String>(
+          value: _selectFields[field.key],
+          decoration: InputDecoration(
+            border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+            contentPadding:
+                const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            isDense: true,
+          ),
+          items: (field.options ?? [])
+              .map((o) => DropdownMenuItem(value: o, child: Text(o)))
+              .toList(),
+          onChanged: (v) => setState(() => _selectFields[field.key] = v),
+        ),
+      ]);
+
+  Widget _buildTextField(CliConfigField field, ColorScheme cs) {
+    _fieldControllers.putIfAbsent(
+        field.key, () => TextEditingController());
+    final ctrl = _fieldControllers[field.key]!;
+    final isNumeric = field.type == CliConfigFieldType.integer ||
+        field.type == CliConfigFieldType.doubleNum;
+    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      Row(children: [
+        Text(field.label,
+            style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500)),
+        if (field.required) ...[
+          const SizedBox(width: 4),
+          Text('*', style: TextStyle(fontSize: 14, color: cs.error)),
+        ],
+      ]),
+      const SizedBox(height: 4),
+      Text(field.description,
+          style: TextStyle(fontSize: 12, color: cs.outline)),
+      const SizedBox(height: 8),
+      TextField(
+        controller: ctrl,
+        keyboardType: isNumeric
+            ? const TextInputType.numberWithOptions(decimal: true)
+            : TextInputType.text,
+        style: const TextStyle(fontSize: 13),
+        decoration: InputDecoration(
+          hintText: field.defaultValue != null ? field.defaultValue.toString() : '',
+          border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+          contentPadding:
+              const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          isDense: true,
+        ),
+      ),
+    ]);
+  }
+
+  Widget _buildNoteSection(ColorScheme cs) =>
+      Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Row(children: [
+          Icon(Icons.note_outlined, size: 16, color: cs.outline),
+          const SizedBox(width: 6),
+          const Text('Note',
+              style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500)),
+        ]),
+        const SizedBox(height: 8),
+        TextField(
+          controller: _noteController,
+          maxLines: 2,
+          style: const TextStyle(fontSize: 13),
+          decoration: InputDecoration(
+            hintText: 'Optional note...',
+            hintStyle: TextStyle(fontSize: 13, color: cs.outline),
+            border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+            contentPadding:
+                const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            isDense: true,
+          ),
+        ),
+      ]);
+
+  Widget _buildActions(ColorScheme cs) => Row(children: [
+        TextButton(
+          style: TextButton.styleFrom(foregroundColor: cs.error),
+          onPressed: _confirmDeleteConfig,
+          child: const Text('Delete Config'),
+        ),
+        const Spacer(),
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Cancel'),
+        ),
+        const SizedBox(width: 8),
+        FilledButton(
+          onPressed: _saving ? null : _saveConfig,
+          child: _saving
+              ? const SizedBox(
+                  width: 16,
+                  height: 16,
+                  child: CircularProgressIndicator(strokeWidth: 2))
+              : const Text('Save'),
+        ),
+      ]);
+
+  Future<void> _showSetKeyDialog() async {
+    final ctrl = TextEditingController();
+    final formKey = GlobalKey<FormState>();
+    final result = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text('Set API Key — ${widget.schema.displayName}'),
+        content: Form(
+          key: formKey,
+          child: TextFormField(
+            controller: ctrl,
+            obscureText: true,
+            decoration: const InputDecoration(
+                labelText: 'API Key',
+                hintText: 'Enter your API key',
+                border: OutlineInputBorder()),
+            validator: (v) =>
+                (v == null || v.isEmpty) ? 'API key cannot be empty' : null,
+          ),
+        ),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Cancel')),
+          FilledButton(
+            onPressed: () {
+              if (formKey.currentState!.validate()) {
+                Navigator.pop(ctx, ctrl.text);
+              }
+            },
+            child: const Text('Save'),
+          ),
+        ],
+      ),
+    );
+    if (result != null && result.isNotEmpty) {
+      await widget.service.setToolApiKey(widget.schema.toolName, result);
+      await _loadApiKey();
+    }
+  }
+
+  Future<void> _confirmDeleteKey() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Delete API Key'),
+        content: Text(
+            'Remove the API key for ${widget.schema.displayName}? This cannot be undone.'),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Cancel')),
+          FilledButton(
+            style: FilledButton.styleFrom(
+                backgroundColor: Theme.of(context).colorScheme.error),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed == true) {
+      await widget.service.deleteToolApiKey(widget.schema.toolName);
+      await _loadApiKey();
+    }
+  }
+
+  Future<void> _confirmDeleteConfig() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Delete Configuration'),
+        content: Text(
+            'Delete all configuration for ${widget.schema.displayName}? The API key will also be removed.'),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Cancel')),
+          FilledButton(
+            style: FilledButton.styleFrom(
+                backgroundColor: Theme.of(context).colorScheme.error),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed == true) {
+      await widget.service.deleteToolConfig(widget.schema.toolName);
+      if (mounted) {
+        Navigator.pop(context);
+        widget.onChanged();
+      }
+    }
+  }
+
+  Future<void> _saveConfig() async {
+    setState(() => _saving = true);
+    try {
+      final newOverrides = <String, dynamic>{};
+      for (final field in widget.schema.fields) {
+        if (field.type == CliConfigFieldType.apiKey) continue;
+        if (field.type == CliConfigFieldType.boolean) {
+          final val = _boolFields[field.key];
+          if (val != null) newOverrides[field.key] = val;
+        } else if (field.type == CliConfigFieldType.select) {
+          final val = _selectFields[field.key];
+          if (val != null) newOverrides[field.key] = val;
+        } else {
+          final text = _fieldControllers[field.key]?.text.trim() ?? '';
+          if (text.isNotEmpty) newOverrides[field.key] = _parseParamValue(text);
+        }
+      }
+      final note = _noteController.text.trim();
+      await widget.service.saveToolConfig(
+        widget.schema.toolName,
+        parameterOverrides: newOverrides.isEmpty ? null : newOverrides,
+        clearParameterOverrides: newOverrides.isEmpty,
+        enabled: _enabled,
+        sheExclusive: _sheExclusive,
+        note: note.isEmpty ? null : note,
+        clearNote: note.isEmpty,
+      );
+      if (mounted) {
+        Navigator.pop(context);
+        widget.onChanged();
+      }
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
+  }
+
+  dynamic _parseParamValue(String raw) {
+    if (raw == 'true') return true;
+    if (raw == 'false') return false;
+    final intVal = int.tryParse(raw);
+    if (intVal != null) return intVal;
+    final doubleVal = double.tryParse(raw);
+    if (doubleVal != null) return doubleVal;
+    try {
+      return jsonDecode(raw);
+    } catch (_) {}
+    return raw;
+  }
+}
+
