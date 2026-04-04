@@ -1,7 +1,6 @@
 import '../../models/message.dart';
 import '../../models/attachment_data.dart';
 import '../../models/llm_stream_event.dart';
-import '../os_tool_registry.dart';
 import '../skill_registry.dart';
 import '../model_registry.dart';
 import '../ui_component_registry.dart';
@@ -14,17 +13,18 @@ import '../task/task_models.dart';
 /// tool-building and message-formatting logic.
 class LocalLLMHelpers {
   /// Build the combined tool list for a local LLM agent.
+  ///
+  /// OS/web tools are no longer exposed directly — they are accessed
+  /// through the shepaw CLI (os/web namespaces).
   static List<Map<String, dynamic>> buildToolList({
     required bool isClaude,
-    required List<String> enabledOsTools,
     required List<String> enabledSkills,
     required List<String> enabledToolModels,
     required Map<String, dynamic> toolModelScenarios,
-    bool isShe = false,
+    bool includeShepawCli = true,
     // 是否在工具列表里注入 get_tool_result（有历史工具调用时应传 true）
     bool includeGetToolResult = false,
   }) {
-    final osRegistry = OsToolRegistry.instance;
     final skillRegistry = SkillRegistry.instance;
     final toolModelRegistry = ModelRegistry.instance;
     final pawRegistry = ShepawCLI.instance;
@@ -32,45 +32,43 @@ class LocalLLMHelpers {
     if (isClaude) {
       return [
         ...UIComponentRegistry.instance.claudeTools(),
-        if (enabledOsTools.isNotEmpty) ...osRegistry.claudeTools(enabledTools: enabledOsTools.toSet()),
         if (enabledSkills.isNotEmpty) ...skillRegistry.claudeTools(enabledSkills: enabledSkills.toSet()),
         if (enabledToolModels.isNotEmpty) ...toolModelRegistry.claudeTools(
           enabledToolModels: enabledToolModels.toSet(),
           scenarioOverrides: Map<String, String>.from(toolModelScenarios),
         ),
-        if (isShe) pawRegistry.claudeTool(),
+        if (includeShepawCli) pawRegistry.claudeTool(),
         if (includeGetToolResult) getToolResultClaude(),
       ];
     } else {
       return [
         ...UIComponentRegistry.instance.openAITools(),
-        if (enabledOsTools.isNotEmpty) ...osRegistry.openAITools(enabledTools: enabledOsTools.toSet()),
         if (enabledSkills.isNotEmpty) ...skillRegistry.openAITools(enabledSkills: enabledSkills.toSet()),
         if (enabledToolModels.isNotEmpty) ...toolModelRegistry.openAITools(
           enabledToolModels: enabledToolModels.toSet(),
           scenarioOverrides: Map<String, String>.from(toolModelScenarios),
         ),
-        if (isShe) pawRegistry.openAITool(),
+        if (includeShepawCli) pawRegistry.openAITool(),
         if (includeGetToolResult) getToolResultOpenAI(),
       ];
     }
   }
 
   /// Build the combined system prompt for a local LLM agent.
+  ///
+  /// OS tool documentation is no longer injected here — agents discover
+  /// tools through the shepaw CLI.
   static String buildSystemPrompt({
     required String baseSystemPrompt,
-    required List<String> enabledOsTools,
     required List<String> enabledSkills,
     required List<String> enabledToolModels,
     required Map<String, dynamic> toolModelScenarios,
   }) {
-    final osRegistry = OsToolRegistry.instance;
     final skillRegistry = SkillRegistry.instance;
     final toolModelRegistry = ModelRegistry.instance;
 
     return '$baseSystemPrompt'
         '${UIComponentRegistry.instance.systemPromptSuffix}'
-        '${enabledOsTools.isNotEmpty ? osRegistry.systemPromptSuffix(enabledOsTools.toSet()) : ''}'
         '${enabledSkills.isNotEmpty ? skillRegistry.systemPromptSuffix(enabledSkills.toSet()) : ''}'
         '${enabledToolModels.isNotEmpty ? toolModelRegistry.systemPromptSuffix(enabledToolModels.toSet(), scenarioOverrides: Map<String, String>.from(toolModelScenarios)) : ''}';
   }

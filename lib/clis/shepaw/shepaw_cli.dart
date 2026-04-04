@@ -4,6 +4,7 @@ import 'context/context_namespace.dart';
 import 'chat/chat_namespace.dart';
 import 'skills_namespace.dart';
 import 'tools_namespace.dart';
+import 'os/os_cli_namespace.dart';
 import 'meta/meta_namespace.dart';
 import 'help_namespace.dart';
 import 'external_cli_namespace.dart';
@@ -25,8 +26,12 @@ import '../../services/cli_tool_registry.dart';
 ///   chat      对话频道与消息（channels / messages）
 ///
 /// ─── 🔧 TOOLING 层（系统工具和功能能力）────────────────────
-///   tools     本地系统工具（OS tools、文件操作等）
+///   tools     系统工具（os.* / network.* / web.*）
+///             web.search  Web 搜索（--query / --limit）
+///             web.fetch   网页抓取（--url / --format / --timeout）
+///             web.config  Web 工具配置管理
 ///   skills    已加载的 LLM 技能库（user-imported skills）
+///   os        直接操作系统工具（shell/file/app/clipboard/process/macos）
 ///
 /// ─── ℹ️ META 层（系统元信息和诊断）─────────────────────────
 ///   meta      系统信息、时间（system.* / datetime）
@@ -59,6 +64,7 @@ class ShepawCLI {
     // ── 🔧 TOOLING 层 - 系统工具和功能能力 ──────────────────────────────────────
     'tools': ToolsNamespace.instance,
     'skills': SkillsNamespace.instance,
+    'os': OsCliNamespace.instance,
 
     // ── ℹ️ META 层 - 系统元信息和诊断 ───────────────────────────────────────────
     'meta': MetaNamespace.instance,
@@ -112,9 +118,11 @@ class ShepawCLI {
       'ShePaw built-in CLI. Namespaces: '
       '[CONTEXT] context (profile.*/memory.*/agents.* — use dot notation, e.g. context profile.query); '
       '[COMMUNICATION] chat (channels: list channels, messages: query messages); '
-      '[TOOLING] tools (os.list/detail/categories | network.list/detail | config | <tool_name>.config), skills (LLM skills: list/detail); '
+      '[TOOLING] tools (network.list/network.detail | web.search/web.fetch/web.config | web.search.config/web.fetch.config | <tool_name>.config), '
+      'skills (LLM skills: list/detail), '
+      'os (local OS commands: <category>.<cmd> e.g. command.shell/file.read/file.write/app.open/clipboard.read/process.list/macos.applescript | list); '
       '[META] meta (datetime | system.info/tools-list/tools-detail/capabilities | cli-tools.<list|install|uninstall|rescan>), help (full docs). '
-      'Tool config: shepaw tools web_search.config [--action get|set-key|delete-key|set-param|delete-param|set-note|delete|enable|disable] [--key k] [--value v]. '
+      'Web config: shepaw tools web search.config [--action get|set-key|delete-key|set-param|delete-param|set-note|delete|enable|disable] [--key k] [--value v]. '
       'Add flags={"help":""} to any call for contextual help. Run "shepaw help" for complete reference.';
 
   /// 动态生成工具描述（包含外部工具信息）
@@ -131,8 +139,9 @@ class ShepawCLI {
       'Subcommand for the chosen namespace. '
       'context: profile.<fields|query|write|delete> | memory.<query|write|append> | agents.<list|get|channels|messages|chat|memory-query|memory-write|cognition-query|cognition-write>; '
       'chat: channels|messages; '
-      'tools: list | config | os.<list|detail|categories> | network.<list|detail> | <tool_name>.config [--action get|set-key|delete-key|set-param|delete-param|set-note|delete|enable|disable]; '
+      'tools: list | config | network.list | network.detail | web.search --query <q> [--limit n] | web.fetch --url <url> [--format text|markdown|html] | web.config | web.search.config | web.fetch.config | <tool_name>.config [--action get|set-key|delete-key|set-param|delete-param|set-note|delete|enable|disable]; '
       'skills: list|detail; '
+      'os: list | <category>.<cmd> (command.shell|file.read|file.write|file.list|file.delete|file.info|app.open|app.url|clipboard.read|clipboard.write|process.list|process.kill|macos.applescript|screenshot); '
       'meta: datetime | system.<info|tools-list|tools-detail|capabilities> | cli-tools.<list|install|uninstall|rescan>; '
       'help: (none, returns full docs)',
     );
@@ -225,7 +234,7 @@ class ShepawCLI {
       'namespace_layers': {
         'context': 'She internal state — profile, memory, agents',
         'communication': 'Real-time messaging — chat (channels + messages)',
-        'tooling': 'System capabilities — tools (OS), skills (LLM)',
+        'tooling': 'Network/web tools — tools (network.*/web.*), skills (LLM), os (local OS commands)',
         'meta': 'System info — meta (datetime + system.* + cli-tools.*)',
       },
       'namespaces': {
@@ -261,17 +270,31 @@ class ShepawCLI {
         // TOOLING
         'shepaw tools list',
         'shepaw tools config',
-        'shepaw tools os.list',
-        'shepaw tools os.detail --name file_read',
-        'shepaw tools os.categories --category file',
         'shepaw tools network.list',
         'shepaw tools network.detail --name web_search',
-        'shepaw tools web_search.config',
-        'shepaw tools web_search.config --action set-key --value sk-xxx',
-        'shepaw tools web_search.config --action set-param --key timeout --value 60',
-        'shepaw tools web_search.config --action disable',
+        // TOOLING - web
+        'shepaw tools web.search --query "Flutter state management"',
+        'shepaw tools web.search --query "Dart 3 records" --limit 5',
+        'shepaw tools web.fetch --url https://dart.dev',
+        'shepaw tools web.fetch --url https://example.com --format text --timeout 60',
+        'shepaw tools web.config',
+        'shepaw tools web.search.config',
+        'shepaw tools web.search.config --action set-key --value BSA-xxx',
+        'shepaw tools web.search.config --action set-param --key timeout --value 60',
+        'shepaw tools web.search.config --action disable',
         'shepaw skills list',
         'shepaw skills detail --name extract_pdf',
+        // OS
+        'shepaw os list',
+        'shepaw os shell.exec --command "ls -la"',
+        'shepaw os file.read --path /tmp/test.txt',
+        'shepaw os file.write --path /tmp/test.txt --content "hello"',
+        'shepaw os file.list --path /tmp --detail true',
+        'shepaw os app.open --app_name Safari',
+        'shepaw os clipboard.read',
+        'shepaw os clipboard.write --text "copied text"',
+        'shepaw os process.list --sort_by cpu --limit 10',
+        'shepaw os macos.applescript --script "display dialog Hello"',
       ],
     };
 

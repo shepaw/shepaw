@@ -53,6 +53,8 @@ class CliToolRegistry {
     'chat',
     'tools',
     'skills',
+    'web',
+    'os',
     'meta',
     'help',
   };

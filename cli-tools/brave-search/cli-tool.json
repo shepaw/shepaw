@@ -1,0 +1,35 @@
+{
+  "namespace": "brave-search",
+  "displayName": "Brave Search",
+  "description": "Web search using Brave Search API",
+  "version": "1.0.0",
+  "supportedPlatforms": ["macos", "linux", "windows"],
+  "handler": {
+    "type": "script",
+    "path": "handler.sh"
+  },
+  "commands": {
+    "search": {
+      "description": "Search the web using Brave Search API",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "Search query string (required)"
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Maximum number of results to return (default: 10)",
+            "default": 10
+          },
+          "apiKey": {
+            "type": "string",
+            "description": "Brave Search API Key (required)"
+          }
+        },
+        "required": ["query", "apiKey"]
+      }
+    }
+  }
+}

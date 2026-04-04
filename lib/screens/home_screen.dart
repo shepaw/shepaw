@@ -18,7 +18,7 @@ import 'settings_screen.dart';
 import 'contacts_screen.dart';
 import 'model_management_screen.dart';
 import 'skill_management_screen.dart';
-import 'agent_cli_commands_management_screen.dart';
+import 'cli_config_management_screen.dart';
 import '../services/model_registry.dart';
 import '../widgets/agent_search_delegate.dart';
 import '../services/message_search_service.dart';
@@ -704,13 +704,13 @@ class HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateMi
                   ),
                   ListTile(
                     leading: const Icon(Icons.terminal),
-                    title: const Text('CLI Commands'),
+                    title: Text(l10n.osTool_configTitle),
                     onTap: () {
                       Navigator.pop(context);
                       Navigator.push(
                         context,
                         MaterialPageRoute(
-                          builder: (context) => const AgentCliCommandsManagementScreen(),
+                          builder: (context) => const CliConfigManagementScreen(),
                         ),
                       );
                       if (mounted) setState(() {});

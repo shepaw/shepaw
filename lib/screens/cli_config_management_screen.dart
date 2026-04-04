@@ -11,6 +11,7 @@ import '../clis/shepaw/tools_namespace.dart';
 import '../clis/shepaw/skills_namespace.dart';
 import '../clis/shepaw/meta/meta_namespace.dart';
 import '../clis/shepaw/help_namespace.dart';
+import '../clis/shepaw/os/os_cli_namespace.dart';
 import '../clis/shepaw/context/context_namespace.dart' show ContextNamespace;
 import '../models/cli_command_config.dart';
 import '../models/cli_config_field.dart';
@@ -55,9 +56,16 @@ List<_NsDef> get _topNamespaces => [
       _NsDef(
         key: 'tools',
         label: 'Tooling',
-        description: 'Local OS tools and network utilities',
+        description: 'Network and web tools',
         icon: Icons.build_outlined,
         ns: ToolsNamespace.instance,
+      ),
+      _NsDef(
+        key: 'os',
+        label: 'OS',
+        description: 'Local OS tools — shell, file, app, clipboard, process',
+        icon: Icons.computer_outlined,
+        ns: OsCliNamespace.instance,
       ),
       _NsDef(
         key: 'skills',
@@ -118,6 +126,29 @@ dynamic _parseParamValue(String raw) {
 // ── 判断某个命名空间是否是 Tooling（有工具配置管理）──────────────────────────
 bool _isToolNamespace(CliNamespace ns) => ns is ToolsNamespace;
 
+// ── 共享帮助对话框 ───────────────────────────────────────────────────────────────
+/// 执行 --help 命令并在底部面板中显示帮助信息
+Future<void> _showHelpSheet({
+  required BuildContext context,
+  required String namespace,
+  String subcommand = '',
+  required String title,
+}) async {
+  showModalBottomSheet(
+    context: context,
+    isScrollControlled: true,
+    useSafeArea: true,
+    shape: const RoundedRectangleBorder(
+      borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+    ),
+    builder: (_) => _HelpSheet(
+      namespace: namespace,
+      subcommand: subcommand,
+      title: title,
+    ),
+  );
+}
+
 // ═══════════════════════════════════════════════════════════════════════════════
 // Root Screen — Top-level namespace list
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -140,6 +171,17 @@ class CliConfigManagementScreen extends StatelessWidget {
             const Text('CLI Management'),
           ],
         ),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.help_outline, size: 20),
+            tooltip: 'shepaw help',
+            onPressed: () => _showHelpSheet(
+              context: context,
+              namespace: 'help',
+              title: 'ShepawCLI',
+            ),
+          ),
+        ],
       ),
       body: ListView.separated(
         padding: const EdgeInsets.symmetric(vertical: 8),
@@ -371,6 +413,15 @@ class _NsPageState extends State<_NsPage> {
           ],
         ),
         actions: [
+          IconButton(
+            icon: const Icon(Icons.help_outline, size: 20),
+            tooltip: 'shepaw ${widget.def.key} --help',
+            onPressed: () => _showHelpSheet(
+              context: context,
+              namespace: widget.def.key,
+              title: widget.def.label,
+            ),
+          ),
           IconButton(
             icon: const Icon(Icons.settings_outlined, size: 20),
             tooltip: 'Namespace Settings',
@@ -696,6 +747,16 @@ class _SubNsPageState extends State<_SubNsPage> {
           ],
         ),
         actions: [
+          IconButton(
+            icon: const Icon(Icons.help_outline, size: 20),
+            tooltip: 'shepaw ${widget.parentKey} ${widget.subKey} --help',
+            onPressed: () => _showHelpSheet(
+              context: context,
+              namespace: widget.parentKey,
+              subcommand: widget.subKey,
+              title: _title,
+            ),
+          ),
           IconButton(
             icon: const Icon(Icons.settings_outlined, size: 20),
             tooltip: 'Sub-namespace Settings',
@@ -2079,6 +2140,217 @@ class _CliConfigBadges extends StatelessWidget {
     return Tooltip(
       message: tooltip,
       child: GestureDetector(onTap: onTap, child: child),
+    );
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// _HelpSheet — 执行 --help 并展示结果的底部面板
+// ═══════════════════════════════════════════════════════════════════════════════
+
+class _HelpSheet extends StatefulWidget {
+  final String namespace;
+  final String subcommand;
+  final String title;
+
+  const _HelpSheet({
+    required this.namespace,
+    required this.subcommand,
+    required this.title,
+  });
+
+  @override
+  State<_HelpSheet> createState() => _HelpSheetState();
+}
+
+class _HelpSheetState extends State<_HelpSheet> {
+  bool _loading = true;
+  String? _result;
+  bool _isError = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _runHelp();
+  }
+
+  Future<void> _runHelp() async {
+    setState(() { _loading = true; _result = null; });
+    try {
+      final raw = await ShepawCLI.instance.execute({
+        'namespace': widget.namespace,
+        'subcommand': widget.subcommand,
+        'flags': {'help': ''},
+      });
+      try {
+        final decoded = jsonDecode(raw);
+        _result = const JsonEncoder.withIndent('  ').convert(decoded);
+        _isError = decoded is Map && decoded.containsKey('error');
+      } catch (_) {
+        _result = raw;
+        _isError = false;
+      }
+    } catch (e) {
+      _result = e.toString();
+      _isError = true;
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  /// 构建帮助命令显示文本
+  String get _commandText {
+    final sb = StringBuffer('shepaw');
+    if (widget.namespace.isNotEmpty) {
+      sb.write(' ${widget.namespace}');
+    }
+    if (widget.subcommand.isNotEmpty) {
+      sb.write(' ${widget.subcommand}');
+    }
+    sb.write(' --help');
+    return sb.toString();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+
+    return DraggableScrollableSheet(
+      initialChildSize: 0.65,
+      maxChildSize: 0.95,
+      minChildSize: 0.35,
+      expand: false,
+      builder: (ctx, scrollCtrl) => Padding(
+        padding: const EdgeInsets.fromLTRB(20, 16, 20, 20),
+        child: ListView(
+          controller: scrollCtrl,
+          children: [
+            // ── Header ────────────────────────────────────────────────────
+            Row(children: [
+              Icon(Icons.help_outline, size: 20, color: cs.primary),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  '${widget.title} — Help',
+                  style: const TextStyle(
+                      fontSize: 17, fontWeight: FontWeight.w600),
+                ),
+              ),
+              IconButton(
+                icon: const Icon(Icons.close),
+                visualDensity: VisualDensity.compact,
+                onPressed: () => Navigator.pop(ctx),
+              ),
+            ]),
+
+            const SizedBox(height: 8),
+
+            // ── 命令预览 ──────────────────────────────────────────────────
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+              decoration: BoxDecoration(
+                color: cs.primaryContainer.withValues(alpha: 0.3),
+                borderRadius: BorderRadius.circular(6),
+                border: Border.all(color: cs.primary.withValues(alpha: 0.3)),
+              ),
+              child: Row(
+                children: [
+                  Icon(Icons.terminal, size: 14, color: cs.primary),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: SelectableText(
+                      _commandText,
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontFamily: 'monospace',
+                        fontWeight: FontWeight.w600,
+                        color: cs.primary,
+                      ),
+                    ),
+                  ),
+                  IconButton(
+                    icon: Icon(Icons.refresh, size: 16, color: cs.primary),
+                    tooltip: 'Re-run',
+                    visualDensity: VisualDensity.compact,
+                    padding: EdgeInsets.zero,
+                    constraints: const BoxConstraints(),
+                    onPressed: _loading ? null : _runHelp,
+                  ),
+                ],
+              ),
+            ),
+
+            const SizedBox(height: 12),
+
+            // ── 结果区域 ──────────────────────────────────────────────────
+            if (_loading)
+              const Padding(
+                padding: EdgeInsets.symmetric(vertical: 40),
+                child: Center(child: CircularProgressIndicator()),
+              )
+            else if (_result != null) ...[
+              // 结果头部
+              Row(children: [
+                Icon(
+                  _isError ? Icons.error_outline : Icons.check_circle_outline,
+                  size: 14,
+                  color: _isError ? cs.error : cs.primary,
+                ),
+                const SizedBox(width: 6),
+                Text(
+                  _isError ? 'Error' : 'Help Output',
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                    color: _isError ? cs.error : cs.primary,
+                  ),
+                ),
+                const Spacer(),
+                IconButton(
+                  icon: const Icon(Icons.copy, size: 15),
+                  tooltip: 'Copy',
+                  visualDensity: VisualDensity.compact,
+                  onPressed: () {
+                    Clipboard.setData(ClipboardData(text: _result!));
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text('Copied to clipboard'),
+                        behavior: SnackBarBehavior.floating,
+                        duration: Duration(seconds: 2),
+                      ),
+                    );
+                  },
+                ),
+              ]),
+              const SizedBox(height: 4),
+              // 结果内容
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: _isError
+                      ? cs.errorContainer.withValues(alpha: 0.4)
+                      : cs.surfaceContainerHighest,
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(
+                    color: _isError
+                        ? cs.error.withValues(alpha: 0.3)
+                        : cs.outlineVariant,
+                  ),
+                ),
+                child: SelectableText(
+                  _result!,
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontFamily: 'monospace',
+                    color: _isError ? cs.onErrorContainer : cs.onSurface,
+                  ),
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
     );
   }
 }

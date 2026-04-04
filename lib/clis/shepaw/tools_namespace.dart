@@ -3,33 +3,33 @@ import 'dart:convert';
 import '../cli_base.dart';
 import '../../services/os_tool_registry.dart';
 import '../../services/tool_config_service.dart';
-import 'tools/os/os_namespace.dart';
 import 'tools/network/network_namespace.dart';
+import 'tools/web/web_namespace.dart';
 
-/// [TOOLING 层] tools 命名空间 - 系统工具总入口
+/// [TOOLING 层] tools 命名空间 - Web 工具 + 工具配置管理
 ///
-/// 按工具类型分为两个子命名空间：
+/// 子命名空间：
+///   network — 网络工具分类（list/detail 查询）
+///   web     — Web 搜索和抓取（search/fetch + 配置管理）
 ///
-///   os      — 本地系统执行能力（file/command/process/app/clipboard）
-///   network — 网络与 Web 能力（web_search/web_fetch/http_request）
+/// 注：OS 本地工具已独立为顶层 `os` 命名空间，使用 `shepaw os.*`
 ///
 /// 使用分层路由，subcommand 格式为 `<sub-namespace>.<action>`：
-///   shepaw tools os.list
-///   shepaw tools os.detail --name file_read
-///   shepaw tools os.categories --category file
 ///   shepaw tools network.list
 ///   shepaw tools network.detail --name web_search
+///   shepaw tools web.search --query "..." [--limit n]
+///   shepaw tools web.fetch --url "..." [--format ...] [--timeout n]
+///   shepaw tools web.config                         — 查看所有 web 工具配置
+///   shepaw tools web.search.config                  — 管理 web_search 配置
+///   shepaw tools web.fetch.config                   — 管理 web_fetch 配置
 ///
-/// 顶层扁平命令（跨分类汇总）：
-///   shepaw tools list   — 列出所有工具（os + network）
+/// 顶层扁平命令：
+///   shepaw tools list   — 列出所有网络/web 工具
 ///
 /// 工具配置命令（动态路由，拦截 `{tool_name}.config` 格式）：
 ///   shepaw tools web_search.config                    — 查看配置
 ///   shepaw tools web_search.config --action set-key   — 设置 API Key
 ///   shepaw tools web_search.config --action delete-key — 删除 API Key
-///   shepaw tools web_search.config --action set-param --key timeout --value 60
-///   shepaw tools web_search.config --action delete-param
-///   shepaw tools web_search.config --action delete    — 删除全部配置
 ///   shepaw tools config                               — 列出所有工具配置汇总
 class ToolsNamespace extends CliNamespace {
   static final instance = ToolsNamespace._();
@@ -39,7 +39,7 @@ class ToolsNamespace extends CliNamespace {
   String get namespace => 'tools';
 
   @override
-  String get description => 'System tools — os (local) and network (web)';
+  String get description => 'Network and web tools — search, fetch, config management';
 
   /// 顶层扁平命令：跨分类汇总列表 + 配置汇总
   @override
@@ -51,8 +51,8 @@ class ToolsNamespace extends CliNamespace {
   /// 分层 sub-namespace
   @override
   Map<String, CliNamespace> get subNamespaces => {
-        'os': OsSubNamespace.instance,
         'network': NetworkSubNamespace.instance,
+        'web': WebSubNamespace.instance,
       };
 
   @override
@@ -60,13 +60,16 @@ class ToolsNamespace extends CliNamespace {
         'namespace': namespace,
         'description': description,
         'subcommands': {
-          'list': 'List all tools across all categories (os + network)',
+          'list': 'List all network/web tools',
           'config': 'List all tool configuration summaries',
-          'os.list': 'List OS tools on the current platform',
-          'os.detail': 'Full docs for an OS tool (--name <tool_name>)',
-          'os.categories': 'Browse OS tools by category (optional --category)',
-          'network.list': 'List network and web tools',
+          'network.list': 'List network tools (query only)',
           'network.detail': 'Full docs for a network tool (--name <tool_name>)',
+          'note': 'OS tools: use top-level "shepaw os.*" namespace instead',
+          'web.search': 'Search the web (--query <q> [--limit n])',
+          'web.fetch': 'Fetch URL content (--url <url> [--format text|markdown|html] [--timeout n])',
+          'web.config': 'List configuration for all web tools',
+          'web.search.config': 'Manage web_search config (API key, params, enable/disable)',
+          'web.fetch.config': 'Manage web_fetch config (params, enable/disable)',
           '<tool_name>.config': 'Manage config for a specific tool',
         },
         'tool_config_actions': {
@@ -83,20 +86,23 @@ class ToolsNamespace extends CliNamespace {
         'examples': [
           'shepaw tools list',
           'shepaw tools config',
-          'shepaw tools os.list',
-          'shepaw tools os.detail --name file_read',
-          'shepaw tools os.categories --category file',
           'shepaw tools network.list',
+          '# OS tools are now at top-level: shepaw os.*',
           'shepaw tools network.detail --name web_search',
-          'shepaw tools web_search.config',
-          'shepaw tools web_search.config --action set-key --value sk-xxx',
-          'shepaw tools web_search.config --action delete-key',
-          'shepaw tools web_search.config --action set-param --key timeout --value 60',
-          'shepaw tools web_search.config --action delete-param',
-          'shepaw tools web_search.config --action set-note --value "Primary search key"',
-          'shepaw tools web_search.config --action delete',
-          'shepaw tools web_search.config --action disable',
-          'shepaw tools web_search.config --action enable',
+          'shepaw tools web.search --query "Flutter state management"',
+          'shepaw tools web.search --query "Dart 3 records" --limit 5',
+          'shepaw tools web.fetch --url https://dart.dev',
+          'shepaw tools web.fetch --url https://example.com --format text --timeout 60',
+          'shepaw tools web.config',
+          'shepaw tools web.search.config',
+          'shepaw tools web.search.config --action set-key --value sk-xxx',
+          'shepaw tools web.search.config --action delete-key',
+          'shepaw tools web.search.config --action set-param --key timeout --value 60',
+          'shepaw tools web.search.config --action delete-param',
+          'shepaw tools web.search.config --action set-note --value "Primary search key"',
+          'shepaw tools web.search.config --action delete',
+          'shepaw tools web.search.config --action disable',
+          'shepaw tools web.search.config --action enable',
         ],
       };
 
@@ -118,9 +124,12 @@ class ToolsNamespace extends CliNamespace {
   /// 处理工具配置命令
   Future<Map<String, dynamic>> _handleToolConfig(
       String toolName, Map<String, String> flags) async {
-    // 验证工具是否存在
+    // 验证工具是否存在（支持 name 或 cliPath）
     final registry = OsToolRegistry.instance;
-    final tool = registry.tools.where((t) => t.name == toolName).firstOrNull;
+    final resolvedName = registry.resolveToolName(toolName);
+    final tool = registry.tools
+        .where((t) => t.name == resolvedName)
+        .firstOrNull;
     if (tool == null) {
       return {
         'error': 'Unknown tool: $toolName',
@@ -392,32 +401,37 @@ class _ToolsAllListCommand extends CliCommand {
   String get name => 'list';
 
   @override
-  String get description => 'List all tools across all categories';
+  String get description => 'List all network/web tools';
+
+  @override
+  Map<String, dynamic> getHelp() => {
+        'command': name,
+        'description': description,
+        'usage': 'shepaw tools list',
+        'note': 'For OS tools use: shepaw os list',
+      };
 
   @override
   Future<Map<String, dynamic>> execute(Map<String, String> flags) async {
     final registry = OsToolRegistry.instance;
     final platform = registry.currentPlatform;
+    // 只列 network 分类的工具（OS 工具已移至顶层 os 命名空间）
     final tools = registry.tools
-        .where((t) => t.supportedPlatforms.contains(platform))
+        .where((t) =>
+            t.supportedPlatforms.contains(platform) &&
+            t.category == 'network')
         .toList();
 
-    // 按 sub-namespace 分组
-    final grouped = <String, List<Map<String, dynamic>>>{};
-    for (final t in tools) {
-      final ns = t.category == 'network' ? 'network' : 'os';
-      grouped.putIfAbsent(ns, () => []).add({
+    return {
+      'platform': platform,
+      'tools': tools.map((t) => {
         'name': t.name,
         'description': t.description,
         'category': t.category,
         'risk': t.defaultRiskLevel,
-      });
-    }
-
-    return {
-      'platform': platform,
-      'tools_by_namespace': grouped,
+      }).toList(),
       'total_count': tools.length,
+      'note': 'OS tools are at top-level namespace. Use: shepaw os list',
     };
   }
 }
@@ -446,8 +460,11 @@ class _ToolsConfigListCommand extends CliCommand {
     final service = ToolConfigService.instance;
     final platform = registry.currentPlatform;
 
-    final allTools = registry.tools
-        .where((t) => t.supportedPlatforms.contains(platform))
+    // 只列 network 分类工具（OS 工具已移至顶层 os 命名空间）
+    final networkTools = registry.tools
+        .where((t) =>
+            t.supportedPlatforms.contains(platform) &&
+            t.category == 'network')
         .toList();
 
     final allConfigs = await service.getAllToolConfigs();
@@ -455,7 +472,7 @@ class _ToolsConfigListCommand extends CliCommand {
       for (final c in allConfigs) c.toolName: c,
     };
 
-    final result = allTools.map((t) {
+    final result = networkTools.map((t) {
       final config = configMap[t.name];
       return {
         'tool_name': t.name,
@@ -472,10 +489,11 @@ class _ToolsConfigListCommand extends CliCommand {
 
     return {
       'platform': platform,
-      'total_tools': allTools.length,
+      'total_tools': networkTools.length,
       'configured_tools': configuredCount,
       'tools': result,
       'hint': 'Use "shepaw tools <tool_name>.config" to manage a tool\'s config',
+      'note': 'For OS tool config use: shepaw tools <os_tool_name>.config',
     };
   }
 }

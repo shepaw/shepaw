@@ -14,7 +14,6 @@ import '../agent_prompt_builder.dart';
 import '../local_llm_agent_service.dart';
 import '../task/task_models.dart';
 import '../os_tool_executor.dart' as os_exec;
-import '../os_tool_registry.dart';
 import '../skill_registry.dart';
 import '../model_registry.dart';
 import '../ui_component_registry.dart';
@@ -708,11 +707,6 @@ class AgentMessagingService {
       final providerType = agent.metadata['llm_provider'] as String? ?? 'openai';
       final isClaude = providerType == 'claude';
 
-      // Determine enabled OS tools
-      final enabledOsTools = agent.enabledOsTools;
-      final hasOsTools = enabledOsTools.isNotEmpty;
-      final osRegistry = OsToolRegistry.instance;
-
       // Determine enabled skills
       final enabledSkills = agent.enabledSkills;
       final hasSkills = enabledSkills.isNotEmpty;
@@ -727,12 +721,12 @@ class AgentMessagingService {
       // Build combined tool list (UI + OS + Skills + Tool Models + Paw for She)
       final isShe = agent.isShe;
       final promptConfig = agent.promptStackConfig;
-      final includeShepawCli = isShe && promptConfig.tools.includeShepawCli;
+      final includeShepawCli = promptConfig.tools.includeShepawCli;
       final List<Map<String, dynamic>> combinedTools;
       if (isClaude) {
         combinedTools = [
           ...UIComponentRegistry.instance.claudeTools(),
-          if (hasOsTools && promptConfig.tools.includeOsTools) ...osRegistry.claudeTools(enabledTools: enabledOsTools),
+          // OS/web tools are now accessed through shepaw CLI (os/web namespaces)
           if (hasSkills && promptConfig.tools.includeSkills) ...skillRegistry.claudeTools(enabledSkills: enabledSkills),
           if (hasToolModels && promptConfig.tools.includeToolModels) ...toolModelRegistry.claudeTools(enabledToolModels: enabledToolModels, scenarioOverrides: toolModelScenarios),
           if (includeShepawCli) ShepawCLI.instance.claudeTool(),
@@ -740,7 +734,7 @@ class AgentMessagingService {
       } else {
         combinedTools = [
           ...UIComponentRegistry.instance.openAITools(),
-          if (hasOsTools && promptConfig.tools.includeOsTools) ...osRegistry.openAITools(enabledTools: enabledOsTools),
+          // OS/web tools are now accessed through shepaw CLI (os/web namespaces)
           if (hasSkills && promptConfig.tools.includeSkills) ...skillRegistry.openAITools(enabledSkills: enabledSkills),
           if (hasToolModels && promptConfig.tools.includeToolModels) ...toolModelRegistry.openAITools(enabledToolModels: enabledToolModels, scenarioOverrides: toolModelScenarios),
           if (includeShepawCli) ShepawCLI.instance.openAITool(),
@@ -799,9 +793,9 @@ class AgentMessagingService {
         LocalLLMAgentService.instance.abort();
       };
 
-      // If no OS tools, no skills, no tool models, and not She (who has paw tools),
+      // If no tools at all (no CLI, no skills, no tool models),
       // fall back to the simpler single-round path
-      if (!hasOsTools && !hasSkills && !hasToolModels && !isShe) {
+      if (!includeShepawCli && !hasSkills && !hasToolModels) {
         return await _sendViaLocalLLMSingleRound(
           agent: agent,
           content: effectiveContent,
@@ -892,9 +886,9 @@ class AgentMessagingService {
         if (acpCancellationToken?.isCancelled == true) break;
         if (toolCallEvents.isEmpty) break;
 
-        // Separate UI tool calls from OS tool calls, skill tool calls, tool model calls, and paw tool calls
+        // Separate UI tool calls from skill, tool model, and paw (CLI) tool calls
+        // OS/web tools are no longer dispatched directly — they go through ShepawCLI
         final uiToolCalls = <LLMToolCallEvent>[];
-        final osToolCalls = <LLMToolCallEvent>[];
         final skillToolCalls = <LLMToolCallEvent>[];
         final toolModelCalls = <LLMToolCallEvent>[];
         final pawToolCalls = <LLMToolCallEvent>[];
@@ -904,8 +898,6 @@ class AgentMessagingService {
             getToolResultCalls.add(tc);
           } else if (LocalLLMHelpers.isUiTool(tc.name)) {
             uiToolCalls.add(tc);
-          } else if (osRegistry.isOsTool(tc.name)) {
-            osToolCalls.add(tc);
           } else if (skillRegistry.isSkillTool(tc.name)) {
             skillToolCalls.add(tc);
           } else if (toolModelRegistry.isToolModelTool(tc.name)) {
@@ -996,8 +988,8 @@ class AgentMessagingService {
           continue;
         }
 
-        // Handle OS tool calls, skill tool calls, tool model calls, and paw tool calls (execute and feed results back)
-        final executableToolCalls = [...osToolCalls, ...skillToolCalls, ...toolModelCalls, ...pawToolCalls];
+        // Handle skill tool calls, tool model calls, and paw tool calls (execute and feed results back)
+        final executableToolCalls = [...skillToolCalls, ...toolModelCalls, ...pawToolCalls];
         if (executableToolCalls.isNotEmpty && doneEvent?.rawAssistantMessage != null) {
           final toolResults = <Map<String, dynamic>>[];
 
@@ -1114,66 +1106,26 @@ class AgentMessagingService {
               continue;
             }
 
-            // OS tool call — existing risk/confirmation/execution logic
-            // Classify risk
-            final risk = os_exec.classifyRisk(tc.name, tc.arguments);
-
-            // For high-risk, ask for confirmation
-            if (risk == os_exec.RiskLevel.highRisk) {
-              final approved = await activeTask.onOsToolConfirmation
-                  ?.call(tc.name, tc.arguments, risk) ?? false;
-              if (!approved) {
-                final deniedResult = jsonEncode({
-                    'success': false,
-                    'error': 'User denied this operation.',
-                  });
-                toolResults.add({
-                  'tool_call_id': tc.id,
-                  'name': tc.name,
-                  'result': deniedResult,
-                });
-                infLog.onToolResult(activeTask.taskId, toolCallId: tc.id, name: tc.name, result: deniedResult);
-
-                // 持久化拒绝结果（状态标记为 denied）
-                await historyService.saveToolExecution(
-                  messageId: agentMessageId,
-                  channelId: effectiveChannelId,
-                  toolCallId: tc.id,
-                  toolName: tc.name,
-                  arguments: tc.arguments,
-                  result: ToolExecutionResult.text(deniedResult),
-                );
-                continue;
-              }
-            }
-
-            // Notify user for low-risk operations
-            if (risk == os_exec.RiskLevel.lowRisk) {
-              final desc = os_exec.getRiskDescription(risk, tc.name, tc.arguments);
-              activeTask.accumulatedContent += '\n[Executing: $desc]\n';
-              activeTask.onStreamChunk?.call('\n[Executing: $desc]\n');
-              responseBuffer.write('\n[Executing: $desc]\n');
-            }
-
-            // Execute the tool
-            final result = await os_exec.runTool(tc.name, tc.arguments);
-            final resultJson = jsonEncode(result);
+            // Unknown tool — should not happen since we only expose known tools,
+            // but handle gracefully.
+            final unknownResult = jsonEncode({
+              'error': 'Unknown tool: ${tc.name}. Use shepaw CLI to call OS/web tools.',
+            });
             toolResults.add({
               'tool_call_id': tc.id,
               'name': tc.name,
-              'result': resultJson,
+              'result': unknownResult,
             });
-            infLog.onToolResult(activeTask.taskId, toolCallId: tc.id, name: tc.name, result: resultJson);
+            infLog.onToolResult(activeTask.taskId, toolCallId: tc.id, name: tc.name, result: unknownResult);
 
-            // 持久化工具执行结果
-            // OS 工具的 result 是 Map，序列化为 JSON 文本存储
+            // 持久化错误结果
             await historyService.saveToolExecution(
               messageId: agentMessageId,
               channelId: effectiveChannelId,
               toolCallId: tc.id,
               toolName: tc.name,
               arguments: tc.arguments,
-              result: ToolExecutionResult.text(resultJson),
+              result: ToolExecutionResult.text(unknownResult),
             );
           }
 

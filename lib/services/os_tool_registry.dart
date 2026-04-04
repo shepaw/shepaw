@@ -2,6 +2,11 @@
 ///
 /// Mirrors the pattern of [UIComponentRegistry] but for local OS operations
 /// (shell commands, file I/O, clipboard, screenshots, etc.).
+///
+/// 工具名称规范：
+///   - [name]    内部名 / 执行器分派键（如 `shell_exec`）
+///   - [cliPath] CLI 分层路径，对 LLM 可见（如 `os.shell.exec`）
+///   LLM function-calling 使用 cliPath；runTool() 使用 name。
 library;
 
 import 'dart:io' show Platform;
@@ -10,8 +15,14 @@ import '../models/cli_config_field.dart';
 
 /// Describes a single OS tool that can be invoked by a local LLM agent.
 class OsToolDefinition {
-  /// Tool name used in function-calling (e.g. `shell_exec`).
+  /// Internal tool name used by [runTool] dispatch (e.g. `shell_exec`).
   final String name;
+
+  /// Hierarchical CLI path exposed to the LLM (e.g. `os.shell.exec`).
+  ///
+  /// Format: `<namespace>.<sub-namespace>.<action>`
+  /// Maps to CLI: `shepaw tools <cliPath>`
+  final String cliPath;
 
   /// Human-readable description shown to the LLM and in config UI.
   final String description;
@@ -42,6 +53,7 @@ class OsToolDefinition {
 
   const OsToolDefinition({
     required this.name,
+    required this.cliPath,
     required this.description,
     required this.parameterSchema,
     required this.defaultRiskLevel,
@@ -66,9 +78,10 @@ class OsToolRegistry {
   static const _all = {'macos', 'linux', 'windows', 'android', 'ios'};
 
   final List<OsToolDefinition> tools = const [
-    // --- Command & System ---
+    // ── Shell (command & system) ─────────────────────────────────────────────
     OsToolDefinition(
       name: 'shell_exec',
+      cliPath: 'os.shell.exec',
       description:
           'Execute a shell command on the local machine. '
           'Use for running terminal commands, scripts, and system utilities.',
@@ -97,6 +110,7 @@ class OsToolRegistry {
     ),
     OsToolDefinition(
       name: 'system_info',
+      cliPath: 'os.shell.info',
       description: 'Get system information (OS, CPU, memory, disk, etc.).',
       parameterSchema: {
         'type': 'object',
@@ -122,9 +136,10 @@ class OsToolRegistry {
       category: 'command',
     ),
 
-    // --- File Operations ---
+    // ── File ─────────────────────────────────────────────────────────────────
     OsToolDefinition(
       name: 'file_read',
+      cliPath: 'os.file.read',
       description: 'Read the contents of a file.',
       parameterSchema: {
         'type': 'object',
@@ -146,6 +161,7 @@ class OsToolRegistry {
     ),
     OsToolDefinition(
       name: 'file_write',
+      cliPath: 'os.file.write',
       description:
           'Write content to a file. Creates the file if it does not exist.',
       parameterSchema: {
@@ -173,6 +189,7 @@ class OsToolRegistry {
     ),
     OsToolDefinition(
       name: 'file_delete',
+      cliPath: 'os.file.delete',
       description: 'Delete a file or directory.',
       parameterSchema: {
         'type': 'object',
@@ -196,6 +213,7 @@ class OsToolRegistry {
     ),
     OsToolDefinition(
       name: 'file_move',
+      cliPath: 'os.file.move',
       description: 'Move or rename a file or directory.',
       parameterSchema: {
         'type': 'object',
@@ -217,6 +235,7 @@ class OsToolRegistry {
     ),
     OsToolDefinition(
       name: 'file_list',
+      cliPath: 'os.file.list',
       description: 'List the contents of a directory.',
       parameterSchema: {
         'type': 'object',
@@ -242,9 +261,10 @@ class OsToolRegistry {
       category: 'file',
     ),
 
-    // --- App & Browser ---
+    // ── App & Browser ────────────────────────────────────────────────────────
     OsToolDefinition(
       name: 'app_open',
+      cliPath: 'os.app.open',
       description: 'Open an application by name.',
       parameterSchema: {
         'type': 'object',
@@ -263,6 +283,7 @@ class OsToolRegistry {
     ),
     OsToolDefinition(
       name: 'url_open',
+      cliPath: 'os.app.url',
       description: "Open a URL in the default browser.",
       parameterSchema: {
         'type': 'object',
@@ -279,9 +300,10 @@ class OsToolRegistry {
       category: 'app',
     ),
 
-    // --- Screenshot ---
+    // ── Screenshot (grouped under app) ───────────────────────────────────────
     OsToolDefinition(
       name: 'screenshot',
+      cliPath: 'os.app.screenshot',
       description: 'Take a screenshot of the screen.',
       parameterSchema: {
         'type': 'object',
@@ -300,12 +322,13 @@ class OsToolRegistry {
       },
       defaultRiskLevel: 'safe',
       supportedPlatforms: _desktop,
-      category: 'command',
+      category: 'app',
     ),
 
-    // --- Clipboard ---
+    // ── Clipboard ────────────────────────────────────────────────────────────
     OsToolDefinition(
       name: 'clipboard_read',
+      cliPath: 'os.clipboard.read',
       description: 'Read the current contents of the clipboard.',
       parameterSchema: {
         'type': 'object',
@@ -317,6 +340,7 @@ class OsToolRegistry {
     ),
     OsToolDefinition(
       name: 'clipboard_write',
+      cliPath: 'os.clipboard.write',
       description: 'Write text to the clipboard.',
       parameterSchema: {
         'type': 'object',
@@ -333,9 +357,10 @@ class OsToolRegistry {
       category: 'clipboard',
     ),
 
-    // --- macOS Only ---
+    // ── macOS Only ───────────────────────────────────────────────────────────
     OsToolDefinition(
       name: 'applescript_exec',
+      cliPath: 'os.applescript.exec',
       description:
           'Execute an AppleScript. Useful for automating macOS applications and system features.',
       parameterSchema: {
@@ -353,9 +378,10 @@ class OsToolRegistry {
       category: 'macos',
     ),
 
-    // --- Process Management ---
+    // ── Process Management ───────────────────────────────────────────────────
     OsToolDefinition(
       name: 'process_list',
+      cliPath: 'os.process.list',
       description:
           'List running processes on the local machine. '
           'Supports filtering by name, sorting by cpu/memory/pid, and limiting results.',
@@ -384,6 +410,7 @@ class OsToolRegistry {
     ),
     OsToolDefinition(
       name: 'process_kill',
+      cliPath: 'os.process.kill',
       description:
           'Kill a process by PID. Sends SIGTERM by default, or SIGKILL with force=true. '
           'Protected system processes cannot be killed.',
@@ -408,6 +435,7 @@ class OsToolRegistry {
     ),
     OsToolDefinition(
       name: 'process_detail',
+      cliPath: 'os.process.detail',
       description:
           'Get detailed information about a specific process by PID, '
           'including CPU, memory, command line, and open files.',
@@ -427,6 +455,7 @@ class OsToolRegistry {
     ),
     OsToolDefinition(
       name: 'network_connections',
+      cliPath: 'os.process.connections',
       description:
           'List active network connections (TCP/UDP). '
           'Optionally filter by a specific process PID.',
@@ -444,9 +473,10 @@ class OsToolRegistry {
       category: 'process',
     ),
 
-    // --- Network ---
+    // ── Network (web) ────────────────────────────────────────────────────────
     OsToolDefinition(
       name: 'web_search',
+      cliPath: 'web.search',
       description:
           'Search the web and return a list of relevant results (title, URL, snippet). '
           'Use when the user asks to look something up, find information, or research a topic online.',
@@ -495,6 +525,7 @@ class OsToolRegistry {
     ),
     OsToolDefinition(
       name: 'web_fetch',
+      cliPath: 'web.fetch',
       description:
           'Fetch the content of a URL and return it as plain text or markdown. '
           'Use when the user asks to read, summarize, or extract information from a specific webpage.',
@@ -524,6 +555,26 @@ class OsToolRegistry {
   ];
 
   // ---------------------------------------------------------------------------
+  // cliPath ↔ name 双向映射（懒初始化）
+  // ---------------------------------------------------------------------------
+
+  late final Map<String, String> _cliPathToName = {
+    for (final t in tools) t.cliPath: t.name,
+  };
+
+  late final Map<String, String> _nameToCli = {
+    for (final t in tools) t.name: t.cliPath,
+  };
+
+  /// 从 cliPath 解析为内部 name（用于 runTool 分派）。
+  /// 找不到则原样返回，保持向后兼容。
+  String resolveToolName(String cliPathOrName) =>
+      _cliPathToName[cliPathOrName] ?? cliPathOrName;
+
+  /// 从内部 name 获取 cliPath。找不到则原样返回。
+  String toCliPath(String name) => _nameToCli[name] ?? name;
+
+  // ---------------------------------------------------------------------------
   // Platform helpers
   // ---------------------------------------------------------------------------
 
@@ -537,8 +588,11 @@ class OsToolRegistry {
     return 'unknown';
   }
 
-  /// All tool names.
+  /// All tool names (internal).
   Set<String> get allToolNames => tools.map((t) => t.name).toSet();
+
+  /// All CLI paths.
+  Set<String> get allCliPaths => tools.map((t) => t.cliPath).toSet();
 
   /// Tool names supported on the current platform.
   Set<String> get platformToolNames =>
@@ -547,14 +601,16 @@ class OsToolRegistry {
           .map((t) => t.name)
           .toSet();
 
-  /// Whether [toolName] is a known OS tool.
+  /// Whether [toolName] is a known OS tool (accepts name or cliPath).
   bool isOsTool(String toolName) =>
-      tools.any((t) => t.name == toolName);
+      tools.any((t) => t.name == toolName || t.cliPath == toolName);
 
-  /// Lookup a definition by name, or null.
-  OsToolDefinition? getDefinition(String toolName) {
+  /// Lookup a definition by name or cliPath, or null.
+  OsToolDefinition? getDefinition(String toolNameOrCliPath) {
     for (final t in tools) {
-      if (t.name == toolName) return t;
+      if (t.name == toolNameOrCliPath || t.cliPath == toolNameOrCliPath) {
+        return t;
+      }
     }
     return null;
   }
@@ -565,12 +621,14 @@ class OsToolRegistry {
 
   /// Returns OS tools in OpenAI function-calling format, filtered by
   /// current platform and the user-enabled set.
+  ///
+  /// LLM 看到的 function name 是 [cliPath]（如 `os.shell.exec`）。
   List<Map<String, dynamic>> openAITools({Set<String>? enabledTools}) {
     return _filteredTools(enabledTools)
         .map((t) => <String, dynamic>{
               'type': 'function',
               'function': {
-                'name': t.name,
+                'name': t.cliPath,
                 'description': t.description,
                 'parameters': t.parameterSchema,
               },
@@ -579,10 +637,12 @@ class OsToolRegistry {
   }
 
   /// Returns OS tools in Claude (Anthropic) format.
+  ///
+  /// LLM 看到的 tool name 是 [cliPath]（如 `os.shell.exec`）。
   List<Map<String, dynamic>> claudeTools({Set<String>? enabledTools}) {
     return _filteredTools(enabledTools)
         .map((t) => <String, dynamic>{
-              'name': t.name,
+              'name': t.cliPath,
               'description': t.description,
               'input_schema': t.parameterSchema,
             })
@@ -596,8 +656,8 @@ class OsToolRegistry {
   /// Layered system prompt suffix for OS tools.
   ///
   /// [level] controls verbosity:
-  /// - `'names_only'`: Only tool names — minimal context.
-  /// - `'summary'`: Name + one-liner (default, ~50 % tokens vs full).
+  /// - `'names_only'`: Only tool CLI paths — minimal context.
+  /// - `'summary'`: CLI path + one-liner (default, ~50 % tokens vs full).
   /// - `'full'`: Complete description without truncation.
   String systemPromptSuffixLayered(Set<String> enabledTools, String level) {
     final filtered = _filteredTools(enabledTools);
@@ -605,11 +665,11 @@ class OsToolRegistry {
     final toolLines = filtered.map((t) {
       switch (level) {
         case 'names_only':
-          return '- ${t.name}';
+          return '- ${t.cliPath}';
         case 'full':
-          return '- ${t.name}: ${t.description}';
+          return '- ${t.cliPath}: ${t.description}';
         default: // 'summary'
-          return '- ${t.name}: ${t.description.split('.').first.trim().toLowerCase()}';
+          return '- ${t.cliPath}: ${t.description.split('.').first.trim().toLowerCase()}';
       }
     }).join('\n');
     if (level == 'names_only') {
@@ -618,7 +678,7 @@ class OsToolRegistry {
 You also have access to OS-level tools that let you operate the local machine.
 Available OS tools:
 $toolLines
-For full details on any tool, call: shepaw system tools-detail --name <tool-name>
+For full details on any tool, call: shepaw tools os.detail --name <tool-name>
 IMPORTANT: These tools execute real actions on the user's device. Always confirm destructive operations.''';
     }
     return '''
@@ -680,7 +740,12 @@ IMPORTANT: These tools execute real actions on the user's device. Always confirm
     final platform = currentPlatform;
     return tools.where((t) {
       if (!t.supportedPlatforms.contains(platform)) return false;
-      if (enabledTools != null && !enabledTools.contains(t.name)) return false;
+      // enabledTools 可以是 name 或 cliPath
+      if (enabledTools != null &&
+          !enabledTools.contains(t.name) &&
+          !enabledTools.contains(t.cliPath)) {
+        return false;
+      }
       return true;
     });
   }

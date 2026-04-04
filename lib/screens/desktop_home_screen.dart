@@ -14,7 +14,7 @@ import 'settings_screen.dart';
 import 'contacts_screen.dart';
 import 'skill_management_screen.dart';
 import 'model_management_screen.dart';
-import 'agent_cli_commands_management_screen.dart';
+import 'cli_config_management_screen.dart';
 import '../utils/layout_utils.dart';
 import '../services/native_window_service.dart';
 
@@ -297,7 +297,7 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
         return const SkillManagementScreen();
 
       case _RightPanelView.toolConfigManagement:
-        return const AgentCliCommandsManagementScreen();
+        return const CliConfigManagementScreen();
 
       case _RightPanelView.empty:
         return _buildEmptyState();

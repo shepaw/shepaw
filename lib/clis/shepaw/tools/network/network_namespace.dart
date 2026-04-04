@@ -1,9 +1,9 @@
 import '../../../cli_base.dart';
 import '../../../../services/os_tool_registry.dart';
 
-/// Network 工具子命名空间 - 网络与 Web 能力
+/// Network 工具子命名空间 - 网络工具列表与文档
 ///
-/// 管理所有 category = 'network' 的工具：
+/// 管理所有 category = 'network' 的工具查询：
 ///   web_search — 搜索引擎查询
 ///   web_fetch  — 抓取网页内容
 ///   （未来可扩展：http_request、rss_fetch 等）
@@ -11,6 +11,10 @@ import '../../../../services/os_tool_registry.dart';
 /// Subcommands:
 /// - `list`   列出所有网络工具
 /// - `detail` 获取单个工具的完整参数文档（--name <tool_name>）
+///
+/// 注：web 执行能力已移至 `tools web.*`：
+///   shepaw tools web.search --query "..." [--limit n]
+///   shepaw tools web.fetch --url "..." [--format ...] [--timeout n]
 class NetworkSubNamespace extends CliNamespace {
   static final instance = NetworkSubNamespace._();
   NetworkSubNamespace._();
@@ -29,6 +33,10 @@ class NetworkSubNamespace extends CliNamespace {
         'detail': _NetworkDetailCommand(),
       };
 
+  // web 执行能力已移至 tools web.*，network 不再推路 web 子命名空间
+  @override
+  Map<String, CliNamespace> get subNamespaces => {};
+
   @override
   Map<String, dynamic> getHelp() => {
         'namespace': namespace,
@@ -37,10 +45,14 @@ class NetworkSubNamespace extends CliNamespace {
           'list': 'List all network tools',
           'detail': 'Full parameter docs for a tool (--name <tool_name>)',
         },
+        'note': 'Web execution commands have moved to: shepaw tools web.*',
         'examples': [
           'shepaw tools network.list',
           'shepaw tools network.detail --name web_search',
           'shepaw tools network.detail --name web_fetch',
+          '# Web execution (use these instead):',
+          'shepaw tools web.search --query "Flutter state management"',
+          'shepaw tools web.fetch --url https://dart.dev',
         ],
       };
 }
