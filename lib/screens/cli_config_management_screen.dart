@@ -1667,6 +1667,9 @@ class _CliDetailSheet extends StatefulWidget {
   final Future<String> Function(Map<String, String> extraFlags) execute;
   /// 命令 ID（用于加载/保存全局启用/She专属配置），如 'context.profile.query'
   final String commandId;
+  /// 可选：命令的工具配置 schema（如 brave_search / tavily_search 等有 API Key 的命令）
+  /// 若非 null，面板中会渲染 Tool Configuration 配置区块
+  final CommandConfigSchema? configSchema;
 
   const _CliDetailSheet({
     required this.title,
@@ -1674,6 +1677,7 @@ class _CliDetailSheet extends StatefulWidget {
     required this.help,
     required this.execute,
     required this.commandId,
+    this.configSchema,
   });
 
   // ── Convenience constructors ──────────────────────────────────────────────
@@ -1703,6 +1707,7 @@ class _CliDetailSheet extends StatefulWidget {
         icon: Icons.code_outlined,
         help: help,
         commandId: commandId,
+        configSchema: cmd.configSchema,
         execute: (extraFlags) => ShepawCLI.instance.execute(
           {
             'namespace': namespace,
@@ -1764,6 +1769,17 @@ class _CliDetailSheetState extends State<_CliDetailSheet> {
   CliCommandConfig? _config;
   bool _configLoading = true;
 
+  // ── Tool Configuration（configSchema 字段）────────────────────────────────
+  bool _toolEnabled = true;
+  bool _toolSheExclusive = false;
+  bool _toolConfigLoading = false;
+  bool _toolConfigSaving = false;
+  String? _currentApiKey;
+  bool _apiKeyLoading = true;
+  final Map<String, TextEditingController> _toolFieldControllers = {};
+  final Map<String, bool> _toolBoolFields = {};
+  final Map<String, String?> _toolSelectFields = {};
+
   // ── 参数输入框 ────────────────────────────────────────────────────────────
   final TextEditingController _flagsController = TextEditingController();
 
@@ -1771,12 +1787,191 @@ class _CliDetailSheetState extends State<_CliDetailSheet> {
   void initState() {
     super.initState();
     _loadConfig();
+    if (widget.configSchema != null) {
+      _initToolConfigDefaults();
+      _loadToolConfig();
+    }
   }
 
   @override
   void dispose() {
     _flagsController.dispose();
+    for (final c in _toolFieldControllers.values) c.dispose();
     super.dispose();
+  }
+
+  /// 先用 schema 默认值同步初始化控件，避免第一帧空白
+  void _initToolConfigDefaults() {
+    final schema = widget.configSchema!;
+    for (final field in schema.fields) {
+      if (field.type == CliConfigFieldType.apiKey) continue;
+      if (field.type == CliConfigFieldType.boolean) {
+        _toolBoolFields[field.key] =
+            field.defaultValue is bool ? field.defaultValue as bool : false;
+      } else if (field.type == CliConfigFieldType.select) {
+        _toolSelectFields[field.key] = field.defaultValue as String?;
+      } else {
+        _toolFieldControllers[field.key] = TextEditingController(
+          text: field.defaultValue != null ? field.defaultValue.toString() : '',
+        );
+      }
+    }
+  }
+
+  Future<void> _loadToolConfig() async {
+    final schema = widget.configSchema!;
+    setState(() => _toolConfigLoading = true);
+    final c = await ToolConfigService.instance.getToolConfig(schema.toolName);
+    final key = await ToolConfigService.instance.getToolApiKey(schema.toolName);
+    if (!mounted) return;
+    setState(() {
+      _toolEnabled = c?.enabled ?? true;
+      _toolSheExclusive = c?.sheExclusive ?? false;
+      _currentApiKey = key;
+      _apiKeyLoading = false;
+      _toolConfigLoading = false;
+      if (c?.parameterOverrides != null) {
+        final overrides = c!.parameterOverrides!;
+        for (final field in schema.fields) {
+          if (field.type == CliConfigFieldType.apiKey) continue;
+          if (field.type == CliConfigFieldType.boolean) {
+            final val = overrides[field.key];
+            if (val is bool) _toolBoolFields[field.key] = val;
+          } else if (field.type == CliConfigFieldType.select) {
+            final val = overrides[field.key];
+            if (val is String) _toolSelectFields[field.key] = val;
+          } else {
+            final val = overrides[field.key];
+            if (val != null) {
+              _toolFieldControllers.putIfAbsent(
+                  field.key, () => TextEditingController());
+              _toolFieldControllers[field.key]!.text = val.toString();
+            }
+          }
+        }
+      }
+    });
+  }
+
+  Future<void> _saveToolConfig() async {
+    final schema = widget.configSchema!;
+    setState(() => _toolConfigSaving = true);
+    try {
+      final overrides = <String, dynamic>{};
+      for (final field in schema.fields) {
+        if (field.type == CliConfigFieldType.apiKey) continue;
+        if (field.type == CliConfigFieldType.boolean) {
+          final val = _toolBoolFields[field.key];
+          if (val != null) overrides[field.key] = val;
+        } else if (field.type == CliConfigFieldType.select) {
+          final val = _toolSelectFields[field.key];
+          if (val != null) overrides[field.key] = val;
+        } else {
+          final text = _toolFieldControllers[field.key]?.text.trim() ?? '';
+          if (text.isNotEmpty) overrides[field.key] = _parseToolValue(text);
+        }
+      }
+      await ToolConfigService.instance.saveToolConfig(
+        schema.toolName,
+        parameterOverrides: overrides.isEmpty ? null : overrides,
+        clearParameterOverrides: overrides.isEmpty,
+        enabled: _toolEnabled,
+        sheExclusive: _toolSheExclusive,
+      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Configuration saved'),
+            behavior: SnackBarBehavior.floating,
+            duration: Duration(seconds: 2),
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _toolConfigSaving = false);
+    }
+  }
+
+  dynamic _parseToolValue(String raw) {
+    if (raw == 'true') return true;
+    if (raw == 'false') return false;
+    final i = int.tryParse(raw);
+    if (i != null) return i;
+    final d = double.tryParse(raw);
+    if (d != null) return d;
+    try { return jsonDecode(raw); } catch (_) {}
+    return raw;
+  }
+
+  Future<void> _showSetApiKeyDialog() async {
+    final schema = widget.configSchema!;
+    final ctrl = TextEditingController();
+    final formKey = GlobalKey<FormState>();
+    final result = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text('Set API Key — ${schema.displayName}'),
+        content: Form(
+          key: formKey,
+          child: TextFormField(
+            controller: ctrl,
+            obscureText: true,
+            decoration: const InputDecoration(
+              labelText: 'API Key',
+              hintText: 'Enter your API key',
+              border: OutlineInputBorder(),
+            ),
+            validator: (v) =>
+                (v == null || v.isEmpty) ? 'API key cannot be empty' : null,
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () {
+              if (formKey.currentState!.validate()) {
+                Navigator.pop(ctx, ctrl.text);
+              }
+            },
+            child: const Text('Save'),
+          ),
+        ],
+      ),
+    );
+    if (result != null && result.isNotEmpty) {
+      await ToolConfigService.instance.setToolApiKey(schema.toolName, result);
+      if (mounted) setState(() => _currentApiKey = result);
+    }
+  }
+
+  Future<void> _confirmDeleteApiKey() async {
+    final schema = widget.configSchema!;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Delete API Key'),
+        content: Text('Remove the API key for ${schema.displayName}?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(
+                backgroundColor: Theme.of(context).colorScheme.error),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed == true) {
+      await ToolConfigService.instance.deleteToolApiKey(schema.toolName);
+      if (mounted) setState(() => _currentApiKey = null);
+    }
   }
 
   Future<void> _loadConfig() async {
@@ -1835,6 +2030,249 @@ class _CliDetailSheetState extends State<_CliDetailSheet> {
     }
     return result;
   }
+
+  List<Widget> _buildToolConfigFields(ColorScheme cs) {
+    final schema = widget.configSchema!;
+    final widgets = <Widget>[];
+    for (final field in schema.fields) {
+      widgets.add(_buildToolField(field, cs));
+      widgets.add(const SizedBox(height: 12));
+    }
+    return widgets;
+  }
+
+  Widget _buildToolField(CliConfigField field, ColorScheme cs) {
+    switch (field.type) {
+      case CliConfigFieldType.apiKey:
+        return _buildToolApiKeyField(field, cs);
+      case CliConfigFieldType.boolean:
+        return _buildToolBoolField(field, cs);
+      case CliConfigFieldType.select:
+        return _buildToolSelectField(field, cs);
+      default:
+        return _buildToolTextField(field, cs);
+    }
+  }
+
+  Widget _buildToolApiKeyField(CliConfigField field, ColorScheme cs) {
+    final hasKey = (_currentApiKey?.isNotEmpty) == true;
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: cs.surfaceContainerHighest,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(
+          color: hasKey
+              ? cs.primary.withValues(alpha: 0.3)
+              : cs.outlineVariant,
+        ),
+      ),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Row(children: [
+          Icon(Icons.key, size: 14, color: hasKey ? cs.primary : cs.outline),
+          const SizedBox(width: 6),
+          Text(field.label,
+              style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500)),
+          if (field.required) ...[
+            const SizedBox(width: 3),
+            Text('*', style: TextStyle(fontSize: 13, color: cs.error)),
+          ],
+          const Spacer(),
+          if (_apiKeyLoading)
+            const SizedBox(
+              width: 12, height: 12,
+              child: CircularProgressIndicator(strokeWidth: 1.5))
+          else
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+              decoration: BoxDecoration(
+                color: (hasKey ? cs.primary : cs.outline).withValues(alpha: 0.1),
+                borderRadius: BorderRadius.circular(3),
+              ),
+              child: Text(
+                hasKey ? 'Configured' : 'Not set',
+                style: TextStyle(
+                  fontSize: 10,
+                  color: hasKey ? cs.primary : cs.outline,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ),
+        ]),
+        const SizedBox(height: 3),
+        Text(field.description,
+            style: TextStyle(fontSize: 11, color: cs.outline)),
+        if (hasKey && _currentApiKey != null) ...[
+          const SizedBox(height: 4),
+          Text(
+            '${_currentApiKey!.substring(0, _currentApiKey!.length.clamp(0, 8))}••••••••',
+            style: TextStyle(
+                fontSize: 11, color: cs.outline, fontFamily: 'monospace'),
+          ),
+        ],
+        const SizedBox(height: 8),
+        Row(children: [
+          Expanded(
+            child: OutlinedButton.icon(
+              icon: Icon(hasKey ? Icons.edit : Icons.add, size: 14),
+              label: Text(hasKey ? 'Update Key' : 'Set Key',
+                  style: const TextStyle(fontSize: 12)),
+              style: OutlinedButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(vertical: 6)),
+              onPressed: _showSetApiKeyDialog,
+            ),
+          ),
+          if (hasKey) ...[
+            const SizedBox(width: 8),
+            IconButton(
+              tooltip: 'Delete API key',
+              icon: Icon(Icons.delete_outline, size: 18, color: cs.error),
+              visualDensity: VisualDensity.compact,
+              onPressed: _confirmDeleteApiKey,
+            ),
+          ],
+        ]),
+      ]),
+    );
+  }
+
+  Widget _buildToolBoolField(CliConfigField field, ColorScheme cs) =>
+      Container(
+        decoration: BoxDecoration(
+          color: cs.surfaceContainerHighest,
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: SwitchListTile.adaptive(
+          contentPadding:
+              const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
+          title: Text(field.label,
+              style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500)),
+          subtitle: Text(field.description,
+              style: TextStyle(fontSize: 11, color: cs.outline)),
+          value: _toolBoolFields[field.key] ?? false,
+          onChanged: (v) => setState(() => _toolBoolFields[field.key] = v),
+        ),
+      );
+
+  Widget _buildToolSelectField(CliConfigField field, ColorScheme cs) =>
+      Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Row(children: [
+          Text(field.label,
+              style: const TextStyle(
+                  fontSize: 13, fontWeight: FontWeight.w500)),
+          if (field.required) ...[
+            const SizedBox(width: 3),
+            Text('*', style: TextStyle(fontSize: 13, color: cs.error)),
+          ],
+        ]),
+        const SizedBox(height: 3),
+        Text(field.description,
+            style: TextStyle(fontSize: 11, color: cs.outline)),
+        const SizedBox(height: 6),
+        DropdownButtonFormField<String>(
+          value: _toolSelectFields[field.key],
+          decoration: InputDecoration(
+            border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+            contentPadding:
+                const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            isDense: true,
+          ),
+          style: const TextStyle(fontSize: 13),
+          items: (field.options ?? [])
+              .map((o) => DropdownMenuItem(value: o, child: Text(o)))
+              .toList(),
+          onChanged: (v) => setState(() => _toolSelectFields[field.key] = v),
+        ),
+      ]);
+
+  Widget _buildToolTextField(CliConfigField field, ColorScheme cs) {
+    _toolFieldControllers.putIfAbsent(
+        field.key, () => TextEditingController());
+    final ctrl = _toolFieldControllers[field.key]!;
+    final isNumeric = field.type == CliConfigFieldType.integer ||
+        field.type == CliConfigFieldType.doubleNum;
+    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      Row(children: [
+        Text(field.label,
+            style: const TextStyle(
+                fontSize: 13, fontWeight: FontWeight.w500)),
+        if (field.required) ...[
+          const SizedBox(width: 3),
+          Text('*', style: TextStyle(fontSize: 13, color: cs.error)),
+        ],
+      ]),
+      const SizedBox(height: 3),
+      Text(field.description,
+          style: TextStyle(fontSize: 11, color: cs.outline)),
+      const SizedBox(height: 6),
+      TextField(
+        controller: ctrl,
+        keyboardType: isNumeric
+            ? const TextInputType.numberWithOptions(decimal: true)
+            : TextInputType.text,
+        style: const TextStyle(fontSize: 13),
+        decoration: InputDecoration(
+          hintText: field.defaultValue != null
+              ? field.defaultValue.toString()
+              : '',
+          border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+          contentPadding:
+              const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          isDense: true,
+        ),
+      ),
+    ]);
+  }
+
+  Widget _buildToolToggleRow(ColorScheme cs) => Row(children: [
+        Expanded(
+          child: Container(
+            decoration: BoxDecoration(
+              color: cs.surfaceContainerHighest,
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: SwitchListTile.adaptive(
+              contentPadding:
+                  const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
+              title: const Text('Enabled',
+                  style: TextStyle(fontSize: 13, fontWeight: FontWeight.w500)),
+              subtitle: Text(
+                _toolEnabled ? 'Tool is active' : 'Tool is disabled',
+                style: TextStyle(fontSize: 11, color: cs.outline),
+              ),
+              value: _toolEnabled,
+              onChanged: (v) => setState(() => _toolEnabled = v),
+            ),
+          ),
+        ),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Container(
+            decoration: BoxDecoration(
+              color: _toolSheExclusive
+                  ? cs.tertiaryContainer.withValues(alpha: 0.35)
+                  : cs.surfaceContainerHighest,
+              borderRadius: BorderRadius.circular(8),
+              border: _toolSheExclusive
+                  ? Border.all(color: cs.tertiary.withValues(alpha: 0.4))
+                  : null,
+            ),
+            child: SwitchListTile.adaptive(
+              contentPadding:
+                  const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
+              title: const Text('She only',
+                  style: TextStyle(fontSize: 13, fontWeight: FontWeight.w500)),
+              subtitle: Text(
+                _toolSheExclusive ? 'She only' : 'All agents',
+                style: TextStyle(fontSize: 11, color: cs.outline),
+              ),
+              value: _toolSheExclusive,
+              activeTrackColor: cs.tertiary,
+              onChanged: (v) => setState(() => _toolSheExclusive = v),
+            ),
+          ),
+        ),
+      ]);
 
   Future<void> _run() async {
     setState(() { _running = true; _result = null; });
@@ -2085,6 +2523,56 @@ class _CliDetailSheetState extends State<_CliDetailSheet> {
                     fontFamily: 'monospace',
                     color: _resultIsError ? cs.onErrorContainer : cs.onSurface,
                   ),
+                ),
+              ),
+            ],
+
+            // ── Tool Configuration（configSchema 字段）────────────────────
+            if (widget.configSchema != null) ...[
+              const SizedBox(height: 20),
+              Divider(height: 1, color: cs.outlineVariant),
+              const SizedBox(height: 14),
+              Row(children: [
+                Icon(Icons.tune, size: 14, color: cs.primary),
+                const SizedBox(width: 6),
+                Text(
+                  'Tool Configuration',
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    color: cs.onSurface,
+                  ),
+                ),
+                const SizedBox(width: 4),
+                Text(
+                  widget.configSchema!.displayName,
+                  style: TextStyle(fontSize: 11, color: cs.outline),
+                ),
+                if (_toolConfigLoading) ...[
+                  const Spacer(),
+                  SizedBox(
+                    width: 12, height: 12,
+                    child: CircularProgressIndicator(
+                        strokeWidth: 1.5, color: cs.outline),
+                  ),
+                ],
+              ]),
+              const SizedBox(height: 12),
+              ..._buildToolConfigFields(cs),
+              const SizedBox(height: 12),
+              // enabled / sheExclusive 开关
+              _buildToolToggleRow(cs),
+              const SizedBox(height: 12),
+              // Save 按钮
+              SizedBox(
+                width: double.infinity,
+                child: FilledButton.tonal(
+                  onPressed: _toolConfigSaving ? null : _saveToolConfig,
+                  child: _toolConfigSaving
+                      ? const SizedBox(
+                          width: 14, height: 14,
+                          child: CircularProgressIndicator(strokeWidth: 2))
+                      : const Text('Save Configuration'),
                 ),
               ),
             ],
