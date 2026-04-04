@@ -1,6 +1,7 @@
 import '../../../cli_base.dart';
+import '../../../../models/cli_config_field.dart';
+import '../../../../models/command_config_schema.dart';
 import '../../../../services/network/network_service.dart';
-import 'tool_config_mixin.dart';
 
 /// `shepaw tools web.search` — 执行网络搜索
 ///
@@ -11,26 +12,57 @@ import 'tool_config_mixin.dart';
 ///   --query  搜索关键词（必须）
 ///   --limit  返回结果数量（默认 10）
 ///
-/// 配置子命令（search.config）:
+/// 配置（基类自动处理）:
 ///   shepaw tools web.search.config
 ///   shepaw tools web.search.config --action set-key --value YOUR_KEY
 ///   shepaw tools web.search.config --action set-param --key max_results --value 20
-///   shepaw tools web.search.config --action disable
+///   shepaw tools web.search --config             — 快捷查看配置
 ///
 /// 示例:
 ///   shepaw tools web.search --query "Flutter state management" --limit 5
-class WebSearchCommand extends CliCommand with WebToolConfigMixin {
-  static const _toolName = 'web_search';
-  static const _shortName = 'search';
-
+class WebSearchCommand extends CliCommand {
   @override
-  String get name => _shortName;
+  String get name => 'search';
 
   @override
   String get description => 'Search the web and return relevant results';
 
   @override
   String get usage => 'shepaw tools web.search --query <query> [--limit <n>]';
+
+  @override
+  CommandConfigSchema get configSchema => _schema;
+
+  static const _schema = CommandConfigSchema(
+    toolName: 'web_search',
+    displayName: 'Web Search',
+    description: 'API key and parameters for the web search engine (Brave / Tavily)',
+    fields: [
+      CliConfigField(
+        key: 'api_key',
+        label: 'API Key',
+        type: CliConfigFieldType.apiKey,
+        required: true,
+        description:
+            'Brave Search API key (starts with BSA-) or Tavily key (starts with tvly-). '
+            'The engine is auto-detected from the key prefix.',
+      ),
+      CliConfigField(
+        key: 'max_results',
+        label: 'Max Results',
+        type: CliConfigFieldType.integer,
+        description: 'Default number of results per query (default: 10)',
+        defaultValue: 10,
+      ),
+      CliConfigField(
+        key: 'timeout',
+        label: 'Timeout (seconds)',
+        type: CliConfigFieldType.integer,
+        description: 'Request timeout in seconds (default: 30)',
+        defaultValue: 30,
+      ),
+    ],
+  );
 
   @override
   Map<String, dynamic> getHelp() {
@@ -47,8 +79,6 @@ class WebSearchCommand extends CliCommand with WebToolConfigMixin {
         'type': 'integer',
       },
     };
-    base['config_hint'] =
-        'API Key is required. Set via: shepaw tools web.search.config --action set-key --value YOUR_KEY';
     return base;
   }
 
@@ -58,7 +88,7 @@ class WebSearchCommand extends CliCommand with WebToolConfigMixin {
     if (query == null || query.isEmpty) {
       return {
         'error': 'Missing required flag: --query',
-        'usage': 'shepaw tools web.search --query <query> [--limit <n>]',
+        'usage': usage,
       };
     }
 
@@ -70,9 +100,4 @@ class WebSearchCommand extends CliCommand with WebToolConfigMixin {
       limit: limit,
     );
   }
-
-  /// 处理 `search.config` 子命令（由 WebSubNamespace 路由调用）
-  Future<Map<String, dynamic>> executeConfig(
-          Map<String, String> flags) =>
-      handleConfig(_toolName, _shortName, flags);
 }
