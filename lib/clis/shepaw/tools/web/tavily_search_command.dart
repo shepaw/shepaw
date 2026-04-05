@@ -44,7 +44,7 @@ class TavilySearchCommand extends CliCommand {
       CliConfigField(
         key: 'api_key',
         label: 'API Key',
-        type: CliConfigFieldType.apiKey,
+        type: CliConfigFieldType.secret,
         required: true,
         description:
             'Your Tavily Search API key. Get one at: https://app.tavily.com. '
@@ -110,14 +110,14 @@ class TavilySearchCommand extends CliCommand {
     // 3. 从配置读取所有参数
     final service = ToolConfigService.instance;
     final config = await service.getToolConfig('tavily_search');
-    final apiKey = await service.getToolApiKey('tavily_search');
+    final apiKey = await service.getToolSecret('tavily_search', 'api_key');
 
-    // 4. 验证 API Key
+    // 4. 验证 secret
     if (apiKey == null || apiKey.isEmpty) {
       return {
         'error': 'Tavily Search API key not configured',
         'configured': false,
-        'hint': 'Run: shepaw tools web.search.tavily.config --action set-key --value tvly-xxxxx',
+        'hint': 'Run: shepaw tools web.search.tavily.config --action set --key api_key --value tvly-xxxxx',
       };
     }
 

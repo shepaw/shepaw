@@ -25,6 +25,14 @@ abstract class CliCommand {
   /// 命令简短描述
   String get description;
 
+  /// 命令的 icon（用于 UI 展示）
+  /// 返回值可以是：
+  /// - Emoji（如 '📁', '🔍'）
+  /// - Icon 代码（如 'icons.folder', 'icons.search'）
+  /// - null（使用默认 icon）
+  /// 子类可覆盖；默认返回 null
+  String? get icon => null;
+
   /// 用法示例（如 'shepaw context profile.query [--fields name,age,...]'）
   /// 子类可覆盖；默认返回空字符串
   String get usage => '';
@@ -50,7 +58,7 @@ abstract class CliCommand {
   ///   displayName: 'Brave Search',
   ///   fields: [
   ///     CliConfigField(key: 'api_key', label: 'API Key',
-  ///         type: CliConfigFieldType.apiKey, required: true,
+  ///         type: CliConfigFieldType.secret, required: true,
   ///         description: 'Your Brave Search API key (BSA-...)'),
   ///   ],
   /// );
@@ -65,7 +73,7 @@ abstract class CliCommand {
   ///
   /// - 如果命令无 [configSchema]，返回 (true, null)（无需配置，总是可用）
   /// - 如果有必填字段（[CommandConfigSchema.requiredFields]），检查是否已填
-  ///   - apiKey 类型字段 → 查 SecureStorage
+  ///   - secret 类型字段 → 查 SecureStorage
   ///   - 其他必填字段 → 查 parameterOverrides
   ///
   /// 返回 `(isAvailable, reason)`：
@@ -84,10 +92,13 @@ abstract class CliCommand {
     final toolName = schema.toolName;
     final config = await service.getToolConfig(toolName);
 
+    // 统一检查必填项是否已配置。
+    // 分支仅因存储后端不同：secret 类型存于 OS Keychain/Keystore（SecureStorage），
+    // 其他类型存于 SQLite 的 parameterOverrides，两者均通过"是否有值"判断是否满足。
     for (final field in requiredFields) {
-      if (field.type == CliConfigFieldType.apiKey) {
-        final apiKey = await service.getToolApiKey(toolName);
-        if (apiKey == null || apiKey.isEmpty) {
+      if (field.type == CliConfigFieldType.secret) {
+        final secret = await service.getToolSecret(toolName, field.key);
+        if (secret == null || secret.isEmpty) {
           return (false, 'Missing required config: ${field.label} (${field.key})');
         }
       } else {
@@ -134,7 +145,7 @@ abstract class CliCommand {
   ///   get（默认）、schema、set、delete、enable、disable
   ///
   /// `set` 通过 `--key` 指定字段名，`--value` 指定值：
-  ///   - key 对应 schema 中 [CliConfigFieldType.apiKey] 类型 → 存入 SecureStorage
+  ///   - key 对应 schema 中 [CliConfigFieldType.secret] 类型 → 存入 SecureStorage
   ///   - 其他 key → 存入 parameterOverrides
   ///   - 省略 --value → 清除该字段
   ///
@@ -170,7 +181,7 @@ abstract class CliCommand {
           return {
             'error': 'Missing --key flag',
             'usage': _configUsage(schema),
-            'example': '$usage --config --action set --key api_key --value YOUR_KEY',
+            'example': '$usage --config --action set --key <secret_field> --value YOUR_KEY',
           };
         }
         return _configActionSet(toolName, key, flags['value'], schema, service);
@@ -199,12 +210,35 @@ abstract class CliCommand {
       String toolName, CommandConfigSchema schema) async {
     final service = ToolConfigService.instance;
     final config = await service.getToolConfig(toolName);
+
+    // 构建每个必填字段的配置状态
+    Future<Map<String, dynamic>> buildFieldStatus(CliConfigField field) async {
+      final bool configured;
+      if (field.type == CliConfigFieldType.secret) {
+        final secret = await service.getToolSecret(toolName, field.key);
+        configured = secret != null && secret.isNotEmpty;
+      } else {
+        final value = config?.parameterOverrides?[field.key];
+        configured = value != null && value.toString().isNotEmpty;
+      }
+      return {
+        'key': field.key,
+        'label': field.label,
+        'type': field.type.name,
+        'configured': configured,
+      };
+    }
+
+    final requiredFieldStatuses = await Future.wait(
+      schema.requiredFields.map(buildFieldStatus),
+    );
+
     if (config == null) {
       return {
         'tool_name': toolName,
         'display_name': schema.displayName,
         'configured': false,
-        'required_fields': schema.requiredFields.map((f) => f.key).toList(),
+        'required_fields': requiredFieldStatuses,
         'message': 'No configuration found.',
         'hint': 'Use --config --action set --key <field> --value <val> to configure.',
       };
@@ -213,8 +247,7 @@ abstract class CliCommand {
       'tool_name': config.toolName,
       'display_name': schema.displayName,
       'configured': true,
-      'has_api_key': config.hasApiKey,
-      'api_key_status': config.hasApiKey ? '*** (configured)' : 'not set',
+      'required_fields': requiredFieldStatuses,
       'parameter_overrides': config.parameterOverrides,
       'note': config.note,
       'updated_at':
@@ -223,7 +256,7 @@ abstract class CliCommand {
   }
 
   /// 统一的 set action：根据 schema 字段类型自动路由到正确的存储
-  ///   - [CliConfigFieldType.apiKey] → SecureStorage
+  ///   - [CliConfigFieldType.secret] → SecureStorage
   ///   - 其他字段 → parameterOverrides
   ///   - value 为 null → 清除该字段
   Future<Map<String, dynamic>> _configActionSet(
@@ -241,25 +274,26 @@ abstract class CliCommand {
       };
     }
 
-    // apiKey 类型 → SecureStorage
-    if (field.type == CliConfigFieldType.apiKey) {
+    // secret 类型 → SecureStorage
+    if (field.type == CliConfigFieldType.secret) {
+      final allSecretKeys = schema.secretFields.map((f) => f.key).toList();
       if (value == null || value.isEmpty) {
-        await service.deleteToolApiKey(toolName);
+        await service.deleteToolSecret(toolName, key, allSecretKeys);
         return {
           'tool_name': toolName,
           'action': 'set',
           'key': key,
           'success': true,
-          'message': 'API key removed.',
+          'message': 'Secret "$key" removed.',
         };
       }
-      await service.setToolApiKey(toolName, value);
+      await service.setToolSecret(toolName, key, value);
       return {
         'tool_name': toolName,
         'action': 'set',
         'key': key,
         'success': true,
-        'message': 'API key stored securely.',
+        'message': 'Secret "$key" stored securely.',
       };
     }
 
@@ -294,7 +328,7 @@ abstract class CliCommand {
       'tool_name': toolName,
       'action': 'delete',
       'success': true,
-      'message': 'All configuration (including API key) deleted for $toolName.',
+      'message': 'All configuration (including secrets) deleted for $toolName.',
     };
   }
 
@@ -390,6 +424,14 @@ abstract class CliNamespace {
 
   /// 命名空间描述
   String get description;
+
+  /// 命名空间的 icon（用于 UI 展示）
+  /// 返回值可以是：
+  /// - Emoji（如 '🧠', '💬'）
+  /// - Icon 代码（如 'icons.brain', 'icons.chat'）
+  /// - null（使用默认 icon）
+  /// 子类可覆盖；默认返回 null
+  String? get icon => null;
 
   /// 用法示例（如 'shepaw context <sub-namespace>.<action> [flags]'）
   /// 子类可覆盖

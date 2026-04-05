@@ -41,7 +41,7 @@ class WebSearchCommand extends CliCommand {
       CliConfigField(
         key: 'api_key',
         label: 'API Key',
-        type: CliConfigFieldType.apiKey,
+        type: CliConfigFieldType.secret,
         required: true,
         description:
             'Brave Search API key (starts with BSA-) or Tavily key (starts with tvly-). '

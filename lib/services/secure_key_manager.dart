@@ -85,9 +85,10 @@ class SecureKeyManager {
     return _storage.readAll();
   }
 
-  // ── 工具 API Key 命名规范 ─────────────────────────────────────────────────
+  // ── 工具 Secret 命名规范 ──────────────────────────────────────────────────
 
-  /// 工具 API Key 的存储键名格式
-  static String toolApiKeyStorageKey(String toolName) =>
-      'tool_api_key_$toolName';
+  /// 工具 secret 字段的存储键名格式
+  /// 格式：tool_secret_<toolName>_<fieldKey>，支持同一工具多个 secret 字段
+  static String toolSecretStorageKey(String toolName, String fieldKey) =>
+      'tool_secret_${toolName}_$fieldKey';
 }

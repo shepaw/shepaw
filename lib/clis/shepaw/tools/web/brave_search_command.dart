@@ -44,7 +44,7 @@ class BraveSearchCommand extends CliCommand {
       CliConfigField(
         key: 'api_key',
         label: 'API Key',
-        type: CliConfigFieldType.apiKey,
+        type: CliConfigFieldType.secret,
         required: true,
         description:
             'Your Brave Search API key. Get one at: https://api.search.brave.com. '
@@ -103,14 +103,14 @@ class BraveSearchCommand extends CliCommand {
     // 3. 从配置读取所有参数
     final service = ToolConfigService.instance;
     final config = await service.getToolConfig('brave_search');
-    final apiKey = await service.getToolApiKey('brave_search');
+    final apiKey = await service.getToolSecret('brave_search', 'api_key');
 
-    // 4. 验证 API Key
+    // 4. 验证 secret
     if (apiKey == null || apiKey.isEmpty) {
       return {
         'error': 'Brave Search API key not configured',
         'configured': false,
-        'hint': 'Run: shepaw tools web.search.brave.config --action set-key --value BSA-xxxxx',
+        'hint': 'Run: shepaw tools web.search.brave.config --action set --key api_key --value BSA-xxxxx',
       };
     }
 

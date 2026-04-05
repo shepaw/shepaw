@@ -342,12 +342,11 @@ Future<Map<String, dynamic>> _injectToolConfig(
       }
     }
 
-    // 2. API Key 注入（强制覆盖，不允许 LLM 传入密钥）
-    if (config?.hasApiKey == true) {
-      final apiKey = await configService.getToolApiKey(toolName);
-      if (apiKey != null && apiKey.isNotEmpty) {
-        resolved['api_key'] = apiKey;
-      }
+    // 2. Secret 注入（强制覆盖，不允许 LLM 传入密钥）
+    // 兼容旧 OS 工具：尝试读取名为 api_key 的 secret 字段
+    final apiKey = await configService.getToolSecret(toolName, 'api_key');
+    if (apiKey != null && apiKey.isNotEmpty) {
+      resolved['api_key'] = apiKey;
     }
 
     return resolved;

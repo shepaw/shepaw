@@ -127,6 +127,16 @@ dynamic _parseParamValue(String raw) {
 // ── 判断某个命名空间是否是 Tooling（有工具配置管理）──────────────────────────
 bool _isToolNamespace(CliNamespace ns) => ns is ToolsNamespace;
 
+/// 将 icon 字符串解析为 IconData（全局辅助函数）
+/// 支持 Material Icons codePoint（"0xe###" 十六进制 或 纯十进制整数）
+IconData? _parseIconData(String? iconStr) {
+  if (iconStr == null) return null;
+  final code = int.tryParse(iconStr) ??
+      int.tryParse(iconStr.replaceFirst('0x', ''), radix: 16);
+  if (code != null) return IconData(code, fontFamily: 'MaterialIcons');
+  return null;
+}
+
 // ── 共享帮助对话框 ───────────────────────────────────────────────────────────────
 /// 执行 --help 命令并在底部面板中显示帮助信息
 Future<void> _showHelpSheet({
@@ -539,8 +549,8 @@ class _SubNsTileState extends State<_SubNsTile> {
     final countLabel =
         subNsCount > 0 ? '$subNsCount namespaces' : '$cmdCount commands';
 
-    // 选取图标
-    final icon = _subNsIcon(widget.subKey);
+    // 选取图标：优先使用 CliNamespace.icon，回退到硬编码映射
+    final icon = _nsIconData(widget.subNs.icon) ?? _subNsIcon(widget.subKey);
     final globalEnabled = _nsConfig?.globalEnabled ?? true;
     final sheOnly = _nsConfig?.sheOnly ?? false;
 
@@ -622,7 +632,7 @@ class _SubNsTileState extends State<_SubNsTile> {
                 nsId: _nsId,
                 label: _capitalize(widget.subKey),
                 description: widget.subNs.description,
-                icon: icon,
+                icon: icon,  // 已经是优先用 ns.icon 解析后的值
               );
               _loadConfig();
             },
@@ -657,6 +667,9 @@ class _SubNsTileState extends State<_SubNsTile> {
       },
     );
   }
+
+  /// 将 CliNamespace.icon 字符串解析为 IconData（委托给全局辅助函数）
+  IconData? _nsIconData(String? iconStr) => _parseIconData(iconStr);
 
   IconData _subNsIcon(String key) => switch (key) {
         'profile' => Icons.person_outline,
@@ -946,11 +959,13 @@ class _CommandTileState extends State<_CommandTile> {
               borderRadius: BorderRadius.circular(6),
             ),
             child: Icon(
-              toolDef != null
-                  ? _toolIconFor(toolDef.name)
-                  : hasCmdSchema
-                      ? Icons.settings_ethernet
-                      : Icons.code_outlined,
+              // 优先使用 cmd.icon（解析为 codePoint），回退到工具名/类型映射
+              _cmdIconData(widget.cmd.icon) ??
+                  (toolDef != null
+                      ? _toolIconFor(toolDef.name)
+                      : hasCmdSchema
+                          ? Icons.settings_ethernet
+                          : Icons.code_outlined),
               size: 16,
               color: toolDef != null
                   ? colorScheme.onPrimaryContainer
@@ -1128,6 +1143,9 @@ class _CommandTileState extends State<_CommandTile> {
       ],
     );
   }
+
+  /// 将 CliCommand.icon 字符串解析为 IconData（委托给全局辅助函数）
+  IconData? _cmdIconData(String? iconStr) => _parseIconData(iconStr);
 
   Future<void> _openCliCommandConfigSheet(
       BuildContext context, CommandConfigSchema schema) async {
@@ -1595,7 +1613,7 @@ class _CliDetailSheet extends StatefulWidget {
       ),
       builder: (_) => _CliDetailSheet(
         title: cmd.name,
-        icon: Icons.code_outlined,
+        icon: _parseIconData(cmd.icon) ?? Icons.code_outlined,
         help: help,
         commandId: commandId,
         configSchema: cmd.configSchema,
@@ -1663,7 +1681,8 @@ class _CliDetailSheetState extends State<_CliDetailSheet> {
   // ── Tool Configuration（configSchema 字段）────────────────────────────────
   bool _toolConfigLoading = false;
   bool _toolConfigSaving = false;
-  String? _currentApiKey;
+  // key: fieldKey, value: secret value (null = not set)
+  final Map<String, String?> _secretValues = {};
   bool _apiKeyLoading = true;
   final Map<String, TextEditingController> _toolFieldControllers = {};
   final Map<String, bool> _toolBoolFields = {};
@@ -1693,7 +1712,7 @@ class _CliDetailSheetState extends State<_CliDetailSheet> {
   void _initToolConfigDefaults() {
     final schema = widget.configSchema!;
     for (final field in schema.fields) {
-      if (field.type == CliConfigFieldType.apiKey) continue;
+      if (field.type == CliConfigFieldType.secret) continue;
       if (field.type == CliConfigFieldType.boolean) {
         _toolBoolFields[field.key] =
             field.defaultValue is bool ? field.defaultValue as bool : false;
@@ -1710,10 +1729,14 @@ class _CliDetailSheetState extends State<_CliDetailSheet> {
   Future<void> _loadToolConfig() async {
     final schema = widget.configSchema!;
     setState(() => _toolConfigLoading = true);
-    final key = await ToolConfigService.instance.getToolApiKey(schema.toolName);
+    final secretFields = schema.secretFields;
+    final secrets = <String, String?>{};
+    for (final f in secretFields) {
+      secrets[f.key] = await ToolConfigService.instance.getToolSecret(schema.toolName, f.key);
+    }
     if (!mounted) return;
     setState(() {
-      _currentApiKey = key;
+      _secretValues.addAll(secrets);
       _apiKeyLoading = false;
       _toolConfigLoading = false;
     });
@@ -1724,7 +1747,7 @@ class _CliDetailSheetState extends State<_CliDetailSheet> {
       final overrides = c!.parameterOverrides!;
       setState(() {
         for (final field in schema.fields) {
-          if (field.type == CliConfigFieldType.apiKey) continue;
+          if (field.type == CliConfigFieldType.secret) continue;
           if (field.type == CliConfigFieldType.boolean) {
             final val = overrides[field.key];
             if (val is bool) _toolBoolFields[field.key] = val;
@@ -1750,7 +1773,7 @@ class _CliDetailSheetState extends State<_CliDetailSheet> {
     try {
       final overrides = <String, dynamic>{};
       for (final field in schema.fields) {
-        if (field.type == CliConfigFieldType.apiKey) continue;
+        if (field.type == CliConfigFieldType.secret) continue;
         if (field.type == CliConfigFieldType.boolean) {
           final val = _toolBoolFields[field.key];
           if (val != null) overrides[field.key] = val;
@@ -1831,8 +1854,9 @@ class _CliDetailSheetState extends State<_CliDetailSheet> {
       ),
     );
     if (result != null && result.isNotEmpty) {
-      await ToolConfigService.instance.setToolApiKey(schema.toolName, result);
-      if (mounted) setState(() => _currentApiKey = result);
+      final field = schema.secretFields.first;
+      await ToolConfigService.instance.setToolSecret(schema.toolName, field.key, result);
+      if (mounted) setState(() => _secretValues[field.key] = result);
     }
   }
 
@@ -1858,8 +1882,11 @@ class _CliDetailSheetState extends State<_CliDetailSheet> {
       ),
     );
     if (confirmed == true) {
-      await ToolConfigService.instance.deleteToolApiKey(schema.toolName);
-      if (mounted) setState(() => _currentApiKey = null);
+      final allSecretKeys = schema.secretFields.map((f) => f.key).toList();
+      for (final f in schema.secretFields) {
+        await ToolConfigService.instance.deleteToolSecret(schema.toolName, f.key, allSecretKeys);
+      }
+      if (mounted) setState(() => _secretValues.clear());
     }
   }
 
@@ -1932,7 +1959,7 @@ class _CliDetailSheetState extends State<_CliDetailSheet> {
 
   Widget _buildToolField(CliConfigField field, ColorScheme cs) {
     switch (field.type) {
-      case CliConfigFieldType.apiKey:
+      case CliConfigFieldType.secret:
         return _buildToolApiKeyField(field, cs);
       case CliConfigFieldType.boolean:
         return _buildToolBoolField(field, cs);
@@ -1944,7 +1971,8 @@ class _CliDetailSheetState extends State<_CliDetailSheet> {
   }
 
   Widget _buildToolApiKeyField(CliConfigField field, ColorScheme cs) {
-    final hasKey = (_currentApiKey?.isNotEmpty) == true;
+    final currentSecret = _secretValues[field.key];
+    final hasKey = (currentSecret?.isNotEmpty) == true;
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
@@ -1991,10 +2019,10 @@ class _CliDetailSheetState extends State<_CliDetailSheet> {
         const SizedBox(height: 3),
         Text(field.description,
             style: TextStyle(fontSize: 11, color: cs.outline)),
-        if (hasKey && _currentApiKey != null) ...[
+        if (hasKey && currentSecret != null) ...[
           const SizedBox(height: 4),
           Text(
-            '${_currentApiKey!.substring(0, _currentApiKey!.length.clamp(0, 8))}••••••••',
+            '${currentSecret.substring(0, currentSecret.length.clamp(0, 8))}••••••••',
             style: TextStyle(
                 fontSize: 11, color: cs.outline, fontFamily: 'monospace'),
           ),
@@ -3041,7 +3069,8 @@ class _ToolConfigSheet extends StatefulWidget {
 class _ToolConfigSheetState extends State<_ToolConfigSheet> {
   late Map<String, dynamic> _paramOverrides;
 
-  String? _currentApiKey;
+  // key: fieldKey, value: secret value (null = not set)
+  final Map<String, String?> _secretValues = {};
   bool _loadingKey = true;
   bool _saving = false;
 
@@ -3058,7 +3087,7 @@ class _ToolConfigSheetState extends State<_ToolConfigSheet> {
     _noteController.text = c?.note ?? '';
 
     for (final field in widget.tool.configSpec) {
-      if (field.type == CliConfigFieldType.apiKey) continue;
+      if (field.type == CliConfigFieldType.secret) continue;
       if (field.type == CliConfigFieldType.boolean) {
         final val = _paramOverrides[field.key];
         _boolFields[field.key] = val is bool
@@ -3091,8 +3120,12 @@ class _ToolConfigSheetState extends State<_ToolConfigSheet> {
   }
 
   Future<void> _loadApiKey() async {
-    final key = await widget.service.getToolApiKey(widget.tool.name);
-    if (mounted) setState(() { _currentApiKey = key; _loadingKey = false; });
+    final secretFields = widget.tool.configSpec.where((f) => f.type == CliConfigFieldType.secret).toList();
+    final secrets = <String, String?>{};
+    for (final f in secretFields) {
+      secrets[f.key] = await widget.service.getToolSecret(widget.tool.name, f.key);
+    }
+    if (mounted) setState(() { _secretValues.addAll(secrets); _loadingKey = false; });
   }
 
   @override
@@ -3157,14 +3190,15 @@ class _ToolConfigSheetState extends State<_ToolConfigSheet> {
 
   Widget _buildField(CliConfigField field, ColorScheme cs) =>
       switch (field.type) {
-        CliConfigFieldType.apiKey => _buildApiKeyField(field, cs),
+        CliConfigFieldType.secret => _buildApiKeyField(field, cs),
         CliConfigFieldType.boolean => _buildBoolField(field, cs),
         CliConfigFieldType.select => _buildSelectField(field, cs),
         _ => _buildTextField(field, cs),
       };
 
   Widget _buildApiKeyField(CliConfigField field, ColorScheme cs) {
-    final hasKey = (_currentApiKey?.isNotEmpty) == true;
+    final currentSecret = _secretValues[field.key];
+    final hasKey = (currentSecret?.isNotEmpty) == true;
     return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
       Row(children: [
         Icon(Icons.key, size: 16, color: cs.primary),
@@ -3199,10 +3233,10 @@ class _ToolConfigSheetState extends State<_ToolConfigSheet> {
       const SizedBox(height: 4),
       Text(field.description,
           style: TextStyle(fontSize: 12, color: cs.outline)),
-      if (hasKey && _currentApiKey != null) ...[
+      if (hasKey && currentSecret != null) ...[
         const SizedBox(height: 6),
         Text(
-            '${_currentApiKey!.substring(0, _currentApiKey!.length.clamp(0, 8))}••••••••',
+            '${currentSecret.substring(0, currentSecret.length.clamp(0, 8))}••••••••',
             style: TextStyle(
                 fontSize: 12,
                 color: cs.outline,
@@ -3214,7 +3248,7 @@ class _ToolConfigSheetState extends State<_ToolConfigSheet> {
           child: OutlinedButton.icon(
             icon: Icon(hasKey ? Icons.edit : Icons.add, size: 16),
             label: Text(hasKey ? 'Update Key' : 'Set Key'),
-            onPressed: _showSetKeyDialog,
+            onPressed: () => _showSetKeyDialog(field),
           ),
         ),
         if (hasKey) ...[
@@ -3222,7 +3256,7 @@ class _ToolConfigSheetState extends State<_ToolConfigSheet> {
           IconButton(
             tooltip: 'Delete API key',
             icon: Icon(Icons.delete_outline, color: cs.error),
-            onPressed: _confirmDeleteKey,
+            onPressed: () => _confirmDeleteKey(field),
           ),
         ],
       ]),
@@ -3359,13 +3393,13 @@ class _ToolConfigSheetState extends State<_ToolConfigSheet> {
         ),
       ]);
 
-  Future<void> _showSetKeyDialog() async {
+  Future<void> _showSetKeyDialog(CliConfigField field) async {
     final ctrl = TextEditingController();
     final formKey = GlobalKey<FormState>();
     final result = await showDialog<String>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: Text('Set API Key — ${widget.tool.name}'),
+        title: Text('Set ${field.label} — ${widget.tool.name}'),
         content: Form(
           key: formKey,
           child: TextFormField(
@@ -3395,12 +3429,12 @@ class _ToolConfigSheetState extends State<_ToolConfigSheet> {
       ),
     );
     if (result != null && result.isNotEmpty) {
-      await widget.service.setToolApiKey(widget.tool.name, result);
+      await widget.service.setToolSecret(widget.tool.name, field.key, result);
       await _loadApiKey();
     }
   }
 
-  Future<void> _confirmDeleteKey() async {
+  Future<void> _confirmDeleteKey(CliConfigField field) async {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -3421,7 +3455,8 @@ class _ToolConfigSheetState extends State<_ToolConfigSheet> {
       ),
     );
     if (confirmed == true) {
-      await widget.service.deleteToolApiKey(widget.tool.name);
+      final allSecretKeys = widget.tool.configSpec.where((f) => f.type == CliConfigFieldType.secret).map((f) => f.key).toList();
+      await widget.service.deleteToolSecret(widget.tool.name, field.key, allSecretKeys);
       await _loadApiKey();
     }
   }
@@ -3432,7 +3467,7 @@ class _ToolConfigSheetState extends State<_ToolConfigSheet> {
       builder: (ctx) => AlertDialog(
         title: const Text('Delete Configuration'),
         content: Text(
-            'Delete all configuration for ${widget.tool.name}? The API key will also be removed.'),
+            'Delete all configuration for ${widget.tool.name}? All secrets will also be removed.'),
         actions: [
           TextButton(
               onPressed: () => Navigator.pop(ctx, false),
@@ -3460,7 +3495,7 @@ class _ToolConfigSheetState extends State<_ToolConfigSheet> {
     try {
       final newOverrides = <String, dynamic>{};
       for (final field in widget.tool.configSpec) {
-        if (field.type == CliConfigFieldType.apiKey) continue;
+        if (field.type == CliConfigFieldType.secret) continue;
         if (field.type == CliConfigFieldType.boolean) {
           final val = _boolFields[field.key];
           if (val != null) newOverrides[field.key] = val;
@@ -3518,7 +3553,8 @@ class _CliCommandConfigSheet extends StatefulWidget {
 class _CliCommandConfigSheetState extends State<_CliCommandConfigSheet> {
   late Map<String, dynamic> _paramOverrides;
 
-  String? _currentApiKey;
+  // key: fieldKey, value: secret value (null = not set)
+  final Map<String, String?> _secretValues = {};
   bool _loadingKey = true;
   bool _saving = false;
 
@@ -3540,7 +3576,7 @@ class _CliCommandConfigSheetState extends State<_CliCommandConfigSheet> {
   /// 先用 schema 默认值初始化控件，避免第一帧为空
   void _initFieldControllersFromDefaults() {
     for (final field in widget.schema.fields) {
-      if (field.type == CliConfigFieldType.apiKey) continue;
+      if (field.type == CliConfigFieldType.secret) continue;
       if (field.type == CliConfigFieldType.boolean) {
         _boolFields[field.key] =
             field.defaultValue is bool ? field.defaultValue as bool : false;
@@ -3562,7 +3598,7 @@ class _CliCommandConfigSheetState extends State<_CliCommandConfigSheet> {
       _noteController.text = c?.note ?? '';
 
       for (final field in widget.schema.fields) {
-        if (field.type == CliConfigFieldType.apiKey) continue;
+        if (field.type == CliConfigFieldType.secret) continue;
         if (field.type == CliConfigFieldType.boolean) {
           final val = _paramOverrides[field.key];
           _boolFields[field.key] = val is bool
@@ -3597,8 +3633,12 @@ class _CliCommandConfigSheetState extends State<_CliCommandConfigSheet> {
   }
 
   Future<void> _loadApiKey() async {
-    final key = await widget.service.getToolApiKey(widget.schema.toolName);
-    if (mounted) setState(() { _currentApiKey = key; _loadingKey = false; });
+    final secretFields = widget.schema.secretFields;
+    final secrets = <String, String?>{};
+    for (final f in secretFields) {
+      secrets[f.key] = await widget.service.getToolSecret(widget.schema.toolName, f.key);
+    }
+    if (mounted) setState(() { _secretValues.addAll(secrets); _loadingKey = false; });
   }
 
   @override
@@ -3673,14 +3713,15 @@ class _CliCommandConfigSheetState extends State<_CliCommandConfigSheet> {
 
   Widget _buildField(CliConfigField field, ColorScheme cs) =>
       switch (field.type) {
-        CliConfigFieldType.apiKey => _buildApiKeyField(field, cs),
+        CliConfigFieldType.secret => _buildApiKeyField(field, cs),
         CliConfigFieldType.boolean => _buildBoolField(field, cs),
         CliConfigFieldType.select => _buildSelectField(field, cs),
         _ => _buildTextField(field, cs),
       };
 
   Widget _buildApiKeyField(CliConfigField field, ColorScheme cs) {
-    final hasKey = (_currentApiKey?.isNotEmpty) == true;
+    final currentSecret = _secretValues[field.key];
+    final hasKey = (currentSecret?.isNotEmpty) == true;
     return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
       Row(children: [
         Icon(Icons.key, size: 16, color: cs.primary),
@@ -3714,10 +3755,10 @@ class _CliCommandConfigSheetState extends State<_CliCommandConfigSheet> {
       const SizedBox(height: 4),
       Text(field.description,
           style: TextStyle(fontSize: 12, color: cs.outline)),
-      if (hasKey && _currentApiKey != null) ...[
+      if (hasKey && currentSecret != null) ...[
         const SizedBox(height: 6),
         Text(
-            '${_currentApiKey!.substring(0, _currentApiKey!.length.clamp(0, 8))}••••••••',
+            '${currentSecret.substring(0, currentSecret.length.clamp(0, 8))}••••••••',
             style: TextStyle(
                 fontSize: 12, color: cs.outline, fontFamily: 'monospace')),
       ],
@@ -3727,7 +3768,7 @@ class _CliCommandConfigSheetState extends State<_CliCommandConfigSheet> {
           child: OutlinedButton.icon(
             icon: Icon(hasKey ? Icons.edit : Icons.add, size: 16),
             label: Text(hasKey ? 'Update Key' : 'Set Key'),
-            onPressed: _showSetKeyDialog,
+            onPressed: () => _showSetKeyDialog(field),
           ),
         ),
         if (hasKey) ...[
@@ -3735,7 +3776,7 @@ class _CliCommandConfigSheetState extends State<_CliCommandConfigSheet> {
           IconButton(
             tooltip: 'Delete API key',
             icon: Icon(Icons.delete_outline, color: cs.error),
-            onPressed: _confirmDeleteKey,
+            onPressed: () => _confirmDeleteKey(field),
           ),
         ],
       ]),
@@ -3869,13 +3910,13 @@ class _CliCommandConfigSheetState extends State<_CliCommandConfigSheet> {
         ),
       ]);
 
-  Future<void> _showSetKeyDialog() async {
+  Future<void> _showSetKeyDialog(CliConfigField field) async {
     final ctrl = TextEditingController();
     final formKey = GlobalKey<FormState>();
     final result = await showDialog<String>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: Text('Set API Key — ${widget.schema.displayName}'),
+        title: Text('Set ${field.label} — ${widget.schema.displayName}'),
         content: Form(
           key: formKey,
           child: TextFormField(
@@ -3905,18 +3946,18 @@ class _CliCommandConfigSheetState extends State<_CliCommandConfigSheet> {
       ),
     );
     if (result != null && result.isNotEmpty) {
-      await widget.service.setToolApiKey(widget.schema.toolName, result);
+      await widget.service.setToolSecret(widget.schema.toolName, field.key, result);
       await _loadApiKey();
     }
   }
 
-  Future<void> _confirmDeleteKey() async {
+  Future<void> _confirmDeleteKey(CliConfigField field) async {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Delete API Key'),
+        title: Text('Delete ${field.label}'),
         content: Text(
-            'Remove the API key for ${widget.schema.displayName}? This cannot be undone.'),
+            'Remove "${field.label}" for ${widget.schema.displayName}? This cannot be undone.'),
         actions: [
           TextButton(
               onPressed: () => Navigator.pop(ctx, false),
@@ -3931,7 +3972,8 @@ class _CliCommandConfigSheetState extends State<_CliCommandConfigSheet> {
       ),
     );
     if (confirmed == true) {
-      await widget.service.deleteToolApiKey(widget.schema.toolName);
+      final allSecretKeys = widget.schema.secretFields.map((f) => f.key).toList();
+      await widget.service.deleteToolSecret(widget.schema.toolName, field.key, allSecretKeys);
       await _loadApiKey();
     }
   }
@@ -3970,7 +4012,7 @@ class _CliCommandConfigSheetState extends State<_CliCommandConfigSheet> {
     try {
       final newOverrides = <String, dynamic>{};
       for (final field in widget.schema.fields) {
-        if (field.type == CliConfigFieldType.apiKey) continue;
+        if (field.type == CliConfigFieldType.secret) continue;
         if (field.type == CliConfigFieldType.boolean) {
           final val = _boolFields[field.key];
           if (val != null) newOverrides[field.key] = val;

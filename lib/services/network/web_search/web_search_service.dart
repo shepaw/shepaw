@@ -40,14 +40,14 @@ class WebSearchService {
     }
 
     try {
-      // 获取已配置的 API Key
+      // 获取已配置的 secret
       final apiKey =
-          await ToolConfigService.instance.getToolApiKey('web_search');
+          await ToolConfigService.instance.getToolSecret('web_search', 'api_key');
       if (apiKey == null || apiKey.isEmpty) {
         return {
           'success': false,
           'error': 'Web search API key not configured. '
-              'Please set it using: shepaw tools web.search.config --action set-key --value YOUR_KEY',
+              'Please set it using: shepaw tools web.search.config --action set --key api_key --value YOUR_KEY',
         };
       }
 

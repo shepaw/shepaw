@@ -8,7 +8,7 @@ import 'secure_key_manager.dart';
 ///
 /// 职责分层：
 /// - 非敏感配置（enabled, parameterOverrides, note 等）→ SQLite (tool_configs 表)
-/// - 敏感 API Key → flutter_secure_storage（通过 SecureKeyManager）
+/// - 敏感 secret 字段（apiKey、token 等）→ flutter_secure_storage（通过 SecureKeyManager）
 ///
 /// 使用单例模式，与项目其他服务保持一致。
 class ToolConfigService {
@@ -17,20 +17,20 @@ class ToolConfigService {
 
   final _db = LocalDatabaseService();
 
-  // ── API Key 操作（SecureKeyManager）─────────────────────────────────────
+  // ── Secret 操作（SecureKeyManager）─────────────────────────────────────────
 
-  /// 获取工具的 API Key（解密）
-  Future<String?> getToolApiKey(String toolName) async {
-    final storageKey = SecureKeyManager.toolApiKeyStorageKey(toolName);
+  /// 获取工具指定 secret 字段的值（解密）
+  Future<String?> getToolSecret(String toolName, String fieldKey) async {
+    final storageKey = SecureKeyManager.toolSecretStorageKey(toolName, fieldKey);
     return SecureKeyManager.getSecureValue(storageKey);
   }
 
-  /// 设置工具的 API Key（加密存储）
+  /// 设置工具指定 secret 字段（加密存储）
   ///
-  /// 同时更新数据库中的 has_api_key 标志
-  Future<void> setToolApiKey(String toolName, String apiKey) async {
-    final storageKey = SecureKeyManager.toolApiKeyStorageKey(toolName);
-    await SecureKeyManager.saveSecureValue(storageKey, apiKey);
+  /// 同时更新数据库中的 has_api_key 标志，表示至少有一个 secret 已配置
+  Future<void> setToolSecret(String toolName, String fieldKey, String value) async {
+    final storageKey = SecureKeyManager.toolSecretStorageKey(toolName, fieldKey);
+    await SecureKeyManager.saveSecureValue(storageKey, value);
 
     // 同步更新或创建数据库记录，标记 has_api_key = true
     final existing = await _db.queryToolConfig(toolName);
@@ -53,23 +53,34 @@ class ToolConfigService {
     }
   }
 
-  /// 删除工具的 API Key
+  /// 删除工具指定 secret 字段
   ///
-  /// 同时更新数据库中的 has_api_key 标志
-  Future<void> deleteToolApiKey(String toolName) async {
-    final storageKey = SecureKeyManager.toolApiKeyStorageKey(toolName);
+  /// 若该工具所有 secret 字段均已删除，同步更新 has_api_key = false
+  Future<void> deleteToolSecret(
+      String toolName, String fieldKey, List<String> allSecretFieldKeys) async {
+    final storageKey = SecureKeyManager.toolSecretStorageKey(toolName, fieldKey);
     await SecureKeyManager.deleteSecureValue(storageKey);
 
-    // 同步更新数据库
+    // 检查是否还有其他 secret 字段有值
+    final hasRemaining = await _hasAnySecret(toolName, allSecretFieldKeys);
     final existing = await _db.queryToolConfig(toolName);
     if (existing != null) {
       final now = DateTime.now().millisecondsSinceEpoch;
       await _db.upsertToolConfig({
         ...existing,
-        'has_api_key': 0,
+        'has_api_key': hasRemaining ? 1 : 0,
         'updated_at': now,
       });
     }
+  }
+
+  /// 检查工具是否还有任意 secret 字段已配置
+  Future<bool> _hasAnySecret(String toolName, List<String> fieldKeys) async {
+    for (final key in fieldKeys) {
+      final value = await getToolSecret(toolName, key);
+      if (value != null && value.isNotEmpty) return true;
+    }
+    return false;
   }
 
   // ── 配置 CRUD（LocalDatabaseService）──────────────────────────────────────
@@ -134,11 +145,16 @@ class ToolConfigService {
     return rows.map(ToolConfig.fromJson).toList();
   }
 
-  /// 删除工具配置（同时删除对应的 API Key）
+  /// 删除工具配置（同时删除所有对应的 secrets）
   Future<void> deleteToolConfig(String toolName) async {
-    // 先删除 secure storage 中的 API Key
-    final storageKey = SecureKeyManager.toolApiKeyStorageKey(toolName);
-    await SecureKeyManager.deleteSecureValue(storageKey);
+    // 通过前缀匹配删除该工具所有 secret 字段（键名格式: tool_secret_<toolName>_<fieldKey>）
+    final allSecure = await SecureKeyManager.getAllSecureValues();
+    final prefix = 'tool_secret_${toolName}_';
+    for (final key in allSecure.keys) {
+      if (key.startsWith(prefix)) {
+        await SecureKeyManager.deleteSecureValue(key);
+      }
+    }
 
     // 再删除数据库记录
     await _db.deleteToolConfig(toolName);

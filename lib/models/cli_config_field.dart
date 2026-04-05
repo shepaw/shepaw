@@ -9,15 +9,16 @@
 ///   key: 'api_key',
 ///   label: 'API Key',
 ///   description: 'Your Brave Search or Tavily API key.',
-///   type: CliConfigFieldType.apiKey,
+///   type: CliConfigFieldType.secret,
 ///   required: true,
 /// )
 /// ```
 
 /// 配置字段类型，决定 UI 渲染方式
 enum CliConfigFieldType {
-  /// 密钥类型：使用遮掩输入框，存入 SecureStorage（不存 parameterOverrides）
-  apiKey,
+  /// 敏感字段类型：使用遮掩输入框，存入 SecureStorage（不存 parameterOverrides）
+  /// 支持在同一个工具中声明多个 secret 字段（如 api_key、api_secret），各自独立存储。
+  secret,
 
   /// 普通字符串：普通文本输入框
   string,
@@ -39,7 +40,7 @@ enum CliConfigFieldType {
 class CliConfigField {
   /// 字段标识符
   ///
-  /// - `apiKey` 类型：此 key 仅作标识，实际存入 SecureStorage（工具名作 key）
+  /// - `secret` 类型：此 key 同时作为 SecureStorage 的子键，格式为 `tool_secret_<toolName>_<fieldKey>`
   /// - 其余类型：存入 [ToolConfig.parameterOverrides] 的 map key
   final String key;
 

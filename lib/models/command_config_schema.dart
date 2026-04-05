@@ -22,7 +22,7 @@ import 'cli_config_field.dart';
 ///       CliConfigField(
 ///         key: 'api_key',
 ///         label: 'API Key',
-///         type: CliConfigFieldType.apiKey,
+///         type: CliConfigFieldType.secret,
 ///         required: true,
 ///         description: 'Your Brave Search API key (starts with BSA-)',
 ///       ),
@@ -69,9 +69,9 @@ class CommandConfigSchema {
   List<CliConfigField> get requiredFields =>
       fields.where((f) => f.required).toList();
 
-  /// 获取所有 API Key 类型的字段
-  List<CliConfigField> get apiKeyFields =>
-      fields.where((f) => f.type == CliConfigFieldType.apiKey).toList();
+  /// 获取所有 secret 类型的字段
+  List<CliConfigField> get secretFields =>
+      fields.where((f) => f.type == CliConfigFieldType.secret).toList();
 
   /// 根据字段 key 查找字段定义
   CliConfigField? findField(String key) {
@@ -119,7 +119,7 @@ class CommandConfigSchema {
 
     // 类型特定验证
     switch (field.type) {
-      case CliConfigFieldType.apiKey:
+      case CliConfigFieldType.secret:
       case CliConfigFieldType.string:
         errors.addAll(_validateString(field, value));
         break;
@@ -260,8 +260,8 @@ class CommandConfigSchema {
   /// 将字段类型转换为字符串表示
   String _fieldTypeString(CliConfigFieldType type) {
     switch (type) {
-      case CliConfigFieldType.apiKey:
-        return 'apiKey (password, stored securely)';
+      case CliConfigFieldType.secret:
+        return 'secret (stored securely in OS Keychain/Keystore)';
       case CliConfigFieldType.string:
         return 'string';
       case CliConfigFieldType.integer:
