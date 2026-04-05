@@ -921,11 +921,9 @@ class _CommandTileState extends State<_CommandTile> {
     // CLI 命令（非 OS 工具）的配置状态
     final cliGlobalEnabled = _cliConfig?.globalEnabled ?? true;
     final cliSheOnly = _cliConfig?.sheOnly ?? false;
-    // 有 configSchema 的 CLI 命令的工具级状态
+    // 有 configSchema 的 CLI 命令（schema 用于打开配置弹窗）
     final schema = widget.cmd.configSchema;
     final hasCmdSchema = toolDef == null && schema != null;
-    final cmdToolEnabled = _cmdToolConfig?.enabled ?? true;
-    final cmdToolSheExclusive = _cmdToolConfig?.sheExclusive ?? false;
 
     return Column(
       mainAxisSize: MainAxisSize.min,
@@ -940,7 +938,7 @@ class _CommandTileState extends State<_CommandTile> {
               color: (toolDef != null || hasCmdSchema
                       ? colorScheme.primaryContainer
                       : colorScheme.surfaceContainerHighest)
-                  .withValues(alpha: (toolDef != null ? isEnabled : hasCmdSchema ? cmdToolEnabled : cliGlobalEnabled) ? 1 : 0.5),
+                  .withValues(alpha: (toolDef != null ? isEnabled : cliGlobalEnabled) ? 1 : 0.5),
               borderRadius: BorderRadius.circular(6),
             ),
             child: Icon(
@@ -955,7 +953,7 @@ class _CommandTileState extends State<_CommandTile> {
                       .withValues(alpha: isEnabled ? 1 : 0.4)
                   : hasCmdSchema
                       ? colorScheme.onPrimaryContainer
-                          .withValues(alpha: cmdToolEnabled ? 1 : 0.4)
+                          .withValues(alpha: cliGlobalEnabled ? 1 : 0.4)
                       : colorScheme.onSurfaceVariant
                           .withValues(alpha: cliGlobalEnabled ? 1 : 0.4),
             ),
@@ -968,11 +966,7 @@ class _CommandTileState extends State<_CommandTile> {
                   fontSize: 13,
                   fontWeight: FontWeight.w500,
                   fontFamily: toolDef != null ? null : 'monospace',
-                  color: (toolDef != null
-                          ? isEnabled
-                          : hasCmdSchema
-                              ? cmdToolEnabled
-                              : cliGlobalEnabled)
+                  color: (toolDef != null ? isEnabled : cliGlobalEnabled)
                       ? colorScheme.onSurface
                       : colorScheme.outline,
                 ),
@@ -1087,31 +1081,18 @@ class _CommandTileState extends State<_CommandTile> {
                   ],
                 )
               : hasCmdSchema
-                  // CLI 命令有 configSchema（如 brave_search、tavily_search）：显示工具级配置控件
+                  // CLI 命令有 configSchema（如 web.fetch、brave_search）：徽章 + 配置按钮
                   ? Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        // She Only chip（工具级）
-                        _buildCliSchemaShOnlyChip(
-                          schema!, cmdToolSheExclusive, colorScheme, service),
-                        const SizedBox(width: 6),
-                        // Enabled switch（工具级）
-                        SizedBox(
-                          height: 24,
-                          child: Switch.adaptive(
-                            value: cmdToolEnabled,
-                            onChanged: (v) async {
-                              await service.saveToolConfig(
-                                  schema.toolName, enabled: v);
-                              final updated = await ToolConfigService.instance
-                                  .getToolConfig(schema.toolName);
-                              if (mounted) setState(() => _cmdToolConfig = updated);
-                            },
-                            materialTapTargetSize:
-                                MaterialTapTargetSize.shrinkWrap,
-                          ),
+                        // 启用/禁用徽章（CLI 命令级，与普通命令一致）
+                        _CliConfigBadges(
+                          globalEnabled: cliGlobalEnabled,
+                          sheOnly: cliSheOnly,
+                          onToggleGlobal: _toggleGlobal,
+                          onToggleSheOnly: _toggleSheOnly,
                         ),
-                        // Configure button
+                        // Configure button（参数配置）
                         const SizedBox(width: 2),
                         IconButton(
                           icon: Icon(Icons.tune,
@@ -1151,51 +1132,6 @@ class _CommandTileState extends State<_CommandTile> {
           color: colorScheme.outlineVariant.withValues(alpha: 0.5),
         ),
       ],
-    );
-  }
-
-  Widget _buildCliSchemaShOnlyChip(
-    CommandConfigSchema schema,
-    bool isSheExclusive,
-    ColorScheme colorScheme,
-    ToolConfigService service,
-  ) {
-    return GestureDetector(
-      onTap: () async {
-        await service.saveToolConfig(
-            schema.toolName, sheExclusive: !isSheExclusive);
-        final updated =
-            await ToolConfigService.instance.getToolConfig(schema.toolName);
-        if (mounted) setState(() => _cmdToolConfig = updated);
-      },
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 150),
-        padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
-        decoration: BoxDecoration(
-          color: isSheExclusive
-              ? Theme.of(context).colorScheme.tertiary.withValues(alpha: 0.15)
-              : Theme.of(context).colorScheme.surfaceContainerHighest,
-          borderRadius: BorderRadius.circular(4),
-          border: Border.all(
-            color: isSheExclusive
-                ? Theme.of(context)
-                    .colorScheme
-                    .tertiary
-                    .withValues(alpha: 0.5)
-                : Theme.of(context).colorScheme.outlineVariant,
-          ),
-        ),
-        child: Text(
-          'She only',
-          style: TextStyle(
-            fontSize: 10,
-            fontWeight: FontWeight.w500,
-            color: isSheExclusive
-                ? Theme.of(context).colorScheme.tertiary
-                : Theme.of(context).colorScheme.outline,
-          ),
-        ),
-      ),
     );
   }
 
@@ -2177,9 +2113,13 @@ class _CliDetailSheetState extends State<_CliDetailSheet> {
                 const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
             isDense: true,
           ),
-          style: const TextStyle(fontSize: 13),
+          style: TextStyle(fontSize: 13, color: cs.onSurface),
+          dropdownColor: cs.surfaceContainerHigh,
           items: (field.options ?? [])
-              .map((o) => DropdownMenuItem(value: o, child: Text(o)))
+              .map((o) => DropdownMenuItem(
+                value: o,
+                child: Text(o, style: TextStyle(fontSize: 13, color: cs.onSurface)),
+              ))
               .toList(),
           onChanged: (v) => setState(() => _toolSelectFields[field.key] = v),
         ),
@@ -2560,9 +2500,6 @@ class _CliDetailSheetState extends State<_CliDetailSheet> {
               const SizedBox(height: 12),
               ..._buildToolConfigFields(cs),
               const SizedBox(height: 12),
-              // enabled / sheExclusive 开关
-              _buildToolToggleRow(cs),
-              const SizedBox(height: 12),
               // Save 按钮
               SizedBox(
                 width: double.infinity,
@@ -2712,6 +2649,8 @@ class _CliConfigBadges extends StatelessWidget {
           tooltip: sheOnly ? 'She only — tap to remove restriction' : 'All agents — tap to restrict to She',
           onTap: onToggleSheOnly,
           cs: cs,
+          activeBackgroundAlpha: 0.22,
+          activeBorderAlpha: 0.8,
         ),
         const SizedBox(width: 4),
         // ── 全局启用开关 ─────────────────────────────────────────────────
@@ -2736,6 +2675,8 @@ class _CliConfigBadges extends StatelessWidget {
     required String tooltip,
     required VoidCallback? onTap,
     required ColorScheme cs,
+    double activeBackgroundAlpha = 0.12,
+    double activeBorderAlpha = 0.5,
   }) {
     final color = active ? activeColor : inactiveColor;
     final child = AnimatedContainer(
@@ -2743,11 +2684,12 @@ class _CliConfigBadges extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
       decoration: BoxDecoration(
         color: active
-            ? color.withValues(alpha: 0.12)
+            ? color.withValues(alpha: activeBackgroundAlpha)
             : cs.surfaceContainerHighest,
         borderRadius: BorderRadius.circular(4),
         border: Border.all(
-          color: active ? color.withValues(alpha: 0.5) : cs.outlineVariant,
+          color: active ? color.withValues(alpha: activeBorderAlpha) : cs.outlineVariant,
+          width: active ? 1.5 : 1.0,
         ),
       ),
       child: Text(
@@ -3452,8 +3394,13 @@ class _ToolConfigSheetState extends State<_ToolConfigSheet> {
                 const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
             isDense: true,
           ),
+          style: TextStyle(fontSize: 13, color: cs.onSurface),
+          dropdownColor: cs.surfaceContainerHigh,
           items: (field.options ?? [])
-              .map((o) => DropdownMenuItem(value: o, child: Text(o)))
+              .map((o) => DropdownMenuItem(
+                value: o,
+                child: Text(o, style: TextStyle(fontSize: 13, color: cs.onSurface)),
+              ))
               .toList(),
           onChanged: (v) => setState(() => _selectFields[field.key] = v),
         ),
@@ -3842,8 +3789,6 @@ class _CliCommandConfigSheetState extends State<_CliCommandConfigSheet> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  _buildToggles(colorScheme),
-                  const Divider(height: 24),
                   ..._buildConfigFields(colorScheme),
                   _buildNoteSection(colorScheme),
                   const SizedBox(height: 20),
@@ -3856,40 +3801,6 @@ class _CliCommandConfigSheetState extends State<_CliCommandConfigSheet> {
       ),
     );
   }
-
-  Widget _buildToggles(ColorScheme cs) => Column(children: [
-        SwitchListTile(
-          contentPadding: EdgeInsets.zero,
-          title: const Text('Enable globally', style: TextStyle(fontSize: 14)),
-          subtitle: Text('When disabled, agents cannot use this tool',
-              style: TextStyle(fontSize: 12, color: cs.outline)),
-          value: _enabled,
-          onChanged: (v) => setState(() => _enabled = v),
-        ),
-        SwitchListTile(
-          contentPadding: EdgeInsets.zero,
-          title: Row(children: [
-            const Text('She only', style: TextStyle(fontSize: 14)),
-            const SizedBox(width: 6),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
-              decoration: BoxDecoration(
-                color: cs.tertiary.withValues(alpha: 0.12),
-                borderRadius: BorderRadius.circular(4),
-              ),
-              child: Text('She',
-                  style: TextStyle(
-                      fontSize: 10,
-                      color: cs.tertiary,
-                      fontWeight: FontWeight.w500)),
-            ),
-          ]),
-          subtitle: Text('Only She can use this tool (not other agents)',
-              style: TextStyle(fontSize: 12, color: cs.outline)),
-          value: _sheExclusive,
-          onChanged: (v) => setState(() => _sheExclusive = v),
-        ),
-      ]);
 
   List<Widget> _buildConfigFields(ColorScheme cs) {
     final widgets = <Widget>[];
@@ -4003,8 +3914,13 @@ class _CliCommandConfigSheetState extends State<_CliCommandConfigSheet> {
                 const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
             isDense: true,
           ),
+          style: TextStyle(fontSize: 13, color: cs.onSurface),
+          dropdownColor: cs.surfaceContainerHigh,
           items: (field.options ?? [])
-              .map((o) => DropdownMenuItem(value: o, child: Text(o)))
+              .map((o) => DropdownMenuItem(
+                value: o,
+                child: Text(o, style: TextStyle(fontSize: 13, color: cs.onSurface)),
+              ))
               .toList(),
           onChanged: (v) => setState(() => _selectFields[field.key] = v),
         ),

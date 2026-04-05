@@ -22,7 +22,9 @@ class WebSubNamespace extends CliNamespace {
   static final instance = WebSubNamespace._();
   WebSubNamespace._();
 
-  final _searchNamespace = _WebSearchNamespace();
+  final _searchCommand = WebSearchCommand();
+  final _braveCommand = BraveSearchCommand();
+  final _tavilyCommand = TavilySearchCommand();
   final _fetchCommand = WebFetchCommand();
 
   @override
@@ -30,43 +32,15 @@ class WebSubNamespace extends CliNamespace {
 
   @override
   String get description =>
-      'Web search and content fetching with config management';
-
-  @override
-  Map<String, CliCommand> get commands => {
-        _fetchCommand.name: _fetchCommand,
-      };
-
-  @override
-  Map<String, CliNamespace> get subNamespaces => {
-        'search': _searchNamespace,
-      };
-}
-
-// ── Web Search 子命名空间（支持多个搜索引擎）──────────────────────────────────
-
-/// `web.search.*` 子命名空间 — 支持多个搜索引擎（Brave、Tavily 等）
-///
-/// config 路由由基类自动处理：
-///   web.search.config       → WebSearchCommand.handleConfig()
-///   web.search.brave.config → BraveSearchCommand.handleConfig()
-class _WebSearchNamespace extends CliNamespace {
-  final _searchCommand = WebSearchCommand();
-  final _braveCommand = BraveSearchCommand();
-  final _tavilyCommand = TavilySearchCommand();
-
-  @override
-  String get namespace => 'search';
-
-  @override
-  String get description => 'Choose a search engine and execute web search';
-
+      'Web search (Brave/Tavily) and URL content fetching';
+  
   @override
   String get usage =>
       'shepaw tools web.search <brave|tavily> --query <query> [--limit <n>]';
 
   @override
   Map<String, CliCommand> get commands => {
+        _fetchCommand.name: _fetchCommand,
         _searchCommand.name: _searchCommand,
         _braveCommand.name: _braveCommand,
         _tavilyCommand.name: _tavilyCommand,

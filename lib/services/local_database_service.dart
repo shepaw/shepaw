@@ -39,7 +39,7 @@ class LocalDatabaseService {
       // Web平台使用sqflite_common_ffi
       return await openDatabase(
         'shepaw',
-        version: 18,
+        version: 19,
         onCreate: _onCreate,
         onUpgrade: _onUpgrade,
       );
@@ -49,7 +49,7 @@ class LocalDatabaseService {
       path = join(directory.path, 'shepaw.db');
       return await openDatabase(
         path,
-        version: 18,
+        version: 19,
         onCreate: _onCreate,
         onUpgrade: _onUpgrade,
       );
@@ -60,7 +60,7 @@ class LocalDatabaseService {
 
       return await openDatabase(
         path,
-        version: 18,
+        version: 19,
         onCreate: _onCreate,
         onUpgrade: _onUpgrade,
       );
@@ -265,6 +265,7 @@ class LocalDatabaseService {
         parameter_overrides TEXT,
         has_api_key INTEGER DEFAULT 0,
         enabled INTEGER DEFAULT 1,
+        she_exclusive INTEGER DEFAULT 0,
         note TEXT,
         created_at INTEGER NOT NULL,
         updated_at INTEGER NOT NULL
@@ -335,6 +336,7 @@ class LocalDatabaseService {
             parameter_overrides TEXT,
             has_api_key INTEGER DEFAULT 0,
             enabled INTEGER DEFAULT 1,
+            she_exclusive INTEGER DEFAULT 0,
             note TEXT,
             created_at INTEGER NOT NULL,
             updated_at INTEGER NOT NULL
@@ -356,6 +358,14 @@ class LocalDatabaseService {
             updated_at INTEGER NOT NULL
           )
         ''');
+      } catch (_) {}
+    }
+
+    if (oldVersion < 19) {
+      // 版本 18 -> 19: tool_configs 表补充 she_exclusive 列
+      try {
+        await db.execute(
+          'ALTER TABLE tool_configs ADD COLUMN she_exclusive INTEGER DEFAULT 0');
       } catch (_) {}
     }
 
