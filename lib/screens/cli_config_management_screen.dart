@@ -701,6 +701,8 @@ class _SubNsPageState extends State<_SubNsPage> {
   CliCommandConfig? _nsConfig;
   // 祖先限制
   ({String id, CliCommandConfig config})? _ancestor;
+  // 工具配置（独立维护，不依赖父级传入的 snapshot）
+  Map<String, ToolConfig> _toolConfigs = {};
 
   String get _nsId => '${widget.parentKey}.${widget.subKey}';
 
@@ -712,18 +714,26 @@ class _SubNsPageState extends State<_SubNsPage> {
   @override
   void initState() {
     super.initState();
+    _toolConfigs = Map.of(widget.configs);
     _loadConfigs();
   }
 
   Future<void> _loadConfigs() async {
     final nsConfig = await CliCommandConfigService.instance.getConfig(_nsId);
     final ancestor = await CliCommandConfigService.instance.findRestrictingAncestor(_nsId);
+    final toolCfgs = await ToolConfigService.instance.getAllToolConfigs();
     if (mounted) {
       setState(() {
         _nsConfig = nsConfig;
         _ancestor = ancestor;
+        _toolConfigs = {for (final c in toolCfgs) c.toolName: c};
       });
     }
+  }
+
+  void _onCommandRefresh() {
+    widget.onRefresh();
+    _loadConfigs();
   }
 
   @override
@@ -797,8 +807,8 @@ class _SubNsPageState extends State<_SubNsPage> {
                   parentKey: '${widget.parentKey} ${widget.subKey}',
                   subKey: e.key,
                   subNs: e.value,
-                  configs: widget.configs,
-                  onRefresh: widget.onRefresh,
+                  configs: _toolConfigs,
+                  onRefresh: _onCommandRefresh,
                 )),
           ],
 
@@ -810,8 +820,8 @@ class _SubNsPageState extends State<_SubNsPage> {
             ...cmds.entries.map((e) => _CommandTile(
                   nsKey: '${widget.parentKey} ${widget.subKey}',
                   cmd: e.value,
-                  configs: widget.configs,
-                  onRefresh: widget.onRefresh,
+                  configs: _toolConfigs,
+                  onRefresh: _onCommandRefresh,
                 )),
           ],
         ],
@@ -849,9 +859,11 @@ class _CommandTileState extends State<_CommandTile> {
   ({String id, CliCommandConfig config})? _ancestor;
 
   // 只有 OsToolDefinition 对应的工具命令才有配置管理
+  // 用 cliPath 匹配（格式如 os.app.open），而不是 cmd.name（如 open），
+  // 因为 CLI 命令的 name 可能与工具内部 name 不一致（例如 'open' vs 'app_open'）
   OsToolDefinition? _toolDef() {
     try {
-      return OsToolRegistry.instance.tools.firstWhere((t) => t.name == widget.cmd.name);
+      return OsToolRegistry.instance.tools.firstWhere((t) => t.cliPath == _commandId);
     } catch (_) {
       return null;
     }
@@ -871,23 +883,16 @@ class _CommandTileState extends State<_CommandTile> {
   }
 
   Future<void> _loadCliConfig() async {
-    final toolDef = _toolDef();
-    // OS 工具命令用 ToolConfigService，其他 CLI 命令用 CliCommandConfigService
-    if (toolDef == null) {
-      final cfg = await CliCommandConfigService.instance.getConfig(_commandId);
-      final ancestor = await CliCommandConfigService.instance.findRestrictingAncestor(_commandId);
-      // 如果命令有 configSchema，也加载工具级配置
-      final schema = widget.cmd.configSchema;
-      ToolConfig? toolCfg;
-      if (schema != null) {
-        toolCfg = await ToolConfigService.instance.getToolConfig(schema.toolName);
-      }
-      if (mounted) setState(() { _cliConfig = cfg; _ancestor = ancestor; _cmdToolConfig = toolCfg; });
-    } else {
-      // 工具命令也要检查祖先限制
-      final ancestor = await CliCommandConfigService.instance.findRestrictingAncestor(_commandId);
-      if (mounted) setState(() => _ancestor = ancestor);
+    // 所有命令统一从 CliCommandConfigService 读取启用/She 专属状态
+    final cfg = await CliCommandConfigService.instance.getConfig(_commandId);
+    final ancestor = await CliCommandConfigService.instance.findRestrictingAncestor(_commandId);
+    // 如果命令有 configSchema（非 OS 工具），也加载工具级配置
+    final schema = widget.cmd.configSchema;
+    ToolConfig? toolCfg;
+    if (schema != null) {
+      toolCfg = await ToolConfigService.instance.getToolConfig(schema.toolName);
     }
+    if (mounted) setState(() { _cliConfig = cfg; _ancestor = ancestor; _cmdToolConfig = toolCfg; });
   }
 
   Future<void> _toggleGlobal() async {
@@ -907,11 +912,10 @@ class _CommandTileState extends State<_CommandTile> {
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
-    final service = ToolConfigService.instance;
     final toolDef = _toolDef();
-    final config = toolDef != null ? widget.configs[toolDef.name] : null;
-    final isEnabled = config?.enabled ?? true;
-    final isSheOnly = config?.sheExclusive ?? toolDef?.sheExclusive ?? false;
+    // 统一从 CliCommandConfigService（_cliConfig）读取启用/She 专属状态
+    final isEnabled = _cliConfig?.globalEnabled ?? true;
+    final isSheOnly = _cliConfig?.sheOnly ?? toolDef?.sheExclusive ?? false;
     final hasConfigSpec = toolDef != null && toolDef.configSpec.isNotEmpty;
     // 获取 flags 文档以判断该命令是否有参数
     final help = widget.cmd.getHelp();
@@ -976,8 +980,7 @@ class _CommandTileState extends State<_CommandTile> {
               if (toolDef != null)
                 _RiskBadge(risk: toolDef.defaultRiskLevel),
               // API Key 图标（OS 工具 或 有 configSchema 的 CLI 命令）
-              if ((config?.hasApiKey ?? false) ||
-                  (_cmdToolConfig?.hasApiKey ?? false)) ...[
+              if ((_cmdToolConfig?.hasApiKey ?? false)) ...[
                 const SizedBox(width: 4),
                 Tooltip(
                   message: 'API Key configured',
@@ -985,8 +988,7 @@ class _CommandTileState extends State<_CommandTile> {
                 ),
               ],
               // 参数覆盖图标
-              if ((config?.parameterOverrides != null) ||
-                  (_cmdToolConfig?.parameterOverrides != null)) ...[
+              if ((_cmdToolConfig?.parameterOverrides != null)) ...[
                 const SizedBox(width: 4),
                 Tooltip(
                   message: 'Overrides set',
@@ -1052,20 +1054,12 @@ class _CommandTileState extends State<_CommandTile> {
               ? Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    // She Only chip
-                    _buildSheOnlyChip(toolDef, isSheOnly, colorScheme, service, widget.onRefresh, context),
-                    const SizedBox(width: 6),
-                    // Enabled switch
-                    SizedBox(
-                      height: 24,
-                      child: Switch.adaptive(
-                        value: isEnabled,
-                        onChanged: (v) async {
-                          await service.saveToolConfig(toolDef.name, enabled: v);
-                          widget.onRefresh();
-                        },
-                        materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                      ),
+                    // She Only + Enabled badges（与 CLI 命令保持一致）
+                    _CliConfigBadges(
+                      globalEnabled: isEnabled,
+                      sheOnly: isSheOnly,
+                      onToggleGlobal: _toggleGlobal,
+                      onToggleSheOnly: _toggleSheOnly,
                     ),
                     // Configure button
                     if (hasConfigSpec) ...[
@@ -1132,45 +1126,6 @@ class _CommandTileState extends State<_CommandTile> {
           color: colorScheme.outlineVariant.withValues(alpha: 0.5),
         ),
       ],
-    );
-  }
-
-  Widget _buildSheOnlyChip(
-    OsToolDefinition tool,
-    bool isSheOnly,
-    ColorScheme colorScheme,
-    ToolConfigService service,
-    VoidCallback onRefresh,
-    BuildContext context,
-  ) {
-    return GestureDetector(
-      onTap: () async {
-        await service.saveToolConfig(tool.name, sheExclusive: !isSheOnly);
-        onRefresh();
-      },
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 150),
-        padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
-        decoration: BoxDecoration(
-          color: isSheOnly
-              ? colorScheme.tertiary.withValues(alpha: 0.15)
-              : colorScheme.surfaceContainerHighest,
-          borderRadius: BorderRadius.circular(4),
-          border: Border.all(
-            color: isSheOnly
-                ? colorScheme.tertiary.withValues(alpha: 0.5)
-                : colorScheme.outlineVariant,
-          ),
-        ),
-        child: Text(
-          'She only',
-          style: TextStyle(
-            fontSize: 10,
-            fontWeight: FontWeight.w500,
-            color: isSheOnly ? colorScheme.tertiary : colorScheme.outline,
-          ),
-        ),
-      ),
     );
   }
 
@@ -1706,8 +1661,6 @@ class _CliDetailSheetState extends State<_CliDetailSheet> {
   bool _configLoading = true;
 
   // ── Tool Configuration（configSchema 字段）────────────────────────────────
-  bool _toolEnabled = true;
-  bool _toolSheExclusive = false;
   bool _toolConfigLoading = false;
   bool _toolConfigSaving = false;
   String? _currentApiKey;
@@ -1757,17 +1710,19 @@ class _CliDetailSheetState extends State<_CliDetailSheet> {
   Future<void> _loadToolConfig() async {
     final schema = widget.configSchema!;
     setState(() => _toolConfigLoading = true);
-    final c = await ToolConfigService.instance.getToolConfig(schema.toolName);
     final key = await ToolConfigService.instance.getToolApiKey(schema.toolName);
     if (!mounted) return;
     setState(() {
-      _toolEnabled = c?.enabled ?? true;
-      _toolSheExclusive = c?.sheExclusive ?? false;
       _currentApiKey = key;
       _apiKeyLoading = false;
       _toolConfigLoading = false;
-      if (c?.parameterOverrides != null) {
-        final overrides = c!.parameterOverrides!;
+    });
+    // 参数覆盖后续从 schema 加载
+    final c = await ToolConfigService.instance.getToolConfig(schema.toolName);
+    if (!mounted) return;
+    if (c?.parameterOverrides != null) {
+      final overrides = c!.parameterOverrides!;
+      setState(() {
         for (final field in schema.fields) {
           if (field.type == CliConfigFieldType.apiKey) continue;
           if (field.type == CliConfigFieldType.boolean) {
@@ -1785,8 +1740,8 @@ class _CliDetailSheetState extends State<_CliDetailSheet> {
             }
           }
         }
-      }
-    });
+      });
+    }
   }
 
   Future<void> _saveToolConfig() async {
@@ -1811,8 +1766,6 @@ class _CliDetailSheetState extends State<_CliDetailSheet> {
         schema.toolName,
         parameterOverrides: overrides.isEmpty ? null : overrides,
         clearParameterOverrides: overrides.isEmpty,
-        enabled: _toolEnabled,
-        sheExclusive: _toolSheExclusive,
       );
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -2164,55 +2117,7 @@ class _CliDetailSheetState extends State<_CliDetailSheet> {
     ]);
   }
 
-  Widget _buildToolToggleRow(ColorScheme cs) => Row(children: [
-        Expanded(
-          child: Container(
-            decoration: BoxDecoration(
-              color: cs.surfaceContainerHighest,
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: SwitchListTile.adaptive(
-              contentPadding:
-                  const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
-              title: const Text('Enabled',
-                  style: TextStyle(fontSize: 13, fontWeight: FontWeight.w500)),
-              subtitle: Text(
-                _toolEnabled ? 'Tool is active' : 'Tool is disabled',
-                style: TextStyle(fontSize: 11, color: cs.outline),
-              ),
-              value: _toolEnabled,
-              onChanged: (v) => setState(() => _toolEnabled = v),
-            ),
-          ),
-        ),
-        const SizedBox(width: 8),
-        Expanded(
-          child: Container(
-            decoration: BoxDecoration(
-              color: _toolSheExclusive
-                  ? cs.tertiaryContainer.withValues(alpha: 0.35)
-                  : cs.surfaceContainerHighest,
-              borderRadius: BorderRadius.circular(8),
-              border: _toolSheExclusive
-                  ? Border.all(color: cs.tertiary.withValues(alpha: 0.4))
-                  : null,
-            ),
-            child: SwitchListTile.adaptive(
-              contentPadding:
-                  const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
-              title: const Text('She only',
-                  style: TextStyle(fontSize: 13, fontWeight: FontWeight.w500)),
-              subtitle: Text(
-                _toolSheExclusive ? 'She only' : 'All agents',
-                style: TextStyle(fontSize: 11, color: cs.outline),
-              ),
-              value: _toolSheExclusive,
-              activeTrackColor: cs.tertiary,
-              onChanged: (v) => setState(() => _toolSheExclusive = v),
-            ),
-          ),
-        ),
-      ]);
+  Widget _buildToolToggleRow(ColorScheme cs) => const SizedBox.shrink();
 
   Future<void> _run() async {
     setState(() { _running = true; _result = null; });
@@ -3134,8 +3039,6 @@ class _ToolConfigSheet extends StatefulWidget {
 }
 
 class _ToolConfigSheetState extends State<_ToolConfigSheet> {
-  late bool _enabled;
-  late bool _sheExclusive;
   late Map<String, dynamic> _paramOverrides;
 
   String? _currentApiKey;
@@ -3151,8 +3054,6 @@ class _ToolConfigSheetState extends State<_ToolConfigSheet> {
   void initState() {
     super.initState();
     final c = widget.initialConfig;
-    _enabled = c?.enabled ?? true;
-    _sheExclusive = c?.sheExclusive ?? widget.tool.sheExclusive;
     _paramOverrides = Map.from(c?.parameterOverrides ?? {});
     _noteController.text = c?.note ?? '';
 
@@ -3243,40 +3144,7 @@ class _ToolConfigSheetState extends State<_ToolConfigSheet> {
     );
   }
 
-  Widget _buildToggles(ColorScheme cs) => Column(children: [
-        SwitchListTile(
-          contentPadding: EdgeInsets.zero,
-          title: const Text('Enable globally', style: TextStyle(fontSize: 14)),
-          subtitle: Text('When disabled, agents cannot use this tool',
-              style: TextStyle(fontSize: 12, color: cs.outline)),
-          value: _enabled,
-          onChanged: (v) => setState(() => _enabled = v),
-        ),
-        SwitchListTile(
-          contentPadding: EdgeInsets.zero,
-          title: Row(children: [
-            const Text('She only', style: TextStyle(fontSize: 14)),
-            const SizedBox(width: 6),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
-              decoration: BoxDecoration(
-                color: cs.tertiary.withValues(alpha: 0.12),
-                borderRadius: BorderRadius.circular(4),
-              ),
-              child: Text('She',
-                  style: TextStyle(
-                      fontSize: 10,
-                      color: cs.tertiary,
-                      fontWeight: FontWeight.w500)),
-            ),
-          ]),
-          subtitle: Text(
-              'Only She can use this tool (not other agents)',
-              style: TextStyle(fontSize: 12, color: cs.outline)),
-          value: _sheExclusive,
-          onChanged: (v) => setState(() => _sheExclusive = v),
-        ),
-      ]);
+  Widget _buildToggles(ColorScheme cs) => const SizedBox.shrink();
 
   List<Widget> _buildConfigFields(ColorScheme cs) {
     final widgets = <Widget>[];
@@ -3605,15 +3473,13 @@ class _ToolConfigSheetState extends State<_ToolConfigSheet> {
         }
       }
       final note = _noteController.text.trim();
-      await widget.service.saveToolConfig(
-        widget.tool.name,
-        parameterOverrides: newOverrides.isEmpty ? null : newOverrides,
-        clearParameterOverrides: newOverrides.isEmpty,
-        enabled: _enabled,
-        sheExclusive: _sheExclusive,
-        note: note.isEmpty ? null : note,
-        clearNote: note.isEmpty,
-      );
+    await widget.service.saveToolConfig(
+      widget.tool.name,
+      parameterOverrides: newOverrides.isEmpty ? null : newOverrides,
+      clearParameterOverrides: newOverrides.isEmpty,
+      note: note.isEmpty ? null : note,
+      clearNote: note.isEmpty,
+    );
       if (mounted) {
         Navigator.pop(context);
         widget.onChanged();
@@ -3650,8 +3516,6 @@ class _CliCommandConfigSheet extends StatefulWidget {
 }
 
 class _CliCommandConfigSheetState extends State<_CliCommandConfigSheet> {
-  late bool _enabled;
-  late bool _sheExclusive;
   late Map<String, dynamic> _paramOverrides;
 
   String? _currentApiKey;
@@ -3667,8 +3531,6 @@ class _CliCommandConfigSheetState extends State<_CliCommandConfigSheet> {
   void initState() {
     super.initState();
     // 同步初始化（用默认值），等异步加载完成后再覆盖
-    _enabled = true;
-    _sheExclusive = false;
     _paramOverrides = {};
     _initFieldControllersFromDefaults();
     _initFromConfig();
@@ -3696,8 +3558,6 @@ class _CliCommandConfigSheetState extends State<_CliCommandConfigSheet> {
     final c = await widget.service.getToolConfig(widget.schema.toolName);
     if (!mounted) return;
     setState(() {
-      _enabled = c?.enabled ?? true;
-      _sheExclusive = c?.sheExclusive ?? false;
       _paramOverrides = Map.from(c?.parameterOverrides ?? {});
       _noteController.text = c?.note ?? '';
 
@@ -4123,15 +3983,13 @@ class _CliCommandConfigSheetState extends State<_CliCommandConfigSheet> {
         }
       }
       final note = _noteController.text.trim();
-      await widget.service.saveToolConfig(
-        widget.schema.toolName,
-        parameterOverrides: newOverrides.isEmpty ? null : newOverrides,
-        clearParameterOverrides: newOverrides.isEmpty,
-        enabled: _enabled,
-        sheExclusive: _sheExclusive,
-        note: note.isEmpty ? null : note,
-        clearNote: note.isEmpty,
-      );
+    await widget.service.saveToolConfig(
+      widget.schema.toolName,
+      parameterOverrides: newOverrides.isEmpty ? null : newOverrides,
+      clearParameterOverrides: newOverrides.isEmpty,
+      note: note.isEmpty ? null : note,
+      clearNote: note.isEmpty,
+    );
       if (mounted) {
         Navigator.pop(context);
         widget.onChanged();

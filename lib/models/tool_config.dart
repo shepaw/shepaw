@@ -1,6 +1,9 @@
 import 'dart:convert';
 
-/// 工具全局配置 - 存储单个工具的配置元数据（API Key 单独存于 SecureKeyManager）
+/// 工具配置 - 存储单个工具的参数覆盖和 API Key 信息
+/// 
+/// 注意：权限控制（enabled/sheOnly）已迁移到 CliCommandConfigService，
+/// 使用 CliCommandConfig 的 globalEnabled 和 sheOnly 字段管理。
 class ToolConfig {
   /// 工具名称（如 'web_search', 'web_fetch'），同时作为主键
   final String toolName;
@@ -11,14 +14,6 @@ class ToolConfig {
   /// 工具参数覆盖（JSON 对象，覆盖 LLM 调用时传入的默认值）
   /// 例如: { "timeout": 60, "max_results": 20 }
   final Map<String, dynamic>? parameterOverrides;
-
-  /// 全局启用/禁用开关
-  final bool enabled;
-
-  /// She 专属开关
-  ///
-  /// true = 仅 She 可调用此工具；false = 所有 Agent 均可调用（默认）
-  final bool sheExclusive;
 
   /// 备注说明
   final String? note;
@@ -33,8 +28,6 @@ class ToolConfig {
     required this.toolName,
     this.hasApiKey = false,
     this.parameterOverrides,
-    this.enabled = true,
-    this.sheExclusive = false,
     this.note,
     required this.createdAt,
     required this.updatedAt,
@@ -44,8 +37,6 @@ class ToolConfig {
   ToolConfig copyWith({
     bool? hasApiKey,
     Map<String, dynamic>? parameterOverrides,
-    bool? enabled,
-    bool? sheExclusive,
     String? note,
     int? updatedAt,
     // 使用 sentinel 表示显式清空
@@ -58,8 +49,6 @@ class ToolConfig {
       parameterOverrides: clearParameterOverrides
           ? null
           : (parameterOverrides ?? this.parameterOverrides),
-      enabled: enabled ?? this.enabled,
-      sheExclusive: sheExclusive ?? this.sheExclusive,
       note: clearNote ? null : (note ?? this.note),
       createdAt: createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
@@ -74,8 +63,6 @@ class ToolConfig {
         'parameter_overrides': parameterOverrides != null
             ? jsonEncode(parameterOverrides)
             : null,
-        'enabled': enabled ? 1 : 0,
-        'she_exclusive': sheExclusive ? 1 : 0,
         'note': note,
         'created_at': createdAt,
         'updated_at': updatedAt,
@@ -94,8 +81,6 @@ class ToolConfig {
       toolName: json['tool_name'] as String,
       hasApiKey: (json['has_api_key'] as int? ?? 0) == 1,
       parameterOverrides: overrides,
-      enabled: (json['enabled'] as int? ?? 1) == 1,
-      sheExclusive: (json['she_exclusive'] as int? ?? 0) == 1,
       note: json['note'] as String?,
       createdAt: json['created_at'] as int,
       updatedAt: json['updated_at'] as int,
@@ -104,6 +89,5 @@ class ToolConfig {
 
   @override
   String toString() =>
-      'ToolConfig(toolName: $toolName, hasApiKey: $hasApiKey, '
-      'enabled: $enabled, sheExclusive: $sheExclusive)';
+      'ToolConfig(toolName: $toolName, hasApiKey: $hasApiKey)';
 }

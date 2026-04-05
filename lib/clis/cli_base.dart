@@ -5,6 +5,7 @@ import '../models/cli_config_field.dart';
 import '../models/command_config_schema.dart';
 import '../models/remote_agent.dart';
 import '../services/tool_config_service.dart';
+import '../services/cli_command_config_service.dart';
 
 /// Minimal interface for sending messages as She.
 /// Implemented by ChatService to avoid circular imports.
@@ -60,8 +61,52 @@ abstract class CliCommand {
   /// flags: 从 CLI 解析的键值对（如 {field: "name", value: "小明"}）
   Future<Map<String, dynamic>> execute(Map<String, String> flags);
 
+  /// 检查命令是否可用（所有必填配置字段是否已完整配置）
+  ///
+  /// - 如果命令无 [configSchema]，返回 (true, null)（无需配置，总是可用）
+  /// - 如果有必填字段（[CommandConfigSchema.requiredFields]），检查是否已填
+  ///   - apiKey 类型字段 → 查 SecureStorage
+  ///   - 其他必填字段 → 查 parameterOverrides
+  ///
+  /// 返回 `(isAvailable, reason)`：
+  /// - `isAvailable == true` 时 reason 为 null
+  /// - `isAvailable == false` 时 reason 说明第一个未满足的必填字段
+  ///
+  /// 子类可覆盖以实现自定义可用性检查（建议调用 `super.checkAvailability()`）。
+  Future<(bool, String?)> checkAvailability() async {
+    final schema = configSchema;
+    if (schema == null) return (true, null);
+
+    final requiredFields = schema.requiredFields;
+    if (requiredFields.isEmpty) return (true, null);
+
+    final service = ToolConfigService.instance;
+    final toolName = schema.toolName;
+    final config = await service.getToolConfig(toolName);
+
+    for (final field in requiredFields) {
+      if (field.type == CliConfigFieldType.apiKey) {
+        final apiKey = await service.getToolApiKey(toolName);
+        if (apiKey == null || apiKey.isEmpty) {
+          return (false, 'Missing required config: ${field.label} (${field.key})');
+        }
+      } else {
+        final value = config?.parameterOverrides?[field.key];
+        if (value == null || value.toString().isEmpty) {
+          return (false, 'Missing required config: ${field.label} (${field.key})');
+        }
+      }
+    }
+
+    return (true, null);
+  }
+
   /// 返回命令帮助信息
-  /// 子类可覆盖以提供详细的 flags 文档
+  ///
+  /// 子类可覆盖以提供详细的 flags 文档（建议调用 `super.getHelp()` 合并）。
+  /// 注意：此方法为同步，不含可用性检查。
+  /// 框架在 getHelp 路由触发时会自动追加 available / reason_unavailable 字段，
+  /// 子类无需手动处理。
   Map<String, dynamic> getHelp() => {
         'command': name,
         'description': description,
@@ -168,7 +213,6 @@ abstract class CliCommand {
       'tool_name': config.toolName,
       'display_name': schema.displayName,
       'configured': true,
-      'enabled': config.enabled,
       'has_api_key': config.hasApiKey,
       'api_key_status': config.hasApiKey ? '*** (configured)' : 'not set',
       'parameter_overrides': config.parameterOverrides,
@@ -256,7 +300,8 @@ abstract class CliCommand {
 
   Future<Map<String, dynamic>> _configActionSetEnabled(
       String toolName, bool enabled, ToolConfigService service) async {
-    await service.saveToolConfig(toolName, enabled: enabled);
+    final commandConfigService = CliCommandConfigService.instance;
+    await commandConfigService.saveConfig(toolName, globalEnabled: enabled);
     return {
       'tool_name': toolName,
       'action': enabled ? 'enable' : 'disable',
@@ -408,9 +453,9 @@ abstract class CliNamespace {
         ? subcommand.split('.').first
         : (subNamespaces.containsKey(subcommand) ? subcommand : null);
     if (firstSegment != null && subNamespaces.containsKey(firstSegment)) {
-      // 直接访问 sub-namespace 本身（无 action）→ 返回该 sub-namespace 帮助
+      // 直接访问 sub-namespace 本身（无 action）→ 返回该 sub-namespace 帮助（含可用性）
       if (subcommand == firstSegment) {
-        return subNamespaces[firstSegment]!.getHelp();
+        return subNamespaces[firstSegment]!.getHelpAsync();
       }
       final action = subcommand.substring(firstSegment.length + 1);
       return subNamespaces[firstSegment]!.execute(action, flags);
@@ -418,7 +463,7 @@ abstract class CliNamespace {
 
     // ── 2. help ───────────────────────────────────────────────────────────────
     if (subcommand.isEmpty || subcommand == 'help') {
-      return getHelp();
+      return getHelpAsync();
     }
 
     // ── 3. 含 "." → 分层路由 ──────────────────────────────────────────────────
@@ -452,14 +497,14 @@ abstract class CliNamespace {
     final cmd = commands[subcommand];
     if (cmd == null) {
       if (flags.containsKey('help') || flags.containsKey('h')) {
-        return getHelp();
+        return getHelpAsync();
       }
       return _unknownSubcommand(subcommand);
     }
 
     // 找到命令 → 检查特殊 flags
     if (flags.containsKey('help') || flags.containsKey('h')) {
-      return cmd.getHelp();
+      return _cmdHelpWithAvailability(cmd);
     }
 
     // --config flag：进入配置管理（与 --help 对称）
@@ -470,9 +515,70 @@ abstract class CliNamespace {
     return cmd.execute(flags);
   }
 
-  /// 生成帮助信息
-  /// 默认实现自动从 commands + subNamespaces 聚合（仅展示当前平台可用的）
-  /// 子类可覆盖以添加额外字段（建议调用 super.getHelp() 合并）
+  /// 生成帮助信息（异步版本，含命令可用性检查）
+  ///
+  /// 对所有 [commands] 调用 [CliCommand.checkAvailability]，
+  /// 在每个命令条目中追加 `available` 字段（true/false）；
+  /// 若不可用则同时追加 `reason_unavailable` 字段。
+  ///
+  /// 子命名空间（[subNamespaces]）不做异步可用性检查，仅列出 description。
+  ///
+  /// 子类可覆盖以添加额外字段（建议调用 `super.getHelpAsync()` 合并）。
+  Future<Map<String, dynamic>> getHelpAsync() async {
+    final result = <String, dynamic>{
+      'namespace': namespace,
+      'description': description,
+    };
+
+    if (usage.isNotEmpty) {
+      result['usage'] = usage;
+    }
+
+    // 自动聚合 sub-namespaces
+    if (subNamespaces.isNotEmpty) {
+      result['sub_namespaces'] = {
+        for (final entry in subNamespaces.entries)
+          entry.key: entry.value.description,
+      };
+    }
+
+    // 自动聚合 commands（含可用性检查）
+    if (commands.isNotEmpty) {
+      final commandMap = <String, dynamic>{};
+      for (final entry in commands.entries) {
+        final cmd = entry.value;
+        final (isAvailable, reason) = await cmd.checkAvailability();
+        final cmdInfo = <String, dynamic>{
+          'description': cmd.description,
+          'available': isAvailable,
+          if (!isAvailable && reason != null) 'reason_unavailable': reason,
+        };
+        commandMap[entry.key] = cmdInfo;
+      }
+      result['commands'] = commandMap;
+    }
+
+    // 自动生成 examples
+    final examples = <String>[];
+    for (final cmd in commands.values) {
+      if (cmd.usage.isNotEmpty) examples.add(cmd.usage);
+    }
+    for (final ns in subNamespaces.values) {
+      if (ns.usage.isNotEmpty) examples.add(ns.usage);
+    }
+    if (examples.isNotEmpty) {
+      result['examples'] = examples;
+    }
+
+    return result;
+  }
+
+  /// 生成帮助信息（同步版本，不含可用性检查）
+  ///
+  /// 仅在需要同步返回时使用（如内部路由、旧版兼容）。
+  /// 绝大多数场景应优先使用 [getHelpAsync]，以便 Agent 获得完整的可用性信息。
+  ///
+  /// 子类可覆盖以添加额外字段（建议调用 `super.getHelp()` 合并）。
   Map<String, dynamic> getHelp() {
     final result = <String, dynamic>{
       'namespace': namespace,
@@ -511,6 +617,21 @@ abstract class CliNamespace {
       result['examples'] = examples;
     }
 
+    return result;
+  }
+
+  /// 单个命令的 help（含可用性检查）
+  ///
+  /// 取 [cmd.getHelp()] 的同步结果，再异步追加 `available` / `reason_unavailable` 字段。
+  Future<Map<String, dynamic>> _cmdHelpWithAvailability(CliCommand cmd) async {
+    final result = Map<String, dynamic>.from(cmd.getHelp());
+    final (isAvailable, reason) = await cmd.checkAvailability();
+    result['available'] = isAvailable;
+    if (!isAvailable && reason != null) {
+      result['reason_unavailable'] = reason;
+      result['config_action'] =
+          'Use: ${cmd.usage.isNotEmpty ? cmd.usage : 'shepaw $namespace ${cmd.name}'} --config --action set --key <field> --value <value>';
+    }
     return result;
   }
 
