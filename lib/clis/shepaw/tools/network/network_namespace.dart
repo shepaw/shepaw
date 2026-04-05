@@ -1,5 +1,5 @@
 import '../../../cli_base.dart';
-import '../../../../services/os_tool_registry.dart';
+import '../../os/os_tool_registry.dart';
 
 /// Network 工具子命名空间 - 网络工具列表与文档
 ///

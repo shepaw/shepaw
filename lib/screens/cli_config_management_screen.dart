@@ -7,7 +7,7 @@ import '../clis/cli_base.dart';
 import '../clis/shepaw/shepaw_cli.dart' show ShepawCLI;
 import '../clis/shepaw/context/context_namespace.dart';
 import '../clis/shepaw/chat/chat_namespace.dart';
-import '../clis/shepaw/tools_namespace.dart';
+import '../clis/shepaw/tools/tools_namespace.dart';
 import '../clis/shepaw/skills_namespace.dart';
 import '../clis/shepaw/meta/meta_namespace.dart';
 import '../clis/shepaw/help_namespace.dart';
@@ -18,7 +18,7 @@ import '../models/cli_config_field.dart';
 import '../models/command_config_schema.dart';
 import '../models/tool_config.dart';
 import '../services/cli_command_config_service.dart';
-import '../services/os_tool_registry.dart';
+import '../clis/shepaw/os/os_tool_registry.dart';
 import '../services/tool_config_service.dart';
 
 // ─── 顶层命名空间描述 ──────────────────────────────────────────────────────────

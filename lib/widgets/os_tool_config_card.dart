@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import '../services/os_tool_registry.dart';
+import '../clis/shepaw/os/os_tool_registry.dart';
 import '../l10n/app_localizations.dart';
 
 /// Configuration card for enabling/disabling individual OS tools

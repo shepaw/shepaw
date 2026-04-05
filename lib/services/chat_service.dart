@@ -28,7 +28,7 @@ import '../providers/notification_provider.dart';
 import 'foreground_task_service.dart';
 import 'logger_service.dart';
 import 'flow_executor.dart';
-import 'os_tool_executor.dart' as os_exec;
+import '../clis/shepaw/os/os_executor.dart' as os_exec;
 import 'she_service.dart';
 import '../clis/shepaw/shepaw_cli.dart';
 import '../clis/cli_base.dart';

@@ -1,5 +1,5 @@
 import '../../cli_base.dart';
-import '../../../services/os_tool_registry.dart';
+import '../os/os_tool_registry.dart';
 import '../../../services/skill_registry.dart';
 import '../../../services/ui_component_registry.dart';
 import '../../../services/model_registry.dart';

@@ -10,8 +10,8 @@ import 'dart:io';
 import 'package:flutter/services.dart' show Clipboard, ClipboardData;
 import 'package:url_launcher/url_launcher.dart';
 
-import 'tool_config_service.dart';
-import 'network/network_service.dart';
+import '../../../services/tool_config_service.dart';
+import '../../../services/network/network_service.dart';
 
 // ============================================================================
 // Risk levels

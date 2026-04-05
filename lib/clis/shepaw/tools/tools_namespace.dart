@@ -1,6 +1,6 @@
-import '../cli_base.dart';
-import 'tools/network/network_namespace.dart';
-import 'tools/web/web_namespace.dart';
+import '../../cli_base.dart';
+import 'network/network_namespace.dart';
+import 'web/web_namespace.dart';
 
 /// [TOOLING 层] tools 命名空间 - Web 工具 + 工具配置管理
 ///
@@ -15,7 +15,6 @@ import 'tools/web/web_namespace.dart';
 ///   shepaw tools network.detail --name web_search
 ///   shepaw tools web.search --query "..." [--limit n]
 ///   shepaw tools web.fetch --url "..." [--format ...] [--timeout n]
-///   shepaw tools web.config                         — 查看所有 web 工具配置
 ///   shepaw tools web.search.config                  — 管理 web_search 配置
 ///   shepaw tools web.fetch.config                   — 管理 web_fetch 配置
 ///   shepaw tools web.search --config                — 快捷查看 web_search 配置

@@ -1,5 +1,5 @@
 import 'dart:async';
-import '../os_tool_executor.dart' as os_exec;
+import '../../clis/shepaw/os/os_executor.dart' as os_exec;
 
 /// Tracks an in-flight ACP task so it can continue in the background
 /// when the user navigates away from the chat screen.

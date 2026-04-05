@@ -1,6 +1,6 @@
 import '../clis/shepaw/context/context_namespace.dart';
 import '../clis/shepaw/chat/chat_namespace.dart';
-import '../clis/shepaw/tools_namespace.dart';
+import '../clis/shepaw/tools/tools_namespace.dart';
 import '../clis/shepaw/skills_namespace.dart';
 import '../clis/shepaw/meta/meta_namespace.dart';
 import '../clis/shepaw/help_namespace.dart';

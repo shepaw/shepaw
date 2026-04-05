@@ -5,23 +5,23 @@
 ///
 /// 工具名称规范：
 ///   - [name]    内部名 / 执行器分派键（如 `shell_exec`）
-///   - [cliPath] CLI 分层路径，对 LLM 可见（如 `os.shell.exec`）
+///   - [cliPath] CLI 分层路径，对 LLM 可见（如 `os.command.exec`）
 ///   LLM function-calling 使用 cliPath；runTool() 使用 name。
 library;
 
 import 'dart:io' show Platform;
 
-import '../models/cli_config_field.dart';
+import '../../../models/cli_config_field.dart';
 
 /// Describes a single OS tool that can be invoked by a local LLM agent.
 class OsToolDefinition {
   /// Internal tool name used by [runTool] dispatch (e.g. `shell_exec`).
   final String name;
 
-  /// Hierarchical CLI path exposed to the LLM (e.g. `os.shell.exec`).
+  /// Hierarchical CLI path exposed to the LLM (e.g. `os.command.exec`).
   ///
   /// Format: `<namespace>.<sub-namespace>.<action>`
-  /// Maps to CLI: `shepaw tools <cliPath>`
+  /// Maps to CLI: `shepaw os <cliPath>`
   final String cliPath;
 
   /// Human-readable description shown to the LLM and in config UI.
@@ -40,15 +40,9 @@ class OsToolDefinition {
   final String category;
 
   /// User-configurable fields for this tool.
-  ///
-  /// Empty list means the tool needs no user configuration (only enabled/sheExclusive toggles).
-  /// Non-empty list triggers a "Configure" entry in the CLI config UI, where each field
-  /// is rendered as an appropriate form widget based on its [CliConfigFieldType].
   final List<CliConfigField> configSpec;
 
   /// Whether this tool is restricted to She only by default.
-  ///
-  /// The user can override this per-tool in the config UI (persisted to [ToolConfig.sheExclusive]).
   final bool sheExclusive;
 
   const OsToolDefinition({
@@ -65,23 +59,30 @@ class OsToolDefinition {
 }
 
 /// Central registry for all OS tool definitions.
+///
+/// 工具定义集中在此处维护，各 CLI 子命名空间（CommandNamespace、FileNamespace 等）
+/// 直接调用 runTool() 执行，注册表主要用于 LLM schema 导出和工具发现。
 class OsToolRegistry {
   OsToolRegistry._();
   static final OsToolRegistry instance = OsToolRegistry._();
 
   // ---------------------------------------------------------------------------
-  // Tool definitions
+  // Platform sets (shorthand)
   // ---------------------------------------------------------------------------
 
   static const _desktop = {'macos', 'linux', 'windows'};
   static const _desktopAndroid = {'macos', 'linux', 'windows', 'android'};
   static const _all = {'macos', 'linux', 'windows', 'android', 'ios'};
 
+  // ---------------------------------------------------------------------------
+  // Tool definitions
+  // ---------------------------------------------------------------------------
+
   final List<OsToolDefinition> tools = const [
-    // ── Shell (command & system) ─────────────────────────────────────────────
+    // ── Command & System ──────────────────────────────────────────────────────
     OsToolDefinition(
       name: 'shell_exec',
-      cliPath: 'os.shell.exec',
+      cliPath: 'os.command.exec',
       description:
           'Execute a shell command on the local machine. '
           'Use for running terminal commands, scripts, and system utilities.',
@@ -98,8 +99,7 @@ class OsToolRegistry {
           },
           'working_dir': {
             'type': 'string',
-            'description':
-                "Working directory for the command (default: user's home)",
+            'description': "Working directory for the command (default: user's home)",
           },
         },
         'required': ['command'],
@@ -110,24 +110,15 @@ class OsToolRegistry {
     ),
     OsToolDefinition(
       name: 'system_info',
-      cliPath: 'os.shell.info',
+      cliPath: 'os.command.sysinfo',
       description: 'Get system information (OS, CPU, memory, disk, etc.).',
       parameterSchema: {
         'type': 'object',
         'properties': {
           'category': {
             'type': 'string',
-            'enum': [
-              'overview',
-              'cpu',
-              'memory',
-              'disk',
-              'network',
-              'battery',
-              'displays',
-            ],
-            'description':
-                "Category of system info to retrieve (default: 'overview')",
+            'enum': ['overview', 'cpu', 'memory', 'disk', 'network', 'battery', 'displays'],
+            'description': "Category of system info to retrieve (default: 'overview')",
           },
         },
       },
@@ -144,14 +135,8 @@ class OsToolRegistry {
       parameterSchema: {
         'type': 'object',
         'properties': {
-          'path': {
-            'type': 'string',
-            'description': 'Absolute path to the file to read',
-          },
-          'max_bytes': {
-            'type': 'integer',
-            'description': 'Maximum bytes to read (default: 10240)',
-          },
+          'path': {'type': 'string', 'description': 'Absolute path to the file to read'},
+          'max_bytes': {'type': 'integer', 'description': 'Maximum bytes to read (default: 10240)'},
         },
         'required': ['path'],
       },
@@ -162,23 +147,15 @@ class OsToolRegistry {
     OsToolDefinition(
       name: 'file_write',
       cliPath: 'os.file.write',
-      description:
-          'Write content to a file. Creates the file if it does not exist.',
+      description: 'Write content to a file. Creates the file if it does not exist.',
       parameterSchema: {
         'type': 'object',
         'properties': {
-          'path': {
-            'type': 'string',
-            'description': 'Absolute path to the file to write',
-          },
-          'content': {
-            'type': 'string',
-            'description': 'Content to write to the file',
-          },
+          'path': {'type': 'string', 'description': 'Absolute path to the file to write'},
+          'content': {'type': 'string', 'description': 'Content to write to the file'},
           'append': {
             'type': 'boolean',
-            'description':
-                'If true, append to existing file instead of overwriting (default: false)',
+            'description': 'If true, append to existing file instead of overwriting (default: false)',
           },
         },
         'required': ['path', 'content'],
@@ -194,15 +171,10 @@ class OsToolRegistry {
       parameterSchema: {
         'type': 'object',
         'properties': {
-          'path': {
-            'type': 'string',
-            'description':
-                'Absolute path to the file or directory to delete',
-          },
+          'path': {'type': 'string', 'description': 'Absolute path to the file or directory to delete'},
           'recursive': {
             'type': 'boolean',
-            'description':
-                'If true, delete directories recursively (default: false)',
+            'description': 'If true, delete directories recursively (default: false)',
           },
         },
         'required': ['path'],
@@ -218,14 +190,8 @@ class OsToolRegistry {
       parameterSchema: {
         'type': 'object',
         'properties': {
-          'source': {
-            'type': 'string',
-            'description': 'Absolute path of the source file or directory',
-          },
-          'destination': {
-            'type': 'string',
-            'description': 'Absolute path of the destination',
-          },
+          'source': {'type': 'string', 'description': 'Absolute path of the source file or directory'},
+          'destination': {'type': 'string', 'description': 'Absolute path of the destination'},
         },
         'required': ['source', 'destination'],
       },
@@ -240,18 +206,11 @@ class OsToolRegistry {
       parameterSchema: {
         'type': 'object',
         'properties': {
-          'path': {
-            'type': 'string',
-            'description': 'Absolute path to the directory to list',
-          },
-          'show_hidden': {
-            'type': 'boolean',
-            'description': 'Include hidden files (default: false)',
-          },
+          'path': {'type': 'string', 'description': 'Absolute path to the directory to list'},
+          'show_hidden': {'type': 'boolean', 'description': 'Include hidden files (default: false)'},
           'detail': {
             'type': 'boolean',
-            'description':
-                'Show detailed info (size, modified time) (default: false)',
+            'description': 'Show detailed info (size, modified time) (default: false)',
           },
         },
         'required': ['path'],
@@ -271,8 +230,7 @@ class OsToolRegistry {
         'properties': {
           'app_name': {
             'type': 'string',
-            'description':
-                "Name of the application to open (e.g., 'Safari', 'Terminal')",
+            'description': "Name of the application to open (e.g., 'Safari', 'Terminal')",
           },
         },
         'required': ['app_name'],
@@ -284,14 +242,11 @@ class OsToolRegistry {
     OsToolDefinition(
       name: 'url_open',
       cliPath: 'os.app.url',
-      description: "Open a URL in the default browser.",
+      description: 'Open a URL in the default browser.',
       parameterSchema: {
         'type': 'object',
         'properties': {
-          'url': {
-            'type': 'string',
-            'description': 'The URL to open',
-          },
+          'url': {'type': 'string', 'description': 'The URL to open'},
         },
         'required': ['url'],
       },
@@ -299,8 +254,6 @@ class OsToolRegistry {
       supportedPlatforms: _all,
       category: 'app',
     ),
-
-    // ── Screenshot (grouped under app) ───────────────────────────────────────
     OsToolDefinition(
       name: 'screenshot',
       cliPath: 'os.app.screenshot',
@@ -310,13 +263,11 @@ class OsToolRegistry {
         'properties': {
           'region': {
             'type': 'string',
-            'description':
-                "Screen region: 'full' (default), 'window', or 'x,y,w,h' for custom rectangle",
+            'description': "Screen region: 'full' (default), 'window', or 'x,y,w,h'",
           },
           'save_path': {
             'type': 'string',
-            'description':
-                'Path to save the screenshot (default: temp file)',
+            'description': 'Path to save the screenshot (default: temp file)',
           },
         },
       },
@@ -330,10 +281,7 @@ class OsToolRegistry {
       name: 'clipboard_read',
       cliPath: 'os.clipboard.read',
       description: 'Read the current contents of the clipboard.',
-      parameterSchema: {
-        'type': 'object',
-        'properties': {},
-      },
+      parameterSchema: {'type': 'object', 'properties': {}},
       defaultRiskLevel: 'safe',
       supportedPlatforms: _all,
       category: 'clipboard',
@@ -345,10 +293,7 @@ class OsToolRegistry {
       parameterSchema: {
         'type': 'object',
         'properties': {
-          'text': {
-            'type': 'string',
-            'description': 'Text to copy to the clipboard',
-          },
+          'text': {'type': 'string', 'description': 'Text to copy to the clipboard'},
         },
         'required': ['text'],
       },
@@ -360,16 +305,13 @@ class OsToolRegistry {
     // ── macOS Only ───────────────────────────────────────────────────────────
     OsToolDefinition(
       name: 'applescript_exec',
-      cliPath: 'os.applescript.exec',
+      cliPath: 'os.macos.exec',
       description:
           'Execute an AppleScript. Useful for automating macOS applications and system features.',
       parameterSchema: {
         'type': 'object',
         'properties': {
-          'script': {
-            'type': 'string',
-            'description': 'The AppleScript code to execute',
-          },
+          'script': {'type': 'string', 'description': 'The AppleScript code to execute'},
         },
         'required': ['script'],
       },
@@ -390,8 +332,7 @@ class OsToolRegistry {
         'properties': {
           'filter': {
             'type': 'string',
-            'description':
-                'Filter processes by name (case-insensitive substring match)',
+            'description': 'Filter processes by name (case-insensitive substring match)',
           },
           'sort_by': {
             'type': 'string',
@@ -417,14 +358,10 @@ class OsToolRegistry {
       parameterSchema: {
         'type': 'object',
         'properties': {
-          'pid': {
-            'type': 'integer',
-            'description': 'The process ID to kill',
-          },
+          'pid': {'type': 'integer', 'description': 'The process ID to kill'},
           'force': {
             'type': 'boolean',
-            'description':
-                'If true, send SIGKILL instead of SIGTERM (default: false)',
+            'description': 'If true, send SIGKILL instead of SIGTERM (default: false)',
           },
         },
         'required': ['pid'],
@@ -442,10 +379,7 @@ class OsToolRegistry {
       parameterSchema: {
         'type': 'object',
         'properties': {
-          'pid': {
-            'type': 'integer',
-            'description': 'The process ID to inspect',
-          },
+          'pid': {'type': 'integer', 'description': 'The process ID to inspect'},
         },
         'required': ['pid'],
       },
@@ -462,95 +396,12 @@ class OsToolRegistry {
       parameterSchema: {
         'type': 'object',
         'properties': {
-          'pid': {
-            'type': 'integer',
-            'description': 'Filter connections by process ID (optional)',
-          },
+          'pid': {'type': 'integer', 'description': 'Filter connections by process ID (optional)'},
         },
       },
       defaultRiskLevel: 'safe',
       supportedPlatforms: _desktop,
       category: 'process',
-    ),
-
-    // ── Network (web) ────────────────────────────────────────────────────────
-    OsToolDefinition(
-      name: 'web_search',
-      cliPath: 'web.search',
-      description:
-          'Search the web and return a list of relevant results (title, URL, snippet). '
-          'Use when the user asks to look something up, find information, or research a topic online.',
-      parameterSchema: {
-        'type': 'object',
-        'properties': {
-          'query': {
-            'type': 'string',
-            'description': 'The search query',
-          },
-          'limit': {
-            'type': 'integer',
-            'description': 'Maximum number of results to return (default: 10)',
-          },
-        },
-        'required': ['query'],
-      },
-      defaultRiskLevel: 'safe',
-      supportedPlatforms: _all,
-      category: 'network',
-      configSpec: [
-        CliConfigField(
-          key: 'api_key',
-          label: 'API Key',
-          description:
-              'Brave Search API key (starts with BSA...) or Tavily API key (starts with tvly-). '
-              'The provider is auto-detected from the key prefix.',
-          type: CliConfigFieldType.apiKey,
-          required: true,
-        ),
-        CliConfigField(
-          key: 'max_results',
-          label: 'Max Results',
-          description: 'Maximum number of search results to return (default: 10).',
-          type: CliConfigFieldType.integer,
-          defaultValue: 10,
-        ),
-        CliConfigField(
-          key: 'timeout',
-          label: 'Timeout (seconds)',
-          description: 'Request timeout in seconds (default: 30).',
-          type: CliConfigFieldType.integer,
-          defaultValue: 30,
-        ),
-      ],
-    ),
-    OsToolDefinition(
-      name: 'web_fetch',
-      cliPath: 'web.fetch',
-      description:
-          'Fetch the content of a URL and return it as plain text or markdown. '
-          'Use when the user asks to read, summarize, or extract information from a specific webpage.',
-      parameterSchema: {
-        'type': 'object',
-        'properties': {
-          'url': {
-            'type': 'string',
-            'description': 'The URL to fetch',
-          },
-          'format': {
-            'type': 'string',
-            'enum': ['text', 'markdown', 'html'],
-            'description': 'Output format (default: markdown)',
-          },
-          'timeout': {
-            'type': 'integer',
-            'description': 'Request timeout in seconds (default: 30)',
-          },
-        },
-        'required': ['url'],
-      },
-      defaultRiskLevel: 'safe',
-      supportedPlatforms: _all,
-      category: 'network',
     ),
   ];
 
@@ -567,18 +418,16 @@ class OsToolRegistry {
   };
 
   /// 从 cliPath 解析为内部 name（用于 runTool 分派）。
-  /// 找不到则原样返回，保持向后兼容。
   String resolveToolName(String cliPathOrName) =>
       _cliPathToName[cliPathOrName] ?? cliPathOrName;
 
-  /// 从内部 name 获取 cliPath。找不到则原样返回。
+  /// 从内部 name 获取 cliPath。
   String toCliPath(String name) => _nameToCli[name] ?? name;
 
   // ---------------------------------------------------------------------------
   // Platform helpers
   // ---------------------------------------------------------------------------
 
-  /// Returns the current platform identifier.
   String get currentPlatform {
     if (Platform.isMacOS) return 'macos';
     if (Platform.isLinux) return 'linux';
@@ -588,24 +437,18 @@ class OsToolRegistry {
     return 'unknown';
   }
 
-  /// All tool names (internal).
   Set<String> get allToolNames => tools.map((t) => t.name).toSet();
-
-  /// All CLI paths.
   Set<String> get allCliPaths => tools.map((t) => t.cliPath).toSet();
 
-  /// Tool names supported on the current platform.
   Set<String> get platformToolNames =>
       tools
           .where((t) => t.supportedPlatforms.contains(currentPlatform))
           .map((t) => t.name)
           .toSet();
 
-  /// Whether [toolName] is a known OS tool (accepts name or cliPath).
   bool isOsTool(String toolName) =>
       tools.any((t) => t.name == toolName || t.cliPath == toolName);
 
-  /// Lookup a definition by name or cliPath, or null.
   OsToolDefinition? getDefinition(String toolNameOrCliPath) {
     for (final t in tools) {
       if (t.name == toolNameOrCliPath || t.cliPath == toolNameOrCliPath) {
@@ -616,13 +459,9 @@ class OsToolRegistry {
   }
 
   // ---------------------------------------------------------------------------
-  // LLM tool formats (filtered by platform + enabled set)
+  // LLM tool formats
   // ---------------------------------------------------------------------------
 
-  /// Returns OS tools in OpenAI function-calling format, filtered by
-  /// current platform and the user-enabled set.
-  ///
-  /// LLM 看到的 function name 是 [cliPath]（如 `os.shell.exec`）。
   List<Map<String, dynamic>> openAITools({Set<String>? enabledTools}) {
     return _filteredTools(enabledTools)
         .map((t) => <String, dynamic>{
@@ -636,9 +475,6 @@ class OsToolRegistry {
         .toList();
   }
 
-  /// Returns OS tools in Claude (Anthropic) format.
-  ///
-  /// LLM 看到的 tool name 是 [cliPath]（如 `os.shell.exec`）。
   List<Map<String, dynamic>> claudeTools({Set<String>? enabledTools}) {
     return _filteredTools(enabledTools)
         .map((t) => <String, dynamic>{
@@ -649,16 +485,9 @@ class OsToolRegistry {
         .toList();
   }
 
-  /// System prompt suffix describing available OS tools.
   String systemPromptSuffix(Set<String> enabledTools) =>
       systemPromptSuffixLayered(enabledTools, 'summary');
 
-  /// Layered system prompt suffix for OS tools.
-  ///
-  /// [level] controls verbosity:
-  /// - `'names_only'`: Only tool CLI paths — minimal context.
-  /// - `'summary'`: CLI path + one-liner (default, ~50 % tokens vs full).
-  /// - `'full'`: Complete description without truncation.
   String systemPromptSuffixLayered(Set<String> enabledTools, String level) {
     final filtered = _filteredTools(enabledTools);
     if (filtered.isEmpty) return '';
@@ -668,7 +497,7 @@ class OsToolRegistry {
           return '- ${t.cliPath}';
         case 'full':
           return '- ${t.cliPath}: ${t.description}';
-        default: // 'summary'
+        default:
           return '- ${t.cliPath}: ${t.description.split('.').first.trim().toLowerCase()}';
       }
     }).join('\n');
@@ -691,13 +520,6 @@ IMPORTANT: These tools execute real actions on the user's device. Always confirm
 For file/command operations, prefer using these tools over describing steps in text.''';
   }
 
-  /// Returns a compact CLI-reference block that tells agents OS tools exist,
-  /// without enumerating all tool names or discovery commands.
-  ///
-  /// This is the default for non-She agents ([osToolsMode] == 'cli_reference').
-  /// Discovery commands (`tools os.list`, `tools os.detail`) are intentionally
-  /// omitted here — they are already listed in the Agent Meta CLI block
-  /// (`_buildAgentMetaCliBlock`) which is injected later in the prompt.
   String systemPromptCliReference(Set<String> enabledTools) {
     final filtered = _filteredTools(enabledTools);
     if (filtered.isEmpty) return '';
@@ -712,7 +534,6 @@ IMPORTANT: These tools execute real actions on the user's device. Always confirm
   // Grouping for UI
   // ---------------------------------------------------------------------------
 
-  /// Category labels (localized externally, these are keys).
   static const Map<String, String> categoryLabels = {
     'command': 'Command & System',
     'file': 'File Operations',
@@ -720,10 +541,8 @@ IMPORTANT: These tools execute real actions on the user's device. Always confirm
     'clipboard': 'Clipboard',
     'macos': 'macOS Only',
     'process': 'Process Management',
-    'network': 'Network & Web',
   };
 
-  /// Returns tools grouped by category, preserving definition order.
   Map<String, List<OsToolDefinition>> get toolsByCategory {
     final map = <String, List<OsToolDefinition>>{};
     for (final t in tools) {
@@ -740,7 +559,6 @@ IMPORTANT: These tools execute real actions on the user's device. Always confirm
     final platform = currentPlatform;
     return tools.where((t) {
       if (!t.supportedPlatforms.contains(platform)) return false;
-      // enabledTools 可以是 name 或 cliPath
       if (enabledTools != null &&
           !enabledTools.contains(t.name) &&
           !enabledTools.contains(t.cliPath)) {

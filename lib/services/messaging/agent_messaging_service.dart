@@ -13,7 +13,7 @@ import '../acp_agent_connection.dart';
 import '../agent_prompt_builder.dart';
 import '../local_llm_agent_service.dart';
 import '../task/task_models.dart';
-import '../os_tool_executor.dart' as os_exec;
+import '../../clis/shepaw/os/os_executor.dart' as os_exec;
 import '../skill_registry.dart';
 import '../model_registry.dart';
 import '../ui_component_registry.dart';

@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import '../services/os_tool_executor.dart';
+import '../clis/shepaw/os/os_executor.dart';
 import '../l10n/app_localizations.dart';
 
 /// Dialog for confirming high-risk OS tool operations.

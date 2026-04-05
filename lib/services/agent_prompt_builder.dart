@@ -4,7 +4,7 @@ import 'agent_memory_db_service.dart';
 import 'cognition_service.dart';
 import 'she_service.dart';
 import 'ui_component_registry.dart';
-import 'os_tool_registry.dart';
+import '../clis/shepaw/os/os_tool_registry.dart';
 import 'skill_registry.dart';
 import 'model_registry.dart';
 

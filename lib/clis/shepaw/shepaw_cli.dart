@@ -3,7 +3,7 @@ import '../cli_base.dart';
 import 'context/context_namespace.dart';
 import 'chat/chat_namespace.dart';
 import 'skills_namespace.dart';
-import 'tools_namespace.dart';
+import 'tools/tools_namespace.dart';
 import 'os/os_cli_namespace.dart';
 import 'meta/meta_namespace.dart';
 import 'help_namespace.dart';

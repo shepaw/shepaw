@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:io' show Platform;
 
 import '../models/cli_config_field.dart';
 import '../models/command_config_schema.dart';
@@ -26,6 +27,13 @@ abstract class CliCommand {
   /// 用法示例（如 'shepaw context profile.query [--fields name,age,...]'）
   /// 子类可覆盖；默认返回空字符串
   String get usage => '';
+
+  /// 支持的平台集合（如 {'macos', 'linux', 'windows'}, {'ios', 'android'}, 等）
+  /// 默认值：所有平台 {'macos', 'linux', 'windows', 'android', 'ios'}
+  /// 
+  /// 用于在运行时过滤不支持当前平台的命令。
+  /// 通过 Platform.isMacOS, Platform.isLinux 等检查当前平台。
+  Set<String> get supportedPlatforms => const {'macos', 'linux', 'windows', 'android', 'ios'};
 
   /// 命令的配置 Schema（可选）
   ///
@@ -342,28 +350,63 @@ abstract class CliNamespace {
   /// 子类可覆盖
   String get usage => '';
 
+  /// 支持的平台集合（如 {'macos', 'linux', 'windows'}, {'ios', 'android'}, 等）
+  /// 默认值：所有平台 {'macos', 'linux', 'windows', 'android', 'ios'}
+  ///
+  /// 用于在运行时过滤不支持当前平台的命名空间。
+  /// 注意：子命名空间（subNamespaces）和命令（commands）也有各自的平台过滤，
+  /// 此处声明的是该命名空间整体是否可用于当前平台。
+  Set<String> get supportedPlatforms => const {'macos', 'linux', 'windows', 'android', 'ios'};
+
   /// 所有扁平子命令（单层模式）；分层模式返回空 map
+  ///
+  /// 注册规范：
+  /// - key 直接取实例的 [CliCommand.name]，不要硬编码字符串
+  /// - 注册前用 [currentPlatformName] 判断平台，不支持则不加入
+  ///
+  /// 示例：
+  /// ```dart
+  /// @override
+  /// Map<String, CliCommand> get commands => {
+  ///   for (final cmd in [_FooCommand(), _BarCommand()])
+  ///     if (cmd.supportedPlatforms.contains(currentPlatformName)) cmd.name: cmd,
+  /// };
+  /// ```
   Map<String, CliCommand> get commands => {};
 
   /// 嵌套的 sub-namespace（分层模式）；扁平模式返回空 map
+  ///
+  /// 注册规范：
+  /// - key 直接取实例的 [CliNamespace.namespace]，不要硬编码字符串
+  /// - 注册前用 [currentPlatformName] 判断平台，不支持则不加入
+  ///
+  /// 示例：
+  /// ```dart
+  /// @override
+  /// Map<String, CliNamespace> get subNamespaces => {
+  ///   for (final ns in [FooNamespace.instance, BarNamespace.instance])
+  ///     if (ns.supportedPlatforms.contains(currentPlatformName)) ns.namespace: ns,
+  /// };
+  /// ```
   Map<String, CliNamespace> get subNamespaces => {};
 
   /// 执行子命令
   ///
   /// 路由优先级（从高到低）：
-  /// 1. 已知 sub-namespace 前缀 → 交给对应 CliNamespace 处理
+  /// 1. 已知 sub-namespace 前缀 → 交给对应 CliNamespace 处理（仅当支持当前平台）
   /// 2. 空字符串 / "help" → 返回当前命名空间帮助
   /// 3. 含 "." 的字符串 → 分层路由（sub-namespace.action）
   ///    - 特例：`<cmd>.config` → 路由到对应命令的 handleConfig()
-  /// 4. 其他 → 扁平路由查 commands
+  /// 4. 其他 → 扁平路由查 commands（仅当支持当前平台）
   ///    - `--help` flag → 返回命令帮助
   ///    - `--config` flag → 返回命令配置（需声明 configSchema）
   ///    - 否则 → 执行命令
   Future<Map<String, dynamic>> execute(
       String subcommand, Map<String, String> flags) async {
     // ── 1. 已知 sub-namespace 前缀：优先交给分层路由，避免 .config 提前消费 ──
-    final firstSegment =
-        subcommand.contains('.') ? subcommand.split('.').first : null;
+    final firstSegment = subcommand.contains('.')
+        ? subcommand.split('.').first
+        : (subNamespaces.containsKey(subcommand) ? subcommand : null);
     if (firstSegment != null && subNamespaces.containsKey(firstSegment)) {
       // 直接访问 sub-namespace 本身（无 action）→ 返回该 sub-namespace 帮助
       if (subcommand == firstSegment) {
@@ -428,7 +471,7 @@ abstract class CliNamespace {
   }
 
   /// 生成帮助信息
-  /// 默认实现自动从 commands + subNamespaces 聚合
+  /// 默认实现自动从 commands + subNamespaces 聚合（仅展示当前平台可用的）
   /// 子类可覆盖以添加额外字段（建议调用 super.getHelp() 合并）
   Map<String, dynamic> getHelp() {
     final result = <String, dynamic>{
@@ -456,7 +499,7 @@ abstract class CliNamespace {
       };
     }
 
-    // 自动生成 examples（从子命令和子空间的 usage 中收集）
+    // 自动生成 examples
     final examples = <String>[];
     for (final cmd in commands.values) {
       if (cmd.usage.isNotEmpty) examples.add(cmd.usage);
@@ -486,4 +529,18 @@ abstract class CliNamespace {
       'available_subcommands': commands.keys.toList(),
     };
   }
+}
+
+// ── 全局平台工具 ────────────────────────────────────────────────────────────────
+
+/// 返回当前运行平台的名称（统一格式，与 supportedPlatforms 中的值一致）
+///
+/// 返回值：'macos', 'linux', 'windows', 'android', 'ios' 之一
+String get currentPlatformName {
+  if (Platform.isMacOS) return 'macos';
+  if (Platform.isLinux) return 'linux';
+  if (Platform.isWindows) return 'windows';
+  if (Platform.isAndroid) return 'android';
+  if (Platform.isIOS) return 'ios';
+  return 'unknown';
 }
