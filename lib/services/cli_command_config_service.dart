@@ -1,5 +1,6 @@
 import '../models/cli_command_config.dart';
 import 'local_database_service.dart';
+import 'she_service.dart';
 
 /// CLI 命令配置业务服务
 ///
@@ -130,10 +131,12 @@ class CliCommandConfigService {
   /// - 任意层级 sheOnly=true 且非 She 则拒绝
   ///
   /// [commandId] 命令 ID（如 'context.profile.query'）
-  /// [isShe] 当前调用者是否为 She
+  /// [agentId] 当前调用者的 Agent ID（用于推断是否为 She）
   ///
   /// 返回 null 表示允许执行，返回 String 表示拒绝原因。
-  Future<String?> checkPermission(String commandId, {bool isShe = false}) async {
+  Future<String?> checkPermission(String commandId, {String agentId = SheService.sheId}) async {
+    final isShe = agentId == SheService.sheId;
+
     // 构建所有需要检查的层级 IDs
     // 例：'context.profile.query' → ['context', 'context.profile', 'context.profile.query']
     final segments = commandId.split('.');

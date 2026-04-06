@@ -1,24 +1,31 @@
 import '../../cli_base.dart';
+import '../../../services/she_service.dart';
 import 'query_command.dart';
 import 'write_command.dart';
 import 'append_command.dart';
 
-/// memory namespace - She's memory management
+/// memory namespace - Agent memory management
+///
+/// 支持所有 Agent 访问各自的记忆数据。
+/// agentId 由 ContextNamespace 在每次调用前注入。
 class MemoryNamespace extends CliNamespace {
   static final instance = MemoryNamespace._();
   MemoryNamespace._();
+
+  /// 当前执行命令的 Agent ID
+  String agentId = SheService.sheId;
 
   @override
   String get namespace => 'memory';
 
   @override
-  String get description => "She's memories (she_memory table)";
+  String get description => "Agent's memories (soul / long_term_memory / heartbeat / ...)";
 
   @override
   Map<String, CliCommand> get commands => {
-    'query': QueryCommand(),
-    'write': WriteCommand(),
-    'append': AppendCommand(),
+    'query': QueryCommand(agentId: agentId),
+    'write': WriteCommand(agentId: agentId),
+    'append': AppendCommand(agentId: agentId),
   };
 
   @override

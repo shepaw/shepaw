@@ -1,12 +1,15 @@
 import '../../cli_base.dart';
 import '../../../services/local_database_service.dart';
-import '../../../services/she_service.dart';
 
 /// 查询频道消息
 /// 支持两种定位方式：
 ///   --channel <id>        直接指定频道
-///   --agent  <agent_id>   自动找 She ↔ agent 最近的 DM 频道
+///   --agent  <agent_id>   自动找当前 Agent ↔ 目标 agent 最近的 DM 频道
 class ChatMessagesCommand extends CliCommand {
+  final String agentId;
+
+  ChatMessagesCommand({required this.agentId});
+
   final _db = LocalDatabaseService();
 
   @override
@@ -30,7 +33,7 @@ class ChatMessagesCommand extends CliCommand {
         'type': 'string',
       },
       'agent': {
-        'description': 'Agent ID — auto-finds the most recent DM channel with this agent',
+        'description': 'Agent ID — auto-finds the most recent DM channel between the current agent and this agent',
         'required': 'one of channel or agent required',
         'type': 'string',
       },
@@ -55,14 +58,15 @@ class ChatMessagesCommand extends CliCommand {
     String? channelId = flags['channel'];
 
     if (channelId == null || channelId.isEmpty) {
-      final agentId = flags['agent'];
-      if (agentId != null && agentId.isNotEmpty) {
+      final targetAgentId = flags['agent'];
+      if (targetAgentId != null && targetAgentId.isNotEmpty) {
+        // 使用注入的 agentId（执行命令的 agent）查找与目标 agent 的 DM 频道
         channelId = await _db.getLatestActiveChannelForUserAndAgent(
-            SheService.sheId, agentId);
+            agentId, targetAgentId);
         if (channelId == null || channelId.isEmpty) {
           return {
             'error':
-                'No channel found for agent $agentId. Start a conversation in ShePaw first or use --channel directly.'
+                'No channel found for agent $targetAgentId. Start a conversation in ShePaw first or use --channel directly.'
           };
         }
       } else {

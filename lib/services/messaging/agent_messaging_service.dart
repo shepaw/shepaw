@@ -719,7 +719,6 @@ class AgentMessagingService {
       final toolModelScenarios = agent.toolModelScenarios;
 
       // Build combined tool list (UI + OS + Skills + Tool Models + Paw for She)
-      final isShe = agent.isShe;
       final promptConfig = agent.promptStackConfig;
       final includeShepawCli = promptConfig.tools.includeShepawCli;
       final List<Map<String, dynamic>> combinedTools;
@@ -1086,7 +1085,7 @@ class AgentMessagingService {
                 }
               }
               // 命令被允许 → 继续执行
-              final result = await ShepawCLI.instance.execute(tc.arguments, isShe: isShe);
+              final result = await ShepawCLI.instance.execute(tc.arguments, agentId: agent.id);
               toolResults.add({
                 'tool_call_id': tc.id,
                 'name': tc.name,

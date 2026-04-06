@@ -36,7 +36,7 @@ class CognitionService {
 
   /// She 的 agentId（user_profile 的默认所有者）
   ///
-  /// 直接硬编码避免循环依赖 SheService。
+  /// 直接硬编码避免循环依赖（与 SheService.sheId 保持一致）。
   static const String _sheId = 'she-builtin-agent-001';
 
   /// user_profile 内部初始化标志位键名（与 SheService 保持一致）

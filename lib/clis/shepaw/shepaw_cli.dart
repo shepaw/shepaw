@@ -1,6 +1,7 @@
 import 'dart:convert';
 import '../cli_base.dart';
 import 'context/context_namespace.dart';
+import '../../services/she_service.dart';
 import 'chat/chat_namespace.dart';
 import 'skills_namespace.dart';
 import 'tools/tools_namespace.dart';
@@ -173,15 +174,19 @@ class ShepawCLI {
   /// 执行 shepaw 命令，返回 JSON 字符串结果（供 LLM tool_result 使用）
   ///
   /// [args] 命令参数（namespace / subcommand / flags）
-  /// [isShe] 当前执行者是否为 She（默认 false，She 调用时传 true）
+  /// [agentId] 当前执行命令的 Agent ID（默认为 She 的 ID）
   /// [isUiOperation] 是否来自 UI 操作（UI 操作跳过权限检查，默认 false）
-  Future<String> execute(Map<String, dynamic> args, {bool isShe = false, bool isUiOperation = false}) async {
+  Future<String> execute(
+    Map<String, dynamic> args, {
+    String agentId = SheService.sheId,
+    bool isUiOperation = false,
+  }) async {
     final namespace = args['namespace'] as String? ?? 'help';
     final subcommand = args['subcommand'] as String? ?? '';
     final flags = _parseFlags(args['flags']);
 
     LoggerService().info(
-        'shepaw $namespace ${subcommand.isNotEmpty ? subcommand : ""} $flags [isShe=$isShe]',
+        'shepaw $namespace ${subcommand.isNotEmpty ? subcommand : ""} $flags [agentId=$agentId]',
         tag: 'Paw');
 
     try {
@@ -202,11 +207,15 @@ class ShepawCLI {
       if (!isUiOperation) {
         final commandId = _buildCommandId(namespace, subcommand);
         final denyReason = await CliCommandConfigService.instance
-            .checkPermission(commandId, isShe: isShe);
+            .checkPermission(commandId, agentId: agentId);
         if (denyReason != null) {
           return jsonEncode({'error': denyReason, 'command': commandId});
         }
       }
+
+      // 透传当前执行者的 agentId 到支持多 agent 的命名空间
+      if (ns is ContextNamespace) ns.agentId = agentId;
+      if (ns is ChatNamespace) ns.agentId = agentId;
 
       final result = await ns.execute(subcommand, flags);
       return jsonEncode(result);
@@ -258,6 +267,73 @@ class ShepawCLI {
     if (raw is Map) {
       return raw.map((k, v) => MapEntry(k.toString(), v.toString()));
     }
+    // 兼容小模型将 flags 传为字符串的情况（如 "--query 你好 --limit 5"）
+    if (raw is String) {
+      return _parseFlagsFromString(raw);
+    }
     return {};
+  }
+
+  /// 解析命令行风格的 flags 字符串
+  ///
+  /// 支持格式：
+  ///   --key value        （标准双横线）
+  ///   -key value         （单横线）
+  ///   --key=value        （等号赋值）
+  ///   --key              （布尔 flag，值为空字符串）
+  ///
+  /// 示例：
+  ///   "--query 你好 --limit 5"   → {'query': '你好', 'limit': '5'}
+  ///   "--url https://x.com"     → {'url': 'https://x.com'}
+  ///   "--flag"                   → {'flag': ''}
+  Map<String, String> _parseFlagsFromString(String raw) {
+    final result = <String, String>{};
+    if (raw.trim().isEmpty) return result;
+
+    // 先尝试 JSON 对象解析（兼容 LLM 传 JSON 字符串的情况）
+    try {
+      final decoded = jsonDecode(raw);
+      if (decoded is Map) {
+        return decoded.map((k, v) => MapEntry(k.toString(), v.toString()));
+      }
+    } catch (_) {}
+
+    // 按 --key 或 -key 分割，提取 key-value 对
+    // 正则：匹配 --key=value 或 --key（后面跟空格+非--开头的值）
+    final tokens = raw.trim().split(RegExp(r'\s+'));
+    int i = 0;
+    while (i < tokens.length) {
+      final token = tokens[i];
+      if (token.startsWith('-')) {
+        final key = token.replaceFirst(RegExp(r'^--?'), '');
+        // --key=value 格式
+        if (key.contains('=')) {
+          final eq = key.indexOf('=');
+          result[key.substring(0, eq)] = key.substring(eq + 1);
+          i++;
+          continue;
+        }
+        // --key value 格式（下一个 token 不以 - 开头）
+        if (i + 1 < tokens.length && !tokens[i + 1].startsWith('-')) {
+          // 收集所有连续的非-flag token 作为 value（支持带空格的值）
+          final valueParts = <String>[];
+          int j = i + 1;
+          while (j < tokens.length && !tokens[j].startsWith('-')) {
+            valueParts.add(tokens[j]);
+            j++;
+          }
+          result[key] = valueParts.join(' ');
+          i = j;
+          continue;
+        }
+        // 布尔 flag（无值）
+        result[key] = '';
+        i++;
+      } else {
+        // 跳过非 flag token（可能是命令路径残留，如 "shepaw tools web.search"）
+        i++;
+      }
+    }
+    return result;
   }
 }

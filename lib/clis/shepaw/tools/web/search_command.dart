@@ -1,68 +1,45 @@
 import '../../../cli_base.dart';
-import '../../../../models/cli_config_field.dart';
-import '../../../../models/command_config_schema.dart';
-import '../../../../services/network/network_service.dart';
+import 'brave_search_command.dart';
+import 'tavily_search_command.dart';
 
-/// `shepaw tools web.search` — 执行网络搜索
+/// `shepaw tools web.search` — 通用网络搜索命令（自动选择搜索引擎）
 ///
-/// 调用 WebSearchService 搜索网页，返回标题、链接和摘要。
-/// API Key 由 ToolConfigService 从安全存储注入（web_search 工具配置）。
+/// 当用户运行 `shepaw tools web.search --query "keyword"` 时，自动选择
+/// 可用的搜索引擎（Brave 或 Tavily），并将参数透传给所选引擎。
+///
+/// 优先级顺序（按配置的可用性）：
+/// 1. Brave Search（如果已配置 API key）
+/// 2. Tavily Search（如果已配置 API key）
+/// 3. 如果两者都未配置，返回错误提示
 ///
 /// Flags:
-///   --query  搜索关键词（必须）
-///   --limit  返回结果数量（默认 10）
-///
-/// 配置（基类自动处理）:
-///   shepaw tools web.search.config
-///   shepaw tools web.search.config --action set-key --value YOUR_KEY
-///   shepaw tools web.search.config --action set-param --key max_results --value 20
-///   shepaw tools web.search --config             — 快捷查看配置
+///   --query    搜索关键词（必须）
+///   --limit    返回结果数量（默认 10）
 ///
 /// 示例:
-///   shepaw tools web.search --query "Flutter state management" --limit 5
+///   shepaw tools web.search --query "flutter best practices"
+///   shepaw tools web.search --query "machine learning" --limit 5
+///
+/// 注意：
+/// - 若要明确指定搜索引擎，使用：
+///   shepaw tools web.search.brave --query "..."
+///   shepaw tools web.search.tavily --query "..."
+/// - 若要配置搜索引擎 API key，使用：
+///   shepaw tools web.search.<brave|tavily>.config
 class WebSearchCommand extends CliCommand {
+  static final _braveCommand = BraveSearchCommand();
+  static final _tavilyCommand = TavilySearchCommand();
+
   @override
   String get name => 'search';
 
   @override
-  String get description => 'Search the web and return relevant results';
+  String get description =>
+      'Search the web using available search engines (automatically selects Brave or Tavily)';
 
   @override
-  String get usage => 'shepaw tools web.search --query <query> [--limit <n>]';
-
-  @override
-  CommandConfigSchema get configSchema => _schema;
-
-  static const _schema = CommandConfigSchema(
-    toolName: 'web_search',
-    displayName: 'Web Search',
-    description: 'API key and parameters for the web search engine (Brave / Tavily)',
-    fields: [
-      CliConfigField(
-        key: 'api_key',
-        label: 'API Key',
-        type: CliConfigFieldType.secret,
-        required: true,
-        description:
-            'Brave Search API key (starts with BSA-) or Tavily key (starts with tvly-). '
-            'The engine is auto-detected from the key prefix.',
-      ),
-      CliConfigField(
-        key: 'max_results',
-        label: 'Max Results',
-        type: CliConfigFieldType.integer,
-        description: 'Default number of results per query (default: 10)',
-        defaultValue: 10,
-      ),
-      CliConfigField(
-        key: 'timeout',
-        label: 'Timeout (seconds)',
-        type: CliConfigFieldType.integer,
-        description: 'Request timeout in seconds (default: 30)',
-        defaultValue: 30,
-      ),
-    ],
-  );
+  String get usage =>
+      'shepaw tools web.search --query <query> [--limit <n>]';
 
   @override
   Map<String, dynamic> getHelp() {
@@ -79,11 +56,15 @@ class WebSearchCommand extends CliCommand {
         'type': 'integer',
       },
     };
+    base['note'] =
+        'Automatically selects the first available search engine (Brave > Tavily). '
+        'To use a specific engine, use web.search.brave or web.search.tavily.';
     return base;
   }
 
   @override
   Future<Map<String, dynamic>> execute(Map<String, String> flags) async {
+    // 1. 验证必填参数
     final query = flags['query'];
     if (query == null || query.isEmpty) {
       return {
@@ -92,12 +73,58 @@ class WebSearchCommand extends CliCommand {
       };
     }
 
-    final limit = int.tryParse(flags['limit'] ?? '') ?? 10;
+    // 2. 检查可用的搜索引擎（按优先级）
+    final (braveAvailable, braveReason) =
+        await _braveCommand.checkAvailability();
+    final (tavilyAvailable, tavilyReason) =
+        await _tavilyCommand.checkAvailability();
 
-    // WebSearchService 内部已处理 API Key 获取和搜索引擎选择
-    return await NetworkService.instance.webSearch.search(
-      query,
-      limit: limit,
-    );
+    // 3. 选择可用的搜索引擎（优先级：Brave > Tavily）
+    CliCommand selectedCommand;
+    String selectedEngine;
+
+    if (braveAvailable) {
+      selectedCommand = _braveCommand;
+      selectedEngine = 'Brave Search';
+    } else if (tavilyAvailable) {
+      selectedCommand = _tavilyCommand;
+      selectedEngine = 'Tavily Search';
+    } else {
+      // 两个都不可用
+      return {
+        'error': 'No search engine configured',
+        'configured': false,
+        'engines': {
+          'brave': {
+            'available': false,
+            'reason': braveReason,
+          },
+          'tavily': {
+            'available': false,
+            'reason': tavilyReason,
+          },
+        },
+        'hint':
+            'Configure at least one search engine:\n'
+            '  Brave: shepaw tools web.search.brave.config --action set --key api_key --value BSA-xxxxx\n'
+            '  Tavily: shepaw tools web.search.tavily.config --action set --key api_key --value tvly-xxxxx',
+      };
+    }
+
+    // 4. 透传参数给选中的引擎并执行
+    try {
+      final result = await selectedCommand.execute(flags);
+      // 在结果中标注使用了哪个引擎
+      return {
+        ...result,
+        'engine_used': selectedEngine,
+      };
+    } catch (e) {
+      return {
+        'success': false,
+        'error': 'Search failed: $e',
+        'engine_used': selectedEngine,
+      };
+    }
   }
 }

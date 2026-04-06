@@ -1,5 +1,5 @@
 import '../../cli_base.dart';
-import '../../../services/she_service.dart';
+import '../../../services/cognition_service.dart';
 
 /// 写入主人档案字段
 class WriteCommand extends CliCommand {
@@ -43,7 +43,7 @@ class WriteCommand extends CliCommand {
     if (value == null) {
       return {'error': 'Missing --value. Usage: shepaw profile write --field name --value John'};
     }
-    await SheService.instance.updateUserProfileField(field, value);
+    await CognitionService.instance.updateUserProfileField(field, value);
     return {'ok': true, 'field': field, 'value': value};
   }
 }
