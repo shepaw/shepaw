@@ -247,7 +247,10 @@ $prompt
 
     return '''
 ## Your Core Purpose & Principles
-${self.soul}''';
+${self.soul}
+
+This grows over time. When you gain new self-awareness, call:
+`shepaw context memory.write --key soul --value "(complete updated soul)"`''';
   }
 
   /// ⑦'' Build the agent's user-cognition block (impression/notes) from minds.db.
@@ -309,7 +312,7 @@ ${lines.join('\n')}''';
           m.memoryKeywords.isNotEmpty ? ' [${m.memoryKeywords.join(', ')}]' : '';
       buffer.writeln('- [$timeStr]$keywords ${m.memoryContent}');
     }
-    buffer.write('\nWhen you learn new things about the user or have new observations, use `shepaw agents memory write --id ${agent.id}` to record them.');
+    buffer.write('\nWhen you learn new things about the user or have new observations, use `shepaw context agents.memory-write --id ${agent.id}` to record them.');
     return buffer.toString();
   }
 
@@ -379,37 +382,40 @@ ${lines.join('\n')}''';
   }
 
   /// Build the meta/tools CLI guidance block for non-She agents.
-  /// Teaches agents about `shepaw meta *` and `shepaw tools *` for self-discovery
-  /// without exposing context or profile-write capabilities.
+  /// Uses a compact table format to guide agents through `shepaw` discovery.
   String _buildAgentMetaCliBlock() => '''
-## System Discovery (On-Demand)
+## Tool Discovery
 
-You have access to a `shepaw` tool to discover your own capabilities and get system info.
+You have a `shepaw` CLI tool to access your data and discover capabilities on demand.
 
-**Available namespaces**:
-- `meta datetime` — current date/time
-- `meta system.info` — app information
-- `meta system.capabilities` — overview of what the system supports
-- `meta system.tools-list` — list all available tools (UI, OS, skills)
-- `meta system.tools-detail --name <tool>` — full parameter docs for any tool
-- `tools list` — list all tools by category
-- `tools os.list` — list OS tools
-- `tools os.detail --name <tool>` — OS tool details
-- `skills list` — list available LLM skill libraries
-- `skills detail --name <skill>` — skill details
-- `help` — complete CLI reference
+| Need | Command |
+|------|---------|
+| Your soul / self-notes | `shepaw context memory.query` |
+| User's basic info | `shepaw context profile.query` |
+| Conversation history | `shepaw chat messages --agent <id>` |
+| System info | `shepaw meta system.info` |
+| Current time | `shepaw meta datetime` |
+| OS tools | `shepaw os list` |
+| Full help | `shepaw help` |
 
-**How to use**: Call `shepaw help` to see all available commands, or use the namespace-specific commands above when you need specific information. Add `--help` to any command call for contextual help.''';
+**Common OS tools**:
+- File: `shepaw os file.{read,write,delete,list}`
+- Run: `shepaw os command.exec --command "..."`
+- App: `shepaw os app.{open,url,screenshot}`
+- Clipboard: `shepaw os clipboard.{read,write}`
+
+> Need parameters? Add `flags={"help":""}` to any command.''';
 
   /// Build the session-end guidance block for non-She agents.
-  /// Encourages agents to persist new insights at the end of each conversation.
   String _buildAgentSessionEndBlock() => '''
 ## Before This Conversation Ends
 
-If you learned something new or formed new insights during this conversation:
-- New observations about the user → `shepaw context agents.memory-write --id ${agent.id} --content "..." --type observation`
-- Updated understanding of your purpose or identity → `shepaw context agents.cognition-write --id ${agent.id} --type self --soul "(complete updated soul)"`
-- New impression of the user → `shepaw context agents.cognition-write --id ${agent.id} --type user --field impression --value "..."`
+If you learned something new, record it silently:
 
-These writes are silent — the user does not see them. Only write when you have genuinely new insights.''';
+- Observation about user → `shepaw context agents.memory-write --id ${agent.id} --content "..." --keywords "tag1,tag2"`
+- Updated self-understanding → `shepaw context memory.write --key soul --value "(complete updated soul)"`
+- New self-reflection or note → `shepaw context memory.append --key self_notes --value "..."`
+- New impression of user → `shepaw context agents.cognition-write --id ${agent.id} --type user --field impression --value "..."`
+
+> Only write when you have genuinely new insights. These are silent — user cannot see them. `ok: true` = success.''';
 }
