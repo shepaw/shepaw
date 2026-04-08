@@ -38,6 +38,10 @@ class ChatInputArea extends StatefulWidget {
   /// (so TextField's default paste is suppressed).
   final Future<bool> Function()? onDesktopPaste;
 
+  /// Whether the configured LLM supports audio/voice input.
+  /// When false, the voice mode toggle button is hidden.
+  final bool hasAudioModel;
+
   const ChatInputArea({
     super.key,
     required this.messageController,
@@ -57,6 +61,7 @@ class ChatInputArea extends StatefulWidget {
     required this.onRemoveAttachment,
     this.onMentionPickerChanged,
     this.onDesktopPaste,
+    this.hasAudioModel = false,
   });
 
   @override
@@ -97,6 +102,15 @@ class ChatInputAreaState extends State<ChatInputArea> {
     widget.messageController.removeListener(_onTextChanged);
     _mentionScrollController.dispose();
     super.dispose();
+  }
+
+  @override
+  void didUpdateWidget(ChatInputArea oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // If audio support was removed, exit voice mode automatically.
+    if (!widget.hasAudioModel && _isVoiceMode) {
+      setState(() => _isVoiceMode = false);
+    }
   }
 
   void _onTextChanged() {
@@ -601,20 +615,21 @@ class ChatInputAreaState extends State<ChatInputArea> {
             _buildPendingAttachmentsPreview(),
             Row(
               children: [
-                IconButton(
-                  icon: Icon(
-                    _isVoiceMode ? Icons.keyboard_alt_outlined : Icons.mic_none,
+                if (widget.hasAudioModel)
+                  IconButton(
+                    icon: Icon(
+                      _isVoiceMode ? Icons.keyboard_alt_outlined : Icons.mic_none,
+                    ),
+                    color: Colors.grey[600],
+                    onPressed: () {
+                      setState(() {
+                        _isVoiceMode = !_isVoiceMode;
+                      });
+                      if (!_isVoiceMode) {
+                        widget.textFieldFocusNode.requestFocus();
+                      }
+                    },
                   ),
-                  color: Colors.grey[600],
-                  onPressed: () {
-                    setState(() {
-                      _isVoiceMode = !_isVoiceMode;
-                    });
-                    if (!_isVoiceMode) {
-                      widget.textFieldFocusNode.requestFocus();
-                    }
-                  },
-                ),
                 IconButton(
                   icon: Icon(
                     widget.showEmojiPicker

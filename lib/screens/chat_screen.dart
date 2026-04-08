@@ -14,6 +14,7 @@ import '../models/channel.dart';
 import '../models/mention_entry.dart';
 import '../models/pending_attachment.dart';
 import '../models/remote_agent.dart';
+import '../models/model_routing_config.dart';
 import '../services/audio_recording_service.dart';
 import '../utils/layout_utils.dart';
 import '../l10n/app_localizations.dart';
@@ -105,6 +106,9 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   // Whether She agent needs LLM model configuration
   bool _sheNeedsConfig = false;
 
+  // Whether the current agent's LLM supports audio/voice input
+  bool _agentSupportsAudio = false;
+
   @override
   void initState() {
     super.initState();
@@ -147,6 +151,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     _audioRecordingService.requestPermission();
     _pendingHighlightMessageId = widget.highlightMessageId;
     _checkSheNeedsConfig();
+    _checkAgentAudioSupport();
   }
 
   @override
@@ -1486,6 +1491,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
               if (mounted) setState(() {});
             },
             onDesktopPaste: _handleDesktopPaste,
+            hasAudioModel: _agentSupportsAudio,
           ),
 
           // Emoji picker panel
@@ -1529,6 +1535,18 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     final needsConfig = agent != null && agent.metadata['llm_provider'] == null;
     if (needsConfig != _sheNeedsConfig) {
       setState(() => _sheNeedsConfig = needsConfig);
+    }
+  }
+
+  /// Check whether the current agent's LLM configuration supports audio input.
+  Future<void> _checkAgentAudioSupport() async {
+    final agentId = widget.agentId;
+    if (agentId == null) return;
+    final agent = await _controller.localDatabaseService.getRemoteAgentById(agentId);
+    if (!mounted) return;
+    final supportsAudio = agent != null && agent.supportsModality(ModalityType.audio);
+    if (supportsAudio != _agentSupportsAudio) {
+      setState(() => _agentSupportsAudio = supportsAudio);
     }
   }
 

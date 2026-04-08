@@ -1,9 +1,11 @@
 import 'dart:convert';
 
 import 'model_routing_config.dart';
+import 'model_definition.dart';
 import 'llm_provider_config.dart';
 import 'prompt_stack_config.dart';
 import '../services/channel_tunnel_service.dart';
+import '../services/model_registry.dart';
 
 /// Detect and repair a string corrupted by a UTF-16 encoding bug.
 ///
@@ -313,22 +315,43 @@ class RemoteAgent {
   ///
   /// - Text is always supported.
   /// - Remote ACP agents (no `llm_provider` metadata) are assumed capable.
-  /// - Local agents check explicit model routing first, then fall back to
-  ///   the provider's [defaultVisionModel] for image modality.
+  /// - Local agents check enabled tool models first, then explicit model routing,
+  ///   then fall back to the provider's [defaultVisionModel] for image modality.
   bool supportsModality(ModalityType modality) {
     if (modality == ModalityType.text) return true;
 
     // Remote ACP agents — assume capable (remote side handles it).
     if (!metadata.containsKey('llm_provider')) return true;
 
-    // Check explicit model_routing for the modality.
+    // Check enabled tool models for the modality.
+    // Priority 1: Tool models with explicit model type tags
+    final toolModels = enabledToolModels;
+    if (toolModels.isNotEmpty) {
+      // Map ModalityType to required ModelType
+      final requiredType = switch (modality) {
+        ModalityType.text => ModelType.text,
+        ModalityType.image => ModelType.imageUnderstanding,
+        ModalityType.audio => ModelType.audioUnderstanding,
+        ModalityType.video => ModelType.videoUnderstanding,
+      };
+
+      // Check if any enabled tool supports this modality
+      for (final toolName in toolModels) {
+        final def = ModelRegistry.instance.getDefinition(toolName);
+        if (def != null && def.modelTypes.contains(requiredType)) {
+          return true;
+        }
+      }
+    }
+
+    // Priority 2: Check explicit model_routing for the modality.
     final routing = modelRouting;
     if (!routing.isEmpty) {
       final route = routing.routes[modality];
       if (route != null && !route.isEmpty) return true;
     }
 
-    // For image modality, check if provider has a default vision model.
+    // Priority 3: For image modality, check if provider has a default vision model.
     if (modality == ModalityType.image) {
       final provider = metadata['llm_provider'] as String? ?? 'openai';
       final apiBase = metadata['llm_api_base'] as String? ?? '';

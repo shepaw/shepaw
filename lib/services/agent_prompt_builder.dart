@@ -384,12 +384,26 @@ ${lines.join('\n')}''';
   /// Build the meta/tools CLI guidance block for non-She agents.
   /// Uses a compact table format to guide agents through `shepaw` discovery.
   String _buildAgentMetaCliBlock() => '''
-## Tool Discovery
+## Tool Discovery & Proactive Use
 
 You have a `shepaw` CLI tool to access your data and discover capabilities on demand.
 
+### When to Use Web Search (use FIRST, not as fallback)
+
+Call `shepaw tools web.search --query "..."` **immediately** when the question requires information that:
+- May have changed since your training cutoff
+- Describes an ongoing or evolving situation
+- Is inherently time-sensitive (news, events, prices, weather, live data)
+- You cannot confidently answer without up-to-date sources
+
+If there is any doubt about whether your knowledge is current, search first.
+
+### Your Data & Context
+
 | Need | Command |
 |------|---------|
+| Web search | `shepaw tools web.search --query "..."` |
+| Fetch a page | `shepaw tools web.fetch --url "..."` |
 | Your soul / self-notes | `shepaw context memory.query` |
 | User's basic info | `shepaw context profile.query` |
 | Conversation history | `shepaw chat messages --agent <id>` |
