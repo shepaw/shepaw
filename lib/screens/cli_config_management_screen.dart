@@ -49,14 +49,14 @@ List<_NsDef> get _topNamespaces => [
       ),
       _NsDef(
         key: 'chat',
-        label: 'Communication',
+        label: 'Chat',
         description: 'Channels and message history',
         icon: Icons.chat_bubble_outline,
         ns: ChatNamespace.instance,
       ),
       _NsDef(
         key: 'tools',
-        label: 'Tooling',
+        label: 'Tools',
         description: 'Network and web tools',
         icon: Icons.build_outlined,
         ns: ToolsNamespace.instance,

@@ -1,6 +1,6 @@
 # ShePaw
 
-> **Language / 语言:** **中文** | [English](README_EN.md)
+> **Language / 语言:** **English** | [中文](README_CN.md)
 
 > ShePaw — Local-first, Multi-protocol, Cross-platform, AI-agent-cooperation
 
@@ -10,82 +10,82 @@
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
 <p align="center">
-  <img src="assets/images/shepaw_icon.png" width="120" alt="Shepaw Logo" />
+  <img src="assets/images/shepaw_icon.png" width="120" alt="ShePaw Logo" />
 </p>
 
-> ”她“可以是你的 AI 伴侣，也可以是你最忠实的闺蜜。相处越久，会越懂你，更值得被信任。
-> 每个人都应该有多个 AI 助手，和一个“她”。
+> She can be your AI companion, or your most loyal confidante. The longer you spend together, the better she understands you — and the more you can trust her.
+> Everyone deserves multiple AI assistants, and one ShePaw.
 
-Shepaw是一个跨平台的 AI助理们交互协作的平台，但“她”可以帮你搞定属于AI的世界。
+ShePaw is a cross-platform hub for interacting and collaborating with your AI assistants — but **she** is the one who helps you navigate the world of AI.
 
-以本地优先的理念设计，所有数据存储在用户设备上，支持多种 Agent 通信协议，提供丰富的聊天与自动化协作体验。
+Designed with a local-first philosophy: all your data stays on your device. ShePaw supports multiple Agent communication protocols and delivers a rich chat and automation experience.
 
 **[用户使用指南 (中文)](docs/USER_GUIDE.md)** · **[User Guide (English)](docs/USER_GUIDE_EN.md)**
 
 ---
 
-## 功能亮点
+## Highlights
 
-### Agent 管理与通信
-- **ACP 协议**（Agent Communication Protocol）— 基于 JSON-RPC 2.0 的 WebSocket 双向实时通信
-- **本地 LLM Agent** — 直接集成 OpenAI、Claude、Gemini、DeepSeek、Qwen、GLM、Kimi、Ollama 等 9+ 主流 LLM 服务
-- 双向通信：用户主动对话 & Agent 主动发起对话（需授权）
-- 连接状态实时监控、健康检查、Token 认证
+### Agent Management & Communication
+- **ACP Protocol** (Agent Communication Protocol) — Real-time bidirectional WebSocket communication based on JSON-RPC 2.0
+- **Local LLM Agents** — Direct integration with 9+ major LLM services: OpenAI, Claude, Gemini, DeepSeek, Qwen, GLM, Kimi, Ollama, and more
+- Bidirectional communication: user-initiated chat & agent-initiated messages (with authorization)
+- Real-time connection monitoring, health checks, and token authentication
 
-### 智能聊天
-- 富文本消息气泡（文本、图片、文件、语音、Markdown、代码高亮）
-- 多模态支持：文本、图片、音频、视频等多种媒体类型
-- 交互式组件：表单、单选 / 多选、操作确认按钮
-- 消息回复、上下文菜单、全文搜索
-- 实时打字状态指示、流式响应
+### Smart Chat
+- Rich message bubbles (text, images, files, voice, Markdown, code highlighting)
+- Multimodal support: text, images, audio, video, and more
+- Interactive components: forms, single/multiple choice, action confirmation buttons
+- Message replies, context menus, full-text search
+- Live typing indicators and streaming responses
 
-### 协作与自动化
-- **Direct Message / Group Channel** — 支持多 Agent 协同工作
-- **三种群组编排模式：**
-  - **标准模式** — Admin 协调多 Agent 轮流参与讨论（最多 50 轮）
-  - **Planning Mode** — Agent 生成 JSON 执行计划，用户审核后执行，支持逐任务审批与修改
-  - **Flow Mode** — Agent 生成分阶段工作流，系统自动驱动执行，支持暂停 / 恢复 / 跳步 / 中止
-- **多模态路由** — 为文本、图片、音频、视频自动分配最适合的模型
-- **系统工具（OS Tools）** — 文件操作、进程执行、系统信息查询
-- **技能包（Skills）** — 支持从本地 ZIP 或 URL 导入自定义技能扩展
+### Collaboration & Automation
+- **Direct Message / Group Channel** — multiple agents working together
+- **Three group orchestration modes:**
+  - **Standard** — Admin coordinates agents in round-robin discussion (up to 50 rounds)
+  - **Planning Mode** — Agent generates a JSON execution plan; you review and approve each task before it runs
+  - **Flow Mode** — Agent produces a multi-stage workflow; the system drives execution automatically with pause / resume / skip / abort controls
+- **Multimodal Routing** — automatically assigns the best model for text, images, audio, and video
+- **OS Tools** — file operations, process execution, system info queries
+- **Skill Packages** — import custom skill bundles from a local ZIP or URL
 
-### 安全与隐私
-- 全部数据本地存储（SQLite + Hive），无需后端服务器
-- 密码 + 生物识别（Face ID / Touch ID / 指纹）锁屏保护
-- API Key 加密存储、三级权限管理（SAFE / WARNING / DANGEROUS）
-- 推理日志审计（Token 消耗、响应时间、错误记录）
+### Security & Privacy
+- All data stored locally (SQLite + Hive) — no backend server required
+- Password + biometric lock (Face ID / Touch ID / fingerprint)
+- Encrypted API key storage, three-tier permission system (SAFE / WARNING / DANGEROUS)
+- Inference log audit (token usage, response time, error records)
 
-### 跨平台支持
+### Cross-platform
 - iOS / Android / macOS / Windows / Web
-- 桌面端多窗口支持、自适应布局（Desktop 分割面板 / Mobile 单屏）
-- 国际化（中文 / English）
+- Desktop multi-window support, adaptive layout (split panel on desktop / single screen on mobile)
+- Internationalization (Chinese / English)
 
 ---
 
-## 快速开始
+## Quick Start
 
-### 环境要求
+### Requirements
 
 - Flutter 3.x & Dart SDK 3.0+
-- Xcode（iOS / macOS）或 Android Studio（Android）
+- Xcode (iOS / macOS) or Android Studio (Android)
 
-### 安装与运行
+### Install & Run
 
 ```bash
-# 克隆项目
+# Clone the repository
 git clone https://github.com/shepaw/shepaw.git
 cd shepaw
 
-# 安装依赖
+# Install dependencies
 flutter pub get
 
-# 运行（选择目标平台）
-flutter run                # 默认设备
+# Run on your target platform
+flutter run                # default device
 flutter run -d macos       # macOS
 flutter run -d chrome      # Web
 ```
 
-### 构建发布包
+### Build for Release
 
 ```bash
 flutter build apk --release    # Android
@@ -93,139 +93,139 @@ flutter build ios --release    # iOS
 flutter build macos --release  # macOS
 ```
 
-详细构建说明请参考 [BUILD_GUIDE.md](BUILD_GUIDE.md)。
+For detailed build instructions, see [BUILD_GUIDE.md](BUILD_GUIDE.md).
 
 ---
 
-## 支持的 LLM 提供商
+## Supported LLM Providers
 
-| 类型 | 提供商 |
-|------|--------|
-| 云端 | OpenAI (GPT-4 / GPT-4o)、Anthropic Claude、Google Gemini、DeepSeek、Qwen（通义千问）、GLM（智谱）、Kimi（月之暗面）、Grok、Hunyuan（腾讯混元） |
-| 本地 | Ollama（llama3、llava 等任意本地模型） |
-| 自定义 | 任何兼容 OpenAI API 的服务 |
+| Type | Providers |
+|------|-----------|
+| Cloud | OpenAI (GPT-4 / GPT-4o), Anthropic Claude, Google Gemini, DeepSeek, Qwen, GLM (Zhipu), Kimi (Moonshot), Grok, Hunyuan (Tencent) |
+| Local | Ollama (llama3, llava, and any locally deployed model) |
+| Custom | Any service with an OpenAI-compatible API |
 
 ---
 
-## 项目结构
+## Project Structure
 
 ```
 shepaw/
 ├── lib/
-│   ├── main.dart                        # 应用入口
-│   ├── sub_window_app.dart              # 桌面端多窗口管理
-│   ├── models/                          # 数据模型（19 个）
-│   │   ├── agent.dart                   # Agent 模型
+│   ├── main.dart                        # App entry point
+│   ├── sub_window_app.dart              # Desktop multi-window manager
+│   ├── models/                          # Data models (19 files)
+│   │   ├── agent.dart                   # Agent model
 │   │   ├── remote_agent.dart            # Remote Agent (ACP)
-│   │   ├── channel.dart                 # Channel / 会话模型
-│   │   ├── message.dart                 # 消息模型
+│   │   ├── channel.dart                 # Channel / conversation model
+│   │   ├── message.dart                 # Message model
 │   │   └── ...
-│   ├── screens/                         # 页面（37+ 屏幕）
-│   │   ├── home_screen.dart             # 主页（移动端）
-│   │   ├── desktop_home_screen.dart     # 主页（桌面端）
-│   │   ├── chat_screen.dart             # 聊天界面
-│   │   ├── add_remote_agent_screen.dart # 添加远端 Agent
-│   │   ├── remote_agent_detail_screen.dart  # Agent 详情与配置
+│   ├── screens/                         # UI screens (37+)
+│   │   ├── home_screen.dart             # Home (mobile)
+│   │   ├── desktop_home_screen.dart     # Home (desktop)
+│   │   ├── chat_screen.dart             # Chat interface
+│   │   ├── add_remote_agent_screen.dart # Add remote agent
+│   │   ├── remote_agent_detail_screen.dart  # Agent detail & config
 │   │   └── ...
-│   ├── widgets/                         # UI 组件（24 个）
-│   │   ├── chat/                        # 聊天相关组件
-│   │   ├── message_bubble.dart          # 消息气泡
-│   │   ├── plan_approval_card.dart      # Planning 任务审批卡片
-│   │   ├── task_board_widget.dart       # Flow 任务看板
+│   ├── widgets/                         # UI components (24 files)
+│   │   ├── chat/                        # Chat-related widgets
+│   │   ├── message_bubble.dart          # Message bubble
+│   │   ├── plan_approval_card.dart      # Planning task approval card
+│   │   ├── task_board_widget.dart       # Flow task board
 │   │   └── ...
-│   ├── services/                        # 核心服务（50+ 文件）
-│   │   ├── chat_service.dart            # 聊天服务（消息处理中心）
-│   │   ├── local_database_service.dart  # 数据库服务（SQLite）
-│   │   ├── acp_agent_connection.dart    # ACP 连接管理（WebSocket）
-│   │   ├── local_llm_agent_service.dart # 本地 LLM Agent 服务
-│   │   ├── model_registry.dart          # AI 模型注册表
-│   │   ├── skill_registry.dart          # 技能注册表
-│   │   ├── os_tool_registry.dart        # OS 工具注册表
-│   │   ├── permission_service.dart      # 权限管理
+│   ├── services/                        # Core services (50+ files)
+│   │   ├── chat_service.dart            # Chat service (message hub)
+│   │   ├── local_database_service.dart  # Database service (SQLite)
+│   │   ├── acp_agent_connection.dart    # ACP connection manager (WebSocket)
+│   │   ├── local_llm_agent_service.dart # Local LLM agent service
+│   │   ├── model_registry.dart          # AI model registry
+│   │   ├── skill_registry.dart          # Skill registry
+│   │   ├── os_tool_registry.dart        # OS tool registry
+│   │   ├── permission_service.dart      # Permission management
 │   │   └── ...
-│   ├── group/                           # 群组编排引擎（7 个文件）
-│   │   ├── group_orchestration_service.dart  # 编排核心
-│   │   ├── planning_mode_handler.dart   # Planning 模式处理器
-│   │   ├── flow_mode_handler.dart       # Flow 模式处理器
+│   ├── group/                           # Group orchestration engine (7 files)
+│   │   ├── group_orchestration_service.dart  # Orchestration core
+│   │   ├── planning_mode_handler.dart   # Planning mode handler
+│   │   ├── flow_mode_handler.dart       # Flow mode handler
 │   │   └── ...
-│   ├── providers/                       # 状态管理（Provider）
-│   ├── l10n/                            # 国际化（EN / ZH）
-│   └── utils/                           # 工具类
-├── test/                                # 测试（18 个文件）
-├── docs/                                # 文档
-│   ├── USER_GUIDE.md                    # 用户使用指南（中文）
-│   ├── USER_GUIDE_EN.md                 # User Guide (English)
-│   ├── agent_integration_guide.md       # ACP 协议集成指南
-│   ├── remote_llm_agent_integration.md     # Remote LLM Agent 接入指南（中文）
-│   ├── remote_llm_agent_integration_en.md  # Remote LLM Agent Integration Guide (EN)
-│   ├── tool_model_architecture.md       # 工具模型系统文档
-│   └── gorup_chat_flow.md               # Group Channel 流程文档
+│   ├── providers/                       # State management (Provider)
+│   ├── l10n/                            # Internationalization (EN / ZH)
+│   └── utils/                           # Utilities
+├── test/                                # Tests (18 files)
+├── docs/                                # Documentation
+│   ├── USER_GUIDE.md                    # User guide (Chinese)
+│   ├── USER_GUIDE_EN.md                 # User guide (English)
+│   ├── agent_integration_guide.md       # ACP protocol integration guide
+│   ├── remote_llm_agent_integration.md     # Remote LLM Agent integration guide (Chinese)
+│   ├── remote_llm_agent_integration_en.md  # Remote LLM Agent integration guide (English)
+│   ├── tool_model_architecture.md       # Tool model architecture
+│   └── gorup_chat_flow.md               # Group channel flow documentation
 ├── scripts/
-│   └── mock_agents/                     # Mock Agent 测试环境（4 个测试 Agent）
-├── android/ ios/ macos/ windows/ web/   # 各平台入口
-├── assets/                              # 静态资源
+│   └── mock_agents/                     # Mock agent test environment (4 agents)
+├── android/ ios/ macos/ windows/ web/   # Platform entry points
+├── assets/                              # Static assets
 ├── pubspec.yaml
-├── BUILD_GUIDE.md                       # 多平台构建指南
-└── DEVELOPMENT.md                       # 开发工作流程
+├── BUILD_GUIDE.md                       # Multi-platform build guide
+└── DEVELOPMENT.md                       # Development workflow
 ```
 
 ---
 
-## 开发
+## Development
 
-代码规范和工作流程请参考 [DEVELOPMENT.md](DEVELOPMENT.md)。
+For code style and workflow guidelines, see [DEVELOPMENT.md](DEVELOPMENT.md).
 
 ```bash
-# 代码分析
+# Analyze code
 flutter analyze
 
-# 格式化
+# Format code
 dart format .
 
-# 运行测试
+# Run all tests
 flutter test
 
-# 运行特定测试
+# Run specific tests
 flutter test test/models/
 flutter test test/integration/
 ```
 
 ---
 
-## 技术栈
+## Tech Stack
 
-| 类别 | 技术 |
-|------|------|
-| 框架 | Flutter 3.x / Dart 3.0+ |
-| 状态管理 | Provider, Get |
-| 数据库 | SQLite (sqflite) |
-| 本地存储 | Hive, SharedPreferences, Flutter Secure Storage |
-| 网络 | Dio, HTTP, WebSocket |
-| 安全 | crypto, encrypt, flutter_secure_storage, local_auth |
+| Category | Technology |
+|----------|------------|
+| Framework | Flutter 3.x / Dart 3.0+ |
+| State Management | Provider, Get |
+| Database | SQLite (sqflite) |
+| Local Storage | Hive, SharedPreferences, Flutter Secure Storage |
+| Networking | Dio, HTTP, WebSocket |
+| Security | crypto, encrypt, flutter_secure_storage, local_auth |
 | UI | Material Design 3, flutter_markdown, flutter_highlight |
-| 多媒体 | image_picker, record, audioplayers, file_picker |
-| 桌面 | desktop_multi_window（多窗口）, pasteboard（剪贴板） |
-| 通知 | flutter_local_notifications |
-| 权限 | permission_handler, flutter_foreground_task |
+| Multimedia | image_picker, record, audioplayers, file_picker |
+| Desktop | desktop_multi_window, pasteboard |
+| Notifications | flutter_local_notifications |
+| Permissions | permission_handler, flutter_foreground_task |
 
 ---
 
-## 文档
+## Documentation
 
-| 文档 | 说明 |
-|------|------|
+| Document | Description |
+|----------|-------------|
+| [User Guide (English)](docs/USER_GUIDE_EN.md) | Complete end-user feature guide |
 | [用户使用指南（中文）](docs/USER_GUIDE.md) | 面向最终用户的完整功能说明 |
-| [User Guide (English)](docs/USER_GUIDE_EN.md) | End-user guide in English |
-| [构建指南](BUILD_GUIDE.md) | 各平台详细构建说明 |
-| [开发指南](DEVELOPMENT.md) | 代码规范和工作流程 |
-| [Agent 接入指南](docs/agent_integration_guide.md) | ACP 协议集成文档（SDK 参考） |
+| [Build Guide](BUILD_GUIDE.md) | Platform-specific build instructions |
+| [Development Guide](DEVELOPMENT.md) | Code standards and workflow |
+| [Agent Integration Guide](docs/agent_integration_guide.md) | ACP protocol integration docs (SDK reference) |
+| [Remote LLM Agent Integration](docs/remote_llm_agent_integration_en.md) | Complete guide for third-party Remote Agent integration (English) |
 | [Remote LLM Agent 接入指南](docs/remote_llm_agent_integration.md) | 第三方 Remote Agent 完整接入文档（中文） |
-| [Remote LLM Agent Integration Guide](docs/remote_llm_agent_integration_en.md) | Third-party Remote Agent integration guide (English) |
-| [工具模型架构](docs/tool_model_architecture.md) | 工具模型系统说明 |
-| [群组聊天流程](docs/gorup_chat_flow.md) | Group Channel 流程文档 |
+| [Tool Model Architecture](docs/tool_model_architecture.md) | Tool model system overview |
+| [Group Chat Flow](docs/gorup_chat_flow.md) | Group channel workflow documentation |
 
 ---
 
-## 许可证
+## License
 
 [MIT License](LICENSE)

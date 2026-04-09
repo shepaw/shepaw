@@ -156,6 +156,13 @@ class UpdateService {
 
       if (response.statusCode == 200) {
         final json = jsonDecode(response.body) as Map<String, dynamic>;
+        _logger.info(
+          'appcheck raw response keys: ${json.keys.toList()}, '
+          'downloadUrl="${json['downloadUrl']}", '
+          'download_url="${json['download_url']}", '
+          'fullBody=${response.body.length > 500 ? response.body.substring(0, 500) : response.body}',
+          tag: 'UpdateService',
+        );
         final updateInfo = UpdateInfo.fromJson(json);
         final latestVersion = VersionInfo.parse(
           '${updateInfo.version}+${json['buildNumber'] ?? 0}',

@@ -176,26 +176,18 @@ class UpdateDialog extends StatelessWidget {
       tag: 'UpdateDialog',
     );
 
-    if (updateInfo.downloadUrl.isEmpty) {
-      logger.warning(
-        'downloadUrl is empty! updateInfo.version=${updateInfo.version}, '
-        'isMandatory=${updateInfo.isMandatory}. '
-        'Check that the appcheck API response contains a "downloadUrl" field.',
-        tag: 'UpdateDialog',
-      );
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('下载链接为空，请联系管理员检查接口返回')),
-        );
+    if (isDesktop && updateInfo.downloadUrl.isNotEmpty) {
+      // Close the update dialog first (unless mandatory)
+      if (!updateInfo.isMandatory && context.mounted) {
+        Navigator.of(context).pop();
       }
-      return;
-    }
-
-    if (isDesktop) {
+      if (!context.mounted) {
+        logger.warning('Context unmounted after Navigator.pop()', tag: 'UpdateDialog');
+        return;
+      }
       final fileName = _extractFileName(updateInfo.downloadUrl);
       logger.info('Showing UpdateDownloadDialog for $fileName', tag: 'UpdateDialog');
 
-      // Show download dialog first (keep update dialog alive so context remains valid)
       await showDialog<bool>(
         context: context,
         barrierDismissible: false,
@@ -205,25 +197,16 @@ class UpdateDialog extends StatelessWidget {
           totalSize: updateInfo.fileSize,
         ),
       );
-      // Close the update dialog after download dialog is done
-      if (context.mounted) {
+      // For mandatory updates, close the update dialog after download
+      if (updateInfo.isMandatory && context.mounted) {
         Navigator.of(context).pop();
       }
     } else {
       logger.info('Using external URL launcher', tag: 'UpdateDialog');
       // Mobile / Web: open external browser / App Store
       final url = Uri.tryParse(updateInfo.downloadUrl);
-      if (url != null) {
-        try {
-          await launchUrl(url, mode: LaunchMode.externalApplication);
-        } catch (e) {
-          logger.warning('launchUrl failed: $e', tag: 'UpdateDialog');
-          if (context.mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(content: Text('无法打开下载链接: ${updateInfo.downloadUrl}')),
-            );
-          }
-        }
+      if (url != null && await canLaunchUrl(url)) {
+        await launchUrl(url, mode: LaunchMode.externalApplication);
       }
       if (context.mounted && !updateInfo.isMandatory) {
         Navigator.of(context).pop();

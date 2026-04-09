@@ -28,6 +28,27 @@
 	<string>MainMenu</string>
 	<key>NSPrincipalClass</key>
 	<string>NSApplication</string>
+	<key>NSAppTransportSecurity</key>
+	<dict>
+		<!-- Allow cleartext HTTP for update/release servers -->
+		<key>NSExceptionDomains</key>
+		<dict>
+			<key>channel.shepaw.com</key>
+			<dict>
+				<key>NSExceptionAllowsInsecureHTTPLoads</key>
+				<true/>
+				<key>NSIncludesSubdomains</key>
+				<true/>
+			</dict>
+			<key>release.shepaw.com</key>
+			<dict>
+				<key>NSExceptionAllowsInsecureHTTPLoads</key>
+				<true/>
+				<key>NSIncludesSubdomains</key>
+				<true/>
+			</dict>
+		</dict>
+	</dict>
 	<key>NSCameraUsageDescription</key>
 	<string>ShePaw needs camera access to take photos for sharing with agents.</string>
 	<key>NSMicrophoneUsageDescription</key>

@@ -22,6 +22,7 @@ import 'model_select_screen.dart';
 import 'cli_command_select_screen.dart';
 import 'chat_screen.dart';
 import 'cli_config_management_screen.dart';
+import 'model_management_screen.dart';
 import '../utils/layout_utils.dart';
 
 /// 远端 Agent 详情页面（从聊天页进入）
@@ -2212,24 +2213,52 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
             const SizedBox(height: 12),
 
             if (defs.isEmpty)
-              Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: colorScheme.errorContainer.withValues(alpha: 0.3),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Row(
-                  children: [
-                    Icon(Icons.warning_outlined, size: 16, color: colorScheme.error),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        l10n.addAgent_noModels,
-                        style: TextStyle(fontSize: 12, color: colorScheme.error),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: colorScheme.errorContainer.withValues(alpha: 0.3),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Row(
+                      children: [
+                        Icon(Icons.warning_outlined, size: 16, color: colorScheme.error),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            l10n.addAgent_noModels,
+                            style: TextStyle(fontSize: 12, color: colorScheme.error),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Align(
+                    alignment: Alignment.centerRight,
+                    child: TextButton.icon(
+                      onPressed: () async {
+                        await Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => const ModelManagementScreen(),
+                          ),
+                        );
+                        if (mounted) setState(() {});
+                      },
+                      icon: const Icon(Icons.settings_outlined, size: 16),
+                      label: Text(l10n.toolModel_goToManagement),
+                      style: TextButton.styleFrom(
+                        textStyle: const TextStyle(fontSize: 13),
+                        padding: const EdgeInsets.symmetric(horizontal: 8),
+                        minimumSize: Size.zero,
+                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                       ),
                     ),
-                  ],
-                ),
+                  ),
+                ],
               )
             else
               DropdownButtonFormField<String>(

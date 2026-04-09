@@ -29,6 +29,27 @@
 		<string>https</string>
 		<string>http</string>
 	</array>
+	<key>NSAppTransportSecurity</key>
+	<dict>
+		<!-- Allow cleartext HTTP for update/release servers -->
+		<key>NSExceptionDomains</key>
+		<dict>
+			<key>channel.shepaw.com</key>
+			<dict>
+				<key>NSExceptionAllowsInsecureHTTPLoads</key>
+				<true/>
+				<key>NSIncludesSubdomains</key>
+				<true/>
+			</dict>
+			<key>release.shepaw.com</key>
+			<dict>
+				<key>NSExceptionAllowsInsecureHTTPLoads</key>
+				<true/>
+				<key>NSIncludesSubdomains</key>
+				<true/>
+			</dict>
+		</dict>
+	</dict>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
 	<key>NSCameraUsageDescription</key>

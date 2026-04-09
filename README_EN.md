@@ -1,6 +1,8 @@
 # ShePaw
 
-> **Language / 语言:** [中文](README.md) | **English**
+> **Language / 语言:** [中文](README_CN.md) | **English**
+>
+> ℹ️ This file is kept for compatibility. The canonical English README is now [README.md](README.md).
 
 > ShePaw — Local-first, Multi-protocol, Cross-platform, AI-agent-cooperation
 
