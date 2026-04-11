@@ -10,7 +10,10 @@ import 'chat_screen.dart';
 class AgentDetailScreen extends StatefulWidget {
   final Agent? agent; // null 表示新建模式
 
-  const AgentDetailScreen({Key? key, this.agent}) : super(key: key);
+  /// 若为 true，打开即进入编辑模式（仅在 agent != null 时有效）
+  final bool initialEditMode;
+
+  const AgentDetailScreen({Key? key, this.agent, this.initialEditMode = false}) : super(key: key);
 
   @override
   State<AgentDetailScreen> createState() => _AgentDetailScreenState();
@@ -23,6 +26,8 @@ class _AgentDetailScreenState extends State<AgentDetailScreen> {
   late TextEditingController _nameController;
   late TextEditingController _typeController;
   late TextEditingController _avatarController;
+  late TextEditingController _maxToolRoundsController;
+  late TextEditingController _taskTimeoutController;
   String _selectedStatus = 'online';
 
   bool _isEditing = false;
@@ -31,11 +36,17 @@ class _AgentDetailScreenState extends State<AgentDetailScreen> {
   @override
   void initState() {
     super.initState();
-    _isEditing = widget.agent == null;
+    _isEditing = widget.agent == null || widget.initialEditMode;
     _nameController = TextEditingController(text: widget.agent?.name ?? '');
     _typeController = TextEditingController(text: widget.agent?.type ?? '');
     _avatarController = TextEditingController(text: widget.agent?.avatar ?? '');
     _selectedStatus = widget.agent?.status.state ?? 'online';
+    _maxToolRoundsController = TextEditingController(
+      text: (widget.agent?.metadata?['max_tool_rounds'] ?? 100).toString(),
+    );
+    _taskTimeoutController = TextEditingController(
+      text: (widget.agent?.metadata?['task_timeout_seconds'] ?? 600).toString(),
+    );
   }
 
   /// 保存 Agent
@@ -54,6 +65,10 @@ class _AgentDetailScreenState extends State<AgentDetailScreen> {
           avatar: _avatarController.text.trim().isEmpty
               ? '🤖'
               : _avatarController.text.trim(),
+          metadata: {
+            'max_tool_rounds': int.tryParse(_maxToolRoundsController.text.trim()) ?? 100,
+            'task_timeout_seconds': int.tryParse(_taskTimeoutController.text.trim()) ?? 600,
+          },
           provider: AgentProvider(name: 'Custom', platform: 'custom', type: 'custom'),
           status: AgentStatus(state: _selectedStatus),
         );
@@ -76,6 +91,11 @@ class _AgentDetailScreenState extends State<AgentDetailScreen> {
           avatar: _avatarController.text.trim().isEmpty
               ? '🤖'
               : _avatarController.text.trim(),
+          metadata: {
+            ...?widget.agent!.metadata,
+            'max_tool_rounds': int.tryParse(_maxToolRoundsController.text.trim()) ?? 100,
+            'task_timeout_seconds': int.tryParse(_taskTimeoutController.text.trim()) ?? 600,
+          },
           provider: widget.agent!.provider,
           status: AgentStatus(state: _selectedStatus),
         );
@@ -241,6 +261,52 @@ class _AgentDetailScreenState extends State<AgentDetailScreen> {
                     ),
                     const SizedBox(height: 16),
 
+                    // 最大工具调用轮次
+                    TextFormField(
+                      controller: _maxToolRoundsController,
+                      decoration: const InputDecoration(
+                        labelText: '最大工具调用轮次',
+                        hintText: '默认 100',
+                        prefixIcon: Icon(Icons.repeat),
+                        border: OutlineInputBorder(),
+                        helperText: '单次对话中 LLM 最多可调用工具的轮数（1–500）',
+                      ),
+                      enabled: _isEditing,
+                      keyboardType: TextInputType.number,
+                      validator: (value) {
+                        if (value == null || value.trim().isEmpty) return null;
+                        final n = int.tryParse(value.trim());
+                        if (n == null || n < 1 || n > 500) {
+                          return '请输入 1 到 500 之间的整数';
+                        }
+                        return null;
+                      },
+                    ),
+                    const SizedBox(height: 16),
+
+                    // 任务超时时间
+                    TextFormField(
+                      controller: _taskTimeoutController,
+                      decoration: const InputDecoration(
+                        labelText: '任务超时时间（秒）',
+                        hintText: '默认 600',
+                        prefixIcon: Icon(Icons.timer),
+                        border: OutlineInputBorder(),
+                        helperText: '单次任务的最长等待时间（60–3600 秒）',
+                      ),
+                      enabled: _isEditing,
+                      keyboardType: TextInputType.number,
+                      validator: (value) {
+                        if (value == null || value.trim().isEmpty) return null;
+                        final n = int.tryParse(value.trim());
+                        if (n == null || n < 60 || n > 3600) {
+                          return '请输入 60 到 3600 之间的整数';
+                        }
+                        return null;
+                      },
+                    ),
+                    const SizedBox(height: 16),
+
                     // Agent ID (只读，仅编辑模式显示)
                     if (!isNewAgent)
                       TextFormField(
@@ -288,6 +354,10 @@ class _AgentDetailScreenState extends State<AgentDetailScreen> {
                                     _avatarController.text =
                                         widget.agent!.avatar;
                                     _selectedStatus = widget.agent!.status.state;
+                                    _maxToolRoundsController.text =
+                                        (widget.agent!.metadata?['max_tool_rounds'] ?? 100).toString();
+                                    _taskTimeoutController.text =
+                                        (widget.agent!.metadata?['task_timeout_seconds'] ?? 600).toString();
                                   });
                                 },
                                 child: const Text('取消'),
@@ -381,6 +451,8 @@ class _AgentDetailScreenState extends State<AgentDetailScreen> {
     _nameController.dispose();
     _typeController.dispose();
     _avatarController.dispose();
+    _maxToolRoundsController.dispose();
+    _taskTimeoutController.dispose();
     _apiService.dispose();
     super.dispose();
   }

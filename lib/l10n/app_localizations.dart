@@ -2960,6 +2960,12 @@ abstract class AppLocalizations {
   /// **'查看详情'**
   String get chat_viewDetails;
 
+  /// No description provided for @chat_editAgent.
+  ///
+  /// In zh, this message translates to:
+  /// **'编辑 Agent'**
+  String get chat_editAgent;
+
   /// No description provided for @chat_customSystemPrompt.
   ///
   /// In zh, this message translates to:

@@ -664,6 +664,35 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     await _navigateToAgentDetailById(widget.agentId!);
   }
 
+  /// 直接以编辑模式打开 Agent 详情页，无需先进入详情再点击编辑
+  Future<void> _navigateToAgentDetailForEdit() async {
+    if (widget.agentId == null) return;
+    final remoteAgent = await _controller.localDatabaseService.getRemoteAgentById(widget.agentId!);
+    if (remoteAgent != null && mounted) {
+      final result = await Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => RemoteAgentDetailScreen(
+            agent: remoteAgent,
+            initialEditMode: true,
+          ),
+        ),
+      );
+      if (result == 'deleted' && mounted) {
+        if (widget.embedded) {
+          widget.onClose?.call();
+        } else {
+          Navigator.pop(context);
+        }
+      } else if (mounted) {
+        final updated = await _controller.localDatabaseService.getRemoteAgentById(widget.agentId!);
+        if (updated != null) {
+          _controller.updateAgentInfo(updated.name, updated.avatar);
+        }
+      }
+    }
+  }
+
   Future<void> _navigateToAgentDetailById(String agentId) async {
     final remoteAgent = await _controller.localDatabaseService.getRemoteAgentById(agentId);
     if (remoteAgent != null && mounted) {
@@ -1354,6 +1383,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                     _sendMessage();
                   },
                   onViewDetails: _navigateToAgentDetail,
+                  onEdit: _navigateToAgentDetailForEdit,
                   onSearch: _showSearchDialog,
                   onCustomSystemPrompt: _showDmSystemPromptDialog,
                 );

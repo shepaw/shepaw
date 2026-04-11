@@ -1616,6 +1616,9 @@ class AppLocalizationsEn extends AppLocalizations {
   String get chat_viewDetails => 'View Details';
 
   @override
+  String get chat_editAgent => 'Edit Agent';
+
+  @override
   String get chat_customSystemPrompt => 'Custom System Prompt';
 
   @override

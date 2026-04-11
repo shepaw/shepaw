@@ -282,6 +282,9 @@ class _AgentListScreenState extends State<AgentListScreen> {
                         case 'chat':
                           _startConversation(agent);
                           break;
+                        case 'edit':
+                          _navigateToAgentDetailForEdit(agent);
+                          break;
                         case 'detail':
                           _navigateToAgentDetail(agent);
                           break;
@@ -298,6 +301,16 @@ class _AgentListScreenState extends State<AgentListScreen> {
                             Icon(Icons.chat),
                             SizedBox(width: 8),
                             Text('发起对话'),
+                          ],
+                        ),
+                      ),
+                      const PopupMenuItem(
+                        value: 'edit',
+                        child: Row(
+                          children: [
+                            Icon(Icons.edit_outlined),
+                            SizedBox(width: 8),
+                            Text('编辑'),
                           ],
                         ),
                       ),
@@ -412,6 +425,16 @@ class _AgentListScreenState extends State<AgentListScreen> {
       context,
       MaterialPageRoute(
         builder: (context) => AgentDetailScreen(agent: agent),
+      ),
+    ).then((_) => _loadAgents()); // 返回后刷新
+  }
+
+  /// 直接以编辑模式打开 Agent 详情页
+  void _navigateToAgentDetailForEdit(Agent agent) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => AgentDetailScreen(agent: agent, initialEditMode: true),
       ),
     ).then((_) => _loadAgents()); // 返回后刷新
   }

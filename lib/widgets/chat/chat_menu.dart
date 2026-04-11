@@ -14,6 +14,7 @@ class ChatMenuHelper {
     required VoidCallback onViewDetails,
     required VoidCallback onSearch,
     required VoidCallback onCustomSystemPrompt,
+    VoidCallback? onEdit,
   }) async {
     final menuL10n = AppLocalizations.of(context);
     final overlay = Overlay.of(context).context.findRenderObject() as RenderBox;
@@ -33,6 +34,8 @@ class ChatMenuHelper {
       items: [
         PopupMenuItem(value: 'reset', child: ListTile(dense: true, leading: const Icon(Icons.refresh), title: Text(menuL10n.chat_resetSession))),
         const PopupMenuDivider(),
+        if (onEdit != null)
+          PopupMenuItem(value: 'edit', child: ListTile(dense: true, leading: const Icon(Icons.edit_outlined), title: Text(menuL10n.chat_editAgent))),
         PopupMenuItem(value: 'details', child: ListTile(dense: true, leading: const Icon(Icons.info_outline), title: Text(menuL10n.chat_viewDetails))),
         PopupMenuItem(value: 'systemPrompt', child: ListTile(dense: true, leading: const Icon(Icons.edit_note), title: Text(menuL10n.chat_customSystemPrompt))),
         PopupMenuItem(value: 'search', child: ListTile(dense: true, leading: const Icon(Icons.search), title: Text(menuL10n.chat_searchMessages))),
@@ -41,6 +44,8 @@ class ChatMenuHelper {
 
     if (value == null) return;
     switch (value) {
+      case 'edit':
+        onEdit?.call();
       case 'reset':
         onReset();
       case 'details':

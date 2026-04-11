@@ -29,9 +29,13 @@ import '../utils/layout_utils.dart';
 class RemoteAgentDetailScreen extends StatefulWidget {
   final RemoteAgent agent;
 
+  /// 若为 true，打开页面即进入编辑模式
+  final bool initialEditMode;
+
   const RemoteAgentDetailScreen({
     super.key,
     required this.agent,
+    this.initialEditMode = false,
   });
 
   @override
@@ -101,6 +105,7 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
   void initState() {
     super.initState();
     _agent = widget.agent;
+    _isEditing = widget.initialEditMode;
     _initEditingControllers();
     _lanAddressesFuture = _loadLanAddresses();
     _publicUrlFuture = _loadPublicUrl();

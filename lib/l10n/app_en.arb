@@ -567,6 +567,7 @@
   "chat_clearAllSessionsSub": "Clear all sessions and reset agents",
   "chat_clearAllSessionsSubSingle": "Clear all sessions and reset remote agent",
   "chat_resetSession": "Reset Session",
+  "chat_editAgent": "Edit Agent",
   "chat_viewDetails": "View Details",
   "chat_customSystemPrompt": "Custom System Prompt",
   "chat_systemPromptTitle": "Custom System Prompt",

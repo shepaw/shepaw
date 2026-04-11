@@ -473,8 +473,9 @@ class AgentMessagingService {
       );
 
       // Wait for task.completed, task.error, or local cancellation
+      final taskTimeoutSeconds = (agent.metadata?['task_timeout_seconds'] as num?)?.toInt() ?? 600;
       await taskCompleter.future.timeout(
-        const Duration(seconds: 300),
+        Duration(seconds: taskTimeoutSeconds),
         onTimeout: () {
           throw TimeoutException('ACP task timed out');
         },
@@ -837,7 +838,7 @@ class AgentMessagingService {
       Map<String, dynamic>? messageMetadataExtra;
       bool fileMessageHandled = false;
 
-      const maxToolRounds = 10;
+      final maxToolRounds = (agent.metadata?['max_tool_rounds'] as num?)?.toInt() ?? 100;
 
       for (int round = 0; round < maxToolRounds; round++) {
         if (acpCancellationToken?.isCancelled == true) break;
