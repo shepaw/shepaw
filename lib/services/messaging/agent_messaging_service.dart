@@ -351,9 +351,10 @@ class AgentMessagingService {
           chatHistory = messages
               .where((m) => m.type != MessageType.system && m.type != MessageType.permissionAudit && m.id != userMessage.id)
               .map((m) {
+                final isAgent = m.from.isAgent;
                 final entry = <String, dynamic>{
-                  'role': m.from.isAgent ? 'assistant' : 'user',
-                  'content': m.content,
+                  'role': isAgent ? 'assistant' : 'user',
+                  'content': isAgent ? m.content : '[${_formatTimestamp(m.timestampMs)}] ${m.content}',
                 };
                 if (m.type != MessageType.text && m.type != MessageType.system) {
                   entry['attachment_info'] = LocalLLMHelpers.buildAttachmentInfo(m);
@@ -756,9 +757,10 @@ class AgentMessagingService {
         if (messages.isNotEmpty) {
           for (final m in messages) {
             if (m.type != MessageType.system && m.type != MessageType.permissionAudit && m.id != userMessage.id) {
+              final isAgent = m.from.isAgent;
               final entry = <String, dynamic>{
-                'role': m.from.isAgent ? 'assistant' : 'user',
-                'content': m.content,
+                'role': isAgent ? 'assistant' : 'user',
+                'content': isAgent ? m.content : '[${_formatTimestamp(m.timestampMs)}] ${m.content}',
               };
               if (m.type != MessageType.text && m.type != MessageType.system) {
                 entry['attachment_info'] = LocalLLMHelpers.buildAttachmentInfo(m);
@@ -1264,9 +1266,10 @@ class AgentMessagingService {
         chatHistory = messages
             .where((m) => m.type != MessageType.system && m.type != MessageType.permissionAudit && m.id != userMessage.id)
             .map((m) {
+              final isAgent = m.from.isAgent;
               final entry = <String, dynamic>{
-                'role': m.from.isAgent ? 'assistant' : 'user',
-                'content': m.content,
+                'role': isAgent ? 'assistant' : 'user',
+                'content': isAgent ? m.content : '[${_formatTimestamp(m.timestampMs)}] ${m.content}',
               };
               if (m.type != MessageType.text && m.type != MessageType.system) {
                 entry['attachment_info'] = LocalLLMHelpers.buildAttachmentInfo(m);
@@ -1433,5 +1436,21 @@ class AgentMessagingService {
     }
 
     return agentResponse;
+  }
+
+  // ---------------------------------------------------------------------------
+  // Helpers
+  // ---------------------------------------------------------------------------
+
+  /// Formats a millisecond timestamp as "YYYY-MM-DD HH:MM:SS" (local time).
+  String _formatTimestamp(int timestampMs) {
+    final dt = DateTime.fromMillisecondsSinceEpoch(timestampMs);
+    final y = dt.year.toString();
+    final mo = dt.month.toString().padLeft(2, '0');
+    final d = dt.day.toString().padLeft(2, '0');
+    final h = dt.hour.toString().padLeft(2, '0');
+    final mi = dt.minute.toString().padLeft(2, '0');
+    final s = dt.second.toString().padLeft(2, '0');
+    return '$y-$mo-$d $h:$mi:$s';
   }
 }
