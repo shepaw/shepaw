@@ -63,6 +63,8 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
   late TextEditingController _tokenController;
   late TextEditingController _systemPromptController;
   late TextEditingController _remoteAgentIdController;
+  late TextEditingController _maxToolRoundsController;
+  late TextEditingController _taskTimeoutController;
   String _editingAvatar = '';
 
   // 主模型选择（从 ModelRegistry 中选择）
@@ -136,6 +138,12 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
     _remoteAgentIdController = TextEditingController(
       text: (_agent.metadata['target_agent_id'] as String?) ?? '',
     );
+    _maxToolRoundsController = TextEditingController(
+      text: (_agent.metadata['max_tool_rounds'] as num? ?? 100).toString(),
+    );
+    _taskTimeoutController = TextEditingController(
+      text: (_agent.metadata['task_timeout_seconds'] as num? ?? 600).toString(),
+    );
     _editingAvatar = _agent.avatar;
     _localAvatarPath = null;
     _editingProtocol = _agent.protocol;
@@ -199,6 +207,8 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
     _tokenController.dispose();
     _systemPromptController.dispose();
     _remoteAgentIdController.dispose();
+    _maxToolRoundsController.dispose();
+    _taskTimeoutController.dispose();
     _channelServerUrlController.dispose();
     _channelIdController.dispose();
     _channelSecretController.dispose();
@@ -372,7 +382,19 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
         metadata.remove('target_agent_id');
       }
 
-      // Note: She prompt stack configuration is now managed in CLI Management page
+      // Save tool call limits
+      final maxToolRounds = int.tryParse(_maxToolRoundsController.text.trim());
+      if (maxToolRounds != null && maxToolRounds >= 1 && maxToolRounds <= 500) {
+        metadata['max_tool_rounds'] = maxToolRounds;
+      } else {
+        metadata['max_tool_rounds'] = 100;
+      }
+      final taskTimeout = int.tryParse(_taskTimeoutController.text.trim());
+      if (taskTimeout != null && taskTimeout >= 60 && taskTimeout <= 3600) {
+        metadata['task_timeout_seconds'] = taskTimeout;
+      } else {
+        metadata['task_timeout_seconds'] = 600;
+      }
 
       final updatedAgent = _agent.copyWith(
         name: name,
@@ -1027,6 +1049,12 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
               const SizedBox(height: 8),
               _buildInfoRow(l10n.agentDetail_lastActive, _formatTimestamp(_agent.lastHeartbeat!)),
             ],
+            const SizedBox(height: 8),
+            _buildInfoRow('最大工具调用轮次',
+                '${(_agent.metadata['max_tool_rounds'] as num? ?? 100).toInt()} 次'),
+            const SizedBox(height: 8),
+            _buildInfoRow('任务超时时间',
+                '${(_agent.metadata['task_timeout_seconds'] as num? ?? 600).toInt()} 秒'),
             const SizedBox(height: 8),
             _buildInfoRow(l10n.agentDetail_createdAt, _formatTimestamp(_agent.createdAt)),
           ],
@@ -1976,6 +2004,42 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
               ),
               maxLines: 4,
               minLines: 2,
+            ),
+            const SizedBox(height: 12),
+            TextFormField(
+              controller: _maxToolRoundsController,
+              decoration: const InputDecoration(
+                labelText: '最大工具调用轮次',
+                hintText: '默认 100',
+                border: OutlineInputBorder(),
+                prefixIcon: Icon(Icons.repeat),
+                helperText: '单次对话中 LLM 最多可调用工具的轮数（1–500）',
+              ),
+              keyboardType: TextInputType.number,
+              validator: (value) {
+                if (value == null || value.trim().isEmpty) return null;
+                final n = int.tryParse(value.trim());
+                if (n == null || n < 1 || n > 500) return '请输入 1 到 500 之间的整数';
+                return null;
+              },
+            ),
+            const SizedBox(height: 12),
+            TextFormField(
+              controller: _taskTimeoutController,
+              decoration: const InputDecoration(
+                labelText: '任务超时时间（秒）',
+                hintText: '默认 600',
+                border: OutlineInputBorder(),
+                prefixIcon: Icon(Icons.timer),
+                helperText: '单次任务的最长等待时间（60–3600 秒）',
+              ),
+              keyboardType: TextInputType.number,
+              validator: (value) {
+                if (value == null || value.trim().isEmpty) return null;
+                final n = int.tryParse(value.trim());
+                if (n == null || n < 60 || n > 3600) return '请输入 60 到 3600 之间的整数';
+                return null;
+              },
             ),
           ],
         ),
