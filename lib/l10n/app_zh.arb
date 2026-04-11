@@ -804,6 +804,7 @@
   "chat_viewDetails": "查看详情",
   "chat_customSystemPrompt": "自定义系统提示词",
   "chat_systemPromptTitle": "自定义系统提示词",
+  "chat_systemPromptHint": "为本会话覆盖 Agent 的系统提示词",
   "chat_systemPromptSaved": "系统提示词已保存",
   "chat_moreActions": "更多操作",
 

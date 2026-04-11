@@ -1561,10 +1561,10 @@ class AppLocalizationsZh extends AppLocalizations {
   String get chat_resetSession => '重置会话';
 
   @override
-  String get chat_viewDetails => '查看详情';
+  String get chat_editAgent => '编辑 Agent';
 
   @override
-  String get chat_editAgent => '编辑 Agent';
+  String get chat_viewDetails => '查看详情';
 
   @override
   String get chat_customSystemPrompt => '自定义系统提示词';

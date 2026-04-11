@@ -1613,10 +1613,10 @@ class AppLocalizationsEn extends AppLocalizations {
   String get chat_resetSession => 'Reset Session';
 
   @override
-  String get chat_viewDetails => 'View Details';
+  String get chat_editAgent => 'Edit Agent';
 
   @override
-  String get chat_editAgent => 'Edit Agent';
+  String get chat_viewDetails => 'View Details';
 
   @override
   String get chat_customSystemPrompt => 'Custom System Prompt';

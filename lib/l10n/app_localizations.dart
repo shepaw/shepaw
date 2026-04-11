@@ -2954,17 +2954,17 @@ abstract class AppLocalizations {
   /// **'重置会话'**
   String get chat_resetSession;
 
-  /// No description provided for @chat_viewDetails.
-  ///
-  /// In zh, this message translates to:
-  /// **'查看详情'**
-  String get chat_viewDetails;
-
   /// No description provided for @chat_editAgent.
   ///
   /// In zh, this message translates to:
   /// **'编辑 Agent'**
   String get chat_editAgent;
+
+  /// No description provided for @chat_viewDetails.
+  ///
+  /// In zh, this message translates to:
+  /// **'查看详情'**
+  String get chat_viewDetails;
 
   /// No description provided for @chat_customSystemPrompt.
   ///
