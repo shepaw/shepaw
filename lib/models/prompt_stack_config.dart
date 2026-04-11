@@ -441,8 +441,12 @@ class PromptStackConfig {
   );
 
   /// Standard configuration for non-She agents — She sections silently off.
+  /// `includeShepawCli` is also disabled because She's data-access CLI block
+  /// (`_pawCliPrompt`) is She-exclusive; non-She agents get the lighter
+  /// meta-CLI guidance block via `includeShepawMetaCli` instead.
   static const PromptStackConfig forOtherAgent = PromptStackConfig(
     she: SheStackConfig.disabled,
+    tools: ToolsStackConfig(includeShepawCli: false),
   );
 
   factory PromptStackConfig.fromJson(Map<String, dynamic> json) =>

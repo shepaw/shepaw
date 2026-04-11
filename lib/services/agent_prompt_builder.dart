@@ -11,31 +11,40 @@ import 'model_registry.dart';
 /// Builds the complete system prompt for any Agent — She or others — using a
 /// unified, configurable layering approach.
 ///
-/// ## Layering order (matching She's original stacking order)
+/// ## Layering order
 ///
 /// ```
-///  ①  Identity block          ← agent's name (all agents)
-///  ②  Description block       ← She: core identity; others: system_prompt
-///  ③  Tools block             ← UI / OS / Skills / ToolModels / shepaw CLI
-///  ③' She meta-cognition      ← [She-only] on-demand capability discovery guide
-///  ④  She memory context      ← soul  [She-only, optional]
-///  ③.5 Current time           ← injected by SheService inside legacy path
-///  ⑤  Custom prompt           ← DM override or user-set system_prompt
-///  ⑥  User-strategy block     ← [She-only, optional, default OFF]
-///  ⑦  Profile snapshot        ← [She-only, optional, default OFF]
-///  ⑦' User profile (brief)    ← [non-She, optional] core fields only
-///  ⑧  First-meeting block     ← [She-only, conditional]
-///  ⑧' Agent memories          ← [non-She, optional] recent N memories
-///  ⑧'' Non-She meta CLI       ← [non-She] meta/tools namespace guidance
-///  ⑨  Session-end block       ← [She-only, optional]
-///  ⑨' Non-She session-end     ← [non-She] soul/cognition/memory update guide
+///  ①   Identity block          ← agent's name (non-She only; She's name is in ②)
+///  ②   Description block       ← She: core identity; others: system_prompt
+///  ③   Tools block             ← UI / OS / Skills / ToolModels
+///  ③.5 She data-access CLI     ← [She-only] shepaw CLI data-access reference
+///  ③'  Shepaw guidance         ← tool-discovery + web-search guidance (all agents,
+///                                 content scoped to each agent's actual permissions)
+///  ④   She memory context      ← soul  [She-only via config.she.includeSheMemory]
+///  ③.6 Current time            ← injected for all agents
+///  ⑤   Custom prompt           ← DM override or user-set system_prompt
+///  ⑥   User-strategy block     ← [She-only via config.she.includeUserStrategy]
+///  ⑦   Profile snapshot        ← [She-only via config.she.includeProfileSnapshot]
+///  ⑦'  She self-cognition      ← [She-only via config.she.includeSheSelfCognition]
+///  ⑦'' She user-cognition      ← [She-only via config.she.includeUserCognition]
+///  ⑦'''Non-She user profile    ← [non-She via config.agent.includeUserProfile]
+///  ⑧   First-meeting block     ← [She-only via config.she.includeFirstMeeting]
+///  ⑧'  Non-She self-cognition  ← [non-She via config.agent.includeAgentSelfCognition]
+///  ⑧'' Non-She user-cognition  ← [non-She via config.agent.includeAgentUserCognition]
+///  ⑧'''Non-She agent memories  ← [non-She via config.agent.includeAgentMemory]
+///  ⑨   Session-end block       ← all agents (She: guarded by config.she.includeSessionEnd)
 /// ```
 ///
-/// She-specific sections are delegated entirely to [SheService] so that the
-/// soul / memory / profile logic stays in one place.
+/// The only remaining `agent.isShe` checks are in the three spots where the
+/// behavior genuinely differs regardless of config:
+///   • `_buildIdentityBlock` — She's name lives in her core-identity block (②)
+///   • `_buildDescriptionBlock` — She → core identity; non-She → system_prompt
+///   • Step ⑤ (custom prompt) — She seeds soul; non-She injects as custom settings
 ///
-/// Non-She sections are built from [CognitionService] (user profile) and
-/// [AgentMemoryDbService] (per-agent memories).
+/// Everything else is driven by [PromptStackConfig] flags.  Non-She agents use
+/// [PromptStackConfig.forOtherAgent] which sets [SheStackConfig.disabled] and
+/// disables `includeShepawCli`, so all She-exclusive config checks evaluate to
+/// false automatically — no hardcoded `!agent.isShe` guard needed.
 class AgentPromptBuilder {
   final RemoteAgent agent;
 
@@ -77,21 +86,27 @@ class AgentPromptBuilder {
     final toolParts = _buildToolsBlocks(effectiveTools, config.she);
     parts.addAll(toolParts);
 
-    // ③' She-only: meta-cognition block (on-demand capability discovery)
-    if (agent.isShe && config.she.includeMetaCognition) {
-      parts.add(SheService.buildMetaCognitionBlock());
+    // ③' Shepaw guidance — unified for She and non-She.
+    // For She:     full meta-cognition block (config.she.includeMetaCognition).
+    // For non-She: permission-scoped meta CLI block (effectiveTools.includeShepawMetaCli).
+    // Content is produced by SheService.buildShepawGuidanceBlock() which is
+    // aware of each agent's actual CLI permissions.
+    final wantsShepawGuidance = agent.isShe
+        ? config.she.includeMetaCognition
+        : effectiveTools.includeShepawMetaCli;
+    if (wantsShepawGuidance) {
+      parts.add(SheService.buildShepawGuidanceBlock(agent));
     }
 
-    // ④ She-only: memory context (soul)
-    if (agent.isShe && config.she.includeSheMemory) {
+    // ④ She memory context (soul) — guarded by SheStackConfig flag.
+    // Non-She agents have SheStackConfig.disabled so this is always false for them.
+    if (config.she.includeSheMemory) {
       final mem = await SheService.instance.buildMemoryContextBlock();
       if (mem.isNotEmpty) parts.add(mem);
     }
 
-    // ③.5 She-only: current time (always injected for She)
-    if (agent.isShe) {
-      parts.add(SheService.instance.buildCurrentTimeBlock());
-    }
+    // ③.6 Current time — injected for all agents so they have accurate temporal context.
+    parts.add(SheService.instance.buildCurrentTimeBlock());
 
     // ⑤ Custom / DM system prompt
     // For She: system_prompt is soul seed only (handled below) — never shown
@@ -105,90 +120,82 @@ class AgentPromptBuilder {
       }
       // Inject DM override as custom settings block (if any)
       if (dmSystemPromptOverride != null && dmSystemPromptOverride!.isNotEmpty) {
-        parts.add(_wrapCustomPrompt(dmSystemPromptOverride!));
+        parts.add(SheService.wrapCustomPrompt(dmSystemPromptOverride!));
       }
     } else if (config.includeCustomPrompt) {
       final custom = _resolveCustomPrompt();
       if (custom.isNotEmpty) {
-        parts.add(_wrapCustomPrompt(custom));
+        parts.add(SheService.wrapCustomPrompt(custom));
       }
     }
 
-    // ⑥ She-only: user-understanding strategy
-    if (agent.isShe && config.she.includeUserStrategy) {
+    // ⑥ User-understanding strategy — She-only via config flag.
+    if (config.she.includeUserStrategy) {
       final strategy = await SheService.instance.buildUserStrategyBlock();
       if (strategy.isNotEmpty) parts.add(strategy);
     }
 
-    // ⑦ She-only: user-profile snapshot
-    if (agent.isShe && config.she.includeProfileSnapshot) {
+    // ⑦ User-profile snapshot — She-only via config flag.
+    if (config.she.includeProfileSnapshot) {
       final snapshot = await SheService.instance
           .buildProfileSnapshotBlock(level: config.she.profileSnapshotLevel);
       if (snapshot.isNotEmpty) parts.add(snapshot);
     }
 
-    // ⑦' She-only: self-cognition (self_notes from minds.db)
-    if (agent.isShe && config.she.includeSheSelfCognition) {
+    // ⑦' She self-cognition (self_notes from minds.db) — She-only via config flag.
+    if (config.she.includeSheSelfCognition) {
       final selfCog = await SheService.instance.buildSheSelfCognitionBlock();
       if (selfCog.isNotEmpty) parts.add(selfCog);
     }
 
-    // ⑦'' She-only: user-cognition (impression/notes from minds.db)
+    // ⑦'' She user-cognition (impression/notes from minds.db).
     // Skipped in lightweight mode — She can query on demand.
-    if (agent.isShe && !config.lightweightMode && config.she.includeUserCognition) {
+    if (!config.lightweightMode && config.she.includeUserCognition) {
       final userCog = await SheService.instance.buildUserCognitionBlock();
       if (userCog.isNotEmpty) parts.add(userCog);
     }
 
-    // ⑦''' Non-She: brief user profile (core fields only)
-    if (!agent.isShe && config.agent.includeUserProfile) {
+    // ⑦''' Non-She: brief user profile (core fields only).
+    // Non-She configs have AgentStackConfig enabled; She has AgentStackConfig.disabled.
+    if (config.agent.includeUserProfile) {
       final profileBlock = await _buildAgentUserProfileBlock();
       if (profileBlock.isNotEmpty) parts.add(profileBlock);
     }
 
-    // ⑧ She-only: first-meeting instruction (conditional)
-    if (agent.isShe && config.she.includeFirstMeeting) {
+    // ⑧ First-meeting instruction — She-only via config flag.
+    if (config.she.includeFirstMeeting) {
       final isFirst = await SheService.instance.isFirstMeeting();
       if (isFirst) parts.add(SheService.instance.buildFirstMeetingBlock());
     }
 
-    // ⑧' Non-She: agent's own soul (self-cognition from minds.db)
+    // ⑧' Non-She: agent's own soul (self-cognition from minds.db).
     // Skipped in lightweight mode.
-    if (!config.lightweightMode && !agent.isShe && config.agent.includeAgentSelfCognition) {
+    if (!config.lightweightMode && config.agent.includeAgentSelfCognition) {
       final selfCog = await _buildAgentSelfCognitionBlock();
       if (selfCog.isNotEmpty) parts.add(selfCog);
     }
 
-    // ⑧'' Non-She: agent's user-cognition (impression/notes from minds.db)
+    // ⑧'' Non-She: agent's user-cognition (impression/notes from minds.db).
     // Skipped in lightweight mode.
-    if (!config.lightweightMode && !agent.isShe && config.agent.includeAgentUserCognition) {
+    if (!config.lightweightMode && config.agent.includeAgentUserCognition) {
       final userCog = await _buildAgentUserCognitionBlock();
       if (userCog.isNotEmpty) parts.add(userCog);
     }
 
-    // ⑧''' Non-She: agent's own recent memories
+    // ⑧''' Non-She: agent's own recent memories.
     // Skipped in lightweight mode.
-    if (!config.lightweightMode && !agent.isShe && config.agent.includeAgentMemory) {
+    if (!config.lightweightMode && config.agent.includeAgentMemory) {
       final memoriesBlock =
           await _buildAgentMemoriesBlock(config.agent.memoryLimit);
       if (memoriesBlock.isNotEmpty) parts.add(memoriesBlock);
     }
 
-    // ⑧'' Non-She: meta/tools CLI guidance (self-discovery)
-    // Always inject when enabled — helps agents discover their tool capabilities.
-    if (!agent.isShe && effectiveTools.includeShepawMetaCli) {
-      final metaBlock = _buildAgentMetaCliBlock();
-      if (metaBlock.isNotEmpty) parts.add(metaBlock);
-    }
-
-    // ⑨ She-only: session-end write instructions
-    if (agent.isShe && config.she.includeSessionEnd) {
-      parts.add(SheService.instance.buildSessionEndBlock());
-    }
-
-    // ⑨' Non-She: session-end cognition/memory update guidance
-    if (!agent.isShe) {
-      parts.add(_buildAgentSessionEndBlock());
+    // ⑨ Session-end — unified for all agents via SheService.buildSessionEndBlockFor().
+    // She: guarded by config.she.includeSessionEnd.
+    // Non-She: always injected (config.she.includeSessionEnd is false for them,
+    //          but !agent.isShe ensures they still get the lighter version).
+    if (config.she.includeSessionEnd || !agent.isShe) {
+      parts.add(SheService.instance.buildSessionEndBlockFor(agent.id));
     }
 
     return parts.where((s) => s.trim().isNotEmpty).join('\n\n');
@@ -214,33 +221,19 @@ class AgentPromptBuilder {
     return agent.metadata['system_prompt'] as String? ?? '';
   }
 
-  /// Resolve the custom prompt: DM override takes priority over the agent's
-  /// stored system_prompt (which is already in the description block for
-  /// non-She agents — so for non-She we only inject dmSystemPromptOverride).
-  ///
-  /// For She, `metadata['system_prompt']` is ONLY used as a soul seed (see
-  /// step ④ above); it is NOT re-injected as "Master's Custom Settings" to
-  /// avoid duplicating the soul content.  Only a DM-channel override is
-  /// injected as a custom block for She.
+  /// Resolve the custom prompt for non-She agents: DM override takes priority.
+  /// The agent's `system_prompt` is already in the description block (②),
+  /// so here we only return the DM-channel override when present.
   String _resolveCustomPrompt() {
     if (dmSystemPromptOverride != null && dmSystemPromptOverride!.isNotEmpty) {
       return dmSystemPromptOverride!;
     }
-    // For She: system_prompt is used as soul seed only, not shown separately.
-    if (agent.isShe) return '';
-    // For other agents the system_prompt was already in the description block.
     return '';
   }
 
-  static String _wrapCustomPrompt(String prompt) => '''
-## Master's Custom Settings for You
-$prompt
-
-(Please follow the above settings without violating your core identity.)''';
-
   // ── Non-She context blocks ─────────────────────────────────────────────────
 
-  /// ⑦' Build the agent's self-cognition block (soul) from minds.db.
+  /// Build the agent's self-cognition block (soul) from minds.db.
   Future<String> _buildAgentSelfCognitionBlock() async {
     final self = await CognitionService.instance.getSelfCognition(agent.id);
     if (self == null || self.soul.isEmpty) return '';
@@ -253,7 +246,7 @@ This grows over time. When you gain new self-awareness, call:
 `shepaw context memory.write --key soul --value "(complete updated soul)"`''';
   }
 
-  /// ⑦'' Build the agent's user-cognition block (impression/notes) from minds.db.
+  /// Build the agent's user-cognition block (impression/notes) from minds.db.
   Future<String> _buildAgentUserCognitionBlock() async {
     final user = await CognitionService.instance.getUserCognition(agent.id);
     if (user == null) return '';
@@ -271,7 +264,7 @@ This grows over time. When you gain new self-awareness, call:
 ## How I Understand My Master
 ${parts.join('\n')}''';
   }
-  ///
+
   /// Injects only non-empty core fields (name/age/gender/occupation/city)
   /// so the agent has basic context about the user without overwhelming the
   /// prompt with She-level detail.
@@ -293,7 +286,7 @@ ${parts.join('\n')}''';
 ${lines.join('\n')}''';
   }
 
-  /// ⑧' Build the recent-memories block for non-She agents.
+  /// Build the recent-memories block for non-She agents.
   ///
   /// Fetches up to [limit] memories sorted by `memory_time` descending.
   /// Returns empty string when the agent has no memories yet.
@@ -329,7 +322,7 @@ ${lines.join('\n')}''';
   }
 
   /// Build all tool-documentation sections according to [ToolsStackConfig]
-  /// and [SheStackConfig] (for the shepaw CLI).
+  /// and [SheStackConfig] (for the shepaw data-access CLI block).
   List<String> _buildToolsBlocks(
     ToolsStackConfig tools,
     SheStackConfig she,
@@ -371,65 +364,15 @@ ${lines.join('\n')}''';
       if (suffix.isNotEmpty) result.add(suffix);
     }
 
-    // shepaw CLI — She-exclusive; config switch lets users disable individual
-    // sub-commands (e.g. disable memory writes, disable agent chat, …).
-    if (tools.includeShepawCli && agent.isShe) {
+    // shepaw data-access CLI — She-exclusive content (_pawCliPrompt).
+    // Non-She agents have this disabled via PromptStackConfig.forOtherAgent
+    // (tools: ToolsStackConfig(includeShepawCli: false)) so this branch
+    // only fires for She.
+    if (tools.includeShepawCli) {
       final cliBlock = SheService.instance.buildShepawCliBlock(she);
       if (cliBlock.isNotEmpty) result.add(cliBlock);
     }
 
     return result;
   }
-
-  /// Build the meta/tools CLI guidance block for non-She agents.
-  /// Uses a compact table format to guide agents through `shepaw` discovery.
-  String _buildAgentMetaCliBlock() => '''
-## Tool Discovery & Proactive Use
-
-You have a `shepaw` CLI tool to access your data and discover capabilities on demand.
-
-### When to Use Web Search (use FIRST, not as fallback)
-
-Call `shepaw tools web.search --query "..."` **immediately** when the question requires information that:
-- May have changed since your training cutoff
-- Describes an ongoing or evolving situation
-- Is inherently time-sensitive (news, events, prices, weather, live data)
-- You cannot confidently answer without up-to-date sources
-
-If there is any doubt about whether your knowledge is current, search first.
-
-### Your Data & Context
-
-| Need | Command |
-|------|---------|
-| Web search | `shepaw tools web.search --query "..."` |
-| Fetch a page | `shepaw tools web.fetch --url "..."` |
-| Your soul / self-notes | `shepaw context memory.query` |
-| User's basic info | `shepaw context profile.query` |
-| Conversation history | `shepaw chat messages --agent <id>` |
-| System info | `shepaw meta system.info` |
-| Current time | `shepaw meta datetime` |
-| OS tools | `shepaw os list` |
-| Full help | `shepaw help` |
-
-**Common OS tools**:
-- File: `shepaw os file.{read,write,delete,list}`
-- Run: `shepaw os command.exec --command "..."`
-- App: `shepaw os app.{open,url,screenshot}`
-- Clipboard: `shepaw os clipboard.{read,write}`
-
-> Need parameters? Add `flags={"help":""}` to any command.''';
-
-  /// Build the session-end guidance block for non-She agents.
-  String _buildAgentSessionEndBlock() => '''
-## Before This Conversation Ends
-
-If you learned something new, record it silently:
-
-- Observation about user → `shepaw context agents.memory-write --id ${agent.id} --content "..." --keywords "tag1,tag2"`
-- Updated self-understanding → `shepaw context memory.write --key soul --value "(complete updated soul)"`
-- New self-reflection or note → `shepaw context memory.append --key self_notes --value "..."`
-- New impression of user → `shepaw context agents.cognition-write --id ${agent.id} --type user --field impression --value "..."`
-
-> Only write when you have genuinely new insights. These are silent — user cannot see them. `ok: true` = success.''';
 }

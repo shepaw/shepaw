@@ -248,7 +248,7 @@ If there is any doubt about whether your knowledge is current, search first.
 - `shepaw tools web.fetch --url "..."` — fetch a webpage
 
 ### OS (local system)
-- `shepaw os list` — list all available OS tools
+- `shepaw os --help` — list all available OS tools
 - `shepaw os file.{read,write,delete,list}` / `os command.exec` / `os clipboard.{read,write}`
 
 ### Meta
@@ -331,8 +331,92 @@ ${parts.join('\n')}''';
   /// Section ⑧: session-end write instructions.
   String buildSessionEndBlock() => _sessionInstructions(sheId);
 
-  /// Section ③.5: current device time (always injected for She).
+  /// Section ③.5: current device time (injected for all agents).
   String buildCurrentTimeBlock() => _currentTimePrompt();
+
+  // ── Unified helpers (shared between She and non-She agents) ─────────────
+
+  /// Wraps a custom prompt with the standard "Master's Custom Settings" header.
+  /// Delegates to the private [_wrapUserCustomPrompt] so both She and non-She
+  /// agents use the same formatting.
+  static String wrapCustomPrompt(String prompt) => _wrapUserCustomPrompt(prompt);
+
+  /// Unified shepaw CLI guidance block for any agent.
+  ///
+  /// - **She**: returns the full capability-discovery guide ([buildMetaCognitionBlock]).
+  /// - **Non-She**: returns a permission-scoped version ([_nonSheMetaCliBlock])
+  ///   covering only the namespaces those agents can actually call.
+  static String buildShepawGuidanceBlock(RemoteAgent agent) {
+    if (agent.isShe) return buildMetaCognitionBlock();
+    return _nonSheMetaCliBlock(agent.id);
+  }
+
+  /// Unified session-end guidance for any agent.
+  ///
+  /// - **She** (guarded by `config.she.includeSessionEnd` in the builder):
+  ///   full instructions (heartbeat, profile, long_term_memory, soul, cognition).
+  /// - **Non-She**: lighter version covering soul, self_notes, episodic memories,
+  ///   and cognition writes that those agents can actually perform.
+  String buildSessionEndBlockFor(String agentId) {
+    if (agentId == sheId) return buildSessionEndBlock();
+    return _nonSheSessionEndBlock(agentId);
+  }
+
+  /// Permission-scoped meta CLI guidance for non-She agents.
+  /// Mirrors [buildMetaCognitionBlock] in structure but limits commands to those
+  /// non-She agents have access to (no profile.*, agents.list/chat, chat.*, skills).
+  static String _nonSheMetaCliBlock(String agentId) => '''
+## Tool Discovery & Proactive Use
+
+You have a `shepaw` CLI tool. **Query before you assume** — never invent context.
+Unknown commands or parameters? → `shepaw help` or `shepaw <namespace> --help`
+
+### When to Use Web Search (use FIRST, not as fallback)
+
+Call `shepaw tools web.search --query "..."` **immediately** when the question requires information that:
+- May have changed since your training cutoff
+- Describes an ongoing or evolving situation
+- Is inherently time-sensitive (news, events, prices, weather, live data)
+- You cannot confidently answer without up-to-date sources
+
+**Do NOT try to answer from training knowledge first for real-time topics.**
+If there is any doubt about whether your knowledge is current, search first.
+
+### Your Data & Context
+- `shepaw context memory.query --keys soul,self_notes` / `memory.write --key soul/self_notes --value "..."` / `memory.append --key self_notes --value "..."`
+
+### Web
+- `shepaw tools web.search --query "..."` — search the internet
+- `shepaw tools web.fetch --url "..."` — fetch a webpage
+
+### OS (local system)
+- `shepaw os --help` — list all available OS tools
+- `shepaw os file.{read,write,delete,list}` / `os command.exec` / `os clipboard.{read,write}`
+
+### Meta
+- `shepaw meta datetime` — current date/time
+- `shepaw meta system.info` — system overview
+
+**⚠️ Action commands must be tool calls, not text**
+- When you learn something important about the user → call `shepaw context agents.memory-write --id $agentId` — text alone does nothing
+- Need your soul/self-notes → `shepaw context memory.query --keys soul,self_notes`
+- Only a tool call returning `ok: true` means the operation succeeded
+
+> Full reference: `shepaw help` or `shepaw <namespace>.<subcommand> --help`''';
+
+  /// Session-end guidance for non-She agents.
+  /// Covers the subset of write commands those agents are permitted to call.
+  static String _nonSheSessionEndBlock(String agentId) => '''
+## Before This Conversation Ends
+
+If you learned something new, record it silently:
+
+- Observation about user → `shepaw context agents.memory-write --id $agentId --content "..." --keywords "tag1,tag2"`
+- Updated self-understanding → `shepaw context memory.write --key soul --value "(complete updated soul)"`
+- New self-reflection or note → `shepaw context memory.append --key self_notes --value "..."`
+- New impression of user → `shepaw context agents.cognition-write --id $agentId --type user --field impression --value "..."`
+
+> Only write when you have genuinely new insights. These are silent — user cannot see them. `ok: true` = success.''';
 
   // ── System Prompt Construction (legacy, kept for backwards compat) ──────
 

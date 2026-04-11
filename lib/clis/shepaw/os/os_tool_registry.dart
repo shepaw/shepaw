@@ -489,6 +489,7 @@ class OsToolRegistry {
       systemPromptSuffixLayered(enabledTools, 'summary');
 
   String systemPromptSuffixLayered(Set<String> enabledTools, String level) {
+    return '';
     final filtered = _filteredTools(enabledTools);
     if (filtered.isEmpty) return '';
     final toolLines = filtered.map((t) {
