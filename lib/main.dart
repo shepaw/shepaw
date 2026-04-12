@@ -28,6 +28,7 @@ import 'clis/shepaw/shepaw_cli.dart';
 import 'services/model_registry.dart';
 import 'services/logger_service.dart';
 import 'services/foreground_task_service.dart';
+import 'task/services/scheduled_task_service.dart';
 import 'services/trace_service.dart';
 import 'services/channel_tunnel_service.dart';
 import 'services/she_service.dart';
@@ -113,6 +114,8 @@ Future<void> main(List<String> args) async {
       await NotificationService().init();
       UpdateNotificationService().init(navigatorKey: navigatorKey);
       ForegroundTaskService().init();
+      // Initialize scheduled task service
+      await ScheduledTaskService().startScheduler();
 
       // Initialize skill registry
       await SkillRegistry.instance.initialize();

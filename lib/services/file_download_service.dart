@@ -1,7 +1,9 @@
+import 'dart:async';
 import 'dart:io';
 import 'package:http/http.dart' as http;
 import 'package:path/path.dart' as path;
 import 'local_file_storage_service.dart';
+import 'logger_service.dart';
 
 /// Result of a file download operation
 class FileDownloadResult {
@@ -32,9 +34,12 @@ class FileDownloadResult {
 /// Service for downloading files from URLs and saving them locally
 class FileDownloadService {
   final LocalFileStorageService _storageService;
+  late final LoggerService _logger;
 
   FileDownloadService([LocalFileStorageService? storageService])
-      : _storageService = storageService ?? LocalFileStorageService();
+      : _storageService = storageService ?? LocalFileStorageService() {
+    _logger = LoggerService();
+  }
 
   /// Check if a MIME type represents an image
   static bool isImageMimeType(String mimeType) {
@@ -52,16 +57,39 @@ class FileDownloadService {
     int? expectedSize,
     void Function(int received, int? total)? onProgress,
   }) async {
+    _logger.info(
+      'downloadAndSave() called with url=$url',
+      tag: 'FileDownloadService',
+    );
+
     // Handle local file paths directly without HTTP
     final uri = Uri.parse(url);
+    
+    _logger.info(
+      'URL parsed - scheme=${uri.scheme}, hasScheme=${uri.hasScheme}, host=${uri.host}',
+      tag: 'FileDownloadService',
+    );
+
     if (!uri.hasScheme || uri.scheme == 'file' || url.startsWith('/')) {
+      _logger.info('Copying local file: $url', tag: 'FileDownloadService');
       return _copyLocalFile(url, fileName: fileName, mimeType: mimeType, onProgress: onProgress);
     }
+
+    _logger.info(
+      'Downloading from URL: $url (scheme=${uri.scheme})',
+      tag: 'FileDownloadService',
+    );
 
     final client = http.Client();
     try {
       final request = http.Request('GET', uri);
       final streamedResponse = await client.send(request);
+
+      _logger.info(
+        'HTTP response received: status=${streamedResponse.statusCode}, '
+        'contentLength=${streamedResponse.contentLength}',
+        tag: 'FileDownloadService',
+      );
 
       if (streamedResponse.statusCode != 200) {
         throw Exception(
@@ -125,6 +153,11 @@ class FileDownloadService {
 
       final fileSize = received;
 
+      _logger.info(
+        'Download completed successfully: $effectiveFileName ($fileSize bytes)',
+        tag: 'FileDownloadService',
+      );
+
       return FileDownloadResult(
         relativePath: relativePath,
         fileName: effectiveFileName,
@@ -132,6 +165,20 @@ class FileDownloadService {
         mimeType: effectiveMime,
         isImage: isImageMimeType(effectiveMime),
       );
+    } on SocketException catch (e) {
+      _logger.error('Network error during download', tag: 'FileDownloadService', error: e);
+      rethrow;
+    } on TimeoutException catch (e) {
+      _logger.error('Download timeout', tag: 'FileDownloadService', error: e);
+      rethrow;
+    } catch (e, stack) {
+      _logger.error(
+        'Unexpected error during download',
+        tag: 'FileDownloadService',
+        error: e,
+        stackTrace: stack,
+      );
+      rethrow;
     } finally {
       client.close();
     }

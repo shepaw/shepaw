@@ -5647,6 +5647,726 @@ abstract class AppLocalizations {
   /// In zh, this message translates to:
   /// **'正在加载档案...'**
   String get profile_loadingProfile;
+
+  /// No description provided for @scheduledTasks_title.
+  ///
+  /// In zh, this message translates to:
+  /// **'定时任务'**
+  String get scheduledTasks_title;
+
+  /// No description provided for @scheduledTasks_description.
+  ///
+  /// In zh, this message translates to:
+  /// **'管理自动执行的定时任务'**
+  String get scheduledTasks_description;
+
+  /// No description provided for @scheduledTasks_noTasks.
+  ///
+  /// In zh, this message translates to:
+  /// **'还没有定时任务'**
+  String get scheduledTasks_noTasks;
+
+  /// No description provided for @scheduledTasks_noTasksHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'创建一个新任务来开始'**
+  String get scheduledTasks_noTasksHint;
+
+  /// No description provided for @scheduledTasks_createTask.
+  ///
+  /// In zh, this message translates to:
+  /// **'创建任务'**
+  String get scheduledTasks_createTask;
+
+  /// No description provided for @scheduledTasks_editTask.
+  ///
+  /// In zh, this message translates to:
+  /// **'编辑任务'**
+  String get scheduledTasks_editTask;
+
+  /// No description provided for @scheduledTasks_deleteTask.
+  ///
+  /// In zh, this message translates to:
+  /// **'删除任务'**
+  String get scheduledTasks_deleteTask;
+
+  /// No description provided for @scheduledTasks_activateTask.
+  ///
+  /// In zh, this message translates to:
+  /// **'启用'**
+  String get scheduledTasks_activateTask;
+
+  /// No description provided for @scheduledTasks_pauseTask.
+  ///
+  /// In zh, this message translates to:
+  /// **'暂停'**
+  String get scheduledTasks_pauseTask;
+
+  /// No description provided for @scheduledTasks_executeNow.
+  ///
+  /// In zh, this message translates to:
+  /// **'立即执行'**
+  String get scheduledTasks_executeNow;
+
+  /// No description provided for @scheduledTasks_form_title.
+  ///
+  /// In zh, this message translates to:
+  /// **'任务详情'**
+  String get scheduledTasks_form_title;
+
+  /// No description provided for @scheduledTasks_form_description.
+  ///
+  /// In zh, this message translates to:
+  /// **'描述'**
+  String get scheduledTasks_form_description;
+
+  /// No description provided for @scheduledTasks_form_descriptionHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'这个任务的用途是什么？'**
+  String get scheduledTasks_form_descriptionHint;
+
+  /// No description provided for @scheduledTasks_form_instruction.
+  ///
+  /// In zh, this message translates to:
+  /// **'指令'**
+  String get scheduledTasks_form_instruction;
+
+  /// No description provided for @scheduledTasks_form_instructionHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'输入任务指令或提示'**
+  String get scheduledTasks_form_instructionHint;
+
+  /// No description provided for @scheduledTasks_form_selectAgent.
+  ///
+  /// In zh, this message translates to:
+  /// **'选择智能体'**
+  String get scheduledTasks_form_selectAgent;
+
+  /// No description provided for @scheduledTasks_form_scheduleType.
+  ///
+  /// In zh, this message translates to:
+  /// **'计划类型'**
+  String get scheduledTasks_form_scheduleType;
+
+  /// No description provided for @scheduledTasks_form_schedulePattern.
+  ///
+  /// In zh, this message translates to:
+  /// **'时间安排'**
+  String get scheduledTasks_form_schedulePattern;
+
+  /// No description provided for @scheduledTasks_form_schedulePatternHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'Cron: 0 9 * * * 或 Duration: PT5M'**
+  String get scheduledTasks_form_schedulePatternHint;
+
+  /// No description provided for @scheduledTasks_form_optional.
+  ///
+  /// In zh, this message translates to:
+  /// **'可选'**
+  String get scheduledTasks_form_optional;
+
+  /// No description provided for @scheduledTasks_form_selectChannel.
+  ///
+  /// In zh, this message translates to:
+  /// **'选择频道（可选）'**
+  String get scheduledTasks_form_selectChannel;
+
+  /// No description provided for @scheduledTasks_scheduleType_cron.
+  ///
+  /// In zh, this message translates to:
+  /// **'Cron 表达式'**
+  String get scheduledTasks_scheduleType_cron;
+
+  /// No description provided for @scheduledTasks_scheduleType_interval.
+  ///
+  /// In zh, this message translates to:
+  /// **'间隔时长'**
+  String get scheduledTasks_scheduleType_interval;
+
+  /// No description provided for @scheduledTasks_scheduleType_once.
+  ///
+  /// In zh, this message translates to:
+  /// **'一次性'**
+  String get scheduledTasks_scheduleType_once;
+
+  /// No description provided for @scheduledTasks_cronExamples.
+  ///
+  /// In zh, this message translates to:
+  /// **'Cron 示例'**
+  String get scheduledTasks_cronExamples;
+
+  /// No description provided for @scheduledTasks_cronExample_daily.
+  ///
+  /// In zh, this message translates to:
+  /// **'每天早上 9 点: 0 9 * * *'**
+  String get scheduledTasks_cronExample_daily;
+
+  /// No description provided for @scheduledTasks_cronExample_hourly.
+  ///
+  /// In zh, this message translates to:
+  /// **'每小时: 0 * * * *'**
+  String get scheduledTasks_cronExample_hourly;
+
+  /// No description provided for @scheduledTasks_cronExample_weekdays.
+  ///
+  /// In zh, this message translates to:
+  /// **'工作日早上 9 点: 0 9 * * 1-5'**
+  String get scheduledTasks_cronExample_weekdays;
+
+  /// No description provided for @scheduledTasks_cronExample_everyMinute.
+  ///
+  /// In zh, this message translates to:
+  /// **'每分钟: * * * * *'**
+  String get scheduledTasks_cronExample_everyMinute;
+
+  /// No description provided for @scheduledTasks_intervalExamples.
+  ///
+  /// In zh, this message translates to:
+  /// **'时长示例'**
+  String get scheduledTasks_intervalExamples;
+
+  /// No description provided for @scheduledTasks_intervalExample_5min.
+  ///
+  /// In zh, this message translates to:
+  /// **'每 5 分钟: PT5M'**
+  String get scheduledTasks_intervalExample_5min;
+
+  /// No description provided for @scheduledTasks_intervalExample_1hour.
+  ///
+  /// In zh, this message translates to:
+  /// **'每 1 小时: PT1H'**
+  String get scheduledTasks_intervalExample_1hour;
+
+  /// No description provided for @scheduledTasks_intervalExample_30min.
+  ///
+  /// In zh, this message translates to:
+  /// **'每 30 分钟: PT30M'**
+  String get scheduledTasks_intervalExample_30min;
+
+  /// No description provided for @scheduledTasks_status_pending.
+  ///
+  /// In zh, this message translates to:
+  /// **'待处理'**
+  String get scheduledTasks_status_pending;
+
+  /// No description provided for @scheduledTasks_status_active.
+  ///
+  /// In zh, this message translates to:
+  /// **'活跃'**
+  String get scheduledTasks_status_active;
+
+  /// No description provided for @scheduledTasks_status_paused.
+  ///
+  /// In zh, this message translates to:
+  /// **'已暂停'**
+  String get scheduledTasks_status_paused;
+
+  /// No description provided for @scheduledTasks_status_completed.
+  ///
+  /// In zh, this message translates to:
+  /// **'已完成'**
+  String get scheduledTasks_status_completed;
+
+  /// No description provided for @scheduledTasks_status_failed.
+  ///
+  /// In zh, this message translates to:
+  /// **'失败'**
+  String get scheduledTasks_status_failed;
+
+  /// No description provided for @scheduledTasks_nextRun.
+  ///
+  /// In zh, this message translates to:
+  /// **'下次运行: {time}'**
+  String scheduledTasks_nextRun(String time);
+
+  /// No description provided for @scheduledTasks_lastRun.
+  ///
+  /// In zh, this message translates to:
+  /// **'最后运行: {time}'**
+  String scheduledTasks_lastRun(String time);
+
+  /// No description provided for @scheduledTasks_executionCount.
+  ///
+  /// In zh, this message translates to:
+  /// **'执行次数: {count}'**
+  String scheduledTasks_executionCount(String count);
+
+  /// No description provided for @scheduledTasks_failureCount.
+  ///
+  /// In zh, this message translates to:
+  /// **'失败次数: {count}'**
+  String scheduledTasks_failureCount(String count);
+
+  /// No description provided for @scheduledTasks_noLastError.
+  ///
+  /// In zh, this message translates to:
+  /// **'无错误'**
+  String get scheduledTasks_noLastError;
+
+  /// No description provided for @scheduledTasks_lastError.
+  ///
+  /// In zh, this message translates to:
+  /// **'最后错误: {error}'**
+  String scheduledTasks_lastError(String error);
+
+  /// No description provided for @scheduledTasks_confirmDelete.
+  ///
+  /// In zh, this message translates to:
+  /// **'删除任务？'**
+  String get scheduledTasks_confirmDelete;
+
+  /// No description provided for @scheduledTasks_confirmDeleteMsg.
+  ///
+  /// In zh, this message translates to:
+  /// **'确定要删除这个定时任务吗？此操作无法撤销。'**
+  String get scheduledTasks_confirmDeleteMsg;
+
+  /// No description provided for @scheduledTasks_confirmPause.
+  ///
+  /// In zh, this message translates to:
+  /// **'暂停任务？'**
+  String get scheduledTasks_confirmPause;
+
+  /// No description provided for @scheduledTasks_confirmPauseMsg.
+  ///
+  /// In zh, this message translates to:
+  /// **'任务将停止执行。您可以稍后恢复。'**
+  String get scheduledTasks_confirmPauseMsg;
+
+  /// No description provided for @scheduledTasks_invalidSchedule.
+  ///
+  /// In zh, this message translates to:
+  /// **'无效的时间安排'**
+  String get scheduledTasks_invalidSchedule;
+
+  /// No description provided for @scheduledTasks_invalidScheduleMsg.
+  ///
+  /// In zh, this message translates to:
+  /// **'请检查您的 cron 表达式或时长格式'**
+  String get scheduledTasks_invalidScheduleMsg;
+
+  /// No description provided for @scheduledTasks_missingInstruction.
+  ///
+  /// In zh, this message translates to:
+  /// **'指令不能为空'**
+  String get scheduledTasks_missingInstruction;
+
+  /// No description provided for @scheduledTasks_missingAgent.
+  ///
+  /// In zh, this message translates to:
+  /// **'请选择一个智能体'**
+  String get scheduledTasks_missingAgent;
+
+  /// No description provided for @scheduledTasks_createSuccess.
+  ///
+  /// In zh, this message translates to:
+  /// **'任务创建成功'**
+  String get scheduledTasks_createSuccess;
+
+  /// No description provided for @scheduledTasks_updateSuccess.
+  ///
+  /// In zh, this message translates to:
+  /// **'任务更新成功'**
+  String get scheduledTasks_updateSuccess;
+
+  /// No description provided for @scheduledTasks_deleteSuccess.
+  ///
+  /// In zh, this message translates to:
+  /// **'任务删除成功'**
+  String get scheduledTasks_deleteSuccess;
+
+  /// No description provided for @scheduledTasks_activateSuccess.
+  ///
+  /// In zh, this message translates to:
+  /// **'任务已启用'**
+  String get scheduledTasks_activateSuccess;
+
+  /// No description provided for @scheduledTasks_pauseSuccess.
+  ///
+  /// In zh, this message translates to:
+  /// **'任务已暂停'**
+  String get scheduledTasks_pauseSuccess;
+
+  /// No description provided for @scheduledTasks_executeNowSuccess.
+  ///
+  /// In zh, this message translates to:
+  /// **'任务执行已开始'**
+  String get scheduledTasks_executeNowSuccess;
+
+  /// No description provided for @scheduledTasks_filterByAgent.
+  ///
+  /// In zh, this message translates to:
+  /// **'按智能体筛选'**
+  String get scheduledTasks_filterByAgent;
+
+  /// No description provided for @scheduledTasks_filterAll.
+  ///
+  /// In zh, this message translates to:
+  /// **'全部'**
+  String get scheduledTasks_filterAll;
+
+  /// No description provided for @scheduledTasks_createError.
+  ///
+  /// In zh, this message translates to:
+  /// **'创建任务失败: {error}'**
+  String scheduledTasks_createError(String error);
+
+  /// No description provided for @scheduledTasks_updateError.
+  ///
+  /// In zh, this message translates to:
+  /// **'更新任务失败: {error}'**
+  String scheduledTasks_updateError(String error);
+
+  /// No description provided for @scheduledTasks_deleteError.
+  ///
+  /// In zh, this message translates to:
+  /// **'删除任务失败: {error}'**
+  String scheduledTasks_deleteError(String error);
+
+  /// No description provided for @scheduledTasks_activateError.
+  ///
+  /// In zh, this message translates to:
+  /// **'启用任务失败: {error}'**
+  String scheduledTasks_activateError(String error);
+
+  /// No description provided for @scheduledTasks_targetAgent.
+  ///
+  /// In zh, this message translates to:
+  /// **'Agent 任务'**
+  String get scheduledTasks_targetAgent;
+
+  /// No description provided for @scheduledTasks_targetGroup.
+  ///
+  /// In zh, this message translates to:
+  /// **'群任务'**
+  String get scheduledTasks_targetGroup;
+
+  /// No description provided for @scheduledTasks_form_optionalChannel.
+  ///
+  /// In zh, this message translates to:
+  /// **'指定频道（可选）'**
+  String get scheduledTasks_form_optionalChannel;
+
+  /// No description provided for @scheduledTasks_form_selectGroupChannel.
+  ///
+  /// In zh, this message translates to:
+  /// **'选择群频道'**
+  String get scheduledTasks_form_selectGroupChannel;
+
+  /// No description provided for @scheduledTasks_form_selectGroup.
+  ///
+  /// In zh, this message translates to:
+  /// **'选择群'**
+  String get scheduledTasks_form_selectGroup;
+
+  /// No description provided for @scheduledTasks_form_selectGroupAgents.
+  ///
+  /// In zh, this message translates to:
+  /// **'群内 Agent'**
+  String get scheduledTasks_form_selectGroupAgents;
+
+  /// No description provided for @scheduledTasks_form_selectMentions.
+  ///
+  /// In zh, this message translates to:
+  /// **'@提及的 Agent（可选）'**
+  String get scheduledTasks_form_selectMentions;
+
+  /// No description provided for @scheduledTasks_missingChannel.
+  ///
+  /// In zh, this message translates to:
+  /// **'请选择频道'**
+  String get scheduledTasks_missingChannel;
+
+  /// No description provided for @scheduledTasks_missingGroupAgents.
+  ///
+  /// In zh, this message translates to:
+  /// **'请至少选择一个 Agent'**
+  String get scheduledTasks_missingGroupAgents;
+
+  /// No description provided for @scheduledTasks_form_scheduleTypeLabel.
+  ///
+  /// In zh, this message translates to:
+  /// **'时间规则类型'**
+  String get scheduledTasks_form_scheduleTypeLabel;
+
+  /// No description provided for @scheduledTasks_form_scheduleType_interval.
+  ///
+  /// In zh, this message translates to:
+  /// **'间隔重复'**
+  String get scheduledTasks_form_scheduleType_interval;
+
+  /// No description provided for @scheduledTasks_form_scheduleType_cron.
+  ///
+  /// In zh, this message translates to:
+  /// **'Cron 计划'**
+  String get scheduledTasks_form_scheduleType_cron;
+
+  /// No description provided for @scheduledTasks_form_scheduleType_once.
+  ///
+  /// In zh, this message translates to:
+  /// **'一次性'**
+  String get scheduledTasks_form_scheduleType_once;
+
+  /// No description provided for @scheduledTasks_form_interval_value.
+  ///
+  /// In zh, this message translates to:
+  /// **'间隔数值'**
+  String get scheduledTasks_form_interval_value;
+
+  /// No description provided for @scheduledTasks_form_interval_unit_minutes.
+  ///
+  /// In zh, this message translates to:
+  /// **'分钟'**
+  String get scheduledTasks_form_interval_unit_minutes;
+
+  /// No description provided for @scheduledTasks_form_interval_unit_hours.
+  ///
+  /// In zh, this message translates to:
+  /// **'小时'**
+  String get scheduledTasks_form_interval_unit_hours;
+
+  /// No description provided for @scheduledTasks_form_interval_unit_days.
+  ///
+  /// In zh, this message translates to:
+  /// **'天'**
+  String get scheduledTasks_form_interval_unit_days;
+
+  /// No description provided for @scheduledTasks_form_interval_preview.
+  ///
+  /// In zh, this message translates to:
+  /// **'每 {value} {unit}执行一次'**
+  String scheduledTasks_form_interval_preview(String value, String unit);
+
+  /// No description provided for @scheduledTasks_form_preset_label.
+  ///
+  /// In zh, this message translates to:
+  /// **'快捷预设'**
+  String get scheduledTasks_form_preset_label;
+
+  /// No description provided for @scheduledTasks_form_preset_5min.
+  ///
+  /// In zh, this message translates to:
+  /// **'5分钟'**
+  String get scheduledTasks_form_preset_5min;
+
+  /// No description provided for @scheduledTasks_form_preset_30min.
+  ///
+  /// In zh, this message translates to:
+  /// **'30分钟'**
+  String get scheduledTasks_form_preset_30min;
+
+  /// No description provided for @scheduledTasks_form_preset_1h.
+  ///
+  /// In zh, this message translates to:
+  /// **'1小时'**
+  String get scheduledTasks_form_preset_1h;
+
+  /// No description provided for @scheduledTasks_form_preset_6h.
+  ///
+  /// In zh, this message translates to:
+  /// **'6小时'**
+  String get scheduledTasks_form_preset_6h;
+
+  /// No description provided for @scheduledTasks_form_preset_1d.
+  ///
+  /// In zh, this message translates to:
+  /// **'每天'**
+  String get scheduledTasks_form_preset_1d;
+
+  /// No description provided for @scheduledTasks_form_cron_frequency.
+  ///
+  /// In zh, this message translates to:
+  /// **'执行频率'**
+  String get scheduledTasks_form_cron_frequency;
+
+  /// No description provided for @scheduledTasks_form_cron_freq_daily.
+  ///
+  /// In zh, this message translates to:
+  /// **'每天'**
+  String get scheduledTasks_form_cron_freq_daily;
+
+  /// No description provided for @scheduledTasks_form_cron_freq_weekly.
+  ///
+  /// In zh, this message translates to:
+  /// **'每周'**
+  String get scheduledTasks_form_cron_freq_weekly;
+
+  /// No description provided for @scheduledTasks_form_cron_freq_monthly.
+  ///
+  /// In zh, this message translates to:
+  /// **'每月'**
+  String get scheduledTasks_form_cron_freq_monthly;
+
+  /// No description provided for @scheduledTasks_form_cron_freq_custom.
+  ///
+  /// In zh, this message translates to:
+  /// **'自定义'**
+  String get scheduledTasks_form_cron_freq_custom;
+
+  /// No description provided for @scheduledTasks_form_cron_time.
+  ///
+  /// In zh, this message translates to:
+  /// **'执行时间'**
+  String get scheduledTasks_form_cron_time;
+
+  /// No description provided for @scheduledTasks_form_cron_weekdays.
+  ///
+  /// In zh, this message translates to:
+  /// **'执行星期'**
+  String get scheduledTasks_form_cron_weekdays;
+
+  /// No description provided for @scheduledTasks_form_cron_monthdays.
+  ///
+  /// In zh, this message translates to:
+  /// **'执行日期'**
+  String get scheduledTasks_form_cron_monthdays;
+
+  /// No description provided for @scheduledTasks_form_cron_advanced.
+  ///
+  /// In zh, this message translates to:
+  /// **'查看 Cron 表达式'**
+  String get scheduledTasks_form_cron_advanced;
+
+  /// No description provided for @scheduledTasks_form_cron_preview.
+  ///
+  /// In zh, this message translates to:
+  /// **'接下来的执行时间'**
+  String get scheduledTasks_form_cron_preview;
+
+  /// No description provided for @scheduledTasks_form_cron_custom_hint.
+  ///
+  /// In zh, this message translates to:
+  /// **'分 时 日 月 周（如：0 9 * * 1-5）'**
+  String get scheduledTasks_form_cron_custom_hint;
+
+  /// No description provided for @scheduledTasks_form_cron_weekday_mon.
+  ///
+  /// In zh, this message translates to:
+  /// **'一'**
+  String get scheduledTasks_form_cron_weekday_mon;
+
+  /// No description provided for @scheduledTasks_form_cron_weekday_tue.
+  ///
+  /// In zh, this message translates to:
+  /// **'二'**
+  String get scheduledTasks_form_cron_weekday_tue;
+
+  /// No description provided for @scheduledTasks_form_cron_weekday_wed.
+  ///
+  /// In zh, this message translates to:
+  /// **'三'**
+  String get scheduledTasks_form_cron_weekday_wed;
+
+  /// No description provided for @scheduledTasks_form_cron_weekday_thu.
+  ///
+  /// In zh, this message translates to:
+  /// **'四'**
+  String get scheduledTasks_form_cron_weekday_thu;
+
+  /// No description provided for @scheduledTasks_form_cron_weekday_fri.
+  ///
+  /// In zh, this message translates to:
+  /// **'五'**
+  String get scheduledTasks_form_cron_weekday_fri;
+
+  /// No description provided for @scheduledTasks_form_cron_weekday_sat.
+  ///
+  /// In zh, this message translates to:
+  /// **'六'**
+  String get scheduledTasks_form_cron_weekday_sat;
+
+  /// No description provided for @scheduledTasks_form_cron_weekday_sun.
+  ///
+  /// In zh, this message translates to:
+  /// **'日'**
+  String get scheduledTasks_form_cron_weekday_sun;
+
+  /// No description provided for @scheduledTasks_form_once_datetime.
+  ///
+  /// In zh, this message translates to:
+  /// **'执行时间'**
+  String get scheduledTasks_form_once_datetime;
+
+  /// No description provided for @scheduledTasks_form_once_pickDate.
+  ///
+  /// In zh, this message translates to:
+  /// **'选择日期'**
+  String get scheduledTasks_form_once_pickDate;
+
+  /// No description provided for @scheduledTasks_form_once_pickTime.
+  ///
+  /// In zh, this message translates to:
+  /// **'选择时间'**
+  String get scheduledTasks_form_once_pickTime;
+
+  /// No description provided for @scheduledTasks_form_saveAndActivate.
+  ///
+  /// In zh, this message translates to:
+  /// **'保存并启用'**
+  String get scheduledTasks_form_saveAndActivate;
+
+  /// No description provided for @scheduledTasks_form_scheduleSection.
+  ///
+  /// In zh, this message translates to:
+  /// **'时间规则'**
+  String get scheduledTasks_form_scheduleSection;
+
+  /// No description provided for @scheduledTasks_form_targetSection.
+  ///
+  /// In zh, this message translates to:
+  /// **'执行目标'**
+  String get scheduledTasks_form_targetSection;
+
+  /// No description provided for @scheduledTasks_form_contentSection.
+  ///
+  /// In zh, this message translates to:
+  /// **'任务内容'**
+  String get scheduledTasks_form_contentSection;
+
+  /// No description provided for @scheduledTasks_form_invalidInterval.
+  ///
+  /// In zh, this message translates to:
+  /// **'请输入有效的间隔数值（最小 1）'**
+  String get scheduledTasks_form_invalidInterval;
+
+  /// No description provided for @scheduledTasks_form_invalidCron.
+  ///
+  /// In zh, this message translates to:
+  /// **'请完善 Cron 规则配置'**
+  String get scheduledTasks_form_invalidCron;
+
+  /// No description provided for @scheduledTasks_form_invalidOnce.
+  ///
+  /// In zh, this message translates to:
+  /// **'请选择一个未来的执行时间'**
+  String get scheduledTasks_form_invalidOnce;
+
+  /// No description provided for @scheduledTasks_form_oncePastError.
+  ///
+  /// In zh, this message translates to:
+  /// **'执行时间必须在当前时间之后'**
+  String get scheduledTasks_form_oncePastError;
+
+  /// No description provided for @scheduledTasks_form_agentConversation.
+  ///
+  /// In zh, this message translates to:
+  /// **'指定会话'**
+  String get scheduledTasks_form_agentConversation;
+
+  /// No description provided for @scheduledTasks_form_agentConversationHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'选择该智能体的会话（默认当前激活会话）'**
+  String get scheduledTasks_form_agentConversationHint;
+
+  /// No description provided for @scheduledTasks_form_agentNoConversation.
+  ///
+  /// In zh, this message translates to:
+  /// **'该智能体暂无会话记录'**
+  String get scheduledTasks_form_agentNoConversation;
 }
 
 class _AppLocalizationsDelegate

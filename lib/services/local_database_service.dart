@@ -12,6 +12,8 @@ import 'she_profile_database_service.dart';
 import 'she_memory_db_service.dart';
 import 'minds_database_service.dart';
 import 'agent_memory_db_service.dart';
+import '../task/models/scheduled_task.dart';
+import 'logger_service.dart';
 /// 本地数据库服务 - 使用 SQLite 存储所有数据
 class LocalDatabaseService {
   static final LocalDatabaseService _instance = LocalDatabaseService._internal();
@@ -39,7 +41,7 @@ class LocalDatabaseService {
       // Web平台使用sqflite_common_ffi
       return await openDatabase(
         'shepaw',
-        version: 19,
+        version: 21,
         onCreate: _onCreate,
         onUpgrade: _onUpgrade,
       );
@@ -49,7 +51,7 @@ class LocalDatabaseService {
       path = join(directory.path, 'shepaw.db');
       return await openDatabase(
         path,
-        version: 19,
+        version: 21,
         onCreate: _onCreate,
         onUpgrade: _onUpgrade,
       );
@@ -60,7 +62,7 @@ class LocalDatabaseService {
 
       return await openDatabase(
         path,
-        version: 19,
+        version: 21,
         onCreate: _onCreate,
         onUpgrade: _onUpgrade,
       );
@@ -284,6 +286,37 @@ class LocalDatabaseService {
       )
     ''');
 
+    // 定时任务表 (v21)
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS scheduled_tasks (
+        id TEXT PRIMARY KEY,
+        agent_id TEXT,
+        channel_id TEXT,
+        task_type TEXT NOT NULL,
+        description TEXT,
+        status TEXT DEFAULT 'pending',
+        instruction TEXT NOT NULL,
+        parameters TEXT,
+        schedule_pattern TEXT NOT NULL,
+        last_run_at INTEGER,
+        next_run_at INTEGER NOT NULL,
+        execution_count INTEGER DEFAULT 0,
+        failure_count INTEGER DEFAULT 0,
+        last_error TEXT,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL,
+        created_by TEXT NOT NULL,
+        execution_target TEXT NOT NULL DEFAULT 'agent',
+        agent_ids TEXT,
+        mentioned_agent_ids TEXT
+      )
+    ''');
+    await db.execute('CREATE INDEX IF NOT EXISTS idx_scheduled_tasks_status ON scheduled_tasks(status)');
+    await db.execute('CREATE INDEX IF NOT EXISTS idx_scheduled_tasks_next_run ON scheduled_tasks(next_run_at)');
+    await db.execute('CREATE INDEX IF NOT EXISTS idx_scheduled_tasks_agent ON scheduled_tasks(agent_id)');
+    await db.execute('CREATE INDEX IF NOT EXISTS idx_scheduled_tasks_channel ON scheduled_tasks(channel_id)');
+    await db.execute('CREATE INDEX IF NOT EXISTS idx_scheduled_tasks_target ON scheduled_tasks(execution_target)');
+
   }
 
   /// 数据库升级
@@ -367,6 +400,100 @@ class LocalDatabaseService {
         await db.execute(
           'ALTER TABLE tool_configs ADD COLUMN she_exclusive INTEGER DEFAULT 0');
       } catch (_) {}
+    }
+
+
+    if (oldVersion < 20) {
+      // 版本 19 -> 20: 定时任务表
+      try {
+        await db.execute('''
+          CREATE TABLE IF NOT EXISTS scheduled_tasks (
+            id TEXT PRIMARY KEY,
+            agent_id TEXT NOT NULL,
+            channel_id TEXT,
+            task_type TEXT NOT NULL,
+            description TEXT,
+            status TEXT DEFAULT 'pending',
+            instruction TEXT NOT NULL,
+            parameters TEXT,
+            schedule_pattern TEXT NOT NULL,
+            last_run_at INTEGER,
+            next_run_at INTEGER NOT NULL,
+            execution_count INTEGER DEFAULT 0,
+            failure_count INTEGER DEFAULT 0,
+            last_error TEXT,
+            created_at INTEGER NOT NULL,
+            updated_at INTEGER NOT NULL,
+            created_by TEXT NOT NULL,
+            FOREIGN KEY (agent_id) REFERENCES agents (id) ON DELETE CASCADE
+          )
+        ''');
+        await db.execute('CREATE INDEX IF NOT EXISTS idx_scheduled_tasks_status ON scheduled_tasks(status)');
+        await db.execute('CREATE INDEX IF NOT EXISTS idx_scheduled_tasks_next_run ON scheduled_tasks(next_run_at)');
+        await db.execute('CREATE INDEX IF NOT EXISTS idx_scheduled_tasks_agent ON scheduled_tasks(agent_id)');
+        await db.execute('CREATE INDEX IF NOT EXISTS idx_scheduled_tasks_channel ON scheduled_tasks(channel_id)');
+      } catch (e) {
+        LoggerService().error('Failed to create scheduled_tasks table', tag: 'Migration', error: e);
+      }
+    }
+
+    if (oldVersion < 21) {
+      // 版本 20 -> 21: scheduled_tasks 支持群任务（execution_target / agent_ids / mentioned_agent_ids）
+      // SQLite 不支持直接 DROP CONSTRAINT，使用 rename-create-copy-drop 模式迁移。
+      try {
+        // 1. 备份旧表
+        await db.execute('ALTER TABLE scheduled_tasks RENAME TO scheduled_tasks_v20');
+        // 2. 建新表（agent_id 可空、无 FK、三个新列）
+        await db.execute('''
+          CREATE TABLE scheduled_tasks (
+            id TEXT PRIMARY KEY,
+            agent_id TEXT,
+            channel_id TEXT,
+            task_type TEXT NOT NULL,
+            description TEXT,
+            status TEXT DEFAULT 'pending',
+            instruction TEXT NOT NULL,
+            parameters TEXT,
+            schedule_pattern TEXT NOT NULL,
+            last_run_at INTEGER,
+            next_run_at INTEGER NOT NULL,
+            execution_count INTEGER DEFAULT 0,
+            failure_count INTEGER DEFAULT 0,
+            last_error TEXT,
+            created_at INTEGER NOT NULL,
+            updated_at INTEGER NOT NULL,
+            created_by TEXT NOT NULL,
+            execution_target TEXT NOT NULL DEFAULT 'agent',
+            agent_ids TEXT,
+            mentioned_agent_ids TEXT
+          )
+        ''');
+        // 3. 迁移数据（旧数据全部归为 agent 类型，新列填充默认值）
+        await db.execute('''
+          INSERT INTO scheduled_tasks (
+            id, agent_id, channel_id, task_type, description, status,
+            instruction, parameters, schedule_pattern, last_run_at, next_run_at,
+            execution_count, failure_count, last_error, created_at, updated_at,
+            created_by, execution_target, agent_ids, mentioned_agent_ids
+          )
+          SELECT
+            id, agent_id, channel_id, task_type, description, status,
+            instruction, parameters, schedule_pattern, last_run_at, next_run_at,
+            execution_count, failure_count, last_error, created_at, updated_at,
+            created_by, 'agent', NULL, NULL
+          FROM scheduled_tasks_v20
+        ''');
+        // 4. 删除备份表
+        await db.execute('DROP TABLE scheduled_tasks_v20');
+        // 5. 重建索引
+        await db.execute('CREATE INDEX IF NOT EXISTS idx_scheduled_tasks_status ON scheduled_tasks(status)');
+        await db.execute('CREATE INDEX IF NOT EXISTS idx_scheduled_tasks_next_run ON scheduled_tasks(next_run_at)');
+        await db.execute('CREATE INDEX IF NOT EXISTS idx_scheduled_tasks_agent ON scheduled_tasks(agent_id)');
+        await db.execute('CREATE INDEX IF NOT EXISTS idx_scheduled_tasks_channel ON scheduled_tasks(channel_id)');
+        await db.execute('CREATE INDEX IF NOT EXISTS idx_scheduled_tasks_target ON scheduled_tasks(execution_target)');
+      } catch (e) {
+        LoggerService().error('Failed to migrate scheduled_tasks to v21', tag: 'Migration', error: e);
+      }
     }
 
   }
@@ -1274,4 +1401,97 @@ class LocalDatabaseService {
       }
     }
   }
+
+  // ==================== 定时任务操作 ====================
+
+  /// 创建定时任务
+  Future<void> createScheduledTask(ScheduledTask task) async {
+    final db = await database;
+    await db.insert(
+      'scheduled_tasks',
+      task.toJson(),
+      conflictAlgorithm: ConflictAlgorithm.replace,
+    );
+  }
+
+  /// 根据 ID 获取定时任务
+  Future<ScheduledTask?> getScheduledTaskById(String id) async {
+    final db = await database;
+    final results = await db.query(
+      'scheduled_tasks',
+      where: 'id = ?',
+      whereArgs: [id],
+    );
+    return results.isEmpty ? null : ScheduledTask.fromJson(results.first);
+  }
+
+  /// 列出定时任务（支持筛选）
+  Future<List<ScheduledTask>> listScheduledTasks({
+    String? agentId,
+    String? status,
+    String? channelId,
+  }) async {
+    final db = await database;
+    final where = <String>[];
+    final args = <dynamic>[];
+
+    if (agentId != null) {
+      where.add('agent_id = ?');
+      args.add(agentId);
+    }
+    if (status != null) {
+      where.add('status = ?');
+      args.add(status);
+    }
+    if (channelId != null) {
+      where.add('channel_id = ?');
+      args.add(channelId);
+    }
+
+    final results = await db.query(
+      'scheduled_tasks',
+      where: where.isNotEmpty ? where.join(' AND ') : null,
+      whereArgs: args.isNotEmpty ? args : null,
+      orderBy: 'next_run_at ASC',
+    );
+
+    return results.map((r) => ScheduledTask.fromJson(r)).toList();
+  }
+
+  /// 获取到期执行的定时任务
+  Future<List<ScheduledTask>> getTasksDueForExecution({int? beforeTime}) async {
+    final db = await database;
+    final now = beforeTime ?? DateTime.now().millisecondsSinceEpoch;
+
+    final results = await db.query(
+      'scheduled_tasks',
+      where: 'status = ? AND next_run_at <= ?',
+      whereArgs: [ScheduledTask.statusActive, now],
+      orderBy: 'next_run_at ASC',
+    );
+
+    return results.map((r) => ScheduledTask.fromJson(r)).toList();
+  }
+
+  /// 更新定时任务
+  Future<void> updateScheduledTask(ScheduledTask task) async {
+    final db = await database;
+    await db.update(
+      'scheduled_tasks',
+      task.toJson(),
+      where: 'id = ?',
+      whereArgs: [task.id],
+    );
+  }
+
+  /// 删除定时任务
+  Future<void> deleteScheduledTask(String id) async {
+    final db = await database;
+    await db.delete(
+      'scheduled_tasks',
+      where: 'id = ?',
+      whereArgs: [id],
+    );
+  }
+
 }

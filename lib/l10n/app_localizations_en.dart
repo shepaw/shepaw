@@ -3151,4 +3151,402 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get profile_loadingProfile => 'Loading profile...';
+
+  @override
+  String get scheduledTasks_title => 'Scheduled Tasks';
+
+  @override
+  String get scheduledTasks_description =>
+      'Manage automated tasks that run on a schedule';
+
+  @override
+  String get scheduledTasks_noTasks => 'No scheduled tasks yet';
+
+  @override
+  String get scheduledTasks_noTasksHint => 'Create a new task to get started';
+
+  @override
+  String get scheduledTasks_createTask => 'Create Task';
+
+  @override
+  String get scheduledTasks_editTask => 'Edit Task';
+
+  @override
+  String get scheduledTasks_deleteTask => 'Delete Task';
+
+  @override
+  String get scheduledTasks_activateTask => 'Activate';
+
+  @override
+  String get scheduledTasks_pauseTask => 'Pause';
+
+  @override
+  String get scheduledTasks_executeNow => 'Execute Now';
+
+  @override
+  String get scheduledTasks_form_title => 'Task Details';
+
+  @override
+  String get scheduledTasks_form_description => 'Description';
+
+  @override
+  String get scheduledTasks_form_descriptionHint => 'What does this task do?';
+
+  @override
+  String get scheduledTasks_form_instruction => 'Instruction';
+
+  @override
+  String get scheduledTasks_form_instructionHint =>
+      'Enter the task instruction or prompt';
+
+  @override
+  String get scheduledTasks_form_selectAgent => 'Select Agent';
+
+  @override
+  String get scheduledTasks_form_scheduleType => 'Schedule Type';
+
+  @override
+  String get scheduledTasks_form_schedulePattern => 'Schedule Pattern';
+
+  @override
+  String get scheduledTasks_form_schedulePatternHint =>
+      'Cron: 0 9 * * * or Duration: PT5M';
+
+  @override
+  String get scheduledTasks_form_optional => 'Optional';
+
+  @override
+  String get scheduledTasks_form_selectChannel => 'Select Channel (Optional)';
+
+  @override
+  String get scheduledTasks_scheduleType_cron => 'Cron Expression';
+
+  @override
+  String get scheduledTasks_scheduleType_interval => 'Interval Duration';
+
+  @override
+  String get scheduledTasks_scheduleType_once => 'One-Time';
+
+  @override
+  String get scheduledTasks_cronExamples => 'Cron Examples';
+
+  @override
+  String get scheduledTasks_cronExample_daily => 'Daily at 9:00 AM: 0 9 * * *';
+
+  @override
+  String get scheduledTasks_cronExample_hourly => 'Every hour: 0 * * * *';
+
+  @override
+  String get scheduledTasks_cronExample_weekdays =>
+      'Weekdays at 9:00 AM: 0 9 * * 1-5';
+
+  @override
+  String get scheduledTasks_cronExample_everyMinute =>
+      'Every minute: * * * * *';
+
+  @override
+  String get scheduledTasks_intervalExamples => 'Duration Examples';
+
+  @override
+  String get scheduledTasks_intervalExample_5min => 'Every 5 minutes: PT5M';
+
+  @override
+  String get scheduledTasks_intervalExample_1hour => 'Every 1 hour: PT1H';
+
+  @override
+  String get scheduledTasks_intervalExample_30min => 'Every 30 minutes: PT30M';
+
+  @override
+  String get scheduledTasks_status_pending => 'Pending';
+
+  @override
+  String get scheduledTasks_status_active => 'Active';
+
+  @override
+  String get scheduledTasks_status_paused => 'Paused';
+
+  @override
+  String get scheduledTasks_status_completed => 'Completed';
+
+  @override
+  String get scheduledTasks_status_failed => 'Failed';
+
+  @override
+  String scheduledTasks_nextRun(String time) {
+    return 'Next Run: $time';
+  }
+
+  @override
+  String scheduledTasks_lastRun(String time) {
+    return 'Last Run: $time';
+  }
+
+  @override
+  String scheduledTasks_executionCount(String count) {
+    return 'Executions: $count';
+  }
+
+  @override
+  String scheduledTasks_failureCount(String count) {
+    return 'Failures: $count';
+  }
+
+  @override
+  String get scheduledTasks_noLastError => 'No errors';
+
+  @override
+  String scheduledTasks_lastError(String error) {
+    return 'Last Error: $error';
+  }
+
+  @override
+  String get scheduledTasks_confirmDelete => 'Delete Task?';
+
+  @override
+  String get scheduledTasks_confirmDeleteMsg =>
+      'Are you sure you want to delete this scheduled task? This action cannot be undone.';
+
+  @override
+  String get scheduledTasks_confirmPause => 'Pause Task?';
+
+  @override
+  String get scheduledTasks_confirmPauseMsg =>
+      'The task will stop executing. You can resume it later.';
+
+  @override
+  String get scheduledTasks_invalidSchedule => 'Invalid schedule pattern';
+
+  @override
+  String get scheduledTasks_invalidScheduleMsg =>
+      'Please check your cron expression or duration format';
+
+  @override
+  String get scheduledTasks_missingInstruction => 'Instruction is required';
+
+  @override
+  String get scheduledTasks_missingAgent => 'Please select an agent';
+
+  @override
+  String get scheduledTasks_createSuccess => 'Task created successfully';
+
+  @override
+  String get scheduledTasks_updateSuccess => 'Task updated successfully';
+
+  @override
+  String get scheduledTasks_deleteSuccess => 'Task deleted successfully';
+
+  @override
+  String get scheduledTasks_activateSuccess => 'Task activated';
+
+  @override
+  String get scheduledTasks_pauseSuccess => 'Task paused';
+
+  @override
+  String get scheduledTasks_executeNowSuccess => 'Task execution started';
+
+  @override
+  String get scheduledTasks_filterByAgent => 'FILTER BY AGENT';
+
+  @override
+  String get scheduledTasks_filterAll => 'All';
+
+  @override
+  String scheduledTasks_createError(String error) {
+    return 'Failed to create task: $error';
+  }
+
+  @override
+  String scheduledTasks_updateError(String error) {
+    return 'Failed to update task: $error';
+  }
+
+  @override
+  String scheduledTasks_deleteError(String error) {
+    return 'Failed to delete task: $error';
+  }
+
+  @override
+  String scheduledTasks_activateError(String error) {
+    return 'Failed to activate task: $error';
+  }
+
+  @override
+  String get scheduledTasks_targetAgent => 'Agent Task';
+
+  @override
+  String get scheduledTasks_targetGroup => 'Group Task';
+
+  @override
+  String get scheduledTasks_form_optionalChannel =>
+      'Override channel (optional)';
+
+  @override
+  String get scheduledTasks_form_selectGroupChannel => 'Select group channel';
+
+  @override
+  String get scheduledTasks_form_selectGroup => 'Select group';
+
+  @override
+  String get scheduledTasks_form_selectGroupAgents => 'Agents in group';
+
+  @override
+  String get scheduledTasks_form_selectMentions =>
+      'Agents to mention (optional)';
+
+  @override
+  String get scheduledTasks_missingChannel => 'Please select a channel';
+
+  @override
+  String get scheduledTasks_missingGroupAgents =>
+      'Please select at least one agent';
+
+  @override
+  String get scheduledTasks_form_scheduleTypeLabel => 'Schedule Type';
+
+  @override
+  String get scheduledTasks_form_scheduleType_interval => 'Repeat Interval';
+
+  @override
+  String get scheduledTasks_form_scheduleType_cron => 'Cron Schedule';
+
+  @override
+  String get scheduledTasks_form_scheduleType_once => 'One-Time';
+
+  @override
+  String get scheduledTasks_form_interval_value => 'Interval Value';
+
+  @override
+  String get scheduledTasks_form_interval_unit_minutes => 'minutes';
+
+  @override
+  String get scheduledTasks_form_interval_unit_hours => 'hours';
+
+  @override
+  String get scheduledTasks_form_interval_unit_days => 'days';
+
+  @override
+  String scheduledTasks_form_interval_preview(String value, String unit) {
+    return 'Runs every $value $unit';
+  }
+
+  @override
+  String get scheduledTasks_form_preset_label => 'Quick Presets';
+
+  @override
+  String get scheduledTasks_form_preset_5min => '5 min';
+
+  @override
+  String get scheduledTasks_form_preset_30min => '30 min';
+
+  @override
+  String get scheduledTasks_form_preset_1h => '1 hour';
+
+  @override
+  String get scheduledTasks_form_preset_6h => '6 hours';
+
+  @override
+  String get scheduledTasks_form_preset_1d => 'Daily';
+
+  @override
+  String get scheduledTasks_form_cron_frequency => 'Frequency';
+
+  @override
+  String get scheduledTasks_form_cron_freq_daily => 'Daily';
+
+  @override
+  String get scheduledTasks_form_cron_freq_weekly => 'Weekly';
+
+  @override
+  String get scheduledTasks_form_cron_freq_monthly => 'Monthly';
+
+  @override
+  String get scheduledTasks_form_cron_freq_custom => 'Custom';
+
+  @override
+  String get scheduledTasks_form_cron_time => 'Time';
+
+  @override
+  String get scheduledTasks_form_cron_weekdays => 'Day(s) of Week';
+
+  @override
+  String get scheduledTasks_form_cron_monthdays => 'Day(s) of Month';
+
+  @override
+  String get scheduledTasks_form_cron_advanced => 'View Cron Expression';
+
+  @override
+  String get scheduledTasks_form_cron_preview => 'Upcoming runs';
+
+  @override
+  String get scheduledTasks_form_cron_custom_hint =>
+      'min hour day month weekday (e.g. 0 9 * * 1-5)';
+
+  @override
+  String get scheduledTasks_form_cron_weekday_mon => 'Mon';
+
+  @override
+  String get scheduledTasks_form_cron_weekday_tue => 'Tue';
+
+  @override
+  String get scheduledTasks_form_cron_weekday_wed => 'Wed';
+
+  @override
+  String get scheduledTasks_form_cron_weekday_thu => 'Thu';
+
+  @override
+  String get scheduledTasks_form_cron_weekday_fri => 'Fri';
+
+  @override
+  String get scheduledTasks_form_cron_weekday_sat => 'Sat';
+
+  @override
+  String get scheduledTasks_form_cron_weekday_sun => 'Sun';
+
+  @override
+  String get scheduledTasks_form_once_datetime => 'Run At';
+
+  @override
+  String get scheduledTasks_form_once_pickDate => 'Pick Date';
+
+  @override
+  String get scheduledTasks_form_once_pickTime => 'Pick Time';
+
+  @override
+  String get scheduledTasks_form_saveAndActivate => 'Save & Activate';
+
+  @override
+  String get scheduledTasks_form_scheduleSection => 'Schedule';
+
+  @override
+  String get scheduledTasks_form_targetSection => 'Execution Target';
+
+  @override
+  String get scheduledTasks_form_contentSection => 'Task Content';
+
+  @override
+  String get scheduledTasks_form_invalidInterval =>
+      'Please enter a valid interval (minimum 1)';
+
+  @override
+  String get scheduledTasks_form_invalidCron =>
+      'Please complete the cron configuration';
+
+  @override
+  String get scheduledTasks_form_invalidOnce =>
+      'Please select a future run time';
+
+  @override
+  String get scheduledTasks_form_oncePastError =>
+      'Run time must be in the future';
+
+  @override
+  String get scheduledTasks_form_agentConversation => 'Conversation';
+
+  @override
+  String get scheduledTasks_form_agentConversationHint =>
+      'Select a conversation for this agent (defaults to the active session)';
+
+  @override
+  String get scheduledTasks_form_agentNoConversation =>
+      'No conversations found for this agent';
 }

@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter/widgets.dart';
+import '../task/services/scheduled_task_service.dart';
 
 /// Global singleton that observes the app lifecycle and tracks which
 /// chat channel the user is currently viewing.
@@ -52,12 +53,16 @@ class AppLifecycleService with WidgetsBindingObserver {
     if (state == AppLifecycleState.paused || state == AppLifecycleState.inactive) {
       // Record when the app entered background (only on the first transition).
       _backgroundedAtMs ??= DateTime.now().millisecondsSinceEpoch;
+      // Pause scheduled tasks when app goes to background
+      ScheduledTaskService().pauseScheduler();
     } else if (state == AppLifecycleState.resumed && _backgroundedAtMs != null) {
       final duration = Duration(
         milliseconds: DateTime.now().millisecondsSinceEpoch - _backgroundedAtMs!,
       );
       _backgroundedAtMs = null;
       _onResumeController.add(duration);
+      // Resume scheduled tasks when app returns to foreground
+      ScheduledTaskService().resumeScheduler();
     }
   }
 

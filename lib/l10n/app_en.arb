@@ -1,10 +1,8 @@
 {
   "@@locale": "en",
-
   "appTitle": "ShePaw",
   "appVersion": "ShePaw v1.0.0",
   "appDescription": "Secure AI Agent Management Platform",
-
   "common_cancel": "Cancel",
   "common_confirm": "Confirm",
   "common_save": "Save",
@@ -23,9 +21,7 @@
   "common_featureComingSoon": "Feature coming soon",
   "common_operationFailed": "Operation failed: {error}",
   "common_error": "Error: {error}",
-
   "splash_loading": "Loading...",
-
   "login_title": "ShePaw",
   "login_subtitle": "Enter password to unlock",
   "login_password": "Password",
@@ -40,7 +36,6 @@
   "login_resetPasswordContent": "After resetting your password, you will enter a completely new data space.",
   "login_resetPasswordVaultHint": "Your old data will be securely encrypted and saved. You can restore it anytime via Settings → Data Vault using your old password.",
   "login_confirmReset": "Confirm Reset",
-
   "passwordSetup_title": "Set Login Password",
   "passwordSetup_subtitle": "Set a secure password to protect your account",
   "passwordSetup_password": "Set Password",
@@ -62,7 +57,6 @@
   "passwordSetup_agreePrefix": "I have read and agree to the",
   "passwordSetup_and": "and",
   "passwordSetup_termsNotAccepted": "Please read and agree to the Terms of Service and Privacy Policy",
-
   "changePassword_title": "Change Password",
   "changePassword_currentPassword": "Current Password",
   "changePassword_currentPasswordHint": "Enter current password",
@@ -81,7 +75,6 @@
   "changePassword_success": "Password changed successfully",
   "changePassword_wrongCurrent": "Incorrect current password. Please try again",
   "changePassword_failed": "Failed to change password: {error}",
-
   "home_noAgents": "No Agents",
   "home_noAgentsHint": "Tap the menu to add agents",
   "home_noMessages": "No messages",
@@ -100,16 +93,13 @@
   "home_addAgent": "Add Agent",
   "home_createGroup": "Create Group",
   "home_agentsCount": "{count} agents",
-
   "drawer_myProfile": "My Profile",
   "drawer_newAgent": "New Agent",
   "drawer_newGroup": "New Group",
   "drawer_settings": "Settings",
   "drawer_logout": "Logout",
-
   "logout_confirmTitle": "Confirm Logout",
   "logout_confirmContent": "Are you sure you want to logout?",
-
   "settings_title": "Settings",
   "settings_security": "Security",
   "settings_changePassword": "Change Password",
@@ -142,21 +132,27 @@
   "update_upToDateSub": "Paw {version} is the latest version.",
   "@update_upToDateSub": {
     "placeholders": {
-      "version": { "type": "String" }
+      "version": {
+        "type": "String"
+      }
     }
   },
   "update_available": "Update Available",
   "update_availableVersion": "Paw {version} is now available",
   "@update_availableVersion": {
     "placeholders": {
-      "version": { "type": "String" }
+      "version": {
+        "type": "String"
+      }
     }
   },
   "update_mandatoryTitle": "Required Update",
   "update_mandatoryMessage": "This update is required to continue using Paw. Please update to version {version}.",
   "@update_mandatoryMessage": {
     "placeholders": {
-      "version": { "type": "String" }
+      "version": {
+        "type": "String"
+      }
     }
   },
   "update_releaseNotes": "Release Notes",
@@ -167,43 +163,56 @@
   "update_currentVersion": "Current version: {version}",
   "@update_currentVersion": {
     "placeholders": {
-      "version": { "type": "String" }
+      "version": {
+        "type": "String"
+      }
     }
   },
   "update_downloading": "Downloading...",
   "update_downloadingFile": "Downloading {fileName}",
   "@update_downloadingFile": {
     "placeholders": {
-      "fileName": { "type": "String" }
+      "fileName": {
+        "type": "String"
+      }
     }
   },
   "update_downloadProgress": "{downloaded} / {total}",
   "@update_downloadProgress": {
     "placeholders": {
-      "downloaded": { "type": "String" },
-      "total": { "type": "String" }
+      "downloaded": {
+        "type": "String"
+      },
+      "total": {
+        "type": "String"
+      }
     }
   },
   "update_downloadSpeed": "{speed}/s",
   "@update_downloadSpeed": {
     "placeholders": {
-      "speed": { "type": "String" }
+      "speed": {
+        "type": "String"
+      }
     }
   },
   "update_downloadTimeRemaining": "{time} remaining",
   "@update_downloadTimeRemaining": {
     "placeholders": {
-      "time": { "type": "String" }
+      "time": {
+        "type": "String"
+      }
     }
   },
   "update_downloadCompleted": "Download completed",
   "update_downloadFailed": "Download failed",
   "update_retryDownload": "Retry Download",
-
   "update_notification_availableTitle": "New version {version} available",
   "@update_notification_availableTitle": {
     "placeholders": {
-      "version": { "type": "String" }
+      "version": {
+        "type": "String"
+      }
     }
   },
   "update_notification_availableBody": "Tap to view update details",
@@ -212,7 +221,9 @@
   "update_notification_readyBody": "Tap to install {version}",
   "@update_notification_readyBody": {
     "placeholders": {
-      "version": { "type": "String" }
+      "version": {
+        "type": "String"
+      }
     }
   },
   "update_action_accept": "Download Now",
@@ -223,19 +234,19 @@
   "update_pendingInstallBody": "Version {version} has been downloaded. Install now?",
   "@update_pendingInstallBody": {
     "placeholders": {
-      "version": { "type": "String" }
+      "version": {
+        "type": "String"
+      }
     }
   },
   "settings_privacyPolicy": "Privacy Policy",
   "settings_termsOfService": "Terms of Service",
-
   "settings_language": "Language",
   "settings_languageSub": "Change app display language",
   "settings_languageFollowSystem": "Follow System",
   "settings_languageEnglish": "English",
   "settings_languageChinese": "中文",
   "settings_languageDialogTitle": "Select Language",
-
   "settings_exportDataTitle": "Export Data",
   "settings_exportDataContent": "This will export all app data (including agent configurations, chat history, files, etc.) as a backup file.\n\nOnce exported, you can share it to another location.",
   "settings_exportingData": "Exporting data...",
@@ -243,7 +254,9 @@
   "settings_exportFailed": "Export failed: {error}",
   "@settings_exportFailed": {
     "placeholders": {
-      "error": { "type": "String" }
+      "error": {
+        "type": "String"
+      }
     }
   },
   "settings_clearAllDataTitle": "Clear All Data",
@@ -254,10 +267,11 @@
   "settings_clearAllDataFailed": "Failed to clear data: {error}",
   "@settings_clearAllDataFailed": {
     "placeholders": {
-      "error": { "type": "String" }
+      "error": {
+        "type": "String"
+      }
     }
   },
-
   "addAgent_connectTitle": "Connect Remote Agent",
   "addAgent_createTitle": "Create Agent Configuration",
   "addAgent_modeConnect": "Connect Remote Agent",
@@ -315,7 +329,6 @@
   "addAgent_remoteAgentId": "Remote Agent ID",
   "addAgent_remoteAgentIdHint": "Optional, the remote agent's ID",
   "addAgent_remoteAgentIdHelper": "Specify the target agent ID (optional)",
-
   "createGroup_title": "Create Group",
   "createGroup_create": "Create",
   "createGroup_groupName": "Group Name",
@@ -335,7 +348,6 @@
   "createGroup_groupRoleHint": "Describe this agent's role in the group",
   "createGroup_maxLoopRounds": "Max Orchestration Rounds",
   "createGroup_maxLoopRoundsHint": "Max loop rounds for admin orchestration (default 50)",
-
   "permission_title": "Permission Request Management",
   "permission_filterLabel": "Filter by status:",
   "permission_noRequests": "No permission requests",
@@ -368,7 +380,6 @@
   "permission_typeGetSessions": "Get Session List",
   "permission_typeGetSessionMessages": "Get Session Messages",
   "permission_typeGetAttachmentContent": "Get Attachment Content",
-
   "permissionDialog_title": "Permission Request",
   "permissionDialog_agent": "Agent",
   "permissionDialog_action": "Action",
@@ -376,7 +387,6 @@
   "permissionDialog_time": "Time",
   "permissionDialog_reject": "Reject",
   "permissionDialog_approve": "Approve",
-
   "log_title": "System Logs",
   "log_filterTooltip": "Filter log level",
   "log_all": "All",
@@ -389,7 +399,6 @@
   "log_clearButton": "Clear",
   "log_noLogs": "No logs",
   "log_total": "Total",
-
   "agentDetail_title": "Agent Details",
   "agentDetail_editTitle": "Edit Agent",
   "agentDetail_editTooltip": "Edit",
@@ -432,7 +441,6 @@
   "agentDetail_justNow": "Just now",
   "agentDetail_minutesAgo": "{minutes} min ago",
   "agentDetail_hoursAgo": "{hours} hr ago",
-
   "profile_title": "My Profile",
   "profile_email": "Email",
   "profile_phone": "Phone",
@@ -443,7 +451,6 @@
   "profile_groups": "Groups",
   "profile_messages": "Messages",
   "profile_editProfile": "Edit Profile",
-
   "collaboration_title": "Agent Collaboration",
   "collaboration_description": "Have multiple agents collaborate on complex tasks with various strategies.",
   "collaboration_taskName": "Task Name",
@@ -482,7 +489,6 @@
   "collaboration_helpParallel": "All agents process simultaneously, suitable for multi-perspective analysis.",
   "collaboration_helpVoting": "Multiple agents vote for the best approach, suitable for decision-making tasks.",
   "collaboration_helpPipeline": "Each agent handles a specific stage, suitable for complex multi-step tasks.",
-
   "incoming_title": "Incoming Messages",
   "incoming_unreadCount": "{count} unread",
   "incoming_clearAll": "Clear all messages",
@@ -498,7 +504,6 @@
   "incoming_minutesAgo": "{minutes} min ago",
   "incoming_hoursAgo": "{hours} hr ago",
   "incoming_daysAgo": "{days} days ago",
-
   "chat_noAgentSelected": "No agent selected",
   "chat_loadFailed": "Failed to load messages: {error}",
   "chat_checkingHealth": "Checking agent health...",
@@ -540,7 +545,6 @@
   "chat_rollbackSub": "Delete this and all later messages",
   "chat_reEdit": "Re-edit",
   "chat_reEditSub": "Rollback and edit this message",
-
   "chat_editGroupInfo": "Edit Group Info",
   "chat_groupName": "Group Name",
   "chat_groupDescription": "Description (optional)",
@@ -574,7 +578,6 @@
   "chat_systemPromptHint": "Override the agent's system prompt for this chat",
   "chat_systemPromptSaved": "System prompt saved",
   "chat_moreActions": "More Actions",
-
   "chat_clearSessionTitle": "Clear Session History",
   "chat_clearSessionContent": "This will delete all messages in the current session and reset the remote agent connection. This action cannot be undone.",
   "chat_clearSessionGroupContent": "This will delete all messages in the current session and reset all agent connections. This action cannot be undone.",
@@ -623,14 +626,12 @@
   "chat_stopped": "Stopped",
   "chat_groupChatError": "Group chat error: {error}",
   "chat_fileMessageFailed": "File message failed: {error}",
-
   "status_online": "Online",
   "status_offline": "Offline",
   "status_connecting": "Connecting...",
   "status_error": "Error",
   "status_protocolAcp": "ACP",
   "status_protocolCustom": "Custom",
-
   "widget_typing": "Typing...",
   "widget_stop": "Stop",
   "widget_cannotOpenLink": "Cannot open link: {url}",
@@ -641,13 +642,10 @@
   "widget_confirm": "Confirm",
   "widget_changeFiles": "Change files",
   "widget_details": "Details",
-
   "privacy_title": "Privacy Policy",
   "privacy_content": "Privacy Policy\n\nLast updated: 2026-02-28\n\nPaw (\"we\", \"our\", or \"us\") is committed to protecting your privacy. Paw is a fully local application — we do not collect, upload, or store any of your personal data. All your data remains on your device and is entirely under your control.\n\n1. Data Storage\n\nPaw does not have any servers and does not collect any user data. All data generated during your use, including:\n- Account credentials\n- Agent configuration data\n- Chat messages and conversation history\n\nis stored exclusively on your local device. We cannot and will not access this data.\n\n2. Data Security\n\nWe protect your local data through the following measures:\n- Local data encryption\n- Secure WebSocket connections (WSS) for remote communications\n- Biometric authentication support\n- Password-protected access\n\n3. Third-Party Services\n\nWhen you actively configure and connect to remote AI agents, your messages are transmitted directly between your device and the agent endpoint you configure, without passing through any of our servers. We are not responsible for the data handling practices of third-party agent services.\n\n4. Your Rights\n\nSince all data is stored locally on your device, you can at any time:\n- View all your data\n- Permanently delete your data by clearing app data or uninstalling the app\n- Export your data using the in-app export feature\n\n5. Changes to This Policy\n\nWe may update this Privacy Policy from time to time. We will notify you of any changes by updating the \"Last updated\" date.\n\n6. Contact Us\n\nIf you have questions about this Privacy Policy, please contact us at:\nsupport@metamessager.com",
-
   "terms_title": "Terms of Service",
   "terms_content": "Terms of Service\n\nLast updated: 2026-02-28\n\nPlease read these Terms of Service carefully before using the Paw application.\n\n1. Acceptance of Terms\n\nBy accessing or using Paw, you agree to be bound by these Terms. If you do not agree, do not use the application.\n\n2. Description of Service\n\nPaw is an AI agent management platform that allows you to:\n- Connect to and communicate with AI agents\n- Manage multiple agent configurations\n- Facilitate agent-to-agent collaboration\n- Transfer files and media with agents\n\n3. User Responsibilities\n\nYou agree to:\n- Use the app in compliance with all applicable laws\n- Not use the app for any illegal or unauthorized purpose\n- Not attempt to interfere with the app's functionality\n- Be responsible for the security of your account credentials\n- Be responsible for the content you send through the app\n\n4. Intellectual Property\n\nThe app and its original content, features, and functionality are owned by us and are protected by international copyright, trademark, and other intellectual property laws.\n\n5. Third-Party Agent Services\n\nOur app allows you to connect to third-party AI agent services. We do not control these services and are not responsible for their content, privacy policies, or practices.\n\n6. Disclaimer of Warranties\n\nThe app is provided \"as is\" without warranty of any kind. We do not guarantee that the app will be uninterrupted, secure, or error-free.\n\n7. Limitation of Liability\n\nIn no event shall we be liable for any indirect, incidental, special, consequential, or punitive damages arising from your use of the app.\n\n8. Changes to Terms\n\nWe reserve the right to modify these Terms at any time. Your continued use of the app after changes constitutes acceptance of the new Terms.\n\n9. Contact Us\n\nIf you have questions about these Terms, please contact us at:\nsupport@metamessager.com",
-
   "notif_enableAll": "Enable Notifications",
   "notif_enableAllSub": "Receive notifications for agent messages",
   "notif_sound": "Sound",
@@ -659,10 +657,11 @@
   "notif_newMessageFrom": "New message from {name}",
   "@notif_newMessageFrom": {
     "placeholders": {
-      "name": { "type": "String" }
+      "name": {
+        "type": "String"
+      }
     }
   },
-
   "osTool_configTitle": "CLI Management",
   "osTool_configHint": "Enable OS-level tools for this agent to interact with your local machine (files, commands, clipboard, etc.).",
   "osTool_selectAll": "Select All",
@@ -676,7 +675,9 @@
   "osTool_notSupported": "Not supported on {platform}",
   "@osTool_notSupported": {
     "placeholders": {
-      "platform": { "type": "String" }
+      "platform": {
+        "type": "String"
+      }
     }
   },
   "osTool_confirmTitle": "Confirm Operation",
@@ -685,7 +686,6 @@
   "osTool_tool": "Tool",
   "osTool_approve": "Approve",
   "osTool_deny": "Deny",
-
   "skill_configTitle": "Skills",
   "skill_configHint": "Enable markdown-based skills to guide the agent through complex multi-step tasks.",
   "skill_selectAll": "Select All",
@@ -694,39 +694,48 @@
   "skill_noSkillsFound": "No skills found. Import a skill ZIP or add subdirectories to the skills folder.",
   "settings_agentConfig": "Agent Configuration",
   "settings_skillDirectory": "Skill Management",
-
   "skillMgmt_title": "Skill Management",
   "skillMgmt_importZip": "Import Skill (ZIP)",
   "skillMgmt_importing": "Importing skill...",
   "skillMgmt_importSuccess": "Skill \"{name}\" imported successfully",
   "@skillMgmt_importSuccess": {
     "placeholders": {
-      "name": { "type": "String" }
+      "name": {
+        "type": "String"
+      }
     }
   },
   "skillMgmt_importFailed": "Import failed: {error}",
   "@skillMgmt_importFailed": {
     "placeholders": {
-      "error": { "type": "String" }
+      "error": {
+        "type": "String"
+      }
     }
   },
   "skillMgmt_deleteTitle": "Delete Skill",
   "skillMgmt_deleteContent": "Are you sure you want to delete the skill \"{name}\"? This will remove all files in the skill directory and cannot be undone.",
   "@skillMgmt_deleteContent": {
     "placeholders": {
-      "name": { "type": "String" }
+      "name": {
+        "type": "String"
+      }
     }
   },
   "skillMgmt_deleted": "Skill \"{name}\" deleted",
   "@skillMgmt_deleted": {
     "placeholders": {
-      "name": { "type": "String" }
+      "name": {
+        "type": "String"
+      }
     }
   },
   "skillMgmt_deleteFailed": "Delete failed: {error}",
   "@skillMgmt_deleteFailed": {
     "placeholders": {
-      "error": { "type": "String" }
+      "error": {
+        "type": "String"
+      }
     }
   },
   "skillMgmt_noSkills": "No skills found",
@@ -734,20 +743,26 @@
   "skillMgmt_fileCount": "{count, plural, =1{1 file} other{{count} files}}",
   "@skillMgmt_fileCount": {
     "placeholders": {
-      "count": { "type": "int" }
+      "count": {
+        "type": "int"
+      }
     }
   },
   "skillMgmt_skillCount": "{count, plural, =1{1 skill} other{{count} skills}}",
   "@skillMgmt_skillCount": {
     "placeholders": {
-      "count": { "type": "int" }
+      "count": {
+        "type": "int"
+      }
     }
   },
   "skillMgmt_conflictTitle": "Skill Already Exists",
   "skillMgmt_conflictContent": "A skill named \"{name}\" already exists. Do you want to replace it?",
   "@skillMgmt_conflictContent": {
     "placeholders": {
-      "name": { "type": "String" }
+      "name": {
+        "type": "String"
+      }
     }
   },
   "skillMgmt_replace": "Replace",
@@ -759,21 +774,20 @@
   "skillMgmt_downloading": "Downloading... {percent}%",
   "@skillMgmt_downloading": {
     "placeholders": {
-      "percent": { "type": "int" }
+      "percent": {
+        "type": "int"
+      }
     }
   },
   "skillMgmt_downloadingIndeterminate": "Downloading...",
   "skillMgmt_invalidUrl": "Invalid URL. Please enter a direct http/https link to a .zip or .md file",
-
   "agentDetail_noOsToolsEnabled": "No OS tools enabled",
   "agentDetail_noSkillsEnabled": "No skills enabled",
-
   "settings_developerTools": "Developer Tools",
   "settings_inferenceLog": "Inference Logs",
   "settings_inferenceLogSub": "Inspect LLM request/response details",
   "settings_systemLog": "System Logs",
   "settings_systemLogSub": "View application system logs",
-
   "inferenceLog_title": "Inference Logs",
   "inferenceLog_empty": "No inference logs yet",
   "inferenceLog_emptyHint": "Logs will appear here after you chat with a local LLM agent",
@@ -806,50 +820,58 @@
   "inferenceLog_detailTitle": "Inference Detail",
   "inferenceLog_timeline": "Timeline",
   "inferenceLog_noText": "(no text)",
-
   "chat_selectSessions": "Select Sessions",
   "chat_selectedCount": "{count} selected",
   "@chat_selectedCount": {
     "placeholders": {
-      "count": { "type": "int" }
+      "count": {
+        "type": "int"
+      }
     }
   },
   "chat_invertSelection": "Invert",
   "chat_deleteSelected": "Delete ({count})",
   "@chat_deleteSelected": {
     "placeholders": {
-      "count": { "type": "int" }
+      "count": {
+        "type": "int"
+      }
     }
   },
   "chat_batchDeleteContent": "Delete {count} session(s) and all their messages? This cannot be undone.",
   "@chat_batchDeleteContent": {
     "placeholders": {
-      "count": { "type": "int" }
+      "count": {
+        "type": "int"
+      }
     }
   },
   "chat_batchDeleteSuccess": "Deleted {count} sessions",
   "@chat_batchDeleteSuccess": {
     "placeholders": {
-      "count": { "type": "int" }
+      "count": {
+        "type": "int"
+      }
     }
   },
-
   "chat_maxAttachments": "Maximum {count} attachments allowed",
   "@chat_maxAttachments": {
     "placeholders": {
-      "count": { "type": "int" }
+      "count": {
+        "type": "int"
+      }
     }
   },
-
   "chat_connectionInterrupted": "Connection lost while in background",
   "chat_connectionInterruptedRetry": "Retry",
   "chat_loopRoundLimitReached": "Orchestration loop reached the maximum of {count} rounds and has been stopped.",
   "@chat_loopRoundLimitReached": {
     "placeholders": {
-      "count": { "type": "int" }
+      "count": {
+        "type": "int"
+      }
     }
   },
-
   "modelRouting_title": "Multi-modal Model Routing",
   "modelRouting_hint": "Configure different models for different content types. Unconfigured items use the default model above.",
   "modelRouting_text": "Text Chat",
@@ -864,7 +886,6 @@
   "modelRouting_selectFromRegistry": "Select from model list",
   "modelRouting_usingDefault": "Using default model",
   "modelRouting_configured": "Configured",
-
   "modelRouting_enableStreaming": "Enable Streaming (SSE)",
   "modelRouting_apiPath": "API Path",
   "modelRouting_apiPathHint": "Override endpoint (e.g. /images/generations)",
@@ -872,7 +893,6 @@
   "modelRouting_requestBodyTemplateHint": "JSON template with $model, $prompt variables",
   "modelRouting_responseBodyPath": "Response Path",
   "modelRouting_responseBodyPathHint": "JSON path to extract content (e.g. data[0].url)",
-
   "modelRouting_customModalities": "Custom Modalities",
   "modelRouting_customModalitiesHint": "Define custom task types with intent-based routing",
   "modelRouting_addCustomModality": "Add Custom Modality",
@@ -883,32 +903,36 @@
   "modelRouting_modalityDescription": "Intent Description",
   "modelRouting_modalityDescriptionHint": "Describe when to use this modality (for classifier)",
   "modelRouting_deleteModality": "Delete",
-
   "addAgent_osToolsCount": "{count} tools enabled",
   "@addAgent_osToolsCount": {
     "placeholders": {
-      "count": { "type": "int" }
+      "count": {
+        "type": "int"
+      }
     }
   },
   "addAgent_noOsTools": "No tools selected",
   "addAgent_skillsCount": "{count} skills enabled",
   "@addAgent_skillsCount": {
     "placeholders": {
-      "count": { "type": "int" }
+      "count": {
+        "type": "int"
+      }
     }
   },
   "addAgent_noSkills": "No skills selected",
   "addAgent_modelRoutingCount": "{count} modalities configured",
   "@addAgent_modelRoutingCount": {
     "placeholders": {
-      "count": { "type": "int" }
+      "count": {
+        "type": "int"
+      }
     }
   },
   "addAgent_noModelRouting": "Not configured",
   "addAgent_configureTools": "Configure Tools",
   "addAgent_configureSkills": "Configure Skills",
   "addAgent_configureModelRouting": "Configure Model Routing",
-
   "contacts_title": "Contacts",
   "contacts_agents": "Agents",
   "contacts_groups": "Groups",
@@ -917,19 +941,25 @@
   "contacts_agentCount": "{count} agents",
   "@contacts_agentCount": {
     "placeholders": {
-      "count": { "type": "int" }
+      "count": {
+        "type": "int"
+      }
     }
   },
   "contacts_groupCount": "{count} groups",
   "@contacts_groupCount": {
     "placeholders": {
-      "count": { "type": "int" }
+      "count": {
+        "type": "int"
+      }
     }
   },
   "contacts_memberCount": "{count} members",
   "@contacts_memberCount": {
     "placeholders": {
-      "count": { "type": "int" }
+      "count": {
+        "type": "int"
+      }
     }
   },
   "groupDetail_title": "Group Details",
@@ -946,23 +976,28 @@
   "groupDetail_deleteContent": "Are you sure you want to delete the group \"{name}\"? This will delete all messages.",
   "@groupDetail_deleteContent": {
     "placeholders": {
-      "name": { "type": "String" }
+      "name": {
+        "type": "String"
+      }
     }
   },
   "groupDetail_deleted": "Group \"{name}\" deleted",
   "@groupDetail_deleted": {
     "placeholders": {
-      "name": { "type": "String" }
+      "name": {
+        "type": "String"
+      }
     }
   },
   "groupDetail_deleteFailed": "Failed to delete group: {error}",
   "@groupDetail_deleteFailed": {
     "placeholders": {
-      "error": { "type": "String" }
+      "error": {
+        "type": "String"
+      }
     }
   },
   "drawer_contacts": "Contacts",
-
   "toolModel_managementTitle": "Model Management",
   "toolModel_configTitle": "Models",
   "toolModel_configHint": "Select models for this agent. Tool models are exposed to the main LLM via tool calls; other models can be used for multi-modal routing.",
@@ -993,20 +1028,26 @@
   "toolModel_count": "{count, plural, =1{1 model} other{{count} models}}",
   "@toolModel_count": {
     "placeholders": {
-      "count": { "type": "int" }
+      "count": {
+        "type": "int"
+      }
     }
   },
   "toolModel_deleteTitle": "Delete Model",
   "toolModel_deleteContent": "Are you sure you want to delete the model \"{name}\"?",
   "@toolModel_deleteContent": {
     "placeholders": {
-      "name": { "type": "String" }
+      "name": {
+        "type": "String"
+      }
     }
   },
   "toolModel_deleted": "Model \"{name}\" deleted",
   "@toolModel_deleted": {
     "placeholders": {
-      "name": { "type": "String" }
+      "name": {
+        "type": "String"
+      }
     }
   },
   "toolModel_selectAll": "Select All",
@@ -1018,11 +1059,12 @@
   "addAgent_toolModelsCount": "{count} models enabled",
   "@addAgent_toolModelsCount": {
     "placeholders": {
-      "count": { "type": "int" }
+      "count": {
+        "type": "int"
+      }
     }
   },
   "agentDetail_noToolModelsEnabled": "No models enabled",
-
   "chat_mentionMode": "Mention Mode",
   "chat_mentionModeAdminOnly": "Admin Only",
   "chat_mentionModeAllMembers": "All Members",
@@ -1033,9 +1075,7 @@
   "chat_planningModeDesc": "Admin generates a plan first, execution begins after user approval",
   "chat_flowMode": "Flow Mode",
   "chat_flowModeDesc": "Admin generates a staged FlowPlan; executor drives stages serially, steps in parallel",
-
   "chat_viewTrace": "View Trace",
-
   "modelType_sectionLabel": "Model Types",
   "modelType_sectionHint": "Select the capability types this model supports (multi-select)",
   "modelType_text": "Text",
@@ -1045,16 +1085,13 @@
   "modelType_imageGeneration": "Image Generation",
   "modelType_tts": "Text-to-Speech",
   "modelType_videoGeneration": "Video Generation",
-
   "common_required": "Required",
   "addAgent_modelRequired": "Please select a model",
   "addAgent_noModels": "No models configured. Please add models in Settings first.",
   "toolModel_goToManagement": "Go to Model Management",
-
   "settings_disableServiceTitle": "Disable Local Service",
   "settings_disableServiceContent": "After disabling, all agents configured with \"Allow External Access\" will no longer accept external connections, and any connected clients will be disconnected immediately.\n\nConfirm?",
   "settings_disableServiceConfirm": "Confirm Disable",
-
   "settings_localService": "Local Service",
   "settings_localServiceDesc": "Allow LAN or internet devices to connect as a Remote Agent",
   "settings_lanAddress": "LAN Address",
@@ -1078,7 +1115,6 @@
   "settings_tunnelConfigRequiredFields": "Please fill in all required fields",
   "settings_deleteTunnelConfig": "Delete Configuration",
   "settings_noLanAddress": "No LAN address found",
-
   "settings_acpPort": "Port",
   "settings_acpPortSuffix": "(1024-65535)",
   "settings_acpChangePort": "Change Port",
@@ -1086,17 +1122,14 @@
   "settings_acpPortInvalid": "Invalid port number. Please enter a value between 1024 and 65535.",
   "settings_acpPortRestarting": "Restarting ACP Server...",
   "settings_acpPortRestartRequired": "Port saved. Restart the app to apply.",
-
   "settings_acpToken": "Connection Token",
   "settings_acpTokenCopy": "Copy Token",
   "settings_acpTokenRefresh": "Refresh Token",
   "settings_acpTokenRefreshed": "Token refreshed. Existing connections must reconnect.",
-
   "agent_enableExternalAccessTitle": "Enable External Access",
   "agent_enableExternalAccessNeedService": "The local service master switch is currently off, so external access cannot work.\n\nWould you like to enable the local service now?",
   "agent_enableServiceAndContinue": "Enable Local Service",
   "agent_keepDisabled": "Save Settings Only",
-
   "agent_allowExternalAccess": "Allow External Access",
   "agent_allowExternalAccessDesc": "When enabled, external apps can join conversations as a Remote Agent",
   "agent_externalAccessUrl": "Access URL",
@@ -1114,10 +1147,11 @@
   "agent_tokenRegenerateFailed": "Failed to regenerate: {error}",
   "@agent_tokenRegenerateFailed": {
     "placeholders": {
-      "error": {"type": "String"}
+      "error": {
+        "type": "String"
+      }
     }
   },
-
   "agent_channelConfig": "Public Channel Config",
   "agent_channelServerUrl": "Server URL",
   "agent_channelId": "Channel ID",
@@ -1125,15 +1159,12 @@
   "agent_channelEndpoint": "Channel Endpoint (optional)",
   "agent_channelNotConfigured": "Public channel not configured",
   "agent_channelConfigure": "Configure",
-
   "she_pinned_label": "Pinned",
   "she_bio": "Your personal guardian",
-
   "settings_userProfile": "Personal Profile",
   "settings_userProfileSub": "Manage your personal information",
   "settings_agentMemories": "Agent Memories",
   "settings_agentMemoriesSub": "View and manage memories for each agent",
-
   "memory_title": "Memories",
   "memory_add": "Add Note",
   "memory_structured": "Structured",
@@ -1150,7 +1181,6 @@
   "memory_addAgents": "Add agents to manage their memories",
   "memory_created": "Created",
   "memory_updated": "Updated",
-
   "profile_personalTitle": "Personal Profile",
   "profile_coreInfo": "Core Information",
   "profile_extendedInfo": "Additional Information",
@@ -1193,7 +1223,9 @@
   "profile_removeAttrContent": "Remove \"{name}\"?",
   "@profile_removeAttrContent": {
     "placeholders": {
-      "name": { "type": "String" }
+      "name": {
+        "type": "String"
+      }
     }
   },
   "profile_customLabel": "Custom",
@@ -1204,7 +1236,9 @@
   "profile_saveFailed": "Error: {error}",
   "@profile_saveFailed": {
     "placeholders": {
-      "error": { "type": "String" }
+      "error": {
+        "type": "String"
+      }
     }
   },
   "profile_loadFailed": "Failed to load profile",
@@ -1214,17 +1248,215 @@
   "profile_nameReserved": "\"{name}\" is a reserved field name",
   "@profile_nameReserved": {
     "placeholders": {
-      "name": { "type": "String" }
+      "name": {
+        "type": "String"
+      }
     }
   },
   "profile_nameDuplicate": "\"{name}\" already exists",
   "@profile_nameDuplicate": {
     "placeholders": {
-      "name": { "type": "String" }
+      "name": {
+        "type": "String"
+      }
     }
   },
   "profile_nameStartWithUnderscore": "Name cannot start with underscore",
   "profile_nameInvalidChars": "Only letters, numbers and underscore allowed",
   "profile_nameTooLong": "Name too long (max 50 chars)",
-  "profile_loadingProfile": "Loading profile..."
+  "profile_loadingProfile": "Loading profile...",
+  "scheduledTasks_title": "Scheduled Tasks",
+  "scheduledTasks_description": "Manage automated tasks that run on a schedule",
+  "scheduledTasks_noTasks": "No scheduled tasks yet",
+  "scheduledTasks_noTasksHint": "Create a new task to get started",
+  "scheduledTasks_createTask": "Create Task",
+  "scheduledTasks_editTask": "Edit Task",
+  "scheduledTasks_deleteTask": "Delete Task",
+  "scheduledTasks_activateTask": "Activate",
+  "scheduledTasks_pauseTask": "Pause",
+  "scheduledTasks_executeNow": "Execute Now",
+  "scheduledTasks_form_title": "Task Details",
+  "scheduledTasks_form_description": "Description",
+  "scheduledTasks_form_descriptionHint": "What does this task do?",
+  "scheduledTasks_form_instruction": "Instruction",
+  "scheduledTasks_form_instructionHint": "Enter the task instruction or prompt",
+  "scheduledTasks_form_selectAgent": "Select Agent",
+  "scheduledTasks_form_scheduleType": "Schedule Type",
+  "scheduledTasks_form_schedulePattern": "Schedule Pattern",
+  "scheduledTasks_form_schedulePatternHint": "Cron: 0 9 * * * or Duration: PT5M",
+  "scheduledTasks_form_optional": "Optional",
+  "scheduledTasks_form_selectChannel": "Select Channel (Optional)",
+  "scheduledTasks_scheduleType_cron": "Cron Expression",
+  "scheduledTasks_scheduleType_interval": "Interval Duration",
+  "scheduledTasks_scheduleType_once": "One-Time",
+  "scheduledTasks_cronExamples": "Cron Examples",
+  "scheduledTasks_cronExample_daily": "Daily at 9:00 AM: 0 9 * * *",
+  "scheduledTasks_cronExample_hourly": "Every hour: 0 * * * *",
+  "scheduledTasks_cronExample_weekdays": "Weekdays at 9:00 AM: 0 9 * * 1-5",
+  "scheduledTasks_cronExample_everyMinute": "Every minute: * * * * *",
+  "scheduledTasks_intervalExamples": "Duration Examples",
+  "scheduledTasks_intervalExample_5min": "Every 5 minutes: PT5M",
+  "scheduledTasks_intervalExample_1hour": "Every 1 hour: PT1H",
+  "scheduledTasks_intervalExample_30min": "Every 30 minutes: PT30M",
+  "scheduledTasks_status_pending": "Pending",
+  "scheduledTasks_status_active": "Active",
+  "scheduledTasks_status_paused": "Paused",
+  "scheduledTasks_status_completed": "Completed",
+  "scheduledTasks_status_failed": "Failed",
+  "scheduledTasks_nextRun": "Next Run: {time}",
+  "@scheduledTasks_nextRun": {
+    "placeholders": {
+      "time": {
+        "type": "String"
+      }
+    }
+  },
+  "scheduledTasks_lastRun": "Last Run: {time}",
+  "@scheduledTasks_lastRun": {
+    "placeholders": {
+      "time": {
+        "type": "String"
+      }
+    }
+  },
+  "scheduledTasks_executionCount": "Executions: {count}",
+  "@scheduledTasks_executionCount": {
+    "placeholders": {
+      "count": {
+        "type": "String"
+      }
+    }
+  },
+  "scheduledTasks_failureCount": "Failures: {count}",
+  "@scheduledTasks_failureCount": {
+    "placeholders": {
+      "count": {
+        "type": "String"
+      }
+    }
+  },
+  "scheduledTasks_noLastError": "No errors",
+  "scheduledTasks_lastError": "Last Error: {error}",
+  "@scheduledTasks_lastError": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "scheduledTasks_confirmDelete": "Delete Task?",
+  "scheduledTasks_confirmDeleteMsg": "Are you sure you want to delete this scheduled task? This action cannot be undone.",
+  "scheduledTasks_confirmPause": "Pause Task?",
+  "scheduledTasks_confirmPauseMsg": "The task will stop executing. You can resume it later.",
+  "scheduledTasks_invalidSchedule": "Invalid schedule pattern",
+  "scheduledTasks_invalidScheduleMsg": "Please check your cron expression or duration format",
+  "scheduledTasks_missingInstruction": "Instruction is required",
+  "scheduledTasks_missingAgent": "Please select an agent",
+  "scheduledTasks_createSuccess": "Task created successfully",
+  "scheduledTasks_updateSuccess": "Task updated successfully",
+  "scheduledTasks_deleteSuccess": "Task deleted successfully",
+  "scheduledTasks_activateSuccess": "Task activated",
+  "scheduledTasks_pauseSuccess": "Task paused",
+  "scheduledTasks_executeNowSuccess": "Task execution started",
+  "scheduledTasks_filterByAgent": "FILTER BY AGENT",
+  "scheduledTasks_filterAll": "All",
+  "scheduledTasks_createError": "Failed to create task: {error}",
+  "@scheduledTasks_createError": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "scheduledTasks_updateError": "Failed to update task: {error}",
+  "@scheduledTasks_updateError": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "scheduledTasks_deleteError": "Failed to delete task: {error}",
+  "@scheduledTasks_deleteError": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "scheduledTasks_activateError": "Failed to activate task: {error}",
+  "@scheduledTasks_activateError": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "scheduledTasks_targetAgent": "Agent Task",
+  "scheduledTasks_targetGroup": "Group Task",
+  "scheduledTasks_form_optionalChannel": "Override channel (optional)",
+  "scheduledTasks_form_selectGroupChannel": "Select group channel",
+  "scheduledTasks_form_selectGroup": "Select group",
+  "scheduledTasks_form_selectGroupAgents": "Agents in group",
+  "scheduledTasks_form_selectMentions": "Agents to mention (optional)",
+  "scheduledTasks_missingChannel": "Please select a channel",
+  "scheduledTasks_missingGroupAgents": "Please select at least one agent",
+
+  "scheduledTasks_form_scheduleTypeLabel": "Schedule Type",
+  "scheduledTasks_form_scheduleType_interval": "Repeat Interval",
+  "scheduledTasks_form_scheduleType_cron": "Cron Schedule",
+  "scheduledTasks_form_scheduleType_once": "One-Time",
+
+  "scheduledTasks_form_interval_value": "Interval Value",
+  "scheduledTasks_form_interval_unit_minutes": "minutes",
+  "scheduledTasks_form_interval_unit_hours": "hours",
+  "scheduledTasks_form_interval_unit_days": "days",
+  "scheduledTasks_form_interval_preview": "Runs every {value} {unit}",
+  "@scheduledTasks_form_interval_preview": {
+    "placeholders": {
+      "value": { "type": "String" },
+      "unit": { "type": "String" }
+    }
+  },
+  "scheduledTasks_form_preset_label": "Quick Presets",
+  "scheduledTasks_form_preset_5min": "5 min",
+  "scheduledTasks_form_preset_30min": "30 min",
+  "scheduledTasks_form_preset_1h": "1 hour",
+  "scheduledTasks_form_preset_6h": "6 hours",
+  "scheduledTasks_form_preset_1d": "Daily",
+
+  "scheduledTasks_form_cron_frequency": "Frequency",
+  "scheduledTasks_form_cron_freq_daily": "Daily",
+  "scheduledTasks_form_cron_freq_weekly": "Weekly",
+  "scheduledTasks_form_cron_freq_monthly": "Monthly",
+  "scheduledTasks_form_cron_freq_custom": "Custom",
+  "scheduledTasks_form_cron_time": "Time",
+  "scheduledTasks_form_cron_weekdays": "Day(s) of Week",
+  "scheduledTasks_form_cron_monthdays": "Day(s) of Month",
+  "scheduledTasks_form_cron_advanced": "View Cron Expression",
+  "scheduledTasks_form_cron_preview": "Upcoming runs",
+  "scheduledTasks_form_cron_custom_hint": "min hour day month weekday (e.g. 0 9 * * 1-5)",
+  "scheduledTasks_form_cron_weekday_mon": "Mon",
+  "scheduledTasks_form_cron_weekday_tue": "Tue",
+  "scheduledTasks_form_cron_weekday_wed": "Wed",
+  "scheduledTasks_form_cron_weekday_thu": "Thu",
+  "scheduledTasks_form_cron_weekday_fri": "Fri",
+  "scheduledTasks_form_cron_weekday_sat": "Sat",
+  "scheduledTasks_form_cron_weekday_sun": "Sun",
+
+  "scheduledTasks_form_once_datetime": "Run At",
+  "scheduledTasks_form_once_pickDate": "Pick Date",
+  "scheduledTasks_form_once_pickTime": "Pick Time",
+
+  "scheduledTasks_form_saveAndActivate": "Save & Activate",
+  "scheduledTasks_form_scheduleSection": "Schedule",
+  "scheduledTasks_form_targetSection": "Execution Target",
+  "scheduledTasks_form_contentSection": "Task Content",
+  "scheduledTasks_form_invalidInterval": "Please enter a valid interval (minimum 1)",
+  "scheduledTasks_form_invalidCron": "Please complete the cron configuration",
+  "scheduledTasks_form_invalidOnce": "Please select a future run time",
+  "scheduledTasks_form_oncePastError": "Run time must be in the future",
+  "scheduledTasks_form_agentConversation": "Conversation",
+  "scheduledTasks_form_agentConversationHint": "Select a conversation for this agent (defaults to the active session)",
+  "scheduledTasks_form_agentNoConversation": "No conversations found for this agent"
 }

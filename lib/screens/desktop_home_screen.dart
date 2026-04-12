@@ -15,6 +15,9 @@ import 'contacts_screen.dart';
 import 'skill_management_screen.dart';
 import 'model_management_screen.dart';
 import 'cli_config_management_screen.dart';
+import '../task/screens/scheduled_tasks_management_screen.dart';
+import '../task/screens/scheduled_task_form_screen.dart';
+import '../task/models/scheduled_task.dart';
 import '../utils/layout_utils.dart';
 import '../services/native_window_service.dart';
 
@@ -41,6 +44,9 @@ enum _RightPanelView {
   modelManagement,
   skillManagement,
   toolConfigManagement,
+  scheduledTaskManagement,
+  createScheduledTask,
+  editScheduledTask,
 }
 
 /// Describes one item in the icon sidebar.
@@ -73,6 +79,9 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
   final GlobalKey<HomeScreenState> _homeKey = GlobalKey<HomeScreenState>();
 
   _RightPanelView _rightPanel = _RightPanelView.empty;
+
+  /// The task being edited in the editScheduledTask panel.
+  ScheduledTask? _editingTask;
 
   /// The actual channelId of the chat that triggered the traces view.
   /// May differ from _selected?.channelId when the controller created/loaded
@@ -299,6 +308,39 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
       case _RightPanelView.toolConfigManagement:
         return const CliConfigManagementScreen();
 
+      case _RightPanelView.scheduledTaskManagement:
+        return ScheduledTasksManagementScreen(
+          onCreateTask: () {
+            setState(() {
+              _editingTask = null;
+              _rightPanel = _RightPanelView.createScheduledTask;
+              _navGeneration++;
+            });
+          },
+          onEditTask: (task) {
+            setState(() {
+              _editingTask = task;
+              _rightPanel = _RightPanelView.editScheduledTask;
+              _navGeneration++;
+            });
+          },
+        );
+
+      case _RightPanelView.createScheduledTask:
+        return ScheduledTaskFormScreen(
+          onDone: () {
+            _showPanel(_RightPanelView.scheduledTaskManagement);
+          },
+        );
+
+      case _RightPanelView.editScheduledTask:
+        return ScheduledTaskFormScreen(
+          task: _editingTask,
+          onDone: () {
+            _showPanel(_RightPanelView.scheduledTaskManagement);
+          },
+        );
+
       case _RightPanelView.empty:
         return _buildEmptyState();
     }
@@ -380,7 +422,15 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
             : iconColor,
         onTap: () => _showPanel(_RightPanelView.toolConfigManagement),
       ),
-      // divider placeholder – index 5
+      _SidebarItemDef(
+        icon: Icons.schedule,
+        tooltip: l10n.scheduledTasks_title,
+        colorBuilder: (_) => _rightPanel == _RightPanelView.scheduledTaskManagement
+            ? activeColor
+            : iconColor,
+        onTap: () => _showPanel(_RightPanelView.scheduledTaskManagement),
+      ),
+      // divider placeholder – index 6
       _SidebarItemDef(
         icon: Icons.horizontal_rule, // sentinel, won't render directly
         tooltip: '',
@@ -401,7 +451,7 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
         onTap: _showLogoutDialog,
       ),
     ];
-    const dividerIndex = 5; // index in bottomItems that is the divider sentinel
+    const dividerIndex = 6; // index in bottomItems that is the divider sentinel
 
     return Container(
       width: _sidebarWidth,
@@ -463,15 +513,15 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
             final double usableForBottom =
                 (spaceForBottom).clamp(minBottomHeight, double.infinity);
 
-            // Items to always keep: divider + settings + logout (indices 4,5,6)
-            const alwaysKeep = [4, 5, 6]; // divider, settings, logout
+            // Items to always keep: divider + settings + logout (indices 6,7,8)
+            const alwaysKeep = [6, 7, 8]; // divider, settings, logout
             double alwaysHeight = dividerHeight + itemHeight * 2;
 
-            // Remaining budget for collapsible items (indices 0-3) + more button
+            // Remaining budget for collapsible items (indices 0-5) + more button
             double budget = usableForBottom - alwaysHeight - moreItemHeight;
 
             // Pack collapsible items from end to beginning (last ones have priority)
-            final collapsibleIndices = [3, 2, 1, 0];
+            final collapsibleIndices = [4, 3, 2, 1, 0];
             List<int> shownCollapsible = [];
             for (final idx in collapsibleIndices) {
               if (budget >= itemHeight) {

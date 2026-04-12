@@ -3041,4 +3041,385 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get profile_loadingProfile => '正在加载档案...';
+
+  @override
+  String get scheduledTasks_title => '定时任务';
+
+  @override
+  String get scheduledTasks_description => '管理自动执行的定时任务';
+
+  @override
+  String get scheduledTasks_noTasks => '还没有定时任务';
+
+  @override
+  String get scheduledTasks_noTasksHint => '创建一个新任务来开始';
+
+  @override
+  String get scheduledTasks_createTask => '创建任务';
+
+  @override
+  String get scheduledTasks_editTask => '编辑任务';
+
+  @override
+  String get scheduledTasks_deleteTask => '删除任务';
+
+  @override
+  String get scheduledTasks_activateTask => '启用';
+
+  @override
+  String get scheduledTasks_pauseTask => '暂停';
+
+  @override
+  String get scheduledTasks_executeNow => '立即执行';
+
+  @override
+  String get scheduledTasks_form_title => '任务详情';
+
+  @override
+  String get scheduledTasks_form_description => '描述';
+
+  @override
+  String get scheduledTasks_form_descriptionHint => '这个任务的用途是什么？';
+
+  @override
+  String get scheduledTasks_form_instruction => '指令';
+
+  @override
+  String get scheduledTasks_form_instructionHint => '输入任务指令或提示';
+
+  @override
+  String get scheduledTasks_form_selectAgent => '选择智能体';
+
+  @override
+  String get scheduledTasks_form_scheduleType => '计划类型';
+
+  @override
+  String get scheduledTasks_form_schedulePattern => '时间安排';
+
+  @override
+  String get scheduledTasks_form_schedulePatternHint =>
+      'Cron: 0 9 * * * 或 Duration: PT5M';
+
+  @override
+  String get scheduledTasks_form_optional => '可选';
+
+  @override
+  String get scheduledTasks_form_selectChannel => '选择频道（可选）';
+
+  @override
+  String get scheduledTasks_scheduleType_cron => 'Cron 表达式';
+
+  @override
+  String get scheduledTasks_scheduleType_interval => '间隔时长';
+
+  @override
+  String get scheduledTasks_scheduleType_once => '一次性';
+
+  @override
+  String get scheduledTasks_cronExamples => 'Cron 示例';
+
+  @override
+  String get scheduledTasks_cronExample_daily => '每天早上 9 点: 0 9 * * *';
+
+  @override
+  String get scheduledTasks_cronExample_hourly => '每小时: 0 * * * *';
+
+  @override
+  String get scheduledTasks_cronExample_weekdays => '工作日早上 9 点: 0 9 * * 1-5';
+
+  @override
+  String get scheduledTasks_cronExample_everyMinute => '每分钟: * * * * *';
+
+  @override
+  String get scheduledTasks_intervalExamples => '时长示例';
+
+  @override
+  String get scheduledTasks_intervalExample_5min => '每 5 分钟: PT5M';
+
+  @override
+  String get scheduledTasks_intervalExample_1hour => '每 1 小时: PT1H';
+
+  @override
+  String get scheduledTasks_intervalExample_30min => '每 30 分钟: PT30M';
+
+  @override
+  String get scheduledTasks_status_pending => '待处理';
+
+  @override
+  String get scheduledTasks_status_active => '活跃';
+
+  @override
+  String get scheduledTasks_status_paused => '已暂停';
+
+  @override
+  String get scheduledTasks_status_completed => '已完成';
+
+  @override
+  String get scheduledTasks_status_failed => '失败';
+
+  @override
+  String scheduledTasks_nextRun(String time) {
+    return '下次运行: $time';
+  }
+
+  @override
+  String scheduledTasks_lastRun(String time) {
+    return '最后运行: $time';
+  }
+
+  @override
+  String scheduledTasks_executionCount(String count) {
+    return '执行次数: $count';
+  }
+
+  @override
+  String scheduledTasks_failureCount(String count) {
+    return '失败次数: $count';
+  }
+
+  @override
+  String get scheduledTasks_noLastError => '无错误';
+
+  @override
+  String scheduledTasks_lastError(String error) {
+    return '最后错误: $error';
+  }
+
+  @override
+  String get scheduledTasks_confirmDelete => '删除任务？';
+
+  @override
+  String get scheduledTasks_confirmDeleteMsg => '确定要删除这个定时任务吗？此操作无法撤销。';
+
+  @override
+  String get scheduledTasks_confirmPause => '暂停任务？';
+
+  @override
+  String get scheduledTasks_confirmPauseMsg => '任务将停止执行。您可以稍后恢复。';
+
+  @override
+  String get scheduledTasks_invalidSchedule => '无效的时间安排';
+
+  @override
+  String get scheduledTasks_invalidScheduleMsg => '请检查您的 cron 表达式或时长格式';
+
+  @override
+  String get scheduledTasks_missingInstruction => '指令不能为空';
+
+  @override
+  String get scheduledTasks_missingAgent => '请选择一个智能体';
+
+  @override
+  String get scheduledTasks_createSuccess => '任务创建成功';
+
+  @override
+  String get scheduledTasks_updateSuccess => '任务更新成功';
+
+  @override
+  String get scheduledTasks_deleteSuccess => '任务删除成功';
+
+  @override
+  String get scheduledTasks_activateSuccess => '任务已启用';
+
+  @override
+  String get scheduledTasks_pauseSuccess => '任务已暂停';
+
+  @override
+  String get scheduledTasks_executeNowSuccess => '任务执行已开始';
+
+  @override
+  String get scheduledTasks_filterByAgent => '按智能体筛选';
+
+  @override
+  String get scheduledTasks_filterAll => '全部';
+
+  @override
+  String scheduledTasks_createError(String error) {
+    return '创建任务失败: $error';
+  }
+
+  @override
+  String scheduledTasks_updateError(String error) {
+    return '更新任务失败: $error';
+  }
+
+  @override
+  String scheduledTasks_deleteError(String error) {
+    return '删除任务失败: $error';
+  }
+
+  @override
+  String scheduledTasks_activateError(String error) {
+    return '启用任务失败: $error';
+  }
+
+  @override
+  String get scheduledTasks_targetAgent => 'Agent 任务';
+
+  @override
+  String get scheduledTasks_targetGroup => '群任务';
+
+  @override
+  String get scheduledTasks_form_optionalChannel => '指定频道（可选）';
+
+  @override
+  String get scheduledTasks_form_selectGroupChannel => '选择群频道';
+
+  @override
+  String get scheduledTasks_form_selectGroup => '选择群';
+
+  @override
+  String get scheduledTasks_form_selectGroupAgents => '群内 Agent';
+
+  @override
+  String get scheduledTasks_form_selectMentions => '@提及的 Agent（可选）';
+
+  @override
+  String get scheduledTasks_missingChannel => '请选择频道';
+
+  @override
+  String get scheduledTasks_missingGroupAgents => '请至少选择一个 Agent';
+
+  @override
+  String get scheduledTasks_form_scheduleTypeLabel => '时间规则类型';
+
+  @override
+  String get scheduledTasks_form_scheduleType_interval => '间隔重复';
+
+  @override
+  String get scheduledTasks_form_scheduleType_cron => 'Cron 计划';
+
+  @override
+  String get scheduledTasks_form_scheduleType_once => '一次性';
+
+  @override
+  String get scheduledTasks_form_interval_value => '间隔数值';
+
+  @override
+  String get scheduledTasks_form_interval_unit_minutes => '分钟';
+
+  @override
+  String get scheduledTasks_form_interval_unit_hours => '小时';
+
+  @override
+  String get scheduledTasks_form_interval_unit_days => '天';
+
+  @override
+  String scheduledTasks_form_interval_preview(String value, String unit) {
+    return '每 $value $unit执行一次';
+  }
+
+  @override
+  String get scheduledTasks_form_preset_label => '快捷预设';
+
+  @override
+  String get scheduledTasks_form_preset_5min => '5分钟';
+
+  @override
+  String get scheduledTasks_form_preset_30min => '30分钟';
+
+  @override
+  String get scheduledTasks_form_preset_1h => '1小时';
+
+  @override
+  String get scheduledTasks_form_preset_6h => '6小时';
+
+  @override
+  String get scheduledTasks_form_preset_1d => '每天';
+
+  @override
+  String get scheduledTasks_form_cron_frequency => '执行频率';
+
+  @override
+  String get scheduledTasks_form_cron_freq_daily => '每天';
+
+  @override
+  String get scheduledTasks_form_cron_freq_weekly => '每周';
+
+  @override
+  String get scheduledTasks_form_cron_freq_monthly => '每月';
+
+  @override
+  String get scheduledTasks_form_cron_freq_custom => '自定义';
+
+  @override
+  String get scheduledTasks_form_cron_time => '执行时间';
+
+  @override
+  String get scheduledTasks_form_cron_weekdays => '执行星期';
+
+  @override
+  String get scheduledTasks_form_cron_monthdays => '执行日期';
+
+  @override
+  String get scheduledTasks_form_cron_advanced => '查看 Cron 表达式';
+
+  @override
+  String get scheduledTasks_form_cron_preview => '接下来的执行时间';
+
+  @override
+  String get scheduledTasks_form_cron_custom_hint => '分 时 日 月 周（如：0 9 * * 1-5）';
+
+  @override
+  String get scheduledTasks_form_cron_weekday_mon => '一';
+
+  @override
+  String get scheduledTasks_form_cron_weekday_tue => '二';
+
+  @override
+  String get scheduledTasks_form_cron_weekday_wed => '三';
+
+  @override
+  String get scheduledTasks_form_cron_weekday_thu => '四';
+
+  @override
+  String get scheduledTasks_form_cron_weekday_fri => '五';
+
+  @override
+  String get scheduledTasks_form_cron_weekday_sat => '六';
+
+  @override
+  String get scheduledTasks_form_cron_weekday_sun => '日';
+
+  @override
+  String get scheduledTasks_form_once_datetime => '执行时间';
+
+  @override
+  String get scheduledTasks_form_once_pickDate => '选择日期';
+
+  @override
+  String get scheduledTasks_form_once_pickTime => '选择时间';
+
+  @override
+  String get scheduledTasks_form_saveAndActivate => '保存并启用';
+
+  @override
+  String get scheduledTasks_form_scheduleSection => '时间规则';
+
+  @override
+  String get scheduledTasks_form_targetSection => '执行目标';
+
+  @override
+  String get scheduledTasks_form_contentSection => '任务内容';
+
+  @override
+  String get scheduledTasks_form_invalidInterval => '请输入有效的间隔数值（最小 1）';
+
+  @override
+  String get scheduledTasks_form_invalidCron => '请完善 Cron 规则配置';
+
+  @override
+  String get scheduledTasks_form_invalidOnce => '请选择一个未来的执行时间';
+
+  @override
+  String get scheduledTasks_form_oncePastError => '执行时间必须在当前时间之后';
+
+  @override
+  String get scheduledTasks_form_agentConversation => '指定会话';
+
+  @override
+  String get scheduledTasks_form_agentConversationHint => '选择该智能体的会话（默认当前激活会话）';
+
+  @override
+  String get scheduledTasks_form_agentNoConversation => '该智能体暂无会话记录';
 }
