@@ -70,12 +70,17 @@ class RemoteAgentService {
     Map<String, dynamic> metadata = const {},
     AgentStatus? initialStatus,
   }) async {
-    // 检查 endpoint 是否已存在（endpoint 非空时）
+    // 检查 endpoint + agentId 是否已存在（endpoint 非空时）
     if (endpoint.isNotEmpty) {
-      final existing = await _databaseService.getRemoteAgentByEndpoint(endpoint);
+      // 从 metadata 中提取 target_agent_id
+      final targetAgentId = metadata['target_agent_id'] as String?;
+      final existing = await _databaseService.getRemoteAgentByEndpointAndAgentId(
+        endpoint,
+        agentId: targetAgentId,
+      );
       if (existing != null) {
         throw AgentDuplicateException(
-          '已存在相同 Endpoint 的 Agent「${existing.name}」',
+          '已存在相同 Endpoint 和 Agent ID 的 Agent「${existing.name}」',
           existingAgent: existing,
         );
       }
@@ -132,12 +137,17 @@ class RemoteAgentService {
     List<String> capabilities = const [],
     Map<String, dynamic> metadata = const {},
   }) async {
-    // 检查 endpoint 是否已存在
+    // 检查 endpoint + agentId 是否已存在
     if (endpoint.isNotEmpty) {
-      final existingByEndpoint = await _databaseService.getRemoteAgentByEndpoint(endpoint);
+      // 从 metadata 中提取 target_agent_id
+      final targetAgentId = metadata['target_agent_id'] as String?;
+      final existingByEndpoint = await _databaseService.getRemoteAgentByEndpointAndAgentId(
+        endpoint,
+        agentId: targetAgentId,
+      );
       if (existingByEndpoint != null) {
         throw AgentDuplicateException(
-          '已存在相同 Endpoint 的 Agent「${existingByEndpoint.name}」',
+          '已存在相同 Endpoint 和 Agent ID 的 Agent「${existingByEndpoint.name}」',
           existingAgent: existingByEndpoint,
         );
       }

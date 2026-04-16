@@ -1140,6 +1140,41 @@ class LocalDatabaseService {
     return results.isEmpty ? null : remote_agent.RemoteAgent.fromMap(results.first);
   }
 
+  /// 根据 Endpoint 和 Agent ID 获取远端助手
+  /// 
+  /// 用于检查 (endpoint, agentId) 组合是否已存在
+  /// 当 agentId 为空时，仅检查 endpoint
+  /// 当 agentId 不为空时，检查 endpoint + metadata['target_agent_id'] 的组合
+  Future<remote_agent.RemoteAgent?> getRemoteAgentByEndpointAndAgentId(
+    String endpoint, {
+    String? agentId,
+  }) async {
+    final db = await database;
+    
+    // 如果没有提供 agentId，仅按 endpoint 查询
+    if (agentId == null || agentId.isEmpty) {
+      final results = await db.query('agents', where: 'endpoint = ?', whereArgs: [endpoint]);
+      return results.isEmpty ? null : remote_agent.RemoteAgent.fromMap(results.first);
+    }
+    
+    // 获取所有指定 endpoint 的 agents
+    final results = await db.query('agents', where: 'endpoint = ?', whereArgs: [endpoint]);
+    if (results.isEmpty) return null;
+    
+    // 检查是否有匹配的 agentId
+    for (final result in results) {
+      final agent = remote_agent.RemoteAgent.fromMap(result);
+      final targetAgentId = agent.metadata['target_agent_id'] as String?;
+      
+      if (targetAgentId == agentId) {
+        return agent;
+      }
+    }
+    
+    return null;
+  }
+
+
   /// 获取所有在线的远端助手
   Future<List<remote_agent.RemoteAgent>> getOnlineRemoteAgents() async {
     final db = await database;
