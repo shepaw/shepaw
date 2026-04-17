@@ -19,6 +19,7 @@ import 'contacts_screen.dart';
 import 'model_management_screen.dart';
 import 'skill_management_screen.dart';
 import 'cli_config_management_screen.dart';
+import '../task/screens/scheduled_tasks_management_screen.dart';
 import '../services/model_registry.dart';
 import '../widgets/agent_search_delegate.dart';
 import '../services/message_search_service.dart';
@@ -730,6 +731,19 @@ class HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateMi
                     },
                   ),
                   const Divider(),
+                  ListTile(
+                    leading: const Icon(Icons.schedule),
+                    title: Text(l10n.scheduledTasks_title),
+                    onTap: () {
+                      Navigator.pop(context);
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) => const ScheduledTasksManagementScreen(),
+                        ),
+                      );
+                    },
+                  ),
                   ListTile(
                     leading: const Icon(Icons.settings_outlined),
                     title: Text(l10n.drawer_settings),
