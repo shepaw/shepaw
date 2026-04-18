@@ -45,6 +45,26 @@ class ScheduledTaskService {
   // Timers for each scheduled task (keyed by task ID)
   final Map<String, Timer> _timers = {};
 
+  /// Maximum consecutive failures before a task is automatically marked as failed.
+  static const int maxConsecutiveFailures = 10;
+
+  /// Heartbeat interval for detecting system sleep / wall-clock jumps.
+  /// A short periodic timer whose purpose is to compare wall-clock time
+  /// against the last recorded tick.  If the gap significantly exceeds the
+  /// interval, the system likely resumed from sleep (e.g. macOS lid close)
+  /// and we should reschedule all tasks to catch up missed runs.
+  static const Duration _heartbeatInterval = Duration(minutes: 2);
+  static const int _heartbeatDriftThresholdMs = 3 * 60 * 1000; // 3 minutes
+
+  /// Maximum age of a missed run (relative to nextRunAt) that still gets
+  /// executed.  Anything older is silently skipped and nextRunAt is advanced.
+  /// Default: 1 hour — long enough to cover brief sleeps / background periods,
+  /// short enough that a week-old "check the weather" task won't fire.
+  static const int _catchUpWindowMs = 60 * 60 * 1000; // 1 hour
+
+  Timer? _heartbeatTimer;
+  int _lastHeartbeatMs = 0;
+
   bool _initialized = false;
   bool _running = false;
 
@@ -65,6 +85,8 @@ class ScheduledTaskService {
     for (final task in activeTasks) {
       await _scheduleTask(task);
     }
+
+    _startHeartbeat();
   }
 
   /// Pause all active tasks without losing their state.
@@ -73,6 +95,7 @@ class ScheduledTaskService {
   Future<void> pauseScheduler() async {
     _running = false;
     _cancelAllTimers();
+    _stopHeartbeat();
     LoggerService().info('Scheduled task service paused', tag: 'ScheduledTasks');
   }
 
@@ -80,13 +103,22 @@ class ScheduledTaskService {
   /// 
   /// Call this when the app comes back to the foreground.
   Future<void> resumeScheduler() async {
-    if (!_initialized) await startScheduler();
+    if (!_initialized) {
+      await startScheduler();
+      return;
+    }
     _running = true;
+
+    // Cancel all existing timers before re-scheduling to avoid duplicates
+    // and clean up timers for tasks that may have been deleted while paused.
+    _cancelAllTimers();
 
     final activeTasks = await _db.listScheduledTasks(status: ScheduledTask.statusActive);
     for (final task in activeTasks) {
       await _scheduleTask(task);
     }
+
+    _startHeartbeat();
 
     LoggerService().info('Scheduled task service resumed', tag: 'ScheduledTasks');
   }
@@ -233,15 +265,95 @@ class ScheduledTaskService {
   Future<void> _scheduleTask(ScheduledTask task) async {
     if (!_running || task.status != ScheduledTask.statusActive) return;
 
-    final taskType = task.taskType;
+    // Cancel any existing timer for this task to prevent duplicate scheduling.
+    _cancelTaskTimer(task.id);
+
+    // ── Missed-run catch-up for cron / interval tasks ──
+    // On mobile, Dart timers do not fire while the app is in background.
+    // When we resume, nextRunAt may already be in the past.  Detect that
+    // and execute the task once immediately, then advance nextRunAt so the
+    // regular scheduling logic places the next timer in the future.
+    final taskAfterCatchUp = await _catchUpMissedRun(task);
+
+    final taskType = taskAfterCatchUp.taskType;
 
     if (taskType == ScheduledTask.typeInterval) {
-      _scheduleIntervalTask(task);
+      _scheduleIntervalTask(taskAfterCatchUp);
     } else if (taskType == ScheduledTask.typeCron) {
-      _scheduleCronTask(task);
+      _scheduleCronTask(taskAfterCatchUp);
     } else if (taskType == ScheduledTask.typeOnce) {
-      _scheduleOnceTask(task);
+      await _scheduleOnceTask(taskAfterCatchUp);
     }
+  }
+
+  /// If [task] has a nextRunAt in the past (i.e. the scheduled fire was missed
+  /// while the app was suspended / in background), decide whether to execute
+  /// a catch-up run or silently advance to the next future occurrence.
+  ///
+  /// Catch-up policy:
+  /// - Only missed by ≤ [_catchUpWindowMs] (default 1 hour) → execute once now.
+  /// - Missed by more than that → too stale to be useful; just advance nextRunAt.
+  ///
+  /// Returns the (possibly updated) task for downstream scheduling.
+  Future<ScheduledTask> _catchUpMissedRun(ScheduledTask task) async {
+    // Only catch up cron and interval tasks — one-time tasks have separate
+    // handling in _scheduleOnceTask (past-due window / mark completed).
+    if (task.taskType == ScheduledTask.typeOnce) return task;
+
+    final now = DateTime.now().millisecondsSinceEpoch;
+
+    // nextRunAt == 0 means the pattern was unparseable at creation time.
+    // A small tolerance of 30 seconds avoids treating a task that is just
+    // about to fire as "missed".
+    if (task.nextRunAt <= 0 || task.nextRunAt > now - 30000) return task;
+
+    // The task was missed.  Only execute if it was actually run before at
+    // least once (executionCount > 0) or has never run (fresh activation).
+    // We also require that lastRunAt is *before* the missed nextRunAt to
+    // avoid double-executing if the DB was updated but timer not set.
+    if (task.lastRunAt != null && task.lastRunAt! >= task.nextRunAt) {
+      // Already executed for this window — just advance nextRunAt.
+      return _advanceNextRunAt(task, now);
+    }
+
+    final missedByMs = now - task.nextRunAt;
+
+    // If the miss is within the catch-up window, execute once now.
+    if (missedByMs <= _catchUpWindowMs) {
+      LoggerService().info(
+        'Catch-up: task ${task.id} missed scheduled run at '
+        '${DateTime.fromMillisecondsSinceEpoch(task.nextRunAt)} '
+        '(${missedByMs ~/ 1000}s ago), executing now',
+        tag: 'ScheduledTasks',
+      );
+
+      await _executeTask(task);
+
+      // Re-fetch from DB because _executeTask updated it (nextRunAt, counts, etc.)
+      final refreshed = await _db.getScheduledTaskById(task.id);
+      return refreshed ?? task;
+    }
+
+    // Missed by too long — silently advance to the next future occurrence.
+    LoggerService().info(
+      'Skipping stale catch-up for task ${task.id}: missed by '
+      '${Duration(milliseconds: missedByMs).inHours}h '
+      '(window is ${const Duration(milliseconds: _catchUpWindowMs).inHours}h), '
+      'advancing to next scheduled time',
+      tag: 'ScheduledTasks',
+    );
+    return _advanceNextRunAt(task, now);
+  }
+
+  /// Advance [task.nextRunAt] to the next future occurrence without executing.
+  Future<ScheduledTask> _advanceNextRunAt(ScheduledTask task, int now) async {
+    final nextFuture = _calculateNextRun(task.schedulePattern, now);
+    if (nextFuture != null && nextFuture != task.nextRunAt) {
+      final advanced = task.copyWith(nextRunAt: nextFuture, updatedAt: now);
+      await _db.updateScheduledTask(advanced);
+      return advanced;
+    }
+    return task;
   }
 
   void _scheduleIntervalTask(ScheduledTask task) {
@@ -256,20 +368,42 @@ class ScheduledTaskService {
         return;
       }
 
-      final timer = Timer.periodic(duration, (_) async {
+      // Calculate initial delay: align the first fire to nextRunAt so that
+      // a newly activated task doesn't wait a full interval before executing.
+      final now = DateTime.now().millisecondsSinceEpoch;
+      final initialDelayMs = task.nextRunAt > now ? task.nextRunAt - now : 0;
+      final initialDelay = Duration(milliseconds: initialDelayMs);
+
+      // Use a one-shot timer for the first fire, then switch to periodic.
+      final timer = Timer(initialDelay, () async {
         if (!_running) return;
-        // Re-fetch latest task to get current status and counts.
         final latestTask = await _db.getScheduledTaskById(task.id);
         if (latestTask == null || latestTask.status != ScheduledTask.statusActive) {
           _cancelTaskTimer(task.id);
           return;
         }
         await _executeTask(latestTask);
+
+        // Now start the periodic timer for subsequent fires.
+        if (!_running || !_timers.containsKey(task.id)) return;
+
+        final periodicTimer = Timer.periodic(duration, (_) async {
+          if (!_running) return;
+          // Re-fetch latest task to get current status and counts.
+          final latest = await _db.getScheduledTaskById(task.id);
+          if (latest == null || latest.status != ScheduledTask.statusActive) {
+            _cancelTaskTimer(task.id);
+            return;
+          }
+          await _executeTask(latest);
+        });
+
+        _timers[task.id] = periodicTimer;
       });
 
       _timers[task.id] = timer;
       LoggerService().debug(
-        'Scheduled interval task: ${task.id} -> ${task.schedulePattern}',
+        'Scheduled interval task: ${task.id} -> first fire in ${initialDelay.inSeconds}s, then every ${duration.inSeconds}s',
         tag: 'ScheduledTasks',
       );
     } catch (e) {
@@ -344,7 +478,7 @@ class ScheduledTaskService {
     }
   }
 
-  void _scheduleOnceTask(ScheduledTask task) {
+  Future<void> _scheduleOnceTask(ScheduledTask task) async {
     try {
       final now = DateTime.now().millisecondsSinceEpoch;
 
@@ -356,7 +490,7 @@ class ScheduledTaskService {
           'One-time task ${task.id} has invalid nextRunAt (${task.nextRunAt}), aborting scheduling',
           tag: 'ScheduledTasks',
         );
-        _db.updateScheduledTask(task.copyWith(
+        await _db.updateScheduledTask(task.copyWith(
           status: ScheduledTask.statusCompleted,
           lastError: 'Invalid schedule: nextRunAt is not set',
           updatedAt: now,
@@ -373,7 +507,7 @@ class ScheduledTaskService {
           'One-time task ${task.id} is past due, marking completed without execution',
           tag: 'ScheduledTasks',
         );
-        _db.updateScheduledTask(task.copyWith(
+        await _db.updateScheduledTask(task.copyWith(
           status: ScheduledTask.statusCompleted,
           updatedAt: now,
         ));
@@ -426,6 +560,7 @@ class ScheduledTaskService {
       final updated = task.copyWith(
         lastRunAt: now,
         executionCount: task.executionCount + 1,
+        failureCount: 0, // Reset consecutive failure count on success
         status: isOnce ? ScheduledTask.statusCompleted : task.status,
         nextRunAt: isOnce ? task.nextRunAt : (_calculateNextRun(task.schedulePattern, now) ?? task.nextRunAt),
         updatedAt: now,
@@ -440,17 +575,31 @@ class ScheduledTaskService {
       );
     } catch (execError) {
       // Update task with failure information
+      final newFailureCount = task.failureCount + 1;
+      final reachedLimit = newFailureCount >= maxConsecutiveFailures;
+
       final updated = task.copyWith(
         lastRunAt: now,
-        failureCount: task.failureCount + 1,
+        failureCount: newFailureCount,
         lastError: execError.toString(),
-        nextRunAt: _calculateNextRun(task.schedulePattern, now) ?? task.nextRunAt,
+        status: reachedLimit ? ScheduledTask.statusFailed : task.status,
+        nextRunAt: reachedLimit
+            ? task.nextRunAt
+            : (_calculateNextRun(task.schedulePattern, now) ?? task.nextRunAt),
         updatedAt: now,
       );
       await _db.updateScheduledTask(updated);
 
+      if (reachedLimit) {
+        _cancelTaskTimer(task.id);
+        LoggerService().error(
+          'Scheduled task ${task.id} reached max failure count ($maxConsecutiveFailures), marked as failed',
+          tag: 'ScheduledTasks',
+        );
+      }
+
       LoggerService().error(
-        'Scheduled task execution failed: ${task.id}',
+        'Scheduled task execution failed: ${task.id} (failures: $newFailureCount)',
         tag: 'ScheduledTasks',
         error: execError,
       );
@@ -511,5 +660,54 @@ class ScheduledTaskService {
       timer.cancel();
     }
     _timers.clear();
+  }
+
+  // ── Heartbeat: detect system sleep / wall-clock jumps ──
+
+  void _startHeartbeat() {
+    _stopHeartbeat();
+    _lastHeartbeatMs = DateTime.now().millisecondsSinceEpoch;
+    _heartbeatTimer = Timer.periodic(_heartbeatInterval, (_) => _onHeartbeat());
+  }
+
+  void _stopHeartbeat() {
+    _heartbeatTimer?.cancel();
+    _heartbeatTimer = null;
+  }
+
+  /// Called every [_heartbeatInterval].  If the wall-clock gap since the last
+  /// tick exceeds [_heartbeatDriftThresholdMs], the system likely slept
+  /// (e.g. macOS lid close) without sending a lifecycle event.
+  /// In that case we reschedule all active tasks, which triggers
+  /// [_catchUpMissedRun] for any that were due during the sleep.
+  void _onHeartbeat() {
+    if (!_running) return;
+
+    final now = DateTime.now().millisecondsSinceEpoch;
+    final elapsed = now - _lastHeartbeatMs;
+    _lastHeartbeatMs = now;
+
+    if (elapsed > _heartbeatDriftThresholdMs) {
+      LoggerService().info(
+        'Clock drift detected: ${elapsed ~/ 1000}s elapsed since last heartbeat '
+        '(expected ~${_heartbeatInterval.inSeconds}s). Rescheduling all tasks.',
+        tag: 'ScheduledTasks',
+      );
+      _rescheduleAllTasks();
+    }
+  }
+
+  /// Cancel all existing timers and reschedule every active task from DB.
+  /// This is the same logic as [resumeScheduler] but without changing
+  /// [_running] state — used when the scheduler is already running but
+  /// timers are stale due to a system sleep.
+  Future<void> _rescheduleAllTasks() async {
+    _cancelAllTimers();
+    final activeTasks = await _db.listScheduledTasks(
+      status: ScheduledTask.statusActive,
+    );
+    for (final task in activeTasks) {
+      await _scheduleTask(task);
+    }
   }
 }

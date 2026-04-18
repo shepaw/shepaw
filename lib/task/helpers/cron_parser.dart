@@ -61,8 +61,8 @@ class CronParser {
   /// **Never** returns [fromTime] itself as a fallback — callers must handle
   /// a `null` result explicitly to avoid accidental immediate execution.
   ///
-  /// This is a simplified implementation that handles basic cron patterns.
-  /// For complex patterns, consider using a dedicated cron library.
+  /// Uses a jump-ahead strategy: when a field (month, day, hour) doesn't match,
+  /// skip directly to the next candidate rather than incrementing minute-by-minute.
   static int? calculateNextCronRun(String cronExpression, {int? fromTime}) {
     fromTime ??= DateTime.now().millisecondsSinceEpoch;
     final from = DateTime.fromMillisecondsSinceEpoch(fromTime);
@@ -73,28 +73,57 @@ class CronParser {
     // Validate each field before iterating.
     if (!isValidCron(cronExpression)) return null;
 
-    final minute = parts[0];
-    final hour = parts[1];
-    final dayOfMonth = parts[2];
-    final month = parts[3];
-    final dayOfWeek = parts[4];
+    final minutePat = parts[0];
+    final hourPat = parts[1];
+    final dayOfMonthPat = parts[2];
+    final monthPat = parts[3];
+    final dayOfWeekPat = parts[4];
 
     // Start from next minute to ensure we never fire at the exact creation time.
     var next = DateTime(from.year, from.month, from.day, from.hour, from.minute)
         .add(const Duration(minutes: 1));
 
-    // Search for next valid time (up to 4 years in the future as a safety limit)
+    // Safety limit: 4 years in the future
     final maxTime = DateTime.now().add(const Duration(days: 4 * 365));
 
+    // Outer loop with jump-ahead for month/day/hour mismatches.
+    // Each iteration either finds a match or jumps to the next candidate,
+    // guaranteeing O(months * days * hours) worst case instead of O(minutes).
     while (next.isBefore(maxTime)) {
-      if (_matchesCronPart(next.minute, minute) &&
-          _matchesCronPart(next.hour, hour) &&
-          _matchesCronPart(next.day, dayOfMonth) &&
-          _matchesCronPart(next.month, month) &&
-          _matchesCronDayOfWeek(next.weekday, dayOfWeek)) {
-        return next.millisecondsSinceEpoch;
+      // --- Month check: jump to next matching month ---
+      if (!_matchesCronPart(next.month, monthPat)) {
+        // Advance to the 1st day, 00:00 of the next month
+        if (next.month == 12) {
+          next = DateTime(next.year + 1, 1, 1, 0, 0);
+        } else {
+          next = DateTime(next.year, next.month + 1, 1, 0, 0);
+        }
+        continue;
       }
-      next = next.add(const Duration(minutes: 1));
+
+      // --- Day of month + Day of week check: jump to next day ---
+      if (!_matchesCronPart(next.day, dayOfMonthPat) ||
+          !_matchesCronDayOfWeek(next.weekday, dayOfWeekPat)) {
+        // Advance to 00:00 of the next day
+        next = DateTime(next.year, next.month, next.day + 1, 0, 0);
+        continue;
+      }
+
+      // --- Hour check: jump to next hour ---
+      if (!_matchesCronPart(next.hour, hourPat)) {
+        // Advance to :00 of the next hour
+        next = DateTime(next.year, next.month, next.day, next.hour + 1, 0);
+        continue;
+      }
+
+      // --- Minute check: jump to next minute ---
+      if (!_matchesCronPart(next.minute, minutePat)) {
+        next = next.add(const Duration(minutes: 1));
+        continue;
+      }
+
+      // All fields match!
+      return next.millisecondsSinceEpoch;
     }
 
     // No match found within 4 years — return null so callers can handle it safely.
