@@ -28,3 +28,9 @@ android/.gradle/
 *.env
 google-services.json
 GoogleService-Info.plist
+
+# AI 推理中间产物
+.ai_workspace/
+
+# AI 推理中间产物
+.ai_workspace/
