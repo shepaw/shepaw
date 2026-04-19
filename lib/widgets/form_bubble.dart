@@ -5,11 +5,15 @@ import 'file_upload_bubble.dart';
 /// Widget that renders a composite form inline in a message bubble.
 ///
 /// Supports mixing multiple field types in a single form:
-/// - text_input: free-text input field
-/// - single_select: radio-style selection
-/// - multi_select: checkbox-style selection
+/// - text_input / text: free-text input field
+/// - single_select / radio_group: radio-style selection
+/// - multi_select / checkbox_group: checkbox-style selection
 /// - file_upload: file picker
 /// - action_buttons: action buttons (within form context)
+///
+/// The widget is lenient about field/option shape so it can render both
+/// the legacy Shepaw wire format (`field_id`, option `id`) and the newer
+/// form format emitted by non-blocking agents (`name`, option `value`).
 ///
 /// All fields are collected and submitted together as a single form response.
 class FormBubble extends StatefulWidget {
@@ -29,6 +33,42 @@ class FormBubble extends StatefulWidget {
 class _FormBubbleState extends State<FormBubble> {
   final Map<String, dynamic> _fieldValues = {};
   final Map<String, TextEditingController> _textControllers = {};
+
+  /// The stable per-field key used for storing the user's input.
+  ///
+  /// Accepts both the legacy `field_id` and the newer `name` keys so the
+  /// widget renders forms emitted by either variant of the agent SDK.
+  static String _fieldKey(Map<String, dynamic> field) {
+    final fid = field['field_id'] as String?;
+    if (fid != null && fid.isNotEmpty) return fid;
+    final name = field['name'] as String?;
+    return name ?? '';
+  }
+
+  /// Canonicalise the field `type` into one of the values this widget
+  /// knows how to render. Returns the original string if no mapping
+  /// applies so the "Unknown field type" fallback still works.
+  static String _canonicalFieldType(String type) {
+    switch (type) {
+      case 'radio_group':
+        return 'single_select';
+      case 'checkbox_group':
+        return 'multi_select';
+      case 'text':
+        return 'text_input';
+      default:
+        return type;
+    }
+  }
+
+  /// The stable per-option key; accepts both the legacy `id` and the
+  /// newer `value` shapes.
+  static String _optionKey(Map<String, dynamic> option) {
+    final id = option['id'] as String?;
+    if (id != null && id.isNotEmpty) return id;
+    final value = option['value'] as String?;
+    return value ?? '';
+  }
 
   @override
   void dispose() {
@@ -124,7 +164,7 @@ class _FormBubbleState extends State<FormBubble> {
   Widget _buildField(BuildContext context, Map<String, dynamic> field) {
     final type = field['type'] as String? ?? 'text_input';
     final label = field['label'] as String?;
-    final fieldId = field['field_id'] as String? ?? '';
+    final fieldId = _fieldKey(field);
     final required = field['required'] as bool? ?? false;
 
     return Column(
@@ -157,7 +197,7 @@ class _FormBubbleState extends State<FormBubble> {
   }
 
   Widget _buildFieldInput(BuildContext context, String type, Map<String, dynamic> field, String fieldId) {
-    switch (type) {
+    switch (_canonicalFieldType(type)) {
       case 'text_input':
         return _buildTextInput(context, field, fieldId);
       case 'single_select':
@@ -217,7 +257,7 @@ class _FormBubbleState extends State<FormBubble> {
     return Column(
       children: options.map<Widget>((option) {
         final optionMap = option as Map<String, dynamic>;
-        final id = optionMap['id'] as String? ?? '';
+        final id = _optionKey(optionMap);
         final label = optionMap['label'] as String? ?? '';
         final isSelected = selectedId == id;
 
@@ -275,7 +315,7 @@ class _FormBubbleState extends State<FormBubble> {
     return Column(
       children: options.map<Widget>((option) {
         final optionMap = option as Map<String, dynamic>;
-        final id = optionMap['id'] as String? ?? '';
+        final id = _optionKey(optionMap);
         final label = optionMap['label'] as String? ?? '';
         final isSelected = selectedIds.contains(id);
 
@@ -425,7 +465,7 @@ class _FormBubbleState extends State<FormBubble> {
   ) {
     final type = field['type'] as String? ?? 'text_input';
     final label = field['label'] as String?;
-    final fieldId = field['field_id'] as String? ?? '';
+    final fieldId = _fieldKey(field);
     final value = submittedValues[fieldId];
 
     return Column(
@@ -454,7 +494,7 @@ class _FormBubbleState extends State<FormBubble> {
     Map<String, dynamic> field,
     dynamic value,
   ) {
-    switch (type) {
+    switch (_canonicalFieldType(type)) {
       case 'text_input':
         return Container(
           width: double.infinity,
@@ -473,7 +513,7 @@ class _FormBubbleState extends State<FormBubble> {
       case 'single_select':
         final options = (field['options'] as List<dynamic>?) ?? [];
         final selectedOption = options.firstWhere(
-          (o) => (o as Map<String, dynamic>)['id'] == value,
+          (o) => _optionKey(o as Map<String, dynamic>) == value,
           orElse: () => <String, dynamic>{},
         ) as Map<String, dynamic>;
         final selectedLabel = selectedOption['label'] as String? ?? '-';
@@ -489,7 +529,7 @@ class _FormBubbleState extends State<FormBubble> {
         final options = (field['options'] as List<dynamic>?) ?? [];
         final selectedIds = (value as List<dynamic>?)?.cast<String>() ?? [];
         final selectedLabels = options
-            .where((o) => selectedIds.contains((o as Map<String, dynamic>)['id']))
+            .where((o) => selectedIds.contains(_optionKey(o as Map<String, dynamic>)))
             .map((o) => (o as Map<String, dynamic>)['label'] as String? ?? '')
             .toList();
         return Wrap(
@@ -541,7 +581,7 @@ class _FormBubbleState extends State<FormBubble> {
     for (final field in fields) {
       final fieldMap = field as Map<String, dynamic>;
       final required = fieldMap['required'] as bool? ?? false;
-      final fieldId = fieldMap['field_id'] as String? ?? '';
+      final fieldId = _fieldKey(fieldMap);
       if (required) {
         final value = _fieldValues[fieldId];
         if (value == null || (value is String && value.trim().isEmpty) || (value is List && value.isEmpty)) {
@@ -562,7 +602,7 @@ class _FormBubbleState extends State<FormBubble> {
 
                 for (final field in fields) {
                   final fieldMap = field as Map<String, dynamic>;
-                  final fieldId = fieldMap['field_id'] as String? ?? '';
+                  final fieldId = _fieldKey(fieldMap);
                   final label = fieldMap['label'] as String? ?? fieldId;
                   final type = fieldMap['type'] as String? ?? 'text_input';
                   final value = _fieldValues[fieldId];
@@ -571,7 +611,7 @@ class _FormBubbleState extends State<FormBubble> {
                     values[fieldId] = value;
 
                     // Build summary
-                    switch (type) {
+                    switch (_canonicalFieldType(type)) {
                       case 'text_input':
                         if ((value as String).isNotEmpty) {
                           summaryParts.add('$label: $value');
@@ -580,14 +620,24 @@ class _FormBubbleState extends State<FormBubble> {
                       case 'single_select':
                         final options = (fieldMap['options'] as List<dynamic>?) ?? [];
                         final opt = options.firstWhere(
-                          (o) => (o as Map<String, dynamic>)['id'] == value,
+                          (o) => _optionKey(o as Map<String, dynamic>) == value,
                           orElse: () => <String, dynamic>{},
                         ) as Map<String, dynamic>;
                         summaryParts.add('$label: ${opt['label'] ?? value}');
                         break;
                       case 'multi_select':
                         final ids = (value as List<String>);
-                        summaryParts.add('$label: ${ids.length} selected');
+                        final options = (fieldMap['options'] as List<dynamic>?) ?? [];
+                        final selectedLabels = options
+                            .where((o) => ids.contains(_optionKey(o as Map<String, dynamic>)))
+                            .map((o) => (o as Map<String, dynamic>)['label'] as String? ?? '')
+                            .where((s) => s.isNotEmpty)
+                            .toList();
+                        summaryParts.add(
+                          selectedLabels.isEmpty
+                              ? '$label: ${ids.length} selected'
+                              : '$label: ${selectedLabels.join(", ")}',
+                        );
                         break;
                       case 'file_upload':
                         final files = (value as List<Map<String, dynamic>>);
