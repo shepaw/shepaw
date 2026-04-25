@@ -86,8 +86,15 @@ class ConnectionManager {
         }
       }
 
-      await connection.connect(wsUrl, agent.token,
-          targetAgentId: agent.metadata['target_agent_id'] as String?);
+      await connection.connect(
+        wsUrl,
+        agent.token,
+        targetAgentId: agent.metadata['target_agent_id'] as String?,
+        // v2.1: pinned peer fingerprint from the original pairing URL.
+        // Stored in metadata by `AddRemoteAgentScreen._connectToAgent` —
+        // required for the Noise handshake to pin the agent's identity.
+        pinnedFingerprint: (agent.metadata['noise_peer_fp'] as String?) ?? '',
+      );
       _acpConnections[agent.id] = connection;
 
       // Create message stream controller
@@ -116,6 +123,30 @@ class ConnectionManager {
 
     // 清除重连计数
     _reconnectAttempts.remove(agentId);
+  }
+
+  /// v2.1: ask the remote agent to remove this device from its allowlist,
+  /// then disconnect locally. Called by the UI right before deleting the
+  /// RemoteAgent record, so the agent host doesn't end up with a stale
+  /// authorized-peer entry that the user never intended to keep.
+  ///
+  /// Best-effort — if there's no live connection or the unregister RPC
+  /// can't be delivered, we fall through to the normal disconnect path
+  /// and the user's local delete still proceeds. Raising an error here
+  /// would be user-hostile: the intent was "forget this agent".
+  Future<void> unregisterAndDisconnect(String agentId) async {
+    final conn = _acpConnections[agentId];
+    if (conn != null) {
+      try {
+        await conn.unregisterSelfFromAgent();
+      } catch (e) {
+        LoggerService().warning(
+          'unregisterSelfFromAgent failed, proceeding with local delete: $e',
+          tag: 'ConnectionManager',
+        );
+      }
+    }
+    await disconnectAgent(agentId);
   }
 
   /// 重连助手

@@ -2570,6 +2570,18 @@ abstract class AppLocalizations {
   /// **'正在检查 Agent 状态...'**
   String get chat_checkingHealth;
 
+  /// No description provided for @chat_reconnectingAttempt.
+  ///
+  /// In zh, this message translates to:
+  /// **'正在重连… ({attempt}/{total})'**
+  String chat_reconnectingAttempt(int attempt, int total);
+
+  /// No description provided for @chat_reconnectFailed.
+  ///
+  /// In zh, this message translates to:
+  /// **'无法连接到 Agent，请检查 Agent 是否在线。'**
+  String get chat_reconnectFailed;
+
   /// No description provided for @chat_responseError.
   ///
   /// In zh, this message translates to:

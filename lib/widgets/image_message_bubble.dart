@@ -212,6 +212,8 @@ class _ImageMessageBubbleState extends State<ImageMessageBubble> {
               wsUrl,
               agent.token,
               targetAgentId: agent.metadata['target_agent_id'] as String?,
+              pinnedFingerprint:
+                  (agent.metadata['noise_peer_fp'] as String?) ?? '',
             );
             connection = tempConn;
             temporaryConnection = true;

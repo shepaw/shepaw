@@ -303,8 +303,12 @@ class ACPProtocolHandler {
       }
     }
 
-    await connection.connect(wsUrl, agent.token,
-        targetAgentId: agent.metadata['target_agent_id'] as String?);
+    await connection.connect(
+      wsUrl,
+      agent.token,
+      targetAgentId: agent.metadata['target_agent_id'] as String?,
+      pinnedFingerprint: (agent.metadata['noise_peer_fp'] as String?) ?? '',
+    );
     return connection;
   }
 }

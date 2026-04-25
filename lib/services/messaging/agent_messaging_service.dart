@@ -23,7 +23,10 @@ import '../logger_service.dart';
 import '../she_service.dart';
 import '../../clis/shepaw/shepaw_cli.dart';
 import '../session/session_history_service.dart';
+import '../remote_agent_service.dart';
+import '../token_service.dart';
 import 'local_llm_handler.dart';
+import 'connection_retry_policy.dart';
 
 /// Handles sending messages to individual (non-group) agents.
 ///
@@ -83,6 +86,11 @@ class AgentMessagingService {
     ACPCancellationToken? acpCancellationToken,
     List<AttachmentData>? attachments,
     Message? existingUserMessage,
+    /// 主动重连进度回调：`(attempt, total)`。
+    /// - `attempt > 0`：正在进行第 `attempt` 次（共 `total` 次）重连尝试。
+    /// - `attempt == 0`：重连流程结束（连上或彻底失败），UI 可隐藏进度提示。
+    /// 仅在 ACP 协议下、首次建连/复用失败进入重试循环时触发。
+    void Function(int attempt, int total)? onReconnecting,
   }) async {
     LoggerService().debug('sendMessageToAgent: agentId=${agent.id}, name=${agent.name}, protocol=${agent.protocol}, status=${agent.status}, endpoint=${agent.endpoint}', tag: 'AgentMessagingService');
 
@@ -113,12 +121,18 @@ class AgentMessagingService {
         );
       }
 
-      // Check if agent is online
+      // Check if agent is online (soft gate).
+      // 本地缓存状态可能过期（Agent 刚上线但本地未更新），因此这里只记日志、
+      // 不抛异常；真正的可达性由 _getOrCreateACPConnectionWithRetry 在建连时
+      // 决定（并带 3 次指数退避 + checkAgentHealth 兜底）。
       if (agent.status != AgentStatus.online) {
-        LoggerService().error('Agent ${agent.name} is not online (status: ${agent.status})', tag: 'AgentMessagingService');
-        throw Exception('Agent ${agent.name} is not online');
+        LoggerService().warning(
+          'Agent ${agent.name} cached status=${agent.status}; will attempt reconnect on send',
+          tag: 'AgentMessagingService',
+        );
+      } else {
+        LoggerService().info('Agent is online', tag: 'AgentMessagingService');
       }
-      LoggerService().info('Agent is online', tag: 'AgentMessagingService');
 
       // Check if agent has valid endpoint
       if (agent.endpoint.isEmpty) {
@@ -196,6 +210,7 @@ class AgentMessagingService {
           acpCancellationToken: acpCancellationToken,
           attachments: attachments,
           dmSystemPrompt: dmSystemPrompt,
+          onReconnecting: onReconnecting,
         );
       } else {
         // For other protocols, use generic HTTP POST
@@ -283,6 +298,7 @@ class AgentMessagingService {
     ACPCancellationToken? acpCancellationToken,
     List<AttachmentData>? attachments,
     String? dmSystemPrompt,
+    void Function(int attempt, int total)? onReconnecting,
   }) async {
     LoggerService().info('Starting ACP WebSocket protocol, endpoint: ${agent.endpoint}', tag: 'AgentMessagingService');
 
@@ -290,8 +306,11 @@ class AgentMessagingService {
     String? taskId;
 
     try {
-      // Get or create connection for this agent
-      connection = await _getOrCreateACPConnection(agent);
+      // Get or create connection for this agent (with retry + backoff + health fallback)
+      connection = await _getOrCreateACPConnectionWithRetry(
+        agent,
+        onReconnecting: onReconnecting,
+      );
 
       // Create task ID
       taskId = _uuid.v4();
@@ -572,13 +591,19 @@ class AgentMessagingService {
 
     // Create new connection
     connection = ACPAgentConnection(agentId: agent.id);
+    final newConnection = connection;
     _acpConnections[agent.id] = connection;
 
-    // 监听连接状态变化，实时更新 Agent 在线/离线状态
+    // 监听连接状态变化，实时更新 Agent 在线/离线状态。
+    // 使用 identical(...) 保护：只有当 map 仍然指向自己（而不是之后被"主动
+    // 重试"替换进来的新连接）时才从 map 删除。避免旧连接延迟的 disconnect
+    // 回调把刚建立的新连接误删。
     connection.onConnectionStateChanged = (bool connected) {
       if (!connected) {
         _db.updateRemoteAgentStatus(agent.id, 'offline').catchError((_) {});
-        _acpConnections.remove(agent.id);
+        if (identical(_acpConnections[agent.id], newConnection)) {
+          _acpConnections.remove(agent.id);
+        }
         LoggerService().info('ACP connection offline: ${agent.name}', tag: 'AgentMessagingService');
       }
     };
@@ -597,9 +622,116 @@ class AgentMessagingService {
       }
     }
 
-    await connection.connect(wsUrl, agent.token,
-        targetAgentId: agent.metadata['target_agent_id'] as String?);
+    await connection.connect(
+      wsUrl,
+      agent.token,
+      targetAgentId: agent.metadata['target_agent_id'] as String?,
+      pinnedFingerprint: (agent.metadata['noise_peer_fp'] as String?) ?? '',
+    );
     return connection;
+  }
+
+  /// 带 3 次指数退避重试 + `checkAgentHealth` 兜底的 ACP 建连。
+  ///
+  /// 使用场景：用户主动发送消息时，若本地缓存的 agent 状态为 offline、或
+  /// 建连瞬时失败，首次失败后再试一次通常即可成功（网络抖动/Agent 刚上线
+  /// 但本地状态未刷新）。避免用户遇到"一次失败就报错"的体验。
+  ///
+  /// 规则：
+  /// - 若已有 `isConnected == true` 的连接，直接复用，**不**触发任何
+  ///   `onReconnecting` 回调（用户无感知）。
+  /// - 否则进入重试循环，间隔 500ms → 1s → 2s。
+  /// - 不可重试错误（身份指纹不匹配/未授权/鉴权失败等）立即 rethrow。
+  /// - 3 次全部失败 → 调一次 `RemoteAgentService.checkAgentHealth` 兜底
+  ///   （它对 502/503 隧道未就绪有特判）；若兜底成功，再尝试一次真正建连。
+  /// - 回调约定：`attempt > 0` 正在进行第几次；`attempt == 0` 结束（成功或失败）。
+  Future<ACPAgentConnection> _getOrCreateACPConnectionWithRetry(
+    RemoteAgent agent, {
+    void Function(int attempt, int total)? onReconnecting,
+  }) async {
+    // 快速路径：已有活连接直接返回
+    final cached = _acpConnections[agent.id];
+    if (cached != null && cached.isConnected) {
+      return cached;
+    }
+
+    const total = kReconnectMaxAttempts;
+    Object? lastError;
+
+    for (int attempt = 1; attempt <= total; attempt++) {
+      onReconnecting?.call(attempt, total);
+
+      // 先把可能还挂在 map 里的 stale 连接踢掉并释放，避免
+      // _getOrCreateACPConnection 把它当作"活连接"复用，或者它的被动自动
+      // 重连与主动路径抢活。dispose() 会设 _disposed 阻止进一步重连。
+      final stale = _acpConnections.remove(agent.id);
+      if (stale != null) {
+        try {
+          stale.dispose();
+        } catch (_) {}
+      }
+
+      try {
+        final conn = await _getOrCreateACPConnection(agent);
+        onReconnecting?.call(0, total);
+        return conn;
+      } catch (e, st) {
+        lastError = e;
+        LoggerService().warning(
+          'ACP reconnect attempt $attempt/$total failed: $e',
+          tag: 'AgentMessagingService',
+        );
+        if (!isRetriableConnectionError(e)) {
+          LoggerService().error(
+            'Non-retriable connection error; aborting retry loop',
+            tag: 'AgentMessagingService',
+            error: e,
+            stackTrace: st,
+          );
+          onReconnecting?.call(0, total);
+          rethrow;
+        }
+        if (attempt < total) {
+          await Future.delayed(kReconnectBackoffs[attempt - 1]);
+        }
+      }
+    }
+
+    // 兜底：调一次完整的 checkAgentHealth（内部有 502/503 隧道未就绪特判），
+    // 若返回 healthy 则再做一次建连（checkAgentHealth 使用的是临时连接且
+    // 已 dispose，不能直接复用）。
+    LoggerService().warning(
+      'All $total reconnect attempts failed, falling back to checkAgentHealth',
+      tag: 'AgentMessagingService',
+    );
+    try {
+      final svc = RemoteAgentService(_db, TokenService(_db));
+      final healthy = await svc.checkAgentHealth(agent.id);
+      if (healthy) {
+        try {
+          final conn = await _getOrCreateACPConnection(agent);
+          onReconnecting?.call(0, total);
+          return conn;
+        } catch (e) {
+          lastError = e;
+          LoggerService().warning(
+            'Post-health connect still failed: $e',
+            tag: 'AgentMessagingService',
+          );
+        }
+      }
+    } catch (e) {
+      LoggerService().warning(
+        'Fallback checkAgentHealth threw: $e',
+        tag: 'AgentMessagingService',
+      );
+    }
+
+    onReconnecting?.call(0, total);
+    throw Exception(
+      'Agent ${agent.name} is not reachable after $total retries. '
+      'Last error: $lastError',
+    );
   }
 
   /// Send message via generic HTTP protocol

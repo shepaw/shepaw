@@ -507,6 +507,18 @@
   "chat_noAgentSelected": "No agent selected",
   "chat_loadFailed": "Failed to load messages: {error}",
   "chat_checkingHealth": "Checking agent health...",
+  "chat_reconnectingAttempt": "Reconnecting… ({attempt}/{total})",
+  "@chat_reconnectingAttempt": {
+    "placeholders": {
+      "attempt": {
+        "type": "int"
+      },
+      "total": {
+        "type": "int"
+      }
+    }
+  },
+  "chat_reconnectFailed": "Unable to reach agent. Please verify the agent is online.",
   "chat_responseError": "Failed to get response from {agentName}",
   "chat_voiceTooShort": "Voice message too short",
   "chat_historyRequestTitle": "Agent requests to view more chat history",

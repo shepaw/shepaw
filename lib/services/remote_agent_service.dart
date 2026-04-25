@@ -186,8 +186,76 @@ class RemoteAgentService {
   }
 
   /// 删除远端助手
+  ///
+  /// v2.1: before deleting the local record, try to open a short-lived Noise
+  /// session and send `peer.unregister` so the agent removes this device from
+  /// its allowlist. This keeps the agent's `authorized_peers.json` clean
+  /// without requiring the operator to manually run `peers remove`.
+  ///
+  /// Best-effort: if the agent is offline, unreachable, on the old v2
+  /// protocol, or any step fails, we silently proceed with the local delete.
+  /// The user's intent is "forget this agent"; a network hiccup shouldn't
+  /// leave a stale local record.
   Future<void> deleteAgent(String agentId) async {
+    final agent = await _databaseService.getRemoteAgentById(agentId);
+    if (agent != null && agent.protocol == ProtocolType.acp) {
+      await _tryUnregisterFromAgent(agent);
+    }
     await _databaseService.deleteRemoteAgent(agentId);
+  }
+
+  /// Open a one-shot Noise session purely to send `peer.unregister`, then
+  /// tear it down. Swallows all errors — this path must never block the
+  /// user's delete intent.
+  Future<void> _tryUnregisterFromAgent(RemoteAgent agent) async {
+    final pinnedFp = (agent.metadata['noise_peer_fp'] as String?) ?? '';
+    if (pinnedFp.isEmpty) {
+      // Pre-v2.1 record with no pinned fingerprint — skip. The user will
+      // have to `peers remove` manually if they care about allowlist hygiene.
+      return;
+    }
+
+    // Build the same wsUrl the regular connection path uses. Kept inline
+    // here to avoid pulling the whole health-check machinery just for a
+    // one-shot handshake + notification.
+    String wsUrl;
+    final endpoint = agent.endpoint;
+    if (endpoint.isEmpty) return;
+    if (endpoint.startsWith('ws://') || endpoint.startsWith('wss://')) {
+      wsUrl = endpoint;
+    } else {
+      wsUrl = endpoint
+          .replaceFirst('https://', 'wss://')
+          .replaceFirst('http://', 'ws://');
+    }
+    if (!wsUrl.contains('/acp/ws')) {
+      wsUrl = wsUrl.endsWith('/') ? '${wsUrl}acp/ws' : '$wsUrl/acp/ws';
+    }
+
+    final conn = ACPAgentConnection(
+      agentId: agent.id,
+      autoReconnect: false,
+    );
+    try {
+      await conn
+          .connect(
+            wsUrl,
+            agent.token,
+            targetAgentId: agent.metadata['target_agent_id'] as String?,
+            pinnedFingerprint: pinnedFp,
+          )
+          .timeout(const Duration(seconds: 5));
+      await conn.unregisterSelfFromAgent();
+    } catch (e) {
+      LoggerService().info(
+        'peer.unregister skipped for ${agent.id} (${agent.name}): $e',
+        tag: 'RemoteAgent',
+      );
+    } finally {
+      try {
+        await conn.disconnect();
+      } catch (_) {}
+    }
   }
 
   // ==================== 查询操作 ====================
@@ -306,6 +374,7 @@ class RemoteAgentService {
   Future<bool> checkAgentHealth(
     String agentId, {
     Duration timeout = const Duration(seconds: 5),
+    String? enrollmentCode,
   }) async {
 
     final agent = await getAgentById(agentId);
@@ -372,6 +441,9 @@ class RemoteAgentService {
       // ws://host:port — don't append /acp/ws.
       // The targetAgentId tells connect() to add ?agentId=yyy to the URL.
       final targetAgentId = agent.metadata['target_agent_id'] as String?;
+      // v2.1: pinned peer fingerprint from pairing. Required for Noise
+      // handshake to pin the agent's static public key.
+      final pinnedFp = (agent.metadata['noise_peer_fp'] as String?) ?? '';
 
       LoggerService().debug('WebSocket URL: $wsUrl', tag: 'RemoteAgent');
       LoggerService().info('通过临时 WebSocket ping 检查健康状态...', tag: 'RemoteAgent');
@@ -386,7 +458,16 @@ class RemoteAgentService {
         // Using separate .timeout() on each would restart the clock after
         // connect() finishes, making the total wait up to 2× the budget.
         final bool healthy = await Future(() async {
-          await connection.connect(wsUrl, agent.token, targetAgentId: targetAgentId);
+          await connection.connect(
+            wsUrl,
+            agent.token,
+            targetAgentId: targetAgentId,
+            pinnedFingerprint: pinnedFp,
+            // One-shot pairing code from the "Add agent" flow. After a
+            // successful first handshake the agent has our pubkey in its
+            // allowlist; all later reconnects pass `null` (no code).
+            enrollmentCode: enrollmentCode,
+          );
           final pingResponse = await connection.ping();
           return pingResponse.isSuccess;
         }).timeout(timeout);

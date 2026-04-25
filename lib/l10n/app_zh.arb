@@ -754,6 +754,18 @@
     }
   },
   "chat_checkingHealth": "正在检查 Agent 状态...",
+  "chat_reconnectingAttempt": "正在重连… ({attempt}/{total})",
+  "@chat_reconnectingAttempt": {
+    "placeholders": {
+      "attempt": {
+        "type": "int"
+      },
+      "total": {
+        "type": "int"
+      }
+    }
+  },
+  "chat_reconnectFailed": "无法连接到 Agent，请检查 Agent 是否在线。",
   "chat_responseError": "获取 {agentName} 的回复失败",
   "@chat_responseError": {
     "placeholders": {

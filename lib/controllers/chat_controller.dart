@@ -10,8 +10,6 @@ import '../models/attachment_data.dart';
 import '../models/pending_attachment.dart';
 import '../services/chat_service.dart';
 import '../services/local_database_service.dart';
-import '../services/token_service.dart';
-import '../services/remote_agent_service.dart';
 import '../services/attachment_service.dart';
 import '../services/message_search_service.dart';
 import '../services/local_file_storage_service.dart';
@@ -44,6 +42,18 @@ class ShowRetrySnackBarEvent extends ChatEvent {
   final Map<String, String> interruptedInfo;
   ShowRetrySnackBarEvent(this.message, this.retryLabel, this.interruptedInfo);
 }
+
+/// 主动重连进度提示：发送消息时发现 Agent 不可达，进入指数退避重试循环，
+/// 每次尝试前发此事件。UI 显示形如 "正在重连… (1/3)" 的顶部提示。
+class ShowReconnectingSnackBarEvent extends ChatEvent {
+  final int attempt;
+  final int total;
+  ShowReconnectingSnackBarEvent(this.attempt, this.total);
+}
+
+/// 主动重连结束（连上 or 最终失败）：UI 应隐藏 [ShowReconnectingSnackBarEvent]
+/// 之前展示的持久提示。
+class HideReconnectingSnackBarEvent extends ChatEvent {}
 
 class NavigateToSessionEvent extends ChatEvent {
   final String channelId;
@@ -1054,24 +1064,10 @@ class ChatController extends ChangeNotifier with InteractiveStreamingContext {
         throw Exception('Agent has no valid endpoint');
       }
 
-      if (!isLocal && !remoteAgent.isOnline) {
-        final remoteAgentService = RemoteAgentService(
-          localDatabaseService,
-          TokenService(localDatabaseService),
-        );
-
-        _emit(ShowSnackBarEvent('chat_checkingHealth'));
-
-        final isOnline = await remoteAgentService.checkAgentHealth(agentId!);
-        if (!isOnline) {
-          throw Exception('Agent is not online. Please check if the agent server is running.');
-        }
-
-        final updatedAgent = await localDatabaseService.getRemoteAgentById(agentId!);
-        if (updatedAgent == null || !updatedAgent.isOnline) {
-          throw Exception('Failed to connect to agent');
-        }
-      }
+      // 注意：不再在此做前置的 checkAgentHealth 探测。
+      // AgentMessagingService 内部在建连阶段已带 3 次指数退避重试 +
+      // checkAgentHealth 兜底，并通过 onReconnecting 回调把进度推给 UI。
+      // 移除这里可以避免"一次失败就抛出"的体验，并减少一次冗余 ping。
 
       // Add user message to UI immediately
       final userMessage = Message(
@@ -1119,6 +1115,13 @@ class ChatController extends ChangeNotifier with InteractiveStreamingContext {
         dmSystemPrompt: dmSystemPrompt,
         acpCancellationToken: acpCancellationToken,
         attachments: attachments,
+        onReconnecting: (attempt, total) {
+          if (attempt == 0) {
+            _emit(HideReconnectingSnackBarEvent());
+          } else {
+            _emit(ShowReconnectingSnackBarEvent(attempt, total));
+          }
+        },
         onOsToolConfirmation: (toolName, args, risk) async {
           final event = ShowOsToolConfirmationEvent(toolName, args, risk);
           _emit(event);

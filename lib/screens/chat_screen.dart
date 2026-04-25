@@ -218,6 +218,20 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
           actionLabel: l10n.chat_connectionInterruptedRetry,
           onAction: () => _controller.retryLastUserMessage(interruptedInfo),
         );
+      case ShowReconnectingSnackBarEvent(:final attempt, :final total):
+        final l10n = AppLocalizations.of(context);
+        // 持久提示——每次尝试前重复触发会覆盖旧 toast（_TopToastManager 内部会先
+        // dismiss 当前实例再插入新实例）。duration 设得足够长以覆盖完整重试周期；
+        // 结束时由 HideReconnectingSnackBarEvent 主动 hideTopToast。
+        showTopToast(
+          context,
+          l10n.chat_reconnectingAttempt(attempt, total),
+          icon: Icons.wifi_tethering,
+          color: Colors.orange,
+          duration: const Duration(seconds: 30),
+        );
+      case HideReconnectingSnackBarEvent():
+        hideTopToast();
       case NavigateToSessionEvent(:final channelId, :final agentId, :final agentName, :final agentAvatar, :final embedded):
         if (embedded && widget.onSwitchChannel != null) {
           widget.onSwitchChannel!(channelId);

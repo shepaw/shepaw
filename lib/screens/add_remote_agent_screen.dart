@@ -1,12 +1,14 @@
 import 'package:flutter/material.dart';
-import 'package:uuid/uuid.dart';
+import 'package:flutter/services.dart';
 import '../l10n/app_localizations.dart';
 import '../models/model_definition.dart';
 import '../models/remote_agent.dart';
 import '../services/model_registry.dart';
 import '../services/remote_agent_service.dart';
 import '../services/local_database_service.dart';
+import '../services/noise_identity.dart';
 import '../services/token_service.dart';
+import 'pairing_qr_scanner_screen.dart';
 import 'skill_select_screen.dart';
 import 'model_select_screen.dart';
 import 'model_management_screen.dart';
@@ -36,6 +38,11 @@ class _AddRemoteAgentScreenState extends State<AddRemoteAgentScreen> {
   final _tokenController = TextEditingController();
   final _systemPromptController = TextEditingController();
   final _remoteAgentIdController = TextEditingController();
+  // v2.1: one-time pairing code from the agent's `enroll` CLI output. If
+  // filled in, the app passes it in the Noise msg 1 payload so the agent
+  // auto-adds this device's pubkey to its allowlist on first connect. After
+  // that first handshake the code is spent; later reconnects don't use it.
+  final _enrollmentCodeController = TextEditingController();
 
   AgentCreationMode _mode = AgentCreationMode.create;
   String _selectedAvatar = '🤖';
@@ -44,6 +51,18 @@ class _AddRemoteAgentScreenState extends State<AddRemoteAgentScreen> {
 
   // 连接模式：从完整 URL 中解析出的 agentId（用于本地 agent 外部访问）
   String? _parsedTargetAgentId;
+
+  // v2.1: this device's Noise identity, loaded once on screen mount. The
+  // base64 public key is shown in the "connect" mode as the string the user
+  // copies and pastes into `<gateway> peers add <pubkey>` on the agent host.
+  // null while still loading.
+  NoiseIdentity? _noiseIdentity;
+
+  // v2.1: 16-hex fingerprint parsed from the pasted URL's `#fp=<...>` fragment.
+  // Required in connect mode — the handshake uses it to pin the agent's
+  // static public key. Empty = user either hasn't pasted a URL yet or the
+  // URL is missing `#fp=`.
+  String _parsedFingerprint = '';
 
   // 主模型选择（从 ModelRegistry 中选择）
   String? _selectedMainModelId;
@@ -72,15 +91,36 @@ class _AddRemoteAgentScreenState extends State<AddRemoteAgentScreen> {
     _agentService = RemoteAgentService(dbService, tokenService);
     // Auto-parse token + agentId from a full URL pasted into the endpoint field
     _endpointController.addListener(_onEndpointChanged);
+
+    // v2.1: fetch (or generate on first ever launch) this device's long-term
+    // Noise static keypair so the pairing screen can display the public key
+    // for the user to copy into `<gateway> peers add <pubkey>`. This is the
+    // replacement for the v2 token-pasting ritual.
+    _loadNoiseIdentity();
   }
 
-  /// When the user pastes a full URL like ws://host:port?token=xxx&agentId=yyy,
-  /// automatically split it: strip query params from the endpoint field, fill
-  /// the token field, and remember the agentId for later.
+  Future<void> _loadNoiseIdentity() async {
+    try {
+      final identity = await NoiseIdentity.loadOrCreate();
+      if (!mounted) return;
+      setState(() {
+        _noiseIdentity = identity;
+      });
+    } catch (_) {
+      // Non-fatal for the screen to render; connect-mode validation will
+      // catch the missing identity and surface a proper error.
+    }
+  }
+
+  /// When the user pastes a full URL like
+  /// `ws://host:port?agentId=yyy#fp=1234abcd...`, automatically split it:
+  /// strip query params from the endpoint field, extract the fingerprint,
+  /// remember the agentId. v2.1 no longer consumes `?token=` — if present it
+  /// is ignored (harmless legacy paste from old operators).
   void _onEndpointChanged() {
     final text = _endpointController.text;
-    // Only try to parse if the text looks like a URL with query params
-    if (!text.contains('?')) return;
+    // Only try to parse if the text looks like a URL with query / fragment
+    if (!text.contains('?') && !text.contains('#')) return;
 
     Uri parsed;
     try {
@@ -89,33 +129,42 @@ class _AddRemoteAgentScreenState extends State<AddRemoteAgentScreen> {
       return;
     }
 
-    final tokenParam = parsed.queryParameters['token'];
     final agentIdParam = parsed.queryParameters['agentId'];
 
-    // Only auto-fill when at least one param is recognised
-    if (tokenParam == null && agentIdParam == null) return;
+    // Parse `#fp=<hex>` fragment. The whole fragment is a single param pair
+    // (`fp=abcd...`). We accept it case-insensitive but store lowercased to
+    // match `NoiseIdentity.fingerprintHex` and what the agent sends back.
+    String? fpParam;
+    if (parsed.fragment.isNotEmpty) {
+      final frag = Uri.splitQueryString(parsed.fragment);
+      final raw = frag['fp'];
+      if (raw != null && RegExp(r'^[0-9a-fA-F]{16}$').hasMatch(raw)) {
+        fpParam = raw.toLowerCase();
+      }
+    }
+
+    // Nothing recognised → leave things alone (the user may still be typing)
+    if (agentIdParam == null && fpParam == null) return;
 
     // Remove listener temporarily so our programmatic changes don't re-trigger
     _endpointController.removeListener(_onEndpointChanged);
 
-    // Rewrite endpoint field to base URL (no query params)
-    final cleanEndpoint = parsed.replace(query: '').toString();
-    // replace() leaves a trailing '?', strip it
+    // Rewrite endpoint field to base URL (no query params, no fragment).
+    // Keeping fp around in a separate field avoids round-tripping it via the
+    // editable endpoint text where the user might accidentally delete it.
+    final cleanEndpoint =
+        parsed.replace(query: '', fragment: '').toString().replaceAll(RegExp(r'[?#]+$'), '');
     _endpointController.value = TextEditingValue(
-      text: cleanEndpoint.replaceAll(RegExp(r'\?$'), ''),
-      selection: TextSelection.collapsed(
-        offset: cleanEndpoint.replaceAll(RegExp(r'\?$'), '').length,
-      ),
+      text: cleanEndpoint,
+      selection: TextSelection.collapsed(offset: cleanEndpoint.length),
     );
 
     setState(() {
-      if (tokenParam != null && tokenParam.isNotEmpty) {
-        _tokenController.text = tokenParam;
-      }
       _parsedTargetAgentId = (agentIdParam != null && agentIdParam.isNotEmpty)
           ? agentIdParam
           : null;
       _remoteAgentIdController.text = agentIdParam ?? '';
+      if (fpParam != null) _parsedFingerprint = fpParam;
     });
 
     // Re-attach listener
@@ -131,18 +180,13 @@ class _AddRemoteAgentScreenState extends State<AddRemoteAgentScreen> {
     _tokenController.dispose();
     _systemPromptController.dispose();
     _remoteAgentIdController.dispose();
+    _enrollmentCodeController.dispose();
     super.dispose();
   }
 
   void _selectMainModel(String? modelId) {
     setState(() {
       _selectedMainModelId = modelId;
-    });
-  }
-
-  void _generateRandomToken() {
-    setState(() {
-      _tokenController.text = const Uuid().v4();
     });
   }
 
@@ -246,8 +290,53 @@ class _AddRemoteAgentScreenState extends State<AddRemoteAgentScreen> {
     }
   }
 
+  /// v2.1 scan-to-pair: open the camera, parse the `shepaw://pair` QR, and
+  /// auto-fill both the endpoint URL and the pairing code.
+  ///
+  /// We intentionally do NOT remove the `_endpointController` listener
+  /// before setting its text — the listener (`_onEndpointChanged`) is
+  /// exactly what pulls `#fp=` and `?agentId=` out of the URL into
+  /// `_parsedFingerprint` and `_remoteAgentIdController`. Letting it run
+  /// is the whole point.
+  Future<void> _onScanPairingQR() async {
+    final result = await PairingQRScannerScreen.show(context);
+    if (result == null || !mounted) return;
+
+    // Fill the endpoint first. The existing listener reacts to this and
+    // parses fp + agentId asynchronously (via setState), so the UI will
+    // refresh with the parsed fingerprint visible right below the field.
+    _endpointController.text = result.wsUrl;
+    _enrollmentCodeController.text = result.code;
+
+    // Nudge the user — make it obvious the scan worked.
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('已扫码：URL 与配对码已填入。点击"连接"完成配对。'),
+        behavior: SnackBarBehavior.floating,
+        duration: Duration(seconds: 2),
+      ),
+    );
+  }
+
   Future<void> _connectToAgent() async {
     if (!_formKey.currentState!.validate()) {
+      return;
+    }
+
+    // v2.1: fingerprint is required. The URL the user pasted must have carried
+    // a `#fp=<16-hex>` fragment (it's in the agent's startup banner). Without
+    // it, we cannot safely pin the agent's public key and the handshake
+    // would later fail with FingerprintMissingException — fail early here so
+    // the user gets a clear error right at the pairing screen.
+    if (_parsedFingerprint.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'URL 缺失指纹（`#fp=…`）。请使用 agent 终端启动时打印的完整 URL。',
+          ),
+          backgroundColor: Colors.red,
+        ),
+      );
       return;
     }
 
@@ -257,8 +346,14 @@ class _AddRemoteAgentScreenState extends State<AddRemoteAgentScreen> {
 
     try {
       // Build metadata: store the targetAgentId when connecting to a local
-      // agent exposed externally (parsed from the full access URL).
-      final Map<String, dynamic> connectMetadata = {};
+      // agent exposed externally (parsed from the full access URL), and the
+      // pinned peer fingerprint so downstream connection sites know which
+      // agent identity to expect.
+      final Map<String, dynamic> connectMetadata = {
+        // v2.1 pinned fingerprint from `#fp=…`. Read back by
+        // `acp_agent_connection.dart:connect()` via the metadata map.
+        'noise_peer_fp': _parsedFingerprint,
+      };
       final manualAgentId = _remoteAgentIdController.text.trim();
       final targetId = manualAgentId.isNotEmpty ? manualAgentId : _parsedTargetAgentId;
       if (targetId != null && targetId.isNotEmpty) {
@@ -270,7 +365,10 @@ class _AddRemoteAgentScreenState extends State<AddRemoteAgentScreen> {
         protocol: ProtocolType.acp,
         connectionType: ConnectionType.websocket,
         endpoint: _endpointController.text.trim(),
-        token: _tokenController.text.trim(),
+        // v2.1: token is no longer sent on the wire. We pass an empty string
+        // so the schema stays populated without leaking anything. Existing
+        // connection sites gracefully accept an empty token.
+        token: '',
         bio: _bioController.text.trim().isEmpty
             ? null
             : _bioController.text.trim(),
@@ -304,6 +402,12 @@ class _AddRemoteAgentScreenState extends State<AddRemoteAgentScreen> {
       final isHealthy = await _agentService.checkAgentHealth(
         tempAgent.id,
         timeout: const Duration(seconds: 10),
+        // v2.1: if the user filled in a pairing code from the agent's
+        // `enroll` CLI output, pass it through the first handshake so the
+        // agent can consume it and auto-authorize this device.
+        enrollmentCode: _enrollmentCodeController.text.trim().isEmpty
+            ? null
+            : _enrollmentCodeController.text.trim(),
       );
 
       if (!mounted) return;
@@ -687,6 +791,18 @@ class _AddRemoteAgentScreenState extends State<AddRemoteAgentScreen> {
                 hintText: l10n.addAgent_endpointUrlHint,
                 border: const OutlineInputBorder(),
                 prefixIcon: const Icon(Icons.language),
+                // v2.1: scan the `shepaw://pair` QR printed by the agent's
+                // `<gateway> enroll` / `shepaw-hub pair` commands. On scan
+                // success we populate the endpoint field (which triggers
+                // the existing URL-parse listener to extract fp + agentId)
+                // AND the enrollment code field below.
+                suffixIcon: _mode == AgentCreationMode.connect
+                    ? IconButton(
+                        icon: const Icon(Icons.qr_code_scanner),
+                        tooltip: '扫描配对二维码',
+                        onPressed: _onScanPairingQR,
+                      )
+                    : null,
                 helperText: l10n.addAgent_endpointHelper,
               ),
               keyboardType: TextInputType.url,
@@ -707,59 +823,30 @@ class _AddRemoteAgentScreenState extends State<AddRemoteAgentScreen> {
             ),
             const SizedBox(height: 12),
 
-            // Token 输入 - 特殊样式
-            Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: colorScheme.outlineVariant),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      Icon(Icons.vpn_key, size: 16, color: colorScheme.tertiary),
-                      const SizedBox(width: 6),
-                      Text(
-                        l10n.addAgent_tokenAuth,
-                        style: TextStyle(
-                          fontSize: 12,
-                          fontWeight: FontWeight.w600,
-                          color: colorScheme.tertiary,
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 8),
-                  TextFormField(
-                    controller: _tokenController,
-                    decoration: InputDecoration(
-                      hintText: l10n.addAgent_tokenHint,
-                      border: const OutlineInputBorder(),
-                      isDense: true,
-                      suffixIcon: IconButton(
-                        icon: const Icon(Icons.casino),
-                        onPressed: _generateRandomToken,
-                        tooltip: l10n.addAgent_generateToken,
-                      ),
-                    ),
-                    validator: (value) {
-                      if (_mode == AgentCreationMode.connect) {
-                        if (value == null || value.trim().isEmpty) {
-                          return l10n.addAgent_tokenRequired;
-                        }
-                      }
-                      return null;
-                    },
-                    enableSuggestions: false,
-                    autocorrect: false,
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 12),
+            // v2.1: replaced the "Token" input (from v2) with a display of
+            // this device's Noise public key + the command the agent operator
+            // needs to run. The user no longer types a shared secret — the
+            // agent operator copies this public key and adds it to their
+            // `authorized_peers.json` via `<gateway> peers add <pubkey>`.
+            //
+            // Shown in connect mode only. Create mode generates a local agent,
+            // where authorization is handled by the local-agent wiring and
+            // this UI doesn't apply.
+            if (_mode == AgentCreationMode.connect)
+              _buildDevicePublicKeyCard(context, colorScheme, l10n),
+            if (_mode == AgentCreationMode.connect) const SizedBox(height: 12),
+
+            // v2.1: alternative pairing path — the operator mints a short-lived
+            // pairing code via `<gateway> enroll` and shares it out of band.
+            // When filled in, the app puts it in the Noise msg 1 payload; the
+            // agent consumes the code on first handshake and auto-adds this
+            // device's pubkey to authorized_peers.json. Leaves this device
+            // paired for all future reconnects without any further operator
+            // action. Optional — the "copy pubkey + peers add" flow above
+            // still works.
+            if (_mode == AgentCreationMode.connect)
+              _buildEnrollmentCodeField(context, colorScheme),
+            if (_mode == AgentCreationMode.connect) const SizedBox(height: 12),
 
             // 远端 Agent ID（可选）
             TextFormField(
@@ -1076,6 +1163,280 @@ class _AddRemoteAgentScreenState extends State<AddRemoteAgentScreen> {
                 });
               }
             },
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// v2.1: "This device's public key" display card. The agent operator
+  /// copies the base64 pubkey and runs `<gateway> peers add <pubkey>` to
+  /// authorize this phone. The card also surfaces the short fingerprint so
+  /// users can sanity-check what they just copied; and (when the user has
+  /// pasted a URL with `#fp=…`) the agent's own fingerprint so the user can
+  /// eyeball it against the agent terminal's startup banner.
+  ///
+  /// This replaces v2's "Token" input. No shared secret exists anymore —
+  /// the app's static X25519 public key IS the credential.
+  Widget _buildDevicePublicKeyCard(
+    BuildContext context,
+    ColorScheme colorScheme,
+    AppLocalizations l10n,
+  ) {
+    final identity = _noiseIdentity;
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: colorScheme.outlineVariant),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.key, size: 16, color: colorScheme.tertiary),
+              const SizedBox(width: 6),
+              Text(
+                '本设备公钥（v2.1 授权凭证）',
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                  color: colorScheme.tertiary,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          if (identity == null)
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 12),
+              child: Text('正在加载设备身份…'),
+            )
+          else ...[
+            // Fingerprint row
+            Row(
+              children: [
+                Text(
+                  '指纹: ',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: colorScheme.onSurfaceVariant,
+                  ),
+                ),
+                Expanded(
+                  child: SelectableText(
+                    identity.fingerprintHex,
+                    style: const TextStyle(
+                      fontFamily: 'monospace',
+                      fontSize: 13,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            // Base64 public key + copy button
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: colorScheme.surface,
+                borderRadius: BorderRadius.circular(6),
+                border: Border.all(color: colorScheme.outlineVariant),
+              ),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(
+                    child: SelectableText(
+                      identity.publicKeyBase64,
+                      style: const TextStyle(
+                        fontFamily: 'monospace',
+                        fontSize: 12,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 4),
+                  IconButton(
+                    icon: const Icon(Icons.copy, size: 16),
+                    tooltip: '复制公钥',
+                    padding: EdgeInsets.zero,
+                    constraints: const BoxConstraints(
+                      minWidth: 28,
+                      minHeight: 28,
+                    ),
+                    onPressed: () async {
+                      await Clipboard.setData(
+                        ClipboardData(text: identity.publicKeyBase64),
+                      );
+                      if (!context.mounted) return;
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text('公钥已复制到剪贴板'),
+                          duration: Duration(seconds: 2),
+                        ),
+                      );
+                    },
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 8),
+            // Instructions: the command to run on the agent host.
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: colorScheme.primaryContainer.withValues(alpha: 0.4),
+                borderRadius: BorderRadius.circular(6),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    '在 agent 主机上执行：',
+                    style: TextStyle(
+                      fontSize: 11,
+                      color: colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  SelectableText(
+                    'shepaw-codebuddy-code peers add \\\n  ${identity.publicKeyBase64} \\\n  --label "我的手机"',
+                    style: const TextStyle(
+                      fontFamily: 'monospace',
+                      fontSize: 11,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            // Pinned agent fingerprint (parsed from URL's #fp=...).
+            if (_parsedFingerprint.isNotEmpty) ...[
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  Icon(
+                    Icons.verified_user_outlined,
+                    size: 14,
+                    color: colorScheme.primary,
+                  ),
+                  const SizedBox(width: 4),
+                  Text(
+                    'Agent 指纹: ',
+                    style: TextStyle(
+                      fontSize: 11,
+                      color: colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                  Expanded(
+                    child: SelectableText(
+                      _parsedFingerprint,
+                      style: const TextStyle(
+                        fontFamily: 'monospace',
+                        fontSize: 11,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              Text(
+                '请对照 agent 终端启动时打印的 Fingerprint 是否一致',
+                style: TextStyle(
+                  fontSize: 10,
+                  color: colorScheme.onSurfaceVariant,
+                  fontStyle: FontStyle.italic,
+                ),
+              ),
+            ] else ...[
+              const SizedBox(height: 6),
+              Text(
+                '⚠ URL 缺失 #fp=… 指纹段，配对将失败。请使用 agent 启动时打印的完整 URL。',
+                style: TextStyle(
+                  fontSize: 11,
+                  color: colorScheme.error,
+                ),
+              ),
+            ],
+          ],
+        ],
+      ),
+    );
+  }
+
+  /// v2.1: optional pairing-code input. The operator runs `<gateway> enroll`
+  /// which mints a short-lived code; when provided here, the first Noise
+  /// handshake carries the code in its payload and the agent auto-adds this
+  /// device's pubkey to its allowlist — skipping the "copy pubkey → run
+  /// peers add" step entirely.
+  ///
+  /// Empty is fine. Users who prefer the manual flow (or whose operator
+  /// hasn't rolled out enrollments yet) leave this blank and the card above
+  /// shows the pubkey + manual command instead.
+  Widget _buildEnrollmentCodeField(
+    BuildContext context,
+    ColorScheme colorScheme,
+  ) {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: colorScheme.primaryContainer.withValues(alpha: 0.15),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: colorScheme.primaryContainer),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.qr_code_2, size: 16, color: colorScheme.primary),
+              const SizedBox(width: 6),
+              Text(
+                '配对码（可选，用于一键配对）',
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                  color: colorScheme.primary,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          Text(
+            'Agent 主机运行 `<gateway> enroll` 得到类似 XXX-XXX-XXX 的短码，粘贴到这里即可自动授权本设备。不填写则走上方的"复制公钥 → peers add"手动流程。',
+            style: TextStyle(
+              fontSize: 11,
+              color: colorScheme.onSurfaceVariant,
+              height: 1.35,
+            ),
+          ),
+          const SizedBox(height: 8),
+          TextFormField(
+            controller: _enrollmentCodeController,
+            textCapitalization: TextCapitalization.characters,
+            autocorrect: false,
+            decoration: InputDecoration(
+              hintText: 'XXX-XXX-XXX',
+              hintStyle: TextStyle(
+                fontFamily: 'monospace',
+                fontSize: 14,
+                letterSpacing: 2,
+                color: colorScheme.onSurfaceVariant.withValues(alpha: 0.5),
+              ),
+              isDense: true,
+              contentPadding: const EdgeInsets.symmetric(
+                horizontal: 12,
+                vertical: 10,
+              ),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(6),
+              ),
+            ),
+            style: const TextStyle(
+              fontFamily: 'monospace',
+              fontSize: 14,
+              letterSpacing: 2,
+            ),
           ),
         ],
       ),

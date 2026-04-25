@@ -434,3 +434,9 @@ void showTopToast(
     onAction: onAction,
   );
 }
+
+/// 立即隐藏当前顶部 Toast（若有），不等待动画。
+/// 供长时间持续提示（如"正在重连…"）在后台任务结束后主动收起。
+void hideTopToast() {
+  _globalToast._dismissNow();
+}

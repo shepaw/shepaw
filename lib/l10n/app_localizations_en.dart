@@ -1391,6 +1391,15 @@ class AppLocalizationsEn extends AppLocalizations {
   String get chat_checkingHealth => 'Checking agent health...';
 
   @override
+  String chat_reconnectingAttempt(int attempt, int total) {
+    return 'Reconnecting… ($attempt/$total)';
+  }
+
+  @override
+  String get chat_reconnectFailed =>
+      'Unable to reach agent. Please verify the agent is online.';
+
+  @override
   String chat_responseError(String agentName) {
     return 'Failed to get response from $agentName';
   }

@@ -42,6 +42,8 @@ dependencies:
   encrypt: ^5.0.3
   flutter_secure_storage: ^9.0.0
   local_auth: ^2.1.8
+  # Noise Protocol (E2E encryption with ACP agents) — X25519 + ChaCha20-Poly1305 + SHA-256
+  cryptography: ^2.7.0
   
   # 工具
   uuid: ^4.3.3
@@ -69,6 +71,9 @@ dependencies:
 
   # 权限
   permission_handler: ^11.2.0
+
+  # 二维码扫描（v2.1 shepaw://pair 配对）
+  mobile_scanner: ^5.2.0
 
   # 音频
   record: ^5.1.2

@@ -1345,6 +1345,14 @@ class AppLocalizationsZh extends AppLocalizations {
   String get chat_checkingHealth => '正在检查 Agent 状态...';
 
   @override
+  String chat_reconnectingAttempt(int attempt, int total) {
+    return '正在重连… ($attempt/$total)';
+  }
+
+  @override
+  String get chat_reconnectFailed => '无法连接到 Agent，请检查 Agent 是否在线。';
+
+  @override
   String chat_responseError(String agentName) {
     return '获取 $agentName 的回复失败';
   }
