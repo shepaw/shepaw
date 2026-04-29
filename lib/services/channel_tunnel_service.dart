@@ -5,7 +5,9 @@ library;
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io' as io;
+import 'dart:math';
 import 'dart:typed_data';
+import 'package:crypto/crypto.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:web_socket_channel/io.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
@@ -306,11 +308,21 @@ class ChannelTunnelService {
         .replaceFirst(RegExp(r'^http://'), 'ws://');
     final trimmed = base.endsWith('/') ? base.substring(0, base.length - 1) : base;
 
+    // HMAC-SHA256 签名认证（密钥不上线）
+    final timestamp = (DateTime.now().millisecondsSinceEpoch ~/ 1000).toString();
+    final nonce = _generateNonce();
+    final signingString = '${config.channelId}\n$timestamp\n$nonce';
+    final hmacSha256 = Hmac(sha256, utf8.encode(config.secret));
+    final signature = hmacSha256.convert(utf8.encode(signingString)).toString();
+
     final wsUrl =
-        '$trimmed/tunnel/connect?channel_id=${Uri.encodeComponent(config.channelId)}&secret=${Uri.encodeComponent(config.secret)}';
+        '$trimmed/tunnel/connect?channel_id=${Uri.encodeComponent(config.channelId)}'
+        '&timestamp=${Uri.encodeComponent(timestamp)}'
+        '&nonce=${Uri.encodeComponent(nonce)}'
+        '&signature=${Uri.encodeComponent(signature)}';
     final uri = Uri.parse(wsUrl);
 
-    _log.debug('Tunnel connecting to $wsUrl', tag: _tag);
+    _log.debug('Tunnel connecting to $trimmed/tunnel/connect', tag: _tag);
 
     // 使用 dart:io WebSocket.connect 直接连接，行为更可预期（握手失败立即抛出异常）
     // web_socket_channel.connect 在某些情况下 ready 不会及时抛出错误
@@ -318,6 +330,13 @@ class ChannelTunnelService {
     _channel = IOWebSocketChannel(ioSocket);
 
     _log.debug('Tunnel WebSocket handshake complete, channel_id=${config.channelId}', tag: _tag);
+  }
+
+  /// 生成随机 nonce（16字节 hex，32字符）
+  static String _generateNonce() {
+    final random = Random.secure();
+    final bytes = List<int>.generate(16, (_) => random.nextInt(256));
+    return bytes.map((b) => b.toRadixString(16).padLeft(2, '0')).join();
   }
 
   Future<void> _listen() async {

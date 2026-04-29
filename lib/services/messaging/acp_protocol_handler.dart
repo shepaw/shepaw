@@ -10,6 +10,7 @@ import '../local_database_service.dart';
 import '../inference_log_service.dart';
 import '../foreground_task_service.dart';
 import '../logger_service.dart';
+import '../peer_key_utils.dart';
 import '../task/task_models.dart';
 
 /// Callbacks used to bridge the ACPProtocolHandler with ChatService state.
@@ -308,6 +309,9 @@ class ACPProtocolHandler {
       agent.token,
       targetAgentId: agent.metadata['target_agent_id'] as String?,
       pinnedFingerprint: (agent.metadata['noise_peer_fp'] as String?) ?? '',
+      cachedPeerStaticPublicKey: decodeCachedPeerPublicKey(
+        agent.metadata['cached_peer_static_public_key'],
+      ),
     );
     return connection;
   }

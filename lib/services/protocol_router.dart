@@ -2,6 +2,7 @@ import 'dart:async';
 import '../models/remote_agent.dart';
 import '../models/message.dart';
 import 'acp_agent_connection.dart';
+import 'peer_key_utils.dart';
 
 /// 协议路由器
 /// 负责将消息路由到对应的协议处理器
@@ -67,6 +68,9 @@ class ProtocolRouter {
       agent.token,
       targetAgentId: agent.metadata['target_agent_id'] as String?,
       pinnedFingerprint: (agent.metadata['noise_peer_fp'] as String?) ?? '',
+      cachedPeerStaticPublicKey: decodeCachedPeerPublicKey(
+        agent.metadata['cached_peer_static_public_key'],
+      ),
     );
     return connection;
   }

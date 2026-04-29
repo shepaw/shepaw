@@ -1640,48 +1640,57 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   }
 
   Widget _buildSheWelcomeState() {
-    return Center(
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 360),
-        child: Padding(
-          padding: const EdgeInsets.all(32),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              const Text('🌸', style: TextStyle(fontSize: 72), textAlign: TextAlign.center),
-              const SizedBox(height: 16),
-              const Text(
-                'She',
-                style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
-                textAlign: TextAlign.center,
-              ),
-              const SizedBox(height: 8),
-              Text(
-                '你的专属守护 AI，会越来越懂你',
-                style: TextStyle(fontSize: 14, color: Colors.grey[600]),
-                textAlign: TextAlign.center,
-              ),
-              const SizedBox(height: 32),
-              FilledButton.icon(
-                onPressed: _openSheConfig,
-                icon: const Icon(Icons.settings_suggest_outlined),
-                label: const Text('配置 AI 模型，开始对话'),
-                style: FilledButton.styleFrom(
-                  backgroundColor: Colors.pink.shade400,
-                  padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        return SingleChildScrollView(
+          child: ConstrainedBox(
+            constraints: BoxConstraints(minHeight: constraints.maxHeight),
+            child: Center(
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 360),
+                child: Padding(
+                  padding: const EdgeInsets.all(32),
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      const Text('🌸', style: TextStyle(fontSize: 72), textAlign: TextAlign.center),
+                      const SizedBox(height: 16),
+                      const Text(
+                        'She',
+                        style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
+                        textAlign: TextAlign.center,
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        '你的专属守护 AI，会越来越懂你',
+                        style: TextStyle(fontSize: 14, color: Colors.grey[600]),
+                        textAlign: TextAlign.center,
+                      ),
+                      const SizedBox(height: 32),
+                      FilledButton.icon(
+                        onPressed: _openSheConfig,
+                        icon: const Icon(Icons.settings_suggest_outlined),
+                        label: const Text('配置 AI 模型，开始对话'),
+                        style: FilledButton.styleFrom(
+                          backgroundColor: Colors.pink.shade400,
+                          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                      Text(
+                        'She 使用本地 LLM 运行，请先在设置中\n为她选择一个 AI 模型',
+                        style: TextStyle(fontSize: 12, color: Colors.grey[500]),
+                        textAlign: TextAlign.center,
+                      ),
+                    ],
+                  ),
                 ),
               ),
-              const SizedBox(height: 16),
-              Text(
-                'She 使用本地 LLM 运行，请先在设置中\n为她选择一个 AI 模型',
-                style: TextStyle(fontSize: 12, color: Colors.grey[500]),
-                textAlign: TextAlign.center,
-              ),
-            ],
+            ),
           ),
-        ),
-      ),
+        );
+      },
     );
   }
 

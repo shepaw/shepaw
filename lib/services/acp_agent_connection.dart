@@ -116,6 +116,47 @@ class ACPAgentConnection {
   /// connects).
   Uint8List? _peerStaticPublicKeyAfterHandshake;
 
+  /// Serialisation chain for `_sendEncrypted`. Noise transport AEAD uses a
+  /// strictly increasing nonce, so the `(encrypt, sink.add)` pair must be
+  /// atomic relative to other sends on the same connection. `encrypt()` is
+  /// async (AEAD lives off the main isolate), which introduces await points
+  /// where a second `_sendEncrypted` could interleave — consuming nonce N+1
+  /// before nonce N has been written to the sink, so the wire order arrives
+  /// out-of-order on the peer and every subsequent frame fails the AEAD tag
+  /// check.
+  ///
+  /// The queue is a rolling future that each send awaits before running; the
+  /// next send chains onto its completion. `catchError((_) {})` ensures one
+  /// failed encrypt doesn't wedge the whole chain — the failing send is
+  /// surfaced to its own caller, and the next send still runs.
+  Future<void> _sendQueue = Future<void>.value();
+
+  /// Matching serialisation chain for inbound frames. `_handleMessage` is
+  /// invoked from `_dispatchIncomingFrame` via `unawaited(...)`, so two
+  /// frames arriving back-to-back both start their decrypt pipelines and
+  /// race for the recv-side Noise nonce. Without a queue, Dart's scheduler
+  /// can let the second frame's `decrypt` await resolve first, consuming
+  /// nonce 0 out of a frame that was encrypted with nonce 1 — and then every
+  /// subsequent frame fails the AEAD tag check, which is exactly the
+  /// "Transport decrypt failed" symptom after the agent streams
+  /// `ui.textContent` + `task.completed` back-to-back.
+  Future<void> _recvQueue = Future<void>.value();
+
+  /// Set by `_driveHandshake` before the handshake starts, cleared after it
+  /// finishes. While set, `_dispatchIncomingFrame` routes raw WS frames here
+  /// instead of `_handleMessage` — the handshake needs to consume plaintext
+  /// `hs` frames, which `_handleMessage` would reject as non-`data` frames.
+  ///
+  /// A single-shot slot is fine: IK has exactly one responder-to-initiator
+  /// message, and any bytes arriving before it (or after it while the slot
+  /// is still set) are a protocol violation.
+  void Function(dynamic raw)? _handshakeFrameSink;
+
+  /// Matched pair of `_handshakeFrameSink`: receives transport-level errors
+  /// (WS onError / onDone before handshake completes) so the initiator can
+  /// fail fast instead of waiting for the 10 s msg2 timeout.
+  void Function(Object error, StackTrace? st)? _handshakeErrorSink;
+
   /// Heartbeat timer
   Timer? _heartbeatTimer;
   final int heartbeatIntervalSeconds;
@@ -260,6 +301,18 @@ class ACPAgentConnection {
       _channel = IOWebSocketChannel(ioSocket);
       await _channel!.ready;
 
+      // Attach the (single) stream subscription NOW — `WebSocketChannel.stream`
+      // is single-subscription, so we can't listen again after the handshake.
+      // During the handshake we route raw frames through `_handshakeFrameSink`
+      // (a one-shot completer set up by `_driveHandshake`); after the handshake
+      // we swap to `_handleMessage` for the rest of the connection's life.
+      _subscription = _channel!.stream.listen(
+        _dispatchIncomingFrame,
+        onError: _handleError,
+        onDone: _handleDisconnect,
+        cancelOnError: false,
+      );
+
       // Drive the Noise IK handshake BEFORE marking the connection as ready
       // for general JSON-RPC traffic. If anything here throws the connection
       // is torn down and we rethrow.
@@ -277,14 +330,6 @@ class ACPAgentConnection {
       _consecutiveHeartbeatFailures = 0;
       onConnectionStateChanged?.call(true);
 
-      // Attach the normal message listener for post-handshake traffic.
-      _subscription = _channel!.stream.listen(
-        _handleMessage,
-        onError: _handleError,
-        onDone: _handleDisconnect,
-        cancelOnError: false,
-      );
-
       // Start heartbeat
       _startHeartbeat();
 
@@ -301,6 +346,19 @@ class ACPAgentConnection {
         _noise?.close();
       } catch (_) {}
       _noise = null;
+      // Clear handshake sinks if the handshake aborted mid-flight, so a future
+      // reconnect on this connection object doesn't carry stale handlers that
+      // would swallow the first real frame.
+      _handshakeFrameSink = null;
+      _handshakeErrorSink = null;
+      // Cancel the single WS subscription we attached eagerly in connect().
+      // Without this, a pending frame on the now-doomed channel could call
+      // into `_dispatchIncomingFrame` after the connection is considered torn
+      // down.
+      try {
+        await _subscription?.cancel();
+      } catch (_) {}
+      _subscription = null;
       try {
         await _channel?.sink.close();
       } catch (_) {}
@@ -427,36 +485,36 @@ class ACPAgentConnection {
     final msg1 = await session.writeHandshake1(
       utf8.encode(jsonEncode(hs1Payload)),
     );
-    _channel!.sink.add(encodeFrame(Frame(t: FrameType.hs, payload: msg1)));
 
-    // Wait for msg2 via a one-shot stream listener.
+    // Register the handshake frame sink BEFORE sending msg1. The single WS
+    // subscription (set up in `connect()` before the handshake) routes all
+    // inbound frames through `_dispatchIncomingFrame`, which delegates to
+    // `_handshakeFrameSink` while a handshake is in flight. This avoids
+    // calling `.listen()` twice on `WebSocketChannel.stream` (which is
+    // single-subscription and throws "Stream has already been listened to"
+    // on the second attempt).
     final msg2Completer = Completer<String>();
-    late StreamSubscription hsSub;
-    hsSub = _channel!.stream.listen(
-      (raw) {
-        if (msg2Completer.isCompleted) return;
-        if (raw is String) {
-          msg2Completer.complete(raw);
-        } else if (raw is List<int>) {
-          msg2Completer.complete(utf8.decode(raw));
-        } else {
-          msg2Completer.completeError(
-            StateError('unexpected WS frame type ${raw.runtimeType}'),
-          );
-        }
-      },
-      onError: (Object e, StackTrace st) {
-        if (!msg2Completer.isCompleted) msg2Completer.completeError(e, st);
-      },
-      onDone: () {
-        if (!msg2Completer.isCompleted) {
-          msg2Completer.completeError(
-            StateError('ws closed before handshake 2'),
-          );
-        }
-      },
-      cancelOnError: false,
-    );
+    _handshakeFrameSink = (raw) {
+      if (msg2Completer.isCompleted) return;
+      if (raw is String) {
+        msg2Completer.complete(raw);
+      } else if (raw is List<int>) {
+        msg2Completer.complete(utf8.decode(raw));
+      } else {
+        msg2Completer.completeError(
+          StateError('unexpected WS frame type ${raw.runtimeType}'),
+        );
+      }
+    };
+    // Also route transport-level errors (server closed the WS, network drop)
+    // into the Completer so we fail fast instead of hitting the 10 s timeout.
+    _handshakeErrorSink = (error, st) {
+      if (!msg2Completer.isCompleted) {
+        msg2Completer.completeError(error, st ?? StackTrace.current);
+      }
+    };
+
+    _channel!.sink.add(encodeFrame(Frame(t: FrameType.hs, payload: msg1)));
 
     Future<String> withTimeout() => msg2Completer.future.timeout(
           const Duration(seconds: 10),
@@ -466,7 +524,11 @@ class ACPAgentConnection {
     try {
       msg2Raw = await withTimeout();
     } finally {
-      await hsSub.cancel();
+      // Unregister both sinks regardless of outcome. On success the next
+      // frame should be a post-handshake `data` frame, handled by
+      // `_handleMessage`. On failure the caller tears down the connection.
+      _handshakeFrameSink = null;
+      _handshakeErrorSink = null;
     }
 
     final Frame frame;
@@ -490,7 +552,6 @@ class ACPAgentConnection {
         'Post-handshake fingerprint mismatch (got $finalFp, expected $pinnedFingerprint)',
       );
     }
-
     // Validate agentId in hs2 payload if we claimed one.
     if (claimedAgentId != null && claimedAgentId.isNotEmpty) {
       try {
@@ -797,101 +858,167 @@ class ACPAgentConnection {
   ///   - Noise session not ready (shouldn't happen post-handshake; logged):
   ///     drop and log. We DO NOT fall back to plaintext — that would create
   ///     a downgrade vector.
+  ///
+  /// The entire `(encrypt, sink.add)` pair is serialised through `_sendQueue`
+  /// so a concurrent caller can't consume the next Noise nonce before the
+  /// current ciphertext has been written to the socket. Without that guard
+  /// two in-flight `_sendEncrypted` calls can interleave their await points
+  /// and end up writing to the wire in the reverse order of their nonce
+  /// allocation — the peer then fails every AEAD check once the out-of-order
+  /// frame arrives.
   Future<void> _sendEncrypted(String jsonPayload) async {
-    final session = _noise;
-    final channel = _channel;
-    if (session == null || !session.ready || channel == null) {
-      LoggerService().warning(
-        'Dropping outbound message — Noise session not ready',
-        tag: 'ACP',
-      );
-      return;
+    final completer = Completer<void>();
+    final prev = _sendQueue;
+    _sendQueue = completer.future;
+    await prev.catchError((_) {});
+
+    try {
+      final session = _noise;
+      final channel = _channel;
+      if (session == null || !session.ready || channel == null) {
+        LoggerService().warning(
+          'Dropping outbound message — Noise session not ready',
+          tag: 'ACP',
+        );
+        return;
+      }
+      final ct = await session.encrypt(utf8.encode(jsonPayload));
+      channel.sink.add(encodeFrame(Frame(t: FrameType.data, payload: ct)));
+    } finally {
+      completer.complete();
     }
-    final ct = await session.encrypt(utf8.encode(jsonPayload));
-    channel.sink.add(encodeFrame(Frame(t: FrameType.data, payload: ct)));
   }
 
   // ==================== Message handling ====================
 
-  Future<void> _handleMessage(dynamic rawMessage) async {
+  /// Route a raw WS frame to either the handshake handler or the post-handshake
+  /// message handler, depending on whether a handshake is currently in flight.
+  ///
+  /// `WebSocketChannel.stream` is single-subscription, so we can only call
+  /// `.listen()` ONCE per channel. This dispatcher lets the (exactly one)
+  /// subscription serve both the Noise handshake phase and the steady-state
+  /// JSON-RPC phase without re-listening — see `connect()` for the setup.
+  void _dispatchIncomingFrame(dynamic raw) {
+    final hsSink = _handshakeFrameSink;
+    if (hsSink != null) {
+      hsSink(raw);
+      return;
+    }
+    // Post-handshake traffic. Split responsibilities:
+    //   1. Decrypt + JSON-parse is chained onto `_recvQueue` so Noise nonces
+    //      are consumed in the exact wire order. A single frame that blocks
+    //      inside decrypt (e.g. large payload, isolate stall) holds up the
+    //      next frame — that's fine; decrypt itself is fast.
+    //   2. Actual dispatch (JSON-RPC request/response/notification handling,
+    //      including user-facing callbacks such as action confirmations) is
+    //      kicked off as a fire-and-forget once parsing is done. This is
+    //      critical: notification callbacks can be long-lived (waiting for
+    //      the user to tap a confirm button) and MUST NOT block the
+    //      decryption of subsequent frames — otherwise the agent's follow-up
+    //      response after the user's tap can never be decrypted.
+    final prev = _recvQueue;
+    _recvQueue = prev
+        .catchError((_) {})
+        .then((_) async {
+          final parsed = await _decryptAndParseFrame(raw);
+          if (parsed != null) {
+            // Detach from the queue — do NOT await. Dispatch runs on its own.
+            unawaited(_dispatchParsed(parsed));
+          }
+        });
+  }
+
+  /// Decrypt + envelope-decode + JSON-parse one raw WS frame.
+  ///
+  /// Returns the decoded JSON-RPC object on success, or `null` when the frame
+  /// is non-data (handshake remnant, `err` frame, binary) or fatal (decrypt
+  /// failure — in which case the connection is also closed here).
+  ///
+  /// MUST be called serially through `_recvQueue`: the Noise transport AEAD
+  /// consumes the recv nonce counter, which is strictly ordered by wire
+  /// arrival. Running two decrypts concurrently would let the second frame
+  /// consume the first frame's nonce (or vice-versa, depending on scheduling)
+  /// and every subsequent frame would fail the AEAD tag check.
+  Future<Map<String, dynamic>?> _decryptAndParseFrame(dynamic rawMessage) async {
+    if (rawMessage is! String) {
+      LoggerService().warning(
+        'Dropping unexpected non-text WS frame (type=${rawMessage.runtimeType})',
+        tag: 'ACP',
+      );
+      return null;
+    }
+
+    final Frame frame;
     try {
-      // v2 protocol: every inbound frame is a JSON envelope wrapping either
-      // a handshake message, an encrypted data payload, or a plaintext error.
-      // We drop binary frames entirely — v2 never uses them on the wire
-      // (file chunks, when they come back in v2.1, will travel as `data`
-      // frames with a JSON-RPC binary_chunk payload inside).
-      if (rawMessage is! String) {
-        LoggerService().warning(
-          'Dropping unexpected non-text WS frame (type=${rawMessage.runtimeType})',
-          tag: 'ACP',
-        );
-        return;
-      }
+      frame = decodeFrame(rawMessage, maxPayload: maxFrameAgentToApp);
+    } on EnvelopeError catch (e) {
+      LoggerService().error(
+        'Envelope decode failed (${e.code}): ${e.message}',
+        tag: 'ACP',
+      );
+      return null;
+    }
 
-      final Frame frame;
+    if (frame.t == FrameType.err) {
+      LoggerService().warning(
+        'Agent sent an err frame (${utf8.decode(frame.payload, allowMalformed: true)})',
+        tag: 'ACP',
+      );
+      return null;
+    }
+
+    if (frame.t != FrameType.data) {
+      LoggerService().warning(
+        'Ignoring unexpected ${frame.t} frame post-handshake',
+        tag: 'ACP',
+      );
+      return null;
+    }
+
+    final session = _noise;
+    if (session == null || !session.ready) {
+      LoggerService().error(
+        'Received data frame but Noise session is not ready',
+        tag: 'ACP',
+      );
+      return null;
+    }
+
+    final Uint8List plaintext;
+    try {
+      plaintext = await session.decrypt(frame.payload);
+    } catch (e) {
+      LoggerService().error(
+        'Transport decrypt failed; closing connection',
+        tag: 'ACP',
+        error: e,
+      );
       try {
-        frame = decodeFrame(rawMessage, maxPayload: maxFrameAgentToApp);
-      } on EnvelopeError catch (e) {
-        LoggerService().error(
-          'Envelope decode failed (${e.code}): ${e.message}',
-          tag: 'ACP',
-        );
-        return;
-      }
+        await _channel?.sink.close();
+      } catch (_) {}
+      return null;
+    }
 
-      if (frame.t == FrameType.err) {
-        // Server told us they're aborting. Log and let the close flow handle
-        // teardown — there's nothing useful to reply with.
-        LoggerService().warning(
-          'Agent sent an err frame (${utf8.decode(frame.payload, allowMalformed: true)})',
-          tag: 'ACP',
-        );
-        return;
-      }
+    try {
+      return jsonDecode(utf8.decode(plaintext)) as Map<String, dynamic>;
+    } catch (e) {
+      LoggerService().error('Failed to parse message', tag: 'ACP', error: e);
+      return null;
+    }
+  }
 
-      if (frame.t != FrameType.data) {
-        // Hs frames after handshake complete → protocol violation. Drop.
-        LoggerService().warning(
-          'Ignoring unexpected ${frame.t} frame post-handshake',
-          tag: 'ACP',
-        );
-        return;
-      }
-
-      final session = _noise;
-      if (session == null || !session.ready) {
-        LoggerService().error(
-          'Received data frame but Noise session is not ready',
-          tag: 'ACP',
-        );
-        return;
-      }
-
-      final Uint8List plaintext;
-      try {
-        plaintext = await session.decrypt(frame.payload);
-      } catch (e) {
-        // Any decrypt failure is fatal — session may be out of sync or
-        // under attack. Surface via logs and close.
-        LoggerService().error(
-          'Transport decrypt failed; closing connection',
-          tag: 'ACP',
-          error: e,
-        );
-        try {
-          await _channel?.sink.close();
-        } catch (_) {}
-        return;
-      }
-
-      final json = jsonDecode(utf8.decode(plaintext)) as Map<String, dynamic>;
-
+  /// Dispatch a parsed JSON-RPC message to request / response / notification
+  /// handlers. Runs *off* `_recvQueue` so a long-running handler (e.g. an
+  /// `onActionConfirmation` callback waiting for the user to tap) doesn't
+  /// stall the decryption of subsequent frames.
+  Future<void> _dispatchParsed(Map<String, dynamic> json) async {
+    try {
       final hasId = json.containsKey('id') && json['id'] != null;
       final hasMethod = json.containsKey('method') && json['method'] != null;
 
       if (hasId && hasMethod) {
         // Agent -> App Request (has both id and method, e.g. hub.*)
-        _handleIncomingRequest(json);
+        await _handleIncomingRequest(json);
       } else if (hasId && !hasMethod) {
         // Response to our request (has id, no method)
         _handleResponse(json);
@@ -900,7 +1027,7 @@ class ACPAgentConnection {
         await _handleNotification(json);
       }
     } catch (e) {
-      LoggerService().error('Failed to parse message', tag: 'ACP', error: e);
+      LoggerService().error('Dispatch error', tag: 'ACP', error: e);
     }
   }
 
@@ -1056,6 +1183,15 @@ class ACPAgentConnection {
   // ==================== Connection lifecycle ====================
 
   void _handleError(dynamic error) {
+    // If a handshake is in flight, route the error to the handshake's error
+    // sink so the initiator fails fast instead of waiting for its 10 s
+    // msg2 timeout. The `connect()` caller then handles teardown (including
+    // subscription cancel), so we must NOT also trigger reconnect here.
+    final hsErr = _handshakeErrorSink;
+    if (hsErr != null) {
+      hsErr(error is Object ? error : StateError('ws error: $error'), null);
+      return;
+    }
     LoggerService().error('WebSocket error', tag: 'ACP', error: error);
     if (autoReconnect && !_disposed) {
       _tryReconnect();
@@ -1063,6 +1199,15 @@ class ACPAgentConnection {
   }
 
   void _handleDisconnect() {
+    // Handshake-in-flight path: fail the handshake Completer, let `connect()`
+    // clean up. Skip the "mark disconnected + reconnect" path — the
+    // connection was never fully up and calling `_tryReconnect` here would
+    // race with the caller's own error handling.
+    final hsErr = _handshakeErrorSink;
+    if (hsErr != null) {
+      hsErr(StateError('ws closed before handshake 2'), null);
+      return;
+    }
     _isConnected = false;
     _isAuthenticated = false;
     _stopHeartbeat();

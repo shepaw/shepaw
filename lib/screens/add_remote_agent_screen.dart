@@ -64,6 +64,12 @@ class _AddRemoteAgentScreenState extends State<AddRemoteAgentScreen> {
   // URL is missing `#fp=`.
   String _parsedFingerprint = '';
 
+  // v2.1: base64-encoded 32-byte peer static public key parsed from the URL's
+  // `#fp=<hex>&pk=<base64>` fragment. Required for the Noise IK handshake —
+  // the initiator must know the responder's full public key upfront.
+  // Empty = user hasn't pasted a URL with `&pk=` yet.
+  String _parsedPeerPublicKey = '';
+
   // 主模型选择（从 ModelRegistry 中选择）
   String? _selectedMainModelId;
 
@@ -131,15 +137,21 @@ class _AddRemoteAgentScreenState extends State<AddRemoteAgentScreen> {
 
     final agentIdParam = parsed.queryParameters['agentId'];
 
-    // Parse `#fp=<hex>` fragment. The whole fragment is a single param pair
-    // (`fp=abcd...`). We accept it case-insensitive but store lowercased to
-    // match `NoiseIdentity.fingerprintHex` and what the agent sends back.
+    // Parse `#fp=<hex>&pk=<base64>` fragment. The fragment is one or more
+    // param pairs. `fp` is the 16-hex fingerprint; `pk` is the full 32-byte
+    // X25519 static public key base64-encoded — required by Noise IK so the
+    // initiator can encrypt its first message to the responder.
     String? fpParam;
+    String? pkParam;
     if (parsed.fragment.isNotEmpty) {
       final frag = Uri.splitQueryString(parsed.fragment);
       final raw = frag['fp'];
       if (raw != null && RegExp(r'^[0-9a-fA-F]{16}$').hasMatch(raw)) {
         fpParam = raw.toLowerCase();
+      }
+      final rawPk = frag['pk'];
+      if (rawPk != null && rawPk.isNotEmpty) {
+        pkParam = rawPk;
       }
     }
 
@@ -165,6 +177,7 @@ class _AddRemoteAgentScreenState extends State<AddRemoteAgentScreen> {
           : null;
       _remoteAgentIdController.text = agentIdParam ?? '';
       if (fpParam != null) _parsedFingerprint = fpParam;
+      if (pkParam != null) _parsedPeerPublicKey = pkParam;
     });
 
     // Re-attach listener
@@ -354,6 +367,12 @@ class _AddRemoteAgentScreenState extends State<AddRemoteAgentScreen> {
         // `acp_agent_connection.dart:connect()` via the metadata map.
         'noise_peer_fp': _parsedFingerprint,
       };
+      // v2.1: full base64 peer static public key from `&pk=…`. Required for
+      // the Noise IK handshake — the initiator must know the responder's
+      // 32-byte X25519 public key upfront to encrypt msg1.
+      if (_parsedPeerPublicKey.isNotEmpty) {
+        connectMetadata['cached_peer_static_public_key'] = _parsedPeerPublicKey;
+      }
       final manualAgentId = _remoteAgentIdController.text.trim();
       final targetId = manualAgentId.isNotEmpty ? manualAgentId : _parsedTargetAgentId;
       if (targetId != null && targetId.isNotEmpty) {

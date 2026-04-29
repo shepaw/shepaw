@@ -1915,6 +1915,12 @@ class ChatController extends ChangeNotifier with InteractiveStreamingContext {
     String actionLabel, {
     String? confirmationContext,
   }) async {
+    LoggerService().info(
+      'handleActionSelected: confirmationId=$confirmationId, '
+      'actionId=$actionId, label="$actionLabel", '
+      'context=$confirmationContext, isProcessing=$isProcessing',
+      tag: 'ChatController',
+    );
     final pending = pendingGroupInteractions[originalMessage.id];
     if (pending != null && !pending.result.isCompleted) {
       pending.result.complete({
@@ -1924,7 +1930,6 @@ class ChatController extends ChangeNotifier with InteractiveStreamingContext {
       _updateGroupStreamingMetadata(originalMessage.id, 'action_confirmation_responded', {'action_id': actionId, 'action_label': actionLabel});
       return;
     }
-    if (isProcessing) return;
 
     // Check if this is a plan confirmation (agent used action_confirmation instead of
     // the system plan_approval UI). Use execution-trigger phrasing so the admin knows
@@ -1937,6 +1942,14 @@ class ChatController extends ChangeNotifier with InteractiveStreamingContext {
     if (await _handleGroupInteractionLocally(originalMessage, 'action_confirmation', {
       'selected_action_id': actionId,
     }, responseText: responseTextForGroup)) return;
+
+    // NOTE: intentionally NOT gated on `isProcessing`. An action-confirmation
+    // tap is a reply to the in-flight task, not a fresh user turn — for ACP
+    // agents (e.g. codebuddy-code's canUseTool), the reply is delivered as
+    // a new `agent.chat` that the agent classifies as an allow/deny verdict,
+    // and only THEN does the original task's `task.completed` fire. Guarding
+    // on `isProcessing` here would drop the tap silently, stranding the user
+    // (task hangs forever, UI spinner never clears).
 
     try {
       await interactiveResponseHandler.handleActionConfirmation(
@@ -1966,7 +1979,7 @@ class ChatController extends ChangeNotifier with InteractiveStreamingContext {
       _updateGroupStreamingMetadata(originalMessage.id, 'single_select_responded', {'option_id': optionId, 'option_label': optionLabel});
       return;
     }
-    if (isProcessing) return;
+    // See handleActionSelected for why `isProcessing` is not checked here.
 
     if (await _handleGroupInteractionLocally(originalMessage, 'single_select', {
       'selected_option_id': optionId,
@@ -1996,7 +2009,7 @@ class ChatController extends ChangeNotifier with InteractiveStreamingContext {
       _updateGroupStreamingMetadata(originalMessage.id, 'multi_select_responded', {'option_ids': optionIds});
       return;
     }
-    if (isProcessing) return;
+    // See handleActionSelected for why `isProcessing` is not checked here.
 
     if (await _handleGroupInteractionLocally(originalMessage, 'multi_select', {
       'selected_option_ids': optionIds,

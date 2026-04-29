@@ -11,6 +11,7 @@ import '../services/file_download_service.dart';
 import '../services/ws_file_transfer_service.dart';
 import '../services/acp_agent_connection.dart';
 import '../services/chat_service.dart';
+import '../services/peer_key_utils.dart';
 import '../main.dart' show globalACPServer;
 import '../screens/image_viewer_screen.dart';
 
@@ -214,6 +215,9 @@ class _ImageMessageBubbleState extends State<ImageMessageBubble> {
               targetAgentId: agent.metadata['target_agent_id'] as String?,
               pinnedFingerprint:
                   (agent.metadata['noise_peer_fp'] as String?) ?? '',
+              cachedPeerStaticPublicKey: decodeCachedPeerPublicKey(
+                agent.metadata['cached_peer_static_public_key'],
+              ),
             );
             connection = tempConn;
             temporaryConnection = true;

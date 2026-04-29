@@ -4,6 +4,7 @@ import '../models/message.dart';
 import 'remote_agent_service.dart';
 import 'acp_agent_connection.dart';
 import 'logger_service.dart';
+import 'peer_key_utils.dart';
 
 /// 连接管理器
 /// 负责管理远端助手的连接生命周期
@@ -94,6 +95,9 @@ class ConnectionManager {
         // Stored in metadata by `AddRemoteAgentScreen._connectToAgent` —
         // required for the Noise handshake to pin the agent's identity.
         pinnedFingerprint: (agent.metadata['noise_peer_fp'] as String?) ?? '',
+        cachedPeerStaticPublicKey: decodeCachedPeerPublicKey(
+          agent.metadata['cached_peer_static_public_key'],
+        ),
       );
       _acpConnections[agent.id] = connection;
 

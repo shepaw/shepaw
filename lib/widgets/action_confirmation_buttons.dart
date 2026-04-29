@@ -44,7 +44,15 @@ class ActionConfirmationButtons extends StatelessWidget {
           runSpacing: 8,
           children: actions.map<Widget>((action) {
             final actionMap = action as Map<String, dynamic>;
-            final id = actionMap['id'] as String? ?? '';
+            // Some agents emit `value` (the canonical UIActionOption schema —
+            // see shepaw-acp-sdk's `UIActionOption`), others emit `id`
+            // (older clients). Accept both and fall back to `label` so we
+            // never end up reporting an empty action id back to the agent,
+            // which then can't distinguish Allow from Deny.
+            final id = (actionMap['id'] as String?)
+                ?? (actionMap['value'] as String?)
+                ?? (actionMap['label'] as String?)
+                ?? '';
             final label = actionMap['label'] as String? ?? '';
             final style = actionMap['style'] as String? ?? 'secondary';
             final isSelected = selectedActionId == id;

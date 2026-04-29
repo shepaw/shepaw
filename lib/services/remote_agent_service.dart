@@ -6,6 +6,7 @@ import 'logger_service.dart';
 import 'token_service.dart';
 import 'acp_agent_connection.dart';
 import 'chat_service.dart';
+import 'peer_key_utils.dart';
 import 'she_service.dart';
 
 /// Agent 重复异常
@@ -243,6 +244,9 @@ class RemoteAgentService {
             agent.token,
             targetAgentId: agent.metadata['target_agent_id'] as String?,
             pinnedFingerprint: pinnedFp,
+            cachedPeerStaticPublicKey: decodeCachedPeerPublicKey(
+              agent.metadata['cached_peer_static_public_key'],
+            ),
           )
           .timeout(const Duration(seconds: 5));
       await conn.unregisterSelfFromAgent();
@@ -463,6 +467,9 @@ class RemoteAgentService {
             agent.token,
             targetAgentId: targetAgentId,
             pinnedFingerprint: pinnedFp,
+            cachedPeerStaticPublicKey: decodeCachedPeerPublicKey(
+              agent.metadata['cached_peer_static_public_key'],
+            ),
             // One-shot pairing code from the "Add agent" flow. After a
             // successful first handshake the agent has our pubkey in its
             // allowlist; all later reconnects pass `null` (no code).

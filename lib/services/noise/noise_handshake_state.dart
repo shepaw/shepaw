@@ -285,11 +285,20 @@ class HandshakeState {
     final ee = await noiseDh(privateKey: ePriv!, remotePublicKey: re!);
     await ss.mixKey(ee);
 
-    // se: MixKey(DH(s, re)) — responder's static DH with initiator's ephemeral
-    // Note the token ordering matters: for responder writing, `se` means
-    // DH(s_local, e_remote). The spec's rule is "first token letter names the
-    // local contribution; second letter names the remote contribution".
-    final se = await noiseDh(privateKey: sPriv, remotePublicKey: re!);
+    // se: MixKey(DH(initiator.s, responder.e)).
+    //
+    // Per Noise spec §7.2, the letters in token names always refer to party
+    // roles (initiator.s + responder.e for `se`), NOT to "local + remote".
+    // The DH is commutative, so the responder side computes its half as
+    // DH(e_local_responder, s_remote_initiator) = DH(ePriv, rs).
+    //
+    // Earlier code swapped `ee`/`se` vs `ss`/`es` semantics and computed
+    // DH(s_local, e_remote) here, which is actually the spec's `es` token.
+    // That was self-consistent between Dart initiator and Dart responder
+    // (so cross-Dart handshakes succeeded) but incompatible with the TS
+    // `noise-protocol` library (see agent-bridge/node_modules/noise-protocol/
+    // handshake-state.js:TOK_SE), causing AEAD failure on the real wire.
+    final se = await noiseDh(privateKey: ePriv!, remotePublicKey: rs!);
     await ss.mixKey(se);
 
     // Payload: EncryptAndHash(payload)
@@ -318,18 +327,18 @@ class HandshakeState {
     final ee = await noiseDh(privateKey: ePriv!, remotePublicKey: re!);
     await ss.mixKey(ee);
 
-    // se: MixKey(DH(e_local, rs)) — mirror of responder's `se` which was
-    // DH(s_remote, e_local). Wait — reread the spec.
+    // se: MixKey(DH(initiator.s, responder.e)).
     //
-    // Token order per Noise §7.1: the token letters are [local][remote]
-    // FROM THE WRITER'S PERSPECTIVE. When the responder writes `se`, it
-    // means DH(s_local_to_responder, e_remote_to_responder) = DH(s_resp, e_init).
-    // When the initiator READS `se`, it performs the same DH from its side,
-    // which is DH(e_init, s_resp) — mathematically equal to what the
-    // responder computed because DH is commutative.
+    // Per Noise spec §7.2 the letters refer to ROLES (initiator/responder),
+    // not "local/remote" — `se` = DH(initiator.s, responder.e). From the
+    // initiator side we hold `sPriv` and the just-read `re`, so the half
+    // we compute is DH(sPriv, re).
     //
-    // So reading `se` on initiator = DH(e_local=e_init, rs=s_resp).
-    final se = await noiseDh(privateKey: ePriv!, remotePublicKey: rs!);
+    // See _writeResponderMsg2 for the full rationale — the responder and
+    // initiator previously both computed DH(s_local, e_remote) (which is
+    // actually `es`), yielding a self-consistent but non-spec handshake
+    // that failed against the TS `noise-protocol` library.
+    final se = await noiseDh(privateKey: sPriv, remotePublicKey: re!);
     await ss.mixKey(se);
 
     // Payload

@@ -20,6 +20,7 @@ import '../ui_component_registry.dart';
 import '../inference_log_service.dart';
 import '../foreground_task_service.dart';
 import '../logger_service.dart';
+import '../peer_key_utils.dart';
 import '../she_service.dart';
 import '../../clis/shepaw/shepaw_cli.dart';
 import '../session/session_history_service.dart';
@@ -627,6 +628,9 @@ class AgentMessagingService {
       agent.token,
       targetAgentId: agent.metadata['target_agent_id'] as String?,
       pinnedFingerprint: (agent.metadata['noise_peer_fp'] as String?) ?? '',
+      cachedPeerStaticPublicKey: decodeCachedPeerPublicKey(
+        agent.metadata['cached_peer_static_public_key'],
+      ),
     );
     return connection;
   }

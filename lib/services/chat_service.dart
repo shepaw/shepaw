@@ -775,27 +775,44 @@ class ChatService implements IPawChatSender {
       metadata: updatedMetadata,
     );
 
-    // mac_tool confirmations: send in-band via submitResponse (no new chat message)
-    if (confirmationContext == 'mac_tool') {
-      final connection = _acpConnections[agent.id];
-      if (connection != null && connection.isConnected) {
-        final activeTask = getActiveTask(channelId ?? '');
-        final taskId = activeTask?.taskId ?? '';
-        await connection.submitResponse(
-          taskId: taskId,
-          responseType: 'action_confirmation',
-          responseData: {
-            'confirmation_id': confirmationId,
-            'selected_action_id': selectedActionId,
-            'selected_action_label': selectedActionLabel,
-          },
-        );
-        LoggerService().debug('Sent mac_tool confirmation via submitResponse', tag: 'ChatService');
-        return null; // No new message created for in-band confirmations
-      }
+    // In-band reply via submitResponse. Used to be gated behind
+    // `confirmationContext == 'mac_tool'`, but every agent that uses
+    // `ui.actionConfirmation` benefits from this path: it keeps the reply
+    // on the SAME task_id as the outstanding SDK turn so we don't spin up
+    // a fresh `_sendViaACPProtocol` whose new taskCompleter races the old
+    // one and collapses into an empty "Task completed" placeholder.
+    //
+    // Newer agents (codebuddy-code, claude-code-ts) both resolve confirmations
+    // via the SDK's `pendingResponses` map, which `submitResponse` drives.
+    // Legacy agents that only understand chat-verdict keywords still work —
+    // the agent-side race in `permission.ts` means either path unlocks
+    // `canUseTool`, and the chat path only opens a redundant (empty) task
+    // which the gateway promptly completes.
+    final connection = _acpConnections[agent.id];
+    if (connection != null && connection.isConnected) {
+      final activeTask = getActiveTask(channelId ?? '');
+      final taskId = activeTask?.taskId ?? '';
+      await connection.submitResponse(
+        taskId: taskId,
+        responseType: 'action_confirmation',
+        responseData: {
+          'confirmation_id': confirmationId,
+          'selected_action_id': selectedActionId,
+          'selected_action_label': selectedActionLabel,
+        },
+      );
+      LoggerService().debug(
+        'Sent action confirmation via submitResponse '
+        '(context=$confirmationContext, taskId=$taskId)',
+        tag: 'ChatService',
+      );
+      return null; // No new message created for in-band confirmations
     }
 
-    // Default path: send the selection as a new message to the agent
+    // Fallback (no live connection yet): send the selection as a new message
+    // to the agent. This path is best-effort — it may show the transient
+    // "Task completed" placeholder if the current task completes before the
+    // new turn streams any content, but it at least gets the verdict across.
     return await sendMessageToAgent(
       content: 'Selected action: $selectedActionLabel',
       agent: agent,

@@ -290,9 +290,22 @@ class NoiseSession {
   }
 
   void _installTransportKeysInitiator(NoiseSplit split) {
-    // Initiator: send = c1, recv = c2.
-    _sendKey = split.c1Key;
-    _recvKey = split.c2Key;
+    // Initiator: send = c2, recv = c1.
+    //
+    // This matches the TS `noise-protocol` library: after `readMessage`
+    // completes (which is what the initiator does for msg2), the library
+    // assigns `rx=c1, tx=c2` (handshake-state.js: `split(ss, rx, tx, ...)`).
+    // The Shepaw TS SDK then sets `sendState=tx, recvState=rx`, so on the
+    // wire the initiator encrypts with c2 and decrypts with c1.
+    //
+    // Earlier code had this reversed (send=c1, recv=c2). That was
+    // self-consistent with the matching reversal in the responder half
+    // below (so Dart↔Dart handshake + transport tests passed), but
+    // incompatible with the TS agent: the first post-handshake ping would
+    // close with WS 4409 ("decrypt failed") on the server and the reply
+    // timeout on the client.
+    _sendKey = split.c2Key;
+    _recvKey = split.c1Key;
     _sendNonce = 0;
     _recvNonce = 0;
     _hs = null;
@@ -300,9 +313,12 @@ class NoiseSession {
   }
 
   void _installTransportKeysResponder(NoiseSplit split) {
-    // Responder: send = c2, recv = c1.
-    _sendKey = split.c2Key;
-    _recvKey = split.c1Key;
+    // Responder: send = c1, recv = c2.
+    // See _installTransportKeysInitiator for rationale. The TS library's
+    // `writeMessage`-path split is `split(ss, tx, rx, ...)` → tx=c1, rx=c2,
+    // so the responder encrypts with c1 and decrypts with c2.
+    _sendKey = split.c1Key;
+    _recvKey = split.c2Key;
     _sendNonce = 0;
     _recvNonce = 0;
     _hs = null;
