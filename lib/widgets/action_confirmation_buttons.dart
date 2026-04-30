@@ -5,14 +5,20 @@ import 'package:flutter/material.dart';
 /// Displays a list of buttons based on action data from the agent.
 /// Once a button is selected, it shows as highlighted with a checkmark,
 /// and all other buttons are greyed out and disabled.
+///
+/// [isAgentOffline] adds a small "offline" hint above the buttons. Buttons
+/// stay clickable because the submission path auto-reconnects — the hint is
+/// just UX so the user knows there will be a brief delay after tapping.
 class ActionConfirmationButtons extends StatelessWidget {
   final Map<String, dynamic> actionData;
   final void Function(String confirmationId, String actionId, String actionLabel)? onActionSelected;
+  final bool isAgentOffline;
 
   const ActionConfirmationButtons({
     Key? key,
     required this.actionData,
     this.onActionSelected,
+    this.isAgentOffline = false,
   }) : super(key: key);
 
   @override
@@ -21,6 +27,7 @@ class ActionConfirmationButtons extends StatelessWidget {
     final actions = (actionData['actions'] as List<dynamic>?) ?? [];
     final confirmationId = actionData['confirmation_id'] as String? ?? '';
     final selectedActionId = actionData['selected_action_id'] as String?;
+    final hasSelection = selectedActionId != null;
 
     if (actions.isEmpty) return const SizedBox.shrink();
 
@@ -37,6 +44,29 @@ class ActionConfirmationButtons extends StatelessWidget {
                 color: Colors.black54,
                 fontWeight: FontWeight.w500,
               ),
+            ),
+          ),
+        // "Offline — will reconnect on tap" hint. Only shown while the user
+        // still has a pending choice to make; once they've tapped a button
+        // the hint is pointless (the verdict is already in flight or saved
+        // locally, waiting for the reconnect to flush it).
+        if (isAgentOffline && !hasSelection)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 6),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(Icons.cloud_off_outlined, size: 12, color: Colors.orange[700]),
+                const SizedBox(width: 4),
+                Text(
+                  'Agent offline — tap will reconnect first',
+                  style: TextStyle(
+                    fontSize: 11,
+                    color: Colors.orange[700],
+                    fontStyle: FontStyle.italic,
+                  ),
+                ),
+              ],
             ),
           ),
         Wrap(
@@ -56,7 +86,7 @@ class ActionConfirmationButtons extends StatelessWidget {
             final label = actionMap['label'] as String? ?? '';
             final style = actionMap['style'] as String? ?? 'secondary';
             final isSelected = selectedActionId == id;
-            final isDisabled = selectedActionId != null && !isSelected;
+            final isDisabled = hasSelection && !isSelected;
 
             return _buildButton(
               context,

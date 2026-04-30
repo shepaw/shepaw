@@ -1473,6 +1473,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                               );
                             }
                           },
+                          isAgentOffline: !c.isAgentOnline,
                         ),
                       ),
                 if (_isUserScrolledUp)

@@ -39,6 +39,12 @@ class MessageBubble extends StatelessWidget {
   final Map<String, int> imageIndexMap;
   final VoidCallback? onAvatarTap;
 
+  /// When `true`, the action-confirmation card (if rendered) shows an
+  /// "offline — will reconnect on tap" hint. Pass the negation of whatever
+  /// `isAgentOnline` signal the screen has. Default `false` keeps the
+  /// legacy look when the caller doesn't plumb the value through.
+  final bool isAgentOffline;
+
   const MessageBubble({
     Key? key,
     required this.message,
@@ -59,6 +65,7 @@ class MessageBubble extends StatelessWidget {
     this.groupedImageMessages,
     this.imageIndexMap = const {},
     this.onAvatarTap,
+    this.isAgentOffline = false,
   }) : super(key: key);
 
   static MarkdownStyleSheet? _cachedMyStyleSheet;
@@ -414,6 +421,7 @@ class MessageBubble extends StatelessWidget {
               ActionConfirmationButtons(
                 actionData: actionConfirmation,
                 onActionSelected: onActionSelected,
+                isAgentOffline: isAgentOffline,
               ),
             ],
           );

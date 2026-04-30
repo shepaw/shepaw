@@ -775,21 +775,26 @@ class ChatService implements IPawChatSender {
       metadata: updatedMetadata,
     );
 
-    // In-band reply via submitResponse. Used to be gated behind
-    // `confirmationContext == 'mac_tool'`, but every agent that uses
-    // `ui.actionConfirmation` benefits from this path: it keeps the reply
-    // on the SAME task_id as the outstanding SDK turn so we don't spin up
-    // a fresh `_sendViaACPProtocol` whose new taskCompleter races the old
-    // one and collapses into an empty "Task completed" placeholder.
+    // Async-confirmation agents (Phase 1) don't keep the SDK turn alive
+    // waiting for the user's tap — `canUseTool` already returned `deny` and
+    // `task.completed` fired seconds after the confirmation was emitted. So
+    // `submitResponse` is a dead end (the agent's `pendingResponses` map is
+    // empty for this confirmation_id). Route these agents through a fresh
+    // `agent.chat` whose body contains an "allow" / "deny" keyword — the
+    // agent's `onChat` will match the persisted `PendingMarker`, populate
+    // `ApprovalCache`, and `--resume` the SDK session to actually execute
+    // the tool (or acknowledge denial).
     //
-    // Newer agents (codebuddy-code, claude-code-ts) both resolve confirmations
-    // via the SDK's `pendingResponses` map, which `submitResponse` drives.
-    // Legacy agents that only understand chat-verdict keywords still work —
-    // the agent-side race in `permission.ts` means either path unlocks
-    // `canUseTool`, and the chat path only opens a redundant (empty) task
-    // which the gateway promptly completes.
+    // Same path is taken when there's no live connection: we fall back to
+    // sending a chat message, which also auto-reconnects through the
+    // regular retry/backoff in `_getOrCreateACPConnectionWithRetry`.
     final connection = _acpConnections[agent.id];
-    if (connection != null && connection.isConnected) {
+    final isAsyncAgent = connection?.supportsAsyncConfirmation ?? false;
+
+    if (connection != null && connection.isConnected && !isAsyncAgent) {
+      // Legacy blocking agents: keep the in-band submitResponse path so the
+      // single outstanding `canUseTool` / `waitForResponse` unblocks without
+      // spinning up a second task.
       final activeTask = getActiveTask(channelId ?? '');
       final taskId = activeTask?.taskId ?? '';
       await connection.submitResponse(
@@ -809,12 +814,19 @@ class ChatService implements IPawChatSender {
       return null; // No new message created for in-band confirmations
     }
 
-    // Fallback (no live connection yet): send the selection as a new message
-    // to the agent. This path is best-effort — it may show the transient
-    // "Task completed" placeholder if the current task completes before the
-    // new turn streams any content, but it at least gets the verdict across.
+    // Async-confirmation path (or no-connection fallback): issue a new chat
+    // message that mirrors the user's tap. The message content is a short
+    // verdict sentence that both (a) the keyword classifier picks up as
+    // allow/deny and (b) makes sense as a visible user message in the
+    // channel — just like a form submission's summary line.
+    final verdictContent = 'Selected action: $selectedActionLabel';
+    LoggerService().debug(
+      'Sending action confirmation as chat message '
+      '(isAsyncAgent=$isAsyncAgent, confirmationId=$confirmationId): $verdictContent',
+      tag: 'ChatService',
+    );
     return await sendMessageToAgent(
-      content: 'Selected action: $selectedActionLabel',
+      content: verdictContent,
       agent: agent,
       userId: userId,
       userName: userName,

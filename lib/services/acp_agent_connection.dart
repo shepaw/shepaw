@@ -213,6 +213,23 @@ class ACPAgentConnection {
   bool get isConnected => _isConnected;
   bool get isAuthenticated => _isAuthenticated;
 
+  /// Whether this agent advertised the `async_confirmation` capability in its
+  /// card. Populated after a successful [connect] by [_refreshCapabilities].
+  ///
+  /// `true` means the agent follows the async-confirmation protocol: on a
+  /// tool_use that needs approval it emits `ui.actionConfirmation` and then
+  /// ends the current SDK turn (so `task.completed` arrives within seconds).
+  /// The app can drop the long blocking await on `taskCompleter` and rely on
+  /// callback-driven DB persistence.
+  ///
+  /// `false` means legacy blocking — `task.completed` may stay pending until
+  /// the user approves, and the app must keep its current await-based flow.
+  ///
+  /// Defaults to `false` so connection failures / card fetch failures degrade
+  /// safely back to the legacy path.
+  bool _supportsAsyncConfirmation = false;
+  bool get supportsAsyncConfirmation => _supportsAsyncConfirmation;
+
   /// Peer static public key learned during the Noise handshake. Null until
   /// [connect] completes successfully. Callers may persist this in their
   /// remote-agent record so the fingerprint can be re-verified on reconnect
@@ -334,6 +351,11 @@ class ACPAgentConnection {
       _startHeartbeat();
 
       LoggerService().debug('Connected to $wsUrl (v2.1)', tag: 'ACP');
+
+      // Fetch the agent card to learn advertised capabilities. Fire-and-forget:
+      // a failed card fetch shouldn't break an otherwise healthy connection,
+      // it just leaves [supportsAsyncConfirmation] at its default `false`.
+      unawaited(_refreshCapabilities());
     } catch (e) {
       _isConnected = false;
       _isAuthenticated = false;
@@ -783,6 +805,36 @@ class ACPAgentConnection {
   /// Get the Agent card.
   Future<ACPResponse> getAgentCard() async {
     return await sendRequest(ACPMethod.agentGetCard);
+  }
+
+  /// Fetch the agent card after connect and parse its `capabilities` array
+  /// to populate connection-level flags like [supportsAsyncConfirmation].
+  ///
+  /// Failures are swallowed: a card that fails to return, arrives malformed,
+  /// or omits `capabilities` simply leaves the default flag values in place
+  /// (which assume the legacy blocking protocol — the safe fallback).
+  Future<void> _refreshCapabilities() async {
+    try {
+      final response = await getAgentCard().timeout(
+        const Duration(seconds: 5),
+      );
+      if (!response.isSuccess) return;
+      final result = response.result;
+      if (result is! Map) return;
+      final caps = result['capabilities'];
+      if (caps is! List) return;
+      final capsSet = caps.whereType<String>().toSet();
+      _supportsAsyncConfirmation = capsSet.contains('async_confirmation');
+      LoggerService().debug(
+        'Agent card refreshed: capabilities=$capsSet, async_confirmation=$_supportsAsyncConfirmation',
+        tag: 'ACP',
+      );
+    } catch (e) {
+      LoggerService().warning(
+        'Failed to refresh agent card capabilities: $e',
+        tag: 'ACP',
+      );
+    }
   }
 
   /// Send a ping.

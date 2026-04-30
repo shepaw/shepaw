@@ -29,6 +29,21 @@ import '../token_service.dart';
 import 'local_llm_handler.dart';
 import 'connection_retry_policy.dart';
 
+/// Internal sentinel returned by [AgentMessagingService._sendViaACPProtocol]
+/// when the agent advertised the `async_confirmation` capability.
+///
+/// In async mode, `_sendViaACPProtocol` does NOT await `task.completed` — it
+/// returns as soon as `sendChatMessage` completes, and relies on callback-
+/// driven persistence (the `onTaskCompleted` / `onTaskError` callbacks
+/// registered with the connection handle DB save + cleanup themselves).
+///
+/// `sendMessageToAgent` checks this sentinel and skips the outer DB save +
+/// `_activeTasks` cleanup (both already owned by the callbacks).
+const _asyncPendingSentinelMetadataKey = '__shepaw_async_pending__';
+
+bool _isAsyncPendingSentinel(Message? m) =>
+    m != null && m.metadata?[_asyncPendingSentinelMetadataKey] == true;
+
 /// Handles sending messages to individual (non-group) agents.
 ///
 /// Extracted from [ChatService] to isolate the 1:1 agent messaging paths:
@@ -220,6 +235,20 @@ class AgentMessagingService {
       }
 
       // Save agent response if received
+      if (_isAsyncPendingSentinel(agentResponse)) {
+        // Async-confirmation path: _sendViaACPProtocol handed off DB save +
+        // cleanup to the TaskCallbacks registered on the connection. The
+        // outer flow returns immediately — the UI continues receiving
+        // ui.* notifications until task.completed fires, at which point the
+        // callback saves the final message and completes dbSaveCompleter.
+        LoggerService().debug(
+          'Async-confirmation path: returning without awaiting task.completed '
+          '(DB save + cleanup deferred to TaskCallbacks)',
+          tag: 'AgentMessagingService',
+        );
+        return null;
+      }
+
       if (agentResponse != null) {
         LoggerService().info('Received agent response: ${agentResponse.id}', tag: 'AgentMessagingService');
         LoggerService().debug('Response content: ${agentResponse.content}', tag: 'AgentMessagingService');
@@ -403,6 +432,17 @@ class AgentMessagingService {
       Map<String, dynamic>? formDataCapture;
       Map<String, dynamic>? messageMetadataExtra;
 
+      // Decide early whether this agent supports the async-confirmation
+      // capability. The flag is populated by [ACPAgentConnection._refreshCapabilities]
+      // right after the Noise handshake; we snapshot it here so the callback
+      // registration and the post-send branch both see the same value (the
+      // connection could technically reconnect mid-turn, but the task stays
+      // tied to the original handle via `effectiveTaskId`).
+      final asyncConfirmation = connection.supportsAsyncConfirmation;
+      final effectiveChannelIdForAsync = effectiveChannelId;
+      // Declared up here so both the sync & async finalizers can reference it.
+      final effectiveTaskId = taskId;
+
       // Hook cancellation token so the completer resolves immediately on cancel.
       acpCancellationToken?.onCancelled = () {
         activeTask.isComplete = true;
@@ -411,8 +451,117 @@ class AgentMessagingService {
         }
       };
 
+      // Shared builder for the "final agent message" produced after the
+      // SDK turn finishes — used by both the legacy blocking path and the
+      // async-path callbacks.
+      Message buildFinalMessage({
+        String? fallbackContent,
+        bool markStopped = false,
+      }) {
+        final meta = <String, dynamic>{};
+        meta['trace_id'] = activeTask.taskId;
+        if (messageMetadataExtra != null) {
+          meta.addAll(messageMetadataExtra!);
+        }
+        if (actionConfirmationData != null) {
+          meta['action_confirmation'] = actionConfirmationData;
+        }
+        if (singleSelectData != null) {
+          meta['single_select'] = singleSelectData;
+        }
+        if (multiSelectData != null) {
+          meta['multi_select'] = multiSelectData;
+        }
+        if (fileUploadData != null) {
+          meta['file_upload'] = fileUploadData;
+        }
+        if (formDataCapture != null) {
+          meta['form'] = formDataCapture;
+        }
+
+        final responseContent = activeTask.accumulatedContent;
+        String content;
+        if (markStopped) {
+          content = responseContent.isNotEmpty ? '$responseContent\n\n[Stopped]' : '[Stopped]';
+        } else if (responseContent.isNotEmpty) {
+          content = responseContent;
+        } else {
+          content = fallbackContent ?? 'Task completed';
+        }
+
+        return Message(
+          id: _uuid.v4(),
+          content: content,
+          timestampMs: DateTime.now().millisecondsSinceEpoch,
+          from: MessageFrom(id: agent.id, type: 'agent', name: agent.name),
+          to: MessageFrom(
+            id: userMessage.from.id,
+            type: 'user',
+            name: userMessage.from.name,
+          ),
+          type: MessageType.text,
+          replyTo: userMessage.id,
+          metadata: meta,
+        );
+      }
+
+      // Async-path finaliser: invoked from `onTaskCompleted` / `onTaskError`
+      // when [asyncConfirmation] is true. Handles DB save + task cleanup that
+      // the blocking path does inline after `await taskCompleter.future`.
+      //
+      // Protected against re-entry via `activeTask.dbSaveCompleter` — only
+      // the first completion path wins; later errors/cancellations are
+      // swallowed to avoid double-saves.
+      bool asyncFinalizeStarted = false;
+      Future<void> asyncFinalize({
+        bool isError = false,
+        String? errorMessage,
+      }) async {
+        if (asyncFinalizeStarted) return;
+        asyncFinalizeStarted = true;
+        try {
+          final Message msg;
+          if (isError) {
+            msg = Message(
+              id: _uuid.v4(),
+              content: 'Error: ${errorMessage ?? 'Task error'}',
+              timestampMs: DateTime.now().millisecondsSinceEpoch,
+              from: MessageFrom(id: 'system', type: 'system', name: 'System'),
+              type: MessageType.system,
+            );
+          } else {
+            msg = buildFinalMessage();
+            activeTask.metadata = msg.metadata;
+          }
+          final channelForSave = effectiveChannelIdForAsync.isNotEmpty
+              ? effectiveChannelIdForAsync
+              : null;
+          await saveMessageToChannel(msg, agent.id, channelId: channelForSave);
+        } catch (e, st) {
+          LoggerService().error(
+            'Async-path finalize failed for task $effectiveTaskId',
+            tag: 'AgentMessagingService',
+            error: e,
+            stackTrace: st,
+          );
+        } finally {
+          try {
+            connection!.unregisterTaskCallbacks(effectiveTaskId);
+          } catch (_) {}
+          if (effectiveChannelIdForAsync.isNotEmpty) {
+            final removed = _activeTasks.remove(effectiveChannelIdForAsync);
+            updateTypingAgentIds();
+            if (removed != null) {
+              releaseForegroundTask(removed.agentName);
+              if (!removed.dbSaveCompleter.isCompleted) {
+                removed.dbSaveCompleter.complete();
+              }
+            }
+          }
+        }
+      }
+
       // Set up connection callbacks — accumulate in ActiveTask, then forward to UI
-      final effectiveTaskId = taskId;
       connection.registerTaskCallbacks(effectiveTaskId, TaskCallbacks(
         onTextContent: (data) {
           final content = data['content'] as String? ?? '';
@@ -455,6 +604,9 @@ class AgentMessagingService {
           infLogAcp.endSession(effectiveTaskId, InferenceStatus.completed);
           activeTask.isComplete = true;
           activeTask.onTaskFinished?.call();
+          if (asyncConfirmation) {
+            unawaited(asyncFinalize());
+          }
           if (!taskCompleter.isCompleted) {
             taskCompleter.complete();
           }
@@ -466,6 +618,9 @@ class AgentMessagingService {
           activeTask.isComplete = true;
           activeTask.errorMessage = errorMsg;
           activeTask.onTaskFinished?.call();
+          if (asyncConfirmation) {
+            unawaited(asyncFinalize(isError: true, errorMessage: errorMsg));
+          }
           if (!taskCompleter.isCompleted) {
             taskCompleter.completeError(
               Exception(data['message'] ?? 'Task error'),
@@ -493,6 +648,33 @@ class AgentMessagingService {
         attachments: serializedAttachments,
       );
 
+      // Async-confirmation path: don't block on `task.completed`. The
+      // registered TaskCallbacks above will handle DB save + cleanup when
+      // the SDK turn actually finishes (or errors). Return a sentinel
+      // Message so the outer `sendMessageToAgent` knows to skip its own
+      // post-return save path.
+      if (asyncConfirmation) {
+        LoggerService().debug(
+          'Async-confirmation path: returning from _sendViaACPProtocol without '
+          'awaiting task.completed (agentId=${agent.id}, taskId=$effectiveTaskId)',
+          tag: 'AgentMessagingService',
+        );
+        return Message(
+          id: 'async_pending_$effectiveTaskId',
+          content: '',
+          timestampMs: DateTime.now().millisecondsSinceEpoch,
+          from: MessageFrom(id: agent.id, type: 'agent', name: agent.name),
+          to: MessageFrom(
+            id: userMessage.from.id,
+            type: 'user',
+            name: userMessage.from.name,
+          ),
+          type: MessageType.text,
+          replyTo: userMessage.id,
+          metadata: {_asyncPendingSentinelMetadataKey: true},
+        );
+      }
+
       // Wait for task.completed, task.error, or local cancellation
       final taskTimeoutSeconds = (agent.metadata?['task_timeout_seconds'] as num?)?.toInt() ?? 600;
       await taskCompleter.future.timeout(
@@ -505,68 +687,17 @@ class AgentMessagingService {
       // If cancelled, clean up callbacks and return partial content.
       if (acpCancellationToken?.isCancelled == true) {
         connection.unregisterTaskCallbacks(effectiveTaskId);
-        final responseContent = activeTask.accumulatedContent;
-        return Message(
-          id: _uuid.v4(),
-          content: responseContent.isNotEmpty
-              ? '$responseContent\n\n[Stopped]'
-              : '[Stopped]',
-          timestampMs: DateTime.now().millisecondsSinceEpoch,
-          from: MessageFrom(id: agent.id, type: 'agent', name: agent.name),
-          to: MessageFrom(id: userMessage.from.id, type: 'user', name: userMessage.from.name),
-          type: MessageType.text,
-          replyTo: userMessage.id,
-        );
+        return buildFinalMessage(markStopped: true);
       }
-
-      // Build metadata
-      final meta = <String, dynamic>{};
-      meta['trace_id'] = activeTask.taskId;
-      if (messageMetadataExtra != null) {
-        meta.addAll(messageMetadataExtra!);
-      }
-      if (actionConfirmationData != null) {
-        meta['action_confirmation'] = actionConfirmationData;
-      }
-      if (singleSelectData != null) {
-        meta['single_select'] = singleSelectData;
-      }
-      if (multiSelectData != null) {
-        meta['multi_select'] = multiSelectData;
-      }
-      if (fileUploadData != null) {
-        meta['file_upload'] = fileUploadData;
-      }
-      if (formDataCapture != null) {
-        meta['form'] = formDataCapture;
-      }
-      final messageMetadata = meta;
-      activeTask.metadata = messageMetadata;
 
       // Clear callbacks and remove from active tasks
       connection.unregisterTaskCallbacks(effectiveTaskId);
       // NOTE: Don't remove from _activeTasks here — sendMessageToAgent will
       // do it after persisting the response to DB so the UI can await the save.
 
-      final responseContent = activeTask.accumulatedContent;
-      return Message(
-        id: _uuid.v4(),
-        content: responseContent.isNotEmpty ? responseContent : 'Task completed',
-        timestampMs: DateTime.now().millisecondsSinceEpoch,
-        from: MessageFrom(
-          id: agent.id,
-          type: 'agent',
-          name: agent.name,
-        ),
-        to: MessageFrom(
-          id: userMessage.from.id,
-          type: 'user',
-          name: userMessage.from.name,
-        ),
-        type: MessageType.text,
-        replyTo: userMessage.id,
-        metadata: messageMetadata,
-      );
+      final finalMessage = buildFinalMessage();
+      activeTask.metadata = finalMessage.metadata;
+      return finalMessage;
     } catch (e, stackTrace) {
       LoggerService().error('ACP protocol error', tag: 'AgentMessagingService', error: e, stackTrace: stackTrace);
       if (connection != null && taskId != null) {

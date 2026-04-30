@@ -1054,6 +1054,12 @@ class ChatController extends ChangeNotifier with InteractiveStreamingContext {
     lastUserQuestion = content;
     acpCancellationToken = ACPCancellationToken();
 
+    // Set to true when the agent supports async-confirmation: the task lives
+    // on past this method's return, and the finally block must NOT clear
+    // `streamingMessageId` / `isProcessing` — those belong to the task's
+    // onTaskFinished callback, which fires later when task.completed arrives.
+    bool awaitingAsyncTask = false;
+
     try {
       final remoteAgent = await localDatabaseService.getRemoteAgentById(agentId!);
       if (remoteAgent == null) throw Exception('Agent not found');
@@ -1204,6 +1210,43 @@ class ChatController extends ChangeNotifier with InteractiveStreamingContext {
         },
       );
 
+      // Phase 2-A: async-confirmation fast path.
+      // When the agent supports async_confirmation, `sendMessageToAgent`
+      // returns `null` as soon as the agent has ACK'd the request — the
+      // streaming chunks, action_confirmation metadata, and eventual
+      // task.completed all flow through TaskCallbacks asynchronously.
+      //
+      // Hook the underlying ActiveTask's onTaskFinished so that when the
+      // agent's SDK turn finally ends (milliseconds to seconds later), we
+      // reload messages from DB, drop the streaming id, and clear the
+      // processing flag. Until then the UI stays responsive — the user can
+      // tap Allow / Deny on a confirmation card, or even send a follow-up.
+      final asyncConn = chatService.getACPConnection(remoteAgent.id);
+      final supportsAsync = asyncConn?.supportsAsyncConfirmation ?? false;
+      if (supportsAsync && currentChannelId != null) {
+        final activeTask = chatService.getActiveTask(currentChannelId!);
+        if (activeTask != null) {
+          awaitingAsyncTask = true;
+          final channelAtDispatch = currentChannelId;
+          activeTask.onTaskFinished = () async {
+            try {
+              await activeTask.dbSaveCompleter.future;
+            } catch (_) {}
+            // Only clean up if we're still on the same channel (user may have
+            // navigated away). If they did, the values are already detached
+            // and another call will just be a no-op on stale state.
+            if (currentChannelId == channelAtDispatch) {
+              acpCancellationToken = null;
+              streamingMessageId = null;
+              streamingContent = '';
+              await loadMessages();
+              isProcessing = false;
+              _notify();
+            }
+          };
+        }
+      }
+
       // Handle pending history request
       bool handledHistorySupplement = false;
       if (pendingHistoryRequest != null) {
@@ -1317,25 +1360,51 @@ class ChatController extends ChangeNotifier with InteractiveStreamingContext {
       }
 
       if (!handledHistorySupplement && agentResponse == null) {
-        _emit(ShowSnackBarEvent('chat_responseError'));
+        // Phase 2-A: in async-confirmation mode, `sendMessageToAgent` returns
+        // null as soon as the agent has acknowledged the request — the actual
+        // response (text + confirmation metadata) flows through the registered
+        // TaskCallbacks asynchronously. A `null` here is NOT an error in that
+        // mode; suppress the snackbar and leave the streaming message in place
+        // for the callbacks to keep updating.
+        final isAsync = chatService
+                .getACPConnection(remoteAgent.id)
+                ?.supportsAsyncConfirmation ??
+            false;
+        if (!isAsync) {
+          _emit(ShowSnackBarEvent('chat_responseError'));
+        }
       }
 
       isAgentOnline = true;
       _notify();
-      await loadMessages();
+      // In async mode, skip loadMessages() here — the DB save happens later
+      // (in onTaskCompleted), so reloading now would overwrite the in-memory
+      // streaming content with a stale DB snapshot. The onTaskFinished
+      // callback does its own loadMessages() when the task actually ends.
+      if (!awaitingAsyncTask) {
+        await loadMessages();
+      }
     } catch (e, stackTrace) {
       LoggerService().error('Send message failed', tag: 'ChatController', error: e, stackTrace: stackTrace);
       messageQueue.clear();
       await loadMessages();
       _emit(ShowErrorSnackBarEvent('$e'));
     } finally {
-      acpCancellationToken = null;
-      streamingMessageId = null;
-      streamingContent = '';
-      pendingHistoryRequest = null;
-      isProcessing = false;
-      _notify();
-      processNextInQueue();
+      if (awaitingAsyncTask) {
+        // Async path: don't clear streamingMessageId / isProcessing here —
+        // the activeTask.onTaskFinished callback owns that cleanup and will
+        // fire when the agent's SDK turn actually ends. We still drain the
+        // send queue so the next queued message can start preparing.
+        processNextInQueue();
+      } else {
+        acpCancellationToken = null;
+        streamingMessageId = null;
+        streamingContent = '';
+        pendingHistoryRequest = null;
+        isProcessing = false;
+        _notify();
+        processNextInQueue();
+      }
     }
   }
 

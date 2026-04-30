@@ -74,6 +74,15 @@ class InteractiveResponseHandler {
 
     _beginProcessing();
 
+    // In async-confirmation mode, `submitActionConfirmationResponse` dispatches
+    // via `sendMessageToAgent` which returns `null` as soon as the agent has
+    // ACKed the chat — the streaming response arrives later through the
+    // TaskCallbacks registered on the underlying ActiveTask. The synchronous
+    // `_endProcessing()` in the finally block would clear `streamingMessageId`
+    // before any chunks land, so we defer cleanup to `activeTask.onTaskFinished`
+    // just like `ChatController.processMessage` does for the main send path.
+    bool awaitingAsyncTask = false;
+
     try {
       if (isMacTool) {
         // In-band: no streaming placeholder
@@ -103,13 +112,45 @@ class InteractiveResponseHandler {
           acpCancellationToken: ctx.acpCancellationToken,
           onStreamChunk: _onStreamChunk,
         );
+
+        // Hook onTaskFinished for async-confirmation agents. The ActiveTask
+        // was registered by `_sendViaACPProtocol` inside the submit call above,
+        // so it's retrievable here. If no activeTask exists (fast-finish race
+        // where asyncFinalize already removed it) we just fall through to the
+        // synchronous finally — loadMessages picks up the DB state.
+        final conn = ctx.chatService.getACPConnection(remoteAgent.id);
+        if (conn != null && conn.supportsAsyncConfirmation && ctx.currentChannelId != null) {
+          final activeTask = ctx.chatService.getActiveTask(ctx.currentChannelId!);
+          if (activeTask != null) {
+            awaitingAsyncTask = true;
+            activeTask.onTaskFinished = () async {
+              try {
+                await activeTask.dbSaveCompleter.future;
+              } catch (_) {}
+              if (!ctx.isMounted) return;
+              await ctx.loadMessages();
+              ctx.acpCancellationToken = null;
+              ctx.streamingMessageId = null;
+              ctx.streamingContent = '';
+              ctx.isProcessing = false;
+              ctx.notifyUI();
+            };
+          }
+        }
       }
-      await ctx.loadMessages();
+      // Sync path: reload now so the user sees their verdict message and
+      // the agent's (already-complete) follow-up. Async path skips this —
+      // onTaskFinished will call loadMessages when the task actually ends.
+      if (!awaitingAsyncTask) {
+        await ctx.loadMessages();
+      }
     } catch (e) {
       await ctx.loadMessages();
       rethrow;
     } finally {
-      _endProcessing();
+      if (!awaitingAsyncTask) {
+        _endProcessing();
+      }
     }
   }
 
@@ -133,6 +174,11 @@ class InteractiveResponseHandler {
     _beginProcessing();
     _addStreamingPlaceholder(remoteAgent);
 
+    // Mirror `handleActionConfirmation`: defer UI cleanup to the ActiveTask's
+    // onTaskFinished when the agent supports async-confirmation, since
+    // `submitSelectResponse` returns immediately in that mode.
+    bool awaitingAsyncTask = false;
+
     try {
       await ctx.chatService.submitSelectResponse(
         originalMessage: originalMessage,
@@ -146,12 +192,37 @@ class InteractiveResponseHandler {
         acpCancellationToken: ctx.acpCancellationToken,
         onStreamChunk: _onStreamChunk,
       );
-      await ctx.loadMessages();
+
+      final conn = ctx.chatService.getACPConnection(remoteAgent.id);
+      if (conn != null && conn.supportsAsyncConfirmation && ctx.currentChannelId != null) {
+        final activeTask = ctx.chatService.getActiveTask(ctx.currentChannelId!);
+        if (activeTask != null) {
+          awaitingAsyncTask = true;
+          activeTask.onTaskFinished = () async {
+            try {
+              await activeTask.dbSaveCompleter.future;
+            } catch (_) {}
+            if (!ctx.isMounted) return;
+            await ctx.loadMessages();
+            ctx.acpCancellationToken = null;
+            ctx.streamingMessageId = null;
+            ctx.streamingContent = '';
+            ctx.isProcessing = false;
+            ctx.notifyUI();
+          };
+        }
+      }
+
+      if (!awaitingAsyncTask) {
+        await ctx.loadMessages();
+      }
     } catch (e) {
       await ctx.loadMessages();
       rethrow;
     } finally {
-      _endProcessing();
+      if (!awaitingAsyncTask) {
+        _endProcessing();
+      }
     }
   }
 

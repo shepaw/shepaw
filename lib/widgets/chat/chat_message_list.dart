@@ -38,6 +38,11 @@ class ChatMessageList extends StatelessWidget {
   final String? highlightedMessageId;
   final void Function(Message message)? onViewTrace;
 
+  /// When `true`, action-confirmation cards render an "offline" hint so
+  /// users know tapping Allow/Deny will first need a reconnect. Threaded
+  /// down into each [MessageBubble].
+  final bool isAgentOffline;
+
   const ChatMessageList({
     super.key,
     required this.messages,
@@ -62,6 +67,7 @@ class ChatMessageList extends StatelessWidget {
     required this.onScrollToMessage,
     this.highlightedMessageId,
     this.onViewTrace,
+    this.isAgentOffline = false,
   });
 
   @override
@@ -214,6 +220,7 @@ class ChatMessageList extends StatelessWidget {
                     onAvatarTap: message.from.isAgent
                         ? () => onAgentAvatarTap(message.from.id)
                         : null,
+                    isAgentOffline: isAgentOffline,
                   ),
                 ),
               ),
