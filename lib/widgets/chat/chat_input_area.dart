@@ -1,11 +1,15 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import '../../models/acp_protocol.dart';
 import '../../models/mention_entry.dart';
 import '../../models/pending_attachment.dart';
 import '../../models/remote_agent.dart';
 import '../../services/audio_recording_service.dart';
 import '../../utils/layout_utils.dart';
 import '../../l10n/app_localizations.dart';
+import 'slash_command_picker.dart';
 
 /// The chat input area widget (supports both desktop and mobile layouts).
 ///
@@ -42,6 +46,13 @@ class ChatInputArea extends StatefulWidget {
   /// When false, the voice mode toggle button is hidden.
   final bool hasAudioModel;
 
+  /// Available slash commands for the "/" palette. When empty, the palette
+  /// never appears. Combined with [slashCommandsStream] — the stream fires
+  /// whenever the agent pushes `agent.commands.changed` so the list can
+  /// update without a reconnect.
+  final List<SlashCommandInfo> slashCommands;
+  final Stream<List<SlashCommandInfo>>? slashCommandsStream;
+
   const ChatInputArea({
     super.key,
     required this.messageController,
@@ -62,6 +73,8 @@ class ChatInputArea extends StatefulWidget {
     this.onMentionPickerChanged,
     this.onDesktopPaste,
     this.hasAudioModel = false,
+    this.slashCommands = const [],
+    this.slashCommandsStream,
   });
 
   @override
@@ -90,17 +103,35 @@ class ChatInputAreaState extends State<ChatInputArea> {
 
   bool get showMentionPicker => _showMentionPicker;
 
+  // Slash command palette state (mirrors the mention picker).
+  bool _showSlashPicker = false;
+  String _slashQuery = '';
+  int _slashTriggerOffset = -1;
+  int _slashSelectedIndex = 0;
+  final ScrollController _slashScrollController = ScrollController();
+  late List<SlashCommandInfo> _slashCommands;
+  StreamSubscription<List<SlashCommandInfo>>? _slashCommandsSub;
+
   @override
   void initState() {
     super.initState();
     _hasText = widget.messageController.text.isNotEmpty;
     widget.messageController.addListener(_onTextChanged);
+    _slashCommands = widget.slashCommands;
+    _slashCommandsSub = widget.slashCommandsStream?.listen((next) {
+      if (!mounted) return;
+      setState(() {
+        _slashCommands = next;
+      });
+    });
   }
 
   @override
   void dispose() {
     widget.messageController.removeListener(_onTextChanged);
     _mentionScrollController.dispose();
+    _slashScrollController.dispose();
+    _slashCommandsSub?.cancel();
     super.dispose();
   }
 
@@ -110,6 +141,18 @@ class ChatInputAreaState extends State<ChatInputArea> {
     // If audio support was removed, exit voice mode automatically.
     if (!widget.hasAudioModel && _isVoiceMode) {
       setState(() => _isVoiceMode = false);
+    }
+    if (!identical(oldWidget.slashCommands, widget.slashCommands)) {
+      _slashCommands = widget.slashCommands;
+    }
+    if (!identical(oldWidget.slashCommandsStream, widget.slashCommandsStream)) {
+      _slashCommandsSub?.cancel();
+      _slashCommandsSub = widget.slashCommandsStream?.listen((next) {
+        if (!mounted) return;
+        setState(() {
+          _slashCommands = next;
+        });
+      });
     }
   }
 
@@ -128,6 +171,9 @@ class ChatInputAreaState extends State<ChatInputArea> {
     if (widget.isGroupMode && !_insertingMention) {
       _detectMentionTrigger();
     }
+    if (!_insertingMention) {
+      _detectSlashTrigger();
+    }
   }
 
   void _syncMentionsWithText() {
@@ -142,13 +188,31 @@ class ChatInputAreaState extends State<ChatInputArea> {
   Widget build(BuildContext context) {
     final isDesktop = LayoutUtils.isDesktopLayout(context);
     final inputArea = isDesktop ? _buildDesktopInputArea() : _buildMobileInputArea();
-    if (!widget.isGroupMode) return inputArea;
+    final showMention = widget.isGroupMode && _showMentionPicker;
+    final showSlash = _showSlashPicker;
+    if (!showMention && !showSlash) return inputArea;
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        if (_showMentionPicker) _buildMentionPickerWidget(),
+        if (showMention) _buildMentionPickerWidget(),
+        if (showSlash) _buildSlashPickerWidget(),
         inputArea,
       ],
+    );
+  }
+
+  Widget _buildSlashPickerWidget() {
+    return SlashCommandPicker(
+      commands: _slashCommands,
+      query: _slashQuery,
+      selectedIndex: _slashSelectedIndex,
+      scrollController: _slashScrollController,
+      onHover: (index) {
+        if (index != _slashSelectedIndex) {
+          setState(() => _slashSelectedIndex = index);
+        }
+      },
+      onSelect: _applySlashCommand,
     );
   }
 
@@ -1048,6 +1112,144 @@ class ChatInputAreaState extends State<ChatInputArea> {
       widget.onMentionPickerChanged?.call();
     }
   }
+
+  /// Detect a `/` trigger at a word boundary (line start or preceded by
+  /// whitespace), populate the slash palette query from the text between
+  /// `/` and the caret. Mirrors [_detectMentionTrigger].
+  void _detectSlashTrigger() {
+    if (_slashCommands.isEmpty) {
+      if (_showSlashPicker) {
+        setState(() {
+          _showSlashPicker = false;
+          _slashTriggerOffset = -1;
+          _slashQuery = '';
+        });
+      }
+      return;
+    }
+
+    final text = widget.messageController.text;
+    final selection = widget.messageController.selection;
+    final cursorPos = selection.baseOffset;
+
+    if (cursorPos < 0 || cursorPos > text.length) {
+      if (_showSlashPicker) {
+        setState(() => _showSlashPicker = false);
+      }
+      return;
+    }
+
+    int slashPos = -1;
+    for (int i = cursorPos - 1; i >= 0; i--) {
+      final char = text[i];
+      if (char == '/') {
+        if (i == 0 || text[i - 1] == ' ' || text[i - 1] == '\n') {
+          slashPos = i;
+        }
+        break;
+      }
+      // Only allow [a-zA-Z0-9_-:] inside a slash-command token, break on
+      // anything else so "path/to/file" doesn't accidentally trigger.
+      final code = char.codeUnitAt(0);
+      final isAlnum = (code >= 48 && code <= 57) ||
+          (code >= 65 && code <= 90) ||
+          (code >= 97 && code <= 122);
+      if (!isAlnum && char != '_' && char != '-' && char != ':') break;
+    }
+
+    if (slashPos >= 0) {
+      final query = text.substring(slashPos + 1, cursorPos);
+      final filtered = SlashCommandPicker.filter(_slashCommands, query);
+      if (filtered.isNotEmpty) {
+        final queryChanged = query != _slashQuery;
+        setState(() {
+          _showSlashPicker = true;
+          _slashQuery = query;
+          _slashTriggerOffset = slashPos;
+          if (queryChanged) _slashSelectedIndex = 0;
+          if (_slashSelectedIndex >= filtered.length) {
+            _slashSelectedIndex = filtered.length - 1;
+          }
+        });
+        return;
+      }
+    }
+
+    if (_showSlashPicker) {
+      setState(() {
+        _showSlashPicker = false;
+        _slashTriggerOffset = -1;
+        _slashQuery = '';
+      });
+    }
+  }
+
+  /// Replace the `/<query>` range with `/<cmd.name> ` and dismiss the
+  /// palette. Guarded by [_insertingMention] so the resulting text-change
+  /// doesn't re-trigger detection in a loop.
+  void _applySlashCommand(SlashCommandInfo cmd) {
+    if (_slashTriggerOffset < 0) return;
+    final text = widget.messageController.text;
+    final cursorPos = widget.messageController.selection.baseOffset;
+    if (cursorPos < _slashTriggerOffset) return;
+
+    final insert = '/${cmd.name} ';
+    final newText =
+        text.substring(0, _slashTriggerOffset) + insert + text.substring(cursorPos);
+    final newCursor = _slashTriggerOffset + insert.length;
+
+    _insertingMention = true;
+    widget.messageController.value = TextEditingValue(
+      text: newText,
+      selection: TextSelection.collapsed(offset: newCursor),
+    );
+    _insertingMention = false;
+
+    setState(() {
+      _showSlashPicker = false;
+      _slashTriggerOffset = -1;
+      _slashQuery = '';
+    });
+  }
+
+  /// Public hook for the parent chat screen to route keyboard events to
+  /// the slash palette (↑/↓ to move selection, Enter to commit, Esc to
+  /// dismiss). Returns true if the event was handled.
+  bool handleSlashKeyEvent(KeyEvent event) {
+    if (!_showSlashPicker) return false;
+    if (event is! KeyDownEvent && event is! KeyRepeatEvent) return false;
+    final filtered = SlashCommandPicker.filter(_slashCommands, _slashQuery);
+    if (filtered.isEmpty) return false;
+
+    if (event.logicalKey == LogicalKeyboardKey.arrowDown) {
+      setState(() {
+        _slashSelectedIndex = (_slashSelectedIndex + 1) % filtered.length;
+      });
+      return true;
+    }
+    if (event.logicalKey == LogicalKeyboardKey.arrowUp) {
+      setState(() {
+        _slashSelectedIndex =
+            (_slashSelectedIndex - 1 + filtered.length) % filtered.length;
+      });
+      return true;
+    }
+    if (event.logicalKey == LogicalKeyboardKey.enter ||
+        event.logicalKey == LogicalKeyboardKey.numpadEnter) {
+      _applySlashCommand(filtered[_slashSelectedIndex]);
+      return true;
+    }
+    if (event.logicalKey == LogicalKeyboardKey.escape) {
+      setState(() {
+        _showSlashPicker = false;
+        _slashTriggerOffset = -1;
+      });
+      return true;
+    }
+    return false;
+  }
+
+  bool get showSlashPicker => _showSlashPicker;
 
   bool _mentionAllMatches(String query) {
     return 'all'.contains(query);

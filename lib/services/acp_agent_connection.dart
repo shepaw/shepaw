@@ -182,6 +182,27 @@ class ACPAgentConnection {
     _taskCallbacks.remove(taskId);
   }
 
+  // ==================== Slash commands (agent.commands.list) ====================
+
+  /// Last snapshot of agent-supplied slash commands. Populated on connect
+  /// (via `agent.commands.list` prefetch) and refreshed by incoming
+  /// `agent.commands.changed` notifications.
+  List<SlashCommandInfo> _slashCommands = const [];
+  final StreamController<List<SlashCommandInfo>> _slashCommandsController =
+      StreamController<List<SlashCommandInfo>>.broadcast();
+
+  /// Current snapshot. Empty until the agent has responded (or if the agent
+  /// doesn't advertise any commands — which is fine for the `/` palette,
+  /// we just show an empty list).
+  List<SlashCommandInfo> get slashCommands =>
+      List.unmodifiable(_slashCommands);
+
+  /// Stream that fires whenever the command list changes — either because
+  /// the agent pushed `agent.commands.changed`, or a fresh prefetch
+  /// resolved after (re)connect.
+  Stream<List<SlashCommandInfo>> get slashCommandsStream =>
+      _slashCommandsController.stream;
+
   // ==================== File Transfer Callbacks ====================
 
   void Function(String fileId, Uint8List chunk)? onFileChunk;
@@ -356,6 +377,10 @@ class ACPAgentConnection {
       // a failed card fetch shouldn't break an otherwise healthy connection,
       // it just leaves [supportsAsyncConfirmation] at its default `false`.
       unawaited(_refreshCapabilities());
+      // Prefetch the slash-command list so "/" palette is responsive even
+      // before the first message. Same fire-and-forget contract — if the
+      // agent doesn't support the method we just show an empty palette.
+      unawaited(_refreshSlashCommands());
     } catch (e) {
       _isConnected = false;
       _isAuthenticated = false;
@@ -842,6 +867,50 @@ class ACPAgentConnection {
     return await sendRequest(ACPMethod.ping);
   }
 
+  /// Fetch the agent's slash-command list and cache it for the "/" palette.
+  ///
+  /// Fires the [slashCommandsStream] when the payload changes. Silently
+  /// handles agents that don't implement `agent.commands.list` yet —
+  /// the method returns `method_not_found (-32601)` in that case and we
+  /// just leave the cache empty.
+  Future<void> _refreshSlashCommands() async {
+    try {
+      final response = await sendRequest(ACPMethod.agentCommandsList)
+          .timeout(const Duration(seconds: 5));
+      if (!response.isSuccess) return;
+      final next = _parseCommandsPayload(response.result);
+      if (next != null) _applySlashCommands(next);
+    } catch (e) {
+      LoggerService().debug(
+        'slash commands prefetch skipped: $e',
+        tag: 'ACP',
+      );
+    }
+  }
+
+  List<SlashCommandInfo>? _parseCommandsPayload(dynamic payload) {
+    if (payload is! Map) return null;
+    final raw = payload['commands'];
+    if (raw is! List) return null;
+    final out = <SlashCommandInfo>[];
+    for (final item in raw) {
+      if (item is! Map) continue;
+      try {
+        out.add(SlashCommandInfo.fromJson(Map<String, dynamic>.from(item)));
+      } catch (_) {
+        // Skip malformed entries — don't poison the whole list.
+      }
+    }
+    return out;
+  }
+
+  void _applySlashCommands(List<SlashCommandInfo> next) {
+    _slashCommands = next;
+    if (!_slashCommandsController.isClosed) {
+      _slashCommandsController.add(List.unmodifiable(next));
+    }
+  }
+
   /// Attempt a one-shot reconnect (e.g. after returning from background).
   /// Resets the reconnect counter so that the full retry budget is available.
   /// Returns `true` if the connection is established, `false` otherwise.
@@ -1194,6 +1263,10 @@ class ACPAgentConnection {
         final error = params['error'] as String? ?? 'Unknown error';
         onFileTransferError?.call(fileId, error);
         break;
+      case ACPMethod.agentCommandsChanged:
+        final next = _parseCommandsPayload(params);
+        if (next != null) _applySlashCommands(next);
+        break;
       default:
         LoggerService().debug('Unknown notification: $method', tag: 'ACP');
     }
@@ -1344,6 +1417,7 @@ class ACPAgentConnection {
   void dispose() {
     _disposed = true;
     disconnect();
+    _slashCommandsController.close();
   }
 }
 

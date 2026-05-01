@@ -356,4 +356,59 @@ void main() {
       expect(ACPErrorCode.taskCancelled, -32008);
     });
   });
+
+  group('SlashCommandInfo Tests', () {
+    test('fromJson parses a fully populated entry', () {
+      final info = SlashCommandInfo.fromJson({
+        'name': 'plan',
+        'description': 'Plan a feature',
+        'argument_hint': '<feature>',
+        'scope': 'project',
+        'source': 'filesystem',
+      });
+      expect(info.name, 'plan');
+      expect(info.description, 'Plan a feature');
+      expect(info.argumentHint, '<feature>');
+      expect(info.scope, CommandScope.project);
+      expect(info.source, CommandSource.filesystem);
+    });
+
+    test('fromJson tolerates missing optional fields', () {
+      final info = SlashCommandInfo.fromJson({'name': 'compact'});
+      expect(info.name, 'compact');
+      expect(info.description, isNull);
+      expect(info.argumentHint, isNull);
+      expect(info.scope, isNull);
+      expect(info.source, isNull);
+    });
+
+    test('fromJson returns null enum for unknown string', () {
+      final info = SlashCommandInfo.fromJson({
+        'name': 'x',
+        'scope': 'bogus',
+        'source': 'also-bogus',
+      });
+      expect(info.scope, isNull);
+      expect(info.source, isNull);
+    });
+
+    test('toJson omits null fields and uses snake_case for argument_hint', () {
+      const info = SlashCommandInfo(
+        name: 'deploy',
+        argumentHint: '[service]',
+        scope: CommandScope.project,
+      );
+      final json = info.toJson();
+      expect(json['name'], 'deploy');
+      expect(json['argument_hint'], '[service]');
+      expect(json['scope'], 'project');
+      expect(json.containsKey('description'), isFalse);
+      expect(json.containsKey('source'), isFalse);
+    });
+
+    test('ACPMethod constants use the right wire strings', () {
+      expect(ACPMethod.agentCommandsList, 'agent.commands.list');
+      expect(ACPMethod.agentCommandsChanged, 'agent.commands.changed');
+    });
+  });
 }

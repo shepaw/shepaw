@@ -205,6 +205,9 @@ class ACPMethod {
   /// 获取 Agent 卡片
   static const String agentGetCard = 'agent.getCard';
 
+  /// 获取 agent 支持的 slash 指令（用于聊天输入框 "/" 弹出列表）
+  static const String agentCommandsList = 'agent.commands.list';
+
   /// 心跳
   static const String ping = 'ping';
 
@@ -247,6 +250,9 @@ class ACPMethod {
 
   /// 任务错误
   static const String taskError = 'task.error';
+
+  /// Agent 可用 slash 指令列表发生变化（文件增删或 SDK 重新加载）
+  static const String agentCommandsChanged = 'agent.commands.changed';
 
   // ==================== App -> Agent 通知 (群组事件) ====================
 
@@ -335,4 +341,82 @@ class ACPErrorCode {
   static const int taskFailed = -32006;
   static const int timeout = -32007;
   static const int taskCancelled = -32008;
+}
+
+/// Slash 指令的作用域来源
+enum CommandScope {
+  project,
+  user,
+  builtin;
+
+  static CommandScope? fromString(String? s) {
+    switch (s) {
+      case 'project':
+        return CommandScope.project;
+      case 'user':
+        return CommandScope.user;
+      case 'builtin':
+        return CommandScope.builtin;
+      default:
+        return null;
+    }
+  }
+}
+
+/// 指令是从哪里被发现的（SDK init 消息 vs 文件系统扫描）
+enum CommandSource {
+  sdk,
+  filesystem;
+
+  static CommandSource? fromString(String? s) {
+    switch (s) {
+      case 'sdk':
+        return CommandSource.sdk;
+      case 'filesystem':
+        return CommandSource.filesystem;
+      default:
+        return null;
+    }
+  }
+}
+
+/// Agent 公布的单条 slash 指令元数据
+///
+/// Wire 字段全部 snake_case，与 agent.commands.list 响应保持一致。
+/// `name` 不带前导 `/`，shepaw 插入输入框时会自动加上。
+class SlashCommandInfo {
+  final String name;
+  final String? description;
+  final String? argumentHint;
+  final CommandScope? scope;
+  final CommandSource? source;
+
+  const SlashCommandInfo({
+    required this.name,
+    this.description,
+    this.argumentHint,
+    this.scope,
+    this.source,
+  });
+
+  factory SlashCommandInfo.fromJson(Map<String, dynamic> json) {
+    return SlashCommandInfo(
+      name: json['name'] as String,
+      description: json['description'] as String?,
+      argumentHint: json['argument_hint'] as String?,
+      scope: CommandScope.fromString(json['scope'] as String?),
+      source: CommandSource.fromString(json['source'] as String?),
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+        'name': name,
+        if (description != null) 'description': description,
+        if (argumentHint != null) 'argument_hint': argumentHint,
+        if (scope != null) 'scope': scope!.name,
+        if (source != null) 'source': source!.name,
+      };
+
+  @override
+  String toString() => '/$name${argumentHint != null ? ' $argumentHint' : ''}';
 }

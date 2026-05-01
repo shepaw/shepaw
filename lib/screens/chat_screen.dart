@@ -1537,6 +1537,15 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
             },
             onDesktopPaste: _handleDesktopPaste,
             hasAudioModel: _agentSupportsAudio,
+            slashCommands: c.agentId == null
+                ? const []
+                : (c.chatService.getACPConnection(c.agentId!)?.slashCommands ??
+                    const []),
+            slashCommandsStream: c.agentId == null
+                ? null
+                : c.chatService
+                    .getACPConnection(c.agentId!)
+                    ?.slashCommandsStream,
           ),
 
           // Emoji picker panel
