@@ -1546,6 +1546,19 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                 : c.chatService
                     .getACPConnection(c.agentId!)
                     ?.slashCommandsStream,
+            // Live resolver: read the current snapshot on every keystroke.
+            // Falls back to the process-wide snapshot cache (populated by
+            // any past ACP connection — including the short-lived
+            // health-check connection) when no persistent connection is
+            // active yet. This is what lets the "/" palette work before
+            // the user has sent their first message.
+            slashCommandsResolver: () {
+              if (c.agentId == null) return const [];
+              final conn = c.chatService.getACPConnection(c.agentId!);
+              final live = conn?.slashCommands ?? const [];
+              if (live.isNotEmpty) return live;
+              return c.chatService.getSlashCommandsSnapshot(c.agentId!);
+            },
           ),
 
           // Emoji picker panel

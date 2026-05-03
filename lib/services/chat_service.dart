@@ -66,6 +66,13 @@ class ChatService implements IPawChatSender {
   // ACP connection pool (keyed by agent ID)
   final Map<String, ACPAgentConnection> _acpConnections = {};
 
+  // Cached slash-command snapshots, keyed by agent ID. Populated by any
+  // connection that sees `agent.commands.changed` (including the one-shot
+  // health-check connection that otherwise disposes before the user ever
+  // uses it). The `/` palette reads from here before the persistent
+  // connection is established on the first send.
+  final Map<String, List<SlashCommandInfo>> _slashCommandsSnapshot = {};
+
   // Active tasks (keyed by channelId) — survives UI detach/reattach
   final Map<String, ActiveTask> _activeTasks = {};
 
@@ -181,6 +188,11 @@ class ChatService implements IPawChatSender {
     // Register this instance as the IPawChatSender so She can dispatch
     // `shepaw agents chat` commands.
     ShepawCLI.instance.chatSender = this;
+    // Wire every ACPAgentConnection's slash-command updates back into our
+    // process-wide snapshot map. This lets the "/" palette populate from
+    // commands seen during short-lived health-check connections, even
+    // though those connections are disposed before the chat screen opens.
+    ACPAgentConnection.slashCommandsSnapshotHook = cacheSlashCommandsSnapshot;
   }
 
   /// Notification provider, injected from the widget layer.
@@ -573,6 +585,22 @@ class ChatService implements IPawChatSender {
   /// Returns the active ACP connection for [agentId], or null.
   ACPAgentConnection? getACPConnection(String agentId) =>
       _agentMessagingService.getACPConnection(agentId);
+
+  /// Update the cached slash-command snapshot for [agentId].
+  ///
+  /// Called by any `ACPAgentConnection` that receives `agent.commands.changed`
+  /// or a fresh `agent.commands.list` response — including short-lived
+  /// health-check connections that dispose before the user sees the chat
+  /// screen. The `/` palette can read from here via
+  /// [getSlashCommandsSnapshot] to populate before the persistent
+  /// connection is established.
+  void cacheSlashCommandsSnapshot(String agentId, List<SlashCommandInfo> commands) {
+    _slashCommandsSnapshot[agentId] = List.unmodifiable(commands);
+  }
+
+  /// Read the cached slash-command snapshot for [agentId], or an empty list.
+  List<SlashCommandInfo> getSlashCommandsSnapshot(String agentId) =>
+      _slashCommandsSnapshot[agentId] ?? const [];
 
   /// Send additional history to agent as a supplement after REQUEST_HISTORY.
   /// Returns the agent's re-answer message, or null if no more history is

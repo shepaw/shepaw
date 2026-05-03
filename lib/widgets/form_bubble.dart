@@ -255,10 +255,17 @@ class _FormBubbleState extends State<FormBubble> {
     final selectedId = _fieldValues[fieldId] as String?;
 
     return Column(
-      children: options.map<Widget>((option) {
+      children: options.asMap().entries.map<Widget>((entry) {
+        final index = entry.key;
+        final option = entry.value;
         final optionMap = option as Map<String, dynamic>;
-        final id = _optionKey(optionMap);
+        // If the option has neither `id` nor `value` (or both are empty),
+        // fall back to a synthetic per-index id so rows don't all collapse
+        // to the same "" key — otherwise selecting one would "select" all.
+        var id = _optionKey(optionMap);
+        if (id.isEmpty) id = '__idx_$index';
         final label = optionMap['label'] as String? ?? '';
+        final description = optionMap['description'] as String?;
         final isSelected = selectedId == id;
 
         return GestureDetector(
@@ -283,21 +290,41 @@ class _FormBubbleState extends State<FormBubble> {
               ),
             ),
             child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Icon(
-                  isSelected ? Icons.radio_button_checked : Icons.radio_button_off,
-                  size: 20,
-                  color: isSelected ? Theme.of(context).primaryColor : Colors.grey[400],
+                Padding(
+                  padding: const EdgeInsets.only(top: 2),
+                  child: Icon(
+                    isSelected ? Icons.radio_button_checked : Icons.radio_button_off,
+                    size: 20,
+                    color: isSelected ? Theme.of(context).primaryColor : Colors.grey[400],
+                  ),
                 ),
                 const SizedBox(width: 10),
                 Expanded(
-                  child: Text(
-                    label,
-                    style: TextStyle(
-                      fontSize: 14,
-                      color: Colors.black87,
-                      fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
-                    ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        label.isNotEmpty ? label : id,
+                        style: TextStyle(
+                          fontSize: 14,
+                          color: Colors.black87,
+                          fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
+                        ),
+                      ),
+                      if (description != null && description.isNotEmpty)
+                        Padding(
+                          padding: const EdgeInsets.only(top: 2),
+                          child: Text(
+                            description,
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: Colors.grey[600],
+                            ),
+                          ),
+                        ),
+                    ],
                   ),
                 ),
               ],

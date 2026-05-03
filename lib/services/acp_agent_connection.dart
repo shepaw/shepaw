@@ -212,6 +212,14 @@ class ACPAgentConnection {
   /// Called when connection state changes
   void Function(bool isConnected)? onConnectionStateChanged;
 
+  /// Process-wide hook invoked whenever any `ACPAgentConnection` receives a
+  /// fresh slash-command list (via prefetch response or `agent.commands.changed`
+  /// notification). Lets `ChatService` persist the snapshot across the
+  /// connection's lifetime — useful for short-lived health-check connections
+  /// that dispose before the user interacts with the chat screen.
+  static void Function(String agentId, List<SlashCommandInfo> commands)?
+      slashCommandsSnapshotHook;
+
   ACPAgentConnection({
     required this.agentId,
     ACPHubHandlers? hubHandlers,
@@ -873,6 +881,13 @@ class ACPAgentConnection {
   /// handles agents that don't implement `agent.commands.list` yet —
   /// the method returns `method_not_found (-32601)` in that case and we
   /// just leave the cache empty.
+  /// Public accessor for the slash-command prefetch. Normally called as
+  /// fire-and-forget from [connect], but short-lived connections (such as
+  /// the health-check ping in `RemoteAgentService.checkAgentHealth`) can
+  /// await this explicitly before [dispose] so the process-wide snapshot
+  /// cache in [ChatService] gets populated before the socket is torn down.
+  Future<void> refreshSlashCommands() => _refreshSlashCommands();
+
   Future<void> _refreshSlashCommands() async {
     try {
       final response = await sendRequest(ACPMethod.agentCommandsList)
@@ -908,6 +923,14 @@ class ACPAgentConnection {
     _slashCommands = next;
     if (!_slashCommandsController.isClosed) {
       _slashCommandsController.add(List.unmodifiable(next));
+    }
+    // Notify the process-wide snapshot cache so short-lived health-check
+    // connections can still seed the "/" palette for the persistent chat
+    // connection that comes later.
+    try {
+      slashCommandsSnapshotHook?.call(agentId, next);
+    } catch (_) {
+      /* hook must never break connection state */
     }
   }
 

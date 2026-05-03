@@ -476,6 +476,16 @@ class RemoteAgentService {
             enrollmentCode: enrollmentCode,
           );
           final pingResponse = await connection.ping();
+          // Seed the process-wide slash-command snapshot BEFORE this temp
+          // connection is disposed. Without this, the next chat-screen
+          // entry has no commands to show when the user types "/" before
+          // sending the first real message. Swallow errors — prefetch is
+          // best-effort and the full chat send path will refresh it later.
+          try {
+            await connection.refreshSlashCommands();
+          } catch (_) {
+            /* ignore — prefetch is best-effort */
+          }
           return pingResponse.isSuccess;
         }).timeout(timeout);
 

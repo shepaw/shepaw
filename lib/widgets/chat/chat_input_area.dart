@@ -53,6 +53,15 @@ class ChatInputArea extends StatefulWidget {
   final List<SlashCommandInfo> slashCommands;
   final Stream<List<SlashCommandInfo>>? slashCommandsStream;
 
+  /// On-demand resolver for the live slash-command list. If set, this is
+  /// called every time the user types `/`, so the palette sees the current
+  /// snapshot even if the parent widget's build didn't happen to coincide
+  /// with the agent's `agent.commands.changed` notification. This is the
+  /// robust path for the "first launch" race where the ACP connection is
+  /// created lazily after screen entry and the parent doesn't immediately
+  /// rebuild when it becomes available.
+  final List<SlashCommandInfo> Function()? slashCommandsResolver;
+
   const ChatInputArea({
     super.key,
     required this.messageController,
@@ -75,6 +84,7 @@ class ChatInputArea extends StatefulWidget {
     this.hasAudioModel = false,
     this.slashCommands = const [],
     this.slashCommandsStream,
+    this.slashCommandsResolver,
   });
 
   @override
@@ -120,9 +130,18 @@ class ChatInputAreaState extends State<ChatInputArea> {
     _slashCommands = widget.slashCommands;
     _slashCommandsSub = widget.slashCommandsStream?.listen((next) {
       if (!mounted) return;
+      final wasEmpty = _slashCommands.isEmpty;
       setState(() {
         _slashCommands = next;
       });
+      // First-launch race fix: if the user already typed "/" before the
+      // agent's command list arrived, `_detectSlashTrigger` bailed out on
+      // an empty list and left the picker dismissed. Re-run it now so
+      // the palette opens against the text the user already has in the
+      // input, instead of forcing them to type another key.
+      if (wasEmpty && next.isNotEmpty && !_showSlashPicker) {
+        _detectSlashTrigger();
+      }
     });
   }
 
@@ -143,15 +162,23 @@ class ChatInputAreaState extends State<ChatInputArea> {
       setState(() => _isVoiceMode = false);
     }
     if (!identical(oldWidget.slashCommands, widget.slashCommands)) {
+      final wasEmpty = _slashCommands.isEmpty;
       _slashCommands = widget.slashCommands;
+      if (wasEmpty && _slashCommands.isNotEmpty && !_showSlashPicker) {
+        _detectSlashTrigger();
+      }
     }
     if (!identical(oldWidget.slashCommandsStream, widget.slashCommandsStream)) {
       _slashCommandsSub?.cancel();
       _slashCommandsSub = widget.slashCommandsStream?.listen((next) {
         if (!mounted) return;
+        final wasEmpty = _slashCommands.isEmpty;
         setState(() {
           _slashCommands = next;
         });
+        if (wasEmpty && next.isNotEmpty && !_showSlashPicker) {
+          _detectSlashTrigger();
+        }
       });
     }
   }
@@ -190,7 +217,9 @@ class ChatInputAreaState extends State<ChatInputArea> {
     final inputArea = isDesktop ? _buildDesktopInputArea() : _buildMobileInputArea();
     final showMention = widget.isGroupMode && _showMentionPicker;
     final showSlash = _showSlashPicker;
-    if (!showMention && !showSlash) return inputArea;
+    // Always wrap in a Column so toggling picker visibility doesn't
+    // re-parent the input area — re-parenting would tear down the
+    // TextField's internal state and drop the keyboard focus.
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
@@ -969,6 +998,50 @@ class ChatInputAreaState extends State<ChatInputArea> {
   KeyEventResult _handleInputKeyEvent(FocusNode node, KeyEvent event) {
     if (event is! KeyDownEvent) return KeyEventResult.ignored;
 
+    // Slash palette takes precedence over mention picker when active: if
+    // the user just typed "/", they want slash-command completion, not
+    // message send or @mention submenus.
+    if (_showSlashPicker) {
+      final filtered =
+          SlashCommandPicker.filter(_slashCommands, _slashQuery);
+      if (filtered.isNotEmpty) {
+        if (event.logicalKey == LogicalKeyboardKey.arrowDown) {
+          setState(() {
+            _slashSelectedIndex = (_slashSelectedIndex + 1) % filtered.length;
+          });
+          return KeyEventResult.handled;
+        }
+        if (event.logicalKey == LogicalKeyboardKey.arrowUp) {
+          setState(() {
+            _slashSelectedIndex =
+                (_slashSelectedIndex - 1 + filtered.length) % filtered.length;
+          });
+          return KeyEventResult.handled;
+        }
+        if (event.logicalKey == LogicalKeyboardKey.enter ||
+            event.logicalKey == LogicalKeyboardKey.numpadEnter) {
+          // Pick the highlighted command and insert it — do NOT send.
+          if (widget.messageController.value.composing == TextRange.empty &&
+              !HardwareKeyboard.instance.isShiftPressed) {
+            _applySlashCommand(filtered[_slashSelectedIndex]);
+            return KeyEventResult.handled;
+          }
+        }
+        if (event.logicalKey == LogicalKeyboardKey.tab) {
+          _applySlashCommand(filtered[_slashSelectedIndex]);
+          return KeyEventResult.handled;
+        }
+        if (event.logicalKey == LogicalKeyboardKey.escape) {
+          setState(() {
+            _showSlashPicker = false;
+            _slashTriggerOffset = -1;
+            _slashQuery = '';
+          });
+          return KeyEventResult.handled;
+        }
+      }
+    }
+
     if (event.logicalKey == LogicalKeyboardKey.enter) {
       if (widget.messageController.value.composing != TextRange.empty) {
         return KeyEventResult.ignored;
@@ -1117,6 +1190,15 @@ class ChatInputAreaState extends State<ChatInputArea> {
   /// whitespace), populate the slash palette query from the text between
   /// `/` and the caret. Mirrors [_detectMentionTrigger].
   void _detectSlashTrigger() {
+    // Live-resolve the current command list on every call. This sidesteps
+    // the race between ACP connection creation and widget subscription:
+    // even if [slashCommandsStream] was null when this widget first
+    // mounted, the resolver reads directly from the connection on each
+    // keystroke, so the palette fires as soon as the agent has pushed or
+    // responded with the command list.
+    if (widget.slashCommandsResolver != null) {
+      _slashCommands = widget.slashCommandsResolver!();
+    }
     if (_slashCommands.isEmpty) {
       if (_showSlashPicker) {
         setState(() {
@@ -1210,43 +1292,10 @@ class ChatInputAreaState extends State<ChatInputArea> {
       _slashTriggerOffset = -1;
       _slashQuery = '';
     });
-  }
 
-  /// Public hook for the parent chat screen to route keyboard events to
-  /// the slash palette (↑/↓ to move selection, Enter to commit, Esc to
-  /// dismiss). Returns true if the event was handled.
-  bool handleSlashKeyEvent(KeyEvent event) {
-    if (!_showSlashPicker) return false;
-    if (event is! KeyDownEvent && event is! KeyRepeatEvent) return false;
-    final filtered = SlashCommandPicker.filter(_slashCommands, _slashQuery);
-    if (filtered.isEmpty) return false;
-
-    if (event.logicalKey == LogicalKeyboardKey.arrowDown) {
-      setState(() {
-        _slashSelectedIndex = (_slashSelectedIndex + 1) % filtered.length;
-      });
-      return true;
-    }
-    if (event.logicalKey == LogicalKeyboardKey.arrowUp) {
-      setState(() {
-        _slashSelectedIndex =
-            (_slashSelectedIndex - 1 + filtered.length) % filtered.length;
-      });
-      return true;
-    }
-    if (event.logicalKey == LogicalKeyboardKey.enter ||
-        event.logicalKey == LogicalKeyboardKey.numpadEnter) {
-      _applySlashCommand(filtered[_slashSelectedIndex]);
-      return true;
-    }
-    if (event.logicalKey == LogicalKeyboardKey.escape) {
-      setState(() {
-        _showSlashPicker = false;
-        _slashTriggerOffset = -1;
-      });
-      return true;
-    }
-    return false;
+    // Keep focus in the TextField so the user can keep typing arguments
+    // (e.g. `/plan <ticket>`) without having to click back in.
+    widget.textFieldFocusNode.requestFocus();
   }
 
   bool get showSlashPicker => _showSlashPicker;
