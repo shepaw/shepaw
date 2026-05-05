@@ -48,8 +48,6 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
   bool _isDeleting = false;
   bool _isEditing = false;
   bool _isSaving = false;
-  bool _isRegeneratingToken = false;
-
   // 独立刷新状态（外部访问区域）
   Future<List<String>>? _lanAddressesFuture;
   Future<String?>? _publicUrlFuture;
@@ -60,7 +58,6 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
   late TextEditingController _nameController;
   late TextEditingController _bioController;
   late TextEditingController _endpointController;
-  late TextEditingController _tokenController;
   late TextEditingController _systemPromptController;
   late TextEditingController _remoteAgentIdController;
   late TextEditingController _maxToolRoundsController;
@@ -131,7 +128,6 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
     _nameController = TextEditingController(text: _agent.name);
     _bioController = TextEditingController(text: _agent.bio ?? '');
     _endpointController = TextEditingController(text: _agent.endpoint);
-    _tokenController = TextEditingController(text: _agent.token);
     _systemPromptController = TextEditingController(
       text: _agent.metadata['system_prompt'] as String? ?? '',
     );
@@ -204,7 +200,6 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
     _nameController.dispose();
     _bioController.dispose();
     _endpointController.dispose();
-    _tokenController.dispose();
     _systemPromptController.dispose();
     _remoteAgentIdController.dispose();
     _maxToolRoundsController.dispose();
@@ -245,18 +240,9 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
       return;
     }
 
-    // Token is required for remote agents (She and local-LLM agents don't need one)
-    final isRemoteAgent = !_isLocalMode;
-    final newToken = _tokenController.text.trim();
-    if (isRemoteAgent && newToken.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(l10n.agentDetail_tokenRequired),
-          backgroundColor: Colors.red,
-        ),
-      );
-      return;
-    }
+    // v2.1: token is no longer required — authentication is handled via Noise
+    // public-key pinning. Keep reading the field so users who still have an
+    // old token stored can clear or update it, but never block saving on it.
 
     setState(() => _isSaving = true);
 
@@ -403,7 +389,6 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
         endpoint: _endpointController.text.trim(),
         protocol: _editingProtocol,
         connectionType: _editingConnectionType,
-        token: newToken.isNotEmpty ? newToken : null,
         metadata: metadata,
         updatedAt: DateTime.now().millisecondsSinceEpoch,
       );
@@ -525,58 +510,6 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
         ),
       ),
     );
-  }
-
-  /// Regenerate the agent's token (both local and remote agents).
-  Future<void> _regenerateToken() async {
-    final l10n = AppLocalizations.of(context);
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text(l10n.agent_regenerateTokenConfirmTitle),
-        content: Text(l10n.agent_regenerateTokenConfirmBody),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: Text(l10n.common_cancel),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            style: TextButton.styleFrom(foregroundColor: Colors.orange),
-            child: Text(l10n.agent_regenerateToken),
-          ),
-        ],
-      ),
-    );
-    if (confirmed != true || !mounted) return;
-
-    setState(() => _isRegeneratingToken = true);
-    try {
-      final dbService = LocalDatabaseService();
-      final tokenService = TokenService(dbService);
-      final agentService = RemoteAgentService(dbService, tokenService);
-      final newToken = await agentService.regenerateToken(_agent.id);
-      final updatedAgent = _agent.copyWith(token: newToken);
-      setState(() {
-        _agent = updatedAgent;
-        _isRegeneratingToken = false;
-      });
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(l10n.agent_tokenRegenerated)),
-        );
-      }
-    } catch (e) {
-      setState(() => _isRegeneratingToken = false);
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(l10n.agent_tokenRegenerateFailed('$e')),
-            backgroundColor: Colors.red,
-          ),
-        );
-      }
-    }
   }
 
   // ==================== 头像选择 ====================
@@ -844,11 +777,6 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
           // 外部访问卡片（仅本地 agent 显示）
           const SizedBox(height: 16),
           _buildExternalAccessCard(),
-        ],
-        // Token 卡片（仅远端 agent 显示）
-        if (!_isLocalMode) ...[
-          const SizedBox(height: 16),
-          _buildTokenCard(),
         ],
         const SizedBox(height: 24),
         SizedBox(
@@ -1297,83 +1225,6 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
     );
   }
 
-  Widget _buildTokenCard() {
-    final l10n = AppLocalizations.of(context);
-    return Card(
-      color: Theme.of(context).colorScheme.primaryContainer,
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Icon(
-                  Icons.key,
-                  color: Theme.of(context).colorScheme.primary,
-                ),
-                const SizedBox(width: 8),
-                Text(
-                  l10n.agentDetail_authToken,
-                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                        fontWeight: FontWeight.bold,
-                        color: Theme.of(context).colorScheme.primary,
-                      ),
-                ),
-                const Spacer(),
-                if (_isRegeneratingToken)
-                  const SizedBox(
-                    width: 20,
-                    height: 20,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  )
-                else
-                  IconButton(
-                    icon: const Icon(Icons.refresh),
-                    tooltip: l10n.agent_regenerateToken,
-                    onPressed: _regenerateToken,
-                  ),
-              ],
-            ),
-            const SizedBox(height: 12),
-            Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: Colors.black87,
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: SelectableText(
-                _agent.token,
-                style: const TextStyle(
-                  fontFamily: 'Courier',
-                  color: Colors.greenAccent,
-                  fontSize: 13,
-                ),
-              ),
-            ),
-            const SizedBox(height: 12),
-            SizedBox(
-              width: double.infinity,
-              child: ElevatedButton.icon(
-                onPressed: () {
-                  Clipboard.setData(ClipboardData(text: _agent.token));
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: Text(l10n.agentDetail_tokenCopied),
-                      duration: const Duration(seconds: 2),
-                    ),
-                  );
-                },
-                icon: const Icon(Icons.copy),
-                label: Text(l10n.agentDetail_copyToken),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
 
   // ==================== 外部访问卡片 ====================
 
@@ -1496,7 +1347,7 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
             return Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: addresses.map((addr) {
-                final url = '$addr?token=${_agent.token}&agentId=${_agent.id}';
+                final url = '$addr?agentId=${_agent.id}';
                 return _buildUrlRow(url, colorScheme, l10n);
               }).toList(),
             );
@@ -1598,7 +1449,7 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
     final tunnelService = ChannelTunnelService.instance;
     final endpoint = tunnelService.getPublicEndpoint(config);
     if (endpoint == null || endpoint.isEmpty) return null;
-    return '$endpoint?token=${_agent.token}&agentId=${_agent.id}';
+    return '$endpoint?agentId=${_agent.id}';
   }
 
   // ── Refresh methods ────────────────────────────────────────────────────────
@@ -2085,35 +1936,6 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
                 prefixIcon: const Icon(Icons.language),
               ),
               keyboardType: TextInputType.url,
-            ),
-            const SizedBox(height: 16),
-
-            // Token（可编辑）
-            TextFormField(
-              controller: _tokenController,
-              decoration: InputDecoration(
-                labelText: 'Token',
-                hintText: l10n.agentDetail_tokenHint,
-                border: const OutlineInputBorder(),
-                prefixIcon: const Icon(Icons.vpn_key),
-                suffixIcon: IconButton(
-                  icon: const Icon(Icons.copy, size: 18),
-                  tooltip: l10n.agentDetail_copyTokenTooltip,
-                  onPressed: () {
-                    final t = _tokenController.text.trim();
-                    if (t.isNotEmpty) {
-                      Clipboard.setData(ClipboardData(text: t));
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(
-                          content: Text(l10n.agentDetail_tokenCopied),
-                          duration: const Duration(seconds: 2),
-                        ),
-                      );
-                    }
-                  },
-                ),
-              ),
-              style: const TextStyle(fontFamily: 'monospace', fontSize: 13),
             ),
             const SizedBox(height: 16),
 

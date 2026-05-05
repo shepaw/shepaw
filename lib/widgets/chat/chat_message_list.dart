@@ -38,6 +38,11 @@ class ChatMessageList extends StatelessWidget {
   final String? highlightedMessageId;
   final void Function(Message message)? onViewTrace;
 
+  /// sender id → avatar（emoji / 本地路径 / URL）的映射表。
+  /// DM 模式传 `{agentId: agentAvatar}`；群组模式传所有成员的头像映射。
+  /// 缺失的 sender 退回 [MessageBubble] 内部默认逻辑。
+  final Map<String, String> agentAvatarMap;
+
   /// When `true`, action-confirmation cards render an "offline" hint so
   /// users know tapping Allow/Deny will first need a reconnect. Threaded
   /// down into each [MessageBubble].
@@ -67,6 +72,7 @@ class ChatMessageList extends StatelessWidget {
     required this.onScrollToMessage,
     this.highlightedMessageId,
     this.onViewTrace,
+    this.agentAvatarMap = const {},
     this.isAgentOffline = false,
   });
 
@@ -220,6 +226,7 @@ class ChatMessageList extends StatelessWidget {
                     onAvatarTap: message.from.isAgent
                         ? () => onAgentAvatarTap(message.from.id)
                         : null,
+                    senderAvatar: agentAvatarMap[message.from.id],
                     isAgentOffline: isAgentOffline,
                   ),
                 ),

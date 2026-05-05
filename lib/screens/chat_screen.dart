@@ -1473,6 +1473,15 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                               );
                             }
                           },
+                          agentAvatarMap: c.isGroupMode
+                              ? {
+                                  for (final a in c.groupAgents)
+                                    if (a.avatar.isNotEmpty)
+                                      a.id: a.avatar,
+                                }
+                              : (c.agentId != null && c.agentAvatar != null && c.agentAvatar!.isNotEmpty
+                                  ? {c.agentId!: c.agentAvatar!}
+                                  : const {}),
                           isAgentOffline: !c.isAgentOnline,
                         ),
                       ),

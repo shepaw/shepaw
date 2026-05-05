@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_markdown/flutter_markdown.dart';
 import 'package:markdown/markdown.dart' as md;
@@ -39,6 +40,10 @@ class MessageBubble extends StatelessWidget {
   final Map<String, int> imageIndexMap;
   final VoidCallback? onAvatarTap;
 
+  /// 发送者的自定义头像（emoji / 本地文件路径 / URL）。
+  /// 非空时优先用于渲染头像，覆盖从 [message.from.name] 提取的 emoji 逻辑。
+  final String? senderAvatar;
+
   /// When `true`, the action-confirmation card (if rendered) shows an
   /// "offline — will reconnect on tap" hint. Pass the negation of whatever
   /// `isAgentOnline` signal the screen has. Default `false` keeps the
@@ -65,6 +70,7 @@ class MessageBubble extends StatelessWidget {
     this.groupedImageMessages,
     this.imageIndexMap = const {},
     this.onAvatarTap,
+    this.senderAvatar,
     this.isAgentOffline = false,
   }) : super(key: key);
 
@@ -197,10 +203,7 @@ class MessageBubble extends StatelessWidget {
                           ),
                         ),
                       )
-                    : Text(
-                        _getAvatar(),
-                        style: const TextStyle(fontSize: 24),
-                      ),
+                    : _buildAvatarWidget(),
               ),
             ),
             const SizedBox(width: 8),
@@ -329,10 +332,7 @@ class MessageBubble extends StatelessWidget {
                 borderRadius: BorderRadius.circular(8),
               ),
               alignment: Alignment.center,
-              child: Text(
-                _getAvatar(),
-                style: const TextStyle(fontSize: 24),
-              ),
+              child: _buildAvatarWidget(),
             ),
           ],
         ],
@@ -622,6 +622,17 @@ class MessageBubble extends StatelessWidget {
     if (message.from.id == SheService.sheId) {
       return SheService.sheAvatar; // '🌸'
     }
+
+    // senderAvatar 有值时：若是纯 emoji（≤ 2 个字符或不含 /、http），直接返回
+    if (senderAvatar != null && senderAvatar!.isNotEmpty) {
+      final isImagePath = senderAvatar!.startsWith('/') ||
+          senderAvatar!.startsWith('http://') ||
+          senderAvatar!.startsWith('https://');
+      if (!isImagePath) return senderAvatar!;
+      // 图片路径/URL 交由 _buildAvatarWidget 处理，此处返回 fallback
+      return message.from.isAgent ? '🤖' : '👤';
+    }
+
     // 尝试从 from.name 中提取 emoji
     if (message.from.name.isNotEmpty) {
       final firstChar = message.from.name.runes.first;
@@ -632,5 +643,49 @@ class MessageBubble extends StatelessWidget {
 
     // 默认头像
     return message.from.isAgent ? '🤖' : '👤';
+  }
+
+  /// 根据 [senderAvatar] 决定渲染图片还是 emoji 文字。
+  Widget _buildAvatarWidget() {
+    // She 专属 emoji 头像
+    if (message.from.id == SheService.sheId) {
+      return Text(SheService.sheAvatar, style: const TextStyle(fontSize: 24));
+    }
+
+    if (senderAvatar != null && senderAvatar!.isNotEmpty) {
+      final isLocalFile = senderAvatar!.startsWith('/') &&
+          !senderAvatar!.startsWith('//');
+      final isUrl = senderAvatar!.startsWith('http://') ||
+          senderAvatar!.startsWith('https://');
+
+      if (isLocalFile || isUrl) {
+        final fallback = Text(
+          message.from.isAgent ? '🤖' : '👤',
+          style: const TextStyle(fontSize: 24),
+        );
+        return ClipRRect(
+          borderRadius: BorderRadius.circular(8),
+          child: isLocalFile
+              ? Image.file(
+                  File(senderAvatar!),
+                  width: 32,
+                  height: 32,
+                  fit: BoxFit.cover,
+                  errorBuilder: (_, __, ___) => fallback,
+                )
+              : Image.network(
+                  senderAvatar!,
+                  width: 32,
+                  height: 32,
+                  fit: BoxFit.cover,
+                  errorBuilder: (_, __, ___) => fallback,
+                ),
+        );
+      }
+      // 纯 emoji 或普通字符串
+      return Text(senderAvatar!, style: const TextStyle(fontSize: 24));
+    }
+
+    return Text(_getAvatar(), style: const TextStyle(fontSize: 24));
   }
 }
