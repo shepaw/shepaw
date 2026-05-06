@@ -672,13 +672,17 @@ class ACPAgentConnection {
     _isAuthenticated = false;
     onConnectionStateChanged?.call(false);
 
-    // Fail all pending requests
+    // Fail all pending JSON-RPC requests.
     for (final completer in _pendingRequests.values) {
       if (!completer.isCompleted) {
         completer.completeError(Exception('Connection closed'));
       }
     }
     _pendingRequests.clear();
+
+    // Fail all in-flight tasks so their task completers unblock immediately
+    // rather than waiting for a 300-second timeout.
+    _failInFlightTasks('Connection closed');
   }
 
   /// v2.1: ask the agent to remove this device from its `authorized_peers.json`
@@ -1361,8 +1365,30 @@ class ACPAgentConnection {
     _stopHeartbeat();
     onConnectionStateChanged?.call(false);
 
+    // Notify all in-flight tasks that the connection was lost so callers
+    // (e.g. taskCompleter in ChatService) unblock immediately instead of
+    // spinning until their 300-second timeout fires.
+    _failInFlightTasks('Connection lost');
+
     if (autoReconnect && !_disposed) {
       _tryReconnect();
+    }
+  }
+
+  /// Fire [TaskCallbacks.onTaskError] for every registered task and clear
+  /// the registry. Call this whenever the transport goes down so that
+  /// higher-level waiters (task completers) unblock without waiting for
+  /// their own timeouts.
+  void _failInFlightTasks(String reason) {
+    if (_taskCallbacks.isEmpty) return;
+    final snapshot = Map<String, TaskCallbacks>.from(_taskCallbacks);
+    _taskCallbacks.clear();
+    for (final entry in snapshot.entries) {
+      try {
+        entry.value.onTaskError?.call({'task_id': entry.key, 'message': reason});
+      } catch (_) {
+        // Never let a callback error bubble into the connection lifecycle.
+      }
     }
   }
 
@@ -1418,16 +1444,24 @@ class ACPAgentConnection {
 
   void _sendHeartbeat() {
     if (!_isConnected) return;
-    ping().then((_) {
-      _consecutiveHeartbeatFailures = 0;
-    }).catchError((e) {
-      _consecutiveHeartbeatFailures++;
-      LoggerService().error('Heartbeat failed ($_consecutiveHeartbeatFailures/$maxHeartbeatFailures)', tag: 'ACP', error: e);
-      if (_consecutiveHeartbeatFailures >= maxHeartbeatFailures) {
-        LoggerService().error('Max heartbeat failures reached, disconnecting', tag: 'ACP');
-        disconnect();
-      }
-    });
+    // Use a short timeout so a dead socket is detected quickly.  The default
+    // sendRequest timeout is 120 s — far too slow for a liveness check.
+    ping()
+        .timeout(
+          const Duration(seconds: 10),
+          onTimeout: () => throw TimeoutException('Heartbeat ping timeout'),
+        )
+        .then((_) {
+          _consecutiveHeartbeatFailures = 0;
+        })
+        .catchError((e) {
+          _consecutiveHeartbeatFailures++;
+          LoggerService().error('Heartbeat failed ($_consecutiveHeartbeatFailures/$maxHeartbeatFailures)', tag: 'ACP', error: e);
+          if (_consecutiveHeartbeatFailures >= maxHeartbeatFailures) {
+            LoggerService().error('Max heartbeat failures reached, disconnecting', tag: 'ACP');
+            disconnect();
+          }
+        });
   }
 
   int _nextRequestId() => ++_requestId;
