@@ -85,17 +85,25 @@ class ActiveTask {
   });
 
   /// Determine if streaming content should be flushed based on time/content accumulation.
-  /// 
+  ///
   /// Returns true if:
-  /// - Time since last flush exceeds [flushIntervalMs], OR
+  /// - Time since last flush (or task start) exceeds [flushIntervalMs], OR
   /// - Content accumulated since last flush exceeds [contentThreshold]
   bool shouldFlush({
     int flushIntervalMs = 2000,
     int contentThreshold = 500,
   }) {
-    // No flush yet
-    if (lastFlushTimestampMs == null) return false;
+    if (accumulatedContent.isEmpty) return false;
 
+    // Never flushed before → use task start time as baseline
+    if (lastFlushTimestampMs == null) {
+      final timeSinceStart =
+          DateTime.now().millisecondsSinceEpoch - startedAtMs;
+      return timeSinceStart >= flushIntervalMs ||
+          accumulatedContent.length >= contentThreshold;
+    }
+
+    // Already flushed → use last flush as baseline
     final timeSinceFlush =
         DateTime.now().millisecondsSinceEpoch - lastFlushTimestampMs!;
     final contentSinceFlush = accumulatedContent.length - lastFlushedContentLength;

@@ -541,13 +541,11 @@ class AgentMessagingService {
       // Hook cancellation token so the completer resolves immediately on cancel.
       acpCancellationToken?.onCancelled = () {
         flushTimer?.cancel();
-        
-        // Mark partial message as interrupted
+
+        // Delete partial message — the cancel flow will save the final
+        // "[Stopped]" message via buildFinalMessage(markStopped: true).
         if (activeTask.partialMessageId != null) {
-          unawaited(_db.markMessageInterrupted(
-            messageId: activeTask.partialMessageId!,
-            interruptionReason: 'user_cancelled',
-          ));
+          unawaited(_db.deleteMessage(activeTask.partialMessageId!));
         }
         activeTask.recordInterruption('user_cancelled');
 
@@ -639,16 +637,13 @@ class AgentMessagingService {
           } else {
             msg = buildFinalMessage();
             activeTask.metadata = msg.metadata;
-            
-            // Update partial message to completed
-            if (activeTask.partialMessageId != null) {
-              unawaited(_db.markMessageCompleted(
-                messageId: activeTask.partialMessageId!,
-                finalContent: msg.content,
-                finalMetadata: msg.metadata,
-              ));
-            }
           }
+
+          // Delete partial message before saving the final one to avoid duplicates
+          if (activeTask.partialMessageId != null) {
+            await _db.deleteMessage(activeTask.partialMessageId!);
+          }
+
           final channelForSave = effectiveChannelIdForAsync.isNotEmpty
               ? effectiveChannelIdForAsync
               : null;
@@ -719,24 +714,19 @@ class AgentMessagingService {
           activeTask.onRequestHistory?.call(data);
         },
         onTaskCompleted: (data) {
-          // Final flush before marking complete
-          unawaited(flushStreamingContent());
           flushTimer?.cancel();
 
           infLogAcp.endRound(effectiveTaskId, stopReason: 'stop');
           infLogAcp.endSession(effectiveTaskId, InferenceStatus.completed);
           activeTask.isComplete = true;
           activeTask.onTaskFinished?.call();
-          
-          // Mark partial message as completed
+
+          // Delete the partial message — the final message will be saved
+          // by the outer flow (sendMessageToAgent or asyncFinalize).
           if (activeTask.partialMessageId != null) {
-            unawaited(_db.markMessageCompleted(
-              messageId: activeTask.partialMessageId!,
-              finalContent: activeTask.accumulatedContent,
-              finalMetadata: buildFinalMessage().metadata,
-            ));
+            unawaited(_db.deleteMessage(activeTask.partialMessageId!));
           }
-          
+
           if (asyncConfirmation) {
             unawaited(asyncFinalize());
           }
@@ -747,14 +737,10 @@ class AgentMessagingService {
         onTaskError: (data) {
           flushTimer?.cancel();
 
-          // Mark last partial message as interrupted with error reason
+          // Delete partial message — the error flow will save its own message
           if (activeTask.partialMessageId != null) {
-            unawaited(_db.markMessageInterrupted(
-              messageId: activeTask.partialMessageId!,
-              interruptionReason: 'task_error',
-            ));
+            unawaited(_db.deleteMessage(activeTask.partialMessageId!));
           }
-          activeTask.recordInterruption('task_error');
 
           final errorMsg = data['message'] as String? ?? 'Task error';
           infLogAcp.endRound(effectiveTaskId, stopReason: 'error');
@@ -842,27 +828,20 @@ class AgentMessagingService {
       final finalMessage = buildFinalMessage();
       activeTask.metadata = finalMessage.metadata;
       
-      // If we have a partial message, ensure it's marked as completed
+      // Delete partial message — the outer sendMessageToAgent will save finalMessage
       if (activeTask.partialMessageId != null) {
-        unawaited(_db.markMessageCompleted(
-          messageId: activeTask.partialMessageId!,
-          finalContent: finalMessage.content,
-          finalMetadata: finalMessage.metadata,
-        ));
+        unawaited(_db.deleteMessage(activeTask.partialMessageId!));
       }
-      
+
       return finalMessage;
     } catch (e, stackTrace) {
       flushTimer?.cancel();
-      
-      // Mark partial message as interrupted if task failed
+
+      // Delete partial message — the error flow saves its own error message
       if (taskId != null && activeTask.partialMessageId != null) {
-        unawaited(_db.markMessageInterrupted(
-          messageId: activeTask.partialMessageId!,
-          interruptionReason: 'connection_error',
-        ));
+        unawaited(_db.deleteMessage(activeTask.partialMessageId!));
       }
-      
+
       LoggerService().error('ACP protocol error', tag: 'AgentMessagingService', error: e, stackTrace: stackTrace);
       if (connection != null && taskId != null) {
         connection.unregisterTaskCallbacks(taskId);

@@ -645,6 +645,7 @@ class ChatController extends ChangeNotifier with InteractiveStreamingContext {
         await loadMessages();
         isProcessing = false;
         _notify();
+        processNextInQueue();
       },
     );
   }
@@ -726,6 +727,7 @@ class ChatController extends ChangeNotifier with InteractiveStreamingContext {
             respondingAgentNames.clear();
             groupStreamingMessageIds.clear();
             _notify();
+            processNextInQueue();
           });
         }
       },
@@ -934,6 +936,7 @@ class ChatController extends ChangeNotifier with InteractiveStreamingContext {
     groupStreamingMessageIds.clear();
     isProcessing = false;
     _notify();
+    processNextInQueue();
   }
 
   void stopStreaming() {
@@ -1242,6 +1245,7 @@ class ChatController extends ChangeNotifier with InteractiveStreamingContext {
               await loadMessages();
               isProcessing = false;
               _notify();
+              processNextInQueue();
             }
           };
         }
@@ -1877,6 +1881,7 @@ class ChatController extends ChangeNotifier with InteractiveStreamingContext {
       streamingContent = '';
       isProcessing = false;
       _notify();
+      processNextInQueue();
     }
   }
 
