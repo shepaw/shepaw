@@ -44,6 +44,17 @@ const _asyncPendingSentinelMetadataKey = '__shepaw_async_pending__';
 bool _isAsyncPendingSentinel(Message? m) =>
     m != null && m.metadata?[_asyncPendingSentinelMetadataKey] == true;
 
+
+/// Configuration for periodic message flushing during streaming.
+/// 
+/// These can be overridden in RemoteAgent metadata:
+///   'streaming_flush_interval_ms': 2000  // milliseconds
+///   'streaming_content_threshold': 500   // characters
+///   'streaming_enable_flushing': true    // on/off toggle
+const int kDefaultFlushIntervalMs = 2000;
+const int kDefaultContentThreshold = 500;
+
+
 /// Handles sending messages to individual (non-group) agents.
 ///
 /// Extracted from [ChatService] to isolate the 1:1 agent messaging paths:
@@ -334,6 +345,8 @@ class AgentMessagingService {
 
     ACPAgentConnection? connection;
     String? taskId;
+    late ActiveTask activeTask;
+    Timer? flushTimer;
 
     try {
       // Get or create connection for this agent (with retry + backoff + health fallback)
@@ -350,7 +363,7 @@ class AgentMessagingService {
 
       // Create ActiveTask for background tracking
       final effectiveChannelId = sessionId ?? '';
-      final activeTask = ActiveTask(
+      activeTask = ActiveTask(
         taskId: taskId,
         agentId: agent.id,
         agentName: agent.name,
@@ -377,6 +390,90 @@ class AgentMessagingService {
         updateTypingAgentIds();
       }
       ForegroundTaskService().acquireTask(agent.name);
+
+      // Declare effectiveTaskId early so flush functions can reference it
+      final effectiveTaskId = taskId;
+
+      // Extract flush configuration from agent metadata
+      final flushInterval = Duration(
+        milliseconds: (agent.metadata['streaming_flush_interval_ms'] as num?)?.toInt() ?? kDefaultFlushIntervalMs,
+      );
+      final contentThreshold = (agent.metadata['streaming_content_threshold'] as num?)?.toInt() ?? kDefaultContentThreshold;
+      final flushingEnabled = agent.metadata['streaming_enable_flushing'] != false;
+      
+      bool hasScheduledFlush = false;
+
+      /// Helper to flush current accumulated content to the database.
+      /// 
+      /// Creates a new partial message on first call, updates it on subsequent calls.
+      /// Logs progress and handles errors gracefully.
+      Future<void> flushStreamingContent() async {
+        if (!flushingEnabled || activeTask.accumulatedContent.isEmpty) return;
+
+        try {
+          final partialMessageId = await _db.upsertPartialStreamingMessage(
+            existingMessageId: activeTask.partialMessageId,
+            channelId: effectiveChannelId,
+            senderId: agent.id,
+            senderName: agent.name,
+            content: activeTask.accumulatedContent,
+            replyToId: userMessage.id,
+            status: 'streaming',
+            metadata: {
+              'trace_id': effectiveTaskId,
+              'is_partial': true,
+              'flushed_content_length': activeTask.accumulatedContent.length,
+              'agent_id': agent.id,
+              'agent_name': agent.name,
+            },
+          );
+
+          activeTask.recordFlush(partialMessageId);
+
+          LoggerService().debug(
+            'Flushed streaming content: ${activeTask.accumulatedContent.length} bytes for task $effectiveTaskId',
+            tag: 'AgentMessagingService',
+          );
+        } catch (e, _) {
+          LoggerService().warning(
+            'Failed to flush streaming content for task $effectiveTaskId',
+            tag: 'AgentMessagingService',
+            error: e,
+          );
+          // Continue operation — don't fail entire task if flush fails
+        }
+      }
+
+      /// Schedule periodic flush checks.
+      /// 
+      /// Creates a timer that periodically checks if flushing is needed
+      /// based on time elapsed or content accumulated.
+      void scheduleFlushTimer() {
+        if (hasScheduledFlush || !flushingEnabled) return;
+        hasScheduledFlush = true;
+
+        flushTimer = Timer.periodic(flushInterval, (_) async {
+          if (activeTask.isComplete) {
+            flushTimer?.cancel();
+            return;
+          }
+
+          final shouldFlush = activeTask.shouldFlush(
+            flushIntervalMs: flushInterval.inMilliseconds,
+            contentThreshold: contentThreshold,
+          );
+
+          if (shouldFlush) {
+            await flushStreamingContent();
+          }
+        });
+
+        LoggerService().debug(
+          'Scheduled streaming flush timer: ${flushInterval.inMilliseconds}ms interval, $contentThreshold char threshold',
+          tag: 'AgentMessagingService',
+        );
+      }
+
 
       // Begin trace for remote ACP agent
       final infLogAcp = InferenceLogService.instance;
@@ -440,16 +537,26 @@ class AgentMessagingService {
       // tied to the original handle via `effectiveTaskId`).
       final asyncConfirmation = connection.supportsAsyncConfirmation;
       final effectiveChannelIdForAsync = effectiveChannelId;
-      // Declared up here so both the sync & async finalizers can reference it.
-      final effectiveTaskId = taskId;
 
       // Hook cancellation token so the completer resolves immediately on cancel.
       acpCancellationToken?.onCancelled = () {
+        flushTimer?.cancel();
+        
+        // Mark partial message as interrupted
+        if (activeTask.partialMessageId != null) {
+          unawaited(_db.markMessageInterrupted(
+            messageId: activeTask.partialMessageId!,
+            interruptionReason: 'user_cancelled',
+          ));
+        }
+        activeTask.recordInterruption('user_cancelled');
+
         activeTask.isComplete = true;
         if (!taskCompleter.isCompleted) {
           taskCompleter.complete();
         }
       };
+
 
       // Shared builder for the "final agent message" produced after the
       // SDK turn finishes — used by both the legacy blocking path and the
@@ -532,6 +639,15 @@ class AgentMessagingService {
           } else {
             msg = buildFinalMessage();
             activeTask.metadata = msg.metadata;
+            
+            // Update partial message to completed
+            if (activeTask.partialMessageId != null) {
+              unawaited(_db.markMessageCompleted(
+                messageId: activeTask.partialMessageId!,
+                finalContent: msg.content,
+                finalMetadata: msg.metadata,
+              ));
+            }
           }
           final channelForSave = effectiveChannelIdForAsync.isNotEmpty
               ? effectiveChannelIdForAsync
@@ -568,6 +684,9 @@ class AgentMessagingService {
           activeTask.accumulatedContent += content;
           activeTask.onStreamChunk?.call(content);
           infLogAcp.onTextChunk(effectiveTaskId, content);
+          
+          // Schedule periodic flushing on first content chunk
+          scheduleFlushTimer();
         },
         onActionConfirmation: (data) {
           actionConfirmationData = Map<String, dynamic>.from(data);
@@ -600,10 +719,24 @@ class AgentMessagingService {
           activeTask.onRequestHistory?.call(data);
         },
         onTaskCompleted: (data) {
+          // Final flush before marking complete
+          unawaited(flushStreamingContent());
+          flushTimer?.cancel();
+
           infLogAcp.endRound(effectiveTaskId, stopReason: 'stop');
           infLogAcp.endSession(effectiveTaskId, InferenceStatus.completed);
           activeTask.isComplete = true;
           activeTask.onTaskFinished?.call();
+          
+          // Mark partial message as completed
+          if (activeTask.partialMessageId != null) {
+            unawaited(_db.markMessageCompleted(
+              messageId: activeTask.partialMessageId!,
+              finalContent: activeTask.accumulatedContent,
+              finalMetadata: buildFinalMessage().metadata,
+            ));
+          }
+          
           if (asyncConfirmation) {
             unawaited(asyncFinalize());
           }
@@ -612,6 +745,17 @@ class AgentMessagingService {
           }
         },
         onTaskError: (data) {
+          flushTimer?.cancel();
+
+          // Mark last partial message as interrupted with error reason
+          if (activeTask.partialMessageId != null) {
+            unawaited(_db.markMessageInterrupted(
+              messageId: activeTask.partialMessageId!,
+              interruptionReason: 'task_error',
+            ));
+          }
+          activeTask.recordInterruption('task_error');
+
           final errorMsg = data['message'] as String? ?? 'Task error';
           infLogAcp.endRound(effectiveTaskId, stopReason: 'error');
           infLogAcp.endSession(effectiveTaskId, InferenceStatus.error, error: errorMsg);
@@ -697,8 +841,28 @@ class AgentMessagingService {
 
       final finalMessage = buildFinalMessage();
       activeTask.metadata = finalMessage.metadata;
+      
+      // If we have a partial message, ensure it's marked as completed
+      if (activeTask.partialMessageId != null) {
+        unawaited(_db.markMessageCompleted(
+          messageId: activeTask.partialMessageId!,
+          finalContent: finalMessage.content,
+          finalMetadata: finalMessage.metadata,
+        ));
+      }
+      
       return finalMessage;
     } catch (e, stackTrace) {
+      flushTimer?.cancel();
+      
+      // Mark partial message as interrupted if task failed
+      if (taskId != null && activeTask.partialMessageId != null) {
+        unawaited(_db.markMessageInterrupted(
+          messageId: activeTask.partialMessageId!,
+          interruptionReason: 'connection_error',
+        ));
+      }
+      
       LoggerService().error('ACP protocol error', tag: 'AgentMessagingService', error: e, stackTrace: stackTrace);
       if (connection != null && taskId != null) {
         connection.unregisterTaskCallbacks(taskId);
