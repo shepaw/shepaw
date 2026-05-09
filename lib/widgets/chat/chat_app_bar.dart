@@ -1,8 +1,8 @@
-import 'dart:io';
 import 'package:flutter/material.dart';
 import '../../models/channel.dart';
 import '../../models/remote_agent.dart';
 import '../../utils/session_utils.dart';
+import '../avatar_image.dart';
 import '../../l10n/app_localizations.dart';
 
 /// AppBar title widget for DM (1-on-1) chat mode.
@@ -45,37 +45,16 @@ class ChatDMAppBarTitle extends StatelessWidget {
             ),
             alignment: Alignment.center,
             child: agentAvatar != null && agentAvatar!.length > 2
-                ? ClipRRect(
-                    borderRadius: BorderRadius.circular(10),
-                    child: agentAvatar!.startsWith('/') && !agentAvatar!.startsWith('http')
-                        ? Image.file(
-                            File(agentAvatar!),
-                            width: 40,
-                            height: 40,
-                            fit: BoxFit.cover,
-                            errorBuilder: (context, error, stackTrace) {
-                              return Text(
-                                agentName?.isNotEmpty == true
-                                    ? agentName![0]
-                                    : 'A',
-                                style: const TextStyle(fontSize: 28),
-                              );
-                            },
-                          )
-                        : Image.network(
-                            agentAvatar!,
-                            width: 40,
-                            height: 40,
-                            fit: BoxFit.cover,
-                            errorBuilder: (context, error, stackTrace) {
-                              return Text(
-                                agentName?.isNotEmpty == true
-                                    ? agentName![0]
-                                    : 'A',
-                                style: const TextStyle(fontSize: 28),
-                              );
-                            },
-                          ),
+                ? AvatarImage(
+                    avatar: agentAvatar!,
+                    size: 40,
+                    borderRadius: 10,
+                    fallback: Text(
+                      agentName?.isNotEmpty == true
+                          ? agentName![0]
+                          : 'A',
+                      style: const TextStyle(fontSize: 28),
+                    ),
                   )
                 : Text(
                     agentAvatar ??

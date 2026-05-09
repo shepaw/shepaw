@@ -1,4 +1,3 @@
-import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_markdown/flutter_markdown.dart';
 import 'package:markdown/markdown.dart' as md;
@@ -16,6 +15,7 @@ import 'file_upload_bubble.dart';
 import 'form_bubble.dart';
 import 'collapsible_message_bubble.dart';
 import 'permission_audit_bubble.dart';
+import 'avatar_image.dart';
 import 'chat/plan_approval_card.dart';
 import 'chat/task_board_widget.dart';
 import '../services/she_service.dart';
@@ -663,23 +663,12 @@ class MessageBubble extends StatelessWidget {
           message.from.isAgent ? '🤖' : '👤',
           style: const TextStyle(fontSize: 24),
         );
-        return ClipRRect(
-          borderRadius: BorderRadius.circular(8),
-          child: isLocalFile
-              ? Image.file(
-                  File(senderAvatar!),
-                  width: 32,
-                  height: 32,
-                  fit: BoxFit.cover,
-                  errorBuilder: (_, __, ___) => fallback,
-                )
-              : Image.network(
-                  senderAvatar!,
-                  width: 32,
-                  height: 32,
-                  fit: BoxFit.cover,
-                  errorBuilder: (_, __, ___) => fallback,
-                ),
+
+        return AvatarImage(
+          avatar: senderAvatar!,
+          size: 32,
+          borderRadius: 8,
+          fallback: fallback,
         );
       }
       // 纯 emoji 或普通字符串

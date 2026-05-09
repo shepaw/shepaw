@@ -3,6 +3,7 @@ import '../models/agent.dart';
 import '../models/channel.dart';
 import '../services/local_database_service.dart';
 import '../services/message_search_service.dart';
+import 'avatar_image.dart';
 
 /// Describes a search result selection so the caller can navigate using its own
 /// standard flow (mark-as-read, resolve active channel, etc.).
@@ -228,19 +229,13 @@ class AgentSearchDelegate extends SearchDelegate<Agent?> {
         alignment: Alignment.center,
         child: agent.avatar.length <= 2
             ? Text(agent.avatar, style: const TextStyle(fontSize: 20))
-            : ClipRRect(
-                borderRadius: BorderRadius.circular(10),
-                child: Image.network(
-                  agent.avatar,
-                  width: 40,
-                  height: 40,
-                  fit: BoxFit.cover,
-                  errorBuilder: (context, error, stackTrace) {
-                    return Text(
-                      agent.name.isNotEmpty ? agent.name[0] : 'A',
-                      style: const TextStyle(fontSize: 20),
-                    );
-                  },
+            : AvatarImage(
+                avatar: agent.avatar,
+                size: 40,
+                borderRadius: 10,
+                fallback: Text(
+                  agent.name.isNotEmpty ? agent.name[0] : 'A',
+                  style: const TextStyle(fontSize: 20),
                 ),
               ),
       ),

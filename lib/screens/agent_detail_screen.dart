@@ -4,6 +4,7 @@ import '../models/channel.dart';
 import '../services/local_api_service.dart';
 import '../services/logger_service.dart';
 import '../utils/exceptions.dart';
+import '../widgets/avatar_image.dart';
 import 'chat_screen.dart';
 
 /// Agent 详情/添加/编辑页面
@@ -168,17 +169,11 @@ class _AgentDetailScreenState extends State<AgentDetailScreen> {
                         ),
                         alignment: Alignment.center,
                         child: _avatarController.text.isNotEmpty
-                            ? ClipRRect(
-                                borderRadius: BorderRadius.circular(30),
-                                child: Image.network(
-                                  _avatarController.text,
-                                  width: 120,
-                                  height: 120,
-                                  fit: BoxFit.cover,
-                                  errorBuilder: (context, error, stackTrace) {
-                                    return const Icon(Icons.smart_toy, size: 60);
-                                  },
-                                ),
+                            ? AvatarImage(
+                                avatar: _avatarController.text,
+                                size: 120,
+                                borderRadius: 30,
+                                fallback: const Icon(Icons.smart_toy, size: 60),
                               )
                             : const Icon(Icons.smart_toy, size: 60),
                       ),

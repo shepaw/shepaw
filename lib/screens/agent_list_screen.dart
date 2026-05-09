@@ -4,6 +4,7 @@ import '../models/channel.dart';
 import '../services/local_api_service.dart';
 import '../services/logger_service.dart';
 import '../utils/exceptions.dart';
+import '../widgets/avatar_image.dart';
 import 'agent_detail_screen.dart';
 import 'add_remote_agent_screen.dart';
 import 'chat_screen.dart';
@@ -211,20 +212,14 @@ class _AgentListScreenState extends State<AgentListScreen> {
                     ),
                     alignment: Alignment.center,
                     child: agent.avatar.isNotEmpty
-                        ? ClipRRect(
-                            borderRadius: BorderRadius.circular(15),
-                            child: Image.network(
-                              agent.avatar,
-                              width: 60,
-                              height: 60,
-                              fit: BoxFit.cover,
-                              errorBuilder: (context, error, stackTrace) {
-                                return Icon(
-                                  Icons.smart_toy,
-                                  size: 30,
-                                  color: _getStatusColor(agent.status),
-                                );
-                              },
+                        ? AvatarImage(
+                            avatar: agent.avatar,
+                            size: 60,
+                            borderRadius: 15,
+                            fallback: Icon(
+                              Icons.smart_toy,
+                              size: 30,
+                              color: _getStatusColor(agent.status),
                             ),
                           )
                         : Icon(

@@ -2,6 +2,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
+import '../widgets/avatar_image.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../l10n/app_localizations.dart';
 import '../models/remote_agent.dart';
@@ -685,33 +686,15 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
   }
 
   Widget _buildAvatarWidget(String avatar, double size) {
-    final borderRadius = BorderRadius.circular(size * 0.25);
-    if (_isLocalFilePath(avatar)) {
-      final file = File(avatar);
-      return ClipRRect(
+    final borderRadius = size * 0.25;
+    final fallback = Icon(Icons.smart_toy, size: size * 0.6);
+
+    if (_isLocalFilePath(avatar) || _isNetworkUrl(avatar)) {
+      return AvatarImage(
+        avatar: avatar,
+        size: size,
         borderRadius: borderRadius,
-        child: Image.file(
-          file,
-          width: size,
-          height: size,
-          fit: BoxFit.cover,
-          errorBuilder: (context, error, stackTrace) {
-            return Icon(Icons.smart_toy, size: size * 0.6);
-          },
-        ),
-      );
-    } else if (_isNetworkUrl(avatar)) {
-      return ClipRRect(
-        borderRadius: borderRadius,
-        child: Image.network(
-          avatar,
-          width: size,
-          height: size,
-          fit: BoxFit.cover,
-          errorBuilder: (context, error, stackTrace) {
-            return Icon(Icons.smart_toy, size: size * 0.6);
-          },
-        ),
+        fallback: fallback,
       );
     } else {
       // Emoji

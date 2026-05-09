@@ -1,4 +1,3 @@
-import 'dart:io';
 import 'package:flutter/material.dart';
 import '../l10n/app_localizations.dart';
 import '../models/agent.dart';
@@ -6,6 +5,7 @@ import '../models/channel.dart';
 import '../services/local_api_service.dart';
 import '../services/local_database_service.dart';
 import '../services/logger_service.dart';
+import '../widgets/avatar_image.dart';
 import 'remote_agent_detail_screen.dart';
 import 'group_detail_screen.dart';
 
@@ -165,30 +165,14 @@ class _ContactsScreenState extends State<ContactsScreen>
             alignment: Alignment.center,
             child: agent.avatar.length <= 2
                 ? Text(agent.avatar, style: const TextStyle(fontSize: 20))
-                : ClipRRect(
-                    borderRadius: BorderRadius.circular(12),
-                    child: agent.avatar.startsWith('/') &&
-                            !agent.avatar.startsWith('http')
-                        ? Image.file(
-                            File(agent.avatar),
-                            width: 48,
-                            height: 48,
-                            fit: BoxFit.cover,
-                            errorBuilder: (_, __, ___) => Text(
-                              agent.name.isNotEmpty ? agent.name[0] : 'A',
-                              style: const TextStyle(fontSize: 20),
-                            ),
-                          )
-                        : Image.network(
-                            agent.avatar,
-                            width: 48,
-                            height: 48,
-                            fit: BoxFit.cover,
-                            errorBuilder: (_, __, ___) => Text(
-                              agent.name.isNotEmpty ? agent.name[0] : 'A',
-                              style: const TextStyle(fontSize: 20),
-                            ),
-                          ),
+                : AvatarImage(
+                    avatar: agent.avatar,
+                    size: 48,
+                    borderRadius: 12,
+                    fallback: Text(
+                      agent.name.isNotEmpty ? agent.name[0] : 'A',
+                      style: const TextStyle(fontSize: 20),
+                    ),
                   ),
           ),
           // Online status dot

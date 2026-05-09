@@ -20,6 +20,7 @@ import '../task/screens/scheduled_task_form_screen.dart';
 import '../task/models/scheduled_task.dart';
 import '../utils/layout_utils.dart';
 import '../services/native_window_service.dart';
+import '../widgets/avatar_image.dart';
 
 /// Desktop split-panel layout similar to WeChat desktop.
 /// Left: icon sidebar + conversation list (HomeScreen embedded).
@@ -995,17 +996,13 @@ class _DesktopSearchPanelState extends State<_DesktopSearchPanel> {
         alignment: Alignment.center,
         child: agent.avatar.length <= 2
             ? Text(agent.avatar, style: const TextStyle(fontSize: 20))
-            : ClipRRect(
-                borderRadius: BorderRadius.circular(10),
-                child: Image.network(
-                  agent.avatar,
-                  width: 40,
-                  height: 40,
-                  fit: BoxFit.cover,
-                  errorBuilder: (_, __, ___) => Text(
-                    agent.name.isNotEmpty ? agent.name[0] : 'A',
-                    style: const TextStyle(fontSize: 20),
-                  ),
+            : AvatarImage(
+                avatar: agent.avatar,
+                size: 40,
+                borderRadius: 10,
+                fallback: Text(
+                  agent.name.isNotEmpty ? agent.name[0] : 'A',
+                  style: const TextStyle(fontSize: 20),
                 ),
               ),
       ),

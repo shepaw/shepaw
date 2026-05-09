@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:io';
 import 'package:flutter/material.dart';
 import '../models/agent.dart';
 import '../models/channel.dart';
@@ -22,6 +21,7 @@ import 'cli_config_management_screen.dart';
 import '../task/screens/scheduled_tasks_management_screen.dart';
 import '../services/model_registry.dart';
 import '../widgets/agent_search_delegate.dart';
+import '../widgets/avatar_image.dart';
 import '../services/message_search_service.dart';
 import '../l10n/app_localizations.dart';
 import '../providers/notification_provider.dart';
@@ -242,33 +242,14 @@ class HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateMi
                   agent.avatar,
                   style: const TextStyle(fontSize: 24),
                 )
-              : ClipRRect(
-                  borderRadius: BorderRadius.circular(12),
-                  child: agent.avatar.startsWith('/') && !agent.avatar.startsWith('http')
-                      ? Image.file(
-                          File(agent.avatar),
-                          width: 56,
-                          height: 56,
-                          fit: BoxFit.cover,
-                          errorBuilder: (context, error, stackTrace) {
-                            return Text(
-                              agent.name.isNotEmpty ? agent.name[0] : 'A',
-                              style: const TextStyle(fontSize: 24),
-                            );
-                          },
-                        )
-                      : Image.network(
-                          agent.avatar,
-                          width: 56,
-                          height: 56,
-                          fit: BoxFit.cover,
-                          errorBuilder: (context, error, stackTrace) {
-                            return Text(
-                              agent.name.isNotEmpty ? agent.name[0] : 'A',
-                              style: const TextStyle(fontSize: 24),
-                            );
-                          },
-                        ),
+              : AvatarImage(
+                  avatar: agent.avatar,
+                  size: 56,
+                  borderRadius: 12,
+                  fallback: Text(
+                    agent.name.isNotEmpty ? agent.name[0] : 'A',
+                    style: const TextStyle(fontSize: 24),
+                  ),
                 ),
         ),
         // 未读消息红点

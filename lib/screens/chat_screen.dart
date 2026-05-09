@@ -26,6 +26,7 @@ import '../widgets/chat/chat_message_list.dart';
 import '../widgets/chat/chat_reply_preview.dart';
 import '../widgets/chat/session_list_panel.dart';
 import '../widgets/chat/group_session_list_panel.dart';
+import '../widgets/avatar_image.dart';
 import '../widgets/message_search_delegate.dart';
 import '../widgets/voice_record_overlay.dart';
 import 'remote_agent_detail_screen.dart';
@@ -310,13 +311,56 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
 
   void _showLocalizedSnackBar(String key, {bool isError = false}) {
     if (!mounted) return;
-    final text = key.contains(':') ? key.split(':').last : key;
+    final l10n = AppLocalizations.of(context);
+    final text = _resolveSnackBarMessage(l10n, key);
     showTopToast(
       context,
       text,
       icon: isError ? Icons.error_outline : Icons.info_outline,
       color: isError ? Colors.red.shade400 : Colors.blueGrey,
     );
+  }
+
+  /// 将 controller 发出的 SnackBar key 解析为本地化字符串。
+  /// 支持格式：
+  /// - 纯 key：'chat_sessionCleared' → l10n.chat_sessionCleared
+  /// - 带参数 key：'chat_batchDeleteSuccess:3' → l10n.chat_batchDeleteSuccess(3)
+  /// - 未匹配的 key → 按冒号分割取后半部分（兼容错误信息透传）
+  String _resolveSnackBarMessage(AppLocalizations l10n, String key) {
+    // 解析 key 和参数
+    final colonIdx = key.indexOf(':');
+    final name = colonIdx >= 0 ? key.substring(0, colonIdx) : key;
+    final param = colonIdx >= 0 ? key.substring(colonIdx + 1) : '';
+
+    switch (name) {
+      case 'chat_sessionCleared':
+        return l10n.chat_sessionCleared;
+      case 'chat_allSessionsCleared':
+        return l10n.chat_allSessionsCleared;
+      case 'chat_groupSessionCleared':
+        return l10n.chat_groupSessionCleared;
+      case 'chat_allGroupSessionsCleared':
+        return l10n.chat_allGroupSessionsCleared;
+      case 'chat_noAgentSelected':
+        return l10n.chat_noAgentSelected;
+      case 'chat_batchDeleteSuccess':
+        return l10n.chat_batchDeleteSuccess(int.tryParse(param) ?? 0);
+      case 'chat_clearSessionFailed':
+        return l10n.chat_clearSessionFailed(param);
+      case 'chat_loadFailed':
+        return l10n.chat_loadFailed(param);
+      case 'chat_searchError':
+        return l10n.chat_searchError(param);
+      case 'chat_rollbackFailed':
+        return l10n.chat_rollbackFailed(param);
+      case 'chat_groupChatError':
+        return l10n.chat_groupChatError(param);
+      case 'chat_fileMessageFailed':
+        return l10n.chat_fileMessageFailed(param);
+      default:
+        // 未知 key：若含冒号则取后半部分（错误详情），否则原样返回
+        return colonIdx >= 0 ? param : key;
+    }
   }
 
   // ---------------------------------------------------------------------------
@@ -1740,25 +1784,14 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
             ),
             alignment: Alignment.center,
             child: _controller.agentAvatar != null && _controller.agentAvatar!.length > 2
-                ? ClipRRect(
-                    borderRadius: BorderRadius.circular(20),
-                    child: _controller.agentAvatar!.startsWith('/') && !_controller.agentAvatar!.startsWith('http')
-                        ? Image.file(
-                            File(_controller.agentAvatar!),
-                            width: 80, height: 80, fit: BoxFit.cover,
-                            errorBuilder: (_, __, ___) => Text(
-                              _controller.agentName?.isNotEmpty == true ? _controller.agentName![0] : 'A',
-                              style: const TextStyle(fontSize: 56),
-                            ),
-                          )
-                        : Image.network(
-                            _controller.agentAvatar!,
-                            width: 80, height: 80, fit: BoxFit.cover,
-                            errorBuilder: (_, __, ___) => Text(
-                              _controller.agentName?.isNotEmpty == true ? _controller.agentName![0] : 'A',
-                              style: const TextStyle(fontSize: 56),
-                            ),
-                          ),
+                ? AvatarImage(
+                    avatar: _controller.agentAvatar!,
+                    size: 80,
+                    borderRadius: 20,
+                    fallback: Text(
+                      _controller.agentName?.isNotEmpty == true ? _controller.agentName![0] : 'A',
+                      style: const TextStyle(fontSize: 56),
+                    ),
                   )
                 : Text(
                     _controller.agentAvatar ??
