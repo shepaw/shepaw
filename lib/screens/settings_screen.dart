@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 import 'package:provider/provider.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -488,13 +489,21 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ListTile(
             leading: const Icon(Icons.info),
             title: Text(l10n.settings_about),
-            subtitle: Text(l10n.settings_aboutVersion),
+            subtitle: FutureBuilder<PackageInfo>(
+              future: PackageInfo.fromPlatform(),
+              builder: (context, snapshot) {
+                final version = snapshot.data?.version ?? '';
+                return Text('v$version');
+              },
+            ),
             trailing: const Icon(Icons.chevron_right),
-            onTap: () {
+            onTap: () async {
+              final packageInfo = await PackageInfo.fromPlatform();
+              if (!context.mounted) return;
               showAboutDialog(
                 context: context,
                 applicationName: 'Paw',
-                applicationVersion: '1.0.0',
+                applicationVersion: packageInfo.version,
                 applicationIcon: ClipRRect(
                   borderRadius: BorderRadius.circular(12),
                   child: Image.asset(

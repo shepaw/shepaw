@@ -1,13 +1,18 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:image_picker/image_picker.dart';
 import '../l10n/app_localizations.dart';
 import '../models/model_definition.dart';
 import '../models/remote_agent.dart';
 import '../services/model_registry.dart';
 import '../services/remote_agent_service.dart';
 import '../services/local_database_service.dart';
+import '../services/local_file_storage_service.dart';
 import '../services/noise_identity.dart';
 import '../services/token_service.dart';
+import '../utils/layout_utils.dart';
+import '../widgets/avatar_image.dart';
 import 'pairing_qr_scanner_screen.dart';
 import 'skill_select_screen.dart';
 import 'model_select_screen.dart';
@@ -48,6 +53,10 @@ class _AddRemoteAgentScreenState extends State<AddRemoteAgentScreen> {
   String _selectedAvatar = '🤖';
   bool _isCreating = false;
   bool _allowExternalAccess = false;
+  String? _localAvatarPath; // 本地图片相对路径
+
+  final ImagePicker _imagePicker = ImagePicker();
+  final LocalFileStorageService _fileStorage = LocalFileStorageService();
 
   // 连接模式：从完整 URL 中解析出的 agentId（用于本地 agent 外部访问）
   String? _parsedTargetAgentId;
@@ -673,10 +682,7 @@ class _AddRemoteAgentScreenState extends State<AddRemoteAgentScreen> {
           child: Stack(
             alignment: Alignment.center,
             children: [
-              Text(
-                _selectedAvatar,
-                style: const TextStyle(fontSize: 52),
-              ),
+              _buildAvatarWidget(_selectedAvatar, 120),
               Positioned(
                 bottom: 4,
                 right: 4,
@@ -698,6 +704,31 @@ class _AddRemoteAgentScreenState extends State<AddRemoteAgentScreen> {
         ),
       ),
     );
+  }
+
+  /// 构建头像 widget（支持本地文件路径、网络 URL、emoji）
+  Widget _buildAvatarWidget(String avatar, double size) {
+    if (avatar.isEmpty) {
+      return Icon(Icons.smart_toy, size: size * 0.5);
+    }
+
+    if (AvatarImage.isLocalFile(avatar) || AvatarImage.isNetworkUrl(avatar)) {
+      return ClipRRect(
+        borderRadius: BorderRadius.circular(size * 0.25),
+        child: AvatarImage(
+          avatar: avatar,
+          size: size,
+          borderRadius: size * 0.25,
+          fallback: Icon(Icons.smart_toy, size: size * 0.5),
+        ),
+      );
+    } else {
+      // Emoji
+      return Text(
+        avatar,
+        style: TextStyle(fontSize: size * 0.43),
+      );
+    }
   }
 
   /// 基本信息卡片
@@ -1702,14 +1733,53 @@ class _AddRemoteAgentScreenState extends State<AddRemoteAgentScreen> {
 
   void _showAvatarPicker() {
     final l10n = AppLocalizations.of(context);
+    LayoutUtils.showAdaptivePanel(
+      context: context,
+      builder: (ctx) => Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          ListTile(
+            leading: const Icon(Icons.emoji_emotions_outlined),
+            title: Text(l10n.agentDetail_selectBuiltinAvatar),
+            onTap: () {
+              Navigator.pop(ctx);
+              _showBuiltinAvatarPicker();
+            },
+          ),
+          ListTile(
+            leading: const Icon(Icons.photo_library_outlined),
+            title: Text(l10n.agentDetail_selectFromGallery),
+            onTap: () {
+              Navigator.pop(ctx);
+              _pickImageFromGallery();
+            },
+          ),
+          ListTile(
+            leading: const Icon(Icons.camera_alt_outlined),
+            title: Text(l10n.agentDetail_takePhoto),
+            onTap: () {
+              Navigator.pop(ctx);
+              _pickImageFromCamera();
+            },
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// 显示内置头像（emoji）选择器
+  void _showBuiltinAvatarPicker() {
+    final l10n = AppLocalizations.of(context);
     final avatars = [
       '🤖', '🦾', '🧠', '💡', '🌟', '⚡', '🔮', '🎯',
       '🚀', '🛸', '🌈', '🔥', '💎', '🎨', '🎭', '🎪',
+      '🐱', '🐶', '🦊', '🐼', '🦉', '🦋', '🐝', '🐙',
+      '👤', '👩‍💻', '🧑‍🔬', '🧑‍🚀', '🧙', '🥷', '🦸', '🤹',
     ];
 
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
+      builder: (ctx) => AlertDialog(
         title: Text(l10n.addAgent_selectAvatar),
         content: SizedBox(
           width: double.maxFinite,
@@ -1727,16 +1797,15 @@ class _AddRemoteAgentScreenState extends State<AddRemoteAgentScreen> {
                 onTap: () {
                   setState(() {
                     _selectedAvatar = avatar;
+                    _localAvatarPath = null;
                   });
-                  Navigator.pop(context);
+                  Navigator.pop(ctx);
                 },
                 child: Container(
                   decoration: BoxDecoration(
-                    color: _selectedAvatar == avatar
+                    color: _selectedAvatar == avatar && _localAvatarPath == null
                         ? Theme.of(context).colorScheme.primaryContainer
-                        : Theme.of(context)
-                            .colorScheme
-                            .surfaceContainerHighest,
+                        : Theme.of(context).colorScheme.surfaceContainerHighest,
                     borderRadius: BorderRadius.circular(8),
                   ),
                   child: Center(
@@ -1752,11 +1821,75 @@ class _AddRemoteAgentScreenState extends State<AddRemoteAgentScreen> {
         ),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(context),
+            onPressed: () => Navigator.pop(ctx),
             child: Text(l10n.common_cancel),
           ),
         ],
       ),
     );
+  }
+
+  /// 从相册选择图片
+  Future<void> _pickImageFromGallery() async {
+    final l10n = AppLocalizations.of(context);
+    try {
+      final XFile? image = await _imagePicker.pickImage(
+        source: ImageSource.gallery,
+        maxWidth: 512,
+        maxHeight: 512,
+        imageQuality: 85,
+      );
+      if (image == null) return;
+      await _savePickedImage(File(image.path));
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(l10n.agentDetail_galleryFailed('$e')), backgroundColor: Colors.red),
+        );
+      }
+    }
+  }
+
+  /// 拍照选择头像
+  Future<void> _pickImageFromCamera() async {
+    final l10n = AppLocalizations.of(context);
+    try {
+      final XFile? image = await _imagePicker.pickImage(
+        source: ImageSource.camera,
+        maxWidth: 512,
+        maxHeight: 512,
+        imageQuality: 85,
+      );
+      if (image == null) return;
+      await _savePickedImage(File(image.path));
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(l10n.agentDetail_cameraFailed('$e')), backgroundColor: Colors.red),
+        );
+      }
+    }
+  }
+
+  /// 保存选择的图片到本地存储
+  Future<void> _savePickedImage(File imageFile) async {
+    final l10n = AppLocalizations.of(context);
+    try {
+      final relativePath = await _fileStorage.saveImage(
+        imageFile,
+        type: ResourceType.avatars,
+      );
+      final fullPath = await _fileStorage.getFullPath(relativePath);
+      setState(() {
+        _localAvatarPath = relativePath;
+        _selectedAvatar = fullPath;
+      });
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(l10n.agentDetail_saveImageFailed('$e')), backgroundColor: Colors.red),
+        );
+      }
+    }
   }
 }

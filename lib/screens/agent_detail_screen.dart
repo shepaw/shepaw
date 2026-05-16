@@ -1,9 +1,14 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
 import '../models/agent.dart';
 import '../models/channel.dart';
 import '../services/local_api_service.dart';
+import '../services/local_file_storage_service.dart';
 import '../services/logger_service.dart';
 import '../utils/exceptions.dart';
+import '../utils/layout_utils.dart';
+import '../l10n/app_localizations.dart';
 import '../widgets/avatar_image.dart';
 import 'chat_screen.dart';
 
@@ -23,6 +28,8 @@ class AgentDetailScreen extends StatefulWidget {
 class _AgentDetailScreenState extends State<AgentDetailScreen> {
   final _formKey = GlobalKey<FormState>();
   final LocalApiService _apiService = LocalApiService();
+  final ImagePicker _imagePicker = ImagePicker();
+  final LocalFileStorageService _fileStorage = LocalFileStorageService();
 
   late TextEditingController _nameController;
   late TextEditingController _typeController;
@@ -33,6 +40,7 @@ class _AgentDetailScreenState extends State<AgentDetailScreen> {
 
   bool _isEditing = false;
   bool _isLoading = false;
+  String? _localAvatarPath; // 本地图片相对路径
 
   @override
   void initState() {
@@ -57,15 +65,21 @@ class _AgentDetailScreenState extends State<AgentDetailScreen> {
     setState(() => _isLoading = true);
 
     try {
+      // 解析最终 avatar 值
+      String avatar = _avatarController.text.trim();
+      if (_localAvatarPath != null) {
+        final fullPath = await _fileStorage.getFullPath(_localAvatarPath!);
+        avatar = fullPath;
+      }
+      if (avatar.isEmpty) avatar = '🤖';
+
       if (widget.agent == null) {
         // 新建模式
         final newAgent = Agent(
           id: '', // 服务器会生成
           name: _nameController.text.trim(),
           type: _typeController.text.trim(),
-          avatar: _avatarController.text.trim().isEmpty
-              ? '🤖'
-              : _avatarController.text.trim(),
+          avatar: avatar,
           metadata: {
             'max_tool_rounds': int.tryParse(_maxToolRoundsController.text.trim()) ?? 100,
             'task_timeout_seconds': int.tryParse(_taskTimeoutController.text.trim()) ?? 600,
@@ -89,9 +103,7 @@ class _AgentDetailScreenState extends State<AgentDetailScreen> {
           id: widget.agent!.id,
           name: _nameController.text.trim(),
           type: _typeController.text.trim(),
-          avatar: _avatarController.text.trim().isEmpty
-              ? '🤖'
-              : _avatarController.text.trim(),
+          avatar: avatar,
           metadata: {
             ...?widget.agent!.metadata,
             'max_tool_rounds': int.tryParse(_maxToolRoundsController.text.trim()) ?? 100,
@@ -158,27 +170,57 @@ class _AgentDetailScreenState extends State<AgentDetailScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    // Avatar 预览
+                    // Avatar 预览（可点击更换）
                     Center(
-                      child: Container(
-                        width: 120,
-                        height: 120,
-                        decoration: BoxDecoration(
-                          color: Colors.grey[300],
-                          borderRadius: BorderRadius.circular(30),
+                      child: GestureDetector(
+                        onTap: _isEditing ? _showAvatarPicker : null,
+                        child: Stack(
+                          children: [
+                            Container(
+                              width: 120,
+                              height: 120,
+                              decoration: BoxDecoration(
+                                color: Colors.grey[300],
+                                borderRadius: BorderRadius.circular(30),
+                              ),
+                              alignment: Alignment.center,
+                              child: _buildAvatarWidget(
+                                _avatarController.text,
+                                120,
+                              ),
+                            ),
+                            if (_isEditing)
+                              Positioned(
+                                right: 0,
+                                bottom: 0,
+                                child: Container(
+                                  padding: const EdgeInsets.all(6),
+                                  decoration: BoxDecoration(
+                                    color: Theme.of(context).colorScheme.primary,
+                                    shape: BoxShape.circle,
+                                  ),
+                                  child: const Icon(
+                                    Icons.camera_alt,
+                                    size: 18,
+                                    color: Colors.white,
+                                  ),
+                                ),
+                              ),
+                          ],
                         ),
-                        alignment: Alignment.center,
-                        child: _avatarController.text.isNotEmpty
-                            ? AvatarImage(
-                                avatar: _avatarController.text,
-                                size: 120,
-                                borderRadius: 30,
-                                fallback: const Icon(Icons.smart_toy, size: 60),
-                              )
-                            : const Icon(Icons.smart_toy, size: 60),
                       ),
                     ),
-                    const SizedBox(height: 32),
+                    if (_isEditing) ...[
+                      const SizedBox(height: 8),
+                      Center(
+                        child: TextButton.icon(
+                          onPressed: _showAvatarPicker,
+                          icon: const Icon(Icons.edit, size: 16),
+                          label: Text(AppLocalizations.of(context).agentDetail_changeAvatar),
+                        ),
+                      ),
+                    ],
+                    const SizedBox(height: 16),
 
                     // Agent 名称
                     TextFormField(
@@ -239,20 +281,6 @@ class _AgentDetailScreenState extends State<AgentDetailScreen> {
                               }
                             }
                           : null,
-                    ),
-                    const SizedBox(height: 16),
-
-                    // Avatar URL
-                    TextFormField(
-                      controller: _avatarController,
-                      decoration: const InputDecoration(
-                        labelText: 'Avatar URL (可选)',
-                        hintText: 'https://example.com/avatar.png',
-                        prefixIcon: Icon(Icons.image),
-                        border: OutlineInputBorder(),
-                      ),
-                      enabled: _isEditing,
-                      onChanged: (value) => setState(() {}), // 触发预览更新
                     ),
                     const SizedBox(height: 16),
 
@@ -343,6 +371,7 @@ class _AgentDetailScreenState extends State<AgentDetailScreen> {
                                 onPressed: () {
                                   setState(() {
                                     _isEditing = false;
+                                    _localAvatarPath = null;
                                     // 恢复原始值
                                     _nameController.text = widget.agent!.name;
                                     _typeController.text = widget.agent!.type ?? '';
@@ -373,6 +402,194 @@ class _AgentDetailScreenState extends State<AgentDetailScreen> {
               ),
             ),
     );
+  }
+
+  // ==================== 头像选择 ====================
+
+  /// 构建头像 widget（支持本地文件路径、网络 URL、emoji）
+  Widget _buildAvatarWidget(String avatar, double size) {
+    final borderRadius = size * 0.25;
+    final fallback = Icon(Icons.smart_toy, size: size * 0.5);
+
+    if (avatar.isEmpty) return fallback;
+
+    if (AvatarImage.isLocalFile(avatar) || AvatarImage.isNetworkUrl(avatar)) {
+      return AvatarImage(
+        avatar: avatar,
+        size: size,
+        borderRadius: borderRadius,
+        fallback: fallback,
+      );
+    } else {
+      // Emoji
+      return Text(
+        avatar,
+        style: TextStyle(fontSize: size * 0.4),
+      );
+    }
+  }
+
+  /// 显示头像选择面板
+  void _showAvatarPicker() {
+    final l10n = AppLocalizations.of(context);
+    LayoutUtils.showAdaptivePanel(
+      context: context,
+      builder: (ctx) => Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          ListTile(
+            leading: const Icon(Icons.emoji_emotions_outlined),
+            title: Text(l10n.agentDetail_selectBuiltinAvatar),
+            onTap: () {
+              Navigator.pop(ctx);
+              _showBuiltinAvatarPicker();
+            },
+          ),
+          ListTile(
+            leading: const Icon(Icons.photo_library_outlined),
+            title: Text(l10n.agentDetail_selectFromGallery),
+            onTap: () {
+              Navigator.pop(ctx);
+              _pickImageFromGallery();
+            },
+          ),
+          ListTile(
+            leading: const Icon(Icons.camera_alt_outlined),
+            title: Text(l10n.agentDetail_takePhoto),
+            onTap: () {
+              Navigator.pop(ctx);
+              _pickImageFromCamera();
+            },
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// 显示内置头像（emoji）选择器
+  void _showBuiltinAvatarPicker() {
+    final l10n = AppLocalizations.of(context);
+    final avatars = [
+      '🤖', '🦾', '🧠', '💡', '🌟', '⚡', '🔮', '🎯',
+      '🚀', '🛸', '🌈', '🔥', '💎', '🎨', '🎭', '🎪',
+      '🐱', '🐶', '🦊', '🐼', '🦉', '🦋', '🐝', '🐙',
+      '👤', '👩‍💻', '🧑‍🔬', '🧑‍🚀', '🧙', '🥷', '🦸', '🤹',
+    ];
+
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(l10n.addAgent_selectAvatar),
+        content: SizedBox(
+          width: double.maxFinite,
+          child: GridView.builder(
+            shrinkWrap: true,
+            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+              crossAxisCount: 4,
+              mainAxisSpacing: 8,
+              crossAxisSpacing: 8,
+            ),
+            itemCount: avatars.length,
+            itemBuilder: (context, index) {
+              final avatar = avatars[index];
+              return GestureDetector(
+                onTap: () {
+                  setState(() {
+                    _avatarController.text = avatar;
+                    _localAvatarPath = null;
+                  });
+                  Navigator.pop(ctx);
+                },
+                child: Container(
+                  decoration: BoxDecoration(
+                    color: _avatarController.text == avatar && _localAvatarPath == null
+                        ? Theme.of(context).colorScheme.primaryContainer
+                        : Theme.of(context).colorScheme.surfaceContainerHighest,
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Center(
+                    child: Text(
+                      avatar,
+                      style: const TextStyle(fontSize: 32),
+                    ),
+                  ),
+                ),
+              );
+            },
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('取消'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// 从相册选择图片
+  Future<void> _pickImageFromGallery() async {
+    final l10n = AppLocalizations.of(context);
+    try {
+      final XFile? image = await _imagePicker.pickImage(
+        source: ImageSource.gallery,
+        maxWidth: 512,
+        maxHeight: 512,
+        imageQuality: 85,
+      );
+      if (image == null) return;
+      await _savePickedImage(File(image.path));
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(l10n.agentDetail_galleryFailed('$e')), backgroundColor: Colors.red),
+        );
+      }
+    }
+  }
+
+  /// 拍照选择头像
+  Future<void> _pickImageFromCamera() async {
+    final l10n = AppLocalizations.of(context);
+    try {
+      final XFile? image = await _imagePicker.pickImage(
+        source: ImageSource.camera,
+        maxWidth: 512,
+        maxHeight: 512,
+        imageQuality: 85,
+      );
+      if (image == null) return;
+      await _savePickedImage(File(image.path));
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(l10n.agentDetail_cameraFailed('$e')), backgroundColor: Colors.red),
+        );
+      }
+    }
+  }
+
+  /// 保存选择的图片到本地存储
+  Future<void> _savePickedImage(File imageFile) async {
+    final l10n = AppLocalizations.of(context);
+    try {
+      final relativePath = await _fileStorage.saveImage(
+        imageFile,
+        type: ResourceType.avatars,
+      );
+      final fullPath = await _fileStorage.getFullPath(relativePath);
+      setState(() {
+        _localAvatarPath = relativePath;
+        _avatarController.text = fullPath;
+      });
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(l10n.agentDetail_saveImageFailed('$e')), backgroundColor: Colors.red),
+        );
+      }
+    }
   }
 
   /// 发起与 Agent 的对话

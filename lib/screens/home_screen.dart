@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 import '../models/agent.dart';
 import '../models/channel.dart';
 import '../services/local_api_service.dart';
@@ -610,14 +611,6 @@ class HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateMi
                       fontWeight: FontWeight.bold,
                     ),
                   ),
-                  const SizedBox(height: 4),
-                  const Text(
-                    'support@metamessager.com',
-                    style: TextStyle(
-                      color: Colors.white70,
-                      fontSize: 13,
-                    ),
-                  ),
                 ],
               ),
             ),
@@ -738,17 +731,6 @@ class HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateMi
                       );
                     },
                   ),
-                  ListTile(
-                    leading: const Icon(Icons.logout, color: Colors.red),
-                    title: Text(
-                      l10n.drawer_logout,
-                      style: const TextStyle(color: Colors.red),
-                    ),
-                    onTap: () {
-                      Navigator.pop(context);
-                      _showLogoutDialog();
-                    },
-                  ),
                 ],
               ),
             ),
@@ -756,12 +738,18 @@ class HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateMi
             // 版本信息
             Padding(
               padding: const EdgeInsets.all(16),
-              child: Text(
-                l10n.appVersion,
-                style: TextStyle(
-                  color: Colors.grey[500],
-                  fontSize: 12,
-                ),
+              child: FutureBuilder<PackageInfo>(
+                future: PackageInfo.fromPlatform(),
+                builder: (context, snapshot) {
+                  final version = snapshot.data?.version ?? '';
+                  return Text(
+                    'ShePaw v$version',
+                    style: TextStyle(
+                      color: Colors.grey[500],
+                      fontSize: 12,
+                    ),
+                  );
+                },
               ),
             ),
           ],
@@ -770,35 +758,6 @@ class HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateMi
     );
   }
 
-  /// 显示退出登录确认对话框
-  void _showLogoutDialog() {
-    final l10n = AppLocalizations.of(context);
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: Text(l10n.logout_confirmTitle),
-        content: Text(l10n.logout_confirmContent),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: Text(l10n.common_cancel),
-          ),
-          TextButton(
-            onPressed: () {
-              Navigator.of(context).pushNamedAndRemoveUntil(
-                '/login',
-                (route) => false,
-              );
-            },
-            child: Text(
-              l10n.common_confirm,
-              style: const TextStyle(color: Colors.red),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
 
   /// 构建主页body内容
   Widget _buildBody() {

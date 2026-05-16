@@ -259,26 +259,28 @@ class ChatInputAreaState extends State<ChatInputArea> {
     final extraHeight = _mentionSubMenuIndex != null ? subMenuHeight : 0.0;
     final maxHeight = (totalCount * itemHeight + extraHeight).clamp(0.0, 220.0);
 
-    return Container(
-      constraints: BoxConstraints(maxHeight: maxHeight),
-      margin: const EdgeInsets.symmetric(horizontal: 8),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.1),
-            blurRadius: 8,
-            offset: const Offset(0, -2),
-          ),
-        ],
-      ),
-      child: ListView.builder(
-        controller: _mentionScrollController,
-        shrinkWrap: true,
-        padding: EdgeInsets.zero,
-        itemCount: totalCount,
-        itemBuilder: (context, index) {
+    return FocusScope(
+      canRequestFocus: false,
+      child: Container(
+        constraints: BoxConstraints(maxHeight: maxHeight),
+        margin: const EdgeInsets.symmetric(horizontal: 8),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(12),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.1),
+              blurRadius: 8,
+              offset: const Offset(0, -2),
+            ),
+          ],
+        ),
+        child: ListView.builder(
+          controller: _mentionScrollController,
+          shrinkWrap: true,
+          padding: EdgeInsets.zero,
+          itemCount: totalCount,
+          itemBuilder: (context, index) {
           final isSelected = index == _mentionSelectedIndex;
           final showSubMenu = _mentionSubMenuIndex == index;
 
@@ -303,11 +305,13 @@ class ChatInputAreaState extends State<ChatInputArea> {
           return itemTile;
         },
       ),
+      ),
     );
   }
 
   Widget _buildMentionAllTile(bool isSelected, bool showSubMenu) {
     return InkWell(
+      canRequestFocus: false,
       onTap: () {
         setState(() {
           _mentionSelectedIndex = 0;
@@ -353,6 +357,7 @@ class ChatInputAreaState extends State<ChatInputArea> {
     int index,
   ) {
     return InkWell(
+      canRequestFocus: false,
       onTap: () {
         setState(() {
           _mentionSelectedIndex = index;
@@ -409,6 +414,7 @@ class ChatInputAreaState extends State<ChatInputArea> {
         children: [
           Expanded(
             child: InkWell(
+              canRequestFocus: false,
               onTap: () => _confirmSubMenuSelection(0),
               child: Container(
                 alignment: Alignment.center,
@@ -451,6 +457,7 @@ class ChatInputAreaState extends State<ChatInputArea> {
           Container(width: 0.5, color: Colors.grey[300]),
           Expanded(
             child: InkWell(
+              canRequestFocus: false,
               onTap: () => _confirmSubMenuSelection(1),
               child: Container(
                 alignment: Alignment.center,
@@ -507,6 +514,8 @@ class ChatInputAreaState extends State<ChatInputArea> {
         _insertMentionDirect(filtered[agentIndex], notify);
       }
     }
+    // Ensure focus returns to text field after mention insertion
+    _refocusTextField();
   }
 
   void _scrollToSelectedItem() {
@@ -1059,7 +1068,7 @@ class ChatInputAreaState extends State<ChatInputArea> {
             _mentionSubMenuIndex = _mentionSelectedIndex;
             _mentionSubMenuSelectedIndex = 0;
           });
-          widget.textFieldFocusNode.requestFocus();
+          _refocusTextField();
         }
         return KeyEventResult.handled;
       }
@@ -1421,11 +1430,19 @@ class ChatInputAreaState extends State<ChatInputArea> {
   void _refocusTextField() {
     widget.textFieldFocusNode.requestFocus();
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) widget.textFieldFocusNode.requestFocus();
+      if (mounted) {
+        widget.textFieldFocusNode.requestFocus();
+        // After the next frame (layout fully settled after widget removal)
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) widget.textFieldFocusNode.requestFocus();
+        });
+      }
     });
-    // Extra delay for mobile: touch-up events can unfocus after requestFocus
-    Future.delayed(const Duration(milliseconds: 50), () {
-      if (mounted) widget.textFieldFocusNode.requestFocus();
+    // Fallback for mobile: touch-up or keyboard events can unfocus after frame callbacks
+    Future.delayed(const Duration(milliseconds: 100), () {
+      if (mounted && !widget.textFieldFocusNode.hasFocus) {
+        widget.textFieldFocusNode.requestFocus();
+      }
     });
   }
 

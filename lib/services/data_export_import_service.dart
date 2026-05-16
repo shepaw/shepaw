@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'dart:convert';
 import 'package:path_provider/path_provider.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 import 'package:archive/archive_io.dart';
 import 'package:sqflite/sqflite.dart';
 import '../services/local_database_service.dart';
@@ -242,11 +243,12 @@ class DataExportImportService {
   }
 
   Future<void> _createMetadata(Directory exportDir) async {
+    final packageInfo = await PackageInfo.fromPlatform();
     final metadata = {
       'version': '1.0',
       'exportedAt': DateTime.now().toIso8601String(),
       'platform': Platform.operatingSystem,
-      'appVersion': '1.0.0',
+      'appVersion': packageInfo.version,
     };
 
     final file = File('${exportDir.path}/metadata.json');

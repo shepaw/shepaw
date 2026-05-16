@@ -383,7 +383,7 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
     ];
 
     // Bottom section items (collapsed when height is insufficient)
-    // Index 0–4: before divider; after that: settings + logout
+    // Index 0–5: before divider; after that: settings
     final bottomItems = [
       _SidebarItemDef(
         icon: Icons.person_add_outlined,
@@ -445,12 +445,6 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
             _rightPanel == _RightPanelView.settings ? activeColor : iconColor,
         onTap: () => _showPanel(_RightPanelView.settings),
       ),
-      _SidebarItemDef(
-        icon: Icons.logout,
-        tooltip: l10n.drawer_logout,
-        colorBuilder: (_) => Colors.red,
-        onTap: _showLogoutDialog,
-      ),
     ];
     const dividerIndex = 6; // index in bottomItems that is the divider sentinel
 
@@ -505,24 +499,24 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
             // But per user request: overflow goes from top of bottom section.
             needsMoreButton = true;
 
-            // Minimum bottom section: just the "more" button + divider + settings + logout
-            // = moreItemHeight + dividerHeight + itemHeight*2
+            // Minimum bottom section: just the "more" button + divider + settings
+            // = moreItemHeight + dividerHeight + itemHeight
             const double minBottomHeight =
-                moreItemHeight + dividerHeight + itemHeight * 2;
+                moreItemHeight + dividerHeight + itemHeight;
 
             // Available height for bottom section (allow spacer to compress to 0)
             final double usableForBottom =
                 (spaceForBottom).clamp(minBottomHeight, double.infinity);
 
-            // Items to always keep: divider + settings + logout (indices 6,7,8)
-            const alwaysKeep = [6, 7, 8]; // divider, settings, logout
-            double alwaysHeight = dividerHeight + itemHeight * 2;
+            // Items to always keep: divider + settings (indices 6,7)
+            const alwaysKeep = [6, 7]; // divider, settings
+            double alwaysHeight = dividerHeight + itemHeight;
 
             // Remaining budget for collapsible items (indices 0-5) + more button
             double budget = usableForBottom - alwaysHeight - moreItemHeight;
 
             // Pack collapsible items from end to beginning (last ones have priority)
-            final collapsibleIndices = [4, 3, 2, 1, 0];
+            final collapsibleIndices = [5, 4, 3, 2, 1, 0];
             List<int> shownCollapsible = [];
             for (final idx in collapsibleIndices) {
               if (budget >= itemHeight) {
@@ -720,34 +714,6 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
     _showPanel(_RightPanelView.search);
   }
 
-  void _showLogoutDialog() {
-    final l10n = AppLocalizations.of(context);
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: Text(l10n.logout_confirmTitle),
-        content: Text(l10n.logout_confirmContent),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: Text(l10n.common_cancel),
-          ),
-          TextButton(
-            onPressed: () {
-              Navigator.of(context, rootNavigator: true).pushNamedAndRemoveUntil(
-                '/login',
-                (route) => false,
-              );
-            },
-            child: Text(
-              l10n.common_confirm,
-              style: const TextStyle(color: Colors.red),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
 
   Widget _buildEmptyState() {
     final l10n = AppLocalizations.of(context);

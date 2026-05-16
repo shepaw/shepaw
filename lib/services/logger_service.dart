@@ -21,6 +21,7 @@ class LoggerService {
 
   File? _logFile;
   bool _initialized = false;
+  bool _logDirVerified = false;
   final List<LogEntry> _memoryLogs = [];
   static const int _maxMemoryLogs = 1000;
   static const int _maxLogFileSizeMB = 10;
@@ -108,6 +109,14 @@ class LoggerService {
     // 写入文件
     if (_initialized && _logFile != null) {
       try {
+        // 首次写入时确保日志目录存在（防止沙盒路径变化或目录被清理）
+        if (!_logDirVerified) {
+          final logDir = _logFile!.parent;
+          if (!await logDir.exists()) {
+            await logDir.create(recursive: true);
+          }
+          _logDirVerified = true;
+        }
         await _logFile!.writeAsString('$logMessage\n', mode: FileMode.append);
       } catch (e) {
         if (kDebugMode) print('Failed to write log to file: $e');

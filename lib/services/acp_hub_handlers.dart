@@ -7,6 +7,7 @@ library;
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'package:package_info_plus/package_info_plus.dart';
 import '../models/acp_protocol.dart';
 import '../models/acp_server_message.dart';
 import '../models/channel.dart';
@@ -204,11 +205,12 @@ class ACPHubHandlers {
 
   Future<ACPResponse> _handleGetHubInfo(dynamic id) async {
     final agents = await _apiService.getAgents();
+    final packageInfo = await PackageInfo.fromPlatform();
 
     return ACPResponse.success(
       id: id,
       result: {
-        'version': '1.0.0',
+        'version': packageInfo.version,
         'name': 'Paw',
         'supported_protocols': ['ACP/1.0', 'A2A/1.0'],
         'agent_count': agents.length,
