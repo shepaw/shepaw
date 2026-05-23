@@ -19,6 +19,7 @@ import '../services/app_lifecycle_service.dart';
 import '../services/notification_service.dart';
 import '../services/interactive_response_handler.dart';
 import '../services/logger_service.dart';
+import '../services/workflow/workflow_service.dart';
 
 // ---------------------------------------------------------------------------
 // Events — sealed hierarchy for UI-bound side effects
@@ -218,6 +219,98 @@ class ChatController extends ChangeNotifier with InteractiveStreamingContext {
   void dismissWorkflowPanel() {
     _activeWorkflowId = null;
     notifyListeners();
+  }
+
+  /// Called when user approves a workflow plan — marks it running and shows progress panel.
+  Future<void> _handleWorkflowApproved(String workflowId) async {
+    final workflowService = WorkflowService(db: localDatabaseService);
+    await workflowService.startWorkflow(workflowId);
+    setActiveWorkflowId(workflowId);
+  }
+
+  /// Handle workflow approval/rejection from the WorkflowProgressPanel.
+  Future<void> handleWorkflowApproval(bool approved, {String? feedback}) async {
+    final workflowId = _activeWorkflowId;
+    if (workflowId == null || currentChannelId == null) return;
+
+    final workflowService = WorkflowService(db: localDatabaseService);
+
+    if (approved) {
+      await workflowService.startWorkflow(workflowId);
+      notifyListeners();
+
+      // Auto-execute all stages in the background.
+      // processGroupAgent inside executeWorkflowSteps handles message creation
+      // and streaming internally. We just reconcile afterwards.
+      chatService.executeWorkflowSteps(
+        workflowId: workflowId,
+        channelId: currentChannelId!,
+        userId: getUserId(),
+        userName: getUserName(),
+        onAgentStart: (aid, anm) {
+          respondingAgentNames.add(anm);
+          _notify();
+        },
+        onAgentDone: (aid, anm, skipped) {
+          respondingAgentNames.remove(anm);
+          _notify();
+          reconcileGroupMessages();
+        },
+        onInteractionRequest: (agentId, agentName, interactionType, data) async {
+          // During workflow step execution, interactions must block until
+          // the user responds. This prevents steps from being marked
+          // "completed" before the user fills a form / selects an action.
+
+          // Determine the message ID — the agent's message is already saved
+          // to DB by processGroupAgent before this callback fires.
+          await reconcileGroupMessages();
+          final savedMsgId = data.remove('_savedMessageId') as String?;
+          String? sid;
+          if (savedMsgId != null && messageIdMap.containsKey(savedMsgId)) {
+            sid = savedMsgId;
+          }
+
+          // Update message metadata to show the interactive component
+          if (sid != null) {
+            _updateGroupStreamingMetadata(sid, interactionType, data);
+            final existingMeta = Map<String, dynamic>.from(
+                messageIdMap[sid]?.metadata ?? {});
+            existingMeta[interactionType] = data;
+            localDatabaseService
+                .updateMessageMetadata(sid, existingMeta)
+                .ignore();
+          }
+
+          // Create event with a Completer that BLOCKS until user responds
+          final event = GroupInteractionRequestEvent(
+            agentId: agentId,
+            agentName: agentName,
+            interactionType: interactionType,
+            data: data,
+            groupStreamingMessageId: sid ?? agentId,
+          );
+          pendingGroupInteractions[sid ?? agentId] = event;
+          _notify();
+          _emit(event);
+
+          // Block here until the user actually responds (no timeout for workflow steps)
+          try {
+            final result = await event.result.future.timeout(
+              const Duration(minutes: 30),
+              onTimeout: () => null,
+            );
+            return result;
+          } finally {
+            pendingGroupInteractions.remove(sid ?? agentId);
+            _notify();
+          }
+        },
+      );
+    } else {
+      await workflowService.cancelWorkflow(workflowId);
+      _activeWorkflowId = null;
+      notifyListeners();
+    }
   }
 
   ChatController({
@@ -1657,6 +1750,14 @@ class ChatController extends ChangeNotifier with InteractiveStreamingContext {
         onAllDone: () {},
         onActiveWorkflowChanged: (workflowId) => setActiveWorkflowId(workflowId),
         onInteractionRequest: (agentId, agentName, interactionType, data) async {
+          // Workflow: if this is a plan_approval with a workflow ID, show the progress panel
+          if (interactionType == 'plan_approval') {
+            final workflowId = data['_workflowId'] as String?;
+            if (workflowId != null) {
+              setActiveWorkflowId(workflowId);
+            }
+          }
+
           // Determine the message ID to attach the interactive component to.
           // If the agent is still streaming, use the streaming message ID.
           // If the agent has already finished (local LLM path), the streaming
@@ -1949,6 +2050,16 @@ class ChatController extends ChangeNotifier with InteractiveStreamingContext {
         if (skippedTaskIds != null && skippedTaskIds.isNotEmpty)
           'skipped_task_ids': skippedTaskIds,
       });
+
+      // If approved and has workflow ID, mark workflow as running + show panel
+      if (approved) {
+        final existingMsg = messageIdMap[originalMessage.id];
+        final planMeta = existingMsg?.metadata?['plan_approval'] as Map<String, dynamic>?;
+        final workflowId = planMeta?['_workflowId'] as String?;
+        if (workflowId != null) {
+          _handleWorkflowApproved(workflowId);
+        }
+      }
     }
   }
 

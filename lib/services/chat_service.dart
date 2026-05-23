@@ -21,6 +21,7 @@ import 'group/planning_helpers.dart';
 import 'group/group_agent_executor.dart';
 import 'group/group_orchestration_service.dart';
 import 'workflow/workflow_service.dart';
+import '../models/workflow_models.dart';
 import 'messaging/agent_messaging_service.dart';
 import 'group/group_session_service.dart';
 import 'session/session_history_service.dart';
@@ -77,7 +78,7 @@ class ChatService implements IPawChatSender {
   final Map<String, ActiveTask> _activeTasks = {};
 
   // Pending plan_approvals: managed by PlanApprovalService
-  final PlanApprovalService _planApprovalService = PlanApprovalService();
+  final PlanApprovalService _planApprovalService = PlanApprovalService.instance;
 
   // Active group tasks: channelId -> { agentId -> GroupActiveTask }
   final Map<String, Map<String, GroupActiveTask>> _activeGroupTasks = {};
@@ -1149,6 +1150,158 @@ class ChatService implements IPawChatSender {
     onActiveWorkflowChanged: onActiveWorkflowChanged,
     onInteractionRequest: onInteractionRequest,
   );
+
+  /// Execute a workflow's steps automatically after user approval.
+  ///
+  /// Iterates through stages sequentially, executing all steps within each
+  /// stage in parallel using [GroupAgentExecutor.processGroupAgent].
+  /// If a step triggers a user interaction (form/action_confirmation/file_upload),
+  /// the step waits for the user to respond before marking as complete.
+  Future<void> executeWorkflowSteps({
+    required String workflowId,
+    required String channelId,
+    required String userId,
+    required String userName,
+    void Function(String agentId, String agentName, String chunk)? onStreamChunk,
+    void Function(String agentId, String agentName)? onAgentStart,
+    void Function(String agentId, String agentName, bool skipped)? onAgentDone,
+    Future<Map<String, dynamic>?> Function(
+      String agentId, String agentName, String interactionType, Map<String, dynamic> data,
+    )? onInteractionRequest,
+  }) async {
+    final workflow = await _workflowService.getWorkflowExecutionWithSteps(workflowId);
+    if (workflow == null) return;
+
+    final channel = await _databaseService.getChannelById(channelId);
+    if (channel == null) return;
+
+    // Load agents
+    final agents = <RemoteAgent>[];
+    for (final agentId in channel.agentIds) {
+      final agent = await _databaseService.getRemoteAgentById(agentId);
+      if (agent != null) agents.add(agent);
+    }
+    if (agents.isEmpty) return;
+
+    final groupName = channel.name;
+    final groupDescription = channel.description ?? '';
+    final channelMembers = channel.members;
+    final customSystemPrompt = channel.systemPrompt;
+    final mentionMode = channel.effectiveMentionMode;
+
+    // Group steps by stage
+    final stageMap = <int, List<dynamic>>{};
+    for (final step in workflow.steps) {
+      stageMap.putIfAbsent(step.stageIndex, () => []).add(step);
+    }
+    final stageIndices = stageMap.keys.toList()..sort();
+
+    // Load history once
+    final historyMessages = await loadChannelMessages(channelId, limit: 50);
+
+    // Execute stages sequentially
+    for (final stageIdx in stageIndices) {
+      final steps = stageMap[stageIdx]!;
+
+      // Execute steps within stage in parallel
+      final futures = steps
+          .where((s) => s.status != StepExecutionStatus.skipped)
+          .map((step) async {
+        await _workflowService.startStep(step.id);
+
+        // Find the agent
+        final agent = agents.cast<RemoteAgent?>().firstWhere(
+          (a) => a!.name == step.agentName,
+          orElse: () => null,
+        );
+        if (agent == null) {
+          await _workflowService.failStep(step.id, 'Agent "${step.agentName}" not found');
+          return;
+        }
+
+        onAgentStart?.call(agent.id, agent.name);
+
+        try {
+          final stepBuffer = StringBuffer();
+          await _groupAgentExecutor.processGroupAgent(
+            agent: agent,
+            channelId: channelId,
+            content: step.instruction,
+            userId: userId,
+            userName: userName,
+            groupName: groupName,
+            groupDescription: groupDescription,
+            allAgents: agents,
+            historyMessages: historyMessages,
+            mentionedAgentIds: [agent.id],
+            isFirstMessage: false,
+            channelMembers: channelMembers,
+            customSystemPrompt: customSystemPrompt,
+            mentionMode: mentionMode,
+            onStreamChunk: (aid, anm, chunk) {
+              stepBuffer.write(chunk);
+              onStreamChunk?.call(aid, anm, chunk);
+            },
+            onAgentDone: onAgentDone,
+            onInteractionRequest: onInteractionRequest,
+          );
+          final output = stepBuffer.toString();
+          await _workflowService.completeStep(
+            step.id,
+            outputSummary: output.length > 500 ? '${output.substring(0, 497)}...' : output,
+          );
+        } catch (e) {
+          await _workflowService.failStep(step.id, e.toString());
+          onAgentDone?.call(agent.id, agent.name, true);
+        }
+      });
+
+      await Future.wait(futures);
+
+      // Check if any step in this stage failed
+      final updatedWorkflow = await _workflowService.getWorkflowExecutionWithSteps(workflowId);
+      final stageSteps = updatedWorkflow?.steps.where((s) => s.stageIndex == stageIdx) ?? [];
+      if (stageSteps.any((s) => s.status == StepExecutionStatus.failed)) {
+        await _workflowService.failWorkflow(workflowId, 'Stage ${stageIdx + 1} has failed steps');
+        return;
+      }
+    }
+
+    // All stages completed — invoke Admin for final summary
+    final adminAgent = agents.where((a) =>
+        channel.members.any((m) => m.id == a.id && m.role == 'admin')).firstOrNull;
+
+    if (adminAgent != null) {
+      onAgentStart?.call(adminAgent.id, adminAgent.name);
+      try {
+        final summaryHistory = await loadChannelMessages(channelId, limit: 50);
+        await _groupAgentExecutor.processGroupAgent(
+          agent: adminAgent,
+          channelId: channelId,
+          content: '[SYSTEM] 工作流全部阶段已执行完毕，请对执行结果做最终总结，向用户汇报成果。',
+          userId: userId,
+          userName: userName,
+          groupName: groupName,
+          groupDescription: groupDescription,
+          allAgents: agents,
+          historyMessages: summaryHistory,
+          mentionedAgentIds: const [],
+          isFirstMessage: false,
+          isAdmin: true,
+          channelMembers: channelMembers,
+          customSystemPrompt: customSystemPrompt,
+          mentionMode: mentionMode,
+          onStreamChunk: onStreamChunk,
+          onAgentDone: onAgentDone,
+        );
+      } catch (e) {
+        LoggerService().error('Workflow final summary error', tag: 'ChatService', error: e);
+        onAgentDone?.call(adminAgent.id, adminAgent.name, true);
+      }
+    }
+
+    await _workflowService.completeWorkflow(workflowId, summary: '所有阶段执行完毕');
+  }
 
   /// Create a new group session with the same members and name as the original group.
   Future<String> createNewGroupSession({

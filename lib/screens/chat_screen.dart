@@ -1550,6 +1550,9 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
             WorkflowProgressPanel(
               workflowId: c.activeWorkflowId!,
               onDismiss: () => c.dismissWorkflowPanel(),
+              onApprovalResponse: (approved, {feedback}) {
+                c.handleWorkflowApproval(approved, feedback: feedback);
+              },
             ),
 
           // Voice record overlay

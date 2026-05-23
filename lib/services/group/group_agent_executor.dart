@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 import 'package:uuid/uuid.dart';
 import '../../models/message.dart';
@@ -8,8 +9,12 @@ import '../../models/attachment_data.dart';
 import '../../models/llm_stream_event.dart';
 import '../../models/inference_log_entry.dart';
 import '../../models/planning_models.dart';
+import '../../clis/shepaw/shepaw_cli.dart';
+import '../../clis/shepaw/workflow/workflow_namespace.dart';
+import '../../clis/shepaw/workflow/workflow_dispatch_command.dart';
 import '../local_database_service.dart';
 import '../local_llm_agent_service.dart';
+import '../messaging/local_llm_handler.dart';
 import '../acp_agent_connection.dart';
 import '../file_download_service.dart';
 import '../inference_log_service.dart';
@@ -332,74 +337,194 @@ class GroupAgentExecutor {
         isClaude: isClaude,
       );
 
-      // Build the full message list for trace recording (mirrors what
-      // LocalLLMAgentService.chat builds internally for OpenAI-compatible APIs).
-      final traceMessages = <Map<String, dynamic>>[
-        if (systemPrompt.isNotEmpty) {'role': 'system', 'content': systemPrompt},
+      // Build the full message list for multi-turn tool calling
+      final roundMessages = <Map<String, dynamic>>[
         ...chatHistory,
         {'role': 'user', 'content': content},
       ];
+      const maxToolRounds = 5;
+
       infLogGroup.beginRound(
         groupTraceId,
-        requestSummary: 'Group single round',
-        messages: traceMessages,
+        requestSummary: 'Group round 1',
+        messages: [
+          if (systemPrompt.isNotEmpty) {'role': 'system', 'content': systemPrompt},
+          ...roundMessages,
+        ],
       );
 
       try {
-        await for (final event in LocalLLMAgentService.instance.chat(
-          agent: agent,
-          message: content,
-          history: chatHistory.isNotEmpty ? chatHistory : null,
-          enableUITools: true,
-          systemPromptOverride: systemPrompt,
-        )) {
-          if (acpCancellationToken?.isCancelled == true) break;
-          switch (event) {
-            case LLMTextEvent():
-              streamingStarted = true;
-              responseBuffer.write(event.text);
-              groupTask.accumulatedContent += event.text;
-              groupTask.onStreamChunk?.call(event.text);
-              onStreamChunk?.call(agent.id, agent.name, event.text);
-              infLogGroup.onTextChunk(groupTraceId, event.text);
-              break;
-            case LLMToolCallEvent():
-              infLogGroup.onToolCall(groupTraceId, id: event.id, name: event.name, arguments: event.arguments);
-              switch (event.name) {
-                case 'file_message':
-                  await saveGroupFileMessage(
-                    fileData: event.arguments,
-                    agentId: agent.id,
-                    agentName: agent.name,
-                    channelId: channelId,
-                    userId: userId,
-                    userName: userName,
-                  );
-                  break;
-                case 'action_confirmation':
-                  actionConfirmationData = Map<String, dynamic>.from(event.arguments);
-                  break;
-                case 'single_select':
-                  singleSelectData = Map<String, dynamic>.from(event.arguments);
-                  break;
-                case 'multi_select':
-                  multiSelectData = Map<String, dynamic>.from(event.arguments);
-                  break;
-                case 'file_upload':
-                  fileUploadData = Map<String, dynamic>.from(event.arguments);
-                  break;
-                case 'form':
-                  formDataCapture = Map<String, dynamic>.from(event.arguments);
-                  break;
-                case 'message_metadata':
-                  messageMetadataExtra = Map<String, dynamic>.from(event.arguments);
-                  break;
-              }
-              break;
-            case LLMDoneEvent():
-              infLogGroup.endRound(groupTraceId, stopReason: event.stopReason);
-              break;
+        for (int toolRound = 0; toolRound < maxToolRounds; toolRound++) {
+          final pawToolCalls = <LLMToolCallEvent>[];
+          final pawToolResults = <Map<String, dynamic>>[];
+          LLMDoneEvent? doneEvent;
+
+          await for (final event in LocalLLMAgentService.instance.chat(
+            agent: agent,
+            message: toolRound == 0 ? content : '', // Only first round has original message
+            history: toolRound == 0
+                ? (chatHistory.isNotEmpty ? chatHistory : null)
+                : roundMessages,
+            enableUITools: true,
+            includeShepawCli: isAdmin,
+            systemPromptOverride: systemPrompt,
+          )) {
+            if (acpCancellationToken?.isCancelled == true) break;
+            switch (event) {
+              case LLMTextEvent():
+                streamingStarted = true;
+                responseBuffer.write(event.text);
+                groupTask.accumulatedContent += event.text;
+                groupTask.onStreamChunk?.call(event.text);
+                onStreamChunk?.call(agent.id, agent.name, event.text);
+                infLogGroup.onTextChunk(groupTraceId, event.text);
+                break;
+              case LLMToolCallEvent():
+                infLogGroup.onToolCall(groupTraceId, id: event.id, name: event.name, arguments: event.arguments);
+                switch (event.name) {
+                  case 'file_message':
+                    await saveGroupFileMessage(
+                      fileData: event.arguments,
+                      agentId: agent.id,
+                      agentName: agent.name,
+                      channelId: channelId,
+                      userId: userId,
+                      userName: userName,
+                    );
+                    break;
+                  case 'action_confirmation':
+                    actionConfirmationData = Map<String, dynamic>.from(event.arguments);
+                    break;
+                  case 'single_select':
+                    singleSelectData = Map<String, dynamic>.from(event.arguments);
+                    break;
+                  case 'multi_select':
+                    multiSelectData = Map<String, dynamic>.from(event.arguments);
+                    break;
+                  case 'file_upload':
+                    fileUploadData = Map<String, dynamic>.from(event.arguments);
+                    break;
+                  case 'form':
+                    formDataCapture = Map<String, dynamic>.from(event.arguments);
+                    break;
+                  case 'message_metadata':
+                    messageMetadataExtra = Map<String, dynamic>.from(event.arguments);
+                    break;
+                  default:
+                    // Handle shepaw CLI tool calls
+                    if (ShepawCLI.instance.isPawTool(event.name)) {
+                      // Inject channel_id into the args
+                      final args = Map<String, dynamic>.from(event.arguments);
+                      final flags = args['flags'] is Map
+                          ? Map<String, dynamic>.from(args['flags'] as Map)
+                          : <String, dynamic>{};
+                      flags['channel_id'] = channelId;
+                      args['flags'] = flags;
+
+                      // Set workflow namespace context
+                      WorkflowNamespace.instance.channelId = channelId;
+                      WorkflowNamespace.instance.agentId = agent.id;
+
+                      // Wire up dispatch command's step execution callback
+                      WorkflowDispatchCommand.executeStepFn = (agentName, instruction, chId) async {
+                        final targetAgent = allAgents.cast<RemoteAgent?>().firstWhere(
+                          (a) => a!.name == agentName,
+                          orElse: () => null,
+                        );
+                        if (targetAgent == null) {
+                          return '[Error] Agent "$agentName" not found in group members.';
+                        }
+                        final stepBuffer = StringBuffer();
+                        await processGroupAgent(
+                          agent: targetAgent,
+                          channelId: chId,
+                          content: instruction,
+                          userId: userId,
+                          userName: userName,
+                          groupName: groupName,
+                          groupDescription: groupDescription,
+                          allAgents: allAgents,
+                          historyMessages: historyMessages,
+                          mentionedAgentIds: [targetAgent.id],
+                          isFirstMessage: false,
+                          messageVersion: messageVersion,
+                          channelMembers: channelMembers,
+                          customSystemPrompt: customSystemPrompt,
+                          mentionMode: mentionMode,
+                          acpCancellationToken: acpCancellationToken,
+                          onStreamChunk: (aid, anm, chunk) {
+                            stepBuffer.write(chunk);
+                            onStreamChunk?.call(aid, anm, chunk);
+                          },
+                          onAgentDone: onAgentDone,
+                          onInteractionRequest: onInteractionRequest,
+                        );
+                        return stepBuffer.toString();
+                      };
+
+                      // Execute CLI command
+                      final cliResult = await ShepawCLI.instance.execute(args, agentId: agent.id);
+                      LoggerService().info(
+                        'CLI result (${args['namespace']} ${args['subcommand'] ?? ''}): ${cliResult.length > 200 ? '${cliResult.substring(0, 200)}...' : cliResult}',
+                        tag: 'GroupAgentExecutor',
+                      );
+                      infLogGroup.onToolResult(groupTraceId, toolCallId: event.id, name: event.name, result: cliResult);
+
+                      // Collect for multi-turn
+                      pawToolCalls.add(event);
+                      pawToolResults.add({
+                        'tool_call_id': event.id,
+                        'name': event.name,
+                        'result': cliResult,
+                      });
+
+                      // Handle workflow create approval flow
+                      try {
+                        final cliJson = json.decode(cliResult) as Map<String, dynamic>?;
+                        if (cliJson != null && cliJson['status'] == 'pending_approval') {
+                          final workflowId = cliJson['workflow_id'] as String?;
+                          final planDataRaw = cliJson['_plan_data'] as Map<String, dynamic>?;
+                          if (workflowId != null && planDataRaw != null && onInteractionRequest != null) {
+                            await onInteractionRequest?.call(
+                              agent.id, agent.name, 'plan_approval',
+                              {...planDataRaw, '_workflowId': workflowId, '_non_blocking': true},
+                            );
+                          }
+                        }
+                      } catch (e) {
+                        LoggerService().warning('Workflow approval flow error: $e', tag: 'GroupAgentExecutor');
+                      }
+                    }
+                    break;
+                }
+                break;
+              case LLMDoneEvent():
+                doneEvent = event;
+                infLogGroup.endRound(groupTraceId, stopReason: event.stopReason);
+                break;
+            }
           }
+
+          // If there were CLI tool calls AND we have a rawAssistantMessage,
+          // feed results back to LLM for continuation (multi-turn).
+          if (pawToolCalls.isNotEmpty && doneEvent?.rawAssistantMessage != null) {
+            LoggerService().info(
+              'Multi-turn: ${pawToolCalls.length} tool calls in round ${toolRound + 1}, continuing...',
+              tag: 'GroupAgentExecutor',
+            );
+            if (isClaude) {
+              LocalLLMHelpers.appendToolRoundClaude(
+                  roundMessages, doneEvent!.rawAssistantMessage!, pawToolCalls, pawToolResults);
+            } else {
+              LocalLLMHelpers.appendToolRoundOpenAI(
+                  roundMessages, doneEvent!.rawAssistantMessage!, pawToolCalls, pawToolResults);
+            }
+            infLogGroup.beginRound(groupTraceId, requestSummary: 'Group round ${toolRound + 2}');
+            continue; // Next round
+          }
+
+          // No tool calls or stream done — exit loop
+          break;
         }
       } catch (e) {
         LoggerService().error('Group agent ${agent.name} stream error', tag: 'GroupAgentExecutor', error: e);

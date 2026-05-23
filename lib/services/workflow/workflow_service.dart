@@ -12,6 +12,9 @@ import '../logger_service.dart';
 /// workflow_step_executions tables, plus real-time notifications
 /// for UI updates via streams.
 class WorkflowService {
+  /// Global singleton instance.
+  static final WorkflowService instance = WorkflowService._(db: LocalDatabaseService());
+
   final LocalDatabaseService _db;
   final Uuid _uuid = const Uuid();
 
@@ -20,7 +23,10 @@ class WorkflowService {
   final StreamController<String> _updateController =
       StreamController<String>.broadcast();
 
-  WorkflowService({required LocalDatabaseService db}) : _db = db;
+  WorkflowService._({required LocalDatabaseService db}) : _db = db;
+
+  /// Constructor for dependency injection (delegates to singleton in practice).
+  factory WorkflowService({required LocalDatabaseService db}) => instance;
 
   /// Dispose resources.
   void dispose() {

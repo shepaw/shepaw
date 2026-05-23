@@ -16,7 +16,6 @@ import 'form_bubble.dart';
 import 'collapsible_message_bubble.dart';
 import 'permission_audit_bubble.dart';
 import 'avatar_image.dart';
-import 'chat/plan_approval_card.dart';
 import '../services/she_service.dart';
 
 class MessageBubble extends StatelessWidget {
@@ -426,23 +425,7 @@ class MessageBubble extends StatelessWidget {
           );
         }
 
-        // Check for plan approval data
-        final planApproval = message.metadata?['plan_approval'] as Map<String, dynamic>?;
-        if (planApproval != null) {
-          return Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              if (message.content.isNotEmpty)
-                ...[markdownWidget, const SizedBox(height: 10)],
-              PlanApprovalCard(
-                planData: planApproval,
-                isResponded: message.metadata?['plan_approval_responded'] != null,
-                onRespond: onPlanApprovalResponded ??
-                    (_, {feedback, skippedTaskIds}) {},
-              ),
-            ],
-          );
-        }
+        // Check for single-select data
 
         // Check for single-select data
         final singleSelect = message.metadata?['single_select'] as Map<String, dynamic>?;

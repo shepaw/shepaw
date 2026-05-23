@@ -3,10 +3,9 @@ import '../../cli_base.dart';
 import '../../../models/planning_models.dart';
 import '../../../services/workflow/workflow_service.dart';
 import '../../../services/local_database_service.dart';
-import '../../../services/task/plan_approval_service.dart';
 import 'workflow_namespace.dart';
 
-/// 创建工作流并提交用户审批。
+/// 创建工作流计划。
 ///
 /// 用法：
 ///   shepaw workflow create --title "标题" --summary "摘要" --stages '[...]'
@@ -23,13 +22,15 @@ import 'workflow_namespace.dart';
 /// ]
 /// ```
 ///
-/// 命令会阻塞等待用户审批结果后返回。
+/// 创建后系统会向用户展示审批卡片。
+/// 命令立即返回 workflow_id 和 pending_approval 状态。
+/// Admin 应等待用户审批后再调用 `workflow dispatch`。
 class WorkflowCreateCommand extends CliCommand {
   @override
   String get name => 'create';
 
   @override
-  String get description => 'Create a workflow plan and submit for user approval';
+  String get description => 'Create a workflow plan (pending user approval)';
 
   @override
   String get usage =>
@@ -110,60 +111,17 @@ class WorkflowCreateCommand extends CliCommand {
       triggerMessage: flags['trigger_message'],
     );
 
-    // Wait for user approval via PlanApprovalService
-    final approvalService = PlanApprovalService();
-    final planData = {
-      ...flowPlan.toExecutionPlan().toJson(),
-      '_workflowId': execution.id,
-    };
-
-    final approvalResult = await approvalService.awaitPlanApproval(
-      channelId: channelId,
-      agentId: WorkflowNamespace.instance.agentId ?? '',
-      agentName: '',
-      planData: planData,
-      messageId: '',
-    );
-
-    if (approvalResult == null || approvalResult['approved'] != true) {
-      await workflowService.cancelWorkflow(execution.id);
-      final feedback = approvalResult?['feedback'] as String?;
-      return {
-        'workflow_id': execution.id,
-        'status': 'rejected',
-        if (feedback != null) 'feedback': feedback,
-        'message': '用户拒绝了工作流计划${feedback != null ? "，反馈：$feedback" : ""}',
-      };
-    }
-
-    // Apply skipped steps
-    final skippedIds = ((approvalResult['skipped_task_ids'] as List?)
-            ?.map((e) => e.toString())
-            .toSet()) ??
-        <String>{};
-    if (skippedIds.isNotEmpty) {
-      final exec =
-          await workflowService.getWorkflowExecutionWithSteps(execution.id);
-      if (exec != null) {
-        for (final step in exec.steps) {
-          final stepKey = 's${step.stageIndex}_t${step.stepIndex}';
-          if (skippedIds.contains(stepKey)) {
-            await workflowService.skipStep(step.id);
-          }
-        }
-      }
-    }
-
-    // Mark as running
-    await workflowService.startWorkflow(execution.id);
-
+    // Return immediately with pending_approval status.
+    // The GroupAgentExecutor will handle showing the approval UI
+    // and the user approval flow externally.
     return {
       'workflow_id': execution.id,
-      'status': 'approved',
+      'status': 'pending_approval',
       'title': title,
       'total_stages': stages.length,
       'total_steps': stages.fold<int>(0, (sum, s) => sum + s.steps.length),
-      'message': '工作流已获批准，可以开始执行。请逐阶段调用 workflow dispatch。',
+      'message': '工作流已创建，等待用户审批。审批通过后请调用 workflow dispatch 开始执行。',
+      '_plan_data': flowPlan.toExecutionPlan().toJson(),
     };
   }
 }

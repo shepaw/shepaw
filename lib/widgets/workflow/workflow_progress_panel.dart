@@ -7,6 +7,7 @@ import 'workflow_step_tile.dart';
 
 /// A floating panel shown above the chat input area during workflow execution.
 ///
+/// - **Pending approval**: shows approve/reject buttons
 /// - **Collapsed**: single-row showing title + progress + expand/close buttons
 /// - **Expanded**: scrollable list of stages and steps with real-time status
 ///
@@ -14,11 +15,13 @@ import 'workflow_step_tile.dart';
 class WorkflowProgressPanel extends StatefulWidget {
   final String workflowId;
   final VoidCallback? onDismiss;
+  final void Function(bool approved, {String? feedback})? onApprovalResponse;
 
   const WorkflowProgressPanel({
     super.key,
     required this.workflowId,
     this.onDismiss,
+    this.onApprovalResponse,
   });
 
   @override
@@ -77,13 +80,16 @@ class _WorkflowProgressPanelState extends State<WorkflowProgressPanel>
     final exec = _execution;
     if (exec == null) return const SizedBox.shrink();
 
+    final isPendingApproval = exec.status == WorkflowStatus.pendingApproval;
     final allDone = exec.status == WorkflowStatus.completed;
     final failed = exec.status == WorkflowStatus.failed;
-    final accentColor = allDone
-        ? Colors.green
-        : failed
-            ? Colors.red
-            : Colors.blue;
+    final accentColor = isPendingApproval
+        ? Colors.orange
+        : allDone
+            ? Colors.green
+            : failed
+                ? Colors.red
+                : Colors.blue;
 
     return AnimatedContainer(
       duration: const Duration(milliseconds: 250),
@@ -97,14 +103,18 @@ class _WorkflowProgressPanelState extends State<WorkflowProgressPanel>
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          // Collapsed header (always visible)
+          // Header (always visible)
           _buildHeader(exec, accentColor, allDone, failed),
-          // Expanded content
-          AnimatedSize(
-            duration: const Duration(milliseconds: 250),
-            curve: Curves.easeInOut,
-            child: _expanded ? _buildExpandedContent(exec) : const SizedBox.shrink(),
-          ),
+          // Approval buttons (when pending)
+          if (isPendingApproval)
+            _buildApprovalButtons(),
+          // Expanded content (when not pending)
+          if (!isPendingApproval)
+            AnimatedSize(
+              duration: const Duration(milliseconds: 250),
+              curve: Curves.easeInOut,
+              child: _expanded ? _buildExpandedContent(exec) : const SizedBox.shrink(),
+            ),
         ],
       ),
     );
@@ -126,10 +136,13 @@ class _WorkflowProgressPanelState extends State<WorkflowProgressPanel>
             SizedBox(
               width: 26,
               height: 26,
-              child: allDone
-                  ? Icon(Icons.check_circle,
-                      size: 22, color: Colors.green.shade600)
-                  : failed
+              child: exec.status == WorkflowStatus.pendingApproval
+                  ? Icon(Icons.pending_actions,
+                      size: 22, color: Colors.orange.shade600)
+                  : allDone
+                      ? Icon(Icons.check_circle,
+                          size: 22, color: Colors.green.shade600)
+                      : failed
                       ? Icon(Icons.error, size: 22, color: Colors.red.shade600)
                       : Stack(
                           alignment: Alignment.center,
@@ -174,11 +187,13 @@ class _WorkflowProgressPanelState extends State<WorkflowProgressPanel>
                     overflow: TextOverflow.ellipsis,
                   ),
                   Text(
-                    allDone
-                        ? '全部完成'
-                        : failed
-                            ? '执行失败'
-                            : '$done / $total 步骤完成',
+                    exec.status == WorkflowStatus.pendingApproval
+                        ? '等待审批 · ${exec.totalSteps} 步骤'
+                        : allDone
+                            ? '全部完成'
+                            : failed
+                                ? '执行失败'
+                                : '$done / $total 步骤完成',
                     style: TextStyle(
                       fontSize: 11,
                       color: Colors.grey.shade600,
@@ -201,6 +216,76 @@ class _WorkflowProgressPanelState extends State<WorkflowProgressPanel>
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _buildApprovalButtons() {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(14, 4, 14, 10),
+      child: Row(
+        children: [
+          Expanded(
+            child: OutlinedButton.icon(
+              onPressed: () {
+                _showFeedbackDialog();
+              },
+              icon: const Icon(Icons.edit_outlined, size: 16),
+              label: const Text('提出修改'),
+              style: OutlinedButton.styleFrom(
+                foregroundColor: Colors.orange.shade700,
+              ),
+            ),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: FilledButton.icon(
+              onPressed: () {
+                widget.onApprovalResponse?.call(true);
+              },
+              icon: const Icon(Icons.check_circle_outline, size: 16),
+              label: const Text('批准执行'),
+              style: FilledButton.styleFrom(
+                backgroundColor: Colors.green,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showFeedbackDialog() {
+    final controller = TextEditingController();
+    showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('修改意见'),
+        content: TextField(
+          controller: controller,
+          maxLines: 3,
+          decoration: const InputDecoration(
+            hintText: '请描述你的修改意见...',
+            border: OutlineInputBorder(),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            onPressed: () {
+              Navigator.pop(ctx);
+              widget.onApprovalResponse?.call(
+                false,
+                feedback: controller.text.trim(),
+              );
+            },
+            style: FilledButton.styleFrom(backgroundColor: Colors.orange),
+            child: const Text('提交'),
+          ),
+        ],
       ),
     );
   }

@@ -24,6 +24,10 @@ class PlanApprovalHandle {
 /// Manages pending plan approvals, keyed by channelId.
 /// At most one pending approval per channel.
 class PlanApprovalService {
+  /// Global singleton instance.
+  static final PlanApprovalService instance = PlanApprovalService._();
+  PlanApprovalService._();
+
   final Map<String, PlanApprovalHandle> _pendingApprovals = {};
 
   /// Register a pending plan approval for [channelId].

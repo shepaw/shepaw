@@ -11,6 +11,7 @@ import 'model_registry.dart';
 import 'ui_component_registry.dart';
 import 'logger_service.dart';
 import 'she_service.dart';
+import '../clis/shepaw/shepaw_cli.dart';
 
 /// Local LLM Agent Service
 ///
@@ -74,6 +75,7 @@ class LocalLLMAgentService {
     required String message,
     List<Map<String, dynamic>>? history,
     bool enableUITools = true,
+    bool includeShepawCli = false,
     String? systemPromptOverride,
     List<AttachmentData>? attachments,
   }) async* {
@@ -99,6 +101,7 @@ class LocalLLMAgentService {
         systemPrompt: systemPrompt,
         history: history,
         enableUITools: enableUITools,
+        includeShepawCli: includeShepawCli,
         attachments: attachments,
       );
       return;
@@ -114,6 +117,7 @@ class LocalLLMAgentService {
           systemPrompt: systemPrompt,
           history: history,
           enableUITools: enableUITools,
+          includeShepawCli: includeShepawCli,
           attachments: attachments,
         );
         break;
@@ -129,6 +133,7 @@ class LocalLLMAgentService {
           systemPrompt: systemPrompt,
           history: history,
           enableUITools: enableUITools,
+          includeShepawCli: includeShepawCli,
           attachments: attachments,
         );
         break;
@@ -294,6 +299,7 @@ class LocalLLMAgentService {
     required String systemPrompt,
     List<Map<String, dynamic>>? history,
     bool enableUITools = true,
+    bool includeShepawCli = false,
     List<AttachmentData>? attachments,
   }) async* {
     final messages = <Map<String, dynamic>>[];
@@ -876,6 +882,7 @@ Reply with ONLY the category key (e.g. "${customModalities.first.key}" or "none"
     required String systemPrompt,
     List<Map<String, dynamic>>? history,
     bool enableUITools = true,
+    bool includeShepawCli = false,
     List<AttachmentData>? attachments,
   }) async* {
     final effectiveSystemPrompt = enableUITools
@@ -957,7 +964,9 @@ Reply with ONLY the category key (e.g. "${customModalities.first.key}" or "none"
       'stream': true,
     };
     if (enableUITools) {
-      requestBody['tools'] = UIComponentRegistry.instance.openAITools();
+      final tools = UIComponentRegistry.instance.openAITools();
+      if (includeShepawCli) tools.add(ShepawCLI.instance.openAITool());
+      requestBody['tools'] = tools;
     }
 
     final body = jsonEncode(requestBody);
@@ -986,6 +995,7 @@ Reply with ONLY the category key (e.g. "${customModalities.first.key}" or "none"
     required String systemPrompt,
     List<Map<String, dynamic>>? history,
     bool enableUITools = true,
+    bool includeShepawCli = false,
     List<AttachmentData>? attachments,
   }) async* {
     final effectiveSystemPrompt = enableUITools
@@ -1041,7 +1051,9 @@ Reply with ONLY the category key (e.g. "${customModalities.first.key}" or "none"
       requestBody['system'] = effectiveSystemPrompt;
     }
     if (enableUITools) {
-      requestBody['tools'] = UIComponentRegistry.instance.claudeTools();
+      final tools = UIComponentRegistry.instance.claudeTools();
+      if (includeShepawCli) tools.add(ShepawCLI.instance.claudeTool());
+      requestBody['tools'] = tools;
     }
 
     final body = jsonEncode(requestBody);
