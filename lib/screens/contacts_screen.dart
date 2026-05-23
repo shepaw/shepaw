@@ -2,6 +2,11 @@ import 'package:flutter/material.dart';
 import '../l10n/app_localizations.dart';
 import '../models/agent.dart';
 import '../models/channel.dart';
+import '../peer/models/paired_peer.dart';
+import '../peer/screens/peer_chat_screen.dart';
+import '../peer/screens/peer_pairing_screen.dart';
+import '../peer/services/peer_connection_manager.dart';
+import '../peer/services/peer_storage_service.dart';
 import '../services/local_api_service.dart';
 import '../services/local_database_service.dart';
 import '../services/logger_service.dart';
@@ -25,12 +30,13 @@ class _ContactsScreenState extends State<ContactsScreen>
 
   List<Agent> _agents = [];
   List<Channel> _groups = [];
+  List<PairedPeer> _peers = [];
   bool _isLoading = true;
 
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 2, vsync: this);
+    _tabController = TabController(length: 3, vsync: this);
     _loadData();
   }
 
@@ -49,10 +55,17 @@ class _ContactsScreenState extends State<ContactsScreen>
           .where((c) => c.isGroup && c.parentGroupId == null)
           .toList();
 
+      List<PairedPeer> peers = [];
+      try {
+        await PeerConnectionManager.instance.start();
+        peers = await PeerConnectionManager.instance.getAllPeers();
+      } catch (_) {}
+
       if (mounted) {
         setState(() {
           _agents = agents;
           _groups = groups;
+          _peers = peers;
           _isLoading = false;
         });
       }
@@ -77,6 +90,7 @@ class _ContactsScreenState extends State<ContactsScreen>
           tabs: [
             Tab(text: l10n.contacts_agents),
             Tab(text: l10n.contacts_groups),
+            const Tab(text: '设备'),
           ],
         ),
       ),
@@ -87,6 +101,7 @@ class _ContactsScreenState extends State<ContactsScreen>
               children: [
                 _buildAgentsList(),
                 _buildGroupsList(),
+                _buildPeersList(),
               ],
             ),
     );
@@ -273,5 +288,221 @@ class _ContactsScreenState extends State<ContactsScreen>
     );
     // Reload on return in case of deletion
     _loadData();
+  }
+
+  // ── 配对设备列表 ─────────────────────────────────────────────────────
+
+  Widget _buildPeersList() {
+    if (_peers.isEmpty) {
+      return Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.devices_other, size: 64, color: Colors.grey[300]),
+            const SizedBox(height: 16),
+            Text(
+              '尚未配对任何设备',
+              style: TextStyle(fontSize: 16, color: Colors.grey[400]),
+            ),
+            const SizedBox(height: 24),
+            FilledButton.icon(
+              onPressed: _startPeerPairing,
+              icon: const Icon(Icons.qr_code_2),
+              label: const Text('开始配对'),
+            ),
+          ],
+        ),
+      );
+    }
+
+    return Column(
+      children: [
+        // 添加配对按钮
+        Padding(
+          padding: const EdgeInsets.all(12),
+          child: SizedBox(
+            width: double.infinity,
+            child: OutlinedButton.icon(
+              onPressed: _startPeerPairing,
+              icon: const Icon(Icons.add),
+              label: const Text('添加配对设备'),
+            ),
+          ),
+        ),
+        // 设备列表
+        Expanded(
+          child: RefreshIndicator(
+            onRefresh: _loadData,
+            child: ListView.builder(
+              itemCount: _peers.length,
+              itemBuilder: (context, index) => _buildPeerTile(_peers[index]),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildPeerTile(PairedPeer peer) {
+    final isConnected = peer.state == PeerConnectionState.connected;
+
+    return ListTile(
+      leading: Stack(
+        children: [
+          Container(
+            width: 48,
+            height: 48,
+            decoration: BoxDecoration(
+              color: Colors.teal[100],
+              borderRadius: BorderRadius.circular(12),
+            ),
+            alignment: Alignment.center,
+            child: const Icon(Icons.smartphone, size: 24, color: Colors.teal),
+          ),
+          Positioned(
+            right: 0,
+            bottom: 0,
+            child: Container(
+              width: 12,
+              height: 12,
+              decoration: BoxDecoration(
+                color: isConnected ? Colors.green : Colors.grey,
+                shape: BoxShape.circle,
+                border: Border.all(
+                  color: Theme.of(context).scaffoldBackgroundColor,
+                  width: 2,
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+      title: Text(
+        peer.deviceName,
+        style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w500),
+      ),
+      subtitle: Text(
+        isConnected ? '已连接 (端到端加密)' : '未连接',
+        style: TextStyle(
+          fontSize: 12,
+          color: isConnected ? Colors.green : Colors.grey,
+        ),
+      ),
+      trailing: const Icon(Icons.chevron_right, color: Colors.grey),
+      onTap: () => _openPeerChat(peer),
+      onLongPress: () => _showPeerActions(peer),
+    );
+  }
+
+  Future<void> _showPeerActions(PairedPeer peer) async {
+    final action = await showModalBottomSheet<String>(
+      context: context,
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.edit),
+              title: const Text('修改备注'),
+              onTap: () => Navigator.pop(ctx, 'rename'),
+            ),
+            ListTile(
+              leading: Icon(Icons.delete, color: Theme.of(context).colorScheme.error),
+              title: Text('删除配对', style: TextStyle(color: Theme.of(context).colorScheme.error)),
+              onTap: () => Navigator.pop(ctx, 'delete'),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    if (!mounted) return;
+    if (action == 'rename') {
+      await _renamePeer(peer);
+    } else if (action == 'delete') {
+      await _deletePeer(peer);
+    }
+  }
+
+  Future<void> _renamePeer(PairedPeer peer) async {
+    final newName = await showDialog<String>(
+      context: context,
+      builder: (ctx) {
+        final controller = TextEditingController(text: peer.deviceName);
+        return AlertDialog(
+          title: const Text('修改备注'),
+          content: TextField(
+            controller: controller,
+            autofocus: true,
+            decoration: const InputDecoration(
+              hintText: '输入备注名称',
+              border: OutlineInputBorder(),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('取消'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(ctx, controller.text.trim()),
+              child: const Text('保存'),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (newName != null && newName.isNotEmpty && newName != peer.deviceName) {
+      await PeerStorageService().updateDeviceName(peer.id, newName);
+      _loadData();
+    }
+  }
+
+  Future<void> _deletePeer(PairedPeer peer) async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('删除配对'),
+        content: Text('确定要删除与 ${peer.deviceName} 的配对吗？\n所有消息记录也会被删除。'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: FilledButton.styleFrom(
+              backgroundColor: Theme.of(context).colorScheme.error,
+            ),
+            child: const Text('删除'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm == true) {
+      await PeerConnectionManager.instance.removePeer(peer.id);
+      _loadData();
+    }
+  }
+
+  Future<void> _startPeerPairing() async {
+    final peer = await PeerPairingScreen.show(context);
+    if (peer != null && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('已与 ${peer.deviceName} 配对成功')),
+      );
+      _loadData();
+    }
+  }
+
+  void _openPeerChat(PairedPeer peer) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => PeerChatScreen(peer: peer),
+      ),
+    );
   }
 }

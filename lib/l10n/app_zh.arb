@@ -905,6 +905,7 @@
   "chat_cannotRemoveLast": "无法移除最后一个成员",
   "chat_waitingForAction": "等待你的操作",
   "chat_searchMessages": "搜索消息",
+  "chat_workflow": "工作流",
   "chat_newSession": "新建会话",
   "chat_sessionList": "会话列表",
   "chat_clearSessionHistory": "清除会话历史",

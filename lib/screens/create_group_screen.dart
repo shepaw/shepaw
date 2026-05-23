@@ -29,7 +29,6 @@ class _CreateGroupScreenState extends State<CreateGroupScreen> {
   final Map<String, TextEditingController> _groupBioControllers = {};
   String? _adminAgentId;
   String _mentionMode = 'adminOnly';
-  bool _planningMode = false;
   bool _flowMode = false;
   final LocalApiService _apiService = LocalApiService();
   final LocalDatabaseService _databaseService = LocalDatabaseService();
@@ -134,7 +133,6 @@ class _CreateGroupScreenState extends State<CreateGroupScreen> {
       systemPrompt: systemPrompt.isNotEmpty ? systemPrompt : null,
       maxLoopRounds: maxLoopRounds,
       mentionMode: _mentionMode != 'adminOnly' ? _mentionMode : null,
-      planningMode: _planningMode,
       flowMode: _flowMode,
       isPrivate: true,
     );
@@ -328,20 +326,7 @@ class _CreateGroupScreenState extends State<CreateGroupScreen> {
 
                   const SizedBox(height: 4),
 
-                  // 计划模式（Flow 模式开启时禁用，两者互斥，Flow 优先）
-                  SwitchListTile(
-                    title: Text(l10n.chat_planningMode),
-                    subtitle: Text(
-                      l10n.chat_planningModeDesc,
-                      style: const TextStyle(fontSize: 12),
-                    ),
-                    secondary: const Icon(Icons.assignment_turned_in_outlined),
-                    value: _planningMode,
-                    onChanged: _flowMode ? null : (v) => setState(() => _planningMode = v),
-                    contentPadding: const EdgeInsets.symmetric(horizontal: 4),
-                  ),
-
-                  // Flow 模式
+                  // Flow 模式（工作流模式）
                   SwitchListTile(
                     title: Text(l10n.chat_flowMode),
                     subtitle: Text(

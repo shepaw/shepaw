@@ -204,22 +204,20 @@ class ChatController extends ChangeNotifier with InteractiveStreamingContext {
   // ---- Frame coalescing ----
   bool _pendingStreamingRebuild = false;
 
-  /// Returns the latest task_board message's planData map, or null if none exists.
-  /// Used by the sticky progress banner in the chat screen.
-  Map<String, dynamic>? get activePlanData {
-    for (int i = messages.length - 1; i >= 0; i--) {
-      final tb = messages[i].metadata?['task_board'] as Map<String, dynamic>?;
-      if (tb != null) return tb;
-    }
-    return null;
+  /// The ID of the currently active workflow (set during flow execution).
+  String? _activeWorkflowId;
+  String? get activeWorkflowId => _activeWorkflowId;
+
+  /// Set the active workflow ID (called by orchestration when flow starts).
+  void setActiveWorkflowId(String? id) {
+    _activeWorkflowId = id;
+    notifyListeners();
   }
 
-  /// Returns the message ID of the latest task_board message, or null if none.
-  String? get taskBoardMessageId {
-    for (int i = messages.length - 1; i >= 0; i--) {
-      if (messages[i].metadata?['task_board'] != null) return messages[i].id;
-    }
-    return null;
+  /// User dismisses the workflow progress panel.
+  void dismissWorkflowPanel() {
+    _activeWorkflowId = null;
+    notifyListeners();
   }
 
   ChatController({
@@ -1594,7 +1592,6 @@ class ChatController extends ChangeNotifier with InteractiveStreamingContext {
         mentionOnlyMode: mentionOnlyMode,
         adminAgentId: groupAdminAgentId,
         replyToId: replyToId,
-        planningMode: groupChannel?.planningMode ?? false,
         flowMode: groupChannel?.flowMode ?? false,
         acpCancellationToken: acpCancellationToken,
         userMessageMetadata: userMsgMetadata,
@@ -1658,33 +1655,8 @@ class ChatController extends ChangeNotifier with InteractiveStreamingContext {
           _notify();
         },
         onAllDone: () {},
+        onActiveWorkflowChanged: (workflowId) => setActiveWorkflowId(workflowId),
         onInteractionRequest: (agentId, agentName, interactionType, data) async {
-          // Handle task board updates directly (no streaming message ID needed)
-          if (interactionType == 'task_board_update') {
-            final tbMsgId = data.remove('_taskBoardMessageId') as String?;
-            final planData = data['plan'] as Map<String, dynamic>?;
-            if (tbMsgId != null && planData != null) {
-              // Always reconcile to ensure the task board DB message is loaded
-              // into the in-memory list (especially on the first call, before
-              // the message has been seen by the controller).
-              await reconcileGroupMessages();
-              // Always patch in-memory metadata with the latest plan data.
-              // When other agents are streaming, reconcileGroupMessages only
-              // merges temp messages and appends new DB messages — it does NOT
-              // refresh metadata of non-temp messages already in the list.
-              // So we must explicitly overwrite the task_board metadata here
-              // to ensure real-time status updates are visible.
-              _updateGroupStreamingMetadata(tbMsgId, 'task_board', planData);
-              // Persist the latest plan state to the DB so it survives a
-              // channel switch. Without this, only the initial plan (written
-              // by _createTaskBoardMessage) would be reloaded on return.
-              localDatabaseService
-                  .updateMessageMetadata(tbMsgId, {'task_board': planData})
-                  .ignore();
-            }
-            return {'acknowledged': true};
-          }
-
           // Determine the message ID to attach the interactive component to.
           // If the agent is still streaming, use the streaming message ID.
           // If the agent has already finished (local LLM path), the streaming
@@ -1731,9 +1703,7 @@ class ChatController extends ChangeNotifier with InteractiveStreamingContext {
 
           // form / file_upload / action_confirmation / single_select / multi_select
           // are always non-blocking: the current turn ends immediately so the
-          // user can interact with the component.  In flow mode the FlowExecutor
-          // itself waits for the user via resumeWithInteractionResult() before
-          // advancing to the next stage.
+          // user can interact with the component.
           // plan_approval is also non-blocking here: the actual blocking wait is
           // managed by ChatService._pendingPlanApprovals, which survives channel
           // navigation. The UI card is already persisted to DB by the code above.
@@ -2115,13 +2085,6 @@ class ChatController extends ChangeNotifier with InteractiveStreamingContext {
     }
     if (isProcessing && !isGroupMode) return;
 
-    // In flow mode, resume the suspended FlowExecutor with the upload result
-    // so it can continue to the next stage.
-    if (groupChannel?.flowMode == true && currentChannelId != null) {
-      _updateGroupStreamingMetadata(originalMessage.id, 'file_upload_responded', {'files': files});
-      chatService.resumeFlowInteraction(currentChannelId!, {'uploaded_files': files});
-      return;
-    }
 
     if (await _handleGroupInteractionLocally(originalMessage, 'file_upload', {
       'uploaded_files': files,
@@ -2152,40 +2115,6 @@ class ChatController extends ChangeNotifier with InteractiveStreamingContext {
       return;
     }
     if (isProcessing && !isGroupMode) return;
-
-    // In flow mode, resume the suspended FlowExecutor with the form result
-    // so it can continue to the next stage.
-    if (groupChannel?.flowMode == true && currentChannelId != null) {
-      // Update metadata['form']['submitted_values'] so FormBubble switches to
-      // the submitted state (same as _handleGroupInteractionLocally does for
-      // the non-flow path).
-      final updatedMeta = Map<String, dynamic>.from(originalMessage.metadata ?? {});
-      final formSection = Map<String, dynamic>.from(
-        updatedMeta['form'] as Map<String, dynamic>? ?? {},
-      );
-      formSection['submitted_values'] = values;
-      formSection['selected_at'] = DateTime.now().millisecondsSinceEpoch;
-      updatedMeta['form'] = formSection;
-      final idx = messages.indexWhere((m) => m.id == originalMessage.id);
-      if (idx != -1) {
-        final updated = Message(
-          id: originalMessage.id,
-          content: originalMessage.content,
-          timestampMs: originalMessage.timestampMs,
-          from: originalMessage.from,
-          to: originalMessage.to,
-          type: originalMessage.type,
-          replyTo: originalMessage.replyTo,
-          metadata: updatedMeta,
-        );
-        messages[idx] = updated;
-        messageIdMap[updated.id] = updated;
-        _notify();
-      }
-      localDatabaseService.updateMessageMetadata(originalMessage.id, updatedMeta).ignore();
-      chatService.resumeFlowInteraction(currentChannelId!, {'submitted_values': values});
-      return;
-    }
 
     if (await _handleGroupInteractionLocally(originalMessage, 'form', {
       'submitted_values': values,

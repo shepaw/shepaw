@@ -62,7 +62,7 @@ class LocalDatabaseService {
 
       return await openDatabase(
         path,
-        version: 21,
+        version: 22,
         onCreate: _onCreate,
         onUpgrade: _onUpgrade,
       );
@@ -317,6 +317,45 @@ class LocalDatabaseService {
     await db.execute('CREATE INDEX IF NOT EXISTS idx_scheduled_tasks_channel ON scheduled_tasks(channel_id)');
     await db.execute('CREATE INDEX IF NOT EXISTS idx_scheduled_tasks_target ON scheduled_tasks(execution_target)');
 
+    // 工作流执行记录表 (v22)
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS workflow_executions (
+        id TEXT PRIMARY KEY,
+        channel_id TEXT NOT NULL,
+        title TEXT NOT NULL,
+        summary TEXT,
+        flow_plan_json TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'pending_approval',
+        created_at INTEGER NOT NULL,
+        started_at INTEGER,
+        completed_at INTEGER,
+        trigger_message TEXT,
+        error_message TEXT
+      )
+    ''');
+    await db.execute('CREATE INDEX IF NOT EXISTS idx_workflow_executions_channel ON workflow_executions(channel_id, created_at DESC)');
+    await db.execute('CREATE INDEX IF NOT EXISTS idx_workflow_executions_status ON workflow_executions(status)');
+
+    // 工作流步骤执行记录表 (v22)
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS workflow_step_executions (
+        id TEXT PRIMARY KEY,
+        workflow_execution_id TEXT NOT NULL,
+        stage_index INTEGER NOT NULL,
+        step_index INTEGER NOT NULL,
+        stage_name TEXT DEFAULT '',
+        agent_name TEXT NOT NULL,
+        instruction TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'pending',
+        started_at INTEGER,
+        completed_at INTEGER,
+        output_summary TEXT,
+        error_message TEXT,
+        FOREIGN KEY (workflow_execution_id) REFERENCES workflow_executions(id)
+      )
+    ''');
+    await db.execute('CREATE INDEX IF NOT EXISTS idx_workflow_steps_execution ON workflow_step_executions(workflow_execution_id, stage_index, step_index)');
+
   }
 
   /// 数据库升级
@@ -496,6 +535,50 @@ class LocalDatabaseService {
       }
     }
 
+    if (oldVersion < 22) {
+      // 版本 21 -> 22: 添加工作流执行记录表
+      try {
+        await db.execute('''
+          CREATE TABLE IF NOT EXISTS workflow_executions (
+            id TEXT PRIMARY KEY,
+            channel_id TEXT NOT NULL,
+            title TEXT NOT NULL,
+            summary TEXT,
+            flow_plan_json TEXT NOT NULL,
+            status TEXT NOT NULL DEFAULT 'pending_approval',
+            created_at INTEGER NOT NULL,
+            started_at INTEGER,
+            completed_at INTEGER,
+            trigger_message TEXT,
+            error_message TEXT
+          )
+        ''');
+        await db.execute('CREATE INDEX IF NOT EXISTS idx_workflow_executions_channel ON workflow_executions(channel_id, created_at DESC)');
+        await db.execute('CREATE INDEX IF NOT EXISTS idx_workflow_executions_status ON workflow_executions(status)');
+
+        await db.execute('''
+          CREATE TABLE IF NOT EXISTS workflow_step_executions (
+            id TEXT PRIMARY KEY,
+            workflow_execution_id TEXT NOT NULL,
+            stage_index INTEGER NOT NULL,
+            step_index INTEGER NOT NULL,
+            stage_name TEXT DEFAULT '',
+            agent_name TEXT NOT NULL,
+            instruction TEXT NOT NULL,
+            status TEXT NOT NULL DEFAULT 'pending',
+            started_at INTEGER,
+            completed_at INTEGER,
+            output_summary TEXT,
+            error_message TEXT,
+            FOREIGN KEY (workflow_execution_id) REFERENCES workflow_executions(id)
+          )
+        ''');
+        await db.execute('CREATE INDEX IF NOT EXISTS idx_workflow_steps_execution ON workflow_step_executions(workflow_execution_id, stage_index, step_index)');
+      } catch (e) {
+        LoggerService().error('Failed to create workflow tables (v22)', tag: 'Migration', error: e);
+      }
+    }
+
   }
 
   // ==================== 用户敏感信息 KV 操作 ====================
@@ -669,7 +752,7 @@ class LocalDatabaseService {
         'system_prompt': channel.systemPrompt,
         'max_loop_rounds': channel.maxLoopRounds,
         'mention_mode': channel.mentionMode,
-        'planning_mode': channel.planningMode ? 1 : 0,
+        'planning_mode': 0, // deprecated, kept for migration compatibility
         'flow_mode': channel.flowMode ? 1 : 0,
         'created_at': now,
         'updated_at': now,
@@ -721,7 +804,7 @@ class LocalDatabaseService {
         'system_prompt': channel.systemPrompt,
         'max_loop_rounds': channel.maxLoopRounds,
         'mention_mode': channel.mentionMode,
-        'planning_mode': channel.planningMode ? 1 : 0,
+        'planning_mode': 0, // deprecated, kept for migration compatibility
         'flow_mode': channel.flowMode ? 1 : 0,
         'updated_at': DateTime.now().toIso8601String(),
       },
@@ -842,7 +925,7 @@ class LocalDatabaseService {
       systemPrompt: map['system_prompt'] as String?,
       maxLoopRounds: map['max_loop_rounds'] as int?,
       mentionMode: map['mention_mode'] as String?,
-      planningMode: (map['planning_mode'] as int?) == 1,
+      // planning_mode column kept for migration compatibility but no longer used
       flowMode: (map['flow_mode'] as int?) == 1,
     );
   }

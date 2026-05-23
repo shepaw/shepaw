@@ -57,13 +57,14 @@ class ChatMenuHelper {
     }
   }
 
-  /// Show the group chat menu (edit, members, add, search).
+  /// Show the group chat menu (edit, members, add, workflow, search).
   static Future<void> showGroupMenu(
     BuildContext context, {
     required VoidCallback onEditGroup,
     required VoidCallback onShowMembers,
     required VoidCallback onAddMember,
     required VoidCallback onSearch,
+    VoidCallback? onWorkflow,
   }) async {
     final menuL10n = AppLocalizations.of(context);
     final overlay = Overlay.of(context).context.findRenderObject() as RenderBox;
@@ -84,6 +85,8 @@ class ChatMenuHelper {
         PopupMenuItem(value: 'editGroup', child: ListTile(dense: true, leading: const Icon(Icons.edit), title: Text(menuL10n.chat_editGroupInfo))),
         PopupMenuItem(value: 'members', child: ListTile(dense: true, leading: const Icon(Icons.group), title: Text(menuL10n.chat_groupMembers))),
         PopupMenuItem(value: 'addMember', child: ListTile(dense: true, leading: const Icon(Icons.person_add), title: Text(menuL10n.chat_addMember))),
+        if (onWorkflow != null)
+          PopupMenuItem(value: 'workflow', child: ListTile(dense: true, leading: const Icon(Icons.account_tree_outlined), title: Text(menuL10n.chat_workflow))),
         PopupMenuItem(value: 'search', child: ListTile(dense: true, leading: const Icon(Icons.search), title: Text(menuL10n.chat_searchMessages))),
       ],
     );
@@ -96,6 +99,8 @@ class ChatMenuHelper {
         onShowMembers();
       case 'addMember':
         onAddMember();
+      case 'workflow':
+        onWorkflow?.call();
       case 'search':
         onSearch();
     }

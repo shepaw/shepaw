@@ -36,7 +36,6 @@ class _GroupDetailScreenState extends State<GroupDetailScreen> {
   late TextEditingController _descController;
   late TextEditingController _systemPromptController;
   late String _selectedMentionMode;
-  late bool _planningMode;
   late bool _flowMode;
   bool _isSaving = false;
 
@@ -56,7 +55,6 @@ class _GroupDetailScreenState extends State<GroupDetailScreen> {
     _descController = TextEditingController(text: _channel.description ?? '');
     _systemPromptController = TextEditingController(text: _channel.systemPrompt ?? '');
     _selectedMentionMode = _channel.effectiveMentionMode;
-    _planningMode = _channel.planningMode;
     _flowMode = _channel.flowMode;
   }
 
@@ -91,7 +89,6 @@ class _GroupDetailScreenState extends State<GroupDetailScreen> {
     _descController.text = _channel.description ?? '';
     _systemPromptController.text = _channel.systemPrompt ?? '';
     _selectedMentionMode = _channel.effectiveMentionMode;
-    _planningMode = _channel.planningMode;
     _flowMode = _channel.flowMode;
     setState(() => _isEditing = true);
   }
@@ -127,7 +124,6 @@ class _GroupDetailScreenState extends State<GroupDetailScreen> {
         isPrivate: _channel.isPrivate,
         maxLoopRounds: _channel.maxLoopRounds,
         mentionMode: _selectedMentionMode,
-        planningMode: _planningMode,
         flowMode: _flowMode,
         parentGroupId: _channel.parentGroupId,
       );
@@ -473,14 +469,6 @@ class _GroupDetailScreenState extends State<GroupDetailScreen> {
                       ),
                     ),
                     const SizedBox(height: 8),
-                    SwitchListTile(
-                      title: Text(l10n.chat_planningMode),
-                      subtitle: Text(l10n.chat_planningModeDesc, style: const TextStyle(fontSize: 12)),
-                      secondary: const Icon(Icons.assignment_turned_in_outlined),
-                      value: _planningMode,
-                      onChanged: _flowMode ? null : (v) => setEditState(() => _planningMode = v),
-                      contentPadding: const EdgeInsets.symmetric(horizontal: 4),
-                    ),
                     SwitchListTile(
                       title: Text(l10n.chat_flowMode),
                       subtitle: Text(l10n.chat_flowModeDesc, style: const TextStyle(fontSize: 12)),

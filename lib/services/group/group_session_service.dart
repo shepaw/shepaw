@@ -43,7 +43,6 @@ class GroupSessionService {
       systemPrompt: currentChannel.systemPrompt,
       maxLoopRounds: currentChannel.maxLoopRounds,
       mentionMode: currentChannel.mentionMode,
-      planningMode: currentChannel.planningMode,
       flowMode: currentChannel.flowMode,
     );
     await _db.createChannel(channel, userId);

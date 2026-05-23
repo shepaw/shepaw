@@ -79,16 +79,13 @@ class TraceService extends ChangeNotifier {
     required String adminAgentName,
     required String userMessage,
     required List<String> memberAgentIds,
-    bool planningMode = false,
     bool flowMode = false,
   }) {
     final sessionId = _uuid.v4();
     final now = DateTime.now();
     final mode = flowMode
         ? 'group_flow'
-        : planningMode
-            ? 'group_plan'
-            : 'group_orchestration';
+        : 'group_orchestration';
     final entry = TraceEntry(
       id: sessionId,
       channelId: channelId,
@@ -103,7 +100,6 @@ class TraceService extends ChangeNotifier {
       createdAt: now,
       systemPrompt: json.encode({
         'member_agent_ids': memberAgentIds,
-        'planning_mode': planningMode,
         'flow_mode': flowMode,
       }),
     );

@@ -1593,6 +1593,9 @@ class AppLocalizationsEn extends AppLocalizations {
   String get chat_searchMessages => 'Search Messages';
 
   @override
+  String get chat_workflow => 'Workflow';
+
+  @override
   String get chat_newSession => 'New Session';
 
   @override

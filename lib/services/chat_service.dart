@@ -20,6 +20,7 @@ import 'group/group_interaction_handler.dart';
 import 'group/planning_helpers.dart';
 import 'group/group_agent_executor.dart';
 import 'group/group_orchestration_service.dart';
+import 'workflow/workflow_service.dart';
 import 'messaging/agent_messaging_service.dart';
 import 'group/group_session_service.dart';
 import 'session/session_history_service.dart';
@@ -27,7 +28,6 @@ import 'app_lifecycle_service.dart';
 import '../providers/notification_provider.dart';
 import 'foreground_task_service.dart';
 import 'logger_service.dart';
-import 'flow_executor.dart';
 import '../clis/shepaw/os/os_executor.dart' as os_exec;
 import 'she_service.dart';
 import '../clis/shepaw/shepaw_cli.dart';
@@ -82,9 +82,6 @@ class ChatService implements IPawChatSender {
   // Active group tasks: channelId -> { agentId -> GroupActiveTask }
   final Map<String, Map<String, GroupActiveTask>> _activeGroupTasks = {};
 
-  // Active FlowExecutors: channelId -> FlowExecutor (one per group channel)
-  final Map<String, FlowExecutor> _activeFlowExecutors = {};
-
   /// Sub-service: group session management (create/list/clear sessions)
   late final GroupSessionService _groupSessionService = GroupSessionService(
     db: _databaseService,
@@ -95,6 +92,9 @@ class ChatService implements IPawChatSender {
 
   /// Sub-service: group dispatch parsing (structured JSON dispatch blocks)
   late final GroupDispatchParser _groupDispatchParser = GroupDispatchParser(_databaseService);
+
+  /// Sub-service: workflow execution persistence
+  late final WorkflowService _workflowService = WorkflowService(db: _databaseService);
 
   /// Sub-service: session management (create/list DM sessions)
   late final SessionService _sessionService = SessionService(_databaseService);
@@ -114,10 +114,9 @@ class ChatService implements IPawChatSender {
     loadChannelMessages: (channelId, {int limit = 100}) => loadChannelMessages(channelId, limit: limit),
   );
 
-  /// Sub-service: plan-mode helpers (strip blocks, task board, status parsing)
+  /// Sub-service: flow-mode helpers (strip blocks)
   late final PlanningHelpers _planningHelpers = PlanningHelpers(
     db: _databaseService,
-    uuid: _uuid,
     notifyChannelUpdate: _notifyChannelUpdate,
   );
 
@@ -156,6 +155,7 @@ class ChatService implements IPawChatSender {
     executor: _groupAgentExecutor,
     dispatchParser: _groupDispatchParser,
     planningHelpers: _planningHelpers,
+    workflowService: _workflowService,
     notifyChannelUpdate: _notifyChannelUpdate,
     loadAndTruncateHistory: _loadAndTruncateHistory,
     awaitPlanApproval: ({
@@ -171,7 +171,6 @@ class ChatService implements IPawChatSender {
       planData: planData,
       messageId: messageId,
     ),
-    activeFlowExecutors: _activeFlowExecutors,
     loadChannelMessages: (channelId, {int limit = 100}) => loadChannelMessages(channelId, limit: limit),
     getMessageById: (id) => getMessageById(id),
   );
@@ -1119,7 +1118,6 @@ class ChatService implements IPawChatSender {
     bool mentionOnlyMode = false,
     String? adminAgentId,
     String? replyToId,
-    bool planningMode = false,
     bool flowMode = false,
     Map<String, dynamic>? userMessageMetadata,
     ACPCancellationToken? acpCancellationToken,
@@ -1130,6 +1128,7 @@ class ChatService implements IPawChatSender {
     Future<Map<String, dynamic>?> Function(
       String agentId, String agentName, String interactionType, Map<String, dynamic> data,
     )? onInteractionRequest,
+    void Function(String? workflowId)? onActiveWorkflowChanged,
   }) => _groupOrchestrationService.sendMessageToGroup(
     channelId: channelId,
     content: content,
@@ -1140,7 +1139,6 @@ class ChatService implements IPawChatSender {
     mentionOnlyMode: mentionOnlyMode,
     adminAgentId: adminAgentId,
     replyToId: replyToId,
-    planningMode: planningMode,
     flowMode: flowMode,
     userMessageMetadata: userMessageMetadata,
     acpCancellationToken: acpCancellationToken,
@@ -1148,14 +1146,9 @@ class ChatService implements IPawChatSender {
     onAgentStart: onAgentStart,
     onAgentDone: onAgentDone,
     onAllDone: onAllDone,
+    onActiveWorkflowChanged: onActiveWorkflowChanged,
     onInteractionRequest: onInteractionRequest,
   );
-
-  /// Resume the active FlowExecutor for the given channel after the user has
-  /// submitted a form or file-upload interaction triggered by a flow step.
-  void resumeFlowInteraction(String channelId, Map<String, dynamic>? result) {
-    _activeFlowExecutors[channelId]?.resumeWithInteractionResult(result);
-  }
 
   /// Create a new group session with the same members and name as the original group.
   Future<String> createNewGroupSession({

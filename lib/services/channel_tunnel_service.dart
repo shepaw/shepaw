@@ -12,6 +12,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:web_socket_channel/io.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
 import 'logger_service.dart';
+import '../peer/services/peer_channel_bridge.dart';
 
 // ACP Server 默认端口（与 main.dart 保持一致）
 const _kAcpDefaultPort = 18790;
@@ -453,6 +454,13 @@ class ChannelTunnelService {
       }
     }
 
+    // P2P 连接路由：/peer/ws 路径交给 PeerChannelBridge 处理
+    if (strippedPath.startsWith('/peer/ws')) {
+      _log.info('ws_connect routed to P2P handler, stream=${req.streamId}', tag: _tag);
+      _handlePeerWsConnect(req.streamId);
+      return;
+    }
+
     // 构建目标 WS URL（本地 ACP Server，端口从 SharedPreferences 读取）
     final acpTarget = await _getAcpTarget();
     final targetUri = Uri.parse(
@@ -642,9 +650,56 @@ class ChannelTunnelService {
     }
   }
 
+  // ── P2P Peer 连接处理 ──────────────────────────────────────────────────
+
+  /// 跟踪哪些 streamId 属于 peer 连接
+  final Set<int> _peerStreamIds = {};
+
+  /// 处理 /peer/ws 的 ws_connect 请求
+  void _handlePeerWsConnect(int streamId) {
+    _peerStreamIds.add(streamId);
+
+    // 注册到 _wsStreams，复用现有的消息路由机制
+    final streamCtrl = StreamController<_TunnelMessage>();
+    _wsStreams[streamId] = streamCtrl;
+
+    // 绑定 tunnel sender（如果尚未绑定）
+    final bridge = PeerChannelBridge.instance;
+    bridge.bindTunnelSender((msg) => _sendMessage(_TunnelMessage(
+      type: msg['type'] as String,
+      streamId: (msg['stream_id'] as num?)?.toInt() ?? 0,
+      body: msg['body'] as String? ?? '',
+      wsMsgType: (msg['ws_msg_type'] as num?)?.toInt() ?? 0,
+    )));
+
+    // 通知 bridge 有新的 peer 连接
+    bridge.handlePeerWsConnect(streamId);
+
+    // 监听隧道消息并转发给 bridge
+    streamCtrl.stream.listen(
+      (msg) {
+        if (msg.type == 'ws_close') {
+          bridge.handlePeerWsClose(streamId);
+          _peerStreamIds.remove(streamId);
+          _wsStreams.remove(streamId);
+          if (!streamCtrl.isClosed) streamCtrl.close();
+        } else if (msg.type == 'ws_data') {
+          final bytes = base64Decode(msg.body);
+          bridge.handlePeerWsData(streamId, Uint8List.fromList(bytes));
+        }
+      },
+      onDone: () {
+        bridge.handlePeerWsClose(streamId);
+        _peerStreamIds.remove(streamId);
+      },
+    );
+  }
+
   void dispose() {
     _stopRequested = true;
     _running = false;
+    _peerStreamIds.clear();
+    PeerChannelBridge.instance.unbindTunnelSender();
     _channel?.sink.close();
     _statusController.close();
   }

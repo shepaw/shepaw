@@ -17,7 +17,6 @@ import 'collapsible_message_bubble.dart';
 import 'permission_audit_bubble.dart';
 import 'avatar_image.dart';
 import 'chat/plan_approval_card.dart';
-import 'chat/task_board_widget.dart';
 import '../services/she_service.dart';
 
 class MessageBubble extends StatelessWidget {
@@ -443,12 +442,6 @@ class MessageBubble extends StatelessWidget {
               ),
             ],
           );
-        }
-
-        // Check for task board data
-        final taskBoard = message.metadata?['task_board'] as Map<String, dynamic>?;
-        if (taskBoard != null) {
-          return TaskBoardWidget(planData: taskBoard);
         }
 
         // Check for single-select data

@@ -1,7 +1,7 @@
 name: shepaw
 description: Paw - Secure Mobile Platform
 publish_to: 'none'
-version: 1.0.5+1
+version: 1.0.6+1
 
 environment:
   sdk: '>=3.0.0 <4.0.0'
@@ -74,6 +74,8 @@ dependencies:
 
   # 二维码扫描（v2.1 shepaw://pair 配对）
   mobile_scanner: ^5.2.0
+  # 二维码生成（P2P 配对 QR 展示）
+  qr_flutter: ^4.1.0
 
   # 音频
   record: ^5.1.2

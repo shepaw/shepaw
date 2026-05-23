@@ -60,8 +60,6 @@ class Channel {
   final int? maxLoopRounds;
   /// 群聊 @提及模式: 'adminOnly' (默认) 或 'allMembers'
   final String? mentionMode;
-  /// 计划模式：Admin 先生成执行计划，用户确认后再执行
-  final bool planningMode;
   /// Flow 模式：Admin 生成阶段化 FlowPlan，由 FlowExecutor 主动驱动执行
   final bool flowMode;
 
@@ -91,7 +89,6 @@ class Channel {
     this.systemPrompt,
     this.maxLoopRounds,
     this.mentionMode,
-    this.planningMode = false,
     this.flowMode = false,
   });
 
@@ -118,7 +115,6 @@ class Channel {
     String? systemPrompt,
     int? maxLoopRounds,
     String? mentionMode,
-    bool planningMode = false,
     bool flowMode = false,
   }) {
     return Channel(
@@ -143,7 +139,6 @@ class Channel {
       systemPrompt: systemPrompt,
       maxLoopRounds: maxLoopRounds,
       mentionMode: mentionMode,
-      planningMode: planningMode,
       flowMode: flowMode,
     );
   }
@@ -194,7 +189,6 @@ class Channel {
       systemPrompt: json['metadata']?['system_prompt'],
       maxLoopRounds: json['metadata']?['max_loop_rounds'] as int?,
       mentionMode: json['metadata']?['mention_mode'],
-      planningMode: json['planning_mode'] == true,
       flowMode: json['flow_mode'] as bool? ?? false,
     );
   }
@@ -216,7 +210,6 @@ class Channel {
     String? systemPrompt,
     int? maxLoopRounds,
     String? mentionMode,
-    bool? planningMode,
     bool? flowMode,
   }) {
     return Channel(
@@ -236,7 +229,6 @@ class Channel {
       systemPrompt: systemPrompt ?? this.systemPrompt,
       maxLoopRounds: maxLoopRounds ?? this.maxLoopRounds,
       mentionMode: mentionMode ?? this.mentionMode,
-      planningMode: planningMode ?? this.planningMode,
       flowMode: flowMode ?? this.flowMode,
     );
   }
@@ -257,7 +249,6 @@ class Channel {
         if (mentionMode != null) 'mention_mode': mentionMode,
       },
       'is_private': isPrivate,
-      if (planningMode) 'planning_mode': true,
       if (flowMode) 'flow_mode': true,
       if (unreadCount != null) 'unread_count': unreadCount,
       if (parentGroupId != null) 'parent_group_id': parentGroupId,

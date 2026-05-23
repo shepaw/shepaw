@@ -229,9 +229,6 @@ class GroupAgentExecutor {
     bool isAbortSummarize = false,
     int? loopRound,
     String mentionMode = 'adminOnly',
-    bool planningMode = false,
-    ExecutionPlan? approvedPlan,
-    bool isPlanRevise = false,
     List<String> failedAgentNames = const [],
     ACPCancellationToken? acpCancellationToken,
     void Function(String agentId, String agentName, String chunk)? onStreamChunk,
@@ -240,8 +237,6 @@ class GroupAgentExecutor {
       String agentId, String agentName, String interactionType, Map<String, dynamic> data,
     )? onInteractionRequest,
     bool isFlowMode = false,
-    bool isFlowStageReview = false,
-    int? flowStageIndex,
     String? orchestrationTraceId,
   }) async {
     LoggerService().debug('_processGroupAgent START: ${agent.name} (isAdmin=$isAdmin, isLocal=${LocalLLMAgentService.instance.isLocalAgent(agent)})', tag: 'GroupAgentExecutor');
@@ -258,13 +253,8 @@ class GroupAgentExecutor {
       isAbortSummarize: isAbortSummarize,
       loopRound: loopRound,
       mentionMode: mentionMode,
-      planningMode: planningMode,
-      approvedPlan: approvedPlan,
-      isPlanRevise: isPlanRevise,
       failedAgentNames: failedAgentNames,
       isFlowMode: isFlowMode,
-      isFlowStageReview: isFlowStageReview,
-      flowStageIndex: flowStageIndex,
     );
 
     // Build chat history: pack the entire group conversation into a single

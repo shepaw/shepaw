@@ -3,6 +3,7 @@ import '../cli_base.dart';
 import 'context/context_namespace.dart';
 import '../../services/she_service.dart';
 import 'chat/chat_namespace.dart';
+import 'workflow/workflow_namespace.dart';
 import 'skills_namespace.dart';
 import 'tools/tools_namespace.dart';
 import 'os/os_cli_namespace.dart';
@@ -66,6 +67,7 @@ class ShepawCLI {
     'tools': ToolsNamespace.instance,
     'skills': SkillsNamespace.instance,
     'os': OsCliNamespace.instance,
+    'workflow': WorkflowNamespace.instance,
 
     // ── ℹ️ META 层 - 系统元信息和诊断 ───────────────────────────────────────────
     'meta': MetaNamespace.instance,
@@ -216,6 +218,10 @@ class ShepawCLI {
       // 透传当前执行者的 agentId 到支持多 agent 的命名空间
       if (ns is ContextNamespace) ns.agentId = agentId;
       if (ns is ChatNamespace) ns.agentId = agentId;
+      if (ns is WorkflowNamespace) {
+        ns.agentId = agentId;
+        ns.channelId = flags['channel_id'];
+      }
 
       final result = await ns.execute(subcommand, flags);
       return jsonEncode(result);

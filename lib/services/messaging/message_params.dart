@@ -58,7 +58,6 @@ class GroupMessageParams {
   final bool mentionOnlyMode;
   final String? adminAgentId;
   final String? replyToId;
-  final bool planningMode;
   final bool flowMode;
   final Map<String, dynamic>? userMessageMetadata;
   final ACPCancellationToken? acpCancellationToken;
@@ -80,7 +79,6 @@ class GroupMessageParams {
     this.mentionOnlyMode = false,
     this.adminAgentId,
     this.replyToId,
-    this.planningMode = false,
     this.flowMode = false,
     this.userMessageMetadata,
     this.acpCancellationToken,

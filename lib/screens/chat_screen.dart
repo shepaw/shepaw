@@ -34,8 +34,9 @@ import 'group_detail_screen.dart';
 import '../services/logger_service.dart';
 import '../services/error_handler_service.dart';
 import '../services/she_service.dart';
-import '../models/planning_models.dart';
 import 'channel_trace_screen.dart';
+import 'group_workflow_screen.dart';
+import '../widgets/workflow/workflow_progress_panel.dart';
 
 class ChatScreen extends StatefulWidget {
   final String? agentId;
@@ -818,6 +819,20 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     );
   }
 
+  void _showGroupWorkflow() {
+    final channelId = _controller.currentChannelId;
+    if (channelId == null) return;
+    final channelName = _controller.groupChannel?.name ?? '';
+    Navigator.of(context, rootNavigator: widget.embedded).push(
+      MaterialPageRoute(
+        builder: (_) => GroupWorkflowScreen(
+          channelId: channelId,
+          channelName: channelName,
+        ),
+      ),
+    );
+  }
+
   Future<void> _showSessionList() async {
     if (widget.agentId == null) return;
     try {
@@ -1057,7 +1072,6 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     final descController = TextEditingController(text: _controller.groupChannel?.description ?? '');
     final systemPromptController = TextEditingController(text: _controller.groupChannel?.systemPrompt ?? '');
     String selectedMentionMode = _controller.groupChannel?.effectiveMentionMode ?? 'adminOnly';
-    bool planningMode = _controller.groupChannel?.planningMode ?? false;
     bool flowMode = _controller.groupChannel?.flowMode ?? false;
 
     LayoutUtils.showRightDrawer(
@@ -1123,14 +1137,6 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                     ),
                     const SizedBox(height: 8),
                     SwitchListTile(
-                      title: Text(panelL10n.chat_planningMode),
-                      subtitle: Text(panelL10n.chat_planningModeDesc, style: const TextStyle(fontSize: 12)),
-                      secondary: const Icon(Icons.assignment_turned_in_outlined),
-                      value: planningMode,
-                      onChanged: flowMode ? null : (v) => setDrawerState(() => planningMode = v),
-                      contentPadding: const EdgeInsets.symmetric(horizontal: 4),
-                    ),
-                    SwitchListTile(
                       title: Text(panelL10n.chat_flowMode),
                       subtitle: Text(panelL10n.chat_flowModeDesc, style: const TextStyle(fontSize: 12)),
                       secondary: const Icon(Icons.account_tree_outlined),
@@ -1166,7 +1172,6 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                               avatar: old.avatar, isPrivate: old.isPrivate,
                               maxLoopRounds: old.maxLoopRounds,
                               mentionMode: selectedMentionMode,
-                              planningMode: planningMode,
                               flowMode: flowMode,
                               parentGroupId: old.parentGroupId,
                             );
@@ -1432,6 +1437,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                   onShowMembers: _showGroupMembersPanel,
                   onAddMember: _addGroupMember,
                   onSearch: _showSearchDialog,
+                  onWorkflow: _showGroupWorkflow,
                 );
               } else {
                 ChatMenuHelper.showAgentMenu(
@@ -1539,14 +1545,11 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
             ),
           ),
 
-          // Planning mode: sticky task progress banner
-          if (c.isGroupMode && c.activePlanData != null)
-            _TaskProgressBanner(
-              planData: c.activePlanData!,
-              onTap: () {
-                final msgId = c.taskBoardMessageId;
-                if (msgId != null) _scrollToMessage(msgId);
-              },
+          // Workflow progress panel (floating above input)
+          if (c.isGroupMode && c.activeWorkflowId != null)
+            WorkflowProgressPanel(
+              workflowId: c.activeWorkflowId!,
+              onDismiss: () => c.dismissWorkflowPanel(),
             ),
 
           // Voice record overlay
@@ -2085,169 +2088,5 @@ class _GroupMembersSheetState extends State<_GroupMembersSheet> {
         ],
       ),
     );
-  }
-}
-
-// ---------------------------------------------------------------------------
-// _TaskProgressBanner — sticky execution progress strip
-// ---------------------------------------------------------------------------
-
-/// A compact strip shown between the message list and input area whenever
-/// a planning-mode group is executing. Tapping it scrolls to the task board
-/// message in the chat list.
-class _TaskProgressBanner extends StatelessWidget {
-  final Map<String, dynamic> planData;
-  final VoidCallback? onTap;
-
-  const _TaskProgressBanner({required this.planData, this.onTap});
-
-  @override
-  Widget build(BuildContext context) {
-    final ExecutionPlan plan;
-    try {
-      plan = ExecutionPlan.fromJson(planData);
-    } catch (_) {
-      return const SizedBox.shrink();
-    }
-
-    if (plan.tasks.isEmpty) return const SizedBox.shrink();
-
-    final total = plan.tasks.length;
-    final done = plan.tasks
-        .where((t) => t.status == TaskStatus.done || t.status == TaskStatus.skipped)
-        .length;
-    final progress = total > 0 ? done / total : 0.0;
-    final allDone = plan.tasks.every(
-      (t) => t.status == TaskStatus.done || t.status == TaskStatus.skipped,
-    );
-
-    // Find the currently active task
-    final activeTask = plan.tasks.firstWhere(
-      (t) => t.status == TaskStatus.inProgress,
-      orElse: () => plan.tasks.firstWhere(
-        (t) => t.status == TaskStatus.pending,
-        orElse: () => plan.tasks.last,
-      ),
-    );
-
-    final accentColor = allDone ? Colors.green : Colors.blue;
-
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        onTap: onTap,
-        child: Container(
-          decoration: BoxDecoration(
-            color: accentColor.withOpacity(0.06),
-            border: Border(
-              top: BorderSide(color: accentColor.withOpacity(0.25), width: 1),
-              bottom: BorderSide(color: accentColor.withOpacity(0.25), width: 1),
-            ),
-          ),
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
-          child: Row(
-            children: [
-              // Mini progress circle / done icon
-              SizedBox(
-                width: 28,
-                height: 28,
-                child: allDone
-                    ? Icon(Icons.check_circle, size: 22, color: Colors.green.shade600)
-                    : Stack(
-                        alignment: Alignment.center,
-                        children: [
-                          CircularProgressIndicator(
-                            value: progress,
-                            strokeWidth: 2.5,
-                            backgroundColor: Colors.grey.shade300,
-                            valueColor: AlwaysStoppedAnimation<Color>(
-                                Colors.blue.shade400),
-                          ),
-                          Text(
-                            '$done',
-                            style: TextStyle(
-                              fontSize: 9,
-                              fontWeight: FontWeight.bold,
-                              color: Colors.blue.shade700,
-                            ),
-                          ),
-                        ],
-                      ),
-              ),
-              const SizedBox(width: 10),
-              // Task info
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(
-                      allDone ? '全部任务已完成' : activeTask.title,
-                      style: TextStyle(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w600,
-                        color: allDone
-                            ? Colors.green.shade700
-                            : Colors.black87,
-                      ),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                    Row(
-                      children: [
-                        Text(
-                          allDone
-                              ? '${plan.title.isNotEmpty ? plan.title : "计划"}执行完毕'
-                              : '$done / $total 任务${_statusText(activeTask.status)}',
-                          style: TextStyle(
-                            fontSize: 11,
-                            color: Colors.grey.shade600,
-                          ),
-                        ),
-                        if (!allDone && activeTask.assignee.isNotEmpty) ...[
-                          const SizedBox(width: 6),
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 5, vertical: 1),
-                            decoration: BoxDecoration(
-                              color: Colors.blue.shade50,
-                              borderRadius: BorderRadius.circular(6),
-                            ),
-                            child: Text(
-                              '@${activeTask.assignee}',
-                              style: TextStyle(
-                                fontSize: 10,
-                                color: Colors.blue.shade700,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ],
-                    ),
-                  ],
-                ),
-              ),
-              // Tap cue
-              Icon(Icons.open_in_full, size: 14, color: Colors.grey.shade400),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  String _statusText(TaskStatus status) {
-    switch (status) {
-      case TaskStatus.pending:
-        return '（等待中）';
-      case TaskStatus.inProgress:
-        return '（执行中）';
-      case TaskStatus.done:
-        return '（已完成）';
-      case TaskStatus.failed:
-        return '（失败）';
-      case TaskStatus.skipped:
-        return '（已跳过）';
-    }
   }
 }

@@ -574,6 +574,7 @@
   "chat_cannotRemoveLast": "Cannot remove the last member",
   "chat_waitingForAction": "is waiting for your action",
   "chat_searchMessages": "Search Messages",
+  "chat_workflow": "Workflow",
   "chat_newSession": "New Session",
   "chat_sessionList": "Session List",
   "chat_clearSessionHistory": "Clear Session History",

@@ -2,7 +2,6 @@ import '../../models/remote_agent.dart';
 import '../../models/channel.dart';
 import '../../models/message.dart';
 import '../../models/model_routing_config.dart';
-import '../../models/planning_models.dart';
 
 /// Builds system prompts for group chat agents (admin and member roles).
 class GroupPromptBuilder {
@@ -21,13 +20,8 @@ class GroupPromptBuilder {
     bool isAbortSummarize = false,
     int? loopRound,
     String mentionMode = 'adminOnly',
-    bool planningMode = false,
-    ExecutionPlan? approvedPlan,
-    bool isPlanRevise = false,
     List<String> failedAgentNames = const [],
     bool isFlowMode = false,
-    bool isFlowStageReview = false,
-    int? flowStageIndex,
   }) {
     final memberList = allAgents.map((a) {
       final channelMember = channelMembers.where((m) => m.id == a.id).firstOrNull;
@@ -69,14 +63,8 @@ class GroupPromptBuilder {
           ? '\n\n【当前状态】这是第 $loopRound 轮。成员已回复，请逐一检查每位成员回复末尾的 `[TASK_STATUS]` 标注：\n- 如有任一成员标注为 `[TASK_STATUS: pending]`，**必须优先处理该 pending 状态**（向用户说明情况、做出决策或重新委派），不得跳过继续推进其他流程\n- 所有成员均为 `[TASK_STATUS: done]` 时，再判断用户需求是否已整体满足并决定下一步'
           : '';
 
-      final planningSection = planningMode
-          ? buildPlanningModeSection(
-              approvedPlan: approvedPlan,
-              isPlanRevise: isPlanRevise,
-              isFlowMode: isFlowMode,
-              isFlowStageReview: isFlowStageReview,
-              flowStageIndex: flowStageIndex,
-            )
+      final planningSection = isFlowMode
+          ? _buildWorkflowCliSection()
           : '';
 
       return '''你当前处于一个群聊环境中，你是本群的**管理员**。
@@ -173,183 +161,38 @@ $memberList
 9. 在每次回复的**最后一行**，必须输出任务状态标注，格式为：\n   - 任务已完成：`[TASK_STATUS: done]`\n   - 任务未完成或需要更多信息：`[TASK_STATUS: pending] 原因：<简要说明>`\n管理员会根据此标注决定下一步安排。$mentionNotice$allMembersMentionSection''';
   }
 
-  /// Build the planning mode section to inject into Admin's system prompt.
-  String buildPlanningModeSection({
-    ExecutionPlan? approvedPlan,
-    bool isPlanRevise = false,
-    bool isFlowMode = false,
-    bool isFlowStageReview = false,
-    int? flowStageIndex,
-  }) {
-    if (isFlowStageReview) {
-      final stageLabel = flowStageIndex != null ? '第 ${flowStageIndex + 1} 阶段' : '当前阶段';
-      return '''
+  /// Build the workflow CLI usage section for Admin's system prompt.
+  String _buildWorkflowCliSection() {
+    return '''
 
-【Flow 模式 - 阶段间审查（$stageLabel 已完成）】
-上一阶段的所有步骤已执行完毕。请审视执行结果，自主决定是否需要调整下一阶段的执行策略。
+【工作流模式】
+当前群组已开启工作流模式。请通过 CLI 工具来规划和执行复杂任务：
 
-如需调整，在回复末尾输出 [FLOW_CTRL] 指令块（JSON 格式），否则系统将自动继续执行下一阶段。
+**流程：**
+1. 分析用户需求，设计阶段化执行计划
+2. 调用 `shepaw workflow create` 创建工作流（用户会审批）
+3. 审批通过后，逐阶段调用 `shepaw workflow dispatch` 执行
+4. 每个阶段完成后审视结果，决定是否继续下一阶段
+5. 全部完成后调用 `shepaw workflow complete` 结束
 
-可用指令：
-[FLOW_CTRL]
-{"action": "pause"}
-[/FLOW_CTRL]
-暂停后续阶段执行（需后续 resume 指令才会继续）。
+**可用命令：**
+- `shepaw workflow create --title "标题" --stages '[{"label":"阶段名","steps":[{"agent":"成员名","instruction":"指令"}]}]'`
+  创建工作流并提交审批。stages 中的 agent 必须是当前群成员的名称。
+- `shepaw workflow dispatch --workflow_id <id> --stage_index <n>`
+  执行指定阶段的所有步骤（并行）。完成后返回各步骤结果。
+- `shepaw workflow status --workflow_id <id>`
+  查看工作流当前状态。
+- `shepaw workflow complete --workflow_id <id> --summary "完成摘要"`
+  标记工作流完成。
+- `shepaw workflow fail --workflow_id <id> --reason "原因"`
+  标记工作流失败。
+- `shepaw workflow cancel --workflow_id <id>`
+  取消工作流。
 
-[FLOW_CTRL]
-{"action": "skip_step", "step_id": "s2_t1", "message": "说明原因"}
-[/FLOW_CTRL]
-跳过指定步骤。
-
-[FLOW_CTRL]
-{"action": "retry_task", "step_id": "s1_t1"}
-[/FLOW_CTRL]
-重试失败的步骤。
-
-[FLOW_CTRL]
-{"action": "inject_message", "message": "向后续步骤注入的上下文信息"}
-[/FLOW_CTRL]
-向对话上下文注入补充信息。
-
-[FLOW_CTRL]
-{"action": "abort", "message": "中止原因"}
-[/FLOW_CTRL]
-中止整个 Flow 执行，Admin 将输出最终摘要。
-
-不输出 [FLOW_CTRL] 块则系统自动继续下一阶段。''';
-    }
-
-    if (approvedPlan != null) {
-      final taskLines = approvedPlan.tasks.map((t) {
-        final icon = {
-          TaskStatus.pending: '⏳',
-          TaskStatus.inProgress: '🔄',
-          TaskStatus.done: '✅',
-          TaskStatus.failed: '❌',
-          TaskStatus.skipped: '⏭️',
-        }[t.status] ?? '⏳';
-        return '  $icon [${t.id}] ${t.title} → @${t.assignee}';
-      }).join('\n');
-
-      final exampleAssignee = approvedPlan.tasks.isNotEmpty ? approvedPlan.tasks.first.assignee : '成员名';
-      final exampleTaskId = approvedPlan.tasks.isNotEmpty ? approvedPlan.tasks.first.id : 'task_1';
-      return '''
-
-【计划模式 - 执行阶段】
-用户已批准执行计划，请按计划推进：
-
-${approvedPlan.title}
-
-当前任务状态：
-$taskLines
-
-执行规则：
-- **委派任务必须通过 JSON 代码块输出**，格式与通用委派机制一致（见上方【委派机制】）
-- 在自然语言中说明工作安排，然后在回复末尾输出 JSON 代码块委派对应成员，例如：
-
-\`\`\`json
-{"dispatch": {"mode": "concurrent", "steps": [{"step": 1, "agents": ["$exampleAssignee"], "task": "任务说明"}]}}
-\`\`\`
-
-- 开始委派某任务时，同时在回复末尾输出 [TASK_START:task_id]（紧跟在 JSON 代码块之后）
-- 确认该任务完成后，在回复末尾输出 [TASK_DONE:task_id]
-- 任务失败时输出 [TASK_FAIL:task_id]
-- 这些标记由系统处理，用户不会直接看到
-- 有依赖关系的任务需等前置任务完成后再开始
-- 状态为 skipped 的任务无需执行
-- **不要只输出状态标记而不委派**，必须通过 JSON 代码块委派，系统才会调用对应成员
-
-示例（委派 $exampleAssignee 执行 $exampleTaskId）：
-好的，现在开始执行……（自然语言说明）
-
-\`\`\`json
-{"dispatch": {"mode": "concurrent", "steps": [{"step": 1, "agents": ["$exampleAssignee"], "task": "具体任务说明"}]}}
-\`\`\`
-
-[TASK_START:$exampleTaskId]''';
-    } else if (isPlanRevise) {
-      return '''
-
-【计划模式 - 计划修改阶段】
-用户对你的计划提出了修改意见，请根据反馈重新生成执行计划。
-请再次按照计划格式在 [PLAN]...[/PLAN] 标签中输出修改后的计划，并在标签外用不超过 100 字说明修改要点。''';
-    } else if (isFlowMode) {
-      return '''
-
-【Flow 计划模式 - 计划阶段】
-当前群组已开启 Flow 计划模式。请在开始执行任何任务之前，先输出一个阶段化执行计划供用户审批。
-
-Flow 计划按阶段（Stage）组织，同一阶段内的步骤（Step）将**并行执行**，不同阶段之间**串行推进**。
-阶段间系统会调用你进行审查，你可通过 [FLOW_CTRL] 指令调整后续执行策略。
-
-计划格式（在 [FLOW_PLAN]...[/FLOW_PLAN] 标签中输出 JSON）：
-[FLOW_PLAN]
-{
-  "title": "计划标题",
-  "summary": "用两三句话描述整体方案",
-  "stages": [
-    {
-      "stage_id": "s1",
-      "label": "阶段名称（如：分析阶段）",
-      "steps": [
-        {
-          "step_id": "s1_t1",
-          "task_id": "task_1",
-          "agent": "负责该步骤的成员名（必须是当前群成员中的 Agent 名称）",
-          "instruction": "给该成员的详细指令",
-          "depends_on": [],
-          "estimated_complexity": "low|medium|high"
-        }
-      ]
-    },
-    {
-      "stage_id": "s2",
-      "label": "执行阶段",
-      "steps": [
-        {
-          "step_id": "s2_t1",
-          "task_id": "task_2",
-          "agent": "AgentName",
-          "instruction": "...",
-          "depends_on": ["s1_t1"],
-          "estimated_complexity": "medium"
-        }
-      ]
-    }
-  ]
-}
-[/FLOW_PLAN]
-
-在 [FLOW_PLAN]...[/FLOW_PLAN] 之外，用不超过 100 字的自然语言向用户简要说明计划思路。
-注意：不要在计划阶段就开始执行，仅生成计划。输出 [FLOW_PLAN] 块后立即停止，系统会将计划展示给用户审批。''';
-    } else {
-      return '''
-
-【计划模式 - 计划阶段】
-当前群组已开启计划模式。请在开始执行任何任务之前，先输出一个结构化执行计划供用户审批。
-
-计划格式（在 [PLAN]...[/PLAN] 标签中输出 JSON）：
-[PLAN]
-{
-  "title": "计划标题",
-  "summary": "用两三句话描述整体方案",
-  "tasks": [
-    {
-      "id": "task_1",
-      "title": "任务名称",
-      "description": "详细描述",
-      "assignee": "负责该任务的成员名（必须是当前群成员中的 Agent 名称）",
-      "dependencies": [],
-      "estimated_complexity": "low|medium|high",
-      "status": "pending"
-    }
-  ]
-}
-[/PLAN]
-
-在 [PLAN]...[/PLAN] 之外，用不超过 100 字的自然语言向用户简要说明计划思路。
-注意：不要在计划阶段就开始执行，仅生成计划。输出 [PLAN] 块后立即停止，系统会自动将计划展示给用户审批，你无需再输出任何 action_confirmation 或其他确认按钮。''';
-    }
+**注意：**
+- 只有在任务需要多步骤协调时才使用工作流，简单任务直接委派即可
+- 每个阶段内的步骤会并行执行，不同阶段串行推进
+- dispatch 返回后请审视结果，根据实际情况决定继续、重试或终止''';
   }
 
   /// Detect the most significant non-text modality in recent history messages.
