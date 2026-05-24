@@ -14,11 +14,13 @@ import 'workflow_detail_screen.dart';
 class GroupWorkflowScreen extends StatefulWidget {
   final String channelId;
   final String channelName;
+  final VoidCallback? onBack;
 
   const GroupWorkflowScreen({
     super.key,
     required this.channelId,
     required this.channelName,
+    this.onBack,
   });
 
   @override
@@ -68,6 +70,10 @@ class _GroupWorkflowScreenState extends State<GroupWorkflowScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back),
+          onPressed: widget.onBack ?? () => Navigator.pop(context),
+        ),
         title: Text('${widget.channelName} - 工作流'),
         elevation: 1,
       ),

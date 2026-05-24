@@ -47,6 +47,7 @@ class ChatScreen extends StatefulWidget {
   final VoidCallback? onClose;
   final ValueChanged<String>? onSwitchChannel;
   final ValueChanged<String?>? onShowTraces;
+  final void Function(String channelId, String channelName)? onShowGroupWorkflow;
 
   /// When set, scroll to and highlight this message after loading.
   final String? highlightMessageId;
@@ -64,6 +65,7 @@ class ChatScreen extends StatefulWidget {
     this.onClose,
     this.onSwitchChannel,
     this.onShowTraces,
+    this.onShowGroupWorkflow,
     this.highlightMessageId,
     this.showBackButton = false,
   }) : super(key: key);
@@ -823,6 +825,10 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     final channelId = _controller.currentChannelId;
     if (channelId == null) return;
     final channelName = _controller.groupChannel?.name ?? '';
+    if (widget.onShowGroupWorkflow != null) {
+      widget.onShowGroupWorkflow!(channelId, channelName);
+      return;
+    }
     Navigator.of(context, rootNavigator: widget.embedded).push(
       MaterialPageRoute(
         builder: (_) => GroupWorkflowScreen(
@@ -1072,7 +1078,6 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     final descController = TextEditingController(text: _controller.groupChannel?.description ?? '');
     final systemPromptController = TextEditingController(text: _controller.groupChannel?.systemPrompt ?? '');
     String selectedMentionMode = _controller.groupChannel?.effectiveMentionMode ?? 'adminOnly';
-    bool flowMode = _controller.groupChannel?.flowMode ?? false;
 
     LayoutUtils.showRightDrawer(
       context: context,
@@ -1135,15 +1140,6 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                         style: TextStyle(fontSize: 12, color: Colors.grey[600]),
                       ),
                     ),
-                    const SizedBox(height: 8),
-                    SwitchListTile(
-                      title: Text(panelL10n.chat_flowMode),
-                      subtitle: Text(panelL10n.chat_flowModeDesc, style: const TextStyle(fontSize: 12)),
-                      secondary: const Icon(Icons.account_tree_outlined),
-                      value: flowMode,
-                      onChanged: (v) => setDrawerState(() => flowMode = v),
-                      contentPadding: const EdgeInsets.symmetric(horizontal: 4),
-                    ),
                     const SizedBox(height: 24),
                     Row(
                       mainAxisAlignment: MainAxisAlignment.end,
@@ -1172,7 +1168,6 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                               avatar: old.avatar, isPrivate: old.isPrivate,
                               maxLoopRounds: old.maxLoopRounds,
                               mentionMode: selectedMentionMode,
-                              flowMode: flowMode,
                               parentGroupId: old.parentGroupId,
                             );
                             await _controller.localDatabaseService.updateChannel(updated);

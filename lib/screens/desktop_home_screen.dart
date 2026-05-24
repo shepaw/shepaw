@@ -8,6 +8,7 @@ import '../services/message_search_service.dart';
 import 'home_screen.dart';
 import 'chat_screen.dart';
 import 'channel_trace_screen.dart';
+import 'group_workflow_screen.dart';
 import 'add_remote_agent_screen.dart';
 import 'create_group_screen.dart';
 import 'settings_screen.dart';
@@ -42,6 +43,7 @@ enum _RightPanelView {
   contacts,
   search,
   traces,
+  groupWorkflow,
   modelManagement,
   skillManagement,
   toolConfigManagement,
@@ -88,6 +90,10 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
   /// May differ from _selected?.channelId when the controller created/loaded
   /// a channel after the initial ConversationSelection was recorded.
   String? _tracesChannelId;
+
+  /// Channel info for the group workflow view.
+  String? _workflowChannelId;
+  String? _workflowChannelName;
 
   /// Tracks the panel that was showing before switching to chat,
   /// so the close/back button can return to it (e.g. search → chat → search).
@@ -149,6 +155,26 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
       _rightPanel = _RightPanelView.chat;
       _previousPanel = null;
       _tracesChannelId = null;
+      _navGeneration++;
+    });
+  }
+
+  void _onShowGroupWorkflow(String channelId, String channelName) {
+    setState(() {
+      _previousPanel = _RightPanelView.chat;
+      _workflowChannelId = channelId;
+      _workflowChannelName = channelName;
+      _rightPanel = _RightPanelView.groupWorkflow;
+      _navGeneration++;
+    });
+  }
+
+  void _onGroupWorkflowBack() {
+    setState(() {
+      _rightPanel = _RightPanelView.chat;
+      _previousPanel = null;
+      _workflowChannelId = null;
+      _workflowChannelName = null;
       _navGeneration++;
     });
   }
@@ -257,6 +283,7 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
             onClose: _onChatClose,
             onSwitchChannel: _onSwitchChannel,
             onShowTraces: _onShowTraces,
+            onShowGroupWorkflow: _onShowGroupWorkflow,
           );
         }
         return _buildEmptyState();
@@ -298,6 +325,13 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
           channelId: _tracesChannelId,
           channelName: _selected?.agentName,
           onBack: _onTracesBack,
+        );
+
+      case _RightPanelView.groupWorkflow:
+        return GroupWorkflowScreen(
+          channelId: _workflowChannelId ?? '',
+          channelName: _workflowChannelName ?? '',
+          onBack: _onGroupWorkflowBack,
         );
 
       case _RightPanelView.modelManagement:

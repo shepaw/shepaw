@@ -36,7 +36,6 @@ class _GroupDetailScreenState extends State<GroupDetailScreen> {
   late TextEditingController _descController;
   late TextEditingController _systemPromptController;
   late String _selectedMentionMode;
-  late bool _flowMode;
   bool _isSaving = false;
 
   @override
@@ -55,7 +54,6 @@ class _GroupDetailScreenState extends State<GroupDetailScreen> {
     _descController = TextEditingController(text: _channel.description ?? '');
     _systemPromptController = TextEditingController(text: _channel.systemPrompt ?? '');
     _selectedMentionMode = _channel.effectiveMentionMode;
-    _flowMode = _channel.flowMode;
   }
 
   @override
@@ -89,7 +87,6 @@ class _GroupDetailScreenState extends State<GroupDetailScreen> {
     _descController.text = _channel.description ?? '';
     _systemPromptController.text = _channel.systemPrompt ?? '';
     _selectedMentionMode = _channel.effectiveMentionMode;
-    _flowMode = _channel.flowMode;
     setState(() => _isEditing = true);
   }
 
@@ -124,7 +121,6 @@ class _GroupDetailScreenState extends State<GroupDetailScreen> {
         isPrivate: _channel.isPrivate,
         maxLoopRounds: _channel.maxLoopRounds,
         mentionMode: _selectedMentionMode,
-        flowMode: _flowMode,
         parentGroupId: _channel.parentGroupId,
       );
       await _databaseService.updateChannel(updated);
@@ -467,15 +463,6 @@ class _GroupDetailScreenState extends State<GroupDetailScreen> {
                             : l10n.chat_mentionModeAdminOnlyDesc,
                         style: TextStyle(fontSize: 12, color: Colors.grey[600]),
                       ),
-                    ),
-                    const SizedBox(height: 8),
-                    SwitchListTile(
-                      title: Text(l10n.chat_flowMode),
-                      subtitle: Text(l10n.chat_flowModeDesc, style: const TextStyle(fontSize: 12)),
-                      secondary: const Icon(Icons.account_tree_outlined),
-                      value: _flowMode,
-                      onChanged: (v) => setEditState(() => _flowMode = v),
-                      contentPadding: const EdgeInsets.symmetric(horizontal: 4),
                     ),
                   ],
                 ),
