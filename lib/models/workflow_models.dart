@@ -104,6 +104,21 @@ enum StepExecutionStatus {
 }
 
 // ---------------------------------------------------------------------------
+// WorkflowCancellationToken — cooperative cancellation for workflow execution
+// ---------------------------------------------------------------------------
+
+/// A simple token that can be checked between stages/steps to abort execution.
+class WorkflowCancellationToken {
+  bool _cancelled = false;
+
+  bool get isCancelled => _cancelled;
+
+  void cancel() {
+    _cancelled = true;
+  }
+}
+
+// ---------------------------------------------------------------------------
 // WorkflowExecution — a single workflow run record
 // ---------------------------------------------------------------------------
 

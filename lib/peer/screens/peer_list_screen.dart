@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 
 import '../models/paired_peer.dart';
@@ -17,11 +18,22 @@ class PeerListScreen extends StatefulWidget {
 class _PeerListScreenState extends State<PeerListScreen> {
   List<PairedPeer> _peers = [];
   bool _loading = true;
+  StreamSubscription? _eventSub;
 
   @override
   void initState() {
     super.initState();
     _loadPeers();
+    // 实时监听连接状态变化
+    _eventSub = PeerConnectionManager.instance.events.listen((_) {
+      _loadPeers();
+    });
+  }
+
+  @override
+  void dispose() {
+    _eventSub?.cancel();
+    super.dispose();
   }
 
   Future<void> _loadPeers() async {

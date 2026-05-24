@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../models/paired_peer.dart';
+import '../services/peer_pairing_service.dart';
 import 'peer_qr_display_screen.dart';
 import 'peer_qr_scanner_screen.dart';
 
@@ -38,6 +39,7 @@ class _PeerPairingScreenState extends State<PeerPairingScreen>
   @override
   void dispose() {
     _tabController.dispose();
+    PeerPairingService.instance.cancelPairing();
     super.dispose();
   }
 

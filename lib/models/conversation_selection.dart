@@ -7,6 +7,9 @@ class ConversationSelection {
   final String? channelId;
   final String? groupFamilyId;
 
+  /// P2P peer ID (for device-to-device chat)
+  final String? peerId;
+
   /// When set, the chat screen should scroll to and highlight this message.
   final String? highlightMessageId;
 
@@ -16,6 +19,7 @@ class ConversationSelection {
     this.agentAvatar,
     this.channelId,
     this.groupFamilyId,
+    this.peerId,
     this.highlightMessageId,
   });
 
@@ -23,7 +27,7 @@ class ConversationSelection {
   /// Includes highlightMessageId so that clicking different messages in the
   /// same channel still forces a fresh ChatScreen.
   String get key {
-    final base = channelId ?? agentId ?? '';
+    final base = peerId ?? channelId ?? agentId ?? '';
     return highlightMessageId != null ? '$base#$highlightMessageId' : base;
   }
 
@@ -33,8 +37,9 @@ class ConversationSelection {
       other is ConversationSelection &&
           agentId == other.agentId &&
           channelId == other.channelId &&
-          groupFamilyId == other.groupFamilyId;
+          groupFamilyId == other.groupFamilyId &&
+          peerId == other.peerId;
 
   @override
-  int get hashCode => Object.hash(agentId, channelId, groupFamilyId);
+  int get hashCode => Object.hash(agentId, channelId, groupFamilyId, peerId);
 }

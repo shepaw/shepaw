@@ -1,8 +1,6 @@
 import '../../cli_base.dart';
 import '../../../models/workflow_models.dart';
 import '../../../services/workflow/workflow_service.dart';
-import '../../../services/local_database_service.dart';
-import 'workflow_namespace.dart';
 
 /// 查看工作流当前执行状态。
 ///
@@ -21,7 +19,7 @@ class WorkflowStatusCommand extends CliCommand {
 
   @override
   Future<Map<String, dynamic>> execute(Map<String, String> flags) async {
-    final workflowService = WorkflowService(db: LocalDatabaseService());
+    final workflowService = WorkflowService.instance;
     final workflowId = flags['workflow_id'];
 
     WorkflowExecution? workflow;
@@ -30,9 +28,9 @@ class WorkflowStatusCommand extends CliCommand {
       workflow =
           await workflowService.getWorkflowExecutionWithSteps(workflowId);
     } else {
-      // Try to get active workflow for current channel
-      final channelId = WorkflowNamespace.instance.channelId;
-      if (channelId != null) {
+      // Try to get active workflow for current channel (from flags)
+      final channelId = flags['channel_id'];
+      if (channelId != null && channelId.isNotEmpty) {
         workflow = await workflowService.getActiveWorkflow(channelId);
       }
     }

@@ -55,6 +55,12 @@ class PeerConnection {
   DateTime? _lastActivity;
   bool _closed = false;
 
+  /// 发送队列锁 — 保证 encrypt + send 的原子性（防止 nonce 乱序）
+  Future<void> _sendLock = Future.value();
+
+  /// 接收队列锁 — 保证 decrypt 的顺序性
+  Future<void> _recvLock = Future.value();
+
   /// 连接状态
   PeerConnectionState _state = PeerConnectionState.disconnected;
   PeerConnectionState get state => _state;
@@ -62,6 +68,10 @@ class PeerConnection {
   /// 收到的解密消息
   final _messageController = StreamController<PeerMessage>.broadcast();
   Stream<PeerMessage> get messages => _messageController.stream;
+
+  /// 收到的回执事件
+  final _ackController = StreamController<PeerAckEvent>.broadcast();
+  Stream<PeerAckEvent> get acks => _ackController.stream;
 
   /// 连接状态变化
   final _stateController = StreamController<PeerConnectionState>.broadcast();
@@ -109,35 +119,42 @@ class PeerConnection {
           .timeout(const Duration(seconds: 10));
       _wsChannel = IOWebSocketChannel(ioSocket);
 
-      // Noise IK 握手
-      await _performInitiatorHandshake();
+      // 先建立单一 subscription，用 Completer 取 msg2，之后继续用同一个 sub
+      final handshakeCompleter = Completer<String>();
+      _incomingSub = _wsChannel!.stream.listen(
+        (data) {
+          final frame = data is String ? data : utf8.decode(data as List<int>);
+          if (!handshakeCompleter.isCompleted) {
+            handshakeCompleter.complete(frame);
+          } else {
+            _handleIncomingFrame(frame);
+          }
+        },
+        onError: (e) {
+          if (!handshakeCompleter.isCompleted) {
+            handshakeCompleter.completeError(e);
+          }
+          _log.warning('WebSocket error: $e', tag: _tag);
+          _setState(PeerConnectionState.disconnected);
+        },
+        onDone: () {
+          if (!handshakeCompleter.isCompleted) {
+            handshakeCompleter.completeError(StateError('WebSocket closed during handshake'));
+          }
+          _log.info('WebSocket closed for ${peer.deviceName}', tag: _tag);
+          _setState(PeerConnectionState.disconnected);
+        },
+      );
+
+      // Noise IK 握手（使用 completer 等待 msg2）
+      await _performInitiatorHandshake(handshakeCompleter);
 
       _setState(PeerConnectionState.connected);
       _startHeartbeat();
-      _listenWebSocket();
     } catch (e) {
       _log.error('Connection failed to ${peer.deviceName}', tag: _tag, error: e);
-      _setState(PeerConnectionState.disconnected);
-      rethrow;
-    }
-  }
-
-  /// 通过 Channel 隧道的 PeerTunnelStream 连接（Responder 侧）
-  /// 用于接受来自已配对设备的入站连接
-  Future<void> connectViaTunnel(PeerTunnelStream stream) async {
-    if (_closed) return;
-    _tunnelStream = stream;
-    _setState(PeerConnectionState.connecting);
-
-    try {
-      // Noise IK 握手（Responder）
-      await _performResponderHandshake(stream);
-
-      _setState(PeerConnectionState.connected);
-      _startHeartbeat();
-      _listenTunnelStream(stream);
-    } catch (e) {
-      _log.error('Tunnel connection failed from ${peer.deviceName}', tag: _tag, error: e);
+      _incomingSub?.cancel();
+      _incomingSub = null;
       _setState(PeerConnectionState.disconnected);
       rethrow;
     }
@@ -145,36 +162,37 @@ class PeerConnection {
 
   /// 发送加密消息
   Future<void> sendMessage(PeerMessage message) async {
-    if (_noiseSession == null || !_noiseSession!.ready) {
-      throw StateError('Noise session not ready');
-    }
-
-    final plaintext = Uint8List.fromList(utf8.encode(jsonEncode({
+    await _serializedSend(Uint8List.fromList(utf8.encode(jsonEncode({
       'type': 'message',
       'payload': message.toWireJson(),
-    })));
-
-    final ciphertext = await _noiseSession!.encrypt(plaintext);
-    final frame = encodeFrame(Frame(t: FrameType.data, payload: ciphertext));
-    _send(frame);
+    }))));
     _lastActivity = DateTime.now();
   }
 
   /// 发送心跳
   Future<void> _sendHeartbeat() async {
-    if (_noiseSession == null || !_noiseSession!.ready) return;
-
-    final plaintext = Uint8List.fromList(utf8.encode(jsonEncode({
+    await _serializedSend(Uint8List.fromList(utf8.encode(jsonEncode({
       'type': 'ping',
       'timestamp': DateTime.now().millisecondsSinceEpoch,
-    })));
+    }))));
+  }
 
+  /// 序列化发送 — 确保 encrypt + send 原子执行，防止 nonce 并发冲突
+  Future<void> _serializedSend(Uint8List plaintext) async {
+    final prev = _sendLock;
+    final completer = Completer<void>();
+    _sendLock = completer.future;
+
+    await prev; // 等待上一次发送完成
     try {
+      if (_noiseSession == null || !_noiseSession!.ready) return;
       final ciphertext = await _noiseSession!.encrypt(plaintext);
       final frame = encodeFrame(Frame(t: FrameType.data, payload: ciphertext));
       _send(frame);
-    } catch (_) {
-      // 心跳失败不处理，等超时检测
+    } catch (e) {
+      _log.error('Serialized send failed', tag: _tag, error: e);
+    } finally {
+      completer.complete();
     }
   }
 
@@ -189,12 +207,13 @@ class PeerConnection {
     _tunnelStream?.close();
     _setState(PeerConnectionState.disconnected);
     _messageController.close();
+    _ackController.close();
     _stateController.close();
   }
 
   // ── 内部方法 ────────────────────────────────────────────────────────────
 
-  Future<void> _performInitiatorHandshake() async {
+  Future<void> _performInitiatorHandshake(Completer<String> msg2Completer) async {
     final identity = await NoiseIdentity.loadOrCreate();
     _noiseSession = await NoiseSession.initiator(
       staticPublicKey: identity.publicKey,
@@ -202,17 +221,17 @@ class PeerConnection {
       pinnedPeerStaticPublicKey: peer.publicKey,
     );
 
-    // 发送 msg1（空 payload，非配对场景）
+    // 发送 msg1
     final msg1Payload = Uint8List.fromList(utf8.encode(jsonEncode({
       'type': 'reconnect',
-      'device_id': _getDeviceId(),
+      'device_id': identity.fingerprintHex,
     })));
     final msg1 = await _noiseSession!.writeHandshake1(msg1Payload);
     final frame1 = encodeFrame(Frame(t: FrameType.hs, payload: msg1));
     _send(frame1);
 
-    // 等待 msg2
-    final msg2Raw = await _receiveFirst().timeout(const Duration(seconds: 15));
+    // 等待 msg2（通过 Completer，复用同一个 subscription）
+    final msg2Raw = await msg2Completer.future.timeout(const Duration(seconds: 15));
     final msg2Frame = decodeFrame(msg2Raw);
     if (msg2Frame.t != FrameType.hs) {
       throw StateError('Expected handshake frame, got ${msg2Frame.t}');
@@ -220,41 +239,12 @@ class PeerConnection {
     await _noiseSession!.readHandshake2(msg2Frame.payload);
   }
 
-  Future<void> _performResponderHandshake(PeerTunnelStream stream) async {
-    final identity = await NoiseIdentity.loadOrCreate();
-    _noiseSession = await NoiseSession.responder(
-      staticPublicKey: identity.publicKey,
-      staticPrivateKey: identity.privateKey,
-    );
-
-    // 等待 msg1
-    final msg1Raw = await stream.incoming.first.timeout(const Duration(seconds: 15));
-    final msg1Frame = decodeFrame(utf8.decode(msg1Raw));
-    if (msg1Frame.t != FrameType.hs) {
-      throw StateError('Expected handshake frame, got ${msg1Frame.t}');
-    }
-
-    final result = await _noiseSession!.readHandshake1(msg1Frame.payload);
-
-    // 验证对方公钥匹配已存储的
-    if (!_keysEqual(result.peerStaticPublicKey, peer.publicKey)) {
-      _noiseSession!.close();
-      throw StateError('Peer public key mismatch — possible impersonation');
-    }
-
-    // 发送 msg2
-    final msg2Payload = Uint8List.fromList(utf8.encode(jsonEncode({
-      'type': 'reconnect_ack',
-      'device_id': _getDeviceId(),
-    })));
-    final msg2 = await _noiseSession!.writeHandshake2(msg2Payload);
-    final frame2 = encodeFrame(Frame(t: FrameType.hs, payload: msg2));
-    stream.send(Uint8List.fromList(utf8.encode(frame2)));
-  }
-
   void _listenWebSocket() {
     _incomingSub = _wsChannel!.stream.listen(
-      (data) => _handleIncomingFrame(data as String),
+      (data) {
+        final frame = data is String ? data : utf8.decode(data as List<int>);
+        _handleIncomingFrame(frame);
+      },
       onError: (e) {
         _log.warning('WebSocket error: $e', tag: _tag);
         _setState(PeerConnectionState.disconnected);
@@ -268,7 +258,10 @@ class PeerConnection {
 
   void _listenTunnelStream(PeerTunnelStream stream) {
     _incomingSub = stream.incoming.listen(
-      (data) => _handleIncomingFrame(utf8.decode(data)),
+      (data) {
+        final frame = utf8.decode(data);
+        _handleIncomingFrame(frame);
+      },
       onDone: () {
         _log.info('Tunnel stream closed for ${peer.deviceName}', tag: _tag);
         _setState(PeerConnectionState.disconnected);
@@ -277,10 +270,17 @@ class PeerConnection {
   }
 
   Future<void> _handleIncomingFrame(String raw) async {
+    // 序列化接收处理 — 防止并发 decrypt 导致 nonce 乱序
+    final prev = _recvLock;
+    final completer = Completer<void>();
+    _recvLock = completer.future;
+
+    await prev;
     try {
       final frame = decodeFrame(raw);
       if (frame.t != FrameType.data) return;
 
+      if (_noiseSession == null || !_noiseSession!.ready) return;
       final plaintext = await _noiseSession!.decrypt(frame.payload);
       final json = jsonDecode(utf8.decode(plaintext)) as Map<String, dynamic>;
 
@@ -293,24 +293,46 @@ class PeerConnection {
             peer.id,
           );
           _messageController.add(msg);
+          // 自动回复已送达回执（不 await，避免阻塞接收）
+          _sendAck(msg.id, 'delivered');
+          break;
+
+        case 'ack':
+          final messageId = json['message_id'] as String;
+          final status = json['status'] as String;
+          _ackController.add(PeerAckEvent(messageId: messageId, status: status));
           break;
 
         case 'ping':
-          // 回复 pong
-          final pong = Uint8List.fromList(utf8.encode(jsonEncode({
+          _serializedSend(Uint8List.fromList(utf8.encode(jsonEncode({
             'type': 'pong',
             'timestamp': DateTime.now().millisecondsSinceEpoch,
-          })));
-          final ct = await _noiseSession!.encrypt(pong);
-          _send(encodeFrame(Frame(t: FrameType.data, payload: ct)));
+          }))));
           break;
 
         case 'pong':
-          // 心跳确认，已更新 _lastActivity
           break;
       }
     } catch (e) {
       _log.error('Error handling incoming frame', tag: _tag, error: e);
+    } finally {
+      completer.complete();
+    }
+  }
+
+  /// 发送投递回执
+  Future<void> _sendAck(String messageId, String status) async {
+    await _serializedSend(Uint8List.fromList(utf8.encode(jsonEncode({
+      'type': 'ack',
+      'message_id': messageId,
+      'status': status,
+    }))));
+  }
+
+  /// 发送已读回执（批量）
+  Future<void> sendReadReceipts(List<String> messageIds) async {
+    for (final id in messageIds) {
+      await _sendAck(id, 'read');
     }
   }
 
@@ -320,13 +342,6 @@ class PeerConnection {
     } else if (_tunnelStream != null && !_tunnelStream!.isClosed) {
       _tunnelStream!.send(Uint8List.fromList(utf8.encode(frameStr)));
     }
-  }
-
-  Future<String> _receiveFirst() async {
-    if (_wsChannel != null) {
-      return await _wsChannel!.stream.first as String;
-    }
-    throw StateError('No active transport for receiving');
   }
 
   void _startHeartbeat() {
@@ -351,18 +366,11 @@ class PeerConnection {
       _stateController.add(newState);
     }
   }
+}
 
-  bool _keysEqual(Uint8List a, Uint8List b) {
-    if (a.length != b.length) return false;
-    var result = 0;
-    for (var i = 0; i < a.length; i++) {
-      result |= a[i] ^ b[i];
-    }
-    return result == 0;
-  }
-
-  String _getDeviceId() {
-    // TODO: 从持久化存储读取
-    return 'device-id';
-  }
+/// 回执事件
+class PeerAckEvent {
+  final String messageId;
+  final String status; // 'delivered' or 'read'
+  PeerAckEvent({required this.messageId, required this.status});
 }

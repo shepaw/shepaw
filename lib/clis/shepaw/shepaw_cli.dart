@@ -219,8 +219,10 @@ class ShepawCLI {
       if (ns is ContextNamespace) ns.agentId = agentId;
       if (ns is ChatNamespace) ns.agentId = agentId;
       if (ns is WorkflowNamespace) {
-        ns.agentId = agentId;
-        ns.channelId = flags['channel_id'];
+        final chId = flags['channel_id'];
+        if (chId != null && agentId != null) {
+          ns.setContext(chId, agentId);
+        }
       }
 
       final result = await ns.execute(subcommand, flags);

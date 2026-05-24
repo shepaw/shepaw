@@ -31,6 +31,7 @@ import 'services/foreground_task_service.dart';
 import 'task/services/scheduled_task_service.dart';
 import 'services/trace_service.dart';
 import 'services/channel_tunnel_service.dart';
+import 'peer/services/peer_connection_manager.dart';
 import 'services/she_service.dart';
 import 'package:flutter_foreground_task/flutter_foreground_task.dart';
 import 'sub_window_app.dart';
@@ -109,6 +110,10 @@ Future<void> main(List<String> args) async {
 
       // 自动启动 Channel Tunnel（如有本地 agent 配置了公网穿透）
       await _initializeChannelTunnel();
+
+      // 启动 P2P 连接管理器（后台监听入站连接、自动重连已配对设备）
+      await _initializePeerConnection();
+
       // Initialize notification and lifecycle services
       AppLifecycleService().init();
       await NotificationService().init();
@@ -378,6 +383,17 @@ Future<void> _initializeChannelTunnel() async {
 }
 
 NotificationProvider? _globalNotificationProvider;
+
+/// 启动 P2P 连接管理器
+Future<void> _initializePeerConnection() async {
+  final log = LoggerService();
+  try {
+    await PeerConnectionManager.instance.start();
+    log.info('P2P connection manager started', tag: 'App');
+  } catch (e) {
+    log.error('P2P connection manager start failed', tag: 'App', error: e);
+  }
+}
 
 void setGlobalNotificationProvider(NotificationProvider provider) {
   _globalNotificationProvider = provider;

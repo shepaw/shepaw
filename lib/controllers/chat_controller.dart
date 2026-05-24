@@ -20,6 +20,7 @@ import '../services/notification_service.dart';
 import '../services/interactive_response_handler.dart';
 import '../services/logger_service.dart';
 import '../services/workflow/workflow_service.dart';
+import '../models/workflow_models.dart';
 
 // ---------------------------------------------------------------------------
 // Events — sealed hierarchy for UI-bound side effects
@@ -209,6 +210,9 @@ class ChatController extends ChangeNotifier with InteractiveStreamingContext {
   String? _activeWorkflowId;
   String? get activeWorkflowId => _activeWorkflowId;
 
+  /// Cancellation token for the currently executing workflow.
+  WorkflowCancellationToken? _workflowCancelToken;
+
   /// Set the active workflow ID (called by orchestration when flow starts).
   void setActiveWorkflowId(String? id) {
     _activeWorkflowId = id;
@@ -221,10 +225,37 @@ class ChatController extends ChangeNotifier with InteractiveStreamingContext {
     notifyListeners();
   }
 
-  /// Called when user approves a workflow plan — marks it running and shows progress panel.
+  /// Cancel a running workflow execution.
+  /// Called when user explicitly stops a workflow from the UI.
+  Future<void> cancelRunningWorkflow() async {
+    final workflowId = _activeWorkflowId;
+    if (workflowId == null) return;
+
+    // Signal cancellation to the execution loop
+    _workflowCancelToken?.cancel();
+    _workflowCancelToken = null;
+
+    // Complete all pending interaction Completers so blocked steps can exit
+    for (final e in pendingGroupInteractions.values) {
+      if (!e.result.isCompleted) e.result.complete(null);
+    }
+    pendingGroupInteractions.clear();
+
+    // Mark workflow as cancelled in DB
+    final workflowService = WorkflowService.instance;
+    await workflowService.cancelWorkflow(workflowId);
+
+    _activeWorkflowId = null;
+    notifyListeners();
+  }
+
+  /// Called when user approves a workflow plan — just shows the progress panel.
+  /// The actual startWorkflow + execution is handled by handleWorkflowApproval
+  /// from the progress panel, or directly when approved via plan_approval card.
   Future<void> _handleWorkflowApproved(String workflowId) async {
-    final workflowService = WorkflowService(db: localDatabaseService);
-    await workflowService.startWorkflow(workflowId);
+    // Only set the active ID to show the panel — do NOT call startWorkflow here.
+    // handleWorkflowApproval (triggered from the panel) is the canonical entry
+    // point for starting execution. This avoids the double-start race (C2).
     setActiveWorkflowId(workflowId);
   }
 
@@ -239,6 +270,10 @@ class ChatController extends ChangeNotifier with InteractiveStreamingContext {
       await workflowService.startWorkflow(workflowId);
       notifyListeners();
 
+      // Create a cancellation token for this workflow execution
+      final cancelToken = WorkflowCancellationToken();
+      _workflowCancelToken = cancelToken;
+
       // Auto-execute all stages in the background.
       // processGroupAgent inside executeWorkflowSteps handles message creation
       // and streaming internally. We just reconcile afterwards.
@@ -247,6 +282,7 @@ class ChatController extends ChangeNotifier with InteractiveStreamingContext {
         channelId: currentChannelId!,
         userId: getUserId(),
         userName: getUserName(),
+        cancelToken: cancelToken,
         onAgentStart: (aid, anm) {
           respondingAgentNames.add(anm);
           _notify();
@@ -310,6 +346,16 @@ class ChatController extends ChangeNotifier with InteractiveStreamingContext {
       await workflowService.cancelWorkflow(workflowId);
       _activeWorkflowId = null;
       notifyListeners();
+
+      // M5: Send rejection feedback to Admin so it can re-plan
+      if (feedback != null && feedback.isNotEmpty && currentChannelId != null) {
+        final feedbackMessage = '用户拒绝了工作流计划并提出修改意见: $feedback';
+        try {
+          await processGroupMessage(feedbackMessage);
+        } catch (e) {
+          LoggerService().error('Failed to send workflow rejection feedback', tag: 'ChatController', error: e);
+        }
+      }
     }
   }
 

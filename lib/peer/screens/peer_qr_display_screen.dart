@@ -33,7 +33,8 @@ class _PeerQrDisplayScreenState extends State<PeerQrDisplayScreen> {
   @override
   void dispose() {
     _requestSub?.cancel();
-    PeerPairingService.instance.cancelPairing();
+    // 注意：不在这里 cancelPairing()，因为 TabView 切换时会触发 dispose
+    // 配对生命周期由父页面 PeerPairingScreen 管理
     super.dispose();
   }
 

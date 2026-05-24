@@ -2,8 +2,6 @@ import 'dart:convert';
 import '../../cli_base.dart';
 import '../../../models/planning_models.dart';
 import '../../../services/workflow/workflow_service.dart';
-import '../../../services/local_database_service.dart';
-import 'workflow_namespace.dart';
 
 /// 创建工作流计划。
 ///
@@ -41,7 +39,7 @@ class WorkflowCreateCommand extends CliCommand {
     final title = flags['title'];
     final summary = flags['summary'] ?? '';
     final stagesJson = flags['stages'];
-    final channelId = WorkflowNamespace.instance.channelId;
+    final channelId = flags['channel_id'];
 
     if (title == null || title.isEmpty) {
       return {'error': 'Missing required flag: --title'};
@@ -103,7 +101,7 @@ class WorkflowCreateCommand extends CliCommand {
     );
 
     // Create workflow execution record
-    final workflowService = WorkflowService(db: LocalDatabaseService());
+    final workflowService = WorkflowService.instance;
     final execution = await workflowService.createWorkflowExecution(
       channelId: channelId,
       title: title,

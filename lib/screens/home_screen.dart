@@ -28,6 +28,12 @@ import '../l10n/app_localizations.dart';
 import '../providers/notification_provider.dart';
 import '../main.dart' show setGlobalNotificationProvider;
 import '../models/conversation_selection.dart';
+import '../peer/models/paired_peer.dart';
+import '../peer/models/peer_message.dart';
+import '../peer/screens/peer_chat_screen.dart';
+import '../peer/services/peer_connection_manager.dart';
+import '../peer/services/peer_pairing_service.dart';
+import '../peer/services/peer_storage_service.dart';
 import 'package:provider/provider.dart';
 import '../utils/layout_utils.dart';
 
@@ -35,13 +41,16 @@ import '../utils/layout_utils.dart';
 class _ConversationItem {
   final Agent? agent;
   final Channel? group;
+  final PairedPeer? peer;
   final DateTime? lastMessageTime;
 
-  _ConversationItem.agent(this.agent, this.lastMessageTime) : group = null;
-  _ConversationItem.group(this.group, this.lastMessageTime) : agent = null;
+  _ConversationItem.agent(this.agent, this.lastMessageTime) : group = null, peer = null;
+  _ConversationItem.group(this.group, this.lastMessageTime) : agent = null, peer = null;
+  _ConversationItem.peer(this.peer, this.lastMessageTime) : agent = null, group = null;
 
   bool get isAgent => agent != null;
   bool get isGroup => group != null;
+  bool get isPeer => peer != null;
 }
 
 /// 应用主页 - Telegram风格设计
@@ -75,6 +84,7 @@ class HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateMi
   List<Agent> _agents = [];
   List<Agent> _filteredAgents = [];
   List<Channel> _groupChannels = [];
+  List<PairedPeer> _pairedPeers = [];
   List<_ConversationItem> _sortedConversations = [];
   bool _isLoading = true;
   final TextEditingController _searchController = TextEditingController();
@@ -93,12 +103,19 @@ class HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateMi
   final Map<String, int> _groupUnreadCounts = {};
   // Cache: groupId -> set of session channelIds (for typing indicator lookup)
   final Map<String, Set<String>> _groupSessionChannelIds = {};
+  // P2P peer preview data
+  final Map<String, String> _peerLatestContent = {};
+  final Map<String, int> _peerLatestTime = {};
+  final Map<String, int> _peerUnreadCounts = {};
 
   // FAB 动画控制
   late AnimationController _buttonAnimatedIcon;
 
   // 定期健康检查定时器
   Timer? _healthCheckTimer;
+
+  // P2P 消息监听
+  StreamSubscription? _peerMessageSub;
 
   /// Public accessor so DesktopHomeScreen can trigger a refresh via GlobalKey.
   void reloadAgents() => _loadAgents();
@@ -115,6 +132,18 @@ class HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateMi
     // Listen for typing status changes
     ChatService().typingAgentIds.addListener(_onTypingChanged);
     ChatService().typingChannelIds.addListener(_onTypingChanged);
+
+    // 监听 P2P 新消息，实时更新会话列表
+    _peerMessageSub = PeerConnectionManager.instance.messages.listen((msg) {
+      if (mounted) {
+        setState(() {
+          _peerLatestContent[msg.peerId] = msg.content;
+          _peerLatestTime[msg.peerId] = msg.timestamp;
+          _peerUnreadCounts[msg.peerId] = (_peerUnreadCounts[msg.peerId] ?? 0) + 1;
+          _sortedConversations = _buildSortedConversations();
+        });
+      }
+    });
 
     // 初始化动画控制器
     _buttonAnimatedIcon = AnimationController(
@@ -141,6 +170,7 @@ class HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateMi
     ChatService().typingAgentIds.removeListener(_onTypingChanged);
     ChatService().typingChannelIds.removeListener(_onTypingChanged);
     _healthCheckTimer?.cancel();
+    _peerMessageSub?.cancel();
     _searchController.dispose();
     _buttonAnimatedIcon.dispose();
     super.dispose();
@@ -387,6 +417,26 @@ class HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateMi
     }
   }
 
+  /// 加载 peer 的最新消息和未读数
+  Future<void> _loadPeerPreviews(List<PairedPeer> peers) async {
+    final storage = PeerStorageService();
+    final myDeviceId = await PeerPairingService.instance.getDeviceId();
+    for (final peer in peers) {
+      final messages = await storage.getMessages(peer.id, limit: 1);
+      if (messages.isNotEmpty) {
+        _peerLatestContent[peer.id] = messages.first.content;
+        _peerLatestTime[peer.id] = messages.first.timestamp;
+      }
+      // 未读数：非我发的 + 还没标记为 read 的
+      final recent = await storage.getMessages(peer.id, limit: 100);
+      final unread = recent.where((m) =>
+          m.senderId != myDeviceId &&
+          m.delivery != PeerMessageDelivery.read
+      ).length;
+      _peerUnreadCounts[peer.id] = unread;
+    }
+  }
+
   /// 后台执行健康检查，完成后静默更新在线状态（不显示 loading）
   void _runHealthCheckInBackground() {
     () async {
@@ -426,11 +476,19 @@ class HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateMi
       final groups = allChannels.where((c) => c.isGroup && c.parentGroupId == null).toList();
       await _loadGroupPreviews(groups);
 
+      // Load paired peers (有最近活跃记录的)
+      List<PairedPeer> peers = [];
+      try {
+        peers = await PeerConnectionManager.instance.getAllPeers();
+        await _loadPeerPreviews(peers);
+      } catch (_) {}
+
       if (mounted) {
         setState(() {
           _agents = agents;
           _filteredAgents = _applySearchFilter(agents);
           _groupChannels = groups;
+          _pairedPeers = peers;
           _sortedConversations = _buildSortedConversations();
           _isLoading = false;
         });
@@ -513,6 +571,20 @@ class HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateMi
       final timeStr = msg?['created_at'] as String?;
       final time = timeStr != null ? DateTime.tryParse(timeStr) : null;
       items.add(_ConversationItem.group(group, time));
+    }
+
+    // 已配对设备（有最近消息的加入会话列表）
+    for (final peer in _pairedPeers) {
+      if (query.isNotEmpty) {
+        if (!peer.deviceName.toLowerCase().contains(query)) continue;
+      }
+      final msgTime = _peerLatestTime[peer.id];
+      final time = msgTime != null
+          ? DateTime.fromMillisecondsSinceEpoch(msgTime)
+          : (peer.lastSeen != null
+              ? DateTime.fromMillisecondsSinceEpoch(peer.lastSeen!)
+              : DateTime.fromMillisecondsSinceEpoch(peer.pairedAt));
+      items.add(_ConversationItem.peer(peer, time));
     }
 
     // Sort by last message time descending; items with no messages go last.
@@ -809,6 +881,9 @@ class HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateMi
           final item = _sortedConversations[index];
           if (item.isGroup) {
             return _buildGroupTile(item.group!);
+          }
+          if (item.isPeer) {
+            return _buildPeerTile(item.peer!);
           }
           return _buildAgentTile(item.agent!);
         },
@@ -1269,6 +1344,142 @@ class HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateMi
                       const SizedBox(width: 8),
                       // 在线/离线/思考中 状态
                       _buildStatusLabel(agent),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildPeerTile(PairedPeer peer) {
+    final isConnected = PeerConnectionManager.instance.getPeerState(peer.id) ==
+        PeerConnectionState.connected;
+    final lastContent = _peerLatestContent[peer.id] ?? '';
+    final lastTimestamp = _peerLatestTime[peer.id];
+    final lastTime = lastTimestamp != null
+        ? DateTime.fromMillisecondsSinceEpoch(lastTimestamp).toIso8601String()
+        : null;
+    final unreadCount = _peerUnreadCounts[peer.id] ?? 0;
+
+    final isSelected = widget.embedded &&
+        widget.selectedConversation != null &&
+        widget.selectedConversation!.peerId == peer.id;
+
+    return InkWell(
+      onTap: () {
+        if (widget.embedded && widget.onConversationSelected != null) {
+          setState(() => _peerUnreadCounts[peer.id] = 0);
+          widget.onConversationSelected!(ConversationSelection(peerId: peer.id));
+          return;
+        }
+        setState(() => _peerUnreadCounts[peer.id] = 0);
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) => PeerChatScreen(peer: peer),
+          ),
+        ).then((_) => _loadAgents());
+      },
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        color: isSelected ? Colors.blue.withOpacity(0.08) : null,
+        child: Row(
+          children: [
+            // 设备头像 + 未读红点
+            Stack(
+              children: [
+                Container(
+                  width: 48,
+                  height: 48,
+                  decoration: BoxDecoration(
+                    color: Colors.teal[50],
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  alignment: Alignment.center,
+                  child: Icon(Icons.smartphone, size: 24, color: Colors.teal[600]),
+                ),
+                // 在线状态
+                Positioned(
+                  right: 0,
+                  bottom: 0,
+                  child: Container(
+                    width: 14,
+                    height: 14,
+                    decoration: BoxDecoration(
+                      color: isConnected ? Colors.green : Colors.grey,
+                      shape: BoxShape.circle,
+                      border: Border.all(
+                        color: Theme.of(context).scaffoldBackgroundColor,
+                        width: 2,
+                      ),
+                    ),
+                  ),
+                ),
+                // 未读数
+                if (unreadCount > 0)
+                  Positioned(
+                    right: -2,
+                    top: -2,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: Colors.red,
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: Text(
+                        unreadCount > 99 ? '99+' : '$unreadCount',
+                        style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold),
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+            const SizedBox(width: 12),
+            // 名称 + 最新消息
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          peer.deviceName,
+                          style: const TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w500,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                      if (lastTime != null)
+                        Text(
+                          _formatTime(lastTime),
+                          style: TextStyle(fontSize: 12, color: Colors.grey[500]),
+                        ),
+                    ],
+                  ),
+                  const SizedBox(height: 4),
+                  Row(
+                    children: [
+                      Icon(Icons.lock, size: 12, color: Colors.green[400]),
+                      const SizedBox(width: 4),
+                      Expanded(
+                        child: Text(
+                          lastContent.isNotEmpty ? lastContent : (isConnected ? '在线' : '离线'),
+                          style: TextStyle(
+                            fontSize: 13,
+                            color: Colors.grey[500],
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
                     ],
                   ),
                 ],

@@ -5,6 +5,7 @@ import 'package:uuid/uuid.dart';
 import '../models/paired_peer.dart';
 import '../models/peer_message.dart';
 import '../services/peer_connection_manager.dart';
+import '../services/peer_pairing_service.dart';
 import '../services/peer_storage_service.dart';
 
 /// P2P 聊天页面
@@ -23,32 +24,120 @@ class _PeerChatScreenState extends State<PeerChatScreen> {
   final _uuid = const Uuid();
 
   late String _displayName;
+  String? _myDeviceId;
   List<PeerMessage> _messages = [];
   StreamSubscription? _messageSub;
   StreamSubscription? _eventSub;
+  StreamSubscription? _ackSub;
   PeerConnectionState _connectionState = PeerConnectionState.disconnected;
+  bool _showScrollToBottom = false;
 
   @override
   void initState() {
     super.initState();
     _displayName = widget.peer.deviceName;
+    _initDeviceId();
     _loadMessages();
     _subscribeToMessages();
     _connectionState = PeerConnectionManager.instance.getPeerState(widget.peer.id);
-    // 进入聊天页时自动尝试连接
     _tryConnect();
+
+    _scrollController.addListener(_onScroll);
   }
 
   @override
   void dispose() {
     _textController.dispose();
+    _scrollController.removeListener(_onScroll);
     _scrollController.dispose();
     _messageSub?.cancel();
     _eventSub?.cancel();
+    _ackSub?.cancel();
     super.dispose();
   }
 
-  /// 异步检测并建立连接
+  void _onScroll() {
+    if (!_scrollController.hasClients) return;
+    final maxScroll = _scrollController.position.maxScrollExtent;
+    final currentScroll = _scrollController.offset;
+    // 距离底部超过 200px 时显示按钮
+    final shouldShow = (maxScroll - currentScroll) > 200;
+    if (shouldShow != _showScrollToBottom) {
+      setState(() => _showScrollToBottom = shouldShow);
+    }
+  }
+
+  Future<void> _initDeviceId() async {
+    _myDeviceId = await PeerPairingService.instance.getDeviceId();
+  }
+
+  Future<void> _loadMessages() async {
+    final messages = await PeerStorageService().getMessages(widget.peer.id);
+    if (mounted) {
+      setState(() {
+        _messages = messages.reversed.toList();
+      });
+      // 加载后滚到底部
+      _scrollToBottom(animate: false);
+      // 标记所有对方发来的未读消息为已读
+      final unreadIds = _messages
+          .where((m) => !_isMyMessage(m) && m.delivery != PeerMessageDelivery.read)
+          .map((m) => m.id)
+          .toList();
+      if (unreadIds.isNotEmpty) {
+        _sendReadReceipt(unreadIds);
+      }
+    }
+  }
+
+  /// 发送已读回执
+  Future<void> _sendReadReceipt(List<String> messageIds) async {
+    await PeerConnectionManager.instance.markMessagesAsRead(
+      widget.peer.id,
+      messageIds,
+    );
+  }
+
+  void _subscribeToMessages() {
+    _messageSub = PeerConnectionManager.instance.messages
+        .where((msg) => msg.peerId == widget.peer.id)
+        .listen((msg) {
+      if (mounted) {
+        setState(() => _messages.add(msg));
+        _scrollToBottom();
+        // 收到消息时立即标记已读
+        _sendReadReceipt([msg.id]);
+      }
+    });
+
+    _eventSub = PeerConnectionManager.instance.events
+        .where((event) => event.peerId == widget.peer.id)
+        .listen((event) {
+      if (mounted) {
+        setState(() {
+          _connectionState = PeerConnectionManager.instance.getPeerState(widget.peer.id);
+        });
+      }
+    });
+
+    // 监听回执事件，实时更新消息投递状态
+    _ackSub = PeerConnectionManager.instance.ackEvents.listen((ack) {
+      if (mounted) {
+        setState(() {
+          for (var i = 0; i < _messages.length; i++) {
+            if (_messages[i].id == ack.messageId) {
+              final newDelivery = ack.status == 'read'
+                  ? PeerMessageDelivery.read
+                  : PeerMessageDelivery.delivered;
+              _messages[i] = _messages[i].copyWith(delivery: newDelivery);
+              break;
+            }
+          }
+        });
+      }
+    });
+  }
+
   Future<void> _tryConnect() async {
     final currentState = PeerConnectionManager.instance.getPeerState(widget.peer.id);
     if (currentState == PeerConnectionState.connected) return;
@@ -59,41 +148,7 @@ class _PeerChatScreenState extends State<PeerChatScreen> {
 
     try {
       await PeerConnectionManager.instance.connectToPeer(widget.peer);
-    } catch (_) {
-      // 连接失败，状态会通过 events stream 更新
-    }
-  }
-
-  Future<void> _loadMessages() async {
-    final messages = await PeerStorageService().getMessages(widget.peer.id);
-    if (mounted) {
-      setState(() {
-        _messages = messages.reversed.toList(); // 按时间正序
-      });
-    }
-  }
-
-  void _subscribeToMessages() {
-    // 监听新消息
-    _messageSub = PeerConnectionManager.instance.messages
-        .where((msg) => msg.peerId == widget.peer.id)
-        .listen((msg) {
-      if (mounted) {
-        setState(() => _messages.add(msg));
-        _scrollToBottom();
-      }
-    });
-
-    // 监听连接状态
-    _eventSub = PeerConnectionManager.instance.events
-        .where((event) => event.peerId == widget.peer.id)
-        .listen((event) {
-      if (mounted) {
-        setState(() {
-          _connectionState = PeerConnectionManager.instance.getPeerState(widget.peer.id);
-        });
-      }
-    });
+    } catch (_) {}
   }
 
   Future<void> _sendMessage() async {
@@ -103,7 +158,7 @@ class _PeerChatScreenState extends State<PeerChatScreen> {
     final message = PeerMessage(
       id: _uuid.v4(),
       peerId: widget.peer.id,
-      senderId: 'self', // TODO: 使用实际 deviceId
+      senderId: _myDeviceId ?? 'self',
       type: PeerMessageType.text,
       content: text,
       timestamp: DateTime.now().millisecondsSinceEpoch,
@@ -114,19 +169,22 @@ class _PeerChatScreenState extends State<PeerChatScreen> {
     setState(() => _messages.add(message));
     _scrollToBottom();
 
-    // 保存并发送
     await PeerStorageService().saveMessage(message);
     await PeerConnectionManager.instance.sendMessage(widget.peer.id, message);
   }
 
-  void _scrollToBottom() {
-    Future.delayed(const Duration(milliseconds: 100), () {
-      if (_scrollController.hasClients) {
+  void _scrollToBottom({bool animate = true}) {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!_scrollController.hasClients) return;
+      final target = _scrollController.position.maxScrollExtent;
+      if (animate) {
         _scrollController.animateTo(
-          _scrollController.position.maxScrollExtent,
+          target,
           duration: const Duration(milliseconds: 200),
           curve: Curves.easeOut,
         );
+      } else {
+        _scrollController.jumpTo(target);
       }
     });
   }
@@ -168,10 +226,15 @@ class _PeerChatScreenState extends State<PeerChatScreen> {
     }
   }
 
+  bool _isMyMessage(PeerMessage msg) {
+    if (_myDeviceId != null) {
+      return msg.senderId == _myDeviceId;
+    }
+    return msg.senderId != widget.peer.deviceId;
+  }
+
   @override
   Widget build(BuildContext context) {
-    final colorScheme = Theme.of(context).colorScheme;
-
     return Scaffold(
       appBar: AppBar(
         title: GestureDetector(
@@ -183,14 +246,13 @@ class _PeerChatScreenState extends State<PeerChatScreen> {
               Text(
                 _connectionStateText(),
                 style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                  color: _connectionStateColor(colorScheme),
+                  color: _connectionStateColor(),
                 ),
               ),
             ],
           ),
         ),
         actions: [
-          // 连接状态图标
           Padding(
             padding: const EdgeInsets.only(right: 12),
             child: Icon(
@@ -200,28 +262,26 @@ class _PeerChatScreenState extends State<PeerChatScreen> {
               size: 18,
               color: _connectionState == PeerConnectionState.connected
                   ? Colors.green
-                  : colorScheme.onSurfaceVariant,
+                  : Colors.grey,
             ),
           ),
         ],
       ),
       body: Column(
         children: [
-          // 加密提示
+          // 加密提示条
           Container(
             width: double.infinity,
             padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 16),
-            color: colorScheme.primaryContainer.withOpacity(0.3),
+            color: Colors.green.withOpacity(0.08),
             child: Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                Icon(Icons.enhanced_encryption, size: 14, color: colorScheme.primary),
+                Icon(Icons.enhanced_encryption, size: 14, color: Colors.green[700]),
                 const SizedBox(width: 6),
                 Text(
-                  '端到端加密',
-                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: colorScheme.primary,
-                  ),
+                  '消息已端到端加密',
+                  style: TextStyle(fontSize: 12, color: Colors.green[700]),
                 ),
               ],
             ),
@@ -229,31 +289,55 @@ class _PeerChatScreenState extends State<PeerChatScreen> {
 
           // 消息列表
           Expanded(
-            child: _messages.isEmpty
-                ? Center(
-                    child: Text(
-                      '暂无消息',
-                      style: TextStyle(color: colorScheme.onSurfaceVariant),
+            child: Stack(
+              children: [
+                _messages.isEmpty
+                    ? Center(
+                        child: Text(
+                          '暂无消息\n发送第一条消息开始对话',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(color: Colors.grey[400], height: 1.5),
+                        ),
+                      )
+                    : ListView.builder(
+                        controller: _scrollController,
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                        itemCount: _messages.length,
+                        itemBuilder: (context, index) {
+                          return _PeerMessageBubble(
+                            message: _messages[index],
+                            isMyMessage: _isMyMessage(_messages[index]),
+                            peerName: _displayName,
+                          );
+                        },
+                      ),
+
+                // 跳到底部按钮
+                if (_showScrollToBottom)
+                  Positioned(
+                    right: 16,
+                    bottom: 16,
+                    child: FloatingActionButton.small(
+                      onPressed: () => _scrollToBottom(),
+                      backgroundColor: Theme.of(context).colorScheme.surfaceContainerHighest,
+                      child: Icon(
+                        Icons.keyboard_arrow_down,
+                        color: Theme.of(context).colorScheme.onSurface,
+                      ),
                     ),
-                  )
-                : ListView.builder(
-                    controller: _scrollController,
-                    padding: const EdgeInsets.all(12),
-                    itemCount: _messages.length,
-                    itemBuilder: (context, index) {
-                      return _MessageBubble(message: _messages[index]);
-                    },
                   ),
+              ],
+            ),
           ),
 
           // 输入区域
-          _buildInputArea(colorScheme),
+          _buildInputArea(),
         ],
       ),
     );
   }
 
-  Widget _buildInputArea(ColorScheme colorScheme) {
+  Widget _buildInputArea() {
     final isConnected = _connectionState == PeerConnectionState.connected;
 
     return Container(
@@ -264,9 +348,9 @@ class _PeerChatScreenState extends State<PeerChatScreen> {
         bottom: MediaQuery.of(context).padding.bottom + 8,
       ),
       decoration: BoxDecoration(
-        color: colorScheme.surface,
+        color: Theme.of(context).scaffoldBackgroundColor,
         border: Border(
-          top: BorderSide(color: colorScheme.outlineVariant, width: 0.5),
+          top: BorderSide(color: Colors.grey[300]!, width: 0.5),
         ),
       ),
       child: Row(
@@ -276,12 +360,13 @@ class _PeerChatScreenState extends State<PeerChatScreen> {
               controller: _textController,
               decoration: InputDecoration(
                 hintText: isConnected ? '输入消息...' : '设备未连接',
+                hintStyle: TextStyle(color: Colors.grey[400]),
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(24),
                   borderSide: BorderSide.none,
                 ),
                 filled: true,
-                fillColor: colorScheme.surfaceContainerHighest,
+                fillColor: Colors.grey[100],
                 contentPadding: const EdgeInsets.symmetric(
                   horizontal: 16,
                   vertical: 10,
@@ -293,9 +378,21 @@ class _PeerChatScreenState extends State<PeerChatScreen> {
             ),
           ),
           const SizedBox(width: 8),
-          IconButton.filled(
-            onPressed: isConnected ? _sendMessage : null,
-            icon: const Icon(Icons.send),
+          GestureDetector(
+            onTap: isConnected ? _sendMessage : null,
+            child: Container(
+              width: 40,
+              height: 40,
+              decoration: BoxDecoration(
+                color: isConnected ? Theme.of(context).primaryColor : Colors.grey[300],
+                shape: BoxShape.circle,
+              ),
+              child: Icon(
+                Icons.send,
+                size: 18,
+                color: isConnected ? Colors.white : Colors.grey[500],
+              ),
+            ),
           ),
         ],
       ),
@@ -305,115 +402,156 @@ class _PeerChatScreenState extends State<PeerChatScreen> {
   String _connectionStateText() {
     switch (_connectionState) {
       case PeerConnectionState.connected:
-        return '已连接 (加密)';
+        return '在线 · 端到端加密';
       case PeerConnectionState.connecting:
         return '连接中...';
       case PeerConnectionState.disconnected:
-        return '未连接';
+        return '离线';
     }
   }
 
-  Color _connectionStateColor(ColorScheme colorScheme) {
+  Color _connectionStateColor() {
     switch (_connectionState) {
       case PeerConnectionState.connected:
         return Colors.green;
       case PeerConnectionState.connecting:
         return Colors.orange;
       case PeerConnectionState.disconnected:
-        return colorScheme.onSurfaceVariant;
+        return Colors.grey;
     }
   }
 }
 
 /// 消息气泡
-class _MessageBubble extends StatelessWidget {
+class _PeerMessageBubble extends StatelessWidget {
   final PeerMessage message;
+  final bool isMyMessage;
+  final String peerName;
 
-  const _MessageBubble({required this.message});
+  const _PeerMessageBubble({
+    required this.message,
+    required this.isMyMessage,
+    required this.peerName,
+  });
 
   @override
   Widget build(BuildContext context) {
-    final isSelf = message.senderId == 'self'; // TODO: 使用实际 deviceId
-    final colorScheme = Theme.of(context).colorScheme;
-
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 4),
       child: Row(
-        mainAxisAlignment: isSelf ? MainAxisAlignment.end : MainAxisAlignment.start,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisAlignment: isMyMessage ? MainAxisAlignment.end : MainAxisAlignment.start,
         children: [
-          if (isSelf) const Spacer(flex: 2),
-          Flexible(
-            flex: 5,
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+          // 对方头像（左侧）
+          if (!isMyMessage) ...[
+            Container(
+              width: 32,
+              height: 32,
               decoration: BoxDecoration(
-                color: isSelf
-                    ? colorScheme.primaryContainer
-                    : colorScheme.surfaceContainerHighest,
-                borderRadius: BorderRadius.only(
-                  topLeft: const Radius.circular(16),
-                  topRight: const Radius.circular(16),
-                  bottomLeft: isSelf ? const Radius.circular(16) : const Radius.circular(4),
-                  bottomRight: isSelf ? const Radius.circular(4) : const Radius.circular(16),
-                ),
+                color: Colors.teal[100],
+                borderRadius: BorderRadius.circular(8),
               ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.end,
-                children: [
-                  Text(
-                    message.content,
-                    style: TextStyle(
-                      color: isSelf
-                          ? colorScheme.onPrimaryContainer
-                          : colorScheme.onSurface,
+              alignment: Alignment.center,
+              child: Icon(Icons.smartphone, size: 16, color: Colors.teal[700]),
+            ),
+            const SizedBox(width: 8),
+          ],
+
+          // 消息内容
+          Flexible(
+            child: Column(
+              crossAxisAlignment: isMyMessage
+                  ? CrossAxisAlignment.end
+                  : CrossAxisAlignment.start,
+              children: [
+                // 对方名字
+                if (!isMyMessage)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 4),
+                    child: Text(
+                      peerName,
+                      style: const TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.grey,
+                      ),
                     ),
                   ),
-                  const SizedBox(height: 4),
-                  Row(
+
+                // 气泡
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  decoration: BoxDecoration(
+                    color: isMyMessage
+                        ? Theme.of(context).primaryColor
+                        : Colors.grey[200],
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                  child: Text(
+                    message.content,
+                    style: TextStyle(
+                      fontSize: 15,
+                      height: 1.4,
+                      color: isMyMessage ? Colors.white : Colors.black87,
+                    ),
+                  ),
+                ),
+
+                // 时间 + 状态
+                Padding(
+                  padding: const EdgeInsets.only(top: 4),
+                  child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       Text(
                         _formatTime(message.timestamp),
-                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          color: isSelf
-                              ? colorScheme.onPrimaryContainer.withOpacity(0.6)
-                              : colorScheme.onSurfaceVariant,
-                          fontSize: 11,
-                        ),
+                        style: const TextStyle(fontSize: 10, color: Colors.grey),
                       ),
-                      if (isSelf) ...[
+                      if (isMyMessage) ...[
                         const SizedBox(width: 4),
-                        _deliveryIcon(message.delivery, colorScheme),
+                        _buildDeliveryIcon(message.delivery),
                       ],
                     ],
                   ),
-                ],
-              ),
+                ),
+              ],
             ),
           ),
-          if (!isSelf) const Spacer(flex: 2),
+
+          // 自己的消息右侧留白
+          if (isMyMessage) const SizedBox(width: 40),
         ],
       ),
     );
   }
 
-  Widget _deliveryIcon(PeerMessageDelivery delivery, ColorScheme colorScheme) {
+  Widget _buildDeliveryIcon(PeerMessageDelivery delivery) {
     switch (delivery) {
       case PeerMessageDelivery.pending:
-        return Icon(Icons.access_time, size: 12, color: colorScheme.onPrimaryContainer.withOpacity(0.5));
+        return const Icon(Icons.access_time, size: 12, color: Colors.grey);
       case PeerMessageDelivery.sent:
-        return Icon(Icons.check, size: 12, color: colorScheme.onPrimaryContainer.withOpacity(0.7));
+        return const Icon(Icons.check, size: 12, color: Colors.grey);
       case PeerMessageDelivery.delivered:
-        return Icon(Icons.done_all, size: 12, color: colorScheme.onPrimaryContainer.withOpacity(0.7));
+        return const Icon(Icons.done_all, size: 12, color: Colors.grey);
       case PeerMessageDelivery.read:
-        return Icon(Icons.done_all, size: 12, color: colorScheme.primary);
+        return const Icon(Icons.done_all, size: 12, color: Colors.blue);
       case PeerMessageDelivery.failed:
-        return Icon(Icons.error_outline, size: 12, color: colorScheme.error);
+        return const Icon(Icons.error_outline, size: 12, color: Colors.red);
     }
   }
 
   String _formatTime(int timestamp) {
     final dt = DateTime.fromMillisecondsSinceEpoch(timestamp);
-    return '${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';
+    final now = DateTime.now();
+    final timeStr = '${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';
+
+    if (dt.year == now.year && dt.month == now.month && dt.day == now.day) {
+      return timeStr;
+    }
+    final yesterday = now.subtract(const Duration(days: 1));
+    if (dt.year == yesterday.year && dt.month == yesterday.month && dt.day == yesterday.day) {
+      return '昨天 $timeStr';
+    }
+    return '${dt.month}/${dt.day} $timeStr';
   }
 }

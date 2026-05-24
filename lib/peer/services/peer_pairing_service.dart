@@ -230,19 +230,22 @@ class PeerPairingService {
     final frame = encodeFrame(Frame(t: FrameType.hs, payload: msg2Bytes));
     _responderStream!.send(Uint8List.fromList(utf8.encode(frame)));
 
-    // 创建 PairedPeer 并存储
+    // 检查是否已配对过（避免重复记录）
+    final fingerprint = _fingerprintFromKey(_responderPeerPublicKey!);
+    final existingPeer = await _storage.getPeerByFingerprint(fingerprint);
+
     final peer = PairedPeer(
-      id: peerId,
+      id: existingPeer?.id ?? peerId, // 复用已有 ID
       deviceName: request.deviceName,
       deviceId: request.deviceId,
       publicKey: _responderPeerPublicKey!,
-      fingerprint: _fingerprintFromKey(_responderPeerPublicKey!),
+      fingerprint: fingerprint,
       channelEndpoint: request.channelEndpoint,
       localEndpoint: request.localEndpoint,
-      pairedAt: DateTime.now().millisecondsSinceEpoch,
+      pairedAt: existingPeer?.pairedAt ?? DateTime.now().millisecondsSinceEpoch,
     );
 
-    await _storage.savePeer(peer);
+    await _storage.savePeer(peer); // INSERT OR REPLACE
 
     _state = PairingSessionState.completed;
     _cleanup();
@@ -405,9 +408,11 @@ class PeerPairingService {
         throw PairingRejectedException(response.rejectReason);
       }
 
-      // 配对成功
+      // 配对成功 — 检查是否已配对过
+      final existingPeer = await _storage.getPeerByFingerprint(info.fingerprint);
+
       final peer = PairedPeer(
-        id: response.peerId,
+        id: existingPeer?.id ?? response.peerId, // 复用已有 ID
         deviceName: response.deviceName,
         deviceId: response.deviceId,
         publicKey: info.publicKey,
@@ -552,6 +557,12 @@ class PeerPairingService {
   /// 获取本设备 UUID（持久化，首次生成后固定）
   String _getDeviceId() {
     return _cachedDeviceId ?? _uuid.v4();
+  }
+
+  /// 获取当前设备 ID（公开，供 chat 等模块使用）
+  Future<String> getDeviceId() async {
+    await ensureDeviceInfo();
+    return _cachedDeviceId!;
   }
 
   // ── 设备信息缓存（在 init 时加载） ────────────────────────────────────

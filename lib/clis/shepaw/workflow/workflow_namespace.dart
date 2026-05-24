@@ -21,11 +21,25 @@ class WorkflowNamespace extends CliNamespace {
   static final instance = WorkflowNamespace._();
   WorkflowNamespace._();
 
-  /// 当前执行的 channelId（由外部在调用前注入）
-  String? channelId;
+  /// Per-channel context for concurrent safety (C1 fix).
+  /// Keyed by channelId so multiple groups can run workflows simultaneously.
+  final Map<String, _WorkflowContext> _contexts = {};
 
-  /// 当前执行的 agentId（由外部在调用前注入）
-  String? agentId;
+  /// Set context for a specific channel before CLI execution.
+  void setContext(String channelId, String agentId) {
+    _contexts[channelId] = _WorkflowContext(channelId: channelId, agentId: agentId);
+  }
+
+  /// Clear context for a specific channel after CLI execution.
+  void clearContext(String channelId) {
+    _contexts.remove(channelId);
+  }
+
+  /// Get the channelId for a given context (looked up by channel_id flag in CLI args).
+  String? getChannelId(String? fromFlags) => fromFlags ?? _contexts.values.firstOrNull?.channelId;
+
+  /// Get the agentId for a given channel context.
+  String? getAgentId(String? channelId) => channelId != null ? _contexts[channelId]?.agentId : null;
 
   @override
   String get namespace => 'workflow';
@@ -42,4 +56,10 @@ class WorkflowNamespace extends CliNamespace {
         'fail': WorkflowFailCommand(),
         'cancel': WorkflowCancelCommand(),
       };
+}
+
+class _WorkflowContext {
+  final String channelId;
+  final String agentId;
+  _WorkflowContext({required this.channelId, required this.agentId});
 }

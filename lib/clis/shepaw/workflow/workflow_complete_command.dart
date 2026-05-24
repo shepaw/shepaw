@@ -1,6 +1,6 @@
 import '../../cli_base.dart';
+import '../../../models/workflow_models.dart';
 import '../../../services/workflow/workflow_service.dart';
-import '../../../services/local_database_service.dart';
 
 /// 标记工作流执行成功完成。
 ///
@@ -26,12 +26,19 @@ class WorkflowCompleteCommand extends CliCommand {
       return {'error': 'Missing required flag: --workflow_id'};
     }
 
-    final workflowService = WorkflowService(db: LocalDatabaseService());
+    final workflowService = WorkflowService.instance;
     final workflow =
         await workflowService.getWorkflowExecutionWithSteps(workflowId);
 
     if (workflow == null) {
       return {'error': 'Workflow not found: $workflowId'};
+    }
+
+    // H2: Status guard — only allow completing a running workflow
+    if (workflow.status != WorkflowStatus.running) {
+      return {
+        'error': 'Cannot complete workflow in "${workflow.status.label}" state. Only running workflows can be completed.',
+      };
     }
 
     await workflowService.completeWorkflow(workflowId, summary: summary);

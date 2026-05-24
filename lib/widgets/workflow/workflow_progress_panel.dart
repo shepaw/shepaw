@@ -204,7 +204,7 @@ class _WorkflowProgressPanelState extends State<WorkflowProgressPanel>
             ),
             // Expand/collapse button
             Icon(
-              _expanded ? Icons.expand_more : Icons.expand_less,
+              _expanded ? Icons.expand_less : Icons.expand_more,
               size: 20,
               color: Colors.grey.shade500,
             ),
@@ -287,7 +287,7 @@ class _WorkflowProgressPanelState extends State<WorkflowProgressPanel>
           ),
         ],
       ),
-    );
+    ).then((_) => controller.dispose());
   }
 
   Widget _buildExpandedContent(WorkflowExecution exec) {

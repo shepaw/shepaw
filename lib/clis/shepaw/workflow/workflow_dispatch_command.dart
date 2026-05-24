@@ -1,4 +1,3 @@
-import 'dart:convert';
 import '../../cli_base.dart';
 import '../../../models/workflow_models.dart';
 import '../../../services/workflow/workflow_service.dart';
@@ -16,14 +15,24 @@ import '../../../services/local_database_service.dart';
 ///
 /// 注意：此命令是阻塞式的，直到阶段内所有步骤完成才返回。
 class WorkflowDispatchCommand extends CliCommand {
-  /// 外部注入的 Agent 执行回调。
-  /// 由 GroupOrchestrationService 在调用前设置。
-  /// 参数：(agentName, instruction, channelId) → 返回执行结果摘要
-  static Future<String> Function(
-    String agentName,
-    String instruction,
+  /// Per-channel step execution callbacks.
+  /// Keyed by channelId to prevent cross-channel contamination (C1 fix).
+  /// Set by GroupAgentExecutor before each CLI invocation.
+  static final Map<String, Future<String> Function(String agentName, String instruction, String channelId)>
+      executeStepFnMap = {};
+
+  /// Convenience setter — sets for a specific channel.
+  static void setExecuteStepFn(
     String channelId,
-  )? executeStepFn;
+    Future<String> Function(String agentName, String instruction, String channelId) fn,
+  ) {
+    executeStepFnMap[channelId] = fn;
+  }
+
+  /// Convenience removal — clears for a specific channel.
+  static void clearExecuteStepFn(String channelId) {
+    executeStepFnMap.remove(channelId);
+  }
 
   @override
   String get name => 'dispatch';
@@ -53,7 +62,7 @@ class WorkflowDispatchCommand extends CliCommand {
       return {'error': 'Invalid --stage_index: must be a non-negative integer'};
     }
 
-    final workflowService = WorkflowService(db: LocalDatabaseService());
+    final workflowService = WorkflowService.instance;
     final workflow =
         await workflowService.getWorkflowExecutionWithSteps(workflowId);
 
@@ -78,7 +87,10 @@ class WorkflowDispatchCommand extends CliCommand {
       };
     }
 
-    // Check if executeStepFn is set
+    final channelId = workflow.channelId;
+
+    // Check if executeStepFn is set for this channel
+    final executeStepFn = executeStepFnMap[channelId];
     if (executeStepFn == null) {
       return {
         'error':
@@ -86,7 +98,6 @@ class WorkflowDispatchCommand extends CliCommand {
       };
     }
 
-    final channelId = workflow.channelId;
     final results = <Map<String, dynamic>>[];
 
     // Execute steps in parallel
@@ -96,7 +107,7 @@ class WorkflowDispatchCommand extends CliCommand {
       await workflowService.startStep(step.id);
 
       try {
-        final output = await executeStepFn!(
+        final output = await executeStepFn(
           step.agentName,
           step.instruction,
           channelId,

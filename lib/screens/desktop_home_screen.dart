@@ -5,6 +5,9 @@ import '../models/conversation_selection.dart';
 import '../l10n/app_localizations.dart';
 import '../services/local_database_service.dart';
 import '../services/message_search_service.dart';
+import '../peer/models/paired_peer.dart';
+import '../peer/screens/peer_chat_screen.dart';
+import '../peer/services/peer_connection_manager.dart';
 import 'home_screen.dart';
 import 'chat_screen.dart';
 import 'channel_trace_screen.dart';
@@ -271,6 +274,25 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
     switch (_rightPanel) {
       case _RightPanelView.chat:
         if (_selected != null) {
+          // P2P 设备聊天
+          if (_selected!.peerId != null) {
+            return FutureBuilder<PairedPeer?>(
+              key: ValueKey('peer_${_selected!.peerId}'),
+              future: PeerConnectionManager.instance.getAllPeers().then(
+                (peers) => peers.where((p) => p.id == _selected!.peerId).firstOrNull,
+              ),
+              builder: (context, snapshot) {
+                if (!snapshot.hasData || snapshot.data == null) {
+                  return const Center(child: CircularProgressIndicator());
+                }
+                return PeerChatScreen(
+                  key: ValueKey(_selected!.key),
+                  peer: snapshot.data!,
+                );
+              },
+            );
+          }
+          // 普通 Agent/Group 聊天
           return ChatScreen(
             key: ValueKey(_selected!.key),
             agentId: _selected!.agentId,

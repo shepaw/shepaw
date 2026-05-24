@@ -23,6 +23,9 @@ class WorkflowService {
   final StreamController<String> _updateController =
       StreamController<String>.broadcast();
 
+  /// H4: Cache workflowId → channelId to avoid unnecessary cross-channel queries.
+  final Map<String, String> _workflowChannelCache = {};
+
   WorkflowService._({required LocalDatabaseService db}) : _db = db;
 
   /// Constructor for dependency injection (delegates to singleton in practice).
@@ -61,32 +64,37 @@ class WorkflowService {
     );
 
     final db = await _db.database;
-    await db.insert('workflow_executions', execution.toMap());
 
-    // Insert step records
+    // M6: Use transaction to ensure atomic creation of workflow + steps
     final steps = <WorkflowStepExecution>[];
-    for (int si = 0; si < flowPlan.stages.length; si++) {
-      final stage = flowPlan.stages[si];
-      for (int sti = 0; sti < stage.steps.length; sti++) {
-        final step = stage.steps[sti];
-        final stepExec = WorkflowStepExecution(
-          id: _uuid.v4(),
-          workflowExecutionId: workflowId,
-          stageIndex: si,
-          stepIndex: sti,
-          stageName: stage.label,
-          agentName: step.agent,
-          instruction: step.instruction,
-          status: step.status == TaskStatus.skipped
-              ? StepExecutionStatus.skipped
-              : StepExecutionStatus.pending,
-        );
-        await db.insert('workflow_step_executions', stepExec.toMap());
-        steps.add(stepExec);
+    await db.transaction((txn) async {
+      await txn.insert('workflow_executions', execution.toMap());
+
+      // Insert step records
+      for (int si = 0; si < flowPlan.stages.length; si++) {
+        final stage = flowPlan.stages[si];
+        for (int sti = 0; sti < stage.steps.length; sti++) {
+          final step = stage.steps[sti];
+          final stepExec = WorkflowStepExecution(
+            id: _uuid.v4(),
+            workflowExecutionId: workflowId,
+            stageIndex: si,
+            stepIndex: sti,
+            stageName: stage.label,
+            agentName: step.agent,
+            instruction: step.instruction,
+            status: step.status == TaskStatus.skipped
+                ? StepExecutionStatus.skipped
+                : StepExecutionStatus.pending,
+          );
+          await txn.insert('workflow_step_executions', stepExec.toMap());
+          steps.add(stepExec);
+        }
       }
-    }
+    });
 
     execution.steps = steps;
+    _workflowChannelCache[workflowId] = channelId;
     _notify(workflowId);
     LoggerService().info(
       'WorkflowService: created workflow $workflowId with ${steps.length} steps',
@@ -115,6 +123,11 @@ class WorkflowService {
       offset: offset,
     );
     final executions = rows.map(WorkflowExecution.fromMap).toList();
+
+    // Populate channel cache
+    for (final exec in executions) {
+      _workflowChannelCache[exec.id] = channelId;
+    }
 
     // Load step counts for list display
     for (final exec in executions) {
@@ -179,6 +192,7 @@ class WorkflowService {
   // ===========================================================================
 
   /// Mark workflow as running (user approved).
+  /// Idempotent — only updates if current status is pendingApproval.
   Future<void> startWorkflow(String workflowId) async {
     final db = await _db.database;
     await db.update(
@@ -187,8 +201,8 @@ class WorkflowService {
         'status': WorkflowStatus.running.dbValue,
         'started_at': DateTime.now().millisecondsSinceEpoch,
       },
-      where: 'id = ?',
-      whereArgs: [workflowId],
+      where: 'id = ? AND status = ?',
+      whereArgs: [workflowId, WorkflowStatus.pendingApproval.dbValue],
     );
     _notify(workflowId);
   }
@@ -207,6 +221,13 @@ class WorkflowService {
       where: 'id = ?',
       whereArgs: [workflowId],
     );
+    // Mark any remaining pending steps as skipped
+    await db.update(
+      'workflow_step_executions',
+      {'status': StepExecutionStatus.skipped.dbValue},
+      where: 'workflow_execution_id = ? AND status = ?',
+      whereArgs: [workflowId, StepExecutionStatus.pending.dbValue],
+    );
     _notify(workflowId);
   }
 
@@ -223,6 +244,23 @@ class WorkflowService {
       where: 'id = ?',
       whereArgs: [workflowId],
     );
+    // H3: Cascade — mark running steps as failed, pending steps as skipped
+    await db.update(
+      'workflow_step_executions',
+      {
+        'status': StepExecutionStatus.failed.dbValue,
+        'completed_at': DateTime.now().millisecondsSinceEpoch,
+        'error_message': 'Workflow failed: $errorMessage',
+      },
+      where: 'workflow_execution_id = ? AND status = ?',
+      whereArgs: [workflowId, StepExecutionStatus.running.dbValue],
+    );
+    await db.update(
+      'workflow_step_executions',
+      {'status': StepExecutionStatus.skipped.dbValue},
+      where: 'workflow_execution_id = ? AND status = ?',
+      whereArgs: [workflowId, StepExecutionStatus.pending.dbValue],
+    );
     _notify(workflowId);
   }
 
@@ -237,6 +275,23 @@ class WorkflowService {
       },
       where: 'id = ?',
       whereArgs: [workflowId],
+    );
+    // H3: Cascade — mark running steps as cancelled, pending steps as skipped
+    await db.update(
+      'workflow_step_executions',
+      {
+        'status': StepExecutionStatus.failed.dbValue,
+        'completed_at': DateTime.now().millisecondsSinceEpoch,
+        'error_message': 'Workflow cancelled',
+      },
+      where: 'workflow_execution_id = ? AND status = ?',
+      whereArgs: [workflowId, StepExecutionStatus.running.dbValue],
+    );
+    await db.update(
+      'workflow_step_executions',
+      {'status': StepExecutionStatus.skipped.dbValue},
+      where: 'workflow_execution_id = ? AND status = ?',
+      whereArgs: [workflowId, StepExecutionStatus.pending.dbValue],
     );
     _notify(workflowId);
   }
@@ -326,8 +381,15 @@ class WorkflowService {
   }
 
   /// Stream that emits whenever any workflow for [channelId] changes.
+  /// H4 fix: Only fires when the updated workflow belongs to this channel.
   Stream<List<WorkflowExecution>> watchChannelWorkflows(String channelId) {
-    return _updateController.stream.asyncMap((_) => getWorkflowExecutions(channelId));
+    return _updateController.stream
+        .where((workflowId) {
+          // Check cache first; if not cached, allow through (will be filtered by query)
+          final cached = _workflowChannelCache[workflowId];
+          return cached == null || cached == channelId;
+        })
+        .asyncMap((_) => getWorkflowExecutions(channelId));
   }
 
   // ===========================================================================

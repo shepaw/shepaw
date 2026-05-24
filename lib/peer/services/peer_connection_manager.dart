@@ -56,6 +56,10 @@ class PeerConnectionManager {
   final _messageController = StreamController<PeerMessage>.broadcast();
   Stream<PeerMessage> get messages => _messageController.stream;
 
+  /// 回执事件流（消息状态更新：delivered / read）
+  final _ackController = StreamController<PeerAckEvent>.broadcast();
+  Stream<PeerAckEvent> get ackEvents => _ackController.stream;
+
   /// 连接状态变化事件
   final _eventController = StreamController<PeerConnectionEvent>.broadcast();
   Stream<PeerConnectionEvent> get events => _eventController.stream;
@@ -166,14 +170,32 @@ class PeerConnectionManager {
   Future<void> sendMessage(String peerId, PeerMessage message) async {
     final conn = _connections[peerId];
     if (conn != null && conn.state == PeerConnectionState.connected) {
-      await conn.sendMessage(message);
-      // 更新消息状态为已发送
-      await _storage.updateMessageDelivery(message.id, PeerMessageDelivery.sent);
+      try {
+        await conn.sendMessage(message);
+        await _storage.updateMessageDelivery(message.id, PeerMessageDelivery.sent);
+      } catch (e) {
+        // Noise session 可能未就绪，保存到待发队列
+        _log.warning('sendMessage failed, queuing: $e', tag: _tag);
+        await _storage.updateMessageDelivery(message.id, PeerMessageDelivery.pending);
+      }
     } else {
       // 离线，保存到待发队列
       await _storage.saveMessage(message.copyWith(
         delivery: PeerMessageDelivery.pending,
       ));
+    }
+  }
+
+  /// 标记消息已读并发送已读回执给对方
+  Future<void> markMessagesAsRead(String peerId, List<String> messageIds) async {
+    if (messageIds.isEmpty) return;
+    final conn = _connections[peerId];
+    if (conn != null && conn.state == PeerConnectionState.connected) {
+      await conn.sendReadReceipts(messageIds);
+    }
+    // 不管是否在线，本地都标记已读
+    for (final id in messageIds) {
+      await _storage.updateMessageDelivery(id, PeerMessageDelivery.read);
     }
   }
 
@@ -226,32 +248,43 @@ class PeerConnectionManager {
       staticPrivateKey: identity.privateKey,
     );
 
-    // 用 Completer 方式取第一条消息，保持 subscription 活跃
+    // 单一 subscription + relay controller 方案：
+    // listen 回调通过闭包变量 `onData` 动态切换行为
+    final relayCtrl = StreamController<Uint8List>.broadcast();
     final firstMsgCompleter = Completer<Uint8List>();
-    final bufferedMessages = <Uint8List>[];
-    var firstReceived = false;
+    var handshakeDone = false;
 
     final sub = stream.incoming.listen(
       (data) {
-        if (!firstReceived) {
-          firstReceived = true;
-          firstMsgCompleter.complete(data);
+        if (!handshakeDone) {
+          // 握手阶段：第一条消息交给 completer
+          if (!firstMsgCompleter.isCompleted) {
+            firstMsgCompleter.complete(data);
+          }
+          // 握手期间如果有多余消息（不太可能），暂存到 relay
+          else {
+            relayCtrl.add(data);
+          }
         } else {
-          bufferedMessages.add(data);
+          // 握手完成后：所有数据转发到 relay
+          relayCtrl.add(data);
         }
       },
       onError: (e) {
         if (!firstMsgCompleter.isCompleted) {
           firstMsgCompleter.completeError(e);
         }
+        relayCtrl.addError(e);
       },
       onDone: () {
         if (!firstMsgCompleter.isCompleted) {
           firstMsgCompleter.completeError(StateError('Stream closed before msg1'));
         }
+        relayCtrl.close();
       },
     );
 
+    // 等待 msg1
     Uint8List msg1Raw;
     try {
       msg1Raw = await firstMsgCompleter.future.timeout(const Duration(seconds: 15));
@@ -290,6 +323,16 @@ class PeerConnectionManager {
       return;
     }
 
+    // 如果已有活跃连接，拒绝新入站（避免覆盖正常工作的连接）
+    final existingConn = _connections[matchedPeer.id];
+    if (existingConn != null && existingConn.state == PeerConnectionState.connected) {
+      _log.debug('Already connected to ${matchedPeer.deviceName}, rejecting duplicate inbound', tag: _tag);
+      noiseSession.close();
+      await sub.cancel();
+      stream.close();
+      return;
+    }
+
     // 发送 msg2 完成握手
     final msg2Payload = Uint8List.fromList(utf8.encode(jsonEncode({
       'type': 'reconnect_ack',
@@ -299,23 +342,10 @@ class PeerConnectionManager {
     final frame2 = encodeFrame(Frame(t: FrameType.hs, payload: msg2));
     stream.send(Uint8List.fromList(utf8.encode(frame2)));
 
-    // 取消原始 subscription，创建新的 broadcast stream 供 PeerConnection 使用
-    await sub.cancel();
+    // 标记握手完成 — 后续数据通过 relay 转发给 PeerConnection
+    handshakeDone = true;
 
-    // 重建一个 stream 包装器：将 PeerTunnelStream 转为可重新监听的形式
-    // 使用 broadcast controller 转发后续消息
-    final relayCtrl = StreamController<Uint8List>.broadcast();
-    stream.incoming.listen(
-      (data) => relayCtrl.add(data),
-      onDone: () => relayCtrl.close(),
-      onError: (e) => relayCtrl.addError(e),
-    );
-    // 先把 buffer 中的消息推入
-    for (final msg in bufferedMessages) {
-      relayCtrl.add(msg);
-    }
-
-    // 握手完成 — 关闭旧连接，注册新连接
+    // 关闭旧连接，注册新连接
     final oldConn = _connections.remove(matchedPeer.id);
     if (oldConn != null) await oldConn.close();
     _reconnectTimers[matchedPeer.id]?.cancel();
@@ -339,6 +369,13 @@ class PeerConnectionManager {
         type: PeerConnectionEventType.messageReceived,
         data: msg,
       ));
+    });
+    conn.acks.listen((ack) {
+      final delivery = ack.status == 'read'
+          ? PeerMessageDelivery.read
+          : PeerMessageDelivery.delivered;
+      _storage.updateMessageDelivery(ack.messageId, delivery);
+      _ackController.add(ack);
     });
     conn.stateChanges.listen((state) {
       _eventController.add(PeerConnectionEvent(
@@ -387,8 +424,26 @@ class PeerConnectionManager {
 
   /// 执行连接（优先内网直连，失败后回退 Channel）
   Future<void> _doConnect(PairedPeer peer) async {
+    // 如果已有活跃连接，跳过
+    final existing = _connections[peer.id];
+    if (existing != null && existing.state == PeerConnectionState.connected) {
+      return;
+    }
+
+    // Tie-breaking：只有指纹较小的一方主动发起连接
+    // 指纹较大的一方只等待入站连接，不主动连接
+    final myFingerprint = (await NoiseIdentity.loadOrCreate()).fingerprintHex;
+    if (myFingerprint.compareTo(peer.fingerprint) > 0) {
+      _log.debug('Tie-break: I am responder for ${peer.deviceName}, not connecting', tag: _tag);
+      return;
+    }
+
+    PeerConnection? conn;
     try {
-      final conn = PeerConnection(peer: peer);
+      conn = PeerConnection(peer: peer);
+      // 关闭旧的非活跃连接
+      final old = _connections.remove(peer.id);
+      if (old != null) await old.close();
       _connections[peer.id] = conn;
 
       // 监听消息
@@ -400,6 +455,15 @@ class PeerConnectionManager {
           type: PeerConnectionEventType.messageReceived,
           data: msg,
         ));
+      });
+
+      // 监听回执
+      conn.acks.listen((ack) {
+        final delivery = ack.status == 'read'
+            ? PeerMessageDelivery.read
+            : PeerMessageDelivery.delivered;
+        _storage.updateMessageDelivery(ack.messageId, delivery);
+        _ackController.add(ack);
       });
 
       // 监听状态
@@ -468,9 +532,13 @@ class PeerConnectionManager {
 
     } catch (e) {
       _log.warning('Failed to connect to ${peer.deviceName}: $e', tag: _tag);
-      _connections.remove(peer.id);
-      // 重连
-      if (_running) {
+      // 只移除属于本次 _doConnect 创建的连接（避免误删 _acceptIncoming 创建的）
+      if (_connections[peer.id] == conn) {
+        _connections.remove(peer.id);
+      }
+      // 重连（但如果已有活跃连接则不重连）
+      final current = _connections[peer.id];
+      if (_running && (current == null || current.state != PeerConnectionState.connected)) {
         _scheduleReconnect(peer);
       }
     }
@@ -521,6 +589,7 @@ class PeerConnectionManager {
   void dispose() {
     stop();
     _messageController.close();
+    _ackController.close();
     _eventController.close();
   }
 }

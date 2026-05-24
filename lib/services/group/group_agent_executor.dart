@@ -421,12 +421,11 @@ class GroupAgentExecutor {
                       flags['channel_id'] = channelId;
                       args['flags'] = flags;
 
-                      // Set workflow namespace context
-                      WorkflowNamespace.instance.channelId = channelId;
-                      WorkflowNamespace.instance.agentId = agent.id;
+                      // Set workflow namespace context (per-channel for C1 safety)
+                      WorkflowNamespace.instance.setContext(channelId, agent.id);
 
-                      // Wire up dispatch command's step execution callback
-                      WorkflowDispatchCommand.executeStepFn = (agentName, instruction, chId) async {
+                      // Wire up dispatch command's step execution callback (per-channel)
+                      WorkflowDispatchCommand.setExecuteStepFn(channelId, (agentName, instruction, chId) async {
                         final targetAgent = allAgents.cast<RemoteAgent?>().firstWhere(
                           (a) => a!.name == agentName,
                           orElse: () => null,
@@ -460,7 +459,7 @@ class GroupAgentExecutor {
                           onInteractionRequest: onInteractionRequest,
                         );
                         return stepBuffer.toString();
-                      };
+                      });
 
                       // Execute CLI command
                       final cliResult = await ShepawCLI.instance.execute(args, agentId: agent.id);
