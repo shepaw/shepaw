@@ -2745,8 +2745,11 @@ class AppLocalizationsZh extends AppLocalizations {
   String get agent_allowExternalAccess => '允许外部访问';
 
   @override
-  String get agent_allowExternalAccessDesc =>
-      '开启后，外部 App 可通过 Remote Agent 方式加入对话';
+  String get agent_allowExternalAccessDesc => '开启后，已配对的设备可在会话列表中看到并与该 agent 对话';
+
+  @override
+  String get agent_externalAccessPeerEnabled =>
+      '已开启：已配对的设备可在会话列表中看到并与该 agent 对话';
 
   @override
   String get agent_externalAccessUrl => '访问地址';

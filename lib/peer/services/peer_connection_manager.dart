@@ -14,6 +14,7 @@ import 'dart:typed_data';
 import '../../services/noise_identity.dart';
 import '../../services/noise/noise_session.dart';
 import '../../services/noise/noise_envelope.dart';
+import '../../services/channel_tunnel_service.dart';
 import '../../services/logger_service.dart';
 import '../models/paired_peer.dart';
 import '../models/peer_message.dart';
@@ -35,8 +36,20 @@ class PeerConnectionManager {
   /// 活跃连接（peerId → PeerConnection）
   final Map<String, PeerConnection> _connections = {};
 
+  /// 正在进行的主动连接尝试（peerId 集合）
+  /// 防止重入：避免新的 _doConnect 把仍在握手/建连中的连接掐掉后重头再来，
+  /// 否则配对后多个触发点（UI / 重连定时器 / 生命周期）会互相打断，导致一直连不上。
+  final Set<String> _connecting = {};
+
+  /// 活跃连接的事件订阅（peerId → subscriptions）
+  /// 连接被替换或断开时取消，防止旧连接的回调泄漏
+  final Map<String, List<StreamSubscription>> _connectionSubs = {};
+
   /// 重连定时器（peerId → Timer）
   final Map<String, Timer> _reconnectTimers = {};
+
+  /// Tie-break 回退定时器（peerId → Timer）
+  final Map<String, Timer> _fallbackTimers = {};
 
   /// 重连尝试次数（peerId → count）
   final Map<String, int> _reconnectAttempts = {};
@@ -60,9 +73,25 @@ class PeerConnectionManager {
   final _ackController = StreamController<PeerAckEvent>.broadcast();
   Stream<PeerAckEvent> get ackEvents => _ackController.stream;
 
+  /// 控制消息事件流（agent-over-peer）。供 host/client 服务订阅。
+  final _controlController = StreamController<PeerControlEvent>.broadcast();
+  Stream<PeerControlEvent> get controlEvents => _controlController.stream;
+
   /// 连接状态变化事件
   final _eventController = StreamController<PeerConnectionEvent>.broadcast();
   Stream<PeerConnectionEvent> get events => _eventController.stream;
+
+  /// peer 列表变化事件（新增配对 / 删除配对 / 连接建立）——供会话列表、设备列表刷新。
+  /// 与 [events] 区分：events 关注单个连接状态，这里关注「集合发生增删」。
+  final _peerListChangedController = StreamController<void>.broadcast();
+  Stream<void> get peerListChanged => _peerListChangedController.stream;
+
+  /// 主动通知 peer 列表发生变化（如配对成功保存后）。
+  void notifyPeerListChanged() {
+    if (!_peerListChangedController.isClosed) {
+      _peerListChangedController.add(null);
+    }
+  }
 
   // ── 公开 API ─────────────────────────────────────────────────────────
 
@@ -113,7 +142,19 @@ class PeerConnectionManager {
       timer.cancel();
     }
     _reconnectTimers.clear();
+    for (final timer in _fallbackTimers.values) {
+      timer.cancel();
+    }
+    _fallbackTimers.clear();
     _reconnectAttempts.clear();
+    _connecting.clear();
+
+    for (final subs in _connectionSubs.values) {
+      for (final sub in subs) {
+        sub.cancel();
+      }
+    }
+    _connectionSubs.clear();
 
     for (final conn in _connections.values) {
       await conn.close();
@@ -121,6 +162,25 @@ class PeerConnectionManager {
     _connections.clear();
 
     _log.info('PeerConnectionManager stopped', tag: _tag);
+  }
+
+  /// App 恢复前台时调用 — 立即尝试重连所有断开的 peer
+  Future<void> resumeAll() async {
+    if (!_running) {
+      await start();
+      return;
+    }
+    _log.info('Resuming all peer connections', tag: _tag);
+    final peers = await _storage.loadAllPeers();
+    for (final peer in peers) {
+      if (peer.isBlocked) continue;
+      final conn = _connections[peer.id];
+      if (conn == null || conn.state != PeerConnectionState.connected) {
+        // 重置重连计数，立即重连
+        _reconnectAttempts.remove(peer.id);
+        _scheduleReconnect(peer, delay: Duration.zero);
+      }
+    }
   }
 
   /// 获取所有已配对设备（含实时连接状态）
@@ -155,6 +215,7 @@ class PeerConnectionManager {
     _reconnectTimers[peerId]?.cancel();
     _reconnectTimers.remove(peerId);
     _reconnectAttempts.remove(peerId);
+    _cancelConnectionSubs(peerId);
 
     final conn = _connections.remove(peerId);
     if (conn != null) {
@@ -186,6 +247,30 @@ class PeerConnectionManager {
     }
   }
 
+  /// 发送控制消息给指定 peer（agent-over-peer）。
+  ///
+  /// 返回是否成功发出（peer 未连接时返回 false，不入队）。控制消息是
+  /// 请求/响应式的，离线排队没有意义。
+  Future<bool> sendControl(String peerId, Map<String, dynamic> json) async {
+    final conn = _connections[peerId];
+    if (conn != null && conn.state == PeerConnectionState.connected) {
+      try {
+        await conn.sendControl(json);
+        return true;
+      } catch (e) {
+        _log.warning('sendControl failed: $e', tag: _tag);
+        return false;
+      }
+    }
+    return false;
+  }
+
+  /// 当前已连接的 peerId 列表。
+  List<String> get connectedPeerIds => _connections.entries
+      .where((e) => e.value.state == PeerConnectionState.connected)
+      .map((e) => e.key)
+      .toList();
+
   /// 标记消息已读并发送已读回执给对方
   Future<void> markMessagesAsRead(String peerId, List<String> messageIds) async {
     if (messageIds.isEmpty) return;
@@ -203,7 +288,13 @@ class PeerConnectionManager {
   Future<void> removePeer(String peerId) async {
     await disconnectPeer(peerId);
     await _storage.removePeer(peerId);
+    // 清理重连/回退状态，避免删除后又被定时器拉起
+    _reconnectTimers.remove(peerId)?.cancel();
+    _fallbackTimers.remove(peerId)?.cancel();
+    _reconnectAttempts.remove(peerId);
+    _connecting.remove(peerId);
     _log.info('Peer removed: $peerId', tag: _tag);
+    notifyPeerListChanged();
   }
 
   /// 获取指定 peer 的连接状态
@@ -249,8 +340,10 @@ class PeerConnectionManager {
     );
 
     // 单一 subscription + relay controller 方案：
-    // listen 回调通过闭包变量 `onData` 动态切换行为
-    final relayCtrl = StreamController<Uint8List>.broadcast();
+    // listen 回调通过闭包变量 `onData` 动态切换行为。
+    // 使用普通（非 broadcast）controller：在 PeerConnection 订阅前到达的帧会被
+    // 缓冲而非丢弃，避免握手完成瞬间对端立即发数据时丢首帧。
+    final relayCtrl = StreamController<Uint8List>();
     final firstMsgCompleter = Completer<Uint8List>();
     var handshakeDone = false;
 
@@ -349,6 +442,8 @@ class PeerConnectionManager {
     final oldConn = _connections.remove(matchedPeer.id);
     if (oldConn != null) await oldConn.close();
     _reconnectTimers[matchedPeer.id]?.cancel();
+    _fallbackTimers[matchedPeer.id]?.cancel();
+    _fallbackTimers.remove(matchedPeer.id);
 
     final conn = PeerConnection.fromEstablishedSession(
       peer: matchedPeer,
@@ -357,46 +452,88 @@ class PeerConnectionManager {
       incomingStream: relayCtrl.stream,
     );
     _connections[matchedPeer.id] = conn;
+    _wireConnection(conn, matchedPeer);
 
-    // 监听（用局部 final 变量避免 closure 中的 null 检查）
-    final peerId = matchedPeer.id;
-    final peerForReconnect = matchedPeer;
-    conn.messages.listen((msg) {
-      _messageController.add(msg);
-      _storage.saveMessage(msg);
-      _eventController.add(PeerConnectionEvent(
-        peerId: peerId,
-        type: PeerConnectionEventType.messageReceived,
-        data: msg,
-      ));
-    });
-    conn.acks.listen((ack) {
-      final delivery = ack.status == 'read'
-          ? PeerMessageDelivery.read
-          : PeerMessageDelivery.delivered;
-      _storage.updateMessageDelivery(ack.messageId, delivery);
-      _ackController.add(ack);
-    });
-    conn.stateChanges.listen((state) {
-      _eventController.add(PeerConnectionEvent(
-        peerId: peerId,
-        type: state == PeerConnectionState.connected
-            ? PeerConnectionEventType.connected
-            : PeerConnectionEventType.disconnected,
-      ));
-      if (state == PeerConnectionState.disconnected && _running) {
-        _scheduleReconnect(peerForReconnect);
-      }
-    });
-
-    _eventController.add(PeerConnectionEvent(
-      peerId: matchedPeer.id,
-      type: PeerConnectionEventType.connected,
-    ));
-    _storage.updateLastSeen(matchedPeer.id, DateTime.now().millisecondsSinceEpoch);
-    _flushPendingMessages(matchedPeer.id);
+    // 连接创建时已是 connected 状态，stateChanges 不会再发出 connected 事件，
+    // 因此在此手动触发连接建立后的副作用（发事件、更新 lastSeen、补发离线消息）。
+    _onConnected(matchedPeer);
 
     _log.info('Accepted reconnection from ${matchedPeer.deviceName}', tag: _tag);
+  }
+
+  /// 统一连线：订阅连接的消息 / 回执 / 状态流，并跟踪 subscription 以便取消。
+  /// 入站接受与主动连接两条路径共用，避免重复代码。
+  void _wireConnection(PeerConnection conn, PairedPeer peer) {
+    // 取消该 peer 旧连接遗留的订阅，防止泄漏
+    _cancelConnectionSubs(peer.id);
+
+    final subs = <StreamSubscription>[
+      conn.messages.listen((msg) {
+        _messageController.add(msg);
+        _storage.saveMessage(msg);
+        _eventController.add(PeerConnectionEvent(
+          peerId: peer.id,
+          type: PeerConnectionEventType.messageReceived,
+          data: msg,
+        ));
+      }),
+      conn.acks.listen((ack) {
+        final delivery = ack.status == 'read'
+            ? PeerMessageDelivery.read
+            : PeerMessageDelivery.delivered;
+        _storage.updateMessageDelivery(ack.messageId, delivery);
+        _ackController.add(ack);
+      }),
+      conn.control.listen((json) {
+        if (!_controlController.isClosed) {
+          _controlController.add(PeerControlEvent(peerId: peer.id, data: json));
+        }
+      }),
+      conn.stateChanges.listen((state) {
+        if (state == PeerConnectionState.connected) {
+          _onConnected(peer);
+        } else if (state == PeerConnectionState.disconnected) {
+          _onDisconnected(peer);
+        }
+      }),
+    ];
+
+    _connectionSubs[peer.id] = subs;
+  }
+
+  /// 连接建立后的副作用：重置重连状态、广播 connected 事件、更新 lastSeen、补发离线消息。
+  void _onConnected(PairedPeer peer) {
+    _reconnectAttempts.remove(peer.id);
+    _fallbackTimers[peer.id]?.cancel();
+    _fallbackTimers.remove(peer.id);
+    _eventController.add(PeerConnectionEvent(
+      peerId: peer.id,
+      type: PeerConnectionEventType.connected,
+    ));
+    _storage.updateLastSeen(peer.id, DateTime.now().millisecondsSinceEpoch);
+    _flushPendingMessages(peer.id);
+    // 连接建立后通知列表刷新（新配对设备首次上线时即时出现在会话列表）
+    notifyPeerListChanged();
+  }
+
+  /// 连接断开后的副作用：广播 disconnected 事件并在运行中时调度重连。
+  void _onDisconnected(PairedPeer peer) {
+    _eventController.add(PeerConnectionEvent(
+      peerId: peer.id,
+      type: PeerConnectionEventType.disconnected,
+    ));
+    if (_running) {
+      _scheduleReconnect(peer);
+    }
+  }
+
+  /// 取消并移除指定 peer 的连接订阅
+  void _cancelConnectionSubs(String peerId) {
+    final subs = _connectionSubs.remove(peerId);
+    if (subs == null) return;
+    for (final sub in subs) {
+      sub.cancel();
+    }
   }
 
   bool _keysEqual(Uint8List a, Uint8List b) {
@@ -422,21 +559,72 @@ class PeerConnectionManager {
     }
   }
 
+  /// 内网端点建连超时 — 不可达时快速失败以便回退到 Channel
+  static const _localConnectTimeout = Duration(seconds: 2);
+
+  /// Tie-break responder 兜底发起延迟（可达性判断已处理主路径，这里只作安全网）
+  static const _fallbackDelay = Duration(seconds: 6);
+
+  /// 判断本机是否「公网可达」——即拥有一个对端可连入的 Channel 端点且隧道在线。
+  /// 用于可达性感知的 tie-break：不可达的一方应主动发起连接。
+  Future<bool> _isSelfReachable() async {
+    try {
+      final cfg = await ChannelTunnelService.instance.loadConfig();
+      if (cfg == null) return false;
+      if (ChannelTunnelService.instance.currentStatus != TunnelStatus.connected) {
+        return false;
+      }
+      return ChannelTunnelService.instance.getPublicEndpoint(cfg) != null;
+    } catch (_) {
+      return false;
+    }
+  }
+
   /// 执行连接（优先内网直连，失败后回退 Channel）
-  Future<void> _doConnect(PairedPeer peer) async {
+  Future<void> _doConnect(PairedPeer peer, {bool ignoreTieBreak = false}) async {
     // 如果已有活跃连接，跳过
     final existing = _connections[peer.id];
     if (existing != null && existing.state == PeerConnectionState.connected) {
       return;
     }
 
-    // Tie-breaking：只有指纹较小的一方主动发起连接
-    // 指纹较大的一方只等待入站连接，不主动连接
-    final myFingerprint = (await NoiseIdentity.loadOrCreate()).fingerprintHex;
-    if (myFingerprint.compareTo(peer.fingerprint) > 0) {
-      _log.debug('Tie-break: I am responder for ${peer.deviceName}, not connecting', tag: _tag);
+    // 防重入：已有正在进行的连接尝试时直接返回，避免把在连的连接掐掉重来。
+    // 该尝试结束后若失败会自行调度重连，无需在此处重复发起。
+    if (_connecting.contains(peer.id)) {
+      _log.debug('Connect already in progress for ${peer.deviceName}, skip', tag: _tag);
       return;
     }
+
+    // 可达性感知的 tie-break：
+    // - 对端可达而我方不可达 → 对端连不到我，必须由我主动发起（忽略指纹顺序）
+    // - 我方可达而对端不可达 → 让对端主动连我，我仅作 fallback 兜底
+    // - 两者可达性相同（都可达 / 都不可达）→ 退回指纹比较，指纹较小者发起
+    if (!ignoreTieBreak) {
+      final myFingerprint = (await NoiseIdentity.loadOrCreate()).fingerprintHex;
+      final iAmReachable = await _isSelfReachable();
+      final peerReachable = peer.channelEndpoint != null;
+
+      final bool shouldInitiate;
+      if (iAmReachable != peerReachable) {
+        shouldInitiate = !iAmReachable; // 我不可达 → 我发起
+      } else {
+        shouldInitiate = myFingerprint.compareTo(peer.fingerprint) < 0;
+      }
+
+      if (!shouldInitiate) {
+        _log.debug(
+          'Tie-break: I am responder for ${peer.deviceName} '
+          '(selfReachable=$iAmReachable, peerReachable=$peerReachable), scheduling fallback',
+          tag: _tag,
+        );
+        _scheduleFallbackConnect(peer);
+        return;
+      }
+    }
+
+    // 二次检查：tie-break 期间可能有别的尝试已进入连接中
+    if (_connecting.contains(peer.id)) return;
+    _connecting.add(peer.id);
 
     PeerConnection? conn;
     try {
@@ -446,67 +634,29 @@ class PeerConnectionManager {
       if (old != null) await old.close();
       _connections[peer.id] = conn;
 
-      // 监听消息
-      conn.messages.listen((msg) {
-        _messageController.add(msg);
-        _storage.saveMessage(msg);
-        _eventController.add(PeerConnectionEvent(
-          peerId: peer.id,
-          type: PeerConnectionEventType.messageReceived,
-          data: msg,
-        ));
-      });
-
-      // 监听回执
-      conn.acks.listen((ack) {
-        final delivery = ack.status == 'read'
-            ? PeerMessageDelivery.read
-            : PeerMessageDelivery.delivered;
-        _storage.updateMessageDelivery(ack.messageId, delivery);
-        _ackController.add(ack);
-      });
-
-      // 监听状态
-      conn.stateChanges.listen((state) {
-        if (state == PeerConnectionState.disconnected) {
-          _eventController.add(PeerConnectionEvent(
-            peerId: peer.id,
-            type: PeerConnectionEventType.disconnected,
-          ));
-          // 自动重连
-          if (_running) {
-            _scheduleReconnect(peer);
-          }
-        } else if (state == PeerConnectionState.connected) {
-          _reconnectAttempts.remove(peer.id);
-          _eventController.add(PeerConnectionEvent(
-            peerId: peer.id,
-            type: PeerConnectionEventType.connected,
-          ));
-          _storage.updateLastSeen(peer.id, DateTime.now().millisecondsSinceEpoch);
-          // 发送离线消息队列
-          _flushPendingMessages(peer.id);
-        }
-      });
+      _wireConnection(conn, peer);
 
       // 优先内网直连，失败回退 Channel
       bool connected = false;
 
       // 尝试内网直连：从存储的 localEndpoint 提取 IP，使用固定端口
+      // 内网不可达时用短超时（2s）快速失败，避免长时间阻塞 Channel 回退
       final localAddr = _extractLocalAddress(peer.localEndpoint);
       if (localAddr != null) {
         // 先尝试固定端口
         final fixedUrl = 'ws://$localAddr:${PeerLocalServer.defaultPort}/peer/ws';
         try {
-          await conn.connectViaWebSocket(fixedUrl);
+          await conn.connectViaWebSocket(fixedUrl, timeout: _localConnectTimeout);
           connected = true;
           _log.debug('Connected to ${peer.deviceName} via local network (fixed port)', tag: _tag);
         } catch (e) {
           _log.debug('Fixed port connection failed: $e', tag: _tag);
           // 回退到存储的完整 localEndpoint（可能有正确的随机端口）
-          if (peer.localEndpoint != null && peer.localEndpoint != fixedUrl) {
+          if (!conn.isClosed &&
+              peer.localEndpoint != null &&
+              peer.localEndpoint != fixedUrl) {
             try {
-              await conn.connectViaWebSocket(peer.localEndpoint!);
+              await conn.connectViaWebSocket(peer.localEndpoint!, timeout: _localConnectTimeout);
               connected = true;
               _log.debug('Connected to ${peer.deviceName} via local network (stored port)', tag: _tag);
             } catch (e2) {
@@ -516,7 +666,7 @@ class PeerConnectionManager {
         }
       }
 
-      if (!connected && peer.channelEndpoint != null) {
+      if (!connected && !conn.isClosed && peer.channelEndpoint != null) {
         try {
           await conn.connectViaWebSocket(peer.channelEndpoint!);
           connected = true;
@@ -535,13 +685,32 @@ class PeerConnectionManager {
       // 只移除属于本次 _doConnect 创建的连接（避免误删 _acceptIncoming 创建的）
       if (_connections[peer.id] == conn) {
         _connections.remove(peer.id);
+        _cancelConnectionSubs(peer.id);
       }
       // 重连（但如果已有活跃连接则不重连）
       final current = _connections[peer.id];
       if (_running && (current == null || current.state != PeerConnectionState.connected)) {
         _scheduleReconnect(peer);
       }
+    } finally {
+      _connecting.remove(peer.id);
     }
+  }
+
+  /// Tie-break 回退：等待一段时间后，如果仍未连接，则忽略 tie-break 主动发起连接。
+  /// 解决场景：tie-break 赢家无法连到我方（例如我方无 channel endpoint 或不在同一网络），
+  /// 但我方可以连到对方的 channel。
+  void _scheduleFallbackConnect(PairedPeer peer) {
+    _fallbackTimers[peer.id]?.cancel();
+    _fallbackTimers[peer.id] = Timer(_fallbackDelay, () async {
+      if (!_running) return;
+      final current = _connections[peer.id];
+      if (current != null && current.state == PeerConnectionState.connected) {
+        return; // 已通过入站连接建立，无需回退
+      }
+      _log.debug('Fallback connect: initiating connection to ${peer.deviceName}', tag: _tag);
+      await _doConnect(peer, ignoreTieBreak: true);
+    });
   }
 
   /// 调度重连
@@ -549,13 +718,9 @@ class PeerConnectionManager {
     _reconnectTimers[peer.id]?.cancel();
 
     final attempts = _reconnectAttempts[peer.id] ?? 0;
-    if (attempts >= 10) {
-      _log.warning('Max reconnect attempts reached for ${peer.deviceName}', tag: _tag);
-      return;
-    }
 
-    // 指数退避: 2s, 4s, 8s, 16s, 32s, 60s max
-    final backoffSeconds = delay?.inSeconds ?? (2 * (1 << attempts)).clamp(2, 60);
+    // 指数退避: 2s, 4s, 8s, 16s, 30s max（不设上限次数，持续重试）
+    final backoffSeconds = delay?.inSeconds ?? (2 * (1 << attempts)).clamp(2, 30);
     final actualDelay = delay ?? Duration(seconds: backoffSeconds);
 
     _reconnectTimers[peer.id] = Timer(actualDelay, () async {
@@ -590,6 +755,18 @@ class PeerConnectionManager {
     stop();
     _messageController.close();
     _ackController.close();
+    _controlController.close();
     _eventController.close();
+    _peerListChangedController.close();
   }
+}
+
+/// agent-over-peer 控制消息事件（带来源 peerId）。
+class PeerControlEvent {
+  final String peerId;
+  final Map<String, dynamic> data;
+  PeerControlEvent({required this.peerId, required this.data});
+
+  /// 控制消息类型（agent_* 之一）。
+  String get type => data['type'] as String? ?? '';
 }

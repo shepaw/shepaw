@@ -25,7 +25,8 @@ import '../she_service.dart';
 import '../../clis/shepaw/shepaw_cli.dart';
 import '../session/session_history_service.dart';
 import '../remote_agent_service.dart';
-import '../token_service.dart';
+import '../../peer/services/peer_agent_client_service.dart';
+import '../../service_locator.dart' show getIt;
 import 'local_llm_handler.dart';
 import 'connection_retry_policy.dart';
 
@@ -123,7 +124,7 @@ class AgentMessagingService {
 
     try {
       // Check if this is a local LLM agent — bypass status/endpoint checks
-      if (LocalLLMAgentService.instance.isLocalAgent(agent)) {
+      if (agent.isLocal) {
         LoggerService().debug('Detected local LLM agent, using local LLM path', tag: 'AgentMessagingService');
         return await _sendViaLocalLLM(
           content: content,
@@ -220,7 +221,15 @@ class AgentMessagingService {
       Message? agentResponse;
       LoggerService().debug('Preparing to send message via ${agent.protocol} protocol', tag: 'AgentMessagingService');
 
-      if (agent.protocol == ProtocolType.acp) {
+      if (agent.protocol == ProtocolType.peer) {
+        LoggerService().debug('Using peer protocol', tag: 'AgentMessagingService');
+        agentResponse = await _sendViaPeerProtocol(
+          messageToSend, agent,
+          onStreamChunk: onStreamChunk,
+          sessionId: channelId,
+          acpCancellationToken: acpCancellationToken,
+        );
+      } else if (agent.protocol == ProtocolType.acp) {
         LoggerService().debug('Using ACP protocol', tag: 'AgentMessagingService');
         agentResponse = await _sendViaACPProtocol(
           messageToSend, agent,
@@ -983,7 +992,7 @@ class AgentMessagingService {
       tag: 'AgentMessagingService',
     );
     try {
-      final svc = RemoteAgentService(_db, TokenService(_db));
+      final svc = getIt<RemoteAgentService>();
       final healthy = await svc.checkAgentHealth(agent.id);
       if (healthy) {
         try {
@@ -1009,6 +1018,81 @@ class AgentMessagingService {
     throw Exception(
       'Agent ${agent.name} is not reachable after $total retries. '
       'Last error: $lastError',
+    );
+  }
+
+  /// Send message via the P2P peer channel to a paired device's local agent.
+  ///
+  /// 消费方路径：把用户消息通过 [PeerAgentClientService] 经已配对设备的加密
+  /// 通道转发给对端，对端用自己的本地 agent 执行并流式回传文本。对端维护多轮
+  /// 上下文（按来源设备隔离的隐藏会话），因此这里只发送当前这条消息。
+  Future<Message?> _sendViaPeerProtocol(
+    Message userMessage,
+    RemoteAgent agent, {
+    void Function(String chunk)? onStreamChunk,
+    String? sessionId,
+    ACPCancellationToken? acpCancellationToken,
+  }) async {
+    final peerId = agent.sourcePeerId;
+    final remoteAgentId = agent.remoteAgentId;
+    if (peerId == null || remoteAgentId == null) {
+      throw Exception('Peer agent missing source_peer_id/remote_agent_id');
+    }
+
+    final effectiveChannelId = sessionId ?? '';
+    final activeTask = ActiveTask(
+      taskId: _uuid.v4(),
+      agentId: agent.id,
+      agentName: agent.name,
+      channelId: effectiveChannelId,
+      userMessageId: userMessage.id,
+      userId: userMessage.from.id,
+      userName: userMessage.from.name,
+    );
+    activeTask.onStreamChunk = onStreamChunk;
+    if (effectiveChannelId.isNotEmpty) {
+      _activeTasks[effectiveChannelId] = activeTask;
+      updateTypingAgentIds();
+    }
+    ForegroundTaskService().acquireTask(agent.name);
+
+    final result = await PeerAgentClientService.instance.sendChat(
+      peerId: peerId,
+      remoteAgentId: remoteAgentId,
+      message: userMessage.content,
+      cancelToken: acpCancellationToken,
+      onChunk: (chunk) {
+        activeTask.accumulatedContent += chunk;
+        activeTask.onStreamChunk?.call(chunk);
+      },
+    );
+
+    activeTask.isComplete = true;
+    activeTask.onTaskFinished?.call();
+
+    final content = result.content.isNotEmpty
+        ? result.content
+        : (activeTask.accumulatedContent.isNotEmpty
+            ? activeTask.accumulatedContent
+            : 'Task completed');
+
+    final meta = <String, dynamic>{};
+    if (result.metadata != null) meta.addAll(result.metadata!);
+    activeTask.metadata = meta;
+
+    return Message(
+      id: _uuid.v4(),
+      content: content,
+      timestampMs: DateTime.now().millisecondsSinceEpoch,
+      from: MessageFrom(id: agent.id, type: 'agent', name: agent.name),
+      to: MessageFrom(
+        id: userMessage.from.id,
+        type: 'user',
+        name: userMessage.from.name,
+      ),
+      type: MessageType.text,
+      replyTo: userMessage.id,
+      metadata: meta.isEmpty ? null : meta,
     );
   }
 
@@ -1201,8 +1285,11 @@ class AgentMessagingService {
       ));
 
       // Hook cancellation token
+      // 每个 task 用独立的取消键，使「停止」只中止本次推理，不影响并发的其他
+      // agent（含 peer 请求）或桌面自己的会话。
+      final cancelKey = activeTask.taskId;
       acpCancellationToken?.onCancelled = () {
-        LocalLLMAgentService.instance.abort();
+        LocalLLMAgentService.instance.abort(cancelKey);
       };
 
       // If no tools at all (no CLI, no skills, no tool models),
@@ -1211,6 +1298,7 @@ class AgentMessagingService {
         return await _sendViaLocalLLMSingleRound(
           agent: agent,
           content: effectiveContent,
+          cancelKey: cancelKey,
           userId: userId,
           userName: userName,
           channelId: channelId,
@@ -1265,12 +1353,15 @@ class AgentMessagingService {
         final toolCallEvents = <LLMToolCallEvent>[];
         LLMDoneEvent? doneEvent;
 
-        await for (final event in LocalLLMAgentService.instance.chatRound(
-          agent: agent,
-          messages: roundMessages,
-          tools: combinedTools,
-          systemPrompt: isClaude ? systemPrompt : null,
-          attachments: round == 0 ? attachments : null,
+        await for (final event in LocalLLMAgentService.instance.runWithCancelKey(
+          cancelKey,
+          () => LocalLLMAgentService.instance.chatRound(
+            agent: agent,
+            messages: roundMessages,
+            tools: combinedTools,
+            systemPrompt: isClaude ? systemPrompt : null,
+            attachments: round == 0 ? attachments : null,
+          ),
         )) {
           if (acpCancellationToken?.isCancelled == true) break;
 
@@ -1659,6 +1750,7 @@ class AgentMessagingService {
   Future<Message?> _sendViaLocalLLMSingleRound({
     required RemoteAgent agent,
     required String content,
+    required Object cancelKey,
     required String userId,
     required String userName,
     String? channelId,
@@ -1721,11 +1813,14 @@ class AgentMessagingService {
     bool fileMessageHandled = false;
 
     await for (final event
-        in LocalLLMAgentService.instance.chat(
-          agent: agent,
-          message: content,
-          history: chatHistory,
-          attachments: attachments,
+        in LocalLLMAgentService.instance.runWithCancelKey(
+          cancelKey,
+          () => LocalLLMAgentService.instance.chat(
+            agent: agent,
+            message: content,
+            history: chatHistory,
+            attachments: attachments,
+          ),
         )) {
       if (acpCancellationToken?.isCancelled == true) break;
 

@@ -244,7 +244,7 @@ class GroupAgentExecutor {
     bool isFlowMode = false,
     String? orchestrationTraceId,
   }) async {
-    LoggerService().debug('_processGroupAgent START: ${agent.name} (isAdmin=$isAdmin, isLocal=${LocalLLMAgentService.instance.isLocalAgent(agent)})', tag: 'GroupAgentExecutor');
+    LoggerService().debug('_processGroupAgent START: ${agent.name} (isAdmin=$isAdmin, isLocal=${agent.isLocal})', tag: 'GroupAgentExecutor');
     final systemPrompt = _promptBuilder.buildGroupSystemPrompt(
       groupName: groupName,
       groupDescription: groupDescription,
@@ -308,16 +308,14 @@ class GroupAgentExecutor {
       channelId: channelId,
       provider: agent.metadata['llm_provider'] as String?,
       model: agent.metadata['llm_model'] as String?,
-      executionMode: LocalLLMAgentService.instance.isLocalAgent(agent)
-          ? 'group_local'
-          : 'group_remote_acp',
+      executionMode: agent.isLocal ? 'group_local' : 'group_remote_acp',
       userMessage: content,
       systemPrompt: systemPrompt,
       parentTraceId: orchestrationTraceId,
       traceRole: isAdmin ? 'group_admin' : 'group_member',
     );
 
-    if (LocalLLMAgentService.instance.isLocalAgent(agent)) {
+    if (agent.isLocal) {
       // ── Local LLM agent path ──
       // Determine provider type so we can build the correct multimodal format.
       final isClaude = LocalLLMAgentService.instance
@@ -916,7 +914,7 @@ class GroupAgentExecutor {
     }
 
     // End session for local LLM path (remote ACP ends in onTaskCompleted/onTaskError callbacks)
-    if (LocalLLMAgentService.instance.isLocalAgent(agent)) {
+    if (agent.isLocal) {
       final wasCancelled = acpCancellationToken?.isCancelled == true;
       infLogGroup.endSession(groupTraceId, wasCancelled ? InferenceStatus.cancelled : InferenceStatus.completed);
     }

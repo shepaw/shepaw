@@ -5075,8 +5075,14 @@ abstract class AppLocalizations {
   /// No description provided for @agent_allowExternalAccessDesc.
   ///
   /// In zh, this message translates to:
-  /// **'开启后，外部 App 可通过 Remote Agent 方式加入对话'**
+  /// **'开启后，已配对的设备可在会话列表中看到并与该 agent 对话'**
   String get agent_allowExternalAccessDesc;
+
+  /// No description provided for @agent_externalAccessPeerEnabled.
+  ///
+  /// In zh, this message translates to:
+  /// **'已开启：已配对的设备可在会话列表中看到并与该 agent 对话'**
+  String get agent_externalAccessPeerEnabled;
 
   /// No description provided for @agent_externalAccessUrl.
   ///

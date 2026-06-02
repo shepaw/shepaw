@@ -3,26 +3,19 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
 import '../widgets/avatar_image.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import '../l10n/app_localizations.dart';
 import '../models/remote_agent.dart';
-import '../models/prompt_stack_config.dart';
 import '../services/remote_agent_service.dart';
-import '../services/local_database_service.dart';
 import '../services/local_file_storage_service.dart';
-import '../services/token_service.dart';
 import '../services/model_registry.dart';
 import '../models/model_definition.dart';
 import '../models/llm_provider_config.dart';
 import '../services/skill_registry.dart';
-import '../services/channel_tunnel_service.dart';
-import '../services/local_network_service.dart';
-import '../main.dart' show globalACPServer, kAcpServerPortKey, kAcpServerDefaultPort, kAcpServerEnabledKey;
+import '../service_locator.dart' show getIt;
 import 'skill_select_screen.dart';
 import 'model_select_screen.dart';
 import 'cli_command_select_screen.dart';
 import 'chat_screen.dart';
-import 'cli_config_management_screen.dart';
 import 'model_management_screen.dart';
 import '../utils/layout_utils.dart';
 
@@ -49,11 +42,6 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
   bool _isDeleting = false;
   bool _isEditing = false;
   bool _isSaving = false;
-  // 独立刷新状态（外部访问区域）
-  Future<List<String>>? _lanAddressesFuture;
-  Future<String?>? _publicUrlFuture;
-  bool _isRefreshingLan = false;
-  bool _isRefreshingPublicUrl = false;
 
   // 编辑用的控制器
   late TextEditingController _nameController;
@@ -83,14 +71,8 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
   // 本地上传的头像文件路径（相对路径）
   String? _localAvatarPath;
 
-  // 外部访问相关（用于编辑模式）
+  // 外部访问相关（用于编辑模式）。开启后该 agent 可被已配对设备通过 P2P 访问。
   bool _editingAllowExternalAccess = false;
-
-  // Channel 配置编辑用控制器
-  late TextEditingController _channelServerUrlController;
-  late TextEditingController _channelIdController;
-  late TextEditingController _channelSecretController;
-  late TextEditingController _channelEndpointController;
 
   final ImagePicker _imagePicker = ImagePicker();
   final LocalFileStorageService _fileStorage = LocalFileStorageService();
@@ -98,7 +80,7 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
   /// True when this agent should be treated as a local LLM agent.
   /// She is always treated as local even before a model is configured.
   bool get _isLocalMode =>
-      _agent.metadata['llm_provider'] != null ||
+      _agent.isLocal ||
       _agent.metadata['is_she'] == true;
 
   @override
@@ -107,22 +89,6 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
     _agent = widget.agent;
     _isEditing = widget.initialEditMode;
     _initEditingControllers();
-    _lanAddressesFuture = _loadLanAddresses();
-    _publicUrlFuture = _loadPublicUrl();
-    // Auto-start tunnel if this agent has external access enabled with channel config
-    _maybeStartTunnel(_agent);
-  }
-
-  /// Start the channel tunnel if the agent has external access enabled and a
-  /// channel config, and the tunnel is not already running.
-  void _maybeStartTunnel(RemoteAgent agent) {
-    if (!agent.allowExternalAccess) return;
-    final cfg = agent.channelConfig;
-    if (cfg == null) return;
-    final tunnelService = ChannelTunnelService.instance;
-    if (!tunnelService.isRunning) {
-      tunnelService.startWithConfig(cfg);
-    }
   }
 
   void _initEditingControllers() {
@@ -185,15 +151,6 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
       }
     }
 
-    // Channel config controllers
-    final cfg = _agent.channelConfig;
-    _channelServerUrlController = TextEditingController(text: cfg?.serverUrl ?? '');
-    _channelIdController = TextEditingController(text: cfg?.channelId ?? '');
-    _channelSecretController = TextEditingController(text: cfg?.secret ?? '');
-    _channelEndpointController = TextEditingController(text: cfg?.channelEndpoint ?? '');
-
-    // Load She-exclusive feature toggles from PromptStackConfig
-    // (Removed - She CLI commands are now managed in CLI Management page)
   }
 
   @override
@@ -205,10 +162,6 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
     _remoteAgentIdController.dispose();
     _maxToolRoundsController.dispose();
     _taskTimeoutController.dispose();
-    _channelServerUrlController.dispose();
-    _channelIdController.dispose();
-    _channelSecretController.dispose();
-    _channelEndpointController.dispose();
     super.dispose();
   }
 
@@ -223,8 +176,6 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
     setState(() {
       _isEditing = false;
       _initEditingControllers();
-      // Refresh public URL section after edit is cancelled (channel config may have changed)
-      _publicUrlFuture = _loadPublicUrl();
     });
   }
 
@@ -328,38 +279,9 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
         metadata['allow_external_access'] = _editingAllowExternalAccess;
       }
 
-      // Save channel config for local agents
-      if (_editingAllowExternalAccess &&
-          _channelServerUrlController.text.trim().isNotEmpty &&
-          _channelIdController.text.trim().isNotEmpty) {
-        final rawChannelId = _channelIdController.text.trim();
-        // Validate: channel ID must not contain spaces (common paste mistake)
-        if (rawChannelId.contains(' ')) {
-          setState(() => _isSaving = false);
-          if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                content: const Text('Channel ID 格式无效，不能包含空格'),
-                backgroundColor: Colors.red,
-              ),
-            );
-          }
-          return;
-        }
-        final channelConfig = ChannelTunnelConfig(
-          serverUrl: _channelServerUrlController.text.trim(),
-          channelId: rawChannelId,
-          secret: _channelSecretController.text.trim(),
-          channelEndpoint: _channelEndpointController.text.trim().isNotEmpty
-              ? _channelEndpointController.text.trim()
-              : null,
-          autoConnect: false,
-        );
-        metadata['channel_config'] = channelConfig.toJson();
-      } else if (!_editingAllowExternalAccess) {
-        // Clear channel config when external access is disabled
-        metadata.remove('channel_config');
-      }
+      // 旧的 per-agent 公网 Channel 配置已废弃，外部访问统一走 P2P peer 连接。
+      // 清理可能残留的旧字段。
+      metadata.remove('channel_config');
 
       // Save remote agent ID (target_agent_id)
       final remoteAgentId = _remoteAgentIdController.text.trim();
@@ -394,30 +316,14 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
         updatedAt: DateTime.now().millisecondsSinceEpoch,
       );
 
-      final dbService = LocalDatabaseService();
-      final tokenService = TokenService(dbService);
-      final agentService = RemoteAgentService(dbService, tokenService);
+      final agentService = getIt<RemoteAgentService>();
       await agentService.updateAgent(updatedAgent);
 
       setState(() {
         _agent = updatedAgent;
         _isEditing = false;
         _isSaving = false;
-        // Refresh public URL with new channel config
-        _publicUrlFuture = _loadPublicUrl();
       });
-
-      // Start or stop the tunnel based on the updated agent config
-      _maybeStartTunnel(updatedAgent);
-      // If external access was disabled, stop any running tunnel for this agent
-      if (!_editingAllowExternalAccess) {
-        final tunnelService = ChannelTunnelService.instance;
-        if (tunnelService.isRunning) {
-          // Only stop if no other agent has a channel config that needs the tunnel
-          // (for simplicity, we stop it; it will be restarted if another agent needs it)
-          tunnelService.stop();
-        }
-      }
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -476,9 +382,7 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
     setState(() => _isDeleting = true);
 
     try {
-      final dbService = LocalDatabaseService();
-      final tokenService = TokenService(dbService);
-      final agentService = RemoteAgentService(dbService, tokenService);
+      final agentService = getIt<RemoteAgentService>();
       await agentService.deleteAgent(_agent.id);
 
       if (mounted) {
@@ -847,7 +751,39 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
             ],
           ),
         ),
+        if (_agent.isPeerAgent) ...[
+          const SizedBox(height: 8),
+          _buildPeerSourceChip(),
+        ],
       ],
+    );
+  }
+
+  /// 来源标识：标记该 agent 来自某台配对设备（通过 P2P 隧道访问）。
+  Widget _buildPeerSourceChip() {
+    final colorScheme = Theme.of(context).colorScheme;
+    final sourceName = _agent.sourcePeerName ?? '配对设备';
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      decoration: BoxDecoration(
+        color: colorScheme.primaryContainer.withValues(alpha: 0.5),
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.devices_outlined, size: 14, color: colorScheme.primary),
+          const SizedBox(width: 6),
+          Text(
+            '来自 $sourceName',
+            style: TextStyle(
+              fontSize: 13,
+              color: colorScheme.primary,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -1211,13 +1147,15 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
 
   // ==================== 外部访问卡片 ====================
 
-  /// 外部访问卡片（详情模式，仅本地 agent）
+  /// 外部访问卡片（详情模式，仅本地 agent）。
+  ///
+  /// 外部访问现在统一走 P2P peer 连接：开启后，该 agent 会对已配对设备可见，
+  /// 对方可直接在会话列表里看到并与之对话。无需公网 Channel 或复制 URL。
   Widget _buildExternalAccessCard() {
     final l10n = AppLocalizations.of(context);
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
     final isEnabled = _agent.allowExternalAccess;
-    final isRunning = globalACPServer.isRunning;
 
     return Card(
       elevation: 0,
@@ -1241,267 +1179,24 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
                     color: colorScheme.primary,
                   ),
                 ),
+                const Spacer(),
+                Icon(
+                  isEnabled ? Icons.check_circle : Icons.cancel,
+                  size: 18,
+                  color: isEnabled ? Colors.green : colorScheme.outline,
+                ),
               ],
             ),
             const Divider(height: 24),
-            if (!isEnabled)
-              Text(
-                l10n.agent_externalAccessDisabled,
-                style: TextStyle(color: colorScheme.outline, fontStyle: FontStyle.italic),
-              )
-            else if (!isRunning)
-              Row(
-                children: [
-                  Icon(Icons.warning_amber_outlined, size: 16, color: Colors.orange.shade700),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      l10n.agent_externalAccessNeedsService,
-                      style: TextStyle(color: Colors.orange.shade700, fontSize: 13),
-                    ),
-                  ),
-                ],
-              )
-            else
-              _buildAccessUrlSection(l10n, colorScheme),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildAccessUrlSection(AppLocalizations l10n, ColorScheme colorScheme) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        _buildLanAddressSection(l10n, colorScheme),
-        const SizedBox(height: 12),
-        _buildPublicUrlSection(l10n, colorScheme),
-      ],
-    );
-  }
-
-  Widget _buildLanAddressSection(AppLocalizations l10n, ColorScheme colorScheme) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        // Label + refresh button
-        Row(
-          children: [
             Text(
-              l10n.agent_externalAccessUrlLan,
-              style: TextStyle(fontSize: 12, color: Colors.grey[600]),
-            ),
-            const Spacer(),
-            _isRefreshingLan
-                ? const SizedBox(
-                    width: 16,
-                    height: 16,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  )
-                : IconButton(
-                    icon: const Icon(Icons.refresh, size: 16),
-                    tooltip: l10n.common_refresh,
-                    onPressed: _refreshLanAddresses,
-                    padding: EdgeInsets.zero,
-                    constraints: const BoxConstraints(),
-                    visualDensity: VisualDensity.compact,
-                  ),
-          ],
-        ),
-        const SizedBox(height: 6),
-        FutureBuilder<List<String>>(
-          future: _lanAddressesFuture,
-          builder: (context, snapshot) {
-            if (!snapshot.hasData) {
-              return const SizedBox(
-                width: 16,
-                height: 16,
-                child: CircularProgressIndicator(strokeWidth: 2),
-              );
-            }
-            final addresses = snapshot.data!;
-            if (addresses.isEmpty) {
-              return Text(
-                l10n.settings_noLanAddress,
-                style: TextStyle(color: colorScheme.outline, fontSize: 13, fontStyle: FontStyle.italic),
-              );
-            }
-            return Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: addresses.map((addr) {
-                final url = '$addr?agentId=${_agent.id}';
-                return _buildUrlRow(url, colorScheme, l10n);
-              }).toList(),
-            );
-          },
-        ),
-      ],
-    );
-  }
-
-  Widget _buildPublicUrlSection(AppLocalizations l10n, ColorScheme colorScheme) {
-    final channelConfig = _agent.channelConfig;
-
-    // No channel config on this agent
-    if (channelConfig == null) {
-      return Row(
-        children: [
-          Expanded(
-            child: Text(
-              l10n.agent_channelNotConfigured,
+              isEnabled
+                  ? l10n.agent_externalAccessPeerEnabled
+                  : l10n.agent_externalAccessDisabled,
               style: TextStyle(
-                color: colorScheme.outline,
+                color: isEnabled ? colorScheme.onSurface : colorScheme.outline,
+                fontStyle: isEnabled ? FontStyle.normal : FontStyle.italic,
                 fontSize: 13,
-                fontStyle: FontStyle.italic,
               ),
-            ),
-          ),
-          TextButton(
-            onPressed: _enterEditMode,
-            style: TextButton.styleFrom(
-              visualDensity: VisualDensity.compact,
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-            ),
-            child: Text(l10n.agent_channelConfigure, style: const TextStyle(fontSize: 13)),
-          ),
-        ],
-      );
-    }
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        // Label + refresh button
-        Row(
-          children: [
-            Text(
-              l10n.agent_externalAccessUrlPublic,
-              style: TextStyle(fontSize: 12, color: Colors.grey[600]),
-            ),
-            const Spacer(),
-            _isRefreshingPublicUrl
-                ? const SizedBox(
-                    width: 16,
-                    height: 16,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  )
-                : IconButton(
-                    icon: const Icon(Icons.refresh, size: 16),
-                    tooltip: l10n.common_refresh,
-                    onPressed: _refreshPublicUrl,
-                    padding: EdgeInsets.zero,
-                    constraints: const BoxConstraints(),
-                    visualDensity: VisualDensity.compact,
-                  ),
-          ],
-        ),
-        const SizedBox(height: 6),
-        FutureBuilder<String?>(
-          future: _publicUrlFuture,
-          builder: (context, snapshot) {
-            if (!snapshot.hasData && snapshot.connectionState == ConnectionState.waiting) {
-              return const SizedBox(
-                width: 16,
-                height: 16,
-                child: CircularProgressIndicator(strokeWidth: 2),
-              );
-            }
-            final url = snapshot.data;
-            if (url == null || url.isEmpty) {
-              return const SizedBox.shrink();
-            }
-            return _buildUrlRow(url, colorScheme, l10n);
-          },
-        ),
-      ],
-    );
-  }
-
-  // ── Async loaders ──────────────────────────────────────────────────────────
-
-  Future<List<String>> _loadLanAddresses() async {
-    final prefs = await SharedPreferences.getInstance();
-    final port = prefs.getInt(kAcpServerPortKey) ?? kAcpServerDefaultPort;
-    return LocalNetworkService.getACPServerAddresses(port: port);
-  }
-
-  Future<String?> _loadPublicUrl() async {
-    final config = _agent.channelConfig;
-    if (config == null) return null;
-    final tunnelService = ChannelTunnelService.instance;
-    final endpoint = tunnelService.getPublicEndpoint(config);
-    if (endpoint == null || endpoint.isEmpty) return null;
-    return '$endpoint?agentId=${_agent.id}';
-  }
-
-  // ── Refresh methods ────────────────────────────────────────────────────────
-
-  void _refreshLanAddresses() {
-    setState(() {
-      _isRefreshingLan = true;
-      _lanAddressesFuture = _loadLanAddresses();
-    });
-    _lanAddressesFuture!.whenComplete(() {
-      if (mounted) setState(() => _isRefreshingLan = false);
-    });
-  }
-
-  void _refreshPublicUrl() {
-    setState(() {
-      _isRefreshingPublicUrl = true;
-      _publicUrlFuture = _loadPublicUrl();
-    });
-    _publicUrlFuture!.whenComplete(() {
-      if (mounted) setState(() => _isRefreshingPublicUrl = false);
-    });
-  }
-
-  Widget _buildUrlRow(String url, ColorScheme colorScheme, AppLocalizations l10n) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-        decoration: BoxDecoration(
-          color: colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
-          borderRadius: BorderRadius.circular(6),
-          border: Border.all(color: colorScheme.outlineVariant),
-        ),
-        child: Row(
-          children: [
-            Expanded(
-              child: SelectableText(
-                url,
-                style: const TextStyle(fontFamily: 'monospace', fontSize: 11),
-              ),
-            ),
-            const SizedBox(width: 4),
-            IconButton(
-              icon: const Icon(Icons.copy, size: 16),
-              tooltip: l10n.agent_copyAccessUrl,
-              onPressed: () {
-                Clipboard.setData(ClipboardData(text: url));
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(
-                    content: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(l10n.agent_accessUrlCopied),
-                        const SizedBox(height: 2),
-                        Text(
-                          l10n.agent_accessUrlCopiedHint,
-                          style: const TextStyle(fontSize: 12, color: Colors.white70),
-                        ),
-                      ],
-                    ),
-                    duration: const Duration(seconds: 3),
-                  ),
-                );
-              },
-              padding: EdgeInsets.zero,
-              constraints: const BoxConstraints(),
-              visualDensity: VisualDensity.compact,
             ),
           ],
         ),
@@ -1530,126 +1225,9 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
           style: TextStyle(fontSize: 12, color: Colors.grey[600]),
         ),
         value: _editingAllowExternalAccess,
-        onChanged: (value) async {
-          if (value) {
-            // 检查全局 ACP Server 开关状态
-            final prefs = await SharedPreferences.getInstance();
-            final acpEnabled = prefs.getBool(kAcpServerEnabledKey) ?? true;
-            if (!acpEnabled && mounted) {
-              // 总控关闭，弹出提示
-              final shouldEnableService = await showDialog<bool>(
-                context: context,
-                builder: (ctx) {
-                  final dialogL10n = AppLocalizations.of(ctx);
-                  return AlertDialog(
-                    title: Text(dialogL10n.agent_enableExternalAccessTitle),
-                    content: Text(dialogL10n.agent_enableExternalAccessNeedService),
-                    actions: [
-                      TextButton(
-                        onPressed: () => Navigator.pop(ctx, false),
-                        child: Text(dialogL10n.agent_keepDisabled),
-                      ),
-                      TextButton(
-                        onPressed: () => Navigator.pop(ctx, true),
-                        child: Text(dialogL10n.agent_enableServiceAndContinue),
-                      ),
-                    ],
-                  );
-                },
-              );
-              if (shouldEnableService == true) {
-                // 自动开启总控：写入 SharedPreferences + 启动 ACP Server
-                await prefs.setBool(kAcpServerEnabledKey, true);
-                try {
-                  await globalACPServer.start();
-                } catch (_) {}
-              }
-              // 无论用户选择"开启服务"还是"仅保存设置"，都保存 agent 的外部访问开关
-            }
-          }
-          if (mounted) {
-            setState(() => _editingAllowExternalAccess = value);
-          }
+        onChanged: (value) {
+          setState(() => _editingAllowExternalAccess = value);
         },
-      ),
-    );
-  }
-
-  /// Channel 配置卡片（编辑模式，仅在允许外部访问时显示）
-  Widget _buildEditChannelConfigCard(ColorScheme colorScheme) {
-    final l10n = AppLocalizations.of(context);
-    return Card(
-      elevation: 0,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(12),
-        side: BorderSide(color: colorScheme.outlineVariant),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Icon(Icons.cloud_outlined, size: 18, color: colorScheme.primary),
-                const SizedBox(width: 8),
-                Text(
-                  l10n.agent_channelConfig,
-                  style: TextStyle(
-                    fontWeight: FontWeight.w600,
-                    color: colorScheme.primary,
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 16),
-            TextFormField(
-              controller: _channelServerUrlController,
-              decoration: InputDecoration(
-                labelText: l10n.agent_channelServerUrl,
-                hintText: 'https://channel.example.com',
-                border: const OutlineInputBorder(),
-                prefixIcon: const Icon(Icons.dns_outlined),
-              ),
-              keyboardType: TextInputType.url,
-            ),
-            const SizedBox(height: 12),
-            TextFormField(
-              controller: _channelIdController,
-              decoration: InputDecoration(
-                labelText: l10n.agent_channelId,
-                hintText: 'abc-123',
-                border: const OutlineInputBorder(),
-                prefixIcon: const Icon(Icons.tag),
-              ),
-              // Prevent accidental paste of "uuid --secret ..." style strings
-              inputFormatters: [
-                FilteringTextInputFormatter.deny(RegExp(r'\s')),
-              ],
-            ),
-            const SizedBox(height: 12),
-            TextFormField(
-              controller: _channelSecretController,
-              obscureText: true,
-              decoration: InputDecoration(
-                labelText: l10n.agent_channelSecret,
-                hintText: 'ch_sec_xxx',
-                border: const OutlineInputBorder(),
-                prefixIcon: const Icon(Icons.lock_outline),
-              ),
-            ),
-            const SizedBox(height: 12),
-            TextFormField(
-              controller: _channelEndpointController,
-              decoration: InputDecoration(
-                labelText: l10n.agent_channelEndpoint,
-                hintText: 'endpoint from channel service',
-                border: const OutlineInputBorder(),
-                prefixIcon: const Icon(Icons.link),
-              ),
-            ),
-          ],
-        ),
       ),
     );
   }
@@ -1727,11 +1305,6 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
         if (_isLocalMode) ...[
           const SizedBox(height: 16),
           _buildEditExternalAccessCard(colorScheme),
-          // Channel 配置（仅在外部访问开启时显示）
-          if (_editingAllowExternalAccess) ...[
-            const SizedBox(height: 16),
-            _buildEditChannelConfigCard(colorScheme),
-          ],
         ],
 
         // 卡片 5: OS 工具 / 技能 / 模型路由导航入口（仅在选择了主模型时显示）

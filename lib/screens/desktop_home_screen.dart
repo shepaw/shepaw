@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import '../models/agent.dart';
 import '../models/channel.dart';
@@ -7,6 +8,7 @@ import '../services/local_database_service.dart';
 import '../services/message_search_service.dart';
 import '../peer/models/paired_peer.dart';
 import '../peer/screens/peer_chat_screen.dart';
+import '../peer/services/peer_connection.dart';
 import '../peer/services/peer_connection_manager.dart';
 import 'home_screen.dart';
 import 'chat_screen.dart';
@@ -72,9 +74,48 @@ class _SidebarItemDef {
 
 class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
   final OverlayPortalController _morePortalController = OverlayPortalController();
+  StreamSubscription? _peerEventSub;
+  StreamSubscription? _peerListChangedSub;
+
+  @override
+  void initState() {
+    super.initState();
+    // 监听 peer 事件，删除 peer 后右面板切回空
+    _peerEventSub = PeerConnectionManager.instance.events.listen((event) {
+      if (event.type == PeerConnectionEventType.disconnected &&
+          _selected?.peerId == event.peerId) {
+        _resetIfSelectedPeerRemoved(event.peerId);
+      }
+    });
+
+    // 监听设备列表变化（删除配对后），若当前选中的 peer 已不存在则清空右面板
+    _peerListChangedSub =
+        PeerConnectionManager.instance.peerListChanged.listen((_) {
+      _resetIfSelectedPeerRemoved(_selected?.peerId);
+    });
+  }
+
+  /// 若指定 peerId 正是当前选中的会话且已从存储中删除，则把右面板切回空，
+  /// 避免 FutureBuilder 因找不到 peer 而一直转圈。
+  void _resetIfSelectedPeerRemoved(String? peerId) {
+    if (peerId == null || _selected?.peerId != peerId) return;
+    PeerConnectionManager.instance.getAllPeers().then((peers) {
+      if (mounted &&
+          _selected?.peerId == peerId &&
+          !peers.any((p) => p.id == peerId)) {
+        setState(() {
+          _selected = null;
+          _rightPanel = _RightPanelView.empty;
+          _navGeneration++;
+        });
+      }
+    });
+  }
 
   @override
   void dispose() {
+    _peerEventSub?.cancel();
+    _peerListChangedSub?.cancel();
     FloatingPanelManager.instance.closeAll();
     NativeWindowService.instance.closeAll();
     super.dispose();
@@ -282,12 +323,18 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
                 (peers) => peers.where((p) => p.id == _selected!.peerId).firstOrNull,
               ),
               builder: (context, snapshot) {
-                if (!snapshot.hasData || snapshot.data == null) {
+                // 仅在加载中显示转圈
+                if (snapshot.connectionState == ConnectionState.waiting) {
                   return const Center(child: CircularProgressIndicator());
+                }
+                // 加载完成但 peer 不存在（已被删除）→ 回到空状态，避免一直白屏转圈
+                final peer = snapshot.data;
+                if (peer == null) {
+                  return _buildEmptyState();
                 }
                 return PeerChatScreen(
                   key: ValueKey(_selected!.key),
-                  peer: snapshot.data!,
+                  peer: peer,
                 );
               },
             );

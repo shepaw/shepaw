@@ -10,7 +10,7 @@ import '../../models/channel.dart';
 import '../../services/logger_service.dart';
 import '../../services/local_database_service.dart';
 import '../../services/remote_agent_service.dart';
-import '../../services/token_service.dart';
+import '../../service_locator.dart' show getIt;
 import '../services/scheduled_task_service.dart';
 
 /// Enum for the three schedule modes available in the form.
@@ -218,9 +218,7 @@ class _ScheduledTaskFormScreenState extends State<ScheduledTaskFormScreen> {
   Future<void> _loadAgents() async {
     setState(() => _loadingAgents = true);
     try {
-      final db = LocalDatabaseService();
-      final tokenService = TokenService(db);
-      final agentService = RemoteAgentService(db, tokenService);
+      final agentService = getIt<RemoteAgentService>();
       final agents = await agentService.getAllAgents();
       if (mounted) {
         setState(() {

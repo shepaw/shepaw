@@ -21,112 +21,27 @@ import '../services/interactive_response_handler.dart';
 import '../services/logger_service.dart';
 import '../services/workflow/workflow_service.dart';
 import '../models/workflow_models.dart';
+import 'chat_events.dart';
 
-// ---------------------------------------------------------------------------
-// Events — sealed hierarchy for UI-bound side effects
-// ---------------------------------------------------------------------------
+// ChatEvent 及其全部子类已拆分到 chat_events.dart，这里重新导出，
+// 使现有 `import '../controllers/chat_controller.dart'` 的调用方无需改动。
+export 'chat_events.dart';
 
-sealed class ChatEvent {}
-
-class ShowSnackBarEvent extends ChatEvent {
-  final String message;
-  ShowSnackBarEvent(this.message);
-}
-
-class ShowErrorSnackBarEvent extends ChatEvent {
-  final String message;
-  ShowErrorSnackBarEvent(this.message);
-}
-
-class ShowRetrySnackBarEvent extends ChatEvent {
-  final String message;
-  final String retryLabel;
-  final Map<String, String> interruptedInfo;
-  ShowRetrySnackBarEvent(this.message, this.retryLabel, this.interruptedInfo);
-}
-
-/// 主动重连进度提示：发送消息时发现 Agent 不可达，进入指数退避重试循环，
-/// 每次尝试前发此事件。UI 显示形如 "正在重连… (1/3)" 的顶部提示。
-class ShowReconnectingSnackBarEvent extends ChatEvent {
-  final int attempt;
-  final int total;
-  ShowReconnectingSnackBarEvent(this.attempt, this.total);
-}
-
-/// 主动重连结束（连上 or 最终失败）：UI 应隐藏 [ShowReconnectingSnackBarEvent]
-/// 之前展示的持久提示。
-class HideReconnectingSnackBarEvent extends ChatEvent {}
-
-class NavigateToSessionEvent extends ChatEvent {
-  final String channelId;
-  final String? agentId;
-  final String? agentName;
-  final String? agentAvatar;
-  final bool embedded;
-  NavigateToSessionEvent({
-    required this.channelId,
-    this.agentId,
-    this.agentName,
-    this.agentAvatar,
-    this.embedded = false,
-  });
-}
-
-class ShowLoadingOverlayEvent extends ChatEvent {
-  final String message;
-  ShowLoadingOverlayEvent(this.message);
-}
-
-class DismissOverlayEvent extends ChatEvent {}
-
-class RequestScrollToBottomEvent extends ChatEvent {
-  final bool force;
-  RequestScrollToBottomEvent({this.force = false});
-}
-
-class ShowHistoryRequestDialogEvent extends ChatEvent {
-  final String reason;
-  final Completer<bool> result;
-  ShowHistoryRequestDialogEvent(this.reason) : result = Completer<bool>();
-}
-
-class ShowOsToolConfirmationEvent extends ChatEvent {
-  final String toolName;
-  final Map<String, dynamic> args;
-  final dynamic risk;
-  final Completer<bool> result;
-  ShowOsToolConfirmationEvent(this.toolName, this.args, this.risk) : result = Completer<bool>();
-}
-
-class GroupInteractionRequestEvent extends ChatEvent {
-  final String agentId;
-  final String agentName;
-  final String interactionType; // 'action_confirmation', 'single_select', 'multi_select', 'form', 'file_upload'
-  final Map<String, dynamic> data;
-  final String groupStreamingMessageId;
-  final Completer<Map<String, dynamic>?> result;
-  GroupInteractionRequestEvent({
-    required this.agentId,
-    required this.agentName,
-    required this.interactionType,
-    required this.data,
-    required this.groupStreamingMessageId,
-  }) : result = Completer<Map<String, dynamic>?>();
-}
-
-class CloseScreenEvent extends ChatEvent {}
-
-class AgentInfoUpdatedEvent extends ChatEvent {
-  final String? name;
-  final String? avatar;
-  AgentInfoUpdatedEvent(this.name, this.avatar);
-}
+// 部分低耦合的方法簇（会话管理、群成员管理）以 part + mixin 形式拆到独立文件，
+// 与本文件同属一个库，因此可直接访问 _ChatControllerBase 的私有字段与辅助方法。
+part 'chat_controller_sessions.dart';
+part 'chat_controller_group_members.dart';
+part 'chat_controller_interactions.dart';
 
 // ---------------------------------------------------------------------------
 // ChatController
 // ---------------------------------------------------------------------------
 
-class ChatController extends ChangeNotifier with InteractiveStreamingContext {
+/// ChatController 的状态与核心逻辑基类。
+///
+/// 持有全部字段、构造与核心方法；低耦合的方法簇通过 part 文件中的 mixin
+/// （[_SessionOps]、[_GroupMemberOps]）挂载到具体的 [ChatController] 子类上。
+abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStreamingContext {
   // ---- Constructor parameters ----
   final String? agentId;
   final String? initialAgentName;
@@ -359,7 +274,7 @@ class ChatController extends ChangeNotifier with InteractiveStreamingContext {
     }
   }
 
-  ChatController({
+  _ChatControllerBase({
     required this.agentId,
     this.initialAgentName,
     this.initialAgentAvatar,
@@ -1204,7 +1119,7 @@ class ChatController extends ChangeNotifier with InteractiveStreamingContext {
       final remoteAgent = await localDatabaseService.getRemoteAgentById(agentId!);
       if (remoteAgent == null) throw Exception('Agent not found');
 
-      final isLocal = LocalLLMAgentService.instance.isLocalAgent(remoteAgent);
+      final isLocal = remoteAgent.isLocal;
 
       if (!isLocal && remoteAgent.endpoint.isEmpty) {
         throw Exception('Agent has no valid endpoint');
@@ -1922,7 +1837,7 @@ class ChatController extends ChangeNotifier with InteractiveStreamingContext {
       final remoteAgent = await localDatabaseService.getRemoteAgentById(agentId!);
       if (remoteAgent == null) throw Exception('Agent not found');
 
-      final isLocal = LocalLLMAgentService.instance.isLocalAgent(remoteAgent);
+      final isLocal = remoteAgent.isLocal;
       if (!isLocal && remoteAgent.endpoint.isEmpty) {
         throw Exception('Agent has no valid endpoint');
       }
@@ -1999,293 +1914,6 @@ class ChatController extends ChangeNotifier with InteractiveStreamingContext {
       isProcessing = false;
       _notify();
       processNextInQueue();
-    }
-  }
-
-  // ---------------------------------------------------------------------------
-  // Interactive response handlers (delegates to InteractiveResponseHandler)
-  // ---------------------------------------------------------------------------
-
-  /// Helper: for group chat with local LLM agents that have already finished,
-  /// just persist the user's interactive response to the message metadata in
-  /// DB.  Returns true if handled (caller should return early).
-  Future<bool> _handleGroupInteractionLocally(
-    Message originalMessage,
-    String metadataKey,
-    Map<String, dynamic> selectedData, {
-    String? responseText,
-  }) async {
-    if (!isGroupMode) return false;
-    final updatedMeta = Map<String, dynamic>.from(originalMessage.metadata ?? {});
-    final section = Map<String, dynamic>.from(
-      updatedMeta[metadataKey] as Map<String, dynamic>? ?? {},
-    );
-    section.addAll(selectedData);
-    section['selected_at'] = DateTime.now().millisecondsSinceEpoch;
-    updatedMeta[metadataKey] = section;
-
-    // Update in-memory message
-    final idx = messages.indexWhere((m) => m.id == originalMessage.id);
-    if (idx != -1) {
-      final updated = Message(
-        id: originalMessage.id,
-        content: originalMessage.content,
-        timestampMs: originalMessage.timestampMs,
-        from: originalMessage.from,
-        to: originalMessage.to,
-        type: originalMessage.type,
-        replyTo: originalMessage.replyTo,
-        metadata: updatedMeta,
-      );
-      messages[idx] = updated;
-      messageIdMap[updated.id] = updated;
-      _notify();
-    }
-
-    try {
-      await localDatabaseService.updateMessageMetadata(originalMessage.id, updatedMeta);
-    } catch (e) {
-      _emit(ShowErrorSnackBarEvent('$e'));
-    }
-
-    // For local LLM agents, trigger a follow-up round so the agent can
-    // process the user's interaction response and generate a reply.
-    // Prefix with @agentName so the agent has context that it is being
-    // directly addressed (needed for it to generate UI widgets like
-    // action_confirmation).  When there is a group admin and the mentioned
-    // agent IS the admin, sendMessageToGroup will detect that the sole
-    // mention is the admin and fall through to the admin orchestration loop
-    // (path 5b) rather than the simple direct-dispatch path (5a), so the
-    // admin's subsequent @mentions of member agents will still be honoured.
-    if (responseText != null && originalMessage.from.isAgent) {
-      final agentName = originalMessage.from.name;
-      Future.microtask(() => processGroupMessage('@$agentName $responseText'));
-    }
-
-    return true;
-  }
-
-  void handlePlanApprovalResponded(
-    Message originalMessage,
-    bool approved, {
-    String? feedback,
-    List<String>? skippedTaskIds,
-  }) {
-    // Update UI immediately
-    _updateGroupStreamingMetadata(
-      originalMessage.id,
-      'plan_approval_responded',
-      {'approved': approved},
-    );
-    // Merge _approved into the plan_approval data so the card badge updates
-    final existing = messageIdMap[originalMessage.id];
-    if (existing != null) {
-      final existingPlanData = existing.metadata?['plan_approval'] as Map<String, dynamic>?;
-      if (existingPlanData != null) {
-        final merged = Map<String, dynamic>.from(existingPlanData);
-        merged['_approved'] = approved;
-        _updateGroupStreamingMetadata(originalMessage.id, 'plan_approval', merged);
-      }
-    }
-
-    // Submit result through ChatService Completer (survives channel switch)
-    if (currentChannelId != null) {
-      chatService.completePlanApproval(currentChannelId!, {
-        'approved': approved,
-        if (feedback != null && feedback.isNotEmpty) 'feedback': feedback,
-        if (skippedTaskIds != null && skippedTaskIds.isNotEmpty)
-          'skipped_task_ids': skippedTaskIds,
-      });
-
-      // If approved and has workflow ID, mark workflow as running + show panel
-      if (approved) {
-        final existingMsg = messageIdMap[originalMessage.id];
-        final planMeta = existingMsg?.metadata?['plan_approval'] as Map<String, dynamic>?;
-        final workflowId = planMeta?['_workflowId'] as String?;
-        if (workflowId != null) {
-          _handleWorkflowApproved(workflowId);
-        }
-      }
-    }
-  }
-
-  Future<void> handleActionSelected(
-    Message originalMessage,
-    String confirmationId,
-    String actionId,
-    String actionLabel, {
-    String? confirmationContext,
-  }) async {
-    LoggerService().info(
-      'handleActionSelected: confirmationId=$confirmationId, '
-      'actionId=$actionId, label="$actionLabel", '
-      'context=$confirmationContext, isProcessing=$isProcessing',
-      tag: 'ChatController',
-    );
-    final pending = pendingGroupInteractions[originalMessage.id];
-    if (pending != null && !pending.result.isCompleted) {
-      pending.result.complete({
-        'selected_action_id': actionId,
-        'selected_action_label': actionLabel,
-      });
-      _updateGroupStreamingMetadata(originalMessage.id, 'action_confirmation_responded', {'action_id': actionId, 'action_label': actionLabel});
-      return;
-    }
-
-    // Check if this is a plan confirmation (agent used action_confirmation instead of
-    // the system plan_approval UI). Use execution-trigger phrasing so the admin knows
-    // to proceed with task delegation rather than re-plan.
-    final isPlanConfirm = confirmationId.startsWith('plan_confirm');
-    final responseTextForGroup = isPlanConfirm && actionId != 'modify'
-        ? 'User selected action: $actionLabel. 请立即开始按计划执行，直接委派任务给各成员，不要重新输出计划。'
-        : 'User selected action: $actionLabel';
-
-    if (await _handleGroupInteractionLocally(originalMessage, 'action_confirmation', {
-      'selected_action_id': actionId,
-    }, responseText: responseTextForGroup)) return;
-
-    // NOTE: intentionally NOT gated on `isProcessing`. An action-confirmation
-    // tap is a reply to the in-flight task, not a fresh user turn — for ACP
-    // agents (e.g. codebuddy-code's canUseTool), the reply is delivered as
-    // a new `agent.chat` that the agent classifies as an allow/deny verdict,
-    // and only THEN does the original task's `task.completed` fire. Guarding
-    // on `isProcessing` here would drop the tap silently, stranding the user
-    // (task hangs forever, UI spinner never clears).
-
-    try {
-      await interactiveResponseHandler.handleActionConfirmation(
-        originalMessage: originalMessage,
-        confirmationId: confirmationId,
-        actionId: actionId,
-        actionLabel: actionLabel,
-        confirmationContext: confirmationContext,
-      );
-    } catch (e) {
-      _emit(ShowErrorSnackBarEvent('$e'));
-    }
-  }
-
-  Future<void> handleSingleSelectSubmitted(
-    Message originalMessage,
-    String selectId,
-    String optionId,
-    String optionLabel,
-  ) async {
-    final pending = pendingGroupInteractions[originalMessage.id];
-    if (pending != null && !pending.result.isCompleted) {
-      pending.result.complete({
-        'selected_option_id': optionId,
-        'selected_option_label': optionLabel,
-      });
-      _updateGroupStreamingMetadata(originalMessage.id, 'single_select_responded', {'option_id': optionId, 'option_label': optionLabel});
-      return;
-    }
-    // See handleActionSelected for why `isProcessing` is not checked here.
-
-    if (await _handleGroupInteractionLocally(originalMessage, 'single_select', {
-      'selected_option_id': optionId,
-    }, responseText: 'Selected: $optionLabel')) return;
-
-    try {
-      await interactiveResponseHandler.handleSelectResponse(
-        originalMessage: originalMessage,
-        metadataKey: 'single_select',
-        selectedData: {'selected_option_id': optionId},
-        responseText: 'Selected: $optionLabel',
-      );
-    } catch (e) {
-      _emit(ShowErrorSnackBarEvent('$e'));
-    }
-  }
-
-  Future<void> handleMultiSelectSubmitted(
-    Message originalMessage,
-    String selectId,
-    List<String> optionIds,
-    String summary,
-  ) async {
-    final pending = pendingGroupInteractions[originalMessage.id];
-    if (pending != null && !pending.result.isCompleted) {
-      pending.result.complete({'selected_option_ids': optionIds});
-      _updateGroupStreamingMetadata(originalMessage.id, 'multi_select_responded', {'option_ids': optionIds});
-      return;
-    }
-    // See handleActionSelected for why `isProcessing` is not checked here.
-
-    if (await _handleGroupInteractionLocally(originalMessage, 'multi_select', {
-      'selected_option_ids': optionIds,
-    }, responseText: 'Selected: $summary')) return;
-
-    try {
-      await interactiveResponseHandler.handleSelectResponse(
-        originalMessage: originalMessage,
-        metadataKey: 'multi_select',
-        selectedData: {'selected_option_ids': optionIds},
-        responseText: 'Selected: $summary',
-      );
-    } catch (e) {
-      _emit(ShowErrorSnackBarEvent('$e'));
-    }
-  }
-
-  Future<void> handleFileUploadSubmitted(
-    Message originalMessage,
-    String uploadId,
-    List<Map<String, dynamic>> files,
-    String summary,
-  ) async {
-    final pending = pendingGroupInteractions[originalMessage.id];
-    if (pending != null && !pending.result.isCompleted) {
-      pending.result.complete({'uploaded_files': files});
-      _updateGroupStreamingMetadata(originalMessage.id, 'file_upload_responded', {'files': files});
-      return;
-    }
-    if (isProcessing && !isGroupMode) return;
-
-
-    if (await _handleGroupInteractionLocally(originalMessage, 'file_upload', {
-      'uploaded_files': files,
-    }, responseText: 'Uploaded files: $summary')) return;
-
-    try {
-      await interactiveResponseHandler.handleSelectResponse(
-        originalMessage: originalMessage,
-        metadataKey: 'file_upload',
-        selectedData: {'uploaded_files': files},
-        responseText: 'Uploaded files: $summary',
-      );
-    } catch (e) {
-      _emit(ShowErrorSnackBarEvent('$e'));
-    }
-  }
-
-  Future<void> handleFormSubmitted(
-    Message originalMessage,
-    String formId,
-    Map<String, dynamic> values,
-    String summary,
-  ) async {
-    final pending = pendingGroupInteractions[originalMessage.id];
-    if (pending != null && !pending.result.isCompleted) {
-      pending.result.complete({'submitted_values': values});
-      _updateGroupStreamingMetadata(originalMessage.id, 'form_responded', {'values': values});
-      return;
-    }
-    if (isProcessing && !isGroupMode) return;
-
-    if (await _handleGroupInteractionLocally(originalMessage, 'form', {
-      'submitted_values': values,
-    }, responseText: 'Form submitted: $summary')) return;
-
-    try {
-      await interactiveResponseHandler.handleSelectResponse(
-        originalMessage: originalMessage,
-        metadataKey: 'form',
-        selectedData: {'submitted_values': values},
-        responseText: 'Form submitted: $summary',
-      );
-    } catch (e) {
-      _emit(ShowErrorSnackBarEvent('$e'));
     }
   }
 
@@ -2370,372 +1998,6 @@ class ChatController extends ChangeNotifier with InteractiveStreamingContext {
     } catch (e) {
       _emit(ShowErrorSnackBarEvent('chat_rollbackFailed:$e'));
     }
-  }
-
-  // ---------------------------------------------------------------------------
-  // Session management
-  // ---------------------------------------------------------------------------
-
-  void resetSession(TextEditingController messageController) {
-    messageController.text = '/reset';
-    // The UI will call sendMessage
-  }
-
-  Future<void> createNewSession() async {
-    if (agentId == null) return;
-
-    final userId = getUserId();
-    final userName = getUserName();
-
-    try {
-      final newChannelId = await chatService.createNewSession(
-        userId: userId,
-        userName: userName,
-        agentId: agentId!,
-        agentName: agentName ?? 'Agent',
-      );
-
-      await localDatabaseService.touchChannelUpdatedAt(newChannelId);
-
-      _emit(NavigateToSessionEvent(
-        channelId: newChannelId,
-        agentId: agentId,
-        agentName: agentName,
-        agentAvatar: agentAvatar,
-        embedded: embedded,
-      ));
-    } catch (e) {
-      _emit(ShowErrorSnackBarEvent('chat_newSessionFailed:$e'));
-    }
-  }
-
-  Future<void> createNewGroupSession() async {
-    if (groupChannel == null || currentChannelId == null) return;
-
-    final userId = getUserId();
-
-    try {
-      final newChannelId = await chatService.createNewGroupSession(
-        channelId: currentChannelId!,
-        userId: userId,
-      );
-
-      await localDatabaseService.touchChannelUpdatedAt(newChannelId);
-
-      _emit(NavigateToSessionEvent(
-        channelId: newChannelId,
-        embedded: embedded,
-      ));
-    } catch (e) {
-      _emit(ShowErrorSnackBarEvent('chat_newGroupSessionFailed:$e'));
-    }
-  }
-
-  Future<void> clearCurrentSessionHistory() async {
-    if (agentId == null) return;
-
-    final userId = getUserId();
-    final userName = getUserName();
-    final sessionId = currentChannelId
-        ?? await chatService.getLatestActiveChannelId(userId, agentId!)
-        ?? chatService.generateChannelId(userId, agentId!);
-
-    _emit(ShowLoadingOverlayEvent('chat_clearingSession'));
-
-    try {
-      final remoteAgent = await localDatabaseService.getRemoteAgentById(agentId!);
-
-      if (remoteAgent != null && remoteAgent.isOnline) {
-        try {
-          await chatService.sendMessageToAgent(
-            content: '/reset',
-            agent: remoteAgent,
-            userId: userId,
-            userName: userName,
-            channelId: sessionId,
-          );
-        } catch (_) {}
-      }
-
-      final sessions = await chatService.getAgentSessions(agentId: agentId!);
-
-      if (sessions.length > 1) {
-        await localDatabaseService.deleteChannelMessages(sessionId);
-        await localDatabaseService.deleteChannel(sessionId);
-
-        final remaining = sessions.where((s) => s.id != sessionId).toList();
-        final targetSession = remaining.first;
-
-        _emit(DismissOverlayEvent());
-        _emit(NavigateToSessionEvent(
-          channelId: targetSession.id,
-          agentId: agentId,
-          agentName: agentName,
-          agentAvatar: agentAvatar,
-          embedded: embedded,
-        ));
-      } else {
-        await localDatabaseService.deleteChannelMessages(sessionId);
-
-        _emit(DismissOverlayEvent());
-        messages.clear();
-        messageIdMap.clear();
-        _notify();
-        _emit(ShowSnackBarEvent('chat_sessionCleared'));
-      }
-    } catch (e) {
-      _emit(DismissOverlayEvent());
-      _emit(ShowErrorSnackBarEvent('chat_clearSessionFailed:$e'));
-    }
-  }
-
-  Future<void> clearAllSessionsHistory() async {
-    if (agentId == null) return;
-
-    final userId = getUserId();
-    final userName = getUserName();
-    final sessionId = currentChannelId
-        ?? await chatService.getLatestActiveChannelId(userId, agentId!)
-        ?? chatService.generateChannelId(userId, agentId!);
-
-    _emit(ShowLoadingOverlayEvent('chat_clearingAllSessions'));
-
-    try {
-      final remoteAgent = await localDatabaseService.getRemoteAgentById(agentId!);
-
-      if (remoteAgent != null && remoteAgent.isOnline) {
-        try {
-          await chatService.sendMessageToAgent(
-            content: '/reset-all',
-            agent: remoteAgent,
-            userId: userId,
-            userName: userName,
-            channelId: sessionId,
-          );
-        } catch (_) {}
-      }
-
-      final sessions = await chatService.getAgentSessions(agentId: agentId!);
-      final defaultChannelId = chatService.generateChannelId(userId, agentId!);
-
-      for (final session in sessions) {
-        await localDatabaseService.deleteChannelMessages(session.id);
-        if (session.id != defaultChannelId) {
-          await localDatabaseService.deleteChannel(session.id);
-        }
-      }
-
-      final defaultChannel = await localDatabaseService.getChannelById(defaultChannelId);
-      if (defaultChannel == null) {
-        final channel = Channel.withMemberIds(
-          id: defaultChannelId,
-          name: 'Chat with ${agentName ?? 'Agent'}',
-          type: 'dm',
-          memberIds: [userId, agentId!],
-          isPrivate: true,
-        );
-        await localDatabaseService.createChannel(channel, userId);
-      }
-
-      _emit(DismissOverlayEvent());
-      final isAlreadyDefault = currentChannelId == defaultChannelId;
-
-      if (isAlreadyDefault) {
-        messages.clear();
-        messageIdMap.clear();
-        _notify();
-        _emit(ShowSnackBarEvent('chat_allSessionsCleared'));
-      } else {
-        _emit(NavigateToSessionEvent(
-          channelId: defaultChannelId,
-          agentId: agentId,
-          agentName: agentName,
-          agentAvatar: agentAvatar,
-          embedded: embedded,
-        ));
-      }
-    } catch (e) {
-      _emit(DismissOverlayEvent());
-      _emit(ShowErrorSnackBarEvent('chat_clearAllSessionsFailed:$e'));
-    }
-  }
-
-  Future<void> clearGroupSessionHistory() async {
-    if (groupChannel == null || currentChannelId == null) return;
-
-    _emit(ShowLoadingOverlayEvent('chat_clearingGroupSession'));
-
-    try {
-      final agentIds = groupAgents.map((a) => a.id).toList();
-      final parentGroupId = groupChannel!.groupFamilyId;
-      final sessions = await chatService.getGroupSessions(parentGroupId: parentGroupId);
-
-      if (sessions.length > 1) {
-        await chatService.clearGroupSessionHistory(
-          channelId: currentChannelId!,
-          agentIds: agentIds,
-        );
-        await localDatabaseService.deleteChannel(currentChannelId!);
-
-        final remaining = sessions.where((s) => s.id != currentChannelId).toList();
-        final targetSession = remaining.first;
-
-        _emit(DismissOverlayEvent());
-        _emit(NavigateToSessionEvent(
-          channelId: targetSession.id,
-          embedded: embedded,
-        ));
-      } else {
-        await chatService.clearGroupSessionHistory(
-          channelId: currentChannelId!,
-          agentIds: agentIds,
-        );
-
-        _emit(DismissOverlayEvent());
-        messages.clear();
-        messageIdMap.clear();
-        _notify();
-        _emit(ShowSnackBarEvent('chat_groupSessionCleared'));
-      }
-    } catch (e) {
-      _emit(DismissOverlayEvent());
-      _emit(ShowErrorSnackBarEvent('chat_clearGroupSessionFailed:$e'));
-    }
-  }
-
-  Future<void> clearAllGroupSessionsHistory() async {
-    if (groupChannel == null || currentChannelId == null) return;
-
-    _emit(ShowLoadingOverlayEvent('chat_clearingAllGroupSessions'));
-
-    try {
-      final agentIds = groupAgents.map((a) => a.id).toList();
-      final parentGroupId = groupChannel!.groupFamilyId;
-
-      await chatService.clearAllGroupSessions(
-        parentGroupId: parentGroupId,
-        currentChannelId: currentChannelId!,
-        agentIds: agentIds,
-      );
-
-      _emit(DismissOverlayEvent());
-      final isAlreadyParent = currentChannelId == parentGroupId;
-
-      if (isAlreadyParent) {
-        messages.clear();
-        messageIdMap.clear();
-        _notify();
-        _emit(ShowSnackBarEvent('chat_allGroupSessionsCleared'));
-      } else {
-        _emit(NavigateToSessionEvent(
-          channelId: parentGroupId,
-          embedded: embedded,
-        ));
-      }
-    } catch (e) {
-      _emit(DismissOverlayEvent());
-      _emit(ShowErrorSnackBarEvent('chat_clearAllGroupSessionsFailed:$e'));
-    }
-  }
-
-  Future<void> batchDeleteSessions(List<String> sessionIds, {required bool isGroup}) async {
-    if (sessionIds.isEmpty) return;
-
-    _emit(ShowLoadingOverlayEvent('chat_clearingAllSessions'));
-
-    try {
-      // Guard: never delete the parent group channel itself, only child sessions.
-      // Use groupFamilyId so the parent is protected regardless of which session is currently open.
-      final parentGroupId = groupChannel?.groupFamilyId;
-      final idsToDelete = isGroup && parentGroupId != null
-          ? sessionIds.where((id) => id != parentGroupId).toList()
-          : sessionIds;
-
-      for (final id in idsToDelete) {
-        await localDatabaseService.deleteChannelMessages(id);
-        await localDatabaseService.deleteChannel(id);
-      }
-
-      _emit(DismissOverlayEvent());
-      _emit(ShowSnackBarEvent('chat_batchDeleteSuccess:${idsToDelete.length}'));
-    } catch (e) {
-      _emit(DismissOverlayEvent());
-      _emit(ShowErrorSnackBarEvent('chat_clearSessionFailed:$e'));
-    }
-  }
-
-  // ---------------------------------------------------------------------------
-  // Group member management
-  // ---------------------------------------------------------------------------
-
-  Future<void> addGroupMember(RemoteAgent agent) async {
-    if (currentChannelId == null) return;
-
-    await localDatabaseService.addChannelMember(currentChannelId!, agent.id);
-
-    final systemMsg = await chatService.notifyGroupMembershipChange(
-      currentChannelId!,
-      agent.id,
-      agent.name,
-      isJoin: true,
-    );
-    messages.add(systemMsg);
-    messageIdMap[systemMsg.id] = systemMsg;
-    _notify();
-    _emit(RequestScrollToBottomEvent());
-
-    await refreshGroupMembers();
-  }
-
-  Future<void> removeGroupMember(RemoteAgent agent) async {
-    if (currentChannelId == null) return;
-
-    await localDatabaseService.removeChannelMember(currentChannelId!, agent.id);
-
-    final systemMsg = await chatService.notifyGroupMembershipChange(
-      currentChannelId!,
-      agent.id,
-      agent.name,
-      isJoin: false,
-    );
-    messages.add(systemMsg);
-    messageIdMap[systemMsg.id] = systemMsg;
-    _notify();
-    _emit(RequestScrollToBottomEvent());
-
-    await refreshGroupMembers();
-  }
-
-  Future<void> refreshGroupMembers() async {
-    if (currentChannelId == null) return;
-    final userId = getUserId();
-
-    final channel = await localDatabaseService.getChannelById(currentChannelId!);
-    final memberIds = await localDatabaseService.getChannelMemberIds(currentChannelId!);
-    final agentIdsList = memberIds.where((id) => id != userId && id != 'user').toList();
-    final agents = <RemoteAgent>[];
-    for (final aid in agentIdsList) {
-      final agent = await localDatabaseService.getRemoteAgentById(aid);
-      if (agent != null) agents.add(agent);
-    }
-
-    groupAgents = agents;
-    groupChannel = channel;
-    groupAdminAgentId = channel?.adminAgentId;
-    _notify();
-  }
-
-  Future<List<ChannelMember>> saveMemberGroupBio(RemoteAgent agent, String? newGroupBio) async {
-    if (currentChannelId == null) return groupChannel?.members ?? [];
-
-    final parentGroupId = groupChannel?.groupFamilyId ?? currentChannelId!;
-    final sessions = await localDatabaseService.getGroupSessions(parentGroupId);
-    for (final session in sessions) {
-      await localDatabaseService.updateChannelMemberGroupBio(session.id, agent.id, newGroupBio);
-    }
-
-    await refreshGroupMembers();
-    return groupChannel?.members ?? [];
   }
 
   List<String> parseMentionedAgentIds(String content) {
@@ -2903,4 +2165,23 @@ class ChatController extends ChangeNotifier with InteractiveStreamingContext {
     agentAvatar = avatar;
     _notify();
   }
+}
+
+/// 聊天页面控制器。
+///
+/// 在 [_ChatControllerBase] 的状态与核心逻辑之上，通过 mixin 组合会话管理
+/// （[_SessionOps]）与群成员管理（[_GroupMemberOps]）两个职责模块。
+class ChatController extends _ChatControllerBase
+    with _SessionOps, _GroupMemberOps, _InteractionOps {
+  ChatController({
+    required super.agentId,
+    super.initialAgentName,
+    super.initialAgentAvatar,
+    super.initialChannelId,
+    super.embedded,
+    super.onClose,
+    super.onSwitchChannel,
+    required super.getUserId,
+    required super.getUserName,
+  });
 }

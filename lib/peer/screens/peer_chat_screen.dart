@@ -7,6 +7,7 @@ import '../models/peer_message.dart';
 import '../services/peer_connection_manager.dart';
 import '../services/peer_pairing_service.dart';
 import '../services/peer_storage_service.dart';
+import 'peer_settings_screen.dart';
 
 /// P2P 聊天页面
 class PeerChatScreen extends StatefulWidget {
@@ -189,39 +190,19 @@ class _PeerChatScreenState extends State<PeerChatScreen> {
     });
   }
 
-  Future<void> _editDisplayName() async {
-    final newName = await showDialog<String>(
-      context: context,
-      builder: (ctx) {
-        final controller = TextEditingController(text: _displayName);
-        return AlertDialog(
-          title: const Text('修改备注'),
-          content: TextField(
-            controller: controller,
-            autofocus: true,
-            decoration: const InputDecoration(
-              hintText: '输入备注名称',
-              border: OutlineInputBorder(),
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(ctx),
-              child: const Text('取消'),
-            ),
-            FilledButton(
-              onPressed: () => Navigator.pop(ctx, controller.text.trim()),
-              child: const Text('保存'),
-            ),
-          ],
-        );
-      },
-    );
-
-    if (newName != null && newName.isNotEmpty && newName != _displayName) {
-      await PeerStorageService().updateDeviceName(widget.peer.id, newName);
-      if (mounted) {
-        setState(() => _displayName = newName);
+  Future<void> _openSettings() async {
+    final deleted = await PeerSettingsScreen.show(context, widget.peer);
+    if (deleted == true && mounted) {
+      // peer 被删除了，尝试退出聊天页
+      // 在嵌入模式下 pop 可能无效（由父组件通过事件监听处理）
+      if (Navigator.of(context).canPop()) {
+        Navigator.of(context).pop();
+      }
+    } else {
+      // 可能改了名称，重新加载
+      final updatedPeer = await PeerStorageService().getPeerById(widget.peer.id);
+      if (updatedPeer != null && mounted) {
+        setState(() => _displayName = updatedPeer.deviceName);
       }
     }
   }
@@ -235,18 +216,53 @@ class _PeerChatScreenState extends State<PeerChatScreen> {
 
   @override
   Widget build(BuildContext context) {
+    // 嵌入桌面右面板时没有返回按钮（leading），title 会贴左边界；
+    // 此时给一点左间距，移动端有返回箭头则保持紧凑。
+    final hasLeading = Navigator.of(context).canPop();
     return Scaffold(
       appBar: AppBar(
+        titleSpacing: hasLeading ? 0 : 16,
         title: GestureDetector(
-          onTap: _editDisplayName,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+          onTap: _openSettings,
+          child: Row(
             children: [
-              Text(_displayName),
-              Text(
-                _connectionStateText(),
-                style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                  color: _connectionStateColor(),
+              Container(
+                width: 36,
+                height: 36,
+                decoration: BoxDecoration(
+                  color: Colors.teal[50],
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                alignment: Alignment.center,
+                child: Icon(Icons.smartphone, size: 18, color: Colors.teal[600]),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Flexible(
+                          child: Text(
+                            _displayName,
+                            style: const TextStyle(fontSize: 16),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                        if (widget.peer.pairingRole != null) ...[
+                          const SizedBox(width: 6),
+                          _buildRoleBadge(),
+                        ],
+                      ],
+                    ),
+                    Text(
+                      _connectionStateText(),
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: _connectionStateColor(),
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ],
@@ -393,6 +409,33 @@ class _PeerChatScreenState extends State<PeerChatScreen> {
                 color: isConnected ? Colors.white : Colors.grey[500],
               ),
             ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildRoleBadge() {
+    final isInitiator = widget.peer.pairingRole == PeerPairingRole.initiator;
+    final color = isInitiator ? Colors.indigo : Colors.teal;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.12),
+        borderRadius: BorderRadius.circular(6),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            isInitiator ? Icons.call_made : Icons.call_received,
+            size: 11,
+            color: color,
+          ),
+          const SizedBox(width: 3),
+          Text(
+            widget.peer.pairingRoleShortLabel ?? '',
+            style: TextStyle(fontSize: 11, color: color),
           ),
         ],
       ),

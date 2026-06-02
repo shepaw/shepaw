@@ -23,6 +23,9 @@ class ProtocolRouter {
       case ProtocolType.custom:
         await _handleCustomMessage(agent, message);
         break;
+      case ProtocolType.peer:
+        throw Exception('Peer protocol is not routed through ProtocolRouter; '
+            'use PeerConnectionManager via AgentMessagingService.');
     }
   }
 
@@ -35,6 +38,9 @@ class ProtocolRouter {
       case ProtocolType.custom:
         yield* _handleCustomStreamMessage(agent, message);
         break;
+      case ProtocolType.peer:
+        throw Exception('Peer protocol is not routed through ProtocolRouter; '
+            'use PeerConnectionManager via AgentMessagingService.');
     }
   }
 
@@ -97,50 +103,54 @@ class ProtocolRouter {
     try {
       final connection = await _getOrCreateACPConnection(agent);
       final responseCompleter = Completer<String>();
-      String content = '';
+      final content = StringBuffer();
+      final taskId = message.id;
 
-      connection.onTextContent = (data) {
-        final chunk = data['content'] as String? ?? '';
-        content += chunk;
-      };
+      connection.registerTaskCallbacks(taskId, TaskCallbacks(
+        onTextContent: (data) {
+          content.write(data['content'] as String? ?? '');
+        },
+        onTaskCompleted: (data) {
+          if (!responseCompleter.isCompleted) {
+            responseCompleter.complete(content.toString());
+          }
+        },
+        onTaskError: (data) {
+          if (!responseCompleter.isCompleted) {
+            responseCompleter.completeError(
+              Exception(data['message'] ?? 'Task error'),
+            );
+          }
+        },
+      ));
 
-      connection.onTaskCompleted = (data) {
-        if (!responseCompleter.isCompleted) {
-          responseCompleter.complete(content);
-        }
-      };
+      try {
+        await connection.sendChatMessage(
+          taskId: taskId,
+          sessionId: message.channelId ?? '',
+          message: message.content,
+          userId: message.from.id,
+          messageId: message.id,
+          systemPrompt: agent.metadata['system_prompt'] as String?,
+        );
 
-      connection.onTaskError = (data) {
-        if (!responseCompleter.isCompleted) {
-          responseCompleter.completeError(
-            Exception(data['message'] ?? 'Task error'),
-          );
-        }
-      };
+        final responseContent = await responseCompleter.future;
 
-      await connection.sendChatMessage(
-        taskId: message.id,
-        sessionId: message.channelId ?? '',
-        message: message.content,
-        userId: message.from.id,
-        messageId: message.id,
-        systemPrompt: agent.metadata['system_prompt'] as String?,
-      );
-
-      final responseContent = await responseCompleter.future;
-
-      yield Message(
-        id: '${message.id}_response',
-        from: MessageFrom(
-          id: agent.id,
-          type: 'agent',
-          name: agent.name,
-        ),
-        channelId: message.channelId,
-        type: MessageType.text,
-        content: responseContent,
-        timestampMs: DateTime.now().millisecondsSinceEpoch,
-      );
+        yield Message(
+          id: '${message.id}_response',
+          from: MessageFrom(
+            id: agent.id,
+            type: 'agent',
+            name: agent.name,
+          ),
+          channelId: message.channelId,
+          type: MessageType.text,
+          content: responseContent,
+          timestampMs: DateTime.now().millisecondsSinceEpoch,
+        );
+      } finally {
+        connection.unregisterTaskCallbacks(taskId);
+      }
     } catch (e) {
       throw Exception('ACP stream routing failed: $e');
     }
@@ -164,6 +174,8 @@ class ProtocolRouter {
         return true;
       case ProtocolType.custom:
         return false;
+      case ProtocolType.peer:
+        return true;
     }
   }
 
@@ -172,6 +184,8 @@ class ProtocolRouter {
       case ProtocolType.acp:
         return true;
       case ProtocolType.custom:
+        return false;
+      case ProtocolType.peer:
         return false;
     }
   }
@@ -190,6 +204,8 @@ class ProtocolRouter {
         ];
       case ProtocolType.custom:
         return ['text_message'];
+      case ProtocolType.peer:
+        return ['text_message', 'streaming'];
     }
   }
 
@@ -201,6 +217,8 @@ class ProtocolRouter {
         return _validateACPConfiguration(agent);
       case ProtocolType.custom:
         return _validateCustomConfiguration(agent);
+      case ProtocolType.peer:
+        return agent.sourcePeerId != null && agent.remoteAgentId != null;
     }
   }
 

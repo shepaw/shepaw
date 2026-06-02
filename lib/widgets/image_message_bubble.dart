@@ -12,7 +12,7 @@ import '../services/ws_file_transfer_service.dart';
 import '../services/acp_agent_connection.dart';
 import '../services/chat_service.dart';
 import '../services/peer_key_utils.dart';
-import '../main.dart' show globalACPServer;
+import '../service_locator.dart' show acpServerOrNull;
 import '../screens/image_viewer_screen.dart';
 
 /// Displays image messages with three download states:
@@ -255,9 +255,10 @@ class _ImageMessageBubbleState extends State<ImageMessageBubble> {
 
     // Try server connection (agent connected TO app)
     try {
-      if (globalACPServer.isRunning) {
+      final acp = acpServerOrNull;
+      if (acp != null && acp.isRunning) {
         return await WsFileTransferService().downloadViaServerConnection(
-          server: globalACPServer,
+          server: acp,
           agentId: agentId,
           fileId: fileId,
           onProgress: (received, total) {

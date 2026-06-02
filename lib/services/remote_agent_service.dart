@@ -1,7 +1,6 @@
 import 'package:uuid/uuid.dart';
 import '../models/remote_agent.dart';
 import 'local_database_service.dart';
-import 'local_llm_agent_service.dart';
 import 'logger_service.dart';
 import 'token_service.dart';
 import 'acp_agent_connection.dart';
@@ -388,7 +387,7 @@ class RemoteAgentService {
     }
 
     // 本地 agent 不依赖远端 endpoint，跳过健康检查
-    if (LocalLLMAgentService.instance.isLocalAgent(agent)) {
+    if (agent.isLocal) {
       return true;
     }
 

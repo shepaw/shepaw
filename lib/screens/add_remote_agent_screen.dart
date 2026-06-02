@@ -7,10 +7,9 @@ import '../models/model_definition.dart';
 import '../models/remote_agent.dart';
 import '../services/model_registry.dart';
 import '../services/remote_agent_service.dart';
-import '../services/local_database_service.dart';
 import '../services/local_file_storage_service.dart';
 import '../services/noise_identity.dart';
-import '../services/token_service.dart';
+import '../service_locator.dart' show getIt;
 import '../utils/layout_utils.dart';
 import '../widgets/avatar_image.dart';
 import 'pairing_qr_scanner_screen.dart';
@@ -101,9 +100,7 @@ class _AddRemoteAgentScreenState extends State<AddRemoteAgentScreen> {
   @override
   void initState() {
     super.initState();
-    final dbService = LocalDatabaseService();
-    final tokenService = TokenService(dbService);
-    _agentService = RemoteAgentService(dbService, tokenService);
+    _agentService = getIt<RemoteAgentService>();
     // Auto-parse token + agentId from a full URL pasted into the endpoint field
     _endpointController.addListener(_onEndpointChanged);
 

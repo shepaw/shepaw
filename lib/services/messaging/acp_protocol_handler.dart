@@ -150,8 +150,8 @@ class ACPProtocolHandler {
           formDataCapture = Map<String, dynamic>.from(data);
           activeTask.onForm?.call(data);
         },
-        onFileMessage: (data) {
-          activeTask.onFileMessage?.call(data);
+        onFileMessage: (data) async {
+          await activeTask.onFileMessage?.call(data);
         },
         onMessageMetadata: (data) {
           messageMetadataExtra = Map<String, dynamic>.from(data);

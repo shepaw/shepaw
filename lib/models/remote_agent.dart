@@ -4,7 +4,6 @@ import 'model_routing_config.dart';
 import 'model_definition.dart';
 import 'llm_provider_config.dart';
 import 'prompt_stack_config.dart';
-import '../services/channel_tunnel_service.dart';
 import '../services/model_registry.dart';
 
 /// Detect and repair a string corrupted by a UTF-16 encoding bug.
@@ -35,7 +34,15 @@ Map<String, dynamic> _repairMetadata(Map<String, dynamic> m) {
 /// 协议类型
 enum ProtocolType {
   acp,
-  custom;
+  custom,
+
+  /// 通过已配对设备的 P2P 隧道访问对端开放的本地 agent。
+  ///
+  /// 此类 agent 由 [PeerAgentClientService] 在配对设备连上后自动注入，
+  /// `metadata['source_peer_id']` 指向来源配对设备，`metadata['remote_agent_id']`
+  /// 指向对端那个本地 agent 的 UUID。发送路径走 [PeerConnectionManager] 而非
+  /// ACP / 本机 LLM。
+  peer;
 
   String toJson() => name;
 
@@ -311,6 +318,13 @@ class RemoteAgent {
   /// Whether multi-modal model routing is configured.
   bool get hasModelRouting => !modelRouting.isEmpty;
 
+  /// 是否为本地 LLM agent（由 App 直接驱动 LLM 循环，无需远端 endpoint）。
+  ///
+  /// 判定依据：metadata 中存在非空的 `llm_provider`。这是「本地 vs 远端 ACP」
+  /// agent 区分的唯一权威入口，全代码库应统一使用本 getter，避免在各处散落
+  /// `metadata.containsKey('llm_provider')` 之类的隐式判断。
+  bool get isLocal => metadata['llm_provider'] != null;
+
   /// Whether this agent can handle content of the given [modality].
   ///
   /// - Text is always supported.
@@ -321,7 +335,7 @@ class RemoteAgent {
     if (modality == ModalityType.text) return true;
 
     // Remote ACP agents — assume capable (remote side handles it).
-    if (!metadata.containsKey('llm_provider')) return true;
+    if (!isLocal) return true;
 
     // Check enabled tool models for the modality.
     // Priority 1: Tool models with explicit model type tags
@@ -367,16 +381,12 @@ class RemoteAgent {
     return false;
   }
 
-  /// 是否允许外部访问（仅本地 agent 有意义）
+  /// 是否允许外部访问（仅本地 agent 有意义）。
+  ///
+  /// 开启后，该本地 agent 会对已配对设备（peer）可见，对方可通过 P2P 隧道访问。
+  /// 旧的「公网 Channel + ACP-over-channel」暴露方式已废弃。
   bool get allowExternalAccess {
     return metadata['allow_external_access'] == true;
-  }
-
-  /// 该 agent 的公网 channel 配置（存 metadata['channel_config']）
-  ChannelTunnelConfig? get channelConfig {
-    final raw = metadata['channel_config'];
-    if (raw == null) return null;
-    return ChannelTunnelConfig.fromJson(Map<String, dynamic>.from(raw as Map));
   }
 
   /// 是否在线
@@ -446,8 +456,22 @@ class RemoteAgent {
         return 'ACP';
       case ProtocolType.custom:
         return '自定义';
+      case ProtocolType.peer:
+        return '配对设备';
     }
   }
+
+  /// 是否为「来自配对设备的 agent」（走 P2P 隧道访问对端本地 agent）。
+  bool get isPeerAgent => protocol == ProtocolType.peer;
+
+  /// 来源配对设备的 peerId（仅 [isPeerAgent] 有意义）。
+  String? get sourcePeerId => metadata['source_peer_id'] as String?;
+
+  /// 对端那个本地 agent 的 UUID（仅 [isPeerAgent] 有意义）。
+  String? get remoteAgentId => metadata['remote_agent_id'] as String?;
+
+  /// 来源配对设备的显示名（仅 [isPeerAgent] 有意义）。
+  String? get sourcePeerName => metadata['source_peer_name'] as String?;
 
   /// 获取连接类型显示名称
   String get connectionTypeName {

@@ -16,6 +16,7 @@ import '../models/pending_attachment.dart';
 import '../models/remote_agent.dart';
 import '../models/model_routing_config.dart';
 import '../services/audio_recording_service.dart';
+import '../services/local_database_service.dart';
 import '../utils/layout_utils.dart';
 import '../l10n/app_localizations.dart';
 import '../controllers/chat_controller.dart';
@@ -1653,7 +1654,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     if (agentId == null || agentId != SheService.sheId) return;
     final agent = await _controller.localDatabaseService.getRemoteAgentById(agentId);
     if (!mounted) return;
-    final needsConfig = agent != null && agent.metadata['llm_provider'] == null;
+    final needsConfig = agent != null && !agent.isLocal;
     if (needsConfig != _sheNeedsConfig) {
       setState(() => _sheNeedsConfig = needsConfig);
     }

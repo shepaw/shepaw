@@ -55,6 +55,9 @@ class PeerConnection {
   DateTime? _lastActivity;
   bool _closed = false;
 
+  /// 连接是否已被关闭（被新的入站连接替换或主动断开）
+  bool get isClosed => _closed;
+
   /// 发送队列锁 — 保证 encrypt + send 的原子性（防止 nonce 乱序）
   Future<void> _sendLock = Future.value();
 
@@ -72,6 +75,23 @@ class PeerConnection {
   /// 收到的回执事件
   final _ackController = StreamController<PeerAckEvent>.broadcast();
   Stream<PeerAckEvent> get acks => _ackController.stream;
+
+  /// 收到的控制消息（agent-over-peer 等非聊天控制帧）。
+  /// 发出的是解密后的原始 JSON（含 `type` 字段）。
+  final _controlController = StreamController<Map<String, dynamic>>.broadcast();
+  Stream<Map<String, dynamic>> get control => _controlController.stream;
+
+  /// agent-over-peer 控制消息的 type 前缀。这些帧不走聊天持久化，
+  /// 而是通过 [control] 流交给上层服务处理。
+  static const Set<String> _controlTypes = {
+    'agent_list_req',
+    'agent_list_resp',
+    'agent_chat',
+    'agent_chunk',
+    'agent_done',
+    'agent_error',
+    'agent_cancel',
+  };
 
   /// 连接状态变化
   final _stateController = StreamController<PeerConnectionState>.broadcast();
@@ -110,13 +130,18 @@ class PeerConnection {
 
   /// 通过直接 WebSocket 连接对方（Initiator 侧）
   /// 用于主动连接已配对设备的 Channel 端点
-  Future<void> connectViaWebSocket(String endpoint) async {
+  ///
+  /// [timeout] 控制底层 TCP/WS 建连超时。内网端点不可达时应使用较短超时
+  /// （如 2s）以便快速回退到 Channel，避免长时间阻塞。
+  Future<void> connectViaWebSocket(
+    String endpoint, {
+    Duration timeout = const Duration(seconds: 10),
+  }) async {
     if (_closed) return;
     _setState(PeerConnectionState.connecting);
 
     try {
-      final ioSocket = await io.WebSocket.connect(endpoint)
-          .timeout(const Duration(seconds: 10));
+      final ioSocket = await io.WebSocket.connect(endpoint).timeout(timeout);
       _wsChannel = IOWebSocketChannel(ioSocket);
 
       // 先建立单一 subscription，用 Completer 取 msg2，之后继续用同一个 sub
@@ -169,6 +194,12 @@ class PeerConnection {
     _lastActivity = DateTime.now();
   }
 
+  /// 发送控制消息（agent-over-peer）。[json] 必须含 `type` 字段（agent_* 之一）。
+  Future<void> sendControl(Map<String, dynamic> json) async {
+    await _serializedSend(Uint8List.fromList(utf8.encode(jsonEncode(json))));
+    _lastActivity = DateTime.now();
+  }
+
   /// 发送心跳
   Future<void> _sendHeartbeat() async {
     await _serializedSend(Uint8List.fromList(utf8.encode(jsonEncode({
@@ -208,6 +239,7 @@ class PeerConnection {
     _setState(PeerConnectionState.disconnected);
     _messageController.close();
     _ackController.close();
+    _controlController.close();
     _stateController.close();
   }
 
@@ -286,7 +318,15 @@ class PeerConnection {
 
       _lastActivity = DateTime.now();
 
-      switch (json['type']) {
+      final type = json['type'];
+      if (type is String && _controlTypes.contains(type)) {
+        if (!_controlController.isClosed) {
+          _controlController.add(json);
+        }
+        return;
+      }
+
+      switch (type) {
         case 'message':
           final msg = PeerMessage.fromWireJson(
             json['payload'] as Map<String, dynamic>,
@@ -344,12 +384,26 @@ class PeerConnection {
     }
   }
 
+  /// 心跳发送间隔。
+  static const _heartbeatInterval = Duration(seconds: 30);
+
+  /// 活性超时阈值：超过该时长未收到任何帧（含对端 pong）即判定连接已死。
+  /// 取 4 个心跳周期，容忍手机短暂切后台/网络抖动，又能较快发现半开连接。
+  static const _livenessTimeout = Duration(seconds: 120);
+
   void _startHeartbeat() {
-    _heartbeatTimer = Timer.periodic(const Duration(seconds: 30), (_) {
-      // 检查超时（90s 无活动）
+    _heartbeatTimer = Timer.periodic(_heartbeatInterval, (_) {
+      // 半开连接（对端消失但 TCP FIN 未到达，relay/移动网络常见）不会触发
+      // onDone，必须靠活性检测主动断开。每次成功收帧都会刷新 _lastActivity，
+      // 因此活连接靠 30s 一次的 pong 持续刷新；超过阈值无任何活动 → 判定已死。
       if (_lastActivity != null &&
-          DateTime.now().difference(_lastActivity!) > const Duration(seconds: 90)) {
-        _log.warning('Heartbeat timeout for ${peer.deviceName}', tag: _tag);
+          DateTime.now().difference(_lastActivity!) > _livenessTimeout) {
+        _log.warning(
+          'Heartbeat timeout (no activity ${_livenessTimeout.inSeconds}s) '
+          'for ${peer.deviceName}, dropping connection',
+          tag: _tag,
+        );
+        // 标记断开会触发上层 _onDisconnected → 调度重连，重建可用路径。
         _setState(PeerConnectionState.disconnected);
         _heartbeatTimer?.cancel();
         return;

@@ -1,8 +1,7 @@
 import 'package:flutter/material.dart';
 import '../models/remote_agent.dart';
 import '../services/remote_agent_service.dart';
-import '../services/local_database_service.dart';
-import '../services/token_service.dart';
+import '../service_locator.dart' show getIt;
 import '../services/agent_memory_biz_service.dart';
 import '../services/logger_service.dart';
 import 'agent_memory_detail_screen.dart';
@@ -31,9 +30,7 @@ class _AgentMemoryManagementScreenState
   @override
   void initState() {
     super.initState();
-    final dbService = LocalDatabaseService();
-    final tokenService = TokenService(dbService);
-    _agentService = RemoteAgentService(dbService, tokenService);
+    _agentService = getIt<RemoteAgentService>();
     _loadAgents();
   }
 

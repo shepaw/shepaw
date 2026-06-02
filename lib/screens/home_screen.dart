@@ -6,7 +6,7 @@ import '../models/channel.dart';
 import '../services/local_api_service.dart';
 import '../services/local_database_service.dart';
 import '../services/remote_agent_service.dart';
-import '../services/token_service.dart';
+import '../service_locator.dart' show getIt;
 import '../services/chat_service.dart';
 import '../services/logger_service.dart';
 import 'remote_agent_list_screen.dart';
@@ -26,11 +26,11 @@ import '../widgets/avatar_image.dart';
 import '../services/message_search_service.dart';
 import '../l10n/app_localizations.dart';
 import '../providers/notification_provider.dart';
-import '../main.dart' show setGlobalNotificationProvider;
 import '../models/conversation_selection.dart';
 import '../peer/models/paired_peer.dart';
 import '../peer/models/peer_message.dart';
 import '../peer/screens/peer_chat_screen.dart';
+import '../peer/services/peer_connection.dart';
 import '../peer/services/peer_connection_manager.dart';
 import '../peer/services/peer_pairing_service.dart';
 import '../peer/services/peer_storage_service.dart';
@@ -116,6 +116,10 @@ class HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateMi
 
   // P2P 消息监听
   StreamSubscription? _peerMessageSub;
+  // P2P 事件监听（连接/断开/删除时刷新列表）
+  StreamSubscription? _peerEventSub;
+  // P2P 设备列表变化监听（新增配对/删除配对时刷新会话列表）
+  StreamSubscription? _peerListChangedSub;
 
   /// Public accessor so DesktopHomeScreen can trigger a refresh via GlobalKey.
   void reloadAgents() => _loadAgents();
@@ -139,10 +143,27 @@ class HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateMi
         setState(() {
           _peerLatestContent[msg.peerId] = msg.content;
           _peerLatestTime[msg.peerId] = msg.timestamp;
-          _peerUnreadCounts[msg.peerId] = (_peerUnreadCounts[msg.peerId] ?? 0) + 1;
+          // 桌面端当前正在查看该 peer 的聊天时，不增加未读数
+          final isCurrentlyViewing = widget.embedded &&
+              widget.selectedConversation?.peerId == msg.peerId;
+          if (!isCurrentlyViewing) {
+            _peerUnreadCounts[msg.peerId] = (_peerUnreadCounts[msg.peerId] ?? 0) + 1;
+          }
           _sortedConversations = _buildSortedConversations();
         });
       }
+    });
+
+    // 监听 P2P 断开事件刷新在线状态（连接/新增由 peerListChanged 统一处理，避免重复刷新）
+    _peerEventSub = PeerConnectionManager.instance.events.listen((event) {
+      if (mounted && event.type == PeerConnectionEventType.disconnected) {
+        _loadAgents();
+      }
+    });
+
+    // 监听 P2P 设备列表变化（新增/删除配对/连接建立）——立即刷新会话列表
+    _peerListChangedSub = PeerConnectionManager.instance.peerListChanged.listen((_) {
+      if (mounted) _loadAgents();
     });
 
     // 初始化动画控制器
@@ -162,7 +183,6 @@ class HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateMi
     super.didChangeDependencies();
     final notifProvider = context.read<NotificationProvider>();
     _chatService.setNotificationProvider(notifProvider);
-    setGlobalNotificationProvider(notifProvider);
   }
 
   @override
@@ -171,6 +191,8 @@ class HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateMi
     ChatService().typingChannelIds.removeListener(_onTypingChanged);
     _healthCheckTimer?.cancel();
     _peerMessageSub?.cancel();
+    _peerEventSub?.cancel();
+    _peerListChangedSub?.cancel();
     _searchController.dispose();
     _buttonAnimatedIcon.dispose();
     super.dispose();
@@ -441,8 +463,7 @@ class HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateMi
   void _runHealthCheckInBackground() {
     () async {
       try {
-        final tokenService = TokenService(_databaseService);
-        final remoteAgentService = RemoteAgentService(_databaseService, tokenService);
+        final remoteAgentService = getIt<RemoteAgentService>();
         await remoteAgentService.checkAllAgentsHealth(timeout: const Duration(seconds: 3));
 
         if (!mounted) return;
@@ -480,6 +501,11 @@ class HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateMi
       List<PairedPeer> peers = [];
       try {
         peers = await PeerConnectionManager.instance.getAllPeers();
+        // 清理已删除 peer 的陈旧预览缓存，避免会话列表残留旧设备
+        final liveIds = peers.map((p) => p.id).toSet();
+        _peerLatestContent.removeWhere((id, _) => !liveIds.contains(id));
+        _peerLatestTime.removeWhere((id, _) => !liveIds.contains(id));
+        _peerUnreadCounts.removeWhere((id, _) => !liveIds.contains(id));
         await _loadPeerPreviews(peers);
       } catch (_) {}
 
@@ -1294,14 +1320,24 @@ class HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateMi
                   Row(
                     children: [
                       Expanded(
-                        child: Text(
-                          agent.name,
-                          style: const TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.w500,
-                          ),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
+                        child: Row(
+                          children: [
+                            Flexible(
+                              child: Text(
+                                agent.name,
+                                style: const TextStyle(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.w500,
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                            if (agent.isPeerAgent) ...[
+                              const SizedBox(width: 6),
+                              _buildPeerSourceBadge(agent.sourcePeerName),
+                            ],
+                          ],
                         ),
                       ),
                       // 最近消息时间
@@ -1355,6 +1391,62 @@ class HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateMi
     );
   }
 
+  /// 连接角色小徽标：标记本机是发起方还是被连接方。
+  Widget _buildPeerRoleBadge(PairedPeer peer) {
+    final isInitiator = peer.pairingRole == PeerPairingRole.initiator;
+    final color = isInitiator ? Colors.indigo : Colors.teal;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(6),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            isInitiator ? Icons.call_made : Icons.call_received,
+            size: 11,
+            color: color,
+          ),
+          const SizedBox(width: 3),
+          Text(
+            peer.pairingRoleShortLabel ?? '',
+            style: TextStyle(fontSize: 10, color: color),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// 来源标识小徽标：标记该 agent 来自某台配对设备。
+  Widget _buildPeerSourceBadge(String? sourceName) {
+    final colorScheme = Theme.of(context).colorScheme;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      decoration: BoxDecoration(
+        color: colorScheme.primaryContainer.withValues(alpha: 0.5),
+        borderRadius: BorderRadius.circular(6),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.devices_outlined, size: 11, color: colorScheme.primary),
+          const SizedBox(width: 3),
+          ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 120),
+            child: Text(
+              sourceName ?? '配对设备',
+              style: TextStyle(fontSize: 10, color: colorScheme.primary),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildPeerTile(PairedPeer peer) {
     final isConnected = PeerConnectionManager.instance.getPeerState(peer.id) ==
         PeerConnectionState.connected;
@@ -1391,6 +1483,7 @@ class HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateMi
           children: [
             // 设备头像 + 未读红点
             Stack(
+              clipBehavior: Clip.none,
               children: [
                 Container(
                   width: 48,
@@ -1422,8 +1515,8 @@ class HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateMi
                 // 未读数
                 if (unreadCount > 0)
                   Positioned(
-                    right: -2,
-                    top: -2,
+                    right: -4,
+                    top: -4,
                     child: Container(
                       padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
                       decoration: BoxDecoration(
@@ -1447,14 +1540,24 @@ class HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateMi
                   Row(
                     children: [
                       Expanded(
-                        child: Text(
-                          peer.deviceName,
-                          style: const TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.w500,
-                          ),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
+                        child: Row(
+                          children: [
+                            Flexible(
+                              child: Text(
+                                peer.deviceName,
+                                style: const TextStyle(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.w500,
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                            if (peer.pairingRole != null) ...[
+                              const SizedBox(width: 6),
+                              _buildPeerRoleBadge(peer),
+                            ],
+                          ],
                         ),
                       ),
                       if (lastTime != null)

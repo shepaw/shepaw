@@ -8,7 +8,7 @@ import '../../services/logger_service.dart';
 import '../../services/local_database_service.dart';
 import '../services/scheduled_task_service.dart';
 import '../../services/remote_agent_service.dart';
-import '../../services/token_service.dart';
+import '../../service_locator.dart' show getIt;
 
 /// Screen for managing scheduled tasks.
 class ScheduledTasksManagementScreen extends StatefulWidget {
@@ -61,8 +61,7 @@ class _ScheduledTasksManagementScreenState
 
   Future<List<RemoteAgent>> _loadAgents() async {
     try {
-      final tokenService = TokenService(_db);
-      final agentService = RemoteAgentService(_db, tokenService);
+      final agentService = getIt<RemoteAgentService>();
       return await agentService.getAllAgents();
     } catch (e) {
       LoggerService().error('Failed to load agents', error: e);

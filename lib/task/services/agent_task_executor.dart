@@ -1,7 +1,6 @@
 import '../../services/chat_service.dart';
-import '../../services/local_database_service.dart';
 import '../../services/remote_agent_service.dart';
-import '../../services/token_service.dart';
+import '../../service_locator.dart' show getIt;
 import '../models/scheduled_task.dart';
 import 'task_executor.dart';
 
@@ -13,9 +12,7 @@ class AgentTaskExecutor implements TaskExecutor {
       throw Exception('AgentTaskExecutor: task.agentId is null for task ${task.id}');
     }
 
-    final db = LocalDatabaseService();
-    final tokenService = TokenService(db);
-    final agentService = RemoteAgentService(db, tokenService);
+    final agentService = getIt<RemoteAgentService>();
     final agent = await agentService.getAgentById(task.agentId!);
 
     if (agent == null) {

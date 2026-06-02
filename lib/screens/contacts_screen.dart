@@ -3,7 +3,7 @@ import '../l10n/app_localizations.dart';
 import '../models/agent.dart';
 import '../models/channel.dart';
 import '../peer/models/paired_peer.dart';
-import '../peer/screens/peer_chat_screen.dart';
+import '../peer/screens/peer_settings_screen.dart';
 import '../peer/screens/peer_pairing_screen.dart';
 import '../peer/services/peer_connection_manager.dart';
 import '../peer/services/peer_storage_service.dart';
@@ -389,7 +389,7 @@ class _ContactsScreenState extends State<ContactsScreen>
         ),
       ),
       trailing: const Icon(Icons.chevron_right, color: Colors.grey),
-      onTap: () => _openPeerChat(peer),
+      onTap: () => _openPeerDetail(peer),
       onLongPress: () => _showPeerActions(peer),
     );
   }
@@ -497,12 +497,9 @@ class _ContactsScreenState extends State<ContactsScreen>
     }
   }
 
-  void _openPeerChat(PairedPeer peer) {
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (context) => PeerChatScreen(peer: peer),
-      ),
-    );
+  Future<void> _openPeerDetail(PairedPeer peer) async {
+    await PeerSettingsScreen.show(context, peer);
+    // 详情页可能改了备注或删除了配对，返回后刷新列表。
+    if (mounted) _loadData();
   }
 }

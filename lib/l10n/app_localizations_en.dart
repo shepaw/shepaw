@@ -2849,7 +2849,11 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get agent_allowExternalAccessDesc =>
-      'When enabled, external apps can join conversations as a Remote Agent';
+      'When enabled, paired devices can see and chat with this agent in their conversation list';
+
+  @override
+  String get agent_externalAccessPeerEnabled =>
+      'Enabled: paired devices can see and chat with this agent in their conversation list';
 
   @override
   String get agent_externalAccessUrl => 'Access URL';

@@ -3,62 +3,29 @@ import 'dart:convert';
 import 'dart:io' show Platform;
 import 'dart:ui' show PlatformDispatcher;
 import 'package:flutter/foundation.dart' show kIsWeb;
-import 'package:shared_preferences/shared_preferences.dart';
-import 'package:uuid/uuid.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:sqflite_common_ffi/sqflite_ffi.dart';
-import 'package:sqflite_common_ffi_web/sqflite_ffi_web.dart';
 import 'package:desktop_multi_window/desktop_multi_window.dart';
 import 'l10n/app_localizations.dart';
 import 'services/password_service.dart';
-import 'services/local_database_service.dart';
-import 'services/local_api_service.dart';
-import 'services/local_storage_service.dart';
 import 'services/permission_service.dart';
-import 'services/acp_server_service.dart';
-import 'services/remote_agent_service.dart';
-import 'services/token_service.dart';
-import 'services/notification_service.dart';
-import 'services/update_notification_service.dart';
-import 'services/app_lifecycle_service.dart';
-import 'services/skill_registry.dart';
-import 'services/cli_tool_registry.dart';
-import 'clis/shepaw/shepaw_cli.dart';
-import 'services/model_registry.dart';
 import 'services/logger_service.dart';
-import 'services/foreground_task_service.dart';
-import 'task/services/scheduled_task_service.dart';
-import 'services/trace_service.dart';
-import 'services/channel_tunnel_service.dart';
-import 'peer/services/peer_connection_manager.dart';
-import 'services/she_service.dart';
 import 'package:flutter_foreground_task/flutter_foreground_task.dart';
 import 'sub_window_app.dart';
+import 'app_bootstrap.dart';
+import 'service_locator.dart';
 
-import 'models/message.dart';
 import 'providers/app_state.dart';
 import 'providers/locale_provider.dart';
 import 'providers/notification_provider.dart';
 import 'screens/password_setup_screen.dart';
 import 'screens/login_screen.dart';
 import 'screens/adaptive_home_screen.dart';
-// 全局 ACP Server 实例
-late ACPServerService globalACPServer;
 
-/// ACP Server 端口的 SharedPreferences 键
-const kAcpServerPortKey = 'acp_server_port';
-const kAcpServerDefaultPort = 18790;
-/// ACP Server 是否启用的 SharedPreferences 键（默认开启）
-const kAcpServerEnabledKey = 'acp_server_enabled';
-/// ACP Server 连接 Token 的 SharedPreferences 键
-const kAcpServerTokenKey = 'acp_server_token';
-
-// 全局 Navigator Key（用于在任意位置弹出对话框）
-final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
-
-// 全局 PermissionService 引用
-PermissionService? globalPermissionService;
+// 重新导出 ACP 常量，保持 settings_screen / remote_agent_detail_screen 等
+// 现有 `import '../main.dart' show kAcpServer...` 的引用不受影响。
+export 'app_bootstrap.dart'
+    show kAcpServerPortKey, kAcpServerDefaultPort, kAcpServerEnabledKey, kAcpServerTokenKey;
 
 Future<void> main(List<String> args) async {
   // 用 runZonedGuarded 捕获 Zone 内未处理异常，必须在 ensureInitialized 之前建立 zone，
@@ -84,56 +51,18 @@ Future<void> main(List<String> args) async {
 
       // --- Main window startup ---
 
-      // Web/Windows平台初始化FFI数据库工厂
-      if (kIsWeb) {
-        sqfliteFfiInit();
-        databaseFactory = databaseFactoryFfiWeb;
-      } else if (Platform.isWindows || Platform.isLinux) {
-        sqfliteFfiInit();
-        databaseFactory = databaseFactoryFfi;
-      }
+      // 初始化服务定位器（注册 navigatorKey 等核心对象）
+      setupServiceLocator();
 
       // 初始化日志服务（最先初始化，确保后续日志可写入文件）
       await LoggerService().initialize();
 
-      // 初始化本地数据库
-      await _initializeLocalStorage();
-
-      // 检查远端 Agent 健康状态
-      await _checkRemoteAgentsHealth();
-
-      // 初始化 She（内置守护 Agent）
-      await SheService.instance.ensureSheExists();
-
-      // 初始化 ACP Server
-      await _initializeACPServer();
-
-      // 自动启动 Channel Tunnel（如有本地 agent 配置了公网穿透）
-      await _initializeChannelTunnel();
-
-      // 启动 P2P 连接管理器（后台监听入站连接、自动重连已配对设备）
-      await _initializePeerConnection();
-
-      // Initialize notification and lifecycle services
-      AppLifecycleService().init();
-      await NotificationService().init();
-      UpdateNotificationService().init(navigatorKey: navigatorKey);
-      ForegroundTaskService().init();
-      // Initialize scheduled task service
-      await ScheduledTaskService().startScheduler();
-
-      // Initialize skill registry
-      await SkillRegistry.instance.initialize();
-
-      // Initialize external CLI tool registry and load into ShepawCLI
-      await CliToolRegistry.instance.initialize();
-      ShepawCLI.instance.reloadExternalTools();
-
-      // Initialize tool model registry
-      await ModelRegistry.instance.initialize();
-
-      // Initialize trace database and run retention cleanup
-      await TraceService.instance.cleanup();
+      // 执行完整启动编排（数据库、ACP、P2P、通知、注册表等）
+      final boot = await AppBootstrap.initialize(navigatorKey: navigatorKey);
+      registerBootstrapServices(
+        acpServer: boot.acpServer,
+        permissionService: boot.permissionService,
+      );
 
       // 捕获 Flutter 框架异常
       FlutterError.onError = (details) {
@@ -187,239 +116,6 @@ Future<void> _runSubWindow(String rawArgs) async {
     localeCode: locale,
   ));
 }
-/// 初始化本地存储
-Future<void> _initializeLocalStorage() async {
-  final _log = LoggerService();
-  try {
-    _log.info('Initializing local storage...', tag: 'App');
-
-    // 初始化数据库
-    final db = LocalDatabaseService();
-    await db.database; // 触发数据库初始化
-
-    // 初始化示例数据（仅首次启动）
-    final api = LocalApiService();
-    await api.initializeSampleData();
-
-    _log.info('Local storage initialized', tag: 'App');
-  } catch (e) {
-    _log.error('Local storage initialization failed', tag: 'App', error: e);
-  }
-}
-
-/// 检查远端 Agent 健康状态
-Future<void> _checkRemoteAgentsHealth() async {
-  final _log = LoggerService();
-  try {
-    _log.info('Checking remote agents health...', tag: 'App');
-
-    final databaseService = LocalDatabaseService();
-    final tokenService = TokenService(databaseService);
-    final remoteAgentService = RemoteAgentService(databaseService, tokenService);
-
-    // 检查所有 Agent 的健康状态
-    final onlineCount = await remoteAgentService.checkAllAgentsHealth(
-      timeout: const Duration(seconds: 3),
-    );
-
-    _log.info('Remote agents health check done, online: $onlineCount', tag: 'App');
-  } catch (e) {
-    _log.error('Remote agents health check failed', tag: 'App', error: e);
-  }
-}
-
-/// 初始化 ACP Server
-Future<void> _initializeACPServer() async {
-  final _log = LoggerService();
-  try {
-    _log.info('Initializing ACP Server...', tag: 'App');
-
-    // 创建服务实例
-    final storageService = LocalStorageService();
-    final permissionService = PermissionService(storageService);
-    final apiService = LocalApiService();
-
-    // 初始化权限数据库
-    await permissionService.initialize();
-
-    // 保存全局引用
-    globalPermissionService = permissionService;
-
-    // 读取持久化的端口配置
-    final prefs = await SharedPreferences.getInstance();
-    final port = prefs.getInt(kAcpServerPortKey) ?? kAcpServerDefaultPort;
-
-    // 读取或自动生成连接 Token
-    String? token = prefs.getString(kAcpServerTokenKey);
-    if (token == null || token.isEmpty) {
-      token = const Uuid().v4();
-      await prefs.setString(kAcpServerTokenKey, token);
-      _log.info('Generated new ACP Server token', tag: 'App');
-    }
-
-    // 创建 ACP Server
-    globalACPServer = ACPServerService(
-      config: ACPServerConfig(
-        host: '0.0.0.0',
-        port: port,
-        heartbeatInterval: 30,
-        token: token,
-      ),
-      permissionService: permissionService,
-      apiService: apiService,
-      databaseService: LocalDatabaseService(),
-    );
-
-    // Handle ui.fileMessage notifications from inbound Agents
-    globalACPServer.onFileMessage = (agentId, agentName, params) async {
-      try {
-        final url = params['url'] as String?;
-        final filename = params['filename'] as String?;
-        final mimeType = params['mime_type'] as String?;
-        final size = params['size'] as int?;
-        final thumbnailBase64 = params['thumbnail_base64'] as String?;
-        final fileId = params['file_id'] as String?;
-
-        // 需要至少有 url 或 file_id 之一
-        if ((url == null || url.isEmpty) && (fileId == null || fileId.isEmpty)) {
-          _log.warning('ui.fileMessage missing url and file_id from $agentName', tag: 'ACPServer');
-          return;
-        }
-
-        // 从 HTTP url 路径中提取 file_id（兼容 http://host/files/{id} 格式）
-        String? resolvedFileId = fileId;
-        if (resolvedFileId == null && url != null && url.isNotEmpty) {
-          try {
-            final uri = Uri.parse(url);
-            if (uri.pathSegments.length >= 2 &&
-                uri.pathSegments[uri.pathSegments.length - 2] == 'files') {
-              resolvedFileId = uri.pathSegments.last;
-            }
-          } catch (_) {}
-        }
-
-        final isImage = mimeType != null && mimeType.startsWith('image/');
-        final msgType = isImage ? MessageType.image : MessageType.file;
-
-        final metadata = <String, dynamic>{
-          'name': filename ?? 'file',
-          'type': mimeType ?? 'application/octet-stream',
-          'size': size ?? 0,
-          'download_status': 'pending',
-        };
-
-        if (url != null && url.isNotEmpty) metadata['source_url'] = url;
-        if (resolvedFileId != null) metadata['file_id'] = resolvedFileId;
-        if (thumbnailBase64 != null && thumbnailBase64.isNotEmpty) {
-          metadata['thumbnail_base64'] = thumbnailBase64;
-        }
-
-        final databaseService = LocalDatabaseService();
-        final channelId = params['channel_id'] as String? ?? '';
-        final messageId = 'file_${DateTime.now().millisecondsSinceEpoch}';
-
-        await databaseService.createMessage(
-          id: messageId,
-          channelId: channelId,
-          senderId: agentId,
-          senderType: 'agent',
-          senderName: agentName,
-          content: isImage ? '[Image: ${filename ?? "image"}]' : '[File: ${filename ?? "file"}]',
-          messageType: msgType.toString().split('.').last,
-          metadata: metadata,
-        );
-
-        _log.info('File message saved (pending) from $agentName: ${filename ?? "file"}', tag: 'ACPServer');
-
-        _maybeShowFileNotification(
-          channelId: channelId,
-          senderId: agentId,
-          senderName: agentName,
-          content: isImage ? '[Image: ${filename ?? "image"}]' : '[File: ${filename ?? "file"}]',
-        );
-      } catch (e) {
-        _log.error('Failed to handle file message', tag: 'ACPServer', error: e);
-      }
-    };
-
-    // 启动服务器（仅当用户开启了本地服务开关时）
-    final enabled = prefs.getBool(kAcpServerEnabledKey) ?? true;
-    if (enabled) {
-      await globalACPServer.start();
-      _log.info('ACP Server started (port: $port)', tag: 'App');
-    } else {
-      _log.info('ACP Server disabled by user, skipping start', tag: 'App');
-    }
-  } catch (e) {
-    _log.error('ACP Server initialization failed', tag: 'App', error: e);
-  }
-}
-
-/// 自动启动 Channel Tunnel
-/// 扫描所有本地 agent，找到第一个 allowExternalAccess=true 且配置了 channelConfig 的
-/// agent，用其配置启动隧道。
-Future<void> _initializeChannelTunnel() async {
-  final log = LoggerService();
-  try {
-    final db = LocalDatabaseService();
-    final tokenService = TokenService(db);
-    final agentService = RemoteAgentService(db, tokenService);
-    final allAgents = await agentService.getAllAgents();
-    for (final agent in allAgents) {
-      final cfg = agent.channelConfig;
-      if (cfg != null && agent.allowExternalAccess) {
-        log.info(
-          'Auto-starting channel tunnel for agent "${agent.name}" (channel_id=${cfg.channelId})',
-          tag: 'App',
-        );
-        await ChannelTunnelService.instance.startWithConfig(cfg);
-        return;
-      }
-    }
-    log.debug('No agent with channel tunnel config found, skipping', tag: 'App');
-  } catch (e) {
-    log.error('Channel tunnel auto-start failed', tag: 'App', error: e);
-  }
-}
-
-NotificationProvider? _globalNotificationProvider;
-
-/// 启动 P2P 连接管理器
-Future<void> _initializePeerConnection() async {
-  final log = LoggerService();
-  try {
-    await PeerConnectionManager.instance.start();
-    log.info('P2P connection manager started', tag: 'App');
-  } catch (e) {
-    log.error('P2P connection manager start failed', tag: 'App', error: e);
-  }
-}
-
-void setGlobalNotificationProvider(NotificationProvider provider) {
-  _globalNotificationProvider = provider;
-}
-
-/// Fire a local notification for an inbound file message (written directly
-/// to DB, bypassing ChatService).
-void _maybeShowFileNotification({
-  required String channelId,
-  required String senderId,
-  required String senderName,
-  required String content,
-}) {
-  final provider = _globalNotificationProvider;
-  if (provider == null) return;
-  if (!provider.shouldNotify(senderId)) return;
-  if (AppLifecycleService().shouldSuppressNotification(channelId)) return;
-
-  final body = provider.showPreview ? content : 'New message';
-  NotificationService().showNotification(
-    id: channelId.hashCode,
-    title: senderName,
-    body: body,
-    playSound: provider.soundEnabled,
-  );
-}
 
 class MyApp extends StatefulWidget {
   const MyApp({Key? key}) : super(key: key);
@@ -438,7 +134,7 @@ class _MyAppState extends State<MyApp> {
   }
 
   void _listenForPermissionRequests() {
-    final service = globalPermissionService;
+    final service = permissionServiceOrNull;
     if (service == null) return;
 
     _permissionSub = service.pendingRequestStream.listen((request) {

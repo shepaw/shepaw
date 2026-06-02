@@ -17,6 +17,25 @@ enum PeerConnectionState {
   }
 }
 
+/// 本机在这段配对关系中的角色
+enum PeerPairingRole {
+  /// 本机主动发起配对（扫描了对方的二维码）
+  initiator,
+
+  /// 本机被动接受配对（展示二维码、被对方扫描）
+  responder;
+
+  String toJson() => name;
+
+  static PeerPairingRole? fromJson(String? value) {
+    if (value == null) return null;
+    for (final r in PeerPairingRole.values) {
+      if (r.name == value) return r;
+    }
+    return null;
+  }
+}
+
 /// 已配对的远端 Shepaw 设备
 class PairedPeer {
   /// 配对关系唯一 ID
@@ -52,6 +71,9 @@ class PairedPeer {
   /// 是否已屏蔽
   final bool isBlocked;
 
+  /// 本机在这段配对中的角色（发起方 / 被连接方）。历史数据可能为 null。
+  final PeerPairingRole? pairingRole;
+
   PairedPeer({
     required this.id,
     required this.deviceName,
@@ -64,6 +86,7 @@ class PairedPeer {
     this.lastSeen,
     this.state = PeerConnectionState.disconnected,
     this.isBlocked = false,
+    this.pairingRole,
   });
 
   /// 获取首选连接端点（优先内网直连）
@@ -71,6 +94,30 @@ class PairedPeer {
 
   /// 是否有可用端点
   bool get hasEndpoint => channelEndpoint != null || localEndpoint != null;
+
+  /// 角色短标签（用于会话列表/标题栏小徽标）。
+  String? get pairingRoleShortLabel {
+    switch (pairingRole) {
+      case PeerPairingRole.initiator:
+        return '我发起';
+      case PeerPairingRole.responder:
+        return '对方发起';
+      case null:
+        return null;
+    }
+  }
+
+  /// 角色完整描述（用于设备详情页）。
+  String? get pairingRoleDescription {
+    switch (pairingRole) {
+      case PeerPairingRole.initiator:
+        return '本机扫码发起连接';
+      case PeerPairingRole.responder:
+        return '对方扫码发起连接';
+      case null:
+        return null;
+    }
+  }
 
   /// 从 JSON（数据库行）创建
   factory PairedPeer.fromJson(Map<String, dynamic> json) {
@@ -88,6 +135,7 @@ class PairedPeer {
       lastSeen: json['last_seen'] as int?,
       state: PeerConnectionState.disconnected, // 运行时状态，不从 DB 恢复
       isBlocked: (json['is_blocked'] as int? ?? 0) == 1,
+      pairingRole: PeerPairingRole.fromJson(json['pairing_role'] as String?),
     );
   }
 
@@ -104,6 +152,7 @@ class PairedPeer {
       'paired_at': pairedAt,
       'last_seen': lastSeen,
       'is_blocked': isBlocked ? 1 : 0,
+      'pairing_role': pairingRole?.toJson(),
     };
   }
 
@@ -120,6 +169,7 @@ class PairedPeer {
     int? lastSeen,
     PeerConnectionState? state,
     bool? isBlocked,
+    PeerPairingRole? pairingRole,
   }) {
     return PairedPeer(
       id: id ?? this.id,
@@ -133,6 +183,7 @@ class PairedPeer {
       lastSeen: lastSeen ?? this.lastSeen,
       state: state ?? this.state,
       isBlocked: isBlocked ?? this.isBlocked,
+      pairingRole: pairingRole ?? this.pairingRole,
     );
   }
 

@@ -25,10 +25,9 @@ import '../services/biometric_service.dart';
 import '../services/inference_log_service.dart';
 import '../services/local_network_service.dart';
 import '../services/channel_tunnel_service.dart';
-import '../services/remote_agent_service.dart';
-import '../services/token_service.dart';
 import '../widgets/update_dialog.dart';
-import '../main.dart' show globalACPServer, kAcpServerPortKey, kAcpServerDefaultPort, kAcpServerEnabledKey;
+import '../main.dart' show kAcpServerPortKey, kAcpServerDefaultPort, kAcpServerEnabledKey;
+import '../service_locator.dart' show acpServerOrNull;
 import 'dart:io' show Platform;
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter_foreground_task/flutter_foreground_task.dart';
@@ -76,8 +75,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
       setState(() {
         _acpEnabled = enabled;
         _acpPort = port;
-        _acpRunning = globalACPServer.isRunning;
-        _acpError = globalACPServer.startError;
+        _acpRunning = acpServerOrNull?.isRunning ?? false;
+        _acpError = acpServerOrNull?.startError;
         _lanAddresses = addresses;
         _lanLoading = false;
       });
@@ -92,45 +91,29 @@ class _SettingsScreenState extends State<SettingsScreen> {
     if (value) {
       // 开启：启动 server
       try {
-        await globalACPServer.start();
+        await acpServerOrNull?.start();
       } catch (e) {
         // start() 失败不抛给 UI，通过 startError 显示
       }
     } else {
       // 关闭：停止 server，同时停止 tunnel
-      await globalACPServer.stop();
+      await acpServerOrNull?.stop();
       if (ChannelTunnelService.instance.isRunning) {
         await ChannelTunnelService.instance.stop();
       }
     }
 
     setState(() {
-      _acpRunning = globalACPServer.isRunning;
-      _acpError = globalACPServer.startError;
+      _acpRunning = acpServerOrNull?.isRunning ?? false;
+      _acpError = acpServerOrNull?.startError;
     });
   }
 
   Future<void> _loadTunnelState() async {
-    // Try to find a local agent with channel config (per-agent design)
-    // Fall back to old global SharedPreferences config for backward compatibility
-    ChannelTunnelConfig? config;
-    try {
-      final db = LocalDatabaseService();
-      final tokenService = TokenService(db);
-      final agentService = RemoteAgentService(db, tokenService);
-      final allAgents = await agentService.getAllAgents();
-      for (final agent in allAgents) {
-        final cfg = agent.channelConfig;
-        if (cfg != null && agent.allowExternalAccess) {
-          config = cfg;
-          break;
-        }
-      }
-    } catch (_) {}
-    // Fall back to old global config if no per-agent config found
-    if (config == null) {
-      config = await ChannelTunnelService.instance.loadConfig();
-    }
+    // Channel 隧道使用全局配置（在配对二维码页配置），供 P2P peer 跨网中转。
+    // per-agent channel 暴露已废弃。
+    final ChannelTunnelConfig? config =
+        await ChannelTunnelService.instance.loadConfig();
     if (mounted) {
       setState(() {
         _tunnelConfig = config;
@@ -999,11 +982,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
               }
 
               try {
-                await globalACPServer.stop();
+                await acpServerOrNull?.stop();
               } catch (_) {}
 
               // 用新端口重建 server 实例并启动
-              // 注意：需要重启 App 才能彻底生效（globalACPServer 是 late 变量）
+              // 注意：需要重启 App 才能彻底生效（ACP Server 实例在启动期注册到服务定位器）
               // 这里提示用户重启
               if (mounted) {
                 ScaffoldMessenger.of(context).hideCurrentSnackBar();

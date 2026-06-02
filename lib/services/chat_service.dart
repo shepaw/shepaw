@@ -999,6 +999,87 @@ class ChatService implements IPawChatSender {
   /// trigger a UI refresh after writing messages directly to the database.
   void notifyChannelUpdate(String channelId) => _notifyChannelUpdate(channelId);
 
+  /// Handle an inbound `ui.fileMessage` notification from a remote Agent
+  /// (delivered via [ACPServerService.onFileMessage]).
+  ///
+  /// Persists the file/image message and fires a local notification through
+  /// the unified [_saveMessageToChannel] write path, so inbound file messages
+  /// share the same channel-creation / ordering / notification behaviour as
+  /// every other agent message instead of writing to the DB directly.
+  Future<void> handleInboundFileMessage(
+    String agentId,
+    String agentName,
+    Map<String, dynamic> params,
+  ) async {
+    try {
+      final url = params['url'] as String?;
+      final filename = params['filename'] as String?;
+      final mimeType = params['mime_type'] as String?;
+      final size = params['size'] as int?;
+      final thumbnailBase64 = params['thumbnail_base64'] as String?;
+      final fileId = params['file_id'] as String?;
+
+      // 需要至少有 url 或 file_id 之一
+      if ((url == null || url.isEmpty) && (fileId == null || fileId.isEmpty)) {
+        LoggerService().warning(
+          'ui.fileMessage missing url and file_id from $agentName',
+          tag: 'ChatService',
+        );
+        return;
+      }
+
+      // 从 HTTP url 路径中提取 file_id（兼容 http://host/files/{id} 格式）
+      String? resolvedFileId = fileId;
+      if (resolvedFileId == null && url != null && url.isNotEmpty) {
+        try {
+          final uri = Uri.parse(url);
+          if (uri.pathSegments.length >= 2 &&
+              uri.pathSegments[uri.pathSegments.length - 2] == 'files') {
+            resolvedFileId = uri.pathSegments.last;
+          }
+        } catch (_) {}
+      }
+
+      final isImage = mimeType != null && mimeType.startsWith('image/');
+      final msgType = isImage ? MessageType.image : MessageType.file;
+
+      final metadata = <String, dynamic>{
+        'name': filename ?? 'file',
+        'type': mimeType ?? 'application/octet-stream',
+        'size': size ?? 0,
+        'download_status': 'pending',
+      };
+      if (url != null && url.isNotEmpty) metadata['source_url'] = url;
+      if (resolvedFileId != null) metadata['file_id'] = resolvedFileId;
+      if (thumbnailBase64 != null && thumbnailBase64.isNotEmpty) {
+        metadata['thumbnail_base64'] = thumbnailBase64;
+      }
+
+      final channelId = params['channel_id'] as String? ?? '';
+      final content = isImage
+          ? '[Image: ${filename ?? "image"}]'
+          : '[File: ${filename ?? "file"}]';
+
+      final message = Message(
+        id: 'file_${DateTime.now().millisecondsSinceEpoch}',
+        channelId: channelId,
+        from: MessageFrom(id: agentId, type: 'agent', name: agentName),
+        type: msgType,
+        content: content,
+        timestampMs: DateTime.now().millisecondsSinceEpoch,
+        metadata: metadata,
+      );
+
+      await _saveMessageToChannel(message, agentId, channelId: channelId);
+      LoggerService().info(
+        'Inbound file message saved (pending) from $agentName: ${filename ?? "file"}',
+        tag: 'ChatService',
+      );
+    } catch (e) {
+      LoggerService().error('Failed to handle inbound file message', tag: 'ChatService', error: e);
+    }
+  }
+
   /// Show a local notification if conditions are met.
   void _maybeShowNotification({
     required String channelId,

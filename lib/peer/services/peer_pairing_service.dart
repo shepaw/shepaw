@@ -243,6 +243,8 @@ class PeerPairingService {
       channelEndpoint: request.channelEndpoint,
       localEndpoint: request.localEndpoint,
       pairedAt: existingPeer?.pairedAt ?? DateTime.now().millisecondsSinceEpoch,
+      // 本机展示二维码、被对方扫码连接 → 被连接方
+      pairingRole: PeerPairingRole.responder,
     );
 
     await _storage.savePeer(peer); // INSERT OR REPLACE
@@ -250,7 +252,8 @@ class PeerPairingService {
     _state = PairingSessionState.completed;
     _cleanup();
 
-    // 配对成功后通知 ConnectionManager 建立连接
+    // 配对成功后通知 ConnectionManager 建立连接，并刷新会话/设备列表
+    PeerConnectionManager.instance.notifyPeerListChanged();
     PeerConnectionManager.instance.connectToPeer(peer);
 
     _log.info('Pairing confirmed: ${peer.deviceName} (${peer.fingerprint})', tag: _tag);
@@ -392,7 +395,8 @@ class PeerPairingService {
         onTimeout: () => throw PairingTimeoutException(),
       );
 
-      final msg2Frame = decodeFrame(msg2Raw as String);
+      final msg2Str = msg2Raw is String ? msg2Raw : utf8.decode(msg2Raw as List<int>);
+      final msg2Frame = decodeFrame(msg2Str);
       if (msg2Frame.t != FrameType.hs) {
         throw StateError('Expected handshake frame, got ${msg2Frame.t}');
       }
@@ -420,6 +424,8 @@ class PeerPairingService {
         channelEndpoint: response.channelEndpoint,
         localEndpoint: response.localEndpoint ?? info.localEndpoint,
         pairedAt: DateTime.now().millisecondsSinceEpoch,
+        // 本机扫码主动发起连接 → 发起方
+        pairingRole: PeerPairingRole.initiator,
       );
 
       await _storage.savePeer(peer);
@@ -428,7 +434,8 @@ class PeerPairingService {
       session.close();
       ws.sink.close();
 
-      // 配对成功后通知 ConnectionManager 建立连接
+      // 配对成功后通知 ConnectionManager 建立连接，并刷新会话/设备列表
+      PeerConnectionManager.instance.notifyPeerListChanged();
       PeerConnectionManager.instance.connectToPeer(peer);
 
       _log.info('Pairing successful: ${peer.deviceName} (${peer.fingerprint})', tag: _tag);

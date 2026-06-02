@@ -1,8 +1,7 @@
 import 'package:flutter/material.dart';
 import '../models/remote_agent.dart';
 import '../services/remote_agent_service.dart';
-import '../services/local_database_service.dart';
-import '../services/token_service.dart';
+import '../service_locator.dart' show getIt;
 import '../services/cli_namespace_registry.dart';
 import 'cli_command_select_screen.dart';
 
@@ -26,9 +25,7 @@ class _AgentCliCommandsManagementScreenState
   @override
   void initState() {
     super.initState();
-    final dbService = LocalDatabaseService();
-    final tokenService = TokenService(dbService);
-    _agentService = RemoteAgentService(dbService, tokenService);
+    _agentService = getIt<RemoteAgentService>();
     _loadAgents();
   }
 

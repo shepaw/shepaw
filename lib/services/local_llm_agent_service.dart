@@ -21,27 +21,75 @@ class LocalLLMAgentService {
   static final LocalLLMAgentService instance = LocalLLMAgentService._();
   LocalLLMAgentService._();
 
-  /// Whether [agent] is a local LLM agent (has `llm_provider` in metadata).
-  bool isLocalAgent(RemoteAgent agent) {
-    return agent.metadata.containsKey('llm_provider') &&
-        agent.metadata['llm_provider'] != null;
+  /// Whether [agent] is a local LLM agent.
+  ///
+  /// 统一判定入口为 [RemoteAgent.isLocal]；此方法仅作向后兼容的薄封装，
+  /// 不再重复判定逻辑。新代码请直接使用 `agent.isLocal`。
+  bool isLocalAgent(RemoteAgent agent) => agent.isLocal;
+
+  /// Zone key carrying the per-request cancel key. Set via [runWithCancelKey];
+  /// read at [HttpClient] registration sites so each in-flight request is
+  /// associated with its own cancel key, enabling isolated cancellation.
+  static const _cancelKeyZoneKey = #shepawLlmCancelKey;
+
+  /// Sentinel bucket for requests started without a cancel key (legacy /
+  /// fire-and-forget). [abort] with no argument targets every bucket.
+  static final Object _unkeyed = Object();
+
+  /// In-flight [HttpClient]s grouped by cancel key.
+  final Map<Object, Set<HttpClient>> _clientsByKey = {};
+
+  /// Run [body] (which invokes [chat] / [chatRound]) under a cancel [key], so
+  /// every HTTP client it spawns is tagged with that key. Cancelling via
+  /// `abort(key)` then only tears down this request's streams — other concurrent
+  /// agents (and the desktop's own chats) are unaffected.
+  ///
+  /// Relies on `async`/`async*` bodies capturing [Zone.current] at invocation:
+  /// because the stream is created inside the zoned [body], its later execution
+  /// (and nested HTTP client creation) runs in this zone.
+  Stream<LLMStreamEvent> runWithCancelKey(
+    Object key,
+    Stream<LLMStreamEvent> Function() body,
+  ) {
+    return runZoned(body, zoneValues: {_cancelKeyZoneKey: key});
   }
 
-  /// Abort all currently running streaming requests.
+  Object _currentCancelKey() =>
+      (Zone.current[_cancelKeyZoneKey] as Object?) ?? _unkeyed;
+
+  void _registerClient(HttpClient client) {
+    (_clientsByKey[_currentCancelKey()] ??= {}).add(client);
+  }
+
+  void _unregisterClient(HttpClient client) {
+    // Remove from whichever bucket holds it (robust against zone mismatch).
+    _clientsByKey.removeWhere((key, set) {
+      set.remove(client);
+      return set.isEmpty;
+    });
+  }
+
+  /// Abort running streaming requests.
   ///
-  /// The caller should invoke this when the user taps "Stop". It force-closes
-  /// all underlying [HttpClient]s, which causes the SSE `await for` loops to
-  /// terminate with an error that is caught and silenced.
-  void abort() {
-    final clients = Set<HttpClient>.from(_activeClients);
-    _activeClients.clear();
+  /// - With a [key]: force-closes only that request's [HttpClient]s (isolated
+  ///   per-agent cancellation). Used when a single chat is stopped.
+  /// - Without a key: force-closes *all* in-flight requests (global stop).
+  ///
+  /// Force-closing causes the SSE `await for` loops to terminate with an error
+  /// that is caught and silenced.
+  void abort([Object? key]) {
+    final Iterable<HttpClient> clients;
+    if (key == null) {
+      clients = _clientsByKey.values.expand((s) => s).toList();
+      _clientsByKey.clear();
+    } else {
+      final set = _clientsByKey.remove(key);
+      clients = set?.toList() ?? const [];
+    }
     for (final c in clients) {
       c.close(force: true);
     }
   }
-
-  /// The [HttpClient]s for in-flight SSE requests.
-  final Set<HttpClient> _activeClients = {};
 
   /// Return the effective provider type string for [agent] (e.g. 'claude',
   /// 'openai', 'glm'). This is the same value used internally by [chat] to
@@ -394,7 +442,7 @@ class LocalLLMAgentService {
     final uri = Uri.parse(url);
     final client = HttpClient();
     client.badCertificateCallback = (cert, host, port) => true;
-    _activeClients.add(client);
+    _registerClient(client);
 
     try {
       final request = await client.postUrl(uri);
@@ -412,7 +460,7 @@ class LocalLLMAgentService {
 
       return jsonDecode(responseBody) as Map<String, dynamic>;
     } finally {
-      _activeClients.remove(client);
+      _unregisterClient(client);
       client.close();
     }
   }
@@ -1137,7 +1185,7 @@ Reply with ONLY the category key (e.g. "${customModalities.first.key}" or "none"
       headers: headers,
       body: body,
     );
-    _activeClients.add(client);
+    _registerClient(client);
 
     try {
       // Accumulators for streaming tool_calls:
@@ -1304,7 +1352,7 @@ Reply with ONLY the category key (e.g. "${customModalities.first.key}" or "none"
     } on SocketException catch (_) {
       // Force-closed by abort() — silently stop yielding.
     } finally {
-      _activeClients.remove(client);
+      _unregisterClient(client);
       client.close();
     }
   }
@@ -1333,7 +1381,7 @@ Reply with ONLY the category key (e.g. "${customModalities.first.key}" or "none"
       headers: headers,
       body: body,
     );
-    _activeClients.add(client);
+    _registerClient(client);
 
     try {
       // Current tool_use block being accumulated
@@ -1478,7 +1526,7 @@ Reply with ONLY the category key (e.g. "${customModalities.first.key}" or "none"
     } on SocketException catch (_) {
       // Force-closed by abort() — silently stop yielding.
     } finally {
-      _activeClients.remove(client);
+      _unregisterClient(client);
       client.close();
     }
   }

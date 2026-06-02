@@ -40,9 +40,16 @@ class PeerStorageService {
         local_endpoint TEXT,
         paired_at INTEGER NOT NULL,
         last_seen INTEGER,
-        is_blocked INTEGER DEFAULT 0
+        is_blocked INTEGER DEFAULT 0,
+        pairing_role TEXT
       )
     ''');
+    // 老库迁移：为既有 paired_peers 表补充 pairing_role 列（重复执行会报错，忽略）。
+    try {
+      await db.execute('ALTER TABLE paired_peers ADD COLUMN pairing_role TEXT');
+    } catch (_) {
+      // 列已存在
+    }
     await db.execute('''
       CREATE TABLE IF NOT EXISTS peer_messages (
         id TEXT PRIMARY KEY,

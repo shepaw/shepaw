@@ -243,7 +243,7 @@ class ACPServerService {
       }
 
       // Check if it's a local agent (has llm_provider in metadata)
-      if (!agent.metadata.containsKey('llm_provider')) {
+      if (!agent.isLocal) {
         request.response
           ..statusCode = HttpStatus.unauthorized
           ..write('Unauthorized: agent is not a local agent')

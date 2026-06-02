@@ -23,6 +23,8 @@ extension RemoteAgentL10n on RemoteAgent {
         return l10n.status_protocolAcp;
       case ProtocolType.custom:
         return l10n.status_protocolCustom;
+      case ProtocolType.peer:
+        return protocolName;
     }
   }
 }

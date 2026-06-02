@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:flutter/widgets.dart';
 import '../task/services/scheduled_task_service.dart';
+import '../peer/services/peer_connection_manager.dart';
 
 /// Global singleton that observes the app lifecycle and tracks which
 /// chat channel the user is currently viewing.
@@ -63,6 +64,8 @@ class AppLifecycleService with WidgetsBindingObserver {
       _onResumeController.add(duration);
       // Resume scheduled tasks when app returns to foreground
       ScheduledTaskService().resumeScheduler();
+      // 立即恢复 P2P 连接（手机亮屏后不等心跳周期）
+      PeerConnectionManager.instance.resumeAll();
     }
   }
 
