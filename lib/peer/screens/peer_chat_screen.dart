@@ -477,19 +477,23 @@ class _PeerMessageBubble extends StatelessWidget {
     required this.peerName,
   });
 
+  static const _avatarSize = 32.0;
+  static const _avatarGap = 8.0;
+
   @override
   Widget build(BuildContext context) {
+    final maxBubbleWidth = MediaQuery.sizeOf(context).width * 0.72;
+
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 4),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisAlignment: isMyMessage ? MainAxisAlignment.end : MainAxisAlignment.start,
         children: [
           // 对方头像（左侧）
           if (!isMyMessage) ...[
             Container(
-              width: 32,
-              height: 32,
+              width: _avatarSize,
+              height: _avatarSize,
               decoration: BoxDecoration(
                 color: Colors.teal[100],
                 borderRadius: BorderRadius.circular(8),
@@ -497,72 +501,77 @@ class _PeerMessageBubble extends StatelessWidget {
               alignment: Alignment.center,
               child: Icon(Icons.smartphone, size: 16, color: Colors.teal[700]),
             ),
-            const SizedBox(width: 8),
+            const SizedBox(width: _avatarGap),
           ],
 
-          // 消息内容
-          Flexible(
-            child: Column(
-              crossAxisAlignment: isMyMessage
-                  ? CrossAxisAlignment.end
-                  : CrossAxisAlignment.start,
-              children: [
-                // 对方名字
-                if (!isMyMessage)
-                  Padding(
-                    padding: const EdgeInsets.only(bottom: 4),
-                    child: Text(
-                      peerName,
-                      style: const TextStyle(
-                        fontSize: 12,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.grey,
+          // 消息内容：己方靠右贴齐列表边距（12px），对方保留左侧头像区
+          Expanded(
+            child: Align(
+              alignment:
+                  isMyMessage ? Alignment.centerRight : Alignment.centerLeft,
+              child: ConstrainedBox(
+                constraints: BoxConstraints(maxWidth: maxBubbleWidth),
+                child: Column(
+                  crossAxisAlignment: isMyMessage
+                      ? CrossAxisAlignment.end
+                      : CrossAxisAlignment.start,
+                  children: [
+                    if (!isMyMessage)
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 4),
+                        child: Text(
+                          peerName,
+                          style: const TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.grey,
+                          ),
+                        ),
+                      ),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 8,
+                      ),
+                      decoration: BoxDecoration(
+                        color: isMyMessage
+                            ? Theme.of(context).primaryColor
+                            : Colors.grey[200],
+                        borderRadius: BorderRadius.circular(16),
+                      ),
+                      child: Text(
+                        message.content,
+                        style: TextStyle(
+                          fontSize: 15,
+                          height: 1.4,
+                          color: isMyMessage ? Colors.white : Colors.black87,
+                        ),
                       ),
                     ),
-                  ),
-
-                // 气泡
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                  decoration: BoxDecoration(
-                    color: isMyMessage
-                        ? Theme.of(context).primaryColor
-                        : Colors.grey[200],
-                    borderRadius: BorderRadius.circular(16),
-                  ),
-                  child: Text(
-                    message.content,
-                    style: TextStyle(
-                      fontSize: 15,
-                      height: 1.4,
-                      color: isMyMessage ? Colors.white : Colors.black87,
-                    ),
-                  ),
-                ),
-
-                // 时间 + 状态
-                Padding(
-                  padding: const EdgeInsets.only(top: 4),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text(
-                        _formatTime(message.timestamp),
-                        style: const TextStyle(fontSize: 10, color: Colors.grey),
+                    Padding(
+                      padding: const EdgeInsets.only(top: 4),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            _formatTime(message.timestamp),
+                            style: const TextStyle(
+                              fontSize: 10,
+                              color: Colors.grey,
+                            ),
+                          ),
+                          if (isMyMessage) ...[
+                            const SizedBox(width: 4),
+                            _buildDeliveryIcon(message.delivery),
+                          ],
+                        ],
                       ),
-                      if (isMyMessage) ...[
-                        const SizedBox(width: 4),
-                        _buildDeliveryIcon(message.delivery),
-                      ],
-                    ],
-                  ),
+                    ),
+                  ],
                 ),
-              ],
+              ),
             ),
           ),
-
-          // 自己的消息右侧留白
-          if (isMyMessage) const SizedBox(width: 40),
         ],
       ),
     );

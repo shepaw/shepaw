@@ -113,6 +113,7 @@ class HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateMi
 
   // 定期健康检查定时器
   Timer? _healthCheckTimer;
+  bool _healthCheckRunning = false;
 
   // P2P 消息监听
   StreamSubscription? _peerMessageSub;
@@ -122,7 +123,7 @@ class HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateMi
   StreamSubscription? _peerListChangedSub;
 
   /// Public accessor so DesktopHomeScreen can trigger a refresh via GlobalKey.
-  void reloadAgents() => _loadAgents();
+  void reloadAgents() => _loadAgents(silent: true);
 
   /// Public accessor for the current agents list (used by desktop sidebar search).
   List<Agent> get agents => _agents;
@@ -157,13 +158,13 @@ class HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateMi
     // 监听 P2P 断开事件刷新在线状态（连接/新增由 peerListChanged 统一处理，避免重复刷新）
     _peerEventSub = PeerConnectionManager.instance.events.listen((event) {
       if (mounted && event.type == PeerConnectionEventType.disconnected) {
-        _loadAgents();
+        _loadAgents(silent: true);
       }
     });
 
     // 监听 P2P 设备列表变化（新增/删除配对/连接建立）——立即刷新会话列表
     _peerListChangedSub = PeerConnectionManager.instance.peerListChanged.listen((_) {
-      if (mounted) _loadAgents();
+      if (mounted) _loadAgents(silent: true);
     });
 
     // 初始化动画控制器
@@ -172,9 +173,9 @@ class HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateMi
       vsync: this,
     );
 
-    // 启动定期健康检查（每30秒）
+    // 定期健康检查（每30秒）——仅更新在线状态，避免整表刷新导致列表闪烁
     _healthCheckTimer = Timer.periodic(const Duration(seconds: 30), (_) {
-      _refreshAgentStatus();
+      _runHealthCheckInBackground();
     });
   }
 
@@ -459,8 +460,10 @@ class HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateMi
     }
   }
 
-  /// 后台执行健康检查，完成后静默更新在线状态（不显示 loading）
+  /// 后台执行健康检查，完成后仅在在线状态变化时更新 UI（不显示 loading）
   void _runHealthCheckInBackground() {
+    if (_healthCheckRunning) return;
+    _healthCheckRunning = true;
     () async {
       try {
         final remoteAgentService = getIt<RemoteAgentService>();
@@ -469,6 +472,8 @@ class HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateMi
         if (!mounted) return;
         final freshAgents = await _apiService.getAgents();
         if (!mounted) return;
+        if (!_agentOnlineStatusChanged(freshAgents, _agents)) return;
+
         setState(() {
           _agents = freshAgents;
           _filteredAgents = _applySearchFilter(freshAgents);
@@ -476,15 +481,31 @@ class HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateMi
         });
       } catch (e) {
         LoggerService().error('Background health check failed', tag: 'Home', error: e);
+      } finally {
+        _healthCheckRunning = false;
       }
     }();
   }
 
-  /// 加载Agent列表
-  Future<void> _loadAgents() async {
-    setState(() {
-      _isLoading = true;
-    });
+  /// 比较 agent 列表的在线状态是否有变化（忽略 lastHeartbeat 等不影响 UI 的字段）
+  bool _agentOnlineStatusChanged(List<Agent> fresh, List<Agent> current) {
+    if (fresh.length != current.length) return true;
+    final statusById = {for (final a in current) a.id: a.status.state};
+    for (final agent in fresh) {
+      if (statusById[agent.id] != agent.status.state) return true;
+    }
+    return false;
+  }
+
+  /// 加载 Agent 列表。
+  /// [silent] 为 true 时不显示全屏 loading（用于从聊天返回、P2P 事件等后台刷新）。
+  Future<void> _loadAgents({bool silent = false}) async {
+    final showLoading = !silent && _agents.isEmpty && _groupChannels.isEmpty && _pairedPeers.isEmpty;
+    if (showLoading) {
+      setState(() {
+        _isLoading = true;
+      });
+    }
 
     try {
       // 直接从数据库加载最新的 Agent 列表（毫秒级，立即展示）
@@ -528,30 +549,6 @@ class HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateMi
           _isLoading = false;
         });
       }
-    }
-  }
-
-  /// 静默刷新 Agent 状态（不显示 loading 状态）
-  Future<void> _refreshAgentStatus() async {
-    try {
-      final agents = await _apiService.getAgents();
-      await _loadAgentPreviews(agents);
-
-      final allChannels = await _databaseService.getAllChannels();
-      final groups = allChannels.where((c) => c.isGroup && c.parentGroupId == null).toList();
-      await _loadGroupPreviews(groups);
-
-      if (mounted) {
-        setState(() {
-          _agents = agents;
-          _filteredAgents = _applySearchFilter(agents);
-          _groupChannels = groups;
-          _sortedConversations = _buildSortedConversations();
-        });
-      }
-      _runHealthCheckInBackground(); // 后台健康检查
-    } catch (e) {
-      LoggerService().error('Failed to refresh agent status', tag: 'Home', error: e);
     }
   }
 
@@ -728,7 +725,7 @@ class HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateMi
                         MaterialPageRoute(
                           builder: (context) => const AddRemoteAgentScreen(),
                         ),
-                      ).then((_) => _loadAgents());
+                      ).then((_) => _loadAgents(silent: true));
                     },
                   ),
                   ListTile(
@@ -741,7 +738,7 @@ class HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateMi
                         MaterialPageRoute(
                           builder: (context) => const CreateGroupScreen(),
                         ),
-                      ).then((_) => _loadAgents());
+                      ).then((_) => _loadAgents(silent: true));
                     },
                   ),
                   const Divider(),
@@ -799,7 +796,7 @@ class HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateMi
                         MaterialPageRoute(
                           builder: (context) => const ContactsScreen(),
                         ),
-                      ).then((_) => _loadAgents());
+                      ).then((_) => _loadAgents(silent: true));
                     },
                   ),
                   const Divider(),
@@ -900,18 +897,27 @@ class HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateMi
     final totalItems = _sortedConversations.length;
 
     return RefreshIndicator(
-      onRefresh: _loadAgents,
+      onRefresh: () => _loadAgents(silent: true),
       child: ListView.builder(
         itemCount: totalItems,
         itemBuilder: (context, index) {
           final item = _sortedConversations[index];
           if (item.isGroup) {
-            return _buildGroupTile(item.group!);
+            return KeyedSubtree(
+              key: ValueKey('group_${item.group!.id}'),
+              child: _buildGroupTile(item.group!),
+            );
           }
           if (item.isPeer) {
-            return _buildPeerTile(item.peer!);
+            return KeyedSubtree(
+              key: ValueKey('peer_${item.peer!.id}'),
+              child: _buildPeerTile(item.peer!),
+            );
           }
-          return _buildAgentTile(item.agent!);
+          return KeyedSubtree(
+            key: ValueKey('agent_${item.agent!.id}'),
+            child: _buildAgentTile(item.agent!),
+          );
         },
       ),
     );
@@ -937,7 +943,7 @@ class HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateMi
                     MaterialPageRoute(
                       builder: (context) => const AddRemoteAgentScreen(),
                     ),
-                  ).then((_) => _loadAgents());
+                  ).then((_) => _loadAgents(silent: true));
                 },
               ),
               ListTile(
@@ -950,7 +956,7 @@ class HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateMi
                     MaterialPageRoute(
                       builder: (context) => const CreateGroupScreen(),
                     ),
-                  ).then((_) => _loadAgents());
+                  ).then((_) => _loadAgents(silent: true));
                 },
               ),
             ],
@@ -1009,7 +1015,7 @@ class HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateMi
           ),
         ).then((_) async {
           // Reload full list in case the group was deleted or modified
-          await _loadAgents();
+          await _loadAgents(silent: true);
         });
       },
       child: Container(
@@ -1180,7 +1186,7 @@ class HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateMi
         final channelId =
             activeChannelId ?? _chatService.generateChannelId(userId, agent.id);
         await _databaseService.markChannelMessagesAsRead(channelId);
-        _loadAgents();
+        _loadAgents(silent: true);
       });
     } else if (selection.channel != null) {
       // Channel/group result — reuse the same logic as _buildGroupTile onTap
@@ -1216,7 +1222,7 @@ class HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateMi
           builder: (context) => ChatScreen(channelId: targetChannelId),
         ),
       ).then((_) async {
-        await _loadAgents();
+        await _loadAgents(silent: true);
       });
     } else if (selection.messageChannelId != null) {
       // Message result — navigate to the channel with highlight
@@ -1242,7 +1248,7 @@ class HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateMi
           ),
         ),
       ).then((_) async {
-        await _loadAgents();
+        await _loadAgents(silent: true);
       });
     }
   }
@@ -1300,7 +1306,7 @@ class HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateMi
           final channelId = activeChannelId ?? _chatService.generateChannelId(userId, agent.id);
           await _databaseService.markChannelMessagesAsRead(channelId);
           // Reload agents to pick up avatar/name changes made in detail screen
-          _loadAgents();
+          _loadAgents(silent: true);
         });
       },
       child: Container(
@@ -1474,7 +1480,7 @@ class HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateMi
           MaterialPageRoute(
             builder: (context) => PeerChatScreen(peer: peer),
           ),
-        ).then((_) => _loadAgents());
+        ).then((_) => _loadAgents(silent: true));
       },
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
