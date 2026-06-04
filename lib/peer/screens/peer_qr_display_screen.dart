@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 
+import '../../l10n/app_localizations.dart';
 import '../../services/channel_tunnel_service.dart';
 import '../models/paired_peer.dart';
 import '../services/peer_pairing_service.dart';
@@ -319,7 +320,22 @@ class _PeerQrDisplayScreenState extends State<PeerQrDisplayScreen> {
             ),
           ],
 
-          const SizedBox(height: 24),
+          const SizedBox(height: 12),
+
+          // 复制配对链接（供对方在「输入」Tab 手动粘贴，桌面端等无摄像头场景）
+          TextButton.icon(
+            onPressed: () {
+              final l10n = AppLocalizations.of(context);
+              Clipboard.setData(ClipboardData(text: _qrData!));
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(content: Text(l10n.peerPairing_linkCopied)),
+              );
+            },
+            icon: const Icon(Icons.link, size: 18),
+            label: Text(AppLocalizations.of(context).peerPairing_copyLink),
+          ),
+
+          const SizedBox(height: 12),
 
           // ── Channel 外网配置卡片 ─────────────────────────────────────
           _buildChannelCard(context, colorScheme),

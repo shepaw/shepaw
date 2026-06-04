@@ -92,10 +92,12 @@
   "home_weekSun": "Sun",
   "home_addAgent": "Add Agent",
   "home_createGroup": "Create Group",
+  "home_addDevice": "Add Device",
   "home_agentsCount": "{count} agents",
   "drawer_myProfile": "My Profile",
   "drawer_newAgent": "New Agent",
   "drawer_newGroup": "New Group",
+  "drawer_newDevice": "New Device",
   "drawer_settings": "Settings",
   "drawer_logout": "Logout",
   "logout_confirmTitle": "Confirm Logout",
@@ -1472,5 +1474,31 @@
   "scheduledTasks_form_oncePastError": "Run time must be in the future",
   "scheduledTasks_form_agentConversation": "Conversation",
   "scheduledTasks_form_agentConversationHint": "Select a conversation for this agent (defaults to the active session)",
-  "scheduledTasks_form_agentNoConversation": "No conversations found for this agent"
+  "scheduledTasks_form_agentNoConversation": "No conversations found for this agent",
+  "peerPairing_title": "Pair Device",
+  "peerPairing_tabMyQr": "My QR Code",
+  "peerPairing_tabScan": "Scan",
+  "peerPairing_tabManual": "Enter",
+  "peerPairing_copyLink": "Copy pairing link",
+  "peerPairing_linkCopied": "Pairing link copied",
+  "peerManual_title": "Manual pairing",
+  "peerManual_desc": "Copy the pairing link from the other device's \"My QR Code\" page and paste it below to start pairing.",
+  "peerManual_inputHint": "shepaw://peer?local=...&code=...#fp=...&pk=...",
+  "peerManual_paste": "Paste",
+  "peerManual_submit": "Start pairing",
+  "peerManual_emptyError": "Please paste the other device's pairing content",
+  "peerManual_invalidError": "Invalid content. Please paste the full pairing link (shepaw://peer?...)",
+  "peerManual_connecting": "Connecting...",
+  "peerManual_waitingConfirm": "Waiting for confirmation...",
+  "peerManual_success": "Paired successfully!",
+  "peerManual_rejected": "The other device rejected the pairing request",
+  "peerManual_timeout": "Pairing timed out, please retry",
+  "peerManual_failed": "Pairing failed: {error}",
+  "@peerManual_failed": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  }
 }

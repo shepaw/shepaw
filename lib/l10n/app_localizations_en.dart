@@ -311,6 +311,9 @@ class AppLocalizationsEn extends AppLocalizations {
   String get home_createGroup => 'Create Group';
 
   @override
+  String get home_addDevice => 'Add Device';
+
+  @override
   String home_agentsCount(int count) {
     return '$count agents';
   }
@@ -323,6 +326,9 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get drawer_newGroup => 'New Group';
+
+  @override
+  String get drawer_newDevice => 'New Device';
 
   @override
   String get drawer_settings => 'Settings';
@@ -3565,4 +3571,68 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get scheduledTasks_form_agentNoConversation =>
       'No conversations found for this agent';
+
+  @override
+  String get peerPairing_title => 'Pair Device';
+
+  @override
+  String get peerPairing_tabMyQr => 'My QR Code';
+
+  @override
+  String get peerPairing_tabScan => 'Scan';
+
+  @override
+  String get peerPairing_tabManual => 'Enter';
+
+  @override
+  String get peerPairing_copyLink => 'Copy pairing link';
+
+  @override
+  String get peerPairing_linkCopied => 'Pairing link copied';
+
+  @override
+  String get peerManual_title => 'Manual pairing';
+
+  @override
+  String get peerManual_desc =>
+      'Copy the pairing link from the other device\'s \"My QR Code\" page and paste it below to start pairing.';
+
+  @override
+  String get peerManual_inputHint =>
+      'shepaw://peer?local=...&code=...#fp=...&pk=...';
+
+  @override
+  String get peerManual_paste => 'Paste';
+
+  @override
+  String get peerManual_submit => 'Start pairing';
+
+  @override
+  String get peerManual_emptyError =>
+      'Please paste the other device\'s pairing content';
+
+  @override
+  String get peerManual_invalidError =>
+      'Invalid content. Please paste the full pairing link (shepaw://peer?...)';
+
+  @override
+  String get peerManual_connecting => 'Connecting...';
+
+  @override
+  String get peerManual_waitingConfirm => 'Waiting for confirmation...';
+
+  @override
+  String get peerManual_success => 'Paired successfully!';
+
+  @override
+  String get peerManual_rejected =>
+      'The other device rejected the pairing request';
+
+  @override
+  String get peerManual_timeout => 'Pairing timed out, please retry';
+
+  @override
+  String peerManual_failed(String error) {
+    return 'Pairing failed: $error';
+  }
 }

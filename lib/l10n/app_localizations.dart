@@ -650,6 +650,12 @@ abstract class AppLocalizations {
   /// **'创建群组'**
   String get home_createGroup;
 
+  /// No description provided for @home_addDevice.
+  ///
+  /// In zh, this message translates to:
+  /// **'添加设备'**
+  String get home_addDevice;
+
   /// No description provided for @home_agentsCount.
   ///
   /// In zh, this message translates to:
@@ -673,6 +679,12 @@ abstract class AppLocalizations {
   /// In zh, this message translates to:
   /// **'新建群组'**
   String get drawer_newGroup;
+
+  /// No description provided for @drawer_newDevice.
+  ///
+  /// In zh, this message translates to:
+  /// **'新建设备'**
+  String get drawer_newDevice;
 
   /// No description provided for @drawer_settings.
   ///
@@ -6391,6 +6403,120 @@ abstract class AppLocalizations {
   /// In zh, this message translates to:
   /// **'该智能体暂无会话记录'**
   String get scheduledTasks_form_agentNoConversation;
+
+  /// No description provided for @peerPairing_title.
+  ///
+  /// In zh, this message translates to:
+  /// **'配对设备'**
+  String get peerPairing_title;
+
+  /// No description provided for @peerPairing_tabMyQr.
+  ///
+  /// In zh, this message translates to:
+  /// **'我的二维码'**
+  String get peerPairing_tabMyQr;
+
+  /// No description provided for @peerPairing_tabScan.
+  ///
+  /// In zh, this message translates to:
+  /// **'扫一扫'**
+  String get peerPairing_tabScan;
+
+  /// No description provided for @peerPairing_tabManual.
+  ///
+  /// In zh, this message translates to:
+  /// **'输入'**
+  String get peerPairing_tabManual;
+
+  /// No description provided for @peerPairing_copyLink.
+  ///
+  /// In zh, this message translates to:
+  /// **'复制配对链接'**
+  String get peerPairing_copyLink;
+
+  /// No description provided for @peerPairing_linkCopied.
+  ///
+  /// In zh, this message translates to:
+  /// **'配对链接已复制'**
+  String get peerPairing_linkCopied;
+
+  /// No description provided for @peerManual_title.
+  ///
+  /// In zh, this message translates to:
+  /// **'手动输入配对'**
+  String get peerManual_title;
+
+  /// No description provided for @peerManual_desc.
+  ///
+  /// In zh, this message translates to:
+  /// **'在对方设备的「我的二维码」页面复制配对链接，粘贴到下方发起配对。'**
+  String get peerManual_desc;
+
+  /// No description provided for @peerManual_inputHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'shepaw://peer?local=...&code=...#fp=...&pk=...'**
+  String get peerManual_inputHint;
+
+  /// No description provided for @peerManual_paste.
+  ///
+  /// In zh, this message translates to:
+  /// **'粘贴'**
+  String get peerManual_paste;
+
+  /// No description provided for @peerManual_submit.
+  ///
+  /// In zh, this message translates to:
+  /// **'发起配对'**
+  String get peerManual_submit;
+
+  /// No description provided for @peerManual_emptyError.
+  ///
+  /// In zh, this message translates to:
+  /// **'请粘贴对方的配对内容'**
+  String get peerManual_emptyError;
+
+  /// No description provided for @peerManual_invalidError.
+  ///
+  /// In zh, this message translates to:
+  /// **'无效的配对内容，请粘贴完整的配对链接（shepaw://peer?...）'**
+  String get peerManual_invalidError;
+
+  /// No description provided for @peerManual_connecting.
+  ///
+  /// In zh, this message translates to:
+  /// **'正在连接...'**
+  String get peerManual_connecting;
+
+  /// No description provided for @peerManual_waitingConfirm.
+  ///
+  /// In zh, this message translates to:
+  /// **'等待对方确认...'**
+  String get peerManual_waitingConfirm;
+
+  /// No description provided for @peerManual_success.
+  ///
+  /// In zh, this message translates to:
+  /// **'配对成功!'**
+  String get peerManual_success;
+
+  /// No description provided for @peerManual_rejected.
+  ///
+  /// In zh, this message translates to:
+  /// **'对方拒绝了配对请求'**
+  String get peerManual_rejected;
+
+  /// No description provided for @peerManual_timeout.
+  ///
+  /// In zh, this message translates to:
+  /// **'配对超时，请重试'**
+  String get peerManual_timeout;
+
+  /// No description provided for @peerManual_failed.
+  ///
+  /// In zh, this message translates to:
+  /// **'配对失败: {error}'**
+  String peerManual_failed(String error);
 }
 
 class _AppLocalizationsDelegate

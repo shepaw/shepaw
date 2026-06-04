@@ -31,6 +31,7 @@ import '../models/conversation_selection.dart';
 import '../peer/models/paired_peer.dart';
 import '../peer/models/peer_message.dart';
 import '../peer/screens/peer_chat_screen.dart';
+import '../peer/screens/peer_pairing_screen.dart';
 import '../peer/services/peer_connection.dart';
 import '../peer/services/peer_connection_manager.dart';
 import '../peer/services/peer_pairing_service.dart';
@@ -742,6 +743,15 @@ class HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateMi
                       ).then((_) => _loadAgents(silent: true));
                     },
                   ),
+                  ListTile(
+                    leading: const Icon(Icons.devices_outlined),
+                    title: Text(l10n.drawer_newDevice),
+                    onTap: () {
+                      Navigator.pop(context);
+                      PeerPairingScreen.show(context)
+                          .then((_) => _loadAgents(silent: true));
+                    },
+                  ),
                   const Divider(),
                   ListTile(
                     leading: const Icon(Icons.hub),
@@ -958,6 +968,15 @@ class HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateMi
                       builder: (context) => const CreateGroupScreen(),
                     ),
                   ).then((_) => _loadAgents(silent: true));
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.devices_outlined),
+                title: Text(l10n.home_addDevice),
+                onTap: () {
+                  Navigator.pop(context);
+                  PeerPairingScreen.show(context)
+                      .then((_) => _loadAgents(silent: true));
                 },
               ),
             ],

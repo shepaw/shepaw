@@ -134,6 +134,7 @@
   "home_weekSun": "周日",
   "home_addAgent": "添加 Agent",
   "home_createGroup": "创建群组",
+  "home_addDevice": "添加设备",
   "home_agentsCount": "{count} agents",
   "@home_agentsCount": {
     "placeholders": {
@@ -145,6 +146,7 @@
   "drawer_myProfile": "我的资料",
   "drawer_newAgent": "新建 Agent",
   "drawer_newGroup": "新建群组",
+  "drawer_newDevice": "新建设备",
   "drawer_settings": "设置",
   "drawer_logout": "退出登录",
   "logout_confirmTitle": "确认退出",
@@ -1957,5 +1959,31 @@
   "scheduledTasks_form_oncePastError": "执行时间必须在当前时间之后",
   "scheduledTasks_form_agentConversation": "指定会话",
   "scheduledTasks_form_agentConversationHint": "选择该智能体的会话（默认当前激活会话）",
-  "scheduledTasks_form_agentNoConversation": "该智能体暂无会话记录"
+  "scheduledTasks_form_agentNoConversation": "该智能体暂无会话记录",
+  "peerPairing_title": "配对设备",
+  "peerPairing_tabMyQr": "我的二维码",
+  "peerPairing_tabScan": "扫一扫",
+  "peerPairing_tabManual": "输入",
+  "peerPairing_copyLink": "复制配对链接",
+  "peerPairing_linkCopied": "配对链接已复制",
+  "peerManual_title": "手动输入配对",
+  "peerManual_desc": "在对方设备的「我的二维码」页面复制配对链接，粘贴到下方发起配对。",
+  "peerManual_inputHint": "shepaw://peer?local=...&code=...#fp=...&pk=...",
+  "peerManual_paste": "粘贴",
+  "peerManual_submit": "发起配对",
+  "peerManual_emptyError": "请粘贴对方的配对内容",
+  "peerManual_invalidError": "无效的配对内容，请粘贴完整的配对链接（shepaw://peer?...）",
+  "peerManual_connecting": "正在连接...",
+  "peerManual_waitingConfirm": "等待对方确认...",
+  "peerManual_success": "配对成功!",
+  "peerManual_rejected": "对方拒绝了配对请求",
+  "peerManual_timeout": "配对超时，请重试",
+  "peerManual_failed": "配对失败: {error}",
+  "@peerManual_failed": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  }
 }

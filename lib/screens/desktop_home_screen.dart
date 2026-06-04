@@ -9,6 +9,7 @@ import '../services/message_search_service.dart';
 import '../theme/app_theme.dart';
 import '../peer/models/paired_peer.dart';
 import '../peer/screens/peer_chat_screen.dart';
+import '../peer/screens/peer_pairing_screen.dart';
 import '../peer/services/peer_connection.dart';
 import '../peer/services/peer_connection_manager.dart';
 import 'home_screen.dart';
@@ -46,6 +47,7 @@ enum _RightPanelView {
   settings,
   addAgent,
   createGroup,
+  pairDevice,
   contacts,
   search,
   traces,
@@ -381,6 +383,15 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
           },
         );
 
+      case _RightPanelView.pairDevice:
+        return PeerPairingScreen(
+          onPaired: (peer) {
+            _reloadAgents();
+            // 配对成功后直接打开与该设备的聊天。
+            _onConversationSelected(ConversationSelection(peerId: peer.id));
+          },
+        );
+
       case _RightPanelView.contacts:
         return const ContactsScreen();
 
@@ -487,7 +498,7 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
     ];
 
     // Bottom section items (collapsed when height is insufficient)
-    // Index 0–5: before divider; after that: settings
+    // Index 0–6: before divider; after that: settings
     final bottomItems = [
       _SidebarItemDef(
         icon: Icons.person_add_outlined,
@@ -502,6 +513,13 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
         colorBuilder: (_) =>
             _rightPanel == _RightPanelView.createGroup ? activeColor : iconColor,
         onTap: () => _showPanel(_RightPanelView.createGroup),
+      ),
+      _SidebarItemDef(
+        icon: Icons.devices_outlined,
+        tooltip: l10n.drawer_newDevice,
+        colorBuilder: (_) =>
+            _rightPanel == _RightPanelView.pairDevice ? activeColor : iconColor,
+        onTap: () => _showPanel(_RightPanelView.pairDevice),
       ),
       _SidebarItemDef(
         icon: Icons.hub,
@@ -550,7 +568,7 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
         onTap: () => _showPanel(_RightPanelView.settings),
       ),
     ];
-    const dividerIndex = 6; // index in bottomItems that is the divider sentinel
+    const dividerIndex = 7; // index in bottomItems that is the divider sentinel
 
     return Container(
       width: _sidebarWidth,
@@ -612,15 +630,15 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
             final double usableForBottom =
                 (spaceForBottom).clamp(minBottomHeight, double.infinity);
 
-            // Items to always keep: divider + settings (indices 6,7)
-            const alwaysKeep = [6, 7]; // divider, settings
+            // Items to always keep: divider + settings (indices 7,8)
+            const alwaysKeep = [7, 8]; // divider, settings
             double alwaysHeight = dividerHeight + itemHeight;
 
-            // Remaining budget for collapsible items (indices 0-5) + more button
+            // Remaining budget for collapsible items (indices 0-6) + more button
             double budget = usableForBottom - alwaysHeight - moreItemHeight;
 
             // Pack collapsible items from end to beginning (last ones have priority)
-            final collapsibleIndices = [5, 4, 3, 2, 1, 0];
+            final collapsibleIndices = [6, 5, 4, 3, 2, 1, 0];
             List<int> shownCollapsible = [];
             for (final idx in collapsibleIndices) {
               if (budget >= itemHeight) {

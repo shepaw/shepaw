@@ -298,6 +298,9 @@ class AppLocalizationsZh extends AppLocalizations {
   String get home_createGroup => '创建群组';
 
   @override
+  String get home_addDevice => '添加设备';
+
+  @override
   String home_agentsCount(int count) {
     return '$count agents';
   }
@@ -310,6 +313,9 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get drawer_newGroup => '新建群组';
+
+  @override
+  String get drawer_newDevice => '新建设备';
 
   @override
   String get drawer_settings => '设置';
@@ -3436,4 +3442,64 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get scheduledTasks_form_agentNoConversation => '该智能体暂无会话记录';
+
+  @override
+  String get peerPairing_title => '配对设备';
+
+  @override
+  String get peerPairing_tabMyQr => '我的二维码';
+
+  @override
+  String get peerPairing_tabScan => '扫一扫';
+
+  @override
+  String get peerPairing_tabManual => '输入';
+
+  @override
+  String get peerPairing_copyLink => '复制配对链接';
+
+  @override
+  String get peerPairing_linkCopied => '配对链接已复制';
+
+  @override
+  String get peerManual_title => '手动输入配对';
+
+  @override
+  String get peerManual_desc => '在对方设备的「我的二维码」页面复制配对链接，粘贴到下方发起配对。';
+
+  @override
+  String get peerManual_inputHint =>
+      'shepaw://peer?local=...&code=...#fp=...&pk=...';
+
+  @override
+  String get peerManual_paste => '粘贴';
+
+  @override
+  String get peerManual_submit => '发起配对';
+
+  @override
+  String get peerManual_emptyError => '请粘贴对方的配对内容';
+
+  @override
+  String get peerManual_invalidError => '无效的配对内容，请粘贴完整的配对链接（shepaw://peer?...）';
+
+  @override
+  String get peerManual_connecting => '正在连接...';
+
+  @override
+  String get peerManual_waitingConfirm => '等待对方确认...';
+
+  @override
+  String get peerManual_success => '配对成功!';
+
+  @override
+  String get peerManual_rejected => '对方拒绝了配对请求';
+
+  @override
+  String get peerManual_timeout => '配对超时，请重试';
+
+  @override
+  String peerManual_failed(String error) {
+    return '配对失败: $error';
+  }
 }
