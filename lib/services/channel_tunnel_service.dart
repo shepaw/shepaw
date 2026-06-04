@@ -249,6 +249,20 @@ class ChannelTunnelService {
     _setStatus(TunnelStatus.idle);
   }
 
+  /// 网络环境变化时主动触发隧道重连。
+  ///
+  /// 切换 WiFi / 移动网络后，旧 socket 常变成「半开」失效连接（收不到 relay 的
+  /// ping 也不会触发 onError/onDone），导致 relay 无法经本机隧道回推、外网 peer
+  /// 连不上。这里主动关闭旧 socket，让 [_runLoop] 立即用新网络重建隧道。
+  Future<void> reconnect() async {
+    if (!_running || _stopRequested) return;
+    _log.info('Network changed, forcing tunnel reconnect', tag: _tag);
+    // 关闭当前 socket 会让 _listen() 结束 → _runLoop 退避后立即重连。
+    // 连接成功后退避已被重置为 2s，故重连很快。
+    await _disconnect();
+    _setStatus(TunnelStatus.disconnected);
+  }
+
   /// 获取外网访问地址（基于 channelEndpoint 或 channelId 拼接）
   String? getPublicEndpoint(ChannelTunnelConfig config) {
     final base = config.serverUrl.replaceFirst(RegExp(r'^http://'), 'ws://')

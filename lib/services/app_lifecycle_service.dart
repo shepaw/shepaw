@@ -64,8 +64,9 @@ class AppLifecycleService with WidgetsBindingObserver {
       _onResumeController.add(duration);
       // Resume scheduled tasks when app returns to foreground
       ScheduledTaskService().resumeScheduler();
-      // 立即恢复 P2P 连接（手机亮屏后不等心跳周期）
-      PeerConnectionManager.instance.resumeAll();
+      // 立即恢复 P2P 连接（手机亮屏后不等心跳周期）。
+      // 传入后台时长：较久后台后强制刷新可能已半开的陈旧连接。
+      PeerConnectionManager.instance.resumeAll(backgroundedFor: duration);
     }
   }
 

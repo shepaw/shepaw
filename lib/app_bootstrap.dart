@@ -15,6 +15,8 @@ import 'services/remote_agent_service.dart';
 import 'services/notification_service.dart';
 import 'services/update_notification_service.dart';
 import 'services/app_lifecycle_service.dart';
+import 'services/network_monitor_service.dart';
+import 'services/channel_tunnel_service.dart';
 import 'services/skill_registry.dart';
 import 'services/cli_tool_registry.dart';
 import 'clis/shepaw/shepaw_cli.dart';
@@ -86,8 +88,17 @@ class AppBootstrap {
     // 启动 P2P 连接管理器（后台监听入站连接、自动重连已配对设备）
     await _initializePeerConnection();
 
+    // 自动建立 Channel 隧道（若已配置 autoConnect）。
+    // 隧道是 P2P 跨网中转的前提：PC 需主动维护到 channel server 的隧道，
+    // 外网 peer 才能经 channel server 连入本机。此前隧道仅在用户打开「设置页」
+    // 或「配对二维码页」时才启动，导致 App 启动后若未进入这些页面，隧道一直
+    // 离线、外网 peer 连不上。这里在启动时统一拉起。
+    await _initializeChannelTunnel();
+
     // 初始化通知与生命周期相关服务
     AppLifecycleService().init();
+    // 监听网络变化：切网后主动重连隧道与 P2P 连接，避免半开连接拖到活性超时
+    NetworkMonitorService().init();
     await NotificationService().init();
     UpdateNotificationService().init(navigatorKey: navigatorKey);
     ForegroundTaskService().init();
@@ -227,6 +238,27 @@ class AppBootstrap {
       _log.info('P2P connection manager started', tag: 'App');
     } catch (e) {
       _log.error('P2P connection manager start failed', tag: 'App', error: e);
+    }
+  }
+
+  /// 自动建立 Channel 隧道。
+  ///
+  /// 仅当用户已保存配置且开启 [ChannelTunnelConfig.autoConnect] 时启动。
+  /// [ChannelTunnelService.startWithConfig] 自带 `isRunning` 防重入，故即便设置页
+  /// 之后再次触发启动也不会重复连接。
+  static Future<void> _initializeChannelTunnel() async {
+    try {
+      final config = await ChannelTunnelService.instance.loadConfig();
+      if (config != null &&
+          config.autoConnect &&
+          !ChannelTunnelService.instance.isRunning) {
+        await ChannelTunnelService.instance.startWithConfig(config);
+        _log.info('Channel tunnel auto-started', tag: 'App');
+      } else {
+        _log.info('Channel tunnel auto-start skipped (no config / disabled)', tag: 'App');
+      }
+    } catch (e) {
+      _log.error('Channel tunnel auto-start failed', tag: 'App', error: e);
     }
   }
 }

@@ -140,17 +140,40 @@ class PeerConnection {
     if (_closed) return;
     _setState(PeerConnectionState.connecting);
 
+    // 清理上一次尝试遗留的订阅 / socket / 会话。connectViaWebSocket 会在同一个
+    // PeerConnection 上按「固定端口 → 存储端口 → channel」顺序重试；若不清理，
+    // 上一次尝试的 socket 监听器仍然活跃，而 _handleIncomingFrame 用的是实例当前
+    // 的 _noiseSession（本次新建的会话）。旧 socket 上迟到的帧会被用新会话解密 →
+    // NoiseTransportError: decrypt failed，并造成 socket / 订阅泄漏。
+    await _incomingSub?.cancel();
+    _incomingSub = null;
+    try {
+      await _wsChannel?.sink.close();
+    } catch (_) {}
+    _wsChannel = null;
+    _noiseSession?.close();
+    _noiseSession = null;
+
     try {
       final ioSocket = await io.WebSocket.connect(endpoint).timeout(timeout);
       _wsChannel = IOWebSocketChannel(ioSocket);
 
-      // 先建立单一 subscription，用 Completer 取 msg2，之后继续用同一个 sub
+      // 单一 subscription：第一帧用 Completer 取 msg2 完成握手，之后继续用同一个 sub。
+      //
+      // 关键：握手完成（_noiseSession.ready 为 true）之前到达的数据帧必须**缓冲**而非
+      // 直接交给 _handleIncomingFrame。因为对端握手后会立即补发离线消息 / 回执，这些
+      // 帧会在「会话尚未就绪」的微小窗口里被 _handleIncomingFrame 因 !ready 丢弃，导致
+      // 本机接收 nonce 与对端发送 nonce 错位 → 之后每一帧都 NoiseTransportError:
+      // decrypt failed（确定性死循环，且恰好在「有待发消息」时触发）。
       final handshakeCompleter = Completer<String>();
+      final earlyFrames = <String>[];
       _incomingSub = _wsChannel!.stream.listen(
         (data) {
           final frame = data is String ? data : utf8.decode(data as List<int>);
           if (!handshakeCompleter.isCompleted) {
             handshakeCompleter.complete(frame);
+          } else if (_noiseSession?.ready != true) {
+            earlyFrames.add(frame);
           } else {
             _handleIncomingFrame(frame);
           }
@@ -176,6 +199,15 @@ class PeerConnection {
 
       _setState(PeerConnectionState.connected);
       _startHeartbeat();
+
+      // 握手已完成、会话就绪。把握手窗口内缓冲的帧按到达顺序补放。
+      // 同步逐个 invoke（不 await）：_handleIncomingFrame 内部用 _recvLock 串行化，按
+      // invoke 顺序占位，保证缓冲的早到帧先于之后新到帧处理，nonce 不乱序。此处为同步
+      // 循环、无 await，期间不会有新 socket 事件插入，故顺序安全。
+      for (final f in earlyFrames) {
+        _handleIncomingFrame(f);
+      }
+      earlyFrames.clear();
     } catch (e) {
       _log.error('Connection failed to ${peer.deviceName}', tag: _tag, error: e);
       _incomingSub?.cancel();
@@ -208,7 +240,24 @@ class PeerConnection {
     }))));
   }
 
-  /// 序列化发送 — 确保 encrypt + send 原子执行，防止 nonce 并发冲突
+  /// 回复心跳（失败静默忽略，避免中断接收处理）
+  Future<void> _sendPong() async {
+    try {
+      await _serializedSend(Uint8List.fromList(utf8.encode(jsonEncode({
+        'type': 'pong',
+        'timestamp': DateTime.now().millisecondsSinceEpoch,
+      }))));
+    } catch (e) {
+      _log.debug('Failed to send pong: $e', tag: _tag);
+    }
+  }
+
+  /// 序列化发送 — 确保 encrypt + send 原子执行，防止 nonce 并发冲突。
+  ///
+  /// 发送失败（会话未就绪 / 加密失败 / 传输层已断）会向上抛出异常，
+  /// 由调用方决定如何处理（业务消息会被重新入队，心跳会触发断开重连）。
+  /// 这点至关重要：若在此吞掉异常，半开连接期间发出的消息会被误判为
+  /// 已发送，重连后不会补发，从而永远停留在「未送达」状态。
   Future<void> _serializedSend(Uint8List plaintext) async {
     final prev = _sendLock;
     final completer = Completer<void>();
@@ -216,12 +265,12 @@ class PeerConnection {
 
     await prev; // 等待上一次发送完成
     try {
-      if (_noiseSession == null || !_noiseSession!.ready) return;
+      if (_noiseSession == null || !_noiseSession!.ready) {
+        throw StateError('Noise session not ready');
+      }
       final ciphertext = await _noiseSession!.encrypt(plaintext);
       final frame = encodeFrame(Frame(t: FrameType.data, payload: ciphertext));
       _send(frame);
-    } catch (e) {
-      _log.error('Serialized send failed', tag: _tag, error: e);
     } finally {
       completer.complete();
     }
@@ -344,10 +393,8 @@ class PeerConnection {
           break;
 
         case 'ping':
-          _serializedSend(Uint8List.fromList(utf8.encode(jsonEncode({
-            'type': 'pong',
-            'timestamp': DateTime.now().millisecondsSinceEpoch,
-          }))));
+          // fire-and-forget；发送失败不应中断接收流程
+          unawaited(_sendPong());
           break;
 
         case 'pong':
@@ -355,18 +402,30 @@ class PeerConnection {
       }
     } catch (e) {
       _log.error('Error handling incoming frame', tag: _tag, error: e);
+      // decrypt 失败意味着 Noise 会话已损坏（phase=closed），无法再收发任何帧。
+      // 必须主动断开以触发上层重连、重建会话；否则连接会停留在「state=connected
+      // 但会话已死」的僵尸态：发送时静默失败，而 _triggerImmediateReconnect 又因
+      // 「看起来仍已连接」而跳过重连，导致消息一直发不出去。
+      if (e is NoiseTransportError) {
+        _heartbeatTimer?.cancel();
+        _setState(PeerConnectionState.disconnected);
+      }
     } finally {
       completer.complete();
     }
   }
 
-  /// 发送投递回执
+  /// 发送投递回执（失败不致命：对端重连后会重新触发已读/送达逻辑）
   Future<void> _sendAck(String messageId, String status) async {
-    await _serializedSend(Uint8List.fromList(utf8.encode(jsonEncode({
-      'type': 'ack',
-      'message_id': messageId,
-      'status': status,
-    }))));
+    try {
+      await _serializedSend(Uint8List.fromList(utf8.encode(jsonEncode({
+        'type': 'ack',
+        'message_id': messageId,
+        'status': status,
+      }))));
+    } catch (e) {
+      _log.debug('Failed to send ack ($status) for $messageId: $e', tag: _tag);
+    }
   }
 
   /// 发送已读回执（批量）
@@ -377,10 +436,15 @@ class PeerConnection {
   }
 
   void _send(String frameStr) {
+    if (_closed) {
+      throw StateError('Connection closed');
+    }
     if (_wsChannel != null) {
       _wsChannel!.sink.add(frameStr);
     } else if (_tunnelStream != null && !_tunnelStream!.isClosed) {
       _tunnelStream!.send(Uint8List.fromList(utf8.encode(frameStr)));
+    } else {
+      throw StateError('No active transport for ${peer.deviceName}');
     }
   }
 
@@ -392,7 +456,7 @@ class PeerConnection {
   static const _livenessTimeout = Duration(seconds: 120);
 
   void _startHeartbeat() {
-    _heartbeatTimer = Timer.periodic(_heartbeatInterval, (_) {
+    _heartbeatTimer = Timer.periodic(_heartbeatInterval, (_) async {
       // 半开连接（对端消失但 TCP FIN 未到达，relay/移动网络常见）不会触发
       // onDone，必须靠活性检测主动断开。每次成功收帧都会刷新 _lastActivity，
       // 因此活连接靠 30s 一次的 pong 持续刷新；超过阈值无任何活动 → 判定已死。
@@ -408,7 +472,18 @@ class PeerConnection {
         _heartbeatTimer?.cancel();
         return;
       }
-      _sendHeartbeat();
+      try {
+        await _sendHeartbeat();
+      } catch (e) {
+        // 心跳发送失败说明传输层已断（如 WiFi 关闭）。立即判定断开并触发
+        // 重连，无需等待 120s 活性超时，从而更快地恢复可用连接。
+        _log.warning(
+          'Heartbeat send failed for ${peer.deviceName}, dropping connection: $e',
+          tag: _tag,
+        );
+        _setState(PeerConnectionState.disconnected);
+        _heartbeatTimer?.cancel();
+      }
     });
     _lastActivity = DateTime.now();
   }

@@ -121,22 +121,54 @@ class _PeerChatScreenState extends State<PeerChatScreen> {
       }
     });
 
-    // 监听回执事件，实时更新消息投递状态
+    // 监听回执事件，实时更新消息投递状态。
+    // 包括本地发送成功事件（'sent'）以及对端回执（'delivered' / 'read'）。
     _ackSub = PeerConnectionManager.instance.ackEvents.listen((ack) {
-      if (mounted) {
-        setState(() {
-          for (var i = 0; i < _messages.length; i++) {
-            if (_messages[i].id == ack.messageId) {
-              final newDelivery = ack.status == 'read'
-                  ? PeerMessageDelivery.read
-                  : PeerMessageDelivery.delivered;
+      if (!mounted) return;
+      final newDelivery = _deliveryFromAckStatus(ack.status);
+      if (newDelivery == null) return;
+      setState(() {
+        for (var i = 0; i < _messages.length; i++) {
+          if (_messages[i].id == ack.messageId) {
+            // 防止状态回退：仅允许向更「已送达」的方向推进。
+            if (_deliveryRank(newDelivery) >
+                _deliveryRank(_messages[i].delivery)) {
               _messages[i] = _messages[i].copyWith(delivery: newDelivery);
-              break;
             }
+            break;
           }
-        });
-      }
+        }
+      });
     });
+  }
+
+  PeerMessageDelivery? _deliveryFromAckStatus(String status) {
+    switch (status) {
+      case 'sent':
+        return PeerMessageDelivery.sent;
+      case 'delivered':
+        return PeerMessageDelivery.delivered;
+      case 'read':
+        return PeerMessageDelivery.read;
+      default:
+        return null;
+    }
+  }
+
+  /// 投递状态的推进等级，用于防止状态回退（数值越大表示越「已送达」）。
+  int _deliveryRank(PeerMessageDelivery delivery) {
+    switch (delivery) {
+      case PeerMessageDelivery.failed:
+        return -1;
+      case PeerMessageDelivery.pending:
+        return 0;
+      case PeerMessageDelivery.sent:
+        return 1;
+      case PeerMessageDelivery.delivered:
+        return 2;
+      case PeerMessageDelivery.read:
+        return 3;
+    }
   }
 
   Future<void> _tryConnect() async {
@@ -375,7 +407,8 @@ class _PeerChatScreenState extends State<PeerChatScreen> {
             child: TextField(
               controller: _textController,
               decoration: InputDecoration(
-                hintText: isConnected ? '输入消息...' : '设备未连接',
+                // 离线时仍可输入：消息会进入待发队列，连接恢复后自动补发
+                hintText: isConnected ? '输入消息...' : '离线 · 消息将在连接后发送',
                 hintStyle: TextStyle(color: Colors.grey[400]),
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(24),
@@ -388,25 +421,24 @@ class _PeerChatScreenState extends State<PeerChatScreen> {
                   vertical: 10,
                 ),
               ),
-              enabled: isConnected,
               textInputAction: TextInputAction.send,
               onSubmitted: (_) => _sendMessage(),
             ),
           ),
           const SizedBox(width: 8),
           GestureDetector(
-            onTap: isConnected ? _sendMessage : null,
+            onTap: _sendMessage,
             child: Container(
               width: 40,
               height: 40,
               decoration: BoxDecoration(
-                color: isConnected ? Theme.of(context).primaryColor : Colors.grey[300],
+                color: Theme.of(context).primaryColor,
                 shape: BoxShape.circle,
               ),
-              child: Icon(
+              child: const Icon(
                 Icons.send,
                 size: 18,
-                color: isConnected ? Colors.white : Colors.grey[500],
+                color: Colors.white,
               ),
             ),
           ),

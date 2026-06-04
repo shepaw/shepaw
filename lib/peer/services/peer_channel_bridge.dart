@@ -27,6 +27,10 @@ class PeerTunnelStream {
   /// 关闭连接
   final void Function() close;
 
+  /// 远端在本地网络中的地址（仅本地直连入站时已知；Channel 中继入站为 null）。
+  /// 用于学习对端当前内网 IP，使存储的 localEndpoint 在换网后自愈。
+  final String? remoteAddress;
+
   /// 连接是否已关闭
   bool _closed = false;
   bool get isClosed => _closed;
@@ -36,6 +40,7 @@ class PeerTunnelStream {
     required this.incoming,
     required this.send,
     required this.close,
+    this.remoteAddress,
   });
 
   void markClosed() => _closed = true;

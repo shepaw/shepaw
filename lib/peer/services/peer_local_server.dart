@@ -153,6 +153,8 @@ class PeerLocalServer {
           ws.close();
           if (!dataCtrl.isClosed) dataCtrl.close();
         },
+        // 记录对端当前内网 IP，便于学习并刷新存储的 localEndpoint
+        remoteAddress: request.connectionInfo?.remoteAddress.address,
       );
 
       _incomingController.add(stream);

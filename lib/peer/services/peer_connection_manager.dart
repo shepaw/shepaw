@@ -164,22 +164,51 @@ class PeerConnectionManager {
     _log.info('PeerConnectionManager stopped', tag: _tag);
   }
 
-  /// App 恢复前台时调用 — 立即尝试重连所有断开的 peer
-  Future<void> resumeAll() async {
+  /// App 恢复前台时调用 — 主动重连所有 peer。
+  ///
+  /// [backgroundedFor] 为本次后台停留时长。移动系统在较长时间后台会挂起 / 关闭
+  /// 套接字，使现有连接变成「半开」陈旧连接（状态仍是 connected 但实际已失效）。
+  /// 因此后台较久时强制刷新连接。
+  ///
+  /// 刚恢复的一方此前很可能不可达（息屏 / 后台），对端无法连入，所以这里一律由
+  /// 本机「主动发起」连接（ignoreTieBreak），重复连接交给 glare 收敛器处理。
+  Future<void> resumeAll({Duration? backgroundedFor}) async {
     if (!_running) {
       await start();
       return;
     }
-    _log.info('Resuming all peer connections', tag: _tag);
+    final forceRefresh = backgroundedFor == null ||
+        backgroundedFor > const Duration(seconds: 20);
+    _log.info(
+      'Resuming peer connections (forceRefresh=$forceRefresh, '
+      'bg=${backgroundedFor?.inSeconds ?? '?'}s)',
+      tag: _tag,
+    );
     final peers = await _storage.loadAllPeers();
     for (final peer in peers) {
       if (peer.isBlocked) continue;
       final conn = _connections[peer.id];
-      if (conn == null || conn.state != PeerConnectionState.connected) {
-        // 重置重连计数，立即重连
-        _reconnectAttempts.remove(peer.id);
-        _scheduleReconnect(peer, delay: Duration.zero);
+      final isConnected =
+          conn != null && conn.state == PeerConnectionState.connected;
+      // 短暂后台且仍连接 → 大概率有效，保留，不打断
+      if (isConnected && !forceRefresh) continue;
+
+      // 取消遗留定时器、重置退避，准备立即主动发起
+      _reconnectTimers[peer.id]?.cancel();
+      _reconnectTimers.remove(peer.id);
+      _fallbackTimers[peer.id]?.cancel();
+      _fallbackTimers.remove(peer.id);
+      _reconnectAttempts.remove(peer.id);
+
+      // 关闭可能已半开失效的旧连接，强制重建（否则 _doConnect 会因「已连接」跳过）
+      if (isConnected) {
+        _connections.remove(peer.id);
+        _cancelConnectionSubs(peer.id);
+        await conn.close();
       }
+
+      // 主动发起（忽略 tie-break）。不 await，让各 peer 并发连接。
+      _doConnect(peer, ignoreTieBreak: true);
     }
   }
 
@@ -227,24 +256,54 @@ class PeerConnectionManager {
     }
   }
 
-  /// 发送消息给指定 peer
+  /// 发送消息给指定 peer。
+  ///
+  /// - 在线且发送成功 → 标记 sent 并广播 sent 事件（UI 单勾）。
+  /// - 在线但发送失败（半开连接 / 会话未就绪）→ 标记 pending 并触发立即重连。
+  /// - 离线 → 入待发队列并触发立即重连。
+  ///
+  /// 待发队列中的消息会在连接恢复后由 [_flushPendingMessages] 自动补发。
   Future<void> sendMessage(String peerId, PeerMessage message) async {
     final conn = _connections[peerId];
     if (conn != null && conn.state == PeerConnectionState.connected) {
       try {
         await conn.sendMessage(message);
         await _storage.updateMessageDelivery(message.id, PeerMessageDelivery.sent);
+        _emitLocalDelivery(message.id, 'sent');
       } catch (e) {
-        // Noise session 可能未就绪，保存到待发队列
+        // 发送失败（如 WiFi 刚断、连接半开）：保留为待发队列，主动重连后补发
         _log.warning('sendMessage failed, queuing: $e', tag: _tag);
         await _storage.updateMessageDelivery(message.id, PeerMessageDelivery.pending);
+        _triggerImmediateReconnect(peerId);
       }
     } else {
-      // 离线，保存到待发队列
+      // 离线，保存到待发队列，并主动尝试重连以尽快补发
       await _storage.saveMessage(message.copyWith(
         delivery: PeerMessageDelivery.pending,
       ));
+      _triggerImmediateReconnect(peerId);
     }
+  }
+
+  /// 广播本地投递状态变化（如发送成功 / 补发成功），供打开的聊天页更新气泡状态。
+  /// 复用 ack 事件流，status 取值与回执一致（'sent' / 'delivered' / 'read'）。
+  void _emitLocalDelivery(String messageId, String status) {
+    if (!_ackController.isClosed) {
+      _ackController.add(PeerAckEvent(messageId: messageId, status: status));
+    }
+  }
+
+  /// 主动触发一次立即重连（重置退避），用于「无法发送时尽快恢复连接」。
+  /// 若已连接或正在连接中则跳过，避免打断正在进行的握手。
+  Future<void> _triggerImmediateReconnect(String peerId) async {
+    if (!_running) return;
+    final conn = _connections[peerId];
+    if (conn != null && conn.state == PeerConnectionState.connected) return;
+    if (_connecting.contains(peerId)) return;
+    final peer = await _storage.getPeerById(peerId);
+    if (peer == null || peer.isBlocked) return;
+    _reconnectAttempts.remove(peerId);
+    _scheduleReconnect(peer, delay: Duration.zero);
   }
 
   /// 发送控制消息给指定 peer（agent-over-peer）。
@@ -416,15 +475,56 @@ class PeerConnectionManager {
       return;
     }
 
-    // 如果已有活跃连接，拒绝新入站（避免覆盖正常工作的连接）
-    final existingConn = _connections[matchedPeer.id];
-    if (existingConn != null && existingConn.state == PeerConnectionState.connected) {
-      _log.debug('Already connected to ${matchedPeer.deviceName}, rejecting duplicate inbound', tag: _tag);
+    // 学习并持久化对端当前内网地址：换网 / 重连 WiFi 后对端 IP 常会变化，
+    // 存储里的旧 localEndpoint 会失效，导致本机主动直连一直超时。每次对端连入时
+    // 用其实际来源 IP 刷新 localEndpoint，使后续本机主动直连能命中正确地址。
+    final learnedAddr = stream.remoteAddress;
+    if (learnedAddr != null && learnedAddr.isNotEmpty) {
+      final learnedEndpoint =
+          'ws://$learnedAddr:${PeerLocalServer.defaultPort}/peer/ws';
+      if (learnedEndpoint != matchedPeer.localEndpoint) {
+        await _storage.updateLocalEndpoint(matchedPeer.id, learnedEndpoint);
+        matchedPeer = matchedPeer.copyWith(localEndpoint: learnedEndpoint);
+        _log.debug(
+          'Learned local endpoint for ${matchedPeer.deviceName}: $learnedEndpoint',
+          tag: _tag,
+        );
+      }
+    }
+
+    // 重复连接（glare）的确定性收敛 vs. 陈旧半开连接的替换：
+    //
+    // - 真正的「双向同时建连(glare)」：两端几乎同时互相主动发起，此时本机的
+    //   _connecting 集合里一定有该 peer（自己正在发起 outbound）。这种情况下由
+    //   「指定发起方」(指纹较小者) 坚持自己的 outbound、拒绝对端 inbound；两端用
+    //   同一把尺、计算结果互补，必然收敛到同一条连接。
+    //
+    // - 「陈旧半开连接」：本机并未在发起连接（_connecting 不含该 peer），只是握着
+    //   一条状态仍是 connected、实则已失效的旧连接（切网 / 对端息屏后常见）。对端
+    //   此刻主动连入，说明对端已认定旧连接死亡。若仍以「我是指定发起方」为由拒绝
+    //   入站、死守旧连接，就会陷入「标题显示已连接、却一直拒绝对端、收不到消息」的
+    //   死循环（旧连接要等 120s 活性超时才会被清掉）。因此这种情况必须接受入站、
+    //   替换旧连接。
+    //
+    // 用 _connecting 区分二者：仅当「我此刻正在主动发起对该 peer 的连接」时才视为
+    // 真 glare、由指定发起方拒绝入站；否则一律接受入站并替换可能已失效的旧连接。
+    final iAmInitiator = _isDesignatedInitiator(
+      identity.fingerprintHex,
+      matchedPeer.fingerprint,
+    );
+    final iAmActivelyConnecting = _connecting.contains(matchedPeer.id);
+    if (iAmInitiator && iAmActivelyConnecting) {
+      _log.debug(
+        'Glare with ${matchedPeer.deviceName}: keep my outbound, reject inbound '
+        '(designated initiator & actively connecting)',
+        tag: _tag,
+      );
       noiseSession.close();
       await sub.cancel();
       stream.close();
       return;
     }
+    // 其余情况一律接受入站：旧连接（可能已半开失效）会在注册新连接前被关闭。
 
     // 发送 msg2 完成握手
     final msg2Payload = Uint8List.fromList(utf8.encode(jsonEncode({
@@ -504,6 +604,10 @@ class PeerConnectionManager {
   /// 连接建立后的副作用：重置重连状态、广播 connected 事件、更新 lastSeen、补发离线消息。
   void _onConnected(PairedPeer peer) {
     _reconnectAttempts.remove(peer.id);
+    // 连接已建立，取消遗留的重连/回退定时器，避免再触发多余的 _doConnect
+    // 而产生重复连接（glare）。
+    _reconnectTimers[peer.id]?.cancel();
+    _reconnectTimers.remove(peer.id);
     _fallbackTimers[peer.id]?.cancel();
     _fallbackTimers.remove(peer.id);
     _eventController.add(PeerConnectionEvent(
@@ -580,8 +684,22 @@ class PeerConnectionManager {
     }
   }
 
+  /// 指纹收敛规则：指纹较小的一方为该 peer 的「指定发起方」。
+  ///
+  /// 发起 tie-break 与 glare 去重（[_acceptIncomingConnection]）共用此规则，
+  /// 保证两端用同一把尺、收敛到同一条连接：指定发起方坚持自己的 outbound，
+  /// 另一方接受 inbound。两端计算结果互补，必然一致。
+  bool _isDesignatedInitiator(String myFingerprint, String peerFingerprint) {
+    return myFingerprint.compareTo(peerFingerprint) < 0;
+  }
+
   /// 执行连接（优先内网直连，失败后回退 Channel）
   Future<void> _doConnect(PairedPeer peer, {bool ignoreTieBreak = false}) async {
+    // 使用存储中的最新端点：localEndpoint 可能已被入站连接学习并刷新为对端
+    // 当前 IP，避免一直用换网前的旧地址反复超时。
+    final fresh = await _storage.getPeerById(peer.id);
+    if (fresh != null) peer = fresh;
+
     // 如果已有活跃连接，跳过
     final existing = _connections[peer.id];
     if (existing != null && existing.state == PeerConnectionState.connected) {
@@ -608,7 +726,8 @@ class PeerConnectionManager {
       if (iAmReachable != peerReachable) {
         shouldInitiate = !iAmReachable; // 我不可达 → 我发起
       } else {
-        shouldInitiate = myFingerprint.compareTo(peer.fingerprint) < 0;
+        // 可达性相同 → 用指纹收敛规则（与 glare 去重同一把尺）
+        shouldInitiate = _isDesignatedInitiator(myFingerprint, peer.fingerprint);
       }
 
       if (!shouldInitiate) {
@@ -704,10 +823,13 @@ class PeerConnectionManager {
     _fallbackTimers[peer.id]?.cancel();
     _fallbackTimers[peer.id] = Timer(_fallbackDelay, () async {
       if (!_running) return;
+      // 已连接 / 正在握手（含正在接受入站）则无需回退，避免与对端发起方
+      // 同时建连产生重复连接（glare）。
       final current = _connections[peer.id];
-      if (current != null && current.state == PeerConnectionState.connected) {
-        return; // 已通过入站连接建立，无需回退
+      if (current != null && current.state != PeerConnectionState.disconnected) {
+        return;
       }
+      if (_connecting.contains(peer.id)) return;
       _log.debug('Fallback connect: initiating connection to ${peer.deviceName}', tag: _tag);
       await _doConnect(peer, ignoreTieBreak: true);
     });
@@ -744,6 +866,8 @@ class PeerConnectionManager {
       try {
         await conn.sendMessage(msg);
         await _storage.updateMessageDelivery(msg.id, PeerMessageDelivery.sent);
+        // 通知打开的聊天页将该消息从「待发送」更新为「已发送」
+        _emitLocalDelivery(msg.id, 'sent');
       } catch (e) {
         _log.warning('Failed to flush message ${msg.id}: $e', tag: _tag);
         break; // 停止发送，等下次连接

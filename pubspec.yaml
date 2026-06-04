@@ -1,7 +1,7 @@
 name: shepaw
 description: Paw - Secure Mobile Platform
 publish_to: 'none'
-version: 1.0.14+1
+version: 1.0.16+1
 
 environment:
   sdk: '>=3.0.0 <4.0.0'
@@ -98,6 +98,7 @@ dependencies:
   # 向量数据库 & Embedding
   veda: ^0.1.0
   tflite_flutter: ^0.12.1
+  connectivity_plus: ^6.1.0
 
 dependency_overrides:
   record_linux: ^1.3.0
