@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../l10n/app_localizations.dart';
 import '../services/password_service.dart';
+import '../theme/app_theme.dart';
 
 /// 密码修改页面
 class ChangePasswordScreen extends StatefulWidget {
@@ -315,7 +316,7 @@ class _ChangePasswordScreenState extends State<ChangePasswordScreen> {
               Container(
                 padding: const EdgeInsets.all(16),
                 decoration: BoxDecoration(
-                  color: Colors.blue[50],
+                  color: AppColors.primaryContainer,
                   borderRadius: BorderRadius.circular(12),
                 ),
                 child: Column(
@@ -323,9 +324,9 @@ class _ChangePasswordScreenState extends State<ChangePasswordScreen> {
                   children: [
                     Text(
                       l10n.changePassword_requirementsTitle,
-                      style: TextStyle(
+                      style: const TextStyle(
                         fontWeight: FontWeight.bold,
-                        color: Colors.blue[700],
+                        color: AppColors.primaryDark,
                       ),
                     ),
                     const SizedBox(height: 8),
@@ -347,9 +348,9 @@ class _ChangePasswordScreenState extends State<ChangePasswordScreen> {
       padding: const EdgeInsets.only(top: 4),
       child: Row(
         children: [
-          Icon(Icons.check_circle_outline, size: 16, color: Colors.blue[700]),
+          const Icon(Icons.check_circle_outline, size: 16, color: AppColors.primaryDark),
           const SizedBox(width: 8),
-          Text(text, style: TextStyle(color: Colors.blue[700])),
+          Text(text, style: const TextStyle(color: AppColors.primaryDark)),
         ],
       ),
     );

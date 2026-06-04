@@ -4,6 +4,7 @@ import 'package:markdown/markdown.dart' as md;
 import 'package:url_launcher/url_launcher.dart';
 import '../l10n/app_localizations.dart';
 import '../models/message.dart';
+import '../theme/app_theme.dart';
 import 'voice_message_bubble.dart';
 import 'image_message_bubble.dart';
 import 'image_grid_bubble.dart';
@@ -186,7 +187,7 @@ class MessageBubble extends StatelessWidget {
                 width: 32,
                 height: 32,
                 decoration: BoxDecoration(
-                  color: isStreaming ? Colors.blue[100] : null,
+                  color: isStreaming ? AppColors.primaryContainer : null,
                   borderRadius: BorderRadius.circular(8),
                 ),
                 alignment: Alignment.center,
@@ -235,7 +236,7 @@ class MessageBubble extends StatelessWidget {
                             AppLocalizations.of(context).widget_typing,
                             style: const TextStyle(
                               fontSize: 10,
-                              color: Colors.blue,
+                              color: AppColors.primary,
                               fontStyle: FontStyle.italic,
                             ),
                           ),
@@ -255,10 +256,10 @@ class MessageBubble extends StatelessWidget {
                   decoration: BoxDecoration(
                     color: isMyMessage
                         ? Theme.of(context).primaryColor
-                        : (isStreaming ? Colors.blue[50] : Colors.grey[200]),
+                        : (isStreaming ? AppColors.primaryContainer : Colors.grey[200]),
                     borderRadius: BorderRadius.circular(16),
                     border: isStreaming
-                        ? Border.all(color: Colors.blue[200]!, width: 1)
+                        ? Border.all(color: AppColors.primaryLight, width: 1)
                         : null,
                   ),
                   child: Column(

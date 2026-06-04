@@ -4,6 +4,7 @@ import '../../models/remote_agent.dart';
 import '../../utils/session_utils.dart';
 import '../avatar_image.dart';
 import '../../l10n/app_localizations.dart';
+import '../../theme/app_theme.dart';
 
 /// AppBar title widget for DM (1-on-1) chat mode.
 class ChatDMAppBarTitle extends StatelessWidget {
@@ -192,11 +193,11 @@ class ChatGroupAppBarTitle extends StatelessWidget {
             width: 40,
             height: 40,
             decoration: BoxDecoration(
-              color: Colors.blue[100],
+              color: AppColors.primaryContainer,
               borderRadius: BorderRadius.circular(10),
             ),
             alignment: Alignment.center,
-            child: const Icon(Icons.group, size: 24),
+            child: const Icon(Icons.group, size: 24, color: AppColors.primary),
           ),
         ),
         const SizedBox(width: 12),

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../l10n/app_localizations.dart';
 import '../models/agent.dart';
 import '../models/channel.dart';
+import '../theme/app_theme.dart';
 import '../peer/models/paired_peer.dart';
 import '../peer/screens/peer_settings_screen.dart';
 import '../peer/screens/peer_pairing_screen.dart';
@@ -241,11 +242,11 @@ class _ContactsScreenState extends State<ContactsScreen>
         width: 48,
         height: 48,
         decoration: BoxDecoration(
-          color: Colors.blue[100],
+          color: AppColors.primaryContainer,
           borderRadius: BorderRadius.circular(12),
         ),
         alignment: Alignment.center,
-        child: const Icon(Icons.group, size: 24, color: Colors.blue),
+        child: const Icon(Icons.group, size: 24, color: AppColors.primary),
       ),
       title: Text(
         group.name,

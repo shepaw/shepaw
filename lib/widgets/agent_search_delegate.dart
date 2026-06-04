@@ -3,6 +3,7 @@ import '../models/agent.dart';
 import '../models/channel.dart';
 import '../services/local_database_service.dart';
 import '../services/message_search_service.dart';
+import '../theme/app_theme.dart';
 import 'avatar_image.dart';
 
 /// Describes a search result selection so the caller can navigate using its own
@@ -254,13 +255,13 @@ class AgentSearchDelegate extends SearchDelegate<Agent?> {
         width: 40,
         height: 40,
         decoration: BoxDecoration(
-          color: Colors.blue[50],
+          color: AppColors.primaryContainer,
           borderRadius: BorderRadius.circular(10),
         ),
         alignment: Alignment.center,
         child: Icon(
           channel.isGroup ? Icons.group : Icons.chat_bubble_outline,
-          color: Colors.blue[700],
+          color: AppColors.primaryDark,
           size: 20,
         ),
       ),

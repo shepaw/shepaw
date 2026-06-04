@@ -5,6 +5,7 @@ import '../../models/message.dart';
 import '../../providers/app_state.dart';
 import '../../utils/message_utils.dart';
 import '../../l10n/app_localizations.dart';
+import '../../theme/app_theme.dart';
 
 /// Shows a context menu (bottom sheet) for a message.
 ///
@@ -81,8 +82,8 @@ void showMessageContextMenu(
                 },
               ),
               ListTile(
-                leading: const Icon(Icons.edit_note, color: Colors.blue),
-                title: Text(menuL10n.chat_reEdit, style: const TextStyle(color: Colors.blue)),
+                leading: const Icon(Icons.edit_note, color: AppColors.primary),
+                title: Text(menuL10n.chat_reEdit, style: const TextStyle(color: AppColors.primary)),
                 subtitle: Text(menuL10n.chat_reEditSub),
                 onTap: () {
                   Navigator.pop(context);

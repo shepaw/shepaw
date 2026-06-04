@@ -4,6 +4,7 @@ import '../services/remote_agent_service.dart';
 import '../service_locator.dart' show getIt;
 import '../services/agent_memory_biz_service.dart';
 import '../services/logger_service.dart';
+import '../theme/app_theme.dart';
 import 'agent_memory_detail_screen.dart';
 
 /// Agent 记忆管理列表页面（新版本）
@@ -162,7 +163,7 @@ class _AgentMemoryManagementScreenState
           children: [
             Badge.count(
               count: memoryCount,
-              backgroundColor: Colors.blue,
+              backgroundColor: AppColors.primary,
               textColor: Colors.white,
             ),
             const SizedBox(height: 4),

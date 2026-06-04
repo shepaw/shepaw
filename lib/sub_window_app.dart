@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'l10n/app_localizations.dart';
 import 'screens/inference_log_screen.dart';
 import 'screens/log_viewer_screen.dart';
+import 'theme/app_theme.dart';
 
 /// Lightweight [MaterialApp] that runs inside a native sub-window.
 ///
@@ -46,14 +47,7 @@ class SubWindowApp extends StatelessWidget {
         }
         return const Locale('zh');
       },
-      theme: ThemeData(
-        primarySwatch: Colors.blue,
-        useMaterial3: true,
-        colorScheme: ColorScheme.fromSeed(
-          seedColor: Colors.blue,
-          brightness: Brightness.light,
-        ),
-      ),
+      theme: AppTheme.light,
       home: _buildScreen(),
     );
   }

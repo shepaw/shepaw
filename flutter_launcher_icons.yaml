@@ -5,23 +5,25 @@ flutter_launcher_icons:
   image_path: "assets/shepaw_icon_1024.png"
 
   # Android 自适应图标
-  adaptive_icon_background: "#1e64c8"
+  adaptive_icon_background: "#FFFFFF"
   adaptive_icon_foreground: "assets/shepaw_icon_1024.png"
 
   # iOS 配置
   remove_alpha_ios: true
 
   # macOS 配置
+  # 使用预先做好的圆角母图（squircle + 透明留白 + 投影），符合 macOS Dock 规范。
+  # 普通方图在 macOS 上不会被系统自动裁圆角，所以需要图片自带圆角形状。
   macos:
     generate: true
-    image_path: "assets/shepaw_icon_1024.png"
+    image_path: "assets/shepaw_icon_macos_1024.png"
 
   # Web 配置
   web:
     generate: true
     image_path: "assets/shepaw_icon_1024.png"
-    background_color: "#1e64c8"
-    theme_color: "#1e64c8"
+    background_color: "#FFF8F0"
+    theme_color: "#EE7A1E"
 
   # Windows 配置
   windows:

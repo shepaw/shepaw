@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../theme/app_theme.dart';
 
 /// Indicator shown when there are queued messages waiting to be processed.
 class ChatQueueIndicator extends StatelessWidget {
@@ -15,23 +16,23 @@ class ChatQueueIndicator extends StatelessWidget {
 
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-      color: Colors.blue[50],
+      color: AppColors.primaryContainer,
       child: Row(
         children: [
-          SizedBox(
+          const SizedBox(
             width: 14,
             height: 14,
             child: CircularProgressIndicator(
               strokeWidth: 2,
-              color: Colors.blue[400],
+              color: AppColors.primary,
             ),
           ),
           const SizedBox(width: 8),
           Text(
             queueLength == 1 ? '1 message queued' : '$queueLength messages queued',
-            style: TextStyle(
+            style: const TextStyle(
               fontSize: 12,
-              color: Colors.blue[700],
+              color: AppColors.primaryDark,
             ),
           ),
         ],

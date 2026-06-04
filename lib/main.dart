@@ -14,6 +14,7 @@ import 'package:flutter_foreground_task/flutter_foreground_task.dart';
 import 'sub_window_app.dart';
 import 'app_bootstrap.dart';
 import 'service_locator.dart';
+import 'theme/app_theme.dart';
 
 import 'providers/app_state.dart';
 import 'providers/locale_provider.dart';
@@ -255,14 +256,7 @@ class _MyAppState extends State<MyApp> {
               }
               return const Locale('zh');
             },
-            theme: ThemeData(
-              primarySwatch: Colors.blue,
-              useMaterial3: true,
-              colorScheme: ColorScheme.fromSeed(
-                seedColor: Colors.blue,
-                brightness: Brightness.light,
-              ),
-            ),
+            theme: AppTheme.light,
             home: const SplashScreen(),
             routes: {
               '/setup': (context) => const PasswordSetupScreen(),
@@ -314,8 +308,13 @@ class _SplashScreenState extends State<SplashScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Theme.of(context).primaryColor,
-      body: Center(
+      body: Container(
+        width: double.infinity,
+        height: double.infinity,
+        decoration: const BoxDecoration(
+          gradient: AppTheme.brandGradient,
+        ),
+        child: Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
@@ -355,6 +354,7 @@ class _SplashScreenState extends State<SplashScreen> {
               ),
             ),
           ],
+        ),
         ),
       ),
     );

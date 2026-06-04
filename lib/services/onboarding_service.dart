@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import '../theme/app_theme.dart';
 
 /// 用户引导服务
 /// 
@@ -72,7 +73,7 @@ class OnboardingService {
       await showDialog(
         context: context,
         builder: (context) => AlertDialog(
-          icon: Icon(icon, size: 48, color: Colors.blue),
+          icon: Icon(icon, size: 48, color: AppColors.primary),
           title: Text(title),
           content: Text(message),
           actions: [

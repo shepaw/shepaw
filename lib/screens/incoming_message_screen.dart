@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import '../l10n/app_localizations.dart';
 import '../models/acp_server_message.dart';
 import '../services/acp_server_service.dart';
+import '../theme/app_theme.dart';
 import '../widgets/common_widgets.dart';
 import 'chat_screen.dart';
 
@@ -89,7 +90,7 @@ class _IncomingMessageScreenState extends State<IncomingMessageScreen> {
           },
         ),
         duration: const Duration(seconds: 5),
-        backgroundColor: Colors.blue[700],
+        backgroundColor: AppColors.primaryDark,
       ),
     );
   }
@@ -167,7 +168,7 @@ class _IncomingMessageScreenState extends State<IncomingMessageScreen> {
       onDismissed: (_) => _deleteMessage(message),
       child: Card(
         margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-        color: message.isRead ? null : Colors.blue[50],
+        color: message.isRead ? null : AppColors.primaryContainer,
         child: InkWell(
           onTap: () => _showMessageDetail(message),
           child: Padding(
@@ -182,7 +183,7 @@ class _IncomingMessageScreenState extends State<IncomingMessageScreen> {
                       width: 40,
                       height: 40,
                       decoration: BoxDecoration(
-                        color: Colors.blue,
+                        color: AppColors.primary,
                         borderRadius: BorderRadius.circular(10),
                       ),
                       alignment: Alignment.center,
@@ -215,7 +216,7 @@ class _IncomingMessageScreenState extends State<IncomingMessageScreen> {
                         width: 8,
                         height: 8,
                         decoration: const BoxDecoration(
-                          color: Colors.blue,
+                          color: AppColors.primary,
                           shape: BoxShape.circle,
                         ),
                       ),

@@ -25,6 +25,7 @@ import '../widgets/agent_search_delegate.dart';
 import '../widgets/avatar_image.dart';
 import '../services/message_search_service.dart';
 import '../l10n/app_localizations.dart';
+import '../theme/app_theme.dart';
 import '../providers/notification_provider.dart';
 import '../models/conversation_selection.dart';
 import '../peer/models/paired_peer.dart';
@@ -1020,7 +1021,7 @@ class HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateMi
       },
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-        color: isSelected ? Colors.blue.withValues(alpha: 0.08) : null,
+        color: isSelected ? AppColors.primary.withValues(alpha: 0.08) : null,
         child: Row(
           children: [
             // Group avatar
@@ -1030,11 +1031,11 @@ class HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateMi
                   width: 56,
                   height: 56,
                   decoration: BoxDecoration(
-                    color: Colors.blue[100],
+                    color: AppColors.primaryContainer,
                     borderRadius: BorderRadius.circular(12),
                   ),
                   alignment: Alignment.center,
-                  child: const Icon(Icons.group, size: 28, color: Colors.blue),
+                  child: const Icon(Icons.group, size: 28, color: AppColors.primary),
                 ),
                 if (unreadCount > 0)
                   Positioned(
@@ -1311,7 +1312,7 @@ class HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateMi
       },
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-        color: isSelected ? Colors.blue.withValues(alpha: 0.08) : null,
+        color: isSelected ? AppColors.primary.withValues(alpha: 0.08) : null,
         child: Row(
           children: [
             // Agent头像 + 未读红点
@@ -1484,7 +1485,7 @@ class HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateMi
       },
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-        color: isSelected ? Colors.blue.withOpacity(0.08) : null,
+        color: isSelected ? AppColors.primary.withValues(alpha: 0.08) : null,
         child: Row(
           children: [
             // 设备头像 + 未读红点

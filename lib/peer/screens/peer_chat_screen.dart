@@ -7,6 +7,7 @@ import '../models/peer_message.dart';
 import '../services/peer_connection_manager.dart';
 import '../services/peer_pairing_service.dart';
 import '../services/peer_storage_service.dart';
+import '../../theme/app_theme.dart';
 import 'peer_settings_screen.dart';
 
 /// P2P 聊天页面
@@ -618,7 +619,7 @@ class _PeerMessageBubble extends StatelessWidget {
       case PeerMessageDelivery.delivered:
         return const Icon(Icons.done_all, size: 12, color: Colors.grey);
       case PeerMessageDelivery.read:
-        return const Icon(Icons.done_all, size: 12, color: Colors.blue);
+        return const Icon(Icons.done_all, size: 12, color: AppColors.primary);
       case PeerMessageDelivery.failed:
         return const Icon(Icons.error_outline, size: 12, color: Colors.red);
     }

@@ -2,6 +2,7 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import '../l10n/app_localizations.dart';
 import '../services/password_service.dart';
+import '../theme/app_theme.dart';
 import 'privacy_policy_screen.dart';
 
 /// 首次密码设置页面
@@ -324,7 +325,7 @@ class _PasswordSetupScreenState extends State<PasswordSetupScreen> {
               Container(
                 padding: const EdgeInsets.all(16),
                 decoration: BoxDecoration(
-                  color: Colors.blue[50],
+                  color: AppColors.primaryContainer,
                   borderRadius: BorderRadius.circular(12),
                 ),
                 child: Column(
@@ -332,9 +333,9 @@ class _PasswordSetupScreenState extends State<PasswordSetupScreen> {
                   children: [
                     Text(
                       l10n.passwordSetup_requirementsTitle,
-                      style: TextStyle(
+                      style: const TextStyle(
                         fontWeight: FontWeight.bold,
-                        color: Colors.blue[700],
+                        color: AppColors.primaryDark,
                       ),
                     ),
                     const SizedBox(height: 8),
@@ -356,9 +357,9 @@ class _PasswordSetupScreenState extends State<PasswordSetupScreen> {
       padding: const EdgeInsets.only(top: 4),
       child: Row(
         children: [
-          Icon(Icons.check_circle_outline, size: 16, color: Colors.blue[700]),
+          const Icon(Icons.check_circle_outline, size: 16, color: AppColors.primaryDark),
           const SizedBox(width: 8),
-          Text(text, style: TextStyle(color: Colors.blue[700])),
+          Text(text, style: const TextStyle(color: AppColors.primaryDark)),
         ],
       ),
     );

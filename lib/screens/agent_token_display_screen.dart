@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../models/remote_agent.dart';
+import '../theme/app_theme.dart';
 
 /// Token 展示界面
 class AgentTokenDisplayScreen extends StatelessWidget {
@@ -258,8 +259,8 @@ class AgentTokenDisplayScreen extends StatelessWidget {
           Container(
             width: 24,
             height: 24,
-            decoration: BoxDecoration(
-              color: Colors.blue,
+            decoration: const BoxDecoration(
+              color: AppColors.primary,
               shape: BoxShape.circle,
             ),
             child: Center(

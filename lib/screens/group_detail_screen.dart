@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../l10n/app_localizations.dart';
 import '../models/channel.dart';
 import '../models/agent.dart';
+import '../theme/app_theme.dart';
 import '../services/local_api_service.dart';
 import '../services/local_database_service.dart';
 import '../services/logger_service.dart';
@@ -201,11 +202,11 @@ class _GroupDetailScreenState extends State<GroupDetailScreen> {
                 width: 80,
                 height: 80,
                 decoration: BoxDecoration(
-                  color: Colors.blue[100],
+                  color: AppColors.primaryContainer,
                   borderRadius: BorderRadius.circular(20),
                 ),
                 alignment: Alignment.center,
-                child: const Icon(Icons.group, size: 40, color: Colors.blue),
+                child: const Icon(Icons.group, size: 40, color: AppColors.primary),
               ),
               const SizedBox(height: 16),
               Text(
@@ -374,11 +375,11 @@ class _GroupDetailScreenState extends State<GroupDetailScreen> {
                 width: 80,
                 height: 80,
                 decoration: BoxDecoration(
-                  color: Colors.blue[100],
+                  color: AppColors.primaryContainer,
                   borderRadius: BorderRadius.circular(20),
                 ),
                 alignment: Alignment.center,
-                child: const Icon(Icons.group, size: 40, color: Colors.blue),
+                child: const Icon(Icons.group, size: 40, color: AppColors.primary),
               ),
             ),
             const SizedBox(height: 24),

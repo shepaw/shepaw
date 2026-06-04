@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../l10n/app_localizations.dart';
 import '../services/password_service.dart';
 import '../services/biometric_service.dart';
+import '../theme/app_theme.dart';
 
 /// 登录页面
 class LoginScreen extends StatefulWidget {
@@ -302,19 +303,19 @@ class _LoginScreenState extends State<LoginScreen> {
             Container(
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
-                color: Colors.blue[50],
+                color: AppColors.primaryContainer,
                 borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: Colors.blue[200]!),
+                border: Border.all(color: AppColors.primaryLight),
               ),
               child: Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Icon(Icons.info_outline, color: Colors.blue[700], size: 18),
+                  const Icon(Icons.info_outline, color: AppColors.primaryDark, size: 18),
                   const SizedBox(width: 8),
                   Expanded(
                     child: Text(
                       l10n.login_resetPasswordVaultHint,
-                      style: TextStyle(color: Colors.blue[800], fontSize: 13),
+                      style: const TextStyle(color: AppColors.primaryDark, fontSize: 13),
                     ),
                   ),
                 ],

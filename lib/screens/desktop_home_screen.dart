@@ -6,6 +6,7 @@ import '../models/conversation_selection.dart';
 import '../l10n/app_localizations.dart';
 import '../services/local_database_service.dart';
 import '../services/message_search_service.dart';
+import '../theme/app_theme.dart';
 import '../peer/models/paired_peer.dart';
 import '../peer/screens/peer_chat_screen.dart';
 import '../peer/services/peer_connection.dart';
@@ -1093,13 +1094,13 @@ class _DesktopSearchPanelState extends State<_DesktopSearchPanel> {
         width: 40,
         height: 40,
         decoration: BoxDecoration(
-          color: Colors.blue[50],
+          color: AppColors.primaryContainer,
           borderRadius: BorderRadius.circular(10),
         ),
         alignment: Alignment.center,
         child: Icon(
           channel.isGroup ? Icons.group : Icons.chat_bubble_outline,
-          color: Colors.blue[700],
+          color: AppColors.primaryDark,
           size: 20,
         ),
       ),

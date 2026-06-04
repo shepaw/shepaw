@@ -20,6 +20,7 @@ import '../services/local_database_service.dart';
 import '../utils/layout_utils.dart';
 import '../l10n/app_localizations.dart';
 import '../controllers/chat_controller.dart';
+import '../theme/app_theme.dart';
 import '../widgets/chat/chat_app_bar.dart';
 import '../widgets/chat/chat_menu.dart';
 import '../widgets/chat/chat_input_area.dart';
@@ -1260,9 +1261,9 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
             ...available.map((agent) => ListTile(
               leading: Container(
                 width: 40, height: 40,
-                decoration: BoxDecoration(color: Colors.blue[100], borderRadius: BorderRadius.circular(10)),
+                decoration: BoxDecoration(color: AppColors.primaryContainer, borderRadius: BorderRadius.circular(10)),
                 alignment: Alignment.center,
-                child: Text(agent.name.isNotEmpty ? agent.name[0].toUpperCase() : '?', style: TextStyle(color: Colors.blue[700], fontWeight: FontWeight.bold)),
+                child: Text(agent.name.isNotEmpty ? agent.name[0].toUpperCase() : '?', style: const TextStyle(color: AppColors.primaryDark, fontWeight: FontWeight.bold)),
               ),
               title: Text(agent.name),
               subtitle: agent.bio != null && agent.bio!.isNotEmpty ? Text(agent.bio!, maxLines: 1, overflow: TextOverflow.ellipsis) : null,
@@ -1854,12 +1855,12 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       decoration: BoxDecoration(
-        color: Colors.blue[50],
-        border: Border(top: BorderSide(color: Colors.blue[100]!, width: 1)),
+        color: AppColors.primaryContainer,
+        border: const Border(top: BorderSide(color: AppColors.primaryLight, width: 1)),
       ),
       child: Row(
         children: [
-          Icon(Icons.queue, size: 16, color: Colors.blue[400]),
+          const Icon(Icons.queue, size: 16, color: AppColors.primary),
           const SizedBox(width: 8),
           Expanded(
             child: Column(
@@ -1868,9 +1869,9 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
               children: [
                 Text(
                   count == 1 ? '1 message queued' : '$count messages queued',
-                  style: TextStyle(fontSize: 12, fontWeight: FontWeight.w500, color: Colors.blue[700]),
+                  style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500, color: AppColors.primaryDark),
                 ),
-                Text(preview, style: TextStyle(fontSize: 11, color: Colors.blue[400]), maxLines: 1, overflow: TextOverflow.ellipsis),
+                Text(preview, style: const TextStyle(fontSize: 11, color: AppColors.primary), maxLines: 1, overflow: TextOverflow.ellipsis),
               ],
             ),
           ),
@@ -2007,9 +2008,9 @@ class _GroupMembersSheetState extends State<_GroupMembersSheet> {
                       children: [
                         Container(
                           width: 32, height: 32,
-                          decoration: BoxDecoration(color: Colors.blue[100], borderRadius: BorderRadius.circular(8)),
+                          decoration: BoxDecoration(color: AppColors.primaryContainer, borderRadius: BorderRadius.circular(8)),
                           alignment: Alignment.center,
-                          child: Text(agent.name.isNotEmpty ? agent.name[0].toUpperCase() : '?', style: TextStyle(color: Colors.blue[700], fontWeight: FontWeight.bold, fontSize: 13)),
+                          child: Text(agent.name.isNotEmpty ? agent.name[0].toUpperCase() : '?', style: const TextStyle(color: AppColors.primaryDark, fontWeight: FontWeight.bold, fontSize: 13)),
                         ),
                         const SizedBox(width: 8),
                         Expanded(child: Text(l10n.chat_groupRoleTitle(agent.name), style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600))),
@@ -2053,9 +2054,9 @@ class _GroupMembersSheetState extends State<_GroupMembersSheet> {
             return ListTile(
               leading: Container(
                 width: 40, height: 40,
-                decoration: BoxDecoration(color: Colors.blue[100], borderRadius: BorderRadius.circular(10)),
+                decoration: BoxDecoration(color: AppColors.primaryContainer, borderRadius: BorderRadius.circular(10)),
                 alignment: Alignment.center,
-                child: Text(agent.name.isNotEmpty ? agent.name[0].toUpperCase() : '?', style: TextStyle(color: Colors.blue[700], fontWeight: FontWeight.bold)),
+                child: Text(agent.name.isNotEmpty ? agent.name[0].toUpperCase() : '?', style: const TextStyle(color: AppColors.primaryDark, fontWeight: FontWeight.bold)),
               ),
               title: Row(
                 children: [
@@ -2071,12 +2072,12 @@ class _GroupMembersSheetState extends State<_GroupMembersSheet> {
                 ],
               ),
               subtitle: displayBio != null && displayBio.isNotEmpty
-                  ? Text(displayBio, maxLines: 1, overflow: TextOverflow.ellipsis, style: hasGroupBio ? TextStyle(color: Colors.blue[600], fontStyle: FontStyle.italic) : null)
+                  ? Text(displayBio, maxLines: 1, overflow: TextOverflow.ellipsis, style: hasGroupBio ? const TextStyle(color: AppColors.primary, fontStyle: FontStyle.italic) : null)
                   : Text('Set group role...', style: TextStyle(color: Colors.grey[400], fontSize: 13)),
               trailing: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  IconButton(icon: Icon(Icons.edit_note, size: 20, color: Colors.blue[300]), tooltip: 'Edit group role', onPressed: () => _startEditing(agent)),
+                  IconButton(icon: const Icon(Icons.edit_note, size: 20, color: AppColors.primary), tooltip: 'Edit group role', onPressed: () => _startEditing(agent)),
                   IconButton(icon: Icon(Icons.remove_circle_outline, color: Colors.red[300]), onPressed: () { Navigator.pop(context); widget.onRemoveMember(agent); }),
                 ],
               ),

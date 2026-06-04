@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../services/vault_service.dart';
+import '../theme/app_theme.dart';
 
 /// 历史数据保险库页面
 ///
@@ -283,18 +284,18 @@ class _VaultRestoreScreenState extends State<VaultRestoreScreen> {
           margin: const EdgeInsets.all(16),
           padding: const EdgeInsets.all(12),
           decoration: BoxDecoration(
-            color: Colors.blue[50],
+            color: AppColors.primaryContainer,
             borderRadius: BorderRadius.circular(8),
-            border: Border.all(color: Colors.blue[200]!),
+            border: Border.all(color: AppColors.primaryLight),
           ),
           child: Row(
             children: [
-              Icon(Icons.info_outline, color: Colors.blue[700]),
+              const Icon(Icons.info_outline, color: AppColors.primaryDark),
               const SizedBox(width: 8),
               Expanded(
                 child: Text(
                   '每次重置密码时，旧数据会自动加密保存。\n点击"恢复"并输入对应的旧密码即可还原数据。',
-                  style: TextStyle(color: Colors.blue[800], fontSize: 13),
+                  style: const TextStyle(color: AppColors.primaryDark, fontSize: 13),
                 ),
               ),
             ],

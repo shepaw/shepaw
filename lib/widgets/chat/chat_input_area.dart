@@ -9,6 +9,7 @@ import '../../models/remote_agent.dart';
 import '../../services/audio_recording_service.dart';
 import '../../utils/layout_utils.dart';
 import '../../l10n/app_localizations.dart';
+import '../../theme/app_theme.dart';
 import 'slash_command_picker.dart';
 
 /// The chat input area widget (supports both desktop and mobile layouts).
@@ -321,7 +322,7 @@ class ChatInputAreaState extends State<ChatInputArea> {
         widget.textFieldFocusNode.requestFocus();
       },
       child: Container(
-        color: isSelected ? Colors.blue.withOpacity(0.08) : null,
+        color: isSelected ? AppColors.primary.withOpacity(0.08) : null,
         child: ListTile(
           dense: true,
           leading: Container(
@@ -343,7 +344,7 @@ class ChatInputAreaState extends State<ChatInputArea> {
             style: TextStyle(fontSize: 12, color: Colors.grey[500]),
           ),
           trailing: isSelected
-              ? Icon(Icons.chevron_right, size: 16, color: Colors.blue[400])
+              ? const Icon(Icons.chevron_right, size: 16, color: AppColors.primary)
               : null,
         ),
       ),
@@ -367,21 +368,21 @@ class ChatInputAreaState extends State<ChatInputArea> {
         widget.textFieldFocusNode.requestFocus();
       },
       child: Container(
-        color: isSelected ? Colors.blue.withOpacity(0.08) : null,
+        color: isSelected ? AppColors.primary.withOpacity(0.08) : null,
         child: ListTile(
           dense: true,
           leading: Container(
             width: 32,
             height: 32,
             decoration: BoxDecoration(
-              color: isSelected ? Colors.blue[200] : Colors.blue[100],
+              color: isSelected ? AppColors.primaryLight : AppColors.primaryContainer,
               borderRadius: BorderRadius.circular(8),
             ),
             alignment: Alignment.center,
             child: Text(
               agent.name.isNotEmpty ? agent.name[0].toUpperCase() : '?',
-              style: TextStyle(
-                color: Colors.blue[700],
+              style: const TextStyle(
+                color: AppColors.primaryDark,
                 fontWeight: FontWeight.bold,
                 fontSize: 14,
               ),
@@ -392,7 +393,7 @@ class ChatInputAreaState extends State<ChatInputArea> {
             style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
           ),
           trailing: isSelected
-              ? Icon(Icons.chevron_right, size: 16, color: Colors.blue[400])
+              ? const Icon(Icons.chevron_right, size: 16, color: AppColors.primary)
               : null,
         ),
       ),
@@ -956,7 +957,7 @@ class ChatInputAreaState extends State<ChatInputArea> {
           ),
           child: Row(
             children: [
-              Icon(Icons.insert_drive_file, size: 32, color: Colors.blue[400]),
+              const Icon(Icons.insert_drive_file, size: 32, color: AppColors.primary),
               const SizedBox(width: 8),
               Expanded(
                 child: Column(
