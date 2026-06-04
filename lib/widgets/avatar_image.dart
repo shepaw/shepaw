@@ -55,10 +55,38 @@ class AvatarImage extends StatelessWidget {
     return path.startsWith('http://') || path.startsWith('https://');
   }
 
+  /// 判断路径是否为打包资源（assets 内置图）。
+  static bool isAsset(String path) {
+    return path.startsWith('assets/');
+  }
+
   @override
   Widget build(BuildContext context) {
     final isLocal = isLocalFile(avatar);
     final isNetwork = isNetworkUrl(avatar);
+    final isBundledAsset = isAsset(avatar);
+
+    if (isBundledAsset) {
+      final Widget assetWidget = isSvg(avatar)
+          ? SvgPicture.asset(
+              avatar,
+              width: size,
+              height: size,
+              fit: fit,
+              placeholderBuilder: (_) => fallback,
+            )
+          : Image.asset(
+              avatar,
+              width: size,
+              height: size,
+              fit: fit,
+              errorBuilder: (_, __, ___) => fallback,
+            );
+      return ClipRRect(
+        borderRadius: BorderRadius.circular(borderRadius),
+        child: assetWidget,
+      );
+    }
 
     if (!isLocal && !isNetwork) {
       // 既不是本地文件也不是网络 URL，返回兜底

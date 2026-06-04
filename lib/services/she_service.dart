@@ -24,7 +24,9 @@ class SheService {
 
   static const String sheId = 'she-builtin-agent-001';
   static const String sheName = 'She';
-  static const String sheAvatar = '🌸';
+
+  /// She 默认头像：系统 logo（橘猫）。
+  static const String sheAvatar = 'assets/images/shepaw_icon.png';
 
   /// Internal flag field for user_profile, not exposed to She
   static const String _profileInitKey = '_initialized';
@@ -94,7 +96,14 @@ class SheService {
 
   Future<void> ensureSheExists() async {
     final existing = await _db.getRemoteAgentById(sheId);
-    if (existing != null) return;
+    if (existing != null) {
+      // 迁移旧版头像（如花朵 emoji）到系统 logo
+      if (existing.avatar != sheAvatar) {
+        await _db.updateRemoteAgent(existing.copyWith(avatar: sheAvatar));
+        LoggerService().info('Migrated She avatar to system logo', tag: 'She');
+      }
+      return;
+    }
 
     LoggerService().info('Creating She agent for first time', tag: 'She');
 

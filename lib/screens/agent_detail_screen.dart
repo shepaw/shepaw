@@ -413,7 +413,9 @@ class _AgentDetailScreenState extends State<AgentDetailScreen> {
 
     if (avatar.isEmpty) return fallback;
 
-    if (AvatarImage.isLocalFile(avatar) || AvatarImage.isNetworkUrl(avatar)) {
+    if (AvatarImage.isLocalFile(avatar) ||
+        AvatarImage.isNetworkUrl(avatar) ||
+        AvatarImage.isAsset(avatar)) {
       return AvatarImage(
         avatar: avatar,
         size: size,

@@ -593,7 +593,9 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
     final borderRadius = size * 0.25;
     final fallback = Icon(Icons.smart_toy, size: size * 0.6);
 
-    if (_isLocalFilePath(avatar) || _isNetworkUrl(avatar)) {
+    if (_isLocalFilePath(avatar) ||
+        _isNetworkUrl(avatar) ||
+        AvatarImage.isAsset(avatar)) {
       return AvatarImage(
         avatar: avatar,
         size: size,

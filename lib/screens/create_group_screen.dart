@@ -168,7 +168,9 @@ class _CreateGroupScreenState extends State<CreateGroupScreen> {
     }
     // Image URL or file path
     final ImageProvider imageProvider;
-    if (agent.avatar.startsWith('/') && !agent.avatar.startsWith('http')) {
+    if (agent.avatar.startsWith('assets/')) {
+      imageProvider = AssetImage(agent.avatar);
+    } else if (agent.avatar.startsWith('/') && !agent.avatar.startsWith('http')) {
       imageProvider = FileImage(File(agent.avatar));
     } else {
       imageProvider = NetworkImage(agent.avatar);

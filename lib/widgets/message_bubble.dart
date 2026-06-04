@@ -595,9 +595,9 @@ class MessageBubble extends StatelessWidget {
   }
 
   String _getAvatar() {
-    // She 专属头像
+    // She 专属头像（系统 logo，由 _buildAvatarWidget 渲染为图片）
     if (message.from.id == SheService.sheId) {
-      return SheService.sheAvatar; // '🌸'
+      return '🐱';
     }
 
     // senderAvatar 有值时：若是纯 emoji（≤ 2 个字符或不含 /、http），直接返回
@@ -624,9 +624,14 @@ class MessageBubble extends StatelessWidget {
 
   /// 根据 [senderAvatar] 决定渲染图片还是 emoji 文字。
   Widget _buildAvatarWidget() {
-    // She 专属 emoji 头像
+    // She 专属头像：系统 logo（橘猫）
     if (message.from.id == SheService.sheId) {
-      return Text(SheService.sheAvatar, style: const TextStyle(fontSize: 24));
+      return AvatarImage(
+        avatar: SheService.sheAvatar,
+        size: 32,
+        borderRadius: 8,
+        fallback: const Text('🐱', style: TextStyle(fontSize: 24)),
+      );
     }
 
     if (senderAvatar != null && senderAvatar!.isNotEmpty) {
