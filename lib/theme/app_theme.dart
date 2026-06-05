@@ -27,20 +27,26 @@ class AppColors {
   /// 柔和的粉色填充。
   static const Color accentContainer = Color(0xFFFCE2EB);
 
-  /// 奶白肚皮色，温暖的全局背景。
-  static const Color background = Color(0xFFFFF8F0);
+  /// 纯净的全局背景（纯白，类似 QQ 聊天界面）。
+  static const Color background = Color(0xFFFFFFFF);
 
   /// 卡片/表面色。
   static const Color surface = Color(0xFFFFFFFF);
 
+  /// 中性的次级表面填充（浅灰，用于卡片/输入框等容器，避免橘调）。
+  static const Color surfaceMuted = Color(0xFFF2F3F5);
+
+  /// 中性的分隔/边框灰。
+  static const Color outline = Color(0xFFE3E5E8);
+
   /// 主品牌色上的前景色。
   static const Color onPrimary = Color(0xFFFFFFFF);
 
-  /// 主要文字色（暖棕，呼应猫咪轮廓）。
-  static const Color textPrimary = Color(0xFF3D2C1E);
+  /// 主要文字色（中性深灰，纯净不偏色）。
+  static const Color textPrimary = Color(0xFF1F2329);
 
-  /// 次要文字色。
-  static const Color textSecondary = Color(0xFF8A7763);
+  /// 次要文字色（中性灰）。
+  static const Color textSecondary = Color(0xFF8A8F99);
 }
 
 /// 应用主题。统一从 [AppColors] 派生，保证全局风格一致。
@@ -57,7 +63,20 @@ class AppTheme {
       primaryContainer: AppColors.primaryContainer,
       secondary: AppColors.accent,
       secondaryContainer: AppColors.accentContainer,
+      // 表面与背景统一为纯净的中性白/灰，去掉橘色种子带来的暖色调。
       surface: AppColors.surface,
+      onSurface: AppColors.textPrimary,
+      onSurfaceVariant: AppColors.textSecondary,
+      surfaceContainerLowest: AppColors.surface,
+      surfaceContainerLow: const Color(0xFFFAFBFC),
+      surfaceContainer: const Color(0xFFF5F6F8),
+      surfaceContainerHigh: const Color(0xFFF2F3F5),
+      surfaceContainerHighest: AppColors.surfaceMuted,
+      surfaceVariant: AppColors.surfaceMuted,
+      outline: AppColors.outline,
+      outlineVariant: const Color(0xFFEDEEF0),
+      // 去掉 M3 海拔叠加的橘色染色。
+      surfaceTint: Colors.transparent,
     );
 
     return ThemeData(
@@ -65,6 +84,40 @@ class AppTheme {
       colorScheme: scheme,
       primaryColor: AppColors.primary,
       scaffoldBackgroundColor: AppColors.background,
+      // 全局禁用 M3 表面海拔叠加的橘色染色，保持纯净。
+      appBarTheme: const AppBarTheme(
+        backgroundColor: AppColors.surface,
+        foregroundColor: AppColors.textPrimary,
+        surfaceTintColor: Colors.transparent,
+        scrolledUnderElevation: 0,
+        elevation: 0,
+      ),
+      cardTheme: const CardThemeData(
+        surfaceTintColor: Colors.transparent,
+      ),
+      dialogTheme: const DialogThemeData(
+        surfaceTintColor: Colors.transparent,
+        backgroundColor: AppColors.surface,
+      ),
+      bottomSheetTheme: const BottomSheetThemeData(
+        surfaceTintColor: Colors.transparent,
+        backgroundColor: AppColors.surface,
+      ),
+      popupMenuTheme: const PopupMenuThemeData(
+        surfaceTintColor: Colors.transparent,
+        color: AppColors.surface,
+      ),
+      navigationBarTheme: const NavigationBarThemeData(
+        surfaceTintColor: Colors.transparent,
+        backgroundColor: AppColors.surface,
+      ),
+      drawerTheme: const DrawerThemeData(
+        surfaceTintColor: Colors.transparent,
+        backgroundColor: AppColors.surface,
+      ),
+      dividerTheme: const DividerThemeData(
+        color: AppColors.outline,
+      ),
       // 暖色波纹/选中态
       switchTheme: SwitchThemeData(
         thumbColor: WidgetStateProperty.resolveWith(
