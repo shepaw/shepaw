@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../l10n/app_localizations.dart';
+import '../widgets/model_icon.dart';
 import '../models/model_definition.dart';
 import '../services/model_registry.dart';
 import 'model_management_screen.dart';
@@ -305,7 +306,7 @@ class _ModelSelectScreenState extends State<ModelSelectScreen> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.psychology_outlined,
+            ModelIcon(
                 size: 48, color: colorScheme.outline.withValues(alpha: 0.5)),
             const SizedBox(height: 12),
             Text(

@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import '../models/agent.dart';
 import '../models/channel.dart';
+import '../widgets/model_icon.dart';
 import '../services/local_api_service.dart';
 import '../services/local_database_service.dart';
 import '../services/remote_agent_service.dart';
@@ -719,32 +720,6 @@ class HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateMi
                 padding: EdgeInsets.zero,
                 children: [
                   ListTile(
-                    leading: const Icon(Icons.person_add_outlined),
-                    title: Text(l10n.drawer_newAgent),
-                    onTap: () {
-                      Navigator.pop(context);
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (context) => const AddRemoteAgentScreen(),
-                        ),
-                      ).then((_) => _loadAgents(silent: true));
-                    },
-                  ),
-                  ListTile(
-                    leading: const Icon(Icons.group_add_outlined),
-                    title: Text(l10n.drawer_newGroup),
-                    onTap: () {
-                      Navigator.pop(context);
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (context) => const CreateGroupScreen(),
-                        ),
-                      ).then((_) => _loadAgents(silent: true));
-                    },
-                  ),
-                  ListTile(
                     leading: const Icon(Icons.devices_outlined),
                     title: Text(l10n.drawer_newDevice),
                     onTap: () {
@@ -755,7 +730,7 @@ class HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateMi
                   ),
                   const Divider(),
                   ListTile(
-                    leading: const Icon(Icons.psychology),
+                    leading: const ModelIcon(),
                     title: Text(l10n.toolModel_managementTitle),
                     subtitle: Text(
                       l10n.toolModel_count(ModelRegistry.instance.definitions.length),

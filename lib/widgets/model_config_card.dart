@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'model_icon.dart';
 import '../models/model_definition.dart';
 import '../services/model_registry.dart';
 import '../l10n/app_localizations.dart';
@@ -37,7 +38,7 @@ class ModelConfigCard extends StatelessWidget {
             // Header
             Row(
               children: [
-                Icon(Icons.psychology, size: 18, color: colorScheme.primary),
+                ModelIcon(size: 18, color: colorScheme.primary),
                 const SizedBox(width: 8),
                 Text(
                   l10n.toolModel_configTitle,

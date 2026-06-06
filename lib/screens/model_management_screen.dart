@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:uuid/uuid.dart';
 import '../l10n/app_localizations.dart';
+import '../widgets/model_icon.dart';
 import '../models/llm_provider_config.dart';
 import '../models/model_definition.dart';
 import '../models/model_routing_config.dart';
@@ -135,7 +136,7 @@ class _ModelManagementScreenState
       padding: const EdgeInsets.symmetric(vertical: 48),
       child: Column(
         children: [
-          Icon(Icons.psychology_outlined,
+          ModelIcon(
               size: 64,
               color: colorScheme.outline.withValues(alpha: 0.5)),
           const SizedBox(height: 16),
@@ -183,7 +184,7 @@ class _ModelManagementScreenState
             children: [
               Row(
                 children: [
-                  Icon(Icons.psychology, size: 20, color: colorScheme.primary),
+                  ModelIcon(size: 20, color: colorScheme.primary),
                   const SizedBox(width: 8),
                   Expanded(
                     child: Text(

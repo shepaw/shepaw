@@ -8,6 +8,7 @@ import '../models/remote_agent.dart';
 import '../services/remote_agent_service.dart';
 import '../services/local_file_storage_service.dart';
 import '../services/model_registry.dart';
+import '../widgets/model_icon.dart';
 import '../models/model_definition.dart';
 import '../models/llm_provider_config.dart';
 import '../services/skill_registry.dart';
@@ -1038,7 +1039,7 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
         side: BorderSide(color: colorScheme.outlineVariant),
       ),
       child: ExpansionTile(
-        leading: Icon(Icons.psychology, size: 18, color: colorScheme.primary),
+        leading: ModelIcon(size: 18, color: colorScheme.primary),
         title: Row(
           children: [
             Text(
@@ -1088,8 +1089,7 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
                   children: [
                     Padding(
                       padding: const EdgeInsets.only(top: 2),
-                      child: Icon(
-                        Icons.psychology,
+                      child: ModelIcon(
                         size: 16,
                         color: colorScheme.onSurface,
                       ),
@@ -1561,7 +1561,7 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
           ),
           const Divider(height: 1, indent: 16, endIndent: 16),
           ListTile(
-            leading: Icon(Icons.psychology, color: colorScheme.primary),
+            leading: ModelIcon(color: colorScheme.primary),
             title: Text(l10n.toolModel_configTitle),
             subtitle: Text(
               _toolModelScenarios.isEmpty
@@ -1643,7 +1643,7 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
           children: [
             Row(
               children: [
-                Icon(Icons.psychology, size: 18, color: colorScheme.primary),
+                ModelIcon(size: 18, color: colorScheme.primary),
                 const SizedBox(width: 8),
                 Text(
                   l10n.addAgent_modelConfig,

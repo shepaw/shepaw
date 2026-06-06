@@ -15,6 +15,8 @@ import '../services/logger_service.dart';
 import '../widgets/avatar_image.dart';
 import 'remote_agent_detail_screen.dart';
 import 'group_detail_screen.dart';
+import 'add_remote_agent_screen.dart';
+import 'create_group_screen.dart';
 
 /// Contacts management screen with Agents and Groups tabs.
 class ContactsScreen extends StatefulWidget {
@@ -112,57 +114,113 @@ class _ContactsScreenState extends State<ContactsScreen>
   Widget _buildAgentsList() {
     final l10n = AppLocalizations.of(context);
 
-    if (_agents.isEmpty) {
-      return Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(Icons.smart_toy_outlined, size: 64, color: Colors.grey[300]),
-            const SizedBox(height: 16),
-            Text(
-              l10n.contacts_noAgents,
-              style: TextStyle(fontSize: 16, color: Colors.grey[400]),
+    return Column(
+      children: [
+        // 添加 Agent 按钮
+        Padding(
+          padding: const EdgeInsets.all(12),
+          child: SizedBox(
+            width: double.infinity,
+            child: OutlinedButton.icon(
+              onPressed: _addAgent,
+              icon: const Icon(Icons.person_add_outlined),
+              label: Text(l10n.home_addAgent),
             ),
-          ],
+          ),
         ),
-      );
-    }
-
-    return RefreshIndicator(
-      onRefresh: _loadData,
-      child: ListView.builder(
-        itemCount: _agents.length,
-        itemBuilder: (context, index) => _buildAgentTile(_agents[index]),
-      ),
+        Expanded(
+          child: _agents.isEmpty
+              ? Center(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(Icons.smart_toy_outlined,
+                          size: 64, color: Colors.grey[300]),
+                      const SizedBox(height: 16),
+                      Text(
+                        l10n.contacts_noAgents,
+                        style: TextStyle(fontSize: 16, color: Colors.grey[400]),
+                      ),
+                    ],
+                  ),
+                )
+              : RefreshIndicator(
+                  onRefresh: _loadData,
+                  child: ListView.builder(
+                    itemCount: _agents.length,
+                    itemBuilder: (context, index) =>
+                        _buildAgentTile(_agents[index]),
+                  ),
+                ),
+        ),
+      ],
     );
   }
 
   Widget _buildGroupsList() {
     final l10n = AppLocalizations.of(context);
 
-    if (_groups.isEmpty) {
-      return Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(Icons.group_outlined, size: 64, color: Colors.grey[300]),
-            const SizedBox(height: 16),
-            Text(
-              l10n.contacts_noGroups,
-              style: TextStyle(fontSize: 16, color: Colors.grey[400]),
+    return Column(
+      children: [
+        // 创建群组按钮
+        Padding(
+          padding: const EdgeInsets.all(12),
+          child: SizedBox(
+            width: double.infinity,
+            child: OutlinedButton.icon(
+              onPressed: _createGroup,
+              icon: const Icon(Icons.group_add_outlined),
+              label: Text(l10n.home_createGroup),
             ),
-          ],
+          ),
         ),
-      );
-    }
+        Expanded(
+          child: _groups.isEmpty
+              ? Center(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(Icons.group_outlined,
+                          size: 64, color: Colors.grey[300]),
+                      const SizedBox(height: 16),
+                      Text(
+                        l10n.contacts_noGroups,
+                        style: TextStyle(fontSize: 16, color: Colors.grey[400]),
+                      ),
+                    ],
+                  ),
+                )
+              : RefreshIndicator(
+                  onRefresh: _loadData,
+                  child: ListView.builder(
+                    itemCount: _groups.length,
+                    itemBuilder: (context, index) =>
+                        _buildGroupTile(_groups[index]),
+                  ),
+                ),
+        ),
+      ],
+    );
+  }
 
-    return RefreshIndicator(
-      onRefresh: _loadData,
-      child: ListView.builder(
-        itemCount: _groups.length,
-        itemBuilder: (context, index) => _buildGroupTile(_groups[index]),
+  Future<void> _addAgent() async {
+    await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => const AddRemoteAgentScreen(),
       ),
     );
+    if (mounted) _loadData();
+  }
+
+  Future<void> _createGroup() async {
+    await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => const CreateGroupScreen(),
+      ),
+    );
+    if (mounted) _loadData();
   }
 
   Widget _buildAgentTile(Agent agent) {

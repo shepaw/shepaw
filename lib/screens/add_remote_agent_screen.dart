@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
 import '../l10n/app_localizations.dart';
+import '../widgets/model_icon.dart';
 import '../models/model_definition.dart';
 import '../models/remote_agent.dart';
 import '../services/model_registry.dart';
@@ -932,7 +933,7 @@ class _AddRemoteAgentScreenState extends State<AddRemoteAgentScreen> {
           children: [
             Row(
               children: [
-                Icon(Icons.psychology, size: 18, color: colorScheme.primary),
+                ModelIcon(size: 18, color: colorScheme.primary),
                 const SizedBox(width: 8),
                 Text(
                   l10n.addAgent_modelConfig,
@@ -1182,7 +1183,7 @@ class _AddRemoteAgentScreenState extends State<AddRemoteAgentScreen> {
           ),
           const Divider(height: 1, indent: 16, endIndent: 16),
           ListTile(
-            leading: Icon(Icons.psychology, color: colorScheme.primary),
+            leading: ModelIcon(color: colorScheme.primary),
             title: Text(l10n.toolModel_configTitle),
             subtitle: Text(
               _toolModelScenarios.isEmpty

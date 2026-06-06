@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'model_icon.dart';
 import '../l10n/app_localizations.dart';
 import '../models/model_routing_config.dart';
 import '../models/remote_agent.dart';
@@ -451,7 +452,7 @@ class _ModelRoutingConfigCardState extends State<ModelRoutingConfigCard> {
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.psychology_outlined, size: 14, color: colorScheme.secondary),
+            ModelIcon(size: 14, color: colorScheme.secondary),
             const SizedBox(width: 4),
             Text(
               l10n.modelRouting_selectFromRegistry,

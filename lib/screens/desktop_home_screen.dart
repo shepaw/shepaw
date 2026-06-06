@@ -4,6 +4,7 @@ import '../models/agent.dart';
 import '../models/channel.dart';
 import '../models/conversation_selection.dart';
 import '../l10n/app_localizations.dart';
+import '../widgets/model_icon.dart';
 import '../services/local_database_service.dart';
 import '../services/message_search_service.dart';
 import '../services/she_service.dart';
@@ -68,10 +69,14 @@ class _SidebarItemDef {
   final Color Function(BuildContext) colorBuilder;
   final VoidCallback onTap;
 
+  /// Optional custom glyph (e.g. an SVG-based icon) rendered instead of [icon].
+  final Widget Function(double size, Color color)? iconBuilder;
+
   const _SidebarItemDef({
     required this.icon,
     required this.tooltip,
     required this.colorBuilder,
+    this.iconBuilder,
     required this.onTap,
   });
 }
@@ -499,22 +504,8 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
     ];
 
     // Bottom section items (collapsed when height is insufficient)
-    // Index 0–6: before divider; after that: settings
+    // Index 0–4: before divider; after that: settings
     final bottomItems = [
-      _SidebarItemDef(
-        icon: Icons.person_add_outlined,
-        tooltip: l10n.drawer_newAgent,
-        colorBuilder: (_) =>
-            _rightPanel == _RightPanelView.addAgent ? activeColor : iconColor,
-        onTap: () => _showPanel(_RightPanelView.addAgent),
-      ),
-      _SidebarItemDef(
-        icon: Icons.group_add_outlined,
-        tooltip: l10n.drawer_newGroup,
-        colorBuilder: (_) =>
-            _rightPanel == _RightPanelView.createGroup ? activeColor : iconColor,
-        onTap: () => _showPanel(_RightPanelView.createGroup),
-      ),
       _SidebarItemDef(
         icon: Icons.devices_outlined,
         tooltip: l10n.drawer_newDevice,
@@ -524,6 +515,7 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
       ),
       _SidebarItemDef(
         icon: Icons.psychology,
+        iconBuilder: (size, color) => ModelIcon(size: size, color: color),
         tooltip: l10n.toolModel_managementTitle,
         colorBuilder: (_) => _rightPanel == _RightPanelView.modelManagement
             ? activeColor
@@ -554,7 +546,7 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
             : iconColor,
         onTap: () => _showPanel(_RightPanelView.scheduledTaskManagement),
       ),
-      // divider placeholder – index 6
+      // divider placeholder – index 5
       _SidebarItemDef(
         icon: Icons.horizontal_rule, // sentinel, won't render directly
         tooltip: '',
@@ -569,7 +561,7 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
         onTap: () => _showPanel(_RightPanelView.settings),
       ),
     ];
-    const dividerIndex = 7; // index in bottomItems that is the divider sentinel
+    const dividerIndex = 5; // index in bottomItems that is the divider sentinel
 
     return Container(
       width: _sidebarWidth,
@@ -667,6 +659,7 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
               tooltip: item.tooltip,
               color: item.colorBuilder(ctx),
               onTap: item.onTap,
+              iconBuilder: item.iconBuilder,
             );
           }
 
@@ -737,6 +730,7 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
                     tooltip: item.tooltip,
                     color: item.colorBuilder(context),
                     onTap: item.onTap,
+                    iconBuilder: item.iconBuilder,
                   )),
               // Flexible spacer
               SizedBox(height: spacerHeight),
@@ -800,6 +794,7 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
                               icon: item.icon,
                               tooltip: item.tooltip,
                               color: item.colorBuilder(ctx),
+                              iconBuilder: item.iconBuilder,
                               onTap: () {
                                 _morePortalController.hide();
                                 setState(() {});
@@ -1298,12 +1293,14 @@ class _SidebarIcon extends StatelessWidget {
   final String tooltip;
   final Color color;
   final VoidCallback onTap;
+  final Widget Function(double size, Color color)? iconBuilder;
 
   const _SidebarIcon({
     required this.icon,
     required this.tooltip,
     required this.color,
     required this.onTap,
+    this.iconBuilder,
   });
 
   @override
@@ -1317,7 +1314,9 @@ class _SidebarIcon extends StatelessWidget {
         borderRadius: BorderRadius.circular(8),
         child: Padding(
           padding: const EdgeInsets.symmetric(vertical: 10),
-          child: Icon(icon, size: 22, color: color),
+          child: iconBuilder != null
+              ? iconBuilder!(22, color)
+              : Icon(icon, size: 22, color: color),
         ),
       ),
     );
