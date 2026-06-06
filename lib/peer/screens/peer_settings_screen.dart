@@ -7,6 +7,7 @@ import '../services/peer_connection_manager.dart';
 import '../services/peer_storage_service.dart';
 import '../services/peer_agent_host_service.dart';
 import 'peer_chat_screen.dart';
+import '../widgets/peer_device_icon.dart';
 import '../../models/remote_agent.dart';
 import '../../service_locator.dart' show getIt;
 import '../../services/local_database_service.dart';
@@ -218,16 +219,7 @@ class _PeerSettingsScreenState extends State<PeerSettingsScreen> {
           Center(
             child: Column(
               children: [
-                Container(
-                  width: 80,
-                  height: 80,
-                  decoration: BoxDecoration(
-                    color: Colors.teal[50],
-                    borderRadius: BorderRadius.circular(20),
-                  ),
-                  alignment: Alignment.center,
-                  child: Icon(Icons.smartphone, size: 40, color: Colors.teal[600]),
-                ),
+                PeerDeviceIcon(peer: widget.peer, size: 80, borderRadius: 20),
                 const SizedBox(height: 12),
                 Text(
                   _deviceName,

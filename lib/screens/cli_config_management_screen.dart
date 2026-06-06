@@ -20,6 +20,23 @@ import '../models/tool_config.dart';
 import '../services/cli_command_config_service.dart';
 import '../clis/shepaw/os/os_tool_registry.dart';
 import '../services/tool_config_service.dart';
+import '../theme/app_theme.dart';
+
+/// CLI 管理页内容区背景：纯白底，避免灰底影响文档/代码可读性。
+Color _cliContentBg(ColorScheme _) => AppColors.surface;
+
+/// 带浅灰描边的内容区装饰，用于在白底页面上区分区块。
+BoxDecoration _cliPanelDecoration(
+  ColorScheme cs, {
+  Color? color,
+  double radius = 8,
+  Border? border,
+}) =>
+    BoxDecoration(
+      color: color ?? _cliContentBg(cs),
+      borderRadius: BorderRadius.circular(radius),
+      border: border ?? Border.all(color: cs.outlineVariant),
+    );
 
 // ─── 顶层命名空间描述 ──────────────────────────────────────────────────────────
 
@@ -149,6 +166,7 @@ Future<void> _showHelpSheet({
     context: context,
     isScrollControlled: true,
     useSafeArea: true,
+    backgroundColor: AppColors.surface,
     shape: const RoundedRectangleBorder(
       borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
     ),
@@ -299,15 +317,12 @@ class _RootNsTileState extends State<_RootNsTile> {
         children: [
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-            decoration: BoxDecoration(
-              color: colorScheme.surfaceContainerHighest,
-              borderRadius: BorderRadius.circular(6),
-            ),
+            decoration: _cliPanelDecoration(colorScheme, radius: 6),
             child: Text(
               countLabel,
               style: TextStyle(
                 fontSize: 11,
-                color: colorScheme.onSurfaceVariant,
+                color: colorScheme.onSurface,
                 fontWeight: FontWeight.w500,
               ),
             ),
@@ -608,15 +623,12 @@ class _SubNsTileState extends State<_SubNsTile> {
         children: [
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
-            decoration: BoxDecoration(
-              color: colorScheme.surfaceContainerHighest,
-              borderRadius: BorderRadius.circular(5),
-            ),
+            decoration: _cliPanelDecoration(colorScheme, radius: 5),
             child: Text(
               countLabel,
               style: TextStyle(
                 fontSize: 11,
-                color: colorScheme.onSurfaceVariant,
+                color: colorScheme.onSurface,
                 fontWeight: FontWeight.w500,
               ),
             ),
@@ -954,8 +966,11 @@ class _CommandTileState extends State<_CommandTile> {
             decoration: BoxDecoration(
               color: (toolDef != null || hasCmdSchema
                       ? colorScheme.primaryContainer
-                      : colorScheme.surfaceContainerHighest)
+                      : _cliContentBg(colorScheme))
                   .withValues(alpha: (toolDef != null ? isEnabled : cliGlobalEnabled) ? 1 : 0.5),
+              border: toolDef == null && !hasCmdSchema
+                  ? Border.all(color: colorScheme.outlineVariant)
+                  : null,
               borderRadius: BorderRadius.circular(6),
             ),
             child: Icon(
@@ -1153,6 +1168,7 @@ class _CommandTileState extends State<_CommandTile> {
       context: context,
       isScrollControlled: true,
       useSafeArea: true,
+      backgroundColor: AppColors.surface,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
@@ -1177,6 +1193,7 @@ class _CommandTileState extends State<_CommandTile> {
       context: context,
       isScrollControlled: true,
       useSafeArea: true,
+      backgroundColor: AppColors.surface,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
@@ -1346,6 +1363,7 @@ class _NsConfigSheet extends StatefulWidget {
       context: context,
       isScrollControlled: true,
       useSafeArea: true,
+      backgroundColor: AppColors.surface,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
@@ -1464,10 +1482,7 @@ class _NsConfigSheetState extends State<_NsConfigSheet> {
           else ...[
             // ── Global Enabled Switch ─────────────────────────────────
             Container(
-              decoration: BoxDecoration(
-                color: cs.surfaceContainerHighest,
-                borderRadius: BorderRadius.circular(8),
-              ),
+              decoration: _cliPanelDecoration(cs),
               child: SwitchListTile.adaptive(
                 contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
                 title: const Text('Global Enabled', style: TextStyle(fontSize: 13)),
@@ -1488,11 +1503,13 @@ class _NsConfigSheetState extends State<_NsConfigSheet> {
               decoration: BoxDecoration(
                 color: sheOnly
                     ? cs.tertiaryContainer.withValues(alpha: 0.3)
-                    : cs.surfaceContainerHighest,
+                    : _cliContentBg(cs),
                 borderRadius: BorderRadius.circular(8),
-                border: sheOnly
-                    ? Border.all(color: cs.tertiary.withValues(alpha: 0.4))
-                    : null,
+                border: Border.all(
+                  color: sheOnly
+                      ? cs.tertiary.withValues(alpha: 0.4)
+                      : cs.outlineVariant,
+                ),
               ),
               child: SwitchListTile.adaptive(
                 contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
@@ -1608,6 +1625,7 @@ class _CliDetailSheet extends StatefulWidget {
       context: context,
       isScrollControlled: true,
       useSafeArea: true,
+      backgroundColor: AppColors.surface,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
@@ -1645,6 +1663,7 @@ class _CliDetailSheet extends StatefulWidget {
       context: context,
       isScrollControlled: true,
       useSafeArea: true,
+      backgroundColor: AppColors.surface,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
@@ -1975,9 +1994,8 @@ class _CliDetailSheetState extends State<_CliDetailSheet> {
     final hasKey = (currentSecret?.isNotEmpty) == true;
     return Container(
       padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: cs.surfaceContainerHighest,
-        borderRadius: BorderRadius.circular(8),
+      decoration: _cliPanelDecoration(
+        cs,
         border: Border.all(
           color: hasKey
               ? cs.primary.withValues(alpha: 0.3)
@@ -2055,10 +2073,7 @@ class _CliDetailSheetState extends State<_CliDetailSheet> {
 
   Widget _buildToolBoolField(CliConfigField field, ColorScheme cs) =>
       Container(
-        decoration: BoxDecoration(
-          color: cs.surfaceContainerHighest,
-          borderRadius: BorderRadius.circular(8),
-        ),
+        decoration: _cliPanelDecoration(cs),
         child: SwitchListTile.adaptive(
           contentPadding:
               const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
@@ -2095,7 +2110,7 @@ class _CliDetailSheetState extends State<_CliDetailSheet> {
             isDense: true,
           ),
           style: TextStyle(fontSize: 13, color: cs.onSurface),
-          dropdownColor: cs.surfaceContainerHigh,
+          dropdownColor: _cliContentBg(cs),
           items: (field.options ?? [])
               .map((o) => DropdownMenuItem(
                 value: o,
@@ -2295,7 +2310,7 @@ class _CliDetailSheetState extends State<_CliDetailSheet> {
                     : 'No flags available for this command',
                 hintStyle: TextStyle(fontSize: 11, color: cs.outlineVariant),
                 filled: true,
-                fillColor: cs.surfaceContainerHighest,
+                fillColor: _cliContentBg(cs),
                 contentPadding: const EdgeInsets.all(12),
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(8),
@@ -2381,7 +2396,7 @@ class _CliDetailSheetState extends State<_CliDetailSheet> {
                 decoration: BoxDecoration(
                   color: _resultIsError
                       ? cs.errorContainer.withValues(alpha: 0.4)
-                      : cs.surfaceContainerHighest,
+                      : _cliContentBg(cs),
                   borderRadius: BorderRadius.circular(8),
                   border: Border.all(
                     color: _resultIsError
@@ -2474,10 +2489,7 @@ class _CliDetailSheetState extends State<_CliDetailSheet> {
             else ...[
               // 全局启用开关
               Container(
-                decoration: BoxDecoration(
-                  color: cs.surfaceContainerHighest,
-                  borderRadius: BorderRadius.circular(8),
-                ),
+                decoration: _cliPanelDecoration(cs),
                 child: SwitchListTile.adaptive(
                   contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
                   title: const Text('Global Enabled', style: TextStyle(fontSize: 13)),
@@ -2497,11 +2509,13 @@ class _CliDetailSheetState extends State<_CliDetailSheet> {
                 decoration: BoxDecoration(
                   color: sheOnly
                       ? cs.tertiaryContainer.withValues(alpha: 0.3)
-                      : cs.surfaceContainerHighest,
+                      : _cliContentBg(cs),
                   borderRadius: BorderRadius.circular(8),
-                  border: sheOnly
-                      ? Border.all(color: cs.tertiary.withValues(alpha: 0.4))
-                      : null,
+                  border: Border.all(
+                    color: sheOnly
+                        ? cs.tertiary.withValues(alpha: 0.4)
+                        : cs.outlineVariant,
+                  ),
                 ),
                 child: SwitchListTile.adaptive(
                   contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
@@ -2618,7 +2632,7 @@ class _CliConfigBadges extends StatelessWidget {
       decoration: BoxDecoration(
         color: active
             ? color.withValues(alpha: activeBackgroundAlpha)
-            : cs.surfaceContainerHighest,
+            : _cliContentBg(cs),
         borderRadius: BorderRadius.circular(4),
         border: Border.all(
           color: active ? color.withValues(alpha: activeBorderAlpha) : cs.outlineVariant,
@@ -2833,7 +2847,7 @@ class _HelpSheetState extends State<_HelpSheet> {
                 decoration: BoxDecoration(
                   color: _isError
                       ? cs.errorContainer.withValues(alpha: 0.4)
-                      : cs.surfaceContainerHighest,
+                      : _cliContentBg(cs),
                   borderRadius: BorderRadius.circular(8),
                   border: Border.all(
                     color: _isError
@@ -2870,17 +2884,13 @@ class _CodeBlock extends StatelessWidget {
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
-      decoration: BoxDecoration(
-        color: cs.surfaceContainerHighest,
-        borderRadius: BorderRadius.circular(6),
-        border: Border.all(color: cs.outlineVariant),
-      ),
+      decoration: _cliPanelDecoration(cs, radius: 6),
       child: SelectableText(
         text,
         style: TextStyle(
           fontSize: 11,
           fontFamily: 'monospace',
-          color: cs.onSurfaceVariant,
+          color: cs.onSurface,
         ),
       ),
     );
@@ -2913,8 +2923,11 @@ class _FlagRow extends StatelessWidget {
             constraints: const BoxConstraints(minWidth: 110),
             padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
             decoration: BoxDecoration(
-              color: req ? cs.errorContainer : cs.surfaceContainerHighest,
+              color: req ? cs.errorContainer : _cliContentBg(cs),
               borderRadius: BorderRadius.circular(5),
+              border: req
+                  ? null
+                  : Border.all(color: cs.outlineVariant),
             ),
             child: Text(
               '--$flagName',
@@ -2922,7 +2935,7 @@ class _FlagRow extends StatelessWidget {
                 fontSize: 11,
                 fontFamily: 'monospace',
                 fontWeight: FontWeight.w600,
-                color: req ? cs.onErrorContainer : cs.onSurfaceVariant,
+                color: req ? cs.onErrorContainer : cs.onSurface,
               ),
             ),
           ),
@@ -3297,7 +3310,7 @@ class _ToolConfigSheetState extends State<_ToolConfigSheet> {
             isDense: true,
           ),
           style: TextStyle(fontSize: 13, color: cs.onSurface),
-          dropdownColor: cs.surfaceContainerHigh,
+          dropdownColor: _cliContentBg(cs),
           items: (field.options ?? [])
               .map((o) => DropdownMenuItem(
                 value: o,
@@ -3816,7 +3829,7 @@ class _CliCommandConfigSheetState extends State<_CliCommandConfigSheet> {
             isDense: true,
           ),
           style: TextStyle(fontSize: 13, color: cs.onSurface),
-          dropdownColor: cs.surfaceContainerHigh,
+          dropdownColor: _cliContentBg(cs),
           items: (field.options ?? [])
               .map((o) => DropdownMenuItem(
                 value: o,

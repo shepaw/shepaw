@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import '../models/agent.dart';
 import '../models/channel.dart';
@@ -33,6 +34,7 @@ import '../models/conversation_selection.dart';
 import '../peer/models/paired_peer.dart';
 import '../peer/models/peer_message.dart';
 import '../peer/screens/peer_chat_screen.dart';
+import '../peer/widgets/peer_device_icon.dart';
 import '../peer/screens/peer_pairing_screen.dart';
 import '../peer/services/peer_connection.dart';
 import '../peer/services/peer_connection_manager.dart';
@@ -81,7 +83,7 @@ class HomeScreen extends StatefulWidget {
   State<HomeScreen> createState() => HomeScreenState();
 }
 
-class HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateMixin {
+class HomeScreenState extends State<HomeScreen> {
   final LocalApiService _apiService = LocalApiService();
   final LocalDatabaseService _databaseService = LocalDatabaseService();
   final ChatService _chatService = ChatService();
@@ -111,9 +113,6 @@ class HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateMi
   final Map<String, String> _peerLatestContent = {};
   final Map<String, int> _peerLatestTime = {};
   final Map<String, int> _peerUnreadCounts = {};
-
-  // FAB 动画控制
-  late AnimationController _buttonAnimatedIcon;
 
   // 定期健康检查定时器
   Timer? _healthCheckTimer;
@@ -171,12 +170,6 @@ class HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateMi
       if (mounted) _loadAgents(silent: true);
     });
 
-    // 初始化动画控制器
-    _buttonAnimatedIcon = AnimationController(
-      duration: const Duration(milliseconds: 300),
-      vsync: this,
-    );
-
     // 定期健康检查（每30秒）——仅更新在线状态，避免整表刷新导致列表闪烁
     _healthCheckTimer = Timer.periodic(const Duration(seconds: 30), (_) {
       _runHealthCheckInBackground();
@@ -199,7 +192,6 @@ class HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateMi
     _peerEventSub?.cancel();
     _peerListChangedSub?.cancel();
     _searchController.dispose();
-    _buttonAnimatedIcon.dispose();
     super.dispose();
   }
 
@@ -633,12 +625,31 @@ class HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateMi
     return items;
   }
 
+  /// 主页标题：中文「惜宝」，英文「shepaw」，居中显示（微信风格）。
+  String _homeAppBarTitle(BuildContext context) {
+    final locale = Localizations.localeOf(context);
+    if (locale.languageCode == 'zh') {
+      return AppLocalizations.of(context).appTitle;
+    }
+    return 'shepaw';
+  }
+
   @override
   Widget build(BuildContext context) {
+    final iconColor = IconTheme.of(context).color ?? Theme.of(context).colorScheme.onSurface;
+
     return Scaffold(
       appBar: AppBar(
-        title: const Text('ShePaw'),
-        elevation: 1,
+        title: Text(
+          _homeAppBarTitle(context),
+          style: const TextStyle(
+            fontSize: 17,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        centerTitle: true,
+        elevation: 0,
+        scrolledUnderElevation: 0.5,
         automaticallyImplyLeading: !widget.embedded,
         leading: widget.embedded
             ? null
@@ -649,32 +660,78 @@ class HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateMi
                 ),
               ),
         actions: [
-          // 搜索按钮（展开搜索）— 桌面嵌入模式下搜索在侧边栏，不重复显示
-          if (!widget.embedded)
-            IconButton(
-              icon: const Icon(Icons.search),
-              onPressed: () {
-                final databaseService = LocalDatabaseService();
-                final messageSearchService = MessageSearchService(databaseService);
-                showSearch(
-                  context: context,
-                  delegate: AgentSearchDelegate(
-                    agents: _agents,
-                    databaseService: databaseService,
-                    messageSearchService: messageSearchService,
-                    onResultSelected: (selection) {
-                      _handleSearchSelection(selection);
-                    },
-                  ),
-                );
-              },
-            ),
+          // 搜索 + 添加 — 图标间距与右侧边距一致（微信风格）
+          if (!widget.embedded) _buildAppBarTrailingActions(iconColor),
         ],
       ),
       // 左侧抽屉菜单 (hidden in embedded mode)
       drawer: widget.embedded ? null : _buildDrawer(),
       body: _buildBody(),
-      floatingActionButton: widget.embedded ? null : _buildFloatingActionButton(),
+    );
+  }
+
+  static const double _appBarActionEdgeGap = 12;
+
+  Widget _buildAppBarTrailingActions(Color iconColor) {
+    final l10n = AppLocalizations.of(context);
+    return Padding(
+      padding: const EdgeInsets.only(right: _appBarActionEdgeGap),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          _buildCompactAppBarIconButton(
+            icon: const Icon(Icons.search),
+            tooltip: l10n.common_search,
+            onPressed: _openSearch,
+          ),
+          const SizedBox(width: _appBarActionEdgeGap),
+          _buildCompactAppBarIconButton(
+            icon: SvgPicture.asset(
+              'assets/icons/add_circle.svg',
+              width: 24,
+              height: 24,
+              colorFilter: ColorFilter.mode(iconColor, BlendMode.srcIn),
+            ),
+            tooltip: l10n.home_addAgent,
+            onPressed: _showAddMenu,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildCompactAppBarIconButton({
+    required Widget icon,
+    required String tooltip,
+    required VoidCallback onPressed,
+  }) {
+    // 布局宽度贴合 24px 图标，避免 IconButton 默认最小宽度把两图标间距撑大。
+    return IconButton(
+      icon: icon,
+      tooltip: tooltip,
+      onPressed: onPressed,
+      padding: EdgeInsets.zero,
+      constraints: const BoxConstraints.tightFor(width: 24, height: 40),
+      style: IconButton.styleFrom(
+        minimumSize: Size.zero,
+        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+      ),
+    );
+  }
+
+  void _openSearch() {
+    final databaseService = LocalDatabaseService();
+    final messageSearchService = MessageSearchService(databaseService);
+    showSearch(
+      context: context,
+      delegate: AgentSearchDelegate(
+        agents: _agents,
+        databaseService: databaseService,
+        messageSearchService: messageSearchService,
+        onResultSelected: (selection) {
+          _handleSearchSelection(selection);
+        },
+      ),
     );
   }
 
@@ -910,56 +967,51 @@ class HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateMi
     );
   }
 
-  /// 构建浮动操作按钮
-  Widget _buildFloatingActionButton() {
+  /// 标题栏添加按钮：弹出添加菜单（原 FAB 功能）。
+  void _showAddMenu() {
     final l10n = AppLocalizations.of(context);
-    return FloatingActionButton(
-      onPressed: () {
-        LayoutUtils.showAdaptivePanel(
-          context: context,
-          builder: (context) => Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              ListTile(
-                leading: const Icon(Icons.person_add_outlined),
-                title: Text(l10n.home_addAgent),
-                onTap: () {
-                  Navigator.pop(context);
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (context) => const AddRemoteAgentScreen(),
-                    ),
-                  ).then((_) => _loadAgents(silent: true));
-                },
-              ),
-              ListTile(
-                leading: const Icon(Icons.group_add),
-                title: Text(l10n.home_createGroup),
-                onTap: () {
-                  Navigator.pop(context);
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (context) => const CreateGroupScreen(),
-                    ),
-                  ).then((_) => _loadAgents(silent: true));
-                },
-              ),
-              ListTile(
-                leading: const Icon(Icons.devices_outlined),
-                title: Text(l10n.home_addDevice),
-                onTap: () {
-                  Navigator.pop(context);
-                  PeerPairingScreen.show(context)
-                      .then((_) => _loadAgents(silent: true));
-                },
-              ),
-            ],
+    LayoutUtils.showAdaptivePanel(
+      context: context,
+      builder: (context) => Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          ListTile(
+            leading: const Icon(Icons.person_add_outlined),
+            title: Text(l10n.home_addAgent),
+            onTap: () {
+              Navigator.pop(context);
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => const AddRemoteAgentScreen(),
+                ),
+              ).then((_) => _loadAgents(silent: true));
+            },
           ),
-        );
-      },
-      child: const Icon(Icons.add),
+          ListTile(
+            leading: const Icon(Icons.group_add),
+            title: Text(l10n.home_createGroup),
+            onTap: () {
+              Navigator.pop(context);
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => const CreateGroupScreen(),
+                ),
+              ).then((_) => _loadAgents(silent: true));
+            },
+          ),
+          ListTile(
+            leading: const Icon(Icons.devices_outlined),
+            title: Text(l10n.home_addDevice),
+            onTap: () {
+              Navigator.pop(context);
+              PeerPairingScreen.show(context)
+                  .then((_) => _loadAgents(silent: true));
+            },
+          ),
+        ],
+      ),
     );
   }
   Widget _buildGroupTile(Channel group) {
@@ -1399,7 +1451,7 @@ class HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateMi
   /// 连接角色小徽标：标记本机是发起方还是被连接方。
   Widget _buildPeerRoleBadge(PairedPeer peer) {
     final isInitiator = peer.pairingRole == PeerPairingRole.initiator;
-    final color = isInitiator ? Colors.indigo : Colors.teal;
+    final color = PeerDeviceStyle.forPeer(peer).labelColor;
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
       decoration: BoxDecoration(
@@ -1490,16 +1542,7 @@ class HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateMi
             Stack(
               clipBehavior: Clip.none,
               children: [
-                Container(
-                  width: 48,
-                  height: 48,
-                  decoration: BoxDecoration(
-                    color: Colors.teal[50],
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  alignment: Alignment.center,
-                  child: Icon(Icons.smartphone, size: 24, color: Colors.teal[600]),
-                ),
+                PeerDeviceIcon(peer: peer, size: 48, borderRadius: 12),
                 // 在线状态
                 Positioned(
                   right: 0,

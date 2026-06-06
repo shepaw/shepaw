@@ -23,8 +23,7 @@ import '../../services/acp_agent_connection.dart';
 import '../../services/chat_service.dart';
 import '../../services/local_database_service.dart';
 import '../../services/logger_service.dart';
-import '../../service_locator.dart' show getIt, navigatorKey;
-import '../widgets/peer_agent_share_dialog.dart';
+import '../../service_locator.dart' show getIt;
 import 'peer_connection_manager.dart';
 import 'peer_storage_service.dart';
 
@@ -97,9 +96,7 @@ class PeerAgentHostService {
   }
 
   Future<void> _handleListReq(String peerId) async {
-    // 先按当前分享决定推送一次（未确认的设备会拿到空列表），随后视情况弹窗确认。
     await pushAgentList(peerId);
-    unawaited(_maybePromptShareDecision(peerId));
   }
 
   /// 按「分享给该设备」的决定构建并推送可访问的 agent 列表。
@@ -143,44 +140,6 @@ class PeerAgentHostService {
   Future<List<RemoteAgent>> _eligibleAgents() async {
     final agents = await _db.getAllRemoteAgents();
     return agents.where((a) => a.isLocal && a.allowExternalAccess).toList();
-  }
-
-  /// 正在弹出分享确认框的设备，避免重连/重复请求时弹出多个对话框。
-  final Set<String> _promptingPeers = {};
-
-  /// 首次连接某设备且存在可分享 agent 时，弹窗让用户确认要分享哪些。
-  ///
-  /// 已确认过的设备（[PeerStorageService.hasAnyAgentShare] 为真）不再弹窗：之后
-  /// 新开放的 agent 默认不分享，由用户到设备设置页手动开启。
-  Future<void> _maybePromptShareDecision(String peerId) async {
-    if (_promptingPeers.contains(peerId)) return;
-    try {
-      if (await PeerStorageService().hasAnyAgentShare(peerId)) return;
-      final eligible = await _eligibleAgents();
-      if (eligible.isEmpty) return;
-
-      _promptingPeers.add(peerId);
-      final deviceName = await _peerDisplayName(peerId);
-      final ctx = navigatorKey.currentContext;
-      if (ctx == null || !ctx.mounted) return;
-
-      final result = await showPeerAgentShareDialog(
-        context: ctx,
-        deviceName: deviceName,
-        // 默认全勾选（用户可取消），符合「确认即分享全部」的预期。
-        agents: eligible
-            .map((a) => PeerShareAgentEntry.fromAgent(a, initiallyShared: true))
-            .toList(),
-      );
-
-      if (result == null) return; // 用户取消：不写决定，下次连接再次询问
-      await PeerStorageService().setAgentShares(peerId, result);
-      await pushAgentList(peerId);
-    } catch (e) {
-      _log.warning('Failed to prompt share decision: $e', tag: _tag);
-    } finally {
-      _promptingPeers.remove(peerId);
-    }
   }
 
   /// 单个头像随控制消息传输的体积上限（base64 前的原始字节）。

@@ -5,6 +5,7 @@ import '../models/paired_peer.dart';
 import '../services/peer_connection_manager.dart';
 import '../services/peer_storage_service.dart';
 import 'peer_chat_screen.dart';
+import '../widgets/peer_device_icon.dart';
 import 'peer_pairing_screen.dart';
 
 /// 已配对设备列表页
@@ -261,10 +262,7 @@ class _PeerListItem extends StatelessWidget {
       onLongPress: onLongPress,
       leading: Stack(
         children: [
-          CircleAvatar(
-            backgroundColor: colorScheme.primaryContainer,
-            child: Icon(Icons.smartphone, color: colorScheme.onPrimaryContainer),
-          ),
+          PeerDeviceIcon(peer: peer, size: 40, borderRadius: 20),
           // 在线状态指示器
           Positioned(
             bottom: 0,

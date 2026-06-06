@@ -30,6 +30,7 @@ import '../../services/channel_tunnel_service.dart';
 import '../../services/logger_service.dart';
 import '../models/paired_peer.dart';
 import '../models/pairing_payload.dart';
+import 'peer_agent_host_service.dart';
 import 'peer_channel_bridge.dart';
 import 'peer_connection_manager.dart';
 import 'peer_local_server.dart';
@@ -196,8 +197,14 @@ class PeerPairingService {
     return qrContent;
   }
 
-  /// 确认配对请求（Responder 侧）
-  Future<PairedPeer> confirmPairing(IncomingPairingRequest request) async {
+  /// 确认配对请求（Responder 侧）。
+  ///
+  /// [agentShares] 为配对确认弹窗中用户勾选的分享决定（agentId → 是否分享），
+  /// 在建立连接前写入本地，连接后立即推送给对端。
+  Future<PairedPeer> confirmPairing(
+    IncomingPairingRequest request, {
+    Map<String, bool>? agentShares,
+  }) async {
     if (_state != PairingSessionState.receivedRequest) {
       throw StateError('No pending pairing request to confirm');
     }
@@ -249,12 +256,17 @@ class PeerPairingService {
 
     await _storage.savePeer(peer); // INSERT OR REPLACE
 
+    if (agentShares != null) {
+      await PeerStorageService().setAgentShares(peer.id, agentShares);
+    }
+
     _state = PairingSessionState.completed;
     _cleanup();
 
     // 配对成功后通知 ConnectionManager 建立连接，并刷新会话/设备列表
     PeerConnectionManager.instance.notifyPeerListChanged();
     PeerConnectionManager.instance.connectToPeer(peer);
+    await PeerAgentHostService.instance.pushAgentList(peer.id);
 
     _log.info('Pairing confirmed: ${peer.deviceName} (${peer.fingerprint})', tag: _tag);
     return peer;

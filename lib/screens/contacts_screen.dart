@@ -5,6 +5,7 @@ import '../models/channel.dart';
 import '../theme/app_theme.dart';
 import '../peer/models/paired_peer.dart';
 import '../peer/screens/peer_settings_screen.dart';
+import '../peer/widgets/peer_device_icon.dart';
 import '../peer/screens/peer_pairing_screen.dart';
 import '../peer/services/peer_connection_manager.dart';
 import '../peer/services/peer_storage_service.dart';
@@ -412,16 +413,7 @@ class _ContactsScreenState extends State<ContactsScreen>
     return ListTile(
       leading: Stack(
         children: [
-          Container(
-            width: 48,
-            height: 48,
-            decoration: BoxDecoration(
-              color: Colors.teal[100],
-              borderRadius: BorderRadius.circular(12),
-            ),
-            alignment: Alignment.center,
-            child: const Icon(Icons.smartphone, size: 24, color: Colors.teal),
-          ),
+          PeerDeviceIcon(peer: peer, size: 48, borderRadius: 12),
           Positioned(
             right: 0,
             bottom: 0,

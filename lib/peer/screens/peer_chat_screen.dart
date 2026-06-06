@@ -9,6 +9,7 @@ import '../services/peer_pairing_service.dart';
 import '../services/peer_storage_service.dart';
 import '../../theme/app_theme.dart';
 import 'peer_settings_screen.dart';
+import '../widgets/peer_device_icon.dart';
 
 /// P2P 聊天页面
 class PeerChatScreen extends StatefulWidget {
@@ -259,16 +260,7 @@ class _PeerChatScreenState extends State<PeerChatScreen> {
           onTap: _openSettings,
           child: Row(
             children: [
-              Container(
-                width: 36,
-                height: 36,
-                decoration: BoxDecoration(
-                  color: Colors.teal[50],
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                alignment: Alignment.center,
-                child: Icon(Icons.smartphone, size: 18, color: Colors.teal[600]),
-              ),
+              PeerDeviceIcon(peer: widget.peer, size: 36, borderRadius: 10),
               const SizedBox(width: 10),
               Expanded(
                 child: Column(
@@ -320,6 +312,7 @@ class _PeerChatScreenState extends State<PeerChatScreen> {
                             message: _messages[index],
                             isMyMessage: _isMyMessage(_messages[index]),
                             peerName: _displayName,
+                            deviceStyle: PeerDeviceStyle.forPeer(widget.peer),
                           );
                         },
                       ),
@@ -413,7 +406,7 @@ class _PeerChatScreenState extends State<PeerChatScreen> {
 
   Widget _buildRoleBadge() {
     final isInitiator = widget.peer.pairingRole == PeerPairingRole.initiator;
-    final color = isInitiator ? Colors.indigo : Colors.teal;
+    final color = PeerDeviceStyle.forPeer(widget.peer).labelColor;
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
       decoration: BoxDecoration(
@@ -487,11 +480,13 @@ class _PeerMessageBubble extends StatelessWidget {
   final PeerMessage message;
   final bool isMyMessage;
   final String peerName;
+  final PeerDeviceStyle deviceStyle;
 
   const _PeerMessageBubble({
     required this.message,
     required this.isMyMessage,
     required this.peerName,
+    required this.deviceStyle,
   });
 
   static const _avatarSize = 32.0;
@@ -512,11 +507,11 @@ class _PeerMessageBubble extends StatelessWidget {
               width: _avatarSize,
               height: _avatarSize,
               decoration: BoxDecoration(
-                color: Colors.teal[100],
+                color: deviceStyle.backgroundColor,
                 borderRadius: BorderRadius.circular(8),
               ),
               alignment: Alignment.center,
-              child: Icon(Icons.smartphone, size: 16, color: Colors.teal[700]),
+              child: Icon(Icons.smartphone, size: 16, color: deviceStyle.iconColor),
             ),
             const SizedBox(width: _avatarGap),
           ],
