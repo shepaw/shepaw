@@ -30,6 +30,7 @@ import '../widgets/chat/session_list_panel.dart';
 import '../widgets/chat/group_session_list_panel.dart';
 import '../widgets/avatar_image.dart';
 import '../widgets/message_search_delegate.dart';
+import '../widgets/shepaw_search_page.dart';
 import '../widgets/voice_record_overlay.dart';
 import 'remote_agent_detail_screen.dart';
 import 'group_detail_screen.dart';
@@ -1020,7 +1021,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
 
     if (!mounted) return;
 
-    showSearch(
+    showShepawSearch(
       context: context,
       delegate: MessageSearchDelegate(
         searchService: _controller.searchService,

@@ -5,6 +5,7 @@ import '../services/local_database_service.dart';
 import '../services/message_search_service.dart';
 import '../theme/app_theme.dart';
 import 'avatar_image.dart';
+import 'shepaw_search_page.dart';
 
 /// Describes a search result selection so the caller can navigate using its own
 /// standard flow (mark-as-read, resolve active channel, etc.).
@@ -39,26 +40,22 @@ class AgentSearchDelegate extends SearchDelegate<Agent?> {
     required this.databaseService,
     required this.messageSearchService,
     this.onResultSelected,
-  });
+  }) : super(
+          searchFieldStyle: const TextStyle(
+            fontSize: 16,
+            fontWeight: FontWeight.w400,
+          ),
+        );
 
   @override
-  List<Widget> buildActions(BuildContext context) {
-    return [
-      IconButton(
-        icon: const Icon(Icons.clear),
-        onPressed: () {
-          query = '';
-        },
-      ),
-    ];
-  }
+  List<Widget>? buildActions(BuildContext context) => null;
 
   @override
   Widget buildLeading(BuildContext context) {
     return IconButton(
       icon: const Icon(Icons.arrow_back),
       onPressed: () {
-        close(context, null);
+        popShepawSearch(context, null);
       },
     );
   }
@@ -243,7 +240,7 @@ class AgentSearchDelegate extends SearchDelegate<Agent?> {
       title: Text(agent.name),
       subtitle: Text(agent.description ?? agent.type ?? 'AI Agent'),
       onTap: () {
-        close(context, agent);
+        popShepawSearch(context, agent);
         onResultSelected?.call(SearchSelection(agent: agent));
       },
     );
@@ -270,7 +267,7 @@ class AgentSearchDelegate extends SearchDelegate<Agent?> {
         channel.description ?? (channel.isGroup ? 'Group' : 'Chat'),
       ),
       onTap: () {
-        close(context, null);
+        popShepawSearch(context, null);
         onResultSelected?.call(SearchSelection(channel: channel));
       },
     );
@@ -282,7 +279,7 @@ class AgentSearchDelegate extends SearchDelegate<Agent?> {
 
     return InkWell(
       onTap: () {
-        close(context, null);
+        popShepawSearch(context, null);
         onResultSelected?.call(SearchSelection(
           messageChannelId: message.channelId,
           messageChannelName: result.channelName,

@@ -24,6 +24,7 @@ import 'cli_config_management_screen.dart';
 import '../task/screens/scheduled_tasks_management_screen.dart';
 import '../services/model_registry.dart';
 import '../widgets/agent_search_delegate.dart';
+import '../widgets/shepaw_search_page.dart';
 import '../widgets/avatar_image.dart';
 import '../services/message_search_service.dart';
 import '../services/she_service.dart';
@@ -875,7 +876,7 @@ class HomeScreenState extends State<HomeScreen> {
   void _openSearch() {
     final databaseService = LocalDatabaseService();
     final messageSearchService = MessageSearchService(databaseService);
-    showSearch(
+    showShepawSearch(
       context: context,
       delegate: AgentSearchDelegate(
         agents: _agents,

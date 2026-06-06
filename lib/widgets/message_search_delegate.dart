@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../models/message.dart';
 import '../services/message_search_service.dart';
 import '../utils/message_utils.dart';
+import 'shepaw_search_page.dart';
 
 /// Message search delegate - 支持跨会话搜索并标记来源
 class MessageSearchDelegate extends SearchDelegate<String> {
@@ -15,26 +16,22 @@ class MessageSearchDelegate extends SearchDelegate<String> {
     this.channelId,
     this.channelIds,
     this.onResultTap,
-  });
+  }) : super(
+          searchFieldStyle: const TextStyle(
+            fontSize: 16,
+            fontWeight: FontWeight.w400,
+          ),
+        );
 
   @override
-  List<Widget> buildActions(BuildContext context) {
-    return [
-      IconButton(
-        icon: const Icon(Icons.clear),
-        onPressed: () {
-          query = '';
-        },
-      ),
-    ];
-  }
+  List<Widget>? buildActions(BuildContext context) => null;
 
   @override
   Widget buildLeading(BuildContext context) {
     return IconButton(
       icon: const Icon(Icons.arrow_back),
       onPressed: () {
-        close(context, '');
+        popShepawSearch(context, '');
       },
     );
   }
@@ -187,7 +184,7 @@ class MessageSearchDelegate extends SearchDelegate<String> {
     return InkWell(
       onTap: () {
         onResultTap?.call(message, message.channelId);
-        close(context, message.id);
+        popShepawSearch(context, message.id);
       },
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
