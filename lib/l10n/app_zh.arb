@@ -2058,6 +2058,7 @@
   "peerChat_statusOnline": "在线 · 端到端加密",
   "peerChat_statusConnecting": "连接中...",
   "peerChat_statusOffline": "离线",
+  "peerChat_agentList": "共享 Agent",
   "peerChat_yesterday": "昨天 {time}",
   "@peerChat_yesterday": {
     "placeholders": {

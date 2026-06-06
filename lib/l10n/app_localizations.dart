@@ -6782,6 +6782,12 @@ abstract class AppLocalizations {
   /// **'离线'**
   String get peerChat_statusOffline;
 
+  /// No description provided for @peerChat_agentList.
+  ///
+  /// In zh, this message translates to:
+  /// **'共享 Agent'**
+  String get peerChat_agentList;
+
   /// No description provided for @peerChat_yesterday.
   ///
   /// In zh, this message translates to:

@@ -328,6 +328,14 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
                 return PeerChatScreen(
                   key: ValueKey(_selected!.key),
                   peer: peer,
+                  embedded: true,
+                  onAgentSelected: (agent) {
+                    _onConversationSelected(ConversationSelection(
+                      agentId: agent.id,
+                      agentName: agent.name,
+                      agentAvatar: agent.avatar,
+                    ));
+                  },
                 );
               },
             );

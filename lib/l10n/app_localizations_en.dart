@@ -3786,6 +3786,9 @@ class AppLocalizationsEn extends AppLocalizations {
   String get peerChat_statusOffline => 'Offline';
 
   @override
+  String get peerChat_agentList => 'Shared Agents';
+
+  @override
   String peerChat_yesterday(String time) {
     return 'Yesterday $time';
   }

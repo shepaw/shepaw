@@ -8,15 +8,28 @@ import '../services/peer_connection_manager.dart';
 import '../services/peer_pairing_service.dart';
 import '../services/peer_storage_service.dart';
 import '../../l10n/app_localizations.dart';
+import '../../models/remote_agent.dart';
+import '../../screens/chat_screen.dart';
+import '../../service_locator.dart' show getIt;
+import '../../services/local_database_service.dart';
 import '../../theme/app_theme.dart';
+import '../../utils/layout_utils.dart';
 import 'peer_settings_screen.dart';
+import '../widgets/peer_agent_list_panel.dart';
 import '../widgets/peer_device_icon.dart';
 
 /// P2P 聊天页面
 class PeerChatScreen extends StatefulWidget {
   final PairedPeer peer;
+  final bool embedded;
+  final ValueChanged<RemoteAgent>? onAgentSelected;
 
-  const PeerChatScreen({super.key, required this.peer});
+  const PeerChatScreen({
+    super.key,
+    required this.peer,
+    this.embedded = false,
+    this.onAgentSelected,
+  });
 
   @override
   State<PeerChatScreen> createState() => _PeerChatScreenState();
@@ -36,6 +49,11 @@ class _PeerChatScreenState extends State<PeerChatScreen> {
   PeerConnectionState _connectionState = PeerConnectionState.disconnected;
   bool _showScrollToBottom = false;
 
+  /// 对端设备共享、本机可连接的 agent 列表。
+  List<RemoteAgent> _peerAgents = [];
+  bool _agentsLoading = true;
+  StreamSubscription<void>? _peerListSub;
+
   @override
   void initState() {
     super.initState();
@@ -45,6 +63,10 @@ class _PeerChatScreenState extends State<PeerChatScreen> {
     _subscribeToMessages();
     _connectionState = PeerConnectionManager.instance.getPeerState(widget.peer.id);
     _tryConnect();
+    _loadPeerAgents();
+    _peerListSub = PeerConnectionManager.instance.peerListChanged.listen((_) {
+      _loadPeerAgents();
+    });
 
     _scrollController.addListener(_onScroll);
   }
@@ -57,7 +79,28 @@ class _PeerChatScreenState extends State<PeerChatScreen> {
     _messageSub?.cancel();
     _eventSub?.cancel();
     _ackSub?.cancel();
+    _peerListSub?.cancel();
     super.dispose();
+  }
+
+  Future<void> _loadPeerAgents() async {
+    try {
+      final all = await getIt<LocalDatabaseService>().getAllRemoteAgents();
+      final mine = all
+          .where((a) =>
+              a.protocol == ProtocolType.peer &&
+              a.sourcePeerId == widget.peer.id)
+          .toList()
+        ..sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
+      if (mounted) {
+        setState(() {
+          _peerAgents = mine;
+          _agentsLoading = false;
+        });
+      }
+    } catch (_) {
+      if (mounted) setState(() => _agentsLoading = false);
+    }
   }
 
   void _onScroll() {
@@ -225,6 +268,56 @@ class _PeerChatScreenState extends State<PeerChatScreen> {
     });
   }
 
+  Future<void> _showAgentList() async {
+    final l10n = AppLocalizations.of(context);
+    final isConnected =
+        _connectionState == PeerConnectionState.connected;
+
+    final content = PeerAgentListPanel(
+      agents: _peerAgents,
+      isLoading: _agentsLoading,
+      isPeerConnected: isConnected,
+      onAgentTap: _openAgentChat,
+    );
+
+    if (LayoutUtils.isDesktopLayout(context)) {
+      await LayoutUtils.showRightDrawer(context: context, builder: (_) => content);
+    } else {
+      await Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => Scaffold(
+            appBar: AppBar(
+              title: Text(l10n.peerChat_agentList),
+              elevation: 1,
+            ),
+            body: content,
+          ),
+        ),
+      );
+    }
+  }
+
+  void _openAgentChat(RemoteAgent agent) {
+    Navigator.of(context).pop();
+
+    if (widget.embedded && widget.onAgentSelected != null) {
+      widget.onAgentSelected!(agent);
+      return;
+    }
+
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => ChatScreen(
+          agentId: agent.id,
+          agentName: agent.name,
+          agentAvatar: agent.avatar,
+        ),
+      ),
+    );
+  }
+
   Future<void> _openSettings() async {
     final deleted = await PeerSettingsScreen.show(context, widget.peer);
     if (deleted == true && mounted) {
@@ -290,6 +383,13 @@ class _PeerChatScreenState extends State<PeerChatScreen> {
             ],
           ),
         ),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.smart_toy_outlined, size: 20),
+            tooltip: l10n.peerChat_agentList,
+            onPressed: _showAgentList,
+          ),
+        ],
       ),
       body: Column(
         children: [

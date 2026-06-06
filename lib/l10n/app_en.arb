@@ -1573,6 +1573,7 @@
   "peerChat_statusOnline": "Online · End-to-end encrypted",
   "peerChat_statusConnecting": "Connecting...",
   "peerChat_statusOffline": "Offline",
+  "peerChat_agentList": "Shared Agents",
   "peerChat_yesterday": "Yesterday {time}",
   "@peerChat_yesterday": {
     "placeholders": {

@@ -696,13 +696,9 @@ class HomeScreenState extends State<HomeScreen> {
     return items;
   }
 
-  /// 主页标题：中文「惜宝」，英文「shepaw」，居中显示（微信风格）。
+  /// 主页标题：中文「惜宝」，英文「ShePaw」，居中显示（微信风格）。
   String _homeAppBarTitle(BuildContext context) {
-    final locale = Localizations.localeOf(context);
-    if (locale.languageCode == 'zh') {
-      return AppLocalizations.of(context).appTitle;
-    }
-    return 'shepaw';
+    return AppLocalizations.of(context).appTitle;
   }
 
   @override

@@ -3644,6 +3644,9 @@ class AppLocalizationsZh extends AppLocalizations {
   String get peerChat_statusOffline => '离线';
 
   @override
+  String get peerChat_agentList => '共享 Agent';
+
+  @override
   String peerChat_yesterday(String time) {
     return '昨天 $time';
   }
