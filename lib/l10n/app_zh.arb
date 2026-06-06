@@ -36,7 +36,7 @@
     }
   },
   "splash_loading": "正在加载...",
-  "login_title": "ShePaw",
+  "login_title": "惜宝",
   "login_subtitle": "请输入密码解锁",
   "login_password": "密码",
   "login_passwordHint": "请输入您的密码",
@@ -136,6 +136,11 @@
   "home_createGroup": "创建群组",
   "home_addDevice": "设备配对",
   "home_scanConnect": "扫码连接",
+  "home_searchEmptyHint": "搜索 Agent、群组和消息",
+  "home_searchNoResults": "未找到相关结果",
+  "home_searchSectionAgents": "Agent",
+  "home_searchSectionGroups": "群组",
+  "home_searchSectionMessages": "消息",
   "home_agentsCount": "{count} agents",
   "@home_agentsCount": {
     "placeholders": {
@@ -156,6 +161,55 @@
   "settings_security": "安全",
   "settings_changePassword": "修改密码",
   "settings_changePasswordSub": "修改您的登录密码",
+  "settings_dataVault": "历史数据保险库",
+  "settings_dataVaultSub": "查看并恢复重置密码前的数据备份",
+  "vault_emptyTitle": "暂无历史备份",
+  "vault_emptyDesc": "每次重置密码时，旧数据会自动\n加密保存到此处",
+  "vault_infoBanner": "每次重置密码时，旧数据会自动加密保存。\n点击「恢复」并输入对应的旧密码即可还原数据。",
+  "vault_restoreTitle": "恢复旧数据",
+  "vault_backupTime": "备份时间: {date}",
+  "@vault_backupTime": {
+    "placeholders": {
+      "date": {
+        "type": "String"
+      }
+    }
+  },
+  "vault_fileSize": "文件大小: {size}",
+  "@vault_fileSize": {
+    "placeholders": {
+      "size": {
+        "type": "String"
+      }
+    }
+  },
+  "vault_size": "大小: {size}",
+  "@vault_size": {
+    "placeholders": {
+      "size": {
+        "type": "String"
+      }
+    }
+  },
+  "vault_restorePasswordPrompt": "请输入该备份对应的旧密码以解锁：",
+  "vault_oldPassword": "旧密码",
+  "vault_restoreWarning": "恢复将覆盖当前所有数据，此操作不可撤销。",
+  "vault_confirmRestore": "确认恢复",
+  "vault_emptyPassword": "请输入旧密码",
+  "vault_restoreFailed": "密码错误或备份文件损坏，请重试",
+  "vault_restoreSuccess": "数据恢复成功！请重启应用以加载恢复的数据。",
+  "vault_deleteTitle": "删除备份",
+  "vault_deleteConfirm": "确定要永久删除此备份？\n\n备份时间: {date}\n删除后数据将无法恢复。",
+  "@vault_deleteConfirm": {
+    "placeholders": {
+      "date": {
+        "type": "String"
+      }
+    }
+  },
+  "vault_deleted": "备份已删除",
+  "vault_restore": "恢复",
+  "vault_deleteTooltip": "删除备份",
   "settings_biometric": "生物识别认证",
   "settings_biometricSub": "使用指纹或面容 ID",
   "settings_biometricComingSoon": "生物识别认证即将推出",
@@ -163,7 +217,7 @@
   "settings_biometricEnablePrompt": "请先验证身份以启用生物识别",
   "settings_biometricEnabled": "生物识别已启用",
   "settings_biometricDisabled": "生物识别已关闭",
-  "login_biometricPrompt": "验证身份以登录 ShePaw",
+  "login_biometricPrompt": "验证身份以登录惜宝",
   "login_useBiometric": "使用生物识别登录",
   "settings_account": "账户",
   "settings_profile": "个人资料",
@@ -1437,6 +1491,10 @@
   "contacts_title": "通讯录",
   "contacts_agents": "Agent",
   "contacts_groups": "群组",
+  "contacts_devices": "设备",
+  "contacts_noPeers": "尚未配对任何设备",
+  "contacts_startPairing": "开始配对",
+  "contacts_addPairingDevice": "添加配对设备",
   "contacts_noAgents": "暂无 Agent",
   "contacts_noGroups": "暂无群组",
   "contacts_agentCount": "{count} 个 Agent",
@@ -1987,5 +2045,80 @@
         "type": "String"
       }
     }
-  }
+  },
+  "peerRole_initiatorShort": "我发起",
+  "peerRole_responderShort": "对方发起",
+  "peerRole_initiatorDesc": "本机扫码发起连接",
+  "peerRole_responderDesc": "对方扫码发起连接",
+  "peerChat_emptyMessages": "暂无消息\n发送第一条消息开始对话",
+  "peerChat_hintOnline": "输入消息...",
+  "peerChat_hintOffline": "离线 · 消息将在连接后发送",
+  "peerChat_statusOnlinePrefix": "在线 · ",
+  "peerChat_e2eEncryption": "端到端加密",
+  "peerChat_statusOnline": "在线 · 端到端加密",
+  "peerChat_statusConnecting": "连接中...",
+  "peerChat_statusOffline": "离线",
+  "peerChat_yesterday": "昨天 {time}",
+  "@peerChat_yesterday": {
+    "placeholders": {
+      "time": {
+        "type": "String"
+      }
+    }
+  },
+  "peerSettings_title": "设备设置",
+  "peerSettings_online": "在线",
+  "peerSettings_offline": "离线",
+  "peerSettings_sectionBasic": "基本信息",
+  "peerSettings_aliasName": "备注名称",
+  "peerSettings_fingerprint": "设备指纹",
+  "peerSettings_pairedAt": "配对时间",
+  "peerSettings_connectionInitiator": "连接发起方",
+  "peerSettings_sectionConnection": "连接信息",
+  "peerSettings_localAddress": "内网地址",
+  "peerSettings_relayAddress": "外网中继",
+  "peerSettings_encryption": "加密方式",
+  "peerSettings_encryptionValue": "Noise IK (X25519 + ChaCha20-Poly1305)",
+  "peerSettings_startChat": "发起对话",
+  "peerSettings_deletePairing": "删除配对",
+  "peerSettings_editAliasTitle": "修改备注名称",
+  "peerSettings_editAliasHint": "输入备注名称",
+  "peerSettings_deleteConfirm": "确定要删除与 {name} 的配对吗？\n所有消息记录也会被删除。",
+  "@peerSettings_deleteConfirm": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "peerSettings_noShareableAgents": "暂无可分享的 Agent",
+  "peerSettings_enableExternalAccessHint": "在 Agent 设置中开启「允许外部访问」后即可在此分享给该设备",
+  "peerSettings_shareAgentsTitle": "分享给此设备的 Agent",
+  "peerSettings_shareAgentsTitleCount": "分享给此设备的 Agent ({shared}/{total})",
+  "@peerSettings_shareAgentsTitleCount": {
+    "placeholders": {
+      "shared": {
+        "type": "int"
+      },
+      "total": {
+        "type": "int"
+      }
+    }
+  },
+  "peerSettings_noPeerAgentsConnected": "该设备暂未开放任何 Agent",
+  "peerSettings_noPeerAgentsOffline": "设备离线，暂无可连接的 Agent",
+  "peerSettings_peerEnableExternalHint": "对方可在 Agent 设置中开启「允许外部访问」",
+  "peerSettings_syncAgentsOnConnect": "连接后将自动同步可连接的 Agent",
+  "peerSettings_connectableAgentsTitle": "可连接的 Agent",
+  "peerSettings_connectableAgentsTitleCount": "可连接的 Agent ({count})",
+  "@peerSettings_connectableAgentsTitleCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "peerList_connected": "已连接",
+  "peerList_connectedE2e": "已连接 (端到端加密)",
+  "peerList_disconnected": "未连接"
 }

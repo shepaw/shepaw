@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import '../../l10n/app_localizations.dart';
 import '../models/paired_peer.dart';
 import '../services/peer_connection_manager.dart';
 import '../services/peer_storage_service.dart';
@@ -128,28 +129,29 @@ class _PeerSettingsScreenState extends State<PeerSettingsScreen> {
   }
 
   Future<void> _editName() async {
+    final l10n = AppLocalizations.of(context);
     final newName = await showDialog<String>(
       context: context,
       builder: (ctx) {
         final controller = TextEditingController(text: _deviceName);
         return AlertDialog(
-          title: const Text('修改备注名称'),
+          title: Text(l10n.peerSettings_editAliasTitle),
           content: TextField(
             controller: controller,
             autofocus: true,
-            decoration: const InputDecoration(
-              hintText: '输入备注名称',
-              border: OutlineInputBorder(),
+            decoration: InputDecoration(
+              hintText: l10n.peerSettings_editAliasHint,
+              border: const OutlineInputBorder(),
             ),
           ),
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(ctx),
-              child: const Text('取消'),
+              child: Text(l10n.common_cancel),
             ),
             FilledButton(
               onPressed: () => Navigator.pop(ctx, controller.text.trim()),
-              child: const Text('保存'),
+              child: Text(l10n.common_save),
             ),
           ],
         );
@@ -174,22 +176,23 @@ class _PeerSettingsScreenState extends State<PeerSettingsScreen> {
   }
 
   Future<void> _deletePeer() async {
+    final l10n = AppLocalizations.of(context);
     final confirm = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('删除配对'),
-        content: Text('确定要删除与 $_deviceName 的配对吗？\n所有消息记录也会被删除。'),
+        title: Text(l10n.peerSettings_deletePairing),
+        content: Text(l10n.peerSettings_deleteConfirm(_deviceName)),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('取消'),
+            child: Text(l10n.common_cancel),
           ),
           FilledButton(
             onPressed: () => Navigator.pop(ctx, true),
             style: FilledButton.styleFrom(
               backgroundColor: Theme.of(context).colorScheme.error,
             ),
-            child: const Text('删除'),
+            child: Text(l10n.common_delete),
           ),
         ],
       ),
@@ -205,11 +208,12 @@ class _PeerSettingsScreenState extends State<PeerSettingsScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
     final colorScheme = Theme.of(context).colorScheme;
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('设备设置'),
+        title: Text(l10n.peerSettings_title),
       ),
       body: ListView(
         children: [
@@ -236,7 +240,7 @@ class _PeerSettingsScreenState extends State<PeerSettingsScreen> {
                     ),
                     const SizedBox(width: 6),
                     Text(
-                      _isConnected ? '在线' : '离线',
+                      _isConnected ? l10n.peerSettings_online : l10n.peerSettings_offline,
                       style: TextStyle(
                         color: _isConnected ? Colors.green : Colors.grey,
                       ),
@@ -250,22 +254,22 @@ class _PeerSettingsScreenState extends State<PeerSettingsScreen> {
           const SizedBox(height: 32),
 
           // 设置项
-          _buildSection(context, '基本信息', [
+          _buildSection(context, l10n.peerSettings_sectionBasic, [
             ListTile(
               leading: const Icon(Icons.edit),
-              title: const Text('备注名称'),
+              title: Text(l10n.peerSettings_aliasName),
               subtitle: Text(_deviceName),
               trailing: const Icon(Icons.chevron_right),
               onTap: _editName,
             ),
             ListTile(
               leading: const Icon(Icons.fingerprint),
-              title: const Text('设备指纹'),
+              title: Text(l10n.peerSettings_fingerprint),
               subtitle: Text(_formatFingerprint(widget.peer.fingerprint)),
             ),
             ListTile(
               leading: const Icon(Icons.calendar_today),
-              title: const Text('配对时间'),
+              title: Text(l10n.peerSettings_pairedAt),
               subtitle: Text(_formatDate(widget.peer.pairedAt)),
             ),
             if (widget.peer.pairingRole != null)
@@ -275,9 +279,9 @@ class _PeerSettingsScreenState extends State<PeerSettingsScreen> {
                       ? Icons.call_made
                       : Icons.call_received,
                 ),
-                title: const Text('连接发起方'),
+                title: Text(l10n.peerSettings_connectionInitiator),
                 subtitle: Text(
-                  '${widget.peer.pairingRoleShortLabel} · ${widget.peer.pairingRoleDescription}',
+                  '${widget.peer.pairingRoleShortLabel(l10n)} · ${widget.peer.pairingRoleDescription(l10n)}',
                 ),
               ),
           ]),
@@ -292,23 +296,23 @@ class _PeerSettingsScreenState extends State<PeerSettingsScreen> {
 
           const SizedBox(height: 16),
 
-          _buildSection(context, '连接信息', [
+          _buildSection(context, l10n.peerSettings_sectionConnection, [
             if (widget.peer.localEndpoint != null)
               ListTile(
                 leading: const Icon(Icons.wifi),
-                title: const Text('内网地址'),
+                title: Text(l10n.peerSettings_localAddress),
                 subtitle: Text(widget.peer.localEndpoint!),
               ),
             if (widget.peer.channelEndpoint != null)
               ListTile(
                 leading: const Icon(Icons.cloud),
-                title: const Text('外网中继'),
+                title: Text(l10n.peerSettings_relayAddress),
                 subtitle: Text(widget.peer.channelEndpoint!),
               ),
-            const ListTile(
-              leading: Icon(Icons.lock),
-              title: Text('加密方式'),
-              subtitle: Text('Noise IK (X25519 + ChaCha20-Poly1305)'),
+            ListTile(
+              leading: const Icon(Icons.lock),
+              title: Text(l10n.peerSettings_encryption),
+              subtitle: Text(l10n.peerSettings_encryptionValue),
             ),
           ]),
 
@@ -320,7 +324,7 @@ class _PeerSettingsScreenState extends State<PeerSettingsScreen> {
             child: FilledButton.icon(
               onPressed: _startChat,
               icon: const Icon(Icons.chat_bubble_outline),
-              label: const Text('发起对话'),
+              label: Text(l10n.peerSettings_startChat),
               style: FilledButton.styleFrom(
                 minimumSize: const Size(double.infinity, 48),
               ),
@@ -335,7 +339,7 @@ class _PeerSettingsScreenState extends State<PeerSettingsScreen> {
             child: OutlinedButton.icon(
               onPressed: _deletePeer,
               icon: Icon(Icons.delete_forever, color: colorScheme.error),
-              label: Text('删除配对', style: TextStyle(color: colorScheme.error)),
+              label: Text(l10n.peerSettings_deletePairing, style: TextStyle(color: colorScheme.error)),
               style: OutlinedButton.styleFrom(
                 side: BorderSide(color: colorScheme.error),
                 minimumSize: const Size(double.infinity, 48),
@@ -351,6 +355,7 @@ class _PeerSettingsScreenState extends State<PeerSettingsScreen> {
 
   /// 分享给该设备的本机 agent（仅列出已开启「允许外部访问」的 agent）。
   Widget _buildShareSection(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
     final List<Widget> children;
     if (_shareLoading) {
       children = const [
@@ -368,11 +373,11 @@ class _PeerSettingsScreenState extends State<PeerSettingsScreen> {
         ListTile(
           leading: Icon(Icons.ios_share, color: Colors.grey[400]),
           title: Text(
-            '暂无可分享的 Agent',
+            l10n.peerSettings_noShareableAgents,
             style: TextStyle(color: Colors.grey[600]),
           ),
           subtitle: Text(
-            '在 Agent 设置中开启「允许外部访问」后即可在此分享给该设备',
+            l10n.peerSettings_enableExternalAccessHint,
             style: TextStyle(color: Colors.grey[500], fontSize: 12),
           ),
         ),
@@ -383,11 +388,13 @@ class _PeerSettingsScreenState extends State<PeerSettingsScreen> {
 
     final sharedCount =
         _shareableAgents.where((a) => _shareDecisions[a.id] == true).length;
-    return _buildSection(
-      context,
-      '分享给此设备的 Agent${_shareableAgents.isNotEmpty ? ' ($sharedCount/${_shareableAgents.length})' : ''}',
-      children,
-    );
+    final shareTitle = _shareableAgents.isNotEmpty
+        ? l10n.peerSettings_shareAgentsTitleCount(
+            sharedCount,
+            _shareableAgents.length,
+          )
+        : l10n.peerSettings_shareAgentsTitle;
+    return _buildSection(context, shareTitle, children);
   }
 
   Widget _buildShareTile(RemoteAgent agent) {
@@ -433,6 +440,7 @@ class _PeerSettingsScreenState extends State<PeerSettingsScreen> {
 
   /// 对方设备开放的、可被本机连接的 agent 列表。
   Widget _buildAgentsSection(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
     final List<Widget> children;
     if (_agentsLoading) {
       children = const [
@@ -450,11 +458,15 @@ class _PeerSettingsScreenState extends State<PeerSettingsScreen> {
         ListTile(
           leading: Icon(Icons.smart_toy_outlined, color: Colors.grey[400]),
           title: Text(
-            _isConnected ? '该设备暂未开放任何 Agent' : '设备离线，暂无可连接的 Agent',
+            _isConnected
+                ? l10n.peerSettings_noPeerAgentsConnected
+                : l10n.peerSettings_noPeerAgentsOffline,
             style: TextStyle(color: Colors.grey[600]),
           ),
           subtitle: Text(
-            _isConnected ? '对方可在 Agent 设置中开启「允许外部访问」' : '连接后将自动同步可连接的 Agent',
+            _isConnected
+                ? l10n.peerSettings_peerEnableExternalHint
+                : l10n.peerSettings_syncAgentsOnConnect,
             style: TextStyle(color: Colors.grey[500], fontSize: 12),
           ),
         ),
@@ -463,14 +475,14 @@ class _PeerSettingsScreenState extends State<PeerSettingsScreen> {
       children = _peerAgents.map(_buildAgentTile).toList();
     }
 
-    return _buildSection(
-      context,
-      '可连接的 Agent${_peerAgents.isNotEmpty ? ' (${_peerAgents.length})' : ''}',
-      children,
-    );
+    final agentsTitle = _peerAgents.isNotEmpty
+        ? l10n.peerSettings_connectableAgentsTitleCount(_peerAgents.length)
+        : l10n.peerSettings_connectableAgentsTitle;
+    return _buildSection(context, agentsTitle, children);
   }
 
   Widget _buildAgentTile(RemoteAgent agent) {
+    final l10n = AppLocalizations.of(context);
     final online = agent.status == AgentStatus.online;
     return ListTile(
       leading: Container(
@@ -496,7 +508,7 @@ class _PeerSettingsScreenState extends State<PeerSettingsScreen> {
           Icon(Icons.circle, size: 8, color: online ? Colors.green : Colors.grey),
           const SizedBox(width: 4),
           Text(
-            online ? '在线' : '离线',
+            online ? l10n.peerSettings_online : l10n.peerSettings_offline,
             style: TextStyle(
               fontSize: 12,
               color: online ? Colors.green : Colors.grey,

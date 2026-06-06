@@ -317,6 +317,21 @@ class AppLocalizationsEn extends AppLocalizations {
   String get home_scanConnect => 'Scan to Connect';
 
   @override
+  String get home_searchEmptyHint => 'Search agents, groups, and messages';
+
+  @override
+  String get home_searchNoResults => 'No results found';
+
+  @override
+  String get home_searchSectionAgents => 'Agents';
+
+  @override
+  String get home_searchSectionGroups => 'Groups';
+
+  @override
+  String get home_searchSectionMessages => 'Messages';
+
+  @override
   String home_agentsCount(int count) {
     return '$count agents';
   }
@@ -356,6 +371,84 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get settings_changePasswordSub => 'Change your login password';
+
+  @override
+  String get settings_dataVault => 'Data Vault';
+
+  @override
+  String get settings_dataVaultSub =>
+      'View and restore data backups from before password reset';
+
+  @override
+  String get vault_emptyTitle => 'No backups yet';
+
+  @override
+  String get vault_emptyDesc =>
+      'Each time you reset your password,\nold data is automatically encrypted and saved here.';
+
+  @override
+  String get vault_infoBanner =>
+      'Each time you reset your password, your old data is automatically encrypted and saved.\nTap \"Restore\" and enter the corresponding old password to recover your data.';
+
+  @override
+  String get vault_restoreTitle => 'Restore Old Data';
+
+  @override
+  String vault_backupTime(String date) {
+    return 'Backup time: $date';
+  }
+
+  @override
+  String vault_fileSize(String size) {
+    return 'File size: $size';
+  }
+
+  @override
+  String vault_size(String size) {
+    return 'Size: $size';
+  }
+
+  @override
+  String get vault_restorePasswordPrompt =>
+      'Enter the old password for this backup to unlock:';
+
+  @override
+  String get vault_oldPassword => 'Old Password';
+
+  @override
+  String get vault_restoreWarning =>
+      'Restoring will overwrite all current data. This cannot be undone.';
+
+  @override
+  String get vault_confirmRestore => 'Confirm Restore';
+
+  @override
+  String get vault_emptyPassword => 'Please enter the old password';
+
+  @override
+  String get vault_restoreFailed =>
+      'Wrong password or corrupted backup. Please try again.';
+
+  @override
+  String get vault_restoreSuccess =>
+      'Data restored successfully! Please restart the app to load the restored data.';
+
+  @override
+  String get vault_deleteTitle => 'Delete Backup';
+
+  @override
+  String vault_deleteConfirm(String date) {
+    return 'Are you sure you want to permanently delete this backup?\n\nBackup time: $date\nThe data cannot be recovered after deletion.';
+  }
+
+  @override
+  String get vault_deleted => 'Backup deleted';
+
+  @override
+  String get vault_restore => 'Restore';
+
+  @override
+  String get vault_deleteTooltip => 'Delete backup';
 
   @override
   String get settings_biometric => 'Biometric Authentication';
@@ -2435,6 +2528,18 @@ class AppLocalizationsEn extends AppLocalizations {
   String get contacts_groups => 'Groups';
 
   @override
+  String get contacts_devices => 'Devices';
+
+  @override
+  String get contacts_noPeers => 'No paired devices yet';
+
+  @override
+  String get contacts_startPairing => 'Start Pairing';
+
+  @override
+  String get contacts_addPairingDevice => 'Add Paired Device';
+
+  @override
   String get contacts_noAgents => 'No agents yet';
 
   @override
@@ -3641,4 +3746,152 @@ class AppLocalizationsEn extends AppLocalizations {
   String peerManual_failed(String error) {
     return 'Pairing failed: $error';
   }
+
+  @override
+  String get peerRole_initiatorShort => 'Initiated by me';
+
+  @override
+  String get peerRole_responderShort => 'Initiated by peer';
+
+  @override
+  String get peerRole_initiatorDesc => 'Paired by scanning on this device';
+
+  @override
+  String get peerRole_responderDesc => 'Paired when peer scanned';
+
+  @override
+  String get peerChat_emptyMessages =>
+      'No messages yet\nSend the first message to start chatting';
+
+  @override
+  String get peerChat_hintOnline => 'Type a message...';
+
+  @override
+  String get peerChat_hintOffline =>
+      'Offline · Messages will send when connected';
+
+  @override
+  String get peerChat_statusOnlinePrefix => 'Online · ';
+
+  @override
+  String get peerChat_e2eEncryption => 'End-to-end encrypted';
+
+  @override
+  String get peerChat_statusOnline => 'Online · End-to-end encrypted';
+
+  @override
+  String get peerChat_statusConnecting => 'Connecting...';
+
+  @override
+  String get peerChat_statusOffline => 'Offline';
+
+  @override
+  String peerChat_yesterday(String time) {
+    return 'Yesterday $time';
+  }
+
+  @override
+  String get peerSettings_title => 'Device Settings';
+
+  @override
+  String get peerSettings_online => 'Online';
+
+  @override
+  String get peerSettings_offline => 'Offline';
+
+  @override
+  String get peerSettings_sectionBasic => 'Basic Info';
+
+  @override
+  String get peerSettings_aliasName => 'Display Name';
+
+  @override
+  String get peerSettings_fingerprint => 'Device Fingerprint';
+
+  @override
+  String get peerSettings_pairedAt => 'Paired At';
+
+  @override
+  String get peerSettings_connectionInitiator => 'Connection Initiator';
+
+  @override
+  String get peerSettings_sectionConnection => 'Connection Info';
+
+  @override
+  String get peerSettings_localAddress => 'Local Address';
+
+  @override
+  String get peerSettings_relayAddress => 'Relay Endpoint';
+
+  @override
+  String get peerSettings_encryption => 'Encryption';
+
+  @override
+  String get peerSettings_encryptionValue =>
+      'Noise IK (X25519 + ChaCha20-Poly1305)';
+
+  @override
+  String get peerSettings_startChat => 'Start Chat';
+
+  @override
+  String get peerSettings_deletePairing => 'Remove Pairing';
+
+  @override
+  String get peerSettings_editAliasTitle => 'Edit Display Name';
+
+  @override
+  String get peerSettings_editAliasHint => 'Enter display name';
+
+  @override
+  String peerSettings_deleteConfirm(String name) {
+    return 'Are you sure you want to remove pairing with $name?\nAll message history will also be deleted.';
+  }
+
+  @override
+  String get peerSettings_noShareableAgents => 'No agents available to share';
+
+  @override
+  String get peerSettings_enableExternalAccessHint =>
+      'Enable \"Allow External Access\" in agent settings to share agents with this device';
+
+  @override
+  String get peerSettings_shareAgentsTitle => 'Agents Shared with This Device';
+
+  @override
+  String peerSettings_shareAgentsTitleCount(int shared, int total) {
+    return 'Agents Shared with This Device ($shared/$total)';
+  }
+
+  @override
+  String get peerSettings_noPeerAgentsConnected =>
+      'This device has not shared any agents';
+
+  @override
+  String get peerSettings_noPeerAgentsOffline =>
+      'Device offline, no agents available';
+
+  @override
+  String get peerSettings_peerEnableExternalHint =>
+      'The peer can enable \"Allow External Access\" in agent settings';
+
+  @override
+  String get peerSettings_syncAgentsOnConnect =>
+      'Available agents will sync automatically when connected';
+
+  @override
+  String get peerSettings_connectableAgentsTitle => 'Connectable Agents';
+
+  @override
+  String peerSettings_connectableAgentsTitleCount(int count) {
+    return 'Connectable Agents ($count)';
+  }
+
+  @override
+  String get peerList_connected => 'Connected';
+
+  @override
+  String get peerList_connectedE2e => 'Connected (End-to-end encrypted)';
+
+  @override
+  String get peerList_disconnected => 'Not connected';
 }

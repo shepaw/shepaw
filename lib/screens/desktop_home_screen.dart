@@ -1,14 +1,8 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
-import '../models/agent.dart';
-import '../models/channel.dart';
 import '../models/conversation_selection.dart';
 import '../l10n/app_localizations.dart';
 import '../widgets/model_icon.dart';
-import '../services/local_database_service.dart';
-import '../services/message_search_service.dart';
-import '../services/she_service.dart';
-import '../theme/app_theme.dart';
 import '../peer/models/paired_peer.dart';
 import '../peer/screens/peer_chat_screen.dart';
 import '../peer/screens/peer_pairing_screen.dart';
@@ -30,7 +24,6 @@ import '../task/screens/scheduled_task_form_screen.dart';
 import '../task/models/scheduled_task.dart';
 import '../utils/layout_utils.dart';
 import '../services/native_window_service.dart';
-import '../widgets/avatar_image.dart';
 
 /// Desktop split-panel layout similar to WeChat desktop.
 /// Left: icon sidebar + conversation list (HomeScreen embedded).
@@ -51,7 +44,6 @@ enum _RightPanelView {
   createGroup,
   pairDevice,
   contacts,
-  search,
   traces,
   groupWorkflow,
   modelManagement,
@@ -171,17 +163,6 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
     });
   }
 
-  /// Called when a conversation is opened from the search panel.
-  /// Remembers search as the previous panel so the back button returns to it.
-  void _onSearchConversationSelected(ConversationSelection selection) {
-    setState(() {
-      _previousPanel = _RightPanelView.search;
-      _selected = selection;
-      _rightPanel = _RightPanelView.chat;
-      _navGeneration++;
-    });
-  }
-
   void _onChatClose() {
     setState(() {
       _selected = null;
@@ -277,6 +258,9 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
               embedded: true,
               selectedConversation: _selected,
               onConversationSelected: _onConversationSelected,
+              onAddAgent: () => _showPanel(_RightPanelView.addAgent),
+              onCreateGroup: () => _showPanel(_RightPanelView.createGroup),
+              onPairDevice: () => _showPanel(_RightPanelView.pairDevice),
             ),
           ),
 
@@ -401,12 +385,6 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
       case _RightPanelView.contacts:
         return const ContactsScreen();
 
-      case _RightPanelView.search:
-        return _DesktopSearchPanel(
-          agents: _homeKey.currentState?.agents ?? [],
-          onConversationSelected: _onSearchConversationSelected,
-        );
-
       case _RightPanelView.traces:
         return ChannelTraceScreen(
           channelId: _tracesChannelId,
@@ -488,13 +466,6 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
         onTap: () => _showPanel(_RightPanelView.empty),
       ),
       _SidebarItemDef(
-        icon: Icons.search,
-        tooltip: l10n.common_search,
-        colorBuilder: (_) =>
-            _rightPanel == _RightPanelView.search ? activeColor : iconColor,
-        onTap: () => _openSearch(),
-      ),
-      _SidebarItemDef(
         icon: Icons.contacts_outlined,
         tooltip: l10n.drawer_contacts,
         colorBuilder: (_) =>
@@ -506,13 +477,6 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
     // Bottom section items (collapsed when height is insufficient)
     // Index 0–4: before divider; after that: settings
     final bottomItems = [
-      _SidebarItemDef(
-        icon: Icons.devices_outlined,
-        tooltip: l10n.drawer_newDevice,
-        colorBuilder: (_) =>
-            _rightPanel == _RightPanelView.pairDevice ? activeColor : iconColor,
-        onTap: () => _showPanel(_RightPanelView.pairDevice),
-      ),
       _SidebarItemDef(
         icon: Icons.psychology,
         iconBuilder: (size, color) => ModelIcon(size: size, color: color),
@@ -828,11 +792,6 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
     );
   }
 
-  void _openSearch() {
-    _showPanel(_RightPanelView.search);
-  }
-
-
   Widget _buildEmptyState() {
     final l10n = AppLocalizations.of(context);
     return Center(
@@ -858,434 +817,6 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
   }
 }
 
-/// Inline search panel displayed in the right panel on desktop.
-class _DesktopSearchPanel extends StatefulWidget {
-  final List<Agent> agents;
-  final ValueChanged<ConversationSelection> onConversationSelected;
-
-  const _DesktopSearchPanel({
-    required this.agents,
-    required this.onConversationSelected,
-  });
-
-  @override
-  State<_DesktopSearchPanel> createState() => _DesktopSearchPanelState();
-}
-
-class _DesktopSearchPanelState extends State<_DesktopSearchPanel> {
-  final TextEditingController _controller = TextEditingController();
-  final FocusNode _focusNode = FocusNode();
-  final LocalDatabaseService _databaseService = LocalDatabaseService();
-  late final MessageSearchService _messageSearchService;
-
-  List<Agent> _agentResults = [];
-  List<Channel> _channelResults = [];
-  List<MessageSearchResult> _messageResults = [];
-  bool _searching = false;
-
-  @override
-  void initState() {
-    super.initState();
-    _messageSearchService = MessageSearchService(_databaseService);
-    _controller.addListener(_onQueryChanged);
-    // Auto-focus the search field.
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _focusNode.requestFocus();
-    });
-  }
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    _focusNode.dispose();
-    super.dispose();
-  }
-
-  void _onQueryChanged() {
-    final query = _controller.text.trim();
-    if (query.isEmpty) {
-      setState(() {
-        _agentResults = [];
-        _channelResults = [];
-        _messageResults = [];
-        _searching = false;
-      });
-      return;
-    }
-    _performSearch(query);
-  }
-
-  Future<void> _performSearch(String query) async {
-    setState(() => _searching = true);
-
-    final lowerQuery = query.toLowerCase();
-    final agentResults = widget.agents.where((a) {
-      return a.name.toLowerCase().contains(lowerQuery) ||
-          (a.type?.toLowerCase().contains(lowerQuery) ?? false) ||
-          (a.description?.toLowerCase().contains(lowerQuery) ?? false);
-    }).toList();
-
-    List<Channel> channelResults = [];
-    List<MessageSearchResult> messageResults = [];
-    try {
-      final allChannels = await _databaseService.getAllChannels();
-      channelResults = allChannels.where((ch) {
-        return ch.name.toLowerCase().contains(lowerQuery) ||
-            (ch.description?.toLowerCase().contains(lowerQuery) ?? false);
-      }).toList();
-    } catch (_) {}
-    try {
-      messageResults = await _messageSearchService.searchMessages(
-        query: query,
-        limit: 20,
-      );
-    } catch (_) {}
-
-    if (!mounted || _controller.text.trim() != query) return;
-    setState(() {
-      _agentResults = agentResults;
-      _channelResults = channelResults;
-      _messageResults = messageResults;
-      _searching = false;
-    });
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final l10n = AppLocalizations.of(context);
-    return Scaffold(
-      appBar: AppBar(
-        automaticallyImplyLeading: false,
-        title: TextField(
-          controller: _controller,
-          focusNode: _focusNode,
-          decoration: InputDecoration(
-            hintText: l10n.common_search,
-            border: InputBorder.none,
-            prefixIcon: const Icon(Icons.search),
-            suffixIcon: _controller.text.isNotEmpty
-                ? IconButton(
-                    icon: const Icon(Icons.clear),
-                    onPressed: () => _controller.clear(),
-                  )
-                : null,
-          ),
-        ),
-      ),
-      body: _buildBody(context),
-    );
-  }
-
-  Widget _buildBody(BuildContext context) {
-    final query = _controller.text.trim();
-    if (query.isEmpty) {
-      return Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(Icons.search, size: 64, color: Colors.grey[400]),
-            const SizedBox(height: 16),
-            Text(
-              'Search agents, groups, and messages',
-              style: TextStyle(fontSize: 16, color: Colors.grey[600]),
-            ),
-          ],
-        ),
-      );
-    }
-
-    if (_searching &&
-        _agentResults.isEmpty &&
-        _channelResults.isEmpty &&
-        _messageResults.isEmpty) {
-      return const Center(child: CircularProgressIndicator());
-    }
-
-    final hasAgents = _agentResults.isNotEmpty;
-    final hasChannels = _channelResults.isNotEmpty;
-    final hasMessages = _messageResults.isNotEmpty;
-
-    if (!hasAgents && !hasChannels && !hasMessages) {
-      return Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(Icons.search_off, size: 64, color: Colors.grey[400]),
-            const SizedBox(height: 16),
-            Text(
-              'No results found',
-              style: TextStyle(fontSize: 16, color: Colors.grey[600]),
-            ),
-          ],
-        ),
-      );
-    }
-
-    return ListView(
-      children: [
-        if (hasAgents) ...[
-          _buildSectionHeader(context, 'Agents', _agentResults.length),
-          ..._agentResults.map((agent) => _buildAgentTile(context, agent)),
-        ],
-        if (hasChannels) ...[
-          _buildSectionHeader(context, 'Groups', _channelResults.length),
-          ..._channelResults.map((ch) => _buildChannelTile(context, ch)),
-        ],
-        if (hasMessages) ...[
-          _buildSectionHeader(context, 'Messages', _messageResults.length),
-          ..._messageResults.map((r) => _buildMessageTile(context, r)),
-        ],
-      ],
-    );
-  }
-
-  Widget _buildSectionHeader(BuildContext context, String title, int count) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-      color: Colors.grey[50],
-      child: Row(
-        children: [
-          Text(title,
-              style: TextStyle(
-                  fontSize: 13,
-                  fontWeight: FontWeight.w600,
-                  color: Colors.grey[700])),
-          const SizedBox(width: 8),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-            decoration: BoxDecoration(
-              color: Theme.of(context).primaryColor.withOpacity(0.1),
-              borderRadius: BorderRadius.circular(10),
-            ),
-            child: Text('$count',
-                style: TextStyle(
-                    fontSize: 12,
-                    color: Theme.of(context).primaryColor,
-                    fontWeight: FontWeight.w600)),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildAgentTile(BuildContext context, Agent agent) {
-    final displayName = SheService.isSheIdentity(agent.id, agent.metadata)
-        ? AppLocalizations.of(context).she_name
-        : agent.name;
-    return ListTile(
-      leading: Container(
-        width: 40,
-        height: 40,
-        decoration: BoxDecoration(
-          color: Colors.grey[200],
-          borderRadius: BorderRadius.circular(10),
-        ),
-        alignment: Alignment.center,
-        child: agent.avatar.length <= 2
-            ? Text(agent.avatar, style: const TextStyle(fontSize: 20))
-            : AvatarImage(
-                avatar: agent.avatar,
-                size: 40,
-                borderRadius: 10,
-                fallback: Text(
-                  agent.name.isNotEmpty ? agent.name[0] : 'A',
-                  style: const TextStyle(fontSize: 20),
-                ),
-              ),
-      ),
-      title: Text(displayName),
-      subtitle: Text(agent.description ?? agent.type ?? 'AI Agent'),
-      onTap: () {
-        widget.onConversationSelected(ConversationSelection(
-          agentId: agent.id,
-          agentName: agent.name,
-          agentAvatar: agent.avatar,
-        ));
-      },
-    );
-  }
-
-  Widget _buildChannelTile(BuildContext context, Channel channel) {
-    return ListTile(
-      leading: Container(
-        width: 40,
-        height: 40,
-        decoration: BoxDecoration(
-          color: AppColors.primaryContainer,
-          borderRadius: BorderRadius.circular(10),
-        ),
-        alignment: Alignment.center,
-        child: Icon(
-          channel.isGroup ? Icons.group : Icons.chat_bubble_outline,
-          color: AppColors.primaryDark,
-          size: 20,
-        ),
-      ),
-      title: Text(channel.name),
-      subtitle:
-          Text(channel.description ?? (channel.isGroup ? 'Group' : 'Chat')),
-      onTap: () {
-        widget.onConversationSelected(ConversationSelection(
-          channelId: channel.id,
-          groupFamilyId: channel.isGroup ? channel.groupFamilyId : null,
-        ));
-      },
-    );
-  }
-
-  Widget _buildMessageTile(BuildContext context, MessageSearchResult result) {
-    final message = result.message;
-    final isMyMessage = message.from.type == 'user';
-    return InkWell(
-      onTap: () {
-        widget.onConversationSelected(ConversationSelection(
-          channelId: message.channelId,
-          highlightMessageId: message.id,
-        ));
-      },
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-        decoration: BoxDecoration(
-          border: Border(bottom: BorderSide(color: Colors.grey[200]!)),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
-                  decoration: BoxDecoration(
-                    color: Colors.grey[100],
-                    borderRadius: BorderRadius.circular(4),
-                  ),
-                  child: Text(
-                    result.channelName.isNotEmpty
-                        ? result.channelName
-                        : 'Unknown',
-                    style: TextStyle(fontSize: 11, color: Colors.grey[600]),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Container(
-                  width: 20,
-                  height: 20,
-                  decoration: BoxDecoration(
-                    color: isMyMessage
-                        ? Theme.of(context).primaryColor.withOpacity(0.15)
-                        : Colors.grey[200],
-                    borderRadius: BorderRadius.circular(5),
-                  ),
-                  alignment: Alignment.center,
-                  child: Text(
-                    message.senderName.isNotEmpty
-                        ? message.senderName[0].toUpperCase()
-                        : '?',
-                    style: TextStyle(
-                      fontSize: 9,
-                      fontWeight: FontWeight.w600,
-                      color: isMyMessage
-                          ? Theme.of(context).primaryColor
-                          : Colors.grey[600],
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 4),
-                Text(
-                  message.senderName,
-                  style: TextStyle(
-                    fontWeight: FontWeight.w600,
-                    fontSize: 12,
-                    color: isMyMessage
-                        ? Theme.of(context).primaryColor
-                        : Colors.grey[800],
-                  ),
-                ),
-                const Spacer(),
-                Text(
-                  _formatTime(message.timestampMs),
-                  style: TextStyle(fontSize: 11, color: Colors.grey[500]),
-                ),
-              ],
-            ),
-            const SizedBox(height: 4),
-            Padding(
-              padding: const EdgeInsets.only(left: 4),
-              child: _buildHighlightedContent(context, message.content),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildHighlightedContent(BuildContext context, String content) {
-    final query = _controller.text.trim();
-    final baseStyle = TextStyle(color: Colors.grey[800], fontSize: 13);
-    if (query.isEmpty) {
-      return Text(content,
-          maxLines: 2, overflow: TextOverflow.ellipsis, style: baseStyle);
-    }
-
-    // Collapse all whitespace (newlines, tabs, etc.) into single spaces so
-    // the match is always visible in the snippet.
-    final flat = content.replaceAll(RegExp(r'\s+'), ' ');
-    final lowerFlat = flat.toLowerCase();
-    final lowerQuery = query.toLowerCase();
-
-    final matchIndex = lowerFlat.indexOf(lowerQuery);
-    if (matchIndex == -1) {
-      return Text(flat,
-          maxLines: 2, overflow: TextOverflow.ellipsis, style: baseStyle);
-    }
-
-    // Extract a window of ~40 chars before and after the first match.
-    const windowSize = 40;
-    final snippetStart = matchIndex > windowSize ? matchIndex - windowSize : 0;
-    final matchEnd = matchIndex + query.length;
-    final snippetEnd =
-        (matchEnd + windowSize).clamp(0, flat.length);
-
-    final before = flat.substring(snippetStart, matchIndex);
-    final match = flat.substring(matchIndex, matchEnd);
-    final after = flat.substring(matchEnd, snippetEnd);
-
-    final spans = <TextSpan>[
-      if (snippetStart > 0) const TextSpan(text: '...'),
-      TextSpan(text: before),
-      TextSpan(
-        text: match,
-        style: TextStyle(
-          backgroundColor: Colors.yellow[200],
-          fontWeight: FontWeight.w600,
-        ),
-      ),
-      TextSpan(text: after),
-      if (snippetEnd < flat.length) const TextSpan(text: '...'),
-    ];
-
-    return RichText(
-      maxLines: 2,
-      overflow: TextOverflow.ellipsis,
-      text: TextSpan(style: baseStyle, children: spans),
-    );
-  }
-
-  String _formatTime(int timestampMs) {
-    final dt = DateTime.fromMillisecondsSinceEpoch(timestampMs);
-    final now = DateTime.now();
-    final diff = now.difference(dt);
-    if (diff.inDays == 0) {
-      return '${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';
-    } else if (diff.inDays < 7) {
-      const weekdays = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
-      return weekdays[dt.weekday - 1];
-    } else {
-      return '${dt.month}/${dt.day}';
-    }
-  }
-}
 
 /// A single icon button in the sidebar.
 class _SidebarIcon extends StatelessWidget {

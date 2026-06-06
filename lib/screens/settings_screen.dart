@@ -226,8 +226,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
           ListTile(
             leading: const Icon(Icons.archive_outlined),
-            title: const Text('历史数据保险库'),
-            subtitle: const Text('查看并恢复重置密码前的数据备份'),
+            title: Text(l10n.settings_dataVault),
+            subtitle: Text(l10n.settings_dataVaultSub),
             trailing: const Icon(Icons.chevron_right),
             onTap: () {
               Navigator.push(

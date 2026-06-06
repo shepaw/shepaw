@@ -22,11 +22,23 @@ import 'providers/notification_provider.dart';
 import 'screens/password_setup_screen.dart';
 import 'screens/login_screen.dart';
 import 'screens/adaptive_home_screen.dart';
+import 'widgets/window_title_sync.dart';
 
 // 重新导出 ACP 常量，保持 settings_screen / remote_agent_detail_screen 等
 // 现有 `import '../main.dart' show kAcpServer...` 的引用不受影响。
 export 'app_bootstrap.dart'
     show kAcpServerPortKey, kAcpServerDefaultPort, kAcpServerEnabledKey, kAcpServerTokenKey;
+
+Locale _resolveAppLocale(Locale? preferred) {
+  if (preferred != null) return preferred;
+  final system = WidgetsBinding.instance.platformDispatcher.locale;
+  for (final supported in AppLocalizations.supportedLocales) {
+    if (supported.languageCode == system.languageCode) {
+      return supported;
+    }
+  }
+  return const Locale('zh');
+}
 
 Future<void> main(List<String> args) async {
   // 用 runZonedGuarded 捕获 Zone 内未处理异常，必须在 ensureInitialized 之前建立 zone，
@@ -240,31 +252,38 @@ class _MyAppState extends State<MyApp> {
         ),
       ],
       child: Consumer<LocaleProvider>(
-        builder: (context, localeProvider, _) => WithForegroundTask(
-          child: MaterialApp(
-            navigatorKey: navigatorKey,
-            title: 'Paw',
-            debugShowCheckedModeBanner: false,
-            localizationsDelegates: AppLocalizations.localizationsDelegates,
-            supportedLocales: AppLocalizations.supportedLocales,
-            locale: localeProvider.locale,
-            localeResolutionCallback: (locale, supportedLocales) {
-              for (final supportedLocale in supportedLocales) {
-                if (supportedLocale.languageCode == locale?.languageCode) {
-                  return supportedLocale;
+        builder: (context, localeProvider, _) {
+          final l10n = lookupAppLocalizations(
+            _resolveAppLocale(localeProvider.locale),
+          );
+          return WithForegroundTask(
+            child: MaterialApp(
+              navigatorKey: navigatorKey,
+              title: l10n.appTitle,
+              debugShowCheckedModeBanner: false,
+              localizationsDelegates: AppLocalizations.localizationsDelegates,
+              supportedLocales: AppLocalizations.supportedLocales,
+              locale: localeProvider.locale,
+              localeResolutionCallback: (locale, supportedLocales) {
+                for (final supportedLocale in supportedLocales) {
+                  if (supportedLocale.languageCode == locale?.languageCode) {
+                    return supportedLocale;
+                  }
                 }
-              }
-              return const Locale('zh');
-            },
-            theme: AppTheme.light,
-            home: const SplashScreen(),
-            routes: {
-              '/setup': (context) => const PasswordSetupScreen(),
-              '/login': (context) => const LoginScreen(),
-              '/home': (context) => const AdaptiveHomeScreen(),
-            },
-          ),
-        ),
+                return const Locale('zh');
+              },
+              theme: AppTheme.light,
+              builder: (context, child) =>
+                  WindowTitleSync(child: child ?? const SizedBox.shrink()),
+              home: const SplashScreen(),
+              routes: {
+                '/setup': (context) => const PasswordSetupScreen(),
+                '/login': (context) => const LoginScreen(),
+                '/home': (context) => const AdaptiveHomeScreen(),
+              },
+            ),
+          );
+        },
       ),
     );
   }
@@ -307,6 +326,7 @@ class _SplashScreenState extends State<SplashScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
     return Scaffold(
       body: Container(
         width: double.infinity,
@@ -330,9 +350,9 @@ class _SplashScreenState extends State<SplashScreen> {
             const SizedBox(height: 32),
             
             // 应用名称
-            const Text(
-              'Paw',
-              style: TextStyle(
+            Text(
+              l10n.appTitle,
+              style: const TextStyle(
                 fontSize: 32,
                 fontWeight: FontWeight.bold,
                 color: Colors.white,
@@ -347,7 +367,7 @@ class _SplashScreenState extends State<SplashScreen> {
             const SizedBox(height: 16),
 
             Text(
-              AppLocalizations.of(context).splash_loading,
+              l10n.splash_loading,
               style: const TextStyle(
                 fontSize: 16,
                 color: Colors.white70,

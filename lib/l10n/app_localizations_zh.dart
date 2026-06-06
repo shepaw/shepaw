@@ -79,7 +79,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get splash_loading => '正在加载...';
 
   @override
-  String get login_title => 'ShePaw';
+  String get login_title => '惜宝';
 
   @override
   String get login_subtitle => '请输入密码解锁';
@@ -304,6 +304,21 @@ class AppLocalizationsZh extends AppLocalizations {
   String get home_scanConnect => '扫码连接';
 
   @override
+  String get home_searchEmptyHint => '搜索 Agent、群组和消息';
+
+  @override
+  String get home_searchNoResults => '未找到相关结果';
+
+  @override
+  String get home_searchSectionAgents => 'Agent';
+
+  @override
+  String get home_searchSectionGroups => '群组';
+
+  @override
+  String get home_searchSectionMessages => '消息';
+
+  @override
   String home_agentsCount(int count) {
     return '$count agents';
   }
@@ -345,6 +360,77 @@ class AppLocalizationsZh extends AppLocalizations {
   String get settings_changePasswordSub => '修改您的登录密码';
 
   @override
+  String get settings_dataVault => '历史数据保险库';
+
+  @override
+  String get settings_dataVaultSub => '查看并恢复重置密码前的数据备份';
+
+  @override
+  String get vault_emptyTitle => '暂无历史备份';
+
+  @override
+  String get vault_emptyDesc => '每次重置密码时，旧数据会自动\n加密保存到此处';
+
+  @override
+  String get vault_infoBanner => '每次重置密码时，旧数据会自动加密保存。\n点击「恢复」并输入对应的旧密码即可还原数据。';
+
+  @override
+  String get vault_restoreTitle => '恢复旧数据';
+
+  @override
+  String vault_backupTime(String date) {
+    return '备份时间: $date';
+  }
+
+  @override
+  String vault_fileSize(String size) {
+    return '文件大小: $size';
+  }
+
+  @override
+  String vault_size(String size) {
+    return '大小: $size';
+  }
+
+  @override
+  String get vault_restorePasswordPrompt => '请输入该备份对应的旧密码以解锁：';
+
+  @override
+  String get vault_oldPassword => '旧密码';
+
+  @override
+  String get vault_restoreWarning => '恢复将覆盖当前所有数据，此操作不可撤销。';
+
+  @override
+  String get vault_confirmRestore => '确认恢复';
+
+  @override
+  String get vault_emptyPassword => '请输入旧密码';
+
+  @override
+  String get vault_restoreFailed => '密码错误或备份文件损坏，请重试';
+
+  @override
+  String get vault_restoreSuccess => '数据恢复成功！请重启应用以加载恢复的数据。';
+
+  @override
+  String get vault_deleteTitle => '删除备份';
+
+  @override
+  String vault_deleteConfirm(String date) {
+    return '确定要永久删除此备份？\n\n备份时间: $date\n删除后数据将无法恢复。';
+  }
+
+  @override
+  String get vault_deleted => '备份已删除';
+
+  @override
+  String get vault_restore => '恢复';
+
+  @override
+  String get vault_deleteTooltip => '删除备份';
+
+  @override
   String get settings_biometric => '生物识别认证';
 
   @override
@@ -366,7 +452,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get settings_biometricDisabled => '生物识别已关闭';
 
   @override
-  String get login_biometricPrompt => '验证身份以登录 ShePaw';
+  String get login_biometricPrompt => '验证身份以登录惜宝';
 
   @override
   String get login_useBiometric => '使用生物识别登录';
@@ -2356,6 +2442,18 @@ class AppLocalizationsZh extends AppLocalizations {
   String get contacts_groups => '群组';
 
   @override
+  String get contacts_devices => '设备';
+
+  @override
+  String get contacts_noPeers => '尚未配对任何设备';
+
+  @override
+  String get contacts_startPairing => '开始配对';
+
+  @override
+  String get contacts_addPairingDevice => '添加配对设备';
+
+  @override
   String get contacts_noAgents => '暂无 Agent';
 
   @override
@@ -3508,4 +3606,146 @@ class AppLocalizationsZh extends AppLocalizations {
   String peerManual_failed(String error) {
     return '配对失败: $error';
   }
+
+  @override
+  String get peerRole_initiatorShort => '我发起';
+
+  @override
+  String get peerRole_responderShort => '对方发起';
+
+  @override
+  String get peerRole_initiatorDesc => '本机扫码发起连接';
+
+  @override
+  String get peerRole_responderDesc => '对方扫码发起连接';
+
+  @override
+  String get peerChat_emptyMessages => '暂无消息\n发送第一条消息开始对话';
+
+  @override
+  String get peerChat_hintOnline => '输入消息...';
+
+  @override
+  String get peerChat_hintOffline => '离线 · 消息将在连接后发送';
+
+  @override
+  String get peerChat_statusOnlinePrefix => '在线 · ';
+
+  @override
+  String get peerChat_e2eEncryption => '端到端加密';
+
+  @override
+  String get peerChat_statusOnline => '在线 · 端到端加密';
+
+  @override
+  String get peerChat_statusConnecting => '连接中...';
+
+  @override
+  String get peerChat_statusOffline => '离线';
+
+  @override
+  String peerChat_yesterday(String time) {
+    return '昨天 $time';
+  }
+
+  @override
+  String get peerSettings_title => '设备设置';
+
+  @override
+  String get peerSettings_online => '在线';
+
+  @override
+  String get peerSettings_offline => '离线';
+
+  @override
+  String get peerSettings_sectionBasic => '基本信息';
+
+  @override
+  String get peerSettings_aliasName => '备注名称';
+
+  @override
+  String get peerSettings_fingerprint => '设备指纹';
+
+  @override
+  String get peerSettings_pairedAt => '配对时间';
+
+  @override
+  String get peerSettings_connectionInitiator => '连接发起方';
+
+  @override
+  String get peerSettings_sectionConnection => '连接信息';
+
+  @override
+  String get peerSettings_localAddress => '内网地址';
+
+  @override
+  String get peerSettings_relayAddress => '外网中继';
+
+  @override
+  String get peerSettings_encryption => '加密方式';
+
+  @override
+  String get peerSettings_encryptionValue =>
+      'Noise IK (X25519 + ChaCha20-Poly1305)';
+
+  @override
+  String get peerSettings_startChat => '发起对话';
+
+  @override
+  String get peerSettings_deletePairing => '删除配对';
+
+  @override
+  String get peerSettings_editAliasTitle => '修改备注名称';
+
+  @override
+  String get peerSettings_editAliasHint => '输入备注名称';
+
+  @override
+  String peerSettings_deleteConfirm(String name) {
+    return '确定要删除与 $name 的配对吗？\n所有消息记录也会被删除。';
+  }
+
+  @override
+  String get peerSettings_noShareableAgents => '暂无可分享的 Agent';
+
+  @override
+  String get peerSettings_enableExternalAccessHint =>
+      '在 Agent 设置中开启「允许外部访问」后即可在此分享给该设备';
+
+  @override
+  String get peerSettings_shareAgentsTitle => '分享给此设备的 Agent';
+
+  @override
+  String peerSettings_shareAgentsTitleCount(int shared, int total) {
+    return '分享给此设备的 Agent ($shared/$total)';
+  }
+
+  @override
+  String get peerSettings_noPeerAgentsConnected => '该设备暂未开放任何 Agent';
+
+  @override
+  String get peerSettings_noPeerAgentsOffline => '设备离线，暂无可连接的 Agent';
+
+  @override
+  String get peerSettings_peerEnableExternalHint => '对方可在 Agent 设置中开启「允许外部访问」';
+
+  @override
+  String get peerSettings_syncAgentsOnConnect => '连接后将自动同步可连接的 Agent';
+
+  @override
+  String get peerSettings_connectableAgentsTitle => '可连接的 Agent';
+
+  @override
+  String peerSettings_connectableAgentsTitleCount(int count) {
+    return '可连接的 Agent ($count)';
+  }
+
+  @override
+  String get peerList_connected => '已连接';
+
+  @override
+  String get peerList_connectedE2e => '已连接 (端到端加密)';
+
+  @override
+  String get peerList_disconnected => '未连接';
 }

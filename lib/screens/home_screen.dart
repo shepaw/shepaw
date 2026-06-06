@@ -71,11 +71,19 @@ class HomeScreen extends StatefulWidget {
   /// Called when a conversation tile is tapped in embedded mode.
   final ValueChanged<ConversationSelection>? onConversationSelected;
 
+  /// 桌面嵌入模式：标题栏添加菜单回调。
+  final VoidCallback? onAddAgent;
+  final VoidCallback? onCreateGroup;
+  final VoidCallback? onPairDevice;
+
   const HomeScreen({
     Key? key,
     this.embedded = false,
     this.selectedConversation,
     this.onConversationSelected,
+    this.onAddAgent,
+    this.onCreateGroup,
+    this.onPairDevice,
   }) : super(key: key);
 
   @override
@@ -94,6 +102,11 @@ class HomeScreenState extends State<HomeScreen> {
   bool _isLoading = true;
   final TextEditingController _searchController = TextEditingController();
   final GlobalKey _addButtonKey = GlobalKey();
+  late final MessageSearchService _messageSearchService;
+  List<Channel> _searchChannelResults = [];
+  List<MessageSearchResult> _searchMessageResults = [];
+  bool _isEmbeddedSearching = false;
+  Timer? _searchDebounce;
 
   // Typing agent IDs from ChatService (1:1 chats only)
   Set<String> _typingAgentIds = {};
@@ -134,6 +147,7 @@ class HomeScreenState extends State<HomeScreen> {
   @override
   void initState() {
     super.initState();
+    _messageSearchService = MessageSearchService(_databaseService);
     _loadAgents();
     _searchController.addListener(_onSearchChanged);
 
@@ -191,6 +205,7 @@ class HomeScreenState extends State<HomeScreen> {
     _peerMessageSub?.cancel();
     _peerEventSub?.cancel();
     _peerListChangedSub?.cancel();
+    _searchDebounce?.cancel();
     _searchController.dispose();
     super.dispose();
   }
@@ -561,9 +576,64 @@ class HomeScreenState extends State<HomeScreen> {
 
   /// 搜索过滤
   void _onSearchChanged() {
+    if (widget.embedded) {
+      setState(() {});
+      _searchDebounce?.cancel();
+      _searchDebounce = Timer(const Duration(milliseconds: 300), () {
+        if (mounted) _performEmbeddedSearch(_searchController.text.trim());
+      });
+      return;
+    }
     setState(() {
       _filteredAgents = _applySearchFilter(_agents);
       _sortedConversations = _buildSortedConversations();
+    });
+  }
+
+  Future<void> _performEmbeddedSearch(String query) async {
+    if (!widget.embedded) return;
+    if (query.isEmpty) {
+      setState(() {
+        _filteredAgents = _agents;
+        _searchChannelResults = [];
+        _searchMessageResults = [];
+        _isEmbeddedSearching = false;
+        _sortedConversations = _buildSortedConversations();
+      });
+      return;
+    }
+
+    setState(() => _isEmbeddedSearching = true);
+
+    final lowerQuery = query.toLowerCase();
+    final agentResults = _agents.where((a) {
+      return a.name.toLowerCase().contains(lowerQuery) ||
+          (a.type?.toLowerCase().contains(lowerQuery) ?? false) ||
+          (a.description?.toLowerCase().contains(lowerQuery) ?? false);
+    }).toList();
+
+    List<Channel> channelResults = [];
+    List<MessageSearchResult> messageResults = [];
+    try {
+      final allChannels = await _databaseService.getAllChannels();
+      channelResults = allChannels.where((ch) {
+        return ch.name.toLowerCase().contains(lowerQuery) ||
+            (ch.description?.toLowerCase().contains(lowerQuery) ?? false);
+      }).toList();
+    } catch (_) {}
+    try {
+      messageResults = await _messageSearchService.searchMessages(
+        query: query,
+        limit: 20,
+      );
+    } catch (_) {}
+
+    if (!mounted || _searchController.text.trim() != query) return;
+    setState(() {
+      _filteredAgents = agentResults;
+      _searchChannelResults = channelResults;
+      _searchMessageResults = messageResults;
+      _isEmbeddedSearching = false;
     });
   }
 
@@ -637,36 +707,116 @@ class HomeScreenState extends State<HomeScreen> {
   @override
   Widget build(BuildContext context) {
     final iconColor = IconTheme.of(context).color ?? Theme.of(context).colorScheme.onSurface;
+    final isSearching = widget.embedded && _searchController.text.trim().isNotEmpty;
 
     return Scaffold(
-      appBar: AppBar(
-        title: Text(
-          _homeAppBarTitle(context),
-          style: const TextStyle(
-            fontSize: 17,
-            fontWeight: FontWeight.w600,
-          ),
-        ),
-        centerTitle: true,
-        elevation: 0,
-        scrolledUnderElevation: 0.5,
-        automaticallyImplyLeading: !widget.embedded,
-        leading: widget.embedded
-            ? null
-            : Builder(
+      appBar: widget.embedded
+          ? _buildEmbeddedAppBar(iconColor)
+          : AppBar(
+              title: Text(
+                _homeAppBarTitle(context),
+                style: const TextStyle(
+                  fontSize: 17,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              centerTitle: true,
+              elevation: 0,
+              scrolledUnderElevation: 0.5,
+              leading: Builder(
                 builder: (context) => IconButton(
                   icon: const Icon(Icons.menu),
                   onPressed: () => Scaffold.of(context).openDrawer(),
                 ),
               ),
-        actions: [
-          // 搜索 + 添加 — 图标间距与右侧边距一致（微信风格）
-          if (!widget.embedded) _buildAppBarTrailingActions(iconColor),
-        ],
-      ),
+              actions: [_buildAppBarTrailingActions(iconColor)],
+            ),
       // 左侧抽屉菜单 (hidden in embedded mode)
       drawer: widget.embedded ? null : _buildDrawer(),
-      body: _buildBody(),
+      body: isSearching ? _buildEmbeddedSearchBody() : _buildBody(),
+    );
+  }
+
+  /// 桌面版会话列表标题栏：搜索输入框 + 添加按钮（微信/QQ 桌面风格）。
+  PreferredSizeWidget _buildEmbeddedAppBar(Color iconColor) {
+    final l10n = AppLocalizations.of(context);
+    final colorScheme = Theme.of(context).colorScheme;
+
+    return AppBar(
+      automaticallyImplyLeading: false,
+      titleSpacing: 0,
+      elevation: 0,
+      scrolledUnderElevation: 0.5,
+      title: Padding(
+        padding: const EdgeInsets.fromLTRB(12, 0, 12, 0),
+        child: Row(
+          children: [
+            Expanded(
+              child: SizedBox(
+                height: 32,
+                child: TextField(
+                  controller: _searchController,
+                  textInputAction: TextInputAction.search,
+                  style: const TextStyle(fontSize: 14),
+                  decoration: InputDecoration(
+                    hintText: l10n.common_search,
+                    hintStyle: TextStyle(
+                      fontSize: 14,
+                      color: colorScheme.onSurfaceVariant,
+                    ),
+                    isDense: true,
+                    contentPadding: const EdgeInsets.symmetric(vertical: 8),
+                    prefixIcon: Icon(
+                      Icons.search,
+                      size: 18,
+                      color: colorScheme.onSurfaceVariant,
+                    ),
+                    prefixIconConstraints: const BoxConstraints(
+                      minWidth: 36,
+                      minHeight: 32,
+                    ),
+                    suffixIcon: _searchController.text.isNotEmpty
+                        ? IconButton(
+                            icon: const Icon(Icons.clear, size: 18),
+                            onPressed: () => _searchController.clear(),
+                          )
+                        : null,
+                    filled: true,
+                    fillColor: colorScheme.surfaceContainerHighest,
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(6),
+                      borderSide: BorderSide.none,
+                    ),
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(6),
+                      borderSide: BorderSide.none,
+                    ),
+                    focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(6),
+                      borderSide: BorderSide(
+                        color: colorScheme.primary.withValues(alpha: 0.5),
+                        width: 1,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(width: 8),
+            _buildCompactAppBarIconButton(
+              key: _addButtonKey,
+              icon: SvgPicture.asset(
+                'assets/icons/add_circle.svg',
+                width: 24,
+                height: 24,
+                colorFilter: ColorFilter.mode(iconColor, BlendMode.srcIn),
+              ),
+              tooltip: l10n.home_addAgent,
+              onPressed: _showAddMenu,
+            ),
+          ],
+        ),
+      ),
     );
   }
 
@@ -780,16 +930,6 @@ class HomeScreenState extends State<HomeScreen> {
                 padding: EdgeInsets.zero,
                 children: [
                   ListTile(
-                    leading: const Icon(Icons.devices_outlined),
-                    title: Text(l10n.drawer_newDevice),
-                    onTap: () {
-                      Navigator.pop(context);
-                      PeerPairingScreen.show(context)
-                          .then((_) => _loadAgents(silent: true));
-                    },
-                  ),
-                  const Divider(),
-                  ListTile(
                     leading: const ModelIcon(),
                     title: Text(l10n.toolModel_managementTitle),
                     subtitle: Text(
@@ -900,6 +1040,319 @@ class HomeScreenState extends State<HomeScreen> {
     );
   }
 
+
+  /// 桌面版：在会话列表区域展示搜索结果。
+  Widget _buildEmbeddedSearchBody() {
+    final l10n = AppLocalizations.of(context);
+    final query = _searchController.text.trim();
+    final agentResults = _filteredAgents;
+    final hasAgents = agentResults.isNotEmpty;
+    final hasChannels = _searchChannelResults.isNotEmpty;
+    final hasMessages = _searchMessageResults.isNotEmpty;
+
+    if (_isEmbeddedSearching &&
+        !hasAgents &&
+        !hasChannels &&
+        !hasMessages) {
+      return const Center(child: CircularProgressIndicator());
+    }
+
+    if (!hasAgents && !hasChannels && !hasMessages) {
+      return Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.search_off, size: 48, color: Colors.grey[400]),
+            const SizedBox(height: 12),
+            Text(
+              l10n.home_searchNoResults,
+              style: TextStyle(fontSize: 14, color: Colors.grey[600]),
+            ),
+          ],
+        ),
+      );
+    }
+
+    return ListView(
+      children: [
+        if (hasAgents) ...[
+          _buildEmbeddedSearchSectionHeader(
+            l10n.home_searchSectionAgents,
+            agentResults.length,
+          ),
+          ...agentResults.map(_buildEmbeddedSearchAgentTile),
+        ],
+        if (hasChannels) ...[
+          _buildEmbeddedSearchSectionHeader(
+            l10n.home_searchSectionGroups,
+            _searchChannelResults.length,
+          ),
+          ..._searchChannelResults.map(_buildEmbeddedSearchChannelTile),
+        ],
+        if (hasMessages) ...[
+          _buildEmbeddedSearchSectionHeader(
+            l10n.home_searchSectionMessages,
+            _searchMessageResults.length,
+          ),
+          ..._searchMessageResults.map(
+            (r) => _buildEmbeddedSearchMessageTile(r, query),
+          ),
+        ],
+      ],
+    );
+  }
+
+  Widget _buildEmbeddedSearchSectionHeader(String title, int count) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      color: Theme.of(context).colorScheme.surfaceContainerLow,
+      child: Row(
+        children: [
+          Text(
+            title,
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
+            ),
+          ),
+          const SizedBox(width: 8),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+            decoration: BoxDecoration(
+              color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.1),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Text(
+              '$count',
+              style: TextStyle(
+                fontSize: 11,
+                color: Theme.of(context).colorScheme.primary,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildEmbeddedSearchAgentTile(Agent agent) {
+    final l10n = AppLocalizations.of(context);
+    final displayName = SheService.isSheIdentity(agent.id, agent.metadata)
+        ? l10n.she_name
+        : agent.name;
+    return ListTile(
+      dense: true,
+      leading: Container(
+        width: 40,
+        height: 40,
+        decoration: BoxDecoration(
+          color: Colors.grey[200],
+          borderRadius: BorderRadius.circular(10),
+        ),
+        alignment: Alignment.center,
+        child: agent.avatar.length <= 2
+            ? Text(agent.avatar, style: const TextStyle(fontSize: 20))
+            : AvatarImage(
+                avatar: agent.avatar,
+                size: 40,
+                borderRadius: 10,
+                fallback: Text(
+                  agent.name.isNotEmpty ? agent.name[0] : 'A',
+                  style: const TextStyle(fontSize: 20),
+                ),
+              ),
+      ),
+      title: Text(displayName, maxLines: 1, overflow: TextOverflow.ellipsis),
+      subtitle: Text(
+        agent.description ?? agent.type ?? 'AI Agent',
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+      ),
+      onTap: () => _handleSearchSelection(SearchSelection(agent: agent)),
+    );
+  }
+
+  Widget _buildEmbeddedSearchChannelTile(Channel channel) {
+    return ListTile(
+      dense: true,
+      leading: Container(
+        width: 40,
+        height: 40,
+        decoration: BoxDecoration(
+          color: AppColors.primaryContainer,
+          borderRadius: BorderRadius.circular(10),
+        ),
+        alignment: Alignment.center,
+        child: Icon(
+          channel.isGroup ? Icons.group : Icons.chat_bubble_outline,
+          color: AppColors.primaryDark,
+          size: 20,
+        ),
+      ),
+      title: Text(channel.name, maxLines: 1, overflow: TextOverflow.ellipsis),
+      subtitle: Text(
+        channel.description ?? (channel.isGroup ? 'Group' : 'Chat'),
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+      ),
+      onTap: () => _handleSearchSelection(SearchSelection(channel: channel)),
+    );
+  }
+
+  Widget _buildEmbeddedSearchMessageTile(MessageSearchResult result, String query) {
+    final message = result.message;
+    final isMyMessage = message.from.type == 'user';
+    return InkWell(
+      onTap: () => _handleSearchSelection(SearchSelection(
+        messageChannelId: message.channelId,
+        highlightMessageId: message.id,
+      )),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+        decoration: BoxDecoration(
+          border: Border(
+            bottom: BorderSide(
+              color: Theme.of(context).colorScheme.outlineVariant,
+            ),
+          ),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Flexible(
+                  flex: 2,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+                    decoration: BoxDecoration(
+                      color: Theme.of(context).colorScheme.surfaceContainerHighest,
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                    child: Text(
+                      result.channelName.isNotEmpty ? result.channelName : '?',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Flexible(
+                  child: Text(
+                    message.senderName,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontWeight: FontWeight.w600,
+                      fontSize: 12,
+                      color: isMyMessage
+                          ? Theme.of(context).colorScheme.primary
+                          : Theme.of(context).colorScheme.onSurface,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 4),
+                Text(
+                  _formatMessageSearchTime(message.timestampMs),
+                  style: TextStyle(
+                    fontSize: 11,
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 4),
+            _buildEmbeddedHighlightedContent(message.content, query),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildEmbeddedHighlightedContent(String content, String query) {
+    final baseStyle = TextStyle(
+      color: Theme.of(context).colorScheme.onSurface,
+      fontSize: 13,
+    );
+    if (query.isEmpty) {
+      return Text(
+        content,
+        maxLines: 2,
+        overflow: TextOverflow.ellipsis,
+        style: baseStyle,
+      );
+    }
+
+    final flat = content.replaceAll(RegExp(r'\s+'), ' ');
+    final lowerFlat = flat.toLowerCase();
+    final lowerQuery = query.toLowerCase();
+    final matchIndex = lowerFlat.indexOf(lowerQuery);
+    if (matchIndex == -1) {
+      return Text(
+        flat,
+        maxLines: 2,
+        overflow: TextOverflow.ellipsis,
+        style: baseStyle,
+      );
+    }
+
+    const windowSize = 40;
+    final snippetStart = matchIndex > windowSize ? matchIndex - windowSize : 0;
+    final matchEnd = matchIndex + query.length;
+    final snippetEnd = (matchEnd + windowSize).clamp(0, flat.length);
+    final before = flat.substring(snippetStart, matchIndex);
+    final match = flat.substring(matchIndex, matchEnd);
+    final after = flat.substring(matchEnd, snippetEnd);
+
+    return Text.rich(
+      TextSpan(
+        style: baseStyle,
+        children: [
+          if (snippetStart > 0) const TextSpan(text: '...'),
+          TextSpan(text: before),
+          TextSpan(
+            text: match,
+            style: TextStyle(
+              backgroundColor: Colors.yellow[200],
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          TextSpan(text: after),
+          if (snippetEnd < flat.length) const TextSpan(text: '...'),
+        ],
+      ),
+      maxLines: 2,
+      overflow: TextOverflow.ellipsis,
+    );
+  }
+
+  String _formatMessageSearchTime(int timestampMs) {
+    final dt = DateTime.fromMillisecondsSinceEpoch(timestampMs);
+    final now = DateTime.now();
+    final diff = now.difference(dt);
+    if (diff.inDays == 0) {
+      return '${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';
+    } else if (diff.inDays < 7) {
+      final l10n = AppLocalizations.of(context);
+      final weekDays = [
+        l10n.home_weekMon,
+        l10n.home_weekTue,
+        l10n.home_weekWed,
+        l10n.home_weekThu,
+        l10n.home_weekFri,
+        l10n.home_weekSat,
+        l10n.home_weekSun,
+      ];
+      return weekDays[dt.weekday - 1];
+    }
+    return '${dt.month}/${dt.day}';
+  }
 
   /// 构建主页body内容
   Widget _buildBody() {
@@ -1028,35 +1481,48 @@ class HomeScreenState extends State<HomeScreen> {
           icon: Icons.devices_outlined,
           label: l10n.home_addDevice,
         ),
-        _buildAddMenuItem(
-          value: 'scan',
-          icon: Icons.qr_code_scanner,
-          label: l10n.home_scanConnect,
-        ),
+        if (!widget.embedded)
+          _buildAddMenuItem(
+            value: 'scan',
+            icon: Icons.qr_code_scanner,
+            label: l10n.home_scanConnect,
+          ),
       ],
     );
 
     if (!mounted || action == null) return;
     switch (action) {
       case 'agent':
-        await Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder: (context) => const AddRemoteAgentScreen(),
-          ),
-        );
-        if (mounted) _loadAgents(silent: true);
+        if (widget.embedded && widget.onAddAgent != null) {
+          widget.onAddAgent!();
+        } else {
+          await Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (context) => const AddRemoteAgentScreen(),
+            ),
+          );
+          if (mounted) _loadAgents(silent: true);
+        }
       case 'group':
-        await Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder: (context) => const CreateGroupScreen(),
-          ),
-        );
-        if (mounted) _loadAgents(silent: true);
+        if (widget.embedded && widget.onCreateGroup != null) {
+          widget.onCreateGroup!();
+        } else {
+          await Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (context) => const CreateGroupScreen(),
+            ),
+          );
+          if (mounted) _loadAgents(silent: true);
+        }
       case 'device':
-        await PeerPairingScreen.show(context);
-        if (mounted) _loadAgents(silent: true);
+        if (widget.embedded && widget.onPairDevice != null) {
+          widget.onPairDevice!();
+        } else {
+          await PeerPairingScreen.show(context);
+          if (mounted) _loadAgents(silent: true);
+        }
       case 'scan':
         await PeerPairingScreen.show(
           context,
@@ -1524,6 +1990,7 @@ class HomeScreenState extends State<HomeScreen> {
 
   /// 连接角色小徽标：标记本机是发起方还是被连接方。
   Widget _buildPeerRoleBadge(PairedPeer peer) {
+    final l10n = AppLocalizations.of(context);
     final isInitiator = peer.pairingRole == PeerPairingRole.initiator;
     final color = PeerDeviceStyle.forPeer(peer).labelColor;
     return Container(
@@ -1542,7 +2009,7 @@ class HomeScreenState extends State<HomeScreen> {
           ),
           const SizedBox(width: 3),
           Text(
-            peer.pairingRoleShortLabel ?? '',
+            peer.pairingRoleShortLabel(l10n) ?? '',
             style: TextStyle(fontSize: 10, color: color),
           ),
         ],
@@ -1579,6 +2046,7 @@ class HomeScreenState extends State<HomeScreen> {
   }
 
   Widget _buildPeerTile(PairedPeer peer) {
+    final l10n = AppLocalizations.of(context);
     final isConnected = PeerConnectionManager.instance.getPeerState(peer.id) ==
         PeerConnectionState.connected;
     final lastContent = _peerLatestContent[peer.id] ?? '';
@@ -1696,7 +2164,11 @@ class HomeScreenState extends State<HomeScreen> {
                       const SizedBox(width: 4),
                       Expanded(
                         child: Text(
-                          lastContent.isNotEmpty ? lastContent : (isConnected ? '在线' : '离线'),
+                          lastContent.isNotEmpty
+                              ? lastContent
+                              : (isConnected
+                                  ? l10n.peerSettings_online
+                                  : l10n.peerSettings_offline),
                           style: TextStyle(
                             fontSize: 13,
                             color: Colors.grey[500],

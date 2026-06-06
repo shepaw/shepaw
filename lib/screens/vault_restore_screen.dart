@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../l10n/app_localizations.dart';
 import '../services/vault_service.dart';
 import '../theme/app_theme.dart';
 
@@ -37,6 +38,7 @@ class _VaultRestoreScreenState extends State<VaultRestoreScreen> {
 
   /// 显示恢复确认对话框
   Future<void> _showRestoreDialog(VaultInfo vault) async {
+    final l10n = AppLocalizations.of(context);
     final passwordController = TextEditingController();
     bool isPasswordVisible = false;
     bool isRestoring = false;
@@ -47,11 +49,11 @@ class _VaultRestoreScreenState extends State<VaultRestoreScreen> {
       barrierDismissible: false,
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setDialogState) => AlertDialog(
-          title: const Row(
+          title: Row(
             children: [
-              Icon(Icons.lock_open_outlined),
-              SizedBox(width: 8),
-              Text('恢复旧数据'),
+              const Icon(Icons.lock_open_outlined),
+              const SizedBox(width: 8),
+              Text(l10n.vault_restoreTitle),
             ],
           ),
           content: Column(
@@ -59,22 +61,22 @@ class _VaultRestoreScreenState extends State<VaultRestoreScreen> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                '备份时间: ${_formatDate(vault.createdAt)}',
+                l10n.vault_backupTime(_formatDate(vault.createdAt)),
                 style: const TextStyle(fontSize: 13, color: Colors.grey),
               ),
               Text(
-                '文件大小: ${vault.displaySize}',
+                l10n.vault_fileSize(vault.displaySize),
                 style: const TextStyle(fontSize: 13, color: Colors.grey),
               ),
               const SizedBox(height: 16),
-              const Text('请输入该备份对应的旧密码以解锁：'),
+              Text(l10n.vault_restorePasswordPrompt),
               const SizedBox(height: 12),
               TextField(
                 controller: passwordController,
                 obscureText: !isPasswordVisible,
                 autofocus: true,
                 decoration: InputDecoration(
-                  labelText: '旧密码',
+                  labelText: l10n.vault_oldPassword,
                   prefixIcon: const Icon(Icons.lock_outline),
                   suffixIcon: IconButton(
                     icon: Icon(
@@ -111,10 +113,10 @@ class _VaultRestoreScreenState extends State<VaultRestoreScreen> {
                   children: [
                     Icon(Icons.warning_amber, color: Colors.orange[700], size: 16),
                     const SizedBox(width: 8),
-                    const Expanded(
+                    Expanded(
                       child: Text(
-                        '恢复将覆盖当前所有数据，此操作不可撤销。',
-                        style: TextStyle(fontSize: 12),
+                        l10n.vault_restoreWarning,
+                        style: const TextStyle(fontSize: 12),
                       ),
                     ),
                   ],
@@ -125,7 +127,7 @@ class _VaultRestoreScreenState extends State<VaultRestoreScreen> {
           actions: [
             TextButton(
               onPressed: isRestoring ? null : () => Navigator.pop(ctx),
-              child: const Text('取消'),
+              child: Text(l10n.common_cancel),
             ),
             ElevatedButton(
               onPressed: isRestoring
@@ -133,7 +135,7 @@ class _VaultRestoreScreenState extends State<VaultRestoreScreen> {
                   : () async {
                       final password = passwordController.text.trim();
                       if (password.isEmpty) {
-                        setDialogState(() => errorMsg = '请输入旧密码');
+                        setDialogState(() => errorMsg = l10n.vault_emptyPassword);
                         return;
                       }
 
@@ -172,7 +174,7 @@ class _VaultRestoreScreenState extends State<VaultRestoreScreen> {
                       } else {
                         setDialogState(() {
                           isRestoring = false;
-                          errorMsg = '密码错误或备份文件损坏，请重试';
+                          errorMsg = l10n.vault_restoreFailed;
                         });
                       }
                     },
@@ -182,7 +184,7 @@ class _VaultRestoreScreenState extends State<VaultRestoreScreen> {
                       height: 16,
                       child: CircularProgressIndicator(strokeWidth: 2),
                     )
-                  : const Text('确认恢复'),
+                  : Text(l10n.vault_confirmRestore),
             ),
           ],
         ),
@@ -192,9 +194,9 @@ class _VaultRestoreScreenState extends State<VaultRestoreScreen> {
     // 恢复成功后提示重启
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('数据恢复成功！请重启应用以加载恢复的数据。'),
-          duration: Duration(seconds: 4),
+        SnackBar(
+          content: Text(l10n.vault_restoreSuccess),
+          duration: const Duration(seconds: 4),
         ),
       );
     }
@@ -202,22 +204,22 @@ class _VaultRestoreScreenState extends State<VaultRestoreScreen> {
 
   /// 显示删除确认对话框
   Future<void> _showDeleteDialog(VaultInfo vault) async {
+    final l10n = AppLocalizations.of(context);
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('删除备份'),
+        title: Text(l10n.vault_deleteTitle),
         content: Text(
-          '确定要永久删除此备份？\n\n备份时间: ${_formatDate(vault.createdAt)}\n'
-          '删除后数据将无法恢复。',
+          l10n.vault_deleteConfirm(_formatDate(vault.createdAt)),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('取消'),
+            child: Text(l10n.common_cancel),
           ),
           TextButton(
             onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('删除', style: TextStyle(color: Colors.red)),
+            child: Text(l10n.common_delete, style: const TextStyle(color: Colors.red)),
           ),
         ],
       ),
@@ -227,7 +229,7 @@ class _VaultRestoreScreenState extends State<VaultRestoreScreen> {
       await _vaultService.deleteVault(vault.vaultId);
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('备份已删除')),
+          SnackBar(content: Text(l10n.vault_deleted)),
         );
         _loadVaults();
       }
@@ -243,9 +245,10 @@ class _VaultRestoreScreenState extends State<VaultRestoreScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
     return Scaffold(
       appBar: AppBar(
-        title: const Text('历史数据保险库'),
+        title: Text(l10n.settings_dataVault),
       ),
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
@@ -256,6 +259,7 @@ class _VaultRestoreScreenState extends State<VaultRestoreScreen> {
   }
 
   Widget _buildEmptyState() {
+    final l10n = AppLocalizations.of(context);
     return Center(
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
@@ -263,12 +267,12 @@ class _VaultRestoreScreenState extends State<VaultRestoreScreen> {
           Icon(Icons.lock_outlined, size: 64, color: Colors.grey[400]),
           const SizedBox(height: 16),
           Text(
-            '暂无历史备份',
+            l10n.vault_emptyTitle,
             style: TextStyle(fontSize: 18, color: Colors.grey[600]),
           ),
           const SizedBox(height: 8),
           Text(
-            '每次重置密码时，旧数据会自动\n加密保存到此处',
+            l10n.vault_emptyDesc,
             textAlign: TextAlign.center,
             style: TextStyle(color: Colors.grey[500]),
           ),
@@ -278,6 +282,7 @@ class _VaultRestoreScreenState extends State<VaultRestoreScreen> {
   }
 
   Widget _buildVaultList() {
+    final l10n = AppLocalizations.of(context);
     return Column(
       children: [
         Container(
@@ -294,7 +299,7 @@ class _VaultRestoreScreenState extends State<VaultRestoreScreen> {
               const SizedBox(width: 8),
               Expanded(
                 child: Text(
-                  '每次重置密码时，旧数据会自动加密保存。\n点击"恢复"并输入对应的旧密码即可还原数据。',
+                  l10n.vault_infoBanner,
                   style: const TextStyle(color: AppColors.primaryDark, fontSize: 13),
                 ),
               ),
@@ -324,7 +329,7 @@ class _VaultRestoreScreenState extends State<VaultRestoreScreen> {
                   style: const TextStyle(fontWeight: FontWeight.w500),
                 ),
                 subtitle: Text(
-                  '大小: ${vault.displaySize}',
+                  l10n.vault_size(vault.displaySize),
                   style: TextStyle(color: Colors.grey[600], fontSize: 12),
                 ),
                 trailing: Row(
@@ -332,12 +337,12 @@ class _VaultRestoreScreenState extends State<VaultRestoreScreen> {
                   children: [
                     TextButton(
                       onPressed: () => _showRestoreDialog(vault),
-                      child: const Text('恢复'),
+                      child: Text(l10n.vault_restore),
                     ),
                     IconButton(
                       icon: const Icon(Icons.delete_outline, color: Colors.red),
                       onPressed: () => _showDeleteDialog(vault),
-                      tooltip: '删除备份',
+                      tooltip: l10n.vault_deleteTooltip,
                     ),
                   ],
                 ),

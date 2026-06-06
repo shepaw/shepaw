@@ -233,7 +233,7 @@ abstract class AppLocalizations {
   /// No description provided for @login_title.
   ///
   /// In zh, this message translates to:
-  /// **'ShePaw'**
+  /// **'惜宝'**
   String get login_title;
 
   /// No description provided for @login_subtitle.
@@ -662,6 +662,36 @@ abstract class AppLocalizations {
   /// **'扫码连接'**
   String get home_scanConnect;
 
+  /// No description provided for @home_searchEmptyHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'搜索 Agent、群组和消息'**
+  String get home_searchEmptyHint;
+
+  /// No description provided for @home_searchNoResults.
+  ///
+  /// In zh, this message translates to:
+  /// **'未找到相关结果'**
+  String get home_searchNoResults;
+
+  /// No description provided for @home_searchSectionAgents.
+  ///
+  /// In zh, this message translates to:
+  /// **'Agent'**
+  String get home_searchSectionAgents;
+
+  /// No description provided for @home_searchSectionGroups.
+  ///
+  /// In zh, this message translates to:
+  /// **'群组'**
+  String get home_searchSectionGroups;
+
+  /// No description provided for @home_searchSectionMessages.
+  ///
+  /// In zh, this message translates to:
+  /// **'消息'**
+  String get home_searchSectionMessages;
+
   /// No description provided for @home_agentsCount.
   ///
   /// In zh, this message translates to:
@@ -740,6 +770,132 @@ abstract class AppLocalizations {
   /// **'修改您的登录密码'**
   String get settings_changePasswordSub;
 
+  /// No description provided for @settings_dataVault.
+  ///
+  /// In zh, this message translates to:
+  /// **'历史数据保险库'**
+  String get settings_dataVault;
+
+  /// No description provided for @settings_dataVaultSub.
+  ///
+  /// In zh, this message translates to:
+  /// **'查看并恢复重置密码前的数据备份'**
+  String get settings_dataVaultSub;
+
+  /// No description provided for @vault_emptyTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'暂无历史备份'**
+  String get vault_emptyTitle;
+
+  /// No description provided for @vault_emptyDesc.
+  ///
+  /// In zh, this message translates to:
+  /// **'每次重置密码时，旧数据会自动\n加密保存到此处'**
+  String get vault_emptyDesc;
+
+  /// No description provided for @vault_infoBanner.
+  ///
+  /// In zh, this message translates to:
+  /// **'每次重置密码时，旧数据会自动加密保存。\n点击「恢复」并输入对应的旧密码即可还原数据。'**
+  String get vault_infoBanner;
+
+  /// No description provided for @vault_restoreTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'恢复旧数据'**
+  String get vault_restoreTitle;
+
+  /// No description provided for @vault_backupTime.
+  ///
+  /// In zh, this message translates to:
+  /// **'备份时间: {date}'**
+  String vault_backupTime(String date);
+
+  /// No description provided for @vault_fileSize.
+  ///
+  /// In zh, this message translates to:
+  /// **'文件大小: {size}'**
+  String vault_fileSize(String size);
+
+  /// No description provided for @vault_size.
+  ///
+  /// In zh, this message translates to:
+  /// **'大小: {size}'**
+  String vault_size(String size);
+
+  /// No description provided for @vault_restorePasswordPrompt.
+  ///
+  /// In zh, this message translates to:
+  /// **'请输入该备份对应的旧密码以解锁：'**
+  String get vault_restorePasswordPrompt;
+
+  /// No description provided for @vault_oldPassword.
+  ///
+  /// In zh, this message translates to:
+  /// **'旧密码'**
+  String get vault_oldPassword;
+
+  /// No description provided for @vault_restoreWarning.
+  ///
+  /// In zh, this message translates to:
+  /// **'恢复将覆盖当前所有数据，此操作不可撤销。'**
+  String get vault_restoreWarning;
+
+  /// No description provided for @vault_confirmRestore.
+  ///
+  /// In zh, this message translates to:
+  /// **'确认恢复'**
+  String get vault_confirmRestore;
+
+  /// No description provided for @vault_emptyPassword.
+  ///
+  /// In zh, this message translates to:
+  /// **'请输入旧密码'**
+  String get vault_emptyPassword;
+
+  /// No description provided for @vault_restoreFailed.
+  ///
+  /// In zh, this message translates to:
+  /// **'密码错误或备份文件损坏，请重试'**
+  String get vault_restoreFailed;
+
+  /// No description provided for @vault_restoreSuccess.
+  ///
+  /// In zh, this message translates to:
+  /// **'数据恢复成功！请重启应用以加载恢复的数据。'**
+  String get vault_restoreSuccess;
+
+  /// No description provided for @vault_deleteTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'删除备份'**
+  String get vault_deleteTitle;
+
+  /// No description provided for @vault_deleteConfirm.
+  ///
+  /// In zh, this message translates to:
+  /// **'确定要永久删除此备份？\n\n备份时间: {date}\n删除后数据将无法恢复。'**
+  String vault_deleteConfirm(String date);
+
+  /// No description provided for @vault_deleted.
+  ///
+  /// In zh, this message translates to:
+  /// **'备份已删除'**
+  String get vault_deleted;
+
+  /// No description provided for @vault_restore.
+  ///
+  /// In zh, this message translates to:
+  /// **'恢复'**
+  String get vault_restore;
+
+  /// No description provided for @vault_deleteTooltip.
+  ///
+  /// In zh, this message translates to:
+  /// **'删除备份'**
+  String get vault_deleteTooltip;
+
   /// No description provided for @settings_biometric.
   ///
   /// In zh, this message translates to:
@@ -785,7 +941,7 @@ abstract class AppLocalizations {
   /// No description provided for @login_biometricPrompt.
   ///
   /// In zh, this message translates to:
-  /// **'验证身份以登录 ShePaw'**
+  /// **'验证身份以登录惜宝'**
   String get login_biometricPrompt;
 
   /// No description provided for @login_useBiometric.
@@ -4340,6 +4496,30 @@ abstract class AppLocalizations {
   /// **'群组'**
   String get contacts_groups;
 
+  /// No description provided for @contacts_devices.
+  ///
+  /// In zh, this message translates to:
+  /// **'设备'**
+  String get contacts_devices;
+
+  /// No description provided for @contacts_noPeers.
+  ///
+  /// In zh, this message translates to:
+  /// **'尚未配对任何设备'**
+  String get contacts_noPeers;
+
+  /// No description provided for @contacts_startPairing.
+  ///
+  /// In zh, this message translates to:
+  /// **'开始配对'**
+  String get contacts_startPairing;
+
+  /// No description provided for @contacts_addPairingDevice.
+  ///
+  /// In zh, this message translates to:
+  /// **'添加配对设备'**
+  String get contacts_addPairingDevice;
+
   /// No description provided for @contacts_noAgents.
   ///
   /// In zh, this message translates to:
@@ -6529,6 +6709,270 @@ abstract class AppLocalizations {
   /// In zh, this message translates to:
   /// **'配对失败: {error}'**
   String peerManual_failed(String error);
+
+  /// No description provided for @peerRole_initiatorShort.
+  ///
+  /// In zh, this message translates to:
+  /// **'我发起'**
+  String get peerRole_initiatorShort;
+
+  /// No description provided for @peerRole_responderShort.
+  ///
+  /// In zh, this message translates to:
+  /// **'对方发起'**
+  String get peerRole_responderShort;
+
+  /// No description provided for @peerRole_initiatorDesc.
+  ///
+  /// In zh, this message translates to:
+  /// **'本机扫码发起连接'**
+  String get peerRole_initiatorDesc;
+
+  /// No description provided for @peerRole_responderDesc.
+  ///
+  /// In zh, this message translates to:
+  /// **'对方扫码发起连接'**
+  String get peerRole_responderDesc;
+
+  /// No description provided for @peerChat_emptyMessages.
+  ///
+  /// In zh, this message translates to:
+  /// **'暂无消息\n发送第一条消息开始对话'**
+  String get peerChat_emptyMessages;
+
+  /// No description provided for @peerChat_hintOnline.
+  ///
+  /// In zh, this message translates to:
+  /// **'输入消息...'**
+  String get peerChat_hintOnline;
+
+  /// No description provided for @peerChat_hintOffline.
+  ///
+  /// In zh, this message translates to:
+  /// **'离线 · 消息将在连接后发送'**
+  String get peerChat_hintOffline;
+
+  /// No description provided for @peerChat_statusOnlinePrefix.
+  ///
+  /// In zh, this message translates to:
+  /// **'在线 · '**
+  String get peerChat_statusOnlinePrefix;
+
+  /// No description provided for @peerChat_e2eEncryption.
+  ///
+  /// In zh, this message translates to:
+  /// **'端到端加密'**
+  String get peerChat_e2eEncryption;
+
+  /// No description provided for @peerChat_statusOnline.
+  ///
+  /// In zh, this message translates to:
+  /// **'在线 · 端到端加密'**
+  String get peerChat_statusOnline;
+
+  /// No description provided for @peerChat_statusConnecting.
+  ///
+  /// In zh, this message translates to:
+  /// **'连接中...'**
+  String get peerChat_statusConnecting;
+
+  /// No description provided for @peerChat_statusOffline.
+  ///
+  /// In zh, this message translates to:
+  /// **'离线'**
+  String get peerChat_statusOffline;
+
+  /// No description provided for @peerChat_yesterday.
+  ///
+  /// In zh, this message translates to:
+  /// **'昨天 {time}'**
+  String peerChat_yesterday(String time);
+
+  /// No description provided for @peerSettings_title.
+  ///
+  /// In zh, this message translates to:
+  /// **'设备设置'**
+  String get peerSettings_title;
+
+  /// No description provided for @peerSettings_online.
+  ///
+  /// In zh, this message translates to:
+  /// **'在线'**
+  String get peerSettings_online;
+
+  /// No description provided for @peerSettings_offline.
+  ///
+  /// In zh, this message translates to:
+  /// **'离线'**
+  String get peerSettings_offline;
+
+  /// No description provided for @peerSettings_sectionBasic.
+  ///
+  /// In zh, this message translates to:
+  /// **'基本信息'**
+  String get peerSettings_sectionBasic;
+
+  /// No description provided for @peerSettings_aliasName.
+  ///
+  /// In zh, this message translates to:
+  /// **'备注名称'**
+  String get peerSettings_aliasName;
+
+  /// No description provided for @peerSettings_fingerprint.
+  ///
+  /// In zh, this message translates to:
+  /// **'设备指纹'**
+  String get peerSettings_fingerprint;
+
+  /// No description provided for @peerSettings_pairedAt.
+  ///
+  /// In zh, this message translates to:
+  /// **'配对时间'**
+  String get peerSettings_pairedAt;
+
+  /// No description provided for @peerSettings_connectionInitiator.
+  ///
+  /// In zh, this message translates to:
+  /// **'连接发起方'**
+  String get peerSettings_connectionInitiator;
+
+  /// No description provided for @peerSettings_sectionConnection.
+  ///
+  /// In zh, this message translates to:
+  /// **'连接信息'**
+  String get peerSettings_sectionConnection;
+
+  /// No description provided for @peerSettings_localAddress.
+  ///
+  /// In zh, this message translates to:
+  /// **'内网地址'**
+  String get peerSettings_localAddress;
+
+  /// No description provided for @peerSettings_relayAddress.
+  ///
+  /// In zh, this message translates to:
+  /// **'外网中继'**
+  String get peerSettings_relayAddress;
+
+  /// No description provided for @peerSettings_encryption.
+  ///
+  /// In zh, this message translates to:
+  /// **'加密方式'**
+  String get peerSettings_encryption;
+
+  /// No description provided for @peerSettings_encryptionValue.
+  ///
+  /// In zh, this message translates to:
+  /// **'Noise IK (X25519 + ChaCha20-Poly1305)'**
+  String get peerSettings_encryptionValue;
+
+  /// No description provided for @peerSettings_startChat.
+  ///
+  /// In zh, this message translates to:
+  /// **'发起对话'**
+  String get peerSettings_startChat;
+
+  /// No description provided for @peerSettings_deletePairing.
+  ///
+  /// In zh, this message translates to:
+  /// **'删除配对'**
+  String get peerSettings_deletePairing;
+
+  /// No description provided for @peerSettings_editAliasTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'修改备注名称'**
+  String get peerSettings_editAliasTitle;
+
+  /// No description provided for @peerSettings_editAliasHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'输入备注名称'**
+  String get peerSettings_editAliasHint;
+
+  /// No description provided for @peerSettings_deleteConfirm.
+  ///
+  /// In zh, this message translates to:
+  /// **'确定要删除与 {name} 的配对吗？\n所有消息记录也会被删除。'**
+  String peerSettings_deleteConfirm(String name);
+
+  /// No description provided for @peerSettings_noShareableAgents.
+  ///
+  /// In zh, this message translates to:
+  /// **'暂无可分享的 Agent'**
+  String get peerSettings_noShareableAgents;
+
+  /// No description provided for @peerSettings_enableExternalAccessHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'在 Agent 设置中开启「允许外部访问」后即可在此分享给该设备'**
+  String get peerSettings_enableExternalAccessHint;
+
+  /// No description provided for @peerSettings_shareAgentsTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'分享给此设备的 Agent'**
+  String get peerSettings_shareAgentsTitle;
+
+  /// No description provided for @peerSettings_shareAgentsTitleCount.
+  ///
+  /// In zh, this message translates to:
+  /// **'分享给此设备的 Agent ({shared}/{total})'**
+  String peerSettings_shareAgentsTitleCount(int shared, int total);
+
+  /// No description provided for @peerSettings_noPeerAgentsConnected.
+  ///
+  /// In zh, this message translates to:
+  /// **'该设备暂未开放任何 Agent'**
+  String get peerSettings_noPeerAgentsConnected;
+
+  /// No description provided for @peerSettings_noPeerAgentsOffline.
+  ///
+  /// In zh, this message translates to:
+  /// **'设备离线，暂无可连接的 Agent'**
+  String get peerSettings_noPeerAgentsOffline;
+
+  /// No description provided for @peerSettings_peerEnableExternalHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'对方可在 Agent 设置中开启「允许外部访问」'**
+  String get peerSettings_peerEnableExternalHint;
+
+  /// No description provided for @peerSettings_syncAgentsOnConnect.
+  ///
+  /// In zh, this message translates to:
+  /// **'连接后将自动同步可连接的 Agent'**
+  String get peerSettings_syncAgentsOnConnect;
+
+  /// No description provided for @peerSettings_connectableAgentsTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'可连接的 Agent'**
+  String get peerSettings_connectableAgentsTitle;
+
+  /// No description provided for @peerSettings_connectableAgentsTitleCount.
+  ///
+  /// In zh, this message translates to:
+  /// **'可连接的 Agent ({count})'**
+  String peerSettings_connectableAgentsTitleCount(int count);
+
+  /// No description provided for @peerList_connected.
+  ///
+  /// In zh, this message translates to:
+  /// **'已连接'**
+  String get peerList_connected;
+
+  /// No description provided for @peerList_connectedE2e.
+  ///
+  /// In zh, this message translates to:
+  /// **'已连接 (端到端加密)'**
+  String get peerList_connectedE2e;
+
+  /// No description provided for @peerList_disconnected.
+  ///
+  /// In zh, this message translates to:
+  /// **'未连接'**
+  String get peerList_disconnected;
 }
 
 class _AppLocalizationsDelegate

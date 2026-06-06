@@ -94,6 +94,11 @@
   "home_createGroup": "Create Group",
   "home_addDevice": "Device Pairing",
   "home_scanConnect": "Scan to Connect",
+  "home_searchEmptyHint": "Search agents, groups, and messages",
+  "home_searchNoResults": "No results found",
+  "home_searchSectionAgents": "Agents",
+  "home_searchSectionGroups": "Groups",
+  "home_searchSectionMessages": "Messages",
   "home_agentsCount": "{count} agents",
   "drawer_myProfile": "My Profile",
   "drawer_newAgent": "New Agent",
@@ -107,6 +112,55 @@
   "settings_security": "Security",
   "settings_changePassword": "Change Password",
   "settings_changePasswordSub": "Change your login password",
+  "settings_dataVault": "Data Vault",
+  "settings_dataVaultSub": "View and restore data backups from before password reset",
+  "vault_emptyTitle": "No backups yet",
+  "vault_emptyDesc": "Each time you reset your password,\nold data is automatically encrypted and saved here.",
+  "vault_infoBanner": "Each time you reset your password, your old data is automatically encrypted and saved.\nTap \"Restore\" and enter the corresponding old password to recover your data.",
+  "vault_restoreTitle": "Restore Old Data",
+  "vault_backupTime": "Backup time: {date}",
+  "@vault_backupTime": {
+    "placeholders": {
+      "date": {
+        "type": "String"
+      }
+    }
+  },
+  "vault_fileSize": "File size: {size}",
+  "@vault_fileSize": {
+    "placeholders": {
+      "size": {
+        "type": "String"
+      }
+    }
+  },
+  "vault_size": "Size: {size}",
+  "@vault_size": {
+    "placeholders": {
+      "size": {
+        "type": "String"
+      }
+    }
+  },
+  "vault_restorePasswordPrompt": "Enter the old password for this backup to unlock:",
+  "vault_oldPassword": "Old Password",
+  "vault_restoreWarning": "Restoring will overwrite all current data. This cannot be undone.",
+  "vault_confirmRestore": "Confirm Restore",
+  "vault_emptyPassword": "Please enter the old password",
+  "vault_restoreFailed": "Wrong password or corrupted backup. Please try again.",
+  "vault_restoreSuccess": "Data restored successfully! Please restart the app to load the restored data.",
+  "vault_deleteTitle": "Delete Backup",
+  "vault_deleteConfirm": "Are you sure you want to permanently delete this backup?\n\nBackup time: {date}\nThe data cannot be recovered after deletion.",
+  "@vault_deleteConfirm": {
+    "placeholders": {
+      "date": {
+        "type": "String"
+      }
+    }
+  },
+  "vault_deleted": "Backup deleted",
+  "vault_restore": "Restore",
+  "vault_deleteTooltip": "Delete backup",
   "settings_biometric": "Biometric Authentication",
   "settings_biometricSub": "Use fingerprint or face ID",
   "settings_biometricComingSoon": "Biometric authentication coming soon",
@@ -952,6 +1006,10 @@
   "contacts_title": "Contacts",
   "contacts_agents": "Agents",
   "contacts_groups": "Groups",
+  "contacts_devices": "Devices",
+  "contacts_noPeers": "No paired devices yet",
+  "contacts_startPairing": "Start Pairing",
+  "contacts_addPairingDevice": "Add Paired Device",
   "contacts_noAgents": "No agents yet",
   "contacts_noGroups": "No groups yet",
   "contacts_agentCount": "{count} agents",
@@ -1502,5 +1560,80 @@
         "type": "String"
       }
     }
-  }
+  },
+  "peerRole_initiatorShort": "Initiated by me",
+  "peerRole_responderShort": "Initiated by peer",
+  "peerRole_initiatorDesc": "Paired by scanning on this device",
+  "peerRole_responderDesc": "Paired when peer scanned",
+  "peerChat_emptyMessages": "No messages yet\nSend the first message to start chatting",
+  "peerChat_hintOnline": "Type a message...",
+  "peerChat_hintOffline": "Offline · Messages will send when connected",
+  "peerChat_statusOnlinePrefix": "Online · ",
+  "peerChat_e2eEncryption": "End-to-end encrypted",
+  "peerChat_statusOnline": "Online · End-to-end encrypted",
+  "peerChat_statusConnecting": "Connecting...",
+  "peerChat_statusOffline": "Offline",
+  "peerChat_yesterday": "Yesterday {time}",
+  "@peerChat_yesterday": {
+    "placeholders": {
+      "time": {
+        "type": "String"
+      }
+    }
+  },
+  "peerSettings_title": "Device Settings",
+  "peerSettings_online": "Online",
+  "peerSettings_offline": "Offline",
+  "peerSettings_sectionBasic": "Basic Info",
+  "peerSettings_aliasName": "Display Name",
+  "peerSettings_fingerprint": "Device Fingerprint",
+  "peerSettings_pairedAt": "Paired At",
+  "peerSettings_connectionInitiator": "Connection Initiator",
+  "peerSettings_sectionConnection": "Connection Info",
+  "peerSettings_localAddress": "Local Address",
+  "peerSettings_relayAddress": "Relay Endpoint",
+  "peerSettings_encryption": "Encryption",
+  "peerSettings_encryptionValue": "Noise IK (X25519 + ChaCha20-Poly1305)",
+  "peerSettings_startChat": "Start Chat",
+  "peerSettings_deletePairing": "Remove Pairing",
+  "peerSettings_editAliasTitle": "Edit Display Name",
+  "peerSettings_editAliasHint": "Enter display name",
+  "peerSettings_deleteConfirm": "Are you sure you want to remove pairing with {name}?\nAll message history will also be deleted.",
+  "@peerSettings_deleteConfirm": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "peerSettings_noShareableAgents": "No agents available to share",
+  "peerSettings_enableExternalAccessHint": "Enable \"Allow External Access\" in agent settings to share agents with this device",
+  "peerSettings_shareAgentsTitle": "Agents Shared with This Device",
+  "peerSettings_shareAgentsTitleCount": "Agents Shared with This Device ({shared}/{total})",
+  "@peerSettings_shareAgentsTitleCount": {
+    "placeholders": {
+      "shared": {
+        "type": "int"
+      },
+      "total": {
+        "type": "int"
+      }
+    }
+  },
+  "peerSettings_noPeerAgentsConnected": "This device has not shared any agents",
+  "peerSettings_noPeerAgentsOffline": "Device offline, no agents available",
+  "peerSettings_peerEnableExternalHint": "The peer can enable \"Allow External Access\" in agent settings",
+  "peerSettings_syncAgentsOnConnect": "Available agents will sync automatically when connected",
+  "peerSettings_connectableAgentsTitle": "Connectable Agents",
+  "peerSettings_connectableAgentsTitleCount": "Connectable Agents ({count})",
+  "@peerSettings_connectableAgentsTitleCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "peerList_connected": "Connected",
+  "peerList_connectedE2e": "Connected (End-to-end encrypted)",
+  "peerList_disconnected": "Not connected"
 }

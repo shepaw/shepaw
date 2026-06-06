@@ -7,6 +7,7 @@ import '../models/peer_message.dart';
 import '../services/peer_connection_manager.dart';
 import '../services/peer_pairing_service.dart';
 import '../services/peer_storage_service.dart';
+import '../../l10n/app_localizations.dart';
 import '../../theme/app_theme.dart';
 import 'peer_settings_screen.dart';
 import '../widgets/peer_device_icon.dart';
@@ -250,6 +251,7 @@ class _PeerChatScreenState extends State<PeerChatScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
     // 嵌入桌面右面板时没有返回按钮（leading），title 会贴左边界；
     // 此时给一点左间距，移动端有返回箭头则保持紧凑。
     final hasLeading = Navigator.of(context).canPop();
@@ -277,11 +279,11 @@ class _PeerChatScreenState extends State<PeerChatScreen> {
                         ),
                         if (widget.peer.pairingRole != null) ...[
                           const SizedBox(width: 6),
-                          _buildRoleBadge(),
+                          _buildRoleBadge(l10n),
                         ],
                       ],
                     ),
-                    _buildConnectionStatus(),
+                    _buildConnectionStatus(l10n),
                   ],
                 ),
               ),
@@ -298,7 +300,7 @@ class _PeerChatScreenState extends State<PeerChatScreen> {
                 _messages.isEmpty
                     ? Center(
                         child: Text(
-                          '暂无消息\n发送第一条消息开始对话',
+                          l10n.peerChat_emptyMessages,
                           textAlign: TextAlign.center,
                           style: TextStyle(color: Colors.grey[400], height: 1.5),
                         ),
@@ -336,13 +338,13 @@ class _PeerChatScreenState extends State<PeerChatScreen> {
           ),
 
           // 输入区域
-          _buildInputArea(),
+          _buildInputArea(l10n),
         ],
       ),
     );
   }
 
-  Widget _buildInputArea() {
+  Widget _buildInputArea(AppLocalizations l10n) {
     final isConnected = _connectionState == PeerConnectionState.connected;
 
     return Container(
@@ -365,7 +367,7 @@ class _PeerChatScreenState extends State<PeerChatScreen> {
               controller: _textController,
               decoration: InputDecoration(
                 // 离线时仍可输入：消息会进入待发队列，连接恢复后自动补发
-                hintText: isConnected ? '输入消息...' : '离线 · 消息将在连接后发送',
+                hintText: isConnected ? l10n.peerChat_hintOnline : l10n.peerChat_hintOffline,
                 hintStyle: TextStyle(color: Colors.grey[400]),
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(24),
@@ -404,7 +406,7 @@ class _PeerChatScreenState extends State<PeerChatScreen> {
     );
   }
 
-  Widget _buildRoleBadge() {
+  Widget _buildRoleBadge(AppLocalizations l10n) {
     final isInitiator = widget.peer.pairingRole == PeerPairingRole.initiator;
     final color = PeerDeviceStyle.forPeer(widget.peer).labelColor;
     return Container(
@@ -423,7 +425,7 @@ class _PeerChatScreenState extends State<PeerChatScreen> {
           ),
           const SizedBox(width: 3),
           Text(
-            widget.peer.pairingRoleShortLabel ?? '',
+            widget.peer.pairingRoleShortLabel(l10n) ?? '',
             style: TextStyle(fontSize: 11, color: color),
           ),
         ],
@@ -431,7 +433,7 @@ class _PeerChatScreenState extends State<PeerChatScreen> {
     );
   }
 
-  Widget _buildConnectionStatus() {
+  Widget _buildConnectionStatus(AppLocalizations l10n) {
     final textStyle = Theme.of(context).textTheme.bodySmall?.copyWith(
       color: _connectionStateColor(),
     );
@@ -441,25 +443,25 @@ class _PeerChatScreenState extends State<PeerChatScreen> {
       return Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Text('在线 · ', style: textStyle),
+          Text(l10n.peerChat_statusOnlinePrefix, style: textStyle),
           Icon(Icons.lock, size: 12, color: _connectionStateColor()),
           const SizedBox(width: 3),
-          Text('端到端加密', style: textStyle),
+          Text(l10n.peerChat_e2eEncryption, style: textStyle),
         ],
       );
     }
 
-    return Text(_connectionStateText(), style: textStyle);
+    return Text(_connectionStateText(l10n), style: textStyle);
   }
 
-  String _connectionStateText() {
+  String _connectionStateText(AppLocalizations l10n) {
     switch (_connectionState) {
       case PeerConnectionState.connected:
-        return '在线 · 端到端加密';
+        return l10n.peerChat_statusOnline;
       case PeerConnectionState.connecting:
-        return '连接中...';
+        return l10n.peerChat_statusConnecting;
       case PeerConnectionState.disconnected:
-        return '离线';
+        return l10n.peerChat_statusOffline;
     }
   }
 
@@ -566,7 +568,7 @@ class _PeerMessageBubble extends StatelessWidget {
                         mainAxisSize: MainAxisSize.min,
                         children: [
                           Text(
-                            _formatTime(message.timestamp),
+                            _formatTime(context, message.timestamp),
                             style: const TextStyle(
                               fontSize: 10,
                               color: Colors.grey,
@@ -604,7 +606,8 @@ class _PeerMessageBubble extends StatelessWidget {
     }
   }
 
-  String _formatTime(int timestamp) {
+  String _formatTime(BuildContext context, int timestamp) {
+    final l10n = AppLocalizations.of(context);
     final dt = DateTime.fromMillisecondsSinceEpoch(timestamp);
     final now = DateTime.now();
     final timeStr = '${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';
@@ -614,7 +617,7 @@ class _PeerMessageBubble extends StatelessWidget {
     }
     final yesterday = now.subtract(const Duration(days: 1));
     if (dt.year == yesterday.year && dt.month == yesterday.month && dt.day == yesterday.day) {
-      return '昨天 $timeStr';
+      return l10n.peerChat_yesterday(timeStr);
     }
     return '${dt.month}/${dt.day} $timeStr';
   }

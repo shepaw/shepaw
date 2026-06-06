@@ -95,7 +95,7 @@ class _ContactsScreenState extends State<ContactsScreen>
           tabs: [
             Tab(text: l10n.contacts_agents),
             Tab(text: l10n.contacts_groups),
-            const Tab(text: '设备'),
+            Tab(text: l10n.contacts_devices),
           ],
         ),
       ),
@@ -357,6 +357,8 @@ class _ContactsScreenState extends State<ContactsScreen>
   // ── 配对设备列表 ─────────────────────────────────────────────────────
 
   Widget _buildPeersList() {
+    final l10n = AppLocalizations.of(context);
+
     if (_peers.isEmpty) {
       return Center(
         child: Column(
@@ -365,14 +367,14 @@ class _ContactsScreenState extends State<ContactsScreen>
             Icon(Icons.devices_other, size: 64, color: Colors.grey[300]),
             const SizedBox(height: 16),
             Text(
-              '尚未配对任何设备',
+              l10n.contacts_noPeers,
               style: TextStyle(fontSize: 16, color: Colors.grey[400]),
             ),
             const SizedBox(height: 24),
             FilledButton.icon(
               onPressed: _startPeerPairing,
               icon: const Icon(Icons.qr_code_2),
-              label: const Text('开始配对'),
+              label: Text(l10n.contacts_startPairing),
             ),
           ],
         ),
@@ -389,7 +391,7 @@ class _ContactsScreenState extends State<ContactsScreen>
             child: OutlinedButton.icon(
               onPressed: _startPeerPairing,
               icon: const Icon(Icons.add),
-              label: const Text('添加配对设备'),
+              label: Text(l10n.contacts_addPairingDevice),
             ),
           ),
         ),
@@ -408,6 +410,7 @@ class _ContactsScreenState extends State<ContactsScreen>
   }
 
   Widget _buildPeerTile(PairedPeer peer) {
+    final l10n = AppLocalizations.of(context);
     final isConnected = peer.state == PeerConnectionState.connected;
 
     return ListTile(
@@ -437,7 +440,7 @@ class _ContactsScreenState extends State<ContactsScreen>
         style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w500),
       ),
       subtitle: Text(
-        isConnected ? '已连接 (端到端加密)' : '未连接',
+        peer.state.listStatusLabel(l10n, showE2eWhenConnected: true),
         style: TextStyle(
           fontSize: 12,
           color: isConnected ? Colors.green : Colors.grey,

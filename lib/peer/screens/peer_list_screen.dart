@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 
+import '../../l10n/app_localizations.dart';
 import '../models/paired_peer.dart';
 import '../services/peer_connection_manager.dart';
 import '../services/peer_storage_service.dart';
@@ -255,6 +256,7 @@ class _PeerListItem extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
     final colorScheme = Theme.of(context).colorScheme;
 
     return ListTile(
@@ -284,7 +286,7 @@ class _PeerListItem extends StatelessWidget {
       ),
       title: Text(peer.deviceName),
       subtitle: Text(
-        _stateText(peer.state),
+        peer.state.listStatusLabel(l10n),
         style: TextStyle(
           color: _stateColor(peer.state, colorScheme),
           fontSize: 12,
@@ -305,14 +307,4 @@ class _PeerListItem extends StatelessWidget {
     }
   }
 
-  String _stateText(PeerConnectionState state) {
-    switch (state) {
-      case PeerConnectionState.connected:
-        return '已连接';
-      case PeerConnectionState.connecting:
-        return '连接中...';
-      case PeerConnectionState.disconnected:
-        return '未连接';
-    }
-  }
 }

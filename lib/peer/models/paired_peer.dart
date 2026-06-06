@@ -1,6 +1,8 @@
 import 'dart:convert';
 import 'dart:typed_data';
 
+import '../../l10n/app_localizations.dart';
+
 /// 配对设备连接状态
 enum PeerConnectionState {
   disconnected,
@@ -14,6 +16,25 @@ enum PeerConnectionState {
       (e) => e.name == value,
       orElse: () => PeerConnectionState.disconnected,
     );
+  }
+}
+
+extension PeerConnectionStateL10n on PeerConnectionState {
+  /// 设备列表中的连接状态文案。
+  String listStatusLabel(
+    AppLocalizations l10n, {
+    bool showE2eWhenConnected = false,
+  }) {
+    switch (this) {
+      case PeerConnectionState.connected:
+        return showE2eWhenConnected
+            ? l10n.peerList_connectedE2e
+            : l10n.peerList_connected;
+      case PeerConnectionState.connecting:
+        return l10n.peerChat_statusConnecting;
+      case PeerConnectionState.disconnected:
+        return l10n.peerList_disconnected;
+    }
   }
 }
 
@@ -96,24 +117,24 @@ class PairedPeer {
   bool get hasEndpoint => channelEndpoint != null || localEndpoint != null;
 
   /// 角色短标签（用于会话列表/标题栏小徽标）。
-  String? get pairingRoleShortLabel {
+  String? pairingRoleShortLabel(AppLocalizations l10n) {
     switch (pairingRole) {
       case PeerPairingRole.initiator:
-        return '我发起';
+        return l10n.peerRole_initiatorShort;
       case PeerPairingRole.responder:
-        return '对方发起';
+        return l10n.peerRole_responderShort;
       case null:
         return null;
     }
   }
 
   /// 角色完整描述（用于设备详情页）。
-  String? get pairingRoleDescription {
+  String? pairingRoleDescription(AppLocalizations l10n) {
     switch (pairingRole) {
       case PeerPairingRole.initiator:
-        return '本机扫码发起连接';
+        return l10n.peerRole_initiatorDesc;
       case PeerPairingRole.responder:
-        return '对方扫码发起连接';
+        return l10n.peerRole_responderDesc;
       case null:
         return null;
     }

@@ -1,8 +1,11 @@
 #include "flutter_window.h"
 
 #include <optional>
+#include <string>
 
 #include "flutter/generated_plugin_registrant.h"
+#include "flutter/method_channel.h"
+#include "flutter/standard_method_codec.h"
 #include <desktop_multi_window/desktop_multi_window_plugin.h>
 
 FlutterWindow::FlutterWindow(const flutter::DartProject& project)
@@ -26,6 +29,37 @@ bool FlutterWindow::OnCreate() {
     return false;
   }
   RegisterPlugins(flutter_controller_->engine());
+
+  window_title_channel_ =
+      std::make_unique<flutter::MethodChannel<flutter::EncodableValue>>(
+          flutter_controller_->engine()->messenger(), "shepaw/window",
+          &flutter::StandardMethodCodec::GetInstance());
+  window_title_channel_->SetMethodCallHandler(
+      [this](const flutter::MethodCall<flutter::EncodableValue>& call,
+             std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>>
+                 result) {
+        if (call.method_name() == "setTitle") {
+          const auto* title = std::get_if<std::string>(call.arguments());
+          if (title == nullptr) {
+            result->Error("INVALID_ARGS", "Expected String title");
+            return;
+          }
+          const int wide_len = MultiByteToWideChar(
+              CP_UTF8, 0, title->c_str(), -1, nullptr, 0);
+          if (wide_len <= 0) {
+            result->Error("ENCODING", "Failed to encode window title");
+            return;
+          }
+          std::wstring wide_title(static_cast<size_t>(wide_len), L'\0');
+          MultiByteToWideChar(CP_UTF8, 0, title->c_str(), -1, wide_title.data(),
+                              wide_len);
+          SetWindowTextW(GetHandle(), wide_title.c_str());
+          result->Success();
+          return;
+        }
+        result->NotImplemented();
+      });
+
   DesktopMultiWindowSetWindowCreatedCallback([](void *controller) {
     auto *flutter_view_controller =
         reinterpret_cast<flutter::FlutterViewController *>(controller);
@@ -47,6 +81,7 @@ bool FlutterWindow::OnCreate() {
 }
 
 void FlutterWindow::OnDestroy() {
+  window_title_channel_.reset();
   if (flutter_controller_) {
     flutter_controller_ = nullptr;
   }
