@@ -600,11 +600,11 @@ class MessageBubble extends StatelessWidget {
       return '🐱';
     }
 
-    // senderAvatar 有值时：若是纯 emoji（≤ 2 个字符或不含 /、http），直接返回
+    // senderAvatar 有值时：若是纯 emoji，直接返回；图片路径交由 _buildAvatarWidget
     if (senderAvatar != null && senderAvatar!.isNotEmpty) {
-      final isImagePath = senderAvatar!.startsWith('/') ||
-          senderAvatar!.startsWith('http://') ||
-          senderAvatar!.startsWith('https://');
+      final isImagePath = AvatarImage.isLocalFile(senderAvatar!) ||
+          AvatarImage.isNetworkUrl(senderAvatar!) ||
+          AvatarImage.isAsset(senderAvatar!);
       if (!isImagePath) return senderAvatar!;
       // 图片路径/URL 交由 _buildAvatarWidget 处理，此处返回 fallback
       return message.from.isAgent ? '🤖' : '👤';
@@ -635,12 +635,11 @@ class MessageBubble extends StatelessWidget {
     }
 
     if (senderAvatar != null && senderAvatar!.isNotEmpty) {
-      final isLocalFile = senderAvatar!.startsWith('/') &&
-          !senderAvatar!.startsWith('//');
-      final isUrl = senderAvatar!.startsWith('http://') ||
-          senderAvatar!.startsWith('https://');
+      final isImage = AvatarImage.isLocalFile(senderAvatar!) ||
+          AvatarImage.isNetworkUrl(senderAvatar!) ||
+          AvatarImage.isAsset(senderAvatar!);
 
-      if (isLocalFile || isUrl) {
+      if (isImage) {
         final fallback = Text(
           message.from.isAgent ? '🤖' : '👤',
           style: const TextStyle(fontSize: 24),
