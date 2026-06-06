@@ -41,7 +41,6 @@ import '../peer/services/peer_connection_manager.dart';
 import '../peer/services/peer_pairing_service.dart';
 import '../peer/services/peer_storage_service.dart';
 import 'package:provider/provider.dart';
-import '../utils/layout_utils.dart';
 
 /// Tagged union for a unified conversation list item (agent or group).
 class _ConversationItem {
@@ -94,6 +93,7 @@ class HomeScreenState extends State<HomeScreen> {
   List<_ConversationItem> _sortedConversations = [];
   bool _isLoading = true;
   final TextEditingController _searchController = TextEditingController();
+  final GlobalKey _addButtonKey = GlobalKey();
 
   // Typing agent IDs from ChatService (1:1 chats only)
   Set<String> _typingAgentIds = {};
@@ -686,6 +686,7 @@ class HomeScreenState extends State<HomeScreen> {
           ),
           const SizedBox(width: _appBarActionEdgeGap),
           _buildCompactAppBarIconButton(
+            key: _addButtonKey,
             icon: SvgPicture.asset(
               'assets/icons/add_circle.svg',
               width: 24,
@@ -701,12 +702,14 @@ class HomeScreenState extends State<HomeScreen> {
   }
 
   Widget _buildCompactAppBarIconButton({
+    Key? key,
     required Widget icon,
     required String tooltip,
     required VoidCallback onPressed,
   }) {
     // 布局宽度贴合 24px 图标，避免 IconButton 默认最小宽度把两图标间距撑大。
     return IconButton(
+      key: key,
       icon: icon,
       tooltip: tooltip,
       onPressed: onPressed,
@@ -967,48 +970,119 @@ class HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  /// 标题栏添加按钮：弹出添加菜单（原 FAB 功能）。
-  void _showAddMenu() {
+  /// 标题栏添加按钮：从按钮下方弹出菜单。
+  Future<void> _showAddMenu() async {
     final l10n = AppLocalizations.of(context);
-    LayoutUtils.showAdaptivePanel(
+    final overlay = Overlay.of(context).context.findRenderObject() as RenderBox;
+    final overlaySize = overlay.size;
+    const menuWidth = 180.0;
+    const gap = 6.0;
+
+    RelativeRect position;
+    final buttonBox = _addButtonKey.currentContext?.findRenderObject() as RenderBox?;
+    if (buttonBox != null) {
+      final bottomRight = buttonBox.localToGlobal(
+        buttonBox.size.bottomRight(Offset.zero),
+        ancestor: overlay,
+      );
+      position = RelativeRect.fromLTRB(
+        bottomRight.dx - menuWidth,
+        bottomRight.dy + gap,
+        overlaySize.width - bottomRight.dx,
+        overlaySize.height - bottomRight.dy - gap,
+      );
+    } else {
+      position = RelativeRect.fromLTRB(
+        overlaySize.width - menuWidth - _appBarActionEdgeGap,
+        kToolbarHeight + MediaQuery.of(context).padding.top + gap,
+        _appBarActionEdgeGap,
+        0,
+      );
+    }
+
+    final colorScheme = Theme.of(context).colorScheme;
+
+    final action = await showMenu<String>(
       context: context,
-      builder: (context) => Column(
-        mainAxisSize: MainAxisSize.min,
+      position: position,
+      constraints: const BoxConstraints.tightFor(width: menuWidth),
+      color: colorScheme.surface,
+      elevation: 4,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(8),
+        side: BorderSide(color: colorScheme.outline.withValues(alpha: 0.6)),
+      ),
+      items: [
+        _buildAddMenuItem(
+          value: 'agent',
+          icon: Icons.person_add_outlined,
+          label: l10n.home_addAgent,
+        ),
+        _buildAddMenuItem(
+          value: 'group',
+          icon: Icons.group_add,
+          label: l10n.home_createGroup,
+        ),
+        _buildAddMenuItem(
+          value: 'device',
+          icon: Icons.devices_outlined,
+          label: l10n.home_addDevice,
+        ),
+        _buildAddMenuItem(
+          value: 'scan',
+          icon: Icons.qr_code_scanner,
+          label: l10n.home_scanConnect,
+        ),
+      ],
+    );
+
+    if (!mounted || action == null) return;
+    switch (action) {
+      case 'agent':
+        await Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) => const AddRemoteAgentScreen(),
+          ),
+        );
+        if (mounted) _loadAgents(silent: true);
+      case 'group':
+        await Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) => const CreateGroupScreen(),
+          ),
+        );
+        if (mounted) _loadAgents(silent: true);
+      case 'device':
+        await PeerPairingScreen.show(context);
+        if (mounted) _loadAgents(silent: true);
+      case 'scan':
+        await PeerPairingScreen.show(
+          context,
+          initialTabIndex: PeerPairingScreen.scanTabIndex,
+        );
+        if (mounted) _loadAgents(silent: true);
+    }
+  }
+
+  PopupMenuItem<String> _buildAddMenuItem({
+    required String value,
+    required IconData icon,
+    required String label,
+  }) {
+    return PopupMenuItem<String>(
+      value: value,
+      height: 44,
+      child: Row(
         children: [
-          ListTile(
-            leading: const Icon(Icons.person_add_outlined),
-            title: Text(l10n.home_addAgent),
-            onTap: () {
-              Navigator.pop(context);
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (context) => const AddRemoteAgentScreen(),
-                ),
-              ).then((_) => _loadAgents(silent: true));
-            },
-          ),
-          ListTile(
-            leading: const Icon(Icons.group_add),
-            title: Text(l10n.home_createGroup),
-            onTap: () {
-              Navigator.pop(context);
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (context) => const CreateGroupScreen(),
-                ),
-              ).then((_) => _loadAgents(silent: true));
-            },
-          ),
-          ListTile(
-            leading: const Icon(Icons.devices_outlined),
-            title: Text(l10n.home_addDevice),
-            onTap: () {
-              Navigator.pop(context);
-              PeerPairingScreen.show(context)
-                  .then((_) => _loadAgents(silent: true));
-            },
+          Icon(icon, size: 22),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Text(
+              label,
+              style: const TextStyle(fontSize: 15),
+            ),
           ),
         ],
       ),

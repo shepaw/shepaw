@@ -134,7 +134,8 @@
   "home_weekSun": "周日",
   "home_addAgent": "添加 Agent",
   "home_createGroup": "创建群组",
-  "home_addDevice": "添加设备",
+  "home_addDevice": "设备配对",
+  "home_scanConnect": "扫码连接",
   "home_agentsCount": "{count} agents",
   "@home_agentsCount": {
     "placeholders": {

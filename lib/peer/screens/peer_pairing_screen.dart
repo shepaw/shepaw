@@ -20,12 +20,24 @@ class PeerPairingScreen extends StatefulWidget {
   /// - 提供时（如桌面端内嵌右侧面板）：由调用方接管后续导航，不再 `pop`。
   final void Function(PairedPeer peer)? onPaired;
 
-  const PeerPairingScreen({super.key, this.onPaired});
+  /// 初始 Tab 索引：0=我的二维码，1=扫一扫，2=输入。
+  final int initialTabIndex;
 
-  static Future<PairedPeer?> show(BuildContext context) {
+  const PeerPairingScreen({
+    super.key,
+    this.onPaired,
+    this.initialTabIndex = 0,
+  });
+
+  static const int scanTabIndex = 1;
+
+  static Future<PairedPeer?> show(
+    BuildContext context, {
+    int initialTabIndex = 0,
+  }) {
     return Navigator.of(context).push<PairedPeer?>(
       MaterialPageRoute(
-        builder: (_) => const PeerPairingScreen(),
+        builder: (_) => PeerPairingScreen(initialTabIndex: initialTabIndex),
         fullscreenDialog: true,
       ),
     );
@@ -42,7 +54,11 @@ class _PeerPairingScreenState extends State<PeerPairingScreen>
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 3, vsync: this);
+    _tabController = TabController(
+      length: 3,
+      vsync: this,
+      initialIndex: widget.initialTabIndex.clamp(0, 2),
+    );
   }
 
   @override

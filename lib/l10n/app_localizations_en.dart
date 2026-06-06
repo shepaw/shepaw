@@ -311,7 +311,10 @@ class AppLocalizationsEn extends AppLocalizations {
   String get home_createGroup => 'Create Group';
 
   @override
-  String get home_addDevice => 'Add Device';
+  String get home_addDevice => 'Device Pairing';
+
+  @override
+  String get home_scanConnect => 'Scan to Connect';
 
   @override
   String home_agentsCount(int count) {

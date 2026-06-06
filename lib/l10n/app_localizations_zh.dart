@@ -298,7 +298,10 @@ class AppLocalizationsZh extends AppLocalizations {
   String get home_createGroup => '创建群组';
 
   @override
-  String get home_addDevice => '添加设备';
+  String get home_addDevice => '设备配对';
+
+  @override
+  String get home_scanConnect => '扫码连接';
 
   @override
   String home_agentsCount(int count) {

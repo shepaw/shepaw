@@ -653,8 +653,14 @@ abstract class AppLocalizations {
   /// No description provided for @home_addDevice.
   ///
   /// In zh, this message translates to:
-  /// **'添加设备'**
+  /// **'设备配对'**
   String get home_addDevice;
+
+  /// No description provided for @home_scanConnect.
+  ///
+  /// In zh, this message translates to:
+  /// **'扫码连接'**
+  String get home_scanConnect;
 
   /// No description provided for @home_agentsCount.
   ///
