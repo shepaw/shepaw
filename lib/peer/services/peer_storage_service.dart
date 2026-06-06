@@ -65,6 +65,18 @@ class PeerStorageService {
     await db.execute(
       'CREATE INDEX IF NOT EXISTS idx_peer_messages_peer ON peer_messages(peer_id, timestamp DESC)',
     );
+    // 每台配对设备的「本机 agent 分享决定」：记录用户是否同意把某个本地 agent
+    // 分享给该设备。存在任意一行即代表该设备已被用户确认过一次（用于区分「首次
+    // 连接需弹窗确认」与「之后新开放的 agent 默认不分享」）。
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS peer_agent_shares (
+        peer_id TEXT NOT NULL,
+        agent_id TEXT NOT NULL,
+        shared INTEGER NOT NULL DEFAULT 0,
+        updated_at INTEGER NOT NULL DEFAULT 0,
+        PRIMARY KEY (peer_id, agent_id)
+      )
+    ''');
     _tablesReady = true;
     _log.debug('P2P tables ensured', tag: _tag);
   }
@@ -176,12 +188,84 @@ class PeerStorageService {
     );
   }
 
-  /// 删除配对（同时删除消息记录）
+  /// 删除配对（同时删除消息记录与 agent 分享决定）
   Future<void> removePeer(String peerId) async {
     final db = await _db;
     await db.delete('peer_messages', where: 'peer_id = ?', whereArgs: [peerId]);
+    await db.delete('peer_agent_shares', where: 'peer_id = ?', whereArgs: [peerId]);
     await db.delete('paired_peers', where: 'id = ?', whereArgs: [peerId]);
     _log.info('Removed peer: $peerId', tag: _tag);
+  }
+
+  // ── Agent 分享决定（host 侧：本机 agent 分享给哪些配对设备） ───────────────
+
+  /// 该设备是否已被用户做过至少一次分享决定（用于判断首次连接是否需要弹窗）。
+  Future<bool> hasAnyAgentShare(String peerId) async {
+    final db = await _db;
+    final rows = await db.query(
+      'peer_agent_shares',
+      where: 'peer_id = ?',
+      whereArgs: [peerId],
+      limit: 1,
+    );
+    return rows.isNotEmpty;
+  }
+
+  /// 获取分享给该设备的本机 agent id 集合（仅 shared=1）。
+  Future<Set<String>> getSharedAgentIds(String peerId) async {
+    final db = await _db;
+    final rows = await db.query(
+      'peer_agent_shares',
+      columns: ['agent_id'],
+      where: 'peer_id = ? AND shared = 1',
+      whereArgs: [peerId],
+    );
+    return rows.map((r) => r['agent_id'] as String).toSet();
+  }
+
+  /// 获取该设备的全部分享决定（agentId → 是否分享），供设置页展示开关状态。
+  Future<Map<String, bool>> getAgentShares(String peerId) async {
+    final db = await _db;
+    final rows = await db.query(
+      'peer_agent_shares',
+      columns: ['agent_id', 'shared'],
+      where: 'peer_id = ?',
+      whereArgs: [peerId],
+    );
+    return {
+      for (final r in rows) r['agent_id'] as String: (r['shared'] as int) == 1,
+    };
+  }
+
+  /// 批量写入分享决定（一次确认/同步多个 agent）。
+  Future<void> setAgentShares(String peerId, Map<String, bool> shares) async {
+    final db = await _db;
+    final now = DateTime.now().millisecondsSinceEpoch;
+    final batch = db.batch();
+    shares.forEach((agentId, shared) {
+      batch.insert(
+        'peer_agent_shares',
+        {
+          'peer_id': peerId,
+          'agent_id': agentId,
+          'shared': shared ? 1 : 0,
+          'updated_at': now,
+        },
+        conflictAlgorithm: ConflictAlgorithm.replace,
+      );
+    });
+    await batch.commit(noResult: true);
+  }
+
+  /// 写入单个 agent 的分享决定。
+  Future<void> setAgentShare(String peerId, String agentId, bool shared) async {
+    await setAgentShares(peerId, {agentId: shared});
+  }
+
+  /// 删除某个 agent 在所有设备上的分享决定（agent 被删除时清理）。
+  Future<void> removeAgentShares(String agentId) async {
+    final db = await _db;
+    await db.delete('peer_agent_shares', where: 'agent_id = ?', whereArgs: [agentId]);
   }
 
   // ── PeerMessage CRUD ────────────────────────────────────────────────────

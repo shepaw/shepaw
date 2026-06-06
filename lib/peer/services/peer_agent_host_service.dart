@@ -14,13 +14,17 @@
 library;
 
 import 'dart:async';
+import 'dart:convert';
+import 'dart:io';
 
 import '../../models/channel.dart';
+import '../../models/remote_agent.dart';
 import '../../services/acp_agent_connection.dart';
 import '../../services/chat_service.dart';
 import '../../services/local_database_service.dart';
 import '../../services/logger_service.dart';
-import '../../service_locator.dart' show getIt;
+import '../../service_locator.dart' show getIt, navigatorKey;
+import '../widgets/peer_agent_share_dialog.dart';
 import 'peer_connection_manager.dart';
 import 'peer_storage_service.dart';
 
@@ -93,25 +97,118 @@ class PeerAgentHostService {
   }
 
   Future<void> _handleListReq(String peerId) async {
+    // 先按当前分享决定推送一次（未确认的设备会拿到空列表），随后视情况弹窗确认。
+    await pushAgentList(peerId);
+    unawaited(_maybePromptShareDecision(peerId));
+  }
+
+  /// 按「分享给该设备」的决定构建并推送可访问的 agent 列表。
+  ///
+  /// 设置页修改分享开关、或用户在弹窗中确认后，也通过此方法把最新列表推给对端，
+  /// 对端据此即时增删本地的 peer agent。
+  Future<void> pushAgentList(String peerId) async {
     try {
-      final agents = await _db.getAllRemoteAgents();
-      final exposed = agents
-          .where((a) => a.isLocal && a.allowExternalAccess)
-          .map((a) => {
-                'id': a.id,
-                'name': a.name,
-                'avatar': a.avatar,
-                'bio': a.bio,
-                'capabilities': a.capabilities,
-              })
-          .toList();
+      final eligible = await _eligibleAgents();
+      final sharedIds = await PeerStorageService().getSharedAgentIds(peerId);
+      final shared = eligible.where((a) => sharedIds.contains(a.id)).toList();
+
+      final exposed = <Map<String, dynamic>>[];
+      // 所有头像共享一个传输预算：agent_list_resp 是单条控制消息，受帧大小限制，
+      // 超预算的头像不附带字节，由对端回退到默认头像。
+      var avatarBudget = _avatarBudgetBytes;
+      for (final a in shared) {
+        final entry = <String, dynamic>{
+          'id': a.id,
+          'name': a.name,
+          'avatar': a.avatar,
+          'bio': a.bio,
+          'capabilities': a.capabilities,
+        };
+        // 头像若为本机文件（用户上传的自定义图片），对端无法访问该路径，
+        // 故把图片字节一并打包发送，由对端落地为本地文件后展示。
+        avatarBudget -= await _attachAvatarData(a.avatar, entry, avatarBudget);
+        exposed.add(entry);
+      }
       await PeerConnectionManager.instance.sendControl(peerId, {
         'type': 'agent_list_resp',
         'agents': exposed,
       });
-      _log.debug('Sent ${exposed.length} exposed agents to $peerId', tag: _tag);
+      _log.debug('Sent ${exposed.length} shared agents to $peerId', tag: _tag);
     } catch (e) {
-      _log.warning('Failed to handle agent_list_req: $e', tag: _tag);
+      _log.warning('Failed to push agent list: $e', tag: _tag);
+    }
+  }
+
+  /// 本机所有「本地且允许外部访问」的 agent —— 可被分享的候选集。
+  Future<List<RemoteAgent>> _eligibleAgents() async {
+    final agents = await _db.getAllRemoteAgents();
+    return agents.where((a) => a.isLocal && a.allowExternalAccess).toList();
+  }
+
+  /// 正在弹出分享确认框的设备，避免重连/重复请求时弹出多个对话框。
+  final Set<String> _promptingPeers = {};
+
+  /// 首次连接某设备且存在可分享 agent 时，弹窗让用户确认要分享哪些。
+  ///
+  /// 已确认过的设备（[PeerStorageService.hasAnyAgentShare] 为真）不再弹窗：之后
+  /// 新开放的 agent 默认不分享，由用户到设备设置页手动开启。
+  Future<void> _maybePromptShareDecision(String peerId) async {
+    if (_promptingPeers.contains(peerId)) return;
+    try {
+      if (await PeerStorageService().hasAnyAgentShare(peerId)) return;
+      final eligible = await _eligibleAgents();
+      if (eligible.isEmpty) return;
+
+      _promptingPeers.add(peerId);
+      final deviceName = await _peerDisplayName(peerId);
+      final ctx = navigatorKey.currentContext;
+      if (ctx == null || !ctx.mounted) return;
+
+      final result = await showPeerAgentShareDialog(
+        context: ctx,
+        deviceName: deviceName,
+        // 默认全勾选（用户可取消），符合「确认即分享全部」的预期。
+        agents: eligible
+            .map((a) => PeerShareAgentEntry.fromAgent(a, initiallyShared: true))
+            .toList(),
+      );
+
+      if (result == null) return; // 用户取消：不写决定，下次连接再次询问
+      await PeerStorageService().setAgentShares(peerId, result);
+      await pushAgentList(peerId);
+    } catch (e) {
+      _log.warning('Failed to prompt share decision: $e', tag: _tag);
+    } finally {
+      _promptingPeers.remove(peerId);
+    }
+  }
+
+  /// 单个头像随控制消息传输的体积上限（base64 前的原始字节）。
+  static const int _maxAvatarBytes = 256 * 1024;
+
+  /// 单条 agent_list_resp 中所有头像字节的总预算，避免拼包后超出帧大小限制。
+  static const int _avatarBudgetBytes = 2 * 1024 * 1024;
+
+  /// 若 [avatar] 是本机文件路径，读取其字节并以 base64 写入 [entry]
+  /// （`avatar_data` + `avatar_ext`）。emoji / asset / 网络 URL 无需处理。
+  /// 返回本次实际占用的字节数（未附带时为 0），供调用方扣减总预算。
+  Future<int> _attachAvatarData(
+      String avatar, Map<String, dynamic> entry, int budget) async {
+    if (!avatar.startsWith('/')) return 0; // 非本机绝对路径，对端可直接解析
+    try {
+      final file = File(avatar);
+      if (!await file.exists()) return 0;
+      final len = await file.length();
+      if (len <= 0 || len > _maxAvatarBytes || len > budget) return 0;
+      final bytes = await file.readAsBytes();
+      var ext = avatar.contains('.') ? avatar.split('.').last.toLowerCase() : 'png';
+      if (ext.length > 5) ext = 'png';
+      entry['avatar_data'] = base64Encode(bytes);
+      entry['avatar_ext'] = ext;
+      return len;
+    } catch (e) {
+      _log.warning('Failed to attach avatar data for $avatar: $e', tag: _tag);
+      return 0;
     }
   }
 

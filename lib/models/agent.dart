@@ -139,6 +139,9 @@ class Agent {
   /// 是否为「来自配对设备的 agent」（通过 P2P 隧道访问对端本地 agent）。
   bool get isPeerAgent => metadata?['source_peer_id'] != null;
 
+  /// 来源配对设备的 peerId（仅 [isPeerAgent] 有意义）。
+  String? get sourcePeerId => metadata?['source_peer_id'] as String?;
+
   /// 来源配对设备的显示名（仅 [isPeerAgent] 有意义）。
   String? get sourcePeerName => metadata?['source_peer_name'] as String?;
 

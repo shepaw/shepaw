@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -5,6 +6,9 @@ import 'package:image_picker/image_picker.dart';
 import '../widgets/avatar_image.dart';
 import '../l10n/app_localizations.dart';
 import '../models/remote_agent.dart';
+import '../peer/services/peer_connection_manager.dart';
+import '../peer/services/peer_connection.dart' show PeerConnectionEvent;
+import '../peer/models/paired_peer.dart' show PeerConnectionState;
 import '../services/remote_agent_service.dart';
 import '../services/local_file_storage_service.dart';
 import '../services/model_registry.dart';
@@ -78,6 +82,9 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
   final ImagePicker _imagePicker = ImagePicker();
   final LocalFileStorageService _fileStorage = LocalFileStorageService();
 
+  /// peer 连接状态变化订阅：peer agent 的在线状态需实时跟随来源设备上/下线。
+  StreamSubscription<PeerConnectionEvent>? _peerConnSub;
+
   /// True when this agent should be treated as a local LLM agent.
   /// She is always treated as local even before a model is configured.
   bool get _isLocalMode =>
@@ -90,6 +97,29 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
     _agent = widget.agent;
     _isEditing = widget.initialEditMode;
     _initEditingControllers();
+
+    // peer agent 的在线状态完全取决于来源配对设备是否在线，订阅连接状态变化
+    // 以便设备上/下线时即时刷新页面顶部的状态徽标。
+    if (_agent.isPeerAgent) {
+      _peerConnSub =
+          PeerConnectionManager.instance.events.listen((event) {
+        if (event.peerId == _agent.sourcePeerId && mounted) {
+          setState(() {});
+        }
+      });
+    }
+  }
+
+  /// 页面展示用的在线状态。peer agent 跟随来源设备的 P2P 连接状态，其余 agent
+  /// 沿用自身 [RemoteAgent.status]。
+  AgentStatus get _displayStatus {
+    if (!_agent.isPeerAgent) return _agent.status;
+    final peerId = _agent.sourcePeerId;
+    if (peerId == null) return AgentStatus.offline;
+    return PeerConnectionManager.instance.getPeerState(peerId) ==
+            PeerConnectionState.connected
+        ? AgentStatus.online
+        : AgentStatus.offline;
   }
 
   void _initEditingControllers() {
@@ -163,6 +193,7 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
     _remoteAgentIdController.dispose();
     _maxToolRoundsController.dispose();
     _taskTimeoutController.dispose();
+    _peerConnSub?.cancel();
     super.dispose();
   }
 
@@ -209,6 +240,12 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
 
       // Build updated metadata
       final Map<String, dynamic> metadata = Map<String, dynamic>.from(_agent.metadata);
+
+      // peer agent：本地一旦改过头像，打上标记，后续从对端同步时以本地为准，
+      // 不再被对端分享的头像覆盖。
+      if (_agent.isPeerAgent && avatar != _agent.avatar) {
+        metadata['avatar_overridden'] = true;
+      }
 
       // System prompt
       final systemPrompt = _systemPromptController.text.trim();
@@ -732,28 +769,34 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
           ),
         ],
         const SizedBox(height: 12),
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-          decoration: BoxDecoration(
-            color: _getStatusColor(_agent.status).withValues(alpha: 0.1),
-            borderRadius: BorderRadius.circular(16),
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(_agent.statusIcon, style: const TextStyle(fontSize: 14)),
-              const SizedBox(width: 6),
-              Text(
-                _agent.statusText,
-                style: TextStyle(
-                  fontSize: 14,
-                  color: _getStatusColor(_agent.status),
-                  fontWeight: FontWeight.w500,
+        Builder(builder: (context) {
+          // peer agent 用跟随设备的展示状态，其余 agent 用自身状态。
+          final displayAgent = _agent.isPeerAgent
+              ? _agent.copyWith(status: _displayStatus)
+              : _agent;
+          return Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+            decoration: BoxDecoration(
+              color: _getStatusColor(displayAgent.status).withValues(alpha: 0.1),
+              borderRadius: BorderRadius.circular(16),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(displayAgent.statusIcon, style: const TextStyle(fontSize: 14)),
+                const SizedBox(width: 6),
+                Text(
+                  displayAgent.statusText,
+                  style: TextStyle(
+                    fontSize: 14,
+                    color: _getStatusColor(displayAgent.status),
+                    fontWeight: FontWeight.w500,
+                  ),
                 ),
-              ),
-            ],
-          ),
-        ),
+              ],
+            ),
+          );
+        }),
         if (_agent.isPeerAgent) ...[
           const SizedBox(height: 8),
           _buildPeerSourceChip(),

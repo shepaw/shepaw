@@ -5,10 +5,12 @@ import 'package:flutter/material.dart';
 import '../models/paired_peer.dart';
 import '../services/peer_connection_manager.dart';
 import '../services/peer_storage_service.dart';
+import '../services/peer_agent_host_service.dart';
 import 'peer_chat_screen.dart';
 import '../../models/remote_agent.dart';
 import '../../service_locator.dart' show getIt;
 import '../../services/local_database_service.dart';
+import '../../widgets/avatar_image.dart';
 
 /// P2P 设备设置页面
 ///
@@ -38,6 +40,11 @@ class _PeerSettingsScreenState extends State<PeerSettingsScreen> {
   bool _agentsLoading = true;
   StreamSubscription<void>? _peerListSub;
 
+  /// 本机可分享的 agent（已开启「允许外部访问」），及其对该设备的分享开关状态。
+  List<RemoteAgent> _shareableAgents = [];
+  Map<String, bool> _shareDecisions = {};
+  bool _shareLoading = true;
+
   @override
   void initState() {
     super.initState();
@@ -45,6 +52,7 @@ class _PeerSettingsScreenState extends State<PeerSettingsScreen> {
     _isConnected = PeerConnectionManager.instance.getPeerState(widget.peer.id) ==
         PeerConnectionState.connected;
     _loadPeerAgents();
+    _loadShareableAgents();
     // agent 列表在对端连接/上报后会刷新，这里跟随刷新。
     _peerListSub = PeerConnectionManager.instance.peerListChanged.listen((_) {
       _refreshConnectionState();
@@ -83,6 +91,38 @@ class _PeerSettingsScreenState extends State<PeerSettingsScreen> {
       }
     } catch (_) {
       if (mounted) setState(() => _agentsLoading = false);
+    }
+  }
+
+  /// 加载本机可分享的 agent（允许外部访问）及当前对该设备的分享决定。
+  Future<void> _loadShareableAgents() async {
+    try {
+      final all = await getIt<LocalDatabaseService>().getAllRemoteAgents();
+      final shareable = all
+          .where((a) => a.isLocal && a.allowExternalAccess)
+          .toList()
+        ..sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
+      final decisions = await PeerStorageService().getAgentShares(widget.peer.id);
+      if (mounted) {
+        setState(() {
+          _shareableAgents = shareable;
+          _shareDecisions = decisions;
+          _shareLoading = false;
+        });
+      }
+    } catch (_) {
+      if (mounted) setState(() => _shareLoading = false);
+    }
+  }
+
+  /// 切换某个本机 agent 是否分享给该设备，并把最新列表推送给对端。
+  Future<void> _toggleShare(RemoteAgent agent, bool shared) async {
+    setState(() => _shareDecisions[agent.id] = shared);
+    await PeerStorageService().setAgentShare(widget.peer.id, agent.id, shared);
+    // 设备在线时立即同步，使对端即时增删该 agent。
+    if (PeerConnectionManager.instance.getPeerState(widget.peer.id) ==
+        PeerConnectionState.connected) {
+      await PeerAgentHostService.instance.pushAgentList(widget.peer.id);
     }
   }
 
@@ -252,6 +292,10 @@ class _PeerSettingsScreenState extends State<PeerSettingsScreen> {
 
           const SizedBox(height: 16),
 
+          _buildShareSection(context),
+
+          const SizedBox(height: 16),
+
           _buildAgentsSection(context),
 
           const SizedBox(height: 16),
@@ -269,10 +313,10 @@ class _PeerSettingsScreenState extends State<PeerSettingsScreen> {
                 title: const Text('外网中继'),
                 subtitle: Text(widget.peer.channelEndpoint!),
               ),
-            ListTile(
-              leading: const Icon(Icons.lock),
-              title: const Text('加密方式'),
-              subtitle: const Text('Noise IK (X25519 + ChaCha20-Poly1305)'),
+            const ListTile(
+              leading: Icon(Icons.lock),
+              title: Text('加密方式'),
+              subtitle: Text('Noise IK (X25519 + ChaCha20-Poly1305)'),
             ),
           ]),
 
@@ -310,6 +354,88 @@ class _PeerSettingsScreenState extends State<PeerSettingsScreen> {
           const SizedBox(height: 32),
         ],
       ),
+    );
+  }
+
+  /// 分享给该设备的本机 agent（仅列出已开启「允许外部访问」的 agent）。
+  Widget _buildShareSection(BuildContext context) {
+    final List<Widget> children;
+    if (_shareLoading) {
+      children = const [
+        Padding(
+          padding: EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+          child: SizedBox(
+            width: 18,
+            height: 18,
+            child: CircularProgressIndicator(strokeWidth: 2),
+          ),
+        ),
+      ];
+    } else if (_shareableAgents.isEmpty) {
+      children = [
+        ListTile(
+          leading: Icon(Icons.ios_share, color: Colors.grey[400]),
+          title: Text(
+            '暂无可分享的 Agent',
+            style: TextStyle(color: Colors.grey[600]),
+          ),
+          subtitle: Text(
+            '在 Agent 设置中开启「允许外部访问」后即可在此分享给该设备',
+            style: TextStyle(color: Colors.grey[500], fontSize: 12),
+          ),
+        ),
+      ];
+    } else {
+      children = _shareableAgents.map(_buildShareTile).toList();
+    }
+
+    final sharedCount =
+        _shareableAgents.where((a) => _shareDecisions[a.id] == true).length;
+    return _buildSection(
+      context,
+      '分享给此设备的 Agent${_shareableAgents.isNotEmpty ? ' ($sharedCount/${_shareableAgents.length})' : ''}',
+      children,
+    );
+  }
+
+  Widget _buildShareTile(RemoteAgent agent) {
+    final shared = _shareDecisions[agent.id] == true;
+    return SwitchListTile(
+      secondary: Container(
+        width: 40,
+        height: 40,
+        decoration: BoxDecoration(
+          color: Colors.indigo[50],
+          borderRadius: BorderRadius.circular(10),
+        ),
+        clipBehavior: Clip.antiAlias,
+        alignment: Alignment.center,
+        child: _buildShareAgentAvatar(agent.avatar),
+      ),
+      title: Text(agent.name),
+      subtitle: (agent.bio != null && agent.bio!.isNotEmpty)
+          ? Text(agent.bio!, maxLines: 1, overflow: TextOverflow.ellipsis)
+          : null,
+      value: shared,
+      onChanged: (v) => _toggleShare(agent, v),
+    );
+  }
+
+  Widget _buildShareAgentAvatar(String avatar) {
+    final isPath = (avatar.startsWith('/') && !avatar.startsWith('http')) ||
+        avatar.startsWith('http') ||
+        AvatarImage.isAsset(avatar);
+    if (isPath) {
+      return AvatarImage(
+        avatar: avatar,
+        size: 40,
+        borderRadius: 10,
+        fallback: const Icon(Icons.smart_toy_outlined),
+      );
+    }
+    return Text(
+      avatar.isNotEmpty ? avatar : '🤖',
+      style: const TextStyle(fontSize: 20),
     );
   }
 

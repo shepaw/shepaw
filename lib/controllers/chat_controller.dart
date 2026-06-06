@@ -23,6 +23,9 @@ import '../services/workflow/workflow_service.dart';
 import '../models/workflow_models.dart';
 import '../peer/services/peer_agent_host_service.dart' show isPeerAgentChannel;
 import '../peer/services/peer_storage_service.dart';
+import '../peer/services/peer_connection_manager.dart';
+import '../peer/services/peer_connection.dart' show PeerConnectionEvent;
+import '../peer/models/paired_peer.dart' show PeerConnectionState;
 import 'chat_events.dart';
 
 // ChatEvent 及其全部子类已拆分到 chat_events.dart，这里重新导出，
@@ -86,6 +89,13 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
   bool isAgentOnline = false;
   bool isCheckingHealth = true;
   Timer? _healthCheckTimer;
+
+  /// 当前 agent 若来自配对设备（peer agent），记录其来源 peerId。其在线状态跟随
+  /// 该设备的 P2P 连接状态，而非普通的健康轮询；为 null 表示非 peer agent。
+  String? _agentSourcePeerId;
+
+  /// peer 连接状态变化订阅，用于让 peer agent 的在线状态实时跟随设备上/下线。
+  StreamSubscription<PeerConnectionEvent>? _peerConnSub;
 
   // ---- Reply state ----
   Message? replyingToMessage;
@@ -313,6 +323,12 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
     _healthCheckTimer = Timer.periodic(const Duration(seconds: 10), (_) {
       refreshAgentStatus();
     });
+    // peer agent 的在线状态需实时跟随来源设备上/下线，不能只靠 10s 轮询。
+    _peerConnSub = PeerConnectionManager.instance.events.listen((event) {
+      if (_agentSourcePeerId != null && event.peerId == _agentSourcePeerId) {
+        refreshAgentStatus();
+      }
+    });
   }
 
   @override
@@ -324,6 +340,7 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
     }
     messageQueue.clear();
     _healthCheckTimer?.cancel();
+    _peerConnSub?.cancel();
     if (currentChannelId != null) {
       chatService.closeChannelStream(currentChannelId!);
     }
@@ -489,7 +506,11 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
 
       // Detect group mode & resolve agent info from channel metadata
       final channel = await localDatabaseService.getChannelById(currentChannelId!);
-      sourceDeviceLabel = channel != null ? await _resolveSourceDeviceLabel(channel) : null;
+      // channel 已落库时按 channel 解析；全新会话（channel 尚未持久化）回退到
+      // 构造参数 agentId，确保 peer agent 首次对话也能展示来源设备标签。
+      sourceDeviceLabel = channel != null
+          ? await _resolveSourceDeviceLabel(channel)
+          : await _resolveClientPeerAgentDeviceLabel(null);
       if (channel != null && channel.isGroup) {
         isGroupMode = true;
         groupChannel = channel;
@@ -556,12 +577,24 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
 
   /// 解析当前会话的来源设备标签。
   ///
-  /// 仅对本机作为 host 的入站 peer 会话（`peer__{peerId}__{agentId}`）有效：
-  /// 从 channel 成员中取出 `peer:{peerId}` 成员，按 peerId 查配对设备名；查不到
-  /// 时回退到 channel 名称中 `← ` 之后的部分；都没有则返回 null。
+  /// 覆盖两类「来自配对设备」的会话：
+  /// - **Host 侧入站会话**（`peer__{peerId}__{agentId}`）：从 channel 成员中取出
+  ///   `peer:{peerId}` 成员，按 peerId 查配对设备名；查不到时回退到 channel 名称中
+  ///   `← ` 之后的部分。
+  /// - **Client 侧访问对端分享的 agent**（普通 `dm_` channel，agent 为 peer 类型）：
+  ///   从 agent 成员对应的 [RemoteAgent.sourcePeerId] 实时查配对设备名，回退到
+  ///   [RemoteAgent.sourcePeerName] 快照。
+  ///
+  /// 都解析不到时返回 null。
   Future<String?> _resolveSourceDeviceLabel(Channel channel) async {
-    if (!isPeerAgentChannel(channel.id)) return null;
+    if (isPeerAgentChannel(channel.id)) {
+      return _resolveHostInboundDeviceLabel(channel);
+    }
+    return _resolveClientPeerAgentDeviceLabel(channel);
+  }
 
+  /// Host 侧：本机被某配对设备访问时的入站会话来源设备名。
+  Future<String?> _resolveHostInboundDeviceLabel(Channel channel) async {
     String? peerId;
     for (final m in channel.members) {
       if (m.id.startsWith('peer:')) {
@@ -570,14 +603,8 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
       }
     }
 
-    if (peerId != null) {
-      try {
-        final peers = await PeerStorageService().loadAllPeers();
-        for (final p in peers) {
-          if (p.id == peerId && p.deviceName.isNotEmpty) return p.deviceName;
-        }
-      } catch (_) {}
-    }
+    final byId = await _peerDeviceNameById(peerId);
+    if (byId != null) return byId;
 
     // 回退：channel 名称形如 `Agent 名 ← 设备名`
     const sep = ' ← ';
@@ -586,6 +613,44 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
       final label = channel.name.substring(idx + sep.length).trim();
       if (label.isNotEmpty) return label;
     }
+    return null;
+  }
+
+  /// Client 侧：当前 DM 会话访问的是对端分享的 peer agent 时的来源设备名。
+  Future<String?> _resolveClientPeerAgentDeviceLabel(Channel? channel) async {
+    // 优先用 channel 中的 agent 成员；取不到时回退到构造参数 agentId。
+    String? targetAgentId = agentId;
+    final agentMembers =
+        channel?.members.where((m) => m.isAgent).toList() ?? const [];
+    if (agentMembers.isNotEmpty) {
+      targetAgentId = agentMembers.first.id;
+    }
+    if (targetAgentId == null) return null;
+
+    try {
+      final agent = await localDatabaseService.getRemoteAgentById(targetAgentId);
+      if (agent == null || !agent.isPeerAgent) return null;
+
+      // 优先用 sourcePeerId 实时查配对设备名（设备改名后能跟随更新）。
+      final byId = await _peerDeviceNameById(agent.sourcePeerId);
+      if (byId != null) return byId;
+
+      // 回退：agent metadata 中的设备名快照。
+      final snapshot = agent.sourcePeerName;
+      if (snapshot != null && snapshot.isNotEmpty) return snapshot;
+    } catch (_) {}
+    return null;
+  }
+
+  /// 按 peerId 查配对设备的显示名；查不到或为空时返回 null。
+  Future<String?> _peerDeviceNameById(String? peerId) async {
+    if (peerId == null || peerId.isEmpty) return null;
+    try {
+      final peers = await PeerStorageService().loadAllPeers();
+      for (final p in peers) {
+        if (p.id == peerId && p.deviceName.isNotEmpty) return p.deviceName;
+      }
+    } catch (_) {}
     return null;
   }
 
@@ -614,7 +679,18 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
     try {
       final agent = await localDatabaseService.getAgentById(agentId!);
       if (agent != null) {
-        isAgentOnline = agent.status.isOnline;
+        if (agent.isPeerAgent) {
+          // peer agent 通过 P2P 隧道访问对端本地 agent，其可用性完全取决于来源
+          // 配对设备是否在线，因此在线状态直接跟随该设备的连接状态。
+          _agentSourcePeerId = agent.sourcePeerId;
+          final peerId = agent.sourcePeerId;
+          isAgentOnline = peerId != null &&
+              PeerConnectionManager.instance.getPeerState(peerId) ==
+                  PeerConnectionState.connected;
+        } else {
+          _agentSourcePeerId = null;
+          isAgentOnline = agent.status.isOnline;
+        }
         isCheckingHealth = false;
         _notify();
       }

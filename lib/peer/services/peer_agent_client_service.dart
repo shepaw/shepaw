@@ -9,12 +9,15 @@
 library;
 
 import 'dart:async';
+import 'dart:convert';
+import 'dart:io';
 
 import 'package:uuid/uuid.dart';
 
 import '../../models/remote_agent.dart';
 import '../../services/acp_agent_connection.dart';
 import '../../services/local_database_service.dart';
+import '../../services/local_file_storage_service.dart';
 import '../../services/logger_service.dart';
 import '../../service_locator.dart' show getIt;
 import 'peer_connection.dart' show PeerConnectionEvent, PeerConnectionEventType;
@@ -54,6 +57,7 @@ class PeerAgentClientService {
   final Map<String, _PendingRequest> _pending = {};
 
   LocalDatabaseService get _db => getIt<LocalDatabaseService>();
+  final _fileStorage = LocalFileStorageService();
 
   Future<void> start() async {
     if (_running) return;
@@ -213,11 +217,12 @@ class PeerAgentClientService {
         final localId = peerAgentLocalId(peerId, remoteId);
         final existing = await _db.getRemoteAgentById(localId);
         final capabilities = (raw['capabilities'] as List?)?.cast<String>() ?? const [];
+        final avatar = await _resolvePeerAvatar(raw, existing);
 
         final agent = RemoteAgent(
           id: localId,
           name: raw['name'] as String? ?? 'Agent',
-          avatar: raw['avatar'] as String? ?? '🤖',
+          avatar: avatar,
           bio: raw['bio'] as String?,
           token: '',
           endpoint: 'peer://$peerId/$remoteId',
@@ -230,6 +235,9 @@ class PeerAgentClientService {
             'source_peer_id': peerId,
             'source_peer_name': peerName,
             'remote_agent_id': remoteId,
+            // 保留本地头像自定义标记，使其在每次同步后依然生效。
+            if (existing?.metadata['avatar_overridden'] == true)
+              'avatar_overridden': true,
           },
           createdAt: existing?.createdAt ?? now,
           updatedAt: now,
@@ -250,6 +258,54 @@ class PeerAgentClientService {
     } catch (e) {
       _log.warning('Failed to inject peer agents: $e', tag: _tag);
     }
+  }
+
+  /// 解析对端 agent 的头像值，落地为本地可展示的形式。
+  ///
+  /// - 对端附带了图片字节（`avatar_data`）：解码后写入本地存储，返回其绝对路径；
+  ///   若该 peer agent 此前已有本地头像文件，则原地覆盖以保持路径稳定、避免堆积。
+  /// - 无字节：直接用 `avatar` 字符串（emoji / asset / 网络 URL 可在本端解析）；
+  ///   但若它是对端的本机绝对路径，本端无法访问，回退到默认 emoji。
+  Future<String> _resolvePeerAvatar(Map raw, RemoteAgent? existing) async {
+    // 本地已自定义该 peer agent 头像 → 以本地为准，忽略对端分享的头像。
+    final existingAvatar = existing?.avatar;
+    if (existing?.metadata['avatar_overridden'] == true &&
+        existingAvatar != null &&
+        existingAvatar.isNotEmpty) {
+      return existingAvatar;
+    }
+
+    final data = raw['avatar_data'] as String?;
+    if (data != null && data.isNotEmpty) {
+      try {
+        final bytes = base64Decode(data);
+        final ext = (raw['avatar_ext'] as String?)?.trim();
+        // 复用已有本地文件（须真实存在，避免误用早期存下的对端绝对路径），原地
+        // 覆盖以保持路径稳定、避免每次重连都堆积新文件。
+        if (existingAvatar != null &&
+            existingAvatar.startsWith('/') &&
+            !existingAvatar.startsWith('http')) {
+          final f = File(existingAvatar);
+          if (await f.exists()) {
+            await f.writeAsBytes(bytes, flush: true);
+            return existingAvatar;
+          }
+        }
+        final rel = await _fileStorage.saveImageBytes(
+          bytes,
+          (ext != null && ext.isNotEmpty) ? ext : 'png',
+        );
+        return await _fileStorage.getFullPath(rel);
+      } catch (e) {
+        _log.warning('Failed to persist peer avatar: $e', tag: _tag);
+        // 落地失败则继续走下面的字符串回退。
+      }
+    }
+
+    final avatar = raw['avatar'] as String? ?? '🤖';
+    // 对端的本机绝对路径在本端不存在，回退默认 emoji。
+    if (avatar.startsWith('/') && !avatar.startsWith('http')) return '🤖';
+    return avatar.isEmpty ? '🤖' : avatar;
   }
 
   Future<void> _markPeerAgentsOffline(String peerId) async {
