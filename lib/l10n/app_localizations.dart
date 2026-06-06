@@ -5411,7 +5411,7 @@ abstract class AppLocalizations {
   /// No description provided for @she_name.
   ///
   /// In zh, this message translates to:
-  /// **'惜宝'**
+  /// **'惜'**
   String get she_name;
 
   /// No description provided for @she_bio.

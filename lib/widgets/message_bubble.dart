@@ -595,7 +595,7 @@ class MessageBubble extends StatelessWidget {
   }
 
   String _getAvatar() {
-    // She 专属头像（系统 logo，由 _buildAvatarWidget 渲染为图片）
+    // She 专属头像（灵宠形象，由 _buildAvatarWidget 渲染为图片）
     if (message.from.id == SheService.sheId) {
       return '🐱';
     }
@@ -624,7 +624,7 @@ class MessageBubble extends StatelessWidget {
 
   /// 根据 [senderAvatar] 决定渲染图片还是 emoji 文字。
   Widget _buildAvatarWidget() {
-    // She 专属头像：系统 logo（橘猫）
+    // She 专属头像：橘猫灵宠形象
     if (message.from.id == SheService.sheId) {
       return AvatarImage(
         avatar: SheService.sheAvatar,

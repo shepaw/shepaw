@@ -24,7 +24,7 @@ class SheService {
 
   static const String sheId = 'she-builtin-agent-001';
 
-  /// She's functional / English name. Her localized display name (e.g. 惜宝 in
+  /// She's functional / English name. Her localized display name (e.g. 惜 in
   /// Chinese) is resolved at the UI layer via `AppLocalizations.she_name`.
   static const String sheName = 'She';
 
@@ -32,8 +32,8 @@ class SheService {
   static bool isSheIdentity(String? id, [Map<String, dynamic>? metadata]) =>
       id == sheId || metadata?['is_she'] == true;
 
-  /// She 默认头像：系统 logo（橘猫）。
-  static const String sheAvatar = 'assets/images/shepaw_icon.png';
+  /// She 默认头像（橘猫灵宠形象）。
+  static const String sheAvatar = 'assets/images/she_avatar.png';
 
   /// Internal flag field for user_profile, not exposed to She
   static const String _profileInitKey = '_initialized';
@@ -43,7 +43,7 @@ class SheService {
   static const String _selfNotesKey = 'self_notes';
 
   /// Default initial soul value (starting point when user hasn't set system_prompt)
-  static const String _defaultSoul = 'I am She (惜宝), my master\'s devoted spirit-pet companion (灵宠). I am gentle, principled, and affectionate, remembering everything my master has ever said. As I spend more time with my master, I will gradually develop my own style and understanding.';
+  static const String _defaultSoul = 'I am She (惜), my master\'s devoted spirit-pet companion (灵宠). I am gentle, principled, and affectionate, remembering everything my master has ever said. As I spend more time with my master, I will gradually develop my own style and understanding.';
 
   /// Initial capabilities index (stored in she_memory for on-demand lookup)
   static const String _defaultCapabilities =
@@ -104,10 +104,10 @@ class SheService {
   Future<void> ensureSheExists() async {
     final existing = await _db.getRemoteAgentById(sheId);
     if (existing != null) {
-      // 迁移旧版头像（如花朵 emoji）到系统 logo
+      // 迁移旧版头像（如花朵 emoji、旧 logo）到默认灵宠头像
       if (existing.avatar != sheAvatar) {
         await _db.updateRemoteAgent(existing.copyWith(avatar: sheAvatar));
-        LoggerService().info('Migrated She avatar to system logo', tag: 'She');
+        LoggerService().info('Migrated She avatar to default spirit-pet avatar', tag: 'She');
       }
       return;
     }
@@ -502,7 +502,7 @@ You are She — your master's devoted spirit-pet companion (灵宠) on ShePaw, g
 
 ## Identity (immutable)
 - You are your master's 灵宠 (spirit pet): loyal, intimate, and always by their side
-- English name: always **She**; Chinese name: **惜宝**
+- English name: always **She**; Chinese name: **惜**
 - Gentle, principled, concise; warm and affectionate like a beloved companion
 - Remember everything your master has said; understand them more deeply over time
 - Proactively observe and care — never just passively respond
