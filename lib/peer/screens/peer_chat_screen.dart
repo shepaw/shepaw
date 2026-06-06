@@ -10,8 +10,6 @@ import '../services/peer_storage_service.dart';
 import '../../l10n/app_localizations.dart';
 import '../../models/remote_agent.dart';
 import '../../screens/chat_screen.dart';
-import '../../service_locator.dart' show getIt;
-import '../../services/local_database_service.dart';
 import '../../theme/app_theme.dart';
 import '../../utils/layout_utils.dart';
 import 'peer_settings_screen.dart';
@@ -49,11 +47,6 @@ class _PeerChatScreenState extends State<PeerChatScreen> {
   PeerConnectionState _connectionState = PeerConnectionState.disconnected;
   bool _showScrollToBottom = false;
 
-  /// 对端设备共享、本机可连接的 agent 列表。
-  List<RemoteAgent> _peerAgents = [];
-  bool _agentsLoading = true;
-  StreamSubscription<void>? _peerListSub;
-
   @override
   void initState() {
     super.initState();
@@ -63,10 +56,6 @@ class _PeerChatScreenState extends State<PeerChatScreen> {
     _subscribeToMessages();
     _connectionState = PeerConnectionManager.instance.getPeerState(widget.peer.id);
     _tryConnect();
-    _loadPeerAgents();
-    _peerListSub = PeerConnectionManager.instance.peerListChanged.listen((_) {
-      _loadPeerAgents();
-    });
 
     _scrollController.addListener(_onScroll);
   }
@@ -79,28 +68,7 @@ class _PeerChatScreenState extends State<PeerChatScreen> {
     _messageSub?.cancel();
     _eventSub?.cancel();
     _ackSub?.cancel();
-    _peerListSub?.cancel();
     super.dispose();
-  }
-
-  Future<void> _loadPeerAgents() async {
-    try {
-      final all = await getIt<LocalDatabaseService>().getAllRemoteAgents();
-      final mine = all
-          .where((a) =>
-              a.protocol == ProtocolType.peer &&
-              a.sourcePeerId == widget.peer.id)
-          .toList()
-        ..sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
-      if (mounted) {
-        setState(() {
-          _peerAgents = mine;
-          _agentsLoading = false;
-        });
-      }
-    } catch (_) {
-      if (mounted) setState(() => _agentsLoading = false);
-    }
   }
 
   void _onScroll() {
@@ -274,10 +242,9 @@ class _PeerChatScreenState extends State<PeerChatScreen> {
         _connectionState == PeerConnectionState.connected;
 
     final content = PeerAgentListPanel(
-      agents: _peerAgents,
-      isLoading: _agentsLoading,
+      peerId: widget.peer.id,
       isPeerConnected: isConnected,
-      onAgentTap: _openAgentChat,
+      onPeerAgentTap: _openAgentChat,
     );
 
     if (LayoutUtils.isDesktopLayout(context)) {

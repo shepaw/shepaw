@@ -6788,6 +6788,18 @@ abstract class AppLocalizations {
   /// **'共享 Agent'**
   String get peerChat_agentList;
 
+  /// No description provided for @peerChat_tabFromPeerCount.
+  ///
+  /// In zh, this message translates to:
+  /// **'对方分享 ({count})'**
+  String peerChat_tabFromPeerCount(int count);
+
+  /// No description provided for @peerChat_tabSharedByMeCount.
+  ///
+  /// In zh, this message translates to:
+  /// **'我分享的 ({count})'**
+  String peerChat_tabSharedByMeCount(int count);
+
   /// No description provided for @peerChat_yesterday.
   ///
   /// In zh, this message translates to:

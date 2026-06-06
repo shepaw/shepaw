@@ -1574,6 +1574,22 @@
   "peerChat_statusConnecting": "Connecting...",
   "peerChat_statusOffline": "Offline",
   "peerChat_agentList": "Shared Agents",
+  "peerChat_tabFromPeerCount": "From Peer ({count})",
+  "@peerChat_tabFromPeerCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "peerChat_tabSharedByMeCount": "Shared by Me ({count})",
+  "@peerChat_tabSharedByMeCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
   "peerChat_yesterday": "Yesterday {time}",
   "@peerChat_yesterday": {
     "placeholders": {

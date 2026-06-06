@@ -2059,6 +2059,22 @@
   "peerChat_statusConnecting": "连接中...",
   "peerChat_statusOffline": "离线",
   "peerChat_agentList": "共享 Agent",
+  "peerChat_tabFromPeerCount": "对方分享 ({count})",
+  "@peerChat_tabFromPeerCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "peerChat_tabSharedByMeCount": "我分享的 ({count})",
+  "@peerChat_tabSharedByMeCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
   "peerChat_yesterday": "昨天 {time}",
   "@peerChat_yesterday": {
     "placeholders": {

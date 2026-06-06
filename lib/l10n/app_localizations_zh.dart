@@ -3647,6 +3647,16 @@ class AppLocalizationsZh extends AppLocalizations {
   String get peerChat_agentList => '共享 Agent';
 
   @override
+  String peerChat_tabFromPeerCount(int count) {
+    return '对方分享 ($count)';
+  }
+
+  @override
+  String peerChat_tabSharedByMeCount(int count) {
+    return '我分享的 ($count)';
+  }
+
+  @override
   String peerChat_yesterday(String time) {
     return '昨天 $time';
   }

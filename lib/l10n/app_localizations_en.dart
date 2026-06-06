@@ -3789,6 +3789,16 @@ class AppLocalizationsEn extends AppLocalizations {
   String get peerChat_agentList => 'Shared Agents';
 
   @override
+  String peerChat_tabFromPeerCount(int count) {
+    return 'From Peer ($count)';
+  }
+
+  @override
+  String peerChat_tabSharedByMeCount(int count) {
+    return 'Shared by Me ($count)';
+  }
+
+  @override
   String peerChat_yesterday(String time) {
     return 'Yesterday $time';
   }
