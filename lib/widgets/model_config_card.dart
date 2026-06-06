@@ -37,7 +37,7 @@ class ModelConfigCard extends StatelessWidget {
             // Header
             Row(
               children: [
-                Icon(Icons.hub, size: 18, color: colorScheme.primary),
+                Icon(Icons.psychology, size: 18, color: colorScheme.primary),
                 const SizedBox(width: 8),
                 Text(
                   l10n.toolModel_configTitle,

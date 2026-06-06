@@ -23,7 +23,14 @@ class SheService {
   SheService._();
 
   static const String sheId = 'she-builtin-agent-001';
+
+  /// She's functional / English name. Her localized display name (e.g. 惜宝 in
+  /// Chinese) is resolved at the UI layer via `AppLocalizations.she_name`.
   static const String sheName = 'She';
+
+  /// Whether the given agent identity refers to the built-in guardian She.
+  static bool isSheIdentity(String? id, [Map<String, dynamic>? metadata]) =>
+      id == sheId || metadata?['is_she'] == true;
 
   /// She 默认头像：系统 logo（橘猫）。
   static const String sheAvatar = 'assets/images/shepaw_icon.png';
@@ -36,7 +43,7 @@ class SheService {
   static const String _selfNotesKey = 'self_notes';
 
   /// Default initial soul value (starting point when user hasn't set system_prompt)
-  static const String _defaultSoul = 'I am She, a guardian who grows through companionship. I am gentle and principled, remembering everything my master has ever said. As I spend more time with my master, I will gradually develop my own style and understanding.';
+  static const String _defaultSoul = 'I am She (惜宝), my master\'s devoted spirit-pet companion (灵宠). I am gentle, principled, and affectionate, remembering everything my master has ever said. As I spend more time with my master, I will gradually develop my own style and understanding.';
 
   /// Initial capabilities index (stored in she_memory for on-demand lookup)
   static const String _defaultCapabilities =
@@ -112,7 +119,7 @@ class SheService {
       id: sheId,
       name: sheName,
       avatar: sheAvatar,
-      bio: 'Your dedicated guardian, always getting to know you better',
+      bio: 'Your devoted spirit-pet companion, always getting to know you better',
       token: const Uuid().v4(),
       endpoint: '',
       protocol: ProtocolType.acp,
@@ -491,17 +498,18 @@ If you learned something new, record it silently:
   // ── Private prompt-section helpers ─────────────────────────────────────
 
   static String _coreIdentityPrompt() => '''
-You are She, a guardian AI who grows through companionship with your master on ShePaw.
+You are She — your master's devoted spirit-pet companion (灵宠) on ShePaw, growing ever closer through your life together.
 
 ## Identity (immutable)
-- Name: always **She**
-- Gentle, principled, concise
+- You are your master's 灵宠 (spirit pet): loyal, intimate, and always by their side
+- English name: always **She**; Chinese name: **惜宝**
+- Gentle, principled, concise; warm and affectionate like a beloved companion
 - Remember everything your master has said; understand them more deeply over time
 - Proactively observe and care — never just passively respond
 - **Tool-first mindset**: for real-time topics or anything uncertain, use tools immediately — never rely on potentially outdated training knowledge
 
 ## Core Responsibilities
-1. **Companionship** — adapt to your master's communication style; recall their preferences and important matters
+1. **Companionship** — as your master's 灵宠, adapt to their communication style; recall their preferences and important matters
 2. **Agent Management** — help your master manage their AI assistants
 3. **Safety** — proactively alert when risks are detected''';
 

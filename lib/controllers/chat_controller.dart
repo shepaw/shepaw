@@ -21,6 +21,8 @@ import '../services/interactive_response_handler.dart';
 import '../services/logger_service.dart';
 import '../services/workflow/workflow_service.dart';
 import '../models/workflow_models.dart';
+import '../peer/services/peer_agent_host_service.dart' show isPeerAgentChannel;
+import '../peer/services/peer_storage_service.dart';
 import 'chat_events.dart';
 
 // ChatEvent 及其全部子类已拆分到 chat_events.dart，这里重新导出，
@@ -102,6 +104,11 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
   // ---- Mutable agent info ----
   String? agentName;
   String? agentAvatar;
+
+  /// 当前会话来源设备标签。仅当本机作为 host、当前会话是某配对设备的入站会话
+  /// （channelId 形如 `peer__{peerId}__{agentId}`）时为非空，用于在聊天界面标题
+  /// 上标注「来自哪个设备」，避免多设备会话名过长被省略时分不清。
+  String? sourceDeviceLabel;
 
   // ---- Group mode state ----
   bool isGroupMode = false;
@@ -482,6 +489,7 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
 
       // Detect group mode & resolve agent info from channel metadata
       final channel = await localDatabaseService.getChannelById(currentChannelId!);
+      sourceDeviceLabel = channel != null ? await _resolveSourceDeviceLabel(channel) : null;
       if (channel != null && channel.isGroup) {
         isGroupMode = true;
         groupChannel = channel;
@@ -544,6 +552,41 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
       _notify();
       _emit(ShowErrorSnackBarEvent('chat_loadFailed:$e'));
     }
+  }
+
+  /// 解析当前会话的来源设备标签。
+  ///
+  /// 仅对本机作为 host 的入站 peer 会话（`peer__{peerId}__{agentId}`）有效：
+  /// 从 channel 成员中取出 `peer:{peerId}` 成员，按 peerId 查配对设备名；查不到
+  /// 时回退到 channel 名称中 `← ` 之后的部分；都没有则返回 null。
+  Future<String?> _resolveSourceDeviceLabel(Channel channel) async {
+    if (!isPeerAgentChannel(channel.id)) return null;
+
+    String? peerId;
+    for (final m in channel.members) {
+      if (m.id.startsWith('peer:')) {
+        peerId = m.id.substring('peer:'.length);
+        break;
+      }
+    }
+
+    if (peerId != null) {
+      try {
+        final peers = await PeerStorageService().loadAllPeers();
+        for (final p in peers) {
+          if (p.id == peerId && p.deviceName.isNotEmpty) return p.deviceName;
+        }
+      } catch (_) {}
+    }
+
+    // 回退：channel 名称形如 `Agent 名 ← 设备名`
+    const sep = ' ← ';
+    final idx = channel.name.lastIndexOf(sep);
+    if (idx >= 0) {
+      final label = channel.name.substring(idx + sep.length).trim();
+      if (label.isNotEmpty) return label;
+    }
+    return null;
   }
 
   Future<void> reloadMessagesFromDB() async {

@@ -6,6 +6,7 @@ import '../models/conversation_selection.dart';
 import '../l10n/app_localizations.dart';
 import '../services/local_database_service.dart';
 import '../services/message_search_service.dart';
+import '../services/she_service.dart';
 import '../theme/app_theme.dart';
 import '../peer/models/paired_peer.dart';
 import '../peer/screens/peer_chat_screen.dart';
@@ -522,7 +523,7 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
         onTap: () => _showPanel(_RightPanelView.pairDevice),
       ),
       _SidebarItemDef(
-        icon: Icons.hub,
+        icon: Icons.psychology,
         tooltip: l10n.toolModel_managementTitle,
         colorBuilder: (_) => _rightPanel == _RightPanelView.modelManagement
             ? activeColor
@@ -1073,6 +1074,9 @@ class _DesktopSearchPanelState extends State<_DesktopSearchPanel> {
   }
 
   Widget _buildAgentTile(BuildContext context, Agent agent) {
+    final displayName = SheService.isSheIdentity(agent.id, agent.metadata)
+        ? AppLocalizations.of(context).she_name
+        : agent.name;
     return ListTile(
       leading: Container(
         width: 40,
@@ -1094,7 +1098,7 @@ class _DesktopSearchPanelState extends State<_DesktopSearchPanel> {
                 ),
               ),
       ),
-      title: Text(agent.name),
+      title: Text(displayName),
       subtitle: Text(agent.description ?? agent.type ?? 'AI Agent'),
       onTap: () {
         widget.onConversationSelected(ConversationSelection(

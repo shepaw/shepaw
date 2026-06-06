@@ -9,7 +9,7 @@ class AppLocalizationsZh extends AppLocalizations {
   AppLocalizationsZh([String locale = 'zh']) : super(locale);
 
   @override
-  String get appTitle => '希宝';
+  String get appTitle => '惜宝';
 
   @override
   String get appVersion => 'ShePaw v1.0.0';
@@ -2824,7 +2824,10 @@ class AppLocalizationsZh extends AppLocalizations {
   String get she_pinned_label => '置顶';
 
   @override
-  String get she_bio => '你的专属守护者';
+  String get she_name => '惜宝';
+
+  @override
+  String get she_bio => '主人的专属灵宠';
 
   @override
   String get settings_userProfile => '个人档案';

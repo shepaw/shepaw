@@ -101,7 +101,7 @@ abstract class AppLocalizations {
   /// No description provided for @appTitle.
   ///
   /// In zh, this message translates to:
-  /// **'希宝'**
+  /// **'惜宝'**
   String get appTitle;
 
   /// No description provided for @appVersion.
@@ -5222,10 +5222,16 @@ abstract class AppLocalizations {
   /// **'置顶'**
   String get she_pinned_label;
 
+  /// No description provided for @she_name.
+  ///
+  /// In zh, this message translates to:
+  /// **'惜宝'**
+  String get she_name;
+
   /// No description provided for @she_bio.
   ///
   /// In zh, this message translates to:
-  /// **'你的专属守护者'**
+  /// **'主人的专属灵宠'**
   String get she_bio;
 
   /// No description provided for @settings_userProfile.

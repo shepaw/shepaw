@@ -456,7 +456,7 @@ class _SkillManagementScreenState extends State<SkillManagementScreen> {
           if (skills.isEmpty)
             _buildEmptyState(
               context,
-              icon: Icons.auto_stories_outlined,
+              icon: Icons.auto_awesome_outlined,
               message: l10n.skillMgmt_noSkills,
               hint: l10n.skillMgmt_noSkillsHint,
             )
@@ -535,7 +535,7 @@ class _SkillManagementScreenState extends State<SkillManagementScreen> {
           children: [
             Row(
               children: [
-                Icon(Icons.auto_stories, size: 20, color: colorScheme.primary),
+                Icon(Icons.auto_awesome, size: 20, color: colorScheme.primary),
                 const SizedBox(width: 8),
                 Expanded(
                   child: Text(

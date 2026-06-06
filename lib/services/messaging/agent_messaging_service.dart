@@ -1024,8 +1024,9 @@ class AgentMessagingService {
   /// Send message via the P2P peer channel to a paired device's local agent.
   ///
   /// 消费方路径：把用户消息通过 [PeerAgentClientService] 经已配对设备的加密
-  /// 通道转发给对端，对端用自己的本地 agent 执行并流式回传文本。对端维护多轮
-  /// 上下文（按来源设备隔离的隐藏会话），因此这里只发送当前这条消息。
+  /// 通道转发给对端，对端用自己的本地 agent 执行并流式回传文本。多轮上下文由
+  /// 对端按「来源设备 + 来源会话」隔离维护（本端会话 id 通过 sessionId 透传），
+  /// 因此这里只发送当前这条消息；本端新开会话会在对端得到对应的干净新会话。
   Future<Message?> _sendViaPeerProtocol(
     Message userMessage,
     RemoteAgent agent, {
@@ -1060,6 +1061,7 @@ class AgentMessagingService {
       peerId: peerId,
       remoteAgentId: remoteAgentId,
       message: userMessage.content,
+      sessionId: effectiveChannelId.isNotEmpty ? effectiveChannelId : null,
       cancelToken: acpCancellationToken,
       onChunk: (chunk) {
         activeTask.accumulatedContent += chunk;

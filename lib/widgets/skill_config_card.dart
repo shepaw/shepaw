@@ -36,7 +36,7 @@ class SkillConfigCard extends StatelessWidget {
             // Header
             Row(
               children: [
-                Icon(Icons.auto_stories, size: 18, color: colorScheme.primary),
+                Icon(Icons.auto_awesome, size: 18, color: colorScheme.primary),
                 const SizedBox(width: 8),
                 Text(
                   l10n.skill_configTitle,

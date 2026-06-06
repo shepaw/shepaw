@@ -10,6 +10,7 @@ import '../peer/services/peer_connection_manager.dart';
 import '../peer/services/peer_storage_service.dart';
 import '../services/local_api_service.dart';
 import '../services/local_database_service.dart';
+import '../services/she_service.dart';
 import '../services/logger_service.dart';
 import '../widgets/avatar_image.dart';
 import 'remote_agent_detail_screen.dart';
@@ -167,6 +168,9 @@ class _ContactsScreenState extends State<ContactsScreen>
   Widget _buildAgentTile(Agent agent) {
     final l10n = AppLocalizations.of(context);
     final isOnline = agent.status.isOnline;
+    final displayName = SheService.isSheIdentity(agent.id, agent.metadata)
+        ? l10n.she_name
+        : agent.name;
 
     return ListTile(
       leading: Stack(
@@ -211,7 +215,7 @@ class _ContactsScreenState extends State<ContactsScreen>
         ],
       ),
       title: Text(
-        agent.name,
+        displayName,
         style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w500),
       ),
       subtitle: agent.bio != null && agent.bio!.isNotEmpty

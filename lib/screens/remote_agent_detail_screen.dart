@@ -714,7 +714,7 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
         ),
         const SizedBox(height: 16),
         Text(
-          _agent.name,
+          _agent.isShe ? AppLocalizations.of(context).she_name : _agent.name,
           style: Theme.of(context).textTheme.headlineSmall?.copyWith(
                 fontWeight: FontWeight.bold,
               ),
@@ -947,7 +947,7 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
         side: BorderSide(color: colorScheme.outlineVariant),
       ),
       child: ExpansionTile(
-        leading: Icon(Icons.auto_stories, size: 18, color: colorScheme.primary),
+        leading: Icon(Icons.auto_awesome, size: 18, color: colorScheme.primary),
         title: Row(
           children: [
             Text(
@@ -1038,7 +1038,7 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
         side: BorderSide(color: colorScheme.outlineVariant),
       ),
       child: ExpansionTile(
-        leading: Icon(Icons.hub, size: 18, color: colorScheme.primary),
+        leading: Icon(Icons.psychology, size: 18, color: colorScheme.primary),
         title: Row(
           children: [
             Text(
@@ -1089,7 +1089,7 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
                     Padding(
                       padding: const EdgeInsets.only(top: 2),
                       child: Icon(
-                        Icons.hub,
+                        Icons.psychology,
                         size: 16,
                         color: colorScheme.onSurface,
                       ),
@@ -1530,7 +1530,7 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
       child: Column(
         children: [
           ListTile(
-            leading: Icon(Icons.auto_stories, color: colorScheme.primary),
+            leading: Icon(Icons.auto_awesome, color: colorScheme.primary),
             title: Text(l10n.skill_configTitle),
             subtitle: Text(
               _enabledSkills.isEmpty
@@ -1561,7 +1561,7 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
           ),
           const Divider(height: 1, indent: 16, endIndent: 16),
           ListTile(
-            leading: Icon(Icons.hub, color: colorScheme.primary),
+            leading: Icon(Icons.psychology, color: colorScheme.primary),
             title: Text(l10n.toolModel_configTitle),
             subtitle: Text(
               _toolModelScenarios.isEmpty

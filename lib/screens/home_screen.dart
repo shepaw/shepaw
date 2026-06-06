@@ -24,6 +24,7 @@ import '../services/model_registry.dart';
 import '../widgets/agent_search_delegate.dart';
 import '../widgets/avatar_image.dart';
 import '../services/message_search_service.dart';
+import '../services/she_service.dart';
 import '../l10n/app_localizations.dart';
 import '../theme/app_theme.dart';
 import '../providers/notification_provider.dart';
@@ -754,7 +755,7 @@ class HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateMi
                   ),
                   const Divider(),
                   ListTile(
-                    leading: const Icon(Icons.hub),
+                    leading: const Icon(Icons.psychology),
                     title: Text(l10n.toolModel_managementTitle),
                     subtitle: Text(
                       l10n.toolModel_count(ModelRegistry.instance.definitions.length),
@@ -1275,6 +1276,9 @@ class HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateMi
 
   Widget _buildAgentTile(Agent agent) {
     final l10n = AppLocalizations.of(context);
+    final displayName = SheService.isSheIdentity(agent.id, agent.metadata)
+        ? l10n.she_name
+        : agent.name;
     final latestMsg = _latestMessages[agent.id];
     final unreadCount = _unreadCounts[agent.id] ?? 0;
     final lastContent = latestMsg?['content'] as String? ?? '';
@@ -1350,7 +1354,7 @@ class HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateMi
                           children: [
                             Flexible(
                               child: Text(
-                                agent.name,
+                                displayName,
                                 style: const TextStyle(
                                   fontSize: 16,
                                   fontWeight: FontWeight.w500,

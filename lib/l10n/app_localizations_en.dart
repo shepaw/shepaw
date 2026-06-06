@@ -2930,7 +2930,10 @@ class AppLocalizationsEn extends AppLocalizations {
   String get she_pinned_label => 'Pinned';
 
   @override
-  String get she_bio => 'Your personal guardian';
+  String get she_name => 'She';
+
+  @override
+  String get she_bio => 'Your master\'s devoted spirit companion';
 
   @override
   String get settings_userProfile => 'Personal Profile';

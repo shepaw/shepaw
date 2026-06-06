@@ -1,6 +1,6 @@
 {
   "@@locale": "zh",
-  "appTitle": "希宝",
+  "appTitle": "惜宝",
   "appVersion": "ShePaw v1.0.0",
   "appDescription": "安全 AI Agent 管理平台",
   "common_cancel": "取消",
@@ -1661,7 +1661,8 @@
   "agent_channelNotConfigured": "未配置公网 Channel",
   "agent_channelConfigure": "去配置",
   "she_pinned_label": "置顶",
-  "she_bio": "你的专属守护者",
+  "she_name": "惜宝",
+  "she_bio": "主人的专属灵宠",
   "settings_userProfile": "个人档案",
   "settings_userProfileSub": "管理你的个人信息",
   "settings_agentMemories": "Agent 记忆",

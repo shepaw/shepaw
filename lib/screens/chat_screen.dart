@@ -1413,6 +1413,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                 isCheckingHealth: c.isCheckingHealth,
                 isAgentOnline: c.isAgentOnline,
                 currentChannelId: c.currentChannelId,
+                sourceDeviceLabel: c.sourceDeviceLabel,
                 onAvatarTap: _navigateToAgentDetail,
                 onStopGenerating: c.isProcessing
                     ? () => c.stopStreaming()
@@ -1735,14 +1736,14 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                     children: [
                       const Text('🌸', style: TextStyle(fontSize: 72), textAlign: TextAlign.center),
                       const SizedBox(height: 16),
-                      const Text(
-                        'She',
-                        style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
+                      Text(
+                        AppLocalizations.of(context).she_name,
+                        style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
                         textAlign: TextAlign.center,
                       ),
                       const SizedBox(height: 8),
                       Text(
-                        '你的专属守护 AI，会越来越懂你',
+                        '你的专属灵宠，会越来越懂你',
                         style: TextStyle(fontSize: 14, color: Colors.grey[600]),
                         textAlign: TextAlign.center,
                       ),

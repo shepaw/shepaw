@@ -451,7 +451,7 @@ class _ModelRoutingConfigCardState extends State<ModelRoutingConfigCard> {
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.hub_outlined, size: 14, color: colorScheme.secondary),
+            Icon(Icons.psychology_outlined, size: 14, color: colorScheme.secondary),
             const SizedBox(width: 4),
             Text(
               l10n.modelRouting_selectFromRegistry,

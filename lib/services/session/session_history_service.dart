@@ -6,7 +6,6 @@ import '../local_database_service.dart';
 import '../tool_result_database_service.dart';
 import '../inference_log_service.dart';
 import '../logger_service.dart';
-import '../../peer/services/peer_agent_host_service.dart' show isPeerAgentChannel;
 import 'package:uuid/uuid.dart';
 
 /// Handles session (channel) lifecycle for 1:1 agent conversations.
@@ -44,11 +43,11 @@ class SessionService {
 
   /// Get all sessions (channels) for a specific agent.
   ///
-  /// 过滤掉 `peer__` 隐藏会话——这些是本机作为 host 时、为来自配对设备的请求
-  /// 维护的上下文会话，不应出现在本机自己的会话列表里。
+  /// 包含 `peer__` 入站会话——这些是本机作为 host 被配对设备访问时、为每个来源
+  /// 设备维护的独立会话；它们应像旧 ACP 远程连接一样出现在本机被共享 agent 的
+  /// 会话列表里，以保留独立的会话记录。
   Future<List<Channel>> getAgentSessions({required String agentId}) async {
-    final channels = await _db.getChannelsForAgent(agentId);
-    return channels.where((c) => !isPeerAgentChannel(c.id)).toList();
+    return await _db.getChannelsForAgent(agentId);
   }
 
   /// Get the deterministic channel ID for a user-agent pair.

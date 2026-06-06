@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../models/channel.dart';
 import '../../models/remote_agent.dart';
+import '../../services/she_service.dart';
 import '../../utils/session_utils.dart';
 import '../avatar_image.dart';
 import '../../l10n/app_localizations.dart';
@@ -17,6 +18,10 @@ class ChatDMAppBarTitle extends StatelessWidget {
   final VoidCallback? onAvatarTap;
   final VoidCallback? onStopGenerating;
 
+  /// 来源设备标签。非空时表示当前会话是某配对设备的入站会话，会在标题旁显示
+  /// 一个「来自 设备名」徽标，方便多设备场景下区分。
+  final String? sourceDeviceLabel;
+
   const ChatDMAppBarTitle({
     super.key,
     this.agentName,
@@ -27,11 +32,15 @@ class ChatDMAppBarTitle extends StatelessWidget {
     this.currentChannelId,
     this.onAvatarTap,
     this.onStopGenerating,
+    this.sourceDeviceLabel,
   });
 
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
+    // She's functional/English name is "She"; display her localized name (e.g. 惜宝 in zh).
+    final displayName =
+        agentName == SheService.sheName ? l10n.she_name : agentName;
 
     return Row(
       children: [
@@ -51,16 +60,16 @@ class ChatDMAppBarTitle extends StatelessWidget {
                     size: 40,
                     borderRadius: 10,
                     fallback: Text(
-                      agentName?.isNotEmpty == true
-                          ? agentName![0]
+                      displayName?.isNotEmpty == true
+                          ? displayName![0]
                           : 'A',
                       style: const TextStyle(fontSize: 28),
                     ),
                   )
                 : Text(
                     agentAvatar ??
-                    (agentName?.isNotEmpty == true
-                        ? agentName![0]
+                    (displayName?.isNotEmpty == true
+                        ? displayName![0]
                         : 'A'),
                     style: const TextStyle(fontSize: 28),
                   ),
@@ -71,12 +80,59 @@ class ChatDMAppBarTitle extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(
-                agentName ?? 'AI Agent',
-                style: const TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w500,
-                ),
+              Row(
+                children: [
+                  Flexible(
+                    child: Text(
+                      displayName ?? 'AI Agent',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ),
+                  if (sourceDeviceLabel != null &&
+                      sourceDeviceLabel!.isNotEmpty) ...[
+                    const SizedBox(width: 8),
+                    Flexible(
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 6, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: Theme.of(context)
+                              .primaryColor
+                              .withOpacity(0.1),
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(
+                              Icons.devices_outlined,
+                              size: 12,
+                              color: Theme.of(context).primaryColor,
+                            ),
+                            const SizedBox(width: 3),
+                            Flexible(
+                              child: Text(
+                                sourceDeviceLabel!,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  color: Theme.of(context).primaryColor,
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
+                ],
               ),
               Row(
                 mainAxisSize: MainAxisSize.min,

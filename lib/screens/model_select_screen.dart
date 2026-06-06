@@ -305,7 +305,7 @@ class _ModelSelectScreenState extends State<ModelSelectScreen> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.hub_outlined,
+            Icon(Icons.psychology_outlined,
                 size: 48, color: colorScheme.outline.withValues(alpha: 0.5)),
             const SizedBox(height: 12),
             Text(

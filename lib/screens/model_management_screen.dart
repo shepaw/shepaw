@@ -135,7 +135,7 @@ class _ModelManagementScreenState
       padding: const EdgeInsets.symmetric(vertical: 48),
       child: Column(
         children: [
-          Icon(Icons.hub_outlined,
+          Icon(Icons.psychology_outlined,
               size: 64,
               color: colorScheme.outline.withValues(alpha: 0.5)),
           const SizedBox(height: 16),
@@ -183,7 +183,7 @@ class _ModelManagementScreenState
             children: [
               Row(
                 children: [
-                  Icon(Icons.hub, size: 20, color: colorScheme.primary),
+                  Icon(Icons.psychology, size: 20, color: colorScheme.primary),
                   const SizedBox(width: 8),
                   Expanded(
                     child: Text(

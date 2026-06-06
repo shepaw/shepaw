@@ -289,53 +289,16 @@ class _PeerChatScreenState extends State<PeerChatScreen> {
                         ],
                       ],
                     ),
-                    Text(
-                      _connectionStateText(),
-                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: _connectionStateColor(),
-                      ),
-                    ),
+                    _buildConnectionStatus(),
                   ],
                 ),
               ),
             ],
           ),
         ),
-        actions: [
-          Padding(
-            padding: const EdgeInsets.only(right: 12),
-            child: Icon(
-              _connectionState == PeerConnectionState.connected
-                  ? Icons.lock
-                  : Icons.lock_open,
-              size: 18,
-              color: _connectionState == PeerConnectionState.connected
-                  ? Colors.green
-                  : Colors.grey,
-            ),
-          ),
-        ],
       ),
       body: Column(
         children: [
-          // 加密提示条
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 16),
-            color: Colors.green.withOpacity(0.08),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Icon(Icons.enhanced_encryption, size: 14, color: Colors.green[700]),
-                const SizedBox(width: 6),
-                Text(
-                  '消息已端到端加密',
-                  style: TextStyle(fontSize: 12, color: Colors.green[700]),
-                ),
-              ],
-            ),
-          ),
-
           // 消息列表
           Expanded(
             child: Stack(
@@ -473,6 +436,27 @@ class _PeerChatScreenState extends State<PeerChatScreen> {
         ],
       ),
     );
+  }
+
+  Widget _buildConnectionStatus() {
+    final textStyle = Theme.of(context).textTheme.bodySmall?.copyWith(
+      color: _connectionStateColor(),
+    );
+
+    // 已连接时，把端到端加密锁内联展示在“在线”与“端到端加密”之间
+    if (_connectionState == PeerConnectionState.connected) {
+      return Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text('在线 · ', style: textStyle),
+          Icon(Icons.lock, size: 12, color: _connectionStateColor()),
+          const SizedBox(width: 3),
+          Text('端到端加密', style: textStyle),
+        ],
+      );
+    }
+
+    return Text(_connectionStateText(), style: textStyle);
   }
 
   String _connectionStateText() {

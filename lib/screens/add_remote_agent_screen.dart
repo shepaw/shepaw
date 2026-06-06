@@ -1151,7 +1151,7 @@ class _AddRemoteAgentScreenState extends State<AddRemoteAgentScreen> {
       child: Column(
         children: [
           ListTile(
-            leading: Icon(Icons.auto_stories, color: colorScheme.primary),
+            leading: Icon(Icons.auto_awesome, color: colorScheme.primary),
             title: Text(l10n.skill_configTitle),
             subtitle: Text(
               _enabledSkills.isEmpty
@@ -1182,7 +1182,7 @@ class _AddRemoteAgentScreenState extends State<AddRemoteAgentScreen> {
           ),
           const Divider(height: 1, indent: 16, endIndent: 16),
           ListTile(
-            leading: Icon(Icons.hub, color: colorScheme.primary),
+            leading: Icon(Icons.psychology, color: colorScheme.primary),
             title: Text(l10n.toolModel_configTitle),
             subtitle: Text(
               _toolModelScenarios.isEmpty
