@@ -38,6 +38,9 @@ BoxDecoration _cliPanelDecoration(
       border: border ?? Border.all(color: cs.outlineVariant),
     );
 
+/// CLI 管理页次级文案与图标色（outline 是边框色，对比度过低）。
+Color _cliSecondaryForeground(ColorScheme cs) => cs.onSurfaceVariant;
+
 // ─── 顶层命名空间描述 ──────────────────────────────────────────────────────────
 
 class _NsDef {
@@ -284,7 +287,7 @@ class _RootNsTileState extends State<_RootNsTile> {
             style: TextStyle(
               fontSize: 15,
               fontWeight: FontWeight.w600,
-              color: globalEnabled ? colorScheme.onSurface : colorScheme.outline,
+              color: globalEnabled ? colorScheme.onSurface : _cliSecondaryForeground(colorScheme),
             ),
           ),
           if (!globalEnabled || sheOnly) ...[
@@ -299,7 +302,10 @@ class _RootNsTileState extends State<_RootNsTile> {
           const SizedBox(height: 2),
           Text(
             def.description,
-            style: TextStyle(fontSize: 12, color: colorScheme.outline),
+            style: TextStyle(
+              fontSize: 12,
+              color: _cliSecondaryForeground(colorScheme),
+            ),
           ),
           const SizedBox(height: 2),
           Text(
@@ -329,7 +335,11 @@ class _RootNsTileState extends State<_RootNsTile> {
           ),
           const SizedBox(width: 2),
           IconButton(
-            icon: Icon(Icons.settings_outlined, size: 18, color: colorScheme.outline),
+            icon: Icon(
+              Icons.settings_outlined,
+              size: 18,
+              color: _cliSecondaryForeground(colorScheme),
+            ),
             tooltip: 'Namespace Settings',
             visualDensity: VisualDensity.compact,
             onPressed: () async {
@@ -343,7 +353,7 @@ class _RootNsTileState extends State<_RootNsTile> {
               _loadConfig();
             },
           ),
-          Icon(Icons.chevron_right, color: colorScheme.outline),
+          Icon(Icons.chevron_right, color: _cliSecondaryForeground(colorScheme)),
         ],
       ),
       onTap: () {
@@ -590,7 +600,7 @@ class _SubNsTileState extends State<_SubNsTile> {
             style: TextStyle(
               fontSize: 14,
               fontWeight: FontWeight.w600,
-              color: globalEnabled ? colorScheme.onSurface : colorScheme.outline,
+              color: globalEnabled ? colorScheme.onSurface : _cliSecondaryForeground(colorScheme),
             ),
           ),
           if (!globalEnabled || sheOnly) ...[
@@ -605,7 +615,10 @@ class _SubNsTileState extends State<_SubNsTile> {
           const SizedBox(height: 1),
           Text(
             widget.subNs.description,
-            style: TextStyle(fontSize: 12, color: colorScheme.outline),
+            style: TextStyle(
+              fontSize: 12,
+              color: _cliSecondaryForeground(colorScheme),
+            ),
           ),
           const SizedBox(height: 1),
           Text(
@@ -635,7 +648,11 @@ class _SubNsTileState extends State<_SubNsTile> {
           ),
           const SizedBox(width: 2),
           IconButton(
-            icon: Icon(Icons.settings_outlined, size: 16, color: colorScheme.outline),
+            icon: Icon(
+              Icons.settings_outlined,
+              size: 16,
+              color: _cliSecondaryForeground(colorScheme),
+            ),
             tooltip: 'Sub-namespace Settings',
             visualDensity: VisualDensity.compact,
             onPressed: () async {
@@ -649,7 +666,7 @@ class _SubNsTileState extends State<_SubNsTile> {
               _loadConfig();
             },
           ),
-          Icon(Icons.chevron_right, size: 18, color: colorScheme.outline),
+          Icon(Icons.chevron_right, size: 18, color: _cliSecondaryForeground(colorScheme)),
         ],
       ),
       onTap: () {
@@ -1002,7 +1019,7 @@ class _CommandTileState extends State<_CommandTile> {
                   fontFamily: toolDef != null ? null : 'monospace',
                   color: (toolDef != null ? isEnabled : cliGlobalEnabled)
                       ? colorScheme.onSurface
-                      : colorScheme.outline,
+                      : _cliSecondaryForeground(colorScheme),
                 ),
               ),
               const SizedBox(width: 6),
@@ -1031,7 +1048,7 @@ class _CommandTileState extends State<_CommandTile> {
                 Tooltip(
                   message: 'Has ${flags?.length} flag(s)',
                   child: Icon(Icons.flag_outlined,
-                      size: 12, color: colorScheme.outline),
+                      size: 12, color: _cliSecondaryForeground(colorScheme)),
                 ),
               ],
             ],
@@ -1043,7 +1060,10 @@ class _CommandTileState extends State<_CommandTile> {
               children: [
                 Text(
                   widget.cmd.description,
-                  style: TextStyle(fontSize: 11, color: colorScheme.outline),
+                  style: TextStyle(
+                    fontSize: 11,
+                    color: _cliSecondaryForeground(colorScheme),
+                  ),
                 ),
                 // 祖先限制提示
                 if (_ancestor != null) ...[
@@ -1443,7 +1463,7 @@ class _NsConfigSheetState extends State<_NsConfigSheet> {
           const SizedBox(height: 4),
           Text(
             widget.description,
-            style: TextStyle(fontSize: 12, color: cs.outline),
+            style: TextStyle(fontSize: 12, color: _cliSecondaryForeground(cs)),
           ),
           const SizedBox(height: 4),
           Row(children: [
@@ -1490,7 +1510,7 @@ class _NsConfigSheetState extends State<_NsConfigSheet> {
                   globalEnabled
                       ? 'All agents can use commands in this namespace'
                       : 'All commands in this namespace are disabled',
-                  style: TextStyle(fontSize: 11, color: cs.outline),
+                  style: TextStyle(fontSize: 11, color: _cliSecondaryForeground(cs)),
                 ),
                 value: globalEnabled,
                 onChanged: _setGlobalEnabled,
@@ -1539,7 +1559,7 @@ class _NsConfigSheetState extends State<_NsConfigSheet> {
                   sheOnly
                       ? 'Other agents cannot use commands in this namespace'
                       : 'All agents can use commands in this namespace',
-                  style: TextStyle(fontSize: 11, color: cs.outline),
+                  style: TextStyle(fontSize: 11, color: _cliSecondaryForeground(cs)),
                 ),
                 value: sheOnly,
                 activeTrackColor: cs.tertiary,
@@ -2004,7 +2024,7 @@ class _CliDetailSheetState extends State<_CliDetailSheet> {
       ),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         Row(children: [
-          Icon(Icons.key, size: 14, color: hasKey ? cs.primary : cs.outline),
+          Icon(Icons.key, size: 14, color: hasKey ? cs.primary : _cliSecondaryForeground(cs)),
           const SizedBox(width: 6),
           Text(field.label,
               style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500)),
@@ -2021,14 +2041,14 @@ class _CliDetailSheetState extends State<_CliDetailSheet> {
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
               decoration: BoxDecoration(
-                color: (hasKey ? cs.primary : cs.outline).withValues(alpha: 0.1),
+                color: (hasKey ? cs.primary : _cliSecondaryForeground(cs)).withValues(alpha: 0.1),
                 borderRadius: BorderRadius.circular(3),
               ),
               child: Text(
                 hasKey ? 'Configured' : 'Not set',
                 style: TextStyle(
                   fontSize: 10,
-                  color: hasKey ? cs.primary : cs.outline,
+                  color: hasKey ? cs.primary : _cliSecondaryForeground(cs),
                   fontWeight: FontWeight.w500,
                 ),
               ),
@@ -2036,13 +2056,13 @@ class _CliDetailSheetState extends State<_CliDetailSheet> {
         ]),
         const SizedBox(height: 3),
         Text(field.description,
-            style: TextStyle(fontSize: 11, color: cs.outline)),
+            style: TextStyle(fontSize: 11, color: _cliSecondaryForeground(cs))),
         if (hasKey && currentSecret != null) ...[
           const SizedBox(height: 4),
           Text(
             '${currentSecret.substring(0, currentSecret.length.clamp(0, 8))}••••••••',
             style: TextStyle(
-                fontSize: 11, color: cs.outline, fontFamily: 'monospace'),
+                fontSize: 11, color: _cliSecondaryForeground(cs), fontFamily: 'monospace'),
           ),
         ],
         const SizedBox(height: 8),
@@ -2080,7 +2100,7 @@ class _CliDetailSheetState extends State<_CliDetailSheet> {
           title: Text(field.label,
               style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500)),
           subtitle: Text(field.description,
-              style: TextStyle(fontSize: 11, color: cs.outline)),
+              style: TextStyle(fontSize: 11, color: _cliSecondaryForeground(cs))),
           value: _toolBoolFields[field.key] ?? false,
           onChanged: (v) => setState(() => _toolBoolFields[field.key] = v),
         ),
@@ -2099,7 +2119,7 @@ class _CliDetailSheetState extends State<_CliDetailSheet> {
         ]),
         const SizedBox(height: 3),
         Text(field.description,
-            style: TextStyle(fontSize: 11, color: cs.outline)),
+            style: TextStyle(fontSize: 11, color: _cliSecondaryForeground(cs))),
         const SizedBox(height: 6),
         DropdownButtonFormField<String>(
           value: _toolSelectFields[field.key],
@@ -2139,7 +2159,7 @@ class _CliDetailSheetState extends State<_CliDetailSheet> {
       ]),
       const SizedBox(height: 3),
       Text(field.description,
-          style: TextStyle(fontSize: 11, color: cs.outline)),
+          style: TextStyle(fontSize: 11, color: _cliSecondaryForeground(cs))),
       const SizedBox(height: 6),
       TextField(
         controller: ctrl,
@@ -2228,7 +2248,7 @@ class _CliDetailSheetState extends State<_CliDetailSheet> {
             if (description != null) ...[
               const SizedBox(height: 4),
               Text(description,
-                  style: TextStyle(fontSize: 12, color: cs.outline)),
+                  style: TextStyle(fontSize: 12, color: _cliSecondaryForeground(cs))),
             ],
 
             // ── Usage ─────────────────────────────────────────────────────
@@ -2274,7 +2294,7 @@ class _CliDetailSheetState extends State<_CliDetailSheet> {
             const SizedBox(height: 14),
             Row(
               children: [
-                Icon(Icons.input, size: 14, color: cs.outline),
+                Icon(Icons.input, size: 14, color: _cliSecondaryForeground(cs)),
                 const SizedBox(width: 6),
                 Text(
                   'Parameters',
@@ -2287,13 +2307,13 @@ class _CliDetailSheetState extends State<_CliDetailSheet> {
                 const SizedBox(width: 4),
                 Text(
                   '(optional)',
-                  style: TextStyle(fontSize: 11, color: cs.outline),
+                  style: TextStyle(fontSize: 11, color: _cliSecondaryForeground(cs)),
                 ),
                 if (hasFlags) ...[
                   const Spacer(),
                   Text(
                     '${flags!.length} flag(s) available',
-                    style: TextStyle(fontSize: 10, color: cs.outline),
+                    style: TextStyle(fontSize: 10, color: _cliSecondaryForeground(cs)),
                   ),
                 ],
               ],
@@ -2308,7 +2328,7 @@ class _CliDetailSheetState extends State<_CliDetailSheet> {
                 hintText: hasFlags
                     ? '--${flags!.keys.first} value\n--flag2 value2'
                     : 'No flags available for this command',
-                hintStyle: TextStyle(fontSize: 11, color: cs.outlineVariant),
+                hintStyle: TextStyle(fontSize: 11, color: _cliSecondaryForeground(cs)),
                 filled: true,
                 fillColor: _cliContentBg(cs),
                 contentPadding: const EdgeInsets.all(12),
@@ -2331,7 +2351,7 @@ class _CliDetailSheetState extends State<_CliDetailSheet> {
               const SizedBox(height: 4),
               Text(
                 'Each line: --flag value  or  flag=value',
-                style: TextStyle(fontSize: 10, color: cs.outline),
+                style: TextStyle(fontSize: 10, color: _cliSecondaryForeground(cs)),
               ),
             ],
 
@@ -2434,14 +2454,14 @@ class _CliDetailSheetState extends State<_CliDetailSheet> {
                 const SizedBox(width: 4),
                 Text(
                   widget.configSchema!.displayName,
-                  style: TextStyle(fontSize: 11, color: cs.outline),
+                  style: TextStyle(fontSize: 11, color: _cliSecondaryForeground(cs)),
                 ),
                 if (_toolConfigLoading) ...[
                   const Spacer(),
                   SizedBox(
                     width: 12, height: 12,
                     child: CircularProgressIndicator(
-                        strokeWidth: 1.5, color: cs.outline),
+                        strokeWidth: 1.5, color: _cliSecondaryForeground(cs)),
                   ),
                 ],
               ]),
@@ -2469,9 +2489,9 @@ class _CliDetailSheetState extends State<_CliDetailSheet> {
             Text(
               'Command Settings',
               style: TextStyle(
-                fontSize: 12,
+                fontSize: 13,
                 fontWeight: FontWeight.w600,
-                color: cs.outline,
+                color: cs.onSurface,
               ),
             ),
             const SizedBox(height: 8),
@@ -2482,7 +2502,7 @@ class _CliDetailSheetState extends State<_CliDetailSheet> {
                   child: SizedBox(
                     width: 16,
                     height: 16,
-                    child: CircularProgressIndicator(strokeWidth: 2, color: cs.outline),
+                    child: CircularProgressIndicator(strokeWidth: 2, color: _cliSecondaryForeground(cs)),
                   ),
                 ),
               )
@@ -2497,7 +2517,7 @@ class _CliDetailSheetState extends State<_CliDetailSheet> {
                     globalEnabled
                         ? 'All agents can use this command'
                         : 'Command is disabled globally',
-                    style: TextStyle(fontSize: 11, color: cs.outline),
+                    style: TextStyle(fontSize: 11, color: _cliSecondaryForeground(cs)),
                   ),
                   value: globalEnabled,
                   onChanged: _setGlobalEnabled,
@@ -2547,7 +2567,7 @@ class _CliDetailSheetState extends State<_CliDetailSheet> {
                     sheOnly
                         ? 'Other agents cannot use this command'
                         : 'All agents can use this command',
-                    style: TextStyle(fontSize: 11, color: cs.outline),
+                    style: TextStyle(fontSize: 11, color: _cliSecondaryForeground(cs)),
                   ),
                   value: sheOnly,
                   activeTrackColor: cs.tertiary,
@@ -2592,7 +2612,7 @@ class _CliConfigBadges extends StatelessWidget {
           label: 'She',
           active: sheOnly,
           activeColor: cs.tertiary,
-          inactiveColor: cs.outline,
+          inactiveColor: _cliSecondaryForeground(cs),
           tooltip: sheOnly ? 'She only — tap to remove restriction' : 'All agents — tap to restrict to She',
           onTap: onToggleSheOnly,
           cs: cs,
@@ -2635,7 +2655,9 @@ class _CliConfigBadges extends StatelessWidget {
             : _cliContentBg(cs),
         borderRadius: BorderRadius.circular(4),
         border: Border.all(
-          color: active ? color.withValues(alpha: activeBorderAlpha) : cs.outlineVariant,
+          color: active
+              ? color.withValues(alpha: activeBorderAlpha)
+              : inactiveColor.withValues(alpha: 0.45),
           width: active ? 1.5 : 1.0,
         ),
       ),
@@ -2644,7 +2666,7 @@ class _CliConfigBadges extends StatelessWidget {
         style: TextStyle(
           fontSize: 9,
           fontWeight: FontWeight.w700,
-          color: active ? color : cs.outline,
+          color: color,
           letterSpacing: 0.3,
         ),
       ),
@@ -2960,7 +2982,7 @@ class _FlagRow extends StatelessWidget {
                         style: TextStyle(fontSize: 10, color: cs.error)),
                   if (defaultVal != null)
                     Text('default: $defaultVal',
-                        style: TextStyle(fontSize: 10, color: cs.outline)),
+                        style: TextStyle(fontSize: 10, color: _cliSecondaryForeground(cs))),
                 ]),
                 if (desc.isNotEmpty) ...[
                   const SizedBox(height: 3),
@@ -2992,7 +3014,7 @@ class _FlagRow extends StatelessWidget {
                   Text('e.g. $example',
                       style: TextStyle(
                           fontSize: 10,
-                          color: cs.outline,
+                          color: _cliSecondaryForeground(cs),
                           fontStyle: FontStyle.italic)),
                 ],
               ],
@@ -3017,7 +3039,7 @@ class _RiskBadge extends StatelessWidget {
       'safe' => ('safe', colorScheme.primary),
       'lowRisk' => ('low', colorScheme.tertiary),
       'highRisk' => ('high', colorScheme.error),
-      _ => (risk, colorScheme.outline),
+      _ => (risk, colorScheme.onSurfaceVariant),
     };
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
@@ -3168,7 +3190,7 @@ class _ToolConfigSheetState extends State<_ToolConfigSheet> {
             ),
           ]),
           Text(widget.tool.description,
-              style: TextStyle(fontSize: 12, color: colorScheme.outline)),
+              style: TextStyle(fontSize: 12, color: _cliSecondaryForeground(colorScheme))),
           const Divider(height: 24),
           Flexible(
             child: SingleChildScrollView(
@@ -3233,26 +3255,26 @@ class _ToolConfigSheetState extends State<_ToolConfigSheet> {
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
             decoration: BoxDecoration(
-              color: (hasKey ? cs.primary : cs.outline).withValues(alpha: 0.1),
+              color: (hasKey ? cs.primary : _cliSecondaryForeground(cs)).withValues(alpha: 0.1),
               borderRadius: BorderRadius.circular(4),
             ),
             child: Text(hasKey ? 'Configured' : 'Not set',
                 style: TextStyle(
                     fontSize: 11,
-                    color: hasKey ? cs.primary : cs.outline,
+                    color: hasKey ? cs.primary : _cliSecondaryForeground(cs),
                     fontWeight: FontWeight.w500)),
           ),
       ]),
       const SizedBox(height: 4),
       Text(field.description,
-          style: TextStyle(fontSize: 12, color: cs.outline)),
+          style: TextStyle(fontSize: 12, color: _cliSecondaryForeground(cs))),
       if (hasKey && currentSecret != null) ...[
         const SizedBox(height: 6),
         Text(
             '${currentSecret.substring(0, currentSecret.length.clamp(0, 8))}••••••••',
             style: TextStyle(
                 fontSize: 12,
-                color: cs.outline,
+                color: _cliSecondaryForeground(cs),
                 fontFamily: 'monospace')),
       ],
       const SizedBox(height: 8),
@@ -3281,7 +3303,7 @@ class _ToolConfigSheetState extends State<_ToolConfigSheet> {
         contentPadding: EdgeInsets.zero,
         title: Text(field.label, style: const TextStyle(fontSize: 14)),
         subtitle: Text(field.description,
-            style: TextStyle(fontSize: 12, color: cs.outline)),
+            style: TextStyle(fontSize: 12, color: _cliSecondaryForeground(cs))),
         value: _boolFields[field.key] ?? false,
         onChanged: (v) => setState(() => _boolFields[field.key] = v),
       );
@@ -3299,7 +3321,7 @@ class _ToolConfigSheetState extends State<_ToolConfigSheet> {
         ]),
         const SizedBox(height: 4),
         Text(field.description,
-            style: TextStyle(fontSize: 12, color: cs.outline)),
+            style: TextStyle(fontSize: 12, color: _cliSecondaryForeground(cs))),
         const SizedBox(height: 8),
         DropdownButtonFormField<String>(
           value: _selectFields[field.key],
@@ -3337,7 +3359,7 @@ class _ToolConfigSheetState extends State<_ToolConfigSheet> {
       ]),
       const SizedBox(height: 4),
       Text(field.description,
-          style: TextStyle(fontSize: 12, color: cs.outline)),
+          style: TextStyle(fontSize: 12, color: _cliSecondaryForeground(cs))),
       const SizedBox(height: 8),
       TextField(
         controller: ctrl,
@@ -3360,7 +3382,7 @@ class _ToolConfigSheetState extends State<_ToolConfigSheet> {
   Widget _buildNoteSection(ColorScheme cs) =>
       Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         Row(children: [
-          Icon(Icons.note_outlined, size: 16, color: cs.outline),
+          Icon(Icons.note_outlined, size: 16, color: _cliSecondaryForeground(cs)),
           const SizedBox(width: 6),
           const Text('Note',
               style:
@@ -3373,7 +3395,7 @@ class _ToolConfigSheetState extends State<_ToolConfigSheet> {
           style: const TextStyle(fontSize: 13),
           decoration: InputDecoration(
             hintText: 'Optional note...',
-            hintStyle: TextStyle(fontSize: 13, color: cs.outline),
+            hintStyle: TextStyle(fontSize: 13, color: _cliSecondaryForeground(cs)),
             border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
             contentPadding:
                 const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
@@ -3681,7 +3703,7 @@ class _CliCommandConfigSheetState extends State<_CliCommandConfigSheet> {
                   Text(widget.cmd.name,
                       style: TextStyle(
                           fontSize: 11,
-                          color: colorScheme.outline,
+                          color: _cliSecondaryForeground(colorScheme),
                           fontFamily: 'monospace')),
                 ],
               ),
@@ -3694,7 +3716,7 @@ class _CliCommandConfigSheetState extends State<_CliCommandConfigSheet> {
           if (widget.schema.description != null) ...[
             const SizedBox(height: 4),
             Text(widget.schema.description!,
-                style: TextStyle(fontSize: 12, color: colorScheme.outline)),
+                style: TextStyle(fontSize: 12, color: _cliSecondaryForeground(colorScheme))),
           ],
           const Divider(height: 24),
           Flexible(
@@ -3755,25 +3777,25 @@ class _CliCommandConfigSheetState extends State<_CliCommandConfigSheet> {
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
             decoration: BoxDecoration(
-              color: (hasKey ? cs.primary : cs.outline).withValues(alpha: 0.1),
+              color: (hasKey ? cs.primary : _cliSecondaryForeground(cs)).withValues(alpha: 0.1),
               borderRadius: BorderRadius.circular(4),
             ),
             child: Text(hasKey ? 'Configured' : 'Not set',
                 style: TextStyle(
                     fontSize: 11,
-                    color: hasKey ? cs.primary : cs.outline,
+                    color: hasKey ? cs.primary : _cliSecondaryForeground(cs),
                     fontWeight: FontWeight.w500)),
           ),
       ]),
       const SizedBox(height: 4),
       Text(field.description,
-          style: TextStyle(fontSize: 12, color: cs.outline)),
+          style: TextStyle(fontSize: 12, color: _cliSecondaryForeground(cs))),
       if (hasKey && currentSecret != null) ...[
         const SizedBox(height: 6),
         Text(
             '${currentSecret.substring(0, currentSecret.length.clamp(0, 8))}••••••••',
             style: TextStyle(
-                fontSize: 12, color: cs.outline, fontFamily: 'monospace')),
+                fontSize: 12, color: _cliSecondaryForeground(cs), fontFamily: 'monospace')),
       ],
       const SizedBox(height: 8),
       Row(children: [
@@ -3801,7 +3823,7 @@ class _CliCommandConfigSheetState extends State<_CliCommandConfigSheet> {
         contentPadding: EdgeInsets.zero,
         title: Text(field.label, style: const TextStyle(fontSize: 14)),
         subtitle: Text(field.description,
-            style: TextStyle(fontSize: 12, color: cs.outline)),
+            style: TextStyle(fontSize: 12, color: _cliSecondaryForeground(cs))),
         value: _boolFields[field.key] ?? false,
         onChanged: (v) => setState(() => _boolFields[field.key] = v),
       );
@@ -3818,7 +3840,7 @@ class _CliCommandConfigSheetState extends State<_CliCommandConfigSheet> {
         ]),
         const SizedBox(height: 4),
         Text(field.description,
-            style: TextStyle(fontSize: 12, color: cs.outline)),
+            style: TextStyle(fontSize: 12, color: _cliSecondaryForeground(cs))),
         const SizedBox(height: 8),
         DropdownButtonFormField<String>(
           value: _selectFields[field.key],
@@ -3857,7 +3879,7 @@ class _CliCommandConfigSheetState extends State<_CliCommandConfigSheet> {
       ]),
       const SizedBox(height: 4),
       Text(field.description,
-          style: TextStyle(fontSize: 12, color: cs.outline)),
+          style: TextStyle(fontSize: 12, color: _cliSecondaryForeground(cs))),
       const SizedBox(height: 8),
       TextField(
         controller: ctrl,
@@ -3879,7 +3901,7 @@ class _CliCommandConfigSheetState extends State<_CliCommandConfigSheet> {
   Widget _buildNoteSection(ColorScheme cs) =>
       Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         Row(children: [
-          Icon(Icons.note_outlined, size: 16, color: cs.outline),
+          Icon(Icons.note_outlined, size: 16, color: _cliSecondaryForeground(cs)),
           const SizedBox(width: 6),
           const Text('Note',
               style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500)),
@@ -3891,7 +3913,7 @@ class _CliCommandConfigSheetState extends State<_CliCommandConfigSheet> {
           style: const TextStyle(fontSize: 13),
           decoration: InputDecoration(
             hintText: 'Optional note...',
-            hintStyle: TextStyle(fontSize: 13, color: cs.outline),
+            hintStyle: TextStyle(fontSize: 13, color: _cliSecondaryForeground(cs)),
             border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
             contentPadding:
                 const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
