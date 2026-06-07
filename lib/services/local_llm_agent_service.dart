@@ -129,9 +129,15 @@ class LocalLLMAgentService {
   }) async* {
     final resolved = await _classifyAndResolve(agent, message, attachments);
     // For She agent, inject memory context into the system prompt
-    String systemPrompt = systemPromptOverride ?? (agent.metadata['system_prompt'] as String? ?? '');
+    final isEphemeralOverride = systemPromptOverride != null;
+    String systemPrompt = systemPromptOverride ??
+        (agent.metadata['system_prompt'] as String? ?? '');
     if (agent.metadata['is_she'] == true) {
-      systemPrompt = await SheService.instance.buildSystemPromptWithMemory(systemPrompt);
+      systemPrompt = await SheService.instance.buildSystemPromptWithMemory(
+        systemPrompt,
+        allowSoulSeed: !isEphemeralOverride,
+        isEphemeralContext: isEphemeralOverride,
+      );
     }
 
     if (resolved.apiBase.isEmpty) {

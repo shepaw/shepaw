@@ -286,7 +286,7 @@ When the user asks about a **past** image/file/audio ("这张图说了什么", "
   /// Section ②: She's soul (self-awareness, grows over time).
   /// Reads the current soul value from the database.
   Future<String> buildMemoryContextBlock() async {
-    final soul = await _sheMemoryDb.getSheMemory(_soulKey) ?? _defaultSoul;
+    final soul = await _getSoulForPrompt();
     // Deliberately omit long_term_memory / userInfo / heartbeat here;
     // they are included in the profile snapshot block to avoid duplication.
     return _soulPrompt(soul);
@@ -445,17 +445,27 @@ If you learned something new, record it silently:
   // ── System Prompt Construction (legacy, kept for backwards compat) ──────
 
   /// Build the complete system prompt; see file-top comment for stacking order.
-  Future<String> buildSystemPromptWithMemory(String userSetPrompt) async {
+  ///
+  /// [allowSoulSeed] — when false, [userSetPrompt] is treated as ephemeral
+  /// (e.g. group-chat admin instructions) and must not be written into soul.
+  /// [isEphemeralContext] — wraps [userSetPrompt] as a temporary room context
+  /// block instead of "Master's Custom Settings".
+  Future<String> buildSystemPromptWithMemory(
+    String userSetPrompt, {
+    bool allowSoulSeed = true,
+    bool isEphemeralContext = false,
+  }) async {
     final profile = await _cognition.getAllUserProfile();
     final isInitialized = (profile[_profileInitKey] == 'true');
     final userInfo = await _sheMemoryDb.getSheMemory('user_info') ?? '(not yet known)';
     final longTermMemory =
         await _sheMemoryDb.getSheMemory('long_term_memory') ?? '(no memories yet)';
     final heartbeat = await _sheMemoryDb.getSheMemory('heartbeat') ?? '(no record)';
-    final soul = await _sheMemoryDb.getSheMemory(_soulKey) ?? _defaultSoul;
+    final soul = await _getSoulForPrompt();
 
-    // If user set a system_prompt and soul is still the default, use it as soul seed
-    if (userSetPrompt.trim().isNotEmpty) {
+    // Only seed soul from the agent's own system_prompt — never from ephemeral
+    // overrides such as group-admin prompts passed via systemPromptOverride.
+    if (allowSoulSeed && userSetPrompt.trim().isNotEmpty) {
       await seedSoulFromUserPrompt(userSetPrompt.trim());
     }
 
@@ -473,9 +483,11 @@ If you learned something new, record it silently:
     // ③.5 current time
     parts.add(_currentTimePrompt());
 
-    // ④ master's custom settings (if any)
+    // ④ custom / ephemeral context (if any)
     if (userSetPrompt.trim().isNotEmpty) {
-      parts.add(_wrapUserCustomPrompt(userSetPrompt.trim()));
+      parts.add(isEphemeralContext
+          ? _wrapEphemeralContextPrompt(userSetPrompt.trim())
+          : _wrapUserCustomPrompt(userSetPrompt.trim()));
     }
 
     // ⑤ strategy for knowing master + missing field hints
@@ -497,10 +509,33 @@ If you learned something new, record it silently:
       parts.add(_firstMeetingInstruction());
     }
 
-    // ⑧ session-end write instructions (immutable)
-    parts.add(_sessionInstructions(sheId));
+    // ⑧ session-end write instructions
+    parts.add(isEphemeralContext
+        ? _ephemeralSessionInstructions()
+        : _sessionInstructions(sheId));
 
     return parts.join('\n\n');
+  }
+
+  /// Read soul for prompt injection; auto-heal if polluted by ephemeral room context.
+  Future<String> _getSoulForPrompt() async {
+    final raw = await _sheMemoryDb.getSheMemory(_soulKey) ?? _defaultSoul;
+    if (!_isRoomContextPollution(raw)) return raw;
+
+    LoggerService().warning(
+      'Soul contained ephemeral room context (e.g. group admin prompt); resetting to default',
+      tag: 'She',
+    );
+    await _sheMemoryDb.setSheMemory(_soulKey, _defaultSoul);
+    return _defaultSoul;
+  }
+
+  /// Detect soul polluted by group/room-specific prompts that must not persist globally.
+  static bool _isRoomContextPollution(String soul) {
+    if (soul.isEmpty || soul == _defaultSoul) return false;
+    return soul.contains('你当前处于一个群聊环境中') ||
+        soul.contains('【群聊名称】') ||
+        soul.contains('【委派机制');
   }
 
   // ── Private prompt-section helpers ─────────────────────────────────────
@@ -527,12 +562,29 @@ $prompt
 
 (Please follow the above settings without violating your core identity.)''';
 
+  static String _wrapEphemeralContextPrompt(String prompt) => '''
+## Current Room Context (ephemeral — this session only)
+$prompt
+
+(This block applies only to the current conversation room. Do NOT copy it into soul or long-term memory.)''';
+
   static String _soulPrompt(String soul) => '''
 ## Your Soul
 $soul
 
-This grows over time. When you gain new self-awareness, call:
+Soul stores your **lasting identity and self-awareness** only — never group/room roles, member lists, or dispatch rules.
+When you gain new self-awareness, call:
 `shepaw context memory.write --key soul --value "(complete updated soul)"`''';
+
+  static String _ephemeralSessionInstructions() => '''
+## During This Session (ephemeral room)
+
+**Write when you learn something lasting about your master**:
+- Master info → `shepaw context profile.write --field x --value y`
+- Memory-worthy moment → `shepaw context memory.append --key long_term_memory --value "..."`
+
+**Do NOT** call `memory.write --key soul` to store group/room-specific instructions from above.
+Soul is global across all conversations — only update it with identity/self-awareness that applies everywhere.''';
 
   // ignore: unused_element  (called via public buildShepawCliBlock)
   static String _pawCliPrompt([SheStackConfig config = const SheStackConfig()]) {
@@ -723,7 +775,7 @@ As you learn: write immediately
 
 **Before conversation ends**:
 1. Heartbeat → `shepaw context memory.write --key heartbeat --value "(one-sentence summary)"`
-2. New self-awareness → `shepaw context memory.write --key soul --value "(complete soul)"`
+2. New self-awareness → `shepaw context memory.write --key soul --value "(complete soul)"` — **identity only**, never group/room/dispatch content
 3. Deeper impression of master → `shepaw context agents.cognition-write --id $sheId --type user --field impression --value "..."`
 4. New self-reflections → `shepaw context agents.cognition-write --id $sheId --type self --soul "..."`
 
