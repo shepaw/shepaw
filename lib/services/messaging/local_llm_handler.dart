@@ -136,6 +136,8 @@ class LocalLLMHelpers {
     final info = <String, dynamic>{
       'message_id': m.id,
       'type': m.type.toString().split('.').last,
+      'fetch_command':
+          'shepaw chat message get --id ${m.id} --analyze "describe content"',
     };
     if (m.metadata != null) {
       if (m.metadata!['name'] != null) info['file_name'] = m.metadata!['name'];
@@ -144,6 +146,21 @@ class LocalLLMHelpers {
       if (m.metadata!['duration_ms'] != null) info['duration_ms'] = m.metadata!['duration_ms'];
     }
     return info;
+  }
+
+  /// Append a visible fetch hint so the LLM sees message_id in plain text.
+  ///
+  /// `attachment_info` alone may be ignored by the model; inlining the CLI
+  /// command into [baseContent] makes historical attachments actionable.
+  static String enrichHistoryContent(Message m, String baseContent) {
+    if (m.type == MessageType.text ||
+        m.type == MessageType.system ||
+        m.type == MessageType.permissionAudit) {
+      return baseContent;
+    }
+    return '$baseContent\n'
+        '(attachment message_id=${m.id} — to read/analyze call: '
+        'shepaw chat message get --id ${m.id} --analyze "your question")';
   }
 
   /// Build a user message map, potentially with multimodal content for image attachments.

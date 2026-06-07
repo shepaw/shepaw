@@ -507,9 +507,12 @@ class AgentMessagingService {
               .where((m) => m.type != MessageType.system && m.type != MessageType.permissionAudit && m.id != userMessage.id)
               .map((m) {
                 final isAgent = m.from.isAgent;
+                final rawContent = isAgent
+                    ? m.content
+                    : '[${_formatTimestamp(m.timestampMs)}] ${m.content}';
                 final entry = <String, dynamic>{
                   'role': isAgent ? 'assistant' : 'user',
-                  'content': isAgent ? m.content : '[${_formatTimestamp(m.timestampMs)}] ${m.content}',
+                  'content': LocalLLMHelpers.enrichHistoryContent(m, rawContent),
                 };
                 if (m.type != MessageType.text && m.type != MessageType.system) {
                   entry['attachment_info'] = LocalLLMHelpers.buildAttachmentInfo(m);
@@ -1254,9 +1257,12 @@ class AgentMessagingService {
           for (final m in messages) {
             if (m.type != MessageType.system && m.type != MessageType.permissionAudit && m.id != userMessage.id) {
               final isAgent = m.from.isAgent;
+              final rawContent = isAgent
+                  ? m.content
+                  : '[${_formatTimestamp(m.timestampMs)}] ${m.content}';
               final entry = <String, dynamic>{
                 'role': isAgent ? 'assistant' : 'user',
-                'content': isAgent ? m.content : '[${_formatTimestamp(m.timestampMs)}] ${m.content}',
+                'content': LocalLLMHelpers.enrichHistoryContent(m, rawContent),
               };
               if (m.type != MessageType.text && m.type != MessageType.system) {
                 entry['attachment_info'] = LocalLLMHelpers.buildAttachmentInfo(m);
@@ -1771,9 +1777,12 @@ class AgentMessagingService {
             .where((m) => m.type != MessageType.system && m.type != MessageType.permissionAudit && m.id != userMessage.id)
             .map((m) {
               final isAgent = m.from.isAgent;
+              final rawContent = isAgent
+                  ? m.content
+                  : '[${_formatTimestamp(m.timestampMs)}] ${m.content}';
               final entry = <String, dynamic>{
                 'role': isAgent ? 'assistant' : 'user',
-                'content': isAgent ? m.content : '[${_formatTimestamp(m.timestampMs)}] ${m.content}',
+                'content': LocalLLMHelpers.enrichHistoryContent(m, rawContent),
               };
               if (m.type != MessageType.text && m.type != MessageType.system) {
                 entry['attachment_info'] = LocalLLMHelpers.buildAttachmentInfo(m);

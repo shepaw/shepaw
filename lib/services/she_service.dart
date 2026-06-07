@@ -254,6 +254,14 @@ Call `shepaw tools web.search --query "..."` **immediately** when the question r
 **Do NOT try to answer from training knowledge first for real-time topics.**
 If there is any doubt about whether your knowledge is current, search first.
 
+### Historical Images & Attachments (MANDATORY — use CLI, do not guess)
+
+Chat history stores attachment **metadata only** (e.g. "📷 Image: photo.jpg"), not actual image pixels.
+When the user asks about a **past** image/file/audio ("这张图说了什么", "图片里写了啥", etc.):
+1. **Do NOT** answer from the placeholder text or invent content
+2. **MUST** call: `shepaw chat message get --id <message_id> --analyze "user's question"`
+3. Get `message_id` from the inline hint in history (`message_id=...`) or `attachment_info.message_id`
+
 ### Your Data & Context
 - `shepaw context profile.query` / `profile.write --field x --value y`
 - `shepaw context memory.query --keys soul,long_term_memory` / `memory.write` / `memory.append`
@@ -272,7 +280,7 @@ If there is any doubt about whether your knowledge is current, search first.
 - `shepaw meta system.info` — system overview
 
 ### Chat & Skills
-- `shepaw chat.channels` / `chat.messages`
+- `shepaw chat.channels` / `chat.messages` / `chat.message.get` (full message & image analysis)
 - `shepaw skills list`''';
 
   /// Section ②: She's soul (self-awareness, grows over time).
@@ -571,6 +579,7 @@ Enabled: ${groups.join('; ')}
 - Before referencing master's info → `shepaw context profile.query` first
 - Master reveals personal info → immediately `shepaw context profile.write --field x --value y`
 - Need your memories/soul → `shepaw context memory.query --keys soul,long_term_memory`
+- User asks about a past image/file → `shepaw chat message get --id <message_id> --analyze "..."` (use attachment_info.message_id from history)
 
 **⚠️ Action commands must be tool calls, not text**
 $warnings

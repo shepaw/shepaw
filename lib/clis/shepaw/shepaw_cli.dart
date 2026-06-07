@@ -2,6 +2,7 @@ import 'dart:convert';
 import '../cli_base.dart';
 import 'context/context_namespace.dart';
 import '../../services/she_service.dart';
+import 'chat/chat_agent_scope.dart';
 import 'chat/chat_namespace.dart';
 import 'workflow/workflow_namespace.dart';
 import 'skills_namespace.dart';
@@ -121,7 +122,9 @@ class ShepawCLI {
       'ShePaw built-in CLI. Use "shepaw help" to see all namespaces. '
       'Use "shepaw <namespace>" to see sub-commands. '
       'Use dot notation for nested commands (e.g. "shepaw context profile.query"). '
-      'Add flags={"help":""} for detailed usage.';
+      'Add flags={"help":""} for detailed usage. '
+      'IMPORTANT: chat history images are metadata-only — to read/analyze a past image, '
+      'call namespace=chat subcommand=message.get with flags id=<message_id> analyze=<question>.';
 
   /// 动态生成工具描述（包含外部工具信息）
   String _buildToolDescription() {
@@ -217,7 +220,10 @@ class ShepawCLI {
 
       // 透传当前执行者的 agentId 到支持多 agent 的命名空间
       if (ns is ContextNamespace) ns.agentId = agentId;
-      if (ns is ChatNamespace) ns.agentId = agentId;
+      if (ns is ChatNamespace) {
+        ns.agentId = agentId;
+        ChatAgentScope.agentId = agentId;
+      }
       if (ns is WorkflowNamespace) {
         final chId = flags['channel_id'];
         if (chId != null && agentId != null) {

@@ -1,5 +1,9 @@
+import 'dart:convert';
+
 import '../../cli_base.dart';
+import '../../../models/message.dart';
 import '../../../services/local_database_service.dart';
+import '../../../services/messaging/local_llm_handler.dart';
 
 /// 查询频道消息
 /// 支持两种定位方式：
@@ -90,14 +94,50 @@ class ChatMessagesCommand extends CliCommand {
       final content = (m['content'] as String? ?? '');
       final snippet =
           content.length > 200 ? '${content.substring(0, 200)}…' : content;
-      return {
+      final messageType = m['message_type'] as String? ?? 'text';
+      final hasAttachment = messageType == 'image' ||
+          messageType == 'file' ||
+          messageType == 'audio';
+
+      final entry = <String, dynamic>{
         'id': m['id'],
         'sender': m['sender_name'] ?? m['sender_id'],
         'sender_id': m['sender_id'],
         'role': m['sender_type'],
+        'message_type': messageType,
+        'has_attachment': hasAttachment,
         'content': snippet,
         'created_at': m['created_at'],
       };
+
+      if (hasAttachment) {
+        Map<String, dynamic>? metadata;
+        if (m['metadata'] != null) {
+          try {
+            metadata = Map<String, dynamic>.from(
+              jsonDecode(m['metadata'] as String),
+            );
+          } catch (_) {}
+        }
+        entry['attachment_info'] = LocalLLMHelpers.buildAttachmentInfo(
+          Message(
+            id: m['id'] as String,
+            from: MessageFrom(
+              id: m['sender_id'] as String,
+              type: m['sender_type'] as String,
+              name: m['sender_name'] as String,
+            ),
+            channelId: m['channel_id'] as String?,
+            type: _parseMessageType(messageType),
+            content: content,
+            timestampMs: DateTime.parse(m['created_at'] as String)
+                .millisecondsSinceEpoch,
+            metadata: metadata,
+          ),
+        );
+      }
+
+      return entry;
     }).toList();
 
     return {
@@ -106,6 +146,25 @@ class ChatMessagesCommand extends CliCommand {
       'offset': offset,
       'count': list.length,
       'messages': list,
+      'hint':
+          'For full message content or image analysis: shepaw chat message get --id <message_id> [--analyze "..."]',
     };
+  }
+
+  MessageType _parseMessageType(String value) {
+    switch (value) {
+      case 'image':
+        return MessageType.image;
+      case 'file':
+        return MessageType.file;
+      case 'audio':
+        return MessageType.audio;
+      case 'system':
+        return MessageType.system;
+      case 'permission_audit':
+        return MessageType.permissionAudit;
+      default:
+        return MessageType.text;
+    }
   }
 }

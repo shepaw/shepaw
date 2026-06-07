@@ -267,9 +267,7 @@ class GroupAgentExecutor {
     // Each line is tagged with the sender name so the agent can see who said
     // what, while "(我)" marks its own prior messages.
     final historyLines = historyMessages.map((m) {
-      final content = (m.type != MessageType.text && m.type != MessageType.system)
-          ? '${m.content} [id:${m.id}]'
-          : m.content;
+      final content = LocalLLMHelpers.enrichHistoryContent(m, m.content);
       if (m.from.isAgent && m.from.id == agent.id) {
         return '[${m.from.name}(我)]: $content';
       }

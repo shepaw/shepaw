@@ -1,6 +1,7 @@
 import '../../cli_base.dart';
 import '../../../services/she_service.dart';
 import 'channels_command.dart';
+import 'message_namespace.dart';
 import 'messages_command.dart';
 
 /// [COMMUNICATION 层] chat 命名空间 - 对话频道和消息管理
@@ -11,6 +12,7 @@ import 'messages_command.dart';
 /// Subcommands:
 /// - `channels`  列出所有对话频道
 /// - `messages`  查询频道消息（--channel <id> 或 --agent <agent_id>）
+/// - `message.get` 按 message_id 获取完整消息 / 附件 / 图片分析
 class ChatNamespace extends CliNamespace {
   static final instance = ChatNamespace._();
   ChatNamespace._();
@@ -24,6 +26,11 @@ class ChatNamespace extends CliNamespace {
 
   @override
   String get description => 'Conversation channels and messages';
+
+  @override
+  Map<String, CliNamespace> get subNamespaces => {
+        'message': MessageNamespace(),
+      };
 
   @override
   Map<String, CliCommand> get commands => {

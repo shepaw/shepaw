@@ -67,6 +67,8 @@ class GroupPromptBuilder {
           ? _buildWorkflowCliSection()
           : '';
 
+      final attachmentSection = _buildAdminAttachmentSection();
+
       return '''你当前处于一个群聊环境中，你是本群的**管理员**。
 
 【群聊名称】$groupName
@@ -123,7 +125,7 @@ $memberList
 - **警惕重复失败**：如果同一个任务已经被委派给成员执行了 2 次以上仍未成功，必须停下来重新评估
 - **换思路而非重试**：当某个方案反复失败时，应该考虑：换一个成员来处理、换一种方法或策略、简化任务目标、或者向用户说明困难并请求指导
 - **及时止损**：如果经过多轮尝试后问题仍无法解决，应诚实地向用户汇报当前情况和遇到的困难，而不是继续无意义的循环
-- **关注进展而非次数**：每轮审视结果时，判断是否有实质性进展。如果连续多轮没有任何进展，果断终止并反馈$loopSummarizeSection$planningSection''';
+- **关注进展而非次数**：每轮审视结果时，判断是否有实质性进展。如果连续多轮没有任何进展，果断终止并反馈$attachmentSection$loopSummarizeSection$planningSection''';
     }
 
     final mentionNotice = isMentioned
@@ -160,6 +162,20 @@ $memberList
 8. 如果任务执行过程中需要用户确认信息或做出选择，请用**文字描述**所有选项和所需信息，不要调用 form、action_confirmation、single_select、multi_select 等 UI 工具。管理员会读取你的描述并做出决策。
 9. 在每次回复的**最后一行**，必须输出任务状态标注，格式为：\n   - 任务已完成：`[TASK_STATUS: done]`\n   - 任务未完成或需要更多信息：`[TASK_STATUS: pending] 原因：<简要说明>`\n管理员会根据此标注决定下一步安排。$mentionNotice$allMembersMentionSection''';
   }
+
+  /// Shepaw CLI guidance for group admin — historical attachments are metadata only.
+  String _buildAdminAttachmentSection() => '''
+
+【历史附件与图片 — 必读】
+群聊历史中，图片/文件/语音消息**只保留文字占位符**（如 "📷 Image: xxx.jpg"），不含实际像素或文件内容。
+当用户追问历史图片/附件「说了什么」「内容是什么」「这张图什么意思」时：
+1. **禁止**凭占位符文字猜测或编造
+2. **必须**先调用 shepaw 工具读取并分析：
+   `shepaw chat message get --id <message_id> --analyze "用户的具体问题"`
+3. message_id 见历史记录中的 `message_id=...` 提示
+
+你有 shepaw CLI 工具。示例：
+`shepaw chat message get --id <message_id> --analyze "描述图片中的文字和内容"`''';
 
   /// Build the workflow CLI usage section for Admin's system prompt.
   String _buildWorkflowCliSection() {
