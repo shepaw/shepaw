@@ -38,7 +38,7 @@ class ChatDMAppBarTitle extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
-    // She's functional/English name is "She"; display her localized name (e.g. 惜 in zh).
+    // She's functional/English name is "She"; display her localized name (e.g. 惜惜 in zh).
     final displayName =
         agentName == SheService.sheName ? l10n.she_name : agentName;
 

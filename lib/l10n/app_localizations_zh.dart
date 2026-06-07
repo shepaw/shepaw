@@ -2925,7 +2925,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get she_pinned_label => '置顶';
 
   @override
-  String get she_name => '惜';
+  String get she_name => '惜惜';
 
   @override
   String get she_bio => '主人的专属灵宠';
