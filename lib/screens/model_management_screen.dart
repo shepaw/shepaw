@@ -8,8 +8,10 @@ import '../models/model_definition.dart';
 import '../models/model_routing_config.dart';
 import '../models/remote_agent.dart' show repairUtf16Garbled;
 import '../services/model_registry.dart';
+import '../services/ollama_service.dart';
 import '../services/openrouter_service.dart';
 import '../services/logger_service.dart';
+import '../utils/exceptions.dart';
 
 /// Dedicated management screen for global model definitions.
 class ModelManagementScreen extends StatefulWidget {
@@ -320,8 +322,9 @@ class _ModelEditScreenState extends State<ModelEditScreen> {
   /// Model types selected for this definition (multi-select).
   late Set<ModelType> _selectedModelTypes;
 
-  // ── OpenRouter 模型列表相关 ──────────────────────────
+  // ── 远程/本地模型列表相关 ──────────────────────────────
   late OpenRouterService _openRouterService;
+  late OllamaService _ollamaService;
   bool _loadingModels = false;
   String? _modelsError;
 
@@ -333,6 +336,7 @@ class _ModelEditScreenState extends State<ModelEditScreen> {
   void initState() {
     super.initState();
     _openRouterService = OpenRouterService();
+    _ollamaService = OllamaService();
 
     final e = widget.existing;
     _displayNameController = TextEditingController(text: e?.displayName ?? '');
@@ -441,6 +445,16 @@ class _ModelEditScreenState extends State<ModelEditScreen> {
     } catch (_) {}
   }
 
+  bool get _isOpenRouterSelected =>
+      _selectedProviderIndex >= 0 &&
+      llmProviders[_selectedProviderIndex].name == 'OpenRouter';
+
+  bool get _isOllamaSelected =>
+      _selectedProviderIndex >= 0 &&
+      llmProviders[_selectedProviderIndex].name == 'Ollama';
+
+  bool get _supportsModelFetch => _isOpenRouterSelected || _isOllamaSelected;
+
   /// 获取 OpenRouter 模型列表
   Future<void> _fetchOpenRouterModels() async {
     if (_apiKeyController.text.trim().isEmpty) {
@@ -466,24 +480,100 @@ class _ModelEditScreenState extends State<ModelEditScreen> {
       });
 
       if (mounted) {
-        _showModelSelectionDialog(models);
+        _showModelSelectionDialog(
+          title: '选择 OpenRouter 模型',
+          models: models
+              .map(
+                (m) => _PickableModel(
+                  id: m.id,
+                  name: m.name,
+                  subtitle: m.description ?? m.id,
+                  tag: m.modality,
+                ),
+              )
+              .toList(),
+        );
       }
     } catch (e) {
       setState(() {
-        _modelsError = e is FormatException
-            ? e.message
-            : '获取模型失败: ${e.toString()}';
+        _modelsError = _formatModelFetchError(e);
         _loadingModels = false;
       });
       LoggerService().error('获取 OpenRouter 模型失败', tag: 'ModelEdit', error: e);
     }
   }
 
+  /// 获取 Ollama 本地模型列表
+  Future<void> _fetchOllamaModels() async {
+    final apiBase = _apiBaseController.text.trim();
+    if (apiBase.isEmpty) {
+      setState(() {
+        _modelsError = '请先填写 Ollama API Base 地址';
+      });
+      return;
+    }
+
+    setState(() {
+      _loadingModels = true;
+      _modelsError = null;
+    });
+
+    try {
+      final models = await _ollamaService.getModels(
+        apiBase: apiBase,
+        forceRefresh: true,
+      );
+
+      setState(() {
+        _loadingModels = false;
+      });
+
+      if (models.isEmpty) {
+        setState(() {
+          _modelsError = 'Ollama 中暂无已安装的模型，请先运行 ollama pull <model>';
+        });
+        return;
+      }
+
+      if (mounted) {
+        _showModelSelectionDialog(
+          title: '选择 Ollama 本地模型',
+          models: models
+              .map(
+                (m) => _PickableModel(
+                  id: m.name,
+                  name: m.name,
+                  subtitle: m.description ?? m.name,
+                ),
+              )
+              .toList(),
+        );
+      }
+    } catch (e) {
+      setState(() {
+        _modelsError = _formatModelFetchError(e);
+        _loadingModels = false;
+      });
+      LoggerService().error('获取 Ollama 模型失败', tag: 'ModelEdit', error: e);
+    }
+  }
+
+  String _formatModelFetchError(Object e) {
+    if (e is FormatException) return e.message;
+    if (e is NetworkException) return e.getUserMessage();
+    if (e is AppException) return e.message;
+    return '获取模型失败: ${e.toString()}';
+  }
+
   /// 显示模型选择对话框
-  void _showModelSelectionDialog(List<OpenRouterModel> models) {
+  void _showModelSelectionDialog({
+    required String title,
+    required List<_PickableModel> models,
+  }) {
     showDialog(
       context: context,
       builder: (context) => _ModelPickerDialog(
+        title: title,
         models: models,
         onSelected: (model) {
           _modelController.text = model.id;
@@ -507,6 +597,7 @@ class _ModelEditScreenState extends State<ModelEditScreen> {
     _requestBodyTemplateController.dispose();
     _responseBodyPathController.dispose();
     _openRouterService.close();
+    _ollamaService.close();
     super.dispose();
   }
 
@@ -719,9 +810,8 @@ class _ModelEditScreenState extends State<ModelEditScreen> {
               ),
               const SizedBox(height: 8),
 
-              // ── OpenRouter 模型列表获取按钮 ──────────────────────
-              if (_selectedProviderIndex >= 0 &&
-                  llmProviders[_selectedProviderIndex].name == 'OpenRouter')
+              // ── 模型列表获取按钮（OpenRouter / Ollama） ─────────────
+              if (_supportsModelFetch)
                 Column(
                   children: [
                     if (_modelsError != null)
@@ -747,7 +837,7 @@ class _ModelEditScreenState extends State<ModelEditScreen> {
                                   fontSize: 12,
                                   color: colorScheme.error,
                                 ),
-                                maxLines: 2,
+                                maxLines: 3,
                                 overflow: TextOverflow.ellipsis,
                               ),
                             ),
@@ -759,7 +849,11 @@ class _ModelEditScreenState extends State<ModelEditScreen> {
                     SizedBox(
                       width: double.infinity,
                       child: ElevatedButton.icon(
-                        onPressed: _loadingModels ? null : _fetchOpenRouterModels,
+                        onPressed: _loadingModels
+                            ? null
+                            : (_isOllamaSelected
+                                ? _fetchOllamaModels
+                                : _fetchOpenRouterModels),
                         icon: _loadingModels
                             ? SizedBox(
                                 width: 16,
@@ -770,8 +864,16 @@ class _ModelEditScreenState extends State<ModelEditScreen> {
                                       AlwaysStoppedAnimation(colorScheme.primary),
                                 ),
                               )
-                            : const Icon(Icons.cloud_download),
-                        label: Text(_loadingModels ? '获取中...' : '获取 OpenRouter 模型列表'),
+                            : Icon(_isOllamaSelected
+                                ? Icons.storage
+                                : Icons.cloud_download),
+                        label: Text(
+                          _loadingModels
+                              ? '获取中...'
+                              : (_isOllamaSelected
+                                  ? '获取 Ollama 本地模型列表'
+                                  : '获取 OpenRouter 模型列表'),
+                        ),
                       ),
                     ),
                   ],
@@ -893,14 +995,30 @@ class _ModelEditScreenState extends State<ModelEditScreen> {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// OpenRouter 模型选择对话框（带搜索）
+// 通用模型选择项 / 对话框（带搜索）
 // ─────────────────────────────────────────────────────────────────────────────
 
+class _PickableModel {
+  final String id;
+  final String name;
+  final String? subtitle;
+  final String? tag;
+
+  const _PickableModel({
+    required this.id,
+    required this.name,
+    this.subtitle,
+    this.tag,
+  });
+}
+
 class _ModelPickerDialog extends StatefulWidget {
-  final List<OpenRouterModel> models;
-  final void Function(OpenRouterModel) onSelected;
+  final String title;
+  final List<_PickableModel> models;
+  final void Function(_PickableModel) onSelected;
 
   const _ModelPickerDialog({
+    required this.title,
     required this.models,
     required this.onSelected,
   });
@@ -911,7 +1029,7 @@ class _ModelPickerDialog extends StatefulWidget {
 
 class _ModelPickerDialogState extends State<_ModelPickerDialog> {
   final TextEditingController _searchController = TextEditingController();
-  late List<OpenRouterModel> _filtered;
+  late List<_PickableModel> _filtered;
 
   @override
   void initState() {
@@ -936,7 +1054,7 @@ class _ModelPickerDialogState extends State<_ModelPickerDialog> {
         _filtered = widget.models.where((m) {
           return m.id.toLowerCase().contains(query) ||
               m.name.toLowerCase().contains(query) ||
-              (m.description?.toLowerCase().contains(query) ?? false);
+              (m.subtitle?.toLowerCase().contains(query) ?? false);
         }).toList();
       }
     });
@@ -947,7 +1065,7 @@ class _ModelPickerDialogState extends State<_ModelPickerDialog> {
     final colorScheme = Theme.of(context).colorScheme;
 
     return AlertDialog(
-      title: const Text('选择 OpenRouter 模型'),
+      title: Text(widget.title),
       content: SizedBox(
         width: double.maxFinite,
         child: Column(
@@ -1007,15 +1125,15 @@ class _ModelPickerDialogState extends State<_ModelPickerDialog> {
                             style: const TextStyle(fontSize: 13),
                           ),
                           subtitle: Text(
-                            model.description ?? model.id,
+                            model.subtitle ?? model.id,
                             maxLines: 2,
                             overflow: TextOverflow.ellipsis,
                             style: const TextStyle(fontSize: 11),
                           ),
-                          trailing: model.modality != null
+                          trailing: model.tag != null
                               ? Chip(
                                   label: Text(
-                                    model.modality!,
+                                    model.tag!,
                                     style: const TextStyle(fontSize: 9),
                                   ),
                                   materialTapTargetSize:
