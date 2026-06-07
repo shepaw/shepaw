@@ -1426,32 +1426,36 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
             tooltip: AppLocalizations.of(context).chat_sessionList,
             onPressed: c.isGroupMode ? _showGroupSessionList : _showSessionList,
           ),
-          IconButton(
-            icon: const Icon(Icons.more_vert),
-            onPressed: () {
-              if (c.isGroupMode) {
-                ChatMenuHelper.showGroupMenu(
-                  context,
-                  onEditGroup: _editGroupInfo,
-                  onShowMembers: _showGroupMembersPanel,
-                  onAddMember: _addGroupMember,
-                  onSearch: _showSearchDialog,
-                  onWorkflow: _showGroupWorkflow,
-                );
-              } else {
-                ChatMenuHelper.showAgentMenu(
-                  context,
-                  onReset: () {
-                    _messageController.text = '/reset';
-                    _sendMessage();
-                  },
-                  onViewDetails: _navigateToAgentDetail,
-                  onEdit: _navigateToAgentDetailForEdit,
-                  onSearch: _showSearchDialog,
-                  onCustomSystemPrompt: _showDmSystemPromptDialog,
-                );
-              }
-            },
+          Builder(
+            builder: (moreButtonContext) => IconButton(
+              icon: const Icon(Icons.more_vert),
+              onPressed: () {
+                if (c.isGroupMode) {
+                  ChatMenuHelper.showGroupMenu(
+                    context,
+                    anchorContext: moreButtonContext,
+                    onEditGroup: _editGroupInfo,
+                    onShowMembers: _showGroupMembersPanel,
+                    onAddMember: _addGroupMember,
+                    onSearch: _showSearchDialog,
+                    onWorkflow: _showGroupWorkflow,
+                  );
+                } else {
+                  ChatMenuHelper.showAgentMenu(
+                    context,
+                    anchorContext: moreButtonContext,
+                    onReset: () {
+                      _messageController.text = '/reset';
+                      _sendMessage();
+                    },
+                    onViewDetails: _navigateToAgentDetail,
+                    onEdit: _navigateToAgentDetailForEdit,
+                    onSearch: _showSearchDialog,
+                    onCustomSystemPrompt: _showDmSystemPromptDialog,
+                  );
+                }
+              },
+            ),
           ),
         ],
       ),
