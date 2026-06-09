@@ -674,10 +674,22 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
       ),
       body: _isDeleting
           ? const Center(child: CircularProgressIndicator())
-          : SingleChildScrollView(
-              padding: const EdgeInsets.all(16),
-              child: _isEditing ? _buildEditBody() : _buildDetailBody(),
-            ),
+          : _isEditing
+              ? Column(
+                  children: [
+                    Expanded(
+                      child: SingleChildScrollView(
+                        padding: const EdgeInsets.all(16),
+                        child: _buildEditBody(),
+                      ),
+                    ),
+                    _buildEditBottomBar(),
+                  ],
+                )
+              : SingleChildScrollView(
+                  padding: const EdgeInsets.all(16),
+                  child: _buildDetailBody(),
+                ),
     );
   }
 
@@ -1249,43 +1261,55 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
           const SizedBox(height: 16),
           _buildEditConfigNavigationTiles(colorScheme),
         ],
-        const SizedBox(height: 16),
-
-        // 保存 / 取消按钮
-        Row(
-          children: [
-            Expanded(
-              child: OutlinedButton(
-                onPressed: _isSaving ? null : _cancelEdit,
-                style: OutlinedButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(vertical: 16),
-                ),
-                child: Text(l10n.common_cancel),
-              ),
-            ),
-            const SizedBox(width: 16),
-            Expanded(
-              child: ElevatedButton.icon(
-                onPressed: _isSaving ? null : _saveEdit,
-                icon: _isSaving
-                    ? const SizedBox(
-                        width: 18,
-                        height: 18,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2,
-                          color: Colors.white,
-                        ),
-                      )
-                    : const Icon(Icons.save),
-                label: Text(l10n.common_save),
-                style: ElevatedButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(vertical: 16),
-                ),
-              ),
-            ),
-          ],
-        ),
       ],
+    );
+  }
+
+  Widget _buildEditBottomBar() {
+    final l10n = AppLocalizations.of(context);
+    final colorScheme = Theme.of(context).colorScheme;
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      decoration: BoxDecoration(
+        color: Theme.of(context).scaffoldBackgroundColor,
+        border: Border(
+          top: BorderSide(color: colorScheme.outlineVariant),
+        ),
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: OutlinedButton(
+              onPressed: _isSaving ? null : _cancelEdit,
+              style: OutlinedButton.styleFrom(
+                padding: const EdgeInsets.symmetric(vertical: 16),
+              ),
+              child: Text(l10n.common_cancel),
+            ),
+          ),
+          const SizedBox(width: 16),
+          Expanded(
+            child: ElevatedButton.icon(
+              onPressed: _isSaving ? null : _saveEdit,
+              icon: _isSaving
+                  ? const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: Colors.white,
+                      ),
+                    )
+                  : const Icon(Icons.save),
+              label: Text(l10n.common_save),
+              style: ElevatedButton.styleFrom(
+                padding: const EdgeInsets.symmetric(vertical: 16),
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 

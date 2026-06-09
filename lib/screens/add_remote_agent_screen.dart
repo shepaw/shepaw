@@ -573,73 +573,75 @@ class _AddRemoteAgentScreenState extends State<AddRemoteAgentScreen> {
         title: Text(_mode == AgentCreationMode.connect ? l10n.addAgent_connectTitle : l10n.addAgent_createTitle),
         centerTitle: true,
       ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-        child: Form(
-          key: _formKey,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              // 模式切换 - SegmentedButton
-              _buildModeSwitch(colorScheme),
-              const SizedBox(height: 20),
+      body: Column(
+        children: [
+          Expanded(
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+              child: Form(
+                key: _formKey,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    // 模式切换 - SegmentedButton
+                    _buildModeSwitch(colorScheme),
+                    const SizedBox(height: 20),
 
-              // 头像区域 - 渐变背景
-              _buildAvatarSection(colorScheme),
-              const SizedBox(height: 20),
+                    // 头像区域 - 渐变背景
+                    _buildAvatarSection(colorScheme),
+                    const SizedBox(height: 20),
 
-              // 基本信息卡片
-              _buildBasicInfoCard(colorScheme),
-              const SizedBox(height: 16),
+                    // 基本信息卡片
+                    _buildBasicInfoCard(colorScheme),
+                    const SizedBox(height: 16),
 
-              // 连接配置卡片
-              if (_mode == AgentCreationMode.connect)
-                _buildConnectConfigCard(colorScheme),
+                    // 连接配置卡片
+                    if (_mode == AgentCreationMode.connect)
+                      _buildConnectConfigCard(colorScheme),
 
-              // 创建模式 - 模型配置（主对话模型 + 附件理解）
-              if (_mode == AgentCreationMode.create)
-                AgentModelConfigCard(
-                  mainModelId: _selectedMainModelId,
-                  onMainModelChanged: _selectMainModel,
-                  scenarioModels: _scenarioModels,
-                  onScenarioModelsChanged: (models) =>
-                      setState(() => _scenarioModels = models),
-                  showRequiredBadge: true,
-                  mainModelValidator: (val) {
-                    if (val == null || val.isEmpty) {
-                      return AppLocalizations.of(context).addAgent_modelRequired;
-                    }
-                    return null;
-                  },
+                    // 创建模式 - 模型配置（主对话模型 + 附件理解）
+                    if (_mode == AgentCreationMode.create)
+                      AgentModelConfigCard(
+                        mainModelId: _selectedMainModelId,
+                        onMainModelChanged: _selectMainModel,
+                        scenarioModels: _scenarioModels,
+                        onScenarioModelsChanged: (models) =>
+                            setState(() => _scenarioModels = models),
+                        showRequiredBadge: true,
+                        mainModelValidator: (val) {
+                          if (val == null || val.isEmpty) {
+                            return AppLocalizations.of(context).addAgent_modelRequired;
+                          }
+                          return null;
+                        },
+                      ),
+
+                    // 创建模式 - 允许外部访问开关
+                    if (_mode == AgentCreationMode.create) ...[
+                      const SizedBox(height: 16),
+                      _buildExternalAccessCard(colorScheme),
+                    ],
+
+                    // 创建模式 - 技能导航入口
+                    if (_mode == AgentCreationMode.create && _selectedMainModelId != null) ...[
+                      const SizedBox(height: 16),
+                      _buildConfigNavigationTiles(colorScheme),
+                    ],
+
+                    const SizedBox(height: 16),
+
+                    // 说明步骤卡片（仅连接模式显示）
+                    if (_mode == AgentCreationMode.connect) ...[
+                      _buildInstructionCard(colorScheme),
+                      const SizedBox(height: 8),
+                    ],
+                  ],
                 ),
-
-              // 创建模式 - 允许外部访问开关
-              if (_mode == AgentCreationMode.create) ...[
-                const SizedBox(height: 16),
-                _buildExternalAccessCard(colorScheme),
-              ],
-
-              // 创建模式 - 技能导航入口
-              if (_mode == AgentCreationMode.create && _selectedMainModelId != null) ...[
-                const SizedBox(height: 16),
-                _buildConfigNavigationTiles(colorScheme),
-              ],
-
-              const SizedBox(height: 16),
-
-              // 说明步骤卡片（仅连接模式显示）
-              if (_mode == AgentCreationMode.connect) ...[
-                _buildInstructionCard(colorScheme),
-                const SizedBox(height: 8),
-              ],
-              const SizedBox(height: 24),
-
-              // 操作按钮 - 渐变圆角
-              _buildActionButton(colorScheme),
-              const SizedBox(height: 24),
-            ],
+              ),
+            ),
           ),
-        ),
+          _buildBottomBar(colorScheme),
+        ],
       ),
     );
   }
@@ -1367,6 +1369,19 @@ class _AddRemoteAgentScreenState extends State<AddRemoteAgentScreen> {
   }
 
   /// 操作按钮 - 渐变色 + 圆角
+  Widget _buildBottomBar(ColorScheme colorScheme) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      decoration: BoxDecoration(
+        color: Theme.of(context).scaffoldBackgroundColor,
+        border: Border(
+          top: BorderSide(color: colorScheme.outlineVariant),
+        ),
+      ),
+      child: _buildActionButton(colorScheme),
+    );
+  }
+
   Widget _buildActionButton(ColorScheme colorScheme) {
     final l10n = AppLocalizations.of(context);
     final defs = ModelRegistry.instance.definitions;
