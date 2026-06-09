@@ -12,6 +12,7 @@ import '../services/ollama_service.dart';
 import '../services/openrouter_service.dart';
 import '../services/logger_service.dart';
 import '../utils/exceptions.dart';
+import '../widgets/form_bottom_bar.dart';
 
 /// Dedicated management screen for global model definitions.
 class ModelManagementScreen extends StatefulWidget {
@@ -698,20 +699,17 @@ class _ModelEditScreenState extends State<ModelEditScreen> {
             ? l10n.toolModel_editTitle
             : l10n.toolModel_addTitle),
         centerTitle: true,
-        actions: [
-          TextButton(
-            onPressed: _save,
-            child: Text(l10n.common_save),
-          ),
-        ],
       ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(16),
-        child: Form(
-          key: _formKey,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
+      body: Column(
+        children: [
+          Expanded(
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.all(16),
+              child: Form(
+                key: _formKey,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
               // ── Provider selection ───────────────────────────────────
               Text(
                 l10n.toolModel_selectProvider,
@@ -1028,9 +1026,19 @@ class _ModelEditScreenState extends State<ModelEditScreen> {
               ],
 
               const SizedBox(height: 24),
-            ],
+                  ],
+                ),
+              ),
+            ),
           ),
-        ),
+          FormBottomBar(
+            child: FormPrimaryButton(
+              onPressed: _save,
+              icon: Icons.save,
+              label: l10n.common_save,
+            ),
+          ),
+        ],
       ),
     );
   }

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../l10n/app_localizations.dart';
 import '../services/cli_namespace_registry.dart';
 import '../widgets/cli_command_config_card.dart';
+import '../widgets/form_bottom_bar.dart';
 
 /// Full-page screen for configuring CLI commands for an agent.
 ///
@@ -38,6 +39,14 @@ class _CliCommandSelectScreenState extends State<CliCommandSelectScreen> {
     }
   }
 
+  void _save() {
+    final allIds = CliNamespaceRegistry.instance.allCommandIds;
+    final result = _enabledCommands.length >= allIds.length
+        ? <String>{}
+        : _enabledCommands;
+    Navigator.pop(context, result);
+  }
+
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
@@ -46,30 +55,30 @@ class _CliCommandSelectScreenState extends State<CliCommandSelectScreen> {
       appBar: AppBar(
         title: const Text('Configure CLI Commands'),
         centerTitle: true,
-        actions: [
-          TextButton(
-            onPressed: () {
-              // If all commands are selected, save as empty set (= all allowed)
-              final allIds = CliNamespaceRegistry.instance.allCommandIds;
-              final result = _enabledCommands.length >= allIds.length
-                  ? <String>{}
-                  : _enabledCommands;
-              Navigator.pop(context, result);
-            },
-            child: Text(l10n.common_save),
+      ),
+      body: Column(
+        children: [
+          Expanded(
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.all(16),
+              child: CliCommandConfigCard(
+                enabledCommands: _enabledCommands,
+                onChanged: (commands) {
+                  setState(() {
+                    _enabledCommands = commands;
+                  });
+                },
+              ),
+            ),
+          ),
+          FormBottomBar(
+            child: FormPrimaryButton(
+              onPressed: _save,
+              icon: Icons.save,
+              label: l10n.common_save,
+            ),
           ),
         ],
-      ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(16),
-        child: CliCommandConfigCard(
-          enabledCommands: _enabledCommands,
-          onChanged: (commands) {
-            setState(() {
-              _enabledCommands = commands;
-            });
-          },
-        ),
       ),
     );
   }

@@ -686,9 +686,16 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
                     _buildEditBottomBar(),
                   ],
                 )
-              : SingleChildScrollView(
-                  padding: const EdgeInsets.all(16),
-                  child: _buildDetailBody(),
+              : Column(
+                  children: [
+                    Expanded(
+                      child: SingleChildScrollView(
+                        padding: const EdgeInsets.all(16),
+                        child: _buildDetailBody(),
+                      ),
+                    ),
+                    _buildDetailBottomBar(),
+                  ],
                 ),
     );
   }
@@ -718,34 +725,23 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
           const SizedBox(height: 16),
           _buildExternalAccessCard(),
         ],
-        const SizedBox(height: 24),
-        SizedBox(
-          width: double.infinity,
-          child: ElevatedButton.icon(
-            onPressed: _startConversation,
-            icon: const Icon(Icons.chat),
-            label: Text(l10n.agentDetail_startConversation),
-            style: ElevatedButton.styleFrom(
-              padding: const EdgeInsets.symmetric(vertical: 16),
-            ),
-          ),
-        ),
-        const SizedBox(height: 12),
         // She is a built-in agent and cannot be deleted
-        if (_agent.metadata['is_she'] != true)
-        SizedBox(
-          width: double.infinity,
-          child: OutlinedButton.icon(
-            onPressed: _deleteAgent,
-            icon: const Icon(Icons.delete_outline, color: Colors.red),
-            label: Text(l10n.agentDetail_deleteAgent),
-            style: OutlinedButton.styleFrom(
-              foregroundColor: Colors.red,
-              side: const BorderSide(color: Colors.red),
-              padding: const EdgeInsets.symmetric(vertical: 16),
+        if (_agent.metadata['is_she'] != true) ...[
+          const SizedBox(height: 24),
+          SizedBox(
+            width: double.infinity,
+            child: OutlinedButton.icon(
+              onPressed: _deleteAgent,
+              icon: const Icon(Icons.delete_outline, color: Colors.red),
+              label: Text(l10n.agentDetail_deleteAgent),
+              style: OutlinedButton.styleFrom(
+                foregroundColor: Colors.red,
+                side: const BorderSide(color: Colors.red),
+                padding: const EdgeInsets.symmetric(vertical: 16),
+              ),
             ),
           ),
-        ),
+        ],
       ],
     );
   }
@@ -1262,6 +1258,32 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
           _buildEditConfigNavigationTiles(colorScheme),
         ],
       ],
+    );
+  }
+
+  Widget _buildDetailBottomBar() {
+    final l10n = AppLocalizations.of(context);
+    final colorScheme = Theme.of(context).colorScheme;
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      decoration: BoxDecoration(
+        color: Theme.of(context).scaffoldBackgroundColor,
+        border: Border(
+          top: BorderSide(color: colorScheme.outlineVariant),
+        ),
+      ),
+      child: SizedBox(
+        width: double.infinity,
+        child: ElevatedButton.icon(
+          onPressed: _startConversation,
+          icon: const Icon(Icons.chat),
+          label: Text(l10n.agentDetail_startConversation),
+          style: ElevatedButton.styleFrom(
+            padding: const EdgeInsets.symmetric(vertical: 16),
+          ),
+        ),
+      ),
     );
   }
 

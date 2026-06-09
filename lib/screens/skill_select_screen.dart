@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../l10n/app_localizations.dart';
+import '../widgets/form_bottom_bar.dart';
 import '../widgets/skill_config_card.dart';
 
 /// Full-page screen for configuring skills.
@@ -32,23 +33,30 @@ class _SkillSelectScreenState extends State<SkillSelectScreen> {
       appBar: AppBar(
         title: Text(l10n.addAgent_configureSkills),
         centerTitle: true,
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, _enabledSkills),
-            child: Text(l10n.common_save),
+      ),
+      body: Column(
+        children: [
+          Expanded(
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.all(16),
+              child: SkillConfigCard(
+                enabledSkills: _enabledSkills,
+                onChanged: (skills) {
+                  setState(() {
+                    _enabledSkills = skills;
+                  });
+                },
+              ),
+            ),
+          ),
+          FormBottomBar(
+            child: FormPrimaryButton(
+              onPressed: () => Navigator.pop(context, _enabledSkills),
+              icon: Icons.save,
+              label: l10n.common_save,
+            ),
           ),
         ],
-      ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(16),
-        child: SkillConfigCard(
-          enabledSkills: _enabledSkills,
-          onChanged: (skills) {
-            setState(() {
-              _enabledSkills = skills;
-            });
-          },
-        ),
       ),
     );
   }

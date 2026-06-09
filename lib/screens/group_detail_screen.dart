@@ -6,6 +6,7 @@ import '../theme/app_theme.dart';
 import '../services/local_api_service.dart';
 import '../services/local_database_service.dart';
 import '../services/logger_service.dart';
+import '../widgets/form_bottom_bar.dart';
 import 'chat_screen.dart';
 
 /// Group detail screen, similar to RemoteAgentDetailScreen but for groups.
@@ -155,25 +156,7 @@ class _GroupDetailScreenState extends State<GroupDetailScreen> {
         title: Text(_isEditing ? l10n.groupDetail_editTitle : l10n.groupDetail_title),
         elevation: 1,
         actions: _isEditing
-            ? [
-                TextButton(
-                  onPressed: _isSaving ? null : _cancelEdit,
-                  child: Text(l10n.common_cancel),
-                ),
-                TextButton(
-                  onPressed: _isSaving ? null : _saveEdit,
-                  child: _isSaving
-                      ? const SizedBox(
-                          width: 16,
-                          height: 16,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : Text(
-                          l10n.common_save,
-                          style: const TextStyle(fontWeight: FontWeight.bold),
-                        ),
-                ),
-              ]
+            ? null
             : [
                 IconButton(
                   icon: const Icon(Icons.edit_outlined),
@@ -182,7 +165,36 @@ class _GroupDetailScreenState extends State<GroupDetailScreen> {
                 ),
               ],
       ),
-      body: _isEditing ? _buildEditBody(l10n) : _buildDetailBody(l10n),
+      body: _isEditing
+          ? Column(
+              children: [
+                Expanded(
+                  child: SingleChildScrollView(
+                    padding: const EdgeInsets.all(16),
+                    child: _buildEditBody(l10n),
+                  ),
+                ),
+                FormCancelSaveBar(
+                  onCancel: _cancelEdit,
+                  onSave: _saveEdit,
+                  cancelLabel: l10n.common_cancel,
+                  saveLabel: l10n.common_save,
+                  isSaving: _isSaving,
+                ),
+              ],
+            )
+          : Column(
+              children: [
+                Expanded(child: _buildDetailBody(l10n)),
+                FormBottomBar(
+                  child: FormPrimaryButton(
+                    onPressed: _startChat,
+                    icon: Icons.chat_bubble_outline,
+                    label: l10n.groupDetail_startChat,
+                  ),
+                ),
+              ],
+            ),
     );
   }
 
@@ -191,6 +203,7 @@ class _GroupDetailScreenState extends State<GroupDetailScreen> {
     final memberCount = _channel.members.where((m) => m.id != 'user').length;
 
     return ListView(
+      padding: const EdgeInsets.only(bottom: 16),
       children: [
         // Header section
         Container(
@@ -323,19 +336,7 @@ class _GroupDetailScreenState extends State<GroupDetailScreen> {
 
         const SizedBox(height: 24),
 
-        // Actions
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16),
-          child: FilledButton.icon(
-            onPressed: () => _startChat(),
-            icon: const Icon(Icons.chat_bubble_outline),
-            label: Text(l10n.groupDetail_startChat),
-            style: FilledButton.styleFrom(
-              minimumSize: const Size(double.infinity, 48),
-            ),
-          ),
-        ),
-        const SizedBox(height: 12),
+        // Delete action
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16),
           child: OutlinedButton.icon(
@@ -352,23 +353,21 @@ class _GroupDetailScreenState extends State<GroupDetailScreen> {
               style: const TextStyle(color: Colors.red),
             ),
             style: OutlinedButton.styleFrom(
-              minimumSize: const Size(double.infinity, 48),
+              padding: const EdgeInsets.symmetric(vertical: 16),
               side: const BorderSide(color: Colors.red),
             ),
           ),
         ),
-        const SizedBox(height: 32),
+        const SizedBox(height: 16),
       ],
     );
   }
 
   Widget _buildEditBody(AppLocalizations l10n) {
-    return SingleChildScrollView(
-      padding: const EdgeInsets.all(16),
-      child: StatefulBuilder(
-        builder: (context, setEditState) => Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
+    return StatefulBuilder(
+      builder: (context, setEditState) => Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
             // Group avatar (read-only for now)
             Center(
               child: Container(
@@ -469,11 +468,10 @@ class _GroupDetailScreenState extends State<GroupDetailScreen> {
                 ),
               ),
             ),
-            const SizedBox(height: 32),
+            const SizedBox(height: 16),
           ],
         ),
-      ),
-    );
+      );
   }
 
   Widget _buildMemberTile(ChannelMember member) {

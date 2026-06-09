@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import '../../l10n/app_localizations.dart';
+import '../../widgets/form_bottom_bar.dart';
 import '../models/paired_peer.dart';
 import '../services/peer_connection_manager.dart';
 import '../services/peer_storage_service.dart';
@@ -145,8 +146,11 @@ class _PeerSettingsScreenState extends State<PeerSettingsScreen> {
       appBar: AppBar(
         title: Text(l10n.peerSettings_title),
       ),
-      body: ListView(
+      body: Column(
         children: [
+          Expanded(
+            child: ListView(
+              children: [
           const SizedBox(height: 24),
 
           // 设备头像 + 名称
@@ -240,21 +244,6 @@ class _PeerSettingsScreenState extends State<PeerSettingsScreen> {
 
           const SizedBox(height: 24),
 
-          // 发起对话
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: FilledButton.icon(
-              onPressed: _startChat,
-              icon: const Icon(Icons.chat_bubble_outline),
-              label: Text(l10n.peerSettings_startChat),
-              style: FilledButton.styleFrom(
-                minimumSize: const Size(double.infinity, 48),
-              ),
-            ),
-          ),
-
-          const SizedBox(height: 12),
-
           // 危险操作
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -264,12 +253,22 @@ class _PeerSettingsScreenState extends State<PeerSettingsScreen> {
               label: Text(l10n.peerSettings_deletePairing, style: TextStyle(color: colorScheme.error)),
               style: OutlinedButton.styleFrom(
                 side: BorderSide(color: colorScheme.error),
-                minimumSize: const Size(double.infinity, 48),
+                padding: const EdgeInsets.symmetric(vertical: 16),
               ),
             ),
           ),
 
-          const SizedBox(height: 32),
+          const SizedBox(height: 16),
+              ],
+            ),
+          ),
+          FormBottomBar(
+            child: FormPrimaryButton(
+              onPressed: _startChat,
+              icon: Icons.chat_bubble_outline,
+              label: l10n.peerSettings_startChat,
+            ),
+          ),
         ],
       ),
     );

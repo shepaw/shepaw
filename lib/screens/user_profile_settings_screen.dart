@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../services/cognition_service.dart';
 import '../services/logger_service.dart';
 import '../l10n/app_localizations.dart';
+import '../widgets/form_bottom_bar.dart';
 
 /// 用户档案设置页面
 ///
@@ -444,27 +445,13 @@ class _UserProfileSettingsScreenState extends State<UserProfileSettingsScreen> {
       appBar: AppBar(
         title: Text(l10n.profile_personalTitle),
         centerTitle: true,
-        actions: [
-          if (_isSaving)
-            const Padding(
-              padding: EdgeInsets.all(14),
-              child: SizedBox(
-                width: 20,
-                height: 20,
-                child: CircularProgressIndicator(strokeWidth: 2),
-              ),
-            )
-          else
-            TextButton.icon(
-              onPressed: _saveProfile,
-              icon: const Icon(Icons.save),
-              label: Text(l10n.common_save),
-            ),
-        ],
       ),
-      body: ListView(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      body: Column(
         children: [
+          Expanded(
+            child: ListView(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              children: [
           // ── 核心字段 ───────────────────────────────
           _sectionHeader(l10n.profile_coreInfo),
           for (final f in coreFields)
@@ -514,8 +501,22 @@ class _UserProfileSettingsScreenState extends State<UserProfileSettingsScreen> {
               l10n.profile_reset,
               style: const TextStyle(color: Colors.red),
             ),
+            style: OutlinedButton.styleFrom(
+              padding: const EdgeInsets.symmetric(vertical: 16),
+            ),
           ),
-          const SizedBox(height: 24),
+          const SizedBox(height: 16),
+              ],
+            ),
+          ),
+          FormBottomBar(
+            child: FormPrimaryButton(
+              onPressed: _saveProfile,
+              icon: Icons.save,
+              label: l10n.common_save,
+              isLoading: _isSaving,
+            ),
+          ),
         ],
       ),
     );

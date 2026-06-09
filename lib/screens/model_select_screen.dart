@@ -3,6 +3,7 @@ import '../l10n/app_localizations.dart';
 import '../widgets/model_icon.dart';
 import '../models/model_definition.dart';
 import '../services/model_registry.dart';
+import '../widgets/form_bottom_bar.dart';
 import 'model_management_screen.dart';
 
 /// Full-page screen for selecting tool models per agent and configuring
@@ -63,18 +64,15 @@ class _ModelSelectScreenState extends State<ModelSelectScreen> {
       appBar: AppBar(
         title: Text(l10n.toolModel_configureTitle),
         centerTitle: true,
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, _buildResult()),
-            child: Text(l10n.common_save),
-          ),
-        ],
       ),
       body: defs.isEmpty
           ? _buildEmptyState(colorScheme, l10n)
-          : ListView(
-              padding: const EdgeInsets.all(16),
+          : Column(
               children: [
+                Expanded(
+                  child: ListView(
+                    padding: const EdgeInsets.all(16),
+                    children: [
                 Text(
                   l10n.toolModel_configHint,
                   style: TextStyle(fontSize: 12, color: colorScheme.onSurfaceVariant),
@@ -118,6 +116,16 @@ class _ModelSelectScreenState extends State<ModelSelectScreen> {
                 ),
                 const SizedBox(height: 8),
                 ...defs.map((def) => _buildModelTile(def, colorScheme, l10n)),
+                    ],
+                  ),
+                ),
+                FormBottomBar(
+                  child: FormPrimaryButton(
+                    onPressed: () => Navigator.pop(context, _buildResult()),
+                    icon: Icons.save,
+                    label: l10n.common_save,
+                  ),
+                ),
               ],
             ),
     );

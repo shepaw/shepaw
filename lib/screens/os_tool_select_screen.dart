@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../l10n/app_localizations.dart';
+import '../widgets/form_bottom_bar.dart';
 import '../widgets/os_tool_config_card.dart';
 
 /// Full-page screen for configuring OS tools.
@@ -32,23 +33,30 @@ class _OsToolSelectScreenState extends State<OsToolSelectScreen> {
       appBar: AppBar(
         title: Text(l10n.addAgent_configureTools),
         centerTitle: true,
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, _enabledTools),
-            child: Text(l10n.common_save),
+      ),
+      body: Column(
+        children: [
+          Expanded(
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.all(16),
+              child: OsToolConfigCard(
+                enabledTools: _enabledTools,
+                onChanged: (tools) {
+                  setState(() {
+                    _enabledTools = tools;
+                  });
+                },
+              ),
+            ),
+          ),
+          FormBottomBar(
+            child: FormPrimaryButton(
+              onPressed: () => Navigator.pop(context, _enabledTools),
+              icon: Icons.save,
+              label: l10n.common_save,
+            ),
           ),
         ],
-      ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(16),
-        child: OsToolConfigCard(
-          enabledTools: _enabledTools,
-          onChanged: (tools) {
-            setState(() {
-              _enabledTools = tools;
-            });
-          },
-        ),
       ),
     );
   }

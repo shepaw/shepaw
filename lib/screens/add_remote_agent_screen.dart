@@ -1368,8 +1368,12 @@ class _AddRemoteAgentScreenState extends State<AddRemoteAgentScreen> {
     );
   }
 
-  /// 操作按钮 - 渐变色 + 圆角
   Widget _buildBottomBar(ColorScheme colorScheme) {
+    final l10n = AppLocalizations.of(context);
+    final defs = ModelRegistry.instance.definitions;
+    final isDisabled = _isCreating ||
+        (_mode == AgentCreationMode.create && defs.isEmpty);
+
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       decoration: BoxDecoration(
@@ -1378,88 +1382,35 @@ class _AddRemoteAgentScreenState extends State<AddRemoteAgentScreen> {
           top: BorderSide(color: colorScheme.outlineVariant),
         ),
       ),
-      child: _buildActionButton(colorScheme),
-    );
-  }
-
-  Widget _buildActionButton(ColorScheme colorScheme) {
-    final l10n = AppLocalizations.of(context);
-    final defs = ModelRegistry.instance.definitions;
-    final isDisabled = _isCreating ||
-        (_mode == AgentCreationMode.create && defs.isEmpty);
-
-    return Container(
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(16),
-        gradient: isDisabled
-            ? null
-            : LinearGradient(
-                colors: [
-                  colorScheme.primary,
-                  colorScheme.tertiary,
-                ],
-              ),
-        color: isDisabled ? colorScheme.surfaceContainerHighest : null,
-        boxShadow: isDisabled
-            ? null
-            : [
-                BoxShadow(
-                  color: colorScheme.primary.withValues(alpha: 0.3),
-                  blurRadius: 12,
-                  offset: const Offset(0, 4),
-                ),
-              ],
-      ),
-      child: Material(
-        color: Colors.transparent,
-        child: InkWell(
-          borderRadius: BorderRadius.circular(16),
-          onTap: isDisabled
+      child: SizedBox(
+        width: double.infinity,
+        child: ElevatedButton.icon(
+          onPressed: isDisabled
               ? null
               : (_mode == AgentCreationMode.connect
                   ? _connectToAgent
                   : _createAgent),
-          child: Padding(
+          icon: _isCreating
+              ? const SizedBox(
+                  width: 18,
+                  height: 18,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    color: Colors.white,
+                  ),
+                )
+              : Icon(
+                  _mode == AgentCreationMode.connect
+                      ? Icons.link
+                      : Icons.add_circle,
+                ),
+          label: Text(
+            _mode == AgentCreationMode.connect
+                ? l10n.addAgent_connectButton
+                : l10n.addAgent_createButton,
+          ),
+          style: ElevatedButton.styleFrom(
             padding: const EdgeInsets.symmetric(vertical: 16),
-            child: Center(
-              child: _isCreating
-                  ? const SizedBox(
-                      height: 22,
-                      width: 22,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2.5,
-                        valueColor:
-                            AlwaysStoppedAnimation<Color>(Colors.white),
-                      ),
-                    )
-                  : Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Icon(
-                          _mode == AgentCreationMode.connect
-                              ? Icons.link
-                              : Icons.add_circle,
-                          color: isDisabled
-                              ? colorScheme.onSurfaceVariant
-                              : Colors.white,
-                          size: 20,
-                        ),
-                        const SizedBox(width: 8),
-                        Text(
-                          _mode == AgentCreationMode.connect
-                              ? l10n.addAgent_connectButton
-                              : l10n.addAgent_createButton,
-                          style: TextStyle(
-                            color: isDisabled
-                                ? colorScheme.onSurfaceVariant
-                                : Colors.white,
-                            fontSize: 16,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                      ],
-                    ),
-            ),
           ),
         ),
       ),
