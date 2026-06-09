@@ -63,6 +63,9 @@ class AppLocalizationsZh extends AppLocalizations {
   String get common_optional => '可选';
 
   @override
+  String get common_listSeparator => '、';
+
+  @override
   String get common_featureComingSoon => '功能即将推出';
 
   @override
@@ -748,7 +751,16 @@ class AppLocalizationsZh extends AppLocalizations {
   String get addAgent_modelConfig => '模型配置';
 
   @override
-  String get addAgent_modelConfigHint => '选择 LLM 服务商，将自动填充默认配置';
+  String get addAgent_modelConfigHint => '选择主对话模型；各场景未单独配置时，输入类场景默认继承主模型。';
+
+  @override
+  String get agentModelConfig_mainChat => '主对话模型';
+
+  @override
+  String get agentModelConfig_selectMainChat => '选择主对话模型';
+
+  @override
+  String get agentModelConfig_attachmentsSection => '按场景配置模型';
 
   @override
   String get addAgent_modelName => '模型名称';
@@ -1132,7 +1144,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get agentDetail_systemPrompt => '系统提示词';
 
   @override
-  String get agentDetail_llmConfig => 'LLM 配置';
+  String get agentDetail_llmConfig => '模型配置';
 
   @override
   String get agentDetail_provider => '服务商';
@@ -1430,6 +1442,18 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get chat_noAgentSelected => '未选择 Agent';
+
+  @override
+  String get chat_modalityNotSupported_image =>
+      '此 Agent 未配置图片理解。请在 Agent 设置 → 模型配置中指定，或为主模型勾选「图片理解」。';
+
+  @override
+  String get chat_modalityNotSupported_audio =>
+      '此 Agent 未配置音频理解。请在 Agent 设置 → 模型配置中配置。';
+
+  @override
+  String get chat_modalityNotSupported_video =>
+      '此 Agent 未配置视频理解。请在 Agent 设置 → 模型配置中配置。';
 
   @override
   String chat_loadFailed(String error) {
@@ -2306,6 +2330,41 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
+  String get scenarioModels_title => '按场景配置模型';
+
+  @override
+  String get scenarioModels_hint =>
+      '为图片/音频/视频理解，以及图片生成、语音合成、视频生成等场景指定模型；输入类场景未配置时继承主模型。';
+
+  @override
+  String get scenarioModels_inheritMain => '继承主模型';
+
+  @override
+  String get scenarioModels_inheritMainCovered => '继承主模型（已支持）';
+
+  @override
+  String get scenarioModels_notConfigured => '未配置';
+
+  @override
+  String get scenarioModels_coveredByMain => '主模型已支持全部输入场景，无需额外配置';
+
+  @override
+  String get scenarioModels_expandToOverride => '可展开为各附件类型单独指定模型';
+
+  @override
+  String scenarioModels_needsConfig(String modalities) {
+    return '主模型未支持：$modalities';
+  }
+
+  @override
+  String get scenarioModels_selectMainFirst => '请先选择主模型';
+
+  @override
+  String scenarioModels_configuredCount(int count) {
+    return '已配置 $count 项';
+  }
+
+  @override
   String get modelRouting_title => '多模态模型路由';
 
   @override
@@ -2529,14 +2588,14 @@ class AppLocalizationsZh extends AppLocalizations {
   String get toolModel_managementTitle => '模型管理';
 
   @override
-  String get toolModel_configTitle => '模型';
+  String get toolModel_configTitle => '生成能力';
 
   @override
   String get toolModel_configHint =>
-      '为此 Agent 选择模型。作为工具模型时，主 LLM 可通过工具调用委派任务；也可用于多模态路由。';
+      'AI 在对话中可主动调用的能力，如图片生成、语音合成。处理用户附件请在上方「模型配置」中设置。';
 
   @override
-  String get toolModel_configureTitle => '选择模型';
+  String get toolModel_configureTitle => '选择生成能力';
 
   @override
   String get toolModel_addTitle => '添加模型';
@@ -2641,15 +2700,19 @@ class AppLocalizationsZh extends AppLocalizations {
   String get toolModel_scenarioPlaceholder => '例如：用于图片生成任务';
 
   @override
-  String get addAgent_noToolModels => '未选择模型';
+  String get toolModel_noGenerationModels =>
+      '暂无可用的生成模型。请在设置 > 模型管理中添加图片生成、语音合成等模型。';
+
+  @override
+  String get addAgent_noToolModels => '未启用生成能力';
 
   @override
   String addAgent_toolModelsCount(int count) {
-    return '已启用 $count 个模型';
+    return '已启用 $count 项生成能力';
   }
 
   @override
-  String get agentDetail_noToolModelsEnabled => '未启用模型';
+  String get agentDetail_noToolModelsEnabled => '未启用生成能力';
 
   @override
   String get chat_mentionMode => '提及模式';
@@ -2722,6 +2785,17 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get toolModel_goToManagement => '前往模型管理';
+
+  @override
+  String get ollama_testConnection => '测试连接';
+
+  @override
+  String get ollama_testConnectionSuccess => 'Ollama 连接成功';
+
+  @override
+  String ollama_testConnectionFailed(String error) {
+    return 'Ollama 连接失败: $error';
+  }
 
   @override
   String get settings_disableServiceTitle => '关闭本地服务';

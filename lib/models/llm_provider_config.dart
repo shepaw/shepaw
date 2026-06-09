@@ -4,8 +4,8 @@ class LLMProviderConfig {
   final String providerType; // openai / claude / glm
   final String defaultApiBase;
   final String defaultModel;
-  /// Default vision-capable model for this provider (used for auto-routing
-  /// when the user sends images but has not configured an explicit image route).
+  /// Default vision-capable model suggestion when creating a new model entry.
+  /// Not used at runtime — configure per-agent scenario models instead.
   final String? defaultVisionModel;
   final List<String> models;
   final bool requiresApiKey;
@@ -118,7 +118,7 @@ const List<LLMProviderConfig> llmProviders = [
     providerType: 'openai',
     defaultApiBase: 'http://localhost:11434/v1',
     defaultModel: 'llama3',
-    defaultVisionModel: 'llava',
+    defaultVisionModel: null,
     models: [],
     requiresApiKey: false,
     icon: '⚪',

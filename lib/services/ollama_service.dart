@@ -135,6 +135,12 @@ class OllamaService {
     }
   }
 
+  /// Verify Ollama is reachable at [apiBase]. Throws on failure.
+  Future<int> testConnection({required String apiBase}) async {
+    final models = await getModels(apiBase: apiBase, forceRefresh: true);
+    return models.length;
+  }
+
   static void clearCache() {
     _cachedModels = null;
     _cachedApiBase = null;

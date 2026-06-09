@@ -30,7 +30,7 @@ class _ModelSelectScreenState extends State<ModelSelectScreen> {
     super.initState();
     _enabledToolNames = Set<String>.from(widget.toolModelScenarios.keys);
     _scenarioControllers = {};
-    for (final def in ModelRegistry.instance.definitions) {
+    for (final def in ModelRegistry.instance.definitions.forDelegation()) {
       _scenarioControllers[def.toolName] = TextEditingController(
         text: widget.toolModelScenarios[def.toolName] ?? '',
       );
@@ -57,7 +57,7 @@ class _ModelSelectScreenState extends State<ModelSelectScreen> {
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
     final colorScheme = Theme.of(context).colorScheme;
-    final defs = ModelRegistry.instance.definitions;
+    final defs = ModelRegistry.instance.definitions.forDelegation();
 
     return Scaffold(
       appBar: AppBar(
@@ -75,7 +75,11 @@ class _ModelSelectScreenState extends State<ModelSelectScreen> {
           : ListView(
               padding: const EdgeInsets.all(16),
               children: [
-                // Select all / deselect all
+                Text(
+                  l10n.toolModel_configHint,
+                  style: TextStyle(fontSize: 12, color: colorScheme.onSurfaceVariant),
+                ),
+                const SizedBox(height: 12),
                 Row(
                   children: [
                     TextButton.icon(
@@ -173,7 +177,9 @@ class _ModelSelectScreenState extends State<ModelSelectScreen> {
                 ),
                 const SizedBox(width: 6),
                 // Model type badges
-                ...def.modelTypes.map((t) => Padding(
+                ...def.modelTypes
+                    .where(kDelegatableModelTypes.contains)
+                    .map((t) => Padding(
                   padding: const EdgeInsets.only(right: 4),
                   child: Container(
                     padding: const EdgeInsets.symmetric(
@@ -187,7 +193,7 @@ class _ModelSelectScreenState extends State<ModelSelectScreen> {
                       ),
                     ),
                     child: Text(
-                      _modelTypeLabel(t),
+                      _modelTypeLabel(t, l10n),
                       style: TextStyle(
                         fontSize: 9,
                         color: _modelTypeColor(t),
@@ -213,7 +219,7 @@ class _ModelSelectScreenState extends State<ModelSelectScreen> {
                         def.route.model!,
                         style: TextStyle(
                           fontSize: 10,
-                          color: colorScheme.outline,
+                          color: colorScheme.onSurfaceVariant,
                         ),
                       ),
                     ),
@@ -280,22 +286,22 @@ class _ModelSelectScreenState extends State<ModelSelectScreen> {
   }
 
   /// Returns a short label for a given model type.
-  String _modelTypeLabel(ModelType modelType) {
+  String _modelTypeLabel(ModelType modelType, AppLocalizations l10n) {
     switch (modelType) {
       case ModelType.text:
-        return 'Text';
+        return l10n.modelType_text;
       case ModelType.imageUnderstanding:
-        return 'Vision';
+        return l10n.modelType_imageUnderstanding;
       case ModelType.imageGeneration:
-        return 'ImgGen';
+        return l10n.modelType_imageGeneration;
       case ModelType.audioUnderstanding:
-        return 'Audio';
+        return l10n.modelType_audioUnderstanding;
       case ModelType.videoUnderstanding:
-        return 'Video';
+        return l10n.modelType_videoUnderstanding;
       case ModelType.videoGeneration:
-        return 'VideoGen';
+        return l10n.modelType_videoGeneration;
       case ModelType.tts:
-        return 'TTS';
+        return l10n.modelType_tts;
     }
   }
 
@@ -307,12 +313,12 @@ class _ModelSelectScreenState extends State<ModelSelectScreen> {
           mainAxisSize: MainAxisSize.min,
           children: [
             ModelIcon(
-                size: 48, color: colorScheme.outline.withValues(alpha: 0.5)),
+                size: 48, color: colorScheme.onSurfaceVariant.withValues(alpha: 0.5)),
             const SizedBox(height: 12),
             Text(
-              l10n.toolModel_noModelsAvailable,
+              l10n.toolModel_noGenerationModels,
               textAlign: TextAlign.center,
-              style: TextStyle(fontSize: 13, color: colorScheme.outline),
+              style: TextStyle(fontSize: 13, color: colorScheme.onSurfaceVariant),
             ),
             const SizedBox(height: 16),
             FilledButton.tonal(

@@ -18,7 +18,7 @@ void main() {
     });
 
     test('should have 4 values', () {
-      expect(ModalityType.values.length, 4);
+      expect(ModalityType.values.length, 7);
     });
   });
 

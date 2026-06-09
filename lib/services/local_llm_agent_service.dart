@@ -5,8 +5,7 @@ import '../models/remote_agent.dart';
 import '../models/llm_stream_event.dart';
 import '../models/attachment_data.dart';
 import '../models/model_routing_config.dart';
-import '../models/model_definition.dart';
-import '../models/llm_provider_config.dart';
+import '../models/agent_scenario_models.dart';
 import 'model_registry.dart';
 import 'ui_component_registry.dart';
 import 'logger_service.dart';
@@ -101,23 +100,8 @@ class LocalLLMAgentService {
 
   /// Send a message and get a streaming response from the configured LLM.
   ///
-  /// Returns a stream of [LLMStreamEvent]s: [LLMTextEvent] for text tokens
-  /// and [LLMToolCallEvent] when the LLM invokes an interactive UI tool.
-  ///
-  /// When [enableUITools] is true (the default), UI tool definitions are
-  /// injected into the request and the system prompt is augmented.
-  ///
-  /// Supports multi-modal model routing: if the agent has `model_routing`
-  /// in its metadata, the model/provider is selected based on attachment
-  /// types (image, audio, video, or text fallback).
-  ///
-  /// Reads provider config from [agent.metadata]:
-  /// - `llm_provider`: `openai` | `claude` | `glm`
-  /// - `llm_model`: model name
-  /// - `llm_api_base`: base URL
-  /// - `llm_api_key`: API key (optional for some providers)
-  /// - `system_prompt`: system prompt (optional)
-  /// - `model_routing`: optional per-modality model overrides
+  /// Model selection uses [RemoteAgent.scenarioModels] and [main_model_id]
+  /// via [_resolveModelConfig].
   Stream<LLMStreamEvent> chat({
     required RemoteAgent agent,
     required String message,
@@ -127,7 +111,7 @@ class LocalLLMAgentService {
     String? systemPromptOverride,
     List<AttachmentData>? attachments,
   }) async* {
-    final resolved = await _classifyAndResolve(agent, message, attachments);
+    final resolved = _resolveModelConfig(agent, attachments);
     // For She agent, inject memory context into the system prompt
     final isEphemeralOverride = systemPromptOverride != null;
     String systemPrompt = systemPromptOverride ??
@@ -620,227 +604,46 @@ class LocalLLMAgentService {
   }
 
   // =========================================================================
-  // Intent classification — custom modality routing
-  // =========================================================================
-
-  /// Classify intent and resolve the effective model configuration.
-  ///
-  /// 1. If attachments are present → use existing detectModality (zero cost).
-  /// 2. If no custom modalities → use text route directly (zero cost).
-  /// 3. Otherwise classify intent with a small model call.
-  Future<ResolvedModelConfig> _classifyAndResolve(
-    RemoteAgent agent,
-    String message,
-    List<AttachmentData>? attachments,
-  ) async {
-    // 1. Attachments present → built-in modality detection
-    if (attachments != null && attachments.isNotEmpty) {
-      return _resolveModelConfig(agent, attachments);
-    }
-
-    // 2. Pure text → always use text route directly.
-    //    Custom modality intent classification is deprecated in favour of
-    //    the tool-model mechanism (main LLM decides via tool_call).
-    return _resolveModelConfig(agent, null);
-  }
-
-  /// Use the agent's default model to classify user intent against
-  /// configured [customModalities]. Returns the matched modality key
-  /// or `null` for normal text conversation.
-  Future<String?> _classifyIntent(
-    RemoteAgent agent,
-    String message,
-    List<CustomModality> customModalities,
-  ) async {
-    final choices =
-        customModalities.map((m) => '- "${m.key}": ${m.description}').join('\n');
-
-    final classifierPrompt =
-        '''Classify the user's intent. Available categories:
-$choices
-- "none": Normal text conversation, does not match any category above.
-
-User message: "$message"
-
-Reply with ONLY the category key (e.g. "${customModalities.first.key}" or "none"), no explanation.''';
-
-    // Look up full config from ModelRegistry via main_model_id.
-    final mainModelId = agent.metadata['main_model_id'] as String?;
-    if (mainModelId == null) return null;
-    final mainDef = ModelRegistry.instance.getById(mainModelId);
-    if (mainDef == null) return null;
-    final effectiveApiBase = mainDef.route.apiBase ?? '';
-    final effectiveApiKey = mainDef.route.apiKey != null && mainDef.route.apiKey!.isNotEmpty
-        ? mainDef.route.apiKey!
-        : '';
-    final effectiveModel = mainDef.route.model ?? '';
-
-    if (effectiveApiBase.isEmpty || effectiveModel.isEmpty) return null;
-
-    final url = effectiveApiBase.endsWith('/')
-        ? '${effectiveApiBase}chat/completions'
-        : '$effectiveApiBase/chat/completions';
-
-    try {
-      final response = await _postNonSSE(
-        url: url,
-        headers: {
-          'Content-Type': 'application/json',
-          if (effectiveApiKey.isNotEmpty)
-            'Authorization': 'Bearer $effectiveApiKey',
-        },
-        body: jsonEncode({
-          'model': effectiveModel,
-          'messages': [
-            {'role': 'user', 'content': classifierPrompt},
-          ],
-          'stream': false,
-          'max_tokens': 20,
-          'temperature': 0,
-        }),
-      );
-
-      final content = _extractResponseContent(
-        response,
-        const ResolvedModelConfig(
-          providerType: '',
-          model: '',
-          apiBase: '',
-          apiKey: '',
-        ),
-      );
-      final key = content.trim().replaceAll('"', '').toLowerCase();
-
-      // Validate against known custom modality keys
-      if (key != 'none' && customModalities.any((m) => m.key == key)) {
-        return key;
-      }
-    } catch (e) {
-      LoggerService().warning('Intent classification failed, falling back to text', tag: 'LocalLLM', error: e);
-    }
-    return null;
-  }
-
-  // =========================================================================
   // Model routing — resolve effective model config based on attachment modality
   // =========================================================================
 
   /// Resolve the effective model configuration for a request.
   ///
-  /// Priority order (when main_model_id is configured):
-  /// 1. Tool model matching the attachment modality type (e.g. imageUnderstanding
-  ///    tool model for image attachments).
-  /// 2. Existing model_routing config (legacy / backward-compat).
-  /// 3. Default vision model for the provider (auto-upgrade for images).
-  /// 4. Main model fallback.
+  /// Priority:
+  /// 1. [AgentScenarioModels] explicit mapping.
+  /// 2. Main model when its capability tags cover the detected modality.
+  /// 3. Main model fallback.
+  /// 4. Legacy `llm_*` metadata when `main_model_id` is absent.
   ResolvedModelConfig _resolveModelConfig(
     RemoteAgent agent,
     List<AttachmentData>? attachments,
   ) {
-    // If a main_model_id is stored, look up the full ModelDefinition and use
-    // its route exclusively — do NOT fall back to any metadata fields.
+    final semanticTypes =
+        attachments?.map((a) => a.semanticType).toList() ?? [];
+    final modality = ModelRoutingConfig.detectModality(semanticTypes);
     final mainModelId = agent.metadata['main_model_id'] as String?;
+
+    final scenarioDef = agent.scenarioModels.resolveDefinition(
+      modality,
+      mainModelId: mainModelId,
+      registry: ModelRegistry.instance,
+    );
+    if (scenarioDef != null) {
+      return AgentScenarioModels.configFromDefinition(scenarioDef);
+    }
+
     if (mainModelId != null) {
       final def = ModelRegistry.instance.getById(mainModelId);
       if (def != null) {
-        final r = def.route;
-        final fallbackProvider = (r.provider != null && r.provider!.isNotEmpty)
-            ? r.provider!
-            : 'openai';
-        final fallbackModel = r.model ?? '';
-        final fallbackApiBase = r.apiBase ?? '';
-        final fallbackApiKey = r.apiKey != null && r.apiKey!.isNotEmpty
-            ? r.apiKey!
-            : '';
-
-        final semanticTypes = attachments?.map((a) => a.semanticType).toList() ?? [];
-        final modality = ModelRoutingConfig.detectModality(semanticTypes);
-
-        // 1. Try to resolve via tool model type matching (new logic).
-        final toolModelResolved = _resolveByToolModelType(agent, modality);
-        if (toolModelResolved != null) {
-          return toolModelResolved;
-        }
-
-        // 2. Fall back to legacy model_routing config.
-        final routing = agent.modelRouting;
-        if (!routing.isEmpty) {
-          final route = routing.routes[modality];
-          if (route != null && !route.isEmpty) {
-            return routing.resolve(
-              modality,
-              fallbackProvider: fallbackProvider,
-              fallbackModel: fallbackModel,
-              fallbackApiBase: fallbackApiBase,
-              fallbackApiKey: fallbackApiKey,
-            );
-          }
-        }
-
-        // 3. Auto-upgrade to default vision model for image attachments.
-        if (modality == ModalityType.image) {
-          final visionModel = _defaultVisionModelForProvider(fallbackProvider, fallbackApiBase);
-          if (visionModel != null && visionModel != fallbackModel) {
-            return ResolvedModelConfig(
-              providerType: fallbackProvider,
-              model: visionModel,
-              apiBase: fallbackApiBase,
-              apiKey: fallbackApiKey,
-            );
-          }
-        }
-
-        return ResolvedModelConfig(
-          providerType: fallbackProvider,
-          model: fallbackModel,
-          apiBase: fallbackApiBase,
-          apiKey: fallbackApiKey,
-          stream: r.stream ?? true,
-          apiPath: r.apiPath,
-          requestBodyTemplate: r.requestBodyTemplate,
-          responseBodyPath: r.responseBodyPath,
-        );
+        return AgentScenarioModels.configFromDefinition(def);
       }
     }
 
     final fallbackProvider = agent.metadata['llm_provider'] as String? ?? 'openai';
     final fallbackModel = agent.metadata['llm_model'] as String? ?? '';
     final fallbackApiBase = agent.metadata['llm_api_base'] as String? ?? '';
-    final fallbackApiKey = repairUtf16Garbled(
-        agent.metadata['llm_api_key'] as String? ?? '');
-
-    final semanticTypes = attachments?.map((a) => a.semanticType).toList() ?? [];
-    final modality = ModelRoutingConfig.detectModality(semanticTypes);
-
-    final routing = agent.modelRouting;
-
-    // If an explicit route exists for this modality, use it.
-    if (!routing.isEmpty) {
-      final route = routing.routes[modality];
-      if (route != null && !route.isEmpty) {
-        return routing.resolve(
-          modality,
-          fallbackProvider: fallbackProvider,
-          fallbackModel: fallbackModel,
-          fallbackApiBase: fallbackApiBase,
-          fallbackApiKey: fallbackApiKey,
-        );
-      }
-    }
-
-    // No explicit route — if images are present, auto-select the provider's
-    // default vision model so we don't send image_url to a text-only model.
-    if (modality == ModalityType.image) {
-      final visionModel = _defaultVisionModelForProvider(fallbackProvider, fallbackApiBase);
-      if (visionModel != null && visionModel != fallbackModel) {
-        return ResolvedModelConfig(
-          providerType: fallbackProvider,
-          model: visionModel,
-          apiBase: fallbackApiBase,
-          apiKey: fallbackApiKey,
-        );
-      }
-    }
+    final fallbackApiKey =
+        repairUtf16Garbled(agent.metadata['llm_api_key'] as String? ?? '');
 
     return ResolvedModelConfig(
       providerType: fallbackProvider,
@@ -848,78 +651,6 @@ Reply with ONLY the category key (e.g. "${customModalities.first.key}" or "none"
       apiBase: fallbackApiBase,
       apiKey: fallbackApiKey,
     );
-  }
-
-  /// Try to resolve the model config by matching an enabled tool model against
-  /// the given [modality].
-  ///
-  /// Maps:
-  /// - [ModalityType.image]  → [ModelType.imageUnderstanding]
-  /// - [ModalityType.audio]  → [ModelType.audioUnderstanding]
-  /// - [ModalityType.video]  → [ModelType.videoUnderstanding]
-  ///
-  /// Returns `null` if no matching tool model is found (caller should fall back
-  /// to the legacy model_routing config).
-  ResolvedModelConfig? _resolveByToolModelType(
-    RemoteAgent agent,
-    ModalityType modality,
-  ) {
-    // Only resolve for multimedia modalities.
-    final ModelType? requiredType;
-    switch (modality) {
-      case ModalityType.image:
-        requiredType = ModelType.imageUnderstanding;
-        break;
-      case ModalityType.audio:
-        requiredType = ModelType.audioUnderstanding;
-        break;
-      case ModalityType.video:
-        requiredType = ModelType.videoUnderstanding;
-        break;
-      case ModalityType.text:
-        return null;
-    }
-
-    // Search enabled tool models for one that supports the required type.
-    for (final toolName in agent.enabledToolModels) {
-      final def = ModelRegistry.instance.getDefinition(toolName);
-      if (def == null) continue;
-      if (!def.modelTypes.contains(requiredType)) continue;
-
-      // Found a matching tool model — build a ResolvedModelConfig from its route.
-      final r = def.route;
-      final provider = (r.provider != null && r.provider!.isNotEmpty)
-          ? r.provider!
-          : 'openai';
-      return ResolvedModelConfig(
-        providerType: provider,
-        model: r.model ?? '',
-        apiBase: r.apiBase ?? '',
-        apiKey: r.apiKey != null && r.apiKey!.isNotEmpty ? r.apiKey! : '',
-        stream: r.stream ?? true,
-        apiPath: r.apiPath,
-        requestBodyTemplate: r.requestBodyTemplate,
-        responseBodyPath: r.responseBodyPath,
-      );
-    }
-
-    return null;
-  }
-
-  /// Look up the default vision model for a given provider type / apiBase.
-  String? _defaultVisionModelForProvider(String providerType, String apiBase) {
-    // Try matching by providerType first, then by apiBase prefix.
-    for (final p in llmProviders) {
-      if (p.providerType == providerType && p.defaultApiBase == apiBase) {
-        return p.defaultVisionModel;
-      }
-    }
-    for (final p in llmProviders) {
-      if (p.providerType == providerType && p.defaultVisionModel != null) {
-        return p.defaultVisionModel;
-      }
-    }
-    return null;
   }
 
   // =========================================================================

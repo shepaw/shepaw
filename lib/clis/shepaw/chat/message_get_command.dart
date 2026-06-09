@@ -4,15 +4,12 @@ import '../../cli_base.dart';
 import '../../../models/attachment_data.dart';
 import '../../../models/llm_stream_event.dart';
 import '../../../models/message.dart';
-import '../../../models/model_definition.dart';
-import '../../../models/remote_agent.dart';
 import '../../../services/attachment_service.dart';
 import '../../../services/local_database_service.dart';
 import '../../../services/local_file_storage_service.dart';
 import '../../../services/local_llm_agent_service.dart';
 import '../../../services/messaging/local_llm_handler.dart';
 import '../../../models/model_routing_config.dart';
-import '../../../services/model_registry.dart';
 import 'chat_agent_scope.dart';
 
 /// 按 message_id 获取完整消息内容，支持按需读取附件与图片分析。
@@ -240,16 +237,15 @@ class MessageGetCommand extends CliCommand {
       return 'Error: agent $currentAgentId not found.';
     }
 
-    final visionAgent = _resolveVisionAgent(agent);
-    if (!visionAgent.supportsModality(ModalityType.image)) {
+    if (!agent.supportsModality(ModalityType.image)) {
       return 'Error: no image understanding model configured for this agent. '
-          'Enable an imageUnderstanding tool model in agent settings.';
+          'Configure Scenario Models or tag the main model with imageUnderstanding.';
     }
 
     final buffer = StringBuffer();
     try {
       final stream = LocalLLMAgentService.instance.chat(
-        agent: visionAgent,
+        agent: agent,
         message: prompt,
         enableUITools: false,
         includeShepawCli: false,
@@ -272,43 +268,6 @@ class MessageGetCommand extends CliCommand {
 
     final text = buffer.toString().trim();
     return text.isEmpty ? 'Error: vision model returned empty response.' : text;
-  }
-
-  /// Prefer an enabled imageUnderstanding tool model; fall back to the agent itself.
-  RemoteAgent _resolveVisionAgent(RemoteAgent agent) {
-    ModelDefinition? toolDef;
-    for (final toolName in agent.enabledToolModels) {
-      final def = ModelRegistry.instance.getDefinition(toolName);
-      if (def != null && def.modelTypes.contains(ModelType.imageUnderstanding)) {
-        toolDef = def;
-        break;
-      }
-    }
-
-    if (toolDef == null) return agent;
-
-    final route = toolDef.route;
-    final now = DateTime.now().millisecondsSinceEpoch;
-    return RemoteAgent(
-      id: agent.id,
-      name: agent.name,
-      token: agent.token,
-      endpoint: agent.endpoint,
-      protocol: agent.protocol,
-      connectionType: agent.connectionType,
-      metadata: {
-        'llm_provider':
-            (route.provider != null && route.provider!.isNotEmpty)
-                ? route.provider!
-                : 'openai',
-        'llm_model': route.model ?? '',
-        'llm_api_base': route.apiBase ?? '',
-        'llm_api_key': route.apiKey ?? '',
-        'main_model_id': toolDef.id,
-      },
-      createdAt: now,
-      updatedAt: now,
-    );
   }
 
   bool _flagIsTrue(String? value) {

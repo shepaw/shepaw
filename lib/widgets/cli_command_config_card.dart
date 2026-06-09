@@ -53,7 +53,7 @@ class CliCommandConfigCard extends StatelessWidget {
                   l10n.common_optional,
                   style: TextStyle(
                     fontSize: 12,
-                    color: colorScheme.outline,
+                    color: colorScheme.onSurfaceVariant,
                   ),
                 ),
               ],
@@ -61,7 +61,7 @@ class CliCommandConfigCard extends StatelessWidget {
             const SizedBox(height: 8),
             Text(
               'Select CLI commands this agent can execute. Unselected commands will be blocked. All selected = unrestricted.',
-              style: TextStyle(fontSize: 12, color: colorScheme.outline),
+              style: TextStyle(fontSize: 12, color: colorScheme.onSurfaceVariant),
             ),
             const SizedBox(height: 8),
 
@@ -124,7 +124,7 @@ class CliCommandConfigCard extends StatelessWidget {
                           '(${commands.length} commands)',
                           style: TextStyle(
                             fontSize: 11,
-                            color: colorScheme.outline,
+                            color: colorScheme.onSurfaceVariant,
                           ),
                         ),
                       ],
@@ -134,7 +134,7 @@ class CliCommandConfigCard extends StatelessWidget {
                     nsInfo.description,
                     style: TextStyle(
                       fontSize: 11,
-                      color: colorScheme.outline,
+                      color: colorScheme.onSurfaceVariant,
                     ),
                   ),
                   const SizedBox(height: 4),
@@ -158,7 +158,7 @@ class CliCommandConfigCard extends StatelessWidget {
                         cmdLabel,
                         style: TextStyle(
                           fontSize: 11,
-                          color: colorScheme.outline,
+                          color: colorScheme.onSurfaceVariant,
                         ),
                       ),
                       value: enabled,

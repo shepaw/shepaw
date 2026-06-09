@@ -63,6 +63,9 @@ class AppLocalizationsEn extends AppLocalizations {
   String get common_optional => 'Optional';
 
   @override
+  String get common_listSeparator => ', ';
+
+  @override
   String get common_featureComingSoon => 'Feature coming soon';
 
   @override
@@ -776,7 +779,16 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get addAgent_modelConfigHint =>
-      'Select LLM provider to auto-fill default configuration';
+      'Choose the main chat model. Input scenarios inherit it by default; override per scenario if needed.';
+
+  @override
+  String get agentModelConfig_mainChat => 'Main Chat Model';
+
+  @override
+  String get agentModelConfig_selectMainChat => 'Select main chat model';
+
+  @override
+  String get agentModelConfig_attachmentsSection => 'Scenario Models';
 
   @override
   String get addAgent_modelName => 'Model Name';
@@ -1171,7 +1183,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get agentDetail_systemPrompt => 'System Prompt';
 
   @override
-  String get agentDetail_llmConfig => 'LLM Configuration';
+  String get agentDetail_llmConfig => 'Model Configuration';
 
   @override
   String get agentDetail_provider => 'Provider';
@@ -1483,6 +1495,18 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get chat_noAgentSelected => 'No agent selected';
+
+  @override
+  String get chat_modalityNotSupported_image =>
+      'This agent does not support image understanding. Configure it under Agent Settings → Model Configuration, or enable Image Understanding on the main model.';
+
+  @override
+  String get chat_modalityNotSupported_audio =>
+      'This agent does not support audio understanding. Configure it under Agent Settings → Model Configuration.';
+
+  @override
+  String get chat_modalityNotSupported_video =>
+      'This agent does not support video understanding. Configure it under Agent Settings → Model Configuration.';
 
   @override
   String chat_loadFailed(String error) {
@@ -2387,6 +2411,44 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
+  String get scenarioModels_title => 'Scenario Models';
+
+  @override
+  String get scenarioModels_hint =>
+      'Assign models for image/audio/video understanding and image generation, TTS, video generation. Input scenarios inherit the main model when unset.';
+
+  @override
+  String get scenarioModels_inheritMain => 'Inherit main model';
+
+  @override
+  String get scenarioModels_inheritMainCovered =>
+      'Inherit main model (supported)';
+
+  @override
+  String get scenarioModels_notConfigured => 'Not configured';
+
+  @override
+  String get scenarioModels_coveredByMain =>
+      'Main model supports all input scenarios — no extra setup needed';
+
+  @override
+  String get scenarioModels_expandToOverride =>
+      'Expand to assign a model per attachment type';
+
+  @override
+  String scenarioModels_needsConfig(String modalities) {
+    return 'Main model missing: $modalities';
+  }
+
+  @override
+  String get scenarioModels_selectMainFirst => 'Select a main model first';
+
+  @override
+  String scenarioModels_configuredCount(int count) {
+    return '$count configured';
+  }
+
+  @override
   String get modelRouting_title => 'Multi-modal Model Routing';
 
   @override
@@ -2615,14 +2677,14 @@ class AppLocalizationsEn extends AppLocalizations {
   String get toolModel_managementTitle => 'Model Management';
 
   @override
-  String get toolModel_configTitle => 'Models';
+  String get toolModel_configTitle => 'Generation';
 
   @override
   String get toolModel_configHint =>
-      'Select models for this agent. Tool models are exposed to the main LLM via tool calls; other models can be used for multi-modal routing.';
+      'Capabilities the AI can invoke during chat, such as image generation or TTS. Configure user attachments in Model Configuration above.';
 
   @override
-  String get toolModel_configureTitle => 'Select Models';
+  String get toolModel_configureTitle => 'Select Generation Capabilities';
 
   @override
   String get toolModel_addTitle => 'Add Model';
@@ -2738,15 +2800,20 @@ class AppLocalizationsEn extends AppLocalizations {
       'e.g., Use for image generation tasks';
 
   @override
-  String get addAgent_noToolModels => 'No models selected';
+  String get toolModel_noGenerationModels =>
+      'No generation models available. Add image generation, TTS, etc. in Settings > Model Management.';
+
+  @override
+  String get addAgent_noToolModels => 'No generation capabilities enabled';
 
   @override
   String addAgent_toolModelsCount(int count) {
-    return '$count models enabled';
+    return '$count generation capabilities enabled';
   }
 
   @override
-  String get agentDetail_noToolModelsEnabled => 'No models enabled';
+  String get agentDetail_noToolModelsEnabled =>
+      'No generation capabilities enabled';
 
   @override
   String get chat_mentionMode => 'Mention Mode';
@@ -2825,6 +2892,17 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get toolModel_goToManagement => 'Go to Model Management';
+
+  @override
+  String get ollama_testConnection => 'Test Connection';
+
+  @override
+  String get ollama_testConnectionSuccess => 'Ollama connection successful';
+
+  @override
+  String ollama_testConnectionFailed(String error) {
+    return 'Ollama connection failed: $error';
+  }
 
   @override
   String get settings_disableServiceTitle => 'Disable Local Service';

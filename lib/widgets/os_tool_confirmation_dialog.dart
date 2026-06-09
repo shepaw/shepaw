@@ -91,7 +91,7 @@ class OsToolConfirmationDialog extends StatelessWidget {
           Text(
             l10n.osTool_confirmDescription,
             style: theme.textTheme.bodySmall?.copyWith(
-              color: colorScheme.outline,
+              color: colorScheme.onSurfaceVariant,
             ),
           ),
         ],

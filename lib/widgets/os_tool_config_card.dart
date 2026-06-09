@@ -50,7 +50,7 @@ class OsToolConfigCard extends StatelessWidget {
                   l10n.common_optional,
                   style: TextStyle(
                     fontSize: 12,
-                    color: colorScheme.outline,
+                    color: colorScheme.onSurfaceVariant,
                   ),
                 ),
               ],
@@ -58,7 +58,7 @@ class OsToolConfigCard extends StatelessWidget {
             const SizedBox(height: 8),
             Text(
               l10n.osTool_configHint,
-              style: TextStyle(fontSize: 12, color: colorScheme.outline),
+              style: TextStyle(fontSize: 12, color: colorScheme.onSurfaceVariant),
             ),
             const SizedBox(height: 8),
 
@@ -129,7 +129,7 @@ class OsToolConfigCard extends StatelessWidget {
                             size: 16,
                             color: supported
                                 ? colorScheme.onSurface
-                                : colorScheme.outline.withValues(alpha: 0.5),
+                                : colorScheme.onSurfaceVariant.withValues(alpha: 0.5),
                           ),
                           const SizedBox(width: 8),
                           Expanded(
@@ -139,7 +139,7 @@ class OsToolConfigCard extends StatelessWidget {
                                 fontSize: 13,
                                 color: supported
                                     ? null
-                                    : colorScheme.outline.withValues(alpha: 0.5),
+                                    : colorScheme.onSurfaceVariant.withValues(alpha: 0.5),
                               ),
                             ),
                           ),
@@ -153,8 +153,8 @@ class OsToolConfigCard extends StatelessWidget {
                         style: TextStyle(
                           fontSize: 11,
                           color: supported
-                              ? colorScheme.outline
-                              : colorScheme.outline.withValues(alpha: 0.4),
+                              ? colorScheme.onSurfaceVariant
+                              : colorScheme.onSurfaceVariant.withValues(alpha: 0.4),
                         ),
                       ),
                       value: enabled && supported,

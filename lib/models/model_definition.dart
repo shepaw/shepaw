@@ -37,15 +37,108 @@ enum ModelType {
   }
 }
 
+/// Maps [ModalityType] to the [ModelType] required to handle it.
+extension ModalityRequiredModelType on ModalityType {
+  ModelType get requiredModelType {
+    switch (this) {
+      case ModalityType.text:
+        return ModelType.text;
+      case ModalityType.image:
+        return ModelType.imageUnderstanding;
+      case ModalityType.audio:
+        return ModelType.audioUnderstanding;
+      case ModalityType.video:
+        return ModelType.videoUnderstanding;
+      case ModalityType.imageGeneration:
+        return ModelType.imageGeneration;
+      case ModalityType.tts:
+        return ModelType.tts;
+      case ModalityType.videoGeneration:
+        return ModelType.videoGeneration;
+    }
+  }
+
+  bool get isInputScenario => kInputScenarioModalities.contains(this);
+
+  bool get isGenerationScenario => kGenerationScenarioModalities.contains(this);
+}
+
+/// Model types used when routing user attachments (scenario table).
+const Set<ModelType> kInputScenarioModelTypes = {
+  ModelType.text,
+  ModelType.imageUnderstanding,
+  ModelType.audioUnderstanding,
+  ModelType.videoUnderstanding,
+};
+
+/// Model types the main LLM can delegate to via tool calling.
+const Set<ModelType> kDelegatableModelTypes = {
+  ModelType.imageGeneration,
+  ModelType.tts,
+  ModelType.videoGeneration,
+};
+
+/// Input-understanding scenarios (user attachments).
+const List<ModalityType> kInputScenarioModalities = [
+  ModalityType.image,
+  ModalityType.audio,
+  ModalityType.video,
+];
+
+/// Generation / delegation scenarios (LLM tool calls).
+const List<ModalityType> kGenerationScenarioModalities = [
+  ModalityType.imageGeneration,
+  ModalityType.tts,
+  ModalityType.videoGeneration,
+];
+
+/// All per-scenario overrides shown in agent model config (excludes text).
+const List<ModalityType> kConfigurableScenarioModalities = [
+  ...kInputScenarioModalities,
+  ...kGenerationScenarioModalities,
+];
+
+/// @deprecated Use [kInputScenarioModalities].
+const List<ModalityType> kAttachmentModalities = kInputScenarioModalities;
+
+extension ModelDefinitionCapability on ModelDefinition {
+  bool supportsScenario(ModalityType modality) =>
+      modelTypes.contains(modality.requiredModelType);
+
+  bool get isDelegatable =>
+      modelTypes.any(kDelegatableModelTypes.contains);
+}
+
+extension ModelDefinitionListFilters on Iterable<ModelDefinition> {
+  List<ModelDefinition> forScenario(
+    ModalityType modality, {
+    String? includeId,
+  }) {
+    final matches =
+        where((d) => d.supportsScenario(modality)).toList();
+    if (includeId == null) return matches;
+    if (matches.any((d) => d.id == includeId)) return matches;
+    final extra = where((d) => d.id == includeId);
+    return [...matches, ...extra];
+  }
+
+  List<ModelDefinition> forDelegation() =>
+      where((d) => d.isDelegatable).toList();
+}
+
+bool mainModelCoversModality(ModelDefinition? main, ModalityType modality) {
+  if (main == null) return false;
+  return main.modelTypes.contains(modality.requiredModelType);
+}
+
 /// A globally configured model definition that can be reused across agents.
 ///
 /// Models can serve multiple purposes:
-/// - **Tool model**: Exposed to the main LLM as a callable tool. The LLM
-///   decides when to invoke it via function/tool calling. Requires a
-///   [description] so the LLM knows when to call it.
-/// - **Multi-modal routing**: Can be referenced by agents for image, audio,
-///   or video understanding.
-/// - **Conversation model**: A general-purpose LLM endpoint.
+/// - **Tool model**: Exposed to the main LLM as a callable tool for delegated
+///   tasks (image generation, TTS, etc.). The LLM decides when to invoke it.
+/// - **Scenario model**: Referenced in an agent's scenario table for input
+///   routing (text/image/audio/video attachments).
+/// - **Conversation model**: A general-purpose LLM endpoint (main model).
 ///
 /// Definitions are stored globally (SharedPreferences) and enabled per-agent.
 class ModelDefinition {

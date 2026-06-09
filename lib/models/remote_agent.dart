@@ -2,7 +2,7 @@ import 'dart:convert';
 
 import 'model_routing_config.dart';
 import 'model_definition.dart';
-import 'llm_provider_config.dart';
+import 'agent_scenario_models.dart';
 import 'prompt_stack_config.dart';
 import '../services/model_registry.dart';
 
@@ -310,13 +310,23 @@ class RemoteAgent {
   bool get hasEnabledCliCommands => enabledCliCommands.isNotEmpty;
 
   /// Multi-modal model routing configuration parsed from metadata.
+  /// Legacy inline routing config. Used only when migrating to [scenarioModels].
+  @Deprecated('Use scenario_models. Read-only for migration.')
   ModelRoutingConfig get modelRouting {
     final routing = metadata['model_routing'] as Map<String, dynamic>?;
     return ModelRoutingConfig.fromJson(routing);
   }
 
-  /// Whether multi-modal model routing is configured.
+  /// Whether legacy multi-modal model routing metadata exists (migration only).
+  @Deprecated('Use hasScenarioModels')
   bool get hasModelRouting => !modelRouting.isEmpty;
+
+  /// Explicit scenario → model definition mapping.
+  AgentScenarioModels get scenarioModels => AgentScenarioModels.fromJson(
+        metadata['scenario_models'] as Map<String, dynamic>?,
+      );
+
+  bool get hasScenarioModels => !scenarioModels.isEmpty;
 
   /// 是否为本地 LLM agent（由 App 直接驱动 LLM 循环，无需远端 endpoint）。
   ///
@@ -329,52 +339,35 @@ class RemoteAgent {
   ///
   /// - Text is always supported.
   /// - Remote ACP agents (no `llm_provider` metadata) are assumed capable.
-  /// - Local agents check enabled tool models first, then explicit model routing,
-  ///   then fall back to the provider's [defaultVisionModel] for image modality.
+  /// - Local agents check scenario models, then main model capability tags.
   bool supportsModality(ModalityType modality) {
     if (modality == ModalityType.text) return true;
 
     // Remote ACP agents — assume capable (remote side handles it).
     if (!isLocal) return true;
 
-    // Check enabled tool models for the modality.
-    // Priority 1: Tool models with explicit model type tags
-    final toolModels = enabledToolModels;
-    if (toolModels.isNotEmpty) {
-      // Map ModalityType to required ModelType
-      final requiredType = switch (modality) {
-        ModalityType.text => ModelType.text,
-        ModalityType.image => ModelType.imageUnderstanding,
-        ModalityType.audio => ModelType.audioUnderstanding,
-        ModalityType.video => ModelType.videoUnderstanding,
-      };
-
-      // Check if any enabled tool supports this modality
-      for (final toolName in toolModels) {
-        final def = ModelRegistry.instance.getDefinition(toolName);
-        if (def != null && def.modelTypes.contains(requiredType)) {
-          return true;
-        }
-      }
+    if (modality.isGenerationScenario) {
+      final scenarioId = scenarioModels.modelIdFor(modality);
+      return scenarioId != null &&
+          scenarioId.isNotEmpty &&
+          ModelRegistry.instance.getById(scenarioId) != null;
     }
 
-    // Priority 2: Check explicit model_routing for the modality.
-    final routing = modelRouting;
-    if (!routing.isEmpty) {
-      final route = routing.routes[modality];
-      if (route != null && !route.isEmpty) return true;
+    final requiredType = modality.requiredModelType;
+    final mainModelId = metadata['main_model_id'] as String?;
+
+    // Priority 1: Explicit scenario model for this modality.
+    final scenarioId = scenarioModels.modelIdFor(modality);
+    if (scenarioId != null && scenarioId.isNotEmpty) {
+      final def = ModelRegistry.instance.getById(scenarioId);
+      if (def != null) return true;
     }
 
-    // Priority 3: For image modality, check if provider has a default vision model.
-    if (modality == ModalityType.image) {
-      final provider = metadata['llm_provider'] as String? ?? 'openai';
-      final apiBase = metadata['llm_api_base'] as String? ?? '';
-      for (final p in llmProviders) {
-        if (p.providerType == provider &&
-            (apiBase.isEmpty || p.defaultApiBase == apiBase) &&
-            p.defaultVisionModel != null) {
-          return true;
-        }
+    // Priority 2: Main model tagged for this modality.
+    if (mainModelId != null) {
+      final mainDef = ModelRegistry.instance.getById(mainModelId);
+      if (mainDef != null && mainDef.modelTypes.contains(requiredType)) {
+        return true;
       }
     }
 

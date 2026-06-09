@@ -50,7 +50,7 @@ class SkillConfigCard extends StatelessWidget {
                   l10n.common_optional,
                   style: TextStyle(
                     fontSize: 12,
-                    color: colorScheme.outline,
+                    color: colorScheme.onSurfaceVariant,
                   ),
                 ),
               ],
@@ -58,7 +58,7 @@ class SkillConfigCard extends StatelessWidget {
             const SizedBox(height: 8),
             Text(
               l10n.skill_configHint,
-              style: TextStyle(fontSize: 12, color: colorScheme.outline),
+              style: TextStyle(fontSize: 12, color: colorScheme.onSurfaceVariant),
             ),
             const SizedBox(height: 8),
 
@@ -72,14 +72,14 @@ class SkillConfigCard extends StatelessWidget {
                 ),
                 child: Row(
                   children: [
-                    Icon(Icons.info_outline, size: 16, color: colorScheme.outline),
+                    Icon(Icons.info_outline, size: 16, color: colorScheme.onSurfaceVariant),
                     const SizedBox(width: 8),
                     Expanded(
                       child: Text(
                         l10n.skill_noSkillsFound,
                         style: TextStyle(
                           fontSize: 12,
-                          color: colorScheme.outline,
+                          color: colorScheme.onSurfaceVariant,
                         ),
                       ),
                     ),
@@ -169,7 +169,7 @@ class SkillConfigCard extends StatelessWidget {
                         skill.description,
                         style: TextStyle(
                           fontSize: 11,
-                          color: colorScheme.outline,
+                          color: colorScheme.onSurfaceVariant,
                         ),
                         maxLines: 2,
                         overflow: TextOverflow.ellipsis,

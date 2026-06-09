@@ -8,6 +8,7 @@ import '../models/channel.dart';
 import '../models/remote_agent.dart';
 import '../models/attachment_data.dart';
 import '../models/pending_attachment.dart';
+import '../models/model_routing_config.dart';
 import '../services/chat_service.dart';
 import '../services/local_database_service.dart';
 import '../services/attachment_service.dart';
@@ -945,6 +946,14 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
     if (!isGroupMode && agentId == null) {
       _emit(ShowSnackBarEvent('chat_noAgentSelected'));
       return;
+    }
+
+    if (!isGroupMode && agentId != null && hasPendingAttachments) {
+      final agent = await localDatabaseService.getRemoteAgentById(agentId!);
+      if (agent != null &&
+          !await _validateAttachmentsForAgent(agent, pendingAttachments)) {
+        return;
+      }
     }
 
     final attachmentsToSend = List<PendingAttachment>.from(pendingAttachments);
@@ -1936,12 +1945,50 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
   // Send attachment to agent
   // ---------------------------------------------------------------------------
 
+  Future<bool> _validateAttachmentsForAgent(
+    RemoteAgent agent,
+    List<PendingAttachment> attachments,
+  ) async {
+    if (!agent.isLocal) return true;
+    for (final att in attachments) {
+      if (att.type == PendingAttachmentType.image &&
+          !agent.supportsModality(ModalityType.image)) {
+        _emit(ShowSnackBarEvent('chat_modalityNotSupported:image'));
+        return false;
+      }
+    }
+    return true;
+  }
+
+  Future<bool> _validateAttachmentDataForAgent(
+    RemoteAgent agent,
+    AttachmentData attachment,
+  ) async {
+    if (!agent.isLocal) return true;
+    final modality =
+        ModelRoutingConfig.detectModality([attachment.semanticType]);
+    if (modality == ModalityType.text) return true;
+    if (!agent.supportsModality(modality)) {
+      _emit(ShowSnackBarEvent('chat_modalityNotSupported:${modality.name}'));
+      return false;
+    }
+    return true;
+  }
+
   Future<void> sendAttachmentToAgent(Message attachmentMessage) async {
     final attachmentData = await attachmentService.buildAttachmentData(attachmentMessage);
     if (attachmentData == null) return;
     if (attachmentData.exceedsSizeLimit) {
       _emit(ShowSnackBarEvent('File too large (max 20MB) to send to agent'));
       return;
+    }
+
+    if (agentId != null) {
+      final agent = await localDatabaseService.getRemoteAgentById(agentId!);
+      if (agent != null &&
+          !await _validateAttachmentDataForAgent(agent, attachmentData)) {
+        return;
+      }
     }
 
     final userId = getUserId();

@@ -3,8 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
 import '../l10n/app_localizations.dart';
-import '../widgets/model_icon.dart';
-import '../models/model_definition.dart';
+import '../models/agent_scenario_models.dart';
 import '../models/remote_agent.dart';
 import '../services/model_registry.dart';
 import '../services/remote_agent_service.dart';
@@ -15,8 +14,7 @@ import '../utils/layout_utils.dart';
 import '../widgets/avatar_image.dart';
 import 'pairing_qr_scanner_screen.dart';
 import 'skill_select_screen.dart';
-import 'model_select_screen.dart';
-import 'model_management_screen.dart';
+import '../widgets/agent_model_config_card.dart';
 
 /// 添加远端助手界面
 class AddRemoteAgentScreen extends StatefulWidget {
@@ -85,8 +83,8 @@ class _AddRemoteAgentScreenState extends State<AddRemoteAgentScreen> {
   // Skills 配置
   Set<String> _enabledSkills = {};
 
-  // Tool Models 配置（toolName → 场景描述，空字符串表示使用全局描述）
-  Map<String, String> _toolModelScenarios = {};
+  // 场景模型
+  AgentScenarioModels _scenarioModels = const AgentScenarioModels();
 
   late RemoteAgentService _agentService;
 
@@ -210,6 +208,15 @@ class _AddRemoteAgentScreenState extends State<AddRemoteAgentScreen> {
     });
   }
 
+  void _applyScenarioModelsMetadata(Map<String, dynamic> metadata) {
+    if (_scenarioModels.isEmpty) {
+      metadata.remove('scenario_models');
+    } else {
+      metadata['scenario_models'] = _scenarioModels.toJson();
+      metadata.remove('model_routing');
+    }
+  }
+
   Future<void> _createAgent() async {
     if (!_formKey.currentState!.validate()) {
       return;
@@ -242,19 +249,20 @@ class _AddRemoteAgentScreenState extends State<AddRemoteAgentScreen> {
             metadata['enabled_skills'] = _enabledSkills.toList();
           }
 
-          // Save enabled tool models and scenarios
-          if (_toolModelScenarios.isNotEmpty) {
-            metadata['enabled_tool_models'] = _toolModelScenarios.keys.toList();
-            final nonEmptyScenarios = Map<String, String>.fromEntries(
-              _toolModelScenarios.entries.where((e) => e.value.isNotEmpty),
-            );
-            if (nonEmptyScenarios.isNotEmpty) {
-              metadata['tool_model_scenarios'] = nonEmptyScenarios;
-            }
+          // Save enabled tool models derived from generation scenario config
+          final enabledTools =
+              _scenarioModels.enabledGenerationToolModels(ModelRegistry.instance);
+          if (enabledTools.isNotEmpty) {
+            metadata['enabled_tool_models'] = enabledTools.toList();
+          } else {
+            metadata.remove('enabled_tool_models');
           }
+          metadata.remove('tool_model_scenarios');
 
           // Save allow_external_access
           metadata['allow_external_access'] = _allowExternalAccess;
+
+          _applyScenarioModelsMetadata(metadata);
         }
       }
       // system_prompt is a general agent config, independent of LLM provider
@@ -588,9 +596,22 @@ class _AddRemoteAgentScreenState extends State<AddRemoteAgentScreen> {
               if (_mode == AgentCreationMode.connect)
                 _buildConnectConfigCard(colorScheme),
 
-              // 创建模式 - LLM 配置卡片
+              // 创建模式 - 模型配置（主对话模型 + 附件理解）
               if (_mode == AgentCreationMode.create)
-                _buildLLMConfigCard(colorScheme),
+                AgentModelConfigCard(
+                  mainModelId: _selectedMainModelId,
+                  onMainModelChanged: _selectMainModel,
+                  scenarioModels: _scenarioModels,
+                  onScenarioModelsChanged: (models) =>
+                      setState(() => _scenarioModels = models),
+                  showRequiredBadge: true,
+                  mainModelValidator: (val) {
+                    if (val == null || val.isEmpty) {
+                      return AppLocalizations.of(context).addAgent_modelRequired;
+                    }
+                    return null;
+                  },
+                ),
 
               // 创建模式 - 允许外部访问开关
               if (_mode == AgentCreationMode.create) ...[
@@ -598,7 +619,7 @@ class _AddRemoteAgentScreenState extends State<AddRemoteAgentScreen> {
                 _buildExternalAccessCard(colorScheme),
               ],
 
-              // 创建模式 - OS 工具 / 技能 / 工具模型导航入口
+              // 创建模式 - 技能导航入口
               if (_mode == AgentCreationMode.create && _selectedMainModelId != null) ...[
                 const SizedBox(height: 16),
                 _buildConfigNavigationTiles(colorScheme),
@@ -915,231 +936,7 @@ class _AddRemoteAgentScreenState extends State<AddRemoteAgentScreen> {
     );
   }
 
-  /// LLM 配置卡片（创建模式）——从模型管理列表中选择主模型
-  Widget _buildLLMConfigCard(ColorScheme colorScheme) {
-    final l10n = AppLocalizations.of(context);
-    final defs = ModelRegistry.instance.definitions;
-
-    return Card(
-      elevation: 0,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(12),
-        side: BorderSide(color: colorScheme.outlineVariant),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                ModelIcon(size: 18, color: colorScheme.primary),
-                const SizedBox(width: 8),
-                Text(
-                  l10n.addAgent_modelConfig,
-                  style: TextStyle(
-                    fontWeight: FontWeight.w600,
-                    color: colorScheme.primary,
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 12),
-
-            if (defs.isEmpty)
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Container(
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      color: colorScheme.errorContainer.withValues(alpha: 0.3),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: Row(
-                      children: [
-                        Icon(Icons.warning_outlined, size: 16, color: colorScheme.error),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: Text(
-                            l10n.addAgent_noModels,
-                            style: TextStyle(
-                              fontSize: 12,
-                              color: colorScheme.error,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  Align(
-                    alignment: Alignment.centerRight,
-                    child: TextButton.icon(
-                      onPressed: () async {
-                        await Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (_) => const ModelManagementScreen(),
-                          ),
-                        );
-                        if (mounted) setState(() {});
-                      },
-                      icon: const Icon(Icons.settings_outlined, size: 16),
-                      label: Text(l10n.toolModel_goToManagement),
-                      style: TextButton.styleFrom(
-                        textStyle: const TextStyle(fontSize: 13),
-                        padding: const EdgeInsets.symmetric(horizontal: 8),
-                        minimumSize: Size.zero,
-                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                      ),
-                    ),
-                  ),
-                ],
-              )
-            else
-              DropdownButtonFormField<String>(
-                value: _selectedMainModelId,
-                isExpanded: true,
-                decoration: InputDecoration(
-                  border: const OutlineInputBorder(),
-                  prefixIcon: const Icon(Icons.memory),
-                  isDense: true,
-                ),
-                hint: Text(l10n.addAgent_selectModel),
-                selectedItemBuilder: (context) => defs.map((def) {
-                  // Compact display with type chips for the selected value
-                  return Row(
-                    children: [
-                      Flexible(
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 7, vertical: 2),
-                          decoration: BoxDecoration(
-                            color: const Color(0xFFF48FB1).withValues(alpha: 0.25),
-                            borderRadius: BorderRadius.circular(6),
-                          ),
-                          child: Text(
-                            def.displayName,
-                            overflow: TextOverflow.ellipsis,
-                            style: TextStyle(
-                              fontSize: 13,
-                              fontWeight: FontWeight.w500,
-                              color: colorScheme.onSurface,
-                            ),
-                          ),
-                        ),
-                      ),
-                      ...def.modelTypes.take(2).map((t) => Padding(
-                        padding: const EdgeInsets.only(left: 4),
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 5, vertical: 1),
-                          decoration: BoxDecoration(
-                            color: _modelTypeColor(t).withValues(alpha: 0.15),
-                            borderRadius: BorderRadius.circular(4),
-                          ),
-                          child: Text(
-                            _modelTypeLabel(t),
-                            style: TextStyle(
-                              fontSize: 10,
-                              color: _modelTypeColor(t),
-                              fontWeight: FontWeight.w500,
-                            ),
-                          ),
-                        ),
-                      )),
-                    ],
-                  );
-                }).toList(),
-                items: defs.map((def) {
-                  return DropdownMenuItem<String>(
-                    value: def.id,
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(vertical: 6),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Row(
-                            children: [
-                              Flexible(
-                                child: Container(
-                                  padding: const EdgeInsets.symmetric(
-                                      horizontal: 7, vertical: 2),
-                                  decoration: BoxDecoration(
-                                    color: const Color(0xFFF48FB1).withValues(alpha: 0.2),
-                                    borderRadius: BorderRadius.circular(6),
-                                  ),
-                                  child: Text(
-                                    def.displayName,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: TextStyle(
-                                      fontSize: 13,
-                                      fontWeight: FontWeight.w600,
-                                      color: colorScheme.onSurface,
-                                    ),
-                                  ),
-                                ),
-                              ),
-                              const SizedBox(width: 6),
-                              ...def.modelTypes.map((t) => Padding(
-                                padding: const EdgeInsets.only(right: 4),
-                                child: Container(
-                                  padding: const EdgeInsets.symmetric(
-                                      horizontal: 5, vertical: 2),
-                                  decoration: BoxDecoration(
-                                    color: _modelTypeColor(t).withValues(alpha: 0.12),
-                                    borderRadius: BorderRadius.circular(4),
-                                    border: Border.all(
-                                      color: _modelTypeColor(t).withValues(alpha: 0.3),
-                                      width: 0.5,
-                                    ),
-                                  ),
-                                  child: Text(
-                                    _modelTypeLabel(t),
-                                    style: TextStyle(
-                                      fontSize: 10,
-                                      color: _modelTypeColor(t),
-                                      fontWeight: FontWeight.w500,
-                                    ),
-                                  ),
-                                ),
-                              )),
-                            ],
-                          ),
-                          if (def.route.model != null && def.route.model!.isNotEmpty)
-                            Padding(
-                              padding: const EdgeInsets.only(top: 3),
-                              child: Text(
-                                def.route.model!,
-                                overflow: TextOverflow.ellipsis,
-                                style: TextStyle(
-                                  fontSize: 11,
-                                  color: colorScheme.outline,
-                                ),
-                              ),
-                            ),
-                        ],
-                      ),
-                    ),
-                  );
-                }).toList(),
-                onChanged: (val) => _selectMainModel(val),
-                validator: (val) {
-                  if (val == null || val.isEmpty) {
-                    return l10n.addAgent_modelRequired;
-                  }
-                  return null;
-                },
-              ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  /// Navigation tiles for OS Tools, Skills, and Tool Models sub-pages.
+  /// Navigation tile for Skills sub-page.
   Widget _buildConfigNavigationTiles(ColorScheme colorScheme) {
     final l10n = AppLocalizations.of(context);
 
@@ -1149,70 +946,35 @@ class _AddRemoteAgentScreenState extends State<AddRemoteAgentScreen> {
         borderRadius: BorderRadius.circular(12),
         side: BorderSide(color: colorScheme.outlineVariant),
       ),
-      child: Column(
-        children: [
-          ListTile(
-            leading: Icon(Icons.auto_awesome, color: colorScheme.primary),
-            title: Text(l10n.skill_configTitle),
-            subtitle: Text(
-              _enabledSkills.isEmpty
-                  ? l10n.addAgent_noSkills
-                  : l10n.addAgent_skillsCount(_enabledSkills.length),
-              style: TextStyle(
-                color: _enabledSkills.isEmpty
-                    ? colorScheme.outline
-                    : colorScheme.primary,
+      child: ListTile(
+        leading: Icon(Icons.auto_awesome, color: colorScheme.primary),
+        title: Text(l10n.skill_configTitle),
+        subtitle: Text(
+          _enabledSkills.isEmpty
+              ? l10n.addAgent_noSkills
+              : l10n.addAgent_skillsCount(_enabledSkills.length),
+          style: TextStyle(
+            color: _enabledSkills.isEmpty
+                ? colorScheme.onSurfaceVariant
+                : colorScheme.primary,
+          ),
+        ),
+        trailing: const Icon(Icons.chevron_right),
+        onTap: () async {
+          final result = await Navigator.push<Set<String>>(
+            context,
+            MaterialPageRoute(
+              builder: (_) => SkillSelectScreen(
+                enabledSkills: _enabledSkills,
               ),
             ),
-            trailing: const Icon(Icons.chevron_right),
-            onTap: () async {
-              final result = await Navigator.push<Set<String>>(
-                context,
-                MaterialPageRoute(
-                  builder: (_) => SkillSelectScreen(
-                    enabledSkills: _enabledSkills,
-                  ),
-                ),
-              );
-              if (result != null) {
-                setState(() {
-                  _enabledSkills = result;
-                });
-              }
-            },
-          ),
-          const Divider(height: 1, indent: 16, endIndent: 16),
-          ListTile(
-            leading: ModelIcon(color: colorScheme.primary),
-            title: Text(l10n.toolModel_configTitle),
-            subtitle: Text(
-              _toolModelScenarios.isEmpty
-                  ? l10n.addAgent_noToolModels
-                  : l10n.addAgent_toolModelsCount(_toolModelScenarios.length),
-              style: TextStyle(
-                color: _toolModelScenarios.isEmpty
-                    ? colorScheme.outline
-                    : colorScheme.primary,
-              ),
-            ),
-            trailing: const Icon(Icons.chevron_right),
-            onTap: () async {
-              final result = await Navigator.push<Map<String, String>>(
-                context,
-                MaterialPageRoute(
-                  builder: (_) => ModelSelectScreen(
-                    toolModelScenarios: _toolModelScenarios,
-                  ),
-                ),
-              );
-              if (result != null) {
-                setState(() {
-                  _toolModelScenarios = result;
-                });
-              }
-            },
-          ),
-        ],
+          );
+          if (result != null) {
+            setState(() {
+              _enabledSkills = result;
+            });
+          }
+        },
       ),
     );
   }
@@ -1555,7 +1317,7 @@ class _AddRemoteAgentScreenState extends State<AddRemoteAgentScreen> {
                       ),
                     ),
                     const SizedBox(width: 12),
-                    Icon(icon, size: 18, color: colorScheme.outline),
+                    Icon(icon, size: 18, color: colorScheme.onSurfaceVariant),
                     const SizedBox(width: 8),
                     Expanded(
                       child: Text(
@@ -1663,7 +1425,7 @@ class _AddRemoteAgentScreenState extends State<AddRemoteAgentScreen> {
                               ? Icons.link
                               : Icons.add_circle,
                           color: isDisabled
-                              ? colorScheme.outline
+                              ? colorScheme.onSurfaceVariant
                               : Colors.white,
                           size: 20,
                         ),
@@ -1674,7 +1436,7 @@ class _AddRemoteAgentScreenState extends State<AddRemoteAgentScreen> {
                               : l10n.addAgent_createButton,
                           style: TextStyle(
                             color: isDisabled
-                                ? colorScheme.outline
+                                ? colorScheme.onSurfaceVariant
                                 : Colors.white,
                             fontSize: 16,
                             fontWeight: FontWeight.w600,
@@ -1687,46 +1449,6 @@ class _AddRemoteAgentScreenState extends State<AddRemoteAgentScreen> {
         ),
       ),
     );
-  }
-
-  /// Returns a color for a given model type tag.
-  Color _modelTypeColor(ModelType modelType) {
-    switch (modelType) {
-      case ModelType.text:
-        return const Color(0xFF1976D2);
-      case ModelType.imageUnderstanding:
-        return const Color(0xFF388E3C);
-      case ModelType.imageGeneration:
-        return const Color(0xFF7B1FA2);
-      case ModelType.audioUnderstanding:
-        return const Color(0xFFE64A19);
-      case ModelType.videoUnderstanding:
-        return const Color(0xFF0097A7);
-      case ModelType.videoGeneration:
-        return const Color(0xFF00796B);
-      case ModelType.tts:
-        return const Color(0xFFF57C00);
-    }
-  }
-
-  /// Returns a short label for a given model type.
-  String _modelTypeLabel(ModelType modelType) {
-    switch (modelType) {
-      case ModelType.text:
-        return 'Text';
-      case ModelType.imageUnderstanding:
-        return 'Vision';
-      case ModelType.imageGeneration:
-        return 'ImgGen';
-      case ModelType.audioUnderstanding:
-        return 'Audio';
-      case ModelType.videoUnderstanding:
-        return 'Video';
-      case ModelType.videoGeneration:
-        return 'VideoGen';
-      case ModelType.tts:
-        return 'TTS';
-    }
   }
 
   void _showAvatarPicker() {

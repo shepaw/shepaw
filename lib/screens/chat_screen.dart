@@ -116,6 +116,9 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   // Whether the current agent's LLM supports audio/voice input
   bool _agentSupportsAudio = false;
 
+  // Whether the current agent supports image input routing
+  bool _agentSupportsImage = false;
+
   @override
   void initState() {
     super.initState();
@@ -159,6 +162,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     _pendingHighlightMessageId = widget.highlightMessageId;
     _checkSheNeedsConfig();
     _checkAgentAudioSupport();
+    _checkAgentImageSupport();
   }
 
   @override
@@ -363,6 +367,16 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
         return l10n.chat_groupChatError(param);
       case 'chat_fileMessageFailed':
         return l10n.chat_fileMessageFailed(param);
+      case 'chat_modalityNotSupported':
+        switch (param) {
+          case 'audio':
+            return l10n.chat_modalityNotSupported_audio;
+          case 'video':
+            return l10n.chat_modalityNotSupported_video;
+          case 'image':
+          default:
+            return l10n.chat_modalityNotSupported_image;
+        }
       default:
         // 未知 key：若含冒号则取后半部分（错误详情），否则原样返回
         return colonIdx >= 0 ? param : key;
@@ -645,6 +659,17 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   }
 
   Future<void> _pickAndStageImage() async {
+    if (widget.agentId != null && !_agentSupportsImage) {
+      if (mounted) {
+        showTopToast(
+          context,
+          AppLocalizations.of(context).chat_modalityNotSupported_image,
+          icon: Icons.image_not_supported_outlined,
+          color: Colors.orange,
+        );
+      }
+      return;
+    }
     try {
       final image = await _controller.attachmentService.pickImage();
       if (image == null) return;
@@ -666,6 +691,16 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   // ---------------------------------------------------------------------------
 
   Future<void> _sendVoiceMessage() async {
+    if (widget.agentId != null && !_agentSupportsAudio) {
+      showTopToast(
+        context,
+        AppLocalizations.of(context).chat_modalityNotSupported_audio,
+        icon: Icons.mic_off,
+        color: Colors.orange,
+      );
+      return;
+    }
+
     final result = await _audioRecordingService.stopRecording();
     if (result == null) return;
 
@@ -753,6 +788,8 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
         if (updated != null) {
           _controller.updateAgentInfo(updated.name, updated.avatar);
         }
+        _checkAgentAudioSupport();
+        _checkAgentImageSupport();
       }
     }
   }
@@ -780,6 +817,10 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
         final updated = await _controller.localDatabaseService.getRemoteAgentById(agentId);
         if (updated != null) {
           _controller.updateAgentInfo(updated.name, updated.avatar);
+        }
+        if (agentId == widget.agentId) {
+          _checkAgentAudioSupport();
+          _checkAgentImageSupport();
         }
       }
     }
@@ -1667,6 +1708,17 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     }
   }
 
+  Future<void> _checkAgentImageSupport() async {
+    final agentId = widget.agentId;
+    if (agentId == null) return;
+    final agent = await _controller.localDatabaseService.getRemoteAgentById(agentId);
+    if (!mounted) return;
+    final supportsImage = agent != null && agent.supportsModality(ModalityType.image);
+    if (supportsImage != _agentSupportsImage) {
+      setState(() => _agentSupportsImage = supportsImage);
+    }
+  }
+
   /// Check whether the current agent's LLM configuration supports audio input.
   Future<void> _checkAgentAudioSupport() async {
     final agentId = widget.agentId;
@@ -1684,6 +1736,8 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     await _navigateToAgentDetail();
     // Re-check after returning from detail screen
     _checkSheNeedsConfig();
+    _checkAgentAudioSupport();
+    _checkAgentImageSupport();
   }
 
   Widget _buildSheConfigBanner() {

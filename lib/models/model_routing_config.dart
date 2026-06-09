@@ -3,12 +3,15 @@ import 'remote_agent.dart' show repairUtf16Garbled;
 String? _repairNullable(String? s) =>
     s != null ? repairUtf16Garbled(s) : null;
 
-/// Modality types for model routing.
+/// Modality / scenario types for model routing.
 enum ModalityType {
   text,
   image,
   audio,
-  video;
+  video,
+  imageGeneration,
+  tts,
+  videoGeneration;
 
   String get label {
     switch (this) {
@@ -20,6 +23,12 @@ enum ModalityType {
         return 'Audio';
       case ModalityType.video:
         return 'Video';
+      case ModalityType.imageGeneration:
+        return 'Image Gen';
+      case ModalityType.tts:
+        return 'TTS';
+      case ModalityType.videoGeneration:
+        return 'Video Gen';
     }
   }
 
@@ -32,6 +41,12 @@ enum ModalityType {
       case ModalityType.audio:
         return '\u{1F3B5}'; // musical note
       case ModalityType.video:
+        return '\u{1F3AC}'; // clapper board
+      case ModalityType.imageGeneration:
+        return '\u{1F3A8}'; // artist palette
+      case ModalityType.tts:
+        return '\u{1F50A}'; // speaker
+      case ModalityType.videoGeneration:
         return '\u{1F3AC}'; // clapper board
     }
   }
@@ -179,10 +194,10 @@ class CustomModality {
   );
 }
 
-/// Multi-modal model routing configuration.
+/// Legacy multi-modal routing configuration (migration only).
 ///
-/// Stored in `RemoteAgent.metadata['model_routing']`. Each modality can
-/// optionally override the agent's default (fallback) LLM configuration.
+/// New agents use [AgentScenarioModels] in `metadata['scenario_models']`.
+/// This type remains for reading old `metadata['model_routing']` data.
 class ModelRoutingConfig {
   final Map<ModalityType, ModelRouteConfig> routes;
   final List<CustomModality> customModalities;

@@ -121,7 +121,7 @@ class _ModelManagementScreenState
                 l10n.toolModel_count(defs.length),
                 style: TextStyle(
                   fontSize: 12,
-                  color: colorScheme.outline,
+                  color: colorScheme.onSurfaceVariant,
                   fontWeight: FontWeight.w500,
                 ),
               ),
@@ -140,14 +140,14 @@ class _ModelManagementScreenState
         children: [
           ModelIcon(
               size: 64,
-              color: colorScheme.outline.withValues(alpha: 0.5)),
+              color: colorScheme.onSurfaceVariant.withValues(alpha: 0.5)),
           const SizedBox(height: 16),
           Text(
             l10n.toolModel_noModels,
             style: TextStyle(
               fontSize: 16,
               fontWeight: FontWeight.w500,
-              color: colorScheme.outline,
+              color: colorScheme.onSurfaceVariant,
             ),
           ),
           const SizedBox(height: 8),
@@ -156,7 +156,7 @@ class _ModelManagementScreenState
             textAlign: TextAlign.center,
             style: TextStyle(
               fontSize: 13,
-              color: colorScheme.outline.withValues(alpha: 0.7),
+              color: colorScheme.onSurfaceVariant.withValues(alpha: 0.7),
             ),
           ),
         ],
@@ -211,7 +211,7 @@ class _ModelManagementScreenState
                 const SizedBox(height: 4),
                 Text(
                   def.description,
-                  style: TextStyle(fontSize: 13, color: colorScheme.outline),
+                  style: TextStyle(fontSize: 13, color: colorScheme.onSurfaceVariant),
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
                 ),
@@ -326,6 +326,7 @@ class _ModelEditScreenState extends State<ModelEditScreen> {
   late OpenRouterService _openRouterService;
   late OllamaService _ollamaService;
   bool _loadingModels = false;
+  bool _testingOllamaConnection = false;
   String? _modelsError;
 
   // ── Provider API Key 缓存 ─────────────────────────────
@@ -558,6 +559,43 @@ class _ModelEditScreenState extends State<ModelEditScreen> {
     }
   }
 
+  Future<void> _testOllamaConnection() async {
+    final apiBase = _apiBaseController.text.trim();
+    if (apiBase.isEmpty) {
+      setState(() => _modelsError = '请先填写 Ollama API Base 地址');
+      return;
+    }
+
+    setState(() {
+      _testingOllamaConnection = true;
+      _modelsError = null;
+    });
+
+    try {
+      final count =
+          await _ollamaService.testConnection(apiBase: apiBase);
+      if (!mounted) return;
+      final l10n = AppLocalizations.of(context);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('${l10n.ollama_testConnectionSuccess} ($count)'),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      final l10n = AppLocalizations.of(context);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(l10n.ollama_testConnectionFailed(e.toString())),
+        ),
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _testingOllamaConnection = false);
+      }
+    }
+  }
+
   String _formatModelFetchError(Object e) {
     if (e is FormatException) return e.message;
     if (e is NetworkException) return e.getUserMessage();
@@ -679,7 +717,7 @@ class _ModelEditScreenState extends State<ModelEditScreen> {
                 l10n.toolModel_selectProvider,
                 style: TextStyle(
                   fontSize: 12,
-                  color: colorScheme.outline,
+                  color: colorScheme.onSurfaceVariant,
                 ),
               ),
               const SizedBox(height: 8),
@@ -754,7 +792,7 @@ class _ModelEditScreenState extends State<ModelEditScreen> {
                 l10n.modelType_sectionLabel,
                 style: TextStyle(
                   fontSize: 12,
-                  color: colorScheme.outline,
+                  color: colorScheme.onSurfaceVariant,
                 ),
               ),
               const SizedBox(height: 4),
@@ -762,7 +800,7 @@ class _ModelEditScreenState extends State<ModelEditScreen> {
                 l10n.modelType_sectionHint,
                 style: TextStyle(
                   fontSize: 11,
-                  color: colorScheme.outline.withValues(alpha: 0.7),
+                  color: colorScheme.onSurfaceVariant.withValues(alpha: 0.7),
                 ),
               ),
               const SizedBox(height: 8),
@@ -897,6 +935,29 @@ class _ModelEditScreenState extends State<ModelEditScreen> {
                   return null;
                 },
               ),
+              if (_isOllamaSelected) ...[
+                const SizedBox(height: 8),
+                SizedBox(
+                  width: double.infinity,
+                  child: OutlinedButton.icon(
+                    onPressed: _testingOllamaConnection
+                        ? null
+                        : _testOllamaConnection,
+                    icon: _testingOllamaConnection
+                        ? SizedBox(
+                            width: 16,
+                            height: 16,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              valueColor:
+                                  AlwaysStoppedAnimation(colorScheme.primary),
+                            ),
+                          )
+                        : const Icon(Icons.link),
+                    label: Text(l10n.ollama_testConnection),
+                  ),
+                ),
+              ],
               const SizedBox(height: 12),
 
               // ── API Key ──────────────────────────────────────────────
@@ -1099,7 +1160,7 @@ class _ModelPickerDialogState extends State<_ModelPickerDialog> {
               alignment: Alignment.centerRight,
               child: Text(
                 '${_filtered.length} / ${widget.models.length} 个模型',
-                style: TextStyle(fontSize: 11, color: colorScheme.outline),
+                style: TextStyle(fontSize: 11, color: colorScheme.onSurfaceVariant),
               ),
             ),
             const SizedBox(height: 4),
@@ -1110,7 +1171,7 @@ class _ModelPickerDialogState extends State<_ModelPickerDialog> {
                       padding: const EdgeInsets.symmetric(vertical: 24),
                       child: Text(
                         '无匹配模型',
-                        style: TextStyle(color: colorScheme.outline),
+                        style: TextStyle(color: colorScheme.onSurfaceVariant),
                       ),
                     )
                   : ListView.builder(

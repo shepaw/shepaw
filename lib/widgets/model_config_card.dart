@@ -4,8 +4,8 @@ import '../models/model_definition.dart';
 import '../services/model_registry.dart';
 import '../l10n/app_localizations.dart';
 
-/// Configuration card for enabling/disabling individual models
-/// during agent creation or editing.
+/// Configuration card for enabling generation capabilities
+/// (image gen, TTS, etc.) during agent creation or editing.
 class ModelConfigCard extends StatelessWidget {
   final Set<String> enabledToolModels;
   final ValueChanged<Set<String>> onChanged;
@@ -21,8 +21,7 @@ class ModelConfigCard extends StatelessWidget {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
     final l10n = AppLocalizations.of(context);
-    final registry = ModelRegistry.instance;
-    final defs = registry.definitions;
+    final defs = ModelRegistry.instance.definitions.forDelegation();
 
     return Card(
       elevation: 0,
@@ -35,7 +34,6 @@ class ModelConfigCard extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Header
             Row(
               children: [
                 ModelIcon(size: 18, color: colorScheme.primary),
@@ -52,7 +50,7 @@ class ModelConfigCard extends StatelessWidget {
                   l10n.common_optional,
                   style: TextStyle(
                     fontSize: 12,
-                    color: colorScheme.outline,
+                    color: colorScheme.onSurfaceVariant,
                   ),
                 ),
               ],
@@ -60,7 +58,7 @@ class ModelConfigCard extends StatelessWidget {
             const SizedBox(height: 8),
             Text(
               l10n.toolModel_configHint,
-              style: TextStyle(fontSize: 12, color: colorScheme.outline),
+              style: TextStyle(fontSize: 12, color: colorScheme.onSurfaceVariant),
             ),
             const SizedBox(height: 8),
 
@@ -75,14 +73,14 @@ class ModelConfigCard extends StatelessWidget {
                 child: Row(
                   children: [
                     Icon(Icons.info_outline,
-                        size: 16, color: colorScheme.outline),
+                        size: 16, color: colorScheme.onSurfaceVariant),
                     const SizedBox(width: 8),
                     Expanded(
                       child: Text(
-                        l10n.toolModel_noModelsAvailable,
+                        l10n.toolModel_noGenerationModels,
                         style: TextStyle(
                           fontSize: 12,
-                          color: colorScheme.outline,
+                          color: colorScheme.onSurfaceVariant,
                         ),
                       ),
                     ),
@@ -90,12 +88,11 @@ class ModelConfigCard extends StatelessWidget {
                 ),
               ),
             ] else ...[
-              // Action buttons
               Row(
                 children: [
                   TextButton.icon(
                     onPressed: () {
-                      onChanged(Set<String>.from(registry.allToolNames));
+                      onChanged(defs.map((d) => d.toolName).toSet());
                     },
                     icon: const Icon(Icons.select_all, size: 16),
                     label: Text(l10n.toolModel_selectAll),
@@ -108,9 +105,7 @@ class ModelConfigCard extends StatelessWidget {
                   ),
                   const SizedBox(width: 8),
                   TextButton.icon(
-                    onPressed: () {
-                      onChanged({});
-                    },
+                    onPressed: () => onChanged({}),
                     icon: const Icon(Icons.deselect, size: 16),
                     label: Text(l10n.toolModel_deselectAll),
                     style: TextButton.styleFrom(
@@ -123,23 +118,20 @@ class ModelConfigCard extends StatelessWidget {
                 ],
               ),
               const Divider(),
-
-              // Tool model list
               ...defs.map((def) {
                 final enabled = enabledToolModels.contains(def.toolName);
-
                 return SwitchListTile(
                   dense: true,
                   contentPadding: EdgeInsets.zero,
                   title: Row(
                     children: [
-                      // Model name with soft pink background
                       Flexible(
                         child: Container(
                           padding: const EdgeInsets.symmetric(
                               horizontal: 8, vertical: 3),
                           decoration: BoxDecoration(
-                            color: const Color(0xFFF48FB1).withValues(alpha: 0.2),
+                            color:
+                                const Color(0xFFF48FB1).withValues(alpha: 0.2),
                             borderRadius: BorderRadius.circular(6),
                           ),
                           child: Text(
@@ -153,44 +145,50 @@ class ModelConfigCard extends StatelessWidget {
                         ),
                       ),
                       const SizedBox(width: 6),
-                      // Model type badges
-                      ...def.modelTypes.map((t) => Padding(
-                        padding: const EdgeInsets.only(right: 4),
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 5, vertical: 2),
-                          decoration: BoxDecoration(
-                            color: _modelTypeColor(t).withValues(alpha: 0.12),
-                            borderRadius: BorderRadius.circular(4),
-                            border: Border.all(
-                              color: _modelTypeColor(t).withValues(alpha: 0.35),
-                              width: 0.5,
+                      ...def.modelTypes
+                          .where(kDelegatableModelTypes.contains)
+                          .map(
+                            (t) => Padding(
+                              padding: const EdgeInsets.only(right: 4),
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 5, vertical: 2),
+                                decoration: BoxDecoration(
+                                  color: _modelTypeColor(t)
+                                      .withValues(alpha: 0.12),
+                                  borderRadius: BorderRadius.circular(4),
+                                  border: Border.all(
+                                    color: _modelTypeColor(t)
+                                        .withValues(alpha: 0.35),
+                                    width: 0.5,
+                                  ),
+                                ),
+                                child: Text(
+                                  _modelTypeLabel(t, l10n),
+                                  style: TextStyle(
+                                    fontSize: 9,
+                                    color: _modelTypeColor(t),
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ),
                             ),
                           ),
-                          child: Text(
-                            _modelTypeLabel(t),
-                            style: TextStyle(
-                              fontSize: 9,
-                              color: _modelTypeColor(t),
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                        ),
-                      )),
                     ],
                   ),
                   subtitle: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(
-                        def.description,
-                        style: TextStyle(
-                          fontSize: 11,
-                          color: colorScheme.outline,
+                      if (def.description.isNotEmpty)
+                        Text(
+                          def.description,
+                          style: TextStyle(
+                            fontSize: 11,
+                            color: colorScheme.onSurfaceVariant,
+                          ),
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
                         ),
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                      ),
                       if (def.route.model != null &&
                           def.route.model!.isNotEmpty)
                         Padding(
@@ -207,7 +205,7 @@ class ModelConfigCard extends StatelessWidget {
                               def.route.model!,
                               style: TextStyle(
                                 fontSize: 10,
-                                color: colorScheme.outline,
+                                color: colorScheme.onSurfaceVariant,
                               ),
                             ),
                           ),
@@ -252,22 +250,22 @@ class ModelConfigCard extends StatelessWidget {
     }
   }
 
-  static String _modelTypeLabel(ModelType modelType) {
+  static String _modelTypeLabel(ModelType modelType, AppLocalizations l10n) {
     switch (modelType) {
       case ModelType.text:
-        return 'Text';
+        return l10n.modelType_text;
       case ModelType.imageUnderstanding:
-        return 'Vision';
+        return l10n.modelType_imageUnderstanding;
       case ModelType.imageGeneration:
-        return 'ImgGen';
+        return l10n.modelType_imageGeneration;
       case ModelType.audioUnderstanding:
-        return 'Audio';
+        return l10n.modelType_audioUnderstanding;
       case ModelType.videoUnderstanding:
-        return 'Video';
+        return l10n.modelType_videoUnderstanding;
       case ModelType.videoGeneration:
-        return 'VideoGen';
+        return l10n.modelType_videoGeneration;
       case ModelType.tts:
-        return 'TTS';
+        return l10n.modelType_tts;
     }
   }
 }

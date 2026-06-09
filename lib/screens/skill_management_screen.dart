@@ -445,7 +445,7 @@ class _SkillManagementScreenState extends State<SkillManagementScreen> {
               _downloadProgress! < 0
                   ? l10n.skillMgmt_downloadingIndeterminate
                   : l10n.skillMgmt_downloading((_downloadProgress! * 100).round()),
-              style: TextStyle(fontSize: 12, color: colorScheme.outline),
+              style: TextStyle(fontSize: 12, color: colorScheme.onSurfaceVariant),
               textAlign: TextAlign.center,
             ),
           ],
@@ -468,7 +468,7 @@ class _SkillManagementScreenState extends State<SkillManagementScreen> {
                 l10n.skillMgmt_skillCount(skills.length),
                 style: TextStyle(
                   fontSize: 12,
-                  color: colorScheme.outline,
+                  color: colorScheme.onSurfaceVariant,
                   fontWeight: FontWeight.w500,
                 ),
               ),
@@ -492,14 +492,14 @@ class _SkillManagementScreenState extends State<SkillManagementScreen> {
       padding: const EdgeInsets.symmetric(vertical: 48),
       child: Column(
         children: [
-          Icon(icon, size: 64, color: colorScheme.outline.withValues(alpha: 0.5)),
+          Icon(icon, size: 64, color: colorScheme.onSurfaceVariant.withValues(alpha: 0.5)),
           const SizedBox(height: 16),
           Text(
             message,
             style: TextStyle(
               fontSize: 16,
               fontWeight: FontWeight.w500,
-              color: colorScheme.outline,
+              color: colorScheme.onSurfaceVariant,
             ),
           ),
           const SizedBox(height: 8),
@@ -508,7 +508,7 @@ class _SkillManagementScreenState extends State<SkillManagementScreen> {
             textAlign: TextAlign.center,
             style: TextStyle(
               fontSize: 13,
-              color: colorScheme.outline.withValues(alpha: 0.7),
+              color: colorScheme.onSurfaceVariant.withValues(alpha: 0.7),
             ),
           ),
         ],
@@ -559,7 +559,7 @@ class _SkillManagementScreenState extends State<SkillManagementScreen> {
             const SizedBox(height: 4),
             Text(
               skill.description,
-              style: TextStyle(fontSize: 13, color: colorScheme.outline),
+              style: TextStyle(fontSize: 13, color: colorScheme.onSurfaceVariant),
               maxLines: 2,
               overflow: TextOverflow.ellipsis,
             ),

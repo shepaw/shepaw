@@ -67,14 +67,14 @@ class _AgentCliCommandsManagementScreenState
                   Icon(
                     Icons.smart_toy_outlined,
                     size: 64,
-                    color: colorScheme.outline,
+                    color: colorScheme.onSurfaceVariant,
                   ),
                   const SizedBox(height: 16),
                   Text(
                     'No agents configured',
                     style: TextStyle(
                       fontSize: 16,
-                      color: colorScheme.outline,
+                      color: colorScheme.onSurfaceVariant,
                     ),
                   ),
                 ],
@@ -189,7 +189,7 @@ class _AgentCliCommandsTileState extends State<_AgentCliCommandsTile> {
               'Namespaces: ${registry.groupCommandsByNamespace(enabledCommands).keys.join(", ")}',
               style: TextStyle(
                 fontSize: 11,
-                color: colorScheme.outline,
+                color: colorScheme.onSurfaceVariant,
               ),
             ),
           ],

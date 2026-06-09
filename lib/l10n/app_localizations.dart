@@ -206,6 +206,12 @@ abstract class AppLocalizations {
   /// **'可选'**
   String get common_optional;
 
+  /// No description provided for @common_listSeparator.
+  ///
+  /// In zh, this message translates to:
+  /// **'、'**
+  String get common_listSeparator;
+
   /// No description provided for @common_featureComingSoon.
   ///
   /// In zh, this message translates to:
@@ -1475,8 +1481,26 @@ abstract class AppLocalizations {
   /// No description provided for @addAgent_modelConfigHint.
   ///
   /// In zh, this message translates to:
-  /// **'选择 LLM 服务商，将自动填充默认配置'**
+  /// **'选择主对话模型；各场景未单独配置时，输入类场景默认继承主模型。'**
   String get addAgent_modelConfigHint;
+
+  /// No description provided for @agentModelConfig_mainChat.
+  ///
+  /// In zh, this message translates to:
+  /// **'主对话模型'**
+  String get agentModelConfig_mainChat;
+
+  /// No description provided for @agentModelConfig_selectMainChat.
+  ///
+  /// In zh, this message translates to:
+  /// **'选择主对话模型'**
+  String get agentModelConfig_selectMainChat;
+
+  /// No description provided for @agentModelConfig_attachmentsSection.
+  ///
+  /// In zh, this message translates to:
+  /// **'按场景配置模型'**
+  String get agentModelConfig_attachmentsSection;
 
   /// No description provided for @addAgent_modelName.
   ///
@@ -2189,7 +2213,7 @@ abstract class AppLocalizations {
   /// No description provided for @agentDetail_llmConfig.
   ///
   /// In zh, this message translates to:
-  /// **'LLM 配置'**
+  /// **'模型配置'**
   String get agentDetail_llmConfig;
 
   /// No description provided for @agentDetail_provider.
@@ -2731,6 +2755,24 @@ abstract class AppLocalizations {
   /// In zh, this message translates to:
   /// **'未选择 Agent'**
   String get chat_noAgentSelected;
+
+  /// No description provided for @chat_modalityNotSupported_image.
+  ///
+  /// In zh, this message translates to:
+  /// **'此 Agent 未配置图片理解。请在 Agent 设置 → 模型配置中指定，或为主模型勾选「图片理解」。'**
+  String get chat_modalityNotSupported_image;
+
+  /// No description provided for @chat_modalityNotSupported_audio.
+  ///
+  /// In zh, this message translates to:
+  /// **'此 Agent 未配置音频理解。请在 Agent 设置 → 模型配置中配置。'**
+  String get chat_modalityNotSupported_audio;
+
+  /// No description provided for @chat_modalityNotSupported_video.
+  ///
+  /// In zh, this message translates to:
+  /// **'此 Agent 未配置视频理解。请在 Agent 设置 → 模型配置中配置。'**
+  String get chat_modalityNotSupported_video;
 
   /// No description provided for @chat_loadFailed.
   ///
@@ -4238,6 +4280,66 @@ abstract class AppLocalizations {
   /// **'编排循环已达到最大轮次 {count} 次，已自动停止。'**
   String chat_loopRoundLimitReached(int count);
 
+  /// No description provided for @scenarioModels_title.
+  ///
+  /// In zh, this message translates to:
+  /// **'按场景配置模型'**
+  String get scenarioModels_title;
+
+  /// No description provided for @scenarioModels_hint.
+  ///
+  /// In zh, this message translates to:
+  /// **'为图片/音频/视频理解，以及图片生成、语音合成、视频生成等场景指定模型；输入类场景未配置时继承主模型。'**
+  String get scenarioModels_hint;
+
+  /// No description provided for @scenarioModels_inheritMain.
+  ///
+  /// In zh, this message translates to:
+  /// **'继承主模型'**
+  String get scenarioModels_inheritMain;
+
+  /// No description provided for @scenarioModels_inheritMainCovered.
+  ///
+  /// In zh, this message translates to:
+  /// **'继承主模型（已支持）'**
+  String get scenarioModels_inheritMainCovered;
+
+  /// No description provided for @scenarioModels_notConfigured.
+  ///
+  /// In zh, this message translates to:
+  /// **'未配置'**
+  String get scenarioModels_notConfigured;
+
+  /// No description provided for @scenarioModels_coveredByMain.
+  ///
+  /// In zh, this message translates to:
+  /// **'主模型已支持全部输入场景，无需额外配置'**
+  String get scenarioModels_coveredByMain;
+
+  /// No description provided for @scenarioModels_expandToOverride.
+  ///
+  /// In zh, this message translates to:
+  /// **'可展开为各附件类型单独指定模型'**
+  String get scenarioModels_expandToOverride;
+
+  /// No description provided for @scenarioModels_needsConfig.
+  ///
+  /// In zh, this message translates to:
+  /// **'主模型未支持：{modalities}'**
+  String scenarioModels_needsConfig(String modalities);
+
+  /// No description provided for @scenarioModels_selectMainFirst.
+  ///
+  /// In zh, this message translates to:
+  /// **'请先选择主模型'**
+  String get scenarioModels_selectMainFirst;
+
+  /// No description provided for @scenarioModels_configuredCount.
+  ///
+  /// In zh, this message translates to:
+  /// **'已配置 {count} 项'**
+  String scenarioModels_configuredCount(int count);
+
   /// No description provided for @modelRouting_title.
   ///
   /// In zh, this message translates to:
@@ -4649,19 +4751,19 @@ abstract class AppLocalizations {
   /// No description provided for @toolModel_configTitle.
   ///
   /// In zh, this message translates to:
-  /// **'模型'**
+  /// **'生成能力'**
   String get toolModel_configTitle;
 
   /// No description provided for @toolModel_configHint.
   ///
   /// In zh, this message translates to:
-  /// **'为此 Agent 选择模型。作为工具模型时，主 LLM 可通过工具调用委派任务；也可用于多模态路由。'**
+  /// **'AI 在对话中可主动调用的能力，如图片生成、语音合成。处理用户附件请在上方「模型配置」中设置。'**
   String get toolModel_configHint;
 
   /// No description provided for @toolModel_configureTitle.
   ///
   /// In zh, this message translates to:
-  /// **'选择模型'**
+  /// **'选择生成能力'**
   String get toolModel_configureTitle;
 
   /// No description provided for @toolModel_addTitle.
@@ -4856,22 +4958,28 @@ abstract class AppLocalizations {
   /// **'例如：用于图片生成任务'**
   String get toolModel_scenarioPlaceholder;
 
+  /// No description provided for @toolModel_noGenerationModels.
+  ///
+  /// In zh, this message translates to:
+  /// **'暂无可用的生成模型。请在设置 > 模型管理中添加图片生成、语音合成等模型。'**
+  String get toolModel_noGenerationModels;
+
   /// No description provided for @addAgent_noToolModels.
   ///
   /// In zh, this message translates to:
-  /// **'未选择模型'**
+  /// **'未启用生成能力'**
   String get addAgent_noToolModels;
 
   /// No description provided for @addAgent_toolModelsCount.
   ///
   /// In zh, this message translates to:
-  /// **'已启用 {count} 个模型'**
+  /// **'已启用 {count} 项生成能力'**
   String addAgent_toolModelsCount(int count);
 
   /// No description provided for @agentDetail_noToolModelsEnabled.
   ///
   /// In zh, this message translates to:
-  /// **'未启用模型'**
+  /// **'未启用生成能力'**
   String get agentDetail_noToolModelsEnabled;
 
   /// No description provided for @chat_mentionMode.
@@ -5017,6 +5125,24 @@ abstract class AppLocalizations {
   /// In zh, this message translates to:
   /// **'前往模型管理'**
   String get toolModel_goToManagement;
+
+  /// No description provided for @ollama_testConnection.
+  ///
+  /// In zh, this message translates to:
+  /// **'测试连接'**
+  String get ollama_testConnection;
+
+  /// No description provided for @ollama_testConnectionSuccess.
+  ///
+  /// In zh, this message translates to:
+  /// **'Ollama 连接成功'**
+  String get ollama_testConnectionSuccess;
+
+  /// No description provided for @ollama_testConnectionFailed.
+  ///
+  /// In zh, this message translates to:
+  /// **'Ollama 连接失败: {error}'**
+  String ollama_testConnectionFailed(String error);
 
   /// No description provided for @settings_disableServiceTitle.
   ///

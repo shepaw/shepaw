@@ -18,6 +18,7 @@
   "common_refresh": "Refresh",
   "common_clear": "Clear",
   "common_optional": "Optional",
+  "common_listSeparator": ", ",
   "common_featureComingSoon": "Feature coming soon",
   "common_operationFailed": "Operation failed: {error}",
   "common_error": "Error: {error}",
@@ -352,7 +353,10 @@
   "addAgent_endpointRequired": "Please enter endpoint URL",
   "addAgent_endpointInvalid": "Please enter a valid URL (http://, https://, ws://, wss://)",
   "addAgent_modelConfig": "Model Configuration",
-  "addAgent_modelConfigHint": "Select LLM provider to auto-fill default configuration",
+  "addAgent_modelConfigHint": "Choose the main chat model. Input scenarios inherit it by default; override per scenario if needed.",
+  "agentModelConfig_mainChat": "Main Chat Model",
+  "agentModelConfig_selectMainChat": "Select main chat model",
+  "agentModelConfig_attachmentsSection": "Scenario Models",
   "addAgent_modelName": "Model Name",
   "addAgent_modelNameHint": "Enter model name",
   "addAgent_selectModel": "Select Model",
@@ -471,7 +475,7 @@
   "agentDetail_endpoint": "Endpoint",
   "agentDetail_capabilities": "Capabilities",
   "agentDetail_systemPrompt": "System Prompt",
-  "agentDetail_llmConfig": "LLM Configuration",
+  "agentDetail_llmConfig": "Model Configuration",
   "agentDetail_provider": "Provider",
   "agentDetail_model": "Model",
   "agentDetail_lastActive": "Last Active",
@@ -562,6 +566,9 @@
   "incoming_hoursAgo": "{hours} hr ago",
   "incoming_daysAgo": "{days} days ago",
   "chat_noAgentSelected": "No agent selected",
+  "chat_modalityNotSupported_image": "This agent does not support image understanding. Configure it under Agent Settings → Model Configuration, or enable Image Understanding on the main model.",
+  "chat_modalityNotSupported_audio": "This agent does not support audio understanding. Configure it under Agent Settings → Model Configuration.",
+  "chat_modalityNotSupported_video": "This agent does not support video understanding. Configure it under Agent Settings → Model Configuration.",
   "chat_loadFailed": "Failed to load messages: {error}",
   "chat_checkingHealth": "Checking agent health...",
   "chat_reconnectingAttempt": "Reconnecting… ({attempt}/{total})",
@@ -942,6 +949,30 @@
       }
     }
   },
+  "scenarioModels_title": "Scenario Models",
+  "scenarioModels_hint": "Assign models for image/audio/video understanding and image generation, TTS, video generation. Input scenarios inherit the main model when unset.",
+  "scenarioModels_inheritMain": "Inherit main model",
+  "scenarioModels_inheritMainCovered": "Inherit main model (supported)",
+  "scenarioModels_notConfigured": "Not configured",
+  "scenarioModels_coveredByMain": "Main model supports all input scenarios — no extra setup needed",
+  "scenarioModels_expandToOverride": "Expand to assign a model per attachment type",
+  "scenarioModels_needsConfig": "Main model missing: {modalities}",
+  "@scenarioModels_needsConfig": {
+    "placeholders": {
+      "modalities": {
+        "type": "String"
+      }
+    }
+  },
+  "scenarioModels_selectMainFirst": "Select a main model first",
+  "scenarioModels_configuredCount": "{count} configured",
+  "@scenarioModels_configuredCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
   "modelRouting_title": "Multi-modal Model Routing",
   "modelRouting_hint": "Configure different models for different content types. Unconfigured items use the default model above.",
   "modelRouting_text": "Text Chat",
@@ -1073,9 +1104,9 @@
   },
   "drawer_contacts": "Contacts",
   "toolModel_managementTitle": "Model Management",
-  "toolModel_configTitle": "Models",
-  "toolModel_configHint": "Select models for this agent. Tool models are exposed to the main LLM via tool calls; other models can be used for multi-modal routing.",
-  "toolModel_configureTitle": "Select Models",
+  "toolModel_configTitle": "Generation",
+  "toolModel_configHint": "Capabilities the AI can invoke during chat, such as image generation or TTS. Configure user attachments in Model Configuration above.",
+  "toolModel_configureTitle": "Select Generation Capabilities",
   "toolModel_addTitle": "Add Model",
   "toolModel_editTitle": "Edit Model",
   "toolModel_displayName": "Display Name",
@@ -1129,8 +1160,9 @@
   "toolModel_scenarioLabel": "Usage scenario",
   "toolModel_scenarioHint": "Describe when the agent should call this model (overrides global description)",
   "toolModel_scenarioPlaceholder": "e.g., Use for image generation tasks",
-  "addAgent_noToolModels": "No models selected",
-  "addAgent_toolModelsCount": "{count} models enabled",
+  "toolModel_noGenerationModels": "No generation models available. Add image generation, TTS, etc. in Settings > Model Management.",
+  "addAgent_noToolModels": "No generation capabilities enabled",
+  "addAgent_toolModelsCount": "{count} generation capabilities enabled",
   "@addAgent_toolModelsCount": {
     "placeholders": {
       "count": {
@@ -1138,7 +1170,7 @@
       }
     }
   },
-  "agentDetail_noToolModelsEnabled": "No models enabled",
+  "agentDetail_noToolModelsEnabled": "No generation capabilities enabled",
   "chat_mentionMode": "Mention Mode",
   "chat_mentionModeAdminOnly": "Admin Only",
   "chat_mentionModeAllMembers": "All Members",
@@ -1163,6 +1195,16 @@
   "addAgent_modelRequired": "Please select a model",
   "addAgent_noModels": "No models configured. Please add models in Settings first.",
   "toolModel_goToManagement": "Go to Model Management",
+  "ollama_testConnection": "Test Connection",
+  "ollama_testConnectionSuccess": "Ollama connection successful",
+  "ollama_testConnectionFailed": "Ollama connection failed: {error}",
+  "@ollama_testConnectionFailed": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
   "settings_disableServiceTitle": "Disable Local Service",
   "settings_disableServiceContent": "After disabling, all agents configured with \"Allow External Access\" will no longer accept external connections, and any connected clients will be disconnected immediately.\n\nConfirm?",
   "settings_disableServiceConfirm": "Confirm Disable",

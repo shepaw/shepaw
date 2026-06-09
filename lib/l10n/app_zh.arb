@@ -18,6 +18,7 @@
   "common_refresh": "刷新",
   "common_clear": "清除",
   "common_optional": "可选",
+  "common_listSeparator": "、",
   "common_featureComingSoon": "功能即将推出",
   "common_operationFailed": "操作失败: {error}",
   "@common_operationFailed": {
@@ -401,7 +402,10 @@
   "addAgent_endpointRequired": "请输入端点 URL",
   "addAgent_endpointInvalid": "请输入有效的 URL（http://, https://, ws://, wss://）",
   "addAgent_modelConfig": "模型配置",
-  "addAgent_modelConfigHint": "选择 LLM 服务商，将自动填充默认配置",
+  "addAgent_modelConfigHint": "选择主对话模型；各场景未单独配置时，输入类场景默认继承主模型。",
+  "agentModelConfig_mainChat": "主对话模型",
+  "agentModelConfig_selectMainChat": "选择主对话模型",
+  "agentModelConfig_attachmentsSection": "按场景配置模型",
   "addAgent_modelName": "模型名称",
   "addAgent_modelNameHint": "输入模型名称",
   "addAgent_selectModel": "选择模型",
@@ -617,7 +621,7 @@
   "agentDetail_endpoint": "端点",
   "agentDetail_capabilities": "能力",
   "agentDetail_systemPrompt": "系统提示词",
-  "agentDetail_llmConfig": "LLM 配置",
+  "agentDetail_llmConfig": "模型配置",
   "agentDetail_provider": "服务商",
   "agentDetail_model": "模型",
   "agentDetail_lastActive": "最后活跃",
@@ -802,6 +806,9 @@
     }
   },
   "chat_noAgentSelected": "未选择 Agent",
+  "chat_modalityNotSupported_image": "此 Agent 未配置图片理解。请在 Agent 设置 → 模型配置中指定，或为主模型勾选「图片理解」。",
+  "chat_modalityNotSupported_audio": "此 Agent 未配置音频理解。请在 Agent 设置 → 模型配置中配置。",
+  "chat_modalityNotSupported_video": "此 Agent 未配置视频理解。请在 Agent 设置 → 模型配置中配置。",
   "chat_loadFailed": "加载消息失败: {error}",
   "@chat_loadFailed": {
     "placeholders": {
@@ -1427,6 +1434,30 @@
       }
     }
   },
+  "scenarioModels_title": "按场景配置模型",
+  "scenarioModels_hint": "为图片/音频/视频理解，以及图片生成、语音合成、视频生成等场景指定模型；输入类场景未配置时继承主模型。",
+  "scenarioModels_inheritMain": "继承主模型",
+  "scenarioModels_inheritMainCovered": "继承主模型（已支持）",
+  "scenarioModels_notConfigured": "未配置",
+  "scenarioModels_coveredByMain": "主模型已支持全部输入场景，无需额外配置",
+  "scenarioModels_expandToOverride": "可展开为各附件类型单独指定模型",
+  "scenarioModels_needsConfig": "主模型未支持：{modalities}",
+  "@scenarioModels_needsConfig": {
+    "placeholders": {
+      "modalities": {
+        "type": "String"
+      }
+    }
+  },
+  "scenarioModels_selectMainFirst": "请先选择主模型",
+  "scenarioModels_configuredCount": "已配置 {count} 项",
+  "@scenarioModels_configuredCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
   "modelRouting_title": "多模态模型路由",
   "modelRouting_hint": "为不同内容类型配置不同的模型，未配置的项使用上方的默认模型。",
   "modelRouting_text": "文本聊天",
@@ -1558,9 +1589,9 @@
   },
   "drawer_contacts": "通讯录",
   "toolModel_managementTitle": "模型管理",
-  "toolModel_configTitle": "模型",
-  "toolModel_configHint": "为此 Agent 选择模型。作为工具模型时，主 LLM 可通过工具调用委派任务；也可用于多模态路由。",
-  "toolModel_configureTitle": "选择模型",
+  "toolModel_configTitle": "生成能力",
+  "toolModel_configHint": "AI 在对话中可主动调用的能力，如图片生成、语音合成。处理用户附件请在上方「模型配置」中设置。",
+  "toolModel_configureTitle": "选择生成能力",
   "toolModel_addTitle": "添加模型",
   "toolModel_editTitle": "编辑模型",
   "toolModel_displayName": "显示名称",
@@ -1614,8 +1645,9 @@
   "toolModel_scenarioLabel": "使用场景",
   "toolModel_scenarioHint": "描述何时应调用此模型（覆盖全局描述）",
   "toolModel_scenarioPlaceholder": "例如：用于图片生成任务",
-  "addAgent_noToolModels": "未选择模型",
-  "addAgent_toolModelsCount": "已启用 {count} 个模型",
+  "toolModel_noGenerationModels": "暂无可用的生成模型。请在设置 > 模型管理中添加图片生成、语音合成等模型。",
+  "addAgent_noToolModels": "未启用生成能力",
+  "addAgent_toolModelsCount": "已启用 {count} 项生成能力",
   "@addAgent_toolModelsCount": {
     "placeholders": {
       "count": {
@@ -1623,7 +1655,7 @@
       }
     }
   },
-  "agentDetail_noToolModelsEnabled": "未启用模型",
+  "agentDetail_noToolModelsEnabled": "未启用生成能力",
   "chat_mentionMode": "提及模式",
   "chat_mentionModeAdminOnly": "仅管理员",
   "chat_mentionModeAllMembers": "所有成员",
@@ -1648,6 +1680,16 @@
   "addAgent_modelRequired": "请选择模型",
   "addAgent_noModels": "未配置模型，请先在设置中添加模型",
   "toolModel_goToManagement": "前往模型管理",
+  "ollama_testConnection": "测试连接",
+  "ollama_testConnectionSuccess": "Ollama 连接成功",
+  "ollama_testConnectionFailed": "Ollama 连接失败: {error}",
+  "@ollama_testConnectionFailed": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
   "settings_disableServiceTitle": "关闭本地服务",
   "settings_disableServiceContent": "关闭后，所有已配置「允许外部访问」的 Agent 将无法接受外网连接，正在连接的客户端也会立即断开。\n\n确认关闭？",
   "settings_disableServiceConfirm": "确认关闭",

@@ -45,8 +45,8 @@ class AppColors {
   /// 主要文字色（中性深灰，纯净不偏色）。
   static const Color textPrimary = Color(0xFF1F2329);
 
-  /// 次要文字色（中性灰）。
-  static const Color textSecondary = Color(0xFF8A8F99);
+  /// 次要文字色（与会话列表预览等 UI 中的 grey[500] 一致）。
+  static const Color textSecondary = Color(0xFF9E9E9E);
 }
 
 /// 应用主题。统一从 [AppColors] 派生，保证全局风格一致。
