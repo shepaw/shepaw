@@ -307,7 +307,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get home_scanConnect => '扫码连接';
 
   @override
-  String get home_searchEmptyHint => '搜索 Agent、群组和消息';
+  String get home_searchEmptyHint => '搜索 Agent、群组、消息和设备聊天';
 
   @override
   String get home_searchNoResults => '未找到相关结果';
@@ -320,6 +320,9 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get home_searchSectionMessages => '消息';
+
+  @override
+  String get home_searchSectionPeerMessages => '设备聊天';
 
   @override
   String home_agentsCount(int count) {
@@ -3695,6 +3698,11 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get peerChat_emptyMessages => '暂无消息\n发送第一条消息开始对话';
+
+  @override
+  String peerChat_searchInConversation(String peerName) {
+    return '搜索与 $peerName 的聊天记录';
+  }
 
   @override
   String get peerChat_hintOnline => '输入消息...';

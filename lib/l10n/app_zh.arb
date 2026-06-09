@@ -137,11 +137,12 @@
   "home_createGroup": "创建群组",
   "home_addDevice": "设备配对",
   "home_scanConnect": "扫码连接",
-  "home_searchEmptyHint": "搜索 Agent、群组和消息",
+  "home_searchEmptyHint": "搜索 Agent、群组、消息和设备聊天",
   "home_searchNoResults": "未找到相关结果",
   "home_searchSectionAgents": "Agent",
   "home_searchSectionGroups": "群组",
   "home_searchSectionMessages": "消息",
+  "home_searchSectionPeerMessages": "设备聊天",
   "home_agentsCount": "{count} agents",
   "@home_agentsCount": {
     "placeholders": {
@@ -2093,6 +2094,14 @@
   "peerRole_initiatorDesc": "本机扫码发起连接",
   "peerRole_responderDesc": "对方扫码发起连接",
   "peerChat_emptyMessages": "暂无消息\n发送第一条消息开始对话",
+  "peerChat_searchInConversation": "搜索与 {peerName} 的聊天记录",
+  "@peerChat_searchInConversation": {
+    "placeholders": {
+      "peerName": {
+        "type": "String"
+      }
+    }
+  },
   "peerChat_hintOnline": "输入消息...",
   "peerChat_hintOffline": "离线 · 消息将在连接后发送",
   "peerChat_statusOnlinePrefix": "在线 · ",

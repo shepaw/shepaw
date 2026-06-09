@@ -986,6 +986,18 @@ class ChatService implements IPawChatSender {
   Future<List<Message>> loadChannelMessages(String channelId, {int limit = 100}) =>
       _historyService.loadChannelMessages(channelId, limit: limit);
 
+  /// Load recent messages sufficient to include [messageId] for scroll-to-search.
+  Future<List<Message>> loadChannelMessagesIncluding(
+    String channelId,
+    String messageId, {
+    int paddingAfter = 30,
+  }) =>
+      _historyService.loadChannelMessagesIncluding(
+        channelId,
+        messageId,
+        paddingAfter: paddingAfter,
+      );
+
   /// Get channel ID for user-agent conversation
   String generateChannelId(String userId, String agentId) =>
       _sessionService.generateChannelId(userId, agentId);

@@ -49,7 +49,7 @@ class ChatScreen extends StatefulWidget {
   final String? channelId;
   final bool embedded;
   final VoidCallback? onClose;
-  final ValueChanged<String>? onSwitchChannel;
+  final void Function(String channelId, {String? highlightMessageId})? onSwitchChannel;
   final ValueChanged<String?>? onShowTraces;
   final void Function(String channelId, String channelName)? onShowGroupWorkflow;
 
@@ -166,6 +166,21 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     _checkSheNeedsConfig();
     _checkAgentAudioSupport();
     _checkAgentImageSupport();
+  }
+
+  @override
+  void didUpdateWidget(covariant ChatScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.highlightMessageId != null &&
+        widget.highlightMessageId != oldWidget.highlightMessageId) {
+      _pendingHighlightMessageId = widget.highlightMessageId;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted || _pendingHighlightMessageId == null) return;
+        final mid = _pendingHighlightMessageId!;
+        _pendingHighlightMessageId = null;
+        _scrollToMessage(mid);
+      });
+    }
   }
 
   @override
@@ -286,7 +301,6 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
         if (_pendingHighlightMessageId != null) {
           final mid = _pendingHighlightMessageId!;
           _pendingHighlightMessageId = null;
-          // Wait a frame so the list has laid out, then scroll to the message.
           WidgetsBinding.instance.addPostFrameCallback((_) {
             _scrollToMessage(mid);
           });
@@ -472,23 +486,49 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     }
   }
 
-  void _scrollToMessage(String messageId) {
+  Future<void> _scrollToMessage(String messageId) async {
+    final loaded = await _controller.ensureMessageLoaded(messageId);
+    if (!loaded || !mounted) return;
+
     final idx = _controller.messages.indexWhere((m) => m.id == messageId);
-    if (idx != -1) {
-      // Convert chronological index to reversed index.
-      final reversedIdx = _controller.messages.length - 1 - idx;
-      _itemScrollController.scrollTo(
-        index: reversedIdx,
-        duration: const Duration(milliseconds: 300),
-        curve: Curves.easeOut,
-        alignment: 0.3,
-      );
-      setState(() { _controller.highlightedMessageId = messageId; });
-      Future.delayed(const Duration(seconds: 2), () {
-        if (mounted) {
-          setState(() { _controller.highlightedMessageId = null; });
-        }
-      });
+    if (idx == -1) return;
+
+    setState(() {});
+
+    // Convert chronological index to reversed index.
+    final reversedIdx = _controller.messages.length - 1 - idx;
+    await _scrollToReversedIndex(reversedIdx);
+    if (!mounted) return;
+
+    setState(() { _controller.highlightedMessageId = messageId; });
+    Future.delayed(const Duration(seconds: 2), () {
+      if (mounted) {
+        setState(() { _controller.highlightedMessageId = null; });
+      }
+    });
+  }
+
+  Future<void> _scrollToReversedIndex(int reversedIdx) async {
+    for (var attempt = 0; attempt < 5; attempt++) {
+      if (!mounted) return;
+      if (attempt > 0) {
+        await Future<void>.delayed(const Duration(milliseconds: 80));
+      }
+      if (!_itemScrollController.isAttached) {
+        await WidgetsBinding.instance.endOfFrame;
+        continue;
+      }
+      try {
+        await _itemScrollController.scrollTo(
+          index: reversedIdx,
+          duration: const Duration(milliseconds: 300),
+          curve: Curves.easeOut,
+          alignment: 0.3,
+        );
+        return;
+      } catch (_) {
+        await WidgetsBinding.instance.endOfFrame;
+      }
     }
   }
 
@@ -1073,7 +1113,10 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
         onResultTap: (message, channelId) {
           if (channelId != null && channelId != _controller.currentChannelId) {
             if (widget.embedded) {
-              widget.onSwitchChannel?.call(channelId);
+              widget.onSwitchChannel?.call(
+                channelId,
+                highlightMessageId: message.id,
+              );
             } else {
               Navigator.pushReplacement(
                 context,
@@ -1083,6 +1126,8 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                     agentName: _controller.agentName,
                     agentAvatar: _controller.agentAvatar,
                     channelId: channelId,
+                    highlightMessageId: message.id,
+                    showBackButton: true,
                   ),
                 ),
               );

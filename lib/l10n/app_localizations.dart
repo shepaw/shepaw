@@ -671,7 +671,7 @@ abstract class AppLocalizations {
   /// No description provided for @home_searchEmptyHint.
   ///
   /// In zh, this message translates to:
-  /// **'搜索 Agent、群组和消息'**
+  /// **'搜索 Agent、群组、消息和设备聊天'**
   String get home_searchEmptyHint;
 
   /// No description provided for @home_searchNoResults.
@@ -697,6 +697,12 @@ abstract class AppLocalizations {
   /// In zh, this message translates to:
   /// **'消息'**
   String get home_searchSectionMessages;
+
+  /// No description provided for @home_searchSectionPeerMessages.
+  ///
+  /// In zh, this message translates to:
+  /// **'设备聊天'**
+  String get home_searchSectionPeerMessages;
 
   /// No description provided for @home_agentsCount.
   ///
@@ -6865,6 +6871,12 @@ abstract class AppLocalizations {
   /// In zh, this message translates to:
   /// **'暂无消息\n发送第一条消息开始对话'**
   String get peerChat_emptyMessages;
+
+  /// No description provided for @peerChat_searchInConversation.
+  ///
+  /// In zh, this message translates to:
+  /// **'搜索与 {peerName} 的聊天记录'**
+  String peerChat_searchInConversation(String peerName);
 
   /// No description provided for @peerChat_hintOnline.
   ///

@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:scrollable_positioned_list/scrollable_positioned_list.dart';
 import 'package:uuid/uuid.dart';
 
 import '../models/paired_peer.dart';
@@ -11,6 +12,8 @@ import '../../l10n/app_localizations.dart';
 import '../../models/remote_agent.dart';
 import '../../screens/chat_screen.dart';
 import '../../theme/app_theme.dart';
+import '../../widgets/peer_message_search_delegate.dart';
+import '../../widgets/shepaw_search_page.dart';
 import '../../utils/layout_utils.dart';
 import 'peer_settings_screen.dart';
 import '../widgets/peer_agent_list_panel.dart';
@@ -21,12 +24,14 @@ class PeerChatScreen extends StatefulWidget {
   final PairedPeer peer;
   final bool embedded;
   final ValueChanged<RemoteAgent>? onAgentSelected;
+  final String? highlightMessageId;
 
   const PeerChatScreen({
     super.key,
     required this.peer,
     this.embedded = false,
     this.onAgentSelected,
+    this.highlightMessageId,
   });
 
   @override
@@ -35,7 +40,8 @@ class PeerChatScreen extends StatefulWidget {
 
 class _PeerChatScreenState extends State<PeerChatScreen> {
   final _textController = TextEditingController();
-  final _scrollController = ScrollController();
+  final _itemScrollController = ItemScrollController();
+  final _itemPositionsListener = ItemPositionsListener.create();
   final _uuid = const Uuid();
 
   late String _displayName;
@@ -46,37 +52,57 @@ class _PeerChatScreenState extends State<PeerChatScreen> {
   StreamSubscription? _ackSub;
   PeerConnectionState _connectionState = PeerConnectionState.disconnected;
   bool _showScrollToBottom = false;
+  String? _pendingHighlightMessageId;
+  String? _highlightedMessageId;
 
   @override
   void initState() {
     super.initState();
     _displayName = widget.peer.deviceName;
+    _pendingHighlightMessageId = widget.highlightMessageId;
     _initDeviceId();
     _loadMessages();
     _subscribeToMessages();
     _connectionState = PeerConnectionManager.instance.getPeerState(widget.peer.id);
     _tryConnect();
 
-    _scrollController.addListener(_onScroll);
+    _itemPositionsListener.itemPositions.addListener(_onItemPositionsChanged);
+  }
+
+  @override
+  void didUpdateWidget(covariant PeerChatScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.highlightMessageId != null &&
+        widget.highlightMessageId != oldWidget.highlightMessageId) {
+      _pendingHighlightMessageId = widget.highlightMessageId;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted || _pendingHighlightMessageId == null) return;
+        final mid = _pendingHighlightMessageId!;
+        _pendingHighlightMessageId = null;
+        _scrollToMessage(mid);
+      });
+    }
   }
 
   @override
   void dispose() {
     _textController.dispose();
-    _scrollController.removeListener(_onScroll);
-    _scrollController.dispose();
+    _itemPositionsListener.itemPositions.removeListener(_onItemPositionsChanged);
     _messageSub?.cancel();
     _eventSub?.cancel();
     _ackSub?.cancel();
     super.dispose();
   }
 
-  void _onScroll() {
-    if (!_scrollController.hasClients) return;
-    final maxScroll = _scrollController.position.maxScrollExtent;
-    final currentScroll = _scrollController.offset;
-    // 距离底部超过 200px 时显示按钮
-    final shouldShow = (maxScroll - currentScroll) > 200;
+  void _onItemPositionsChanged() {
+    final positions = _itemPositionsListener.itemPositions.value;
+    if (positions.isEmpty || _messages.isEmpty) return;
+
+    final lastIndex = _messages.length - 1;
+    final atBottom = positions.any(
+      (p) => p.index == lastIndex && p.itemTrailingEdge >= 0.95,
+    );
+    final shouldShow = !atBottom;
     if (shouldShow != _showScrollToBottom) {
       setState(() => _showScrollToBottom = shouldShow);
     }
@@ -87,13 +113,23 @@ class _PeerChatScreenState extends State<PeerChatScreen> {
   }
 
   Future<void> _loadMessages() async {
-    final messages = await PeerStorageService().getMessages(widget.peer.id);
+    final storage = PeerStorageService();
+    final highlightId = _pendingHighlightMessageId;
+    final messages = highlightId != null
+        ? await storage.getMessagesIncluding(widget.peer.id, highlightId)
+        : await storage.getMessages(widget.peer.id);
     if (mounted) {
       setState(() {
         _messages = messages.reversed.toList();
       });
-      // 加载后滚到底部
-      _scrollToBottom(animate: false);
+      if (highlightId != null) {
+        _pendingHighlightMessageId = null;
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          _scrollToMessage(highlightId);
+        });
+      } else {
+        _scrollToBottom(animate: false);
+      }
       // 标记所有对方发来的未读消息为已读
       final unreadIds = _messages
           .where((m) => !_isMyMessage(m) && m.delivery != PeerMessageDelivery.read)
@@ -221,19 +257,79 @@ class _PeerChatScreenState extends State<PeerChatScreen> {
   }
 
   void _scrollToBottom({bool animate = true}) {
+    if (_messages.isEmpty) return;
+    final lastIndex = _messages.length - 1;
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!_scrollController.hasClients) return;
-      final target = _scrollController.position.maxScrollExtent;
+      if (!mounted || !_itemScrollController.isAttached) return;
       if (animate) {
-        _scrollController.animateTo(
-          target,
+        _itemScrollController.scrollTo(
+          index: lastIndex,
           duration: const Duration(milliseconds: 200),
           curve: Curves.easeOut,
+          alignment: 1.0,
         );
       } else {
-        _scrollController.jumpTo(target);
+        _itemScrollController.jumpTo(index: lastIndex, alignment: 1.0);
       }
     });
+  }
+
+  Future<void> _scrollToMessage(String messageId) async {
+    if (!_messages.any((m) => m.id == messageId)) {
+      final loaded = await PeerStorageService().getMessagesIncluding(
+        widget.peer.id,
+        messageId,
+      );
+      if (!mounted) return;
+      setState(() => _messages = loaded.reversed.toList());
+    }
+
+    final idx = _messages.indexWhere((m) => m.id == messageId);
+    if (idx == -1) return;
+
+    setState(() {});
+
+    for (var attempt = 0; attempt < 5; attempt++) {
+      if (!mounted) return;
+      if (attempt > 0) {
+        await Future<void>.delayed(const Duration(milliseconds: 80));
+      }
+      if (!_itemScrollController.isAttached) {
+        await WidgetsBinding.instance.endOfFrame;
+        continue;
+      }
+      try {
+        await _itemScrollController.scrollTo(
+          index: idx,
+          duration: const Duration(milliseconds: 300),
+          curve: Curves.easeOut,
+          alignment: 0.3,
+        );
+        break;
+      } catch (_) {
+        await WidgetsBinding.instance.endOfFrame;
+      }
+    }
+
+    if (!mounted) return;
+    setState(() => _highlightedMessageId = messageId);
+    Future.delayed(const Duration(seconds: 2), () {
+      if (mounted) {
+        setState(() => _highlightedMessageId = null);
+      }
+    });
+  }
+
+  void _showSearch() {
+    showShepawSearch(
+      context: context,
+      delegate: PeerMessageSearchDelegate(
+        peerId: widget.peer.id,
+        peerName: _displayName,
+        storageService: PeerStorageService(),
+        onResultTap: (message) => _scrollToMessage(message.id),
+      ),
+    );
   }
 
   Future<void> _showAgentList() async {
@@ -352,6 +448,11 @@ class _PeerChatScreenState extends State<PeerChatScreen> {
         ),
         actions: [
           IconButton(
+            icon: const Icon(Icons.search, size: 20),
+            tooltip: l10n.chat_searchMessages,
+            onPressed: _showSearch,
+          ),
+          IconButton(
             icon: const Icon(Icons.smart_toy_outlined, size: 20),
             tooltip: l10n.peerChat_agentList,
             onPressed: _showAgentList,
@@ -372,16 +473,20 @@ class _PeerChatScreenState extends State<PeerChatScreen> {
                           style: TextStyle(color: Colors.grey[400], height: 1.5),
                         ),
                       )
-                    : ListView.builder(
-                        controller: _scrollController,
+                    : ScrollablePositionedList.builder(
+                        itemScrollController: _itemScrollController,
+                        itemPositionsListener: _itemPositionsListener,
                         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                         itemCount: _messages.length,
                         itemBuilder: (context, index) {
+                          final message = _messages[index];
                           return _PeerMessageBubble(
-                            message: _messages[index],
-                            isMyMessage: _isMyMessage(_messages[index]),
+                            key: ValueKey(message.id),
+                            message: message,
+                            isMyMessage: _isMyMessage(message),
                             peerName: _displayName,
                             deviceStyle: PeerDeviceStyle.forPeer(widget.peer),
+                            highlighted: _highlightedMessageId == message.id,
                           );
                         },
                       ),
@@ -550,12 +655,15 @@ class _PeerMessageBubble extends StatelessWidget {
   final bool isMyMessage;
   final String peerName;
   final PeerDeviceStyle deviceStyle;
+  final bool highlighted;
 
   const _PeerMessageBubble({
+    super.key,
     required this.message,
     required this.isMyMessage,
     required this.peerName,
     required this.deviceStyle,
+    this.highlighted = false,
   });
 
   static const _avatarSize = 32.0;
@@ -609,7 +717,8 @@ class _PeerMessageBubble extends StatelessWidget {
                           ),
                         ),
                       ),
-                    Container(
+                    AnimatedContainer(
+                      duration: const Duration(milliseconds: 300),
                       padding: const EdgeInsets.symmetric(
                         horizontal: 12,
                         vertical: 8,
@@ -619,6 +728,12 @@ class _PeerMessageBubble extends StatelessWidget {
                             ? Theme.of(context).primaryColor
                             : Colors.grey[200],
                         borderRadius: BorderRadius.circular(16),
+                        border: highlighted
+                            ? Border.all(
+                                color: Colors.amber.shade600,
+                                width: 2,
+                              )
+                            : null,
                       ),
                       child: Text(
                         message.content,

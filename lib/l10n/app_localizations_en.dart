@@ -320,7 +320,8 @@ class AppLocalizationsEn extends AppLocalizations {
   String get home_scanConnect => 'Scan to Connect';
 
   @override
-  String get home_searchEmptyHint => 'Search agents, groups, and messages';
+  String get home_searchEmptyHint =>
+      'Search agents, groups, messages, and peer chats';
 
   @override
   String get home_searchNoResults => 'No results found';
@@ -333,6 +334,9 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get home_searchSectionMessages => 'Messages';
+
+  @override
+  String get home_searchSectionPeerMessages => 'Peer Chats';
 
   @override
   String home_agentsCount(int count) {
@@ -3840,6 +3844,11 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get peerChat_emptyMessages =>
       'No messages yet\nSend the first message to start chatting';
+
+  @override
+  String peerChat_searchInConversation(String peerName) {
+    return 'Search messages with $peerName';
+  }
 
   @override
   String get peerChat_hintOnline => 'Type a message...';

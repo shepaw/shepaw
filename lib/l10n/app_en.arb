@@ -95,11 +95,12 @@
   "home_createGroup": "Create Group",
   "home_addDevice": "Device Pairing",
   "home_scanConnect": "Scan to Connect",
-  "home_searchEmptyHint": "Search agents, groups, and messages",
+  "home_searchEmptyHint": "Search agents, groups, messages, and peer chats",
   "home_searchNoResults": "No results found",
   "home_searchSectionAgents": "Agents",
   "home_searchSectionGroups": "Groups",
   "home_searchSectionMessages": "Messages",
+  "home_searchSectionPeerMessages": "Peer Chats",
   "home_agentsCount": "{count} agents",
   "drawer_myProfile": "My Profile",
   "drawer_newAgent": "New Agent",
@@ -1608,6 +1609,14 @@
   "peerRole_initiatorDesc": "Paired by scanning on this device",
   "peerRole_responderDesc": "Paired when peer scanned",
   "peerChat_emptyMessages": "No messages yet\nSend the first message to start chatting",
+  "peerChat_searchInConversation": "Search messages with {peerName}",
+  "@peerChat_searchInConversation": {
+    "placeholders": {
+      "peerName": {
+        "type": "String"
+      }
+    }
+  },
   "peerChat_hintOnline": "Type a message...",
   "peerChat_hintOffline": "Offline · Messages will send when connected",
   "peerChat_statusOnlinePrefix": "Online · ",

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../models/agent.dart';
 import '../models/channel.dart';
+import '../peer/services/peer_storage_service.dart';
 import '../services/local_database_service.dart';
 import '../services/message_search_service.dart';
 import '../theme/app_theme.dart';
@@ -16,12 +17,16 @@ class SearchSelection {
   final String? messageChannelName;
   final String? highlightMessageId;
 
+  /// P2P 配对设备 ID（用于跳转到设备聊天）
+  final String? peerId;
+
   const SearchSelection({
     this.agent,
     this.channel,
     this.messageChannelId,
     this.messageChannelName,
     this.highlightMessageId,
+    this.peerId,
   });
 }
 
@@ -104,12 +109,14 @@ class AgentSearchDelegate extends SearchDelegate<Agent?> {
       builder: (context, snapshot) {
         final channelResults = snapshot.data?.channels ?? [];
         final messageResults = snapshot.data?.messages ?? [];
+        final peerMessageResults = snapshot.data?.peerMessages ?? [];
 
         final hasAgents = agentResults.isNotEmpty;
         final hasChannels = channelResults.isNotEmpty;
         final hasMessages = messageResults.isNotEmpty;
+        final hasPeerMessages = peerMessageResults.isNotEmpty;
 
-        if (!hasAgents && !hasChannels && !hasMessages) {
+        if (!hasAgents && !hasChannels && !hasMessages && !hasPeerMessages) {
           if (snapshot.connectionState == ConnectionState.waiting) {
             return const Center(child: CircularProgressIndicator());
           }
@@ -148,6 +155,12 @@ class AgentSearchDelegate extends SearchDelegate<Agent?> {
               ...messageResults
                   .map((result) => _buildMessageTile(context, result)),
             ],
+            if (hasPeerMessages) ...[
+              _buildSectionHeader(
+                  context, 'Peer Messages', peerMessageResults.length),
+              ...peerMessageResults
+                  .map((result) => _buildPeerMessageTile(context, result)),
+            ],
           ],
         );
       },
@@ -160,7 +173,15 @@ class AgentSearchDelegate extends SearchDelegate<Agent?> {
       query: searchQuery,
       limit: 20,
     );
-    return _GlobalSearchResults(channels: channels, messages: messages);
+    final peerMessages = await PeerStorageService().searchMessages(
+      query: searchQuery,
+      limit: 20,
+    );
+    return _GlobalSearchResults(
+      channels: channels,
+      messages: messages,
+      peerMessages: peerMessages,
+    );
   }
 
   Future<List<Channel>> _searchChannels(String searchQuery) async {
@@ -365,6 +386,60 @@ class AgentSearchDelegate extends SearchDelegate<Agent?> {
     );
   }
 
+  Widget _buildPeerMessageTile(
+    BuildContext context,
+    PeerMessageSearchResult result,
+  ) {
+    final message = result.message;
+
+    return InkWell(
+      onTap: () {
+        popShepawSearch(context, null);
+        onResultSelected?.call(SearchSelection(
+          peerId: message.peerId,
+          highlightMessageId: message.id,
+        ));
+      },
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+        decoration: BoxDecoration(
+          border: Border(bottom: BorderSide(color: Colors.grey[200]!)),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+                  decoration: BoxDecoration(
+                    color: Colors.grey[100],
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                  child: Text(
+                    result.peerName.isNotEmpty ? result.peerName : 'Unknown',
+                    style: TextStyle(fontSize: 11, color: Colors.grey[600]),
+                  ),
+                ),
+                const Spacer(),
+                Text(
+                  _formatTime(message.timestamp),
+                  style: TextStyle(fontSize: 11, color: Colors.grey[500]),
+                ),
+              ],
+            ),
+            const SizedBox(height: 4),
+            Padding(
+              padding: const EdgeInsets.only(left: 4),
+              child: _buildHighlightedContent(context, message.content),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget _buildHighlightedContent(BuildContext context, String content) {
     final baseStyle = TextStyle(color: Colors.grey[800], fontSize: 13);
     if (query.isEmpty) {
@@ -434,6 +509,11 @@ class AgentSearchDelegate extends SearchDelegate<Agent?> {
 class _GlobalSearchResults {
   final List<Channel> channels;
   final List<MessageSearchResult> messages;
+  final List<PeerMessageSearchResult> peerMessages;
 
-  _GlobalSearchResults({required this.channels, required this.messages});
+  _GlobalSearchResults({
+    required this.channels,
+    required this.messages,
+    required this.peerMessages,
+  });
 }

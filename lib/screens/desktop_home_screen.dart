@@ -213,7 +213,7 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
     });
   }
 
-  void _onSwitchChannel(String channelId) {
+  void _onSwitchChannel(String channelId, {String? highlightMessageId}) {
     if (_selected == null) return;
     setState(() {
       _selected = ConversationSelection(
@@ -222,6 +222,7 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
         agentAvatar: _selected!.agentAvatar,
         channelId: channelId,
         groupFamilyId: _selected!.groupFamilyId,
+        highlightMessageId: highlightMessageId,
       );
       _navGeneration++;
     });
@@ -329,6 +330,7 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
                   key: ValueKey(_selected!.key),
                   peer: peer,
                   embedded: true,
+                  highlightMessageId: _selected!.highlightMessageId,
                   onAgentSelected: (agent) {
                     _onConversationSelected(ConversationSelection(
                       agentId: agent.id,

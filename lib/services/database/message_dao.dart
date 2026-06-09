@@ -81,6 +81,16 @@ extension MessageDao on LocalDatabaseService {
     );
   }
 
+  /// 统计 channel 中 created_at >= [createdAt] 的消息数量（含该时间点）。
+  Future<int> countMessagesFromTimestamp(String channelId, String createdAt) async {
+    final db = await database;
+    final result = await db.rawQuery(
+      'SELECT COUNT(*) as cnt FROM messages WHERE channel_id = ? AND created_at >= ?',
+      [channelId, createdAt],
+    );
+    return (result.first['cnt'] as int?) ?? 0;
+  }
+
   /// 获取消息的 created_at 值
   Future<String?> getMessageCreatedAt(String messageId) async {
     final db = await database;

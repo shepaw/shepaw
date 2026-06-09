@@ -79,7 +79,24 @@ class HistoryService {
   /// Load messages from a channel.
   Future<List<Message>> loadChannelMessages(String channelId, {int limit = 100}) async {
     final messageMaps = await _db.getChannelMessages(channelId, limit: limit);
+    return _mapsToMessages(messageMaps, channelId);
+  }
 
+  /// Load enough recent messages to include [messageId], plus [paddingAfter] newer ones.
+  Future<List<Message>> loadChannelMessagesIncluding(
+    String channelId,
+    String messageId, {
+    int paddingAfter = 30,
+  }) async {
+    final createdAt = await _db.getMessageCreatedAt(messageId);
+    if (createdAt == null) {
+      return loadChannelMessages(channelId);
+    }
+    final count = await _db.countMessagesFromTimestamp(channelId, createdAt);
+    return loadChannelMessages(channelId, limit: count + paddingAfter);
+  }
+
+  List<Message> _mapsToMessages(List<Map<String, dynamic>> messageMaps, String channelId) {
     return messageMaps.map((map) {
       Map<String, dynamic>? metadata;
       if (map['metadata'] != null) {

@@ -107,6 +107,7 @@ class HomeScreenState extends State<HomeScreen> {
   late final MessageSearchService _messageSearchService;
   List<Channel> _searchChannelResults = [];
   List<MessageSearchResult> _searchMessageResults = [];
+  List<PeerMessageSearchResult> _searchPeerMessageResults = [];
   bool _isEmbeddedSearching = false;
   Timer? _searchDebounce;
 
@@ -599,6 +600,7 @@ class HomeScreenState extends State<HomeScreen> {
         _filteredAgents = _agents;
         _searchChannelResults = [];
         _searchMessageResults = [];
+        _searchPeerMessageResults = [];
         _isEmbeddedSearching = false;
         _sortedConversations = _buildSortedConversations();
       });
@@ -616,6 +618,7 @@ class HomeScreenState extends State<HomeScreen> {
 
     List<Channel> channelResults = [];
     List<MessageSearchResult> messageResults = [];
+    List<PeerMessageSearchResult> peerMessageResults = [];
     try {
       final allChannels = await _databaseService.getAllChannels();
       channelResults = allChannels.where((ch) {
@@ -629,12 +632,19 @@ class HomeScreenState extends State<HomeScreen> {
         limit: 20,
       );
     } catch (_) {}
+    try {
+      peerMessageResults = await PeerStorageService().searchMessages(
+        query: query,
+        limit: 20,
+      );
+    } catch (_) {}
 
     if (!mounted || _searchController.text.trim() != query) return;
     setState(() {
       _filteredAgents = agentResults;
       _searchChannelResults = channelResults;
       _searchMessageResults = messageResults;
+      _searchPeerMessageResults = peerMessageResults;
       _isEmbeddedSearching = false;
     });
   }
@@ -1052,15 +1062,17 @@ class HomeScreenState extends State<HomeScreen> {
     final hasAgents = agentResults.isNotEmpty;
     final hasChannels = _searchChannelResults.isNotEmpty;
     final hasMessages = _searchMessageResults.isNotEmpty;
+    final hasPeerMessages = _searchPeerMessageResults.isNotEmpty;
 
     if (_isEmbeddedSearching &&
         !hasAgents &&
         !hasChannels &&
-        !hasMessages) {
+        !hasMessages &&
+        !hasPeerMessages) {
       return const Center(child: CircularProgressIndicator());
     }
 
-    if (!hasAgents && !hasChannels && !hasMessages) {
+    if (!hasAgents && !hasChannels && !hasMessages && !hasPeerMessages) {
       return Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
@@ -1099,6 +1111,15 @@ class HomeScreenState extends State<HomeScreen> {
           ),
           ..._searchMessageResults.map(
             (r) => _buildEmbeddedSearchMessageTile(r, query),
+          ),
+        ],
+        if (hasPeerMessages) ...[
+          _buildEmbeddedSearchSectionHeader(
+            l10n.home_searchSectionPeerMessages,
+            _searchPeerMessageResults.length,
+          ),
+          ..._searchPeerMessageResults.map(
+            (r) => _buildEmbeddedSearchPeerMessageTile(r, query),
           ),
         ],
       ],
@@ -1263,6 +1284,66 @@ class HomeScreenState extends State<HomeScreen> {
                 const SizedBox(width: 4),
                 Text(
                   _formatMessageSearchTime(message.timestampMs),
+                  style: TextStyle(
+                    fontSize: 11,
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 4),
+            _buildEmbeddedHighlightedContent(message.content, query),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildEmbeddedSearchPeerMessageTile(
+    PeerMessageSearchResult result,
+    String query,
+  ) {
+    final message = result.message;
+    return InkWell(
+      onTap: () => _handleSearchSelection(SearchSelection(
+        peerId: message.peerId,
+        highlightMessageId: message.id,
+      )),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+        decoration: BoxDecoration(
+          border: Border(
+            bottom: BorderSide(
+              color: Theme.of(context).colorScheme.outlineVariant,
+            ),
+          ),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Flexible(
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+                    decoration: BoxDecoration(
+                      color: Theme.of(context).colorScheme.surfaceContainerHighest,
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                    child: Text(
+                      result.peerName.isNotEmpty ? result.peerName : '?',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Text(
+                  _formatMessageSearchTime(message.timestamp),
                   style: TextStyle(
                     fontSize: 11,
                     color: Theme.of(context).colorScheme.onSurfaceVariant,
@@ -1835,6 +1916,35 @@ class HomeScreenState extends State<HomeScreen> {
         MaterialPageRoute(
           builder: (context) => ChatScreen(
             channelId: channelId,
+            highlightMessageId: selection.highlightMessageId,
+          ),
+        ),
+      ).then((_) async {
+        await _loadAgents(silent: true);
+      });
+    } else if (selection.peerId != null) {
+      final peerId = selection.peerId!;
+      final peer = _pairedPeers.where((p) => p.id == peerId).firstOrNull;
+
+      if (widget.embedded && widget.onConversationSelected != null) {
+        setState(() => _peerUnreadCounts[peerId] = 0);
+        widget.onConversationSelected!(ConversationSelection(
+          peerId: peerId,
+          highlightMessageId: selection.highlightMessageId,
+        ));
+        return;
+      }
+
+      if (peer == null) return;
+
+      setState(() => _peerUnreadCounts[peerId] = 0);
+
+      if (!mounted) return;
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => PeerChatScreen(
+            peer: peer,
             highlightMessageId: selection.highlightMessageId,
           ),
         ),

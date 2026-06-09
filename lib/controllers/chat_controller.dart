@@ -55,7 +55,7 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
   final String? initialChannelId;
   final bool embedded;
   final VoidCallback? onClose;
-  final ValueChanged<String>? onSwitchChannel;
+  final void Function(String channelId, {String? highlightMessageId})? onSwitchChannel;
   final String Function() getUserId;
   final String Function() getUserName;
 
@@ -669,6 +669,31 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
 
   void rebuildMessageIdMap() {
     messageIdMap = {for (final m in messages) m.id: m};
+  }
+
+  /// Ensure [messageId] is present in the in-memory list, loading older history if needed.
+  Future<bool> ensureMessageLoaded(String messageId) async {
+    if (messages.any((m) => m.id == messageId)) return true;
+    if (currentChannelId == null) return false;
+
+    try {
+      final loadedMessages = await chatService.loadChannelMessagesIncluding(
+        currentChannelId!,
+        messageId,
+      );
+      if (!loadedMessages.any((m) => m.id == messageId)) return false;
+      messages = loadedMessages;
+      rebuildMessageIdMap();
+      _notify();
+      return true;
+    } catch (e) {
+      LoggerService().warning(
+        'Failed to load message for scroll: $messageId',
+        tag: 'ChatController',
+        error: e,
+      );
+      return false;
+    }
   }
 
   // ---------------------------------------------------------------------------

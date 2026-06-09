@@ -305,6 +305,43 @@ class PeerStorageService {
     return rows.map((row) => PeerMessage.fromJson(row)).toList();
   }
 
+  /// 按 ID 获取单条配对设备消息。
+  Future<PeerMessage?> getMessageById(String messageId) async {
+    final db = await _db;
+    final rows = await db.query(
+      'peer_messages',
+      where: 'id = ?',
+      whereArgs: [messageId],
+      limit: 1,
+    );
+    if (rows.isEmpty) return null;
+    return PeerMessage.fromJson(rows.first);
+  }
+
+  /// 统计 peer 中 timestamp >= [timestamp] 的消息数量（含该时间点）。
+  Future<int> countMessagesFromTimestamp(String peerId, int timestamp) async {
+    final db = await _db;
+    final result = await db.rawQuery(
+      'SELECT COUNT(*) as cnt FROM peer_messages WHERE peer_id = ? AND timestamp >= ?',
+      [peerId, timestamp],
+    );
+    return (result.first['cnt'] as int?) ?? 0;
+  }
+
+  /// 加载足够的历史消息以包含 [messageId]（用于搜索定位）。
+  Future<List<PeerMessage>> getMessagesIncluding(
+    String peerId,
+    String messageId, {
+    int paddingAfter = 30,
+  }) async {
+    final target = await getMessageById(messageId);
+    if (target == null) {
+      return getMessages(peerId);
+    }
+    final count = await countMessagesFromTimestamp(peerId, target.timestamp);
+    return getMessages(peerId, limit: count + paddingAfter);
+  }
+
   /// 更新消息投递状态
   Future<void> updateMessageDelivery(String messageId, PeerMessageDelivery delivery) async {
     final db = await _db;
@@ -333,4 +370,58 @@ class PeerStorageService {
     final db = await _db;
     await db.delete('peer_messages', where: 'peer_id = ?', whereArgs: [peerId]);
   }
+
+  /// 搜索配对设备聊天消息（跨设备或限定单个 peer）
+  Future<List<PeerMessageSearchResult>> searchMessages({
+    required String query,
+    String? peerId,
+    int limit = 50,
+  }) async {
+    if (query.trim().isEmpty) {
+      return [];
+    }
+
+    try {
+      final db = await _db;
+
+      var peerFilter = '';
+      final args = <dynamic>['%$query%'];
+      if (peerId != null) {
+        peerFilter = 'AND pm.peer_id = ?';
+        args.add(peerId);
+      }
+      args.add(limit);
+
+      final rows = await db.rawQuery('''
+        SELECT pm.*, pp.device_name AS peer_name
+        FROM peer_messages pm
+        INNER JOIN paired_peers pp ON pm.peer_id = pp.id
+        WHERE pm.content LIKE ?
+        $peerFilter
+        ORDER BY pm.timestamp DESC
+        LIMIT ?
+      ''', args);
+
+      return rows.map((row) {
+        return PeerMessageSearchResult(
+          message: PeerMessage.fromJson(row),
+          peerName: row['peer_name'] as String? ?? '',
+        );
+      }).toList();
+    } catch (e) {
+      _log.error('Error searching peer messages: $e', tag: _tag);
+      return [];
+    }
+  }
+}
+
+/// 配对设备消息搜索结果
+class PeerMessageSearchResult {
+  final PeerMessage message;
+  final String peerName;
+
+  PeerMessageSearchResult({
+    required this.message,
+    required this.peerName,
+  });
 }
