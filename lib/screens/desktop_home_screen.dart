@@ -461,7 +461,12 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
     final l10n = AppLocalizations.of(context);
     final colorScheme = Theme.of(context).colorScheme;
     final sidebarBg = colorScheme.surfaceContainerHighest;
-    final iconColor = colorScheme.onSurfaceVariant;
+    // 比 onSurfaceVariant 略深，避免侧栏图标发灰难以辨认。
+    final iconColor = Color.lerp(
+      colorScheme.onSurfaceVariant,
+      colorScheme.onSurface,
+      0.4,
+    )!;
     final activeColor = colorScheme.primary;
 
     // Top section items (always visible, never collapsed)
@@ -650,7 +655,7 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
               final originalIndex = bottomItems.indexOf(item);
               if (originalIndex >= dividerIndex && !dividerInserted) {
                 // Insert "more" button here
-                bottomWidgets.add(_buildMoreButton(overflowItems, colorScheme));
+                bottomWidgets.add(_buildMoreButton(overflowItems, iconColor));
                 moreInserted = true;
               }
             }
@@ -667,7 +672,7 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
 
           // If more button wasn't inserted yet (edge case)
           if (needsMoreButton && !moreInserted) {
-            bottomWidgets.insert(0, _buildMoreButton(overflowItems, colorScheme));
+            bottomWidgets.insert(0, _buildMoreButton(overflowItems, iconColor));
           }
 
           // Spacer height (can be 0 if not enough space)
@@ -721,9 +726,10 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
   /// Builds the "more (···)" button with an OverlayPortal popup.
   Widget _buildMoreButton(
     List<_SidebarItemDef> overflowItems,
-    ColorScheme colorScheme,
+    Color inactiveIconColor,
   ) {
     // Use a Builder so we can capture the button's own BuildContext
+    final colorScheme = Theme.of(context).colorScheme;
     // for accurate RenderBox position lookup inside overlayChildBuilder.
     return Builder(
       builder: (buttonCtx) {
@@ -787,7 +793,7 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
           child: _SidebarIcon(
             icon: Icons.more_horiz,
             tooltip: '更多',
-            color: colorScheme.onSurfaceVariant,
+            color: inactiveIconColor,
             onTap: () {
               if (_morePortalController.isShowing) {
                 _morePortalController.hide();
