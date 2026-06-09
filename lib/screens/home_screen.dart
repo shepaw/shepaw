@@ -41,6 +41,7 @@ import '../peer/services/peer_connection.dart';
 import '../peer/services/peer_connection_manager.dart';
 import '../peer/services/peer_pairing_service.dart';
 import '../peer/services/peer_storage_service.dart';
+import '../widgets/drawer_swipe_detector.dart';
 import 'package:provider/provider.dart';
 
 /// Tagged union for a unified conversation list item (agent or group).
@@ -730,7 +731,12 @@ class HomeScreenState extends State<HomeScreen> {
             ),
       // 左侧抽屉菜单 (hidden in embedded mode)
       drawer: widget.embedded ? null : _buildDrawer(),
-      body: isSearching ? _buildEmbeddedSearchBody() : _buildBody(),
+      drawerEnableOpenDragGesture: !widget.embedded,
+      drawerEdgeDragWidth: widget.embedded ? null : 72,
+      body: DrawerSwipeDetector(
+        enabled: !widget.embedded,
+        child: isSearching ? _buildEmbeddedSearchBody() : _buildBody(),
+      ),
     );
   }
 

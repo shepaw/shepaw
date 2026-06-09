@@ -28,6 +28,7 @@ import '../widgets/chat/chat_message_list.dart';
 import '../widgets/chat/chat_reply_preview.dart';
 import '../widgets/chat/session_list_panel.dart';
 import '../widgets/chat/group_session_list_panel.dart';
+import '../widgets/chat/chat_mobile_menu_drawer.dart';
 import '../widgets/avatar_image.dart';
 import '../widgets/message_search_delegate.dart';
 import '../widgets/shepaw_search_page.dart';
@@ -118,6 +119,8 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
 
   // Whether the current agent supports image input routing
   bool _agentSupportsImage = false;
+
+  final _scaffoldKey = GlobalKey<ScaffoldState>();
 
   @override
   void initState() {
@@ -1421,11 +1424,74 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   // Build
   // ---------------------------------------------------------------------------
 
+  void _showChatMenu({BuildContext? anchorContext}) {
+    final c = _controller;
+    if (!LayoutUtils.isDesktopLayout(context) && !widget.embedded) {
+      _scaffoldKey.currentState?.openEndDrawer();
+      return;
+    }
+    if (c.isGroupMode) {
+      ChatMenuHelper.showGroupMenu(
+        context,
+        anchorContext: anchorContext,
+        onEditGroup: _editGroupInfo,
+        onShowMembers: _showGroupMembersPanel,
+        onAddMember: _addGroupMember,
+        onSearch: _showSearchDialog,
+        onWorkflow: _showGroupWorkflow,
+      );
+    } else {
+      ChatMenuHelper.showAgentMenu(
+        context,
+        anchorContext: anchorContext,
+        onReset: () {
+          _messageController.text = '/reset';
+          _sendMessage();
+        },
+        onViewDetails: _navigateToAgentDetail,
+        onEdit: _navigateToAgentDetailForEdit,
+        onSearch: _showSearchDialog,
+        onCustomSystemPrompt: _showDmSystemPromptDialog,
+      );
+    }
+  }
+
+  Widget? _buildMobileEndDrawer(BuildContext context) {
+    final c = _controller;
+    final l10n = AppLocalizations.of(context);
+    final title = c.isGroupMode
+        ? (c.groupChannel?.name ?? l10n.chat_editGroupInfo)
+        : (c.agentName == SheService.sheName ? l10n.she_name : (c.agentName ?? 'AI Agent'));
+
+    return ChatMobileMenuDrawer(
+      isGroupMode: c.isGroupMode,
+      title: title,
+      onShowSessionList: c.isGroupMode ? _showGroupSessionList : _showSessionList,
+      onResetSession: () {
+        _messageController.text = '/reset';
+        _sendMessage();
+      },
+      onViewDetails: _navigateToAgentDetail,
+      onEditAgent: _navigateToAgentDetailForEdit,
+      onSearch: _showSearchDialog,
+      onCustomSystemPrompt: _showDmSystemPromptDialog,
+      onEditGroup: _editGroupInfo,
+      onShowMembers: _showGroupMembersPanel,
+      onAddMember: _addGroupMember,
+      onWorkflow: _showGroupWorkflow,
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final c = _controller;
+    final isMobileLayout = !LayoutUtils.isDesktopLayout(context) && !widget.embedded;
 
     return Scaffold(
+      key: _scaffoldKey,
+      endDrawerEnableOpenDragGesture: isMobileLayout,
+      endDrawer: isMobileLayout ? _buildMobileEndDrawer(context) : null,
+      drawerEdgeDragWidth: isMobileLayout ? 72 : null,
       appBar: AppBar(
         elevation: 1,
         automaticallyImplyLeading: !widget.embedded,
@@ -1470,32 +1536,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
           Builder(
             builder: (moreButtonContext) => IconButton(
               icon: const Icon(Icons.more_vert),
-              onPressed: () {
-                if (c.isGroupMode) {
-                  ChatMenuHelper.showGroupMenu(
-                    context,
-                    anchorContext: moreButtonContext,
-                    onEditGroup: _editGroupInfo,
-                    onShowMembers: _showGroupMembersPanel,
-                    onAddMember: _addGroupMember,
-                    onSearch: _showSearchDialog,
-                    onWorkflow: _showGroupWorkflow,
-                  );
-                } else {
-                  ChatMenuHelper.showAgentMenu(
-                    context,
-                    anchorContext: moreButtonContext,
-                    onReset: () {
-                      _messageController.text = '/reset';
-                      _sendMessage();
-                    },
-                    onViewDetails: _navigateToAgentDetail,
-                    onEdit: _navigateToAgentDetailForEdit,
-                    onSearch: _showSearchDialog,
-                    onCustomSystemPrompt: _showDmSystemPromptDialog,
-                  );
-                }
-              },
+              onPressed: () => _showChatMenu(anchorContext: moreButtonContext),
             ),
           ),
         ],
