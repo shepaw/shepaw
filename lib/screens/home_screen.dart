@@ -41,6 +41,7 @@ import '../peer/services/peer_connection.dart';
 import '../peer/services/peer_connection_manager.dart';
 import '../peer/services/peer_pairing_service.dart';
 import '../peer/services/peer_storage_service.dart';
+import '../widgets/drawer_swipe_detector.dart';
 import 'package:provider/provider.dart';
 
 /// Tagged union for a unified conversation list item (agent or group).
@@ -716,7 +717,12 @@ class HomeScreenState extends State<HomeScreen> {
     final iconColor = IconTheme.of(context).color ?? Theme.of(context).colorScheme.onSurface;
     final isSearching = widget.embedded && _searchController.text.trim().isNotEmpty;
 
-    return Scaffold(
+    final screenWidth = MediaQuery.sizeOf(context).width;
+
+    return DrawerSwipeDetector(
+      enabled: !widget.embedded,
+      verticalScrollSlop: 36,
+      child: Scaffold(
         appBar: widget.embedded
             ? _buildEmbeddedAppBar(iconColor)
             : AppBar(
@@ -740,8 +746,10 @@ class HomeScreenState extends State<HomeScreen> {
               ),
         // 左侧抽屉菜单 (hidden in embedded mode)
         drawer: widget.embedded ? null : _buildDrawer(),
-        drawerEnableOpenDragGesture: false,
+        drawerEnableOpenDragGesture: !widget.embedded,
+        drawerEdgeDragWidth: widget.embedded ? null : screenWidth,
         body: isSearching ? _buildEmbeddedSearchBody() : _buildBody(),
+      ),
     );
   }
 
