@@ -3,8 +3,8 @@ import '../../l10n/app_localizations.dart';
 
 /// Mobile chat side menu — slides in from the right.
 ///
-/// Mirrors [ChatMenuHelper] popup items as list tiles so they can be opened
-/// via end-drawer swipe (one-handed) or the app-bar more button.
+/// Mirrors [ChatMenuHelper] popup items as list tiles, opened from the
+/// app-bar more button on mobile.
 class ChatMobileMenuDrawer extends StatelessWidget {
   final bool isGroupMode;
   final String title;
