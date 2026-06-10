@@ -42,6 +42,7 @@ import '../services/she_service.dart';
 import 'channel_trace_screen.dart';
 import 'group_workflow_screen.dart';
 import '../widgets/workflow/workflow_progress_panel.dart';
+import '../peer/widgets/peer_source_badge.dart';
 
 class ChatScreen extends StatefulWidget {
   final String? agentId;
@@ -1356,7 +1357,17 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                 alignment: Alignment.center,
                 child: Text(agent.name.isNotEmpty ? agent.name[0].toUpperCase() : '?', style: const TextStyle(color: AppColors.primaryDark, fontWeight: FontWeight.bold)),
               ),
-              title: Text(agent.name),
+              title: Row(
+                children: [
+                  Flexible(
+                    child: Text(agent.name, overflow: TextOverflow.ellipsis),
+                  ),
+                  if (agent.isPeerAgent) ...[
+                    const SizedBox(width: 6),
+                    PeerSourceBadge.fromAgent(agent),
+                  ],
+                ],
+              ),
               subtitle: agent.bio != null && agent.bio!.isNotEmpty ? Text(agent.bio!, maxLines: 1, overflow: TextOverflow.ellipsis) : null,
               onTap: () => Navigator.pop(ctx, agent),
             )),
@@ -2166,7 +2177,23 @@ class _GroupMembersSheetState extends State<_GroupMembersSheet> {
                           child: Text(agent.name.isNotEmpty ? agent.name[0].toUpperCase() : '?', style: const TextStyle(color: AppColors.primaryDark, fontWeight: FontWeight.bold, fontSize: 13)),
                         ),
                         const SizedBox(width: 8),
-                        Expanded(child: Text(l10n.chat_groupRoleTitle(agent.name), style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600))),
+                        Expanded(
+                          child: Row(
+                            children: [
+                              Flexible(
+                                child: Text(
+                                  l10n.chat_groupRoleTitle(agent.name),
+                                  style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                              if (agent.isPeerAgent) ...[
+                                const SizedBox(width: 6),
+                                PeerSourceBadge.fromAgent(agent),
+                              ],
+                            ],
+                          ),
+                        ),
                       ],
                     ),
                     if (agent.bio != null && agent.bio!.isNotEmpty)
@@ -2214,6 +2241,10 @@ class _GroupMembersSheetState extends State<_GroupMembersSheet> {
               title: Row(
                 children: [
                   Flexible(child: Text(agent.name, overflow: TextOverflow.ellipsis)),
+                  if (agent.isPeerAgent) ...[
+                    const SizedBox(width: 6),
+                    PeerSourceBadge.fromAgent(agent),
+                  ],
                   if (_currentAdminAgentId == agent.id) ...[
                     const SizedBox(width: 8),
                     Container(

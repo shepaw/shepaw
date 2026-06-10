@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import '../l10n/app_localizations.dart';
 import '../models/channel.dart';
 import '../models/agent.dart';
+import '../models/remote_agent.dart';
+import '../peer/widgets/peer_source_badge.dart';
 import '../theme/app_theme.dart';
 import '../services/local_api_service.dart';
 import '../services/local_database_service.dart';
@@ -30,6 +32,7 @@ class _GroupDetailScreenState extends State<GroupDetailScreen> {
   final LocalApiService _apiService = LocalApiService();
   final LocalDatabaseService _databaseService = LocalDatabaseService();
   Map<String, Agent> _agentMap = {};
+  Map<String, RemoteAgent> _remoteAgentMap = {};
   bool _isDeleting = false;
 
   // Edit mode state
@@ -73,9 +76,16 @@ class _GroupDetailScreenState extends State<GroupDetailScreen> {
       for (final agent in agents) {
         map[agent.id] = agent;
       }
+      final remoteMap = <String, RemoteAgent>{};
+      for (final member in _channel.members) {
+        if (member.id == 'user') continue;
+        final remote = await _databaseService.getRemoteAgentById(member.id);
+        if (remote != null) remoteMap[member.id] = remote;
+      }
       if (mounted) {
         setState(() {
           _agentMap = map;
+          _remoteAgentMap = remoteMap;
         });
       }
     } catch (e) {
@@ -477,6 +487,8 @@ class _GroupDetailScreenState extends State<GroupDetailScreen> {
   Widget _buildMemberTile(ChannelMember member) {
     final l10n = AppLocalizations.of(context);
     final agent = _agentMap[member.id];
+    final remoteAgent = _remoteAgentMap[member.id];
+    final displayName = remoteAgent?.name ?? agent?.name ?? member.id;
     final isAdmin = member.role == 'admin';
 
     return ListTile(
@@ -488,16 +500,32 @@ class _GroupDetailScreenState extends State<GroupDetailScreen> {
           borderRadius: BorderRadius.circular(10),
         ),
         alignment: Alignment.center,
-        child: agent != null && agent.avatar.length <= 2
-            ? Text(agent.avatar, style: const TextStyle(fontSize: 18))
-            : Text(
-                agent?.name.isNotEmpty == true ? agent!.name[0] : '?',
+        child: remoteAgent != null
+            ? Text(
+                remoteAgent.name.isNotEmpty ? remoteAgent.name[0] : '?',
                 style: const TextStyle(fontSize: 18),
-              ),
+              )
+            : agent != null && agent.avatar.length <= 2
+                ? Text(agent.avatar, style: const TextStyle(fontSize: 18))
+                : Text(
+                    agent?.name.isNotEmpty == true ? agent!.name[0] : '?',
+                    style: const TextStyle(fontSize: 18),
+                  ),
       ),
-      title: Text(
-        agent?.name ?? member.id,
-        style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w500),
+      title: Row(
+        children: [
+          Flexible(
+            child: Text(
+              displayName,
+              style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w500),
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+          if (remoteAgent?.isPeerAgent == true) ...[
+            const SizedBox(width: 6),
+            PeerSourceBadge.fromAgent(remoteAgent!),
+          ],
+        ],
       ),
       subtitle: member.groupBio != null && member.groupBio!.isNotEmpty
           ? Text(
@@ -506,14 +534,21 @@ class _GroupDetailScreenState extends State<GroupDetailScreen> {
               overflow: TextOverflow.ellipsis,
               style: TextStyle(fontSize: 12, color: Colors.grey[500]),
             )
-          : (agent?.bio != null && agent!.bio!.isNotEmpty
+          : (remoteAgent?.bio != null && remoteAgent!.bio!.isNotEmpty
               ? Text(
-                  agent.bio!,
+                  remoteAgent.bio!,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(fontSize: 12, color: Colors.grey[500]),
                 )
-              : null),
+              : (agent?.bio != null && agent!.bio!.isNotEmpty
+                  ? Text(
+                      agent.bio!,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(fontSize: 12, color: Colors.grey[500]),
+                    )
+                  : null)),
       trailing: isAdmin
           ? Container(
               padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),

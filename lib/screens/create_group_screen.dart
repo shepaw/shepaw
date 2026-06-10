@@ -5,6 +5,7 @@ import 'package:uuid/uuid.dart';
 import '../l10n/app_localizations.dart';
 import '../models/agent.dart';
 import '../models/channel.dart';
+import '../peer/widgets/peer_source_badge.dart';
 import '../services/local_api_service.dart';
 import '../services/local_database_service.dart';
 import 'chat_screen.dart';
@@ -465,6 +466,13 @@ class _CreateGroupScreenState extends State<CreateGroupScreen> {
                                       overflow: TextOverflow.ellipsis,
                                     ),
                                   ),
+                                  if (agent.isPeerAgent) ...[
+                                    const SizedBox(width: 6),
+                                    PeerSourceBadge(
+                                      peerId: agent.sourcePeerId,
+                                      fallbackName: agent.sourcePeerName,
+                                    ),
+                                  ],
                                   if (isSelected && _adminAgentId == agent.id) ...[
                                     const SizedBox(width: 8),
                                     Container(
