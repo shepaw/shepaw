@@ -542,7 +542,50 @@ class GroupOrchestrationService {
         }
         currentRound++;
 
-        // ── Flow 模式现由 CLI 工具驱动（shepaw workflow.*），不再解析文本块 ──
+        // If the first admin reply already contains a plan or dispatch, create a workflow
+        // before entering the delegation loop.
+        final earlyFlowPlan = FlowPlan.tryParse(adminResponseContent);
+        if (earlyFlowPlan != null &&
+            earlyFlowPlan.stages.any((s) => s.steps.isNotEmpty)) {
+          await _planningHelpers.stripFlowPlanBlockFromLastMessage(channelId, adminAgent.id);
+          if (await _offerWorkflowFromPlan(
+            channelId: channelId,
+            adminAgent: adminAgent,
+            flowPlan: earlyFlowPlan,
+            triggerMessageId: userMessage.id,
+            onActiveWorkflowChanged: onActiveWorkflowChanged,
+            onInteractionRequest: onInteractionRequestForAdmin,
+          )) {
+            await endOrchTrace(InferenceStatus.completed);
+            onAllDone?.call();
+            return;
+          }
+        }
+
+        final firstDispatch =
+            _dispatchParser.parseStructuredDispatch(adminResponseContent, nonAdminAgents);
+        if (firstDispatch.steps.isNotEmpty) {
+          await _dispatchParser.stripDispatchJsonFromLastMessage(channelId, adminAgent.id);
+          final dispatchPlan = _dispatchParser.buildFlowPlanFromDispatch(
+            steps: firstDispatch.steps,
+            mode: firstDispatch.steps.first.mode,
+            agents: agents,
+            summary: effectiveContent,
+            title: groupName,
+          );
+          if (await _offerWorkflowFromPlan(
+            channelId: channelId,
+            adminAgent: adminAgent,
+            flowPlan: dispatchPlan,
+            triggerMessageId: userMessage.id,
+            onActiveWorkflowChanged: onActiveWorkflowChanged,
+            onInteractionRequest: onInteractionRequestForAdmin,
+          )) {
+            await endOrchTrace(InferenceStatus.completed);
+            onAllDone?.call();
+            return;
+          }
+        }
 
         // 2. Loop: parse dispatch JSON → delegate → admin summarize → repeat
         final failedAgentNames = <String>[];
@@ -670,6 +713,22 @@ class GroupOrchestrationService {
               .toSet()
               .toList();
 
+          final flowPlanInRound = FlowPlan.tryParse(adminResponseContent);
+          if (flowPlanInRound != null &&
+              flowPlanInRound.stages.any((s) => s.steps.isNotEmpty)) {
+            await _planningHelpers.stripFlowPlanBlockFromLastMessage(channelId, adminAgent.id);
+            if (await _offerWorkflowFromPlan(
+              channelId: channelId,
+              adminAgent: adminAgent,
+              flowPlan: flowPlanInRound,
+              triggerMessageId: userMessage.id,
+              onActiveWorkflowChanged: onActiveWorkflowChanged,
+              onInteractionRequest: onInteractionRequestForAdmin,
+            )) {
+              break;
+            }
+          }
+
           // Record dispatch decision in orchestration trace
           if (orchTraceId != null) {
             final dSpanId = TraceService.instance.addSpan(
@@ -791,6 +850,28 @@ class GroupOrchestrationService {
 
           // Strip dispatch JSON from saved message before delegating
           await _dispatchParser.stripDispatchJsonFromLastMessage(channelId, adminAgent.id);
+
+          // Structured task dispatch → create workflow + approval card instead of
+          // running inline delegation (execution starts after user approval).
+          if (dispatch.steps.isNotEmpty) {
+            final flowPlanFromDispatch = _dispatchParser.buildFlowPlanFromDispatch(
+              steps: dispatch.steps,
+              mode: dispatch.steps.first.mode,
+              agents: agents,
+              summary: effectiveContent,
+              title: groupName,
+            );
+            if (await _offerWorkflowFromPlan(
+              channelId: channelId,
+              adminAgent: adminAgent,
+              flowPlan: flowPlanFromDispatch,
+              triggerMessageId: userMessage.id,
+              onActiveWorkflowChanged: onActiveWorkflowChanged,
+              onInteractionRequest: onInteractionRequestForAdmin,
+            )) {
+              break;
+            }
+          }
 
           // Reset failed-agent tracking for this delegation round
           failedAgentNames.clear();
@@ -1092,5 +1173,79 @@ class GroupOrchestrationService {
     }
 
     onAllDone?.call();
+  }
+
+  /// Create a workflow execution from a [FlowPlan] and surface plan approval UI.
+  Future<bool> _offerWorkflowFromPlan({
+    required String channelId,
+    required RemoteAgent adminAgent,
+    required FlowPlan flowPlan,
+    required String triggerMessageId,
+    void Function(String? workflowId)? onActiveWorkflowChanged,
+    Future<Map<String, dynamic>?> Function(
+      String agentId,
+      String agentName,
+      String interactionType,
+      Map<String, dynamic> data,
+    )? onInteractionRequest,
+  }) async {
+    if (flowPlan.stages.isEmpty ||
+        flowPlan.stages.every((s) => s.steps.isEmpty)) {
+      return false;
+    }
+
+    try {
+      final execution = await _workflowService.createWorkflowExecution(
+        channelId: channelId,
+        title: flowPlan.title.isNotEmpty ? flowPlan.title : '群聊工作流',
+        flowPlan: flowPlan,
+        triggerMessage: triggerMessageId,
+      );
+
+      onActiveWorkflowChanged?.call(execution.id);
+
+      final planData = flowPlan.toExecutionPlan().toJson();
+      final adminMsgId = await _lastAgentMessageId(channelId, adminAgent.id);
+
+      if (onInteractionRequest != null) {
+        await onInteractionRequest(
+          adminAgent.id,
+          adminAgent.name,
+          'plan_approval',
+          {
+            ...planData,
+            '_workflowId': execution.id,
+            '_non_blocking': true,
+            if (adminMsgId != null) '_savedMessageId': adminMsgId,
+          },
+        );
+      }
+
+      LoggerService().info(
+        'Created workflow ${execution.id} from group task dispatch (${execution.steps.length} steps)',
+        tag: 'GroupOrchestrationService',
+      );
+      return true;
+    } catch (e, st) {
+      LoggerService().error(
+        'Failed to create workflow from task dispatch',
+        tag: 'GroupOrchestrationService',
+        error: e,
+        stackTrace: st,
+      );
+      return false;
+    }
+  }
+
+  Future<String?> _lastAgentMessageId(String channelId, String agentId) async {
+    try {
+      final messages = await _db.getChannelMessages(channelId, limit: 20);
+      for (final m in messages) {
+        if (m['sender_id'] == agentId) {
+          return m['id'] as String?;
+        }
+      }
+    } catch (_) {}
+    return null;
   }
 }

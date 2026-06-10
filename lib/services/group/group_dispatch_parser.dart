@@ -1,4 +1,5 @@
 import 'dart:convert';
+import '../../models/planning_models.dart';
 import '../../models/remote_agent.dart';
 import '../local_database_service.dart';
 import '../logger_service.dart';
@@ -95,6 +96,83 @@ class GroupDispatchParser {
     steps.sort((a, b) => a.step.compareTo(b.step));
 
     return (steps: steps, wantsContinue: wantsContinue, isDone: false);
+  }
+
+  /// Convert structured dispatch steps into a [FlowPlan] for workflow tracking.
+  FlowPlan buildFlowPlanFromDispatch({
+    required List<DispatchStep> steps,
+    required String mode,
+    required List<RemoteAgent> agents,
+    required String summary,
+    String? title,
+  }) {
+    if (steps.isEmpty) {
+      return FlowPlan(
+        title: title ?? '群聊任务',
+        summary: summary,
+        stages: [],
+      );
+    }
+
+    final isSequential = mode == 'sequential' && steps.length > 1;
+    final stages = <FlowStage>[];
+
+    if (isSequential) {
+      for (int i = 0; i < steps.length; i++) {
+        final ds = steps[i];
+        final flowSteps = _flowStepsFromDispatchStep(ds, agents, i);
+        if (flowSteps.isEmpty) continue;
+        stages.add(FlowStage(
+          stageId: 's$i',
+          label: '步骤 ${ds.step}',
+          steps: flowSteps,
+        ));
+      }
+    } else {
+      final allFlowSteps = <FlowStep>[];
+      for (int i = 0; i < steps.length; i++) {
+        allFlowSteps.addAll(_flowStepsFromDispatchStep(steps[i], agents, i));
+      }
+      if (allFlowSteps.isNotEmpty) {
+        stages.add(FlowStage(
+          stageId: 's0',
+          label: '任务分派',
+          steps: allFlowSteps,
+        ));
+      }
+    }
+
+    final planTitle = title?.trim();
+    return FlowPlan(
+      title: (planTitle != null && planTitle.isNotEmpty)
+          ? planTitle
+          : (summary.length > 48 ? '${summary.substring(0, 48)}…' : summary),
+      summary: summary,
+      stages: stages,
+    );
+  }
+
+  List<FlowStep> _flowStepsFromDispatchStep(
+    DispatchStep ds,
+    List<RemoteAgent> agents,
+    int stageIndex,
+  ) {
+    final flowSteps = <FlowStep>[];
+    var stepIndex = 0;
+    for (final agentId in ds.agentIds) {
+      final agent = agents.where((a) => a.id == agentId).firstOrNull;
+      if (agent == null) continue;
+      final instruction =
+          ds.task.trim().isNotEmpty ? ds.task.trim() : '请处理用户请求';
+      flowSteps.add(FlowStep(
+        stepId: 's${stageIndex}_t$stepIndex',
+        taskId: 'task_${stageIndex}_$stepIndex',
+        agent: agent.name,
+        instruction: instruction,
+      ));
+      stepIndex++;
+    }
+    return flowSteps;
   }
 
   /// Strip the ```json … ``` dispatch block from the last Admin message in

@@ -68,12 +68,12 @@ mixin _InteractionOps on _ChatControllerBase {
     return true;
   }
 
-  void handlePlanApprovalResponded(
+  Future<void> handlePlanApprovalResponded(
     Message originalMessage,
     bool approved, {
     String? feedback,
     List<String>? skippedTaskIds,
-  }) {
+  }) async {
     // Update UI immediately
     _updateGroupStreamingMetadata(
       originalMessage.id,
@@ -100,13 +100,14 @@ mixin _InteractionOps on _ChatControllerBase {
           'skipped_task_ids': skippedTaskIds,
       });
 
-      // If approved and has workflow ID, mark workflow as running + show panel
+      // If approved and has workflow ID, start execution immediately.
       if (approved) {
         final existingMsg = messageIdMap[originalMessage.id];
         final planMeta = existingMsg?.metadata?['plan_approval'] as Map<String, dynamic>?;
         final workflowId = planMeta?['_workflowId'] as String?;
         if (workflowId != null) {
-          _handleWorkflowApproved(workflowId);
+          setActiveWorkflowId(workflowId);
+          await handleWorkflowApproval(true);
         }
       }
     }
