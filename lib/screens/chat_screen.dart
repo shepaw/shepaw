@@ -29,6 +29,7 @@ import '../widgets/chat/chat_reply_preview.dart';
 import '../widgets/chat/session_list_panel.dart';
 import '../widgets/chat/group_session_list_panel.dart';
 import '../widgets/chat/chat_mobile_menu_drawer.dart';
+import '../widgets/drawer_swipe_detector.dart';
 import '../widgets/avatar_image.dart';
 import '../widgets/message_search_delegate.dart';
 import '../widgets/shepaw_search_page.dart';
@@ -1532,12 +1533,17 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     final c = _controller;
     final isMobileLayout = !LayoutUtils.isDesktopLayout(context) && !widget.embedded;
 
-    return Scaffold(
-      key: _scaffoldKey,
-      endDrawerEnableOpenDragGesture: isMobileLayout,
-      endDrawer: isMobileLayout ? _buildMobileEndDrawer(context) : null,
-      drawerEdgeDragWidth: isMobileLayout ? 72 : null,
-      appBar: AppBar(
+    final screenWidth = MediaQuery.sizeOf(context).width;
+
+    return DrawerSwipeDetector(
+      enabled: isMobileLayout,
+      verticalScrollSlop: 36,
+      child: Scaffold(
+        key: _scaffoldKey,
+        endDrawerEnableOpenDragGesture: isMobileLayout,
+        drawerEdgeDragWidth: isMobileLayout ? screenWidth : null,
+        endDrawer: isMobileLayout ? _buildMobileEndDrawer(context) : null,
+        appBar: AppBar(
         elevation: 1,
         automaticallyImplyLeading: !widget.embedded,
         leading: widget.showBackButton && widget.onClose != null
@@ -1585,13 +1591,13 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
             ),
           ),
         ],
-      ),
-      body: Column(
-        children: [
-          // She config banner — shown when She has no LLM model configured
-          if (_sheNeedsConfig) _buildSheConfigBanner(),
+        ),
+        body: Column(
+          children: [
+            // She config banner — shown when She has no LLM model configured
+            if (_sheNeedsConfig) _buildSheConfigBanner(),
 
-          // Message list
+            // Message list
           Expanded(
             child: Stack(
               children: [
@@ -1773,7 +1779,8 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                 ),
               ),
             ),
-        ],
+          ],
+        ),
       ),
     );
   }

@@ -1,68 +1,76 @@
 import 'package:flutter/material.dart';
 
-/// Expands drawer open gestures beyond the default narrow edge strip.
+/// Wraps [child] with a higher vertical scroll drag threshold so horizontal
+/// drawer edge swipes are less likely to be interpreted as list scrolling.
 ///
-/// Detects rightward drags that start within [edgeWidth] of the left screen
-/// edge and opens the scaffold drawer when the drag distance exceeds
-/// [minDragDistance].
-class DrawerSwipeDetector extends StatefulWidget {
+/// Pair with [Scaffold.drawerEnableOpenDragGesture] /
+/// [Scaffold.endDrawerEnableOpenDragGesture] and a wide
+/// [Scaffold.drawerEdgeDragWidth] so the platform drawer follows the finger
+/// and can be cancelled by swiping back.
+class DrawerSwipeDetector extends StatelessWidget {
   const DrawerSwipeDetector({
     super.key,
     required this.child,
     this.enabled = true,
-    this.edgeWidth = 72,
-    this.minDragDistance = 56,
+    this.verticalScrollSlop = 36,
   });
 
   final Widget child;
   final bool enabled;
-  final double edgeWidth;
-  final double minDragDistance;
 
-  @override
-  State<DrawerSwipeDetector> createState() => _DrawerSwipeDetectorState();
-}
-
-class _DrawerSwipeDetectorState extends State<DrawerSwipeDetector> {
-  double? _startX;
-  double _totalDx = 0;
-  bool _opened = false;
-
-  void _reset() {
-    _startX = null;
-    _totalDx = 0;
-    _opened = false;
-  }
-
-  void _handleDragUpdate(double dx) {
-    if (!widget.enabled || _opened || _startX == null) return;
-    if (_startX! > widget.edgeWidth) return;
-
-    _totalDx += dx;
-    if (_totalDx < widget.minDragDistance) return;
-
-    final scaffold = Scaffold.maybeOf(context);
-    if (scaffold == null || !scaffold.hasDrawer) return;
-
-    scaffold.openDrawer();
-    _opened = true;
-  }
+  /// Vertical travel required before descendant scroll views start dragging.
+  final double verticalScrollSlop;
 
   @override
   Widget build(BuildContext context) {
-    if (!widget.enabled) return widget.child;
+    if (!enabled) return child;
 
-    return Listener(
-      behavior: HitTestBehavior.translucent,
-      onPointerDown: (event) {
-        _startX = event.position.dx;
-        _totalDx = 0;
-        _opened = false;
-      },
-      onPointerMove: (event) => _handleDragUpdate(event.delta.dx),
-      onPointerUp: (_) => _reset(),
-      onPointerCancel: (_) => _reset(),
-      child: widget.child,
+    return ScrollConfiguration(
+      behavior: _DrawerFriendlyScrollBehavior(
+        verticalSlop: verticalScrollSlop,
+      ),
+      child: child,
     );
   }
+}
+
+class _DrawerFriendlyScrollBehavior extends MaterialScrollBehavior {
+  const _DrawerFriendlyScrollBehavior({
+    required this.verticalSlop,
+  });
+
+  final double verticalSlop;
+
+  @override
+  ScrollPhysics getScrollPhysics(BuildContext context) {
+    return _SlopScrollPhysics(
+      verticalSlop: verticalSlop,
+      parent: super.getScrollPhysics(context),
+    );
+  }
+
+  @override
+  bool shouldNotify(covariant _DrawerFriendlyScrollBehavior oldDelegate) {
+    return oldDelegate.verticalSlop != verticalSlop;
+  }
+}
+
+class _SlopScrollPhysics extends ScrollPhysics {
+  const _SlopScrollPhysics({
+    required this.verticalSlop,
+    super.parent,
+  });
+
+  final double verticalSlop;
+
+  @override
+  _SlopScrollPhysics applyTo(ScrollPhysics? ancestor) {
+    return _SlopScrollPhysics(
+      verticalSlop: verticalSlop,
+      parent: buildParent(ancestor),
+    );
+  }
+
+  @override
+  double? get dragStartDistanceMotionThreshold => verticalSlop;
 }

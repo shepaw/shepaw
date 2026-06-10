@@ -717,35 +717,38 @@ class HomeScreenState extends State<HomeScreen> {
     final iconColor = IconTheme.of(context).color ?? Theme.of(context).colorScheme.onSurface;
     final isSearching = widget.embedded && _searchController.text.trim().isNotEmpty;
 
-    return Scaffold(
-      appBar: widget.embedded
-          ? _buildEmbeddedAppBar(iconColor)
-          : AppBar(
-              title: Text(
-                _homeAppBarTitle(context),
-                style: const TextStyle(
-                  fontSize: 17,
-                  fontWeight: FontWeight.w600,
+    final screenWidth = MediaQuery.sizeOf(context).width;
+
+    return DrawerSwipeDetector(
+      enabled: !widget.embedded,
+      verticalScrollSlop: 36,
+      child: Scaffold(
+        appBar: widget.embedded
+            ? _buildEmbeddedAppBar(iconColor)
+            : AppBar(
+                title: Text(
+                  _homeAppBarTitle(context),
+                  style: const TextStyle(
+                    fontSize: 17,
+                    fontWeight: FontWeight.w600,
+                  ),
                 ),
-              ),
-              centerTitle: true,
-              elevation: 0,
-              scrolledUnderElevation: 0.5,
-              leading: Builder(
-                builder: (context) => IconButton(
-                  icon: const Icon(Icons.menu),
-                  onPressed: () => Scaffold.of(context).openDrawer(),
+                centerTitle: true,
+                elevation: 0,
+                scrolledUnderElevation: 0.5,
+                leading: Builder(
+                  builder: (context) => IconButton(
+                    icon: const Icon(Icons.menu),
+                    onPressed: () => Scaffold.of(context).openDrawer(),
+                  ),
                 ),
+                actions: [_buildAppBarTrailingActions(iconColor)],
               ),
-              actions: [_buildAppBarTrailingActions(iconColor)],
-            ),
-      // 左侧抽屉菜单 (hidden in embedded mode)
-      drawer: widget.embedded ? null : _buildDrawer(),
-      drawerEnableOpenDragGesture: !widget.embedded,
-      drawerEdgeDragWidth: widget.embedded ? null : 72,
-      body: DrawerSwipeDetector(
-        enabled: !widget.embedded,
-        child: isSearching ? _buildEmbeddedSearchBody() : _buildBody(),
+        // 左侧抽屉菜单 (hidden in embedded mode)
+        drawer: widget.embedded ? null : _buildDrawer(),
+        drawerEnableOpenDragGesture: !widget.embedded,
+        drawerEdgeDragWidth: widget.embedded ? null : screenWidth,
+        body: isSearching ? _buildEmbeddedSearchBody() : _buildBody(),
       ),
     );
   }
