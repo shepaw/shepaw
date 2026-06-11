@@ -4,7 +4,7 @@ import '../../models/message.dart';
 import '../../widgets/message_bubble.dart';
 import '../../utils/message_utils.dart';
 import '../../services/she_service.dart';
-import 'message_context_menu.dart';
+import 'message_long_press_handler.dart';
 
 /// The scrollable message list for the chat screen.
 ///
@@ -169,39 +169,53 @@ class ChatMessageList extends StatelessWidget {
                       : Colors.transparent,
                   borderRadius: BorderRadius.circular(8),
                 ),
-                child: GestureDetector(
-                  onLongPress: () {
-                    showMessageContextMenu(
-                      context,
-                      message: message,
-                      isGroupMode: isGroupMode,
-                      onReply: () => onReply(message),
-                      onRollback: () => onRollback(message),
-                      onReEdit: () => onRollbackReEdit(message, reEdit: true),
-                      onDelete: () => onDelete(message),
-                      onViewTrace: (message.from.isAgent && message.metadata?['trace_id'] != null)
-                          ? () => onViewTrace?.call(message)
-                          : null,
-                    );
-                  },
-                  child: MessageBubble(
+                child: MessageLongPressHandler(
+                  message: message,
+                  isGroupMode: isGroupMode,
+                  hasSelectableText: message.type == MessageType.text &&
+                      !message.isSystemMessage,
+                  onReply: () => onReply(message),
+                  onRollback: () => onRollback(message),
+                  onReEdit: () => onRollbackReEdit(message, reEdit: true),
+                  onDelete: () => onDelete(message),
+                  onViewTrace: (message.from.isAgent &&
+                          message.metadata?['trace_id'] != null)
+                      ? () => onViewTrace?.call(message)
+                      : null,
+                  builder: ({
+                    required textSelectionEnabled,
+                    required menuActive,
+                    required selectionAreaKey,
+                    required selectionFocusNode,
+                  }) =>
+                      MessageBubble(
                     message: message,
                     isMyMessage: isMyMessage,
                     isStreaming: isStreaming,
-                    onStop: (message.id == streamingMessageId || groupStreamingMessageIds.contains(message.id))
+                    textSelectionEnabled: textSelectionEnabled,
+                    isContextMenuActive: menuActive,
+                    selectionAreaKey: selectionAreaKey,
+                    selectionFocusNode: selectionFocusNode,
+                    onStop: (message.id == streamingMessageId ||
+                            groupStreamingMessageIds.contains(message.id))
                         ? onStopStreaming
                         : null,
                     onActionSelected: (confirmationId, actionId, actionLabel) {
-                      final confirmationContext = (message.metadata?['action_confirmation']
-                          as Map<String, dynamic>?)?['confirmation_context'] as String?;
-                      onActionSelected(message, confirmationId, actionId, actionLabel,
+                      final confirmationContext = (message.metadata?[
+                                  'action_confirmation']
+                              as Map<String, dynamic>?)?['confirmation_context']
+                          as String?;
+                      onActionSelected(message, confirmationId, actionId,
+                          actionLabel,
                           confirmationContext: confirmationContext);
                     },
                     onSingleSelectSubmitted: (selectId, optionId, optionLabel) {
-                      onSingleSelectSubmitted(message, selectId, optionId, optionLabel);
+                      onSingleSelectSubmitted(
+                          message, selectId, optionId, optionLabel);
                     },
                     onMultiSelectSubmitted: (selectId, optionIds, summary) {
-                      onMultiSelectSubmitted(message, selectId, optionIds, summary);
+                      onMultiSelectSubmitted(
+                          message, selectId, optionIds, summary);
                     },
                     onFileUploadSubmitted: (uploadId, files, summary) {
                       onFileUploadSubmitted(message, uploadId, files, summary);
@@ -212,7 +226,8 @@ class ChatMessageList extends StatelessWidget {
                     onPlanApprovalResponded: onPlanApprovalResponded != null
                         ? (approved, {feedback, skippedTaskIds}) =>
                             onPlanApprovalResponded!(message, approved,
-                                feedback: feedback, skippedTaskIds: skippedTaskIds)
+                                feedback: feedback,
+                                skippedTaskIds: skippedTaskIds)
                         : null,
                     quotedMessage: quotedMessage,
                     showQuote: !isReplyToPrevious,

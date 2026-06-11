@@ -49,6 +49,18 @@ class MessageBubble extends StatelessWidget {
   /// legacy look when the caller doesn't plumb the value through.
   final bool isAgentOffline;
 
+  /// When `true`, message text can be selected (long-press flow).
+  final bool textSelectionEnabled;
+
+  /// Key for the [SelectionArea] wrapping message text.
+  final GlobalKey<SelectionAreaState>? selectionAreaKey;
+
+  /// Focus node for the [SelectionArea] selection handles.
+  final FocusNode? selectionFocusNode;
+
+  /// When `true`, the context menu is open on this message.
+  final bool isContextMenuActive;
+
   const MessageBubble({
     Key? key,
     required this.message,
@@ -71,6 +83,10 @@ class MessageBubble extends StatelessWidget {
     this.onAvatarTap,
     this.senderAvatar,
     this.isAgentOffline = false,
+    this.textSelectionEnabled = false,
+    this.selectionAreaKey,
+    this.selectionFocusNode,
+    this.isContextMenuActive = false,
   }) : super(key: key);
 
   static MarkdownStyleSheet? _cachedMyStyleSheet;
@@ -246,33 +262,58 @@ class MessageBubble extends StatelessWidget {
                   ),
                 
                 // 消息气泡
-                Container(
-                  padding: message.type == MessageType.image
-                      ? const EdgeInsets.all(4)
-                      : const EdgeInsets.symmetric(
-                          horizontal: 12,
-                          vertical: 8,
+                Stack(
+                  clipBehavior: Clip.none,
+                  children: [
+                    Container(
+                      padding: message.type == MessageType.image
+                          ? const EdgeInsets.all(4)
+                          : const EdgeInsets.symmetric(
+                              horizontal: 12,
+                              vertical: 8,
+                            ),
+                      decoration: BoxDecoration(
+                        color: isMyMessage
+                            ? Theme.of(context).primaryColor
+                            : (isStreaming
+                                ? AppColors.primaryContainer
+                                : Colors.grey[200]),
+                        borderRadius: BorderRadius.circular(16),
+                        border: isStreaming
+                            ? Border.all(
+                                color: AppColors.primaryLight,
+                                width: 1,
+                              )
+                            : null,
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          if (showQuote && quotedMessage != null)
+                            _buildQuoteBlock(context)
+                          else if (showQuote && message.replyTo != null)
+                            _buildDeletedQuoteBlock(context),
+                          _buildMessageContent(context),
+                        ],
+                      ),
+                    ),
+                    if (isContextMenuActive)
+                      Positioned.fill(
+                        child: IgnorePointer(
+                          child: DecoratedBox(
+                            decoration: BoxDecoration(
+                              borderRadius: BorderRadius.circular(16),
+                              color: isMyMessage
+                                  ? Colors.black.withValues(alpha: 0.18)
+                                  : Theme.of(context)
+                                      .primaryColor
+                                      .withValues(alpha: 0.2),
+                            ),
+                          ),
                         ),
-                  decoration: BoxDecoration(
-                    color: isMyMessage
-                        ? Theme.of(context).primaryColor
-                        : (isStreaming ? AppColors.primaryContainer : Colors.grey[200]),
-                    borderRadius: BorderRadius.circular(16),
-                    border: isStreaming
-                        ? Border.all(color: AppColors.primaryLight, width: 1)
-                        : null,
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      if (showQuote && quotedMessage != null)
-                        _buildQuoteBlock(context)
-                      else if (showQuote && message.replyTo != null)
-                        _buildDeletedQuoteBlock(context),
-                      _buildMessageContent(context),
-                    ],
-                  ),
+                      ),
+                  ],
                 ),
 
                 // 停止按钮（流式输出时显示）
@@ -339,6 +380,20 @@ class MessageBubble extends StatelessWidget {
     );
   }
 
+  Widget _wrapWithTextSelection(Widget child) {
+    final content = textSelectionEnabled
+        ? child
+        : SelectionContainer.disabled(child: child);
+    return SelectionArea(
+      key: selectionAreaKey,
+      focusNode: selectionFocusNode,
+      contextMenuBuilder: (context, selectableRegionState) {
+        return const SizedBox.shrink();
+      },
+      child: content,
+    );
+  }
+
   /// Replace cc-only mention tokens with an annotated form.
   /// For mentions with notify:false, appends "(cc)" so readers can
   /// tell at a glance that the mentioned agent was not triggered.
@@ -388,26 +443,25 @@ class MessageBubble extends StatelessWidget {
         final rawContent = message.content.isEmpty ? '...' : message.content;
         final content = _processContentWithMentions(rawContent, message.metadata);
         final styleSheet = _getStyleSheet(isMyMessage, Theme.of(context).primaryColor);
-        final markdownWidget = SelectionArea(
-          child: MarkdownBody(
-            data: content,
-            selectable: false,
-            extensionSet: md.ExtensionSet.gitHubWeb,
-            onTapLink: (text, href, title) async {
-              if (href == null) return;
-              final uri = Uri.tryParse(href);
-              if (uri == null) return;
-              if (!await launchUrl(uri, mode: LaunchMode.externalApplication)) {
-                if (context.mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text(AppLocalizations.of(context).widget_cannotOpenLink(href))),
-                  );
-                }
+        final markdownBody = MarkdownBody(
+          data: content,
+          selectable: false,
+          extensionSet: md.ExtensionSet.gitHubWeb,
+          onTapLink: (text, href, title) async {
+            if (href == null) return;
+            final uri = Uri.tryParse(href);
+            if (uri == null) return;
+            if (!await launchUrl(uri, mode: LaunchMode.externalApplication)) {
+              if (context.mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(content: Text(AppLocalizations.of(context).widget_cannotOpenLink(href))),
+                );
               }
-            },
-            styleSheet: styleSheet,
-          ),
+            }
+          },
+          styleSheet: styleSheet,
         );
+        final markdownWidget = _wrapWithTextSelection(markdownBody);
 
         // Check for action confirmation data
         final actionConfirmation = message.metadata?['action_confirmation'] as Map<String, dynamic>?;
