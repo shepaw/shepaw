@@ -1077,8 +1077,11 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
               Navigator.of(ctx).pop();
               await _controller.updateDmSystemPrompt(controller.text);
               if (mounted) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(content: Text(l10n.chat_systemPromptSaved)),
+                showTopToast(
+                  context,
+                  l10n.chat_systemPromptSaved,
+                  icon: Icons.check_circle,
+                  color: Colors.green,
                 );
               }
             },

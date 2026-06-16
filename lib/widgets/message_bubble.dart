@@ -18,6 +18,7 @@ import 'collapsible_message_bubble.dart';
 import 'permission_audit_bubble.dart';
 import 'avatar_image.dart';
 import '../services/she_service.dart';
+import '../services/error_handler_service.dart';
 
 class MessageBubble extends StatelessWidget {
   final Message message;
@@ -453,8 +454,11 @@ class MessageBubble extends StatelessWidget {
             if (uri == null) return;
             if (!await launchUrl(uri, mode: LaunchMode.externalApplication)) {
               if (context.mounted) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(content: Text(AppLocalizations.of(context).widget_cannotOpenLink(href))),
+                showTopToast(
+                  context,
+                  AppLocalizations.of(context).widget_cannotOpenLink(href),
+                  icon: Icons.error_outline,
+                  color: Colors.red.shade400,
                 );
               }
             }

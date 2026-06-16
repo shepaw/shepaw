@@ -9,6 +9,7 @@ import '../../models/remote_agent.dart';
 import '../../services/audio_recording_service.dart';
 import '../../utils/layout_utils.dart';
 import '../../l10n/app_localizations.dart';
+import '../../services/error_handler_service.dart';
 import '../../theme/app_theme.dart';
 import 'slash_command_picker.dart';
 
@@ -816,10 +817,11 @@ class ChatInputAreaState extends State<ChatInputArea> {
       onLongPressStart: (_) {
         widget.audioRecordingService.startRecording().then((success) {
           if (!success && mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                content: Text(AppLocalizations.of(context).chat_micNotAvailable),
-              ),
+            showTopToast(
+              context,
+              AppLocalizations.of(context).chat_micNotAvailable,
+              icon: Icons.mic_off,
+              color: Colors.orange,
             );
           }
         });

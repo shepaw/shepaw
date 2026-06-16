@@ -5,6 +5,7 @@ import '../../models/message.dart';
 import '../../providers/app_state.dart';
 import '../../utils/message_utils.dart';
 import '../../l10n/app_localizations.dart';
+import '../../services/error_handler_service.dart';
 
 /// A single action in the message floating context menu.
 class MessageMenuAction {
@@ -39,7 +40,6 @@ OverlayEntry showMessageContextMenu(
   final menuL10n = AppLocalizations.of(context);
   final userId =
       Provider.of<AppState>(context, listen: false).currentUser?.id ?? 'user';
-  final messenger = ScaffoldMessenger.of(context);
   final primaryColor = Theme.of(context).colorScheme.primary;
 
   OverlayEntry? menuEntry;
@@ -58,8 +58,11 @@ OverlayEntry showMessageContextMenu(
     } else {
       Clipboard.setData(ClipboardData(text: message.content));
     }
-    messenger.showSnackBar(
-      SnackBar(content: Text(menuL10n.chat_copiedToClipboard)),
+    showTopToast(
+      context,
+      menuL10n.chat_copiedToClipboard,
+      icon: Icons.check_circle,
+      color: Colors.green,
     );
   }
 
@@ -82,8 +85,10 @@ OverlayEntry showMessageContextMenu(
       MessageMenuAction(
         label: menuL10n.chat_download,
         onTap: () => closeMenu(
-          afterClose: () => messenger.showSnackBar(
-            SnackBar(content: Text(menuL10n.common_featureComingSoon)),
+          afterClose: () => showTopToast(
+            context,
+            menuL10n.common_featureComingSoon,
+            icon: Icons.info_outline,
           ),
         ),
       ),
