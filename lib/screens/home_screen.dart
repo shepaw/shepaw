@@ -722,6 +722,7 @@ class HomeScreenState extends State<HomeScreen> {
     return DrawerSwipeDetector(
       enabled: !widget.embedded,
       verticalScrollSlop: 36,
+      blockLeadingEdgeDrawerGesture: !widget.embedded,
       child: Scaffold(
         appBar: widget.embedded
             ? _buildEmbeddedAppBar(iconColor)
