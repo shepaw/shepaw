@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import '../../l10n/app_localizations.dart';
+import '../../utils/layout_utils.dart';
 import '../../models/remote_agent.dart';
 import '../../service_locator.dart' show getIt;
 import '../../services/local_database_service.dart';
@@ -119,16 +120,17 @@ class _PeerAgentListPanelState extends State<PeerAgentListPanel>
 
     return Column(
       children: [
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-          child: Align(
-            alignment: Alignment.centerLeft,
-            child: Text(
-              l10n.peerChat_agentList,
-              style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+        if (LayoutUtils.isDesktopLayout(context))
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+            child: Align(
+              alignment: Alignment.centerLeft,
+              child: Text(
+                l10n.peerChat_agentList,
+                style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+              ),
             ),
           ),
-        ),
         TabBar(
           controller: _tabController,
           labelPadding: const EdgeInsets.symmetric(horizontal: 12),
