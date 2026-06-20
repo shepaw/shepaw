@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'package:uuid/uuid.dart';
 import '../local_database_service.dart';
 import '../logger_service.dart';
+import '../../identity/services/sync_outbound_hook.dart';
 
 /// 消息（含流式/部分消息）相关的数据访问层。
 extension MessageDao on LocalDatabaseService {
@@ -18,6 +19,7 @@ extension MessageDao on LocalDatabaseService {
     String? replyToId,
   }) async {
     final db = await database;
+    final createdAt = DateTime.now().toIso8601String();
     await db.insert(
       'messages',
       {
@@ -30,9 +32,21 @@ extension MessageDao on LocalDatabaseService {
         'message_type': messageType,
         'metadata': metadata != null ? jsonEncode(metadata) : null,
         'reply_to_id': replyToId,
-        'created_at': DateTime.now().toIso8601String(),
+        'created_at': createdAt,
         'is_read': 0,
       },
+    );
+    SyncOutboundHook.onMessageCreated(
+      id: id,
+      channelId: channelId,
+      senderId: senderId,
+      senderType: senderType,
+      senderName: senderName,
+      content: content,
+      messageType: messageType,
+      metadata: metadata != null ? jsonEncode(metadata) : null,
+      replyToId: replyToId,
+      createdAt: createdAt,
     );
   }
 

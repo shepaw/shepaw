@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
 import '../widgets/avatar_image.dart';
 import '../l10n/app_localizations.dart';
+import '../identity/services/account_identity_service.dart';
 import '../models/remote_agent.dart';
 import '../peer/services/peer_connection_manager.dart';
 import '../peer/services/peer_connection.dart' show PeerConnectionEvent;
@@ -19,6 +20,7 @@ import '../service_locator.dart' show getIt;
 import 'skill_select_screen.dart';
 import 'cli_command_select_screen.dart';
 import 'chat_screen.dart';
+import 'account_identity_screen.dart';
 import '../widgets/agent_model_config_card.dart';
 import '../utils/layout_utils.dart';
 
@@ -83,6 +85,8 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
   /// peer 连接状态变化订阅：peer agent 的在线状态需实时跟随来源设备上/下线。
   StreamSubscription<PeerConnectionEvent>? _peerConnSub;
 
+  String? _accountId;
+
   /// True when this agent should be treated as a local LLM agent.
   /// She is always treated as local even before a model is configured.
   bool get _isLocalMode =>
@@ -106,6 +110,19 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
         }
       });
     }
+
+    if (_agent.isShe) {
+      unawaited(_loadAccountId());
+    }
+  }
+
+  Future<void> _loadAccountId() async {
+    try {
+      await AccountIdentityService.instance.ensureInitialized();
+      final user = await AccountIdentityService.instance.userIdentity();
+      if (!mounted) return;
+      setState(() => _accountId = user.fingerprintHex);
+    } catch (_) {}
   }
 
   /// 页面展示用的在线状态。peer agent 跟随来源设备的 P2P 连接状态，其余 agent
@@ -704,20 +721,16 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
 
   Widget _buildDetailBody() {
     final l10n = AppLocalizations.of(context);
-    // DEBUG: Check if this is She
-    if (_agent.name == 'She' || _agent.metadata['is_she'] == true) {
-      debugPrint('DEBUG: She Agent found! '
-          'isPinned=${_agent.isPinned}, '
-          'name=${_agent.name}, '
-          'isShe=${_agent.isShe}, '
-          'metadata[is_she]=${_agent.metadata['is_she']}');
-    }
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         _buildHeader(),
         const SizedBox(height: 24),
         _buildInfoCard(),
+        if (_agent.isShe) ...[
+          const SizedBox(height: 16),
+          _buildAccountCard(),
+        ],
         if (_isLocalMode) ...[
           const SizedBox(height: 16),
           _buildSkillsCard(),
@@ -1071,6 +1084,35 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
               );
             }),
         ],
+      ),
+    );
+  }
+
+  // ==================== 账号卡片（She） ====================
+
+  Widget _buildAccountCard() {
+    final l10n = AppLocalizations.of(context);
+    return Card(
+      elevation: 0,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12),
+        side: BorderSide(color: Theme.of(context).colorScheme.outlineVariant),
+      ),
+      child: ListTile(
+        leading: const Icon(Icons.account_circle_outlined),
+        title: Text(l10n.identity_title),
+        subtitle: Text(
+          _accountId ?? '—',
+          style: const TextStyle(fontFamily: 'monospace', fontSize: 12),
+        ),
+        trailing: const Icon(Icons.chevron_right),
+        onTap: () async {
+          await Navigator.push(
+            context,
+            MaterialPageRoute(builder: (_) => const AccountIdentityScreen()),
+          );
+          if (mounted) await _loadAccountId();
+        },
       ),
     );
   }

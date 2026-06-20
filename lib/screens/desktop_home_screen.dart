@@ -15,6 +15,7 @@ import 'group_workflow_screen.dart';
 import 'add_remote_agent_screen.dart';
 import 'create_group_screen.dart';
 import 'settings_screen.dart';
+import 'account_identity_screen.dart';
 import 'contacts_screen.dart';
 import 'skill_management_screen.dart';
 import 'model_management_screen.dart';
@@ -39,6 +40,7 @@ class DesktopHomeScreen extends StatefulWidget {
 enum _RightPanelView {
   empty,
   chat,
+  accountIdentity,
   settings,
   addAgent,
   createGroup,
@@ -362,6 +364,9 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
 
       case _RightPanelView.settings:
         return const SettingsScreen();
+
+      case _RightPanelView.accountIdentity:
+        return const AccountIdentityScreen();
 
       case _RightPanelView.addAgent:
         return AddRemoteAgentScreen(
@@ -691,15 +696,33 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
           return Column(
             children: [
               const SizedBox(height: 12),
-              // App avatar / brand
-              Padding(
-                padding: const EdgeInsets.symmetric(vertical: 8),
-                child: ClipRRect(
-                  borderRadius: BorderRadius.circular(10),
-                  child: Image.asset(
-                    'assets/images/shepaw_icon.png',
-                    width: 36,
-                    height: 36,
+              // App avatar / brand — 账号与灵宠
+              Tooltip(
+                message: l10n.identity_title,
+                child: Material(
+                  color: Colors.transparent,
+                  child: InkWell(
+                    borderRadius: BorderRadius.circular(10),
+                    onTap: () => _showPanel(_RightPanelView.accountIdentity),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
+                      child: DecoratedBox(
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(10),
+                          border: _rightPanel == _RightPanelView.accountIdentity
+                              ? Border.all(color: activeColor, width: 2)
+                              : Border.all(color: Colors.transparent, width: 2),
+                        ),
+                        child: ClipRRect(
+                          borderRadius: BorderRadius.circular(8),
+                          child: Image.asset(
+                            'assets/images/shepaw_icon.png',
+                            width: 36,
+                            height: 36,
+                          ),
+                        ),
+                      ),
+                    ),
                   ),
                 ),
               ),

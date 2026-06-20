@@ -21,8 +21,11 @@ import 'providers/locale_provider.dart';
 import 'providers/notification_provider.dart';
 import 'screens/password_setup_screen.dart';
 import 'screens/login_screen.dart';
+import 'screens/account_gate_screen.dart';
+import 'identity/services/account_session_service.dart';
 import 'screens/adaptive_home_screen.dart';
 import 'widgets/window_title_sync.dart';
+import 'widgets/account_join_listener.dart';
 
 // 重新导出 ACP 常量，保持 settings_screen / remote_agent_detail_screen 等
 // 现有 `import '../main.dart' show kAcpServer...` 的引用不受影响。
@@ -273,10 +276,12 @@ class _MyAppState extends State<MyApp> {
                 return const Locale('zh');
               },
               theme: AppTheme.light,
-              builder: (context, child) =>
-                  WindowTitleSync(child: child ?? const SizedBox.shrink()),
+              builder: (context, child) => AccountJoinListener(
+                child: WindowTitleSync(child: child ?? const SizedBox.shrink()),
+              ),
               home: const SplashScreen(),
               routes: {
+                '/account-gate': (context) => const AccountGateScreen(),
                 '/setup': (context) => const PasswordSetupScreen(),
                 '/login': (context) => const LoginScreen(),
                 '/home': (context) => const AdaptiveHomeScreen(),
@@ -307,19 +312,23 @@ class _SplashScreenState extends State<SplashScreen> {
   }
 
   Future<void> _checkPasswordStatus() async {
-    // 短暂延迟，显示启动画面
     await Future.delayed(const Duration(seconds: 1));
-    
+
     if (!mounted) return;
-    
-    // 检查是否已设置密码
+
+    final hasAccount = await AccountSessionService.instance.hasLocalAccount();
+    if (!hasAccount) {
+      Navigator.of(context).pushReplacementNamed('/account-gate');
+      return;
+    }
+
     final isPasswordSet = await _passwordService.isPasswordSet();
-    
+
+    if (!mounted) return;
+
     if (isPasswordSet) {
-      // 已设置密码，跳转到登录页
       Navigator.of(context).pushReplacementNamed('/login');
     } else {
-      // 未设置密码，跳转到设置页
       Navigator.of(context).pushReplacementNamed('/setup');
     }
   }

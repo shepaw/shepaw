@@ -17,6 +17,7 @@ import 'add_remote_agent_screen.dart';
 import 'create_group_screen.dart';
 import 'chat_screen.dart';
 import 'settings_screen.dart';
+import 'account_identity_screen.dart';
 import 'contacts_screen.dart';
 import 'model_management_screen.dart';
 import 'skill_management_screen.dart';
@@ -946,6 +947,21 @@ class HomeScreenState extends State<HomeScreen> {
               child: ListView(
                 padding: EdgeInsets.zero,
                 children: [
+                  ListTile(
+                    leading: const Icon(Icons.pets),
+                    title: Text(l10n.identity_title),
+                    subtitle: Text(l10n.identity_settingsSub),
+                    onTap: () {
+                      Navigator.pop(context);
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) => const AccountIdentityScreen(),
+                        ),
+                      );
+                    },
+                  ),
+                  const Divider(),
                   ListTile(
                     leading: const ModelIcon(),
                     title: Text(l10n.toolModel_managementTitle),

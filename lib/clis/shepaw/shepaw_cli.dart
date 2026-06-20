@@ -5,6 +5,7 @@ import '../../services/she_service.dart';
 import 'chat/chat_agent_scope.dart';
 import 'chat/chat_namespace.dart';
 import 'workflow/workflow_namespace.dart';
+import 'devices/devices_namespace.dart';
 import 'skills_namespace.dart';
 import 'tools/tools_namespace.dart';
 import 'os/os_cli_namespace.dart';
@@ -69,6 +70,7 @@ class ShepawCLI {
     'skills': SkillsNamespace.instance,
     'os': OsCliNamespace.instance,
     'workflow': WorkflowNamespace.instance,
+    'devices': DevicesNamespace.instance,
 
     // ── ℹ️ META 层 - 系统元信息和诊断 ───────────────────────────────────────────
     'meta': MetaNamespace.instance,
@@ -124,7 +126,9 @@ class ShepawCLI {
       'Use dot notation for nested commands (e.g. "shepaw context profile.query"). '
       'Add flags={"help":""} for detailed usage. '
       'IMPORTANT: chat history images are metadata-only — to read/analyze a past image, '
-      'call namespace=chat subcommand=message.get with flags id=<message_id> analyze=<question>.';
+      'call namespace=chat subcommand=message.get with flags id=<message_id> analyze=<question>. '
+      'Cross-device: use namespace=devices to list owned devices, sync.pull from Primary, '
+      'or exec --device <id> --command "shepaw ..." on a remote device.';
 
   /// 动态生成工具描述（包含外部工具信息）
   String _buildToolDescription() {

@@ -2,6 +2,9 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
+import '../identity/services/account_identity_service.dart';
+import '../identity/services/blob_sync_service.dart';
+import '../identity/models/device_role.dart';
 import '../models/message.dart';
 import '../models/remote_agent.dart';
 import '../services/logger_service.dart';
@@ -94,8 +97,51 @@ class _ImageMessageBubbleState extends State<ImageMessageBubble> {
             _imageFile = file;
           });
         }
+        return;
       }
+
+      await _fetchFromPrimaryStorage(relativePath);
     } catch (_) {}
+  }
+
+  Future<void> _fetchFromPrimaryStorage(String relativePath) async {
+    try {
+      final role = await AccountIdentityService.instance.localDeviceRole();
+      if (role == DeviceRole.primary) return;
+
+      if (mounted) {
+        setState(() {
+          _downloadStatus = 'downloading';
+          _progress = 0.0;
+        });
+      }
+
+      await BlobSyncService.instance.fetchBlob(relativePath);
+
+      final fullPath =
+          await LocalFileStorageService().getFullPath(relativePath);
+      final file = File(fullPath);
+      if (await file.exists() && mounted) {
+        setState(() {
+          _downloadStatus = 'completed';
+          _imageFile = file;
+        });
+      } else if (mounted) {
+        setState(() {
+          _downloadStatus = 'completed';
+        });
+      }
+    } catch (e) {
+      LoggerService().warning(
+        'P2P blob fetch failed: $e',
+        tag: 'ImageMessage',
+      );
+      if (mounted) {
+        setState(() {
+          _downloadStatus = 'completed';
+        });
+      }
+    }
   }
 
   Future<void> _startDownload() async {

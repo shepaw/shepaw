@@ -3994,4 +3994,292 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get peerList_disconnected => 'Not connected';
+
+  @override
+  String get identity_title => 'Account & Spirit Pet';
+
+  @override
+  String get identity_settingsSub => 'Account identity and device storage role';
+
+  @override
+  String get identity_sectionAccount => 'Identity';
+
+  @override
+  String get identity_userId => 'Owner ID (fingerprint)';
+
+  @override
+  String get identity_petId => 'Spirit pet ID (fingerprint)';
+
+  @override
+  String get identity_ownership => 'Ownership';
+
+  @override
+  String get identity_bonded => 'Bonded with owner';
+
+  @override
+  String get identity_notBonded => 'Not bonded yet';
+
+  @override
+  String get identity_bondAction => 'Bond with biometrics';
+
+  @override
+  String get identity_bondBiometricReason =>
+      'Verify your identity to bond with your spirit pet';
+
+  @override
+  String get identity_bondSuccess => 'Ownership bond created';
+
+  @override
+  String identity_bondFailed(String error) {
+    return 'Bond failed: $error';
+  }
+
+  @override
+  String get identity_sectionDeviceRole => 'This device storage role';
+
+  @override
+  String get identity_deviceRoleHint =>
+      'Primary holds full data; backup mirrors it; app devices keep index and cache only.';
+
+  @override
+  String get identity_rolePrimary => 'Primary storage';
+
+  @override
+  String get identity_rolePrimaryDesc =>
+      'Authoritative full copy of chat history and attachments';
+
+  @override
+  String get identity_roleBackup => 'Backup';
+
+  @override
+  String get identity_roleBackupDesc =>
+      'Full sync from primary; read-only failover when primary is offline';
+
+  @override
+  String get identity_roleApp => 'App device';
+
+  @override
+  String get identity_roleAppDesc =>
+      'Lightweight, for phones; no full local history';
+
+  @override
+  String get identity_setPrimaryTitle => 'Set as primary storage?';
+
+  @override
+  String get identity_setPrimaryBody =>
+      'This device will hold the full account data. Any existing primary will become an app device.';
+
+  @override
+  String get identity_primaryDevice => 'Current primary';
+
+  @override
+  String get identity_sectionOwnedDevices => 'Devices in account';
+
+  @override
+  String get identity_noOwnedDevices => 'No devices registered yet';
+
+  @override
+  String get identity_thisDevice => 'This device';
+
+  @override
+  String get identity_sectionMultiDevice => 'Multi-device';
+
+  @override
+  String get identity_addDeviceTitle => 'Add device';
+
+  @override
+  String get identity_addDeviceSubtitle =>
+      'Show P2P pairing code for new devices';
+
+  @override
+  String get identity_addDeviceHint =>
+      'On the new device, import the export bundle first, then scan the Trust QR below (or pair via P2P for auto-trust).';
+
+  @override
+  String get identity_trustQrTitle => 'Trust invite';
+
+  @override
+  String get identity_exportBundleTitle => 'Identity export bundle';
+
+  @override
+  String get identity_exportBundleHint =>
+      'Copy and paste on the new device under \"Join existing account\". Contains account keys — keep safe.';
+
+  @override
+  String get identity_copyExport => 'Copy export bundle';
+
+  @override
+  String get identity_exportCopied => 'Copied to clipboard';
+
+  @override
+  String get identity_importTitle => 'Join existing account';
+
+  @override
+  String get identity_importSubtitle => 'Import identity from primary device';
+
+  @override
+  String get identity_importHint =>
+      'Paste the identity export JSON from your primary device, or scan a Trust QR.';
+
+  @override
+  String get identity_importPasteHint => 'Paste identity export JSON…';
+
+  @override
+  String get identity_importAction => 'Import account';
+
+  @override
+  String get identity_importInvalid => 'Invalid export bundle';
+
+  @override
+  String get identity_importSuccess => 'Account imported';
+
+  @override
+  String identity_importFailed(String error) {
+    return 'Import failed: $error';
+  }
+
+  @override
+  String get identity_trustScanSection => 'Trust invite (optional)';
+
+  @override
+  String get identity_trustScanHint =>
+      'After importing identity, scan the Trust QR on the primary device.';
+
+  @override
+  String get identity_scanTrustQr => 'Scan Trust QR';
+
+  @override
+  String get identity_scanUnsupported =>
+      'Scanning is not supported on this platform. Paste the export JSON instead.';
+
+  @override
+  String get identity_trustInvalid => 'Invalid trust invite';
+
+  @override
+  String get identity_trustAccepted => 'Trust invite accepted';
+
+  @override
+  String identity_trustFailed(String error) {
+    return 'Trust failed: $error';
+  }
+
+  @override
+  String get identity_syncPull => 'Sync from primary';
+
+  @override
+  String get identity_syncPullSub => 'Pull chat history and channel metadata';
+
+  @override
+  String get identity_syncPullSuccess => 'Sync completed';
+
+  @override
+  String identity_syncPullFailed(String error) {
+    return 'Sync failed: $error';
+  }
+
+  @override
+  String get account_gateTitle => 'Sign in to account';
+
+  @override
+  String get account_gateHeadline => 'Choose or create your account';
+
+  @override
+  String get account_gateSubtitle =>
+      'Each account has one spirit pet. Account IDs are globally unique; sign in with the same account on multiple devices to share data.';
+
+  @override
+  String get account_gateAccountId => 'Account ID';
+
+  @override
+  String get account_gateContinue => 'Continue';
+
+  @override
+  String get account_gateCreate => 'Create new account';
+
+  @override
+  String get account_gateImport => 'Join existing account';
+
+  @override
+  String get account_gateCreateRoleHint =>
+      'Choose this device\'s storage role for the account:';
+
+  @override
+  String get account_gateSwitchAccount => 'Switch account';
+
+  @override
+  String get account_gateSwitchTitle => 'Switch account?';
+
+  @override
+  String get account_gateSwitchBody =>
+      'This removes the current account keys on this device. Import an existing account or create a new one next.';
+
+  @override
+  String get account_gateIdCopied => 'Account ID copied';
+
+  @override
+  String account_gateCreateFailed(String error) {
+    return 'Failed to create account: $error';
+  }
+
+  @override
+  String get account_gateJoinViaPeer => 'Scan primary device to join';
+
+  @override
+  String get account_gateOfflineImport => 'Offline import (advanced)';
+
+  @override
+  String get account_joinTitle => 'Join existing account';
+
+  @override
+  String get account_joinHint =>
+      'On your primary device, open Add device and show the P2P pairing code. Scan it here; the primary will confirm and send account keys over the encrypted channel.';
+
+  @override
+  String get account_joinScanPeer => 'Scan P2P pairing code';
+
+  @override
+  String get account_joinManualPeer => 'Enter pairing link manually';
+
+  @override
+  String get account_joinWaitingApproval => 'Waiting for primary to approve…';
+
+  @override
+  String get account_joinSuccess => 'Joined account successfully';
+
+  @override
+  String account_joinFailed(String error) {
+    return 'Join failed: $error';
+  }
+
+  @override
+  String get account_joinDialogTitle => 'Allow device to join?';
+
+  @override
+  String account_joinDialogBody(String deviceName, String role) {
+    return 'Device \"$deviceName\" wants to join your account (role: $role).';
+  }
+
+  @override
+  String get account_joinApprove => 'Allow';
+
+  @override
+  String account_joinApproved(String deviceName) {
+    return 'Allowed $deviceName to join';
+  }
+
+  @override
+  String account_joinApproveFailed(String error) {
+    return 'Approval failed: $error';
+  }
+
+  @override
+  String get identity_addDevicePeerHint =>
+      'On the new device, choose scan primary to join, then scan the P2P code below. Account keys are sent automatically after you approve.';
+
+  @override
+  String get identity_importOfflineTitle => 'Offline account import';
+
+  @override
+  String get identity_importOfflineHint =>
+      'Use when the primary device is not online. Copy the export bundle from the primary and paste below.';
 }

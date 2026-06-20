@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../identity/services/account_session_service.dart';
 import '../l10n/app_localizations.dart';
 import '../services/password_service.dart';
 import '../services/biometric_service.dart';
@@ -59,6 +60,8 @@ class _LoginScreenState extends State<LoginScreen> {
       reason: l10n.login_biometricPrompt,
     );
     if (success && mounted) {
+      await AccountSessionService.instance.activate();
+      if (!mounted) return;
       Navigator.of(context).pushReplacementNamed('/home');
     }
   }
@@ -93,8 +96,9 @@ class _LoginScreenState extends State<LoginScreen> {
       final success = await _passwordService.verifyPassword(password);
 
       if (success) {
-        // 登录成功，跳转到主页
         if (mounted) {
+          await AccountSessionService.instance.activate();
+          if (!mounted) return;
           Navigator.of(context).pushReplacementNamed('/home');
         }
       } else {

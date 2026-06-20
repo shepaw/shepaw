@@ -7129,6 +7129,510 @@ abstract class AppLocalizations {
   /// In zh, this message translates to:
   /// **'未连接'**
   String get peerList_disconnected;
+
+  /// No description provided for @identity_title.
+  ///
+  /// In zh, this message translates to:
+  /// **'账号与灵宠'**
+  String get identity_title;
+
+  /// No description provided for @identity_settingsSub.
+  ///
+  /// In zh, this message translates to:
+  /// **'账号身份与设备存储角色'**
+  String get identity_settingsSub;
+
+  /// No description provided for @identity_sectionAccount.
+  ///
+  /// In zh, this message translates to:
+  /// **'身份'**
+  String get identity_sectionAccount;
+
+  /// No description provided for @identity_userId.
+  ///
+  /// In zh, this message translates to:
+  /// **'主人 ID（指纹）'**
+  String get identity_userId;
+
+  /// No description provided for @identity_petId.
+  ///
+  /// In zh, this message translates to:
+  /// **'灵宠 ID（指纹）'**
+  String get identity_petId;
+
+  /// No description provided for @identity_ownership.
+  ///
+  /// In zh, this message translates to:
+  /// **'认主状态'**
+  String get identity_ownership;
+
+  /// No description provided for @identity_bonded.
+  ///
+  /// In zh, this message translates to:
+  /// **'已与主人完成认主'**
+  String get identity_bonded;
+
+  /// No description provided for @identity_notBonded.
+  ///
+  /// In zh, this message translates to:
+  /// **'尚未认主'**
+  String get identity_notBonded;
+
+  /// No description provided for @identity_bondAction.
+  ///
+  /// In zh, this message translates to:
+  /// **'指纹认主'**
+  String get identity_bondAction;
+
+  /// No description provided for @identity_bondBiometricReason.
+  ///
+  /// In zh, this message translates to:
+  /// **'请验证身份以完成灵宠认主'**
+  String get identity_bondBiometricReason;
+
+  /// No description provided for @identity_bondSuccess.
+  ///
+  /// In zh, this message translates to:
+  /// **'认主成功'**
+  String get identity_bondSuccess;
+
+  /// No description provided for @identity_bondFailed.
+  ///
+  /// In zh, this message translates to:
+  /// **'认主失败：{error}'**
+  String identity_bondFailed(String error);
+
+  /// No description provided for @identity_sectionDeviceRole.
+  ///
+  /// In zh, this message translates to:
+  /// **'本机存储角色'**
+  String get identity_sectionDeviceRole;
+
+  /// No description provided for @identity_deviceRoleHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'主存储持有全量数据；备份同步全量；应用设备仅保留索引与缓存，按需向主存储拉取。'**
+  String get identity_deviceRoleHint;
+
+  /// No description provided for @identity_rolePrimary.
+  ///
+  /// In zh, this message translates to:
+  /// **'主存储设备'**
+  String get identity_rolePrimary;
+
+  /// No description provided for @identity_rolePrimaryDesc.
+  ///
+  /// In zh, this message translates to:
+  /// **'权威全量数据，聊天历史与附件的主副本'**
+  String get identity_rolePrimaryDesc;
+
+  /// No description provided for @identity_roleBackup.
+  ///
+  /// In zh, this message translates to:
+  /// **'备份设备'**
+  String get identity_roleBackup;
+
+  /// No description provided for @identity_roleBackupDesc.
+  ///
+  /// In zh, this message translates to:
+  /// **'从主存储同步全量，主存储离线时可只读接管'**
+  String get identity_roleBackupDesc;
+
+  /// No description provided for @identity_roleApp.
+  ///
+  /// In zh, this message translates to:
+  /// **'应用设备'**
+  String get identity_roleApp;
+
+  /// No description provided for @identity_roleAppDesc.
+  ///
+  /// In zh, this message translates to:
+  /// **'轻量运行，适合手机；不保存全量历史'**
+  String get identity_roleAppDesc;
+
+  /// No description provided for @identity_setPrimaryTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'设为主存储？'**
+  String get identity_setPrimaryTitle;
+
+  /// No description provided for @identity_setPrimaryBody.
+  ///
+  /// In zh, this message translates to:
+  /// **'本机将持有账号全量数据。若已有其他主存储设备，其角色将调整为应用设备。'**
+  String get identity_setPrimaryBody;
+
+  /// No description provided for @identity_primaryDevice.
+  ///
+  /// In zh, this message translates to:
+  /// **'当前主存储'**
+  String get identity_primaryDevice;
+
+  /// No description provided for @identity_sectionOwnedDevices.
+  ///
+  /// In zh, this message translates to:
+  /// **'账号下设备'**
+  String get identity_sectionOwnedDevices;
+
+  /// No description provided for @identity_noOwnedDevices.
+  ///
+  /// In zh, this message translates to:
+  /// **'暂无已登记设备'**
+  String get identity_noOwnedDevices;
+
+  /// No description provided for @identity_thisDevice.
+  ///
+  /// In zh, this message translates to:
+  /// **'本机'**
+  String get identity_thisDevice;
+
+  /// No description provided for @identity_sectionMultiDevice.
+  ///
+  /// In zh, this message translates to:
+  /// **'多设备'**
+  String get identity_sectionMultiDevice;
+
+  /// No description provided for @identity_addDeviceTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'添加设备'**
+  String get identity_addDeviceTitle;
+
+  /// No description provided for @identity_addDeviceSubtitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'展示 P2P 配对码供新设备加入'**
+  String get identity_addDeviceSubtitle;
+
+  /// No description provided for @identity_addDeviceHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'在新设备上先「加入已有账号」粘贴导出包，再扫描下方 Trust QR（或配对后自动信任）。'**
+  String get identity_addDeviceHint;
+
+  /// No description provided for @identity_trustQrTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'Trust 邀请码'**
+  String get identity_trustQrTitle;
+
+  /// No description provided for @identity_exportBundleTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'身份导出包'**
+  String get identity_exportBundleTitle;
+
+  /// No description provided for @identity_exportBundleHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'复制后在新设备的「加入已有账号」中粘贴（含 User / 灵宠密钥，请妥善保管）。'**
+  String get identity_exportBundleHint;
+
+  /// No description provided for @identity_copyExport.
+  ///
+  /// In zh, this message translates to:
+  /// **'复制导出包'**
+  String get identity_copyExport;
+
+  /// No description provided for @identity_exportCopied.
+  ///
+  /// In zh, this message translates to:
+  /// **'已复制到剪贴板'**
+  String get identity_exportCopied;
+
+  /// No description provided for @identity_importTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'加入已有账号'**
+  String get identity_importTitle;
+
+  /// No description provided for @identity_importSubtitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'从主存储设备导入身份'**
+  String get identity_importSubtitle;
+
+  /// No description provided for @identity_importHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'从主存储设备复制「身份导出包」JSON 并粘贴 below，或扫描 Trust QR。'**
+  String get identity_importHint;
+
+  /// No description provided for @identity_importPasteHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'粘贴 identity export JSON…'**
+  String get identity_importPasteHint;
+
+  /// No description provided for @identity_importAction.
+  ///
+  /// In zh, this message translates to:
+  /// **'导入账号'**
+  String get identity_importAction;
+
+  /// No description provided for @identity_importInvalid.
+  ///
+  /// In zh, this message translates to:
+  /// **'无效的导出包格式'**
+  String get identity_importInvalid;
+
+  /// No description provided for @identity_importSuccess.
+  ///
+  /// In zh, this message translates to:
+  /// **'账号导入成功'**
+  String get identity_importSuccess;
+
+  /// No description provided for @identity_importFailed.
+  ///
+  /// In zh, this message translates to:
+  /// **'导入失败：{error}'**
+  String identity_importFailed(String error);
+
+  /// No description provided for @identity_trustScanSection.
+  ///
+  /// In zh, this message translates to:
+  /// **'Trust 邀请（可选）'**
+  String get identity_trustScanSection;
+
+  /// No description provided for @identity_trustScanHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'导入身份后，扫描主设备上的 Trust QR 登记设备关系。'**
+  String get identity_trustScanHint;
+
+  /// No description provided for @identity_scanTrustQr.
+  ///
+  /// In zh, this message translates to:
+  /// **'扫描 Trust QR'**
+  String get identity_scanTrustQr;
+
+  /// No description provided for @identity_scanUnsupported.
+  ///
+  /// In zh, this message translates to:
+  /// **'当前平台不支持扫码，请使用粘贴导入。'**
+  String get identity_scanUnsupported;
+
+  /// No description provided for @identity_trustInvalid.
+  ///
+  /// In zh, this message translates to:
+  /// **'无效的 Trust 邀请'**
+  String get identity_trustInvalid;
+
+  /// No description provided for @identity_trustAccepted.
+  ///
+  /// In zh, this message translates to:
+  /// **'已接受 Trust 邀请'**
+  String get identity_trustAccepted;
+
+  /// No description provided for @identity_trustFailed.
+  ///
+  /// In zh, this message translates to:
+  /// **'Trust 失败：{error}'**
+  String identity_trustFailed(String error);
+
+  /// No description provided for @identity_syncPull.
+  ///
+  /// In zh, this message translates to:
+  /// **'从主存储同步'**
+  String get identity_syncPull;
+
+  /// No description provided for @identity_syncPullSub.
+  ///
+  /// In zh, this message translates to:
+  /// **'拉取聊天历史与频道元数据'**
+  String get identity_syncPullSub;
+
+  /// No description provided for @identity_syncPullSuccess.
+  ///
+  /// In zh, this message translates to:
+  /// **'同步完成'**
+  String get identity_syncPullSuccess;
+
+  /// No description provided for @identity_syncPullFailed.
+  ///
+  /// In zh, this message translates to:
+  /// **'同步失败：{error}'**
+  String identity_syncPullFailed(String error);
+
+  /// No description provided for @account_gateTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'登录账号'**
+  String get account_gateTitle;
+
+  /// No description provided for @account_gateHeadline.
+  ///
+  /// In zh, this message translates to:
+  /// **'选择或创建你的账号'**
+  String get account_gateHeadline;
+
+  /// No description provided for @account_gateSubtitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'一个账号对应一只专属灵宠。账号 ID 全局唯一，多设备登录同一账号即可共享数据。'**
+  String get account_gateSubtitle;
+
+  /// No description provided for @account_gateAccountId.
+  ///
+  /// In zh, this message translates to:
+  /// **'账号 ID'**
+  String get account_gateAccountId;
+
+  /// No description provided for @account_gateContinue.
+  ///
+  /// In zh, this message translates to:
+  /// **'进入应用'**
+  String get account_gateContinue;
+
+  /// No description provided for @account_gateCreate.
+  ///
+  /// In zh, this message translates to:
+  /// **'创建新账号'**
+  String get account_gateCreate;
+
+  /// No description provided for @account_gateImport.
+  ///
+  /// In zh, this message translates to:
+  /// **'加入已有账号'**
+  String get account_gateImport;
+
+  /// No description provided for @account_gateCreateRoleHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'选择本机在此账号下的存储角色：'**
+  String get account_gateCreateRoleHint;
+
+  /// No description provided for @account_gateSwitchAccount.
+  ///
+  /// In zh, this message translates to:
+  /// **'切换账号'**
+  String get account_gateSwitchAccount;
+
+  /// No description provided for @account_gateSwitchTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'切换账号？'**
+  String get account_gateSwitchTitle;
+
+  /// No description provided for @account_gateSwitchBody.
+  ///
+  /// In zh, this message translates to:
+  /// **'将清除本机当前账号密钥。请随后导入已有账号或创建新账号。'**
+  String get account_gateSwitchBody;
+
+  /// No description provided for @account_gateIdCopied.
+  ///
+  /// In zh, this message translates to:
+  /// **'账号 ID 已复制'**
+  String get account_gateIdCopied;
+
+  /// No description provided for @account_gateCreateFailed.
+  ///
+  /// In zh, this message translates to:
+  /// **'创建账号失败：{error}'**
+  String account_gateCreateFailed(String error);
+
+  /// No description provided for @account_gateJoinViaPeer.
+  ///
+  /// In zh, this message translates to:
+  /// **'扫描主设备加入账号'**
+  String get account_gateJoinViaPeer;
+
+  /// No description provided for @account_gateOfflineImport.
+  ///
+  /// In zh, this message translates to:
+  /// **'离线导入（高级）'**
+  String get account_gateOfflineImport;
+
+  /// No description provided for @account_joinTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'加入已有账号'**
+  String get account_joinTitle;
+
+  /// No description provided for @account_joinHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'在已登录账号的主存储设备上打开「添加设备」，展示 P2P 配对码。本机扫描该码完成配对后，主设备会弹出确认并安全下发账号密钥。'**
+  String get account_joinHint;
+
+  /// No description provided for @account_joinScanPeer.
+  ///
+  /// In zh, this message translates to:
+  /// **'扫描 P2P 配对码'**
+  String get account_joinScanPeer;
+
+  /// No description provided for @account_joinManualPeer.
+  ///
+  /// In zh, this message translates to:
+  /// **'手动输入配对链接'**
+  String get account_joinManualPeer;
+
+  /// No description provided for @account_joinWaitingApproval.
+  ///
+  /// In zh, this message translates to:
+  /// **'等待主设备确认…'**
+  String get account_joinWaitingApproval;
+
+  /// No description provided for @account_joinSuccess.
+  ///
+  /// In zh, this message translates to:
+  /// **'已成功加入账号'**
+  String get account_joinSuccess;
+
+  /// No description provided for @account_joinFailed.
+  ///
+  /// In zh, this message translates to:
+  /// **'加入失败：{error}'**
+  String account_joinFailed(String error);
+
+  /// No description provided for @account_joinDialogTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'允许加入账号？'**
+  String get account_joinDialogTitle;
+
+  /// No description provided for @account_joinDialogBody.
+  ///
+  /// In zh, this message translates to:
+  /// **'设备「{deviceName}」请求加入你的账号（角色：{role}）。'**
+  String account_joinDialogBody(String deviceName, String role);
+
+  /// No description provided for @account_joinApprove.
+  ///
+  /// In zh, this message translates to:
+  /// **'允许'**
+  String get account_joinApprove;
+
+  /// No description provided for @account_joinApproved.
+  ///
+  /// In zh, this message translates to:
+  /// **'已允许 {deviceName} 加入'**
+  String account_joinApproved(String deviceName);
+
+  /// No description provided for @account_joinApproveFailed.
+  ///
+  /// In zh, this message translates to:
+  /// **'批准失败：{error}'**
+  String account_joinApproveFailed(String error);
+
+  /// No description provided for @identity_addDevicePeerHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'请在新设备上选择「扫描主设备加入账号」，扫描下方 P2P 配对码。确认后账号密钥将通过加密通道自动下发。'**
+  String get identity_addDevicePeerHint;
+
+  /// No description provided for @identity_importOfflineTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'离线导入账号'**
+  String get identity_importOfflineTitle;
+
+  /// No description provided for @identity_importOfflineHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'当无法与主设备在线配对时使用。从主设备复制身份导出包并粘贴到下方。'**
+  String get identity_importOfflineHint;
 }
 
 class _AppLocalizationsDelegate

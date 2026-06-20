@@ -1703,5 +1703,126 @@
   },
   "peerList_connected": "Connected",
   "peerList_connectedE2e": "Connected (End-to-end encrypted)",
-  "peerList_disconnected": "Not connected"
+  "peerList_disconnected": "Not connected",
+
+  "identity_title": "Account & Spirit Pet",
+  "identity_settingsSub": "Account identity and device storage role",
+  "identity_sectionAccount": "Identity",
+  "identity_userId": "Owner ID (fingerprint)",
+  "identity_petId": "Spirit pet ID (fingerprint)",
+  "identity_ownership": "Ownership",
+  "identity_bonded": "Bonded with owner",
+  "identity_notBonded": "Not bonded yet",
+  "identity_bondAction": "Bond with biometrics",
+  "identity_bondBiometricReason": "Verify your identity to bond with your spirit pet",
+  "identity_bondSuccess": "Ownership bond created",
+  "identity_bondFailed": "Bond failed: {error}",
+  "@identity_bondFailed": {
+    "placeholders": {
+      "error": { "type": "String" }
+    }
+  },
+  "identity_sectionDeviceRole": "This device storage role",
+  "identity_deviceRoleHint": "Primary holds full data; backup mirrors it; app devices keep index and cache only.",
+  "identity_rolePrimary": "Primary storage",
+  "identity_rolePrimaryDesc": "Authoritative full copy of chat history and attachments",
+  "identity_roleBackup": "Backup",
+  "identity_roleBackupDesc": "Full sync from primary; read-only failover when primary is offline",
+  "identity_roleApp": "App device",
+  "identity_roleAppDesc": "Lightweight, for phones; no full local history",
+  "identity_setPrimaryTitle": "Set as primary storage?",
+  "identity_setPrimaryBody": "This device will hold the full account data. Any existing primary will become an app device.",
+  "identity_primaryDevice": "Current primary",
+  "identity_sectionOwnedDevices": "Devices in account",
+  "identity_noOwnedDevices": "No devices registered yet",
+  "identity_thisDevice": "This device",
+
+  "identity_sectionMultiDevice": "Multi-device",
+  "identity_addDeviceTitle": "Add device",
+  "identity_addDeviceSubtitle": "Show P2P pairing code for new devices",
+  "identity_addDeviceHint": "On the new device, import the export bundle first, then scan the Trust QR below (or pair via P2P for auto-trust).",
+  "identity_trustQrTitle": "Trust invite",
+  "identity_exportBundleTitle": "Identity export bundle",
+  "identity_exportBundleHint": "Copy and paste on the new device under \"Join existing account\". Contains account keys — keep safe.",
+  "identity_copyExport": "Copy export bundle",
+  "identity_exportCopied": "Copied to clipboard",
+  "identity_importTitle": "Join existing account",
+  "identity_importSubtitle": "Import identity from primary device",
+  "identity_importHint": "Paste the identity export JSON from your primary device, or scan a Trust QR.",
+  "identity_importPasteHint": "Paste identity export JSON…",
+  "identity_importAction": "Import account",
+  "identity_importInvalid": "Invalid export bundle",
+  "identity_importSuccess": "Account imported",
+  "identity_importFailed": "Import failed: {error}",
+  "@identity_importFailed": {
+    "placeholders": { "error": { "type": "String" } }
+  },
+  "identity_trustScanSection": "Trust invite (optional)",
+  "identity_trustScanHint": "After importing identity, scan the Trust QR on the primary device.",
+  "identity_scanTrustQr": "Scan Trust QR",
+  "identity_scanUnsupported": "Scanning is not supported on this platform. Paste the export JSON instead.",
+  "identity_trustInvalid": "Invalid trust invite",
+  "identity_trustAccepted": "Trust invite accepted",
+  "identity_trustFailed": "Trust failed: {error}",
+  "@identity_trustFailed": {
+    "placeholders": { "error": { "type": "String" } }
+  },
+  "identity_syncPull": "Sync from primary",
+  "identity_syncPullSub": "Pull chat history and channel metadata",
+  "identity_syncPullSuccess": "Sync completed",
+  "identity_syncPullFailed": "Sync failed: {error}",
+  "@identity_syncPullFailed": {
+    "placeholders": { "error": { "type": "String" } }
+  },
+
+  "account_gateTitle": "Sign in to account",
+  "account_gateHeadline": "Choose or create your account",
+  "account_gateSubtitle": "Each account has one spirit pet. Account IDs are globally unique; sign in with the same account on multiple devices to share data.",
+  "account_gateAccountId": "Account ID",
+  "account_gateContinue": "Continue",
+  "account_gateCreate": "Create new account",
+  "account_gateImport": "Join existing account",
+  "account_gateCreateRoleHint": "Choose this device's storage role for the account:",
+  "account_gateSwitchAccount": "Switch account",
+  "account_gateSwitchTitle": "Switch account?",
+  "account_gateSwitchBody": "This removes the current account keys on this device. Import an existing account or create a new one next.",
+  "account_gateIdCopied": "Account ID copied",
+  "account_gateCreateFailed": "Failed to create account: {error}",
+  "@account_gateCreateFailed": {
+    "placeholders": { "error": { "type": "String" } }
+  },
+  "account_gateJoinViaPeer": "Scan primary device to join",
+  "account_gateOfflineImport": "Offline import (advanced)",
+
+  "account_joinTitle": "Join existing account",
+  "account_joinHint": "On your primary device, open Add device and show the P2P pairing code. Scan it here; the primary will confirm and send account keys over the encrypted channel.",
+  "account_joinScanPeer": "Scan P2P pairing code",
+  "account_joinManualPeer": "Enter pairing link manually",
+  "account_joinWaitingApproval": "Waiting for primary to approve…",
+  "account_joinSuccess": "Joined account successfully",
+  "account_joinFailed": "Join failed: {error}",
+  "@account_joinFailed": {
+    "placeholders": { "error": { "type": "String" } }
+  },
+  "account_joinDialogTitle": "Allow device to join?",
+  "account_joinDialogBody": "Device \"{deviceName}\" wants to join your account (role: {role}).",
+  "@account_joinDialogBody": {
+    "placeholders": {
+      "deviceName": { "type": "String" },
+      "role": { "type": "String" }
+    }
+  },
+  "account_joinApprove": "Allow",
+  "account_joinApproved": "Allowed {deviceName} to join",
+  "@account_joinApproved": {
+    "placeholders": { "deviceName": { "type": "String" } }
+  },
+  "account_joinApproveFailed": "Approval failed: {error}",
+  "@account_joinApproveFailed": {
+    "placeholders": { "error": { "type": "String" } }
+  },
+
+  "identity_addDevicePeerHint": "On the new device, choose scan primary to join, then scan the P2P code below. Account keys are sent automatically after you approve.",
+  "identity_importOfflineTitle": "Offline account import",
+  "identity_importOfflineHint": "Use when the primary device is not online. Copy the export bundle from the primary and paste below."
 }

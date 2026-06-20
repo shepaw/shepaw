@@ -18,6 +18,8 @@ export 'database/message_dao.dart';
 export 'database/remote_agent_dao.dart';
 export 'database/config_dao.dart';
 export 'database/scheduled_task_dao.dart';
+export 'database/identity_dao.dart';
+export 'database/sync_dao.dart';
 
 /// 本地数据库服务 - 使用 SQLite 存储所有数据
 ///
@@ -45,7 +47,7 @@ class LocalDatabaseService {
       // Web平台使用sqflite_common_ffi
       return await openDatabase(
         'shepaw',
-        version: 21,
+        version: 24,
         onCreate: _onCreate,
         onUpgrade: _onUpgrade,
       );
@@ -55,7 +57,7 @@ class LocalDatabaseService {
       path = join(directory.path, 'shepaw.db');
       return await openDatabase(
         path,
-        version: 21,
+        version: 24,
         onCreate: _onCreate,
         onUpgrade: _onUpgrade,
       );
@@ -66,7 +68,7 @@ class LocalDatabaseService {
 
       return await openDatabase(
         path,
-        version: 22,
+        version: 24,
         onCreate: _onCreate,
         onUpgrade: _onUpgrade,
       );
@@ -360,6 +362,106 @@ class LocalDatabaseService {
     ''');
     await db.execute('CREATE INDEX IF NOT EXISTS idx_workflow_steps_execution ON workflow_step_executions(workflow_execution_id, stage_index, step_index)');
 
+    await _createIdentityTables(db);
+    await _createBlobCacheTable(db);
+  }
+
+  static Future<void> _createBlobCacheTable(Database db) async {
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS identity_blob_cache (
+        blob_key TEXT PRIMARY KEY,
+        relative_path TEXT NOT NULL,
+        sha256 TEXT NOT NULL,
+        size_bytes INTEGER NOT NULL,
+        mime_type TEXT,
+        cached_at INTEGER NOT NULL,
+        last_access_at INTEGER NOT NULL
+      )
+    ''');
+    await db.execute('CREATE INDEX IF NOT EXISTS idx_blob_cache_access ON identity_blob_cache(last_access_at ASC)');
+  }
+
+  static Future<void> _createIdentityTables(Database db) async {
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS identity_user (
+        id TEXT PRIMARY KEY,
+        display_name TEXT NOT NULL DEFAULT '',
+        public_key BLOB NOT NULL,
+        created_at INTEGER NOT NULL
+      )
+    ''');
+
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS identity_spirit_pet (
+        id TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL,
+        name TEXT NOT NULL DEFAULT 'She',
+        public_key BLOB NOT NULL,
+        agent_id TEXT NOT NULL,
+        created_at INTEGER NOT NULL,
+        FOREIGN KEY (user_id) REFERENCES identity_user(id)
+      )
+    ''');
+
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS identity_owned_devices (
+        id TEXT PRIMARY KEY,
+        device_id TEXT NOT NULL UNIQUE,
+        device_name TEXT NOT NULL,
+        role TEXT NOT NULL DEFAULT 'app',
+        transport_public_key BLOB NOT NULL,
+        fingerprint TEXT NOT NULL,
+        user_id TEXT NOT NULL,
+        pet_id TEXT NOT NULL,
+        is_local INTEGER NOT NULL DEFAULT 0,
+        trusted_at INTEGER NOT NULL,
+        last_seen_at INTEGER
+      )
+    ''');
+    await db.execute('CREATE INDEX IF NOT EXISTS idx_owned_devices_user ON identity_owned_devices(user_id)');
+    await db.execute('CREATE INDEX IF NOT EXISTS idx_owned_devices_role ON identity_owned_devices(role)');
+
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS identity_ownership_bonds (
+        pet_id TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL,
+        owner_fingerprint TEXT NOT NULL,
+        bonded_at INTEGER NOT NULL,
+        bond_signature BLOB NOT NULL
+      )
+    ''');
+
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS identity_message_index (
+        message_id TEXT PRIMARY KEY,
+        channel_id TEXT NOT NULL,
+        wall_time INTEGER NOT NULL,
+        preview TEXT NOT NULL,
+        sender_name TEXT NOT NULL,
+        has_attachment INTEGER NOT NULL DEFAULT 0,
+        synced_at INTEGER NOT NULL
+      )
+    ''');
+    await db.execute('CREATE INDEX IF NOT EXISTS idx_msg_index_channel ON identity_message_index(channel_id, wall_time DESC)');
+
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS identity_sync_state (
+        key TEXT PRIMARY KEY,
+        value TEXT NOT NULL,
+        updated_at INTEGER NOT NULL
+      )
+    ''');
+
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS identity_outbound_queue (
+        id TEXT PRIMARY KEY,
+        domain TEXT NOT NULL,
+        payload TEXT NOT NULL,
+        created_at INTEGER NOT NULL,
+        acked INTEGER NOT NULL DEFAULT 0
+      )
+    ''');
+    await db.execute('CREATE INDEX IF NOT EXISTS idx_outbound_pending ON identity_outbound_queue(acked, created_at)');
   }
 
   /// 数据库升级
@@ -580,6 +682,22 @@ class LocalDatabaseService {
         await db.execute('CREATE INDEX IF NOT EXISTS idx_workflow_steps_execution ON workflow_step_executions(workflow_execution_id, stage_index, step_index)');
       } catch (e) {
         LoggerService().error('Failed to create workflow tables (v22)', tag: 'Migration', error: e);
+      }
+    }
+
+    if (oldVersion < 23) {
+      try {
+        await _createIdentityTables(db);
+      } catch (e) {
+        LoggerService().error('Failed to create identity tables (v23)', tag: 'Migration', error: e);
+      }
+    }
+
+    if (oldVersion < 24) {
+      try {
+        await _createBlobCacheTable(db);
+      } catch (e) {
+        LoggerService().error('Failed to create blob cache table (v24)', tag: 'Migration', error: e);
       }
     }
 

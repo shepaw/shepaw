@@ -3843,4 +3843,280 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get peerList_disconnected => '未连接';
+
+  @override
+  String get identity_title => '账号与灵宠';
+
+  @override
+  String get identity_settingsSub => '账号身份与设备存储角色';
+
+  @override
+  String get identity_sectionAccount => '身份';
+
+  @override
+  String get identity_userId => '主人 ID（指纹）';
+
+  @override
+  String get identity_petId => '灵宠 ID（指纹）';
+
+  @override
+  String get identity_ownership => '认主状态';
+
+  @override
+  String get identity_bonded => '已与主人完成认主';
+
+  @override
+  String get identity_notBonded => '尚未认主';
+
+  @override
+  String get identity_bondAction => '指纹认主';
+
+  @override
+  String get identity_bondBiometricReason => '请验证身份以完成灵宠认主';
+
+  @override
+  String get identity_bondSuccess => '认主成功';
+
+  @override
+  String identity_bondFailed(String error) {
+    return '认主失败：$error';
+  }
+
+  @override
+  String get identity_sectionDeviceRole => '本机存储角色';
+
+  @override
+  String get identity_deviceRoleHint =>
+      '主存储持有全量数据；备份同步全量；应用设备仅保留索引与缓存，按需向主存储拉取。';
+
+  @override
+  String get identity_rolePrimary => '主存储设备';
+
+  @override
+  String get identity_rolePrimaryDesc => '权威全量数据，聊天历史与附件的主副本';
+
+  @override
+  String get identity_roleBackup => '备份设备';
+
+  @override
+  String get identity_roleBackupDesc => '从主存储同步全量，主存储离线时可只读接管';
+
+  @override
+  String get identity_roleApp => '应用设备';
+
+  @override
+  String get identity_roleAppDesc => '轻量运行，适合手机；不保存全量历史';
+
+  @override
+  String get identity_setPrimaryTitle => '设为主存储？';
+
+  @override
+  String get identity_setPrimaryBody => '本机将持有账号全量数据。若已有其他主存储设备，其角色将调整为应用设备。';
+
+  @override
+  String get identity_primaryDevice => '当前主存储';
+
+  @override
+  String get identity_sectionOwnedDevices => '账号下设备';
+
+  @override
+  String get identity_noOwnedDevices => '暂无已登记设备';
+
+  @override
+  String get identity_thisDevice => '本机';
+
+  @override
+  String get identity_sectionMultiDevice => '多设备';
+
+  @override
+  String get identity_addDeviceTitle => '添加设备';
+
+  @override
+  String get identity_addDeviceSubtitle => '展示 P2P 配对码供新设备加入';
+
+  @override
+  String get identity_addDeviceHint =>
+      '在新设备上先「加入已有账号」粘贴导出包，再扫描下方 Trust QR（或配对后自动信任）。';
+
+  @override
+  String get identity_trustQrTitle => 'Trust 邀请码';
+
+  @override
+  String get identity_exportBundleTitle => '身份导出包';
+
+  @override
+  String get identity_exportBundleHint =>
+      '复制后在新设备的「加入已有账号」中粘贴（含 User / 灵宠密钥，请妥善保管）。';
+
+  @override
+  String get identity_copyExport => '复制导出包';
+
+  @override
+  String get identity_exportCopied => '已复制到剪贴板';
+
+  @override
+  String get identity_importTitle => '加入已有账号';
+
+  @override
+  String get identity_importSubtitle => '从主存储设备导入身份';
+
+  @override
+  String get identity_importHint =>
+      '从主存储设备复制「身份导出包」JSON 并粘贴 below，或扫描 Trust QR。';
+
+  @override
+  String get identity_importPasteHint => '粘贴 identity export JSON…';
+
+  @override
+  String get identity_importAction => '导入账号';
+
+  @override
+  String get identity_importInvalid => '无效的导出包格式';
+
+  @override
+  String get identity_importSuccess => '账号导入成功';
+
+  @override
+  String identity_importFailed(String error) {
+    return '导入失败：$error';
+  }
+
+  @override
+  String get identity_trustScanSection => 'Trust 邀请（可选）';
+
+  @override
+  String get identity_trustScanHint => '导入身份后，扫描主设备上的 Trust QR 登记设备关系。';
+
+  @override
+  String get identity_scanTrustQr => '扫描 Trust QR';
+
+  @override
+  String get identity_scanUnsupported => '当前平台不支持扫码，请使用粘贴导入。';
+
+  @override
+  String get identity_trustInvalid => '无效的 Trust 邀请';
+
+  @override
+  String get identity_trustAccepted => '已接受 Trust 邀请';
+
+  @override
+  String identity_trustFailed(String error) {
+    return 'Trust 失败：$error';
+  }
+
+  @override
+  String get identity_syncPull => '从主存储同步';
+
+  @override
+  String get identity_syncPullSub => '拉取聊天历史与频道元数据';
+
+  @override
+  String get identity_syncPullSuccess => '同步完成';
+
+  @override
+  String identity_syncPullFailed(String error) {
+    return '同步失败：$error';
+  }
+
+  @override
+  String get account_gateTitle => '登录账号';
+
+  @override
+  String get account_gateHeadline => '选择或创建你的账号';
+
+  @override
+  String get account_gateSubtitle => '一个账号对应一只专属灵宠。账号 ID 全局唯一，多设备登录同一账号即可共享数据。';
+
+  @override
+  String get account_gateAccountId => '账号 ID';
+
+  @override
+  String get account_gateContinue => '进入应用';
+
+  @override
+  String get account_gateCreate => '创建新账号';
+
+  @override
+  String get account_gateImport => '加入已有账号';
+
+  @override
+  String get account_gateCreateRoleHint => '选择本机在此账号下的存储角色：';
+
+  @override
+  String get account_gateSwitchAccount => '切换账号';
+
+  @override
+  String get account_gateSwitchTitle => '切换账号？';
+
+  @override
+  String get account_gateSwitchBody => '将清除本机当前账号密钥。请随后导入已有账号或创建新账号。';
+
+  @override
+  String get account_gateIdCopied => '账号 ID 已复制';
+
+  @override
+  String account_gateCreateFailed(String error) {
+    return '创建账号失败：$error';
+  }
+
+  @override
+  String get account_gateJoinViaPeer => '扫描主设备加入账号';
+
+  @override
+  String get account_gateOfflineImport => '离线导入（高级）';
+
+  @override
+  String get account_joinTitle => '加入已有账号';
+
+  @override
+  String get account_joinHint =>
+      '在已登录账号的主存储设备上打开「添加设备」，展示 P2P 配对码。本机扫描该码完成配对后，主设备会弹出确认并安全下发账号密钥。';
+
+  @override
+  String get account_joinScanPeer => '扫描 P2P 配对码';
+
+  @override
+  String get account_joinManualPeer => '手动输入配对链接';
+
+  @override
+  String get account_joinWaitingApproval => '等待主设备确认…';
+
+  @override
+  String get account_joinSuccess => '已成功加入账号';
+
+  @override
+  String account_joinFailed(String error) {
+    return '加入失败：$error';
+  }
+
+  @override
+  String get account_joinDialogTitle => '允许加入账号？';
+
+  @override
+  String account_joinDialogBody(String deviceName, String role) {
+    return '设备「$deviceName」请求加入你的账号（角色：$role）。';
+  }
+
+  @override
+  String get account_joinApprove => '允许';
+
+  @override
+  String account_joinApproved(String deviceName) {
+    return '已允许 $deviceName 加入';
+  }
+
+  @override
+  String account_joinApproveFailed(String error) {
+    return '批准失败：$error';
+  }
+
+  @override
+  String get identity_addDevicePeerHint =>
+      '请在新设备上选择「扫描主设备加入账号」，扫描下方 P2P 配对码。确认后账号密钥将通过加密通道自动下发。';
+
+  @override
+  String get identity_importOfflineTitle => '离线导入账号';
+
+  @override
+  String get identity_importOfflineHint => '当无法与主设备在线配对时使用。从主设备复制身份导出包并粘贴到下方。';
 }

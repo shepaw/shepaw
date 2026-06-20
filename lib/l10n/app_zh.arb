@@ -2188,5 +2188,126 @@
   },
   "peerList_connected": "已连接",
   "peerList_connectedE2e": "已连接 (端到端加密)",
-  "peerList_disconnected": "未连接"
+  "peerList_disconnected": "未连接",
+
+  "identity_title": "账号与灵宠",
+  "identity_settingsSub": "账号身份与设备存储角色",
+  "identity_sectionAccount": "身份",
+  "identity_userId": "主人 ID（指纹）",
+  "identity_petId": "灵宠 ID（指纹）",
+  "identity_ownership": "认主状态",
+  "identity_bonded": "已与主人完成认主",
+  "identity_notBonded": "尚未认主",
+  "identity_bondAction": "指纹认主",
+  "identity_bondBiometricReason": "请验证身份以完成灵宠认主",
+  "identity_bondSuccess": "认主成功",
+  "identity_bondFailed": "认主失败：{error}",
+  "@identity_bondFailed": {
+    "placeholders": {
+      "error": { "type": "String" }
+    }
+  },
+  "identity_sectionDeviceRole": "本机存储角色",
+  "identity_deviceRoleHint": "主存储持有全量数据；备份同步全量；应用设备仅保留索引与缓存，按需向主存储拉取。",
+  "identity_rolePrimary": "主存储设备",
+  "identity_rolePrimaryDesc": "权威全量数据，聊天历史与附件的主副本",
+  "identity_roleBackup": "备份设备",
+  "identity_roleBackupDesc": "从主存储同步全量，主存储离线时可只读接管",
+  "identity_roleApp": "应用设备",
+  "identity_roleAppDesc": "轻量运行，适合手机；不保存全量历史",
+  "identity_setPrimaryTitle": "设为主存储？",
+  "identity_setPrimaryBody": "本机将持有账号全量数据。若已有其他主存储设备，其角色将调整为应用设备。",
+  "identity_primaryDevice": "当前主存储",
+  "identity_sectionOwnedDevices": "账号下设备",
+  "identity_noOwnedDevices": "暂无已登记设备",
+  "identity_thisDevice": "本机",
+
+  "identity_sectionMultiDevice": "多设备",
+  "identity_addDeviceTitle": "添加设备",
+  "identity_addDeviceSubtitle": "展示 P2P 配对码供新设备加入",
+  "identity_addDeviceHint": "在新设备上先「加入已有账号」粘贴导出包，再扫描下方 Trust QR（或配对后自动信任）。",
+  "identity_trustQrTitle": "Trust 邀请码",
+  "identity_exportBundleTitle": "身份导出包",
+  "identity_exportBundleHint": "复制后在新设备的「加入已有账号」中粘贴（含 User / 灵宠密钥，请妥善保管）。",
+  "identity_copyExport": "复制导出包",
+  "identity_exportCopied": "已复制到剪贴板",
+  "identity_importTitle": "加入已有账号",
+  "identity_importSubtitle": "从主存储设备导入身份",
+  "identity_importHint": "从主存储设备复制「身份导出包」JSON 并粘贴 below，或扫描 Trust QR。",
+  "identity_importPasteHint": "粘贴 identity export JSON…",
+  "identity_importAction": "导入账号",
+  "identity_importInvalid": "无效的导出包格式",
+  "identity_importSuccess": "账号导入成功",
+  "identity_importFailed": "导入失败：{error}",
+  "@identity_importFailed": {
+    "placeholders": { "error": { "type": "String" } }
+  },
+  "identity_trustScanSection": "Trust 邀请（可选）",
+  "identity_trustScanHint": "导入身份后，扫描主设备上的 Trust QR 登记设备关系。",
+  "identity_scanTrustQr": "扫描 Trust QR",
+  "identity_scanUnsupported": "当前平台不支持扫码，请使用粘贴导入。",
+  "identity_trustInvalid": "无效的 Trust 邀请",
+  "identity_trustAccepted": "已接受 Trust 邀请",
+  "identity_trustFailed": "Trust 失败：{error}",
+  "@identity_trustFailed": {
+    "placeholders": { "error": { "type": "String" } }
+  },
+  "identity_syncPull": "从主存储同步",
+  "identity_syncPullSub": "拉取聊天历史与频道元数据",
+  "identity_syncPullSuccess": "同步完成",
+  "identity_syncPullFailed": "同步失败：{error}",
+  "@identity_syncPullFailed": {
+    "placeholders": { "error": { "type": "String" } }
+  },
+
+  "account_gateTitle": "登录账号",
+  "account_gateHeadline": "选择或创建你的账号",
+  "account_gateSubtitle": "一个账号对应一只专属灵宠。账号 ID 全局唯一，多设备登录同一账号即可共享数据。",
+  "account_gateAccountId": "账号 ID",
+  "account_gateContinue": "进入应用",
+  "account_gateCreate": "创建新账号",
+  "account_gateImport": "加入已有账号",
+  "account_gateCreateRoleHint": "选择本机在此账号下的存储角色：",
+  "account_gateSwitchAccount": "切换账号",
+  "account_gateSwitchTitle": "切换账号？",
+  "account_gateSwitchBody": "将清除本机当前账号密钥。请随后导入已有账号或创建新账号。",
+  "account_gateIdCopied": "账号 ID 已复制",
+  "account_gateCreateFailed": "创建账号失败：{error}",
+  "@account_gateCreateFailed": {
+    "placeholders": { "error": { "type": "String" } }
+  },
+  "account_gateJoinViaPeer": "扫描主设备加入账号",
+  "account_gateOfflineImport": "离线导入（高级）",
+
+  "account_joinTitle": "加入已有账号",
+  "account_joinHint": "在已登录账号的主存储设备上打开「添加设备」，展示 P2P 配对码。本机扫描该码完成配对后，主设备会弹出确认并安全下发账号密钥。",
+  "account_joinScanPeer": "扫描 P2P 配对码",
+  "account_joinManualPeer": "手动输入配对链接",
+  "account_joinWaitingApproval": "等待主设备确认…",
+  "account_joinSuccess": "已成功加入账号",
+  "account_joinFailed": "加入失败：{error}",
+  "@account_joinFailed": {
+    "placeholders": { "error": { "type": "String" } }
+  },
+  "account_joinDialogTitle": "允许加入账号？",
+  "account_joinDialogBody": "设备「{deviceName}」请求加入你的账号（角色：{role}）。",
+  "@account_joinDialogBody": {
+    "placeholders": {
+      "deviceName": { "type": "String" },
+      "role": { "type": "String" }
+    }
+  },
+  "account_joinApprove": "允许",
+  "account_joinApproved": "已允许 {deviceName} 加入",
+  "@account_joinApproved": {
+    "placeholders": { "deviceName": { "type": "String" } }
+  },
+  "account_joinApproveFailed": "批准失败：{error}",
+  "@account_joinApproveFailed": {
+    "placeholders": { "error": { "type": "String" } }
+  },
+
+  "identity_addDevicePeerHint": "请在新设备上选择「扫描主设备加入账号」，扫描下方 P2P 配对码。确认后账号密钥将通过加密通道自动下发。",
+  "identity_importOfflineTitle": "离线导入账号",
+  "identity_importOfflineHint": "当无法与主设备在线配对时使用。从主设备复制身份导出包并粘贴到下方。"
 }

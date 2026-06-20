@@ -29,6 +29,7 @@ import 'services/chat_service.dart';
 import 'peer/services/peer_connection_manager.dart';
 import 'peer/services/peer_agent_host_service.dart';
 import 'peer/services/peer_agent_client_service.dart';
+import 'identity/services/account_join_service.dart';
 import 'services/she_service.dart';
 import 'service_locator.dart';
 
@@ -85,8 +86,11 @@ class AppBootstrap {
     // 初始化 ACP Server
     final acp = await _initializeACPServer();
 
-    // 启动 P2P 连接管理器（后台监听入站连接、自动重连已配对设备）
+    // 启动 P2P 连接管理器
     await _initializePeerConnection();
+
+    // 账号身份（User / SpiritPet / 设备角色）与 P2P 同步协议
+    await _initializeAccountIdentity();
 
     // 自动建立 Channel 隧道（若已配置 autoConnect）。
     // 隧道是 P2P 跨网中转的前提：PC 需主动维护到 channel server 的隧道，
@@ -239,6 +243,11 @@ class AppBootstrap {
     } catch (e) {
       _log.error('P2P connection manager start failed', tag: 'App', error: e);
     }
+  }
+
+  /// 启动账号加入协议监听（不依赖账号是否已登录）。
+  static Future<void> _initializeAccountIdentity() async {
+    AccountJoinService.instance.start();
   }
 
   /// 自动建立 Channel 隧道。
