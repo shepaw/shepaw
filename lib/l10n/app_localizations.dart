@@ -320,6 +320,24 @@ abstract class AppLocalizations {
   /// **'确认重置'**
   String get login_confirmReset;
 
+  /// No description provided for @login_selectAccount.
+  ///
+  /// In zh, this message translates to:
+  /// **'选择账号'**
+  String get login_selectAccount;
+
+  /// No description provided for @login_createNewAccount.
+  ///
+  /// In zh, this message translates to:
+  /// **'创建新账号'**
+  String get login_createNewAccount;
+
+  /// No description provided for @login_resetPasswordBackingUp.
+  ///
+  /// In zh, this message translates to:
+  /// **'正在安全备份数据...'**
+  String get login_resetPasswordBackingUp;
+
   /// No description provided for @passwordSetup_title.
   ///
   /// In zh, this message translates to:
@@ -7543,6 +7561,114 @@ abstract class AppLocalizations {
   /// In zh, this message translates to:
   /// **'离线导入（高级）'**
   String get account_gateOfflineImport;
+
+  /// No description provided for @account_gateAddAccount.
+  ///
+  /// In zh, this message translates to:
+  /// **'添加其他账号'**
+  String get account_gateAddAccount;
+
+  /// No description provided for @account_gateSetPasswordHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'为此账号设置登录密码'**
+  String get account_gateSetPasswordHint;
+
+  /// No description provided for @account_gateOrCreate.
+  ///
+  /// In zh, this message translates to:
+  /// **'或创建新账号'**
+  String get account_gateOrCreate;
+
+  /// No description provided for @qrLogin_scanTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'扫码登录'**
+  String get qrLogin_scanTitle;
+
+  /// No description provided for @qrLogin_scanHeadline.
+  ///
+  /// In zh, this message translates to:
+  /// **'扫描主存储设备上的二维码，使用同一账号登录'**
+  String get qrLogin_scanHeadline;
+
+  /// No description provided for @qrLogin_scanButton.
+  ///
+  /// In zh, this message translates to:
+  /// **'扫码登录'**
+  String get qrLogin_scanButton;
+
+  /// No description provided for @qrLogin_joinSuccess.
+  ///
+  /// In zh, this message translates to:
+  /// **'登录成功，正在从主存储设备同步数据…'**
+  String get qrLogin_joinSuccess;
+
+  /// No description provided for @qrLogin_displayTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'扫码登录'**
+  String get qrLogin_displayTitle;
+
+  /// No description provided for @qrLogin_displayHeadline.
+  ///
+  /// In zh, this message translates to:
+  /// **'让其他设备扫码登录'**
+  String get qrLogin_displayHeadline;
+
+  /// No description provided for @qrLogin_displayHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'在手机上打开惜宝，点击「扫码登录」并扫描下方二维码。本设备会弹出确认请求。'**
+  String get qrLogin_displayHint;
+
+  /// No description provided for @qrLogin_displayButton.
+  ///
+  /// In zh, this message translates to:
+  /// **'展示手机扫码登录二维码'**
+  String get qrLogin_displayButton;
+
+  /// No description provided for @qrLogin_stepScan.
+  ///
+  /// In zh, this message translates to:
+  /// **'手机扫描此二维码完成配对'**
+  String get qrLogin_stepScan;
+
+  /// No description provided for @qrLogin_stepApprove.
+  ///
+  /// In zh, this message translates to:
+  /// **'在本设备确认登录请求'**
+  String get qrLogin_stepApprove;
+
+  /// No description provided for @qrLogin_stepSync.
+  ///
+  /// In zh, this message translates to:
+  /// **'设备保持关联，连接后自动同步数据'**
+  String get qrLogin_stepSync;
+
+  /// No description provided for @qrLogin_appRoleHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'本地缓存常用数据，全量数据保存在主存储设备'**
+  String get qrLogin_appRoleHint;
+
+  /// No description provided for @qrLogin_rolePrimaryDesc.
+  ///
+  /// In zh, this message translates to:
+  /// **'账号权威全量存储'**
+  String get qrLogin_rolePrimaryDesc;
+
+  /// No description provided for @qrLogin_roleBackupDesc.
+  ///
+  /// In zh, this message translates to:
+  /// **'从主存储设备镜像全量数据'**
+  String get qrLogin_roleBackupDesc;
+
+  /// No description provided for @qrLogin_roleAppDesc.
+  ///
+  /// In zh, this message translates to:
+  /// **'轻量客户端，与主存储设备增量同步'**
+  String get qrLogin_roleAppDesc;
 
   /// No description provided for @account_joinTitle.
   ///

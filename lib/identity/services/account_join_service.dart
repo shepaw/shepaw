@@ -16,8 +16,10 @@ import '../models/account_join_request.dart';
 import '../models/device_role.dart';
 import '../models/identity_export_bundle.dart';
 import 'account_identity_service.dart';
+import 'account_session_service.dart';
 import 'device_trust_service.dart';
 import 'identity_export_service.dart';
+import 'sync_client_service.dart';
 import 'user_identity_service.dart';
 
 /// 经 P2P 配对 + Noise 加密通道下发账号密钥，加入已有账号。
@@ -107,7 +109,17 @@ class AccountJoinService {
       preferredRole: preferredRole,
     );
 
+    await DeviceTrustService.instance.registerPrimaryFromPeer(peer);
+    AccountSessionService.instance.resetSyncState();
+    await AccountSessionService.instance.activate();
+
     unawaited(_sendTrustAcceptToPeer(peer.id));
+
+    try {
+      await SyncClientService.instance.syncWithPeer(peer.id);
+    } catch (e) {
+      _log.warning('Initial sync after join failed: $e', tag: _tag);
+    }
 
     _log.info('Joined account via P2P from ${peer.deviceName}', tag: _tag);
   }

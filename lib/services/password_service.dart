@@ -5,9 +5,17 @@ import 'local_database_service.dart';
 import 'logger_service.dart';
 import 'vault_service.dart';
 
+/// 密码强度校验结果。
+enum PasswordValidationIssue {
+  empty,
+  tooShort,
+  tooLong,
+  needAlphaNum,
+}
+
 /// 密码管理服务
 /// 负责密码的加密存储、验证和管理
-/// 敏感数据存储于 SQLite user 表（KV 结构），不再使用 SharedPreferences
+/// 敏感数据存储于当前账号 SQLite user 表（KV 结构），各账号独立
 class PasswordService {
   static const String _passwordHashKey = 'password_hash';
   static const String _passwordSaltKey = 'password_salt';
@@ -18,6 +26,18 @@ class PasswordService {
 
   final _db = LocalDatabaseService();
 
+  /// 校验密码强度，通过则返回 null。
+  static PasswordValidationIssue? validateStrength(String password) {
+    if (password.isEmpty) return PasswordValidationIssue.empty;
+    if (password.length < 6) return PasswordValidationIssue.tooShort;
+    if (password.length > 20) return PasswordValidationIssue.tooLong;
+    if (!password.contains(RegExp(r'[a-zA-Z]')) ||
+        !password.contains(RegExp(r'[0-9]'))) {
+      return PasswordValidationIssue.needAlphaNum;
+    }
+    return null;
+  }
+
   /// 检查是否已设置密码
   Future<bool> isPasswordSet() async {
     final value = await _db.getUserValue(_isPasswordSetKey);
@@ -26,8 +46,8 @@ class PasswordService {
 
   /// 设置密码（首次设置）
   Future<bool> setPassword(String password) async {
-    if (password.isEmpty || password.length < 6) {
-      return false; // 密码长度至少6位
+    if (validateStrength(password) != null) {
+      return false;
     }
 
     try {

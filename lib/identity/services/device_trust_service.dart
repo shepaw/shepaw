@@ -3,6 +3,7 @@ import 'dart:math';
 import 'dart:typed_data';
 
 import '../../services/biometric_service.dart';
+import '../../peer/models/paired_peer.dart';
 import '../../services/local_database_service.dart';
 import '../../services/logger_service.dart';
 import '../../services/noise_identity.dart';
@@ -126,6 +127,30 @@ class DeviceTrustService {
     );
     await _db.upsertOwnedDevice(record);
     _log.info('Accepted trust invite from ${invite.issuerDeviceName}', tag: _tag);
+  }
+
+  /// 新设备加入账号后，登记扫码来源的主存储设备。
+  Future<void> registerPrimaryFromPeer(PairedPeer peer) async {
+    await AccountIdentityService.instance.ensureInitialized();
+    final user = await AccountIdentityService.instance.userIdentity();
+    final pet = await AccountIdentityService.instance.spiritPetIdentity();
+    final now = DateTime.now().millisecondsSinceEpoch;
+
+    final record = OwnedDeviceRecord(
+      id: peer.deviceId,
+      deviceId: peer.deviceId,
+      deviceName: peer.deviceName,
+      role: DeviceRole.primary,
+      transportPublicKey: peer.publicKey,
+      fingerprint: peer.fingerprint,
+      userId: user.fingerprintHex,
+      petId: pet.fingerprintHex,
+      isLocal: false,
+      trustedAt: now,
+      lastSeenAt: now,
+    );
+    await _db.upsertOwnedDevice(record);
+    _log.info('Registered primary device ${peer.deviceName} from peer', tag: _tag);
   }
 
   /// 签发方登记接受方（P2P trust_accept 或配对完成后调用）。

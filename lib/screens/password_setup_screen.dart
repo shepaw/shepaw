@@ -1,5 +1,6 @@
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import '../identity/services/account_session_service.dart';
 import '../l10n/app_localizations.dart';
 import '../services/password_service.dart';
 import '../theme/app_theme.dart';
@@ -38,21 +39,22 @@ class _PasswordSetupScreenState extends State<PasswordSetupScreen> {
 
   /// 验证密码强度
   String? _validatePassword(String password, AppLocalizations l10n) {
-    if (password.isEmpty) {
-      return l10n.passwordSetup_emptyPassword;
+    return _passwordValidationMessage(PasswordService.validateStrength(password), l10n);
+  }
+
+  String? _passwordValidationMessage(PasswordValidationIssue? issue, AppLocalizations l10n) {
+    switch (issue) {
+      case PasswordValidationIssue.empty:
+        return l10n.passwordSetup_emptyPassword;
+      case PasswordValidationIssue.tooShort:
+        return l10n.passwordSetup_tooShort;
+      case PasswordValidationIssue.tooLong:
+        return l10n.passwordSetup_tooLong;
+      case PasswordValidationIssue.needAlphaNum:
+        return l10n.passwordSetup_needAlphaNum;
+      case null:
+        return null;
     }
-    if (password.length < 6) {
-      return l10n.passwordSetup_tooShort;
-    }
-    if (password.length > 20) {
-      return l10n.passwordSetup_tooLong;
-    }
-    // 检查是否包含字母和数字
-    if (!password.contains(RegExp(r'[a-zA-Z]')) ||
-        !password.contains(RegExp(r'[0-9]'))) {
-      return l10n.passwordSetup_needAlphaNum;
-    }
-    return null;
   }
 
   /// 提交密码设置
@@ -99,8 +101,9 @@ class _PasswordSetupScreenState extends State<PasswordSetupScreen> {
 
       if (success) {
         if (mounted) {
-          // 密码设置成功，跳转到登录页面
-          Navigator.of(context).pushReplacementNamed('/login');
+          await AccountSessionService.instance.activate();
+          if (!mounted) return;
+          Navigator.of(context).pushReplacementNamed('/home');
         }
       } else {
         setState(() {

@@ -1,4 +1,4 @@
-import 'dart:io' show Platform, File, Directory;
+import 'dart:io' show File, Directory;
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:sqflite/sqflite.dart';
 import 'package:path/path.dart';
@@ -31,6 +31,16 @@ class LocalDatabaseService {
   LocalDatabaseService._internal();
 
   Database? _database;
+  String? _scopedAccountId;
+
+  /// 切换到指定账号的数据库（关闭当前连接，下次访问时打开新库）。
+  Future<void> switchAccount(String? accountId) async {
+    if (_scopedAccountId == accountId && _database != null) return;
+    await close();
+    _scopedAccountId = accountId;
+  }
+
+  String? get scopedAccountId => _scopedAccountId;
 
   /// 获取数据库实例
   Future<Database> get database async {
@@ -39,10 +49,21 @@ class LocalDatabaseService {
     return _database!;
   }
 
+  Future<String> _resolveDbPath() async {
+    if (kIsWeb) return 'shepaw';
+
+    final directory = await getApplicationDocumentsDirectory();
+    final accountId = _scopedAccountId;
+    if (accountId != null && accountId.isNotEmpty) {
+      final accountDir = Directory(join(directory.path, 'accounts', accountId));
+      if (!accountDir.existsSync()) await accountDir.create(recursive: true);
+      return join(accountDir.path, 'shepaw.db');
+    }
+    return join(directory.path, 'shepaw.db');
+  }
+
   /// 初始化数据库
   Future<Database> _initDatabase() async {
-    String path;
-
     if (kIsWeb) {
       // Web平台使用sqflite_common_ffi
       return await openDatabase(
@@ -51,28 +72,15 @@ class LocalDatabaseService {
         onCreate: _onCreate,
         onUpgrade: _onUpgrade,
       );
-    } else if (!kIsWeb && (Platform.isWindows || Platform.isLinux)) {
-      // Windows/Linux 使用 sqflite_common_ffi
-      final directory = await getApplicationDocumentsDirectory();
-      path = join(directory.path, 'shepaw.db');
-      return await openDatabase(
-        path,
-        version: 24,
-        onCreate: _onCreate,
-        onUpgrade: _onUpgrade,
-      );
-    } else {
-      // 移动平台使用sqflite
-      final directory = await getApplicationDocumentsDirectory();
-      path = join(directory.path, 'shepaw.db');
-
-      return await openDatabase(
-        path,
-        version: 24,
-        onCreate: _onCreate,
-        onUpgrade: _onUpgrade,
-      );
     }
+
+    final path = await _resolveDbPath();
+    return await openDatabase(
+      path,
+      version: 24,
+      onCreate: _onCreate,
+      onUpgrade: _onUpgrade,
+    );
   }
 
   /// 创建数据库表

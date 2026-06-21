@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import '../identity/services/identity_export_service.dart';
 import '../l10n/app_localizations.dart';
 import '../peer/screens/peer_qr_display_screen.dart';
+import 'qr_login_display_screen.dart';
 
 /// 主存储设备：展示 P2P 配对码，供新设备扫码配对并加入同一账号。
 class AddOwnedDeviceScreen extends StatefulWidget {
@@ -46,6 +47,17 @@ class _AddOwnedDeviceScreenState extends State<AddOwnedDeviceScreen> {
         padding: const EdgeInsets.all(16),
         children: [
           Text(l10n.identity_addDevicePeerHint, style: Theme.of(context).textTheme.bodyMedium),
+          const SizedBox(height: 12),
+          OutlinedButton.icon(
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const QrLoginDisplayScreen()),
+              );
+            },
+            icon: const Icon(Icons.qr_code_2),
+            label: Text(l10n.qrLogin_displayButton),
+          ),
           const SizedBox(height: 16),
           const PeerQrDisplayScreen(),
           const Divider(height: 32),

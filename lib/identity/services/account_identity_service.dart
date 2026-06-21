@@ -10,7 +10,9 @@ import '../../services/noise_identity.dart';
 import '../crypto/ed25519_identity.dart';
 import '../models/device_role.dart';
 import '../models/owned_device_record.dart';
+import 'account_session_service.dart';
 import 'spirit_pet_identity_service.dart';
+import 'local_account_registry.dart';
 import 'user_identity_service.dart';
 
 /// 账号身份编排：User + SpiritPet + 本机 OwnedDevice 注册与角色。
@@ -43,10 +45,13 @@ class AccountIdentityService {
   Future<void> ensureInitialized() async {
     if (_initialized) return;
 
-    if (!await UserIdentityService.instance.exists()) {
+    await LocalAccountRegistry.instance.ensureInitialized();
+    final accountId = await LocalAccountRegistry.instance.getActiveAccountId();
+    if (accountId == null || !await UserIdentityService.instance.existsForAccount(accountId)) {
       throw StateError('No account on this device');
     }
 
+    await LocalDatabaseService().switchAccount(accountId);
     _user = await UserIdentityService.instance.loadOrCreate();
     _pet = await SpiritPetIdentityService.instance.loadOrCreate();
 
@@ -82,12 +87,23 @@ class AccountIdentityService {
 
   /// 在本机创建新账号（User + 固定灵宠），账号 ID 为 User 公钥指纹。
   Future<String> createAccount({DeviceRole? preferredRole}) async {
-    if (await UserIdentityService.instance.exists()) {
-      throw StateError('Account already exists on this device');
-    }
+    await AccountSessionService.instance.prepareNewAccount();
 
-    _user = await UserIdentityService.instance.loadOrCreate();
-    _pet = await SpiritPetIdentityService.instance.loadOrCreate();
+    _user = await Ed25519Identity.generateFresh();
+    _pet = await Ed25519Identity.generateFresh();
+    final accountId = _user!.fingerprintHex;
+
+    await Ed25519Identity.importRecord(
+      UserIdentityService.storageKeyFor(accountId),
+      _user!.encodeRecord(),
+    );
+    await Ed25519Identity.importRecord(
+      SpiritPetIdentityService.storageKeyFor(accountId),
+      _pet!.encodeRecord(),
+    );
+
+    await LocalAccountRegistry.instance.registerAccount(accountId);
+    await LocalDatabaseService().switchAccount(accountId);
 
     final now = DateTime.now().millisecondsSinceEpoch;
     await _db.upsertIdentityUser(

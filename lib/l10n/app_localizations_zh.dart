@@ -129,6 +129,15 @@ class AppLocalizationsZh extends AppLocalizations {
   String get login_confirmReset => '确认重置';
 
   @override
+  String get login_selectAccount => '选择账号';
+
+  @override
+  String get login_createNewAccount => '创建新账号';
+
+  @override
+  String get login_resetPasswordBackingUp => '正在安全备份数据...';
+
+  @override
   String get passwordSetup_title => '设置登录密码';
 
   @override
@@ -4064,6 +4073,60 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get account_gateOfflineImport => '离线导入（高级）';
+
+  @override
+  String get account_gateAddAccount => '添加其他账号';
+
+  @override
+  String get account_gateSetPasswordHint => '为此账号设置登录密码';
+
+  @override
+  String get account_gateOrCreate => '或创建新账号';
+
+  @override
+  String get qrLogin_scanTitle => '扫码登录';
+
+  @override
+  String get qrLogin_scanHeadline => '扫描主存储设备上的二维码，使用同一账号登录';
+
+  @override
+  String get qrLogin_scanButton => '扫码登录';
+
+  @override
+  String get qrLogin_joinSuccess => '登录成功，正在从主存储设备同步数据…';
+
+  @override
+  String get qrLogin_displayTitle => '扫码登录';
+
+  @override
+  String get qrLogin_displayHeadline => '让其他设备扫码登录';
+
+  @override
+  String get qrLogin_displayHint => '在手机上打开惜宝，点击「扫码登录」并扫描下方二维码。本设备会弹出确认请求。';
+
+  @override
+  String get qrLogin_displayButton => '展示手机扫码登录二维码';
+
+  @override
+  String get qrLogin_stepScan => '手机扫描此二维码完成配对';
+
+  @override
+  String get qrLogin_stepApprove => '在本设备确认登录请求';
+
+  @override
+  String get qrLogin_stepSync => '设备保持关联，连接后自动同步数据';
+
+  @override
+  String get qrLogin_appRoleHint => '本地缓存常用数据，全量数据保存在主存储设备';
+
+  @override
+  String get qrLogin_rolePrimaryDesc => '账号权威全量存储';
+
+  @override
+  String get qrLogin_roleBackupDesc => '从主存储设备镜像全量数据';
+
+  @override
+  String get qrLogin_roleAppDesc => '轻量客户端，与主存储设备增量同步';
 
   @override
   String get account_joinTitle => '加入已有账号';

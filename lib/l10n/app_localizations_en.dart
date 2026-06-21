@@ -131,6 +131,15 @@ class AppLocalizationsEn extends AppLocalizations {
   String get login_confirmReset => 'Confirm Reset';
 
   @override
+  String get login_selectAccount => 'Select account';
+
+  @override
+  String get login_createNewAccount => 'Create new account';
+
+  @override
+  String get login_resetPasswordBackingUp => 'Backing up data securely...';
+
+  @override
   String get passwordSetup_title => 'Set Login Password';
 
   @override
@@ -4226,6 +4235,70 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get account_gateOfflineImport => 'Offline import (advanced)';
+
+  @override
+  String get account_gateAddAccount => 'Add another account';
+
+  @override
+  String get account_gateSetPasswordHint =>
+      'Set a login password for this account';
+
+  @override
+  String get account_gateOrCreate => 'or create new';
+
+  @override
+  String get qrLogin_scanTitle => 'Scan to sign in';
+
+  @override
+  String get qrLogin_scanHeadline =>
+      'Scan the QR code on your primary storage device to sign in with the same account';
+
+  @override
+  String get qrLogin_scanButton => 'Scan QR to sign in';
+
+  @override
+  String get qrLogin_joinSuccess =>
+      'Signed in. Syncing data from primary device…';
+
+  @override
+  String get qrLogin_displayTitle => 'QR sign-in';
+
+  @override
+  String get qrLogin_displayHeadline => 'Let another device scan to sign in';
+
+  @override
+  String get qrLogin_displayHint =>
+      'Open ShePaw on your phone, tap \"Scan QR to sign in\", and scan this code. You will be asked to confirm on this device.';
+
+  @override
+  String get qrLogin_displayButton => 'Show QR for mobile sign-in';
+
+  @override
+  String get qrLogin_stepScan => 'Mobile scans this QR code to pair';
+
+  @override
+  String get qrLogin_stepApprove =>
+      'Confirm the sign-in request on this device';
+
+  @override
+  String get qrLogin_stepSync =>
+      'Devices stay linked; data syncs automatically when connected';
+
+  @override
+  String get qrLogin_appRoleHint =>
+      'Caches recent data locally; full data stays on the primary device';
+
+  @override
+  String get qrLogin_rolePrimaryDesc =>
+      'Authoritative full storage for this account';
+
+  @override
+  String get qrLogin_roleBackupDesc =>
+      'Full mirror synced from the primary device';
+
+  @override
+  String get qrLogin_roleAppDesc =>
+      'Lightweight client; syncs incrementally with the primary device';
 
   @override
   String get account_joinTitle => 'Join existing account';

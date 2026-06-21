@@ -86,6 +86,17 @@ class SyncClientService {
     await pullFromPeer(peerId);
   }
 
+  /// 连接 Primary 后完整同步：拉取增量 + 提交本地 outbound 队列。
+  Future<void> syncWithPeer(String peerId) async {
+    await pullFromPeer(peerId);
+    await flushOutboundToPeer(peerId);
+  }
+
+  /// 提交 outbound 队列到指定 peer（通常为 Primary）。
+  Future<void> flushOutboundToPeer(String peerId) async {
+    await _flushOutbound(peerId);
+  }
+
   Future<void> pullFromPeer(String peerId) async {
     if (_pulling) return;
     _pulling = true;

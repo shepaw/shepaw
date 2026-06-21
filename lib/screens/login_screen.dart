@@ -1,9 +1,20 @@
+import 'dart:io' show Platform;
+
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
+
+import '../identity/models/local_account_entry.dart';
 import '../identity/services/account_session_service.dart';
+import '../identity/services/local_account_registry.dart';
 import '../l10n/app_localizations.dart';
 import '../services/password_service.dart';
 import '../services/biometric_service.dart';
 import '../theme/app_theme.dart';
+import 'join_account_peer_screen.dart';
+import 'qr_login_display_screen.dart';
+
+/// 登录时选择本机已保存的账号。
+const _createNewAccountValue = '__create_new__';
 
 /// 登录页面
 class LoginScreen extends StatefulWidget {
@@ -20,9 +31,14 @@ class _LoginScreenState extends State<LoginScreen> {
 
   bool _isPasswordVisible = false;
   bool _isLoading = false;
+  bool _loadingAccounts = true;
   String _errorMessage = '';
   int _failedAttempts = 0;
   bool _biometricAvailable = false;
+  List<LocalAccountEntry> _accounts = [];
+  String? _selectedAccountId;
+
+  bool get _isMobile => !kIsWeb && (Platform.isAndroid || Platform.isIOS);
 
   @override
   void initState() {
@@ -31,26 +47,67 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   Future<void> _initService() async {
+    await _loadAccounts();
+    await _checkBiometric();
+  }
+
+  Future<void> _loadAccounts() async {
+    final accounts = await LocalAccountRegistry.instance.listAccounts();
+    final activeId = await LocalAccountRegistry.instance.getActiveAccountId();
+    if (!mounted) return;
+    setState(() {
+      _accounts = accounts;
+      _selectedAccountId = activeId ?? (accounts.isNotEmpty ? accounts.first.accountId : null);
+      _loadingAccounts = false;
+    });
+    if (_selectedAccountId != null) {
+      await AccountSessionService.instance.switchToAccount(_selectedAccountId!);
+    }
+  }
+
+  Future<void> _onAccountChanged(String? accountId) async {
+    if (accountId == null) return;
+    if (accountId == _createNewAccountValue) {
+      if (!mounted) return;
+      Navigator.of(context).pushReplacementNamed('/account-gate');
+      return;
+    }
+    if (accountId == _selectedAccountId) return;
+
+    setState(() {
+      _selectedAccountId = accountId;
+      _errorMessage = '';
+      _failedAttempts = 0;
+      _passwordController.clear();
+      _isLoading = true;
+    });
+
+    await AccountSessionService.instance.switchToAccount(accountId);
+    if (!mounted) return;
+    setState(() => _isLoading = false);
     await _checkBiometric();
   }
 
   Future<void> _checkBiometric() async {
     try {
       final enabled = await _biometricService.isBiometricEnabled();
-      if (!enabled) return;
+      if (!enabled) {
+        if (mounted) setState(() => _biometricAvailable = false);
+        return;
+      }
 
       final supported = await _biometricService.isDeviceSupported();
-      if (!supported) return;
+      if (!supported) {
+        if (mounted) setState(() => _biometricAvailable = false);
+        return;
+      }
 
       if (mounted) {
-        setState(() {
-          _biometricAvailable = true;
-        });
-        // Auto-trigger biometric authentication
+        setState(() => _biometricAvailable = true);
         _authenticateWithBiometric();
       }
     } catch (_) {
-      // Biometric not available, fall back to password
+      if (mounted) setState(() => _biometricAvailable = false);
     }
   }
 
@@ -111,7 +168,6 @@ class _LoginScreenState extends State<LoginScreen> {
           }
         });
 
-        // 清空输入
         _passwordController.clear();
       }
     } catch (e) {
@@ -125,9 +181,70 @@ class _LoginScreenState extends State<LoginScreen> {
     }
   }
 
+  Future<void> _openQrLoginScan() async {
+    if (!mounted) return;
+    await Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => const JoinAccountPeerScreen(qrLoginMode: true)),
+    );
+    await _loadAccounts();
+  }
+
+  Future<void> _showQrLoginForMobile() async {
+    final l10n = AppLocalizations.of(context);
+    setState(() => _errorMessage = '');
+
+    final password = _passwordController.text;
+    if (password.isEmpty) {
+      setState(() => _errorMessage = l10n.login_emptyPassword);
+      return;
+    }
+
+    setState(() => _isLoading = true);
+    try {
+      final success = await _passwordService.verifyPassword(password);
+      if (!success) {
+        setState(() {
+          _failedAttempts++;
+          _errorMessage = l10n.login_wrongPassword(_failedAttempts);
+        });
+        return;
+      }
+      if (_selectedAccountId != null) {
+        await AccountSessionService.instance.switchToAccount(_selectedAccountId!);
+      }
+      await AccountSessionService.instance.activate();
+      if (!mounted) return;
+      await Navigator.push(
+        context,
+        MaterialPageRoute(builder: (_) => const QrLoginDisplayScreen()),
+      );
+    } catch (e) {
+      setState(() => _errorMessage = l10n.login_failed('$e'));
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
+
+    if (_loadingAccounts) {
+      return const Scaffold(
+        body: Center(child: CircularProgressIndicator()),
+      );
+    }
+
+    if (_accounts.isEmpty) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          Navigator.of(context).pushReplacementNamed('/account-gate');
+        }
+      });
+      return const SizedBox.shrink();
+    }
+
     return Scaffold(
       backgroundColor: Colors.white,
       body: SafeArea(
@@ -138,7 +255,6 @@ class _LoginScreenState extends State<LoginScreen> {
             children: [
               const SizedBox(height: 80),
 
-              // Logo
               ClipRRect(
                 borderRadius: BorderRadius.circular(24),
                 child: Image.asset(
@@ -165,9 +281,40 @@ class _LoginScreenState extends State<LoginScreen> {
                 ),
                 textAlign: TextAlign.center,
               ),
-              const SizedBox(height: 48),
+              const SizedBox(height: 32),
 
-              // 密码输入框
+              DropdownButtonFormField<String>(
+                value: _selectedAccountId,
+                decoration: InputDecoration(
+                  labelText: l10n.login_selectAccount,
+                  prefixIcon: const Icon(Icons.account_circle_outlined),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                ),
+                items: [
+                  ..._accounts.map((account) => DropdownMenuItem(
+                        value: account.accountId,
+                        child: Text(
+                          account.label,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      )),
+                  DropdownMenuItem(
+                    value: _createNewAccountValue,
+                    child: Row(
+                      children: [
+                        Icon(Icons.add, size: 18, color: Theme.of(context).colorScheme.primary),
+                        const SizedBox(width: 8),
+                        Text(l10n.login_createNewAccount),
+                      ],
+                    ),
+                  ),
+                ],
+                onChanged: _isLoading ? null : _onAccountChanged,
+              ),
+              const SizedBox(height: 24),
+
               TextField(
                 controller: _passwordController,
                 obscureText: !_isPasswordVisible,
@@ -196,7 +343,6 @@ class _LoginScreenState extends State<LoginScreen> {
               ),
               const SizedBox(height: 24),
 
-              // 错误提示
               if (_errorMessage.isNotEmpty)
                 Container(
                   padding: const EdgeInsets.all(12),
@@ -221,7 +367,6 @@ class _LoginScreenState extends State<LoginScreen> {
               if (_errorMessage.isNotEmpty)
                 const SizedBox(height: 24),
 
-              // 登录按钮
               ElevatedButton(
                 onPressed: (_isLoading || _failedAttempts >= 3)
                   ? null
@@ -246,9 +391,30 @@ class _LoginScreenState extends State<LoginScreen> {
                       style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
                     ),
               ),
+              const SizedBox(height: 12),
+
+              if (_isMobile)
+                OutlinedButton.icon(
+                  onPressed: _isLoading ? null : _openQrLoginScan,
+                  icon: const Icon(Icons.qr_code_scanner),
+                  label: Text(l10n.qrLogin_scanButton),
+                  style: OutlinedButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  ),
+                )
+              else
+                OutlinedButton.icon(
+                  onPressed: (_isLoading || _failedAttempts >= 3) ? null : _showQrLoginForMobile,
+                  icon: const Icon(Icons.qr_code_2),
+                  label: Text(l10n.qrLogin_displayButton),
+                  style: OutlinedButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  ),
+                ),
               const SizedBox(height: 16),
 
-              // 生物识别按钮
               if (_biometricAvailable)
                 Column(
                   children: [
@@ -271,7 +437,6 @@ class _LoginScreenState extends State<LoginScreen> {
                   ],
                 ),
 
-              // 忘记密码提示
               TextButton(
                 onPressed: () {
                   _showResetPasswordDialog();
@@ -285,7 +450,6 @@ class _LoginScreenState extends State<LoginScreen> {
     );
   }
 
-  /// 显示重置密码对话框
   void _showResetPasswordDialog() {
     final l10n = AppLocalizations.of(context);
     showDialog(
@@ -337,16 +501,15 @@ class _LoginScreenState extends State<LoginScreen> {
               Navigator.pop(context);
               if (!mounted) return;
 
-              // 显示进度对话框
               showDialog(
                 context: context,
                 barrierDismissible: false,
-                builder: (_) => const AlertDialog(
+                builder: (_) => AlertDialog(
                   content: Row(
                     children: [
-                      CircularProgressIndicator(),
-                      SizedBox(width: 16),
-                      Expanded(child: Text('正在安全备份数据...')),
+                      const CircularProgressIndicator(),
+                      const SizedBox(width: 16),
+                      Expanded(child: Text(l10n.login_resetPasswordBackingUp)),
                     ],
                   ),
                 ),

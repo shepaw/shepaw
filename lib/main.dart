@@ -23,6 +23,7 @@ import 'screens/password_setup_screen.dart';
 import 'screens/login_screen.dart';
 import 'screens/account_gate_screen.dart';
 import 'identity/services/account_session_service.dart';
+import 'identity/services/local_account_registry.dart';
 import 'screens/adaptive_home_screen.dart';
 import 'widgets/window_title_sync.dart';
 import 'widgets/account_join_listener.dart';
@@ -320,6 +321,15 @@ class _SplashScreenState extends State<SplashScreen> {
     if (!hasAccount) {
       Navigator.of(context).pushReplacementNamed('/account-gate');
       return;
+    }
+
+    var activeId = await LocalAccountRegistry.instance.getActiveAccountId();
+    if (activeId == null) {
+      final accounts = await LocalAccountRegistry.instance.listAccounts();
+      if (accounts.isNotEmpty) activeId = accounts.first.accountId;
+    }
+    if (activeId != null) {
+      await AccountSessionService.instance.switchToAccount(activeId);
     }
 
     final isPasswordSet = await _passwordService.isPasswordSet();

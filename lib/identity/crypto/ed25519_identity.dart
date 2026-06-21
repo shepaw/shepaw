@@ -161,4 +161,7 @@ class Ed25519Identity {
     );
   }
 
+  /// 生成新的内存身份（不写入存储）。
+  static Future<Ed25519Identity> generateFresh() => _generate();
+
 }

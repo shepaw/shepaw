@@ -2,11 +2,13 @@ import 'dart:convert';
 import 'dart:typed_data';
 
 import '../../services/biometric_service.dart';
+import '../../services/local_database_service.dart';
 import '../../services/logger_service.dart';
 import '../crypto/ed25519_identity.dart';
 import '../models/device_role.dart';
 import '../models/identity_export_bundle.dart';
 import 'account_identity_service.dart';
+import 'local_account_registry.dart';
 import 'spirit_pet_identity_service.dart';
 import 'user_identity_service.dart';
 
@@ -78,8 +80,15 @@ class IdentityExportService {
       throw StateError('Invalid identity export bundle signature');
     }
 
-    await Ed25519Identity.importRecord(UserIdentityService.storageKey, bundle.userRecord);
-    await Ed25519Identity.importRecord(SpiritPetIdentityService.storageKey, bundle.petRecord);
+    final user = Ed25519Identity.parseRecord(bundle.userRecord);
+    final accountId = user.fingerprintHex;
+
+    await LocalAccountRegistry.instance.registerAccount(accountId);
+    await LocalAccountRegistry.instance.setActiveAccountId(accountId);
+    await LocalDatabaseService().switchAccount(accountId);
+
+    await Ed25519Identity.importRecord(UserIdentityService.storageKeyFor(accountId), bundle.userRecord);
+    await Ed25519Identity.importRecord(SpiritPetIdentityService.storageKeyFor(accountId), bundle.petRecord);
 
     await AccountIdentityService.instance.resetAfterIdentityImport(
       preferredRole: preferredRole,
