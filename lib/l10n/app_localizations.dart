@@ -7682,6 +7682,84 @@ abstract class AppLocalizations {
   /// **'轻量客户端，与主存储设备增量同步'**
   String get qrLogin_roleAppDesc;
 
+  /// No description provided for @qrLogin_connectingAccount.
+  ///
+  /// In zh, this message translates to:
+  /// **'正在连接账号…'**
+  String get qrLogin_connectingAccount;
+
+  /// No description provided for @qrLogin_syncing.
+  ///
+  /// In zh, this message translates to:
+  /// **'正在从主存储设备同步数据…'**
+  String get qrLogin_syncing;
+
+  /// No description provided for @qrLogin_reconnected.
+  ///
+  /// In zh, this message translates to:
+  /// **'已重新连接，正在同步最新数据…'**
+  String get qrLogin_reconnected;
+
+  /// No description provided for @qrLogin_syncFailed.
+  ///
+  /// In zh, this message translates to:
+  /// **'登录成功，但首次同步失败：{error}。连接恢复后将自动重试。'**
+  String qrLogin_syncFailed(String error);
+
+  /// No description provided for @qrLogin_errorNotPrimary.
+  ///
+  /// In zh, this message translates to:
+  /// **'仅主存储设备可展示扫码登录二维码。请切换到主存储设备，或在账号设置中调整本设备角色。'**
+  String get qrLogin_errorNotPrimary;
+
+  /// No description provided for @qrLogin_errorPrimaryRequired.
+  ///
+  /// In zh, this message translates to:
+  /// **'扫描的设备不是主存储设备，请使用主存储设备上的二维码。'**
+  String get qrLogin_errorPrimaryRequired;
+
+  /// No description provided for @qrLogin_errorJoinTimeout.
+  ///
+  /// In zh, this message translates to:
+  /// **'等待确认超时。请保持两台设备在同一网络后重试。'**
+  String get qrLogin_errorJoinTimeout;
+
+  /// No description provided for @qrLogin_errorJoinRejected.
+  ///
+  /// In zh, this message translates to:
+  /// **'主设备已拒绝或取消了登录请求。'**
+  String get qrLogin_errorJoinRejected;
+
+  /// No description provided for @qrLogin_errorPairingUnavailable.
+  ///
+  /// In zh, this message translates to:
+  /// **'无法启动配对：请开启 Channel 隧道，或确保两台设备在同一局域网。'**
+  String get qrLogin_errorPairingUnavailable;
+
+  /// No description provided for @qrLogin_errorPeerConnection.
+  ///
+  /// In zh, this message translates to:
+  /// **'无法连接主存储设备，请检查网络或 Channel 配置后重试。'**
+  String get qrLogin_errorPeerConnection;
+
+  /// No description provided for @qrLogin_errorPairingStart.
+  ///
+  /// In zh, this message translates to:
+  /// **'无法启动配对：{error}'**
+  String qrLogin_errorPairingStart(String error);
+
+  /// No description provided for @qrLogin_pairingStartFailed.
+  ///
+  /// In zh, this message translates to:
+  /// **'无法启动配对'**
+  String get qrLogin_pairingStartFailed;
+
+  /// No description provided for @qrLogin_displayKeepForeground.
+  ///
+  /// In zh, this message translates to:
+  /// **'请保持本页面在前台，直至手机完成登录；收到请求时请在本设备确认。'**
+  String get qrLogin_displayKeepForeground;
+
   /// No description provided for @account_joinTitle.
   ///
   /// In zh, this message translates to:

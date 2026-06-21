@@ -4138,6 +4138,52 @@ class AppLocalizationsZh extends AppLocalizations {
   String get qrLogin_roleAppDesc => '轻量客户端，与主存储设备增量同步';
 
   @override
+  String get qrLogin_connectingAccount => '正在连接账号…';
+
+  @override
+  String get qrLogin_syncing => '正在从主存储设备同步数据…';
+
+  @override
+  String get qrLogin_reconnected => '已重新连接，正在同步最新数据…';
+
+  @override
+  String qrLogin_syncFailed(String error) {
+    return '登录成功，但首次同步失败：$error。连接恢复后将自动重试。';
+  }
+
+  @override
+  String get qrLogin_errorNotPrimary =>
+      '仅主存储设备可展示扫码登录二维码。请切换到主存储设备，或在账号设置中调整本设备角色。';
+
+  @override
+  String get qrLogin_errorPrimaryRequired => '扫描的设备不是主存储设备，请使用主存储设备上的二维码。';
+
+  @override
+  String get qrLogin_errorJoinTimeout => '等待确认超时。请保持两台设备在同一网络后重试。';
+
+  @override
+  String get qrLogin_errorJoinRejected => '主设备已拒绝或取消了登录请求。';
+
+  @override
+  String get qrLogin_errorPairingUnavailable =>
+      '无法启动配对：请开启 Channel 隧道，或确保两台设备在同一局域网。';
+
+  @override
+  String get qrLogin_errorPeerConnection => '无法连接主存储设备，请检查网络或 Channel 配置后重试。';
+
+  @override
+  String qrLogin_errorPairingStart(String error) {
+    return '无法启动配对：$error';
+  }
+
+  @override
+  String get qrLogin_pairingStartFailed => '无法启动配对';
+
+  @override
+  String get qrLogin_displayKeepForeground =>
+      '请保持本页面在前台，直至手机完成登录；收到请求时请在本设备确认。';
+
+  @override
   String get account_joinTitle => '加入已有账号';
 
   @override

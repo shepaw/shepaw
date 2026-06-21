@@ -1,8 +1,9 @@
 import 'package:flutter/material.dart';
 
+import '../identity/models/account_join_result.dart';
 import '../identity/models/device_role.dart';
+import '../identity/services/account_join_errors.dart';
 import '../identity/services/account_join_service.dart';
-import '../identity/services/account_session_service.dart';
 import '../l10n/app_localizations.dart';
 import '../peer/models/paired_peer.dart';
 import '../peer/screens/peer_qr_scanner_screen.dart';
@@ -45,54 +46,90 @@ class QrLoginFlow {
     bool fromHome = false,
   }) async {
     final l10n = AppLocalizations.of(context);
+    final progress = ValueNotifier<String>(l10n.account_joinWaitingApproval);
 
     showDialog<void>(
       context: context,
       barrierDismissible: false,
-      builder: (_) => AlertDialog(
-        content: Row(
-          children: [
-            const CircularProgressIndicator(),
-            const SizedBox(width: 16),
-            Expanded(child: Text(l10n.account_joinWaitingApproval)),
-          ],
+      builder: (_) => ValueListenableBuilder<String>(
+        valueListenable: progress,
+        builder: (ctx, message, __) => AlertDialog(
+          content: Row(
+            children: [
+              const CircularProgressIndicator(),
+              const SizedBox(width: 16),
+              Expanded(child: Text(message)),
+            ],
+          ),
         ),
       ),
     );
 
+    AccountJoinResult? result;
     try {
       AccountJoinService.instance.start();
-      await AccountJoinService.instance.joinViaPeer(
+      result = await AccountJoinService.instance.joinViaPeer(
         peer: peer,
         preferredRole: preferredRole,
+        onProgress: (phase) {
+          switch (phase) {
+            case AccountJoinProgress.waitingApproval:
+              progress.value = l10n.account_joinWaitingApproval;
+            case AccountJoinProgress.connectingAccount:
+              progress.value = l10n.qrLogin_connectingAccount;
+            case AccountJoinProgress.syncing:
+              progress.value = l10n.qrLogin_syncing;
+          }
+        },
       );
-      AccountSessionService.instance.resetSyncState();
-      await AccountSessionService.instance.activate();
 
       if (!context.mounted) return;
       Navigator.of(context, rootNavigator: true).pop();
 
       if (fromHome) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(l10n.qrLogin_joinSuccess)),
-        );
+        _showJoinResultSnackbar(context, l10n, result);
         return;
       }
 
       final isPasswordSet = await PasswordService().isPasswordSet();
       if (!context.mounted) return;
+
       if (isPasswordSet) {
         Navigator.of(context).pushNamedAndRemoveUntil('/home', (_) => false);
       } else {
         Navigator.of(context).pushNamedAndRemoveUntil('/setup', (_) => false);
       }
+
+      if (context.mounted) {
+        _showJoinResultSnackbar(context, l10n, result);
+      }
     } catch (e) {
       if (context.mounted) {
         Navigator.of(context, rootNavigator: true).pop();
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(l10n.account_joinFailed(e.toString()))),
+          SnackBar(content: Text(mapAccountJoinError(e.toString(), l10n))),
         );
       }
+    } finally {
+      progress.dispose();
+    }
+  }
+
+  static void _showJoinResultSnackbar(
+    BuildContext context,
+    AppLocalizations l10n,
+    AccountJoinResult result,
+  ) {
+    if (result.syncSucceeded) {
+      final msg = result.reconnected ? l10n.qrLogin_reconnected : l10n.qrLogin_joinSuccess;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(l10n.qrLogin_syncFailed(result.syncError ?? '')),
+          duration: const Duration(seconds: 5),
+        ),
+      );
     }
   }
 }

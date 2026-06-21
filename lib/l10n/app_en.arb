@@ -1819,6 +1819,25 @@
   "qrLogin_rolePrimaryDesc": "Authoritative full storage for this account",
   "qrLogin_roleBackupDesc": "Full mirror synced from the primary device",
   "qrLogin_roleAppDesc": "Lightweight client; syncs incrementally with the primary device",
+  "qrLogin_connectingAccount": "Connecting account…",
+  "qrLogin_syncing": "Syncing data from primary device…",
+  "qrLogin_reconnected": "Reconnected. Syncing latest data…",
+  "qrLogin_syncFailed": "Signed in, but initial sync failed: {error}. Data will retry when connected.",
+  "@qrLogin_syncFailed": {
+    "placeholders": { "error": { "type": "String" } }
+  },
+  "qrLogin_errorNotPrimary": "Only the primary storage device can show a sign-in QR code. Switch to the primary device or change this device's role in account settings.",
+  "qrLogin_errorPrimaryRequired": "The scanned device is not the primary storage device. Use the QR code from your primary device.",
+  "qrLogin_errorJoinTimeout": "Timed out waiting for approval. Keep both devices on the same network and try again.",
+  "qrLogin_errorJoinRejected": "Sign-in request was rejected or cancelled on the primary device.",
+  "qrLogin_errorPairingUnavailable": "Cannot start pairing: enable Channel tunnel or ensure both devices are on the same local network.",
+  "qrLogin_errorPeerConnection": "Could not connect to the primary device. Check network or Channel settings and try again.",
+  "qrLogin_errorPairingStart": "Could not start pairing: {error}",
+  "@qrLogin_errorPairingStart": {
+    "placeholders": { "error": { "type": "String" } }
+  },
+  "qrLogin_pairingStartFailed": "Could not start pairing",
+  "qrLogin_displayKeepForeground": "Keep this screen open until the phone completes sign-in. Confirm the request when prompted.",
 
   "account_joinTitle": "Join existing account",
   "account_joinHint": "On your primary device, open Add device and show the P2P pairing code. Scan it here; the primary will confirm and send account keys over the encrypted channel.",

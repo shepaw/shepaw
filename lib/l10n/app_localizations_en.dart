@@ -4310,6 +4310,56 @@ class AppLocalizationsEn extends AppLocalizations {
       'Lightweight client; syncs incrementally with the primary device';
 
   @override
+  String get qrLogin_connectingAccount => 'Connecting account…';
+
+  @override
+  String get qrLogin_syncing => 'Syncing data from primary device…';
+
+  @override
+  String get qrLogin_reconnected => 'Reconnected. Syncing latest data…';
+
+  @override
+  String qrLogin_syncFailed(String error) {
+    return 'Signed in, but initial sync failed: $error. Data will retry when connected.';
+  }
+
+  @override
+  String get qrLogin_errorNotPrimary =>
+      'Only the primary storage device can show a sign-in QR code. Switch to the primary device or change this device\'s role in account settings.';
+
+  @override
+  String get qrLogin_errorPrimaryRequired =>
+      'The scanned device is not the primary storage device. Use the QR code from your primary device.';
+
+  @override
+  String get qrLogin_errorJoinTimeout =>
+      'Timed out waiting for approval. Keep both devices on the same network and try again.';
+
+  @override
+  String get qrLogin_errorJoinRejected =>
+      'Sign-in request was rejected or cancelled on the primary device.';
+
+  @override
+  String get qrLogin_errorPairingUnavailable =>
+      'Cannot start pairing: enable Channel tunnel or ensure both devices are on the same local network.';
+
+  @override
+  String get qrLogin_errorPeerConnection =>
+      'Could not connect to the primary device. Check network or Channel settings and try again.';
+
+  @override
+  String qrLogin_errorPairingStart(String error) {
+    return 'Could not start pairing: $error';
+  }
+
+  @override
+  String get qrLogin_pairingStartFailed => 'Could not start pairing';
+
+  @override
+  String get qrLogin_displayKeepForeground =>
+      'Keep this screen open until the phone completes sign-in. Confirm the request when prompted.';
+
+  @override
   String get account_joinTitle => 'Join existing account';
 
   @override

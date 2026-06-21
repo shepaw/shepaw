@@ -13,12 +13,15 @@ import '../../services/biometric_service.dart';
 import '../../services/logger_service.dart';
 import '../../services/noise_identity.dart';
 import '../models/account_join_request.dart';
+import '../crypto/ed25519_identity.dart';
+import '../models/account_join_result.dart';
 import '../models/device_role.dart';
 import '../models/identity_export_bundle.dart';
 import 'account_identity_service.dart';
 import 'account_session_service.dart';
 import 'device_trust_service.dart';
 import 'identity_export_service.dart';
+import 'local_account_registry.dart';
 import 'sync_client_service.dart';
 import 'user_identity_service.dart';
 
@@ -57,10 +60,14 @@ class AccountJoinService {
   }
 
   /// 新设备：配对完成后请求加入 Primary 账号。
-  Future<void> joinViaPeer({
+  ///
+  /// 若本机已有相同账号，跳过密钥导入，仅登记 Primary 并同步。
+  Future<AccountJoinResult> joinViaPeer({
     required PairedPeer peer,
     DeviceRole preferredRole = DeviceRole.app,
+    void Function(AccountJoinProgress progress)? onProgress,
   }) async {
+    onProgress?.call(AccountJoinProgress.waitingApproval);
     await _waitUntilConnected(peer.id);
 
     final pairing = PeerPairingService.instance;
@@ -97,6 +104,8 @@ class AccountJoinService {
       throw StateError(resp['error']?.toString() ?? 'Join rejected');
     }
 
+    onProgress?.call(AccountJoinProgress.connectingAccount);
+
     final bundle = IdentityExportBundle(
       userRecord: resp['user_record'] as String,
       petRecord: resp['pet_record'] as String,
@@ -104,24 +113,51 @@ class AccountJoinService {
       signatureBase64: resp['sig'] as String,
     );
 
-    await IdentityExportService.instance.importBundle(
-      bundle,
-      preferredRole: preferredRole,
-    );
+    if (!await IdentityExportService.instance.verifyBundle(bundle)) {
+      throw StateError('Invalid identity export bundle');
+    }
+
+    final remoteUser = Ed25519Identity.parseRecord(bundle.userRecord);
+    final accountId = remoteUser.fingerprintHex;
+    final alreadyLocal = await UserIdentityService.instance.existsForAccount(accountId);
+
+    if (alreadyLocal) {
+      await LocalAccountRegistry.instance.setActiveAccountId(accountId);
+      AccountIdentityService.instance.resetInMemory();
+      AccountSessionService.instance.resetSyncState();
+      await AccountSessionService.instance.switchToAccount(accountId);
+      await AccountIdentityService.instance.ensureInitialized();
+      _log.info('Reconnected to existing account $accountId', tag: _tag);
+    } else {
+      await IdentityExportService.instance.importBundle(
+        bundle,
+        preferredRole: preferredRole,
+      );
+    }
 
     await DeviceTrustService.instance.registerPrimaryFromPeer(peer);
-    AccountSessionService.instance.resetSyncState();
     await AccountSessionService.instance.activate();
 
     unawaited(_sendTrustAcceptToPeer(peer.id));
 
+    onProgress?.call(AccountJoinProgress.syncing);
     try {
       await SyncClientService.instance.syncWithPeer(peer.id);
+      _log.info(
+        alreadyLocal
+            ? 'Re-synced account via P2P from ${peer.deviceName}'
+            : 'Joined account via P2P from ${peer.deviceName}',
+        tag: _tag,
+      );
+      return AccountJoinResult(reconnected: alreadyLocal, syncSucceeded: true);
     } catch (e) {
       _log.warning('Initial sync after join failed: $e', tag: _tag);
+      return AccountJoinResult(
+        reconnected: alreadyLocal,
+        syncSucceeded: false,
+        syncError: e.toString(),
+      );
     }
-
-    _log.info('Joined account via P2P from ${peer.deviceName}', tag: _tag);
   }
 
   Future<void> _sendTrustAcceptToPeer(String peerId) async {

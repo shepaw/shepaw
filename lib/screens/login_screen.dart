@@ -4,10 +4,10 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 
 import '../identity/models/local_account_entry.dart';
-import '../identity/services/account_identity_service.dart';
-import '../identity/services/account_join_service.dart';
+import '../identity/services/account_join_errors.dart';
 import '../identity/services/account_session_service.dart';
 import '../identity/services/local_account_registry.dart';
+import '../identity/services/qr_login_preflight.dart';
 import '../l10n/app_localizations.dart';
 import '../services/password_service.dart';
 import '../services/biometric_service.dart';
@@ -191,8 +191,12 @@ class _LoginScreenState extends State<LoginScreen> {
       if (_selectedAccountId != null) {
         await AccountSessionService.instance.switchToAccount(_selectedAccountId!);
       }
-      await AccountIdentityService.instance.ensureInitialized();
-      AccountJoinService.instance.start();
+      final preflightError = await QrLoginPreflight.validateCanDisplayQr();
+      if (preflightError != null) {
+        setState(() => _errorMessage = mapQrDisplayPreflightError(preflightError, l10n));
+        return;
+      }
+      await QrLoginPreflight.prepareDisplaySession();
       if (!mounted) return;
       await Navigator.push(
         context,

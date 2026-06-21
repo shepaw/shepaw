@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 
+import '../../identity/services/account_join_errors.dart';
 import '../../l10n/app_localizations.dart';
 import '../../services/channel_tunnel_service.dart';
 import '../models/paired_peer.dart';
@@ -219,6 +220,8 @@ class _PeerQrDisplayScreenState extends State<PeerQrDisplayScreen> {
     }
 
     if (_error != null) {
+      final l10n = AppLocalizations.of(context);
+      final message = mapPairingStartError(_error!, l10n);
       return Center(
         child: Padding(
           padding: const EdgeInsets.all(32),
@@ -228,12 +231,12 @@ class _PeerQrDisplayScreenState extends State<PeerQrDisplayScreen> {
               Icon(Icons.error_outline, size: 48, color: colorScheme.error),
               const SizedBox(height: 16),
               Text(
-                '无法启动配对',
+                l10n.qrLogin_pairingStartFailed,
                 style: Theme.of(context).textTheme.titleMedium,
               ),
               const SizedBox(height: 8),
               Text(
-                _error!,
+                message,
                 textAlign: TextAlign.center,
                 style: TextStyle(color: colorScheme.onSurfaceVariant),
               ),
@@ -241,7 +244,7 @@ class _PeerQrDisplayScreenState extends State<PeerQrDisplayScreen> {
               FilledButton.icon(
                 onPressed: _startPairing,
                 icon: const Icon(Icons.refresh),
-                label: const Text('重试'),
+                label: Text(l10n.common_retry),
               ),
             ],
           ),

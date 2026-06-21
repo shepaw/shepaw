@@ -735,6 +735,23 @@ class LocalDatabaseService {
 
   // ==================== 数据重置 ====================
 
+  /// 关闭并删除指定账号的主库（重置密码时调用，不影响其他账号）。
+  static Future<void> clearAccountDatabase(String accountId) async {
+    if (kIsWeb) return;
+    if (accountId.isEmpty) return;
+
+    final service = LocalDatabaseService();
+    if (service.scopedAccountId == accountId) {
+      await service.close();
+    }
+
+    final directory = await getApplicationDocumentsDirectory();
+    final file = File(join(directory.path, 'accounts', accountId, 'shepaw.db'));
+    if (await file.exists()) {
+      await file.delete();
+    }
+  }
+
   /// 关闭并删除所有 DB 文件（重置密码时调用）
   ///
   /// 调用此方法后，所有数据库单例的 `_database` 将被置 null，

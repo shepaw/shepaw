@@ -4,6 +4,7 @@ import 'package:encrypt/encrypt.dart' as encrypt;
 import 'local_database_service.dart';
 import 'logger_service.dart';
 import 'vault_service.dart';
+import '../identity/services/local_account_registry.dart';
 
 /// 密码强度校验结果。
 enum PasswordValidationIssue {
@@ -135,9 +136,15 @@ class PasswordService {
       // vault 创建失败不阻塞重置流程，继续执行
     }
 
-    // Step 2: 删除所有 DB 文件
+    // Step 2: 删除当前账号 DB（多账号场景不影响其他账号）
     try {
-      await LocalDatabaseService.clearAllDatabases();
+      final accountId = LocalDatabaseService().scopedAccountId ??
+          await LocalAccountRegistry.instance.getActiveAccountId();
+      if (accountId != null && accountId.isNotEmpty) {
+        await LocalDatabaseService.clearAccountDatabase(accountId);
+      } else {
+        await LocalDatabaseService.clearAllDatabases();
+      }
     } catch (e) {
       LoggerService().error('Failed to clear databases during reset', tag: 'Password', error: e);
     }
