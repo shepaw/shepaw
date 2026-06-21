@@ -23,10 +23,14 @@ class PeerPairingScreen extends StatefulWidget {
   /// 初始 Tab 索引：0=我的二维码，1=扫一扫，2=输入。
   final int initialTabIndex;
 
+  /// 仅展示 QR 码（扫码登录主存储设备侧），隐藏其他 Tab。
+  final bool displayQrOnly;
+
   const PeerPairingScreen({
     super.key,
     this.onPaired,
     this.initialTabIndex = 0,
+    this.displayQrOnly = false,
   });
 
   static const int scanTabIndex = 1;
@@ -49,26 +53,32 @@ class PeerPairingScreen extends StatefulWidget {
 
 class _PeerPairingScreenState extends State<PeerPairingScreen>
     with SingleTickerProviderStateMixin {
-  late TabController _tabController;
+  TabController? _tabController;
 
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(
-      length: 3,
-      vsync: this,
-      initialIndex: widget.initialTabIndex.clamp(0, 2),
-    );
+    if (!widget.displayQrOnly) {
+      _tabController = TabController(
+        length: 3,
+        vsync: this,
+        initialIndex: widget.initialTabIndex.clamp(0, 2),
+      );
+    }
   }
 
   @override
   void dispose() {
-    _tabController.dispose();
+    _tabController?.dispose();
     PeerPairingService.instance.cancelPairing();
     super.dispose();
   }
 
   void _handlePaired(PairedPeer peer) {
+    if (widget.displayQrOnly) {
+      // 扫码登录：保持 QR 页，等待账号加入确认流程继续。
+      return;
+    }
     final onPaired = widget.onPaired;
     if (onPaired != null) {
       onPaired(peer);
@@ -80,11 +90,36 @@ class _PeerPairingScreenState extends State<PeerPairingScreen>
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
+
+    if (widget.displayQrOnly) {
+      return Scaffold(
+        appBar: AppBar(title: Text(l10n.qrLogin_displayTitle)),
+        body: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+              child: Text(
+                l10n.qrLogin_displayHint,
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                ),
+                textAlign: TextAlign.center,
+              ),
+            ),
+            Expanded(
+              child: PeerQrDisplayScreen(onPaired: _handlePaired),
+            ),
+          ],
+        ),
+      );
+    }
+
     return Scaffold(
       appBar: AppBar(
         title: Text(l10n.peerPairing_title),
         bottom: TabBar(
-          controller: _tabController,
+          controller: _tabController!,
           tabs: [
             Tab(icon: const Icon(Icons.qr_code_2), text: l10n.peerPairing_tabMyQr),
             Tab(icon: const Icon(Icons.qr_code_scanner), text: l10n.peerPairing_tabScan),
@@ -93,7 +128,7 @@ class _PeerPairingScreenState extends State<PeerPairingScreen>
         ),
       ),
       body: TabBarView(
-        controller: _tabController,
+        controller: _tabController!,
         children: [
           PeerQrDisplayScreen(onPaired: _handlePaired),
           PeerQrScannerScreen(onPaired: _handlePaired),

@@ -97,7 +97,7 @@
   "home_addAgent": "Add Agent",
   "home_createGroup": "Create Group",
   "home_addDevice": "Device Pairing",
-  "home_scanConnect": "Scan to Connect",
+  "home_scanConnect": "Scan to sign in",
   "home_searchEmptyHint": "Search agents, groups, messages, and peer chats",
   "home_searchNoResults": "No results found",
   "home_searchSectionAgents": "Agents",
@@ -1805,8 +1805,13 @@
   "qrLogin_joinSuccess": "Signed in. Syncing data from primary device…",
   "qrLogin_displayTitle": "QR sign-in",
   "qrLogin_displayHeadline": "Let another device scan to sign in",
-  "qrLogin_displayHint": "Open ShePaw on your phone, tap \"Scan QR to sign in\", and scan this code. You will be asked to confirm on this device.",
+  "qrLogin_displayHint": "On your phone, open ShePaw → tap + on the home screen → \"Scan to sign in\", then scan the QR code below. Confirm the request on this device when prompted.",
   "qrLogin_displayButton": "Show QR for mobile sign-in",
+  "qrLogin_displayNoPasswordHint": "No password needed — confirm on this device when the phone scans",
+  "qrLogin_displayFailed": "Could not show QR code: {error}",
+  "@qrLogin_displayFailed": {
+    "placeholders": { "error": { "type": "String" } }
+  },
   "qrLogin_stepScan": "Mobile scans this QR code to pair",
   "qrLogin_stepApprove": "Confirm the sign-in request on this device",
   "qrLogin_stepSync": "Devices stay linked; data syncs automatically when connected",

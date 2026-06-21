@@ -38,6 +38,7 @@ import '../peer/models/peer_message.dart';
 import '../peer/screens/peer_chat_screen.dart';
 import '../peer/widgets/peer_device_icon.dart';
 import '../peer/screens/peer_pairing_screen.dart';
+import 'qr_login_flow.dart';
 import '../peer/services/peer_connection.dart';
 import '../peer/services/peer_connection_manager.dart';
 import '../peer/services/peer_pairing_service.dart';
@@ -1628,10 +1629,7 @@ class HomeScreenState extends State<HomeScreen> {
           if (mounted) _loadAgents(silent: true);
         }
       case 'scan':
-        await PeerPairingScreen.show(
-          context,
-          initialTabIndex: PeerPairingScreen.scanTabIndex,
-        );
+        await QrLoginFlow.scanAndJoin(context, fromHome: true);
         if (mounted) _loadAgents(silent: true);
     }
   }

@@ -326,7 +326,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get home_addDevice => 'Device Pairing';
 
   @override
-  String get home_scanConnect => 'Scan to Connect';
+  String get home_scanConnect => 'Scan to sign in';
 
   @override
   String get home_searchEmptyHint =>
@@ -4268,10 +4268,19 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get qrLogin_displayHint =>
-      'Open ShePaw on your phone, tap \"Scan QR to sign in\", and scan this code. You will be asked to confirm on this device.';
+      'On your phone, open ShePaw → tap + on the home screen → \"Scan to sign in\", then scan the QR code below. Confirm the request on this device when prompted.';
 
   @override
   String get qrLogin_displayButton => 'Show QR for mobile sign-in';
+
+  @override
+  String get qrLogin_displayNoPasswordHint =>
+      'No password needed — confirm on this device when the phone scans';
+
+  @override
+  String qrLogin_displayFailed(String error) {
+    return 'Could not show QR code: $error';
+  }
 
   @override
   String get qrLogin_stepScan => 'Mobile scans this QR code to pair';

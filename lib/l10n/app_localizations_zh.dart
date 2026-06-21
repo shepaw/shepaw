@@ -313,7 +313,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get home_addDevice => '设备配对';
 
   @override
-  String get home_scanConnect => '扫码连接';
+  String get home_scanConnect => '扫码登录';
 
   @override
   String get home_searchEmptyHint => '搜索 Agent、群组、消息和设备聊天';
@@ -4102,10 +4102,19 @@ class AppLocalizationsZh extends AppLocalizations {
   String get qrLogin_displayHeadline => '让其他设备扫码登录';
 
   @override
-  String get qrLogin_displayHint => '在手机上打开惜宝，点击「扫码登录」并扫描下方二维码。本设备会弹出确认请求。';
+  String get qrLogin_displayHint =>
+      '在手机上打开惜宝 → 会话主页右上角 ➕ →「扫码登录」，扫描下方二维码。本设备会弹出确认请求。';
 
   @override
   String get qrLogin_displayButton => '展示手机扫码登录二维码';
+
+  @override
+  String get qrLogin_displayNoPasswordHint => '无需输入密码，手机扫码后在本设备确认即可';
+
+  @override
+  String qrLogin_displayFailed(String error) {
+    return '无法展示二维码：$error';
+  }
 
   @override
   String get qrLogin_stepScan => '手机扫描此二维码完成配对';

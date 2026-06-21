@@ -4,13 +4,14 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 
 import '../identity/models/local_account_entry.dart';
+import '../identity/services/account_identity_service.dart';
+import '../identity/services/account_join_service.dart';
 import '../identity/services/account_session_service.dart';
 import '../identity/services/local_account_registry.dart';
 import '../l10n/app_localizations.dart';
 import '../services/password_service.dart';
 import '../services/biometric_service.dart';
 import '../theme/app_theme.dart';
-import 'join_account_peer_screen.dart';
 import 'qr_login_display_screen.dart';
 
 /// 登录时选择本机已保存的账号。
@@ -181,46 +182,24 @@ class _LoginScreenState extends State<LoginScreen> {
     }
   }
 
-  Future<void> _openQrLoginScan() async {
-    if (!mounted) return;
-    await Navigator.push(
-      context,
-      MaterialPageRoute(builder: (_) => const JoinAccountPeerScreen(qrLoginMode: true)),
-    );
-    await _loadAccounts();
-  }
-
   Future<void> _showQrLoginForMobile() async {
     final l10n = AppLocalizations.of(context);
     setState(() => _errorMessage = '');
 
-    final password = _passwordController.text;
-    if (password.isEmpty) {
-      setState(() => _errorMessage = l10n.login_emptyPassword);
-      return;
-    }
-
     setState(() => _isLoading = true);
     try {
-      final success = await _passwordService.verifyPassword(password);
-      if (!success) {
-        setState(() {
-          _failedAttempts++;
-          _errorMessage = l10n.login_wrongPassword(_failedAttempts);
-        });
-        return;
-      }
       if (_selectedAccountId != null) {
         await AccountSessionService.instance.switchToAccount(_selectedAccountId!);
       }
-      await AccountSessionService.instance.activate();
+      await AccountIdentityService.instance.ensureInitialized();
+      AccountJoinService.instance.start();
       if (!mounted) return;
       await Navigator.push(
         context,
         MaterialPageRoute(builder: (_) => const QrLoginDisplayScreen()),
       );
     } catch (e) {
-      setState(() => _errorMessage = l10n.login_failed('$e'));
+      setState(() => _errorMessage = l10n.qrLogin_displayFailed('$e'));
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
@@ -393,19 +372,9 @@ class _LoginScreenState extends State<LoginScreen> {
               ),
               const SizedBox(height: 12),
 
-              if (_isMobile)
+              if (!_isMobile)
                 OutlinedButton.icon(
-                  onPressed: _isLoading ? null : _openQrLoginScan,
-                  icon: const Icon(Icons.qr_code_scanner),
-                  label: Text(l10n.qrLogin_scanButton),
-                  style: OutlinedButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(vertical: 14),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                  ),
-                )
-              else
-                OutlinedButton.icon(
-                  onPressed: (_isLoading || _failedAttempts >= 3) ? null : _showQrLoginForMobile,
+                  onPressed: _isLoading ? null : _showQrLoginForMobile,
                   icon: const Icon(Icons.qr_code_2),
                   label: Text(l10n.qrLogin_displayButton),
                   style: OutlinedButton.styleFrom(
@@ -413,7 +382,17 @@ class _LoginScreenState extends State<LoginScreen> {
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                   ),
                 ),
-              const SizedBox(height: 16),
+              if (!_isMobile) ...[
+                const SizedBox(height: 8),
+                Text(
+                  l10n.qrLogin_displayNoPasswordHint,
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: Colors.grey[600],
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+              ],
+              if (!_isMobile) const SizedBox(height: 16),
 
               if (_biometricAvailable)
                 Column(

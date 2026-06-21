@@ -139,7 +139,7 @@
   "home_addAgent": "添加 Agent",
   "home_createGroup": "创建群组",
   "home_addDevice": "设备配对",
-  "home_scanConnect": "扫码连接",
+  "home_scanConnect": "扫码登录",
   "home_searchEmptyHint": "搜索 Agent、群组、消息和设备聊天",
   "home_searchNoResults": "未找到相关结果",
   "home_searchSectionAgents": "Agent",
@@ -2290,8 +2290,13 @@
   "qrLogin_joinSuccess": "登录成功，正在从主存储设备同步数据…",
   "qrLogin_displayTitle": "扫码登录",
   "qrLogin_displayHeadline": "让其他设备扫码登录",
-  "qrLogin_displayHint": "在手机上打开惜宝，点击「扫码登录」并扫描下方二维码。本设备会弹出确认请求。",
+  "qrLogin_displayHint": "在手机上打开惜宝 → 会话主页右上角 ➕ →「扫码登录」，扫描下方二维码。本设备会弹出确认请求。",
   "qrLogin_displayButton": "展示手机扫码登录二维码",
+  "qrLogin_displayNoPasswordHint": "无需输入密码，手机扫码后在本设备确认即可",
+  "qrLogin_displayFailed": "无法展示二维码：{error}",
+  "@qrLogin_displayFailed": {
+    "placeholders": { "error": { "type": "String" } }
+  },
   "qrLogin_stepScan": "手机扫描此二维码完成配对",
   "qrLogin_stepApprove": "在本设备确认登录请求",
   "qrLogin_stepSync": "设备保持关联，连接后自动同步数据",

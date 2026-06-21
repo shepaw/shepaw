@@ -1,5 +1,3 @@
-import 'dart:async';
-
 import 'package:flutter/material.dart';
 
 import '../identity/models/device_role.dart';
@@ -7,10 +5,9 @@ import '../identity/services/account_join_service.dart';
 import '../l10n/app_localizations.dart';
 import '../peer/models/paired_peer.dart';
 import '../peer/screens/peer_manual_input_screen.dart';
-import '../peer/screens/peer_qr_scanner_screen.dart';
-import '../services/password_service.dart';
+import 'qr_login_flow.dart';
 
-/// 移动端扫描主存储设备二维码，加入同一账号并建立多设备关联。
+/// 扫描主存储设备二维码，加入同一账号并建立多设备关联。
 class JoinAccountPeerScreen extends StatefulWidget {
   /// 从登录页进入的扫码登录模式（默认应用设备角色，简化 UI）。
   final bool qrLoginMode;
@@ -23,7 +20,6 @@ class JoinAccountPeerScreen extends StatefulWidget {
 
 class _JoinAccountPeerScreenState extends State<JoinAccountPeerScreen> {
   bool _busy = false;
-  String? _status;
   DeviceRole _joinRole = DeviceRole.app;
 
   @override
@@ -35,58 +31,21 @@ class _JoinAccountPeerScreenState extends State<JoinAccountPeerScreen> {
     AccountJoinService.instance.start();
   }
 
-  Future<void> _navigateAfterJoin() async {
-    if (!mounted) return;
-    final isPasswordSet = await PasswordService().isPasswordSet();
-    if (!mounted) return;
-    if (isPasswordSet) {
-      Navigator.of(context).pushNamedAndRemoveUntil('/home', (_) => false);
-    } else {
-      Navigator.of(context).pushNamedAndRemoveUntil('/setup', (_) => false);
-    }
-  }
-
   Future<void> _afterPaired(PairedPeer peer) async {
-    final l10n = AppLocalizations.of(context);
-    setState(() {
-      _busy = true;
-      _status = l10n.account_joinWaitingApproval;
-    });
-
-    try {
-      await AccountJoinService.instance.joinViaPeer(
-        peer: peer,
-        preferredRole: _joinRole,
-      );
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(l10n.qrLogin_joinSuccess)),
-      );
-      await _navigateAfterJoin();
-    } catch (e) {
-      if (!mounted) return;
-      setState(() {
-        _busy = false;
-        _status = null;
-      });
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(l10n.account_joinFailed(e.toString()))),
-      );
-    }
+    setState(() => _busy = true);
+    await QrLoginFlow.joinWithPeer(
+      context,
+      peer: peer,
+      preferredRole: _joinRole,
+    );
+    if (mounted) setState(() => _busy = false);
   }
 
   Future<void> _scanQr() async {
     if (_busy) return;
-    await Navigator.push(
+    await QrLoginFlow.scanAndJoin(
       context,
-      MaterialPageRoute(
-        builder: (_) => PeerQrScannerScreen(
-          onPaired: (peer) {
-            Navigator.pop(context);
-            unawaited(_afterPaired(peer));
-          },
-        ),
-      ),
+      preferredRole: _joinRole,
     );
   }
 
@@ -98,7 +57,7 @@ class _JoinAccountPeerScreenState extends State<JoinAccountPeerScreen> {
         builder: (_) => PeerManualInputScreen(
           onPaired: (peer) {
             Navigator.pop(context);
-            unawaited(_afterPaired(peer));
+            _afterPaired(peer);
           },
         ),
       ),
@@ -159,28 +118,22 @@ class _JoinAccountPeerScreenState extends State<JoinAccountPeerScreen> {
               ),
               const SizedBox(height: 16),
             ],
-            if (_status != null) ...[
-              Center(
+            if (_busy)
+              const Center(
                 child: Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 16),
-                  child: Column(
-                    children: [
-                      const CircularProgressIndicator(),
-                      const SizedBox(height: 12),
-                      Text(_status!, textAlign: TextAlign.center),
-                    ],
-                  ),
+                  padding: EdgeInsets.symmetric(vertical: 24),
+                  child: CircularProgressIndicator(),
                 ),
-              ),
-            ] else ...[
+              )
+            else ...[
               FilledButton.icon(
-                onPressed: _busy ? null : _scanQr,
+                onPressed: _scanQr,
                 icon: const Icon(Icons.qr_code_scanner),
                 label: Text(isQrLogin ? l10n.qrLogin_scanButton : l10n.account_joinScanPeer),
               ),
               const SizedBox(height: 12),
               OutlinedButton.icon(
-                onPressed: _busy ? null : _manualInput,
+                onPressed: _manualInput,
                 icon: const Icon(Icons.keyboard),
                 label: Text(l10n.account_joinManualPeer),
               ),

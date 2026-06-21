@@ -15,6 +15,7 @@ import '../services/password_service.dart';
 import 'join_account_peer_screen.dart';
 import 'import_account_screen.dart';
 import 'privacy_policy_screen.dart';
+import 'qr_login_flow.dart';
 
 /// 设备登录账号：选择已有账号 / 创建新账号 / 加入已有账号。
 ///
@@ -140,10 +141,7 @@ class _AccountGateScreenState extends State<AccountGateScreen> {
   }
 
   Future<void> _scanQrLogin() async {
-    await Navigator.push(
-      context,
-      MaterialPageRoute(builder: (_) => const JoinAccountPeerScreen(qrLoginMode: true)),
-    );
+    await QrLoginFlow.scanAndJoin(context);
     if (!mounted) return;
     await _refresh();
   }

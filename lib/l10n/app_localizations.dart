@@ -683,7 +683,7 @@ abstract class AppLocalizations {
   /// No description provided for @home_scanConnect.
   ///
   /// In zh, this message translates to:
-  /// **'扫码连接'**
+  /// **'扫码登录'**
   String get home_scanConnect;
 
   /// No description provided for @home_searchEmptyHint.
@@ -7619,7 +7619,7 @@ abstract class AppLocalizations {
   /// No description provided for @qrLogin_displayHint.
   ///
   /// In zh, this message translates to:
-  /// **'在手机上打开惜宝，点击「扫码登录」并扫描下方二维码。本设备会弹出确认请求。'**
+  /// **'在手机上打开惜宝 → 会话主页右上角 ➕ →「扫码登录」，扫描下方二维码。本设备会弹出确认请求。'**
   String get qrLogin_displayHint;
 
   /// No description provided for @qrLogin_displayButton.
@@ -7627,6 +7627,18 @@ abstract class AppLocalizations {
   /// In zh, this message translates to:
   /// **'展示手机扫码登录二维码'**
   String get qrLogin_displayButton;
+
+  /// No description provided for @qrLogin_displayNoPasswordHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'无需输入密码，手机扫码后在本设备确认即可'**
+  String get qrLogin_displayNoPasswordHint;
+
+  /// No description provided for @qrLogin_displayFailed.
+  ///
+  /// In zh, this message translates to:
+  /// **'无法展示二维码：{error}'**
+  String qrLogin_displayFailed(String error);
 
   /// No description provided for @qrLogin_stepScan.
   ///
