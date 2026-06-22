@@ -194,7 +194,7 @@ class BlobSyncService {
     }
   }
 
-  /// Primary：接收 blob 分块写入（严格顺序校验）。
+  /// Primary：接收 blob 分块写入（严格顺序校验；partial 状态持久化以 survive 重启）。
   Future<bool> receiveBlobPush({
     required String blobKey,
     required int offset,
@@ -203,17 +203,19 @@ class BlobSyncService {
     required Uint8List chunk,
     required bool done,
   }) async {
-    final partial = _partialUploads[blobKey];
+    var partial = _partialUploads[blobKey] ?? await _loadPartialState(blobKey);
     if (offset == 0) {
-      _partialUploads[blobKey] = _PartialBlobUpload(
+      partial = _PartialBlobUpload(
         totalSize: totalSize,
         sha256Expected: sha256Expected,
         receivedBytes: 0,
       );
+      _partialUploads[blobKey] = partial;
+      await _persistPartialState(blobKey, partial);
     } else {
       if (partial == null || partial.receivedBytes != offset) {
         _log.warning('Blob push out-of-order for $blobKey at offset $offset', tag: _tag);
-        _partialUploads.remove(blobKey);
+        await _clearPartialState(blobKey);
         return false;
       }
     }
@@ -233,11 +235,12 @@ class BlobSyncService {
     final state = _partialUploads[blobKey];
     if (state != null) {
       state.receivedBytes = offset + chunk.length;
+      await _persistPartialState(blobKey, state);
     }
 
     if (!done) return true;
 
-    _partialUploads.remove(blobKey);
+    await _clearPartialState(blobKey);
     if (sha256Expected.isEmpty) return true;
     final hash = await sha256OfFile(file);
     if (hash != sha256Expected) {
@@ -245,6 +248,40 @@ class BlobSyncService {
       return false;
     }
     return true;
+  }
+
+  Future<void> _persistPartialState(String blobKey, _PartialBlobUpload state) async {
+    await _db.setIdentitySyncState(
+      'blob_partial:$blobKey',
+      jsonEncode({
+        'total_size': state.totalSize,
+        'sha256': state.sha256Expected,
+        'received_bytes': state.receivedBytes,
+      }),
+    );
+  }
+
+  Future<_PartialBlobUpload?> _loadPartialState(String blobKey) async {
+    final raw = await _db.getIdentitySyncState('blob_partial:$blobKey');
+    if (raw == null || raw.isEmpty) return null;
+    try {
+      final map = jsonDecode(raw) as Map<String, dynamic>;
+      final state = _PartialBlobUpload(
+        totalSize: map['total_size'] as int? ?? 0,
+        sha256Expected: map['sha256'] as String? ?? '',
+        receivedBytes: map['received_bytes'] as int? ?? 0,
+      );
+      _partialUploads[blobKey] = state;
+      return state;
+    } catch (e) {
+      _log.warning('Failed to load blob partial state for $blobKey: $e', tag: _tag);
+      return null;
+    }
+  }
+
+  Future<void> _clearPartialState(String blobKey) async {
+    _partialUploads.remove(blobKey);
+    await _db.setIdentitySyncState('blob_partial:$blobKey', '');
   }
 
   Future<void> _registerCache(String relativePath, String sha256hex, int size) async {

@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 
 import '../../services/local_database_service.dart';
+import '../../services/logger_service.dart';
 import '../models/device_role.dart';
 import '../models/sync_event.dart';
 import 'account_identity_service.dart';
@@ -11,6 +12,9 @@ import 'sync_fanout_service.dart';
 /// 本地 DB 写入后触发同步（App → outbound 队列，Primary → fan-out push）。
 class SyncLocalWriteHook {
   SyncLocalWriteHook._();
+
+  static const _tag = 'SyncLocalWriteHook';
+  static final _log = LoggerService();
 
   static const _readDebounceDuration = Duration(seconds: 3);
   static const _heartbeatDebounceDuration = Duration(seconds: 60);
@@ -194,7 +198,9 @@ class SyncLocalWriteHook {
       final origin = local?.deviceId ?? 'local';
       final event = SyncEvent.channelEvent(channelRow: channelRow, originDeviceId: origin);
       await _dispatchEvent(event);
-    } catch (_) {}
+    } catch (e) {
+      _log.warning('onChannelUpserted sync hook failed: $e', tag: _tag, error: e);
+    }
   }
 
   static Future<void> _dispatchMessageRow(Map<String, dynamic> row) async {
@@ -215,7 +221,9 @@ class SyncLocalWriteHook {
         await SyncEngine.instance.recordEntitySyncState(event);
         await SyncFanoutService.fanout(event);
       }
-    } catch (_) {}
+    } catch (e) {
+      _log.warning('_dispatchMessageRow sync hook failed: $e', tag: _tag, error: e);
+    }
   }
 
   static Future<void> onChannelMemberUpserted(Map<String, dynamic> memberRow) async {
@@ -224,7 +232,9 @@ class SyncLocalWriteHook {
       final origin = local?.deviceId ?? 'local';
       final event = SyncEvent.channelMemberEvent(memberRow: memberRow, originDeviceId: origin);
       await _dispatchEvent(event);
-    } catch (_) {}
+    } catch (e) {
+      _log.warning('onChannelMemberUpserted sync hook failed: $e', tag: _tag, error: e);
+    }
   }
 
   static Future<void> onChannelMemberRemoved({
@@ -369,7 +379,9 @@ class SyncLocalWriteHook {
         await SyncEngine.instance.recordEntitySyncState(event);
         await SyncFanoutService.fanout(event);
       }
-    } catch (_) {}
+    } catch (e) {
+      _log.warning('_dispatchEvent sync hook failed: $e', tag: _tag, error: e);
+    }
   }
 
   static String? attachmentPathFromEventJson(Map<String, dynamic> eventJson) {

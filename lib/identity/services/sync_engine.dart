@@ -105,16 +105,21 @@ class SyncEngine {
   }) async {
     final since = SyncDomainCursor(wallTimeMs: sinceMs, lastEventId: sinceEventId);
     final origin = originDeviceId ?? (await AccountIdentityService.instance.localDevice())?.deviceId ?? 'local';
-    return _queryDomainEvents(
+    return _queryDualStreamEvents(
       since: since,
       limit: limit,
-      fetchBatch: (ms, fetchLimit, offset) async {
+      fetchUpserts: (ms, fetchLimit, offset) async {
         final rows = await _db.getMessagesChangedSince(
           sinceMs: ms,
           channelId: channelId,
           limit: fetchLimit,
           offset: offset,
         );
+        return rows
+            .map((row) => SyncEvent.messageEvent(messageRow: row, originDeviceId: origin))
+            .toList();
+      },
+      fetchDeletes: (ms, fetchLimit, offset) async {
         var deletes = await _db.querySyncTombstonesSince(
           domain: 'message',
           sinceMs: ms,
@@ -124,10 +129,7 @@ class SyncEngine {
         if (channelId != null) {
           deletes = deletes.where((e) => e.payload['channel_id'] == channelId).toList();
         }
-        return [
-          ...rows.map((row) => SyncEvent.messageEvent(messageRow: row, originDeviceId: origin)),
-          ...deletes,
-        ];
+        return deletes;
       },
     );
   }
@@ -141,22 +143,21 @@ class SyncEngine {
   }) async {
     final since = SyncDomainCursor(wallTimeMs: sinceMs, lastEventId: sinceEventId);
     final origin = originDeviceId ?? (await AccountIdentityService.instance.localDevice())?.deviceId ?? 'local';
-    return _queryDomainEvents(
+    return _queryDualStreamEvents(
       since: since,
       limit: limit,
-      fetchBatch: (ms, fetchLimit, offset) async {
+      fetchUpserts: (ms, fetchLimit, offset) async {
         final rows = await _db.getChannelsUpdatedSince(ms, limit: fetchLimit, offset: offset);
-        final deletes = await _db.querySyncTombstonesSince(
-          domain: 'channel',
-          sinceMs: ms,
-          limit: fetchLimit,
-          offset: offset,
-        );
-        return [
-          ...rows.map((row) => SyncEvent.channelEvent(channelRow: row, originDeviceId: origin)),
-          ...deletes,
-        ];
+        return rows
+            .map((row) => SyncEvent.channelEvent(channelRow: row, originDeviceId: origin))
+            .toList();
       },
+      fetchDeletes: (ms, fetchLimit, offset) => _db.querySyncTombstonesSince(
+        domain: 'channel',
+        sinceMs: ms,
+        limit: fetchLimit,
+        offset: offset,
+      ),
     );
   }
 
@@ -168,22 +169,21 @@ class SyncEngine {
   }) async {
     final since = SyncDomainCursor(wallTimeMs: sinceMs, lastEventId: sinceEventId);
     final origin = originDeviceId ?? (await AccountIdentityService.instance.localDevice())?.deviceId ?? 'local';
-    return _queryDomainEvents(
+    return _queryDualStreamEvents(
       since: since,
       limit: limit,
-      fetchBatch: (ms, fetchLimit, offset) async {
+      fetchUpserts: (ms, fetchLimit, offset) async {
         final rows = await _db.getChannelMembersChangedSince(ms, limit: fetchLimit, offset: offset);
-        final deletes = await _db.querySyncTombstonesSince(
-          domain: 'channel_member',
-          sinceMs: ms,
-          limit: fetchLimit,
-          offset: offset,
-        );
-        return [
-          ...rows.map((row) => SyncEvent.channelMemberEvent(memberRow: row, originDeviceId: origin)),
-          ...deletes,
-        ];
+        return rows
+            .map((row) => SyncEvent.channelMemberEvent(memberRow: row, originDeviceId: origin))
+            .toList();
       },
+      fetchDeletes: (ms, fetchLimit, offset) => _db.querySyncTombstonesSince(
+        domain: 'channel_member',
+        sinceMs: ms,
+        limit: fetchLimit,
+        offset: offset,
+      ),
     );
   }
 
@@ -204,22 +204,21 @@ class SyncEngine {
   }) async {
     final since = SyncDomainCursor(wallTimeMs: sinceMs, lastEventId: sinceEventId);
     final origin = originDeviceId ?? (await AccountIdentityService.instance.localDevice())?.deviceId ?? 'local';
-    return _queryDomainEvents(
+    return _queryDualStreamEvents(
       since: since,
       limit: limit,
-      fetchBatch: (ms, fetchLimit, offset) async {
+      fetchUpserts: (ms, fetchLimit, offset) async {
         final rows = await _db.getAgentsChangedSince(sinceMs: ms, limit: fetchLimit, offset: offset);
-        final deletes = await _db.querySyncTombstonesSince(
-          domain: 'agent',
-          sinceMs: ms,
-          limit: fetchLimit,
-          offset: offset,
-        );
-        return [
-          ...rows.map((row) => SyncEvent.agentEvent(agentRow: row, originDeviceId: origin)),
-          ...deletes,
-        ];
+        return rows
+            .map((row) => SyncEvent.agentEvent(agentRow: row, originDeviceId: origin))
+            .toList();
       },
+      fetchDeletes: (ms, fetchLimit, offset) => _db.querySyncTombstonesSince(
+        domain: 'agent',
+        sinceMs: ms,
+        limit: fetchLimit,
+        offset: offset,
+      ),
     );
   }
 
@@ -231,22 +230,21 @@ class SyncEngine {
   }) async {
     final since = SyncDomainCursor(wallTimeMs: sinceMs, lastEventId: sinceEventId);
     final origin = originDeviceId ?? (await AccountIdentityService.instance.localDevice())?.deviceId ?? 'local';
-    return _queryDomainEvents(
+    return _queryDualStreamEvents(
       since: since,
       limit: limit,
-      fetchBatch: (ms, fetchLimit, offset) async {
+      fetchUpserts: (ms, fetchLimit, offset) async {
         final rows = await _sheMemoryDb.getChangedSince(sinceMs: ms, limit: fetchLimit, offset: offset);
-        final deletes = await _db.querySyncTombstonesSince(
-          domain: 'she_memory',
-          sinceMs: ms,
-          limit: fetchLimit,
-          offset: offset,
-        );
-        return [
-          ...rows.map((row) => SyncEvent.sheMemoryEvent(row: row, originDeviceId: origin)),
-          ...deletes,
-        ];
+        return rows
+            .map((row) => SyncEvent.sheMemoryEvent(row: row, originDeviceId: origin))
+            .toList();
       },
+      fetchDeletes: (ms, fetchLimit, offset) => _db.querySyncTombstonesSince(
+        domain: 'she_memory',
+        sinceMs: ms,
+        limit: fetchLimit,
+        offset: offset,
+      ),
     );
   }
 
@@ -258,32 +256,29 @@ class SyncEngine {
   }) async {
     final since = SyncDomainCursor(wallTimeMs: sinceMs, lastEventId: sinceEventId);
     final origin = originDeviceId ?? (await AccountIdentityService.instance.localDevice())?.deviceId ?? 'local';
-    return _queryDomainEvents(
+    return _queryDualStreamEvents(
       since: since,
       limit: limit,
-      fetchBatch: (ms, fetchLimit, offset) async {
+      fetchUpserts: (ms, fetchLimit, offset) async {
         final rows = await _mindsDb.getCognitionChangedSince(
           sinceMs: ms,
           limit: fetchLimit,
           offset: offset,
         );
-        final deletes = await _db.querySyncTombstonesSince(
-          domain: 'cognition',
-          sinceMs: ms,
-          limit: fetchLimit,
-          offset: offset,
-        );
-        return [
-          ...rows.map((row) {
-            final kind = row['kind'] as String? ?? 'self';
-            if (kind == 'user') {
-              return SyncEvent.cognitionUserEvent(row: row, originDeviceId: origin);
-            }
-            return SyncEvent.cognitionSelfEvent(row: row, originDeviceId: origin);
-          }),
-          ...deletes,
-        ];
+        return rows.map((row) {
+          final kind = row['kind'] as String? ?? 'self';
+          if (kind == 'user') {
+            return SyncEvent.cognitionUserEvent(row: row, originDeviceId: origin);
+          }
+          return SyncEvent.cognitionSelfEvent(row: row, originDeviceId: origin);
+        }).toList();
       },
+      fetchDeletes: (ms, fetchLimit, offset) => _db.querySyncTombstonesSince(
+        domain: 'cognition',
+        sinceMs: ms,
+        limit: fetchLimit,
+        offset: offset,
+      ),
     );
   }
 
@@ -303,26 +298,25 @@ class SyncEngine {
   }) async {
     final since = SyncDomainCursor(wallTimeMs: sinceMs, lastEventId: sinceEventId);
     final origin = originDeviceId ?? (await AccountIdentityService.instance.localDevice())?.deviceId ?? 'local';
-    return _queryDomainEvents(
+    return _queryDualStreamEvents(
       since: since,
       limit: limit,
-      fetchBatch: (ms, fetchLimit, offset) async {
+      fetchUpserts: (ms, fetchLimit, offset) async {
         final rows = await AgentMemoryDbService.queryAllChangedSince(
           sinceMs: ms,
           limit: fetchLimit,
           offset: offset,
         );
-        final deletes = await _db.querySyncTombstonesSince(
-          domain: 'agent_memory',
-          sinceMs: ms,
-          limit: fetchLimit,
-          offset: offset,
-        );
-        return [
-          ...rows.map((row) => SyncEvent.agentMemoryEvent(row: row, originDeviceId: origin)),
-          ...deletes,
-        ];
+        return rows
+            .map((row) => SyncEvent.agentMemoryEvent(row: row, originDeviceId: origin))
+            .toList();
       },
+      fetchDeletes: (ms, fetchLimit, offset) => _db.querySyncTombstonesSince(
+        domain: 'agent_memory',
+        sinceMs: ms,
+        limit: fetchLimit,
+        offset: offset,
+      ),
     );
   }
 
@@ -723,25 +717,34 @@ class SyncEngine {
     return count < policy.maxMessages;
   }
 
-  Future<List<SyncEvent>> _queryDomainEvents({
+  /// upsert 与 tombstone 各自维护 offset，避免双路分页漏事件。
+  Future<List<SyncEvent>> _queryDualStreamEvents({
     required SyncDomainCursor since,
     required int limit,
-    required Future<List<SyncEvent>> Function(int sinceMs, int fetchLimit, int offset) fetchBatch,
+    required Future<List<SyncEvent>> Function(int sinceMs, int batchSize, int offset) fetchUpserts,
+    required Future<List<SyncEvent>> Function(int sinceMs, int batchSize, int offset) fetchDeletes,
   }) async {
     final acc = <SyncEvent>[];
-    var offset = 0;
+    var upsertOffset = 0;
+    var deleteOffset = 0;
     const batch = 80;
+    const maxIterations = 60;
 
-    while (offset <= 4000) {
-      final batchEvents = await fetchBatch(since.wallTimeMs, batch, offset);
-      if (batchEvents.isEmpty) break;
+    for (var i = 0; i < maxIterations; i++) {
+      final upserts = await fetchUpserts(since.wallTimeMs, batch, upsertOffset);
+      final deletes = await fetchDeletes(since.wallTimeMs, batch, deleteOffset);
+      upsertOffset += upserts.length;
+      deleteOffset += deletes.length;
 
-      acc.addAll(batchEvents);
+      if (upserts.isEmpty && deletes.isEmpty) break;
+
+      acc.addAll(upserts);
+      acc.addAll(deletes);
       final page = SyncDomainCursor.pageEventsAfter(events: acc, cursor: since, limit: limit);
       if (page.length >= limit) return page;
-      if (batchEvents.length < batch) return page;
-
-      offset += batch;
+      if (upserts.length < batch && deletes.length < batch) {
+        return SyncDomainCursor.pageEventsAfter(events: acc, cursor: since, limit: limit);
+      }
     }
 
     return SyncDomainCursor.pageEventsAfter(events: acc, cursor: since, limit: limit);

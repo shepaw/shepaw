@@ -413,7 +413,7 @@ extension SyncDao on LocalDatabaseService {
       'identity_sync_tombstones',
       where: 'domain = ? AND wall_time_ms >= ?',
       whereArgs: [domain, sinceMs],
-      orderBy: 'wall_time_ms ASC, entity_key ASC',
+      orderBy: 'wall_time_ms ASC, event_id ASC',
       limit: limit,
       offset: offset,
     );
