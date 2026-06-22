@@ -29,7 +29,7 @@ class SyncLocalWriteHook {
     final reads = Map<String, Map<String, dynamic>>.from(_pendingReadRows);
     _pendingReadRows.clear();
     for (final row in reads.values) {
-      await _dispatchMessageRow(Map<String, dynamic>.from(row), enqueueBlob: false);
+      await _dispatchMessageRow(Map<String, dynamic>.from(row));
     }
 
     for (final timer in _heartbeatDebounceTimers.values) {
@@ -98,7 +98,6 @@ class SyncLocalWriteHook {
         'updated_at': updatedAt ?? createdAt,
         'is_read': 0,
       },
-      enqueueBlob: true,
     );
   }
 
@@ -121,7 +120,6 @@ class SyncLocalWriteHook {
         if (isRead != null) 'is_read': isRead,
         'updated_at': updatedAt,
       },
-      enqueueBlob: metadata != null,
     );
   }
 
@@ -148,7 +146,6 @@ class SyncLocalWriteHook {
       for (final entry in pending) {
         unawaited(_dispatchMessageRow(
           Map<String, dynamic>.from(entry.value),
-          enqueueBlob: false,
         ));
         _pendingReadRows.remove(entry.key);
       }
@@ -200,10 +197,7 @@ class SyncLocalWriteHook {
     } catch (_) {}
   }
 
-  static Future<void> _dispatchMessageRow(
-    Map<String, dynamic> row, {
-    required bool enqueueBlob,
-  }) async {
+  static Future<void> _dispatchMessageRow(Map<String, dynamic> row) async {
     try {
       final role = await AccountIdentityService.instance.localDeviceRole();
       final local = await AccountIdentityService.instance.localDevice();
@@ -217,21 +211,11 @@ class SyncLocalWriteHook {
           domain: event.domain,
           payloadJson: event.toJsonString(),
         );
-        if (enqueueBlob) {
-          await _maybeEnqueueBlob(db, row);
-        }
       } else if (role == DeviceRole.primary) {
         await SyncEngine.instance.recordEntitySyncState(event);
         await SyncFanoutService.fanout(event);
       }
     } catch (_) {}
-  }
-
-  static Future<void> _maybeEnqueueBlob(LocalDatabaseService db, Map<String, dynamic> row) async {
-    final path = _attachmentPathFromRow(row);
-    if (path != null) {
-      await db.enqueueBlobOutbound(relativePath: path);
-    }
   }
 
   static Future<void> onChannelMemberUpserted(Map<String, dynamic> memberRow) async {

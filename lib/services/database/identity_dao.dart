@@ -354,4 +354,30 @@ extension IdentityDao on LocalDatabaseService {
       limit: limit,
     );
   }
+
+  /// 清理已 ack 超过 [olderThanMs] 的同步队列行。
+  Future<void> pruneAckedSyncQueues({int olderThanMs = 7 * 86400000}) async {
+    final db = await database;
+    final cutoff = DateTime.now().millisecondsSinceEpoch - olderThanMs;
+    await db.delete(
+      'identity_outbound_queue',
+      where: 'acked = 1 AND created_at < ?',
+      whereArgs: [cutoff],
+    );
+    await db.delete(
+      'identity_sync_push_outbox',
+      where: 'acked = 1 AND created_at < ?',
+      whereArgs: [cutoff],
+    );
+    await db.delete(
+      'identity_backup_relay_queue',
+      where: 'relayed = 1 AND created_at < ?',
+      whereArgs: [cutoff],
+    );
+    await db.delete(
+      'identity_blob_outbound_queue',
+      where: 'acked = 1 AND created_at < ?',
+      whereArgs: [cutoff],
+    );
+  }
 }

@@ -283,6 +283,11 @@ class SyncProtocolService {
   }
 
   Future<void> _handleTrustAccept(String peerId, Map<String, dynamic> data) async {
+    if (!await _isOwnedAccountPeer(peerId)) {
+      _log.warning('Ignoring sync_trust_accept from unauthorized peer $peerId', tag: _tag);
+      return;
+    }
+
     await AccountIdentityService.instance.ensureInitialized();
     final user = await AccountIdentityService.instance.userIdentity();
     if (data['user_id'] != user.fingerprintHex) return;
@@ -427,6 +432,9 @@ class SyncProtocolService {
       if (role == DeviceRole.backup) {
         final relayResp = await _forwardCommitToPrimary(data);
         if (relayResp != null) {
+          if (relayResp['applied'] == true) {
+            await SyncEngine.instance.commitEventAsStorageRelay(event);
+          }
           await PeerConnectionManager.instance.sendControl(peerId, {
             'type': 'sync_commit_resp',
             'request_id': requestId,
@@ -614,6 +622,15 @@ class SyncProtocolService {
 
   Future<void> _handleBlobReq(String peerId, Map<String, dynamic> data) async {
     final requestId = data['request_id'] as String? ?? '';
+    if (!await _isOwnedAccountPeer(peerId)) {
+      await PeerConnectionManager.instance.sendControl(peerId, {
+        'type': 'sync_blob_resp',
+        'request_id': requestId,
+        'error': 'unauthorized_peer',
+      });
+      return;
+    }
+
     final blobKey = data['blob_key'] as String?;
     if (blobKey == null) return;
 
@@ -649,6 +666,16 @@ class SyncProtocolService {
 
   Future<void> _handleBlobPush(String peerId, Map<String, dynamic> data) async {
     final requestId = data['request_id'] as String? ?? '';
+    if (!await _isOwnedAccountPeer(peerId)) {
+      await PeerConnectionManager.instance.sendControl(peerId, {
+        'type': 'sync_blob_push_ack',
+        'request_id': requestId,
+        'ok': false,
+        'error': 'unauthorized_peer',
+      });
+      return;
+    }
+
     if (!await AccountIdentityService.instance.isCanonicalPrimary()) {
       await PeerConnectionManager.instance.sendControl(peerId, {
         'type': 'sync_blob_push_ack',
@@ -693,6 +720,15 @@ class SyncProtocolService {
 
   Future<void> _handleDeviceRpc(String peerId, Map<String, dynamic> data) async {
     final requestId = data['request_id'] as String? ?? '';
+    if (!await _isOwnedAccountPeer(peerId)) {
+      await PeerConnectionManager.instance.sendControl(peerId, {
+        'type': 'device_rpc_resp',
+        'request_id': requestId,
+        'error': 'unauthorized_peer',
+      });
+      return;
+    }
+
     final method = data['method'] as String? ?? '';
     final params = Map<String, dynamic>.from(data['params'] as Map? ?? {});
 

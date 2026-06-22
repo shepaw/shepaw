@@ -279,7 +279,18 @@ extension SyncDao on LocalDatabaseService {
     final db = await database;
     if (maxDays > 0) {
       final cutoff = DateTime.now().subtract(Duration(days: maxDays)).toIso8601String();
-      await db.delete('messages', where: 'created_at < ?', whereArgs: [cutoff]);
+      final stale = await db.query(
+        'messages',
+        columns: ['id'],
+        where: 'created_at < ?',
+        whereArgs: [cutoff],
+      );
+      for (final row in stale) {
+        final id = row['id'] as String?;
+        if (id == null) continue;
+        await db.delete('messages', where: 'id = ?', whereArgs: [id]);
+        await deleteMessageIndex(id);
+      }
     }
     if (maxMessages <= 0) return;
     final count = await countCachedMessages();
@@ -292,7 +303,10 @@ extension SyncDao on LocalDatabaseService {
       limit: excess,
     );
     for (final row in old) {
-      await db.delete('messages', where: 'id = ?', whereArgs: [row['id']]);
+      final id = row['id'] as String?;
+      if (id == null) continue;
+      await db.delete('messages', where: 'id = ?', whereArgs: [id]);
+      await deleteMessageIndex(id);
     }
   }
 

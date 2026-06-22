@@ -141,6 +141,7 @@ class SyncClientService {
       if (!ok) failed.add(domain);
     }
     await SyncEngine.instance.pruneOldTombstones();
+    await _db.pruneAckedSyncQueues();
     if (failed.isNotEmpty) {
       throw SyncPullException(
         'Sync pull incomplete for domains: ${failed.join(', ')}',
@@ -176,8 +177,10 @@ class SyncClientService {
   Future<bool> _pullDomain(String peerId, {required String domain}) async {
     var cursor = await SyncEngine.instance.getDomainCursor(domain);
     const pageSize = 50;
+    const maxPages = 200;
+    var truncated = false;
 
-    for (var page = 0; page < 200; page++) {
+    for (var page = 0; page < maxPages; page++) {
       final requestId = _uuid.v4();
       final sent = await PeerConnectionManager.instance.sendControl(peerId, {
         'type': 'sync_query',
@@ -232,6 +235,13 @@ class SyncClientService {
       };
 
       if (eventsRaw.length < pageSize) break;
+      if (page == maxPages - 1) {
+        truncated = true;
+      }
+    }
+    if (truncated) {
+      _log.warning('Sync pull hit page cap for domain=$domain', tag: _tag);
+      return false;
     }
     return true;
   }
@@ -296,7 +306,7 @@ class SyncClientService {
     }
   }
 
-  Future<String?> _primaryPeerId() => StorageDeviceService.firstAvailableStoragePeerId();
+  Future<String?> _primaryPeerId() => StorageDeviceService.firstConnectedStoragePeerId();
 
   /// 待同步队列统计（App 设备 UI 展示用）。
   Future<SyncPendingCounts> pendingCounts() async {

@@ -7,6 +7,7 @@ import '../../services/minds_database_service.dart';
 import '../../services/she_memory_db_service.dart';
 import '../models/app_cache_policy.dart';
 import '../models/device_role.dart';
+import '../models/sync_apply_outcome.dart';
 import '../models/sync_commit_result.dart';
 import '../models/sync_domain_cursor.dart';
 import '../utils/sync_lww.dart';
@@ -389,10 +390,15 @@ class SyncEngine {
 
     for (final event in events) {
       try {
-        final applied = await _applyOne(event, role);
-        if (!applied) continue;
-        await _recordEntitySyncState(event);
-        next = next.advance(event);
+        final outcome = await _applyOne(event, role);
+        switch (outcome) {
+          case SyncApplyOutcome.applied:
+            await _recordEntitySyncState(event);
+            next = next.advance(event);
+          case SyncApplyOutcome.staleSkipped:
+          case SyncApplyOutcome.invalidSkipped:
+            next = next.advance(event);
+        }
       } catch (e) {
         _log.warning('Failed to apply sync event ${event.eventId}: $e', tag: _tag);
         break;
@@ -403,35 +409,40 @@ class SyncEngine {
     return next;
   }
 
-  Future<bool> _applyOne(SyncEvent event, DeviceRole role) async {
+  Future<SyncApplyOutcome> _applyOne(SyncEvent event, DeviceRole role) async {
     if (event.action == SyncEventAction.delete) {
-      return _applyDelete(event, role);
+      return await _applyDelete(event, role)
+          ? SyncApplyOutcome.applied
+          : SyncApplyOutcome.invalidSkipped;
     }
-    if (await _isStaleUpsert(event)) return false;
+    if (await _isStaleUpsert(event)) return SyncApplyOutcome.staleSkipped;
     await _clearTombstoneForUpsert(event);
     switch (event.domain) {
       case 'message':
-        return _applyMessage(event, role);
+        return await _applyMessage(event, role)
+            ? SyncApplyOutcome.applied
+            : SyncApplyOutcome.invalidSkipped;
       case 'channel':
         await _applyChannel(event, role);
-        return true;
+        return SyncApplyOutcome.applied;
       case 'channel_member':
         await _applyChannelMember(event, role);
-        return true;
+        return SyncApplyOutcome.applied;
       case 'agent':
         await _applyAgent(event, role);
-        return true;
+        return SyncApplyOutcome.applied;
       case 'she_memory':
         await _applySheMemory(event, role);
-        return true;
+        return SyncApplyOutcome.applied;
       case 'cognition':
         await _applyCognition(event, role);
-        return true;
+        return SyncApplyOutcome.applied;
       case 'agent_memory':
-        await _applyAgentMemory(event, role);
-        return true;
+        return await _applyAgentMemory(event, role)
+            ? SyncApplyOutcome.applied
+            : SyncApplyOutcome.invalidSkipped;
       default:
-        return false;
+        return SyncApplyOutcome.invalidSkipped;
     }
   }
 
@@ -564,7 +575,7 @@ class SyncEngine {
     }
 
     if (event.action == SyncEventAction.delete) {
-      if (!await _applyOne(event, DeviceRole.primary)) {
+      if (await _applyOne(event, DeviceRole.primary) != SyncApplyOutcome.applied) {
         return SyncCommitResult.failed;
       }
       await _recordEntitySyncState(event);
@@ -573,7 +584,7 @@ class SyncEngine {
 
     if (await _isStaleUpsert(event)) return SyncCommitResult.staleOk();
 
-    if (!await _applyOne(event, DeviceRole.primary)) {
+    if (await _applyOne(event, DeviceRole.primary) != SyncApplyOutcome.applied) {
       return SyncCommitResult.failed;
     }
     await _recordEntitySyncState(event);
@@ -586,7 +597,7 @@ class SyncEngine {
     if (role != DeviceRole.backup) return SyncCommitResult.failed;
 
     if (event.action == SyncEventAction.delete) {
-      if (!await _applyOne(event, DeviceRole.backup)) {
+      if (await _applyOne(event, DeviceRole.backup) != SyncApplyOutcome.applied) {
         return SyncCommitResult.failed;
       }
       await _recordEntitySyncState(event);
@@ -595,7 +606,7 @@ class SyncEngine {
 
     if (await _isStaleUpsert(event)) return SyncCommitResult.staleOk();
 
-    if (!await _applyOne(event, DeviceRole.backup)) {
+    if (await _applyOne(event, DeviceRole.backup) != SyncApplyOutcome.applied) {
       return SyncCommitResult.failed;
     }
     await _recordEntitySyncState(event);

@@ -45,16 +45,22 @@ class AccountJoinService {
 
   final _joinWaiters = <String, Completer<Map<String, dynamic>?>>{};
   final _pendingById = <String, AccountJoinPendingRequest>{};
+  Timer? _pendingExpiryTimer;
 
   void start() {
     if (_running) return;
     _running = true;
     _sub = PeerConnectionManager.instance.controlEvents.listen(_onControl);
+    _pendingExpiryTimer = Timer.periodic(const Duration(seconds: 30), (_) {
+      unawaited(_pruneExpiredPending());
+    });
     _log.info('AccountJoinService started', tag: _tag);
   }
 
   void stop() {
     _running = false;
+    _pendingExpiryTimer?.cancel();
+    _pendingExpiryTimer = null;
     _sub?.cancel();
     _sub = null;
   }
@@ -174,6 +180,11 @@ class AccountJoinService {
     final pending = _pendingById.remove(requestId);
     if (pending == null) throw StateError('Join request not found or expired');
 
+    final peer = await PeerStorageService().getPeerById(pending.peerId);
+    if (peer?.deviceId == null || peer!.deviceId != pending.deviceId) {
+      throw StateError('Join request device_id does not match paired peer');
+    }
+
     await AccountIdentityService.instance.ensureInitialized();
     final role = await AccountIdentityService.instance.localDeviceRole();
     if (role != DeviceRole.primary) {
@@ -257,10 +268,24 @@ class AccountJoinService {
       final requestId = data['request_id'] as String? ?? '';
       if (requestId.isEmpty) return;
 
+      final peer = await PeerStorageService().getPeerById(peerId);
+      final reqDeviceId = data['device_id'] as String? ?? '';
+      if (peer?.deviceId != null &&
+          reqDeviceId.isNotEmpty &&
+          peer!.deviceId != reqDeviceId) {
+        await PeerConnectionManager.instance.sendControl(peerId, {
+          'type': 'account_join_resp',
+          'request_id': requestId,
+          'ok': false,
+          'error': 'device_id_mismatch',
+        });
+        return;
+      }
+
       final pending = AccountJoinPendingRequest(
         requestId: requestId,
         peerId: peerId,
-        deviceId: data['device_id'] as String? ?? '',
+        deviceId: peer?.deviceId ?? reqDeviceId,
         deviceName: data['device_name'] as String? ?? 'Device',
         transportFingerprint: data['transport_fingerprint'] as String? ?? '',
         transportPublicKeyBase64: data['transport_public_key'] as String? ?? '',
@@ -271,6 +296,7 @@ class AccountJoinService {
       _pendingById[requestId] = pending;
       _pendingController.add(pending);
       _log.info('Account join request from ${pending.deviceName}', tag: _tag);
+      unawaited(_pruneExpiredPending());
     } catch (e) {
       _log.warning('handle account_join_req failed: $e', tag: _tag);
     }
@@ -312,5 +338,17 @@ class AccountJoinService {
       const Duration(seconds: 45),
       onTimeout: () => throw StateError('P2P connection timeout'),
     );
+  }
+
+  Future<void> _pruneExpiredPending() async {
+    if (_pendingById.isEmpty) return;
+    final now = DateTime.now().millisecondsSinceEpoch;
+    final expired = _pendingById.entries
+        .where((e) => now - e.value.requestedAtMs > _joinTimeout.inMilliseconds)
+        .map((e) => e.key)
+        .toList();
+    for (final id in expired) {
+      await rejectJoin(id, reason: 'expired');
+    }
   }
 }

@@ -1,3 +1,5 @@
+import '../../peer/models/paired_peer.dart' show PeerConnectionState;
+import '../../peer/services/peer_connection_manager.dart';
 import '../../peer/services/peer_storage_service.dart';
 import '../models/device_role.dart';
 import '../models/owned_device_record.dart';
@@ -27,6 +29,19 @@ class StorageDeviceService {
       if (p.deviceId == deviceId) return p.id;
     }
     return null;
+  }
+
+  /// 优先返回已连接的 Primary/Backup peer，否则回退到任意已配对 storage peer。
+  static Future<String?> firstConnectedStoragePeerId() async {
+    for (final device in await devicesInFetchOrder()) {
+      final peerId = await peerIdForDevice(device.deviceId);
+      if (peerId == null) continue;
+      if (PeerConnectionManager.instance.getPeerState(peerId) ==
+          PeerConnectionState.connected) {
+        return peerId;
+      }
+    }
+    return firstAvailableStoragePeerId();
   }
 
   /// 按 Primary → Backup 顺序返回第一个已配对的 peer id。
