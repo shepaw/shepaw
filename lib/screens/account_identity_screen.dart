@@ -25,6 +25,8 @@ class _AccountIdentityScreenState extends State<AccountIdentityScreen> {
   List<OwnedDeviceRecord> _owned = [];
   String? _error;
   bool _syncing = false;
+  int _pendingEvents = 0;
+  int _pendingBlobs = 0;
 
   @override
   void initState() {
@@ -44,6 +46,7 @@ class _AccountIdentityScreenState extends State<AccountIdentityScreen> {
       final role = await AccountIdentityService.instance.localDeviceRole();
       final primary = await AccountIdentityService.instance.primaryDevice();
       final owned = await AccountIdentityService.instance.ownedDevices();
+      final pending = await SyncClientService.instance.pendingCounts();
       if (!mounted) return;
       setState(() {
         _userFp = user.fingerprintHex;
@@ -51,6 +54,8 @@ class _AccountIdentityScreenState extends State<AccountIdentityScreen> {
         _localRole = role;
         _primaryDevice = primary;
         _owned = owned;
+        _pendingEvents = pending.events;
+        _pendingBlobs = pending.blobs;
         _loading = false;
       });
     } catch (e) {
@@ -87,7 +92,9 @@ class _AccountIdentityScreenState extends State<AccountIdentityScreen> {
     final l10n = AppLocalizations.of(context);
     setState(() => _syncing = true);
     try {
-      await SyncClientService.instance.pullFromPrimary();
+      await SyncClientService.instance.syncWithPrimary();
+      if (!mounted) return;
+      await _load();
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(l10n.identity_syncPullSuccess)),
@@ -183,7 +190,18 @@ class _AccountIdentityScreenState extends State<AccountIdentityScreen> {
                       if (ok == true) await _load();
                     },
                   ),
-                  if (_localRole == DeviceRole.app || _localRole == DeviceRole.backup)
+                  if (_localRole == DeviceRole.app || _localRole == DeviceRole.backup) ...[
+                    if (_pendingEvents > 0 || _pendingBlobs > 0)
+                      ListTile(
+                        leading: Icon(
+                          Icons.cloud_upload_outlined,
+                          color: Theme.of(context).colorScheme.tertiary,
+                        ),
+                        title: Text(l10n.identity_syncPendingTitle),
+                        subtitle: Text(
+                          l10n.identity_syncPendingBody(_pendingEvents, _pendingBlobs),
+                        ),
+                      ),
                     ListTile(
                       leading: _syncing
                           ? const SizedBox(width: 24, height: 24, child: CircularProgressIndicator(strokeWidth: 2))
@@ -192,6 +210,7 @@ class _AccountIdentityScreenState extends State<AccountIdentityScreen> {
                       subtitle: Text(l10n.identity_syncPullSub),
                       onTap: _syncing ? null : _pullSync,
                     ),
+                  ],
                   const Divider(height: 32),
                   _SectionTitle(l10n.identity_sectionOwnedDevices),
                   if (_owned.isEmpty)

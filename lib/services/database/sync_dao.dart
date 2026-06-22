@@ -4,30 +4,39 @@ import '../local_database_service.dart';
 
 /// 同步专用数据访问（messages / channels / index / cursor）。
 extension SyncDao on LocalDatabaseService {
-  Future<List<Map<String, dynamic>>> getMessagesCreatedSince({
+  Future<List<Map<String, dynamic>>> getMessagesChangedSince({
     required int sinceMs,
     String? channelId,
     int limit = 50,
   }) async {
     final db = await database;
     final sinceIso = DateTime.fromMillisecondsSinceEpoch(sinceMs).toIso8601String();
+    const where =
+        '(created_at > ? OR COALESCE(updated_at, created_at) > ?)';
     if (channelId != null) {
       return db.query(
         'messages',
-        where: 'created_at > ? AND channel_id = ?',
-        whereArgs: [sinceIso, channelId],
-        orderBy: 'created_at ASC',
+        where: '$where AND channel_id = ?',
+        whereArgs: [sinceIso, sinceIso, channelId],
+        orderBy: 'COALESCE(updated_at, created_at) ASC',
         limit: limit,
       );
     }
     return db.query(
       'messages',
-      where: 'created_at > ?',
-      whereArgs: [sinceIso],
-      orderBy: 'created_at ASC',
+      where: where,
+      whereArgs: [sinceIso, sinceIso],
+      orderBy: 'COALESCE(updated_at, created_at) ASC',
       limit: limit,
     );
   }
+
+  Future<List<Map<String, dynamic>>> getMessagesCreatedSince({
+    required int sinceMs,
+    String? channelId,
+    int limit = 50,
+  }) =>
+      getMessagesChangedSince(sinceMs: sinceMs, channelId: channelId, limit: limit);
 
   Future<void> upsertMessageFromSync(Map<String, dynamic> row) async {
     final db = await database;
@@ -44,10 +53,21 @@ extension SyncDao on LocalDatabaseService {
         'metadata': row['metadata'],
         'reply_to_id': row['reply_to_id'],
         'created_at': row['created_at'],
+        'updated_at': row['updated_at'] ?? row['created_at'],
         'is_read': row['is_read'] ?? 0,
       },
-      conflictAlgorithm: ConflictAlgorithm.ignore,
+      conflictAlgorithm: ConflictAlgorithm.replace,
     );
+  }
+
+  Future<void> deleteMessageFromSync(String messageId) async {
+    final db = await database;
+    await db.delete('messages', where: 'id = ?', whereArgs: [messageId]);
+  }
+
+  Future<void> deleteMessageIndex(String messageId) async {
+    final db = await database;
+    await db.delete('identity_message_index', where: 'message_id = ?', whereArgs: [messageId]);
   }
 
   Future<List<Map<String, dynamic>>> getChannelsUpdatedSince(int sinceMs, {int limit = 50}) async {
@@ -59,6 +79,69 @@ extension SyncDao on LocalDatabaseService {
       whereArgs: [sinceIso, sinceIso],
       orderBy: 'updated_at ASC',
       limit: limit,
+    );
+  }
+
+  Future<Map<String, dynamic>?> getChannelRowById(String channelId) async {
+    final db = await database;
+    final rows = await db.query('channels', where: 'id = ?', whereArgs: [channelId], limit: 1);
+    return rows.isEmpty ? null : rows.first;
+  }
+
+  Future<Map<String, dynamic>?> getChannelMemberRow(String channelId, String agentId) async {
+    final db = await database;
+    final rows = await db.query(
+      'channel_members',
+      where: 'channel_id = ? AND agent_id = ?',
+      whereArgs: [channelId, agentId],
+      limit: 1,
+    );
+    return rows.isEmpty ? null : rows.first;
+  }
+
+  Future<List<Map<String, dynamic>>> getChannelMembersChangedSince(int sinceMs, {int limit = 50}) async {
+    final db = await database;
+    final sinceIso = DateTime.fromMillisecondsSinceEpoch(sinceMs).toIso8601String();
+    return db.query(
+      'channel_members',
+      where: 'joined_at > ? OR COALESCE(updated_at, joined_at) > ?',
+      whereArgs: [sinceIso, sinceIso],
+      orderBy: 'COALESCE(updated_at, joined_at) ASC',
+      limit: limit,
+    );
+  }
+
+  Future<void> upsertChannelMemberFromSync(Map<String, dynamic> row) async {
+    final db = await database;
+    final channelId = row['channel_id'] as String;
+    final agentId = row['agent_id'] as String;
+    final existing = await getChannelMemberRow(channelId, agentId);
+    final data = {
+      'channel_id': channelId,
+      'agent_id': agentId,
+      'role': row['role'] ?? 'member',
+      'group_bio': row['group_bio'],
+      'joined_at': row['joined_at'] ?? DateTime.now().toIso8601String(),
+      'updated_at': row['updated_at'] ?? row['joined_at'],
+    };
+    if (existing != null) {
+      await db.update(
+        'channel_members',
+        data,
+        where: 'channel_id = ? AND agent_id = ?',
+        whereArgs: [channelId, agentId],
+      );
+    } else {
+      await db.insert('channel_members', data);
+    }
+  }
+
+  Future<void> removeChannelMemberFromSync(String channelId, String agentId) async {
+    final db = await database;
+    await db.delete(
+      'channel_members',
+      where: 'channel_id = ? AND agent_id = ?',
+      whereArgs: [channelId, agentId],
     );
   }
 

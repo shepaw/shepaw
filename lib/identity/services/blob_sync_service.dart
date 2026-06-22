@@ -28,6 +28,8 @@ class BlobSyncService {
   final _files = LocalFileStorageService();
   final _uuid = const Uuid();
 
+  final _partialUploads = <String, _PartialBlobUpload>{};
+
   /// blob_key 默认等于 metadata.path（相对存储路径）。
   static String blobKeyFromRelativePath(String relativePath) => relativePath;
 
@@ -119,15 +121,15 @@ class BlobSyncService {
   }
 
   /// App 设备：将本地附件推送到 Primary。
-  Future<void> pushBlobToPrimary(String relativePath) async {
+  Future<void> pushBlobToPrimary(String relativePath, {String? peerId}) async {
     final role = await AccountIdentityService.instance.localDeviceRole();
     if (role == DeviceRole.primary) return;
 
     final file = await _files.getFile(relativePath);
     if (file == null) return;
 
-    final peerId = await _primaryPeerId();
-    if (peerId == null) return;
+    final targetPeerId = peerId ?? await _primaryPeerId();
+    if (targetPeerId == null) return;
 
     final bytes = await file.readAsBytes();
     final hash = sha256.convert(bytes).toString();
@@ -137,7 +139,7 @@ class BlobSyncService {
       final end = (offset + chunkSize < bytes.length) ? offset + chunkSize : bytes.length;
       final slice = bytes.sublist(offset, end);
       final reqId = _uuid.v4();
-      await PeerConnectionManager.instance.sendControl(peerId, {
+      await PeerConnectionManager.instance.sendControl(targetPeerId, {
         'type': 'sync_blob_push',
         'request_id': reqId,
         'blob_key': relativePath,
@@ -187,7 +189,7 @@ class BlobSyncService {
     }
   }
 
-  /// Primary：接收 blob 分块写入（顺序 append）。
+  /// Primary：接收 blob 分块写入（严格顺序校验）。
   Future<bool> receiveBlobPush({
     required String blobKey,
     required int offset,
@@ -196,6 +198,21 @@ class BlobSyncService {
     required Uint8List chunk,
     required bool done,
   }) async {
+    final partial = _partialUploads[blobKey];
+    if (offset == 0) {
+      _partialUploads[blobKey] = _PartialBlobUpload(
+        totalSize: totalSize,
+        sha256Expected: sha256Expected,
+        receivedBytes: 0,
+      );
+    } else {
+      if (partial == null || partial.receivedBytes != offset) {
+        _log.warning('Blob push out-of-order for $blobKey at offset $offset', tag: _tag);
+        _partialUploads.remove(blobKey);
+        return false;
+      }
+    }
+
     final fullPath = await _files.getFullPath(blobKey);
     final file = File(fullPath);
     await file.parent.create(recursive: true);
@@ -208,10 +225,21 @@ class BlobSyncService {
       await raf.close();
     }
 
+    final state = _partialUploads[blobKey];
+    if (state != null) {
+      state.receivedBytes = offset + chunk.length;
+    }
+
     if (!done) return true;
+
+    _partialUploads.remove(blobKey);
     if (sha256Expected.isEmpty) return true;
     final hash = await sha256OfFile(file);
-    return hash == sha256Expected;
+    if (hash != sha256Expected) {
+      await file.delete();
+      return false;
+    }
+    return true;
   }
 
   Future<void> _registerCache(String relativePath, String sha256hex, int size) async {
@@ -260,4 +288,16 @@ class BlobSyncService {
     }
     return null;
   }
+}
+
+class _PartialBlobUpload {
+  final int totalSize;
+  final String sha256Expected;
+  int receivedBytes;
+
+  _PartialBlobUpload({
+    required this.totalSize,
+    required this.sha256Expected,
+    required this.receivedBytes,
+  });
 }

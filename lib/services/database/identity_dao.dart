@@ -211,4 +211,57 @@ extension IdentityDao on LocalDatabaseService {
     final db = await database;
     await db.update('identity_outbound_queue', {'acked': 1}, where: 'id = ?', whereArgs: [id]);
   }
+
+  // ── Blob outbound queue (App → Primary 附件重试) ─────────────────────────
+
+  Future<void> enqueueBlobOutbound({required String relativePath}) async {
+    final db = await database;
+    final now = DateTime.now().millisecondsSinceEpoch;
+    await db.insert(
+      'identity_blob_outbound_queue',
+      {
+        'id': relativePath,
+        'relative_path': relativePath,
+        'created_at': now,
+        'acked': 0,
+      },
+      conflictAlgorithm: ConflictAlgorithm.replace,
+    );
+  }
+
+  Future<List<Map<String, dynamic>>> listPendingBlobOutbound({int limit = 20}) async {
+    final db = await database;
+    return db.query(
+      'identity_blob_outbound_queue',
+      where: 'acked = 0',
+      orderBy: 'created_at ASC',
+      limit: limit,
+    );
+  }
+
+  Future<void> markBlobOutboundAcked(String relativePath) async {
+    final db = await database;
+    await db.update(
+      'identity_blob_outbound_queue',
+      {'acked': 1},
+      where: 'relative_path = ?',
+      whereArgs: [relativePath],
+    );
+  }
+
+  Future<int> countPendingOutbound() async {
+    final db = await database;
+    final r = await db.rawQuery(
+      'SELECT COUNT(*) as c FROM identity_outbound_queue WHERE acked = 0',
+    );
+    return (r.first['c'] as int?) ?? 0;
+  }
+
+  Future<int> countPendingBlobOutbound() async {
+    final db = await database;
+    final r = await db.rawQuery(
+      'SELECT COUNT(*) as c FROM identity_blob_outbound_queue WHERE acked = 0',
+    );
+    return (r.first['c'] as int?) ?? 0;
+  }
 }

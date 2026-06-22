@@ -14,6 +14,7 @@ import 'account_identity_service.dart';
 import 'blob_sync_service.dart';
 import 'device_trust_service.dart';
 import 'sync_engine.dart';
+import 'sync_local_write_hook.dart';
 import 'sync_protocol_service.dart';
 
 /// App / Backup 设备：连接 Primary 后拉取同步、提交 outbound 队列。
@@ -28,7 +29,7 @@ class SyncClientService {
 
   StreamSubscription? _connSub;
   bool _running = false;
-  bool _pulling = false;
+  Future<void> _pullChain = Future.value();
 
   void start() {
     if (_running) return;
@@ -61,12 +62,12 @@ class SyncClientService {
       final primary = await AccountIdentityService.instance.primaryDevice();
       if (primary == null) return;
 
-      // 若连接的是 Primary（按 deviceId 匹配），发起同步。
       if (peer.deviceId != primary.deviceId) return;
 
       await _sendTrustAccept(peerId);
       await pullFromPeer(peerId);
       await _flushOutbound(peerId);
+      await _flushBlobOutbound(peerId);
     } catch (e) {
       _log.warning('Sync on connect failed: $e', tag: _tag);
     }
@@ -77,7 +78,6 @@ class SyncClientService {
     await PeerConnectionManager.instance.sendControl(peerId, payload);
   }
 
-  /// 手动触发从 Primary 拉取（设置页 / 下拉刷新）。
   Future<void> pullFromPrimary() async {
     final peerId = await _primaryPeerId();
     if (peerId == null) {
@@ -86,53 +86,88 @@ class SyncClientService {
     await pullFromPeer(peerId);
   }
 
-  /// 连接 Primary 后完整同步：拉取增量 + 提交本地 outbound 队列。
+  /// 从 Primary 完整同步：拉取 + 提交 outbound + blob 队列。
+  Future<void> syncWithPrimary() async {
+    final peerId = await _primaryPeerId();
+    if (peerId == null) {
+      throw StateError('Primary device not paired or offline');
+    }
+    await syncWithPeer(peerId);
+  }
+
   Future<void> syncWithPeer(String peerId) async {
     await pullFromPeer(peerId);
     await flushOutboundToPeer(peerId);
+    await flushBlobOutboundToPeer(peerId);
   }
 
-  /// 提交 outbound 队列到指定 peer（通常为 Primary）。
   Future<void> flushOutboundToPeer(String peerId) async {
     await _flushOutbound(peerId);
   }
 
-  Future<void> pullFromPeer(String peerId) async {
-    if (_pulling) return;
-    _pulling = true;
-    try {
-      var cursor = await SyncEngine.instance.getLocalCursorMs();
-      const pageSize = 50;
+  Future<void> flushBlobOutboundToPeer(String peerId) async {
+    await _flushBlobOutbound(peerId);
+  }
 
-      for (var page = 0; page < 200; page++) {
-        final requestId = _uuid.v4();
-        final sent = await PeerConnectionManager.instance.sendControl(peerId, {
-          'type': 'sync_query',
-          'request_id': requestId,
-          'since_ms': cursor,
-          'limit': pageSize,
-        });
-        if (!sent) break;
+  Future<void> pullFromPeer(String peerId) {
+    _pullChain = _pullChain.then((_) => _pullFromPeerImpl(peerId));
+    return _pullChain;
+  }
 
-        final resp = await SyncProtocolService.instance.waitQueryResponse(
+  Future<void> _pullFromPeerImpl(String peerId) async {
+    await _pullDomain(peerId, domain: 'message');
+    await _pullDomain(peerId, domain: 'channel');
+    await _pullDomain(peerId, domain: 'channel_member');
+  }
+
+  Future<void> _pullDomain(String peerId, {required String domain}) async {
+    var cursor = switch (domain) {
+      'message' => await SyncEngine.instance.getMessageCursorMs(),
+      'channel' => await SyncEngine.instance.getChannelCursorMs(),
+      'channel_member' => await SyncEngine.instance.getMemberCursorMs(),
+      _ => 0,
+    };
+    const pageSize = 50;
+
+    for (var page = 0; page < 200; page++) {
+      final requestId = _uuid.v4();
+      final sent = await PeerConnectionManager.instance.sendControl(peerId, {
+        'type': 'sync_query',
+        'request_id': requestId,
+        'domain': domain,
+        'since_ms': cursor,
+        'limit': pageSize,
+      });
+      if (!sent) break;
+
+      Map<String, dynamic> resp;
+      try {
+        resp = await SyncProtocolService.instance.waitQueryResponse(
           requestId,
           timeout: const Duration(seconds: 30),
         );
-        if (resp == null) break;
-
-        final eventsRaw = (resp['events'] as List?) ?? const [];
-        if (eventsRaw.isEmpty) break;
-
-        final events = eventsRaw
-            .whereType<Map>()
-            .map((e) => SyncEvent.fromJson(Map<String, dynamic>.from(e)))
-            .toList();
-
-        cursor = await SyncEngine.instance.applyEvents(events);
-        if (events.length < pageSize) break;
+      } on SyncQueryTimeoutException {
+        _log.warning('Sync query timeout for domain=$domain', tag: _tag);
+        break;
       }
-    } finally {
-      _pulling = false;
+
+      final eventsRaw = (resp['events'] as List?) ?? const [];
+      if (eventsRaw.isEmpty) break;
+
+      final events = eventsRaw
+          .whereType<Map>()
+          .map((e) => SyncEvent.fromJson(Map<String, dynamic>.from(e)))
+          .toList();
+
+      if (domain == 'message') {
+        cursor = await SyncEngine.instance.applyMessageEvents(events);
+      } else if (domain == 'channel') {
+        cursor = await SyncEngine.instance.applyChannelEvents(events);
+      } else if (domain == 'channel_member') {
+        cursor = await SyncEngine.instance.applyMemberEvents(events);
+      }
+
+      if (events.length < pageSize) break;
     }
   }
 
@@ -159,35 +194,26 @@ class SyncClientService {
       );
       if (resp?['ok'] == true) {
         await _db.markOutboundAcked(row['id'] as String);
-        await _maybePushBlobForEvent(eventJson);
+        final blobPath = SyncLocalWriteHook.attachmentPathFromEventJson(eventJson);
+        if (blobPath != null) {
+          await _db.enqueueBlobOutbound(relativePath: blobPath);
+        }
       }
     }
+    await _flushBlobOutbound(peerId);
   }
 
-  Future<void> _maybePushBlobForEvent(Map<String, dynamic> eventJson) async {
-    if (eventJson['domain'] != 'message') return;
-    final payload = eventJson['payload'];
-    if (payload is! Map) return;
-
-    final metaRaw = payload['metadata'];
-    Map<String, dynamic>? meta;
-    if (metaRaw is String && metaRaw.isNotEmpty) {
+  Future<void> _flushBlobOutbound(String peerId) async {
+    final pending = await _db.listPendingBlobOutbound(limit: 20);
+    for (final row in pending) {
+      final path = row['relative_path'] as String? ?? '';
+      if (path.isEmpty) continue;
       try {
-        meta = Map<String, dynamic>.from(jsonDecode(metaRaw) as Map);
-      } catch (_) {
-        return;
+        await BlobSyncService.instance.pushBlobToPrimary(path, peerId: peerId);
+        await _db.markBlobOutboundAcked(path);
+      } catch (e) {
+        _log.warning('Blob outbound retry failed for $path: $e', tag: _tag);
       }
-    } else if (metaRaw is Map) {
-      meta = Map<String, dynamic>.from(metaRaw);
-    }
-
-    final path = meta?['path'] as String?;
-    if (path == null || path.isEmpty) return;
-
-    try {
-      await BlobSyncService.instance.pushBlobToPrimary(path);
-    } catch (e) {
-      _log.warning('Blob push after commit failed: $e', tag: _tag);
     }
   }
 
@@ -200,6 +226,24 @@ class SyncClientService {
     }
     return null;
   }
+
+  /// 待同步队列统计（App 设备 UI 展示用）。
+  Future<SyncPendingCounts> pendingCounts() async {
+    return SyncPendingCounts(
+      events: await _db.countPendingOutbound(),
+      blobs: await _db.countPendingBlobOutbound(),
+    );
+  }
+}
+
+class SyncPendingCounts {
+  final int events;
+  final int blobs;
+
+  const SyncPendingCounts({required this.events, required this.blobs});
+
+  int get total => events + blobs;
+  bool get hasPending => total > 0;
 }
 
 /// 供 outbound 队列使用的 helper：App 设备本地发消息后 enqueue。

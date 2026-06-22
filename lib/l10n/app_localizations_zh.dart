@@ -4028,6 +4028,14 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
+  String get identity_syncPendingTitle => '待上传数据';
+
+  @override
+  String identity_syncPendingBody(int events, int blobs) {
+    return '$events 条变更、$blobs 个附件等待同步到主存储设备';
+  }
+
+  @override
   String get account_gateTitle => '登录账号';
 
   @override

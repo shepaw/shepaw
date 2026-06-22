@@ -1,9 +1,24 @@
 import 'dart:convert';
 
+/// 同步事件动作。
+enum SyncEventAction {
+  upsert('upsert'),
+  delete('delete');
+
+  final String wireValue;
+  const SyncEventAction(this.wireValue);
+
+  static SyncEventAction fromWire(String? raw) {
+    if (raw == 'delete') return SyncEventAction.delete;
+    return SyncEventAction.upsert;
+  }
+}
+
 /// P2P 同步事件（Primary 权威 log 条目）。
 class SyncEvent {
   final String eventId;
   final String domain;
+  final SyncEventAction action;
   final Map<String, dynamic> payload;
   final int wallTimeMs;
   final String originDeviceId;
@@ -11,6 +26,7 @@ class SyncEvent {
   const SyncEvent({
     required this.eventId,
     required this.domain,
+    this.action = SyncEventAction.upsert,
     required this.payload,
     required this.wallTimeMs,
     required this.originDeviceId,
@@ -19,6 +35,7 @@ class SyncEvent {
   Map<String, dynamic> toJson() => {
         'event_id': eventId,
         'domain': domain,
+        'action': action.wireValue,
         'payload': payload,
         'wall_time_ms': wallTimeMs,
         'origin_device_id': originDeviceId,
@@ -27,6 +44,7 @@ class SyncEvent {
   factory SyncEvent.fromJson(Map<String, dynamic> json) => SyncEvent(
         eventId: json['event_id'] as String,
         domain: json['domain'] as String,
+        action: SyncEventAction.fromWire(json['action'] as String?),
         payload: Map<String, dynamic>.from(json['payload'] as Map),
         wallTimeMs: json['wall_time_ms'] as int,
         originDeviceId: json['origin_device_id'] as String? ?? '',
@@ -35,15 +53,36 @@ class SyncEvent {
   static SyncEvent messageEvent({
     required Map<String, dynamic> messageRow,
     required String originDeviceId,
+    SyncEventAction action = SyncEventAction.upsert,
   }) {
+    final updatedAt = messageRow['updated_at'] as String?;
     final createdAt = messageRow['created_at'] as String? ?? '';
-    final wallTime = DateTime.tryParse(createdAt)?.millisecondsSinceEpoch ??
+    final timeStr = (updatedAt != null && updatedAt.isNotEmpty) ? updatedAt : createdAt;
+    final wallTime = DateTime.tryParse(timeStr)?.millisecondsSinceEpoch ??
         DateTime.now().millisecondsSinceEpoch;
     return SyncEvent(
       eventId: 'msg:${messageRow['id']}',
       domain: 'message',
+      action: action,
       payload: Map<String, dynamic>.from(messageRow),
       wallTimeMs: wallTime,
+      originDeviceId: originDeviceId,
+    );
+  }
+
+  static SyncEvent messageDeleteEvent({
+    required String messageId,
+    required String channelId,
+    required String originDeviceId,
+    int? wallTimeMs,
+  }) {
+    final ms = wallTimeMs ?? DateTime.now().millisecondsSinceEpoch;
+    return SyncEvent(
+      eventId: 'msg:$messageId:del:$ms',
+      domain: 'message',
+      action: SyncEventAction.delete,
+      payload: {'id': messageId, 'channel_id': channelId},
+      wallTimeMs: ms,
       originDeviceId: originDeviceId,
     );
   }
@@ -51,6 +90,7 @@ class SyncEvent {
   static SyncEvent channelEvent({
     required Map<String, dynamic> channelRow,
     required String originDeviceId,
+    SyncEventAction action = SyncEventAction.upsert,
   }) {
     final updatedAt = channelRow['updated_at'] as String? ?? channelRow['created_at'] as String? ?? '';
     final wallTime = DateTime.tryParse(updatedAt)?.millisecondsSinceEpoch ??
@@ -58,8 +98,46 @@ class SyncEvent {
     return SyncEvent(
       eventId: 'ch:${channelRow['id']}',
       domain: 'channel',
+      action: action,
       payload: Map<String, dynamic>.from(channelRow),
       wallTimeMs: wallTime,
+      originDeviceId: originDeviceId,
+    );
+  }
+
+  static SyncEvent channelMemberEvent({
+    required Map<String, dynamic> memberRow,
+    required String originDeviceId,
+    SyncEventAction action = SyncEventAction.upsert,
+  }) {
+    final updatedAt = memberRow['updated_at'] as String? ?? memberRow['joined_at'] as String? ?? '';
+    final wallTime = DateTime.tryParse(updatedAt)?.millisecondsSinceEpoch ??
+        DateTime.now().millisecondsSinceEpoch;
+    final channelId = memberRow['channel_id'] as String? ?? '';
+    final agentId = memberRow['agent_id'] as String? ?? '';
+    return SyncEvent(
+      eventId: 'cm:$channelId:$agentId',
+      domain: 'channel_member',
+      action: action,
+      payload: Map<String, dynamic>.from(memberRow),
+      wallTimeMs: wallTime,
+      originDeviceId: originDeviceId,
+    );
+  }
+
+  static SyncEvent channelMemberDeleteEvent({
+    required String channelId,
+    required String agentId,
+    required String originDeviceId,
+    int? wallTimeMs,
+  }) {
+    final ms = wallTimeMs ?? DateTime.now().millisecondsSinceEpoch;
+    return SyncEvent(
+      eventId: 'cm:$channelId:$agentId:del:$ms',
+      domain: 'channel_member',
+      action: SyncEventAction.delete,
+      payload: {'channel_id': channelId, 'agent_id': agentId},
+      wallTimeMs: ms,
       originDeviceId: originDeviceId,
     );
   }

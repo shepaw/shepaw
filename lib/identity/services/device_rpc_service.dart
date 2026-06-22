@@ -9,6 +9,7 @@ import '../../peer/services/peer_storage_service.dart';
 import '../../services/local_database_service.dart';
 import '../../services/logger_service.dart';
 import '../../services/she_service.dart';
+import '../models/device_role.dart';
 import 'account_identity_service.dart';
 import 'sync_protocol_service.dart';
 
@@ -18,7 +19,13 @@ class DeviceRpcService {
   static final DeviceRpcService instance = DeviceRpcService._();
 
   static const _tag = 'DeviceRpc';
-  static const _allowedMethods = {'cli.exec', 'agents.list', 'devices.ping', 'sync.status'};
+  static const _allowedMethods = {
+    'cli.exec',
+    'agents.list',
+    'devices.ping',
+    'sync.status',
+    'messages.fetch',
+  };
 
   final _log = LoggerService();
   final _db = LocalDatabaseService();
@@ -80,6 +87,8 @@ class DeviceRpcService {
         return await _cliExec(params);
       case 'sync.status':
         return await _syncStatus();
+      case 'messages.fetch':
+        return await _messagesFetch(params);
       default:
         return {'error': 'unknown_method'};
     }
@@ -153,10 +162,26 @@ class DeviceRpcService {
   Future<Map<String, dynamic>> _syncStatus() async {
     final role = await AccountIdentityService.instance.localDeviceRole();
     final owned = await AccountIdentityService.instance.ownedDevices();
+    final pendingEvents = await _db.countPendingOutbound();
+    final pendingBlobs = await _db.countPendingBlobOutbound();
     return {
       'role': role.wireValue,
       'device_count': owned.length,
+      'pending_events': pendingEvents,
+      'pending_blobs': pendingBlobs,
     };
+  }
+
+  Future<Map<String, dynamic>> _messagesFetch(Map<String, dynamic> params) async {
+    final role = await AccountIdentityService.instance.localDeviceRole();
+    if (role != DeviceRole.primary && role != DeviceRole.backup) {
+      return {'error': 'not_storage_device'};
+    }
+    final messageId = params['message_id'] as String? ?? '';
+    if (messageId.isEmpty) return {'error': 'missing_message_id'};
+    final row = await _db.getMessageById(messageId, fetchRemote: false);
+    if (row == null) return {'error': 'not_found'};
+    return {'message': row};
   }
 
   Future<String?> _peerIdForDevice(String deviceId) async {

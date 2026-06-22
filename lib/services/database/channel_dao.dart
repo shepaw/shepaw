@@ -1,4 +1,5 @@
 import 'package:sqflite/sqflite.dart';
+import '../../identity/services/sync_local_write_hook.dart';
 import '../../models/channel.dart';
 import '../local_database_service.dart';
 
@@ -34,6 +35,11 @@ extension ChannelDao on LocalDatabaseService {
     // 添加成员（保留角色信息）
     for (final member in channel.members) {
       await addChannelMember(channel.id, member.id, role: member.role, groupBio: member.groupBio);
+    }
+
+    final row = await getChannelRowById(channel.id);
+    if (row != null) {
+      SyncLocalWriteHook.onChannelUpserted(row);
     }
   }
 
@@ -81,6 +87,11 @@ extension ChannelDao on LocalDatabaseService {
       where: 'id = ?',
       whereArgs: [channel.id],
     );
+
+    final row = await getChannelRowById(channel.id);
+    if (row != null) {
+      SyncLocalWriteHook.onChannelUpserted(row);
+    }
   }
 
   /// 更新 Channel 的 updated_at 时间戳
@@ -103,6 +114,7 @@ extension ChannelDao on LocalDatabaseService {
   /// 添加 Channel 成员
   Future<void> addChannelMember(String channelId, String agentId, {String role = 'member', String? groupBio}) async {
     final db = await database;
+    final now = DateTime.now().toIso8601String();
     await db.insert(
       'channel_members',
       {
@@ -110,32 +122,50 @@ extension ChannelDao on LocalDatabaseService {
         'agent_id': agentId,
         'role': role,
         'group_bio': groupBio,
-        'joined_at': DateTime.now().toIso8601String(),
+        'joined_at': now,
+        'updated_at': now,
       },
-      conflictAlgorithm: ConflictAlgorithm.ignore,
+      conflictAlgorithm: ConflictAlgorithm.replace,
     );
+
+    final row = await getChannelMemberRow(channelId, agentId);
+    if (row != null) {
+      SyncLocalWriteHook.onChannelMemberUpserted(row);
+    }
   }
 
   /// 更新 Channel 成员角色
   Future<void> updateChannelMemberRole(String channelId, String agentId, String role) async {
     final db = await database;
+    final now = DateTime.now().toIso8601String();
     await db.update(
       'channel_members',
-      {'role': role},
+      {'role': role, 'updated_at': now},
       where: 'channel_id = ? AND agent_id = ?',
       whereArgs: [channelId, agentId],
     );
+
+    final row = await getChannelMemberRow(channelId, agentId);
+    if (row != null) {
+      SyncLocalWriteHook.onChannelMemberUpserted(row);
+    }
   }
 
   /// 更新 Channel 成员的群内能力描述
   Future<void> updateChannelMemberGroupBio(String channelId, String agentId, String? groupBio) async {
     final db = await database;
+    final now = DateTime.now().toIso8601String();
     await db.update(
       'channel_members',
-      {'group_bio': groupBio},
+      {'group_bio': groupBio, 'updated_at': now},
       where: 'channel_id = ? AND agent_id = ?',
       whereArgs: [channelId, agentId],
     );
+
+    final row = await getChannelMemberRow(channelId, agentId);
+    if (row != null) {
+      SyncLocalWriteHook.onChannelMemberUpserted(row);
+    }
   }
 
   /// 移除 Channel 成员
@@ -146,6 +176,7 @@ extension ChannelDao on LocalDatabaseService {
       where: 'channel_id = ? AND agent_id = ?',
       whereArgs: [channelId, agentId],
     );
+    SyncLocalWriteHook.onChannelMemberRemoved(channelId: channelId, agentId: agentId);
   }
 
   /// 获取 Channel 成员 ID 列表

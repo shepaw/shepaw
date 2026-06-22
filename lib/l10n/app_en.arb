@@ -1777,6 +1777,14 @@
   "@identity_syncPullFailed": {
     "placeholders": { "error": { "type": "String" } }
   },
+  "identity_syncPendingTitle": "Pending uploads",
+  "identity_syncPendingBody": "{events} changes and {blobs} attachments waiting to sync to primary",
+  "@identity_syncPendingBody": {
+    "placeholders": {
+      "events": { "type": "int" },
+      "blobs": { "type": "int" }
+    }
+  },
 
   "account_gateTitle": "Sign in to account",
   "account_gateHeadline": "Choose or create your account",

@@ -15,26 +15,22 @@ class AccountSessionService {
 
   bool _syncStarted = false;
 
-  /// 本机是否已有账号密钥。
   Future<bool> hasLocalAccount() => LocalAccountRegistry.instance.hasAnyAccount();
 
-  /// 切换到指定账号（重置内存状态 + 切换数据库）。
   Future<void> switchToAccount(String accountId) async {
+    _stopSyncServices();
     AccountIdentityService.instance.resetInMemory();
-    resetSyncState();
     await LocalAccountRegistry.instance.setActiveAccountId(accountId);
     await LocalDatabaseService().switchAccount(accountId);
     _log.info('Switched to account $accountId', tag: _tag);
   }
 
-  /// 准备创建新账号：清除当前会话状态，不删除已保存账号。
   Future<void> prepareNewAccount() async {
+    _stopSyncServices();
     AccountIdentityService.instance.resetInMemory();
-    resetSyncState();
     await LocalDatabaseService().switchAccount(null);
   }
 
-  /// 激活当前账号（加载身份 + 启动 P2P 同步协议）。
   Future<void> activate() async {
     final accountId = await LocalAccountRegistry.instance.getActiveAccountId();
     if (accountId != null) {
@@ -50,6 +46,14 @@ class AccountSessionService {
   }
 
   void resetSyncState() {
-    _syncStarted = false;
+    _stopSyncServices();
+  }
+
+  void _stopSyncServices() {
+    if (_syncStarted) {
+      SyncProtocolService.instance.stop();
+      SyncClientService.instance.stop();
+      _syncStarted = false;
+    }
   }
 }

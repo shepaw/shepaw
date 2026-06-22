@@ -7472,6 +7472,18 @@ abstract class AppLocalizations {
   /// **'同步失败：{error}'**
   String identity_syncPullFailed(String error);
 
+  /// No description provided for @identity_syncPendingTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'待上传数据'**
+  String get identity_syncPendingTitle;
+
+  /// No description provided for @identity_syncPendingBody.
+  ///
+  /// In zh, this message translates to:
+  /// **'{events} 条变更、{blobs} 个附件等待同步到主存储设备'**
+  String identity_syncPendingBody(int events, int blobs);
+
   /// No description provided for @account_gateTitle.
   ///
   /// In zh, this message translates to:

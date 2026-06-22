@@ -2262,6 +2262,14 @@
   "@identity_syncPullFailed": {
     "placeholders": { "error": { "type": "String" } }
   },
+  "identity_syncPendingTitle": "待上传数据",
+  "identity_syncPendingBody": "{events} 条变更、{blobs} 个附件等待同步到主存储设备",
+  "@identity_syncPendingBody": {
+    "placeholders": {
+      "events": { "type": "int" },
+      "blobs": { "type": "int" }
+    }
+  },
 
   "account_gateTitle": "登录账号",
   "account_gateHeadline": "选择或创建你的账号",

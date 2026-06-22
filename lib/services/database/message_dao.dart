@@ -2,7 +2,8 @@ import 'dart:convert';
 import 'package:uuid/uuid.dart';
 import '../local_database_service.dart';
 import '../logger_service.dart';
-import '../../identity/services/sync_outbound_hook.dart';
+import '../../identity/services/sync_local_write_hook.dart';
+import '../../identity/services/sync_message_fetch_service.dart';
 
 /// 消息（含流式/部分消息）相关的数据访问层。
 extension MessageDao on LocalDatabaseService {
@@ -33,10 +34,11 @@ extension MessageDao on LocalDatabaseService {
         'metadata': metadata != null ? jsonEncode(metadata) : null,
         'reply_to_id': replyToId,
         'created_at': createdAt,
+        'updated_at': createdAt,
         'is_read': 0,
       },
     );
-    SyncOutboundHook.onMessageCreated(
+    SyncLocalWriteHook.onMessageCreated(
       id: id,
       channelId: channelId,
       senderId: senderId,
@@ -63,15 +65,17 @@ extension MessageDao on LocalDatabaseService {
     );
   }
 
-  /// 根据 ID 获取单条消息
-  Future<Map<String, dynamic>?> getMessageById(String messageId) async {
+  /// 根据 ID 获取单条消息（App 可自动从 Primary 按需拉取正文）。
+  Future<Map<String, dynamic>?> getMessageById(String messageId, {bool fetchRemote = true}) async {
     final db = await database;
     final results = await db.query(
       'messages',
       where: 'id = ?',
       whereArgs: [messageId],
     );
-    return results.isEmpty ? null : results.first;
+    if (results.isNotEmpty) return results.first;
+    if (!fetchRemote) return null;
+    return SyncMessageFetchService.instance.fetchMessageBody(messageId);
   }
 
   /// 标记消息为已读
@@ -88,11 +92,16 @@ extension MessageDao on LocalDatabaseService {
   /// 删除消息
   Future<void> deleteMessage(String messageId) async {
     final db = await database;
+    final existing = await getMessageById(messageId);
+    final channelId = existing?['channel_id'] as String? ?? '';
     await db.delete(
       'messages',
       where: 'id = ?',
       whereArgs: [messageId],
     );
+    if (channelId.isNotEmpty) {
+      SyncLocalWriteHook.onMessageDeleted(messageId: messageId, channelId: channelId);
+    }
   }
 
   /// 统计 channel 中 created_at >= [createdAt] 的消息数量（含该时间点）。
@@ -154,8 +163,11 @@ extension MessageDao on LocalDatabaseService {
     Map<String, dynamic>? metadata,
   }) async {
     final db = await database;
+    final existing = await getMessageById(messageId);
+    final updatedAt = DateTime.now().toIso8601String();
     final updateData = <String, dynamic>{
       'content': content,
+      'updated_at': updatedAt,
     };
 
     if (metadata != null) {
@@ -168,16 +180,37 @@ extension MessageDao on LocalDatabaseService {
       where: 'id = ?',
       whereArgs: [messageId],
     );
+
+    if (existing != null) {
+      SyncLocalWriteHook.onMessageUpdated(
+        messageId: messageId,
+        channelId: existing['channel_id'] as String? ?? '',
+        content: content,
+        metadata: metadata != null ? jsonEncode(metadata) : null,
+        updatedAt: updatedAt,
+      );
+    }
   }
 
   Future<void> updateMessageMetadata(String messageId, Map<String, dynamic> metadata) async {
     final db = await database;
+    final existing = await getMessageById(messageId);
+    final updatedAt = DateTime.now().toIso8601String();
     await db.update(
       'messages',
-      {'metadata': jsonEncode(metadata)},
+      {'metadata': jsonEncode(metadata), 'updated_at': updatedAt},
       where: 'id = ?',
       whereArgs: [messageId],
     );
+    if (existing != null) {
+      SyncLocalWriteHook.onMessageUpdated(
+        messageId: messageId,
+        channelId: existing['channel_id'] as String? ?? '',
+        content: existing['content'] as String? ?? '',
+        metadata: jsonEncode(metadata),
+        updatedAt: updatedAt,
+      );
+    }
   }
 
   /// Create or update a partial streaming message.

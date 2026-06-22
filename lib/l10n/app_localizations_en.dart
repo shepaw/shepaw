@@ -4187,6 +4187,14 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
+  String get identity_syncPendingTitle => 'Pending uploads';
+
+  @override
+  String identity_syncPendingBody(int events, int blobs) {
+    return '$events changes and $blobs attachments waiting to sync to primary';
+  }
+
+  @override
   String get account_gateTitle => 'Sign in to account';
 
   @override

@@ -2,8 +2,6 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:typed_data';
 
-import 'package:uuid/uuid.dart';
-
 import '../../peer/services/peer_connection_manager.dart';
 import '../../peer/services/peer_storage_service.dart';
 import '../../services/local_database_service.dart';
@@ -17,6 +15,15 @@ import 'device_rpc_service.dart';
 import 'device_trust_service.dart';
 import 'sync_engine.dart';
 
+/// sync_query 等待响应超时。
+class SyncQueryTimeoutException implements Exception {
+  final String requestId;
+  const SyncQueryTimeoutException(this.requestId);
+
+  @override
+  String toString() => 'Sync query timed out: $requestId';
+}
+
 /// P2P 账号同步协议（Noise 加密通道内的 control 消息）。
 class SyncProtocolService {
   SyncProtocolService._();
@@ -25,7 +32,6 @@ class SyncProtocolService {
   static const _tag = 'SyncProtocol';
   final _log = LoggerService();
   final _db = LocalDatabaseService();
-  final _uuid = const Uuid();
 
   StreamSubscription<PeerControlEvent>? _sub;
   bool _running = false;
@@ -50,12 +56,12 @@ class SyncProtocolService {
     _sub = null;
   }
 
-  Future<Map<String, dynamic>?> waitQueryResponse(String requestId, {required Duration timeout}) {
+  Future<Map<String, dynamic>> waitQueryResponse(String requestId, {required Duration timeout}) {
     final c = Completer<Map<String, dynamic>>();
     _queryWaiters[requestId] = c;
     return c.future.timeout(timeout, onTimeout: () {
       _queryWaiters.remove(requestId);
-      return <String, dynamic>{'events': <Map<String, dynamic>>[]};
+      throw SyncQueryTimeoutException(requestId);
     });
   }
 
@@ -225,8 +231,6 @@ class SyncProtocolService {
       return;
     }
 
-    final pet = await AccountIdentityService.instance.spiritPetIdentity();
-    final fp = data['transport_fingerprint'] as String? ?? '';
     final existing = await _db.getOwnedDeviceByDeviceId(remoteDeviceId);
     final now = DateTime.now().millisecondsSinceEpoch;
 
@@ -239,20 +243,8 @@ class SyncProtocolService {
       return;
     }
 
-    final record = OwnedDeviceRecord(
-      id: _uuid.v4(),
-      deviceId: remoteDeviceId,
-      deviceName: data['device_name'] as String? ?? remoteDeviceId,
-      role: DeviceRole.fromWire(data['role'] as String?),
-      transportPublicKey: Uint8List(32),
-      fingerprint: fp,
-      userId: user.fingerprintHex,
-      petId: pet.fingerprintHex,
-      isLocal: false,
-      trustedAt: now,
-      lastSeenAt: now,
-    );
-    await _db.upsertOwnedDevice(record);
+    // 无 transport 公钥时不自动登记未知设备，等待 join/trust 流程。
+    _log.info('Ignoring sync_role_announce for unknown device $remoteDeviceId', tag: _tag);
   }
 
   Future<void> _handleTrustAccept(String peerId, Map<String, dynamic> data) async {
@@ -269,7 +261,7 @@ class SyncProtocolService {
       deviceName: data['device_name'] as String? ?? 'Device',
       transportPublicKey: Uint8List.fromList(pub),
       fingerprint: data['transport_fingerprint'] as String? ?? '',
-      role: DeviceRole.app,
+      role: DeviceRole.fromWire(data['role'] as String?),
     );
     _log.info('Registered trusted device via sync_trust_accept', tag: _tag);
   }
@@ -301,12 +293,32 @@ class SyncProtocolService {
     final sinceMs = data['since_ms'] as int? ?? 0;
     final limit = data['limit'] as int? ?? 50;
     final channelId = data['channel_id'] as String?;
+    final domain = data['domain'] as String?;
 
-    final events = await SyncEngine.instance.queryEvents(
-      sinceMs: sinceMs,
-      channelId: channelId,
-      limit: limit,
-    );
+    final List<SyncEvent> events;
+    if (domain == 'message') {
+      events = await SyncEngine.instance.queryMessageEvents(
+        sinceMs: sinceMs,
+        channelId: channelId,
+        limit: limit,
+      );
+    } else if (domain == 'channel') {
+      events = await SyncEngine.instance.queryChannelEvents(
+        sinceMs: sinceMs,
+        limit: limit,
+      );
+    } else if (domain == 'channel_member') {
+      events = await SyncEngine.instance.queryChannelMemberEvents(
+        sinceMs: sinceMs,
+        limit: limit,
+      );
+    } else {
+      events = await SyncEngine.instance.queryEvents(
+        sinceMs: sinceMs,
+        channelId: channelId,
+        limit: limit,
+      );
+    }
 
     await PeerConnectionManager.instance.sendControl(peerId, {
       'type': 'sync_query_resp',
@@ -361,6 +373,11 @@ class SyncProtocolService {
         .map((e) => SyncEvent.fromJson(Map<String, dynamic>.from(e)))
         .toList();
     await SyncEngine.instance.applyEvents(events);
+  }
+
+  /// 向已关联 App/Backup 设备推送事件（Primary commit 或本地写入后 fan-out）。
+  Future<void> pushEventsToPeers(List<SyncEvent> events) async {
+    await _pushToBackups(events);
   }
 
   Future<void> _pushToBackups(List<SyncEvent> events) async {

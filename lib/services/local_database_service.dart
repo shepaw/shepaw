@@ -38,6 +38,7 @@ class LocalDatabaseService {
     if (_scopedAccountId == accountId && _database != null) return;
     await close();
     _scopedAccountId = accountId;
+    await SheProfileDatabaseService().switchAccount(accountId);
   }
 
   String? get scopedAccountId => _scopedAccountId;
@@ -68,7 +69,7 @@ class LocalDatabaseService {
       // Web平台使用sqflite_common_ffi
       return await openDatabase(
         'shepaw',
-        version: 24,
+        version: 26,
         onCreate: _onCreate,
         onUpgrade: _onUpgrade,
       );
@@ -77,7 +78,7 @@ class LocalDatabaseService {
     final path = await _resolveDbPath();
     return await openDatabase(
       path,
-      version: 24,
+      version: 26,
       onCreate: _onCreate,
       onUpgrade: _onUpgrade,
     );
@@ -181,6 +182,7 @@ class LocalDatabaseService {
         role TEXT DEFAULT 'member',
         group_bio TEXT,
         joined_at TEXT NOT NULL,
+        updated_at TEXT,
         UNIQUE(channel_id, agent_id),
         FOREIGN KEY (channel_id) REFERENCES channels (id) ON DELETE CASCADE,
         FOREIGN KEY (agent_id) REFERENCES agents (id) ON DELETE CASCADE
@@ -200,6 +202,7 @@ class LocalDatabaseService {
         metadata TEXT,
         reply_to_id TEXT,
         created_at TEXT NOT NULL,
+        updated_at TEXT,
         is_read INTEGER DEFAULT 0,
         FOREIGN KEY (channel_id) REFERENCES channels (id) ON DELETE CASCADE
       )
@@ -706,6 +709,41 @@ class LocalDatabaseService {
         await _createBlobCacheTable(db);
       } catch (e) {
         LoggerService().error('Failed to create blob cache table (v24)', tag: 'Migration', error: e);
+      }
+    }
+
+    if (oldVersion < 25) {
+      try {
+        await db.execute('ALTER TABLE messages ADD COLUMN updated_at TEXT');
+        await db.execute(
+          "UPDATE messages SET updated_at = created_at WHERE updated_at IS NULL",
+        );
+      } catch (_) {}
+      try {
+        await db.execute('''
+          CREATE TABLE IF NOT EXISTS identity_blob_outbound_queue (
+            id TEXT PRIMARY KEY,
+            relative_path TEXT NOT NULL,
+            created_at INTEGER NOT NULL,
+            acked INTEGER NOT NULL DEFAULT 0
+          )
+        ''');
+        await db.execute(
+          'CREATE INDEX IF NOT EXISTS idx_blob_outbound_pending ON identity_blob_outbound_queue(acked, created_at)',
+        );
+      } catch (e) {
+        LoggerService().error('Failed sync v25 migration', tag: 'Migration', error: e);
+      }
+    }
+
+    if (oldVersion < 26) {
+      try {
+        await db.execute('ALTER TABLE channel_members ADD COLUMN updated_at TEXT');
+        await db.execute(
+          "UPDATE channel_members SET updated_at = joined_at WHERE updated_at IS NULL",
+        );
+      } catch (e) {
+        LoggerService().error('Failed sync v26 migration', tag: 'Migration', error: e);
       }
     }
 

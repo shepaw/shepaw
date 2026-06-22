@@ -4,6 +4,7 @@ import 'package:path/path.dart' as path;
 import 'package:uuid/uuid.dart';
 import 'dart:typed_data';
 import 'logger_service.dart';
+import 'local_database_service.dart';
 
 /// 本地文件存储服务 - 管理图片、头像等资源文件
 class LocalFileStorageService {
@@ -13,10 +14,14 @@ class LocalFileStorageService {
 
   final _uuid = const Uuid();
 
-  /// 获取应用数据目录
+  /// 获取应用数据目录（按当前账号隔离；无账号时使用 legacy 全局目录）。
   Future<Directory> get _appDataDir async {
     final directory = await getApplicationDocumentsDirectory();
-    final appDir = Directory(path.join(directory.path, 'shepaw'));
+    final accountId = LocalDatabaseService().scopedAccountId;
+    final basePath = (accountId != null && accountId.isNotEmpty)
+        ? path.join(directory.path, 'accounts', accountId, 'files')
+        : path.join(directory.path, 'shepaw');
+    final appDir = Directory(basePath);
     if (!await appDir.exists()) {
       await appDir.create(recursive: true);
     }
