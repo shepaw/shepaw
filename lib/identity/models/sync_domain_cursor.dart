@@ -47,4 +47,25 @@ class SyncDomainCursor {
     }
     return c;
   }
+
+  /// 从 [events] 中选取 cursor 之后的前 [limit] 条（按 wall_time + event_id 排序）。
+  static List<SyncEvent> pageEventsAfter({
+    required Iterable<SyncEvent> events,
+    required SyncDomainCursor cursor,
+    required int limit,
+  }) {
+    final sorted = events.toList()
+      ..sort((a, b) {
+        final byTime = a.wallTimeMs.compareTo(b.wallTimeMs);
+        if (byTime != 0) return byTime;
+        return a.eventId.compareTo(b.eventId);
+      });
+    final out = <SyncEvent>[];
+    for (final e in sorted) {
+      if (!isEventAfter(e, cursor)) continue;
+      out.add(e);
+      if (out.length >= limit) break;
+    }
+    return out;
+  }
 }

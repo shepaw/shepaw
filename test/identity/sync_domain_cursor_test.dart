@@ -34,5 +34,40 @@ void main() {
       expect(SyncDomainCursor.isEventAfter(before, cursor), isFalse);
       expect(SyncDomainCursor.isEventAfter(after, cursor), isTrue);
     });
+
+    test('pageEventsAfter returns events after cursor in stable order', () {
+      const cursor = SyncDomainCursor(wallTimeMs: 100, lastEventId: 'msg:a');
+      final events = [
+        SyncEvent(
+          eventId: 'msg:a',
+          domain: 'message',
+          payload: {'id': 'a'},
+          wallTimeMs: 100,
+          originDeviceId: 'dev',
+        ),
+        SyncEvent(
+          eventId: 'msg:b',
+          domain: 'message',
+          payload: {'id': 'b'},
+          wallTimeMs: 100,
+          originDeviceId: 'dev',
+        ),
+        SyncEvent(
+          eventId: 'msg:c',
+          domain: 'message',
+          payload: {'id': 'c'},
+          wallTimeMs: 101,
+          originDeviceId: 'dev',
+        ),
+      ];
+
+      final page = SyncDomainCursor.pageEventsAfter(
+        events: events,
+        cursor: cursor,
+        limit: 10,
+      );
+
+      expect(page.map((e) => e.eventId).toList(), ['msg:b', 'msg:c']);
+    });
   });
 }

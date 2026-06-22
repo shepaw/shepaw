@@ -116,14 +116,16 @@ class SheMemoryDbService {
   Future<List<Map<String, dynamic>>> getChangedSince({
     required int sinceMs,
     int limit = 50,
+    int offset = 0,
   }) async {
     final db = await database;
     return db.query(
       'she_memory',
       where: 'updated_at >= ?',
       whereArgs: [sinceMs],
-      orderBy: 'updated_at ASC',
+      orderBy: 'updated_at ASC, key ASC',
       limit: limit,
+      offset: offset,
     );
   }
 

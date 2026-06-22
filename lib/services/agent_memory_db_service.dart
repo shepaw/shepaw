@@ -194,6 +194,7 @@ class AgentMemoryDbService {
   static Future<List<Map<String, dynamic>>> queryAllChangedSince({
     required int sinceMs,
     int limit = 50,
+    int offset = 0,
   }) async {
     if (kIsWeb) return [];
 
@@ -227,16 +228,18 @@ class AgentMemoryDbService {
       }
     }
 
-    return _mergeMemoryRowsByUpdatedAt(perFile, limit);
+    return _mergeMemoryRowsByUpdatedAt(perFile, limit, offset: offset);
   }
 
   static List<Map<String, dynamic>> _mergeMemoryRowsByUpdatedAt(
     List<List<Map<String, dynamic>>> perFile,
-    int limit,
-  ) {
+    int limit, {
+    int offset = 0,
+  }) {
     if (perFile.isEmpty) return [];
     final indices = List<int>.filled(perFile.length, 0);
     final merged = <Map<String, dynamic>>[];
+    var skipped = 0;
 
     while (merged.length < limit) {
       var pick = -1;
@@ -252,7 +255,11 @@ class AgentMemoryDbService {
         if (cmp < 0) pick = i;
       }
       if (pick < 0) break;
-      merged.add(perFile[pick][indices[pick]]);
+      if (skipped < offset) {
+        skipped++;
+      } else {
+        merged.add(perFile[pick][indices[pick]]);
+      }
       indices[pick]++;
     }
     return merged;

@@ -263,6 +263,10 @@ class AccountIdentityService {
     }
   }
 
+  Future<void> applyRemoteUserElectedPrimary(String? deviceId) async {
+    await _setUserElectedPrimary(deviceId);
+  }
+
   Future<void> setLocalDeviceRole(DeviceRole role) async {
     final local = await localDevice();
     if (local == null) return;

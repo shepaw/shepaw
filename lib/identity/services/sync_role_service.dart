@@ -32,6 +32,8 @@ class SyncRoleService {
     final paired = await _findPairedPeerId(peerDeviceId);
     if (paired == null) return;
 
+    final elected = await AccountIdentityService.instance.userElectedPrimaryDeviceId();
+
     await PeerConnectionManager.instance.sendControl(paired, {
       'type': 'sync_role_announce',
       'device_id': local.deviceId,
@@ -40,6 +42,7 @@ class SyncRoleService {
       'user_id': local.userId,
       'pet_id': local.petId,
       'transport_fingerprint': local.fingerprint,
+      'elected_primary_device_id': elected ?? '',
     });
   }
 

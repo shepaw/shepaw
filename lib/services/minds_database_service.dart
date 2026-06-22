@@ -317,9 +317,11 @@ class MindsDatabaseService {
   Future<List<Map<String, dynamic>>> getCognitionChangedSince({
     required int sinceMs,
     int limit = 50,
+    int offset = 0,
   }) async {
-    final selfRows = await getSelfChangedSince(sinceMs: sinceMs);
-    final userRows = await getUserChangedSince(sinceMs: sinceMs);
+    final fetchCap = limit + offset + 50;
+    final selfRows = await getSelfChangedSince(sinceMs: sinceMs, limit: fetchCap);
+    final userRows = await getUserChangedSince(sinceMs: sinceMs, limit: fetchCap);
     final merged = <Map<String, dynamic>>[
       ...selfRows.map((row) => {...row, 'kind': 'self'}),
       ...userRows.map((row) => {...row, 'kind': 'user'}),
@@ -330,10 +332,15 @@ class MindsDatabaseService {
         final bMs = b['kind'] == 'user'
             ? (b['last_updated'] as int? ?? 0)
             : (b['updated_at'] as int? ?? 0);
-        return aMs.compareTo(bMs);
+        final byTime = aMs.compareTo(bMs);
+        if (byTime != 0) return byTime;
+        final aId = a['agent_id'] as String? ?? '';
+        final bId = b['agent_id'] as String? ?? '';
+        return aId.compareTo(bId);
       });
-    if (merged.length > limit) return merged.sublist(0, limit);
-    return merged;
+    if (merged.length <= offset) return [];
+    final end = (offset + limit).clamp(0, merged.length);
+    return merged.sublist(offset, end);
   }
 
   Future<List<Map<String, dynamic>>> getSelfChangedSince({

@@ -11,6 +11,7 @@ import '../../services/local_database_service.dart';
 import '../../services/logger_service.dart';
 import '../models/device_role.dart';
 import '../models/sync_event.dart';
+import '../models/sync_pull_exception.dart';
 import 'account_identity_service.dart';
 import 'blob_sync_service.dart';
 import 'device_trust_service.dart';
@@ -134,14 +135,18 @@ class SyncClientService {
   }
 
   Future<void> _pullFromPeerImpl(String peerId) async {
-    await _pullDomain(peerId, domain: 'message');
-    await _pullDomain(peerId, domain: 'channel');
-    await _pullDomain(peerId, domain: 'channel_member');
-    await _pullDomain(peerId, domain: 'agent');
-    await _pullDomain(peerId, domain: 'she_memory');
-    await _pullDomain(peerId, domain: 'cognition');
-    await _pullDomain(peerId, domain: 'agent_memory');
+    final failed = <String>[];
+    for (final domain in SyncEngine.syncDomains) {
+      final ok = await _pullDomain(peerId, domain: domain);
+      if (!ok) failed.add(domain);
+    }
     await SyncEngine.instance.pruneOldTombstones();
+    if (failed.isNotEmpty) {
+      throw SyncPullException(
+        'Sync pull incomplete for domains: ${failed.join(', ')}',
+        failed,
+      );
+    }
   }
 
   Future<void> _retryPendingOutboundIfConnected() async {
@@ -168,7 +173,7 @@ class SyncClientService {
     }
   }
 
-  Future<void> _pullDomain(String peerId, {required String domain}) async {
+  Future<bool> _pullDomain(String peerId, {required String domain}) async {
     var cursor = await SyncEngine.instance.getDomainCursor(domain);
     const pageSize = 50;
 
@@ -179,9 +184,13 @@ class SyncClientService {
         'request_id': requestId,
         'domain': domain,
         'since_ms': cursor.wallTimeMs,
+        'since_event_id': cursor.lastEventId,
         'limit': pageSize,
       });
-      if (!sent) break;
+      if (!sent) {
+        _log.warning('Sync query send failed for domain=$domain', tag: _tag);
+        return false;
+      }
 
       Map<String, dynamic> resp;
       try {
@@ -191,7 +200,12 @@ class SyncClientService {
         );
       } on SyncQueryTimeoutException {
         _log.warning('Sync query timeout for domain=$domain', tag: _tag);
-        break;
+        return false;
+      }
+
+      if (resp['error'] != null) {
+        _log.warning('Sync query error for domain=$domain: ${resp['error']}', tag: _tag);
+        return false;
       }
 
       final eventsRaw = (resp['events'] as List?) ?? const [];
@@ -219,6 +233,7 @@ class SyncClientService {
 
       if (eventsRaw.length < pageSize) break;
     }
+    return true;
   }
 
   Future<void> _flushOutbound(String peerId) async {

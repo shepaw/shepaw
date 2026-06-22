@@ -94,68 +94,96 @@ class SyncEngine {
     return SyncDomainCursor.zero;
   }
 
-  /// Primary / Backup：查询 since 之后的消息事件。
+  /// Primary / Backup：查询 cursor 之后的消息事件。
   Future<List<SyncEvent>> queryMessageEvents({
     required int sinceMs,
+    String sinceEventId = '',
     String? channelId,
     int limit = 50,
     String? originDeviceId,
   }) async {
+    final since = SyncDomainCursor(wallTimeMs: sinceMs, lastEventId: sinceEventId);
     final origin = originDeviceId ?? (await AccountIdentityService.instance.localDevice())?.deviceId ?? 'local';
-    final rows = await _db.getMessagesChangedSince(
-      sinceMs: sinceMs,
-      channelId: channelId,
+    return _queryDomainEvents(
+      since: since,
       limit: limit,
+      fetchBatch: (ms, fetchLimit, offset) async {
+        final rows = await _db.getMessagesChangedSince(
+          sinceMs: ms,
+          channelId: channelId,
+          limit: fetchLimit,
+          offset: offset,
+        );
+        var deletes = await _db.querySyncTombstonesSince(
+          domain: 'message',
+          sinceMs: ms,
+          limit: fetchLimit,
+          offset: offset,
+        );
+        if (channelId != null) {
+          deletes = deletes.where((e) => e.payload['channel_id'] == channelId).toList();
+        }
+        return [
+          ...rows.map((row) => SyncEvent.messageEvent(messageRow: row, originDeviceId: origin)),
+          ...deletes,
+        ];
+      },
     );
-    final upserts = rows
-        .map((row) => SyncEvent.messageEvent(messageRow: row, originDeviceId: origin))
-        .toList();
-    var deletes = await _db.querySyncTombstonesSince(
-      domain: 'message',
-      sinceMs: sinceMs,
-      limit: limit,
-    );
-    if (channelId != null) {
-      deletes = deletes.where((e) => e.payload['channel_id'] == channelId).toList();
-    }
-    return _mergeEventsByWallTime(upserts: upserts, deletes: deletes, limit: limit);
   }
 
-  /// Primary / Backup：查询 since 之后的频道事件。
+  /// Primary / Backup：查询 cursor 之后的频道事件。
   Future<List<SyncEvent>> queryChannelEvents({
     required int sinceMs,
+    String sinceEventId = '',
     int limit = 50,
     String? originDeviceId,
   }) async {
+    final since = SyncDomainCursor(wallTimeMs: sinceMs, lastEventId: sinceEventId);
     final origin = originDeviceId ?? (await AccountIdentityService.instance.localDevice())?.deviceId ?? 'local';
-    final rows = await _db.getChannelsUpdatedSince(sinceMs, limit: limit);
-    final upserts = rows
-        .map((row) => SyncEvent.channelEvent(channelRow: row, originDeviceId: origin))
-        .toList();
-    final deletes = await _db.querySyncTombstonesSince(
-      domain: 'channel',
-      sinceMs: sinceMs,
+    return _queryDomainEvents(
+      since: since,
       limit: limit,
+      fetchBatch: (ms, fetchLimit, offset) async {
+        final rows = await _db.getChannelsUpdatedSince(ms, limit: fetchLimit, offset: offset);
+        final deletes = await _db.querySyncTombstonesSince(
+          domain: 'channel',
+          sinceMs: ms,
+          limit: fetchLimit,
+          offset: offset,
+        );
+        return [
+          ...rows.map((row) => SyncEvent.channelEvent(channelRow: row, originDeviceId: origin)),
+          ...deletes,
+        ];
+      },
     );
-    return _mergeEventsByWallTime(upserts: upserts, deletes: deletes, limit: limit);
   }
 
   Future<List<SyncEvent>> queryChannelMemberEvents({
     required int sinceMs,
+    String sinceEventId = '',
     int limit = 50,
     String? originDeviceId,
   }) async {
+    final since = SyncDomainCursor(wallTimeMs: sinceMs, lastEventId: sinceEventId);
     final origin = originDeviceId ?? (await AccountIdentityService.instance.localDevice())?.deviceId ?? 'local';
-    final rows = await _db.getChannelMembersChangedSince(sinceMs, limit: limit);
-    final upserts = rows
-        .map((row) => SyncEvent.channelMemberEvent(memberRow: row, originDeviceId: origin))
-        .toList();
-    final deletes = await _db.querySyncTombstonesSince(
-      domain: 'channel_member',
-      sinceMs: sinceMs,
+    return _queryDomainEvents(
+      since: since,
       limit: limit,
+      fetchBatch: (ms, fetchLimit, offset) async {
+        final rows = await _db.getChannelMembersChangedSince(ms, limit: fetchLimit, offset: offset);
+        final deletes = await _db.querySyncTombstonesSince(
+          domain: 'channel_member',
+          sinceMs: ms,
+          limit: fetchLimit,
+          offset: offset,
+        );
+        return [
+          ...rows.map((row) => SyncEvent.channelMemberEvent(memberRow: row, originDeviceId: origin)),
+          ...deletes,
+        ];
+      },
     );
-    return _mergeEventsByWallTime(upserts: upserts, deletes: deletes, limit: limit);
   }
 
   /// 应用频道成员事件批次。
@@ -166,61 +194,96 @@ class SyncEngine {
   Future<SyncDomainCursor> applyAgentEvents(List<SyncEvent> events) =>
       _applyEvents(events, cursorKey: _agentCursorKey);
 
-  /// Primary / Backup：查询 since 之后更新的 Agent。
+  /// Primary / Backup：查询 cursor 之后更新的 Agent。
   Future<List<SyncEvent>> queryAgentEvents({
     required int sinceMs,
+    String sinceEventId = '',
     int limit = 50,
     String? originDeviceId,
   }) async {
+    final since = SyncDomainCursor(wallTimeMs: sinceMs, lastEventId: sinceEventId);
     final origin = originDeviceId ?? (await AccountIdentityService.instance.localDevice())?.deviceId ?? 'local';
-    final rows = await _db.getAgentsChangedSince(sinceMs: sinceMs, limit: limit);
-    final upserts = rows.map((row) => SyncEvent.agentEvent(agentRow: row, originDeviceId: origin)).toList();
-    final deletes = await _db.querySyncTombstonesSince(
-      domain: 'agent',
-      sinceMs: sinceMs,
+    return _queryDomainEvents(
+      since: since,
       limit: limit,
+      fetchBatch: (ms, fetchLimit, offset) async {
+        final rows = await _db.getAgentsChangedSince(sinceMs: ms, limit: fetchLimit, offset: offset);
+        final deletes = await _db.querySyncTombstonesSince(
+          domain: 'agent',
+          sinceMs: ms,
+          limit: fetchLimit,
+          offset: offset,
+        );
+        return [
+          ...rows.map((row) => SyncEvent.agentEvent(agentRow: row, originDeviceId: origin)),
+          ...deletes,
+        ];
+      },
     );
-    return _mergeEventsByWallTime(upserts: upserts, deletes: deletes, limit: limit);
   }
 
   Future<List<SyncEvent>> querySheMemoryEvents({
     required int sinceMs,
+    String sinceEventId = '',
     int limit = 50,
     String? originDeviceId,
   }) async {
+    final since = SyncDomainCursor(wallTimeMs: sinceMs, lastEventId: sinceEventId);
     final origin = originDeviceId ?? (await AccountIdentityService.instance.localDevice())?.deviceId ?? 'local';
-    final rows = await _sheMemoryDb.getChangedSince(sinceMs: sinceMs, limit: limit);
-    final upserts = rows
-        .map((row) => SyncEvent.sheMemoryEvent(row: row, originDeviceId: origin))
-        .toList();
-    final deletes = await _db.querySyncTombstonesSince(
-      domain: 'she_memory',
-      sinceMs: sinceMs,
+    return _queryDomainEvents(
+      since: since,
       limit: limit,
+      fetchBatch: (ms, fetchLimit, offset) async {
+        final rows = await _sheMemoryDb.getChangedSince(sinceMs: ms, limit: fetchLimit, offset: offset);
+        final deletes = await _db.querySyncTombstonesSince(
+          domain: 'she_memory',
+          sinceMs: ms,
+          limit: fetchLimit,
+          offset: offset,
+        );
+        return [
+          ...rows.map((row) => SyncEvent.sheMemoryEvent(row: row, originDeviceId: origin)),
+          ...deletes,
+        ];
+      },
     );
-    return _mergeEventsByWallTime(upserts: upserts, deletes: deletes, limit: limit);
   }
 
   Future<List<SyncEvent>> queryCognitionEvents({
     required int sinceMs,
+    String sinceEventId = '',
     int limit = 50,
     String? originDeviceId,
   }) async {
+    final since = SyncDomainCursor(wallTimeMs: sinceMs, lastEventId: sinceEventId);
     final origin = originDeviceId ?? (await AccountIdentityService.instance.localDevice())?.deviceId ?? 'local';
-    final rows = await _mindsDb.getCognitionChangedSince(sinceMs: sinceMs, limit: limit);
-    final upserts = rows.map((row) {
-      final kind = row['kind'] as String? ?? 'self';
-      if (kind == 'user') {
-        return SyncEvent.cognitionUserEvent(row: row, originDeviceId: origin);
-      }
-      return SyncEvent.cognitionSelfEvent(row: row, originDeviceId: origin);
-    }).toList();
-    final deletes = await _db.querySyncTombstonesSince(
-      domain: 'cognition',
-      sinceMs: sinceMs,
+    return _queryDomainEvents(
+      since: since,
       limit: limit,
+      fetchBatch: (ms, fetchLimit, offset) async {
+        final rows = await _mindsDb.getCognitionChangedSince(
+          sinceMs: ms,
+          limit: fetchLimit,
+          offset: offset,
+        );
+        final deletes = await _db.querySyncTombstonesSince(
+          domain: 'cognition',
+          sinceMs: ms,
+          limit: fetchLimit,
+          offset: offset,
+        );
+        return [
+          ...rows.map((row) {
+            final kind = row['kind'] as String? ?? 'self';
+            if (kind == 'user') {
+              return SyncEvent.cognitionUserEvent(row: row, originDeviceId: origin);
+            }
+            return SyncEvent.cognitionSelfEvent(row: row, originDeviceId: origin);
+          }),
+          ...deletes,
+        ];
+      },
     );
-    return _mergeEventsByWallTime(upserts: upserts, deletes: deletes, limit: limit);
   }
 
   /// 应用 She 记忆事件批次。
@@ -233,23 +296,33 @@ class SyncEngine {
 
   Future<List<SyncEvent>> queryAgentMemoryEvents({
     required int sinceMs,
+    String sinceEventId = '',
     int limit = 50,
     String? originDeviceId,
   }) async {
+    final since = SyncDomainCursor(wallTimeMs: sinceMs, lastEventId: sinceEventId);
     final origin = originDeviceId ?? (await AccountIdentityService.instance.localDevice())?.deviceId ?? 'local';
-    final rows = await AgentMemoryDbService.queryAllChangedSince(
-      sinceMs: sinceMs,
+    return _queryDomainEvents(
+      since: since,
       limit: limit,
+      fetchBatch: (ms, fetchLimit, offset) async {
+        final rows = await AgentMemoryDbService.queryAllChangedSince(
+          sinceMs: ms,
+          limit: fetchLimit,
+          offset: offset,
+        );
+        final deletes = await _db.querySyncTombstonesSince(
+          domain: 'agent_memory',
+          sinceMs: ms,
+          limit: fetchLimit,
+          offset: offset,
+        );
+        return [
+          ...rows.map((row) => SyncEvent.agentMemoryEvent(row: row, originDeviceId: origin)),
+          ...deletes,
+        ];
+      },
     );
-    final upserts = rows
-        .map((row) => SyncEvent.agentMemoryEvent(row: row, originDeviceId: origin))
-        .toList();
-    final deletes = await _db.querySyncTombstonesSince(
-      domain: 'agent_memory',
-      sinceMs: sinceMs,
-      limit: limit,
-    );
-    return _mergeEventsByWallTime(upserts: upserts, deletes: deletes, limit: limit);
   }
 
   /// 应用 Agent 结构化记忆事件批次。
@@ -639,19 +712,28 @@ class SyncEngine {
     return count < policy.maxMessages;
   }
 
-  List<SyncEvent> _mergeEventsByWallTime({
-    required List<SyncEvent> upserts,
-    required List<SyncEvent> deletes,
+  Future<List<SyncEvent>> _queryDomainEvents({
+    required SyncDomainCursor since,
     required int limit,
-  }) {
-    final all = [...upserts, ...deletes]
-      ..sort((a, b) {
-        final byTime = a.wallTimeMs.compareTo(b.wallTimeMs);
-        if (byTime != 0) return byTime;
-        return a.eventId.compareTo(b.eventId);
-      });
-    if (all.length > limit) return all.sublist(0, limit);
-    return all;
+    required Future<List<SyncEvent>> Function(int sinceMs, int fetchLimit, int offset) fetchBatch,
+  }) async {
+    final acc = <SyncEvent>[];
+    var offset = 0;
+    const batch = 80;
+
+    while (offset <= 4000) {
+      final batchEvents = await fetchBatch(since.wallTimeMs, batch, offset);
+      if (batchEvents.isEmpty) break;
+
+      acc.addAll(batchEvents);
+      final page = SyncDomainCursor.pageEventsAfter(events: acc, cursor: since, limit: limit);
+      if (page.length >= limit) return page;
+      if (batchEvents.length < batch) return page;
+
+      offset += batch;
+    }
+
+    return SyncDomainCursor.pageEventsAfter(events: acc, cursor: since, limit: limit);
   }
 
   /// Primary 本地写入 fan-out 前记录实体 LWW 状态。

@@ -144,6 +144,30 @@ class SyncProtocolService {
     return null;
   }
 
+  Future<bool> _isOwnedAccountPeer(String peerId) async {
+    await AccountIdentityService.instance.ensureInitialized();
+    final peer = await PeerStorageService().getPeerById(peerId);
+    final deviceId = peer?.deviceId;
+    if (deviceId == null || deviceId.isEmpty) return false;
+    final owned = await _db.getOwnedDeviceByDeviceId(deviceId);
+    return owned != null;
+  }
+
+  Future<void> _rejectUnauthorizedPeer(
+    String peerId, {
+    required String respType,
+    required String requestId,
+    String error = 'unauthorized_peer',
+  }) async {
+    _log.warning('Rejecting sync from unauthorized peer $peerId', tag: _tag);
+    await PeerConnectionManager.instance.sendControl(peerId, {
+      'type': respType,
+      'request_id': requestId,
+      'error': error,
+      if (respType == 'sync_query_resp') 'events': <Map<String, dynamic>>[],
+    });
+  }
+
   void _onControl(PeerControlEvent event) {
     switch (event.type) {
       case 'sync_role_announce':
@@ -244,6 +268,13 @@ class SyncProtocolService {
       return;
     }
 
+    if (data.containsKey('elected_primary_device_id')) {
+      final elected = data['elected_primary_device_id'] as String? ?? '';
+      await AccountIdentityService.instance.applyRemoteUserElectedPrimary(
+        elected.isEmpty ? null : elected,
+      );
+    }
+
     await AccountIdentityService.instance.reconcileRemoteDeviceRole(
       remoteDeviceId: remoteDeviceId,
       announcedRole: DeviceRole.fromWire(data['role'] as String?),
@@ -283,6 +314,11 @@ class SyncProtocolService {
 
   Future<void> _handleQuery(String peerId, Map<String, dynamic> data) async {
     final requestId = data['request_id'] as String? ?? '';
+    if (!await _isOwnedAccountPeer(peerId)) {
+      await _rejectUnauthorizedPeer(peerId, respType: 'sync_query_resp', requestId: requestId);
+      return;
+    }
+
     final role = await AccountIdentityService.instance.localDeviceRole();
     if (role != DeviceRole.primary && role != DeviceRole.backup) {
       await PeerConnectionManager.instance.sendControl(peerId, {
@@ -295,6 +331,7 @@ class SyncProtocolService {
     }
 
     final sinceMs = data['since_ms'] as int? ?? 0;
+    final sinceEventId = data['since_event_id'] as String? ?? '';
     final limit = data['limit'] as int? ?? 50;
     final channelId = data['channel_id'] as String?;
     final domain = data['domain'] as String?;
@@ -303,37 +340,44 @@ class SyncProtocolService {
     if (domain == 'message') {
       events = await SyncEngine.instance.queryMessageEvents(
         sinceMs: sinceMs,
+        sinceEventId: sinceEventId,
         channelId: channelId,
         limit: limit,
       );
     } else if (domain == 'channel') {
       events = await SyncEngine.instance.queryChannelEvents(
         sinceMs: sinceMs,
+        sinceEventId: sinceEventId,
         limit: limit,
       );
     } else if (domain == 'channel_member') {
       events = await SyncEngine.instance.queryChannelMemberEvents(
         sinceMs: sinceMs,
+        sinceEventId: sinceEventId,
         limit: limit,
       );
     } else if (domain == 'agent') {
       events = await SyncEngine.instance.queryAgentEvents(
         sinceMs: sinceMs,
+        sinceEventId: sinceEventId,
         limit: limit,
       );
     } else if (domain == 'she_memory') {
       events = await SyncEngine.instance.querySheMemoryEvents(
         sinceMs: sinceMs,
+        sinceEventId: sinceEventId,
         limit: limit,
       );
     } else if (domain == 'cognition') {
       events = await SyncEngine.instance.queryCognitionEvents(
         sinceMs: sinceMs,
+        sinceEventId: sinceEventId,
         limit: limit,
       );
     } else if (domain == 'agent_memory') {
       events = await SyncEngine.instance.queryAgentMemoryEvents(
         sinceMs: sinceMs,
+        sinceEventId: sinceEventId,
         limit: limit,
       );
     } else {
@@ -353,6 +397,11 @@ class SyncProtocolService {
 
   Future<void> _handleCommit(String peerId, Map<String, dynamic> data) async {
     final requestId = data['request_id'] as String? ?? '';
+    if (!await _isOwnedAccountPeer(peerId)) {
+      await _rejectUnauthorizedPeer(peerId, respType: 'sync_commit_resp', requestId: requestId);
+      return;
+    }
+
     try {
       final eventMap = data['event'] as Map<String, dynamic>?;
       if (eventMap == null) throw FormatException('missing event');
@@ -476,6 +525,11 @@ class SyncProtocolService {
   }
 
   Future<void> _handlePush(String peerId, Map<String, dynamic> data) async {
+    if (!await _isOwnedAccountPeer(peerId)) {
+      _log.warning('Ignoring sync_push from unauthorized peer $peerId', tag: _tag);
+      return;
+    }
+
     final role = await AccountIdentityService.instance.localDeviceRole();
     if (role != DeviceRole.backup && role != DeviceRole.app) return;
 

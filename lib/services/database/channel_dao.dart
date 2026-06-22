@@ -1,5 +1,8 @@
 import 'package:sqflite/sqflite.dart';
+import '../../identity/models/device_role.dart';
+import '../../identity/services/account_identity_service.dart';
 import '../../identity/services/sync_local_write_hook.dart';
+import '../../identity/utils/message_index_merge.dart';
 import '../../models/channel.dart';
 import '../local_database_service.dart';
 
@@ -282,6 +285,23 @@ extension ChannelDao on LocalDatabaseService {
 
   /// 获取 channel 最新一条消息（用于会话列表预览）
   Future<Map<String, dynamic>?> getLatestChannelMessage(String channelId) async {
+    final role = await AccountIdentityService.instance.localDeviceRole();
+    if (role == DeviceRole.app) {
+      final indexRows = await getMessageIndexForChannel(channelId, limit: 1);
+      if (indexRows.isNotEmpty) {
+        final id = indexRows.first['message_id'] as String?;
+        if (id != null && id.isNotEmpty) {
+          final db = await database;
+          final cached = await db.query('messages', where: 'id = ?', whereArgs: [id]);
+          final merged = mergeChannelMessagesWithIndex(
+            indexRows: indexRows,
+            messageRows: cached,
+          );
+          return merged.first;
+        }
+      }
+    }
+
     final db = await database;
     final results = await db.query(
       'messages',

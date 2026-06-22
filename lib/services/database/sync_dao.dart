@@ -9,6 +9,7 @@ extension SyncDao on LocalDatabaseService {
     required int sinceMs,
     String? channelId,
     int limit = 50,
+    int offset = 0,
   }) async {
     final db = await database;
     final sinceIso = DateTime.fromMillisecondsSinceEpoch(sinceMs).toIso8601String();
@@ -19,16 +20,18 @@ extension SyncDao on LocalDatabaseService {
         'messages',
         where: '$where AND channel_id = ?',
         whereArgs: [sinceIso, sinceIso, channelId],
-        orderBy: 'COALESCE(updated_at, created_at) ASC',
+        orderBy: 'COALESCE(updated_at, created_at) ASC, id ASC',
         limit: limit,
+        offset: offset,
       );
     }
     return db.query(
       'messages',
       where: where,
       whereArgs: [sinceIso, sinceIso],
-      orderBy: 'COALESCE(updated_at, created_at) ASC',
+      orderBy: 'COALESCE(updated_at, created_at) ASC, id ASC',
       limit: limit,
+      offset: offset,
     );
   }
 
@@ -71,15 +74,20 @@ extension SyncDao on LocalDatabaseService {
     await db.delete('identity_message_index', where: 'message_id = ?', whereArgs: [messageId]);
   }
 
-  Future<List<Map<String, dynamic>>> getChannelsUpdatedSince(int sinceMs, {int limit = 50}) async {
+  Future<List<Map<String, dynamic>>> getChannelsUpdatedSince(
+    int sinceMs, {
+    int limit = 50,
+    int offset = 0,
+  }) async {
     final db = await database;
     final sinceIso = DateTime.fromMillisecondsSinceEpoch(sinceMs).toIso8601String();
     return db.query(
       'channels',
       where: 'updated_at >= ? OR created_at >= ?',
       whereArgs: [sinceIso, sinceIso],
-      orderBy: 'updated_at ASC',
+      orderBy: 'updated_at ASC, id ASC',
       limit: limit,
+      offset: offset,
     );
   }
 
@@ -100,15 +108,20 @@ extension SyncDao on LocalDatabaseService {
     return rows.isEmpty ? null : rows.first;
   }
 
-  Future<List<Map<String, dynamic>>> getChannelMembersChangedSince(int sinceMs, {int limit = 50}) async {
+  Future<List<Map<String, dynamic>>> getChannelMembersChangedSince(
+    int sinceMs, {
+    int limit = 50,
+    int offset = 0,
+  }) async {
     final db = await database;
     final sinceIso = DateTime.fromMillisecondsSinceEpoch(sinceMs).toIso8601String();
     return db.query(
       'channel_members',
       where: 'joined_at >= ? OR COALESCE(updated_at, joined_at) >= ?',
       whereArgs: [sinceIso, sinceIso],
-      orderBy: 'COALESCE(updated_at, joined_at) ASC',
+      orderBy: 'COALESCE(updated_at, joined_at) ASC, channel_id ASC, agent_id ASC',
       limit: limit,
+      offset: offset,
     );
   }
 
@@ -163,14 +176,16 @@ extension SyncDao on LocalDatabaseService {
   Future<List<Map<String, dynamic>>> getAgentsChangedSince({
     required int sinceMs,
     int limit = 50,
+    int offset = 0,
   }) async {
     final db = await database;
     return db.query(
       'agents',
       where: 'updated_at >= ? OR created_at >= ?',
       whereArgs: [sinceMs, sinceMs],
-      orderBy: 'updated_at ASC',
+      orderBy: 'updated_at ASC, id ASC',
       limit: limit,
+      offset: offset,
     );
   }
 
@@ -377,14 +392,16 @@ extension SyncDao on LocalDatabaseService {
     required String domain,
     required int sinceMs,
     int limit = 50,
+    int offset = 0,
   }) async {
     final db = await database;
     final rows = await db.query(
       'identity_sync_tombstones',
       where: 'domain = ? AND wall_time_ms >= ?',
       whereArgs: [domain, sinceMs],
-      orderBy: 'wall_time_ms ASC',
+      orderBy: 'wall_time_ms ASC, entity_key ASC',
       limit: limit,
+      offset: offset,
     );
     final events = <SyncEvent>[];
     for (final row in rows) {
