@@ -42,6 +42,7 @@ class SyncClientService {
     _running = false;
     _connSub?.cancel();
     _connSub = null;
+    _pullChain = Future.value();
   }
 
   void _onConnEvent(PeerConnectionEvent event) {

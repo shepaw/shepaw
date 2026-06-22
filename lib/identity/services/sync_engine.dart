@@ -182,16 +182,14 @@ class SyncEngine {
     String? originDeviceId,
   }) async {
     final origin = originDeviceId ?? (await AccountIdentityService.instance.localDevice())?.deviceId ?? 'local';
-    final selfRows = await _mindsDb.getSelfChangedSince(sinceMs: sinceMs, limit: limit);
-    final userRows = await _mindsDb.getUserChangedSince(sinceMs: sinceMs, limit: limit);
-    final upserts = <SyncEvent>[
-      ...selfRows.map(
-        (row) => SyncEvent.cognitionSelfEvent(row: row, originDeviceId: origin),
-      ),
-      ...userRows.map(
-        (row) => SyncEvent.cognitionUserEvent(row: row, originDeviceId: origin),
-      ),
-    ]..sort((a, b) => a.wallTimeMs.compareTo(b.wallTimeMs));
+    final rows = await _mindsDb.getCognitionChangedSince(sinceMs: sinceMs, limit: limit);
+    final upserts = rows.map((row) {
+      final kind = row['kind'] as String? ?? 'self';
+      if (kind == 'user') {
+        return SyncEvent.cognitionUserEvent(row: row, originDeviceId: origin);
+      }
+      return SyncEvent.cognitionSelfEvent(row: row, originDeviceId: origin);
+    }).toList();
     final deletes = await _db.querySyncTombstonesSince(
       domain: 'cognition',
       sinceMs: sinceMs,
@@ -399,6 +397,16 @@ class SyncEngine {
         final syncKey = event.payload['sync_key'] as String?;
         if (agentId == null || syncKey == null) return;
         await AgentMemoryDbService.forAgent(agentId).deleteFromSync(syncKey);
+        break;
+      case 'cognition':
+        final kind = event.payload['kind'] as String? ?? 'self';
+        final agentId = event.payload['agent_id'] as String?;
+        if (agentId == null) return;
+        if (kind == 'user') {
+          await _mindsDb.deleteUserCognitionFromSync(agentId);
+        } else {
+          await _mindsDb.deleteSelfCognitionFromSync(agentId);
+        }
         break;
     }
   }

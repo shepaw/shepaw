@@ -78,21 +78,10 @@ class SyncLocalWriteHook {
 
   static Future<void> onChannelUpserted(Map<String, dynamic> channelRow) async {
     try {
-      final role = await AccountIdentityService.instance.localDeviceRole();
       final local = await AccountIdentityService.instance.localDevice();
       final origin = local?.deviceId ?? 'local';
       final event = SyncEvent.channelEvent(channelRow: channelRow, originDeviceId: origin);
-
-      if (role == DeviceRole.app) {
-        final db = LocalDatabaseService();
-        await db.enqueueOutboundEvent(
-          id: event.eventId,
-          domain: event.domain,
-          payloadJson: event.toJsonString(),
-        );
-      } else if (role == DeviceRole.primary) {
-        await SyncFanoutService.fanout(event);
-      }
+      await _dispatchEvent(event);
     } catch (_) {}
   }
 
@@ -107,7 +96,7 @@ class SyncLocalWriteHook {
       final event = SyncEvent.messageEvent(messageRow: row, originDeviceId: origin);
       final db = LocalDatabaseService();
 
-      if (role == DeviceRole.app) {
+      if (_usesOutboundQueue(role)) {
         await db.enqueueOutboundEvent(
           id: event.eventId,
           domain: event.domain,
@@ -131,21 +120,10 @@ class SyncLocalWriteHook {
 
   static Future<void> onChannelMemberUpserted(Map<String, dynamic> memberRow) async {
     try {
-      final role = await AccountIdentityService.instance.localDeviceRole();
       final local = await AccountIdentityService.instance.localDevice();
       final origin = local?.deviceId ?? 'local';
       final event = SyncEvent.channelMemberEvent(memberRow: memberRow, originDeviceId: origin);
-
-      if (role == DeviceRole.app) {
-        final db = LocalDatabaseService();
-        await db.enqueueOutboundEvent(
-          id: event.eventId,
-          domain: event.domain,
-          payloadJson: event.toJsonString(),
-        );
-      } else if (role == DeviceRole.primary) {
-        await SyncFanoutService.fanout(event);
-      }
+      await _dispatchEvent(event);
     } catch (_) {}
   }
 
@@ -216,6 +194,24 @@ class SyncLocalWriteHook {
     );
   }
 
+  static Future<void> onCognitionSelfDeleted({required String agentId}) async {
+    await _dispatchEvent(
+      SyncEvent.cognitionSelfDeleteEvent(
+        agentId: agentId,
+        originDeviceId: await _originDeviceId(),
+      ),
+    );
+  }
+
+  static Future<void> onCognitionUserDeleted({required String agentId}) async {
+    await _dispatchEvent(
+      SyncEvent.cognitionUserDeleteEvent(
+        agentId: agentId,
+        originDeviceId: await _originDeviceId(),
+      ),
+    );
+  }
+
   static Future<void> onChannelDeleted({required String channelId}) async {
     await _dispatchEvent(
       SyncEvent.channelDeleteEvent(
@@ -252,6 +248,9 @@ class SyncLocalWriteHook {
     return local?.deviceId ?? 'local';
   }
 
+  static bool _usesOutboundQueue(DeviceRole role) =>
+      role == DeviceRole.app || role == DeviceRole.backup;
+
   static Future<void> _dispatchEvent(SyncEvent event) async {
     try {
       final role = await AccountIdentityService.instance.localDeviceRole();
@@ -259,7 +258,7 @@ class SyncLocalWriteHook {
           (role == DeviceRole.primary || role == DeviceRole.backup)) {
         await LocalDatabaseService().recordSyncTombstone(event);
       }
-      if (role == DeviceRole.app) {
+      if (_usesOutboundQueue(role)) {
         final db = LocalDatabaseService();
         await db.enqueueOutboundEvent(
           id: event.eventId,

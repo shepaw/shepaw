@@ -193,6 +193,12 @@ class MindsDatabaseService {
   Future<void> deleteSelfCognition(String agentId) async {
     final db = await database;
     await db.delete('cognition_self', where: 'agent_id = ?', whereArgs: [agentId]);
+    await SyncLocalWriteHook.onCognitionSelfDeleted(agentId: agentId);
+  }
+
+  Future<void> deleteSelfCognitionFromSync(String agentId) async {
+    final db = await database;
+    await db.delete('cognition_self', where: 'agent_id = ?', whereArgs: [agentId]);
   }
 
   // ---------------------------------------------------------------------------
@@ -299,11 +305,40 @@ class MindsDatabaseService {
   Future<void> deleteUserCognition(String agentId) async {
     final db = await database;
     await db.delete('cognition_user', where: 'agent_id = ?', whereArgs: [agentId]);
+    await SyncLocalWriteHook.onCognitionUserDeleted(agentId: agentId);
+  }
+
+  Future<void> deleteUserCognitionFromSync(String agentId) async {
+    final db = await database;
+    await db.delete('cognition_user', where: 'agent_id = ?', whereArgs: [agentId]);
+  }
+
+  /// 合并 self/user 认知变更，按时间统一分页（避免单表 limit 截断丢事件）。
+  Future<List<Map<String, dynamic>>> getCognitionChangedSince({
+    required int sinceMs,
+    int limit = 50,
+  }) async {
+    final selfRows = await getSelfChangedSince(sinceMs: sinceMs);
+    final userRows = await getUserChangedSince(sinceMs: sinceMs);
+    final merged = <Map<String, dynamic>>[
+      ...selfRows.map((row) => {...row, 'kind': 'self'}),
+      ...userRows.map((row) => {...row, 'kind': 'user'}),
+    ]..sort((a, b) {
+        final aMs = a['kind'] == 'user'
+            ? (a['last_updated'] as int? ?? 0)
+            : (a['updated_at'] as int? ?? 0);
+        final bMs = b['kind'] == 'user'
+            ? (b['last_updated'] as int? ?? 0)
+            : (b['updated_at'] as int? ?? 0);
+        return aMs.compareTo(bMs);
+      });
+    if (merged.length > limit) return merged.sublist(0, limit);
+    return merged;
   }
 
   Future<List<Map<String, dynamic>>> getSelfChangedSince({
     required int sinceMs,
-    int limit = 50,
+    int? limit,
   }) async {
     final db = await database;
     return db.query(
@@ -317,7 +352,7 @@ class MindsDatabaseService {
 
   Future<List<Map<String, dynamic>>> getUserChangedSince({
     required int sinceMs,
-    int limit = 50,
+    int? limit,
   }) async {
     final db = await database;
     return db.query(

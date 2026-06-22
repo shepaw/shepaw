@@ -94,7 +94,7 @@ extension ChannelDao on LocalDatabaseService {
     }
   }
 
-  /// 更新 Channel 的 updated_at 时间戳
+  /// 更新 Channel 的 updated_at 时间戳（并同步到其他设备）。
   Future<void> touchChannelUpdatedAt(String channelId) async {
     final db = await database;
     await db.update(
@@ -103,6 +103,10 @@ extension ChannelDao on LocalDatabaseService {
       where: 'id = ?',
       whereArgs: [channelId],
     );
+    final row = await getChannelRowById(channelId);
+    if (row != null) {
+      await SyncLocalWriteHook.onChannelUpserted(row);
+    }
   }
 
   /// 删除 Channel（含成员与消息，并同步删除事件）。

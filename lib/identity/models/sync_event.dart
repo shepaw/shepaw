@@ -267,6 +267,38 @@ class SyncEvent {
     );
   }
 
+  static SyncEvent cognitionSelfDeleteEvent({
+    required String agentId,
+    required String originDeviceId,
+    int? wallTimeMs,
+  }) {
+    final ms = wallTimeMs ?? DateTime.now().millisecondsSinceEpoch;
+    return SyncEvent(
+      eventId: 'cog:self:$agentId:del:$ms',
+      domain: 'cognition',
+      action: SyncEventAction.delete,
+      payload: {'agent_id': agentId, 'kind': 'self'},
+      wallTimeMs: ms,
+      originDeviceId: originDeviceId,
+    );
+  }
+
+  static SyncEvent cognitionUserDeleteEvent({
+    required String agentId,
+    required String originDeviceId,
+    int? wallTimeMs,
+  }) {
+    final ms = wallTimeMs ?? DateTime.now().millisecondsSinceEpoch;
+    return SyncEvent(
+      eventId: 'cog:user:$agentId:del:$ms',
+      domain: 'cognition',
+      action: SyncEventAction.delete,
+      payload: {'agent_id': agentId, 'kind': 'user'},
+      wallTimeMs: ms,
+      originDeviceId: originDeviceId,
+    );
+  }
+
   static SyncEvent agentMemoryEvent({
     required Map<String, dynamic> row,
     required String originDeviceId,

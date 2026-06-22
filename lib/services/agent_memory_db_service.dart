@@ -133,6 +133,29 @@ class AgentMemoryDbService {
     return sanitized.replaceAll('_', '-');
   }
 
+  static Future<String> resolveAgentIdFromDbFile(String filePath) async {
+    Database? db;
+    try {
+      db = await openDatabase(filePath, readOnly: true);
+      final rows = await db.query(
+        '_sync_meta',
+        columns: ['value'],
+        where: 'key = ?',
+        whereArgs: ['agent_id'],
+        limit: 1,
+      );
+      if (rows.isNotEmpty) {
+        final stored = rows.first['value'] as String?;
+        if (stored != null && stored.isNotEmpty) return stored;
+      }
+    } catch (_) {
+      // Legacy DB without meta table.
+    } finally {
+      await db?.close();
+    }
+    return agentIdFromDbFileName(basename(filePath));
+  }
+
   /// 扫描当前账号目录下所有 agent_memory DB，返回 since 之后变更的行。
   static Future<List<Map<String, dynamic>>> queryAllChangedSince({
     required int sinceMs,
@@ -149,7 +172,7 @@ class AgentMemoryDbService {
       final name = basename(entity.path);
       if (!name.startsWith('agent_memory_') || !name.endsWith('.db')) continue;
 
-      final agentId = agentIdFromDbFileName(name);
+      final agentId = await resolveAgentIdFromDbFile(entity.path);
       if (agentId.isEmpty) continue;
 
       Database? db;
@@ -195,7 +218,7 @@ class AgentMemoryDbService {
 
   final String _agentId;
   Database? _database;
-  static const int _dbVersion = 2;
+  static const int _dbVersion = 3;
   static const _uuid = Uuid();
 
   AgentMemoryDbService._(this._agentId);
@@ -224,21 +247,39 @@ class AgentMemoryDbService {
 
   Future<Database> _initDatabase() async {
     if (kIsWeb) {
-      return await openDatabase(
+      final db = await openDatabase(
         'agent_memory_${_sanitizeAgentId(_agentId)}',
         version: _dbVersion,
         onCreate: _onCreate,
         onUpgrade: _onUpgrade,
       );
+      await _ensureSyncMeta(db);
+      return db;
     }
 
     final path = join(await _resolveDirectoryPath(), _dbFileName);
 
-    return await openDatabase(
+    final db = await openDatabase(
       path,
       version: _dbVersion,
       onCreate: _onCreate,
       onUpgrade: _onUpgrade,
+    );
+    await _ensureSyncMeta(db);
+    return db;
+  }
+
+  Future<void> _ensureSyncMeta(Database db) async {
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS _sync_meta (
+        key TEXT PRIMARY KEY NOT NULL,
+        value TEXT NOT NULL
+      )
+    ''');
+    await db.insert(
+      '_sync_meta',
+      {'key': 'agent_id', 'value': _agentId},
+      conflictAlgorithm: ConflictAlgorithm.replace,
     );
   }
 
@@ -261,9 +302,29 @@ class AgentMemoryDbService {
         'CREATE INDEX IF NOT EXISTS idx_memory_updated_at ON memories(updated_at ASC)',
       );
     }
+    if (oldVersion < 3) {
+      await db.execute('''
+        CREATE TABLE IF NOT EXISTS _sync_meta (
+          key TEXT PRIMARY KEY NOT NULL,
+          value TEXT NOT NULL
+        )
+      ''');
+      await db.insert(
+        '_sync_meta',
+        {'key': 'agent_id', 'value': _agentId},
+        conflictAlgorithm: ConflictAlgorithm.replace,
+      );
+    }
   }
 
   Future<void> _onCreate(Database db, int version) async {
+    await db.execute('''
+      CREATE TABLE _sync_meta (
+        key TEXT PRIMARY KEY NOT NULL,
+        value TEXT NOT NULL
+      )
+    ''');
+    await db.insert('_sync_meta', {'key': 'agent_id', 'value': _agentId});
     await db.execute('''
       CREATE TABLE memories (
         memory_id      INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -573,7 +634,16 @@ class AgentMemoryDbService {
   Future<void> clearAllMemories() async {
     try {
       final db = await database;
+      final rows = await db.query('memories', columns: ['sync_key']);
       await db.delete('memories');
+      for (final row in rows) {
+        final syncKey = row['sync_key'] as String?;
+        if (syncKey == null || syncKey.isEmpty) continue;
+        await SyncLocalWriteHook.onAgentMemoryDeleted(
+          agentId: _agentId,
+          syncKey: syncKey,
+        );
+      }
       LoggerService().info(
         'All memories cleared',
         tag: 'AgentMemoryDbService[$_agentId]',

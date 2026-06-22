@@ -107,5 +107,13 @@ void main() {
       );
       expect(SyncEvent.entityKeyForEvent(event), 'ch-1');
     });
+
+    test('cognition delete entity key includes kind', () {
+      final event = SyncEvent.cognitionSelfDeleteEvent(
+        agentId: 'agent-1',
+        originDeviceId: 'dev1',
+      );
+      expect(SyncEvent.entityKeyForEvent(event), 'self:agent-1');
+    });
   });
 }

@@ -170,7 +170,13 @@ class SheMemoryDbService {
 
   Future<void> clearSheMemory() async {
     final db = await database;
+    final rows = await db.query('she_memory', columns: ['key']);
     await db.delete('she_memory');
+    for (final row in rows) {
+      final key = row['key'] as String?;
+      if (key == null || key.isEmpty) continue;
+      await SyncLocalWriteHook.onSheMemoryDeleted(key: key);
+    }
   }
 
   Future<void> close() async {
