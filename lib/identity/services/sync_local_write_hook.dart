@@ -216,6 +216,15 @@ class SyncLocalWriteHook {
     );
   }
 
+  static Future<void> onChannelDeleted({required String channelId}) async {
+    await _dispatchEvent(
+      SyncEvent.channelDeleteEvent(
+        channelId: channelId,
+        originDeviceId: await _originDeviceId(),
+      ),
+    );
+  }
+
   static Future<void> onAgentMemoryUpserted(Map<String, dynamic> row) async {
     await _dispatchEvent(
       SyncEvent.agentMemoryEvent(

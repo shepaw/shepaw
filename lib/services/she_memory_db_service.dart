@@ -120,7 +120,7 @@ class SheMemoryDbService {
     final db = await database;
     return db.query(
       'she_memory',
-      where: 'updated_at > ?',
+      where: 'updated_at >= ?',
       whereArgs: [sinceMs],
       orderBy: 'updated_at ASC',
       limit: limit,

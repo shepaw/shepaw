@@ -105,6 +105,22 @@ class SyncEvent {
     );
   }
 
+  static SyncEvent channelDeleteEvent({
+    required String channelId,
+    required String originDeviceId,
+    int? wallTimeMs,
+  }) {
+    final ms = wallTimeMs ?? DateTime.now().millisecondsSinceEpoch;
+    return SyncEvent(
+      eventId: 'ch:$channelId:del:$ms',
+      domain: 'channel',
+      action: SyncEventAction.delete,
+      payload: {'id': channelId},
+      wallTimeMs: ms,
+      originDeviceId: originDeviceId,
+    );
+  }
+
   static SyncEvent channelMemberEvent({
     required Map<String, dynamic> memberRow,
     required String originDeviceId,

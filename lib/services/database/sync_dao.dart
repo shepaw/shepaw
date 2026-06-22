@@ -13,7 +13,7 @@ extension SyncDao on LocalDatabaseService {
     final db = await database;
     final sinceIso = DateTime.fromMillisecondsSinceEpoch(sinceMs).toIso8601String();
     const where =
-        '(created_at > ? OR COALESCE(updated_at, created_at) > ?)';
+        '(created_at >= ? OR COALESCE(updated_at, created_at) >= ?)';
     if (channelId != null) {
       return db.query(
         'messages',
@@ -76,7 +76,7 @@ extension SyncDao on LocalDatabaseService {
     final sinceIso = DateTime.fromMillisecondsSinceEpoch(sinceMs).toIso8601String();
     return db.query(
       'channels',
-      where: 'updated_at > ? OR created_at > ?',
+      where: 'updated_at >= ? OR created_at >= ?',
       whereArgs: [sinceIso, sinceIso],
       orderBy: 'updated_at ASC',
       limit: limit,
@@ -105,7 +105,7 @@ extension SyncDao on LocalDatabaseService {
     final sinceIso = DateTime.fromMillisecondsSinceEpoch(sinceMs).toIso8601String();
     return db.query(
       'channel_members',
-      where: 'joined_at > ? OR COALESCE(updated_at, joined_at) > ?',
+      where: 'joined_at >= ? OR COALESCE(updated_at, joined_at) >= ?',
       whereArgs: [sinceIso, sinceIso],
       orderBy: 'COALESCE(updated_at, joined_at) ASC',
       limit: limit,
@@ -146,6 +146,14 @@ extension SyncDao on LocalDatabaseService {
     );
   }
 
+  Future<void> deleteChannelFromSync(String channelId) async {
+    final db = await database;
+    await db.delete('messages', where: 'channel_id = ?', whereArgs: [channelId]);
+    await db.delete('identity_message_index', where: 'channel_id = ?', whereArgs: [channelId]);
+    await db.delete('channel_members', where: 'channel_id = ?', whereArgs: [channelId]);
+    await db.delete('channels', where: 'id = ?', whereArgs: [channelId]);
+  }
+
   Future<Map<String, dynamic>?> getAgentRowById(String agentId) async {
     final db = await database;
     final rows = await db.query('agents', where: 'id = ?', whereArgs: [agentId], limit: 1);
@@ -159,7 +167,7 @@ extension SyncDao on LocalDatabaseService {
     final db = await database;
     return db.query(
       'agents',
-      where: 'updated_at > ? OR created_at > ?',
+      where: 'updated_at >= ? OR created_at >= ?',
       whereArgs: [sinceMs, sinceMs],
       orderBy: 'updated_at ASC',
       limit: limit,
@@ -373,7 +381,7 @@ extension SyncDao on LocalDatabaseService {
     final db = await database;
     final rows = await db.query(
       'identity_sync_tombstones',
-      where: 'domain = ? AND wall_time_ms > ?',
+      where: 'domain = ? AND wall_time_ms >= ?',
       whereArgs: [domain, sinceMs],
       orderBy: 'wall_time_ms ASC',
       limit: limit,

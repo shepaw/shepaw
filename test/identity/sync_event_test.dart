@@ -99,5 +99,13 @@ void main() {
       );
       expect(SyncEvent.entityKeyForEvent(event), 'c1:a1');
     });
+
+    test('channel delete entity key', () {
+      final event = SyncEvent.channelDeleteEvent(
+        channelId: 'ch-1',
+        originDeviceId: 'dev1',
+      );
+      expect(SyncEvent.entityKeyForEvent(event), 'ch-1');
+    });
   });
 }

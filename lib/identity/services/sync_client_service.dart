@@ -125,16 +125,7 @@ class SyncClientService {
   }
 
   Future<void> _pullDomain(String peerId, {required String domain}) async {
-    var cursor = switch (domain) {
-      'message' => await SyncEngine.instance.getMessageCursorMs(),
-      'channel' => await SyncEngine.instance.getChannelCursorMs(),
-      'channel_member' => await SyncEngine.instance.getMemberCursorMs(),
-      'agent' => await SyncEngine.instance.getAgentCursorMs(),
-      'she_memory' => await SyncEngine.instance.getSheMemoryCursorMs(),
-      'cognition' => await SyncEngine.instance.getCognitionCursorMs(),
-      'agent_memory' => await SyncEngine.instance.getAgentMemoryCursorMs(),
-      _ => 0,
-    };
+    var cursor = await SyncEngine.instance.getDomainCursor(domain);
     const pageSize = 50;
 
     for (var page = 0; page < 200; page++) {
@@ -143,7 +134,7 @@ class SyncClientService {
         'type': 'sync_query',
         'request_id': requestId,
         'domain': domain,
-        'since_ms': cursor,
+        'since_ms': cursor.wallTimeMs,
         'limit': pageSize,
       });
       if (!sent) break;
@@ -162,28 +153,27 @@ class SyncClientService {
       final eventsRaw = (resp['events'] as List?) ?? const [];
       if (eventsRaw.isEmpty) break;
 
-      final events = eventsRaw
-          .whereType<Map>()
-          .map((e) => SyncEvent.fromJson(Map<String, dynamic>.from(e)))
-          .toList();
+      final events = SyncEngine.instance.filterNewEvents(
+        eventsRaw
+            .whereType<Map>()
+            .map((e) => SyncEvent.fromJson(Map<String, dynamic>.from(e)))
+            .toList(),
+        cursor,
+      );
+      if (events.isEmpty) break;
 
-      if (domain == 'message') {
-        cursor = await SyncEngine.instance.applyMessageEvents(events);
-      } else if (domain == 'channel') {
-        cursor = await SyncEngine.instance.applyChannelEvents(events);
-      } else if (domain == 'channel_member') {
-        cursor = await SyncEngine.instance.applyMemberEvents(events);
-      } else if (domain == 'agent') {
-        cursor = await SyncEngine.instance.applyAgentEvents(events);
-      } else if (domain == 'she_memory') {
-        cursor = await SyncEngine.instance.applySheMemoryEvents(events);
-      } else if (domain == 'cognition') {
-        cursor = await SyncEngine.instance.applyCognitionEvents(events);
-      } else if (domain == 'agent_memory') {
-        cursor = await SyncEngine.instance.applyAgentMemoryEvents(events);
-      }
+      cursor = switch (domain) {
+        'message' => await SyncEngine.instance.applyMessageEvents(events),
+        'channel' => await SyncEngine.instance.applyChannelEvents(events),
+        'channel_member' => await SyncEngine.instance.applyMemberEvents(events),
+        'agent' => await SyncEngine.instance.applyAgentEvents(events),
+        'she_memory' => await SyncEngine.instance.applySheMemoryEvents(events),
+        'cognition' => await SyncEngine.instance.applyCognitionEvents(events),
+        'agent_memory' => await SyncEngine.instance.applyAgentMemoryEvents(events),
+        _ => cursor,
+      };
 
-      if (events.length < pageSize) break;
+      if (eventsRaw.length < pageSize) break;
     }
   }
 
@@ -191,10 +181,12 @@ class SyncClientService {
     final pending = await _db.listPendingOutbound(limit: 50);
     for (final row in pending) {
       final requestId = _uuid.v4();
+      final rowId = row['id'] as String;
       Map<String, dynamic> eventJson;
       try {
         eventJson = jsonDecode(row['payload'] as String) as Map<String, dynamic>;
       } catch (_) {
+        await _db.discardOutboundEvent(rowId);
         continue;
       }
 
@@ -208,10 +200,17 @@ class SyncClientService {
         requestId,
         timeout: const Duration(seconds: 15),
       );
-      if (resp?['ok'] == true) {
-        await _db.markOutboundAcked(row['id'] as String);
+      final ok = resp?['ok'] == true;
+      final legacyAck = ok && resp?['applied'] == null && resp?['stale'] == null;
+      final applied = resp?['applied'] == true || legacyAck;
+      final stale = resp?['stale'] == true;
+      if (ok && (applied || stale)) {
+        await _db.markOutboundAcked(rowId);
+        if (stale) {
+          unawaited(pullFromPeer(peerId));
+        }
         final blobPath = SyncLocalWriteHook.attachmentPathFromEventJson(eventJson);
-        if (blobPath != null) {
+        if (blobPath != null && applied) {
           await _db.enqueueBlobOutbound(relativePath: blobPath);
         }
       }

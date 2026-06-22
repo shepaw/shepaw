@@ -188,13 +188,22 @@ extension IdentityDao on LocalDatabaseService {
     required String payloadJson,
   }) async {
     final db = await database;
-    await db.insert('identity_outbound_queue', {
-      'id': id,
-      'domain': domain,
-      'payload': payloadJson,
-      'created_at': DateTime.now().millisecondsSinceEpoch,
-      'acked': 0,
-    });
+    await db.insert(
+      'identity_outbound_queue',
+      {
+        'id': id,
+        'domain': domain,
+        'payload': payloadJson,
+        'created_at': DateTime.now().millisecondsSinceEpoch,
+        'acked': 0,
+      },
+      conflictAlgorithm: ConflictAlgorithm.replace,
+    );
+  }
+
+  Future<void> discardOutboundEvent(String id) async {
+    final db = await database;
+    await db.delete('identity_outbound_queue', where: 'id = ?', whereArgs: [id]);
   }
 
   Future<List<Map<String, dynamic>>> listPendingOutbound({int limit = 100}) async {

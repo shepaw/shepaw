@@ -105,10 +105,10 @@ extension ChannelDao on LocalDatabaseService {
     );
   }
 
-  /// 删除 Channel
+  /// 删除 Channel（含成员与消息，并同步删除事件）。
   Future<void> deleteChannel(String id) async {
-    final db = await database;
-    await db.delete('channels', where: 'id = ?', whereArgs: [id]);
+    await deleteChannelFromSync(id);
+    await SyncLocalWriteHook.onChannelDeleted(channelId: id);
   }
 
   /// 添加 Channel 成员

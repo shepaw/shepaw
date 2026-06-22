@@ -157,7 +157,7 @@ class AgentMemoryDbService {
         db = await openDatabase(entity.path, readOnly: true);
         final rows = await db.query(
           'memories',
-          where: 'updated_at > ?',
+          where: 'updated_at >= ?',
           whereArgs: [sinceMs],
           orderBy: 'updated_at ASC',
         );
@@ -323,7 +323,7 @@ class AgentMemoryDbService {
     final db = await database;
     final rows = await db.query(
       'memories',
-      where: 'updated_at > ?',
+      where: 'updated_at >= ?',
       whereArgs: [sinceMs],
       orderBy: 'updated_at ASC',
       limit: limit,

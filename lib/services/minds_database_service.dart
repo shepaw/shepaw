@@ -308,7 +308,7 @@ class MindsDatabaseService {
     final db = await database;
     return db.query(
       'cognition_self',
-      where: 'updated_at > ?',
+      where: 'updated_at >= ?',
       whereArgs: [sinceMs],
       orderBy: 'updated_at ASC',
       limit: limit,
@@ -322,7 +322,7 @@ class MindsDatabaseService {
     final db = await database;
     return db.query(
       'cognition_user',
-      where: 'last_updated > ?',
+      where: 'last_updated >= ?',
       whereArgs: [sinceMs],
       orderBy: 'last_updated ASC',
       limit: limit,

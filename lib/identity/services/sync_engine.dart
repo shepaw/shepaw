@@ -6,6 +6,8 @@ import '../../services/logger_service.dart';
 import '../../services/minds_database_service.dart';
 import '../../services/she_memory_db_service.dart';
 import '../models/app_cache_policy.dart';
+import '../models/sync_commit_result.dart';
+import '../models/sync_domain_cursor.dart';
 import '../models/device_role.dart';
 import '../models/sync_event.dart';
 import 'account_identity_service.dart';
@@ -30,54 +32,40 @@ class SyncEngine {
   final _sheMemoryDb = SheMemoryDbService.instance;
   final _mindsDb = MindsDatabaseService();
 
-  Future<int> getMessageCursorMs() => _getCursor(_messageCursorKey);
+  Future<SyncDomainCursor> getDomainCursor(String domain) =>
+      _getDomainCursor(_cursorKeyForDomain(domain));
 
-  Future<int> getChannelCursorMs() => _getCursor(_channelCursorKey);
+  static String _cursorKeyForDomain(String domain) => switch (domain) {
+        'message' => _messageCursorKey,
+        'channel' => _channelCursorKey,
+        'channel_member' => _memberCursorKey,
+        'agent' => _agentCursorKey,
+        'she_memory' => _sheMemoryCursorKey,
+        'cognition' => _cognitionCursorKey,
+        'agent_memory' => _agentMemoryCursorKey,
+        _ => _messageCursorKey,
+      };
 
-  Future<int> getMemberCursorMs() => _getCursor(_memberCursorKey);
+  /// 过滤已 apply 的边界事件（同毫秒 tie-break）。
+  List<SyncEvent> filterNewEvents(List<SyncEvent> events, SyncDomainCursor cursor) {
+    return events.where((e) => SyncDomainCursor.isEventAfter(e, cursor)).toList();
+  }
 
-  Future<int> getAgentCursorMs() => _getCursor(_agentCursorKey);
+  Future<void> _setDomainCursor(String key, SyncDomainCursor cursor) =>
+      _db.setIdentitySyncState(key, cursor.serialize());
 
-  Future<int> getSheMemoryCursorMs() => _getCursor(_sheMemoryCursorKey);
-
-  Future<int> getCognitionCursorMs() => _getCursor(_cognitionCursorKey);
-
-  Future<int> getAgentMemoryCursorMs() => _getCursor(_agentMemoryCursorKey);
-
-  Future<void> setMessageCursorMs(int ms) => _db.setIdentitySyncState(_messageCursorKey, ms.toString());
-
-  Future<void> setChannelCursorMs(int ms) => _db.setIdentitySyncState(_channelCursorKey, ms.toString());
-
-  Future<void> setMemberCursorMs(int ms) => _db.setIdentitySyncState(_memberCursorKey, ms.toString());
-
-  Future<void> setAgentCursorMs(int ms) => _db.setIdentitySyncState(_agentCursorKey, ms.toString());
-
-  Future<void> setSheMemoryCursorMs(int ms) =>
-      _db.setIdentitySyncState(_sheMemoryCursorKey, ms.toString());
-
-  Future<void> setCognitionCursorMs(int ms) =>
-      _db.setIdentitySyncState(_cognitionCursorKey, ms.toString());
-
-  Future<void> setAgentMemoryCursorMs(int ms) =>
-      _db.setIdentitySyncState(_agentMemoryCursorKey, ms.toString());
-
-  Future<int> _getCursor(String key) async {
+  Future<SyncDomainCursor> _getDomainCursor(String key) async {
     final raw = await _db.getIdentitySyncState(key);
     if (raw != null && raw.isNotEmpty) {
-      return int.tryParse(raw) ?? 0;
+      return SyncDomainCursor.parse(raw);
     }
-    // 迁移旧版单一游标。
-    if (key == _messageCursorKey ||
-        key == _channelCursorKey ||
-        key == _memberCursorKey ||
-        key == _agentCursorKey ||
-        key == _sheMemoryCursorKey ||
-        key == _cognitionCursorKey ||
-        key == _agentMemoryCursorKey) {
+    // 旧版单一游标仅迁移到 message 域，避免其他域跳过历史。
+    if (key == _messageCursorKey) {
       final legacy = await _db.getIdentitySyncState(_legacyCursorKey);
-      return int.tryParse(legacy ?? '') ?? 0;
+      final ms = int.tryParse(legacy ?? '') ?? 0;
+      if (ms > 0) return SyncDomainCursor(wallTimeMs: ms);
     }
-    return 0;
+    return SyncDomainCursor.zero;
   }
 
   /// Primary / Backup：查询 since 之后的消息事件。
@@ -145,12 +133,12 @@ class SyncEngine {
   }
 
   /// 应用频道成员事件批次。
-  Future<int> applyMemberEvents(List<SyncEvent> events) =>
-      _applyEvents(events, cursorSetter: setMemberCursorMs, cursorGetter: getMemberCursorMs);
+  Future<SyncDomainCursor> applyMemberEvents(List<SyncEvent> events) =>
+      _applyEvents(events, cursorKey: _memberCursorKey);
 
   /// 应用 Agent 事件批次。
-  Future<int> applyAgentEvents(List<SyncEvent> events) =>
-      _applyEvents(events, cursorSetter: setAgentCursorMs, cursorGetter: getAgentCursorMs);
+  Future<SyncDomainCursor> applyAgentEvents(List<SyncEvent> events) =>
+      _applyEvents(events, cursorKey: _agentCursorKey);
 
   /// Primary / Backup：查询 since 之后更新的 Agent。
   Future<List<SyncEvent>> queryAgentEvents({
@@ -212,12 +200,12 @@ class SyncEngine {
   }
 
   /// 应用 She 记忆事件批次。
-  Future<int> applySheMemoryEvents(List<SyncEvent> events) =>
-      _applyEvents(events, cursorSetter: setSheMemoryCursorMs, cursorGetter: getSheMemoryCursorMs);
+  Future<SyncDomainCursor> applySheMemoryEvents(List<SyncEvent> events) =>
+      _applyEvents(events, cursorKey: _sheMemoryCursorKey);
 
   /// 应用认知事件批次。
-  Future<int> applyCognitionEvents(List<SyncEvent> events) =>
-      _applyEvents(events, cursorSetter: setCognitionCursorMs, cursorGetter: getCognitionCursorMs);
+  Future<SyncDomainCursor> applyCognitionEvents(List<SyncEvent> events) =>
+      _applyEvents(events, cursorKey: _cognitionCursorKey);
 
   Future<List<SyncEvent>> queryAgentMemoryEvents({
     required int sinceMs,
@@ -241,12 +229,8 @@ class SyncEngine {
   }
 
   /// 应用 Agent 结构化记忆事件批次。
-  Future<int> applyAgentMemoryEvents(List<SyncEvent> events) =>
-      _applyEvents(
-        events,
-        cursorSetter: setAgentMemoryCursorMs,
-        cursorGetter: getAgentMemoryCursorMs,
-      );
+  Future<SyncDomainCursor> applyAgentMemoryEvents(List<SyncEvent> events) =>
+      _applyEvents(events, cursorKey: _agentMemoryCursorKey);
 
   /// 兼容旧调用：按域分别查询后合并（仅测试/legacy）。
   Future<List<SyncEvent>> queryEvents({
@@ -272,14 +256,14 @@ class SyncEngine {
   }
 
   /// 应用消息事件批次；遇失败停止，不跳过中间条目。
-  Future<int> applyMessageEvents(List<SyncEvent> events) =>
-      _applyEvents(events, cursorSetter: setMessageCursorMs, cursorGetter: getMessageCursorMs);
+  Future<SyncDomainCursor> applyMessageEvents(List<SyncEvent> events) =>
+      _applyEvents(events, cursorKey: _messageCursorKey);
 
   /// 应用频道事件批次。
-  Future<int> applyChannelEvents(List<SyncEvent> events) =>
-      _applyEvents(events, cursorSetter: setChannelCursorMs, cursorGetter: getChannelCursorMs);
+  Future<SyncDomainCursor> applyChannelEvents(List<SyncEvent> events) =>
+      _applyEvents(events, cursorKey: _channelCursorKey);
 
-  Future<int> applyEvents(List<SyncEvent> events) async {
+  Future<void> applyEvents(List<SyncEvent> events) async {
     final messages = events.where((e) => e.domain == 'message').toList();
     final channels = events.where((e) => e.domain == 'channel').toList();
     final members = events.where((e) => e.domain == 'channel_member').toList();
@@ -287,53 +271,37 @@ class SyncEngine {
     final sheMemory = events.where((e) => e.domain == 'she_memory').toList();
     final cognition = events.where((e) => e.domain == 'cognition').toList();
     final agentMemory = events.where((e) => e.domain == 'agent_memory').toList();
-    var cursor = await getMessageCursorMs();
-    if (messages.isNotEmpty) {
-      cursor = await applyMessageEvents(messages);
-    }
-    if (channels.isNotEmpty) {
-      await applyChannelEvents(channels);
-    }
-    if (members.isNotEmpty) {
-      await applyMemberEvents(members);
-    }
-    if (agents.isNotEmpty) {
-      await applyAgentEvents(agents);
-    }
-    if (sheMemory.isNotEmpty) {
-      await applySheMemoryEvents(sheMemory);
-    }
-    if (cognition.isNotEmpty) {
-      await applyCognitionEvents(cognition);
-    }
-    if (agentMemory.isNotEmpty) {
-      await applyAgentMemoryEvents(agentMemory);
-    }
-    return cursor;
+    if (messages.isNotEmpty) await applyMessageEvents(messages);
+    if (channels.isNotEmpty) await applyChannelEvents(channels);
+    if (members.isNotEmpty) await applyMemberEvents(members);
+    if (agents.isNotEmpty) await applyAgentEvents(agents);
+    if (sheMemory.isNotEmpty) await applySheMemoryEvents(sheMemory);
+    if (cognition.isNotEmpty) await applyCognitionEvents(cognition);
+    if (agentMemory.isNotEmpty) await applyAgentMemoryEvents(agentMemory);
   }
 
-  Future<int> _applyEvents(
+  Future<SyncDomainCursor> _applyEvents(
     List<SyncEvent> events, {
-    required Future<void> Function(int ms) cursorSetter,
-    required Future<int> Function() cursorGetter,
+    required String cursorKey,
   }) async {
-    if (events.isEmpty) return cursorGetter();
+    final cursor = await _getDomainCursor(cursorKey);
+    if (events.isEmpty) return cursor;
 
     final role = await AccountIdentityService.instance.localDeviceRole();
-    var maxMs = await cursorGetter();
+    var next = cursor;
 
     for (final event in events) {
       try {
         await _applyOne(event, role);
-        if (event.wallTimeMs > maxMs) maxMs = event.wallTimeMs;
+        next = next.advance(event);
       } catch (e) {
         _log.warning('Failed to apply sync event ${event.eventId}: $e', tag: _tag);
         break;
       }
     }
 
-    await cursorSetter(maxMs);
-    return maxMs;
+    await _setDomainCursor(cursorKey, next);
+    return next;
   }
 
   Future<void> _applyOne(SyncEvent event, DeviceRole role) async {
@@ -403,6 +371,11 @@ class SyncEngine {
         await _db.deleteMessageFromSync(id);
         await _db.deleteMessageIndex(id);
         break;
+      case 'channel':
+        final id = event.payload['id'] as String?;
+        if (id == null) return;
+        await _db.deleteChannelFromSync(id);
+        break;
       case 'channel_member':
         final channelId = event.payload['channel_id'] as String?;
         final agentId = event.payload['agent_id'] as String?;
@@ -465,13 +438,13 @@ class SyncEngine {
   }
 
   /// Primary：持久化来自 App 的 commit（含更新与删除）。
-  Future<bool> commitEvent(SyncEvent event) async {
+  Future<SyncCommitResult> commitEvent(SyncEvent event) async {
     final role = await AccountIdentityService.instance.localDeviceRole();
-    if (role != DeviceRole.primary) return false;
+    if (role != DeviceRole.primary) return SyncCommitResult.failed;
 
     if (event.action == SyncEventAction.delete) {
-      await _applyDelete(event, DeviceRole.primary);
-      return true;
+      await _applyOne(event, DeviceRole.primary);
+      return SyncCommitResult.appliedOk();
     }
 
     if (event.domain == 'message') {
@@ -480,7 +453,7 @@ class SyncEngine {
       if (existing != null) {
         final existingUpdated = existing['updated_at'] as String? ?? existing['created_at'] as String? ?? '';
         final existingMs = DateTime.tryParse(existingUpdated)?.millisecondsSinceEpoch ?? 0;
-        if (event.wallTimeMs < existingMs) return true;
+        if (event.wallTimeMs < existingMs) return SyncCommitResult.staleOk();
       }
     }
 
@@ -489,7 +462,7 @@ class SyncEngine {
       final existing = await _db.getAgentRowById(id);
       if (existing != null) {
         final existingMs = existing['updated_at'] as int? ?? existing['created_at'] as int? ?? 0;
-        if (event.wallTimeMs < existingMs) return true;
+        if (event.wallTimeMs < existingMs) return SyncCommitResult.staleOk();
       }
     }
 
@@ -498,7 +471,7 @@ class SyncEngine {
       final existing = await _sheMemoryDb.getRowByKey(key);
       if (existing != null) {
         final existingMs = existing['updated_at'] as int? ?? 0;
-        if (event.wallTimeMs < existingMs) return true;
+        if (event.wallTimeMs < existingMs) return SyncCommitResult.staleOk();
       }
     }
 
@@ -507,10 +480,14 @@ class SyncEngine {
       final agentId = event.payload['agent_id'] as String? ?? '';
       if (kind == 'user') {
         final existing = await _mindsDb.getUserCognition(agentId);
-        if (existing != null && event.wallTimeMs < existing.lastUpdated) return true;
+        if (existing != null && event.wallTimeMs < existing.lastUpdated) {
+          return SyncCommitResult.staleOk();
+        }
       } else {
         final existing = await _mindsDb.getSelfCognition(agentId);
-        if (existing != null && event.wallTimeMs < existing.updatedAt) return true;
+        if (existing != null && event.wallTimeMs < existing.updatedAt) {
+          return SyncCommitResult.staleOk();
+        }
       }
     }
 
@@ -521,13 +498,13 @@ class SyncEngine {
         final existing = await AgentMemoryDbService.forAgent(agentId).getRowBySyncKey(syncKey);
         if (existing != null) {
           final existingMs = existing['updated_at'] as int? ?? 0;
-          if (event.wallTimeMs < existingMs) return true;
+          if (event.wallTimeMs < existingMs) return SyncCommitResult.staleOk();
         }
       }
     }
 
     await _applyOne(event, DeviceRole.primary);
-    return true;
+    return SyncCommitResult.appliedOk();
   }
 
   String _messagePreview(Map<String, dynamic> row) {

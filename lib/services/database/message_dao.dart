@@ -92,7 +92,7 @@ extension MessageDao on LocalDatabaseService {
   /// 删除消息
   Future<void> deleteMessage(String messageId) async {
     final db = await database;
-    final existing = await getMessageById(messageId);
+    final existing = await getMessageById(messageId, fetchRemote: false);
     final channelId = existing?['channel_id'] as String? ?? '';
     await db.delete(
       'messages',
@@ -129,11 +129,25 @@ extension MessageDao on LocalDatabaseService {
   /// 删除指定 channel 中某个时间戳及之后的所有消息
   Future<void> deleteMessagesFromTimestamp(String channelId, String createdAt) async {
     final db = await database;
+    final rows = await db.query(
+      'messages',
+      columns: ['id'],
+      where: 'channel_id = ? AND created_at >= ?',
+      whereArgs: [channelId, createdAt],
+    );
     await db.delete(
       'messages',
       where: 'channel_id = ? AND created_at >= ?',
       whereArgs: [channelId, createdAt],
     );
+    for (final row in rows) {
+      final messageId = row['id'] as String?;
+      if (messageId == null) continue;
+      await SyncLocalWriteHook.onMessageDeleted(
+        messageId: messageId,
+        channelId: channelId,
+      );
+    }
   }
 
   /// 获取 Channel 中文本消息的总数
@@ -149,11 +163,25 @@ extension MessageDao on LocalDatabaseService {
   /// 删除 Channel 的所有消息
   Future<void> deleteChannelMessages(String channelId) async {
     final db = await database;
+    final rows = await db.query(
+      'messages',
+      columns: ['id'],
+      where: 'channel_id = ?',
+      whereArgs: [channelId],
+    );
     await db.delete(
       'messages',
       where: 'channel_id = ?',
       whereArgs: [channelId],
     );
+    for (final row in rows) {
+      final messageId = row['id'] as String?;
+      if (messageId == null) continue;
+      await SyncLocalWriteHook.onMessageDeleted(
+        messageId: messageId,
+        channelId: channelId,
+      );
+    }
   }
 
   /// 更新消息内容

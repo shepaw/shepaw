@@ -364,13 +364,15 @@ class SyncProtocolService {
       final eventMap = data['event'] as Map<String, dynamic>?;
       if (eventMap == null) throw FormatException('missing event');
       final event = SyncEvent.fromJson(eventMap);
-      final ok = await SyncEngine.instance.commitEvent(event);
+      final result = await SyncEngine.instance.commitEvent(event);
       await PeerConnectionManager.instance.sendControl(peerId, {
         'type': 'sync_commit_resp',
         'request_id': requestId,
-        'ok': ok,
+        'ok': result.ok,
+        'applied': result.applied,
+        'stale': result.stale,
       });
-      if (ok) {
+      if (result.applied) {
         unawaited(_pushToBackups([event]));
       }
     } catch (e) {
