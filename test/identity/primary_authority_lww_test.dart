@@ -39,6 +39,52 @@ void main() {
       );
     });
 
+    test('isIncomingStale tie-breaks equal wall time by event id', () {
+      expect(
+        SyncLww.isIncomingStale(
+          incomingWallTimeMs: 100,
+          existingWallTimeMs: 100,
+          incomingEventId: 'msg:a',
+          existingEventId: 'msg:b',
+        ),
+        isTrue,
+      );
+      expect(
+        SyncLww.isIncomingStale(
+          incomingWallTimeMs: 100,
+          existingWallTimeMs: 100,
+          incomingEventId: 'msg:c',
+          existingEventId: 'msg:b',
+        ),
+        isFalse,
+      );
+    });
+
+    test('isIncomingStale tie-breaks equal wall time by origin device id', () {
+      expect(
+        SyncLww.isIncomingStale(
+          incomingWallTimeMs: 100,
+          existingWallTimeMs: 100,
+          incomingEventId: 'msg:same',
+          existingEventId: 'msg:same',
+          incomingOriginDeviceId: 'device-a',
+          existingOriginDeviceId: 'device-z',
+        ),
+        isTrue,
+      );
+      expect(
+        SyncLww.isIncomingStale(
+          incomingWallTimeMs: 100,
+          existingWallTimeMs: 100,
+          incomingEventId: 'msg:same',
+          existingEventId: 'msg:same',
+          incomingOriginDeviceId: 'device-z',
+          existingOriginDeviceId: 'device-a',
+        ),
+        isFalse,
+      );
+    });
+
     test('isoRowTimeMs parses updated_at', () {
       final ms = SyncLww.isoRowTimeMs(
         {'updated_at': '2024-01-02T03:04:05.000Z'},

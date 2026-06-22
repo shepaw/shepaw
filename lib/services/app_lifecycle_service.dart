@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter/widgets.dart';
+import '../identity/services/sync_local_write_hook.dart';
 import '../task/services/scheduled_task_service.dart';
 import '../peer/services/peer_connection_manager.dart';
 
@@ -54,6 +55,7 @@ class AppLifecycleService with WidgetsBindingObserver {
     if (state == AppLifecycleState.paused || state == AppLifecycleState.inactive) {
       // Record when the app entered background (only on the first transition).
       _backgroundedAtMs ??= DateTime.now().millisecondsSinceEpoch;
+      unawaited(SyncLocalWriteHook.flushAllPendingDebouncedSync());
       // Pause scheduled tasks when app goes to background
       ScheduledTaskService().pauseScheduler();
     } else if (state == AppLifecycleState.resumed && _backgroundedAtMs != null) {

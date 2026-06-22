@@ -7,6 +7,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:uuid/uuid.dart';
 import '../models/agent_memory_entry.dart';
 import '../identity/services/sync_local_write_hook.dart';
+import 'local_database_service.dart';
 import 'logger_service.dart';
 
 /// Agent 独立记忆数据库服务
@@ -133,6 +134,9 @@ class AgentMemoryDbService {
     return sanitized.replaceAll('_', '-');
   }
 
+  static String _sanitizeAgentId(String agentId) =>
+      agentId.replaceAll('-', '_').replaceAll(RegExp(r'[^a-zA-Z0-9_]'), '_');
+
   static Future<String> resolveAgentIdFromDbFile(String filePath) async {
     Database? db;
     try {
@@ -153,7 +157,37 @@ class AgentMemoryDbService {
     } finally {
       await db?.close();
     }
-    return agentIdFromDbFileName(basename(filePath));
+
+    final fileName = basename(filePath);
+    if (!fileName.startsWith('agent_memory_') || !fileName.endsWith('.db')) {
+      return '';
+    }
+    final sanitized = fileName.substring(
+      'agent_memory_'.length,
+      fileName.length - '.db'.length,
+    );
+
+    final matched = await _matchAgentIdBySanitizedFileToken(sanitized);
+    if (matched.isNotEmpty) return matched;
+
+    return agentIdFromDbFileName(fileName);
+  }
+
+  /// 将文件名 token 与 agents 表 id 的 sanitize 结果匹配（避免 `_` ↔ `-` 误解析）。
+  static Future<String> _matchAgentIdBySanitizedFileToken(String sanitized) async {
+    if (sanitized.isEmpty) return '';
+    try {
+      final db = await LocalDatabaseService().database;
+      final rows = await db.query('agents', columns: ['id']);
+      for (final row in rows) {
+        final id = row['id'] as String?;
+        if (id == null || id.isEmpty) continue;
+        if (_sanitizeAgentId(id) == sanitized) return id;
+      }
+    } catch (_) {
+      // agents 表不可用时回退 legacy 解析。
+    }
+    return '';
   }
 
   /// 扫描当前账号目录下所有 agent_memory DB，返回 since 之后变更的行。
@@ -166,7 +200,7 @@ class AgentMemoryDbService {
     final baseDir = Directory(await _resolveDirectoryPath());
     if (!await baseDir.exists()) return [];
 
-    final merged = <Map<String, dynamic>>[];
+    final perFile = <List<Map<String, dynamic>>>[];
     await for (final entity in baseDir.list()) {
       if (entity is! File) continue;
       final name = basename(entity.path);
@@ -182,23 +216,55 @@ class AgentMemoryDbService {
           'memories',
           where: 'updated_at >= ?',
           whereArgs: [sinceMs],
-          orderBy: 'updated_at ASC',
+          orderBy: 'updated_at ASC, sync_key ASC',
         );
-        for (final row in rows) {
-          merged.add({...row, 'agent_id': agentId});
-        }
+        if (rows.isEmpty) continue;
+        perFile.add([
+          for (final row in rows) {...row, 'agent_id': agentId},
+        ]);
       } finally {
         await db?.close();
       }
     }
 
-    merged.sort(
-      (a, b) => ((a['updated_at'] as int?) ?? 0).compareTo(
-        (b['updated_at'] as int?) ?? 0,
-      ),
-    );
-    if (merged.length > limit) return merged.sublist(0, limit);
+    return _mergeMemoryRowsByUpdatedAt(perFile, limit);
+  }
+
+  static List<Map<String, dynamic>> _mergeMemoryRowsByUpdatedAt(
+    List<List<Map<String, dynamic>>> perFile,
+    int limit,
+  ) {
+    if (perFile.isEmpty) return [];
+    final indices = List<int>.filled(perFile.length, 0);
+    final merged = <Map<String, dynamic>>[];
+
+    while (merged.length < limit) {
+      var pick = -1;
+      for (var i = 0; i < perFile.length; i++) {
+        if (indices[i] >= perFile[i].length) continue;
+        if (pick < 0) {
+          pick = i;
+          continue;
+        }
+        final candidate = perFile[i][indices[i]];
+        final best = perFile[pick][indices[pick]];
+        final cmp = _compareMemoryRows(candidate, best);
+        if (cmp < 0) pick = i;
+      }
+      if (pick < 0) break;
+      merged.add(perFile[pick][indices[pick]]);
+      indices[pick]++;
+    }
     return merged;
+  }
+
+  static int _compareMemoryRows(Map<String, dynamic> a, Map<String, dynamic> b) {
+    final aMs = (a['updated_at'] as int?) ?? 0;
+    final bMs = (b['updated_at'] as int?) ?? 0;
+    if (aMs != bMs) return aMs.compareTo(bMs);
+    final aKey = a['sync_key'] as String? ?? '';
+    final bKey = b['sync_key'] as String? ?? '';
+    return aKey.compareTo(bKey);
   }
 
   static Future<String> _resolveDirectoryPath() async {
@@ -229,10 +295,6 @@ class AgentMemoryDbService {
   // ---------------------------------------------------------------------------
   // 数据库初始化
   // ---------------------------------------------------------------------------
-
-  /// 将 agentId 转换为合法文件名（替换 `-` 为 `_`）
-  static String _sanitizeAgentId(String agentId) =>
-      agentId.replaceAll('-', '_').replaceAll(RegExp(r'[^a-zA-Z0-9_]'), '_');
 
   /// 获取数据库文件名
   String get _dbFileName =>

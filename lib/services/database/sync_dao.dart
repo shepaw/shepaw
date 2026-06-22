@@ -396,4 +396,39 @@ extension SyncDao on LocalDatabaseService {
     }
     return events;
   }
+
+  // ── Sync entity LWW state (tie-break at equal wall_time_ms) ───────────────
+
+  Future<Map<String, dynamic>?> getEntitySyncState(String domain, String entityKey) async {
+    final db = await database;
+    final rows = await db.query(
+      'identity_sync_entity_state',
+      where: 'domain = ? AND entity_key = ?',
+      whereArgs: [domain, entityKey],
+      limit: 1,
+    );
+    if (rows.isEmpty) return null;
+    return rows.first;
+  }
+
+  Future<void> upsertEntitySyncState({
+    required String domain,
+    required String entityKey,
+    required int wallTimeMs,
+    required String eventId,
+    required String originDeviceId,
+  }) async {
+    final db = await database;
+    await db.insert(
+      'identity_sync_entity_state',
+      {
+        'domain': domain,
+        'entity_key': entityKey,
+        'wall_time_ms': wallTimeMs,
+        'event_id': eventId,
+        'origin_device_id': originDeviceId,
+      },
+      conflictAlgorithm: ConflictAlgorithm.replace,
+    );
+  }
 }

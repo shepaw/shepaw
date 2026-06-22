@@ -5,6 +5,7 @@ import '../../services/local_database_service.dart';
 import '../models/device_role.dart';
 import '../models/sync_event.dart';
 import 'account_identity_service.dart';
+import 'sync_engine.dart';
 import 'sync_fanout_service.dart';
 
 /// 本地 DB 写入后触发同步（App → outbound 队列，Primary → fan-out push）。
@@ -14,10 +15,62 @@ class SyncLocalWriteHook {
   static const _streamingDebounceDuration = Duration(seconds: 2);
   static const _readDebounceDuration = Duration(seconds: 3);
   static const _heartbeatDebounceDuration = Duration(seconds: 60);
+  static const _statusDebounceDuration = Duration(seconds: 5);
   static final _streamingDebounceTimers = <String, Timer>{};
+  static final _pendingStreamingRows = <String, Map<String, dynamic>>{};
   static final _readDebounceTimers = <String, Timer>{};
   static final _pendingReadRows = <String, Map<String, dynamic>>{};
   static final _heartbeatDebounceTimers = <String, Timer>{};
+  static final _statusDebounceTimers = <String, Timer>{};
+
+  /// App 进入后台前立即 flush 防抖中的同步事件。
+  static Future<void> flushAllPendingDebouncedSync() async {
+    for (final timer in _streamingDebounceTimers.values) {
+      timer.cancel();
+    }
+    _streamingDebounceTimers.clear();
+    final streaming = Map<String, Map<String, dynamic>>.from(_pendingStreamingRows);
+    _pendingStreamingRows.clear();
+    for (final row in streaming.values) {
+      await onMessageUpdated(
+        messageId: row['messageId'] as String,
+        channelId: row['channelId'] as String,
+        content: row['content'] as String,
+        metadata: row['metadata'] as String?,
+        updatedAt: row['updatedAt'] as String,
+      );
+    }
+
+    for (final timer in _readDebounceTimers.values) {
+      timer.cancel();
+    }
+    _readDebounceTimers.clear();
+    final reads = Map<String, Map<String, dynamic>>.from(_pendingReadRows);
+    _pendingReadRows.clear();
+    for (final row in reads.values) {
+      await _dispatchMessageRow(Map<String, dynamic>.from(row), enqueueBlob: false);
+    }
+
+    for (final timer in _heartbeatDebounceTimers.values) {
+      timer.cancel();
+    }
+    final heartbeatAgents = _heartbeatDebounceTimers.keys.toList();
+    _heartbeatDebounceTimers.clear();
+    for (final agentId in heartbeatAgents) {
+      final row = await LocalDatabaseService().getAgentRowById(agentId);
+      if (row != null) await onAgentUpserted(row);
+    }
+
+    for (final timer in _statusDebounceTimers.values) {
+      timer.cancel();
+    }
+    final statusAgents = _statusDebounceTimers.keys.toList();
+    _statusDebounceTimers.clear();
+    for (final agentId in statusAgents) {
+      final row = await LocalDatabaseService().getAgentRowById(agentId);
+      if (row != null) await onAgentUpserted(row);
+    }
+  }
 
   /// 流式 flush 防抖，避免高频 outbound；完成/中断前应调用 [flushStreamingMessageSync]。
   static void onStreamingMessageUpdated({
@@ -27,16 +80,25 @@ class SyncLocalWriteHook {
     String? metadata,
     required String updatedAt,
   }) {
+    _pendingStreamingRows[messageId] = {
+      'messageId': messageId,
+      'channelId': channelId,
+      'content': content,
+      'metadata': metadata,
+      'updatedAt': updatedAt,
+    };
     _streamingDebounceTimers[messageId]?.cancel();
     _streamingDebounceTimers[messageId] = Timer(_streamingDebounceDuration, () {
-      unawaited(onMessageUpdated(
-        messageId: messageId,
-        channelId: channelId,
-        content: content,
-        metadata: metadata,
-        updatedAt: updatedAt,
-      ));
+      final pending = _pendingStreamingRows.remove(messageId);
       _streamingDebounceTimers.remove(messageId);
+      if (pending == null) return;
+      unawaited(onMessageUpdated(
+        messageId: pending['messageId'] as String,
+        channelId: pending['channelId'] as String,
+        content: pending['content'] as String,
+        metadata: pending['metadata'] as String?,
+        updatedAt: pending['updatedAt'] as String,
+      ));
     });
   }
 
@@ -48,6 +110,7 @@ class SyncLocalWriteHook {
     required String updatedAt,
   }) {
     _streamingDebounceTimers.remove(messageId)?.cancel();
+    _pendingStreamingRows.remove(messageId);
     unawaited(onMessageUpdated(
       messageId: messageId,
       channelId: channelId,
@@ -153,6 +216,17 @@ class SyncLocalWriteHook {
     });
   }
 
+  /// Agent 在线状态（5s 防抖，避免健康检查频繁 outbound）。
+  static void onAgentStatusDebounced(String agentId) {
+    if (agentId.isEmpty) return;
+    _statusDebounceTimers[agentId]?.cancel();
+    _statusDebounceTimers[agentId] = Timer(_statusDebounceDuration, () async {
+      final row = await LocalDatabaseService().getAgentRowById(agentId);
+      if (row != null) await onAgentUpserted(row);
+      _statusDebounceTimers.remove(agentId);
+    });
+  }
+
   static Future<void> onMessageDeleted({
     required String messageId,
     required String channelId,
@@ -196,6 +270,7 @@ class SyncLocalWriteHook {
           await _maybeEnqueueBlob(db, row);
         }
       } else if (role == DeviceRole.primary) {
+        await SyncEngine.instance.recordEntitySyncState(event);
         await SyncFanoutService.fanout(event);
       }
     } catch (_) {}
@@ -356,6 +431,7 @@ class SyncLocalWriteHook {
           payloadJson: event.toJsonString(),
         );
       } else if (role == DeviceRole.primary) {
+        await SyncEngine.instance.recordEntitySyncState(event);
         await SyncFanoutService.fanout(event);
       }
     } catch (_) {}

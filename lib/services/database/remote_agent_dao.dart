@@ -140,7 +140,7 @@ extension RemoteAgentDao on LocalDatabaseService {
 
     final row = await getAgentRowById(agentId);
     if (row != null) {
-      SyncLocalWriteHook.onAgentUpserted(row);
+      SyncLocalWriteHook.onAgentStatusDebounced(agentId);
     }
   }
 
