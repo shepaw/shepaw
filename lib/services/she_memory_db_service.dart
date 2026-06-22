@@ -185,6 +185,7 @@ class SheMemoryDbService {
   }
 
   Future<void> deleteDatabase() async {
+    await clearSheMemory();
     await close();
     if (!kIsWeb) {
       final path = await _resolveDbPath();

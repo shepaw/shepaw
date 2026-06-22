@@ -4195,6 +4195,10 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
+  String get identity_syncStaleCommit =>
+      'Primary had a newer version. Your local copy was refreshed.';
+
+  @override
   String get account_gateTitle => 'Sign in to account';
 
   @override

@@ -1786,6 +1786,8 @@
     }
   },
 
+  "identity_syncStaleCommit": "Primary had a newer version. Your local copy was refreshed.",
+
   "account_gateTitle": "Sign in to account",
   "account_gateHeadline": "Choose or create your account",
   "account_gateSubtitle": "Each account has one spirit pet. Account IDs are globally unique; sign in with the same account on multiple devices to share data.",

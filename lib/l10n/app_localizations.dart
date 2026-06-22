@@ -7484,6 +7484,12 @@ abstract class AppLocalizations {
   /// **'{events} 条变更、{blobs} 个附件等待同步到主存储设备'**
   String identity_syncPendingBody(int events, int blobs);
 
+  /// No description provided for @identity_syncStaleCommit.
+  ///
+  /// In zh, this message translates to:
+  /// **'主存储已有更新版本，本机已自动刷新。'**
+  String get identity_syncStaleCommit;
+
   /// No description provided for @account_gateTitle.
   ///
   /// In zh, this message translates to:

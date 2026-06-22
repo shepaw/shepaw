@@ -444,6 +444,7 @@ class MindsDatabaseService {
 
   /// 删除整个数据库文件
   Future<void> deleteDatabase() async {
+    await clearAll();
     await close();
     if (!kIsWeb) {
       final directory = await getApplicationDocumentsDirectory();

@@ -431,4 +431,17 @@ extension SyncDao on LocalDatabaseService {
       conflictAlgorithm: ConflictAlgorithm.replace,
     );
   }
+
+  /// Tombstone 保留时长（离线设备 pull 删除事件的窗口）。
+  static const tombstoneRetentionMs = 30 * 86400000;
+
+  Future<int> pruneSyncTombstonesOlderThan(int beforeWallTimeMs) async {
+    if (beforeWallTimeMs <= 0) return 0;
+    final db = await database;
+    return db.delete(
+      'identity_sync_tombstones',
+      where: 'wall_time_ms < ?',
+      whereArgs: [beforeWallTimeMs],
+    );
+  }
 }

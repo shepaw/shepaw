@@ -340,6 +340,7 @@ class SyncProtocolService {
       if (result.applied) {
         unawaited(_pushToBackups([event]));
       }
+      unawaited(SyncEngine.instance.pruneOldTombstones());
     } catch (e) {
       await PeerConnectionManager.instance.sendControl(peerId, {
         'type': 'sync_commit_resp',

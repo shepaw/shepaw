@@ -3,6 +3,7 @@ import 'dart:convert';
 
 import 'package:uuid/uuid.dart';
 
+import '../../peer/models/paired_peer.dart';
 import '../../peer/services/peer_connection.dart';
 import '../../peer/services/peer_connection_manager.dart';
 import '../../peer/services/peer_storage_service.dart';
@@ -24,18 +25,27 @@ class SyncClientService {
   static final SyncClientService instance = SyncClientService._();
 
   static const _tag = 'SyncClient';
+  static const _outboundRetryInterval = Duration(minutes: 1);
   final _log = LoggerService();
   final _db = LocalDatabaseService();
   final _uuid = const Uuid();
 
   StreamSubscription? _connSub;
+  Timer? _outboundRetryTimer;
   bool _running = false;
   Future<void> _pullChain = Future.value();
+  final _staleCommitController = StreamController<void>.broadcast();
+
+  /// Primary 因版本较新拒绝本地 commit 时触发（已自动 pull 刷新）。
+  Stream<void> get staleCommitEvents => _staleCommitController.stream;
 
   void start() {
     if (_running) return;
     _running = true;
     _connSub = PeerConnectionManager.instance.events.listen(_onConnEvent);
+    _outboundRetryTimer = Timer.periodic(_outboundRetryInterval, (_) {
+      unawaited(_retryPendingOutboundIfConnected());
+    });
     _log.info('SyncClientService started', tag: _tag);
   }
 
@@ -43,6 +53,8 @@ class SyncClientService {
 
   void stop() {
     _running = false;
+    _outboundRetryTimer?.cancel();
+    _outboundRetryTimer = null;
     _connSub?.cancel();
     _connSub = null;
     _pullChain = Future.value();
@@ -123,6 +135,31 @@ class SyncClientService {
     await _pullDomain(peerId, domain: 'she_memory');
     await _pullDomain(peerId, domain: 'cognition');
     await _pullDomain(peerId, domain: 'agent_memory');
+    await SyncEngine.instance.pruneOldTombstones();
+  }
+
+  Future<void> _retryPendingOutboundIfConnected() async {
+    if (!_running) return;
+    try {
+      await AccountIdentityService.instance.ensureInitialized();
+      final role = await AccountIdentityService.instance.localDeviceRole();
+      if (role == DeviceRole.primary) return;
+
+      final pending = await pendingCounts();
+      if (!pending.hasPending) return;
+
+      final peerId = await _primaryPeerId();
+      if (peerId == null) return;
+      if (PeerConnectionManager.instance.getPeerState(peerId) !=
+          PeerConnectionState.connected) {
+        return;
+      }
+
+      await _flushOutbound(peerId);
+      await _flushBlobOutbound(peerId);
+    } catch (e) {
+      _log.warning('Periodic outbound retry failed: $e', tag: _tag);
+    }
   }
 
   Future<void> _pullDomain(String peerId, {required String domain}) async {
@@ -180,6 +217,7 @@ class SyncClientService {
 
   Future<void> _flushOutbound(String peerId) async {
     final pending = await _db.listPendingOutbound(limit: 50);
+    var hadStaleCommit = false;
     for (final row in pending) {
       final requestId = _uuid.v4();
       final rowId = row['id'] as String;
@@ -208,13 +246,17 @@ class SyncClientService {
       if (ok && (applied || stale)) {
         await _db.markOutboundAcked(rowId);
         if (stale) {
-          unawaited(pullFromPeer(peerId));
+          hadStaleCommit = true;
         }
         final blobPath = SyncLocalWriteHook.attachmentPathFromEventJson(eventJson);
         if (blobPath != null && applied) {
           await _db.enqueueBlobOutbound(relativePath: blobPath);
         }
       }
+    }
+    if (hadStaleCommit) {
+      _staleCommitController.add(null);
+      unawaited(pullFromPeer(peerId));
     }
     await _flushBlobOutbound(peerId);
   }

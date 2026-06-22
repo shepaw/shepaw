@@ -321,9 +321,10 @@ extension ChannelDao on LocalDatabaseService {
       whereArgs: [channelId],
     );
     for (final row in rows) {
-      SyncLocalWriteHook.onMessageMarkedRead(
+      SyncLocalWriteHook.onMessageReadStateChanged(
         messageRow: row,
         updatedAt: updatedAt,
+        isRead: 1,
       );
     }
   }

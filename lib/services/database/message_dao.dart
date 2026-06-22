@@ -92,9 +92,31 @@ extension MessageDao on LocalDatabaseService {
       where: 'id = ?',
       whereArgs: [messageId],
     );
-    SyncLocalWriteHook.onMessageMarkedRead(
+    SyncLocalWriteHook.onMessageReadStateChanged(
       messageRow: existing,
       updatedAt: updatedAt,
+      isRead: 1,
+    );
+  }
+
+  /// 标记消息为未读（跨设备同步 is_read=0）。
+  Future<void> markMessageAsUnread(String messageId) async {
+    final existing = await getMessageById(messageId, fetchRemote: false);
+    if (existing == null) return;
+    if ((existing['is_read'] as int? ?? 0) == 0) return;
+
+    final db = await database;
+    final updatedAt = DateTime.now().toIso8601String();
+    await db.update(
+      'messages',
+      {'is_read': 0, 'updated_at': updatedAt},
+      where: 'id = ?',
+      whereArgs: [messageId],
+    );
+    SyncLocalWriteHook.onMessageReadStateChanged(
+      messageRow: existing,
+      updatedAt: updatedAt,
+      isRead: 0,
     );
   }
 

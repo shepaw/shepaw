@@ -125,10 +125,11 @@ class SyncLocalWriteHook {
     );
   }
 
-  /// 已读状态变更（按 channel 防抖批量同步）。
-  static void onMessageMarkedRead({
+  /// 已读/未读状态变更（按 channel 防抖批量同步，支持双向 is_read）。
+  static void onMessageReadStateChanged({
     required Map<String, dynamic> messageRow,
     required String updatedAt,
+    required int isRead,
   }) {
     final channelId = messageRow['channel_id'] as String? ?? '';
     final messageId = messageRow['id'] as String?;
@@ -136,7 +137,7 @@ class SyncLocalWriteHook {
 
     _pendingReadRows[messageId] = {
       ...messageRow,
-      'is_read': 1,
+      'is_read': isRead,
       'updated_at': updatedAt,
     };
     _readDebounceTimers[channelId]?.cancel();

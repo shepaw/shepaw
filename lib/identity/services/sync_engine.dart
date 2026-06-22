@@ -628,4 +628,16 @@ class SyncEngine {
   Future<void> _trimAppCache(AppCachePolicy policy) async {
     await _db.trimMessagesToPolicy(policy.maxMessages, policy.maxDays);
   }
+
+  /// 清理超过保留期的 delete tombstone（Primary / Backup）。
+  Future<void> pruneOldTombstones() async {
+    final role = await AccountIdentityService.instance.localDeviceRole();
+    if (role != DeviceRole.primary && role != DeviceRole.backup) return;
+    final cutoff =
+        DateTime.now().millisecondsSinceEpoch - (30 * 86400000);
+    final pruned = await _db.pruneSyncTombstonesOlderThan(cutoff);
+    if (pruned > 0) {
+      _log.info('Pruned $pruned sync tombstones older than retention window', tag: _tag);
+    }
+  }
 }

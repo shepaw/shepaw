@@ -852,6 +852,7 @@ class AgentMemoryDbService {
   ///
   /// 警告：此操作不可逆，将永久删除所有记忆数据。
   Future<void> deleteDatabase() async {
+    await clearAllMemories();
     if (!kIsWeb) {
       try {
         final path = join(await _resolveDirectoryPath(), _dbFileName);

@@ -4036,6 +4036,9 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
+  String get identity_syncStaleCommit => '主存储已有更新版本，本机已自动刷新。';
+
+  @override
   String get account_gateTitle => '登录账号';
 
   @override

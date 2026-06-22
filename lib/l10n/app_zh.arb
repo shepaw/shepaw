@@ -2271,6 +2271,8 @@
     }
   },
 
+  "identity_syncStaleCommit": "主存储已有更新版本，本机已自动刷新。",
+
   "account_gateTitle": "登录账号",
   "account_gateHeadline": "选择或创建你的账号",
   "account_gateSubtitle": "一个账号对应一只专属灵宠。账号 ID 全局唯一，多设备登录同一账号即可共享数据。",
