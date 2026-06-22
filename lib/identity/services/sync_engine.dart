@@ -54,6 +54,13 @@ class SyncEngine {
     _log.info('Reset all sync domain cursors', tag: _tag);
   }
 
+  /// 全量 resync 前：重置游标并清空 entity LWW 状态。
+  Future<void> resetForFullResync() async {
+    await resetAllDomainCursors();
+    await _db.clearAllEntitySyncState();
+    _log.info('Reset sync cursors and entity state for full resync', tag: _tag);
+  }
+
   static String _cursorKeyForDomain(String domain) => switch (domain) {
         'message' => _messageCursorKey,
         'channel' => _channelCursorKey,
@@ -309,7 +316,8 @@ class SyncEngine {
 
     for (final event in events) {
       try {
-        await _applyOne(event, role);
+        final applied = await _applyOne(event, role);
+        if (!applied) continue;
         await _recordEntitySyncState(event);
         next = next.advance(event);
       } catch (e) {
@@ -322,43 +330,43 @@ class SyncEngine {
     return next;
   }
 
-  Future<void> _applyOne(SyncEvent event, DeviceRole role) async {
+  Future<bool> _applyOne(SyncEvent event, DeviceRole role) async {
     if (event.action == SyncEventAction.delete) {
-      await _applyDelete(event, role);
-      await _recordTombstoneIfStorage(event, role);
-      return;
+      return _applyDelete(event, role);
     }
-    if (await _isStaleUpsert(event)) return;
+    if (await _isStaleUpsert(event)) return false;
     await _clearTombstoneForUpsert(event);
     switch (event.domain) {
       case 'message':
-        await _applyMessage(event, role);
-        break;
+        return _applyMessage(event, role);
       case 'channel':
         await _applyChannel(event, role);
-        break;
+        return true;
       case 'channel_member':
         await _applyChannelMember(event, role);
-        break;
+        return true;
       case 'agent':
         await _applyAgent(event, role);
-        break;
+        return true;
       case 'she_memory':
         await _applySheMemory(event, role);
-        break;
+        return true;
       case 'cognition':
         await _applyCognition(event, role);
-        break;
+        return true;
       case 'agent_memory':
         await _applyAgentMemory(event, role);
-        break;
+        return true;
+      default:
+        return false;
     }
   }
 
-  Future<void> _applyAgentMemory(SyncEvent event, DeviceRole role) async {
+  Future<bool> _applyAgentMemory(SyncEvent event, DeviceRole role) async {
     final agentId = event.payload['agent_id'] as String?;
-    if (agentId == null || agentId.isEmpty) return;
+    if (agentId == null || agentId.isEmpty) return false;
     await AgentMemoryDbService.forAgent(agentId).upsertFromSync(event.payload);
+    return true;
   }
 
   Future<void> _applySheMemory(SyncEvent event, DeviceRole role) async {
@@ -382,58 +390,67 @@ class SyncEngine {
     await _db.upsertChannelMemberFromSync(event.payload);
   }
 
-  Future<void> _applyDelete(SyncEvent event, DeviceRole role) async {
+  Future<bool> _applyDelete(SyncEvent event, DeviceRole role) async {
     switch (event.domain) {
       case 'message':
         final id = event.payload['id'] as String?;
-        if (id == null) return;
+        if (id == null) return false;
         await _db.deleteMessageFromSync(id);
         await _db.deleteMessageIndex(id);
-        break;
+        await _recordTombstoneIfStorage(event, role);
+        return true;
       case 'channel':
         final id = event.payload['id'] as String?;
-        if (id == null) return;
+        if (id == null) return false;
         await _db.deleteChannelFromSync(id);
-        break;
+        await _recordTombstoneIfStorage(event, role);
+        return true;
       case 'channel_member':
         final channelId = event.payload['channel_id'] as String?;
         final agentId = event.payload['agent_id'] as String?;
-        if (channelId == null || agentId == null) return;
+        if (channelId == null || agentId == null) return false;
         await _db.removeChannelMemberFromSync(channelId, agentId);
-        break;
+        await _recordTombstoneIfStorage(event, role);
+        return true;
       case 'agent':
         final id = event.payload['id'] as String?;
-        if (id == null) return;
+        if (id == null) return false;
         await _db.deleteAgentFromSync(id);
-        break;
+        await _recordTombstoneIfStorage(event, role);
+        return true;
       case 'she_memory':
         final key = event.payload['key'] as String?;
-        if (key == null) return;
+        if (key == null) return false;
         await _sheMemoryDb.deleteFromSync(key);
-        break;
+        await _recordTombstoneIfStorage(event, role);
+        return true;
       case 'agent_memory':
         final agentId = event.payload['agent_id'] as String?;
         final syncKey = event.payload['sync_key'] as String?;
-        if (agentId == null || syncKey == null) return;
+        if (agentId == null || syncKey == null) return false;
         await AgentMemoryDbService.forAgent(agentId).deleteFromSync(syncKey);
-        break;
+        await _recordTombstoneIfStorage(event, role);
+        return true;
       case 'cognition':
         final kind = event.payload['kind'] as String? ?? 'self';
         final agentId = event.payload['agent_id'] as String?;
-        if (agentId == null) return;
+        if (agentId == null) return false;
         if (kind == 'user') {
           await _mindsDb.deleteUserCognitionFromSync(agentId);
         } else {
           await _mindsDb.deleteSelfCognitionFromSync(agentId);
         }
-        break;
+        await _recordTombstoneIfStorage(event, role);
+        return true;
+      default:
+        return false;
     }
   }
 
-  Future<void> _applyMessage(SyncEvent event, DeviceRole role) async {
+  Future<bool> _applyMessage(SyncEvent event, DeviceRole role) async {
     final row = event.payload;
     final id = row['id'] as String?;
-    if (id == null) return;
+    if (id == null) return false;
 
     final preview = _messagePreview(row);
     final wallTime = event.wallTimeMs;
@@ -460,6 +477,7 @@ class SyncEngine {
     } else {
       await _db.upsertMessageFromSync(row);
     }
+    return true;
   }
 
   Future<void> _applyChannel(SyncEvent event, DeviceRole role) async {
@@ -473,14 +491,18 @@ class SyncEngine {
     }
 
     if (event.action == SyncEventAction.delete) {
-      await _applyOne(event, DeviceRole.primary);
+      if (!await _applyOne(event, DeviceRole.primary)) {
+        return SyncCommitResult.failed;
+      }
       await _recordEntitySyncState(event);
       return SyncCommitResult.appliedOk();
     }
 
     if (await _isStaleUpsert(event)) return SyncCommitResult.staleOk();
 
-    await _applyOne(event, DeviceRole.primary);
+    if (!await _applyOne(event, DeviceRole.primary)) {
+      return SyncCommitResult.failed;
+    }
     await _recordEntitySyncState(event);
     return SyncCommitResult.appliedOk();
   }
@@ -491,14 +513,18 @@ class SyncEngine {
     if (role != DeviceRole.backup) return SyncCommitResult.failed;
 
     if (event.action == SyncEventAction.delete) {
-      await _applyOne(event, DeviceRole.backup);
+      if (!await _applyOne(event, DeviceRole.backup)) {
+        return SyncCommitResult.failed;
+      }
       await _recordEntitySyncState(event);
       return SyncCommitResult.appliedOk();
     }
 
     if (await _isStaleUpsert(event)) return SyncCommitResult.staleOk();
 
-    await _applyOne(event, DeviceRole.backup);
+    if (!await _applyOne(event, DeviceRole.backup)) {
+      return SyncCommitResult.failed;
+    }
     await _recordEntitySyncState(event);
     return SyncCommitResult.appliedOk();
   }

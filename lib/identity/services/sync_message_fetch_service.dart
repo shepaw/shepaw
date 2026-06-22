@@ -55,12 +55,15 @@ class SyncMessageFetchService {
     final role = await AccountIdentityService.instance.localDeviceRole();
     if (role != DeviceRole.app) return;
 
-    final rows = await _db.getChannelMessages(channelId, limit: limit);
-    for (final row in rows) {
-      final id = row['id'] as String?;
-      if (id == null) continue;
-      final content = row['content'] as String? ?? '';
-      if (content.isNotEmpty) continue;
+    final indexRows = await _db.getMessageIndexForChannel(channelId, limit: limit);
+    for (final row in indexRows) {
+      final id = row['message_id'] as String?;
+      if (id == null || id.isEmpty) continue;
+      final cached = await _db.getMessageById(id, fetchRemote: false);
+      if (cached != null) {
+        final content = cached['content'] as String? ?? '';
+        if (content.isNotEmpty) continue;
+      }
       await fetchMessageBody(id);
     }
   }

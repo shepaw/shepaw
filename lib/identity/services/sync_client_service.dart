@@ -108,9 +108,9 @@ class SyncClientService {
     await syncWithPeer(peerId);
   }
 
-  /// 全量 resync：重置游标后从 Primary 重新拉取并提交 outbound。
+  /// 全量 resync：重置游标与 entity state 后从 Primary 重新拉取并提交 outbound。
   Future<void> fullResyncFromPrimary() async {
-    await SyncEngine.instance.resetAllDomainCursors();
+    await SyncEngine.instance.resetForFullResync();
     await syncWithPrimary();
   }
 

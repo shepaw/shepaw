@@ -2,8 +2,11 @@ import 'dart:convert';
 import 'package:uuid/uuid.dart';
 import '../local_database_service.dart';
 import '../logger_service.dart';
+import '../../identity/models/device_role.dart';
+import '../../identity/services/account_identity_service.dart';
 import '../../identity/services/sync_local_write_hook.dart';
 import '../../identity/services/sync_message_fetch_service.dart';
+import '../../identity/utils/message_index_merge.dart';
 
 /// 消息（含流式/部分消息）相关的数据访问层。
 extension MessageDao on LocalDatabaseService {
@@ -52,8 +55,33 @@ extension MessageDao on LocalDatabaseService {
     );
   }
 
-  /// 获取 Channel 的消息
+  /// 获取 Channel 的消息（App 设备合并 index + 本地缓存正文）。
   Future<List<Map<String, dynamic>>> getChannelMessages(String channelId, {int limit = 100, int offset = 0}) async {
+    final role = await AccountIdentityService.instance.localDeviceRole();
+    if (role == DeviceRole.app) {
+      final indexRows = await getMessageIndexForChannel(channelId, limit: limit, offset: offset);
+      if (indexRows.isNotEmpty) {
+        final ids = indexRows
+            .map((row) => row['message_id'] as String?)
+            .whereType<String>()
+            .where((id) => id.isNotEmpty)
+            .toList();
+        if (ids.isNotEmpty) {
+          final db = await database;
+          final placeholders = List.filled(ids.length, '?').join(',');
+          final messageRows = await db.query(
+            'messages',
+            where: 'id IN ($placeholders)',
+            whereArgs: ids,
+          );
+          return mergeChannelMessagesWithIndex(
+            indexRows: indexRows,
+            messageRows: messageRows,
+          );
+        }
+      }
+    }
+
     final db = await database;
     return await db.query(
       'messages',

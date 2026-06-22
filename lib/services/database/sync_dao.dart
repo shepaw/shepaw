@@ -432,6 +432,27 @@ extension SyncDao on LocalDatabaseService {
     );
   }
 
+  Future<void> clearAllEntitySyncState() async {
+    final db = await database;
+    await db.delete('identity_sync_entity_state');
+  }
+
+  Future<List<Map<String, dynamic>>> getMessageIndexForChannel(
+    String channelId, {
+    int limit = 100,
+    int offset = 0,
+  }) async {
+    final db = await database;
+    return db.query(
+      'identity_message_index',
+      where: 'channel_id = ?',
+      whereArgs: [channelId],
+      orderBy: 'wall_time DESC',
+      limit: limit,
+      offset: offset,
+    );
+  }
+
   /// Tombstone 保留时长（离线设备 pull 删除事件的窗口）。
   static const tombstoneRetentionMs = 30 * 86400000;
 
