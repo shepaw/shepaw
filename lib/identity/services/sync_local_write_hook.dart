@@ -194,6 +194,42 @@ class SyncLocalWriteHook {
     );
   }
 
+  static Future<void> onSheMemoryUpserted(Map<String, dynamic> row) async {
+    await _dispatchEvent(
+      SyncEvent.sheMemoryEvent(
+        row: row,
+        originDeviceId: await _originDeviceId(),
+      ),
+    );
+  }
+
+  static Future<void> onSheMemoryDeleted({required String key}) async {
+    await _dispatchEvent(
+      SyncEvent.sheMemoryDeleteEvent(
+        key: key,
+        originDeviceId: await _originDeviceId(),
+      ),
+    );
+  }
+
+  static Future<void> onCognitionSelfUpserted(Map<String, dynamic> row) async {
+    await _dispatchEvent(
+      SyncEvent.cognitionSelfEvent(
+        row: row,
+        originDeviceId: await _originDeviceId(),
+      ),
+    );
+  }
+
+  static Future<void> onCognitionUserUpserted(Map<String, dynamic> row) async {
+    await _dispatchEvent(
+      SyncEvent.cognitionUserEvent(
+        row: row,
+        originDeviceId: await _originDeviceId(),
+      ),
+    );
+  }
+
   static Future<String> _originDeviceId() async {
     final local = await AccountIdentityService.instance.localDevice();
     return local?.deviceId ?? 'local';

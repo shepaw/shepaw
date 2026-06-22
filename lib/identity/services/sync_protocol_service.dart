@@ -317,6 +317,16 @@ class SyncProtocolService {
         sinceMs: sinceMs,
         limit: limit,
       );
+    } else if (domain == 'she_memory') {
+      events = await SyncEngine.instance.querySheMemoryEvents(
+        sinceMs: sinceMs,
+        limit: limit,
+      );
+    } else if (domain == 'cognition') {
+      events = await SyncEngine.instance.queryCognitionEvents(
+        sinceMs: sinceMs,
+        limit: limit,
+      );
     } else {
       events = await SyncEngine.instance.queryEvents(
         sinceMs: sinceMs,

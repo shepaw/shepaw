@@ -5,6 +5,7 @@ import 'package:sqflite/sqflite.dart';
 import 'package:path/path.dart';
 import 'package:path_provider/path_provider.dart';
 import '../models/cognition.dart';
+import '../identity/services/sync_local_write_hook.dart';
 
 /// 认知数据库服务
 ///
@@ -132,6 +133,7 @@ class MindsDatabaseService {
       entry.toMap(),
       conflictAlgorithm: ConflictAlgorithm.replace,
     );
+    await SyncLocalWriteHook.onCognitionSelfUpserted(entry.toMap());
   }
 
   /// 读取单个 Agent 的自我认知
@@ -208,6 +210,7 @@ class MindsDatabaseService {
       entry.toMap(),
       conflictAlgorithm: ConflictAlgorithm.replace,
     );
+    await SyncLocalWriteHook.onCognitionUserUpserted(entry.toMap());
   }
 
   /// 读取单个 Agent 的用户认知
@@ -296,6 +299,77 @@ class MindsDatabaseService {
   Future<void> deleteUserCognition(String agentId) async {
     final db = await database;
     await db.delete('cognition_user', where: 'agent_id = ?', whereArgs: [agentId]);
+  }
+
+  Future<List<Map<String, dynamic>>> getSelfChangedSince({
+    required int sinceMs,
+    int limit = 50,
+  }) async {
+    final db = await database;
+    return db.query(
+      'cognition_self',
+      where: 'updated_at > ?',
+      whereArgs: [sinceMs],
+      orderBy: 'updated_at ASC',
+      limit: limit,
+    );
+  }
+
+  Future<List<Map<String, dynamic>>> getUserChangedSince({
+    required int sinceMs,
+    int limit = 50,
+  }) async {
+    final db = await database;
+    return db.query(
+      'cognition_user',
+      where: 'last_updated > ?',
+      whereArgs: [sinceMs],
+      orderBy: 'last_updated ASC',
+      limit: limit,
+    );
+  }
+
+  Future<void> upsertSelfFromSync(Map<String, dynamic> row) async {
+    final agentId = row['agent_id'] as String?;
+    if (agentId == null || agentId.isEmpty) return;
+    final incomingMs = row['updated_at'] as int? ?? 0;
+    final existing = await getSelfCognition(agentId);
+    if (existing != null && incomingMs < existing.updatedAt) return;
+    final db = await database;
+    await db.insert(
+      'cognition_self',
+      {
+        'agent_id': agentId,
+        'soul': row['soul'] as String? ?? '',
+        'self_notes': row['self_notes'],
+        'capabilities': row['capabilities'],
+        'created_at': row['created_at'] as int? ??
+            existing?.createdAt ??
+            incomingMs,
+        'updated_at': incomingMs,
+      },
+      conflictAlgorithm: ConflictAlgorithm.replace,
+    );
+  }
+
+  Future<void> upsertUserFromSync(Map<String, dynamic> row) async {
+    final agentId = row['agent_id'] as String?;
+    if (agentId == null || agentId.isEmpty) return;
+    final incomingMs = row['last_updated'] as int? ?? 0;
+    final existing = await getUserCognition(agentId);
+    if (existing != null && incomingMs < existing.lastUpdated) return;
+    final db = await database;
+    await db.insert(
+      'cognition_user',
+      {
+        'agent_id': agentId,
+        'user_profile': row['user_profile'] as String? ?? '{}',
+        'user_impression': row['user_impression'],
+        'user_notes': row['user_notes'],
+        'last_updated': incomingMs,
+      },
+      conflictAlgorithm: ConflictAlgorithm.replace,
+    );
   }
 
   // ---------------------------------------------------------------------------

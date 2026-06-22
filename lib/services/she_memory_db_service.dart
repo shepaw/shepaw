@@ -5,6 +5,8 @@ import 'package:sqflite/sqflite.dart';
 import 'package:path/path.dart';
 import 'package:path_provider/path_provider.dart';
 
+import '../identity/services/sync_local_write_hook.dart';
+
 /// She 专用记忆数据库（按账号隔离路径）。
 class SheMemoryDbService {
   SheMemoryDbService._internal();
@@ -86,15 +88,69 @@ class SheMemoryDbService {
 
   Future<void> setSheMemory(String key, String value) async {
     final db = await database;
+    final updatedAt = DateTime.now().millisecondsSinceEpoch;
+    final row = {
+      'key': key,
+      'value': value,
+      'updated_at': updatedAt,
+    };
+    await db.insert(
+      'she_memory',
+      row,
+      conflictAlgorithm: ConflictAlgorithm.replace,
+    );
+    await SyncLocalWriteHook.onSheMemoryUpserted(row);
+  }
+
+  Future<Map<String, dynamic>?> getRowByKey(String key) async {
+    final db = await database;
+    final results = await db.query(
+      'she_memory',
+      where: 'key = ?',
+      whereArgs: [key],
+      limit: 1,
+    );
+    return results.isEmpty ? null : results.first;
+  }
+
+  Future<List<Map<String, dynamic>>> getChangedSince({
+    required int sinceMs,
+    int limit = 50,
+  }) async {
+    final db = await database;
+    return db.query(
+      'she_memory',
+      where: 'updated_at > ?',
+      whereArgs: [sinceMs],
+      orderBy: 'updated_at ASC',
+      limit: limit,
+    );
+  }
+
+  Future<void> upsertFromSync(Map<String, dynamic> row) async {
+    final key = row['key'] as String?;
+    if (key == null || key.isEmpty) return;
+    final incomingMs = row['updated_at'] as int? ?? 0;
+    final existing = await getRowByKey(key);
+    if (existing != null) {
+      final existingMs = existing['updated_at'] as int? ?? 0;
+      if (incomingMs < existingMs) return;
+    }
+    final db = await database;
     await db.insert(
       'she_memory',
       {
         'key': key,
-        'value': value,
-        'updated_at': DateTime.now().millisecondsSinceEpoch,
+        'value': row['value'] as String? ?? '',
+        'updated_at': incomingMs,
       },
       conflictAlgorithm: ConflictAlgorithm.replace,
     );
+  }
+
+  Future<void> deleteFromSync(String key) async {
+    final db = await database;
+    await db.delete('she_memory', where: 'key = ?', whereArgs: [key]);
   }
 
   Future<Map<String, String>> getAllSheMemory() async {
@@ -109,6 +165,7 @@ class SheMemoryDbService {
   Future<void> deleteSheMemory(String key) async {
     final db = await database;
     await db.delete('she_memory', where: 'key = ?', whereArgs: [key]);
+    await SyncLocalWriteHook.onSheMemoryDeleted(key: key);
   }
 
   Future<void> clearSheMemory() async {

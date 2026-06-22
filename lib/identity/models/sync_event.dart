@@ -175,6 +175,82 @@ class SyncEvent {
     );
   }
 
+  static SyncEvent sheMemoryEvent({
+    required Map<String, dynamic> row,
+    required String originDeviceId,
+    SyncEventAction action = SyncEventAction.upsert,
+  }) {
+    final key = row['key'] as String? ?? '';
+    final wallTime = row['updated_at'] as int? ??
+        DateTime.now().millisecondsSinceEpoch;
+    return SyncEvent(
+      eventId: 'sm:$key',
+      domain: 'she_memory',
+      action: action,
+      payload: Map<String, dynamic>.from(row),
+      wallTimeMs: wallTime,
+      originDeviceId: originDeviceId,
+    );
+  }
+
+  static SyncEvent sheMemoryDeleteEvent({
+    required String key,
+    required String originDeviceId,
+    int? wallTimeMs,
+  }) {
+    final ms = wallTimeMs ?? DateTime.now().millisecondsSinceEpoch;
+    return SyncEvent(
+      eventId: 'sm:$key:del:$ms',
+      domain: 'she_memory',
+      action: SyncEventAction.delete,
+      payload: {'key': key},
+      wallTimeMs: ms,
+      originDeviceId: originDeviceId,
+    );
+  }
+
+  static SyncEvent cognitionSelfEvent({
+    required Map<String, dynamic> row,
+    required String originDeviceId,
+    SyncEventAction action = SyncEventAction.upsert,
+  }) {
+    final agentId = row['agent_id'] as String? ?? '';
+    final wallTime = row['updated_at'] as int? ??
+        DateTime.now().millisecondsSinceEpoch;
+    return SyncEvent(
+      eventId: 'cog:self:$agentId',
+      domain: 'cognition',
+      action: action,
+      payload: {
+        ...Map<String, dynamic>.from(row),
+        'kind': 'self',
+      },
+      wallTimeMs: wallTime,
+      originDeviceId: originDeviceId,
+    );
+  }
+
+  static SyncEvent cognitionUserEvent({
+    required Map<String, dynamic> row,
+    required String originDeviceId,
+    SyncEventAction action = SyncEventAction.upsert,
+  }) {
+    final agentId = row['agent_id'] as String? ?? '';
+    final wallTime = row['last_updated'] as int? ??
+        DateTime.now().millisecondsSinceEpoch;
+    return SyncEvent(
+      eventId: 'cog:user:$agentId',
+      domain: 'cognition',
+      action: action,
+      payload: {
+        ...Map<String, dynamic>.from(row),
+        'kind': 'user',
+      },
+      wallTimeMs: wallTime,
+      originDeviceId: originDeviceId,
+    );
+  }
+
   String toJsonString() => jsonEncode(toJson());
 
   factory SyncEvent.fromJsonString(String raw) =>

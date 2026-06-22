@@ -42,5 +42,30 @@ void main() {
       expect(restored.domain, 'agent');
       expect(restored.payload['id'], 'a1');
     });
+
+    test('she_memory event round-trips through JSON', () {
+      final event = SyncEvent.sheMemoryEvent(
+        row: {'key': 'soul', 'value': 'test', 'updated_at': 2000},
+        originDeviceId: 'dev1',
+      );
+      final restored = SyncEvent.fromJson(event.toJson());
+      expect(restored.domain, 'she_memory');
+      expect(restored.payload['key'], 'soul');
+    });
+
+    test('cognition self event includes kind', () {
+      final event = SyncEvent.cognitionSelfEvent(
+        row: {
+          'agent_id': 'she-builtin-agent-001',
+          'soul': 'hello',
+          'updated_at': 3000,
+          'created_at': 1000,
+        },
+        originDeviceId: 'dev1',
+      );
+      final restored = SyncEvent.fromJson(event.toJson());
+      expect(restored.domain, 'cognition');
+      expect(restored.payload['kind'], 'self');
+    });
   });
 }
