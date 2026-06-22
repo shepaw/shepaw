@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import '../../services/local_database_service.dart';
@@ -9,6 +10,47 @@ import 'sync_fanout_service.dart';
 /// 本地 DB 写入后触发同步（App → outbound 队列，Primary → fan-out push）。
 class SyncLocalWriteHook {
   SyncLocalWriteHook._();
+
+  static const _streamingDebounceDuration = Duration(seconds: 2);
+  static final _streamingDebounceTimers = <String, Timer>{};
+
+  /// 流式 flush 防抖，避免高频 outbound；完成/中断前应调用 [flushStreamingMessageSync]。
+  static void onStreamingMessageUpdated({
+    required String messageId,
+    required String channelId,
+    required String content,
+    String? metadata,
+    required String updatedAt,
+  }) {
+    _streamingDebounceTimers[messageId]?.cancel();
+    _streamingDebounceTimers[messageId] = Timer(_streamingDebounceDuration, () {
+      unawaited(onMessageUpdated(
+        messageId: messageId,
+        channelId: channelId,
+        content: content,
+        metadata: metadata,
+        updatedAt: updatedAt,
+      ));
+      _streamingDebounceTimers.remove(messageId);
+    });
+  }
+
+  static void flushStreamingMessageSync({
+    required String messageId,
+    required String channelId,
+    required String content,
+    String? metadata,
+    required String updatedAt,
+  }) {
+    _streamingDebounceTimers.remove(messageId)?.cancel();
+    unawaited(onMessageUpdated(
+      messageId: messageId,
+      channelId: channelId,
+      content: content,
+      metadata: metadata,
+      updatedAt: updatedAt,
+    ));
+  }
 
   static Future<void> onMessageCreated({
     required String id,

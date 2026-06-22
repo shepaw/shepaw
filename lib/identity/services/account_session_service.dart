@@ -18,6 +18,7 @@ class AccountSessionService {
   Future<bool> hasLocalAccount() => LocalAccountRegistry.instance.hasAnyAccount();
 
   Future<void> switchToAccount(String accountId) async {
+    await SyncClientService.instance.awaitIdle();
     _stopSyncServices();
     AccountIdentityService.instance.resetInMemory();
     await LocalAccountRegistry.instance.setActiveAccountId(accountId);
@@ -26,6 +27,7 @@ class AccountSessionService {
   }
 
   Future<void> prepareNewAccount() async {
+    await SyncClientService.instance.awaitIdle();
     _stopSyncServices();
     AccountIdentityService.instance.resetInMemory();
     await LocalDatabaseService().switchAccount(null);

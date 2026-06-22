@@ -303,7 +303,7 @@ extension MessageDao on LocalDatabaseService {
           'Updated partial streaming message: $messageId (${content.length} chars)',
           tag: 'LocalDatabaseService',
         );
-        SyncLocalWriteHook.onMessageUpdated(
+        SyncLocalWriteHook.onStreamingMessageUpdated(
           messageId: messageId,
           channelId: channelId,
           content: content,
@@ -384,7 +384,7 @@ extension MessageDao on LocalDatabaseService {
 
       await db.update(
         'messages',
-        {'metadata': jsonEncode(metadata)},
+        {'metadata': jsonEncode(metadata), 'updated_at': DateTime.now().toIso8601String()},
         where: 'id = ?',
         whereArgs: [messageId],
       );
@@ -392,6 +392,15 @@ extension MessageDao on LocalDatabaseService {
       LoggerService().info(
         'Marked message as interrupted: $messageId (reason: $interruptionReason)',
         tag: 'LocalDatabaseService',
+      );
+
+      final updatedAt = DateTime.now().toIso8601String();
+      SyncLocalWriteHook.flushStreamingMessageSync(
+        messageId: messageId,
+        channelId: msg['channel_id'] as String? ?? '',
+        content: msg['content'] as String? ?? '',
+        metadata: jsonEncode(metadata),
+        updatedAt: updatedAt,
       );
     } catch (e, st) {
       LoggerService().error(
@@ -461,7 +470,7 @@ extension MessageDao on LocalDatabaseService {
 
         final row = await getMessageById(messageId, fetchRemote: false);
         if (row != null) {
-          SyncLocalWriteHook.onMessageUpdated(
+          SyncLocalWriteHook.flushStreamingMessageSync(
             messageId: messageId,
             channelId: row['channel_id'] as String? ?? '',
             content: row['content'] as String? ?? '',

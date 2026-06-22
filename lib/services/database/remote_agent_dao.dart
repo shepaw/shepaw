@@ -137,9 +137,14 @@ extension RemoteAgentDao on LocalDatabaseService {
       where: 'id = ?',
       whereArgs: [agentId],
     );
+
+    final row = await getAgentRowById(agentId);
+    if (row != null) {
+      SyncLocalWriteHook.onAgentUpserted(row);
+    }
   }
 
-  /// 更新远端助手心跳
+  /// 更新远端助手心跳（本地 ephemeral，不同步）。
   Future<void> updateRemoteAgentHeartbeat(String agentId) async {
     final db = await database;
     await db.update(

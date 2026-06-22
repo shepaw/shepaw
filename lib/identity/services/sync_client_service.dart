@@ -39,6 +39,8 @@ class SyncClientService {
     _log.info('SyncClientService started', tag: _tag);
   }
 
+  Future<void> awaitIdle() => _pullChain;
+
   void stop() {
     _running = false;
     _connSub?.cancel();
