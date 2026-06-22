@@ -307,6 +307,7 @@ class SyncProtocolService {
   }
 
   Future<void> _handleHello(String peerId, Map<String, dynamic> data) async {
+    if (!await _isOwnedAccountPeer(peerId)) return;
     final local = await AccountIdentityService.instance.localDevice();
     await PeerConnectionManager.instance.sendControl(peerId, {
       'type': 'sync_hello_resp',
