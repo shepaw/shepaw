@@ -81,5 +81,23 @@ void main() {
       expect(event.eventId, 'am:key-abc');
       expect(event.domain, 'agent_memory');
     });
+
+    test('entityKeyForEvent for message delete', () {
+      final event = SyncEvent.messageDeleteEvent(
+        messageId: 'm1',
+        channelId: 'c1',
+        originDeviceId: 'dev1',
+      );
+      expect(SyncEvent.entityKeyForEvent(event), 'm1');
+    });
+
+    test('entityKeyForEvent for channel member delete', () {
+      final event = SyncEvent.channelMemberDeleteEvent(
+        channelId: 'c1',
+        agentId: 'a1',
+        originDeviceId: 'dev1',
+      );
+      expect(SyncEvent.entityKeyForEvent(event), 'c1:a1');
+    });
   });
 }

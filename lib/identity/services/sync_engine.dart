@@ -93,9 +93,18 @@ class SyncEngine {
       channelId: channelId,
       limit: limit,
     );
-    return rows
+    final upserts = rows
         .map((row) => SyncEvent.messageEvent(messageRow: row, originDeviceId: origin))
         .toList();
+    var deletes = await _db.querySyncTombstonesSince(
+      domain: 'message',
+      sinceMs: sinceMs,
+      limit: limit,
+    );
+    if (channelId != null) {
+      deletes = deletes.where((e) => e.payload['channel_id'] == channelId).toList();
+    }
+    return _mergeEventsByWallTime(upserts: upserts, deletes: deletes, limit: limit);
   }
 
   /// Primary / Backup：查询 since 之后的频道事件。
@@ -106,9 +115,15 @@ class SyncEngine {
   }) async {
     final origin = originDeviceId ?? (await AccountIdentityService.instance.localDevice())?.deviceId ?? 'local';
     final rows = await _db.getChannelsUpdatedSince(sinceMs, limit: limit);
-    return rows
+    final upserts = rows
         .map((row) => SyncEvent.channelEvent(channelRow: row, originDeviceId: origin))
         .toList();
+    final deletes = await _db.querySyncTombstonesSince(
+      domain: 'channel',
+      sinceMs: sinceMs,
+      limit: limit,
+    );
+    return _mergeEventsByWallTime(upserts: upserts, deletes: deletes, limit: limit);
   }
 
   Future<List<SyncEvent>> queryChannelMemberEvents({
@@ -118,9 +133,15 @@ class SyncEngine {
   }) async {
     final origin = originDeviceId ?? (await AccountIdentityService.instance.localDevice())?.deviceId ?? 'local';
     final rows = await _db.getChannelMembersChangedSince(sinceMs, limit: limit);
-    return rows
+    final upserts = rows
         .map((row) => SyncEvent.channelMemberEvent(memberRow: row, originDeviceId: origin))
         .toList();
+    final deletes = await _db.querySyncTombstonesSince(
+      domain: 'channel_member',
+      sinceMs: sinceMs,
+      limit: limit,
+    );
+    return _mergeEventsByWallTime(upserts: upserts, deletes: deletes, limit: limit);
   }
 
   /// 应用频道成员事件批次。
@@ -139,7 +160,13 @@ class SyncEngine {
   }) async {
     final origin = originDeviceId ?? (await AccountIdentityService.instance.localDevice())?.deviceId ?? 'local';
     final rows = await _db.getAgentsChangedSince(sinceMs: sinceMs, limit: limit);
-    return rows.map((row) => SyncEvent.agentEvent(agentRow: row, originDeviceId: origin)).toList();
+    final upserts = rows.map((row) => SyncEvent.agentEvent(agentRow: row, originDeviceId: origin)).toList();
+    final deletes = await _db.querySyncTombstonesSince(
+      domain: 'agent',
+      sinceMs: sinceMs,
+      limit: limit,
+    );
+    return _mergeEventsByWallTime(upserts: upserts, deletes: deletes, limit: limit);
   }
 
   Future<List<SyncEvent>> querySheMemoryEvents({
@@ -149,9 +176,15 @@ class SyncEngine {
   }) async {
     final origin = originDeviceId ?? (await AccountIdentityService.instance.localDevice())?.deviceId ?? 'local';
     final rows = await _sheMemoryDb.getChangedSince(sinceMs: sinceMs, limit: limit);
-    return rows
+    final upserts = rows
         .map((row) => SyncEvent.sheMemoryEvent(row: row, originDeviceId: origin))
         .toList();
+    final deletes = await _db.querySyncTombstonesSince(
+      domain: 'she_memory',
+      sinceMs: sinceMs,
+      limit: limit,
+    );
+    return _mergeEventsByWallTime(upserts: upserts, deletes: deletes, limit: limit);
   }
 
   Future<List<SyncEvent>> queryCognitionEvents({
@@ -162,7 +195,7 @@ class SyncEngine {
     final origin = originDeviceId ?? (await AccountIdentityService.instance.localDevice())?.deviceId ?? 'local';
     final selfRows = await _mindsDb.getSelfChangedSince(sinceMs: sinceMs, limit: limit);
     final userRows = await _mindsDb.getUserChangedSince(sinceMs: sinceMs, limit: limit);
-    final events = <SyncEvent>[
+    final upserts = <SyncEvent>[
       ...selfRows.map(
         (row) => SyncEvent.cognitionSelfEvent(row: row, originDeviceId: origin),
       ),
@@ -170,8 +203,12 @@ class SyncEngine {
         (row) => SyncEvent.cognitionUserEvent(row: row, originDeviceId: origin),
       ),
     ]..sort((a, b) => a.wallTimeMs.compareTo(b.wallTimeMs));
-    if (events.length > limit) return events.sublist(0, limit);
-    return events;
+    final deletes = await _db.querySyncTombstonesSince(
+      domain: 'cognition',
+      sinceMs: sinceMs,
+      limit: limit,
+    );
+    return _mergeEventsByWallTime(upserts: upserts, deletes: deletes, limit: limit);
   }
 
   /// 应用 She 记忆事件批次。
@@ -192,9 +229,15 @@ class SyncEngine {
       sinceMs: sinceMs,
       limit: limit,
     );
-    return rows
+    final upserts = rows
         .map((row) => SyncEvent.agentMemoryEvent(row: row, originDeviceId: origin))
         .toList();
+    final deletes = await _db.querySyncTombstonesSince(
+      domain: 'agent_memory',
+      sinceMs: sinceMs,
+      limit: limit,
+    );
+    return _mergeEventsByWallTime(upserts: upserts, deletes: deletes, limit: limit);
   }
 
   /// 应用 Agent 结构化记忆事件批次。
@@ -296,8 +339,10 @@ class SyncEngine {
   Future<void> _applyOne(SyncEvent event, DeviceRole role) async {
     if (event.action == SyncEventAction.delete) {
       await _applyDelete(event, role);
+      await _recordTombstoneIfStorage(event, role);
       return;
     }
+    await _clearTombstoneForUpsert(event);
     switch (event.domain) {
       case 'message':
         await _applyMessage(event, role);
@@ -509,6 +554,29 @@ class SyncEngine {
     if (age > policy.maxDays * 86400000) return false;
     final count = await _db.countCachedMessages();
     return count < policy.maxMessages;
+  }
+
+  List<SyncEvent> _mergeEventsByWallTime({
+    required List<SyncEvent> upserts,
+    required List<SyncEvent> deletes,
+    required int limit,
+  }) {
+    final all = [...upserts, ...deletes]
+      ..sort((a, b) => a.wallTimeMs.compareTo(b.wallTimeMs));
+    if (all.length > limit) return all.sublist(0, limit);
+    return all;
+  }
+
+  Future<void> _recordTombstoneIfStorage(SyncEvent event, DeviceRole role) async {
+    if (event.action != SyncEventAction.delete) return;
+    if (role != DeviceRole.primary && role != DeviceRole.backup) return;
+    await _db.recordSyncTombstone(event);
+  }
+
+  Future<void> _clearTombstoneForUpsert(SyncEvent event) async {
+    final entityKey = SyncEvent.entityKeyForEvent(event);
+    if (entityKey == null || entityKey.isEmpty) return;
+    await _db.clearSyncTombstone(event.domain, entityKey);
   }
 
   Future<void> _trimAppCache(AppCachePolicy policy) async {

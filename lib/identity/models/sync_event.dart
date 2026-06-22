@@ -286,6 +286,32 @@ class SyncEvent {
     );
   }
 
+  /// Tombstone 表与 upsert 去重用的实体键（同 domain 内唯一）。
+  static String? entityKeyForEvent(SyncEvent event) {
+    switch (event.domain) {
+      case 'message':
+      case 'channel':
+      case 'agent':
+        return event.payload['id'] as String?;
+      case 'channel_member':
+        final channelId = event.payload['channel_id'] as String?;
+        final agentId = event.payload['agent_id'] as String?;
+        if (channelId == null || agentId == null) return null;
+        return '$channelId:$agentId';
+      case 'she_memory':
+        return event.payload['key'] as String?;
+      case 'cognition':
+        final agentId = event.payload['agent_id'] as String?;
+        if (agentId == null) return null;
+        final kind = event.payload['kind'] as String? ?? 'self';
+        return '$kind:$agentId';
+      case 'agent_memory':
+        return event.payload['sync_key'] as String?;
+      default:
+        return null;
+    }
+  }
+
   String toJsonString() => jsonEncode(toJson());
 
   factory SyncEvent.fromJsonString(String raw) =>

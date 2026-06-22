@@ -72,7 +72,7 @@ class LocalDatabaseService {
       // Web平台使用sqflite_common_ffi
       return await openDatabase(
         'shepaw',
-        version: 26,
+        version: 27,
         onCreate: _onCreate,
         onUpgrade: _onUpgrade,
       );
@@ -81,7 +81,7 @@ class LocalDatabaseService {
     final path = await _resolveDbPath();
     return await openDatabase(
       path,
-      version: 26,
+      version: 27,
       onCreate: _onCreate,
       onUpgrade: _onUpgrade,
     );
@@ -476,6 +476,26 @@ class LocalDatabaseService {
       )
     ''');
     await db.execute('CREATE INDEX IF NOT EXISTS idx_outbound_pending ON identity_outbound_queue(acked, created_at)');
+    await _createSyncTombstonesTable(db);
+  }
+
+  static Future<void> _createSyncTombstonesTable(Database db) async {
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS identity_sync_tombstones (
+        domain TEXT NOT NULL,
+        entity_key TEXT NOT NULL,
+        event_id TEXT NOT NULL,
+        payload TEXT NOT NULL,
+        wall_time_ms INTEGER NOT NULL,
+        PRIMARY KEY (domain, entity_key)
+      )
+    ''');
+    await db.execute(
+      'CREATE INDEX IF NOT EXISTS idx_sync_tombstones_wall_time ON identity_sync_tombstones(wall_time_ms ASC)',
+    );
+    await db.execute(
+      'CREATE INDEX IF NOT EXISTS idx_sync_tombstones_domain_time ON identity_sync_tombstones(domain, wall_time_ms ASC)',
+    );
   }
 
   /// 数据库升级
@@ -747,6 +767,14 @@ class LocalDatabaseService {
         );
       } catch (e) {
         LoggerService().error('Failed sync v26 migration', tag: 'Migration', error: e);
+      }
+    }
+
+    if (oldVersion < 27) {
+      try {
+        await _createSyncTombstonesTable(db);
+      } catch (e) {
+        LoggerService().error('Failed sync v27 tombstones migration', tag: 'Migration', error: e);
       }
     }
 

@@ -1,5 +1,6 @@
 import 'package:sqflite/sqflite.dart';
 
+import '../../identity/models/sync_event.dart';
 import '../local_database_service.dart';
 
 /// 同步专用数据访问（messages / channels / index / cursor）。
@@ -333,5 +334,58 @@ extension SyncDao on LocalDatabaseService {
   Future<void> deleteBlobCacheEntry(String blobKey) async {
     final db = await database;
     await db.delete('identity_blob_cache', where: 'blob_key = ?', whereArgs: [blobKey]);
+  }
+
+  // ── Sync tombstones (offline pull for deletes) ───────────────────────────
+
+  Future<void> recordSyncTombstone(SyncEvent event) async {
+    if (event.action != SyncEventAction.delete) return;
+    final entityKey = SyncEvent.entityKeyForEvent(event);
+    if (entityKey == null || entityKey.isEmpty) return;
+    final db = await database;
+    await db.insert(
+      'identity_sync_tombstones',
+      {
+        'domain': event.domain,
+        'entity_key': entityKey,
+        'event_id': event.eventId,
+        'payload': event.toJsonString(),
+        'wall_time_ms': event.wallTimeMs,
+      },
+      conflictAlgorithm: ConflictAlgorithm.replace,
+    );
+  }
+
+  Future<void> clearSyncTombstone(String domain, String entityKey) async {
+    final db = await database;
+    await db.delete(
+      'identity_sync_tombstones',
+      where: 'domain = ? AND entity_key = ?',
+      whereArgs: [domain, entityKey],
+    );
+  }
+
+  Future<List<SyncEvent>> querySyncTombstonesSince({
+    required String domain,
+    required int sinceMs,
+    int limit = 50,
+  }) async {
+    final db = await database;
+    final rows = await db.query(
+      'identity_sync_tombstones',
+      where: 'domain = ? AND wall_time_ms > ?',
+      whereArgs: [domain, sinceMs],
+      orderBy: 'wall_time_ms ASC',
+      limit: limit,
+    );
+    final events = <SyncEvent>[];
+    for (final row in rows) {
+      try {
+        final payload = row['payload'] as String?;
+        if (payload == null || payload.isEmpty) continue;
+        events.add(SyncEvent.fromJsonString(payload));
+      } catch (_) {}
+    }
+    return events;
   }
 }
