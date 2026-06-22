@@ -23,6 +23,7 @@ class AccountIdentityService {
   static final AccountIdentityService instance = AccountIdentityService._();
 
   static const _tag = 'AccountIdentity';
+  static const _userElectedPrimaryKey = 'user_elected_primary_device_id';
   final _log = LoggerService();
   final _db = LocalDatabaseService();
   final _uuid = const Uuid();
@@ -156,9 +157,31 @@ class AccountIdentityService {
     }
   }
 
-  /// 双 Primary 冲突时 lex 较小 device_id 胜出。
+  /// 双 Primary 冲突时 lex 较小 device_id 胜出（无用户指定时）。
   static String primaryWinnerDeviceId(String a, String b) =>
       a.compareTo(b) <= 0 ? a : b;
+
+  Future<String?> userElectedPrimaryDeviceId() async {
+    final raw = await _db.getIdentitySyncState(_userElectedPrimaryKey);
+    if (raw == null || raw.isEmpty) return null;
+    return raw;
+  }
+
+  /// 在候选 Primary 中解析权威设备（用户指定优先于 lex）。
+  Future<String> resolvePrimaryWinnerAmong(Iterable<String> candidateIds) async {
+    final ids = candidateIds.toList();
+    if (ids.isEmpty) return '';
+    if (ids.length == 1) return ids.first;
+    final elected = await userElectedPrimaryDeviceId();
+    if (elected != null && elected.isNotEmpty && ids.contains(elected)) {
+      return elected;
+    }
+    return ids.reduce(primaryWinnerDeviceId);
+  }
+
+  Future<void> _setUserElectedPrimary(String? deviceId) async {
+    await _db.setIdentitySyncState(_userElectedPrimaryKey, deviceId ?? '');
+  }
 
   /// 本机是否为账号域唯一权威 Primary（含脑裂自修复）。
   Future<bool> isCanonicalPrimary() async {
@@ -185,10 +208,10 @@ class AccountIdentityService {
       final currentPrimary = await primaryDevice();
       var localDemoted = false;
       if (currentPrimary != null && currentPrimary.deviceId != remoteDeviceId) {
-        final winner = primaryWinnerDeviceId(
+        final winner = await resolvePrimaryWinnerAmong([
           currentPrimary.deviceId,
           remoteDeviceId,
-        );
+        ]);
         if (winner != remoteDeviceId) {
           effectiveRole = DeviceRole.app;
         } else {
@@ -224,9 +247,9 @@ class AccountIdentityService {
     final primaries = all.where((d) => d.role == DeviceRole.primary).toList();
     if (primaries.length <= 1) return;
 
-    final winnerId = primaries
-        .map((d) => d.deviceId)
-        .reduce(primaryWinnerDeviceId);
+    final winnerId = await resolvePrimaryWinnerAmong(
+      primaries.map((d) => d.deviceId),
+    );
     var localDemoted = false;
     for (final d in primaries) {
       if (d.deviceId != winnerId) {
@@ -245,6 +268,7 @@ class AccountIdentityService {
     if (local == null) return;
 
     if (role == DeviceRole.primary) {
+      await _setUserElectedPrimary(local.deviceId);
       // 同一账号域只允许一台 Primary：其余降为 app（backup 保持 backup）。
       final all = await _db.listOwnedDevices();
       for (final d in all) {
@@ -252,6 +276,11 @@ class AccountIdentityService {
         if (d.role == DeviceRole.primary) {
           await _db.updateOwnedDeviceRole(d.deviceId, DeviceRole.app);
         }
+      }
+    } else {
+      final elected = await userElectedPrimaryDeviceId();
+      if (elected == local.deviceId) {
+        await _setUserElectedPrimary(null);
       }
     }
 

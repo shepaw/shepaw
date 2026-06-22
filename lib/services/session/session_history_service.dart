@@ -2,6 +2,7 @@ import 'dart:convert';
 import '../../models/message.dart';
 import '../../models/channel.dart';
 import '../../models/tool_execution_result.dart';
+import '../../identity/services/sync_message_fetch_service.dart';
 import '../local_database_service.dart';
 import '../tool_result_database_service.dart';
 import '../inference_log_service.dart';
@@ -79,6 +80,10 @@ class HistoryService {
   /// Load messages from a channel.
   Future<List<Message>> loadChannelMessages(String channelId, {int limit = 100}) async {
     final messageMaps = await _db.getChannelMessages(channelId, limit: limit);
+    // App 设备：后台按需拉取缺正文的消息（不阻塞 UI）。
+    SyncMessageFetchService.instance
+        .prefetchMissingBodiesForChannel(channelId, limit: limit)
+        .ignore();
     return _mapsToMessages(messageMaps, channelId);
   }
 

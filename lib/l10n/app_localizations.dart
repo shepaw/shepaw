@@ -7472,6 +7472,42 @@ abstract class AppLocalizations {
   /// **'同步失败：{error}'**
   String identity_syncPullFailed(String error);
 
+  /// No description provided for @identity_syncResync.
+  ///
+  /// In zh, this message translates to:
+  /// **'从主存储全量同步'**
+  String get identity_syncResync;
+
+  /// No description provided for @identity_syncResyncSub.
+  ///
+  /// In zh, this message translates to:
+  /// **'重置同步游标并重新拉取全部数据'**
+  String get identity_syncResyncSub;
+
+  /// No description provided for @identity_syncResyncTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'确认全量同步？'**
+  String get identity_syncResyncTitle;
+
+  /// No description provided for @identity_syncResyncBody.
+  ///
+  /// In zh, this message translates to:
+  /// **'将重置本机同步游标，并从主存储设备重新下载全部数据。适用于历史记录不完整时。'**
+  String get identity_syncResyncBody;
+
+  /// No description provided for @identity_syncResyncSuccess.
+  ///
+  /// In zh, this message translates to:
+  /// **'全量同步完成'**
+  String get identity_syncResyncSuccess;
+
+  /// No description provided for @identity_syncResyncFailed.
+  ///
+  /// In zh, this message translates to:
+  /// **'全量同步失败：{error}'**
+  String identity_syncResyncFailed(String error);
+
   /// No description provided for @identity_syncPendingTitle.
   ///
   /// In zh, this message translates to:

@@ -28,6 +28,16 @@ class SyncEngine {
   static const _cognitionCursorKey = 'sync_cursor_cognition_ms';
   static const _agentMemoryCursorKey = 'sync_cursor_agent_memory_ms';
 
+  static const syncDomains = [
+    'message',
+    'channel',
+    'channel_member',
+    'agent',
+    'she_memory',
+    'cognition',
+    'agent_memory',
+  ];
+
   final _db = LocalDatabaseService();
   final _log = LoggerService();
   final _sheMemoryDb = SheMemoryDbService.instance;
@@ -35,6 +45,14 @@ class SyncEngine {
 
   Future<SyncDomainCursor> getDomainCursor(String domain) =>
       _getDomainCursor(_cursorKeyForDomain(domain));
+
+  /// 重置所有分域游标（全量 resync 前调用）。
+  Future<void> resetAllDomainCursors() async {
+    for (final domain in syncDomains) {
+      await _setDomainCursor(_cursorKeyForDomain(domain), SyncDomainCursor.zero);
+    }
+    _log.info('Reset all sync domain cursors', tag: _tag);
+  }
 
   static String _cursorKeyForDomain(String domain) => switch (domain) {
         'message' => _messageCursorKey,
@@ -463,6 +481,24 @@ class SyncEngine {
     if (await _isStaleUpsert(event)) return SyncCommitResult.staleOk();
 
     await _applyOne(event, DeviceRole.primary);
+    await _recordEntitySyncState(event);
+    return SyncCommitResult.appliedOk();
+  }
+
+  /// Backup：Primary 离线时暂存 App commit（供 sync_query 与后续 relay）。
+  Future<SyncCommitResult> commitEventAsStorageRelay(SyncEvent event) async {
+    final role = await AccountIdentityService.instance.localDeviceRole();
+    if (role != DeviceRole.backup) return SyncCommitResult.failed;
+
+    if (event.action == SyncEventAction.delete) {
+      await _applyOne(event, DeviceRole.backup);
+      await _recordEntitySyncState(event);
+      return SyncCommitResult.appliedOk();
+    }
+
+    if (await _isStaleUpsert(event)) return SyncCommitResult.staleOk();
+
+    await _applyOne(event, DeviceRole.backup);
     await _recordEntitySyncState(event);
     return SyncCommitResult.appliedOk();
   }

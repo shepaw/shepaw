@@ -273,4 +273,85 @@ extension IdentityDao on LocalDatabaseService {
     );
     return (r.first['c'] as int?) ?? 0;
   }
+
+  // ── Sync push outbox (Primary → App/Backup，带 ack 重试) ─────────────────
+
+  Future<void> enqueueSyncPushOutbox({
+    required String pushId,
+    required String targetDeviceId,
+    required String payloadJson,
+  }) async {
+    final db = await database;
+    await db.insert(
+      'identity_sync_push_outbox',
+      {
+        'id': pushId,
+        'target_device_id': targetDeviceId,
+        'payload': payloadJson,
+        'created_at': DateTime.now().millisecondsSinceEpoch,
+        'acked': 0,
+      },
+      conflictAlgorithm: ConflictAlgorithm.replace,
+    );
+  }
+
+  Future<void> markSyncPushAcked(String pushId) async {
+    final db = await database;
+    await db.update(
+      'identity_sync_push_outbox',
+      {'acked': 1},
+      where: 'id = ?',
+      whereArgs: [pushId],
+    );
+  }
+
+  Future<List<Map<String, dynamic>>> listPendingSyncPushForDevice(
+    String targetDeviceId, {
+    int limit = 20,
+  }) async {
+    final db = await database;
+    return db.query(
+      'identity_sync_push_outbox',
+      where: 'target_device_id = ? AND acked = 0',
+      whereArgs: [targetDeviceId],
+      orderBy: 'created_at ASC',
+      limit: limit,
+    );
+  }
+
+  // ── Backup commit relay queue (Backup → Primary) ─────────────────────────
+
+  Future<void> enqueueBackupRelayEvent({required String id, required String payloadJson}) async {
+    final db = await database;
+    await db.insert(
+      'identity_backup_relay_queue',
+      {
+        'id': id,
+        'payload': payloadJson,
+        'created_at': DateTime.now().millisecondsSinceEpoch,
+        'relayed': 0,
+      },
+      conflictAlgorithm: ConflictAlgorithm.replace,
+    );
+  }
+
+  Future<void> markBackupRelayAcked(String id) async {
+    final db = await database;
+    await db.update(
+      'identity_backup_relay_queue',
+      {'relayed': 1},
+      where: 'id = ?',
+      whereArgs: [id],
+    );
+  }
+
+  Future<List<Map<String, dynamic>>> listPendingBackupRelay({int limit = 50}) async {
+    final db = await database;
+    return db.query(
+      'identity_backup_relay_queue',
+      where: 'relayed = 0',
+      orderBy: 'created_at ASC',
+      limit: limit,
+    );
+  }
 }

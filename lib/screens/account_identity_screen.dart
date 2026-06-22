@@ -109,6 +109,40 @@ class _AccountIdentityScreenState extends State<AccountIdentityScreen> {
     }
   }
 
+  Future<void> _fullResync() async {
+    final l10n = AppLocalizations.of(context);
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(l10n.identity_syncResyncTitle),
+        content: Text(l10n.identity_syncResyncBody),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: Text(l10n.common_cancel)),
+          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: Text(l10n.common_confirm)),
+        ],
+      ),
+    );
+    if (confirm != true) return;
+
+    setState(() => _syncing = true);
+    try {
+      await SyncClientService.instance.fullResyncFromPrimary();
+      if (!mounted) return;
+      await _load();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(l10n.identity_syncResyncSuccess)),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(l10n.identity_syncResyncFailed(e.toString()))),
+      );
+    } finally {
+      if (mounted) setState(() => _syncing = false);
+    }
+  }
+
   String _roleLabel(DeviceRole role, AppLocalizations l10n) {
     switch (role) {
       case DeviceRole.primary:
@@ -209,6 +243,14 @@ class _AccountIdentityScreenState extends State<AccountIdentityScreen> {
                       title: Text(l10n.identity_syncPull),
                       subtitle: Text(l10n.identity_syncPullSub),
                       onTap: _syncing ? null : _pullSync,
+                    ),
+                    ListTile(
+                      leading: _syncing
+                          ? const SizedBox(width: 24, height: 24, child: CircularProgressIndicator(strokeWidth: 2))
+                          : const Icon(Icons.refresh),
+                      title: Text(l10n.identity_syncResync),
+                      subtitle: Text(l10n.identity_syncResyncSub),
+                      onTap: _syncing ? null : _fullResync,
                     ),
                   ],
                   const Divider(height: 32),

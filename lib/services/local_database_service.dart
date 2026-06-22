@@ -72,7 +72,7 @@ class LocalDatabaseService {
       // Web平台使用sqflite_common_ffi
       return await openDatabase(
         'shepaw',
-        version: 28,
+        version: 29,
         onCreate: _onCreate,
         onUpgrade: _onUpgrade,
       );
@@ -81,7 +81,7 @@ class LocalDatabaseService {
     final path = await _resolveDbPath();
     return await openDatabase(
       path,
-      version: 28,
+      version: 29,
       onCreate: _onCreate,
       onUpgrade: _onUpgrade,
     );
@@ -478,6 +478,37 @@ class LocalDatabaseService {
     await db.execute('CREATE INDEX IF NOT EXISTS idx_outbound_pending ON identity_outbound_queue(acked, created_at)');
     await _createSyncTombstonesTable(db);
     await _createSyncEntityStateTable(db);
+    await _createSyncPushOutboxTable(db);
+    await _createBackupRelayQueueTable(db);
+  }
+
+  static Future<void> _createSyncPushOutboxTable(Database db) async {
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS identity_sync_push_outbox (
+        id TEXT PRIMARY KEY,
+        target_device_id TEXT NOT NULL,
+        payload TEXT NOT NULL,
+        created_at INTEGER NOT NULL,
+        acked INTEGER NOT NULL DEFAULT 0
+      )
+    ''');
+    await db.execute(
+      'CREATE INDEX IF NOT EXISTS idx_sync_push_outbox_pending ON identity_sync_push_outbox(target_device_id, acked, created_at)',
+    );
+  }
+
+  static Future<void> _createBackupRelayQueueTable(Database db) async {
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS identity_backup_relay_queue (
+        id TEXT PRIMARY KEY,
+        payload TEXT NOT NULL,
+        created_at INTEGER NOT NULL,
+        relayed INTEGER NOT NULL DEFAULT 0
+      )
+    ''');
+    await db.execute(
+      'CREATE INDEX IF NOT EXISTS idx_backup_relay_pending ON identity_backup_relay_queue(relayed, created_at)',
+    );
   }
 
   static Future<void> _createSyncEntityStateTable(Database db) async {
@@ -800,6 +831,15 @@ class LocalDatabaseService {
         await _createSyncEntityStateTable(db);
       } catch (e) {
         LoggerService().error('Failed sync v28 entity state migration', tag: 'Migration', error: e);
+      }
+    }
+
+    if (oldVersion < 29) {
+      try {
+        await _createSyncPushOutboxTable(db);
+        await _createBackupRelayQueueTable(db);
+      } catch (e) {
+        LoggerService().error('Failed sync v29 push/relay migration', tag: 'Migration', error: e);
       }
     }
 

@@ -16,7 +16,10 @@ class SyncMessageFetchService {
   /// 若本地无正文，尝试经 RPC 从 Primary 拉取并缓存。
   Future<Map<String, dynamic>?> fetchMessageBody(String messageId) async {
     final existing = await _db.getMessageById(messageId, fetchRemote: false);
-    if (existing != null) return existing;
+    if (existing != null) {
+      final content = existing['content'] as String? ?? '';
+      if (content.isNotEmpty) return existing;
+    }
 
     final role = await AccountIdentityService.instance.localDeviceRole();
     if (role != DeviceRole.app) return null;
@@ -45,5 +48,20 @@ class SyncMessageFetchService {
       }
     }
     return null;
+  }
+
+  /// App 设备：为频道内缺正文的索引消息按需拉取正文（最多 [limit] 条）。
+  Future<void> prefetchMissingBodiesForChannel(String channelId, {int limit = 30}) async {
+    final role = await AccountIdentityService.instance.localDeviceRole();
+    if (role != DeviceRole.app) return;
+
+    final rows = await _db.getChannelMessages(channelId, limit: limit);
+    for (final row in rows) {
+      final id = row['id'] as String?;
+      if (id == null) continue;
+      final content = row['content'] as String? ?? '';
+      if (content.isNotEmpty) continue;
+      await fetchMessageBody(id);
+    }
   }
 }

@@ -108,6 +108,12 @@ class SyncClientService {
     await syncWithPeer(peerId);
   }
 
+  /// 全量 resync：重置游标后从 Primary 重新拉取并提交 outbound。
+  Future<void> fullResyncFromPrimary() async {
+    await SyncEngine.instance.resetAllDomainCursors();
+    await syncWithPrimary();
+  }
+
   Future<void> syncWithPeer(String peerId) async {
     await pullFromPeer(peerId);
     await flushOutboundToPeer(peerId);

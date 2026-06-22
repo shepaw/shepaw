@@ -23,6 +23,38 @@ void main() {
     });
   });
 
+  group('resolvePrimaryWinnerAmong (logic)', () {
+    String pickWinner(List<String> ids, String? elected) {
+      if (ids.isEmpty) return '';
+      if (ids.length == 1) return ids.first;
+      if (elected != null && elected.isNotEmpty && ids.contains(elected)) {
+        return elected;
+      }
+      return ids.reduce(AccountIdentityService.primaryWinnerDeviceId);
+    }
+
+    test('user elected primary wins over lex', () {
+      expect(
+        pickWinner(['device-z', 'device-a'], 'device-z'),
+        'device-z',
+      );
+    });
+
+    test('falls back to lex when no user election', () {
+      expect(
+        pickWinner(['device-z', 'device-a'], null),
+        'device-a',
+      );
+    });
+
+    test('ignores elected id not in candidates', () {
+      expect(
+        pickWinner(['device-z', 'device-a'], 'device-other'),
+        'device-a',
+      );
+    });
+  });
+
   group('SyncLww', () {
     test('isIncomingStale rejects older wall time', () {
       expect(

@@ -4187,6 +4187,28 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
+  String get identity_syncResync => 'Full resync from primary';
+
+  @override
+  String get identity_syncResyncSub =>
+      'Reset sync cursors and pull all domains again';
+
+  @override
+  String get identity_syncResyncTitle => 'Full resync?';
+
+  @override
+  String get identity_syncResyncBody =>
+      'This resets local sync cursors and re-downloads all data from the primary device. Use when history looks incomplete.';
+
+  @override
+  String get identity_syncResyncSuccess => 'Full resync completed';
+
+  @override
+  String identity_syncResyncFailed(String error) {
+    return 'Full resync failed: $error';
+  }
+
+  @override
   String get identity_syncPendingTitle => 'Pending uploads';
 
   @override

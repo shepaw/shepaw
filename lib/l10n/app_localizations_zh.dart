@@ -4028,6 +4028,27 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
+  String get identity_syncResync => '从主存储全量同步';
+
+  @override
+  String get identity_syncResyncSub => '重置同步游标并重新拉取全部数据';
+
+  @override
+  String get identity_syncResyncTitle => '确认全量同步？';
+
+  @override
+  String get identity_syncResyncBody =>
+      '将重置本机同步游标，并从主存储设备重新下载全部数据。适用于历史记录不完整时。';
+
+  @override
+  String get identity_syncResyncSuccess => '全量同步完成';
+
+  @override
+  String identity_syncResyncFailed(String error) {
+    return '全量同步失败：$error';
+  }
+
+  @override
   String get identity_syncPendingTitle => '待上传数据';
 
   @override

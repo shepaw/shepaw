@@ -2,6 +2,10 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:typed_data';
 
+import 'package:uuid/uuid.dart';
+
+import '../../peer/models/paired_peer.dart';
+import '../../peer/services/peer_connection.dart';
 import '../../peer/services/peer_connection_manager.dart';
 import '../../peer/services/peer_storage_service.dart';
 import '../../services/local_database_service.dart';
@@ -32,8 +36,10 @@ class SyncProtocolService {
   static const _tag = 'SyncProtocol';
   final _log = LoggerService();
   final _db = LocalDatabaseService();
+  final _uuid = const Uuid();
 
   StreamSubscription<PeerControlEvent>? _sub;
+  StreamSubscription<PeerConnectionEvent>? _connSub;
   bool _running = false;
 
   final _queryWaiters = <String, Completer<Map<String, dynamic>>>{};
@@ -46,6 +52,7 @@ class SyncProtocolService {
     if (_running) return;
     _running = true;
     _sub = PeerConnectionManager.instance.controlEvents.listen(_onControl);
+    _connSub = PeerConnectionManager.instance.events.listen(_onPeerConnection);
     _log.info('SyncProtocolService started', tag: _tag);
     unawaited(SyncRoleService.announceLocalRole());
   }
@@ -54,6 +61,34 @@ class SyncProtocolService {
     _running = false;
     _sub?.cancel();
     _sub = null;
+    _connSub?.cancel();
+    _connSub = null;
+  }
+
+  void _onPeerConnection(PeerConnectionEvent event) {
+    if (event.type != PeerConnectionEventType.connected) return;
+    unawaited(_onStoragePeerConnected(event.peerId));
+  }
+
+  Future<void> _onStoragePeerConnected(String peerId) async {
+    try {
+      if (await AccountIdentityService.instance.isCanonicalPrimary()) {
+        final peer = await PeerStorageService().getPeerById(peerId);
+        if (peer?.deviceId != null) {
+          await _retryPushOutboxForDevice(peer!.deviceId!);
+        }
+        return;
+      }
+      final role = await AccountIdentityService.instance.localDeviceRole();
+      if (role != DeviceRole.backup) return;
+      final primary = await AccountIdentityService.instance.primaryDevice();
+      final peer = await PeerStorageService().getPeerById(peerId);
+      if (primary != null && peer?.deviceId == primary.deviceId) {
+        await _drainBackupRelayQueue(peerId);
+      }
+    } catch (e) {
+      _log.warning('Storage peer connect hook failed: $e', tag: _tag);
+    }
   }
 
   Future<Map<String, dynamic>> waitQueryResponse(String requestId, {required Duration timeout}) {
@@ -130,7 +165,10 @@ class SyncProtocolService {
         _completeCommitWaiter(event.data);
         break;
       case 'sync_push':
-        unawaited(_handlePush(event.data));
+        unawaited(_handlePush(event.peerId, event.data));
+        break;
+      case 'sync_push_ack':
+        unawaited(_handlePushAck(event.data));
         break;
       case 'sync_trust_accept':
         unawaited(_handleTrustAccept(event.peerId, event.data));
@@ -315,32 +353,64 @@ class SyncProtocolService {
 
   Future<void> _handleCommit(String peerId, Map<String, dynamic> data) async {
     final requestId = data['request_id'] as String? ?? '';
-    if (!await AccountIdentityService.instance.isCanonicalPrimary()) {
+    try {
+      final eventMap = data['event'] as Map<String, dynamic>?;
+      if (eventMap == null) throw FormatException('missing event');
+      final event = SyncEvent.fromJson(eventMap);
+
+      if (await AccountIdentityService.instance.isCanonicalPrimary()) {
+        final result = await SyncEngine.instance.commitEvent(event);
+        await PeerConnectionManager.instance.sendControl(peerId, {
+          'type': 'sync_commit_resp',
+          'request_id': requestId,
+          'ok': result.ok,
+          'applied': result.applied,
+          'stale': result.stale,
+        });
+        if (result.applied) {
+          unawaited(_pushToBackups([event]));
+        }
+        unawaited(SyncEngine.instance.pruneOldTombstones());
+        return;
+      }
+
+      final role = await AccountIdentityService.instance.localDeviceRole();
+      if (role == DeviceRole.backup) {
+        final relayResp = await _forwardCommitToPrimary(data);
+        if (relayResp != null) {
+          await PeerConnectionManager.instance.sendControl(peerId, {
+            'type': 'sync_commit_resp',
+            'request_id': requestId,
+            'ok': relayResp['ok'],
+            'applied': relayResp['applied'],
+            'stale': relayResp['stale'],
+            if (relayResp['error'] != null) 'error': relayResp['error'],
+          });
+          return;
+        }
+
+        final result = await SyncEngine.instance.commitEventAsStorageRelay(event);
+        await _db.enqueueBackupRelayEvent(
+          id: event.eventId,
+          payloadJson: jsonEncode(eventMap),
+        );
+        await PeerConnectionManager.instance.sendControl(peerId, {
+          'type': 'sync_commit_resp',
+          'request_id': requestId,
+          'ok': result.ok,
+          'applied': result.applied,
+          'stale': result.stale,
+          'relayed_via': 'backup',
+        });
+        return;
+      }
+
       await PeerConnectionManager.instance.sendControl(peerId, {
         'type': 'sync_commit_resp',
         'request_id': requestId,
         'ok': false,
         'error': 'primary_required',
       });
-      return;
-    }
-
-    try {
-      final eventMap = data['event'] as Map<String, dynamic>?;
-      if (eventMap == null) throw FormatException('missing event');
-      final event = SyncEvent.fromJson(eventMap);
-      final result = await SyncEngine.instance.commitEvent(event);
-      await PeerConnectionManager.instance.sendControl(peerId, {
-        'type': 'sync_commit_resp',
-        'request_id': requestId,
-        'ok': result.ok,
-        'applied': result.applied,
-        'stale': result.stale,
-      });
-      if (result.applied) {
-        unawaited(_pushToBackups([event]));
-      }
-      unawaited(SyncEngine.instance.pruneOldTombstones());
     } catch (e) {
       await PeerConnectionManager.instance.sendControl(peerId, {
         'type': 'sync_commit_resp',
@@ -351,7 +421,61 @@ class SyncProtocolService {
     }
   }
 
-  Future<void> _handlePush(Map<String, dynamic> data) async {
+  Future<Map<String, dynamic>?> _forwardCommitToPrimary(Map<String, dynamic> data) async {
+    final primary = await AccountIdentityService.instance.primaryDevice();
+    if (primary == null) return null;
+    final primaryPeerId = await _findPairedPeerId(primary.deviceId);
+    if (primaryPeerId == null) return null;
+    if (PeerConnectionManager.instance.getPeerState(primaryPeerId) !=
+        PeerConnectionState.connected) {
+      return null;
+    }
+
+    final requestId = data['request_id'] as String? ?? _uuid.v4();
+    await PeerConnectionManager.instance.sendControl(primaryPeerId, {
+      'type': 'sync_commit',
+      'request_id': requestId,
+      'event': data['event'],
+    });
+    final resp = await waitCommitResponse(
+      requestId,
+      timeout: const Duration(seconds: 15),
+    );
+    if (resp == null) return null;
+    return Map<String, dynamic>.from(resp);
+  }
+
+  Future<void> _drainBackupRelayQueue(String primaryPeerId) async {
+    final pending = await _db.listPendingBackupRelay(limit: 50);
+    for (final row in pending) {
+      final rowId = row['id'] as String;
+      final payloadRaw = row['payload'] as String? ?? '';
+      Map<String, dynamic> eventMap;
+      try {
+        eventMap = jsonDecode(payloadRaw) as Map<String, dynamic>;
+      } catch (_) {
+        await _db.markBackupRelayAcked(rowId);
+        continue;
+      }
+
+      final requestId = _uuid.v4();
+      await PeerConnectionManager.instance.sendControl(primaryPeerId, {
+        'type': 'sync_commit',
+        'request_id': requestId,
+        'event': eventMap,
+      });
+      final resp = await waitCommitResponse(
+        requestId,
+        timeout: const Duration(seconds: 15),
+      );
+      final ok = resp?['ok'] == true;
+      if (ok) {
+        await _db.markBackupRelayAcked(rowId);
+      }
+    }
+  }
+
+  Future<void> _handlePush(String peerId, Map<String, dynamic> data) async {
     final role = await AccountIdentityService.instance.localDeviceRole();
     if (role != DeviceRole.backup && role != DeviceRole.app) return;
 
@@ -361,6 +485,20 @@ class SyncProtocolService {
         .map((e) => SyncEvent.fromJson(Map<String, dynamic>.from(e)))
         .toList();
     await SyncEngine.instance.applyEvents(events);
+
+    final pushId = data['push_id'] as String?;
+    if (pushId != null && pushId.isNotEmpty) {
+      await PeerConnectionManager.instance.sendControl(peerId, {
+        'type': 'sync_push_ack',
+        'push_id': pushId,
+      });
+    }
+  }
+
+  Future<void> _handlePushAck(Map<String, dynamic> data) async {
+    final pushId = data['push_id'] as String?;
+    if (pushId == null || pushId.isEmpty) return;
+    await _db.markSyncPushAcked(pushId);
   }
 
   Future<void> pushEventsToPeers(List<SyncEvent> events) async {
@@ -372,15 +510,50 @@ class SyncProtocolService {
     if (events.isEmpty) return;
     final owned = await AccountIdentityService.instance.ownedDevices();
     final local = await AccountIdentityService.instance.localDevice();
+    final eventsJson = events.map((e) => e.toJson()).toList();
     for (final d in owned) {
       if (d.isLocal) continue;
       if (d.deviceId == local?.deviceId) continue;
       if (d.role != DeviceRole.backup && d.role != DeviceRole.app) continue;
       final peerId = await _findPairedPeerId(d.deviceId);
       if (peerId == null) continue;
+
+      final pushId = _uuid.v4();
+      await _db.enqueueSyncPushOutbox(
+        pushId: pushId,
+        targetDeviceId: d.deviceId,
+        payloadJson: jsonEncode(eventsJson),
+      );
       await PeerConnectionManager.instance.sendControl(peerId, {
         'type': 'sync_push',
-        'events': events.map((e) => e.toJson()).toList(),
+        'push_id': pushId,
+        'events': eventsJson,
+      });
+    }
+  }
+
+  Future<void> _retryPushOutboxForDevice(String targetDeviceId) async {
+    final pending = await _db.listPendingSyncPushForDevice(targetDeviceId);
+    for (final row in pending) {
+      final pushId = row['id'] as String;
+      final payloadRaw = row['payload'] as String? ?? '[]';
+      final peerId = await _findPairedPeerId(targetDeviceId);
+      if (peerId == null) continue;
+      if (PeerConnectionManager.instance.getPeerState(peerId) !=
+          PeerConnectionState.connected) {
+        continue;
+      }
+      List<dynamic> eventsJson;
+      try {
+        eventsJson = jsonDecode(payloadRaw) as List<dynamic>;
+      } catch (_) {
+        await _db.markSyncPushAcked(pushId);
+        continue;
+      }
+      await PeerConnectionManager.instance.sendControl(peerId, {
+        'type': 'sync_push',
+        'push_id': pushId,
+        'events': eventsJson,
       });
     }
   }
