@@ -10,6 +10,7 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 
+import 'local_database_service.dart';
 import 'logger_service.dart';
 
 /// 历史数据保险库信息
@@ -364,9 +365,17 @@ class VaultService {
   // 私有工具方法
   // ---------------------------------------------------------------------------
 
-  /// 获取 DB 目录路径（与各 DB Service 保持一致）
+  /// 获取 DB 目录路径（与各 DB Service 保持一致，按当前账号 scope）
   Future<String> _getDbDirectory() async {
     final dir = await getApplicationDocumentsDirectory();
+    final accountId = LocalDatabaseService().scopedAccountId;
+    if (accountId != null && accountId.isNotEmpty) {
+      final accountDir = Directory(p.join(dir.path, 'accounts', accountId));
+      if (!await accountDir.exists()) {
+        await accountDir.create(recursive: true);
+      }
+      return accountDir.path;
+    }
     return dir.path;
   }
 

@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:sqflite/sqflite.dart';
 import 'package:path/path.dart';
@@ -37,6 +39,10 @@ class AgentMemoryDbService {
   // ---------------------------------------------------------------------------
 
   static final Map<String, AgentMemoryDbService> _instances = {};
+  static String? _scopedAccountId;
+
+  /// 当前账号 scope（与 [LocalDatabaseService.scopedAccountId] 联动）。
+  static String? get scopedAccountId => _scopedAccountId;
 
   /// 获取指定 Agent 的数据库服务（单例）
   static AgentMemoryDbService forAgent(String agentId) {
@@ -46,12 +52,83 @@ class AgentMemoryDbService {
     );
   }
 
-  /// 关闭并移除所有缓存的实例（App 退出时调用）
+  /// 切换到指定账号（关闭所有已打开连接，下次访问时使用新路径）。
+  static Future<void> switchAccount(String? accountId) async {
+    if (_scopedAccountId == accountId) return;
+    await closeAll();
+    _scopedAccountId = accountId;
+  }
+
+  /// 关闭并移除所有缓存的实例（App 退出或切换账号时调用）
   static Future<void> closeAll() async {
-    for (final service in _instances.values) {
-      await service.close();
+    for (final service in List.of(_instances.values)) {
+      await service._closeConnection();
     }
     _instances.clear();
+  }
+
+  /// 删除指定账号目录下所有 agent_memory_*.db
+  static Future<void> deleteAllForAccount(String accountId) async {
+    if (kIsWeb || accountId.isEmpty) return;
+    if (_scopedAccountId == accountId) {
+      await closeAll();
+    }
+    await _deleteAgentMemoryFilesInDirectory(
+      Directory(
+        join(
+          (await getApplicationDocumentsDirectory()).path,
+          'accounts',
+          accountId,
+        ),
+      ),
+    );
+  }
+
+  /// 删除全局 legacy 目录下的 agent_memory_*.db
+  static Future<void> deleteAllLegacyGlobal() async {
+    if (kIsWeb) return;
+    await closeAll();
+    await _deleteAgentMemoryFilesInDirectory(
+      Directory((await getApplicationDocumentsDirectory()).path),
+    );
+  }
+
+  /// 删除所有账号及 legacy 目录下的 agent_memory_*.db
+  static Future<void> deleteAllAcrossAccounts() async {
+    if (kIsWeb) return;
+    await closeAll();
+    final docs = await getApplicationDocumentsDirectory();
+    await _deleteAgentMemoryFilesInDirectory(Directory(docs.path));
+    final accountsDir = Directory(join(docs.path, 'accounts'));
+    if (!await accountsDir.exists()) return;
+    await for (final entity in accountsDir.list()) {
+      if (entity is Directory) {
+        await _deleteAgentMemoryFilesInDirectory(entity);
+      }
+    }
+  }
+
+  static Future<void> _deleteAgentMemoryFilesInDirectory(Directory dir) async {
+    if (!await dir.exists()) return;
+    await for (final entity in dir.list()) {
+      if (entity is File) {
+        final name = basename(entity.path);
+        if (name.startsWith('agent_memory_') && name.endsWith('.db')) {
+          await entity.delete();
+        }
+      }
+    }
+  }
+
+  static Future<String> _resolveDirectoryPath() async {
+    final directory = await getApplicationDocumentsDirectory();
+    final accountId = _scopedAccountId;
+    if (accountId != null && accountId.isNotEmpty) {
+      final accountDir = Directory(join(directory.path, 'accounts', accountId));
+      if (!accountDir.existsSync()) await accountDir.create(recursive: true);
+      return accountDir.path;
+    }
+    return directory.path;
   }
 
   // ---------------------------------------------------------------------------
@@ -95,8 +172,7 @@ class AgentMemoryDbService {
       );
     }
 
-    final directory = await getApplicationDocumentsDirectory();
-    final path = join(directory.path, _dbFileName);
+    final path = join(await _resolveDirectoryPath(), _dbFileName);
 
     return await openDatabase(
       path,
@@ -426,20 +502,24 @@ class AgentMemoryDbService {
 
   /// 关闭数据库连接（不删除文件）
   Future<void> close() async {
+    await _closeConnection();
+    _instances.remove(_agentId);
+  }
+
+  Future<void> _closeConnection() async {
     await _database?.close();
     _database = null;
-    _instances.remove(_agentId);
   }
 
   /// 删除该 Agent 的整个数据库文件并关闭连接
   ///
   /// 警告：此操作不可逆，将永久删除所有记忆数据。
   Future<void> deleteDatabase() async {
-    await close();
     if (!kIsWeb) {
       try {
-        final directory = await getApplicationDocumentsDirectory();
-        final path = join(directory.path, _dbFileName);
+        final path = join(await _resolveDirectoryPath(), _dbFileName);
+        await _closeConnection();
+        _instances.remove(_agentId);
         await databaseFactory.deleteDatabase(path);
         LoggerService().info(
           'Memory database deleted: $_dbFileName',
@@ -452,6 +532,8 @@ class AgentMemoryDbService {
           error: e,
         );
       }
+      return;
     }
+    await close();
   }
 }

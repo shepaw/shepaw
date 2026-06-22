@@ -41,6 +41,7 @@ class LocalDatabaseService {
     await SheProfileDatabaseService().switchAccount(accountId);
     await SheMemoryDbService.instance.switchAccount(accountId);
     await MindsDatabaseService().switchAccount(accountId);
+    await AgentMemoryDbService.switchAccount(accountId);
   }
 
   String? get scopedAccountId => _scopedAccountId;
@@ -790,6 +791,7 @@ class LocalDatabaseService {
     if (await file.exists()) {
       await file.delete();
     }
+    await AgentMemoryDbService.deleteAllForAccount(accountId);
   }
 
   /// 关闭并删除所有 DB 文件（重置密码时调用）
@@ -824,15 +826,7 @@ class LocalDatabaseService {
       }
     }
 
-    // 3. 删除所有 agent_memory_*.db 文件
-    final dir = Directory(dbDir);
-    await for (final entity in dir.list()) {
-      if (entity is File) {
-        final name = basename(entity.path);
-        if (name.startsWith('agent_memory_') && name.endsWith('.db')) {
-          await entity.delete();
-        }
-      }
-    }
+    // 3. 删除所有 agent_memory_*.db（含各账号目录与 legacy 根目录）
+    await AgentMemoryDbService.deleteAllAcrossAccounts();
   }
 }
