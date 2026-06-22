@@ -312,31 +312,14 @@ extension MessageDao on LocalDatabaseService {
           'Updated partial streaming message: $messageId (${content.length} chars)',
           tag: 'LocalDatabaseService',
         );
-        SyncLocalWriteHook.onStreamingMessageUpdated(
-          messageId: messageId,
-          channelId: channelId,
-          content: content,
-          metadata: jsonEncode(metadata),
-          updatedAt: now,
-        );
+        // 流式中间态仅写本地 DB；跨设备同步在 completed/interrupted 时 flush。
       } else {
         await db.insert('messages', values);
         LoggerService().debug(
           'Created partial streaming message: $messageId (${content.length} chars)',
           tag: 'LocalDatabaseService',
         );
-        SyncLocalWriteHook.onMessageCreated(
-          id: messageId,
-          channelId: channelId,
-          senderId: senderId,
-          senderType: 'agent',
-          senderName: senderName,
-          content: content,
-          metadata: jsonEncode(metadata),
-          replyToId: replyToId,
-          createdAt: now,
-          updatedAt: now,
-        );
+        // 首条 partial 也不同步，避免其他设备看到未完成内容。
       }
     } catch (e, st) {
       LoggerService().error(

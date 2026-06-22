@@ -12,12 +12,9 @@ import 'sync_fanout_service.dart';
 class SyncLocalWriteHook {
   SyncLocalWriteHook._();
 
-  static const _streamingDebounceDuration = Duration(seconds: 2);
   static const _readDebounceDuration = Duration(seconds: 3);
   static const _heartbeatDebounceDuration = Duration(seconds: 60);
   static const _statusDebounceDuration = Duration(seconds: 5);
-  static final _streamingDebounceTimers = <String, Timer>{};
-  static final _pendingStreamingRows = <String, Map<String, dynamic>>{};
   static final _readDebounceTimers = <String, Timer>{};
   static final _pendingReadRows = <String, Map<String, dynamic>>{};
   static final _heartbeatDebounceTimers = <String, Timer>{};
@@ -25,22 +22,6 @@ class SyncLocalWriteHook {
 
   /// App 进入后台前立即 flush 防抖中的同步事件。
   static Future<void> flushAllPendingDebouncedSync() async {
-    for (final timer in _streamingDebounceTimers.values) {
-      timer.cancel();
-    }
-    _streamingDebounceTimers.clear();
-    final streaming = Map<String, Map<String, dynamic>>.from(_pendingStreamingRows);
-    _pendingStreamingRows.clear();
-    for (final row in streaming.values) {
-      await onMessageUpdated(
-        messageId: row['messageId'] as String,
-        channelId: row['channelId'] as String,
-        content: row['content'] as String,
-        metadata: row['metadata'] as String?,
-        updatedAt: row['updatedAt'] as String,
-      );
-    }
-
     for (final timer in _readDebounceTimers.values) {
       timer.cancel();
     }
@@ -72,36 +53,7 @@ class SyncLocalWriteHook {
     }
   }
 
-  /// 流式 flush 防抖，避免高频 outbound；完成/中断前应调用 [flushStreamingMessageSync]。
-  static void onStreamingMessageUpdated({
-    required String messageId,
-    required String channelId,
-    required String content,
-    String? metadata,
-    required String updatedAt,
-  }) {
-    _pendingStreamingRows[messageId] = {
-      'messageId': messageId,
-      'channelId': channelId,
-      'content': content,
-      'metadata': metadata,
-      'updatedAt': updatedAt,
-    };
-    _streamingDebounceTimers[messageId]?.cancel();
-    _streamingDebounceTimers[messageId] = Timer(_streamingDebounceDuration, () {
-      final pending = _pendingStreamingRows.remove(messageId);
-      _streamingDebounceTimers.remove(messageId);
-      if (pending == null) return;
-      unawaited(onMessageUpdated(
-        messageId: pending['messageId'] as String,
-        channelId: pending['channelId'] as String,
-        content: pending['content'] as String,
-        metadata: pending['metadata'] as String?,
-        updatedAt: pending['updatedAt'] as String,
-      ));
-    });
-  }
-
+  /// 流式消息完成或中断时同步最终态（中间 flush 不同步到其他设备）。
   static void flushStreamingMessageSync({
     required String messageId,
     required String channelId,
@@ -109,8 +61,6 @@ class SyncLocalWriteHook {
     String? metadata,
     required String updatedAt,
   }) {
-    _streamingDebounceTimers.remove(messageId)?.cancel();
-    _pendingStreamingRows.remove(messageId);
     unawaited(onMessageUpdated(
       messageId: messageId,
       channelId: channelId,
