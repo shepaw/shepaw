@@ -9,10 +9,9 @@ import '../../services/local_database_service.dart';
 import '../../services/local_file_storage_service.dart';
 import '../../services/logger_service.dart';
 import '../../peer/services/peer_connection_manager.dart';
-import '../../peer/services/peer_storage_service.dart';
-import '../models/app_cache_policy.dart';
 import '../models/device_role.dart';
 import 'account_identity_service.dart';
+import 'storage_device_service.dart';
 import 'sync_protocol_service.dart';
 
 /// P2P 附件 blob 按需同步（256KB 分块，Noise 加密通道内传输）。
@@ -51,11 +50,17 @@ class BlobSyncService {
       return relativePath;
     }
 
-    final peerId = await _primaryPeerId();
-    if (peerId == null) {
-      throw StateError('Primary device not available for blob sync');
+    for (final peerId in await _storagePeerIdsInOrder()) {
+      try {
+        return await _fetchBlobFromPeer(peerId, relativePath);
+      } catch (e) {
+        _log.warning('Blob fetch failed via $peerId: $e', tag: _tag);
+      }
     }
+    throw StateError('No storage device available for blob sync');
+  }
 
+  Future<String?> _fetchBlobFromPeer(String peerId, String relativePath) async {
     final requestId = _uuid.v4();
     await PeerConnectionManager.instance.sendControl(peerId, {
       'type': 'sync_blob_req',
@@ -128,7 +133,7 @@ class BlobSyncService {
     final file = await _files.getFile(relativePath);
     if (file == null) return;
 
-    final targetPeerId = peerId ?? await _primaryPeerId();
+    final targetPeerId = peerId ?? await _primaryOnlyPeerId();
     if (targetPeerId == null) return;
 
     final bytes = await file.readAsBytes();
@@ -279,14 +284,19 @@ class BlobSyncService {
     return relativePath;
   }
 
-  Future<String?> _primaryPeerId() async {
+  Future<List<String>> _storagePeerIdsInOrder() async {
+    final peerIds = <String>[];
+    for (final device in await StorageDeviceService.devicesInFetchOrder()) {
+      final peerId = await StorageDeviceService.peerIdForDevice(device.deviceId);
+      if (peerId != null) peerIds.add(peerId);
+    }
+    return peerIds;
+  }
+
+  Future<String?> _primaryOnlyPeerId() async {
     final primary = await AccountIdentityService.instance.primaryDevice();
     if (primary == null) return null;
-    final peers = await PeerStorageService().loadAllPeers();
-    for (final p in peers) {
-      if (p.deviceId == primary.deviceId) return p.id;
-    }
-    return null;
+    return StorageDeviceService.peerIdForDevice(primary.deviceId);
   }
 }
 

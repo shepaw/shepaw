@@ -283,17 +283,18 @@ extension MessageDao on LocalDatabaseService {
       'metadata': jsonEncode(metadata),
       'reply_to_id': replyToId,
       'created_at': now,
+      'updated_at': now,
       'is_read': 0,
     };
 
     try {
       if (existingMessageId != null) {
-        // Update existing partial message
         await db.update(
           'messages',
           {
             'content': content,
             'metadata': jsonEncode(metadata),
+            'updated_at': now,
           },
           where: 'id = ?',
           whereArgs: [messageId],
@@ -302,12 +303,30 @@ extension MessageDao on LocalDatabaseService {
           'Updated partial streaming message: $messageId (${content.length} chars)',
           tag: 'LocalDatabaseService',
         );
+        SyncLocalWriteHook.onMessageUpdated(
+          messageId: messageId,
+          channelId: channelId,
+          content: content,
+          metadata: jsonEncode(metadata),
+          updatedAt: now,
+        );
       } else {
-        // Create new partial message
         await db.insert('messages', values);
         LoggerService().debug(
           'Created partial streaming message: $messageId (${content.length} chars)',
           tag: 'LocalDatabaseService',
+        );
+        SyncLocalWriteHook.onMessageCreated(
+          id: messageId,
+          channelId: channelId,
+          senderId: senderId,
+          senderType: 'agent',
+          senderName: senderName,
+          content: content,
+          metadata: jsonEncode(metadata),
+          replyToId: replyToId,
+          createdAt: now,
+          updatedAt: now,
         );
       }
     } catch (e, st) {
@@ -427,6 +446,7 @@ extension MessageDao on LocalDatabaseService {
       }
 
       if (updates.isNotEmpty) {
+        updates['updated_at'] = DateTime.now().toIso8601String();
         await db.update(
           'messages',
           updates,
@@ -438,6 +458,17 @@ extension MessageDao on LocalDatabaseService {
           'Marked message as completed: $messageId',
           tag: 'LocalDatabaseService',
         );
+
+        final row = await getMessageById(messageId, fetchRemote: false);
+        if (row != null) {
+          SyncLocalWriteHook.onMessageUpdated(
+            messageId: messageId,
+            channelId: row['channel_id'] as String? ?? '',
+            content: row['content'] as String? ?? '',
+            metadata: row['metadata'] as String?,
+            updatedAt: row['updated_at'] as String? ?? '',
+          );
+        }
       }
     } catch (e, st) {
       LoggerService().error(

@@ -295,7 +295,7 @@ class SyncEngine {
         next = next.advance(event);
       } catch (e) {
         _log.warning('Failed to apply sync event ${event.eventId}: $e', tag: _tag);
-        break;
+        next = next.advance(event);
       }
     }
 

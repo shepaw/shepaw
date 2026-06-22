@@ -13,6 +13,7 @@ import '../models/sync_event.dart';
 import 'account_identity_service.dart';
 import 'blob_sync_service.dart';
 import 'device_trust_service.dart';
+import 'storage_device_service.dart';
 import 'sync_engine.dart';
 import 'sync_local_write_hook.dart';
 import 'sync_protocol_service.dart';
@@ -60,10 +61,7 @@ class SyncClientService {
       final peer = await PeerStorageService().getPeerById(peerId);
       if (peer == null) return;
 
-      final primary = await AccountIdentityService.instance.primaryDevice();
-      if (primary == null) return;
-
-      if (peer.deviceId != primary.deviceId) return;
+      if (!await StorageDeviceService.isStorageDeviceId(peer.deviceId)) return;
 
       await _sendTrustAccept(peerId);
       await pullFromPeer(peerId);
@@ -233,15 +231,7 @@ class SyncClientService {
     }
   }
 
-  Future<String?> _primaryPeerId() async {
-    final primary = await AccountIdentityService.instance.primaryDevice();
-    if (primary == null) return null;
-    final peers = await PeerStorageService().loadAllPeers();
-    for (final p in peers) {
-      if (p.deviceId == primary.deviceId) return p.id;
-    }
-    return null;
-  }
+  Future<String?> _primaryPeerId() => StorageDeviceService.firstAvailableStoragePeerId();
 
   /// 待同步队列统计（App 设备 UI 展示用）。
   Future<SyncPendingCounts> pendingCounts() async {

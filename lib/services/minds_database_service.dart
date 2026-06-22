@@ -414,8 +414,20 @@ class MindsDatabaseService {
   /// 清空所有认知数据（保留数据库文件）
   Future<void> clearAll() async {
     final db = await database;
+    final selfRows = await db.query('cognition_self', columns: ['agent_id']);
+    final userRows = await db.query('cognition_user', columns: ['agent_id']);
     await db.delete('cognition_self');
     await db.delete('cognition_user');
+    for (final row in selfRows) {
+      final agentId = row['agent_id'] as String?;
+      if (agentId == null || agentId.isEmpty) continue;
+      await SyncLocalWriteHook.onCognitionSelfDeleted(agentId: agentId);
+    }
+    for (final row in userRows) {
+      final agentId = row['agent_id'] as String?;
+      if (agentId == null || agentId.isEmpty) continue;
+      await SyncLocalWriteHook.onCognitionUserDeleted(agentId: agentId);
+    }
   }
 
   /// 清空单个 Agent 的所有认知
