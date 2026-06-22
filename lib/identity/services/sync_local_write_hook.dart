@@ -230,6 +230,28 @@ class SyncLocalWriteHook {
     );
   }
 
+  static Future<void> onAgentMemoryUpserted(Map<String, dynamic> row) async {
+    await _dispatchEvent(
+      SyncEvent.agentMemoryEvent(
+        row: row,
+        originDeviceId: await _originDeviceId(),
+      ),
+    );
+  }
+
+  static Future<void> onAgentMemoryDeleted({
+    required String agentId,
+    required String syncKey,
+  }) async {
+    await _dispatchEvent(
+      SyncEvent.agentMemoryDeleteEvent(
+        agentId: agentId,
+        syncKey: syncKey,
+        originDeviceId: await _originDeviceId(),
+      ),
+    );
+  }
+
   static Future<String> _originDeviceId() async {
     final local = await AccountIdentityService.instance.localDevice();
     return local?.deviceId ?? 'local';

@@ -64,6 +64,7 @@ class MemorySourceType {
 ///
 /// ### 字段说明
 /// - [memoryId]       自增整数主键，由数据库生成（插入前为 null）
+/// - [syncKey]        跨设备同步稳定 ID（UUID，插入时自动生成）
 /// - [memoryContent]  记忆内容（自由文本）
 /// - [memoryTime]     记忆时间戳（毫秒），表示记忆发生的时间
 /// - [memoryType]     记忆分类（[MemoryType] 枚举）
@@ -75,6 +76,9 @@ class MemorySourceType {
 class AgentMemoryEntry {
   /// 自增主键，插入前为 null，写入后由数据库分配
   final int? memoryId;
+
+  /// 跨设备同步用的稳定标识（UUID）
+  final String? syncKey;
   final String memoryContent;
   final int memoryTime;
   final MemoryType memoryType;
@@ -86,6 +90,7 @@ class AgentMemoryEntry {
 
   const AgentMemoryEntry({
     this.memoryId,
+    this.syncKey,
     required this.memoryContent,
     required this.memoryTime,
     required this.memoryType,
@@ -113,6 +118,7 @@ class AgentMemoryEntry {
       'updated_at': updatedAt,
     };
     if (memoryId != null) map['memory_id'] = memoryId;
+    if (syncKey != null) map['sync_key'] = syncKey;
     return map;
   }
 
@@ -131,6 +137,7 @@ class AgentMemoryEntry {
 
     return AgentMemoryEntry(
       memoryId: map['memory_id'] as int?,
+      syncKey: map['sync_key'] as String?,
       memoryContent: map['memory_content'] as String,
       memoryTime: map['memory_time'] as int,
       memoryType: MemoryType.fromString(map['memory_type'] as String? ?? ''),
@@ -149,6 +156,7 @@ class AgentMemoryEntry {
   /// 转换为 JSON Map
   Map<String, dynamic> toJson() => {
         'memoryId': memoryId,
+        'syncKey': syncKey,
         'memoryContent': memoryContent,
         'memoryTime': memoryTime,
         'memoryType': memoryType.name,
@@ -168,6 +176,7 @@ class AgentMemoryEntry {
 
     return AgentMemoryEntry(
       memoryId: json['memoryId'] as int?,
+      syncKey: json['syncKey'] as String?,
       memoryContent: json['memoryContent'] as String? ?? '',
       memoryTime: (json['memoryTime'] as num?)?.toInt() ?? 0,
       memoryType: MemoryType.fromString(json['memoryType'] as String? ?? ''),
@@ -186,6 +195,7 @@ class AgentMemoryEntry {
   /// 复制并修改部分字段
   AgentMemoryEntry copyWith({
     int? memoryId,
+    String? syncKey,
     String? memoryContent,
     int? memoryTime,
     MemoryType? memoryType,
@@ -197,6 +207,7 @@ class AgentMemoryEntry {
   }) {
     return AgentMemoryEntry(
       memoryId: memoryId ?? this.memoryId,
+      syncKey: syncKey ?? this.syncKey,
       memoryContent: memoryContent ?? this.memoryContent,
       memoryTime: memoryTime ?? this.memoryTime,
       memoryType: memoryType ?? this.memoryType,

@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import '../../services/agent_memory_db_service.dart';
 import '../../services/local_database_service.dart';
 import '../../services/logger_service.dart';
 import '../../services/minds_database_service.dart';
@@ -22,6 +23,7 @@ class SyncEngine {
   static const _agentCursorKey = 'sync_cursor_agent_ms';
   static const _sheMemoryCursorKey = 'sync_cursor_she_memory_ms';
   static const _cognitionCursorKey = 'sync_cursor_cognition_ms';
+  static const _agentMemoryCursorKey = 'sync_cursor_agent_memory_ms';
 
   final _db = LocalDatabaseService();
   final _log = LoggerService();
@@ -40,6 +42,8 @@ class SyncEngine {
 
   Future<int> getCognitionCursorMs() => _getCursor(_cognitionCursorKey);
 
+  Future<int> getAgentMemoryCursorMs() => _getCursor(_agentMemoryCursorKey);
+
   Future<void> setMessageCursorMs(int ms) => _db.setIdentitySyncState(_messageCursorKey, ms.toString());
 
   Future<void> setChannelCursorMs(int ms) => _db.setIdentitySyncState(_channelCursorKey, ms.toString());
@@ -54,6 +58,9 @@ class SyncEngine {
   Future<void> setCognitionCursorMs(int ms) =>
       _db.setIdentitySyncState(_cognitionCursorKey, ms.toString());
 
+  Future<void> setAgentMemoryCursorMs(int ms) =>
+      _db.setIdentitySyncState(_agentMemoryCursorKey, ms.toString());
+
   Future<int> _getCursor(String key) async {
     final raw = await _db.getIdentitySyncState(key);
     if (raw != null && raw.isNotEmpty) {
@@ -65,7 +72,8 @@ class SyncEngine {
         key == _memberCursorKey ||
         key == _agentCursorKey ||
         key == _sheMemoryCursorKey ||
-        key == _cognitionCursorKey) {
+        key == _cognitionCursorKey ||
+        key == _agentMemoryCursorKey) {
       final legacy = await _db.getIdentitySyncState(_legacyCursorKey);
       return int.tryParse(legacy ?? '') ?? 0;
     }
@@ -174,6 +182,29 @@ class SyncEngine {
   Future<int> applyCognitionEvents(List<SyncEvent> events) =>
       _applyEvents(events, cursorSetter: setCognitionCursorMs, cursorGetter: getCognitionCursorMs);
 
+  Future<List<SyncEvent>> queryAgentMemoryEvents({
+    required int sinceMs,
+    int limit = 50,
+    String? originDeviceId,
+  }) async {
+    final origin = originDeviceId ?? (await AccountIdentityService.instance.localDevice())?.deviceId ?? 'local';
+    final rows = await AgentMemoryDbService.queryAllChangedSince(
+      sinceMs: sinceMs,
+      limit: limit,
+    );
+    return rows
+        .map((row) => SyncEvent.agentMemoryEvent(row: row, originDeviceId: origin))
+        .toList();
+  }
+
+  /// 应用 Agent 结构化记忆事件批次。
+  Future<int> applyAgentMemoryEvents(List<SyncEvent> events) =>
+      _applyEvents(
+        events,
+        cursorSetter: setAgentMemoryCursorMs,
+        cursorGetter: getAgentMemoryCursorMs,
+      );
+
   /// 兼容旧调用：按域分别查询后合并（仅测试/legacy）。
   Future<List<SyncEvent>> queryEvents({
     required int sinceMs,
@@ -212,6 +243,7 @@ class SyncEngine {
     final agents = events.where((e) => e.domain == 'agent').toList();
     final sheMemory = events.where((e) => e.domain == 'she_memory').toList();
     final cognition = events.where((e) => e.domain == 'cognition').toList();
+    final agentMemory = events.where((e) => e.domain == 'agent_memory').toList();
     var cursor = await getMessageCursorMs();
     if (messages.isNotEmpty) {
       cursor = await applyMessageEvents(messages);
@@ -230,6 +262,9 @@ class SyncEngine {
     }
     if (cognition.isNotEmpty) {
       await applyCognitionEvents(cognition);
+    }
+    if (agentMemory.isNotEmpty) {
+      await applyAgentMemoryEvents(agentMemory);
     }
     return cursor;
   }
@@ -282,7 +317,16 @@ class SyncEngine {
       case 'cognition':
         await _applyCognition(event, role);
         break;
+      case 'agent_memory':
+        await _applyAgentMemory(event, role);
+        break;
     }
+  }
+
+  Future<void> _applyAgentMemory(SyncEvent event, DeviceRole role) async {
+    final agentId = event.payload['agent_id'] as String?;
+    if (agentId == null || agentId.isEmpty) return;
+    await AgentMemoryDbService.forAgent(agentId).upsertFromSync(event.payload);
   }
 
   Future<void> _applySheMemory(SyncEvent event, DeviceRole role) async {
@@ -329,6 +373,12 @@ class SyncEngine {
         final key = event.payload['key'] as String?;
         if (key == null) return;
         await _sheMemoryDb.deleteFromSync(key);
+        break;
+      case 'agent_memory':
+        final agentId = event.payload['agent_id'] as String?;
+        final syncKey = event.payload['sync_key'] as String?;
+        if (agentId == null || syncKey == null) return;
+        await AgentMemoryDbService.forAgent(agentId).deleteFromSync(syncKey);
         break;
     }
   }
@@ -416,6 +466,18 @@ class SyncEngine {
       } else {
         final existing = await _mindsDb.getSelfCognition(agentId);
         if (existing != null && event.wallTimeMs < existing.updatedAt) return true;
+      }
+    }
+
+    if (event.domain == 'agent_memory') {
+      final agentId = event.payload['agent_id'] as String? ?? '';
+      final syncKey = event.payload['sync_key'] as String? ?? '';
+      if (agentId.isNotEmpty && syncKey.isNotEmpty) {
+        final existing = await AgentMemoryDbService.forAgent(agentId).getRowBySyncKey(syncKey);
+        if (existing != null) {
+          final existingMs = existing['updated_at'] as int? ?? 0;
+          if (event.wallTimeMs < existingMs) return true;
+        }
       }
     }
 

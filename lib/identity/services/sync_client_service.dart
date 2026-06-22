@@ -121,6 +121,7 @@ class SyncClientService {
     await _pullDomain(peerId, domain: 'agent');
     await _pullDomain(peerId, domain: 'she_memory');
     await _pullDomain(peerId, domain: 'cognition');
+    await _pullDomain(peerId, domain: 'agent_memory');
   }
 
   Future<void> _pullDomain(String peerId, {required String domain}) async {
@@ -131,6 +132,7 @@ class SyncClientService {
       'agent' => await SyncEngine.instance.getAgentCursorMs(),
       'she_memory' => await SyncEngine.instance.getSheMemoryCursorMs(),
       'cognition' => await SyncEngine.instance.getCognitionCursorMs(),
+      'agent_memory' => await SyncEngine.instance.getAgentMemoryCursorMs(),
       _ => 0,
     };
     const pageSize = 50;
@@ -177,6 +179,8 @@ class SyncClientService {
         cursor = await SyncEngine.instance.applySheMemoryEvents(events);
       } else if (domain == 'cognition') {
         cursor = await SyncEngine.instance.applyCognitionEvents(events);
+      } else if (domain == 'agent_memory') {
+        cursor = await SyncEngine.instance.applyAgentMemoryEvents(events);
       }
 
       if (events.length < pageSize) break;

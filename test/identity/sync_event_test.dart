@@ -67,5 +67,19 @@ void main() {
       expect(restored.domain, 'cognition');
       expect(restored.payload['kind'], 'self');
     });
+
+    test('agent_memory event uses sync_key in event id', () {
+      final event = SyncEvent.agentMemoryEvent(
+        row: {
+          'agent_id': 'agent-1',
+          'sync_key': 'key-abc',
+          'memory_content': 'hello',
+          'updated_at': 4000,
+        },
+        originDeviceId: 'dev1',
+      );
+      expect(event.eventId, 'am:key-abc');
+      expect(event.domain, 'agent_memory');
+    });
   });
 }

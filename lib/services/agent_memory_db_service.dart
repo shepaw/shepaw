@@ -4,7 +4,9 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:sqflite/sqflite.dart';
 import 'package:path/path.dart';
 import 'package:path_provider/path_provider.dart';
+import 'package:uuid/uuid.dart';
 import '../models/agent_memory_entry.dart';
+import '../identity/services/sync_local_write_hook.dart';
 import 'logger_service.dart';
 
 /// Agent 独立记忆数据库服务
@@ -120,6 +122,62 @@ class AgentMemoryDbService {
     }
   }
 
+  static String agentIdFromDbFileName(String fileName) {
+    if (!fileName.startsWith('agent_memory_') || !fileName.endsWith('.db')) {
+      return '';
+    }
+    final sanitized = fileName.substring(
+      'agent_memory_'.length,
+      fileName.length - '.db'.length,
+    );
+    return sanitized.replaceAll('_', '-');
+  }
+
+  /// 扫描当前账号目录下所有 agent_memory DB，返回 since 之后变更的行。
+  static Future<List<Map<String, dynamic>>> queryAllChangedSince({
+    required int sinceMs,
+    int limit = 50,
+  }) async {
+    if (kIsWeb) return [];
+
+    final baseDir = Directory(await _resolveDirectoryPath());
+    if (!await baseDir.exists()) return [];
+
+    final merged = <Map<String, dynamic>>[];
+    await for (final entity in baseDir.list()) {
+      if (entity is! File) continue;
+      final name = basename(entity.path);
+      if (!name.startsWith('agent_memory_') || !name.endsWith('.db')) continue;
+
+      final agentId = agentIdFromDbFileName(name);
+      if (agentId.isEmpty) continue;
+
+      Database? db;
+      try {
+        db = await openDatabase(entity.path, readOnly: true);
+        final rows = await db.query(
+          'memories',
+          where: 'updated_at > ?',
+          whereArgs: [sinceMs],
+          orderBy: 'updated_at ASC',
+        );
+        for (final row in rows) {
+          merged.add({...row, 'agent_id': agentId});
+        }
+      } finally {
+        await db?.close();
+      }
+    }
+
+    merged.sort(
+      (a, b) => ((a['updated_at'] as int?) ?? 0).compareTo(
+        (b['updated_at'] as int?) ?? 0,
+      ),
+    );
+    if (merged.length > limit) return merged.sublist(0, limit);
+    return merged;
+  }
+
   static Future<String> _resolveDirectoryPath() async {
     final directory = await getApplicationDocumentsDirectory();
     final accountId = _scopedAccountId;
@@ -137,7 +195,8 @@ class AgentMemoryDbService {
 
   final String _agentId;
   Database? _database;
-  static const int _dbVersion = 1;
+  static const int _dbVersion = 2;
+  static const _uuid = Uuid();
 
   AgentMemoryDbService._(this._agentId);
 
@@ -169,6 +228,7 @@ class AgentMemoryDbService {
         'agent_memory_${_sanitizeAgentId(_agentId)}',
         version: _dbVersion,
         onCreate: _onCreate,
+        onUpgrade: _onUpgrade,
       );
     }
 
@@ -178,13 +238,36 @@ class AgentMemoryDbService {
       path,
       version: _dbVersion,
       onCreate: _onCreate,
+      onUpgrade: _onUpgrade,
     );
+  }
+
+  Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
+    if (oldVersion < 2) {
+      await db.execute('ALTER TABLE memories ADD COLUMN sync_key TEXT');
+      final rows = await db.query('memories');
+      for (final row in rows) {
+        await db.update(
+          'memories',
+          {'sync_key': _uuid.v4()},
+          where: 'memory_id = ?',
+          whereArgs: [row['memory_id']],
+        );
+      }
+      await db.execute(
+        'CREATE UNIQUE INDEX IF NOT EXISTS idx_memory_sync_key ON memories(sync_key)',
+      );
+      await db.execute(
+        'CREATE INDEX IF NOT EXISTS idx_memory_updated_at ON memories(updated_at ASC)',
+      );
+    }
   }
 
   Future<void> _onCreate(Database db, int version) async {
     await db.execute('''
       CREATE TABLE memories (
         memory_id      INTEGER PRIMARY KEY AUTOINCREMENT,
+        sync_key       TEXT NOT NULL UNIQUE,
         memory_content TEXT NOT NULL,
         memory_time    INTEGER NOT NULL,
         memory_type    TEXT NOT NULL,
@@ -212,6 +295,93 @@ class AgentMemoryDbService {
     await db.execute(
       'CREATE INDEX idx_source_id ON memories(source_id)',
     );
+    await db.execute(
+      'CREATE INDEX idx_memory_updated_at ON memories(updated_at ASC)',
+    );
+  }
+
+  Map<String, dynamic> _rowWithAgentId(Map<String, dynamic> row) => {
+        ...row,
+        'agent_id': _agentId,
+      };
+
+  Future<Map<String, dynamic>?> getRowBySyncKey(String syncKey) async {
+    final db = await database;
+    final rows = await db.query(
+      'memories',
+      where: 'sync_key = ?',
+      whereArgs: [syncKey],
+      limit: 1,
+    );
+    return rows.isEmpty ? null : rows.first;
+  }
+
+  Future<List<Map<String, dynamic>>> getChangedSince({
+    required int sinceMs,
+    int limit = 50,
+  }) async {
+    final db = await database;
+    final rows = await db.query(
+      'memories',
+      where: 'updated_at > ?',
+      whereArgs: [sinceMs],
+      orderBy: 'updated_at ASC',
+      limit: limit,
+    );
+    return rows.map(_rowWithAgentId).toList();
+  }
+
+  Future<void> upsertFromSync(Map<String, dynamic> row) async {
+    final syncKey = row['sync_key'] as String?;
+    if (syncKey == null || syncKey.isEmpty) return;
+
+    final incomingMs = row['updated_at'] as int? ?? 0;
+    final existing = await getRowBySyncKey(syncKey);
+    if (existing != null) {
+      final existingMs = existing['updated_at'] as int? ?? 0;
+      if (incomingMs < existingMs) return;
+      final db = await database;
+      await db.update(
+        'memories',
+        {
+          'memory_content': row['memory_content'] as String? ?? '',
+          'memory_time': row['memory_time'] as int? ?? incomingMs,
+          'memory_type': row['memory_type'] as String? ?? 'conversation',
+          'memory_keywords': row['memory_keywords'] as String? ?? '[]',
+          'source_type': row['source_type'],
+          'source_id': row['source_id'],
+          'created_at': row['created_at'] as int? ??
+              existing['created_at'] as int? ??
+              incomingMs,
+          'updated_at': incomingMs,
+        },
+        where: 'sync_key = ?',
+        whereArgs: [syncKey],
+      );
+      return;
+    }
+
+    final db = await database;
+    await db.insert(
+      'memories',
+      {
+        'sync_key': syncKey,
+        'memory_content': row['memory_content'] as String? ?? '',
+        'memory_time': row['memory_time'] as int? ?? incomingMs,
+        'memory_type': row['memory_type'] as String? ?? 'conversation',
+        'memory_keywords': row['memory_keywords'] as String? ?? '[]',
+        'source_type': row['source_type'],
+        'source_id': row['source_id'],
+        'created_at': row['created_at'] as int? ?? incomingMs,
+        'updated_at': incomingMs,
+      },
+      conflictAlgorithm: ConflictAlgorithm.replace,
+    );
+  }
+
+  Future<void> deleteFromSync(String syncKey) async {
+    final db = await database;
+    await db.delete('memories', where: 'sync_key = ?', whereArgs: [syncKey]);
   }
 
   // ---------------------------------------------------------------------------
@@ -223,14 +393,21 @@ class AgentMemoryDbService {
     try {
       final db = await database;
       final now = DateTime.now().millisecondsSinceEpoch;
+      final syncKey = entry.syncKey ?? _uuid.v4();
       final effectiveEntry = entry.copyWith(
+        syncKey: syncKey,
         createdAt: entry.createdAt == 0 ? now : entry.createdAt,
         updatedAt: now,
       );
+      final map = effectiveEntry.toMap();
+      map['sync_key'] = syncKey;
       final id = await db.insert(
         'memories',
-        effectiveEntry.toMap(),
+        map,
         conflictAlgorithm: ConflictAlgorithm.replace,
+      );
+      await SyncLocalWriteHook.onAgentMemoryUpserted(
+        _rowWithAgentId({...map, 'memory_id': id}),
       );
       LoggerService().info(
         'Memory added: #$id',
@@ -320,12 +497,17 @@ class AgentMemoryDbService {
     assert(entry.memoryId != null, 'memoryId must not be null when updating');
     try {
       final db = await database;
+      final existing = await getMemory(entry.memoryId!);
+      final syncKey = entry.syncKey ?? existing?.syncKey ?? _uuid.v4();
       final updated = entry.copyWith(
+        syncKey: syncKey,
         updatedAt: DateTime.now().millisecondsSinceEpoch,
       );
+      final map = updated.toMap();
+      map['sync_key'] = syncKey;
       final count = await db.update(
         'memories',
-        updated.toMap(),
+        map,
         where: 'memory_id = ?',
         whereArgs: [entry.memoryId],
       );
@@ -334,6 +516,16 @@ class AgentMemoryDbService {
           'updateMemory: no row matched for id=${entry.memoryId}',
           tag: 'AgentMemoryDbService[$_agentId]',
         );
+      } else {
+        final row = await db.query(
+          'memories',
+          where: 'memory_id = ?',
+          whereArgs: [entry.memoryId],
+          limit: 1,
+        );
+        if (row.isNotEmpty) {
+          await SyncLocalWriteHook.onAgentMemoryUpserted(_rowWithAgentId(row.first));
+        }
       }
     } catch (e) {
       LoggerService().error(
@@ -349,7 +541,20 @@ class AgentMemoryDbService {
   Future<void> deleteMemory(int memoryId) async {
     try {
       final db = await database;
+      final rows = await db.query(
+        'memories',
+        where: 'memory_id = ?',
+        whereArgs: [memoryId],
+        limit: 1,
+      );
+      final syncKey = rows.isEmpty ? null : rows.first['sync_key'] as String?;
       await db.delete('memories', where: 'memory_id = ?', whereArgs: [memoryId]);
+      if (syncKey != null && syncKey.isNotEmpty) {
+        await SyncLocalWriteHook.onAgentMemoryDeleted(
+          agentId: _agentId,
+          syncKey: syncKey,
+        );
+      }
       LoggerService().info(
         'Memory deleted: #$memoryId',
         tag: 'AgentMemoryDbService[$_agentId]',

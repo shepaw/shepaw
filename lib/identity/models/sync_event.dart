@@ -251,6 +251,41 @@ class SyncEvent {
     );
   }
 
+  static SyncEvent agentMemoryEvent({
+    required Map<String, dynamic> row,
+    required String originDeviceId,
+    SyncEventAction action = SyncEventAction.upsert,
+  }) {
+    final syncKey = row['sync_key'] as String? ?? '';
+    final wallTime = row['updated_at'] as int? ??
+        DateTime.now().millisecondsSinceEpoch;
+    return SyncEvent(
+      eventId: 'am:$syncKey',
+      domain: 'agent_memory',
+      action: action,
+      payload: Map<String, dynamic>.from(row),
+      wallTimeMs: wallTime,
+      originDeviceId: originDeviceId,
+    );
+  }
+
+  static SyncEvent agentMemoryDeleteEvent({
+    required String agentId,
+    required String syncKey,
+    required String originDeviceId,
+    int? wallTimeMs,
+  }) {
+    final ms = wallTimeMs ?? DateTime.now().millisecondsSinceEpoch;
+    return SyncEvent(
+      eventId: 'am:$syncKey:del:$ms',
+      domain: 'agent_memory',
+      action: SyncEventAction.delete,
+      payload: {'agent_id': agentId, 'sync_key': syncKey},
+      wallTimeMs: ms,
+      originDeviceId: originDeviceId,
+    );
+  }
+
   String toJsonString() => jsonEncode(toJson());
 
   factory SyncEvent.fromJsonString(String raw) =>
