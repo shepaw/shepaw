@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:sqflite/sqflite.dart';
 import 'package:path/path.dart';
@@ -29,8 +31,15 @@ class MindsDatabaseService {
   MindsDatabaseService._internal();
 
   Database? _database;
+  String? _scopedAccountId;
   static const int _dbVersion = 1;
   static const String _dbName = 'minds.db';
+
+  Future<void> switchAccount(String? accountId) async {
+    if (_scopedAccountId == accountId && _database != null) return;
+    await close();
+    _scopedAccountId = accountId;
+  }
 
   // ---------------------------------------------------------------------------
   // 初始化
@@ -42,6 +51,19 @@ class MindsDatabaseService {
     return _database!;
   }
 
+  Future<String> _resolveDbPath() async {
+    if (kIsWeb) return 'minds';
+
+    final directory = await getApplicationDocumentsDirectory();
+    final accountId = _scopedAccountId;
+    if (accountId != null && accountId.isNotEmpty) {
+      final accountDir = Directory(join(directory.path, 'accounts', accountId));
+      if (!accountDir.existsSync()) await accountDir.create(recursive: true);
+      return join(accountDir.path, _dbName);
+    }
+    return join(directory.path, _dbName);
+  }
+
   Future<Database> _initDatabase() async {
     if (kIsWeb) {
       return await openDatabase(
@@ -51,8 +73,7 @@ class MindsDatabaseService {
       );
     }
 
-    final directory = await getApplicationDocumentsDirectory();
-    final path = join(directory.path, _dbName);
+    final path = await _resolveDbPath();
 
     return await openDatabase(
       path,

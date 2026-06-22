@@ -25,6 +25,7 @@ class DeviceRpcService {
     'devices.ping',
     'sync.status',
     'messages.fetch',
+    'agents.fetch',
   };
 
   final _log = LoggerService();
@@ -89,6 +90,8 @@ class DeviceRpcService {
         return await _syncStatus();
       case 'messages.fetch':
         return await _messagesFetch(params);
+      case 'agents.fetch':
+        return await _agentsFetch(params);
       default:
         return {'error': 'unknown_method'};
     }
@@ -182,6 +185,18 @@ class DeviceRpcService {
     final row = await _db.getMessageById(messageId, fetchRemote: false);
     if (row == null) return {'error': 'not_found'};
     return {'message': row};
+  }
+
+  Future<Map<String, dynamic>> _agentsFetch(Map<String, dynamic> params) async {
+    final role = await AccountIdentityService.instance.localDeviceRole();
+    if (role != DeviceRole.primary && role != DeviceRole.backup) {
+      return {'error': 'not_storage_device'};
+    }
+    final agentId = params['agent_id'] as String? ?? '';
+    if (agentId.isEmpty) return {'error': 'missing_agent_id'};
+    final row = await _db.getAgentRowById(agentId);
+    if (row == null) return {'error': 'not_found'};
+    return {'agent': row};
   }
 
   Future<String?> _peerIdForDevice(String deviceId) async {

@@ -118,6 +118,7 @@ class SyncClientService {
     await _pullDomain(peerId, domain: 'message');
     await _pullDomain(peerId, domain: 'channel');
     await _pullDomain(peerId, domain: 'channel_member');
+    await _pullDomain(peerId, domain: 'agent');
   }
 
   Future<void> _pullDomain(String peerId, {required String domain}) async {
@@ -125,6 +126,7 @@ class SyncClientService {
       'message' => await SyncEngine.instance.getMessageCursorMs(),
       'channel' => await SyncEngine.instance.getChannelCursorMs(),
       'channel_member' => await SyncEngine.instance.getMemberCursorMs(),
+      'agent' => await SyncEngine.instance.getAgentCursorMs(),
       _ => 0,
     };
     const pageSize = 50;
@@ -165,6 +167,8 @@ class SyncClientService {
         cursor = await SyncEngine.instance.applyChannelEvents(events);
       } else if (domain == 'channel_member') {
         cursor = await SyncEngine.instance.applyMemberEvents(events);
+      } else if (domain == 'agent') {
+        cursor = await SyncEngine.instance.applyAgentEvents(events);
       }
 
       if (events.length < pageSize) break;

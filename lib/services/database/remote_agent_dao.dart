@@ -1,4 +1,6 @@
 import 'package:sqflite/sqflite.dart';
+import '../../identity/services/sync_agent_fetch_service.dart';
+import '../../identity/services/sync_local_write_hook.dart';
 import '../../models/remote_agent.dart' as remote_agent;
 import '../local_database_service.dart';
 
@@ -10,8 +12,13 @@ extension RemoteAgentDao on LocalDatabaseService {
     await db.insert(
       'agents',
       agent.toMap(),
-      conflictAlgorithm: ConflictAlgorithm.abort,
+      conflictAlgorithm: ConflictAlgorithm.replace,
     );
+
+    final row = await getAgentRowById(agent.id);
+    if (row != null) {
+      SyncLocalWriteHook.onAgentUpserted(row);
+    }
   }
 
   /// 获取所有远端助手
@@ -21,11 +28,18 @@ extension RemoteAgentDao on LocalDatabaseService {
     return results.map((map) => remote_agent.RemoteAgent.fromMap(map)).toList();
   }
 
-  /// 根据 ID 获取远端助手
-  Future<remote_agent.RemoteAgent?> getRemoteAgentById(String id) async {
+  /// 根据 ID 获取远端助手（App 可自动从 Primary 按需拉取）。
+  Future<remote_agent.RemoteAgent?> getRemoteAgentById(String id, {bool fetchRemote = true}) async {
     final db = await database;
     final results = await db.query('agents', where: 'id = ?', whereArgs: [id]);
-    return results.isEmpty ? null : remote_agent.RemoteAgent.fromMap(results.first);
+    if (results.isNotEmpty) {
+      return remote_agent.RemoteAgent.fromMap(results.first);
+    }
+    if (!fetchRemote) return null;
+
+    final row = await SyncAgentFetchService.instance.fetchAgentRow(id);
+    if (row == null) return null;
+    return remote_agent.RemoteAgent.fromMap(row);
   }
 
   /// 根据 Token 获取远端助手
@@ -98,6 +112,11 @@ extension RemoteAgentDao on LocalDatabaseService {
       where: 'id = ?',
       whereArgs: [agent.id],
     );
+
+    final row = await getAgentRowById(agent.id);
+    if (row != null) {
+      SyncLocalWriteHook.onAgentUpserted(row);
+    }
   }
 
   /// 更新远端助手状态
@@ -138,5 +157,6 @@ extension RemoteAgentDao on LocalDatabaseService {
   Future<void> deleteRemoteAgent(String id) async {
     final db = await database;
     await db.delete('agents', where: 'id = ?', whereArgs: [id]);
+    SyncLocalWriteHook.onAgentDeleted(id);
   }
 }

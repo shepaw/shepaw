@@ -49,7 +49,7 @@ class SyncLocalWriteHook {
     String? metadata,
     required String updatedAt,
   }) async {
-    final existing = await LocalDatabaseService().getMessageById(messageId);
+    final existing = await LocalDatabaseService().getMessageById(messageId, fetchRemote: false);
     if (existing == null) return;
 
     await _dispatchMessageRow(
@@ -167,16 +167,41 @@ class SyncLocalWriteHook {
     required String channelId,
     required String agentId,
   }) async {
-    try {
-      final role = await AccountIdentityService.instance.localDeviceRole();
-      final local = await AccountIdentityService.instance.localDevice();
-      final origin = local?.deviceId ?? 'local';
-      final event = SyncEvent.channelMemberDeleteEvent(
+    await _dispatchEvent(
+      SyncEvent.channelMemberDeleteEvent(
         channelId: channelId,
         agentId: agentId,
-        originDeviceId: origin,
-      );
+        originDeviceId: await _originDeviceId(),
+      ),
+    );
+  }
 
+  static Future<void> onAgentUpserted(Map<String, dynamic> agentRow) async {
+    await _dispatchEvent(
+      SyncEvent.agentEvent(
+        agentRow: agentRow,
+        originDeviceId: await _originDeviceId(),
+      ),
+    );
+  }
+
+  static Future<void> onAgentDeleted(String agentId) async {
+    await _dispatchEvent(
+      SyncEvent.agentDeleteEvent(
+        agentId: agentId,
+        originDeviceId: await _originDeviceId(),
+      ),
+    );
+  }
+
+  static Future<String> _originDeviceId() async {
+    final local = await AccountIdentityService.instance.localDevice();
+    return local?.deviceId ?? 'local';
+  }
+
+  static Future<void> _dispatchEvent(SyncEvent event) async {
+    try {
+      final role = await AccountIdentityService.instance.localDeviceRole();
       if (role == DeviceRole.app) {
         final db = LocalDatabaseService();
         await db.enqueueOutboundEvent(

@@ -27,5 +27,20 @@ void main() {
       });
       expect(restored.action, SyncEventAction.upsert);
     });
+
+    test('agent event round-trips through JSON', () {
+      final event = SyncEvent.agentEvent(
+        agentRow: {
+          'id': 'a1',
+          'name': 'Bot',
+          'updated_at': 1000,
+          'created_at': 900,
+        },
+        originDeviceId: 'dev1',
+      );
+      final restored = SyncEvent.fromJson(event.toJson());
+      expect(restored.domain, 'agent');
+      expect(restored.payload['id'], 'a1');
+    });
   });
 }

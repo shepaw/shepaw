@@ -17,6 +17,7 @@ class SyncEngine {
   static const _messageCursorKey = 'sync_cursor_msg_ms';
   static const _channelCursorKey = 'sync_cursor_ch_ms';
   static const _memberCursorKey = 'sync_cursor_member_ms';
+  static const _agentCursorKey = 'sync_cursor_agent_ms';
 
   final _db = LocalDatabaseService();
   final _log = LoggerService();
@@ -27,11 +28,15 @@ class SyncEngine {
 
   Future<int> getMemberCursorMs() => _getCursor(_memberCursorKey);
 
+  Future<int> getAgentCursorMs() => _getCursor(_agentCursorKey);
+
   Future<void> setMessageCursorMs(int ms) => _db.setIdentitySyncState(_messageCursorKey, ms.toString());
 
   Future<void> setChannelCursorMs(int ms) => _db.setIdentitySyncState(_channelCursorKey, ms.toString());
 
   Future<void> setMemberCursorMs(int ms) => _db.setIdentitySyncState(_memberCursorKey, ms.toString());
+
+  Future<void> setAgentCursorMs(int ms) => _db.setIdentitySyncState(_agentCursorKey, ms.toString());
 
   Future<int> _getCursor(String key) async {
     final raw = await _db.getIdentitySyncState(key);
@@ -39,7 +44,10 @@ class SyncEngine {
       return int.tryParse(raw) ?? 0;
     }
     // 迁移旧版单一游标。
-    if (key == _messageCursorKey || key == _channelCursorKey || key == _memberCursorKey) {
+    if (key == _messageCursorKey ||
+        key == _channelCursorKey ||
+        key == _memberCursorKey ||
+        key == _agentCursorKey) {
       final legacy = await _db.getIdentitySyncState(_legacyCursorKey);
       return int.tryParse(legacy ?? '') ?? 0;
     }
@@ -93,6 +101,21 @@ class SyncEngine {
   Future<int> applyMemberEvents(List<SyncEvent> events) =>
       _applyEvents(events, cursorSetter: setMemberCursorMs, cursorGetter: getMemberCursorMs);
 
+  /// 应用 Agent 事件批次。
+  Future<int> applyAgentEvents(List<SyncEvent> events) =>
+      _applyEvents(events, cursorSetter: setAgentCursorMs, cursorGetter: getAgentCursorMs);
+
+  /// Primary / Backup：查询 since 之后更新的 Agent。
+  Future<List<SyncEvent>> queryAgentEvents({
+    required int sinceMs,
+    int limit = 50,
+    String? originDeviceId,
+  }) async {
+    final origin = originDeviceId ?? (await AccountIdentityService.instance.localDevice())?.deviceId ?? 'local';
+    final rows = await _db.getAgentsChangedSince(sinceMs: sinceMs, limit: limit);
+    return rows.map((row) => SyncEvent.agentEvent(agentRow: row, originDeviceId: origin)).toList();
+  }
+
   /// 兼容旧调用：按域分别查询后合并（仅测试/legacy）。
   Future<List<SyncEvent>> queryEvents({
     required int sinceMs,
@@ -128,6 +151,7 @@ class SyncEngine {
     final messages = events.where((e) => e.domain == 'message').toList();
     final channels = events.where((e) => e.domain == 'channel').toList();
     final members = events.where((e) => e.domain == 'channel_member').toList();
+    final agents = events.where((e) => e.domain == 'agent').toList();
     var cursor = await getMessageCursorMs();
     if (messages.isNotEmpty) {
       cursor = await applyMessageEvents(messages);
@@ -137,6 +161,9 @@ class SyncEngine {
     }
     if (members.isNotEmpty) {
       await applyMemberEvents(members);
+    }
+    if (agents.isNotEmpty) {
+      await applyAgentEvents(agents);
     }
     return cursor;
   }
@@ -180,7 +207,14 @@ class SyncEngine {
       case 'channel_member':
         await _applyChannelMember(event, role);
         break;
+      case 'agent':
+        await _applyAgent(event, role);
+        break;
     }
+  }
+
+  Future<void> _applyAgent(SyncEvent event, DeviceRole role) async {
+    await _db.upsertAgentFromSync(event.payload);
   }
 
   Future<void> _applyChannelMember(SyncEvent event, DeviceRole role) async {
@@ -200,6 +234,11 @@ class SyncEngine {
         final agentId = event.payload['agent_id'] as String?;
         if (channelId == null || agentId == null) return;
         await _db.removeChannelMemberFromSync(channelId, agentId);
+        break;
+      case 'agent':
+        final id = event.payload['id'] as String?;
+        if (id == null) return;
+        await _db.deleteAgentFromSync(id);
         break;
     }
   }
@@ -252,10 +291,19 @@ class SyncEngine {
 
     if (event.domain == 'message') {
       final id = event.payload['id'] as String? ?? '';
-      final existing = await _db.getMessageById(id);
+      final existing = await _db.getMessageById(id, fetchRemote: false);
       if (existing != null) {
         final existingUpdated = existing['updated_at'] as String? ?? existing['created_at'] as String? ?? '';
         final existingMs = DateTime.tryParse(existingUpdated)?.millisecondsSinceEpoch ?? 0;
+        if (event.wallTimeMs < existingMs) return true;
+      }
+    }
+
+    if (event.domain == 'agent') {
+      final id = event.payload['id'] as String? ?? '';
+      final existing = await _db.getAgentRowById(id);
+      if (existing != null) {
+        final existingMs = existing['updated_at'] as int? ?? existing['created_at'] as int? ?? 0;
         if (event.wallTimeMs < existingMs) return true;
       }
     }

@@ -39,6 +39,8 @@ class LocalDatabaseService {
     await close();
     _scopedAccountId = accountId;
     await SheProfileDatabaseService().switchAccount(accountId);
+    await SheMemoryDbService.instance.switchAccount(accountId);
+    await MindsDatabaseService().switchAccount(accountId);
   }
 
   String? get scopedAccountId => _scopedAccountId;

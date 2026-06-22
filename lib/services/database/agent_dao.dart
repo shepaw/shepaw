@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:sqflite/sqflite.dart';
 import 'package:uuid/uuid.dart';
+import '../../identity/services/sync_local_write_hook.dart';
 import '../../models/agent.dart';
 import '../local_database_service.dart';
 
@@ -33,6 +34,11 @@ extension AgentDao on LocalDatabaseService {
       },
       conflictAlgorithm: ConflictAlgorithm.replace,
     );
+
+    final row = await getAgentRowById(agent.id);
+    if (row != null) {
+      SyncLocalWriteHook.onAgentUpserted(row);
+    }
   }
 
   /// 获取所有 Agent
@@ -66,12 +72,18 @@ extension AgentDao on LocalDatabaseService {
       where: 'id = ?',
       whereArgs: [agent.id],
     );
+
+    final row = await getAgentRowById(agent.id);
+    if (row != null) {
+      SyncLocalWriteHook.onAgentUpserted(row);
+    }
   }
 
   /// 删除 Agent
   Future<void> deleteAgent(String id) async {
     final db = await database;
     await db.delete('agents', where: 'id = ?', whereArgs: [id]);
+    SyncLocalWriteHook.onAgentDeleted(id);
   }
 }
 

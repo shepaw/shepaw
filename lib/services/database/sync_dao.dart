@@ -145,6 +145,57 @@ extension SyncDao on LocalDatabaseService {
     );
   }
 
+  Future<Map<String, dynamic>?> getAgentRowById(String agentId) async {
+    final db = await database;
+    final rows = await db.query('agents', where: 'id = ?', whereArgs: [agentId], limit: 1);
+    return rows.isEmpty ? null : rows.first;
+  }
+
+  Future<List<Map<String, dynamic>>> getAgentsChangedSince({
+    required int sinceMs,
+    int limit = 50,
+  }) async {
+    final db = await database;
+    return db.query(
+      'agents',
+      where: 'updated_at > ? OR created_at > ?',
+      whereArgs: [sinceMs, sinceMs],
+      orderBy: 'updated_at ASC',
+      limit: limit,
+    );
+  }
+
+  Future<void> upsertAgentFromSync(Map<String, dynamic> row) async {
+    final db = await database;
+    await db.insert(
+      'agents',
+      {
+        'id': row['id'],
+        'name': row['name'] ?? 'Agent',
+        'avatar': row['avatar'] ?? '🤖',
+        'bio': row['bio'],
+        'token': row['token'] ?? '',
+        'endpoint': row['endpoint'] ?? '',
+        'protocol': row['protocol'] ?? 'a2a',
+        'connection_type': row['connection_type'] ?? 'http',
+        'status': row['status'] ?? 'offline',
+        'last_heartbeat': row['last_heartbeat'],
+        'connected_at': row['connected_at'],
+        'capabilities': row['capabilities'],
+        'metadata': row['metadata'],
+        'is_pinned': row['is_pinned'] ?? 0,
+        'created_at': row['created_at'] ?? DateTime.now().millisecondsSinceEpoch,
+        'updated_at': row['updated_at'] ?? DateTime.now().millisecondsSinceEpoch,
+      },
+      conflictAlgorithm: ConflictAlgorithm.replace,
+    );
+  }
+
+  Future<void> deleteAgentFromSync(String agentId) async {
+    final db = await database;
+    await db.delete('agents', where: 'id = ?', whereArgs: [agentId]);
+  }
+
   Future<void> upsertChannelFromSync(Map<String, dynamic> row) async {
     final db = await database;
     await db.insert(

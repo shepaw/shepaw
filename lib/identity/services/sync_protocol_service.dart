@@ -312,6 +312,11 @@ class SyncProtocolService {
         sinceMs: sinceMs,
         limit: limit,
       );
+    } else if (domain == 'agent') {
+      events = await SyncEngine.instance.queryAgentEvents(
+        sinceMs: sinceMs,
+        limit: limit,
+      );
     } else {
       events = await SyncEngine.instance.queryEvents(
         sinceMs: sinceMs,
