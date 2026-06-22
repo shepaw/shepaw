@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io' show Platform;
 
 import 'package:flutter/foundation.dart' show kIsWeb;
@@ -13,6 +14,7 @@ import '../models/owned_device_record.dart';
 import 'account_session_service.dart';
 import 'spirit_pet_identity_service.dart';
 import 'local_account_registry.dart';
+import 'sync_role_service.dart';
 import 'user_identity_service.dart';
 
 /// 账号身份编排：User + SpiritPet + 本机 OwnedDevice 注册与角色。
@@ -154,6 +156,90 @@ class AccountIdentityService {
     }
   }
 
+  /// 双 Primary 冲突时 lex 较小 device_id 胜出。
+  static String primaryWinnerDeviceId(String a, String b) =>
+      a.compareTo(b) <= 0 ? a : b;
+
+  /// 本机是否为账号域唯一权威 Primary（含脑裂自修复）。
+  Future<bool> isCanonicalPrimary() async {
+    final local = await localDevice();
+    if (local == null || local.role != DeviceRole.primary) return false;
+    await _repairPrimaryRegistry();
+    final primary = await primaryDevice();
+    return primary?.deviceId == local.deviceId;
+  }
+
+  /// 处理对端 `sync_role_announce`，合并角色并消解双 Primary。
+  Future<void> reconcileRemoteDeviceRole({
+    required String remoteDeviceId,
+    required DeviceRole announcedRole,
+    String? deviceName,
+  }) async {
+    final existing = await _db.getOwnedDeviceByDeviceId(remoteDeviceId);
+    if (existing == null) return;
+
+    var effectiveRole = announcedRole;
+    final now = DateTime.now().millisecondsSinceEpoch;
+
+    if (announcedRole == DeviceRole.primary) {
+      final currentPrimary = await primaryDevice();
+      var localDemoted = false;
+      if (currentPrimary != null && currentPrimary.deviceId != remoteDeviceId) {
+        final winner = primaryWinnerDeviceId(
+          currentPrimary.deviceId,
+          remoteDeviceId,
+        );
+        if (winner != remoteDeviceId) {
+          effectiveRole = DeviceRole.app;
+        } else {
+          if (currentPrimary.isLocal) localDemoted = true;
+          await _db.updateOwnedDeviceRole(currentPrimary.deviceId, DeviceRole.app);
+        }
+      }
+      if (effectiveRole == DeviceRole.primary) {
+        final all = await _db.listOwnedDevices();
+        for (final d in all) {
+          if (d.deviceId == remoteDeviceId) continue;
+          if (d.role == DeviceRole.primary) {
+            if (d.isLocal) localDemoted = true;
+            await _db.updateOwnedDeviceRole(d.deviceId, DeviceRole.app);
+          }
+        }
+      }
+      if (localDemoted) {
+        unawaited(SyncRoleService.announceLocalRole());
+      }
+    }
+
+    await _db.upsertOwnedDevice(existing.copyWith(
+      deviceName: deviceName ?? existing.deviceName,
+      role: effectiveRole,
+      lastSeenAt: now,
+    ));
+  }
+
+  Future<void> _repairPrimaryRegistry() async {
+    final local = await localDevice();
+    final all = await _db.listOwnedDevices();
+    final primaries = all.where((d) => d.role == DeviceRole.primary).toList();
+    if (primaries.length <= 1) return;
+
+    final winnerId = primaries
+        .map((d) => d.deviceId)
+        .reduce(primaryWinnerDeviceId);
+    var localDemoted = false;
+    for (final d in primaries) {
+      if (d.deviceId != winnerId) {
+        if (d.isLocal) localDemoted = true;
+        await _db.updateOwnedDeviceRole(d.deviceId, DeviceRole.app);
+      }
+    }
+    _log.warning('Repaired split primary registry → $winnerId', tag: _tag);
+    if (localDemoted && local != null) {
+      unawaited(SyncRoleService.announceLocalRole());
+    }
+  }
+
   Future<void> setLocalDeviceRole(DeviceRole role) async {
     final local = await localDevice();
     if (local == null) return;
@@ -171,6 +257,7 @@ class AccountIdentityService {
 
     await _db.updateOwnedDeviceRole(local.deviceId, role);
     _log.info('Local device role → ${role.wireValue}', tag: _tag);
+    unawaited(SyncRoleService.announceLocalRole());
   }
 
   Future<DeviceRole> localDeviceRole() async {

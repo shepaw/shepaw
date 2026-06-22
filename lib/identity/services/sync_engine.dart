@@ -6,9 +6,10 @@ import '../../services/logger_service.dart';
 import '../../services/minds_database_service.dart';
 import '../../services/she_memory_db_service.dart';
 import '../models/app_cache_policy.dart';
+import '../models/device_role.dart';
 import '../models/sync_commit_result.dart';
 import '../models/sync_domain_cursor.dart';
-import '../models/device_role.dart';
+import '../utils/sync_lww.dart';
 import '../models/sync_event.dart';
 import 'account_identity_service.dart';
 
@@ -310,6 +311,7 @@ class SyncEngine {
       await _recordTombstoneIfStorage(event, role);
       return;
     }
+    if (await _isStaleUpsert(event)) return;
     await _clearTombstoneForUpsert(event);
     switch (event.domain) {
       case 'message':
@@ -439,72 +441,100 @@ class SyncEngine {
 
   /// Primary：持久化来自 App 的 commit（含更新与删除）。
   Future<SyncCommitResult> commitEvent(SyncEvent event) async {
-    final role = await AccountIdentityService.instance.localDeviceRole();
-    if (role != DeviceRole.primary) return SyncCommitResult.failed;
+    if (!await AccountIdentityService.instance.isCanonicalPrimary()) {
+      return SyncCommitResult.failed;
+    }
 
     if (event.action == SyncEventAction.delete) {
       await _applyOne(event, DeviceRole.primary);
       return SyncCommitResult.appliedOk();
     }
 
-    if (event.domain == 'message') {
-      final id = event.payload['id'] as String? ?? '';
-      final existing = await _db.getMessageById(id, fetchRemote: false);
-      if (existing != null) {
-        final existingUpdated = existing['updated_at'] as String? ?? existing['created_at'] as String? ?? '';
-        final existingMs = DateTime.tryParse(existingUpdated)?.millisecondsSinceEpoch ?? 0;
-        if (event.wallTimeMs < existingMs) return SyncCommitResult.staleOk();
-      }
-    }
-
-    if (event.domain == 'agent') {
-      final id = event.payload['id'] as String? ?? '';
-      final existing = await _db.getAgentRowById(id);
-      if (existing != null) {
-        final existingMs = existing['updated_at'] as int? ?? existing['created_at'] as int? ?? 0;
-        if (event.wallTimeMs < existingMs) return SyncCommitResult.staleOk();
-      }
-    }
-
-    if (event.domain == 'she_memory') {
-      final key = event.payload['key'] as String? ?? '';
-      final existing = await _sheMemoryDb.getRowByKey(key);
-      if (existing != null) {
-        final existingMs = existing['updated_at'] as int? ?? 0;
-        if (event.wallTimeMs < existingMs) return SyncCommitResult.staleOk();
-      }
-    }
-
-    if (event.domain == 'cognition') {
-      final kind = event.payload['kind'] as String? ?? 'self';
-      final agentId = event.payload['agent_id'] as String? ?? '';
-      if (kind == 'user') {
-        final existing = await _mindsDb.getUserCognition(agentId);
-        if (existing != null && event.wallTimeMs < existing.lastUpdated) {
-          return SyncCommitResult.staleOk();
-        }
-      } else {
-        final existing = await _mindsDb.getSelfCognition(agentId);
-        if (existing != null && event.wallTimeMs < existing.updatedAt) {
-          return SyncCommitResult.staleOk();
-        }
-      }
-    }
-
-    if (event.domain == 'agent_memory') {
-      final agentId = event.payload['agent_id'] as String? ?? '';
-      final syncKey = event.payload['sync_key'] as String? ?? '';
-      if (agentId.isNotEmpty && syncKey.isNotEmpty) {
-        final existing = await AgentMemoryDbService.forAgent(agentId).getRowBySyncKey(syncKey);
-        if (existing != null) {
-          final existingMs = existing['updated_at'] as int? ?? 0;
-          if (event.wallTimeMs < existingMs) return SyncCommitResult.staleOk();
-        }
-      }
-    }
+    if (await _isStaleUpsert(event)) return SyncCommitResult.staleOk();
 
     await _applyOne(event, DeviceRole.primary);
     return SyncCommitResult.appliedOk();
+  }
+
+  Future<bool> _isStaleUpsert(SyncEvent event) async {
+    switch (event.domain) {
+      case 'message':
+        final id = event.payload['id'] as String? ?? '';
+        if (id.isEmpty) return false;
+        final existing = await _db.getMessageById(id, fetchRemote: false);
+        if (existing == null) return false;
+        return SyncLww.isIncomingStale(
+          incomingWallTimeMs: event.wallTimeMs,
+          existingWallTimeMs: SyncLww.isoRowTimeMs(existing, ['updated_at', 'created_at']),
+        );
+      case 'channel':
+        final id = event.payload['id'] as String? ?? '';
+        if (id.isEmpty) return false;
+        final existing = await _db.getChannelRowById(id);
+        if (existing == null) return false;
+        return SyncLww.isIncomingStale(
+          incomingWallTimeMs: event.wallTimeMs,
+          existingWallTimeMs: SyncLww.isoRowTimeMs(existing, ['updated_at', 'created_at']),
+        );
+      case 'channel_member':
+        final channelId = event.payload['channel_id'] as String? ?? '';
+        final agentId = event.payload['agent_id'] as String? ?? '';
+        if (channelId.isEmpty || agentId.isEmpty) return false;
+        final existing = await _db.getChannelMemberRow(channelId, agentId);
+        if (existing == null) return false;
+        return SyncLww.isIncomingStale(
+          incomingWallTimeMs: event.wallTimeMs,
+          existingWallTimeMs: SyncLww.isoRowTimeMs(existing, ['updated_at', 'joined_at']),
+        );
+      case 'agent':
+        final id = event.payload['id'] as String? ?? '';
+        if (id.isEmpty) return false;
+        final existing = await _db.getAgentRowById(id);
+        if (existing == null) return false;
+        return SyncLww.isIncomingStale(
+          incomingWallTimeMs: event.wallTimeMs,
+          existingWallTimeMs: SyncLww.intRowTimeMs(existing, ['updated_at', 'created_at']),
+        );
+      case 'she_memory':
+        final key = event.payload['key'] as String? ?? '';
+        if (key.isEmpty) return false;
+        final existing = await _sheMemoryDb.getRowByKey(key);
+        if (existing == null) return false;
+        return SyncLww.isIncomingStale(
+          incomingWallTimeMs: event.wallTimeMs,
+          existingWallTimeMs: SyncLww.intRowTimeMs(existing, ['updated_at']),
+        );
+      case 'cognition':
+        final kind = event.payload['kind'] as String? ?? 'self';
+        final agentId = event.payload['agent_id'] as String? ?? '';
+        if (agentId.isEmpty) return false;
+        if (kind == 'user') {
+          final existing = await _mindsDb.getUserCognition(agentId);
+          if (existing == null) return false;
+          return SyncLww.isIncomingStale(
+            incomingWallTimeMs: event.wallTimeMs,
+            existingWallTimeMs: existing.lastUpdated,
+          );
+        }
+        final existing = await _mindsDb.getSelfCognition(agentId);
+        if (existing == null) return false;
+        return SyncLww.isIncomingStale(
+          incomingWallTimeMs: event.wallTimeMs,
+          existingWallTimeMs: existing.updatedAt,
+        );
+      case 'agent_memory':
+        final agentId = event.payload['agent_id'] as String? ?? '';
+        final syncKey = event.payload['sync_key'] as String? ?? '';
+        if (agentId.isEmpty || syncKey.isEmpty) return false;
+        final existing = await AgentMemoryDbService.forAgent(agentId).getRowBySyncKey(syncKey);
+        if (existing == null) return false;
+        return SyncLww.isIncomingStale(
+          incomingWallTimeMs: event.wallTimeMs,
+          existingWallTimeMs: SyncLww.intRowTimeMs(existing, ['updated_at']),
+        );
+      default:
+        return false;
+    }
   }
 
   String _messagePreview(Map<String, dynamic> row) {

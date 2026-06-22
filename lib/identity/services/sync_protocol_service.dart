@@ -7,13 +7,13 @@ import '../../peer/services/peer_storage_service.dart';
 import '../../services/local_database_service.dart';
 import '../../services/logger_service.dart';
 import '../models/device_role.dart';
-import '../models/owned_device_record.dart';
 import '../models/sync_event.dart';
 import 'account_identity_service.dart';
 import 'blob_sync_service.dart';
 import 'device_rpc_service.dart';
 import 'device_trust_service.dart';
 import 'sync_engine.dart';
+import 'sync_role_service.dart';
 
 /// sync_query 等待响应超时。
 class SyncQueryTimeoutException implements Exception {
@@ -47,7 +47,7 @@ class SyncProtocolService {
     _running = true;
     _sub = PeerConnectionManager.instance.controlEvents.listen(_onControl);
     _log.info('SyncProtocolService started', tag: _tag);
-    unawaited(_announceRoleToOwnedPeers());
+    unawaited(SyncRoleService.announceLocalRole());
   }
 
   void stop() {
@@ -98,37 +98,6 @@ class SyncProtocolService {
     return c.future.timeout(timeout, onTimeout: () {
       _deviceRpcWaiters.remove(requestId);
       return null;
-    });
-  }
-
-  Future<void> _announceRoleToOwnedPeers() async {
-    try {
-      await AccountIdentityService.instance.ensureInitialized();
-      final local = await AccountIdentityService.instance.localDevice();
-      if (local == null) return;
-
-      final owned = await AccountIdentityService.instance.ownedDevices();
-      for (final peer in owned) {
-        if (peer.isLocal) continue;
-        await _sendRoleAnnounce(peer.deviceId, local);
-      }
-    } catch (e) {
-      _log.warning('Role announce failed: $e', tag: _tag);
-    }
-  }
-
-  Future<void> _sendRoleAnnounce(String peerDeviceId, OwnedDeviceRecord local) async {
-    final paired = await _findPairedPeerId(peerDeviceId);
-    if (paired == null) return;
-
-    await PeerConnectionManager.instance.sendControl(paired, {
-      'type': 'sync_role_announce',
-      'device_id': local.deviceId,
-      'device_name': local.deviceName,
-      'role': local.role.wireValue,
-      'user_id': local.userId,
-      'pet_id': local.petId,
-      'transport_fingerprint': local.fingerprint,
     });
   }
 
@@ -232,19 +201,16 @@ class SyncProtocolService {
     }
 
     final existing = await _db.getOwnedDeviceByDeviceId(remoteDeviceId);
-    final now = DateTime.now().millisecondsSinceEpoch;
-
-    if (existing != null) {
-      await _db.upsertOwnedDevice(existing.copyWith(
-        deviceName: data['device_name'] as String? ?? existing.deviceName,
-        role: DeviceRole.fromWire(data['role'] as String?),
-        lastSeenAt: now,
-      ));
+    if (existing == null) {
+      _log.info('Ignoring sync_role_announce for unknown device $remoteDeviceId', tag: _tag);
       return;
     }
 
-    // 无 transport 公钥时不自动登记未知设备，等待 join/trust 流程。
-    _log.info('Ignoring sync_role_announce for unknown device $remoteDeviceId', tag: _tag);
+    await AccountIdentityService.instance.reconcileRemoteDeviceRole(
+      remoteDeviceId: remoteDeviceId,
+      announcedRole: DeviceRole.fromWire(data['role'] as String?),
+      deviceName: data['device_name'] as String?,
+    );
   }
 
   Future<void> _handleTrustAccept(String peerId, Map<String, dynamic> data) async {
@@ -349,8 +315,7 @@ class SyncProtocolService {
 
   Future<void> _handleCommit(String peerId, Map<String, dynamic> data) async {
     final requestId = data['request_id'] as String? ?? '';
-    final role = await AccountIdentityService.instance.localDeviceRole();
-    if (role != DeviceRole.primary) {
+    if (!await AccountIdentityService.instance.isCanonicalPrimary()) {
       await PeerConnectionManager.instance.sendControl(peerId, {
         'type': 'sync_commit_resp',
         'request_id': requestId,
@@ -397,8 +362,8 @@ class SyncProtocolService {
     await SyncEngine.instance.applyEvents(events);
   }
 
-  /// 向已关联 App/Backup 设备推送事件（Primary commit 或本地写入后 fan-out）。
   Future<void> pushEventsToPeers(List<SyncEvent> events) async {
+    if (!await AccountIdentityService.instance.isCanonicalPrimary()) return;
     await _pushToBackups(events);
   }
 
@@ -456,8 +421,7 @@ class SyncProtocolService {
 
   Future<void> _handleBlobPush(String peerId, Map<String, dynamic> data) async {
     final requestId = data['request_id'] as String? ?? '';
-    final role = await AccountIdentityService.instance.localDeviceRole();
-    if (role != DeviceRole.primary) {
+    if (!await AccountIdentityService.instance.isCanonicalPrimary()) {
       await PeerConnectionManager.instance.sendControl(peerId, {
         'type': 'sync_blob_push_ack',
         'request_id': requestId,
