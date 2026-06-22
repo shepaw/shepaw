@@ -144,7 +144,7 @@ extension RemoteAgentDao on LocalDatabaseService {
     }
   }
 
-  /// 更新远端助手心跳（本地 ephemeral，不同步）。
+  /// 更新远端助手心跳（60s 防抖同步 last_heartbeat）。
   Future<void> updateRemoteAgentHeartbeat(String agentId) async {
     final db = await database;
     await db.update(
@@ -156,6 +156,11 @@ extension RemoteAgentDao on LocalDatabaseService {
       where: 'id = ?',
       whereArgs: [agentId],
     );
+
+    final row = await getAgentRowById(agentId);
+    if (row != null) {
+      SyncLocalWriteHook.onAgentHeartbeatDebounced(agentId);
+    }
   }
 
   /// 删除远端助手

@@ -306,12 +306,26 @@ extension ChannelDao on LocalDatabaseService {
   /// 标记 channel 所有消息为已读
   Future<void> markChannelMessagesAsRead(String channelId) async {
     final db = await database;
-    await db.update(
+    final rows = await db.query(
       'messages',
-      {'is_read': 1},
       where: 'channel_id = ? AND is_read = 0',
       whereArgs: [channelId],
     );
+    if (rows.isEmpty) return;
+
+    final updatedAt = DateTime.now().toIso8601String();
+    await db.update(
+      'messages',
+      {'is_read': 1, 'updated_at': updatedAt},
+      where: 'channel_id = ? AND is_read = 0',
+      whereArgs: [channelId],
+    );
+    for (final row in rows) {
+      SyncLocalWriteHook.onMessageMarkedRead(
+        messageRow: row,
+        updatedAt: updatedAt,
+      );
+    }
   }
 }
 

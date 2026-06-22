@@ -80,12 +80,21 @@ extension MessageDao on LocalDatabaseService {
 
   /// 标记消息为已读
   Future<void> markMessageAsRead(String messageId) async {
+    final existing = await getMessageById(messageId, fetchRemote: false);
+    if (existing == null) return;
+    if ((existing['is_read'] as int? ?? 0) == 1) return;
+
     final db = await database;
+    final updatedAt = DateTime.now().toIso8601String();
     await db.update(
       'messages',
-      {'is_read': 1},
+      {'is_read': 1, 'updated_at': updatedAt},
       where: 'id = ?',
       whereArgs: [messageId],
+    );
+    SyncLocalWriteHook.onMessageMarkedRead(
+      messageRow: existing,
+      updatedAt: updatedAt,
     );
   }
 
@@ -578,12 +587,21 @@ extension MessageDao on LocalDatabaseService {
             jsonDecode(msg['metadata'] as String? ?? '{}') as Map<String, dynamic>;
         metadata['status'] = 'abandoned';
         metadata['abandoned_at'] = DateTime.now().toIso8601String();
+        final updatedAt = DateTime.now().toIso8601String();
 
         await db.update(
           'messages',
-          {'metadata': jsonEncode(metadata)},
+          {'metadata': jsonEncode(metadata), 'updated_at': updatedAt},
           where: 'id = ?',
           whereArgs: [messageId],
+        );
+
+        SyncLocalWriteHook.onMessageUpdated(
+          messageId: messageId,
+          channelId: msg['channel_id'] as String? ?? '',
+          content: msg['content'] as String? ?? '',
+          metadata: jsonEncode(metadata),
+          updatedAt: updatedAt,
         );
       }
 

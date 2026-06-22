@@ -12,7 +12,12 @@ class SyncLocalWriteHook {
   SyncLocalWriteHook._();
 
   static const _streamingDebounceDuration = Duration(seconds: 2);
+  static const _readDebounceDuration = Duration(seconds: 3);
+  static const _heartbeatDebounceDuration = Duration(seconds: 60);
   static final _streamingDebounceTimers = <String, Timer>{};
+  static final _readDebounceTimers = <String, Timer>{};
+  static final _pendingReadRows = <String, Map<String, dynamic>>{};
+  static final _heartbeatDebounceTimers = <String, Timer>{};
 
   /// 流式 flush 防抖，避免高频 outbound；完成/中断前应调用 [flushStreamingMessageSync]。
   static void onStreamingMessageUpdated({
@@ -90,6 +95,7 @@ class SyncLocalWriteHook {
     required String content,
     String? metadata,
     required String updatedAt,
+    int? isRead,
   }) async {
     final existing = await LocalDatabaseService().getMessageById(messageId, fetchRemote: false);
     if (existing == null) return;
@@ -99,10 +105,52 @@ class SyncLocalWriteHook {
         ...existing,
         'content': content,
         if (metadata != null) 'metadata': metadata,
+        if (isRead != null) 'is_read': isRead,
         'updated_at': updatedAt,
       },
       enqueueBlob: metadata != null,
     );
+  }
+
+  /// 已读状态变更（按 channel 防抖批量同步）。
+  static void onMessageMarkedRead({
+    required Map<String, dynamic> messageRow,
+    required String updatedAt,
+  }) {
+    final channelId = messageRow['channel_id'] as String? ?? '';
+    final messageId = messageRow['id'] as String?;
+    if (channelId.isEmpty || messageId == null) return;
+
+    _pendingReadRows[messageId] = {
+      ...messageRow,
+      'is_read': 1,
+      'updated_at': updatedAt,
+    };
+    _readDebounceTimers[channelId]?.cancel();
+    _readDebounceTimers[channelId] = Timer(_readDebounceDuration, () {
+      final pending = _pendingReadRows.entries
+          .where((e) => e.value['channel_id'] == channelId)
+          .toList();
+      for (final entry in pending) {
+        unawaited(_dispatchMessageRow(
+          Map<String, dynamic>.from(entry.value),
+          enqueueBlob: false,
+        ));
+        _pendingReadRows.remove(entry.key);
+      }
+      _readDebounceTimers.remove(channelId);
+    });
+  }
+
+  /// Agent 心跳（60s 防抖同步 last_heartbeat）。
+  static void onAgentHeartbeatDebounced(String agentId) {
+    if (agentId.isEmpty) return;
+    _heartbeatDebounceTimers[agentId]?.cancel();
+    _heartbeatDebounceTimers[agentId] = Timer(_heartbeatDebounceDuration, () async {
+      final row = await LocalDatabaseService().getAgentRowById(agentId);
+      if (row != null) await onAgentUpserted(row);
+      _heartbeatDebounceTimers.remove(agentId);
+    });
   }
 
   static Future<void> onMessageDeleted({
