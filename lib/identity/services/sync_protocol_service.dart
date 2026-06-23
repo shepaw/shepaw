@@ -41,7 +41,10 @@ class SyncProtocolService {
 
   StreamSubscription<PeerControlEvent>? _sub;
   StreamSubscription<PeerConnectionEvent>? _connSub;
+  Timer? _pushRetryTimer;
   bool _running = false;
+
+  static const _pushRetryInterval = Duration(seconds: 30);
 
   final _queryWaiters = <String, Completer<Map<String, dynamic>>>{};
   final _commitWaiters = <String, Completer<Map<String, dynamic>>>{};
@@ -58,6 +61,9 @@ class SyncProtocolService {
     _running = true;
     _sub = PeerConnectionManager.instance.controlEvents.listen(_onControl);
     _connSub = PeerConnectionManager.instance.events.listen(_onPeerConnection);
+    _pushRetryTimer = Timer.periodic(_pushRetryInterval, (_) {
+      unawaited(_retryAllPendingPushOutbox());
+    });
     _log.info('SyncProtocolService started', tag: _tag);
     unawaited(SyncRoleService.announceLocalRole());
   }
@@ -68,6 +74,8 @@ class SyncProtocolService {
     _sub = null;
     _connSub?.cancel();
     _connSub = null;
+    _pushRetryTimer?.cancel();
+    _pushRetryTimer = null;
   }
 
   void _onPeerConnection(PeerConnectionEvent event) {
@@ -80,7 +88,7 @@ class SyncProtocolService {
       if (await AccountIdentityService.instance.isCanonicalPrimary()) {
         final peer = await PeerStorageService().getPeerById(peerId);
         if (peer?.deviceId != null) {
-          await _retryPushOutboxForDevice(peer!.deviceId!);
+          await _retryPushOutboxForDevice(peer!.deviceId!, bypassBackoff: true);
         }
         return;
       }
@@ -687,16 +695,40 @@ class SyncProtocolService {
         targetDeviceId: d.deviceId,
         payloadJson: jsonEncode(eventsJson),
       );
-      await PeerConnectionManager.instance.sendControl(peerId, {
+      final sent = await PeerConnectionManager.instance.sendControl(peerId, {
         'type': 'sync_push',
         'push_id': pushId,
         'events': eventsJson,
       });
+      if (!sent) {
+        await _db.scheduleSyncPushRetry(pushId);
+      }
     }
   }
 
-  Future<void> _retryPushOutboxForDevice(String targetDeviceId) async {
-    final pending = await _db.listPendingSyncPushForDevice(targetDeviceId);
+  Future<void> _retryAllPendingPushOutbox() async {
+    if (!_running) return;
+    try {
+      if (!await AccountIdentityService.instance.isCanonicalPrimary()) return;
+      final owned = await AccountIdentityService.instance.ownedDevices();
+      for (final d in owned) {
+        if (d.isLocal) continue;
+        if (d.role != DeviceRole.backup && d.role != DeviceRole.app) continue;
+        await _retryPushOutboxForDevice(d.deviceId);
+      }
+    } catch (e) {
+      _log.warning('Periodic push outbox retry failed: $e', tag: _tag);
+    }
+  }
+
+  Future<void> _retryPushOutboxForDevice(
+    String targetDeviceId, {
+    bool bypassBackoff = false,
+  }) async {
+    final pending = await _db.listPendingSyncPushForDevice(
+      targetDeviceId,
+      bypassBackoff: bypassBackoff,
+    );
     for (final row in pending) {
       final pushId = row['id'] as String;
       final payloadRaw = row['payload'] as String? ?? '[]';
@@ -713,11 +745,15 @@ class SyncProtocolService {
         await _db.markSyncPushAcked(pushId);
         continue;
       }
-      await PeerConnectionManager.instance.sendControl(peerId, {
+      final sent = await PeerConnectionManager.instance.sendControl(peerId, {
         'type': 'sync_push',
         'push_id': pushId,
         'events': eventsJson,
       });
+      if (!sent) {
+        await _db.scheduleSyncPushRetry(pushId);
+        break;
+      }
     }
   }
 

@@ -11,6 +11,7 @@ import '../models/sync_apply_outcome.dart';
 import '../models/sync_commit_result.dart';
 import '../models/sync_domain_cursor.dart';
 import '../utils/sync_lww.dart';
+import '../utils/app_cache_utils.dart';
 import '../models/sync_event.dart';
 import 'account_identity_service.dart';
 
@@ -579,7 +580,7 @@ class SyncEngine {
     if (role == DeviceRole.app) {
       final policy = await _db.getAppCachePolicy();
       final existing = await _db.getMessageById(id);
-      if (existing == null && await _shouldCacheMessage(policy, wallTime)) {
+      if (existing == null && await _shouldCacheMessage(policy, wallTime, row: row)) {
         await _db.upsertMessageFromSync(row);
       } else if (existing != null) {
         await _db.upsertMessageFromSync(row);
@@ -731,11 +732,21 @@ class SyncEngine {
     }
   }
 
-  Future<bool> _shouldCacheMessage(AppCachePolicy policy, int wallTimeMs) async {
+  Future<bool> _shouldCacheMessage(
+    AppCachePolicy policy,
+    int wallTimeMs, {
+    Map<String, dynamic>? row,
+  }) async {
     final age = DateTime.now().millisecondsSinceEpoch - wallTimeMs;
     if (age > policy.maxDays * 86400000) return false;
     final count = await _db.countCachedMessages();
-    return count < policy.maxMessages;
+    if (count >= policy.maxMessages) return false;
+    if (policy.maxBytes > 0 && row != null) {
+      final incoming = AppCacheUtils.estimateMessageRowBytes(row);
+      final total = await _db.totalCachedMessageBytes();
+      if (total + incoming > policy.maxBytes) return false;
+    }
+    return true;
   }
 
   /// upsert 与 tombstone 各自维护 offset，避免双路分页漏事件。
@@ -805,7 +816,11 @@ class SyncEngine {
   }
 
   Future<void> _trimAppCache(AppCachePolicy policy) async {
-    await _db.trimMessagesToPolicy(policy.maxMessages, policy.maxDays);
+    await _db.trimMessagesToPolicy(
+      policy.maxMessages,
+      policy.maxDays,
+      maxBytes: policy.maxBytes,
+    );
   }
 
   /// 清理超过保留期的 delete tombstone（Primary / Backup）。

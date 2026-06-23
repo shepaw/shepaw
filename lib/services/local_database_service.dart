@@ -72,7 +72,7 @@ class LocalDatabaseService {
       // Web平台使用sqflite_common_ffi
       return await openDatabase(
         'shepaw',
-        version: 29,
+        version: 30,
         onCreate: _onCreate,
         onUpgrade: _onUpgrade,
       );
@@ -81,7 +81,7 @@ class LocalDatabaseService {
     final path = await _resolveDbPath();
     return await openDatabase(
       path,
-      version: 29,
+      version: 30,
       onCreate: _onCreate,
       onUpgrade: _onUpgrade,
     );
@@ -489,7 +489,9 @@ class LocalDatabaseService {
         target_device_id TEXT NOT NULL,
         payload TEXT NOT NULL,
         created_at INTEGER NOT NULL,
-        acked INTEGER NOT NULL DEFAULT 0
+        acked INTEGER NOT NULL DEFAULT 0,
+        retry_count INTEGER NOT NULL DEFAULT 0,
+        next_retry_at INTEGER NOT NULL DEFAULT 0
       )
     ''');
     await db.execute(
@@ -841,6 +843,19 @@ class LocalDatabaseService {
       } catch (e) {
         LoggerService().error('Failed sync v29 push/relay migration', tag: 'Migration', error: e);
       }
+    }
+
+    if (oldVersion < 30) {
+      try {
+        await db.execute(
+          'ALTER TABLE identity_sync_push_outbox ADD COLUMN retry_count INTEGER NOT NULL DEFAULT 0',
+        );
+      } catch (_) {}
+      try {
+        await db.execute(
+          'ALTER TABLE identity_sync_push_outbox ADD COLUMN next_retry_at INTEGER NOT NULL DEFAULT 0',
+        );
+      } catch (_) {}
     }
 
   }

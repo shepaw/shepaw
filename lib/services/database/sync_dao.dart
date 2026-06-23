@@ -1,6 +1,7 @@
 import 'package:sqflite/sqflite.dart';
 
 import '../../identity/models/sync_event.dart';
+import '../../identity/utils/app_cache_utils.dart';
 import '../local_database_service.dart';
 
 /// 同步专用数据访问（messages / channels / index / cursor）。
@@ -275,7 +276,24 @@ extension SyncDao on LocalDatabaseService {
     return (r.first['c'] as int?) ?? 0;
   }
 
-  Future<void> trimMessagesToPolicy(int maxMessages, int maxDays) async {
+  static int estimateMessageRowBytes(Map<String, dynamic> row) =>
+      AppCacheUtils.estimateMessageRowBytes(row);
+
+  Future<int> totalCachedMessageBytes() async {
+    final db = await database;
+    final rows = await db.query('messages', columns: ['content', 'metadata']);
+    var total = 0;
+    for (final row in rows) {
+      total += AppCacheUtils.estimateMessageRowBytes(row);
+    }
+    return total;
+  }
+
+  Future<void> trimMessagesToPolicy(
+    int maxMessages,
+    int maxDays, {
+    int maxBytes = 0,
+  }) async {
     final db = await database;
     const effectiveTimeSql =
         "COALESCE(NULLIF(updated_at, ''), created_at)";
@@ -292,17 +310,34 @@ extension SyncDao on LocalDatabaseService {
         await deleteMessageIndex(id);
       }
     }
-    if (maxMessages <= 0) return;
-    final count = await countCachedMessages();
-    if (count <= maxMessages) return;
-    final excess = count - maxMessages;
-    final old = await db.rawQuery(
-      'SELECT id FROM messages ORDER BY $effectiveTimeSql ASC LIMIT ?',
-      [excess],
-    );
-    for (final row in old) {
+    if (maxMessages > 0) {
+      final count = await countCachedMessages();
+      if (count > maxMessages) {
+        final excess = count - maxMessages;
+        final old = await db.rawQuery(
+          'SELECT id FROM messages ORDER BY $effectiveTimeSql ASC LIMIT ?',
+          [excess],
+        );
+        for (final row in old) {
+          final id = row['id'] as String?;
+          if (id == null) continue;
+          await db.delete('messages', where: 'id = ?', whereArgs: [id]);
+          await deleteMessageIndex(id);
+        }
+      }
+    }
+
+    if (maxBytes <= 0) return;
+    var total = await totalCachedMessageBytes();
+    while (total > maxBytes) {
+      final oldByBytes = await db.rawQuery(
+        'SELECT id, content, metadata FROM messages ORDER BY $effectiveTimeSql ASC LIMIT 1',
+      );
+      if (oldByBytes.isEmpty) break;
+      final row = oldByBytes.first;
       final id = row['id'] as String?;
-      if (id == null) continue;
+      if (id == null) break;
+      total -= AppCacheUtils.estimateMessageRowBytes(row);
       await db.delete('messages', where: 'id = ?', whereArgs: [id]);
       await deleteMessageIndex(id);
     }

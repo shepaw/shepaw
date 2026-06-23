@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:sqflite/sqflite.dart';
 
 import '../../identity/models/app_cache_policy.dart';
+import '../../identity/utils/sync_push_backoff.dart';
 import '../../identity/models/device_role.dart';
 import '../../identity/models/owned_device_record.dart';
 import '../../identity/models/ownership_bond.dart';
@@ -290,8 +291,32 @@ extension IdentityDao on LocalDatabaseService {
         'payload': payloadJson,
         'created_at': DateTime.now().millisecondsSinceEpoch,
         'acked': 0,
+        'retry_count': 0,
+        'next_retry_at': 0,
       },
       conflictAlgorithm: ConflictAlgorithm.replace,
+    );
+  }
+
+  Future<void> scheduleSyncPushRetry(String pushId) async {
+    final db = await database;
+    final rows = await db.query(
+      'identity_sync_push_outbox',
+      where: 'id = ?',
+      whereArgs: [pushId],
+      limit: 1,
+    );
+    if (rows.isEmpty) return;
+    final count = (rows.first['retry_count'] as int? ?? 0) + 1;
+    final now = DateTime.now().millisecondsSinceEpoch;
+    await db.update(
+      'identity_sync_push_outbox',
+      {
+        'retry_count': count,
+        'next_retry_at': SyncPushBackoff.nextRetryAtMs(count, now),
+      },
+      where: 'id = ?',
+      whereArgs: [pushId],
     );
   }
 
@@ -308,12 +333,23 @@ extension IdentityDao on LocalDatabaseService {
   Future<List<Map<String, dynamic>>> listPendingSyncPushForDevice(
     String targetDeviceId, {
     int limit = 20,
+    bool bypassBackoff = false,
   }) async {
     final db = await database;
+    final now = DateTime.now().millisecondsSinceEpoch;
+    if (bypassBackoff) {
+      return db.query(
+        'identity_sync_push_outbox',
+        where: 'target_device_id = ? AND acked = 0',
+        whereArgs: [targetDeviceId],
+        orderBy: 'created_at ASC',
+        limit: limit,
+      );
+    }
     return db.query(
       'identity_sync_push_outbox',
-      where: 'target_device_id = ? AND acked = 0',
-      whereArgs: [targetDeviceId],
+      where: 'target_device_id = ? AND acked = 0 AND next_retry_at <= ?',
+      whereArgs: [targetDeviceId, now],
       orderBy: 'created_at ASC',
       limit: limit,
     );
