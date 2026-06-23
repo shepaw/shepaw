@@ -154,23 +154,46 @@ class DeviceTrustService {
   }
 
   /// 签发方登记接受方（P2P trust_accept 或配对完成后调用）。
+  ///
+  /// [role] 为 null 时保留已有登记角色（兼容旧版 trust_accept 无 role 字段）。
   Future<void> registerTrustedRemoteDevice({
     required String deviceId,
     required String deviceName,
     required Uint8List transportPublicKey,
     required String fingerprint,
-    DeviceRole role = DeviceRole.app,
+    DeviceRole? role,
   }) async {
     await AccountIdentityService.instance.ensureInitialized();
     final user = await AccountIdentityService.instance.userIdentity();
     final pet = await AccountIdentityService.instance.spiritPetIdentity();
     final now = DateTime.now().millisecondsSinceEpoch;
+    final existing = await _db.getOwnedDeviceByDeviceId(deviceId);
+    final effectiveRole = role ?? existing?.role ?? DeviceRole.app;
+
+    if (existing != null) {
+      await _db.upsertOwnedDevice(
+        OwnedDeviceRecord(
+          id: existing.id,
+          deviceId: deviceId,
+          deviceName: deviceName,
+          role: effectiveRole,
+          transportPublicKey: transportPublicKey,
+          fingerprint: fingerprint,
+          userId: existing.userId,
+          petId: existing.petId,
+          isLocal: existing.isLocal,
+          trustedAt: existing.trustedAt,
+          lastSeenAt: now,
+        ),
+      );
+      return;
+    }
 
     final record = OwnedDeviceRecord(
       id: deviceId,
       deviceId: deviceId,
       deviceName: deviceName,
-      role: role,
+      role: effectiveRole,
       transportPublicKey: transportPublicKey,
       fingerprint: fingerprint,
       userId: user.fingerprintHex,
@@ -192,12 +215,15 @@ class DeviceTrustService {
     final transport = await NoiseIdentity.loadOrCreate();
     final local = await AccountIdentityService.instance.localDevice();
 
+    final role = local?.role ?? await AccountIdentityService.instance.localDeviceRole();
+
     return {
       'type': 'sync_trust_accept',
       'user_id': user.fingerprintHex,
       'pet_id': pet.fingerprintHex,
       'device_id': local?.deviceId ?? await pairing.getDeviceId(),
       'device_name': await pairing.getDeviceName(),
+      'role': role.wireValue,
       'transport_fingerprint': transport.fingerprintHex,
       'transport_public_key': base64.encode(transport.publicKey),
     };

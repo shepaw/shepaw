@@ -330,6 +330,39 @@ extension IdentityDao on LocalDatabaseService {
     );
   }
 
+  Future<Map<String, dynamic>?> getSyncPushOutboxRow(String pushId) async {
+    final db = await database;
+    final rows = await db.query(
+      'identity_sync_push_outbox',
+      where: 'id = ?',
+      whereArgs: [pushId],
+      limit: 1,
+    );
+    if (rows.isEmpty) return null;
+    return rows.first;
+  }
+
+  Future<void> updateSyncPushPayload(String pushId, String payloadJson) async {
+    final db = await database;
+    await db.update(
+      'identity_sync_push_outbox',
+      {'payload': payloadJson},
+      where: 'id = ?',
+      whereArgs: [pushId],
+    );
+  }
+
+  /// 永久放弃重试（payload 损坏或超过 max retries）。
+  Future<void> markSyncPushDeadLetter(String pushId) async {
+    final db = await database;
+    await db.update(
+      'identity_sync_push_outbox',
+      {'acked': 1},
+      where: 'id = ?',
+      whereArgs: [pushId],
+    );
+  }
+
   Future<List<Map<String, dynamic>>> listPendingSyncPushForDevice(
     String targetDeviceId, {
     int limit = 20,
@@ -374,8 +407,32 @@ extension IdentityDao on LocalDatabaseService {
         'payload': payloadJson,
         'created_at': DateTime.now().millisecondsSinceEpoch,
         'relayed': 0,
+        'retry_count': 0,
+        'next_retry_at': 0,
       },
       conflictAlgorithm: ConflictAlgorithm.replace,
+    );
+  }
+
+  Future<void> scheduleBackupRelayRetry(String id) async {
+    final db = await database;
+    final rows = await db.query(
+      'identity_backup_relay_queue',
+      where: 'id = ?',
+      whereArgs: [id],
+      limit: 1,
+    );
+    if (rows.isEmpty) return;
+    final count = (rows.first['retry_count'] as int? ?? 0) + 1;
+    final now = DateTime.now().millisecondsSinceEpoch;
+    await db.update(
+      'identity_backup_relay_queue',
+      {
+        'retry_count': count,
+        'next_retry_at': SyncPushBackoff.nextRetryAtMs(count, now),
+      },
+      where: 'id = ?',
+      whereArgs: [id],
     );
   }
 
@@ -389,11 +446,24 @@ extension IdentityDao on LocalDatabaseService {
     );
   }
 
-  Future<List<Map<String, dynamic>>> listPendingBackupRelay({int limit = 50}) async {
+  Future<List<Map<String, dynamic>>> listPendingBackupRelay({
+    int limit = 50,
+    bool bypassBackoff = false,
+  }) async {
     final db = await database;
+    final now = DateTime.now().millisecondsSinceEpoch;
+    if (bypassBackoff) {
+      return db.query(
+        'identity_backup_relay_queue',
+        where: 'relayed = 0',
+        orderBy: 'created_at ASC',
+        limit: limit,
+      );
+    }
     return db.query(
       'identity_backup_relay_queue',
-      where: 'relayed = 0',
+      where: 'relayed = 0 AND next_retry_at <= ?',
+      whereArgs: [now],
       orderBy: 'created_at ASC',
       limit: limit,
     );

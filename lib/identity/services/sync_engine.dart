@@ -12,6 +12,7 @@ import '../models/sync_commit_result.dart';
 import '../models/sync_domain_cursor.dart';
 import '../utils/sync_lww.dart';
 import '../utils/app_cache_utils.dart';
+import '../models/sync_push_apply_result.dart';
 import '../models/sync_event.dart';
 import 'account_identity_service.dart';
 
@@ -388,20 +389,30 @@ class SyncEngine {
   }
 
   /// 应用多域 push 批次；按 wall_time + event_id 全局排序后逐条 apply。
-  Future<bool> applyPushEvents(List<SyncEvent> events) async {
-    if (events.isEmpty) return true;
+  /// 单条失败不阻塞其余事件；返回失败 event_id 供 Primary ack 修剪 outbox。
+  Future<SyncPushApplyResult> applyPushEvents(List<SyncEvent> events) async {
+    if (events.isEmpty) return SyncPushApplyResult.ok;
     final sorted = events.toList()
       ..sort((a, b) {
         final byTime = a.wallTimeMs.compareTo(b.wallTimeMs);
         if (byTime != 0) return byTime;
         return a.eventId.compareTo(b.eventId);
       });
+    final failed = <String>[];
     for (final event in sorted) {
       final key = _cursorKeyForDomain(event.domain);
-      final (_, allApplied) = await _applyEvents([event], cursorKey: key);
-      if (!allApplied) return false;
+      try {
+        final (_, allApplied) = await _applyEvents([event], cursorKey: key);
+        if (!allApplied) failed.add(event.eventId);
+      } catch (e) {
+        _log.warning('Failed to apply push event ${event.eventId}: $e', tag: _tag);
+        failed.add(event.eventId);
+      }
     }
-    return true;
+    return SyncPushApplyResult(
+      allApplied: failed.isEmpty,
+      failedEventIds: failed,
+    );
   }
 
   Future<(SyncDomainCursor cursor, bool allApplied)> _applyEvents(

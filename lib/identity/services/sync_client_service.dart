@@ -21,6 +21,7 @@ import 'storage_device_service.dart';
 import 'sync_engine.dart';
 import 'sync_local_write_hook.dart';
 import 'sync_protocol_service.dart';
+import 'sync_role_service.dart';
 
 /// App / Backup 设备：连接 Primary 后拉取同步、提交 outbound 队列。
 class SyncClientService {
@@ -105,6 +106,7 @@ class SyncClientService {
       if (!await StorageDeviceService.isStorageDeviceId(peer.deviceId)) return;
 
       await _sendTrustAccept(peerId);
+      await SyncRoleService.announceLocalRole();
       await pullFromPeer(peerId);
       await _flushOutbound(peerId);
       await _flushBlobOutbound();

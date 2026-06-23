@@ -355,6 +355,19 @@ class AccountIdentityService {
     _initialized = true;
   }
 
+  /// 测试专用：注入内存身份并激活 DB 作用域（避免 SecureKey / Pairing 依赖）。
+  @visibleForTesting
+  Future<void> seedTestScopeForTests({
+    required String accountId,
+    required Ed25519Identity user,
+    required Ed25519Identity pet,
+  }) async {
+    await _db.switchAccount(accountId);
+    _user = user;
+    _pet = pet;
+    _initialized = true;
+  }
+
   @visibleForTesting
   void resetIdentityStateForTests() {
     _initialized = false;

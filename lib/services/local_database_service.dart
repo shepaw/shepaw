@@ -72,7 +72,7 @@ class LocalDatabaseService {
       // Web平台使用sqflite_common_ffi
       return await openDatabase(
         'shepaw',
-        version: 30,
+        version: 31,
         onCreate: _onCreate,
         onUpgrade: _onUpgrade,
       );
@@ -81,7 +81,7 @@ class LocalDatabaseService {
     final path = await _resolveDbPath();
     return await openDatabase(
       path,
-      version: 30,
+      version: 31,
       onCreate: _onCreate,
       onUpgrade: _onUpgrade,
     );
@@ -520,7 +520,9 @@ class LocalDatabaseService {
         id TEXT PRIMARY KEY,
         payload TEXT NOT NULL,
         created_at INTEGER NOT NULL,
-        relayed INTEGER NOT NULL DEFAULT 0
+        relayed INTEGER NOT NULL DEFAULT 0,
+        retry_count INTEGER NOT NULL DEFAULT 0,
+        next_retry_at INTEGER NOT NULL DEFAULT 0
       )
     ''');
     await db.execute(
@@ -869,6 +871,19 @@ class LocalDatabaseService {
       try {
         await db.execute(
           'ALTER TABLE identity_sync_push_outbox ADD COLUMN next_retry_at INTEGER NOT NULL DEFAULT 0',
+        );
+      } catch (_) {}
+    }
+
+    if (oldVersion < 31) {
+      try {
+        await db.execute(
+          'ALTER TABLE identity_backup_relay_queue ADD COLUMN retry_count INTEGER NOT NULL DEFAULT 0',
+        );
+      } catch (_) {}
+      try {
+        await db.execute(
+          'ALTER TABLE identity_backup_relay_queue ADD COLUMN next_retry_at INTEGER NOT NULL DEFAULT 0',
         );
       } catch (_) {}
     }

@@ -50,6 +50,10 @@ class SyncEvent {
         originDeviceId: json['origin_device_id'] as String? ?? '',
       );
 
+  /// Upsert 事件 ID 含 wall_time，避免同毫秒二次编辑因稳定 id 被游标跳过。
+  static String upsertEventId(String prefix, String entityPart, int wallTimeMs) =>
+      '$prefix:$entityPart@$wallTimeMs';
+
   static SyncEvent messageEvent({
     required Map<String, dynamic> messageRow,
     required String originDeviceId,
@@ -61,7 +65,7 @@ class SyncEvent {
     final wallTime = DateTime.tryParse(timeStr)?.millisecondsSinceEpoch ??
         DateTime.now().millisecondsSinceEpoch;
     return SyncEvent(
-      eventId: 'msg:${messageRow['id']}',
+      eventId: upsertEventId('msg', messageRow['id'] as String, wallTime),
       domain: 'message',
       action: action,
       payload: Map<String, dynamic>.from(messageRow),
@@ -96,7 +100,7 @@ class SyncEvent {
     final wallTime = DateTime.tryParse(updatedAt)?.millisecondsSinceEpoch ??
         DateTime.now().millisecondsSinceEpoch;
     return SyncEvent(
-      eventId: 'ch:${channelRow['id']}',
+      eventId: upsertEventId('ch', channelRow['id'] as String, wallTime),
       domain: 'channel',
       action: action,
       payload: Map<String, dynamic>.from(channelRow),
@@ -132,7 +136,7 @@ class SyncEvent {
     final channelId = memberRow['channel_id'] as String? ?? '';
     final agentId = memberRow['agent_id'] as String? ?? '';
     return SyncEvent(
-      eventId: 'cm:$channelId:$agentId',
+      eventId: upsertEventId('cm', '$channelId:$agentId', wallTime),
       domain: 'channel_member',
       action: action,
       payload: Map<String, dynamic>.from(memberRow),
@@ -166,7 +170,7 @@ class SyncEvent {
     final updatedAt = agentRow['updated_at'] as int? ?? agentRow['created_at'] as int? ??
         DateTime.now().millisecondsSinceEpoch;
     return SyncEvent(
-      eventId: 'agent:${agentRow['id']}',
+      eventId: upsertEventId('agent', agentRow['id'] as String, updatedAt),
       domain: 'agent',
       action: action,
       payload: Map<String, dynamic>.from(agentRow),
@@ -200,7 +204,7 @@ class SyncEvent {
     final wallTime = row['updated_at'] as int? ??
         DateTime.now().millisecondsSinceEpoch;
     return SyncEvent(
-      eventId: 'sm:$key',
+      eventId: upsertEventId('sm', key, wallTime),
       domain: 'she_memory',
       action: action,
       payload: Map<String, dynamic>.from(row),
@@ -234,7 +238,7 @@ class SyncEvent {
     final wallTime = row['updated_at'] as int? ??
         DateTime.now().millisecondsSinceEpoch;
     return SyncEvent(
-      eventId: 'cog:self:$agentId',
+      eventId: upsertEventId('cog:self', agentId, wallTime),
       domain: 'cognition',
       action: action,
       payload: {
@@ -255,7 +259,7 @@ class SyncEvent {
     final wallTime = row['last_updated'] as int? ??
         DateTime.now().millisecondsSinceEpoch;
     return SyncEvent(
-      eventId: 'cog:user:$agentId',
+      eventId: upsertEventId('cog:user', agentId, wallTime),
       domain: 'cognition',
       action: action,
       payload: {
@@ -309,7 +313,7 @@ class SyncEvent {
     final wallTime = row['updated_at'] as int? ??
         DateTime.now().millisecondsSinceEpoch;
     return SyncEvent(
-      eventId: 'am:$agentId:$syncKey',
+      eventId: upsertEventId('am', '$agentId:$syncKey', wallTime),
       domain: 'agent_memory',
       action: action,
       payload: Map<String, dynamic>.from(row),
