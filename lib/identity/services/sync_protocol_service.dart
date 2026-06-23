@@ -18,6 +18,7 @@ import '../models/sync_event.dart';
 import '../utils/blob_path_utils.dart';
 import 'account_identity_service.dart';
 import 'blob_sync_service.dart';
+import '../utils/device_rpc_policy.dart';
 import 'device_rpc_service.dart';
 import 'device_trust_service.dart';
 import 'sync_engine.dart';
@@ -1025,6 +1026,21 @@ class SyncProtocolService {
     }
 
     final method = data['method'] as String? ?? '';
+    final peer = await PeerStorageService().getPeerById(peerId);
+    final callerDeviceId = peer?.deviceId;
+    final callerRecord = callerDeviceId != null
+        ? await _db.getOwnedDeviceByDeviceId(callerDeviceId)
+        : null;
+    final callerRole = callerRecord?.role ?? DeviceRole.app;
+    if (!DeviceRpcPolicy.callerMayInvoke(method, callerRole)) {
+      await PeerConnectionManager.instance.sendControl(peerId, {
+        'type': 'device_rpc_resp',
+        'request_id': requestId,
+        'error': 'rpc_caller_not_allowed',
+      });
+      return;
+    }
+
     final params = Map<String, dynamic>.from(data['params'] as Map? ?? {});
 
     try {
@@ -1072,6 +1088,9 @@ class SyncProtocolService {
         return;
       case 'sync_query':
         await _handleQuery(peerId, data);
+        return;
+      case 'device_rpc':
+        await _handleDeviceRpc(peerId, data);
         return;
       default:
         _onControl(PeerControlEvent(peerId: peerId, data: data));

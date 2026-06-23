@@ -10,6 +10,7 @@ import '../../services/local_database_service.dart';
 import '../../services/logger_service.dart';
 import '../../services/she_service.dart';
 import '../models/device_role.dart';
+import '../utils/device_rpc_policy.dart';
 import 'account_identity_service.dart';
 import 'sync_protocol_service.dart';
 
@@ -72,6 +73,11 @@ class DeviceRpcService {
   }) async {
     if (!_allowedMethods.contains(method)) {
       return {'error': 'method_not_allowed'};
+    }
+
+    final localRole = await AccountIdentityService.instance.localDeviceRole();
+    if (!DeviceRpcPolicy.receiverMayExecute(method, localRole)) {
+      return {'error': 'rpc_receiver_not_allowed'};
     }
 
     switch (method) {

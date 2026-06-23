@@ -1,8 +1,11 @@
 import 'dart:io';
 
+import 'dart:typed_data';
+
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shepaw/identity/models/device_role.dart';
+import 'package:shepaw/identity/models/owned_device_record.dart';
 import 'package:shepaw/identity/models/sync_event.dart';
 import 'package:shepaw/identity/services/sync_client_service.dart';
 import 'package:shepaw/identity/services/sync_protocol_service.dart';
@@ -133,6 +136,48 @@ void main() {
       final row = await harness.db.getMessageById(messageId, fetchRemote: false);
       expect(row, isNotNull);
       expect(row!['content'], 'authoritative body');
+    });
+
+    test('App does not sync_query Backup when Primary is offline', () async {
+      final harness = await SyncP2pTestHarness.create(
+        localRole: DeviceRole.app,
+        localDeviceId: SyncP2pTestIds.appDevice,
+        localPeerId: SyncP2pTestIds.appPeer,
+      );
+      addTearDown(harness.dispose);
+
+      final now = DateTime.now().millisecondsSinceEpoch;
+      final key = Uint8List.fromList(List.filled(32, 6));
+      await harness.db.upsertOwnedDevice(
+        OwnedDeviceRecord(
+          id: 'rec-backup-for-app',
+          deviceId: SyncP2pTestIds.backupDevice,
+          deviceName: 'Backup',
+          role: DeviceRole.backup,
+          transportPublicKey: key,
+          fingerprint: 'fp-backup',
+          userId: SyncP2pTestIds.userId,
+          petId: SyncP2pTestIds.petId,
+          isLocal: false,
+          trustedAt: now,
+          lastSeenAt: now,
+        ),
+      );
+
+      harness.router.setConnected(SyncP2pTestIds.primaryPeer, connected: false);
+      harness.router.setConnected(SyncP2pTestIds.backupPeer, connected: true);
+      harness.startSyncClient();
+
+      await SyncClientService.instance.onStoragePeerConnectedForTest(
+        SyncP2pTestIds.backupPeer,
+      );
+      await harness.waitForSyncClientIdle();
+
+      final backupQueries = harness.router
+          .sentTo(SyncP2pTestIds.backupPeer)
+          .where((m) => m.type == 'sync_query')
+          .toList();
+      expect(backupQueries, isEmpty);
     });
   });
 }

@@ -190,8 +190,12 @@ extension SyncDao on LocalDatabaseService {
     );
   }
 
-  Future<void> upsertAgentFromSync(Map<String, dynamic> row) async {
+  Future<void> upsertAgentFromSync(
+    Map<String, dynamic> row, {
+    bool persistToken = true,
+  }) async {
     final db = await database;
+    final token = persistToken ? (row['token'] ?? '') : '';
     await db.insert(
       'agents',
       {
@@ -199,7 +203,7 @@ extension SyncDao on LocalDatabaseService {
         'name': row['name'] ?? 'Agent',
         'avatar': row['avatar'] ?? '🤖',
         'bio': row['bio'],
-        'token': row['token'] ?? '',
+        'token': token,
         'endpoint': row['endpoint'] ?? '',
         'protocol': row['protocol'] ?? 'a2a',
         'connection_type': row['connection_type'] ?? 'http',

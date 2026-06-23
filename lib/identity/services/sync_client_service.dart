@@ -107,7 +107,10 @@ class SyncClientService {
 
       await _sendTrustAccept(peerId);
       await SyncRoleService.announceLocalRole();
-      await pullFromPeer(peerId);
+      final pullPeerId = await StorageDeviceService.connectedPrimaryPullPeerId();
+      if (pullPeerId != null) {
+        await pullFromPeer(pullPeerId);
+      }
       await _flushOutbound(peerId);
       await _flushBlobOutbound();
     } catch (e) {
@@ -345,7 +348,11 @@ class SyncClientService {
     }
   }
 
-  Future<String?> _primaryPeerId() => StorageDeviceService.firstConnectedStoragePeerId();
+  @visibleForTesting
+  Future<void> onStoragePeerConnectedForTest(String peerId) => _onPeerConnected(peerId);
+
+  /// 从 Primary 拉取同步；不回退 Backup，避免缺少 pending relay 的副本视图。
+  Future<String?> _primaryPeerId() => StorageDeviceService.connectedPrimaryPullPeerId();
 
   /// 待同步队列统计（App 设备 UI 展示用）。
   Future<SyncPendingCounts> pendingCounts() async {

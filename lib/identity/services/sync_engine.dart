@@ -507,7 +507,10 @@ class SyncEngine {
   }
 
   Future<void> _applyAgent(SyncEvent event, DeviceRole role) async {
-    await _db.upsertAgentFromSync(event.payload);
+    await _db.upsertAgentFromSync(
+      event.payload,
+      persistToken: role != DeviceRole.app,
+    );
   }
 
   Future<void> _applyChannelMember(SyncEvent event, DeviceRole role) async {

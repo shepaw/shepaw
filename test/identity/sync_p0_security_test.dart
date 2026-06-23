@@ -338,4 +338,33 @@ void main() {
       expect(resp?['error'], 'origin_device_mismatch');
     });
   });
+
+  group('P1 device RPC authorization', () {
+    late SyncP2pTestHarness harness;
+
+    tearDown(() async {
+      await harness.dispose();
+    });
+
+    test('App caller cannot invoke cli.exec on Primary', () async {
+      harness = await SyncP2pTestHarness.create(
+        localRole: DeviceRole.primary,
+        localDeviceId: SyncP2pTestIds.primaryDevice,
+        localPeerId: SyncP2pTestIds.primaryPeer,
+      );
+
+      await SyncProtocolService.instance.dispatchControlForTest(
+        SyncP2pTestIds.appPeer,
+        {
+          'type': 'device_rpc',
+          'request_id': 'rpc-app-exec',
+          'method': 'cli.exec',
+          'params': {'command': 'shepaw devices list'},
+        },
+      );
+
+      final resp = harness.router.lastSentTo(SyncP2pTestIds.appPeer)?.payload;
+      expect(resp?['error'], 'rpc_caller_not_allowed');
+    });
+  });
 }

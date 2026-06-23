@@ -5,9 +5,12 @@ import '../models/device_role.dart';
 import '../models/owned_device_record.dart';
 import 'account_identity_service.dart';
 
-/// Primary / Backup 存储设备查找（RPC、blob、pull 回退）。
+  /// Primary / Backup 存储设备查找（RPC、blob、pull 回退）。
 class StorageDeviceService {
   StorageDeviceService._();
+
+  /// 同步 pull / outbound 目标：仅已连接 Primary（App 不回退 Backup，避免 stale 副本）。
+  static Future<String?> connectedPrimaryPullPeerId() => firstConnectedPrimaryPeerId();
 
   /// Primary 优先，其次 Backup（按 device_id 稳定排序）。
   static Future<List<OwnedDeviceRecord>> devicesInFetchOrder() async {
