@@ -15,6 +15,7 @@ import '../models/device_role.dart';
 import '../models/sync_commit_result.dart';
 import '../models/sync_push_apply_result.dart';
 import '../models/sync_event.dart';
+import '../utils/blob_path_utils.dart';
 import 'account_identity_service.dart';
 import 'blob_sync_service.dart';
 import 'device_rpc_service.dart';
@@ -910,7 +911,14 @@ class SyncProtocolService {
     }
 
     final blobKey = data['blob_key'] as String?;
-    if (blobKey == null) return;
+    if (blobKey == null || !BlobPathUtils.isValidRelativeStoragePath(blobKey)) {
+      await PeerConnectionManager.instance.sendControl(peerId, {
+        'type': 'sync_blob_resp',
+        'request_id': requestId,
+        'error': blobKey == null ? 'missing_blob_key' : 'invalid_blob_key',
+      });
+      return;
+    }
 
     final role = await AccountIdentityService.instance.localDeviceRole();
     if (role != DeviceRole.primary && role != DeviceRole.backup) {
@@ -965,7 +973,16 @@ class SyncProtocolService {
     }
 
     try {
-      final blobKey = data['blob_key'] as String;
+      final blobKey = data['blob_key'] as String?;
+      if (blobKey == null || !BlobPathUtils.isValidRelativeStoragePath(blobKey)) {
+        await PeerConnectionManager.instance.sendControl(peerId, {
+          'type': 'sync_blob_push_ack',
+          'request_id': requestId,
+          'ok': false,
+          'error': blobKey == null ? 'missing_blob_key' : 'invalid_blob_key',
+        });
+        return;
+      }
       final offset = data['offset'] as int? ?? 0;
       final totalSize = data['total_size'] as int? ?? 0;
       final sha = data['sha256'] as String? ?? '';

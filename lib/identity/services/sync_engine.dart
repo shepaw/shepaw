@@ -12,6 +12,7 @@ import '../models/sync_commit_result.dart';
 import '../models/sync_domain_cursor.dart';
 import '../utils/sync_lww.dart';
 import '../utils/app_cache_utils.dart';
+import '../utils/sync_tombstone_utils.dart';
 import '../models/sync_push_apply_result.dart';
 import '../models/sync_event.dart';
 import 'account_identity_service.dart';
@@ -835,20 +836,17 @@ class SyncEngine {
   }
 
   /// 清理超过保留期的 delete tombstone（Primary / Backup）。
-  /// 保留窗口 = min(30 天, 各 owned 设备 last_seen)，避免长期离线设备收不到 delete。
+  /// 保留窗口 = clamp(max(30天, 各设备离线时长), 90天)，避免长期离线设备收不到 delete。
   Future<void> pruneOldTombstones() async {
     final role = await AccountIdentityService.instance.localDeviceRole();
     if (role != DeviceRole.primary && role != DeviceRole.backup) return;
 
     final now = DateTime.now().millisecondsSinceEpoch;
-    const minRetentionMs = 30 * 86400000;
-    var cutoff = now - minRetentionMs;
-
     final devices = await AccountIdentityService.instance.ownedDevices();
-    for (final device in devices) {
-      final lastSeen = device.lastSeenAt ?? device.trustedAt;
-      if (lastSeen < cutoff) cutoff = lastSeen;
-    }
+    final cutoff = SyncTombstoneUtils.pruneCutoffWallTimeMs(
+      nowMs: now,
+      deviceLastSeenMs: devices.map((d) => d.lastSeenAt ?? d.trustedAt),
+    );
 
     final pruned = await _db.pruneSyncTombstonesOlderThan(cutoff);
     if (pruned > 0) {

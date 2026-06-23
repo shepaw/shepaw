@@ -1,5 +1,7 @@
 import 'dart:io';
 
+import 'dart:typed_data';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shepaw/identity/models/sync_blob_descriptor.dart';
 import 'package:shepaw/identity/services/blob_sync_service.dart';
@@ -37,6 +39,22 @@ void main() {
       expect(restored.blobKey, d.blobKey);
       expect(restored.sha256, d.sha256);
       expect(restored.sizeBytes, d.sizeBytes);
+    });
+    test('readBlobChunk rejects invalid blob key', () async {
+      final chunk = await BlobSyncService.instance.readBlobChunk('../escape', 0, 1024);
+      expect(chunk, isNull);
+    });
+
+    test('receiveBlobPush rejects invalid blob key', () async {
+      final ok = await BlobSyncService.instance.receiveBlobPush(
+        blobKey: '../escape',
+        offset: 0,
+        totalSize: 1,
+        sha256Expected: '',
+        chunk: Uint8List.fromList([1]),
+        done: true,
+      );
+      expect(ok, isFalse);
     });
   });
 }

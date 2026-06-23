@@ -5,6 +5,7 @@ import 'package:uuid/uuid.dart';
 import 'dart:typed_data';
 import 'logger_service.dart';
 import 'local_database_service.dart';
+import '../identity/utils/blob_path_utils.dart';
 
 /// 本地文件存储服务 - 管理图片、头像等资源文件
 class LocalFileStorageService {
@@ -74,8 +75,13 @@ class LocalFileStorageService {
 
   /// 获取图片的完整路径
   Future<String> getFullPath(String relativePath) async {
+    BlobPathUtils.validateOrThrow(relativePath);
     final appDir = await _appDataDir;
-    return path.join(appDir.path, relativePath);
+    final resolved = BlobPathUtils.resolveUnderRoot(appDir.path, relativePath);
+    if (resolved == null) {
+      throw ArgumentError('path escapes storage root: $relativePath');
+    }
+    return resolved;
   }
 
   /// 获取图片文件

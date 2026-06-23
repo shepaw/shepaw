@@ -11,6 +11,7 @@ import '../../services/local_file_storage_service.dart';
 import '../../services/logger_service.dart';
 import '../../peer/services/peer_connection_manager.dart';
 import '../models/device_role.dart';
+import '../utils/blob_path_utils.dart';
 import 'account_identity_service.dart';
 import 'storage_device_service.dart';
 import 'sync_protocol_service.dart';
@@ -172,6 +173,7 @@ class BlobSyncService {
 
   /// Primary / Backup：响应 blob 拉取请求。
   Future<Map<String, dynamic>?> readBlobChunk(String blobKey, int offset, int limit) async {
+    if (!BlobPathUtils.isValidRelativeStoragePath(blobKey)) return null;
     final file = await _files.getFile(blobKey);
     if (file == null) return null;
 
@@ -207,6 +209,7 @@ class BlobSyncService {
     required Uint8List chunk,
     required bool done,
   }) async {
+    if (!BlobPathUtils.isValidRelativeStoragePath(blobKey)) return false;
     var partial = _partialUploads[blobKey] ?? await _loadPartialState(blobKey);
     if (offset == 0) {
       partial = _PartialBlobUpload(
