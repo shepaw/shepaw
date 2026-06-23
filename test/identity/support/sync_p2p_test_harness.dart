@@ -6,6 +6,7 @@ import 'package:shepaw/identity/models/device_role.dart';
 import 'package:shepaw/identity/models/owned_device_record.dart';
 import 'package:shepaw/identity/models/sync_event.dart';
 import 'package:shepaw/identity/services/account_identity_service.dart';
+import 'package:shepaw/identity/services/sync_client_service.dart';
 import 'package:shepaw/identity/services/sync_protocol_service.dart';
 import 'package:shepaw/peer/models/paired_peer.dart';
 import 'package:shepaw/peer/services/peer_connection.dart';
@@ -48,6 +49,12 @@ class SyncP2pTestRouter {
     Map<String, dynamic> commit,
   )? onPrimaryCommit;
 
+  /// 收到发往 Primary 的 sync_query 时调用；null 时使用空 events 默认响应。
+  Future<Map<String, dynamic>?> Function(
+    String fromPeerId,
+    Map<String, dynamic> query,
+  )? onPrimaryQuery;
+
   void setConnected(String peerId, {bool connected = true}) {
     peerStates[peerId] =
         connected ? PeerConnectionState.connected : PeerConnectionState.disconnected;
@@ -72,6 +79,23 @@ class SyncP2pTestRouter {
     peerStates.clear();
     sent.clear();
     onPrimaryCommit = null;
+    onPrimaryQuery = null;
+  }
+
+  Map<String, dynamic> _emptyQueryResponse(Map<String, dynamic> query) => {
+        'type': 'sync_query_resp',
+        'request_id': query['request_id'],
+        'events': <Map<String, dynamic>>[],
+      };
+
+  void _deliverPrimaryResponse(Map<String, dynamic> resp) {
+    // 下一 event-loop turn 投递，确保 sendControl 返回后 waiter 已注册。
+    Future<void>.delayed(Duration.zero, () {
+      SyncProtocolService.instance.dispatchControlForTest(
+        SyncP2pTestIds.primaryPeer,
+        resp,
+      );
+    });
   }
 
   Future<bool> _send(String toPeerId, Map<String, dynamic> json) async {
@@ -86,13 +110,16 @@ class SyncP2pTestRouter {
       final fromPeer = _lastFromPeerId ?? SyncP2pTestIds.backupPeer;
       final resp = await onPrimaryCommit!(fromPeer, json);
       if (resp != null) {
-        // 异步投递，模拟真实 P2P：sendControl 返回后 response 才到达 waiter。
-        scheduleMicrotask(() {
-          SyncProtocolService.instance.dispatchControlForTest(
-            SyncP2pTestIds.primaryPeer,
-            resp,
-          );
-        });
+        _deliverPrimaryResponse(resp);
+      }
+    } else if (toPeerId == SyncP2pTestIds.primaryPeer &&
+        json['type'] == 'sync_query') {
+      final fromPeer = _lastFromPeerId ?? SyncP2pTestIds.backupPeer;
+      final resp = onPrimaryQuery != null
+          ? await onPrimaryQuery!(fromPeer, json)
+          : _emptyQueryResponse(json);
+      if (resp != null) {
+        _deliverPrimaryResponse(resp);
       }
     }
     return true;
@@ -149,7 +176,25 @@ class SyncP2pTestHarness {
     return harness;
   }
 
+  void startSyncClient() {
+    SyncClientService.instance.stop();
+    SyncClientService.instance.start();
+    router.noteSender(SyncP2pTestIds.backupPeer);
+  }
+
+  void stopSyncClient() {
+    SyncClientService.instance.stop();
+  }
+
+  /// 等待 microtask 触发的 pull / reconcile 链完成。
+  Future<void> waitForSyncClientIdle() async {
+    await Future<void>.delayed(const Duration(milliseconds: 20));
+    await SyncClientService.instance.awaitIdle();
+  }
+
   Future<void> dispose() async {
+    await waitForSyncClientIdle();
+    stopSyncClient();
     SyncProtocolService.instance.stop();
     router.uninstall();
     AccountIdentityService.instance.resetIdentityStateForTests();

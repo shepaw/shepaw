@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 
+import 'package:meta/meta.dart';
 import 'package:uuid/uuid.dart';
 
 import '../../peer/models/paired_peer.dart';
@@ -56,6 +57,10 @@ class SyncClientService {
   }
 
   Future<void> awaitIdle() => _pullChain;
+
+  @visibleForTesting
+  Future<void> pullFromPrimaryAfterRelayStaleForTest() =>
+      _pullFromPrimaryAfterRelayStale();
 
   void stop() {
     _running = false;

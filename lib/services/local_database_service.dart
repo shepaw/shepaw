@@ -480,6 +480,21 @@ class LocalDatabaseService {
     await _createSyncEntityStateTable(db);
     await _createSyncPushOutboxTable(db);
     await _createBackupRelayQueueTable(db);
+    await _createBlobOutboundQueueTable(db);
+  }
+
+  static Future<void> _createBlobOutboundQueueTable(Database db) async {
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS identity_blob_outbound_queue (
+        id TEXT PRIMARY KEY,
+        relative_path TEXT NOT NULL,
+        created_at INTEGER NOT NULL,
+        acked INTEGER NOT NULL DEFAULT 0
+      )
+    ''');
+    await db.execute(
+      'CREATE INDEX IF NOT EXISTS idx_blob_outbound_pending ON identity_blob_outbound_queue(acked, created_at)',
+    );
   }
 
   static Future<void> _createSyncPushOutboxTable(Database db) async {

@@ -555,6 +555,9 @@ class SyncProtocolService {
     _backupRelayStaleController.add(null);
   }
 
+  @visibleForTesting
+  void signalBackupRelayStaleForTest() => _signalBackupRelayStale();
+
   /// Pull 对齐 Primary 后，丢弃已被本地状态覆盖的 stale relay 行。
   Future<void> reconcilePendingBackupRelayAfterPull() async {
     final role = await AccountIdentityService.instance.localDeviceRole();
@@ -897,6 +900,9 @@ class SyncProtocolService {
         return;
       case 'sync_commit_resp':
         _completeCommitWaiter(data);
+        return;
+      case 'sync_query_resp':
+        _completeQueryWaiter(data);
         return;
       case 'sync_push':
         await _handlePush(peerId, data);
