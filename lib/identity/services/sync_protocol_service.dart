@@ -440,6 +440,7 @@ class SyncProtocolService {
         if (relayResp != null) {
           if (relayResp['applied'] == true) {
             await SyncEngine.instance.commitEventAsStorageRelay(event);
+            await _db.markBackupRelayAcked(event.eventId);
           }
           await PeerConnectionManager.instance.sendControl(peerId, {
             'type': 'sync_commit_resp',
@@ -452,19 +453,15 @@ class SyncProtocolService {
           return;
         }
 
-        final result = await SyncEngine.instance.commitEventAsStorageRelay(event);
+        // Primary 不可达：仅入 relay 队列，不在 Backup 本地 apply，避免多 Backup 视图分叉。
         await _db.enqueueBackupRelayEvent(
           id: event.eventId,
           payloadJson: jsonEncode(eventMap),
         );
-        await PeerConnectionManager.instance.sendControl(peerId, {
-          'type': 'sync_commit_resp',
-          'request_id': requestId,
-          'ok': result.ok,
-          'applied': result.applied,
-          'stale': result.stale,
-          'relayed_via': 'backup',
-        });
+        await PeerConnectionManager.instance.sendControl(
+          peerId,
+          SyncCommitResult.pendingRelayOk().toCommitResponse(requestId: requestId),
+        );
         return;
       }
 
@@ -533,6 +530,8 @@ class SyncProtocolService {
       );
       final ok = resp?['ok'] == true;
       if (SyncCommitResult.shouldAckBackupRelayResponse(resp)) {
+        final event = SyncEvent.fromJson(eventMap);
+        await SyncEngine.instance.commitEventAsStorageRelay(event);
         await _db.markBackupRelayAcked(rowId);
       } else if (ok && resp?['stale'] == true) {
         _log.warning(

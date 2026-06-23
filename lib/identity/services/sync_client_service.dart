@@ -11,6 +11,7 @@ import '../../services/local_database_service.dart';
 import '../../services/logger_service.dart';
 import '../models/device_role.dart';
 import '../models/sync_event.dart';
+import '../models/sync_commit_result.dart';
 import '../models/sync_pull_exception.dart';
 import 'account_identity_service.dart';
 import 'blob_sync_service.dart';
@@ -293,17 +294,16 @@ class SyncClientService {
         requestId,
         timeout: const Duration(seconds: 15),
       );
-      final ok = resp?['ok'] == true;
-      final legacyAck = ok && resp?['applied'] == null && resp?['stale'] == null;
-      final applied = resp?['applied'] == true || legacyAck;
-      final stale = resp?['stale'] == true;
-      if (ok && (applied || stale)) {
+      if (SyncCommitResult.shouldAckOutboundCommitResponse(resp)) {
         await _db.markOutboundAcked(rowId);
+        final stale = resp?['stale'] == true;
         if (stale) {
           hadStaleCommit = true;
         }
+        final applied = resp?['applied'] == true ||
+            (resp?['applied'] == null && resp?['stale'] != true);
         final blobPath = SyncLocalWriteHook.attachmentPathFromEventJson(eventJson);
-        if (blobPath != null && applied) {
+        if (blobPath != null && applied && !stale) {
           await _db.enqueueBlobOutbound(relativePath: blobPath);
         }
       }

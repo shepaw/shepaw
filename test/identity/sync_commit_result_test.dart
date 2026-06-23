@@ -3,6 +3,30 @@ import 'package:shepaw/identity/models/sync_commit_result.dart';
 import 'package:shepaw/identity/utils/sync_lww.dart';
 
 void main() {
+  group('SyncCommitResult.shouldAckOutboundCommitResponse', () {
+    test('does not ack pending_relay responses', () {
+      expect(
+        SyncCommitResult.shouldAckOutboundCommitResponse({
+          'ok': true,
+          'applied': false,
+          'pending_relay': true,
+        }),
+        isFalse,
+      );
+    });
+
+    test('acks applied and stale responses', () {
+      expect(
+        SyncCommitResult.shouldAckOutboundCommitResponse({'ok': true, 'applied': true}),
+        isTrue,
+      );
+      expect(
+        SyncCommitResult.shouldAckOutboundCommitResponse({'ok': true, 'stale': true, 'applied': false}),
+        isTrue,
+      );
+    });
+  });
+
   group('SyncCommitResult.shouldAckBackupRelayResponse', () {
     test('acks applied commits', () {
       expect(
