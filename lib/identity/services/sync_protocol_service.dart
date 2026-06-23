@@ -158,6 +158,14 @@ class SyncProtocolService {
     return owned != null;
   }
 
+  Future<bool> _isCommitOriginValid(String peerId, SyncEvent event) async {
+    final peer = await PeerStorageService().getPeerById(peerId);
+    final peerDeviceId = peer?.deviceId;
+    if (peerDeviceId == null || peerDeviceId.isEmpty) return false;
+    if (event.originDeviceId.isEmpty) return true;
+    return event.originDeviceId == peerDeviceId;
+  }
+
   Future<void> _rejectUnauthorizedPeer(
     String peerId, {
     required String respType,
@@ -434,6 +442,16 @@ class SyncProtocolService {
       final eventMap = data['event'] as Map<String, dynamic>?;
       if (eventMap == null) throw FormatException('missing event');
       final event = SyncEvent.fromJson(eventMap);
+
+      if (!await _isCommitOriginValid(peerId, event)) {
+        await PeerConnectionManager.instance.sendControl(peerId, {
+          'type': 'sync_commit_resp',
+          'request_id': requestId,
+          'ok': false,
+          'error': 'origin_device_mismatch',
+        });
+        return;
+      }
 
       if (await AccountIdentityService.instance.isCanonicalPrimary()) {
         final result = await SyncEngine.instance.commitEvent(event);

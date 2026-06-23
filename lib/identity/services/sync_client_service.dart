@@ -174,6 +174,7 @@ class SyncClientService {
   Future<void> _retryPendingOutboundIfConnected() async {
     if (!_running) return;
     try {
+      await _pullChain;
       await AccountIdentityService.instance.ensureInitialized();
       final role = await AccountIdentityService.instance.localDeviceRole();
       if (role == DeviceRole.primary) return;
@@ -269,6 +270,7 @@ class SyncClientService {
   }
 
   Future<void> _flushOutbound(String peerId) async {
+    await _pullChain;
     final pending = await _db.listPendingOutbound(limit: 50);
     var hadStaleCommit = false;
     for (final row in pending) {
