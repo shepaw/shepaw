@@ -48,6 +48,10 @@ class SyncProtocolService {
   final _blobWaiters = <String, Completer<Map<String, dynamic>?>>{};
   final _blobPushAckWaiters = <String, Completer<Map<String, dynamic>>>{};
   final _deviceRpcWaiters = <String, Completer<Map<String, dynamic>?>>{};
+  final _backupRelayStaleController = StreamController<void>.broadcast();
+
+  /// Backup relay 收到 Primary stale 响应时触发（SyncClient 应 pull 对齐）。
+  Stream<void> get backupRelayStaleEvents => _backupRelayStaleController.stream;
 
   void start() {
     if (_running) return;
@@ -531,7 +535,11 @@ class SyncProtocolService {
       if (SyncCommitResult.shouldAckBackupRelayResponse(resp)) {
         await _db.markBackupRelayAcked(rowId);
       } else if (ok && resp?['stale'] == true) {
-        _log.warning('Backup relay stale for event ${eventMap['event_id']}, keeping queue row', tag: _tag);
+        _log.warning(
+          'Backup relay stale for event ${eventMap['event_id']}, keeping queue row',
+          tag: _tag,
+        );
+        _backupRelayStaleController.add(null);
       }
     }
   }

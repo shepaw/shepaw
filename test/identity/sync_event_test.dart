@@ -78,7 +78,7 @@ void main() {
         },
         originDeviceId: 'dev1',
       );
-      expect(event.eventId, 'am:key-abc');
+      expect(event.eventId, 'am:agent-1:key-abc');
       expect(event.domain, 'agent_memory');
     });
 

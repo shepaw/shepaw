@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
+import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:crypto/crypto.dart';
 import 'package:uuid/uuid.dart';
 
@@ -45,6 +46,9 @@ class BlobSyncService {
 
   /// 从 Primary 拉取附件到本地（App / Backup 按需）。
   Future<String?> fetchBlob(String relativePath) async {
+    if (!await _canFetchBlobOnCurrentNetwork()) {
+      throw StateError('blob fetch blocked by wifiOnlyBlobs policy');
+    }
     if (await hasLocalBlob(relativePath)) {
       await _db.touchBlobCacheAccess(blobKeyFromRelativePath(relativePath));
       return relativePath;
@@ -334,6 +338,17 @@ class BlobSyncService {
     final primary = await AccountIdentityService.instance.primaryDevice();
     if (primary == null) return null;
     return StorageDeviceService.peerIdForDevice(primary.deviceId);
+  }
+
+  Future<bool> _canFetchBlobOnCurrentNetwork() async {
+    final role = await AccountIdentityService.instance.localDeviceRole();
+    if (role != DeviceRole.app) return true;
+    final policy = await _db.getAppCachePolicy();
+    if (!policy.wifiOnlyBlobs) return true;
+    final results = await Connectivity().checkConnectivity();
+    return results.any(
+      (r) => r == ConnectivityResult.wifi || r == ConnectivityResult.ethernet,
+    );
   }
 }
 

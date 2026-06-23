@@ -32,6 +32,7 @@ class SyncClientService {
   final _uuid = const Uuid();
 
   StreamSubscription? _connSub;
+  StreamSubscription? _relayStaleSub;
   Timer? _outboundRetryTimer;
   bool _running = false;
   Future<void> _pullChain = Future.value();
@@ -44,6 +45,9 @@ class SyncClientService {
     if (_running) return;
     _running = true;
     _connSub = PeerConnectionManager.instance.events.listen(_onConnEvent);
+    _relayStaleSub = SyncProtocolService.instance.backupRelayStaleEvents.listen((_) {
+      unawaited(_pullFromPrimaryAfterRelayStale());
+    });
     _outboundRetryTimer = Timer.periodic(_outboundRetryInterval, (_) {
       unawaited(_retryPendingOutboundIfConnected());
     });
@@ -56,9 +60,24 @@ class SyncClientService {
     _running = false;
     _outboundRetryTimer?.cancel();
     _outboundRetryTimer = null;
+    _relayStaleSub?.cancel();
+    _relayStaleSub = null;
     _connSub?.cancel();
     _connSub = null;
     _pullChain = Future.value();
+  }
+
+  Future<void> _pullFromPrimaryAfterRelayStale() async {
+    try {
+      final role = await AccountIdentityService.instance.localDeviceRole();
+      if (role != DeviceRole.backup) return;
+      final peerId = await StorageDeviceService.firstConnectedPrimaryPeerId();
+      if (peerId == null) return;
+      await pullFromPeer(peerId);
+      _log.info('Pulled from Primary after backup relay stale', tag: _tag);
+    } catch (e) {
+      _log.warning('Pull after backup relay stale failed: $e', tag: _tag);
+    }
   }
 
   void _onConnEvent(PeerConnectionEvent event) {
@@ -240,8 +259,8 @@ class SyncClientService {
       }
     }
     if (truncated) {
-      _log.warning('Sync pull hit page cap for domain=$domain', tag: _tag);
-      return false;
+      _log.info('Sync pull continuing after page cap for domain=$domain', tag: _tag);
+      return _pullDomain(peerId, domain: domain);
     }
     return true;
   }
@@ -260,11 +279,15 @@ class SyncClientService {
         continue;
       }
 
-      await PeerConnectionManager.instance.sendControl(peerId, {
+      final sent = await PeerConnectionManager.instance.sendControl(peerId, {
         'type': 'sync_commit',
         'request_id': requestId,
         'event': eventJson,
       });
+      if (!sent) {
+        _log.warning('Sync commit send failed, stopping outbound flush', tag: _tag);
+        break;
+      }
 
       final resp = await SyncProtocolService.instance.waitCommitResponse(
         requestId,

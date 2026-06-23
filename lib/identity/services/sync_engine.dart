@@ -386,38 +386,21 @@ class SyncEngine {
     if (agentMemory.isNotEmpty) await applyAgentMemoryEvents(agentMemory);
   }
 
-  /// 应用多域 push 批次；全部成功返回 true（任一批次中断则 false，且不 ack push）。
+  /// 应用多域 push 批次；按 wall_time + event_id 全局排序后逐条 apply。
   Future<bool> applyPushEvents(List<SyncEvent> events) async {
-    var allOk = true;
-    final messages = events.where((e) => e.domain == 'message').toList();
-    final channels = events.where((e) => e.domain == 'channel').toList();
-    final members = events.where((e) => e.domain == 'channel_member').toList();
-    final agents = events.where((e) => e.domain == 'agent').toList();
-    final sheMemory = events.where((e) => e.domain == 'she_memory').toList();
-    final cognition = events.where((e) => e.domain == 'cognition').toList();
-    final agentMemory = events.where((e) => e.domain == 'agent_memory').toList();
-    if (messages.isNotEmpty) {
-      allOk = (await _applyEvents(messages, cursorKey: _messageCursorKey)).$2 && allOk;
+    if (events.isEmpty) return true;
+    final sorted = events.toList()
+      ..sort((a, b) {
+        final byTime = a.wallTimeMs.compareTo(b.wallTimeMs);
+        if (byTime != 0) return byTime;
+        return a.eventId.compareTo(b.eventId);
+      });
+    for (final event in sorted) {
+      final key = _cursorKeyForDomain(event.domain);
+      final (_, allApplied) = await _applyEvents([event], cursorKey: key);
+      if (!allApplied) return false;
     }
-    if (channels.isNotEmpty) {
-      allOk = (await _applyEvents(channels, cursorKey: _channelCursorKey)).$2 && allOk;
-    }
-    if (members.isNotEmpty) {
-      allOk = (await _applyEvents(members, cursorKey: _memberCursorKey)).$2 && allOk;
-    }
-    if (agents.isNotEmpty) {
-      allOk = (await _applyEvents(agents, cursorKey: _agentCursorKey)).$2 && allOk;
-    }
-    if (sheMemory.isNotEmpty) {
-      allOk = (await _applyEvents(sheMemory, cursorKey: _sheMemoryCursorKey)).$2 && allOk;
-    }
-    if (cognition.isNotEmpty) {
-      allOk = (await _applyEvents(cognition, cursorKey: _cognitionCursorKey)).$2 && allOk;
-    }
-    if (agentMemory.isNotEmpty) {
-      allOk = (await _applyEvents(agentMemory, cursorKey: _agentMemoryCursorKey)).$2 && allOk;
-    }
-    return allOk;
+    return true;
   }
 
   Future<(SyncDomainCursor cursor, bool allApplied)> _applyEvents(
@@ -822,14 +805,24 @@ class SyncEngine {
   }
 
   /// 清理超过保留期的 delete tombstone（Primary / Backup）。
+  /// 保留窗口 = min(30 天, 各 owned 设备 last_seen)，避免长期离线设备收不到 delete。
   Future<void> pruneOldTombstones() async {
     final role = await AccountIdentityService.instance.localDeviceRole();
     if (role != DeviceRole.primary && role != DeviceRole.backup) return;
-    final cutoff =
-        DateTime.now().millisecondsSinceEpoch - (30 * 86400000);
+
+    final now = DateTime.now().millisecondsSinceEpoch;
+    const minRetentionMs = 30 * 86400000;
+    var cutoff = now - minRetentionMs;
+
+    final devices = await AccountIdentityService.instance.ownedDevices();
+    for (final device in devices) {
+      final lastSeen = device.lastSeenAt ?? device.trustedAt;
+      if (lastSeen < cutoff) cutoff = lastSeen;
+    }
+
     final pruned = await _db.pruneSyncTombstonesOlderThan(cutoff);
     if (pruned > 0) {
-      _log.info('Pruned $pruned sync tombstones older than retention window', tag: _tag);
+      _log.info('Pruned $pruned sync tombstones older than $cutoff', tag: _tag);
     }
   }
 }

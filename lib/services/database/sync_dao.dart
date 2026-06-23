@@ -277,13 +277,13 @@ extension SyncDao on LocalDatabaseService {
 
   Future<void> trimMessagesToPolicy(int maxMessages, int maxDays) async {
     final db = await database;
+    const effectiveTimeSql =
+        "COALESCE(NULLIF(updated_at, ''), created_at)";
     if (maxDays > 0) {
       final cutoff = DateTime.now().subtract(Duration(days: maxDays)).toIso8601String();
-      final stale = await db.query(
-        'messages',
-        columns: ['id'],
-        where: 'created_at < ?',
-        whereArgs: [cutoff],
+      final stale = await db.rawQuery(
+        'SELECT id FROM messages WHERE $effectiveTimeSql < ?',
+        [cutoff],
       );
       for (final row in stale) {
         final id = row['id'] as String?;
@@ -296,11 +296,9 @@ extension SyncDao on LocalDatabaseService {
     final count = await countCachedMessages();
     if (count <= maxMessages) return;
     final excess = count - maxMessages;
-    final old = await db.query(
-      'messages',
-      columns: ['id'],
-      orderBy: 'created_at ASC',
-      limit: excess,
+    final old = await db.rawQuery(
+      'SELECT id FROM messages ORDER BY $effectiveTimeSql ASC LIMIT ?',
+      [excess],
     );
     for (final row in old) {
       final id = row['id'] as String?;

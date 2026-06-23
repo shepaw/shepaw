@@ -32,6 +32,8 @@ class AccountJoinService {
 
   static const _tag = 'AccountJoin';
   static const _joinTimeout = Duration(minutes: 2);
+  static const _maxPendingJoinRequests = 20;
+  static const _maxPendingJoinPerPeer = 3;
 
   final _log = LoggerService();
   final _biometric = BiometricService();
@@ -267,6 +269,27 @@ class AccountJoinService {
 
       final requestId = data['request_id'] as String? ?? '';
       if (requestId.isEmpty) return;
+
+      await _pruneExpiredPending();
+      if (_pendingById.length >= _maxPendingJoinRequests) {
+        await PeerConnectionManager.instance.sendControl(peerId, {
+          'type': 'account_join_resp',
+          'request_id': requestId,
+          'ok': false,
+          'error': 'too_many_pending',
+        });
+        return;
+      }
+      if (_pendingById.values.where((p) => p.peerId == peerId).length >=
+          _maxPendingJoinPerPeer) {
+        await PeerConnectionManager.instance.sendControl(peerId, {
+          'type': 'account_join_resp',
+          'request_id': requestId,
+          'ok': false,
+          'error': 'rate_limited',
+        });
+        return;
+      }
 
       final peer = await PeerStorageService().getPeerById(peerId);
       final reqDeviceId = data['device_id'] as String? ?? '';

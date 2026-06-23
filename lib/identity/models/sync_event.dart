@@ -304,11 +304,12 @@ class SyncEvent {
     required String originDeviceId,
     SyncEventAction action = SyncEventAction.upsert,
   }) {
+    final agentId = row['agent_id'] as String? ?? '';
     final syncKey = row['sync_key'] as String? ?? '';
     final wallTime = row['updated_at'] as int? ??
         DateTime.now().millisecondsSinceEpoch;
     return SyncEvent(
-      eventId: 'am:$syncKey',
+      eventId: 'am:$agentId:$syncKey',
       domain: 'agent_memory',
       action: action,
       payload: Map<String, dynamic>.from(row),
@@ -325,7 +326,7 @@ class SyncEvent {
   }) {
     final ms = wallTimeMs ?? DateTime.now().millisecondsSinceEpoch;
     return SyncEvent(
-      eventId: 'am:$syncKey:del:$ms',
+      eventId: 'am:$agentId:$syncKey:del:$ms',
       domain: 'agent_memory',
       action: SyncEventAction.delete,
       payload: {'agent_id': agentId, 'sync_key': syncKey},
@@ -354,7 +355,10 @@ class SyncEvent {
         final kind = event.payload['kind'] as String? ?? 'self';
         return '$kind:$agentId';
       case 'agent_memory':
-        return event.payload['sync_key'] as String?;
+        final agentId = event.payload['agent_id'] as String?;
+        final syncKey = event.payload['sync_key'] as String?;
+        if (agentId == null || syncKey == null) return null;
+        return '$agentId:$syncKey';
       default:
         return null;
     }

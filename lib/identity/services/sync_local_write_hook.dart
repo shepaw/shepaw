@@ -211,13 +211,13 @@ class SyncLocalWriteHook {
       final event = SyncEvent.messageEvent(messageRow: row, originDeviceId: origin);
       final db = LocalDatabaseService();
 
-      if (_usesOutboundQueue(role)) {
+      if (await _shouldUseOutboundQueue(role)) {
         await db.enqueueOutboundEvent(
           id: event.eventId,
           domain: event.domain,
           payloadJson: event.toJsonString(),
         );
-      } else if (role == DeviceRole.primary) {
+      } else if (await _shouldFanoutAsPrimary(role)) {
         await SyncEngine.instance.recordEntitySyncState(event);
         await SyncFanoutService.fanout(event);
       }
@@ -361,21 +361,42 @@ class SyncLocalWriteHook {
   static bool _usesOutboundQueue(DeviceRole role) =>
       role == DeviceRole.app || role == DeviceRole.backup;
 
+  static Future<bool> _shouldUseOutboundQueue(DeviceRole role) async {
+    if (_usesOutboundQueue(role)) return true;
+    if (role == DeviceRole.primary) {
+      return !await AccountIdentityService.instance.isCanonicalPrimary();
+    }
+    return false;
+  }
+
+  static Future<bool> _shouldRecordTombstone(DeviceRole role) async {
+    if (role == DeviceRole.backup) return true;
+    if (role == DeviceRole.primary) {
+      return AccountIdentityService.instance.isCanonicalPrimary();
+    }
+    return false;
+  }
+
+  static Future<bool> _shouldFanoutAsPrimary(DeviceRole role) async {
+    return role == DeviceRole.primary &&
+        await AccountIdentityService.instance.isCanonicalPrimary();
+  }
+
   static Future<void> _dispatchEvent(SyncEvent event) async {
     try {
       final role = await AccountIdentityService.instance.localDeviceRole();
       if (event.action == SyncEventAction.delete &&
-          (role == DeviceRole.primary || role == DeviceRole.backup)) {
+          await _shouldRecordTombstone(role)) {
         await LocalDatabaseService().recordSyncTombstone(event);
       }
-      if (_usesOutboundQueue(role)) {
+      if (await _shouldUseOutboundQueue(role)) {
         final db = LocalDatabaseService();
         await db.enqueueOutboundEvent(
           id: event.eventId,
           domain: event.domain,
           payloadJson: event.toJsonString(),
         );
-      } else if (role == DeviceRole.primary) {
+      } else if (await _shouldFanoutAsPrimary(role)) {
         await SyncEngine.instance.recordEntitySyncState(event);
         await SyncFanoutService.fanout(event);
       }
