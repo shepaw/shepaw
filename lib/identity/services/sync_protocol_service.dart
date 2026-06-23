@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:typed_data';
 
+import 'package:meta/meta.dart';
 import 'package:uuid/uuid.dart';
 
 import '../../peer/models/paired_peer.dart';
@@ -885,4 +886,31 @@ class SyncProtocolService {
       });
     }
   }
+
+  /// 测试专用：同步分发 control 消息（等待 commit 等关键 handler 完成）。
+  @visibleForTesting
+  Future<void> dispatchControlForTest(String peerId, Map<String, dynamic> data) async {
+    final type = data['type'] as String? ?? '';
+    switch (type) {
+      case 'sync_commit':
+        await _handleCommit(peerId, data);
+        return;
+      case 'sync_commit_resp':
+        _completeCommitWaiter(data);
+        return;
+      case 'sync_push':
+        await _handlePush(peerId, data);
+        return;
+      default:
+        _onControl(PeerControlEvent(peerId: peerId, data: data));
+    }
+  }
+
+  @visibleForTesting
+  Future<void> drainBackupRelayQueueForTest(String primaryPeerId) =>
+      _drainBackupRelayQueue(primaryPeerId);
+
+  @visibleForTesting
+  Future<void> onStoragePeerConnectedForTest(String peerId) =>
+      _onStoragePeerConnected(peerId);
 }

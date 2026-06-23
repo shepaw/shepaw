@@ -1,3 +1,4 @@
+import 'package:meta/meta.dart';
 import 'package:sqflite/sqflite.dart';
 import '../models/paired_peer.dart';
 import '../models/peer_message.dart';
@@ -16,6 +17,11 @@ class PeerStorageService {
 
   /// 是否已初始化表
   bool _tablesReady = false;
+
+  @visibleForTesting
+  void resetTablesReadyForTests() {
+    _tablesReady = false;
+  }
 
   /// 获取数据库（确保表已创建）
   Future<Database> get _db async {

@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io' show Platform;
 
 import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:meta/meta.dart';
 import 'package:uuid/uuid.dart';
 
 import '../../peer/services/peer_pairing_service.dart';
@@ -345,5 +346,19 @@ class AccountIdentityService {
         await _db.updateOwnedDeviceRole(deviceId, DeviceRole.app);
       }
     }
+  }
+
+  /// 测试专用：跳过 SecureKey 初始化，仅激活账号 DB 作用域。
+  @visibleForTesting
+  Future<void> activateAccountScopeForTests(String accountId) async {
+    await _db.switchAccount(accountId);
+    _initialized = true;
+  }
+
+  @visibleForTesting
+  void resetIdentityStateForTests() {
+    _initialized = false;
+    _user = null;
+    _pet = null;
   }
 }

@@ -11,6 +11,8 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:typed_data';
 
+import 'package:meta/meta.dart';
+
 import '../../services/noise_identity.dart';
 import '../../services/noise/noise_session.dart';
 import '../../services/noise/noise_envelope.dart';
@@ -310,7 +312,18 @@ class PeerConnectionManager {
   ///
   /// 返回是否成功发出（peer 未连接时返回 false，不入队）。控制消息是
   /// 请求/响应式的，离线排队没有意义。
+  @visibleForTesting
+  static Future<bool> Function(String peerId, Map<String, dynamic> json)?
+      debugSendControlOverride;
+
+  @visibleForTesting
+  static PeerConnectionState Function(String peerId)? debugGetPeerStateOverride;
+
   Future<bool> sendControl(String peerId, Map<String, dynamic> json) async {
+    final override = debugSendControlOverride;
+    if (override != null) {
+      return override(peerId, json);
+    }
     final conn = _connections[peerId];
     if (conn != null && conn.state == PeerConnectionState.connected) {
       try {
@@ -358,6 +371,10 @@ class PeerConnectionManager {
 
   /// 获取指定 peer 的连接状态
   PeerConnectionState getPeerState(String peerId) {
+    final override = debugGetPeerStateOverride;
+    if (override != null) {
+      return override(peerId);
+    }
     return _connections[peerId]?.state ?? PeerConnectionState.disconnected;
   }
 
