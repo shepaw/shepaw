@@ -10,7 +10,9 @@ import '../models/device_role.dart';
 import '../models/sync_apply_outcome.dart';
 import '../models/sync_commit_result.dart';
 import '../models/sync_domain_cursor.dart';
+import '../models/sync_query_page.dart';
 import '../utils/sync_lww.dart';
+import '../utils/sync_query_limits.dart';
 import '../utils/app_cache_utils.dart';
 import '../utils/sync_tombstone_utils.dart';
 import '../models/sync_push_apply_result.dart';
@@ -76,6 +78,20 @@ class SyncEngine {
         _ => _messageCursorKey,
       };
 
+  /// 过滤已 apply 或已 quarantine 的无效事件。
+  Future<List<SyncEvent>> filterApplyableEvents(
+    List<SyncEvent> events,
+    SyncDomainCursor cursor,
+  ) async {
+    final out = <SyncEvent>[];
+    for (final e in events) {
+      if (!SyncDomainCursor.isEventAfter(e, cursor)) continue;
+      if (await _db.isInvalidSyncEventSkipped(e.domain, e.eventId)) continue;
+      out.add(e);
+    }
+    return out;
+  }
+
   /// 过滤已 apply 的边界事件（同毫秒 tie-break）。
   List<SyncEvent> filterNewEvents(List<SyncEvent> events, SyncDomainCursor cursor) {
     return events.where((e) => SyncDomainCursor.isEventAfter(e, cursor)).toList();
@@ -99,11 +115,11 @@ class SyncEngine {
   }
 
   /// Primary / Backup：查询 cursor 之后的消息事件。
-  Future<List<SyncEvent>> queryMessageEvents({
+  Future<SyncQueryPage> queryMessageEvents({
     required int sinceMs,
     String sinceEventId = '',
     String? channelId,
-    int limit = 50,
+    int limit = SyncQueryLimits.defaultLimit,
     String? originDeviceId,
   }) async {
     final since = SyncDomainCursor(wallTimeMs: sinceMs, lastEventId: sinceEventId);
@@ -143,10 +159,10 @@ class SyncEngine {
   }
 
   /// Primary / Backup：查询 cursor 之后的频道事件。
-  Future<List<SyncEvent>> queryChannelEvents({
+  Future<SyncQueryPage> queryChannelEvents({
     required int sinceMs,
     String sinceEventId = '',
-    int limit = 50,
+    int limit = SyncQueryLimits.defaultLimit,
     String? originDeviceId,
   }) async {
     final since = SyncDomainCursor(wallTimeMs: sinceMs, lastEventId: sinceEventId);
@@ -174,10 +190,10 @@ class SyncEngine {
     );
   }
 
-  Future<List<SyncEvent>> queryChannelMemberEvents({
+  Future<SyncQueryPage> queryChannelMemberEvents({
     required int sinceMs,
     String sinceEventId = '',
-    int limit = 50,
+    int limit = SyncQueryLimits.defaultLimit,
     String? originDeviceId,
   }) async {
     final since = SyncDomainCursor(wallTimeMs: sinceMs, lastEventId: sinceEventId);
@@ -222,10 +238,10 @@ class SyncEngine {
   }
 
   /// Primary / Backup：查询 cursor 之后更新的 Agent。
-  Future<List<SyncEvent>> queryAgentEvents({
+  Future<SyncQueryPage> queryAgentEvents({
     required int sinceMs,
     String sinceEventId = '',
-    int limit = 50,
+    int limit = SyncQueryLimits.defaultLimit,
     String? originDeviceId,
   }) async {
     final since = SyncDomainCursor(wallTimeMs: sinceMs, lastEventId: sinceEventId);
@@ -253,10 +269,10 @@ class SyncEngine {
     );
   }
 
-  Future<List<SyncEvent>> querySheMemoryEvents({
+  Future<SyncQueryPage> querySheMemoryEvents({
     required int sinceMs,
     String sinceEventId = '',
-    int limit = 50,
+    int limit = SyncQueryLimits.defaultLimit,
     String? originDeviceId,
   }) async {
     final since = SyncDomainCursor(wallTimeMs: sinceMs, lastEventId: sinceEventId);
@@ -284,10 +300,10 @@ class SyncEngine {
     );
   }
 
-  Future<List<SyncEvent>> queryCognitionEvents({
+  Future<SyncQueryPage> queryCognitionEvents({
     required int sinceMs,
     String sinceEventId = '',
-    int limit = 50,
+    int limit = SyncQueryLimits.defaultLimit,
     String? originDeviceId,
   }) async {
     final since = SyncDomainCursor(wallTimeMs: sinceMs, lastEventId: sinceEventId);
@@ -340,10 +356,10 @@ class SyncEngine {
     return cursor;
   }
 
-  Future<List<SyncEvent>> queryAgentMemoryEvents({
+  Future<SyncQueryPage> queryAgentMemoryEvents({
     required int sinceMs,
     String sinceEventId = '',
-    int limit = 50,
+    int limit = SyncQueryLimits.defaultLimit,
     String? originDeviceId,
   }) async {
     final since = SyncDomainCursor(wallTimeMs: sinceMs, lastEventId: sinceEventId);
@@ -386,10 +402,10 @@ class SyncEngine {
   }
 
   /// 兼容旧调用：按域分别查询后合并（仅测试/legacy）。
-  Future<List<SyncEvent>> queryEvents({
+  Future<SyncQueryPage> queryEvents({
     required int sinceMs,
     String? channelId,
-    int limit = 50,
+    int limit = SyncQueryLimits.defaultLimit,
     String? originDeviceId,
   }) async {
     final messages = await queryMessageEvents(
@@ -403,9 +419,13 @@ class SyncEngine {
       limit: limit,
       originDeviceId: originDeviceId,
     );
-    final events = [...messages, ...channels]..sort((a, b) => a.wallTimeMs.compareTo(b.wallTimeMs));
-    if (events.length > limit) return events.sublist(0, limit);
-    return events;
+    final events = [...messages.events, ...channels.events]
+      ..sort((a, b) => a.wallTimeMs.compareTo(b.wallTimeMs));
+    final hasMore = messages.hasMore || channels.hasMore;
+    if (events.length > limit) {
+      return SyncQueryPage(events: events.sublist(0, limit), hasMore: true);
+    }
+    return SyncQueryPage(events: events, hasMore: hasMore);
   }
 
   /// 应用消息事件批次；遇失败停止，不跳过中间条目。
@@ -483,8 +503,13 @@ class SyncEngine {
             await _recordEntitySyncState(event);
             next = next.advance(event);
           case SyncApplyOutcome.staleSkipped:
-          case SyncApplyOutcome.invalidSkipped:
             next = next.advance(event);
+          case SyncApplyOutcome.invalidSkipped:
+            await _db.recordInvalidSyncEventSkip(event.domain, event.eventId);
+            _log.warning(
+              'Quarantined invalid sync event ${event.eventId} (${event.domain})',
+              tag: _tag,
+            );
         }
       } catch (e) {
         _log.warning('Failed to apply sync event ${event.eventId}: $e', tag: _tag);
@@ -835,7 +860,7 @@ class SyncEngine {
   }
 
   /// upsert 与 tombstone 各自维护 offset，避免双路分页漏事件。
-  Future<List<SyncEvent>> _queryDualStreamEvents({
+  Future<SyncQueryPage> _queryDualStreamEvents({
     required SyncDomainCursor since,
     required int limit,
     required Future<List<SyncEvent>> Function(int sinceMs, int batchSize, int offset) fetchUpserts,
@@ -858,13 +883,40 @@ class SyncEngine {
       acc.addAll(upserts);
       acc.addAll(deletes);
       final page = SyncDomainCursor.pageEventsAfter(events: acc, cursor: since, limit: limit);
-      if (page.length >= limit) return page;
+      if (page.length >= limit) {
+        final hasMore = _queryPageHasMore(
+          page: page,
+          acc: acc,
+          upsertsFull: upserts.length >= batch,
+          deletesFull: deletes.length >= batch,
+          hitIterationCap: i == maxIterations - 1,
+        );
+        return SyncQueryPage(events: page, hasMore: hasMore);
+      }
       if (upserts.length < batch && deletes.length < batch) {
-        return SyncDomainCursor.pageEventsAfter(events: acc, cursor: since, limit: limit);
+        return SyncQueryPage(events: page);
       }
     }
 
-    return SyncDomainCursor.pageEventsAfter(events: acc, cursor: since, limit: limit);
+    final page = SyncDomainCursor.pageEventsAfter(events: acc, cursor: since, limit: limit);
+    return SyncQueryPage(events: page);
+  }
+
+  bool _queryPageHasMore({
+    required List<SyncEvent> page,
+    required List<SyncEvent> acc,
+    required bool upsertsFull,
+    required bool deletesFull,
+    required bool hitIterationCap,
+  }) {
+    if (page.isEmpty) return false;
+    if (hitIterationCap || upsertsFull || deletesFull) return true;
+    final last = page.last;
+    final tailCursor = SyncDomainCursor(
+      wallTimeMs: last.wallTimeMs,
+      lastEventId: last.eventId,
+    );
+    return acc.any((e) => SyncDomainCursor.isEventAfter(e, tailCursor));
   }
 
   /// Primary 本地写入 fan-out 前记录实体 LWW 状态。

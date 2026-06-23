@@ -167,6 +167,20 @@ extension IdentityDao on LocalDatabaseService {
     return rows.first['value'] as String?;
   }
 
+  static String _invalidSyncEventSkipKey(String domain, String eventId) =>
+      'invalid_skip:$domain:$eventId';
+
+  Future<void> recordInvalidSyncEventSkip(String domain, String eventId) async {
+    if (domain.isEmpty || eventId.isEmpty) return;
+    await setIdentitySyncState(_invalidSyncEventSkipKey(domain, eventId), eventId);
+  }
+
+  Future<bool> isInvalidSyncEventSkipped(String domain, String eventId) async {
+    if (domain.isEmpty || eventId.isEmpty) return false;
+    final stored = await getIdentitySyncState(_invalidSyncEventSkipKey(domain, eventId));
+    return stored == eventId;
+  }
+
   // ── App cache policy ─────────────────────────────────────────────────────
 
   static const _cachePolicyKey = 'app_cache_policy';

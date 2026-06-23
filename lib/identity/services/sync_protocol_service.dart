@@ -14,6 +14,7 @@ import '../../services/logger_service.dart';
 import '../models/device_role.dart';
 import '../models/sync_commit_result.dart';
 import '../models/sync_push_apply_result.dart';
+import '../models/sync_query_page.dart';
 import '../models/sync_event.dart';
 import '../utils/blob_path_utils.dart';
 import 'account_identity_service.dart';
@@ -24,6 +25,7 @@ import 'device_trust_service.dart';
 import 'sync_engine.dart';
 import 'sync_role_service.dart';
 import '../utils/sync_push_backoff.dart';
+import '../utils/sync_query_limits.dart';
 
 /// sync_query 等待响应超时。
 class SyncQueryTimeoutException implements Exception {
@@ -415,56 +417,56 @@ class SyncProtocolService {
 
     final sinceMs = data['since_ms'] as int? ?? 0;
     final sinceEventId = data['since_event_id'] as String? ?? '';
-    final limit = data['limit'] as int? ?? 50;
+    final limit = SyncQueryLimits.clampLimit(data['limit'] as int?);
     final channelId = data['channel_id'] as String?;
     final domain = data['domain'] as String?;
 
-    final List<SyncEvent> events;
+    final SyncQueryPage page;
     if (domain == 'message') {
-      events = await SyncEngine.instance.queryMessageEvents(
+      page = await SyncEngine.instance.queryMessageEvents(
         sinceMs: sinceMs,
         sinceEventId: sinceEventId,
         channelId: channelId,
         limit: limit,
       );
     } else if (domain == 'channel') {
-      events = await SyncEngine.instance.queryChannelEvents(
+      page = await SyncEngine.instance.queryChannelEvents(
         sinceMs: sinceMs,
         sinceEventId: sinceEventId,
         limit: limit,
       );
     } else if (domain == 'channel_member') {
-      events = await SyncEngine.instance.queryChannelMemberEvents(
+      page = await SyncEngine.instance.queryChannelMemberEvents(
         sinceMs: sinceMs,
         sinceEventId: sinceEventId,
         limit: limit,
       );
     } else if (domain == 'agent') {
-      events = await SyncEngine.instance.queryAgentEvents(
+      page = await SyncEngine.instance.queryAgentEvents(
         sinceMs: sinceMs,
         sinceEventId: sinceEventId,
         limit: limit,
       );
     } else if (domain == 'she_memory') {
-      events = await SyncEngine.instance.querySheMemoryEvents(
+      page = await SyncEngine.instance.querySheMemoryEvents(
         sinceMs: sinceMs,
         sinceEventId: sinceEventId,
         limit: limit,
       );
     } else if (domain == 'cognition') {
-      events = await SyncEngine.instance.queryCognitionEvents(
+      page = await SyncEngine.instance.queryCognitionEvents(
         sinceMs: sinceMs,
         sinceEventId: sinceEventId,
         limit: limit,
       );
     } else if (domain == 'agent_memory') {
-      events = await SyncEngine.instance.queryAgentMemoryEvents(
+      page = await SyncEngine.instance.queryAgentMemoryEvents(
         sinceMs: sinceMs,
         sinceEventId: sinceEventId,
         limit: limit,
       );
     } else {
-      events = await SyncEngine.instance.queryEvents(
+      page = await SyncEngine.instance.queryEvents(
         sinceMs: sinceMs,
         channelId: channelId,
         limit: limit,
@@ -474,7 +476,8 @@ class SyncProtocolService {
     await PeerConnectionManager.instance.sendControl(peerId, {
       'type': 'sync_query_resp',
       'request_id': requestId,
-      'events': events.map((e) => e.toJson()).toList(),
+      'events': page.events.map((e) => e.toJson()).toList(),
+      'has_more': page.hasMore,
     });
   }
 

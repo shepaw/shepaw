@@ -340,9 +340,10 @@ extension ChannelDao on LocalDatabaseService {
       where: 'channel_id = ? AND is_read = 0',
       whereArgs: [channelId],
     );
-    for (final row in rows) {
-      SyncLocalWriteHook.onMessageReadStateChanged(
-        messageRow: row,
+    if (rows.isNotEmpty) {
+      SyncLocalWriteHook.onMessagesReadStateChangedBatch(
+        channelId: channelId,
+        messageRows: rows,
         updatedAt: updatedAt,
         isRead: 1,
       );

@@ -116,12 +116,20 @@ class SyncLocalWriteHook {
     final existing = await LocalDatabaseService().getMessageById(messageId, fetchRemote: false);
     if (existing == null) return;
 
+    if (isRead != null) {
+      onMessageReadStateChanged(
+        messageRow: existing,
+        updatedAt: updatedAt,
+        isRead: isRead,
+      );
+      return;
+    }
+
     await _dispatchMessageRow(
       {
         ...existing,
         'content': content,
         if (metadata != null) 'metadata': metadata,
-        if (isRead != null) 'is_read': isRead,
         'updated_at': updatedAt,
       },
     );
@@ -142,6 +150,31 @@ class SyncLocalWriteHook {
       'is_read': isRead,
       'updated_at': updatedAt,
     };
+    _scheduleReadDebounceFlush(channelId);
+  }
+
+  /// 批量已读/未读（单 channel 一次 debounce）。
+  static void onMessagesReadStateChangedBatch({
+    required String channelId,
+    required Iterable<Map<String, dynamic>> messageRows,
+    required String updatedAt,
+    required int isRead,
+  }) {
+    if (channelId.isEmpty) return;
+    for (final row in messageRows) {
+      final messageId = row['id'] as String?;
+      if (messageId == null || messageId.isEmpty) continue;
+      _pendingReadRows[messageId] = {
+        ...row,
+        'is_read': isRead,
+        'updated_at': updatedAt,
+      };
+    }
+    if (_pendingReadRows.isEmpty) return;
+    _scheduleReadDebounceFlush(channelId);
+  }
+
+  static void _scheduleReadDebounceFlush(String channelId) {
     _readDebounceTimers[channelId]?.cancel();
     _readDebounceTimers[channelId] = Timer(_readDebounceDuration, () {
       final pending = _pendingReadRows.entries

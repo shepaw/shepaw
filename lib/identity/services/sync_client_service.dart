@@ -12,6 +12,7 @@ import '../../services/local_database_service.dart';
 import '../../services/logger_service.dart';
 import '../models/device_role.dart';
 import '../models/sync_event.dart';
+import '../utils/sync_query_limits.dart';
 import '../models/sync_commit_result.dart';
 import '../models/sync_pull_exception.dart';
 import 'account_identity_service.dart';
@@ -207,8 +208,8 @@ class SyncClientService {
   }
 
   Future<bool> _pullDomain(String peerId, {required String domain}) async {
-    const pageSize = 50;
-    const maxPages = 200;
+    const pageSize = SyncQueryLimits.clientPageSize;
+    const maxPages = SyncQueryLimits.maxClientPages;
 
     while (true) {
       var cursor = await SyncEngine.instance.getDomainCursor(domain);
@@ -248,13 +249,11 @@ class SyncClientService {
         final eventsRaw = (resp['events'] as List?) ?? const [];
         if (eventsRaw.isEmpty) break;
 
-        final events = SyncEngine.instance.filterNewEvents(
-          eventsRaw
-              .whereType<Map>()
-              .map((e) => SyncEvent.fromJson(Map<String, dynamic>.from(e)))
-              .toList(),
-          cursor,
-        );
+        final parsed = eventsRaw
+            .whereType<Map>()
+            .map((e) => SyncEvent.fromJson(Map<String, dynamic>.from(e)))
+            .toList();
+        final events = await SyncEngine.instance.filterApplyableEvents(parsed, cursor);
         if (events.isEmpty) break;
 
         cursor = switch (domain) {
@@ -268,7 +267,9 @@ class SyncClientService {
           _ => cursor,
         };
 
-        if (eventsRaw.length < pageSize) break;
+        final hasMore = resp['has_more'] == true;
+        if (!hasMore && eventsRaw.length < pageSize) break;
+        if (!hasMore) break;
         if (page == maxPages - 1) {
           truncated = true;
         }

@@ -107,10 +107,10 @@ void main() {
       );
       await SyncEngine.instance.recordEntitySyncState(commitEvent);
 
-      final events = await SyncEngine.instance.queryMessageEvents(sinceMs: 0);
-      expect(events, isNotEmpty);
-      expect(events.first.originDeviceId, SyncP2pTestIds.appDevice);
-      expect(events.first.originDeviceId, isNot(SyncP2pTestIds.primaryDevice));
+      final page = await SyncEngine.instance.queryMessageEvents(sinceMs: 0);
+      expect(page.events, isNotEmpty);
+      expect(page.events.first.originDeviceId, SyncP2pTestIds.appDevice);
+      expect(page.events.first.originDeviceId, isNot(SyncP2pTestIds.primaryDevice));
     });
   });
 
