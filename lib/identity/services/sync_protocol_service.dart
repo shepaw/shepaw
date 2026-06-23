@@ -11,6 +11,7 @@ import '../../peer/services/peer_storage_service.dart';
 import '../../services/local_database_service.dart';
 import '../../services/logger_service.dart';
 import '../models/device_role.dart';
+import '../models/sync_commit_result.dart';
 import '../models/sync_event.dart';
 import 'account_identity_service.dart';
 import 'blob_sync_service.dart';
@@ -527,8 +528,10 @@ class SyncProtocolService {
         timeout: const Duration(seconds: 15),
       );
       final ok = resp?['ok'] == true;
-      if (ok) {
+      if (SyncCommitResult.shouldAckBackupRelayResponse(resp)) {
         await _db.markBackupRelayAcked(rowId);
+      } else if (ok && resp?['stale'] == true) {
+        _log.warning('Backup relay stale for event ${eventMap['event_id']}, keeping queue row', tag: _tag);
       }
     }
   }
@@ -542,12 +545,29 @@ class SyncProtocolService {
     final role = await AccountIdentityService.instance.localDeviceRole();
     if (role != DeviceRole.backup && role != DeviceRole.app) return;
 
+    final primary = await AccountIdentityService.instance.primaryDevice();
+    final peer = await PeerStorageService().getPeerById(peerId);
+    final senderDeviceId = peer?.deviceId;
+    if (primary == null ||
+        senderDeviceId == null ||
+        senderDeviceId != primary.deviceId) {
+      _log.warning(
+        'Ignoring sync_push from non-primary peer $peerId (sender=$senderDeviceId, primary=${primary?.deviceId})',
+        tag: _tag,
+      );
+      return;
+    }
+
     final eventsRaw = (data['events'] as List?) ?? const [];
     final events = eventsRaw
         .whereType<Map>()
         .map((e) => SyncEvent.fromJson(Map<String, dynamic>.from(e)))
         .toList();
-    await SyncEngine.instance.applyEvents(events);
+    final allApplied = await SyncEngine.instance.applyPushEvents(events);
+    if (!allApplied) {
+      _log.warning('sync_push partial apply failure from primary $peerId', tag: _tag);
+      return;
+    }
 
     final pushId = data['push_id'] as String?;
     if (pushId != null && pushId.isNotEmpty) {

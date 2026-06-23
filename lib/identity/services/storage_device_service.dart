@@ -31,6 +31,19 @@ class StorageDeviceService {
     return null;
   }
 
+  /// 已连接且已配对的 Primary peer（blob push / 权威 commit 专用，不回退 Backup）。
+  static Future<String?> firstConnectedPrimaryPeerId() async {
+    final primary = await AccountIdentityService.instance.primaryDevice();
+    if (primary == null) return null;
+    final peerId = await peerIdForDevice(primary.deviceId);
+    if (peerId == null) return null;
+    if (PeerConnectionManager.instance.getPeerState(peerId) ==
+        PeerConnectionState.connected) {
+      return peerId;
+    }
+    return null;
+  }
+
   /// 优先返回已连接的 Primary/Backup peer，否则回退到任意已配对 storage peer。
   static Future<String?> firstConnectedStoragePeerId() async {
     for (final device in await devicesInFetchOrder()) {

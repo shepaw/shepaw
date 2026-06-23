@@ -19,4 +19,13 @@ class SyncCommitResult {
 
   static SyncCommitResult staleOk() =>
       const SyncCommitResult(ok: true, stale: true);
+
+  /// Backup relay 队列：仅 Primary 已持久化（applied）时 ack，stale 需保留重试/pull。
+  static bool shouldAckBackupRelayResponse(Map<String, dynamic>? resp) {
+    if (resp?['ok'] != true) return false;
+    if (resp?['stale'] == true) return false;
+    if (resp?['applied'] == true) return true;
+    // legacy Primary without applied/stale fields
+    return resp?['applied'] == null && resp?['stale'] != true;
+  }
 }

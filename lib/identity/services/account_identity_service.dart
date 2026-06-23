@@ -84,7 +84,10 @@ class AccountIdentityService {
 
   Future<OwnedDeviceRecord?> localDevice() => _db.getLocalOwnedDevice();
 
-  Future<OwnedDeviceRecord?> primaryDevice() => _db.getPrimaryDevice();
+  Future<OwnedDeviceRecord?> primaryDevice() async {
+    await _repairPrimaryRegistry();
+    return _db.getPrimaryDevice();
+  }
 
   Future<List<OwnedDeviceRecord>> ownedDevices() => _db.listOwnedDevices();
 

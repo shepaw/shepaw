@@ -81,7 +81,7 @@ class SyncClientService {
       await _sendTrustAccept(peerId);
       await pullFromPeer(peerId);
       await _flushOutbound(peerId);
-      await _flushBlobOutbound(peerId);
+      await _flushBlobOutbound();
     } catch (e) {
       _log.warning('Sync on connect failed: $e', tag: _tag);
     }
@@ -126,7 +126,7 @@ class SyncClientService {
   }
 
   Future<void> flushBlobOutboundToPeer(String peerId) async {
-    await _flushBlobOutbound(peerId);
+    await _flushBlobOutbound();
   }
 
   Future<void> pullFromPeer(String peerId) {
@@ -168,7 +168,7 @@ class SyncClientService {
       }
 
       await _flushOutbound(peerId);
-      await _flushBlobOutbound(peerId);
+      await _flushBlobOutbound();
     } catch (e) {
       _log.warning('Periodic outbound retry failed: $e', tag: _tag);
     }
@@ -224,13 +224,13 @@ class SyncClientService {
       if (events.isEmpty) break;
 
       cursor = switch (domain) {
-        'message' => await SyncEngine.instance.applyMessageEvents(events),
-        'channel' => await SyncEngine.instance.applyChannelEvents(events),
-        'channel_member' => await SyncEngine.instance.applyMemberEvents(events),
-        'agent' => await SyncEngine.instance.applyAgentEvents(events),
-        'she_memory' => await SyncEngine.instance.applySheMemoryEvents(events),
-        'cognition' => await SyncEngine.instance.applyCognitionEvents(events),
-        'agent_memory' => await SyncEngine.instance.applyAgentMemoryEvents(events),
+        'message' => (await SyncEngine.instance.applyMessageEvents(events)),
+        'channel' => (await SyncEngine.instance.applyChannelEvents(events)),
+        'channel_member' => (await SyncEngine.instance.applyMemberEvents(events)),
+        'agent' => (await SyncEngine.instance.applyAgentEvents(events)),
+        'she_memory' => (await SyncEngine.instance.applySheMemoryEvents(events)),
+        'cognition' => (await SyncEngine.instance.applyCognitionEvents(events)),
+        'agent_memory' => (await SyncEngine.instance.applyAgentMemoryEvents(events)),
         _ => cursor,
       };
 
@@ -289,16 +289,21 @@ class SyncClientService {
       _staleCommitController.add(null);
       unawaited(pullFromPeer(peerId));
     }
-    await _flushBlobOutbound(peerId);
+    await _flushBlobOutbound();
   }
 
-  Future<void> _flushBlobOutbound(String peerId) async {
+  Future<void> _flushBlobOutbound() async {
+    final primaryPeerId = await StorageDeviceService.firstConnectedPrimaryPeerId();
+    if (primaryPeerId == null) {
+      _log.info('Skipping blob outbound flush: Primary not connected', tag: _tag);
+      return;
+    }
     final pending = await _db.listPendingBlobOutbound(limit: 20);
     for (final row in pending) {
       final path = row['relative_path'] as String? ?? '';
       if (path.isEmpty) continue;
       try {
-        await BlobSyncService.instance.pushBlobToPrimary(path, peerId: peerId);
+        await BlobSyncService.instance.pushBlobToPrimary(path, peerId: primaryPeerId);
         await _db.markBlobOutboundAcked(path);
       } catch (e) {
         _log.warning('Blob outbound retry failed for $path: $e', tag: _tag);

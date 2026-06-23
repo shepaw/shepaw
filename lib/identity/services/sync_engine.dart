@@ -188,12 +188,16 @@ class SyncEngine {
   }
 
   /// 应用频道成员事件批次。
-  Future<SyncDomainCursor> applyMemberEvents(List<SyncEvent> events) =>
-      _applyEvents(events, cursorKey: _memberCursorKey);
+  Future<SyncDomainCursor> applyMemberEvents(List<SyncEvent> events) async {
+    final (cursor, _) = await _applyEvents(events, cursorKey: _memberCursorKey);
+    return cursor;
+  }
 
   /// 应用 Agent 事件批次。
-  Future<SyncDomainCursor> applyAgentEvents(List<SyncEvent> events) =>
-      _applyEvents(events, cursorKey: _agentCursorKey);
+  Future<SyncDomainCursor> applyAgentEvents(List<SyncEvent> events) async {
+    final (cursor, _) = await _applyEvents(events, cursorKey: _agentCursorKey);
+    return cursor;
+  }
 
   /// Primary / Backup：查询 cursor 之后更新的 Agent。
   Future<List<SyncEvent>> queryAgentEvents({
@@ -283,12 +287,16 @@ class SyncEngine {
   }
 
   /// 应用 She 记忆事件批次。
-  Future<SyncDomainCursor> applySheMemoryEvents(List<SyncEvent> events) =>
-      _applyEvents(events, cursorKey: _sheMemoryCursorKey);
+  Future<SyncDomainCursor> applySheMemoryEvents(List<SyncEvent> events) async {
+    final (cursor, _) = await _applyEvents(events, cursorKey: _sheMemoryCursorKey);
+    return cursor;
+  }
 
   /// 应用认知事件批次。
-  Future<SyncDomainCursor> applyCognitionEvents(List<SyncEvent> events) =>
-      _applyEvents(events, cursorKey: _cognitionCursorKey);
+  Future<SyncDomainCursor> applyCognitionEvents(List<SyncEvent> events) async {
+    final (cursor, _) = await _applyEvents(events, cursorKey: _cognitionCursorKey);
+    return cursor;
+  }
 
   Future<List<SyncEvent>> queryAgentMemoryEvents({
     required int sinceMs,
@@ -321,8 +329,10 @@ class SyncEngine {
   }
 
   /// 应用 Agent 结构化记忆事件批次。
-  Future<SyncDomainCursor> applyAgentMemoryEvents(List<SyncEvent> events) =>
-      _applyEvents(events, cursorKey: _agentMemoryCursorKey);
+  Future<SyncDomainCursor> applyAgentMemoryEvents(List<SyncEvent> events) async {
+    final (cursor, _) = await _applyEvents(events, cursorKey: _agentMemoryCursorKey);
+    return cursor;
+  }
 
   /// 兼容旧调用：按域分别查询后合并（仅测试/legacy）。
   Future<List<SyncEvent>> queryEvents({
@@ -348,12 +358,16 @@ class SyncEngine {
   }
 
   /// 应用消息事件批次；遇失败停止，不跳过中间条目。
-  Future<SyncDomainCursor> applyMessageEvents(List<SyncEvent> events) =>
-      _applyEvents(events, cursorKey: _messageCursorKey);
+  Future<SyncDomainCursor> applyMessageEvents(List<SyncEvent> events) async {
+    final (cursor, _) = await _applyEvents(events, cursorKey: _messageCursorKey);
+    return cursor;
+  }
 
   /// 应用频道事件批次。
-  Future<SyncDomainCursor> applyChannelEvents(List<SyncEvent> events) =>
-      _applyEvents(events, cursorKey: _channelCursorKey);
+  Future<SyncDomainCursor> applyChannelEvents(List<SyncEvent> events) async {
+    final (cursor, _) = await _applyEvents(events, cursorKey: _channelCursorKey);
+    return cursor;
+  }
 
   Future<void> applyEvents(List<SyncEvent> events) async {
     final messages = events.where((e) => e.domain == 'message').toList();
@@ -372,15 +386,50 @@ class SyncEngine {
     if (agentMemory.isNotEmpty) await applyAgentMemoryEvents(agentMemory);
   }
 
-  Future<SyncDomainCursor> _applyEvents(
+  /// 应用多域 push 批次；全部成功返回 true（任一批次中断则 false，且不 ack push）。
+  Future<bool> applyPushEvents(List<SyncEvent> events) async {
+    var allOk = true;
+    final messages = events.where((e) => e.domain == 'message').toList();
+    final channels = events.where((e) => e.domain == 'channel').toList();
+    final members = events.where((e) => e.domain == 'channel_member').toList();
+    final agents = events.where((e) => e.domain == 'agent').toList();
+    final sheMemory = events.where((e) => e.domain == 'she_memory').toList();
+    final cognition = events.where((e) => e.domain == 'cognition').toList();
+    final agentMemory = events.where((e) => e.domain == 'agent_memory').toList();
+    if (messages.isNotEmpty) {
+      allOk = (await _applyEvents(messages, cursorKey: _messageCursorKey)).$2 && allOk;
+    }
+    if (channels.isNotEmpty) {
+      allOk = (await _applyEvents(channels, cursorKey: _channelCursorKey)).$2 && allOk;
+    }
+    if (members.isNotEmpty) {
+      allOk = (await _applyEvents(members, cursorKey: _memberCursorKey)).$2 && allOk;
+    }
+    if (agents.isNotEmpty) {
+      allOk = (await _applyEvents(agents, cursorKey: _agentCursorKey)).$2 && allOk;
+    }
+    if (sheMemory.isNotEmpty) {
+      allOk = (await _applyEvents(sheMemory, cursorKey: _sheMemoryCursorKey)).$2 && allOk;
+    }
+    if (cognition.isNotEmpty) {
+      allOk = (await _applyEvents(cognition, cursorKey: _cognitionCursorKey)).$2 && allOk;
+    }
+    if (agentMemory.isNotEmpty) {
+      allOk = (await _applyEvents(agentMemory, cursorKey: _agentMemoryCursorKey)).$2 && allOk;
+    }
+    return allOk;
+  }
+
+  Future<(SyncDomainCursor cursor, bool allApplied)> _applyEvents(
     List<SyncEvent> events, {
     required String cursorKey,
   }) async {
     final cursor = await _getDomainCursor(cursorKey);
-    if (events.isEmpty) return cursor;
+    if (events.isEmpty) return (cursor, true);
 
     final role = await AccountIdentityService.instance.localDeviceRole();
     var next = cursor;
+    var allApplied = true;
 
     for (final event in events) {
       try {
@@ -395,21 +444,22 @@ class SyncEngine {
         }
       } catch (e) {
         _log.warning('Failed to apply sync event ${event.eventId}: $e', tag: _tag);
+        allApplied = false;
         break;
       }
     }
 
     await _setDomainCursor(cursorKey, next);
-    return next;
+    return (next, allApplied);
   }
 
   Future<SyncApplyOutcome> _applyOne(SyncEvent event, DeviceRole role) async {
+    if (await _isStaleUpsert(event)) return SyncApplyOutcome.staleSkipped;
     if (event.action == SyncEventAction.delete) {
       return await _applyDelete(event, role)
           ? SyncApplyOutcome.applied
           : SyncApplyOutcome.invalidSkipped;
     }
-    if (await _isStaleUpsert(event)) return SyncApplyOutcome.staleSkipped;
     await _clearTombstoneForUpsert(event);
     switch (event.domain) {
       case 'message':
@@ -567,44 +617,28 @@ class SyncEngine {
     if (!await AccountIdentityService.instance.isCanonicalPrimary()) {
       return SyncCommitResult.failed;
     }
-
-    if (event.action == SyncEventAction.delete) {
-      if (await _applyOne(event, DeviceRole.primary) != SyncApplyOutcome.applied) {
-        return SyncCommitResult.failed;
-      }
-      await _recordEntitySyncState(event);
-      return SyncCommitResult.appliedOk();
-    }
-
-    if (await _isStaleUpsert(event)) return SyncCommitResult.staleOk();
-
-    if (await _applyOne(event, DeviceRole.primary) != SyncApplyOutcome.applied) {
-      return SyncCommitResult.failed;
-    }
-    await _recordEntitySyncState(event);
-    return SyncCommitResult.appliedOk();
+    final outcome = await _applyOne(event, DeviceRole.primary);
+    return _commitOutcome(outcome, event);
   }
 
   /// Backup：Primary 离线时暂存 App commit（供 sync_query 与后续 relay）。
   Future<SyncCommitResult> commitEventAsStorageRelay(SyncEvent event) async {
     final role = await AccountIdentityService.instance.localDeviceRole();
     if (role != DeviceRole.backup) return SyncCommitResult.failed;
+    final outcome = await _applyOne(event, DeviceRole.backup);
+    return _commitOutcome(outcome, event);
+  }
 
-    if (event.action == SyncEventAction.delete) {
-      if (await _applyOne(event, DeviceRole.backup) != SyncApplyOutcome.applied) {
+  Future<SyncCommitResult> _commitOutcome(SyncApplyOutcome outcome, SyncEvent event) async {
+    switch (outcome) {
+      case SyncApplyOutcome.applied:
+        await _recordEntitySyncState(event);
+        return SyncCommitResult.appliedOk();
+      case SyncApplyOutcome.staleSkipped:
+        return SyncCommitResult.staleOk();
+      case SyncApplyOutcome.invalidSkipped:
         return SyncCommitResult.failed;
-      }
-      await _recordEntitySyncState(event);
-      return SyncCommitResult.appliedOk();
     }
-
-    if (await _isStaleUpsert(event)) return SyncCommitResult.staleOk();
-
-    if (await _applyOne(event, DeviceRole.backup) != SyncApplyOutcome.applied) {
-      return SyncCommitResult.failed;
-    }
-    await _recordEntitySyncState(event);
-    return SyncCommitResult.appliedOk();
   }
 
   Future<bool> _isStaleUpsert(SyncEvent event) async {
