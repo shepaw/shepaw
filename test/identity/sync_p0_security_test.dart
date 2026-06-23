@@ -337,6 +337,79 @@ void main() {
       expect(resp?['ok'], isFalse);
       expect(resp?['error'], 'origin_device_mismatch');
     });
+
+    test('Primary accepts Backup relay commit with App origin', () async {
+      harness = await SyncP2pTestHarness.create(
+        localRole: DeviceRole.primary,
+        localDeviceId: SyncP2pTestIds.primaryDevice,
+        localPeerId: SyncP2pTestIds.primaryPeer,
+      );
+
+      final now = DateTime.now().millisecondsSinceEpoch;
+      final key = Uint8List.fromList(List.filled(32, 11));
+      await harness.db.upsertOwnedDevice(
+        OwnedDeviceRecord(
+          id: 'rec-backup-relay',
+          deviceId: SyncP2pTestIds.backupDevice,
+          deviceName: 'Backup',
+          role: DeviceRole.backup,
+          transportPublicKey: key,
+          fingerprint: 'fp-backup',
+          userId: SyncP2pTestIds.userId,
+          petId: SyncP2pTestIds.petId,
+          isLocal: false,
+          trustedAt: now,
+          lastSeenAt: now,
+        ),
+      );
+
+      harness.router.noteSender(SyncP2pTestIds.backupPeer);
+      final eventJson = harness.messageCommitPayload(
+        messageId: 'msg-relay-origin',
+        originDeviceId: SyncP2pTestIds.appDevice,
+      );
+
+      await SyncProtocolService.instance.dispatchControlForTest(
+        SyncP2pTestIds.backupPeer,
+        {
+          'type': 'sync_commit',
+          'request_id': 'req-relay-origin',
+          'event': eventJson,
+        },
+      );
+
+      final resp = harness.router.lastSentTo(SyncP2pTestIds.backupPeer)?.payload;
+      expect(resp?['error'], isNot('origin_device_mismatch'));
+      expect(resp?['ok'], isTrue);
+      expect(resp?['applied'], isTrue);
+    });
+
+    test('Primary rejects App peer forging foreign origin', () async {
+      harness = await SyncP2pTestHarness.create(
+        localRole: DeviceRole.primary,
+        localDeviceId: SyncP2pTestIds.primaryDevice,
+        localPeerId: SyncP2pTestIds.primaryPeer,
+      );
+
+      harness.router.noteSender(SyncP2pTestIds.appPeer);
+      final eventJson = harness.messageCommitPayload(
+        messageId: 'msg-forged-origin',
+        originDeviceId: SyncP2pTestIds.primaryDevice,
+      );
+
+      await SyncProtocolService.instance.dispatchControlForTest(
+        SyncP2pTestIds.appPeer,
+        {
+          'type': 'sync_commit',
+          'request_id': 'req-forged-origin',
+          'event': eventJson,
+        },
+      );
+
+      final resp = harness.router.lastSentTo(SyncP2pTestIds.appPeer)?.payload;
+      expect(resp?['ok'], isFalse);
+      expect(resp?['error'], 'origin_device_mismatch');
+    });
   });
 
   group('P1 device RPC authorization', () {

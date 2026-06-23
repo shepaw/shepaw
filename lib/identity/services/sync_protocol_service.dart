@@ -182,7 +182,15 @@ class SyncProtocolService {
     final peerDeviceId = peer?.deviceId;
     if (peerDeviceId == null || peerDeviceId.isEmpty) return false;
     if (event.originDeviceId.isEmpty) return false;
-    return event.originDeviceId == peerDeviceId;
+    if (event.originDeviceId == peerDeviceId) return true;
+
+    // Backup relay：Backup 转发 App 写入，Primary 侧 peer=Backup、origin=App。
+    final peerOwned = await _db.getOwnedDeviceByDeviceId(peerDeviceId);
+    if (peerOwned == null || peerOwned.role != DeviceRole.backup) return false;
+
+    final originOwned = await _db.getOwnedDeviceByDeviceId(event.originDeviceId);
+    if (originOwned == null) return false;
+    return originOwned.userId == peerOwned.userId;
   }
 
   Future<void> _rejectUnauthorizedPeer(
