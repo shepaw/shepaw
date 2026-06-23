@@ -624,6 +624,10 @@ class SyncEngine {
     }
   }
 
+  /// 本地 entity/行状态是否已新于该事件（relay stale 后可安全丢弃队列行）。
+  Future<bool> isEventSupersededByLocalState(SyncEvent event) =>
+      _isStaleUpsert(event);
+
   Future<bool> _isStaleUpsert(SyncEvent event) async {
     final state = await _entitySyncState(event);
     final stateMs = (state?['wall_time_ms'] as int?) ?? 0;

@@ -75,6 +75,7 @@ class SyncClientService {
       final peerId = await StorageDeviceService.firstConnectedPrimaryPeerId();
       if (peerId == null) return;
       await pullFromPeer(peerId);
+      await SyncProtocolService.instance.reconcilePendingBackupRelayAfterPull();
       _log.info('Pulled from Primary after backup relay stale', tag: _tag);
     } catch (e) {
       _log.warning('Pull after backup relay stale failed: $e', tag: _tag);
@@ -195,75 +196,76 @@ class SyncClientService {
   }
 
   Future<bool> _pullDomain(String peerId, {required String domain}) async {
-    var cursor = await SyncEngine.instance.getDomainCursor(domain);
     const pageSize = 50;
     const maxPages = 200;
-    var truncated = false;
 
-    for (var page = 0; page < maxPages; page++) {
-      final requestId = _uuid.v4();
-      final sent = await PeerConnectionManager.instance.sendControl(peerId, {
-        'type': 'sync_query',
-        'request_id': requestId,
-        'domain': domain,
-        'since_ms': cursor.wallTimeMs,
-        'since_event_id': cursor.lastEventId,
-        'limit': pageSize,
-      });
-      if (!sent) {
-        _log.warning('Sync query send failed for domain=$domain', tag: _tag);
-        return false;
-      }
+    while (true) {
+      var cursor = await SyncEngine.instance.getDomainCursor(domain);
+      var truncated = false;
 
-      Map<String, dynamic> resp;
-      try {
-        resp = await SyncProtocolService.instance.waitQueryResponse(
-          requestId,
-          timeout: const Duration(seconds: 30),
+      for (var page = 0; page < maxPages; page++) {
+        final requestId = _uuid.v4();
+        final sent = await PeerConnectionManager.instance.sendControl(peerId, {
+          'type': 'sync_query',
+          'request_id': requestId,
+          'domain': domain,
+          'since_ms': cursor.wallTimeMs,
+          'since_event_id': cursor.lastEventId,
+          'limit': pageSize,
+        });
+        if (!sent) {
+          _log.warning('Sync query send failed for domain=$domain', tag: _tag);
+          return false;
+        }
+
+        Map<String, dynamic> resp;
+        try {
+          resp = await SyncProtocolService.instance.waitQueryResponse(
+            requestId,
+            timeout: const Duration(seconds: 30),
+          );
+        } on SyncQueryTimeoutException {
+          _log.warning('Sync query timeout for domain=$domain', tag: _tag);
+          return false;
+        }
+
+        if (resp['error'] != null) {
+          _log.warning('Sync query error for domain=$domain: ${resp['error']}', tag: _tag);
+          return false;
+        }
+
+        final eventsRaw = (resp['events'] as List?) ?? const [];
+        if (eventsRaw.isEmpty) break;
+
+        final events = SyncEngine.instance.filterNewEvents(
+          eventsRaw
+              .whereType<Map>()
+              .map((e) => SyncEvent.fromJson(Map<String, dynamic>.from(e)))
+              .toList(),
+          cursor,
         );
-      } on SyncQueryTimeoutException {
-        _log.warning('Sync query timeout for domain=$domain', tag: _tag);
-        return false;
+        if (events.isEmpty) break;
+
+        cursor = switch (domain) {
+          'message' => (await SyncEngine.instance.applyMessageEvents(events)),
+          'channel' => (await SyncEngine.instance.applyChannelEvents(events)),
+          'channel_member' => (await SyncEngine.instance.applyMemberEvents(events)),
+          'agent' => (await SyncEngine.instance.applyAgentEvents(events)),
+          'she_memory' => (await SyncEngine.instance.applySheMemoryEvents(events)),
+          'cognition' => (await SyncEngine.instance.applyCognitionEvents(events)),
+          'agent_memory' => (await SyncEngine.instance.applyAgentMemoryEvents(events)),
+          _ => cursor,
+        };
+
+        if (eventsRaw.length < pageSize) break;
+        if (page == maxPages - 1) {
+          truncated = true;
+        }
       }
 
-      if (resp['error'] != null) {
-        _log.warning('Sync query error for domain=$domain: ${resp['error']}', tag: _tag);
-        return false;
-      }
-
-      final eventsRaw = (resp['events'] as List?) ?? const [];
-      if (eventsRaw.isEmpty) break;
-
-      final events = SyncEngine.instance.filterNewEvents(
-        eventsRaw
-            .whereType<Map>()
-            .map((e) => SyncEvent.fromJson(Map<String, dynamic>.from(e)))
-            .toList(),
-        cursor,
-      );
-      if (events.isEmpty) break;
-
-      cursor = switch (domain) {
-        'message' => (await SyncEngine.instance.applyMessageEvents(events)),
-        'channel' => (await SyncEngine.instance.applyChannelEvents(events)),
-        'channel_member' => (await SyncEngine.instance.applyMemberEvents(events)),
-        'agent' => (await SyncEngine.instance.applyAgentEvents(events)),
-        'she_memory' => (await SyncEngine.instance.applySheMemoryEvents(events)),
-        'cognition' => (await SyncEngine.instance.applyCognitionEvents(events)),
-        'agent_memory' => (await SyncEngine.instance.applyAgentMemoryEvents(events)),
-        _ => cursor,
-      };
-
-      if (eventsRaw.length < pageSize) break;
-      if (page == maxPages - 1) {
-        truncated = true;
-      }
-    }
-    if (truncated) {
+      if (!truncated) return true;
       _log.info('Sync pull continuing after page cap for domain=$domain', tag: _tag);
-      return _pullDomain(peerId, domain: domain);
     }
-    return true;
   }
 
   Future<void> _flushOutbound(String peerId) async {

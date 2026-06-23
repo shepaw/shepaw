@@ -323,6 +323,14 @@ extension IdentityDao on LocalDatabaseService {
 
   Future<void> enqueueBackupRelayEvent({required String id, required String payloadJson}) async {
     final db = await database;
+    final alreadyRelayed = await db.query(
+      'identity_backup_relay_queue',
+      where: 'id = ? AND relayed = 1',
+      whereArgs: [id],
+      limit: 1,
+    );
+    if (alreadyRelayed.isNotEmpty) return;
+
     await db.insert(
       'identity_backup_relay_queue',
       {

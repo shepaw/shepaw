@@ -260,6 +260,15 @@ class SyncProtocolService {
     final remoteDeviceId = data['device_id'] as String?;
     if (remoteDeviceId == null) return;
 
+    final peer = await PeerStorageService().getPeerById(event.peerId);
+    if (peer?.deviceId != null && peer!.deviceId != remoteDeviceId) {
+      _log.warning(
+        'Ignoring sync_role_announce: peer device_id mismatch (peer=${peer.deviceId}, payload=$remoteDeviceId)',
+        tag: _tag,
+      );
+      return;
+    }
+
     await AccountIdentityService.instance.ensureInitialized();
     final user = await AccountIdentityService.instance.userIdentity();
     if (data['user_id'] != user.fingerprintHex) {
@@ -301,8 +310,16 @@ class SyncProtocolService {
     if (pubB64 == null) return;
     final pub = base64.decode(pubB64);
 
+    final payloadDeviceId = data['device_id'] as String?;
+    if (payloadDeviceId == null || payloadDeviceId.isEmpty) return;
+    final peer = await PeerStorageService().getPeerById(peerId);
+    if (peer?.deviceId != null && peer!.deviceId != payloadDeviceId) {
+      _log.warning('Ignoring sync_trust_accept: device_id mismatch', tag: _tag);
+      return;
+    }
+
     await DeviceTrustService.instance.registerTrustedRemoteDevice(
-      deviceId: data['device_id'] as String,
+      deviceId: payloadDeviceId,
       deviceName: data['device_name'] as String? ?? 'Device',
       transportPublicKey: Uint8List.fromList(pub),
       fingerprint: data['transport_fingerprint'] as String? ?? '',
@@ -441,6 +458,8 @@ class SyncProtocolService {
           if (relayResp['applied'] == true) {
             await SyncEngine.instance.commitEventAsStorageRelay(event);
             await _db.markBackupRelayAcked(event.eventId);
+          } else if (relayResp['stale'] == true) {
+            await _resolveStaleBackupRelay(event, rowId: event.eventId);
           }
           await PeerConnectionManager.instance.sendControl(peerId, {
             'type': 'sync_commit_resp',
@@ -505,6 +524,45 @@ class SyncProtocolService {
     return Map<String, dynamic>.from(resp);
   }
 
+  void _signalBackupRelayStale() {
+    _backupRelayStaleController.add(null);
+  }
+
+  /// Pull 对齐 Primary 后，丢弃已被本地状态覆盖的 stale relay 行。
+  Future<void> reconcilePendingBackupRelayAfterPull() async {
+    final role = await AccountIdentityService.instance.localDeviceRole();
+    if (role != DeviceRole.backup) return;
+
+    final pending = await _db.listPendingBackupRelay(limit: 200);
+    for (final row in pending) {
+      final rowId = row['id'] as String;
+      final payloadRaw = row['payload'] as String? ?? '';
+      try {
+        final event = SyncEvent.fromJson(
+          jsonDecode(payloadRaw) as Map<String, dynamic>,
+        );
+        if (await SyncEngine.instance.isEventSupersededByLocalState(event)) {
+          await _db.markBackupRelayAcked(rowId);
+          _log.info('Discarded superseded backup relay row ${event.eventId}', tag: _tag);
+        }
+      } catch (_) {
+        await _db.markBackupRelayAcked(rowId);
+      }
+    }
+  }
+
+  Future<void> _resolveStaleBackupRelay(SyncEvent event, {required String rowId}) async {
+    if (await SyncEngine.instance.isEventSupersededByLocalState(event)) {
+      await _db.markBackupRelayAcked(rowId);
+      return;
+    }
+    _log.warning(
+      'Backup relay stale for ${event.eventId}, scheduling pull to reconcile',
+      tag: _tag,
+    );
+    _signalBackupRelayStale();
+  }
+
   Future<void> _drainBackupRelayQueue(String primaryPeerId) async {
     final pending = await _db.listPendingBackupRelay(limit: 50);
     for (final row in pending) {
@@ -534,11 +592,8 @@ class SyncProtocolService {
         await SyncEngine.instance.commitEventAsStorageRelay(event);
         await _db.markBackupRelayAcked(rowId);
       } else if (ok && resp?['stale'] == true) {
-        _log.warning(
-          'Backup relay stale for event ${eventMap['event_id']}, keeping queue row',
-          tag: _tag,
-        );
-        _backupRelayStaleController.add(null);
+        final event = SyncEvent.fromJson(eventMap);
+        await _resolveStaleBackupRelay(event, rowId: rowId);
       }
     }
   }
