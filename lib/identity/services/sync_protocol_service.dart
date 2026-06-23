@@ -687,11 +687,18 @@ class SyncProtocolService {
         final event = SyncEvent.fromJson(eventMap);
         await _resolveStaleBackupRelay(event, rowId: rowId);
       } else {
-        await _db.scheduleBackupRelayRetry(rowId);
-        _log.warning(
-          'Backup relay drain deferred for $rowId: ${resp?['error'] ?? 'unknown'}',
-          tag: _tag,
-        );
+        final deadLettered = await _db.scheduleBackupRelayRetry(rowId);
+        if (deadLettered) {
+          _log.warning(
+            'Dead-lettered backup relay $rowId after ${SyncPushBackoff.maxDeadLetterRetries} retries',
+            tag: _tag,
+          );
+        } else {
+          _log.warning(
+            'Backup relay drain deferred for $rowId: ${resp?['error'] ?? 'unknown'}',
+            tag: _tag,
+          );
+        }
         break;
       }
     }
@@ -720,10 +727,14 @@ class SyncProtocolService {
     }
 
     final eventsRaw = (data['events'] as List?) ?? const [];
-    final events = eventsRaw
-        .whereType<Map>()
-        .map((e) => SyncEvent.fromJson(Map<String, dynamic>.from(e)))
-        .toList();
+    final events = <SyncEvent>[];
+    for (final raw in eventsRaw.whereType<Map>()) {
+      try {
+        events.add(SyncEvent.fromJson(Map<String, dynamic>.from(raw)));
+      } catch (e) {
+        _log.warning('Skipping malformed sync_push event: $e', tag: _tag);
+      }
+    }
     final result = await SyncEngine.instance.applyPushEvents(events);
     final pushId = data['push_id'] as String?;
     if (pushId != null && pushId.isNotEmpty) {

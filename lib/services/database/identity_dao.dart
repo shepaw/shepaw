@@ -414,7 +414,8 @@ extension IdentityDao on LocalDatabaseService {
     );
   }
 
-  Future<void> scheduleBackupRelayRetry(String id) async {
+  /// 安排 relay 重试；返回 true 表示已 dead-letter。
+  Future<bool> scheduleBackupRelayRetry(String id) async {
     final db = await database;
     final rows = await db.query(
       'identity_backup_relay_queue',
@@ -422,8 +423,12 @@ extension IdentityDao on LocalDatabaseService {
       whereArgs: [id],
       limit: 1,
     );
-    if (rows.isEmpty) return;
+    if (rows.isEmpty) return false;
     final count = (rows.first['retry_count'] as int? ?? 0) + 1;
+    if (count >= SyncPushBackoff.maxDeadLetterRetries) {
+      await markBackupRelayDeadLetter(id);
+      return true;
+    }
     final now = DateTime.now().millisecondsSinceEpoch;
     await db.update(
       'identity_backup_relay_queue',
@@ -431,6 +436,18 @@ extension IdentityDao on LocalDatabaseService {
         'retry_count': count,
         'next_retry_at': SyncPushBackoff.nextRetryAtMs(count, now),
       },
+      where: 'id = ?',
+      whereArgs: [id],
+    );
+    return false;
+  }
+
+  /// 永久放弃 relay 重试（不再阻塞队列）。
+  Future<void> markBackupRelayDeadLetter(String id) async {
+    final db = await database;
+    await db.update(
+      'identity_backup_relay_queue',
+      {'relayed': 1},
       where: 'id = ?',
       whereArgs: [id],
     );

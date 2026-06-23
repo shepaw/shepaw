@@ -1,5 +1,7 @@
 import 'dart:convert';
 
+import 'package:crypto/crypto.dart';
+
 /// 同步事件动作。
 enum SyncEventAction {
   upsert('upsert'),
@@ -50,9 +52,23 @@ class SyncEvent {
         originDeviceId: json['origin_device_id'] as String? ?? '',
       );
 
-  /// Upsert 事件 ID 含 wall_time，避免同毫秒二次编辑因稳定 id 被游标跳过。
-  static String upsertEventId(String prefix, String entityPart, int wallTimeMs) =>
-      '$prefix:$entityPart@$wallTimeMs';
+  /// Upsert 事件 ID 含 wall_time；同毫秒二次编辑附加 payload revision 避免游标跳过。
+  static String upsertEventId(
+    String prefix,
+    String entityPart,
+    int wallTimeMs, {
+    String? revision,
+  }) {
+    final base = '$prefix:$entityPart@$wallTimeMs';
+    if (revision == null || revision.isEmpty) return base;
+    return '$base#$revision';
+  }
+
+  /// 从 payload 字段生成短 revision（同 ms 不同内容 → 不同 eventId）。
+  static String upsertPayloadRevision(Iterable<String> parts) {
+    final joined = parts.join('\x1f');
+    return sha256.convert(utf8.encode(joined)).toString().substring(0, 12);
+  }
 
   static SyncEvent messageEvent({
     required Map<String, dynamic> messageRow,
@@ -64,8 +80,13 @@ class SyncEvent {
     final timeStr = (updatedAt != null && updatedAt.isNotEmpty) ? updatedAt : createdAt;
     final wallTime = DateTime.tryParse(timeStr)?.millisecondsSinceEpoch ??
         DateTime.now().millisecondsSinceEpoch;
+    final revision = upsertPayloadRevision([
+      messageRow['content']?.toString() ?? '',
+      messageRow['updated_at']?.toString() ?? '',
+      messageRow['message_type']?.toString() ?? '',
+    ]);
     return SyncEvent(
-      eventId: upsertEventId('msg', messageRow['id'] as String, wallTime),
+      eventId: upsertEventId('msg', messageRow['id'] as String, wallTime, revision: revision),
       domain: 'message',
       action: action,
       payload: Map<String, dynamic>.from(messageRow),
@@ -99,8 +120,12 @@ class SyncEvent {
     final updatedAt = channelRow['updated_at'] as String? ?? channelRow['created_at'] as String? ?? '';
     final wallTime = DateTime.tryParse(updatedAt)?.millisecondsSinceEpoch ??
         DateTime.now().millisecondsSinceEpoch;
+    final revision = upsertPayloadRevision([
+      channelRow['name']?.toString() ?? '',
+      channelRow['updated_at']?.toString() ?? '',
+    ]);
     return SyncEvent(
-      eventId: upsertEventId('ch', channelRow['id'] as String, wallTime),
+      eventId: upsertEventId('ch', channelRow['id'] as String, wallTime, revision: revision),
       domain: 'channel',
       action: action,
       payload: Map<String, dynamic>.from(channelRow),
@@ -135,8 +160,12 @@ class SyncEvent {
         DateTime.now().millisecondsSinceEpoch;
     final channelId = memberRow['channel_id'] as String? ?? '';
     final agentId = memberRow['agent_id'] as String? ?? '';
+    final revision = upsertPayloadRevision([
+      memberRow['updated_at']?.toString() ?? '',
+      memberRow['joined_at']?.toString() ?? '',
+    ]);
     return SyncEvent(
-      eventId: upsertEventId('cm', '$channelId:$agentId', wallTime),
+      eventId: upsertEventId('cm', '$channelId:$agentId', wallTime, revision: revision),
       domain: 'channel_member',
       action: action,
       payload: Map<String, dynamic>.from(memberRow),
@@ -169,8 +198,13 @@ class SyncEvent {
   }) {
     final updatedAt = agentRow['updated_at'] as int? ?? agentRow['created_at'] as int? ??
         DateTime.now().millisecondsSinceEpoch;
+    final revision = upsertPayloadRevision([
+      agentRow['name']?.toString() ?? '',
+      agentRow['endpoint']?.toString() ?? '',
+      agentRow['updated_at']?.toString() ?? '',
+    ]);
     return SyncEvent(
-      eventId: upsertEventId('agent', agentRow['id'] as String, updatedAt),
+      eventId: upsertEventId('agent', agentRow['id'] as String, updatedAt, revision: revision),
       domain: 'agent',
       action: action,
       payload: Map<String, dynamic>.from(agentRow),
@@ -203,8 +237,12 @@ class SyncEvent {
     final key = row['key'] as String? ?? '';
     final wallTime = row['updated_at'] as int? ??
         DateTime.now().millisecondsSinceEpoch;
+    final revision = upsertPayloadRevision([
+      row['value']?.toString() ?? '',
+      row['updated_at']?.toString() ?? '',
+    ]);
     return SyncEvent(
-      eventId: upsertEventId('sm', key, wallTime),
+      eventId: upsertEventId('sm', key, wallTime, revision: revision),
       domain: 'she_memory',
       action: action,
       payload: Map<String, dynamic>.from(row),
@@ -237,8 +275,12 @@ class SyncEvent {
     final agentId = row['agent_id'] as String? ?? '';
     final wallTime = row['updated_at'] as int? ??
         DateTime.now().millisecondsSinceEpoch;
+    final revision = upsertPayloadRevision([
+      row['soul']?.toString() ?? '',
+      row['updated_at']?.toString() ?? '',
+    ]);
     return SyncEvent(
-      eventId: upsertEventId('cog:self', agentId, wallTime),
+      eventId: upsertEventId('cog:self', agentId, wallTime, revision: revision),
       domain: 'cognition',
       action: action,
       payload: {
@@ -258,8 +300,12 @@ class SyncEvent {
     final agentId = row['agent_id'] as String? ?? '';
     final wallTime = row['last_updated'] as int? ??
         DateTime.now().millisecondsSinceEpoch;
+    final revision = upsertPayloadRevision([
+      row['user_notes']?.toString() ?? '',
+      row['last_updated']?.toString() ?? '',
+    ]);
     return SyncEvent(
-      eventId: upsertEventId('cog:user', agentId, wallTime),
+      eventId: upsertEventId('cog:user', agentId, wallTime, revision: revision),
       domain: 'cognition',
       action: action,
       payload: {
@@ -312,8 +358,12 @@ class SyncEvent {
     final syncKey = row['sync_key'] as String? ?? '';
     final wallTime = row['updated_at'] as int? ??
         DateTime.now().millisecondsSinceEpoch;
+    final revision = upsertPayloadRevision([
+      row['memory_content']?.toString() ?? '',
+      row['updated_at']?.toString() ?? '',
+    ]);
     return SyncEvent(
-      eventId: upsertEventId('am', '$agentId:$syncKey', wallTime),
+      eventId: upsertEventId('am', '$agentId:$syncKey', wallTime, revision: revision),
       domain: 'agent_memory',
       action: action,
       payload: Map<String, dynamic>.from(row),

@@ -45,7 +45,7 @@ void main() {
 
       final pending = await harness.db.listPendingBackupRelay(limit: 10);
       expect(pending.length, 1);
-      expect(pending.first['id'], 'msg:msg-relay-drain@5000');
+      expect(pending.first['id'], startsWith('msg:msg-relay-drain@5000'));
 
       harness.router.setConnected(SyncP2pTestIds.primaryPeer, connected: true);
       harness.router.onPrimaryCommit = (from, commit) async {

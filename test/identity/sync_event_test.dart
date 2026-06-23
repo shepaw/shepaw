@@ -78,8 +78,34 @@ void main() {
         },
         originDeviceId: 'dev1',
       );
-      expect(event.eventId, 'am:agent-1:key-abc@4000');
+      expect(event.eventId, startsWith('am:agent-1:key-abc@4000#'));
       expect(event.domain, 'agent_memory');
+    });
+
+    test('same millisecond edits produce distinct upsert event ids', () {
+      const iso = '2026-01-01T00:00:00.000';
+      final first = SyncEvent.messageEvent(
+        messageRow: {
+          'id': 'm1',
+          'channel_id': 'c1',
+          'content': 'hello',
+          'created_at': iso,
+          'updated_at': iso,
+        },
+        originDeviceId: 'dev1',
+      );
+      final second = SyncEvent.messageEvent(
+        messageRow: {
+          'id': 'm1',
+          'channel_id': 'c1',
+          'content': 'hello again',
+          'created_at': iso,
+          'updated_at': iso,
+        },
+        originDeviceId: 'dev1',
+      );
+      expect(first.wallTimeMs, second.wallTimeMs);
+      expect(first.eventId, isNot(second.eventId));
     });
 
     test('entityKeyForEvent for message delete', () {

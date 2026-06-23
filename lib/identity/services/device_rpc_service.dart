@@ -202,7 +202,13 @@ class DeviceRpcService {
     if (agentId.isEmpty) return {'error': 'missing_agent_id'};
     final row = await _db.getAgentRowById(agentId);
     if (row == null) return {'error': 'not_found'};
-    return {'agent': row};
+    return {'agent': _redactAgentRowForRpc(row)};
+  }
+
+  Map<String, dynamic> _redactAgentRowForRpc(Map<String, dynamic> row) {
+    final copy = Map<String, dynamic>.from(row);
+    copy['token'] = '';
+    return copy;
   }
 
   Future<String?> _peerIdForDevice(String deviceId) async {

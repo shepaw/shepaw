@@ -57,8 +57,8 @@ void main() {
         },
         originDeviceId: 'dev',
       );
-      expect(first.eventId, 'msg:m1@$ms');
-      expect(second.eventId, first.eventId);
+      expect(first.eventId, startsWith('msg:m1@$ms#'));
+      expect(second.eventId, isNot(first.eventId));
 
       final cursor = SyncDomainCursor(wallTimeMs: ms, lastEventId: first.eventId);
       final third = SyncEvent.messageEvent(

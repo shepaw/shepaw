@@ -64,7 +64,8 @@ void main() {
     test('scheduleBackupRelayRetry defers pending row until next_retry_at', () async {
       const id = 'msg:test:3';
       await db.enqueueBackupRelayEvent(id: id, payloadJson: '{"v":1}');
-      await db.scheduleBackupRelayRetry(id);
+      final deadLettered = await db.scheduleBackupRelayRetry(id);
+      expect(deadLettered, isFalse);
 
       expect(await db.listPendingBackupRelay(limit: 10), isEmpty);
 
@@ -75,6 +76,18 @@ void main() {
         bypassed.first['next_retry_at'],
         greaterThan(DateTime.now().millisecondsSinceEpoch),
       );
+    });
+
+    test('scheduleBackupRelayRetry dead-letters after max retries', () async {
+      const id = 'msg:test:dead';
+      await db.enqueueBackupRelayEvent(id: id, payloadJson: '{"v":1}');
+
+      var deadLettered = false;
+      for (var i = 0; i < 12; i++) {
+        deadLettered = await db.scheduleBackupRelayRetry(id);
+      }
+      expect(deadLettered, isTrue);
+      expect(await db.listPendingBackupRelay(limit: 10, bypassBackoff: true), isEmpty);
     });
   });
 }

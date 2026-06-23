@@ -118,9 +118,14 @@ class SyncEngine {
           limit: fetchLimit,
           offset: offset,
         );
-        return rows
-            .map((row) => SyncEvent.messageEvent(messageRow: row, originDeviceId: origin))
-            .toList();
+        return _buildQueryUpsertEvents(
+          domain: 'message',
+          rows: rows,
+          fallbackOrigin: origin,
+          entityKey: (row) => row['id'] as String? ?? '',
+          build: (row, rowOrigin) =>
+              SyncEvent.messageEvent(messageRow: row, originDeviceId: rowOrigin),
+        );
       },
       fetchDeletes: (ms, fetchLimit, offset) async {
         var deletes = await _db.querySyncTombstonesSince(
@@ -151,9 +156,14 @@ class SyncEngine {
       limit: limit,
       fetchUpserts: (ms, fetchLimit, offset) async {
         final rows = await _db.getChannelsUpdatedSince(ms, limit: fetchLimit, offset: offset);
-        return rows
-            .map((row) => SyncEvent.channelEvent(channelRow: row, originDeviceId: origin))
-            .toList();
+        return _buildQueryUpsertEvents(
+          domain: 'channel',
+          rows: rows,
+          fallbackOrigin: origin,
+          entityKey: (row) => row['id'] as String? ?? '',
+          build: (row, rowOrigin) =>
+              SyncEvent.channelEvent(channelRow: row, originDeviceId: rowOrigin),
+        );
       },
       fetchDeletes: (ms, fetchLimit, offset) => _db.querySyncTombstonesSince(
         domain: 'channel',
@@ -177,9 +187,18 @@ class SyncEngine {
       limit: limit,
       fetchUpserts: (ms, fetchLimit, offset) async {
         final rows = await _db.getChannelMembersChangedSince(ms, limit: fetchLimit, offset: offset);
-        return rows
-            .map((row) => SyncEvent.channelMemberEvent(memberRow: row, originDeviceId: origin))
-            .toList();
+        return _buildQueryUpsertEvents(
+          domain: 'channel_member',
+          rows: rows,
+          fallbackOrigin: origin,
+          entityKey: (row) {
+            final channelId = row['channel_id'] as String? ?? '';
+            final agentId = row['agent_id'] as String? ?? '';
+            return '$channelId:$agentId';
+          },
+          build: (row, rowOrigin) =>
+              SyncEvent.channelMemberEvent(memberRow: row, originDeviceId: rowOrigin),
+        );
       },
       fetchDeletes: (ms, fetchLimit, offset) => _db.querySyncTombstonesSince(
         domain: 'channel_member',
@@ -216,9 +235,14 @@ class SyncEngine {
       limit: limit,
       fetchUpserts: (ms, fetchLimit, offset) async {
         final rows = await _db.getAgentsChangedSince(sinceMs: ms, limit: fetchLimit, offset: offset);
-        return rows
-            .map((row) => SyncEvent.agentEvent(agentRow: row, originDeviceId: origin))
-            .toList();
+        return _buildQueryUpsertEvents(
+          domain: 'agent',
+          rows: rows,
+          fallbackOrigin: origin,
+          entityKey: (row) => row['id'] as String? ?? '',
+          build: (row, rowOrigin) =>
+              SyncEvent.agentEvent(agentRow: row, originDeviceId: rowOrigin),
+        );
       },
       fetchDeletes: (ms, fetchLimit, offset) => _db.querySyncTombstonesSince(
         domain: 'agent',
@@ -242,9 +266,14 @@ class SyncEngine {
       limit: limit,
       fetchUpserts: (ms, fetchLimit, offset) async {
         final rows = await _sheMemoryDb.getChangedSince(sinceMs: ms, limit: fetchLimit, offset: offset);
-        return rows
-            .map((row) => SyncEvent.sheMemoryEvent(row: row, originDeviceId: origin))
-            .toList();
+        return _buildQueryUpsertEvents(
+          domain: 'she_memory',
+          rows: rows,
+          fallbackOrigin: origin,
+          entityKey: (row) => row['key'] as String? ?? '',
+          build: (row, rowOrigin) =>
+              SyncEvent.sheMemoryEvent(row: row, originDeviceId: rowOrigin),
+        );
       },
       fetchDeletes: (ms, fetchLimit, offset) => _db.querySyncTombstonesSince(
         domain: 'she_memory',
@@ -272,13 +301,23 @@ class SyncEngine {
           limit: fetchLimit,
           offset: offset,
         );
-        return rows.map((row) {
-          final kind = row['kind'] as String? ?? 'self';
-          if (kind == 'user') {
-            return SyncEvent.cognitionUserEvent(row: row, originDeviceId: origin);
-          }
-          return SyncEvent.cognitionSelfEvent(row: row, originDeviceId: origin);
-        }).toList();
+        return _buildQueryUpsertEvents(
+          domain: 'cognition',
+          rows: rows,
+          fallbackOrigin: origin,
+          entityKey: (row) {
+            final kind = row['kind'] as String? ?? 'self';
+            final agentId = row['agent_id'] as String? ?? '';
+            return '$kind:$agentId';
+          },
+          build: (row, rowOrigin) {
+            final kind = row['kind'] as String? ?? 'self';
+            if (kind == 'user') {
+              return SyncEvent.cognitionUserEvent(row: row, originDeviceId: rowOrigin);
+            }
+            return SyncEvent.cognitionSelfEvent(row: row, originDeviceId: rowOrigin);
+          },
+        );
       },
       fetchDeletes: (ms, fetchLimit, offset) => _db.querySyncTombstonesSince(
         domain: 'cognition',
@@ -318,9 +357,18 @@ class SyncEngine {
           limit: fetchLimit,
           offset: offset,
         );
-        return rows
-            .map((row) => SyncEvent.agentMemoryEvent(row: row, originDeviceId: origin))
-            .toList();
+        return _buildQueryUpsertEvents(
+          domain: 'agent_memory',
+          rows: rows,
+          fallbackOrigin: origin,
+          entityKey: (row) {
+            final agentId = row['agent_id'] as String? ?? '';
+            final syncKey = row['sync_key'] as String? ?? '';
+            return '$agentId:$syncKey';
+          },
+          build: (row, rowOrigin) =>
+              SyncEvent.agentMemoryEvent(row: row, originDeviceId: rowOrigin),
+        );
       },
       fetchDeletes: (ms, fetchLimit, offset) => _db.querySyncTombstonesSince(
         domain: 'agent_memory',
@@ -440,8 +488,8 @@ class SyncEngine {
         }
       } catch (e) {
         _log.warning('Failed to apply sync event ${event.eventId}: $e', tag: _tag);
+        next = next.advance(event);
         allApplied = false;
-        break;
       }
     }
 
@@ -762,6 +810,28 @@ class SyncEngine {
       if (total + incoming > policy.maxBytes) return false;
     }
     return true;
+  }
+
+  /// sync_query 重建 upsert 时优先使用 entity LWW 状态中的 origin。
+  Future<List<SyncEvent>> _buildQueryUpsertEvents({
+    required String domain,
+    required List<Map<String, dynamic>> rows,
+    required String fallbackOrigin,
+    required String Function(Map<String, dynamic> row) entityKey,
+    required SyncEvent Function(Map<String, dynamic> row, String origin) build,
+  }) async {
+    final out = <SyncEvent>[];
+    for (final row in rows) {
+      final key = entityKey(row);
+      var rowOrigin = fallbackOrigin;
+      if (key.isNotEmpty) {
+        final state = await _db.getEntitySyncState(domain, key);
+        final stored = state?['origin_device_id'] as String?;
+        if (stored != null && stored.isNotEmpty) rowOrigin = stored;
+      }
+      out.add(build(row, rowOrigin));
+    }
+    return out;
   }
 
   /// upsert 与 tombstone 各自维护 offset，避免双路分页漏事件。
