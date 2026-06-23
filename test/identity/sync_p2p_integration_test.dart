@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/services.dart';
@@ -163,6 +164,38 @@ void main() {
 
       await SyncProtocolService.instance.reconcilePendingBackupRelayAfterPull();
       expect(await harness.db.listPendingBackupRelay(limit: 10), isEmpty);
+    });
+
+    test('relay drain failure schedules backoff retry', () async {
+      final harness = await SyncP2pTestHarness.create(localRole: DeviceRole.backup);
+      addTearDown(harness.dispose);
+
+      final eventJson = harness.messageCommitPayload(messageId: 'msg-relay-retry');
+      await harness.db.enqueueBackupRelayEvent(
+        id: eventJson['event_id'] as String,
+        payloadJson: jsonEncode(eventJson),
+      );
+
+      harness.router.onPrimaryCommit = (_, commit) async {
+        return {
+          'type': 'sync_commit_resp',
+          'request_id': commit['request_id'],
+          'ok': false,
+          'error': 'timeout',
+        };
+      };
+
+      await SyncProtocolService.instance.drainBackupRelayQueueForTest(
+        SyncP2pTestIds.primaryPeer,
+      );
+
+      expect(await harness.db.listPendingBackupRelay(limit: 10), isEmpty);
+      final bypassed = await harness.db.listPendingBackupRelay(
+        limit: 10,
+        bypassBackoff: true,
+      );
+      expect(bypassed.length, 1);
+      expect(bypassed.first['retry_count'], 1);
     });
   });
 }

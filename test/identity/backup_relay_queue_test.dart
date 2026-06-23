@@ -60,5 +60,21 @@ void main() {
       expect(pending.first['payload'], '{"v":2}');
       expect(pending.first['relayed'], 0);
     });
+
+    test('scheduleBackupRelayRetry defers pending row until next_retry_at', () async {
+      const id = 'msg:test:3';
+      await db.enqueueBackupRelayEvent(id: id, payloadJson: '{"v":1}');
+      await db.scheduleBackupRelayRetry(id);
+
+      expect(await db.listPendingBackupRelay(limit: 10), isEmpty);
+
+      final bypassed = await db.listPendingBackupRelay(limit: 10, bypassBackoff: true);
+      expect(bypassed.length, 1);
+      expect(bypassed.first['retry_count'], 1);
+      expect(
+        bypassed.first['next_retry_at'],
+        greaterThan(DateTime.now().millisecondsSinceEpoch),
+      );
+    });
   });
 }

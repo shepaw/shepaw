@@ -307,4 +307,35 @@ void main() {
       );
     });
   });
+
+  group('P1 commit origin validation', () {
+    late SyncP2pTestHarness harness;
+
+    tearDown(() async {
+      await harness.dispose();
+    });
+
+    test('rejects sync_commit with empty origin_device_id', () async {
+      harness = await SyncP2pTestHarness.create(localRole: DeviceRole.backup);
+
+      harness.router.noteSender(SyncP2pTestIds.appPeer);
+      final eventJson = Map<String, dynamic>.from(
+        harness.messageCommitPayload(messageId: 'msg-no-origin'),
+      );
+      eventJson['origin_device_id'] = '';
+
+      await SyncProtocolService.instance.dispatchControlForTest(
+        SyncP2pTestIds.appPeer,
+        {
+          'type': 'sync_commit',
+          'request_id': 'req-origin-1',
+          'event': eventJson,
+        },
+      );
+
+      final resp = harness.router.lastSentTo(SyncP2pTestIds.appPeer)?.payload;
+      expect(resp?['ok'], isFalse);
+      expect(resp?['error'], 'origin_device_mismatch');
+    });
+  });
 }
