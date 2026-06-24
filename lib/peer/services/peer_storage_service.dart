@@ -2,6 +2,7 @@ import 'package:meta/meta.dart';
 import 'package:sqflite/sqflite.dart';
 import '../models/paired_peer.dart';
 import '../models/peer_message.dart';
+import '../../services/local_database_service.dart';
 import '../../services/local_storage_service.dart';
 import '../../services/logger_service.dart';
 
@@ -15,25 +16,24 @@ class PeerStorageService {
   final _log = LoggerService();
   final _localStorage = LocalStorageService();
 
-  /// 是否已初始化表
-  bool _tablesReady = false;
+  /// 已为哪个账号库创建过 P2P 表（与 [LocalDatabaseService.scopedAccountId] 对齐）。
+  String? _ensuredForAccountId;
 
   @visibleForTesting
   void resetTablesReadyForTests() {
-    _tablesReady = false;
+    _ensuredForAccountId = null;
   }
 
   /// 获取数据库（确保表已创建）
   Future<Database> get _db async {
-    if (!_tablesReady) {
-      await ensureTables();
-    }
+    await ensureTables();
     return _localStorage.database;
   }
 
-  /// 确保 P2P 表已创建（首次访问时自动调用）
+  /// 确保 P2P 表已创建（首次访问或切换账号后自动调用）
   Future<void> ensureTables() async {
-    if (_tablesReady) return;
+    final accountId = LocalDatabaseService().scopedAccountId;
+    if (_ensuredForAccountId == accountId) return;
     final db = await _localStorage.database;
     await db.execute('''
       CREATE TABLE IF NOT EXISTS paired_peers (
@@ -83,8 +83,8 @@ class PeerStorageService {
         PRIMARY KEY (peer_id, agent_id)
       )
     ''');
-    _tablesReady = true;
-    _log.debug('P2P tables ensured', tag: _tag);
+    _ensuredForAccountId = accountId;
+    _log.debug('P2P tables ensured for account ${accountId ?? '(default)'}', tag: _tag);
   }
 
   // ── PairedPeer CRUD ─────────────────────────────────────────────────────

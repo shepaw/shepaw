@@ -143,6 +143,9 @@ class AccountJoinService {
       );
     }
 
+    // 配对记录在 join 前写入旧账号库；切换账号后迁移到当前库。
+    await PeerStorageService().savePeer(peer);
+
     await DeviceTrustService.instance.registerPrimaryFromPeer(peer);
     await AccountSessionService.instance.activate();
 
