@@ -19,6 +19,7 @@ import '../../services/noise/noise_envelope.dart';
 import '../../services/channel_tunnel_service.dart';
 import '../../services/logger_service.dart';
 import '../models/paired_peer.dart';
+import '../models/pairing_payload.dart';
 import '../models/peer_message.dart';
 import 'peer_connection.dart';
 import 'peer_channel_bridge.dart';
@@ -387,6 +388,7 @@ class PeerConnectionManager {
     // 配对入站由 PeerPairingService 独占处理，避免误走重连握手。
     if (PeerPairingService.instance.isHandlingIncomingPairing) {
       _log.debug('Pairing in progress, delegating to PairingService', tag: _tag);
+      unawaited(PeerPairingService.instance.handleIncomingPeerStream(stream));
       return;
     }
 
@@ -480,9 +482,21 @@ class PeerConnectionManager {
       final payload = jsonDecode(utf8.decode(result.msg1Payload)) as Map<String, dynamic>;
       if (payload.containsKey('pairing_code')) {
         _log.debug(
-          'Ignoring pairing handshake in reconnect handler (pairing not active)',
+          'Pairing request received while pairing UI inactive, sending reject',
           tag: _tag,
         );
+        final pairing = PeerPairingService.instance;
+        await pairing.ensureDeviceInfo();
+        final rejectResponse = PairingResponse(
+          accepted: false,
+          deviceName: await pairing.getDeviceName(),
+          deviceId: await pairing.getDeviceId(),
+          peerId: '',
+          rejectReason: '主存储设备未处于扫码配对状态，请重新打开二维码页面',
+        );
+        final msg2 = await noiseSession.writeHandshake2(rejectResponse.toBytes());
+        final frame2 = encodeFrame(Frame(t: FrameType.hs, payload: msg2));
+        stream.send(Uint8List.fromList(utf8.encode(frame2)));
         noiseSession.close();
         await sub.cancel();
         stream.close();

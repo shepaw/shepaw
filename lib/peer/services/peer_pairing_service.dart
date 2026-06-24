@@ -126,8 +126,12 @@ class PeerPairingService {
   /// 同时启动本地 WS Server 和监听 Channel 隧道入站连接。
   /// 返回 QR 码内容字符串（包含内网地址和/或 Channel 端点）。
   Future<String> startPairing() async {
-    if (_state != PairingSessionState.idle) {
+    if (_state != PairingSessionState.idle &&
+        _state != PairingSessionState.cancelled &&
+        _state != PairingSessionState.failed) {
       await cancelPairing();
+    } else if (_state != PairingSessionState.idle) {
+      _cleanup();
     }
 
     await ensureDeviceInfo();
@@ -135,9 +139,10 @@ class PeerPairingService {
     await PeerConnectionManager.instance.start();
     final identity = await NoiseIdentity.loadOrCreate();
 
-    // 生成配对码
+    // 生成配对码并尽早进入等待态，避免入站连接无人接管
     _currentPairingCode = _generatePairingCode();
     _state = PairingSessionState.waitingForScanner;
+    _attachIncomingListeners();
 
     // 1. 启动本地 WS Server（内网直连）
     String? localEndpoint;
@@ -145,17 +150,12 @@ class PeerPairingService {
       await PeerLocalServer.instance.start();
       localEndpoint = PeerLocalServer.instance.getLocalEndpoint();
       _log.info('Local server started at $localEndpoint', tag: _tag);
-
-      // 监听本地入站连接
-      _localSub = PeerLocalServer.instance.incomingConnections.listen(
-        _handleIncomingPeerStream,
-      );
     } catch (e) {
       _log.warning('Failed to start local server: $e', tag: _tag);
       // 本地服务启动失败不是致命错误，可以仅依赖 Channel
     }
 
-    // 2. 监听 Channel 隧道入站连接（外网穿透）
+    // 2. Channel 外网端点（外网穿透）
     String? channelEndpoint;
     try {
       final tunnelConfig = await ChannelTunnelService.instance.loadConfig();
@@ -165,9 +165,6 @@ class PeerPairingService {
         if (endpoint != null) {
           channelEndpoint = endpoint.replaceFirst('/acp/ws', '/peer/ws');
         }
-        _bridgeSub = PeerChannelBridge.instance.incomingConnections.listen(
-          _handleIncomingPeerStream,
-        );
       }
     } catch (e) {
       _log.warning('Channel tunnel not available: $e', tag: _tag);
@@ -407,10 +404,21 @@ class PeerPairingService {
       ws.sink.add(frame1);
 
       // 等待 msg2 响应
-      final msg2Raw = await ws.stream.first.timeout(
-        _pairingTimeout,
-        onTimeout: () => throw PairingTimeoutException(),
-      );
+      final dynamic msg2Raw;
+      try {
+        msg2Raw = await ws.stream.first.timeout(
+          _pairingTimeout,
+          onTimeout: () => throw PairingTimeoutException(),
+        );
+      } on StateError catch (e) {
+        if (e.message == 'Bad state: No element') {
+          throw StateError(
+            '主存储设备未响应配对请求。请在 PC 上重新打开「展示手机扫码登录二维码」，'
+            '保持页面在前台后再扫描。',
+          );
+        }
+        rethrow;
+      }
 
       final msg2Str = msg2Raw is String ? msg2Raw : utf8.decode(msg2Raw as List<int>);
       final msg2Frame = decodeFrame(msg2Str);
@@ -470,10 +478,17 @@ class PeerPairingService {
   // ═══════════════════════════════════════════════════════════════════════
 
   /// 处理入站 peer stream（Responder 侧，内网或 Channel 均通过此方法）
-  void _handleIncomingPeerStream(PeerTunnelStream stream) async {
+  Future<void> handleIncomingPeerStream(PeerTunnelStream stream) async {
     if (_state != PairingSessionState.waitingForScanner) {
       // 非配对状态，可能是已配对设备的重连，交给 ConnectionManager
       _log.debug('Incoming peer stream in non-pairing state, stream=${stream.streamId}', tag: _tag);
+      return;
+    }
+    if (_responderStream != null) {
+      _log.debug(
+        'Already handling pairing stream, ignore stream=${stream.streamId}',
+        tag: _tag,
+      );
       return;
     }
 
@@ -539,8 +554,48 @@ class PeerPairingService {
 
     } catch (e) {
       _log.error('Error handling incoming peer stream', tag: _tag, error: e);
+      await _rejectIncomingStream(stream, reason: 'Pairing handshake failed');
       _state = PairingSessionState.failed;
       _cleanup();
+    }
+  }
+
+  void _attachIncomingListeners() {
+    _localSub?.cancel();
+    _localSub = PeerLocalServer.instance.incomingConnections.listen(
+      handleIncomingPeerStream,
+    );
+    _bridgeSub?.cancel();
+    _bridgeSub = PeerChannelBridge.instance.incomingConnections.listen(
+      handleIncomingPeerStream,
+    );
+  }
+
+  Future<void> _rejectIncomingStream(
+    PeerTunnelStream stream, {
+    required String reason,
+  }) async {
+    final session = _responderSession;
+    if (session == null) {
+      stream.close();
+      return;
+    }
+    try {
+      final rejectResponse = PairingResponse(
+        accepted: false,
+        deviceName: _getDeviceName(),
+        deviceId: _getDeviceId(),
+        peerId: '',
+        rejectReason: reason,
+      );
+      final msg2 = await session.writeHandshake2(rejectResponse.toBytes());
+      final frame = encodeFrame(Frame(t: FrameType.hs, payload: msg2));
+      stream.send(Uint8List.fromList(utf8.encode(frame)));
+    } catch (_) {
+      // ignore secondary failures while rejecting
+    } finally {
+      session.close();
+      stream.close();
     }
   }
 
