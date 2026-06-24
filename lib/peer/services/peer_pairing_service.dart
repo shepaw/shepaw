@@ -98,6 +98,11 @@ class PeerPairingService {
   PairingSessionState _state = PairingSessionState.idle;
   PairingSessionState get state => _state;
 
+  /// 入站连接应由 [PeerPairingService] 处理（而非 ConnectionManager 重连逻辑）。
+  bool get isHandlingIncomingPairing =>
+      _state == PairingSessionState.waitingForScanner ||
+      _state == PairingSessionState.receivedRequest;
+
   String? _currentPairingCode;
   Timer? _timeoutTimer;
   StreamSubscription? _bridgeSub;

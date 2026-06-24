@@ -384,8 +384,8 @@ class PeerConnectionManager {
   void _handleIncomingConnection(PeerTunnelStream stream) async {
     _log.info('Incoming peer connection, stream=${stream.streamId}', tag: _tag);
 
-    // 如果 PeerPairingService 正在配对中，由它处理
-    if (PeerPairingService.instance.state == PairingSessionState.waitingForScanner) {
+    // 配对入站由 PeerPairingService 独占处理，避免误走重连握手。
+    if (PeerPairingService.instance.isHandlingIncomingPairing) {
       _log.debug('Pairing in progress, delegating to PairingService', tag: _tag);
       return;
     }
@@ -474,6 +474,21 @@ class PeerConnectionManager {
 
     final result = await noiseSession.readHandshake1(msg1Frame.payload);
     final peerPublicKey = result.peerStaticPublicKey;
+
+    // 扫码配对请求（含 pairing_code）只能由 PeerPairingService 处理。
+    try {
+      final payload = jsonDecode(utf8.decode(result.msg1Payload)) as Map<String, dynamic>;
+      if (payload.containsKey('pairing_code')) {
+        _log.debug(
+          'Ignoring pairing handshake in reconnect handler (pairing not active)',
+          tag: _tag,
+        );
+        noiseSession.close();
+        await sub.cancel();
+        stream.close();
+        return;
+      }
+    } catch (_) {}
 
     // 通过公钥匹配已配对设备
     PairedPeer? matchedPeer;

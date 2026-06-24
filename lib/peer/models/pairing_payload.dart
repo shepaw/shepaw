@@ -94,8 +94,18 @@ class PairingResponse {
   });
 
   factory PairingResponse.fromJson(Map<String, dynamic> json) {
+    if (json['type'] == 'reconnect_ack') {
+      throw StateError(
+        '主存储设备未处于扫码配对状态。请在 PC 上重新打开「展示手机扫码登录二维码」，'
+        '保持页面在前台后再扫描。',
+      );
+    }
+    final accepted = json['accepted'];
+    if (accepted is! bool) {
+      throw StateError('无效的配对响应（缺少 accepted 字段）');
+    }
     return PairingResponse(
-      accepted: json['accepted'] as bool,
+      accepted: accepted,
       deviceName: json['device_name'] as String,
       deviceId: json['device_id'] as String,
       peerId: json['peer_id'] as String,
