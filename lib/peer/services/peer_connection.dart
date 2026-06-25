@@ -81,16 +81,14 @@ class PeerConnection {
   final _controlController = StreamController<Map<String, dynamic>>.broadcast();
   Stream<Map<String, dynamic>> get control => _controlController.stream;
 
-  /// agent-over-peer 控制消息的 type 前缀。这些帧不走聊天持久化，
-  /// 而是通过 [control] 流交给上层服务处理。
-  static const Set<String> _controlTypes = {
-    'agent_list_req',
-    'agent_list_resp',
-    'agent_chat',
-    'agent_chunk',
-    'agent_done',
-    'agent_error',
-    'agent_cancel',
+  /// 走聊天持久化 / 链路自身处理的数据类 type。除这些之外的带 type 消息
+  /// （agent-over-peer、account_join_*、sync_*、device_rpc_* 等）一律通过
+  /// [control] 流交给上层服务，避免新增控制类型时漏配白名单导致消息被丢弃。
+  static const Set<String> _dataFrameTypes = {
+    'message',
+    'ack',
+    'ping',
+    'pong',
   };
 
   /// 连接状态变化
@@ -368,7 +366,9 @@ class PeerConnection {
       _lastActivity = DateTime.now();
 
       final type = json['type'];
-      if (type is String && _controlTypes.contains(type)) {
+      if (type is String && !_dataFrameTypes.contains(type)) {
+        // 控制消息：转发给上层服务（AccountJoinService / SyncProtocolService /
+        // PeerAgentHost/Client 等）。未知 type 转发亦无害，对端 switch 会忽略。
         if (!_controlController.isClosed) {
           _controlController.add(json);
         }

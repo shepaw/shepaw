@@ -5,7 +5,6 @@ import 'dart:typed_data';
 import 'package:uuid/uuid.dart';
 
 import '../../peer/models/paired_peer.dart';
-import '../../peer/services/peer_connection.dart';
 import '../../peer/services/peer_connection_manager.dart';
 import '../../peer/services/peer_pairing_service.dart';
 import '../../peer/services/peer_storage_service.dart';
@@ -75,8 +74,7 @@ class AccountJoinService {
     DeviceRole preferredRole = DeviceRole.app,
     void Function(AccountJoinProgress progress)? onProgress,
   }) async {
-    onProgress?.call(AccountJoinProgress.waitingApproval);
-    await _waitUntilConnected(peer.id);
+    await PeerConnectionManager.instance.waitUntilConnected(peer.id);
 
     final pairing = PeerPairingService.instance;
     await pairing.ensureDeviceInfo();
@@ -86,7 +84,7 @@ class AccountJoinService {
     final completer = Completer<Map<String, dynamic>?>();
     _joinWaiters[requestId] = completer;
 
-    final sent = await PeerConnectionManager.instance.sendControl(peer.id, {
+    final joinPayload = {
       'type': 'account_join_req',
       'request_id': requestId,
       'device_id': await pairing.getDeviceId(),
@@ -94,19 +92,39 @@ class AccountJoinService {
       'transport_fingerprint': transport.fingerprintHex,
       'transport_public_key': base64.encode(transport.publicKey),
       'preferred_role': preferredRole.wireValue,
-    });
-    if (!sent) {
-      _joinWaiters.remove(requestId);
-      throw StateError('Failed to send join request (peer not connected)');
+    };
+
+    onProgress?.call(AccountJoinProgress.waitingApproval);
+
+    Future<void> trySendJoinReq() async {
+      if (completer.isCompleted) return;
+      if (PeerConnectionManager.instance.getPeerState(peer.id) !=
+          PeerConnectionState.connected) {
+        try {
+          await PeerConnectionManager.instance.waitUntilConnected(peer.id);
+        } catch (_) {
+          return;
+        }
+      }
+      await PeerConnectionManager.instance.sendControl(peer.id, joinPayload);
     }
 
-    final resp = await completer.future.timeout(
-      _joinTimeout,
-      onTimeout: () {
-        _joinWaiters.remove(requestId);
-        return null;
-      },
+    await trySendJoinReq();
+    final retryTimer = Timer.periodic(
+      const Duration(seconds: 5),
+      (_) => unawaited(trySendJoinReq()),
     );
+
+    Map<String, dynamic>? resp;
+    try {
+      resp = await completer.future.timeout(
+        _joinTimeout,
+        onTimeout: () => null,
+      );
+    } finally {
+      retryTimer.cancel();
+      _joinWaiters.remove(requestId);
+    }
     if (resp == null) throw StateError('Join request timed out');
     if (resp['ok'] != true) {
       throw StateError(resp['error']?.toString() ?? 'Join rejected');
@@ -255,12 +273,22 @@ class AccountJoinService {
 
   Future<void> _handleJoinReq(String peerId, Map<String, dynamic> data) async {
     try {
-      if (!await UserIdentityService.instance.exists()) return;
+      final requestId = data['request_id'] as String? ?? '';
+      if (!await UserIdentityService.instance.exists()) {
+        if (requestId.isNotEmpty) {
+          await PeerConnectionManager.instance.sendControl(peerId, {
+            'type': 'account_join_resp',
+            'request_id': requestId,
+            'ok': false,
+            'error': 'no_account',
+          });
+        }
+        return;
+      }
 
       await AccountIdentityService.instance.ensureInitialized();
       final role = await AccountIdentityService.instance.localDeviceRole();
       if (role != DeviceRole.primary) {
-        final requestId = data['request_id'] as String? ?? '';
         await PeerConnectionManager.instance.sendControl(peerId, {
           'type': 'account_join_resp',
           'request_id': requestId,
@@ -270,8 +298,14 @@ class AccountJoinService {
         return;
       }
 
-      final requestId = data['request_id'] as String? ?? '';
       if (requestId.isEmpty) return;
+
+      final existing = _pendingById[requestId];
+      if (existing != null) {
+        // 移动端重发同一 request_id 时，再次触发 UI（例如首次弹窗因路由未就绪失败）。
+        _pendingController.add(existing);
+        return;
+      }
 
       await _pruneExpiredPending();
       if (_pendingById.length >= _maxPendingJoinRequests) {
@@ -332,38 +366,6 @@ class AccountJoinService {
     final id = data['request_id'] as String?;
     if (id == null) return;
     _joinWaiters.remove(id)?.complete(data);
-  }
-
-  Future<void> _waitUntilConnected(String peerId) async {
-    if (PeerConnectionManager.instance.getPeerState(peerId) ==
-        PeerConnectionState.connected) {
-      return;
-    }
-
-    final peer = await PeerStorageService().getPeerById(peerId);
-    if (peer == null) throw StateError('Peer not found');
-
-    PeerConnectionManager.instance.connectToPeer(peer);
-
-    if (PeerConnectionManager.instance.getPeerState(peerId) ==
-        PeerConnectionState.connected) {
-      return;
-    }
-
-    final completer = Completer<void>();
-    late StreamSubscription<PeerConnectionEvent> sub;
-    sub = PeerConnectionManager.instance.events.listen((event) {
-      if (event.peerId == peerId &&
-          event.type == PeerConnectionEventType.connected) {
-        sub.cancel();
-        if (!completer.isCompleted) completer.complete();
-      }
-    });
-
-    await completer.future.timeout(
-      const Duration(seconds: 45),
-      onTimeout: () => throw StateError('P2P connection timeout'),
-    );
   }
 
   Future<void> _pruneExpiredPending() async {

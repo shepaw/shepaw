@@ -242,6 +242,41 @@ class PeerConnectionManager {
     await _doConnect(peer);
   }
 
+  /// 等待与指定 peer 建立加密连接（配对 / 账号加入前调用）。
+  Future<void> waitUntilConnected(
+    String peerId, {
+    Duration timeout = const Duration(seconds: 45),
+  }) async {
+    if (getPeerState(peerId) == PeerConnectionState.connected) return;
+
+    final peer = await _storage.getPeerById(peerId);
+    if (peer == null) throw StateError('Peer not found');
+
+    final completer = Completer<void>();
+    late StreamSubscription<PeerConnectionEvent> sub;
+    sub = events.listen((event) {
+      if (event.peerId == peerId &&
+          event.type == PeerConnectionEventType.connected) {
+        sub.cancel();
+        if (!completer.isCompleted) completer.complete();
+      }
+    });
+
+    try {
+      if (getPeerState(peerId) != PeerConnectionState.connected) {
+        await connectToPeer(peer);
+      }
+      if (getPeerState(peerId) == PeerConnectionState.connected) return;
+
+      await completer.future.timeout(
+        timeout,
+        onTimeout: () => throw StateError('P2P connection timeout'),
+      );
+    } finally {
+      await sub.cancel();
+    }
+  }
+
   /// 断开与指定 peer 的连接
   Future<void> disconnectPeer(String peerId) async {
     _reconnectTimers[peerId]?.cancel();

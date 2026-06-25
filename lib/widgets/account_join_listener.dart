@@ -36,14 +36,29 @@ class _AccountJoinListenerState extends State<AccountJoinListener> {
 
   void _onPending(AccountJoinPendingRequest req) {
     if (_shown.contains(req.requestId)) return;
-    _shown.add(req.requestId);
+    // 配对确认弹窗关闭后下一帧再弹，避免 Navigator 尚未就绪导致弹窗丢失。
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _presentJoinDialog(req);
+    });
+  }
+
+  void _presentJoinDialog(AccountJoinPendingRequest req, [int attempt = 0]) {
+    if (_shown.contains(req.requestId)) return;
+    if (attempt > 30) return;
 
     final ctx = navigatorKey.currentContext;
-    if (ctx == null || !ctx.mounted) return;
+    if (ctx == null || !ctx.mounted) {
+      WidgetsBinding.instance.addPostFrameCallback(
+        (_) => _presentJoinDialog(req, attempt + 1),
+      );
+      return;
+    }
 
+    _shown.add(req.requestId);
     final l10n = AppLocalizations.of(ctx);
     showDialog<void>(
       context: ctx,
+      useRootNavigator: true,
       barrierDismissible: false,
       builder: (dialogCtx) => AlertDialog(
         title: Text(l10n.account_joinDialogTitle),

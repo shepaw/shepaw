@@ -265,10 +265,17 @@ class PeerPairingService {
     _state = PairingSessionState.completed;
     _cleanup();
 
-    // 配对成功后通知 ConnectionManager 建立连接，并刷新会话/设备列表
+    // 配对成功后建立持久连接，确保移动端发来 account_join_req 时本机已就绪。
     PeerConnectionManager.instance.notifyPeerListChanged();
-    PeerConnectionManager.instance.connectToPeer(peer);
-    await PeerAgentHostService.instance.pushAgentList(peer.id);
+    try {
+      await PeerConnectionManager.instance.waitUntilConnected(
+        peer.id,
+        timeout: const Duration(seconds: 30),
+      );
+    } catch (e) {
+      _log.warning('Post-pairing connect wait: $e', tag: _tag);
+    }
+    unawaited(PeerAgentHostService.instance.pushAgentList(peer.id));
 
     _log.info('Pairing confirmed: ${peer.deviceName} (${peer.fingerprint})', tag: _tag);
     return peer;
