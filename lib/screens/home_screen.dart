@@ -1824,6 +1824,12 @@ class HomeScreenState extends State<HomeScreen> {
       final agent = selection.agent!;
 
       if (widget.embedded && widget.onConversationSelected != null) {
+        const userId = 'user';
+        final activeChannelId =
+            await _chatService.getLatestActiveChannelId(userId, agent.id);
+        final channelId =
+            activeChannelId ?? _chatService.generateChannelId(userId, agent.id);
+        await _databaseService.touchChannelUpdatedAt(channelId);
         setState(() {
           _unreadCounts[agent.id] = 0;
         });
@@ -1831,6 +1837,7 @@ class HomeScreenState extends State<HomeScreen> {
           agentId: agent.id,
           agentName: agent.name,
           agentAvatar: agent.avatar,
+          channelId: channelId,
         ));
         return;
       }
@@ -1840,6 +1847,7 @@ class HomeScreenState extends State<HomeScreen> {
           await _chatService.getLatestActiveChannelId(userId, agent.id);
       final channelId =
           activeChannelId ?? _chatService.generateChannelId(userId, agent.id);
+      await _databaseService.touchChannelUpdatedAt(channelId);
       await _databaseService.markChannelMessagesAsRead(channelId);
       setState(() {
         _unreadCounts[agent.id] = 0;
@@ -1853,6 +1861,7 @@ class HomeScreenState extends State<HomeScreen> {
             agentId: agent.id,
             agentName: agent.name,
             agentAvatar: agent.avatar,
+            channelId: channelId,
           ),
         ),
       ).then((_) async {
@@ -1975,7 +1984,12 @@ class HomeScreenState extends State<HomeScreen> {
     return InkWell(
       onTap: () async {
         if (widget.embedded && widget.onConversationSelected != null) {
-          // Embedded mode: fire callback, don't push route
+          const userId = 'user';
+          final activeChannelId =
+              await _chatService.getLatestActiveChannelId(userId, agent.id);
+          final channelId =
+              activeChannelId ?? _chatService.generateChannelId(userId, agent.id);
+          await _databaseService.touchChannelUpdatedAt(channelId);
           setState(() {
             _unreadCounts[agent.id] = 0;
           });
@@ -1983,6 +1997,7 @@ class HomeScreenState extends State<HomeScreen> {
             agentId: agent.id,
             agentName: agent.name,
             agentAvatar: agent.avatar,
+            channelId: channelId,
           ));
           return;
         }
@@ -1991,6 +2006,7 @@ class HomeScreenState extends State<HomeScreen> {
         const userId = 'user';
         final activeChannelId = await _chatService.getLatestActiveChannelId(userId, agent.id);
         final channelId = activeChannelId ?? _chatService.generateChannelId(userId, agent.id);
+        await _databaseService.touchChannelUpdatedAt(channelId);
         await _databaseService.markChannelMessagesAsRead(channelId);
         // 立即清除本地未读缓存
         setState(() {
@@ -2005,6 +2021,7 @@ class HomeScreenState extends State<HomeScreen> {
               agentId: agent.id,
               agentName: agent.name,
               agentAvatar: agent.avatar,
+              channelId: channelId,
             ),
           ),
         ).then((_) async {

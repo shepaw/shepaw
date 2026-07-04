@@ -502,6 +502,10 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
         return;
       }
 
+      // Mark this channel as the most recently opened for this agent so
+      // re-entry from the conversation list restores the same session.
+      await localDatabaseService.touchChannelUpdatedAt(currentChannelId!);
+
       AppLifecycleService().setActiveChannel(currentChannelId);
       NotificationService().cancelNotification(currentChannelId.hashCode);
 

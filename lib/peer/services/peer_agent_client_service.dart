@@ -521,8 +521,11 @@ class PeerAgentClientService {
       } else if (existing.name != name && name.isNotEmpty) {
         await _db.updateChannel(existing.copyWith(name: name));
       }
-      // Preserve the agent's real recency ordering in the session list.
-      if (s.updatedAt != null) {
+      // Seed recency from the remote only when the channel is first created.
+      // Overwriting updated_at on existing channels would clobber the local
+      // "last opened session" marker (touchChannelUpdatedAt) and make re-entry
+      // from the conversation list jump back to a different session.
+      if (existing == null && s.updatedAt != null) {
         await _db.setChannelUpdatedAt(channelId, s.updatedAt!);
       }
     }
