@@ -47,6 +47,7 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
   bool _isDeleting = false;
   bool _isEditing = false;
   bool _isSaving = false;
+  Timer? _autoSaveDebounce;
 
   /// Whether remote-session sync is enabled for this peer agent (default on).
   bool _peerSyncEnabled = true;
@@ -275,7 +276,17 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
   }
 
   @override
+  void deactivate() {
+    _autoSaveDebounce?.cancel();
+    if (_isEditing) {
+      unawaited(_persistChanges());
+    }
+    super.deactivate();
+  }
+
+  @override
   void dispose() {
+    _autoSaveDebounce?.cancel();
     _nameController.dispose();
     _bioController.dispose();
     _endpointController.dispose();
@@ -288,12 +299,69 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
   }
 
   void _enterEditMode() {
-    setState(() {
-      _isEditing = true;
-      _initEditingControllers();
-    });
+    _syncControllersFromAgent();
+    setState(() => _isEditing = true);
     if (_agent.isPeerAgent) {
       unawaited(_loadPeerModels());
+    }
+  }
+
+  void _scheduleAutoSave() {
+    if (!_isEditing) return;
+    _autoSaveDebounce?.cancel();
+    _autoSaveDebounce = Timer(const Duration(milliseconds: 600), () {
+      unawaited(_persistChanges());
+    });
+  }
+
+  void _syncControllersFromAgent() {
+    _nameController.text = _agent.name;
+    _bioController.text = _agent.bio ?? '';
+    _endpointController.text = _agent.endpoint;
+    _systemPromptController.text =
+        _agent.metadata['system_prompt'] as String? ?? '';
+    _remoteAgentIdController.text =
+        (_agent.metadata['target_agent_id'] as String?) ?? '';
+    _maxToolRoundsController.text =
+        (_agent.metadata['max_tool_rounds'] as num? ?? 100).toString();
+    _taskTimeoutController.text =
+        (_agent.metadata['task_timeout_seconds'] as num? ?? 600).toString();
+    _editingAvatar = _agent.avatar;
+    _localAvatarPath = null;
+    _editingProtocol = _agent.protocol;
+    _editingConnectionType = _agent.connectionType;
+    _editingAllowExternalAccess = _agent.allowExternalAccess;
+    _enabledSkills = _agent.enabledSkills;
+    _enabledCliCommands = _agent.enabledCliCommands;
+    _scenarioModels = AgentScenarioModels.loadForEditing(
+      metadata: _agent.metadata,
+      enabledToolModels: _agent.enabledToolModels,
+      modelRouting: _agent.modelRouting,
+      definitions: ModelRegistry.instance.definitions,
+    );
+    _selectedMainModelId = null;
+    final storedId = _agent.metadata['main_model_id'] as String?;
+    if (storedId != null && ModelRegistry.instance.getById(storedId) != null) {
+      _selectedMainModelId = storedId;
+    } else {
+      final savedModel = _agent.metadata['llm_model'] as String?;
+      final savedBase = _agent.metadata['llm_api_base'] as String?;
+      if (savedModel != null) {
+        for (final def in ModelRegistry.instance.definitions) {
+          if (def.route.model == savedModel && def.route.apiBase == savedBase) {
+            _selectedMainModelId = def.id;
+            break;
+          }
+        }
+        if (_selectedMainModelId == null) {
+          for (final def in ModelRegistry.instance.definitions) {
+            if (def.route.model == savedModel) {
+              _selectedMainModelId = def.id;
+              break;
+            }
+          }
+        }
+      }
     }
   }
 
@@ -306,23 +374,19 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
     }
   }
 
-  void _cancelEdit() {
-    setState(() {
-      _isEditing = false;
-      _initEditingControllers();
-    });
-  }
-
-  Future<void> _saveEdit() async {
+  Future<void> _persistChanges({bool showFeedback = false}) async {
+    if (!_isEditing) return;
     final l10n = AppLocalizations.of(context);
     final name = _nameController.text.trim();
     if (name.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(l10n.agentDetail_nameRequired),
-          backgroundColor: Colors.red,
-        ),
-      );
+      return;
+    }
+
+    if (_isSaving) {
+      _autoSaveDebounce?.cancel();
+      _autoSaveDebounce = Timer(const Duration(milliseconds: 400), () {
+        unawaited(_persistChanges(showFeedback: showFeedback));
+      });
       return;
     }
 
@@ -427,12 +491,14 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
         metadata.remove('target_agent_id');
       }
 
-      // Save tool call limits
-      final maxToolRounds = int.tryParse(_maxToolRoundsController.text.trim());
-      if (maxToolRounds != null && maxToolRounds >= 1 && maxToolRounds <= 500) {
-        metadata['max_tool_rounds'] = maxToolRounds;
-      } else {
-        metadata['max_tool_rounds'] = 100;
+      // Save tool call limits (local / self-managed remote agents only)
+      if (!_agent.isPeerAgent) {
+        final maxToolRounds = int.tryParse(_maxToolRoundsController.text.trim());
+        if (maxToolRounds != null && maxToolRounds >= 1 && maxToolRounds <= 500) {
+          metadata['max_tool_rounds'] = maxToolRounds;
+        } else {
+          metadata['max_tool_rounds'] = 100;
+        }
       }
       final taskTimeout = int.tryParse(_taskTimeoutController.text.trim());
       if (taskTimeout != null && taskTimeout >= 60 && taskTimeout <= 3600) {
@@ -457,11 +523,10 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
 
       setState(() {
         _agent = updatedAgent;
-        _isEditing = false;
         _isSaving = false;
       });
 
-      if (mounted) {
+      if (mounted && showFeedback) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text(l10n.agentDetail_saveSuccess)),
         );
@@ -622,6 +687,7 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
                     _editingAvatar = avatar;
                     _localAvatarPath = null;
                   });
+                  _scheduleAutoSave();
                   Navigator.pop(ctx);
                 },
                 child: Container(
@@ -704,6 +770,7 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
         _localAvatarPath = relativePath;
         _editingAvatar = fullPath;
       });
+      _scheduleAutoSave();
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -757,11 +824,24 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
         title: Text(_isEditing ? l10n.agentDetail_editTitle : l10n.agentDetail_title),
         centerTitle: true,
         actions: [
-          if (!_isEditing && !_isDeleting)
+          if (_isEditing && _isSaving)
+            const Padding(
+              padding: EdgeInsets.only(right: 8),
+              child: Center(
+                child: SizedBox(
+                  width: 18,
+                  height: 18,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                ),
+              ),
+            ),
+          if (!_isDeleting)
             IconButton(
-              icon: const Icon(Icons.edit_outlined),
-              tooltip: l10n.agentDetail_editTooltip,
-              onPressed: _enterEditMode,
+              icon: Icon(_isEditing ? Icons.check : Icons.edit_outlined),
+              tooltip: _isEditing ? l10n.common_confirm : l10n.agentDetail_editTooltip,
+              onPressed: _isEditing
+                  ? () => setState(() => _isEditing = false)
+                  : _enterEditMode,
             ),
         ],
       ),
@@ -776,7 +856,7 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
                         child: _buildEditBody(),
                       ),
                     ),
-                    _buildEditBottomBar(),
+                    _buildDetailBottomBar(),
                   ],
                 )
               : Column(
@@ -810,7 +890,7 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
       children: [
         _buildHeader(),
         const SizedBox(height: 24),
-        _buildInfoCard(),
+        if (!_agent.isPeerAgent) _buildInfoCard(),
         if (_isLocalMode) ...[
           const SizedBox(height: 16),
           _buildSkillsCard(),
@@ -1009,6 +1089,17 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
                 fillColor: colorScheme.surface,
               ),
               hint: const Text('选择模型'),
+              selectedItemBuilder: (context) => _peerModels
+                  .map(
+                    (m) => Align(
+                      alignment: AlignmentDirectional.centerStart,
+                      child: Text(
+                        m.displayName,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  )
+                  .toList(),
               items: _peerModels
                   .map(
                     (m) => DropdownMenuItem<String>(
@@ -1121,8 +1212,8 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
                   ),
             ),
             const Divider(height: 24),
-            // Remote-only connection fields
-            if (!_isLocalMode) ...[
+            // Remote-only connection fields (peer agents use P2P tunnel)
+            if (!_isLocalMode && !_agent.isPeerAgent) ...[
               _buildInfoRow(l10n.agentDetail_protocol, _agent.protocolName),
               const SizedBox(height: 8),
               _buildInfoRow(l10n.agentDetail_connectionType, _agent.connectionTypeName),
@@ -1178,9 +1269,11 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
               _buildInfoRow(l10n.agentDetail_lastActive, _formatTimestamp(_agent.lastHeartbeat!)),
             ],
             const SizedBox(height: 8),
-            _buildInfoRow('最大工具调用轮次',
-                '${(_agent.metadata['max_tool_rounds'] as num? ?? 100).toInt()} 次'),
-            const SizedBox(height: 8),
+            if (!_agent.isPeerAgent) ...[
+              _buildInfoRow('最大工具调用轮次',
+                  '${(_agent.metadata['max_tool_rounds'] as num? ?? 100).toInt()} 次'),
+              const SizedBox(height: 8),
+            ],
             _buildInfoRow('任务超时时间',
                 '${(_agent.metadata['task_timeout_seconds'] as num? ?? 600).toInt()} 秒'),
             const SizedBox(height: 8),
@@ -1383,6 +1476,7 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
         value: _editingAllowExternalAccess,
         onChanged: (value) {
           setState(() => _editingAllowExternalAccess = value);
+          _scheduleAutoSave();
         },
       ),
     );
@@ -1447,8 +1541,8 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
         _buildEditBasicInfoCard(colorScheme),
         const SizedBox(height: 16),
 
-        // 卡片 2: 连接配置（仅远端 agent 显示）
-        if (!_isLocalMode) ...[
+        // 卡片 2: 连接配置（仅自管远端 agent，不含 peer agent）
+        if (!_isLocalMode && !_agent.isPeerAgent) ...[
           _buildEditConnectionCard(colorScheme),
           const SizedBox(height: 16),
         ],
@@ -1465,11 +1559,15 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
         if (_isLocalMode) ...[
           AgentModelConfigCard(
             mainModelId: _selectedMainModelId,
-            onMainModelChanged: (id) =>
-                setState(() => _selectedMainModelId = id),
+            onMainModelChanged: (id) {
+              setState(() => _selectedMainModelId = id);
+              _scheduleAutoSave();
+            },
             scenarioModels: _scenarioModels,
-            onScenarioModelsChanged: (models) =>
-                setState(() => _scenarioModels = models),
+            onScenarioModelsChanged: (models) {
+              setState(() => _scenarioModels = models);
+              _scheduleAutoSave();
+            },
             showRequiredBadge: true,
             mainModelValidator: (val) {
               if (val == null || val.isEmpty) {
@@ -1521,54 +1619,6 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
     );
   }
 
-  Widget _buildEditBottomBar() {
-    final l10n = AppLocalizations.of(context);
-    final colorScheme = Theme.of(context).colorScheme;
-
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-      decoration: BoxDecoration(
-        color: Theme.of(context).scaffoldBackgroundColor,
-        border: Border(
-          top: BorderSide(color: colorScheme.outlineVariant),
-        ),
-      ),
-      child: Row(
-        children: [
-          Expanded(
-            child: OutlinedButton(
-              onPressed: _isSaving ? null : _cancelEdit,
-              style: OutlinedButton.styleFrom(
-                padding: const EdgeInsets.symmetric(vertical: 16),
-              ),
-              child: Text(l10n.common_cancel),
-            ),
-          ),
-          const SizedBox(width: 16),
-          Expanded(
-            child: ElevatedButton.icon(
-              onPressed: _isSaving ? null : _saveEdit,
-              icon: _isSaving
-                  ? const SizedBox(
-                      width: 18,
-                      height: 18,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2,
-                        color: Colors.white,
-                      ),
-                    )
-                  : const Icon(Icons.save),
-              label: Text(l10n.common_save),
-              style: ElevatedButton.styleFrom(
-                padding: const EdgeInsets.symmetric(vertical: 16),
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
   Widget _buildEditBasicInfoCard(ColorScheme colorScheme) {
     final l10n = AppLocalizations.of(context);
     return Card(
@@ -1604,6 +1654,7 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
                 border: const OutlineInputBorder(),
                 prefixIcon: const Icon(Icons.badge),
               ),
+              onChanged: (_) => _scheduleAutoSave(),
             ),
             const SizedBox(height: 12),
             TextFormField(
@@ -1615,6 +1666,7 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
                 prefixIcon: const Icon(Icons.description),
               ),
               maxLines: 2,
+              onChanged: (_) => _scheduleAutoSave(),
             ),
             const SizedBox(height: 12),
             TextFormField(
@@ -1628,25 +1680,29 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
               ),
               maxLines: 4,
               minLines: 2,
+              onChanged: (_) => _scheduleAutoSave(),
             ),
-            const SizedBox(height: 12),
-            TextFormField(
-              controller: _maxToolRoundsController,
-              decoration: const InputDecoration(
-                labelText: '最大工具调用轮次',
-                hintText: '默认 100',
-                border: OutlineInputBorder(),
-                prefixIcon: Icon(Icons.repeat),
-                helperText: '单次对话中 LLM 最多可调用工具的轮数（1–500）',
+            if (!_agent.isPeerAgent) ...[
+              const SizedBox(height: 12),
+              TextFormField(
+                controller: _maxToolRoundsController,
+                decoration: const InputDecoration(
+                  labelText: '最大工具调用轮次',
+                  hintText: '默认 100',
+                  border: OutlineInputBorder(),
+                  prefixIcon: Icon(Icons.repeat),
+                  helperText: '单次对话中 LLM 最多可调用工具的轮数（1–500）',
+                ),
+                keyboardType: TextInputType.number,
+                onChanged: (_) => _scheduleAutoSave(),
+                validator: (value) {
+                  if (value == null || value.trim().isEmpty) return null;
+                  final n = int.tryParse(value.trim());
+                  if (n == null || n < 1 || n > 500) return '请输入 1 到 500 之间的整数';
+                  return null;
+                },
               ),
-              keyboardType: TextInputType.number,
-              validator: (value) {
-                if (value == null || value.trim().isEmpty) return null;
-                final n = int.tryParse(value.trim());
-                if (n == null || n < 1 || n > 500) return '请输入 1 到 500 之间的整数';
-                return null;
-              },
-            ),
+            ],
             const SizedBox(height: 12),
             TextFormField(
               controller: _taskTimeoutController,
@@ -1658,6 +1714,7 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
                 helperText: '单次任务的最长等待时间（60–3600 秒）',
               ),
               keyboardType: TextInputType.number,
+              onChanged: (_) => _scheduleAutoSave(),
               validator: (value) {
                 if (value == null || value.trim().isEmpty) return null;
                 final n = int.tryParse(value.trim());
@@ -1709,6 +1766,7 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
                 prefixIcon: const Icon(Icons.language),
               ),
               keyboardType: TextInputType.url,
+              onChanged: (_) => _scheduleAutoSave(),
             ),
             const SizedBox(height: 16),
 
@@ -1724,6 +1782,7 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
               ),
               enableSuggestions: false,
               autocorrect: false,
+              onChanged: (_) => _scheduleAutoSave(),
             ),
           ],
         ),
@@ -1771,6 +1830,7 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
                 setState(() {
                   _enabledSkills = result;
                 });
+                _scheduleAutoSave();
               }
             },
           ),
@@ -1802,6 +1862,7 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
                 setState(() {
                   _enabledCliCommands = result;
                 });
+                _scheduleAutoSave();
               }
             },
           ),
