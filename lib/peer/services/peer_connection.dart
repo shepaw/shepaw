@@ -91,6 +91,8 @@ class PeerConnection {
     'agent_done',
     'agent_error',
     'agent_cancel',
+    'agent_approval_req',
+    'agent_approval_resp',
   };
 
   /// 连接状态变化
