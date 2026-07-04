@@ -819,7 +819,16 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
-    return Scaffold(
+    return PopScope(
+      canPop: widget.initialEditMode || !_isEditing,
+      onPopInvokedWithResult: (didPop, result) {
+        if (didPop) return;
+        _autoSaveDebounce?.cancel();
+        unawaited(_persistChanges().then((_) {
+          if (mounted) setState(() => _isEditing = false);
+        }));
+      },
+      child: Scaffold(
       appBar: AppBar(
         title: Text(_isEditing ? l10n.agentDetail_editTitle : l10n.agentDetail_title),
         centerTitle: true,
@@ -835,13 +844,11 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
                 ),
               ),
             ),
-          if (!_isDeleting)
+          if (!_isDeleting && !_isEditing)
             IconButton(
-              icon: Icon(_isEditing ? Icons.check : Icons.edit_outlined),
-              tooltip: _isEditing ? l10n.common_confirm : l10n.agentDetail_editTooltip,
-              onPressed: _isEditing
-                  ? () => setState(() => _isEditing = false)
-                  : _enterEditMode,
+              icon: const Icon(Icons.edit_outlined),
+              tooltip: l10n.agentDetail_editTooltip,
+              onPressed: _enterEditMode,
             ),
         ],
       ),
@@ -870,6 +877,7 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
                     _buildDetailBottomBar(),
                   ],
                 ),
+    ),
     );
   }
 
