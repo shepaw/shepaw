@@ -41,8 +41,13 @@ import '../services/she_service.dart';
 import 'channel_trace_screen.dart';
 import 'group_workflow_screen.dart';
 import '../widgets/workflow/workflow_progress_panel.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../peer/widgets/peer_source_badge.dart';
 import '../peer/services/peer_agent_client_service.dart';
+import '../peer/services/peer_connection_manager.dart';
+
+/// User's response to the "sync remote sessions" prompt.
+enum _PeerSyncChoice { sync, later, disable }
 
 class ChatScreen extends StatefulWidget {
   final String? agentId;
@@ -83,6 +88,10 @@ class ChatScreen extends StatefulWidget {
 class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   late final ChatController _controller;
   StreamSubscription<ChatEvent>? _eventSubscription;
+
+  /// True while pulling this synced session's transcript from the remote,
+  /// so the app bar can show a "同步远端…" indicator.
+  bool _syncingPeerHistory = false;
 
   // UI-only state (bound to widget tree)
   final _messageController = TextEditingController();
@@ -168,6 +177,8 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     _checkSheNeedsConfig();
     _checkAgentAudioSupport();
     _checkAgentImageSupport();
+    _maybePromptPeerSessionSync();
+    _maybeSyncPeerHistory();
   }
 
   @override
@@ -1581,6 +1592,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                 isAgentOnline: c.isAgentOnline,
                 currentChannelId: c.currentChannelId,
                 sourceDeviceLabel: c.sourceDeviceLabel,
+                syncingRemote: _syncingPeerHistory,
                 onAvatarTap: _navigateToAgentDetail,
                 onStopGenerating: c.isProcessing
                     ? () => c.stopStreaming()
@@ -1833,6 +1845,151 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     if (supportsAudio != _agentSupportsAudio) {
       setState(() => _agentSupportsAudio = supportsAudio);
     }
+  }
+
+  /// On first open of a peer agent, detect the remote agent's existing
+  /// sessions and, with user confirmation, mirror them into local channels so
+  /// the app's session list matches the remote exactly (no "session crossing").
+  /// On every entry, check whether the peer agent's remote session list matches
+  /// what we've synced locally. If new remote sessions exist, prompt to sync
+  /// (unless the user turned sync off for this agent). When already consistent,
+  /// silently refresh titles/ordering.
+  Future<void> _maybePromptPeerSessionSync() async {
+    final agentId = widget.agentId;
+    if (agentId == null) return;
+    final agent = await _controller.localDatabaseService.getRemoteAgentById(agentId);
+    if (agent == null || !agent.isPeerAgent) return;
+    final peerId = agent.sourcePeerId;
+    final remoteAgentId = agent.remoteAgentId;
+    if (peerId == null || remoteAgentId == null) return;
+
+    final prefs = await SharedPreferences.getInstance();
+    if (prefs.getBool('peer_sync_disabled_$agentId') == true) return;
+
+    // Need a live connection to enumerate remote sessions; retry on a later
+    // open if the peer isn't connected yet.
+    if (!PeerConnectionManager.instance.connectedPeerIds.contains(peerId)) return;
+
+    final sessions = await PeerAgentClientService.instance.fetchSessions(
+      peerId: peerId,
+      remoteAgentId: remoteAgentId,
+    );
+    if (!mounted || sessions.isEmpty) return;
+
+    // Which remote sessions aren't mirrored locally yet?
+    final localChannels =
+        await _controller.localDatabaseService.getChannelsForAgent(agentId);
+    final localRemoteIds = localChannels
+        .map((c) => remoteSessionIdFromChannelId(c.id))
+        .whereType<String>()
+        .toSet();
+    final missing =
+        sessions.where((s) => !localRemoteIds.contains(s.sessionId)).toList();
+
+    if (missing.isEmpty) {
+      // Consistent — silently keep titles / recency fresh, no prompt.
+      if (!mounted) return;
+      await PeerAgentClientService.instance.syncSessions(
+        peerId: peerId,
+        remoteAgentId: remoteAgentId,
+        localAgentId: agentId,
+        userId: _controller.getUserId(),
+        sessions: sessions,
+      );
+      return;
+    }
+
+    final choice = await _showPeerSessionSyncDialog(agent.name, missing.length);
+    if (!mounted) return;
+    if (choice == _PeerSyncChoice.disable) {
+      await prefs.setBool('peer_sync_disabled_$agentId', true);
+      return;
+    }
+    if (choice != _PeerSyncChoice.sync) return; // 暂不 / dismissed
+
+    final count = await PeerAgentClientService.instance.syncSessions(
+      peerId: peerId,
+      remoteAgentId: remoteAgentId,
+      localAgentId: agentId,
+      userId: _controller.getUserId(),
+      sessions: sessions,
+    );
+    if (!mounted) return;
+    showTopToast(
+      context,
+      '已同步 $count 个远端会话',
+      icon: Icons.sync,
+      color: Colors.green,
+    );
+  }
+
+  /// Pull the remote transcript on every entry into a synced session so local
+  /// content stays consistent with the remote (pull-authoritative). Rebuilds
+  /// and refreshes the view only when the transcript actually changed.
+  Future<void> _maybeSyncPeerHistory() async {
+    final channelId = widget.channelId;
+    final agentId = widget.agentId;
+    if (channelId == null || agentId == null) return;
+    if (!channelId.startsWith(kSyncedPeerSessionPrefix)) return;
+
+    final agent = await _controller.localDatabaseService.getRemoteAgentById(agentId);
+    if (agent == null || !agent.isPeerAgent) return;
+    final peerId = agent.sourcePeerId;
+    final remoteAgentId = agent.remoteAgentId;
+    if (peerId == null || remoteAgentId == null) return;
+    if (!PeerConnectionManager.instance.connectedPeerIds.contains(peerId)) return;
+
+    // Honor the per-agent sync toggle.
+    final prefs = await SharedPreferences.getInstance();
+    if (prefs.getBool('peer_sync_disabled_$agentId') == true) return;
+
+    if (mounted) setState(() => _syncingPeerHistory = true);
+    int written = 0;
+    try {
+      written = await PeerAgentClientService.instance.syncHistory(
+        peerId: peerId,
+        remoteAgentId: remoteAgentId,
+        localAgentId: agentId,
+        agentName: agent.name,
+        channelId: channelId,
+        userId: _controller.getUserId(),
+        userName: _controller.getUserName(),
+      );
+    } finally {
+      if (mounted) setState(() => _syncingPeerHistory = false);
+    }
+    if (written > 0 && mounted && _controller.currentChannelId == channelId) {
+      await _controller.reloadMessagesFromDB();
+    }
+  }
+
+  Future<_PeerSyncChoice> _showPeerSessionSyncDialog(String agentName, int count) async {
+    final choice = await showDialog<_PeerSyncChoice>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('同步远端会话'),
+        content: Text(
+          '在 $agentName 上发现 $count 个尚未同步的远端会话。\n\n'
+          '是否同步到本地？同步后可在会话列表中查看并继续这些会话，'
+          '本地会话将与远端保持一致。',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(_PeerSyncChoice.disable),
+            child: const Text('关闭同步'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(_PeerSyncChoice.later),
+            child: const Text('暂不'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(ctx).pop(_PeerSyncChoice.sync),
+            child: const Text('同步'),
+          ),
+        ],
+      ),
+    );
+    return choice ?? _PeerSyncChoice.later;
   }
 
   /// Navigate to She's detail screen so the user can pick a model.

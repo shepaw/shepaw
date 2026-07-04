@@ -12,8 +12,10 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:sqflite/sqflite.dart';
 import 'package:uuid/uuid.dart';
 
+import '../../models/channel.dart';
 import '../../models/remote_agent.dart';
 import '../../models/acp_protocol.dart';
 import '../../services/acp_agent_connection.dart';
@@ -28,11 +30,79 @@ import 'peer_connection_manager.dart';
 String peerAgentLocalId(String peerId, String remoteAgentId) =>
     'peeragent_${peerId}_$remoteAgentId';
 
+/// 「已同步的远端 peer 会话」在本地 channel id 上的前缀。
+///
+/// 本地 channel id = `psess_<远端 sessionId>`。发消息时会剥离前缀，把裸的远端
+/// sessionId 作为 `session_id` 发回对端，从而命中 acp-proxy 预置的映射并 resume
+/// 到真实的上游会话——保证本地会话与远端一一对应、不串 session。
+const String kSyncedPeerSessionPrefix = 'psess_';
+
+/// 由远端 sessionId 生成本地已同步会话的 channel id。
+String syncedPeerChannelId(String remoteSessionId) =>
+    '$kSyncedPeerSessionPrefix$remoteSessionId';
+
+/// 若 [channelId] 是已同步的远端会话，返回其绑定的远端 sessionId，否则返回 null。
+String? remoteSessionIdFromChannelId(String channelId) =>
+    channelId.startsWith(kSyncedPeerSessionPrefix)
+        ? channelId.substring(kSyncedPeerSessionPrefix.length)
+        : null;
+
 /// [PeerAgentClientService.sendChat] 的结果。
 class PeerChatResult {
   final String content;
   final Map<String, dynamic>? metadata;
   PeerChatResult({required this.content, this.metadata});
+}
+
+/// 对端某个 agent 已知的一条会话（由 `agent_sessions_resp` 返回）。
+///
+/// [sessionId] 是「回发给对端 `agent_chat` 的 session_id」——本端据此建立/绑定
+/// 一条本地 channel，从此该会话的每条消息都用同一 session_id 打过去，保证与远端
+/// 会话一一对应、不串。
+class PeerRemoteSession {
+  final String sessionId;
+  final String? title;
+  final DateTime? updatedAt;
+
+  PeerRemoteSession({required this.sessionId, this.title, this.updatedAt});
+
+  static PeerRemoteSession? fromJson(Map<String, dynamic> json) {
+    final id = json['session_id'] as String?;
+    if (id == null || id.isEmpty) return null;
+    DateTime? updated;
+    final rawUpdated = json['updated_at'];
+    if (rawUpdated is String && rawUpdated.isNotEmpty) {
+      updated = DateTime.tryParse(rawUpdated);
+    }
+    final title = (json['title'] as String?)?.trim();
+    return PeerRemoteSession(
+      sessionId: id,
+      title: (title != null && title.isNotEmpty) ? title : null,
+      updatedAt: updated,
+    );
+  }
+}
+
+/// One replayed conversation turn from a peer session's transcript
+/// (via `agent_session_history_resp`).
+class PeerHistoryMessage {
+  /// `user` or `agent`.
+  final String role;
+  final String content;
+  final String? messageId;
+
+  PeerHistoryMessage({required this.role, required this.content, this.messageId});
+
+  static PeerHistoryMessage? fromJson(Map<String, dynamic> json) {
+    final role = json['role'] as String?;
+    final content = json['content'] as String?;
+    if (role == null || content == null) return null;
+    return PeerHistoryMessage(
+      role: role,
+      content: content,
+      messageId: json['message_id'] as String?,
+    );
+  }
 }
 
 class _PendingRequest {
@@ -63,6 +133,12 @@ class PeerAgentClientService {
   final Map<String, List<SlashCommandInfo>> _commandsCache = {};
   /// Outstanding agent_commands_req per remote agent id.
   final Map<String, Completer<List<SlashCommandInfo>>> _pendingCommands = {};
+
+  /// Outstanding agent_sessions_req per remote agent id.
+  final Map<String, Completer<List<PeerRemoteSession>>> _pendingSessions = {};
+
+  /// Outstanding agent_session_history_req per "agentId::sessionId" key.
+  final Map<String, Completer<List<PeerHistoryMessage>>> _pendingHistory = {};
 
   LocalDatabaseService get _db => getIt<LocalDatabaseService>();
   final _fileStorage = LocalFileStorageService();
@@ -98,6 +174,14 @@ class PeerAgentClientService {
       }
     }
     _pending.clear();
+    for (final c in _pendingSessions.values) {
+      if (!c.isCompleted) c.complete(const []);
+    }
+    _pendingSessions.clear();
+    for (final c in _pendingHistory.values) {
+      if (!c.isCompleted) c.complete(const []);
+    }
+    _pendingHistory.clear();
   }
 
   // ── 发送（消费方 → 提供方） ────────────────────────────────────────────
@@ -169,7 +253,208 @@ class PeerAgentClientService {
       case 'agent_commands_resp':
         _onCommandsResp(event.peerId, event.data);
         break;
+      case 'agent_sessions_resp':
+        _onSessionsResp(event.data);
+        break;
+      case 'agent_session_history_resp':
+        _onSessionHistoryResp(event.data);
+        break;
     }
+  }
+
+  /// Fetch a remote session's transcript (oldest → newest) so the app can
+  /// backfill local chat history when opening a synced session. Returns `[]`
+  /// on failure/timeout or when the agent can't replay.
+  Future<List<PeerHistoryMessage>> fetchHistory({
+    required String peerId,
+    required String remoteAgentId,
+    required String sessionId,
+  }) async {
+    final key = '$remoteAgentId::$sessionId';
+    if (_pendingHistory.containsKey(key)) return _pendingHistory[key]!.future;
+    final completer = Completer<List<PeerHistoryMessage>>();
+    _pendingHistory[key] = completer;
+    final sent = await PeerConnectionManager.instance.sendControl(peerId, {
+      'type': 'agent_session_history_req',
+      'agent_id': remoteAgentId,
+      'session_id': sessionId,
+    });
+    if (!sent) {
+      _pendingHistory.remove(key);
+      return const [];
+    }
+    return completer.future.timeout(const Duration(seconds: 45), onTimeout: () {
+      _pendingHistory.remove(key);
+      return const [];
+    });
+  }
+
+  void _onSessionHistoryResp(Map<String, dynamic> data) {
+    final remoteId = data['agent_id'] as String?;
+    final sessionId = data['session_id'] as String?;
+    if (remoteId == null || sessionId == null) return;
+    final raw = (data['messages'] as List?) ?? const [];
+    final messages = raw
+        .whereType<Map<String, dynamic>>()
+        .map(PeerHistoryMessage.fromJson)
+        .whereType<PeerHistoryMessage>()
+        .toList();
+    final completer = _pendingHistory.remove('$remoteId::$sessionId');
+    if (completer != null && !completer.isCompleted) completer.complete(messages);
+  }
+
+  /// Fetch an agent's known sessions from the hub (agent.sessions.list relay).
+  ///
+  /// Returns `[]` on failure/timeout or when the underlying agent can't
+  /// enumerate sessions (graceful degrade — the UI just shows no remote list).
+  Future<List<PeerRemoteSession>> fetchSessions({
+    required String peerId,
+    required String remoteAgentId,
+  }) async {
+    if (_pendingSessions.containsKey(remoteAgentId)) {
+      return _pendingSessions[remoteAgentId]!.future;
+    }
+    final completer = Completer<List<PeerRemoteSession>>();
+    _pendingSessions[remoteAgentId] = completer;
+    final sent = await PeerConnectionManager.instance.sendControl(peerId, {
+      'type': 'agent_sessions_req',
+      'agent_id': remoteAgentId,
+    });
+    if (!sent) {
+      _pendingSessions.remove(remoteAgentId);
+      return const [];
+    }
+    return completer.future.timeout(const Duration(seconds: 10), onTimeout: () {
+      _pendingSessions.remove(remoteAgentId);
+      return const [];
+    });
+  }
+
+  void _onSessionsResp(Map<String, dynamic> data) {
+    final remoteId = data['agent_id'] as String?;
+    if (remoteId == null) return;
+    final raw = (data['sessions'] as List?) ?? const [];
+    final sessions = raw
+        .whereType<Map<String, dynamic>>()
+        .map(PeerRemoteSession.fromJson)
+        .whereType<PeerRemoteSession>()
+        .toList();
+    final completer = _pendingSessions.remove(remoteId);
+    if (completer != null && !completer.isCompleted) completer.complete(sessions);
+  }
+
+  /// Mirror a peer agent's remote sessions into local channels (shell only).
+  ///
+  /// For each remote session we create/update one local channel whose id binds
+  /// the remote sessionId (see [syncedPeerChannelId]). No history is pulled
+  /// here — opening the channel later resumes the real upstream session on the
+  /// agent-bridge side, so context stays intact without duplicating storage.
+  ///
+  /// Returns the number of remote sessions synced (0 if none / not enumerable).
+  Future<int> syncSessions({
+    required String peerId,
+    required String remoteAgentId,
+    required String localAgentId,
+    required String userId,
+    required List<PeerRemoteSession> sessions,
+  }) async {
+    if (sessions.isEmpty) return 0;
+    for (final s in sessions) {
+      final channelId = syncedPeerChannelId(s.sessionId);
+      final name = s.title ?? 'Session';
+      final existing = await _db.getChannelById(channelId);
+      if (existing == null) {
+        final channel = Channel.withMemberIds(
+          id: channelId,
+          name: name,
+          type: 'dm',
+          memberIds: [userId, localAgentId],
+          isPrivate: true,
+        );
+        await _db.createChannel(channel, userId);
+      } else if (existing.name != name && name.isNotEmpty) {
+        await _db.updateChannel(existing.copyWith(name: name));
+      }
+      // Preserve the agent's real recency ordering in the session list.
+      if (s.updatedAt != null) {
+        await _db.setChannelUpdatedAt(channelId, s.updatedAt!);
+      }
+    }
+    _log.info(
+      'Synced ${sessions.length} remote session(s) for peer agent $localAgentId',
+      tag: _tag,
+    );
+    return sessions.length;
+  }
+
+  /// Pull a synced session's transcript from the remote and make the local
+  /// channel mirror it exactly. Meant to run on every entry (pull-authoritative).
+  ///
+  /// Fetches the remote transcript; if it differs from what's stored locally,
+  /// rebuilds the channel's messages to match. If the fetch is empty (agent
+  /// can't replay / timeout), local messages are kept untouched. Returns the
+  /// number of messages written, or 0 when nothing changed / local was kept.
+  Future<int> syncHistory({
+    required String peerId,
+    required String remoteAgentId,
+    required String localAgentId,
+    required String agentName,
+    required String channelId,
+    required String userId,
+    required String userName,
+  }) async {
+    final remoteSessionId = remoteSessionIdFromChannelId(channelId);
+    if (remoteSessionId == null) return 0;
+
+    final history = await fetchHistory(
+      peerId: peerId,
+      remoteAgentId: remoteAgentId,
+      sessionId: remoteSessionId,
+    );
+    if (history.isEmpty) return 0;
+
+    // Skip the rewrite (and UI flicker) when local already matches remote.
+    final existing = await _db.getChannelMessages(channelId, limit: 2000);
+    final existingAsc = existing.reversed.toList();
+    if (existingAsc.length == history.length) {
+      var identical = true;
+      for (var i = 0; i < history.length; i++) {
+        final row = existingAsc[i];
+        final role = (row['sender_type'] as String?) == 'user' ? 'user' : 'agent';
+        if (role != history[i].role || (row['content'] as String? ?? '') != history[i].content) {
+          identical = false;
+          break;
+        }
+      }
+      if (identical) return 0;
+    }
+
+    // Rebuild to mirror the remote transcript exactly.
+    await _db.deleteChannelMessages(channelId);
+    final baseMs = DateTime.now().millisecondsSinceEpoch - history.length * 1000;
+    for (var i = 0; i < history.length; i++) {
+      final m = history[i];
+      final isUser = m.role == 'user';
+      final createdAt = DateTime.fromMillisecondsSinceEpoch(baseMs + i * 1000);
+      final msgId = m.messageId != null && m.messageId!.isNotEmpty
+          ? 'peerhist_${m.messageId}'
+          : 'peerhist_${channelId}_$i';
+      await _db.createMessage(
+        id: msgId,
+        channelId: channelId,
+        senderId: isUser ? userId : localAgentId,
+        senderType: isUser ? 'user' : 'agent',
+        senderName: isUser ? userName : agentName,
+        content: m.content,
+        createdAt: createdAt,
+        conflictAlgorithm: ConflictAlgorithm.replace,
+      );
+    }
+    _log.info(
+      'Synced ${history.length} history message(s) into $channelId',
+      tag: _tag,
+    );
+    return history.length;
   }
 
   /// Cached slash commands for an agent (by local agent id). Empty until the

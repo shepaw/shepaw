@@ -94,6 +94,17 @@ extension ChannelDao on LocalDatabaseService {
     );
   }
 
+  /// 将 Channel 的 updated_at 显式设为指定时间（用于同步远端会话的真实活跃时间）。
+  Future<void> setChannelUpdatedAt(String channelId, DateTime at) async {
+    final db = await database;
+    await db.update(
+      'channels',
+      {'updated_at': at.toIso8601String()},
+      where: 'id = ?',
+      whereArgs: [channelId],
+    );
+  }
+
   /// 删除 Channel
   Future<void> deleteChannel(String id) async {
     final db = await database;

@@ -14,6 +14,14 @@ class SessionUtils {
         return 'Session #default';
       }
     }
+    // Synced peer session: id is `psess_<remoteSessionId>` (see
+    // kSyncedPeerSessionPrefix). Show the tail of the bound remote session id.
+    const peerPrefix = 'psess_';
+    if (channelId.startsWith(peerPrefix)) {
+      final sid = channelId.substring(peerPrefix.length);
+      final tail = sid.length > 6 ? sid.substring(sid.length - 6) : sid;
+      return 'Session #$tail';
+    }
     // channelId format: dm_userId_agentId or dm_userId_agentId_timestamp
     //                   group_<uuid>
     final parts = channelId.split('_');

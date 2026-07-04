@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../widgets/avatar_image.dart';
 import '../l10n/app_localizations.dart';
 import '../models/remote_agent.dart';
@@ -45,6 +46,9 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
   bool _isDeleting = false;
   bool _isEditing = false;
   bool _isSaving = false;
+
+  /// Whether remote-session sync is enabled for this peer agent (default on).
+  bool _peerSyncEnabled = true;
 
   // 编辑用的控制器
   late TextEditingController _nameController;
@@ -105,7 +109,20 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
           setState(() {});
         }
       });
+      _loadPeerSyncPref();
     }
+  }
+
+  Future<void> _loadPeerSyncPref() async {
+    final prefs = await SharedPreferences.getInstance();
+    final disabled = prefs.getBool('peer_sync_disabled_${_agent.id}') == true;
+    if (mounted) setState(() => _peerSyncEnabled = !disabled);
+  }
+
+  Future<void> _setPeerSyncEnabled(bool enabled) async {
+    setState(() => _peerSyncEnabled = enabled);
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('peer_sync_disabled_${_agent.id}', !enabled);
   }
 
   /// 页面展示用的在线状态。peer agent 跟随来源设备的 P2P 连接状态，其余 agent
@@ -809,8 +826,33 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
         if (_agent.isPeerAgent) ...[
           const SizedBox(height: 8),
           _buildPeerSourceChip(),
+          const SizedBox(height: 12),
+          _buildPeerSyncToggle(),
         ],
       ],
+    );
+  }
+
+  /// Toggle whether we auto-detect and sync this peer agent's remote sessions
+  /// (list + history) on entry. Default on; turning it off stops all prompts
+  /// and content pulls for this agent.
+  Widget _buildPeerSyncToggle() {
+    final colorScheme = Theme.of(context).colorScheme;
+    return Container(
+      decoration: BoxDecoration(
+        color: colorScheme.surfaceContainerHighest.withValues(alpha: 0.4),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: SwitchListTile(
+        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 2),
+        title: const Text('会话同步', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
+        subtitle: const Text(
+          '进入时自动检测并同步远端会话列表与聊天记录，保持与远端一致',
+          style: TextStyle(fontSize: 12),
+        ),
+        value: _peerSyncEnabled,
+        onChanged: _setPeerSyncEnabled,
+      ),
     );
   }
 

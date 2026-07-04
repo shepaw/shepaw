@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'package:sqflite/sqflite.dart';
 import 'package:uuid/uuid.dart';
 import '../local_database_service.dart';
 import '../logger_service.dart';
@@ -16,6 +17,8 @@ extension MessageDao on LocalDatabaseService {
     String messageType = 'text',
     Map<String, dynamic>? metadata,
     String? replyToId,
+    DateTime? createdAt,
+    ConflictAlgorithm conflictAlgorithm = ConflictAlgorithm.abort,
   }) async {
     final db = await database;
     await db.insert(
@@ -30,9 +33,10 @@ extension MessageDao on LocalDatabaseService {
         'message_type': messageType,
         'metadata': metadata != null ? jsonEncode(metadata) : null,
         'reply_to_id': replyToId,
-        'created_at': DateTime.now().toIso8601String(),
+        'created_at': (createdAt ?? DateTime.now()).toIso8601String(),
         'is_read': 0,
       },
+      conflictAlgorithm: conflictAlgorithm,
     );
   }
 

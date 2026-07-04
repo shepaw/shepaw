@@ -95,6 +95,10 @@ class PeerConnection {
     'agent_approval_resp',
     'agent_commands_req',
     'agent_commands_resp',
+    'agent_sessions_req',
+    'agent_sessions_resp',
+    'agent_session_history_req',
+    'agent_session_history_resp',
   };
 
   /// 连接状态变化

@@ -1084,11 +1084,19 @@ class AgentMessagingService {
     }
     ForegroundTaskService().acquireTask(agent.name);
 
+    // For a synced remote session the local channelId is `psess_<remoteSessionId>`.
+    // Strip the prefix so the bare remote sessionId is what reaches the peer,
+    // hitting acp-proxy's pre-seeded mapping and resuming the exact upstream
+    // session (no crossing). Regular channels pass their channelId as-is.
+    final boundRemoteSessionId = remoteSessionIdFromChannelId(effectiveChannelId);
+    final peerSessionId = boundRemoteSessionId ??
+        (effectiveChannelId.isNotEmpty ? effectiveChannelId : null);
+
     final result = await PeerAgentClientService.instance.sendChat(
       peerId: peerId,
       remoteAgentId: remoteAgentId,
       message: userMessage.content,
-      sessionId: effectiveChannelId.isNotEmpty ? effectiveChannelId : null,
+      sessionId: peerSessionId,
       cancelToken: acpCancellationToken,
       onChunk: (chunk) {
         activeTask.accumulatedContent += chunk;

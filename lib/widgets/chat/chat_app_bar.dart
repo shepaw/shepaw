@@ -22,6 +22,9 @@ class ChatDMAppBarTitle extends StatelessWidget {
   /// 一个「来自 设备名」徽标，方便多设备场景下区分。
   final String? sourceDeviceLabel;
 
+  /// 正在从远端拉取该会话的聊天记录。为 true 时在 session id 旁显示「同步远端…」。
+  final bool syncingRemote;
+
   const ChatDMAppBarTitle({
     super.key,
     this.agentName,
@@ -33,6 +36,7 @@ class ChatDMAppBarTitle extends StatelessWidget {
     this.onAvatarTap,
     this.onStopGenerating,
     this.sourceDeviceLabel,
+    this.syncingRemote = false,
   });
 
   @override
@@ -200,6 +204,30 @@ class ChatDMAppBarTitle extends StatelessWidget {
                           fontFamily: 'monospace',
                         ),
                         overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  ],
+                  if (syncingRemote) ...[
+                    Text(
+                      '  |  ',
+                      style: TextStyle(fontSize: 10, color: Colors.grey[400]),
+                    ),
+                    SizedBox(
+                      width: 9,
+                      height: 9,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 1.5,
+                        valueColor: AlwaysStoppedAnimation<Color>(
+                          Theme.of(context).colorScheme.primary,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 4),
+                    Text(
+                      '同步远端…',
+                      style: TextStyle(
+                        fontSize: 10,
+                        color: Theme.of(context).colorScheme.primary,
                       ),
                     ),
                   ],
