@@ -15,6 +15,7 @@ import 'dart:io';
 import 'package:uuid/uuid.dart';
 
 import '../../models/remote_agent.dart';
+import '../../models/acp_protocol.dart';
 import '../../services/acp_agent_connection.dart';
 import '../../services/local_database_service.dart';
 import '../../services/local_file_storage_service.dart';
@@ -56,6 +57,12 @@ class PeerAgentClientService {
 
   /// 进行中的请求（requestId → pending）。
   final Map<String, _PendingRequest> _pending = {};
+
+  /// Slash-command cache (localAgentId → commands), populated by
+  /// agent_commands_resp after agent_list_resp prefetches them.
+  final Map<String, List<SlashCommandInfo>> _commandsCache = {};
+  /// Outstanding agent_commands_req per remote agent id.
+  final Map<String, Completer<List<SlashCommandInfo>>> _pendingCommands = {};
 
   LocalDatabaseService get _db => getIt<LocalDatabaseService>();
   final _fileStorage = LocalFileStorageService();
@@ -159,7 +166,52 @@ class PeerAgentClientService {
       case 'agent_approval_req':
         _onApprovalReq(event.data);
         break;
+      case 'agent_commands_resp':
+        _onCommandsResp(event.peerId, event.data);
+        break;
     }
+  }
+
+  /// Cached slash commands for an agent (by local agent id). Empty until the
+  /// prefetch (triggered on agent_list_resp) completes.
+  List<SlashCommandInfo> getSlashCommands(String localAgentId) =>
+      _commandsCache[localAgentId] ?? const [];
+
+  /// Fetch an agent's slash commands from the hub (agent.commands.list relay).
+  Future<List<SlashCommandInfo>> fetchCommands({
+    required String peerId,
+    required String remoteAgentId,
+  }) async {
+    if (_pendingCommands.containsKey(remoteAgentId)) {
+      return _pendingCommands[remoteAgentId]!.future;
+    }
+    final completer = Completer<List<SlashCommandInfo>>();
+    _pendingCommands[remoteAgentId] = completer;
+    final sent = await PeerConnectionManager.instance.sendControl(peerId, {
+      'type': 'agent_commands_req',
+      'agent_id': remoteAgentId,
+    });
+    if (!sent) {
+      _pendingCommands.remove(remoteAgentId);
+      return const [];
+    }
+    return completer.future.timeout(const Duration(seconds: 5), onTimeout: () {
+      _pendingCommands.remove(remoteAgentId);
+      return const [];
+    });
+  }
+
+  void _onCommandsResp(String peerId, Map<String, dynamic> data) {
+    final remoteId = data['agent_id'] as String?;
+    if (remoteId == null) return;
+    final raw = (data['commands'] as List?) ?? const [];
+    final commands = raw
+        .whereType<Map<String, dynamic>>()
+        .map(SlashCommandInfo.fromJson)
+        .toList();
+    _commandsCache[peerAgentLocalId(peerId, remoteId)] = commands;
+    final completer = _pendingCommands.remove(remoteId);
+    if (completer != null && !completer.isCompleted) completer.complete(commands);
   }
 
   /// Tool-call approval request forwarded by the hub. Surface it to the chat
@@ -295,6 +347,12 @@ class PeerAgentClientService {
 
       _log.debug('Injected ${seenRemoteIds.length} peer agents from $peerId', tag: _tag);
       PeerConnectionManager.instance.notifyPeerListChanged();
+
+      // Prefetch each agent's slash commands so the '/' palette works for
+      // peer agents (which have no ACP connection to read them from).
+      for (final remoteId in seenRemoteIds) {
+        unawaited(fetchCommands(peerId: peerId, remoteAgentId: remoteId));
+      }
     } catch (e) {
       _log.warning('Failed to inject peer agents: $e', tag: _tag);
     }

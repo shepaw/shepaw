@@ -93,6 +93,8 @@ class PeerConnection {
     'agent_cancel',
     'agent_approval_req',
     'agent_approval_resp',
+    'agent_commands_req',
+    'agent_commands_resp',
   };
 
   /// 连接状态变化

@@ -42,6 +42,7 @@ import 'channel_trace_screen.dart';
 import 'group_workflow_screen.dart';
 import '../widgets/workflow/workflow_progress_panel.dart';
 import '../peer/widgets/peer_source_badge.dart';
+import '../peer/services/peer_agent_client_service.dart';
 
 class ChatScreen extends StatefulWidget {
   final String? agentId;
@@ -1759,7 +1760,11 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
               final conn = c.chatService.getACPConnection(c.agentId!);
               final live = conn?.slashCommands ?? const [];
               if (live.isNotEmpty) return live;
-              return c.chatService.getSlashCommandsSnapshot(c.agentId!);
+              final snap = c.chatService.getSlashCommandsSnapshot(c.agentId!);
+              if (snap.isNotEmpty) return snap;
+              // Peer agents have no ACP connection — use the prefetched
+              // slash-command cache from PeerAgentClientService.
+              return PeerAgentClientService.instance.getSlashCommands(c.agentId!);
             },
           ),
 
