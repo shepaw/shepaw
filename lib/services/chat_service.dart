@@ -7,6 +7,7 @@ import '../models/channel.dart';
 import '../models/remote_agent.dart';
 import '../models/acp_protocol.dart';
 import '../models/attachment_data.dart';
+import 'acp_interactive_connection.dart';
 import 'local_database_service.dart';
 import 'tool_result_database_service.dart';
 import 'acp_agent_connection.dart';
@@ -586,6 +587,25 @@ class ChatService implements IPawChatSender {
   ACPAgentConnection? getACPConnection(String agentId) =>
       _agentMessagingService.getACPConnection(agentId);
 
+  /// Returns an interactive-connection handle for [agent] — the real ACP
+  /// connection if one is live, otherwise a [PeerAcpConnection] shim for peer
+  /// agents. Callers that only need `submitResponse` / `isConnected` /
+  /// `supportsAsyncConfirmation` (the interactive-response path) use this so
+  /// they don't branch on protocol. ACP-specific surfaces (slash commands,
+  /// reconnect) keep using [getACPConnection].
+  final Map<String, PeerAcpConnection> _peerInteractiveConns = {};
+  AcpInteractiveConnection? getInteractiveConnection(RemoteAgent agent) {
+    final acp = _acpConnections[agent.id];
+    if (acp != null) return acp;
+    if (agent.protocol != ProtocolType.peer) return null;
+    final peerId = agent.sourcePeerId;
+    if (peerId == null) return null;
+    return _peerInteractiveConns.putIfAbsent(
+      agent.id,
+      () => PeerAcpConnection(agentId: agent.id, peerId: peerId),
+    );
+  }
+
   /// Update the cached slash-command snapshot for [agentId].
   ///
   /// Called by any `ACPAgentConnection` that receives `agent.commands.changed`
@@ -816,12 +836,16 @@ class ChatService implements IPawChatSender {
     // Same path is taken when there's no live connection: we fall back to
     // sending a chat message, which also auto-reconnects through the
     // regular retry/backoff in `_getOrCreateACPConnectionWithRetry`.
-    final connection = _acpConnections[agent.id];
+    // Unified interactive-connection handle: the real ACP connection if live,
+    // or a PeerAcpConnection shim for peer agents. submitResponse routes to
+    // the right transport either way — no per-protocol branch here.
+    final connection = getInteractiveConnection(agent);
     final isAsyncAgent = connection?.supportsAsyncConfirmation ?? false;
 
     if (connection != null && connection.isConnected && !isAsyncAgent) {
-      // Legacy blocking agents: keep the in-band submitResponse path so the
-      // single outstanding `canUseTool` / `waitForResponse` unblocks without
+      // Legacy blocking agents (and peer-relayed approvals, which are also
+      // in-band): keep the in-band submitResponse path so the single
+      // outstanding `canUseTool` / `waitForResponse` unblocks without
       // spinning up a second task.
       final activeTask = getActiveTask(channelId ?? '');
       final taskId = activeTask?.taskId ?? '';

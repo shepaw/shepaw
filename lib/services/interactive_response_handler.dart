@@ -118,7 +118,7 @@ class InteractiveResponseHandler {
         // so it's retrievable here. If no activeTask exists (fast-finish race
         // where asyncFinalize already removed it) we just fall through to the
         // synchronous finally — loadMessages picks up the DB state.
-        final conn = ctx.chatService.getACPConnection(remoteAgent.id);
+        final conn = ctx.chatService.getInteractiveConnection(remoteAgent);
         if (conn != null && conn.supportsAsyncConfirmation && ctx.currentChannelId != null) {
           final activeTask = ctx.chatService.getActiveTask(ctx.currentChannelId!);
           if (activeTask != null) {
@@ -193,7 +193,7 @@ class InteractiveResponseHandler {
         onStreamChunk: _onStreamChunk,
       );
 
-      final conn = ctx.chatService.getACPConnection(remoteAgent.id);
+      final conn = ctx.chatService.getInteractiveConnection(remoteAgent);
       if (conn != null && conn.supportsAsyncConfirmation && ctx.currentChannelId != null) {
         final activeTask = ctx.chatService.getActiveTask(ctx.currentChannelId!);
         if (activeTask != null) {

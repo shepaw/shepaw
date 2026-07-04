@@ -226,6 +226,7 @@ class AgentMessagingService {
         agentResponse = await _sendViaPeerProtocol(
           messageToSend, agent,
           onStreamChunk: onStreamChunk,
+          onActionConfirmation: onActionConfirmation,
           sessionId: channelId,
           acpCancellationToken: acpCancellationToken,
         );
@@ -1034,6 +1035,7 @@ class AgentMessagingService {
     Message userMessage,
     RemoteAgent agent, {
     void Function(String chunk)? onStreamChunk,
+    void Function(Map<String, dynamic> actionData)? onActionConfirmation,
     String? sessionId,
     ACPCancellationToken? acpCancellationToken,
   }) async {
@@ -1054,6 +1056,9 @@ class AgentMessagingService {
       userName: userMessage.from.name,
     );
     activeTask.onStreamChunk = onStreamChunk;
+    // Surface tool-call approvals (agent_approval_req relayed by the hub) to
+    // the chat UI via the same card mechanism as the direct ACP flow.
+    activeTask.onActionConfirmation = onActionConfirmation;
     if (effectiveChannelId.isNotEmpty) {
       _activeTasks[effectiveChannelId] = activeTask;
       updateTypingAgentIds();
@@ -1069,6 +1074,9 @@ class AgentMessagingService {
       onChunk: (chunk) {
         activeTask.accumulatedContent += chunk;
         activeTask.onStreamChunk?.call(chunk);
+      },
+      onActionConfirmation: (data) {
+        activeTask.onActionConfirmation?.call(data);
       },
     );
 

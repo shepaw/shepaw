@@ -12,6 +12,7 @@ import 'package:web_socket_channel/io.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
 import '../models/acp_protocol.dart';
 import 'acp_hub_handlers.dart';
+import 'acp_interactive_connection.dart';
 import 'logger_service.dart';
 import 'noise/noise_envelope.dart';
 import 'noise/noise_session.dart';
@@ -88,7 +89,8 @@ class TaskCallbacks {
 /// - App -> Agent: requests (agent.chat, agent.cancelTask, etc.)
 /// - Agent -> App: notifications (ui.textContent, task.*, etc.)
 /// - Agent -> App: requests (hub.*) delegated to [ACPHubHandlers]
-class ACPAgentConnection {
+class ACPAgentConnection implements AcpInteractiveConnection {
+  @override
   final String agentId;
   final ACPHubHandlers? _hubHandlers;
 
@@ -239,6 +241,7 @@ class ACPAgentConnection {
   String? _pinnedFingerprint;
   Uint8List? _cachedPeerStaticPublicKey;
 
+  @override
   bool get isConnected => _isConnected;
   bool get isAuthenticated => _isAuthenticated;
 
@@ -257,6 +260,7 @@ class ACPAgentConnection {
   /// Defaults to `false` so connection failures / card fetch failures degrade
   /// safely back to the legacy path.
   bool _supportsAsyncConfirmation = false;
+  @override
   bool get supportsAsyncConfirmation => _supportsAsyncConfirmation;
 
   /// Peer static public key learned during the Noise handshake. Null until
@@ -810,6 +814,7 @@ class ACPAgentConnection {
   }
 
   /// Submit an interactive response (action confirmation, select, form, etc.)
+  @override
   Future<ACPResponse> submitResponse({
     required String taskId,
     required String responseType,

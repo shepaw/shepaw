@@ -36,8 +36,9 @@ class PeerChatResult {
 
 class _PendingRequest {
   final void Function(String chunk)? onChunk;
+  final void Function(Map<String, dynamic>)? onActionConfirmation;
   final Completer<PeerChatResult> completer = Completer<PeerChatResult>();
-  _PendingRequest(this.onChunk);
+  _PendingRequest(this.onChunk, this.onActionConfirmation);
 }
 
 class PeerAgentClientService {
@@ -103,10 +104,11 @@ class PeerAgentClientService {
     required String message,
     String? sessionId,
     void Function(String chunk)? onChunk,
+    void Function(Map<String, dynamic>)? onActionConfirmation,
     ACPCancellationToken? cancelToken,
   }) async {
     final requestId = _uuid.v4();
-    final pending = _PendingRequest(onChunk);
+    final pending = _PendingRequest(onChunk, onActionConfirmation);
     _pending[requestId] = pending;
 
     cancelToken?.onCancelled = () {
@@ -154,7 +156,45 @@ class PeerAgentClientService {
       case 'agent_error':
         _onError(event.data);
         break;
+      case 'agent_approval_req':
+        _onApprovalReq(event.data);
+        break;
     }
+  }
+
+  /// Tool-call approval request forwarded by the hub. Surface it to the chat
+  /// UI via the active request's `onActionConfirmation` callback (same card
+  /// mechanism as the direct ACP flow). The user's tap later calls
+  /// [submitApproval], which replies `agent_approval_resp` over the peer
+  /// channel; the hub relays it as `agent.submitResponse` to its local agent.
+  void _onApprovalReq(Map<String, dynamic> data) {
+    final requestId = data['request_id'] as String?;
+    if (requestId == null) return;
+    final approvalId = data['approval_id'] as String? ?? '';
+    final actionData = <String, dynamic>{
+      // The card widget keys off `confirmation_id`; the hub's approval_id IS
+      // the gateway's confirmation_id, so reuse it for the submit path too.
+      'confirmation_id': approvalId,
+      'prompt': data['prompt'] ?? '',
+      'actions': data['actions'] ?? const [],
+      // Marks this as a peer-relayed approval so the submit path knows to
+      // reply via agent_approval_resp instead of connection.submitResponse.
+      'confirmation_context': 'peer',
+    };
+    _pending[requestId]?.onActionConfirmation?.call(actionData);
+  }
+
+  /// Submit the user's tool-call decision back to the hub.
+  Future<void> submitApproval({
+    required String peerId,
+    required String approvalId,
+    required String selectedActionId,
+  }) async {
+    await PeerConnectionManager.instance.sendControl(peerId, {
+      'type': 'agent_approval_resp',
+      'approval_id': approvalId,
+      'selected_action_id': selectedActionId,
+    });
   }
 
   void _onChunk(Map<String, dynamic> data) {
