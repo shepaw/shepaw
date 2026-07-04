@@ -552,21 +552,8 @@ class AgentMessagingService {
       final effectiveChannelIdForAsync = effectiveChannelId;
 
       // Hook cancellation token so the completer resolves immediately on cancel.
-      acpCancellationToken?.onCancelled = () {
-        flushTimer?.cancel();
-
-        // Delete partial message — the cancel flow will save the final
-        // "[Stopped]" message via buildFinalMessage(markStopped: true).
-        if (activeTask.partialMessageId != null) {
-          unawaited(_db.deleteMessage(activeTask.partialMessageId!));
-        }
-        activeTask.recordInterruption('user_cancelled');
-
-        activeTask.isComplete = true;
-        if (!taskCompleter.isCompleted) {
-          taskCompleter.complete();
-        }
-      };
+      // The assignment is performed after `asyncFinalize` is declared below,
+      // since the cancel handler must call it on the async-confirmation path.
 
 
       // Shared builder for the "final agent message" produced after the
@@ -634,6 +621,7 @@ class AgentMessagingService {
       Future<void> asyncFinalize({
         bool isError = false,
         String? errorMessage,
+        bool markStopped = false,
       }) async {
         if (asyncFinalizeStarted) return;
         asyncFinalizeStarted = true;
@@ -648,7 +636,7 @@ class AgentMessagingService {
               type: MessageType.system,
             );
           } else {
-            msg = buildFinalMessage();
+            msg = buildFinalMessage(markStopped: markStopped);
             activeTask.metadata = msg.metadata;
           }
 
@@ -684,6 +672,37 @@ class AgentMessagingService {
           }
         }
       }
+
+      // Now that `asyncFinalize` is in scope, wire the cancel handler.
+      acpCancellationToken?.onCancelled = () {
+        flushTimer?.cancel();
+
+        // Delete partial message — the cancel flow will save the final
+        // "[Stopped]" message via buildFinalMessage(markStopped: true).
+        if (activeTask.partialMessageId != null) {
+          unawaited(_db.deleteMessage(activeTask.partialMessageId!));
+        }
+        activeTask.recordInterruption('user_cancelled');
+
+        activeTask.isComplete = true;
+
+        // Async-confirmation path: sendMessageToAgent already returned a
+        // sentinel, so nothing is awaiting `taskCompleter` and the regular
+        // `finally` cleanup in ChatController is skipped. Mirror
+        // onTaskCompleted/onTaskError here: trigger the UI teardown via
+        // onTaskFinished (it awaits dbSaveCompleter), then run asyncFinalize
+        // to persist the "[Stopped]" message, unregister callbacks, release
+        // the foreground task and complete dbSaveCompleter. Without this the
+        // UI stays stuck on isProcessing=true after tapping stop.
+        if (asyncConfirmation) {
+          activeTask.onTaskFinished?.call();
+          unawaited(asyncFinalize(markStopped: true));
+        }
+
+        if (!taskCompleter.isCompleted) {
+          taskCompleter.complete();
+        }
+      };
 
       // Set up connection callbacks — accumulate in ActiveTask, then forward to UI
       connection.registerTaskCallbacks(effectiveTaskId, TaskCallbacks(
