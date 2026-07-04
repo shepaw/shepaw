@@ -8,7 +8,8 @@ import '../widgets/avatar_image.dart';
 import '../l10n/app_localizations.dart';
 import '../models/remote_agent.dart';
 import '../peer/services/peer_connection_manager.dart';
-import '../peer/services/peer_connection.dart' show PeerConnectionEvent;
+import '../peer/services/peer_agent_client_service.dart';
+import '../peer/services/peer_connection.dart' show PeerConnectionEvent, PeerConnectionEventType;
 import '../peer/models/paired_peer.dart' show PeerConnectionState;
 import '../services/remote_agent_service.dart';
 import '../services/local_file_storage_service.dart';
@@ -49,6 +50,13 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
 
   /// Whether remote-session sync is enabled for this peer agent (default on).
   bool _peerSyncEnabled = true;
+
+  /// Upstream model list from the paired device's agent (peer agents only).
+  List<PeerAgentModel> _peerModels = const [];
+  String? _peerCurrentModel;
+  bool _peerModelsLoading = false;
+  bool _peerModelSetting = false;
+  String? _peerModelsError;
 
   // 编辑用的控制器
   late TextEditingController _nameController;
@@ -105,12 +113,77 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
     if (_agent.isPeerAgent) {
       _peerConnSub =
           PeerConnectionManager.instance.events.listen((event) {
-        if (event.peerId == _agent.sourcePeerId && mounted) {
-          setState(() {});
+        if (event.peerId != _agent.sourcePeerId || !mounted) return;
+        if (event.type == PeerConnectionEventType.connected) {
+          unawaited(_loadPeerModels());
         }
+        setState(() {});
       });
       _loadPeerSyncPref();
+      if (_isEditing) _loadPeerModels();
     }
+  }
+
+  Future<void> _loadPeerModels() async {
+    if (!_agent.isPeerAgent) return;
+    final peerId = _agent.sourcePeerId;
+    final remoteId = _agent.remoteAgentId;
+    if (peerId == null || remoteId == null) return;
+    if (!PeerConnectionManager.instance.connectedPeerIds.contains(peerId)) {
+      if (mounted) {
+        setState(() {
+          _peerModels = const [];
+          _peerCurrentModel = null;
+          _peerModelsError = '配对设备未连接';
+          _peerModelsLoading = false;
+        });
+      }
+      return;
+    }
+    if (mounted) {
+      setState(() {
+        _peerModelsLoading = true;
+        _peerModelsError = null;
+      });
+    }
+    final list = await PeerAgentClientService.instance.fetchModels(
+      peerId: peerId,
+      remoteAgentId: remoteId,
+    );
+    if (!mounted) return;
+    setState(() {
+      _peerModelsLoading = false;
+      _peerModels = list.models;
+      _peerCurrentModel = list.current;
+      if (list.models.isEmpty) {
+        _peerModelsError = '该 agent 暂不支持切换模型';
+      }
+    });
+  }
+
+  Future<void> _onPeerModelSelected(String? value) async {
+    if (value == null || value == _peerCurrentModel || _peerModelSetting) return;
+    final peerId = _agent.sourcePeerId;
+    final remoteId = _agent.remoteAgentId;
+    if (peerId == null || remoteId == null) return;
+    setState(() => _peerModelSetting = true);
+    final ok = await PeerAgentClientService.instance.setModel(
+      peerId: peerId,
+      remoteAgentId: remoteId,
+      model: value,
+    );
+    if (!mounted) return;
+    setState(() {
+      _peerModelSetting = false;
+      if (ok) _peerCurrentModel = value;
+    });
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(ok ? '已切换模型' : '切换模型失败'),
+        duration: const Duration(seconds: 2),
+      ),
+    );
   }
 
   Future<void> _loadPeerSyncPref() async {
@@ -219,6 +292,9 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
       _isEditing = true;
       _initEditingControllers();
     });
+    if (_agent.isPeerAgent) {
+      unawaited(_loadPeerModels());
+    }
   }
 
   void _applyScenarioModelsMetadata(Map<String, dynamic> metadata) {
@@ -826,8 +902,6 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
         if (_agent.isPeerAgent) ...[
           const SizedBox(height: 8),
           _buildPeerSourceChip(),
-          const SizedBox(height: 12),
-          _buildPeerSyncToggle(),
         ],
       ],
     );
@@ -852,6 +926,116 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
         ),
         value: _peerSyncEnabled,
         onChanged: _setPeerSyncEnabled,
+      ),
+    );
+  }
+
+  /// Upstream model picker — switches the remote agent's LLM via
+  /// `agent.models.setCurrent` on the paired device.
+  Widget _buildPeerModelPicker() {
+    final colorScheme = Theme.of(context).colorScheme;
+    final busy = _peerModelsLoading || _peerModelSetting;
+    final effectiveCurrent = _peerCurrentModel ??
+        (_peerModels.length == 1 ? _peerModels.first.value : null);
+
+    return Container(
+      decoration: BoxDecoration(
+        color: colorScheme.surfaceContainerHighest.withValues(alpha: 0.4),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.memory_outlined, size: 18, color: colorScheme.primary),
+              const SizedBox(width: 8),
+              const Text(
+                '模型',
+                style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+              ),
+              const Spacer(),
+              if (busy)
+                SizedBox(
+                  width: 16,
+                  height: 16,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    color: colorScheme.primary,
+                  ),
+                )
+              else
+                IconButton(
+                  icon: const Icon(Icons.refresh, size: 18),
+                  tooltip: '刷新模型列表',
+                  onPressed: _loadPeerModels,
+                  visualDensity: VisualDensity.compact,
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                ),
+            ],
+          ),
+          const SizedBox(height: 4),
+          Text(
+            '切换远端 agent 使用的 LLM 模型（作用于后续对话）',
+            style: TextStyle(fontSize: 12, color: colorScheme.onSurfaceVariant),
+          ),
+          const SizedBox(height: 10),
+          if (_peerModelsError != null && _peerModels.isEmpty)
+            Text(
+              _peerModelsError!,
+              style: TextStyle(fontSize: 12, color: colorScheme.error),
+            )
+          else if (_peerModels.isEmpty && _peerModelsLoading)
+            const SizedBox.shrink()
+          else if (_peerModels.isEmpty)
+            Text(
+              '暂无可用模型',
+              style: TextStyle(fontSize: 12, color: colorScheme.onSurfaceVariant),
+            )
+          else
+            DropdownButtonFormField<String>(
+              value: effectiveCurrent != null &&
+                      _peerModels.any((m) => m.value == effectiveCurrent)
+                  ? effectiveCurrent
+                  : null,
+              isExpanded: true,
+              decoration: InputDecoration(
+                isDense: true,
+                contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                filled: true,
+                fillColor: colorScheme.surface,
+              ),
+              hint: const Text('选择模型'),
+              items: _peerModels
+                  .map(
+                    (m) => DropdownMenuItem<String>(
+                      value: m.value,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(m.displayName, overflow: TextOverflow.ellipsis),
+                          if (m.description.isNotEmpty)
+                            Text(
+                              m.description,
+                              style: TextStyle(
+                                fontSize: 11,
+                                color: colorScheme.onSurfaceVariant,
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                        ],
+                      ),
+                    ),
+                  )
+                  .toList(),
+              onChanged: busy ? null : _onPeerModelSelected,
+            ),
+        ],
       ),
     );
   }
@@ -1266,6 +1450,14 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
         // 卡片 2: 连接配置（仅远端 agent 显示）
         if (!_isLocalMode) ...[
           _buildEditConnectionCard(colorScheme),
+          const SizedBox(height: 16),
+        ],
+
+        // peer agent：会话同步 + 远端模型（编辑页配置）
+        if (_agent.isPeerAgent) ...[
+          _buildPeerSyncToggle(),
+          const SizedBox(height: 16),
+          _buildPeerModelPicker(),
           const SizedBox(height: 16),
         ],
 

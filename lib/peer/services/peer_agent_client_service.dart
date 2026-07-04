@@ -105,6 +105,38 @@ class PeerHistoryMessage {
   }
 }
 
+/// One upstream model option from `agent_models_resp`.
+class PeerAgentModel {
+  final String value;
+  final String displayName;
+  final String description;
+
+  PeerAgentModel({
+    required this.value,
+    required this.displayName,
+    this.description = '',
+  });
+
+  static PeerAgentModel? fromJson(Map<String, dynamic> json) {
+    final value = json['value'] as String?;
+    if (value == null || value.isEmpty) return null;
+    final display = (json['display_name'] as String?)?.trim();
+    return PeerAgentModel(
+      value: value,
+      displayName: (display != null && display.isNotEmpty) ? display : value,
+      description: (json['description'] as String?) ?? '',
+    );
+  }
+}
+
+/// Upstream model list + current selection (`agent_models_resp`).
+class PeerModelsList {
+  final List<PeerAgentModel> models;
+  final String? current;
+
+  const PeerModelsList({required this.models, this.current});
+}
+
 class _PendingRequest {
   final void Function(String chunk)? onChunk;
   final void Function(Map<String, dynamic>)? onActionConfirmation;
@@ -133,12 +165,22 @@ class PeerAgentClientService {
   final Map<String, List<SlashCommandInfo>> _commandsCache = {};
   /// Outstanding agent_commands_req per remote agent id.
   final Map<String, Completer<List<SlashCommandInfo>>> _pendingCommands = {};
+  /// Broadcast streams so the "/" palette can refresh when a prefetch completes
+  /// after the chat screen is already open (peer agents have no ACP connection).
+  final Map<String, StreamController<List<SlashCommandInfo>>> _slashCommandsStreams =
+      {};
 
   /// Outstanding agent_sessions_req per remote agent id.
   final Map<String, Completer<List<PeerRemoteSession>>> _pendingSessions = {};
 
   /// Outstanding agent_session_history_req per "agentId::sessionId" key.
   final Map<String, Completer<List<PeerHistoryMessage>>> _pendingHistory = {};
+
+  /// Outstanding agent_models_req per remote agent id.
+  final Map<String, Completer<PeerModelsList>> _pendingModels = {};
+
+  /// Outstanding agent_models_set_req per "agentId::model" key.
+  final Map<String, Completer<bool>> _pendingModelSet = {};
 
   LocalDatabaseService get _db => getIt<LocalDatabaseService>();
   final _fileStorage = LocalFileStorageService();
@@ -182,6 +224,18 @@ class PeerAgentClientService {
       if (!c.isCompleted) c.complete(const []);
     }
     _pendingHistory.clear();
+    for (final c in _pendingCommands.values) {
+      if (!c.isCompleted) c.complete(const []);
+    }
+    _pendingCommands.clear();
+    for (final c in _pendingModels.values) {
+      if (!c.isCompleted) c.complete(const PeerModelsList(models: []));
+    }
+    _pendingModels.clear();
+    for (final c in _pendingModelSet.values) {
+      if (!c.isCompleted) c.complete(false);
+    }
+    _pendingModelSet.clear();
   }
 
   // ── 发送（消费方 → 提供方） ────────────────────────────────────────────
@@ -259,7 +313,99 @@ class PeerAgentClientService {
       case 'agent_session_history_resp':
         _onSessionHistoryResp(event.data);
         break;
+      case 'agent_models_resp':
+        _onModelsResp(event.data);
+        break;
+      case 'agent_models_set_resp':
+        _onModelsSetResp(event.data);
+        break;
     }
+  }
+
+  /// Fetch upstream model options (`agent.models.list` relay). Returns empty
+  /// list on failure/timeout. [sessionId] is the bare remote session id when
+  /// scoping to a synced session; omit for the agent default.
+  Future<PeerModelsList> fetchModels({
+    required String peerId,
+    required String remoteAgentId,
+    String? sessionId,
+  }) async {
+    if (_pendingModels.containsKey(remoteAgentId)) {
+      return _pendingModels[remoteAgentId]!.future;
+    }
+    final completer = Completer<PeerModelsList>();
+    _pendingModels[remoteAgentId] = completer;
+    final payload = <String, dynamic>{
+      'type': 'agent_models_req',
+      'agent_id': remoteAgentId,
+    };
+    if (sessionId != null && sessionId.isNotEmpty) {
+      payload['session_id'] = sessionId;
+    }
+    final sent = await PeerConnectionManager.instance.sendControl(peerId, payload);
+    if (!sent) {
+      _pendingModels.remove(remoteAgentId);
+      return const PeerModelsList(models: []);
+    }
+    return completer.future.timeout(const Duration(seconds: 15), onTimeout: () {
+      _pendingModels.remove(remoteAgentId);
+      return const PeerModelsList(models: []);
+    });
+  }
+
+  void _onModelsResp(Map<String, dynamic> data) {
+    final remoteId = data['agent_id'] as String?;
+    if (remoteId == null) return;
+    final raw = (data['models'] as List?) ?? const [];
+    final models = raw
+        .whereType<Map<String, dynamic>>()
+        .map(PeerAgentModel.fromJson)
+        .whereType<PeerAgentModel>()
+        .toList();
+    final current = data['current'] as String?;
+    final completer = _pendingModels.remove(remoteId);
+    if (completer != null && !completer.isCompleted) {
+      completer.complete(PeerModelsList(models: models, current: current));
+    }
+  }
+
+  /// Switch the upstream model (`agent.models.setCurrent` relay).
+  Future<bool> setModel({
+    required String peerId,
+    required String remoteAgentId,
+    required String model,
+    String? sessionId,
+  }) async {
+    final key = '$remoteAgentId::$model';
+    if (_pendingModelSet.containsKey(key)) return _pendingModelSet[key]!.future;
+    final completer = Completer<bool>();
+    _pendingModelSet[key] = completer;
+    final payload = <String, dynamic>{
+      'type': 'agent_models_set_req',
+      'agent_id': remoteAgentId,
+      'model': model,
+    };
+    if (sessionId != null && sessionId.isNotEmpty) {
+      payload['session_id'] = sessionId;
+    }
+    final sent = await PeerConnectionManager.instance.sendControl(peerId, payload);
+    if (!sent) {
+      _pendingModelSet.remove(key);
+      return false;
+    }
+    return completer.future.timeout(const Duration(seconds: 15), onTimeout: () {
+      _pendingModelSet.remove(key);
+      return false;
+    });
+  }
+
+  void _onModelsSetResp(Map<String, dynamic> data) {
+    final remoteId = data['agent_id'] as String?;
+    final model = data['model'] as String?;
+    if (remoteId == null || model == null) return;
+    final ok = data['ok'] == true;
+    final completer = _pendingModelSet.remove('$remoteId::$model');
+    if (completer != null && !completer.isCompleted) completer.complete(ok);
   }
 
   /// Fetch a remote session's transcript (oldest → newest) so the app can
@@ -462,6 +608,30 @@ class PeerAgentClientService {
   List<SlashCommandInfo> getSlashCommands(String localAgentId) =>
       _commandsCache[localAgentId] ?? const [];
 
+  /// Stream of slash-command list updates for a peer agent (by local agent id).
+  Stream<List<SlashCommandInfo>> slashCommandsStream(String localAgentId) {
+    return _slashCommandsStreams
+        .putIfAbsent(
+          localAgentId,
+          () => StreamController<List<SlashCommandInfo>>.broadcast(),
+        )
+        .stream;
+  }
+
+  /// Ensure slash commands are cached for [localAgentId]. No-op when the cache
+  /// is already populated; otherwise issues agent_commands_req (e.g. on chat
+  /// entry when the connect-time prefetch timed out on a cold agent-bridge).
+  Future<void> ensureCommandsForLocalAgent(String localAgentId) async {
+    if (_commandsCache[localAgentId]?.isNotEmpty ?? false) return;
+    final agent = await _db.getRemoteAgentById(localAgentId);
+    if (agent == null || !agent.isPeerAgent) return;
+    final peerId = agent.sourcePeerId;
+    final remoteId = agent.remoteAgentId;
+    if (peerId == null || remoteId == null) return;
+    if (!PeerConnectionManager.instance.connectedPeerIds.contains(peerId)) return;
+    await fetchCommands(peerId: peerId, remoteAgentId: remoteId);
+  }
+
   /// Fetch an agent's slash commands from the hub (agent.commands.list relay).
   Future<List<SlashCommandInfo>> fetchCommands({
     required String peerId,
@@ -480,7 +650,10 @@ class PeerAgentClientService {
       _pendingCommands.remove(remoteAgentId);
       return const [];
     }
-    return completer.future.timeout(const Duration(seconds: 5), onTimeout: () {
+    // Generous timeout: on a cold agent-bridge subprocess the hub now warms
+    // the command cache via a throwaway session, which can take longer than
+    // a simple RPC round trip (see PeerAcpClient.commands()).
+    return completer.future.timeout(const Duration(seconds: 15), onTimeout: () {
       _pendingCommands.remove(remoteAgentId);
       return const [];
     });
@@ -490,11 +663,23 @@ class PeerAgentClientService {
     final remoteId = data['agent_id'] as String?;
     if (remoteId == null) return;
     final raw = (data['commands'] as List?) ?? const [];
-    final commands = raw
-        .whereType<Map<String, dynamic>>()
-        .map(SlashCommandInfo.fromJson)
-        .toList();
-    _commandsCache[peerAgentLocalId(peerId, remoteId)] = commands;
+    final commands = <SlashCommandInfo>[];
+    for (final item in raw) {
+      if (item is! Map) continue;
+      try {
+        commands.add(SlashCommandInfo.fromJson(Map<String, dynamic>.from(item)));
+      } catch (_) {
+        // Skip malformed entries rather than dropping the whole list.
+      }
+    }
+    final localId = peerAgentLocalId(peerId, remoteId);
+    _commandsCache[localId] = commands;
+    // Mirror ACP's snapshot hook so the "/" resolver can read from either path.
+    ACPAgentConnection.slashCommandsSnapshotHook?.call(localId, commands);
+    final stream = _slashCommandsStreams[localId];
+    if (stream != null && !stream.isClosed) {
+      stream.add(List.unmodifiable(commands));
+    }
     final completer = _pendingCommands.remove(remoteId);
     if (completer != null && !completer.isCompleted) completer.complete(commands);
   }

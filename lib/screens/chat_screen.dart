@@ -179,6 +179,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     _checkAgentImageSupport();
     _maybePromptPeerSessionSync();
     _maybeSyncPeerHistory();
+    _ensurePeerSlashCommands();
   }
 
   @override
@@ -1755,12 +1756,14 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
             slashCommands: c.agentId == null
                 ? const []
                 : (c.chatService.getACPConnection(c.agentId!)?.slashCommands ??
-                    const []),
+                    c.chatService.getSlashCommandsSnapshot(c.agentId!)),
             slashCommandsStream: c.agentId == null
                 ? null
-                : c.chatService
-                    .getACPConnection(c.agentId!)
-                    ?.slashCommandsStream,
+                : (c.chatService
+                        .getACPConnection(c.agentId!)
+                        ?.slashCommandsStream ??
+                    PeerAgentClientService.instance
+                        .slashCommandsStream(c.agentId!)),
             // Live resolver: read the current snapshot on every keystroke.
             // Falls back to the process-wide snapshot cache (populated by
             // any past ACP connection — including the short-lived
@@ -1921,6 +1924,17 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
       icon: Icons.sync,
       color: Colors.green,
     );
+  }
+
+  /// Prefetch slash commands when opening a peer agent chat. The connect-time
+  /// prefetch can time out on a cold agent-bridge (ensureCommandsWarm takes a
+  /// few seconds), leaving the "/" palette empty until we retry here.
+  Future<void> _ensurePeerSlashCommands() async {
+    final agentId = widget.agentId;
+    if (agentId == null) return;
+    final agent = await _controller.localDatabaseService.getRemoteAgentById(agentId);
+    if (agent == null || !agent.isPeerAgent) return;
+    await PeerAgentClientService.instance.ensureCommandsForLocalAgent(agentId);
   }
 
   /// Pull the remote transcript on every entry into a synced session so local
