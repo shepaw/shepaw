@@ -58,10 +58,12 @@ class PeerAcpConnection implements AcpInteractiveConnection {
   }) async {
     final approvalId = responseData['confirmation_id'] as String? ?? '';
     final selectedActionId = responseData['selected_action_id'] as String? ?? '';
+    final selectedActionLabel = responseData['selected_action_label'] as String?;
     await PeerAgentClientService.instance.submitApproval(
       peerId: peerId,
       approvalId: approvalId,
       selectedActionId: selectedActionId,
+      selectedActionLabel: selectedActionLabel,
     );
   }
 }

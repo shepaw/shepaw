@@ -2,6 +2,7 @@ import '../models/message.dart';
 import '../services/chat_service.dart';
 import '../services/local_database_service.dart';
 import '../services/acp_agent_connection.dart';
+import '../services/logger_service.dart';
 
 /// Mixin / interface for the state that [InteractiveResponseHandler] needs
 /// from the owning controller. Keeps the handler decoupled from the concrete
@@ -68,11 +69,25 @@ class InteractiveResponseHandler {
     );
 
     final effectiveAgentId = ctx.agentId ?? originalMessage.from.id;
-    final isMacTool = confirmationContext == 'mac_tool';
     final remoteAgent = await ctx.localDatabaseService.getRemoteAgentById(effectiveAgentId);
     if (remoteAgent == null) throw Exception('Agent not found');
 
-    _beginProcessing();
+    final isMacTool = confirmationContext == 'mac_tool';
+    final isPeerInBand = confirmationContext == 'peer';
+    LoggerService().info(
+      'handleActionConfirmation: confirmationId=$confirmationId actionId=$actionId '
+      'context=$confirmationContext isPeerInBand=$isPeerInBand '
+      'msgId=${originalMessage.id} streamingId=${ctx.streamingMessageId} '
+      'isProcessing=${ctx.isProcessing}',
+      tag: 'PeerApproval',
+    );
+    // Peer in-band: the original sendChat turn is still live — do not toggle
+    // isProcessing / streamingMessageId around the approval tap.
+    final togglesProcessing = !isPeerInBand;
+
+    if (togglesProcessing) {
+      _beginProcessing();
+    }
 
     // In async-confirmation mode, `submitActionConfirmationResponse` dispatches
     // via `sendMessageToAgent` which returns `null` as soon as the agent has
@@ -84,8 +99,14 @@ class InteractiveResponseHandler {
     bool awaitingAsyncTask = false;
 
     try {
-      if (isMacTool) {
-        // In-band: no streaming placeholder
+      if (isMacTool || isPeerInBand) {
+        // In-band (ACP blocking or peer-relayed): reply on the live turn.
+        // Do not swap streamingMessageId — the original peer/ACP stream keeps
+        // flowing on the same placeholder.
+        //
+        // Peer agents: the Hub turn stays open until agent_done; clearing
+        // isProcessing/streamingMessageId here would hide Stop while the task
+        // is still active (reattachToActiveTask restores it on re-entry).
         await ctx.chatService.submitActionConfirmationResponse(
           originalMessage: originalMessage,
           confirmationId: confirmationId,
@@ -96,6 +117,11 @@ class InteractiveResponseHandler {
           userName: ctx.getUserName(),
           channelId: ctx.currentChannelId,
           confirmationContext: confirmationContext,
+        );
+        LoggerService().info(
+          'handleActionConfirmation: submitActionConfirmationResponse done '
+          '(peer in-band, turn still live)',
+          tag: 'PeerApproval',
         );
       } else {
         _addStreamingPlaceholder(remoteAgent);
@@ -141,14 +167,17 @@ class InteractiveResponseHandler {
       // Sync path: reload now so the user sees their verdict message and
       // the agent's (already-complete) follow-up. Async path skips this —
       // onTaskFinished will call loadMessages when the task actually ends.
-      if (!awaitingAsyncTask) {
+      // Peer in-band: turn still live — reload would drop the streaming bubble.
+      if (!awaitingAsyncTask && !isPeerInBand) {
         await ctx.loadMessages();
       }
     } catch (e) {
-      await ctx.loadMessages();
+      if (!isPeerInBand) {
+        await ctx.loadMessages();
+      }
       rethrow;
     } finally {
-      if (!awaitingAsyncTask) {
+      if (!awaitingAsyncTask && togglesProcessing) {
         _endProcessing();
       }
     }

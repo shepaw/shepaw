@@ -807,6 +807,14 @@ class ChatService implements IPawChatSender {
     ACPCancellationToken? acpCancellationToken,
   }) async {
     LoggerService().debug('Submitting action confirmation: id=$confirmationId, action=$selectedActionId ($selectedActionLabel), context=$confirmationContext', tag: 'ChatService');
+    if (confirmationContext == 'peer') {
+      LoggerService().info(
+        'submitActionConfirmationResponse (peer): confirmationId=$confirmationId '
+        'actionId=$selectedActionId channelId=$channelId '
+        'msgId=${originalMessage.id}',
+        tag: 'PeerApproval',
+      );
+    }
 
     // Update original message's metadata in DB
     final updatedMetadata = Map<String, dynamic>.from(originalMessage.metadata ?? {});
@@ -842,7 +850,8 @@ class ChatService implements IPawChatSender {
     final connection = getInteractiveConnection(agent);
     final isAsyncAgent = connection?.supportsAsyncConfirmation ?? false;
 
-    if (connection != null && connection.isConnected && !isAsyncAgent) {
+    if (connection != null && !isAsyncAgent &&
+        (connection.isConnected || agent.isPeerAgent)) {
       // Legacy blocking agents (and peer-relayed approvals, which are also
       // in-band): keep the in-band submitResponse path so the single
       // outstanding `canUseTool` / `waitForResponse` unblocks without

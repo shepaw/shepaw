@@ -808,7 +808,7 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
 
     chatService.attachTaskUI(
       currentChannelId!,
-      onStreamChunk: (chunk) {
+        onStreamChunk: (chunk) {
         streamingContent += chunk;
         final idx = messages.indexWhere((m) => m.id == streamingMessageId);
         if (idx != -1) {
@@ -819,6 +819,7 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
             from: messages[idx].from,
             to: messages[idx].to,
             type: messages[idx].type,
+            metadata: messages[idx].metadata,
           );
           messages[idx] = updated;
           messageIdMap[updated.id] = updated;
@@ -828,6 +829,7 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
           _emit(RequestScrollToBottomEvent());
         }
       },
+      onActionConfirmation: _handleStreamingActionConfirmation,
       onMessageMetadata: (metadata) {
         final idx = messages.indexWhere((m) => m.id == streamingMessageId);
         if (idx != -1) {
@@ -1375,23 +1377,7 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
             _emit(RequestScrollToBottomEvent());
           }
         },
-        onActionConfirmation: (actionData) {
-          final idx = messages.indexWhere((m) => m.id == streamingMessageId);
-          if (idx != -1) {
-            final updated = Message(
-              id: streamingMessageId!,
-              content: streamingContent,
-              timestampMs: messages[idx].timestampMs,
-              from: messages[idx].from,
-              to: messages[idx].to,
-              type: MessageType.text,
-              metadata: {'action_confirmation': Map<String, dynamic>.from(actionData)},
-            );
-            messages[idx] = updated;
-            messageIdMap[updated.id] = updated;
-          }
-          _notify();
-        },
+        onActionConfirmation: _handleStreamingActionConfirmation,
         onSingleSelect: (selectData) {
           _updateStreamingMetadata({'single_select': Map<String, dynamic>.from(selectData)});
         },
@@ -1645,6 +1631,69 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
       messages[idx] = updated;
       messageIdMap[updated.id] = updated;
     }
+    _notify();
+  }
+
+  /// Attach (or replace) an in-band action-confirmation card on the active
+  /// streaming bubble. Supports multiple sequential approvals on the same turn:
+  /// each new `confirmation_id` replaces the prior card and clears any stale
+  /// `selected_action_id` from the previous approval.
+  void _handleStreamingActionConfirmation(Map<String, dynamic> actionData) {
+    final confirmationId = actionData['confirmation_id'] as String? ?? '';
+    final streamingId = streamingMessageId;
+    LoggerService().info(
+      'onActionConfirmation: confirmationId=$confirmationId '
+      'streamingMessageId=$streamingId isProcessing=$isProcessing '
+      'actions=${(actionData['actions'] as List?)?.length ?? 0} '
+      'context=${actionData['confirmation_context']}',
+      tag: 'PeerApproval',
+    );
+    if (streamingId == null) {
+      LoggerService().warning(
+        'onActionConfirmation: no streamingMessageId — UI not attached',
+        tag: 'PeerApproval',
+      );
+      return;
+    }
+    final idx = messages.indexWhere((m) => m.id == streamingId);
+    if (idx == -1) {
+      LoggerService().warning(
+        'onActionConfirmation: message not found for id=$streamingId',
+        tag: 'PeerApproval',
+      );
+      return;
+    }
+    final existingMetadata = Map<String, dynamic>.from(messages[idx].metadata ?? {});
+    final prev = existingMetadata['action_confirmation'];
+    if (prev is Map) {
+      final prevId = prev['confirmation_id'];
+      final prevSelected = prev['selected_action_id'];
+      if (prevId != confirmationId) {
+        LoggerService().info(
+          'onActionConfirmation: new approval replaces prior '
+          'prevId=$prevId prevSelected=$prevSelected → $confirmationId',
+          tag: 'PeerApproval',
+        );
+      }
+    }
+    existingMetadata['action_confirmation'] = Map<String, dynamic>.from(actionData);
+    existingMetadata['approval_seq'] = (existingMetadata['approval_seq'] as int? ?? 0) + 1;
+    final updated = Message(
+      id: streamingId,
+      content: streamingContent.isNotEmpty ? streamingContent : messages[idx].content,
+      timestampMs: messages[idx].timestampMs,
+      from: messages[idx].from,
+      to: messages[idx].to,
+      type: messages[idx].type,
+      metadata: existingMetadata,
+    );
+    messages[idx] = updated;
+    messageIdMap[updated.id] = updated;
+    LoggerService().debug(
+      'onActionConfirmation: attached seq=${existingMetadata['approval_seq']} '
+      'msgLen=${updated.content.length}',
+      tag: 'PeerApproval',
+    );
     _notify();
   }
 

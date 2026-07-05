@@ -719,8 +719,27 @@ class PeerAgentClientService {
   /// channel; the hub relays it as `agent.submitResponse` to its local agent.
   void _onApprovalReq(Map<String, dynamic> data) {
     final requestId = data['request_id'] as String?;
-    if (requestId == null) return;
+    if (requestId == null) {
+      _log.warning('agent_approval_req: missing request_id', tag: 'PeerApproval');
+      return;
+    }
     final approvalId = data['approval_id'] as String? ?? '';
+    final actions = data['actions'] ?? const [];
+    final hasCallback = _pending[requestId]?.onActionConfirmation != null;
+    _log.info(
+      'agent_approval_req: approvalId=$approvalId requestId=$requestId '
+      'pendingRequest=${_pending.containsKey(requestId)} hasCallback=$hasCallback '
+      'actions=${actions is List ? actions.length : 0} '
+      'toolKind=${data['tool_kind']} toolCallId=${data['tool_call_id']}',
+      tag: 'PeerApproval',
+    );
+    if (!hasCallback) {
+      _log.warning(
+        'agent_approval_req: no onActionConfirmation for requestId=$requestId '
+        '(active pending keys: ${_pending.keys.take(5).join(", ")})',
+        tag: 'PeerApproval',
+      );
+    }
     final actionData = <String, dynamic>{
       // The card widget keys off `confirmation_id`; the hub's approval_id IS
       // the gateway's confirmation_id, so reuse it for the submit path too.
@@ -732,6 +751,10 @@ class PeerAgentClientService {
       'confirmation_context': 'peer',
     };
     _pending[requestId]?.onActionConfirmation?.call(actionData);
+    _log.debug(
+      'agent_approval_req: forwarded to UI confirmationId=$approvalId',
+      tag: 'PeerApproval',
+    );
   }
 
   /// Submit the user's tool-call decision back to the hub.
@@ -739,11 +762,19 @@ class PeerAgentClientService {
     required String peerId,
     required String approvalId,
     required String selectedActionId,
+    String? selectedActionLabel,
   }) async {
+    _log.info(
+      'submitApproval: approvalId=$approvalId actionId=$selectedActionId '
+      'label=${selectedActionLabel ?? ""} peerId=$peerId',
+      tag: 'PeerApproval',
+    );
     await PeerConnectionManager.instance.sendControl(peerId, {
       'type': 'agent_approval_resp',
       'approval_id': approvalId,
       'selected_action_id': selectedActionId,
+      if (selectedActionLabel != null && selectedActionLabel.isNotEmpty)
+        'selected_action_label': selectedActionLabel,
     });
   }
 
