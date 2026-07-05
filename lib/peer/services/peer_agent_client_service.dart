@@ -67,7 +67,12 @@ class PeerRemoteSession {
   PeerRemoteSession({required this.sessionId, this.title, this.updatedAt});
 
   static PeerRemoteSession? fromJson(Map<String, dynamic> json) {
-    final id = json['session_id'] as String?;
+    final rawId = json['session_id'];
+    final id = rawId is String
+        ? rawId
+        : rawId != null
+            ? rawId.toString()
+            : null;
     if (id == null || id.isEmpty) return null;
     DateTime? updated;
     final rawUpdated = json['updated_at'];
@@ -505,6 +510,7 @@ class PeerAgentClientService {
     required List<PeerRemoteSession> sessions,
   }) async {
     if (sessions.isEmpty) return 0;
+    var linked = 0;
     for (final s in sessions) {
       final channelId = syncedPeerChannelId(s.sessionId);
       final name = s.title ?? 'Session';
@@ -518,8 +524,27 @@ class PeerAgentClientService {
           isPrivate: true,
         );
         await _db.createChannel(channel, userId);
-      } else if (existing.name != name && name.isNotEmpty) {
-        await _db.updateChannel(existing.copyWith(name: name));
+        linked++;
+      } else {
+        // Channel shell may already exist from a prior sync under a previous
+        // peer-agent local id (peer re-pair / agent re-inject deletes the old
+        // agent row and CASCADE-removes its channel_members, but the psess_
+        // channel row survives). Re-attach the current agent + user so
+        // getChannelsForAgent(localAgentId) can see it again.
+        final members = await _db.getChannelMemberIds(channelId);
+        var repaired = false;
+        if (!members.contains(userId)) {
+          await _db.addChannelMember(channelId, userId);
+          repaired = true;
+        }
+        if (!members.contains(localAgentId)) {
+          await _db.addChannelMember(channelId, localAgentId);
+          repaired = true;
+        }
+        if (repaired) linked++;
+        if (existing.name != name && name.isNotEmpty) {
+          await _db.updateChannel(existing.copyWith(name: name));
+        }
       }
       // Seed recency from the remote only when the channel is first created.
       // Overwriting updated_at on existing channels would clobber the local
@@ -530,10 +555,10 @@ class PeerAgentClientService {
       }
     }
     _log.info(
-      'Synced ${sessions.length} remote session(s) for peer agent $localAgentId',
+      'Synced $linked/${sessions.length} remote session(s) for peer agent $localAgentId',
       tag: _tag,
     );
-    return sessions.length;
+    return linked;
   }
 
   /// Pull a synced session's transcript from the remote and make the local

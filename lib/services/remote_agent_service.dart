@@ -1,5 +1,7 @@
 import 'package:uuid/uuid.dart';
 import '../models/remote_agent.dart';
+import '../peer/models/paired_peer.dart' show PeerConnectionState;
+import '../peer/services/peer_connection_manager.dart';
 import 'local_database_service.dart';
 import 'logger_service.dart';
 import 'token_service.dart';
@@ -391,6 +393,39 @@ class RemoteAgentService {
       return true;
     }
 
+    // peer agent 走 P2P 隧道，可用性取决于来源配对设备是否在线，
+    // 不走 ACP WebSocket + Noise fingerprint 路径。
+    if (agent.protocol == ProtocolType.peer) {
+      final peerId = agent.sourcePeerId;
+      if (peerId == null || peerId.isEmpty) {
+        LoggerService().error(
+          'Peer agent 缺少 source_peer_id，跳过健康检查',
+          tag: 'RemoteAgent',
+        );
+        return false;
+      }
+      final connected = PeerConnectionManager.instance.getPeerState(peerId) ==
+          PeerConnectionState.connected;
+      final now = DateTime.now().millisecondsSinceEpoch;
+      await _databaseService.updateRemoteAgent(agent.copyWith(
+        status: connected ? AgentStatus.online : AgentStatus.offline,
+        lastHeartbeat: connected ? now : agent.lastHeartbeat,
+        connectedAt: connected ? (agent.connectedAt ?? now) : agent.connectedAt,
+        updatedAt: now,
+      ));
+      if (connected) {
+        LoggerService().info(
+          '健康检查成功 (peer 设备在线: $peerId)',
+          tag: 'RemoteAgent',
+        );
+      } else {
+        LoggerService().info(
+          '健康检查: peer 设备离线 ($peerId)',
+          tag: 'RemoteAgent',
+        );
+      }
+      return connected;
+    }
 
     // 检查 endpoint 是否有效
     if (agent.endpoint.trim().isEmpty) {

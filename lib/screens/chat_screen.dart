@@ -1920,9 +1920,9 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     if (!mounted) return;
     showTopToast(
       context,
-      '已同步 $count 个远端会话',
-      icon: Icons.sync,
-      color: Colors.green,
+      count > 0 ? '已同步 $count 个远端会话' : '未能关联远端会话，请重试',
+      icon: count > 0 ? Icons.sync : Icons.warning_amber_outlined,
+      color: count > 0 ? Colors.green : Colors.orange.shade700,
     );
   }
 
