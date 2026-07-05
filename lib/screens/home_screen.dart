@@ -61,6 +61,25 @@ class _ConversationItem {
   bool get isPeer => peer != null;
 }
 
+/// A sortable block in the home conversation list (single row or peer device + agents).
+class _ConversationListBlock {
+  final DateTime? sortTime;
+  final bool isShe;
+  final List<_ConversationItem> items;
+
+  _ConversationListBlock.standalone(_ConversationItem item, {this.isShe = false})
+      : sortTime = item.lastMessageTime,
+        items = [item];
+
+  _ConversationListBlock.peerGroup({
+    required _ConversationItem peerItem,
+    required List<_ConversationItem> agentItems,
+    required DateTime? sortTime,
+  })  : isShe = false,
+        sortTime = sortTime,
+        items = [peerItem, ...agentItems];
+}
+
 /// 应用主页 - Telegram风格设计
 class HomeScreen extends StatefulWidget {
   /// When true, the screen is embedded inside a desktop split-panel layout.
@@ -703,67 +722,118 @@ class HomeScreenState extends State<HomeScreen> {
   /// Build a merged, time-sorted list of agents and groups.
   List<_ConversationItem> _buildSortedConversations() {
     final query = _searchController.text.toLowerCase();
-    final items = <_ConversationItem>[];
     final selectedAgentId = widget.selectedConversation?.agentId;
+    final pairedPeerIds = _pairedPeers.map((p) => p.id).toSet();
+    final blocks = <_ConversationListBlock>[];
 
+    DateTime? _agentLastMessageTime(Agent agent) {
+      final timeStr = _latestMessages[agent.id]?['created_at'] as String?;
+      return timeStr != null ? DateTime.tryParse(timeStr) : null;
+    }
+
+    DateTime? _peerLastMessageTime(PairedPeer peer) {
+      final msgTime = _peerLatestTime[peer.id];
+      if (msgTime != null) {
+        return DateTime.fromMillisecondsSinceEpoch(msgTime);
+      }
+      if (peer.lastSeen != null) {
+        return DateTime.fromMillisecondsSinceEpoch(peer.lastSeen!);
+      }
+      return DateTime.fromMillisecondsSinceEpoch(peer.pairedAt);
+    }
+
+    DateTime? _latestOf(Iterable<DateTime?> times) {
+      DateTime? latest;
+      for (final time in times) {
+        if (time == null) continue;
+        if (latest == null || time.isAfter(latest)) latest = time;
+      }
+      return latest;
+    }
+
+    int _compareBlocks(_ConversationListBlock a, _ConversationListBlock b) {
+      if (a.isShe && !b.isShe) return -1;
+      if (!a.isShe && b.isShe) return 1;
+      if (a.sortTime == null && b.sortTime == null) return 0;
+      if (a.sortTime == null) return 1;
+      if (b.sortTime == null) return -1;
+      return b.sortTime!.compareTo(a.sortTime!);
+    }
+
+    // 本地 agent（非 peer agent，或 peer 已删除的孤儿 agent）
     for (final agent in _filteredAgents) {
-      if (query.isEmpty &&
-          agent.isPeerAgent &&
+      if (agent.isPeerAgent &&
           agent.sourcePeerId != null &&
-          _collapsedPeerIds.contains(agent.sourcePeerId) &&
-          agent.id != selectedAgentId) {
+          pairedPeerIds.contains(agent.sourcePeerId)) {
         continue;
       }
-      final msg = _latestMessages[agent.id];
-      final timeStr = msg?['created_at'] as String?;
-      final time = timeStr != null ? DateTime.tryParse(timeStr) : null;
-      items.add(_ConversationItem.agent(agent, time));
+      final time = _agentLastMessageTime(agent);
+      final item = _ConversationItem.agent(agent, time);
+      blocks.add(_ConversationListBlock.standalone(
+        item,
+        isShe: agent.metadata?['is_she'] == true,
+      ));
     }
 
     for (final group in _groupChannels) {
-      // Apply search filter to groups too
       if (query.isNotEmpty) {
         final matchesName = group.name.toLowerCase().contains(query);
         final matchesDesc = group.description?.toLowerCase().contains(query) ?? false;
         if (!matchesName && !matchesDesc) continue;
       }
-      final msg = _groupLatestMessages[group.id];
-      final timeStr = msg?['created_at'] as String?;
+      final timeStr = _groupLatestMessages[group.id]?['created_at'] as String?;
       final time = timeStr != null ? DateTime.tryParse(timeStr) : null;
-      items.add(_ConversationItem.group(group, time));
+      blocks.add(_ConversationListBlock.standalone(_ConversationItem.group(group, time)));
     }
 
-    // 已配对设备（有最近消息的加入会话列表）
+    // 按设备分组：peer 行 + 其下 agent（折叠时隐藏 agent，但排序仍计入组内最新活跃时间）
     for (final peer in _pairedPeers) {
-      if (query.isNotEmpty) {
-        if (!peer.deviceName.toLowerCase().contains(query)) continue;
+      final peerNameMatches =
+          query.isEmpty || peer.deviceName.toLowerCase().contains(query);
+
+      final childAgents = <Agent>[];
+      for (final agent in _filteredAgents) {
+        if (!agent.isPeerAgent || agent.sourcePeerId != peer.id) continue;
+        childAgents.add(agent);
       }
-      final msgTime = _peerLatestTime[peer.id];
-      final time = msgTime != null
-          ? DateTime.fromMillisecondsSinceEpoch(msgTime)
-          : (peer.lastSeen != null
-              ? DateTime.fromMillisecondsSinceEpoch(peer.lastSeen!)
-              : DateTime.fromMillisecondsSinceEpoch(peer.pairedAt));
-      items.add(_ConversationItem.peer(peer, time));
+
+      if (query.isNotEmpty && !peerNameMatches && childAgents.isEmpty) {
+        continue;
+      }
+
+      final peerTime = _peerLastMessageTime(peer);
+      final peerItem = _ConversationItem.peer(peer, peerTime);
+
+      final visibleAgentItems = <_ConversationItem>[];
+      final allAgentTimes = <DateTime?>[];
+      for (final agent in childAgents) {
+        final time = _agentLastMessageTime(agent);
+        allAgentTimes.add(time);
+        final isCollapsed = query.isEmpty &&
+            _collapsedPeerIds.contains(peer.id) &&
+            agent.id != selectedAgentId;
+        if (!isCollapsed) {
+          visibleAgentItems.add(_ConversationItem.agent(agent, time));
+        }
+      }
+
+      visibleAgentItems.sort((a, b) {
+        if (a.lastMessageTime == null && b.lastMessageTime == null) return 0;
+        if (a.lastMessageTime == null) return 1;
+        if (b.lastMessageTime == null) return -1;
+        return b.lastMessageTime!.compareTo(a.lastMessageTime!);
+      });
+
+      blocks.add(_ConversationListBlock.peerGroup(
+        peerItem: peerItem,
+        agentItems: visibleAgentItems,
+        sortTime: _latestOf([peerTime, ...allAgentTimes]),
+      ));
     }
 
-    // Sort by last message time descending; items with no messages go last.
-    // She (is_she == true) always stays at the top.
-    items.sort((a, b) {
-      // She（pinned）永远排第一
-      final aIsShe = a.agent?.metadata?['is_she'] == true;
-      final bIsShe = b.agent?.metadata?['is_she'] == true;
-      if (aIsShe && !bIsShe) return -1;
-      if (!aIsShe && bIsShe) return 1;
+    blocks.sort(_compareBlocks);
 
-      // 其余按最新消息时间排序
-      if (a.lastMessageTime == null && b.lastMessageTime == null) return 0;
-      if (a.lastMessageTime == null) return 1;
-      if (b.lastMessageTime == null) return -1;
-      return b.lastMessageTime!.compareTo(a.lastMessageTime!);
-    });
-
-    return items;
+    return blocks.expand((block) => block.items).toList();
   }
 
   /// 主页标题：中文「惜宝」，英文「ShePaw」，居中显示（微信风格）。
