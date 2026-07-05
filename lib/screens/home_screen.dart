@@ -43,6 +43,7 @@ import '../peer/services/peer_pairing_service.dart';
 import '../peer/services/peer_storage_service.dart';
 import '../widgets/drawer_swipe_detector.dart';
 import 'package:provider/provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 /// Tagged union for a unified conversation list item (agent or group).
 class _ConversationItem {
@@ -129,6 +130,9 @@ class HomeScreenState extends State<HomeScreen> {
   final Map<String, String> _peerLatestContent = {};
   final Map<String, int> _peerLatestTime = {};
   final Map<String, int> _peerUnreadCounts = {};
+  // 折叠的 peer 设备 ID（隐藏其下所有 peer agent）
+  Set<String> _collapsedPeerIds = {};
+  static const _prefKeyCollapsedPeers = 'home_collapsed_peer_ids';
 
   // 定期健康检查定时器
   Timer? _healthCheckTimer;
@@ -154,6 +158,7 @@ class HomeScreenState extends State<HomeScreen> {
     super.initState();
     _messageSearchService = MessageSearchService(_databaseService);
     _loadAgents();
+    _loadCollapsedPeerIds();
     _searchController.addListener(_onSearchChanged);
 
     // Listen for typing status changes
@@ -482,6 +487,39 @@ class HomeScreenState extends State<HomeScreen> {
     }
   }
 
+  Future<void> _loadCollapsedPeerIds() async {
+    final prefs = await SharedPreferences.getInstance();
+    final ids = prefs.getStringList(_prefKeyCollapsedPeers) ?? [];
+    if (!mounted) return;
+    setState(() {
+      _collapsedPeerIds = ids.toSet();
+      _sortedConversations = _buildSortedConversations();
+    });
+  }
+
+  Future<void> _saveCollapsedPeerIds() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setStringList(_prefKeyCollapsedPeers, _collapsedPeerIds.toList());
+  }
+
+  int _peerAgentCount(String peerId) {
+    return _agents
+        .where((a) => a.isPeerAgent && a.sourcePeerId == peerId)
+        .length;
+  }
+
+  void _togglePeerCollapsed(String peerId) {
+    setState(() {
+      if (_collapsedPeerIds.contains(peerId)) {
+        _collapsedPeerIds.remove(peerId);
+      } else {
+        _collapsedPeerIds.add(peerId);
+      }
+      _sortedConversations = _buildSortedConversations();
+    });
+    _saveCollapsedPeerIds();
+  }
+
   /// 后台执行健康检查，完成后仅在在线状态变化时更新 UI（不显示 loading）
   void _runHealthCheckInBackground() {
     if (_healthCheckRunning) return;
@@ -549,6 +587,11 @@ class HomeScreenState extends State<HomeScreen> {
         _peerLatestContent.removeWhere((id, _) => !liveIds.contains(id));
         _peerLatestTime.removeWhere((id, _) => !liveIds.contains(id));
         _peerUnreadCounts.removeWhere((id, _) => !liveIds.contains(id));
+        final collapsedBefore = _collapsedPeerIds.length;
+        _collapsedPeerIds.removeWhere((id) => !liveIds.contains(id));
+        if (_collapsedPeerIds.length != collapsedBefore) {
+          await _saveCollapsedPeerIds();
+        }
         await _loadPeerPreviews(peers);
       } catch (_) {}
 
@@ -661,8 +704,16 @@ class HomeScreenState extends State<HomeScreen> {
   List<_ConversationItem> _buildSortedConversations() {
     final query = _searchController.text.toLowerCase();
     final items = <_ConversationItem>[];
+    final selectedAgentId = widget.selectedConversation?.agentId;
 
     for (final agent in _filteredAgents) {
+      if (query.isEmpty &&
+          agent.isPeerAgent &&
+          agent.sourcePeerId != null &&
+          _collapsedPeerIds.contains(agent.sourcePeerId) &&
+          agent.id != selectedAgentId) {
+        continue;
+      }
       final msg = _latestMessages[agent.id];
       final timeStr = msg?['created_at'] as String?;
       final time = timeStr != null ? DateTime.tryParse(timeStr) : null;
@@ -2197,6 +2248,8 @@ class HomeScreenState extends State<HomeScreen> {
         ? DateTime.fromMillisecondsSinceEpoch(lastTimestamp).toIso8601String()
         : null;
     final unreadCount = _peerUnreadCounts[peer.id] ?? 0;
+    final agentCount = _peerAgentCount(peer.id);
+    final isCollapsed = _collapsedPeerIds.contains(peer.id);
 
     final isSelected = widget.embedded &&
         widget.selectedConversation != null &&
@@ -2306,11 +2359,13 @@ class HomeScreenState extends State<HomeScreen> {
                       const SizedBox(width: 4),
                       Expanded(
                         child: Text(
-                          lastContent.isNotEmpty
-                              ? lastContent
-                              : (isConnected
-                                  ? l10n.peerSettings_online
-                                  : l10n.peerSettings_offline),
+                          isCollapsed && agentCount > 0
+                              ? l10n.home_agentsCount(agentCount)
+                              : (lastContent.isNotEmpty
+                                  ? lastContent
+                                  : (isConnected
+                                      ? l10n.peerSettings_online
+                                      : l10n.peerSettings_offline)),
                           style: TextStyle(
                             fontSize: 13,
                             color: Colors.grey[500],
@@ -2324,6 +2379,26 @@ class HomeScreenState extends State<HomeScreen> {
                 ],
               ),
             ),
+            if (agentCount > 0) ...[
+              const SizedBox(width: 4),
+              IconButton(
+                icon: Icon(
+                  isCollapsed ? Icons.expand_more : Icons.expand_less,
+                  size: 20,
+                  color: Colors.grey[600],
+                ),
+                tooltip: isCollapsed
+                    ? l10n.home_expandPeerAgents
+                    : l10n.home_collapsePeerAgents,
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints.tightFor(width: 32, height: 32),
+                style: IconButton.styleFrom(
+                  minimumSize: Size.zero,
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                ),
+                onPressed: () => _togglePeerCollapsed(peer.id),
+              ),
+            ],
           ],
         ),
       ),

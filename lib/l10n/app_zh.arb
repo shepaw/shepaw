@@ -151,6 +151,8 @@
       }
     }
   },
+  "home_collapsePeerAgents": "折叠 Agent",
+  "home_expandPeerAgents": "展开 Agent",
   "drawer_myProfile": "我的资料",
   "drawer_newAgent": "新建 Agent",
   "drawer_newGroup": "新建群组",

@@ -330,6 +330,12 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
+  String get home_collapsePeerAgents => '折叠 Agent';
+
+  @override
+  String get home_expandPeerAgents => '展开 Agent';
+
+  @override
   String get drawer_myProfile => '我的资料';
 
   @override

@@ -710,6 +710,18 @@ abstract class AppLocalizations {
   /// **'{count} agents'**
   String home_agentsCount(int count);
 
+  /// No description provided for @home_collapsePeerAgents.
+  ///
+  /// In zh, this message translates to:
+  /// **'折叠 Agent'**
+  String get home_collapsePeerAgents;
+
+  /// No description provided for @home_expandPeerAgents.
+  ///
+  /// In zh, this message translates to:
+  /// **'展开 Agent'**
+  String get home_expandPeerAgents;
+
   /// No description provided for @drawer_myProfile.
   ///
   /// In zh, this message translates to:

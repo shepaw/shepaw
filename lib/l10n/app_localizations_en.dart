@@ -344,6 +344,12 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
+  String get home_collapsePeerAgents => 'Collapse agents';
+
+  @override
+  String get home_expandPeerAgents => 'Expand agents';
+
+  @override
   String get drawer_myProfile => 'My Profile';
 
   @override

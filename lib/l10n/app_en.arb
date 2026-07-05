@@ -102,6 +102,8 @@
   "home_searchSectionMessages": "Messages",
   "home_searchSectionPeerMessages": "Peer Chats",
   "home_agentsCount": "{count} agents",
+  "home_collapsePeerAgents": "Collapse agents",
+  "home_expandPeerAgents": "Expand agents",
   "drawer_myProfile": "My Profile",
   "drawer_newAgent": "New Agent",
   "drawer_newGroup": "New Group",
