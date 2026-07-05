@@ -722,7 +722,6 @@ class HomeScreenState extends State<HomeScreen> {
   /// Build a merged, time-sorted list of agents and groups.
   List<_ConversationItem> _buildSortedConversations() {
     final query = _searchController.text.toLowerCase();
-    final selectedAgentId = widget.selectedConversation?.agentId;
     final pairedPeerIds = _pairedPeers.map((p) => p.id).toSet();
     final blocks = <_ConversationListBlock>[];
 
@@ -809,9 +808,8 @@ class HomeScreenState extends State<HomeScreen> {
       for (final agent in childAgents) {
         final time = _agentLastMessageTime(agent);
         allAgentTimes.add(time);
-        final isCollapsed = query.isEmpty &&
-            _collapsedPeerIds.contains(peer.id) &&
-            agent.id != selectedAgentId;
+        final isCollapsed =
+            query.isEmpty && _collapsedPeerIds.contains(peer.id);
         if (!isCollapsed) {
           visibleAgentItems.add(_ConversationItem.agent(agent, time));
         }
