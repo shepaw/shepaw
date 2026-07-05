@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:uuid/uuid.dart';
 import '../models/remote_agent.dart';
 import '../peer/models/paired_peer.dart' show PeerConnectionState;
@@ -28,7 +30,17 @@ class RemoteAgentService {
   final TokenService _tokenService;
   final Uuid _uuid = const Uuid();
 
+  /// Agent 元数据（名称、头像等）变更通知，供会话列表等 UI 刷新。
+  final _agentsChangedController = StreamController<void>.broadcast();
+  Stream<void> get agentsChanged => _agentsChangedController.stream;
+
   RemoteAgentService(this._databaseService, this._tokenService);
+
+  void notifyAgentsChanged() {
+    if (!_agentsChangedController.isClosed) {
+      _agentsChangedController.add(null);
+    }
+  }
 
   // ==================== Token 管理 ====================
 
@@ -185,6 +197,7 @@ class RemoteAgentService {
       updatedAt: DateTime.now().millisecondsSinceEpoch,
     );
     await _databaseService.updateRemoteAgent(updatedAgent);
+    notifyAgentsChanged();
   }
 
   /// 删除远端助手

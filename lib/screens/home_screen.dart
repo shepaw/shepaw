@@ -140,6 +140,8 @@ class HomeScreenState extends State<HomeScreen> {
   StreamSubscription? _peerEventSub;
   // P2P 设备列表变化监听（新增配对/删除配对时刷新会话列表）
   StreamSubscription? _peerListChangedSub;
+  // Agent 元数据变更监听（头像/名称编辑后刷新会话列表）
+  StreamSubscription? _agentsChangedSub;
 
   /// Public accessor so DesktopHomeScreen can trigger a refresh via GlobalKey.
   void reloadAgents() => _loadAgents(silent: true);
@@ -187,6 +189,11 @@ class HomeScreenState extends State<HomeScreen> {
       if (mounted) _loadAgents(silent: true);
     });
 
+    // 监听 Agent 元数据变更（如在详情页修改头像/名称）
+    _agentsChangedSub = getIt<RemoteAgentService>().agentsChanged.listen((_) {
+      if (mounted) _loadAgents(silent: true);
+    });
+
     // 定期健康检查（每30秒）——仅更新在线状态，避免整表刷新导致列表闪烁
     _healthCheckTimer = Timer.periodic(const Duration(seconds: 30), (_) {
       _runHealthCheckInBackground();
@@ -208,6 +215,7 @@ class HomeScreenState extends State<HomeScreen> {
     _peerMessageSub?.cancel();
     _peerEventSub?.cancel();
     _peerListChangedSub?.cancel();
+    _agentsChangedSub?.cancel();
     _searchDebounce?.cancel();
     _searchController.dispose();
     super.dispose();

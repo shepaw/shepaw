@@ -509,6 +509,15 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
       AppLifecycleService().setActiveChannel(currentChannelId);
       NotificationService().cancelNotification(currentChannelId.hashCode);
 
+      // 始终从数据库读取最新 name/avatar，避免会话列表等入口传入过期的缓存值。
+      if (agentId != null) {
+        final agent = await localDatabaseService.getRemoteAgentById(agentId!);
+        if (agent != null) {
+          agentName = agent.name;
+          agentAvatar = agent.avatar;
+        }
+      }
+
       // Detect group mode & resolve agent info from channel metadata
       final channel = await localDatabaseService.getChannelById(currentChannelId!);
       // channel 已落库时按 channel 解析；全新会话（channel 尚未持久化）回退到
