@@ -70,14 +70,21 @@ class _SlashCommandPickerState extends State<SlashCommandPicker> {
   void didUpdateWidget(SlashCommandPicker oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.query != widget.query || oldWidget.commands != widget.commands) {
-      if (widget.scrollController?.hasClients ?? false) {
-        widget.scrollController!.jumpTo(0);
-      }
+      _scheduleJumpTo(0);
     }
     if (widget.selectedIndex != oldWidget.selectedIndex) {
       _previousSelectedIndex = oldWidget.selectedIndex;
       _scheduleScrollToSelected();
     }
+  }
+
+  void _scheduleJumpTo(double offset) {
+    SchedulerBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final controller = widget.scrollController;
+      if (controller == null || !controller.hasClients) return;
+      controller.jumpTo(offset.clamp(0.0, controller.position.maxScrollExtent));
+    });
   }
 
   void _scheduleScrollToSelected() {
