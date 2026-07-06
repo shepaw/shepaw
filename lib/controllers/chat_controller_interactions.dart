@@ -126,6 +126,30 @@ mixin _InteractionOps on _ChatControllerBase {
       'context=$confirmationContext, isProcessing=$isProcessing',
       tag: 'ChatController',
     );
+
+    // Peer in-band approvals in group chat: the original P2P sendChat turn is
+    // still live on GroupAgentExecutor. Submit via submitApproval instead of
+    // starting a new group round through _handleGroupInteractionLocally.
+    if (isGroupMode && confirmationContext == 'peer') {
+      try {
+        await interactiveResponseHandler.handleActionConfirmation(
+          originalMessage: originalMessage,
+          confirmationId: confirmationId,
+          actionId: actionId,
+          actionLabel: actionLabel,
+          confirmationContext: confirmationContext,
+        );
+        _updateGroupStreamingMetadata(
+          originalMessage.id,
+          'action_confirmation_responded',
+          {'action_id': actionId, 'action_label': actionLabel},
+        );
+      } catch (e) {
+        _emit(ShowErrorSnackBarEvent('$e'));
+      }
+      return;
+    }
+
     final pending = pendingGroupInteractions[originalMessage.id];
     if (pending != null && !pending.result.isCompleted) {
       pending.result.complete({

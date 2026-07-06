@@ -1249,6 +1249,16 @@ class GroupAgentExecutor {
     }
 
     try {
+      // Surface the approval card in group chat before any admin auto-decision.
+      if (onInteractionRequest != null) {
+        await onInteractionRequest(
+          agent.id,
+          agent.name,
+          'action_confirmation',
+          Map<String, dynamic>.from(data),
+        );
+      }
+
       if (adminAgent != null) {
         final responseData = await _interactionHandler.resolveInteractionViaAdmin(
           interactionType: 'action_confirmation',
@@ -1268,22 +1278,9 @@ class GroupAgentExecutor {
           return;
         }
       }
-      if (onInteractionRequest != null) {
-        final userResponse = await onInteractionRequest(
-          agent.id,
-          agent.name,
-          'action_confirmation',
-          data,
-        );
-        if (userResponse != null && userResponse['_non_blocking'] != true) {
-          await submit(userResponse);
-          return;
-        }
-      }
-      final fallback = _interactionHandler.pickDefaultOption('action_confirmation', data);
-      if (fallback != null) {
-        await submit(fallback);
-      }
+
+      // User will tap the card; handleActionSelected(peer) calls submitApproval.
+      // Do not auto-pick a default — the peer hub blocks until explicit approval.
     } catch (e) {
       LoggerService().error(
         'Peer group action_confirmation error for ${agent.name}',
