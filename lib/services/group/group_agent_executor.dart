@@ -23,11 +23,11 @@ import '../logger_service.dart';
 import '../task/task_models.dart';
 import 'group_prompt_builder.dart';
 import 'group_interaction_handler.dart';
-import '../messaging/local_llm_handler.dart';
+import '../../peer/services/peer_agent_client_service.dart';
 
 /// Executes a single agent's response turn within a group chat.
 ///
-/// Handles both local LLM and remote ACP execution paths, including
+/// Handles local LLM, peer P2P, and remote ACP execution paths, including
 /// streaming, interaction escalation, file messages, and task lifecycle.
 class GroupAgentExecutor {
   final LocalDatabaseService _db;
@@ -244,7 +244,10 @@ class GroupAgentExecutor {
     bool isFlowMode = false,
     String? orchestrationTraceId,
   }) async {
-    LoggerService().debug('_processGroupAgent START: ${agent.name} (isAdmin=$isAdmin, isLocal=${agent.isLocal})', tag: 'GroupAgentExecutor');
+    LoggerService().debug(
+      '_processGroupAgent START: ${agent.name} (isAdmin=$isAdmin, isLocal=${agent.isLocal}, isPeer=${agent.isPeerAgent})',
+      tag: 'GroupAgentExecutor',
+    );
     final systemPrompt = _promptBuilder.buildGroupSystemPrompt(
       groupName: groupName,
       groupDescription: groupDescription,
@@ -306,7 +309,11 @@ class GroupAgentExecutor {
       channelId: channelId,
       provider: agent.metadata['llm_provider'] as String?,
       model: agent.metadata['llm_model'] as String?,
-      executionMode: agent.isLocal ? 'group_local' : 'group_remote_acp',
+      executionMode: agent.isLocal
+          ? 'group_local'
+          : agent.isPeerAgent
+              ? 'group_peer'
+              : 'group_remote_acp',
       userMessage: content,
       systemPrompt: systemPrompt,
       parentTraceId: orchestrationTraceId,
@@ -546,6 +553,110 @@ class GroupAgentExecutor {
           await _db.markMessageAsRead(errorMsg.id);
           notifyChannelUpdate(channelId);
 
+          groupTask.isComplete = true;
+          groupTask.onTaskFinished?.call();
+          _activeGroupTasks[channelId]?.remove(agent.id);
+          if (_activeGroupTasks[channelId]?.isEmpty == true) {
+            _activeGroupTasks.remove(channelId);
+          }
+          updateTypingAgentIds();
+          ForegroundTaskService().releaseTask(agent.name);
+          onAgentDone?.call(agent.id, agent.name, true);
+          return;
+        }
+      }
+    } else if (agent.isPeerAgent) {
+      // ── Peer agent path (P2P relay to paired device's local agent) ──
+      final peerId = agent.sourcePeerId;
+      final remoteAgentId = agent.remoteAgentId;
+      if (peerId == null || remoteAgentId == null) {
+        LoggerService().error(
+          'Peer agent ${agent.name} missing source_peer_id/remote_agent_id',
+          tag: 'GroupAgentExecutor',
+        );
+        await _saveGroupAgentErrorMessage(
+          channelId: channelId,
+          agentName: agent.name,
+          error: 'Peer agent 配置不完整（缺少 source_peer_id 或 remote_agent_id）',
+        );
+        groupTask.isComplete = true;
+        groupTask.onTaskFinished?.call();
+        _activeGroupTasks[channelId]?.remove(agent.id);
+        if (_activeGroupTasks[channelId]?.isEmpty == true) {
+          _activeGroupTasks.remove(channelId);
+        }
+        updateTypingAgentIds();
+        ForegroundTaskService().releaseTask(agent.name);
+        infLogGroup.endSession(groupTraceId, InferenceStatus.error,
+            error: 'missing peer metadata');
+        onAgentDone?.call(agent.id, agent.name, true);
+        return;
+      }
+
+      final peerMessage = _buildPeerGroupMessage(
+        systemPrompt: systemPrompt,
+        historyLines: historyLines,
+        content: content,
+      );
+
+      infLogGroup.beginRound(groupTraceId, requestSummary: 'Group peer request');
+
+      try {
+        final result = await PeerAgentClientService.instance.sendChat(
+          peerId: peerId,
+          remoteAgentId: remoteAgentId,
+          message: peerMessage,
+          sessionId: channelId,
+          cancelToken: acpCancellationToken,
+          onChunk: (chunk) {
+            streamingStarted = true;
+            responseBuffer.write(chunk);
+            groupTask.accumulatedContent += chunk;
+            groupTask.onStreamChunk?.call(chunk);
+            onStreamChunk?.call(agent.id, agent.name, chunk);
+            infLogGroup.onTextChunk(groupTraceId, chunk);
+          },
+          onActionConfirmation: (data) {
+            actionConfirmationData = Map<String, dynamic>.from(data);
+            unawaited(_handlePeerGroupActionConfirmation(
+              agent: agent,
+              peerId: peerId,
+              data: data,
+              adminAgent: adminAgent,
+              channelId: channelId,
+              onInteractionRequest: onInteractionRequest,
+            ));
+          },
+        );
+
+        infLogGroup.endRound(groupTraceId, stopReason: 'stop');
+        final wasCancelled = acpCancellationToken?.isCancelled == true;
+        infLogGroup.endSession(
+          groupTraceId,
+          wasCancelled ? InferenceStatus.cancelled : InferenceStatus.completed,
+        );
+
+        if (result.content.isNotEmpty && responseBuffer.isEmpty) {
+          responseBuffer.write(result.content);
+          streamingStarted = true;
+        }
+        if (result.metadata != null && result.metadata!.isNotEmpty) {
+          messageMetadataExtra = Map<String, dynamic>.from(result.metadata!);
+        }
+      } catch (e) {
+        LoggerService().error(
+          'Group agent ${agent.name} peer error',
+          tag: 'GroupAgentExecutor',
+          error: e,
+        );
+        infLogGroup.endRound(groupTraceId, stopReason: 'error');
+        infLogGroup.endSession(groupTraceId, InferenceStatus.error, error: '$e');
+        if (!streamingStarted || responseBuffer.isEmpty) {
+          await _saveGroupAgentErrorMessage(
+            channelId: channelId,
+            agentName: agent.name,
+            error: e,
+          );
           groupTask.isComplete = true;
           groupTask.onTaskFinished?.call();
           _activeGroupTasks[channelId]?.remove(agent.id);
@@ -1067,5 +1178,118 @@ class GroupAgentExecutor {
 
     LoggerService().debug('_processGroupAgent DONE: ${agent.name}, contentLen=${responseContent.length}', tag: 'GroupAgentExecutor');
     onAgentDone?.call(agent.id, agent.name, false);
+  }
+
+  /// Compose a single text payload for peer relay: system prompt + history + turn.
+  String _buildPeerGroupMessage({
+    required String systemPrompt,
+    required String historyLines,
+    required String content,
+  }) {
+    final buf = StringBuffer();
+    if (systemPrompt.isNotEmpty) {
+      buf.writeln(systemPrompt);
+      buf.writeln();
+    }
+    if (historyLines.isNotEmpty) {
+      buf.writeln('以下是群聊的历史记录：');
+      buf.writeln();
+      buf.writeln(historyLines);
+      buf.writeln();
+    }
+    buf.write(content);
+    return buf.toString();
+  }
+
+  Future<void> _saveGroupAgentErrorMessage({
+    required String channelId,
+    required String agentName,
+    required Object error,
+  }) async {
+    final errorMsg = Message(
+      id: _uuid.v4(),
+      content: '⚠️ Agent「$agentName」调用失败：$error',
+      timestampMs: DateTime.now().millisecondsSinceEpoch,
+      from: MessageFrom(id: 'system', type: 'system', name: 'System'),
+      type: MessageType.system,
+    );
+    await _db.createMessage(
+      id: errorMsg.id,
+      channelId: channelId,
+      senderId: 'system',
+      senderType: 'system',
+      senderName: 'System',
+      content: errorMsg.content,
+      messageType: 'system',
+    );
+    await _db.markMessageAsRead(errorMsg.id);
+    notifyChannelUpdate(channelId);
+  }
+
+  Future<void> _handlePeerGroupActionConfirmation({
+    required RemoteAgent agent,
+    required String peerId,
+    required Map<String, dynamic> data,
+    required RemoteAgent? adminAgent,
+    required String channelId,
+    Future<Map<String, dynamic>?> Function(
+      String agentId,
+      String agentName,
+      String interactionType,
+      Map<String, dynamic> data,
+    )? onInteractionRequest,
+  }) async {
+    Future<void> submit(Map<String, dynamic> responseData) async {
+      await PeerAgentClientService.instance.submitApproval(
+        peerId: peerId,
+        approvalId: data['confirmation_id'] as String? ?? '',
+        selectedActionId: responseData['selected_action_id'] as String? ?? '',
+        selectedActionLabel: responseData['selected_action_label'] as String?,
+      );
+    }
+
+    try {
+      if (adminAgent != null) {
+        final responseData = await _interactionHandler.resolveInteractionViaAdmin(
+          interactionType: 'action_confirmation',
+          data: data,
+          adminAgent: adminAgent,
+          channelId: channelId,
+          subAgentName: agent.name,
+        );
+        if (responseData != null) {
+          await submit(responseData);
+          _interactionHandler.saveAdminDecisionMessage(
+            channelId: channelId,
+            subAgentName: agent.name,
+            interactionType: 'action_confirmation',
+            chosenLabel: responseData['selected_action_label'] as String? ?? '',
+          );
+          return;
+        }
+      }
+      if (onInteractionRequest != null) {
+        final userResponse = await onInteractionRequest(
+          agent.id,
+          agent.name,
+          'action_confirmation',
+          data,
+        );
+        if (userResponse != null && userResponse['_non_blocking'] != true) {
+          await submit(userResponse);
+          return;
+        }
+      }
+      final fallback = _interactionHandler.pickDefaultOption('action_confirmation', data);
+      if (fallback != null) {
+        await submit(fallback);
+      }
+    } catch (e) {
+      LoggerService().error(
+        'Peer group action_confirmation error for ${agent.name}',
+        tag: 'GroupAgentExecutor',
+        error: e,
+      );
+    }
   }
 }
