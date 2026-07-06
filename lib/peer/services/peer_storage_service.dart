@@ -1,6 +1,7 @@
 import 'package:sqflite/sqflite.dart';
 import '../models/paired_peer.dart';
 import '../models/peer_message.dart';
+import '../models/peer_hub_pending_approval.dart';
 import '../../services/local_storage_service.dart';
 import '../../services/logger_service.dart';
 
@@ -77,6 +78,25 @@ class PeerStorageService {
         PRIMARY KEY (peer_id, agent_id)
       )
     ''');
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS peer_hub_pending_approvals (
+        approval_id TEXT PRIMARY KEY,
+        peer_id TEXT NOT NULL,
+        request_id TEXT NOT NULL,
+        agent_id TEXT NOT NULL,
+        task_id TEXT NOT NULL DEFAULT '',
+        channel_id TEXT NOT NULL,
+        approval_data_json TEXT NOT NULL DEFAULT '{}',
+        status TEXT NOT NULL DEFAULT 'pending',
+        created_at INTEGER NOT NULL,
+        expires_at INTEGER,
+        selected_action_id TEXT,
+        selected_action_label TEXT
+      )
+    ''');
+    await db.execute(
+      'CREATE INDEX IF NOT EXISTS idx_peer_hub_pending_status ON peer_hub_pending_approvals(status, created_at DESC)',
+    );
     _tablesReady = true;
     _log.debug('P2P tables ensured', tag: _tag);
   }
@@ -412,6 +432,72 @@ class PeerStorageService {
       _log.error('Error searching peer messages: $e', tag: _tag);
       return [];
     }
+  }
+
+  // ── Hub pending peer approvals (Phase C) ────────────────────────────────
+
+  static const int defaultApprovalTtlMs = 24 * 60 * 60 * 1000;
+
+  Future<void> saveHubPendingApproval(PeerHubPendingApproval approval) async {
+    final db = await _db;
+    await db.insert(
+      'peer_hub_pending_approvals',
+      approval.toMap(),
+      conflictAlgorithm: ConflictAlgorithm.replace,
+    );
+  }
+
+  Future<PeerHubPendingApproval?> getHubPendingApproval(String approvalId) async {
+    final db = await _db;
+    final rows = await db.query(
+      'peer_hub_pending_approvals',
+      where: 'approval_id = ?',
+      whereArgs: [approvalId],
+      limit: 1,
+    );
+    if (rows.isEmpty) return null;
+    return PeerHubPendingApproval.fromMap(rows.first);
+  }
+
+  Future<List<PeerHubPendingApproval>> getPendingHubApprovals() async {
+    final db = await _db;
+    final now = DateTime.now().millisecondsSinceEpoch;
+    final rows = await db.query(
+      'peer_hub_pending_approvals',
+      where: 'status = ? AND (expires_at IS NULL OR expires_at > ?)',
+      whereArgs: ['pending', now],
+      orderBy: 'created_at ASC',
+    );
+    return rows.map(PeerHubPendingApproval.fromMap).toList();
+  }
+
+  Future<void> markHubPendingApprovalSubmitted(
+    String approvalId, {
+    required String selectedActionId,
+    String? selectedActionLabel,
+  }) async {
+    final db = await _db;
+    await db.update(
+      'peer_hub_pending_approvals',
+      {
+        'status': 'submitted',
+        'selected_action_id': selectedActionId,
+        if (selectedActionLabel != null) 'selected_action_label': selectedActionLabel,
+      },
+      where: 'approval_id = ?',
+      whereArgs: [approvalId],
+    );
+  }
+
+  Future<void> expireStaleHubPendingApprovals() async {
+    final db = await _db;
+    final now = DateTime.now().millisecondsSinceEpoch;
+    await db.update(
+      'peer_hub_pending_approvals',
+      {'status': 'expired'},
+      where: 'status = ? AND expires_at IS NOT NULL AND expires_at <= ?',
+      whereArgs: ['pending', now],
+    );
   }
 }
 

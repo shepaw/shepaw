@@ -6,6 +6,10 @@
 /// - `agent_chat`：在本机用 [ChatService] 跑对应本地 agent，流式把文本块经
 ///   `agent_chunk` 回传，完成后发 `agent_done`，出错发 `agent_error`。
 /// - `agent_cancel`：取消正在进行的请求。
+/// - `agent_approval_resp`：配对客户端的工具审批回复；Hub 持久化后转发给本地 agent。
+///
+/// 当本地 agent 触发工具审批时，Hub 向客户端发送 `agent_approval_req` 并写入
+/// `peer_hub_pending_approvals`，以便客户端延迟回复（杀进程 / 重连）后仍能完成 relay。
 ///
 /// 每个来源设备的会话历史保存在独立 channel `peer__{peerId}__{agentId}` 下，
 /// 天然提供多轮上下文；该 channel 会以「Agent 名 ← 来源设备名」的形式出现在
@@ -24,7 +28,9 @@ import '../../services/chat_service.dart';
 import '../../services/local_database_service.dart';
 import '../../services/logger_service.dart';
 import '../../service_locator.dart' show getIt;
+import '../models/peer_hub_pending_approval.dart';
 import 'peer_connection_manager.dart';
+import 'peer_connection.dart' show PeerConnectionEvent, PeerConnectionEventType;
 import 'peer_storage_service.dart';
 
 /// 桌面 peer-agent 会话 channelId 前缀。用于标识本机作为 host 时、为来自配对
@@ -48,6 +54,22 @@ String peerAgentChannelId(String peerId, String agentId, [String? clientSessionI
 bool isPeerAgentChannel(String? channelId) =>
     channelId != null && channelId.startsWith(kPeerAgentChannelPrefix);
 
+class _PeerChatSession {
+  final String peerId;
+  final String agentId;
+  final String channelId;
+  final String userId;
+  final String userName;
+
+  const _PeerChatSession({
+    required this.peerId,
+    required this.agentId,
+    required this.channelId,
+    required this.userId,
+    required this.userName,
+  });
+}
+
 class PeerAgentHostService {
   PeerAgentHostService._();
   static final PeerAgentHostService instance = PeerAgentHostService._();
@@ -56,18 +78,29 @@ class PeerAgentHostService {
   final _log = LoggerService();
 
   StreamSubscription<PeerControlEvent>? _sub;
+  StreamSubscription<PeerConnectionEvent>? _peerConnSub;
   bool _running = false;
 
   /// 正在进行的请求的取消令牌（requestId → token）。
   final Map<String, ACPCancellationToken> _activeRequests = {};
 
+  /// In-flight peer chat sessions (requestId → context).
+  final Map<String, _PeerChatSession> _chatSessions = {};
+
   LocalDatabaseService get _db => getIt<LocalDatabaseService>();
   ChatService get _chat => getIt<ChatService>();
+  final PeerStorageService _peerStorage = PeerStorageService();
 
   void start() {
     if (_running) return;
     _running = true;
     _sub = PeerConnectionManager.instance.controlEvents.listen(_onControl);
+    _peerConnSub = PeerConnectionManager.instance.events.listen((event) {
+      if (event.type == PeerConnectionEventType.connected) {
+        unawaited(_resendPendingApprovalsForPeer(event.peerId));
+      }
+    });
+    unawaited(_replayDeferredHubApprovals());
     _log.info('PeerAgentHostService started', tag: _tag);
   }
 
@@ -75,10 +108,13 @@ class PeerAgentHostService {
     _running = false;
     _sub?.cancel();
     _sub = null;
+    _peerConnSub?.cancel();
+    _peerConnSub = null;
     for (final t in _activeRequests.values) {
       t.cancel();
     }
     _activeRequests.clear();
+    _chatSessions.clear();
   }
 
   void _onControl(PeerControlEvent event) {
@@ -91,6 +127,9 @@ class PeerAgentHostService {
         break;
       case 'agent_cancel':
         _handleCancel(event.data);
+        break;
+      case 'agent_approval_resp':
+        unawaited(_handleApprovalResp(event.peerId, event.data));
         break;
     }
   }
@@ -181,16 +220,23 @@ class PeerAgentHostService {
     final token = ACPCancellationToken();
     _activeRequests[requestId] = token;
 
+    final channelId = peerAgentChannelId(peerId, agentId, clientSessionId);
+    final userName = await _peerDisplayName(peerId);
+    final userId = 'peer:$peerId';
+    _chatSessions[requestId] = _PeerChatSession(
+      peerId: peerId,
+      agentId: agentId,
+      channelId: channelId,
+      userId: userId,
+      userName: userName,
+    );
+
     try {
       final agent = await _db.getRemoteAgentById(agentId);
       if (agent == null || !agent.isLocal || !agent.allowExternalAccess) {
         await _sendError(peerId, requestId, 'Agent not available for external access');
         return;
       }
-
-      final channelId = peerAgentChannelId(peerId, agentId, clientSessionId);
-      final userName = await _peerDisplayName(peerId);
-      final userId = 'peer:$peerId';
 
       // 为该来源设备的入站会话维护持久化 channel（与旧 ACP 远程连接逻辑对齐），
       // 标题统一标注「Agent 名 ← 来源设备名」，使本机能在会话列表中分辨出这条
@@ -231,6 +277,13 @@ class PeerAgentHostService {
             'content': chunk,
           }));
         },
+        onActionConfirmation: (data) {
+          unawaited(_relayApprovalRequest(
+            session: _chatSessions[requestId]!,
+            requestId: requestId,
+            data: data,
+          ));
+        },
       );
 
       await PeerConnectionManager.instance.sendControl(peerId, {
@@ -245,6 +298,260 @@ class PeerAgentHostService {
       await _sendError(peerId, requestId, e.toString());
     } finally {
       _activeRequests.remove(requestId);
+      _chatSessions.remove(requestId);
+    }
+  }
+
+  /// Forward a local agent tool approval to the paired client and persist it
+  /// on the hub so a delayed `agent_approval_resp` can still be relayed.
+  Future<void> _relayApprovalRequest({
+    required _PeerChatSession session,
+    required String requestId,
+    required Map<String, dynamic> data,
+  }) async {
+    final approvalId = data['confirmation_id'] as String? ??
+        data['approval_id'] as String? ??
+        '';
+    if (approvalId.isEmpty) {
+      _log.warning('peer approval relay: missing confirmation_id', tag: _tag);
+      return;
+    }
+
+    final activeTask = _chat.getActiveTask(session.channelId);
+    final taskId = activeTask?.taskId ?? '';
+    final now = DateTime.now().millisecondsSinceEpoch;
+
+    final record = PeerHubPendingApproval(
+      approvalId: approvalId,
+      peerId: session.peerId,
+      requestId: requestId,
+      agentId: session.agentId,
+      taskId: taskId,
+      channelId: session.channelId,
+      approvalData: Map<String, dynamic>.from(data),
+      createdAt: now,
+      expiresAt: now + PeerStorageService.defaultApprovalTtlMs,
+    );
+
+    try {
+      await _peerStorage.saveHubPendingApproval(record);
+    } catch (e) {
+      _log.warning('Failed to persist hub pending approval: $e', tag: _tag);
+    }
+
+    final payload = <String, dynamic>{
+      'type': 'agent_approval_req',
+      'request_id': requestId,
+      'approval_id': approvalId,
+      'prompt': data['prompt'] ?? '',
+      'actions': data['actions'] ?? const [],
+      if (data['tool_kind'] != null) 'tool_kind': data['tool_kind'],
+      if (data['tool_call_id'] != null) 'tool_call_id': data['tool_call_id'],
+    };
+
+    final sent = await PeerConnectionManager.instance.sendControl(
+      session.peerId,
+      payload,
+    );
+    _log.info(
+      'Relayed agent_approval_req approvalId=$approvalId requestId=$requestId '
+      'peerId=${session.peerId} sent=$sent',
+      tag: _tag,
+    );
+  }
+
+  Future<void> _handleApprovalResp(
+    String peerId,
+    Map<String, dynamic> data,
+  ) async {
+    final approvalId = data['approval_id'] as String? ?? '';
+    final selectedActionId = data['selected_action_id'] as String? ?? '';
+    final selectedActionLabel = data['selected_action_label'] as String?;
+    if (approvalId.isEmpty || selectedActionId.isEmpty) {
+      _log.warning('agent_approval_resp missing id fields', tag: _tag);
+      return;
+    }
+
+    _log.info(
+      'agent_approval_resp approvalId=$approvalId actionId=$selectedActionId '
+      'peerId=$peerId',
+      tag: _tag,
+    );
+
+    final record = await _peerStorage.getHubPendingApproval(approvalId);
+    if (record != null && record.peerId != peerId) {
+      _log.warning(
+        'agent_approval_resp peer mismatch: expected ${record.peerId}, got $peerId',
+        tag: _tag,
+      );
+      return;
+    }
+
+    if (record != null && !record.isPending) {
+      _log.debug('agent_approval_resp already handled: $approvalId', tag: _tag);
+      return;
+    }
+
+    _PeerChatSession? session;
+    if (record != null) {
+      session = _PeerChatSession(
+        peerId: record.peerId,
+        agentId: record.agentId,
+        channelId: record.channelId,
+        userId: 'peer:${record.peerId}',
+        userName: await _peerDisplayName(record.peerId),
+      );
+    } else {
+      for (final s in _chatSessions.values) {
+        if (s.peerId == peerId) {
+          session = s;
+          break;
+        }
+      }
+    }
+
+    if (session == null) {
+      _log.warning(
+        'agent_approval_resp with no persisted/active session: $approvalId',
+        tag: _tag,
+      );
+      return;
+    }
+
+    final submitted = await _submitApprovalToLocalAgent(
+      session: session,
+      approvalId: approvalId,
+      taskId: record?.taskId,
+      selectedActionId: selectedActionId,
+      selectedActionLabel: selectedActionLabel,
+    );
+
+    if (submitted) {
+      await _peerStorage.markHubPendingApprovalSubmitted(
+        approvalId,
+        selectedActionId: selectedActionId,
+        selectedActionLabel: selectedActionLabel,
+      );
+    }
+  }
+
+  /// Relay the user's verdict to the local agent. Returns true on success.
+  Future<bool> _submitApprovalToLocalAgent({
+    required _PeerChatSession session,
+    required String approvalId,
+    String? taskId,
+    required String selectedActionId,
+    String? selectedActionLabel,
+  }) async {
+    final agent = await _db.getRemoteAgentById(session.agentId);
+    if (agent == null) return false;
+
+    final activeTask = _chat.getActiveTask(session.channelId);
+    final effectiveTaskId = taskId ?? activeTask?.taskId ?? '';
+    final responseData = <String, dynamic>{
+      'confirmation_id': approvalId,
+      'selected_action_id': selectedActionId,
+      if (selectedActionLabel != null && selectedActionLabel.isNotEmpty)
+        'selected_action_label': selectedActionLabel,
+    };
+
+    final acpConn = _chat.getACPConnection(session.agentId);
+    if (acpConn != null &&
+        acpConn.isConnected &&
+        !acpConn.supportsAsyncConfirmation) {
+      try {
+        await acpConn.submitResponse(
+          taskId: effectiveTaskId,
+          responseType: 'action_confirmation',
+          responseData: responseData,
+        );
+        _log.info(
+          'Submitted approval via ACP submitResponse taskId=$effectiveTaskId',
+          tag: _tag,
+        );
+        return true;
+      } catch (e) {
+        _log.warning('ACP submitResponse failed: $e', tag: _tag);
+      }
+    }
+
+    final connection = _chat.getInteractiveConnection(agent);
+    if (connection != null &&
+        !connection.supportsAsyncConfirmation &&
+        connection.isConnected) {
+      try {
+        await connection.submitResponse(
+          taskId: effectiveTaskId,
+          responseType: 'action_confirmation',
+          responseData: responseData,
+        );
+        return true;
+      } catch (e) {
+        _log.warning('Interactive submitResponse failed: $e', tag: _tag);
+      }
+    }
+
+    // Deferred / local-LLM fallback: issue a verdict chat on the peer session.
+    try {
+      final label = selectedActionLabel ?? selectedActionId;
+      await _chat.sendMessageToAgent(
+        content: 'Selected action: $label',
+        agent: agent,
+        userId: session.userId,
+        userName: session.userName,
+        channelId: session.channelId,
+      );
+      _log.info('Submitted approval via verdict chat fallback', tag: _tag);
+      return true;
+    } catch (e) {
+      _log.warning('Verdict chat fallback failed: $e', tag: _tag);
+      return false;
+    }
+  }
+
+  /// On hub restart, re-notify connected clients of approvals still pending.
+  Future<void> _replayDeferredHubApprovals() async {
+    try {
+      await _peerStorage.expireStaleHubPendingApprovals();
+      final connected = PeerConnectionManager.instance.connectedPeerIds;
+      for (final peerId in connected) {
+        await _resendPendingApprovalsForPeer(peerId);
+      }
+    } catch (e) {
+      _log.warning('Deferred hub approval replay failed: $e', tag: _tag);
+    }
+  }
+
+  Future<void> _resendPendingApprovalsForPeer(String peerId) async {
+    try {
+      final pending = await _peerStorage.getPendingHubApprovals();
+      var resent = 0;
+      for (final record in pending) {
+        if (record.peerId != peerId) continue;
+        final data = record.approvalData;
+        final sent = await PeerConnectionManager.instance.sendControl(
+          record.peerId,
+          {
+            'type': 'agent_approval_req',
+            'request_id': record.requestId,
+            'approval_id': record.approvalId,
+            'prompt': data['prompt'] ?? '',
+            'actions': data['actions'] ?? const [],
+            if (data['tool_kind'] != null) 'tool_kind': data['tool_kind'],
+            if (data['tool_call_id'] != null)
+              'tool_call_id': data['tool_call_id'],
+          },
+        );
+        if (sent) resent++;
+      }
+      if (resent > 0) {
+        _log.info(
+          'Re-sent $resent pending approval(s) to peer $peerId',
+          tag: _tag,
+        );
+      }
+    } catch (e) {
+      _log.warning('Resend pending approvals failed for $peerId: $e', tag: _tag);
     }
   }
 
