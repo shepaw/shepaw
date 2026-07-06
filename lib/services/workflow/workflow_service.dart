@@ -1,8 +1,10 @@
+import 'package:sqflite/sqflite.dart';
 import 'dart:async';
 import 'dart:convert';
 import 'package:uuid/uuid.dart';
 import '../../models/planning_models.dart';
 import '../../models/workflow_models.dart';
+import '../../models/workflow_pending_approval.dart';
 import '../local_database_service.dart';
 import '../logger_service.dart';
 
@@ -421,5 +423,103 @@ class WorkflowService {
     } catch (_) {
       return '{}';
     }
+  }
+
+  // ===========================================================================
+  // Pending peer tool approvals (v23)
+  // ===========================================================================
+
+  /// Insert or replace a pending peer approval blocking a workflow step.
+  Future<void> savePendingApproval(WorkflowPendingApproval approval) async {
+    final db = await _db.database;
+    await db.insert(
+      'workflow_pending_approvals',
+      approval.toMap(),
+      conflictAlgorithm: ConflictAlgorithm.replace,
+    );
+    _notify(approval.workflowId);
+  }
+
+  /// Attach the chat message that surfaced the approval card.
+  Future<void> updatePendingApprovalMessageId(
+    String approvalId,
+    String messageId,
+  ) async {
+    final db = await _db.database;
+    await db.update(
+      'workflow_pending_approvals',
+      {'message_id': messageId},
+      where: 'id = ? OR confirmation_id = ?',
+      whereArgs: [approvalId, approvalId],
+    );
+    final pending = await getPendingApprovalById(approvalId);
+    if (pending != null) _notify(pending.workflowId);
+  }
+
+  /// Mark a pending approval as submitted after the user taps Allow/Deny.
+  Future<void> markPendingApprovalSubmitted(
+    String approvalId, {
+    String? selectedActionId,
+  }) async {
+    final db = await _db.database;
+    final data = <String, dynamic>{'status': 'submitted'};
+    if (selectedActionId != null) {
+      final pending = await getPendingApprovalById(approvalId);
+      if (pending != null) {
+        final merged = Map<String, dynamic>.from(pending.approvalData);
+        merged['selected_action_id'] = selectedActionId;
+        data['approval_data_json'] = jsonEncode(merged);
+      }
+    }
+    await db.update(
+      'workflow_pending_approvals',
+      data,
+      where: 'id = ? OR confirmation_id = ?',
+      whereArgs: [approvalId, approvalId],
+    );
+    final pending = await getPendingApprovalById(approvalId);
+    if (pending != null) _notify(pending.workflowId);
+  }
+
+  Future<WorkflowPendingApproval?> getPendingApprovalById(String id) async {
+    final db = await _db.database;
+    final rows = await db.query(
+      'workflow_pending_approvals',
+      where: 'id = ? OR confirmation_id = ?',
+      whereArgs: [id, id],
+      limit: 1,
+    );
+    if (rows.isEmpty) return null;
+    return WorkflowPendingApproval.fromMap(rows.first);
+  }
+
+  /// Latest pending approval for a workflow (at most one active).
+  Future<WorkflowPendingApproval?> getPendingApprovalForWorkflow(
+    String workflowId,
+  ) async {
+    final db = await _db.database;
+    final rows = await db.query(
+      'workflow_pending_approvals',
+      where: 'workflow_id = ? AND status = ?',
+      whereArgs: [workflowId, 'pending'],
+      orderBy: 'created_at DESC',
+      limit: 1,
+    );
+    if (rows.isEmpty) return null;
+    return WorkflowPendingApproval.fromMap(rows.first);
+  }
+
+  /// All pending approvals for a channel (newest first).
+  Future<List<WorkflowPendingApproval>> getPendingApprovalsForChannel(
+    String channelId,
+  ) async {
+    final db = await _db.database;
+    final rows = await db.query(
+      'workflow_pending_approvals',
+      where: 'channel_id = ? AND status = ?',
+      whereArgs: [channelId, 'pending'],
+      orderBy: 'created_at DESC',
+    );
+    return rows.map(WorkflowPendingApproval.fromMap).toList();
   }
 }

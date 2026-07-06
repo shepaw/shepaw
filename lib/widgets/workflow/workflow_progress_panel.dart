@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../models/workflow_models.dart';
 import '../../services/local_database_service.dart';
 import '../../services/workflow/workflow_service.dart';
+import '../action_confirmation_buttons.dart';
 import 'workflow_step_tile.dart';
 
 /// A floating panel shown above the chat input area during workflow execution.
@@ -18,6 +19,11 @@ class WorkflowProgressPanel extends StatefulWidget {
   final void Function(bool approved, {String? feedback})? onApprovalResponse;
   final WorkflowPeerApprovalPending? pendingPeerApproval;
   final void Function(String messageId)? onScrollToApproval;
+  final void Function(
+    String confirmationId,
+    String actionId,
+    String actionLabel,
+  )? onPeerApprovalAction;
 
   const WorkflowProgressPanel({
     super.key,
@@ -26,6 +32,7 @@ class WorkflowProgressPanel extends StatefulWidget {
     this.onApprovalResponse,
     this.pendingPeerApproval,
     this.onScrollToApproval,
+    this.onPeerApprovalAction,
   });
 
   @override
@@ -246,55 +253,74 @@ class _WorkflowProgressPanelState extends State<WorkflowProgressPanel>
 
   Widget _buildPeerApprovalBanner(WorkflowPeerApprovalPending pending) {
     final needsUser = pending.risk == PeerApprovalRisk.high;
+    final approvalData = pending.approvalData;
+    final hasInlineActions = approvalData != null &&
+        (approvalData['actions'] as List<dynamic>?)?.isNotEmpty == true &&
+        approvalData['selected_action_id'] == null &&
+        pending.confirmationId != null;
+
     return Material(
       color: Colors.deepOrange.shade50,
-      child: InkWell(
-        onTap: pending.messageId != null
-            ? () => widget.onScrollToApproval?.call(pending.messageId!)
-            : null,
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(14, 6, 14, 10),
-          child: Row(
-            children: [
-              Icon(Icons.touch_app_outlined,
-                  size: 18, color: Colors.deepOrange.shade700),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      needsUser ? '需要你在群聊中确认工具操作' : '等待工具审批',
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(14, 6, 14, 10),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(Icons.touch_app_outlined,
+                    size: 18, color: Colors.deepOrange.shade700),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    needsUser ? '需要确认工具操作' : '等待工具审批',
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                      color: Colors.deepOrange.shade800,
+                    ),
+                  ),
+                ),
+                if (pending.messageId != null && !hasInlineActions)
+                  InkWell(
+                    onTap: () =>
+                        widget.onScrollToApproval?.call(pending.messageId!),
+                    child: Text(
+                      '查看',
                       style: TextStyle(
                         fontSize: 12,
                         fontWeight: FontWeight.w600,
-                        color: Colors.deepOrange.shade800,
+                        color: Colors.deepOrange.shade700,
                       ),
                     ),
-                    if (pending.prompt != null && pending.prompt!.isNotEmpty)
-                      Text(
-                        pending.prompt!,
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          fontSize: 11,
-                          color: Colors.deepOrange.shade700,
-                        ),
-                      ),
-                  ],
+                  ),
+              ],
+            ),
+            if (hasInlineActions) ...[
+              const SizedBox(height: 8),
+              ActionConfirmationButtons(
+                actionData: approvalData!,
+                onActionSelected: (confirmationId, actionId, actionLabel) {
+                  widget.onPeerApprovalAction?.call(
+                    confirmationId,
+                    actionId,
+                    actionLabel,
+                  );
+                },
+              ),
+            ] else if (pending.prompt != null && pending.prompt!.isNotEmpty) ...[
+              const SizedBox(height: 4),
+              Text(
+                pending.prompt!,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontSize: 11,
+                  color: Colors.deepOrange.shade700,
                 ),
               ),
-              if (pending.messageId != null)
-                Text(
-                  '查看',
-                  style: TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w600,
-                    color: Colors.deepOrange.shade700,
-                  ),
-                ),
             ],
-          ),
+          ],
         ),
       ),
     );

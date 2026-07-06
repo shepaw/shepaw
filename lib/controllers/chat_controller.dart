@@ -22,6 +22,8 @@ import '../services/interactive_response_handler.dart';
 import '../services/logger_service.dart';
 import '../services/workflow/workflow_service.dart';
 import '../models/workflow_models.dart';
+import '../models/workflow_pending_approval.dart';
+import '../peer/services/peer_agent_client_service.dart';
 import '../peer/services/peer_agent_host_service.dart' show isPeerAgentChannel;
 import '../peer/services/peer_storage_service.dart';
 import '../peer/services/peer_connection_manager.dart';
@@ -215,168 +217,11 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
     if (workflowId == null || currentChannelId == null) return;
 
     final workflowService = WorkflowService(db: localDatabaseService);
-    final userId = getUserId();
-    final userName = getUserName();
 
     if (approved) {
       await workflowService.startWorkflow(workflowId);
       notifyListeners();
-
-      // Create a cancellation token for this workflow execution
-      final cancelToken = WorkflowCancellationToken();
-      _workflowCancelToken = cancelToken;
-
-      // Auto-execute all stages in the background.
-      // processGroupAgent inside executeWorkflowSteps handles message creation
-      // and streaming internally. We just reconcile afterwards.
-      unawaited(chatService.executeWorkflowSteps(
-        workflowId: workflowId,
-        channelId: currentChannelId!,
-        userId: userId,
-        userName: userName,
-        cancelToken: cancelToken,
-        onAgentStart: (aid, anm) {
-          respondingAgentNames.add(anm);
-          isProcessing = true;
-          final sid = 'wf_streaming_${aid}_${DateTime.now().millisecondsSinceEpoch}';
-          _workflowStreamingIds[aid] = sid;
-          _workflowStreamingContents[aid] = '';
-          final sm = Message(
-            id: sid,
-            content: '',
-            timestampMs: DateTime.now().millisecondsSinceEpoch + 1,
-            from: MessageFrom(id: aid, type: 'agent', name: anm),
-            to: MessageFrom(id: userId, type: 'user', name: userName),
-            type: MessageType.text,
-          );
-          groupStreamingMessageIds.add(sid);
-          messages.add(sm);
-          messageIdMap[sid] = sm;
-          _notify();
-          _emit(RequestScrollToBottomEvent(force: true));
-        },
-        onStreamChunk: (aid, anm, chunk) {
-          final sid = _workflowStreamingIds[aid];
-          if (sid == null) return;
-          _workflowStreamingContents[aid] =
-              (_workflowStreamingContents[aid] ?? '') + chunk;
-          final updatedContent = _workflowStreamingContents[aid]!;
-          final existing = messageIdMap[sid];
-          if (existing != null) {
-            final idx = messages.indexOf(existing);
-            if (idx != -1) {
-              final updated = Message(
-                id: sid,
-                content: updatedContent,
-                timestampMs: messages[idx].timestampMs,
-                from: messages[idx].from,
-                to: messages[idx].to,
-                type: MessageType.text,
-              );
-              messages[idx] = updated;
-              messageIdMap[updated.id] = updated;
-            }
-          }
-          scheduleStreamingRebuild();
-          if (!isUserScrolledUp) {
-            _emit(RequestScrollToBottomEvent());
-          }
-        },
-        onAgentDone: (aid, anm, skipped) {
-          final sid = _workflowStreamingIds.remove(aid);
-          if (sid != null) groupStreamingMessageIds.remove(sid);
-          _workflowStreamingContents.remove(aid);
-          respondingAgentNames.remove(anm);
-          _notify();
-          reconcileGroupMessages();
-        },
-        onInteractionRequest: (agentId, agentName, interactionType, data) async {
-          // During workflow step execution, interactions must block until
-          // the user responds. This prevents steps from being marked
-          // "completed" before the user fills a form / selects an action.
-
-          // Determine the message ID — prefer saved DB id, else in-flight
-          // workflow streaming placeholder (peer in-band approvals arrive
-          // before the step message is persisted).
-          await reconcileGroupMessages();
-          final savedMsgId = data.remove('_savedMessageId') as String?;
-          String? sid;
-          if (savedMsgId != null && messageIdMap.containsKey(savedMsgId)) {
-            sid = savedMsgId;
-          } else {
-            sid = _workflowStreamingIds[agentId];
-          }
-
-          // Update message metadata to show the interactive component
-          if (sid != null) {
-            _updateGroupStreamingMetadata(sid, interactionType, data);
-            final existingMeta = Map<String, dynamic>.from(
-                messageIdMap[sid]?.metadata ?? {});
-            existingMeta[interactionType] = data;
-            localDatabaseService
-                .updateMessageMetadata(sid, existingMeta)
-                .ignore();
-          }
-
-          // Create event with a Completer that BLOCKS until user responds
-          final event = GroupInteractionRequestEvent(
-            agentId: agentId,
-            agentName: agentName,
-            interactionType: interactionType,
-            data: data,
-            groupStreamingMessageId: sid ?? agentId,
-          );
-          pendingGroupInteractions[sid ?? agentId] = event;
-          _notify();
-          _emit(event);
-
-          if (interactionType == 'action_confirmation' &&
-              data['_workflowPeerApproval'] == true &&
-              _activeWorkflowId != null) {
-            final stepId = data['_workflowStepId'] as String?;
-            if (stepId != null) {
-              final riskStr = data['_approvalRisk'] as String?;
-              final risk = riskStr == 'low'
-                  ? PeerApprovalRisk.low
-                  : PeerApprovalRisk.high;
-              setWorkflowPeerApprovalPending(WorkflowPeerApprovalPending(
-                workflowId: _activeWorkflowId!,
-                stepId: stepId,
-                agentId: agentId,
-                agentName: agentName,
-                messageId: sid,
-                prompt: data['prompt'] as String?,
-                risk: risk,
-              ));
-            }
-          }
-
-          // Block here until the user actually responds (no timeout for workflow steps)
-          try {
-            final result = await event.result.future.timeout(
-              const Duration(minutes: 30),
-              onTimeout: () => null,
-            );
-            return result;
-          } finally {
-            pendingGroupInteractions.remove(sid ?? agentId);
-            if (interactionType == 'action_confirmation' &&
-                data['_workflowPeerApproval'] == true) {
-              setWorkflowPeerApprovalPending(null);
-            }
-            _notify();
-          }
-        },
-      ).whenComplete(() {
-        _workflowStreamingIds.clear();
-        _workflowStreamingContents.clear();
-        _workflowCancelToken = null;
-        workflowPeerApprovalPending = null;
-        isProcessing = false;
-        respondingAgentNames.clear();
-        groupStreamingMessageIds.clear();
-        _notify();
-      }));
+      _beginWorkflowStepExecution(workflowId);
     } else {
       await workflowService.cancelWorkflow(workflowId);
       _activeWorkflowId = null;
@@ -392,6 +237,259 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
         }
       }
     }
+  }
+
+  /// Run (or resume) workflow step execution in the background.
+  void _beginWorkflowStepExecution(String workflowId) {
+    if (currentChannelId == null) return;
+    if (_workflowCancelToken != null) return;
+
+    final userId = getUserId();
+    final userName = getUserName();
+    final cancelToken = WorkflowCancellationToken();
+    _workflowCancelToken = cancelToken;
+
+    unawaited(chatService.executeWorkflowSteps(
+      workflowId: workflowId,
+      channelId: currentChannelId!,
+      userId: userId,
+      userName: userName,
+      cancelToken: cancelToken,
+      onAgentStart: (aid, anm) {
+        respondingAgentNames.add(anm);
+        isProcessing = true;
+        final sid =
+            'wf_streaming_${aid}_${DateTime.now().millisecondsSinceEpoch}';
+        _workflowStreamingIds[aid] = sid;
+        _workflowStreamingContents[aid] = '';
+        final sm = Message(
+          id: sid,
+          content: '',
+          timestampMs: DateTime.now().millisecondsSinceEpoch + 1,
+          from: MessageFrom(id: aid, type: 'agent', name: anm),
+          to: MessageFrom(id: userId, type: 'user', name: userName),
+          type: MessageType.text,
+        );
+        groupStreamingMessageIds.add(sid);
+        messages.add(sm);
+        messageIdMap[sid] = sm;
+        _notify();
+        _emit(RequestScrollToBottomEvent(force: true));
+      },
+      onStreamChunk: (aid, anm, chunk) {
+        final sid = _workflowStreamingIds[aid];
+        if (sid == null) return;
+        _workflowStreamingContents[aid] =
+            (_workflowStreamingContents[aid] ?? '') + chunk;
+        final updatedContent = _workflowStreamingContents[aid]!;
+        final existing = messageIdMap[sid];
+        if (existing != null) {
+          final idx = messages.indexOf(existing);
+          if (idx != -1) {
+            final updated = Message(
+              id: sid,
+              content: updatedContent,
+              timestampMs: messages[idx].timestampMs,
+              from: messages[idx].from,
+              to: messages[idx].to,
+              type: MessageType.text,
+            );
+            messages[idx] = updated;
+            messageIdMap[updated.id] = updated;
+          }
+        }
+        scheduleStreamingRebuild();
+        if (!isUserScrolledUp) {
+          _emit(RequestScrollToBottomEvent());
+        }
+      },
+      onAgentDone: (aid, anm, skipped) {
+        final sid = _workflowStreamingIds.remove(aid);
+        if (sid != null) groupStreamingMessageIds.remove(sid);
+        _workflowStreamingContents.remove(aid);
+        respondingAgentNames.remove(anm);
+        _notify();
+        reconcileGroupMessages();
+      },
+      onInteractionRequest: _workflowStepInteractionRequest,
+    ).whenComplete(() {
+      _workflowStreamingIds.clear();
+      _workflowStreamingContents.clear();
+      _workflowCancelToken = null;
+      workflowPeerApprovalPending = null;
+      isProcessing = false;
+      respondingAgentNames.clear();
+      groupStreamingMessageIds.clear();
+      _notify();
+    }));
+  }
+
+  Future<Map<String, dynamic>?> _workflowStepInteractionRequest(
+    String agentId,
+    String agentName,
+    String interactionType,
+    Map<String, dynamic> data,
+  ) async {
+    await reconcileGroupMessages();
+    final savedMsgId = data.remove('_savedMessageId') as String?;
+    String? sid;
+    if (savedMsgId != null && messageIdMap.containsKey(savedMsgId)) {
+      sid = savedMsgId;
+    } else {
+      sid = _workflowStreamingIds[agentId];
+    }
+
+    if (sid != null) {
+      _updateGroupStreamingMetadata(sid, interactionType, data);
+      final existingMeta =
+          Map<String, dynamic>.from(messageIdMap[sid]?.metadata ?? {});
+      existingMeta[interactionType] = data;
+      localDatabaseService.updateMessageMetadata(sid, existingMeta).ignore();
+    }
+
+    final event = GroupInteractionRequestEvent(
+      agentId: agentId,
+      agentName: agentName,
+      interactionType: interactionType,
+      data: data,
+      groupStreamingMessageId: sid ?? agentId,
+    );
+    pendingGroupInteractions[sid ?? agentId] = event;
+    _notify();
+    _emit(event);
+
+    if (interactionType == 'action_confirmation' &&
+        data['_workflowPeerApproval'] == true &&
+        _activeWorkflowId != null) {
+      final stepId = data['_workflowStepId'] as String?;
+      if (stepId != null) {
+        final riskStr = data['_approvalRisk'] as String?;
+        final risk =
+            riskStr == 'low' ? PeerApprovalRisk.low : PeerApprovalRisk.high;
+        final confirmationId = data['confirmation_id'] as String?;
+        setWorkflowPeerApprovalPending(WorkflowPeerApprovalPending(
+          workflowId: _activeWorkflowId!,
+          stepId: stepId,
+          agentId: agentId,
+          agentName: agentName,
+          messageId: sid,
+          prompt: data['prompt'] as String?,
+          risk: risk,
+          confirmationId: confirmationId,
+          approvalData: Map<String, dynamic>.from(data),
+        ));
+        if (confirmationId != null &&
+            confirmationId.isNotEmpty &&
+            sid != null) {
+          WorkflowService.instance
+              .updatePendingApprovalMessageId(confirmationId, sid)
+              .ignore();
+        }
+      }
+    }
+
+    try {
+      return await event.result.future.timeout(
+        const Duration(minutes: 30),
+        onTimeout: () => null,
+      );
+    } finally {
+      pendingGroupInteractions.remove(sid ?? agentId);
+      if (interactionType == 'action_confirmation' &&
+          data['_workflowPeerApproval'] == true) {
+        setWorkflowPeerApprovalPending(null);
+      }
+      _notify();
+    }
+  }
+
+  /// Resume workflow execution after a deferred peer approval (e.g. app restart).
+  Future<void> _resumeWorkflowExecutionIfNeeded(String workflowId) async {
+    if (_workflowCancelToken != null) return;
+    final wf = await WorkflowService.instance
+        .getWorkflowExecutionWithSteps(workflowId);
+    if (wf == null || wf.status != WorkflowStatus.running) return;
+    setActiveWorkflowId(workflowId);
+    _beginWorkflowStepExecution(workflowId);
+  }
+
+  /// Restore active workflow + pending peer approvals after channel load.
+  Future<void> _restoreWorkflowContext() async {
+    if (currentChannelId == null) return;
+    final workflowService = WorkflowService(db: localDatabaseService);
+    final active = await workflowService.getActiveWorkflow(currentChannelId!);
+
+    if (active != null) {
+      setActiveWorkflowId(active.id);
+    }
+
+    WorkflowPendingApproval? record;
+    final dbPending =
+        await workflowService.getPendingApprovalsForChannel(currentChannelId!);
+    if (dbPending.isNotEmpty) {
+      if (active != null) {
+        final matching =
+            dbPending.where((p) => p.workflowId == active.id).toList();
+        record = matching.isNotEmpty ? matching.first : dbPending.first;
+      } else {
+        record = dbPending.first;
+      }
+    }
+
+    if (record == null && active != null) {
+      for (final msg in messages.reversed) {
+        final ac =
+            msg.metadata?['action_confirmation'] as Map<String, dynamic>?;
+        if (ac == null || ac['_workflowPeerApproval'] != true) continue;
+        if (ac['selected_action_id'] != null) continue;
+        final wfId = ac['_workflowId'] as String?;
+        if (wfId != null && wfId != active.id) continue;
+        final stepId = ac['_workflowStepId'] as String?;
+        if (stepId == null) continue;
+        final uiPending = WorkflowPeerApprovalPending(
+          workflowId: active.id,
+          stepId: stepId,
+          agentId: msg.from.id,
+          agentName: msg.from.name,
+          messageId: msg.id,
+          prompt: ac['prompt'] as String?,
+          risk: ac['_approvalRisk'] == 'low'
+              ? PeerApprovalRisk.low
+              : PeerApprovalRisk.high,
+          confirmationId: ac['confirmation_id'] as String?,
+          approvalData: ac,
+        );
+        setWorkflowPeerApprovalPending(uiPending);
+        _reattachWorkflowPeerApprovalInteraction(msg, ac);
+        return;
+      }
+      return;
+    }
+
+    if (record != null) {
+      setWorkflowPeerApprovalPending(record.toUiPending());
+      final msgId = record.messageId;
+      if (msgId != null && messageIdMap.containsKey(msgId)) {
+        _reattachWorkflowPeerApprovalInteraction(
+          messageIdMap[msgId]!,
+          record.approvalData,
+        );
+      }
+    }
+  }
+
+  void _reattachWorkflowPeerApprovalInteraction(
+    Message msg,
+    Map<String, dynamic> data,
+  ) {
+    if (data['confirmation_id'] == null) return;
+    _emit(GroupInteractionRequestEvent(
+      agentId: msg.from.id,
+      agentName: msg.from.name,
+      interactionType: 'action_confirmation',
+      data: Map<String, dynamic>.from(data),
+      groupStreamingMessageId: msg.id,
+    ));
   }
 
   _ChatControllerBase({
@@ -683,6 +781,7 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
       if (isGroupMode) {
         reattachToGroupActiveTasks();
         _reattachPendingPlanApproval();
+        await _restoreWorkflowContext();
       }
     } catch (e) {
       isLoading = false;

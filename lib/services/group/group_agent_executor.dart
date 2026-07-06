@@ -25,6 +25,8 @@ import 'group_prompt_builder.dart';
 import 'group_interaction_handler.dart';
 import '../../peer/services/peer_agent_client_service.dart';
 import 'peer_approval_policy.dart';
+import '../workflow/workflow_service.dart';
+import '../../models/workflow_pending_approval.dart';
 
 /// Executes a single agent's response turn within a group chat.
 ///
@@ -634,6 +636,8 @@ class GroupAgentExecutor {
             peerApprovalInFlight = _handlePeerGroupActionConfirmation(
               agent: agent,
               peerId: peerId,
+              remoteAgentId: remoteAgentId,
+              peerSessionId: peerSessionId,
               data: data,
               adminAgent: adminAgent,
               channelId: channelId,
@@ -1258,6 +1262,8 @@ class GroupAgentExecutor {
   Future<void> _handlePeerGroupActionConfirmation({
     required RemoteAgent agent,
     required String peerId,
+    required String remoteAgentId,
+    required String peerSessionId,
     required Map<String, dynamic> data,
     required RemoteAgent? adminAgent,
     required String channelId,
@@ -1293,6 +1299,16 @@ class GroupAgentExecutor {
         );
         if (responseData != null) {
           await submit(responseData);
+          if (isWorkflowStep && workflowId != null) {
+            final cid = data['confirmation_id'] as String?;
+            if (cid != null && cid.isNotEmpty) {
+              await WorkflowService.instance.markPendingApprovalSubmitted(
+                cid,
+                selectedActionId:
+                    responseData['selected_action_id'] as String?,
+              );
+            }
+          }
           _interactionHandler.saveAdminDecisionMessage(
             channelId: channelId,
             subAgentName: agent.name,
@@ -1306,6 +1322,34 @@ class GroupAgentExecutor {
       if (isWorkflowStep) {
         // Workflow: block the step until the user (or a late admin path above)
         // resolves the in-band peer approval.
+        final confirmationId =
+            data['confirmation_id'] as String? ?? const Uuid().v4();
+        if (workflowId != null &&
+            workflowStepId != null &&
+            confirmationId.isNotEmpty) {
+          final approvalData = Map<String, dynamic>.from(data);
+          approvalData['_workflowPeerApproval'] = true;
+          approvalData['_workflowId'] = workflowId;
+          approvalData['_workflowStepId'] = workflowStepId;
+          approvalData['_approvalRisk'] =
+              PeerApprovalPolicy.classifyRisk(data).name;
+          await WorkflowService.instance.savePendingApproval(
+            WorkflowPendingApproval(
+              id: confirmationId,
+              workflowId: workflowId!,
+              stepId: workflowStepId!,
+              channelId: channelId,
+              agentId: agent.id,
+              agentName: agent.name,
+              peerId: peerId,
+              remoteAgentId: remoteAgentId,
+              confirmationId: confirmationId,
+              peerSessionId: peerSessionId,
+              approvalData: approvalData,
+              createdAt: DateTime.now().millisecondsSinceEpoch,
+            ),
+          );
+        }
         if (onInteractionRequest != null) {
           final workflowData = Map<String, dynamic>.from(data);
           workflowData['_workflowPeerApproval'] = true;

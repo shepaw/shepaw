@@ -1,7 +1,10 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import '../models/workflow_models.dart';
+import '../models/workflow_pending_approval.dart';
+import '../peer/services/peer_agent_client_service.dart';
 import '../services/workflow/workflow_service.dart';
+import '../widgets/action_confirmation_buttons.dart';
 import '../widgets/workflow/workflow_status_badge.dart';
 import '../widgets/workflow/workflow_step_tile.dart';
 
@@ -24,7 +27,9 @@ class WorkflowDetailScreen extends StatefulWidget {
 
 class _WorkflowDetailScreenState extends State<WorkflowDetailScreen> {
   WorkflowExecution? _execution;
+  WorkflowPendingApproval? _pendingPeerApproval;
   bool _loading = true;
+  bool _submittingApproval = false;
   StreamSubscription? _updateSub;
   final Set<int> _expandedStages = {};
 
@@ -51,15 +56,56 @@ class _WorkflowDetailScreenState extends State<WorkflowDetailScreen> {
   Future<void> _load() async {
     final execution = await widget.workflowService
         .getWorkflowExecutionWithSteps(widget.workflowId);
+    final pending = await widget.workflowService
+        .getPendingApprovalForWorkflow(widget.workflowId);
     if (mounted) {
       setState(() {
         _execution = execution;
+        _pendingPeerApproval = pending;
         _loading = false;
         // Auto-expand current running stage
         if (execution != null) {
           _expandedStages.add(execution.currentStageIndex);
         }
       });
+    }
+  }
+
+  Future<void> _submitPeerApproval(
+    String confirmationId,
+    String actionId,
+    String actionLabel,
+  ) async {
+    final pending = _pendingPeerApproval;
+    if (pending == null || _submittingApproval) return;
+    setState(() => _submittingApproval = true);
+    try {
+      await PeerAgentClientService.instance.submitApproval(
+        peerId: pending.peerId,
+        approvalId: pending.confirmationId,
+        selectedActionId: actionId,
+        selectedActionLabel: actionLabel,
+      );
+      await widget.workflowService.markPendingApprovalSubmitted(
+        confirmationId,
+        selectedActionId: actionId,
+      );
+      if (mounted) {
+        setState(() {
+          _pendingPeerApproval = null;
+          _submittingApproval = false;
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('审批已提交，请返回群聊继续工作流')),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => _submittingApproval = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('审批提交失败: $e')),
+        );
+      }
     }
   }
 
@@ -97,6 +143,11 @@ class _WorkflowDetailScreenState extends State<WorkflowDetailScreen> {
             // Status banner
             _buildStatusBanner(exec),
             const SizedBox(height: 16),
+
+            if (_pendingPeerApproval != null) ...[
+              _buildPeerApprovalCard(_pendingPeerApproval!),
+              const SizedBox(height: 16),
+            ],
 
             // Summary (if completed)
             if (exec.summary != null && exec.summary!.isNotEmpty) ...[
@@ -216,6 +267,78 @@ class _WorkflowDetailScreenState extends State<WorkflowDetailScreen> {
                     ),
                   ),
                 ],
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildPeerApprovalCard(WorkflowPendingApproval pending) {
+    final ui = pending.toUiPending();
+    final data = pending.approvalData;
+    final hasActions =
+        (data['actions'] as List<dynamic>?)?.isNotEmpty == true;
+
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: Colors.deepOrange.shade50,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.deepOrange.shade200),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.gpp_maybe_outlined,
+                  color: Colors.deepOrange.shade700, size: 20),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  '等待 @${pending.agentName} 工具审批',
+                  style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                    color: Colors.deepOrange.shade900,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          if (pending.approvalData['prompt'] != null) ...[
+            const SizedBox(height: 8),
+            Text(
+              pending.approvalData['prompt'] as String,
+              style: TextStyle(fontSize: 13, color: Colors.deepOrange.shade800),
+            ),
+          ],
+          if (hasActions && !_submittingApproval) ...[
+            const SizedBox(height: 12),
+            ActionConfirmationButtons(
+              actionData: data,
+              onActionSelected: _submitPeerApproval,
+            ),
+          ] else if (_submittingApproval)
+            const Padding(
+              padding: EdgeInsets.only(top: 12),
+              child: LinearProgressIndicator(),
+            )
+          else
+            Padding(
+              padding: const EdgeInsets.only(top: 8),
+              child: Text(
+                '请返回群聊消息中完成审批',
+                style: TextStyle(fontSize: 12, color: Colors.deepOrange.shade700),
+              ),
+            ),
+          if (ui.risk == PeerApprovalRisk.low)
+            Padding(
+              padding: const EdgeInsets.only(top: 8),
+              child: Text(
+                '低风险操作',
+                style: TextStyle(fontSize: 11, color: Colors.grey.shade600),
               ),
             ),
         ],
@@ -405,7 +528,11 @@ class _WorkflowDetailScreenState extends State<WorkflowDetailScreen> {
                     padding: const EdgeInsets.fromLTRB(8, 0, 8, 8),
                     child: Column(
                       children: steps
-                          .map((step) => WorkflowStepTile(step: step))
+                          .map((step) => WorkflowStepTile(
+                                step: step,
+                                waitingForPeerApproval:
+                                    _pendingPeerApproval?.stepId == step.id,
+                              ))
                           .toList(),
                     ),
                   ),

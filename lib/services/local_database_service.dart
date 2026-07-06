@@ -45,7 +45,7 @@ class LocalDatabaseService {
       // Web平台使用sqflite_common_ffi
       return await openDatabase(
         'shepaw',
-        version: 21,
+        version: 23,
         onCreate: _onCreate,
         onUpgrade: _onUpgrade,
       );
@@ -55,7 +55,7 @@ class LocalDatabaseService {
       path = join(directory.path, 'shepaw.db');
       return await openDatabase(
         path,
-        version: 21,
+        version: 23,
         onCreate: _onCreate,
         onUpgrade: _onUpgrade,
       );
@@ -66,7 +66,7 @@ class LocalDatabaseService {
 
       return await openDatabase(
         path,
-        version: 22,
+        version: 23,
         onCreate: _onCreate,
         onUpgrade: _onUpgrade,
       );
@@ -360,6 +360,30 @@ class LocalDatabaseService {
     ''');
     await db.execute('CREATE INDEX IF NOT EXISTS idx_workflow_steps_execution ON workflow_step_executions(workflow_execution_id, stage_index, step_index)');
 
+    // 工作流 peer 工具审批待办 (v23)
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS workflow_pending_approvals (
+        id TEXT PRIMARY KEY,
+        workflow_id TEXT NOT NULL,
+        step_id TEXT NOT NULL,
+        channel_id TEXT NOT NULL,
+        agent_id TEXT NOT NULL,
+        agent_name TEXT NOT NULL DEFAULT '',
+        peer_id TEXT NOT NULL,
+        remote_agent_id TEXT NOT NULL,
+        confirmation_id TEXT NOT NULL,
+        peer_session_id TEXT NOT NULL DEFAULT '',
+        message_id TEXT,
+        approval_data_json TEXT NOT NULL DEFAULT '{}',
+        status TEXT NOT NULL DEFAULT 'pending',
+        created_at INTEGER NOT NULL,
+        expires_at INTEGER,
+        FOREIGN KEY (workflow_id) REFERENCES workflow_executions(id)
+      )
+    ''');
+    await db.execute('CREATE INDEX IF NOT EXISTS idx_wf_pending_channel ON workflow_pending_approvals(channel_id, status, created_at DESC)');
+    await db.execute('CREATE INDEX IF NOT EXISTS idx_wf_pending_workflow ON workflow_pending_approvals(workflow_id, status)');
+
   }
 
   /// 数据库升级
@@ -580,6 +604,35 @@ class LocalDatabaseService {
         await db.execute('CREATE INDEX IF NOT EXISTS idx_workflow_steps_execution ON workflow_step_executions(workflow_execution_id, stage_index, step_index)');
       } catch (e) {
         LoggerService().error('Failed to create workflow tables (v22)', tag: 'Migration', error: e);
+      }
+    }
+
+    if (oldVersion < 23) {
+      try {
+        await db.execute('''
+          CREATE TABLE IF NOT EXISTS workflow_pending_approvals (
+            id TEXT PRIMARY KEY,
+            workflow_id TEXT NOT NULL,
+            step_id TEXT NOT NULL,
+            channel_id TEXT NOT NULL,
+            agent_id TEXT NOT NULL,
+            agent_name TEXT NOT NULL DEFAULT '',
+            peer_id TEXT NOT NULL,
+            remote_agent_id TEXT NOT NULL,
+            confirmation_id TEXT NOT NULL,
+            peer_session_id TEXT NOT NULL DEFAULT '',
+            message_id TEXT,
+            approval_data_json TEXT NOT NULL DEFAULT '{}',
+            status TEXT NOT NULL DEFAULT 'pending',
+            created_at INTEGER NOT NULL,
+            expires_at INTEGER,
+            FOREIGN KEY (workflow_id) REFERENCES workflow_executions(id)
+          )
+        ''');
+        await db.execute('CREATE INDEX IF NOT EXISTS idx_wf_pending_channel ON workflow_pending_approvals(channel_id, status, created_at DESC)');
+        await db.execute('CREATE INDEX IF NOT EXISTS idx_wf_pending_workflow ON workflow_pending_approvals(workflow_id, status)');
+      } catch (e) {
+        LoggerService().error('Failed to create workflow_pending_approvals (v23)', tag: 'Migration', error: e);
       }
     }
 

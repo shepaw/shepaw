@@ -345,6 +345,8 @@ class WorkflowPeerApprovalPending {
   final String? messageId;
   final String? prompt;
   final PeerApprovalRisk risk;
+  final String? confirmationId;
+  final Map<String, dynamic>? approvalData;
 
   const WorkflowPeerApprovalPending({
     required this.workflowId,
@@ -354,6 +356,8 @@ class WorkflowPeerApprovalPending {
     this.messageId,
     this.prompt,
     this.risk = PeerApprovalRisk.high,
+    this.confirmationId,
+    this.approvalData,
   });
 }
 

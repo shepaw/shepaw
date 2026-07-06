@@ -1410,7 +1410,9 @@ class ChatService implements IPawChatSender {
 
         // Execute steps within stage in parallel
         final futures = steps
-            .where((s) => s.status != StepExecutionStatus.skipped)
+            .where((s) =>
+                s.status != StepExecutionStatus.skipped &&
+                s.status != StepExecutionStatus.completed)
             .map((step) async {
           // C3: Check cancellation before starting each step
           if (cancelToken?.isCancelled == true) return;

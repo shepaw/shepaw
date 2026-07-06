@@ -69,7 +69,8 @@ mixin _InteractionOps on _ChatControllerBase {
   }
 
   /// Unblock a workflow step (or in-flight peer gate) waiting on tool approval.
-  void _completePendingPeerApproval(
+  /// Returns true when an active completer was satisfied.
+  bool _completePendingPeerApproval(
     Message originalMessage, {
     required String actionId,
     required String actionLabel,
@@ -88,7 +89,7 @@ mixin _InteractionOps on _ChatControllerBase {
       if (pending != null && !pending.result.isCompleted) {
         pending.result.complete(response);
         pendingGroupInteractions.remove(key);
-        return;
+        return true;
       }
     }
     for (final entry in pendingGroupInteractions.entries.toList()) {
@@ -96,8 +97,107 @@ mixin _InteractionOps on _ChatControllerBase {
           !entry.value.result.isCompleted) {
         entry.value.result.complete(response);
         pendingGroupInteractions.remove(entry.key);
-        return;
+        return true;
       }
+    }
+    return false;
+  }
+
+  /// Handle peer tool approval from the workflow progress panel (or detail).
+  Future<void> handleWorkflowPeerApprovalAction(
+    String confirmationId,
+    String actionId,
+    String actionLabel,
+  ) async {
+    final pending = workflowPeerApprovalPending;
+    final workflowIdForResume = pending?.workflowId;
+    Message? msg;
+    final messageId = pending?.messageId;
+    if (messageId != null) {
+      msg = messageIdMap[messageId] ??
+          await chatService.getMessageById(messageId);
+    }
+
+    if (msg != null) {
+      final unblocked = await _handlePeerActionSelected(
+        msg,
+        confirmationId,
+        actionId,
+        actionLabel,
+      );
+      if (!unblocked &&
+          workflowIdForResume != null &&
+          _workflowCancelToken == null) {
+        await _resumeWorkflowExecutionIfNeeded(workflowIdForResume);
+      }
+      return;
+    }
+
+    final record =
+        await WorkflowService.instance.getPendingApprovalById(confirmationId);
+    if (record == null) return;
+
+    try {
+      await PeerAgentClientService.instance.submitApproval(
+        peerId: record.peerId,
+        approvalId: record.confirmationId,
+        selectedActionId: actionId,
+        selectedActionLabel: actionLabel,
+      );
+      await WorkflowService.instance.markPendingApprovalSubmitted(
+        confirmationId,
+        selectedActionId: actionId,
+      );
+      setWorkflowPeerApprovalPending(null);
+      if (record.messageId != null &&
+          messageIdMap.containsKey(record.messageId)) {
+        _updateGroupStreamingMetadata(
+          record.messageId!,
+          'action_confirmation_responded',
+          {'action_id': actionId, 'action_label': actionLabel},
+        );
+      }
+      if (_workflowCancelToken == null) {
+        await _resumeWorkflowExecutionIfNeeded(record.workflowId);
+      }
+    } catch (e) {
+      _emit(ShowErrorSnackBarEvent('$e'));
+    }
+  }
+
+  Future<bool> _handlePeerActionSelected(
+    Message originalMessage,
+    String confirmationId,
+    String actionId,
+    String actionLabel,
+  ) async {
+    try {
+      await interactiveResponseHandler.handleActionConfirmation(
+        originalMessage: originalMessage,
+        confirmationId: confirmationId,
+        actionId: actionId,
+        actionLabel: actionLabel,
+        confirmationContext: 'peer',
+      );
+      final unblocked = _completePendingPeerApproval(
+        originalMessage,
+        actionId: actionId,
+        actionLabel: actionLabel,
+      );
+      await WorkflowService.instance.markPendingApprovalSubmitted(
+        confirmationId,
+        selectedActionId: actionId,
+      );
+      setWorkflowPeerApprovalPending(null);
+      _updateGroupStreamingMetadata(
+        originalMessage.id,
+        'action_confirmation_responded',
+        {'action_id': actionId, 'action_label': actionLabel},
+      );
+      return unblocked;
+    } catch (e) {
+      _emit(ShowErrorSnackBarEvent('$e'));
+      return false;
     }
   }
 
@@ -164,27 +264,17 @@ mixin _InteractionOps on _ChatControllerBase {
     // still live on GroupAgentExecutor. Submit via submitApproval instead of
     // starting a new group round through _handleGroupInteractionLocally.
     if (isGroupMode && confirmationContext == 'peer') {
-      try {
-        await interactiveResponseHandler.handleActionConfirmation(
-          originalMessage: originalMessage,
-          confirmationId: confirmationId,
-          actionId: actionId,
-          actionLabel: actionLabel,
-          confirmationContext: confirmationContext,
-        );
-        _completePendingPeerApproval(
-          originalMessage,
-          actionId: actionId,
-          actionLabel: actionLabel,
-        );
-        setWorkflowPeerApprovalPending(null);
-        _updateGroupStreamingMetadata(
-          originalMessage.id,
-          'action_confirmation_responded',
-          {'action_id': actionId, 'action_label': actionLabel},
-        );
-      } catch (e) {
-        _emit(ShowErrorSnackBarEvent('$e'));
+      final workflowIdForResume = workflowPeerApprovalPending?.workflowId;
+      final unblocked = await _handlePeerActionSelected(
+        originalMessage,
+        confirmationId,
+        actionId,
+        actionLabel,
+      );
+      if (!unblocked &&
+          workflowIdForResume != null &&
+          _workflowCancelToken == null) {
+        await _resumeWorkflowExecutionIfNeeded(workflowIdForResume);
       }
       return;
     }
