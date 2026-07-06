@@ -147,18 +147,28 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
   String? _activeWorkflowId;
   String? get activeWorkflowId => _activeWorkflowId;
 
+  /// Peer agent tool approval blocking a workflow step (for progress panel UI).
+  WorkflowPeerApprovalPending? workflowPeerApprovalPending;
+
   /// Cancellation token for the currently executing workflow.
   WorkflowCancellationToken? _workflowCancelToken;
 
   /// Set the active workflow ID (called by orchestration when flow starts).
   void setActiveWorkflowId(String? id) {
     _activeWorkflowId = id;
+    if (id == null) workflowPeerApprovalPending = null;
     notifyListeners();
+  }
+
+  void setWorkflowPeerApprovalPending(WorkflowPeerApprovalPending? pending) {
+    workflowPeerApprovalPending = pending;
+    _notify();
   }
 
   /// User dismisses the workflow progress panel.
   void dismissWorkflowPanel() {
     _activeWorkflowId = null;
+    workflowPeerApprovalPending = null;
     notifyListeners();
   }
 
@@ -179,6 +189,7 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
     pendingGroupInteractions.clear();
     _workflowStreamingIds.clear();
     _workflowStreamingContents.clear();
+    workflowPeerApprovalPending = null;
 
     // Mark workflow as cancelled in DB
     final workflowService = WorkflowService.instance;
@@ -319,6 +330,27 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
           _notify();
           _emit(event);
 
+          if (interactionType == 'action_confirmation' &&
+              data['_workflowPeerApproval'] == true &&
+              _activeWorkflowId != null) {
+            final stepId = data['_workflowStepId'] as String?;
+            if (stepId != null) {
+              final riskStr = data['_approvalRisk'] as String?;
+              final risk = riskStr == 'low'
+                  ? PeerApprovalRisk.low
+                  : PeerApprovalRisk.high;
+              setWorkflowPeerApprovalPending(WorkflowPeerApprovalPending(
+                workflowId: _activeWorkflowId!,
+                stepId: stepId,
+                agentId: agentId,
+                agentName: agentName,
+                messageId: sid,
+                prompt: data['prompt'] as String?,
+                risk: risk,
+              ));
+            }
+          }
+
           // Block here until the user actually responds (no timeout for workflow steps)
           try {
             final result = await event.result.future.timeout(
@@ -328,6 +360,10 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
             return result;
           } finally {
             pendingGroupInteractions.remove(sid ?? agentId);
+            if (interactionType == 'action_confirmation' &&
+                data['_workflowPeerApproval'] == true) {
+              setWorkflowPeerApprovalPending(null);
+            }
             _notify();
           }
         },
@@ -335,6 +371,7 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
         _workflowStreamingIds.clear();
         _workflowStreamingContents.clear();
         _workflowCancelToken = null;
+        workflowPeerApprovalPending = null;
         isProcessing = false;
         respondingAgentNames.clear();
         groupStreamingMessageIds.clear();

@@ -749,6 +749,8 @@ class PeerAgentClientService {
       // Marks this as a peer-relayed approval so the submit path knows to
       // reply via agent_approval_resp instead of connection.submitResponse.
       'confirmation_context': 'peer',
+      if (data['tool_kind'] != null) 'tool_kind': data['tool_kind'],
+      if (data['tool_call_id'] != null) 'tool_call_id': data['tool_call_id'],
     };
     _pending[requestId]?.onActionConfirmation?.call(actionData);
     _log.debug(

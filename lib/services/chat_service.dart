@@ -1356,6 +1356,16 @@ class ChatService implements IPawChatSender {
       final customSystemPrompt = channel.systemPrompt;
       final mentionMode = channel.effectiveMentionMode;
 
+      RemoteAgent? workflowAdminAgent;
+      final adminId = channel.adminAgentId;
+      if (adminId != null) {
+        workflowAdminAgent =
+            agents.cast<RemoteAgent?>().firstWhere(
+                  (a) => a!.id == adminId,
+                  orElse: () => null,
+                );
+      }
+
       // Group steps by stage
       final stageMap = <int, List<dynamic>>{};
       for (final step in workflow.steps) {
@@ -1434,6 +1444,9 @@ class ChatService implements IPawChatSender {
               mentionedAgentIds: [agent.id],
               isFirstMessage: false,
               isWorkflowStep: true,
+              workflowId: workflowId,
+              workflowStepId: step.id,
+              adminAgent: workflowAdminAgent,
               channelMembers: channelMembers,
               customSystemPrompt: customSystemPrompt,
               mentionMode: mentionMode,

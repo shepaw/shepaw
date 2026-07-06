@@ -16,12 +16,16 @@ class WorkflowProgressPanel extends StatefulWidget {
   final String workflowId;
   final VoidCallback? onDismiss;
   final void Function(bool approved, {String? feedback})? onApprovalResponse;
+  final WorkflowPeerApprovalPending? pendingPeerApproval;
+  final void Function(String messageId)? onScrollToApproval;
 
   const WorkflowProgressPanel({
     super.key,
     required this.workflowId,
     this.onDismiss,
     this.onApprovalResponse,
+    this.pendingPeerApproval,
+    this.onScrollToApproval,
   });
 
   @override
@@ -59,6 +63,11 @@ class _WorkflowProgressPanelState extends State<WorkflowProgressPanel>
         }
       });
     }
+    if (widget.pendingPeerApproval != null &&
+        oldWidget.pendingPeerApproval?.stepId !=
+            widget.pendingPeerApproval?.stepId) {
+      setState(() => _expanded = true);
+    }
   }
 
   @override
@@ -83,9 +92,12 @@ class _WorkflowProgressPanelState extends State<WorkflowProgressPanel>
     final isPendingApproval = exec.status == WorkflowStatus.pendingApproval;
     final allDone = exec.status == WorkflowStatus.completed;
     final failed = exec.status == WorkflowStatus.failed;
+    final pendingApproval = widget.pendingPeerApproval;
     final accentColor = isPendingApproval
         ? Colors.orange
-        : allDone
+        : pendingApproval != null
+            ? Colors.deepOrange
+            : allDone
             ? Colors.green
             : failed
                 ? Colors.red
@@ -104,10 +116,13 @@ class _WorkflowProgressPanelState extends State<WorkflowProgressPanel>
         mainAxisSize: MainAxisSize.min,
         children: [
           // Header (always visible)
-          _buildHeader(exec, accentColor, allDone, failed),
+          _buildHeader(exec, accentColor, allDone, failed, pendingApproval),
           // Approval buttons (when pending)
           if (isPendingApproval)
             _buildApprovalButtons(),
+          // Peer tool-approval banner
+          if (!isPendingApproval && pendingApproval != null)
+            _buildPeerApprovalBanner(pendingApproval),
           // Expanded content (when not pending)
           if (!isPendingApproval)
             AnimatedSize(
@@ -121,7 +136,11 @@ class _WorkflowProgressPanelState extends State<WorkflowProgressPanel>
   }
 
   Widget _buildHeader(
-      WorkflowExecution exec, Color accentColor, bool allDone, bool failed) {
+      WorkflowExecution exec,
+      Color accentColor,
+      bool allDone,
+      bool failed,
+      WorkflowPeerApprovalPending? pendingPeerApproval) {
     final total = exec.totalSteps;
     final done = exec.completedSteps;
     final progress = total > 0 ? done / total : 0.0;
@@ -139,7 +158,10 @@ class _WorkflowProgressPanelState extends State<WorkflowProgressPanel>
               child: exec.status == WorkflowStatus.pendingApproval
                   ? Icon(Icons.pending_actions,
                       size: 22, color: Colors.orange.shade600)
-                  : allDone
+                  : pendingPeerApproval != null
+                      ? Icon(Icons.gpp_maybe_outlined,
+                          size: 22, color: Colors.deepOrange.shade600)
+                      : allDone
                       ? Icon(Icons.check_circle,
                           size: 22, color: Colors.green.shade600)
                       : failed
@@ -189,7 +211,9 @@ class _WorkflowProgressPanelState extends State<WorkflowProgressPanel>
                   Text(
                     exec.status == WorkflowStatus.pendingApproval
                         ? '等待审批 · ${exec.totalSteps} 步骤'
-                        : allDone
+                        : pendingPeerApproval != null
+                            ? '等待 @${pendingPeerApproval.agentName} 工具审批'
+                            : allDone
                             ? '全部完成'
                             : failed
                                 ? '执行失败'
@@ -215,6 +239,62 @@ class _WorkflowProgressPanelState extends State<WorkflowProgressPanel>
               child: Icon(Icons.close, size: 18, color: Colors.grey.shade400),
             ),
           ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildPeerApprovalBanner(WorkflowPeerApprovalPending pending) {
+    final needsUser = pending.risk == PeerApprovalRisk.high;
+    return Material(
+      color: Colors.deepOrange.shade50,
+      child: InkWell(
+        onTap: pending.messageId != null
+            ? () => widget.onScrollToApproval?.call(pending.messageId!)
+            : null,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(14, 6, 14, 10),
+          child: Row(
+            children: [
+              Icon(Icons.touch_app_outlined,
+                  size: 18, color: Colors.deepOrange.shade700),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      needsUser ? '需要你在群聊中确认工具操作' : '等待工具审批',
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        color: Colors.deepOrange.shade800,
+                      ),
+                    ),
+                    if (pending.prompt != null && pending.prompt!.isNotEmpty)
+                      Text(
+                        pending.prompt!,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontSize: 11,
+                          color: Colors.deepOrange.shade700,
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+              if (pending.messageId != null)
+                Text(
+                  '查看',
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                    color: Colors.deepOrange.shade700,
+                  ),
+                ),
+            ],
+          ),
         ),
       ),
     );
@@ -291,6 +371,7 @@ class _WorkflowProgressPanelState extends State<WorkflowProgressPanel>
   }
 
   Widget _buildExpandedContent(WorkflowExecution exec) {
+    final pendingStepId = widget.pendingPeerApproval?.stepId;
     if (exec.steps.isEmpty) {
       return const Padding(
         padding: EdgeInsets.all(12),
@@ -361,7 +442,16 @@ class _WorkflowProgressPanelState extends State<WorkflowProgressPanel>
                   ),
                 ),
                 // Steps
-                ...steps.map((step) => WorkflowStepTile(step: step)),
+                ...steps.map((step) => WorkflowStepTile(
+                      step: step,
+                      waitingForPeerApproval: pendingStepId == step.id,
+                      onTap: pendingStepId == step.id &&
+                              widget.pendingPeerApproval?.messageId != null
+                          ? () => widget.onScrollToApproval?.call(
+                                widget.pendingPeerApproval!.messageId!,
+                              )
+                          : null,
+                    )),
               ],
             ),
           );

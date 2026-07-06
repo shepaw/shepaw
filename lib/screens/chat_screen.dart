@@ -1706,6 +1706,8 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
           if (c.isGroupMode && c.activeWorkflowId != null)
             WorkflowProgressPanel(
               workflowId: c.activeWorkflowId!,
+              pendingPeerApproval: c.workflowPeerApprovalPending,
+              onScrollToApproval: _scrollToMessage,
               onDismiss: () => c.dismissWorkflowPanel(),
               onApprovalResponse: (approved, {feedback}) {
                 c.handleWorkflowApproval(approved, feedback: feedback);

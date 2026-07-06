@@ -24,6 +24,7 @@ import '../task/task_models.dart';
 import 'group_prompt_builder.dart';
 import 'group_interaction_handler.dart';
 import '../../peer/services/peer_agent_client_service.dart';
+import 'peer_approval_policy.dart';
 
 /// Executes a single agent's response turn within a group chat.
 ///
@@ -243,6 +244,8 @@ class GroupAgentExecutor {
     )? onInteractionRequest,
     bool isFlowMode = false,
     bool isWorkflowStep = false,
+    String? workflowId,
+    String? workflowStepId,
     String? orchestrationTraceId,
   }) async {
     LoggerService().debug(
@@ -604,12 +607,19 @@ class GroupAgentExecutor {
 
       infLogGroup.beginRound(groupTraceId, requestSummary: 'Group peer request');
 
+      final peerSessionId = PeerApprovalPolicy.workflowSessionId(
+            channelId: channelId,
+            workflowId: workflowId,
+            workflowStepId: workflowStepId,
+          ) ??
+          channelId;
+
       try {
         final result = await PeerAgentClientService.instance.sendChat(
           peerId: peerId,
           remoteAgentId: remoteAgentId,
           message: peerMessage,
-          sessionId: channelId,
+          sessionId: peerSessionId,
           cancelToken: acpCancellationToken,
           onChunk: (chunk) {
             streamingStarted = true;
@@ -628,6 +638,8 @@ class GroupAgentExecutor {
               adminAgent: adminAgent,
               channelId: channelId,
               isWorkflowStep: isWorkflowStep,
+              workflowId: workflowId,
+              workflowStepId: workflowStepId,
               onInteractionRequest: onInteractionRequest,
             );
             if (!isWorkflowStep) {
@@ -1250,6 +1262,8 @@ class GroupAgentExecutor {
     required RemoteAgent? adminAgent,
     required String channelId,
     required bool isWorkflowStep,
+    String? workflowId,
+    String? workflowStepId,
     Future<Map<String, dynamic>?> Function(
       String agentId,
       String agentName,
@@ -1267,11 +1281,13 @@ class GroupAgentExecutor {
     }
 
     try {
-      if (adminAgent != null) {
+      final allowAdminAuto =
+          adminAgent != null && PeerApprovalPolicy.allowAdminAutoResolve(data);
+      if (allowAdminAuto) {
         final responseData = await _interactionHandler.resolveInteractionViaAdmin(
           interactionType: 'action_confirmation',
           data: data,
-          adminAgent: adminAgent,
+          adminAgent: adminAgent!,
           channelId: channelId,
           subAgentName: agent.name,
         );
@@ -1293,6 +1309,12 @@ class GroupAgentExecutor {
         if (onInteractionRequest != null) {
           final workflowData = Map<String, dynamic>.from(data);
           workflowData['_workflowPeerApproval'] = true;
+          if (workflowId != null) workflowData['_workflowId'] = workflowId;
+          if (workflowStepId != null) {
+            workflowData['_workflowStepId'] = workflowStepId;
+          }
+          workflowData['_approvalRisk'] =
+              PeerApprovalPolicy.classifyRisk(data).name;
           final userResponse = await onInteractionRequest(
             agent.id,
             agent.name,

@@ -5,103 +5,139 @@ import '../../models/workflow_models.dart';
 class WorkflowStepTile extends StatelessWidget {
   final WorkflowStepExecution step;
   final bool showStageName;
+  final bool waitingForPeerApproval;
+  final VoidCallback? onTap;
 
   const WorkflowStepTile({
     super.key,
     required this.step,
     this.showStageName = false,
+    this.waitingForPeerApproval = false,
+    this.onTap,
   });
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 3, horizontal: 4),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // Status icon
-          Padding(
-            padding: const EdgeInsets.only(top: 2),
-            child: _buildStatusIcon(),
-          ),
-          const SizedBox(width: 8),
-          // Content
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                // Instruction (main text)
-                Text(
-                  step.instruction,
-                  style: TextStyle(
-                    fontSize: 13,
-                    color: _textColor,
-                    fontWeight: step.status == StepExecutionStatus.running
-                        ? FontWeight.w600
-                        : FontWeight.normal,
-                    decoration: step.status == StepExecutionStatus.skipped
-                        ? TextDecoration.lineThrough
-                        : null,
-                  ),
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                ),
-                const SizedBox(height: 2),
-                // Agent + duration row
-                Row(
+    return Material(
+      color: waitingForPeerApproval
+          ? Colors.deepOrange.shade50.withOpacity(0.6)
+          : Colors.transparent,
+      borderRadius: BorderRadius.circular(6),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(6),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 3, horizontal: 4),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Status icon
+              Padding(
+                padding: const EdgeInsets.only(top: 2),
+                child: _buildStatusIcon(),
+              ),
+              const SizedBox(width: 8),
+              // Content
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 5, vertical: 1),
-                      decoration: BoxDecoration(
-                        color: _agentChipColor,
-                        borderRadius: BorderRadius.circular(6),
+                    // Instruction (main text)
+                    Text(
+                      step.instruction,
+                      style: TextStyle(
+                        fontSize: 13,
+                        color: _textColor,
+                        fontWeight: step.status == StepExecutionStatus.running
+                            ? FontWeight.w600
+                            : FontWeight.normal,
+                        decoration: step.status == StepExecutionStatus.skipped
+                            ? TextDecoration.lineThrough
+                            : null,
                       ),
-                      child: Text(
-                        '@${step.agentName}',
-                        style: TextStyle(
-                          fontSize: 11,
-                          color: _agentTextColor,
-                          fontWeight: FontWeight.w500,
-                        ),
-                      ),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
                     ),
-                    if (step.duration != null) ...[
-                      const SizedBox(width: 8),
-                      Text(
-                        step.durationLabel,
-                        style: TextStyle(
-                          fontSize: 11,
-                          color: Colors.grey.shade600,
-                        ),
-                      ),
-                    ],
-                    if (step.errorMessage != null &&
-                        step.status == StepExecutionStatus.failed) ...[
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: Text(
-                          step.errorMessage!,
-                          style: TextStyle(
-                            fontSize: 11,
-                            color: Colors.red.shade600,
+                    if (waitingForPeerApproval) ...[
+                      const SizedBox(height: 4),
+                      Row(
+                        children: [
+                          Icon(Icons.gpp_maybe_outlined,
+                              size: 13, color: Colors.deepOrange.shade700),
+                          const SizedBox(width: 4),
+                          Text(
+                            '等待工具审批 · 点击查看',
+                            style: TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w600,
+                              color: Colors.deepOrange.shade700,
+                            ),
                           ),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
+                        ],
                       ),
                     ],
+                    const SizedBox(height: 2),
+                    // Agent + duration row
+                    Row(
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 5, vertical: 1),
+                          decoration: BoxDecoration(
+                            color: _agentChipColor,
+                            borderRadius: BorderRadius.circular(6),
+                          ),
+                          child: Text(
+                            '@${step.agentName}',
+                            style: TextStyle(
+                              fontSize: 11,
+                              color: _agentTextColor,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                        ),
+                        if (step.duration != null) ...[
+                          const SizedBox(width: 8),
+                          Text(
+                            step.durationLabel,
+                            style: TextStyle(
+                              fontSize: 11,
+                              color: Colors.grey.shade600,
+                            ),
+                          ),
+                        ],
+                        if (step.errorMessage != null &&
+                            step.status == StepExecutionStatus.failed) ...[
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              step.errorMessage!,
+                              style: TextStyle(
+                                fontSize: 11,
+                                color: Colors.red.shade600,
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
                   ],
                 ),
-              ],
-            ),
+              ),
+            ],
           ),
-        ],
+        ),
       ),
     );
   }
 
   Widget _buildStatusIcon() {
+    if (waitingForPeerApproval) {
+      return Icon(Icons.gpp_maybe_outlined,
+          size: 16, color: Colors.deepOrange.shade600);
+    }
     switch (step.status) {
       case StepExecutionStatus.pending:
         return Icon(Icons.circle_outlined, size: 16, color: Colors.grey.shade400);

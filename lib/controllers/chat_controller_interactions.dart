@@ -177,6 +177,7 @@ mixin _InteractionOps on _ChatControllerBase {
           actionId: actionId,
           actionLabel: actionLabel,
         );
+        setWorkflowPeerApprovalPending(null);
         _updateGroupStreamingMetadata(
           originalMessage.id,
           'action_confirmation_responded',

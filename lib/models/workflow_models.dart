@@ -331,3 +331,34 @@ class WorkflowStepExecution {
     );
   }
 }
+
+// ---------------------------------------------------------------------------
+// WorkflowPeerApprovalPending — in-flight peer tool approval during a step
+// ---------------------------------------------------------------------------
+
+/// Tracks a workflow step blocked on a peer agent tool-call approval.
+class WorkflowPeerApprovalPending {
+  final String workflowId;
+  final String stepId;
+  final String agentId;
+  final String agentName;
+  final String? messageId;
+  final String? prompt;
+  final PeerApprovalRisk risk;
+
+  const WorkflowPeerApprovalPending({
+    required this.workflowId,
+    required this.stepId,
+    required this.agentId,
+    required this.agentName,
+    this.messageId,
+    this.prompt,
+    this.risk = PeerApprovalRisk.high,
+  });
+}
+
+/// Risk level for peer tool approvals (classification in [PeerApprovalPolicy]).
+enum PeerApprovalRisk {
+  low,
+  high,
+}
