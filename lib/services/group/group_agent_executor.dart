@@ -242,6 +242,7 @@ class GroupAgentExecutor {
       String agentId, String agentName, String interactionType, Map<String, dynamic> data,
     )? onInteractionRequest,
     bool isFlowMode = false,
+    bool isWorkflowStep = false,
     String? orchestrationTraceId,
   }) async {
     LoggerService().debug(
@@ -287,6 +288,8 @@ class GroupAgentExecutor {
     Map<String, dynamic>? fileUploadData;
     Map<String, dynamic>? formDataCapture;
     Map<String, dynamic>? messageMetadataExtra;
+
+    Future<void>? peerApprovalInFlight;
 
     // Register a GroupActiveTask so the UI can reattach after navigating away
     final groupTask = GroupActiveTask(
@@ -618,16 +621,26 @@ class GroupAgentExecutor {
           },
           onActionConfirmation: (data) {
             actionConfirmationData = Map<String, dynamic>.from(data);
-            unawaited(_handlePeerGroupActionConfirmation(
+            peerApprovalInFlight = _handlePeerGroupActionConfirmation(
               agent: agent,
               peerId: peerId,
               data: data,
               adminAgent: adminAgent,
               channelId: channelId,
+              isWorkflowStep: isWorkflowStep,
               onInteractionRequest: onInteractionRequest,
-            ));
+            );
+            if (!isWorkflowStep) {
+              unawaited(peerApprovalInFlight!);
+              peerApprovalInFlight = null;
+            }
           },
         );
+
+        if (peerApprovalInFlight != null) {
+          await peerApprovalInFlight;
+          peerApprovalInFlight = null;
+        }
 
         infLogGroup.endRound(groupTraceId, stopReason: 'stop');
         final wasCancelled = acpCancellationToken?.isCancelled == true;
@@ -1113,8 +1126,12 @@ class GroupAgentExecutor {
     }
 
     // If local agent emitted an interactive component, block until user submits
-    // (mirrors the remote ACP path's onForm/onActionConfirmation blocking behavior)
-    if (_activeInteractionType != null &&
+    // (mirrors the remote ACP path's onForm/onActionConfirmation blocking behavior).
+    // Peer in-band approvals are resolved during sendChat — skip post-save wait.
+    final skipPostSavePeerApproval = _activeInteractionType == 'action_confirmation' &&
+        (_activeInteractionData?['confirmation_context'] as String?) == 'peer';
+    if (!skipPostSavePeerApproval &&
+        _activeInteractionType != null &&
         _activeInteractionData != null &&
         savedMessageId != null &&
         onInteractionRequest != null) {
@@ -1232,6 +1249,7 @@ class GroupAgentExecutor {
     required Map<String, dynamic> data,
     required RemoteAgent? adminAgent,
     required String channelId,
+    required bool isWorkflowStep,
     Future<Map<String, dynamic>?> Function(
       String agentId,
       String agentName,
@@ -1249,16 +1267,6 @@ class GroupAgentExecutor {
     }
 
     try {
-      // Surface the approval card in group chat before any admin auto-decision.
-      if (onInteractionRequest != null) {
-        await onInteractionRequest(
-          agent.id,
-          agent.name,
-          'action_confirmation',
-          Map<String, dynamic>.from(data),
-        );
-      }
-
       if (adminAgent != null) {
         final responseData = await _interactionHandler.resolveInteractionViaAdmin(
           interactionType: 'action_confirmation',
@@ -1277,6 +1285,37 @@ class GroupAgentExecutor {
           );
           return;
         }
+      }
+
+      if (isWorkflowStep) {
+        // Workflow: block the step until the user (or a late admin path above)
+        // resolves the in-band peer approval.
+        if (onInteractionRequest != null) {
+          final workflowData = Map<String, dynamic>.from(data);
+          workflowData['_workflowPeerApproval'] = true;
+          final userResponse = await onInteractionRequest(
+            agent.id,
+            agent.name,
+            'action_confirmation',
+            workflowData,
+          );
+          if (userResponse != null &&
+              userResponse['_approval_submitted'] != true &&
+              userResponse['_non_blocking'] != true) {
+            await submit(userResponse);
+          }
+        }
+        return;
+      }
+
+      // Non-workflow: surface the card; user tap submits via handleActionSelected.
+      if (onInteractionRequest != null) {
+        await onInteractionRequest(
+          agent.id,
+          agent.name,
+          'action_confirmation',
+          Map<String, dynamic>.from(data),
+        );
       }
 
       // User will tap the card; handleActionSelected(peer) calls submitApproval.

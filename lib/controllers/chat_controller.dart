@@ -131,6 +131,10 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
   Set<String> groupStreamingMessageIds = {};
   Map<String, GroupInteractionRequestEvent> pendingGroupInteractions = {};
 
+  /// Workflow step streaming placeholders keyed by agent id.
+  final Map<String, String> _workflowStreamingIds = {};
+  final Map<String, String> _workflowStreamingContents = {};
+
   // ---- DM channel system prompt override ----
   /// Custom system prompt set by the user for the current DM channel.
   /// When non-null, overrides the agent's default system prompt.
@@ -173,6 +177,8 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
       if (!e.result.isCompleted) e.result.complete(null);
     }
     pendingGroupInteractions.clear();
+    _workflowStreamingIds.clear();
+    _workflowStreamingContents.clear();
 
     // Mark workflow as cancelled in DB
     final workflowService = WorkflowService.instance;
@@ -198,6 +204,8 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
     if (workflowId == null || currentChannelId == null) return;
 
     final workflowService = WorkflowService(db: localDatabaseService);
+    final userId = getUserId();
+    final userName = getUserName();
 
     if (approved) {
       await workflowService.startWorkflow(workflowId);
@@ -210,17 +218,63 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
       // Auto-execute all stages in the background.
       // processGroupAgent inside executeWorkflowSteps handles message creation
       // and streaming internally. We just reconcile afterwards.
-      chatService.executeWorkflowSteps(
+      unawaited(chatService.executeWorkflowSteps(
         workflowId: workflowId,
         channelId: currentChannelId!,
-        userId: getUserId(),
-        userName: getUserName(),
+        userId: userId,
+        userName: userName,
         cancelToken: cancelToken,
         onAgentStart: (aid, anm) {
           respondingAgentNames.add(anm);
+          isProcessing = true;
+          final sid = 'wf_streaming_${aid}_${DateTime.now().millisecondsSinceEpoch}';
+          _workflowStreamingIds[aid] = sid;
+          _workflowStreamingContents[aid] = '';
+          final sm = Message(
+            id: sid,
+            content: '',
+            timestampMs: DateTime.now().millisecondsSinceEpoch + 1,
+            from: MessageFrom(id: aid, type: 'agent', name: anm),
+            to: MessageFrom(id: userId, type: 'user', name: userName),
+            type: MessageType.text,
+          );
+          groupStreamingMessageIds.add(sid);
+          messages.add(sm);
+          messageIdMap[sid] = sm;
           _notify();
+          _emit(RequestScrollToBottomEvent(force: true));
+        },
+        onStreamChunk: (aid, anm, chunk) {
+          final sid = _workflowStreamingIds[aid];
+          if (sid == null) return;
+          _workflowStreamingContents[aid] =
+              (_workflowStreamingContents[aid] ?? '') + chunk;
+          final updatedContent = _workflowStreamingContents[aid]!;
+          final existing = messageIdMap[sid];
+          if (existing != null) {
+            final idx = messages.indexOf(existing);
+            if (idx != -1) {
+              final updated = Message(
+                id: sid,
+                content: updatedContent,
+                timestampMs: messages[idx].timestampMs,
+                from: messages[idx].from,
+                to: messages[idx].to,
+                type: MessageType.text,
+              );
+              messages[idx] = updated;
+              messageIdMap[updated.id] = updated;
+            }
+          }
+          scheduleStreamingRebuild();
+          if (!isUserScrolledUp) {
+            _emit(RequestScrollToBottomEvent());
+          }
         },
         onAgentDone: (aid, anm, skipped) {
+          final sid = _workflowStreamingIds.remove(aid);
+          if (sid != null) groupStreamingMessageIds.remove(sid);
+          _workflowStreamingContents.remove(aid);
           respondingAgentNames.remove(anm);
           _notify();
           reconcileGroupMessages();
@@ -230,13 +284,16 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
           // the user responds. This prevents steps from being marked
           // "completed" before the user fills a form / selects an action.
 
-          // Determine the message ID — the agent's message is already saved
-          // to DB by processGroupAgent before this callback fires.
+          // Determine the message ID — prefer saved DB id, else in-flight
+          // workflow streaming placeholder (peer in-band approvals arrive
+          // before the step message is persisted).
           await reconcileGroupMessages();
           final savedMsgId = data.remove('_savedMessageId') as String?;
           String? sid;
           if (savedMsgId != null && messageIdMap.containsKey(savedMsgId)) {
             sid = savedMsgId;
+          } else {
+            sid = _workflowStreamingIds[agentId];
           }
 
           // Update message metadata to show the interactive component
@@ -274,7 +331,15 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
             _notify();
           }
         },
-      );
+      ).whenComplete(() {
+        _workflowStreamingIds.clear();
+        _workflowStreamingContents.clear();
+        _workflowCancelToken = null;
+        isProcessing = false;
+        respondingAgentNames.clear();
+        groupStreamingMessageIds.clear();
+        _notify();
+      }));
     } else {
       await workflowService.cancelWorkflow(workflowId);
       _activeWorkflowId = null;

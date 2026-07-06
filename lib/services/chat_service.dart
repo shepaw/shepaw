@@ -1433,6 +1433,7 @@ class ChatService implements IPawChatSender {
               historyMessages: historyMessages,
               mentionedAgentIds: [agent.id],
               isFirstMessage: false,
+              isWorkflowStep: true,
               channelMembers: channelMembers,
               customSystemPrompt: customSystemPrompt,
               mentionMode: mentionMode,

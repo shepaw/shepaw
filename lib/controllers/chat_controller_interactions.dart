@@ -68,6 +68,39 @@ mixin _InteractionOps on _ChatControllerBase {
     return true;
   }
 
+  /// Unblock a workflow step (or in-flight peer gate) waiting on tool approval.
+  void _completePendingPeerApproval(
+    Message originalMessage, {
+    required String actionId,
+    required String actionLabel,
+  }) {
+    final response = {
+      'selected_action_id': actionId,
+      'selected_action_label': actionLabel,
+      '_approval_submitted': true,
+    };
+    final keys = <String>{
+      originalMessage.id,
+      originalMessage.from.id,
+    };
+    for (final key in keys) {
+      final pending = pendingGroupInteractions[key];
+      if (pending != null && !pending.result.isCompleted) {
+        pending.result.complete(response);
+        pendingGroupInteractions.remove(key);
+        return;
+      }
+    }
+    for (final entry in pendingGroupInteractions.entries.toList()) {
+      if (entry.value.agentId == originalMessage.from.id &&
+          !entry.value.result.isCompleted) {
+        entry.value.result.complete(response);
+        pendingGroupInteractions.remove(entry.key);
+        return;
+      }
+    }
+  }
+
   Future<void> handlePlanApprovalResponded(
     Message originalMessage,
     bool approved, {
@@ -138,6 +171,11 @@ mixin _InteractionOps on _ChatControllerBase {
           actionId: actionId,
           actionLabel: actionLabel,
           confirmationContext: confirmationContext,
+        );
+        _completePendingPeerApproval(
+          originalMessage,
+          actionId: actionId,
+          actionLabel: actionLabel,
         );
         _updateGroupStreamingMetadata(
           originalMessage.id,
