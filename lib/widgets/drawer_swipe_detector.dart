@@ -9,8 +9,8 @@ import 'package:flutter/material.dart';
 /// and can be cancelled by swiping back.
 ///
 /// When [blockLeadingEdgeDrawerGesture] is true, a narrow strip on the left
-/// screen edge absorbs pointer events so the scaffold drawer drag does not
-/// compete with the system back gesture.
+/// screen edge (below the AppBar) absorbs pointer events so the scaffold
+/// drawer drag does not compete with the system back gesture.
 class DrawerSwipeDetector extends StatelessWidget {
   const DrawerSwipeDetector({
     super.key,
@@ -53,13 +53,15 @@ class DrawerSwipeDetector extends StatelessWidget {
         context,
         override: leadingEdgeBlockWidth,
       );
+      // Start below the AppBar so the leading menu button remains tappable.
+      final topInset = MediaQuery.paddingOf(context).top + kToolbarHeight;
       result = Stack(
         clipBehavior: Clip.none,
         children: [
           result,
           Positioned(
             left: 0,
-            top: 0,
+            top: topInset,
             bottom: 0,
             width: blockWidth,
             child: const AbsorbPointer(),
