@@ -1354,8 +1354,10 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     }
   }
 
-  Future<GroupMembersPanelSnapshot?> _addGroupMemberFromPanel() async {
-    final added = await _addGroupMember();
+  Future<GroupMembersPanelSnapshot?> _addGroupMemberFromPanel(
+    BuildContext panelContext,
+  ) async {
+    final added = await _addGroupMember(panelContext: panelContext);
     if (!added || !mounted) return null;
     return GroupMembersPanelSnapshot(
       groupAgents: _controller.groupAgents,
@@ -1364,18 +1366,21 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     );
   }
 
-  Future<List<RemoteAgent>?> _showAddGroupMemberPicker(List<RemoteAgent> available) async {
-    final isDesktop = LayoutUtils.isDesktopLayout(context);
+  Future<List<RemoteAgent>?> _showAddGroupMemberPicker(
+    List<RemoteAgent> available,
+    BuildContext navigationContext,
+  ) async {
+    final isDesktop = LayoutUtils.isDesktopLayout(navigationContext);
 
     if (isDesktop) {
       return LayoutUtils.showRightDrawer<List<RemoteAgent>>(
-        context: context,
+        context: navigationContext,
         builder: (_) => AddGroupMemberPicker(availableAgents: available),
       );
     }
 
     return Navigator.push<List<RemoteAgent>>(
-      context,
+      navigationContext,
       MaterialPageRoute(
         builder: (context) => AddGroupMemberPicker(
           availableAgents: available,
@@ -1385,7 +1390,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     );
   }
 
-  Future<bool> _addGroupMember() async {
+  Future<bool> _addGroupMember({required BuildContext panelContext}) async {
     final l10n = AppLocalizations.of(context);
     final allAgents = await _controller.localDatabaseService.getAllRemoteAgents();
     final currentIds = _controller.groupAgents.map((a) => a.id).toSet();
@@ -1402,7 +1407,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
       return false;
     }
 
-    final selected = await _showAddGroupMemberPicker(available);
+    final selected = await _showAddGroupMemberPicker(available, panelContext);
     if (selected == null || selected.isEmpty || !mounted) return false;
 
     for (final agent in selected) {

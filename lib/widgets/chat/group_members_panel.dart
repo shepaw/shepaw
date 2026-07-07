@@ -27,7 +27,7 @@ class GroupMembersPanel extends StatefulWidget {
   final String channelId;
   final String? adminAgentId;
   final List<ChannelMember> channelMembers;
-  final Future<GroupMembersPanelSnapshot?> Function() onAddMember;
+  final Future<GroupMembersPanelSnapshot?> Function(BuildContext panelContext) onAddMember;
   final Future<void> Function(RemoteAgent agent) onRemoveMember;
   final Future<List<ChannelMember>> Function(RemoteAgent agent, String? newGroupBio) onSaveGroupBio;
   final Future<void> Function(RemoteAgent agent) onChangeAdmin;
@@ -118,7 +118,7 @@ class _GroupMembersPanelState extends State<GroupMembersPanel> {
   }
 
   Future<void> _handleAddMember() async {
-    final snapshot = await widget.onAddMember();
+    final snapshot = await widget.onAddMember(context);
     if (snapshot == null || !mounted) return;
     setState(() {
       _groupAgents = List.of(snapshot.groupAgents);

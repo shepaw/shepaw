@@ -49,7 +49,8 @@ class _AddGroupMemberPickerState extends State<AddGroupMemberPicker> {
   Widget _buildConfirmAction(AppLocalizations l10n) {
     return IconButton(
       onPressed: _selectedIds.isEmpty ? null : _confirm,
-      icon: const Icon(Icons.check),
+      icon: const Icon(Icons.check, size: 24),
+      iconSize: 24,
       tooltip: l10n.common_confirm,
     );
   }
