@@ -29,6 +29,7 @@ import '../widgets/chat/chat_reply_preview.dart';
 import '../widgets/chat/session_list_panel.dart';
 import '../widgets/chat/group_session_list_panel.dart';
 import '../widgets/chat/chat_mobile_menu_drawer.dart';
+import '../widgets/chat/group_members_panel.dart';
 import '../widgets/avatar_image.dart';
 import '../widgets/message_search_delegate.dart';
 import '../widgets/shepaw_search_page.dart';
@@ -1298,45 +1299,59 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     );
   }
 
-  void _showGroupMembersPanel() {
-    LayoutUtils.showAdaptivePanel(
-      context: context,
-      isScrollControlled: true,
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(16))),
-      builder: (sheetContext) => _GroupMembersSheet(
-        groupAgents: _controller.groupAgents,
-        channelId: _controller.currentChannelId!,
-        adminAgentId: _controller.groupAdminAgentId,
-        channelMembers: _controller.groupChannel?.members ?? [],
-        onAddMember: () => _addGroupMember(),
-        onRemoveMember: (agent) => _removeGroupMember(agent),
-        onSaveGroupBio: (agent, bio) => _controller.saveMemberGroupBio(agent, bio),
-        onChangeAdmin: (agent) async {
-          if (agent.id == _controller.groupAdminAgentId) return;
-          final parentGroupId = _controller.groupChannel?.groupFamilyId ?? _controller.currentChannelId!;
-          final sessions = await _controller.localDatabaseService.getGroupSessions(parentGroupId);
-          for (final session in sessions) {
-            if (_controller.groupAdminAgentId != null) {
-              await _controller.localDatabaseService.updateChannelMemberRole(session.id, _controller.groupAdminAgentId!, 'member');
-            }
-            await _controller.localDatabaseService.updateChannelMemberRole(session.id, agent.id, 'admin');
+  Future<void> _showGroupMembersPanel() async {
+    final l10n = AppLocalizations.of(context);
+
+    final content = GroupMembersPanel(
+      groupAgents: _controller.groupAgents,
+      channelId: _controller.currentChannelId!,
+      adminAgentId: _controller.groupAdminAgentId,
+      channelMembers: _controller.groupChannel?.members ?? [],
+      onAddMember: () => _addGroupMember(),
+      onRemoveMember: (agent) => _removeGroupMember(agent),
+      onSaveGroupBio: (agent, bio) => _controller.saveMemberGroupBio(agent, bio),
+      onChangeAdmin: (agent) async {
+        if (agent.id == _controller.groupAdminAgentId) return;
+        final parentGroupId = _controller.groupChannel?.groupFamilyId ?? _controller.currentChannelId!;
+        final sessions = await _controller.localDatabaseService.getGroupSessions(parentGroupId);
+        for (final session in sessions) {
+          if (_controller.groupAdminAgentId != null) {
+            await _controller.localDatabaseService.updateChannelMemberRole(session.id, _controller.groupAdminAgentId!, 'member');
           }
-          await _controller.refreshGroupMembers();
-          if (mounted) {
-            showTopToast(
-              context,
-              AppLocalizations.of(context).chat_adminChanged(agent.name),
-              icon: Icons.admin_panel_settings,
-              color: Colors.green,
-            );
-          }
-        },
-        onMentionAgent: (agent) {
-          Navigator.pop(sheetContext);
-          _chatInputKey.currentState?.insertMentionForAgent(agent);
-        },
-      ),
+          await _controller.localDatabaseService.updateChannelMemberRole(session.id, agent.id, 'admin');
+        }
+        await _controller.refreshGroupMembers();
+        if (mounted) {
+          showTopToast(
+            context,
+            AppLocalizations.of(context).chat_adminChanged(agent.name),
+            icon: Icons.admin_panel_settings,
+            color: Colors.green,
+          );
+        }
+      },
+      onMentionAgent: (agent) {
+        Navigator.of(context).pop();
+        _chatInputKey.currentState?.insertMentionForAgent(agent);
+      },
     );
+
+    if (LayoutUtils.isDesktopLayout(context)) {
+      await LayoutUtils.showRightDrawer(context: context, builder: (_) => content);
+    } else {
+      await Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => Scaffold(
+            appBar: AppBar(
+              title: Text(l10n.chat_groupMembers),
+              elevation: 1,
+            ),
+            body: content,
+          ),
+        ),
+      );
+    }
   }
 
   Future<void> _addGroupMember() async {
@@ -2256,229 +2271,6 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
               child: Text('Clear', style: TextStyle(fontSize: 12, color: Colors.red[400], fontWeight: FontWeight.w500)),
             ),
           ),
-        ],
-      ),
-    );
-  }
-}
-
-// ---------------------------------------------------------------------------
-// _GroupMembersSheet — kept in this file as it's tightly coupled with UI.
-// ---------------------------------------------------------------------------
-
-class _GroupMembersSheet extends StatefulWidget {
-  final List<RemoteAgent> groupAgents;
-  final String channelId;
-  final String? adminAgentId;
-  final List<ChannelMember> channelMembers;
-  final Future<void> Function() onAddMember;
-  final Future<void> Function(RemoteAgent agent) onRemoveMember;
-  final Future<List<ChannelMember>> Function(RemoteAgent agent, String? newGroupBio) onSaveGroupBio;
-  final Future<void> Function(RemoteAgent agent) onChangeAdmin;
-  final void Function(RemoteAgent agent) onMentionAgent;
-
-  const _GroupMembersSheet({
-    required this.groupAgents,
-    required this.channelId,
-    this.adminAgentId,
-    this.channelMembers = const [],
-    required this.onAddMember,
-    required this.onRemoveMember,
-    required this.onSaveGroupBio,
-    required this.onChangeAdmin,
-    required this.onMentionAgent,
-  });
-
-  @override
-  State<_GroupMembersSheet> createState() => _GroupMembersSheetState();
-}
-
-class _GroupMembersSheetState extends State<_GroupMembersSheet> {
-  String? _editingAgentId;
-  late TextEditingController _editController;
-  late List<ChannelMember> _channelMembers;
-  bool _editingIsAdmin = false;
-  late String? _currentAdminAgentId;
-
-  @override
-  void initState() {
-    super.initState();
-    _editController = TextEditingController();
-    _channelMembers = List.of(widget.channelMembers);
-    _currentAdminAgentId = widget.adminAgentId;
-  }
-
-  @override
-  void dispose() {
-    _editController.dispose();
-    super.dispose();
-  }
-
-  void _startEditing(RemoteAgent agent) {
-    final member = _channelMembers.where((m) => m.id == agent.id).firstOrNull;
-    _editController.text = member?.groupBio ?? '';
-    setState(() {
-      _editingAgentId = agent.id;
-      _editingIsAdmin = _currentAdminAgentId == agent.id;
-    });
-  }
-
-  void _cancelEditing() {
-    setState(() { _editingAgentId = null; });
-  }
-
-  Future<void> _saveEditing(RemoteAgent agent) async {
-    final text = _editController.text.trim();
-    final newGroupBio = text.isEmpty ? null : text;
-    final updatedMembers = await widget.onSaveGroupBio(agent, newGroupBio);
-    final wasAdmin = _currentAdminAgentId == agent.id;
-    if (_editingIsAdmin && !wasAdmin) {
-      await widget.onChangeAdmin(agent);
-      if (mounted) setState(() { _currentAdminAgentId = agent.id; });
-    }
-    if (mounted) setState(() { _channelMembers = updatedMembers; _editingAgentId = null; });
-  }
-
-  Future<void> _resetGroupBio(RemoteAgent agent) async {
-    final updatedMembers = await widget.onSaveGroupBio(agent, null);
-    if (mounted) setState(() { _channelMembers = updatedMembers; _editingAgentId = null; });
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final l10n = AppLocalizations.of(context);
-    return SafeArea(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-            child: Row(
-              children: [
-                Expanded(child: Text('Group Members (${widget.groupAgents.length})', style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600))),
-                TextButton.icon(
-                  onPressed: () { Navigator.pop(context); widget.onAddMember(); },
-                  icon: const Icon(Icons.person_add, size: 20),
-                  label: Text(l10n.chat_add),
-                ),
-              ],
-            ),
-          ),
-          const Divider(height: 1),
-          ...widget.groupAgents.map((agent) {
-            final member = _channelMembers.where((m) => m.id == agent.id).firstOrNull;
-            final groupBio = member?.groupBio;
-            final displayBio = groupBio ?? agent.bio;
-            final hasGroupBio = groupBio != null && groupBio.isNotEmpty;
-            final isEditing = _editingAgentId == agent.id;
-
-            if (isEditing) {
-              return Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        Container(
-                          width: 32, height: 32,
-                          decoration: BoxDecoration(color: AppColors.primaryContainer, borderRadius: BorderRadius.circular(8)),
-                          alignment: Alignment.center,
-                          child: Text(agent.name.isNotEmpty ? agent.name[0].toUpperCase() : '?', style: const TextStyle(color: AppColors.primaryDark, fontWeight: FontWeight.bold, fontSize: 13)),
-                        ),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: Row(
-                            children: [
-                              Flexible(
-                                child: Text(
-                                  l10n.chat_groupRoleTitle(agent.name),
-                                  style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                              ),
-                              if (agent.isPeerAgent) ...[
-                                const SizedBox(width: 6),
-                                PeerSourceBadge.fromAgent(agent),
-                              ],
-                            ],
-                          ),
-                        ),
-                      ],
-                    ),
-                    if (agent.bio != null && agent.bio!.isNotEmpty)
-                      Padding(
-                        padding: const EdgeInsets.only(top: 4),
-                        child: Text('Default: ${agent.bio}', style: TextStyle(fontSize: 12, color: Colors.grey[500])),
-                      ),
-                    const SizedBox(height: 8),
-                    TextField(controller: _editController, maxLines: 3, autofocus: true, decoration: InputDecoration(labelText: l10n.chat_groupCapabilityLabel, hintText: l10n.chat_groupCapabilityHint, border: const OutlineInputBorder(), isDense: true)),
-                    const SizedBox(height: 8),
-                    GestureDetector(
-                      onTap: () { setState(() { _editingIsAdmin = !_editingIsAdmin; }); },
-                      child: Row(
-                        children: [
-                          SizedBox(height: 32, width: 40, child: FittedBox(fit: BoxFit.scaleDown, child: Switch(value: _editingIsAdmin, onChanged: (v) { setState(() { _editingIsAdmin = v; }); }, activeTrackColor: Colors.orange[200], activeThumbColor: Colors.orange[700]))),
-                          const SizedBox(width: 4),
-                          Icon(Icons.admin_panel_settings, size: 18, color: _editingIsAdmin ? Colors.orange[700] : Colors.grey[400]),
-                          const SizedBox(width: 4),
-                          Text(l10n.createGroup_setAsAdmin, style: TextStyle(fontSize: 13, color: _editingIsAdmin ? Colors.orange[700] : Colors.grey[600], fontWeight: _editingIsAdmin ? FontWeight.w600 : FontWeight.normal)),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.end,
-                      children: [
-                        TextButton(onPressed: _cancelEditing, child: Text(l10n.common_cancel)),
-                        if (hasGroupBio) TextButton(onPressed: () => _resetGroupBio(agent), child: Text(l10n.chat_resetButton, style: TextStyle(color: Colors.orange[700]))),
-                        TextButton(onPressed: () => _saveEditing(agent), child: Text(l10n.common_save)),
-                      ],
-                    ),
-                    const Divider(height: 1),
-                  ],
-                ),
-              );
-            }
-
-            return ListTile(
-              leading: Container(
-                width: 40, height: 40,
-                decoration: BoxDecoration(color: AppColors.primaryContainer, borderRadius: BorderRadius.circular(10)),
-                alignment: Alignment.center,
-                child: Text(agent.name.isNotEmpty ? agent.name[0].toUpperCase() : '?', style: const TextStyle(color: AppColors.primaryDark, fontWeight: FontWeight.bold)),
-              ),
-              title: Row(
-                children: [
-                  Flexible(child: Text(agent.name, overflow: TextOverflow.ellipsis)),
-                  if (agent.isPeerAgent) ...[
-                    const SizedBox(width: 6),
-                    PeerSourceBadge.fromAgent(agent),
-                  ],
-                  if (_currentAdminAgentId == agent.id) ...[
-                    const SizedBox(width: 8),
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                      decoration: BoxDecoration(color: Colors.orange[100], borderRadius: BorderRadius.circular(12)),
-                      child: Text('Admin', style: TextStyle(fontSize: 11, color: Colors.orange[800], fontWeight: FontWeight.w600)),
-                    ),
-                  ],
-                ],
-              ),
-              subtitle: displayBio != null && displayBio.isNotEmpty
-                  ? Text(displayBio, maxLines: 1, overflow: TextOverflow.ellipsis, style: hasGroupBio ? const TextStyle(color: AppColors.primary, fontStyle: FontStyle.italic) : null)
-                  : Text('Set group role...', style: TextStyle(color: Colors.grey[400], fontSize: 13)),
-              trailing: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  IconButton(icon: const Icon(Icons.edit_note, size: 20, color: AppColors.primary), tooltip: 'Edit group role', onPressed: () => _startEditing(agent)),
-                  IconButton(icon: Icon(Icons.remove_circle_outline, color: Colors.red[300]), onPressed: () { Navigator.pop(context); widget.onRemoveMember(agent); }),
-                ],
-              ),
-              onTap: () => widget.onMentionAgent(agent),
-            );
-          }),
-          const SizedBox(height: 8),
         ],
       ),
     );
