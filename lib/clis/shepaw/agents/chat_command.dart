@@ -1,4 +1,5 @@
 import '../../cli_base.dart';
+import '../../../services/agent_resolver.dart';
 import '../../../services/local_database_service.dart';
 
 /// 以 She 身份向 Agent 发送消息
@@ -13,7 +14,7 @@ class ChatCommand extends CliCommand {
 
   @override
   String get description =>
-      'Send a message to agent as She, --id <agent_id> --message <text> [--channel <channel_id>]';
+      'Send a message to agent as She, --id <agent_id_or_name> --message <text> [--channel <channel_id>]';
 
   @override
   String get usage =>
@@ -24,7 +25,7 @@ class ChatCommand extends CliCommand {
     final base = super.getHelp();
     base['flags'] = {
       'id': {
-        'description': 'Target agent ID',
+        'description': 'Target agent ID or registered display name',
         'required': true,
         'type': 'string',
       },
@@ -60,7 +61,21 @@ class ChatCommand extends CliCommand {
       };
     }
 
-    final targetAgent = await _db.getRemoteAgentById(id);
+    final groupContextId = flags['channel_id'];
+    if (groupContextId != null && groupContextId.isNotEmpty) {
+      final groupChannel = await _db.getChannelById(groupContextId);
+      if (groupChannel?.isGroup == true) {
+        return {
+          'error':
+              'agents.chat cannot delegate tasks inside a group chat. '
+              'Output a ```json dispatch``` block in your reply instead — '
+              'the system will create a workflow and run members in this group. '
+              'agents.chat only sends to a private DM channel.',
+        };
+      }
+    }
+
+    final targetAgent = await AgentResolver.byIdOrName(_db, id);
     if (targetAgent == null) {
       return {'error': 'Agent not found: $id'};
     }
@@ -69,7 +84,7 @@ class ChatCommand extends CliCommand {
     String? channelId =
         flags['channel']?.isNotEmpty == true ? flags['channel'] : null;
     if (channelId == null) {
-      final agentChans = await _db.getChannelsForAgent(id);
+      final agentChans = await _db.getChannelsForAgent(targetAgent.id);
       if (agentChans.isNotEmpty) channelId = agentChans.first.id;
     }
 

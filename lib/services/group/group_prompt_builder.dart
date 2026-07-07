@@ -91,7 +91,7 @@ $memberList
 3. 只有当任务确实需要其他成员的专业能力时，才考虑委派
 
 【委派机制（仅在需要时使用）】
-所有委派指令必须通过 JSON 代码块输出，与自然语言内容分离。格式如下：
+所有委派指令必须通过 JSON 代码块输出，与自然语言内容分离。**不要用 `shepaw context agents.chat` 向本群成员派活**（那会发到私聊，不会创建本群工作流）。格式如下：
 
 ```json
 {"dispatch": {"mode": "concurrent", "steps": [{"step": 1, "agents": ["成员名"], "task": "任务说明"}]}, "continue": false, "done": false}
@@ -204,6 +204,7 @@ $registeredNames
 1. **只使用上表注册名**，禁止用产品名（Shepaw/shepaw）、CLI 工具名、角色描述（如「app 开发同学」）或你自己起的昵称
 2. 自然语言里可以说「shepaw 端」「某某同学」，但 JSON / workflow 里必须用注册名
 3. 名称无法匹配时，委派和工作流**不会创建**，用户也看不到审批卡片
+4. **禁止**用 `shepaw context agents.chat` 向本群成员派活——那会发到私聊频道，不会触发本群工作流；本群内委派**只能**用 dispatch JSON
 
 正确示例（委派 $exampleName）：
 ```json
