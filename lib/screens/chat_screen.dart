@@ -1364,32 +1364,22 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     );
   }
 
-  Future<RemoteAgent?> _showAddGroupMemberPicker(List<RemoteAgent> available) async {
-    final l10n = AppLocalizations.of(context);
+  Future<List<RemoteAgent>?> _showAddGroupMemberPicker(List<RemoteAgent> available) async {
+    final isDesktop = LayoutUtils.isDesktopLayout(context);
 
-    final content = Builder(
-      builder: (pickerContext) => AddGroupMemberPanel(
-        availableAgents: available,
-        onAgentTap: (agent) => Navigator.of(pickerContext).pop(agent),
-      ),
-    );
-
-    if (LayoutUtils.isDesktopLayout(context)) {
-      return LayoutUtils.showRightDrawer<RemoteAgent>(
+    if (isDesktop) {
+      return LayoutUtils.showRightDrawer<List<RemoteAgent>>(
         context: context,
-        builder: (_) => content,
+        builder: (_) => AddGroupMemberPicker(availableAgents: available),
       );
     }
 
-    return Navigator.push<RemoteAgent>(
+    return Navigator.push<List<RemoteAgent>>(
       context,
       MaterialPageRoute(
-        builder: (context) => Scaffold(
-          appBar: AppBar(
-            title: Text(l10n.chat_addMember),
-            elevation: 1,
-          ),
-          body: content,
+        builder: (context) => AddGroupMemberPicker(
+          availableAgents: available,
+          wrappedInScaffold: true,
         ),
       ),
     );
@@ -1413,9 +1403,11 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     }
 
     final selected = await _showAddGroupMemberPicker(available);
-    if (selected == null || !mounted) return false;
+    if (selected == null || selected.isEmpty || !mounted) return false;
 
-    await _controller.addGroupMember(selected);
+    for (final agent in selected) {
+      await _controller.addGroupMember(agent);
+    }
     return true;
   }
 
