@@ -281,19 +281,6 @@ class _WorkflowProgressPanelState extends State<WorkflowProgressPanel>
                     ),
                   ),
                 ),
-                if (pending.messageId != null && !hasInlineActions)
-                  InkWell(
-                    onTap: () =>
-                        widget.onScrollToApproval?.call(pending.messageId!),
-                    child: Text(
-                      '查看',
-                      style: TextStyle(
-                        fontSize: 12,
-                        fontWeight: FontWeight.w600,
-                        color: Colors.deepOrange.shade700,
-                      ),
-                    ),
-                  ),
               ],
             ),
             if (hasInlineActions) ...[
@@ -312,13 +299,31 @@ class _WorkflowProgressPanelState extends State<WorkflowProgressPanel>
               const SizedBox(height: 4),
               Text(
                 pending.prompt!,
-                maxLines: 2,
+                maxLines: 3,
                 overflow: TextOverflow.ellipsis,
                 style: TextStyle(
                   fontSize: 11,
                   color: Colors.deepOrange.shade700,
                 ),
               ),
+              if (pending.messageId != null) ...[
+                const SizedBox(height: 6),
+                Align(
+                  alignment: Alignment.centerRight,
+                  child: InkWell(
+                    onTap: () =>
+                        widget.onScrollToApproval?.call(pending.messageId!),
+                    child: Text(
+                      '查看相关消息',
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        color: Colors.deepOrange.shade700,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
             ],
           ],
         ),

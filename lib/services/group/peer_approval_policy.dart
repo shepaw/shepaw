@@ -25,8 +25,6 @@ class PeerApprovalPolicy {
     'install',
     'deploy',
     'patch',
-    'edit',
-    'modify',
   ];
 
   static const _lowRiskPatterns = [
@@ -42,6 +40,26 @@ class PeerApprovalPolicy {
     'stat',
     'head',
     'tail',
+    'analyze',
+    'analysis',
+    'inspect',
+    'describe',
+    'explain',
+    'glob',
+    'find',
+    'locate',
+    'dart',
+    'flutter',
+    'widget',
+    'layout',
+    'screen',
+    'ui',
+    'code',
+    'file',
+    'directory',
+    'diff',
+    'status',
+    'log',
   ];
 
   /// Classify approval risk from hub-forwarded metadata.
@@ -57,7 +75,7 @@ class PeerApprovalPolicy {
     }
 
     for (final pattern in _lowRiskPatterns) {
-      if (toolKind.contains(pattern)) {
+      if (haystack.contains(pattern)) {
         return PeerApprovalRisk.low;
       }
     }

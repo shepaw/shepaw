@@ -148,6 +148,20 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
   /// The ID of the currently active workflow (set during flow execution).
   String? _activeWorkflowId;
   String? get activeWorkflowId => _activeWorkflowId;
+  bool _workflowPanelDismissed = false;
+
+  /// Whether the floating workflow progress panel should be visible.
+  bool get showWorkflowProgressPanel =>
+      _activeWorkflowId != null && !_workflowPanelDismissed;
+
+  /// Active workflow exists but the user collapsed the progress panel.
+  bool get workflowNeedsPanelAttention =>
+      _activeWorkflowId != null && _workflowPanelDismissed;
+
+  void reopenWorkflowPanel() {
+    _workflowPanelDismissed = false;
+    notifyListeners();
+  }
 
   /// Peer agent tool approval blocking a workflow step (for progress panel UI).
   WorkflowPeerApprovalPending? workflowPeerApprovalPending;
@@ -158,19 +172,20 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
   /// Set the active workflow ID (called by orchestration when flow starts).
   void setActiveWorkflowId(String? id) {
     _activeWorkflowId = id;
+    if (id != null) _workflowPanelDismissed = false;
     if (id == null) workflowPeerApprovalPending = null;
     notifyListeners();
   }
 
   void setWorkflowPeerApprovalPending(WorkflowPeerApprovalPending? pending) {
     workflowPeerApprovalPending = pending;
+    if (pending != null) _workflowPanelDismissed = false;
     _notify();
   }
 
-  /// User dismisses the workflow progress panel.
+  /// User dismisses the workflow progress panel (workflow state is preserved).
   void dismissWorkflowPanel() {
-    _activeWorkflowId = null;
-    workflowPeerApprovalPending = null;
+    _workflowPanelDismissed = true;
     notifyListeners();
   }
 
@@ -463,7 +478,6 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
         _reattachWorkflowPeerApprovalInteraction(msg, ac);
         return;
       }
-      return;
     }
 
     if (record != null) {
@@ -475,6 +489,14 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
           record.approvalData,
         );
       }
+      return;
+    }
+
+    // Resume a running workflow interrupted by app restart (no pending tool approval).
+    if (active != null &&
+        active.status == WorkflowStatus.running &&
+        _workflowCancelToken == null) {
+      _beginWorkflowStepExecution(active.id);
     }
   }
 

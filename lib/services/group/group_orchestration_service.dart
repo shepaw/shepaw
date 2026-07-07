@@ -1233,6 +1233,26 @@ class GroupOrchestrationService {
         error: e,
         stackTrace: st,
       );
+      try {
+        final hintMsg = Message(
+          id: _uuid.v4(),
+          content: '⚠️ 工作流创建失败，未能启动任务分派。请重试或让管理员重新输出 dispatch JSON。',
+          timestampMs: DateTime.now().millisecondsSinceEpoch,
+          from: MessageFrom(id: 'system', type: 'system', name: 'System'),
+          type: MessageType.system,
+        );
+        await _db.createMessage(
+          id: hintMsg.id,
+          channelId: channelId,
+          senderId: 'system',
+          senderType: 'system',
+          senderName: 'System',
+          content: hintMsg.content,
+          messageType: 'system',
+        );
+        await _db.markMessageAsRead(hintMsg.id);
+        notifyChannelUpdate(channelId);
+      } catch (_) {}
       return false;
     }
   }

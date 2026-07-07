@@ -16,6 +16,7 @@ import 'file_upload_bubble.dart';
 import 'form_bubble.dart';
 import 'collapsible_message_bubble.dart';
 import 'permission_audit_bubble.dart';
+import 'chat/plan_approval_card.dart';
 import 'avatar_image.dart';
 import '../services/she_service.dart';
 import '../services/error_handler_service.dart';
@@ -467,19 +468,47 @@ class MessageBubble extends StatelessWidget {
         );
         final markdownWidget = _wrapWithTextSelection(markdownBody);
 
+        // Workflow plan approval card (persisted on admin message metadata).
+        final planApproval =
+            message.metadata?['plan_approval'] as Map<String, dynamic>?;
+        if (planApproval != null && onPlanApprovalResponded != null) {
+          final planResponded =
+              message.metadata?['plan_approval_responded'] as Map<String, dynamic>?;
+          final isPlanResponded =
+              planResponded != null || planApproval['_approved'] != null;
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              if (message.content.trim().isNotEmpty) markdownWidget,
+              if (message.content.trim().isNotEmpty) const SizedBox(height: 10),
+              PlanApprovalCard(
+                planData: planApproval,
+                isResponded: isPlanResponded,
+                onRespond: onPlanApprovalResponded!,
+              ),
+            ],
+          );
+        }
+
         // Check for action confirmation data
         final actionConfirmation = message.metadata?['action_confirmation'] as Map<String, dynamic>?;
         if (actionConfirmation != null) {
+          final isWorkflowPeerApproval =
+              actionConfirmation['_workflowPeerApproval'] == true &&
+              actionConfirmation['selected_action_id'] == null;
           return Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               markdownWidget,
               const SizedBox(height: 10),
-              ActionConfirmationButtons(
-                actionData: actionConfirmation,
-                onActionSelected: onActionSelected,
-                isAgentOffline: isAgentOffline,
-              ),
+              if (isWorkflowPeerApproval)
+                _workflowPeerApprovalHint(context)
+              else
+                ActionConfirmationButtons(
+                  actionData: actionConfirmation,
+                  onActionSelected: onActionSelected,
+                  isAgentOffline: isAgentOffline,
+                ),
             ],
           );
         }
@@ -648,6 +677,35 @@ class MessageBubble extends StatelessWidget {
           fontStyle: FontStyle.italic,
           color: textColor,
         ),
+      ),
+    );
+  }
+
+  Widget _workflowPeerApprovalHint(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: Colors.deepOrange.shade50,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: Colors.deepOrange.shade200),
+      ),
+      child: Row(
+        children: [
+          Icon(Icons.touch_app_outlined,
+              size: 18, color: Colors.deepOrange.shade700),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              '工具操作待确认：请在下方工作流面板中批准或拒绝',
+              style: TextStyle(
+                fontSize: 12,
+                color: colorScheme.onSurface.withOpacity(0.85),
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }

@@ -1703,7 +1703,37 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
           ),
 
           // Workflow progress panel (floating above input)
-          if (c.isGroupMode && c.activeWorkflowId != null)
+          if (c.isGroupMode && c.workflowNeedsPanelAttention)
+            Material(
+              color: Colors.blue.shade50,
+              child: InkWell(
+                onTap: c.reopenWorkflowPanel,
+                child: Padding(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                  child: Row(
+                    children: [
+                      Icon(Icons.playlist_play,
+                          size: 18, color: Colors.blue.shade700),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          '工作流进行中，点击查看进度与审批',
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                            color: Colors.blue.shade800,
+                          ),
+                        ),
+                      ),
+                      Icon(Icons.expand_less,
+                          size: 18, color: Colors.blue.shade700),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          if (c.isGroupMode && c.showWorkflowProgressPanel)
             WorkflowProgressPanel(
               workflowId: c.activeWorkflowId!,
               pendingPeerApproval: c.workflowPeerApprovalPending,
