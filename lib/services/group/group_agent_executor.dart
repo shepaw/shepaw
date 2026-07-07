@@ -21,6 +21,7 @@ import '../inference_log_service.dart';
 import '../foreground_task_service.dart';
 import '../logger_service.dart';
 import '../task/task_models.dart';
+import 'group_dispatch_parser.dart';
 import 'group_prompt_builder.dart';
 import 'group_interaction_handler.dart';
 import '../../peer/services/peer_agent_client_service.dart';
@@ -437,9 +438,9 @@ class GroupAgentExecutor {
 
                       // Wire up dispatch command's step execution callback (per-channel)
                       WorkflowDispatchCommand.setExecuteStepFn(channelId, (agentName, instruction, chId) async {
-                        final targetAgent = allAgents.cast<RemoteAgent?>().firstWhere(
-                          (a) => a!.name == agentName,
-                          orElse: () => null,
+                        final targetAgent = GroupDispatchParser.findAgentByDispatchName(
+                          allAgents,
+                          agentName,
                         );
                         if (targetAgent == null) {
                           return '[Error] Agent "$agentName" not found in group members.';

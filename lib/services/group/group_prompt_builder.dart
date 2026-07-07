@@ -63,8 +63,12 @@ class GroupPromptBuilder {
           ? '\n\n【当前状态】这是第 $loopRound 轮。成员已回复，请逐一检查每位成员回复末尾的 `[TASK_STATUS]` 标注：\n- 如有任一成员标注为 `[TASK_STATUS: pending]`，**必须优先处理该 pending 状态**（向用户说明情况、做出决策或重新委派），不得跳过继续推进其他流程\n- 所有成员均为 `[TASK_STATUS: done]` 时，再判断用户需求是否已整体满足并决定下一步'
           : '';
 
+      final delegateableAgents =
+          allAgents.where((a) => a.id != currentAgent.id).toList();
+      final dispatchMemberNameSection =
+          _buildDispatchMemberNameSection(delegateableAgents);
       final planningSection = isFlowMode
-          ? _buildWorkflowCliSection()
+          ? _buildWorkflowCliSection(delegateableAgents)
           : '';
 
       final attachmentSection = _buildAdminAttachmentSection();
@@ -97,7 +101,7 @@ $memberList
 - `dispatch.steps`：每步包含 `agents`（成员名数组）和 `task`（任务说明）
 - `continue: true`：你自己继续工作，不委派任何成员（替代旧版 [CONTINUE]）
 - `done: true` 或省略 `dispatch`：流程结束，不再委派
-- 自然语言内容中可以提到成员名字，不会被误识别为委派指令
+- 自然语言内容中可以提到成员名字，不会被误识别为委派指令$dispatchMemberNameSection
 
 【行为准则】
 - 直接回复内容即可，不要在回复前加上你的名字前缀（如"[${currentAgent.name}]: "），系统会自动显示你的身份
@@ -177,8 +181,42 @@ $memberList
 你有 shepaw CLI 工具。示例：
 `shepaw chat message get --id <message_id> --analyze "描述图片中的文字和内容"`''';
 
+  /// Rules + live member names for dispatch JSON and workflow CLI agent fields.
+  String _buildDispatchMemberNameSection(List<RemoteAgent> delegateableAgents) {
+    if (delegateableAgents.isEmpty) {
+      return '''
+
+【委派成员名 — 必读】
+当前群没有其他可委派成员；请勿输出包含 `agents` 的 dispatch JSON。''';
+    }
+
+    final registeredNames =
+        delegateableAgents.map((a) => a.name).join('、');
+    final exampleName = delegateableAgents.first.name;
+
+    return '''
+
+【委派成员名 — 必读】
+`dispatch.steps[].agents` 与 `shepaw workflow create` 的 `agent` 字段，必须填写**下列注册名之一**（推荐从列表原样复制；系统也接受仅大小写不同的写法）：
+$registeredNames
+
+规则：
+1. **只使用上表注册名**，禁止用产品名（Shepaw/shepaw）、CLI 工具名、角色描述（如「app 开发同学」）或你自己起的昵称
+2. 自然语言里可以说「shepaw 端」「某某同学」，但 JSON / workflow 里必须用注册名
+3. 名称无法匹配时，委派和工作流**不会创建**，用户也看不到审批卡片
+
+正确示例（委派 $exampleName）：
+```json
+{"dispatch": {"mode": "concurrent", "steps": [{"step": 1, "agents": ["$exampleName"], "task": "任务说明"}]}, "continue": false, "done": false}
+```''';
+  }
+
   /// Build the workflow CLI usage section for Admin's system prompt.
-  String _buildWorkflowCliSection() {
+  String _buildWorkflowCliSection(List<RemoteAgent> delegateableAgents) {
+    final agentNamesHint = delegateableAgents.isEmpty
+        ? '（当前无可委派成员）'
+        : delegateableAgents.map((a) => a.name).join('、');
+
     return '''
 
 【工作流模式】
@@ -192,8 +230,8 @@ $memberList
 5. 全部完成后调用 `shepaw workflow complete` 结束
 
 **可用命令：**
-- `shepaw workflow create --title "标题" --stages '[{"label":"阶段名","steps":[{"agent":"成员名","instruction":"指令"}]}]'`
-  创建工作流并提交审批。stages 中的 agent 必须是当前群成员的名称。
+- `shepaw workflow create --title "标题" --stages '[{"label":"阶段名","steps":[{"agent":"成员注册名","instruction":"指令"}]}]'`
+  创建工作流并提交审批。`agent` 必须是下列注册名之一：$agentNamesHint
 - `shepaw workflow dispatch --workflow_id <id> --stage_index <n>`
   执行指定阶段的所有步骤（并行）。完成后返回各步骤结果。
 - `shepaw workflow status --workflow_id <id>`

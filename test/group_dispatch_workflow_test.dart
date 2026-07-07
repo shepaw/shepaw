@@ -54,6 +54,32 @@ void main() {
     expect(plan.stages.first.steps[1].agent, 'Reviewer');
   });
 
+  test('parseStructuredDispatch matches agent names case-insensitively', () {
+    final mixedCaseAgents = [
+      RemoteAgent(
+        id: 'a1',
+        name: 'Shepaw',
+        avatar: '🤖',
+        token: '',
+        endpoint: '',
+        protocol: ProtocolType.acp,
+        connectionType: ConnectionType.http,
+        createdAt: 0,
+        updatedAt: 0,
+      ),
+    ];
+
+    final dispatch = parser.parseStructuredDispatch(
+      '''```json
+{"dispatch":{"mode":"concurrent","steps":[{"step":1,"agents":["shepaw"],"task":"修复键盘遮挡"}]},"continue":false,"done":false}
+```''',
+      mixedCaseAgents,
+    );
+
+    expect(dispatch.steps.length, 1);
+    expect(dispatch.steps.first.agentIds, ['a1']);
+  });
+
   test('buildFlowPlanFromDispatch splits sequential steps into stages', () {
     final dispatch = parser.parseStructuredDispatch(
       '''```json

@@ -25,6 +25,48 @@ class GroupDispatchParser {
 
   GroupDispatchParser(this._db);
 
+  /// Whether [requestedName] matches [agent]'s registered group display name.
+  static bool matchesAgentName(RemoteAgent agent, String requestedName) {
+    final requested = requestedName.trim();
+    if (requested.isEmpty) return false;
+    return agent.name == requested ||
+        agent.name.toLowerCase() == requested.toLowerCase();
+  }
+
+  /// Resolve a dispatch/workflow agent label to a group member (case-insensitive).
+  static RemoteAgent? findAgentByDispatchName(
+    List<RemoteAgent> agents,
+    String requestedName,
+  ) {
+    for (final agent in agents) {
+      if (matchesAgentName(agent, requestedName)) return agent;
+    }
+    return null;
+  }
+
+  static List<String> resolveAgentIdsForDispatchNames(
+    List<RemoteAgent> agents,
+    List<String> requestedNames, {
+    String logTag = 'GroupDispatchParser',
+  }) {
+    final agentIds = <String>[];
+    for (final requestedName in requestedNames) {
+      final agent = findAgentByDispatchName(agents, requestedName);
+      if (agent == null) {
+        LoggerService().warning(
+          'Dispatch agent name "$requestedName" did not match any group member '
+          '(known: ${agents.map((a) => a.name).join(', ')})',
+          tag: logTag,
+        );
+        continue;
+      }
+      if (!agentIds.contains(agent.id)) {
+        agentIds.add(agent.id);
+      }
+    }
+    return agentIds;
+  }
+
   /// Parse @mentions from an agent's response content, returning matching agent IDs.
   List<String> parseAgentMentions(String content, List<RemoteAgent> agents) {
     if (content.contains('@all')) {
@@ -80,10 +122,7 @@ class GroupDispatchParser {
     final steps = <DispatchStep>[];
     for (final s in rawSteps) {
       final agentNames = List<String>.from(s['agents'] as List? ?? []);
-      final agentIds = agents
-          .where((a) => agentNames.any((n) => n == a.name))
-          .map((a) => a.id)
-          .toList();
+      final agentIds = resolveAgentIdsForDispatchNames(agents, agentNames);
       if (agentIds.isEmpty) continue;
       steps.add(DispatchStep(
         step: (s['step'] as num).toInt(),
