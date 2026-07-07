@@ -19,7 +19,6 @@ class ChatMobileMenuDrawer extends StatelessWidget {
 
   final VoidCallback? onEditGroup;
   final VoidCallback? onShowMembers;
-  final VoidCallback? onAddMember;
   final VoidCallback? onWorkflow;
 
   const ChatMobileMenuDrawer({
@@ -34,7 +33,6 @@ class ChatMobileMenuDrawer extends StatelessWidget {
     this.onCustomSystemPrompt,
     this.onEditGroup,
     this.onShowMembers,
-    this.onAddMember,
     this.onWorkflow,
   });
 
@@ -86,11 +84,6 @@ class ChatMobileMenuDrawer extends StatelessWidget {
                       leading: const Icon(Icons.group_outlined),
                       title: Text(l10n.chat_groupMembers),
                       onTap: () => _closeThen(context, onShowMembers!),
-                    ),
-                    ListTile(
-                      leading: const Icon(Icons.person_add_outlined),
-                      title: Text(l10n.chat_addMember),
-                      onTap: () => _closeThen(context, onAddMember!),
                     ),
                     if (onWorkflow != null)
                       ListTile(

@@ -145,13 +145,12 @@ class ChatMenuHelper {
     }
   }
 
-  /// Show the group chat menu (edit, members, add, workflow, search).
+  /// Show the group chat menu (edit, members, workflow, search).
   static Future<void> showGroupMenu(
     BuildContext context, {
     BuildContext? anchorContext,
     required VoidCallback onEditGroup,
     required VoidCallback onShowMembers,
-    required VoidCallback onAddMember,
     required VoidCallback onSearch,
     VoidCallback? onWorkflow,
   }) async {
@@ -170,11 +169,6 @@ class ChatMenuHelper {
           value: 'members',
           icon: Icons.group_outlined,
           label: menuL10n.chat_groupMembers,
-        ),
-        _buildMenuItem(
-          value: 'addMember',
-          icon: Icons.person_add_outlined,
-          label: menuL10n.chat_addMember,
         ),
         if (onWorkflow != null)
           _buildMenuItem(
@@ -196,8 +190,6 @@ class ChatMenuHelper {
         onEditGroup();
       case 'members':
         onShowMembers();
-      case 'addMember':
-        onAddMember();
       case 'workflow':
         onWorkflow?.call();
       case 'search':

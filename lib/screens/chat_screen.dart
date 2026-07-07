@@ -30,6 +30,7 @@ import '../widgets/chat/session_list_panel.dart';
 import '../widgets/chat/group_session_list_panel.dart';
 import '../widgets/chat/chat_mobile_menu_drawer.dart';
 import '../widgets/chat/group_members_panel.dart';
+import '../widgets/chat/add_group_member_panel.dart';
 import '../widgets/avatar_image.dart';
 import '../widgets/message_search_delegate.dart';
 import '../widgets/shepaw_search_page.dart';
@@ -43,7 +44,6 @@ import 'channel_trace_screen.dart';
 import 'group_workflow_screen.dart';
 import '../widgets/workflow/workflow_progress_panel.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import '../peer/widgets/peer_source_badge.dart';
 import '../peer/services/peer_agent_client_service.dart';
 import '../peer/services/peer_connection_manager.dart';
 
@@ -1307,7 +1307,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
       channelId: _controller.currentChannelId!,
       adminAgentId: _controller.groupAdminAgentId,
       channelMembers: _controller.groupChannel?.members ?? [],
-      onAddMember: () => _addGroupMember(),
+      onAddMember: _addGroupMemberFromPanel,
       onRemoveMember: (agent) => _removeGroupMember(agent),
       onSaveGroupBio: (agent, bio) => _controller.saveMemberGroupBio(agent, bio),
       onChangeAdmin: (agent) async {
@@ -1354,13 +1354,54 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     }
   }
 
-  Future<void> _addGroupMember() async {
+  Future<GroupMembersPanelSnapshot?> _addGroupMemberFromPanel() async {
+    final added = await _addGroupMember();
+    if (!added || !mounted) return null;
+    return GroupMembersPanelSnapshot(
+      groupAgents: _controller.groupAgents,
+      channelMembers: _controller.groupChannel?.members ?? const [],
+      adminAgentId: _controller.groupAdminAgentId,
+    );
+  }
+
+  Future<RemoteAgent?> _showAddGroupMemberPicker(List<RemoteAgent> available) async {
+    final l10n = AppLocalizations.of(context);
+
+    final content = Builder(
+      builder: (pickerContext) => AddGroupMemberPanel(
+        availableAgents: available,
+        onAgentTap: (agent) => Navigator.of(pickerContext).pop(agent),
+      ),
+    );
+
+    if (LayoutUtils.isDesktopLayout(context)) {
+      return LayoutUtils.showRightDrawer<RemoteAgent>(
+        context: context,
+        builder: (_) => content,
+      );
+    }
+
+    return Navigator.push<RemoteAgent>(
+      context,
+      MaterialPageRoute(
+        builder: (context) => Scaffold(
+          appBar: AppBar(
+            title: Text(l10n.chat_addMember),
+            elevation: 1,
+          ),
+          body: content,
+        ),
+      ),
+    );
+  }
+
+  Future<bool> _addGroupMember() async {
     final l10n = AppLocalizations.of(context);
     final allAgents = await _controller.localDatabaseService.getAllRemoteAgents();
     final currentIds = _controller.groupAgents.map((a) => a.id).toSet();
     final available = allAgents.where((a) => !currentIds.contains(a.id)).toList();
 
-    if (!mounted) return;
+    if (!mounted) return false;
     if (available.isEmpty) {
       showTopToast(
         context,
@@ -1368,48 +1409,14 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
         icon: Icons.group_off,
         color: Colors.blueGrey,
       );
-      return;
+      return false;
     }
 
-    final selected = await LayoutUtils.showAdaptivePanel<RemoteAgent>(
-      context: context,
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(16))),
-      builder: (ctx) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Padding(padding: const EdgeInsets.all(16), child: Text(l10n.chat_addMember, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600))),
-            const Divider(height: 1),
-            ...available.map((agent) => ListTile(
-              leading: Container(
-                width: 40, height: 40,
-                decoration: BoxDecoration(color: AppColors.primaryContainer, borderRadius: BorderRadius.circular(10)),
-                alignment: Alignment.center,
-                child: Text(agent.name.isNotEmpty ? agent.name[0].toUpperCase() : '?', style: const TextStyle(color: AppColors.primaryDark, fontWeight: FontWeight.bold)),
-              ),
-              title: Row(
-                children: [
-                  Flexible(
-                    child: Text(agent.name, overflow: TextOverflow.ellipsis),
-                  ),
-                  if (agent.isPeerAgent) ...[
-                    const SizedBox(width: 6),
-                    PeerSourceBadge.fromAgent(agent),
-                  ],
-                ],
-              ),
-              subtitle: agent.bio != null && agent.bio!.isNotEmpty ? Text(agent.bio!, maxLines: 1, overflow: TextOverflow.ellipsis) : null,
-              onTap: () => Navigator.pop(ctx, agent),
-            )),
-            const SizedBox(height: 8),
-          ],
-        ),
-      ),
-    );
+    final selected = await _showAddGroupMemberPicker(available);
+    if (selected == null || !mounted) return false;
 
-    if (selected == null || !mounted) return;
     await _controller.addGroupMember(selected);
-    if (mounted) _showGroupMembersPanel();
+    return true;
   }
 
   Future<void> _removeGroupMember(RemoteAgent agent) async {
@@ -1523,7 +1530,6 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
         anchorContext: anchorContext,
         onEditGroup: _editGroupInfo,
         onShowMembers: _showGroupMembersPanel,
-        onAddMember: _addGroupMember,
         onSearch: _showSearchDialog,
         onWorkflow: _showGroupWorkflow,
       );
@@ -1564,7 +1570,6 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
       onCustomSystemPrompt: _showDmSystemPromptDialog,
       onEditGroup: _editGroupInfo,
       onShowMembers: _showGroupMembersPanel,
-      onAddMember: _addGroupMember,
       onWorkflow: _showGroupWorkflow,
     );
   }

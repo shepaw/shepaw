@@ -7,6 +7,19 @@ import '../../peer/widgets/peer_source_badge.dart';
 import '../../theme/app_theme.dart';
 import '../../utils/layout_utils.dart';
 
+/// Snapshot returned after adding a group member so the panel can refresh.
+class GroupMembersPanelSnapshot {
+  final List<RemoteAgent> groupAgents;
+  final List<ChannelMember> channelMembers;
+  final String? adminAgentId;
+
+  const GroupMembersPanelSnapshot({
+    required this.groupAgents,
+    required this.channelMembers,
+    this.adminAgentId,
+  });
+}
+
 /// Group chat member list panel. Pair with [LayoutUtils.showRightDrawer] on
 /// desktop or a full-screen [Scaffold] route on mobile (see peer agent list).
 class GroupMembersPanel extends StatefulWidget {
@@ -14,7 +27,7 @@ class GroupMembersPanel extends StatefulWidget {
   final String channelId;
   final String? adminAgentId;
   final List<ChannelMember> channelMembers;
-  final Future<void> Function() onAddMember;
+  final Future<GroupMembersPanelSnapshot?> Function() onAddMember;
   final Future<void> Function(RemoteAgent agent) onRemoveMember;
   final Future<List<ChannelMember>> Function(RemoteAgent agent, String? newGroupBio) onSaveGroupBio;
   final Future<void> Function(RemoteAgent agent) onChangeAdmin;
@@ -40,6 +53,7 @@ class GroupMembersPanel extends StatefulWidget {
 class _GroupMembersPanelState extends State<GroupMembersPanel> {
   String? _editingAgentId;
   late TextEditingController _editController;
+  late List<RemoteAgent> _groupAgents;
   late List<ChannelMember> _channelMembers;
   bool _editingIsAdmin = false;
   late String? _currentAdminAgentId;
@@ -48,8 +62,23 @@ class _GroupMembersPanelState extends State<GroupMembersPanel> {
   void initState() {
     super.initState();
     _editController = TextEditingController();
+    _groupAgents = List.of(widget.groupAgents);
     _channelMembers = List.of(widget.channelMembers);
     _currentAdminAgentId = widget.adminAgentId;
+  }
+
+  @override
+  void didUpdateWidget(GroupMembersPanel oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.groupAgents != widget.groupAgents) {
+      _groupAgents = List.of(widget.groupAgents);
+    }
+    if (oldWidget.channelMembers != widget.channelMembers) {
+      _channelMembers = List.of(widget.channelMembers);
+    }
+    if (oldWidget.adminAgentId != widget.adminAgentId) {
+      _currentAdminAgentId = widget.adminAgentId;
+    }
   }
 
   @override
@@ -89,8 +118,13 @@ class _GroupMembersPanelState extends State<GroupMembersPanel> {
   }
 
   Future<void> _handleAddMember() async {
-    Navigator.pop(context);
-    await widget.onAddMember();
+    final snapshot = await widget.onAddMember();
+    if (snapshot == null || !mounted) return;
+    setState(() {
+      _groupAgents = List.of(snapshot.groupAgents);
+      _channelMembers = List.of(snapshot.channelMembers);
+      _currentAdminAgentId = snapshot.adminAgentId;
+    });
   }
 
   Future<void> _handleRemoveMember(RemoteAgent agent) async {
@@ -112,7 +146,7 @@ class _GroupMembersPanelState extends State<GroupMembersPanel> {
             child: Align(
               alignment: Alignment.centerLeft,
               child: Text(
-                l10n.chat_groupMembersCount(widget.groupAgents.length),
+                l10n.chat_groupMembersCount(_groupAgents.length),
                 style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
               ),
             ),
@@ -132,7 +166,7 @@ class _GroupMembersPanelState extends State<GroupMembersPanel> {
         Expanded(
           child: ListView(
             children: [
-              ...widget.groupAgents.map((agent) => _buildAgentTile(context, l10n, agent)),
+              ..._groupAgents.map((agent) => _buildAgentTile(context, l10n, agent)),
               const SizedBox(height: 8),
             ],
           ),
