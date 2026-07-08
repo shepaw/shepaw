@@ -124,18 +124,27 @@ class _WorkflowProgressPanelState extends State<WorkflowProgressPanel>
         children: [
           // Header (always visible)
           _buildHeader(exec, accentColor, allDone, failed, pendingApproval),
-          // Approval buttons (when pending)
-          if (isPendingApproval)
-            _buildApprovalButtons(),
-          // Peer tool-approval banner
-          if (!isPendingApproval && pendingApproval != null)
-            _buildPeerApprovalBanner(pendingApproval),
-          // Expanded content (when not pending)
-          if (!isPendingApproval)
-            AnimatedSize(
-              duration: const Duration(milliseconds: 250),
-              curve: Curves.easeInOut,
-              child: _expanded ? _buildExpandedContent(exec) : const SizedBox.shrink(),
+          // Scrollable body — peer approval prompts can be very long (diffs, etc.)
+          if (isPendingApproval ||
+              pendingApproval != null ||
+              (!isPendingApproval && _expanded))
+            ConstrainedBox(
+              constraints: BoxConstraints(
+                maxHeight: MediaQuery.sizeOf(context).height * 0.42,
+              ),
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    if (isPendingApproval) _buildApprovalButtons(),
+                    if (!isPendingApproval && pendingApproval != null)
+                      _buildPeerApprovalBanner(pendingApproval),
+                    if (!isPendingApproval && _expanded)
+                      _buildExpandedContent(exec),
+                  ],
+                ),
+              ),
             ),
         ],
       ),
@@ -297,13 +306,18 @@ class _WorkflowProgressPanelState extends State<WorkflowProgressPanel>
               ),
             ] else if (pending.prompt != null && pending.prompt!.isNotEmpty) ...[
               const SizedBox(height: 4),
-              Text(
-                pending.prompt!,
-                maxLines: 3,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  fontSize: 11,
-                  color: Colors.deepOrange.shade700,
+              ConstrainedBox(
+                constraints: BoxConstraints(
+                  maxHeight: MediaQuery.sizeOf(context).height * 0.18,
+                ),
+                child: SingleChildScrollView(
+                  child: SelectableText(
+                    pending.prompt!,
+                    style: TextStyle(
+                      fontSize: 11,
+                      color: Colors.deepOrange.shade700,
+                    ),
+                  ),
                 ),
               ),
               if (pending.messageId != null) ...[
@@ -421,13 +435,11 @@ class _WorkflowProgressPanelState extends State<WorkflowProgressPanel>
     }
     final stageIndices = stageMap.keys.toList()..sort();
 
-    final maxHeight = MediaQuery.of(context).size.height * 0.35;
-
-    return ConstrainedBox(
-      constraints: BoxConstraints(maxHeight: maxHeight),
-      child: ListView(
-        shrinkWrap: true,
-        padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: stageIndices.map((stageIdx) {
           final steps = stageMap[stageIdx]!;
           final stageName = stageNames[stageIdx] ?? '阶段 ${stageIdx + 1}';

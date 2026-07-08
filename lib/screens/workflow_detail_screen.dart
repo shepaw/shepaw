@@ -309,9 +309,19 @@ class _WorkflowDetailScreenState extends State<WorkflowDetailScreen> {
           ),
           if (pending.approvalData['prompt'] != null) ...[
             const SizedBox(height: 8),
-            Text(
-              pending.approvalData['prompt'] as String,
-              style: TextStyle(fontSize: 13, color: Colors.deepOrange.shade800),
+            ConstrainedBox(
+              constraints: BoxConstraints(
+                maxHeight: MediaQuery.sizeOf(context).height * 0.22,
+              ),
+              child: SingleChildScrollView(
+                child: SelectableText(
+                  pending.approvalData['prompt'] as String,
+                  style: TextStyle(
+                    fontSize: 13,
+                    color: Colors.deepOrange.shade800,
+                  ),
+                ),
+              ),
             ),
           ],
           if (hasActions && !_submittingApproval) ...[

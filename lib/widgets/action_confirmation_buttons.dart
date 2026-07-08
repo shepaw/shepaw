@@ -37,12 +37,19 @@ class ActionConfirmationButtons extends StatelessWidget {
         if (prompt != null && prompt.isNotEmpty)
           Padding(
             padding: const EdgeInsets.only(bottom: 8, top: 4),
-            child: Text(
-              prompt,
-              style: const TextStyle(
-                fontSize: 13,
-                color: Colors.black54,
-                fontWeight: FontWeight.w500,
+            child: ConstrainedBox(
+              constraints: BoxConstraints(
+                maxHeight: MediaQuery.sizeOf(context).height * 0.22,
+              ),
+              child: SingleChildScrollView(
+                child: SelectableText(
+                  prompt,
+                  style: const TextStyle(
+                    fontSize: 13,
+                    color: Colors.black54,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
               ),
             ),
           ),
