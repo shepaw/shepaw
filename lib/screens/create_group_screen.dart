@@ -218,6 +218,304 @@ class _CreateGroupScreenState extends State<CreateGroupScreen> {
     );
   }
 
+  Widget _buildSelectedAgentsChips() {
+    return SizedBox(
+      height: 60,
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        padding: const EdgeInsets.symmetric(horizontal: 16),
+        child: Row(
+          children: _selectedAgentIds.map((agentId) {
+            final agent = _agents.firstWhere((a) => a.id == agentId);
+            return Padding(
+              padding: const EdgeInsets.only(right: 8),
+              child: Chip(
+                avatar: _buildAgentAvatar(agent, size: 24, fontSize: 16),
+                label: Text(agent.name),
+                onDeleted: () {
+                  setState(() {
+                    _selectedAgentIds.remove(agentId);
+                    _groupBioControllers[agentId]?.dispose();
+                    _groupBioControllers.remove(agentId);
+                    if (_adminAgentId == agentId) {
+                      _adminAgentId = _selectedAgentIds.isNotEmpty
+                          ? _selectedAgentIds.first
+                          : null;
+                    }
+                  });
+                },
+              ),
+            );
+          }).toList(),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildAgentTile(Agent agent, AppLocalizations l10n) {
+    final isSelected = _selectedAgentIds.contains(agent.id);
+
+    void toggleSelection() {
+      setState(() {
+        if (isSelected) {
+          _selectedAgentIds.remove(agent.id);
+          _groupBioControllers[agent.id]?.dispose();
+          _groupBioControllers.remove(agent.id);
+          if (_adminAgentId == agent.id) {
+            _adminAgentId = _selectedAgentIds.isNotEmpty
+                ? _selectedAgentIds.first
+                : null;
+          }
+        } else {
+          _selectedAgentIds.add(agent.id);
+          _groupBioControllers[agent.id] = TextEditingController();
+          _adminAgentId ??= agent.id;
+        }
+      });
+    }
+
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        ListTile(
+          leading: _buildAgentAvatar(agent),
+          trailing: Checkbox(
+            value: isSelected,
+            onChanged: (checked) {
+              if (checked == true && !isSelected) {
+                toggleSelection();
+              } else if (checked == false && isSelected) {
+                toggleSelection();
+              }
+            },
+          ),
+          onTap: toggleSelection,
+          title: Row(
+            children: [
+              Flexible(
+                child: Text(
+                  agent.name,
+                  style: const TextStyle(fontWeight: FontWeight.bold),
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              if (agent.isPeerAgent) ...[
+                const SizedBox(width: 6),
+                PeerSourceBadge(
+                  peerId: agent.sourcePeerId,
+                  fallbackName: agent.sourcePeerName,
+                ),
+              ],
+              if (isSelected && _adminAgentId == agent.id) ...[
+                const SizedBox(width: 8),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: Colors.orange[100],
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Text(
+                    'Admin',
+                    style: TextStyle(
+                      fontSize: 11,
+                      color: Colors.orange[800],
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+              ],
+            ],
+          ),
+          subtitle: Row(
+            children: [
+              Expanded(child: Text(agent.provider.name)),
+              if (isSelected && _adminAgentId != agent.id)
+                GestureDetector(
+                  onTap: () {
+                    setState(() {
+                      _adminAgentId = agent.id;
+                    });
+                  },
+                  child: Text(
+                    l10n.createGroup_setAsAdmin,
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: Colors.orange[700],
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        ),
+        if (isSelected)
+          Padding(
+            padding: const EdgeInsets.only(left: 56, right: 16, bottom: 8),
+            child: TextField(
+              controller: _groupBioControllers[agent.id],
+              maxLines: 2,
+              decoration: InputDecoration(
+                labelText: l10n.createGroup_groupRole,
+                hintText: l10n.createGroup_groupRoleHint,
+                border: const OutlineInputBorder(),
+                isDense: true,
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+
+  Widget _buildFormContent(AppLocalizations l10n) {
+    return CustomScrollView(
+      keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+      slivers: [
+        SliverToBoxAdapter(
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: TextField(
+              controller: _nameController,
+              decoration: InputDecoration(
+                labelText: l10n.createGroup_groupName,
+                border: const OutlineInputBorder(),
+                prefixIcon: const Icon(Icons.group),
+              ),
+            ),
+          ),
+        ),
+        SliverToBoxAdapter(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: TextField(
+              controller: _purposeController,
+              maxLines: 2,
+              decoration: InputDecoration(
+                labelText: l10n.createGroup_purpose,
+                hintText: l10n.createGroup_purposeHint,
+                border: const OutlineInputBorder(),
+                prefixIcon: const Icon(Icons.description),
+              ),
+            ),
+          ),
+        ),
+        const SliverToBoxAdapter(child: SizedBox(height: 12)),
+        SliverToBoxAdapter(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: TextField(
+              controller: _systemPromptController,
+              maxLines: 3,
+              decoration: InputDecoration(
+                labelText: l10n.createGroup_systemPrompt,
+                hintText: l10n.createGroup_systemPromptHint,
+                border: const OutlineInputBorder(),
+                prefixIcon: const Icon(Icons.psychology),
+              ),
+            ),
+          ),
+        ),
+        const SliverToBoxAdapter(child: SizedBox(height: 12)),
+        SliverToBoxAdapter(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: TextField(
+              controller: _maxRoundsController,
+              keyboardType: TextInputType.number,
+              decoration: InputDecoration(
+                labelText: l10n.createGroup_maxLoopRounds,
+                hintText: l10n.createGroup_maxLoopRoundsHint,
+                border: const OutlineInputBorder(),
+                prefixIcon: const Icon(Icons.loop),
+              ),
+            ),
+          ),
+        ),
+        const SliverToBoxAdapter(child: SizedBox(height: 12)),
+        SliverToBoxAdapter(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: DropdownButtonFormField<String>(
+              value: _mentionMode,
+              decoration: InputDecoration(
+                labelText: l10n.createGroup_mentionMode,
+                border: const OutlineInputBorder(),
+                prefixIcon: const Icon(Icons.alternate_email),
+              ),
+              items: [
+                DropdownMenuItem(
+                  value: 'adminOnly',
+                  child: Text(l10n.chat_mentionModeAdminOnly),
+                ),
+                DropdownMenuItem(
+                  value: 'allMembers',
+                  child: Text(l10n.chat_mentionModeAllMembers),
+                ),
+              ],
+              onChanged: (value) {
+                if (value != null) {
+                  setState(() { _mentionMode = value; });
+                }
+              },
+            ),
+          ),
+        ),
+        SliverToBoxAdapter(
+          child: Padding(
+            padding: const EdgeInsets.only(left: 20, top: 4, right: 16),
+            child: Text(
+              _mentionMode == 'allMembers'
+                  ? l10n.chat_mentionModeAllMembersDesc
+                  : l10n.chat_mentionModeAdminOnlyDesc,
+              style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+            ),
+          ),
+        ),
+        const SliverToBoxAdapter(child: SizedBox(height: 8)),
+        if (_selectedAgentIds.isNotEmpty)
+          SliverToBoxAdapter(child: _buildSelectedAgentsChips()),
+        const SliverToBoxAdapter(child: Divider()),
+        SliverToBoxAdapter(
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Row(
+              children: [
+                Text(
+                  l10n.createGroup_selectAgent,
+                  style: const TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Text(
+                  l10n.createGroup_agentCount(_selectedAgentIds.length, _agents.length),
+                  style: const TextStyle(color: Colors.grey),
+                ),
+              ],
+            ),
+          ),
+        ),
+        if (_agents.isEmpty)
+          SliverToBoxAdapter(
+            child: Center(
+              child: Padding(
+                padding: const EdgeInsets.all(32),
+                child: Text(l10n.createGroup_noAgents),
+              ),
+            ),
+          )
+        else
+          SliverList(
+            delegate: SliverChildBuilderDelegate(
+              (context, index) => _buildAgentTile(_agents[index], l10n),
+              childCount: _agents.length,
+            ),
+          ),
+        const SliverToBoxAdapter(child: SizedBox(height: 16)),
+      ],
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
@@ -231,312 +529,7 @@ class _CreateGroupScreenState extends State<CreateGroupScreen> {
           ? const Center(child: CircularProgressIndicator())
           : Column(
               children: [
-                Expanded(
-                  child: SingleChildScrollView(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                  // 群名输入
-                  Padding(
-                    padding: const EdgeInsets.all(16),
-                    child: TextField(
-                      controller: _nameController,
-                      decoration: InputDecoration(
-                        labelText: l10n.createGroup_groupName,
-                        border: const OutlineInputBorder(),
-                        prefixIcon: const Icon(Icons.group),
-                      ),
-                    ),
-                  ),
-
-                  // 群聊目的/描述
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 16),
-                    child: TextField(
-                      controller: _purposeController,
-                      maxLines: 2,
-                      decoration: InputDecoration(
-                        labelText: l10n.createGroup_purpose,
-                        hintText: l10n.createGroup_purposeHint,
-                        border: const OutlineInputBorder(),
-                        prefixIcon: const Icon(Icons.description),
-                      ),
-                    ),
-                  ),
-
-                  const SizedBox(height: 12),
-
-                  // 系统提示词
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 16),
-                    child: TextField(
-                      controller: _systemPromptController,
-                      maxLines: 3,
-                      decoration: InputDecoration(
-                        labelText: l10n.createGroup_systemPrompt,
-                        hintText: l10n.createGroup_systemPromptHint,
-                        border: const OutlineInputBorder(),
-                        prefixIcon: const Icon(Icons.psychology),
-                      ),
-                    ),
-                  ),
-
-                  const SizedBox(height: 12),
-
-                  // 最大编排轮次
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 16),
-                    child: TextField(
-                      controller: _maxRoundsController,
-                      keyboardType: TextInputType.number,
-                      decoration: InputDecoration(
-                        labelText: l10n.createGroup_maxLoopRounds,
-                        hintText: l10n.createGroup_maxLoopRoundsHint,
-                        border: const OutlineInputBorder(),
-                        prefixIcon: const Icon(Icons.loop),
-                      ),
-                    ),
-                  ),
-
-                  const SizedBox(height: 12),
-
-                  // 提及模式
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 16),
-                    child: DropdownButtonFormField<String>(
-                      value: _mentionMode,
-                      decoration: InputDecoration(
-                        labelText: l10n.createGroup_mentionMode,
-                        border: const OutlineInputBorder(),
-                        prefixIcon: const Icon(Icons.alternate_email),
-                      ),
-                      items: [
-                        DropdownMenuItem(
-                          value: 'adminOnly',
-                          child: Text(l10n.chat_mentionModeAdminOnly),
-                        ),
-                        DropdownMenuItem(
-                          value: 'allMembers',
-                          child: Text(l10n.chat_mentionModeAllMembers),
-                        ),
-                      ],
-                      onChanged: (value) {
-                        if (value != null) {
-                          setState(() { _mentionMode = value; });
-                        }
-                      },
-                    ),
-                  ),
-                  Padding(
-                    padding: const EdgeInsets.only(left: 20, top: 4, right: 16),
-                    child: Text(
-                      _mentionMode == 'allMembers'
-                          ? l10n.chat_mentionModeAllMembersDesc
-                          : l10n.chat_mentionModeAdminOnlyDesc,
-                      style: TextStyle(fontSize: 12, color: Colors.grey[600]),
-                    ),
-                  ),
-
-                  const SizedBox(height: 8),
-
-                  // 已选择的 Agents
-                  if (_selectedAgentIds.isNotEmpty)
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 16),
-                      height: 60,
-                      child: ListView.builder(
-                        scrollDirection: Axis.horizontal,
-                        itemCount: _selectedAgentIds.length,
-                        itemBuilder: (context, index) {
-                          final agentId = _selectedAgentIds.elementAt(index);
-                          final agent = _agents.firstWhere((a) => a.id == agentId);
-
-                          return Padding(
-                            padding: const EdgeInsets.only(right: 8),
-                            child: Chip(
-                              avatar: _buildAgentAvatar(agent, size: 24, fontSize: 16),
-                              label: Text(agent.name),
-                              onDeleted: () {
-                                setState(() {
-                                  _selectedAgentIds.remove(agentId);
-                                  _groupBioControllers[agentId]?.dispose();
-                                  _groupBioControllers.remove(agentId);
-                                  if (_adminAgentId == agentId) {
-                                    _adminAgentId = _selectedAgentIds.isNotEmpty
-                                        ? _selectedAgentIds.first
-                                        : null;
-                                  }
-                                });
-                              },
-                            ),
-                          );
-                        },
-                      ),
-                    ),
-
-                  const Divider(),
-
-                  // Agent 列表
-                  Padding(
-                    padding: const EdgeInsets.all(16),
-                    child: Row(
-                      children: [
-                        Text(
-                          l10n.createGroup_selectAgent,
-                          style: const TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-                        Text(
-                          l10n.createGroup_agentCount(_selectedAgentIds.length, _agents.length),
-                          style: const TextStyle(color: Colors.grey),
-                        ),
-                      ],
-                    ),
-                  ),
-
-                  if (_agents.isEmpty)
-                    Center(
-                      child: Padding(
-                        padding: const EdgeInsets.all(32),
-                        child: Text(l10n.createGroup_noAgents),
-                      ),
-                    )
-                  else
-                    ListView.builder(
-                      shrinkWrap: true,
-                      physics: const NeverScrollableScrollPhysics(),
-                      itemCount: _agents.length,
-                      itemBuilder: (context, index) {
-                        final agent = _agents[index];
-                        final isSelected = _selectedAgentIds.contains(agent.id);
-
-                        return Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            ListTile(
-                              leading: _buildAgentAvatar(agent),
-                              trailing: Checkbox(
-                                value: isSelected,
-                                onChanged: (checked) {
-                                  setState(() {
-                                    if (checked == true) {
-                                      _selectedAgentIds.add(agent.id);
-                                      _groupBioControllers[agent.id] = TextEditingController();
-                                      _adminAgentId ??= agent.id;
-                                    } else {
-                                      _selectedAgentIds.remove(agent.id);
-                                      _groupBioControllers[agent.id]?.dispose();
-                                      _groupBioControllers.remove(agent.id);
-                                      if (_adminAgentId == agent.id) {
-                                        _adminAgentId = _selectedAgentIds.isNotEmpty
-                                            ? _selectedAgentIds.first
-                                            : null;
-                                      }
-                                    }
-                                  });
-                                },
-                              ),
-                              onTap: () {
-                                setState(() {
-                                  if (isSelected) {
-                                    _selectedAgentIds.remove(agent.id);
-                                    _groupBioControllers[agent.id]?.dispose();
-                                    _groupBioControllers.remove(agent.id);
-                                    if (_adminAgentId == agent.id) {
-                                      _adminAgentId = _selectedAgentIds.isNotEmpty
-                                          ? _selectedAgentIds.first
-                                          : null;
-                                    }
-                                  } else {
-                                    _selectedAgentIds.add(agent.id);
-                                    _groupBioControllers[agent.id] = TextEditingController();
-                                    _adminAgentId ??= agent.id;
-                                  }
-                                });
-                              },
-                              title: Row(
-                                children: [
-                                  Flexible(
-                                    child: Text(
-                                      agent.name,
-                                      style: const TextStyle(fontWeight: FontWeight.bold),
-                                      overflow: TextOverflow.ellipsis,
-                                    ),
-                                  ),
-                                  if (agent.isPeerAgent) ...[
-                                    const SizedBox(width: 6),
-                                    PeerSourceBadge(
-                                      peerId: agent.sourcePeerId,
-                                      fallbackName: agent.sourcePeerName,
-                                    ),
-                                  ],
-                                  if (isSelected && _adminAgentId == agent.id) ...[
-                                    const SizedBox(width: 8),
-                                    Container(
-                                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                                      decoration: BoxDecoration(
-                                        color: Colors.orange[100],
-                                        borderRadius: BorderRadius.circular(12),
-                                      ),
-                                      child: Text(
-                                        'Admin',
-                                        style: TextStyle(
-                                          fontSize: 11,
-                                          color: Colors.orange[800],
-                                          fontWeight: FontWeight.w600,
-                                        ),
-                                      ),
-                                    ),
-                                  ],
-                                ],
-                              ),
-                              subtitle: Row(
-                                children: [
-                                  Expanded(child: Text(agent.provider.name)),
-                                  if (isSelected && _adminAgentId != agent.id)
-                                    GestureDetector(
-                                      onTap: () {
-                                        setState(() {
-                                          _adminAgentId = agent.id;
-                                        });
-                                      },
-                                      child: Text(
-                                        l10n.createGroup_setAsAdmin,
-                                        style: TextStyle(
-                                          fontSize: 12,
-                                          color: Colors.orange[700],
-                                          fontWeight: FontWeight.w500,
-                                        ),
-                                      ),
-                                    ),
-                                ],
-                              ),
-                            ),
-                            if (isSelected)
-                              Padding(
-                                padding: const EdgeInsets.only(left: 56, right: 16, bottom: 8),
-                                child: TextField(
-                                  controller: _groupBioControllers[agent.id],
-                                  maxLines: 2,
-                                  decoration: InputDecoration(
-                                    labelText: l10n.createGroup_groupRole,
-                                    hintText: l10n.createGroup_groupRoleHint,
-                                    border: const OutlineInputBorder(),
-                                    isDense: true,
-                                  ),
-                                ),
-                              ),
-                          ],
-                        );
-                      },
-                    ),
-                      ],
-                    ),
-                  ),
-                ),
+                Expanded(child: _buildFormContent(l10n)),
                 _buildBottomBar(l10n, colorScheme),
               ],
             ),
