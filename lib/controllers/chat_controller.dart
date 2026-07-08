@@ -354,6 +354,14 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
       sid = _workflowStreamingIds[agentId];
     }
 
+    sid = _resolveGroupInteractionMessageId(
+      agentId: agentId,
+      agentName: agentName,
+      interactionType: interactionType,
+      data: data,
+      preferredSid: sid,
+    );
+
     if (sid != null) {
       _updateGroupStreamingMetadata(sid, interactionType, data);
       final existingMeta =
@@ -1920,6 +1928,65 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
     _notify();
   }
 
+  /// Resolve (or create) the group message bubble that should host an interactive
+  /// component. For peer-relayed tool approvals, ensures a visible card even when
+  /// the streaming placeholder was already reconciled away.
+  String? _resolveGroupInteractionMessageId({
+    required String agentId,
+    required String agentName,
+    required String interactionType,
+    required Map<String, dynamic> data,
+    String? preferredSid,
+  }) {
+    if (preferredSid != null && messageIdMap.containsKey(preferredSid)) {
+      return preferredSid;
+    }
+
+    if (interactionType == 'action_confirmation' &&
+        data['confirmation_context'] == 'peer' &&
+        currentChannelId != null) {
+      final userId = getUserId();
+      final userName = getUserName();
+      final sid =
+          'group_peer_approval_${agentId}_${DateTime.now().millisecondsSinceEpoch}';
+      final prompt = (data['prompt'] as String?)?.trim();
+      final content =
+          prompt != null && prompt.isNotEmpty ? prompt : '需要您的确认';
+      final metadata = {
+        interactionType: Map<String, dynamic>.from(data),
+      };
+      final sm = Message(
+        id: sid,
+        content: content,
+        timestampMs: DateTime.now().millisecondsSinceEpoch + 1,
+        from: MessageFrom(id: agentId, type: 'agent', name: agentName),
+        to: MessageFrom(id: userId, type: 'user', name: userName),
+        type: MessageType.text,
+        metadata: metadata,
+      );
+      messages.add(sm);
+      messageIdMap[sm.id] = sm;
+      groupStreamingMessageIds.add(sid);
+      localDatabaseService
+          .createMessage(
+            id: sid,
+            channelId: currentChannelId!,
+            senderId: agentId,
+            senderType: 'agent',
+            senderName: agentName,
+            content: content,
+            messageType: 'text',
+            metadata: metadata,
+          )
+          .ignore();
+      _notify();
+      _emit(RequestScrollToBottomEvent(force: true));
+      return sid;
+    }
+
+    return preferredSid;
+  }
+
   void _updateGroupStreamingMetadata(String streamingId, String key, Map<String, dynamic> data) {
     final existing = messageIdMap[streamingId];
     if (existing != null) {
@@ -2171,6 +2238,14 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
               sid = savedMsgId;
             }
           }
+
+          sid = _resolveGroupInteractionMessageId(
+            agentId: agentId,
+            agentName: agentName,
+            interactionType: interactionType,
+            data: data,
+            preferredSid: sid,
+          );
 
           // 1. Update message metadata to show the interactive component
           if (sid != null) {
@@ -2501,7 +2576,10 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
     final tempMessages = <String, int>{};
     for (int i = 0; i < messages.length; i++) {
       final id = messages[i].id;
-      if (id.startsWith('group_streaming_') || id.startsWith('temp_user_')) {
+      if (id.startsWith('group_streaming_') ||
+          id.startsWith('wf_streaming_') ||
+          id.startsWith('group_peer_approval_') ||
+          id.startsWith('temp_user_')) {
         tempMessages[id] = i;
       }
     }
@@ -2581,7 +2659,10 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
     // response would lose it permanently.
     final dbSenderIds = dbMessages.map((m) => m.from.id).toSet();
     messages.removeWhere((m) {
-      if (!m.id.startsWith('group_streaming_') && !m.id.startsWith('temp_user_')) {
+      if (!m.id.startsWith('group_streaming_') &&
+          !m.id.startsWith('wf_streaming_') &&
+          !m.id.startsWith('group_peer_approval_') &&
+          !m.id.startsWith('temp_user_')) {
         return false;
       }
       if (usedTempIds.contains(m.id)) return false;
@@ -2589,6 +2670,11 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
       // found from this sender (i.e. the DB save likely failed).
       if (m.id.startsWith('group_streaming_') &&
           m.content.trim().isNotEmpty &&
+          !dbSenderIds.contains(m.from.id)) {
+        return false;
+      }
+      if ((m.id.startsWith('wf_streaming_') ||
+              m.id.startsWith('group_peer_approval_')) &&
           !dbSenderIds.contains(m.from.id)) {
         return false;
       }

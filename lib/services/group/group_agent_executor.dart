@@ -647,10 +647,6 @@ class GroupAgentExecutor {
               workflowStepId: workflowStepId,
               onInteractionRequest: onInteractionRequest,
             );
-            if (!isWorkflowStep) {
-              unawaited(peerApprovalInFlight!);
-              peerApprovalInFlight = null;
-            }
           },
         );
 
@@ -672,6 +668,14 @@ class GroupAgentExecutor {
         }
         if (result.metadata != null && result.metadata!.isNotEmpty) {
           messageMetadataExtra = Map<String, dynamic>.from(result.metadata!);
+        }
+        if (actionConfirmationData == null) {
+          final relayedAc =
+              result.metadata?['action_confirmation'] as Map<String, dynamic>?;
+          if (relayedAc != null) {
+            actionConfirmationData = Map<String, dynamic>.from(relayedAc);
+            actionConfirmationData!['confirmation_context'] ??= 'peer';
+          }
         }
       } catch (e) {
         LoggerService().error(
@@ -1065,7 +1069,12 @@ class GroupAgentExecutor {
     final prefixPattern = RegExp(r'^\[' + RegExp.escape(agent.name) + r'(?:\(Agent\))?\]\s*[:：]\s*');
     responseContent = responseContent.replaceFirst(prefixPattern, '');
 
-    if (responseContent.isEmpty || responseContent.contains('[SKIP]')) {
+    final hasUnresolvedPeerApproval = actionConfirmationData != null &&
+        actionConfirmationData!['confirmation_context'] == 'peer' &&
+        actionConfirmationData!['selected_action_id'] == null;
+
+    if ((responseContent.isEmpty || responseContent.contains('[SKIP]')) &&
+        !hasUnresolvedPeerApproval) {
       LoggerService().debug('Agent ${agent.name} skipped', tag: 'GroupAgentExecutor');
       groupTask.isComplete = true;
       groupTask.onTaskFinished?.call();
@@ -1077,6 +1086,11 @@ class GroupAgentExecutor {
       ForegroundTaskService().releaseTask(agent.name);
       onAgentDone?.call(agent.id, agent.name, true);
       return;
+    }
+
+    if (responseContent.isEmpty && hasUnresolvedPeerApproval) {
+      responseContent =
+          actionConfirmationData!['prompt'] as String? ?? '需要您的确认';
     }
 
     // Build metadata from captured UI tool calls

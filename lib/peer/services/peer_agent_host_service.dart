@@ -22,11 +22,13 @@ import 'dart:convert';
 import 'dart:io';
 
 import '../../models/channel.dart';
+import '../../models/message.dart';
 import '../../models/remote_agent.dart';
 import '../../services/acp_agent_connection.dart';
 import '../../services/chat_service.dart';
 import '../../services/local_database_service.dart';
 import '../../services/logger_service.dart';
+import '../../services/task/task_models.dart';
 import '../../service_locator.dart' show getIt;
 import '../models/peer_hub_pending_approval.dart';
 import 'peer_connection_manager.dart';
@@ -263,7 +265,7 @@ class PeerAgentHostService {
         _log.warning('Failed to ensure peer session channel: $e', tag: _tag);
       }
 
-      final response = await _chat.sendMessageToAgent(
+      var response = await _chat.sendMessageToAgent(
         content: message,
         agent: agent,
         userId: userId,
@@ -286,6 +288,17 @@ class PeerAgentHostService {
         },
       );
 
+      // Async-confirmation agents return null from sendMessageToAgent before the
+      // SDK turn (and any tool approvals) finish. Do not send agent_done yet —
+      // the paired client's group-chat sendChat must stay open until approvals
+      // are resolved and the hub task actually completes.
+      if (response == null) {
+        response = await _awaitAsyncHubTaskMessage(
+          channelId: channelId,
+          cancelToken: token,
+        );
+      }
+
       await PeerConnectionManager.instance.sendControl(peerId, {
         'type': 'agent_done',
         'request_id': requestId,
@@ -300,6 +313,106 @@ class PeerAgentHostService {
       _activeRequests.remove(requestId);
       _chatSessions.remove(requestId);
     }
+  }
+
+  /// After [sendMessageToAgent] returns null (async-confirmation path), block until
+  /// the hub-side task finishes and its response is persisted.
+  Future<Message?> _awaitAsyncHubTaskMessage({
+    required String channelId,
+    required ACPCancellationToken cancelToken,
+  }) async {
+    const timeout = Duration(minutes: 30);
+    final deadline = DateTime.now().add(timeout);
+
+    ActiveTask? task;
+    while (task == null && DateTime.now().isBefore(deadline)) {
+      if (cancelToken.isCancelled) {
+        return Message(
+          id: 'peer_stopped_${DateTime.now().millisecondsSinceEpoch}',
+          content: '[Stopped]',
+          timestampMs: DateTime.now().millisecondsSinceEpoch,
+          from: MessageFrom(id: 'system', type: 'system', name: 'System'),
+          type: MessageType.text,
+        );
+      }
+      task = _chat.getActiveTask(channelId);
+      if (task == null) {
+        await Future.delayed(const Duration(milliseconds: 20));
+      }
+    }
+
+    if (task == null) {
+      _log.warning(
+        'Async peer hub task never registered for channel $channelId',
+        tag: _tag,
+      );
+      return null;
+    }
+
+    try {
+      final remaining = deadline.difference(DateTime.now());
+      if (remaining <= Duration.zero) {
+        throw TimeoutException('Peer hub async task timed out');
+      }
+      await task.dbSaveCompleter.future.timeout(remaining);
+    } on TimeoutException {
+      _log.warning(
+        'Async peer hub task timed out for channel $channelId',
+        tag: _tag,
+      );
+      final partial = task.accumulatedContent;
+      return Message(
+        id: 'peer_timeout_${DateTime.now().millisecondsSinceEpoch}',
+        content: partial.isNotEmpty ? partial : 'Task timed out',
+        timestampMs: DateTime.now().millisecondsSinceEpoch,
+        from: MessageFrom(id: task.agentId, type: 'agent', name: task.agentName),
+        type: MessageType.text,
+        metadata: task.metadata,
+      );
+    }
+
+    try {
+      final rows = await _db.getChannelMessages(channelId, limit: 10);
+      for (final row in rows) {
+        if ((row['sender_type'] as String?) != 'agent') continue;
+        Map<String, dynamic>? meta;
+        final metaRaw = row['metadata_json'] as String?;
+        if (metaRaw != null && metaRaw.isNotEmpty) {
+          try {
+            meta = Map<String, dynamic>.from(jsonDecode(metaRaw) as Map);
+          } catch (_) {}
+        }
+        return Message(
+          id: row['id'] as String? ?? 'peer_done_${DateTime.now().millisecondsSinceEpoch}',
+          content: row['content'] as String? ?? '',
+          timestampMs: row['created_at'] is int
+              ? row['created_at'] as int
+              : DateTime.now().millisecondsSinceEpoch,
+          from: MessageFrom(
+            id: row['sender_id'] as String? ?? task.agentId,
+            type: 'agent',
+            name: row['sender_name'] as String? ?? task.agentName,
+          ),
+          type: MessageType.text,
+          metadata: meta ?? task.metadata,
+        );
+      }
+    } catch (e) {
+      _log.warning(
+        'Failed to load async peer hub result from DB: $e',
+        tag: _tag,
+      );
+    }
+
+    final fallback = task.accumulatedContent;
+    return Message(
+      id: 'peer_done_${DateTime.now().millisecondsSinceEpoch}',
+      content: fallback.isNotEmpty ? fallback : 'Task completed',
+      timestampMs: DateTime.now().millisecondsSinceEpoch,
+      from: MessageFrom(id: task.agentId, type: 'agent', name: task.agentName),
+      type: MessageType.text,
+      metadata: task.metadata,
+    );
   }
 
   /// Forward a local agent tool approval to the paired client and persist it

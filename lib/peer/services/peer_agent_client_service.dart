@@ -146,6 +146,10 @@ class _PendingRequest {
   final void Function(String chunk)? onChunk;
   final void Function(Map<String, dynamic>)? onActionConfirmation;
   final Completer<PeerChatResult> completer = Completer<PeerChatResult>();
+  /// In-flight tool approvals not yet submitted by the user.
+  int openApprovals = 0;
+  /// agent_done payload held until [openApprovals] reaches zero.
+  Map<String, dynamic>? bufferedDone;
   _PendingRequest(this.onChunk, this.onActionConfirmation);
 }
 
@@ -186,6 +190,9 @@ class PeerAgentClientService {
 
   /// Outstanding agent_models_set_req per "agentId::model" key.
   final Map<String, Completer<bool>> _pendingModelSet = {};
+
+  /// Maps hub approval_id → agent_chat request_id for deferred completion.
+  final Map<String, String> _approvalToRequest = {};
 
   LocalDatabaseService get _db => getIt<LocalDatabaseService>();
   final _fileStorage = LocalFileStorageService();
@@ -241,6 +248,7 @@ class PeerAgentClientService {
       if (!c.isCompleted) c.complete(false);
     }
     _pendingModelSet.clear();
+    _approvalToRequest.clear();
   }
 
   // ── 发送（消费方 → 提供方） ────────────────────────────────────────────
@@ -739,6 +747,12 @@ class PeerAgentClientService {
         '(active pending keys: ${_pending.keys.take(5).join(", ")})',
         tag: 'PeerApproval',
       );
+    } else {
+      final pending = _pending[requestId]!;
+      pending.openApprovals++;
+      if (approvalId.isNotEmpty) {
+        _approvalToRequest[approvalId] = requestId;
+      }
     }
     final actionData = <String, dynamic>{
       // The card widget keys off `confirmation_id`; the hub's approval_id IS
@@ -771,6 +785,14 @@ class PeerAgentClientService {
       'label=${selectedActionLabel ?? ""} peerId=$peerId',
       tag: 'PeerApproval',
     );
+    final requestId = _approvalToRequest.remove(approvalId);
+    if (requestId != null) {
+      final pending = _pending[requestId];
+      if (pending != null && pending.openApprovals > 0) {
+        pending.openApprovals--;
+      }
+      _tryCompleteBufferedDone(requestId);
+    }
     await PeerConnectionManager.instance.sendControl(peerId, {
       'type': 'agent_approval_resp',
       'approval_id': approvalId,
@@ -787,15 +809,41 @@ class PeerAgentClientService {
     _pending[requestId]?.onChunk?.call(content);
   }
 
-  void _onDone(Map<String, dynamic> data) {
-    final requestId = data['request_id'] as String?;
-    if (requestId == null) return;
+  void _finishPending(String requestId, Map<String, dynamic> data) {
     final p = _pending.remove(requestId);
     if (p == null || p.completer.isCompleted) return;
+    for (final entry in _approvalToRequest.entries.toList()) {
+      if (entry.value == requestId) {
+        _approvalToRequest.remove(entry.key);
+      }
+    }
     p.completer.complete(PeerChatResult(
       content: data['content'] as String? ?? '',
       metadata: (data['metadata'] as Map?)?.cast<String, dynamic>(),
     ));
+  }
+
+  void _tryCompleteBufferedDone(String requestId) {
+    final p = _pending[requestId];
+    if (p == null || p.openApprovals > 0 || p.bufferedDone == null) return;
+    _finishPending(requestId, p.bufferedDone!);
+  }
+
+  void _onDone(Map<String, dynamic> data) {
+    final requestId = data['request_id'] as String?;
+    if (requestId == null) return;
+    final p = _pending[requestId];
+    if (p == null || p.completer.isCompleted) return;
+    if (p.openApprovals > 0) {
+      p.bufferedDone = Map<String, dynamic>.from(data);
+      _log.info(
+        'agent_done buffered for requestId=$requestId '
+        'openApprovals=${p.openApprovals}',
+        tag: 'PeerApproval',
+      );
+      return;
+    }
+    _finishPending(requestId, data);
   }
 
   void _onError(Map<String, dynamic> data) {
@@ -803,6 +851,11 @@ class PeerAgentClientService {
     if (requestId == null) return;
     final p = _pending.remove(requestId);
     if (p == null || p.completer.isCompleted) return;
+    for (final entry in _approvalToRequest.entries.toList()) {
+      if (entry.value == requestId) {
+        _approvalToRequest.remove(entry.key);
+      }
+    }
     p.completer.completeError(
       Exception(data['message'] as String? ?? 'Peer agent error'),
     );
