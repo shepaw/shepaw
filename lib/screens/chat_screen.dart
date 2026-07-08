@@ -1308,7 +1308,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
       adminAgentId: _controller.groupAdminAgentId,
       channelMembers: _controller.groupChannel?.members ?? [],
       onAddMember: _addGroupMemberFromPanel,
-      onRemoveMember: (agent) => _removeGroupMember(agent),
+      onBatchRemoveMembers: _batchRemoveGroupMembersFromPanel,
       onSaveGroupBio: (agent, bio) => _controller.saveMemberGroupBio(agent, bio),
       onChangeAdmin: (agent) async {
         if (agent.id == _controller.groupAdminAgentId) return;
@@ -1416,36 +1416,32 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     return true;
   }
 
-  Future<void> _removeGroupMember(RemoteAgent agent) async {
+  Future<GroupMembersPanelSnapshot?> _batchRemoveGroupMembersFromPanel(
+    List<RemoteAgent> agents,
+  ) async {
+    if (agents.isEmpty || !mounted) return null;
+
     final l10n = AppLocalizations.of(context);
-    if (_controller.groupAgents.length <= 1) {
-      if (mounted) showTopToast(
+    if (_controller.groupAgents.length - agents.length < 1) {
+      showTopToast(
         context,
         l10n.chat_cannotRemoveLast,
         icon: Icons.warning_amber,
         color: Colors.orange,
       );
-      return;
+      return null;
     }
 
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (ctx) {
-        final dialogL10n = AppLocalizations.of(ctx);
-        return AlertDialog(
-          title: Text(dialogL10n.chat_removeMember),
-          content: Text(dialogL10n.chat_removeMemberContent(agent.name)),
-          actions: [
-            TextButton(onPressed: () => Navigator.pop(ctx, false), child: Text(dialogL10n.common_cancel)),
-            TextButton(onPressed: () => Navigator.pop(ctx, true), style: TextButton.styleFrom(foregroundColor: Colors.red), child: Text(dialogL10n.chat_removeButton)),
-          ],
-        );
-      },
-    );
+    for (final agent in agents) {
+      await _controller.removeGroupMember(agent);
+    }
 
-    if (confirmed != true || !mounted) return;
-    await _controller.removeGroupMember(agent);
-    if (mounted) _showGroupMembersPanel();
+    if (!mounted) return null;
+    return GroupMembersPanelSnapshot(
+      groupAgents: _controller.groupAgents,
+      channelMembers: _controller.groupChannel?.members ?? const [],
+      adminAgentId: _controller.groupAdminAgentId,
+    );
   }
 
   // ---------------------------------------------------------------------------

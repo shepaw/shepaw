@@ -28,7 +28,7 @@ class GroupMembersPanel extends StatefulWidget {
   final String? adminAgentId;
   final List<ChannelMember> channelMembers;
   final Future<GroupMembersPanelSnapshot?> Function(BuildContext panelContext) onAddMember;
-  final Future<void> Function(RemoteAgent agent) onRemoveMember;
+  final Future<GroupMembersPanelSnapshot?> Function(List<RemoteAgent> agents) onBatchRemoveMembers;
   final Future<List<ChannelMember>> Function(RemoteAgent agent, String? newGroupBio) onSaveGroupBio;
   final Future<void> Function(RemoteAgent agent) onChangeAdmin;
   final void Function(RemoteAgent agent) onMentionAgent;
@@ -40,7 +40,7 @@ class GroupMembersPanel extends StatefulWidget {
     this.adminAgentId,
     this.channelMembers = const [],
     required this.onAddMember,
-    required this.onRemoveMember,
+    required this.onBatchRemoveMembers,
     required this.onSaveGroupBio,
     required this.onChangeAdmin,
     required this.onMentionAgent,
@@ -57,6 +57,8 @@ class _GroupMembersPanelState extends State<GroupMembersPanel> {
   late List<ChannelMember> _channelMembers;
   bool _editingIsAdmin = false;
   late String? _currentAdminAgentId;
+  bool _isSelectionMode = false;
+  Set<String> _selectedIds = {};
 
   @override
   void initState() {
@@ -85,6 +87,21 @@ class _GroupMembersPanelState extends State<GroupMembersPanel> {
   void dispose() {
     _editController.dispose();
     super.dispose();
+  }
+
+  void _exitSelectionMode() {
+    setState(() {
+      _isSelectionMode = false;
+      _selectedIds.clear();
+    });
+  }
+
+  void _enterSelectionMode() {
+    setState(() {
+      _editingAgentId = null;
+      _isSelectionMode = true;
+      _selectedIds.clear();
+    });
   }
 
   void _startEditing(RemoteAgent agent) {
@@ -127,9 +144,52 @@ class _GroupMembersPanelState extends State<GroupMembersPanel> {
     });
   }
 
-  Future<void> _handleRemoveMember(RemoteAgent agent) async {
-    Navigator.pop(context);
-    await widget.onRemoveMember(agent);
+  Future<void> _handleBatchDelete() async {
+    if (_selectedIds.isEmpty) return;
+
+    final agents = _groupAgents
+        .where((agent) => _selectedIds.contains(agent.id))
+        .toList();
+    final snapshot = await widget.onBatchRemoveMembers(agents);
+    if (!mounted) return;
+
+    if (snapshot != null) {
+      setState(() {
+        _groupAgents = List.of(snapshot.groupAgents);
+        _channelMembers = List.of(snapshot.channelMembers);
+        _currentAdminAgentId = snapshot.adminAgentId;
+        _isSelectionMode = false;
+        _selectedIds.clear();
+      });
+    }
+  }
+
+  void _toggleSelection(String agentId) {
+    setState(() {
+      if (_selectedIds.contains(agentId)) {
+        _selectedIds.remove(agentId);
+      } else {
+        _selectedIds.add(agentId);
+      }
+    });
+  }
+
+  void _selectAllMembers() {
+    setState(() {
+      _selectedIds = _groupAgents.map((agent) => agent.id).toSet();
+    });
+  }
+
+  void _invertSelection() {
+    setState(() {
+      final newSet = <String>{};
+      for (final agent in _groupAgents) {
+        if (!_selectedIds.contains(agent.id)) {
+          newSet.add(agent.id);
+        }
+      }
+      _selectedIds = newSet;
+    });
   }
 
   @override
@@ -140,28 +200,7 @@ class _GroupMembersPanelState extends State<GroupMembersPanel> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        if (isDesktop)
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-            child: Align(
-              alignment: Alignment.centerLeft,
-              child: Text(
-                l10n.chat_groupMembersCount(_groupAgents.length),
-                style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-              ),
-            ),
-          ),
-        Padding(
-          padding: EdgeInsets.fromLTRB(16, isDesktop ? 4 : 8, 16, 8),
-          child: Align(
-            alignment: Alignment.centerRight,
-            child: TextButton.icon(
-              onPressed: _handleAddMember,
-              icon: const Icon(Icons.person_add, size: 20),
-              label: Text(l10n.chat_add),
-            ),
-          ),
-        ),
+        _buildHeader(l10n, isDesktop),
         const Divider(height: 1),
         Expanded(
           child: ListView(
@@ -171,11 +210,116 @@ class _GroupMembersPanelState extends State<GroupMembersPanel> {
             ],
           ),
         ),
+        if (_isSelectionMode) _buildBottomBar(l10n),
       ],
     );
   }
 
+  Widget _buildHeader(AppLocalizations l10n, bool isDesktop) {
+    if (_isSelectionMode) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+        child: Column(
+          children: [
+            Row(
+              children: [
+                IconButton(
+                  icon: const Icon(Icons.close),
+                  onPressed: _exitSelectionMode,
+                ),
+                Text(
+                  l10n.chat_groupMembers,
+                  style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                ),
+                const Spacer(),
+                TextButton(
+                  onPressed: _selectAllMembers,
+                  child: Text(l10n.osTool_selectAll),
+                ),
+                TextButton(
+                  onPressed: _invertSelection,
+                  child: Text(l10n.chat_invertSelection),
+                ),
+              ],
+            ),
+            Padding(
+              padding: const EdgeInsets.only(left: 16, bottom: 4),
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  l10n.chat_selectedCount(_selectedIds.length),
+                  style: TextStyle(fontSize: 13, color: Colors.grey[600]),
+                ),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    return Padding(
+      padding: EdgeInsets.fromLTRB(16, isDesktop ? 16 : 8, 8, 8),
+      child: Row(
+        children: [
+          if (isDesktop)
+            Expanded(
+              child: Text(
+                l10n.chat_groupMembersCount(_groupAgents.length),
+                style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+              ),
+            )
+          else
+            const Spacer(),
+          if (_groupAgents.length > 1)
+            IconButton(
+              icon: const Icon(Icons.edit_outlined, size: 20),
+              tooltip: l10n.chat_removeMember,
+              onPressed: _enterSelectionMode,
+            ),
+          TextButton.icon(
+            onPressed: _handleAddMember,
+            icon: const Icon(Icons.person_add, size: 20),
+            label: Text(l10n.chat_add),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildBottomBar(AppLocalizations l10n) {
+    return SafeArea(
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: SizedBox(
+          width: double.infinity,
+          child: ElevatedButton.icon(
+            icon: const Icon(Icons.delete_outline),
+            label: Text(l10n.chat_deleteSelected(_selectedIds.length)),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.red,
+              foregroundColor: Colors.white,
+              padding: const EdgeInsets.symmetric(vertical: 12),
+            ),
+            onPressed: _selectedIds.isEmpty ? null : _handleBatchDelete,
+          ),
+        ),
+      ),
+    );
+  }
+
   Widget _buildAgentTile(BuildContext context, AppLocalizations l10n, RemoteAgent agent) {
+    if (_isSelectionMode) {
+      return ListTile(
+        leading: Checkbox(
+          value: _selectedIds.contains(agent.id),
+          onChanged: (_) => _toggleSelection(agent.id),
+        ),
+        title: _buildAgentTitle(agent),
+        subtitle: _buildAgentSubtitle(agent),
+        onTap: () => _toggleSelection(agent.id),
+      );
+    }
+
     final member = _channelMembers.where((m) => m.id == agent.id).firstOrNull;
     final groupBio = member?.groupBio;
     final displayBio = groupBio ?? agent.bio;
@@ -190,12 +334,7 @@ class _GroupMembersPanelState extends State<GroupMembersPanel> {
           children: [
             Row(
               children: [
-                Container(
-                  width: 32, height: 32,
-                  decoration: BoxDecoration(color: AppColors.primaryContainer, borderRadius: BorderRadius.circular(8)),
-                  alignment: Alignment.center,
-                  child: Text(agent.name.isNotEmpty ? agent.name[0].toUpperCase() : '?', style: const TextStyle(color: AppColors.primaryDark, fontWeight: FontWeight.bold, fontSize: 13)),
-                ),
+                _buildAgentAvatar(agent, size: 32, fontSize: 13),
                 const SizedBox(width: 8),
                 Expanded(
                   child: Row(
@@ -252,40 +391,90 @@ class _GroupMembersPanelState extends State<GroupMembersPanel> {
     }
 
     return ListTile(
-      leading: Container(
-        width: 40, height: 40,
-        decoration: BoxDecoration(color: AppColors.primaryContainer, borderRadius: BorderRadius.circular(10)),
-        alignment: Alignment.center,
-        child: Text(agent.name.isNotEmpty ? agent.name[0].toUpperCase() : '?', style: const TextStyle(color: AppColors.primaryDark, fontWeight: FontWeight.bold)),
-      ),
-      title: Row(
-        children: [
-          Flexible(child: Text(agent.name, overflow: TextOverflow.ellipsis)),
-          if (agent.isPeerAgent) ...[
-            const SizedBox(width: 6),
-            PeerSourceBadge.fromAgent(agent),
-          ],
-          if (_currentAdminAgentId == agent.id) ...[
-            const SizedBox(width: 8),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-              decoration: BoxDecoration(color: Colors.orange[100], borderRadius: BorderRadius.circular(12)),
-              child: Text('Admin', style: TextStyle(fontSize: 11, color: Colors.orange[800], fontWeight: FontWeight.w600)),
-            ),
-          ],
-        ],
-      ),
-      subtitle: displayBio != null && displayBio.isNotEmpty
-          ? Text(displayBio, maxLines: 1, overflow: TextOverflow.ellipsis, style: hasGroupBio ? const TextStyle(color: AppColors.primary, fontStyle: FontStyle.italic) : null)
-          : Text('Set group role...', style: TextStyle(color: Colors.grey[400], fontSize: 13)),
-      trailing: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          IconButton(icon: const Icon(Icons.edit_note, size: 20, color: AppColors.primary), tooltip: 'Edit group role', onPressed: () => _startEditing(agent)),
-          IconButton(icon: Icon(Icons.remove_circle_outline, color: Colors.red[300]), onPressed: () => _handleRemoveMember(agent)),
-        ],
+      leading: _buildAgentAvatar(agent),
+      title: _buildAgentTitle(agent),
+      subtitle: _buildAgentSubtitle(agent, displayBio: displayBio, hasGroupBio: hasGroupBio),
+      trailing: IconButton(
+        icon: const Icon(Icons.edit_note, size: 20, color: AppColors.primary),
+        tooltip: 'Edit group role',
+        onPressed: () => _startEditing(agent),
       ),
       onTap: () => widget.onMentionAgent(agent),
+    );
+  }
+
+  Widget _buildAgentAvatar(RemoteAgent agent, {double size = 40, double fontSize = 14}) {
+    return Container(
+      width: size,
+      height: size,
+      decoration: BoxDecoration(
+        color: AppColors.primaryContainer,
+        borderRadius: BorderRadius.circular(size <= 32 ? 8 : 10),
+      ),
+      alignment: Alignment.center,
+      child: Text(
+        agent.name.isNotEmpty ? agent.name[0].toUpperCase() : '?',
+        style: TextStyle(
+          color: AppColors.primaryDark,
+          fontWeight: FontWeight.bold,
+          fontSize: fontSize,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildAgentTitle(RemoteAgent agent) {
+    return Row(
+      children: [
+        Flexible(child: Text(agent.name, overflow: TextOverflow.ellipsis)),
+        if (agent.isPeerAgent) ...[
+          const SizedBox(width: 6),
+          PeerSourceBadge.fromAgent(agent),
+        ],
+        if (_currentAdminAgentId == agent.id) ...[
+          const SizedBox(width: 8),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+            decoration: BoxDecoration(
+              color: Colors.orange[100],
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Text(
+              'Admin',
+              style: TextStyle(
+                fontSize: 11,
+                color: Colors.orange[800],
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+
+  Widget? _buildAgentSubtitle(
+    RemoteAgent agent, {
+    String? displayBio,
+    bool hasGroupBio = false,
+  }) {
+    final member = _channelMembers.where((m) => m.id == agent.id).firstOrNull;
+    final groupBio = member?.groupBio;
+    final bio = displayBio ?? groupBio ?? agent.bio;
+    final customBio = hasGroupBio || (groupBio != null && groupBio.isNotEmpty);
+
+    if (bio != null && bio.isNotEmpty) {
+      return Text(
+        bio,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: customBio ? const TextStyle(color: AppColors.primary, fontStyle: FontStyle.italic) : null,
+      );
+    }
+
+    return Text(
+      'Set group role...',
+      style: TextStyle(color: Colors.grey[400], fontSize: 13),
     );
   }
 }
