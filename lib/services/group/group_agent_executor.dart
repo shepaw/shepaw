@@ -633,13 +633,16 @@ class GroupAgentExecutor {
             infLogGroup.onTextChunk(groupTraceId, chunk);
           },
           onActionConfirmation: (data) {
+            // Keep a single mutable map: resolution (admin auto or user tap)
+            // must write selected_action_id here so the final DB message
+            // metadata matches the post-approval UI state.
             actionConfirmationData = Map<String, dynamic>.from(data);
             peerApprovalInFlight = _handlePeerGroupActionConfirmation(
               agent: agent,
               peerId: peerId,
               remoteAgentId: remoteAgentId,
               peerSessionId: peerSessionId,
-              data: data,
+              data: actionConfirmationData!,
               adminAgent: adminAgent,
               channelId: channelId,
               isWorkflowStep: isWorkflowStep,
@@ -780,11 +783,14 @@ class GroupAgentExecutor {
             }
           },
           onActionConfirmation: (data) async {
+            // Capture into the outer mutable map so admin/user resolution can
+            // stamp selected_action_id before the final message is saved.
+            actionConfirmationData = Map<String, dynamic>.from(data);
             if (adminAgent != null) {
               try {
                 var responseData = await _interactionHandler.resolveInteractionViaAdmin(
                   interactionType: 'action_confirmation',
-                  data: data,
+                  data: actionConfirmationData!,
                   adminAgent: adminAgent,
                   channelId: channelId,
                   subAgentName: agent.name,
@@ -794,6 +800,10 @@ class GroupAgentExecutor {
                     taskId: effectiveTaskId,
                     responseType: 'action_confirmation',
                     responseData: responseData,
+                  );
+                  _applyActionConfirmationSelection(
+                    actionConfirmationData!,
+                    responseData,
                   );
                   _interactionHandler.saveAdminDecisionMessage(
                     channelId: channelId,
@@ -809,7 +819,7 @@ class GroupAgentExecutor {
             }
             // No admin or admin returned null (ASK_USER) — escalate to user
             if (onInteractionRequest != null) {
-              final userResponse = await onInteractionRequest(agent.id, agent.name, 'action_confirmation', data);
+              final userResponse = await onInteractionRequest(agent.id, agent.name, 'action_confirmation', actionConfirmationData!);
               if (userResponse != null && userResponse['_non_blocking'] != true) {
                 try {
                   await effectiveConnection.submitResponse(
@@ -818,11 +828,15 @@ class GroupAgentExecutor {
                     responseData: userResponse,
                   );
                 } catch (_) {}
+                _applyActionConfirmationSelection(
+                  actionConfirmationData!,
+                  userResponse,
+                );
                 return;
               }
             }
             // Fallback to default option
-            final fallback = _interactionHandler.pickDefaultOption('action_confirmation', data);
+            final fallback = _interactionHandler.pickDefaultOption('action_confirmation', actionConfirmationData!);
             if (fallback != null) {
               try {
                 await effectiveConnection.submitResponse(
@@ -831,6 +845,10 @@ class GroupAgentExecutor {
                   responseData: fallback,
                 );
               } catch (_) {}
+              _applyActionConfirmationSelection(
+                actionConfirmationData!,
+                fallback,
+              );
             }
           },
           onSingleSelect: (data) async {
@@ -1069,12 +1087,11 @@ class GroupAgentExecutor {
     final prefixPattern = RegExp(r'^\[' + RegExp.escape(agent.name) + r'(?:\(Agent\))?\]\s*[:：]\s*');
     responseContent = responseContent.replaceFirst(prefixPattern, '');
 
-    final hasUnresolvedPeerApproval = actionConfirmationData != null &&
-        actionConfirmationData!['confirmation_context'] == 'peer' &&
-        actionConfirmationData!['selected_action_id'] == null;
+    final hasPeerApprovalCard = actionConfirmationData != null &&
+        actionConfirmationData!['confirmation_context'] == 'peer';
 
     if ((responseContent.isEmpty || responseContent.contains('[SKIP]')) &&
-        !hasUnresolvedPeerApproval) {
+        !hasPeerApprovalCard) {
       LoggerService().debug('Agent ${agent.name} skipped', tag: 'GroupAgentExecutor');
       groupTask.isComplete = true;
       groupTask.onTaskFinished?.call();
@@ -1088,7 +1105,10 @@ class GroupAgentExecutor {
       return;
     }
 
-    if (responseContent.isEmpty && hasUnresolvedPeerApproval) {
+    if (responseContent.isEmpty && hasPeerApprovalCard) {
+      // Keep a visible bubble for peer approvals even when the agent emitted
+      // no prose — pending cards need a host, and admin-auto / panel-resolved
+      // cards should still show the selected-button state in history.
       responseContent =
           actionConfirmationData!['prompt'] as String? ?? '需要您的确认';
     }
@@ -1159,9 +1179,14 @@ class GroupAgentExecutor {
     // If local agent emitted an interactive component, block until user submits
     // (mirrors the remote ACP path's onForm/onActionConfirmation blocking behavior).
     // Peer in-band approvals are resolved during sendChat — skip post-save wait.
+    // Already-selected cards (admin auto / panel) also skip — nothing left to ask.
     final skipPostSavePeerApproval = _activeInteractionType == 'action_confirmation' &&
         (_activeInteractionData?['confirmation_context'] as String?) == 'peer';
+    final alreadyResolved = _activeInteractionData?['selected_action_id'] != null ||
+        _activeInteractionData?['selected_option_id'] != null ||
+        _activeInteractionData?['selected_option_ids'] != null;
     if (!skipPostSavePeerApproval &&
+        !alreadyResolved &&
         _activeInteractionType != null &&
         _activeInteractionData != null &&
         savedMessageId != null &&
@@ -1197,6 +1222,17 @@ class GroupAgentExecutor {
             final respondedKey = '${_activeInteractionType}_responded';
             final mergedMeta = Map<String, dynamic>.from(messageMetadata ?? {});
             mergedMeta[respondedKey] = resolvedResponse;
+            // Also stamp the selection onto the interactive section itself so
+            // message bubbles render the post-approval (selected) visual state.
+            final section = Map<String, dynamic>.from(
+              mergedMeta[_activeInteractionType!] as Map<String, dynamic>? ??
+                  _activeInteractionData ??
+                  {},
+            );
+            section.addAll(resolvedResponse);
+            section['selected_at'] =
+                DateTime.now().millisecondsSinceEpoch;
+            mergedMeta[_activeInteractionType!] = section;
             await _db.updateMessageMetadata(savedMessageId!, mergedMeta);
           } catch (e) {
             LoggerService().error('Failed to persist responded state for ${agent.name}',
@@ -1274,6 +1310,23 @@ class GroupAgentExecutor {
     notifyChannelUpdate(channelId);
   }
 
+  /// Apply a resolved approval onto [data] so the final saved message
+  /// metadata (and any UI bound to it) shows the selected state.
+  void _applyActionConfirmationSelection(
+    Map<String, dynamic> data,
+    Map<String, dynamic> responseData,
+  ) {
+    final selectedId = responseData['selected_action_id'] as String?;
+    if (selectedId == null || selectedId.isEmpty) return;
+    data['selected_action_id'] = selectedId;
+    final label = responseData['selected_action_label'] as String?;
+    if (label != null && label.isNotEmpty) {
+      data['selected_action_label'] = label;
+    }
+    data['selected_at'] =
+        responseData['selected_at'] ?? DateTime.now().millisecondsSinceEpoch;
+  }
+
   Future<void> _handlePeerGroupActionConfirmation({
     required RemoteAgent agent,
     required String peerId,
@@ -1314,6 +1367,7 @@ class GroupAgentExecutor {
         );
         if (responseData != null) {
           await submit(responseData);
+          _applyActionConfirmationSelection(data, responseData);
           if (isWorkflowStep && workflowId != null) {
             final cid = data['confirmation_id'] as String?;
             if (cid != null && cid.isNotEmpty) {
@@ -1380,10 +1434,11 @@ class GroupAgentExecutor {
             'action_confirmation',
             workflowData,
           );
-          if (userResponse != null &&
-              userResponse['_approval_submitted'] != true &&
-              userResponse['_non_blocking'] != true) {
-            await submit(userResponse);
+          if (userResponse != null && userResponse['_non_blocking'] != true) {
+            if (userResponse['_approval_submitted'] != true) {
+              await submit(userResponse);
+            }
+            _applyActionConfirmationSelection(data, userResponse);
           }
         }
         return;

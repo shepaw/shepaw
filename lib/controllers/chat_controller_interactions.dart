@@ -103,6 +103,34 @@ mixin _InteractionOps on _ChatControllerBase {
     return false;
   }
 
+  /// Merge a selected action into the message's `action_confirmation` metadata
+  /// so the inline buttons switch to the post-approval (selected) visual state.
+  void _markActionConfirmationSelected(
+    String messageId, {
+    required String actionId,
+    required String actionLabel,
+  }) {
+    final existing = messageIdMap[messageId];
+    final existingAc = existing?.metadata?['action_confirmation'];
+    final merged = existingAc is Map
+        ? Map<String, dynamic>.from(existingAc)
+        : <String, dynamic>{};
+    merged['selected_action_id'] = actionId;
+    if (actionLabel.isNotEmpty) {
+      merged['selected_action_label'] = actionLabel;
+    }
+    merged['selected_at'] = DateTime.now().millisecondsSinceEpoch;
+    _updateGroupStreamingMetadata(messageId, 'action_confirmation', merged);
+    _updateGroupStreamingMetadata(
+      messageId,
+      'action_confirmation_responded',
+      {'action_id': actionId, 'action_label': actionLabel},
+    );
+    // Persist so reconcile / channel reload cannot revive the pending card.
+    final meta = Map<String, dynamic>.from(messageIdMap[messageId]?.metadata ?? {});
+    localDatabaseService.updateMessageMetadata(messageId, meta).ignore();
+  }
+
   /// Handle peer tool approval from the workflow progress panel (or detail).
   Future<void> handleWorkflowPeerApprovalAction(
     String confirmationId,
@@ -151,10 +179,10 @@ mixin _InteractionOps on _ChatControllerBase {
       setWorkflowPeerApprovalPending(null);
       if (record.messageId != null &&
           messageIdMap.containsKey(record.messageId)) {
-        _updateGroupStreamingMetadata(
+        _markActionConfirmationSelected(
           record.messageId!,
-          'action_confirmation_responded',
-          {'action_id': actionId, 'action_label': actionLabel},
+          actionId: actionId,
+          actionLabel: actionLabel,
         );
       }
       if (_workflowCancelToken == null) {
@@ -189,10 +217,10 @@ mixin _InteractionOps on _ChatControllerBase {
         selectedActionId: actionId,
       );
       setWorkflowPeerApprovalPending(null);
-      _updateGroupStreamingMetadata(
+      _markActionConfirmationSelected(
         originalMessage.id,
-        'action_confirmation_responded',
-        {'action_id': actionId, 'action_label': actionLabel},
+        actionId: actionId,
+        actionLabel: actionLabel,
       );
       return unblocked;
     } catch (e) {
@@ -285,7 +313,11 @@ mixin _InteractionOps on _ChatControllerBase {
         'selected_action_id': actionId,
         'selected_action_label': actionLabel,
       });
-      _updateGroupStreamingMetadata(originalMessage.id, 'action_confirmation_responded', {'action_id': actionId, 'action_label': actionLabel});
+      _markActionConfirmationSelected(
+        originalMessage.id,
+        actionId: actionId,
+        actionLabel: actionLabel,
+      );
       return;
     }
 
