@@ -741,7 +741,13 @@ class PeerAgentClientService {
       'toolKind=${data['tool_kind']} toolCallId=${data['tool_call_id']}',
       tag: 'PeerApproval',
     );
-    if (!hasCallback) {
+    if (approvalId.isEmpty) {
+      _log.warning(
+        'agent_approval_req: empty approval_id for requestId=$requestId — '
+        'cannot track openApprovals; forwarding without gating agent_done',
+        tag: 'PeerApproval',
+      );
+    } else if (!hasCallback) {
       _log.warning(
         'agent_approval_req: no onActionConfirmation for requestId=$requestId '
         '(active pending keys: ${_pending.keys.take(5).join(", ")})',
@@ -750,16 +756,25 @@ class PeerAgentClientService {
     } else {
       final pending = _pending[requestId]!;
       pending.openApprovals++;
-      if (approvalId.isNotEmpty) {
-        _approvalToRequest[approvalId] = requestId;
-      }
+      _approvalToRequest[approvalId] = requestId;
     }
+    final rawActions = actions is List ? List<dynamic>.from(actions) : <dynamic>[];
+    // Hub / agents sometimes omit actions; provide a safe Allow/Deny pair so
+    // the UI (and admin auto-resolve) can always make a decision.
+    final effectiveActions = rawActions.isNotEmpty
+        ? rawActions
+        : const [
+            {'id': 'allow', 'label': '允许', 'style': 'primary'},
+            {'id': 'deny', 'label': '拒绝', 'style': 'danger'},
+          ];
     final actionData = <String, dynamic>{
       // The card widget keys off `confirmation_id`; the hub's approval_id IS
       // the gateway's confirmation_id, so reuse it for the submit path too.
-      'confirmation_id': approvalId,
+      'confirmation_id': approvalId.isNotEmpty
+          ? approvalId
+          : 'missing_$requestId',
       'prompt': data['prompt'] ?? '',
-      'actions': data['actions'] ?? const [],
+      'actions': effectiveActions,
       // Marks this as a peer-relayed approval so the submit path knows to
       // reply via agent_approval_resp instead of connection.submitResponse.
       'confirmation_context': 'peer',
@@ -768,7 +783,7 @@ class PeerAgentClientService {
     };
     _pending[requestId]?.onActionConfirmation?.call(actionData);
     _log.debug(
-      'agent_approval_req: forwarded to UI confirmationId=$approvalId',
+      'agent_approval_req: forwarded to UI confirmationId=${actionData['confirmation_id']}',
       tag: 'PeerApproval',
     );
   }

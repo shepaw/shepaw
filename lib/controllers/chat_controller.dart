@@ -232,6 +232,13 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
     final workflowId = _activeWorkflowId;
     if (workflowId == null || currentChannelId == null) return;
 
+    // Keep the in-chat plan_approval card in sync with the panel action.
+    _markPlanApprovalRespondedForWorkflow(
+      workflowId,
+      approved,
+      feedback: feedback,
+    );
+
     final workflowService = WorkflowService(db: localDatabaseService);
 
     if (approved) {
@@ -252,6 +259,57 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
           LoggerService().error('Failed to send workflow rejection feedback', tag: 'ChatController', error: e);
         }
       }
+    }
+  }
+
+  /// Mirror panel approve/reject onto the message bubble's plan_approval card.
+  void _markPlanApprovalRespondedForWorkflow(
+    String workflowId,
+    bool approved, {
+    String? feedback,
+  }) {
+    Message? target;
+    for (final msg in messages.reversed) {
+      final plan = msg.metadata?['plan_approval'] as Map<String, dynamic>?;
+      if (plan == null) continue;
+      if (plan['_workflowId'] == workflowId) {
+        target = msg;
+        break;
+      }
+      // Fallback: latest unanswered plan card when workflow id is missing.
+      if (plan['_approved'] == null &&
+          msg.metadata?['plan_approval_responded'] == null) {
+        target ??= msg;
+      }
+    }
+    if (target == null) return;
+
+    _updateGroupStreamingMetadata(
+      target.id,
+      'plan_approval_responded',
+      {
+        'approved': approved,
+        if (feedback != null && feedback.isNotEmpty) 'feedback': feedback,
+      },
+    );
+    final existingPlan =
+        target.metadata?['plan_approval'] as Map<String, dynamic>?;
+    if (existingPlan != null) {
+      final merged = Map<String, dynamic>.from(existingPlan);
+      merged['_approved'] = approved;
+      _updateGroupStreamingMetadata(target.id, 'plan_approval', merged);
+    }
+    final meta =
+        Map<String, dynamic>.from(messageIdMap[target.id]?.metadata ?? {});
+    localDatabaseService.updateMessageMetadata(target.id, meta).ignore();
+
+    // Also complete any ChatService-held plan approval Completer so the
+    // orchestration path (if still waiting) does not hang.
+    if (currentChannelId != null) {
+      chatService.completePlanApproval(currentChannelId!, {
+        'approved': approved,
+        if (feedback != null && feedback.isNotEmpty) 'feedback': feedback,
+      });
     }
   }
 
@@ -421,7 +479,16 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
       data: data,
       groupStreamingMessageId: sid ?? agentId,
     );
-    pendingGroupInteractions[sid ?? agentId] = event;
+    // Key peer approvals by confirmation_id so sequential approvals on the
+    // same agent/message do not overwrite each other's Completer.
+    final confirmationId = data['confirmation_id'] as String?;
+    final pendingKey =
+        (interactionType == 'action_confirmation' &&
+                confirmationId != null &&
+                confirmationId.isNotEmpty)
+            ? confirmationId
+            : (sid ?? agentId);
+    pendingGroupInteractions[pendingKey] = event;
     _notify();
     _emit(event);
 
@@ -434,6 +501,31 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
         final risk =
             riskStr == 'low' ? PeerApprovalRisk.low : PeerApprovalRisk.high;
         final confirmationId = data['confirmation_id'] as String?;
+
+        // A newer sequential approval for the same step replaces the panel.
+        // Complete any prior Completer so the previous wait cannot hang the
+        // peer sendChat openApprovals gate forever.
+        final prev = workflowPeerApprovalPending;
+        if (prev != null &&
+            prev.stepId == stepId &&
+            prev.confirmationId != null &&
+            prev.confirmationId != confirmationId) {
+          final stale = pendingGroupInteractions.remove(prev.confirmationId!);
+          if (stale != null && !stale.result.isCompleted) {
+            LoggerService().warning(
+              'Superseding stale peer approval ${prev.confirmationId} '
+              'with $confirmationId on step $stepId',
+              tag: 'PeerApproval',
+            );
+            stale.result.complete({
+              'selected_action_id': 'deny',
+              'selected_action_label': '被后续审批取代',
+              '_approval_submitted': false,
+              '_superseded': true,
+            });
+          }
+        }
+
         setWorkflowPeerApprovalPending(WorkflowPeerApprovalPending(
           workflowId: _activeWorkflowId!,
           stepId: stepId,
@@ -461,10 +553,16 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
         onTimeout: () => null,
       );
     } finally {
-      pendingGroupInteractions.remove(sid ?? agentId);
+      pendingGroupInteractions.remove(pendingKey);
       if (interactionType == 'action_confirmation' &&
           data['_workflowPeerApproval'] == true) {
-        setWorkflowPeerApprovalPending(null);
+        // Only clear the panel banner when this confirmation is still the
+        // active pending one — a newer sequential approval may have replaced it.
+        if (workflowPeerApprovalPending?.confirmationId == confirmationId ||
+            workflowPeerApprovalPending?.stepId ==
+                data['_workflowStepId']) {
+          setWorkflowPeerApprovalPending(null);
+        }
       }
       _notify();
     }
@@ -2432,7 +2530,14 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
             data: data,
             groupStreamingMessageId: sid ?? agentId,
           );
-          pendingGroupInteractions[sid ?? agentId] = event;
+          final confirmationId = data['confirmation_id'] as String?;
+          final pendingKey =
+              (interactionType == 'action_confirmation' &&
+                      confirmationId != null &&
+                      confirmationId.isNotEmpty)
+                  ? confirmationId
+                  : (sid ?? agentId);
+          pendingGroupInteractions[pendingKey] = event;
           _notify();
           _emit(event);
 
@@ -2447,7 +2552,7 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
             if (!event.result.isCompleted) {
               event.result.complete(const {'_non_blocking': true});
             }
-            pendingGroupInteractions.remove(sid ?? agentId);
+            pendingGroupInteractions.remove(pendingKey);
             _notify();
             return const {'_non_blocking': true};
           }
@@ -2458,7 +2563,7 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
               onTimeout: () => null,
             );
           } finally {
-            pendingGroupInteractions.remove(sid ?? agentId);
+            pendingGroupInteractions.remove(pendingKey);
             _notify();
           }
         },

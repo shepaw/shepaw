@@ -74,6 +74,7 @@ mixin _InteractionOps on _ChatControllerBase {
     Message originalMessage, {
     required String actionId,
     required String actionLabel,
+    String? confirmationId,
   }) {
     final response = {
       'selected_action_id': actionId,
@@ -81,6 +82,7 @@ mixin _InteractionOps on _ChatControllerBase {
       '_approval_submitted': true,
     };
     final keys = <String>{
+      if (confirmationId != null && confirmationId.isNotEmpty) confirmationId,
       originalMessage.id,
       originalMessage.from.id,
     };
@@ -95,6 +97,15 @@ mixin _InteractionOps on _ChatControllerBase {
     for (final entry in pendingGroupInteractions.entries.toList()) {
       if (entry.value.agentId == originalMessage.from.id &&
           !entry.value.result.isCompleted) {
+        // Prefer matching confirmation_id when available.
+        final pendingCid =
+            entry.value.data['confirmation_id'] as String?;
+        if (confirmationId != null &&
+            confirmationId.isNotEmpty &&
+            pendingCid != null &&
+            pendingCid != confirmationId) {
+          continue;
+        }
         entry.value.result.complete(response);
         pendingGroupInteractions.remove(entry.key);
         return true;
@@ -207,6 +218,7 @@ mixin _InteractionOps on _ChatControllerBase {
         originalMessage,
         actionId: actionId,
         actionLabel: actionLabel,
+        confirmationId: confirmationId,
       );
       await WorkflowService.instance.markPendingApprovalSubmitted(
         confirmationId,
@@ -235,7 +247,10 @@ mixin _InteractionOps on _ChatControllerBase {
     _updateGroupStreamingMetadata(
       originalMessage.id,
       'plan_approval_responded',
-      {'approved': approved},
+      {
+        'approved': approved,
+        if (feedback != null && feedback.isNotEmpty) 'feedback': feedback,
+      },
     );
     // Merge _approved into the plan_approval data so the card badge updates
     final existing = messageIdMap[originalMessage.id];
@@ -247,6 +262,13 @@ mixin _InteractionOps on _ChatControllerBase {
         _updateGroupStreamingMetadata(originalMessage.id, 'plan_approval', merged);
       }
     }
+    // Persist so channel reload / reconcile cannot revive the pending card.
+    final meta = Map<String, dynamic>.from(
+      messageIdMap[originalMessage.id]?.metadata ?? {},
+    );
+    localDatabaseService
+        .updateMessageMetadata(originalMessage.id, meta)
+        .ignore();
 
     // Submit result through ChatService Completer (survives channel switch)
     if (currentChannelId != null) {

@@ -147,10 +147,15 @@ class GroupInteractionHandler {
         final idx = matchOption(trimmed, actions);
         if (idx < 0) return null;
         final chosen = actions[idx] as Map<String, dynamic>;
+        final chosenId = (chosen['id'] as String?)
+            ?? (chosen['value'] as String?)
+            ?? (chosen['label'] as String?)
+            ?? '';
+        if (chosenId.isEmpty) return null;
         return {
           'confirmation_id': data['confirmation_id'] ?? data['id'] ?? '',
-          'selected_action_id': chosen['id'] ?? '',
-          'selected_action_label': chosen['label'] ?? '',
+          'selected_action_id': chosenId,
+          'selected_action_label': chosen['label'] ?? chosenId,
         };
 
       case 'single_select':
@@ -274,10 +279,15 @@ class GroupInteractionHandler {
             break;
           }
         }
+        final chosenId = (chosen['id'] as String?)
+            ?? (chosen['value'] as String?)
+            ?? (chosen['label'] as String?)
+            ?? '';
+        if (chosenId.isEmpty) return null;
         return {
           'confirmation_id': data['confirmation_id'] ?? data['id'] ?? '',
-          'selected_action_id': chosen['id'] ?? '',
-          'selected_action_label': chosen['label'] ?? '',
+          'selected_action_id': chosenId,
+          'selected_action_label': chosen['label'] ?? chosenId,
         };
 
       case 'single_select':

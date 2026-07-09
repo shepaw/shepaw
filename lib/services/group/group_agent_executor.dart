@@ -636,8 +636,12 @@ class GroupAgentExecutor {
             // Keep a single mutable map: resolution (admin auto or user tap)
             // must write selected_action_id here so the final DB message
             // metadata matches the post-approval UI state.
+            //
+            // Multiple sequential approvals in one turn must be chained —
+            // overwriting peerApprovalInFlight orphans the previous wait and
+            // leaves the step hung with openApprovals > 0.
             actionConfirmationData = Map<String, dynamic>.from(data);
-            peerApprovalInFlight = _handlePeerGroupActionConfirmation(
+            final next = _handlePeerGroupActionConfirmation(
               agent: agent,
               peerId: peerId,
               remoteAgentId: remoteAgentId,
@@ -650,6 +654,20 @@ class GroupAgentExecutor {
               workflowStepId: workflowStepId,
               onInteractionRequest: onInteractionRequest,
             );
+            final prev = peerApprovalInFlight;
+            peerApprovalInFlight = () async {
+              if (prev != null) {
+                try {
+                  await prev;
+                } catch (e) {
+                  LoggerService().warning(
+                    'Prior peer approval chain error for ${agent.name}: $e',
+                    tag: 'GroupAgentExecutor',
+                  );
+                }
+              }
+              await next;
+            }();
           },
         );
 
@@ -1436,9 +1454,35 @@ class GroupAgentExecutor {
           );
           if (userResponse != null && userResponse['_non_blocking'] != true) {
             if (userResponse['_approval_submitted'] != true) {
+              // Includes superseded approvals: still submit deny so the peer
+              // client's openApprovals counter can drop and agent_done unblocks.
               await submit(userResponse);
             }
-            _applyActionConfirmationSelection(data, userResponse);
+            if (userResponse['_superseded'] != true) {
+              _applyActionConfirmationSelection(data, userResponse);
+            }
+          } else if (userResponse == null) {
+            // Timeout / cancelled: still reply so the peer hub can unblock
+            // (openApprovals would otherwise hold agent_done forever).
+            final deny = <String, dynamic>{
+              'selected_action_id': 'deny',
+              'selected_action_label': '拒绝',
+            };
+            LoggerService().warning(
+              'Peer workflow approval timed out for ${agent.name}; '
+              'auto-denying confirmationId=${data['confirmation_id']}',
+              tag: 'GroupAgentExecutor',
+            );
+            try {
+              await submit(deny);
+              _applyActionConfirmationSelection(data, deny);
+            } catch (e) {
+              LoggerService().error(
+                'Failed to auto-deny timed-out peer approval',
+                tag: 'GroupAgentExecutor',
+                error: e,
+              );
+            }
           }
         }
         return;
