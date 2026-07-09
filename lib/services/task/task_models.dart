@@ -1,5 +1,6 @@
 import 'dart:async';
 import '../../clis/shepaw/os/os_executor.dart' as os_exec;
+import '../../models/workflow_models.dart';
 
 /// Tracks an in-flight ACP task so it can continue in the background
 /// when the user navigates away from the chat screen.
@@ -168,5 +169,41 @@ class GroupActiveTask {
   void detachUI() {
     onStreamChunk = null;
     onTaskFinished = null;
+  }
+}
+
+/// Tracks an in-flight workflow execution so it can continue in the background
+/// when the user navigates away from the group chat screen.
+///
+/// Unlike per-controller cancel tokens (which are lost on ChatController
+/// dispose), this lives in [ChatService] and survives channel switches.
+class ActiveWorkflowExecution {
+  final String workflowId;
+  final String channelId;
+  final WorkflowCancellationToken cancelToken;
+
+  void Function(String agentId, String agentName)? onAgentStart;
+  void Function(String agentId, String agentName, String chunk)? onStreamChunk;
+  void Function(String agentId, String agentName, bool skipped)? onAgentDone;
+  Future<Map<String, dynamic>?> Function(
+    String agentId,
+    String agentName,
+    String interactionType,
+    Map<String, dynamic> data,
+  )? onInteractionRequest;
+  void Function()? onExecutionFinished;
+
+  ActiveWorkflowExecution({
+    required this.workflowId,
+    required this.channelId,
+    required this.cancelToken,
+  });
+
+  void detachUI() {
+    onAgentStart = null;
+    onStreamChunk = null;
+    onAgentDone = null;
+    onInteractionRequest = null;
+    onExecutionFinished = null;
   }
 }

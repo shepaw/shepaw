@@ -191,6 +191,21 @@ class WorkflowExecution {
   int get failedSteps =>
       steps.where((s) => s.status == StepExecutionStatus.failed).length;
 
+  /// True when every step is terminal (completed / skipped / failed).
+  bool get allStepsTerminal =>
+      steps.isNotEmpty &&
+      steps.every((s) =>
+          s.status == StepExecutionStatus.completed ||
+          s.status == StepExecutionStatus.skipped ||
+          s.status == StepExecutionStatus.failed);
+
+  /// True when every step finished successfully (completed or skipped).
+  bool get allStepsSucceeded =>
+      steps.isNotEmpty &&
+      steps.every((s) =>
+          s.status == StepExecutionStatus.completed ||
+          s.status == StepExecutionStatus.skipped);
+
   /// Current stage index (0-based) based on step progress.
   int get currentStageIndex {
     if (steps.isEmpty) return 0;

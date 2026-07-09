@@ -153,9 +153,7 @@ mixin _InteractionOps on _ChatControllerBase {
         actionId,
         actionLabel,
       );
-      if (!unblocked &&
-          workflowIdForResume != null &&
-          _workflowCancelToken == null) {
+      if (!unblocked && workflowIdForResume != null) {
         await _resumeWorkflowExecutionIfNeeded(workflowIdForResume);
       }
       return;
@@ -185,9 +183,7 @@ mixin _InteractionOps on _ChatControllerBase {
           actionLabel: actionLabel,
         );
       }
-      if (_workflowCancelToken == null) {
-        await _resumeWorkflowExecutionIfNeeded(record.workflowId);
-      }
+      await _resumeWorkflowExecutionIfNeeded(record.workflowId);
     } catch (e) {
       _emit(ShowErrorSnackBarEvent('$e'));
     }
@@ -299,9 +295,7 @@ mixin _InteractionOps on _ChatControllerBase {
         actionId,
         actionLabel,
       );
-      if (!unblocked &&
-          workflowIdForResume != null &&
-          _workflowCancelToken == null) {
+      if (!unblocked && workflowIdForResume != null) {
         await _resumeWorkflowExecutionIfNeeded(workflowIdForResume);
       }
       return;

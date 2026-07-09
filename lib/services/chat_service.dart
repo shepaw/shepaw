@@ -1278,7 +1278,45 @@ class ChatService implements IPawChatSender {
   );
 
   /// Track which workflows are currently being executed to prevent concurrent runs.
-  final Set<String> _executingWorkflows = {};
+  final Map<String, ActiveWorkflowExecution> _activeWorkflowExecutions = {};
+
+  /// Whether [workflowId] currently has an in-process execution loop.
+  bool isWorkflowExecuting(String workflowId) =>
+      _activeWorkflowExecutions.containsKey(workflowId);
+
+  /// Active workflow execution for [workflowId], if any.
+  ActiveWorkflowExecution? getActiveWorkflowExecution(String workflowId) =>
+      _activeWorkflowExecutions[workflowId];
+
+  /// Detach UI callbacks from a running workflow without cancelling it.
+  void detachWorkflowExecutionUI(String workflowId) {
+    _activeWorkflowExecutions[workflowId]?.detachUI();
+  }
+
+  /// Re-attach UI callbacks to a running workflow after channel switch.
+  /// Returns null when the workflow is not currently executing in-process.
+  ActiveWorkflowExecution? attachWorkflowExecutionUI(
+    String workflowId, {
+    void Function(String agentId, String agentName)? onAgentStart,
+    void Function(String agentId, String agentName, String chunk)? onStreamChunk,
+    void Function(String agentId, String agentName, bool skipped)? onAgentDone,
+    Future<Map<String, dynamic>?> Function(
+      String agentId,
+      String agentName,
+      String interactionType,
+      Map<String, dynamic> data,
+    )? onInteractionRequest,
+    void Function()? onExecutionFinished,
+  }) {
+    final exec = _activeWorkflowExecutions[workflowId];
+    if (exec == null) return null;
+    exec.onAgentStart = onAgentStart;
+    exec.onStreamChunk = onStreamChunk;
+    exec.onAgentDone = onAgentDone;
+    exec.onInteractionRequest = onInteractionRequest;
+    exec.onExecutionFinished = onExecutionFinished;
+    return exec;
+  }
 
   /// Execute a workflow's steps automatically after user approval.
   ///
@@ -1289,6 +1327,10 @@ class ChatService implements IPawChatSender {
   ///
   /// Supports cancellation via [cancelToken]. When cancelled, running steps are
   /// marked as cancelled and the workflow transitions to cancelled state.
+  ///
+  /// When [cancelToken] is omitted, a token is created and stored on the
+  /// [ActiveWorkflowExecution] so channel switches can reattach without
+  /// restarting the loop.
   Future<void> executeWorkflowSteps({
     required String workflowId,
     required String channelId,
@@ -1300,17 +1342,30 @@ class ChatService implements IPawChatSender {
     Future<Map<String, dynamic>?> Function(
       String agentId, String agentName, String interactionType, Map<String, dynamic> data,
     )? onInteractionRequest,
+    void Function()? onExecutionFinished,
     WorkflowCancellationToken? cancelToken,
   }) async {
     // H1: Concurrency guard — prevent multiple executions of same workflow
-    if (_executingWorkflows.contains(workflowId)) {
+    if (_activeWorkflowExecutions.containsKey(workflowId)) {
       LoggerService().warning(
         'executeWorkflowSteps: workflow $workflowId is already executing, skipping',
         tag: 'ChatService',
       );
       return;
     }
-    _executingWorkflows.add(workflowId);
+
+    final token = cancelToken ?? WorkflowCancellationToken();
+    final activeExec = ActiveWorkflowExecution(
+      workflowId: workflowId,
+      channelId: channelId,
+      cancelToken: token,
+    );
+    activeExec.onAgentStart = onAgentStart;
+    activeExec.onStreamChunk = onStreamChunk;
+    activeExec.onAgentDone = onAgentDone;
+    activeExec.onInteractionRequest = onInteractionRequest;
+    activeExec.onExecutionFinished = onExecutionFinished;
+    _activeWorkflowExecutions[workflowId] = activeExec;
 
     bool reachedTerminalState = false;
 
@@ -1326,6 +1381,21 @@ class ChatService implements IPawChatSender {
         LoggerService().warning(
           'executeWorkflowSteps: workflow $workflowId is not in running state (${workflow.status}), skipping',
           tag: 'ChatService',
+        );
+        reachedTerminalState = true;
+        return;
+      }
+
+      // All steps already terminal — finalize without re-running agents.
+      if (workflow.allStepsSucceeded) {
+        await _workflowService.completeWorkflow(workflowId, summary: '所有阶段执行完毕');
+        reachedTerminalState = true;
+        return;
+      }
+      if (workflow.allStepsTerminal && workflow.failedSteps > 0) {
+        await _workflowService.failWorkflow(
+          workflowId,
+          'Workflow has failed steps and no remaining work',
         );
         reachedTerminalState = true;
         return;
@@ -1366,9 +1436,53 @@ class ChatService implements IPawChatSender {
                 );
       }
 
+      // Heal orphaned `running` steps left by a previous interrupted loop
+      // before evaluating remaining work.
+      final orphanedRunning = workflow.steps
+          .where((s) => s.status == StepExecutionStatus.running)
+          .toList();
+      var effectiveWorkflow = workflow;
+      if (orphanedRunning.isNotEmpty) {
+        for (final step in orphanedRunning) {
+          LoggerService().info(
+            'executeWorkflowSteps: healing orphaned running step ${step.id} '
+            '(${step.agentName}) on workflow $workflowId',
+            tag: 'ChatService',
+          );
+          await _workflowService.completeStep(
+            step.id,
+            outputSummary:
+                step.outputSummary ?? 'Recovered after interrupted execution',
+          );
+        }
+        final refreshed =
+            await _workflowService.getWorkflowExecutionWithSteps(workflowId);
+        if (refreshed == null) {
+          reachedTerminalState = true;
+          return;
+        }
+        effectiveWorkflow = refreshed;
+        if (effectiveWorkflow.allStepsSucceeded) {
+          await _workflowService.completeWorkflow(
+            workflowId,
+            summary: '所有阶段执行完毕',
+          );
+          reachedTerminalState = true;
+          return;
+        }
+        if (effectiveWorkflow.allStepsTerminal) {
+          await _workflowService.failWorkflow(
+            workflowId,
+            'Workflow has failed steps and no remaining work',
+          );
+          reachedTerminalState = true;
+          return;
+        }
+      }
+
       // Group steps by stage
       final stageMap = <int, List<dynamic>>{};
-      for (final step in workflow.steps) {
+      for (final step in effectiveWorkflow.steps) {
         stageMap.putIfAbsent(step.stageIndex, () => []).add(step);
       }
       final stageIndices = stageMap.keys.toList()..sort();
@@ -1382,25 +1496,25 @@ class ChatService implements IPawChatSender {
       Future<Map<String, dynamic>?> Function(
         String agentId, String agentName, String interactionType, Map<String, dynamic> data,
       )? serializedInteractionRequest;
-      if (onInteractionRequest != null) {
-        serializedInteractionRequest = (agentId, agentName, interactionType, data) async {
-          // Wait for any previous interaction to finish
-          while (_interactionLock != null && !_interactionLock!.isCompleted) {
-            await _interactionLock!.future;
-          }
-          _interactionLock = Completer<void>();
-          try {
-            return await onInteractionRequest(agentId, agentName, interactionType, data);
-          } finally {
-            _interactionLock!.complete();
-          }
-        };
-      }
+      serializedInteractionRequest = (agentId, agentName, interactionType, data) async {
+        // Wait for any previous interaction to finish
+        while (_interactionLock != null && !_interactionLock!.isCompleted) {
+          await _interactionLock!.future;
+        }
+        _interactionLock = Completer<void>();
+        try {
+          final handler = activeExec.onInteractionRequest;
+          if (handler == null) return null;
+          return await handler(agentId, agentName, interactionType, data);
+        } finally {
+          _interactionLock!.complete();
+        }
+      };
 
       // Execute stages sequentially
       for (final stageIdx in stageIndices) {
         // C3: Check cancellation between stages
-        if (cancelToken?.isCancelled == true) {
+        if (token.isCancelled) {
           await _workflowService.cancelWorkflow(workflowId);
           reachedTerminalState = true;
           return;
@@ -1408,14 +1522,16 @@ class ChatService implements IPawChatSender {
 
         final steps = stageMap[stageIdx]!;
 
-        // Execute steps within stage in parallel
+        // Execute steps within stage in parallel.
+        // Only pending steps are dispatched. `running` without an in-process
+        // owner is treated as an orphan from a previous interrupted loop and
+        // completed without re-invoking the agent (avoids duplicate work on
+        // channel switch / process recovery).
         final futures = steps
-            .where((s) =>
-                s.status != StepExecutionStatus.skipped &&
-                s.status != StepExecutionStatus.completed)
+            .where((s) => s.status == StepExecutionStatus.pending)
             .map((step) async {
           // C3: Check cancellation before starting each step
-          if (cancelToken?.isCancelled == true) return;
+          if (token.isCancelled) return;
 
           await _workflowService.startStep(step.id);
 
@@ -1429,7 +1545,7 @@ class ChatService implements IPawChatSender {
             return;
           }
 
-          onAgentStart?.call(agent.id, agent.name);
+          activeExec.onAgentStart?.call(agent.id, agent.name);
 
           try {
             final stepBuffer = StringBuffer();
@@ -1454,14 +1570,16 @@ class ChatService implements IPawChatSender {
               mentionMode: mentionMode,
               onStreamChunk: (aid, anm, chunk) {
                 stepBuffer.write(chunk);
-                onStreamChunk?.call(aid, anm, chunk);
+                activeExec.onStreamChunk?.call(aid, anm, chunk);
               },
-              onAgentDone: onAgentDone,
+              onAgentDone: (aid, anm, skipped) {
+                activeExec.onAgentDone?.call(aid, anm, skipped);
+              },
               onInteractionRequest: serializedInteractionRequest,
             );
 
             // C3: Check cancellation after step completes
-            if (cancelToken?.isCancelled == true) return;
+            if (token.isCancelled) return;
 
             final output = stepBuffer.toString();
             await _workflowService.completeStep(
@@ -1470,14 +1588,14 @@ class ChatService implements IPawChatSender {
             );
           } catch (e) {
             await _workflowService.failStep(step.id, e.toString());
-            onAgentDone?.call(agent.id, agent.name, false);
+            activeExec.onAgentDone?.call(agent.id, agent.name, false);
           }
         });
 
         await Future.wait(futures);
 
         // C3: Check cancellation after stage completes
-        if (cancelToken?.isCancelled == true) {
+        if (token.isCancelled) {
           await _workflowService.cancelWorkflow(workflowId);
           reachedTerminalState = true;
           return;
@@ -1498,7 +1616,7 @@ class ChatService implements IPawChatSender {
           channel.members.any((m) => m.id == a.id && m.role == 'admin')).firstOrNull;
 
       if (adminAgent != null) {
-        onAgentStart?.call(adminAgent.id, adminAgent.name);
+        activeExec.onAgentStart?.call(adminAgent.id, adminAgent.name);
         try {
           final summaryHistory = await loadChannelMessages(channelId, limit: 50);
           await _groupAgentExecutor.processGroupAgent(
@@ -1517,12 +1635,16 @@ class ChatService implements IPawChatSender {
             channelMembers: channelMembers,
             customSystemPrompt: customSystemPrompt,
             mentionMode: mentionMode,
-            onStreamChunk: onStreamChunk,
-            onAgentDone: onAgentDone,
+            onStreamChunk: (aid, anm, chunk) {
+              activeExec.onStreamChunk?.call(aid, anm, chunk);
+            },
+            onAgentDone: (aid, anm, skipped) {
+              activeExec.onAgentDone?.call(aid, anm, skipped);
+            },
           );
         } catch (e) {
           LoggerService().error('Workflow final summary error', tag: 'ChatService', error: e);
-          onAgentDone?.call(adminAgent.id, adminAgent.name, true);
+          activeExec.onAgentDone?.call(adminAgent.id, adminAgent.name, true);
         }
       }
 
@@ -1545,7 +1667,8 @@ class ChatService implements IPawChatSender {
           await _workflowService.failWorkflow(workflowId, 'Execution ended without terminal state');
         } catch (_) {}
       }
-      _executingWorkflows.remove(workflowId);
+      final finished = _activeWorkflowExecutions.remove(workflowId);
+      finished?.onExecutionFinished?.call();
     }
   }
 
@@ -1553,9 +1676,10 @@ class ChatService implements IPawChatSender {
   ///
   /// Called when the user stops the workflow from the UI.
   void cancelWorkflowExecution(String workflowId) {
-    // The cancellation token approach handles the actual cancellation;
-    // this is a convenience method for the controller.
-    _executingWorkflows.remove(workflowId);
+    final exec = _activeWorkflowExecutions[workflowId];
+    exec?.cancelToken.cancel();
+    // Keep the entry until the execution loop exits its finally block so
+    // isWorkflowExecuting stays accurate during teardown.
   }
 
   /// Create a new group session with the same members and name as the original group.
