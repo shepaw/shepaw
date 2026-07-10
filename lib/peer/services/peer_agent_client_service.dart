@@ -810,6 +810,11 @@ class PeerAgentClientService {
   }
 
   /// Submit the user's tool-call decision back to the hub.
+  ///
+  /// Send `agent_approval_resp` **before** decrementing [openApprovals] /
+  /// completing a buffered `agent_done`. Completing first can finish
+  /// [sendChat] (and clear streaming UI) while the verdict is still in
+  /// flight; subsequent chunks then have nowhere to land.
   Future<void> submitApproval({
     required String peerId,
     required String approvalId,
@@ -822,13 +827,6 @@ class PeerAgentClientService {
       tag: 'PeerApproval',
     );
     final requestId = _approvalToRequest.remove(approvalId);
-    if (requestId != null) {
-      final pending = _pending[requestId];
-      if (pending != null && pending.openApprovals > 0) {
-        pending.openApprovals--;
-      }
-      _tryCompleteBufferedDone(requestId);
-    }
     await PeerConnectionManager.instance.sendControl(peerId, {
       'type': 'agent_approval_resp',
       'approval_id': approvalId,
@@ -836,6 +834,15 @@ class PeerAgentClientService {
       if (selectedActionLabel != null && selectedActionLabel.isNotEmpty)
         'selected_action_label': selectedActionLabel,
     });
+    if (requestId != null) {
+      final pending = _pending[requestId];
+      if (pending != null && pending.openApprovals > 0) {
+        pending.openApprovals--;
+      }
+      // Async-confirmation agents may have buffered agent_done while the
+      // approval was open — complete now that the verdict is on the wire.
+      _tryCompleteBufferedDone(requestId);
+    }
   }
 
   void _onChunk(Map<String, dynamic> data) {
