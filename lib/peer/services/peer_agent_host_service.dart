@@ -272,11 +272,20 @@ class PeerAgentHostService {
         userName: userName,
         channelId: channelId,
         acpCancellationToken: token,
+        // Relay raw stream; the phone client folds progress once.
+        foldProgressContent: false,
         onStreamChunk: (chunk) {
           unawaited(PeerConnectionManager.instance.sendControl(peerId, {
             'type': 'agent_chunk',
             'request_id': requestId,
             'content': chunk,
+          }));
+        },
+        onMessageMetadata: (data) {
+          unawaited(PeerConnectionManager.instance.sendControl(peerId, {
+            'type': 'agent_metadata',
+            'request_id': requestId,
+            'metadata': data,
           }));
         },
         onActionConfirmation: (data) {

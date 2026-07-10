@@ -28,6 +28,7 @@ import '../remote_agent_service.dart';
 import '../../peer/services/peer_agent_client_service.dart';
 import '../../service_locator.dart' show getIt;
 import 'local_llm_handler.dart';
+import 'stream_content_splitter.dart';
 import 'connection_retry_policy.dart';
 
 /// Internal sentinel returned by [AgentMessagingService._sendViaACPProtocol]
@@ -119,6 +120,10 @@ class AgentMessagingService {
     /// - `attempt == 0`：重连流程结束（连上或彻底失败），UI 可隐藏进度提示。
     /// 仅在 ACP 协议下、首次建连/复用失败进入重试循环时触发。
     void Function(int attempt, int total)? onReconnecting,
+    /// When true (default), thinking/tool text is folded into
+    /// `metadata.progress_content` and only the answer is streamed as content.
+    /// Peer host relay must set false so the phone client can split once.
+    bool foldProgressContent = true,
   }) async {
     LoggerService().debug('sendMessageToAgent: agentId=${agent.id}, name=${agent.name}, protocol=${agent.protocol}, status=${agent.status}, endpoint=${agent.endpoint}', tag: 'AgentMessagingService');
 
@@ -227,6 +232,7 @@ class AgentMessagingService {
           messageToSend, agent,
           onStreamChunk: onStreamChunk,
           onActionConfirmation: onActionConfirmation,
+          onMessageMetadata: onMessageMetadata,
           sessionId: channelId,
           acpCancellationToken: acpCancellationToken,
         );
@@ -248,6 +254,7 @@ class AgentMessagingService {
           attachments: attachments,
           dmSystemPrompt: dmSystemPrompt,
           onReconnecting: onReconnecting,
+          foldProgressContent: foldProgressContent,
         );
       } else {
         // For other protocols, use generic HTTP POST
@@ -350,6 +357,7 @@ class AgentMessagingService {
     List<AttachmentData>? attachments,
     String? dmSystemPrompt,
     void Function(int attempt, int total)? onReconnecting,
+    bool foldProgressContent = true,
   }) async {
     LoggerService().info('Starting ACP WebSocket protocol, endpoint: ${agent.endpoint}', tag: 'AgentMessagingService');
 
@@ -541,6 +549,13 @@ class AgentMessagingService {
       Map<String, dynamic>? fileUploadData;
       Map<String, dynamic>? formDataCapture;
       Map<String, dynamic>? messageMetadataExtra;
+      final splitter = StreamContentSplitter();
+
+      void publishSplitMetadata(Map<String, dynamic> meta) {
+        messageMetadataExtra = Map<String, dynamic>.from(messageMetadataExtra ?? {})
+          ..addAll(meta);
+        activeTask.onMessageMetadata?.call(meta);
+      }
 
       // Decide early whether this agent supports the async-confirmation
       // capability. The flag is populated by [ACPAgentConnection._refreshCapabilities]
@@ -568,6 +583,9 @@ class AgentMessagingService {
         if (messageMetadataExtra != null) {
           meta.addAll(messageMetadataExtra!);
         }
+        if (foldProgressContent) {
+          meta.addAll(splitter.finalProgressMetadata());
+        }
         if (actionConfirmationData != null) {
           meta['action_confirmation'] = actionConfirmationData;
         }
@@ -590,6 +608,8 @@ class AgentMessagingService {
           content = responseContent.isNotEmpty ? '$responseContent\n\n[Stopped]' : '[Stopped]';
         } else if (responseContent.isNotEmpty) {
           content = responseContent;
+        } else if (foldProgressContent && splitter.progressContent.isNotEmpty) {
+          content = '';
         } else {
           content = fallbackContent ?? 'Task completed';
         }
@@ -708,12 +728,25 @@ class AgentMessagingService {
       connection.registerTaskCallbacks(effectiveTaskId, TaskCallbacks(
         onTextContent: (data) {
           final content = data['content'] as String? ?? '';
-          activeTask.accumulatedContent += content;
-          activeTask.onStreamChunk?.call(content);
-          infLogAcp.onTextChunk(effectiveTaskId, content);
-          
-          // Schedule periodic flushing on first content chunk
-          scheduleFlushTimer();
+          if (!foldProgressContent) {
+            activeTask.accumulatedContent += content;
+            activeTask.onStreamChunk?.call(content);
+            infLogAcp.onTextChunk(effectiveTaskId, content);
+            scheduleFlushTimer();
+            return;
+          }
+          final answerDelta = splitter.onChunk(content);
+          if (answerDelta.isNotEmpty) {
+            activeTask.accumulatedContent += answerDelta;
+            activeTask.onStreamChunk?.call(answerDelta);
+            infLogAcp.onTextChunk(effectiveTaskId, answerDelta);
+            scheduleFlushTimer();
+          } else {
+            final progressMeta = splitter.progressMetadataDelta();
+            if (progressMeta != null) publishSplitMetadata(progressMeta);
+            // Still log full stream for inference debugging.
+            infLogAcp.onTextChunk(effectiveTaskId, content);
+          }
         },
         onActionConfirmation: (data) {
           actionConfirmationData = Map<String, dynamic>.from(data);
@@ -739,8 +772,12 @@ class AgentMessagingService {
           await activeTask.onFileMessage?.call(data);
         },
         onMessageMetadata: (data) {
-          messageMetadataExtra = Map<String, dynamic>.from(data);
-          activeTask.onMessageMetadata?.call(data);
+          if (!foldProgressContent) {
+            messageMetadataExtra = Map<String, dynamic>.from(data);
+            activeTask.onMessageMetadata?.call(data);
+            return;
+          }
+          publishSplitMetadata(splitter.onMetadata(data));
         },
         onRequestHistory: (data) {
           activeTask.onRequestHistory?.call(data);
@@ -1055,6 +1092,7 @@ class AgentMessagingService {
     RemoteAgent agent, {
     void Function(String chunk)? onStreamChunk,
     void Function(Map<String, dynamic> actionData)? onActionConfirmation,
+    void Function(Map<String, dynamic> metadata)? onMessageMetadata,
     String? sessionId,
     ACPCancellationToken? acpCancellationToken,
   }) async {
@@ -1075,6 +1113,7 @@ class AgentMessagingService {
       userName: userMessage.from.name,
     );
     activeTask.onStreamChunk = onStreamChunk;
+    activeTask.onMessageMetadata = onMessageMetadata;
     // Surface tool-call approvals (agent_approval_req relayed by the hub) to
     // the chat UI via the same card mechanism as the direct ACP flow.
     activeTask.onActionConfirmation = onActionConfirmation;
@@ -1095,6 +1134,14 @@ class AgentMessagingService {
     // Capture the latest approval so the final persisted message still carries
     // the card after sendChat completes and ChatController reloads from DB.
     Map<String, dynamic>? actionConfirmationData;
+    final splitter = StreamContentSplitter();
+
+    void publishMetadata(Map<String, dynamic> meta) {
+      final merged = Map<String, dynamic>.from(activeTask.metadata ?? {});
+      merged.addAll(meta);
+      activeTask.metadata = merged;
+      activeTask.onMessageMetadata?.call(meta);
+    }
 
     final result = await PeerAgentClientService.instance.sendChat(
       peerId: peerId,
@@ -1103,8 +1150,17 @@ class AgentMessagingService {
       sessionId: peerSessionId,
       cancelToken: acpCancellationToken,
       onChunk: (chunk) {
-        activeTask.accumulatedContent += chunk;
-        activeTask.onStreamChunk?.call(chunk);
+        final answerDelta = splitter.onChunk(chunk);
+        if (answerDelta.isNotEmpty) {
+          activeTask.accumulatedContent += answerDelta;
+          activeTask.onStreamChunk?.call(answerDelta);
+        } else {
+          final progressMeta = splitter.progressMetadataDelta();
+          if (progressMeta != null) publishMetadata(progressMeta);
+        }
+      },
+      onMetadata: (data) {
+        publishMetadata(splitter.onMetadata(data));
       },
       onActionConfirmation: (data) {
         actionConfirmationData = Map<String, dynamic>.from(data);
@@ -1129,14 +1185,24 @@ class AgentMessagingService {
     activeTask.isComplete = true;
     activeTask.onTaskFinished?.call();
 
-    final content = result.content.isNotEmpty
-        ? result.content
-        : (activeTask.accumulatedContent.isNotEmpty
-            ? activeTask.accumulatedContent
-            : 'Task completed');
+    // Prefer splitter answer (progress stripped). Progress-only turns keep
+    // content empty so MessageBubble renders progress_content alone.
+    final String content;
+    if (splitter.answerContent.isNotEmpty) {
+      content = splitter.answerContent;
+    } else if (splitter.progressContent.isNotEmpty) {
+      content = '';
+    } else if (activeTask.accumulatedContent.isNotEmpty) {
+      content = activeTask.accumulatedContent;
+    } else if (result.content.isNotEmpty) {
+      content = result.content;
+    } else {
+      content = 'Task completed';
+    }
 
     final meta = <String, dynamic>{};
     if (result.metadata != null) meta.addAll(result.metadata!);
+    meta.addAll(splitter.finalProgressMetadata());
     // Prefer the in-band approval captured during the turn over any stale
     // metadata the hub may have attached to agent_done.
     final relayedAc =

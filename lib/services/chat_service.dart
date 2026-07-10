@@ -559,6 +559,8 @@ class ChatService implements IPawChatSender {
     /// 主动重连进度回调：`(attempt, total)`。`attempt>0` 正在重连第几次；
     /// `attempt==0` 重连流程结束（成功或失败）。仅 ACP 协议触发。
     void Function(int attempt, int total)? onReconnecting,
+    /// See [AgentMessagingService.sendMessageToAgent].
+    bool foldProgressContent = true,
   }) => _agentMessagingService.sendMessageToAgent(
     content: content,
     agent: agent,
@@ -581,6 +583,7 @@ class ChatService implements IPawChatSender {
     attachments: attachments,
     existingUserMessage: existingUserMessage,
     onReconnecting: onReconnecting,
+    foldProgressContent: foldProgressContent,
   );
 
   /// Returns the active ACP connection for [agentId], or null.

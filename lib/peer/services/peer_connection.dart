@@ -88,6 +88,7 @@ class PeerConnection {
     'agent_list_resp',
     'agent_chat',
     'agent_chunk',
+    'agent_metadata',
     'agent_done',
     'agent_error',
     'agent_cancel',

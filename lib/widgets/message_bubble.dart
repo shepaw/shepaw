@@ -579,7 +579,61 @@ class MessageBubble extends StatelessWidget {
           );
         }
 
-        // Check for collapsible config
+        // Check for separated progress (thinking/tools) vs answer content.
+        // Peer/ACP streams fold progress into metadata.progress_content so the
+        // main bubble stays readable.
+        final progressContent =
+            message.metadata?['progress_content'] as String?;
+        if (progressContent != null && progressContent.isNotEmpty) {
+          final progressTitle =
+              message.metadata?['collapsible_title'] as String?;
+          final autoCollapse =
+              message.metadata?['auto_collapse'] != false;
+          final hasAnswer = message.content.trim().isNotEmpty;
+          final progressBody = MarkdownBody(
+            data: progressContent,
+            selectable: false,
+            extensionSet: md.ExtensionSet.gitHubWeb,
+            onTapLink: (text, href, title) async {
+              if (href == null) return;
+              final uri = Uri.tryParse(href);
+              if (uri == null) return;
+              if (!await launchUrl(uri, mode: LaunchMode.externalApplication)) {
+                if (context.mounted) {
+                  showTopToast(
+                    context,
+                    AppLocalizations.of(context).widget_cannotOpenLink(href),
+                    icon: Icons.error_outline,
+                    color: Colors.red.shade400,
+                  );
+                }
+              }
+            },
+            styleSheet: styleSheet,
+          );
+          final progressBubble = CollapsibleMessageBubble(
+            title: progressTitle ??
+                AppLocalizations.of(context).widget_details,
+            // Collapse when an answer is present (or stream finished with
+            // autoCollapse). Keep expanded while only progress is streaming.
+            initiallyCollapsed: hasAnswer || (!isStreaming && autoCollapse),
+            autoCollapseOnComplete: autoCollapse && hasAnswer,
+            isStreaming: isStreaming && !hasAnswer,
+            isMyMessage: isMyMessage,
+            child: _wrapWithTextSelection(progressBody),
+          );
+          if (!hasAnswer) return progressBubble;
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              progressBubble,
+              const SizedBox(height: 8),
+              markdownWidget,
+            ],
+          );
+        }
+
+        // Check for collapsible config (whole-message collapse, legacy)
         final isCollapsible = message.metadata?['collapsible'] == true;
         if (isCollapsible) {
           final collapsibleTitle = message.metadata?['collapsible_title'] as String?;

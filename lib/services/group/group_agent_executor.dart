@@ -28,6 +28,7 @@ import '../../peer/services/peer_agent_client_service.dart';
 import 'peer_approval_policy.dart';
 import '../workflow/workflow_service.dart';
 import '../../models/workflow_pending_approval.dart';
+import '../messaging/stream_content_splitter.dart';
 
 /// Executes a single agent's response turn within a group chat.
 ///
@@ -618,6 +619,7 @@ class GroupAgentExecutor {
           channelId;
 
       try {
+        final splitter = StreamContentSplitter();
         final result = await PeerAgentClientService.instance.sendChat(
           peerId: peerId,
           remoteAgentId: remoteAgentId,
@@ -625,12 +627,29 @@ class GroupAgentExecutor {
           sessionId: peerSessionId,
           cancelToken: acpCancellationToken,
           onChunk: (chunk) {
-            streamingStarted = true;
-            responseBuffer.write(chunk);
-            groupTask.accumulatedContent += chunk;
-            groupTask.onStreamChunk?.call(chunk);
-            onStreamChunk?.call(agent.id, agent.name, chunk);
-            infLogGroup.onTextChunk(groupTraceId, chunk);
+            final answerDelta = splitter.onChunk(chunk);
+            if (answerDelta.isNotEmpty) {
+              streamingStarted = true;
+              responseBuffer.write(answerDelta);
+              groupTask.accumulatedContent += answerDelta;
+              groupTask.onStreamChunk?.call(answerDelta);
+              onStreamChunk?.call(agent.id, agent.name, answerDelta);
+              infLogGroup.onTextChunk(groupTraceId, answerDelta);
+            } else {
+              final progressMeta = splitter.progressMetadataDelta();
+              if (progressMeta != null) {
+                messageMetadataExtra = Map<String, dynamic>.from(
+                  messageMetadataExtra ?? {},
+                )..addAll(progressMeta);
+              }
+              infLogGroup.onTextChunk(groupTraceId, chunk);
+            }
+          },
+          onMetadata: (data) {
+            final merged = splitter.onMetadata(data);
+            messageMetadataExtra = Map<String, dynamic>.from(
+              messageMetadataExtra ?? {},
+            )..addAll(merged);
           },
           onActionConfirmation: (data) {
             // Keep a single mutable map: resolution (admin auto or user tap)
@@ -683,12 +702,20 @@ class GroupAgentExecutor {
           wasCancelled ? InferenceStatus.cancelled : InferenceStatus.completed,
         );
 
-        if (result.content.isNotEmpty && responseBuffer.isEmpty) {
+        if (responseBuffer.isEmpty && splitter.answerContent.isNotEmpty) {
+          responseBuffer.write(splitter.answerContent);
+          streamingStarted = true;
+        } else if (result.content.isNotEmpty &&
+            responseBuffer.isEmpty &&
+            splitter.progressContent.isEmpty) {
           responseBuffer.write(result.content);
           streamingStarted = true;
         }
+        messageMetadataExtra = Map<String, dynamic>.from(
+          messageMetadataExtra ?? {},
+        )..addAll(splitter.finalProgressMetadata());
         if (result.metadata != null && result.metadata!.isNotEmpty) {
-          messageMetadataExtra = Map<String, dynamic>.from(result.metadata!);
+          messageMetadataExtra!.addAll(result.metadata!);
         }
         if (actionConfirmationData == null) {
           final relayedAc =
@@ -1107,9 +1134,13 @@ class GroupAgentExecutor {
 
     final hasPeerApprovalCard = actionConfirmationData != null &&
         actionConfirmationData!['confirmation_context'] == 'peer';
+    final hasProgressContent =
+        (messageMetadataExtra?['progress_content'] as String?)?.trim().isNotEmpty ==
+            true;
 
     if ((responseContent.isEmpty || responseContent.contains('[SKIP]')) &&
-        !hasPeerApprovalCard) {
+        !hasPeerApprovalCard &&
+        !hasProgressContent) {
       LoggerService().debug('Agent ${agent.name} skipped', tag: 'GroupAgentExecutor');
       groupTask.isComplete = true;
       groupTask.onTaskFinished?.call();

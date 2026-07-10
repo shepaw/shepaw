@@ -145,13 +145,19 @@ class PeerModelsList {
 class _PendingRequest {
   final String peerId;
   final void Function(String chunk)? onChunk;
+  final void Function(Map<String, dynamic>)? onMetadata;
   final void Function(Map<String, dynamic>)? onActionConfirmation;
   final Completer<PeerChatResult> completer = Completer<PeerChatResult>();
   /// In-flight tool approvals not yet submitted by the user.
   int openApprovals = 0;
   /// agent_done payload held until [openApprovals] reaches zero.
   Map<String, dynamic>? bufferedDone;
-  _PendingRequest(this.peerId, this.onChunk, this.onActionConfirmation);
+  _PendingRequest(
+    this.peerId,
+    this.onChunk,
+    this.onActionConfirmation, {
+    this.onMetadata,
+  });
 }
 
 class PeerAgentClientService {
@@ -269,11 +275,17 @@ class PeerAgentClientService {
     required String message,
     String? sessionId,
     void Function(String chunk)? onChunk,
+    void Function(Map<String, dynamic>)? onMetadata,
     void Function(Map<String, dynamic>)? onActionConfirmation,
     ACPCancellationToken? cancelToken,
   }) async {
     final requestId = _uuid.v4();
-    final pending = _PendingRequest(peerId, onChunk, onActionConfirmation);
+    final pending = _PendingRequest(
+      peerId,
+      onChunk,
+      onActionConfirmation,
+      onMetadata: onMetadata,
+    );
     _pending[requestId] = pending;
 
     cancelToken?.onCancelled = () {
@@ -314,6 +326,9 @@ class PeerAgentClientService {
         break;
       case 'agent_chunk':
         _onChunk(event.data);
+        break;
+      case 'agent_metadata':
+        _onMetadata(event.data);
         break;
       case 'agent_done':
         _onDone(event.data);
@@ -881,6 +896,17 @@ class PeerAgentClientService {
     final content = data['content'] as String? ?? '';
     if (requestId == null) return;
     _pending[requestId]?.onChunk?.call(content);
+  }
+
+  void _onMetadata(Map<String, dynamic> data) {
+    final requestId = data['request_id'] as String?;
+    if (requestId == null) return;
+    final raw = data['metadata'];
+    final metadata = raw is Map
+        ? Map<String, dynamic>.from(raw)
+        : <String, dynamic>{};
+    if (metadata.isEmpty) return;
+    _pending[requestId]?.onMetadata?.call(metadata);
   }
 
   void _finishPending(String requestId, Map<String, dynamic> data) {
