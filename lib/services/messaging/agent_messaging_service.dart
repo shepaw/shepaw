@@ -1092,6 +1092,10 @@ class AgentMessagingService {
     final peerSessionId = boundRemoteSessionId ??
         (effectiveChannelId.isNotEmpty ? effectiveChannelId : null);
 
+    // Capture the latest approval so the final persisted message still carries
+    // the card after sendChat completes and ChatController reloads from DB.
+    Map<String, dynamic>? actionConfirmationData;
+
     final result = await PeerAgentClientService.instance.sendChat(
       peerId: peerId,
       remoteAgentId: remoteAgentId,
@@ -1103,7 +1107,22 @@ class AgentMessagingService {
         activeTask.onStreamChunk?.call(chunk);
       },
       onActionConfirmation: (data) {
-        activeTask.onActionConfirmation?.call(data);
+        actionConfirmationData = Map<String, dynamic>.from(data);
+        final meta = Map<String, dynamic>.from(activeTask.metadata ?? {});
+        meta['action_confirmation'] = actionConfirmationData;
+        activeTask.metadata = meta;
+        // Prefer the live UI callback; if it was detached mid-turn, the
+        // metadata above still lets loadMessages / reattach show the card.
+        final cb = activeTask.onActionConfirmation;
+        if (cb != null) {
+          cb(data);
+        } else {
+          LoggerService().warning(
+            'Peer approval arrived but UI callback was detached '
+            '(confirmationId=${data['confirmation_id']}) — kept on ActiveTask.metadata',
+            tag: 'PeerApproval',
+          );
+        }
       },
     );
 
@@ -1118,6 +1137,16 @@ class AgentMessagingService {
 
     final meta = <String, dynamic>{};
     if (result.metadata != null) meta.addAll(result.metadata!);
+    // Prefer the in-band approval captured during the turn over any stale
+    // metadata the hub may have attached to agent_done.
+    final relayedAc =
+        meta['action_confirmation'] as Map<String, dynamic>?;
+    if (actionConfirmationData != null) {
+      meta['action_confirmation'] = actionConfirmationData;
+    } else if (relayedAc != null) {
+      relayedAc['confirmation_context'] ??= 'peer';
+      meta['action_confirmation'] = relayedAc;
+    }
     activeTask.metadata = meta;
 
     return Message(

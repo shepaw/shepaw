@@ -194,6 +194,10 @@ class PeerAgentClientService {
   /// Maps hub approval_id → agent_chat request_id for deferred completion.
   final Map<String, String> _approvalToRequest = {};
 
+  /// Approvals that arrived after agent_done already cleared `_pending`.
+  /// Kept briefly so a late UI path can still surface / submit them.
+  final Map<String, Map<String, dynamic>> _orphanedApprovals = {};
+
   LocalDatabaseService get _db => getIt<LocalDatabaseService>();
   final _fileStorage = LocalFileStorageService();
 
@@ -228,6 +232,8 @@ class PeerAgentClientService {
       }
     }
     _pending.clear();
+    _approvalToRequest.clear();
+    _orphanedApprovals.clear();
     for (final c in _pendingSessions.values) {
       if (!c.isCompleted) c.complete(const []);
     }
@@ -731,33 +737,49 @@ class PeerAgentClientService {
       _log.warning('agent_approval_req: missing request_id', tag: 'PeerApproval');
       return;
     }
-    final approvalId = data['approval_id'] as String? ?? '';
+    var approvalId = data['approval_id'] as String? ?? '';
     final actions = data['actions'] ?? const [];
-    final hasCallback = _pending[requestId]?.onActionConfirmation != null;
+    final pending = _pending[requestId];
+    final hasCallback = pending?.onActionConfirmation != null;
     _log.info(
       'agent_approval_req: approvalId=$approvalId requestId=$requestId '
-      'pendingRequest=${_pending.containsKey(requestId)} hasCallback=$hasCallback '
+      'pendingRequest=${pending != null} hasCallback=$hasCallback '
       'actions=${actions is List ? actions.length : 0} '
       'toolKind=${data['tool_kind']} toolCallId=${data['tool_call_id']}',
       tag: 'PeerApproval',
     );
+
+    // Always use a stable non-empty id so openApprovals gating and submit
+    // mapping work even when the hub omits approval_id.
     if (approvalId.isEmpty) {
+      approvalId = 'missing_$requestId';
       _log.warning(
-        'agent_approval_req: empty approval_id for requestId=$requestId — '
-        'cannot track openApprovals; forwarding without gating agent_done',
+        'agent_approval_req: empty approval_id — using synthetic id=$approvalId',
         tag: 'PeerApproval',
       );
-    } else if (!hasCallback) {
+    }
+
+    if (pending == null) {
+      // agent_done may have already completed the request (hub/client race).
+      // Keep a deferred slot so a late UI path can still submit the verdict.
       _log.warning(
-        'agent_approval_req: no onActionConfirmation for requestId=$requestId '
-        '(active pending keys: ${_pending.keys.take(5).join(", ")})',
+        'agent_approval_req: no pending request for requestId=$requestId — '
+        'buffering as orphan approvalId=$approvalId',
         tag: 'PeerApproval',
       );
+      _orphanedApprovals[approvalId] = Map<String, dynamic>.from(data);
     } else {
-      final pending = _pending[requestId]!;
       pending.openApprovals++;
       _approvalToRequest[approvalId] = requestId;
+      if (!hasCallback) {
+        _log.warning(
+          'agent_approval_req: pending request has null onActionConfirmation '
+          'for requestId=$requestId — will still forward if callback appears',
+          tag: 'PeerApproval',
+        );
+      }
     }
+
     final rawActions = actions is List ? List<dynamic>.from(actions) : <dynamic>[];
     // Hub / agents sometimes omit actions; provide a safe Allow/Deny pair so
     // the UI (and admin auto-resolve) can always make a decision.
@@ -770,9 +792,7 @@ class PeerAgentClientService {
     final actionData = <String, dynamic>{
       // The card widget keys off `confirmation_id`; the hub's approval_id IS
       // the gateway's confirmation_id, so reuse it for the submit path too.
-      'confirmation_id': approvalId.isNotEmpty
-          ? approvalId
-          : 'missing_$requestId',
+      'confirmation_id': approvalId,
       'prompt': data['prompt'] ?? '',
       'actions': effectiveActions,
       // Marks this as a peer-relayed approval so the submit path knows to
@@ -781,9 +801,10 @@ class PeerAgentClientService {
       if (data['tool_kind'] != null) 'tool_kind': data['tool_kind'],
       if (data['tool_call_id'] != null) 'tool_call_id': data['tool_call_id'],
     };
-    _pending[requestId]?.onActionConfirmation?.call(actionData);
+    pending?.onActionConfirmation?.call(actionData);
     _log.debug(
-      'agent_approval_req: forwarded to UI confirmationId=${actionData['confirmation_id']}',
+      'agent_approval_req: forwarded to UI confirmationId=$approvalId '
+      'delivered=${pending?.onActionConfirmation != null}',
       tag: 'PeerApproval',
     );
   }

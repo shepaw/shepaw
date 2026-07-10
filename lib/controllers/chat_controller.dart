@@ -2127,9 +2127,13 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
   /// streaming bubble. Supports multiple sequential approvals on the same turn:
   /// each new `confirmation_id` replaces the prior card and clears any stale
   /// `selected_action_id` from the previous approval.
+  ///
+  /// Peer DM path: if `streamingMessageId` was already cleared (e.g. a racing
+  /// `agent_done` finished the turn before the approval frame arrived), fall
+  /// back to the latest agent message so the card is still visible.
   void _handleStreamingActionConfirmation(Map<String, dynamic> actionData) {
     final confirmationId = actionData['confirmation_id'] as String? ?? '';
-    final streamingId = streamingMessageId;
+    var streamingId = streamingMessageId;
     LoggerService().info(
       'onActionConfirmation: confirmationId=$confirmationId '
       'streamingMessageId=$streamingId isProcessing=$isProcessing '
@@ -2137,13 +2141,79 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
       'context=${actionData['confirmation_context']}',
       tag: 'PeerApproval',
     );
+
+    if (streamingId == null || !messageIdMap.containsKey(streamingId)) {
+      // Prefer the latest agent bubble in this channel (peer DM race recovery).
+      for (final msg in messages.reversed) {
+        if (msg.from.isAgent) {
+          streamingId = msg.id;
+          break;
+        }
+      }
+    }
+
     if (streamingId == null) {
-      LoggerService().warning(
-        'onActionConfirmation: no streamingMessageId — UI not attached',
+      // No host bubble yet — create a dedicated peer-approval placeholder so
+      // the card is never silently dropped.
+      if (agentId == null) {
+        LoggerService().warning(
+          'onActionConfirmation: no streamingMessageId and no agentId — UI not attached',
+          tag: 'PeerApproval',
+        );
+        return;
+      }
+      final userId = getUserId();
+      final userName = getUserName();
+      final sid =
+          'peer_approval_${agentId}_${DateTime.now().millisecondsSinceEpoch}';
+      final prompt = (actionData['prompt'] as String?)?.trim();
+      final content =
+          prompt != null && prompt.isNotEmpty ? prompt : '需要您的确认';
+      final displayName = agentName ?? 'Agent';
+      final sm = Message(
+        id: sid,
+        content: content,
+        timestampMs: DateTime.now().millisecondsSinceEpoch + 1,
+        from: MessageFrom(
+          id: agentId!,
+          type: 'agent',
+          name: displayName,
+        ),
+        to: MessageFrom(id: userId, type: 'user', name: userName),
+        type: MessageType.text,
+        metadata: {
+          'action_confirmation': Map<String, dynamic>.from(actionData),
+        },
+      );
+      messages.add(sm);
+      messageIdMap[sid] = sm;
+      streamingMessageId = sid;
+      streamingContent = content;
+      isProcessing = true;
+      _notify();
+      _emit(RequestScrollToBottomEvent(force: true));
+      LoggerService().info(
+        'onActionConfirmation: created fallback bubble sid=$sid',
         tag: 'PeerApproval',
       );
+      // Persist so a subsequent loadMessages cannot drop the card.
+      if (currentChannelId != null) {
+        localDatabaseService
+            .createMessage(
+              id: sid,
+              channelId: currentChannelId!,
+              senderId: agentId!,
+              senderType: 'agent',
+              senderName: displayName,
+              content: content,
+              messageType: 'text',
+              metadata: sm.metadata,
+            )
+            .ignore();
+      }
       return;
     }
+
     final idx = messages.indexWhere((m) => m.id == streamingId);
     if (idx == -1) {
       LoggerService().warning(
@@ -2178,12 +2248,19 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
     );
     messages[idx] = updated;
     messageIdMap[updated.id] = updated;
+    // Keep streamingMessageId pointing at the host bubble so subsequent
+    // sequential approvals land on the same card.
+    streamingMessageId ??= streamingId;
     LoggerService().debug(
       'onActionConfirmation: attached seq=${existingMetadata['approval_seq']} '
       'msgLen=${updated.content.length}',
       tag: 'PeerApproval',
     );
     _notify();
+    // Persist so loadMessages after sendChat cannot revive a card-less bubble.
+    localDatabaseService
+        .updateMessageMetadata(streamingId, existingMetadata)
+        .ignore();
   }
 
   /// Resolve (or create) the group message bubble that should host an interactive
