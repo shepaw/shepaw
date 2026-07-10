@@ -382,13 +382,13 @@ class MessageBubble extends StatelessWidget {
     );
   }
 
-  Widget _wrapWithTextSelection(Widget child) {
+  Widget _wrapWithTextSelection(Widget child, {bool useSharedSelectionKey = true}) {
     final content = textSelectionEnabled
         ? child
         : SelectionContainer.disabled(child: child);
     return SelectionArea(
-      key: selectionAreaKey,
-      focusNode: selectionFocusNode,
+      key: useSharedSelectionKey ? selectionAreaKey : null,
+      focusNode: useSharedSelectionKey ? selectionFocusNode : null,
       contextMenuBuilder: (context, selectableRegionState) {
         return const SizedBox.shrink();
       },
@@ -620,7 +620,12 @@ class MessageBubble extends StatelessWidget {
             autoCollapseOnComplete: autoCollapse && hasAnswer,
             isStreaming: isStreaming && !hasAnswer,
             isMyMessage: isMyMessage,
-            child: _wrapWithTextSelection(progressBody),
+            // When answer is also shown, don't reuse selectionAreaKey —
+            // markdownWidget already owns it.
+            child: _wrapWithTextSelection(
+              progressBody,
+              useSharedSelectionKey: !hasAnswer,
+            ),
           );
           if (!hasAnswer) return progressBubble;
           return Column(
