@@ -1054,7 +1054,11 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
 
       final loadedMessages = await chatService.loadChannelMessages(currentChannelId!);
 
-      messages = loadedMessages;
+      if (isGroupMode) {
+        messages = loadedMessages;
+      } else {
+        _mergeDmStreamingPlaceholders(loadedMessages);
+      }
       rebuildMessageIdMap();
       isLoading = false;
       _notify();
@@ -1160,11 +1164,16 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
   Future<void> reloadMessagesFromDB() async {
     if (currentChannelId == null) return;
     final dbMessages = await chatService.loadChannelMessages(currentChannelId!);
-    messages.clear();
-    messageIdMap.clear();
-    for (final m in dbMessages) {
-      messages.add(m);
-      messageIdMap[m.id] = m;
+    if (isGroupMode) {
+      messages.clear();
+      messageIdMap.clear();
+      for (final m in dbMessages) {
+        messages.add(m);
+        messageIdMap[m.id] = m;
+      }
+    } else {
+      _mergeDmStreamingPlaceholders(dbMessages);
+      rebuildMessageIdMap();
     }
     _notify();
   }
@@ -2909,6 +2918,86 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
   // ---------------------------------------------------------------------------
   // Group message reconciliation
   // ---------------------------------------------------------------------------
+
+  /// Merge in-memory DM `streaming_*` placeholders with DB messages.
+  ///
+  /// Unlike group chats (which use [reconcileGroupMessages]), DM historically
+  /// did a hard replace in [loadMessages], which dropped the live streaming
+  /// bubble whenever the final DB row was missing or still empty (e.g. peer
+  /// cancel before answer text). Keep the placeholder when it still has
+  /// visible content and no usable DB agent message exists yet.
+  void _mergeDmStreamingPlaceholders(List<Message> dbMessages) {
+    final streamingTemps = <Message>[];
+    for (final m in messages) {
+      if (m.id.startsWith('streaming_')) {
+        streamingTemps.add(m);
+      }
+    }
+
+    if (streamingTemps.isEmpty) {
+      messages = dbMessages;
+      return;
+    }
+
+    messages = List<Message>.from(dbMessages);
+
+    bool hasVisibleAgentContent(Message m) {
+      if (!m.from.isAgent) return false;
+      if (m.content.trim().isNotEmpty) return true;
+      final progress = m.metadata?['progress_content'];
+      return progress is String && progress.trim().isNotEmpty;
+    }
+
+    for (final temp in streamingTemps) {
+      final tempVisible = temp.content.trim().isNotEmpty ||
+          ((temp.metadata?['progress_content'] is String) &&
+              (temp.metadata!['progress_content'] as String).trim().isNotEmpty);
+      if (!tempVisible) continue;
+
+      final sameSenderDb = messages
+          .where((m) => m.from.isAgent && m.from.id == temp.from.id)
+          .toList();
+
+      if (sameSenderDb.isEmpty) {
+        // DB save missing — keep the only copy of the reply.
+        messages.add(temp);
+        continue;
+      }
+
+      // Prefer replacing an empty/progress-less DB shell with the richer
+      // in-memory streaming bubble (same sender, latest agent row).
+      Message? emptyShell;
+      for (final m in sameSenderDb.reversed) {
+        if (!hasVisibleAgentContent(m)) {
+          emptyShell = m;
+          break;
+        }
+      }
+      if (emptyShell != null) {
+        final idx = messages.indexWhere((m) => m.id == emptyShell!.id);
+        if (idx != -1) {
+          messages[idx] = Message(
+            id: emptyShell.id,
+            content: temp.content.trim().isNotEmpty
+                ? temp.content
+                : emptyShell.content,
+            timestampMs: emptyShell.timestampMs,
+            from: emptyShell.from,
+            to: emptyShell.to ?? temp.to,
+            type: emptyShell.type,
+            replyTo: emptyShell.replyTo ?? temp.replyTo,
+            metadata: {
+              ...?emptyShell.metadata,
+              ...?temp.metadata,
+              'status': emptyShell.metadata?['status'] ?? 'streaming',
+            },
+          );
+        }
+      }
+    }
+
+    messages.sort((a, b) => a.timestampMs.compareTo(b.timestampMs));
+  }
 
   Future<void> reconcileGroupMessages() async {
     if (currentChannelId == null) return;

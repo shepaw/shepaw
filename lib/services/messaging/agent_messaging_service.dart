@@ -29,7 +29,11 @@ import '../../peer/services/peer_agent_client_service.dart';
 import '../../service_locator.dart' show getIt;
 import 'local_llm_handler.dart';
 import 'stream_content_splitter.dart';
+import 'streaming_flush_helper.dart';
 import 'connection_retry_policy.dart';
+
+export 'streaming_flush_helper.dart'
+    show kDefaultFlushIntervalMs, kDefaultContentThreshold;
 
 /// Internal sentinel returned by [AgentMessagingService._sendViaACPProtocol]
 /// when the agent advertised the `async_confirmation` capability.
@@ -45,16 +49,6 @@ const _asyncPendingSentinelMetadataKey = '__shepaw_async_pending__';
 
 bool _isAsyncPendingSentinel(Message? m) =>
     m != null && m.metadata?[_asyncPendingSentinelMetadataKey] == true;
-
-
-/// Configuration for periodic message flushing during streaming.
-/// 
-/// These can be overridden in RemoteAgent metadata:
-///   'streaming_flush_interval_ms': 2000  // milliseconds
-///   'streaming_content_threshold': 500   // characters
-///   'streaming_enable_flushing': true    // on/off toggle
-const int kDefaultFlushIntervalMs = 2000;
-const int kDefaultContentThreshold = 500;
 
 
 /// Handles sending messages to individual (non-group) agents.
@@ -364,7 +358,7 @@ class AgentMessagingService {
     ACPAgentConnection? connection;
     String? taskId;
     late ActiveTask activeTask;
-    Timer? flushTimer;
+    StreamingFlushHelper? flushHelper;
 
     try {
       // Get or create connection for this agent (with retry + backoff + health fallback)
@@ -412,86 +406,14 @@ class AgentMessagingService {
       // Declare effectiveTaskId early so flush functions can reference it
       final effectiveTaskId = taskId;
 
-      // Extract flush configuration from agent metadata
-      final flushInterval = Duration(
-        milliseconds: (agent.metadata['streaming_flush_interval_ms'] as num?)?.toInt() ?? kDefaultFlushIntervalMs,
+      flushHelper = StreamingFlushHelper.fromAgent(
+        db: _db,
+        activeTask: activeTask,
+        agent: agent,
+        channelId: effectiveChannelId,
+        replyToId: userMessage.id,
+        traceId: effectiveTaskId,
       );
-      final contentThreshold = (agent.metadata['streaming_content_threshold'] as num?)?.toInt() ?? kDefaultContentThreshold;
-      final flushingEnabled = agent.metadata['streaming_enable_flushing'] != false;
-      
-      bool hasScheduledFlush = false;
-
-      /// Helper to flush current accumulated content to the database.
-      /// 
-      /// Creates a new partial message on first call, updates it on subsequent calls.
-      /// Logs progress and handles errors gracefully.
-      Future<void> flushStreamingContent() async {
-        if (!flushingEnabled || activeTask.accumulatedContent.isEmpty) return;
-
-        try {
-          final partialMessageId = await _db.upsertPartialStreamingMessage(
-            existingMessageId: activeTask.partialMessageId,
-            channelId: effectiveChannelId,
-            senderId: agent.id,
-            senderName: agent.name,
-            content: activeTask.accumulatedContent,
-            replyToId: userMessage.id,
-            status: 'streaming',
-            metadata: {
-              'trace_id': effectiveTaskId,
-              'is_partial': true,
-              'flushed_content_length': activeTask.accumulatedContent.length,
-              'agent_id': agent.id,
-              'agent_name': agent.name,
-            },
-          );
-
-          activeTask.recordFlush(partialMessageId);
-
-          LoggerService().debug(
-            'Flushed streaming content: ${activeTask.accumulatedContent.length} bytes for task $effectiveTaskId',
-            tag: 'AgentMessagingService',
-          );
-        } catch (e, _) {
-          LoggerService().warning(
-            'Failed to flush streaming content for task $effectiveTaskId',
-            tag: 'AgentMessagingService',
-            error: e,
-          );
-          // Continue operation — don't fail entire task if flush fails
-        }
-      }
-
-      /// Schedule periodic flush checks.
-      /// 
-      /// Creates a timer that periodically checks if flushing is needed
-      /// based on time elapsed or content accumulated.
-      void scheduleFlushTimer() {
-        if (hasScheduledFlush || !flushingEnabled) return;
-        hasScheduledFlush = true;
-
-        flushTimer = Timer.periodic(flushInterval, (_) async {
-          if (activeTask.isComplete) {
-            flushTimer?.cancel();
-            return;
-          }
-
-          final shouldFlush = activeTask.shouldFlush(
-            flushIntervalMs: flushInterval.inMilliseconds,
-            contentThreshold: contentThreshold,
-          );
-
-          if (shouldFlush) {
-            await flushStreamingContent();
-          }
-        });
-
-        LoggerService().debug(
-          'Scheduled streaming flush timer: ${flushInterval.inMilliseconds}ms interval, $contentThreshold char threshold',
-          tag: 'AgentMessagingService',
-        );
-      }
-
 
       // Begin trace for remote ACP agent
       final infLogAcp = InferenceLogService.instance;
@@ -661,9 +583,7 @@ class AgentMessagingService {
           }
 
           // Delete partial message before saving the final one to avoid duplicates
-          if (activeTask.partialMessageId != null) {
-            await _db.deleteMessage(activeTask.partialMessageId!);
-          }
+          await flushHelper?.deletePartial();
 
           final channelForSave = effectiveChannelIdForAsync.isNotEmpty
               ? effectiveChannelIdForAsync
@@ -695,13 +615,9 @@ class AgentMessagingService {
 
       // Now that `asyncFinalize` is in scope, wire the cancel handler.
       acpCancellationToken?.onCancelled = () {
-        flushTimer?.cancel();
-
         // Delete partial message — the cancel flow will save the final
         // "[Stopped]" message via buildFinalMessage(markStopped: true).
-        if (activeTask.partialMessageId != null) {
-          unawaited(_db.deleteMessage(activeTask.partialMessageId!));
-        }
+        flushHelper?.deletePartialUnawaited();
         activeTask.recordInterruption('user_cancelled');
 
         activeTask.isComplete = true;
@@ -732,7 +648,7 @@ class AgentMessagingService {
             activeTask.accumulatedContent += content;
             activeTask.onStreamChunk?.call(content);
             infLogAcp.onTextChunk(effectiveTaskId, content);
-            scheduleFlushTimer();
+            flushHelper?.schedule();
             return;
           }
           final answerDelta = splitter.onChunk(content);
@@ -740,7 +656,7 @@ class AgentMessagingService {
             activeTask.accumulatedContent += answerDelta;
             activeTask.onStreamChunk?.call(answerDelta);
             infLogAcp.onTextChunk(effectiveTaskId, answerDelta);
-            scheduleFlushTimer();
+            flushHelper?.schedule();
           } else {
             final progressMeta = splitter.progressMetadataDelta();
             if (progressMeta != null) publishSplitMetadata(progressMeta);
@@ -783,7 +699,7 @@ class AgentMessagingService {
           activeTask.onRequestHistory?.call(data);
         },
         onTaskCompleted: (data) {
-          flushTimer?.cancel();
+          flushHelper?.cancel();
 
           infLogAcp.endRound(effectiveTaskId, stopReason: 'stop');
           infLogAcp.endSession(effectiveTaskId, InferenceStatus.completed);
@@ -792,9 +708,7 @@ class AgentMessagingService {
 
           // Delete the partial message — the final message will be saved
           // by the outer flow (sendMessageToAgent or asyncFinalize).
-          if (activeTask.partialMessageId != null) {
-            unawaited(_db.deleteMessage(activeTask.partialMessageId!));
-          }
+          flushHelper?.deletePartialUnawaited();
 
           if (asyncConfirmation) {
             unawaited(asyncFinalize());
@@ -804,12 +718,10 @@ class AgentMessagingService {
           }
         },
         onTaskError: (data) {
-          flushTimer?.cancel();
+          flushHelper?.cancel();
 
           // Delete partial message — the error flow will save its own message
-          if (activeTask.partialMessageId != null) {
-            unawaited(_db.deleteMessage(activeTask.partialMessageId!));
-          }
+          flushHelper?.deletePartialUnawaited();
 
           final errorMsg = data['message'] as String? ?? 'Task error';
           infLogAcp.endRound(effectiveTaskId, stopReason: 'error');
@@ -898,18 +810,11 @@ class AgentMessagingService {
       activeTask.metadata = finalMessage.metadata;
       
       // Delete partial message — the outer sendMessageToAgent will save finalMessage
-      if (activeTask.partialMessageId != null) {
-        unawaited(_db.deleteMessage(activeTask.partialMessageId!));
-      }
+      flushHelper?.deletePartialUnawaited();
 
       return finalMessage;
     } catch (e, stackTrace) {
-      flushTimer?.cancel();
-
-      // Delete partial message — the error flow saves its own error message
-      if (taskId != null && activeTask.partialMessageId != null) {
-        unawaited(_db.deleteMessage(activeTask.partialMessageId!));
-      }
+      flushHelper?.deletePartialUnawaited();
 
       LoggerService().error('ACP protocol error', tag: 'AgentMessagingService', error: e, stackTrace: stackTrace);
       if (connection != null && taskId != null) {
@@ -1123,6 +1028,15 @@ class AgentMessagingService {
     }
     ForegroundTaskService().acquireTask(agent.name);
 
+    final flushHelper = StreamingFlushHelper.fromAgent(
+      db: _db,
+      activeTask: activeTask,
+      agent: agent,
+      channelId: effectiveChannelId,
+      replyToId: userMessage.id,
+      traceId: activeTask.taskId,
+    );
+
     // For a synced remote session the local channelId is `psess_<remoteSessionId>`.
     // Strip the prefix so the bare remote sessionId is what reaches the peer,
     // hitting acp-proxy's pre-seeded mapping and resuming the exact upstream
@@ -1143,92 +1057,105 @@ class AgentMessagingService {
       activeTask.onMessageMetadata?.call(meta);
     }
 
-    final result = await PeerAgentClientService.instance.sendChat(
-      peerId: peerId,
-      remoteAgentId: remoteAgentId,
-      message: userMessage.content,
-      sessionId: peerSessionId,
-      cancelToken: acpCancellationToken,
-      onChunk: (chunk) {
-        final answerDelta = splitter.onChunk(chunk);
-        if (answerDelta.isNotEmpty) {
-          activeTask.accumulatedContent += answerDelta;
-          activeTask.onStreamChunk?.call(answerDelta);
-        } else {
-          final progressMeta = splitter.progressMetadataDelta();
-          if (progressMeta != null) publishMetadata(progressMeta);
-        }
-      },
-      onMetadata: (data) {
-        publishMetadata(splitter.onMetadata(data));
-      },
-      onActionConfirmation: (data) {
-        actionConfirmationData = Map<String, dynamic>.from(data);
-        final meta = Map<String, dynamic>.from(activeTask.metadata ?? {});
+    try {
+      final result = await PeerAgentClientService.instance.sendChat(
+        peerId: peerId,
+        remoteAgentId: remoteAgentId,
+        message: userMessage.content,
+        sessionId: peerSessionId,
+        cancelToken: acpCancellationToken,
+        onChunk: (chunk) {
+          final answerDelta = splitter.onChunk(chunk);
+          if (answerDelta.isNotEmpty) {
+            activeTask.accumulatedContent += answerDelta;
+            activeTask.onStreamChunk?.call(answerDelta);
+            flushHelper.schedule();
+          } else {
+            final progressMeta = splitter.progressMetadataDelta();
+            if (progressMeta != null) publishMetadata(progressMeta);
+          }
+        },
+        onMetadata: (data) {
+          publishMetadata(splitter.onMetadata(data));
+        },
+        onActionConfirmation: (data) {
+          actionConfirmationData = Map<String, dynamic>.from(data);
+          final meta = Map<String, dynamic>.from(activeTask.metadata ?? {});
+          meta['action_confirmation'] = actionConfirmationData;
+          activeTask.metadata = meta;
+          // Prefer the live UI callback; if it was detached mid-turn, the
+          // metadata above still lets loadMessages / reattach show the card.
+          final cb = activeTask.onActionConfirmation;
+          if (cb != null) {
+            cb(data);
+          } else {
+            LoggerService().warning(
+              'Peer approval arrived but UI callback was detached '
+              '(confirmationId=${data['confirmation_id']}) — kept on ActiveTask.metadata',
+              tag: 'PeerApproval',
+            );
+          }
+        },
+      );
+
+      activeTask.isComplete = true;
+      activeTask.onTaskFinished?.call();
+
+      final wasCancelled = acpCancellationToken?.isCancelled == true;
+      if (wasCancelled) {
+        activeTask.recordInterruption('user_cancelled');
+      }
+
+      // Prefer splitter answer (progress stripped). On cancel, always leave a
+      // visible "[Stopped]" marker — including progress-only turns — so a
+      // subsequent loadMessages cannot look like "no reply".
+      final content = buildPeerFinalContent(
+        answerContent: splitter.answerContent,
+        progressContent: splitter.progressContent,
+        accumulatedContent: activeTask.accumulatedContent,
+        resultContent: result.content,
+        wasCancelled: wasCancelled,
+      );
+
+      final meta = <String, dynamic>{};
+      if (result.metadata != null) meta.addAll(result.metadata!);
+      meta.addAll(splitter.finalProgressMetadata());
+      if (wasCancelled) {
+        meta['status'] = 'stopped';
+        meta['interruption_reason'] = 'user_cancelled';
+      }
+      // Prefer the in-band approval captured during the turn over any stale
+      // metadata the hub may have attached to agent_done.
+      final relayedAc =
+          meta['action_confirmation'] as Map<String, dynamic>?;
+      if (actionConfirmationData != null) {
         meta['action_confirmation'] = actionConfirmationData;
-        activeTask.metadata = meta;
-        // Prefer the live UI callback; if it was detached mid-turn, the
-        // metadata above still lets loadMessages / reattach show the card.
-        final cb = activeTask.onActionConfirmation;
-        if (cb != null) {
-          cb(data);
-        } else {
-          LoggerService().warning(
-            'Peer approval arrived but UI callback was detached '
-            '(confirmationId=${data['confirmation_id']}) — kept on ActiveTask.metadata',
-            tag: 'PeerApproval',
-          );
-        }
-      },
-    );
+      } else if (relayedAc != null) {
+        relayedAc['confirmation_context'] ??= 'peer';
+        meta['action_confirmation'] = relayedAc;
+      }
+      activeTask.metadata = meta;
 
-    activeTask.isComplete = true;
-    activeTask.onTaskFinished?.call();
+      await flushHelper.deletePartial();
 
-    // Prefer splitter answer (progress stripped). Progress-only turns keep
-    // content empty so MessageBubble renders progress_content alone.
-    final String content;
-    if (splitter.answerContent.isNotEmpty) {
-      content = splitter.answerContent;
-    } else if (splitter.progressContent.isNotEmpty) {
-      content = '';
-    } else if (activeTask.accumulatedContent.isNotEmpty) {
-      content = activeTask.accumulatedContent;
-    } else if (result.content.isNotEmpty) {
-      content = result.content;
-    } else {
-      content = 'Task completed';
+      return Message(
+        id: _uuid.v4(),
+        content: content,
+        timestampMs: DateTime.now().millisecondsSinceEpoch,
+        from: MessageFrom(id: agent.id, type: 'agent', name: agent.name),
+        to: MessageFrom(
+          id: userMessage.from.id,
+          type: 'user',
+          name: userMessage.from.name,
+        ),
+        type: MessageType.text,
+        replyTo: userMessage.id,
+        metadata: meta.isEmpty ? null : meta,
+      );
+    } catch (e) {
+      await flushHelper.deletePartial();
+      rethrow;
     }
-
-    final meta = <String, dynamic>{};
-    if (result.metadata != null) meta.addAll(result.metadata!);
-    meta.addAll(splitter.finalProgressMetadata());
-    // Prefer the in-band approval captured during the turn over any stale
-    // metadata the hub may have attached to agent_done.
-    final relayedAc =
-        meta['action_confirmation'] as Map<String, dynamic>?;
-    if (actionConfirmationData != null) {
-      meta['action_confirmation'] = actionConfirmationData;
-    } else if (relayedAc != null) {
-      relayedAc['confirmation_context'] ??= 'peer';
-      meta['action_confirmation'] = relayedAc;
-    }
-    activeTask.metadata = meta;
-
-    return Message(
-      id: _uuid.v4(),
-      content: content,
-      timestampMs: DateTime.now().millisecondsSinceEpoch,
-      from: MessageFrom(id: agent.id, type: 'agent', name: agent.name),
-      to: MessageFrom(
-        id: userMessage.from.id,
-        type: 'user',
-        name: userMessage.from.name,
-      ),
-      type: MessageType.text,
-      replyTo: userMessage.id,
-      metadata: meta.isEmpty ? null : meta,
-    );
   }
 
   /// Send message via generic HTTP protocol
@@ -1333,6 +1260,15 @@ class AgentMessagingService {
     }
     ForegroundTaskService().acquireTask(agent.name);
 
+    final flushHelper = StreamingFlushHelper.fromAgent(
+      db: _db,
+      activeTask: activeTask,
+      agent: agent,
+      channelId: effectiveChannelId,
+      replyToId: userMessage.id,
+      traceId: activeTask.taskId,
+    );
+
     try {
       // Determine provider type for message format
       final providerType = agent.metadata['llm_provider'] as String? ?? 'openai';
@@ -1427,6 +1363,7 @@ class AgentMessagingService {
       // agent（含 peer 请求）或桌面自己的会话。
       final cancelKey = activeTask.taskId;
       acpCancellationToken?.onCancelled = () {
+        activeTask.recordInterruption('user_cancelled');
         LocalLLMAgentService.instance.abort(cancelKey);
       };
 
@@ -1445,6 +1382,7 @@ class AgentMessagingService {
           effectiveChannelId: effectiveChannelId,
           acpCancellationToken: acpCancellationToken,
           attachments: attachments,
+          flushHelper: flushHelper,
         );
       }
 
@@ -1509,6 +1447,7 @@ class AgentMessagingService {
               activeTask.accumulatedContent += event.text;
               activeTask.onStreamChunk?.call(event.text);
               infLog.onTextChunk(activeTask.taskId, event.text);
+              flushHelper.schedule();
               break;
 
             case LLMToolCallEvent():
@@ -1827,6 +1766,7 @@ class AgentMessagingService {
         metadata: messageMetadata,
       );
 
+      await flushHelper.deletePartial();
       await saveMessageToChannel(agentResponse, agent.id, channelId: channelId);
       LoggerService().debug('Agent response saved', tag: 'AgentMessagingService');
 
@@ -1859,6 +1799,8 @@ class AgentMessagingService {
       activeTask.isComplete = true;
       activeTask.errorMessage = e.toString();
       activeTask.onTaskFinished?.call();
+
+      await flushHelper.deletePartial();
 
       final errorMsg = Message(
         id: _uuid.v4(),
@@ -1897,6 +1839,7 @@ class AgentMessagingService {
     required String effectiveChannelId,
     ACPCancellationToken? acpCancellationToken,
     List<AttachmentData>? attachments,
+    required StreamingFlushHelper flushHelper,
   }) async {
     const historyLimit = 20;
     List<Map<String, dynamic>>? chatHistory;
@@ -1971,6 +1914,7 @@ class AgentMessagingService {
           activeTask.accumulatedContent += event.text;
           activeTask.onStreamChunk?.call(event.text);
           infLog.onTextChunk(activeTask.taskId, event.text);
+          flushHelper.schedule();
           break;
 
         case LLMToolCallEvent():
@@ -2058,6 +2002,7 @@ class AgentMessagingService {
       metadata: messageMetadata,
     );
 
+    await flushHelper.deletePartial();
     await saveMessageToChannel(agentResponse, agent.id, channelId: channelId);
     LoggerService().debug('Agent response saved', tag: 'AgentMessagingService');
 
