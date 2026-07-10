@@ -996,8 +996,9 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
   }
 
   /// Toggle whether we auto-detect and sync this peer agent's remote sessions
-  /// (list + history) on entry. Default on; turning it off stops all prompts
-  /// and content pulls for this agent.
+  /// (list + history) on entry. Turning it off stops sync and prompts; turning
+  /// it on enables silent auto-sync. The first chat entry asks once until a
+  /// choice is saved here or via the sync dialog.
   Widget _buildPeerSyncToggle() {
     final colorScheme = Theme.of(context).colorScheme;
     return Container(
@@ -1009,7 +1010,7 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
         contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 2),
         title: const Text('会话同步', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
         subtitle: const Text(
-          '进入时自动检测并同步远端会话列表与聊天记录，保持与远端一致',
+          '开启后进入时自动同步远端会话列表与聊天记录；关闭后不再同步。可随时在此修改',
           style: TextStyle(fontSize: 12),
         ),
         value: _peerSyncEnabled,

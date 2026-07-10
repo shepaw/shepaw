@@ -48,7 +48,8 @@ import '../peer/services/peer_agent_client_service.dart';
 import '../peer/services/peer_connection_manager.dart';
 
 /// User's response to the "sync remote sessions" prompt.
-enum _PeerSyncChoice { sync, later, disable }
+/// Both choices are persisted; the dialog is only shown while undecided.
+enum _PeerSyncChoice { sync, disable }
 
 class ChatScreen extends StatefulWidget {
   final String? agentId;
@@ -1902,13 +1903,13 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     }
   }
 
-  /// On first open of a peer agent, detect the remote agent's existing
-  /// sessions and, with user confirmation, mirror them into local channels so
-  /// the app's session list matches the remote exactly (no "session crossing").
-  /// On every entry, check whether the peer agent's remote session list matches
-  /// what we've synced locally. If new remote sessions exist, prompt to sync
-  /// (unless the user turned sync off for this agent). When already consistent,
-  /// silently refresh titles/ordering.
+  /// On entry to a peer agent chat, keep the local session list aligned with
+  /// the remote — but only after the user has decided whether to sync.
+  ///
+  /// Preference key `peer_sync_disabled_$agentId`:
+  /// - `null` (undecided): prompt once when there are unsynced remote sessions
+  /// - `false` (enabled): auto-sync silently; changeable in agent settings
+  /// - `true` (disabled): skip; changeable in agent settings
   Future<void> _maybePromptPeerSessionSync() async {
     final agentId = widget.agentId;
     if (agentId == null) return;
@@ -1919,7 +1920,8 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     if (peerId == null || remoteAgentId == null) return;
 
     final prefs = await SharedPreferences.getInstance();
-    if (prefs.getBool('peer_sync_disabled_$agentId') == true) return;
+    final syncDisabled = prefs.getBool('peer_sync_disabled_$agentId');
+    if (syncDisabled == true) return;
 
     // Need a live connection to enumerate remote sessions; retry on a later
     // open if the peer isn't connected yet.
@@ -1954,14 +1956,27 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
       return;
     }
 
+    // User already opted in (settings or prior "同步") — auto-sync, no prompt.
+    if (syncDisabled == false) {
+      await PeerAgentClientService.instance.syncSessions(
+        peerId: peerId,
+        remoteAgentId: remoteAgentId,
+        localAgentId: agentId,
+        userId: _controller.getUserId(),
+        sessions: sessions,
+      );
+      return;
+    }
+
+    // Undecided — ask once and persist the choice.
     final choice = await _showPeerSessionSyncDialog(agent.name, missing.length);
-    if (!mounted) return;
+    if (!mounted || choice == null) return; // dismissed → ask again next time
     if (choice == _PeerSyncChoice.disable) {
       await prefs.setBool('peer_sync_disabled_$agentId', true);
       return;
     }
-    if (choice != _PeerSyncChoice.sync) return; // 暂不 / dismissed
 
+    await prefs.setBool('peer_sync_disabled_$agentId', false);
     final count = await PeerAgentClientService.instance.syncSessions(
       peerId: peerId,
       remoteAgentId: remoteAgentId,
@@ -2029,24 +2044,21 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     }
   }
 
-  Future<_PeerSyncChoice> _showPeerSessionSyncDialog(String agentName, int count) async {
-    final choice = await showDialog<_PeerSyncChoice>(
+  Future<_PeerSyncChoice?> _showPeerSessionSyncDialog(String agentName, int count) async {
+    return showDialog<_PeerSyncChoice>(
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('同步远端会话'),
         content: Text(
           '在 $agentName 上发现 $count 个尚未同步的远端会话。\n\n'
           '是否同步到本地？同步后可在会话列表中查看并继续这些会话，'
-          '本地会话将与远端保持一致。',
+          '本地会话将与远端保持一致。\n\n'
+          '此选择会记住，之后可在 Agent 设置中修改。',
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(_PeerSyncChoice.disable),
-            child: const Text('关闭同步'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(_PeerSyncChoice.later),
-            child: const Text('暂不'),
+            child: const Text('不同步'),
           ),
           FilledButton(
             onPressed: () => Navigator.of(ctx).pop(_PeerSyncChoice.sync),
@@ -2055,7 +2067,6 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
         ],
       ),
     );
-    return choice ?? _PeerSyncChoice.later;
   }
 
   /// Navigate to She's detail screen so the user can pick a model.
