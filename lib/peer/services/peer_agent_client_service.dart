@@ -143,6 +143,7 @@ class PeerModelsList {
 }
 
 class _PendingRequest {
+  final String peerId;
   final void Function(String chunk)? onChunk;
   final void Function(Map<String, dynamic>)? onActionConfirmation;
   final Completer<PeerChatResult> completer = Completer<PeerChatResult>();
@@ -150,7 +151,7 @@ class _PendingRequest {
   int openApprovals = 0;
   /// agent_done payload held until [openApprovals] reaches zero.
   Map<String, dynamic>? bufferedDone;
-  _PendingRequest(this.onChunk, this.onActionConfirmation);
+  _PendingRequest(this.peerId, this.onChunk, this.onActionConfirmation);
 }
 
 class PeerAgentClientService {
@@ -272,7 +273,7 @@ class PeerAgentClientService {
     ACPCancellationToken? cancelToken,
   }) async {
     final requestId = _uuid.v4();
-    final pending = _PendingRequest(onChunk, onActionConfirmation);
+    final pending = _PendingRequest(peerId, onChunk, onActionConfirmation);
     _pending[requestId] = pending;
 
     cancelToken?.onCancelled = () {
@@ -815,6 +816,10 @@ class PeerAgentClientService {
   /// completing a buffered `agent_done`. Completing first can finish
   /// [sendChat] (and clear streaming UI) while the verdict is still in
   /// flight; subsequent chunks then have nowhere to land.
+  ///
+  /// If the peer is offline the verdict is not dropped from the local gate —
+  /// [openApprovals] stays elevated so a later reconnect / retry can still
+  /// unblock, and we throw so the UI can surface the failure.
   Future<void> submitApproval({
     required String peerId,
     required String approvalId,
@@ -826,14 +831,40 @@ class PeerAgentClientService {
       'label=${selectedActionLabel ?? ""} peerId=$peerId',
       tag: 'PeerApproval',
     );
-    final requestId = _approvalToRequest.remove(approvalId);
-    await PeerConnectionManager.instance.sendControl(peerId, {
+    final payload = <String, dynamic>{
       'type': 'agent_approval_resp',
       'approval_id': approvalId,
       'selected_action_id': selectedActionId,
       if (selectedActionLabel != null && selectedActionLabel.isNotEmpty)
         'selected_action_label': selectedActionLabel,
-    });
+    };
+
+    // Retry briefly — a single dropped frame after Allow leaves Cursor hung
+    // on [pending] for the rest of the turn.
+    var sent = false;
+    Object? lastErr;
+    for (var attempt = 0; attempt < 3; attempt++) {
+      try {
+        sent = await PeerConnectionManager.instance.sendControl(peerId, payload);
+        if (sent) break;
+        lastErr = 'peer not connected';
+      } catch (e) {
+        lastErr = e;
+      }
+      if (attempt < 2) {
+        await Future<void>.delayed(Duration(milliseconds: 200 * (attempt + 1)));
+      }
+    }
+    if (!sent) {
+      _log.warning(
+        'submitApproval FAILED approvalId=$approvalId err=$lastErr — '
+        'keeping openApprovals gate so the turn does not finish without a verdict',
+        tag: 'PeerApproval',
+      );
+      throw Exception('审核结果发送失败，请确认配对设备在线后重试');
+    }
+
+    final requestId = _approvalToRequest.remove(approvalId);
     if (requestId != null) {
       final pending = _pending[requestId];
       if (pending != null && pending.openApprovals > 0) {
@@ -910,7 +941,37 @@ class PeerAgentClientService {
     if (event.type == PeerConnectionEventType.connected) {
       _requestAgentList(event.peerId);
     } else if (event.type == PeerConnectionEventType.disconnected) {
+      _failPendingForPeer(event.peerId);
       unawaited(_markPeerAgentsOffline(event.peerId));
+    }
+  }
+
+  /// Abort in-flight sendChat turns when the peer drops mid-approval / mid-
+  /// stream. Without this, openApprovals + a missing agent_done leave the UI
+  /// spinner hung until the user force-stops.
+  void _failPendingForPeer(String peerId) {
+    final toFail = <String>[];
+    for (final entry in _pending.entries) {
+      if (entry.value.peerId != peerId) continue;
+      if (entry.value.completer.isCompleted) continue;
+      toFail.add(entry.key);
+    }
+    for (final requestId in toFail) {
+      final p = _pending.remove(requestId);
+      if (p == null || p.completer.isCompleted) continue;
+      for (final entry in _approvalToRequest.entries.toList()) {
+        if (entry.value == requestId) {
+          _approvalToRequest.remove(entry.key);
+        }
+      }
+      _log.warning(
+        'peer disconnected — failing in-flight requestId=$requestId '
+        'openApprovals=${p.openApprovals}',
+        tag: 'PeerApproval',
+      );
+      p.completer.completeError(
+        Exception('配对设备已断开，对话中断'),
+      );
     }
   }
 
