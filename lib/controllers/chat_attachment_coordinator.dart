@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import '../models/attachment_data.dart';
 import '../models/message.dart';
 import '../models/pending_attachment.dart';
@@ -15,6 +17,53 @@ class PersistedAttachments {
 
   bool get isEmpty => messages.isEmpty && data.isEmpty;
   bool get isNotEmpty => !isEmpty;
+}
+
+/// In-memory queue of attachments staged in the chat composer.
+///
+/// Owns capacity checks and clipboard temp-file cleanup; Flutter `setState`
+/// stays in the Screen.
+class PendingAttachmentQueue {
+  PendingAttachmentQueue({this.maxItems = defaultMaxItems});
+
+  static const int defaultMaxItems = 9;
+
+  final int maxItems;
+  final List<PendingAttachment> items = [];
+
+  bool get isEmpty => items.isEmpty;
+  bool get isNotEmpty => items.isNotEmpty;
+  bool get isFull => items.length >= maxItems;
+  int get length => items.length;
+
+  /// Stage a file into the queue. Returns false when the queue is full.
+  Future<bool> addFromFile(
+    File file, {
+    bool isFromClipboard = false,
+  }) async {
+    if (isFull) return false;
+    final attachment = await PendingAttachment.fromFile(
+      file,
+      isFromClipboard: isFromClipboard,
+    );
+    items.add(attachment);
+    return true;
+  }
+
+  /// Remove a staged attachment and delete clipboard temp files.
+  void remove(PendingAttachment att) {
+    items.remove(att);
+    ChatAttachmentCoordinator.deleteClipboardTempIfNeeded(att);
+  }
+
+  void clear({bool deleteClipboardTemps = false}) {
+    if (deleteClipboardTemps) {
+      for (final att in List<PendingAttachment>.from(items)) {
+        ChatAttachmentCoordinator.deleteClipboardTempIfNeeded(att);
+      }
+    }
+    items.clear();
+  }
 }
 
 /// Saves pending chat attachments via [AttachmentService].
@@ -53,9 +102,7 @@ class ChatAttachmentCoordinator {
         agentId: agentId,
       );
       if (att.isFromClipboard) {
-        try {
-          att.file.deleteSync();
-        } catch (_) {}
+        deleteClipboardTempIfNeeded(att);
       }
       if (message == null) continue;
 

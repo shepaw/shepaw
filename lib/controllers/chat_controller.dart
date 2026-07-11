@@ -35,6 +35,7 @@ import '../services/workflow/workflow_plan_approval_sync.dart';
 import 'chat_workflow_coordinator.dart';
 import 'chat_attachment_coordinator.dart';
 import 'chat_attachment_validator.dart';
+import 'chat_streaming_text.dart';
 import 'chat_events.dart';
 
 // ChatEvent 及其全部子类已拆分到 chat_events.dart，这里重新导出，
@@ -1514,19 +1515,12 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
       final idx = messages.indexWhere((m) => m.id == stoppedId);
       if (idx != -1) {
         final current = messages[idx];
-        final stoppedContent = streamingContent.isNotEmpty
-            ? '$streamingContent\n\n[Stopped]'
-            : '[Stopped]';
-        messages[idx] = Message(
-          id: current.id,
-          content: stoppedContent,
-          timestampMs: current.timestampMs,
-          from: current.from,
-          to: current.to,
-          type: current.type,
-          metadata: current.metadata,
+        final updated = ChatStreamingText.markMessageStopped(
+          current,
+          contentOverride: streamingContent,
         );
-        messageIdMap[current.id] = messages[idx];
+        messages[idx] = updated;
+        messageIdMap[current.id] = updated;
       }
       streamingMessageId = null;
       streamingContent = '';
@@ -1549,19 +1543,7 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
       if (existing != null) {
         final idx = messages.indexOf(existing);
         if (idx != -1) {
-          final current = messages[idx];
-          final stoppedContent = current.content.isNotEmpty
-              ? '${current.content}\n\n[Stopped]'
-              : '[Stopped]';
-          final updated = Message(
-            id: current.id,
-            content: stoppedContent,
-            timestampMs: current.timestampMs,
-            from: current.from,
-            to: current.to,
-            type: current.type,
-            metadata: current.metadata,
-          );
+          final updated = ChatStreamingText.markMessageStopped(messages[idx]);
           messages[idx] = updated;
           messageIdMap[updated.id] = updated;
         }
@@ -1601,19 +1583,12 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
       final idx = messages.indexWhere((m) => m.id == stoppedId);
       if (idx != -1) {
         final current = messages[idx];
-        final stoppedContent = streamingContent.isNotEmpty
-            ? '$streamingContent\n\n[Stopped]'
-            : '[Stopped]';
-        messages[idx] = Message(
-          id: current.id,
-          content: stoppedContent,
-          timestampMs: current.timestampMs,
-          from: current.from,
-          to: current.to,
-          type: current.type,
-          metadata: current.metadata,
+        final updated = ChatStreamingText.markMessageStopped(
+          current,
+          contentOverride: streamingContent,
         );
-        messageIdMap[current.id] = messages[idx];
+        messages[idx] = updated;
+        messageIdMap[current.id] = updated;
       }
       streamingMessageId = null;
       streamingContent = '';
@@ -1636,19 +1611,7 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
       if (existing != null) {
         final idx = messages.indexOf(existing);
         if (idx != -1) {
-          final current = messages[idx];
-          final stoppedContent = current.content.isNotEmpty
-              ? '${current.content}\n\n[Stopped]'
-              : '[Stopped]';
-          final updated = Message(
-            id: current.id,
-            content: stoppedContent,
-            timestampMs: current.timestampMs,
-            from: current.from,
-            to: current.to,
-            type: current.type,
-            metadata: current.metadata,
-          );
+          final updated = ChatStreamingText.markMessageStopped(messages[idx]);
           messages[idx] = updated;
           messageIdMap[updated.id] = updated;
         }

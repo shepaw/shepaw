@@ -19,6 +19,7 @@ import '../services/local_database_service.dart';
 import '../utils/layout_utils.dart';
 import '../l10n/app_localizations.dart';
 import '../controllers/chat_controller.dart';
+import '../controllers/chat_attachment_coordinator.dart';
 import '../theme/app_theme.dart';
 import '../widgets/chat/chat_app_bar.dart';
 import '../widgets/chat/chat_menu.dart';
@@ -110,8 +111,8 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   double _recordingAmplitude = 0.0;
 
   // Pending attachments (UI-bound)
-  List<PendingAttachment> _pendingAttachments = [];
-  static const int _maxPendingAttachments = 9;
+  List<PendingAttachment> get _pendingAttachments => _pendingQueue.items;
+  final PendingAttachmentQueue _pendingQueue = PendingAttachmentQueue();
 
   // Emoji picker (UI-bound)
   bool _showEmojiPicker = false;
@@ -634,11 +635,11 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   // ---------------------------------------------------------------------------
 
   Future<void> _addPendingAttachment(File file, {bool isFromClipboard = false}) async {
-    if (_pendingAttachments.length >= _maxPendingAttachments) {
+    if (_pendingQueue.isFull) {
       if (mounted) {
         showTopToast(
           context,
-          AppLocalizations.of(context).chat_maxAttachments(_maxPendingAttachments),
+          AppLocalizations.of(context).chat_maxAttachments(_pendingQueue.maxItems),
           icon: Icons.attachment,
           color: Colors.orange,
         );
@@ -646,9 +647,12 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
       return;
     }
     try {
-      final attachment = await PendingAttachment.fromFile(file, isFromClipboard: isFromClipboard);
-      if (mounted) {
-        setState(() { _pendingAttachments.add(attachment); });
+      final added = await _pendingQueue.addFromFile(
+        file,
+        isFromClipboard: isFromClipboard,
+      );
+      if (added && mounted) {
+        setState(() {});
       }
     } catch (e) {
       LoggerService().error('Error staging attachment', tag: 'ChatScreen', error: e);
@@ -657,10 +661,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
 
   void _removePendingAttachment(PendingAttachment att) {
     setState(() {
-      _pendingAttachments.remove(att);
-      if (att.isFromClipboard) {
-        try { att.file.deleteSync(); } catch (_) {}
-      }
+      _pendingQueue.remove(att);
     });
   }
 
@@ -805,7 +806,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
       pendingAttachments: _pendingAttachments,
       clearMessageController: () {
         _messageController.clear();
-        setState(() { _pendingAttachments.clear(); });
+        setState(() { _pendingQueue.clear(); });
       },
       replyToId: _controller.replyingToMessage?.id,
       mentions: mentions,
