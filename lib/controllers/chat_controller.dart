@@ -41,6 +41,7 @@ import 'chat_group_streaming_tracker.dart';
 import 'group_mention_resolver.dart';
 import 'chat_message_reconciler.dart';
 import 'chat_send_planner.dart';
+import 'dm_send_turn_planner.dart';
 import 'streaming_action_confirmation.dart';
 import 'inbound_file_message_parser.dart';
 import 'peer_approval_completer_resolver.dart';
@@ -1677,29 +1678,19 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
       // checkAgentHealth 兜底，并通过 onReconnecting 回调把进度推给 UI。
       // 移除这里可以避免"一次失败就抛出"的体验，并减少一次冗余 ping。
 
-      // Add user message to UI immediately
-      final userMessage = Message(
-        id: 'temp_user_${DateTime.now().millisecondsSinceEpoch}',
+      final optimistic = DmSendTurnPlanner.buildOptimisticPair(
         content: content,
-        timestampMs: DateTime.now().millisecondsSinceEpoch,
-        from: MessageFrom(id: userId, type: 'user', name: userName),
-        to: MessageFrom(id: remoteAgent.id, type: 'agent', name: remoteAgent.name),
-        type: MessageType.text,
-        replyTo: replyToId,
+        userId: userId,
+        userName: userName,
+        agentId: remoteAgent.id,
+        agentName: remoteAgent.name,
+        replyToId: replyToId,
       );
-
-      streaming.begin('streaming_${DateTime.now().millisecondsSinceEpoch}');
-      final streamingMessage = ChatStreamingText.placeholder(
-        id: streaming.messageId!,
-        from: MessageFrom(id: remoteAgent.id, type: 'agent', name: remoteAgent.name),
-        to: MessageFrom(id: userId, type: 'user', name: userName),
-        timestampMs: DateTime.now().millisecondsSinceEpoch + 1,
-      );
-
-      messages.add(userMessage);
-      messages.add(streamingMessage);
-      messageIdMap[userMessage.id] = userMessage;
-      messageIdMap[streamingMessage.id] = streamingMessage;
+      streaming.begin(optimistic.streaming.id);
+      messages.add(optimistic.user);
+      messages.add(optimistic.streaming);
+      messageIdMap[optimistic.user.id] = optimistic.user;
+      messageIdMap[optimistic.streaming.id] = optimistic.streaming;
       _notify();
       _emit(RequestScrollToBottomEvent(force: true));
 
@@ -1770,12 +1761,6 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
       // returns `null` as soon as the agent has ACK'd the request — the
       // streaming chunks, action_confirmation metadata, and eventual
       // task.completed all flow through TaskCallbacks asynchronously.
-      //
-      // Hook the underlying ActiveTask's onTaskFinished so that when the
-      // agent's SDK turn finally ends (milliseconds to seconds later), we
-      // reload messages from DB, drop the streaming id, and clear the
-      // processing flag. Until then the UI stays responsive — the user can
-      // tap Allow / Deny on a confirmation card, or even send a follow-up.
       final asyncConn = chatService.getACPConnection(remoteAgent.id);
       final supportsAsync = asyncConn?.supportsAsyncConfirmation ?? false;
       if (supportsAsync && currentChannelId != null) {
@@ -1802,119 +1787,25 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
         }
       }
 
-      // Handle pending history request
-      bool handledHistorySupplement = false;
-      if (pendingHistoryRequest != null) {
-        final historyData = pendingHistoryRequest!;
-        pendingHistoryRequest = null;
+      final handledHistorySupplement = await _handleHistorySupplementIfNeeded(
+        remoteAgent: remoteAgent,
+        userId: userId,
+        userName: userName,
+        agentResponse: agentResponse,
+      );
 
-        if (agentResponse != null) {
-          try { await chatService.deleteMessage(agentResponse.id); } catch (_) {}
-        }
+      final turn = DmSendTurnPlanner.afterAgentSend(
+        supportsAsyncConfirmation: supportsAsync,
+        hasChannel: currentChannelId != null,
+        hasActiveTask: awaitingAsyncTask,
+        handledHistorySupplement: handledHistorySupplement,
+        agentResponseIsNull: agentResponse == null,
+      );
+      // awaitingAsyncTask already set when hooking ActiveTask; keep in sync.
+      awaitingAsyncTask = turn.awaitingAsyncTask || awaitingAsyncTask;
 
-        final reason = historyData['reason'] as String? ?? 'Agent needs more context';
-        final requestId = historyData['request_id'] as String? ?? '';
-        final requestedCount = historyData['requested_count'] as int? ?? 40;
-
-        addSystemHint('$reason');
-
-        final dialogEvent = ShowHistoryRequestDialogEvent(reason);
-        _emit(dialogEvent);
-        final approved = await dialogEvent.result.future;
-
-        if (approved) {
-          handledHistorySupplement = true;
-          addSystemHint('Loading more chat history...');
-
-          streaming.begin(
-            'streaming_reanswer_${DateTime.now().millisecondsSinceEpoch}',
-          );
-          acpCancellationToken = ACPCancellationToken();
-
-          final reanswer = ChatStreamingText.placeholder(
-            id: streaming.messageId!,
-            from: MessageFrom(id: remoteAgent.id, type: 'agent', name: remoteAgent.name),
-            to: MessageFrom(id: userId, type: 'user', name: userName),
-            timestampMs: DateTime.now().millisecondsSinceEpoch + 1,
-          );
-          messages.add(reanswer);
-          messageIdMap[reanswer.id] = reanswer;
-          _notify();
-          _emit(RequestScrollToBottomEvent(force: true));
-
-          int currentRequestedCount = requestedCount;
-          const int maxSupplementRounds = 3;
-          try {
-            for (int round = 0; round < maxSupplementRounds; round++) {
-              final supplementResult = await chatService.sendHistorySupplement(
-                agent: remoteAgent,
-                sessionId: currentChannelId!,
-                requestId: requestId,
-                originalQuestion: lastUserQuestion ?? '',
-                offset: historySentCount,
-                batchSize: currentRequestedCount,
-                onStreamChunk: (chunk) {
-                  streaming.append(chunk);
-                  streaming.applyContentTo(messages, messageIdMap);
-                  scheduleStreamingRebuild();
-                  if (!isUserScrolledUp) {
-                    _emit(RequestScrollToBottomEvent());
-                  }
-                },
-                acpCancellationToken: acpCancellationToken,
-              );
-
-              if (supplementResult == null) {
-                addSystemHint('No more history records available');
-                messages.removeWhere((m) => m.id == streamingMessageId);
-                messageIdMap.remove(streamingMessageId);
-                _notify();
-                break;
-              }
-
-              historySentCount += supplementResult.actualSentCount;
-
-              if (supplementResult.pendingHistoryRequest != null) {
-                final nextReason = supplementResult.pendingHistoryRequest!['reason'] as String? ?? 'Agent needs more context';
-                currentRequestedCount = supplementResult.pendingHistoryRequest!['requested_count'] as int? ?? 40;
-                if (supplementResult.message.content.isEmpty) {
-                  try { await chatService.deleteMessage(supplementResult.message.id); } catch (_) {}
-                }
-                addSystemHint(nextReason);
-                addSystemHint('Loading more chat history...');
-                streamingContent = '';
-                acpCancellationToken = ACPCancellationToken();
-                continue;
-              }
-
-              addSystemHint('History loaded, agent is re-answering...');
-              break;
-            }
-          } catch (e) {
-            addSystemHint('Failed to load history: $e');
-            messages.removeWhere((m) => m.id == streamingMessageId);
-            messageIdMap.remove(streamingMessageId);
-            _notify();
-          }
-        } else {
-          addSystemHint('History request ignored');
-        }
-      }
-
-      if (!handledHistorySupplement && agentResponse == null) {
-        // Phase 2-A: in async-confirmation mode, `sendMessageToAgent` returns
-        // null as soon as the agent has acknowledged the request — the actual
-        // response (text + confirmation metadata) flows through the registered
-        // TaskCallbacks asynchronously. A `null` here is NOT an error in that
-        // mode; suppress the snackbar and leave the streaming message in place
-        // for the callbacks to keep updating.
-        final isAsync = chatService
-                .getACPConnection(remoteAgent.id)
-                ?.supportsAsyncConfirmation ??
-            false;
-        if (!isAsync) {
-          _emit(ShowSnackBarEvent('chat_responseError'));
-        }
+      if (turn.showNullResponseError) {
+        _emit(ShowSnackBarEvent('chat_responseError'));
       }
 
       isAgentOnline = true;
@@ -1923,7 +1814,7 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
       // (in onTaskCompleted), so reloading now would overwrite the in-memory
       // streaming content with a stale DB snapshot. The onTaskFinished
       // callback does its own loadMessages() when the task actually ends.
-      if (!awaitingAsyncTask) {
+      if (turn.loadMessagesNow) {
         await loadMessages();
       }
     } catch (e, stackTrace) {
@@ -1947,6 +1838,121 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
         processNextInQueue();
       }
     }
+  }
+
+  /// Run the optional history-supplement / re-answer loop after a DM send.
+  /// Returns true when a supplement path was entered (approved by the user).
+  Future<bool> _handleHistorySupplementIfNeeded({
+    required RemoteAgent remoteAgent,
+    required String userId,
+    required String userName,
+    required Message? agentResponse,
+  }) async {
+    if (pendingHistoryRequest == null) return false;
+
+    final historyData = pendingHistoryRequest!;
+    pendingHistoryRequest = null;
+    final request = HistoryRequestInfo.fromMap(historyData);
+
+    if (agentResponse != null) {
+      try {
+        await chatService.deleteMessage(agentResponse.id);
+      } catch (_) {}
+    }
+
+    addSystemHint(request.reason);
+
+    final dialogEvent = ShowHistoryRequestDialogEvent(request.reason);
+    _emit(dialogEvent);
+    final approved = await dialogEvent.result.future;
+    if (!approved) {
+      addSystemHint('History request ignored');
+      return false;
+    }
+
+    addSystemHint('Loading more chat history...');
+
+    streaming.begin(
+      'streaming_reanswer_${DateTime.now().millisecondsSinceEpoch}',
+    );
+    acpCancellationToken = ACPCancellationToken();
+
+    final reanswer = ChatStreamingText.placeholder(
+      id: streaming.messageId!,
+      from: MessageFrom(id: remoteAgent.id, type: 'agent', name: remoteAgent.name),
+      to: MessageFrom(id: userId, type: 'user', name: userName),
+      timestampMs: DateTime.now().millisecondsSinceEpoch + 1,
+    );
+    messages.add(reanswer);
+    messageIdMap[reanswer.id] = reanswer;
+    _notify();
+    _emit(RequestScrollToBottomEvent(force: true));
+
+    var currentRequestedCount = request.requestedCount;
+    try {
+      for (var round = 0;
+          round < DmSendTurnPlanner.maxHistorySupplementRounds;
+          round++) {
+        final supplementResult = await chatService.sendHistorySupplement(
+          agent: remoteAgent,
+          sessionId: currentChannelId!,
+          requestId: request.requestId,
+          originalQuestion: lastUserQuestion ?? '',
+          offset: historySentCount,
+          batchSize: currentRequestedCount,
+          onStreamChunk: (chunk) {
+            streaming.append(chunk);
+            streaming.applyContentTo(messages, messageIdMap);
+            scheduleStreamingRebuild();
+            if (!isUserScrolledUp) {
+              _emit(RequestScrollToBottomEvent());
+            }
+          },
+          acpCancellationToken: acpCancellationToken,
+        );
+
+        final decision = DmSendTurnPlanner.evaluateSupplementRound(
+          supplementIsNull: supplementResult == null,
+          actualSentCount: supplementResult?.actualSentCount ?? 0,
+          messageContent: supplementResult?.message.content ?? '',
+          pendingHistoryRequest: supplementResult?.pendingHistoryRequest,
+        );
+
+        switch (decision.action) {
+          case HistorySupplementRoundAction.noMoreHistory:
+            addSystemHint('No more history records available');
+            messages.removeWhere((m) => m.id == streamingMessageId);
+            messageIdMap.remove(streamingMessageId);
+            _notify();
+            return true;
+          case HistorySupplementRoundAction.needMoreHistory:
+            historySentCount += decision.actualSentCount;
+            if (decision.deleteEmptySupplementMessage &&
+                supplementResult != null) {
+              try {
+                await chatService.deleteMessage(supplementResult.message.id);
+              } catch (_) {}
+            }
+            addSystemHint(decision.nextReason ?? request.reason);
+            addSystemHint('Loading more chat history...');
+            streamingContent = '';
+            acpCancellationToken = ACPCancellationToken();
+            currentRequestedCount =
+                decision.nextRequestedCount ?? currentRequestedCount;
+            continue;
+          case HistorySupplementRoundAction.reanswerReady:
+            historySentCount += decision.actualSentCount;
+            addSystemHint('History loaded, agent is re-answering...');
+            return true;
+        }
+      }
+    } catch (e) {
+      addSystemHint('Failed to load history: $e');
+      messages.removeWhere((m) => m.id == streamingMessageId);
+      messageIdMap.remove(streamingMessageId);
+      _notify();
+    }
+    return true;
   }
 
   void _updateStreamingMetadata(Map<String, dynamic> metadata) {
