@@ -16,7 +16,6 @@ import 'app_bootstrap.dart';
 import 'service_locator.dart';
 import 'theme/app_theme.dart';
 
-import 'providers/app_state.dart';
 import 'providers/locale_provider.dart';
 import 'providers/notification_provider.dart';
 import 'screens/password_setup_screen.dart';
@@ -241,9 +240,6 @@ class _MyAppState extends State<MyApp> {
   Widget build(BuildContext context) {
     return MultiProvider(
       providers: [
-        ChangeNotifierProvider(
-          create: (_) => AppState(),
-        ),
         ChangeNotifierProvider(
           create: (_) => LocaleProvider(),
         ),

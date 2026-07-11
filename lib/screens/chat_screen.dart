@@ -8,8 +8,7 @@ import 'package:pasteboard/pasteboard.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:emoji_picker_flutter/emoji_picker_flutter.dart';
 import 'package:scrollable_positioned_list/scrollable_positioned_list.dart';
-import 'package:provider/provider.dart';
-import '../providers/app_state.dart';
+import '../services/local_user_identity.dart';
 import '../models/channel.dart';
 import '../models/mention_entry.dart';
 import '../models/pending_attachment.dart';
@@ -148,8 +147,8 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
       embedded: widget.embedded,
       onClose: widget.onClose,
       onSwitchChannel: widget.onSwitchChannel,
-      getUserId: () => Provider.of<AppState>(context, listen: false).currentUser?.id ?? 'user',
-      getUserName: () => Provider.of<AppState>(context, listen: false).currentUser?.username ?? 'User',
+      getUserId: () => LocalUserIdentity.id,
+      getUserName: () => LocalUserIdentity.displayName,
     );
 
     _controller.addListener(_onControllerChanged);

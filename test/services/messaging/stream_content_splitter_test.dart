@@ -54,5 +54,38 @@ void main() {
       expect(s.progressContent, contains('Read'));
       expect(s.answerContent, 'partial answer final');
     });
+
+    test('progressMetadataDelta is null until progress exists', () {
+      final s = StreamContentSplitter();
+      expect(s.progressMetadataDelta(), isNull);
+
+      s.onMetadata({'collapsible': true});
+      s.onChunk('x');
+      final delta = s.progressMetadataDelta();
+      expect(delta?['progress_content'], 'x');
+      expect(delta?['collapsible_title'], 'Details');
+      expect(delta?['auto_collapse'], isTrue);
+    });
+
+    test('respects auto_collapse false and custom title defaults', () {
+      final s = StreamContentSplitter();
+      final out = s.onMetadata({
+        'collapsible': true,
+        'auto_collapse': false,
+      });
+      expect(s.autoCollapse, isFalse);
+      s.onChunk('tool');
+      final meta = s.finalProgressMetadata();
+      expect(meta['auto_collapse'], isFalse);
+      expect(meta['collapsible_title'], 'Details');
+      expect(out['collapsible'], isTrue);
+    });
+
+    test('collapsible false clears whole-message collapsible when no progress',
+        () {
+      final s = StreamContentSplitter();
+      final out = s.onMetadata({'collapsible': false});
+      expect(out['collapsible'], isFalse);
+    });
   });
 }

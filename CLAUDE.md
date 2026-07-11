@@ -38,8 +38,14 @@
 
 ### 遗留路径（待清理，勿扩大使用面）
 
-- `lib/providers/app_state.dart` + `WebSocketService`：旧 client-server 模型，仅少量 UI 仍读 `currentUser`；新功能不要依赖
+- ~~`lib/providers/app_state.dart` + `WebSocketService`~~：已删除（2026-07）。本地用户身份见 `LocalUserIdentity`
 - 巨型 Screen / Controller：拆分时优先按领域抽协作类 / DAO / 独立 Widget，Controller 只做组合
+- 无路由的旧 UI / 死代码：发现后删除，不要再接 Provider 旧链路
+
+### 本地用户身份
+
+- 使用 `lib/services/local_user_identity.dart`（`LocalUserIdentity.id` / `displayName`）
+- 不要再引入 HTTP login + WebSocket 的全局 `AppState`
 
 ## 测试与 CI
 

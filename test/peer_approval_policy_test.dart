@@ -41,5 +41,85 @@ void main() {
         PeerApprovalRisk.high,
       );
     });
+
+    test('unknown tools default to high risk', () {
+      expect(
+        PeerApprovalPolicy.classifyRisk({
+          'tool_kind': 'mystery_tool',
+          'prompt': 'do the thing',
+        }),
+        PeerApprovalRisk.high,
+      );
+    });
+
+    test('network patterns are high risk', () {
+      expect(
+        PeerApprovalPolicy.classifyRisk({
+          'prompt': 'curl https://example.com',
+        }),
+        PeerApprovalRisk.high,
+      );
+    });
+  });
+
+  group('PeerApprovalPolicy.allowAdminAutoResolve', () {
+    test('allows low-risk prompts', () {
+      expect(
+        PeerApprovalPolicy.allowAdminAutoResolve({
+          'prompt': 'grep LocalUserIdentity',
+        }),
+        isTrue,
+      );
+    });
+
+    test('blocks high-risk prompts', () {
+      expect(
+        PeerApprovalPolicy.allowAdminAutoResolve({
+          'tool_kind': 'bash',
+          'prompt': 'Run tests',
+        }),
+        isFalse,
+      );
+    });
+  });
+
+  group('PeerApprovalPolicy.workflowSessionId', () {
+    test('returns null when workflow or step missing', () {
+      expect(
+        PeerApprovalPolicy.workflowSessionId(
+          channelId: 'ch',
+          workflowId: null,
+          workflowStepId: 's1',
+        ),
+        isNull,
+      );
+      expect(
+        PeerApprovalPolicy.workflowSessionId(
+          channelId: 'ch',
+          workflowId: '',
+          workflowStepId: 's1',
+        ),
+        isNull,
+      );
+      expect(
+        PeerApprovalPolicy.workflowSessionId(
+          channelId: 'ch',
+          workflowId: 'wf',
+          workflowStepId: '',
+        ),
+        isNull,
+      );
+    });
+
+    test('scopes session by channel, workflow, and step', () {
+      expect(
+        PeerApprovalPolicy.workflowSessionId(
+          channelId: 'ch-1',
+          workflowId: 'wf-9',
+          workflowStepId: 'step-2',
+        ),
+        'ch-1__wf_wf-9__step_step-2',
+      );
+    });
   });
 }

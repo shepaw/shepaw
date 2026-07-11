@@ -67,5 +67,51 @@ void main() {
         'Done',
       );
     });
+
+    test('cancel prefers accumulatedContent when answer empty', () {
+      expect(
+        buildPeerFinalContent(
+          answerContent: '',
+          progressContent: '',
+          accumulatedContent: 'partial reply',
+          resultContent: '[Stopped]',
+          wasCancelled: true,
+        ),
+        'partial reply\n\n[Stopped]',
+      );
+    });
+
+    test('normal path falls back to accumulated then result then default', () {
+      expect(
+        buildPeerFinalContent(
+          answerContent: '',
+          progressContent: '',
+          accumulatedContent: 'from stream',
+          resultContent: '',
+          wasCancelled: false,
+        ),
+        'from stream',
+      );
+      expect(
+        buildPeerFinalContent(
+          answerContent: '',
+          progressContent: '',
+          accumulatedContent: '',
+          resultContent: 'hub result',
+          wasCancelled: false,
+        ),
+        'hub result',
+      );
+      expect(
+        buildPeerFinalContent(
+          answerContent: '',
+          progressContent: '',
+          accumulatedContent: '',
+          resultContent: '',
+          wasCancelled: false,
+        ),
+        'Task completed',
+      );
+    });
   });
 }

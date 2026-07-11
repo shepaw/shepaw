@@ -1,8 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:provider/provider.dart';
 import '../../models/message.dart';
-import '../../providers/app_state.dart';
+import '../../services/local_user_identity.dart';
 import '../../utils/message_utils.dart';
 import '../../l10n/app_localizations.dart';
 import '../../services/error_handler_service.dart';
@@ -38,8 +37,7 @@ OverlayEntry showMessageContextMenu(
   void Function(Rect panelRect)? onPanelBoundsChanged,
 }) {
   final menuL10n = AppLocalizations.of(context);
-  final userId =
-      Provider.of<AppState>(context, listen: false).currentUser?.id ?? 'user';
+  final userId = LocalUserIdentity.id;
   final primaryColor = Theme.of(context).colorScheme.primary;
 
   OverlayEntry? menuEntry;

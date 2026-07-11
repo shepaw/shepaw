@@ -24,6 +24,7 @@ import '../../services/local_file_storage_service.dart';
 import '../../services/logger_service.dart';
 import '../../service_locator.dart' show getIt;
 import 'peer_connection.dart' show PeerConnectionEvent, PeerConnectionEventType;
+import '../peer_approval_payload.dart';
 import 'peer_connection_manager.dart';
 
 /// peer-agent 在本地 `agents` 表中的稳定 id（保证重复注入是 upsert 而非新增）。
@@ -753,7 +754,11 @@ class PeerAgentClientService {
       _log.warning('agent_approval_req: missing request_id', tag: 'PeerApproval');
       return;
     }
-    var approvalId = data['approval_id'] as String? ?? '';
+    final rawApprovalId = data['approval_id'] as String?;
+    var approvalId = PeerApprovalPayload.normalizeApprovalId(
+      rawApprovalId,
+      requestId,
+    );
     final actions = data['actions'] ?? const [];
     final pending = _pending[requestId];
     final hasCallback = pending?.onActionConfirmation != null;
@@ -765,10 +770,7 @@ class PeerAgentClientService {
       tag: 'PeerApproval',
     );
 
-    // Always use a stable non-empty id so openApprovals gating and submit
-    // mapping work even when the hub omits approval_id.
-    if (approvalId.isEmpty) {
-      approvalId = 'missing_$requestId';
+    if (rawApprovalId == null || rawApprovalId.isEmpty) {
       _log.warning(
         'agent_approval_req: empty approval_id — using synthetic id=$approvalId',
         tag: 'PeerApproval',
@@ -797,26 +799,12 @@ class PeerAgentClientService {
     }
 
     final rawActions = actions is List ? List<dynamic>.from(actions) : <dynamic>[];
-    // Hub / agents sometimes omit actions; provide a safe Allow/Deny pair so
-    // the UI (and admin auto-resolve) can always make a decision.
-    final effectiveActions = rawActions.isNotEmpty
-        ? rawActions
-        : const [
-            {'id': 'allow', 'label': '允许', 'style': 'primary'},
-            {'id': 'deny', 'label': '拒绝', 'style': 'danger'},
-          ];
-    final actionData = <String, dynamic>{
-      // The card widget keys off `confirmation_id`; the hub's approval_id IS
-      // the gateway's confirmation_id, so reuse it for the submit path too.
-      'confirmation_id': approvalId,
-      'prompt': data['prompt'] ?? '',
-      'actions': effectiveActions,
-      // Marks this as a peer-relayed approval so the submit path knows to
-      // reply via agent_approval_resp instead of connection.submitResponse.
-      'confirmation_context': 'peer',
-      if (data['tool_kind'] != null) 'tool_kind': data['tool_kind'],
-      if (data['tool_call_id'] != null) 'tool_call_id': data['tool_call_id'],
-    };
+    final effectiveActions = PeerApprovalPayload.effectiveActions(rawActions);
+    final actionData = PeerApprovalPayload.buildActionConfirmationData(
+      data: data,
+      approvalId: approvalId,
+      actions: effectiveActions,
+    );
     pending?.onActionConfirmation?.call(actionData);
     _log.debug(
       'agent_approval_req: forwarded to UI confirmationId=$approvalId '
