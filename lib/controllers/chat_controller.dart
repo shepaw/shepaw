@@ -403,6 +403,7 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
   // ---- Messaging hooks (implemented by [_MessagingOps]) ----
   void reattachToActiveTask();
   void reattachToGroupActiveTasks();
+  void _reattachPendingPlanApproval();
   void scheduleStreamingRebuild();
   Future<void> processMessage(String content, {String? replyToId, List<AttachmentData>? attachments, List<Message>? attachmentMessages});
   Future<void> processGroupMessage(String content, {String? replyToId, List<AttachmentData>? attachments, List<MentionEntry> mentions = const []});

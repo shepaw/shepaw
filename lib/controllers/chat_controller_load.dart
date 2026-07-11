@@ -191,12 +191,4 @@ mixin _LoadOps on _ChatControllerBase {
       return const [];
     }
   }
-
-  /// 按 peerId 查配对设备的显示名；查不到或为空时返回 null。
-  Future<String?> _peerDeviceNameById(String? peerId) async {
-    return PeerDeviceLabelResolver.deviceNameById(
-      await _peerDeviceEntries(),
-      peerId,
-    );
-  }
 }

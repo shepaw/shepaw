@@ -138,6 +138,7 @@ mixin _MessagingOps on _ChatControllerBase {
   /// Re-emit a GroupInteractionRequestEvent for any pending plan_approval
   /// that survived a channel switch. Called from loadMessages() so the UI
   /// can re-render the approve/reject card after navigating back.
+  @override
   void _reattachPendingPlanApproval() {
     if (currentChannelId == null) return;
     final pendingApproval = chatService.getPendingPlanApproval(currentChannelId!);
