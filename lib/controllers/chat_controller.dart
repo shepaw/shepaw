@@ -36,6 +36,8 @@ import 'chat_workflow_coordinator.dart';
 import 'chat_attachment_coordinator.dart';
 import 'chat_attachment_validator.dart';
 import 'chat_streaming_text.dart';
+import 'chat_lifecycle_coordinator.dart';
+import 'peer_approval_completer_resolver.dart';
 import 'chat_events.dart';
 
 // ChatEvent 及其全部子类已拆分到 chat_events.dart，这里重新导出，
@@ -88,8 +90,23 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
   String searchQuery = '';
 
   // ---- Streaming state ----
-  String? streamingMessageId;
-  String streamingContent = '';
+  final ChatStreamingSession streaming = ChatStreamingSession();
+
+  @override
+  String? get streamingMessageId => streaming.messageId;
+  @override
+  set streamingMessageId(String? v) {
+    if (v == null) {
+      streaming.messageId = null;
+    } else {
+      streaming.messageId = v;
+    }
+  }
+
+  @override
+  String get streamingContent => streaming.content;
+  @override
+  set streamingContent(String v) => streaming.content = v;
 
   // ---- Processing / queue ----
   bool isProcessing = false;
@@ -114,8 +131,9 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
 
   // ---- Channel / lifecycle ----
   String? currentChannelId;
-  bool isAppActive = true;
-  int? backgroundedAtMs;
+  final ChatLifecycleCoordinator lifecycle = ChatLifecycleCoordinator();
+
+  bool get isAppActive => lifecycle.isAppActive;
 
   // ---- History request tracking ----
   int historySentCount = 40;
@@ -828,31 +846,23 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
   // ---------------------------------------------------------------------------
 
   void onAppLifecycleChanged(bool resumed) {
-    final wasActive = isAppActive;
-    isAppActive = resumed;
+    final shouldHandleResume = lifecycle.onLifecycleChanged(resumed);
+    if (!shouldHandleResume) return;
 
-    if (!resumed) {
-      backgroundedAtMs ??= DateTime.now().millisecondsSinceEpoch;
-    }
-
-    if (resumed && !wasActive) {
-      // Delay DB writes slightly — on iOS the SQLite file handle may still be
-      // readonly for a brief moment after the app returns from background.
-      Future.delayed(const Duration(milliseconds: 500), () {
-        markMessagesAsReadIfAtBottom();
-        handleResumeFromBackground();
-      });
-    }
+    // Delay DB writes slightly — on iOS the SQLite file handle may still be
+    // readonly for a brief moment after the app returns from background.
+    Future.delayed(const Duration(milliseconds: 500), () {
+      markMessagesAsReadIfAtBottom();
+      handleResumeFromBackground();
+    });
   }
 
   Future<void> handleResumeFromBackground() async {
-    final bgMs = backgroundedAtMs;
-    backgroundedAtMs = null;
+    final bgMs = lifecycle.takeBackgroundedAtMs();
     if (bgMs == null || currentChannelId == null) return;
 
-    final duration = Duration(
-      milliseconds: DateTime.now().millisecondsSinceEpoch - bgMs,
-    );
+    final duration = ChatLifecycleCoordinator.backgroundDuration(bgMs);
+    if (duration == null) return;
 
     try {
       await chatService.handleAppResumed(duration);
@@ -867,8 +877,7 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
     if (interruptedInfo != null) {
       chatService.clearInterruptedTaskInfo(currentChannelId!);
 
-      streamingMessageId = null;
-      streamingContent = '';
+      streaming.clear();
       isProcessing = false;
       _notify();
 
@@ -1231,21 +1240,26 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
     final activeTask = chatService.getActiveTask(currentChannelId!);
     if (activeTask == null) return;
 
-    streamingContent = activeTask.accumulatedContent;
-    streamingMessageId = 'streaming_reattach_${DateTime.now().millisecondsSinceEpoch}';
+    streaming.begin(
+      'streaming_reattach_${DateTime.now().millisecondsSinceEpoch}',
+    );
+    streaming.content = activeTask.accumulatedContent;
 
-    final streamingMessage = Message(
-      id: streamingMessageId!,
-      content: streamingContent,
-      timestampMs: DateTime.now().millisecondsSinceEpoch + 1,
+    final streamingMessage = ChatStreamingText.placeholder(
+      id: streaming.messageId!,
       from: MessageFrom(id: activeTask.agentId, type: 'agent', name: activeTask.agentName),
       to: MessageFrom(id: activeTask.userId, type: 'user', name: activeTask.userName),
-      type: MessageType.text,
+      timestampMs: DateTime.now().millisecondsSinceEpoch + 1,
+    );
+    // placeholder starts empty — restore accumulated content
+    final seeded = ChatStreamingText.withUpdatedContent(
+      streamingMessage,
+      streaming.content,
     );
 
     isProcessing = true;
-    messages.add(streamingMessage);
-    messageIdMap[streamingMessage.id] = streamingMessage;
+    messages.add(seeded);
+    messageIdMap[seeded.id] = seeded;
     _notify();
     _emit(RequestScrollToBottomEvent(force: true));
 
@@ -1254,21 +1268,8 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
     chatService.attachTaskUI(
       currentChannelId!,
         onStreamChunk: (chunk) {
-        streamingContent += chunk;
-        final idx = messages.indexWhere((m) => m.id == streamingMessageId);
-        if (idx != -1) {
-          final updated = Message(
-            id: streamingMessageId!,
-            content: streamingContent,
-            timestampMs: messages[idx].timestampMs,
-            from: messages[idx].from,
-            to: messages[idx].to,
-            type: messages[idx].type,
-            metadata: messages[idx].metadata,
-          );
-          messages[idx] = updated;
-          messageIdMap[updated.id] = updated;
-        }
+        streaming.append(chunk);
+        streaming.applyContentTo(messages, messageIdMap);
         scheduleStreamingRebuild();
         if (!isUserScrolledUp) {
           _emit(RequestScrollToBottomEvent());
@@ -1276,31 +1277,15 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
       },
       onActionConfirmation: _handleStreamingActionConfirmation,
       onMessageMetadata: (metadata) {
-        final idx = messages.indexWhere((m) => m.id == streamingMessageId);
-        if (idx != -1) {
-          final existingMetadata = Map<String, dynamic>.from(messages[idx].metadata ?? {});
-          existingMetadata.addAll(metadata);
-          final updated = Message(
-            id: streamingMessageId!,
-            content: messages[idx].content,
-            timestampMs: messages[idx].timestampMs,
-            from: messages[idx].from,
-            to: messages[idx].to,
-            type: messages[idx].type,
-            metadata: existingMetadata,
-          );
-          messages[idx] = updated;
-          messageIdMap[updated.id] = updated;
-        }
+        streaming.applyMetadataTo(messages, messageIdMap, metadata);
         _notify();
       },
       onTaskFinished: () async {
         await activeTask.dbSaveCompleter.future;
         acpCancellationToken = null;
-        streamingMessageId = null;
-        streamingContent = '';
-        await loadMessages();
+        streaming.clear();
         isProcessing = false;
+        await loadMessages();
         _notify();
         processNextInQueue();
       },
@@ -1522,8 +1507,7 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
         messages[idx] = updated;
         messageIdMap[current.id] = updated;
       }
-      streamingMessageId = null;
-      streamingContent = '';
+      streaming.clear();
       _notify();
     }
 
@@ -1590,8 +1574,7 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
         messages[idx] = updated;
         messageIdMap[current.id] = updated;
       }
-      streamingMessageId = null;
-      streamingContent = '';
+      streaming.clear();
       _notify();
     }
 
@@ -1706,15 +1689,12 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
         replyTo: replyToId,
       );
 
-      streamingMessageId = 'streaming_${DateTime.now().millisecondsSinceEpoch}';
-      streamingContent = '';
-      final streamingMessage = Message(
-        id: streamingMessageId!,
-        content: '',
-        timestampMs: DateTime.now().millisecondsSinceEpoch + 1,
+      streaming.begin('streaming_${DateTime.now().millisecondsSinceEpoch}');
+      final streamingMessage = ChatStreamingText.placeholder(
+        id: streaming.messageId!,
         from: MessageFrom(id: remoteAgent.id, type: 'agent', name: remoteAgent.name),
         to: MessageFrom(id: userId, type: 'user', name: userName),
-        type: MessageType.text,
+        timestampMs: DateTime.now().millisecondsSinceEpoch + 1,
       );
 
       messages.add(userMessage);
@@ -1754,21 +1734,8 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
           return await event.result.future;
         },
         onStreamChunk: (chunk) {
-          streamingContent += chunk;
-          final idx = messages.indexWhere((m) => m.id == streamingMessageId);
-          if (idx != -1) {
-            final updated = Message(
-              id: streamingMessageId!,
-              content: streamingContent,
-              timestampMs: messages[idx].timestampMs,
-              from: messages[idx].from,
-              to: messages[idx].to,
-              type: MessageType.text,
-              metadata: messages[idx].metadata,
-            );
-            messages[idx] = updated;
-            messageIdMap[updated.id] = updated;
-          }
+          streaming.append(chunk);
+          streaming.applyContentTo(messages, messageIdMap);
           scheduleStreamingRebuild();
           if (!isUserScrolledUp) {
             _emit(RequestScrollToBottomEvent());
@@ -1791,22 +1758,7 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
           await _handleFileMessage(fileData);
         },
         onMessageMetadata: (metadata) {
-          final idx = messages.indexWhere((m) => m.id == streamingMessageId);
-          if (idx != -1) {
-            final existingMetadata = Map<String, dynamic>.from(messages[idx].metadata ?? {});
-            existingMetadata.addAll(metadata);
-            final updated = Message(
-              id: streamingMessageId!,
-              content: messages[idx].content,
-              timestampMs: messages[idx].timestampMs,
-              from: messages[idx].from,
-              to: messages[idx].to,
-              type: messages[idx].type,
-              metadata: existingMetadata,
-            );
-            messages[idx] = updated;
-            messageIdMap[updated.id] = updated;
-          }
+          streaming.applyMetadataTo(messages, messageIdMap, metadata);
           _notify();
         },
         onRequestHistory: (historyData) {
@@ -1841,8 +1793,7 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
             // and another call will just be a no-op on stale state.
             if (currentChannelId == channelAtDispatch) {
               acpCancellationToken = null;
-              streamingMessageId = null;
-              streamingContent = '';
+              streaming.clear();
               await loadMessages();
               isProcessing = false;
               _notify();
@@ -1876,17 +1827,16 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
           handledHistorySupplement = true;
           addSystemHint('Loading more chat history...');
 
-          streamingMessageId = 'streaming_reanswer_${DateTime.now().millisecondsSinceEpoch}';
-          streamingContent = '';
+          streaming.begin(
+            'streaming_reanswer_${DateTime.now().millisecondsSinceEpoch}',
+          );
           acpCancellationToken = ACPCancellationToken();
 
-          final reanswer = Message(
-            id: streamingMessageId!,
-            content: '',
-            timestampMs: DateTime.now().millisecondsSinceEpoch + 1,
+          final reanswer = ChatStreamingText.placeholder(
+            id: streaming.messageId!,
             from: MessageFrom(id: remoteAgent.id, type: 'agent', name: remoteAgent.name),
             to: MessageFrom(id: userId, type: 'user', name: userName),
-            type: MessageType.text,
+            timestampMs: DateTime.now().millisecondsSinceEpoch + 1,
           );
           messages.add(reanswer);
           messageIdMap[reanswer.id] = reanswer;
@@ -1905,20 +1855,8 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
                 offset: historySentCount,
                 batchSize: currentRequestedCount,
                 onStreamChunk: (chunk) {
-                  streamingContent += chunk;
-                  final idx = messages.indexWhere((m) => m.id == streamingMessageId);
-                  if (idx != -1) {
-                    final updated = Message(
-                      id: streamingMessageId!,
-                      content: streamingContent,
-                      timestampMs: messages[idx].timestampMs,
-                      from: messages[idx].from,
-                      to: messages[idx].to,
-                      type: MessageType.text,
-                    );
-                    messages[idx] = updated;
-                    messageIdMap[updated.id] = updated;
-                  }
+                  streaming.append(chunk);
+                  streaming.applyContentTo(messages, messageIdMap);
                   scheduleStreamingRebuild();
                   if (!isUserScrolledUp) {
                     _emit(RequestScrollToBottomEvent());
@@ -2003,8 +1941,7 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
         processNextInQueue();
       } else {
         acpCancellationToken = null;
-        streamingMessageId = null;
-        streamingContent = '';
+        streaming.clear();
         pendingHistoryRequest = null;
         isProcessing = false;
         _notify();
@@ -2014,19 +1951,10 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
   }
 
   void _updateStreamingMetadata(Map<String, dynamic> metadata) {
-    final idx = messages.indexWhere((m) => m.id == streamingMessageId);
-    if (idx != -1) {
-      final updated = Message(
-        id: streamingMessageId!,
-        content: streamingContent,
-        timestampMs: messages[idx].timestampMs,
-        from: messages[idx].from,
-        to: messages[idx].to,
-        type: MessageType.text,
-        metadata: metadata,
-      );
-      messages[idx] = updated;
-      messageIdMap[updated.id] = updated;
+    streaming.applyMetadataTo(messages, messageIdMap, metadata);
+    // Keep content in sync with the session accumulator when present.
+    if (streaming.isActive && streaming.content.isNotEmpty) {
+      streaming.applyContentTo(messages, messageIdMap);
     }
     _notify();
   }
@@ -2561,8 +2489,7 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
       _emit(ShowErrorSnackBarEvent('chat_groupChatError:$e'));
     } finally {
       acpCancellationToken = null;
-      streamingMessageId = null;
-      streamingContent = '';
+      streaming.clear();
       // Complete all pending group interaction Completers with null
       for (final e in pendingGroupInteractions.values) {
         if (!e.result.isCompleted) e.result.complete(null);
@@ -2625,15 +2552,12 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
         throw Exception('Agent has no valid endpoint');
       }
 
-      streamingMessageId = 'streaming_${DateTime.now().millisecondsSinceEpoch}';
-      streamingContent = '';
-      final sm = Message(
-        id: streamingMessageId!,
-        content: '',
-        timestampMs: DateTime.now().millisecondsSinceEpoch + 1,
+      streaming.begin('streaming_${DateTime.now().millisecondsSinceEpoch}');
+      final sm = ChatStreamingText.placeholder(
+        id: streaming.messageId!,
         from: MessageFrom(id: remoteAgent.id, type: 'agent', name: remoteAgent.name),
         to: MessageFrom(id: userId, type: 'user', name: userName),
-        type: MessageType.text,
+        timestampMs: DateTime.now().millisecondsSinceEpoch + 1,
       );
 
       messages.add(sm);
@@ -2652,21 +2576,8 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
         attachments: [attachmentData],
         existingUserMessage: attachmentMessage,
         onStreamChunk: (chunk) {
-          streamingContent += chunk;
-          final idx = messages.indexWhere((m) => m.id == streamingMessageId);
-          if (idx != -1) {
-            final updated = Message(
-              id: streamingMessageId!,
-              content: streamingContent,
-              timestampMs: messages[idx].timestampMs,
-              from: messages[idx].from,
-              to: messages[idx].to,
-              type: MessageType.text,
-              metadata: messages[idx].metadata,
-            );
-            messages[idx] = updated;
-            messageIdMap[updated.id] = updated;
-          }
+          streaming.append(chunk);
+          streaming.applyContentTo(messages, messageIdMap);
           scheduleStreamingRebuild();
           if (!isUserScrolledUp) {
             _emit(RequestScrollToBottomEvent());
@@ -2692,8 +2603,7 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
       messageIdMap.remove(streamingMessageId);
       _notify();
     } finally {
-      streamingMessageId = null;
-      streamingContent = '';
+      streaming.clear();
       isProcessing = false;
       _notify();
       processNextInQueue();

@@ -1,5 +1,7 @@
 import 'dart:async';
 
+import 'peer_approval_completer_resolver.dart';
+
 // ---------------------------------------------------------------------------
 // Events — sealed hierarchy for UI-bound side effects
 //
@@ -80,12 +82,16 @@ class ShowOsToolConfirmationEvent extends ChatEvent {
   ShowOsToolConfirmationEvent(this.toolName, this.args, this.risk) : result = Completer<bool>();
 }
 
-class GroupInteractionRequestEvent extends ChatEvent {
+class GroupInteractionRequestEvent extends ChatEvent
+    implements PendingInteractionLike {
+  @override
   final String agentId;
   final String agentName;
   final String interactionType; // 'action_confirmation', 'single_select', 'multi_select', 'form', 'file_upload'
+  @override
   final Map<String, dynamic> data;
   final String groupStreamingMessageId;
+  @override
   final Completer<Map<String, dynamic>?> result;
   GroupInteractionRequestEvent({
     required this.agentId,

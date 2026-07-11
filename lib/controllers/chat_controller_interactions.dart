@@ -76,42 +76,13 @@ mixin _InteractionOps on _ChatControllerBase {
     required String actionLabel,
     String? confirmationId,
   }) {
-    final response = {
-      'selected_action_id': actionId,
-      'selected_action_label': actionLabel,
-      '_approval_submitted': true,
-    };
-    final keys = <String>{
-      if (confirmationId != null && confirmationId.isNotEmpty) confirmationId,
-      originalMessage.id,
-      originalMessage.from.id,
-    };
-    for (final key in keys) {
-      final pending = pendingGroupInteractions[key];
-      if (pending != null && !pending.result.isCompleted) {
-        pending.result.complete(response);
-        pendingGroupInteractions.remove(key);
-        return true;
-      }
-    }
-    for (final entry in pendingGroupInteractions.entries.toList()) {
-      if (entry.value.agentId == originalMessage.from.id &&
-          !entry.value.result.isCompleted) {
-        // Prefer matching confirmation_id when available.
-        final pendingCid =
-            entry.value.data['confirmation_id'] as String?;
-        if (confirmationId != null &&
-            confirmationId.isNotEmpty &&
-            pendingCid != null &&
-            pendingCid != confirmationId) {
-          continue;
-        }
-        entry.value.result.complete(response);
-        pendingGroupInteractions.remove(entry.key);
-        return true;
-      }
-    }
-    return false;
+    return PeerApprovalCompleterResolver.completePending(
+      pendingGroupInteractions,
+      originalMessage: originalMessage,
+      actionId: actionId,
+      actionLabel: actionLabel,
+      confirmationId: confirmationId,
+    );
   }
 
   /// Merge a selected action into the message's `action_confirmation` metadata
