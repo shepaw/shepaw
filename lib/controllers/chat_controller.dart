@@ -39,6 +39,7 @@ import 'chat_streaming_text.dart';
 import 'chat_lifecycle_coordinator.dart';
 import 'chat_group_streaming_tracker.dart';
 import 'group_mention_resolver.dart';
+import 'chat_message_reconciler.dart';
 import 'peer_approval_completer_resolver.dart';
 import 'chat_events.dart';
 
@@ -2643,201 +2644,40 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
   /// cancel before answer text). Keep the placeholder when it still has
   /// visible content and no usable DB agent message exists yet.
   void _mergeDmStreamingPlaceholders(List<Message> dbMessages) {
-    final streamingTemps = <Message>[];
-    for (final m in messages) {
-      if (m.id.startsWith('streaming_')) {
-        streamingTemps.add(m);
-      }
-    }
-
-    if (streamingTemps.isEmpty) {
-      messages = dbMessages;
-      return;
-    }
-
-    messages = List<Message>.from(dbMessages);
-
-    bool hasVisibleAgentContent(Message m) {
-      if (!m.from.isAgent) return false;
-      if (m.content.trim().isNotEmpty) return true;
-      final progress = m.metadata?['progress_content'];
-      return progress is String && progress.trim().isNotEmpty;
-    }
-
-    for (final temp in streamingTemps) {
-      final tempVisible = temp.content.trim().isNotEmpty ||
-          ((temp.metadata?['progress_content'] is String) &&
-              (temp.metadata!['progress_content'] as String).trim().isNotEmpty);
-      if (!tempVisible) continue;
-
-      final sameSenderDb = messages
-          .where((m) => m.from.isAgent && m.from.id == temp.from.id)
-          .toList();
-
-      if (sameSenderDb.isEmpty) {
-        // DB save missing — keep the only copy of the reply.
-        messages.add(temp);
-        continue;
-      }
-
-      // Prefer replacing an empty/progress-less DB shell with the richer
-      // in-memory streaming bubble (same sender, latest agent row).
-      Message? emptyShell;
-      for (final m in sameSenderDb.reversed) {
-        if (!hasVisibleAgentContent(m)) {
-          emptyShell = m;
-          break;
-        }
-      }
-      if (emptyShell != null) {
-        final idx = messages.indexWhere((m) => m.id == emptyShell!.id);
-        if (idx != -1) {
-          messages[idx] = Message(
-            id: emptyShell.id,
-            content: temp.content.trim().isNotEmpty
-                ? temp.content
-                : emptyShell.content,
-            timestampMs: emptyShell.timestampMs,
-            from: emptyShell.from,
-            to: emptyShell.to ?? temp.to,
-            type: emptyShell.type,
-            replyTo: emptyShell.replyTo ?? temp.replyTo,
-            metadata: {
-              ...?emptyShell.metadata,
-              ...?temp.metadata,
-              'status': emptyShell.metadata?['status'] ?? 'streaming',
-            },
-          );
-        }
-      }
-    }
-
-    messages.sort((a, b) => a.timestampMs.compareTo(b.timestampMs));
+    messages = ChatMessageReconciler.mergeDmStreamingPlaceholders(
+      current: messages,
+      dbMessages: dbMessages,
+    );
   }
 
   Future<void> reconcileGroupMessages() async {
     if (currentChannelId == null) return;
 
     final dbMessages = await chatService.loadChannelMessages(currentChannelId!);
+    final result = ChatMessageReconciler.reconcileGroupMessages(
+      current: messages,
+      dbMessages: dbMessages,
+    );
 
-    final tempMessages = <String, int>{};
-    for (int i = 0; i < messages.length; i++) {
-      final id = messages[i].id;
-      if (id.startsWith('group_streaming_') ||
-          id.startsWith('wf_streaming_') ||
-          id.startsWith('group_peer_approval_') ||
-          id.startsWith('temp_user_')) {
-        tempMessages[id] = i;
+    LoggerService().debug(
+      'reconcileGroupMessages: temps=${messages.where((m) => ChatMessageReconciler.isGroupTempId(m.id)).length}, '
+      'db=${dbMessages.length}, migrations=${result.pendingKeyMigrations.length}',
+      tag: 'ChatController',
+    );
+
+    for (final entry in result.pendingKeyMigrations.entries) {
+      if (pendingGroupInteractions.containsKey(entry.key)) {
+        pendingGroupInteractions[entry.value] =
+            pendingGroupInteractions.remove(entry.key)!;
       }
     }
 
-    LoggerService().debug('reconcileGroupMessages: ${tempMessages.length} temp, ${dbMessages.length} db, ${messages.length} total', tag: 'ChatController');
-
-    if (tempMessages.isEmpty) {
-      messages = dbMessages;
-      rebuildMessageIdMap();
-      _notify();
-      return;
-    }
-
-    final matchedDbIds = <String>{};
-    final usedTempIds = <String>{};
-
-    // Pass 1: exact content match
-    for (final dbMsg in dbMessages) {
-      if (matchedDbIds.contains(dbMsg.id)) continue;
-      String? matchedTempId;
-      for (final entry in tempMessages.entries) {
-        if (usedTempIds.contains(entry.key)) continue;
-        final tempMsg = messages[entry.value];
-        if (tempMsg.from.id == dbMsg.from.id &&
-            tempMsg.content.trim() == dbMsg.content.trim()) {
-          matchedTempId = entry.key;
-          break;
-        }
-      }
-      if (matchedTempId != null) {
-        final idx = tempMessages[matchedTempId]!;
-        messages[idx] = dbMsg;
-        matchedDbIds.add(dbMsg.id);
-        usedTempIds.add(matchedTempId);
-        // Migrate any pending interaction keyed on the old streaming ID
-        // to the new DB message ID so form/select submissions can still
-        // find the Completer after reconciliation replaces the message.
-        if (pendingGroupInteractions.containsKey(matchedTempId)) {
-          pendingGroupInteractions[dbMsg.id] =
-              pendingGroupInteractions.remove(matchedTempId)!;
-        }
-      }
-    }
-
-    // Pass 2: for unmatched DB messages, match by sender ID alone.
-    // The DB content may differ from the streaming content because the
-    // service strips redundant agent-name prefixes before saving.  When
-    // there is exactly one remaining temp message from the same sender,
-    // treat it as a match so the streaming placeholder is replaced
-    // correctly and doesn't disappear.
-    for (final dbMsg in dbMessages) {
-      if (matchedDbIds.contains(dbMsg.id)) continue;
-      final candidates = tempMessages.entries
-          .where((e) => !usedTempIds.contains(e.key) && messages[e.value].from.id == dbMsg.from.id)
-          .toList();
-      if (candidates.length == 1) {
-        final entry = candidates.first;
-        final idx = entry.value;
-        messages[idx] = dbMsg;
-        matchedDbIds.add(dbMsg.id);
-        usedTempIds.add(entry.key);
-        // Migrate any pending interaction keyed on the old streaming ID
-        // to the new DB message ID so form/select submissions can still
-        // find the Completer after reconciliation replaces the message.
-        if (pendingGroupInteractions.containsKey(entry.key)) {
-          pendingGroupInteractions[dbMsg.id] =
-              pendingGroupInteractions.remove(entry.key)!;
-        }
-      }
-    }
-
-    LoggerService().debug('reconcileGroupMessages: pass1 matched ${matchedDbIds.length}, pass2 total matched ${usedTempIds.length}', tag: 'ChatController');
-
-    // Remove unmatched temp messages, but keep streaming messages that
-    // have non-empty content when no corresponding DB message exists —
-    // the DB save may have failed and discarding the only copy of the
-    // response would lose it permanently.
-    final dbSenderIds = dbMessages.map((m) => m.from.id).toSet();
-    messages.removeWhere((m) {
-      if (!m.id.startsWith('group_streaming_') &&
-          !m.id.startsWith('wf_streaming_') &&
-          !m.id.startsWith('group_peer_approval_') &&
-          !m.id.startsWith('temp_user_')) {
-        return false;
-      }
-      if (usedTempIds.contains(m.id)) return false;
-      // Keep streaming messages with content when no DB message was
-      // found from this sender (i.e. the DB save likely failed).
-      if (m.id.startsWith('group_streaming_') &&
-          m.content.trim().isNotEmpty &&
-          !dbSenderIds.contains(m.from.id)) {
-        return false;
-      }
-      if ((m.id.startsWith('wf_streaming_') ||
-              m.id.startsWith('group_peer_approval_')) &&
-          !dbSenderIds.contains(m.from.id)) {
-        return false;
-      }
-      return true;
-    });
-
-    final existingIds = messages.map((m) => m.id).toSet();
-    for (final dbMsg in dbMessages) {
-      if (!existingIds.contains(dbMsg.id) && !matchedDbIds.contains(dbMsg.id)) {
-        messages.add(dbMsg);
-      }
-    }
-
-    messages.sort((a, b) => a.timestampMs.compareTo(b.timestampMs));
+    messages = result.messages;
     rebuildMessageIdMap();
-    LoggerService().debug('reconcileGroupMessages done: ${messages.length} messages', tag: 'ChatController');
+    LoggerService().debug(
+      'reconcileGroupMessages done: ${messages.length} messages',
+      tag: 'ChatController',
+    );
     _notify();
   }
 
