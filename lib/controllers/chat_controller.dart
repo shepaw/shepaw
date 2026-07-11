@@ -40,6 +40,9 @@ import 'chat_lifecycle_coordinator.dart';
 import 'chat_group_streaming_tracker.dart';
 import 'group_mention_resolver.dart';
 import 'chat_message_reconciler.dart';
+import 'chat_send_planner.dart';
+import 'streaming_action_confirmation.dart';
+import 'inbound_file_message_parser.dart';
 import 'peer_approval_completer_resolver.dart';
 import 'chat_events.dart';
 
@@ -1380,9 +1383,15 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
     final hasPendingAttachments = pendingAttachments.isNotEmpty;
     LoggerService().debug('User sending message', tag: 'ChatController');
 
-    if (content.isEmpty && !hasPendingAttachments) return;
-
-    if (!isGroupMode && agentId == null) {
+    final early = ChatSendPlanner.decide(
+      content: content,
+      hasAttachments: hasPendingAttachments,
+      isGroupMode: isGroupMode,
+      hasAgent: agentId != null,
+      isProcessing: false,
+    );
+    if (early == ChatSendDisposition.empty) return;
+    if (early == ChatSendDisposition.noAgent) {
       _emit(ShowSnackBarEvent('chat_noAgentSelected'));
       return;
     }
@@ -1426,36 +1435,57 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
     );
     final savedAttachmentMessages = persisted.messages;
     final attachmentDataList = persisted.data;
-
     final hasAttachments = attachmentDataList.isNotEmpty;
 
-    // If only attachments (no text), send each attachment individually
-    if (content.isEmpty) {
-      if (hasAttachments && !isGroupMode) {
-        for (final msg in savedAttachmentMessages) {
-          await sendAttachmentToAgent(msg);
-        }
-      }
-      return;
-    }
+    final disposition = ChatSendPlanner.decide(
+      content: content,
+      hasAttachments: hasAttachments,
+      isGroupMode: isGroupMode,
+      hasAgent: agentId != null,
+      isProcessing: isProcessing,
+    );
 
-    // Queue if processing
-    if (isProcessing) {
-      if (hasAttachments && !isGroupMode) {
-        for (final msg in savedAttachmentMessages) {
-          await sendAttachmentToAgent(msg);
+    switch (disposition) {
+      case ChatSendDisposition.empty:
+      case ChatSendDisposition.noAgent:
+        return;
+      case ChatSendDisposition.attachmentsOnly:
+        if (!isGroupMode) {
+          for (final msg in savedAttachmentMessages) {
+            await sendAttachmentToAgent(msg);
+          }
         }
-      }
-      messageQueue.add(content);
-      _notify();
-      return;
-    }
-
-    if (isGroupMode) {
-      LoggerService().debug('sendMessage -> processGroupMessage (isGroupMode=true, groupAgents=${groupAgents.length}, adminId=$groupAdminAgentId)', tag: 'ChatController');
-      await processGroupMessage(content, replyToId: capturedReplyToId, attachments: hasAttachments ? attachmentDataList : null, mentions: mentions);
-    } else {
-      await processMessage(content, replyToId: capturedReplyToId, attachments: hasAttachments ? attachmentDataList : null, attachmentMessages: hasAttachments ? savedAttachmentMessages : null);
+        return;
+      case ChatSendDisposition.queueText:
+        if (hasAttachments && !isGroupMode) {
+          for (final msg in savedAttachmentMessages) {
+            await sendAttachmentToAgent(msg);
+          }
+        }
+        messageQueue.add(content);
+        _notify();
+        return;
+      case ChatSendDisposition.sendGroup:
+        LoggerService().debug(
+          'sendMessage -> processGroupMessage (isGroupMode=true, '
+          'groupAgents=${groupAgents.length}, adminId=$groupAdminAgentId)',
+          tag: 'ChatController',
+        );
+        await processGroupMessage(
+          content,
+          replyToId: capturedReplyToId,
+          attachments: hasAttachments ? attachmentDataList : null,
+          mentions: mentions,
+        );
+        return;
+      case ChatSendDisposition.sendDm:
+        await processMessage(
+          content,
+          replyToId: capturedReplyToId,
+          attachments: hasAttachments ? attachmentDataList : null,
+          attachmentMessages: hasAttachments ? savedAttachmentMessages : null,
+        );
+        return;
     }
   }
 
@@ -1938,24 +1968,19 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
   /// back to the latest agent message so the card is still visible.
   void _handleStreamingActionConfirmation(Map<String, dynamic> actionData) {
     final confirmationId = actionData['confirmation_id'] as String? ?? '';
-    var streamingId = streamingMessageId;
     LoggerService().info(
       'onActionConfirmation: confirmationId=$confirmationId '
-      'streamingMessageId=$streamingId isProcessing=$isProcessing '
+      'streamingMessageId=$streamingMessageId isProcessing=$isProcessing '
       'actions=${(actionData['actions'] as List?)?.length ?? 0} '
       'context=${actionData['confirmation_context']}',
       tag: 'PeerApproval',
     );
 
-    if (streamingId == null || !messageIdMap.containsKey(streamingId)) {
-      // Prefer the latest agent bubble in this channel (peer DM race recovery).
-      for (final msg in messages.reversed) {
-        if (msg.from.isAgent) {
-          streamingId = msg.id;
-          break;
-        }
-      }
-    }
+    final streamingId = StreamingActionConfirmation.resolveHostMessageId(
+      preferredId: streamingMessageId,
+      messageIdMap: messageIdMap,
+      messages: messages,
+    );
 
     if (streamingId == null) {
       // No host bubble yet — create a dedicated peer-approval placeholder so
@@ -1969,31 +1994,20 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
       }
       final userId = getUserId();
       final userName = getUserName();
-      final sid =
-          'peer_approval_${agentId}_${DateTime.now().millisecondsSinceEpoch}';
-      final prompt = (actionData['prompt'] as String?)?.trim();
-      final content =
-          prompt != null && prompt.isNotEmpty ? prompt : '需要您的确认';
       final displayName = agentName ?? 'Agent';
-      final sm = Message(
+      final sid = StreamingActionConfirmation.dmFallbackId(agentId!);
+      final sm = StreamingActionConfirmation.buildFallbackBubble(
         id: sid,
-        content: content,
-        timestampMs: DateTime.now().millisecondsSinceEpoch + 1,
-        from: MessageFrom(
-          id: agentId!,
-          type: 'agent',
-          name: displayName,
-        ),
-        to: MessageFrom(id: userId, type: 'user', name: userName),
-        type: MessageType.text,
-        metadata: {
-          'action_confirmation': Map<String, dynamic>.from(actionData),
-        },
+        agentId: agentId!,
+        agentName: displayName,
+        userId: userId,
+        userName: userName,
+        actionData: actionData,
       );
       messages.add(sm);
       messageIdMap[sid] = sm;
       streamingMessageId = sid;
-      streamingContent = content;
+      streamingContent = sm.content;
       isProcessing = true;
       _notify();
       _emit(RequestScrollToBottomEvent(force: true));
@@ -2010,7 +2024,7 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
               senderId: agentId!,
               senderType: 'agent',
               senderName: displayName,
-              content: content,
+              content: sm.content,
               messageType: 'text',
               metadata: sm.metadata,
             )
@@ -2027,29 +2041,23 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
       );
       return;
     }
-    final existingMetadata = Map<String, dynamic>.from(messages[idx].metadata ?? {});
-    final prev = existingMetadata['action_confirmation'];
-    if (prev is Map) {
-      final prevId = prev['confirmation_id'];
-      final prevSelected = prev['selected_action_id'];
-      if (prevId != confirmationId) {
-        LoggerService().info(
-          'onActionConfirmation: new approval replaces prior '
-          'prevId=$prevId prevSelected=$prevSelected → $confirmationId',
-          tag: 'PeerApproval',
-        );
-      }
+    if (StreamingActionConfirmation.replacesPrior(
+      existingMetadata: messages[idx].metadata,
+      confirmationId: confirmationId,
+    )) {
+      final prev = messages[idx].metadata?['action_confirmation'];
+      LoggerService().info(
+        'onActionConfirmation: new approval replaces prior '
+        'prevId=${prev is Map ? prev['confirmation_id'] : null} '
+        'prevSelected=${prev is Map ? prev['selected_action_id'] : null} '
+        '→ $confirmationId',
+        tag: 'PeerApproval',
+      );
     }
-    existingMetadata['action_confirmation'] = Map<String, dynamic>.from(actionData);
-    existingMetadata['approval_seq'] = (existingMetadata['approval_seq'] as int? ?? 0) + 1;
-    final updated = Message(
-      id: streamingId,
-      content: streamingContent.isNotEmpty ? streamingContent : messages[idx].content,
-      timestampMs: messages[idx].timestampMs,
-      from: messages[idx].from,
-      to: messages[idx].to,
-      type: messages[idx].type,
-      metadata: existingMetadata,
+    final updated = StreamingActionConfirmation.attachToHost(
+      host: messages[idx],
+      actionData: actionData,
+      contentOverride: streamingContent,
     );
     messages[idx] = updated;
     messageIdMap[updated.id] = updated;
@@ -2057,14 +2065,14 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
     // sequential approvals land on the same card.
     streamingMessageId ??= streamingId;
     LoggerService().debug(
-      'onActionConfirmation: attached seq=${existingMetadata['approval_seq']} '
+      'onActionConfirmation: attached seq=${updated.metadata?['approval_seq']} '
       'msgLen=${updated.content.length}',
       tag: 'PeerApproval',
     );
     _notify();
     // Persist so loadMessages after sendChat cannot revive a card-less bubble.
     localDatabaseService
-        .updateMessageMetadata(streamingId, existingMetadata)
+        .updateMessageMetadata(streamingId, updated.metadata ?? {})
         .ignore();
   }
 
@@ -2087,22 +2095,15 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
         currentChannelId != null) {
       final userId = getUserId();
       final userName = getUserName();
-      final sid =
-          'group_peer_approval_${agentId}_${DateTime.now().millisecondsSinceEpoch}';
-      final prompt = (data['prompt'] as String?)?.trim();
-      final content =
-          prompt != null && prompt.isNotEmpty ? prompt : '需要您的确认';
-      final metadata = {
-        interactionType: Map<String, dynamic>.from(data),
-      };
-      final sm = Message(
+      final sid = StreamingActionConfirmation.groupFallbackId(agentId);
+      final sm = StreamingActionConfirmation.buildFallbackBubble(
         id: sid,
-        content: content,
-        timestampMs: DateTime.now().millisecondsSinceEpoch + 1,
-        from: MessageFrom(id: agentId, type: 'agent', name: agentName),
-        to: MessageFrom(id: userId, type: 'user', name: userName),
-        type: MessageType.text,
-        metadata: metadata,
+        agentId: agentId,
+        agentName: agentName,
+        userId: userId,
+        userName: userName,
+        actionData: data,
+        metadataKey: interactionType,
       );
       messages.add(sm);
       messageIdMap[sm.id] = sm;
@@ -2114,9 +2115,9 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
             senderId: agentId,
             senderType: 'agent',
             senderName: agentName,
-            content: content,
+            content: sm.content,
             messageType: 'text',
-            metadata: metadata,
+            metadata: sm.metadata,
           )
           .ignore();
       _notify();
@@ -2140,55 +2141,22 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
 
   Future<void> _handleFileMessage(Map<String, dynamic> fileData) async {
     try {
+      int? resolvedSize;
       final url = fileData['url'] as String?;
-      final filename = fileData['filename'] as String?;
-      final fileMimeType = fileData['mime_type'] as String?;
-      int? size = (fileData['size'] as num?)?.toInt();
-      final thumbnailBase64 = fileData['thumbnail_base64'] as String?;
-
-      // Prefer explicit file_id field, fall back to extracting from URL path
-      String? fileId = fileData['file_id'] as String?;
-      if ((fileId == null || fileId.isEmpty) && url != null && url.isNotEmpty) {
-        try {
-          final uri = Uri.parse(url);
-          if (uri.hasScheme &&
-              uri.pathSegments.length >= 2 &&
-              uri.pathSegments[uri.pathSegments.length - 2] == 'files') {
-            fileId = uri.pathSegments.last;
-          }
-        } catch (_) {}
-      }
-
-      // Need at least a url or file_id to handle the message
-      if ((url == null || url.isEmpty) && (fileId == null || fileId.isEmpty)) return;
-
-      // If size is missing or zero and url is a non-empty local path, read from filesystem
-      if ((size == null || size == 0) && url != null && url.isNotEmpty && !url.startsWith('http')) {
+      final rawSize = (fileData['size'] as num?)?.toInt();
+      if (InboundFileMessageParser.needsLocalSizeProbe(url, rawSize) &&
+          url != null) {
         try {
           final f = File(url);
-          if (await f.exists()) size = await f.length();
+          if (await f.exists()) resolvedSize = await f.length();
         } catch (_) {}
       }
 
-      final isImage = fileMimeType != null && fileMimeType.startsWith('image/');
-      final msgType = isImage ? MessageType.image : MessageType.file;
-
-      final metadata = <String, dynamic>{
-        'download_status': 'pending',
-        'name': filename ?? 'file',
-        'type': fileMimeType ?? 'application/octet-stream',
-        'size': size ?? 0,
-      };
-
-      if (url != null && url.isNotEmpty) metadata['source_url'] = url;
-
-      if (thumbnailBase64 != null && thumbnailBase64.isNotEmpty) {
-        metadata['thumbnail_base64'] = thumbnailBase64;
-      }
-
-      if (fileId != null) {
-        metadata['file_id'] = fileId;
-      }
+      final draft = InboundFileMessageParser.parse(
+        fileData,
+        resolvedSize: resolvedSize ?? rawSize,
+      );
+      if (draft == null) return;
 
       final currentAgentName = agentName ?? 'Agent';
       final messageId = 'file_${DateTime.now().millisecondsSinceEpoch}';
@@ -2198,11 +2166,9 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
         senderId: agentId ?? '',
         senderType: 'agent',
         senderName: currentAgentName,
-        content: isImage
-            ? '[Image: ${filename ?? "image"}]'
-            : '[File: ${filename ?? "file"}]',
-        messageType: msgType.toString().split('.').last,
-        metadata: metadata,
+        content: draft.content,
+        messageType: draft.messageType.toString().split('.').last,
+        metadata: draft.metadata,
       );
 
       await loadMessages();
