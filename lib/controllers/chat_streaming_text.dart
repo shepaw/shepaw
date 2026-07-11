@@ -59,7 +59,7 @@ class ChatStreamingText {
   static Message placeholder({
     required String id,
     required MessageFrom from,
-    required MessageFrom to,
+    MessageFrom? to,
     int? timestampMs,
     Map<String, dynamic>? metadata,
   }) {

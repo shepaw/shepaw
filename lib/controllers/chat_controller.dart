@@ -37,6 +37,8 @@ import 'chat_attachment_coordinator.dart';
 import 'chat_attachment_validator.dart';
 import 'chat_streaming_text.dart';
 import 'chat_lifecycle_coordinator.dart';
+import 'chat_group_streaming_tracker.dart';
+import 'group_mention_resolver.dart';
 import 'peer_approval_completer_resolver.dart';
 import 'chat_events.dart';
 
@@ -375,25 +377,13 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
   void _onWorkflowStreamChunk(String aid, String anm, String chunk) {
     final sid = _workflowStreamingIds[aid];
     if (sid == null) return;
-    _workflowStreamingContents[aid] =
-        (_workflowStreamingContents[aid] ?? '') + chunk;
-    final updatedContent = _workflowStreamingContents[aid]!;
-    final existing = messageIdMap[sid];
-    if (existing != null) {
-      final idx = messages.indexOf(existing);
-      if (idx != -1) {
-        final updated = Message(
-          id: sid,
-          content: updatedContent,
-          timestampMs: messages[idx].timestampMs,
-          from: messages[idx].from,
-          to: messages[idx].to,
-          type: MessageType.text,
-        );
-        messages[idx] = updated;
-        messageIdMap[updated.id] = updated;
-      }
-    }
+    final updatedContent = workflow.appendStreamChunk(aid, chunk);
+    ChatGroupStreamingTracker.applyContentById(
+      sid,
+      updatedContent,
+      messages,
+      messageIdMap,
+    );
     scheduleStreamingRebuild();
     if (!isUserScrolledUp) {
       _emit(RequestScrollToBottomEvent());
@@ -1298,22 +1288,21 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
     final activeTasks = chatService.getActiveGroupTasks(currentChannelId!);
     if (activeTasks.isEmpty) return;
 
-    final streamingIds = <String, String>{};
-    final streamingContents = <String, String>{};
+    final turn = ChatGroupStreamingTracker();
 
     for (final entry in activeTasks.entries) {
       final aid = entry.key;
       final task = entry.value;
       final sid = 'group_streaming_${aid}_${DateTime.now().millisecondsSinceEpoch}';
-      streamingIds[aid] = sid;
-      streamingContents[aid] = task.accumulatedContent;
+      turn.begin(aid, sid, initialContent: task.accumulatedContent);
 
-      final streamingMessage = Message(
-        id: sid,
-        content: task.accumulatedContent,
-        timestampMs: DateTime.now().millisecondsSinceEpoch + 1,
-        from: MessageFrom(id: aid, type: 'agent', name: task.agentName),
-        type: MessageType.text,
+      final streamingMessage = ChatStreamingText.withUpdatedContent(
+        ChatStreamingText.placeholder(
+          id: sid,
+          from: MessageFrom(id: aid, type: 'agent', name: task.agentName),
+          timestampMs: DateTime.now().millisecondsSinceEpoch + 1,
+        ),
+        task.accumulatedContent,
       );
 
       isProcessing = true;
@@ -1328,25 +1317,8 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
     chatService.attachGroupTaskUI(
       currentChannelId!,
       onStreamChunk: (aid, agentNameVal, chunk) {
-        final sid = streamingIds[aid];
-        if (sid == null) return;
-        streamingContents[aid] = (streamingContents[aid] ?? '') + chunk;
-        final updatedContent = streamingContents[aid]!;
-        final existing = messageIdMap[sid];
-        if (existing != null) {
-          final idx = messages.indexOf(existing);
-          if (idx != -1) {
-            final updated = Message(
-              id: sid,
-              content: updatedContent,
-              timestampMs: messages[idx].timestampMs,
-              from: messages[idx].from,
-              to: messages[idx].to,
-              type: MessageType.text,
-            );
-            messages[idx] = updated;
-            messageIdMap[updated.id] = updated;
-          }
+        if (turn.appendAndApply(aid, chunk, messages, messageIdMap) == null) {
+          return;
         }
         scheduleStreamingRebuild();
         if (!isUserScrolledUp) {
@@ -1354,16 +1326,12 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
         }
       },
       onTaskFinished: (aid, agentNameVal) {
-        final sid = streamingIds[aid];
-        if (sid != null) {
-          groupStreamingMessageIds.remove(sid);
-        }
-        streamingIds.remove(aid);
-        streamingContents.remove(aid);
+        final sid = turn.finish(aid);
+        if (sid != null) groupStreamingMessageIds.remove(sid);
         respondingAgentNames.remove(agentNameVal);
         _notify();
 
-        if (streamingIds.isEmpty) {
+        if (turn.isEmpty) {
           reconcileGroupMessages().then((_) {
             isProcessing = false;
             respondingAgentNames.clear();
@@ -2159,25 +2127,13 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
   }
 
   void _updateGroupStreamingMetadata(String streamingId, String key, Map<String, dynamic> data) {
-    final existing = messageIdMap[streamingId];
-    if (existing != null) {
-      final idx = messages.indexOf(existing);
-      if (idx != -1) {
-        final existingMetadata = Map<String, dynamic>.from(messages[idx].metadata ?? {});
-        existingMetadata[key] = Map<String, dynamic>.from(data);
-        final updated = Message(
-          id: streamingId,
-          content: messages[idx].content,
-          timestampMs: messages[idx].timestampMs,
-          from: messages[idx].from,
-          to: messages[idx].to,
-          type: messages[idx].type,
-          metadata: existingMetadata,
-        );
-        messages[idx] = updated;
-        messageIdMap[updated.id] = updated;
-      }
-    }
+    ChatGroupStreamingTracker.putMetadataKey(
+      streamingId,
+      key,
+      data,
+      messages,
+      messageIdMap,
+    );
     _notify();
   }
 
@@ -2285,8 +2241,7 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
     _notify();
     _emit(RequestScrollToBottomEvent(force: true));
 
-    final streamingIds = <String, String>{};
-    final streamingContents = <String, String>{};
+    final turn = ChatGroupStreamingTracker();
 
     try {
       final agentIds = groupAgents.map((a) => a.id).toList();
@@ -2295,17 +2250,13 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
       // If the caller provided explicit MentionEntry list, use notify:true entries.
       // Fall back to legacy text-parsing when no structured mentions are provided
       // (e.g. queued messages, agent-triggered flows).
-      List<String> mentionedAgentIds;
-      if (mentions.isNotEmpty) {
-        final notifyMentions = mentions.where((m) => m.notify).toList();
-        if (notifyMentions.any((m) => m.id == 'all')) {
-          mentionedAgentIds = agentIds;
-        } else {
-          mentionedAgentIds = notifyMentions.map((m) => m.id).toList();
-        }
-      } else {
-        mentionedAgentIds = parseMentionedAgentIds(content);
-      }
+      final mentionedAgentIds = GroupMentionResolver.resolveAgentIds(
+        content: content,
+        mentions: mentions,
+        agents: [
+          for (final a in groupAgents) (id: a.id, name: a.name),
+        ],
+      );
 
       // Build metadata to persist on the user message.
       final Map<String, dynamic>? userMsgMetadata = mentions.isNotEmpty
@@ -2327,15 +2278,12 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
         userMessageMetadata: userMsgMetadata,
         onAgentStart: (aid, anm) {
           final sid = 'group_streaming_${aid}_${DateTime.now().millisecondsSinceEpoch}';
-          streamingIds[aid] = sid;
-          streamingContents[aid] = '';
-          final sm = Message(
+          turn.begin(aid, sid);
+          final sm = ChatStreamingText.placeholder(
             id: sid,
-            content: '',
-            timestampMs: DateTime.now().millisecondsSinceEpoch + 1,
             from: MessageFrom(id: aid, type: 'agent', name: anm),
             to: MessageFrom(id: userId, type: 'user', name: userName),
-            type: MessageType.text,
+            timestampMs: DateTime.now().millisecondsSinceEpoch + 1,
           );
           respondingAgentNames.add(anm);
           groupStreamingMessageIds.add(sid);
@@ -2345,25 +2293,8 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
           _emit(RequestScrollToBottomEvent(force: true));
         },
         onStreamChunk: (aid, anm, chunk) {
-          final sid = streamingIds[aid];
-          if (sid == null) return;
-          streamingContents[aid] = (streamingContents[aid] ?? '') + chunk;
-          final updatedContent = streamingContents[aid]!;
-          final existing = messageIdMap[sid];
-          if (existing != null) {
-            final idx = messages.indexOf(existing);
-            if (idx != -1) {
-              final updated = Message(
-                id: sid,
-                content: updatedContent,
-                timestampMs: messages[idx].timestampMs,
-                from: messages[idx].from,
-                to: messages[idx].to,
-                type: MessageType.text,
-              );
-              messages[idx] = updated;
-              messageIdMap[updated.id] = updated;
-            }
+          if (turn.appendAndApply(aid, chunk, messages, messageIdMap) == null) {
+            return;
           }
           scheduleStreamingRebuild();
           if (!isUserScrolledUp) {
@@ -2371,7 +2302,7 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
           }
         },
         onAgentDone: (aid, anm, skipped) {
-          final sid = streamingIds[aid];
+          final sid = turn.idFor(aid);
           if (skipped && sid != null) {
             messages.removeWhere((m) => m.id == sid);
             messageIdMap.remove(sid);
@@ -2379,8 +2310,7 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
           } else if (sid != null) {
             groupStreamingMessageIds.remove(sid);
           }
-          streamingIds.remove(aid);
-          streamingContents.remove(aid);
+          turn.finish(aid);
           respondingAgentNames.remove(anm);
           _notify();
         },
@@ -2400,7 +2330,7 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
           // If the agent has already finished (local LLM path), the streaming
           // ID is gone — reconcile first so the DB message is in the list,
           // then use the saved message ID injected by the service.
-          var sid = streamingIds[agentId];
+          var sid = turn.idFor(agentId);
           if (sid == null) {
             // Agent already done — reconcile to load DB message into the list
             await reconcileGroupMessages();
@@ -2490,6 +2420,7 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
     } finally {
       acpCancellationToken = null;
       streaming.clear();
+      turn.clear();
       // Complete all pending group interaction Completers with null
       for (final e in pendingGroupInteractions.values) {
         if (!e.result.isCompleted) e.result.complete(null);
@@ -2694,16 +2625,10 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
   }
 
   List<String> parseMentionedAgentIds(String content) {
-    if (content.contains('@all')) {
-      return groupAgents.map((a) => a.id).toList();
-    }
-    final mentioned = <String>[];
-    for (final agent in groupAgents) {
-      if (content.contains('@${agent.name}')) {
-        mentioned.add(agent.id);
-      }
-    }
-    return mentioned;
+    return GroupMentionResolver.parseFromContent(
+      content,
+      [for (final a in groupAgents) (id: a.id, name: a.name)],
+    );
   }
 
   // ---------------------------------------------------------------------------
