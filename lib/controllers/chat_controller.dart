@@ -42,6 +42,7 @@ import 'group_mention_resolver.dart';
 import 'chat_message_reconciler.dart';
 import 'chat_send_planner.dart';
 import 'dm_send_turn_planner.dart';
+import 'group_interaction_planner.dart';
 import 'streaming_action_confirmation.dart';
 import 'inbound_file_message_parser.dart';
 import 'peer_approval_completer_resolver.dart';
@@ -440,28 +441,32 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
     Map<String, dynamic> data,
   ) async {
     await reconcileGroupMessages();
-    final savedMsgId = data.remove('_savedMessageId') as String?;
-    String? sid;
-    if (savedMsgId != null && messageIdMap.containsKey(savedMsgId)) {
-      sid = savedMsgId;
-    } else {
-      sid = _workflowStreamingIds[agentId];
-    }
-
-    sid = _resolveGroupInteractionMessageId(
+    final savedMsgId = GroupInteractionPlanner.takeSavedMessageId(data);
+    final sid = _resolveGroupInteractionMessageId(
       agentId: agentId,
       agentName: agentName,
       interactionType: interactionType,
       data: data,
-      preferredSid: sid,
+      preferredSid: GroupInteractionPlanner.resolvePreferredSid(
+        streamingSid: _workflowStreamingIds[agentId],
+        savedMessageId: savedMsgId,
+        hasMessage: messageIdMap.containsKey,
+        preferSaved: true,
+      ),
     );
 
     if (sid != null) {
       _updateGroupStreamingMetadata(sid, interactionType, data);
-      final existingMeta =
-          Map<String, dynamic>.from(messageIdMap[sid]?.metadata ?? {});
-      existingMeta[interactionType] = data;
-      localDatabaseService.updateMessageMetadata(sid, existingMeta).ignore();
+      localDatabaseService
+          .updateMessageMetadata(
+            sid,
+            GroupInteractionPlanner.metadataForPersist(
+              existing: messageIdMap[sid]?.metadata,
+              interactionType: interactionType,
+              data: data,
+            ),
+          )
+          .ignore();
     }
 
     final event = GroupInteractionRequestEvent(
@@ -472,7 +477,7 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
       groupStreamingMessageId: sid ?? agentId,
     );
     final confirmationId = data['confirmation_id'] as String?;
-    final pendingKey = ChatWorkflowCoordinator.interactionPendingKey(
+    final pendingKey = GroupInteractionPlanner.pendingKey(
       interactionType: interactionType,
       data: data,
       sid: sid,
@@ -2096,42 +2101,47 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
       return preferredSid;
     }
 
-    if (interactionType == 'action_confirmation' &&
-        data['confirmation_context'] == 'peer' &&
-        currentChannelId != null) {
-      final userId = getUserId();
-      final userName = getUserName();
-      final sid = StreamingActionConfirmation.groupFallbackId(agentId);
-      final sm = StreamingActionConfirmation.buildFallbackBubble(
-        id: sid,
-        agentId: agentId,
-        agentName: agentName,
-        userId: userId,
-        userName: userName,
-        actionData: data,
-        metadataKey: interactionType,
-      );
-      messages.add(sm);
-      messageIdMap[sm.id] = sm;
-      groupStreamingMessageIds.add(sid);
-      localDatabaseService
-          .createMessage(
-            id: sid,
-            channelId: currentChannelId!,
-            senderId: agentId,
-            senderType: 'agent',
-            senderName: agentName,
-            content: sm.content,
-            messageType: 'text',
-            metadata: sm.metadata,
-          )
-          .ignore();
-      _notify();
-      _emit(RequestScrollToBottomEvent(force: true));
-      return sid;
+    if (!GroupInteractionPlanner.needsPeerApprovalFallback(
+      preferredSid: preferredSid,
+      preferredExists:
+          preferredSid != null && messageIdMap.containsKey(preferredSid),
+      interactionType: interactionType,
+      data: data,
+      hasChannel: currentChannelId != null,
+    )) {
+      return preferredSid;
     }
 
-    return preferredSid;
+    final userId = getUserId();
+    final userName = getUserName();
+    final sid = StreamingActionConfirmation.groupFallbackId(agentId);
+    final sm = StreamingActionConfirmation.buildFallbackBubble(
+      id: sid,
+      agentId: agentId,
+      agentName: agentName,
+      userId: userId,
+      userName: userName,
+      actionData: data,
+      metadataKey: interactionType,
+    );
+    messages.add(sm);
+    messageIdMap[sm.id] = sm;
+    groupStreamingMessageIds.add(sid);
+    localDatabaseService
+        .createMessage(
+          id: sid,
+          channelId: currentChannelId!,
+          senderId: agentId,
+          senderType: 'agent',
+          senderName: agentName,
+          content: sm.content,
+          messageType: 'text',
+          metadata: sm.metadata,
+        )
+        .ignore();
+    _notify();
+    _emit(RequestScrollToBottomEvent(force: true));
+    return sid;
   }
 
   void _updateGroupStreamingMetadata(String streamingId, String key, Map<String, dynamic> data) {
@@ -2201,13 +2211,11 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
     acpCancellationToken = ACPCancellationToken();
     _notify();
 
-    final userMessage = Message(
-      id: 'temp_user_${DateTime.now().millisecondsSinceEpoch}',
+    final userMessage = GroupInteractionPlanner.buildOptimisticUserMessage(
       content: content,
-      timestampMs: DateTime.now().millisecondsSinceEpoch,
-      from: MessageFrom(id: userId, type: 'user', name: userName),
-      type: MessageType.text,
-      replyTo: replyToId,
+      userId: userId,
+      userName: userName,
+      replyToId: replyToId,
     );
     messages.add(userMessage);
     messageIdMap[userMessage.id] = userMessage;
@@ -2218,11 +2226,6 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
 
     try {
       final agentIds = groupAgents.map((a) => a.id).toList();
-
-      // Determine which agents to actually trigger based on structured mentions.
-      // If the caller provided explicit MentionEntry list, use notify:true entries.
-      // Fall back to legacy text-parsing when no structured mentions are provided
-      // (e.g. queued messages, agent-triggered flows).
       final mentionedAgentIds = GroupMentionResolver.resolveAgentIds(
         content: content,
         mentions: mentions,
@@ -2230,11 +2233,8 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
           for (final a in groupAgents) (id: a.id, name: a.name),
         ],
       );
-
-      // Build metadata to persist on the user message.
-      final Map<String, dynamic>? userMsgMetadata = mentions.isNotEmpty
-          ? {'mentions': mentions.map((m) => m.toJson()).toList()}
-          : null;
+      final userMsgMetadata =
+          GroupInteractionPlanner.userMessageMentionsMetadata(mentions);
 
       await chatService.sendMessageToGroup(
         channelId: currentChannelId!,
@@ -2250,13 +2250,14 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
         acpCancellationToken: acpCancellationToken,
         userMessageMetadata: userMsgMetadata,
         onAgentStart: (aid, anm) {
-          final sid = 'group_streaming_${aid}_${DateTime.now().millisecondsSinceEpoch}';
+          final sid = GroupInteractionPlanner.groupStreamingId(aid);
           turn.begin(aid, sid);
-          final sm = ChatStreamingText.placeholder(
-            id: sid,
-            from: MessageFrom(id: aid, type: 'agent', name: anm),
-            to: MessageFrom(id: userId, type: 'user', name: userName),
-            timestampMs: DateTime.now().millisecondsSinceEpoch + 1,
+          final sm = GroupInteractionPlanner.buildAgentStreamingPlaceholder(
+            sid: sid,
+            agentId: aid,
+            agentName: anm,
+            userId: userId,
+            userName: userName,
           );
           respondingAgentNames.add(anm);
           groupStreamingMessageIds.add(sid);
@@ -2276,10 +2277,13 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
         },
         onAgentDone: (aid, anm, skipped) {
           final sid = turn.idFor(aid);
-          if (skipped && sid != null) {
+          if (GroupInteractionPlanner.shouldDropSkippedPlaceholder(
+            skipped: skipped,
+            sid: sid,
+          )) {
             messages.removeWhere((m) => m.id == sid);
             messageIdMap.remove(sid);
-            groupStreamingMessageIds.remove(sid);
+            groupStreamingMessageIds.remove(sid!);
           } else if (sid != null) {
             groupStreamingMessageIds.remove(sid);
           }
@@ -2289,100 +2293,14 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
         },
         onAllDone: () {},
         onActiveWorkflowChanged: (workflowId) => setActiveWorkflowId(workflowId),
-        onInteractionRequest: (agentId, agentName, interactionType, data) async {
-          // Workflow: if this is a plan_approval with a workflow ID, show the progress panel
-          if (interactionType == 'plan_approval') {
-            final workflowId = data['_workflowId'] as String?;
-            if (workflowId != null) {
-              setActiveWorkflowId(workflowId);
-            }
-          }
-
-          // Determine the message ID to attach the interactive component to.
-          // If the agent is still streaming, use the streaming message ID.
-          // If the agent has already finished (local LLM path), the streaming
-          // ID is gone — reconcile first so the DB message is in the list,
-          // then use the saved message ID injected by the service.
-          var sid = turn.idFor(agentId);
-          if (sid == null) {
-            // Agent already done — reconcile to load DB message into the list
-            await reconcileGroupMessages();
-            final savedMsgId = data.remove('_savedMessageId') as String?;
-            if (savedMsgId != null && messageIdMap.containsKey(savedMsgId)) {
-              sid = savedMsgId;
-            }
-          }
-
-          sid = _resolveGroupInteractionMessageId(
-            agentId: agentId,
-            agentName: agentName,
-            interactionType: interactionType,
-            data: data,
-            preferredSid: sid,
-          );
-
-          // 1. Update message metadata to show the interactive component
-          if (sid != null) {
-            _updateGroupStreamingMetadata(sid, interactionType, data);
-            // Persist the interaction metadata to DB so it survives a channel
-            // switch. Without this, returning to the chat reloads from DB and
-            // the plan_approval / action_confirmation card is missing, making
-            // the message appear blank or invisible.
-            // updateMessageMetadata overwrites the entire metadata field, so
-            // merge with whatever is already in memory before writing.
-            final existingMeta = Map<String, dynamic>.from(
-                messageIdMap[sid]?.metadata ?? {});
-            existingMeta[interactionType] = data;
-            localDatabaseService
-                .updateMessageMetadata(sid, existingMeta)
-                .ignore();
-          }
-
-          // 2. Create event, track it, emit, and await with timeout
-          final event = GroupInteractionRequestEvent(
-            agentId: agentId,
-            agentName: agentName,
-            interactionType: interactionType,
-            data: data,
-            groupStreamingMessageId: sid ?? agentId,
-          );
-          final confirmationId = data['confirmation_id'] as String?;
-          final pendingKey =
-              (interactionType == 'action_confirmation' &&
-                      confirmationId != null &&
-                      confirmationId.isNotEmpty)
-                  ? confirmationId
-                  : (sid ?? agentId);
-          pendingGroupInteractions[pendingKey] = event;
-          _notify();
-          _emit(event);
-
-          // form / file_upload / action_confirmation / single_select / multi_select
-          // are always non-blocking: the current turn ends immediately so the
-          // user can interact with the component.
-          // plan_approval is also non-blocking here: the actual blocking wait is
-          // managed by ChatService._pendingPlanApprovals, which survives channel
-          // navigation. The UI card is already persisted to DB by the code above.
-          const _nonBlockingTypes = {'form', 'file_upload', 'action_confirmation', 'single_select', 'multi_select', 'plan_approval'};
-          if (_nonBlockingTypes.contains(interactionType)) {
-            if (!event.result.isCompleted) {
-              event.result.complete(const {'_non_blocking': true});
-            }
-            pendingGroupInteractions.remove(pendingKey);
-            _notify();
-            return const {'_non_blocking': true};
-          }
-
-          try {
-            return await event.result.future.timeout(
-              const Duration(minutes: 5),
-              onTimeout: () => null,
-            );
-          } finally {
-            pendingGroupInteractions.remove(pendingKey);
-            _notify();
-          }
-        },
+        onInteractionRequest: (agentId, agentName, interactionType, data) =>
+            _handleProcessGroupInteractionRequest(
+          turn: turn,
+          agentId: agentId,
+          agentName: agentName,
+          interactionType: interactionType,
+          data: data,
+        ),
       );
 
       await reconcileGroupMessages();
@@ -2394,7 +2312,6 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
       acpCancellationToken = null;
       streaming.clear();
       turn.clear();
-      // Complete all pending group interaction Completers with null
       for (final e in pendingGroupInteractions.values) {
         if (!e.result.isCompleted) e.result.complete(null);
       }
@@ -2404,6 +2321,91 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
       groupStreamingMessageIds.clear();
       _notify();
       processNextInQueue();
+    }
+  }
+
+  /// Attach an interactive card during [processGroupMessage] and await (or
+  /// immediately complete) the user's response.
+  Future<Map<String, dynamic>?> _handleProcessGroupInteractionRequest({
+    required ChatGroupStreamingTracker turn,
+    required String agentId,
+    required String agentName,
+    required String interactionType,
+    required Map<String, dynamic> data,
+  }) async {
+    final workflowId = GroupInteractionPlanner.workflowIdFromPlanApproval(
+      interactionType,
+      data,
+    );
+    if (workflowId != null) setActiveWorkflowId(workflowId);
+
+    var sid = turn.idFor(agentId);
+    if (sid == null) {
+      await reconcileGroupMessages();
+      final savedMsgId = GroupInteractionPlanner.takeSavedMessageId(data);
+      sid = GroupInteractionPlanner.resolvePreferredSid(
+        streamingSid: null,
+        savedMessageId: savedMsgId,
+        hasMessage: messageIdMap.containsKey,
+      );
+    }
+
+    sid = _resolveGroupInteractionMessageId(
+      agentId: agentId,
+      agentName: agentName,
+      interactionType: interactionType,
+      data: data,
+      preferredSid: sid,
+    );
+
+    if (sid != null) {
+      _updateGroupStreamingMetadata(sid, interactionType, data);
+      localDatabaseService
+          .updateMessageMetadata(
+            sid,
+            GroupInteractionPlanner.metadataForPersist(
+              existing: messageIdMap[sid]?.metadata,
+              interactionType: interactionType,
+              data: data,
+            ),
+          )
+          .ignore();
+    }
+
+    final event = GroupInteractionRequestEvent(
+      agentId: agentId,
+      agentName: agentName,
+      interactionType: interactionType,
+      data: data,
+      groupStreamingMessageId: sid ?? agentId,
+    );
+    final pendingKey = GroupInteractionPlanner.pendingKey(
+      interactionType: interactionType,
+      data: data,
+      sid: sid,
+      agentId: agentId,
+    );
+    pendingGroupInteractions[pendingKey] = event;
+    _notify();
+    _emit(event);
+
+    if (GroupInteractionPlanner.isNonBlocking(interactionType)) {
+      if (!event.result.isCompleted) {
+        event.result.complete(GroupInteractionPlanner.nonBlockingResult());
+      }
+      pendingGroupInteractions.remove(pendingKey);
+      _notify();
+      return GroupInteractionPlanner.nonBlockingResult();
+    }
+
+    try {
+      return await event.result.future.timeout(
+        const Duration(minutes: 5),
+        onTimeout: () => null,
+      );
+    } finally {
+      pendingGroupInteractions.remove(pendingKey);
+      _notify();
     }
   }
 
