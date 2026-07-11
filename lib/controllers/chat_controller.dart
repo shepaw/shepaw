@@ -43,6 +43,8 @@ import 'chat_message_reconciler.dart';
 import 'chat_send_planner.dart';
 import 'dm_send_turn_planner.dart';
 import 'group_interaction_planner.dart';
+import 'peer_device_label_resolver.dart';
+import 'chat_load_channel_planner.dart';
 import 'streaming_action_confirmation.dart';
 import 'inbound_file_message_parser.dart';
 import 'peer_approval_completer_resolver.dart';
@@ -935,15 +937,24 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
     try {
       final userId = getUserId();
 
-      if (initialChannelId != null && currentChannelId == null) {
-        currentChannelId = initialChannelId;
-      } else if (agentId != null && currentChannelId == null) {
-        final latestChannelId = await chatService.getLatestActiveChannelId(userId, agentId!);
-        currentChannelId = latestChannelId ?? chatService.generateChannelId(userId, agentId!);
-      } else if (agentId == null && currentChannelId == null) {
-        isLoading = false;
-        _notify();
-        return;
+      switch (ChatLoadChannelPlanner.decideChannel(
+        currentChannelId: currentChannelId,
+        initialChannelId: initialChannelId,
+        agentId: agentId,
+      )) {
+        case ChatLoadChannelAction.keepCurrent:
+          break;
+        case ChatLoadChannelAction.useInitial:
+          currentChannelId = initialChannelId;
+        case ChatLoadChannelAction.resolveFromAgent:
+          final latestChannelId =
+              await chatService.getLatestActiveChannelId(userId, agentId!);
+          currentChannelId =
+              latestChannelId ?? chatService.generateChannelId(userId, agentId!);
+        case ChatLoadChannelAction.abort:
+          isLoading = false;
+          _notify();
+          return;
       }
 
       // Mark this channel as the most recently opened for this agent so
@@ -973,7 +984,8 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
         isGroupMode = true;
         groupChannel = channel;
         mentionOnlyMode = channel.isAllMembersMentionMode;
-        final agentIds = channel.memberIds.where((id) => id != userId && id != 'user').toList();
+        final agentIds =
+            ChatLoadChannelPlanner.groupAgentMemberIds(channel, userId);
         final agents = <RemoteAgent>[];
         for (final aid in agentIds) {
           final agent = await localDatabaseService.getRemoteAgentById(aid);
@@ -987,9 +999,10 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
         if (agentName == null) {
           // Resolve agent name/avatar from channel when not provided
           // (e.g. navigating from search results by channelId only)
-          final agentMember = channel.members.where((m) => m.isAgent).toList();
-          if (agentMember.isNotEmpty) {
-            final agent = await localDatabaseService.getRemoteAgentById(agentMember.first.id);
+          final agentMemberId = ChatLoadChannelPlanner.firstAgentMemberId(channel);
+          if (agentMemberId != null) {
+            final agent =
+                await localDatabaseService.getRemoteAgentById(agentMemberId);
             if (agent != null) {
               agentName = agent.name;
               agentAvatar = agent.avatar;
@@ -998,9 +1011,10 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
         }
       } else if (channel != null && !channel.isGroup && agentName == null) {
         // Non-group, non-DM typed channel — resolve agent name from channel
-        final agentMember = channel.members.where((m) => m.isAgent).toList();
-        if (agentMember.isNotEmpty) {
-          final agent = await localDatabaseService.getRemoteAgentById(agentMember.first.id);
+        final agentMemberId = ChatLoadChannelPlanner.firstAgentMemberId(channel);
+        if (agentMemberId != null) {
+          final agent =
+              await localDatabaseService.getRemoteAgentById(agentMemberId);
           if (agent != null) {
             agentName = agent.name;
             agentAvatar = agent.avatar;
@@ -1058,63 +1072,52 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
 
   /// Host 侧：本机被某配对设备访问时的入站会话来源设备名。
   Future<String?> _resolveHostInboundDeviceLabel(Channel channel) async {
-    String? peerId;
-    for (final m in channel.members) {
-      if (m.id.startsWith('peer:')) {
-        peerId = m.id.substring('peer:'.length);
-        break;
-      }
-    }
-
-    final byId = await _peerDeviceNameById(peerId);
-    if (byId != null) return byId;
-
-    // 回退：channel 名称形如 `Agent 名 ← 设备名`
-    const sep = ' ← ';
-    final idx = channel.name.lastIndexOf(sep);
-    if (idx >= 0) {
-      final label = channel.name.substring(idx + sep.length).trim();
-      if (label.isNotEmpty) return label;
-    }
-    return null;
+    final peers = await _peerDeviceEntries();
+    return PeerDeviceLabelResolver.hostInboundLabel(
+      channel: channel,
+      peers: peers,
+    );
   }
 
   /// Client 侧：当前 DM 会话访问的是对端分享的 peer agent 时的来源设备名。
   Future<String?> _resolveClientPeerAgentDeviceLabel(Channel? channel) async {
-    // 优先用 channel 中的 agent 成员；取不到时回退到构造参数 agentId。
-    String? targetAgentId = agentId;
-    final agentMembers =
-        channel?.members.where((m) => m.isAgent).toList() ?? const [];
-    if (agentMembers.isNotEmpty) {
-      targetAgentId = agentMembers.first.id;
-    }
+    final targetAgentId = PeerDeviceLabelResolver.clientAgentId(
+      channel: channel,
+      fallbackAgentId: agentId,
+    );
     if (targetAgentId == null) return null;
 
     try {
       final agent = await localDatabaseService.getRemoteAgentById(targetAgentId);
-      if (agent == null || !agent.isPeerAgent) return null;
-
-      // 优先用 sourcePeerId 实时查配对设备名（设备改名后能跟随更新）。
-      final byId = await _peerDeviceNameById(agent.sourcePeerId);
-      if (byId != null) return byId;
-
-      // 回退：agent metadata 中的设备名快照。
-      final snapshot = agent.sourcePeerName;
-      if (snapshot != null && snapshot.isNotEmpty) return snapshot;
+      if (agent == null) return null;
+      final peers = await _peerDeviceEntries();
+      return PeerDeviceLabelResolver.clientPeerAgentLabel(
+        isPeerAgent: agent.isPeerAgent,
+        sourcePeerId: agent.sourcePeerId,
+        sourcePeerNameSnapshot: agent.sourcePeerName,
+        peers: peers,
+      );
     } catch (_) {}
     return null;
   }
 
-  /// 按 peerId 查配对设备的显示名；查不到或为空时返回 null。
-  Future<String?> _peerDeviceNameById(String? peerId) async {
-    if (peerId == null || peerId.isEmpty) return null;
+  Future<List<({String id, String deviceName})>> _peerDeviceEntries() async {
     try {
       final peers = await PeerStorageService().loadAllPeers();
-      for (final p in peers) {
-        if (p.id == peerId && p.deviceName.isNotEmpty) return p.deviceName;
-      }
-    } catch (_) {}
-    return null;
+      return [
+        for (final p in peers) (id: p.id, deviceName: p.deviceName),
+      ];
+    } catch (_) {
+      return const [];
+    }
+  }
+
+  /// 按 peerId 查配对设备的显示名；查不到或为空时返回 null。
+  Future<String?> _peerDeviceNameById(String? peerId) async {
+    return PeerDeviceLabelResolver.deviceNameById(
+      await _peerDeviceEntries(),
+      peerId,
+    );
   }
 
   Future<void> reloadMessagesFromDB() async {
