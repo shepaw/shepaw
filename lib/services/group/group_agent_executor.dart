@@ -25,6 +25,7 @@ import 'group_dispatch_parser.dart';
 import 'group_prompt_builder.dart';
 import 'group_interaction_handler.dart';
 import '../../peer/services/peer_agent_client_service.dart';
+import '../../peer/peer_approval_selection.dart';
 import 'peer_approval_policy.dart';
 import '../workflow/workflow_service.dart';
 import '../../models/workflow_pending_approval.dart';
@@ -1365,15 +1366,7 @@ class GroupAgentExecutor {
     Map<String, dynamic> data,
     Map<String, dynamic> responseData,
   ) {
-    final selectedId = responseData['selected_action_id'] as String?;
-    if (selectedId == null || selectedId.isEmpty) return;
-    data['selected_action_id'] = selectedId;
-    final label = responseData['selected_action_label'] as String?;
-    if (label != null && label.isNotEmpty) {
-      data['selected_action_label'] = label;
-    }
-    data['selected_at'] =
-        responseData['selected_at'] ?? DateTime.now().millisecondsSinceEpoch;
+    PeerApprovalSelection.applySelection(data, responseData);
   }
 
   Future<void> _handlePeerGroupActionConfirmation({

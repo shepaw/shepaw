@@ -126,11 +126,10 @@ mixin _InteractionOps on _ChatControllerBase {
     final merged = existingAc is Map
         ? Map<String, dynamic>.from(existingAc)
         : <String, dynamic>{};
-    merged['selected_action_id'] = actionId;
-    if (actionLabel.isNotEmpty) {
-      merged['selected_action_label'] = actionLabel;
-    }
-    merged['selected_at'] = DateTime.now().millisecondsSinceEpoch;
+    PeerApprovalSelection.applySelection(merged, {
+      'selected_action_id': actionId,
+      if (actionLabel.isNotEmpty) 'selected_action_label': actionLabel,
+    });
     _updateGroupStreamingMetadata(messageId, 'action_confirmation', merged);
     _updateGroupStreamingMetadata(
       messageId,

@@ -28,7 +28,9 @@ import '../peer/services/peer_agent_host_service.dart' show isPeerAgentChannel;
 import '../peer/services/peer_storage_service.dart';
 import '../peer/services/peer_connection_manager.dart';
 import '../peer/services/peer_connection.dart' show PeerConnectionEvent;
+import '../peer/peer_approval_selection.dart';
 import '../peer/models/paired_peer.dart' show PeerConnectionState;
+import 'chat_workflow_panel_state.dart';
 import 'chat_events.dart';
 
 // ChatEvent 及其全部子类已拆分到 chat_events.dart，这里重新导出，
@@ -145,54 +147,51 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
   // ---- Frame coalescing ----
   bool _pendingStreamingRebuild = false;
 
+  /// Floating workflow progress panel + peer approval banner state.
+  final ChatWorkflowPanelState workflowPanel = ChatWorkflowPanelState();
+
   /// The ID of the currently active workflow (set during flow execution).
-  String? _activeWorkflowId;
-  String? get activeWorkflowId => _activeWorkflowId;
-  bool _workflowPanelDismissed = false;
+  String? get activeWorkflowId => workflowPanel.activeWorkflowId;
 
   /// Whether the floating workflow progress panel should be visible.
-  bool get showWorkflowProgressPanel =>
-      _activeWorkflowId != null && !_workflowPanelDismissed;
+  bool get showWorkflowProgressPanel => workflowPanel.showProgressPanel;
 
   /// Active workflow exists but the user collapsed the progress panel.
-  bool get workflowNeedsPanelAttention =>
-      _activeWorkflowId != null && _workflowPanelDismissed;
+  bool get workflowNeedsPanelAttention => workflowPanel.needsPanelAttention;
 
   void reopenWorkflowPanel() {
-    _workflowPanelDismissed = false;
+    workflowPanel.reopen();
     notifyListeners();
   }
 
   /// Peer agent tool approval blocking a workflow step (for progress panel UI).
-  WorkflowPeerApprovalPending? workflowPeerApprovalPending;
+  WorkflowPeerApprovalPending? get workflowPeerApprovalPending =>
+      workflowPanel.peerApprovalPending;
 
   /// Cancellation token for the currently executing workflow.
   WorkflowCancellationToken? _workflowCancelToken;
 
   /// Set the active workflow ID (called by orchestration when flow starts).
   void setActiveWorkflowId(String? id) {
-    _activeWorkflowId = id;
-    if (id != null) _workflowPanelDismissed = false;
-    if (id == null) workflowPeerApprovalPending = null;
+    workflowPanel.setActiveWorkflowId(id);
     notifyListeners();
   }
 
   void setWorkflowPeerApprovalPending(WorkflowPeerApprovalPending? pending) {
-    workflowPeerApprovalPending = pending;
-    if (pending != null) _workflowPanelDismissed = false;
+    workflowPanel.setPeerApprovalPending(pending);
     _notify();
   }
 
   /// User dismisses the workflow progress panel (workflow state is preserved).
   void dismissWorkflowPanel() {
-    _workflowPanelDismissed = true;
+    workflowPanel.dismiss();
     notifyListeners();
   }
 
   /// Cancel a running workflow execution.
   /// Called when user explicitly stops a workflow from the UI.
   Future<void> cancelRunningWorkflow() async {
-    final workflowId = _activeWorkflowId;
+    final workflowId = activeWorkflowId;
     if (workflowId == null) return;
 
     // Signal cancellation to the ChatService-owned execution loop
@@ -207,13 +206,13 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
     pendingGroupInteractions.clear();
     _workflowStreamingIds.clear();
     _workflowStreamingContents.clear();
-    workflowPeerApprovalPending = null;
+    workflowPanel.clearPeerApproval();
 
     // Mark workflow as cancelled in DB
     final workflowService = WorkflowService.instance;
     await workflowService.cancelWorkflow(workflowId);
 
-    _activeWorkflowId = null;
+    workflowPanel.setActiveWorkflowId(null);
     notifyListeners();
   }
 
@@ -229,7 +228,7 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
 
   /// Handle workflow approval/rejection from the WorkflowProgressPanel.
   Future<void> handleWorkflowApproval(bool approved, {String? feedback}) async {
-    final workflowId = _activeWorkflowId;
+    final workflowId = activeWorkflowId;
     if (workflowId == null || currentChannelId == null) return;
 
     // Keep the in-chat plan_approval card in sync with the panel action.
@@ -247,7 +246,7 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
       _beginWorkflowStepExecution(workflowId);
     } else {
       await workflowService.cancelWorkflow(workflowId);
-      _activeWorkflowId = null;
+      workflowPanel.setActiveWorkflowId(null);
       notifyListeners();
 
       // M5: Send rejection feedback to Admin so it can re-plan
@@ -413,7 +412,7 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
     _workflowStreamingIds.clear();
     _workflowStreamingContents.clear();
     _workflowCancelToken = null;
-    workflowPeerApprovalPending = null;
+    workflowPanel.clearPeerApproval();
     isProcessing = false;
     respondingAgentNames.clear();
     groupStreamingMessageIds.clear();
@@ -494,40 +493,36 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
 
     if (interactionType == 'action_confirmation' &&
         data['_workflowPeerApproval'] == true &&
-        _activeWorkflowId != null) {
+        activeWorkflowId != null) {
       final stepId = data['_workflowStepId'] as String?;
       if (stepId != null) {
-        final riskStr = data['_approvalRisk'] as String?;
-        final risk =
-            riskStr == 'low' ? PeerApprovalRisk.low : PeerApprovalRisk.high;
+        final risk = PeerApprovalSelection.parseRisk(data);
         final confirmationId = data['confirmation_id'] as String?;
 
         // A newer sequential approval for the same step replaces the panel.
         // Complete any prior Completer so the previous wait cannot hang the
         // peer sendChat openApprovals gate forever.
         final prev = workflowPeerApprovalPending;
-        if (prev != null &&
-            prev.stepId == stepId &&
-            prev.confirmationId != null &&
-            prev.confirmationId != confirmationId) {
-          final stale = pendingGroupInteractions.remove(prev.confirmationId!);
+        if (PeerApprovalSelection.shouldSupersede(
+          prev: prev,
+          newStepId: stepId,
+          newConfirmationId: confirmationId,
+        )) {
+          final stale = pendingGroupInteractions.remove(prev!.confirmationId!);
           if (stale != null && !stale.result.isCompleted) {
             LoggerService().warning(
               'Superseding stale peer approval ${prev.confirmationId} '
               'with $confirmationId on step $stepId',
               tag: 'PeerApproval',
             );
-            stale.result.complete({
-              'selected_action_id': 'deny',
-              'selected_action_label': '被后续审批取代',
-              '_approval_submitted': false,
-              '_superseded': true,
-            });
+            stale.result.complete(
+              PeerApprovalSelection.buildSupersededDenyResponse(),
+            );
           }
         }
 
         setWorkflowPeerApprovalPending(WorkflowPeerApprovalPending(
-          workflowId: _activeWorkflowId!,
+          workflowId: activeWorkflowId!,
           stepId: stepId,
           agentId: agentId,
           agentName: agentName,
@@ -558,9 +553,11 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
           data['_workflowPeerApproval'] == true) {
         // Only clear the panel banner when this confirmation is still the
         // active pending one — a newer sequential approval may have replaced it.
-        if (workflowPeerApprovalPending?.confirmationId == confirmationId ||
-            workflowPeerApprovalPending?.stepId ==
-                data['_workflowStepId']) {
+        if (PeerApprovalSelection.shouldClearPendingAfterCompletion(
+          pending: workflowPeerApprovalPending,
+          completedConfirmationId: confirmationId,
+          completedStepId: data['_workflowStepId'] as String?,
+        )) {
           setWorkflowPeerApprovalPending(null);
         }
       }
@@ -634,9 +631,7 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
           agentName: msg.from.name,
           messageId: msg.id,
           prompt: ac['prompt'] as String?,
-          risk: ac['_approvalRisk'] == 'low'
-              ? PeerApprovalRisk.low
-              : PeerApprovalRisk.high,
+          risk: PeerApprovalSelection.parseRisk(ac),
           confirmationId: ac['confirmation_id'] as String?,
           approvalData: ac,
         );
@@ -822,7 +817,7 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
     }
     // Detach workflow UI only — do NOT cancel. ChatService keeps the
     // execution loop alive so switching back reattaches instead of restarting.
-    final wfId = _activeWorkflowId;
+    final wfId = activeWorkflowId;
     if (wfId != null) {
       chatService.detachWorkflowExecutionUI(wfId);
     }
