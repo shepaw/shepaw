@@ -30,7 +30,9 @@ import '../peer/services/peer_connection_manager.dart';
 import '../peer/services/peer_connection.dart' show PeerConnectionEvent;
 import '../peer/peer_approval_selection.dart';
 import '../peer/models/paired_peer.dart' show PeerConnectionState;
-import 'chat_workflow_panel_state.dart';
+import '../services/workflow/workflow_restore_planner.dart';
+import '../services/workflow/workflow_pending_approval_picker.dart';
+import 'chat_workflow_coordinator.dart';
 import 'chat_events.dart';
 
 // ChatEvent 及其全部子类已拆分到 chat_events.dart，这里重新导出，
@@ -136,8 +138,9 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
   Map<String, GroupInteractionRequestEvent> pendingGroupInteractions = {};
 
   /// Workflow step streaming placeholders keyed by agent id.
-  final Map<String, String> _workflowStreamingIds = {};
-  final Map<String, String> _workflowStreamingContents = {};
+  Map<String, String> get _workflowStreamingIds => workflow.streamingIds;
+  Map<String, String> get _workflowStreamingContents =>
+      workflow.streamingContents;
 
   // ---- DM channel system prompt override ----
   /// Custom system prompt set by the user for the current DM channel.
@@ -147,44 +150,46 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
   // ---- Frame coalescing ----
   bool _pendingStreamingRebuild = false;
 
-  /// Floating workflow progress panel + peer approval banner state.
-  final ChatWorkflowPanelState workflowPanel = ChatWorkflowPanelState();
+  /// Workflow panel + local execution bookkeeping.
+  final ChatWorkflowCoordinator workflow = ChatWorkflowCoordinator();
 
   /// The ID of the currently active workflow (set during flow execution).
-  String? get activeWorkflowId => workflowPanel.activeWorkflowId;
+  String? get activeWorkflowId => workflow.activeWorkflowId;
 
   /// Whether the floating workflow progress panel should be visible.
-  bool get showWorkflowProgressPanel => workflowPanel.showProgressPanel;
+  bool get showWorkflowProgressPanel => workflow.showProgressPanel;
 
   /// Active workflow exists but the user collapsed the progress panel.
-  bool get workflowNeedsPanelAttention => workflowPanel.needsPanelAttention;
+  bool get workflowNeedsPanelAttention => workflow.needsPanelAttention;
 
   void reopenWorkflowPanel() {
-    workflowPanel.reopen();
+    workflow.reopenPanel();
     notifyListeners();
   }
 
   /// Peer agent tool approval blocking a workflow step (for progress panel UI).
   WorkflowPeerApprovalPending? get workflowPeerApprovalPending =>
-      workflowPanel.peerApprovalPending;
+      workflow.peerApprovalPending;
 
   /// Cancellation token for the currently executing workflow.
-  WorkflowCancellationToken? _workflowCancelToken;
+  WorkflowCancellationToken? get _workflowCancelToken => workflow.cancelToken;
+  set _workflowCancelToken(WorkflowCancellationToken? value) =>
+      workflow.adoptCancelToken(value);
 
   /// Set the active workflow ID (called by orchestration when flow starts).
   void setActiveWorkflowId(String? id) {
-    workflowPanel.setActiveWorkflowId(id);
+    workflow.setActiveWorkflowId(id);
     notifyListeners();
   }
 
   void setWorkflowPeerApprovalPending(WorkflowPeerApprovalPending? pending) {
-    workflowPanel.setPeerApprovalPending(pending);
+    workflow.setPeerApprovalPending(pending);
     _notify();
   }
 
   /// User dismisses the workflow progress panel (workflow state is preserved).
   void dismissWorkflowPanel() {
-    workflowPanel.dismiss();
+    workflow.dismissPanel();
     notifyListeners();
   }
 
@@ -196,23 +201,18 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
 
     // Signal cancellation to the ChatService-owned execution loop
     chatService.cancelWorkflowExecution(workflowId);
-    _workflowCancelToken?.cancel();
-    _workflowCancelToken = null;
 
     // Complete all pending interaction Completers so blocked steps can exit
     for (final e in pendingGroupInteractions.values) {
       if (!e.result.isCompleted) e.result.complete(null);
     }
     pendingGroupInteractions.clear();
-    _workflowStreamingIds.clear();
-    _workflowStreamingContents.clear();
-    workflowPanel.clearPeerApproval();
+    workflow.prepareLocalCancel();
 
     // Mark workflow as cancelled in DB
     final workflowService = WorkflowService.instance;
     await workflowService.cancelWorkflow(workflowId);
 
-    workflowPanel.setActiveWorkflowId(null);
     notifyListeners();
   }
 
@@ -246,7 +246,7 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
       _beginWorkflowStepExecution(workflowId);
     } else {
       await workflowService.cancelWorkflow(workflowId);
-      workflowPanel.setActiveWorkflowId(null);
+      workflow.setActiveWorkflowId(null);
       notifyListeners();
 
       // M5: Send rejection feedback to Admin so it can re-plan
@@ -321,12 +321,14 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
       _reattachWorkflowExecutionUI(workflowId);
       return;
     }
-    if (_workflowCancelToken != null) return;
+    final cancelToken = workflow.takeCancelTokenForNewExecution(
+      chatService: chatService,
+      workflowId: workflowId,
+    );
+    if (cancelToken == null) return;
 
     final userId = getUserId();
     final userName = getUserName();
-    final cancelToken = WorkflowCancellationToken();
-    _workflowCancelToken = cancelToken;
 
     unawaited(chatService.executeWorkflowSteps(
       workflowId: workflowId,
@@ -409,10 +411,7 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
   }
 
   void _onWorkflowExecutionFinished() {
-    _workflowStreamingIds.clear();
-    _workflowStreamingContents.clear();
-    _workflowCancelToken = null;
-    workflowPanel.clearPeerApproval();
+    workflow.onExecutionFinished();
     isProcessing = false;
     respondingAgentNames.clear();
     groupStreamingMessageIds.clear();
@@ -571,24 +570,41 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
       _reattachWorkflowExecutionUI(workflowId);
       return;
     }
-    if (_workflowCancelToken != null) return;
+    if (workflow.hasLocalExecution) return;
     final wf = await WorkflowService.instance
         .getWorkflowExecutionWithSteps(workflowId);
-    if (wf == null || wf.status != WorkflowStatus.running) return;
-    if (wf.allStepsSucceeded) {
-      await WorkflowService.instance
-          .completeWorkflow(workflowId, summary: '所有阶段执行完毕');
-      return;
+    final plan = WorkflowRestorePlanner.plan(
+      active: wf,
+      isExecutingInProcess: false,
+      hasLocalCancelToken: false,
+      withSteps: wf,
+    );
+    switch (plan.kind) {
+      case WorkflowRestoreActionKind.none:
+      case WorkflowRestoreActionKind.reattachOnly:
+        return;
+      case WorkflowRestoreActionKind.finalizeSucceeded:
+        await WorkflowService.instance
+            .completeWorkflow(workflowId, summary: '所有阶段执行完毕');
+        return;
+      case WorkflowRestoreActionKind.finalizeFailed:
+        await WorkflowService.instance.failWorkflow(
+          workflowId,
+          'Workflow has failed steps and no remaining work',
+        );
+        return;
+      case WorkflowRestoreActionKind.healOrphansThenFinalize:
+      case WorkflowRestoreActionKind.healOrphansThenResume:
+      case WorkflowRestoreActionKind.resumePending:
+        // Peer-approval resume path historically only restarted pending work;
+        // orphan healing is handled by full channel restore.
+        if (plan.kind == WorkflowRestoreActionKind.resumePending ||
+            plan.kind == WorkflowRestoreActionKind.healOrphansThenResume) {
+          setActiveWorkflowId(workflowId);
+          _beginWorkflowStepExecution(workflowId);
+        }
+        return;
     }
-    if (wf.allStepsTerminal) {
-      await WorkflowService.instance.failWorkflow(
-        workflowId,
-        'Workflow has failed steps and no remaining work',
-      );
-      return;
-    }
-    setActiveWorkflowId(workflowId);
-    _beginWorkflowStepExecution(workflowId);
   }
 
   /// Restore active workflow + pending peer approvals after channel load.
@@ -601,43 +617,27 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
       setActiveWorkflowId(active.id);
     }
 
-    WorkflowPendingApproval? record;
     final dbPending =
         await workflowService.getPendingApprovalsForChannel(currentChannelId!);
-    if (dbPending.isNotEmpty) {
-      if (active != null) {
-        final matching =
-            dbPending.where((p) => p.workflowId == active.id).toList();
-        record = matching.isNotEmpty ? matching.first : dbPending.first;
-      } else {
-        record = dbPending.first;
-      }
-    }
+    final record = WorkflowPendingApprovalPicker.pickDbRecord(
+      dbPending: dbPending,
+      activeWorkflowId: active?.id,
+    );
 
     if (record == null && active != null) {
-      for (final msg in messages.reversed) {
-        final ac =
-            msg.metadata?['action_confirmation'] as Map<String, dynamic>?;
-        if (ac == null || ac['_workflowPeerApproval'] != true) continue;
-        if (ac['selected_action_id'] != null) continue;
-        final wfId = ac['_workflowId'] as String?;
-        if (wfId != null && wfId != active.id) continue;
-        final stepId = ac['_workflowStepId'] as String?;
-        if (stepId == null) continue;
-        final uiPending = WorkflowPeerApprovalPending(
-          workflowId: active.id,
-          stepId: stepId,
-          agentId: msg.from.id,
-          agentName: msg.from.name,
-          messageId: msg.id,
-          prompt: ac['prompt'] as String?,
-          risk: PeerApprovalSelection.parseRisk(ac),
-          confirmationId: ac['confirmation_id'] as String?,
-          approvalData: ac,
-        );
+      final uiPending = WorkflowPendingApprovalPicker.findInMessages(
+        activeWorkflowId: active.id,
+        messages: messages,
+      );
+      if (uiPending != null) {
         setWorkflowPeerApprovalPending(uiPending);
-        _reattachWorkflowPeerApprovalInteraction(msg, ac);
-        // Still reattach an in-process execution if one is running.
+        final msgId = uiPending.messageId;
+        if (msgId != null && messageIdMap.containsKey(msgId)) {
+          _reattachWorkflowPeerApprovalInteraction(
+            messageIdMap[msgId]!,
+            uiPending.approvalData ?? const {},
+          );
+        }
         if (chatService.isWorkflowExecuting(active.id)) {
           _reattachWorkflowExecutionUI(active.id);
         }
@@ -662,95 +662,93 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
 
     if (active == null || active.status != WorkflowStatus.running) return;
 
-    // Already running in ChatService (user switched away mid-execution):
-    // only reattach UI — do NOT start a second execution loop.
-    if (chatService.isWorkflowExecuting(active.id)) {
-      _reattachWorkflowExecutionUI(active.id);
-      return;
+    final isExecuting = chatService.isWorkflowExecuting(active.id);
+    WorkflowExecution? withSteps;
+    if (!isExecuting) {
+      withSteps =
+          await workflowService.getWorkflowExecutionWithSteps(active.id);
     }
 
-    // Load full step state before deciding whether to resume.
-    final withSteps =
-        await workflowService.getWorkflowExecutionWithSteps(active.id);
-    if (withSteps == null || withSteps.status != WorkflowStatus.running) {
-      return;
-    }
+    final plan = WorkflowRestorePlanner.plan(
+      active: active,
+      isExecutingInProcess: isExecuting,
+      hasLocalCancelToken: workflow.hasLocalExecution,
+      withSteps: withSteps,
+    );
 
-    // Orphaned "running" workflow whose steps already finished — finalize
-    // instead of re-dispatching member agents.
-    if (withSteps.allStepsSucceeded) {
-      LoggerService().info(
-        '_restoreWorkflowContext: finalizing completed workflow ${active.id}',
-        tag: 'ChatController',
-      );
-      await workflowService.completeWorkflow(
-        active.id,
-        summary: '所有阶段执行完毕',
-      );
-      return;
-    }
-    if (withSteps.allStepsTerminal) {
-      LoggerService().info(
-        '_restoreWorkflowContext: failing terminal workflow ${active.id}',
-        tag: 'ChatController',
-      );
-      await workflowService.failWorkflow(
-        active.id,
-        'Workflow has failed steps and no remaining work',
-      );
-      return;
-    }
-
-    // Steps left as `running` with no in-process loop are orphans from a
-    // previous controller dispose (agent often already finished). Heal them
-    // instead of re-dispatching the same member tasks.
-    final stuckRunning = withSteps.steps
-        .where((s) => s.status == StepExecutionStatus.running)
-        .toList();
-    final pendingSteps = withSteps.steps
-        .where((s) => s.status == StepExecutionStatus.pending)
-        .toList();
-    if (stuckRunning.isNotEmpty) {
-      LoggerService().info(
-        '_restoreWorkflowContext: healing ${stuckRunning.length} orphaned '
-        'running step(s) on workflow ${active.id}',
-        tag: 'ChatController',
-      );
-      for (final step in stuckRunning) {
-        await workflowService.completeStep(
-          step.id,
-          outputSummary:
-              step.outputSummary ?? 'Recovered after channel switch',
+    switch (plan.kind) {
+      case WorkflowRestoreActionKind.none:
+        return;
+      case WorkflowRestoreActionKind.reattachOnly:
+        _reattachWorkflowExecutionUI(active.id);
+        return;
+      case WorkflowRestoreActionKind.finalizeSucceeded:
+        LoggerService().info(
+          '_restoreWorkflowContext: finalizing completed workflow ${active.id}',
+          tag: 'ChatController',
         );
-      }
-      if (pendingSteps.isEmpty) {
-        final refreshed =
-            await workflowService.getWorkflowExecutionWithSteps(active.id);
-        if (refreshed != null && refreshed.failedSteps > 0) {
-          await workflowService.failWorkflow(
-            active.id,
-            'Workflow has failed steps and no remaining work',
-          );
-        } else {
-          await workflowService.completeWorkflow(
-            active.id,
-            summary: '所有阶段执行完毕',
+        await workflowService.completeWorkflow(
+          active.id,
+          summary: '所有阶段执行完毕',
+        );
+        return;
+      case WorkflowRestoreActionKind.finalizeFailed:
+        LoggerService().info(
+          '_restoreWorkflowContext: failing terminal workflow ${active.id}',
+          tag: 'ChatController',
+        );
+        await workflowService.failWorkflow(
+          active.id,
+          'Workflow has failed steps and no remaining work',
+        );
+        return;
+      case WorkflowRestoreActionKind.healOrphansThenFinalize:
+      case WorkflowRestoreActionKind.healOrphansThenResume:
+        LoggerService().info(
+          '_restoreWorkflowContext: healing ${plan.stuckRunning.length} orphaned '
+          'running step(s) on workflow ${active.id}',
+          tag: 'ChatController',
+        );
+        for (final step in plan.stuckRunning) {
+          await workflowService.completeStep(
+            step.id,
+            outputSummary:
+                step.outputSummary ?? 'Recovered after channel switch',
           );
         }
+        if (plan.kind == WorkflowRestoreActionKind.healOrphansThenFinalize) {
+          final refreshed =
+              await workflowService.getWorkflowExecutionWithSteps(active.id);
+          if (refreshed != null && refreshed.failedSteps > 0) {
+            await workflowService.failWorkflow(
+              active.id,
+              'Workflow has failed steps and no remaining work',
+            );
+          } else {
+            await workflowService.completeWorkflow(
+              active.id,
+              summary: '所有阶段执行完毕',
+            );
+          }
+          return;
+        }
+        LoggerService().info(
+          '_restoreWorkflowContext: resuming interrupted workflow ${active.id} '
+          '(pending=${plan.pendingCount}, '
+          'completed=${plan.completedSteps}/${plan.totalSteps})',
+          tag: 'ChatController',
+        );
+        _beginWorkflowStepExecution(active.id);
         return;
-      }
-    }
-
-    // True interrupted resume (app restart / process death): remaining
-    // pending steps still need work, and no in-process loop exists.
-    if (_workflowCancelToken == null && pendingSteps.isNotEmpty) {
-      LoggerService().info(
-        '_restoreWorkflowContext: resuming interrupted workflow ${active.id} '
-        '(pending=${pendingSteps.length}, '
-        'completed=${withSteps.completedSteps}/${withSteps.totalSteps})',
-        tag: 'ChatController',
-      );
-      _beginWorkflowStepExecution(active.id);
+      case WorkflowRestoreActionKind.resumePending:
+        LoggerService().info(
+          '_restoreWorkflowContext: resuming interrupted workflow ${active.id} '
+          '(pending=${plan.pendingCount}, '
+          'completed=${plan.completedSteps}/${plan.totalSteps})',
+          tag: 'ChatController',
+        );
+        _beginWorkflowStepExecution(active.id);
+        return;
     }
   }
 
@@ -821,7 +819,7 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
     if (wfId != null) {
       chatService.detachWorkflowExecutionUI(wfId);
     }
-    _workflowCancelToken = null;
+    workflow.detachOnDispose();
     messageQueue.clear();
     _healthCheckTimer?.cancel();
     _peerConnSub?.cancel();
