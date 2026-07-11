@@ -1,6 +1,7 @@
 import '../models/workflow_models.dart';
 import '../peer/peer_approval_selection.dart';
 import '../services/chat_service.dart';
+import '../services/logger_service.dart';
 import 'chat_workflow_panel_state.dart';
 
 /// Owns workflow panel + local execution bookkeeping for [ChatController].
@@ -181,5 +182,46 @@ class ChatWorkflowCoordinator {
   String? removeAgentStreaming(String agentId) {
     streamingContents.remove(agentId);
     return streamingIds.remove(agentId);
+  }
+
+  /// Apply a plan approve/reject decision after the in-chat card has been synced.
+  ///
+  /// [startExecution] starts (or resumes) step execution for an approved plan.
+  /// [sendRejectionFeedback] posts admin re-plan feedback when the user rejects
+  /// with comments.
+  Future<void> applyPlanDecision({
+    required bool approved,
+    required String workflowId,
+    required Future<void> Function(String workflowId) startWorkflow,
+    required Future<void> Function(String workflowId) cancelWorkflow,
+    required Future<void> Function(String workflowId) startExecution,
+    Future<void> Function(String feedbackMessage)? sendRejectionFeedback,
+    String? feedback,
+    void Function()? notify,
+  }) async {
+    if (approved) {
+      await startWorkflow(workflowId);
+      notify?.call();
+      await startExecution(workflowId);
+      return;
+    }
+
+    await cancelWorkflow(workflowId);
+    setActiveWorkflowId(null);
+    notify?.call();
+
+    if (feedback == null || feedback.isEmpty || sendRejectionFeedback == null) {
+      return;
+    }
+    final feedbackMessage = '用户拒绝了工作流计划并提出修改意见: $feedback';
+    try {
+      await sendRejectionFeedback(feedbackMessage);
+    } catch (e) {
+      LoggerService().error(
+        'Failed to send workflow rejection feedback',
+        tag: 'ChatWorkflowCoordinator',
+        error: e,
+      );
+    }
   }
 }

@@ -104,5 +104,42 @@ void main() {
       );
       expect(c.peerApprovalPending, isNull);
     });
+
+    test('applyPlanDecision starts or cancels via callbacks', () async {
+      final c = ChatWorkflowCoordinator();
+      c.setActiveWorkflowId('wf-1');
+
+      var startedWorkflow = false;
+      var startedExecution = false;
+      await c.applyPlanDecision(
+        approved: true,
+        workflowId: 'wf-1',
+        startWorkflow: (id) async {
+          startedWorkflow = id == 'wf-1';
+        },
+        cancelWorkflow: (_) async {},
+        startExecution: (id) async {
+          startedExecution = id == 'wf-1';
+        },
+      );
+      expect(startedWorkflow, isTrue);
+      expect(startedExecution, isTrue);
+      expect(c.activeWorkflowId, 'wf-1');
+
+      String? feedbackSent;
+      await c.applyPlanDecision(
+        approved: false,
+        workflowId: 'wf-1',
+        startWorkflow: (_) async {},
+        cancelWorkflow: (_) async {},
+        startExecution: (_) async {},
+        sendRejectionFeedback: (msg) async {
+          feedbackSent = msg;
+        },
+        feedback: 'please replan',
+      );
+      expect(c.activeWorkflowId, isNull);
+      expect(feedbackSent, contains('please replan'));
+    });
   });
 }

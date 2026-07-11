@@ -8,7 +8,6 @@ import '../models/channel.dart';
 import '../models/remote_agent.dart';
 import '../models/attachment_data.dart';
 import '../models/pending_attachment.dart';
-import '../models/model_routing_config.dart';
 import '../services/chat_service.dart';
 import '../services/local_database_service.dart';
 import '../services/attachment_service.dart';
@@ -34,6 +33,8 @@ import '../services/workflow/workflow_restore_planner.dart';
 import '../services/workflow/workflow_pending_approval_picker.dart';
 import '../services/workflow/workflow_plan_approval_sync.dart';
 import 'chat_workflow_coordinator.dart';
+import 'chat_attachment_coordinator.dart';
+import 'chat_attachment_validator.dart';
 import 'chat_events.dart';
 
 // ChatEvent 及其全部子类已拆分到 chat_events.dart，这里重新导出，
@@ -69,6 +70,7 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
   // ---- Services ----
   late final ChatService chatService;
   late final AttachmentService attachmentService;
+  late final ChatAttachmentCoordinator attachmentCoordinator;
   late final MessageSearchService searchService;
   late final LocalDatabaseService localDatabaseService;
   late final InteractiveResponseHandler interactiveResponseHandler;
@@ -229,27 +231,19 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
       feedback: feedback,
     );
 
-    final workflowService = WorkflowService(db: localDatabaseService);
-
-    if (approved) {
-      await workflowService.startWorkflow(workflowId);
-      notifyListeners();
-      _beginWorkflowStepExecution(workflowId);
-    } else {
-      await workflowService.cancelWorkflow(workflowId);
-      workflow.setActiveWorkflowId(null);
-      notifyListeners();
-
-      // M5: Send rejection feedback to Admin so it can re-plan
-      if (feedback != null && feedback.isNotEmpty && currentChannelId != null) {
-        final feedbackMessage = '用户拒绝了工作流计划并提出修改意见: $feedback';
-        try {
-          await processGroupMessage(feedbackMessage);
-        } catch (e) {
-          LoggerService().error('Failed to send workflow rejection feedback', tag: 'ChatController', error: e);
-        }
-      }
-    }
+    await workflow.applyPlanDecision(
+      approved: approved,
+      workflowId: workflowId,
+      startWorkflow: (id) =>
+          WorkflowService(db: localDatabaseService).startWorkflow(id),
+      cancelWorkflow: (id) =>
+          WorkflowService(db: localDatabaseService).cancelWorkflow(id),
+      startExecution: (id) async => _beginWorkflowStepExecution(id),
+      sendRejectionFeedback: (feedbackMessage) =>
+          processGroupMessage(feedbackMessage),
+      feedback: feedback,
+      notify: notifyListeners,
+    );
   }
 
   /// Mirror panel approve/reject onto the message bubble's plan_approval card.
@@ -745,6 +739,7 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
       LocalFileStorageService(),
       databaseService,
     );
+    attachmentCoordinator = ChatAttachmentCoordinator(attachmentService);
     searchService = MessageSearchService(databaseService);
     interactiveResponseHandler = InteractiveResponseHandler(this);
   }
@@ -1439,9 +1434,15 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
 
     if (!isGroupMode && agentId != null && hasPendingAttachments) {
       final agent = await localDatabaseService.getRemoteAgentById(agentId!);
-      if (agent != null &&
-          !await _validateAttachmentsForAgent(agent, pendingAttachments)) {
-        return;
+      if (agent != null) {
+        final validation = ChatAttachmentValidator.validatePendingForAgent(
+          agent,
+          pendingAttachments,
+        );
+        if (!validation.ok) {
+          _emit(ShowSnackBarEvent(validation.errorKey!));
+          return;
+        }
       }
     }
 
@@ -1455,37 +1456,21 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
     cancelReply();
 
     // Save all pending attachments and build AttachmentData list
-    final savedAttachmentMessages = <Message>[];
-    final attachmentDataList = <AttachmentData>[];
-    if (attachmentsToSend.isNotEmpty) {
-      final userId = getUserId();
-      final userName = getUserName();
-
-      for (final att in attachmentsToSend) {
-        final message = await attachmentService.saveAttachment(
-          file: att.file,
-          channelId: currentChannelId ?? '',
-          userId: userId,
-          userName: userName,
-          agentId: agentId ?? '',
-        );
-        if (att.isFromClipboard) {
-          try { att.file.deleteSync(); } catch (_) {}
-        }
-        if (message != null) {
-          messages.add(message);
-          messageIdMap[message.id] = message;
-          _notify();
-          _emit(RequestScrollToBottomEvent(force: true));
-          savedAttachmentMessages.add(message);
-
-          final attData = await attachmentService.buildAttachmentData(message);
-          if (attData != null && !attData.exceedsSizeLimit) {
-            attachmentDataList.add(attData);
-          }
-        }
-      }
-    }
+    final persisted = await attachmentCoordinator.persistPending(
+      pending: attachmentsToSend,
+      channelId: currentChannelId ?? '',
+      userId: getUserId(),
+      userName: getUserName(),
+      agentId: agentId ?? '',
+      onMessageSaved: (message) {
+        messages.add(message);
+        messageIdMap[message.id] = message;
+        _notify();
+        _emit(RequestScrollToBottomEvent(force: true));
+      },
+    );
+    final savedAttachmentMessages = persisted.messages;
+    final attachmentDataList = persisted.data;
 
     final hasAttachments = attachmentDataList.isNotEmpty;
 
@@ -2632,34 +2617,16 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
   // Send attachment to agent
   // ---------------------------------------------------------------------------
 
-  Future<bool> _validateAttachmentsForAgent(
-    RemoteAgent agent,
-    List<PendingAttachment> attachments,
-  ) async {
-    if (!agent.isLocal) return true;
-    for (final att in attachments) {
-      if (att.type == PendingAttachmentType.image &&
-          !agent.supportsModality(ModalityType.image)) {
-        _emit(ShowSnackBarEvent('chat_modalityNotSupported:image'));
-        return false;
-      }
-    }
-    return true;
-  }
-
   Future<bool> _validateAttachmentDataForAgent(
     RemoteAgent agent,
     AttachmentData attachment,
   ) async {
-    if (!agent.isLocal) return true;
-    final modality =
-        ModelRoutingConfig.detectModality([attachment.semanticType]);
-    if (modality == ModalityType.text) return true;
-    if (!agent.supportsModality(modality)) {
-      _emit(ShowSnackBarEvent('chat_modalityNotSupported:${modality.name}'));
-      return false;
+    final result =
+        ChatAttachmentValidator.validateDataForAgent(agent, attachment);
+    if (!result.ok) {
+      _emit(ShowSnackBarEvent(result.errorKey!));
     }
-    return true;
+    return result.ok;
   }
 
   Future<void> sendAttachmentToAgent(Message attachmentMessage) async {
