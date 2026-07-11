@@ -1,3 +1,6 @@
+@Tags(['needs-plugins'])
+library;
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shepaw/models/remote_agent.dart';

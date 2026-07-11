@@ -1,3 +1,6 @@
+@Tags(['needs-plugins'])
+library;
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shepaw/models/remote_agent.dart';
 import 'package:shepaw/services/token_service.dart';
@@ -5,6 +8,7 @@ import 'package:shepaw/services/local_database_service.dart';
 import 'package:shepaw/services/remote_agent_service.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
+/// Needs path_provider + sqflite harness; excluded from default CI via `needs-plugins`.
 void main() {
   setUpAll(() {
     // 初始化 FFI

@@ -1,3 +1,6 @@
+@Tags(['needs-plugins'])
+library;
+
 import 'dart:io';
 import 'dart:convert';
 import 'package:flutter_test/flutter_test.dart';
@@ -13,6 +16,8 @@ import 'package:shepaw/services/logger_service.dart';
 ///
 /// 运行测试：
 /// flutter test test/integration/core_integration_test.dart
+///
+/// Needs path_provider / filesystem harness; excluded from default CI via `needs-plugins`.
 
 void main() {
   // 测试在移动端运行，无需特殊初始化

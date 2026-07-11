@@ -1,0 +1,44 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master, develop, 'feat/**', 'fix/**']
+  pull_request:
+    branches: [main, master, develop]
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  analyze-and-test:
+    name: Analyze & Test
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          # Pin close to local toolchain; bump when the team upgrades Flutter.
+          flutter-version: '3.41.4'
+          channel: stable
+          cache: true
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Analyze
+        # Fail on errors only for now; warnings are tracked separately as tech debt.
+        run: flutter analyze --no-fatal-infos --no-fatal-warnings
+
+      - name: Unit & widget tests
+        # Exclude plugin-heavy integration suites that need path_provider /
+        # platform channels (tracked as P1 to re-enable with proper test harness).
+        run: >
+          flutter test
+          --exclude-tags=needs-plugins
+          --reporter=compact
