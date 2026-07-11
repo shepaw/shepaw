@@ -1,4 +1,5 @@
 import '../models/workflow_models.dart';
+import '../peer/peer_approval_selection.dart';
 import '../services/chat_service.dart';
 import 'chat_workflow_panel_state.dart';
 
@@ -40,6 +41,83 @@ class ChatWorkflowCoordinator {
   void reopenPanel() => panel.reopen();
 
   void clearPeerApproval() => panel.clearPeerApproval();
+
+  /// Key used in `pendingGroupInteractions` for a step interaction.
+  ///
+  /// Peer action confirmations are keyed by confirmation_id so sequential
+  /// approvals on the same agent/message do not overwrite each other.
+  static String interactionPendingKey({
+    required String interactionType,
+    required Map<String, dynamic> data,
+    required String? sid,
+    required String agentId,
+  }) {
+    final confirmationId = data['confirmation_id'] as String?;
+    if (interactionType == 'action_confirmation' &&
+        confirmationId != null &&
+        confirmationId.isNotEmpty) {
+      return confirmationId;
+    }
+    return sid ?? agentId;
+  }
+
+  /// Register a workflow peer-approval on the progress panel.
+  ///
+  /// Returns the stale confirmation id that should be auto-denied when a newer
+  /// sequential approval supersedes the previous one; otherwise null.
+  String? registerWorkflowPeerApproval({
+    required String agentId,
+    required String agentName,
+    required String? messageId,
+    required Map<String, dynamic> data,
+  }) {
+    final activeId = activeWorkflowId;
+    if (activeId == null) return null;
+    if (data['_workflowPeerApproval'] != true) return null;
+    final stepId = data['_workflowStepId'] as String?;
+    if (stepId == null) return null;
+
+    final confirmationId = data['confirmation_id'] as String?;
+    final prev = peerApprovalPending;
+    String? staleConfirmationId;
+    if (PeerApprovalSelection.shouldSupersede(
+      prev: prev,
+      newStepId: stepId,
+      newConfirmationId: confirmationId,
+    )) {
+      staleConfirmationId = prev!.confirmationId;
+    }
+
+    setPeerApprovalPending(WorkflowPeerApprovalPending(
+      workflowId: activeId,
+      stepId: stepId,
+      agentId: agentId,
+      agentName: agentName,
+      messageId: messageId,
+      prompt: data['prompt'] as String?,
+      risk: PeerApprovalSelection.parseRisk(data),
+      confirmationId: confirmationId,
+      approvalData: Map<String, dynamic>.from(data),
+    ));
+    return staleConfirmationId;
+  }
+
+  /// Clear the panel banner after an approval Completer settles, unless a
+  /// newer sequential approval already replaced it.
+  bool clearPeerApprovalIfCurrent({
+    required String? completedConfirmationId,
+    required String? completedStepId,
+  }) {
+    if (!PeerApprovalSelection.shouldClearPendingAfterCompletion(
+      pending: peerApprovalPending,
+      completedConfirmationId: completedConfirmationId,
+      completedStepId: completedStepId,
+    )) {
+      return false;
+    }
+    clearPeerApproval();
+    return true;
+  }
 
   /// Start a local cancel token if ChatService is not already executing.
   ///

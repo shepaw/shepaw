@@ -30,5 +30,79 @@ void main() {
       c.prepareLocalCancel();
       expect(c.activeWorkflowId, isNull);
     });
+
+    test('interactionPendingKey prefers confirmation_id', () {
+      expect(
+        ChatWorkflowCoordinator.interactionPendingKey(
+          interactionType: 'action_confirmation',
+          data: {'confirmation_id': 'conf-1'},
+          sid: 'sid',
+          agentId: 'a1',
+        ),
+        'conf-1',
+      );
+      expect(
+        ChatWorkflowCoordinator.interactionPendingKey(
+          interactionType: 'form',
+          data: {},
+          sid: 'sid',
+          agentId: 'a1',
+        ),
+        'sid',
+      );
+    });
+
+    test('registerWorkflowPeerApproval supersedes same-step pending', () {
+      final c = ChatWorkflowCoordinator();
+      c.setActiveWorkflowId('wf-1');
+      expect(
+        c.registerWorkflowPeerApproval(
+          agentId: 'a1',
+          agentName: 'Coder',
+          messageId: 'm1',
+          data: {
+            '_workflowPeerApproval': true,
+            '_workflowStepId': 's1',
+            'confirmation_id': 'c1',
+            'prompt': 'first',
+          },
+        ),
+        isNull,
+      );
+      expect(c.peerApprovalPending?.confirmationId, 'c1');
+
+      expect(
+        c.registerWorkflowPeerApproval(
+          agentId: 'a1',
+          agentName: 'Coder',
+          messageId: 'm2',
+          data: {
+            '_workflowPeerApproval': true,
+            '_workflowStepId': 's1',
+            'confirmation_id': 'c2',
+            'prompt': 'second',
+          },
+        ),
+        'c1',
+      );
+      expect(c.peerApprovalPending?.confirmationId, 'c2');
+
+      expect(
+        c.clearPeerApprovalIfCurrent(
+          completedConfirmationId: 'c1',
+          completedStepId: 's1',
+        ),
+        isFalse,
+      );
+      expect(c.peerApprovalPending?.confirmationId, 'c2');
+      expect(
+        c.clearPeerApprovalIfCurrent(
+          completedConfirmationId: 'c2',
+          completedStepId: 's1',
+        ),
+        isTrue,
+      );
+      expect(c.peerApprovalPending, isNull);
+    });
   });
 }

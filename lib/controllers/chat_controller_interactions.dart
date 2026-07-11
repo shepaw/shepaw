@@ -246,19 +246,21 @@ mixin _InteractionOps on _ChatControllerBase {
     _updateGroupStreamingMetadata(
       originalMessage.id,
       'plan_approval_responded',
-      {
-        'approved': approved,
-        if (feedback != null && feedback.isNotEmpty) 'feedback': feedback,
-      },
+      WorkflowPlanApprovalSync.buildRespondedPatch(
+        approved: approved,
+        feedback: feedback,
+      ),
     );
     // Merge _approved into the plan_approval data so the card badge updates
     final existing = messageIdMap[originalMessage.id];
     if (existing != null) {
       final existingPlanData = existing.metadata?['plan_approval'] as Map<String, dynamic>?;
       if (existingPlanData != null) {
-        final merged = Map<String, dynamic>.from(existingPlanData);
-        merged['_approved'] = approved;
-        _updateGroupStreamingMetadata(originalMessage.id, 'plan_approval', merged);
+        _updateGroupStreamingMetadata(
+          originalMessage.id,
+          'plan_approval',
+          WorkflowPlanApprovalSync.mergeApprovedFlag(existingPlanData, approved),
+        );
       }
     }
     // Persist so channel reload / reconcile cannot revive the pending card.
@@ -271,12 +273,14 @@ mixin _InteractionOps on _ChatControllerBase {
 
     // Submit result through ChatService Completer (survives channel switch)
     if (currentChannelId != null) {
-      chatService.completePlanApproval(currentChannelId!, {
-        'approved': approved,
-        if (feedback != null && feedback.isNotEmpty) 'feedback': feedback,
-        if (skippedTaskIds != null && skippedTaskIds.isNotEmpty)
-          'skipped_task_ids': skippedTaskIds,
-      });
+      chatService.completePlanApproval(
+        currentChannelId!,
+        WorkflowPlanApprovalSync.buildCompleterPayload(
+          approved: approved,
+          feedback: feedback,
+          skippedTaskIds: skippedTaskIds,
+        ),
+      );
 
       // If approved and has workflow ID, start execution immediately.
       if (approved) {

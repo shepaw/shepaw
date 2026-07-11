@@ -32,6 +32,7 @@ import '../peer/peer_approval_selection.dart';
 import '../peer/models/paired_peer.dart' show PeerConnectionState;
 import '../services/workflow/workflow_restore_planner.dart';
 import '../services/workflow/workflow_pending_approval_picker.dart';
+import '../services/workflow/workflow_plan_approval_sync.dart';
 import 'chat_workflow_coordinator.dart';
 import 'chat_events.dart';
 
@@ -216,16 +217,6 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
     notifyListeners();
   }
 
-  /// Called when user approves a workflow plan — just shows the progress panel.
-  /// The actual startWorkflow + execution is handled by handleWorkflowApproval
-  /// from the progress panel, or directly when approved via plan_approval card.
-  Future<void> _handleWorkflowApproved(String workflowId) async {
-    // Only set the active ID to show the panel — do NOT call startWorkflow here.
-    // handleWorkflowApproval (triggered from the panel) is the canonical entry
-    // point for starting execution. This avoids the double-start race (C2).
-    setActiveWorkflowId(workflowId);
-  }
-
   /// Handle workflow approval/rejection from the WorkflowProgressPanel.
   Future<void> handleWorkflowApproval(bool approved, {String? feedback}) async {
     final workflowId = activeWorkflowId;
@@ -267,36 +258,28 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
     bool approved, {
     String? feedback,
   }) {
-    Message? target;
-    for (final msg in messages.reversed) {
-      final plan = msg.metadata?['plan_approval'] as Map<String, dynamic>?;
-      if (plan == null) continue;
-      if (plan['_workflowId'] == workflowId) {
-        target = msg;
-        break;
-      }
-      // Fallback: latest unanswered plan card when workflow id is missing.
-      if (plan['_approved'] == null &&
-          msg.metadata?['plan_approval_responded'] == null) {
-        target ??= msg;
-      }
-    }
+    final target = WorkflowPlanApprovalSync.findPlanApprovalMessage(
+      messages: messages,
+      workflowId: workflowId,
+    );
     if (target == null) return;
 
     _updateGroupStreamingMetadata(
       target.id,
       'plan_approval_responded',
-      {
-        'approved': approved,
-        if (feedback != null && feedback.isNotEmpty) 'feedback': feedback,
-      },
+      WorkflowPlanApprovalSync.buildRespondedPatch(
+        approved: approved,
+        feedback: feedback,
+      ),
     );
     final existingPlan =
         target.metadata?['plan_approval'] as Map<String, dynamic>?;
     if (existingPlan != null) {
-      final merged = Map<String, dynamic>.from(existingPlan);
-      merged['_approved'] = approved;
-      _updateGroupStreamingMetadata(target.id, 'plan_approval', merged);
+      _updateGroupStreamingMetadata(
+        target.id,
+        'plan_approval',
+        WorkflowPlanApprovalSync.mergeApprovedFlag(existingPlan, approved),
+      );
     }
     final meta =
         Map<String, dynamic>.from(messageIdMap[target.id]?.metadata ?? {});
@@ -305,10 +288,13 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
     // Also complete any ChatService-held plan approval Completer so the
     // orchestration path (if still waiting) does not hang.
     if (currentChannelId != null) {
-      chatService.completePlanApproval(currentChannelId!, {
-        'approved': approved,
-        if (feedback != null && feedback.isNotEmpty) 'feedback': feedback,
-      });
+      chatService.completePlanApproval(
+        currentChannelId!,
+        WorkflowPlanApprovalSync.buildCompleterPayload(
+          approved: approved,
+          feedback: feedback,
+        ),
+      );
     }
   }
 
@@ -477,67 +463,44 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
       data: data,
       groupStreamingMessageId: sid ?? agentId,
     );
-    // Key peer approvals by confirmation_id so sequential approvals on the
-    // same agent/message do not overwrite each other's Completer.
     final confirmationId = data['confirmation_id'] as String?;
-    final pendingKey =
-        (interactionType == 'action_confirmation' &&
-                confirmationId != null &&
-                confirmationId.isNotEmpty)
-            ? confirmationId
-            : (sid ?? agentId);
+    final pendingKey = ChatWorkflowCoordinator.interactionPendingKey(
+      interactionType: interactionType,
+      data: data,
+      sid: sid,
+      agentId: agentId,
+    );
     pendingGroupInteractions[pendingKey] = event;
     _notify();
     _emit(event);
 
-    if (interactionType == 'action_confirmation' &&
-        data['_workflowPeerApproval'] == true &&
-        activeWorkflowId != null) {
-      final stepId = data['_workflowStepId'] as String?;
-      if (stepId != null) {
-        final risk = PeerApprovalSelection.parseRisk(data);
-        final confirmationId = data['confirmation_id'] as String?;
-
-        // A newer sequential approval for the same step replaces the panel.
-        // Complete any prior Completer so the previous wait cannot hang the
-        // peer sendChat openApprovals gate forever.
-        final prev = workflowPeerApprovalPending;
-        if (PeerApprovalSelection.shouldSupersede(
-          prev: prev,
-          newStepId: stepId,
-          newConfirmationId: confirmationId,
-        )) {
-          final stale = pendingGroupInteractions.remove(prev!.confirmationId!);
-          if (stale != null && !stale.result.isCompleted) {
-            LoggerService().warning(
-              'Superseding stale peer approval ${prev.confirmationId} '
-              'with $confirmationId on step $stepId',
-              tag: 'PeerApproval',
-            );
-            stale.result.complete(
-              PeerApprovalSelection.buildSupersededDenyResponse(),
-            );
-          }
+    if (interactionType == 'action_confirmation') {
+      final staleConfirmationId = workflow.registerWorkflowPeerApproval(
+        agentId: agentId,
+        agentName: agentName,
+        messageId: sid,
+        data: data,
+      );
+      if (staleConfirmationId != null) {
+        final stale = pendingGroupInteractions.remove(staleConfirmationId);
+        if (stale != null && !stale.result.isCompleted) {
+          LoggerService().warning(
+            'Superseding stale peer approval $staleConfirmationId '
+            'with $confirmationId on step ${data['_workflowStepId']}',
+            tag: 'PeerApproval',
+          );
+          stale.result.complete(
+            PeerApprovalSelection.buildSupersededDenyResponse(),
+          );
         }
-
-        setWorkflowPeerApprovalPending(WorkflowPeerApprovalPending(
-          workflowId: activeWorkflowId!,
-          stepId: stepId,
-          agentId: agentId,
-          agentName: agentName,
-          messageId: sid,
-          prompt: data['prompt'] as String?,
-          risk: risk,
-          confirmationId: confirmationId,
-          approvalData: Map<String, dynamic>.from(data),
-        ));
-        if (confirmationId != null &&
-            confirmationId.isNotEmpty &&
-            sid != null) {
-          WorkflowService.instance
-              .updatePendingApprovalMessageId(confirmationId, sid)
-              .ignore();
-        }
+      }
+      if (confirmationId != null &&
+          confirmationId.isNotEmpty &&
+          sid != null &&
+          data['_workflowPeerApproval'] == true) {
+        WorkflowService.instance
+            .updatePendingApprovalMessageId(confirmationId, sid)
+            .ignore();
       }
     }
 
@@ -550,15 +513,10 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
       pendingGroupInteractions.remove(pendingKey);
       if (interactionType == 'action_confirmation' &&
           data['_workflowPeerApproval'] == true) {
-        // Only clear the panel banner when this confirmation is still the
-        // active pending one — a newer sequential approval may have replaced it.
-        if (PeerApprovalSelection.shouldClearPendingAfterCompletion(
-          pending: workflowPeerApprovalPending,
+        workflow.clearPeerApprovalIfCurrent(
           completedConfirmationId: confirmationId,
           completedStepId: data['_workflowStepId'] as String?,
-        )) {
-          setWorkflowPeerApprovalPending(null);
-        }
+        );
       }
       _notify();
     }
