@@ -265,7 +265,9 @@ class PeerPairingService {
 
     // 配对成功后通知 ConnectionManager 建立连接，并刷新会话/设备列表
     PeerConnectionManager.instance.notifyPeerListChanged();
-    PeerConnectionManager.instance.connectToPeer(peer);
+    PeerConnectionManager.instance.connectToPeer(peer).catchError((Object e) {
+      _log.warning('Post-pairing connect failed: $e', tag: _tag);
+    });
     await PeerAgentHostService.instance.pushAgentList(peer.id);
 
     _log.info('Pairing confirmed: ${peer.deviceName} (${peer.fingerprint})', tag: _tag);
@@ -448,7 +450,9 @@ class PeerPairingService {
 
       // 配对成功后通知 ConnectionManager 建立连接，并刷新会话/设备列表
       PeerConnectionManager.instance.notifyPeerListChanged();
-      PeerConnectionManager.instance.connectToPeer(peer);
+      PeerConnectionManager.instance.connectToPeer(peer).catchError((Object e) {
+        _log.warning('Post-pairing connect failed: $e', tag: _tag);
+      });
 
       _log.info('Pairing successful: ${peer.deviceName} (${peer.fingerprint})', tag: _tag);
       return peer;

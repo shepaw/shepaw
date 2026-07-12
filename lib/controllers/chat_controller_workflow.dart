@@ -83,19 +83,23 @@ mixin _WorkflowOps on _ChatControllerBase {
       feedback: feedback,
     );
 
-    await workflow.applyPlanDecision(
-      approved: approved,
-      workflowId: workflowId,
-      startWorkflow: (id) =>
-          WorkflowService(db: localDatabaseService).startWorkflow(id),
-      cancelWorkflow: (id) =>
-          WorkflowService(db: localDatabaseService).cancelWorkflow(id),
-      startExecution: (id) async => _beginWorkflowStepExecution(id),
-      sendRejectionFeedback: (feedbackMessage) =>
-          processGroupMessage(feedbackMessage),
-      feedback: feedback,
-      notify: notifyListeners,
-    );
+    try {
+      await workflow.applyPlanDecision(
+        approved: approved,
+        workflowId: workflowId,
+        startWorkflow: (id) =>
+            WorkflowService(db: localDatabaseService).startWorkflow(id),
+        cancelWorkflow: (id) =>
+            WorkflowService(db: localDatabaseService).cancelWorkflow(id),
+        startExecution: (id) async => _beginWorkflowStepExecution(id),
+        sendRejectionFeedback: (feedbackMessage) =>
+            processGroupMessage(feedbackMessage),
+        feedback: feedback,
+        notify: notifyListeners,
+      );
+    } catch (e) {
+      _emit(ShowErrorSnackBarEvent('$e'));
+    }
   }
 
   /// Mirror panel approve/reject onto the message bubble's plan_approval card.

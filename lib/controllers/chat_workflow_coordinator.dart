@@ -222,6 +222,7 @@ class ChatWorkflowCoordinator {
         tag: 'ChatWorkflowCoordinator',
         error: e,
       );
+      rethrow;
     }
   }
 }

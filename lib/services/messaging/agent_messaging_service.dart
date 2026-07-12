@@ -321,7 +321,9 @@ class AgentMessagingService {
           }
         }
       }
-      return null;
+      // Rethrow so ChatController can show a toast; the system message above
+      // remains for in-thread history.
+      rethrow;
     }
   }
 
@@ -1049,6 +1051,17 @@ class AgentMessagingService {
     // the card after sendChat completes and ChatController reloads from DB.
     Map<String, dynamic>? actionConfirmationData;
     final splitter = StreamContentSplitter();
+    final infLogPeer = InferenceLogService.instance;
+    final traceId = activeTask.taskId;
+    infLogPeer.beginSession(
+      sessionId: traceId,
+      agentId: agent.id,
+      agentName: agent.name,
+      channelId: effectiveChannelId.isNotEmpty ? effectiveChannelId : null,
+      executionMode: 'peer_dm',
+      userMessage: userMessage.content,
+    );
+    infLogPeer.beginRound(traceId, requestSummary: 'Peer DM request');
 
     void publishMetadata(Map<String, dynamic> meta) {
       final merged = Map<String, dynamic>.from(activeTask.metadata ?? {});
@@ -1070,9 +1083,11 @@ class AgentMessagingService {
             activeTask.accumulatedContent += answerDelta;
             activeTask.onStreamChunk?.call(answerDelta);
             flushHelper.schedule();
+            infLogPeer.onTextChunk(traceId, answerDelta);
           } else {
             final progressMeta = splitter.progressMetadataDelta();
             if (progressMeta != null) publishMetadata(progressMeta);
+            infLogPeer.onTextChunk(traceId, chunk);
           }
         },
         onMetadata: (data) {
@@ -1106,6 +1121,12 @@ class AgentMessagingService {
         activeTask.recordInterruption('user_cancelled');
       }
 
+      infLogPeer.endRound(traceId, stopReason: wasCancelled ? 'cancelled' : 'stop');
+      infLogPeer.endSession(
+        traceId,
+        wasCancelled ? InferenceStatus.cancelled : InferenceStatus.completed,
+      );
+
       // Prefer splitter answer (progress stripped). On cancel, always leave a
       // visible "[Stopped]" marker — including progress-only turns — so a
       // subsequent loadMessages cannot look like "no reply".
@@ -1117,9 +1138,12 @@ class AgentMessagingService {
         wasCancelled: wasCancelled,
       );
 
-      final meta = <String, dynamic>{};
+      final meta = <String, dynamic>{
+        'trace_id': traceId,
+      };
       if (result.metadata != null) meta.addAll(result.metadata!);
       meta.addAll(splitter.finalProgressMetadata());
+      meta['trace_id'] = traceId;
       if (wasCancelled) {
         meta['status'] = 'stopped';
         meta['interruption_reason'] = 'user_cancelled';
@@ -1154,6 +1178,8 @@ class AgentMessagingService {
       );
     } catch (e) {
       await flushHelper.deletePartial();
+      infLogPeer.endRound(traceId, stopReason: 'error');
+      infLogPeer.endSession(traceId, InferenceStatus.error, error: '$e');
       rethrow;
     }
   }

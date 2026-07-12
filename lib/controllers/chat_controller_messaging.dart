@@ -593,7 +593,7 @@ mixin _MessagingOps on _ChatControllerBase {
       awaitingAsyncTask = turn.awaitingAsyncTask || awaitingAsyncTask;
 
       if (turn.showNullResponseError) {
-        _emit(ShowSnackBarEvent('chat_responseError'));
+        _emit(ShowSnackBarEvent('chat_responseError:${remoteAgent.name}'));
       }
 
       isAgentOnline = true;
@@ -609,7 +609,12 @@ mixin _MessagingOps on _ChatControllerBase {
       LoggerService().error('Send message failed', tag: 'ChatController', error: e, stackTrace: stackTrace);
       messageQueue.clear();
       await loadMessages();
-      _emit(ShowErrorSnackBarEvent('$e'));
+      final err = e.toString();
+      if (err.contains('not reachable after')) {
+        _emit(ShowErrorSnackBarEvent('chat_reconnectFailed'));
+      } else {
+        _emit(ShowErrorSnackBarEvent('$e'));
+      }
     } finally {
       if (awaitingAsyncTask) {
         // Async path: don't clear streamingMessageId / isProcessing here —
@@ -739,6 +744,7 @@ mixin _MessagingOps on _ChatControllerBase {
       messages.removeWhere((m) => m.id == streamingMessageId);
       messageIdMap.remove(streamingMessageId);
       _notify();
+      _emit(ShowErrorSnackBarEvent('chat_historyLoadFailed:$e'));
     }
     return true;
   }
@@ -1294,6 +1300,7 @@ mixin _MessagingOps on _ChatControllerBase {
       messages.removeWhere((m) => m.id == streamingMessageId);
       messageIdMap.remove(streamingMessageId);
       _notify();
+      _emit(ShowErrorSnackBarEvent('chat_fileMessageFailed:$e'));
     } finally {
       streaming.clear();
       isProcessing = false;

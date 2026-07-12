@@ -1049,6 +1049,8 @@ class _TraceDetailScreenState extends State<TraceDetailScreen> {
       case 'group_plan': return Colors.amber.shade800;
       case 'group_flow': return Colors.green.shade700;
       case 'group_local': return Colors.purple;
+      case 'group_peer': return Colors.deepPurple;
+      case 'peer_dm': return Colors.deepPurple.shade400;
       case 'group_remote_acp': return Colors.cyan.shade700;
       default: return Colors.grey;
     }

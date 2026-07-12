@@ -400,6 +400,12 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
         return l10n.chat_groupChatError(param);
       case 'chat_fileMessageFailed':
         return l10n.chat_fileMessageFailed(param);
+      case 'chat_reconnectFailed':
+        return l10n.chat_reconnectFailed;
+      case 'chat_responseError':
+        return l10n.chat_responseError(param);
+      case 'chat_historyLoadFailed':
+        return l10n.chat_historyLoadFailed(param);
       case 'chat_modalityNotSupported':
         switch (param) {
           case 'audio':

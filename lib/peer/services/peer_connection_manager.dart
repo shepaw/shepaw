@@ -226,7 +226,10 @@ class PeerConnectionManager {
     }).toList();
   }
 
-  /// 主动连接指定 peer（自动确保管理器已启动）
+  /// 主动连接指定 peer（自动确保管理器已启动）。
+  ///
+  /// 若最终未连上，抛出 [StateError] 供 UI 提示；后台重连仍由
+  /// [_scheduleReconnect] 静默继续，避免刷屏。
   Future<void> connectToPeer(PairedPeer peer) async {
     // 确保管理器已启动（监听入站连接 + 本地服务器运行）
     await start();
@@ -237,6 +240,17 @@ class PeerConnectionManager {
     }
 
     await _doConnect(peer);
+
+    final conn = _connections[peer.id];
+    if (conn == null || conn.state != PeerConnectionState.connected) {
+      final message = '无法连接到 ${peer.deviceName}，请确认对方在线后重试';
+      _eventController.add(PeerConnectionEvent(
+        peerId: peer.id,
+        type: PeerConnectionEventType.error,
+        data: message,
+      ));
+      throw StateError(message);
+    }
   }
 
   /// 断开与指定 peer 的连接

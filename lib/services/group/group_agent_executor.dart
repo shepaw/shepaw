@@ -1530,6 +1530,9 @@ class GroupAgentExecutor {
         tag: 'GroupAgentExecutor',
         error: e,
       );
+      // Surface to the outer peer send path (saves an error bubble) and to any
+      // ChatController snackbar that awaits the approval chain.
+      rethrow;
     }
   }
 }

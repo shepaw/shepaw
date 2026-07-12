@@ -5,12 +5,14 @@ import 'package:uuid/uuid.dart';
 
 import '../models/paired_peer.dart';
 import '../models/peer_message.dart';
+import '../services/peer_connection.dart' show PeerConnectionEventType;
 import '../services/peer_connection_manager.dart';
 import '../services/peer_pairing_service.dart';
 import '../services/peer_storage_service.dart';
 import '../../l10n/app_localizations.dart';
 import '../../models/remote_agent.dart';
 import '../../screens/chat_screen.dart';
+import '../../services/error_handler_service.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/peer_message_search_delegate.dart';
 import '../../widgets/shepaw_search_page.dart';
@@ -164,10 +166,19 @@ class _PeerChatScreenState extends State<PeerChatScreen> {
     _eventSub = PeerConnectionManager.instance.events
         .where((event) => event.peerId == widget.peer.id)
         .listen((event) {
-      if (mounted) {
-        setState(() {
-          _connectionState = PeerConnectionManager.instance.getPeerState(widget.peer.id);
-        });
+      if (!mounted) return;
+      setState(() {
+        _connectionState =
+            PeerConnectionManager.instance.getPeerState(widget.peer.id);
+      });
+      if (event.type == PeerConnectionEventType.error) {
+        final detail = event.data is String ? event.data as String : null;
+        showTopToast(
+          context,
+          detail ?? '无法连接到 $_displayName，请确认对方在线后重试',
+          icon: Icons.error_outline,
+          color: Colors.redAccent,
+        );
       }
     });
 
@@ -231,7 +242,14 @@ class _PeerChatScreenState extends State<PeerChatScreen> {
 
     try {
       await PeerConnectionManager.instance.connectToPeer(widget.peer);
-    } catch (_) {}
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _connectionState =
+            PeerConnectionManager.instance.getPeerState(widget.peer.id);
+      });
+      // UI toast comes from PeerConnectionEventType.error (emitted by connectToPeer).
+    }
   }
 
   Future<void> _sendMessage() async {
