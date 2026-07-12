@@ -12,6 +12,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:sqflite/sqflite.dart';
 import 'package:uuid/uuid.dart';
 
@@ -39,6 +40,14 @@ String peerAgentLocalId(String peerId, String remoteAgentId) =>
 /// 到真实的上游会话——保证本地会话与远端一一对应、不串 session。
 const String kSyncedPeerSessionPrefix = 'psess_';
 
+/// Overlap subtracted from the last history-sync watermark so borderline
+/// updates are not missed across consecutive syncs.
+const Duration kPeerHistorySyncOverlap = Duration(minutes: 2);
+
+/// SharedPreferences key for the agent-level history sync watermark.
+String peerHistoryLastSyncPrefsKey(String localAgentId) =>
+    'peer_history_last_sync_$localAgentId';
+
 /// 由远端 sessionId 生成本地已同步会话的 channel id。
 String syncedPeerChannelId(String remoteSessionId) =>
     '$kSyncedPeerSessionPrefix$remoteSessionId';
@@ -48,6 +57,37 @@ String? remoteSessionIdFromChannelId(String channelId) =>
     channelId.startsWith(kSyncedPeerSessionPrefix)
         ? channelId.substring(kSyncedPeerSessionPrefix.length)
         : null;
+
+/// Sessions whose transcripts should be re-fetched for an incremental sync.
+///
+/// When [lastSyncAt] is null (first sync), every session is dirty. Otherwise a
+/// session is dirty if it has no `updatedAt` or `updatedAt >= lastSyncAt - overlap`.
+/// When [prioritizeSessionId] is set, that session is moved to the front.
+List<PeerRemoteSession> selectDirtySessions(
+  List<PeerRemoteSession> sessions, {
+  DateTime? lastSyncAt,
+  Duration overlap = kPeerHistorySyncOverlap,
+  String? prioritizeSessionId,
+}) {
+  final List<PeerRemoteSession> dirty;
+  if (lastSyncAt == null) {
+    dirty = List<PeerRemoteSession>.of(sessions);
+  } else {
+    final since = lastSyncAt.subtract(overlap);
+    dirty = sessions
+        .where((s) => s.updatedAt == null || !s.updatedAt!.isBefore(since))
+        .toList();
+  }
+  final prioritize = prioritizeSessionId;
+  if (prioritize != null && prioritize.isNotEmpty) {
+    dirty.sort((a, b) {
+      if (a.sessionId == prioritize) return -1;
+      if (b.sessionId == prioritize) return 1;
+      return 0;
+    });
+  }
+  return dirty;
+}
 
 /// [PeerAgentClientService.sendChat] 的结果。
 class PeerChatResult {
@@ -142,6 +182,36 @@ class PeerModelsList {
   final String? current;
 
   const PeerModelsList({required this.models, this.current});
+}
+
+/// Result of [PeerAgentClientService.syncAgentIncremental].
+class PeerAgentIncrementalSyncResult {
+  /// Channels linked/repaired by [PeerAgentClientService.syncSessions].
+  final int sessionsLinked;
+
+  /// Remote sessions whose history was attempted this round.
+  final int dirtySessionCount;
+
+  /// Sessions where [PeerAgentClientService.syncHistory] wrote at least one row.
+  final int historySessionsWritten;
+
+  /// Total messages upserted across all dirty sessions.
+  final int totalMessagesWritten;
+
+  /// Messages written into the prioritized (currently open) channel.
+  final int currentChannelMessagesWritten;
+
+  /// Whether the agent-level watermark was advanced.
+  final bool watermarkAdvanced;
+
+  const PeerAgentIncrementalSyncResult({
+    this.sessionsLinked = 0,
+    this.dirtySessionCount = 0,
+    this.historySessionsWritten = 0,
+    this.totalMessagesWritten = 0,
+    this.currentChannelMessagesWritten = 0,
+    this.watermarkAdvanced = false,
+  });
 }
 
 class _PendingRequest {
@@ -771,13 +841,153 @@ class PeerAgentClientService {
     return linked;
   }
 
-  /// Pull a synced session's transcript from the remote and make the local
-  /// channel mirror it exactly. Meant to run on every entry (pull-authoritative).
+  /// Agent-level watermark for peer history incremental sync.
+  Future<DateTime?> getLastHistorySyncAt(String localAgentId) async {
+    final prefs = await SharedPreferences.getInstance();
+    final raw = prefs.getString(peerHistoryLastSyncPrefsKey(localAgentId));
+    if (raw == null || raw.isEmpty) return null;
+    return DateTime.tryParse(raw);
+  }
+
+  /// Persist the agent-level history sync watermark (UTC ISO-8601).
+  Future<void> setLastHistorySyncAt(String localAgentId, DateTime at) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(
+      peerHistoryLastSyncPrefsKey(localAgentId),
+      at.toUtc().toIso8601String(),
+    );
+  }
+
+  /// Incrementally sync all dirty remote sessions for a peer agent.
+  ///
+  /// 1. Enumerate remote sessions and ensure local channel shells exist.
+  /// 2. Select dirty sessions via [selectDirtySessions] (watermark + overlap).
+  /// 3. Pull history for each dirty session (prioritized channel first).
+  /// 4. Advance the watermark to [syncStartedAt] only if every attempt finishes
+  ///    without throwing.
+  ///
+  /// [onPrioritizedChannelDone] is invoked after the prioritized channel's
+  /// history attempt (even when 0 messages were written) so the UI can stop
+  /// its spinner and reload.
+  Future<PeerAgentIncrementalSyncResult> syncAgentIncremental({
+    required String peerId,
+    required String remoteAgentId,
+    required String localAgentId,
+    required String agentName,
+    required String userId,
+    required String userName,
+    String? prioritizeChannelId,
+    Future<void> Function(int written)? onPrioritizedChannelDone,
+  }) async {
+    final syncStartedAt = DateTime.now().toUtc();
+    final sessions = await fetchSessions(
+      peerId: peerId,
+      remoteAgentId: remoteAgentId,
+    );
+    if (sessions.isEmpty) {
+      return const PeerAgentIncrementalSyncResult();
+    }
+
+    final linked = await syncSessions(
+      peerId: peerId,
+      remoteAgentId: remoteAgentId,
+      localAgentId: localAgentId,
+      userId: userId,
+      sessions: sessions,
+    );
+
+    final lastSyncAt = await getLastHistorySyncAt(localAgentId);
+    final prioritizeSessionId = prioritizeChannelId != null
+        ? remoteSessionIdFromChannelId(prioritizeChannelId)
+        : null;
+    final dirty = selectDirtySessions(
+      sessions,
+      lastSyncAt: lastSyncAt,
+      prioritizeSessionId: prioritizeSessionId,
+    );
+
+    var historySessionsWritten = 0;
+    var totalMessagesWritten = 0;
+    var currentChannelMessagesWritten = 0;
+    var prioritizedDone = false;
+
+    try {
+      for (final session in dirty) {
+        final channelId = syncedPeerChannelId(session.sessionId);
+        final written = await syncHistory(
+          peerId: peerId,
+          remoteAgentId: remoteAgentId,
+          localAgentId: localAgentId,
+          agentName: agentName,
+          channelId: channelId,
+          userId: userId,
+          userName: userName,
+        );
+        if (written > 0) {
+          historySessionsWritten++;
+          totalMessagesWritten += written;
+        }
+        if (prioritizeSessionId != null &&
+            session.sessionId == prioritizeSessionId) {
+          currentChannelMessagesWritten = written;
+          prioritizedDone = true;
+          if (onPrioritizedChannelDone != null) {
+            await onPrioritizedChannelDone(written);
+          }
+        }
+      }
+    } catch (e, st) {
+      _log.warning(
+        'Incremental sync aborted for $localAgentId: $e\n$st',
+        tag: _tag,
+        error: e,
+      );
+      if (!prioritizedDone &&
+          prioritizeSessionId != null &&
+          onPrioritizedChannelDone != null) {
+        await onPrioritizedChannelDone(currentChannelMessagesWritten);
+      }
+      return PeerAgentIncrementalSyncResult(
+        sessionsLinked: linked,
+        dirtySessionCount: dirty.length,
+        historySessionsWritten: historySessionsWritten,
+        totalMessagesWritten: totalMessagesWritten,
+        currentChannelMessagesWritten: currentChannelMessagesWritten,
+        watermarkAdvanced: false,
+      );
+    }
+
+    // Prioritized session was not dirty — still notify so UI can clear spinner.
+    if (!prioritizedDone &&
+        prioritizeSessionId != null &&
+        onPrioritizedChannelDone != null) {
+      await onPrioritizedChannelDone(0);
+    }
+
+    await setLastHistorySyncAt(localAgentId, syncStartedAt);
+    _log.info(
+      'Incremental sync for $localAgentId: '
+      '${dirty.length} dirty / ${sessions.length} sessions, '
+      '$totalMessagesWritten message(s) written',
+      tag: _tag,
+    );
+    return PeerAgentIncrementalSyncResult(
+      sessionsLinked: linked,
+      dirtySessionCount: dirty.length,
+      historySessionsWritten: historySessionsWritten,
+      totalMessagesWritten: totalMessagesWritten,
+      currentChannelMessagesWritten: currentChannelMessagesWritten,
+      watermarkAdvanced: true,
+    );
+  }
+
+  /// Pull a synced session's transcript from the remote and mirror it locally.
   ///
   /// Fetches the remote transcript; if it differs from what's stored locally,
-  /// rebuilds the channel's messages to match. If the fetch is empty (agent
-  /// can't replay / timeout), local messages are kept untouched. Returns the
-  /// number of messages written, or 0 when nothing changed / local was kept.
+  /// upserts by stable `peerhist_*` ids and removes local rows that are no
+  /// longer present remotely. If the fetch is empty (agent can't replay /
+  /// timeout), local messages are kept untouched. Returns the number of
+  /// messages written, or 0 when nothing changed / local was kept.
   Future<int> syncHistory({
     required String peerId,
     required String remoteAgentId,
@@ -813,8 +1023,7 @@ class PeerAgentClientService {
       if (identical) return 0;
     }
 
-    // Rebuild to mirror the remote transcript exactly.
-    await _db.deleteChannelMessages(channelId);
+    final remoteIds = <String>{};
     final baseMs = DateTime.now().millisecondsSinceEpoch - history.length * 1000;
     for (var i = 0; i < history.length; i++) {
       final m = history[i];
@@ -823,6 +1032,7 @@ class PeerAgentClientService {
       final msgId = m.messageId != null && m.messageId!.isNotEmpty
           ? 'peerhist_${m.messageId}'
           : 'peerhist_${channelId}_$i';
+      remoteIds.add(msgId);
       await _db.createMessage(
         id: msgId,
         channelId: channelId,
@@ -834,6 +1044,16 @@ class PeerAgentClientService {
         conflictAlgorithm: ConflictAlgorithm.replace,
       );
     }
+
+    // Drop local rows that are no longer in the remote transcript so the
+    // channel stays pull-authoritative without a full delete+rewrite wipe.
+    for (final row in existingAsc) {
+      final id = row['id'] as String?;
+      if (id != null && !remoteIds.contains(id)) {
+        await _db.deleteMessage(id);
+      }
+    }
+
     _log.info(
       'Synced ${history.length} history message(s) into $channelId',
       tag: _tag,

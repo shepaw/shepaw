@@ -179,8 +179,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     _checkSheNeedsConfig();
     _checkAgentAudioSupport();
     _checkAgentImageSupport();
-    _maybePromptPeerSessionSync();
-    _maybeSyncPeerHistory();
+    _maybeSyncPeerAgent();
     _ensurePeerSlashCommands();
   }
 
@@ -1908,14 +1907,14 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     }
   }
 
-  /// On entry to a peer agent chat, keep the local session list aligned with
-  /// the remote — but only after the user has decided whether to sync.
+  /// On entry to a peer agent chat, incrementally sync remote sessions + dirty
+  /// history — but only after the user has decided whether to sync.
   ///
   /// Preference key `peer_sync_disabled_$agentId`:
   /// - `null` (undecided): prompt once when there are unsynced remote sessions
   /// - `false` (enabled): auto-sync silently; changeable in agent settings
   /// - `true` (disabled): skip; changeable in agent settings
-  Future<void> _maybePromptPeerSessionSync() async {
+  Future<void> _maybeSyncPeerAgent() async {
     final agentId = widget.agentId;
     if (agentId == null) return;
     final agent = await _controller.localDatabaseService.getRemoteAgentById(agentId);
@@ -1932,70 +1931,98 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     // open if the peer isn't connected yet.
     if (!PeerConnectionManager.instance.connectedPeerIds.contains(peerId)) return;
 
-    final sessions = await PeerAgentClientService.instance.fetchSessions(
-      peerId: peerId,
-      remoteAgentId: remoteAgentId,
-    );
-    if (!mounted || sessions.isEmpty) return;
-
-    // Which remote sessions aren't mirrored locally yet?
-    final localChannels =
-        await _controller.localDatabaseService.getChannelsForAgent(agentId);
-    final localRemoteIds = localChannels
-        .map((c) => remoteSessionIdFromChannelId(c.id))
-        .whereType<String>()
-        .toSet();
-    final missing =
-        sessions.where((s) => !localRemoteIds.contains(s.sessionId)).toList();
-
-    if (missing.isEmpty) {
-      // Consistent — silently keep titles / recency fresh, no prompt.
-      if (!mounted) return;
-      await PeerAgentClientService.instance.syncSessions(
+    // Undecided — prompt only when there are remote sessions not yet mirrored.
+    var showToastOnFirstLink = false;
+    if (syncDisabled == null) {
+      final sessions = await PeerAgentClientService.instance.fetchSessions(
         peerId: peerId,
         remoteAgentId: remoteAgentId,
-        localAgentId: agentId,
-        userId: _controller.getUserId(),
-        sessions: sessions,
       );
-      return;
+      if (!mounted || sessions.isEmpty) return;
+
+      final localChannels =
+          await _controller.localDatabaseService.getChannelsForAgent(agentId);
+      final localRemoteIds = localChannels
+          .map((c) => remoteSessionIdFromChannelId(c.id))
+          .whereType<String>()
+          .toSet();
+      final missing =
+          sessions.where((s) => !localRemoteIds.contains(s.sessionId)).toList();
+
+      if (missing.isNotEmpty) {
+        final choice =
+            await _showPeerSessionSyncDialog(agent.name, missing.length);
+        if (!mounted || choice == null) return; // dismissed → ask again next time
+        if (choice == _PeerSyncChoice.disable) {
+          await prefs.setBool('peer_sync_disabled_$agentId', true);
+          return;
+        }
+        await prefs.setBool('peer_sync_disabled_$agentId', false);
+        showToastOnFirstLink = true;
+      }
+      // Missing empty or user opted in → fall through to incremental sync.
     }
 
-    // User already opted in (settings or prior "同步") — auto-sync, no prompt.
-    if (syncDisabled == false) {
-      await PeerAgentClientService.instance.syncSessions(
-        peerId: peerId,
-        remoteAgentId: remoteAgentId,
-        localAgentId: agentId,
-        userId: _controller.getUserId(),
-        sessions: sessions,
-      );
-      return;
-    }
-
-    // Undecided — ask once and persist the choice.
-    final choice = await _showPeerSessionSyncDialog(agent.name, missing.length);
-    if (!mounted || choice == null) return; // dismissed → ask again next time
-    if (choice == _PeerSyncChoice.disable) {
-      await prefs.setBool('peer_sync_disabled_$agentId', true);
-      return;
-    }
-
-    await prefs.setBool('peer_sync_disabled_$agentId', false);
-    final count = await PeerAgentClientService.instance.syncSessions(
+    if (!mounted) return;
+    await _runPeerAgentIncrementalSync(
       peerId: peerId,
       remoteAgentId: remoteAgentId,
       localAgentId: agentId,
-      userId: _controller.getUserId(),
-      sessions: sessions,
+      agentName: agent.name,
+      showToastOnFirstLink: showToastOnFirstLink,
     );
-    if (!mounted) return;
-    showTopToast(
-      context,
-      count > 0 ? '已同步 $count 个远端会话' : '未能关联远端会话，请重试',
-      icon: count > 0 ? Icons.sync : Icons.warning_amber_outlined,
-      color: count > 0 ? Colors.green : Colors.orange.shade700,
-    );
+  }
+
+  /// Run agent-wide incremental sync; spinner only covers the open channel.
+  Future<void> _runPeerAgentIncrementalSync({
+    required String peerId,
+    required String remoteAgentId,
+    required String localAgentId,
+    required String agentName,
+    bool showToastOnFirstLink = false,
+  }) async {
+    final channelId = widget.channelId;
+    final prioritizeCurrent =
+        channelId != null && channelId.startsWith(kSyncedPeerSessionPrefix);
+    if (prioritizeCurrent && mounted) {
+      setState(() => _syncingPeerHistory = true);
+    }
+
+    late final PeerAgentIncrementalSyncResult result;
+    try {
+      result = await PeerAgentClientService.instance.syncAgentIncremental(
+        peerId: peerId,
+        remoteAgentId: remoteAgentId,
+        localAgentId: localAgentId,
+        agentName: agentName,
+        userId: _controller.getUserId(),
+        userName: _controller.getUserName(),
+        prioritizeChannelId: prioritizeCurrent ? channelId : null,
+        onPrioritizedChannelDone: (written) async {
+          if (mounted) setState(() => _syncingPeerHistory = false);
+          if (written > 0 &&
+              mounted &&
+              channelId != null &&
+              _controller.currentChannelId == channelId) {
+            await _controller.reloadMessagesFromDB();
+          }
+        },
+      );
+    } finally {
+      if (mounted && _syncingPeerHistory) {
+        setState(() => _syncingPeerHistory = false);
+      }
+    }
+
+    if (!mounted || !showToastOnFirstLink) return;
+    if (result.sessionsLinked > 0) {
+      showTopToast(
+        context,
+        '已同步 ${result.sessionsLinked} 个远端会话',
+        icon: Icons.sync,
+        color: Colors.green,
+      );
+    }
   }
 
   /// Prefetch slash commands when opening a peer agent chat. The connect-time
@@ -2007,46 +2034,6 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     final agent = await _controller.localDatabaseService.getRemoteAgentById(agentId);
     if (agent == null || !agent.isPeerAgent) return;
     await PeerAgentClientService.instance.ensureCommandsForLocalAgent(agentId);
-  }
-
-  /// Pull the remote transcript on every entry into a synced session so local
-  /// content stays consistent with the remote (pull-authoritative). Rebuilds
-  /// and refreshes the view only when the transcript actually changed.
-  Future<void> _maybeSyncPeerHistory() async {
-    final channelId = widget.channelId;
-    final agentId = widget.agentId;
-    if (channelId == null || agentId == null) return;
-    if (!channelId.startsWith(kSyncedPeerSessionPrefix)) return;
-
-    final agent = await _controller.localDatabaseService.getRemoteAgentById(agentId);
-    if (agent == null || !agent.isPeerAgent) return;
-    final peerId = agent.sourcePeerId;
-    final remoteAgentId = agent.remoteAgentId;
-    if (peerId == null || remoteAgentId == null) return;
-    if (!PeerConnectionManager.instance.connectedPeerIds.contains(peerId)) return;
-
-    // Honor the per-agent sync toggle.
-    final prefs = await SharedPreferences.getInstance();
-    if (prefs.getBool('peer_sync_disabled_$agentId') == true) return;
-
-    if (mounted) setState(() => _syncingPeerHistory = true);
-    int written = 0;
-    try {
-      written = await PeerAgentClientService.instance.syncHistory(
-        peerId: peerId,
-        remoteAgentId: remoteAgentId,
-        localAgentId: agentId,
-        agentName: agent.name,
-        channelId: channelId,
-        userId: _controller.getUserId(),
-        userName: _controller.getUserName(),
-      );
-    } finally {
-      if (mounted) setState(() => _syncingPeerHistory = false);
-    }
-    if (written > 0 && mounted && _controller.currentChannelId == channelId) {
-      await _controller.reloadMessagesFromDB();
-    }
   }
 
   Future<_PeerSyncChoice?> _showPeerSessionSyncDialog(String agentName, int count) async {
