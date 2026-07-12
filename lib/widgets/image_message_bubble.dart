@@ -333,18 +333,27 @@ class _ImageMessageBubbleState extends State<ImageMessageBubble> {
     );
   }
 
+  static const BoxConstraints _imageConstraints = BoxConstraints(
+    maxWidth: 220,
+    maxHeight: 280,
+  );
+
+  /// Decode cache width only — setting both width and height forces a square
+  /// bitmap and distorts non-square images.
+  int get _cacheWidth {
+    final dpr = MediaQuery.devicePixelRatioOf(context);
+    return (_imageConstraints.maxWidth * dpr).round();
+  }
+
   Widget _buildThumbnailOrPlaceholder() {
     if (_thumbnailBytes != null) {
       return ClipRRect(
         borderRadius: BorderRadius.circular(8),
         child: ConstrainedBox(
-          constraints: const BoxConstraints(
-            maxWidth: 220,
-            maxHeight: 220,
-          ),
+          constraints: _imageConstraints,
           child: Image.memory(
             _thumbnailBytes!,
-            fit: BoxFit.cover,
+            fit: BoxFit.contain,
             errorBuilder: (context, error, stackTrace) {
               return _buildPlaceholder();
             },
@@ -380,15 +389,12 @@ class _ImageMessageBubbleState extends State<ImageMessageBubble> {
           child: ClipRRect(
             borderRadius: BorderRadius.circular(8),
             child: ConstrainedBox(
-              constraints: const BoxConstraints(
-                maxWidth: 220,
-                maxHeight: 220,
-              ),
+              constraints: _imageConstraints,
               child: Image.file(
                 _imageFile!,
-                fit: BoxFit.cover,
-                cacheWidth: 440,
-                cacheHeight: 440,
+                fit: BoxFit.contain,
+                // Only cacheWidth: Flutter preserves aspect ratio when height is omitted.
+                cacheWidth: _cacheWidth,
                 errorBuilder: (context, error, stackTrace) {
                   return const SizedBox(
                     width: 180,

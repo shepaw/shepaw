@@ -206,8 +206,10 @@ class _ImageGridBubbleState extends State<ImageGridBubble> {
               ? Image.file(
                   file,
                   fit: BoxFit.cover,
-                  cacheWidth: 160,
-                  cacheHeight: 160,
+                  // Only cacheWidth so decode keeps aspect ratio; cover crops the square.
+                  cacheWidth: (_thumbSize *
+                          MediaQuery.devicePixelRatioOf(context))
+                      .round(),
                   errorBuilder: (context, error, stackTrace) {
                     return Container(
                       color: Colors.grey[300],
@@ -267,8 +269,9 @@ class _ImageGridBubbleState extends State<ImageGridBubble> {
                 Image.file(
                   file,
                   fit: BoxFit.cover,
-                  cacheWidth: 160,
-                  cacheHeight: 160,
+                  cacheWidth: (_thumbSize *
+                          MediaQuery.devicePixelRatioOf(context))
+                      .round(),
                 )
               else
                 Container(color: Colors.grey[400]),
