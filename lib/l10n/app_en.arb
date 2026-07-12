@@ -713,6 +713,8 @@
   "status_protocolAcp": "ACP",
   "status_protocolCustom": "Custom",
   "widget_typing": "Typing...",
+  "widget_collapseMessage": "Collapse message",
+  "widget_expandMessage": "Expand message",
   "widget_stop": "Stop",
   "widget_cannotOpenLink": "Cannot open link: {url}",
   "widget_originalMessageUnavailable": "Original message unavailable",

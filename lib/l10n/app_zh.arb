@@ -1149,6 +1149,8 @@
   "status_protocolAcp": "ACP",
   "status_protocolCustom": "自定义",
   "widget_typing": "正在输入...",
+  "widget_collapseMessage": "折叠消息",
+  "widget_expandMessage": "展开消息",
   "widget_stop": "停止",
   "widget_cannotOpenLink": "无法打开链接: {url}",
   "@widget_cannotOpenLink": {

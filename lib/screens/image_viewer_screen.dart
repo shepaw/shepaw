@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
+import '../utils/layout_utils.dart';
 
 /// Data class for an image entry in the gallery.
 class ImageGalleryItem {
@@ -11,6 +12,9 @@ class ImageGalleryItem {
 
 /// Full-screen image gallery viewer with swipe navigation, pinch-to-zoom,
 /// and an image counter indicator.
+///
+/// On desktop layouts, also shows clickable previous/next buttons beside
+/// the counter in the app bar.
 class ImageViewerScreen extends StatefulWidget {
   /// All images available for swiping.
   final List<ImageGalleryItem> images;
@@ -70,13 +74,77 @@ class _ImageViewerScreenState extends State<ImageViewerScreen> {
     return item.title;
   }
 
+  bool get _hasMultiple => widget.images.length > 1;
+
   String get _counterText {
-    if (widget.images.length <= 1) return '';
+    if (!_hasMultiple) return '';
     return '${_currentIndex + 1}/${widget.images.length}';
+  }
+
+  void _goTo(int index) {
+    if (index < 0 || index >= widget.images.length) return;
+    _pageController.animateToPage(
+      index,
+      duration: const Duration(milliseconds: 220),
+      curve: Curves.easeOut,
+    );
+  }
+
+  void _goPrevious() => _goTo(_currentIndex - 1);
+
+  void _goNext() => _goTo(_currentIndex + 1);
+
+  Widget _buildNavButton({
+    required IconData icon,
+    required String tooltip,
+    required VoidCallback? onPressed,
+  }) {
+    return IconButton(
+      icon: Icon(icon, size: 20),
+      tooltip: tooltip,
+      onPressed: onPressed,
+      color: Colors.white,
+      disabledColor: Colors.white24,
+      splashRadius: 18,
+      padding: EdgeInsets.zero,
+      constraints: const BoxConstraints.tightFor(width: 32, height: 32),
+    );
+  }
+
+  /// Desktop: previous / next buttons placed to the left of the counter.
+  Widget _buildDesktopCounterNav() {
+    final canPrevious = _currentIndex > 0;
+    final canNext = _currentIndex < widget.images.length - 1;
+
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        _buildNavButton(
+          icon: Icons.chevron_left,
+          tooltip: 'Previous',
+          onPressed: canPrevious ? _goPrevious : null,
+        ),
+        _buildNavButton(
+          icon: Icons.chevron_right,
+          tooltip: 'Next',
+          onPressed: canNext ? _goNext : null,
+        ),
+        const SizedBox(width: 4),
+        Text(
+          _counterText,
+          style: const TextStyle(
+            fontSize: 13,
+            color: Colors.white70,
+          ),
+        ),
+      ],
+    );
   }
 
   @override
   Widget build(BuildContext context) {
+    final isDesktop = LayoutUtils.isDesktopLayout(context);
+
     return Scaffold(
       backgroundColor: Colors.black,
       appBar: AppBar(
@@ -98,13 +166,15 @@ class _ImageViewerScreenState extends State<ImageViewerScreen> {
                 padding: EdgeInsets.only(
                   left: _currentTitle != null ? 8 : 0,
                 ),
-                child: Text(
-                  _counterText,
-                  style: const TextStyle(
-                    fontSize: 13,
-                    color: Colors.white70,
-                  ),
-                ),
+                child: isDesktop
+                    ? _buildDesktopCounterNav()
+                    : Text(
+                        _counterText,
+                        style: const TextStyle(
+                          fontSize: 13,
+                          color: Colors.white70,
+                        ),
+                      ),
               ),
           ],
         ),

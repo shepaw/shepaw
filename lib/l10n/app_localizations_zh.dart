@@ -1919,6 +1919,12 @@ class AppLocalizationsZh extends AppLocalizations {
   String get widget_typing => '正在输入...';
 
   @override
+  String get widget_collapseMessage => '折叠消息';
+
+  @override
+  String get widget_expandMessage => '展开消息';
+
+  @override
   String get widget_stop => '停止';
 
   @override

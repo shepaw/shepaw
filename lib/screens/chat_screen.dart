@@ -1657,6 +1657,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                           streamingMessageId: c.streamingMessageId,
                           groupStreamingMessageIds: c.groupStreamingMessageIds,
                           isGroupMode: c.isGroupMode,
+                          channelId: c.currentChannelId,
                           itemScrollController: _itemScrollController,
                           itemPositionsListener: _itemPositionsListener,
                           onStopStreaming: () => c.isGroupMode

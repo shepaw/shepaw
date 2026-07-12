@@ -7,6 +7,7 @@ import 'services/acp_server_service.dart';
 import 'services/permission_service.dart';
 import 'services/token_service.dart';
 import 'services/remote_agent_service.dart';
+import 'services/message_collapse_preference.dart';
 
 /// 全局服务定位器（依赖注入容器）。
 ///
@@ -39,6 +40,9 @@ void setupServiceLocator() {
   );
   getIt.registerLazySingleton<RemoteAgentService>(
     () => RemoteAgentService(getIt<LocalDatabaseService>(), getIt<TokenService>()),
+  );
+  getIt.registerLazySingleton<MessageCollapsePreference>(
+    () => MessageCollapsePreference(),
   );
 }
 

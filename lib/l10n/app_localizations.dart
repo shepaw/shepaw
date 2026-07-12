@@ -3578,6 +3578,18 @@ abstract class AppLocalizations {
   /// **'正在输入...'**
   String get widget_typing;
 
+  /// No description provided for @widget_collapseMessage.
+  ///
+  /// In zh, this message translates to:
+  /// **'折叠消息'**
+  String get widget_collapseMessage;
+
+  /// No description provided for @widget_expandMessage.
+  ///
+  /// In zh, this message translates to:
+  /// **'展开消息'**
+  String get widget_expandMessage;
+
   /// No description provided for @widget_stop.
   ///
   /// In zh, this message translates to:

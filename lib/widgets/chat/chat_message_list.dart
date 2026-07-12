@@ -4,6 +4,8 @@ import '../../models/message.dart';
 import '../../widgets/message_bubble.dart';
 import '../../utils/message_utils.dart';
 import '../../services/she_service.dart';
+import '../../services/message_collapse_preference.dart';
+import '../../service_locator.dart';
 import 'message_long_press_handler.dart';
 
 /// The scrollable message list for the chat screen.
@@ -14,12 +16,17 @@ import 'message_long_press_handler.dart';
 /// - Quote/reply display
 /// - Highlight animation
 /// - Long-press context menu
+/// - Group-chat message body collapse (persisted per channel)
 class ChatMessageList extends StatefulWidget {
   final List<Message> messages;
   final Map<String, Message> messageIdMap;
   final String? streamingMessageId;
   final Set<String> groupStreamingMessageIds;
   final bool isGroupMode;
+
+  /// Channel id used to scope persisted body-collapse preferences.
+  final String? channelId;
+
   final ItemScrollController itemScrollController;
   final ItemPositionsListener itemPositionsListener;
   final VoidCallback onStopStreaming;
@@ -55,6 +62,7 @@ class ChatMessageList extends StatefulWidget {
     this.streamingMessageId,
     this.groupStreamingMessageIds = const {},
     required this.isGroupMode,
+    this.channelId,
     required this.itemScrollController,
     required this.itemPositionsListener,
     required this.onStopStreaming,
@@ -82,6 +90,51 @@ class ChatMessageList extends StatefulWidget {
 
 class _ChatMessageListState extends State<ChatMessageList> {
   final GlobalKey _viewportKey = GlobalKey();
+  final MessageCollapsePreference _collapsePreference =
+      getIt<MessageCollapsePreference>();
+
+  @override
+  void initState() {
+    super.initState();
+    _collapsePreference.addListener(_onCollapsePreferenceChanged);
+    _loadCollapsePreference();
+  }
+
+  @override
+  void didUpdateWidget(covariant ChatMessageList oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.channelId != widget.channelId ||
+        oldWidget.isGroupMode != widget.isGroupMode) {
+      _loadCollapsePreference();
+    } else if (widget.isGroupMode &&
+        oldWidget.messages.length != widget.messages.length) {
+      _pruneCollapsedIds();
+    }
+  }
+
+  @override
+  void dispose() {
+    _collapsePreference.removeListener(_onCollapsePreferenceChanged);
+    super.dispose();
+  }
+
+  void _onCollapsePreferenceChanged() {
+    if (mounted) setState(() {});
+  }
+
+  Future<void> _loadCollapsePreference() async {
+    final channelId = widget.channelId;
+    if (!widget.isGroupMode || channelId == null || channelId.isEmpty) {
+      return;
+    }
+    await _collapsePreference.loadForChannel(channelId);
+    await _pruneCollapsedIds();
+  }
+
+  Future<void> _pruneCollapsedIds() async {
+    if (!widget.isGroupMode) return;
+    await _collapsePreference.pruneTo(widget.messages.map((m) => m.id));
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -248,6 +301,12 @@ class _ChatMessageListState extends State<ChatMessageList> {
                         widget.itemPositionsListener.itemPositions,
                       ],
                       stickyViewportKey: _viewportKey,
+                      bodyCollapsed: isGroupMode &&
+                          !isMyMessage &&
+                          _collapsePreference.isCollapsed(message.id),
+                      onToggleBodyCollapse: isGroupMode && !isMyMessage
+                          ? () => _collapsePreference.toggle(message.id)
+                          : null,
                       onStop: (message.id == streamingMessageId ||
                               groupStreamingMessageIds.contains(message.id))
                           ? widget.onStopStreaming

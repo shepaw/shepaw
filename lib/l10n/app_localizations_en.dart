@@ -1987,6 +1987,12 @@ class AppLocalizationsEn extends AppLocalizations {
   String get widget_typing => 'Typing...';
 
   @override
+  String get widget_collapseMessage => 'Collapse message';
+
+  @override
+  String get widget_expandMessage => 'Expand message';
+
+  @override
   String get widget_stop => 'Stop';
 
   @override

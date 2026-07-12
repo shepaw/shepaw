@@ -81,6 +81,12 @@ class MessageBubble extends StatelessWidget {
   /// message's visible area while scrolling.
   final bool stickySenderName;
 
+  /// Group-chat: hide the bubble body (user preference).
+  final bool bodyCollapsed;
+
+  /// Group-chat: tap handler for the author-bar collapse control.
+  final VoidCallback? onToggleBodyCollapse;
+
   /// Extra listenables (e.g. item positions) that trigger sticky recalculation.
   final List<Listenable> stickyScrollListenables;
 
@@ -117,6 +123,8 @@ class MessageBubble extends StatelessWidget {
     this.showAvatar = true,
     this.reserveAvatarSpace = false,
     this.stickySenderName = false,
+    this.bodyCollapsed = false,
+    this.onToggleBodyCollapse,
     this.stickyScrollListenables = const [],
     this.stickyViewportKey,
   }) : super(key: key);
@@ -238,7 +246,14 @@ class MessageBubble extends StatelessWidget {
     // Group non-my: sticky header carries avatar + name above a full-width
     // bubble (same usable width as DM — no left indent under the chrome).
     if (stickySenderName) {
-      final showChromeInFlow = showSenderName || showAvatar;
+      // Collapsed: conversation-list style row; tap anywhere to expand.
+      if (bodyCollapsed) {
+        return _buildCollapsedListTile(context);
+      }
+
+      final canToggle = onToggleBodyCollapse != null;
+      final showFullChrome = showSenderName || showAvatar;
+      final showChromeInFlow = showFullChrome || canToggle;
       return StickyInViewHeader(
         enabled: true,
         showHeaderInFlow: showChromeInFlow,
@@ -246,7 +261,9 @@ class MessageBubble extends StatelessWidget {
         scrollListenables: stickyScrollListenables,
         viewportKey: stickyViewportKey,
         bubbleTopRadius: 16,
-        header: _buildStickyAuthorChrome(context),
+        header: showFullChrome
+            ? _buildStickyAuthorChrome(context)
+            : _buildCollapseOnlyChrome(context),
         child: _buildBubbleBody(context),
       );
     }
@@ -271,46 +288,195 @@ class MessageBubble extends StatelessWidget {
     );
   }
 
+  /// Collapsed body: home conversation-list style; tap row to expand.
+  Widget _buildCollapsedListTile(BuildContext context) {
+    final onToggle = onToggleBodyCollapse;
+
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onToggle,
+        borderRadius: BorderRadius.circular(8),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 6),
+          child: Row(
+            children: [
+              _buildLeadingAvatarSlot(context, forceVisible: true),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            message.from.name,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Text(
+                          message.timeString,
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: Colors.grey[500],
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      _collapsedPreviewText(context),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: 13,
+                        color: Colors.grey[500],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              if (onToggle != null) ...[
+                const SizedBox(width: 4),
+                Icon(
+                  Icons.expand_more,
+                  size: 20,
+                  color: Colors.grey[600],
+                ),
+              ],
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  String _collapsedPreviewText(BuildContext context) {
+    switch (message.type) {
+      case MessageType.image:
+        final name = message.metadata?['name'] as String?;
+        return (name != null && name.isNotEmpty) ? name : '🖼';
+      case MessageType.file:
+        final name = message.metadata?['name'] as String?;
+        return (name != null && name.isNotEmpty)
+            ? name
+            : AppLocalizations.of(context).chat_file;
+      case MessageType.audio:
+        return '🎤';
+      default:
+        final text =
+            message.content.replaceAll(RegExp(r'\s+'), ' ').trim();
+        return text.isEmpty ? '…' : text;
+    }
+  }
+
+  /// Compact left-side collapse control for consecutive messages without
+  /// full author chrome (expanded state only).
+  Widget _buildCollapseOnlyChrome(BuildContext context) {
+    final onToggle = onToggleBodyCollapse;
+    if (onToggle == null) return const SizedBox.shrink();
+    final l10n = AppLocalizations.of(context);
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 2),
+      child: Align(
+        alignment: Alignment.centerLeft,
+        child: IconButton(
+          icon: Icon(
+            Icons.expand_less,
+            size: 20,
+            color: Colors.grey[600],
+          ),
+          tooltip: l10n.widget_collapseMessage,
+          onPressed: onToggle,
+          splashRadius: 16,
+          padding: EdgeInsets.zero,
+          constraints: const BoxConstraints.tightFor(width: 28, height: 28),
+          visualDensity: VisualDensity.compact,
+        ),
+      ),
+    );
+  }
+
   /// Avatar + name row used as the sticky / in-flow author chrome.
   Widget _buildStickyAuthorChrome(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 4),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.center,
-        children: [
-          _buildLeadingAvatarSlot(context, forceVisible: true),
-          const SizedBox(width: avatarGap),
-          Flexible(
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Flexible(
-                  child: Text(
-                    message.from.name,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.bold,
-                      color: Colors.grey,
-                    ),
+    final l10n = AppLocalizations.of(context);
+    final canToggle = onToggleBodyCollapse != null;
+
+    final row = Row(
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: [
+        _buildLeadingAvatarSlot(context, forceVisible: true),
+        const SizedBox(width: avatarGap),
+        Expanded(
+          child: Row(
+            children: [
+              Flexible(
+                child: Text(
+                  message.from.name,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.grey,
                   ),
                 ),
-                if (isStreaming) ...[
-                  const SizedBox(width: 4),
-                  Text(
-                    AppLocalizations.of(context).widget_typing,
-                    style: const TextStyle(
-                      fontSize: 10,
-                      color: AppColors.primary,
-                      fontStyle: FontStyle.italic,
-                    ),
+              ),
+              if (isStreaming) ...[
+                const SizedBox(width: 4),
+                Text(
+                  l10n.widget_typing,
+                  style: const TextStyle(
+                    fontSize: 10,
+                    color: AppColors.primary,
+                    fontStyle: FontStyle.italic,
                   ),
-                ],
+                ),
               ],
-            ),
+            ],
+          ),
+        ),
+        const SizedBox(width: 8),
+        Text(
+          message.timeString,
+          style: TextStyle(
+            fontSize: 12,
+            color: Colors.grey[500],
+          ),
+        ),
+        if (canToggle) ...[
+          const SizedBox(width: 4),
+          Icon(
+            Icons.expand_less,
+            size: 20,
+            color: Colors.grey[600],
           ),
         ],
-      ),
+      ],
+    );
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 4),
+      child: canToggle
+          ? Material(
+              color: Colors.transparent,
+              child: InkWell(
+                onTap: onToggleBodyCollapse,
+                borderRadius: BorderRadius.circular(8),
+                child: Padding(
+                  // Keep hit target comfortable without shifting layout much.
+                  padding: const EdgeInsets.symmetric(vertical: 2),
+                  child: row,
+                ),
+              ),
+            )
+          : row,
     );
   }
 
