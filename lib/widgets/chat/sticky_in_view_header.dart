@@ -2,17 +2,16 @@ import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/scheduler.dart';
+import 'package:flutter/rendering.dart';
 
-/// Pins [header] to the top of this widget's visible area inside its
-/// scrollable ancestor. When the item scrolls out of view, the header
-/// leaves with it (clamped to the item bottom).
+/// Pins [header] to the top of this widget's visible area while scrolling.
 ///
-/// The header is always painted above [child] so the bubble never covers
-/// the author chrome while stuck.
+/// Sticky offset is applied during **paint** (not a lagged setState chase), so
+/// the author chrome locks firmly once it reaches the viewport top.
 ///
-/// When [showHeaderInFlow] is false, the header only appears while stuck
-/// (consecutive group messages).
+/// While stuck, [child] is clipped below the header with [bubbleTopRadius] so
+/// the visible content keeps a rounded top — it reads as bubble content
+/// scrolling under a fixed author bar, not a sticker sliding over text.
 class StickyInViewHeader extends StatefulWidget {
   final Widget header;
   final Widget child;
@@ -20,10 +19,10 @@ class StickyInViewHeader extends StatefulWidget {
   final bool showHeaderInFlow;
   final Color? stuckBackground;
   final List<Listenable> scrollListenables;
-
-  /// Optional list viewport box used for Y measurement. Prefer this over
-  /// walking to [Scrollable] — more reliable with ScrollablePositionedList.
   final GlobalKey? viewportKey;
+
+  /// Rounded top applied to the clipped bubble content while stuck.
+  final double bubbleTopRadius;
 
   const StickyInViewHeader({
     super.key,
@@ -34,6 +33,7 @@ class StickyInViewHeader extends StatefulWidget {
     this.stuckBackground,
     this.scrollListenables = const [],
     this.viewportKey,
+    this.bubbleTopRadius = 16,
   });
 
   @override
@@ -41,19 +41,13 @@ class StickyInViewHeader extends StatefulWidget {
 }
 
 class _StickyInViewHeaderState extends State<StickyInViewHeader> {
-  final GlobalKey _headerKey = GlobalKey();
   ScrollPosition? _position;
-  double _stuckOffset = 0;
-  double _headerHeight = 36;
-  bool _frameScheduled = false;
-
-  bool get _isStuck => _stuckOffset > 0.5;
 
   @override
   void initState() {
     super.initState();
     for (final l in widget.scrollListenables) {
-      l.addListener(_scheduleUpdate);
+      l.addListener(_onScrollSignal);
     }
   }
 
@@ -68,19 +62,19 @@ class _StickyInViewHeaderState extends State<StickyInViewHeader> {
     super.didUpdateWidget(oldWidget);
     if (!listEquals(oldWidget.scrollListenables, widget.scrollListenables)) {
       for (final l in oldWidget.scrollListenables) {
-        l.removeListener(_scheduleUpdate);
+        l.removeListener(_onScrollSignal);
       }
       for (final l in widget.scrollListenables) {
-        l.addListener(_scheduleUpdate);
+        l.addListener(_onScrollSignal);
       }
     }
   }
 
   @override
   void dispose() {
-    _position?.removeListener(_scheduleUpdate);
+    _position?.removeListener(_onScrollSignal);
     for (final l in widget.scrollListenables) {
-      l.removeListener(_scheduleUpdate);
+      l.removeListener(_onScrollSignal);
     }
     super.dispose();
   }
@@ -88,93 +82,17 @@ class _StickyInViewHeaderState extends State<StickyInViewHeader> {
   void _attachPosition() {
     final position = Scrollable.maybeOf(context)?.position;
     if (!identical(position, _position)) {
-      _position?.removeListener(_scheduleUpdate);
+      _position?.removeListener(_onScrollSignal);
       _position = position;
-      _position?.addListener(_scheduleUpdate);
+      _position?.addListener(_onScrollSignal);
     }
   }
 
-  void _scheduleUpdate() {
-    if (_frameScheduled || !mounted) return;
-    _frameScheduled = true;
-    SchedulerBinding.instance.addPostFrameCallback((_) {
-      _frameScheduled = false;
-      _recalculate();
-    });
-  }
-
-  void _recalculate() {
-    if (!widget.enabled || !mounted) return;
-
-    final itemBox = context.findRenderObject() as RenderBox?;
-    if (itemBox == null || !itemBox.hasSize) return;
-
-    final headerBox =
-        _headerKey.currentContext?.findRenderObject() as RenderBox?;
-    final headerHeight =
-        headerBox != null && headerBox.hasSize ? headerBox.size.height : 36.0;
-
-    final itemTop = _itemTopInViewport(itemBox);
-    if (itemTop == null) return;
-
-    double offset = 0;
-    if (itemTop < 0) {
-      final maxOffset = math.max(0.0, itemBox.size.height - headerHeight);
-      offset = (-itemTop).clamp(0.0, maxOffset);
+  void _onScrollSignal() {
+    final ro = context.findRenderObject();
+    if (ro is RenderStickyInViewHeader) {
+      ro.markNeedsPaint();
     }
-
-    final heightChanged = (headerHeight - _headerHeight).abs() > 0.5;
-    final offsetChanged = (offset - _stuckOffset).abs() > 0.5;
-    if (heightChanged || offsetChanged) {
-      setState(() {
-        _headerHeight = headerHeight;
-        _stuckOffset = offset;
-      });
-    }
-  }
-
-  double? _itemTopInViewport(RenderBox itemBox) {
-    final itemGlobal = itemBox.localToGlobal(Offset.zero);
-
-    final viewportKeyBox =
-        widget.viewportKey?.currentContext?.findRenderObject() as RenderBox?;
-    if (viewportKeyBox != null && viewportKeyBox.hasSize) {
-      return itemGlobal.dy - viewportKeyBox.localToGlobal(Offset.zero).dy;
-    }
-
-    final scrollable = Scrollable.maybeOf(context);
-    final scrollableBox = scrollable?.context.findRenderObject() as RenderBox?;
-    if (scrollableBox == null || !scrollableBox.hasSize) return null;
-
-    return itemGlobal.dy - scrollableBox.localToGlobal(Offset.zero).dy;
-  }
-
-  Widget _buildHeader(BuildContext context) {
-    final stuck = _isStuck;
-    final bg = widget.stuckBackground ??
-        Theme.of(context).scaffoldBackgroundColor;
-    return KeyedSubtree(
-      key: _headerKey,
-      child: Material(
-        // Always opaque while stuck so bubble text never shows through.
-        color: stuck ? bg : Colors.transparent,
-        elevation: 0,
-        child: DecoratedBox(
-          decoration: BoxDecoration(
-            color: stuck ? bg : null,
-            border: stuck
-                ? Border(
-                    bottom: BorderSide(
-                      color: Colors.grey.withValues(alpha: 0.25),
-                      width: 0.5,
-                    ),
-                  )
-                : null,
-          ),
-          child: widget.header,
-        ),
-      ),
-    );
   }
 
   @override
@@ -193,44 +111,303 @@ class _StickyInViewHeaderState extends State<StickyInViewHeader> {
       );
     }
 
-    _scheduleUpdate();
-    final header = _buildHeader(context);
+    final stuckBg = widget.stuckBackground ??
+        Theme.of(context).scaffoldBackgroundColor;
 
-    // Overlay-only: header appears above the bubble only while stuck.
-    if (!widget.showHeaderInFlow) {
-      return Stack(
-        clipBehavior: Clip.none,
-        children: [
-          widget.child,
-          if (_isStuck)
-            Positioned(
-              top: _stuckOffset,
-              left: 0,
-              right: 0,
-              child: header,
-            )
-          else
-            Offstage(child: header),
-        ],
+    return _StickyInViewHeaderRender(
+      showHeaderInFlow: widget.showHeaderInFlow,
+      stuckBackground: stuckBg,
+      bubbleTopRadius: widget.bubbleTopRadius,
+      viewportKey: widget.viewportKey,
+      header: widget.header,
+      body: widget.child,
+    );
+  }
+}
+
+class _StickyInViewHeaderRender extends MultiChildRenderObjectWidget {
+  final bool showHeaderInFlow;
+  final Color stuckBackground;
+  final double bubbleTopRadius;
+  final GlobalKey? viewportKey;
+
+  _StickyInViewHeaderRender({
+    required this.showHeaderInFlow,
+    required this.stuckBackground,
+    required this.bubbleTopRadius,
+    required this.viewportKey,
+    required Widget header,
+    required Widget body,
+  }) : super(children: [body, header]);
+
+  @override
+  RenderStickyInViewHeader createRenderObject(BuildContext context) {
+    return RenderStickyInViewHeader(
+      showHeaderInFlow: showHeaderInFlow,
+      stuckBackground: stuckBackground,
+      bubbleTopRadius: bubbleTopRadius,
+      viewportKey: viewportKey,
+    );
+  }
+
+  @override
+  void updateRenderObject(
+    BuildContext context,
+    RenderStickyInViewHeader renderObject,
+  ) {
+    renderObject
+      ..showHeaderInFlow = showHeaderInFlow
+      ..stuckBackground = stuckBackground
+      ..bubbleTopRadius = bubbleTopRadius
+      ..viewportKey = viewportKey;
+  }
+}
+
+class _StickyParentData extends ContainerBoxParentData<RenderBox> {}
+
+class RenderStickyInViewHeader extends RenderBox
+    with
+        ContainerRenderObjectMixin<RenderBox, _StickyParentData>,
+        RenderBoxContainerDefaultsMixin<RenderBox, _StickyParentData> {
+  RenderStickyInViewHeader({
+    required bool showHeaderInFlow,
+    required Color stuckBackground,
+    required double bubbleTopRadius,
+    required GlobalKey? viewportKey,
+  })  : _showHeaderInFlow = showHeaderInFlow,
+        _stuckBackground = stuckBackground,
+        _bubbleTopRadius = bubbleTopRadius,
+        _viewportKey = viewportKey;
+
+  bool _showHeaderInFlow;
+  Color _stuckBackground;
+  double _bubbleTopRadius;
+  GlobalKey? _viewportKey;
+
+  set showHeaderInFlow(bool value) {
+    if (_showHeaderInFlow == value) return;
+    _showHeaderInFlow = value;
+    markNeedsLayout();
+  }
+
+  set stuckBackground(Color value) {
+    if (_stuckBackground == value) return;
+    _stuckBackground = value;
+    markNeedsPaint();
+  }
+
+  set bubbleTopRadius(double value) {
+    if (_bubbleTopRadius == value) return;
+    _bubbleTopRadius = value;
+    markNeedsPaint();
+  }
+
+  set viewportKey(GlobalKey? value) {
+    if (_viewportKey == value) return;
+    _viewportKey = value;
+    markNeedsPaint();
+  }
+
+  RenderBox? get _body => firstChild;
+  RenderBox? get _header {
+    final body = firstChild;
+    if (body == null) return null;
+    return childAfter(body);
+  }
+
+  @override
+  void setupParentData(RenderBox child) {
+    if (child.parentData is! _StickyParentData) {
+      child.parentData = _StickyParentData();
+    }
+  }
+
+  @override
+  void performLayout() {
+    final body = _body;
+    final header = _header;
+    if (body == null || header == null) {
+      size = constraints.smallest;
+      return;
+    }
+
+    final maxWidth =
+        constraints.hasBoundedWidth ? constraints.maxWidth : constraints.minWidth;
+
+    header.layout(
+      BoxConstraints(maxWidth: maxWidth),
+      parentUsesSize: true,
+    );
+
+    final reservedHeaderH = _showHeaderInFlow ? header.size.height : 0.0;
+
+    body.layout(
+      BoxConstraints(
+        minWidth: maxWidth,
+        maxWidth: maxWidth,
+      ),
+      parentUsesSize: true,
+    );
+
+    size = constraints.constrain(
+      Size(maxWidth, reservedHeaderH + body.size.height),
+    );
+
+    final bodyParentData = body.parentData! as _StickyParentData;
+    bodyParentData.offset = Offset(0, reservedHeaderH);
+
+    final headerParentData = header.parentData! as _StickyParentData;
+    headerParentData.offset = Offset.zero;
+  }
+
+  double _stuckOffset(RenderBox header) {
+    final itemTop = _itemTopInViewport();
+    if (itemTop == null || itemTop >= 0) return 0;
+
+    final headerH = header.size.height;
+    final maxOffset = math.max(0.0, size.height - headerH);
+    return (-itemTop).clamp(0.0, maxOffset);
+  }
+
+  double? _itemTopInViewport() {
+    if (!hasSize) return null;
+    final itemGlobal = localToGlobal(Offset.zero);
+
+    final viewportKeyBox =
+        _viewportKey?.currentContext?.findRenderObject() as RenderBox?;
+    if (viewportKeyBox != null && viewportKeyBox.hasSize) {
+      return itemGlobal.dy - viewportKeyBox.localToGlobal(Offset.zero).dy;
+    }
+
+    final viewport = RenderAbstractViewport.maybeOf(this);
+    final viewportBox = viewport is RenderBox ? (viewport as RenderBox) : null;
+    if (viewportBox != null && viewportBox.hasSize) {
+      return itemGlobal.dy - viewportBox.localToGlobal(Offset.zero).dy;
+    }
+    return null;
+  }
+
+  @override
+  bool get isRepaintBoundary => true;
+
+  @override
+  void paint(PaintingContext context, Offset offset) {
+    final body = _body;
+    final header = _header;
+    if (body == null || header == null) return;
+
+    final stuck = _stuckOffset(header);
+    final headerH = header.size.height;
+    final bodyParentData = body.parentData! as _StickyParentData;
+    final bodyLayoutOffset = _showHeaderInFlow
+        ? bodyParentData.offset
+        : Offset.zero;
+    final bodyOffset = offset + bodyLayoutOffset;
+
+    if (stuck > 0.5) {
+      final clipTop = offset.dy + stuck + headerH;
+      final clipRect = Rect.fromLTRB(
+        offset.dx,
+        clipTop,
+        offset.dx + size.width,
+        offset.dy + size.height,
+      );
+      if (clipRect.height > 0 && clipRect.width > 0) {
+        final radius = Radius.circular(_bubbleTopRadius);
+        final clipRRect = RRect.fromRectAndCorners(
+          clipRect,
+          topLeft: radius,
+          topRight: radius,
+        );
+        context.pushClipRRect(
+          needsCompositing,
+          Offset.zero,
+          clipRect,
+          clipRRect,
+          (PaintingContext ctx, Offset _) {
+            ctx.paintChild(body, bodyOffset);
+          },
+        );
+      }
+
+      final headerTop = offset.dy + stuck;
+      final headerRect =
+          Rect.fromLTWH(offset.dx, headerTop, size.width, headerH);
+      context.canvas.drawRect(headerRect, Paint()..color = _stuckBackground);
+      context.paintChild(header, Offset(offset.dx, headerTop));
+      return;
+    }
+
+    if (_showHeaderInFlow) {
+      context.paintChild(header, offset);
+      context.paintChild(body, bodyOffset);
+    } else {
+      context.paintChild(body, bodyOffset);
+    }
+  }
+
+  @override
+  bool hitTestChildren(BoxHitTestResult result, {required Offset position}) {
+    final header = _header;
+    final body = _body;
+    if (header == null || body == null) return false;
+
+    final stuck = _stuckOffset(header);
+    final headerH = header.size.height;
+    final bodyParentData = body.parentData! as _StickyParentData;
+    final bodyLayoutOffset =
+        _showHeaderInFlow ? bodyParentData.offset : Offset.zero;
+
+    if (stuck > 0.5) {
+      final headerTopLeft = Offset(0, stuck);
+      if (position.dy >= stuck && position.dy < stuck + headerH) {
+        return result.addWithPaintOffset(
+          offset: headerTopLeft,
+          position: position,
+          hitTest: (BoxHitTestResult r, Offset transformed) {
+            return header.hitTest(r, position: transformed);
+          },
+        );
+      }
+      return result.addWithPaintOffset(
+        offset: bodyLayoutOffset,
+        position: position,
+        hitTest: (BoxHitTestResult r, Offset transformed) {
+          return body.hitTest(r, position: transformed);
+        },
       );
     }
 
-    // In-flow: reserve header height, paint the real header last so it
-    // always sits above the bubble while stuck.
-    return Stack(
-      clipBehavior: Clip.none,
-      children: [
-        Padding(
-          padding: EdgeInsets.only(top: _headerHeight),
-          child: widget.child,
-        ),
-        Positioned(
-          top: _stuckOffset,
-          left: 0,
-          right: 0,
-          child: header,
-        ),
-      ],
+    if (_showHeaderInFlow) {
+      if (position.dy < headerH) {
+        return result.addWithPaintOffset(
+          offset: Offset.zero,
+          position: position,
+          hitTest: (BoxHitTestResult r, Offset transformed) {
+            return header.hitTest(r, position: transformed);
+          },
+        );
+      }
+    }
+
+    return result.addWithPaintOffset(
+      offset: bodyLayoutOffset,
+      position: position,
+      hitTest: (BoxHitTestResult r, Offset transformed) {
+        return body.hitTest(r, position: transformed);
+      },
     );
+  }
+
+  @override
+  void applyPaintTransform(RenderBox child, Matrix4 transform) {
+    if (child == _header) {
+      final stuck = _stuckOffset(child);
+      transform.translateByDouble(0.0, stuck, 0.0, 1.0);
+      return;
+    }
+    final parentData = child.parentData! as _StickyParentData;
+    final o = _showHeaderInFlow ? parentData.offset : Offset.zero;
+    transform.translateByDouble(o.dx, o.dy, 0.0, 1.0);
   }
 }

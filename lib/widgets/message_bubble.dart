@@ -245,6 +245,7 @@ class MessageBubble extends StatelessWidget {
         stuckBackground: Theme.of(context).scaffoldBackgroundColor,
         scrollListenables: stickyScrollListenables,
         viewportKey: stickyViewportKey,
+        bubbleTopRadius: 16,
         header: _buildStickyAuthorChrome(context),
         child: _buildBubbleBody(context),
       );
