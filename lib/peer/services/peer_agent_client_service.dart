@@ -162,6 +162,11 @@ class _PendingRequest {
   });
 }
 
+class _PendingFilePush {
+  final Completer<void> begin = Completer<void>();
+  final Completer<void> end = Completer<void>();
+}
+
 class PeerAgentClientService {
   PeerAgentClientService._();
   static final PeerAgentClientService instance = PeerAgentClientService._();
@@ -178,8 +183,8 @@ class PeerAgentClientService {
   /// 进行中的请求（requestId → pending）。
   final Map<String, _PendingRequest> _pending = {};
 
-  /// In-flight peer file pushes (fileId → completer).
-  final Map<String, Completer<void>> _pendingFilePushes = {};
+  /// In-flight peer file pushes (fileId → begin/end completers).
+  final Map<String, _PendingFilePush> _pendingFilePushes = {};
 
   /// Slash-command cache (localAgentId → commands), populated by
   /// agent_commands_resp after agent_list_resp prefetches them.
@@ -286,8 +291,10 @@ class PeerAgentClientService {
       );
     }
     final fileId = _uuid.v4().replaceAll('-', '').substring(0, 12);
-    final completer = Completer<void>();
-    _pendingFilePushes[fileId] = completer;
+    final pending = _PendingFilePush();
+    _pendingFilePushes[fileId] = pending;
+
+    void clearPending() => _pendingFilePushes.remove(fileId);
 
     final beginSent = await PeerConnectionManager.instance.sendControl(peerId, {
       'type': 'agent_file_begin',
@@ -299,12 +306,25 @@ class PeerAgentClientService {
       'size': attachment.sizeBytes,
     });
     if (!beginSent) {
-      _pendingFilePushes.remove(fileId);
+      clearPending();
       throw Exception('配对设备未连接，无法推送附件');
     }
 
+    try {
+      await pending.begin.future.timeout(const Duration(seconds: 15));
+    } on TimeoutException {
+      clearPending();
+      throw Exception(
+        '对端未响应附件推送（${attachment.fileName}）。'
+        '请确认对端已更新并重启 agent-bridge / App',
+      );
+    } catch (e) {
+      clearPending();
+      rethrow;
+    }
+
     final bytes = attachment.bytes;
-    final chunkSize = AttachmentData.peerChunkBytes;
+    const chunkSize = AttachmentData.peerChunkBytes;
     var index = 0;
     for (var offset = 0; offset < bytes.length; offset += chunkSize) {
       final end = (offset + chunkSize < bytes.length)
@@ -318,7 +338,7 @@ class PeerAgentClientService {
         'data': base64Encode(slice),
       });
       if (!chunkSent) {
-        _pendingFilePushes.remove(fileId);
+        clearPending();
         throw Exception('推送附件分片失败（连接中断）');
       }
       index++;
@@ -330,16 +350,20 @@ class PeerAgentClientService {
       'chunk_count': index,
     });
     if (!endSent) {
-      _pendingFilePushes.remove(fileId);
+      clearPending();
       throw Exception('推送附件结束帧失败（连接中断）');
     }
 
     try {
-      await completer.future.timeout(const Duration(seconds: 60));
+      await pending.end.future.timeout(const Duration(seconds: 60));
     } on TimeoutException {
-      _pendingFilePushes.remove(fileId);
+      clearPending();
       throw Exception('推送附件超时: ${attachment.fileName}');
+    } catch (e) {
+      clearPending();
+      rethrow;
     }
+    clearPending();
     return fileId;
   }
 
@@ -466,15 +490,40 @@ class PeerAgentClientService {
   void _onFileAck(Map<String, dynamic> data) {
     final fileId = data['file_id'] as String?;
     if (fileId == null) return;
-    final pending = _pendingFilePushes.remove(fileId);
-    if (pending == null || pending.isCompleted) return;
+    final pending = _pendingFilePushes[fileId];
+    if (pending == null) return;
     final ok = data['ok'] != false;
+    final stage = data['stage'] as String? ?? 'end';
+    final error = data['error'] as String? ?? '附件推送被对端拒绝';
+
+    void fail(Completer<void> c) {
+      if (!c.isCompleted) c.completeError(Exception(error));
+    }
+
+    void succeed(Completer<void> c) {
+      if (!c.isCompleted) c.complete();
+    }
+
+    if (stage == 'begin') {
+      if (ok) {
+        succeed(pending.begin);
+      } else {
+        fail(pending.begin);
+        fail(pending.end);
+        _pendingFilePushes.remove(fileId);
+      }
+      return;
+    }
+
+    // stage == end (or legacy ack without stage)
     if (ok) {
-      pending.complete();
+      // If begin was skipped somehow, still unblock it.
+      succeed(pending.begin);
+      succeed(pending.end);
     } else {
-      pending.completeError(
-        Exception(data['error'] as String? ?? '附件推送被对端拒绝'),
-      );
+      fail(pending.begin);
+      fail(pending.end);
+      _pendingFilePushes.remove(fileId);
     }
   }
 
@@ -482,10 +531,10 @@ class PeerAgentClientService {
     final fileId = data['file_id'] as String?;
     if (fileId == null) return;
     final pending = _pendingFilePushes.remove(fileId);
-    if (pending == null || pending.isCompleted) return;
-    pending.completeError(
-      Exception(data['message'] as String? ?? '附件推送失败'),
-    );
+    if (pending == null) return;
+    final err = Exception(data['message'] as String? ?? '附件推送失败');
+    if (!pending.begin.isCompleted) pending.begin.completeError(err);
+    if (!pending.end.isCompleted) pending.end.completeError(err);
   }
 
   /// Fetch upstream model options (`agent.models.list` relay). Returns empty

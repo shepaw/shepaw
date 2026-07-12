@@ -7,7 +7,9 @@ class AttachmentData {
   static const int maxSizeBytes = 20 * 1024 * 1024; // 20 MB
 
   /// Peer control-frame chunk size (decoded bytes per agent_file_chunk).
-  static const int peerChunkBytes = 256 * 1024; // 256 KiB
+  /// Keep well under typical relay / WS practical limits (avatar budget ~256KiB
+  /// raw; base64 + JSON + Noise expand ~1.4x).
+  static const int peerChunkBytes = 48 * 1024; // 48 KiB
 
   final String fileName;
   final String mimeType;

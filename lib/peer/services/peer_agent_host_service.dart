@@ -286,6 +286,7 @@ class PeerAgentHostService {
     }
 
     Future<void> reject(String message) async {
+      _incomingFiles.remove(fileId);
       await PeerConnectionManager.instance.sendControl(peerId, {
         'type': 'agent_file_error',
         'file_id': fileId,
@@ -298,6 +299,16 @@ class PeerAgentHostService {
       return;
     }
 
+    // Reserve before any await so early chunks are not dropped.
+    _incomingFiles[fileId] = _IncomingPeerFile(
+      agentId: agentId,
+      fileId: fileId,
+      fileName: fileName,
+      mimeType: mimeType,
+      semanticType: semanticType,
+      size: size,
+    );
+
     try {
       final agent = await _db.getRemoteAgentById(agentId);
       if (agent == null || !agent.isLocal || !agent.allowExternalAccess) {
@@ -309,14 +320,12 @@ class PeerAgentHostService {
       return;
     }
 
-    _incomingFiles[fileId] = _IncomingPeerFile(
-      agentId: agentId,
-      fileId: fileId,
-      fileName: fileName,
-      mimeType: mimeType,
-      semanticType: semanticType,
-      size: size,
-    );
+    await PeerConnectionManager.instance.sendControl(peerId, {
+      'type': 'agent_file_ack',
+      'file_id': fileId,
+      'ok': true,
+      'stage': 'begin',
+    });
   }
 
   void _handleFileChunk(String peerId, Map<String, dynamic> data) {
@@ -348,6 +357,7 @@ class PeerAgentHostService {
         'type': 'agent_file_ack',
         'file_id': fileId,
         'ok': false,
+        'stage': 'end',
         'error': 'unknown file_id',
       });
       return;
@@ -396,6 +406,7 @@ class PeerAgentHostService {
         'type': 'agent_file_ack',
         'file_id': fileId,
         'ok': true,
+        'stage': 'end',
       });
     } catch (e) {
       _log.warning('agent_file_end failed: $e', tag: _tag);
@@ -403,6 +414,7 @@ class PeerAgentHostService {
         'type': 'agent_file_ack',
         'file_id': fileId,
         'ok': false,
+        'stage': 'end',
         'error': e.toString(),
       });
     }
