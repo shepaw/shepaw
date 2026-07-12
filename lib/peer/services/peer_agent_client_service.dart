@@ -138,18 +138,89 @@ class PeerHistoryMessage {
   final String content;
   final String? messageId;
 
-  PeerHistoryMessage({required this.role, required this.content, this.messageId});
+  /// Original send time from the standard history protocol (`created_at`).
+  /// Engine-specific extraction happens in agent-bridge; the app only consumes
+  /// this field.
+  final DateTime? createdAt;
+
+  PeerHistoryMessage({
+    required this.role,
+    required this.content,
+    this.messageId,
+    this.createdAt,
+  });
 
   static PeerHistoryMessage? fromJson(Map<String, dynamic> json) {
     final role = json['role'] as String?;
     final content = json['content'] as String?;
     if (role == null || content == null) return null;
+    DateTime? createdAt;
+    final rawCreated = json['created_at'];
+    if (rawCreated is String && rawCreated.isNotEmpty) {
+      createdAt = DateTime.tryParse(rawCreated);
+    }
     return PeerHistoryMessage(
       role: role,
       content: content,
       messageId: json['message_id'] as String?,
+      createdAt: createdAt,
     );
   }
+}
+
+/// Assign display timestamps for a synced peer transcript.
+///
+/// Preference order per message:
+/// 1. Protocol [PeerHistoryMessage.createdAt] (filled by agent-bridge)
+/// 2. Existing local `created_at` for the same stable id (when any remote stamp
+///    exists — preserves prior good times for unstamped gaps)
+/// 3. Anchor to session-level [sessionUpdatedAt] from `sessions.list`
+/// 4. Preserve existing local time when no session anchor is available
+/// 5. [fallbackEnd]-anchored synthetic times for brand-new rows
+List<DateTime> assignPeerHistoryTimestamps(
+  List<PeerHistoryMessage> history, {
+  Map<String, DateTime> existingById = const {},
+  DateTime? sessionUpdatedAt,
+  DateTime? fallbackEnd,
+  String Function(PeerHistoryMessage message, int index)? idFor,
+}) {
+  if (history.isEmpty) return const [];
+  final anyRemote = history.any((m) => m.createdAt != null);
+  final end = sessionUpdatedAt ?? fallbackEnd ?? DateTime.now();
+  final out = <DateTime>[];
+  for (var i = 0; i < history.length; i++) {
+    final m = history[i];
+    final id = idFor?.call(m, i);
+    final existing = id != null ? existingById[id] : null;
+    if (m.createdAt != null) {
+      out.add(m.createdAt!);
+    } else if (anyRemote && existing != null) {
+      out.add(existing);
+    } else if (sessionUpdatedAt != null) {
+      final offsetFromEnd = history.length - 1 - i;
+      out.add(sessionUpdatedAt.subtract(Duration(minutes: offsetFromEnd)));
+    } else if (existing != null) {
+      out.add(existing);
+    } else {
+      final offsetFromEnd = history.length - 1 - i;
+      out.add(end.subtract(Duration(minutes: offsetFromEnd)));
+    }
+  }
+  // Ensure strictly non-decreasing order so chat sorting stays stable when
+  // remote stamps and anchors mix.
+  for (var i = 1; i < out.length; i++) {
+    if (out[i].isBefore(out[i - 1])) {
+      out[i] = out[i - 1].add(const Duration(seconds: 1));
+    }
+  }
+  return out;
+}
+
+String peerHistoryMessageId(PeerHistoryMessage m, String channelId, int index) {
+  if (m.messageId != null && m.messageId!.isNotEmpty) {
+    return 'peerhist_${m.messageId}';
+  }
+  return 'peerhist_${channelId}_$index';
 }
 
 /// One upstream model option from `agent_models_resp`.
@@ -922,6 +993,7 @@ class PeerAgentClientService {
           channelId: channelId,
           userId: userId,
           userName: userName,
+          sessionUpdatedAt: session.updatedAt,
         );
         if (written > 0) {
           historySessionsWritten++;
@@ -983,11 +1055,12 @@ class PeerAgentClientService {
 
   /// Pull a synced session's transcript from the remote and mirror it locally.
   ///
-  /// Fetches the remote transcript; if it differs from what's stored locally,
-  /// upserts by stable `peerhist_*` ids and removes local rows that are no
-  /// longer present remotely. If the fetch is empty (agent can't replay /
-  /// timeout), local messages are kept untouched. Returns the number of
-  /// messages written, or 0 when nothing changed / local was kept.
+  /// Fetches the remote transcript; if it differs from what's stored locally
+  /// (content or resolved send times), upserts by stable `peerhist_*` ids and
+  /// removes local rows that are no longer present remotely. If the fetch is
+  /// empty (agent can't replay / timeout), local messages are kept untouched.
+  /// Returns the number of messages written, or 0 when nothing changed / local
+  /// was kept.
   Future<int> syncHistory({
     required String peerId,
     required String remoteAgentId,
@@ -996,6 +1069,7 @@ class PeerAgentClientService {
     required String channelId,
     required String userId,
     required String userName,
+    DateTime? sessionUpdatedAt,
   }) async {
     final remoteSessionId = remoteSessionIdFromChannelId(channelId);
     if (remoteSessionId == null) return 0;
@@ -1007,15 +1081,40 @@ class PeerAgentClientService {
     );
     if (history.isEmpty) return 0;
 
-    // Skip the rewrite (and UI flicker) when local already matches remote.
     final existing = await _db.getChannelMessages(channelId, limit: 2000);
     final existingAsc = existing.reversed.toList();
+    final existingById = <String, DateTime>{};
+    for (final row in existingAsc) {
+      final id = row['id'] as String?;
+      final rawAt = row['created_at'] as String?;
+      if (id == null || rawAt == null) continue;
+      final at = DateTime.tryParse(rawAt);
+      if (at != null) existingById[id] = at;
+    }
+
+    final createdAts = assignPeerHistoryTimestamps(
+      history,
+      existingById: existingById,
+      sessionUpdatedAt: sessionUpdatedAt,
+      idFor: (m, i) => peerHistoryMessageId(m, channelId, i),
+    );
+
+    // Skip the rewrite (and UI flicker) when local already matches remote
+    // content and the resolved send times.
     if (existingAsc.length == history.length) {
       var identical = true;
       for (var i = 0; i < history.length; i++) {
         final row = existingAsc[i];
         final role = (row['sender_type'] as String?) == 'user' ? 'user' : 'agent';
-        if (role != history[i].role || (row['content'] as String? ?? '') != history[i].content) {
+        if (role != history[i].role ||
+            (row['content'] as String? ?? '') != history[i].content) {
+          identical = false;
+          break;
+        }
+        final localAt = DateTime.tryParse(row['created_at'] as String? ?? '');
+        if (localAt == null ||
+            localAt.toUtc().millisecondsSinceEpoch !=
+                createdAts[i].toUtc().millisecondsSinceEpoch) {
           identical = false;
           break;
         }
@@ -1024,14 +1123,10 @@ class PeerAgentClientService {
     }
 
     final remoteIds = <String>{};
-    final baseMs = DateTime.now().millisecondsSinceEpoch - history.length * 1000;
     for (var i = 0; i < history.length; i++) {
       final m = history[i];
       final isUser = m.role == 'user';
-      final createdAt = DateTime.fromMillisecondsSinceEpoch(baseMs + i * 1000);
-      final msgId = m.messageId != null && m.messageId!.isNotEmpty
-          ? 'peerhist_${m.messageId}'
-          : 'peerhist_${channelId}_$i';
+      final msgId = peerHistoryMessageId(m, channelId, i);
       remoteIds.add(msgId);
       await _db.createMessage(
         id: msgId,
@@ -1040,7 +1135,7 @@ class PeerAgentClientService {
         senderType: isUser ? 'user' : 'agent',
         senderName: isUser ? userName : agentName,
         content: m.content,
-        createdAt: createdAt,
+        createdAt: createdAts[i],
         conflictAlgorithm: ConflictAlgorithm.replace,
       );
     }

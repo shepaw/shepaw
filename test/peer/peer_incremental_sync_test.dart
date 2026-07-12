@@ -70,4 +70,71 @@ void main() {
       );
     });
   });
+
+  group('assignPeerHistoryTimestamps', () {
+    final end = DateTime.utc(2026, 7, 12, 12, 0);
+
+    test('uses remote createdAt when present', () {
+      final t1 = DateTime.utc(2026, 7, 1, 10);
+      final t2 = DateTime.utc(2026, 7, 1, 10, 1);
+      final history = [
+        PeerHistoryMessage(role: 'user', content: 'a', createdAt: t1),
+        PeerHistoryMessage(role: 'agent', content: 'b', createdAt: t2),
+      ];
+      expect(
+        assignPeerHistoryTimestamps(history, sessionUpdatedAt: end),
+        [t1, t2],
+      );
+    });
+
+    test('anchors to sessionUpdatedAt when remote has no stamps', () {
+      final history = [
+        PeerHistoryMessage(role: 'user', content: 'a'),
+        PeerHistoryMessage(role: 'agent', content: 'b'),
+        PeerHistoryMessage(role: 'user', content: 'c'),
+      ];
+      final times = assignPeerHistoryTimestamps(
+        history,
+        sessionUpdatedAt: end,
+        existingById: {
+          'peerhist_x': DateTime.utc(2026, 7, 12, 11, 59), // ignored: no remote stamps
+        },
+        idFor: (m, i) => 'peerhist_$i',
+      );
+      expect(times, [
+        end.subtract(const Duration(minutes: 2)),
+        end.subtract(const Duration(minutes: 1)),
+        end,
+      ]);
+    });
+
+    test('preserves existing local time for unstamped gaps when any remote stamp exists', () {
+      final remote = DateTime.utc(2026, 7, 1, 10);
+      final local = DateTime.utc(2026, 7, 1, 10, 0, 30);
+      final history = [
+        PeerHistoryMessage(role: 'user', content: 'a', createdAt: remote),
+        PeerHistoryMessage(role: 'agent', content: 'b'), // no stamp
+      ];
+      final times = assignPeerHistoryTimestamps(
+        history,
+        existingById: {'peerhist_1': local},
+        sessionUpdatedAt: end,
+        idFor: (m, i) => 'peerhist_$i',
+      );
+      expect(times[0], remote);
+      expect(times[1], local);
+    });
+
+    test('enforces non-decreasing order', () {
+      final earlier = DateTime.utc(2026, 7, 1, 10);
+      final later = DateTime.utc(2026, 7, 1, 11);
+      final history = [
+        PeerHistoryMessage(role: 'user', content: 'a', createdAt: later),
+        PeerHistoryMessage(role: 'agent', content: 'b', createdAt: earlier),
+      ];
+      final times = assignPeerHistoryTimestamps(history, sessionUpdatedAt: end);
+      expect(times[0], later);
+      expect(times[1], later.add(const Duration(seconds: 1)));
+    });
+  });
 }
