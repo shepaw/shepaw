@@ -1,9 +1,13 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 
 /// A wrapper widget that allows long content to be collapsed/expanded.
 ///
 /// Useful for "thinking" messages or verbose agent output that should
 /// be collapsed by default or auto-collapsed when streaming finishes.
+///
+/// Collapsed height follows the child's intrinsic size up to
+/// [collapsedMaxHeight] — short content will not leave empty space.
 class CollapsibleMessageBubble extends StatefulWidget {
   final Widget child;
   final bool initiallyCollapsed;
@@ -118,53 +122,162 @@ class _CollapsibleMessageBubbleState extends State<CollapsibleMessageBubble> {
             ),
           ),
         ),
-        // Content area
-        if (_isCollapsed)
-          SizedBox(
-            height: widget.collapsedMaxHeight,
-            child: ClipRRect(
-              borderRadius: BorderRadius.zero,
-              child: Stack(
-                children: [
-                  // Use OverflowBox + Align to let child render at natural
-                  // size but clip it to the SizedBox bounds via ClipRRect.
-                  Positioned.fill(
-                    child: Align(
-                      alignment: Alignment.topLeft,
-                      child: SingleChildScrollView(
-                        physics: const NeverScrollableScrollPhysics(),
-                        child: widget.child,
-                      ),
-                    ),
-                  ),
-                  // Gradient fade-out overlay
-                  Positioned(
-                    left: 0,
-                    right: 0,
-                    bottom: 0,
-                    height: 40,
-                    child: IgnorePointer(
-                      child: Container(
-                        decoration: BoxDecoration(
-                          gradient: LinearGradient(
-                            begin: Alignment.topCenter,
-                            end: Alignment.bottomCenter,
-                            colors: [
-                              fadeColor.withOpacity(0.0),
-                              fadeColor,
-                            ],
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          )
-        else
-          widget.child,
+        _CollapsibleContent(
+          collapsed: _isCollapsed,
+          collapsedMaxHeight: widget.collapsedMaxHeight,
+          fadeColor: fadeColor,
+          child: widget.child,
+        ),
       ],
     );
+  }
+}
+
+/// Lays out [child] at its intrinsic height, then sizes itself to that height
+/// when expanded, or `min(intrinsic, collapsedMaxHeight)` when collapsed.
+/// Draws a bottom fade only when content is actually clipped.
+class _CollapsibleContent extends SingleChildRenderObjectWidget {
+  final bool collapsed;
+  final double collapsedMaxHeight;
+  final Color fadeColor;
+
+  const _CollapsibleContent({
+    required this.collapsed,
+    required this.collapsedMaxHeight,
+    required this.fadeColor,
+    required Widget child,
+  }) : super(child: child);
+
+  @override
+  RenderObject createRenderObject(BuildContext context) {
+    return _RenderCollapsibleContent(
+      collapsed: collapsed,
+      collapsedMaxHeight: collapsedMaxHeight,
+      fadeColor: fadeColor,
+    );
+  }
+
+  @override
+  void updateRenderObject(
+    BuildContext context,
+    covariant _RenderCollapsibleContent renderObject,
+  ) {
+    renderObject
+      ..collapsed = collapsed
+      ..collapsedMaxHeight = collapsedMaxHeight
+      ..fadeColor = fadeColor;
+  }
+}
+
+class _RenderCollapsibleContent extends RenderProxyBox {
+  _RenderCollapsibleContent({
+    required bool collapsed,
+    required double collapsedMaxHeight,
+    required Color fadeColor,
+  })  : _collapsed = collapsed,
+        _collapsedMaxHeight = collapsedMaxHeight,
+        _fadeColor = fadeColor;
+
+  bool _collapsed;
+  bool get collapsed => _collapsed;
+  set collapsed(bool value) {
+    if (_collapsed == value) return;
+    _collapsed = value;
+    markNeedsLayout();
+  }
+
+  double _collapsedMaxHeight;
+  double get collapsedMaxHeight => _collapsedMaxHeight;
+  set collapsedMaxHeight(double value) {
+    if (_collapsedMaxHeight == value) return;
+    _collapsedMaxHeight = value;
+    markNeedsLayout();
+  }
+
+  Color _fadeColor;
+  Color get fadeColor => _fadeColor;
+  set fadeColor(Color value) {
+    if (_fadeColor == value) return;
+    _fadeColor = value;
+    markNeedsPaint();
+  }
+
+  bool _overflows = false;
+
+  @override
+  void performLayout() {
+    final child = this.child;
+    if (child == null) {
+      size = constraints.smallest;
+      _overflows = false;
+      return;
+    }
+
+    // Layout child with unbounded max height so we learn its intrinsic size.
+    child.layout(
+      BoxConstraints(
+        minWidth: constraints.minWidth,
+        maxWidth: constraints.maxWidth,
+        minHeight: 0,
+        maxHeight: double.infinity,
+      ),
+      parentUsesSize: true,
+    );
+
+    final childHeight = child.size.height;
+    _overflows = _collapsed && childHeight > _collapsedMaxHeight + 0.5;
+    final displayHeight =
+        _overflows ? _collapsedMaxHeight : childHeight;
+
+    size = constraints.constrain(Size(child.size.width, displayHeight));
+  }
+
+  @override
+  bool get alwaysNeedsCompositing => _overflows;
+
+  @override
+  void paint(PaintingContext context, Offset offset) {
+    final child = this.child;
+    if (child == null) return;
+
+    if (_overflows) {
+      context.pushClipRect(
+        needsCompositing,
+        offset,
+        Offset.zero & size,
+        (PaintingContext ctx, Offset off) {
+          ctx.paintChild(child, off);
+          _paintFade(ctx, off);
+        },
+      );
+    } else {
+      context.paintChild(child, offset);
+    }
+  }
+
+  void _paintFade(PaintingContext context, Offset offset) {
+    const fadeHeight = 40.0;
+    final rect = Rect.fromLTWH(
+      offset.dx,
+      offset.dy + size.height - fadeHeight,
+      size.width,
+      fadeHeight,
+    );
+    final paint = Paint()
+      ..shader = LinearGradient(
+        begin: Alignment.topCenter,
+        end: Alignment.bottomCenter,
+        colors: [
+          _fadeColor.withValues(alpha: 0.0),
+          _fadeColor,
+        ],
+      ).createShader(rect);
+    context.canvas.drawRect(rect, paint);
+  }
+
+  @override
+  bool hitTestChildren(BoxHitTestResult result, {required Offset position}) {
+    if (position.dy < 0 || position.dy >= size.height) return false;
+    return super.hitTestChildren(result, position: position);
   }
 }
