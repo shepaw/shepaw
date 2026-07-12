@@ -186,7 +186,8 @@ class ProtocolRouter {
       case ProtocolType.custom:
         return false;
       case ProtocolType.peer:
-        return false;
+        // Chat-turn attachments (images) are relayed inline on agent_chat.
+        return true;
     }
   }
 
@@ -205,7 +206,7 @@ class ProtocolRouter {
       case ProtocolType.custom:
         return ['text_message'];
       case ProtocolType.peer:
-        return ['text_message', 'streaming'];
+        return ['text_message', 'streaming', 'file_transfer'];
     }
   }
 

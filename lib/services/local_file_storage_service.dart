@@ -67,6 +67,30 @@ class LocalFileStorageService {
     return '${type.folderName}/$fileName';
   }
 
+  /// Save a peer-pushed attachment under `peer_inbound/<agentId>/`.
+  ///
+  /// Returns a relative path (from app data dir). [fileId] and [fileName] are
+  /// sanitized for the on-disk name.
+  Future<String> savePeerInboundBytes({
+    required String agentId,
+    required String fileId,
+    required String fileName,
+    required Uint8List bytes,
+  }) async {
+    final appDir = await _appDataDir;
+    final safeAgent = agentId.replaceAll(RegExp(r'[^\w.\-]+'), '_');
+    final dir = Directory(path.join(appDir.path, 'peer_inbound', safeAgent));
+    if (!await dir.exists()) {
+      await dir.create(recursive: true);
+    }
+    final safeId = fileId.replaceAll(RegExp(r'[^\w.\-]+'), '_');
+    final safeName = fileName.replaceAll(RegExp(r'[^\w.\-]+'), '_');
+    final leaf = safeName.isEmpty ? safeId : '${safeId}_$safeName';
+    final targetPath = path.join(dir.path, leaf);
+    await File(targetPath).writeAsBytes(bytes, flush: true);
+    return path.join('peer_inbound', safeAgent, leaf);
+  }
+
   /// 获取图片的完整路径
   Future<String> getFullPath(String relativePath) async {
     final appDir = await _appDataDir;

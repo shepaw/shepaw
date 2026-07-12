@@ -446,24 +446,11 @@ class ACPServerService {
     final userName  = connection.agentName ?? userId;
 
     // Deserialise ACP attachments back into AttachmentData objects
-    final rawAttachments = params['attachments'] as List?;
     List<AttachmentData>? attachments;
-    if (rawAttachments != null && rawAttachments.isNotEmpty) {
-      try {
-        attachments = rawAttachments
-            .cast<Map<String, dynamic>>()
-            .map((a) => AttachmentData(
-                  fileName: a['file_name'] as String? ?? 'file',
-                  mimeType: a['mime_type'] as String? ?? 'application/octet-stream',
-                  sizeBytes: a['size'] as int? ?? 0,
-                  bytes: base64Decode(a['data'] as String? ?? ''),
-                  semanticType: a['type'] as String? ?? 'file',
-                  extraMetadata: a['extra'] as Map<String, dynamic>?,
-                ))
-            .toList();
-      } catch (e) {
-        LoggerService().warning('Failed to deserialise attachments: $e', tag: 'ACPServer');
-      }
+    try {
+      attachments = AttachmentData.listFromJson(params['attachments']);
+    } catch (e) {
+      LoggerService().warning('Failed to deserialise attachments: $e', tag: 'ACPServer');
     }
 
     final targetAgentId = connection.agentId;

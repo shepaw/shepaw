@@ -15,6 +15,7 @@ import 'dart:io';
 import 'package:sqflite/sqflite.dart';
 import 'package:uuid/uuid.dart';
 
+import '../../models/attachment_data.dart';
 import '../../models/channel.dart';
 import '../../models/remote_agent.dart';
 import '../../models/acp_protocol.dart';
@@ -177,6 +178,9 @@ class PeerAgentClientService {
   /// 进行中的请求（requestId → pending）。
   final Map<String, _PendingRequest> _pending = {};
 
+  /// In-flight peer file pushes (fileId → completer).
+  final Map<String, Completer<void>> _pendingFilePushes = {};
+
   /// Slash-command cache (localAgentId → commands), populated by
   /// agent_commands_resp after agent_list_resp prefetches them.
   final Map<String, List<SlashCommandInfo>> _commandsCache = {};
@@ -267,19 +271,113 @@ class PeerAgentClientService {
 
   // ── 发送（消费方 → 提供方） ────────────────────────────────────────────
 
+  /// Push [attachment] bytes to the peer host under [remoteAgentId]'s directory.
+  ///
+  /// Returns the `file_id` acknowledged by the host.
+  Future<String> pushFile({
+    required String peerId,
+    required String remoteAgentId,
+    required AttachmentData attachment,
+  }) async {
+    if (attachment.exceedsSizeLimit) {
+      throw Exception(
+        '附件过大（上限 ${AttachmentData.maxSizeBytes ~/ (1024 * 1024)}MB）: '
+        '${attachment.fileName}',
+      );
+    }
+    final fileId = _uuid.v4().replaceAll('-', '').substring(0, 12);
+    final completer = Completer<void>();
+    _pendingFilePushes[fileId] = completer;
+
+    final beginSent = await PeerConnectionManager.instance.sendControl(peerId, {
+      'type': 'agent_file_begin',
+      'agent_id': remoteAgentId,
+      'file_id': fileId,
+      'file_name': attachment.fileName,
+      'mime_type': attachment.mimeType,
+      'file_type': attachment.semanticType,
+      'size': attachment.sizeBytes,
+    });
+    if (!beginSent) {
+      _pendingFilePushes.remove(fileId);
+      throw Exception('配对设备未连接，无法推送附件');
+    }
+
+    final bytes = attachment.bytes;
+    final chunkSize = AttachmentData.peerChunkBytes;
+    var index = 0;
+    for (var offset = 0; offset < bytes.length; offset += chunkSize) {
+      final end = (offset + chunkSize < bytes.length)
+          ? offset + chunkSize
+          : bytes.length;
+      final slice = bytes.sublist(offset, end);
+      final chunkSent = await PeerConnectionManager.instance.sendControl(peerId, {
+        'type': 'agent_file_chunk',
+        'file_id': fileId,
+        'index': index,
+        'data': base64Encode(slice),
+      });
+      if (!chunkSent) {
+        _pendingFilePushes.remove(fileId);
+        throw Exception('推送附件分片失败（连接中断）');
+      }
+      index++;
+    }
+
+    final endSent = await PeerConnectionManager.instance.sendControl(peerId, {
+      'type': 'agent_file_end',
+      'file_id': fileId,
+      'chunk_count': index,
+    });
+    if (!endSent) {
+      _pendingFilePushes.remove(fileId);
+      throw Exception('推送附件结束帧失败（连接中断）');
+    }
+
+    try {
+      await completer.future.timeout(const Duration(seconds: 60));
+    } on TimeoutException {
+      _pendingFilePushes.remove(fileId);
+      throw Exception('推送附件超时: ${attachment.fileName}');
+    }
+    return fileId;
+  }
+
   /// 通过 P2P 通道把消息发给对端的本地 agent，流式接收回复。
   ///
   /// 对端未连接时立即抛错。[cancelToken] 触发时会向对端发送 `agent_cancel`。
+  /// Attachments are pushed via [pushFile] first; `agent_chat` only carries
+  /// `file_id` refs (no base64 payload).
   Future<PeerChatResult> sendChat({
     required String peerId,
     required String remoteAgentId,
     required String message,
     String? sessionId,
+    List<AttachmentData>? attachments,
     void Function(String chunk)? onChunk,
     void Function(Map<String, dynamic>)? onMetadata,
     void Function(Map<String, dynamic>)? onActionConfirmation,
     ACPCancellationToken? cancelToken,
   }) async {
+    List<Map<String, dynamic>>? attachmentRefs;
+    if (attachments != null && attachments.isNotEmpty) {
+      attachmentRefs = <Map<String, dynamic>>[];
+      for (final att in attachments) {
+        if (att.exceedsSizeLimit) {
+          throw Exception(
+            '附件过大（上限 ${AttachmentData.maxSizeBytes ~/ (1024 * 1024)}MB）: '
+            '${att.fileName}',
+          );
+        }
+        final fileId = await pushFile(
+          peerId: peerId,
+          remoteAgentId: remoteAgentId,
+          attachment: att,
+        );
+        attachmentRefs.add(att.toPeerRefJson(fileId));
+      }
+    }
+
     final requestId = _uuid.v4();
     final pending = _PendingRequest(
       peerId,
@@ -308,6 +406,7 @@ class PeerAgentClientService {
       // 把本端会话 id 透传给对端，使对端按会话隔离历史：本端「新开会话」
       // 在对端也得到一条干净、无历史的新会话。
       if (sessionId != null && sessionId.isNotEmpty) 'session_id': sessionId,
+      if (attachmentRefs != null) 'attachments': attachmentRefs,
     });
 
     if (!sent) {
@@ -355,7 +454,38 @@ class PeerAgentClientService {
       case 'agent_models_set_resp':
         _onModelsSetResp(event.data);
         break;
+      case 'agent_file_ack':
+        _onFileAck(event.data);
+        break;
+      case 'agent_file_error':
+        _onFileError(event.data);
+        break;
     }
+  }
+
+  void _onFileAck(Map<String, dynamic> data) {
+    final fileId = data['file_id'] as String?;
+    if (fileId == null) return;
+    final pending = _pendingFilePushes.remove(fileId);
+    if (pending == null || pending.isCompleted) return;
+    final ok = data['ok'] != false;
+    if (ok) {
+      pending.complete();
+    } else {
+      pending.completeError(
+        Exception(data['error'] as String? ?? '附件推送被对端拒绝'),
+      );
+    }
+  }
+
+  void _onFileError(Map<String, dynamic> data) {
+    final fileId = data['file_id'] as String?;
+    if (fileId == null) return;
+    final pending = _pendingFilePushes.remove(fileId);
+    if (pending == null || pending.isCompleted) return;
+    pending.completeError(
+      Exception(data['message'] as String? ?? '附件推送失败'),
+    );
   }
 
   /// Fetch upstream model options (`agent.models.list` relay). Returns empty

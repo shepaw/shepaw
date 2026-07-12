@@ -104,6 +104,11 @@ class PeerConnection {
     'agent_models_resp',
     'agent_models_set_req',
     'agent_models_set_resp',
+    'agent_file_begin',
+    'agent_file_chunk',
+    'agent_file_end',
+    'agent_file_ack',
+    'agent_file_error',
   };
 
   /// 连接状态变化

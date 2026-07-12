@@ -241,6 +241,7 @@ class GroupAgentExecutor {
     int? loopRound,
     String mentionMode = 'adminOnly',
     List<String> failedAgentNames = const [],
+    List<AttachmentData>? attachments,
     ACPCancellationToken? acpCancellationToken,
     void Function(String agentId, String agentName, String chunk)? onStreamChunk,
     void Function(String agentId, String agentName, bool skipped)? onAgentDone,
@@ -338,13 +339,10 @@ class GroupAgentExecutor {
               .resolveProviderType(agent) ==
           'claude';
 
-      // Do NOT load history image bytes for group chat. The group chat()
-      // call does not pass `attachments`, so _classifyAndResolve always
-      // picks the text model — embedding images in history would cause the
-      // text model to fail with a 400 error and trigger the "model does not
-      // support images" warning on every single message. The text
-      // placeholder (e.g. "[Image: photo.jpg]") in historyLines already
-      // provides sufficient context.
+      // Do NOT load history image bytes for group chat. Embedding historical
+      // images would force vision on every turn; text placeholders in
+      // historyLines already provide context. Current-turn [attachments] are
+      // passed separately for multimodal understanding.
       final chatHistory = buildGroupChatHistoryWithImages(
         historyText: historyLines,
         imageEntries: const [],
@@ -354,7 +352,7 @@ class GroupAgentExecutor {
       // Build the full message list for multi-turn tool calling
       final roundMessages = <Map<String, dynamic>>[
         ...chatHistory,
-        {'role': 'user', 'content': content},
+        LocalLLMHelpers.buildUserMessageContent(content, attachments, isClaude),
       ];
       const maxToolRounds = 5;
 
@@ -382,6 +380,7 @@ class GroupAgentExecutor {
             enableUITools: true,
             includeShepawCli: isAdmin,
             systemPromptOverride: systemPrompt,
+            attachments: toolRound == 0 ? attachments : null,
           )) {
             if (acpCancellationToken?.isCancelled == true) break;
             switch (event) {
@@ -620,12 +619,24 @@ class GroupAgentExecutor {
           channelId;
 
       try {
+        if (attachments != null) {
+          for (final a in attachments) {
+            if (a.exceedsSizeLimit) {
+              throw Exception(
+                '附件过大（上限 ${AttachmentData.maxSizeBytes ~/ (1024 * 1024)}MB）: '
+                '${a.fileName}',
+              );
+            }
+          }
+        }
+
         final splitter = StreamContentSplitter();
         final result = await PeerAgentClientService.instance.sendChat(
           peerId: peerId,
           remoteAgentId: remoteAgentId,
           message: peerMessage,
           sessionId: peerSessionId,
+          attachments: attachments,
           cancelToken: acpCancellationToken,
           onChunk: (chunk) {
             final answerDelta = splitter.onChunk(chunk);
@@ -1090,6 +1101,10 @@ class GroupAgentExecutor {
           history: acpHistoryEntries.isNotEmpty ? acpHistoryEntries : null,
           systemPrompt: systemPrompt,
           groupContext: groupContext,
+          attachments: attachments
+              ?.where((a) => !a.exceedsSizeLimit)
+              .map((a) => a.toJson())
+              .toList(),
         );
 
         await taskCompleter.future.timeout(

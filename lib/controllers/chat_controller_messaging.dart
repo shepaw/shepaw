@@ -1041,6 +1041,7 @@ mixin _MessagingOps on _ChatControllerBase {
         flowMode: groupChannel?.flowMode ?? false,
         acpCancellationToken: acpCancellationToken,
         userMessageMetadata: userMsgMetadata,
+        attachments: attachments,
         onAgentStart: (aid, anm) {
           final sid = GroupInteractionPlanner.groupStreamingId(aid);
           turn.begin(aid, sid);

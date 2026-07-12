@@ -20,13 +20,18 @@ library;
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 
+import 'package:uuid/uuid.dart';
+
+import '../../models/attachment_data.dart';
 import '../../models/channel.dart';
 import '../../models/message.dart';
 import '../../models/remote_agent.dart';
 import '../../services/acp_agent_connection.dart';
 import '../../services/chat_service.dart';
 import '../../services/local_database_service.dart';
+import '../../services/local_file_storage_service.dart';
 import '../../services/logger_service.dart';
 import '../../services/task/task_models.dart';
 import '../../service_locator.dart' show getIt;
@@ -34,6 +39,44 @@ import '../models/peer_hub_pending_approval.dart';
 import 'peer_connection_manager.dart';
 import 'peer_connection.dart' show PeerConnectionEvent, PeerConnectionEventType;
 import 'peer_storage_service.dart';
+
+/// In-progress chunked file receive.
+class _IncomingPeerFile {
+  final String agentId;
+  final String fileId;
+  final String fileName;
+  final String mimeType;
+  final String semanticType;
+  final int size;
+  final Map<int, List<int>> chunks = {};
+
+  _IncomingPeerFile({
+    required this.agentId,
+    required this.fileId,
+    required this.fileName,
+    required this.mimeType,
+    required this.semanticType,
+    required this.size,
+  });
+}
+
+class _StoredPeerFile {
+  final String agentId;
+  final String relativePath;
+  final String fileName;
+  final String mimeType;
+  final String semanticType;
+  final int size;
+
+  const _StoredPeerFile({
+    required this.agentId,
+    required this.relativePath,
+    required this.fileName,
+    required this.mimeType,
+    required this.semanticType,
+    required this.size,
+  });
+}
 
 /// 桌面 peer-agent 会话 channelId 前缀。用于标识本机作为 host 时、为来自配对
 /// 设备的请求维护的独立入站会话。
@@ -89,9 +132,16 @@ class PeerAgentHostService {
   /// In-flight peer chat sessions (requestId → context).
   final Map<String, _PeerChatSession> _chatSessions = {};
 
+  /// In-progress file pushes (fileId → buffer state).
+  final Map<String, _IncomingPeerFile> _incomingFiles = {};
+
+  /// Completed peer file pushes (fileId → relative path under app storage).
+  final Map<String, _StoredPeerFile> _storedFiles = {};
+
   LocalDatabaseService get _db => getIt<LocalDatabaseService>();
   ChatService get _chat => getIt<ChatService>();
   final PeerStorageService _peerStorage = PeerStorageService();
+  final LocalFileStorageService _fileStorage = LocalFileStorageService();
 
   void start() {
     if (_running) return;
@@ -132,6 +182,15 @@ class PeerAgentHostService {
         break;
       case 'agent_approval_resp':
         unawaited(_handleApprovalResp(event.peerId, event.data));
+        break;
+      case 'agent_file_begin':
+        unawaited(_handleFileBegin(event.peerId, event.data));
+        break;
+      case 'agent_file_chunk':
+        _handleFileChunk(event.peerId, event.data);
+        break;
+      case 'agent_file_end':
+        unawaited(_handleFileEnd(event.peerId, event.data));
         break;
     }
   }
@@ -212,6 +271,211 @@ class PeerAgentHostService {
     }
   }
 
+  Future<void> _handleFileBegin(String peerId, Map<String, dynamic> data) async {
+    final fileId = data['file_id'] as String?;
+    final agentId = data['agent_id'] as String?;
+    final fileName = data['file_name'] as String? ?? 'file';
+    final mimeType = data['mime_type'] as String? ?? 'application/octet-stream';
+    final semanticType = data['file_type'] as String? ??
+        data['semantic_type'] as String? ??
+        'file';
+    final size = data['size'] as int? ?? 0;
+
+    if (fileId == null || fileId.isEmpty || agentId == null || agentId.isEmpty) {
+      return;
+    }
+
+    Future<void> reject(String message) async {
+      await PeerConnectionManager.instance.sendControl(peerId, {
+        'type': 'agent_file_error',
+        'file_id': fileId,
+        'message': message,
+      });
+    }
+
+    if (size <= 0 || size > AttachmentData.maxSizeBytes) {
+      await reject('invalid or oversized file ($size bytes)');
+      return;
+    }
+
+    try {
+      final agent = await _db.getRemoteAgentById(agentId);
+      if (agent == null || !agent.isLocal || !agent.allowExternalAccess) {
+        await reject('Agent not available for external access');
+        return;
+      }
+    } catch (e) {
+      await reject('Failed to validate agent: $e');
+      return;
+    }
+
+    _incomingFiles[fileId] = _IncomingPeerFile(
+      agentId: agentId,
+      fileId: fileId,
+      fileName: fileName,
+      mimeType: mimeType,
+      semanticType: semanticType,
+      size: size,
+    );
+  }
+
+  void _handleFileChunk(String peerId, Map<String, dynamic> data) {
+    final fileId = data['file_id'] as String?;
+    final index = data['index'] as int?;
+    final b64 = data['data'] as String?;
+    if (fileId == null || index == null || b64 == null) return;
+    final incoming = _incomingFiles[fileId];
+    if (incoming == null) return;
+    try {
+      incoming.chunks[index] = base64Decode(b64);
+    } catch (e) {
+      _incomingFiles.remove(fileId);
+      unawaited(PeerConnectionManager.instance.sendControl(peerId, {
+        'type': 'agent_file_error',
+        'file_id': fileId,
+        'message': 'Invalid chunk: $e',
+      }));
+    }
+  }
+
+  Future<void> _handleFileEnd(String peerId, Map<String, dynamic> data) async {
+    final fileId = data['file_id'] as String?;
+    final chunkCount = data['chunk_count'] as int? ?? 0;
+    if (fileId == null) return;
+    final incoming = _incomingFiles.remove(fileId);
+    if (incoming == null) {
+      await PeerConnectionManager.instance.sendControl(peerId, {
+        'type': 'agent_file_ack',
+        'file_id': fileId,
+        'ok': false,
+        'error': 'unknown file_id',
+      });
+      return;
+    }
+
+    try {
+      if (incoming.chunks.length != chunkCount) {
+        throw StateError(
+          'chunk count mismatch: got ${incoming.chunks.length}, expected $chunkCount',
+        );
+      }
+      final ordered = <int>[];
+      for (var i = 0; i < chunkCount; i++) {
+        final part = incoming.chunks[i];
+        if (part == null) {
+          throw StateError('missing chunk $i');
+        }
+        ordered.addAll(part);
+      }
+      if (ordered.length != incoming.size && incoming.size > 0) {
+        // Allow slight mismatch only if size was approximate; prefer exact.
+        if (ordered.length > AttachmentData.maxSizeBytes) {
+          throw StateError('assembled file exceeds size limit');
+        }
+      }
+      final bytes = Uint8List.fromList(ordered);
+      if (bytes.length > AttachmentData.maxSizeBytes) {
+        throw StateError('assembled file exceeds size limit');
+      }
+
+      final relativePath = await _fileStorage.savePeerInboundBytes(
+        agentId: incoming.agentId,
+        fileId: incoming.fileId,
+        fileName: AttachmentData.safeFileName(incoming.fileName),
+        bytes: bytes,
+      );
+      _storedFiles[fileId] = _StoredPeerFile(
+        agentId: incoming.agentId,
+        relativePath: relativePath,
+        fileName: incoming.fileName,
+        mimeType: incoming.mimeType,
+        semanticType: incoming.semanticType,
+        size: bytes.length,
+      );
+      await PeerConnectionManager.instance.sendControl(peerId, {
+        'type': 'agent_file_ack',
+        'file_id': fileId,
+        'ok': true,
+      });
+    } catch (e) {
+      _log.warning('agent_file_end failed: $e', tag: _tag);
+      await PeerConnectionManager.instance.sendControl(peerId, {
+        'type': 'agent_file_ack',
+        'file_id': fileId,
+        'ok': false,
+        'error': e.toString(),
+      });
+    }
+  }
+
+  Future<List<AttachmentData>?> _resolveAttachmentRefs(
+    String agentId,
+    dynamic raw,
+  ) async {
+    final refs = AttachmentData.peerRefListFromJson(raw);
+    if (refs == null) return null;
+    final out = <AttachmentData>[];
+    for (final ref in refs) {
+      final fileId = ref['file_id'] as String;
+      final stored = _storedFiles[fileId];
+      if (stored == null || stored.agentId != agentId) {
+        throw Exception('Unknown or mismatched attachment file_id: $fileId');
+      }
+      final fullPath = await _fileStorage.getFullPath(stored.relativePath);
+      final file = File(fullPath);
+      if (!await file.exists()) {
+        throw Exception('Attachment file missing on host: $fileId');
+      }
+      final bytes = await file.readAsBytes();
+      out.add(AttachmentData(
+        fileName: stored.fileName,
+        mimeType: stored.mimeType,
+        sizeBytes: stored.size,
+        bytes: bytes,
+        semanticType: stored.semanticType,
+        fileId: fileId,
+      ));
+    }
+    return out;
+  }
+
+  Future<void> _persistInboundAttachmentMessages({
+    required String channelId,
+    required String userId,
+    required String userName,
+    required List<AttachmentData> attachments,
+  }) async {
+    for (final att in attachments) {
+      final fileId = att.fileId;
+      if (fileId == null) continue;
+      final stored = _storedFiles[fileId];
+      if (stored == null) continue;
+      final messageType = switch (att.semanticType) {
+        'image' => 'image',
+        'audio' => 'audio',
+        _ => 'file',
+      };
+      final metadata = {
+        'path': stored.relativePath,
+        'name': stored.fileName,
+        'type': stored.semanticType,
+        'size': stored.size,
+        'file_id': fileId,
+      };
+      final id = Uuid().v4();
+      await _db.createMessage(
+        id: id,
+        channelId: channelId,
+        senderId: userId,
+        senderType: 'user',
+        senderName: userName,
+        content: att.textDescription,
+        messageType: messageType,
+        metadata: metadata,
+      );
+    }
+  }
+
   Future<void> _handleChat(String peerId, Map<String, dynamic> data) async {
     final requestId = data['request_id'] as String?;
     final agentId = data['agent_id'] as String?;
@@ -265,6 +529,16 @@ class PeerAgentHostService {
         _log.warning('Failed to ensure peer session channel: $e', tag: _tag);
       }
 
+      final attachments = await _resolveAttachmentRefs(agentId, data['attachments']);
+      if (attachments != null && attachments.isNotEmpty) {
+        await _persistInboundAttachmentMessages(
+          channelId: channelId,
+          userId: userId,
+          userName: userName,
+          attachments: attachments,
+        );
+      }
+
       var response = await _chat.sendMessageToAgent(
         content: message,
         agent: agent,
@@ -272,6 +546,7 @@ class PeerAgentHostService {
         userName: userName,
         channelId: channelId,
         acpCancellationToken: token,
+        attachments: attachments,
         // Relay raw stream; the phone client folds progress once.
         foldProgressContent: false,
         onStreamChunk: (chunk) {

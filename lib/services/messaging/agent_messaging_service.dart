@@ -229,6 +229,7 @@ class AgentMessagingService {
           onMessageMetadata: onMessageMetadata,
           sessionId: channelId,
           acpCancellationToken: acpCancellationToken,
+          attachments: attachments,
         );
       } else if (agent.protocol == ProtocolType.acp) {
         LoggerService().debug('Using ACP protocol', tag: 'AgentMessagingService');
@@ -1002,6 +1003,7 @@ class AgentMessagingService {
     void Function(Map<String, dynamic> metadata)? onMessageMetadata,
     String? sessionId,
     ACPCancellationToken? acpCancellationToken,
+    List<AttachmentData>? attachments,
   }) async {
     final peerId = agent.sourcePeerId;
     final remoteAgentId = agent.remoteAgentId;
@@ -1071,11 +1073,23 @@ class AgentMessagingService {
     }
 
     try {
+      if (attachments != null) {
+        for (final a in attachments) {
+          if (a.exceedsSizeLimit) {
+            throw Exception(
+              '附件过大（上限 ${AttachmentData.maxSizeBytes ~/ (1024 * 1024)}MB）: '
+              '${a.fileName}',
+            );
+          }
+        }
+      }
+
       final result = await PeerAgentClientService.instance.sendChat(
         peerId: peerId,
         remoteAgentId: remoteAgentId,
         message: userMessage.content,
         sessionId: peerSessionId,
+        attachments: attachments,
         cancelToken: acpCancellationToken,
         onChunk: (chunk) {
           final answerDelta = splitter.onChunk(chunk);

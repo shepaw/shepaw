@@ -161,6 +161,83 @@ void main() {
         expect(json['extra'], {'duration_ms': 5000});
       });
     });
+
+    group('fromJson / listFromJson', () {
+      test('round-trips toJson → fromJson', () {
+        final restored = AttachmentData.fromJson(imageAttachment.toJson());
+        expect(restored.fileName, imageAttachment.fileName);
+        expect(restored.mimeType, imageAttachment.mimeType);
+        expect(restored.sizeBytes, imageAttachment.sizeBytes);
+        expect(restored.semanticType, imageAttachment.semanticType);
+        expect(restored.bytes, imageAttachment.bytes);
+      });
+
+      test('listFromJson returns null for empty / invalid', () {
+        expect(AttachmentData.listFromJson(null), isNull);
+        expect(AttachmentData.listFromJson([]), isNull);
+        expect(AttachmentData.listFromJson('nope'), isNull);
+      });
+
+      test('listFromJson skips malformed entries', () {
+        final list = AttachmentData.listFromJson([
+          imageAttachment.toJson(),
+          'bad',
+          42,
+        ]);
+        expect(list, isNotNull);
+        expect(list!.length, 1);
+        expect(list.first.fileName, 'photo.jpg');
+      });
+
+      test('fromJson supports peer ref without data', () {
+        final ref = AttachmentData.fromJson({
+          'file_id': 'abc123',
+          'file_name': 'photo.jpg',
+          'mime_type': 'image/jpeg',
+          'size': 100,
+          'type': 'image',
+        });
+        expect(ref.fileId, 'abc123');
+        expect(ref.hasBytes, false);
+        expect(ref.sizeBytes, 100);
+      });
+    });
+
+    group('toPeerRefJson', () {
+      test('omits data payload', () {
+        final ref = imageAttachment.toPeerRefJson('fid001');
+        expect(ref['file_id'], 'fid001');
+        expect(ref['file_name'], 'photo.jpg');
+        expect(ref.containsKey('data'), false);
+      });
+    });
+
+    group('peerRefListFromJson', () {
+      test('keeps only entries with file_id', () {
+        final refs = AttachmentData.peerRefListFromJson([
+          {'file_id': 'a', 'file_name': 'x.jpg'},
+          {'file_name': 'no-id'},
+          'bad',
+        ]);
+        expect(refs, isNotNull);
+        expect(refs!.length, 1);
+        expect(refs.first['file_id'], 'a');
+      });
+    });
+
+    group('size limits', () {
+      test('exceedsSizeLimit checks 20MB', () {
+        expect(imageAttachment.exceedsSizeLimit, false);
+        final large = AttachmentData(
+          fileName: 'big.bin',
+          mimeType: 'application/octet-stream',
+          sizeBytes: AttachmentData.maxSizeBytes + 1,
+          bytes: Uint8List(0),
+          semanticType: 'file',
+        );
+        expect(large.exceedsSizeLimit, true);
+      });
+    });
   });
 
   group('PendingAttachment Tests', () {
