@@ -93,6 +93,44 @@ class MessageUtils {
     return true;
   }
 
+  /// 群聊中是否折叠头像/作者名（连续同发送者且无日期分隔）。
+  static bool shouldCollapseSenderChrome({
+    required bool isGroupMode,
+    required Message? previousMessage,
+    required Message currentMessage,
+    required bool showDateSeparator,
+  }) {
+    if (!isGroupMode || showDateSeparator) return false;
+    return isConsecutiveMessage(previousMessage, currentMessage);
+  }
+
+  /// 是否显示作者名：仅群聊、非己方、且未折叠连续气泡。
+  static bool shouldShowSenderName({
+    required bool isGroupMode,
+    required bool isMyMessage,
+    required bool collapseSenderChrome,
+  }) {
+    return isGroupMode && !isMyMessage && !collapseSenderChrome;
+  }
+
+  /// 是否绘制头像：仅群聊；连续气泡不绘制（可改用占位对齐）。
+  /// 单聊不显示头像，以增加气泡可用宽度。
+  static bool shouldShowAvatar({
+    required bool isGroupMode,
+    required bool collapseSenderChrome,
+  }) {
+    if (!isGroupMode) return false;
+    return !collapseSenderChrome;
+  }
+
+  /// 群聊连续气泡是否保留头像占位（对齐气泡左缘）。
+  static bool shouldReserveAvatarSpace({
+    required bool isGroupMode,
+    required bool collapseSenderChrome,
+  }) {
+    return isGroupMode && collapseSenderChrome;
+  }
+
   /// 编辑消息
   static Message editMessage(Message originalMessage, String newContent) {
     return Message(

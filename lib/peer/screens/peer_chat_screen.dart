@@ -502,8 +502,6 @@ class _PeerChatScreenState extends State<PeerChatScreen> {
                             key: ValueKey(message.id),
                             message: message,
                             isMyMessage: _isMyMessage(message),
-                            peerName: _displayName,
-                            deviceStyle: PeerDeviceStyle.forPeer(widget.peer),
                             highlighted: _highlightedMessageId == message.id,
                           );
                         },
@@ -671,122 +669,79 @@ class _PeerChatScreenState extends State<PeerChatScreen> {
 class _PeerMessageBubble extends StatelessWidget {
   final PeerMessage message;
   final bool isMyMessage;
-  final String peerName;
-  final PeerDeviceStyle deviceStyle;
   final bool highlighted;
 
   const _PeerMessageBubble({
     super.key,
     required this.message,
     required this.isMyMessage,
-    required this.peerName,
-    required this.deviceStyle,
     this.highlighted = false,
   });
 
-  static const _avatarSize = 32.0;
-  static const _avatarGap = 8.0;
-
   @override
   Widget build(BuildContext context) {
-    final maxBubbleWidth = MediaQuery.sizeOf(context).width * 0.72;
+    final maxBubbleWidth = MediaQuery.sizeOf(context).width * 0.88;
 
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 4),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // 对方头像（左侧）
-          if (!isMyMessage) ...[
-            Container(
-              width: _avatarSize,
-              height: _avatarSize,
-              decoration: BoxDecoration(
-                color: deviceStyle.backgroundColor,
-                borderRadius: BorderRadius.circular(8),
+      child: Align(
+        alignment: isMyMessage ? Alignment.centerRight : Alignment.centerLeft,
+        child: ConstrainedBox(
+          constraints: BoxConstraints(maxWidth: maxBubbleWidth),
+          child: Column(
+            crossAxisAlignment:
+                isMyMessage ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+            children: [
+              AnimatedContainer(
+                duration: const Duration(milliseconds: 300),
+                width: isMyMessage ? null : double.infinity,
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 14,
+                  vertical: 10,
+                ),
+                decoration: BoxDecoration(
+                  color: isMyMessage
+                      ? Theme.of(context).primaryColor
+                      : AppColors.surfaceMuted,
+                  borderRadius: BorderRadius.circular(16),
+                  border: highlighted
+                      ? Border.all(
+                          color: Colors.amber.shade600,
+                          width: 2,
+                        )
+                      : null,
+                ),
+                child: Text(
+                  message.content,
+                  style: TextStyle(
+                    fontSize: 15,
+                    height: 1.5,
+                    color: isMyMessage ? Colors.white : AppColors.textPrimary,
+                  ),
+                ),
               ),
-              alignment: Alignment.center,
-              child: Icon(Icons.smartphone, size: 16, color: deviceStyle.iconColor),
-            ),
-            const SizedBox(width: _avatarGap),
-          ],
-
-          // 消息内容：己方靠右贴齐列表边距（12px），对方保留左侧头像区
-          Expanded(
-            child: Align(
-              alignment:
-                  isMyMessage ? Alignment.centerRight : Alignment.centerLeft,
-              child: ConstrainedBox(
-                constraints: BoxConstraints(maxWidth: maxBubbleWidth),
-                child: Column(
-                  crossAxisAlignment: isMyMessage
-                      ? CrossAxisAlignment.end
-                      : CrossAxisAlignment.start,
+              Padding(
+                padding: const EdgeInsets.only(top: 4),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
                   children: [
-                    if (!isMyMessage)
-                      Padding(
-                        padding: const EdgeInsets.only(bottom: 4),
-                        child: Text(
-                          peerName,
-                          style: const TextStyle(
-                            fontSize: 12,
-                            fontWeight: FontWeight.bold,
-                            color: Colors.grey,
-                          ),
-                        ),
-                      ),
-                    AnimatedContainer(
-                      duration: const Duration(milliseconds: 300),
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 12,
-                        vertical: 8,
-                      ),
-                      decoration: BoxDecoration(
-                        color: isMyMessage
-                            ? Theme.of(context).primaryColor
-                            : Colors.grey[200],
-                        borderRadius: BorderRadius.circular(16),
-                        border: highlighted
-                            ? Border.all(
-                                color: Colors.amber.shade600,
-                                width: 2,
-                              )
-                            : null,
-                      ),
-                      child: Text(
-                        message.content,
-                        style: TextStyle(
-                          fontSize: 15,
-                          height: 1.4,
-                          color: isMyMessage ? Colors.white : Colors.black87,
-                        ),
+                    Text(
+                      _formatTime(context, message.timestamp),
+                      style: const TextStyle(
+                        fontSize: 10,
+                        color: Colors.grey,
                       ),
                     ),
-                    Padding(
-                      padding: const EdgeInsets.only(top: 4),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Text(
-                            _formatTime(context, message.timestamp),
-                            style: const TextStyle(
-                              fontSize: 10,
-                              color: Colors.grey,
-                            ),
-                          ),
-                          if (isMyMessage) ...[
-                            const SizedBox(width: 4),
-                            _buildDeliveryIcon(message.delivery),
-                          ],
-                        ],
-                      ),
-                    ),
+                    if (isMyMessage) ...[
+                      const SizedBox(width: 4),
+                      _buildDeliveryIcon(message.delivery),
+                    ],
                   ],
                 ),
               ),
-            ),
+            ],
           ),
-        ],
+        ),
       ),
     );
   }

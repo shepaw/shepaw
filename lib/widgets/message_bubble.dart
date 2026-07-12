@@ -18,10 +18,14 @@ import 'collapsible_message_bubble.dart';
 import 'permission_audit_bubble.dart';
 import 'chat/plan_approval_card.dart';
 import 'avatar_image.dart';
+import 'chat/sticky_in_view_header.dart';
 import '../services/she_service.dart';
 import '../services/error_handler_service.dart';
 
 class MessageBubble extends StatelessWidget {
+  static const double avatarSize = 32;
+  static const double avatarGap = 8;
+
   final Message message;
   final bool isMyMessage;
   final bool isStreaming;
@@ -63,6 +67,26 @@ class MessageBubble extends StatelessWidget {
   /// When `true`, the context menu is open on this message.
   final bool isContextMenuActive;
 
+  /// Whether to show the sender name above the bubble (group chats only).
+  final bool showSenderName;
+
+  /// Whether to show the avatar widget.
+  final bool showAvatar;
+
+  /// When avatar is hidden in group consecutive mode, keep a spacer so
+  /// bubbles stay indented. Ignored when [showAvatar] is true.
+  final bool reserveAvatarSpace;
+
+  /// When `true`, author chrome (avatar + name) sticks to the top of this
+  /// message's visible area while scrolling.
+  final bool stickySenderName;
+
+  /// Extra listenables (e.g. item positions) that trigger sticky recalculation.
+  final List<Listenable> stickyScrollListenables;
+
+  /// List viewport key for sticky Y measurement.
+  final GlobalKey? stickyViewportKey;
+
   const MessageBubble({
     Key? key,
     required this.message,
@@ -89,17 +113,28 @@ class MessageBubble extends StatelessWidget {
     this.selectionAreaKey,
     this.selectionFocusNode,
     this.isContextMenuActive = false,
+    this.showSenderName = true,
+    this.showAvatar = true,
+    this.reserveAvatarSpace = false,
+    this.stickySenderName = false,
+    this.stickyScrollListenables = const [],
+    this.stickyViewportKey,
   }) : super(key: key);
 
   static MarkdownStyleSheet? _cachedMyStyleSheet;
   static MarkdownStyleSheet? _cachedOtherStyleSheet;
   static Color? _cachedPrimaryColor;
+  // Bump when other-message typography/colors change so hot reload refreshes.
+  static const int _styleSheetVersion = 2;
+  static int? _cachedStyleSheetVersion;
 
   static MarkdownStyleSheet _getStyleSheet(bool isMyMessage, Color primaryColor) {
-    if (_cachedPrimaryColor != primaryColor) {
+    if (_cachedPrimaryColor != primaryColor ||
+        _cachedStyleSheetVersion != _styleSheetVersion) {
       _cachedMyStyleSheet = null;
       _cachedOtherStyleSheet = null;
       _cachedPrimaryColor = primaryColor;
+      _cachedStyleSheetVersion = _styleSheetVersion;
     }
     if (isMyMessage) {
       return _cachedMyStyleSheet ??= _buildStyleSheet(true);
@@ -109,9 +144,10 @@ class MessageBubble extends StatelessWidget {
   }
 
   static MarkdownStyleSheet _buildStyleSheet(bool isMyMessage) {
-    final textColor = isMyMessage ? Colors.white : Colors.black87;
+    final textColor =
+        isMyMessage ? Colors.white : AppColors.textPrimary;
     return MarkdownStyleSheet(
-      p: TextStyle(color: textColor, fontSize: 15, height: 1.4),
+      p: TextStyle(color: textColor, fontSize: 15, height: 1.5),
       h1: TextStyle(color: textColor, fontSize: 22, fontWeight: FontWeight.bold),
       h2: TextStyle(color: textColor, fontSize: 20, fontWeight: FontWeight.bold),
       h3: TextStyle(color: textColor, fontSize: 18, fontWeight: FontWeight.bold),
@@ -122,20 +158,22 @@ class MessageBubble extends StatelessWidget {
       strong: TextStyle(color: textColor, fontWeight: FontWeight.bold),
       a: TextStyle(color: isMyMessage ? Colors.lightBlueAccent : Colors.blue, decoration: TextDecoration.underline),
       code: TextStyle(
-        color: isMyMessage ? Colors.white : Colors.black87,
-        backgroundColor: isMyMessage ? Colors.white24 : Colors.grey[300],
+        color: isMyMessage ? Colors.white : AppColors.textPrimary,
+        backgroundColor: isMyMessage
+            ? Colors.white24
+            : AppColors.outline.withValues(alpha: 0.45),
         fontFamily: 'monospace',
         fontSize: 13,
       ),
       codeblockDecoration: BoxDecoration(
-        color: isMyMessage ? Colors.white12 : Colors.grey[100],
+        color: isMyMessage ? Colors.white12 : AppColors.background,
         borderRadius: BorderRadius.circular(8),
       ),
       codeblockPadding: const EdgeInsets.all(10),
       blockquoteDecoration: BoxDecoration(
         border: Border(
           left: BorderSide(
-            color: isMyMessage ? Colors.white54 : Colors.grey[400]!,
+            color: isMyMessage ? Colors.white54 : AppColors.outline,
             width: 3,
           ),
         ),
@@ -145,13 +183,13 @@ class MessageBubble extends StatelessWidget {
       tableHead: TextStyle(color: textColor, fontWeight: FontWeight.bold),
       tableBody: TextStyle(color: textColor),
       tableBorder: TableBorder.all(
-        color: isMyMessage ? Colors.white38 : Colors.grey[400]!,
+        color: isMyMessage ? Colors.white38 : AppColors.outline,
         width: 1,
       ),
       horizontalRuleDecoration: BoxDecoration(
         border: Border(
           top: BorderSide(
-            color: isMyMessage ? Colors.white38 : Colors.grey[400]!,
+            color: isMyMessage ? Colors.white38 : AppColors.outline,
             width: 1,
           ),
         ),
@@ -192,191 +230,238 @@ class MessageBubble extends StatelessWidget {
     // 普通消息
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 4),
+      child: _buildNormalMessage(context),
+    );
+  }
+
+  Widget _buildNormalMessage(BuildContext context) {
+    // Group non-my: sticky header carries avatar + name above a full-width
+    // bubble (same usable width as DM — no left indent under the chrome).
+    if (stickySenderName) {
+      final showChromeInFlow = showSenderName || showAvatar;
+      return StickyInViewHeader(
+        enabled: true,
+        showHeaderInFlow: showChromeInFlow,
+        stuckBackground: Theme.of(context).scaffoldBackgroundColor,
+        scrollListenables: stickyScrollListenables,
+        viewportKey: stickyViewportKey,
+        header: _buildStickyAuthorChrome(context),
+        child: _buildBubbleBody(context),
+      );
+    }
+
+    // DM / my messages / group without sticky: classic row layout.
+    // DM: no avatar. Group my-messages may still show trailing avatar.
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisAlignment:
+          isMyMessage ? MainAxisAlignment.end : MainAxisAlignment.start,
+      children: [
+        if (!isMyMessage && (showAvatar || reserveAvatarSpace)) ...[
+          _buildLeadingAvatarSlot(context),
+          const SizedBox(width: avatarGap),
+        ],
+        Flexible(child: _buildBubbleBody(context)),
+        if (isMyMessage && showAvatar) ...[
+          const SizedBox(width: avatarGap),
+          _buildTrailingAvatarSlot(context),
+        ],
+      ],
+    );
+  }
+
+  /// Avatar + name row used as the sticky / in-flow author chrome.
+  Widget _buildStickyAuthorChrome(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 4),
       child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisAlignment:
-            isMyMessage ? MainAxisAlignment.end : MainAxisAlignment.start,
+        crossAxisAlignment: CrossAxisAlignment.center,
         children: [
-          if (!isMyMessage) ...[
-            // Agent/用户头像
-            GestureDetector(
-              onTap: onAvatarTap,
-              child: Container(
-                width: 32,
-                height: 32,
-                decoration: BoxDecoration(
-                  color: isStreaming ? AppColors.primaryContainer : null,
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                alignment: Alignment.center,
-                child: isStreaming
-                    ? SizedBox(
-                        width: 16,
-                        height: 16,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2,
-                          valueColor: AlwaysStoppedAnimation<Color>(
-                            Theme.of(context).primaryColor,
-                          ),
-                        ),
-                      )
-                    : _buildAvatarWidget(),
-              ),
-            ),
-            const SizedBox(width: 8),
-          ],
-          
-          // 消息内容
+          _buildLeadingAvatarSlot(context, forceVisible: true),
+          const SizedBox(width: avatarGap),
           Flexible(
-            child: Column(
-              crossAxisAlignment: isMyMessage
-                  ? CrossAxisAlignment.end
-                  : CrossAxisAlignment.start,
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
               children: [
-                // 发送者名字 (非自己的消息)
-                if (!isMyMessage)
-                  Padding(
-                    padding: const EdgeInsets.only(bottom: 4),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Text(
-                          message.from.name,
-                          style: const TextStyle(
-                            fontSize: 12,
-                            fontWeight: FontWeight.bold,
-                            color: Colors.grey,
-                          ),
-                        ),
-                        if (isStreaming) ...[
-                          const SizedBox(width: 4),
-                          Text(
-                            AppLocalizations.of(context).widget_typing,
-                            style: const TextStyle(
-                              fontSize: 10,
-                              color: AppColors.primary,
-                              fontStyle: FontStyle.italic,
-                            ),
-                          ),
-                        ],
-                      ],
-                    ),
-                  ),
-                
-                // 消息气泡
-                Stack(
-                  clipBehavior: Clip.none,
-                  children: [
-                    Container(
-                      padding: message.type == MessageType.image
-                          ? const EdgeInsets.all(4)
-                          : const EdgeInsets.symmetric(
-                              horizontal: 12,
-                              vertical: 8,
-                            ),
-                      decoration: BoxDecoration(
-                        color: isMyMessage
-                            ? Theme.of(context).primaryColor
-                            : (isStreaming
-                                ? AppColors.primaryContainer
-                                : Colors.grey[200]),
-                        borderRadius: BorderRadius.circular(16),
-                        border: isStreaming
-                            ? Border.all(
-                                color: AppColors.primaryLight,
-                                width: 1,
-                              )
-                            : null,
-                      ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          if (showQuote && quotedMessage != null)
-                            _buildQuoteBlock(context)
-                          else if (showQuote && message.replyTo != null)
-                            _buildDeletedQuoteBlock(context),
-                          _buildMessageContent(context),
-                        ],
-                      ),
-                    ),
-                    if (isContextMenuActive)
-                      Positioned.fill(
-                        child: IgnorePointer(
-                          child: DecoratedBox(
-                            decoration: BoxDecoration(
-                              borderRadius: BorderRadius.circular(16),
-                              color: isMyMessage
-                                  ? Colors.black.withValues(alpha: 0.18)
-                                  : Theme.of(context)
-                                      .primaryColor
-                                      .withValues(alpha: 0.2),
-                            ),
-                          ),
-                        ),
-                      ),
-                  ],
-                ),
-
-                // 停止按钮（流式输出时显示）
-                if (isStreaming && onStop != null)
-                  Padding(
-                    padding: const EdgeInsets.only(top: 6),
-                    child: GestureDetector(
-                      onTap: onStop,
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                        decoration: BoxDecoration(
-                          border: Border.all(color: Colors.red[300]!, width: 1),
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(Icons.stop, size: 14, color: Colors.red[400]),
-                            const SizedBox(width: 4),
-                            Text(
-                              AppLocalizations.of(context).widget_stop,
-                              style: TextStyle(
-                                fontSize: 12,
-                                color: Colors.red[400],
-                                fontWeight: FontWeight.w500,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ),
-
-                // 时间
-                Padding(
-                  padding: const EdgeInsets.only(top: 4),
+                Flexible(
                   child: Text(
-                    message.timeString,
+                    message.from.name,
+                    overflow: TextOverflow.ellipsis,
                     style: const TextStyle(
-                      fontSize: 10,
+                      fontSize: 12,
+                      fontWeight: FontWeight.bold,
                       color: Colors.grey,
                     ),
                   ),
                 ),
+                if (isStreaming) ...[
+                  const SizedBox(width: 4),
+                  Text(
+                    AppLocalizations.of(context).widget_typing,
+                    style: const TextStyle(
+                      fontSize: 10,
+                      color: AppColors.primary,
+                      fontStyle: FontStyle.italic,
+                    ),
+                  ),
+                ],
               ],
             ),
           ),
-          
-          if (isMyMessage) ...[
-            const SizedBox(width: 8),
-            // 自己的头像
-            Container(
-              width: 32,
-              height: 32,
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(8),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildLeadingAvatarSlot(BuildContext context,
+      {bool forceVisible = false}) {
+    final visible = forceVisible || showAvatar;
+    if (!visible) {
+      return const SizedBox(width: avatarSize, height: avatarSize);
+    }
+    return GestureDetector(
+      onTap: onAvatarTap,
+      child: Container(
+        width: avatarSize,
+        height: avatarSize,
+        decoration: BoxDecoration(
+          color: isStreaming ? AppColors.primaryContainer : null,
+          borderRadius: BorderRadius.circular(8),
+        ),
+        alignment: Alignment.center,
+        child: isStreaming
+            ? SizedBox(
+                width: 16,
+                height: 16,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  valueColor: AlwaysStoppedAnimation<Color>(
+                    Theme.of(context).primaryColor,
+                  ),
+                ),
+              )
+            : _buildAvatarWidget(),
+      ),
+    );
+  }
+
+  Widget _buildTrailingAvatarSlot(BuildContext context) {
+    if (!showAvatar) {
+      return const SizedBox(width: avatarSize, height: avatarSize);
+    }
+    return Container(
+      width: avatarSize,
+      height: avatarSize,
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(8),
+      ),
+      alignment: Alignment.center,
+      child: _buildAvatarWidget(),
+    );
+  }
+
+  Widget _buildBubbleBody(BuildContext context) {
+    return Align(
+      alignment: isMyMessage ? Alignment.centerRight : Alignment.centerLeft,
+      child: Column(
+        crossAxisAlignment:
+            isMyMessage ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Stack(
+            clipBehavior: Clip.none,
+            children: [
+              Container(
+                width: isMyMessage ? null : double.infinity,
+                padding: message.type == MessageType.image
+                    ? const EdgeInsets.all(4)
+                    : const EdgeInsets.symmetric(
+                        horizontal: 14,
+                        vertical: 10,
+                      ),
+                decoration: BoxDecoration(
+                  color: isMyMessage
+                      ? Theme.of(context).primaryColor
+                      : (isStreaming
+                          ? AppColors.primaryContainer
+                          : AppColors.surfaceMuted),
+                  borderRadius: BorderRadius.circular(16),
+                  border: isStreaming
+                      ? Border.all(
+                          color: AppColors.primaryLight,
+                          width: 1,
+                        )
+                      : null,
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    if (showQuote && quotedMessage != null)
+                      _buildQuoteBlock(context)
+                    else if (showQuote && message.replyTo != null)
+                      _buildDeletedQuoteBlock(context),
+                    _buildMessageContent(context),
+                  ],
+                ),
               ),
-              alignment: Alignment.center,
-              child: _buildAvatarWidget(),
+              if (isContextMenuActive)
+                Positioned.fill(
+                  child: IgnorePointer(
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(16),
+                        color: isMyMessage
+                            ? Colors.black.withValues(alpha: 0.18)
+                            : Theme.of(context)
+                                .primaryColor
+                                .withValues(alpha: 0.2),
+                      ),
+                    ),
+                  ),
+                ),
+            ],
+          ),
+          if (isStreaming && onStop != null)
+            Padding(
+              padding: const EdgeInsets.only(top: 6),
+              child: GestureDetector(
+                onTap: onStop,
+                child: Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  decoration: BoxDecoration(
+                    border: Border.all(color: Colors.red[300]!, width: 1),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.stop, size: 14, color: Colors.red[400]),
+                      const SizedBox(width: 4),
+                      Text(
+                        AppLocalizations.of(context).widget_stop,
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: Colors.red[400],
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
             ),
-          ],
+          Padding(
+            padding: const EdgeInsets.only(top: 4),
+            child: Text(
+              message.timeString,
+              style: const TextStyle(
+                fontSize: 10,
+                color: Colors.grey,
+              ),
+            ),
+          ),
         ],
       ),
     );

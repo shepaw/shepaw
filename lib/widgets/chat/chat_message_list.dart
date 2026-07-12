@@ -14,7 +14,7 @@ import 'message_long_press_handler.dart';
 /// - Quote/reply display
 /// - Highlight animation
 /// - Long-press context menu
-class ChatMessageList extends StatelessWidget {
+class ChatMessageList extends StatefulWidget {
   final List<Message> messages;
   final Map<String, Message> messageIdMap;
   final String? streamingMessageId;
@@ -77,7 +77,23 @@ class ChatMessageList extends StatelessWidget {
   });
 
   @override
+  State<ChatMessageList> createState() => _ChatMessageListState();
+}
+
+class _ChatMessageListState extends State<ChatMessageList> {
+  final GlobalKey _viewportKey = GlobalKey();
+
+  @override
   Widget build(BuildContext context) {
+    final messages = widget.messages;
+    final isGroupMode = widget.isGroupMode;
+    final messageIdMap = widget.messageIdMap;
+    final streamingMessageId = widget.streamingMessageId;
+    final groupStreamingMessageIds = widget.groupStreamingMessageIds;
+    final agentAvatarMap = widget.agentAvatarMap;
+    final isAgentOffline = widget.isAgentOffline;
+    final highlightedMessageId = widget.highlightedMessageId;
+
     // Pre-compute image messages list and index map for gallery support
     final allImageMessages = <Message>[];
     final imageIndexMap = <String, int>{};
@@ -116,140 +132,183 @@ class ChatMessageList extends StatelessWidget {
       }
     }
 
-    return ScrollablePositionedList.builder(
-      reverse: true,
-      itemScrollController: itemScrollController,
-      itemPositionsListener: itemPositionsListener,
-      padding: const EdgeInsets.all(16),
-      itemCount: messages.length,
-      itemBuilder: (context, index) {
-        // In reverse mode, index 0 is the newest (last) message.
-        // Map back to the chronological index.
-        final originalIndex = messages.length - 1 - index;
-        final message = messages[originalIndex];
-        // She 以 userId 身份发送的消息，sender_type 虽为 'user' 但不应视为"我的消息"
-        final isMyMessage = message.from.type == 'user'
-            && message.from.id != SheService.sheId;
+    return KeyedSubtree(
+      key: _viewportKey,
+      child: ScrollablePositionedList.builder(
+        reverse: true,
+        itemScrollController: widget.itemScrollController,
+        itemPositionsListener: widget.itemPositionsListener,
+        padding: const EdgeInsets.all(16),
+        itemCount: messages.length,
+        itemBuilder: (context, index) {
+          // In reverse mode, index 0 is the newest (last) message.
+          // Map back to the chronological index.
+          final originalIndex = messages.length - 1 - index;
+          final message = messages[originalIndex];
+          // She 以 userId 身份发送的消息，sender_type 虽为 'user' 但不应视为"我的消息"
+          final isMyMessage = message.from.type == 'user'
+              && message.from.id != SheService.sheId;
 
-        final previousMessage = originalIndex > 0 ? messages[originalIndex - 1] : null;
-        final showDateSeparator = MessageUtils.shouldShowDateSeparator(
-          previousMessage,
-          message,
-        );
+          final previousMessage =
+              originalIndex > 0 ? messages[originalIndex - 1] : null;
+          final showDateSeparator = MessageUtils.shouldShowDateSeparator(
+            previousMessage,
+            message,
+          );
 
-        if (mergedIndices.contains(originalIndex)) {
-          if (showDateSeparator) {
-            return _buildDateSeparator(context, message.dateTime);
+          if (mergedIndices.contains(originalIndex)) {
+            if (showDateSeparator) {
+              return _buildDateSeparator(context, message.dateTime);
+            }
+            return const SizedBox.shrink();
           }
-          return const SizedBox.shrink();
-        }
 
-        Message? quotedMessage;
-        final isReplyToPrevious = message.replyTo != null &&
-            previousMessage != null &&
-            previousMessage.id == message.replyTo;
-        if (message.replyTo != null && !isReplyToPrevious) {
-          quotedMessage = messageIdMap[message.replyTo];
-        }
+          Message? quotedMessage;
+          final isReplyToPrevious = message.replyTo != null &&
+              previousMessage != null &&
+              previousMessage.id == message.replyTo;
+          if (message.replyTo != null && !isReplyToPrevious) {
+            quotedMessage = messageIdMap[message.replyTo];
+          }
 
-        final isHighlighted = highlightedMessageId == message.id;
-        final isStreaming = message.id == streamingMessageId || groupStreamingMessageIds.contains(message.id);
+          final isHighlighted = highlightedMessageId == message.id;
+          final isStreaming = message.id == streamingMessageId ||
+              groupStreamingMessageIds.contains(message.id);
 
-        return RepaintBoundary(
-          key: ValueKey(message.id),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              if (showDateSeparator)
-                _buildDateSeparator(context, message.dateTime),
-              DecoratedBox(
-                decoration: BoxDecoration(
-                  color: isHighlighted
-                      ? Theme.of(context).primaryColor.withOpacity(0.12)
-                      : Colors.transparent,
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: MessageLongPressHandler(
-                  message: message,
-                  isGroupMode: isGroupMode,
-                  hasSelectableText: message.type == MessageType.text &&
-                      !message.isSystemMessage,
-                  onReply: () => onReply(message),
-                  onRollback: () => onRollback(message),
-                  onReEdit: () => onRollbackReEdit(message, reEdit: true),
-                  onDelete: () => onDelete(message),
-                  onViewTrace: (message.from.isAgent &&
-                          message.metadata?['trace_id'] != null)
-                      ? () => onViewTrace?.call(message)
-                      : null,
-                  builder: ({
-                    required textSelectionEnabled,
-                    required menuActive,
-                    required selectionAreaKey,
-                    required selectionFocusNode,
-                  }) =>
-                      MessageBubble(
+          final collapseSenderChrome = MessageUtils.shouldCollapseSenderChrome(
+            isGroupMode: isGroupMode,
+            previousMessage: previousMessage,
+            currentMessage: message,
+            showDateSeparator: showDateSeparator,
+          );
+          final showSenderName = MessageUtils.shouldShowSenderName(
+            isGroupMode: isGroupMode,
+            isMyMessage: isMyMessage,
+            collapseSenderChrome: collapseSenderChrome,
+          );
+          final showAvatar = MessageUtils.shouldShowAvatar(
+            isGroupMode: isGroupMode,
+            collapseSenderChrome: collapseSenderChrome,
+          );
+          final reserveAvatarSpace = MessageUtils.shouldReserveAvatarSpace(
+            isGroupMode: isGroupMode,
+            collapseSenderChrome: collapseSenderChrome,
+          );
+          // Sticky for every non-my group message so long follow-ups still
+          // identify the author after consecutive chrome is collapsed.
+          final stickySenderName = isGroupMode && !isMyMessage;
+
+          return RepaintBoundary(
+            key: ValueKey(message.id),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                if (showDateSeparator)
+                  _buildDateSeparator(context, message.dateTime),
+                DecoratedBox(
+                  decoration: BoxDecoration(
+                    color: isHighlighted
+                        ? Theme.of(context).primaryColor.withOpacity(0.12)
+                        : Colors.transparent,
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: MessageLongPressHandler(
                     message: message,
-                    isMyMessage: isMyMessage,
-                    isStreaming: isStreaming,
-                    textSelectionEnabled: textSelectionEnabled,
-                    isContextMenuActive: menuActive,
-                    selectionAreaKey: selectionAreaKey,
-                    selectionFocusNode: selectionFocusNode,
-                    onStop: (message.id == streamingMessageId ||
-                            groupStreamingMessageIds.contains(message.id))
-                        ? onStopStreaming
+                    isGroupMode: isGroupMode,
+                    hasSelectableText: message.type == MessageType.text &&
+                        !message.isSystemMessage,
+                    onReply: () => widget.onReply(message),
+                    onRollback: () => widget.onRollback(message),
+                    onReEdit: () =>
+                        widget.onRollbackReEdit(message, reEdit: true),
+                    onDelete: () => widget.onDelete(message),
+                    onViewTrace: (message.from.isAgent &&
+                            message.metadata?['trace_id'] != null)
+                        ? () => widget.onViewTrace?.call(message)
                         : null,
-                    onActionSelected: (confirmationId, actionId, actionLabel) {
-                      final confirmationContext = (message.metadata?[
-                                  'action_confirmation']
-                              as Map<String, dynamic>?)?['confirmation_context']
-                          as String?;
-                      onActionSelected(message, confirmationId, actionId,
-                          actionLabel,
-                          confirmationContext: confirmationContext);
-                    },
-                    onSingleSelectSubmitted: (selectId, optionId, optionLabel) {
-                      onSingleSelectSubmitted(
-                          message, selectId, optionId, optionLabel);
-                    },
-                    onMultiSelectSubmitted: (selectId, optionIds, summary) {
-                      onMultiSelectSubmitted(
-                          message, selectId, optionIds, summary);
-                    },
-                    onFileUploadSubmitted: (uploadId, files, summary) {
-                      onFileUploadSubmitted(message, uploadId, files, summary);
-                    },
-                    onFormSubmitted: (formId, values, summary) {
-                      onFormSubmitted(message, formId, values, summary);
-                    },
-                    onPlanApprovalResponded: onPlanApprovalResponded != null
-                        ? (approved, {feedback, skippedTaskIds}) =>
-                            onPlanApprovalResponded!(message, approved,
-                                feedback: feedback,
-                                skippedTaskIds: skippedTaskIds)
-                        : null,
-                    quotedMessage: quotedMessage,
-                    showQuote: !isReplyToPrevious,
-                    onQuoteTap: message.replyTo != null
-                        ? () => onScrollToMessage(message.replyTo!)
-                        : null,
-                    allImageMessages: allImageMessages,
-                    imageIndex: imageIndexMap[message.id] ?? 0,
-                    imageIndexMap: imageIndexMap,
-                    groupedImageMessages: imageGroupMap[originalIndex],
-                    onAvatarTap: message.from.isAgent
-                        ? () => onAgentAvatarTap(message.from.id)
-                        : null,
-                    senderAvatar: agentAvatarMap[message.from.id],
-                    isAgentOffline: isAgentOffline,
+                    builder: ({
+                      required textSelectionEnabled,
+                      required menuActive,
+                      required selectionAreaKey,
+                      required selectionFocusNode,
+                    }) =>
+                        MessageBubble(
+                      message: message,
+                      isMyMessage: isMyMessage,
+                      isStreaming: isStreaming,
+                      textSelectionEnabled: textSelectionEnabled,
+                      isContextMenuActive: menuActive,
+                      selectionAreaKey: selectionAreaKey,
+                      selectionFocusNode: selectionFocusNode,
+                      showSenderName: showSenderName,
+                      showAvatar: showAvatar,
+                      reserveAvatarSpace: reserveAvatarSpace,
+                      stickySenderName: stickySenderName,
+                      stickyScrollListenables: [
+                        widget.itemPositionsListener.itemPositions,
+                      ],
+                      stickyViewportKey: _viewportKey,
+                      onStop: (message.id == streamingMessageId ||
+                              groupStreamingMessageIds.contains(message.id))
+                          ? widget.onStopStreaming
+                          : null,
+                      onActionSelected:
+                          (confirmationId, actionId, actionLabel) {
+                        final confirmationContext = (message.metadata?[
+                                    'action_confirmation']
+                                as Map<String, dynamic>?)?[
+                            'confirmation_context'] as String?;
+                        widget.onActionSelected(
+                            message, confirmationId, actionId, actionLabel,
+                            confirmationContext: confirmationContext);
+                      },
+                      onSingleSelectSubmitted:
+                          (selectId, optionId, optionLabel) {
+                        widget.onSingleSelectSubmitted(
+                            message, selectId, optionId, optionLabel);
+                      },
+                      onMultiSelectSubmitted: (selectId, optionIds, summary) {
+                        widget.onMultiSelectSubmitted(
+                            message, selectId, optionIds, summary);
+                      },
+                      onFileUploadSubmitted: (uploadId, files, summary) {
+                        widget.onFileUploadSubmitted(
+                            message, uploadId, files, summary);
+                      },
+                      onFormSubmitted: (formId, values, summary) {
+                        widget.onFormSubmitted(
+                            message, formId, values, summary);
+                      },
+                      onPlanApprovalResponded:
+                          widget.onPlanApprovalResponded != null
+                              ? (approved, {feedback, skippedTaskIds}) =>
+                                  widget.onPlanApprovalResponded!(
+                                      message, approved,
+                                      feedback: feedback,
+                                      skippedTaskIds: skippedTaskIds)
+                              : null,
+                      quotedMessage: quotedMessage,
+                      showQuote: !isReplyToPrevious,
+                      onQuoteTap: message.replyTo != null
+                          ? () => widget.onScrollToMessage(message.replyTo!)
+                          : null,
+                      allImageMessages: allImageMessages,
+                      imageIndex: imageIndexMap[message.id] ?? 0,
+                      imageIndexMap: imageIndexMap,
+                      groupedImageMessages: imageGroupMap[originalIndex],
+                      onAvatarTap: message.from.isAgent
+                          ? () => widget.onAgentAvatarTap(message.from.id)
+                          : null,
+                      senderAvatar: agentAvatarMap[message.from.id],
+                      isAgentOffline: isAgentOffline,
+                    ),
                   ),
                 ),
-              ),
-            ],
-          ),
-        );
-      },
+              ],
+            ),
+          );
+        },
+      ),
     );
   }
 
