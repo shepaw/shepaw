@@ -203,6 +203,28 @@ void main() {
       });
     });
 
+    test('isAudio and audioFormat derive from name / mime', () {
+      final m4a = AttachmentData(
+        fileName: 'voice.m4a',
+        mimeType: 'audio/mp4',
+        sizeBytes: 100,
+        bytes: Uint8List.fromList([1, 2, 3]),
+        semanticType: 'audio',
+      );
+      expect(m4a.isAudio, isTrue);
+      expect(m4a.isImage, isFalse);
+      expect(m4a.audioFormat, 'm4a');
+
+      final mp3 = AttachmentData(
+        fileName: 'clip.bin',
+        mimeType: 'audio/mpeg',
+        sizeBytes: 10,
+        bytes: Uint8List(0),
+        semanticType: 'audio',
+      );
+      expect(mp3.audioFormat, 'mp3');
+    });
+
     group('toPeerRefJson', () {
       test('omits data payload', () {
         final ref = imageAttachment.toPeerRefJson('fid001');

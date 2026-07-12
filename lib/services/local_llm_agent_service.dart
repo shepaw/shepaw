@@ -10,6 +10,7 @@ import 'model_registry.dart';
 import 'ui_component_registry.dart';
 import 'logger_service.dart';
 import 'she_service.dart';
+import 'messaging/local_llm_handler.dart';
 import '../clis/shepaw/shepaw_cli.dart';
 
 /// Local LLM Agent Service
@@ -347,7 +348,12 @@ class LocalLLMAgentService {
     if (history != null) {
       messages.addAll(history);
     }
-    messages.add({'role': 'user', 'content': message});
+    final isClaude = resolved.providerType == 'claude';
+    messages.add(LocalLLMHelpers.buildUserMessageContent(
+      message,
+      attachments,
+      isClaude,
+    ));
 
     final url = _buildNonSSEUrl(resolved);
     final body = _buildNonSSERequestBody(resolved, messages);
@@ -682,16 +688,14 @@ class LocalLLMAgentService {
       messages.addAll(history);
     }
 
-    // Build user message — multimodal if image attachments present
-    final imageAttachments = attachments?.where((a) => a.isImage).toList() ?? [];
-    final nonImageAttachments = attachments?.where((a) => !a.isImage).toList() ?? [];
-
-    // Prepend non-image attachment descriptions to the text
-    String effectiveMessage = message;
-    if (nonImageAttachments.isNotEmpty) {
-      final descriptions = nonImageAttachments.map((a) => a.textDescription).join('\n');
-      effectiveMessage = '$descriptions\n\n$effectiveMessage';
-    }
+    // Build user message — multimodal for image / audio attachments.
+    final userMsg = LocalLLMHelpers.buildUserMessageContent(
+      message,
+      attachments,
+      false,
+    );
+    final userContent = userMsg['content'];
+    final hasMultimodal = userContent is List;
 
     // If the last message in history is already a user message, merge the
     // current content into it instead of appending a second consecutive user
@@ -699,44 +703,35 @@ class LocalLLMAgentService {
     // messages with a 400 error.
     final lastIsUser = messages.isNotEmpty && messages.last['role'] == 'user';
 
-    if (lastIsUser && imageAttachments.isEmpty) {
-      // Simple text merge: append current message to the existing user msg.
+    if (lastIsUser && !hasMultimodal) {
       final prev = messages.last;
       final prevContent = prev['content'];
+      final text = userContent as String;
       if (prevContent is String) {
-        prev['content'] = '$prevContent\n\n$effectiveMessage';
+        prev['content'] = '$prevContent\n\n$text';
       } else if (prevContent is List) {
-        // Previous content is multimodal array — append a text part.
-        (prevContent as List).add({'type': 'text', 'text': '\n\n$effectiveMessage'});
+        prevContent.add({'type': 'text', 'text': '\n\n$text'});
       }
-    } else if (imageAttachments.isNotEmpty) {
-      // OpenAI Vision format: content is an array
-      final contentParts = <Map<String, dynamic>>[
-        {'type': 'text', 'text': effectiveMessage},
-        for (final img in imageAttachments)
-          {
-            'type': 'image_url',
-            'image_url': {'url': 'data:${img.mimeType};base64,${img.base64Data}'},
-          },
-      ];
+    } else if (hasMultimodal) {
+      final contentParts = List<Map<String, dynamic>>.from(
+        (userContent as List).map((e) => Map<String, dynamic>.from(e as Map)),
+      );
       if (lastIsUser) {
-        // Merge multimodal content into existing user message.
         final prev = messages.last;
         final prevContent = prev['content'];
         if (prevContent is String) {
-          // Convert previous plain text into multimodal array, then append.
           prev['content'] = <Map<String, dynamic>>[
             {'type': 'text', 'text': prevContent},
             ...contentParts,
           ];
         } else if (prevContent is List) {
-          (prevContent as List).addAll(contentParts);
+          prevContent.addAll(contentParts);
         }
       } else {
         messages.add({'role': 'user', 'content': contentParts});
       }
     } else {
-      messages.add({'role': 'user', 'content': effectiveMessage});
+      messages.add({'role': 'user', 'content': userContent});
     }
 
     final url = apiBase.endsWith('/')
@@ -792,35 +787,11 @@ class LocalLLMAgentService {
       messages.addAll(history);
     }
 
-    // Build user message — multimodal if image attachments present
-    final imageAttachments = attachments?.where((a) => a.isImage).toList() ?? [];
-    final nonImageAttachments = attachments?.where((a) => !a.isImage).toList() ?? [];
-
-    // Prepend non-image attachment descriptions to the text
-    String effectiveMessage = message;
-    if (nonImageAttachments.isNotEmpty) {
-      final descriptions = nonImageAttachments.map((a) => a.textDescription).join('\n');
-      effectiveMessage = '$descriptions\n\n$effectiveMessage';
-    }
-
-    if (imageAttachments.isNotEmpty) {
-      // Claude multimodal format: content is an array of blocks
-      final contentParts = <Map<String, dynamic>>[
-        for (final img in imageAttachments)
-          {
-            'type': 'image',
-            'source': {
-              'type': 'base64',
-              'media_type': img.mimeType,
-              'data': img.base64Data,
-            },
-          },
-        {'type': 'text', 'text': effectiveMessage},
-      ];
-      messages.add({'role': 'user', 'content': contentParts});
-    } else {
-      messages.add({'role': 'user', 'content': effectiveMessage});
-    }
+    messages.add(LocalLLMHelpers.buildUserMessageContent(
+      message,
+      attachments,
+      true,
+    ));
 
     final url = apiBase.endsWith('/')
         ? '${apiBase}messages'
@@ -1323,7 +1294,7 @@ class LocalLLMAgentService {
       if (_lastUserMessageHasMultimodal(historyDegraded) &&
           e.toString().contains('LLM API error (4')) {
         yield LLMTextEvent(
-            '> ⚠️ 当前模型不支持图片识别，已自动忽略图片内容，回复可能不够准确。\n\n');
+            '> ⚠️ 当前模型不支持图片/音频识别，已自动忽略多媒体内容，回复可能不够准确。\n\n');
         final degraded = _degradeMultimodalMessages(historyDegraded);
         await for (final event in buildRetryStream(degraded)) {
           yield event;
@@ -1357,6 +1328,8 @@ class LocalLLMAgentService {
           textParts.add(part['text'] as String? ?? '');
         } else if (part['type'] == 'image_url' || part['type'] == 'image') {
           textParts.add('[Image]');
+        } else if (part['type'] == 'input_audio') {
+          textParts.add('[Audio]');
         }
       }
     }
@@ -1367,6 +1340,7 @@ class LocalLLMAgentService {
   ///
   /// - OpenAI `{type: 'image_url', ...}` → `[Image]`
   /// - Claude `{type: 'image', ...}` → `[Image]`
+  /// - OpenAI `{type: 'input_audio', ...}` → `[Audio]`
   /// - `{type: 'text', text: ...}` parts are preserved
   /// - Messages whose `content` is already a `String` are returned as-is.
   static List<Map<String, dynamic>> _degradeMultimodalMessages(

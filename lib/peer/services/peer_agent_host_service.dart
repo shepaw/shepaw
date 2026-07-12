@@ -27,6 +27,8 @@ import 'package:uuid/uuid.dart';
 import '../../models/attachment_data.dart';
 import '../../models/channel.dart';
 import '../../models/message.dart';
+import '../../models/model_definition.dart';
+import '../../models/model_routing_config.dart';
 import '../../models/remote_agent.dart';
 import '../../services/acp_agent_connection.dart';
 import '../../services/chat_service.dart';
@@ -220,6 +222,12 @@ class PeerAgentHostService {
           'avatar': a.avatar,
           'bio': a.bio,
           'capabilities': a.capabilities,
+          // Input modalities the peer client should expose (mic / image picker).
+          'supported_modalities': [
+            ModalityType.text.name,
+            for (final m in kInputScenarioModalities)
+              if (a.supportsModality(m)) m.name,
+          ],
         };
         // 头像若为本机文件（用户上传的自定义图片），对端无法访问该路径，
         // 故把图片字节一并打包发送，由对端落地为本地文件后展示。
@@ -439,6 +447,7 @@ class PeerAgentHostService {
         throw Exception('Attachment file missing on host: $fileId');
       }
       final bytes = await file.readAsBytes();
+      final extra = ref['extra'];
       out.add(AttachmentData(
         fileName: stored.fileName,
         mimeType: stored.mimeType,
@@ -446,6 +455,9 @@ class PeerAgentHostService {
         bytes: bytes,
         semanticType: stored.semanticType,
         fileId: fileId,
+        extraMetadata: extra is Map
+            ? Map<String, dynamic>.from(extra)
+            : null,
       ));
     }
     return out;
@@ -473,6 +485,7 @@ class PeerAgentHostService {
         'type': stored.semanticType,
         'size': stored.size,
         'file_id': fileId,
+        if (att.extraMetadata != null) ...att.extraMetadata!,
       };
       final id = Uuid().v4();
       await _db.createMessage(

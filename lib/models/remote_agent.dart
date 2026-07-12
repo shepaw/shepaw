@@ -338,10 +338,21 @@ class RemoteAgent {
   /// Whether this agent can handle content of the given [modality].
   ///
   /// - Text is always supported.
+  /// - Peer agents trust host-advertised `supported_modalities` when present;
+  ///   legacy peer rows without the field assume capable.
   /// - Remote ACP agents (no `llm_provider` metadata) are assumed capable.
   /// - Local agents check scenario models, then main model capability tags.
   bool supportsModality(ModalityType modality) {
     if (modality == ModalityType.text) return true;
+
+    if (isPeerAgent) {
+      final advertised = metadata['supported_modalities'];
+      if (advertised is List) {
+        return advertised.map((e) => e.toString()).contains(modality.name);
+      }
+      // Legacy peer agents injected before modality advertising.
+      return true;
+    }
 
     // Remote ACP agents — assume capable (remote side handles it).
     if (!isLocal) return true;

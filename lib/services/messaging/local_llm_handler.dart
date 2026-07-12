@@ -163,7 +163,12 @@ class LocalLLMHelpers {
         'shepaw chat message get --id ${m.id} --analyze "your question")';
   }
 
-  /// Build a user message map, potentially with multimodal content for image attachments.
+  /// Build a user message map, with multimodal content for image/audio attachments.
+  ///
+  /// - Images are embedded for both OpenAI-compatible and Claude formats.
+  /// - Audio is embedded as OpenAI `input_audio` for non-Claude providers.
+  ///   Claude Messages API has no stable audio-input block, so audio becomes a
+  ///   text description there (same as other non-image files).
   static Map<String, dynamic> buildUserMessageContent(
     String text,
     List<AttachmentData>? attachments,
@@ -173,16 +178,27 @@ class LocalLLMHelpers {
       return {'role': 'user', 'content': text};
     }
 
-    final imageAttachments = attachments.where((a) => a.isImage && !a.exceedsSizeLimit).toList();
-    final nonImageAttachments = attachments.where((a) => !a.isImage).toList();
+    final imageAttachments =
+        attachments.where((a) => a.isImage && !a.exceedsSizeLimit).toList();
+    final audioAttachments =
+        attachments.where((a) => a.isAudio && !a.exceedsSizeLimit).toList();
+    final textOnlyAttachments = attachments.where((a) {
+      if (a.exceedsSizeLimit) return true;
+      if (a.isImage) return false;
+      // Claude: describe audio as text (no input_audio block).
+      if (a.isAudio) return isClaude;
+      return true;
+    }).toList();
 
-    String effectiveText = text;
-    if (nonImageAttachments.isNotEmpty) {
-      final descriptions = nonImageAttachments.map((a) => a.textDescription).join('\n');
+    var effectiveText = text;
+    if (textOnlyAttachments.isNotEmpty) {
+      final descriptions =
+          textOnlyAttachments.map((a) => a.textDescription).join('\n');
       effectiveText = '$descriptions\n\n$effectiveText';
     }
 
-    if (imageAttachments.isEmpty) {
+    final embedAudio = !isClaude && audioAttachments.isNotEmpty;
+    if (imageAttachments.isEmpty && !embedAudio) {
       return {'role': 'user', 'content': effectiveText};
     }
 
@@ -200,17 +216,27 @@ class LocalLLMHelpers {
         {'type': 'text', 'text': effectiveText},
       ];
       return {'role': 'user', 'content': contentParts};
-    } else {
-      final contentParts = <Map<String, dynamic>>[
-        {'type': 'text', 'text': effectiveText},
-        for (final img in imageAttachments)
-          {
-            'type': 'image_url',
-            'image_url': {'url': 'data:${img.mimeType};base64,${img.base64Data}'},
-          },
-      ];
-      return {'role': 'user', 'content': contentParts};
     }
+
+    final contentParts = <Map<String, dynamic>>[
+      {'type': 'text', 'text': effectiveText},
+      for (final img in imageAttachments)
+        {
+          'type': 'image_url',
+          'image_url': {
+            'url': 'data:${img.mimeType};base64,${img.base64Data}',
+          },
+        },
+      for (final audio in audioAttachments)
+        {
+          'type': 'input_audio',
+          'input_audio': {
+            'data': audio.base64Data,
+            'format': audio.audioFormat,
+          },
+        },
+    ];
+    return {'role': 'user', 'content': contentParts};
   }
 
   /// Append a tool round to the message history for OpenAI-compatible APIs.

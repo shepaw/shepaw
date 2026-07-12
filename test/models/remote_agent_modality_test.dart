@@ -47,5 +47,46 @@ void main() {
       });
       expect(agent.supportsModality(ModalityType.image), isFalse);
     });
+
+    test('peer agent uses advertised supported_modalities', () {
+      final now = DateTime.now().millisecondsSinceEpoch;
+      final agent = RemoteAgent(
+        id: 'peer__x__y',
+        name: 'PeerAgent',
+        token: '',
+        endpoint: 'peer://x/y',
+        protocol: ProtocolType.peer,
+        connectionType: ConnectionType.websocket,
+        metadata: {
+          'source_peer_id': 'x',
+          'remote_agent_id': 'y',
+          'supported_modalities': ['text', 'image'],
+        },
+        createdAt: now,
+        updatedAt: now,
+      );
+      expect(agent.isPeerAgent, isTrue);
+      expect(agent.supportsModality(ModalityType.image), isTrue);
+      expect(agent.supportsModality(ModalityType.audio), isFalse);
+    });
+
+    test('legacy peer agent without modalities assumes capable', () {
+      final now = DateTime.now().millisecondsSinceEpoch;
+      final agent = RemoteAgent(
+        id: 'peer__x__y',
+        name: 'PeerAgent',
+        token: '',
+        endpoint: 'peer://x/y',
+        protocol: ProtocolType.peer,
+        connectionType: ConnectionType.websocket,
+        metadata: {
+          'source_peer_id': 'x',
+          'remote_agent_id': 'y',
+        },
+        createdAt: now,
+        updatedAt: now,
+      );
+      expect(agent.supportsModality(ModalityType.audio), isTrue);
+    });
   });
 }

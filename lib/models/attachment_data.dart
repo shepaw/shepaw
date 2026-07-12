@@ -83,6 +83,42 @@ class AttachmentData {
 
   bool get isImage => semanticType == 'image';
 
+  bool get isAudio => semanticType == 'audio';
+
+  /// Format string for OpenAI-compatible `input_audio.format`.
+  ///
+  /// OpenAI officially documents wav/mp3/flac/opus/pcm16; m4a is kept for
+  /// Omni-style models that accept AAC-in-MP4. Callers may degrade on 4xx.
+  String get audioFormat {
+    final dot = fileName.lastIndexOf('.');
+    final ext = dot >= 0 ? fileName.substring(dot + 1).toLowerCase() : '';
+    switch (ext) {
+      case 'wav':
+        return 'wav';
+      case 'mp3':
+        return 'mp3';
+      case 'flac':
+        return 'flac';
+      case 'ogg':
+      case 'opus':
+        return 'opus';
+      case 'm4a':
+      case 'aac':
+        return 'm4a';
+      default:
+        break;
+    }
+    final mime = mimeType.toLowerCase();
+    if (mime.contains('wav')) return 'wav';
+    if (mime.contains('mpeg') || mime.contains('mp3')) return 'mp3';
+    if (mime.contains('flac')) return 'flac';
+    if (mime.contains('ogg') || mime.contains('opus')) return 'opus';
+    if (mime.contains('mp4') || mime.contains('m4a') || mime.contains('aac')) {
+      return 'm4a';
+    }
+    return 'wav';
+  }
+
   bool get exceedsSizeLimit => sizeBytes > maxSizeBytes;
 
   bool get hasBytes => bytes.isNotEmpty;

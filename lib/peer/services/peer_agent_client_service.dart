@@ -1505,6 +1505,10 @@ class PeerAgentClientService {
         final localId = peerAgentLocalId(peerId, remoteId);
         final existing = await _db.getRemoteAgentById(localId);
         final capabilities = (raw['capabilities'] as List?)?.cast<String>() ?? const [];
+        final supportedModalities = (raw['supported_modalities'] as List?)
+                ?.map((e) => e.toString())
+                .toList() ??
+            const <String>[];
         final avatar = await _resolvePeerAvatar(raw, existing);
 
         final agent = RemoteAgent(
@@ -1523,6 +1527,8 @@ class PeerAgentClientService {
             'source_peer_id': peerId,
             'source_peer_name': peerName,
             'remote_agent_id': remoteId,
+            if (supportedModalities.isNotEmpty)
+              'supported_modalities': supportedModalities,
             // 保留本地头像自定义标记，使其在每次同步后依然生效。
             if (existing?.metadata['avatar_overridden'] == true)
               'avatar_overridden': true,
