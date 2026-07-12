@@ -9,8 +9,6 @@ class ChatMobileMenuDrawer extends StatelessWidget {
   final bool isGroupMode;
   final String title;
 
-  final VoidCallback onShowSessionList;
-
   final VoidCallback? onResetSession;
   final VoidCallback? onViewDetails;
   final VoidCallback? onEditAgent;
@@ -25,7 +23,6 @@ class ChatMobileMenuDrawer extends StatelessWidget {
     super.key,
     required this.isGroupMode,
     required this.title,
-    required this.onShowSessionList,
     this.onResetSession,
     this.onViewDetails,
     this.onEditAgent,
@@ -68,12 +65,6 @@ class ChatMobileMenuDrawer extends StatelessWidget {
               child: ListView(
                 padding: const EdgeInsets.symmetric(vertical: 8),
                 children: [
-                  ListTile(
-                    leading: const Icon(Icons.history),
-                    title: Text(l10n.chat_sessionList),
-                    onTap: () => _closeThen(context, onShowSessionList),
-                  ),
-                  const Divider(height: 1, indent: 16, endIndent: 16),
                   if (isGroupMode) ...[
                     ListTile(
                       leading: const Icon(Icons.edit_outlined),

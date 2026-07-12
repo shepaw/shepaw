@@ -1559,7 +1559,6 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     return ChatMobileMenuDrawer(
       isGroupMode: c.isGroupMode,
       title: title,
-      onShowSessionList: c.isGroupMode ? _showGroupSessionList : _showSessionList,
       onResetSession: () {
         _messageController.text = '/reset';
         _sendMessage();
