@@ -653,17 +653,14 @@ mixin _MessagingOps on _ChatControllerBase {
       } catch (_) {}
     }
 
-    addSystemHint(request.reason);
-
+    // Reason is already shown in the approval dialog — do not also insert a
+    // duplicate system message into the chat the user is currently viewing.
     final dialogEvent = ShowHistoryRequestDialogEvent(request.reason);
     _emit(dialogEvent);
     final approved = await dialogEvent.result.future;
     if (!approved) {
-      addSystemHint('History request ignored');
       return false;
     }
-
-    addSystemHint('Loading more chat history...');
 
     streaming.begin(
       'streaming_reanswer_${DateTime.now().millisecondsSinceEpoch}',
@@ -726,8 +723,7 @@ mixin _MessagingOps on _ChatControllerBase {
                 await chatService.deleteMessage(supplementResult.message.id);
               } catch (_) {}
             }
-            addSystemHint(decision.nextReason ?? request.reason);
-            addSystemHint('Loading more chat history...');
+            // Already approved once; continue quietly without more system spam.
             streamingContent = '';
             acpCancellationToken = ACPCancellationToken();
             currentRequestedCount =
@@ -735,12 +731,10 @@ mixin _MessagingOps on _ChatControllerBase {
             continue;
           case HistorySupplementRoundAction.reanswerReady:
             historySentCount += decision.actualSentCount;
-            addSystemHint('History loaded, agent is re-answering...');
             return true;
         }
       }
     } catch (e) {
-      addSystemHint('Failed to load history: $e');
       messages.removeWhere((m) => m.id == streamingMessageId);
       messageIdMap.remove(streamingMessageId);
       _notify();

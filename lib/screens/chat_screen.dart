@@ -339,15 +339,10 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
       case AgentInfoUpdatedEvent():
         // Already handled via notifyListeners
         break;
-      case GroupInteractionRequestEvent(:final agentName):
+      case GroupInteractionRequestEvent():
+        // User is already in this chat — the approval/interaction card is in
+        // the message list. Only scroll into view; do not also toast.
         _scrollToBottom(force: true);
-        showTopToast(
-          context,
-          '$agentName ${AppLocalizations.of(context).chat_waitingForAction}',
-          icon: Icons.touch_app,
-          color: Colors.blueGrey,
-          duration: const Duration(seconds: 4),
-        );
     }
   }
 
