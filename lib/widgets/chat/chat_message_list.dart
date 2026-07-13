@@ -247,8 +247,8 @@ class _ChatMessageListState extends State<ChatMessageList> {
             isGroupMode: isGroupMode,
             collapseSenderChrome: collapseSenderChrome,
           );
-          // Sticky for every non-my group message so long follow-ups still
-          // identify the author after consecutive chrome is collapsed.
+          // Sticky for every non-my group message (each message shows its own
+          // author chrome — consecutive same-author collapse is disabled).
           final stickySenderName = isGroupMode && !isMyMessage;
 
           return RepaintBoundary(
