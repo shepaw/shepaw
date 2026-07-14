@@ -339,13 +339,17 @@ class RemoteAgent {
   ///
   /// - Text is always supported.
   /// - Peer agents trust host-advertised `supported_modalities` when present;
-  ///   legacy peer rows without the field assume capable.
+  ///   legacy peer rows without the field assume capable (except audio —
+  ///   peer voice input is not wired yet).
   /// - Remote ACP agents (no `llm_provider` metadata) are assumed capable.
   /// - Local agents check scenario models, then main model capability tags.
   bool supportsModality(ModalityType modality) {
     if (modality == ModalityType.text) return true;
 
     if (isPeerAgent) {
+      // Peer chat does not support voice input yet (mic / hold-to-talk).
+      if (modality == ModalityType.audio) return false;
+
       final advertised = metadata['supported_modalities'];
       if (advertised is List) {
         return advertised.map((e) => e.toString()).contains(modality.name);

@@ -70,7 +70,27 @@ void main() {
       expect(agent.supportsModality(ModalityType.audio), isFalse);
     });
 
-    test('legacy peer agent without modalities assumes capable', () {
+    test('peer agent never supports audio even if advertised', () {
+      final now = DateTime.now().millisecondsSinceEpoch;
+      final agent = RemoteAgent(
+        id: 'peer__x__y',
+        name: 'PeerAgent',
+        token: '',
+        endpoint: 'peer://x/y',
+        protocol: ProtocolType.peer,
+        connectionType: ConnectionType.websocket,
+        metadata: {
+          'source_peer_id': 'x',
+          'remote_agent_id': 'y',
+          'supported_modalities': ['text', 'image', 'audio'],
+        },
+        createdAt: now,
+        updatedAt: now,
+      );
+      expect(agent.supportsModality(ModalityType.audio), isFalse);
+    });
+
+    test('legacy peer agent without modalities assumes capable except audio', () {
       final now = DateTime.now().millisecondsSinceEpoch;
       final agent = RemoteAgent(
         id: 'peer__x__y',
@@ -86,7 +106,8 @@ void main() {
         createdAt: now,
         updatedAt: now,
       );
-      expect(agent.supportsModality(ModalityType.audio), isTrue);
+      expect(agent.supportsModality(ModalityType.image), isTrue);
+      expect(agent.supportsModality(ModalityType.audio), isFalse);
     });
   });
 }

@@ -222,11 +222,12 @@ class PeerAgentHostService {
           'avatar': a.avatar,
           'bio': a.bio,
           'capabilities': a.capabilities,
-          // Input modalities the peer client should expose (mic / image picker).
+          // Input modalities the peer client should expose (e.g. image picker).
+          // Audio is omitted: peer voice input is not supported yet.
           'supported_modalities': [
             ModalityType.text.name,
             for (final m in kInputScenarioModalities)
-              if (a.supportsModality(m)) m.name,
+              if (m != ModalityType.audio && a.supportsModality(m)) m.name,
           ],
         };
         // 头像若为本机文件（用户上传的自定义图片），对端无法访问该路径，
