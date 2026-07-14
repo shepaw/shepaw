@@ -173,6 +173,14 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
   Set<String> groupStreamingMessageIds = {};
   Map<String, GroupInteractionRequestEvent> pendingGroupInteractions = {};
 
+  /// When viewing a DM that was auto-created for a group member, these point
+  /// at the linked group session. Input is disabled; UI offers a jump to group.
+  String? sourceGroupChannelId;
+  String? sourceGroupName;
+
+  bool get isViewingGroupBoundMemberSession =>
+      sourceGroupChannelId != null && sourceGroupChannelId!.isNotEmpty;
+
   /// Workflow step streaming placeholders keyed by agent id.
   Map<String, String> get _workflowStreamingIds => workflow.streamingIds;
   Map<String, String> get _workflowStreamingContents =>

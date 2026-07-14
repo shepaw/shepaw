@@ -677,6 +677,16 @@
   "chat_clearingAllGroupSessions": "Clearing all group sessions...",
   "chat_noAdminSet": "No admin set",
   "chat_groupSessions": "Group Sessions",
+  "chat_groupBoundInputDisabled": "This session was created by a group chat and cannot be used for direct messaging",
+  "chat_openLinkedGroup": "Open group chat",
+  "chat_openLinkedGroupNamed": "Open group 「{name}」",
+  "@chat_openLinkedGroupNamed": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
   "chat_sessions": "Sessions",
   "chat_sessionsCount": "{count} sessions",
   "chat_mentionAll": "All",

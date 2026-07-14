@@ -1786,6 +1786,17 @@ class AppLocalizationsZh extends AppLocalizations {
   String get chat_groupSessions => '群组会话';
 
   @override
+  String get chat_groupBoundInputDisabled => '此会话由群聊产生，不能在此直接对话';
+
+  @override
+  String get chat_openLinkedGroup => '打开群聊';
+
+  @override
+  String chat_openLinkedGroupNamed(String name) {
+    return '打开群聊「$name」';
+  }
+
+  @override
   String get chat_sessions => '会话';
 
   @override

@@ -60,6 +60,10 @@ mixin _LoadOps on _ChatControllerBase {
       sourceDeviceLabel = channel != null
           ? await _resolveSourceDeviceLabel(channel)
           : await _resolveClientPeerAgentDeviceLabel(null);
+      // Reset group-bound DM markers; re-set below when applicable.
+      sourceGroupChannelId = null;
+      sourceGroupName = null;
+
       if (channel != null && channel.isGroup) {
         isGroupMode = true;
         groupChannel = channel;
@@ -74,8 +78,18 @@ mixin _LoadOps on _ChatControllerBase {
         groupAgents = agents;
         groupAdminAgentId = channel.adminAgentId;
       } else if (channel != null && channel.isDM) {
+        isGroupMode = false;
+        groupChannel = null;
+        groupAgents = [];
+        groupAdminAgentId = null;
         // Load DM channel's custom system prompt
         dmSystemPrompt = channel.systemPrompt;
+        if (channel.isGroupBoundMemberSession) {
+          sourceGroupChannelId = channel.sourceGroupChannelId;
+          final sourceGroup = await localDatabaseService
+              .getChannelById(channel.sourceGroupChannelId!);
+          sourceGroupName = sourceGroup?.name ?? channel.name;
+        }
         if (agentName == null) {
           // Resolve agent name/avatar from channel when not provided
           // (e.g. navigating from search results by channelId only)
@@ -90,6 +104,7 @@ mixin _LoadOps on _ChatControllerBase {
           }
         }
       } else if (channel != null && !channel.isGroup && agentName == null) {
+        isGroupMode = false;
         // Non-group, non-DM typed channel — resolve agent name from channel
         final agentMemberId = ChatLoadChannelPlanner.firstAgentMemberId(channel);
         if (agentMemberId != null) {

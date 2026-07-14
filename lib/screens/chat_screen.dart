@@ -381,6 +381,8 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
         return l10n.chat_allGroupSessionsCleared;
       case 'chat_noAgentSelected':
         return l10n.chat_noAgentSelected;
+      case 'chat_groupBoundInputDisabled':
+        return l10n.chat_groupBoundInputDisabled;
       case 'chat_batchDeleteSuccess':
         return l10n.chat_batchDeleteSuccess(int.tryParse(param) ?? 0);
       case 'chat_clearSessionFailed':
@@ -955,28 +957,21 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
         controller: _controller,
         onNewSession: () => _controller.createNewSession(),
         onSwitchSession: (channelId) async {
-          // Group-bound member sessions open the linked group chat, not a DM.
-          final session = sessions.cast<Channel?>().firstWhere(
-            (s) => s?.id == channelId,
-            orElse: () => null,
-          );
-          final targetId = session?.sourceGroupChannelId ?? channelId;
-          await _controller.localDatabaseService.touchChannelUpdatedAt(targetId);
+          // Stay in the agent DM chat — group-bound sessions are view-only here.
+          await _controller.localDatabaseService.touchChannelUpdatedAt(channelId);
           if (!mounted) return;
           if (widget.embedded) {
-            widget.onSwitchChannel?.call(targetId);
+            widget.onSwitchChannel?.call(channelId);
           } else {
             Navigator.pushReplacement(
               context,
               MaterialPageRoute(
-                builder: (context) => session?.isGroupBoundMemberSession == true
-                    ? ChatScreen(channelId: targetId)
-                    : ChatScreen(
-                        agentId: widget.agentId,
-                        agentName: _controller.agentName,
-                        agentAvatar: _controller.agentAvatar,
-                        channelId: targetId,
-                      ),
+                builder: (context) => ChatScreen(
+                  agentId: widget.agentId,
+                  agentName: _controller.agentName,
+                  agentAvatar: _controller.agentAvatar,
+                  channelId: channelId,
+                ),
               ),
             );
           }
@@ -1788,17 +1783,20 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
             ),
 
           // Reply preview bar
-          if (c.replyingToMessage != null)
+          if (c.replyingToMessage != null && !c.isViewingGroupBoundMemberSession)
             ChatReplyPreview(
               replyingTo: c.replyingToMessage!,
               onCancel: () => c.cancelReply(),
             ),
 
           // Queue indicator
-          _buildQueueIndicator(),
+          if (!c.isViewingGroupBoundMemberSession) _buildQueueIndicator(),
 
-          // Input area
-          ChatInputArea(
+          // Group-bound member sessions: input disabled + jump to linked group.
+          if (c.isViewingGroupBoundMemberSession)
+            _buildGroupBoundSessionBar(c)
+          else
+            ChatInputArea(
             key: _chatInputKey,
             messageController: _messageController,
             textFieldFocusNode: _textFieldFocusNode,
@@ -1851,7 +1849,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
           ),
 
           // Emoji picker panel
-          if (_showEmojiPicker)
+          if (_showEmojiPicker && !c.isViewingGroupBoundMemberSession)
             SizedBox(
               height: 250,
               child: EmojiPicker(
@@ -1875,6 +1873,81 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
             ),
           ],
         ),
+    );
+  }
+
+  // ---------------------------------------------------------------------------
+  // She config helpers
+  // ---------------------------------------------------------------------------
+
+  Widget _buildGroupBoundSessionBar(ChatController c) {
+    final l10n = AppLocalizations.of(context);
+    final groupName = c.sourceGroupName?.trim();
+    final openLabel = (groupName != null && groupName.isNotEmpty)
+        ? l10n.chat_openLinkedGroupNamed(groupName)
+        : l10n.chat_openLinkedGroup;
+
+    return Material(
+      color: Colors.teal.shade50,
+      child: SafeArea(
+        top: false,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+          child: Row(
+            children: [
+              Icon(Icons.groups_outlined, size: 22, color: Colors.teal.shade700),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  l10n.chat_groupBoundInputDisabled,
+                  style: TextStyle(
+                    fontSize: 13,
+                    color: Colors.teal.shade900,
+                    height: 1.3,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              TextButton(
+                onPressed: () => _openLinkedGroupChat(c),
+                style: TextButton.styleFrom(
+                  foregroundColor: Colors.teal.shade800,
+                  padding: const EdgeInsets.symmetric(horizontal: 8),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(openLabel, style: const TextStyle(fontWeight: FontWeight.w600)),
+                    const SizedBox(width: 2),
+                    const Icon(Icons.arrow_forward, size: 16),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _openLinkedGroupChat(ChatController c) async {
+    final groupChannelId = c.sourceGroupChannelId;
+    if (groupChannelId == null || groupChannelId.isEmpty) return;
+
+    // sourceGroupChannelId is the exact group session this member DM is bound to.
+    await c.localDatabaseService.touchChannelUpdatedAt(groupChannelId);
+    if (!mounted) return;
+
+    if (widget.embedded) {
+      widget.onSwitchChannel?.call(groupChannelId);
+      return;
+    }
+
+    Navigator.pushReplacement(
+      context,
+      MaterialPageRoute(
+        builder: (context) => ChatScreen(channelId: groupChannelId),
+      ),
     );
   }
 

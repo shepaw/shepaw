@@ -345,7 +345,7 @@ class _SessionListContentState extends State<_SessionListContent> {
       ),
       subtitle: Text(
         isGroupBound
-            ? (preview.isNotEmpty ? preview : 'Open linked group chat')
+            ? (preview.isNotEmpty ? preview : 'Group-bound session')
             : preview,
         maxLines: 1,
         overflow: TextOverflow.ellipsis,

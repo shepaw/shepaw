@@ -168,6 +168,11 @@ mixin _MessagingOps on _ChatControllerBase {
     String? replyToId,
     List<MentionEntry> mentions = const [],
   }) async {
+    if (isViewingGroupBoundMemberSession) {
+      _emit(ShowSnackBarEvent('chat_groupBoundInputDisabled'));
+      return;
+    }
+
     final hasPendingAttachments = pendingAttachments.isNotEmpty;
     LoggerService().debug('User sending message', tag: 'ChatController');
 

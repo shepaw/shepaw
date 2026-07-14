@@ -1029,6 +1029,16 @@
   "chat_clearingAllGroupSessions": "正在清除所有群组会话...",
   "chat_noAdminSet": "未设置管理员",
   "chat_groupSessions": "群组会话",
+  "chat_groupBoundInputDisabled": "此会话由群聊产生，不能在此直接对话",
+  "chat_openLinkedGroup": "打开群聊",
+  "chat_openLinkedGroupNamed": "打开群聊「{name}」",
+  "@chat_openLinkedGroupNamed": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
   "chat_sessions": "会话",
   "chat_sessionsCount": "{count} 个会话",
   "@chat_sessionsCount": {

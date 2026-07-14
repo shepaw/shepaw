@@ -1850,6 +1850,18 @@ class AppLocalizationsEn extends AppLocalizations {
   String get chat_groupSessions => 'Group Sessions';
 
   @override
+  String get chat_groupBoundInputDisabled =>
+      'This session was created by a group chat and cannot be used for direct messaging';
+
+  @override
+  String get chat_openLinkedGroup => 'Open group chat';
+
+  @override
+  String chat_openLinkedGroupNamed(String name) {
+    return 'Open group 「$name」';
+  }
+
+  @override
   String get chat_sessions => 'Sessions';
 
   @override

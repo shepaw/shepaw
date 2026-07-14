@@ -3362,6 +3362,24 @@ abstract class AppLocalizations {
   /// **'群组会话'**
   String get chat_groupSessions;
 
+  /// No description provided for @chat_groupBoundInputDisabled.
+  ///
+  /// In zh, this message translates to:
+  /// **'此会话由群聊产生，不能在此直接对话'**
+  String get chat_groupBoundInputDisabled;
+
+  /// No description provided for @chat_openLinkedGroup.
+  ///
+  /// In zh, this message translates to:
+  /// **'打开群聊'**
+  String get chat_openLinkedGroup;
+
+  /// No description provided for @chat_openLinkedGroupNamed.
+  ///
+  /// In zh, this message translates to:
+  /// **'打开群聊「{name}」'**
+  String chat_openLinkedGroupNamed(String name);
+
   /// No description provided for @chat_sessions.
   ///
   /// In zh, this message translates to:
