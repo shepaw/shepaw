@@ -258,9 +258,8 @@ class _SessionListContentState extends State<_SessionListContent> {
 
   Widget _buildSessionTile(BuildContext context, Channel session, bool isCurrentSession, Map<String, dynamic>? latestMessage) {
     final isGroupBound = session.isGroupBoundMemberSession;
-    final preview = isGroupBound
-        ? (session.description ?? latestMessage?['content'] as String? ?? '')
-        : (latestMessage?['content'] as String? ?? 'No messages');
+    final preview = latestMessage?['content'] as String? ??
+        (isGroupBound ? (session.description ?? '') : 'No messages');
     final createdAtStr = latestMessage?['created_at'] as String?;
     String timeText = '';
     if (createdAtStr != null) {
@@ -344,9 +343,9 @@ class _SessionListContentState extends State<_SessionListContent> {
         ],
       ),
       subtitle: Text(
-        isGroupBound
-            ? (preview.isNotEmpty ? preview : 'Group-bound session')
-            : preview,
+        preview.isNotEmpty
+            ? preview
+            : (isGroupBound ? 'Group-bound session' : 'No messages'),
         maxLines: 1,
         overflow: TextOverflow.ellipsis,
         style: TextStyle(

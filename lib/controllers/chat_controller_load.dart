@@ -89,6 +89,16 @@ mixin _LoadOps on _ChatControllerBase {
           final sourceGroup = await localDatabaseService
               .getChannelById(channel.sourceGroupChannelId!);
           sourceGroupName = sourceGroup?.name ?? channel.name;
+          // One-time backfill: copy this agent's prior group replies into the
+          // bound session so older groups still show session history.
+          await GroupMemberSessionService(localDatabaseService)
+              .backfillAgentMessagesFromGroupIfNeeded(
+            memberSessionId: channel.id,
+            groupChannelId: channel.sourceGroupChannelId!,
+            agentId: agentId ??
+                ChatLoadChannelPlanner.firstAgentMemberId(channel) ??
+                '',
+          );
         }
         if (agentName == null) {
           // Resolve agent name/avatar from channel when not provided
@@ -117,7 +127,8 @@ mixin _LoadOps on _ChatControllerBase {
         }
       }
 
-      final loadedMessages = await chatService.loadChannelMessages(currentChannelId!);
+      final loadedMessages =
+          await chatService.loadChannelMessages(currentChannelId!);
 
       if (isGroupMode) {
         messages = loadedMessages;

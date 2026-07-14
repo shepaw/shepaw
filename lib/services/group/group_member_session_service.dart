@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import '../../models/channel.dart';
 import '../local_database_service.dart';
 import '../logger_service.dart';
@@ -111,7 +113,7 @@ class GroupMemberSessionService {
         senderName: 'System',
         content:
             '本会话由群聊「${groupChannel.name}」自动创建，与该群会话一一对应。'
-            '群内对该成员的调用使用此会话，不会影响普通单聊上下文。',
+            '此处记录对该成员的每次调用（请求与回复），不会影响普通单聊上下文。',
         messageType: 'system',
       );
       LoggerService().debug(
@@ -190,6 +192,141 @@ class GroupMemberSessionService {
           await _db.updateChannel(memberSession.copyWith(name: title));
         }
       }
+    }
+  }
+
+  /// Append one group turn into the bound member session: the inbound request
+  /// (what was sent to this agent) plus the agent's reply — matching the
+  /// remote peer/ACP session shape (request + response), without other members.
+  Future<void> mirrorTurn({
+    required String memberSessionId,
+    required String groupChannelId,
+    required String userId,
+    required String userName,
+    required String inboundContent,
+    required String agentId,
+    required String agentName,
+    required String replyContent,
+    Map<String, dynamic>? replyMetadata,
+    String? sourceMessageId,
+  }) async {
+    final existing = await _db.getChannelById(memberSessionId);
+    if (existing == null) return;
+
+    final turnKey = sourceMessageId ??
+        '${DateTime.now().microsecondsSinceEpoch}';
+    final baseMeta = <String, dynamic>{
+      'mirrored_from_group': groupChannelId,
+      if (sourceMessageId != null) 'source_message_id': sourceMessageId,
+    };
+
+    try {
+      final inbound = inboundContent.trim();
+      if (inbound.isNotEmpty) {
+        await _db.createMessage(
+          id: 'gmdreq_$turnKey',
+          channelId: memberSessionId,
+          senderId: userId,
+          senderType: 'user',
+          senderName: userName,
+          content: inbound,
+          messageType: 'text',
+          metadata: {
+            ...baseMeta,
+            'group_turn_role': 'request',
+          },
+        );
+      }
+
+      final reply = replyContent.trim();
+      if (reply.isNotEmpty) {
+        await _db.createMessage(
+          id: 'gmdmsg_$turnKey',
+          channelId: memberSessionId,
+          senderId: agentId,
+          senderType: 'agent',
+          senderName: agentName,
+          content: reply,
+          messageType: 'text',
+          metadata: {
+            if (replyMetadata != null) ...replyMetadata,
+            ...baseMeta,
+            'group_turn_role': 'reply',
+          },
+        );
+      }
+
+      await _db.touchChannelUpdatedAt(memberSessionId);
+    } catch (e) {
+      LoggerService().warning(
+        'Failed to mirror group turn into $memberSessionId: $e',
+        tag: _tag,
+      );
+    }
+  }
+
+  /// If the bound session has no agent messages yet, copy this agent's prior
+  /// replies from the linked group session (legacy groups created before mirror).
+  /// Request-side text is not recoverable from group history alone.
+  Future<void> backfillAgentMessagesFromGroupIfNeeded({
+    required String memberSessionId,
+    required String groupChannelId,
+    required String agentId,
+  }) async {
+    if (agentId.isEmpty) return;
+
+    final existing = await _db.getChannelMessages(memberSessionId, limit: 100);
+    final hasAgentMsg = existing.any((m) => m['sender_type'] == 'agent');
+    if (hasAgentMsg) return;
+
+    final groupMsgs =
+        await _db.getChannelMessages(groupChannelId, limit: 500);
+    // DAO returns newest-first; iterate oldest-first when copying.
+    final agentMsgs = groupMsgs
+        .where(
+          (m) =>
+              m['sender_id'] == agentId &&
+              m['sender_type'] == 'agent' &&
+              (m['message_type'] as String? ?? 'text') == 'text',
+        )
+        .toList()
+        .reversed;
+
+    for (final m in agentMsgs) {
+      final sourceId = m['id'] as String?;
+      final content = m['content'] as String? ?? '';
+      if (content.isEmpty) continue;
+
+      Map<String, dynamic>? metadata;
+      final rawMeta = m['metadata'] as String?;
+      if (rawMeta != null && rawMeta.isNotEmpty) {
+        try {
+          metadata = Map<String, dynamic>.from(jsonDecode(rawMeta) as Map);
+        } catch (_) {}
+      }
+
+      await mirrorTurn(
+        memberSessionId: memberSessionId,
+        groupChannelId: groupChannelId,
+        userId: 'user',
+        userName: 'User',
+        inboundContent: '',
+        agentId: agentId,
+        agentName: m['sender_name'] as String? ?? agentId,
+        replyContent: content,
+        replyMetadata: metadata,
+        sourceMessageId: sourceId,
+      );
+    }
+  }
+
+  /// Clear mirrored history in every member session bound to [groupChannelId].
+  Future<void> clearMemberSessionMessagesForGroupChannel(
+    String groupChannelId,
+  ) async {
+    final sessions = await _db.getMemberSessionsForGroupChannel(groupChannelId);
+    for (final session in sessions) {
+      await _db.deleteChannelMessages(session.id);
     }
   }
 }

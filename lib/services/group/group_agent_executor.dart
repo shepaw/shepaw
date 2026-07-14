@@ -1248,6 +1248,21 @@ class GroupAgentExecutor {
       // Mark as read immediately — the user is actively viewing this chat
       await _db.markMessageAsRead(agentResponse.id);
       notifyChannelUpdate(channelId);
+
+      // Mirror request + reply into the bound member session so local history
+      // matches the remote peer/ACP session shape (inbound + agent response).
+      await _memberSessions.mirrorTurn(
+        memberSessionId: memberSessionId,
+        groupChannelId: channelId,
+        userId: userId,
+        userName: userName,
+        inboundContent: content,
+        agentId: agent.id,
+        agentName: agent.name,
+        replyContent: responseContent,
+        replyMetadata: messageMetadata,
+        sourceMessageId: agentResponse.id,
+      );
     } catch (e) {
       LoggerService().error('Group agent ${agent.name} DB save error', tag: 'GroupAgentExecutor', error: e);
       // DB save failed, but the message is already in the UI — keep it

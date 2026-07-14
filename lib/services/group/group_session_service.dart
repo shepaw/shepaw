@@ -86,6 +86,7 @@ class GroupSessionService {
     }
 
     await _db.deleteChannelMessages(channelId);
+    await _memberSessions.clearMemberSessionMessagesForGroupChannel(channelId);
     InferenceLogService.instance.removeByChannel(channelId);
     notifyChannelUpdate(channelId);
   }
