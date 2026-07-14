@@ -8,6 +8,7 @@ import '../models/channel.dart';
 import '../peer/widgets/peer_source_badge.dart';
 import '../services/local_api_service.dart';
 import '../services/local_database_service.dart';
+import '../services/group/group_member_session_service.dart';
 import 'chat_screen.dart';
 
 class CreateGroupScreen extends StatefulWidget {
@@ -137,6 +138,13 @@ class _CreateGroupScreenState extends State<CreateGroupScreen> {
     );
 
     await _databaseService.createChannel(channel, userId);
+
+    // Create a bound member DM for each agent so group context stays isolated
+    // from personal 1:1 sessions (and appears in each agent's session history).
+    await GroupMemberSessionService(_databaseService).ensureMemberSessionsForGroup(
+      groupChannel: channel,
+      userId: userId,
+    );
 
     if (mounted) {
       if (widget.onGroupCreated != null) {

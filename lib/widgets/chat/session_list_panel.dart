@@ -257,7 +257,10 @@ class _SessionListContentState extends State<_SessionListContent> {
   }
 
   Widget _buildSessionTile(BuildContext context, Channel session, bool isCurrentSession, Map<String, dynamic>? latestMessage) {
-    final preview = latestMessage?['content'] as String? ?? 'No messages';
+    final isGroupBound = session.isGroupBoundMemberSession;
+    final preview = isGroupBound
+        ? (session.description ?? latestMessage?['content'] as String? ?? '')
+        : (latestMessage?['content'] as String? ?? 'No messages');
     final createdAtStr = latestMessage?['created_at'] as String?;
     String timeText = '';
     if (createdAtStr != null) {
@@ -277,13 +280,21 @@ class _SessionListContentState extends State<_SessionListContent> {
         width: 40,
         height: 40,
         decoration: BoxDecoration(
-          color: isCurrentSession ? Theme.of(context).primaryColor : Colors.grey[300],
+          color: isCurrentSession
+              ? Theme.of(context).primaryColor
+              : isGroupBound
+                  ? Colors.teal.withOpacity(0.15)
+                  : Colors.grey[300],
           borderRadius: BorderRadius.circular(10),
         ),
         alignment: Alignment.center,
         child: Icon(
-          Icons.chat_bubble_outline,
-          color: isCurrentSession ? Colors.white : Colors.grey[600],
+          isGroupBound ? Icons.groups_outlined : Icons.chat_bubble_outline,
+          color: isCurrentSession
+              ? Colors.white
+              : isGroupBound
+                  ? Colors.teal[700]
+                  : Colors.grey[600],
           size: 20,
         ),
       ),
@@ -296,6 +307,23 @@ class _SessionListContentState extends State<_SessionListContent> {
               overflow: TextOverflow.ellipsis,
             ),
           ),
+          if (isGroupBound)
+            Container(
+              margin: const EdgeInsets.only(left: 8),
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+              decoration: BoxDecoration(
+                color: Colors.teal.withOpacity(0.12),
+                borderRadius: BorderRadius.circular(4),
+              ),
+              child: Text(
+                'Group',
+                style: TextStyle(
+                  fontSize: 10,
+                  color: Colors.teal[700],
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
           if (isCurrentSession)
             Container(
               margin: const EdgeInsets.only(left: 8),
@@ -316,7 +344,9 @@ class _SessionListContentState extends State<_SessionListContent> {
         ],
       ),
       subtitle: Text(
-        preview,
+        isGroupBound
+            ? (preview.isNotEmpty ? preview : 'Open linked group chat')
+            : preview,
         maxLines: 1,
         overflow: TextOverflow.ellipsis,
         style: TextStyle(

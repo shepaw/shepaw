@@ -3,7 +3,7 @@ import '../../models/channel.dart';
 import '../local_database_service.dart';
 import '../acp_agent_connection.dart';
 import '../inference_log_service.dart';
-import '../logger_service.dart';
+import 'group_member_session_service.dart';
 
 /// Manages group chat sessions (create, list, clear, reset).
 class GroupSessionService {
@@ -11,6 +11,8 @@ class GroupSessionService {
   final Uuid _uuid;
   final Map<String, ACPAgentConnection> _acpConnections;
   final void Function(String channelId) notifyChannelUpdate;
+  late final GroupMemberSessionService _memberSessions =
+      GroupMemberSessionService(_db);
 
   GroupSessionService({
     required LocalDatabaseService db,
@@ -46,6 +48,11 @@ class GroupSessionService {
       flowMode: currentChannel.flowMode,
     );
     await _db.createChannel(channel, userId);
+    // Each member gets a fresh bound DM for this new group session.
+    await _memberSessions.ensureMemberSessionsForGroup(
+      groupChannel: channel,
+      userId: userId,
+    );
     return newChannelId;
   }
 
@@ -60,12 +67,16 @@ class GroupSessionService {
     required List<String> agentIds,
   }) async {
     for (final agentId in agentIds) {
+      final memberSessionId = GroupMemberSessionService.memberSessionId(
+        channelId,
+        agentId,
+      );
       final connection = _acpConnections[agentId];
       if (connection != null && connection.isConnected) {
         try {
           await connection.sendChatMessage(
             taskId: _uuid.v4(),
-            sessionId: channelId,
+            sessionId: memberSessionId,
             message: '/reset',
             userId: 'user',
             messageId: _uuid.v4(),
@@ -86,12 +97,16 @@ class GroupSessionService {
     required List<String> agentIds,
   }) async {
     for (final agentId in agentIds) {
+      final memberSessionId = GroupMemberSessionService.memberSessionId(
+        currentChannelId,
+        agentId,
+      );
       final connection = _acpConnections[agentId];
       if (connection != null && connection.isConnected) {
         try {
           await connection.sendChatMessage(
             taskId: _uuid.v4(),
-            sessionId: currentChannelId,
+            sessionId: memberSessionId,
             message: '/reset-all',
             userId: 'user',
             messageId: _uuid.v4(),
@@ -102,6 +117,7 @@ class GroupSessionService {
 
     final sessions = await _db.getGroupSessions(parentGroupId);
     for (final session in sessions) {
+      await _memberSessions.deleteMemberSessionsForGroupChannel(session.id);
       await _db.deleteChannelMessages(session.id);
       if (session.id != parentGroupId) {
         await _db.deleteChannel(session.id);
@@ -123,6 +139,15 @@ class GroupSessionService {
         maxLoopRounds: firstSession.maxLoopRounds,
       );
       await _db.createChannel(channel, 'user');
+    }
+
+    // Recreate bound member sessions for the surviving parent session.
+    final surviving = await _db.getChannelById(parentGroupId);
+    if (surviving != null) {
+      await _memberSessions.ensureMemberSessionsForGroup(
+        groupChannel: surviving,
+        userId: 'user',
+      );
     }
 
     notifyChannelUpdate(parentGroupId);

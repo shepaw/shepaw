@@ -19,6 +19,7 @@ extension ChannelDao on LocalDatabaseService {
         'avatar_path': channel.avatar,
         'is_private': channel.isPrivate ? 1 : 0,
         'parent_group_id': channel.parentGroupId,
+        'source_group_channel_id': channel.sourceGroupChannelId,
         'system_prompt': channel.systemPrompt,
         'max_loop_rounds': channel.maxLoopRounds,
         'mention_mode': channel.mentionMode,
@@ -71,6 +72,7 @@ extension ChannelDao on LocalDatabaseService {
         'type': channel.type,
         'avatar_path': channel.avatar,
         'is_private': channel.isPrivate ? 1 : 0,
+        'source_group_channel_id': channel.sourceGroupChannelId,
         'system_prompt': channel.systemPrompt,
         'max_loop_rounds': channel.maxLoopRounds,
         'mention_mode': channel.mentionMode,
@@ -191,6 +193,8 @@ extension ChannelDao on LocalDatabaseService {
   }
 
   /// 获取某 user 和 agent 之间最近活跃的 channel（按最新消息时间排序）
+  ///
+  /// 排除群聊为成员自动创建的绑定会话，避免打开单聊时落到群派生上下文。
   Future<String?> getLatestActiveChannelForUserAndAgent(String userId, String agentId) async {
     final db = await database;
     // 查找同时包含 userId 和 agentId 的 dm channel，按最近访问时间排序
@@ -199,12 +203,31 @@ extension ChannelDao on LocalDatabaseService {
       INNER JOIN channel_members cm1 ON c.id = cm1.channel_id AND cm1.agent_id = ?
       INNER JOIN channel_members cm2 ON c.id = cm2.channel_id AND cm2.agent_id = ?
       WHERE c.type = 'dm'
+        AND (c.source_group_channel_id IS NULL OR c.source_group_channel_id = '')
       ORDER BY c.updated_at DESC
       LIMIT 1
     ''', [userId, agentId]);
 
     if (results.isEmpty) return null;
     return results.first['id'] as String;
+  }
+
+  /// 查询绑定到指定群会话的所有成员 DM 会话。
+  Future<List<Channel>> getMemberSessionsForGroupChannel(String groupChannelId) async {
+    final db = await database;
+    final results = await db.query(
+      'channels',
+      where: "type = 'dm' AND source_group_channel_id = ?",
+      whereArgs: [groupChannelId],
+      orderBy: 'created_at DESC',
+    );
+
+    final channels = <Channel>[];
+    for (final map in results) {
+      final members = await getChannelMembers(map['id'] as String);
+      channels.add(_channelFromMap(map, members));
+    }
+    return channels;
   }
 
   /// 获取某个群聊的所有会话（包括原始群聊和所有子会话）
@@ -304,6 +327,7 @@ Channel _channelFromMap(Map<String, dynamic> map, List<ChannelMember> members) {
     lastMessageTime: null,
     unreadCount: 0,
     parentGroupId: map['parent_group_id'] as String?,
+    sourceGroupChannelId: map['source_group_channel_id'] as String?,
     systemPrompt: map['system_prompt'] as String?,
     maxLoopRounds: map['max_loop_rounds'] as int?,
     mentionMode: map['mention_mode'] as String?,

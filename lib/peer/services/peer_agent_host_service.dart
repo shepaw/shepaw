@@ -533,7 +533,10 @@ class PeerAgentHostService {
       // 标题统一标注「Agent 名 ← 来源设备名」，使本机能在会话列表中分辨出这条
       // 会话来自哪个配对设备。channel 不存在则创建；已存在但标题未正确标注来源
       // 设备（如历史遗留的通用名称、或对端设备改名）时则刷新标题。
-      final sessionTitle = '${agent.name} ← $userName';
+      final sessionTitle = (clientSessionId != null &&
+              clientSessionId.startsWith('gmd_'))
+          ? '${agent.name} ← $userName · Group'
+          : '${agent.name} ← $userName';
       try {
         final existing = await _db.getChannelById(channelId);
         if (existing == null) {

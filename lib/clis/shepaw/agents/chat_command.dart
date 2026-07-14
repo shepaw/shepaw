@@ -80,11 +80,13 @@ class ChatCommand extends CliCommand {
       return {'error': 'Agent not found: $id'};
     }
 
-    // Determine channel: use explicit flag, or find the most recently active channel for this agent
+    // Determine channel: use explicit flag, or find the most recently active
+    // personal DM (exclude group-bound member sessions).
     String? channelId =
         flags['channel']?.isNotEmpty == true ? flags['channel'] : null;
     if (channelId == null) {
-      final agentChans = await _db.getChannelsForAgent(targetAgent.id);
+      final agentChans = (await _db.getChannelsForAgent(targetAgent.id))
+          .where((c) => !c.isGroupBoundMemberSession);
       if (agentChans.isNotEmpty) channelId = agentChans.first.id;
     }
 

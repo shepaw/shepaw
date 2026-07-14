@@ -208,6 +208,8 @@ mixin _SessionOps on _ChatControllerBase {
           channelId: currentChannelId!,
           agentIds: agentIds,
         );
+        await GroupMemberSessionService(localDatabaseService)
+            .deleteMemberSessionsForGroupChannel(currentChannelId!);
         await localDatabaseService.deleteChannel(currentChannelId!);
 
         final remaining = sessions.where((s) => s.id != currentChannelId).toList();
@@ -285,6 +287,10 @@ mixin _SessionOps on _ChatControllerBase {
           : sessionIds;
 
       for (final id in idsToDelete) {
+        if (isGroup) {
+          await GroupMemberSessionService(localDatabaseService)
+              .deleteMemberSessionsForGroupChannel(id);
+        }
         await localDatabaseService.deleteChannelMessages(id);
         await localDatabaseService.deleteChannel(id);
       }

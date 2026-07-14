@@ -30,6 +30,7 @@ import 'peer_approval_policy.dart';
 import '../workflow/workflow_service.dart';
 import '../../models/workflow_pending_approval.dart';
 import '../messaging/stream_content_splitter.dart';
+import 'group_member_session_service.dart';
 
 /// Executes a single agent's response turn within a group chat.
 ///
@@ -45,6 +46,8 @@ class GroupAgentExecutor {
   final void Function(String channelId) notifyChannelUpdate;
   final void Function() updateTypingAgentIds;
   final Future<ACPAgentConnection> Function(RemoteAgent agent) getOrCreateACPConnection;
+  late final GroupMemberSessionService _memberSessions =
+      GroupMemberSessionService(_db);
 
   GroupAgentExecutor({
     required LocalDatabaseService db,
@@ -258,6 +261,15 @@ class GroupAgentExecutor {
       '_processGroupAgent START: ${agent.name} (isAdmin=$isAdmin, isLocal=${agent.isLocal}, isPeer=${agent.isPeerAgent})',
       tag: 'GroupAgentExecutor',
     );
+
+    // Bound member DM session (1:1 with this group session) — used as peer/ACP
+    // session_id so group context never shares the agent's personal DM session.
+    final memberSessionId = await _memberSessions.resolveMemberSessionId(
+      groupChannelId: channelId,
+      agentId: agent.id,
+      userId: userId,
+    );
+
     final systemPrompt = _promptBuilder.buildGroupSystemPrompt(
       groupName: groupName,
       groupDescription: groupDescription,
@@ -612,11 +624,11 @@ class GroupAgentExecutor {
       infLogGroup.beginRound(groupTraceId, requestSummary: 'Group peer request');
 
       final peerSessionId = PeerApprovalPolicy.workflowSessionId(
-            channelId: channelId,
+            channelId: memberSessionId,
             workflowId: workflowId,
             workflowStepId: workflowStepId,
           ) ??
-          channelId;
+          memberSessionId;
 
       try {
         if (attachments != null) {
@@ -1094,7 +1106,7 @@ class GroupAgentExecutor {
 
         await effectiveConnection.sendChatMessage(
           taskId: effectiveTaskId,
-          sessionId: channelId,
+          sessionId: memberSessionId,
           message: content,
           userId: userId,
           messageId: _uuid.v4(),

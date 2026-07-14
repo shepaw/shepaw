@@ -16,6 +16,7 @@ import '../models/remote_agent.dart';
 import '../models/model_routing_config.dart';
 import '../services/audio_recording_service.dart';
 import '../services/local_database_service.dart';
+import '../services/group/group_member_session_service.dart';
 import '../utils/layout_utils.dart';
 import '../l10n/app_localizations.dart';
 import '../controllers/chat_controller.dart';
@@ -954,20 +955,28 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
         controller: _controller,
         onNewSession: () => _controller.createNewSession(),
         onSwitchSession: (channelId) async {
-          await _controller.localDatabaseService.touchChannelUpdatedAt(channelId);
+          // Group-bound member sessions open the linked group chat, not a DM.
+          final session = sessions.cast<Channel?>().firstWhere(
+            (s) => s?.id == channelId,
+            orElse: () => null,
+          );
+          final targetId = session?.sourceGroupChannelId ?? channelId;
+          await _controller.localDatabaseService.touchChannelUpdatedAt(targetId);
           if (!mounted) return;
           if (widget.embedded) {
-            widget.onSwitchChannel?.call(channelId);
+            widget.onSwitchChannel?.call(targetId);
           } else {
             Navigator.pushReplacement(
               context,
               MaterialPageRoute(
-                builder: (context) => ChatScreen(
-                  agentId: widget.agentId,
-                  agentName: _controller.agentName,
-                  agentAvatar: _controller.agentAvatar,
-                  channelId: channelId,
-                ),
+                builder: (context) => session?.isGroupBoundMemberSession == true
+                    ? ChatScreen(channelId: targetId)
+                    : ChatScreen(
+                        agentId: widget.agentId,
+                        agentName: _controller.agentName,
+                        agentAvatar: _controller.agentAvatar,
+                        channelId: targetId,
+                      ),
               ),
             );
           }
@@ -1282,6 +1291,11 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                               parentGroupId: old.parentGroupId,
                             );
                             await _controller.localDatabaseService.updateChannel(updated);
+                            await GroupMemberSessionService(_controller.localDatabaseService)
+                                .syncTitlesForGroupFamily(
+                              parentGroupId: updated.groupFamilyId,
+                              groupName: newName,
+                            );
                             if (mounted) { _controller.updateGroupChannelInfo(updated); }
                             if (ctx.mounted) Navigator.pop(ctx);
                           },

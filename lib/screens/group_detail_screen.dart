@@ -7,6 +7,7 @@ import '../peer/widgets/peer_source_badge.dart';
 import '../theme/app_theme.dart';
 import '../services/local_api_service.dart';
 import '../services/local_database_service.dart';
+import '../services/group/group_member_session_service.dart';
 import '../services/logger_service.dart';
 import '../widgets/form_bottom_bar.dart';
 import 'chat_screen.dart';
@@ -136,6 +137,10 @@ class _GroupDetailScreenState extends State<GroupDetailScreen> {
         parentGroupId: _channel.parentGroupId,
       );
       await _databaseService.updateChannel(updated);
+      await GroupMemberSessionService(_databaseService).syncTitlesForGroupFamily(
+        parentGroupId: updated.groupFamilyId,
+        groupName: newName,
+      );
       if (!mounted) return;
       if (widget.startInEditMode) {
         // Opened directly in edit mode (e.g. from chat screen), pop with result
@@ -619,14 +624,17 @@ class _GroupDetailScreenState extends State<GroupDetailScreen> {
     setState(() => _isDeleting = true);
 
     try {
-      // Delete all sessions in this group family
+      // Delete all sessions in this group family (and bound member DMs)
       final sessions =
           await _databaseService.getGroupSessions(_channel.groupFamilyId);
+      final memberSessions = GroupMemberSessionService(_databaseService);
       for (final session in sessions) {
+        await memberSessions.deleteMemberSessionsForGroupChannel(session.id);
         await _databaseService.deleteChannelMessages(session.id);
         await _databaseService.deleteChannel(session.id);
       }
       // Delete the parent group itself
+      await memberSessions.deleteMemberSessionsForGroupChannel(_channel.id);
       await _databaseService.deleteChannelMessages(_channel.id);
       await _databaseService.deleteChannel(_channel.id);
 

@@ -54,6 +54,9 @@ class Channel {
   final String? lastMessage;
   final DateTime? lastMessageTime;
   final String? parentGroupId;
+  /// 若本 DM 是某群会话为成员自动创建的绑定会话，则指向对应的群 channel id。
+  /// 与群会话一一对应，用于隔离群聊上下文，避免污染普通单聊。
+  final String? sourceGroupChannelId;
   /// 群聊自定义系统提示词，用于约束群内 Agent 行为
   final String? systemPrompt;
   /// 群聊循环编排最大轮次
@@ -86,6 +89,7 @@ class Channel {
     this.lastMessage,
     this.lastMessageTime,
     this.parentGroupId,
+    this.sourceGroupChannelId,
     this.systemPrompt,
     this.maxLoopRounds,
     this.mentionMode,
@@ -96,6 +100,10 @@ class Channel {
   /// For the original group, this is its own ID.
   /// For child sessions, this is their parentGroupId.
   String get groupFamilyId => parentGroupId ?? (isGroup ? id : id);
+
+  /// Whether this DM was auto-created for a group member and bound to a group session.
+  bool get isGroupBoundMemberSession =>
+      isDM && sourceGroupChannelId != null && sourceGroupChannelId!.isNotEmpty;
 
   /// Factory constructor that accepts memberIds for convenience
   factory Channel.withMemberIds({
@@ -112,6 +120,7 @@ class Channel {
     String? lastMessage,
     DateTime? lastMessageTime,
     String? parentGroupId,
+    String? sourceGroupChannelId,
     String? systemPrompt,
     int? maxLoopRounds,
     String? mentionMode,
@@ -136,6 +145,7 @@ class Channel {
       lastMessage: lastMessage,
       lastMessageTime: lastMessageTime,
       parentGroupId: parentGroupId,
+      sourceGroupChannelId: sourceGroupChannelId,
       systemPrompt: systemPrompt,
       maxLoopRounds: maxLoopRounds,
       mentionMode: mentionMode,
@@ -186,6 +196,7 @@ class Channel {
       isPrivate: json['is_private'] ?? true,
       unreadCount: json['unread_count'],
       parentGroupId: json['parent_group_id'],
+      sourceGroupChannelId: json['source_group_channel_id'],
       systemPrompt: json['metadata']?['system_prompt'],
       maxLoopRounds: json['metadata']?['max_loop_rounds'] as int?,
       mentionMode: json['metadata']?['mention_mode'],
@@ -207,6 +218,7 @@ class Channel {
     String? lastMessage,
     DateTime? lastMessageTime,
     String? parentGroupId,
+    String? sourceGroupChannelId,
     String? systemPrompt,
     int? maxLoopRounds,
     String? mentionMode,
@@ -226,6 +238,7 @@ class Channel {
       lastMessage: lastMessage ?? this.lastMessage,
       lastMessageTime: lastMessageTime ?? this.lastMessageTime,
       parentGroupId: parentGroupId ?? this.parentGroupId,
+      sourceGroupChannelId: sourceGroupChannelId ?? this.sourceGroupChannelId,
       systemPrompt: systemPrompt ?? this.systemPrompt,
       maxLoopRounds: maxLoopRounds ?? this.maxLoopRounds,
       mentionMode: mentionMode ?? this.mentionMode,
@@ -252,6 +265,8 @@ class Channel {
       if (flowMode) 'flow_mode': true,
       if (unreadCount != null) 'unread_count': unreadCount,
       if (parentGroupId != null) 'parent_group_id': parentGroupId,
+      if (sourceGroupChannelId != null)
+        'source_group_channel_id': sourceGroupChannelId,
     };
   }
 }

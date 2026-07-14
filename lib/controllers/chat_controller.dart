@@ -32,6 +32,7 @@ import '../peer/models/paired_peer.dart' show PeerConnectionState;
 import '../services/workflow/workflow_restore_planner.dart';
 import '../services/workflow/workflow_pending_approval_picker.dart';
 import '../services/workflow/workflow_plan_approval_sync.dart';
+import '../services/group/group_member_session_service.dart';
 import 'chat_workflow_coordinator.dart';
 import 'chat_attachment_coordinator.dart';
 import 'chat_attachment_validator.dart';

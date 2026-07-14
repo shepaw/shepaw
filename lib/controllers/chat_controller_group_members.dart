@@ -14,6 +14,15 @@ mixin _GroupMemberOps on _ChatControllerBase {
 
     await localDatabaseService.addChannelMember(currentChannelId!, agent.id);
 
+    final channel = await localDatabaseService.getChannelById(currentChannelId!);
+    if (channel != null) {
+      await GroupMemberSessionService(localDatabaseService).ensureMemberSession(
+        groupChannel: channel,
+        agentId: agent.id,
+        userId: getUserId(),
+      );
+    }
+
     final systemMsg = await chatService.notifyGroupMembershipChange(
       currentChannelId!,
       agent.id,
@@ -32,6 +41,10 @@ mixin _GroupMemberOps on _ChatControllerBase {
     if (currentChannelId == null) return;
 
     await localDatabaseService.removeChannelMember(currentChannelId!, agent.id);
+    await GroupMemberSessionService(localDatabaseService).deleteMemberSession(
+      groupChannelId: currentChannelId!,
+      agentId: agent.id,
+    );
 
     final systemMsg = await chatService.notifyGroupMembershipChange(
       currentChannelId!,

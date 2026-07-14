@@ -15,6 +15,7 @@ import '../workflow/workflow_service.dart';
 import 'group_dispatch_parser.dart';
 import 'group_agent_executor.dart';
 import 'group_prompt_builder.dart';
+import 'group_member_session_service.dart';
 import 'planning_helpers.dart';
 
 class GroupOrchestrationService {
@@ -113,6 +114,15 @@ class GroupOrchestrationService {
     final channelMembers = channel?.members ?? <ChannelMember>[];
     final customSystemPrompt = channel?.systemPrompt;
     final mentionMode = channel?.effectiveMentionMode ?? 'adminOnly';
+
+    // Ensure each agent member has a DM session bound 1:1 to this group session
+    // (covers legacy groups created before binding existed).
+    if (channel != null) {
+      await GroupMemberSessionService(_db).ensureMemberSessionsForGroup(
+        groupChannel: channel,
+        userId: userId,
+      );
+    }
 
     // 3. Load all agent RemoteAgent objects
     final List<RemoteAgent> agents = [];

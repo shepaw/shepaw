@@ -45,7 +45,7 @@ class LocalDatabaseService {
       // Web平台使用sqflite_common_ffi
       return await openDatabase(
         'shepaw',
-        version: 23,
+        version: 24,
         onCreate: _onCreate,
         onUpgrade: _onUpgrade,
       );
@@ -55,7 +55,7 @@ class LocalDatabaseService {
       path = join(directory.path, 'shepaw.db');
       return await openDatabase(
         path,
-        version: 23,
+        version: 24,
         onCreate: _onCreate,
         onUpgrade: _onUpgrade,
       );
@@ -66,7 +66,7 @@ class LocalDatabaseService {
 
       return await openDatabase(
         path,
-        version: 23,
+        version: 24,
         onCreate: _onCreate,
         onUpgrade: _onUpgrade,
       );
@@ -151,6 +151,7 @@ class LocalDatabaseService {
         avatar_path TEXT,
         is_private INTEGER DEFAULT 0,
         parent_group_id TEXT,
+        source_group_channel_id TEXT,
         system_prompt TEXT,
         max_loop_rounds INTEGER,
         mention_mode TEXT,
@@ -242,6 +243,7 @@ class LocalDatabaseService {
     await db.execute('CREATE INDEX idx_messages_read ON messages(is_read)');
     await db.execute('CREATE INDEX idx_channels_created_by ON channels(created_by)');
     await db.execute('CREATE INDEX idx_channels_type ON channels(type)');
+    await db.execute('CREATE INDEX idx_channels_source_group ON channels(source_group_channel_id)');
     await db.execute('CREATE INDEX idx_channel_members_agent ON channel_members(agent_id)');
     await db.execute('CREATE INDEX idx_conversation_requests_status ON conversation_requests(status)');
     await db.execute('CREATE INDEX idx_conversation_requests_target ON conversation_requests(target_id)');
@@ -633,6 +635,23 @@ class LocalDatabaseService {
         await db.execute('CREATE INDEX IF NOT EXISTS idx_wf_pending_workflow ON workflow_pending_approvals(workflow_id, status)');
       } catch (e) {
         LoggerService().error('Failed to create workflow_pending_approvals (v23)', tag: 'Migration', error: e);
+      }
+    }
+
+    if (oldVersion < 24) {
+      // 版本 23 -> 24: 群成员绑定会话（DM.source_group_channel_id ↔ 群会话 1:1）
+      try {
+        await db.execute(
+          'ALTER TABLE channels ADD COLUMN source_group_channel_id TEXT');
+        await db.execute(
+          'CREATE INDEX IF NOT EXISTS idx_channels_source_group '
+          'ON channels(source_group_channel_id)');
+      } catch (e) {
+        LoggerService().error(
+          'Failed to add source_group_channel_id (v24)',
+          tag: 'Migration',
+          error: e,
+        );
       }
     }
 
