@@ -3,21 +3,27 @@ import 'dart:io';
 import 'dart:math';
 import 'dart:typed_data';
 import 'package:encrypt/encrypt.dart' as encrypt;
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:path_provider/path_provider.dart';
 
 /// 安全密钥管理服务
 ///
-/// 实现：AES-256-CBC 加密后写文件（沙箱 Application Support 目录）。
-/// 背景：macOS 沙箱应用在无开发者证书时，flutter_secure_storage 写 Keychain 静默失败。
-/// 本实现用 path_provider 获取沙箱专属目录，数据不出沙箱，其他进程无法访问。
+/// 优先将 AES master key 存入平台 Secure Storage（Keychain / Keystore）。
+/// 若平台存储不可用（例如无开发者证书的 macOS 沙箱），回退到 Application
+/// Support 目录下的加密文件布局。
 ///
-/// 文件布局（Application Support/com.shepaw.app/secure/）：
-///   _master.key  — 随机 AES-256 key + IV（96 bytes raw），首次生成后持久化
+/// 文件布局（回退模式，Application Support/com.shepaw.app/secure/）：
+///   _master.key  — 随机 AES-256 key + IV（48 bytes raw）
 ///   _secrets.json — AES 加密后的 base64，明文为 JSON Map<String, String>
 class SecureKeyManager {
   static const String _secureDir = 'secure';
   static const String _masterKeyFile = '_master.key';
   static const String _secretsFile = '_secrets.json';
+  static const String _masterKeyStorageKey = 'shepaw_secure_master_key_v1';
+
+  static const FlutterSecureStorage _secureStorage = FlutterSecureStorage(
+    aOptions: AndroidOptions(encryptedSharedPreferences: true),
+  );
 
   // ── 内部路径辅助 ──────────────────────────────────────────────────────────
 
@@ -30,37 +36,92 @@ class SecureKeyManager {
 
   // ── Master Key 管理 ───────────────────────────────────────────────────────
 
-  /// 获取（或初次生成）AES key + IV，存在沙箱文件中。
+  /// 获取（或初次生成）AES key + IV。
   static Future<({encrypt.Key key, encrypt.IV iv})> _getMasterKey() async {
-    final dir = await _dir();
-    final keyFile = File('${dir.path}/$_masterKeyFile');
+    final fromPlatform = await _readMasterKeyFromPlatform();
+    if (fromPlatform != null) return fromPlatform;
 
-    if (keyFile.existsSync()) {
-      final bytes = await keyFile.readAsBytes();
-      // 格式：前 32 字节为 key，后 16 字节为 IV
-      if (bytes.length >= 48) {
-        final key = encrypt.Key(bytes.sublist(0, 32));
-        final iv = encrypt.IV(bytes.sublist(32, 48));
-        return (key: key, iv: iv);
-      }
+    final fromFile = await _readMasterKeyFromFile();
+    if (fromFile != null) {
+      // Best-effort migrate file-backed key into platform storage.
+      await _writeMasterKeyToPlatform(fromFile);
+      return fromFile;
     }
 
-    // 首次：生成随机 key（32B）和 IV（16B）
     final rng = Random.secure();
     final keyBytes = Uint8List(32);
     final ivBytes = Uint8List(16);
-    for (var i = 0; i < 32; i++) { keyBytes[i] = rng.nextInt(256); }
-    for (var i = 0; i < 16; i++) { ivBytes[i] = rng.nextInt(256); }
-
-    final combined = Uint8List(48)
-      ..setRange(0, 32, keyBytes)
-      ..setRange(32, 48, ivBytes);
-    await keyFile.writeAsBytes(combined, flush: true);
-
-    return (
+    for (var i = 0; i < 32; i++) {
+      keyBytes[i] = rng.nextInt(256);
+    }
+    for (var i = 0; i < 16; i++) {
+      ivBytes[i] = rng.nextInt(256);
+    }
+    final generated = (
       key: encrypt.Key(keyBytes),
       iv: encrypt.IV(ivBytes),
     );
+
+    final savedToPlatform = await _writeMasterKeyToPlatform(generated);
+    if (!savedToPlatform) {
+      await _writeMasterKeyToFile(generated);
+    }
+    return generated;
+  }
+
+  static Future<({encrypt.Key key, encrypt.IV iv})?> _readMasterKeyFromPlatform() async {
+    try {
+      final b64 = await _secureStorage.read(key: _masterKeyStorageKey);
+      if (b64 == null || b64.isEmpty) return null;
+      final bytes = base64Decode(b64);
+      if (bytes.length < 48) return null;
+      return (
+        key: encrypt.Key(Uint8List.fromList(bytes.sublist(0, 32))),
+        iv: encrypt.IV(Uint8List.fromList(bytes.sublist(32, 48))),
+      );
+    } catch (_) {
+      return null;
+    }
+  }
+
+  static Future<bool> _writeMasterKeyToPlatform(
+    ({encrypt.Key key, encrypt.IV iv}) master,
+  ) async {
+    try {
+      final combined = Uint8List(48)
+        ..setRange(0, 32, master.key.bytes)
+        ..setRange(32, 48, master.iv.bytes);
+      await _secureStorage.write(
+        key: _masterKeyStorageKey,
+        value: base64Encode(combined),
+      );
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  static Future<({encrypt.Key key, encrypt.IV iv})?> _readMasterKeyFromFile() async {
+    final dir = await _dir();
+    final keyFile = File('${dir.path}/$_masterKeyFile');
+    if (!keyFile.existsSync()) return null;
+    final bytes = await keyFile.readAsBytes();
+    if (bytes.length < 48) return null;
+    return (
+      key: encrypt.Key(bytes.sublist(0, 32)),
+      iv: encrypt.IV(bytes.sublist(32, 48)),
+    );
+  }
+
+  static Future<void> _writeMasterKeyToFile(
+    ({encrypt.Key key, encrypt.IV iv}) master,
+  ) async {
+    final dir = await _dir();
+    final keyFile = File('${dir.path}/$_masterKeyFile');
+    final combined = Uint8List(48)
+      ..setRange(0, 32, master.key.bytes)
+      ..setRange(32, 48, master.iv.bytes);
+    await keyFile.writeAsBytes(combined, flush: true);
   }
 
   // ── Secrets 文件读写 ──────────────────────────────────────────────────────
@@ -78,7 +139,6 @@ class SecureKeyManager {
       final map = jsonDecode(decrypted) as Map<String, dynamic>;
       return map.map((k, v) => MapEntry(k, v as String));
     } catch (_) {
-      // 文件损坏或首次读取失败，返回空 map
       return {};
     }
   }
@@ -121,6 +181,13 @@ class SecureKeyManager {
     return _readAll();
   }
 
+  /// 模型 API Key 的存储键
+  static String modelApiKeyStorageKey(String modelId) => 'model_api_key_$modelId';
+
+  /// Provider 级 API Key 缓存键（按 apiBase）
+  static String providerApiKeyStorageKey(String apiBase) =>
+      'provider_api_key_$apiBase';
+
   // ── 工具 Secret 命名规范 ──────────────────────────────────────────────────
 
   /// 工具 secret 字段的存储键名格式
@@ -150,5 +217,8 @@ class SecureKeyManager {
     final secretsFile = File('${dir.path}/$_secretsFile');
     if (keyFile.existsSync()) await keyFile.delete();
     if (secretsFile.existsSync()) await secretsFile.delete();
+    try {
+      await _secureStorage.delete(key: _masterKeyStorageKey);
+    } catch (_) {}
   }
 }

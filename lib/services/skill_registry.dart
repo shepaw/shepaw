@@ -188,13 +188,28 @@ class SkillRegistry {
     final tempDir = await Directory.systemTemp.createTemp('skill_import_');
     try {
       for (final entry in archive) {
-        final filePath = p.join(tempDir.path, entry.name);
+        // Zip Slip protection: reject absolute paths and `..` traversal.
+        final normalizedName = p.normalize(entry.name);
+        if (normalizedName.isEmpty ||
+            p.isAbsolute(normalizedName) ||
+            normalizedName.split(p.separator).contains('..')) {
+          throw Exception(
+            'Unsafe path in ZIP archive: ${entry.name}',
+          );
+        }
+        final filePath = p.join(tempDir.path, normalizedName);
+        final resolved = p.normalize(filePath);
+        if (!p.isWithin(tempDir.path, resolved) && resolved != tempDir.path) {
+          throw Exception(
+            'Zip Slip blocked: ${entry.name}',
+          );
+        }
         if (entry.isFile) {
-          final outFile = File(filePath);
-          await outFile.create(recursive: true);
+          final outFile = File(resolved);
+          await outFile.parent.create(recursive: true);
           await outFile.writeAsBytes(entry.content as List<int>);
         } else {
-          await Directory(filePath).create(recursive: true);
+          await Directory(resolved).create(recursive: true);
         }
       }
 

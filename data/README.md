@@ -1,0 +1,35 @@
+# data/ — 本地构建与签名材料
+
+本目录用于**本机发包**：密钥与 keystore 放这里，默认不进 git。
+
+## 一次配置
+
+1. 复制示例并填入真实密码：
+
+```bash
+cp data/key.properties.example data/key.properties
+# 编辑 data/key.properties
+```
+
+2. 把 `.jks` 放到 `data/`（与 `storeFile=` 文件名一致），例如：
+
+```bash
+cp android/app/shepaw-release.jks data/shepaw-release.jks
+# 或: ln -s ../android/app/shepaw-release.jks data/shepaw-release.jks
+```
+
+3. 构建：
+
+```bash
+./data/build.sh              # 本机可构建的全部平台
+./data/build.sh android
+./data/build.sh macos web
+./data/build.sh android --debug
+```
+
+Windows 桌面请在 Windows 上运行：`.\data\build_windows.ps1`
+
+## Git 忽略规则
+
+已忽略：`data/key.properties`、`data/*.jks`、`data/out/` 等密钥与产物。  
+可提交：`data/build.sh`、`data/key.properties.example`、本 README。

@@ -1,0 +1,8 @@
+# Release keystore — kept under data/ (gitignored)
+#
+# storeFile is relative to this file's directory (data/).
+# Place shepaw-release.jks next to this file, or set an absolute path.
+storePassword=<your-store-password>
+keyPassword=<your-key-password>
+keyAlias=shepaw
+storeFile=shepaw-release.jks

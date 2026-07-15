@@ -31,24 +31,9 @@
 	</array>
 	<key>NSAppTransportSecurity</key>
 	<dict>
-		<!-- Allow cleartext HTTP for update/release servers -->
-		<key>NSExceptionDomains</key>
-		<dict>
-			<key>channel.shepaw.com</key>
-			<dict>
-				<key>NSExceptionAllowsInsecureHTTPLoads</key>
-				<true/>
-				<key>NSIncludesSubdomains</key>
-				<true/>
-			</dict>
-			<key>release.shepaw.com</key>
-			<dict>
-				<key>NSExceptionAllowsInsecureHTTPLoads</key>
-				<true/>
-				<key>NSIncludesSubdomains</key>
-				<true/>
-			</dict>
-		</dict>
+		<!-- Production hosts must use HTTPS; no cleartext exceptions. -->
+		<key>NSAllowsLocalNetworking</key>
+		<true/>
 	</dict>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>

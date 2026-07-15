@@ -1849,7 +1849,7 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
             title: const Text('CLI Commands'),
             subtitle: Text(
               _enabledCliCommands.isEmpty
-                  ? 'All CLI commands available'
+                  ? 'All CLI commands available (OS tools still require confirmation)'
                   : '${_enabledCliCommands.length} command(s) selected (restricted)',
               style: TextStyle(
                 color: _enabledCliCommands.isEmpty

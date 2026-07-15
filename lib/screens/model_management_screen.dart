@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import 'package:uuid/uuid.dart';
 import '../l10n/app_localizations.dart';
 import '../widgets/model_icon.dart';
@@ -11,6 +10,7 @@ import '../services/model_registry.dart';
 import '../services/ollama_service.dart';
 import '../services/openrouter_service.dart';
 import '../services/logger_service.dart';
+import '../services/secure_key_manager.dart';
 import '../utils/exceptions.dart';
 import '../widgets/form_bottom_bar.dart';
 
@@ -331,8 +331,7 @@ class _ModelEditScreenState extends State<ModelEditScreen> {
   String? _modelsError;
 
   // ── Provider API Key 缓存 ─────────────────────────────
-  /// SharedPreferences key 前缀，按 apiBase 存储 API Key
-  static const String _apiKeyCachePrefix = 'provider_api_key_';
+  /// Secure storage key 前缀由 [SecureKeyManager.providerApiKeyStorageKey] 管理
 
   @override
   void initState() {
@@ -417,7 +416,7 @@ class _ModelEditScreenState extends State<ModelEditScreen> {
     }
   }
 
-  /// 从 SharedPreferences 读取该 provider 缓存的 API Key 并回填
+  /// 从安全存储读取该 provider 缓存的 API Key 并回填
   Future<void> _loadCachedApiKey(String apiBase) async {
     // 优先从已有的 ModelDefinition 中找同 apiBase 的 Key
     for (final def in ModelRegistry.instance.definitions) {
@@ -428,22 +427,26 @@ class _ModelEditScreenState extends State<ModelEditScreen> {
       }
     }
 
-    // 降级：查 SharedPreferences 缓存
+    // 降级：查 SecureKeyManager 缓存
     try {
-      final prefs = await SharedPreferences.getInstance();
-      final cached = prefs.getString('$_apiKeyCachePrefix$apiBase') ?? '';
+      final cached = await SecureKeyManager.getSecureValue(
+            SecureKeyManager.providerApiKeyStorageKey(apiBase),
+          ) ??
+          '';
       if (cached.isNotEmpty && mounted) {
         setState(() => _apiKeyController.text = cached);
       }
     } catch (_) {}
   }
 
-  /// 将当前 API Key 缓存到 SharedPreferences
+  /// 将当前 API Key 缓存到安全存储
   Future<void> _saveApiKeyCache(String apiBase, String apiKey) async {
     if (apiKey.trim().isEmpty) return;
     try {
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setString('$_apiKeyCachePrefix$apiBase', apiKey.trim());
+      await SecureKeyManager.saveSecureValue(
+        SecureKeyManager.providerApiKeyStorageKey(apiBase),
+        apiKey.trim(),
+      );
     } catch (_) {}
   }
 

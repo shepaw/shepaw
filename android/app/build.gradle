@@ -23,9 +23,25 @@ if (flutterVersionName == null) {
 }
 
 def keystoreProperties = new Properties()
-def keystorePropertiesFile = rootProject.file('key.properties')
+// Prefer project-local secrets under ../data/ (gitignored); fall back to android/key.properties
+def keystorePropertiesFile = rootProject.file('../data/key.properties')
+if (!keystorePropertiesFile.exists()) {
+    keystorePropertiesFile = rootProject.file('key.properties')
+}
 if (keystorePropertiesFile.exists()) {
     keystoreProperties.load(new FileInputStream(keystorePropertiesFile))
+}
+
+def resolveStoreFile(String storePath) {
+    if (storePath == null || storePath.trim().isEmpty()) {
+        return null
+    }
+    def candidate = new File(storePath)
+    if (candidate.isAbsolute()) {
+        return candidate
+    }
+    // Paths in key.properties are relative to the properties file directory (data/ or android/)
+    return new File(keystorePropertiesFile.parentFile, storePath)
 }
 
 android {
@@ -59,7 +75,7 @@ android {
         release {
             keyAlias keystoreProperties['keyAlias']
             keyPassword keystoreProperties['keyPassword']
-            storeFile keystoreProperties['storeFile'] ? file(keystoreProperties['storeFile']) : null
+            storeFile resolveStoreFile(keystoreProperties['storeFile'] as String)
             storePassword keystoreProperties['storePassword']
         }
     }

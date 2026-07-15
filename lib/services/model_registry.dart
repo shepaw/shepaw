@@ -14,8 +14,10 @@ import 'package:uuid/uuid.dart';
 import '../models/model_definition.dart';
 import '../models/model_routing_config.dart';
 import 'logger_service.dart';
+import 'secure_key_manager.dart';
 
 const _prefsKey = 'tool_model_definitions';
+const _prefsApiKeyCachePrefix = 'provider_api_key_';
 
 /// Central registry for tool model definitions.
 class ModelRegistry {
@@ -53,12 +55,92 @@ class ModelRegistry {
         _definitions = [];
       }
     }
+
+    // Restore / migrate API keys into SecureKeyManager (strip from prefs payload).
+    await _hydrateApiKeys(prefs);
+    await _persist();
+  }
+
+  Future<void> _hydrateApiKeys(SharedPreferences prefs) async {
+    var changed = false;
+    final hydrated = <ModelDefinition>[];
+
+    for (final def in _definitions) {
+      final secureKey = SecureKeyManager.modelApiKeyStorageKey(def.id);
+      final existingSecure = await SecureKeyManager.getSecureValue(secureKey);
+      final inlineKey = def.route.apiKey ?? '';
+
+      if (inlineKey.isNotEmpty) {
+        if (existingSecure == null || existingSecure.isEmpty) {
+          await SecureKeyManager.saveSecureValue(secureKey, inlineKey);
+        }
+        // Keep key in memory for runtime use, but it will be stripped on persist.
+        hydrated.add(def);
+        changed = true;
+      } else if (existingSecure != null && existingSecure.isNotEmpty) {
+        hydrated.add(def.copyWith(
+          route: ModelRouteConfig(
+            provider: def.route.provider,
+            model: def.route.model,
+            apiBase: def.route.apiBase,
+            apiKey: existingSecure,
+            stream: def.route.stream,
+            apiPath: def.route.apiPath,
+            requestBodyTemplate: def.route.requestBodyTemplate,
+            responseBodyPath: def.route.responseBodyPath,
+          ),
+        ));
+      } else {
+        hydrated.add(def);
+      }
+    }
+    _definitions = hydrated;
+
+    // Migrate legacy provider API key cache out of SharedPreferences.
+    for (final key in prefs.getKeys().where((k) => k.startsWith(_prefsApiKeyCachePrefix))) {
+      final value = prefs.getString(key);
+      if (value != null && value.isNotEmpty) {
+        final apiBase = key.substring(_prefsApiKeyCachePrefix.length);
+        await SecureKeyManager.saveSecureValue(
+          SecureKeyManager.providerApiKeyStorageKey(apiBase),
+          value,
+        );
+      }
+      await prefs.remove(key);
+      changed = true;
+    }
+
+    if (changed) {
+      LoggerService().info('Migrated model API keys to secure storage', tag: 'ModelRegistry');
+    }
   }
 
   Future<void> _persist() async {
     final prefs = await SharedPreferences.getInstance();
-    final json = jsonEncode(_definitions.map((d) => d.toJson()).toList());
-    await prefs.setString(_prefsKey, json);
+
+    // Persist definitions without API keys; store keys separately.
+    final sanitized = <Map<String, dynamic>>[];
+    for (final def in _definitions) {
+      final key = def.route.apiKey ?? '';
+      if (key.isNotEmpty) {
+        await SecureKeyManager.saveSecureValue(
+          SecureKeyManager.modelApiKeyStorageKey(def.id),
+          key,
+        );
+      } else {
+        await SecureKeyManager.deleteSecureValue(
+          SecureKeyManager.modelApiKeyStorageKey(def.id),
+        );
+      }
+
+      final json = def.toJson();
+      final route = Map<String, dynamic>.from(json['route'] as Map? ?? {});
+      route.remove('api_key');
+      json['route'] = route;
+      sanitized.add(json);
+    }
+
+    await prefs.setString(_prefsKey, jsonEncode(sanitized));
   }
 
   // ---------------------------------------------------------------------------
@@ -98,6 +180,9 @@ class ModelRegistry {
   /// Delete a tool model definition by [id].
   Future<void> delete(String id) async {
     _definitions.removeWhere((d) => d.id == id);
+    await SecureKeyManager.deleteSecureValue(
+      SecureKeyManager.modelApiKeyStorageKey(id),
+    );
     await _persist();
   }
 
@@ -314,7 +399,6 @@ $lines''';
 
     // Execute HTTP request
     final client = HttpClient();
-    client.badCertificateCallback = (cert, host, port) => true;
     try {
       final request = await client.postUrl(Uri.parse(url));
       for (final entry in headers.entries) {

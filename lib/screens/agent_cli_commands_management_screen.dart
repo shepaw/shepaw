@@ -133,7 +133,7 @@ class _AgentCliCommandsTileState extends State<_AgentCliCommandsTile> {
 
     String getStatusText() {
       if (enabledCommands.isEmpty) {
-        return 'All CLI commands available';
+        return 'All CLI commands available (OS tools still require confirmation)';
       } else {
         final count = enabledCommands.length;
         return '$count command(s) allowed';

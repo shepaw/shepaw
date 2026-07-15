@@ -14,6 +14,7 @@ import '../agent_prompt_builder.dart';
 import '../local_llm_agent_service.dart';
 import '../task/task_models.dart';
 import '../../clis/shepaw/os/os_executor.dart' as os_exec;
+import '../../clis/shepaw/os/os_tool_registry.dart';
 import '../skill_registry.dart';
 import '../model_registry.dart';
 import '../ui_component_registry.dart';
@@ -1705,6 +1706,20 @@ class AgentMessagingService {
                   continue;
                 }
               }
+
+              // OS 工具风险确认：非 safe 必须经用户批准
+              final osConfirmDenied = await _confirmOsToolIfNeeded(
+                activeTask: activeTask,
+                args: tc.arguments,
+                agentMessageId: agentMessageId,
+                effectiveChannelId: effectiveChannelId,
+                toolCall: tc,
+                toolResults: toolResults,
+                infLog: infLog,
+                historyService: historyService,
+              );
+              if (osConfirmDenied) continue;
+
               // 命令被允许 → 继续执行
               final result = await ShepawCLI.instance.execute(tc.arguments, agentId: agent.id);
               toolResults.add({
@@ -2072,6 +2087,69 @@ class AgentMessagingService {
   // ---------------------------------------------------------------------------
   // Helpers
   // ---------------------------------------------------------------------------
+
+  /// Returns `true` when the OS tool call was denied (caller should `continue`).
+  Future<bool> _confirmOsToolIfNeeded({
+    required ActiveTask activeTask,
+    required Map<String, dynamic> args,
+    required String agentMessageId,
+    required String effectiveChannelId,
+    required LLMToolCallEvent toolCall,
+    required List<Map<String, dynamic>> toolResults,
+    required InferenceLogService infLog,
+    required HistoryService historyService,
+  }) async {
+    final namespace = args['namespace'] as String? ?? '';
+    if (namespace != 'os') return false;
+
+    final subcommand = args['subcommand'] as String? ?? '';
+    if (subcommand.isEmpty) return false;
+
+    final flagsRaw = args['flags'];
+    final flags = <String, dynamic>{};
+    if (flagsRaw is Map) {
+      flags.addAll(Map<String, dynamic>.from(flagsRaw));
+    }
+
+    final cliPath = 'os.$subcommand';
+    final toolName = OsToolRegistry.instance.resolveToolName(cliPath);
+    final risk = os_exec.classifyRisk(toolName, flags);
+    if (risk == os_exec.RiskLevel.safe) return false;
+
+    final confirm = activeTask.onOsToolConfirmation;
+    final approved = confirm == null
+        ? false // No UI confirmation handler → deny non-safe OS tools
+        : await confirm(toolName, flags, risk);
+
+    if (approved) return false;
+
+    final denyResult = {
+      'error': 'OS tool "$cliPath" was denied by the user (risk: ${risk.name}).',
+      'tool': toolName,
+      'risk': risk.name,
+    };
+    final encoded = jsonEncode(denyResult);
+    toolResults.add({
+      'tool_call_id': toolCall.id,
+      'name': toolCall.name,
+      'result': encoded,
+    });
+    infLog.onToolResult(
+      activeTask.taskId,
+      toolCallId: toolCall.id,
+      name: toolCall.name,
+      result: encoded,
+    );
+    await historyService.saveToolExecution(
+      messageId: agentMessageId,
+      channelId: effectiveChannelId,
+      toolCallId: toolCall.id,
+      toolName: toolCall.name,
+      arguments: args,
+      result: ToolExecutionResult.text(encoded),
+    );
+    return true;
+  }
 
   /// Formats a millisecond timestamp as "YYYY-MM-DD HH:MM:SS" (local time).
   String _formatTimestamp(int timestampMs) {

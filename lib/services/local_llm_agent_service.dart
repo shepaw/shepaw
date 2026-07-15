@@ -437,7 +437,6 @@ class LocalLLMAgentService {
   }) async {
     final uri = Uri.parse(url);
     final client = HttpClient();
-    client.badCertificateCallback = (cert, host, port) => true;
     _registerClient(client);
 
     try {
@@ -842,7 +841,6 @@ class LocalLLMAgentService {
   }) async {
     final uri = Uri.parse(url);
     final client = HttpClient();
-    client.badCertificateCallback = (cert, host, port) => true;
 
     try {
       final request = await client.postUrl(uri);

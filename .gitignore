@@ -1,5 +1,6 @@
 # Flutter/Dart 构建产物
 build/
+dist/
 .dart_tool/
 
 # Android Gradle 缓存
@@ -29,8 +30,19 @@ android/.gradle/
 google-services.json
 GoogleService-Info.plist
 
-# AI 推理中间产物
-.ai_workspace/
+# Android 签名（切勿提交密码或 keystore）
+android/key.properties
+android/*.jks
+android/*.keystore
+*.jks
+*.keystore
+
+# data/：本地密钥与产物不入库；脚本与示例可提交
+data/**
+!data/README.md
+!data/build.sh
+!data/build_windows.ps1
+!data/key.properties.example
 
 # AI 推理中间产物
 .ai_workspace/
