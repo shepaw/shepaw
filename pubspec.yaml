@@ -107,6 +107,13 @@ dependency_overrides:
   # Pin to 2.4.x which uses the older FFI approach without objective_c.dylib.
   path_provider_foundation: '>=2.4.0 <2.5.0'
 
+# Prefer OS SQLite on desktop so builds do not download GitHub native assets
+# (often blocked / timed out in restricted networks).
+hooks:
+  user_defines:
+    sqlite3:
+      source: system
+
 dev_dependencies:
   flutter_test:
     sdk: flutter

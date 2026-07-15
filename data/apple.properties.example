@@ -1,0 +1,7 @@
+# Optional Apple signing for iOS / macOS (gitignored).
+# Copy to data/apple.properties and fill your Team ID from
+# https://developer.apple.com/account → Membership details.
+#
+# Without this file, iOS is built unsigned (xcodebuild CODE_SIGNING_ALLOWED=NO)
+# and can be signed later in Xcode; macOS builds use ad-hoc / local signing.
+DEVELOPMENT_TEAM=

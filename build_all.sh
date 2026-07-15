@@ -288,20 +288,73 @@ build_ios() {
     warn "Skip iOS: xcodebuild not found"
     return 0
   fi
-  info "Building iOS ($BUILD_MODE, no-codesign)..."
-  if [[ "$BUILD_MODE" == "release" ]]; then
-    flutter build ios --release --no-codesign
-  else
-    flutter build ios --debug --no-codesign
+
+  local config="Release"
+  local sdk="iphoneos"
+  local mode_flag="--release"
+  if [[ "$BUILD_MODE" != "release" ]]; then
+    config="Debug"
+    mode_flag="--debug"
   fi
-  local app_dir
-  app_dir="$(find build/ios -type d -name 'Runner.app' 2>/dev/null | head -1 || true)"
-  if [[ -n "$app_dir" ]]; then
-    archive_dir "$app_dir" "${ARTIFACT_PREFIX}-ios-${BUILD_MODE}.tar.gz" "Runner.app"
-  else
-    warn "iOS build finished but Runner.app not found under build/ios (open ios/Runner.xcworkspace to archive/sign)"
+
+  local team=""
+  if [[ -f data/apple.properties ]]; then
+    team="$(grep -E '^DEVELOPMENT_TEAM=' data/apple.properties | head -1 | cut -d= -f2- | tr -d '\r' | xargs || true)"
   fi
-  info "Tip: open ios/Runner.xcworkspace in Xcode to sign & distribute"
+  team="${DEVELOPMENT_TEAM:-$team}"
+
+  # Prepare Flutter/ios generated files. Prefer unsigned path when no team is set:
+  # plain `flutter build ios --no-codesign` still fails without a Development Team
+  # on current Flutter/Xcode versions.
+  info "Preparing iOS Flutter project ($BUILD_MODE)..."
+  flutter build ios --config-only $mode_flag --no-codesign
+
+  local app_dir=""
+  if [[ -n "$team" ]]; then
+    info "Building iOS with DEVELOPMENT_TEAM=$team ..."
+    printf 'DEVELOPMENT_TEAM=%s\nCODE_SIGN_STYLE=Automatic\n' "$team" \
+      > ios/Flutter/Signing.local.xcconfig
+    flutter build ios $mode_flag
+    app_dir="build/ios/${config}-iphoneos/Runner.app"
+  else
+    info "Building iOS unsigned (no DEVELOPMENT_TEAM). Set data/apple.properties for device install / App Store."
+    rm -f ios/Flutter/Signing.local.xcconfig
+    local dd_path="$ROOT_DIR/build/ios/DerivedData"
+    local products_dir="$dd_path/Build/Products/${config}-iphoneos"
+    rm -rf "$dd_path"
+    mkdir -p "$dd_path"
+    (
+      cd ios
+      xcodebuild -workspace Runner.xcworkspace -scheme Runner \
+        -configuration "$config" \
+        -sdk "$sdk" \
+        -destination 'generic/platform=iOS' \
+        -derivedDataPath "$dd_path" \
+        CODE_SIGN_IDENTITY="" \
+        CODE_SIGNING_REQUIRED=NO \
+        CODE_SIGNING_ALLOWED=NO \
+        ONLY_ACTIVE_ARCH=NO \
+        build
+    )
+    app_dir="$products_dir/Runner.app"
+  fi
+
+  if [[ ! -d "$app_dir" ]]; then
+    app_dir="$(find build/ios -path "*/${config}-iphoneos/Runner.app" -type d 2>/dev/null | head -1 || true)"
+  fi
+  [[ -d "$app_dir" ]] || die "iOS Runner.app not found (looked under build/ios/**/${config}-iphoneos)"
+
+  # Reject empty / stub apps (e.g. leftover Frameworks-only dirs)
+  local app_bytes
+  app_bytes="$(du -sk "$app_dir" 2>/dev/null | awk '{print $1}')"
+  if [[ -z "$app_bytes" || "$app_bytes" -lt 1000 ]]; then
+    die "iOS Runner.app looks empty (${app_bytes:-0} KB): $app_dir"
+  fi
+
+  archive_dir "$app_dir" "${ARTIFACT_PREFIX}-ios-${BUILD_MODE}.tar.gz" "Runner.app"
+  if [[ -z "$team" ]]; then
+    warn "iOS artifact is unsigned — open ios/Runner.xcworkspace to sign before device/TestFlight."
+  fi
 }
 
 build_macos() {
@@ -310,6 +363,20 @@ build_macos() {
     return 0
   fi
   info "Building macOS ($BUILD_MODE)..."
+
+  # Stale Xcode build DB locks are common after interrupted / concurrent builds.
+  rm -rf build/macos/Build/Intermediates.noindex/XCBuildData 2>/dev/null || true
+
+  local team=""
+  if [[ -f data/apple.properties ]]; then
+    team="$(grep -E '^DEVELOPMENT_TEAM=' data/apple.properties | head -1 | cut -d= -f2- | tr -d '\r' | xargs || true)"
+  fi
+  team="${DEVELOPMENT_TEAM:-$team}"
+
+  if [[ -n "$team" ]]; then
+    export DEVELOPMENT_TEAM="$team"
+  fi
+
   flutter build macos "--${BUILD_MODE}"
 
   local app
@@ -392,10 +459,15 @@ prepare
 for t in $TARGETS; do
   echo
   info "======== $t ========"
-  if run_target "$t"; then
+  # Don't wrap in `if` — that disables set -e inside the build function on bash.
+  set +e
+  run_target "$t"
+  status=$?
+  set -e
+  if [[ $status -eq 0 ]]; then
     SUCCEEDED="${SUCCEEDED} $t"
   else
-    error "Target failed: $t"
+    error "Target failed: $t (exit $status)"
     FAILED=1
   fi
 done

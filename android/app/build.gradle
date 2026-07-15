@@ -32,16 +32,14 @@ if (keystorePropertiesFile.exists()) {
     keystoreProperties.load(new FileInputStream(keystorePropertiesFile))
 }
 
-def resolveStoreFile(String storePath) {
-    if (storePath == null || storePath.trim().isEmpty()) {
-        return null
-    }
-    def candidate = new File(storePath)
-    if (candidate.isAbsolute()) {
-        return candidate
-    }
-    // Paths in key.properties are relative to the properties file directory (data/ or android/)
-    return new File(keystorePropertiesFile.parentFile, storePath)
+// Resolve storeFile relative to the key.properties directory (data/ or android/)
+def keystoreStoreFile = null
+def storePath = keystoreProperties['storeFile']
+if (storePath != null && !storePath.toString().trim().isEmpty()) {
+    def candidate = new File(storePath.toString())
+    keystoreStoreFile = candidate.isAbsolute()
+        ? candidate
+        : new File(keystorePropertiesFile.parentFile, storePath.toString())
 }
 
 android {
@@ -75,7 +73,7 @@ android {
         release {
             keyAlias keystoreProperties['keyAlias']
             keyPassword keystoreProperties['keyPassword']
-            storeFile resolveStoreFile(keystoreProperties['storeFile'] as String)
+            storeFile keystoreStoreFile
             storePassword keystoreProperties['storePassword']
         }
     }

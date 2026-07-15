@@ -22,9 +22,20 @@ cp android/app/shepaw-release.jks data/shepaw-release.jks
 
 ```bash
 ./data/build.sh              # 本机可构建的全部平台
-./data/build.sh android
+./data/build_all.sh android  # 同上（别名）
 ./data/build.sh macos web
 ./data/build.sh android --debug
+```
+
+### Apple 签名（可选）
+
+本机若没有 Apple Development Team，iOS 会打**未签名**包（可用 Xcode 再签）。
+
+若要自动签名，复制并填写 Team ID：
+
+```bash
+cp data/apple.properties.example data/apple.properties
+# DEVELOPMENT_TEAM=XXXXXXXXXX
 ```
 
 Windows 桌面请在 Windows 上运行：`.\data\build_windows.ps1`
