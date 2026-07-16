@@ -52,7 +52,7 @@ Designed with a local-first philosophy: all your data stays on your device. SheP
 - **Skill Packages** — import custom skill bundles from a local ZIP or URL
 
 ### Security & Privacy
-- All data stored locally (SQLite + Hive) — no backend server required
+- Local-first storage (SQLite); sensitive credentials use platform Secure Storage — no mandatory cloud backend
 - Password + biometric lock (Face ID / Touch ID / fingerprint)
 - Encrypted API key storage, three-tier permission system (SAFE / WARNING / DANGEROUS)
 - Inference log audit (token usage, response time, error records)
@@ -150,7 +150,11 @@ shepaw/
 │   │   ├── planning_mode_handler.dart   # Planning mode handler
 │   │   ├── flow_mode_handler.dart       # Flow mode handler
 │   │   └── ...
-│   ├── providers/                       # State management (Provider)
+│   ├── providers/                       # Light global prefs (Provider)
+│   ├── controllers/                     # Chat / conversation coordinators
+│   ├── peer/                            # Device pairing & P2P sync
+│   ├── service_locator.dart             # get_it composition root
+│   ├── app_bootstrap.dart               # Startup orchestration
 │   ├── l10n/                            # Internationalization (EN / ZH)
 │   └── utils/                           # Utilities
 ├── test/                                # Tests (18 files)
@@ -184,8 +188,8 @@ flutter analyze
 # Format code
 dart format .
 
-# Run all tests
-flutter test
+# Run unit tests (CI excludes plugin-integration tags)
+flutter test --exclude-tags=needs-plugins
 
 # Run specific tests
 flutter test test/models/
@@ -199,11 +203,14 @@ flutter test test/integration/
 | Category | Technology |
 |----------|------------|
 | Framework | Flutter 3.x / Dart 3.0+ |
-| State Management | Provider, Get |
-| Database | SQLite (sqflite) |
-| Local Storage | Hive, SharedPreferences, Flutter Secure Storage |
-| Networking | Dio, HTTP, WebSocket |
-| Security | crypto, encrypt, flutter_secure_storage, local_auth |
+| DI / Services | `get_it` service locator + Stream / ChangeNotifier |
+| UI local state | `StatefulWidget` / `setState` |
+| Light global prefs | Provider + ChangeNotifier (`lib/providers/`) |
+| Database | SQLite (`sqflite`) with domain DAO extensions |
+| Secure secrets | `flutter_secure_storage` (Keychain / Keystore) via `SecureKeyManager` |
+| Local prefs | SharedPreferences |
+| Networking | Dio, HTTP, WebSocket (ACP / Peer / Channel tunnel) |
+| Security | crypto, encrypt, local_auth, OS-tool confirmation gates |
 | UI | Material Design 3, flutter_markdown, flutter_highlight |
 | Multimedia | image_picker, record, audioplayers, file_picker |
 | Desktop | desktop_multi_window, pasteboard |
@@ -220,6 +227,7 @@ flutter test test/integration/
 | [用户使用指南（中文）](docs/USER_GUIDE.md) | 面向最终用户的完整功能说明 |
 | [Build Guide](BUILD_GUIDE.md) | Platform-specific build instructions |
 | [Development Guide](DEVELOPMENT.md) | Code standards and workflow |
+| [Store Release Checklist](docs/STORE_RELEASE_CHECKLIST.md) | PrivacyInfo, deep links, store assets |
 | [Agent Integration Guide](docs/agent_integration_guide.md) | ACP protocol integration docs (SDK reference) |
 | [Remote LLM Agent Integration](docs/remote_llm_agent_integration_en.md) | Complete guide for third-party Remote Agent integration (English) |
 | [Remote LLM Agent 接入指南](docs/remote_llm_agent_integration.md) | 第三方 Remote Agent 完整接入文档（中文） |

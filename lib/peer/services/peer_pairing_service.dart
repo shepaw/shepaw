@@ -86,7 +86,7 @@ class PeerPairingService {
   static final PeerPairingService instance = PeerPairingService._();
 
   static const _tag = 'PeerPairing';
-  static const _pairingCodeLength = 6;
+  static const _pairingCodeLength = 8;
   static const _pairingTimeout = Duration(minutes: 5);
 
   final _log = LoggerService();
@@ -545,7 +545,7 @@ class PeerPairingService {
 
   // ── 工具方法 ────────────────────────────────────────────────────────────
 
-  /// 生成 6 位字母数字配对码（排除易混淆字符 0/O/1/I）
+  /// 生成 8 位字母数字配对码（排除易混淆字符 0/O/1/I/L；约 40 bit）
   String _generatePairingCode() {
     const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
     final random = Random.secure();

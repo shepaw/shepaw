@@ -197,7 +197,8 @@ class AppBootstrap {
 
       final acpServer = ACPServerService(
         config: ACPServerConfig(
-          host: '0.0.0.0',
+          // Loopback by default; LAN bind must be an explicit product decision.
+          host: '127.0.0.1',
           port: port,
           heartbeatInterval: 30,
           token: token,

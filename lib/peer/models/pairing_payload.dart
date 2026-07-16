@@ -167,7 +167,7 @@ class PeerPairingInfo {
   /// 从 QR 码内容解析
   ///
   /// 格式:
-  ///   shepaw://peer?local=<WS_URL>&channel=<WS_URL>&code=<6-CHAR>#fp=<fingerprint>&pk=<base64url-pubkey>
+  ///   shepaw://peer?local=<WS_URL>&channel=<WS_URL>&code=<8-CHAR>#fp=<fingerprint>&pk=<base64url-pubkey>
   ///
   /// `local` 和 `channel` 至少有一个存在。
   /// 仅内网配对时只有 `local`，仅外网时只有 `channel`，两者都有时优先尝试 `local`。

@@ -5,7 +5,7 @@ import '../models/paired_peer.dart';
 import '../services/peer_pairing_service.dart';
 import 'peer_manual_input_screen.dart';
 import 'peer_qr_display_screen.dart';
-import 'peer_qr_scanner_screen.dart';
+import 'peer_device_scanner_screen.dart';
 
 /// P2P 配对主页面
 ///
@@ -96,7 +96,7 @@ class _PeerPairingScreenState extends State<PeerPairingScreen>
         controller: _tabController,
         children: [
           PeerQrDisplayScreen(onPaired: _handlePaired),
-          PeerQrScannerScreen(onPaired: _handlePaired),
+          PeerDeviceScannerScreen(onPaired: _handlePaired),
           PeerManualInputScreen(onPaired: _handlePaired),
         ],
       ),

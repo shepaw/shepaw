@@ -12,7 +12,7 @@ import '../services/noise_identity.dart';
 import '../service_locator.dart' show getIt;
 import '../utils/layout_utils.dart';
 import '../widgets/avatar_image.dart';
-import 'pairing_qr_scanner_screen.dart';
+import 'agent_pairing_scanner_screen.dart';
 import 'skill_select_screen.dart';
 import '../widgets/agent_model_config_card.dart';
 
@@ -327,7 +327,7 @@ class _AddRemoteAgentScreenState extends State<AddRemoteAgentScreen> {
   /// `_parsedFingerprint` and `_remoteAgentIdController`. Letting it run
   /// is the whole point.
   Future<void> _onScanPairingQR() async {
-    final result = await PairingQRScannerScreen.show(context);
+    final result = await AgentPairingScannerScreen.show(context);
     if (result == null || !mounted) return;
 
     // Fill the endpoint first. The existing listener reacts to this and

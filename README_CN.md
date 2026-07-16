@@ -50,7 +50,7 @@ Shepaw是一个跨平台的 AI助理们交互协作的平台，但"她"可以帮
 - **技能包（Skills）** — 支持从本地 ZIP 或 URL 导入自定义技能扩展
 
 ### 安全与隐私
-- 全部数据本地存储（SQLite + Hive），无需后端服务器
+- 本地优先存储（SQLite）；敏感凭证走平台 Secure Storage——无强制云后端
 - 密码 + 生物识别（Face ID / Touch ID / 指纹）锁屏保护
 - API Key 加密存储、三级权限管理（SAFE / WARNING / DANGEROUS）
 - 推理日志审计（Token 消耗、响应时间、错误记录）
@@ -148,7 +148,11 @@ shepaw/
 │   │   ├── planning_mode_handler.dart   # Planning 模式处理器
 │   │   ├── flow_mode_handler.dart       # Flow 模式处理器
 │   │   └── ...
-│   ├── providers/                       # 状态管理（Provider）
+│   ├── providers/                       # 轻量全局配置（Provider）
+│   ├── controllers/                     # Chat / 会话列表协调器
+│   ├── peer/                            # 设备配对与 P2P 同步
+│   ├── service_locator.dart             # get_it 组合根
+│   ├── app_bootstrap.dart               # 启动编排
 │   ├── l10n/                            # 国际化（EN / ZH）
 │   └── utils/                           # 工具类
 ├── test/                                # 测试（18 个文件）
@@ -183,7 +187,7 @@ flutter analyze
 dart format .
 
 # 运行测试
-flutter test
+flutter test --exclude-tags=needs-plugins
 
 # 运行特定测试
 flutter test test/models/
@@ -197,11 +201,14 @@ flutter test test/integration/
 | 类别 | 技术 |
 |------|------|
 | 框架 | Flutter 3.x / Dart 3.0+ |
-| 状态管理 | Provider, Get |
-| 数据库 | SQLite (sqflite) |
-| 本地存储 | Hive, SharedPreferences, Flutter Secure Storage |
-| 网络 | Dio, HTTP, WebSocket |
-| 安全 | crypto, encrypt, flutter_secure_storage, local_auth |
+| DI / 业务服务 | `get_it` + Stream / ChangeNotifier |
+| UI 局部状态 | `StatefulWidget` / `setState` |
+| 轻量全局配置 | Provider + ChangeNotifier（`lib/providers/`） |
+| 数据库 | SQLite（`sqflite`）+ 领域 DAO extension |
+| 敏感凭证 | `flutter_secure_storage`（Keychain / Keystore）via `SecureKeyManager` |
+| 本地偏好 | SharedPreferences |
+| 网络 | Dio, HTTP, WebSocket（ACP / Peer / Channel 隧道） |
+| 安全 | crypto, encrypt, local_auth, OS 工具确认门 |
 | UI | Material Design 3, flutter_markdown, flutter_highlight |
 | 多媒体 | image_picker, record, audioplayers, file_picker |
 | 桌面 | desktop_multi_window（多窗口）, pasteboard（剪贴板） |
@@ -218,6 +225,7 @@ flutter test test/integration/
 | [User Guide (English)](docs/USER_GUIDE_EN.md) | End-user guide in English |
 | [构建指南](BUILD_GUIDE.md) | 各平台详细构建说明 |
 | [开发指南](DEVELOPMENT.md) | 代码规范和工作流程 |
+| [商店上架清单](docs/STORE_RELEASE_CHECKLIST.md) | PrivacyInfo、深链、商店素材核对 |
 | [Agent 接入指南](docs/agent_integration_guide.md) | ACP 协议集成文档（SDK 参考） |
 | [Remote LLM Agent 接入指南](docs/remote_llm_agent_integration.md) | 第三方 Remote Agent 完整接入文档（中文） |
 | [Remote LLM Agent Integration Guide](docs/remote_llm_agent_integration_en.md) | Third-party Remote Agent integration guide (English) |

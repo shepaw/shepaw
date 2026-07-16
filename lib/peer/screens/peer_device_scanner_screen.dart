@@ -9,16 +9,16 @@ import '../models/pairing_payload.dart';
 import '../services/peer_pairing_service.dart';
 
 /// P2P 配对 QR 扫描页面（Initiator 侧）
-class PeerQrScannerScreen extends StatefulWidget {
+class PeerDeviceScannerScreen extends StatefulWidget {
   final void Function(PairedPeer peer)? onPaired;
 
-  const PeerQrScannerScreen({super.key, this.onPaired});
+  const PeerDeviceScannerScreen({super.key, this.onPaired});
 
   @override
-  State<PeerQrScannerScreen> createState() => _PeerQrScannerScreenState();
+  State<PeerDeviceScannerScreen> createState() => _PeerDeviceScannerScreenState();
 }
 
-class _PeerQrScannerScreenState extends State<PeerQrScannerScreen> {
+class _PeerDeviceScannerScreenState extends State<PeerDeviceScannerScreen> {
   MobileScannerController? _controller;
   bool _processing = false;
   String? _error;
@@ -239,3 +239,6 @@ class _PeerQrScannerScreenState extends State<PeerQrScannerScreen> {
     );
   }
 }
+
+/// Backward-compatible alias (formerly PeerQrScannerScreen).
+typedef PeerQrScannerScreen = PeerDeviceScannerScreen;

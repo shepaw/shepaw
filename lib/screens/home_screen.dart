@@ -29,6 +29,7 @@ import '../providers/notification_provider.dart';
 import '../models/conversation_selection.dart';
 import '../models/conversation_list_entry.dart';
 import '../controllers/conversation_list_controller.dart';
+import '../service_locator.dart' show getIt;
 import '../peer/models/paired_peer.dart';
 import '../peer/screens/peer_chat_screen.dart';
 import '../peer/widgets/peer_device_icon.dart';
@@ -72,7 +73,7 @@ class HomeScreen extends StatefulWidget {
 
 class HomeScreenState extends State<HomeScreen> {
   final LocalApiService _apiService = LocalApiService();
-  final LocalDatabaseService _databaseService = LocalDatabaseService();
+  final LocalDatabaseService _databaseService = getIt<LocalDatabaseService>();
   final ChatService _chatService = ChatService();
   late final ConversationListController _list;
   final TextEditingController _searchController = TextEditingController();
@@ -520,7 +521,7 @@ class HomeScreenState extends State<HomeScreen> {
   }
 
   void _openSearch() {
-    final databaseService = LocalDatabaseService();
+    final databaseService = _databaseService;
     final messageSearchService = MessageSearchService(databaseService);
     showShepawSearch(
       context: context,

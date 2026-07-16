@@ -32,7 +32,8 @@ class ACPServerConfig {
   final String? token;
 
   ACPServerConfig({
-    this.host = '0.0.0.0',
+    /// Default loopback-only. Bind `0.0.0.0` / `::` only when LAN exposure is intentional.
+    this.host = '127.0.0.1',
     this.port = 18790,
     this.heartbeatInterval = 30,
     this.enableTLS = false,

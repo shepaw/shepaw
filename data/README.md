@@ -2,6 +2,14 @@
 
 本目录用于**本机发包**：密钥与 keystore 放这里，默认不进 git。
 
+## 安全提醒（上线前必读）
+
+历史上 `android/key.properties` 曾提交进版本库，其中的签名密码视为已泄露。正式发布前请：
+
+1. **轮换** release keystore 密码（或生成新的 `.jks`）
+2. 只把新密码写在本目录的 `key.properties`（已被 gitignore）
+3. 不要把 `key.properties` / `*.jks` 再提交到 git
+
 ## 一次配置
 
 1. 复制示例并填入真实密码：

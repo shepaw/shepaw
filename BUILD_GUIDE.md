@@ -86,6 +86,16 @@ cp data/key.properties.example data/key.properties   # 已有可跳过
 
 兼容旧路径：`android/key.properties`（已 gitignore）。Gradle **优先**读 `data/key.properties`。
 
+### 必须：轮换曾泄露的签名密码
+
+`android/key.properties` 曾进入 git 历史，其中的 keystore 密码**视为已泄露**。正式发包前请：
+
+1. 用新密码重新生成 / 更换 release keystore（或至少改 `storePassword` / `keyPassword`，若工具链支持）
+2. 仅在本机 `data/key.properties`（或已 gitignore 的路径）填写新密码，**勿**再提交
+3. 若仓库已公开或即将公开，用 `git filter-repo` / BFG 清理历史中的密钥文件（需团队同意后再 force-push）
+
+未完成轮换前，不要用旧 keystore 向商店或公开渠道分发。
+
 ## 环境要求
 
 - 全局：Flutter SDK（`flutter doctor` 通过）

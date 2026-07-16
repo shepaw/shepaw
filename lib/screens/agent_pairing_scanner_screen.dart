@@ -27,8 +27,8 @@ import '../services/pair_deeplink.dart';
 /// only implements iOS + Android, and importing the native bindings on
 /// desktop raises a runtime MissingPluginException. Users on desktop
 /// retain the typed-short-code fallback we already have.
-class PairingQRScannerScreen extends StatefulWidget {
-  const PairingQRScannerScreen({super.key});
+class AgentPairingScannerScreen extends StatefulWidget {
+  const AgentPairingScannerScreen({super.key});
 
   static const String routeName = '/add-agent/scan-qr';
 
@@ -38,17 +38,17 @@ class PairingQRScannerScreen extends StatefulWidget {
   static Future<PairDeeplink?> show(BuildContext context) {
     return Navigator.of(context).push<PairDeeplink?>(
       MaterialPageRoute<PairDeeplink?>(
-        builder: (_) => const PairingQRScannerScreen(),
+        builder: (_) => const AgentPairingScannerScreen(),
         fullscreenDialog: true,
       ),
     );
   }
 
   @override
-  State<PairingQRScannerScreen> createState() => _PairingQRScannerScreenState();
+  State<AgentPairingScannerScreen> createState() => _AgentPairingScannerScreenState();
 }
 
-class _PairingQRScannerScreenState extends State<PairingQRScannerScreen>
+class _AgentPairingScannerScreenState extends State<AgentPairingScannerScreen>
     with WidgetsBindingObserver {
   MobileScannerController? _controller;
   bool _hasPermission = false;
@@ -440,3 +440,6 @@ class _ScannerOverlay extends StatelessWidget {
     );
   }
 }
+
+/// Backward-compatible alias (formerly PairingQRScannerScreen).
+typedef PairingQRScannerScreen = AgentPairingScannerScreen;

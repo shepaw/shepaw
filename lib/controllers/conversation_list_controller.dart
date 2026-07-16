@@ -28,8 +28,14 @@ class ConversationListController extends ChangeNotifier {
     LocalDatabaseService? databaseService,
     ChatService? chatService,
   })  : _apiService = apiService ?? LocalApiService(),
-        _databaseService = databaseService ?? LocalDatabaseService(),
-        _chatService = chatService ?? ChatService();
+        _databaseService = databaseService ??
+            (getIt.isRegistered<LocalDatabaseService>()
+                ? getIt<LocalDatabaseService>()
+                : LocalDatabaseService()),
+        _chatService = chatService ??
+            (getIt.isRegistered<ChatService>()
+                ? getIt<ChatService>()
+                : ChatService());
 
   final LocalApiService _apiService;
   final LocalDatabaseService _databaseService;
