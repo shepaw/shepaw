@@ -4,6 +4,7 @@ import 'get_command.dart';
 import 'channels_command.dart';
 import 'messages_command.dart';
 import 'chat_command.dart';
+import 'dispatch_command.dart';
 import 'memory_query_command.dart';
 import 'memory_write_command.dart';
 import 'cognition_query_command.dart';
@@ -32,6 +33,7 @@ class AgentsNamespace extends CliNamespace {
         'channels': ChannelsCommand(),
         'messages': MessagesCommand(),
         'chat': _chatCommand,
+        'dispatch': DispatchCommand(),
         'memory-query': MemoryQueryCommand(),
         'memory-write': MemoryWriteCommand(),
         'cognition-query': CognitionQueryCommand(),

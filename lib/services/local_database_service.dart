@@ -18,6 +18,7 @@ export 'database/message_dao.dart';
 export 'database/remote_agent_dao.dart';
 export 'database/config_dao.dart';
 export 'database/scheduled_task_dao.dart';
+export 'database/dispatch_task_dao.dart';
 
 /// 本地数据库服务 - 使用 SQLite 存储所有数据
 ///
@@ -45,7 +46,7 @@ class LocalDatabaseService {
       // Web平台使用sqflite_common_ffi
       return await openDatabase(
         'shepaw',
-        version: 24,
+        version: 25,
         onCreate: _onCreate,
         onUpgrade: _onUpgrade,
       );
@@ -55,7 +56,7 @@ class LocalDatabaseService {
       path = join(directory.path, 'shepaw.db');
       return await openDatabase(
         path,
-        version: 24,
+        version: 25,
         onCreate: _onCreate,
         onUpgrade: _onUpgrade,
       );
@@ -66,7 +67,7 @@ class LocalDatabaseService {
 
       return await openDatabase(
         path,
-        version: 24,
+        version: 25,
         onCreate: _onCreate,
         onUpgrade: _onUpgrade,
       );
@@ -386,6 +387,28 @@ class LocalDatabaseService {
     await db.execute('CREATE INDEX IF NOT EXISTS idx_wf_pending_channel ON workflow_pending_approvals(channel_id, status, created_at DESC)');
     await db.execute('CREATE INDEX IF NOT EXISTS idx_wf_pending_workflow ON workflow_pending_approvals(workflow_id, status)');
 
+    // She 单聊任务派发记录表 (v25)
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS dispatch_tasks (
+        id TEXT PRIMARY KEY,
+        source_channel_id TEXT NOT NULL,
+        target_agent_id TEXT NOT NULL,
+        target_agent_name TEXT NOT NULL DEFAULT '',
+        target_channel_id TEXT NOT NULL,
+        user_message_id TEXT,
+        status_message_id TEXT,
+        prompt TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'pending',
+        result_summary TEXT,
+        error_message TEXT,
+        created_at INTEGER NOT NULL,
+        completed_at INTEGER
+      )
+    ''');
+    await db.execute('CREATE INDEX IF NOT EXISTS idx_dispatch_tasks_status ON dispatch_tasks(status)');
+    await db.execute('CREATE INDEX IF NOT EXISTS idx_dispatch_tasks_target_channel ON dispatch_tasks(target_channel_id, status)');
+    await db.execute('CREATE INDEX IF NOT EXISTS idx_dispatch_tasks_source_channel ON dispatch_tasks(source_channel_id, created_at DESC)');
+
   }
 
   /// 数据库升级
@@ -652,6 +675,34 @@ class LocalDatabaseService {
           tag: 'Migration',
           error: e,
         );
+      }
+    }
+
+    if (oldVersion < 25) {
+      // 版本 24 -> 25: She 单聊任务派发记录表
+      try {
+        await db.execute('''
+          CREATE TABLE IF NOT EXISTS dispatch_tasks (
+            id TEXT PRIMARY KEY,
+            source_channel_id TEXT NOT NULL,
+            target_agent_id TEXT NOT NULL,
+            target_agent_name TEXT NOT NULL DEFAULT '',
+            target_channel_id TEXT NOT NULL,
+            user_message_id TEXT,
+            status_message_id TEXT,
+            prompt TEXT NOT NULL,
+            status TEXT NOT NULL DEFAULT 'pending',
+            result_summary TEXT,
+            error_message TEXT,
+            created_at INTEGER NOT NULL,
+            completed_at INTEGER
+          )
+        ''');
+        await db.execute('CREATE INDEX IF NOT EXISTS idx_dispatch_tasks_status ON dispatch_tasks(status)');
+        await db.execute('CREATE INDEX IF NOT EXISTS idx_dispatch_tasks_target_channel ON dispatch_tasks(target_channel_id, status)');
+        await db.execute('CREATE INDEX IF NOT EXISTS idx_dispatch_tasks_source_channel ON dispatch_tasks(source_channel_id, created_at DESC)');
+      } catch (e) {
+        LoggerService().error('Failed to create dispatch_tasks (v25)', tag: 'Migration', error: e);
       }
     }
 

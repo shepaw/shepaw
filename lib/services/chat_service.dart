@@ -1047,6 +1047,21 @@ class ChatService implements IPawChatSender {
   /// trigger a UI refresh after writing messages directly to the database.
   void notifyChannelUpdate(String channelId) => _notifyChannelUpdate(channelId);
 
+  /// 1:1 agent 回合终态广播（最终消息已落库）。
+  /// 供 DispatchService 闭环派发任务；UI 不应消费此流。
+  Stream<AgentTaskCompletion> get agentTaskCompletionStream =>
+      _agentMessagingService.completionStream;
+
+  /// 保存本地生成的消息（如派发状态/结果消息）并通知频道监听者。
+  Future<void> saveLocalMessage(Message message, String agentId, {String? channelId}) =>
+      _saveMessageToChannel(message, agentId, channelId: channelId);
+
+  /// 该频道当前是否有未完成的 1:1 任务（用于编排方避让并发冲突）。
+  bool isChannelBusy(String channelId) {
+    final task = _activeTasks[channelId];
+    return task != null && !task.isComplete;
+  }
+
   /// Handle an inbound `ui.fileMessage` notification from a remote Agent
   /// (delivered via [ACPServerService.onFileMessage]).
   ///

@@ -43,12 +43,23 @@ class ListCommand extends CliCommand {
               'id': a.id,
               'name': a.name,
               'bio': a.bio,
+              // 专长摘要（system_prompt 前 60 字符）：初选派发目标的关键信号
+              'specialty': () {
+                final s = (a.metadata['system_prompt'] as String? ?? '').trim();
+                return s.length > 60 ? '${s.substring(0, 60)}…' : s;
+              }(),
               'status': a.status.name,
               'is_she': a.metadata['is_she'] == true,
+              'dispatch_confirm': a.metadata['dispatch_confirm'] == true,
               'provider': a.metadata['llm_provider'],
               'model': a.metadata['llm_model'],
             })
         .toList();
-    return {'agents': list, 'count': list.length};
+    return {
+      'agents': list,
+      'count': list.length,
+      'hint': 'Use `shepaw context agents.get --id <id>` for the full '
+          'capability profile before an important dispatch.',
+    };
   }
 }

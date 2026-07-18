@@ -1,4 +1,5 @@
 import 'package:uuid/uuid.dart';
+import '../models/channel.dart';
 import '../models/cognition.dart';
 import '../models/prompt_stack_config.dart';
 import '../models/remote_agent.dart';
@@ -594,6 +595,13 @@ If you learned something new, record it silently:
     final userCognition = await buildUserCognitionBlock();
     if (userCognition.isNotEmpty) parts.add(userCognition);
 
+    // ⑦''' connected-agents overview + dispatch rules (1:1 context only;
+    // group chats get their own member/delegation prompts instead)
+    if (!isEphemeralContext) {
+      parts.add(await _agentsOverviewPrompt());
+      parts.add(_dispatchRulesPrompt());
+    }
+
     // ⑦ first meeting instruction (only when profile is empty)
     if (!isInitialized) {
       parts.add(_firstMeetingInstruction());
@@ -647,6 +655,85 @@ You are She — your master's devoted spirit-pet companion (灵宠) on ShePaw, g
 2. **Agent Management** — help your master manage their AI assistants
 3. **Safety** — proactively alert when risks are detected''';
 
+  /// Compact connected-agents & groups overview for She's 1:1 prompt.
+  ///
+  /// Only counts + name lists are injected. Full capability profiles are
+  /// deliberately NOT stuffed into the prompt (context budget: roster size
+  /// grows with agent count) — She discovers them on demand via the CLI.
+  Future<String> _agentsOverviewPrompt() async {
+    List<RemoteAgent> agents;
+    List<Channel> groups;
+    try {
+      agents = (await _db.getAllRemoteAgents())
+          .where((a) => !isSheIdentity(a.id, a.metadata))
+          .toList();
+      groups = (await _db.getAllChannels())
+          .where((c) => c.isGroup && c.parentGroupId == null)
+          .toList();
+    } catch (e) {
+      LoggerService().warning('agents overview build failed: $e', tag: 'She');
+      return '';
+    }
+
+    final buf = StringBuffer('## Connected Agents & Groups\n\n');
+    if (agents.isEmpty) {
+      buf.writeln('No other agents registered yet — you cannot dispatch '
+          'tasks until your master adds one.');
+    } else {
+      final online =
+          agents.where((a) => a.isOnline).map((a) => a.name).toList();
+      buf.writeln('${agents.length} agents connected (${online.length} online'
+          '${online.isNotEmpty ? ': ${_joinNames(online)}' : ''}).');
+    }
+    if (groups.isNotEmpty) {
+      buf.writeln('${groups.length} group chats: '
+          '${_joinNames(groups.map((g) => g.name).toList())}.');
+    }
+    buf.write('''
+Agent details are NOT injected here — discover on demand:
+- Who exists → `shepaw context agents.list [--status online]` (id, name, status, bio, specialty)
+- Full capability profile before an important dispatch → `shepaw context agents.get --id <id>` (specialty, skills, OS tools, modalities, slash commands, dispatch track record + your 经验 learnings)
+- Group chats with members → `shepaw chat channels --type group`''');
+    return buf.toString();
+  }
+
+  static String _joinNames(List<String> names, [int max = 12]) {
+    if (names.length <= max) return names.join(', ');
+    return '${names.take(max).join(', ')} …+${names.length - max}';
+  }
+
+  /// She's dispatch playbook for 1:1 conversations.
+  static String _dispatchRulesPrompt() => '''
+## Task Dispatch (1-on-1 only)
+
+Delegate work to a connected agent via:
+`shepaw context agents.dispatch --id <agent> --task "<brief>" [--timeout-min N]`
+
+**Choosing who**: run `agents.list` to see who's connected (bio + specialty hint); before an important or unfamiliar dispatch, run `agents.get --id <id>` for the full profile. An agent's 专长/描述 is written by your master — authoritative; its 经验 learnings and 派发战绩 are your own observations — supplementary, never overriding.
+
+**Act directly when the fit is clear — no need to ask first**:
+- Coding / debugging / repo work → a coding agent
+- The request names or clearly implies a specific agent
+- A follow-up on an agent's earlier work
+
+**Ask your master first when**:
+- Several agents fit and the choice matters (offer the candidates)
+- The task is destructive, sensitive, or hard to undo
+- No connected agent fits (say so and offer alternatives)
+- The target is marked "requires confirmation" (the command rejects without `--confirm true`; confirm with your master first)
+
+**Writing the brief**: make it self-contained — the agent cannot see this conversation. Include file paths, goals, constraints, and what "done" looks like.
+
+**After dispatching**: tell your master who got the task and that you will report back when it finishes. Never fabricate a result — it arrives later as a `[Dispatch Result]` message from Dispatch.
+
+**When a `[Dispatch Result]` arrives**: report in your own voice — success: key takeaways; failure: one-line cause + suggested next step. Do NOT re-dispatch unless your master asks.
+
+**Learn from results**: when a dispatch teaches you something durable about what an agent is good or bad at, record it silently (do not narrate):
+`shepaw context agents.memory-write --id <agent> --type knowledge --keywords dispatch --content "<one factual line, dated>"`
+e.g. "擅长 Dart 重构；大仓库全量扫描会超时 (2026-07)". It surfaces as 经验 in `agents.get` next time.
+
+(In group chats this command is blocked — use the group's ```json dispatch``` mechanism instead.)''';
+
   static String _wrapUserCustomPrompt(String prompt) => '''
 ## Master's Custom Settings for You
 $prompt
@@ -692,12 +779,16 @@ Soul is global across all conversations — only update it with identity/self-aw
     if (hasProfile) groups.add('`context profile.*` (master profile)');
     if (hasMemory) groups.add('`context memory.*` (your memory & soul)');
     if (hasMessages) groups.add('`context agents.*` (agents), `chat *` (messages), `skills list`');
-    if (hasChat) groups.add('`context agents.chat` (send message to agent)');
+    if (hasChat) {
+      groups.add('`context agents.chat` (send message to agent)');
+      groups.add('`context agents.dispatch` (delegate task to agent, result auto-reported)');
+    }
 
     // Action warnings
     final actionWarnings = <String>[];
     if (hasChat) {
       actionWarnings.add('- Master asks you to "send a message to an agent" → call `shepaw context agents.chat --id <id> --message "..."` — text alone does nothing');
+      actionWarnings.add('- Master\'s request clearly fits a connected agent → call `shepaw context agents.dispatch --id <id> --task "..."`, then tell master you\'ll report back when it finishes');
     }
     if (hasMemory || hasProfile) {
       actionWarnings.add('- Master asks you to "remember something" → call `shepaw context memory.append` (your memory) or `shepaw context profile.write` (user profile)');

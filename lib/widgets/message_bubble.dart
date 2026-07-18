@@ -17,6 +17,7 @@ import 'form_bubble.dart';
 import 'collapsible_message_bubble.dart';
 import 'permission_audit_bubble.dart';
 import 'chat/plan_approval_card.dart';
+import 'chat/dispatch_card.dart';
 import 'avatar_image.dart';
 import 'chat/sticky_in_view_header.dart';
 import '../services/she_service.dart';
@@ -214,6 +215,14 @@ class MessageBubble extends StatelessWidget {
 
     // 系统消息
     if (message.isSystemMessage) {
+      // She 派发卡片：以系统消息落库，按 metadata 渲染为卡片
+      final dispatchMeta = message.metadata;
+      if (dispatchMeta?['dispatch_status'] == true) {
+        return DispatchStatusCard(message: message);
+      }
+      if (dispatchMeta?['dispatch_confirm'] != null) {
+        return DispatchConfirmCard(message: message);
+      }
       return Padding(
         padding: const EdgeInsets.symmetric(vertical: 8),
         child: Center(

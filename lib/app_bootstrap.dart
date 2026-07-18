@@ -30,6 +30,7 @@ import 'peer/services/peer_connection_manager.dart';
 import 'peer/services/peer_agent_host_service.dart';
 import 'peer/services/peer_agent_client_service.dart';
 import 'services/she_service.dart';
+import 'services/dispatch/dispatch_service.dart';
 import 'service_locator.dart';
 
 /// ACP Server 端口的 SharedPreferences 键
@@ -81,6 +82,9 @@ class AppBootstrap {
 
     // 初始化 She（内置守护 Agent）
     await SheService.instance.ensureSheExists();
+
+    // 启动 She 任务派发服务（订阅 agent 回合完成事件、清扫上次遗留的在途派发）
+    DispatchService.instance.ensureStarted();
 
     // 初始化 ACP Server
     final acp = await _initializeACPServer();

@@ -51,6 +51,34 @@ const _asyncPendingSentinelMetadataKey = '__shepaw_async_pending__';
 bool _isAsyncPendingSentinel(Message? m) =>
     m != null && m.metadata?[_asyncPendingSentinelMetadataKey] == true;
 
+/// 单个 1:1 agent 回合的终态。
+enum AgentTaskOutcome { completed, error, stopped }
+
+/// 1:1 agent 回合到达终态（最终消息已持久化）后的广播载荷。
+///
+/// 供 [DispatchService] 之类的编排方闭环使用；UI 仍走
+/// ActiveTask / dbSaveCompleter，不应消费此流。
+class AgentTaskCompletion {
+  final String channelId;
+  final String agentId;
+  final String agentName;
+
+  /// 最终消息；纯发送失败（未产生回复）时为 null。
+  /// 其 `replyTo` 指向触发本回合的用户消息 id，可用于精确归因。
+  final Message? finalMessage;
+  final AgentTaskOutcome outcome;
+  final String? errorMessage;
+
+  const AgentTaskCompletion({
+    required this.channelId,
+    required this.agentId,
+    required this.agentName,
+    required this.outcome,
+    this.finalMessage,
+    this.errorMessage,
+  });
+}
+
 
 /// Handles sending messages to individual (non-group) agents.
 ///
@@ -84,6 +112,35 @@ class AgentMessagingService {
         _uuid = uuid,
         _acpConnections = acpConnections,
         _activeTasks = activeTasks;
+
+  // ---------------------------------------------------------------------------
+  // Task-completion broadcast
+  // ---------------------------------------------------------------------------
+
+  final StreamController<AgentTaskCompletion> _completionController =
+      StreamController<AgentTaskCompletion>.broadcast();
+
+  /// 每个 1:1 agent 回合到达终态（成功/失败/停止，最终消息已落库）后广播。
+  /// 编排方（DispatchService）订阅此流闭环；无监听时零开销。
+  Stream<AgentTaskCompletion> get completionStream => _completionController.stream;
+
+  void _emitCompletion({
+    required String channelId,
+    required RemoteAgent agent,
+    required AgentTaskOutcome outcome,
+    Message? finalMessage,
+    String? errorMessage,
+  }) {
+    if (channelId.isEmpty || !_completionController.hasListener) return;
+    _completionController.add(AgentTaskCompletion(
+      channelId: channelId,
+      agentId: agent.id,
+      agentName: agent.name,
+      outcome: outcome,
+      finalMessage: finalMessage,
+      errorMessage: errorMessage,
+    ));
+  }
 
   // ---------------------------------------------------------------------------
   // Public API
@@ -292,6 +349,12 @@ class AgentMessagingService {
             task.dbSaveCompleter.complete();
           }
         }
+        _emitCompletion(
+          channelId: channelId,
+          agent: agent,
+          outcome: AgentTaskOutcome.completed,
+          finalMessage: agentResponse,
+        );
       }
 
       return agentResponse;
@@ -322,6 +385,12 @@ class AgentMessagingService {
             task.dbSaveCompleter.complete();
           }
         }
+        _emitCompletion(
+          channelId: channelId,
+          agent: agent,
+          outcome: AgentTaskOutcome.error,
+          errorMessage: e.toString(),
+        );
       }
       // Rethrow so ChatController can show a toast; the system message above
       // remains for in-thread history.
@@ -593,6 +662,19 @@ class AgentMessagingService {
               ? effectiveChannelIdForAsync
               : null;
           await saveMessageToChannel(msg, agent.id, channelId: channelForSave);
+          if (channelForSave != null) {
+            _emitCompletion(
+              channelId: channelForSave,
+              agent: agent,
+              outcome: isError
+                  ? AgentTaskOutcome.error
+                  : (markStopped
+                      ? AgentTaskOutcome.stopped
+                      : AgentTaskOutcome.completed),
+              finalMessage: msg,
+              errorMessage: isError ? (errorMessage ?? 'Task error') : null,
+            );
+          }
         } catch (e, st) {
           LoggerService().error(
             'Async-path finalize failed for task $effectiveTaskId',
@@ -1862,6 +1944,14 @@ class AgentMessagingService {
             task.dbSaveCompleter.complete();
           }
         }
+        _emitCompletion(
+          channelId: effectiveChannelId,
+          agent: agent,
+          outcome: wasCancelled
+              ? AgentTaskOutcome.stopped
+              : AgentTaskOutcome.completed,
+          finalMessage: agentResponse,
+        );
       }
 
       return agentResponse;
@@ -1894,6 +1984,12 @@ class AgentMessagingService {
             task.dbSaveCompleter.complete();
           }
         }
+        _emitCompletion(
+          channelId: effectiveChannelId,
+          agent: agent,
+          outcome: AgentTaskOutcome.error,
+          errorMessage: e.toString(),
+        );
       }
 
       return null;
@@ -2098,6 +2194,14 @@ class AgentMessagingService {
           task.dbSaveCompleter.complete();
         }
       }
+      _emitCompletion(
+        channelId: effectiveChannelId,
+        agent: agent,
+        outcome: wasCancelled
+            ? AgentTaskOutcome.stopped
+            : AgentTaskOutcome.completed,
+        finalMessage: agentResponse,
+      );
     }
 
     return agentResponse;
