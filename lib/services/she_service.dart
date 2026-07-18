@@ -1,4 +1,5 @@
 import 'package:uuid/uuid.dart';
+import '../models/cognition.dart';
 import '../models/prompt_stack_config.dart';
 import '../models/remote_agent.dart';
 import 'local_database_service.dart';
@@ -109,6 +110,7 @@ class SheService {
         await _db.updateRemoteAgent(existing.copyWith(avatar: sheAvatar));
         LoggerService().info('Migrated She avatar to default spirit-pet avatar', tag: 'She');
       }
+      await _healSelfCognitionFromMinds();
       return;
     }
 
@@ -146,6 +148,40 @@ class SheService {
     await _sheMemoryDb.setSheMemory('capabilities', _defaultCapabilities);
 
     LoggerService().info('She agent created successfully', tag: 'She');
+
+    await _healSelfCognitionFromMinds();
+  }
+
+  /// One-time, idempotent self-heal: older builds could write She's soul /
+  /// self_notes into minds.db (via `agents.cognition-write --type self`),
+  /// but she_memory.db is the single source of truth that her prompt reads.
+  /// Copy values over only when she_memory.db still holds the defaults.
+  Future<void> _healSelfCognitionFromMinds() async {
+    try {
+      final self = await _cognition.getSelfCognition(sheId);
+      if (self == null) return;
+
+      final currentSoul = await _sheMemoryDb.getSheMemory(_soulKey);
+      if ((currentSoul == null ||
+              currentSoul.isEmpty ||
+              currentSoul == _defaultSoul) &&
+          self.soul.isNotEmpty &&
+          self.soul != _defaultSoul) {
+        await _sheMemoryDb.setSheMemory(_soulKey, self.soul);
+        LoggerService().info('Healed She soul from minds.db', tag: 'She');
+      }
+
+      final currentNotes = await _sheMemoryDb.getSheMemory(_selfNotesKey);
+      if ((currentNotes == null ||
+              currentNotes.isEmpty ||
+              currentNotes == '(no self-notes yet)') &&
+          (self.selfNotes?.isNotEmpty ?? false)) {
+        await _sheMemoryDb.setSheMemory(_selfNotesKey, self.selfNotes!);
+        LoggerService().info('Healed She self_notes from minds.db', tag: 'She');
+      }
+    } catch (e) {
+      LoggerService().warning('Self-cognition heal skipped: $e', tag: 'She');
+    }
   }
 
   // ── User Profile ─────────────────────────────────────────────────
@@ -219,6 +255,40 @@ class SheService {
     return count % 10 == 0;
   }
 
+  /// Fetch all DB-backed prompt inputs in one parallel batch.
+  ///
+  /// Used by AgentPromptBuilder so a single prompt build performs one round
+  /// of reads instead of duplicated serial queries (profile was read 3× and
+  /// soul 2× per message). The returned [ShePromptData] can be passed to the
+  /// individual block builders via their `data` parameter.
+  Future<ShePromptData> prefetchPromptData() async {
+    final results = await Future.wait<Object?>([
+      _cognition.getAllUserProfile(),
+      _getSoulForPrompt(),
+      _sheMemoryDb.getSheMemory('user_info'),
+      _sheMemoryDb.getSheMemory('long_term_memory'),
+      _sheMemoryDb.getSheMemory('heartbeat'),
+      _sheMemoryDb.getSheMemory(_selfNotesKey),
+      _cognition.getUserCognition(sheId),
+    ]);
+    return ShePromptData(
+      profile: results[0] as Map<String, String>,
+      soul: results[1] as String,
+      userInfo: results[2] as String?,
+      longTermMemory: results[3] as String?,
+      heartbeat: results[4] as String?,
+      selfNotes: results[5] as String?,
+      userCognition: results[6] as UserCognition?,
+    );
+  }
+
+  /// Keep the TAIL of [text] within [maxChars], prefixing an omission note
+  /// when truncated. Recent entries matter more than old ones.
+  static String truncateTail(String text, int maxChars) {
+    if (text.length <= maxChars) return text;
+    return '[older entries omitted]\n${text.substring(text.length - maxChars)}';
+  }
+
   // ── System Prompt Construction (public building blocks) ──────────────
   //
   // These methods are used by AgentPromptBuilder to assemble the prompt in a
@@ -227,7 +297,8 @@ class SheService {
   // duplicating logic.
 
   /// Whether this is She's first interaction with the user (profile still empty).
-  Future<bool> isFirstMeeting() async {
+  Future<bool> isFirstMeeting({ShePromptData? data}) async {
+    if (data != null) return data.profile[_profileInitKey] != 'true';
     return !(await _cognition.isUserProfileInitialized());
   }
 
@@ -284,9 +355,16 @@ When the user asks about a **past** image/file/audio ("这张图说了什么", "
 - `shepaw skills list`''';
 
   /// Section ②: She's soul (self-awareness, grows over time).
-  /// Reads the current soul value from the database.
-  Future<String> buildMemoryContextBlock() async {
-    final soul = await _getSoulForPrompt();
+  /// Reads the current soul value from the database (or from [data] when
+  /// prefetched by the caller).
+  Future<String> buildMemoryContextBlock({ShePromptData? data}) async {
+    final soul = data?.soul ?? await _getSoulForPrompt();
+    if (soul.length > 4000) {
+      LoggerService().warning(
+        'She soul is ${soul.length} chars (>4000) — prompt size risk',
+        tag: 'She',
+      );
+    }
     // Deliberately omit long_term_memory / userInfo / heartbeat here;
     // they are included in the profile snapshot block to avoid duplication.
     return _soulPrompt(soul);
@@ -299,48 +377,60 @@ When the user asks about a **past** image/file/audio ("这张图说了什么", "
       _pawCliPrompt(config ?? const SheStackConfig());
 
   /// Section ⑤: strategy for knowing the user + missing-field hints.
-  Future<String> buildUserStrategyBlock() async {
-    final profile = await _cognition.getAllUserProfile();
+  Future<String> buildUserStrategyBlock({ShePromptData? data}) async {
+    final profile = data?.profile ?? await _cognition.getAllUserProfile();
     return _knowUserStrategyPrompt(profile);
   }
 
   /// Section ⑥: user-profile snapshot (layered injection).
-  Future<String> buildProfileSnapshotBlock({String level = 'extended'}) async {
-    final profile = await _cognition.getAllUserProfile();
-    final userInfo =
-        await _sheMemoryDb.getSheMemory('user_info') ?? '(not yet known)';
-    final longTermMemory =
-        await _sheMemoryDb.getSheMemory('long_term_memory') ?? '(no memories yet)';
-    final heartbeat =
-        await _sheMemoryDb.getSheMemory('heartbeat') ?? '(no record)';
+  Future<String> buildProfileSnapshotBlock({
+    String level = 'extended',
+    ShePromptData? data,
+  }) async {
+    final profile = data?.profile ?? await _cognition.getAllUserProfile();
+    final userInfo = data?.userInfo ??
+        await _sheMemoryDb.getSheMemory('user_info') ??
+        '(not yet known)';
+    final longTermMemory = data?.longTermMemory ??
+        await _sheMemoryDb.getSheMemory('long_term_memory') ??
+        '(no memories yet)';
+    final heartbeat = data?.heartbeat ??
+        await _sheMemoryDb.getSheMemory('heartbeat') ??
+        '(no record)';
     return _buildProfileSnapshot(profile, userInfo, longTermMemory, heartbeat,
         level: level);
   }
 
-  /// Section ⑦' (optional): She's self-cognition from minds.db.
-  /// Injects self_notes (She's reflections about herself).
+  /// Section ⑦' (optional): She's self-cognition (self_notes).
+  /// Injects self_notes (She's reflections about herself), read from
+  /// she_memory.db — the single source of truth for She's soul & self_notes.
   /// Soul is already in buildMemoryContextBlock(), so we focus on self_notes here.
-  Future<String> buildSheSelfCognitionBlock() async {
-    final self = await _cognition.getSelfCognition(sheId);
-    if (self == null || (self.selfNotes?.isEmpty ?? true)) return '';
+  Future<String> buildSheSelfCognitionBlock({ShePromptData? data}) async {
+    final notes =
+        data?.selfNotes ?? await _sheMemoryDb.getSheMemory(_selfNotesKey);
+    if (notes == null || notes.isEmpty || notes == '(no self-notes yet)') {
+      return '';
+    }
 
     return '''
 ## Your Self-Reflections
-${self.selfNotes}''';
+${truncateTail(notes, 2000)}''';
   }
 
   /// Section ⑦'' (optional): She's user-cognition from minds.db.
   /// Injects user_impression and user_notes (She's subjective understanding of the user).
-  Future<String> buildUserCognitionBlock() async {
-    final user = await _cognition.getUserCognition(sheId);
+  Future<String> buildUserCognitionBlock({ShePromptData? data}) async {
+    final user = data != null
+        ? data.userCognition
+        : await _cognition.getUserCognition(sheId);
     if (user == null) return '';
 
     final parts = <String>[];
     if (user.userImpression?.isNotEmpty ?? false) {
-      parts.add('**My Impression**: ${user.userImpression}');
+      parts.add('**My Impression**: ${truncateTail(user.userImpression!, 1000)}');
     }
     if (user.userNotes?.isNotEmpty ?? false) {
-      parts.add('**Notes About You**: ${user.userNotes}');
+      parts.add('**Notes About You**: ${truncateTail(user.userNotes!, 1000)}');
     }
     if (parts.isEmpty) return '';
 
@@ -778,7 +868,30 @@ As you learn: write immediately
 1. Heartbeat → `shepaw context memory.write --key heartbeat --value "(one-sentence summary)"`
 2. New self-awareness → `shepaw context memory.write --key soul --value "(complete soul)"` — **identity only**, never group/room/dispatch content
 3. Deeper impression of master → `shepaw context agents.cognition-write --id $sheId --type user --field impression --value "..."`
-4. New self-reflections → `shepaw context agents.cognition-write --id $sheId --type self --soul "..."`
+4. New self-reflections → `shepaw context memory.append --key self_notes --value "..."`
 
 > These calls are silent. `ok: true` = success. Use what you know to make every response personal.''';
+}
+
+/// Prefetched She prompt context — one parallel read of all DB-backed prompt
+/// inputs, passed to the block builders to avoid duplicate DB reads per build.
+/// See [SheService.prefetchPromptData].
+class ShePromptData {
+  final Map<String, String> profile;
+  final String soul;
+  final String? userInfo;
+  final String? longTermMemory;
+  final String? heartbeat;
+  final String? selfNotes;
+  final UserCognition? userCognition;
+
+  const ShePromptData({
+    required this.profile,
+    required this.soul,
+    this.userInfo,
+    this.longTermMemory,
+    this.heartbeat,
+    this.selfNotes,
+    this.userCognition,
+  });
 }

@@ -1,5 +1,6 @@
 import '../../cli_base.dart';
 import '../../../services/cognition_service.dart';
+import '../../../services/she_service.dart';
 
 /// 写入/更新 Agent 的认知数据
 ///
@@ -85,7 +86,13 @@ class CognitionWriteCommand extends CliCommand {
               'Missing --soul. Usage: shepaw agents cognition-write --id <agent_id> --type self --soul "..."',
         };
       }
-      await svc.updateAgentSoul(id, soul.trim());
+      if (id == SheService.sheId) {
+        // She's soul lives in she_memory.db (single source of truth) — route
+        // to SheService so the value actually reaches her system prompt.
+        await SheService.instance.updateSoul(soul.trim());
+      } else {
+        await svc.updateAgentSoul(id, soul.trim());
+      }
       return {
         'ok': true,
         'agent_id': id,

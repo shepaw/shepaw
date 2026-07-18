@@ -1337,6 +1337,7 @@ class AgentMessagingService {
           if (hasSkills && promptConfig.tools.includeSkills) ...skillRegistry.claudeTools(enabledSkills: enabledSkills),
           if (hasToolModels && promptConfig.tools.includeToolModels) ...toolModelRegistry.claudeTools(enabledToolModels: enabledToolModels, scenarioOverrides: toolModelScenarios),
           if (includeShepawCli) ShepawCLI.instance.claudeTool(),
+          LocalLLMHelpers.getToolResultClaude(),
         ];
       } else {
         combinedTools = [
@@ -1345,6 +1346,7 @@ class AgentMessagingService {
           if (hasSkills && promptConfig.tools.includeSkills) ...skillRegistry.openAITools(enabledSkills: enabledSkills),
           if (hasToolModels && promptConfig.tools.includeToolModels) ...toolModelRegistry.openAITools(enabledToolModels: enabledToolModels, scenarioOverrides: toolModelScenarios),
           if (includeShepawCli) ShepawCLI.instance.openAITool(),
+          LocalLLMHelpers.getToolResultOpenAI(),
         ];
       }
 
@@ -1355,11 +1357,18 @@ class AgentMessagingService {
         dmSystemPromptOverride: dmSystemPrompt,
       ).buildSystemPrompt();
 
-      // Load history — include attachment messages for context
-      const historyLimit = 20;
+      // Load history with a character budget — same helper the group flow
+      // uses; keeps long sessions from blowing up the context.
+      const historyMaxChars = 20000;
+      final historyService = HistoryService(_db, _toolResultDb);
       final List<Map<String, dynamic>> chatHistory = [];
       if (channelId != null) {
-        final messages = await loadChannelMessages(channelId, limit: historyLimit);
+        final messages = await historyService.loadAndTruncateHistory(
+          channelId,
+          maxChars: historyMaxChars,
+          limit: 50,
+          excludeMessageId: userMessage.id,
+        );
         if (messages.isNotEmpty) {
           for (final m in messages) {
             if (m.type != MessageType.system && m.type != MessageType.permissionAudit && m.id != userMessage.id) {
@@ -1444,7 +1453,6 @@ class AgentMessagingService {
       // 预分配 agentMessageId：工具执行时需要关联到该消息，
       // 循环结束后创建 agentResponse 复用同一 ID，保证 tool_executions 外键有效。
       final agentMessageId = _uuid.v4();
-      final historyService = HistoryService(_db, _toolResultDb);
 
       final responseBuffer = StringBuffer();
       Map<String, dynamic>? actionConfirmationData;
@@ -1762,6 +1770,17 @@ class AgentMessagingService {
               arguments: tc.arguments,
               result: ToolExecutionResult.text(unknownResult),
             );
+          }
+
+          // Cap large tool results before appending — full results are
+          // persisted via saveToolExecution and can be pulled on demand
+          // through get_tool_result, so truncation loses no information.
+          for (final tr in toolResults) {
+            final r = tr['result'];
+            final id = tr['tool_call_id'];
+            if (r is String && id is String) {
+              tr['result'] = LocalLLMHelpers.truncateToolResult(r, id);
+            }
           }
 
           // Append assistant message + tool results to message history

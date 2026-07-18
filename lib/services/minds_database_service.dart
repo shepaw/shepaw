@@ -202,6 +202,13 @@ class MindsDatabaseService {
     return UserCognition.fromMap(rows.first);
   }
 
+  /// 获取所有 Agent 的用户认知（用于数据导出）
+  Future<List<UserCognition>> getAllUserCognitions() async {
+    final db = await database;
+    final rows = await db.query('cognition_user', orderBy: 'last_updated DESC');
+    return rows.map(UserCognition.fromMap).toList();
+  }
+
   /// 获取 user_profile KV Map（与旧 getAllUserProfile() 语义一致）
   ///
   /// [agentId] 通常为 She 的 ID，因为用户档案由 She 维护。

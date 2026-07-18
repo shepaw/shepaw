@@ -13,6 +13,23 @@ import 'she_service.dart';
 import 'messaging/local_llm_handler.dart';
 import '../clis/shepaw/shepaw_cli.dart';
 
+/// Timeout for establishing the TCP/TLS connection to the LLM API.
+const Duration _connectTimeout = Duration(seconds: 15);
+
+/// Timeout for waiting for the response headers (first byte) after the
+/// request body has been sent.
+const Duration _firstByteTimeout = Duration(seconds: 30);
+
+/// Max idle gap between streamed chunks before the SSE stream is failed.
+/// Applied via `Stream.timeout`, so the timer resets on every chunk.
+const Duration _idleChunkTimeout = Duration(seconds: 60);
+
+/// Max attempts (initial call + one retry) for a single LLM request.
+const int _maxAttempts = 2;
+
+/// Backoff delay between retry attempts.
+const Duration _retryBackoff = Duration(milliseconds: 1500);
+
 /// Local LLM Agent Service
 ///
 /// Directly calls LLM HTTP APIs (OpenAI-compatible / Claude / GLM) and
@@ -103,6 +120,10 @@ class LocalLLMAgentService {
   ///
   /// Model selection uses [RemoteAgent.scenarioModels] and [main_model_id]
   /// via [_resolveModelConfig].
+  ///
+  /// For She, the full companion memory stack is layered onto the system
+  /// prompt by default. Pure-task callers (group-admin decisions, image
+  /// analysis) should pass [skipSheMemoryStack] to use their override as-is.
   Stream<LLMStreamEvent> chat({
     required RemoteAgent agent,
     required String message,
@@ -111,13 +132,14 @@ class LocalLLMAgentService {
     bool includeShepawCli = false,
     String? systemPromptOverride,
     List<AttachmentData>? attachments,
+    bool skipSheMemoryStack = false,
   }) async* {
     final resolved = _resolveModelConfig(agent, attachments);
     // For She agent, inject memory context into the system prompt
     final isEphemeralOverride = systemPromptOverride != null;
     String systemPrompt = systemPromptOverride ??
         (agent.metadata['system_prompt'] as String? ?? '');
-    if (agent.metadata['is_she'] == true) {
+    if (agent.metadata['is_she'] == true && !skipSheMemoryStack) {
       systemPrompt = await SheService.instance.buildSystemPromptWithMemory(
         systemPrompt,
         allowSoulSeed: !isEphemeralOverride,
@@ -271,11 +293,13 @@ class LocalLLMAgentService {
     final body = jsonEncode(requestBody);
 
     yield* _streamWithMultimodalFallback(
-      stream: () => _streamSSEOpenAI(url: url, headers: headers, body: body),
+      stream: () =>
+          _withRetry(() => _streamSSEOpenAI(url: url, headers: headers, body: body)),
       messages: messages,
       buildRetryStream: (degraded) {
         final retryBody = jsonEncode({...requestBody, 'messages': degraded});
-        return _streamSSEOpenAI(url: url, headers: headers, body: retryBody);
+        return _withRetry(
+            () => _streamSSEOpenAI(url: url, headers: headers, body: retryBody));
       },
     );
   }
@@ -317,11 +341,13 @@ class LocalLLMAgentService {
     final body = jsonEncode(requestBody);
 
     yield* _streamWithMultimodalFallback(
-      stream: () => _streamSSEClaude(url: url, headers: headers, body: body),
+      stream: () =>
+          _withRetry(() => _streamSSEClaude(url: url, headers: headers, body: body)),
       messages: messages,
       buildRetryStream: (degraded) {
         final retryBody = jsonEncode({...requestBody, 'messages': degraded});
-        return _streamSSEClaude(url: url, headers: headers, body: retryBody);
+        return _withRetry(
+            () => _streamSSEClaude(url: url, headers: headers, body: retryBody));
       },
     );
   }
@@ -430,33 +456,56 @@ class LocalLLMAgentService {
   }
 
   /// POST a non-SSE request and return the parsed JSON response body.
+  ///
+  /// Unlike the SSE path there is no partial output, so the whole request is
+  /// retried once (up to [_maxAttempts] attempts) on transient failures
+  /// (connection-class errors, timeouts, HTTP 429/5xx).
   Future<Map<String, dynamic>> _postNonSSE({
     required String url,
     required Map<String, String> headers,
     required String body,
   }) async {
     final uri = Uri.parse(url);
-    final client = HttpClient();
-    _registerClient(client);
+    var attempt = 0;
 
-    try {
-      final request = await client.postUrl(uri);
-      for (final entry in headers.entries) {
-        request.headers.set(entry.key, entry.value);
+    while (true) {
+      attempt++;
+      final client = HttpClient();
+      client.connectionTimeout = _connectTimeout;
+      _registerClient(client);
+
+      try {
+        final request = await client.postUrl(uri);
+        for (final entry in headers.entries) {
+          request.headers.set(entry.key, entry.value);
+        }
+        request.add(utf8.encode(body));
+        final response =
+            await request.close().timeout(const Duration(seconds: 60));
+        final responseBody = await response
+            .transform(utf8.decoder)
+            .join()
+            .timeout(const Duration(seconds: 60));
+
+        if (response.statusCode != 200) {
+          LoggerService().error('Non-SSE API error ${response.statusCode} from $url', tag: 'LocalLLM');
+          if (response.statusCode == 429 || response.statusCode >= 500) {
+            throw _RetryableLlmException(
+                'LLM API HTTP ${response.statusCode}: $responseBody');
+          }
+          throw Exception('LLM API error (${response.statusCode}): $responseBody');
+        }
+
+        return jsonDecode(responseBody) as Map<String, dynamic>;
+      } catch (e) {
+        if (!isRetryableLlmError(e) || attempt >= _maxAttempts) {
+          rethrow;
+        }
+        await Future<void>.delayed(_retryBackoff);
+      } finally {
+        _unregisterClient(client);
+        client.close();
       }
-      request.add(utf8.encode(body));
-      final response = await request.close();
-      final responseBody = await response.transform(utf8.decoder).join();
-
-      if (response.statusCode != 200) {
-        LoggerService().error('Non-SSE API error ${response.statusCode} from $url', tag: 'LocalLLM');
-        throw Exception('LLM API error (${response.statusCode}): $responseBody');
-      }
-
-      return jsonDecode(responseBody) as Map<String, dynamic>;
-    } finally {
-      _unregisterClient(client);
-      client.close();
     }
   }
 
@@ -841,6 +890,7 @@ class LocalLLMAgentService {
   }) async {
     final uri = Uri.parse(url);
     final client = HttpClient();
+    client.connectionTimeout = _connectTimeout;
 
     try {
       final request = await client.postUrl(uri);
@@ -848,12 +898,19 @@ class LocalLLMAgentService {
         request.headers.set(entry.key, entry.value);
       }
       request.add(utf8.encode(body));
-      final response = await request.close();
+      final response = await request.close().timeout(_firstByteTimeout);
 
       if (response.statusCode != 200) {
         final errorBody = await response.transform(utf8.decoder).join();
         client.close();
         LoggerService().error('API error ${response.statusCode} from $url — body length: ${body.length}', tag: 'LocalLLM');
+        if (response.statusCode == 429 || response.statusCode >= 500) {
+          // Transient server-side / rate-limit failure — retryable. Carried by
+          // a dedicated type so the 'LLM API error (4xx)' string contract used
+          // by `_streamWithMultimodalFallback` is never matched accidentally.
+          throw _RetryableLlmException(
+              'LLM API HTTP ${response.statusCode}: $errorBody');
+        }
         throw Exception(
             'LLM API error (${response.statusCode}): $errorBody');
       }
@@ -861,9 +918,20 @@ class LocalLLMAgentService {
       return (client, response);
     } catch (e) {
       client.close();
+      if (e is _RetryableLlmException) {
+        rethrow;
+      }
       if (e is Exception &&
           e.toString().contains('LLM API error')) {
         rethrow;
+      }
+      // Classify connection-class failures BEFORE wrapping — the generic
+      // 'Failed to connect' Exception would destroy the type info.
+      if (e is SocketException ||
+          e is TimeoutException ||
+          e is HandshakeException ||
+          e is HttpException) {
+        throw _RetryableLlmException('$e');
       }
       throw Exception('Failed to connect to LLM API: $e');
     }
@@ -905,7 +973,8 @@ class LocalLLMAgentService {
       String? lastFinishReason;
 
       String buffer = '';
-      await for (final chunk in response.transform(utf8.decoder)) {
+      await for (final chunk
+          in response.transform(utf8.decoder).timeout(_idleChunkTimeout)) {
         buffer += chunk;
         while (buffer.contains('\n')) {
           final newlineIndex = buffer.indexOf('\n');
@@ -1103,7 +1172,8 @@ class LocalLLMAgentService {
       String buffer = '';
       String? currentEventType;
 
-      await for (final chunk in response.transform(utf8.decoder)) {
+      await for (final chunk
+          in response.transform(utf8.decoder).timeout(_idleChunkTimeout)) {
         buffer += chunk;
         while (buffer.contains('\n')) {
           final newlineIndex = buffer.indexOf('\n');
@@ -1234,6 +1304,54 @@ class LocalLLMAgentService {
     } finally {
       _unregisterClient(client);
       client.close();
+    }
+  }
+
+  // =========================================================================
+  // Retry helpers
+  // =========================================================================
+
+  /// Whether [error] is a transient LLM-call failure worth retrying:
+  /// connection-class errors, timeouts, and HTTP 429/5xx (carried by
+  /// `_RetryableLlmException`). Non-retryable 4xx (`Exception('LLM API error
+  /// (4xx): ...')`) returns false, preserving the multimodal-degradation
+  /// string contract.
+  static bool isRetryableLlmError(Object error) {
+    return error is _RetryableLlmException ||
+        error is SocketException ||
+        error is TimeoutException ||
+        error is HandshakeException ||
+        error is HttpException;
+  }
+
+  /// Retry a streaming LLM call at most [_maxAttempts] times.
+  ///
+  /// A retry only happens when the failed attempt yielded **zero** events
+  /// (so partial text is never duplicated) and the error is retryable per
+  /// [isRetryableLlmError]. Uses `await for` (not `yield*`) so errors thrown
+  /// during stream creation (e.g. connect/first-byte failures in `_openSSE`)
+  /// are caught here.
+  Stream<LLMStreamEvent> _withRetry(
+    Stream<LLMStreamEvent> Function() factory,
+  ) async* {
+    var attempt = 0;
+    while (true) {
+      attempt++;
+      var yieldedEvents = 0;
+      try {
+        await for (final event in factory()) {
+          yieldedEvents++;
+          yield event;
+        }
+        return;
+      } catch (e) {
+        if (yieldedEvents > 0 ||
+            !isRetryableLlmError(e) ||
+            attempt >= _maxAttempts) {
+          rethrow;
+        }
+        await Future<void>.delayed(_retryBackoff);
+      }
     }
   }
 
@@ -1374,4 +1492,18 @@ class _OpenAIToolCallAccumulator {
   String id = '';
   String name = '';
   final StringBuffer argumentsBuffer = StringBuffer();
+}
+
+/// A transient LLM-call failure that is safe to retry (connection-class
+/// errors, timeouts, HTTP 429/5xx).
+///
+/// Carries a readable message; its [toString] deliberately does **not** start
+/// with (or contain) `'LLM API error (4'` so the multimodal-degradation
+/// string contract in `_streamWithMultimodalFallback` is never matched.
+class _RetryableLlmException implements Exception {
+  final String message;
+  _RetryableLlmException(this.message);
+
+  @override
+  String toString() => 'RetryableLlmException: $message';
 }

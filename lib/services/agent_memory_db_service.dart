@@ -1,3 +1,4 @@
+import 'dart:io' show File;
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:sqflite/sqflite.dart';
 import 'package:path/path.dart';
@@ -52,6 +53,34 @@ class AgentMemoryDbService {
       await service.close();
     }
     _instances.clear();
+  }
+
+  /// 删除所有 Agent 的记忆数据库文件（用于「清除全部数据」）。
+  ///
+  /// 先关闭并清空实例缓存，再扫描文档目录删除 `agent_memory_*.db`，
+  /// 因此连缓存之外的（如已删除 Agent 遗留的）记忆库也会被清除。
+  /// Web 平台无文件概念，仅清空实例缓存。
+  static Future<void> deleteAllDatabases() async {
+    await closeAll();
+    if (kIsWeb) return;
+    try {
+      final directory = await getApplicationDocumentsDirectory();
+      await for (final entity in directory.list()) {
+        if (entity is File && entity.path.contains('agent_memory_') && entity.path.endsWith('.db')) {
+          await entity.delete();
+          LoggerService().info(
+            'Memory database deleted: ${entity.path}',
+            tag: 'AgentMemoryDbService',
+          );
+        }
+      }
+    } catch (e) {
+      LoggerService().error(
+        'Failed to delete agent memory databases',
+        tag: 'AgentMemoryDbService',
+        error: e,
+      );
+    }
   }
 
   // ---------------------------------------------------------------------------

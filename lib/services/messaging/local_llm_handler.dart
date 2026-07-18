@@ -12,6 +12,20 @@ import '../task/task_models.dart';
 /// These static helpers are extracted from ChatService to isolate the
 /// tool-building and message-formatting logic.
 class LocalLLMHelpers {
+  /// Cap a tool result string before it is appended to the next round's
+  /// messages. Full results are persisted via `saveToolExecution` and can be
+  /// pulled on demand through the get_tool_result tool, so truncation loses
+  /// no information.
+  static String truncateToolResult(
+    String result,
+    String toolCallId, {
+    int maxChars = 8000,
+  }) {
+    if (result.length <= maxChars) return result;
+    return '${result.substring(0, maxChars)}… [${result.length} chars total'
+        ' — use get_tool_result with tool_call_id "$toolCallId" for full result]';
+  }
+
   /// Build the combined tool list for a local LLM agent.
   ///
   /// OS/web tools are no longer exposed directly — they are accessed

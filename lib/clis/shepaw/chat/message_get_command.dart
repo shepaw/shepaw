@@ -250,6 +250,7 @@ class MessageGetCommand extends CliCommand {
         enableUITools: false,
         includeShepawCli: false,
         systemPromptOverride: '',
+        skipSheMemoryStack: true, // 纯分析任务：不叠加 She 的全量人格 prompt
         attachments: [attachment],
       );
       await for (final event in stream) {

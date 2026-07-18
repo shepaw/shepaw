@@ -2,6 +2,7 @@ import '../models/prompt_stack_config.dart';
 import '../models/remote_agent.dart';
 import 'agent_memory_db_service.dart';
 import 'cognition_service.dart';
+import 'logger_service.dart';
 import 'she_service.dart';
 import 'ui_component_registry.dart';
 import '../clis/shepaw/os/os_tool_registry.dart';
@@ -69,6 +70,11 @@ class AgentPromptBuilder {
         : config.tools;
     final parts = <String>[];
 
+    // Prefetch She's DB-backed prompt inputs in one parallel batch — avoids
+    // the duplicate serial reads (profile ×3, soul ×2) across block builders.
+    final sheData =
+        agent.isShe ? await SheService.instance.prefetchPromptData() : null;
+
     // ① Identity — always include the agent's name so the model can recognise
     //   when quoted messages refer to itself.
     if (config.includeIdentity) {
@@ -101,7 +107,7 @@ class AgentPromptBuilder {
     // ④ She memory context (soul) — guarded by SheStackConfig flag.
     // Non-She agents have SheStackConfig.disabled so this is always false for them.
     if (config.she.includeSheMemory) {
-      final mem = await SheService.instance.buildMemoryContextBlock();
+      final mem = await SheService.instance.buildMemoryContextBlock(data: sheData);
       if (mem.isNotEmpty) parts.add(mem);
     }
 
@@ -131,27 +137,27 @@ class AgentPromptBuilder {
 
     // ⑥ User-understanding strategy — She-only via config flag.
     if (config.she.includeUserStrategy) {
-      final strategy = await SheService.instance.buildUserStrategyBlock();
+      final strategy = await SheService.instance.buildUserStrategyBlock(data: sheData);
       if (strategy.isNotEmpty) parts.add(strategy);
     }
 
     // ⑦ User-profile snapshot — She-only via config flag.
     if (config.she.includeProfileSnapshot) {
       final snapshot = await SheService.instance
-          .buildProfileSnapshotBlock(level: config.she.profileSnapshotLevel);
+          .buildProfileSnapshotBlock(level: config.she.profileSnapshotLevel, data: sheData);
       if (snapshot.isNotEmpty) parts.add(snapshot);
     }
 
-    // ⑦' She self-cognition (self_notes from minds.db) — She-only via config flag.
+    // ⑦' She self-cognition (self_notes) — She-only via config flag.
     if (config.she.includeSheSelfCognition) {
-      final selfCog = await SheService.instance.buildSheSelfCognitionBlock();
+      final selfCog = await SheService.instance.buildSheSelfCognitionBlock(data: sheData);
       if (selfCog.isNotEmpty) parts.add(selfCog);
     }
 
     // ⑦'' She user-cognition (impression/notes from minds.db).
     // Skipped in lightweight mode — She can query on demand.
     if (!config.lightweightMode && config.she.includeUserCognition) {
-      final userCog = await SheService.instance.buildUserCognitionBlock();
+      final userCog = await SheService.instance.buildUserCognitionBlock(data: sheData);
       if (userCog.isNotEmpty) parts.add(userCog);
     }
 
@@ -164,7 +170,7 @@ class AgentPromptBuilder {
 
     // ⑧ First-meeting instruction — She-only via config flag.
     if (config.she.includeFirstMeeting) {
-      final isFirst = await SheService.instance.isFirstMeeting();
+      final isFirst = await SheService.instance.isFirstMeeting(data: sheData);
       if (isFirst) parts.add(SheService.instance.buildFirstMeetingBlock());
     }
 
@@ -198,7 +204,15 @@ class AgentPromptBuilder {
       parts.add(SheService.instance.buildSessionEndBlockFor(agent.id));
     }
 
-    return parts.where((s) => s.trim().isNotEmpty).join('\n\n');
+    final prompt = parts.where((s) => s.trim().isNotEmpty).join('\n\n');
+    if (prompt.length > 12000) {
+      LoggerService().warning(
+        'System prompt for agent=${agent.id} is ${prompt.length} chars '
+        '(block sizes: ${parts.map((p) => p.length).join(', ')})',
+        tag: 'PromptBuilder',
+      );
+    }
+    return prompt;
   }
 
   // ── Private helpers ────────────────────────────────────────────────────────

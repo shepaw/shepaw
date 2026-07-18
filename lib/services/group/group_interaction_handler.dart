@@ -240,6 +240,7 @@ class GroupInteractionHandler {
         history: history.isNotEmpty ? history : null,
         enableUITools: false,
         systemPromptOverride: decisionSystemPrompt,
+        skipSheMemoryStack: true, // 纯决策任务：不叠加 She 的全量人格 prompt
       ).timeout(const Duration(seconds: 30))) {
         if (event is LLMTextEvent) {
           responseBuffer.write(event.text);

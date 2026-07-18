@@ -7,6 +7,11 @@ import 'package:sqflite/sqflite.dart';
 import '../services/local_database_service.dart';
 import '../services/local_file_storage_service.dart';
 import '../services/logger_service.dart';
+import '../services/she_memory_db_service.dart';
+import '../services/minds_database_service.dart';
+import '../services/agent_memory_db_service.dart';
+import '../models/cognition.dart';
+import '../models/agent_memory_entry.dart';
 
 /// 数据导入导出服务
 /// 
@@ -218,6 +223,62 @@ class DataExportImportService {
         _logger.warning('Failed to export table $table', error: e);
       }
     }
+
+    await _exportMemoryData(dataDir);
+  }
+
+  /// 导出记忆数据：She 的记忆 KV、minds.db 认知、各 Agent 独立记忆库。
+  ///
+  /// 与主库表导出相同的 JSON 文件风格；每类数据独立 try/catch，
+  /// 单项失败不影响整体备份。
+  Future<void> _exportMemoryData(Directory dataDir) async {
+    // She 的记忆 KV（soul / long_term_memory / heartbeat 等）
+    try {
+      final sheMemory = await SheMemoryDbService().getAllSheMemory();
+      await File('${dataDir.path}/she_memory.json')
+          .writeAsString(json.encode(sheMemory));
+      _logger.debug('Exported she_memory');
+    } catch (e) {
+      _logger.warning('Failed to export she_memory', error: e);
+    }
+
+    // minds.db：各 Agent 的自我认知 + 用户认知（含 user_profile）
+    try {
+      final minds = MindsDatabaseService();
+      final selfCogs = await minds.getAllSelfCognitions();
+      await File('${dataDir.path}/cognition_self.json').writeAsString(
+          json.encode(selfCogs.map((c) => c.toMap()).toList()));
+      final userCogs = await minds.getAllUserCognitions();
+      await File('${dataDir.path}/cognition_user.json').writeAsString(
+          json.encode(userCogs.map((c) => c.toMap()).toList()));
+      _logger.debug('Exported minds.db cognitions');
+    } catch (e) {
+      _logger.warning('Failed to export cognitions', error: e);
+    }
+
+    // 各 Agent 独立记忆库（按文件名枚举，已删除 Agent 的遗留库也包含）
+    try {
+      final docsDir = await getApplicationDocumentsDirectory();
+      final memDir = Directory('${dataDir.path}/agent_memory');
+      await for (final entity in docsDir.list()) {
+        final name = entity.path.split('/').last;
+        if (entity is! File ||
+            !name.startsWith('agent_memory_') ||
+            !name.endsWith('.db')) {
+          continue;
+        }
+        final agentId = name.substring('agent_memory_'.length, name.length - 3);
+        final memories =
+            await AgentMemoryDbService.forAgent(agentId).getAllMemories(limit: 100000);
+        if (memories.isEmpty) continue;
+        await memDir.create(recursive: true);
+        await File('${memDir.path}/$agentId.json').writeAsString(
+            json.encode(memories.map((m) => m.toMap()).toList()));
+      }
+      _logger.debug('Exported agent memories');
+    } catch (e) {
+      _logger.warning('Failed to export agent memories', error: e);
+    }
   }
 
   Future<void> _exportFiles(Directory exportDir) async {
@@ -332,6 +393,84 @@ class DataExportImportService {
           _logger.warning('Failed to import table $tableName', error: e);
         }
       }
+    }
+
+    await _importMemoryData(dataDir, overwrite);
+  }
+
+  /// 导入记忆数据（对应 [_exportMemoryData]；文件缺失时静默跳过，
+  /// 因此旧版本备份仍可正常导入）。
+  ///
+  /// [overwrite] 为 false 时：已存在的 She 记忆 key、已存在的认知行、
+  /// 以及非空的 Agent 记忆库会被跳过，避免覆盖现有数据。
+  Future<void> _importMemoryData(Directory dataDir, bool overwrite) async {
+    // She 的记忆 KV
+    try {
+      final file = File('${dataDir.path}/she_memory.json');
+      if (await file.exists()) {
+        final map =
+            (json.decode(await file.readAsString()) as Map).cast<String, dynamic>();
+        final sheMemDb = SheMemoryDbService();
+        for (final entry in map.entries) {
+          final value = entry.value?.toString();
+          if (value == null) continue;
+          if (overwrite || await sheMemDb.getSheMemory(entry.key) == null) {
+            await sheMemDb.setSheMemory(entry.key, value);
+          }
+        }
+        _logger.debug('Imported she_memory');
+      }
+    } catch (e) {
+      _logger.warning('Failed to import she_memory', error: e);
+    }
+
+    // minds.db 认知
+    try {
+      final minds = MindsDatabaseService();
+      final selfFile = File('${dataDir.path}/cognition_self.json');
+      if (await selfFile.exists()) {
+        for (final raw in json.decode(await selfFile.readAsString()) as List) {
+          final cog =
+              SelfCognition.fromMap((raw as Map).cast<String, dynamic>());
+          if (overwrite || await minds.getSelfCognition(cog.agentId) == null) {
+            await minds.setSelfCognition(cog);
+          }
+        }
+      }
+      final userFile = File('${dataDir.path}/cognition_user.json');
+      if (await userFile.exists()) {
+        for (final raw in json.decode(await userFile.readAsString()) as List) {
+          final cog =
+              UserCognition.fromMap((raw as Map).cast<String, dynamic>());
+          if (overwrite || await minds.getUserCognition(cog.agentId) == null) {
+            await minds.setUserCognition(cog);
+          }
+        }
+      }
+      _logger.debug('Imported minds.db cognitions');
+    } catch (e) {
+      _logger.warning('Failed to import cognitions', error: e);
+    }
+
+    // 各 Agent 独立记忆库（memory_id 随备份保留，replace 语义 → 重复导入幂等）
+    try {
+      final memDir = Directory('${dataDir.path}/agent_memory');
+      if (await memDir.exists()) {
+        await for (final entity in memDir.list()) {
+          if (entity is! File || !entity.path.endsWith('.json')) continue;
+          final agentId = entity.path.split('/').last.replaceAll('.json', '');
+          final service = AgentMemoryDbService.forAgent(agentId);
+          if (!overwrite && await service.getMemoryCount() > 0) continue;
+          final list = json.decode(await entity.readAsString()) as List;
+          for (final raw in list) {
+            await service.addMemory(AgentMemoryEntry.fromMap(
+                (raw as Map).cast<String, dynamic>()));
+          }
+        }
+        _logger.debug('Imported agent memories');
+      }
+    } catch (e) {
+      _logger.warning('Failed to import agent memories', error: e);
     }
   }
 

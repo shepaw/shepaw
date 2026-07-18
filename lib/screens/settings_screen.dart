@@ -18,6 +18,8 @@ import 'agent_memory_management_screen.dart';
 import '../utils/layout_utils.dart';
 import '../services/local_database_service.dart';
 import '../services/cognition_service.dart';
+import '../services/she_memory_db_service.dart';
+import '../services/agent_memory_db_service.dart';
 import '../services/local_file_storage_service.dart';
 import '../services/data_export_import_service.dart';
 import '../services/logger_service.dart';
@@ -1180,6 +1182,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
       await db.clearAllData();
 
       await CognitionService.instance.clearAll();
+
+      // She 的记忆（soul / long_term_memory / self_notes 等）与各 Agent 的
+      // 独立记忆库也属于「全部数据」，一并清除。
+      await SheMemoryDbService().clearSheMemory();
+      await AgentMemoryDbService.deleteAllDatabases();
 
       InferenceLogService.instance.clearAll();
 
