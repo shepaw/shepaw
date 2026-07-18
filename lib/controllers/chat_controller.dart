@@ -147,6 +147,11 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
   String? currentChannelId;
   final ChatLifecycleCoordinator lifecycle = ChatLifecycleCoordinator();
 
+  /// Subscription to service-side DB writes for the current channel (system
+  /// messages, member failure notices) so they surface in the chat
+  /// immediately instead of waiting for the next full reconcile.
+  StreamSubscription<List<Message>>? _channelUpdateSub;
+
   bool get isAppActive => lifecycle.isAppActive;
 
   // ---- History request tracking ----
@@ -279,6 +284,7 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
     messageQueue.clear();
     _healthCheckTimer?.cancel();
     _peerConnSub?.cancel();
+    _channelUpdateSub?.cancel();
     if (currentChannelId != null) {
       chatService.closeChannelStream(currentChannelId!);
     }
@@ -676,6 +682,22 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
       tag: 'ChatController',
     );
     _notify();
+  }
+
+  /// Subscribe to service-side DB writes for the current channel. Services
+  /// (group executor, orchestration, workflow) write user-visible system
+  /// messages directly to the DB and then call notifyChannelUpdate; without
+  /// this listener those messages only appear after the next full reconcile
+  /// (i.e. when the whole round finishes). Reconcile is idempotent and
+  /// preserves streaming placeholders, so it is safe to run mid-turn.
+  void _subscribeChannelUpdates() {
+    final cid = currentChannelId;
+    if (cid == null) return;
+    _channelUpdateSub?.cancel();
+    _channelUpdateSub = chatService.getMessageStream(cid).listen((_) {
+      if (!isGroupMode) return;
+      unawaited(reconcileGroupMessages());
+    });
   }
 
   // ---------------------------------------------------------------------------

@@ -44,6 +44,10 @@ mixin _LoadOps on _ChatControllerBase {
       AppLifecycleService().setActiveChannel(currentChannelId);
       NotificationService().cancelNotification(currentChannelId.hashCode);
 
+      // Surface service-side DB writes (member failure notices, orchestration
+      // system messages) in the chat immediately.
+      _subscribeChannelUpdates();
+
       // 始终从数据库读取最新 name/avatar，避免会话列表等入口传入过期的缓存值。
       if (agentId != null) {
         final agent = await localDatabaseService.getRemoteAgentById(agentId!);

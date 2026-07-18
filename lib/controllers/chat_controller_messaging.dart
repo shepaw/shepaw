@@ -329,6 +329,12 @@ mixin _MessagingOps on _ChatControllerBase {
     // Cancel the cancellation token to stop all active agent tasks
     acpCancellationToken?.cancel();
 
+    // If a workflow is executing for this channel, cancel its execution loop
+    // too — same contract as stopGroupStreaming.
+    if (activeWorkflowId != null) {
+      unawaited(cancelRunningWorkflow());
+    }
+
     // Force-complete all group tasks in ChatService
     if (currentChannelId != null) {
       chatService.cancelActiveGroupTasks(currentChannelId!);
@@ -395,6 +401,13 @@ mixin _MessagingOps on _ChatControllerBase {
 
     // Cancel the cancellation token to stop all active agent tasks
     acpCancellationToken?.cancel();
+
+    // If a workflow is executing for this channel, cancel its execution loop
+    // too — otherwise the workflow keeps running (and keeps auto-denying
+    // pending approvals on timeout) after the user pressed stop.
+    if (activeWorkflowId != null) {
+      unawaited(cancelRunningWorkflow());
+    }
 
     // Force-complete all group tasks in ChatService so typing indicators
     // are cleared and reattach won't resume cancelled tasks.

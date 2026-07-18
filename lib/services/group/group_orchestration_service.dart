@@ -56,6 +56,27 @@ class GroupOrchestrationService {
         _planningHelpers = planningHelpers,
         _workflowService = workflowService;
 
+  /// Persist a user-visible system message in the group channel so
+  /// orchestration-level failures are never silent in the chat.
+  Future<void> _saveOrchestrationSystemMessage(String channelId, String content) async {
+    try {
+      final msgId = _uuid.v4();
+      await _db.createMessage(
+        id: msgId,
+        channelId: channelId,
+        senderId: 'system',
+        senderType: 'system',
+        senderName: 'System',
+        content: content,
+        messageType: 'system',
+      );
+      await _db.markMessageAsRead(msgId);
+      notifyChannelUpdate(channelId);
+    } catch (e) {
+      LoggerService().error('Failed to save orchestration system message', tag: 'GroupOrchestrationService', error: e);
+    }
+  }
+
   Future<void> sendMessageToGroup({
     required String channelId,
     required String content,
@@ -605,6 +626,12 @@ class GroupOrchestrationService {
 
         // 2. Loop: parse dispatch JSON → delegate → admin summarize → repeat
         final failedAgentNames = <String>[];
+        var dispatchNudgeCount = 0;
+        const maxDispatchNudges = 2;
+        // Compact record of the last dispatch. The dispatch JSON is stripped
+        // from the admin's message (user-facing), so this note is re-injected
+        // into the summarize round to let the admin remember its own plan.
+        String? lastDispatchNote;
         while (true) {
           // If admin sent a form/file_upload in the previous round, exit immediately
           // so the user can fill it in (forms are non-blocking).
@@ -655,6 +682,8 @@ class GroupOrchestrationService {
                 LoggerService().error('Admin abort-summarize (loop-start cancel) error', tag: 'GroupOrchestrationService', error: e);
                 onAgentDone?.call(adminAgent.id, adminAgent.name, adminResponseContent.trim().isEmpty);
               }
+              // Hide the closing {"done": true} JSON block from the user.
+              await _dispatchParser.stripDispatchJsonFromLastMessage(channelId, adminAgent.id);
             }
             break;
           }
@@ -720,6 +749,8 @@ class GroupOrchestrationService {
               LoggerService().error('Admin abort-summarize (maxRounds) error', tag: 'GroupOrchestrationService', error: e);
               onAgentDone?.call(adminAgent.id, adminAgent.name, adminResponseContent.trim().isEmpty);
             }
+            // Hide the closing {"done": true} JSON block from the user.
+            await _dispatchParser.stripDispatchJsonFromLastMessage(channelId, adminAgent.id);
             break;
           }
 
@@ -747,6 +778,93 @@ class GroupOrchestrationService {
             }
           }
 
+          // Nudge on unparsable dispatch: the admin emitted a ```json block
+          // that yielded no usable step (broken JSON, malformed steps, or all
+          // names unmatched). Ask for a well-formed re-emit instead of
+          // silently treating the turn as "done".
+          if (dispatch.parseError != null && dispatch.steps.isEmpty) {
+            if (dispatchNudgeCount < maxDispatchNudges) {
+              dispatchNudgeCount++;
+              LoggerService().warning(
+                'Dispatch parse failed at round $currentRound (${dispatch.parseError}); nudging admin ($dispatchNudgeCount/$maxDispatchNudges)',
+                tag: 'GroupOrchestrationService',
+              );
+              await _dispatchParser.stripDispatchJsonFromLastMessage(channelId, adminAgent.id);
+              final nudgeHistory = await loadAndTruncateHistory(channelId, excludeMessageId: userMessage.id);
+              adminResponseContent = '';
+              onAgentStart?.call(adminAgent.id, adminAgent.name);
+              try {
+                await _executor.processGroupAgent(
+                  agent: adminAgent,
+                  channelId: channelId,
+                  content: '$effectiveContent\n\n[SYSTEM] 你上一条回复中的派发指令无法执行：${dispatch.parseError}。请核对群成员注册名与 JSON 格式，重新输出规范的 ```json 派发块；若无需派发，请直接给出最终答复。',
+                  attachments: attachments,
+                  userId: userId,
+                  userName: userName,
+                  groupName: groupName,
+                  groupDescription: groupDescription,
+                  allAgents: agents,
+                  historyMessages: nudgeHistory,
+                  mentionedAgentIds: const [],
+                  isFirstMessage: false,
+                  isAdmin: true,
+                  isLoopSummarize: true,
+                  loopRound: currentRound + 1,
+                  messageVersion: messageVersion,
+                  channelMembers: channelMembers,
+                  customSystemPrompt: customSystemPrompt,
+                  mentionMode: mentionMode,
+                  acpCancellationToken: acpCancellationToken,
+                  onStreamChunk: (agentId, agentName, chunk) {
+                    adminResponseContent += chunk;
+                    onStreamChunk?.call(agentId, agentName, chunk);
+                  },
+                  onAgentDone: onAgentDone,
+                  onInteractionRequest: onInteractionRequestForAdmin,
+                  orchestrationTraceId: orchTraceId,
+                );
+              } catch (e) {
+                LoggerService().error('Admin nudge error at round $currentRound', tag: 'GroupOrchestrationService', error: e);
+                onAgentDone?.call(adminAgent.id, adminAgent.name, adminResponseContent.trim().isEmpty);
+                break;
+              }
+              currentRound++;
+              if (adminResponseContent.trim().isEmpty) {
+                LoggerService().warning('Admin nudge produced empty response at round $currentRound, stopping', tag: 'GroupOrchestrationService');
+                break;
+              }
+              continue;
+            }
+            // Nudge budget exhausted — surface the failure and stop.
+            await _dispatchParser.stripDispatchJsonFromLastMessage(channelId, adminAgent.id);
+            await _saveOrchestrationSystemMessage(
+              channelId,
+              '⚠️ 管理员的派发指令多次无法解析（${dispatch.parseError}），流程已停止，请重新描述需求再试。',
+            );
+            break;
+          }
+
+          // Some dispatched names did not match any member — keep going with
+          // the resolved steps but tell the user what was dropped.
+          if (dispatch.unresolvedNames.isNotEmpty) {
+            await _saveOrchestrationSystemMessage(
+              channelId,
+              '⚠️ 派发指令中的成员名称「${dispatch.unresolvedNames.join('、')}」未匹配到群成员，对应任务未执行。',
+            );
+          }
+
+          // Record the dispatch plan before the JSON is stripped from the
+          // admin's message, so the summarize round can be reminded of it.
+          if (dispatch.steps.isNotEmpty) {
+            lastDispatchNote = dispatch.steps.map((s) {
+              final names = s.agentIds.map((id) {
+                final a = agents.where((x) => x.id == id).firstOrNull;
+                return a?.name ?? id;
+              }).join('、');
+              return '步骤${s.step}→$names：${s.task}';
+            }).join('；');
+          }
+
           // Record dispatch decision in orchestration trace
           if (orchTraceId != null) {
             final dSpanId = TraceService.instance.addSpan(
@@ -764,8 +882,10 @@ class GroupOrchestrationService {
           }
 
           if (delegatedIds.isEmpty && !adminWantsContinue) {
-            // No dispatch and no continue — orchestration complete
+            // No dispatch and no continue — orchestration complete. Strip the
+            // closing {"done": true} JSON block so the user never sees it.
             LoggerService().debug('Loop orchestration ended: no dispatch at round $currentRound', tag: 'GroupOrchestrationService');
+            await _dispatchParser.stripDispatchJsonFromLastMessage(channelId, adminAgent.id);
             break;
           }
 
@@ -1108,6 +1228,8 @@ class GroupOrchestrationService {
               LoggerService().error('Admin abort-summarize error', tag: 'GroupOrchestrationService', error: e);
               onAgentDone?.call(adminAgent.id, adminAgent.name, adminResponseContent.trim().isEmpty);
             }
+            // Hide the closing {"done": true} JSON block from the user.
+            await _dispatchParser.stripDispatchJsonFromLastMessage(channelId, adminAgent.id);
             break;
           }
 
@@ -1120,7 +1242,9 @@ class GroupOrchestrationService {
             await _executor.processGroupAgent(
               agent: adminAgent,
               channelId: channelId,
-              content: effectiveContent,
+              content: lastDispatchNote != null
+                  ? '$effectiveContent\n\n[SYSTEM] 你上一轮的派发记录（该 JSON 已从你的消息中隐藏，仅供核对）：$lastDispatchNote'
+                  : effectiveContent,
               attachments: attachments,
               userId: userId,
               userName: userName,

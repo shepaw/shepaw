@@ -700,11 +700,11 @@ class ChatService implements IPawChatSender {
     Map<String, dynamic>? capturedHistoryRequest;
 
     // Hook cancellation token so the completer resolves immediately on cancel.
-    acpCancellationToken?.onCancelled = () {
+    acpCancellationToken?.addOnCancelled(() {
       if (!taskCompleter.isCompleted) {
         taskCompleter.complete();
       }
-    };
+    });
 
     connection.registerTaskCallbacks(taskId, TaskCallbacks(
       onTextContent: (data) {
@@ -1336,6 +1336,30 @@ class ChatService implements IPawChatSender {
   /// When [cancelToken] is omitted, a token is created and stored on the
   /// [ActiveWorkflowExecution] so channel switches can reattach without
   /// restarting the loop.
+  /// Persist a user-visible system message for a failed workflow so the chat
+  /// never silently dies when execution cannot complete.
+  Future<void> _saveWorkflowFailureMessage({
+    required String channelId,
+    required String content,
+  }) async {
+    try {
+      final msgId = _uuid.v4();
+      await _databaseService.createMessage(
+        id: msgId,
+        channelId: channelId,
+        senderId: 'system',
+        senderType: 'system',
+        senderName: 'System',
+        content: content,
+        messageType: 'system',
+      );
+      await _databaseService.markMessageAsRead(msgId);
+      _notifyChannelUpdate(channelId);
+    } catch (e) {
+      LoggerService().error('Failed to save workflow failure message', tag: 'ChatService', error: e);
+    }
+  }
+
   Future<void> executeWorkflowSteps({
     required String workflowId,
     required String channelId,
@@ -1439,6 +1463,45 @@ class ChatService implements IPawChatSender {
                   (a) => a!.id == adminId,
                   orElse: () => null,
                 );
+      }
+
+      // Shared helper: invoke the admin agent for a closing summary. Used by
+      // both the all-success path and the failure path so a failed workflow
+      // still ends with a visible review instead of silence.
+      Future<void> runAdminClosingSummary(String prompt) async {
+        final adminAgent = agents.where((a) =>
+            channel.members.any((m) => m.id == a.id && m.role == 'admin')).firstOrNull;
+        if (adminAgent == null) return;
+        activeExec.onAgentStart?.call(adminAgent.id, adminAgent.name);
+        try {
+          final summaryHistory = await loadChannelMessages(channelId, limit: 50);
+          await _groupAgentExecutor.processGroupAgent(
+            agent: adminAgent,
+            channelId: channelId,
+            content: prompt,
+            userId: userId,
+            userName: userName,
+            groupName: groupName,
+            groupDescription: groupDescription,
+            allAgents: agents,
+            historyMessages: summaryHistory,
+            mentionedAgentIds: const [],
+            isFirstMessage: false,
+            isAdmin: true,
+            channelMembers: channelMembers,
+            customSystemPrompt: customSystemPrompt,
+            mentionMode: mentionMode,
+            onStreamChunk: (aid, anm, chunk) {
+              activeExec.onStreamChunk?.call(aid, anm, chunk);
+            },
+            onAgentDone: (aid, anm, skipped) {
+              activeExec.onAgentDone?.call(aid, anm, skipped);
+            },
+          );
+        } catch (e) {
+          LoggerService().error('Workflow closing summary error', tag: 'ChatService', error: e);
+          activeExec.onAgentDone?.call(adminAgent.id, adminAgent.name, true);
+        }
       }
 
       // Heal orphaned `running` steps left by a previous interrupted loop
@@ -1610,48 +1673,27 @@ class ChatService implements IPawChatSender {
         final updatedWorkflow = await _workflowService.getWorkflowExecutionWithSteps(workflowId);
         final stageSteps = updatedWorkflow?.steps.where((s) => s.stageIndex == stageIdx) ?? [];
         if (stageSteps.any((s) => s.status == StepExecutionStatus.failed)) {
+          final failedStepNames = stageSteps
+              .where((s) => s.status == StepExecutionStatus.failed)
+              .map((s) => s.agentName)
+              .join('、');
           await _workflowService.failWorkflow(workflowId, 'Stage ${stageIdx + 1} has failed steps');
+          // Surface the failure in chat and let the admin give a closing
+          // review — a failed workflow must never end in silence.
+          await _saveWorkflowFailureMessage(
+            channelId: channelId,
+            content: '⚠️ 工作流执行失败：阶段 ${stageIdx + 1} 中成员「$failedStepNames」的任务未能完成。',
+          );
+          await runAdminClosingSummary(
+            '[SYSTEM] 工作流执行失败：阶段 ${stageIdx + 1} 中成员「$failedStepNames」的任务失败。请向用户说明失败情况、已完成的部分成果，以及建议的补救措施。',
+          );
           reachedTerminalState = true;
           return;
         }
       }
 
       // All stages completed — invoke Admin for final summary
-      final adminAgent = agents.where((a) =>
-          channel.members.any((m) => m.id == a.id && m.role == 'admin')).firstOrNull;
-
-      if (adminAgent != null) {
-        activeExec.onAgentStart?.call(adminAgent.id, adminAgent.name);
-        try {
-          final summaryHistory = await loadChannelMessages(channelId, limit: 50);
-          await _groupAgentExecutor.processGroupAgent(
-            agent: adminAgent,
-            channelId: channelId,
-            content: '[SYSTEM] 工作流全部阶段已执行完毕，请对执行结果做最终总结，向用户汇报成果。',
-            userId: userId,
-            userName: userName,
-            groupName: groupName,
-            groupDescription: groupDescription,
-            allAgents: agents,
-            historyMessages: summaryHistory,
-            mentionedAgentIds: const [],
-            isFirstMessage: false,
-            isAdmin: true,
-            channelMembers: channelMembers,
-            customSystemPrompt: customSystemPrompt,
-            mentionMode: mentionMode,
-            onStreamChunk: (aid, anm, chunk) {
-              activeExec.onStreamChunk?.call(aid, anm, chunk);
-            },
-            onAgentDone: (aid, anm, skipped) {
-              activeExec.onAgentDone?.call(aid, anm, skipped);
-            },
-          );
-        } catch (e) {
-          LoggerService().error('Workflow final summary error', tag: 'ChatService', error: e);
-          activeExec.onAgentDone?.call(adminAgent.id, adminAgent.name, true);
-        }
-      }
+      await runAdminClosingSummary('[SYSTEM] 工作流全部阶段已执行完毕，请对执行结果做最终总结，向用户汇报成果。');
 
       await _workflowService.completeWorkflow(workflowId, summary: '所有阶段执行完毕');
       reachedTerminalState = true;
@@ -1664,6 +1706,10 @@ class ChatService implements IPawChatSender {
       try {
         await _workflowService.failWorkflow(workflowId, 'Unexpected error: $e');
       } catch (_) {}
+      await _saveWorkflowFailureMessage(
+        channelId: channelId,
+        content: '⚠️ 工作流执行出错：$e',
+      );
       reachedTerminalState = true;
     } finally {
       // C4: Last resort — if no terminal state was set, mark as failed

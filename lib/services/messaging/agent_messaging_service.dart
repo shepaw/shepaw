@@ -618,7 +618,7 @@ class AgentMessagingService {
       }
 
       // Now that `asyncFinalize` is in scope, wire the cancel handler.
-      acpCancellationToken?.onCancelled = () {
+      acpCancellationToken?.addOnCancelled(() {
         // Delete partial message — the cancel flow will save the final
         // "[Stopped]" message via buildFinalMessage(markStopped: true).
         flushHelper?.deletePartialUnawaited();
@@ -642,7 +642,7 @@ class AgentMessagingService {
         if (!taskCompleter.isCompleted) {
           taskCompleter.complete();
         }
-      };
+      });
 
       // Set up connection callbacks — accumulate in ActiveTask, then forward to UI
       connection.registerTaskCallbacks(effectiveTaskId, TaskCallbacks(
@@ -1412,10 +1412,10 @@ class AgentMessagingService {
       // 每个 task 用独立的取消键，使「停止」只中止本次推理，不影响并发的其他
       // agent（含 peer 请求）或桌面自己的会话。
       final cancelKey = activeTask.taskId;
-      acpCancellationToken?.onCancelled = () {
+      acpCancellationToken?.addOnCancelled(() {
         activeTask.recordInterruption('user_cancelled');
         LocalLLMAgentService.instance.abort(cancelKey);
-      };
+      });
 
       // If no tools at all (no CLI, no skills, no tool models),
       // fall back to the simpler single-round path

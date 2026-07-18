@@ -28,6 +28,9 @@ class GroupPromptBuilder {
       final groupBio = channelMember?.groupBio;
       final bio = groupBio ?? a.bio ?? '';
       final statusText = a.isOnline ? '在线' : '离线';
+      final selfNote = isAdmin && a.id == currentAgent.id
+          ? ' ← 这是你（管理员），不可委派给自己'
+          : '';
       final capabilitiesText = a.capabilities.isNotEmpty
           ? a.capabilities.join(', ')
           : '未指定';
@@ -36,7 +39,7 @@ class GroupPromptBuilder {
           ? (systemPrompt.length > 200 ? '${systemPrompt.substring(0, 200)}...' : systemPrompt)
           : '未指定';
 
-      return '- ${a.name} ($statusText)\n'
+      return '- ${a.name} ($statusText)$selfNote\n'
           '  描述: ${bio.isNotEmpty ? bio : '无'}\n'
           '  能力: $capabilitiesText\n'
           '  专长: $specialtyText';
@@ -60,7 +63,12 @@ class GroupPromptBuilder {
               return '\n\n【当前状态】任务执行被中断（用户手动停止或超时）。$failedSection成员已完成了部分工作，请对已完成的工作做最终总结，向用户说明当前进度和结果。**请在回复末尾输出 `{"done": true}` JSON 代码块，不要再委派任何成员。**';
             }()
           : isLoopSummarize
-          ? '\n\n【当前状态】这是第 $loopRound 轮。成员已回复，请逐一检查每位成员回复末尾的 `[TASK_STATUS]` 标注：\n- 如有任一成员标注为 `[TASK_STATUS: pending]`，**必须优先处理该 pending 状态**（向用户说明情况、做出决策或重新委派），不得跳过继续推进其他流程\n- 所有成员均为 `[TASK_STATUS: done]` 时，再判断用户需求是否已整体满足并决定下一步'
+          ? () {
+              final failedSection = failedAgentNames.isNotEmpty
+                  ? '\n- ⚠️ 以下成员执行失败：${failedAgentNames.join('、')}——其负责的部分未完成。你必须在回复中如实说明这一点及原因，并决定重新委派、换人执行或向用户解释；**不得宣称全部完成**'
+                  : '';
+              return '\n\n【当前状态】这是第 $loopRound 轮。成员已回复，请逐一检查每位成员回复末尾的 `[TASK_STATUS]` 标注：\n- 如有任一成员标注为 `[TASK_STATUS: pending]`，**必须优先处理该 pending 状态**（向用户说明情况、做出决策或重新委派），不得跳过继续推进其他流程\n- 所有成员均为 `[TASK_STATUS: done]` 时，再判断用户需求是否已整体满足并决定下一步$failedSection';
+            }()
           : '';
 
       final delegateableAgents =
@@ -85,10 +93,10 @@ $memberList
 【你的身份】你是 ${currentAgent.name}（管理员）。$agentIdentity$customPromptSection
 
 【核心目标】
-你的首要目标是**尽可能好地完成用户的需求**。用户的每条消息都会首先由你处理，你应当：
+你的首要目标是**尽可能好地完成用户的需求**，你是这个群的项目经理。用户的每条消息都会首先由你处理，你应当：
 1. 认真理解用户的意图和需求
-2. 如果你能直接回答或解决，就直接回答，不需要委派
-3. 只有当任务确实需要其他成员的专业能力时，才考虑委派
+2. 闲聊、协调性问题、关于本群本身的问题，你可以直接回答
+3. 专业性问题**优先委派给更专业的成员**，即使你自己能答——你的核心价值是拆任务、选对人、盯进度和审结果，而不是替成员干活
 
 【委派机制（仅在需要时使用）】
 所有委派指令必须通过 JSON 代码块输出，与自然语言内容分离。**不要用 `shepaw context agents.chat` 向本群成员派活**（那会发到私聊，不会创建本群工作流）。格式如下：
@@ -99,8 +107,11 @@ $memberList
 
 - `dispatch.mode`：`"concurrent"`（并行）或 `"sequential"`（顺序，步骤按 step 编号依次执行）
 - `dispatch.steps`：每步包含 `agents`（成员名数组）和 `task`（任务说明）
+- `task` 必须写清**背景、目标和验收标准**——成员可能看不到用户的原始消息，会完全依赖 task 描述干活
 - `continue: true`：你自己继续工作，不委派任何成员（替代旧版 [CONTINUE]）
 - `done: true` 或省略 `dispatch`：流程结束，不再委派
+- **决定委派就必须输出上述 JSON 代码块**——只在自然语言中承诺"我来安排/我来派发"而不附 JSON，系统会视为流程结束，什么都不会发生
+- 输出 dispatch JSON 的同时，**必须用自然语言向用户简要说明分工安排**（派给谁、做什么、先后关系），让用户清楚进展
 - 自然语言内容中可以提到成员名字，不会被误识别为委派指令$dispatchMemberNameSection
 
 【行为准则】
@@ -110,6 +121,8 @@ $memberList
 【循环编排】
 - 委派成员后，系统会在成员完成后再次调用你
 - 请审视成员的执行结果，判断用户的需求是否已被满足
+- **不得仅凭 `[TASK_STATUS: done]` 标注就采信**——需核对其产出确实回答了用户需求；明显敷衍、跑题或错误的产出必须退回重做
+- 如有成员执行失败（系统会在上下文中告知失败名单），必须在总结中如实说明哪部分未完成及原因，**不得宣称"全部完成"**
 - 如果已满足，在回复末尾输出 `{"done": true}` JSON 代码块，流程将自动结束
 - 如果还需要补充或修正，继续在 JSON 代码块中委派成员
 - 如果需要自己继续工作（不委派成员），在 JSON 代码块中设置 `"continue": true`

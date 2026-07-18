@@ -20,34 +20,62 @@ import 'noise_identity.dart';
 import 'ui_component_registry.dart';
 
 /// Cancellation token for ACP protocol operations.
-/// Sends `agent.cancelTask` to the remote Agent when cancelled,
-/// and invokes a local [onCancelled] callback so the waiting
+/// Sends `agent.cancelTask` to every bound remote Agent task when cancelled,
+/// and invokes all registered cancel callbacks so every waiting
 /// `taskCompleter` can be resolved immediately without relying
 /// on the remote Agent to respond.
+///
+/// Multi-binding: group orchestration runs several agents concurrently under
+/// one token, so bindings/callbacks accumulate instead of overwriting each
+/// other. Callbacks/bindings registered after [cancel] fire immediately.
 class ACPCancellationToken {
   bool _isCancelled = false;
-  ACPAgentConnection? _connection;
-  String? _taskId;
-
-  /// Callback invoked synchronously when [cancel] is called.
-  /// Used by the chat service to complete the task completer locally.
-  void Function()? onCancelled;
+  final List<({ACPAgentConnection connection, String taskId})> _bindings = [];
+  final List<void Function()> _cancelCallbacks = [];
 
   bool get isCancelled => _isCancelled;
 
   void bind(ACPAgentConnection connection, String taskId) {
-    _connection = connection;
-    _taskId = taskId;
+    if (_isCancelled) {
+      // Already cancelled — propagate immediately so late-bound tasks stop.
+      connection.cancelTask(taskId).catchError((_) => ACPResponse(jsonrpc: '2.0', id: 0));
+      return;
+    }
+    _bindings.add((connection: connection, taskId: taskId));
+  }
+
+  /// Drop a binding once its task has finished so [cancel] does not send
+  /// cancelTask for tasks that already completed.
+  void unbind(ACPAgentConnection connection, String taskId) {
+    _bindings.removeWhere(
+      (b) => identical(b.connection, connection) && b.taskId == taskId,
+    );
+  }
+
+  /// Register a callback invoked synchronously when [cancel] is called.
+  /// Used by the chat service to complete task completers locally.
+  void addOnCancelled(void Function() callback) {
+    if (_isCancelled) {
+      callback();
+      return;
+    }
+    _cancelCallbacks.add(callback);
   }
 
   void cancel() {
     if (_isCancelled) return;
     _isCancelled = true;
     // Notify local listeners first so the UI unblocks immediately.
-    onCancelled?.call();
-    // Then best-effort tell the remote Agent to stop.
-    if (_connection != null && _taskId != null) {
-      _connection!.cancelTask(_taskId!).catchError((_) => ACPResponse(jsonrpc: '2.0', id: 0));
+    for (final cb in List.of(_cancelCallbacks)) {
+      try {
+        cb();
+      } catch (_) {}
+    }
+    // Then best-effort tell every bound remote Agent to stop.
+    for (final b in List.of(_bindings)) {
+      b.connection
+          .cancelTask(b.taskId)
+          .catchError((_) => ACPResponse(jsonrpc: '2.0', id: 0));
     }
   }
 }

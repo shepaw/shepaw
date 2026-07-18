@@ -94,47 +94,116 @@ class GroupDispatchParser {
   ///   "done": false
   /// }
   /// ```
-  ({List<DispatchStep> steps, bool wantsContinue, bool isDone})
+  ({List<DispatchStep> steps, bool wantsContinue, bool isDone, String? parseError, List<String> unresolvedNames})
       parseStructuredDispatch(String content, List<RemoteAgent> agents) {
-    final match = RegExp(r'```json\s*([\s\S]*?)\s*```').firstMatch(content);
+    const noError = null;
+    const noUnresolved = <String>[];
+    final match = RegExp(r'```json\s*([\s\S]*?)\s*```', caseSensitive: false).firstMatch(content);
     if (match == null) {
-      return (steps: [], wantsContinue: false, isDone: true);
+      return (steps: [], wantsContinue: false, isDone: true, parseError: noError, unresolvedNames: noUnresolved);
     }
 
     Map<String, dynamic> parsed;
     try {
-      parsed = jsonDecode(match.group(1)!) as Map<String, dynamic>;
-    } catch (_) {
-      return (steps: [], wantsContinue: false, isDone: true);
+      final decoded = jsonDecode(match.group(1)!);
+      if (decoded is! Map<String, dynamic>) {
+        return (
+          steps: [],
+          wantsContinue: false,
+          isDone: true,
+          parseError: 'dispatch JSON root is not an object',
+          unresolvedNames: noUnresolved,
+        );
+      }
+      parsed = decoded;
+    } catch (e) {
+      return (
+        steps: [],
+        wantsContinue: false,
+        isDone: true,
+        parseError: 'invalid dispatch JSON: $e',
+        unresolvedNames: noUnresolved,
+      );
     }
 
     final isDone = parsed['done'] == true;
     final wantsContinue = parsed['continue'] == true;
-    final dispatchData = parsed['dispatch'] as Map?;
+    final rawDispatch = parsed['dispatch'];
+    final dispatchData = rawDispatch is Map ? rawDispatch : null;
 
     if (dispatchData == null || isDone) {
-      return (steps: [], wantsContinue: wantsContinue, isDone: isDone);
+      return (steps: [], wantsContinue: wantsContinue, isDone: isDone, parseError: noError, unresolvedNames: noUnresolved);
     }
 
-    final mode = (dispatchData['mode'] as String? ?? 'concurrent');
-    final rawSteps = dispatchData['steps'] as List? ?? [];
+    final rawMode = dispatchData['mode'];
+    final mode = (rawMode is String && rawMode.isNotEmpty) ? rawMode : 'concurrent';
+    final rawStepsValue = dispatchData['steps'];
+    final rawSteps = rawStepsValue is List ? rawStepsValue : const [];
 
     final steps = <DispatchStep>[];
+    final unresolved = <String>[];
+    var malformedSteps = 0;
     for (final s in rawSteps) {
-      final agentNames = List<String>.from(s['agents'] as List? ?? []);
-      final agentIds = resolveAgentIdsForDispatchNames(agents, agentNames);
+      if (s is! Map) {
+        malformedSteps++;
+        continue;
+      }
+      // Tolerate "agents": "Name" (string instead of list).
+      final rawAgents = s['agents'];
+      final agentNames = rawAgents is List
+          ? rawAgents.map((e) => '$e').toList()
+          : rawAgents is String
+              ? [rawAgents]
+              : <String>[];
+      if (agentNames.isEmpty) {
+        malformedSteps++;
+        continue;
+      }
+      final agentIds = <String>[];
+      for (final requestedName in agentNames) {
+        final agent = findAgentByDispatchName(agents, requestedName);
+        if (agent == null) {
+          unresolved.add(requestedName);
+          LoggerService().warning(
+            'Dispatch agent name "$requestedName" did not match any group member '
+            '(known: ${agents.map((a) => a.name).join(', ')})',
+            tag: 'GroupDispatchParser',
+          );
+          continue;
+        }
+        if (!agentIds.contains(agent.id)) {
+          agentIds.add(agent.id);
+        }
+      }
       if (agentIds.isEmpty) continue;
+      // Tolerate "step": "1" (string) or a missing step number.
+      final rawStep = s['step'];
+      final stepNo = rawStep is num
+          ? rawStep.toInt()
+          : int.tryParse('$rawStep') ?? (steps.length + 1);
+      final rawTask = s['task'];
       steps.add(DispatchStep(
-        step: (s['step'] as num).toInt(),
+        step: stepNo,
         agentIds: agentIds,
-        task: s['task'] as String? ?? '',
+        task: rawTask?.toString() ?? '',
         mode: mode,
       ));
     }
 
     steps.sort((a, b) => a.step.compareTo(b.step));
 
-    return (steps: steps, wantsContinue: wantsContinue, isDone: false);
+    // A dispatch block that yielded no usable step at all is a parse failure
+    // the caller may want to nudge the admin about — not a silent "done".
+    String? parseError;
+    if (steps.isEmpty) {
+      if (malformedSteps > 0) {
+        parseError = 'dispatch steps are malformed (missing/invalid agents or step)';
+      } else if (unresolved.isNotEmpty) {
+        parseError = 'none of the dispatched agent names matched a group member: ${unresolved.join(', ')}';
+      }
+    }
+
+    return (steps: steps, wantsContinue: wantsContinue, isDone: false, parseError: parseError, unresolvedNames: unresolved);
   }
 
   /// Convert structured dispatch steps into a [FlowPlan] for workflow tracking.

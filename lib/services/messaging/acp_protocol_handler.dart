@@ -115,12 +115,12 @@ class ACPProtocolHandler {
       Map<String, dynamic>? formDataCapture;
       Map<String, dynamic>? messageMetadataExtra;
 
-      acpCancellationToken?.onCancelled = () {
+      acpCancellationToken?.addOnCancelled(() {
         activeTask.isComplete = true;
         if (!taskCompleter.isCompleted) {
           taskCompleter.complete();
         }
-      };
+      });
 
       final effectiveTaskId = taskId;
       connection.registerTaskCallbacks(effectiveTaskId, TaskCallbacks(

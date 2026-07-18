@@ -459,30 +459,38 @@ class GroupAgentExecutor {
                           return '[Error] Agent "$agentName" not found in group members.';
                         }
                         final stepBuffer = StringBuffer();
-                        await processGroupAgent(
-                          agent: targetAgent,
-                          channelId: chId,
-                          content: instruction,
-                          userId: userId,
-                          userName: userName,
-                          groupName: groupName,
-                          groupDescription: groupDescription,
-                          allAgents: allAgents,
-                          historyMessages: historyMessages,
-                          mentionedAgentIds: [targetAgent.id],
-                          isFirstMessage: false,
-                          messageVersion: messageVersion,
-                          channelMembers: channelMembers,
-                          customSystemPrompt: customSystemPrompt,
-                          mentionMode: mentionMode,
-                          acpCancellationToken: acpCancellationToken,
-                          onStreamChunk: (aid, anm, chunk) {
-                            stepBuffer.write(chunk);
-                            onStreamChunk?.call(aid, anm, chunk);
-                          },
-                          onAgentDone: onAgentDone,
-                          onInteractionRequest: onInteractionRequest,
-                        );
+                        try {
+                          await processGroupAgent(
+                            agent: targetAgent,
+                            channelId: chId,
+                            content: instruction,
+                            userId: userId,
+                            userName: userName,
+                            groupName: groupName,
+                            groupDescription: groupDescription,
+                            allAgents: allAgents,
+                            historyMessages: historyMessages,
+                            mentionedAgentIds: [targetAgent.id],
+                            isFirstMessage: false,
+                            messageVersion: messageVersion,
+                            channelMembers: channelMembers,
+                            customSystemPrompt: customSystemPrompt,
+                            mentionMode: mentionMode,
+                            acpCancellationToken: acpCancellationToken,
+                            onStreamChunk: (aid, anm, chunk) {
+                              stepBuffer.write(chunk);
+                              onStreamChunk?.call(aid, anm, chunk);
+                            },
+                            onAgentDone: onAgentDone,
+                            onInteractionRequest: onInteractionRequest,
+                          );
+                        } catch (e) {
+                          // processGroupAgent rethrows member failures so the
+                          // orchestration layer can track them; inside this
+                          // tool callback the failure must come back as a tool
+                          // result string instead of killing the tool loop.
+                          return '[Error] Agent "$agentName" execution failed: $e';
+                        }
                         return stepBuffer.toString();
                       });
 
@@ -584,7 +592,10 @@ class GroupAgentExecutor {
           updateTypingAgentIds();
           ForegroundTaskService().releaseTask(agent.name);
           onAgentDone?.call(agent.id, agent.name, true);
-          return;
+          // Propagate so the orchestration layer records this member in
+          // failedAgentNames (and workflow steps hit failStep) — the admin's
+          // review/summarize round must know the member failed.
+          rethrow;
         }
       }
     } else if (agent.isPeerAgent) {
@@ -772,7 +783,9 @@ class GroupAgentExecutor {
           updateTypingAgentIds();
           ForegroundTaskService().releaseTask(agent.name);
           onAgentDone?.call(agent.id, agent.name, true);
-          return;
+          // Propagate so orchestration records failedAgentNames / workflow
+          // steps hit failStep (same contract as the local path).
+          rethrow;
         }
       }
     } else {
@@ -812,14 +825,16 @@ class GroupAgentExecutor {
 
         infLogGroup.beginRound(groupTraceId, requestSummary: 'Group ACP request');
 
-        // Bind cancellation token so the UI can stop this agent
+        // Bind cancellation token so the UI can stop this agent. The token is
+        // multi-binding: concurrent group members each register their own
+        // binding/callback instead of overwriting each other.
         if (acpCancellationToken != null) {
           acpCancellationToken.bind(connection!, taskId!);
-          acpCancellationToken.onCancelled = () {
+          acpCancellationToken.addOnCancelled(() {
             if (!taskCompleter.isCompleted) {
               taskCompleter.complete();
             }
-          };
+          });
         }
 
         final effectiveTaskId = taskId!;
@@ -1127,12 +1142,22 @@ class GroupAgentExecutor {
         );
 
         effectiveConnection.unregisterTaskCallbacks(effectiveTaskId);
+        acpCancellationToken?.unbind(effectiveConnection, effectiveTaskId);
       } catch (e) {
         LoggerService().error('Group agent ${agent.name} ACP error', tag: 'GroupAgentExecutor', error: e);
         if (connection != null && taskId != null) {
           connection!.unregisterTaskCallbacks(taskId!);
+          acpCancellationToken?.unbind(connection!, taskId!);
         }
         if (!streamingStarted || responseBuffer.isEmpty) {
+          // Keep behavior consistent with the local/peer paths: surface a
+          // visible error message so the user knows which agent failed
+          // instead of the placeholder bubble silently disappearing.
+          await _saveGroupAgentErrorMessage(
+            channelId: channelId,
+            agentName: agent.name,
+            error: e,
+          );
           groupTask.isComplete = true;
           groupTask.onTaskFinished?.call();
           _activeGroupTasks[channelId]?.remove(agent.id);
@@ -1142,7 +1167,9 @@ class GroupAgentExecutor {
           updateTypingAgentIds();
           ForegroundTaskService().releaseTask(agent.name);
           onAgentDone?.call(agent.id, agent.name, true);
-          return;
+          // Propagate so orchestration records failedAgentNames / workflow
+          // steps hit failStep (same contract as the local/peer paths).
+          rethrow;
         }
       }
     }

@@ -313,6 +313,12 @@ class PeerAgentClientService {
   static final PeerAgentClientService instance = PeerAgentClientService._();
 
   static const _tag = 'PeerAgentClient';
+
+  /// Upper bound for a single peer agent chat request. Aligned with the ACP
+  /// group task timeout (300s) so a peer that stays connected but never
+  /// answers cannot hang a group orchestration forever.
+  static const Duration chatTimeout = Duration(seconds: 300);
+
   final _log = LoggerService();
   final _uuid = const Uuid();
 
@@ -552,7 +558,7 @@ class PeerAgentClientService {
     );
     _pending[requestId] = pending;
 
-    cancelToken?.onCancelled = () {
+    cancelToken?.addOnCancelled(() {
       unawaited(PeerConnectionManager.instance.sendControl(peerId, {
         'type': 'agent_cancel',
         'request_id': requestId,
@@ -561,7 +567,7 @@ class PeerAgentClientService {
       if (p != null && !p.completer.isCompleted) {
         p.completer.complete(PeerChatResult(content: '[Stopped]'));
       }
-    };
+    });
 
     final sent = await PeerConnectionManager.instance.sendControl(peerId, {
       'type': 'agent_chat',
@@ -579,7 +585,23 @@ class PeerAgentClientService {
       throw Exception('配对设备未连接，无法发送');
     }
 
-    return pending.completer.future;
+    return pending.completer.future.timeout(
+      chatTimeout,
+      onTimeout: () {
+        // Connection is alive but the remote agent never finished (hung
+        // agent, or an approval the user never answered). Drop the pending
+        // entry so late frames are ignored, and tell the remote to abort so
+        // its side does not keep running.
+        final p = _pending.remove(requestId);
+        if (p != null && !p.completer.isCompleted) {
+          unawaited(PeerConnectionManager.instance.sendControl(peerId, {
+            'type': 'agent_cancel',
+            'request_id': requestId,
+          }));
+        }
+        throw TimeoutException('对端 agent 响应超时（${chatTimeout.inSeconds}s）', chatTimeout);
+      },
+    );
   }
 
   // ── 控制消息处理 ───────────────────────────────────────────────────────
