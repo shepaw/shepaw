@@ -9,6 +9,7 @@ import '../peer/widgets/peer_source_badge.dart';
 import '../services/local_api_service.dart';
 import '../services/local_database_service.dart';
 import '../services/group/group_member_session_service.dart';
+import '../services/she_service.dart';
 import 'chat_screen.dart';
 
 class CreateGroupScreen extends StatefulWidget {
@@ -27,6 +28,7 @@ class _CreateGroupScreenState extends State<CreateGroupScreen> {
   final _purposeController = TextEditingController();
   final _systemPromptController = TextEditingController();
   final _maxRoundsController = TextEditingController(text: '50');
+  final _filterController = TextEditingController();
   final Set<String> _selectedAgentIds = {};
   final Map<String, TextEditingController> _groupBioControllers = {};
   String? _adminAgentId;
@@ -39,11 +41,14 @@ class _CreateGroupScreenState extends State<CreateGroupScreen> {
   @override
   void initState() {
     super.initState();
+    _filterController.addListener(_onFilterChanged);
     _loadAgents();
   }
 
   @override
   void dispose() {
+    _filterController.removeListener(_onFilterChanged);
+    _filterController.dispose();
     _nameController.dispose();
     _purposeController.dispose();
     _systemPromptController.dispose();
@@ -54,6 +59,25 @@ class _CreateGroupScreenState extends State<CreateGroupScreen> {
     super.dispose();
   }
 
+  void _onFilterChanged() {
+    if (mounted) setState(() {});
+  }
+
+  List<Agent> get _filteredAgents {
+    final query = _filterController.text.trim().toLowerCase();
+    if (query.isEmpty) return _agents;
+    return _agents.where((agent) {
+      if (agent.name.toLowerCase().contains(query)) return true;
+      final bio = agent.bio;
+      if (bio != null && bio.toLowerCase().contains(query)) return true;
+      final peerName = agent.sourcePeerName;
+      if (peerName != null && peerName.toLowerCase().contains(query)) {
+        return true;
+      }
+      return false;
+    }).toList();
+  }
+
   Future<void> _loadAgents() async {
     try {
       final agents = await _apiService.getAgents();
@@ -61,6 +85,7 @@ class _CreateGroupScreenState extends State<CreateGroupScreen> {
         setState(() {
           _agents = agents;
           _isLoading = false;
+          _preselectSheAsAdmin();
         });
       }
     } catch (e) {
@@ -70,6 +95,22 @@ class _CreateGroupScreenState extends State<CreateGroupScreen> {
         });
       }
     }
+  }
+
+  /// Default: select built-in She and make her the group admin.
+  void _preselectSheAsAdmin() {
+    Agent? she;
+    for (final agent in _agents) {
+      if (SheService.isSheIdentity(agent.id, agent.metadata)) {
+        she = agent;
+        break;
+      }
+    }
+    if (she == null) return;
+
+    _selectedAgentIds.add(she.id);
+    _groupBioControllers.putIfAbsent(she.id, TextEditingController.new);
+    _adminAgentId = she.id;
   }
 
   Future<void> _createGroup() async {
@@ -375,6 +416,7 @@ class _CreateGroupScreenState extends State<CreateGroupScreen> {
   }
 
   Widget _buildFormContent(AppLocalizations l10n) {
+    final filteredAgents = _filteredAgents;
     return CustomScrollView(
       keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
       slivers: [
@@ -484,7 +526,7 @@ class _CreateGroupScreenState extends State<CreateGroupScreen> {
         const SliverToBoxAdapter(child: Divider()),
         SliverToBoxAdapter(
           child: Padding(
-            padding: const EdgeInsets.all(16),
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
             child: Row(
               children: [
                 Text(
@@ -503,6 +545,8 @@ class _CreateGroupScreenState extends State<CreateGroupScreen> {
             ),
           ),
         ),
+        if (_agents.isNotEmpty)
+          SliverToBoxAdapter(child: _buildFilterField(l10n)),
         if (_agents.isEmpty)
           SliverToBoxAdapter(
             child: Center(
@@ -512,15 +556,79 @@ class _CreateGroupScreenState extends State<CreateGroupScreen> {
               ),
             ),
           )
+        else if (filteredAgents.isEmpty)
+          SliverToBoxAdapter(
+            child: Center(
+              child: Padding(
+                padding: const EdgeInsets.all(32),
+                child: Text(
+                  l10n.home_searchNoResults,
+                  style: TextStyle(color: Colors.grey[600]),
+                ),
+              ),
+            ),
+          )
         else
           SliverList(
             delegate: SliverChildBuilderDelegate(
-              (context, index) => _buildAgentTile(_agents[index], l10n),
-              childCount: _agents.length,
+              (context, index) => _buildAgentTile(filteredAgents[index], l10n),
+              childCount: filteredAgents.length,
             ),
           ),
         const SliverToBoxAdapter(child: SizedBox(height: 16)),
       ],
+    );
+  }
+
+  Widget _buildFilterField(AppLocalizations l10n) {
+    final colorScheme = Theme.of(context).colorScheme;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+      child: TextField(
+        controller: _filterController,
+        textInputAction: TextInputAction.search,
+        style: const TextStyle(fontSize: 14),
+        decoration: InputDecoration(
+          hintText: l10n.common_search,
+          hintStyle: TextStyle(
+            fontSize: 14,
+            color: colorScheme.onSurfaceVariant,
+          ),
+          isDense: true,
+          contentPadding: const EdgeInsets.symmetric(vertical: 10),
+          prefixIcon: Icon(
+            Icons.search,
+            size: 18,
+            color: colorScheme.onSurfaceVariant,
+          ),
+          prefixIconConstraints: const BoxConstraints(
+            minWidth: 36,
+            minHeight: 36,
+          ),
+          suffixIcon: _filterController.text.isNotEmpty
+              ? IconButton(
+                  icon: const Icon(Icons.clear, size: 18),
+                  onPressed: () => _filterController.clear(),
+                )
+              : null,
+          filled: true,
+          fillColor: colorScheme.surfaceContainerHighest,
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(6),
+            borderSide: BorderSide.none,
+          ),
+          enabledBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(6),
+            borderSide: BorderSide.none,
+          ),
+          focusedBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(6),
+            borderSide: BorderSide(
+              color: colorScheme.primary.withValues(alpha: 0.4),
+            ),
+          ),
+        ),
+      ),
     );
   }
 

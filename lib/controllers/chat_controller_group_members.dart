@@ -12,7 +12,35 @@ mixin _GroupMemberOps on _ChatControllerBase {
   Future<void> addGroupMember(RemoteAgent agent) async {
     if (currentChannelId == null) return;
 
-    await localDatabaseService.addChannelMember(currentChannelId!, agent.id);
+    // She joins as admin by default when added to a group.
+    final role = agent.isShe ? 'admin' : 'member';
+    await localDatabaseService.addChannelMember(
+      currentChannelId!,
+      agent.id,
+      role: role,
+    );
+
+    if (role == 'admin') {
+      final parentGroupId =
+          groupChannel?.groupFamilyId ?? currentChannelId!;
+      final sessions =
+          await localDatabaseService.getGroupSessions(parentGroupId);
+      final previousAdminId = groupAdminAgentId;
+      for (final session in sessions) {
+        if (previousAdminId != null && previousAdminId != agent.id) {
+          await localDatabaseService.updateChannelMemberRole(
+            session.id,
+            previousAdminId,
+            'member',
+          );
+        }
+        await localDatabaseService.updateChannelMemberRole(
+          session.id,
+          agent.id,
+          'admin',
+        );
+      }
+    }
 
     final channel = await localDatabaseService.getChannelById(currentChannelId!);
     if (channel != null) {
