@@ -1,6 +1,9 @@
-import 'dart:io';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
+
+import 'avatar_local_file.dart'
+    if (dart.library.html) 'avatar_local_file_web.dart' as local_file;
 
 /// 通用头像图片组件，支持 SVG、光栅图（PNG/JPG/GIF/WEBP）、本地文件和网络 URL。
 ///
@@ -93,20 +96,24 @@ class AvatarImage extends StatelessWidget {
       return fallback;
     }
 
+    // Web has no dart:io filesystem for local avatar paths.
+    if (isLocal && kIsWeb) {
+      return fallback;
+    }
+
     final Widget imageWidget;
 
     if (isSvg(avatar)) {
-      // SVG 格式 → flutter_svg
       imageWidget = SizedBox(
         width: size,
         height: size,
         child: isLocal
-            ? SvgPicture.file(
-                File(avatar),
+            ? local_file.svgFile(
+                avatar,
                 width: size,
                 height: size,
                 fit: fit,
-                placeholderBuilder: (_) => fallback,
+                placeholder: fallback,
               )
             : SvgPicture.network(
                 avatar,
@@ -117,14 +124,13 @@ class AvatarImage extends StatelessWidget {
               ),
       );
     } else {
-      // 光栅图（PNG/JPG/GIF/WEBP）→ Image widget
       imageWidget = isLocal
-          ? Image.file(
-              File(avatar),
+          ? local_file.rasterFile(
+              avatar,
               width: size,
               height: size,
               fit: fit,
-              errorBuilder: (_, __, ___) => fallback,
+              fallback: fallback,
             )
           : Image.network(
               avatar,

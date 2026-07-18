@@ -190,6 +190,7 @@ copy_artifact() {
 
 archive_dir() {
   local src_dir="$1" archive_name="$2" inner_name="${3:-}"
+  [[ -e "$src_dir" ]] || die "Cannot archive missing path: $src_dir"
   mkdir -p "$OUTPUT_DIR"
   local parent base
   parent="$(dirname "$src_dir")"
@@ -198,10 +199,12 @@ archive_dir() {
     local tmp
     tmp="$(mktemp -d "${TMPDIR:-/tmp}/shepaw-build.XXXXXX")"
     cp -R "$src_dir" "$tmp/$inner_name"
-    tar -czf "$OUTPUT_DIR/$archive_name" -C "$tmp" "$inner_name"
+    tar -czf "$OUTPUT_DIR/$archive_name" -C "$tmp" "$inner_name" \
+      || die "tar failed for $archive_name"
     rm -rf "$tmp"
   else
-    tar -czf "$OUTPUT_DIR/$archive_name" -C "$parent" "$base"
+    tar -czf "$OUTPUT_DIR/$archive_name" -C "$parent" "$base" \
+      || die "tar failed for $archive_name"
   fi
   success "→ $OUTPUT_DIR/$archive_name"
 }
@@ -391,7 +394,20 @@ build_macos() {
 
 build_web() {
   info "Building Web ($BUILD_MODE)..."
-  flutter build web "--${BUILD_MODE}"
+  # Domestic Flutter mirrors (e.g. Tsinghua) often 404 on flutter-web-sdk.zip
+  # for newer engine hashes. Fall back to Google CDN for this target only.
+  # --no-wasm-dry-run: app targets dart2js, not Wasm.
+  # --no-tree-shake-icons: CLI UI builds IconData from runtime codepoints.
+  if [[ -n "${FLUTTER_STORAGE_BASE_URL:-}" ]]; then
+    warn "Mirror FLUTTER_STORAGE_BASE_URL may lack flutter-web-sdk; using storage.googleapis.com for web"
+    (
+      export FLUTTER_STORAGE_BASE_URL="https://storage.googleapis.com"
+      flutter build web "--${BUILD_MODE}" --no-wasm-dry-run --no-tree-shake-icons
+    ) || return $?
+  else
+    flutter build web "--${BUILD_MODE}" --no-wasm-dry-run --no-tree-shake-icons || return $?
+  fi
+  [[ -d build/web ]] || die "Web build produced no build/web"
   archive_dir "build/web" "${ARTIFACT_PREFIX}-web-${BUILD_MODE}.tar.gz" "web"
   copy_artifact "build/web" "web"
 }
