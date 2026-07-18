@@ -241,16 +241,16 @@ class RenderStickyInViewHeader extends RenderBox
 
     final reservedHeaderH = _showHeaderInFlow ? header.size.height : 0.0;
 
+    // Loose width so the bubble can shrink-wrap content; author chrome may
+    // still span the full row via Expanded in the header.
     body.layout(
-      BoxConstraints(
-        minWidth: maxWidth,
-        maxWidth: maxWidth,
-      ),
+      BoxConstraints(maxWidth: maxWidth),
       parentUsesSize: true,
     );
 
+    final contentWidth = math.max(header.size.width, body.size.width);
     size = constraints.constrain(
-      Size(maxWidth, reservedHeaderH + body.size.height),
+      Size(contentWidth, reservedHeaderH + body.size.height),
     );
 
     final bodyParentData = body.parentData! as _StickyParentData;

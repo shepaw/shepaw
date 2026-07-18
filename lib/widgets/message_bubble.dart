@@ -252,8 +252,8 @@ class MessageBubble extends StatelessWidget {
   }
 
   Widget _buildNormalMessage(BuildContext context) {
-    // Group non-my: sticky header carries avatar + name above a full-width
-    // bubble (same usable width as DM — no left indent under the chrome).
+    // Group non-my: sticky header carries avatar + name above the bubble
+    // (no left indent under the chrome; bubble width follows content).
     if (stickySenderName) {
       // Collapsed: conversation-list style row; tap anywhere to expand.
       if (bodyCollapsed) {
@@ -548,7 +548,8 @@ class MessageBubble extends StatelessWidget {
             clipBehavior: Clip.none,
             children: [
               Container(
-                width: isMyMessage ? null : double.infinity,
+                // Width follows content (capped by parent Align/Flexible).
+                // Do not force full row width — short messages stay compact.
                 padding: message.type == MessageType.image
                     ? const EdgeInsets.all(4)
                     : const EdgeInsets.symmetric(
