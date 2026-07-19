@@ -3,19 +3,8 @@ import 'dart:io' show Platform;
 
 import '../models/cli_config_field.dart';
 import '../models/command_config_schema.dart';
-import '../models/remote_agent.dart';
 import '../services/tool_config_service.dart';
 import '../services/cli_command_config_service.dart';
-
-/// Minimal interface for sending messages as She.
-/// Implemented by ChatService to avoid circular imports.
-abstract class IPawChatSender {
-  Future<void> sendAsSheTo({
-    required RemoteAgent targetAgent,
-    required String channelId,
-    required String message,
-  });
-}
 
 /// 单个叶子命令的抽象基类
 abstract class CliCommand {

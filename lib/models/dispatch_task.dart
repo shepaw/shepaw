@@ -10,6 +10,13 @@ class DispatchTask {
   static const String statusError = 'error';
   static const String statusTimeout = 'timeout';
 
+  /// 任务型派发：写状态卡片、以 [Dispatch Result] 汇报结果。
+  static const String kindTask = 'task';
+
+  /// 对话型转发（agents.chat）：不写状态卡片，agent 回复以
+  /// [Agent Reply] 形式注入 She↔用户 频道并唤起 She 继续对话。
+  static const String kindChat = 'chat';
+
   /// 派发记录 id（uuid）
   final String id;
 
@@ -41,6 +48,9 @@ class DispatchTask {
   final int createdAtMs;
   final int? completedAtMs;
 
+  /// 派发类型：[kindTask]（默认）或 [kindChat]。旧记录无此列时按 task 处理。
+  final String kind;
+
   const DispatchTask({
     required this.id,
     required this.sourceChannelId,
@@ -55,12 +65,15 @@ class DispatchTask {
     this.errorMessage,
     required this.createdAtMs,
     this.completedAtMs,
+    this.kind = kindTask,
   });
 
   bool get isTerminal =>
       status == statusDone ||
       status == statusError ||
       status == statusTimeout;
+
+  bool get isChat => kind == kindChat;
 
   DispatchTask copyWith({
     String? userMessageId,
@@ -84,6 +97,7 @@ class DispatchTask {
         errorMessage: errorMessage ?? this.errorMessage,
         createdAtMs: createdAtMs,
         completedAtMs: completedAtMs ?? this.completedAtMs,
+        kind: kind,
       );
 
   factory DispatchTask.fromJson(Map<String, dynamic> json) => DispatchTask(
@@ -100,6 +114,7 @@ class DispatchTask {
         errorMessage: json['error_message'] as String?,
         createdAtMs: (json['created_at'] as num?)?.toInt() ?? 0,
         completedAtMs: (json['completed_at'] as num?)?.toInt(),
+        kind: json['kind'] as String? ?? kindTask,
       );
 
   Map<String, dynamic> toJson() => {
@@ -116,5 +131,6 @@ class DispatchTask {
         'error_message': errorMessage,
         'created_at': createdAtMs,
         'completed_at': completedAtMs,
+        'kind': kind,
       };
 }

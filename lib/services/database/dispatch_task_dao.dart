@@ -88,12 +88,14 @@ extension DispatchTaskDao on LocalDatabaseService {
     );
   }
 
-  /// 单个 agent 的派发战绩（{status: count}，仅终态记录）。
+  /// 单个 agent 的派发战绩（{status: count}，仅终态的任务型派发记录；
+  /// chat 型对话转发不计入战绩）。
   Future<Map<String, int>> getDispatchStatsForAgent(String agentId) async {
     final db = await database;
     final rows = await db.rawQuery(
-      'SELECT status, COUNT(*) AS cnt FROM dispatch_tasks '
-      'WHERE target_agent_id = ? AND status IN (?, ?, ?) GROUP BY status',
+      "SELECT status, COUNT(*) AS cnt FROM dispatch_tasks "
+      "WHERE target_agent_id = ? AND kind = 'task' "
+      "AND status IN (?, ?, ?) GROUP BY status",
       [
         agentId,
         DispatchTask.statusDone,

@@ -15,11 +15,6 @@ class AgentsNamespace extends CliNamespace {
   static final instance = AgentsNamespace._();
   AgentsNamespace._();
 
-  final _chatCommand = ChatCommand();
-
-  /// Injected via ShepawCLI — forwarded to ChatCommand
-  set chatSender(IPawChatSender? sender) => _chatCommand.chatSender = sender;
-
   @override
   String get namespace => 'agents';
 
@@ -32,7 +27,7 @@ class AgentsNamespace extends CliNamespace {
         'get': GetCommand(),
         'channels': ChannelsCommand(),
         'messages': MessagesCommand(),
-        'chat': _chatCommand,
+        'chat': ChatCommand(),
         'dispatch': DispatchCommand(),
         'memory-query': MemoryQueryCommand(),
         'memory-write': MemoryWriteCommand(),

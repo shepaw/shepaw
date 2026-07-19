@@ -780,14 +780,14 @@ Soul is global across all conversations — only update it with identity/self-aw
     if (hasMemory) groups.add('`context memory.*` (your memory & soul)');
     if (hasMessages) groups.add('`context agents.*` (agents), `chat *` (messages), `skills list`');
     if (hasChat) {
-      groups.add('`context agents.chat` (send message to agent)');
+      groups.add('`context agents.chat` (message an agent — their reply auto-returns here as [Agent Reply])');
       groups.add('`context agents.dispatch` (delegate task to agent, result auto-reported)');
     }
 
     // Action warnings
     final actionWarnings = <String>[];
     if (hasChat) {
-      actionWarnings.add('- Master asks you to "send a message to an agent" → call `shepaw context agents.chat --id <id> --message "..."` — text alone does nothing');
+      actionWarnings.add('- Master asks you to "send a message to an agent" → call `shepaw context agents.chat --id <id> --message "..."` — text alone does nothing. The agent\'s reply returns automatically as an `[Agent Reply]` message that re-invokes you: decide then whether to relay your next message or report to your master. Consecutive relays without new input from your master are capped (5 turns) — when the budget runs out, summarize for your master instead of relaying again');
       actionWarnings.add('- Master\'s request clearly fits a connected agent → call `shepaw context agents.dispatch --id <id> --task "..."`, then tell master you\'ll report back when it finishes');
     }
     if (hasMemory || hasProfile) {

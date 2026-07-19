@@ -15,18 +15,21 @@ import '../trace_service.dart';
 /// She 单聊任务派发服务：登记 → 跟踪 → 回传闭环。
 ///
 /// 流程：
-/// 1. [dispatch] 落库派发记录，在 She↔用户 频道写状态消息，
+/// 1. [dispatch] 落库派发记录，在 She↔用户 频道写状态消息（仅 task 型），
 ///    以 She 身份把任务消息存进目标 agent 的 DM 频道并 fire-and-forget 发送
 ///    （严禁同步等待对方完成——会死锁 She 自己的工具循环）。
 /// 2. 订阅 [ChatService.agentTaskCompletionStream]，按 `replyTo == 任务消息id`
 ///    精确匹配（失败路径无 replyTo 时退化为"该频道唯一在途派发"）。
-/// 3. 终态后更新状态消息，并把结果以合成消息注入 She↔用户 频道、重新唤起
-///    She，由她用自己的口吻向用户汇报。
+/// 3. 终态后更新状态消息（仅 task 型），并把结果以合成消息注入 She↔用户 频道、
+///    重新唤起 She，由她用自己的口吻向用户汇报（task 型）或继续对话（chat 型）。
 /// 4. 超时只终态化派发记录、不取消底层 turn；归因挪入迟到观察表，迟到的
 ///    完成事件仍会把结果回报给 She（迟到成功则任务升级为 done）。
 ///
-/// 防回环：注入消息的 metadata 带 `dispatch_result: true`；完成事件只按在途
-/// 派发匹配，She 汇报自身产生的完成事件不会被认领。
+/// 防回环：注入消息的 metadata 带 `dispatch_result: true`（task）或
+/// `she_chat_relay: true`（chat）；完成事件只按在途派发匹配，She 汇报自身
+/// 产生的完成事件不会被认领。chat 型另有连续对聊轮次预算
+/// （[maxChatRelayTurns]），耗尽后 agents.chat 直接拒绝，防止 She 与
+/// agent 在无用户输入时无限接力。
 class DispatchService {
   static final DispatchService instance = DispatchService._();
   DispatchService._();
@@ -37,6 +40,9 @@ class DispatchService {
 
   /// 同一 agent 的在途派发上限
   static const int maxInFlightPerAgent = 3;
+
+  /// chat 型转发：无用户新输入时允许的连续自动接力轮次上限
+  static const int maxChatRelayTurns = 5;
 
   /// 回传给 She 的结果正文最大字符数（防超长上下文）
   static const int maxResultChars = 6000;
@@ -87,14 +93,38 @@ class DispatchService {
 
   /// 把任务 [prompt] 派发给 [targetAgent]（在其 [targetChannelId] DM 频道执行），
   /// 结果回传到 [sourceChannelId]（She↔用户 频道）。
+  ///
+  /// [kind] 为 [DispatchTask.kindChat] 时走对话转发语义：不写状态卡片、
+  /// 回复以 `[Agent Reply]` 注入并唤起 She 继续对话，且受连续对聊轮次
+  /// 预算（[maxChatRelayTurns]）约束。
   Future<Map<String, dynamic>> dispatch({
     required String sourceChannelId,
     required RemoteAgent targetAgent,
     required String targetChannelId,
     required String prompt,
     Duration timeout = const Duration(minutes: 30),
+    String kind = DispatchTask.kindTask,
   }) async {
     ensureStarted();
+
+    final isChat = kind == DispatchTask.kindChat;
+
+    // chat 型：连续自动接力轮次预算，防 She↔agent 无用户输入时无限对聊
+    if (isChat) {
+      final recent = await ChatService()
+          .loadChannelMessages(sourceChannelId, limit: 60);
+      final used = countConsecutiveChatRelays(recent);
+      if (used >= maxChatRelayTurns) {
+        return {
+          'error': 'Relay turn budget exhausted: this conversation has already '
+              'relayed $used consecutive agent replies without new input from '
+              'your master (limit $maxChatRelayTurns).',
+          'note': 'Do NOT call agents.chat again for this thread. Summarize '
+              'the conversation so far for your master and let them decide '
+              'how to proceed.',
+        };
+      }
+    }
 
     // 同一 agent 在途上限
     final running = await _db.listDispatchTasks(
@@ -122,6 +152,7 @@ class DispatchService {
       prompt: prompt,
       status: DispatchTask.statusPending,
       createdAtMs: now,
+      kind: kind,
     );
     await _db.createDispatchTask(task);
 
@@ -132,9 +163,9 @@ class DispatchService {
       agentId: targetAgent.id,
       agentName: targetAgent.name,
       channelId: sourceChannelId,
-      executionMode: 'she_dispatch',
+      executionMode: isChat ? 'she_chat' : 'she_dispatch',
       userMessage: prompt,
-      traceRole: 'she_dispatch',
+      traceRole: isChat ? 'she_chat' : 'she_dispatch',
     );
     TraceService.instance.addSpan(
       traceId: traceId,
@@ -144,12 +175,18 @@ class DispatchService {
         'dispatch_task_id': taskId,
         'target_channel_id': targetChannelId,
         'timeout_min': timeout.inMinutes,
+        'kind': kind,
       },
     );
 
-    // 2. She↔用户 频道的状态消息（用户可见；完成后原地更新）
-    final statusMsgId = _uuid.v4();
-    await _writeStatusMessage(task, DispatchTask.statusRunning, statusMsgId);
+    // 2. She↔用户 频道的状态消息（用户可见；完成后原地更新）。
+    //    chat 型不写状态卡片——对话转发由 [Agent Reply] 注入与 She 的转述
+    //    覆盖，状态卡会在多轮对聊时刷屏。
+    String? statusMsgId;
+    if (!isChat) {
+      statusMsgId = _uuid.v4();
+      await _writeStatusMessage(task, DispatchTask.statusRunning, statusMsgId);
+    }
 
     // 3. 以 She 身份构造任务消息并存入目标频道。
     //    必须自己保存：sendMessageToAgent 见到 existingUserMessage 会跳过保存。
@@ -162,7 +199,11 @@ class DispatchService {
       to: MessageFrom(
           id: targetAgent.id, type: 'agent', name: targetAgent.name),
       type: MessageType.text,
-      metadata: {'dispatch_task_id': taskId, 'is_dispatch_task': true},
+      metadata: {
+        'dispatch_task_id': taskId,
+        'is_dispatch_task': true,
+        if (isChat) 'she_chat': true,
+      },
     );
     await ChatService()
         .saveLocalMessage(userMsg, targetAgent.id, channelId: targetChannelId);
@@ -207,7 +248,7 @@ class DispatchService {
     });
 
     LoggerService().info(
-      'dispatched task $taskId → ${targetAgent.name} [channel: $targetChannelId]',
+      'dispatched ${isChat ? 'chat' : 'task'} $taskId → ${targetAgent.name} [channel: $targetChannelId]',
       tag: 'Dispatch',
     );
 
@@ -217,10 +258,34 @@ class DispatchService {
       'target': targetAgent.name,
       'target_channel_id': targetChannelId,
       'status': DispatchTask.statusRunning,
-      'note': 'The agent is now working. Its result will be reported back into '
-          'THIS conversation automatically when finished — do NOT poll '
-          'agents.messages and do NOT dispatch the same task twice.',
+      'note': isChat
+          ? 'The agent is now replying. Its reply will arrive back into THIS '
+              'conversation automatically as an [Agent Reply] message — do NOT '
+              'poll agents.messages and do NOT send the same message twice. '
+              'You will be re-invoked when it arrives.'
+          : 'The agent is now working. Its result will be reported back into '
+              'THIS conversation automatically when finished — do NOT poll '
+              'agents.messages and do NOT dispatch the same task twice.',
     };
+  }
+
+  /// 统计源频道里"自最后一条真实用户消息以来"连续注入的 [Agent Reply]
+  /// 转发消息数（chat 型接力已用轮次）。
+  ///
+  /// [messages] 为频道消息（时间升序）。从最新往前数：
+  /// - `she_chat_relay` 注入消息 → 计 1 轮；
+  /// - 真实用户消息（非本服务虚拟身份）→ 链中断，停止计数；
+  /// - 其余（She 自己的回复、系统消息、task 型注入）→ 跳过不计。
+  static int countConsecutiveChatRelays(List<Message> messages) {
+    var count = 0;
+    for (final m in messages.reversed) {
+      if (m.metadata?['she_chat_relay'] == true) {
+        count++;
+        continue;
+      }
+      if (m.from.type == 'user' && m.from.id != senderId) break;
+    }
+    return count;
   }
 
   // ---------------------------------------------------------------------------
@@ -321,8 +386,10 @@ class DispatchService {
         completedAtMs: DateTime.now().millisecondsSinceEpoch,
       );
       await _db.updateDispatchTask(updated);
-      await _writeStatusMessage(
-          updated, DispatchTask.statusDone, task.statusMessageId);
+      if (!updated.isChat) {
+        await _writeStatusMessage(
+            updated, DispatchTask.statusDone, task.statusMessageId);
+      }
       await _reportToShe(updated, DispatchTask.statusDone,
           result: content, late: true);
     } else {
@@ -403,8 +470,10 @@ class DispatchService {
       totalTextChars: result?.length ?? 0,
     ));
 
-    // 更新源频道里的状态消息
-    await _writeStatusMessage(updated, status, task.statusMessageId);
+    // 更新源频道里的状态消息（chat 型无状态卡片，跳过）
+    if (!updated.isChat) {
+      await _writeStatusMessage(updated, status, task.statusMessageId);
+    }
 
     // 唤起 She 向用户汇报
     await _reportToShe(updated, status,
@@ -590,8 +659,19 @@ class DispatchService {
       return;
     }
 
+    // chat 型：告知 She 接力预算消耗（注入本条后 used+1）
+    int? relayTurnsUsed;
+    if (task.isChat) {
+      final recent = await ChatService()
+          .loadChannelMessages(task.sourceChannelId, limit: 60);
+      relayTurnsUsed = countConsecutiveChatRelays(recent) + 1;
+    }
+
     final content = _buildReportContent(task, status,
-        result: result, errorMessage: errorMessage, late: late);
+        result: result,
+        errorMessage: errorMessage,
+        late: late,
+        relayTurnsUsed: relayTurnsUsed);
     final resultMsg = Message(
       id: _uuid.v4(),
       content: content,
@@ -599,11 +679,17 @@ class DispatchService {
       from: MessageFrom(id: senderId, type: 'user', name: senderName),
       to: MessageFrom(id: she.id, type: 'agent', name: she.name),
       type: MessageType.text,
-      metadata: {
-        'dispatch_result': true,
-        'dispatch_task_id': task.id,
-        'status': status,
-      },
+      metadata: task.isChat
+          ? {
+              'she_chat_relay': true,
+              'dispatch_task_id': task.id,
+              'status': status,
+            }
+          : {
+              'dispatch_result': true,
+              'dispatch_task_id': task.id,
+              'status': status,
+            },
     );
 
     // 等待 She 频道空闲（最长 120s）
@@ -652,7 +738,16 @@ class DispatchService {
     String? result,
     String? errorMessage,
     bool late = false,
+    int? relayTurnsUsed,
   }) {
+    if (task.isChat) {
+      return _buildChatReportContent(task, status,
+          result: result,
+          errorMessage: errorMessage,
+          late: late,
+          relayTurnsUsed: relayTurnsUsed ?? 1);
+    }
+
     final buf = StringBuffer()
       ..writeln('[Dispatch Result — ${task.id}]')
       ..writeln('Agent: ${task.targetAgentName} (${task.targetAgentId})')
@@ -707,6 +802,63 @@ class DispatchService {
             'Tell your master the dispatch failed, explain why in one sentence, '
             'and suggest a next step (retry / assign another agent / handle it '
             'yourself). Do NOT call agents.dispatch again unless your master asks.');
+    }
+    return buf.toString();
+  }
+
+  /// chat 型转发的注入模板：以 [Agent Reply] 呈现对方回复，引导 She 决定
+  /// 继续对聊还是向用户汇报，并显式告知接力预算消耗。
+  String _buildChatReportContent(
+    DispatchTask task,
+    String status, {
+    String? result,
+    String? errorMessage,
+    bool late = false,
+    required int relayTurnsUsed,
+  }) {
+    final buf = StringBuffer()
+      ..writeln('[Agent Reply — ${task.targetAgentName} (${task.targetAgentId})]')
+      ..writeln('Your message: ${_truncate(task.prompt, 300)}');
+
+    switch (status) {
+      case DispatchTask.statusDone:
+        if (late) {
+          buf.writeln('Note: this reply arrived AFTER the relay had already '
+              'been reported as timed out — it is the agent\'s real final reply.');
+        }
+        buf
+          ..writeln('--- ${task.targetAgentName}\'s reply ---')
+          ..writeln(_truncate(result ?? '(empty reply)', maxResultChars))
+          ..writeln('--- End of reply ---');
+      case DispatchTask.statusTimeout:
+        buf.writeln(late
+            ? 'Status: failed after timeout — ${_truncate(errorMessage ?? 'unknown', 300)}'
+            : 'Status: timeout — the agent did not reply within the limit. '
+                'It may still be working in its own channel; suggest your '
+                'master check that channel directly.');
+      default:
+        buf.writeln('Status: failed');
+        if (errorMessage != null) {
+          buf.writeln('Error: ${_truncate(errorMessage, 500)}');
+        }
+        if (result != null && result.isNotEmpty) {
+          buf
+            ..writeln('--- Partial reply ---')
+            ..writeln(_truncate(result, maxResultChars))
+            ..writeln('--- End of partial reply ---');
+        }
+    }
+
+    buf.writeln('Relay turns used: $relayTurnsUsed/$maxChatRelayTurns '
+        '(consecutive agent relays without new input from your master).');
+    if (relayTurnsUsed >= maxChatRelayTurns) {
+      buf.writeln('The budget is now exhausted — further agents.chat calls '
+          'will be rejected. Summarize the conversation for your master and '
+          'let them decide how to proceed.');
+    } else {
+      buf.writeln('Decide: relay your next message via agents.chat to '
+          'continue the conversation, or report back to your master in your '
+          'own voice. Do NOT relay the reply verbatim back and forth.');
     }
     return buf.toString();
   }

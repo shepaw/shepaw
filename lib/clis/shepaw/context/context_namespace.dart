@@ -39,10 +39,6 @@ class ContextNamespace extends CliNamespace {
     MemoryNamespace.instance.agentId = id;
   }
 
-  /// chatSender 透传给 AgentsNamespace
-  set chatSender(IPawChatSender? sender) =>
-      AgentsNamespace.instance.chatSender = sender;
-
   @override
   String get namespace => 'context';
 

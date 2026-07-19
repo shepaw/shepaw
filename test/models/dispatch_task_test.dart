@@ -75,5 +75,35 @@ void main() {
       expect(task.resultSummary, isNull);
       expect(task.completedAtMs, isNull);
     });
+
+    test('kind defaults to task and survives roundtrip', () {
+      // 旧记录无 kind 列 → 按 task 处理
+      expect(base.kind, DispatchTask.kindTask);
+      expect(base.isChat, isFalse);
+      expect(
+        DispatchTask.fromJson(base.toJson()).kind,
+        DispatchTask.kindTask,
+      );
+
+      final chat = DispatchTask(
+        id: 'dt-3',
+        sourceChannelId: 'dm_she_user',
+        targetAgentId: 'agent-1',
+        targetAgentName: 'codebuddy',
+        targetChannelId: 'dm_user_agent1',
+        prompt: 'hello',
+        status: DispatchTask.statusRunning,
+        createdAtMs: 1700000000000,
+        kind: DispatchTask.kindChat,
+      );
+      expect(chat.isChat, isTrue);
+      final restored = DispatchTask.fromJson(chat.toJson());
+      expect(restored.kind, DispatchTask.kindChat);
+      expect(restored.isChat, isTrue);
+
+      // copyWith 保留 kind
+      expect(chat.copyWith(status: DispatchTask.statusDone).kind,
+          DispatchTask.kindChat);
+    });
   });
 }

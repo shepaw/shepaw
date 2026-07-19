@@ -46,7 +46,7 @@ class LocalDatabaseService {
       // Web平台使用sqflite_common_ffi
       return await openDatabase(
         'shepaw',
-        version: 25,
+        version: 26,
         onCreate: _onCreate,
         onUpgrade: _onUpgrade,
       );
@@ -56,7 +56,7 @@ class LocalDatabaseService {
       path = join(directory.path, 'shepaw.db');
       return await openDatabase(
         path,
-        version: 25,
+        version: 26,
         onCreate: _onCreate,
         onUpgrade: _onUpgrade,
       );
@@ -67,7 +67,7 @@ class LocalDatabaseService {
 
       return await openDatabase(
         path,
-        version: 25,
+        version: 26,
         onCreate: _onCreate,
         onUpgrade: _onUpgrade,
       );
@@ -387,7 +387,7 @@ class LocalDatabaseService {
     await db.execute('CREATE INDEX IF NOT EXISTS idx_wf_pending_channel ON workflow_pending_approvals(channel_id, status, created_at DESC)');
     await db.execute('CREATE INDEX IF NOT EXISTS idx_wf_pending_workflow ON workflow_pending_approvals(workflow_id, status)');
 
-    // She 单聊任务派发记录表 (v25)
+    // She 单聊任务派发记录表 (v25)；kind 列区分任务派发与对话转发 (v26)
     await db.execute('''
       CREATE TABLE IF NOT EXISTS dispatch_tasks (
         id TEXT PRIMARY KEY,
@@ -402,7 +402,8 @@ class LocalDatabaseService {
         result_summary TEXT,
         error_message TEXT,
         created_at INTEGER NOT NULL,
-        completed_at INTEGER
+        completed_at INTEGER,
+        kind TEXT NOT NULL DEFAULT 'task'
       )
     ''');
     await db.execute('CREATE INDEX IF NOT EXISTS idx_dispatch_tasks_status ON dispatch_tasks(status)');
@@ -704,6 +705,15 @@ class LocalDatabaseService {
       } catch (e) {
         LoggerService().error('Failed to create dispatch_tasks (v25)', tag: 'Migration', error: e);
       }
+    }
+
+    if (oldVersion < 26) {
+      // 版本 25 -> 26: dispatch_tasks 加 kind 列（task | chat），区分任务派发
+      // 与 agents.chat 的对话转发（后者不写状态卡片、回复注入 She 频道）
+      try {
+        await db.execute(
+            "ALTER TABLE dispatch_tasks ADD COLUMN kind TEXT NOT NULL DEFAULT 'task'");
+      } catch (_) {}
     }
 
   }

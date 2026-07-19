@@ -1815,8 +1815,18 @@ class AgentMessagingService {
               );
               if (osConfirmDenied) continue;
 
-              // 命令被允许 → 继续执行
-              final result = await ShepawCLI.instance.execute(tc.arguments, agentId: agent.id);
+              // 命令被允许 → 继续执行。
+              // 注入当前频道 id（与群聊执行器一致），agents.dispatch /
+              // agents.chat 依赖它定位结果回传的目标频道。
+              final cliArgs = Map<String, dynamic>.from(tc.arguments);
+              if (effectiveChannelId.isNotEmpty) {
+                final flags = cliArgs['flags'] is Map
+                    ? Map<String, dynamic>.from(cliArgs['flags'] as Map)
+                    : <String, dynamic>{};
+                flags['channel_id'] = effectiveChannelId;
+                cliArgs['flags'] = flags;
+              }
+              final result = await ShepawCLI.instance.execute(cliArgs, agentId: agent.id);
               toolResults.add({
                 'tool_call_id': tc.id,
                 'name': tc.name,

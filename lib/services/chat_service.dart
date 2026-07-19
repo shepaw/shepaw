@@ -31,9 +31,6 @@ import '../providers/notification_provider.dart';
 import 'foreground_task_service.dart';
 import 'logger_service.dart';
 import '../clis/shepaw/os/os_executor.dart' as os_exec;
-import 'she_service.dart';
-import '../clis/shepaw/shepaw_cli.dart';
-import '../clis/cli_base.dart';
 
 /// Result of a history supplement request, carrying both the agent's
 /// re-answer message and how many history entries were actually sent.
@@ -54,7 +51,7 @@ class HistorySupplementResult {
 
 /// Chat Service
 /// Handles message sending and receiving with agents
-class ChatService implements IPawChatSender {
+class ChatService {
   static final ChatService _instance = ChatService._internal(LocalDatabaseService(), ToolResultDatabaseService());
   factory ChatService([LocalDatabaseService? db]) => _instance;
 
@@ -186,9 +183,6 @@ class ChatService implements IPawChatSender {
   final ValueNotifier<Set<String>> typingChannelIds = ValueNotifier<Set<String>>({});
 
   ChatService._internal(this._databaseService, this._toolResultService) {
-    // Register this instance as the IPawChatSender so She can dispatch
-    // `shepaw agents chat` commands.
-    ShepawCLI.instance.chatSender = this;
     // Wire every ACPAgentConnection's slash-command updates back into our
     // process-wide snapshot map. This lets the "/" palette populate from
     // commands seen during short-lived health-check connections, even
@@ -201,43 +195,6 @@ class ChatService implements IPawChatSender {
 
   void setNotificationProvider(NotificationProvider provider) {
     _notificationProvider = provider;
-  }
-
-  // ── IPawChatSender implementation ──────────────────────────────────────────
-
-  /// Send a message to [targetAgent] in [channelId] appearing as if She sent it.
-  /// Used by `shepaw agents chat`.
-  ///
-  /// Fire-and-forget: we do NOT await ret1's LLM response here.
-  /// Awaiting would deadlock She's own tool-calling loop, because She is
-  /// suspended inside ShepawCLI.execute() waiting for this method to
-  /// return, while ret1's LLM is waiting for resources on the same thread.
-  @override
-  Future<void> sendAsSheTo({
-    required RemoteAgent targetAgent,
-    required String channelId,
-    required String message,
-  }) async {
-    LoggerService().info(
-      'She → ${targetAgent.name} [channel: $channelId]: ${message.length > 60 ? '${message.substring(0, 60)}…' : message}',
-      tag: 'PawChat',
-    );
-    // Launch ret1's message handling concurrently so She's tool loop is not
-    // blocked waiting for ret1's LLM to finish.
-    unawaited(_agentMessagingService.sendMessageToAgent(
-      content: message,
-      agent: targetAgent,
-      userId: SheService.sheId,
-      userName: SheService.sheName,
-      channelId: channelId,
-    ).catchError((Object e, StackTrace st) {
-      LoggerService().error(
-        'sendAsSheTo: failed to deliver message to ${targetAgent.name}',
-        tag: 'PawChat',
-        error: e,
-        stackTrace: st,
-      );
-    }));
   }
 
   /// Recompute and notify [typingAgentIds] and [typingChannelIds] based on current active tasks.

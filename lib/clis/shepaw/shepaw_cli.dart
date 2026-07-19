@@ -50,11 +50,6 @@ class ShepawCLI {
 
   static const String toolName = 'shepaw';
 
-  /// chatSender 注入点，由 ChatService 在启动时设置
-  set chatSender(IPawChatSender? sender) {
-    ContextNamespace.instance.chatSender = sender;
-  }
-
   // ── 命名空间注册表 ───────────────────────────────────────────────────────────
 
   final Map<String, CliNamespace> _namespaces = {
