@@ -400,6 +400,10 @@ class PeerAgentClientService {
     _peerListSub =
         PeerConnectionManager.instance.peerListChanged.listen((_) => _reconcileDeletions());
 
+    // resumeAll 刷新连接前会征询此钩子：有在途 turn / 待决审批的连接必须保留，
+    // 否则恢复前台（尤其桌面端，连接其实仍存活）会杀死整轮交互。
+    PeerConnectionManager.instance.hasInFlightTurnForPeer = _hasInFlightTurnForPeer;
+
     // 对已连接的 peer 立即拉取一次列表，并清理已删除配对的残留 agent。
     await _reconcileDeletions();
     for (final peerId in PeerConnectionManager.instance.connectedPeerIds) {
@@ -410,6 +414,7 @@ class PeerAgentClientService {
 
   void stop() {
     _running = false;
+    PeerConnectionManager.instance.hasInFlightTurnForPeer = null;
     _controlSub?.cancel();
     _controlSub = null;
     _eventSub?.cancel();
@@ -1454,6 +1459,20 @@ class PeerAgentClientService {
       'label=${selectedActionLabel ?? ""} peerId=$peerId',
       tag: 'PeerApproval',
     );
+    // 过期卡片守卫：approvalId 既不属于活动 turn（_approvalToRequest），也不是
+    // hub 重放的孤儿审批（_orphanedApprovals），说明结果已提交或 turn 已失败
+    // 且 hub 尚未重发 —— 此时发出去的裁决只会被对端丢弃（NO MATCH），用户却
+    // 看到「点击成功」的假象。直接报错让 UI 提示。
+    final tracked = _approvalToRequest.containsKey(approvalId) ||
+        _orphanedApprovals.containsKey(approvalId);
+    if (!tracked) {
+      _log.warning(
+        'submitApproval: unknown/expired approvalId=$approvalId — refusing to '
+        'send a verdict that would be dropped remotely',
+        tag: 'PeerApproval',
+      );
+      throw Exception('审批已失效（对话已结束或结果已提交），无需重复操作');
+    }
     final payload = <String, dynamic>{
       'type': 'agent_approval_resp',
       'approval_id': approvalId,
@@ -1488,6 +1507,8 @@ class PeerAgentClientService {
     }
 
     final requestId = _approvalToRequest.remove(approvalId);
+    // 孤儿审批提交成功后清掉占位，避免重复点击落到 NO MATCH。
+    _orphanedApprovals.remove(approvalId);
     if (requestId != null) {
       final pending = _pending[requestId];
       if (pending != null && pending.openApprovals > 0) {
@@ -1582,6 +1603,16 @@ class PeerAgentClientService {
       _failPendingForPeer(event.peerId);
       unawaited(_markPeerAgentsOffline(event.peerId));
     }
+  }
+
+  /// PeerConnectionManager.resumeAll 的征询钩子：该 peer 是否存在尚未完成的
+  /// sendChat turn（含审批待决）。有则恢复前台时连接必须保留 —— 掐断会让
+  /// hub 把在途审批按放弃处理，整个 turn 随之死亡。
+  bool _hasInFlightTurnForPeer(String peerId) {
+    for (final p in _pending.values) {
+      if (p.peerId == peerId && !p.completer.isCompleted) return true;
+    }
+    return false;
   }
 
   /// Abort in-flight sendChat turns when the peer drops mid-approval / mid-

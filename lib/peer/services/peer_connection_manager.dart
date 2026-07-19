@@ -79,6 +79,11 @@ class PeerConnectionManager {
   /// 是否已启动
   bool _running = false;
 
+  /// 恢复前台刷新连接前的征询钩子：返回 true 表示该 peer 有在途的 agent
+  /// 交互（审批待决 / 流式输出中），连接绝不能被掐断重建。
+  /// 由 PeerAgentClientService 启动时注册，避免 manager 反向依赖上层服务。
+  bool Function(String peerId)? hasInFlightTurnForPeer;
+
   // ── 事件流 ──────────────────────────────────────────────────────────
 
   /// 所有 peer 的消息流
@@ -184,7 +189,15 @@ class PeerConnectionManager {
   ///
   /// [backgroundedFor] 为本次后台停留时长。移动系统在较长时间后台会挂起 / 关闭
   /// 套接字，使现有连接变成「半开」陈旧连接（状态仍是 connected 但实际已失效）。
-  /// 因此后台较久时强制刷新连接。
+  /// 因此后台较久时刷新连接。
+  ///
+  /// 但桌面端（macOS/Windows）切后台 / 锁屏**不会**挂起 socket——连接上的流式
+  /// 数据往往仍在正常流动。此时无脑掐断重建会杀死在途的 agent turn 与待决审批
+  /// （对端 hub 会把断连当作放弃处理）。所以 forceRefresh 不再直接关闭连接，
+  /// 而是逐层确认：
+  /// 1. 有在途 agent 交互（审批中 / 流式输出中）→ 原样保留；
+  /// 2. 探活（ping→pong）成功 → 连接确实还活着，保留；
+  /// 3. 探活失败 → 真正的半开连接，关闭并重建。
   ///
   /// 刚恢复的一方此前很可能不可达（息屏 / 后台），对端无法连入，所以这里一律由
   /// 本机「主动发起」连接（ignoreTieBreak），重复连接交给 glare 收敛器处理。
@@ -209,6 +222,30 @@ class PeerConnectionManager {
       // 短暂后台且仍连接 → 大概率有效，保留，不打断
       if (isConnected && !forceRefresh) continue;
 
+      if (isConnected) {
+        // 在途 agent turn / 待决审批挂在连接上 — 掐断即杀死整轮交互。
+        if (hasInFlightTurnForPeer?.call(peer.id) == true) {
+          _log.info(
+            'Resume: keep ${peer.deviceName} connection (in-flight turn/approval)',
+            tag: _tag,
+          );
+          continue;
+        }
+        // 桌面端后台后连接多半仍存活，探活确认，避免无谓的掐断重建。
+        final alive = await conn.probeLiveness();
+        if (alive) {
+          _log.debug(
+            'Resume: ${peer.deviceName} connection alive after probe, keep',
+            tag: _tag,
+          );
+          continue;
+        }
+        _log.info(
+          'Resume: ${peer.deviceName} connection failed liveness probe, rebuilding',
+          tag: _tag,
+        );
+      }
+
       // 取消遗留定时器、重置退避，准备立即主动发起
       _reconnectTimers[peer.id]?.cancel();
       _reconnectTimers.remove(peer.id);
@@ -216,11 +253,14 @@ class PeerConnectionManager {
       _fallbackTimers.remove(peer.id);
       _reconnectAttempts.remove(peer.id);
 
-      // 关闭可能已半开失效的旧连接，强制重建（否则 _doConnect 会因「已连接」跳过）
+      // 关闭可能已半开失效的旧连接，强制重建（否则 _doConnect 会因「已连接」跳过）。
+      // 探活期间连接可能已被入站替换 —— 只关闭仍是自己持有的那一条。
       if (isConnected) {
-        _connections.remove(peer.id);
-        _cancelConnectionSubs(peer.id);
-        await conn.close();
+        if (identical(_connections[peer.id], conn)) {
+          _connections.remove(peer.id);
+          _cancelConnectionSubs(peer.id);
+          await conn.close();
+        }
       }
 
       // 主动发起（忽略 tie-break）。不 await，让各 peer 并发连接。

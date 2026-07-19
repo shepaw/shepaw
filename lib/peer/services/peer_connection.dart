@@ -53,6 +53,7 @@ class PeerConnection {
   StreamSubscription? _incomingSub;
   Timer? _heartbeatTimer;
   DateTime? _lastActivity;
+  DateTime? _lastReceivedAt;
   bool _closed = false;
 
   /// 连接是否已被关闭（被新的入站连接替换或主动断开）
@@ -384,6 +385,7 @@ class PeerConnection {
       final json = jsonDecode(utf8.decode(plaintext)) as Map<String, dynamic>;
 
       _lastActivity = DateTime.now();
+      _lastReceivedAt = _lastActivity;
 
       final type = json['type'];
       if (type is String && _controlTypes.contains(type)) {
@@ -468,6 +470,31 @@ class PeerConnection {
 
   /// 心跳发送间隔。
   static const _heartbeatInterval = Duration(seconds: 30);
+
+  /// 主动探活：发送 ping，等待对端任意入站帧（pong / 业务帧）刷新接收时间。
+  ///
+  /// resumeAll 用它区分「桌面端后台后仍存活的连接」与「移动端被系统冻结的
+  /// 半开连接」：探活成功 → 保留连接；失败 → 重建。只看入站帧 —— 本端自己的
+  /// 发送不能证明对端可达。
+  Future<bool> probeLiveness({
+    Duration timeout = const Duration(seconds: 3),
+  }) async {
+    if (_closed || _state != PeerConnectionState.connected) return false;
+    final startedAt = DateTime.now();
+    try {
+      await _sendHeartbeat();
+    } catch (_) {
+      // 发送失败即传输层已断
+      return false;
+    }
+    while (DateTime.now().difference(startedAt) < timeout) {
+      final received = _lastReceivedAt;
+      if (received != null && received.isAfter(startedAt)) return true;
+      await Future<void>.delayed(const Duration(milliseconds: 100));
+      if (_closed || _state != PeerConnectionState.connected) return false;
+    }
+    return false;
+  }
 
   /// 活性超时阈值：超过该时长未收到任何帧（含对端 pong）即判定连接已死。
   /// 取 4 个心跳周期，容忍手机短暂切后台/网络抖动，又能较快发现半开连接。
