@@ -24,6 +24,22 @@ import 'peer_local_server.dart';
 import 'peer_pairing_service.dart';
 import 'peer_storage_service.dart';
 
+/// 钳制入站 peer 消息的时间戳，保证持久化顺序 == 到达（因果）顺序。
+///
+/// 线路消息携带的是**发送方设备时钟**（见 PeerMessage.fromWireJson），
+/// 两台设备时钟哪怕只差几秒，快速来回对话时 timestamp 排序就会与到达
+/// 顺序不一致：会话中消息按到达顺序追加（正常），但存储按 timestamp
+/// 排序，重新打开/搜索跳转重载后自己发出的消息会跳到对方回复的另一侧
+/// ——表现为消息"上下浮动"。
+///
+/// 钳制规则：远端时间戳若不晚于本地最新消息，则压到 最新+1ms；
+/// 否则保留远端时间戳（时钟向前漂移不影响因果顺序）。
+int clampPeerMessageTimestamp(int remoteTimestamp, int? latestLocalTimestamp) {
+  if (latestLocalTimestamp == null) return remoteTimestamp;
+  if (remoteTimestamp > latestLocalTimestamp) return remoteTimestamp;
+  return latestLocalTimestamp + 1;
+}
+
 /// P2P 连接管理器（单例）
 class PeerConnectionManager {
   PeerConnectionManager._();
@@ -575,6 +591,23 @@ class PeerConnectionManager {
     _log.info('Accepted reconnection from ${matchedPeer.deviceName}', tag: _tag);
   }
 
+  /// 钳制入站消息的时间戳（见 [clampPeerMessageTimestamp] 的规则说明）。
+  /// 本地尚无消息时直接保留远端时间戳。
+  Future<PeerMessage> _clampIncomingTimestamp(PeerMessage msg) async {
+    try {
+      final latest = await _storage.getMessages(msg.peerId, limit: 1);
+      if (latest.isEmpty) return msg;
+      final clamped =
+          clampPeerMessageTimestamp(msg.timestamp, latest.first.timestamp);
+      if (clamped == msg.timestamp) return msg;
+      return msg.copyWith(timestamp: clamped);
+    } catch (e) {
+      // 读取失败时保持原时间戳（退化到旧行为），不阻断消息收发
+      _log.debug('clamp incoming timestamp skipped: $e', tag: _tag);
+      return msg;
+    }
+  }
+
   /// 统一连线：订阅连接的消息 / 回执 / 状态流，并跟踪 subscription 以便取消。
   /// 入站接受与主动连接两条路径共用，避免重复代码。
   void _wireConnection(PeerConnection conn, PairedPeer peer) {
@@ -582,13 +615,17 @@ class PeerConnectionManager {
     _cancelConnectionSubs(peer.id);
 
     final subs = <StreamSubscription>[
-      conn.messages.listen((msg) {
-        _messageController.add(msg);
-        _storage.saveMessage(msg);
+      conn.messages.listen((msg) async {
+        // 入站消息时间戳来自对端设备时钟，直接入库会让存储排序（timestamp）
+        // 与到达顺序脱节（时钟偏差 → 重载后消息跳动）。先钳制到本地最新
+        // 之后，UI 与存储拿到的都是因果顺序。
+        final clamped = await _clampIncomingTimestamp(msg);
+        _messageController.add(clamped);
+        _storage.saveMessage(clamped);
         _eventController.add(PeerConnectionEvent(
           peerId: peer.id,
           type: PeerConnectionEventType.messageReceived,
-          data: msg,
+          data: clamped,
         ));
       }),
       conn.acks.listen((ack) {
