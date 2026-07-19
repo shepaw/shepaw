@@ -46,7 +46,7 @@ class LocalDatabaseService {
       // Web平台使用sqflite_common_ffi
       return await openDatabase(
         'shepaw',
-        version: 26,
+        version: 27,
         onCreate: _onCreate,
         onUpgrade: _onUpgrade,
       );
@@ -56,7 +56,7 @@ class LocalDatabaseService {
       path = join(directory.path, 'shepaw.db');
       return await openDatabase(
         path,
-        version: 26,
+        version: 27,
         onCreate: _onCreate,
         onUpgrade: _onUpgrade,
       );
@@ -67,7 +67,7 @@ class LocalDatabaseService {
 
       return await openDatabase(
         path,
-        version: 26,
+        version: 27,
         onCreate: _onCreate,
         onUpgrade: _onUpgrade,
       );
@@ -153,6 +153,7 @@ class LocalDatabaseService {
         is_private INTEGER DEFAULT 0,
         parent_group_id TEXT,
         source_group_channel_id TEXT,
+        source_she_channel_id TEXT,
         system_prompt TEXT,
         max_loop_rounds INTEGER,
         mention_mode TEXT,
@@ -245,6 +246,7 @@ class LocalDatabaseService {
     await db.execute('CREATE INDEX idx_channels_created_by ON channels(created_by)');
     await db.execute('CREATE INDEX idx_channels_type ON channels(type)');
     await db.execute('CREATE INDEX idx_channels_source_group ON channels(source_group_channel_id)');
+    await db.execute('CREATE INDEX idx_channels_source_she ON channels(source_she_channel_id)');
     await db.execute('CREATE INDEX idx_channel_members_agent ON channel_members(agent_id)');
     await db.execute('CREATE INDEX idx_conversation_requests_status ON conversation_requests(status)');
     await db.execute('CREATE INDEX idx_conversation_requests_target ON conversation_requests(target_id)');
@@ -714,6 +716,25 @@ class LocalDatabaseService {
         await db.execute(
             "ALTER TABLE dispatch_tasks ADD COLUMN kind TEXT NOT NULL DEFAULT 'task'");
       } catch (_) {}
+    }
+
+    if (oldVersion < 27) {
+      // 版本 26 -> 27: She 绑定会话（DM.source_she_channel_id ↔ She↔用户 会话 1:1），
+      // She 与 agent 的往来（agents.chat / dispatch）在独立 DM 中执行，不污染
+      // 用户与该 agent 的普通单聊上下文。
+      try {
+        await db.execute(
+            'ALTER TABLE channels ADD COLUMN source_she_channel_id TEXT');
+        await db.execute(
+            'CREATE INDEX IF NOT EXISTS idx_channels_source_she '
+            'ON channels(source_she_channel_id)');
+      } catch (e) {
+        LoggerService().error(
+          'Failed to add source_she_channel_id (v27)',
+          tag: 'Migration',
+          error: e,
+        );
+      }
     }
 
   }

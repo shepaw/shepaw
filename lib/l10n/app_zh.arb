@@ -1039,6 +1039,8 @@
       }
     }
   },
+  "chat_sheBoundInputDisabled": "此会话来自 She 与助手的对话，不能在此直接发消息",
+  "chat_openLinkedShe": "打开 She 会话",
   "chat_sessions": "会话",
   "chat_sessionsCount": "{count} 个会话",
   "@chat_sessionsCount": {

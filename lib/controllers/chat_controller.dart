@@ -33,6 +33,7 @@ import '../services/workflow/workflow_restore_planner.dart';
 import '../services/workflow/workflow_pending_approval_picker.dart';
 import '../services/workflow/workflow_plan_approval_sync.dart';
 import '../services/group/group_member_session_service.dart';
+import '../services/dispatch/she_relay_session_service.dart';
 import 'chat_workflow_coordinator.dart';
 import 'chat_attachment_coordinator.dart';
 import 'chat_attachment_validator.dart';
@@ -106,6 +107,11 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
   // ---- Streaming state ----
   final ChatStreamingSession streaming = ChatStreamingSession();
 
+  /// DM 流式回合期间收到 DB 写入通知时置位：全量 reload 会顶掉流式占位
+  /// 气泡（applyContentTo 找不到目标后流式静默中断），推迟到回合结束
+  /// （streaming.clear 触发 onClear）后补一次 reconcile。
+  bool _dmReconcileAfterStreaming = false;
+
   @override
   String? get streamingMessageId => streaming.messageId;
   @override
@@ -155,6 +161,7 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
   /// messages, member failure notices) so they surface in the chat
   /// immediately instead of waiting for the next full reconcile.
   StreamSubscription<List<Message>>? _channelUpdateSub;
+  VoidCallback? _typingListener;
 
   bool get isAppActive => lifecycle.isAppActive;
 
@@ -189,6 +196,14 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
 
   bool get isViewingGroupBoundMemberSession =>
       sourceGroupChannelId != null && sourceGroupChannelId!.isNotEmpty;
+
+  /// When viewing a DM that was auto-created for She's chat/dispatch relay,
+  /// this points at the linked She↔user session. Input is disabled; UI offers
+  /// a jump to the She conversation.
+  String? sourceSheChannelId;
+
+  bool get isViewingSheBoundSession =>
+      sourceSheChannelId != null && sourceSheChannelId!.isNotEmpty;
 
   /// Workflow step streaming placeholders keyed by agent id.
   Map<String, String> get _workflowStreamingIds => workflow.streamingIds;
@@ -254,6 +269,15 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
     attachmentCoordinator = ChatAttachmentCoordinator(attachmentService);
     searchService = MessageSearchService(databaseService);
     interactiveResponseHandler = InteractiveResponseHandler(this);
+    streaming.onClear = _onStreamingSessionCleared;
+  }
+
+  /// 流式回合结束：若期间有 DB 写入通知被推迟，补一次 reconcile（把
+  /// dispatch 状态卡、服务侧注入的消息等同步进 UI）。
+  void _onStreamingSessionCleared() {
+    if (!_dmReconcileAfterStreaming) return;
+    _dmReconcileAfterStreaming = false;
+    unawaited(reloadMessagesFromDB());
   }
 
   /// Initialize the controller. Call this after constructing.
@@ -301,6 +325,10 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
     _peerConnSub?.cancel();
     _orphanApprovalSub?.cancel();
     _channelUpdateSub?.cancel();
+    if (_typingListener != null) {
+      chatService.typingChannelIds.removeListener(_typingListener!);
+      _typingListener = null;
+    }
     if (currentChannelId != null) {
       chatService.closeChannelStream(currentChannelId!);
     }
@@ -462,6 +490,12 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
         messageIdMap[m.id] = m;
       }
     } else {
+      // 流式回合进行中：onStreamChunk 正直接驱动 UI，全量替换会顶掉
+      // streaming 占位气泡导致流式中断。标记待办，回合结束时补 reconcile。
+      if (streaming.isActive) {
+        _dmReconcileAfterStreaming = true;
+        return;
+      }
       _mergeDmStreamingPlaceholders(dbMessages);
       rebuildMessageIdMap();
     }
@@ -705,19 +739,47 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
   }
 
   /// Subscribe to service-side DB writes for the current channel. Services
-  /// (group executor, orchestration, workflow) write user-visible system
-  /// messages directly to the DB and then call notifyChannelUpdate; without
-  /// this listener those messages only appear after the next full reconcile
-  /// (i.e. when the whole round finishes). Reconcile is idempotent and
-  /// preserves streaming placeholders, so it is safe to run mid-turn.
+  /// (group executor, orchestration, workflow, dispatch/She relay) write
+  /// user-visible messages directly to the DB and then call
+  /// notifyChannelUpdate; without this listener those messages only appear
+  /// after the next full reload (i.e. re-entering the chat). Reconcile is
+  /// idempotent and preserves streaming placeholders, so it is safe to run
+  /// mid-turn — for DM, [reloadMessagesFromDB] defers while a streaming
+  /// session is active and re-runs when it ends.
   void _subscribeChannelUpdates() {
     final cid = currentChannelId;
     if (cid == null) return;
     _channelUpdateSub?.cancel();
     _channelUpdateSub = chatService.getMessageStream(cid).listen((_) {
-      if (!isGroupMode) return;
-      unawaited(reconcileGroupMessages());
+      if (isGroupMode) {
+        unawaited(reconcileGroupMessages());
+      } else {
+        unawaited(reloadMessagesFromDB());
+      }
     });
+    _subscribeTypingForReattach();
+  }
+
+  /// 服务侧发起的回合（DispatchService 唤起 She、peer 入站等）开始时，
+  /// 打开的聊天页借此挂接流式输出；否则只能在回合结束后一次性看到
+  /// 整段回复。用户自己发起的回合不经过这里（isProcessing / streaming
+  /// 已占位，守卫会跳过）。
+  void _subscribeTypingForReattach() {
+    if (_typingListener != null) {
+      chatService.typingChannelIds.removeListener(_typingListener!);
+      _typingListener = null;
+    }
+    _typingListener = () {
+      if (isGroupMode) return;
+      final cid = currentChannelId;
+      if (cid == null) return;
+      if (!chatService.typingChannelIds.value.contains(cid)) return;
+      // 已有 UI 回合在进行（自己发送或已挂接）→ 不重复挂接
+      if (streaming.isActive || isProcessing) return;
+      if (chatService.getActiveTask(cid) == null) return;
+      reattachToActiveTask();
+    };
+    chatService.typingChannelIds.addListener(_typingListener!);
   }
 
   // ---------------------------------------------------------------------------

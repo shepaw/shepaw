@@ -290,6 +290,10 @@ mixin _SessionOps on _ChatControllerBase {
         if (isGroup) {
           await GroupMemberSessionService(localDatabaseService)
               .deleteMemberSessionsForGroupChannel(id);
+        } else {
+          // She↔用户 会话被删除时，级联删除其绑定的 She 中转会话
+          await SheRelaySessionService(localDatabaseService)
+              .deleteRelaySessionsForSheChannel(id);
         }
         await localDatabaseService.deleteChannelMessages(id);
         await localDatabaseService.deleteChannel(id);

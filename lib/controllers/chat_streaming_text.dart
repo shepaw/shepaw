@@ -80,6 +80,10 @@ class ChatStreamingSession {
   String? messageId;
   String content = '';
 
+  /// 回合（或占位会话）结束时触发一次。控制器用它补做流式期间被推迟的
+  /// DB reconcile（见 ChatController._dmReconcileAfterStreaming）。
+  void Function()? onClear;
+
   bool get isActive => messageId != null;
 
   void begin(String id) {
@@ -92,8 +96,10 @@ class ChatStreamingSession {
   }
 
   void clear() {
+    final wasActive = messageId != null;
     messageId = null;
     content = '';
+    if (wasActive) onClear?.call();
   }
 
   /// Apply accumulated [content] onto the matching message in [messages].

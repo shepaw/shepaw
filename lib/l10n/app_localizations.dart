@@ -3380,6 +3380,18 @@ abstract class AppLocalizations {
   /// **'打开群聊「{name}」'**
   String chat_openLinkedGroupNamed(String name);
 
+  /// No description provided for @chat_sheBoundInputDisabled.
+  ///
+  /// In zh, this message translates to:
+  /// **'此会话来自 She 与助手的对话，不能在此直接发消息'**
+  String get chat_sheBoundInputDisabled;
+
+  /// No description provided for @chat_openLinkedShe.
+  ///
+  /// In zh, this message translates to:
+  /// **'打开 She 会话'**
+  String get chat_openLinkedShe;
+
   /// No description provided for @chat_sessions.
   ///
   /// In zh, this message translates to:

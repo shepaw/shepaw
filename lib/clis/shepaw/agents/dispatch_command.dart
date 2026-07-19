@@ -6,8 +6,10 @@ import '../../../services/she_service.dart';
 
 /// 以 She 身份把任务派发给 Agent，并在执行完毕后自动把结果回传到当前会话。
 ///
-/// 与 `agents.chat`（纯发消息、无回传）不同：dispatch 会登记任务、跟踪
-/// 执行、超时看门，完成后由 DispatchService 唤起 She 向用户汇报。
+/// 任务在 She 与该 agent 的绑定 DM（[SheRelaySessionService]）中执行，不污染
+/// 用户与该 agent 的普通单聊。dispatch 会登记任务、跟踪执行、超时看门，完成后
+/// 由 DispatchService 唤起 She 向用户汇报。与 `agents.chat`（对话转发，以
+/// [Agent Reply] 唤起 She 继续对话）共享同一套闭环机制。
 class DispatchCommand extends CliCommand {
   final _db = LocalDatabaseService();
 
@@ -17,13 +19,13 @@ class DispatchCommand extends CliCommand {
   @override
   String get description =>
       'Dispatch a task to an agent and auto-report the result back here, '
-      '--id <agent_id_or_name> --task "<brief>" [--channel <channel_id>] '
+      '--id <agent_id_or_name> --task "<brief>" '
       '[--timeout-min N] [--confirm]';
 
   @override
   String get usage =>
       'shepaw context agents.dispatch --id <agent_id> --task "..." '
-      '[--channel <channel_id>] [--timeout-min 30] [--confirm]';
+      '[--timeout-min 30] [--confirm]';
 
   @override
   Map<String, dynamic> getHelp() {
@@ -39,12 +41,6 @@ class DispatchCommand extends CliCommand {
             'Self-contained task brief. The agent cannot see this conversation, '
                 'so include all needed context.',
         'required': true,
-        'type': 'string',
-      },
-      'channel': {
-        'description':
-            'Target channel ID (auto-detected from most recent DM if not provided)',
-        'required': false,
         'type': 'string',
       },
       'timeout-min': {
@@ -113,21 +109,6 @@ class DispatchCommand extends CliCommand {
       return {'error': 'Cannot dispatch to She yourself.'};
     }
 
-    // 目标频道：显式指定，或该 agent 最近活跃的个人 DM（排除群绑定成员会话）
-    String? channelId =
-        flags['channel']?.isNotEmpty == true ? flags['channel'] : null;
-    if (channelId == null) {
-      final agentChans = (await _db.getChannelsForAgent(targetAgent.id))
-          .where((c) => !c.isGroupBoundMemberSession);
-      if (agentChans.isNotEmpty) channelId = agentChans.first.id;
-    }
-    if (channelId == null || channelId.isEmpty) {
-      return {
-        'error':
-            'No channel found for ${targetAgent.name}. Start a conversation in ShePaw first or specify --channel.'
-      };
-    }
-
     // 超时（分钟），默认 30，上限 180
     var timeoutMin = int.tryParse(flags['timeout-min'] ?? '') ?? 30;
     if (timeoutMin < 1) timeoutMin = 1;
@@ -139,7 +120,6 @@ class DispatchCommand extends CliCommand {
       await DispatchService.instance.requestConfirmation(
         sourceChannelId: sourceChannelId,
         targetAgent: targetAgent,
-        targetChannelId: channelId,
         task: task,
         timeoutMin: timeoutMin,
       );
@@ -154,10 +134,10 @@ class DispatchCommand extends CliCommand {
       };
     }
 
+    // 执行频道由 DispatchService 内部确保（She 与该 agent 的绑定 DM）
     return DispatchService.instance.dispatch(
       sourceChannelId: sourceChannelId,
       targetAgent: targetAgent,
-      targetChannelId: channelId,
       prompt: task,
       timeout: Duration(minutes: timeoutMin),
     );

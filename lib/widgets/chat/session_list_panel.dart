@@ -258,8 +258,10 @@ class _SessionListContentState extends State<_SessionListContent> {
 
   Widget _buildSessionTile(BuildContext context, Channel session, bool isCurrentSession, Map<String, dynamic>? latestMessage) {
     final isGroupBound = session.isGroupBoundMemberSession;
+    final isSheBound = session.isSheBoundSession;
+    final isBound = isGroupBound || isSheBound;
     final preview = latestMessage?['content'] as String? ??
-        (isGroupBound ? (session.description ?? '') : 'No messages');
+        (isBound ? (session.description ?? '') : 'No messages');
     final createdAtStr = latestMessage?['created_at'] as String?;
     String timeText = '';
     if (createdAtStr != null) {
@@ -281,19 +283,27 @@ class _SessionListContentState extends State<_SessionListContent> {
         decoration: BoxDecoration(
           color: isCurrentSession
               ? Theme.of(context).primaryColor
-              : isGroupBound
-                  ? Colors.teal.withOpacity(0.15)
-                  : Colors.grey[300],
+              : isSheBound
+                  ? Colors.orange.withOpacity(0.15)
+                  : isGroupBound
+                      ? Colors.teal.withOpacity(0.15)
+                      : Colors.grey[300],
           borderRadius: BorderRadius.circular(10),
         ),
         alignment: Alignment.center,
         child: Icon(
-          isGroupBound ? Icons.groups_outlined : Icons.chat_bubble_outline,
+          isSheBound
+              ? Icons.pets_outlined
+              : isGroupBound
+                  ? Icons.groups_outlined
+                  : Icons.chat_bubble_outline,
           color: isCurrentSession
               ? Colors.white
-              : isGroupBound
-                  ? Colors.teal[700]
-                  : Colors.grey[600],
+              : isSheBound
+                  ? Colors.orange[700]
+                  : isGroupBound
+                      ? Colors.teal[700]
+                      : Colors.grey[600],
           size: 20,
         ),
       ),
@@ -319,6 +329,23 @@ class _SessionListContentState extends State<_SessionListContent> {
                 style: TextStyle(
                   fontSize: 10,
                   color: Colors.teal[700],
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+          if (isSheBound)
+            Container(
+              margin: const EdgeInsets.only(left: 8),
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+              decoration: BoxDecoration(
+                color: Colors.orange.withOpacity(0.12),
+                borderRadius: BorderRadius.circular(4),
+              ),
+              child: Text(
+                'She',
+                style: TextStyle(
+                  fontSize: 10,
+                  color: Colors.orange[700],
                   fontWeight: FontWeight.w600,
                 ),
               ),

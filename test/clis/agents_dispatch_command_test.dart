@@ -20,7 +20,7 @@ void main() {
       expect(help['command'], 'dispatch');
       expect(help['description'], isNotEmpty);
       final flags = help['flags'] as Map<String, dynamic>;
-      for (final key in ['id', 'task', 'channel', 'timeout-min', 'confirm']) {
+      for (final key in ['id', 'task', 'timeout-min', 'confirm']) {
         expect(flags.containsKey(key), true,
             reason: 'help should document --$key');
       }

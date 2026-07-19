@@ -57,6 +57,10 @@ class Channel {
   /// 若本 DM 是某群会话为成员自动创建的绑定会话，则指向对应的群 channel id。
   /// 与群会话一一对应，用于隔离群聊上下文，避免污染普通单聊。
   final String? sourceGroupChannelId;
+  /// 若本 DM 是 She 为 agents.chat / agents.dispatch 自动创建的绑定会话，
+  /// 则指向对应的 She↔用户 channel id。与 She 会话一一对应，用于隔离
+  /// She 与 agent 的往来上下文，避免污染用户与该 agent 的普通单聊。
+  final String? sourceSheChannelId;
   /// 群聊自定义系统提示词，用于约束群内 Agent 行为
   final String? systemPrompt;
   /// 群聊循环编排最大轮次
@@ -90,6 +94,7 @@ class Channel {
     this.lastMessageTime,
     this.parentGroupId,
     this.sourceGroupChannelId,
+    this.sourceSheChannelId,
     this.systemPrompt,
     this.maxLoopRounds,
     this.mentionMode,
@@ -104,6 +109,11 @@ class Channel {
   /// Whether this DM was auto-created for a group member and bound to a group session.
   bool get isGroupBoundMemberSession =>
       isDM && sourceGroupChannelId != null && sourceGroupChannelId!.isNotEmpty;
+
+  /// Whether this DM was auto-created for She's chat/dispatch relay and bound
+  /// to a She↔user session. Read-only for the user; mirrors group-bound DMs.
+  bool get isSheBoundSession =>
+      isDM && sourceSheChannelId != null && sourceSheChannelId!.isNotEmpty;
 
   /// Factory constructor that accepts memberIds for convenience
   factory Channel.withMemberIds({
@@ -121,6 +131,7 @@ class Channel {
     DateTime? lastMessageTime,
     String? parentGroupId,
     String? sourceGroupChannelId,
+    String? sourceSheChannelId,
     String? systemPrompt,
     int? maxLoopRounds,
     String? mentionMode,
@@ -146,6 +157,7 @@ class Channel {
       lastMessageTime: lastMessageTime,
       parentGroupId: parentGroupId,
       sourceGroupChannelId: sourceGroupChannelId,
+      sourceSheChannelId: sourceSheChannelId,
       systemPrompt: systemPrompt,
       maxLoopRounds: maxLoopRounds,
       mentionMode: mentionMode,
@@ -197,6 +209,7 @@ class Channel {
       unreadCount: json['unread_count'],
       parentGroupId: json['parent_group_id'],
       sourceGroupChannelId: json['source_group_channel_id'],
+      sourceSheChannelId: json['source_she_channel_id'],
       systemPrompt: json['metadata']?['system_prompt'],
       maxLoopRounds: json['metadata']?['max_loop_rounds'] as int?,
       mentionMode: json['metadata']?['mention_mode'],
@@ -219,6 +232,7 @@ class Channel {
     DateTime? lastMessageTime,
     String? parentGroupId,
     String? sourceGroupChannelId,
+    String? sourceSheChannelId,
     String? systemPrompt,
     int? maxLoopRounds,
     String? mentionMode,
@@ -239,6 +253,7 @@ class Channel {
       lastMessageTime: lastMessageTime ?? this.lastMessageTime,
       parentGroupId: parentGroupId ?? this.parentGroupId,
       sourceGroupChannelId: sourceGroupChannelId ?? this.sourceGroupChannelId,
+      sourceSheChannelId: sourceSheChannelId ?? this.sourceSheChannelId,
       systemPrompt: systemPrompt ?? this.systemPrompt,
       maxLoopRounds: maxLoopRounds ?? this.maxLoopRounds,
       mentionMode: mentionMode ?? this.mentionMode,
@@ -267,6 +282,8 @@ class Channel {
       if (parentGroupId != null) 'parent_group_id': parentGroupId,
       if (sourceGroupChannelId != null)
         'source_group_channel_id': sourceGroupChannelId,
+      if (sourceSheChannelId != null)
+        'source_she_channel_id': sourceSheChannelId,
     };
   }
 }

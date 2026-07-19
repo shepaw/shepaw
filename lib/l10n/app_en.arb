@@ -687,6 +687,8 @@
       }
     }
   },
+  "chat_sheBoundInputDisabled": "This session was created by She and cannot be used for direct messaging",
+  "chat_openLinkedShe": "Open She chat",
   "chat_sessions": "Sessions",
   "chat_sessionsCount": "{count} sessions",
   "chat_mentionAll": "All",

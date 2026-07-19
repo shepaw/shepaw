@@ -67,6 +67,7 @@ mixin _LoadOps on _ChatControllerBase {
       // Reset group-bound DM markers; re-set below when applicable.
       sourceGroupChannelId = null;
       sourceGroupName = null;
+      sourceSheChannelId = null;
 
       if (channel != null && channel.isGroup) {
         isGroupMode = true;
@@ -103,6 +104,9 @@ mixin _LoadOps on _ChatControllerBase {
                 ChatLoadChannelPlanner.firstAgentMemberId(channel) ??
                 '',
           );
+        }
+        if (channel.isSheBoundSession) {
+          sourceSheChannelId = channel.sourceSheChannelId;
         }
         if (agentName == null) {
           // Resolve agent name/avatar from channel when not provided

@@ -1783,18 +1783,25 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
             ),
 
           // Reply preview bar
-          if (c.replyingToMessage != null && !c.isViewingGroupBoundMemberSession)
+          if (c.replyingToMessage != null &&
+              !c.isViewingGroupBoundMemberSession &&
+              !c.isViewingSheBoundSession)
             ChatReplyPreview(
               replyingTo: c.replyingToMessage!,
               onCancel: () => c.cancelReply(),
             ),
 
           // Queue indicator
-          if (!c.isViewingGroupBoundMemberSession) _buildQueueIndicator(),
+          if (!c.isViewingGroupBoundMemberSession &&
+              !c.isViewingSheBoundSession)
+            _buildQueueIndicator(),
 
-          // Group-bound member sessions: input disabled + jump to linked group.
+          // Bound sessions (group member / She relay): input disabled +
+          // jump to the linked source conversation.
           if (c.isViewingGroupBoundMemberSession)
             _buildGroupBoundSessionBar(c)
+          else if (c.isViewingSheBoundSession)
+            _buildSheBoundSessionBar(c)
           else
             ChatInputArea(
             key: _chatInputKey,
@@ -1849,7 +1856,9 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
           ),
 
           // Emoji picker panel
-          if (_showEmojiPicker && !c.isViewingGroupBoundMemberSession)
+          if (_showEmojiPicker &&
+              !c.isViewingGroupBoundMemberSession &&
+              !c.isViewingSheBoundSession)
             SizedBox(
               height: 250,
               child: EmojiPicker(
@@ -1947,6 +1956,74 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
       context,
       MaterialPageRoute(
         builder: (context) => ChatScreen(channelId: groupChannelId),
+      ),
+    );
+  }
+
+  /// She 绑定会话的只读提示条：标识来自 She，提供跳转回 She 会话入口。
+  Widget _buildSheBoundSessionBar(ChatController c) {
+    final l10n = AppLocalizations.of(context);
+    return Material(
+      color: Colors.orange.shade50,
+      child: SafeArea(
+        top: false,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+          child: Row(
+            children: [
+              Icon(Icons.pets_outlined, size: 22, color: Colors.orange.shade700),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  l10n.chat_sheBoundInputDisabled,
+                  style: TextStyle(
+                    fontSize: 13,
+                    color: Colors.orange.shade900,
+                    height: 1.3,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              TextButton(
+                onPressed: () => _openLinkedSheChat(c),
+                style: TextButton.styleFrom(
+                  foregroundColor: Colors.orange.shade800,
+                  padding: const EdgeInsets.symmetric(horizontal: 8),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(l10n.chat_openLinkedShe,
+                        style: const TextStyle(fontWeight: FontWeight.w600)),
+                    const SizedBox(width: 2),
+                    const Icon(Icons.arrow_forward, size: 16),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _openLinkedSheChat(ChatController c) async {
+    final sheChannelId = c.sourceSheChannelId;
+    if (sheChannelId == null || sheChannelId.isEmpty) return;
+
+    // sourceSheChannelId 是本中转会话绑定的 She↔用户 会话。
+    await c.localDatabaseService.touchChannelUpdatedAt(sheChannelId);
+    if (!mounted) return;
+
+    if (widget.embedded) {
+      widget.onSwitchChannel?.call(sheChannelId);
+      return;
+    }
+
+    Navigator.pushReplacement(
+      context,
+      MaterialPageRoute(
+        builder: (context) => ChatScreen(channelId: sheChannelId),
       ),
     );
   }

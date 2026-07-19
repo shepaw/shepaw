@@ -1862,6 +1862,13 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
+  String get chat_sheBoundInputDisabled =>
+      'This session was created by She and cannot be used for direct messaging';
+
+  @override
+  String get chat_openLinkedShe => 'Open She chat';
+
+  @override
   String get chat_sessions => 'Sessions';
 
   @override

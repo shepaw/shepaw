@@ -11,6 +11,7 @@ import '../logger_service.dart';
 import '../messaging/agent_messaging_service.dart';
 import '../she_service.dart';
 import '../trace_service.dart';
+import 'she_relay_session_service.dart';
 
 /// She 单聊任务派发服务：登记 → 跟踪 → 回传闭环。
 ///
@@ -51,6 +52,7 @@ class DispatchService {
   static const int maxSummaryChars = 500;
 
   final LocalDatabaseService _db = LocalDatabaseService();
+  final SheRelaySessionService _relaySessions = SheRelaySessionService();
   final Uuid _uuid = const Uuid();
 
   StreamSubscription<AgentTaskCompletion>? _sub;
@@ -91,8 +93,12 @@ class DispatchService {
   // 发起派发
   // ---------------------------------------------------------------------------
 
-  /// 把任务 [prompt] 派发给 [targetAgent]（在其 [targetChannelId] DM 频道执行），
-  /// 结果回传到 [sourceChannelId]（She↔用户 频道）。
+  /// 把任务 [prompt] 派发给 [targetAgent]，结果回传到 [sourceChannelId]
+  /// （She↔用户 频道）。
+  ///
+  /// 执行频道由内部确保：在 She 与 [targetAgent] 的绑定 DM（
+  /// [SheRelaySessionService]）中执行，不污染用户与该 agent 的普通单聊
+  /// （peer/ACP session 与本地上下文均隔离）。
   ///
   /// [kind] 为 [DispatchTask.kindChat] 时走对话转发语义：不写状态卡片、
   /// 回复以 `[Agent Reply]` 注入并唤起 She 继续对话，且受连续对聊轮次
@@ -100,7 +106,6 @@ class DispatchService {
   Future<Map<String, dynamic>> dispatch({
     required String sourceChannelId,
     required RemoteAgent targetAgent,
-    required String targetChannelId,
     required String prompt,
     Duration timeout = const Duration(minutes: 30),
     String kind = DispatchTask.kindTask,
@@ -125,6 +130,12 @@ class DispatchService {
         };
       }
     }
+
+    // 目标执行频道：She 与该 agent 的绑定 DM（独立上下文，按需创建）
+    final targetChannelId = await _relaySessions.ensureRelaySession(
+      sheChannelId: sourceChannelId,
+      agent: targetAgent,
+    );
 
     // 同一 agent 在途上限
     final running = await _db.listDispatchTasks(
@@ -565,7 +576,6 @@ class DispatchService {
   Future<void> requestConfirmation({
     required String sourceChannelId,
     required RemoteAgent targetAgent,
-    required String targetChannelId,
     required String task,
     required int timeoutMin,
   }) async {
@@ -580,7 +590,6 @@ class DispatchService {
           'agent_id': targetAgent.id,
           'agent_name': targetAgent.name,
           'task': task,
-          'target_channel_id': targetChannelId,
           'timeout_min': timeoutMin,
           'status': 'pending',
         },
@@ -623,10 +632,11 @@ class DispatchService {
           'respondToConfirm: agent $agentId not found', tag: 'Dispatch');
       return;
     }
+    // 执行频道由 dispatch 内部确保（She 绑定 DM），旧卡片 payload 里的
+    // target_channel_id 字段忽略。
     final result = await dispatch(
       sourceChannelId: channelId,
       targetAgent: agent,
-      targetChannelId: payload['target_channel_id'] as String,
       prompt: payload['task'] as String,
       timeout:
           Duration(minutes: (payload['timeout_min'] as num?)?.toInt() ?? 30),

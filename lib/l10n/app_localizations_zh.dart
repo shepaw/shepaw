@@ -1797,6 +1797,12 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
+  String get chat_sheBoundInputDisabled => '此会话来自 She 与助手的对话，不能在此直接发消息';
+
+  @override
+  String get chat_openLinkedShe => '打开 She 会话';
+
+  @override
   String get chat_sessions => '会话';
 
   @override
