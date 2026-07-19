@@ -172,6 +172,10 @@ class InteractiveResponseHandler {
         await ctx.loadMessages();
       }
     } catch (e) {
+      // The verdict never reached the agent — roll back the optimistic
+      // selection so the card becomes tappable again instead of looking
+      // "approved" while the agent is still waiting.
+      await _rollbackOptimisticUpdate(originalMessage);
       if (!isPeerInBand) {
         await ctx.loadMessages();
       }
@@ -288,6 +292,47 @@ class InteractiveResponseHandler {
     ctx.messages[idx] = updated;
     ctx.messageIdMap[updated.id] = updated;
     ctx.notifyUI();
+  }
+
+  /// Undo the optimistic selection after a failed submit: drop the selection
+  /// keys from the in-memory message AND from the persisted row (best-effort),
+  /// so the approval card is re-enabled for a retry.
+  Future<void> _rollbackOptimisticUpdate(Message originalMessage) async {
+    final idx = ctx.messages.indexWhere((m) => m.id == originalMessage.id);
+    if (idx != -1) {
+      final current = ctx.messages[idx];
+      final updatedMetadata = Map<String, dynamic>.from(current.metadata ?? {});
+      final section = Map<String, dynamic>.from(
+        updatedMetadata['action_confirmation'] as Map<String, dynamic>? ?? {},
+      );
+      section.remove('selected_action_id');
+      section.remove('selected_action_label');
+      section.remove('selected_at');
+      updatedMetadata['action_confirmation'] = section;
+      final updated = Message(
+        id: current.id,
+        content: current.content,
+        timestampMs: current.timestampMs,
+        from: current.from,
+        to: current.to,
+        type: current.type,
+        replyTo: current.replyTo,
+        metadata: updatedMetadata,
+      );
+      ctx.messages[idx] = updated;
+      ctx.messageIdMap[updated.id] = updated;
+      ctx.notifyUI();
+    }
+    // Best-effort DB revert — the row may not exist for streaming bubbles.
+    try {
+      await ctx.localDatabaseService.updateMessage(
+        messageId: originalMessage.id,
+        content: originalMessage.content,
+        metadata: originalMessage.metadata ?? {},
+      );
+    } catch (_) {
+      /* row may not exist */
+    }
   }
 
   void _beginProcessing() {

@@ -139,6 +139,10 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
   /// peer 连接状态变化订阅，用于让 peer agent 的在线状态实时跟随设备上/下线。
   StreamSubscription<PeerConnectionEvent>? _peerConnSub;
 
+  /// 孤儿审批（无活动 sendChat turn 的 agent_approval_req，如 hub 重启后
+  /// 重放的待决审批）订阅，让卡片仍能渲染在当前会话里。
+  StreamSubscription<Map<String, dynamic>>? _orphanApprovalSub;
+
   // ---- Reply state ----
   Message? replyingToMessage;
   String? highlightedMessageId;
@@ -265,6 +269,17 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
         refreshAgentStatus();
       }
     });
+    // 孤儿审批（hub 重启后重放、或 agent_done 抢先完成 turn 的审批）没有
+    // 活动 turn 的回调可挂，经这里渲染成普通卡片；点击走 submitApproval
+    // 只需 approval_id，bridge 侧有 deferred relay 兜底。
+    _orphanApprovalSub =
+        PeerAgentClientService.instance.orphanApprovalEvents.listen((event) {
+      final peerId = event['peer_id'] as String?;
+      final remoteId = event['remote_agent_id'] as String?;
+      if (peerId == null || remoteId == null) return;
+      if (peerAgentLocalId(peerId, remoteId) != agentId) return;
+      _handleStreamingActionConfirmation(event);
+    });
   }
 
   @override
@@ -284,6 +299,7 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
     messageQueue.clear();
     _healthCheckTimer?.cancel();
     _peerConnSub?.cancel();
+    _orphanApprovalSub?.cancel();
     _channelUpdateSub?.cancel();
     if (currentChannelId != null) {
       chatService.closeChannelStream(currentChannelId!);
@@ -297,6 +313,10 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
       _eventController.add(event);
     }
   }
+
+  /// Implemented by [_MessagingOps]: attach/replace an action-confirmation
+  /// card on a host bubble. Called from the base's orphan-approval listener.
+  void _handleStreamingActionConfirmation(Map<String, dynamic> actionData);
 
   void _notify() {
     if (_eventController.isClosed) return;

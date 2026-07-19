@@ -820,7 +820,11 @@ mixin _MessagingOps on _ChatControllerBase {
       messageIdMap[sid] = sm;
       streamingMessageId = sid;
       streamingContent = sm.content;
-      isProcessing = true;
+      // Orphan cards (hub restarted mid-approval) have no live turn behind
+      // them — showing a spinner would never clear.
+      if (actionData['orphan'] != true) {
+        isProcessing = true;
+      }
       _notify();
       _emit(RequestScrollToBottomEvent(force: true));
       LoggerService().info(

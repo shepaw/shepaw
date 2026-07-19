@@ -293,6 +293,11 @@ class _PendingRequest {
   final Completer<PeerChatResult> completer = Completer<PeerChatResult>();
   /// In-flight tool approvals not yet submitted by the user.
   int openApprovals = 0;
+  /// Last moment this turn had zero open approvals (turn start, or when the
+  /// last open approval was submitted). The chat watchdog measures from here
+  /// so the time the user spends reading an approval card never counts
+  /// against the 300s turn budget.
+  DateTime noOpenApprovalsSince = DateTime.now();
   /// agent_done payload held until [openApprovals] reaches zero.
   Map<String, dynamic>? bufferedDone;
   _PendingRequest(
@@ -317,7 +322,15 @@ class PeerAgentClientService {
   /// Upper bound for a single peer agent chat request. Aligned with the ACP
   /// group task timeout (300s) so a peer that stays connected but never
   /// answers cannot hang a group orchestration forever.
+  ///
+  /// Only runs while no approval card is open — see [approvalWaitHardCap].
   static const Duration chatTimeout = Duration(seconds: 300);
+
+  /// Hard upper bound for a turn even while an approval is open. The bridge
+  /// denies an unanswered approval after 20 min (agent-hub
+  /// APPROVAL_TIMEOUT_MS), which also ends the turn — waiting past 25 min
+  /// means the verdict path is gone for good.
+  static const Duration approvalWaitHardCap = Duration(minutes: 25);
 
   final _log = LoggerService();
   final _uuid = const Uuid();
@@ -362,6 +375,19 @@ class PeerAgentClientService {
   /// Kept briefly so a late UI path can still surface / submit them.
   final Map<String, Map<String, dynamic>> _orphanedApprovals = {};
 
+  /// requestId → owning agent, retained briefly after a turn finishes so an
+  /// approval that outlives its sendChat request (e.g. the hub restarted
+  /// mid-approval and re-sent it after reconnect) can still be routed to the
+  /// right chat screen. Bounded — oldest entries are evicted.
+  final Map<String, ({String peerId, String remoteAgentId})> _requestAgents = {};
+
+  /// Orphan approvals republished for open chat screens. Carries the
+  /// actionConfirmation payload plus `peer_id` / `remote_agent_id`.
+  final _orphanApprovalController =
+      StreamController<Map<String, dynamic>>.broadcast();
+  Stream<Map<String, dynamic>> get orphanApprovalEvents =>
+      _orphanApprovalController.stream;
+
   LocalDatabaseService get _db => getIt<LocalDatabaseService>();
   final _fileStorage = LocalFileStorageService();
 
@@ -398,6 +424,7 @@ class PeerAgentClientService {
     _pending.clear();
     _approvalToRequest.clear();
     _orphanedApprovals.clear();
+    _requestAgents.clear();
     for (final c in _pendingSessions.values) {
       if (!c.isCompleted) c.complete(const []);
     }
@@ -557,6 +584,10 @@ class PeerAgentClientService {
       onMetadata: onMetadata,
     );
     _pending[requestId] = pending;
+    _requestAgents[requestId] = (peerId: peerId, remoteAgentId: remoteAgentId);
+    if (_requestAgents.length > 200) {
+      _requestAgents.remove(_requestAgents.keys.first);
+    }
 
     cancelToken?.addOnCancelled(() {
       unawaited(PeerConnectionManager.instance.sendControl(peerId, {
@@ -585,22 +616,79 @@ class PeerAgentClientService {
       throw Exception('配对设备未连接，无法发送');
     }
 
-    return pending.completer.future.timeout(
-      chatTimeout,
-      onTimeout: () {
-        // Connection is alive but the remote agent never finished (hung
-        // agent, or an approval the user never answered). Drop the pending
-        // entry so late frames are ignored, and tell the remote to abort so
-        // its side does not keep running.
-        final p = _pending.remove(requestId);
-        if (p != null && !p.completer.isCompleted) {
-          unawaited(PeerConnectionManager.instance.sendControl(peerId, {
-            'type': 'agent_cancel',
-            'request_id': requestId,
-          }));
-        }
-        throw TimeoutException('对端 agent 响应超时（${chatTimeout.inSeconds}s）', chatTimeout);
-      },
+    return _awaitTurnCompletion(requestId, pending, peerId);
+  }
+
+  /// Await the turn with an approval-aware watchdog.
+  ///
+  /// [chatTimeout] only runs while no approval card is open: the time the
+  /// user spends reading a tool approval must not count against the turn —
+  /// the bridge allows 20 minutes per approval. Firing the timeout mid-
+  /// approval cancels the remote turn and strands the verdict, which looks
+  /// exactly like "approved but stuck". [approvalWaitHardCap] bounds even
+  /// the approval-waiting state in case the bridge's denial never arrives.
+  Future<PeerChatResult> _awaitTurnCompletion(
+    String requestId,
+    _PendingRequest pending,
+    String peerId,
+  ) async {
+    final startedAt = DateTime.now();
+    final watchdog = Timer.periodic(const Duration(seconds: 5), (timer) {
+      if (pending.completer.isCompleted) {
+        timer.cancel();
+        return;
+      }
+      final now = DateTime.now();
+      final idleTooLong = pending.openApprovals == 0 &&
+          now.difference(pending.noOpenApprovalsSince) > chatTimeout;
+      final hardCapHit = now.difference(startedAt) > approvalWaitHardCap;
+      if (idleTooLong || hardCapHit) {
+        timer.cancel();
+        _timeoutRequest(
+          requestId,
+          peerId,
+          duringApproval: pending.openApprovals > 0,
+        );
+      }
+    });
+    try {
+      return await pending.completer.future;
+    } finally {
+      watchdog.cancel();
+    }
+  }
+
+  /// Shared timeout path: drop the pending entry so late frames are ignored,
+  /// tell the remote to abort so its side does not keep running, and fail
+  /// the future.
+  void _timeoutRequest(
+    String requestId,
+    String peerId, {
+    required bool duringApproval,
+  }) {
+    final p = _pending.remove(requestId);
+    if (p == null || p.completer.isCompleted) return;
+    unawaited(PeerConnectionManager.instance.sendControl(peerId, {
+      'type': 'agent_cancel',
+      'request_id': requestId,
+    }));
+    for (final entry in _approvalToRequest.entries.toList()) {
+      if (entry.value == requestId) {
+        _approvalToRequest.remove(entry.key);
+      }
+    }
+    _log.warning(
+      'chat timeout requestId=$requestId duringApproval=$duringApproval '
+      'openApprovals=${p.openApprovals}',
+      tag: 'PeerApproval',
+    );
+    p.completer.completeError(
+      TimeoutException(
+        duringApproval
+            ? '审批等待超时，请重新发送消息'
+            : '对端 agent 响应超时（${chatTimeout.inSeconds}s）',
+        chatTimeout,
+      ),
     );
   }
 
@@ -624,7 +712,7 @@ class PeerAgentClientService {
         _onError(event.data);
         break;
       case 'agent_approval_req':
-        _onApprovalReq(event.data);
+        _onApprovalReq(event.peerId, event.data);
         break;
       case 'agent_commands_resp':
         _onCommandsResp(event.peerId, event.data);
@@ -1264,7 +1352,7 @@ class PeerAgentClientService {
   /// mechanism as the direct ACP flow). The user's tap later calls
   /// [submitApproval], which replies `agent_approval_resp` over the peer
   /// channel; the hub relays it as `agent.submitResponse` to its local agent.
-  void _onApprovalReq(Map<String, dynamic> data) {
+  void _onApprovalReq(String peerId, Map<String, dynamic> data) {
     final requestId = data['request_id'] as String?;
     if (requestId == null) {
       _log.warning('agent_approval_req: missing request_id', tag: 'PeerApproval');
@@ -1321,6 +1409,22 @@ class PeerAgentClientService {
       approvalId: approvalId,
       actions: effectiveActions,
     );
+    if (pending == null) {
+      // Orphan: no live sendChat turn owns this approval (hub restarted
+      // mid-approval and re-sent after reconnect, or agent_done raced ahead).
+      // Republish so an open chat screen can still render the card — the tap
+      // reaches submitApproval, which only needs the approval_id.
+      final owner = _requestAgents[requestId];
+      if (owner != null && !_orphanApprovalController.isClosed) {
+        _orphanApprovalController.add({
+          ...actionData,
+          'peer_id': peerId,
+          'remote_agent_id': owner.remoteAgentId,
+          // No live turn owns this approval — the UI must not show a spinner.
+          'orphan': true,
+        });
+      }
+    }
     pending?.onActionConfirmation?.call(actionData);
     _log.debug(
       'agent_approval_req: forwarded to UI confirmationId=$approvalId '
@@ -1388,6 +1492,10 @@ class PeerAgentClientService {
       final pending = _pending[requestId];
       if (pending != null && pending.openApprovals > 0) {
         pending.openApprovals--;
+        if (pending.openApprovals == 0) {
+          // Verdict is on the wire — the plain chat clock runs from here.
+          pending.noOpenApprovalsSince = DateTime.now();
+        }
       }
       // Async-confirmation agents may have buffered agent_done while the
       // approval was open — complete now that the verdict is on the wire.

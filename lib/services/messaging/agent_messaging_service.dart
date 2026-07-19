@@ -1245,11 +1245,16 @@ class AgentMessagingService {
         meta['status'] = 'stopped';
         meta['interruption_reason'] = 'user_cancelled';
       }
-      // Prefer the in-band approval captured during the turn over any stale
-      // metadata the hub may have attached to agent_done.
+      // Prefer the live task metadata — the approval tap merged the user's
+      // verdict into it — over the snapshot captured when the card arrived,
+      // so the persisted message keeps the selected state across reloads.
+      final liveAc =
+          activeTask.metadata?['action_confirmation'] as Map<String, dynamic>?;
       final relayedAc =
           meta['action_confirmation'] as Map<String, dynamic>?;
-      if (actionConfirmationData != null) {
+      if (liveAc != null) {
+        meta['action_confirmation'] = liveAc;
+      } else if (actionConfirmationData != null) {
         meta['action_confirmation'] = actionConfirmationData;
       } else if (relayedAc != null) {
         relayedAc['confirmation_context'] ??= 'peer';

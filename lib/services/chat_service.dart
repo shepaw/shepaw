@@ -870,6 +870,23 @@ class ChatService implements IPawChatSender {
           'selected_action_label': selectedActionLabel,
         },
       );
+      // Peer in-band: also record the verdict on the live task's metadata.
+      // The DB write above targets the (possibly already-gone) streaming
+      // bubble id, while the final persisted message is built from this
+      // task's metadata — without this, reloading the channel revives the
+      // card as an unanswered one and tapping it again is a no-op.
+      if (confirmationContext == 'peer' && activeTask != null) {
+        final acRaw = activeTask.metadata?['action_confirmation'];
+        if (acRaw is Map && acRaw['confirmation_id'] == confirmationId) {
+          final ac = Map<String, dynamic>.from(acRaw);
+          ac['selected_action_id'] = selectedActionId;
+          ac['selected_action_label'] = selectedActionLabel;
+          ac['selected_at'] = DateTime.now().millisecondsSinceEpoch;
+          final merged = Map<String, dynamic>.from(activeTask.metadata ?? {});
+          merged['action_confirmation'] = ac;
+          activeTask.metadata = merged;
+        }
+      }
       LoggerService().debug(
         'Sent action confirmation via submitResponse '
         '(context=$confirmationContext, taskId=$taskId)',
