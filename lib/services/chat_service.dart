@@ -416,6 +416,17 @@ class ChatService implements IPawChatSender {
     task.onRequestHistory = onRequestHistory;
     task.onTaskFinished = onTaskFinished;
 
+    // Replay an unanswered approval card that arrived while the channel was
+    // closed. Otherwise opening the channel shows no card to tap while the
+    // agent sits [pending] until its own timeout — the turn looks stuck.
+    final ac = task.metadata?['action_confirmation'];
+    if (onActionConfirmation != null &&
+        ac is Map &&
+        ac['selected_action_id'] == null) {
+      final data = Map<String, dynamic>.from(ac);
+      scheduleMicrotask(() => onActionConfirmation(data));
+    }
+
     return task.accumulatedContent;
   }
 

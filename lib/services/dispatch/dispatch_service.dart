@@ -22,6 +22,8 @@ import '../trace_service.dart';
 ///    精确匹配（失败路径无 replyTo 时退化为"该频道唯一在途派发"）。
 /// 3. 终态后更新状态消息，并把结果以合成消息注入 She↔用户 频道、重新唤起
 ///    She，由她用自己的口吻向用户汇报。
+/// 4. 超时只终态化派发记录、不取消底层 turn；归因挪入迟到观察表，迟到的
+///    完成事件仍会把结果回报给 She（迟到成功则任务升级为 done）。
 ///
 /// 防回环：注入消息的 metadata 带 `dispatch_result: true`；完成事件只按在途
 /// 派发匹配，She 汇报自身产生的完成事件不会被认领。
@@ -50,6 +52,10 @@ class DispatchService {
 
   /// 在途派发：dispatchTaskId -> 任务消息 id（replyTo 精确匹配用）
   final Map<String, String> _inFlightMsgIds = {};
+
+  /// 已超时但底层 turn 仍在对端执行的派发：taskId -> (任务消息 id, 目标频道)。
+  /// 迟到完成事件按此归因并回传结果给 She（见 [_onLateCompletion]）。
+  final Map<String, ({String msgId, String channelId})> _lateWatch = {};
 
   /// 已终态的派发 id（同步防重：stream 与 catchError 可能双触发）
   final Set<String> _finalized = {};
@@ -233,11 +239,25 @@ class DispatchService {
           break;
         }
       }
+      // 迟到分支：超时后仍在对端跑的 turn 终于完成
+      if (taskId == null) {
+        for (final entry in _lateWatch.entries) {
+          if (entry.value.msgId == replyTo) {
+            await _onLateCompletion(entry.key, c);
+            return;
+          }
+        }
+      }
     }
 
     // 退化匹配：失败路径的系统消息没有 replyTo —— 该频道恰好只有一个在途派发时才认领
     taskId ??= await _matchSoleInFlight(c.channelId);
-    if (taskId == null) return;
+    if (taskId == null) {
+      // 迟到 turn 的失败同样没有 replyTo —— 该频道恰有一个迟到观察时认领
+      final lateId = _matchSoleLateWatch(c.channelId);
+      if (lateId != null) await _onLateCompletion(lateId, c);
+      return;
+    }
 
     final content = c.finalMessage?.content;
     switch (c.outcome) {
@@ -272,7 +292,57 @@ class DispatchService {
     return null;
   }
 
+  /// 该频道恰有一个迟到观察（超时但仍在跑）的派发时返回其 id，否则 null。
+  String? _matchSoleLateWatch(String channelId) {
+    final candidates = _lateWatch.entries
+        .where((e) => e.value.channelId == channelId)
+        .toList();
+    return candidates.length == 1 ? candidates.first.key : null;
+  }
+
+  /// 超时后仍在对端执行的 turn 到达终态：把迟到结果回传给 She，不让
+  /// agent 的最终回复无声消失。完成则把任务升级为 done（errorMessage 里
+  /// 仍保留曾超时的事实）；失败/停止则保持 timeout 并补充错误信息。
+  Future<void> _onLateCompletion(String taskId, AgentTaskCompletion c) async {
+    _lateWatch.remove(taskId);
+    final task = await _db.getDispatchTaskById(taskId);
+    if (task == null) return;
+
+    LoggerService().info(
+      'dispatch $taskId late completion: ${c.outcome} (${task.targetAgentName})',
+      tag: 'Dispatch',
+    );
+
+    if (c.outcome == AgentTaskOutcome.completed && c.finalMessage != null) {
+      final content = c.finalMessage!.content;
+      final updated = task.copyWith(
+        status: DispatchTask.statusDone,
+        resultSummary: _truncate(content, maxSummaryChars),
+        completedAtMs: DateTime.now().millisecondsSinceEpoch,
+      );
+      await _db.updateDispatchTask(updated);
+      await _writeStatusMessage(
+          updated, DispatchTask.statusDone, task.statusMessageId);
+      await _reportToShe(updated, DispatchTask.statusDone,
+          result: content, late: true);
+    } else {
+      final err = c.errorMessage ?? 'stopped after timeout';
+      final updated = task.copyWith(errorMessage: err);
+      await _db.updateDispatchTask(updated);
+      await _reportToShe(updated, DispatchTask.statusTimeout,
+          errorMessage: err, late: true);
+    }
+  }
+
   Future<void> _onTimeout(String taskId, Duration timeout) async {
+    // 超时只终态化派发记录，底层 turn 仍在对端跑。把归因挪到迟到观察表，
+    // 让迟到的完成事件仍能把结果回报给 She。若任务已被先到的完成事件
+    // 终态化（竞态），则不做迟到登记。
+    final msgId = _inFlightMsgIds[taskId];
+    final task = await _db.getDispatchTaskById(taskId);
+    if (msgId != null && task != null && !task.isTerminal) {
+      _lateWatch[taskId] = (msgId: msgId, channelId: task.targetChannelId);
+    }
     await _finalize(taskId, DispatchTask.statusTimeout,
         errorMessage: 'agent did not finish within ${timeout.inMinutes} min');
   }
@@ -396,18 +466,23 @@ class DispatchService {
     final task = await _db.getDispatchTaskById(taskId);
     if (task == null || task.isTerminal || task.statusMessageId == null) return;
 
-    final title = (data['title'] as String?)?.trim().isNotEmpty == true
-        ? data['title'] as String
-        : (data['description'] as String? ?? '');
+    // peer 审批的文案在 prompt 字段；直连 ACP 表单则可能是 title/description。
+    final rawTitle = (data['title'] as String?) ??
+        (data['prompt'] as String?) ??
+        (data['description'] as String?) ??
+        '';
+    final title = rawTitle.trim();
     final metadata = _statusMetadata(task, DispatchTask.statusRunning)
       ..['awaiting_confirmation'] = true
       ..['confirmation_title'] = title;
 
+    // 审批必须在目标频道内完成（按钮挂在 agent 会话的卡片上）——状态卡
+    // 只负责引导用户过去，否则用户不知道要干什么，turn 会一直挂到超时。
     await _db.updateMessage(
       messageId: task.statusMessageId!,
       content: title.isNotEmpty
-          ? '⏳ ${task.targetAgentName} 等待操作确认：$title'
-          : '⏳ ${task.targetAgentName} 等待操作确认',
+          ? '⏳ ${task.targetAgentName} 等待操作确认：$title\n👉 请打开与 ${task.targetAgentName} 的会话进行审批'
+          : '⏳ ${task.targetAgentName} 等待操作确认\n👉 请打开与 ${task.targetAgentName} 的会话进行审批',
       metadata: metadata,
     );
     ChatService().notifyChannelUpdate(task.sourceChannelId);
@@ -506,6 +581,7 @@ class DispatchService {
     String status, {
     String? result,
     String? errorMessage,
+    bool late = false,
   }) async {
     final she = await _db.getRemoteAgentById(SheService.sheId);
     if (she == null) {
@@ -515,7 +591,7 @@ class DispatchService {
     }
 
     final content = _buildReportContent(task, status,
-        result: result, errorMessage: errorMessage);
+        result: result, errorMessage: errorMessage, late: late);
     final resultMsg = Message(
       id: _uuid.v4(),
       content: content,
@@ -575,6 +651,7 @@ class DispatchService {
     String status, {
     String? result,
     String? errorMessage,
+    bool late = false,
   }) {
     final buf = StringBuffer()
       ..writeln('[Dispatch Result — ${task.id}]')
@@ -584,6 +661,11 @@ class DispatchService {
     switch (status) {
       case DispatchTask.statusDone:
         buf.writeln('Status: completed');
+        if (late) {
+          buf.writeln(
+              'Note: this result arrived AFTER the dispatch had already been '
+              'reported as timed out — it is the agent\'s real final reply.');
+        }
         buf
           ..writeln('--- Agent\'s reply ---')
           ..writeln(_truncate(result ?? '(empty reply)', maxResultChars))
@@ -593,13 +675,23 @@ class DispatchService {
               'and the key result. Do NOT call agents.dispatch again for this '
               'result unless your master asks.');
       case DispatchTask.statusTimeout:
-        buf
-          ..writeln('Status: timeout')
-          ..writeln(
-              'The agent did not finish within the timeout. It may still be '
-              'working in its own channel. Tell your master, and suggest '
-              'checking that channel directly. Do NOT call agents.dispatch '
-              'again unless your master asks.');
+        if (late) {
+          buf
+            ..writeln('Status: failed after timeout')
+            ..writeln(
+                'The agent kept running past the timeout but then stopped or '
+                'failed: ${_truncate(errorMessage ?? 'unknown', 300)}. Tell '
+                'your master the late outcome in one sentence. Do NOT call '
+                'agents.dispatch again unless your master asks.');
+        } else {
+          buf
+            ..writeln('Status: timeout')
+            ..writeln(
+                'The agent did not finish within the timeout. It may still be '
+                'working in its own channel. Tell your master, and suggest '
+                'checking that channel directly. Do NOT call agents.dispatch '
+                'again unless your master asks.');
+        }
       default:
         buf.writeln('Status: failed');
         if (errorMessage != null) {
