@@ -500,6 +500,10 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
       rebuildMessageIdMap();
     }
     _notify();
+    // 消息已展示在当前打开的页面（如 She 频道里的 [Agent Reply] 注入、
+    // 服务侧回合的最终回复）→ 同步标记已读，避免对话列表出现"看得见
+    // 却消不掉"的未读角标。
+    unawaited(markMessagesAsReadIfAtBottom());
   }
 
   void rebuildMessageIdMap() {
@@ -736,6 +740,7 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
       tag: 'ChatController',
     );
     _notify();
+    unawaited(markMessagesAsReadIfAtBottom());
   }
 
   /// Subscribe to service-side DB writes for the current channel. Services

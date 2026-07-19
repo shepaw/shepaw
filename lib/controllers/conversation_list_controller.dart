@@ -14,6 +14,7 @@ import '../peer/services/peer_connection_manager.dart';
 import '../peer/services/peer_pairing_service.dart';
 import '../peer/services/peer_storage_service.dart';
 import '../service_locator.dart' show getIt;
+import '../services/app_lifecycle_service.dart';
 import '../services/chat_service.dart';
 import '../services/local_api_service.dart';
 import '../services/local_database_service.dart';
@@ -294,7 +295,11 @@ class ConversationListController extends ChangeNotifier {
       final unreadCount =
           await _databaseService.getUnreadCountByChannel(channelId);
       _latestMessages[agentId] = latestMsg;
-      _unreadCounts[agentId] = unreadCount;
+      // 用户正在该频道里查看（如 She 频道收到 [Agent Reply] 注入）→
+      // 角标按 0 计：消息已在其眼前，且聊天页的 reconcile 会标记已读，
+      // 此处兜底消除"标记已读"与"角标重算"的先后竞态。
+      _unreadCounts[agentId] =
+          AppLifecycleService().activeChannelId == channelId ? 0 : unreadCount;
     }
     if (_disposed) return;
     _rebuildEntries();
@@ -314,8 +319,10 @@ class ConversationListController extends ChangeNotifier {
       Map<String, dynamic>? activeMsg;
 
       for (final session in sessions) {
-        final unread =
+        var unread =
             await _databaseService.getUnreadCountByChannel(session.id);
+        // 用户正在查看的群会话不计未读（消息已在其眼前）
+        if (session.id == AppLifecycleService().activeChannelId) unread = 0;
         totalUnread += unread;
         if (session.id == activeChannelId) {
           activeMsg =
@@ -343,7 +350,8 @@ class ConversationListController extends ChangeNotifier {
       final unreadCount =
           await _databaseService.getUnreadCountByChannel(channelId);
       _latestMessages[agent.id] = latestMsg;
-      _unreadCounts[agent.id] = unreadCount;
+      _unreadCounts[agent.id] =
+          AppLifecycleService().activeChannelId == channelId ? 0 : unreadCount;
     }
   }
 
@@ -363,8 +371,10 @@ class ConversationListController extends ChangeNotifier {
       Map<String, dynamic>? activeMsg;
 
       for (final session in sessions) {
-        final unread =
+        var unread =
             await _databaseService.getUnreadCountByChannel(session.id);
+        // 用户正在查看的群会话不计未读（消息已在其眼前）
+        if (session.id == AppLifecycleService().activeChannelId) unread = 0;
         totalUnread += unread;
         if (session.id == activeChannelId) {
           activeMsg =
