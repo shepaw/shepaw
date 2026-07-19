@@ -7,6 +7,7 @@ import '../../models/message.dart';
 import '../../models/remote_agent.dart';
 import '../chat_service.dart';
 import '../local_database_service.dart';
+import '../local_user_identity.dart';
 import '../logger_service.dart';
 import '../messaging/agent_messaging_service.dart';
 import '../she_service.dart';
@@ -235,8 +236,8 @@ class DispatchService {
       userName: SheService.sheName,
       channelId: targetChannelId,
       existingUserMessage: userMsg,
-      // 审批中转：agent 等待操作确认时更新状态卡（用户打开目标频道后
-      // UI 回调会接管，此处仅在频道未打开时生效）
+      // 审批代理：agent 等待操作确认时写 relay_approval 卡片到 She↔用户
+      // 频道，用户在 She 窗口直接审批（应答路由回本执行频道）
       onActionConfirmation: (data) {
         unawaited(_markAwaitingConfirmation(taskId, data));
       },
@@ -540,11 +541,17 @@ class DispatchService {
         'status': status,
       };
 
-  /// agent 发出 `ui.actionConfirmation`（等待操作确认）时更新状态卡。
+  /// agent 发出 `ui.actionConfirmation`（等待操作确认）时，把审批代理到
+  /// She↔用户 频道：写一张可操作的审批卡（[RelayApprovalCard] 渲染，
+  /// 应答走 [respondToRelayApproval] 路由回执行频道），task 型同时更新
+  /// 状态卡文案指向该卡片。
+  ///
+  /// 卡片消息 id 取确定性 `appr_<taskId>`：同一任务的后续确认原地更新
+  /// （in-band 一个回合任一时刻只有一个未决确认），不产生卡片堆积。
   Future<void> _markAwaitingConfirmation(
       String taskId, Map<String, dynamic> data) async {
     final task = await _db.getDispatchTaskById(taskId);
-    if (task == null || task.isTerminal || task.statusMessageId == null) return;
+    if (task == null || task.isTerminal) return;
 
     // peer 审批的文案在 prompt 字段；直连 ACP 表单则可能是 title/description。
     final rawTitle = (data['title'] as String?) ??
@@ -552,20 +559,200 @@ class DispatchService {
         (data['description'] as String?) ??
         '';
     final title = rawTitle.trim();
+
+    // 1. 代理审批卡（chat / task 都写）——用户在 She 窗口直接审批，
+    //    无需感知中转会话的存在。
+    final proxyMsgId = 'appr_$taskId';
+    final existing = await _db.getMessageById(proxyMsgId);
+    final proxyPayload = <String, dynamic>{
+      'confirmation_id': data['confirmation_id'] ?? '',
+      'prompt': data['prompt'] ?? data['description'] ?? title,
+      'actions': data['actions'] ?? const [],
+      'confirmation_context': data['confirmation_context'],
+      'agent_id': task.targetAgentId,
+      'agent_name': task.targetAgentName,
+      'relay_channel_id': task.targetChannelId,
+      'dispatch_task_id': task.id,
+      'kind': task.kind,
+      'status': 'pending',
+    };
+    final proxyMeta = <String, dynamic>{'relay_approval': proxyPayload};
+    if (existing != null) {
+      await _db.updateMessage(
+        messageId: proxyMsgId,
+        content: '⚠️ ${task.targetAgentName} 请求操作确认',
+        metadata: proxyMeta,
+      );
+    } else {
+      final proxyMsg = Message(
+        id: proxyMsgId,
+        content: '⚠️ ${task.targetAgentName} 请求操作确认',
+        timestampMs: DateTime.now().millisecondsSinceEpoch,
+        from: MessageFrom(id: 'system', type: 'system', name: 'System'),
+        type: MessageType.system,
+        metadata: proxyMeta,
+      );
+      await ChatService().saveLocalMessage(proxyMsg, SheService.sheId,
+          channelId: task.sourceChannelId);
+    }
+    ChatService().notifyChannelUpdate(task.sourceChannelId);
+
+    // 2. task 型状态卡同步文案（chat 型无状态卡）
+    if (task.isChat || task.statusMessageId == null) return;
     final metadata = _statusMetadata(task, DispatchTask.statusRunning)
       ..['awaiting_confirmation'] = true
       ..['confirmation_title'] = title;
 
-    // 审批必须在目标频道内完成（按钮挂在 agent 会话的卡片上）——状态卡
-    // 只负责引导用户过去，否则用户不知道要干什么，turn 会一直挂到超时。
     await _db.updateMessage(
       messageId: task.statusMessageId!,
       content: title.isNotEmpty
-          ? '⏳ ${task.targetAgentName} 等待操作确认：$title\n👉 请打开与 ${task.targetAgentName} 的会话进行审批'
-          : '⏳ ${task.targetAgentName} 等待操作确认\n👉 请打开与 ${task.targetAgentName} 的会话进行审批',
+          ? '⏳ ${task.targetAgentName} 等待操作确认：$title\n👉 可在下方审批卡片直接处理'
+          : '⏳ ${task.targetAgentName} 等待操作确认\n👉 可在下方审批卡片直接处理',
       metadata: metadata,
     );
     ChatService().notifyChannelUpdate(task.sourceChannelId);
+  }
+
+  /// 代理审批卡按钮回调：把用户的选择路由回执行频道（She 绑定中转会话）
+  /// 应答 agent 的待决确认。幂等（仅 pending 状态可响应）。
+  ///
+  /// 应答路径与在中转会话里直接点击完全一致：
+  /// - in-band（阻塞式 ACP / peer）：`connection.submitResponse` 解开挂起的
+  ///   `canUseTool`，需要执行频道上仍有活动回合，否则判为过期；
+  /// - async-confirmation：以一条裁决消息重新唤起 agent（sendMessageToAgent）。
+  Future<void> respondToRelayApproval(
+    String messageId,
+    String actionId,
+    String actionLabel,
+  ) async {
+    final row = await _db.getMessageById(messageId);
+    if (row == null) return;
+    final meta =
+        jsonDecode(row['metadata'] as String? ?? '{}') as Map<String, dynamic>;
+    final payload = meta['relay_approval'] as Map<String, dynamic>?;
+    if (payload == null || payload['status'] != 'pending') return;
+
+    final sourceChannelId = row['channel_id'] as String;
+    final agentId = payload['agent_id'] as String? ?? '';
+    final relayChannelId = payload['relay_channel_id'] as String? ?? '';
+    final confirmationId = payload['confirmation_id'] as String? ?? '';
+    final confirmationContext = payload['confirmation_context'] as String?;
+
+    final agent = await _db.getRemoteAgentById(agentId);
+    if (agent == null || relayChannelId.isEmpty || confirmationId.isEmpty) {
+      await _resolveProxyCard(messageId, meta, payload, 'failed',
+          errorNote: 'agent or relay channel missing');
+      ChatService().notifyChannelUpdate(sourceChannelId);
+      return;
+    }
+
+    // 死回合检测（仅 in-band 必要）：执行频道上已无活动回合且 agent 不支持
+    // async-confirmation，则审批不可能再送达——标记过期，不给出假希望。
+    final connection = ChatService().getInteractiveConnection(agent);
+    final isAsyncAgent = connection?.supportsAsyncConfirmation ?? false;
+    if (!isAsyncAgent && ChatService().getActiveTask(relayChannelId) == null) {
+      await _resolveProxyCard(messageId, meta, payload, 'expired');
+      ChatService().notifyChannelUpdate(sourceChannelId);
+      return;
+    }
+
+    // 找执行频道里承载该确认的原始消息（其 metadata 需要在应答时更新选中态）；
+    // 找不到（流式途中尚未落库）时用合成消息兜底——应答本身不依赖该行存在。
+    final relayMessage = await _findRelayConfirmationMessage(
+          relayChannelId,
+          confirmationId,
+        ) ??
+        Message(
+          id: 'appr_relay_$confirmationId',
+          content: '',
+          timestampMs: DateTime.now().millisecondsSinceEpoch,
+          from: MessageFrom(id: agent.id, type: 'agent', name: agent.name),
+          type: MessageType.text,
+          metadata: {
+            'action_confirmation': {
+              'confirmation_id': confirmationId,
+              'prompt': payload['prompt'],
+              'actions': payload['actions'],
+              if (confirmationContext != null)
+                'confirmation_context': confirmationContext,
+            },
+          },
+        );
+
+    try {
+      await ChatService().submitActionConfirmationResponse(
+        originalMessage: relayMessage,
+        confirmationId: confirmationId,
+        selectedActionId: actionId,
+        selectedActionLabel: actionLabel,
+        agent: agent,
+        userId: LocalUserIdentity.id,
+        userName: LocalUserIdentity.displayName,
+        channelId: relayChannelId,
+        confirmationContext: confirmationContext,
+      );
+    } catch (e, st) {
+      LoggerService().error(
+        'respondToRelayApproval: submit failed ($confirmationId)',
+        tag: 'Dispatch',
+        error: e,
+        stackTrace: st,
+      );
+      await _resolveProxyCard(messageId, meta, payload, 'failed',
+          errorNote: e.toString());
+      ChatService().notifyChannelUpdate(sourceChannelId);
+      return;
+    }
+
+    LoggerService().info(
+      'relay approval answered via She channel: ${agent.name} '
+      'confirmation=$confirmationId action=$actionId',
+      tag: 'Dispatch',
+    );
+    await _resolveProxyCard(messageId, meta, payload, 'resolved',
+        selectedActionLabel: actionLabel);
+    ChatService().notifyChannelUpdate(sourceChannelId);
+    ChatService().notifyChannelUpdate(relayChannelId);
+  }
+
+  /// 原地更新代理审批卡的终态（resolved / expired / failed）。
+  Future<void> _resolveProxyCard(
+    String messageId,
+    Map<String, dynamic> meta,
+    Map<String, dynamic> payload,
+    String status, {
+    String? selectedActionLabel,
+    String? errorNote,
+  }) async {
+    payload['status'] = status;
+    if (selectedActionLabel != null) {
+      payload['selected_action_label'] = selectedActionLabel;
+    }
+    if (errorNote != null) payload['error_note'] = errorNote;
+    meta['relay_approval'] = payload;
+
+    final agentName = payload['agent_name'] as String? ?? '';
+    final text = switch (status) {
+      'resolved' => '✅ 已处理 $agentName 的操作确认：$selectedActionLabel',
+      'expired' => '⌛ $agentName 的操作确认已过期（回合已结束）',
+      _ => '❌ $agentName 的操作确认处理失败，请到该助手的会话中处理',
+    };
+    await _db.updateMessage(
+        messageId: messageId, content: text, metadata: meta);
+  }
+
+  /// 在执行频道里按 confirmation_id 找承载该确认的消息（最新 50 条内）。
+  Future<Message?> _findRelayConfirmationMessage(
+    String relayChannelId,
+    String confirmationId,
+  ) async {
+    final messages = await ChatService()
+        .loadChannelMessages(relayChannelId, limit: 50);
+    for (final m in messages.reversed) {
+      final ac = m.metadata?['action_confirmation'];
+      if (ac is Map && ac['confirmation_id'] == confirmationId) return m;
+    }
+    return null;
   }
 
   // ---------------------------------------------------------------------------

@@ -18,6 +18,7 @@ import 'collapsible_message_bubble.dart';
 import 'permission_audit_bubble.dart';
 import 'chat/plan_approval_card.dart';
 import 'chat/dispatch_card.dart';
+import 'chat/relay_approval_card.dart';
 import 'avatar_image.dart';
 import 'chat/sticky_in_view_header.dart';
 import '../services/she_service.dart';
@@ -222,6 +223,9 @@ class MessageBubble extends StatelessWidget {
       }
       if (dispatchMeta?['dispatch_confirm'] != null) {
         return DispatchConfirmCard(message: message);
+      }
+      if (dispatchMeta?['relay_approval'] != null) {
+        return RelayApprovalCard(message: message);
       }
       return Padding(
         padding: const EdgeInsets.symmetric(vertical: 8),
