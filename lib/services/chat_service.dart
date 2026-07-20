@@ -30,6 +30,7 @@ import 'app_lifecycle_service.dart';
 import '../providers/notification_provider.dart';
 import 'foreground_task_service.dart';
 import 'logger_service.dart';
+import 'she_service.dart';
 import '../clis/shepaw/os/os_executor.dart' as os_exec;
 
 /// Result of a history supplement request, carrying both the agent's
@@ -521,6 +522,8 @@ class ChatService {
     void Function(Map<String, dynamic> metadata)? onMessageMetadata,
     void Function(Map<String, dynamic> historyRequestData)? onRequestHistory,
     Future<bool> Function(String toolName, Map<String, dynamic> args, os_exec.RiskLevel risk)? onOsToolConfirmation,
+    /// 工作流计划创建回调（She 在 DM 中调用 `shepaw workflow create` 成功后触发）。
+    void Function(String workflowId, Map<String, dynamic> planData)? onWorkflowPlanCreated,
     ACPCancellationToken? acpCancellationToken,
     List<AttachmentData>? attachments,
     Message? existingUserMessage,
@@ -547,6 +550,7 @@ class ChatService {
     onMessageMetadata: onMessageMetadata,
     onRequestHistory: onRequestHistory,
     onOsToolConfirmation: onOsToolConfirmation,
+    onWorkflowPlanCreated: onWorkflowPlanCreated,
     acpCancellationToken: acpCancellationToken,
     attachments: attachments,
     existingUserMessage: existingUserMessage,
@@ -1373,6 +1377,9 @@ class ChatService {
     )? onInteractionRequest,
     void Function()? onExecutionFinished,
     WorkflowCancellationToken? cancelToken,
+    /// OS 工具风险确认（DM 工作流步骤执行 She 的本地工具循环时可能需要）。
+    /// 由控制器接线到与 processMessage 相同的确认对话框。
+    Future<bool> Function(String toolName, Map<String, dynamic> args, os_exec.RiskLevel risk)? onOsToolConfirmation,
   }) async {
     // H1: Concurrency guard — prevent multiple executions of same workflow
     if (_activeWorkflowExecutions.containsKey(workflowId)) {
@@ -1436,6 +1443,10 @@ class ChatService {
         reachedTerminalState = true;
         return;
       }
+
+      // DM 工作流（She 私聊自规划自执行）：步骤通过 DM 消息路径逐个串行执行，
+      // 而非群聊执行器；收尾总结由 She 自己完成（她是自己私聊的工作流 admin）。
+      final isDmWorkflow = channel.isDM;
 
       // Load agents
       final agents = <RemoteAgent>[];
@@ -1503,6 +1514,37 @@ class ChatService {
           activeExec.onAgentDone?.call(adminAgent.id, adminAgent.name, true);
         }
       }
+
+      // DM 收尾总结：She 是自己私聊频道的工作流 admin（DM 无 admin 成员，
+      // runAdminClosingSummary 会空转），以一次 She 回合发布总结。
+      Future<void> runDmClosingSummary(String prompt) async {
+        final she = agents.cast<RemoteAgent?>().firstWhere(
+              (a) => a!.id == SheService.sheId,
+              orElse: () => null,
+            );
+        if (she == null) return;
+        activeExec.onAgentStart?.call(she.id, she.name);
+        try {
+          await _agentMessagingService.sendMessageToAgent(
+            content: prompt,
+            agent: she,
+            userId: userId,
+            userName: userName,
+            channelId: channelId,
+            onStreamChunk: (chunk) {
+              activeExec.onStreamChunk?.call(she.id, she.name, chunk);
+            },
+          );
+        } catch (e) {
+          LoggerService().error('DM workflow closing summary error', tag: 'ChatService', error: e);
+        } finally {
+          activeExec.onAgentDone?.call(she.id, she.name, true);
+        }
+      }
+
+      // 收尾总结分发：群聊走 admin 成员，DM 走 She。
+      Future<void> runClosingSummary(String prompt) =>
+          isDmWorkflow ? runDmClosingSummary(prompt) : runAdminClosingSummary(prompt);
 
       // Heal orphaned `running` steps left by a previous interrupted loop
       // before evaluating remaining work.
@@ -1579,22 +1621,12 @@ class ChatService {
         }
       };
 
-      // Execute stages sequentially
-      for (final stageIdx in stageIndices) {
-        // C3: Check cancellation between stages
-        if (token.isCancelled) {
-          await _workflowService.cancelWorkflow(workflowId);
-          reachedTerminalState = true;
-          return;
-        }
-
-        final steps = stageMap[stageIdx]!;
-
-        // Execute steps within stage in parallel.
-        // Only pending steps are dispatched. `running` without an in-process
-        // owner is treated as an orphan from a previous interrupted loop and
-        // completed without re-invoking the agent (avoids duplicate work on
-        // channel switch / process recovery).
+      // 群聊阶段执行体（原循环内联实现，逐字提取为闭包）：
+      // 阶段内步骤并行。Only pending steps are dispatched. `running` without
+      // an in-process owner is treated as an orphan from a previous interrupted
+      // loop and completed without re-invoking the agent (avoids duplicate work
+      // on channel switch / process recovery).
+      Future<void> executeGroupStage(List<dynamic> steps) async {
         final futures = steps
             .where((s) => s.status == StepExecutionStatus.pending)
             .map((step) async {
@@ -1661,6 +1693,117 @@ class ChatService {
         });
 
         await Future.wait(futures);
+      }
+
+      // DM 阶段执行体：步骤逐个串行，经 DM 消息路径驱动 She 的本地回合
+      // （完整 DM prompt + 多轮工具循环）。串行是必须的——流式占位 id 与
+      // _activeTasks 均按 agent/channel 键控，同 agent 并行步骤会冲突。
+      Future<void> executeDmStage(List<dynamic> steps) async {
+        for (final step in steps.where((s) => s.status == StepExecutionStatus.pending)) {
+          if (token.isCancelled) return;
+
+          await _workflowService.startStep(step.id);
+
+          final agent = agents.cast<RemoteAgent?>().firstWhere(
+            (a) => a!.name == step.agentName,
+            orElse: () => null,
+          );
+          if (agent == null) {
+            await _workflowService.failStep(step.id, 'Agent "${step.agentName}" not found');
+            continue;
+          }
+
+          activeExec.onAgentStart?.call(agent.id, agent.name);
+
+          // 取消桥接：工作流取消 → 中止当前步骤的 LLM 流（而非仅步骤边界检查）
+          final stepToken = ACPCancellationToken();
+          token.addOnCancelled(stepToken.cancel);
+
+          final stepBuffer = StringBuffer();
+          try {
+            final response = await _agentMessagingService.sendMessageToAgent(
+              content: '[Workflow "${workflow.title}" — Stage ${step.stageIndex + 1}]\n'
+                  '${step.instruction}\n\n'
+                  '立即执行该步骤，你的回复将作为步骤结果记录。'
+                  '不要调用 shepaw workflow create/dispatch/complete/fail/cancel。',
+              agent: agent,
+              userId: userId,
+              userName: userName,
+              channelId: channelId,
+              acpCancellationToken: stepToken,
+              onStreamChunk: (chunk) {
+                stepBuffer.write(chunk);
+                activeExec.onStreamChunk?.call(agent.id, agent.name, chunk);
+              },
+              // 步骤中的交互卡片只挂载不阻塞（DM UI 工具本就 fire-and-forget，
+              // 步骤在 She 回合结束时完成）。
+              onActionConfirmation: (d) => serializedInteractionRequest!(
+                agent.id, agent.name, 'action_confirmation',
+                {...d, '_workflowStepId': step.id},
+              ).ignore(),
+              onSingleSelect: (d) => serializedInteractionRequest!(
+                agent.id, agent.name, 'single_select',
+                {...d, '_workflowStepId': step.id},
+              ).ignore(),
+              onMultiSelect: (d) => serializedInteractionRequest!(
+                agent.id, agent.name, 'multi_select',
+                {...d, '_workflowStepId': step.id},
+              ).ignore(),
+              onFileUpload: (d) => serializedInteractionRequest!(
+                agent.id, agent.name, 'file_upload',
+                {...d, '_workflowStepId': step.id},
+              ).ignore(),
+              onForm: (d) => serializedInteractionRequest!(
+                agent.id, agent.name, 'form',
+                {...d, '_workflowStepId': step.id},
+              ).ignore(),
+              onFileMessage: (d) => _groupAgentExecutor.saveGroupFileMessage(
+                fileData: d,
+                agentId: agent.id,
+                agentName: agent.name,
+                channelId: channelId,
+                userId: userId,
+                userName: userName,
+              ),
+              onOsToolConfirmation: onOsToolConfirmation,
+            );
+
+            if (token.isCancelled) return;
+
+            // 步骤输出优先取持久化的最终回复（不含 UI 工具噪声），流式 buffer 兜底
+            final streamed = stepBuffer.toString();
+            final output = (response != null && response.content.isNotEmpty)
+                ? response.content
+                : streamed;
+            await _workflowService.completeStep(
+              step.id,
+              outputSummary: output.length > 500 ? '${output.substring(0, 497)}...' : output,
+            );
+          } catch (e) {
+            await _workflowService.failStep(step.id, e.toString());
+          } finally {
+            activeExec.onAgentDone?.call(agent.id, agent.name, false);
+          }
+        }
+      }
+
+      // Execute stages sequentially
+      for (final stageIdx in stageIndices) {
+        // C3: Check cancellation between stages
+        if (token.isCancelled) {
+          await _workflowService.cancelWorkflow(workflowId);
+          reachedTerminalState = true;
+          return;
+        }
+
+        final steps = stageMap[stageIdx]!;
+
+        // 按频道类型分支：群聊步骤并行（群聊执行器），DM 步骤串行（She 的 DM 回合）
+        if (isDmWorkflow) {
+          await executeDmStage(steps);
+        } else {
+          await executeGroupStage(steps);
+        }
 
         // C3: Check cancellation after stage completes
         if (token.isCancelled) {
@@ -1684,7 +1827,7 @@ class ChatService {
             channelId: channelId,
             content: '⚠️ 工作流执行失败：阶段 ${stageIdx + 1} 中成员「$failedStepNames」的任务未能完成。',
           );
-          await runAdminClosingSummary(
+          await runClosingSummary(
             '[SYSTEM] 工作流执行失败：阶段 ${stageIdx + 1} 中成员「$failedStepNames」的任务失败。请向用户说明失败情况、已完成的部分成果，以及建议的补救措施。',
           );
           reachedTerminalState = true;
@@ -1693,7 +1836,7 @@ class ChatService {
       }
 
       // All stages completed — invoke Admin for final summary
-      await runAdminClosingSummary('[SYSTEM] 工作流全部阶段已执行完毕，请对执行结果做最终总结，向用户汇报成果。');
+      await runClosingSummary('[SYSTEM] 工作流全部阶段已执行完毕，请对执行结果做最终总结，向用户汇报成果。');
 
       await _workflowService.completeWorkflow(workflowId, summary: '所有阶段执行完毕');
       reachedTerminalState = true;

@@ -45,7 +45,8 @@ class WorkflowNamespace extends CliNamespace {
   String get namespace => 'workflow';
 
   @override
-  String get description => 'Group workflow planning and execution (Admin only)';
+  String get description =>
+      'Workflow planning and execution (group Admin; She in 1:1 DM)';
 
   @override
   Map<String, CliCommand> get commands => {

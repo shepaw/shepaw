@@ -87,6 +87,9 @@ mixin _LoadOps on _ChatControllerBase {
         groupChannel = null;
         groupAgents = [];
         groupAdminAgentId = null;
+        // She 私聊启用 DM 工作流（自规划自执行）；其他 DM（普通 agent、
+        // 绑定中继会话）不启用。
+        dmWorkflowEnabled = channel.agentIds.contains(SheService.sheId);
         // Load DM channel's custom system prompt
         dmSystemPrompt = channel.systemPrompt;
         if (channel.isGroupBoundMemberSession) {
@@ -157,6 +160,11 @@ mixin _LoadOps on _ChatControllerBase {
       if (isGroupMode) {
         reattachToGroupActiveTasks();
         _reattachPendingPlanApproval();
+        await _restoreWorkflowContext();
+      } else if (dmWorkflowEnabled) {
+        // DM 工作流恢复：愈合孤儿步骤/续跑/重挂执行 UI（决策表频道无关）。
+        // _reattachPendingPlanApproval 保持群聊专属——DM 审批卡片靠
+        // 消息 metadata 持久化，无 Completer 需要重挂。
         await _restoreWorkflowContext();
       }
     } catch (e) {

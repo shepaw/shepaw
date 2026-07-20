@@ -14,6 +14,18 @@ mixin _WorkflowOps on _ChatControllerBase {
     notifyListeners();
   }
 
+  /// She 在 DM 中调用 `shepaw workflow create` 成功后回调：
+  /// 激活进度面板状态，并把审批卡片挂到当前流式气泡上（回合末持久化
+  /// metadata 由 AgentMessagingService 完成，重载后卡片仍可渲染）。
+  @override
+  void _handleDmWorkflowPlanCreated(
+    String workflowId,
+    Map<String, dynamic> planData,
+  ) {
+    setActiveWorkflowId(workflowId);
+    _updateStreamingMetadata({'plan_approval': planData});
+  }
+
   /// Peer agent tool approval blocking a workflow step (for progress panel UI).
   @override
   WorkflowPeerApprovalPending? get workflowPeerApprovalPending =>
@@ -92,8 +104,12 @@ mixin _WorkflowOps on _ChatControllerBase {
         cancelWorkflow: (id) =>
             WorkflowService(db: localDatabaseService).cancelWorkflow(id),
         startExecution: (id) async => _beginWorkflowStepExecution(id),
+        // 拒绝反馈路由：群聊作为群消息让 admin 重新规划；
+        // DM 作为发给 She 的用户消息，由她按反馈重新创建工作流。
         sendRejectionFeedback: (feedbackMessage) =>
-            processGroupMessage(feedbackMessage),
+            isGroupMode
+                ? processGroupMessage(feedbackMessage)
+                : processMessage(feedbackMessage),
         feedback: feedback,
         notify: notifyListeners,
       );
@@ -149,7 +165,7 @@ mixin _WorkflowOps on _ChatControllerBase {
   }
 
   /// Run (or resume) workflow step execution in the background.
-  void _beginWorkflowStepExecution(String workflowId) {
+  Future<void> _beginWorkflowStepExecution(String workflowId) async {
     if (currentChannelId == null) return;
     // Prefer ChatService's in-process guard — controller token is lost on
     // dispose/channel switch and must not be the only concurrency check.
@@ -157,6 +173,17 @@ mixin _WorkflowOps on _ChatControllerBase {
       _reattachWorkflowExecutionUI(workflowId);
       return;
     }
+
+    // DM 竞态防护：用户在 She 的 create 回合尚未结束时就批准计划 ——
+    // 先等该回合落库完毕再启动步骤执行，避免同频道两个回合重叠。
+    if (!isGroupMode) {
+      final activeTask = chatService.getActiveTask(currentChannelId!);
+      if (activeTask != null) {
+        await activeTask.dbSaveCompleter.future
+            .timeout(const Duration(minutes: 2), onTimeout: () {});
+      }
+    }
+
     final cancelToken = workflow.takeCancelTokenForNewExecution(
       chatService: chatService,
       workflowId: workflowId,
@@ -172,6 +199,11 @@ mixin _WorkflowOps on _ChatControllerBase {
       userId: userId,
       userName: userName,
       cancelToken: cancelToken,
+      onOsToolConfirmation: (toolName, args, risk) async {
+        final event = ShowOsToolConfirmationEvent(toolName, args, risk);
+        _emit(event);
+        return await event.result.future;
+      },
       onAgentStart: (aid, anm) {
         _onWorkflowAgentStart(aid, anm, userId: userId, userName: userName);
       },
@@ -240,6 +272,8 @@ mixin _WorkflowOps on _ChatControllerBase {
     respondingAgentNames.clear();
     groupStreamingMessageIds.clear();
     _notify();
+    // 排空工作流期间用户排队的消息（此前 isProcessing=true 导致入队）。
+    unawaited(processNextInQueue());
   }
 
   /// Re-attach UI callbacks to a workflow that is still running in ChatService

@@ -164,6 +164,8 @@ class AgentMessagingService {
     void Function(Map<String, dynamic> metadata)? onMessageMetadata,
     void Function(Map<String, dynamic> historyRequestData)? onRequestHistory,
     Future<bool> Function(String toolName, Map<String, dynamic> args, os_exec.RiskLevel risk)? onOsToolConfirmation,
+    /// 工作流计划创建回调（She 在 DM 中调用 `shepaw workflow create` 成功后触发）。
+    void Function(String workflowId, Map<String, dynamic> planData)? onWorkflowPlanCreated,
     ACPCancellationToken? acpCancellationToken,
     List<AttachmentData>? attachments,
     Message? existingUserMessage,
@@ -200,6 +202,7 @@ class AgentMessagingService {
           onFileMessage: onFileMessage,
           onMessageMetadata: onMessageMetadata,
           onOsToolConfirmation: onOsToolConfirmation,
+          onWorkflowPlanCreated: onWorkflowPlanCreated,
           acpCancellationToken: acpCancellationToken,
           attachments: attachments,
           existingUserMessage: existingUserMessage,
@@ -1336,6 +1339,9 @@ class AgentMessagingService {
     Future<void> Function(Map<String, dynamic>)? onFileMessage,
     void Function(Map<String, dynamic>)? onMessageMetadata,
     Future<bool> Function(String, Map<String, dynamic>, os_exec.RiskLevel)? onOsToolConfirmation,
+    /// 工作流计划创建回调（She 在 DM 中调用 `shepaw workflow create` 成功后触发）。
+    /// 参数：workflowId、可直接挂到消息 metadata 的 plan_approval 数据。
+    void Function(String workflowId, Map<String, dynamic> planData)? onWorkflowPlanCreated,
     ACPCancellationToken? acpCancellationToken,
     List<AttachmentData>? attachments,
     Message? existingUserMessage,
@@ -1548,6 +1554,7 @@ class AgentMessagingService {
       Map<String, dynamic>? fileUploadData;
       Map<String, dynamic>? formDataCapture;
       Map<String, dynamic>? messageMetadataExtra;
+      Map<String, dynamic>? planApprovalData;
       bool fileMessageHandled = false;
 
       final maxToolRounds = (agent.metadata?['max_tool_rounds'] as num?)?.toInt() ?? 100;
@@ -1834,6 +1841,28 @@ class AgentMessagingService {
               });
               infLog.onToolResult(activeTask.taskId, toolCallId: tc.id, name: tc.name, result: result);
 
+              // 工作流计划创建（She 在 DM 中调用 shepaw workflow create）：
+              // 与群聊执行器一致，检出 pending_approval 结果后通知控制器
+              // 激活进度面板并把审批卡片挂到流式气泡；回合末再合并进持久化
+              // 消息 metadata，保证频道重载后卡片仍可渲染。
+              try {
+                final cliJson = jsonDecode(result) as Map<String, dynamic>?;
+                if (cliJson != null && cliJson['status'] == 'pending_approval') {
+                  final workflowId = cliJson['workflow_id'] as String?;
+                  final planDataRaw = cliJson['_plan_data'] as Map<String, dynamic>?;
+                  if (workflowId != null && planDataRaw != null) {
+                    final planData = {
+                      ...planDataRaw,
+                      '_workflowId': workflowId,
+                      '_non_blocking': true,
+                    };
+                    planApprovalData = planData;
+                    onWorkflowPlanCreated?.call(workflowId, planData);
+                  }                }
+              } catch (e) {
+                LoggerService().warning('Workflow approval flow error: $e', tag: 'AgentMessagingService');
+              }
+
               // 持久化工具执行结果
               await historyService.saveToolExecution(
                 messageId: agentMessageId,
@@ -1910,6 +1939,7 @@ class AgentMessagingService {
       if (multiSelectData != null) meta['multi_select'] = multiSelectData;
       if (fileUploadData != null) meta['file_upload'] = fileUploadData;
       if (formDataCapture != null) meta['form'] = formDataCapture;
+      if (planApprovalData != null) meta['plan_approval'] = planApprovalData;
       final messageMetadata = meta;
       activeTask.metadata = messageMetadata;
 

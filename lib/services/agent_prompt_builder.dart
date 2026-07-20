@@ -104,6 +104,13 @@ class AgentPromptBuilder {
       parts.add(SheService.buildShepawGuidanceBlock(agent));
     }
 
+    // ③'' DM workflow playbook — She only. AgentPromptBuilder is used
+    // exclusively by the DM messaging path, so She + this builder implies
+    // 1:1 context by construction (group prompts come from GroupPromptBuilder).
+    if (agent.isShe && config.she.includeMetaCognition) {
+      parts.add(SheService.buildDmWorkflowPlaybookBlock());
+    }
+
     // ④ She memory context (soul) — guarded by SheStackConfig flag.
     // Non-She agents have SheStackConfig.disabled so this is always false for them.
     if (config.she.includeSheMemory) {

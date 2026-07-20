@@ -111,10 +111,32 @@ enum StepExecutionStatus {
 class WorkflowCancellationToken {
   bool _cancelled = false;
 
+  final List<void Function()> _cancelListeners = [];
+
   bool get isCancelled => _cancelled;
 
+  /// Register a listener invoked once when [cancel] is called.
+  ///
+  /// If the token is already cancelled, the listener fires immediately.
+  /// Used to bridge workflow cancellation into per-step cancellation tokens
+  /// (e.g. aborting an in-flight LLM stream mid-step, not just at step
+  /// boundaries).
+  void addOnCancelled(void Function() listener) {
+    if (_cancelled) {
+      listener();
+      return;
+    }
+    _cancelListeners.add(listener);
+  }
+
   void cancel() {
+    if (_cancelled) return;
     _cancelled = true;
+    final listeners = List<void Function()>.from(_cancelListeners);
+    _cancelListeners.clear();
+    for (final listener in listeners) {
+      listener();
+    }
   }
 }
 

@@ -22,7 +22,8 @@ import '../../../services/workflow/workflow_service.dart';
 ///
 /// 创建后系统会向用户展示审批卡片。
 /// 命令立即返回 workflow_id 和 pending_approval 状态。
-/// Admin 应等待用户审批后再调用 `workflow dispatch`。
+/// 群聊 Flow Mode 下 Admin 等待用户审批后再调用 `workflow dispatch`；
+/// She 的 1:1 私聊中审批通过后由系统自动开始执行，无需再调 dispatch。
 class WorkflowCreateCommand extends CliCommand {
   @override
   String get name => 'create';
@@ -48,7 +49,7 @@ class WorkflowCreateCommand extends CliCommand {
       return {'error': 'Missing required flag: --stages (JSON array)'};
     }
     if (channelId == null || channelId.isEmpty) {
-      return {'error': 'No active channel context. This command must be used in a group chat.'};
+      return {'error': 'No active channel context.'};
     }
 
     // Parse stages JSON
@@ -118,7 +119,7 @@ class WorkflowCreateCommand extends CliCommand {
       'title': title,
       'total_stages': stages.length,
       'total_steps': stages.fold<int>(0, (sum, s) => sum + s.steps.length),
-      'message': '工作流已创建，等待用户审批。审批通过后请调用 workflow dispatch 开始执行。',
+      'message': '工作流已创建，等待用户审批。审批通过后系统会自动开始执行。',
       '_plan_data': flowPlan.toExecutionPlan().toJson(),
     };
   }

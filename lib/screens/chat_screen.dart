@@ -1726,7 +1726,8 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
           ),
 
           // Workflow progress panel (floating above input)
-          if (c.isGroupMode && c.workflowNeedsPanelAttention)
+          if ((c.isGroupMode || c.dmWorkflowEnabled) &&
+              c.workflowNeedsPanelAttention)
             Material(
               color: Colors.blue.shade50,
               child: InkWell(
@@ -1756,7 +1757,8 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                 ),
               ),
             ),
-          if (c.isGroupMode && c.showWorkflowProgressPanel)
+          if ((c.isGroupMode || c.dmWorkflowEnabled) &&
+              c.showWorkflowProgressPanel)
             WorkflowProgressPanel(
               workflowId: c.activeWorkflowId!,
               pendingPeerApproval: c.workflowPeerApprovalPending,

@@ -14,6 +14,10 @@ import '../../../services/local_database_service.dart';
 /// - 自动更新各步骤状态
 ///
 /// 注意：此命令是阻塞式的，直到阶段内所有步骤完成才返回。
+///
+/// 仅限群聊 Flow Mode：步骤执行回调（executeStepFnMap）只由
+/// GroupAgentExecutor 按频道注册。She 的 1:1 私聊工作流由
+/// ChatService.executeWorkflowSteps 的 DM 分支驱动，不经过本命令。
 class WorkflowDispatchCommand extends CliCommand {
   /// Per-channel step execution callbacks.
   /// Keyed by channelId to prevent cross-channel contamination (C1 fix).

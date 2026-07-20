@@ -436,6 +436,7 @@ mixin _MessagingOps on _ChatControllerBase {
     _notify();
   }
 
+  @override
   Future<void> processNextInQueue() async {
     if (messageQueue.isEmpty) return;
 
@@ -557,6 +558,7 @@ mixin _MessagingOps on _ChatControllerBase {
           streaming.applyMetadataTo(messages, messageIdMap, metadata);
           _notify();
         },
+        onWorkflowPlanCreated: _handleDmWorkflowPlanCreated,
         onRequestHistory: (historyData) {
           pendingHistoryRequest = Map<String, dynamic>.from(historyData);
         },
@@ -761,6 +763,7 @@ mixin _MessagingOps on _ChatControllerBase {
     return true;
   }
 
+  @override
   void _updateStreamingMetadata(Map<String, dynamic> metadata) {
     streaming.applyMetadataTo(messages, messageIdMap, metadata);
     // Keep content in sync with the session accumulator when present.

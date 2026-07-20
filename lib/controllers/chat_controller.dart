@@ -19,6 +19,7 @@ import '../services/app_lifecycle_service.dart';
 import '../services/notification_service.dart';
 import '../services/interactive_response_handler.dart';
 import '../services/logger_service.dart';
+import '../services/she_service.dart';
 import '../services/workflow/workflow_service.dart';
 import '../models/workflow_models.dart';
 import '../models/workflow_pending_approval.dart';
@@ -182,6 +183,11 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
   // ---- Group mode state ----
   bool isGroupMode = false;
   Channel? groupChannel;
+
+  /// She 私聊的工作流能力（She 自规划自执行复杂需求）。
+  /// 频道加载时按 `isDM && agentIds.contains(SheService.sheId)` 计算，
+  /// 用于解除工作流面板/恢复逻辑的群聊门控。
+  bool dmWorkflowEnabled = false;
   List<RemoteAgent> groupAgents = [];
   Set<String> respondingAgentNames = {};
   bool mentionOnlyMode = false;
@@ -468,6 +474,8 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
   void reattachToGroupActiveTasks();
   void _reattachPendingPlanApproval();
   void scheduleStreamingRebuild();
+  Future<void> processNextInQueue();
+  void _updateStreamingMetadata(Map<String, dynamic> metadata);
   Future<void> processMessage(String content, {String? replyToId, List<AttachmentData>? attachments, List<Message>? attachmentMessages});
   Future<void> processGroupMessage(String content, {String? replyToId, List<AttachmentData>? attachments, List<MentionEntry> mentions = const []});
   String? _resolveGroupInteractionMessageId({
@@ -478,6 +486,9 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
     String? preferredSid,
   });
   void _updateGroupStreamingMetadata(String streamingId, String key, Map<String, dynamic> data);
+
+  // ---- Workflow hooks (implemented by [_WorkflowOps]) ----
+  void _handleDmWorkflowPlanCreated(String workflowId, Map<String, dynamic> planData);
 
   Future<void> reloadMessagesFromDB() async {
     if (currentChannelId == null) return;

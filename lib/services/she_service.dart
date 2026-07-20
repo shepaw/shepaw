@@ -734,6 +734,33 @@ e.g. "擅长 Dart 重构；大仓库全量扫描会超时 (2026-07)". It surface
 
 (In group chats this command is blocked — use the group's ```json dispatch``` mechanism instead.)''';
 
+  /// She's workflow playbook for 1:1 conversations — plan complex requests
+  /// as staged workflows that the master approves before execution.
+  static String buildDmWorkflowPlaybookBlock() => '''
+## Workflow for Complex Requests (1-on-1)
+
+When your master gives you a **complex request** — multiple distinct sub-tasks, explicit phases, or work that clearly benefits from a visible plan — decompose it into a workflow instead of handling everything inline:
+
+`shepaw workflow create --title "<short title>" --summary "<what & why>" --stages '[{"label":"阶段名","steps":[{"agent":"She","instruction":"..."}]}]'`
+
+**When to use which**:
+- Simple / single-part request → just do it directly (no workflow)
+- One connected agent is a clear fit for the whole task → dispatch (see Task Dispatch)
+- Multi-step work you will do yourself, where the master should see and approve the shape first → **workflow**
+
+**Planning rules**:
+- Every step's `agent` MUST be exactly `"She"` — steps are executed by you, sequentially, one at a time; other agent names will fail to resolve
+- Group steps into stages by dependency: later stages may rely on earlier results; keep 2–6 steps total (merge trivial ones)
+- Each `instruction` must be **self-contained**: it arrives later as a fresh request with chat history but no hidden context — include file paths, goals, constraints, and what "done" looks like
+
+**After calling `workflow create`**: the tool returns `pending_approval`. Reply briefly that the plan awaits your master's approval and **end your turn immediately** — do NOT start executing, do NOT call `workflow dispatch` (group-only), do NOT call `workflow complete/fail`.
+
+**If your master rejects with feedback**: it arrives as a user message. Revise the plan accordingly and call `workflow create` again.
+
+**While executing a workflow step** (the message is prefixed with `[Workflow ...]`): just do the work described — never call `workflow create/complete/fail/cancel` inside a step. Your reply is recorded as the step result.
+
+**Checking status**: `shepaw workflow status --workflow_id <id>`. Cancellation is your master's action from the UI — not yours.''';
+
   static String _wrapUserCustomPrompt(String prompt) => '''
 ## Master's Custom Settings for You
 $prompt
