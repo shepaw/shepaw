@@ -301,6 +301,16 @@ class MessageBubble extends StatelessWidget {
     );
   }
 
+  String _senderDisplayName(BuildContext context) {
+    if (message.from.id == SheService.sheId) {
+      return SheService.resolveDisplayName(
+        message.from.name,
+        AppLocalizations.of(context).she_name,
+      );
+    }
+    return message.from.name;
+  }
+
   /// Collapsed body: home conversation-list style; tap row to expand.
   Widget _buildCollapsedListTile(BuildContext context) {
     final onToggle = onToggleBodyCollapse;
@@ -324,7 +334,7 @@ class MessageBubble extends StatelessWidget {
                       children: [
                         Expanded(
                           child: Text(
-                            message.from.name,
+                            _senderDisplayName(context),
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                             style: const TextStyle(
@@ -432,7 +442,7 @@ class MessageBubble extends StatelessWidget {
             children: [
               Flexible(
                 child: Text(
-                  message.from.name,
+                  _senderDisplayName(context),
                   overflow: TextOverflow.ellipsis,
                   style: const TextStyle(
                     fontSize: 12,
@@ -954,7 +964,12 @@ class MessageBubble extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           children: [
             Text(
-              quoted.from.name,
+              quoted.from.id == SheService.sheId
+                  ? SheService.resolveDisplayName(
+                      quoted.from.name,
+                      AppLocalizations.of(context).she_name,
+                    )
+                  : quoted.from.name,
               style: TextStyle(
                 fontSize: 12,
                 fontWeight: FontWeight.w600,

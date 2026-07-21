@@ -228,7 +228,7 @@ class _ContactsScreenState extends State<ContactsScreen>
     final l10n = AppLocalizations.of(context);
     final isOnline = agent.status.isOnline;
     final displayName = SheService.isSheIdentity(agent.id, agent.metadata)
-        ? l10n.she_name
+        ? SheService.resolveDisplayName(agent.name, l10n.she_name)
         : agent.name;
 
     return ListTile(

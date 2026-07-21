@@ -1557,7 +1557,9 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     final l10n = AppLocalizations.of(context);
     final title = c.isGroupMode
         ? (c.groupChannel?.name ?? l10n.chat_editGroupInfo)
-        : (c.agentName == SheService.sheName ? l10n.she_name : (c.agentName ?? 'AI Agent'));
+        : (SheService.isSheIdentity(c.agentId)
+            ? SheService.resolveDisplayName(c.agentName, l10n.she_name)
+            : (c.agentName ?? 'AI Agent'));
 
     return ChatMobileMenuDrawer(
       isGroupMode: c.isGroupMode,

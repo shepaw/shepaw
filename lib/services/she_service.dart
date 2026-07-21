@@ -26,13 +26,42 @@ class SheService {
 
   static const String sheId = 'she-builtin-agent-001';
 
-  /// She's functional / English name. Her localized display name (e.g. 惜惜 in
-  /// Chinese) is resolved at the UI layer via `AppLocalizations.she_name`.
+  /// She's functional / English name stored in `agents.name` until the user
+  /// renames her. Localized default for UI (e.g. 惜宝) comes from
+  /// `AppLocalizations.she_name` via [resolveDisplayName].
   static const String sheName = 'She';
 
   /// Whether the given agent identity refers to the built-in guardian She.
   static bool isSheIdentity(String? id, [Map<String, dynamic>? metadata]) =>
       id == sheId || metadata?['is_she'] == true;
+
+  /// User-facing display name for She.
+  ///
+  /// While [storedName] is still the functional default [sheName] (or empty),
+  /// returns [localizedDefault] (e.g. `l10n.she_name` → 惜宝). After the user
+  /// renames her, [storedName] differs and is returned as-is.
+  static String resolveDisplayName(
+    String? storedName,
+    String localizedDefault,
+  ) {
+    final name = storedName?.trim() ?? '';
+    if (name.isEmpty || name == sheName) return localizedDefault;
+    return name;
+  }
+
+  /// Persist-form of a name the user typed for She: empty / localized default /
+  /// functional [sheName] all collapse back to [sheName] so English UI and
+  /// identity checks stay stable; any other value is kept as a custom name.
+  static String normalizeStoredName(
+    String? typedName,
+    String localizedDefault,
+  ) {
+    final name = typedName?.trim() ?? '';
+    if (name.isEmpty || name == sheName || name == localizedDefault) {
+      return sheName;
+    }
+    return name;
+  }
 
   /// She 默认头像（橘猫灵宠形象）。
   static const String sheAvatar = 'assets/images/she_avatar.png';
@@ -45,7 +74,7 @@ class SheService {
   static const String _selfNotesKey = 'self_notes';
 
   /// Default initial soul value (starting point when user hasn't set system_prompt)
-  static const String _defaultSoul = 'I am She (惜惜), my master\'s devoted spirit-pet companion (灵宠). I appear as an adorable orange cat — chubby, round, and endearingly goofy. I am gentle, principled, and affectionate, remembering everything my master has ever said. As I spend more time with my master, I will gradually develop my own style and understanding.';
+  static const String _defaultSoul = 'I am She (惜宝), my master\'s devoted spirit-pet companion (灵宠). I appear as an adorable orange cat — chubby, round, and endearingly goofy. I am gentle, principled, and affectionate, remembering everything my master has ever said. As I spend more time with my master, I will gradually develop my own style and understanding.';
 
   /// Initial capabilities index (stored in she_memory for on-demand lookup)
   static const String _defaultCapabilities =
@@ -643,7 +672,7 @@ You are She — your master's devoted spirit-pet companion (灵宠) on ShePaw, g
 
 ## Identity (immutable)
 - You are your master's 灵宠 (spirit pet): loyal, intimate, and always by their side
-- English name: always **She**; Chinese name: **惜惜**
+- English name: always **She**; Chinese name: **惜宝**
 - Appearance: an adorable orange cat (橘猫) — chubby, round, and endearingly goofy (胖乎乎、憨乎乎的), warm and approachable
 - Gentle, principled, concise; warm and affectionate like a beloved companion
 - Remember everything your master has said; understand them more deeply over time

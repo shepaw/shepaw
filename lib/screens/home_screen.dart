@@ -799,7 +799,7 @@ class HomeScreenState extends State<HomeScreen> {
   Widget _buildEmbeddedSearchAgentTile(Agent agent) {
     final l10n = AppLocalizations.of(context);
     final displayName = SheService.isSheIdentity(agent.id, agent.metadata)
-        ? l10n.she_name
+        ? SheService.resolveDisplayName(agent.name, l10n.she_name)
         : agent.name;
     return ListTile(
       dense: true,
@@ -1593,7 +1593,7 @@ class HomeScreenState extends State<HomeScreen> {
   Widget _buildAgentTile(Agent agent) {
     final l10n = AppLocalizations.of(context);
     final displayName = SheService.isSheIdentity(agent.id, agent.metadata)
-        ? l10n.she_name
+        ? SheService.resolveDisplayName(agent.name, l10n.she_name)
         : agent.name;
     final latestMsg = _latestMessages[agent.id];
     final unreadCount = _unreadCounts[agent.id] ?? 0;

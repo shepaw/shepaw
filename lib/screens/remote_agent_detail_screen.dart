@@ -12,6 +12,7 @@ import '../peer/services/peer_agent_client_service.dart';
 import '../peer/services/peer_connection.dart' show PeerConnectionEvent, PeerConnectionEventType;
 import '../peer/models/paired_peer.dart' show PeerConnectionState;
 import '../services/remote_agent_service.dart';
+import '../services/she_service.dart';
 import '../services/local_file_storage_service.dart';
 import '../services/model_registry.dart';
 import '../models/agent_scenario_models.dart';
@@ -315,7 +316,10 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
   }
 
   void _syncControllersFromAgent() {
-    _nameController.text = _agent.name;
+    final l10n = AppLocalizations.of(context);
+    _nameController.text = _agent.isShe
+        ? SheService.resolveDisplayName(_agent.name, l10n.she_name)
+        : _agent.name;
     _bioController.text = _agent.bio ?? '';
     _endpointController.text = _agent.endpoint;
     _systemPromptController.text =
@@ -377,9 +381,12 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
   Future<void> _persistChanges({bool showFeedback = false}) async {
     if (!_isEditing) return;
     final l10n = AppLocalizations.of(context);
-    final name = _nameController.text.trim();
+    var name = _nameController.text.trim();
     if (name.isEmpty) {
       return;
+    }
+    if (_agent.isShe) {
+      name = SheService.normalizeStoredName(name, l10n.she_name);
     }
 
     if (_isSaving) {
@@ -942,7 +949,10 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
         ),
         const SizedBox(height: 16),
         Text(
-          _agent.isShe ? AppLocalizations.of(context).she_name : _agent.name,
+          SheService.resolveDisplayName(
+            _agent.name,
+            AppLocalizations.of(context).she_name,
+          ),
           style: Theme.of(context).textTheme.headlineSmall?.copyWith(
                 fontWeight: FontWeight.bold,
               ),
