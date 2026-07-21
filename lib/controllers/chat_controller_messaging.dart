@@ -20,25 +20,57 @@ mixin _MessagingOps on _ChatControllerBase {
     final activeTask = chatService.getActiveTask(currentChannelId!);
     if (activeTask == null) return;
 
-    streaming.begin(
-      'streaming_reattach_${DateTime.now().millisecondsSinceEpoch}',
+    // Prefer the flushed partial already loaded from DB so switch-back does
+    // not stack a second near-duplicate streaming bubble.
+    final reusable = ChatMessageReconciler.findReusableDmStreamingHost(
+      messages: messages,
+      agentId: activeTask.agentId,
+      partialMessageId: activeTask.partialMessageId,
     );
+    final hostId = reusable?.id ??
+        'streaming_reattach_${DateTime.now().millisecondsSinceEpoch}';
+
+    streaming.begin(hostId);
     streaming.content = activeTask.accumulatedContent;
 
-    final streamingMessage = ChatStreamingText.placeholder(
-      id: streaming.messageId!,
-      from: MessageFrom(id: activeTask.agentId, type: 'agent', name: activeTask.agentName),
-      to: MessageFrom(id: activeTask.userId, type: 'user', name: activeTask.userName),
-      timestampMs: DateTime.now().millisecondsSinceEpoch + 1,
-    );
-    // placeholder starts empty — restore accumulated content
-    final seeded = ChatStreamingText.withUpdatedContent(
-      streamingMessage,
-      streaming.content,
-    );
+    var seeded = reusable != null
+        ? ChatStreamingText.withUpdatedContent(
+            reusable,
+            streaming.content,
+          )
+        : ChatStreamingText.withUpdatedContent(
+            ChatStreamingText.placeholder(
+              id: hostId,
+              from: MessageFrom(
+                id: activeTask.agentId,
+                type: 'agent',
+                name: activeTask.agentName,
+              ),
+              to: MessageFrom(
+                id: activeTask.userId,
+                type: 'user',
+                name: activeTask.userName,
+              ),
+              timestampMs: DateTime.now().millisecondsSinceEpoch + 1,
+            ),
+            streaming.content,
+          );
+    final liveMeta = activeTask.metadata;
+    if (liveMeta != null && liveMeta.isNotEmpty) {
+      seeded = ChatStreamingText.withMergedMetadata(seeded, liveMeta);
+    }
 
     isProcessing = true;
-    messages.add(seeded);
+    if (reusable != null) {
+      final idx = messages.indexWhere((m) => m.id == reusable.id);
+      if (idx >= 0) {
+        messages[idx] = seeded;
+      } else {
+        messages.add(seeded);
+      }
+    } else {
+      messages.add(seeded);
+    }
     messageIdMap[seeded.id] = seeded;
     _notify();
     _emit(RequestScrollToBottomEvent(force: true));

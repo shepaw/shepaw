@@ -31,6 +31,62 @@ Message _user(String id, {String content = 'hi', int ts = 1}) {
 }
 
 void main() {
+  group('ChatMessageReconciler.findReusableDmStreamingHost', () {
+    test('prefers partialMessageId match', () {
+      final partial = _agent(
+        'partial_1',
+        agentId: 'agent',
+        content: 'Hello',
+        metadata: {'status': 'streaming'},
+      );
+      final other = _agent(
+        'partial_2',
+        agentId: 'agent',
+        content: 'Other',
+        ts: 2,
+        metadata: {'status': 'streaming'},
+      );
+      final found = ChatMessageReconciler.findReusableDmStreamingHost(
+        messages: [partial, other],
+        agentId: 'agent',
+        partialMessageId: 'partial_1',
+      );
+      expect(found?.id, 'partial_1');
+    });
+
+    test('falls back to latest status=streaming for agent', () {
+      final older = _agent(
+        'p1',
+        agentId: 'agent',
+        content: 'a',
+        ts: 1,
+        metadata: {'status': 'streaming'},
+      );
+      final newer = _agent(
+        'p2',
+        agentId: 'agent',
+        content: 'ab',
+        ts: 2,
+        metadata: {'status': 'streaming'},
+      );
+      final done = _agent('done', agentId: 'agent', content: 'old', ts: 0);
+      final found = ChatMessageReconciler.findReusableDmStreamingHost(
+        messages: [done, older, newer],
+        agentId: 'agent',
+        partialMessageId: null,
+      );
+      expect(found?.id, 'p2');
+    });
+
+    test('returns null when no streaming host', () {
+      final found = ChatMessageReconciler.findReusableDmStreamingHost(
+        messages: [_agent('done', agentId: 'agent', content: 'done')],
+        agentId: 'agent',
+      );
+      expect(found, isNull);
+    });
+  });
+
   group('ChatMessageReconciler.mergeDmStreamingPlaceholders', () {
     test('returns db list when no streaming temps', () {
       final db = [_user('u1'), _agent('a1', agentId: 'agent')];
@@ -80,6 +136,37 @@ void main() {
       expect(agent.metadata?['progress_content'], 'thinking');
       expect(agent.metadata?['status'], 'streaming');
       expect(merged.any((m) => m.id == 'streaming_1'), isFalse);
+    });
+
+    test('folds live temp into flushed partial that already has text', () {
+      final temp = _agent(
+        'streaming_reattach_1',
+        agentId: 'agent',
+        content: 'Hello world',
+        ts: 30,
+      );
+      final flushed = _agent(
+        'partial_db',
+        agentId: 'agent',
+        content: 'Hello',
+        ts: 25,
+        metadata: {'status': 'streaming', 'is_partial': true},
+      );
+      final prior = _agent(
+        'older_done',
+        agentId: 'agent',
+        content: 'previous turn',
+        ts: 5,
+      );
+      final merged = ChatMessageReconciler.mergeDmStreamingPlaceholders(
+        current: [_user('u1', ts: 10), prior, flushed, temp],
+        dbMessages: [_user('u1', ts: 10), prior, flushed],
+      );
+      expect(merged.map((m) => m.id), ['older_done', 'u1', 'partial_db']);
+      final host = merged.firstWhere((m) => m.id == 'partial_db');
+      expect(host.content, 'Hello world');
+      expect(host.metadata?['status'], 'streaming');
+      expect(merged.any((m) => m.id.startsWith('streaming_')), isFalse);
     });
 
     test('ignores empty streaming temps', () {

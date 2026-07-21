@@ -28,6 +28,7 @@ import '../../service_locator.dart' show getIt;
 import 'peer_connection.dart' show PeerConnectionEvent, PeerConnectionEventType;
 import '../peer_approval_payload.dart';
 import 'peer_connection_manager.dart';
+import 'peer_turn_resume.dart';
 
 /// peer-agent 在本地 `agents` 表中的稳定 id（保证重复注入是 upsert 而非新增）。
 String peerAgentLocalId(String peerId, String remoteAgentId) =>
@@ -300,6 +301,15 @@ class _PendingRequest {
   DateTime noOpenApprovalsSince = DateTime.now();
   /// agent_done payload held until [openApprovals] reaches zero.
   Map<String, dynamic>? bufferedDone;
+  /// 已接收 chunk 内容的累计长度（UTF-16 码元，与 hub 的 accumulated 对齐）。
+  /// resume_req 的 known_content_length 即取此值。
+  int receivedLength = 0;
+  /// 非 null 表示该 turn 因 peer 断连而挂起，等待重连续传。
+  DateTime? suspendedSince;
+  /// 是否已发出 resume_req 且尚未收到应答（防止重复发送）。
+  bool resumeInFlight = false;
+  /// 发出 resume_req 时的 receivedLength 基准，用于 delta 去重（drop-prefix）。
+  int? resumeBaseLength;
   _PendingRequest(
     this.peerId,
     this.onChunk,
@@ -331,6 +341,14 @@ class PeerAgentClientService {
   /// APPROVAL_TIMEOUT_MS), which also ends the turn — waiting past 25 min
   /// means the verdict path is gone for good.
   static const Duration approvalWaitHardCap = Duration(minutes: 25);
+
+  /// 断连挂起（等待重连续传）的最长时长。挂起期间 idle 计时冻结（对端本来
+  /// 就不可能有帧到达），超过该时长说明重连无望，判 turn 失败。
+  static const Duration suspendWaitHardCap = Duration(minutes: 10);
+
+  /// resume_req 发出后对端无应答的容忍时长（旧版本 hub 不支持续传时
+  /// 不会回复），超时按「对端不支持续传」失败，避免无限悬挂。
+  static const Duration resumeResponseTimeout = Duration(seconds: 10);
 
   final _log = LoggerService();
   final _uuid = const Uuid();
@@ -374,6 +392,17 @@ class PeerAgentClientService {
   /// Approvals that arrived after agent_done already cleared `_pending`.
   /// Kept briefly so a late UI path can still surface / submit them.
   final Map<String, Map<String, dynamic>> _orphanedApprovals = {};
+
+  /// 已成功提交的裁决（approvalId → 裁决内容）。hub 断连重连后会重发卡片；
+  /// 若裁决其实已提交成功（只是 resp 没到达 hub），重发的卡片用这里存储的
+  /// 裁决自动应答，不再计数、不再弹卡（E24）。
+  /// 有界：超过 50 条时淘汰最旧。
+  final Map<String, ({String actionId, String? label})> _submittedApprovals = {};
+
+  /// 断连挂起期间用户本地取消的 turn（requestId → peerId）。
+  /// 重连后对这些 requestId 补发 agent_cancel 而非 resume_req。
+  /// 有界：超过 100 条时淘汰最旧。
+  final Map<String, String> _cancelledWhileSuspended = {};
 
   /// requestId → owning agent, retained briefly after a turn finishes so an
   /// approval that outlives its sendChat request (e.g. the hub restarted
@@ -429,6 +458,8 @@ class PeerAgentClientService {
     _pending.clear();
     _approvalToRequest.clear();
     _orphanedApprovals.clear();
+    _submittedApprovals.clear();
+    _cancelledWhileSuspended.clear();
     _requestAgents.clear();
     for (final c in _pendingSessions.values) {
       if (!c.isCompleted) c.complete(const []);
@@ -601,6 +632,16 @@ class PeerAgentClientService {
       }));
       final p = _pending.remove(requestId);
       if (p != null && !p.completer.isCompleted) {
+        // 断连挂起期间的取消：上面的 sendControl 大概率发不出去（连接已断），
+        // 登记下来，重连后补发 cancel 而不是 resume（见 _resumeSuspendedTurns）。
+        if (p.suspendedSince != null) {
+          _cancelledWhileSuspended[requestId] = peerId;
+          if (_cancelledWhileSuspended.length > 100) {
+            _cancelledWhileSuspended.remove(
+              _cancelledWhileSuspended.keys.first,
+            );
+          }
+        }
         p.completer.complete(PeerChatResult(content: '[Stopped]'));
       }
     });
@@ -632,6 +673,10 @@ class PeerAgentClientService {
   /// approval cancels the remote turn and strands the verdict, which looks
   /// exactly like "approved but stuck". [approvalWaitHardCap] bounds even
   /// the approval-waiting state in case the bridge's denial never arrives.
+  ///
+  /// Suspended turns (peer disconnected, waiting for resume) freeze the idle
+  /// clock too — the remote can't possibly send frames while the link is
+  /// down — but are bounded by [suspendWaitHardCap].
   Future<PeerChatResult> _awaitTurnCompletion(
     String requestId,
     _PendingRequest pending,
@@ -643,16 +688,23 @@ class PeerAgentClientService {
         timer.cancel();
         return;
       }
-      final now = DateTime.now();
-      final idleTooLong = pending.openApprovals == 0 &&
-          now.difference(pending.noOpenApprovalsSince) > chatTimeout;
-      final hardCapHit = now.difference(startedAt) > approvalWaitHardCap;
-      if (idleTooLong || hardCapHit) {
+      final verdict = evaluateTurnWatchdog(
+        now: DateTime.now(),
+        startedAt: startedAt,
+        noOpenApprovalsSince: pending.noOpenApprovalsSince,
+        suspendedSince: pending.suspendedSince,
+        openApprovals: pending.openApprovals,
+        chatTimeout: chatTimeout,
+        suspendWaitHardCap: suspendWaitHardCap,
+        approvalWaitHardCap: approvalWaitHardCap,
+      );
+      if (verdict != TurnWatchdogVerdict.none) {
         timer.cancel();
         _timeoutRequest(
           requestId,
           peerId,
           duringApproval: pending.openApprovals > 0,
+          duringSuspend: verdict == TurnWatchdogVerdict.suspendCap,
         );
       }
     });
@@ -670,6 +722,7 @@ class PeerAgentClientService {
     String requestId,
     String peerId, {
     required bool duringApproval,
+    bool duringSuspend = false,
   }) {
     final p = _pending.remove(requestId);
     if (p == null || p.completer.isCompleted) return;
@@ -684,15 +737,17 @@ class PeerAgentClientService {
     }
     _log.warning(
       'chat timeout requestId=$requestId duringApproval=$duringApproval '
-      'openApprovals=${p.openApprovals}',
+      'duringSuspend=$duringSuspend openApprovals=${p.openApprovals}',
       tag: 'PeerApproval',
     );
     p.completer.completeError(
       TimeoutException(
-        duringApproval
-            ? '审批等待超时，请重新发送消息'
-            : '对端 agent 响应超时（${chatTimeout.inSeconds}s）',
-        chatTimeout,
+        duringSuspend
+            ? '重连超时，对话中断'
+            : duringApproval
+                ? '审批等待超时，请重新发送消息'
+                : '对端 agent 响应超时（${chatTimeout.inSeconds}s）',
+        duringSuspend ? suspendWaitHardCap : chatTimeout,
       ),
     );
   }
@@ -706,6 +761,9 @@ class PeerAgentClientService {
         break;
       case 'agent_chunk':
         _onChunk(event.data);
+        break;
+      case 'agent_turn_resume_resp':
+        _onTurnResumeResp(event.data);
         break;
       case 'agent_metadata':
         _onMetadata(event.data);
@@ -1386,7 +1444,35 @@ class PeerAgentClientService {
       );
     }
 
+    // E24：裁决已提交成功（但 hub 没收到 resp）的卡片被重发 —— 用存储的
+    // 裁决自动应答，不重复计数、不重复弹卡。保留记录以便多次重连仍能自动应答。
+    final submitted = _submittedApprovals[approvalId];
+    if (submitted != null) {
+      _log.info(
+        'agent_approval_req: approvalId=$approvalId already submitted — '
+        'auto-replying stored verdict action=${submitted.actionId}',
+        tag: 'PeerApproval',
+      );
+      unawaited(PeerConnectionManager.instance.sendControl(peerId, {
+        'type': 'agent_approval_resp',
+        'approval_id': approvalId,
+        'selected_action_id': submitted.actionId,
+        if (submitted.label != null && submitted.label!.isNotEmpty)
+          'selected_action_label': submitted.label,
+      }));
+      return;
+    }
+
     if (pending == null) {
+      // 幂等：同一 orphan 卡被 hub 重发时不重复灌 orphan 流（避免 UI 重置已选状态）。
+      if (_orphanedApprovals.containsKey(approvalId)) {
+        _log.info(
+          'agent_approval_req: duplicate orphan approvalId=$approvalId — '
+          'skip UI refresh',
+          tag: 'PeerApproval',
+        );
+        return;
+      }
       // agent_done may have already completed the request (hub/client race).
       // Keep a deferred slot so a late UI path can still submit the verdict.
       _log.warning(
@@ -1396,6 +1482,17 @@ class PeerAgentClientService {
       );
       _orphanedApprovals[approvalId] = Map<String, dynamic>.from(data);
     } else {
+      // 幂等：hub 重连后会重发同一张卡片。已在计数的 approvalId 不重复
+      // openApprovals++（否则一次点击永远还不清，bufferedDone 卡死），也不再
+      // 转发 UI（否则会清掉已选状态 / 在 submit 途中重绘未选中卡）。
+      if (_approvalToRequest.containsKey(approvalId)) {
+        _log.info(
+          'agent_approval_req: duplicate card approvalId=$approvalId — '
+          'not double-counting, skip UI refresh',
+          tag: 'PeerApproval',
+        );
+        return;
+      }
       pending.openApprovals++;
       _approvalToRequest[approvalId] = requestId;
       if (!hasCallback) {
@@ -1509,6 +1606,15 @@ class PeerAgentClientService {
     final requestId = _approvalToRequest.remove(approvalId);
     // 孤儿审批提交成功后清掉占位，避免重复点击落到 NO MATCH。
     _orphanedApprovals.remove(approvalId);
+    // 记录已提交的裁决：若 hub 其实没收到 resp（断连恰好发生在发送后），
+    // 重连后 hub 会重发该卡片 —— _onApprovalReq 用此记录自动应答（E24）。
+    _submittedApprovals[approvalId] = (
+      actionId: selectedActionId,
+      label: selectedActionLabel,
+    );
+    if (_submittedApprovals.length > 50) {
+      _submittedApprovals.remove(_submittedApprovals.keys.first);
+    }
     if (requestId != null) {
       final pending = _pending[requestId];
       if (pending != null && pending.openApprovals > 0) {
@@ -1528,7 +1634,12 @@ class PeerAgentClientService {
     final requestId = data['request_id'] as String?;
     final content = data['content'] as String? ?? '';
     if (requestId == null) return;
-    _pending[requestId]?.onChunk?.call(content);
+    final p = _pending[requestId];
+    if (p == null) return;
+    // 先计数再分发：与 hub 的 accumulated 同序列（同为 UTF-16 码元长度），
+    // resume 的断点偏移才精确。
+    p.receivedLength += content.length;
+    p.onChunk?.call(content);
   }
 
   void _onMetadata(Map<String, dynamic> data) {
@@ -1599,8 +1710,9 @@ class PeerAgentClientService {
   void _onConnectionEvent(PeerConnectionEvent event) {
     if (event.type == PeerConnectionEventType.connected) {
       _requestAgentList(event.peerId);
+      unawaited(_resumeSuspendedTurns(event.peerId));
     } else if (event.type == PeerConnectionEventType.disconnected) {
-      _failPendingForPeer(event.peerId);
+      _suspendPendingForPeer(event.peerId);
       unawaited(_markPeerAgentsOffline(event.peerId));
     }
   }
@@ -1615,32 +1727,159 @@ class PeerAgentClientService {
     return false;
   }
 
-  /// Abort in-flight sendChat turns when the peer drops mid-approval / mid-
-  /// stream. Without this, openApprovals + a missing agent_done leave the UI
-  /// spinner hung until the user force-stops.
-  void _failPendingForPeer(String peerId) {
-    final toFail = <String>[];
-    for (final entry in _pending.entries) {
-      if (entry.value.peerId != peerId) continue;
-      if (entry.value.completer.isCompleted) continue;
-      toFail.add(entry.key);
+  /// Peer 断连时把在途 turn 挂起（suspended）而不是判死：hub 侧的 turn 在
+  /// peer 级注册表里存活（输出路由到「当前活连接」），重连后经
+  /// `agent_turn_resume_req` 按 receivedLength 断点续传。只有重连超过
+  /// [suspendWaitHardCap] 仍无望时才由看门狗判失败。
+  void _suspendPendingForPeer(String peerId) {
+    var count = 0;
+    for (final p in _pending.values) {
+      if (p.peerId != peerId || p.completer.isCompleted) continue;
+      p.suspendedSince ??= DateTime.now();
+      // 允许重连后重新发起 resume
+      p.resumeInFlight = false;
+      p.resumeBaseLength = null;
+      count++;
     }
-    for (final requestId in toFail) {
-      final p = _pending.remove(requestId);
-      if (p == null || p.completer.isCompleted) continue;
-      for (final entry in _approvalToRequest.entries.toList()) {
-        if (entry.value == requestId) {
-          _approvalToRequest.remove(entry.key);
-        }
-      }
+    if (count > 0) {
       _log.warning(
-        'peer disconnected — failing in-flight requestId=$requestId '
-        'openApprovals=${p.openApprovals}',
+        'peer disconnected — suspending $count in-flight turn(s) for resume',
         tag: 'PeerApproval',
       );
-      p.completer.completeError(
-        Exception('配对设备已断开，对话中断'),
+    }
+  }
+
+  /// 重连成功后的恢复序列：
+  /// 1. 挂起期间本地取消的 turn → 补发 agent_cancel；
+  /// 2. 其余挂起的 turn → 发 agent_turn_resume_req（断点 = receivedLength），
+  ///    并启动应答超时（旧 hub 不支持续传时 10s 后明确失败）。
+  Future<void> _resumeSuspendedTurns(String peerId) async {
+    // 1. flush 挂起期间本地取消的 turn
+    for (final entry in _cancelledWhileSuspended.entries.toList()) {
+      if (entry.value != peerId) continue;
+      _cancelledWhileSuspended.remove(entry.key);
+      _log.info(
+        'flush queued cancel requestId=${entry.key}',
+        tag: 'PeerApproval',
       );
+      unawaited(PeerConnectionManager.instance.sendControl(peerId, {
+        'type': 'agent_cancel',
+        'request_id': entry.key,
+      }));
+    }
+
+    // 2. 逐 turn 发 resume_req
+    for (final entry in _pending.entries) {
+      final requestId = entry.key;
+      final p = entry.value;
+      if (p.peerId != peerId || p.completer.isCompleted) continue;
+      if (p.suspendedSince == null) continue;
+      // 内容已完整在手（done 已到，只差审批裁决）—— 不需要续传，
+      // 走卡片重发路径即可（E38：hub 若重启过，resume 会把成功 turn 误判 lost）。
+      if (p.bufferedDone != null) {
+        p.suspendedSince = null;
+        continue;
+      }
+      if (p.resumeInFlight) continue;
+      p.resumeInFlight = true;
+      p.resumeBaseLength = p.receivedLength;
+      _log.info(
+        'resume turn requestId=$requestId known=${p.receivedLength}',
+        tag: 'PeerApproval',
+      );
+      final sent = await PeerConnectionManager.instance.sendControl(peerId, {
+        'type': 'agent_turn_resume_req',
+        'request_id': requestId,
+        'known_content_length': p.receivedLength,
+      });
+      if (!sent) {
+        // 仍未连通 —— 回滚标志，等下一次 connected 事件重试。
+        p.resumeInFlight = false;
+        p.resumeBaseLength = null;
+        continue;
+      }
+      // 应答超时：旧 hub 忽略 resume_req（unknown type 无响应）→ 明确失败。
+      Timer(resumeResponseTimeout, () {
+        final cur = _pending[requestId];
+        if (cur == null || cur.completer.isCompleted) return;
+        if (!cur.resumeInFlight) return;
+        _pending.remove(requestId);
+        for (final e in _approvalToRequest.entries.toList()) {
+          if (e.value == requestId) _approvalToRequest.remove(e.key);
+        }
+        _log.warning(
+          'resume requestId=$requestId timed out — peer hub does not '
+          'support turn resume',
+          tag: 'PeerApproval',
+        );
+        cur.completer.completeError(
+          Exception('对端不支持断点续传或任务已丢失，请重新发送'),
+        );
+      });
+    }
+  }
+
+  /// 处理 agent_turn_resume_resp：先经 drop-prefix 去重（重连后 live chunk
+  /// 可能先于 resp 到达，与 delta 前缀重叠），再按 status 走既有完成路径。
+  void _onTurnResumeResp(Map<String, dynamic> data) {
+    final requestId = data['request_id'] as String?;
+    if (requestId == null) return;
+    final p = _pending[requestId];
+    if (p == null) return;
+    p.resumeInFlight = false;
+
+    final rawDelta = data['delta'] as String? ?? '';
+    final base = p.resumeBaseLength ?? p.receivedLength;
+    final delta = applyResumeDelta(
+      delta: rawDelta,
+      receivedLength: p.receivedLength,
+      baseLength: base,
+    );
+    p.resumeBaseLength = null;
+
+    // 先恢复分流状态（R6：metadata 决定 splitter 对后续 chunk 的分流），
+    // 再应用 delta。
+    final streamMeta = data['stream_metadata'];
+    if (streamMeta is Map) {
+      p.onMetadata?.call(Map<String, dynamic>.from(streamMeta));
+    }
+    if (delta.isNotEmpty) {
+      p.receivedLength += delta.length;
+      p.onChunk?.call(delta);
+    }
+    p.suspendedSince = null;
+
+    final status = data['status'] as String? ?? 'lost';
+    _log.info(
+      'turn resume resp requestId=$requestId status=$status '
+      'delta=${delta.length} (raw=${rawDelta.length})',
+      tag: 'PeerApproval',
+    );
+    switch (status) {
+      case 'streaming':
+        // 续传成功 —— idle 看门狗从此刻重新计时。
+        p.noOpenApprovalsSince = DateTime.now();
+        break;
+      case 'done':
+        _onDone({
+          'request_id': requestId,
+          'content': data['content'] as String? ?? '',
+          if (data['metadata'] != null) 'metadata': data['metadata'],
+        });
+        break;
+      case 'error':
+        _onError({
+          'request_id': requestId,
+          'message': data['message'] as String? ?? 'agent error',
+        });
+        break;
+      case 'lost':
+      default:
+        _onError({
+          'request_id': requestId,
+          'message': data['message'] as String? ?? '对端任务已结束或丢失',
+        });
+        break;
     }
   }
 

@@ -39,10 +39,42 @@ class ChatMessageReconciler {
     return progress is String && progress.trim().isNotEmpty;
   }
 
+  /// Whether [m] is an in-flight streaming flush row (`status: streaming`).
+  static bool isFlushedStreamingPartial(Message m) =>
+      m.from.isAgent && m.metadata?['status'] == 'streaming';
+
+  /// Find a DB / in-memory host bubble to reuse when reattaching a live DM task.
+  ///
+  /// Prefers [partialMessageId] (the ActiveTask flush row), then the latest
+  /// same-agent message still marked `status: streaming`. Returns null when
+  /// reattach should create a fresh `streaming_*` placeholder.
+  static Message? findReusableDmStreamingHost({
+    required List<Message> messages,
+    required String agentId,
+    String? partialMessageId,
+  }) {
+    final partialId = partialMessageId;
+    if (partialId != null && partialId.isNotEmpty) {
+      for (final m in messages) {
+        if (m.id == partialId) return m;
+      }
+    }
+    for (var i = messages.length - 1; i >= 0; i--) {
+      final m = messages[i];
+      if (m.from.id != agentId) continue;
+      if (isFlushedStreamingPartial(m)) return m;
+    }
+    return null;
+  }
+
   /// Merge in-memory DM `streaming_*` placeholders with [dbMessages].
   ///
   /// Keep the placeholder when it still has visible content and no usable DB
   /// agent message exists yet (e.g. peer cancel before answer text).
+  ///
+  /// When a flushed partial (`status: streaming`) already exists for the same
+  /// agent — even if it already has visible text — fold the live temp into
+  /// that row so switch-back does not show two near-duplicate bubbles.
   static List<Message> mergeDmStreamingPlaceholders({
     required List<Message> current,
     required List<Message> dbMessages,
@@ -64,33 +96,46 @@ class ChatMessageReconciler {
         continue;
       }
 
-      Message? emptyShell;
+      // Prefer the in-flight flush row (may already contain text); fall back to
+      // an empty shell left by a prior reconcile.
+      Message? adoptTarget;
       for (final m in sameSenderDb.reversed) {
-        if (!hasVisibleAgentContent(m)) {
-          emptyShell = m;
+        if (isFlushedStreamingPartial(m)) {
+          adoptTarget = m;
           break;
         }
       }
-      if (emptyShell == null) continue;
+      if (adoptTarget == null) {
+        for (final m in sameSenderDb.reversed) {
+          if (!hasVisibleAgentContent(m)) {
+            adoptTarget = m;
+            break;
+          }
+        }
+      }
+      if (adoptTarget == null) continue;
 
-      final idx = messages.indexWhere((m) => m.id == emptyShell!.id);
+      final idx = messages.indexWhere((m) => m.id == adoptTarget!.id);
       if (idx == -1) continue;
 
+      // Live temp is usually ahead of the last flush — prefer it when non-empty.
+      final content = temp.content.trim().isNotEmpty
+          ? temp.content
+          : adoptTarget.content;
+
       messages[idx] = Message(
-        id: emptyShell.id,
-        content: temp.content.trim().isNotEmpty
-            ? temp.content
-            : emptyShell.content,
-        timestampMs: emptyShell.timestampMs,
-        from: emptyShell.from,
-        to: emptyShell.to ?? temp.to,
-        type: emptyShell.type,
-        replyTo: emptyShell.replyTo ?? temp.replyTo,
-        channelId: emptyShell.channelId ?? temp.channelId,
+        id: adoptTarget.id,
+        content: content,
+        timestampMs: adoptTarget.timestampMs,
+        from: adoptTarget.from,
+        to: adoptTarget.to ?? temp.to,
+        type: adoptTarget.type,
+        replyTo: adoptTarget.replyTo ?? temp.replyTo,
+        channelId: adoptTarget.channelId ?? temp.channelId,
         metadata: {
-          ...?emptyShell.metadata,
+          ...?adoptTarget.metadata,
           ...?temp.metadata,
-          'status': emptyShell.metadata?['status'] ?? 'streaming',
+          'status': adoptTarget.metadata?['status'] ?? 'streaming',
         },
       );
     }
