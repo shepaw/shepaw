@@ -97,7 +97,6 @@ class _PeerManualInputScreenState extends State<PeerManualInputScreen> {
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
     final l10n = AppLocalizations.of(context);
-
     if (_processing) {
       return Center(
         child: Column(
@@ -106,7 +105,7 @@ class _PeerManualInputScreenState extends State<PeerManualInputScreen> {
             const CircularProgressIndicator(),
             const SizedBox(height: 24),
             Text(
-              _statusMessage ?? '处理中...',
+              _statusMessage ?? l10n.common_processing,
               style: Theme.of(context).textTheme.titleMedium,
             ),
           ],

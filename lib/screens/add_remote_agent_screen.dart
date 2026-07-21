@@ -218,6 +218,7 @@ class _AddRemoteAgentScreenState extends State<AddRemoteAgentScreen> {
   }
 
   Future<void> _createAgent() async {
+    final l10n = AppLocalizations.of(context);
     if (!_formKey.currentState!.validate()) {
       return;
     }
@@ -327,6 +328,7 @@ class _AddRemoteAgentScreenState extends State<AddRemoteAgentScreen> {
   /// `_parsedFingerprint` and `_remoteAgentIdController`. Letting it run
   /// is the whole point.
   Future<void> _onScanPairingQR() async {
+    final l10n = AppLocalizations.of(context);
     final result = await AgentPairingScannerScreen.show(context);
     if (result == null || !mounted) return;
 
@@ -338,15 +340,18 @@ class _AddRemoteAgentScreenState extends State<AddRemoteAgentScreen> {
 
     // Nudge the user — make it obvious the scan worked.
     ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('已扫码：URL 与配对码已填入。点击"连接"完成配对。'),
+      SnackBar(
+        content: Text(
+          '${l10n.addAgent_scannedHintPrefix}"${l10n.common_connect}"${l10n.addAgent_scannedHintSuffix}',
+        ),
         behavior: SnackBarBehavior.floating,
-        duration: Duration(seconds: 2),
+        duration: const Duration(seconds: 2),
       ),
     );
   }
 
   Future<void> _connectToAgent() async {
+    final l10n = AppLocalizations.of(context);
     if (!_formKey.currentState!.validate()) {
       return;
     }
@@ -358,9 +363,9 @@ class _AddRemoteAgentScreenState extends State<AddRemoteAgentScreen> {
     // the user gets a clear error right at the pairing screen.
     if (_parsedFingerprint.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
+        SnackBar(
           content: Text(
-            'URL 缺失指纹（`#fp=…`）。请使用 agent 终端启动时打印的完整 URL。',
+            l10n.addAgent_missingFingerprint,
           ),
           backgroundColor: Colors.red,
         ),
@@ -525,8 +530,8 @@ class _AddRemoteAgentScreenState extends State<AddRemoteAgentScreen> {
   }
 
   Future<void> _showDuplicateAgentDialog(AgentDuplicateException e) async {
-    final existingAgent = e.existingAgent;
     final l10n = AppLocalizations.of(context);
+    final existingAgent = e.existingAgent;
     await showDialog<void>(
       context: context,
       builder: (context) => AlertDialog(
@@ -566,7 +571,6 @@ class _AddRemoteAgentScreenState extends State<AddRemoteAgentScreen> {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
     final l10n = AppLocalizations.of(context);
-
     return Scaffold(
       appBar: AppBar(
         automaticallyImplyLeading: Navigator.canPop(context),
@@ -870,7 +874,7 @@ class _AddRemoteAgentScreenState extends State<AddRemoteAgentScreen> {
                 suffixIcon: _mode == AgentCreationMode.connect
                     ? IconButton(
                         icon: const Icon(Icons.qr_code_scanner),
-                        tooltip: '扫描配对二维码',
+                        tooltip: l10n.agentPair_scanTitle,
                         onPressed: _onScanPairingQR,
                       )
                     : null,
@@ -941,7 +945,6 @@ class _AddRemoteAgentScreenState extends State<AddRemoteAgentScreen> {
   /// Navigation tile for Skills sub-page.
   Widget _buildConfigNavigationTiles(ColorScheme colorScheme) {
     final l10n = AppLocalizations.of(context);
-
     return Card(
       elevation: 0,
       shape: RoundedRectangleBorder(
@@ -995,6 +998,7 @@ class _AddRemoteAgentScreenState extends State<AddRemoteAgentScreen> {
     ColorScheme colorScheme,
     AppLocalizations l10n,
   ) {
+    final l10n = AppLocalizations.of(context);
     final identity = _noiseIdentity;
     return Container(
       padding: const EdgeInsets.all(12),
@@ -1011,7 +1015,7 @@ class _AddRemoteAgentScreenState extends State<AddRemoteAgentScreen> {
               Icon(Icons.key, size: 16, color: colorScheme.tertiary),
               const SizedBox(width: 6),
               Text(
-                '本设备公钥（v2.1 授权凭证）',
+                l10n.addAgent_devicePubkeyTitle,
                 style: TextStyle(
                   fontSize: 12,
                   fontWeight: FontWeight.w600,
@@ -1022,16 +1026,16 @@ class _AddRemoteAgentScreenState extends State<AddRemoteAgentScreen> {
           ),
           const SizedBox(height: 8),
           if (identity == null)
-            const Padding(
-              padding: EdgeInsets.symmetric(vertical: 12),
-              child: Text('正在加载设备身份…'),
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 12),
+              child: Text(l10n.addAgent_loadingDeviceIdentity),
             )
           else ...[
             // Fingerprint row
             Row(
               children: [
                 Text(
-                  '指纹: ',
+                  l10n.addAgent_fingerprintLabel,
                   style: TextStyle(
                     fontSize: 12,
                     color: colorScheme.onSurfaceVariant,
@@ -1072,7 +1076,7 @@ class _AddRemoteAgentScreenState extends State<AddRemoteAgentScreen> {
                   const SizedBox(width: 4),
                   IconButton(
                     icon: const Icon(Icons.copy, size: 16),
-                    tooltip: '复制公钥',
+                    tooltip: l10n.addAgent_copyPubkey,
                     padding: EdgeInsets.zero,
                     constraints: const BoxConstraints(
                       minWidth: 28,
@@ -1084,8 +1088,8 @@ class _AddRemoteAgentScreenState extends State<AddRemoteAgentScreen> {
                       );
                       if (!context.mounted) return;
                       ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(
-                          content: Text('公钥已复制到剪贴板'),
+                        SnackBar(
+                          content: Text(l10n.addAgent_pubkeyCopied),
                           duration: Duration(seconds: 2),
                         ),
                       );
@@ -1106,7 +1110,7 @@ class _AddRemoteAgentScreenState extends State<AddRemoteAgentScreen> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    '在 agent 主机上执行：',
+                    l10n.addAgent_runOnHost,
                     style: TextStyle(
                       fontSize: 11,
                       color: colorScheme.onSurfaceVariant,
@@ -1114,7 +1118,7 @@ class _AddRemoteAgentScreenState extends State<AddRemoteAgentScreen> {
                   ),
                   const SizedBox(height: 4),
                   SelectableText(
-                    'shepaw-codebuddy-code peers add \\\n  ${identity.publicKeyBase64} \\\n  --label "我的手机"',
+                    'shepaw-codebuddy-code peers add \\\n  ${identity.publicKeyBase64} \\\n  --label l10n.addAgent_myPhone',
                     style: const TextStyle(
                       fontFamily: 'monospace',
                       fontSize: 11,
@@ -1135,7 +1139,7 @@ class _AddRemoteAgentScreenState extends State<AddRemoteAgentScreen> {
                   ),
                   const SizedBox(width: 4),
                   Text(
-                    'Agent 指纹: ',
+                    l10n.addAgent_agentFingerprintLabel,
                     style: TextStyle(
                       fontSize: 11,
                       color: colorScheme.onSurfaceVariant,
@@ -1153,7 +1157,7 @@ class _AddRemoteAgentScreenState extends State<AddRemoteAgentScreen> {
                 ],
               ),
               Text(
-                '请对照 agent 终端启动时打印的 Fingerprint 是否一致',
+                l10n.addAgent_verifyFingerprint,
                 style: TextStyle(
                   fontSize: 10,
                   color: colorScheme.onSurfaceVariant,
@@ -1163,7 +1167,7 @@ class _AddRemoteAgentScreenState extends State<AddRemoteAgentScreen> {
             ] else ...[
               const SizedBox(height: 6),
               Text(
-                '⚠ URL 缺失 #fp=… 指纹段，配对将失败。请使用 agent 启动时打印的完整 URL。',
+                l10n.addAgent_missingFpWarning,
                 style: TextStyle(
                   fontSize: 11,
                   color: colorScheme.error,
@@ -1189,6 +1193,7 @@ class _AddRemoteAgentScreenState extends State<AddRemoteAgentScreen> {
     BuildContext context,
     ColorScheme colorScheme,
   ) {
+    final l10n = AppLocalizations.of(context);
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
@@ -1204,7 +1209,7 @@ class _AddRemoteAgentScreenState extends State<AddRemoteAgentScreen> {
               Icon(Icons.qr_code_2, size: 16, color: colorScheme.primary),
               const SizedBox(width: 6),
               Text(
-                '配对码（可选，用于一键配对）',
+                l10n.addAgent_pairingCodeOptional,
                 style: TextStyle(
                   fontSize: 12,
                   fontWeight: FontWeight.w600,
@@ -1215,7 +1220,7 @@ class _AddRemoteAgentScreenState extends State<AddRemoteAgentScreen> {
           ),
           const SizedBox(height: 6),
           Text(
-            'Agent 主机运行 `<gateway> enroll` 得到类似 XXX-XXX-XXX 的短码，粘贴到这里即可自动授权本设备。不填写则走上方的"复制公钥 → peers add"手动流程。',
+            l10n.addAgent_pairingCodeHelper,
             style: TextStyle(
               fontSize: 11,
               color: colorScheme.onSurfaceVariant,

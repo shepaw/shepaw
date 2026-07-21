@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import '../../l10n/app_localizations.dart';
+import '../../l10n/l10n_helpers.dart';
 import '../../models/workflow_models.dart';
 
 /// Small badge widget displaying workflow status with color coding.
@@ -14,6 +16,7 @@ class WorkflowStatusBadge extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
       decoration: BoxDecoration(
@@ -36,7 +39,7 @@ class WorkflowStatusBadge extends StatelessWidget {
               ),
             ),
           Text(
-            status.label,
+            status.localizedLabel(l10n),
             style: TextStyle(
               fontSize: fontSize,
               fontWeight: FontWeight.w600,

@@ -37,7 +37,7 @@ class WorkflowCompleteCommand extends CliCommand {
     // H2: Status guard — only allow completing a running workflow
     if (workflow.status != WorkflowStatus.running) {
       return {
-        'error': 'Cannot complete workflow in "${workflow.status.label}" state. Only running workflows can be completed.',
+        'error': 'Cannot complete workflow in "${workflow.status.dbValue}" state. Only running workflows can be completed.',
       };
     }
 

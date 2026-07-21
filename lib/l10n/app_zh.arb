@@ -2021,12 +2021,10 @@
   "scheduledTasks_form_selectMentions": "@提及的 Agent（可选）",
   "scheduledTasks_missingChannel": "请选择频道",
   "scheduledTasks_missingGroupAgents": "请至少选择一个 Agent",
-
   "scheduledTasks_form_scheduleTypeLabel": "时间规则类型",
   "scheduledTasks_form_scheduleType_interval": "间隔重复",
   "scheduledTasks_form_scheduleType_cron": "Cron 计划",
   "scheduledTasks_form_scheduleType_once": "一次性",
-
   "scheduledTasks_form_interval_value": "间隔数值",
   "scheduledTasks_form_interval_unit_minutes": "分钟",
   "scheduledTasks_form_interval_unit_hours": "小时",
@@ -2034,8 +2032,12 @@
   "scheduledTasks_form_interval_preview": "每 {value} {unit}执行一次",
   "@scheduledTasks_form_interval_preview": {
     "placeholders": {
-      "value": { "type": "String" },
-      "unit": { "type": "String" }
+      "value": {
+        "type": "String"
+      },
+      "unit": {
+        "type": "String"
+      }
     }
   },
   "scheduledTasks_form_preset_label": "快捷预设",
@@ -2044,7 +2046,6 @@
   "scheduledTasks_form_preset_1h": "1小时",
   "scheduledTasks_form_preset_6h": "6小时",
   "scheduledTasks_form_preset_1d": "每天",
-
   "scheduledTasks_form_cron_frequency": "执行频率",
   "scheduledTasks_form_cron_freq_daily": "每天",
   "scheduledTasks_form_cron_freq_weekly": "每周",
@@ -2063,11 +2064,9 @@
   "scheduledTasks_form_cron_weekday_fri": "五",
   "scheduledTasks_form_cron_weekday_sat": "六",
   "scheduledTasks_form_cron_weekday_sun": "日",
-
   "scheduledTasks_form_once_datetime": "执行时间",
   "scheduledTasks_form_once_pickDate": "选择日期",
   "scheduledTasks_form_once_pickTime": "选择时间",
-
   "scheduledTasks_form_saveAndActivate": "保存并启用",
   "scheduledTasks_form_scheduleSection": "时间规则",
   "scheduledTasks_form_targetSection": "执行目标",
@@ -2204,5 +2203,708 @@
   },
   "peerList_connected": "已连接",
   "peerList_connectedE2e": "已连接 (端到端加密)",
-  "peerList_disconnected": "未连接"
+  "peerList_disconnected": "未连接",
+  "common_done": "完成",
+  "common_more": "更多",
+  "common_back": "返回",
+  "common_connect": "连接",
+  "common_submit": "提交",
+  "common_next": "下一步",
+  "common_allow": "允许",
+  "common_processing": "处理中...",
+  "common_fetching": "获取中...",
+  "common_selectAll": "全选",
+  "common_openSettings": "打开设置",
+  "common_sync": "同步",
+  "common_busy": "忙碌",
+  "common_enter": "进入",
+  "common_daysAgo": "{count} 天前",
+  "@common_daysAgo": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "common_minutesAgo": "{count} 分钟前",
+  "@common_minutesAgo": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "common_hoursAgo": "{count} 小时前",
+  "@common_hoursAgo": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "toolModel_needOpenRouterKey": "请先填写 OpenRouter API Key",
+  "toolModel_selectOpenRouter": "选择 OpenRouter 模型",
+  "toolModel_fetchOpenRouterFailed": "获取 OpenRouter 模型失败",
+  "toolModel_needOllamaBase": "请先填写 Ollama API Base 地址",
+  "toolModel_ollamaNoModels": "Ollama 中暂无已安装的模型，请先运行 ollama pull <model>",
+  "toolModel_selectOllama": "选择 Ollama 本地模型",
+  "toolModel_fetchOllamaFailed": "获取 Ollama 模型失败",
+  "toolModel_fetchOllamaList": "获取 Ollama 本地模型列表",
+  "toolModel_fetchOpenRouterList": "获取 OpenRouter 模型列表",
+  "toolModel_searchHint": "搜索模型名称或 ID...",
+  "toolModel_noMatch": "无匹配模型",
+  "toolModel_fetchFailed": "获取模型失败: {error}",
+  "@toolModel_fetchFailed": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "toolModel_filteredCount": "{filtered} / {total} 个模型",
+  "@toolModel_filteredCount": {
+    "placeholders": {
+      "filtered": {
+        "type": "int"
+      },
+      "total": {
+        "type": "int"
+      }
+    }
+  },
+  "remoteAgent_title": "远端助手",
+  "remoteAgent_checkingHealth": "正在检查 Agent 健康状态...",
+  "remoteAgent_healthDone": "健康检查完成，在线: {online}/{total}",
+  "@remoteAgent_healthDone": {
+    "placeholders": {
+      "online": {
+        "type": "int"
+      },
+      "total": {
+        "type": "int"
+      }
+    }
+  },
+  "remoteAgent_healthFailed": "健康检查失败: {error}",
+  "@remoteAgent_healthFailed": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "remoteAgent_deleteConfirm": "确定要删除助手 {name} 吗？\n\n删除后，远端助手将无法再使用此 Token 连接。",
+  "@remoteAgent_deleteConfirm": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "remoteAgent_checkHealth": "检查健康状态",
+  "remoteAgent_add": "添加助手",
+  "remoteAgent_empty": "还没有远端助手",
+  "remoteAgent_emptyHint": "点击下方按钮添加第一个助手",
+  "remoteAgent_viewToken": "查看 Token",
+  "remoteAgent_loadFailed": "加载失败: {error}",
+  "@remoteAgent_loadFailed": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "remoteAgent_deleted": "已删除 {name}",
+  "@remoteAgent_deleted": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "remoteAgent_deleteFailed": "删除失败: {error}",
+  "@remoteAgent_deleteFailed": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "remoteAgent_lastActive": "最后活跃: {time}",
+  "@remoteAgent_lastActive": {
+    "placeholders": {
+      "time": {
+        "type": "String"
+      }
+    }
+  },
+  "workflow_detailTitle": "工作流详情",
+  "workflow_notFound": "工作流不存在",
+  "workflow_approvalSubmitted": "审批已提交，请返回群聊继续工作流",
+  "workflow_approvalFailed": "审批提交失败: {error}",
+  "@workflow_approvalFailed": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "workflow_triggerMessage": "触发消息",
+  "workflow_returnToChatForApproval": "请返回群聊消息中完成审批",
+  "workflow_lowRiskOp": "低风险操作",
+  "workflow_execSummary": "执行摘要",
+  "workflow_noSteps": "暂无步骤信息",
+  "workflow_execStages": "执行阶段",
+  "workflow_timeInfo": "时间信息",
+  "workflow_startTime": "开始时间",
+  "workflow_endTime": "完成时间",
+  "workflow_totalDuration": "总耗时",
+  "workflow_stepsCompleted": "{done}/{total} 步骤完成",
+  "@workflow_stepsCompleted": {
+    "placeholders": {
+      "done": {
+        "type": "int"
+      },
+      "total": {
+        "type": "int"
+      }
+    }
+  },
+  "workflow_stepsCompletedSlash": "{done} / {total} 步骤完成",
+  "@workflow_stepsCompletedSlash": {
+    "placeholders": {
+      "done": {
+        "type": "int"
+      },
+      "total": {
+        "type": "int"
+      }
+    }
+  },
+  "workflow_runningFor": "已运行 {duration}",
+  "@workflow_runningFor": {
+    "placeholders": {
+      "duration": {
+        "type": "String"
+      }
+    }
+  },
+  "workflow_totalDurationValue": "总耗时 {duration}",
+  "@workflow_totalDurationValue": {
+    "placeholders": {
+      "duration": {
+        "type": "String"
+      }
+    }
+  },
+  "workflow_waitingToolApproval": "等待 @{agentName} 工具审批",
+  "@workflow_waitingToolApproval": {
+    "placeholders": {
+      "agentName": {
+        "type": "String"
+      }
+    }
+  },
+  "workflow_stageN": "阶段 {n}",
+  "@workflow_stageN": {
+    "placeholders": {
+      "n": {
+        "type": "int"
+      }
+    }
+  },
+  "workflow_inProgressBanner": "工作流进行中，点击查看进度与审批",
+  "workflow_waitingApprovalSteps": "等待审批 · {total} 步骤",
+  "@workflow_waitingApprovalSteps": {
+    "placeholders": {
+      "total": {
+        "type": "int"
+      }
+    }
+  },
+  "workflow_allDone": "全部完成",
+  "workflow_execFailed": "执行失败",
+  "workflow_needToolConfirm": "需要确认工具操作",
+  "workflow_waitingToolApprovalShort": "等待工具审批",
+  "workflow_viewRelatedMessage": "查看相关消息",
+  "workflow_approveExec": "批准执行",
+  "workflow_revisionComment": "修改意见",
+  "workflow_revisionHint": "请描述你的修改意见...",
+  "workflow_waitingToolTap": "等待工具审批 · 点击查看",
+  "workflow_stagesSteps": "{stages} 阶段 · {steps} 步骤",
+  "@workflow_stagesSteps": {
+    "placeholders": {
+      "stages": {
+        "type": "int"
+      },
+      "steps": {
+        "type": "int"
+      }
+    }
+  },
+  "workflow_completedOf": "{done}/{total} 完成",
+  "@workflow_completedOf": {
+    "placeholders": {
+      "done": {
+        "type": "int"
+      },
+      "total": {
+        "type": "int"
+      }
+    }
+  },
+  "workflow_groupTitle": "{name} - 工作流",
+  "@workflow_groupTitle": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "workflow_empty": "暂无工作流记录",
+  "workflow_emptyHint": "开启 Flow 模式后，群聊中的工作流执行将记录在此处",
+  "workflow_statusPendingApproval": "待审批",
+  "workflow_statusRunning": "运行中",
+  "workflow_statusCompleted": "已完成",
+  "workflow_statusFailed": "失败",
+  "workflow_statusCancelled": "已取消",
+  "workflow_stepPending": "待执行",
+  "workflow_stepRunning": "执行中",
+  "workflow_stepCompleted": "已完成",
+  "workflow_stepFailed": "失败",
+  "workflow_stepSkipped": "已跳过",
+  "chat_syncedRemoteSessions": "已同步 {count} 个远端会话",
+  "@chat_syncedRemoteSessions": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "chat_syncRemoteSessionsTitle": "同步远端会话",
+  "chat_syncRemoteSessionsBody": "在 {agentName} 上发现 {count} 个尚未同步的远端会话。\n\n是否同步到本地？同步后可在会话列表中查看并继续这些会话，本地会话将与远端保持一致。\n\n此选择会记住，之后可在 Agent 设置中修改。",
+  "@chat_syncRemoteSessionsBody": {
+    "placeholders": {
+      "agentName": {
+        "type": "String"
+      },
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "chat_doNotSync": "不同步",
+  "chat_sheNoModel": "She 还没有配置 AI 模型",
+  "chat_sheNoModelTapSettings": "点击这里前往设置，为 She 选择一个 LLM 模型",
+  "chat_sheTagline": "你的专属灵宠，会越来越懂你",
+  "chat_sheConfigModelCta": "配置 AI 模型，开始对话",
+  "chat_sheNeedModelHint": "She 使用本地 LLM 运行，请先在设置中\n为她选择一个 AI 模型",
+  "chat_syncingRemote": "同步远端…",
+  "chat_toolPendingInPanel": "工具操作待确认：请在下方工作流面板中批准或拒绝",
+  "agentToken_createdSuccess": "助手创建成功",
+  "agentToken_nextSteps": "下一步",
+  "agentToken_step1": "复制上方的 Token",
+  "agentToken_step2": "在远端助手的配置中粘贴 Token",
+  "agentToken_step3": "启动远端助手，等待连接",
+  "agentToken_step4": "连接成功后，助手将显示为在线状态",
+  "agentToken_keepSafe": "请妥善保管 Token，不要泄露给他人",
+  "channel_loadFailed": "加载频道列表失败",
+  "channel_management": "频道管理",
+  "channel_create": "创建频道",
+  "channel_empty": "暂无频道",
+  "channel_emptyHint": "点击下方按钮创建您的第一个频道",
+  "channel_knotBridge": "Knot 桥接",
+  "channel_open": "打开频道",
+  "channel_knotRemoved": "Knot 桥接功能已移除，请使用远端助手功能",
+  "channel_name": "频道名称",
+  "channel_nameHint": "输入频道名称",
+  "channel_descOptional": "频道描述（可选）",
+  "channel_descHint": "输入频道描述",
+  "channel_nameRequired": "请输入频道名称",
+  "channel_createdSuccess": "频道 {name} 创建成功",
+  "@channel_createdSuccess": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "channel_createFailed": "创建频道失败",
+  "channel_loaded": "加载了 {count} 个频道",
+  "@channel_loaded": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "channel_opening": "打开频道: {name}",
+  "@channel_opening": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "channel_createdLog": "成功创建频道: {name}",
+  "@channel_createdLog": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "login_backingUp": "正在安全备份数据...",
+  "agentList_loadFailed": "加载 Agent 列表失败",
+  "agentList_deleteConfirm": "确定要删除 Agent {name} 吗？",
+  "@agentList_deleteConfirm": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "agentList_deleteFailed": "删除 Agent 失败",
+  "agentList_title": "Agent 管理",
+  "agentList_emptyHint": "点击下方按钮添加您的第一个 Agent",
+  "agentList_selectType": "选择 Agent 类型",
+  "agentList_typeOpenClaw": "通过 ACP 协议连接 OpenClaw Gateway",
+  "agentList_typeA2a": "支持 A2A 协议的通用 Agent",
+  "agentList_typeCustom": "自定义 Agent",
+  "agentList_typeCustomDesc": "手动配置的其他类型 Agent",
+  "agentList_createConversationFailed": "创建对话失败",
+  "agentList_createConversationFailedDetail": "创建对话失败: {error}",
+  "@agentList_createConversationFailedDetail": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "agentList_loaded": "加载了 {count} 个 Agent",
+  "@agentList_loaded": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "agentList_typeLabel": "类型: {type}",
+  "@agentList_typeLabel": {
+    "placeholders": {
+      "type": {
+        "type": "String"
+      }
+    }
+  },
+  "agentList_conversationWith": "与 {name} 的对话",
+  "@agentList_conversationWith": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "agentList_dmCreated": "创建了与 {name} 的 DM 频道: {id}",
+  "@agentList_dmCreated": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      },
+      "id": {
+        "type": "String"
+      }
+    }
+  },
+  "agentList_conversationCreated": "已创建与 {name} 的对话",
+  "@agentList_conversationCreated": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "agentList_deleted": "已删除 {name}",
+  "@agentList_deleted": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "agentDetail_peerOffline": "配对设备未连接",
+  "agentDetail_modelSwitchUnsupported": "该 agent 暂不支持切换模型",
+  "agentDetail_modelSwitched": "已切换模型",
+  "agentDetail_modelSwitchFailed": "切换模型失败",
+  "agentDetail_sessionSync": "会话同步",
+  "agentDetail_sessionSyncHint": "开启后进入时自动同步远端会话列表与聊天记录；关闭后不再同步。可随时在此修改",
+  "agentDetail_refreshModels": "刷新模型列表",
+  "agentDetail_switchModelHint": "切换远端 agent 使用的 LLM 模型（作用于后续对话）",
+  "agentDetail_noModels": "暂无可用模型",
+  "agentDetail_noAiModel": "尚未配置 AI 模型",
+  "agentDetail_maxToolRounds": "最大工具调用轮次",
+  "agentDetail_maxToolRoundsValue": "{count} 次",
+  "@agentDetail_maxToolRoundsValue": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "agentDetail_taskTimeout": "任务超时时间",
+  "agentDetail_taskTimeoutValue": "{seconds} 秒",
+  "@agentDetail_taskTimeoutValue": {
+    "placeholders": {
+      "seconds": {
+        "type": "int"
+      }
+    }
+  },
+  "agentDetail_maxToolRoundsDefault": "默认 100",
+  "agentDetail_maxToolRoundsHelper": "单次对话中 LLM 最多可调用工具的轮数（1–500）",
+  "agentDetail_maxToolRoundsInvalid": "请输入 1 到 500 之间的整数",
+  "agentDetail_taskTimeoutSeconds": "任务超时时间（秒）",
+  "agentDetail_taskTimeoutDefault": "默认 600",
+  "agentDetail_taskTimeoutHelper": "单次任务的最长等待时间（60–3600 秒）",
+  "agentDetail_taskTimeoutInvalid": "请输入 60 到 3600 之间的整数",
+  "agentDetail_fromSource": "来自 {name}",
+  "@agentDetail_fromSource": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "agentDetail_createSuccess": "Agent 创建成功",
+  "agentDetail_updateSuccess": "Agent 更新成功",
+  "agentDetail_name": "Agent 名称",
+  "agentDetail_nameHint": "输入 Agent 名称",
+  "agentDetail_type": "Agent 类型",
+  "agentDetail_typeHint": "例如: assistant, chatbot",
+  "agentDetail_typeRequired": "请输入 Agent 类型",
+  "agentDetail_status": "Agent 状态",
+  "agentDetail_createdLog": "成功创建 Agent: {name}",
+  "@agentDetail_createdLog": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "agentDetail_updatedLog": "成功更新 Agent: {name}",
+  "@agentDetail_updatedLog": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "agentDetail_addTitle": "添加 Agent",
+  "agentDetail_viewTitle": "Agent 详情",
+  "agentPair_unsupportedPlatform": "当前平台不支持扫码。请返回手动粘贴 URL + 填写配对码，或改用手机扫码。",
+  "agentPair_scanTitle": "扫描配对二维码",
+  "agentPair_torch": "手电筒",
+  "agentPair_scanHint": "对准 agent 主机上 `<gateway> enroll` / `shepaw-hub pair` 打印的二维码",
+  "agentPair_cameraDeniedTitle": "无法访问相机",
+  "agentPair_cameraDeniedBody": "扫码配对需要相机权限。请到系统设置中允许 Shepaw 访问相机，或返回手动输入配对码。",
+  "agentPair_unsupportedShort": "当前平台暂不支持扫码",
+  "agentPair_scanFailed": "扫描失败：{error}",
+  "@agentPair_scanFailed": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "agentPair_cameraInitFailed": "相机初始化失败：{error}",
+  "@agentPair_cameraInitFailed": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "addAgent_scannedHintPrefix": "已扫码：URL 与配对码已填入。点击",
+  "addAgent_scannedHintSuffix": "完成配对。",
+  "addAgent_missingFingerprint": "URL 缺失指纹（`#fp=…`）。请使用 agent 终端启动时打印的完整 URL。",
+  "addAgent_devicePubkeyTitle": "本设备公钥（v2.1 授权凭证）",
+  "addAgent_loadingDeviceIdentity": "正在加载设备身份…",
+  "addAgent_fingerprintLabel": "指纹: ",
+  "addAgent_copyPubkey": "复制公钥",
+  "addAgent_pubkeyCopied": "公钥已复制到剪贴板",
+  "addAgent_runOnHost": "在 agent 主机上执行：",
+  "addAgent_myPhone": "我的手机",
+  "addAgent_agentFingerprintLabel": "Agent 指纹: ",
+  "addAgent_verifyFingerprint": "请对照 agent 终端启动时打印的 Fingerprint 是否一致",
+  "addAgent_missingFpWarning": "⚠ URL 缺失 #fp=… 指纹段，配对将失败。请使用 agent 启动时打印的完整 URL。",
+  "addAgent_pairingCodeOptional": "配对码（可选，用于一键配对）",
+  "dispatch_timeout": "执行超时",
+  "dispatch_failed": "执行失败",
+  "dispatch_waitingConfirm": "等待操作确认",
+  "dispatch_running": "执行中",
+  "dispatch_goConfirm": "前往处理确认",
+  "dispatch_viewDetails": "查看执行详情",
+  "dispatch_awaitingConfirm": "等待确认",
+  "dispatch_confirmed": "已确认",
+  "dispatch_cancelled": "已取消",
+  "dispatch_confirmDispatch": "确认派发",
+  "dispatch_title": "任务派发 · {agentName}",
+  "@dispatch_title": {
+    "placeholders": {
+      "agentName": {
+        "type": "String"
+      }
+    }
+  },
+  "dispatch_pendingConfirm": "待确认：{title}",
+  "@dispatch_pendingConfirm": {
+    "placeholders": {
+      "title": {
+        "type": "String"
+      }
+    }
+  },
+  "dispatch_confirmTitle": "派发确认 · {agentName}",
+  "@dispatch_confirmTitle": {
+    "placeholders": {
+      "agentName": {
+        "type": "String"
+      }
+    }
+  },
+  "dispatch_completed": "已完成",
+  "relay_waiting": "等待审批",
+  "relay_processed": "已处理",
+  "relay_expired": "已过期",
+  "relay_failed": "处理失败",
+  "relay_title": "操作确认 · {agentName}",
+  "@relay_title": {
+    "placeholders": {
+      "agentName": {
+        "type": "String"
+      }
+    }
+  },
+  "relay_yourChoice": "你的选择：{label}",
+  "@relay_yourChoice": {
+    "placeholders": {
+      "label": {
+        "type": "String"
+      }
+    }
+  },
+  "plan_title": "执行计划",
+  "plan_approved": "已批准",
+  "plan_feedbackGiven": "已反馈",
+  "plan_revisionHint": "请描述你对计划的修改意见...",
+  "plan_submitFeedback": "提交意见",
+  "plan_requestRevision": "提出修改",
+  "plan_approveAndRun": "批准并执行",
+  "plan_dependencies": "依赖: {deps}",
+  "@plan_dependencies": {
+    "placeholders": {
+      "deps": {
+        "type": "String"
+      }
+    }
+  },
+  "update_emptyDownloadUrl": "下载链接为空，请联系管理员检查接口返回",
+  "update_cannotOpenUrl": "无法打开下载链接: {url}",
+  "@update_cannotOpenUrl": {
+    "placeholders": {
+      "url": {
+        "type": "String"
+      }
+    }
+  },
+  "update_downloadComplete": "{fileName} 下载完成",
+  "@update_downloadComplete": {
+    "placeholders": {
+      "fileName": {
+        "type": "String"
+      }
+    }
+  },
+  "peerPairing_requestTitle": "配对请求",
+  "peerPairing_requestBody": "以下设备想要与你配对：",
+  "peerPairing_selectAgents": "选择要分享给该设备的 Agent",
+  "peerPairing_selectAgentsHint": "对方将能通过配对连接使用你选中的 Agent（需已开启「允许外部访问」）",
+  "peerPairing_confirmHint": "确认配对后，双方可以直接通讯",
+  "peerPairing_confirm": "确认配对",
+  "peerPairing_confirmWithCount": "确认配对 ({count})",
+  "@peerPairing_confirmWithCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "peerPairing_failed": "配对失败: {error}",
+  "@peerPairing_failed": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "peerScan_desktopUnsupported": "桌面端暂不支持摄像头扫描",
+  "peerScan_useMobile": "请在移动设备上使用扫码功能",
+  "peerScan_frameHint": "将对方的二维码放入框内",
+  "peerScan_cameraError": "摄像头错误: {error}",
+  "@peerScan_cameraError": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "peerList_add": "添加配对",
+  "peerList_emptyHint": "扫描对方的二维码或让对方扫描你的二维码来建立加密连接",
+  "peerList_pairedSuccess": "已与 {name} 配对成功",
+  "@peerList_pairedSuccess": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "peerList_editAlias": "修改备注",
+  "peerQr_fillAllFields": "请填写所有字段",
+  "peerQr_cannotStart": "无法启动配对",
+  "peerQr_scanHint": "让对方扫描此二维码完成配对",
+  "peerQr_codeLabel": "配对码",
+  "peerQr_codeCopied": "配对码已复制",
+  "peerQr_waitingScan": "等待对方扫描...",
+  "peerQr_validFiveMin": "二维码 5 分钟内有效",
+  "peerQr_wanConnect": "外网连接",
+  "peerQr_wanConnectHint": "开启后可通过外网配对，不限同一局域网",
+  "peerQr_channelConnected": "Channel 已连接",
+  "peerQr_channelConnecting": "正在连接 Channel...",
+  "peerQr_channelReconnecting": "连接断开，正在重连...",
+  "peerQr_editConfig": "修改配置",
+  "peerQr_connectFailed": "连接失败",
+  "peerQr_starting": "正在启动...",
+  "peerQr_configureChannel": "配置 Channel 服务以启用外网连接",
+  "peerQr_channelIdHint": "输入 Channel ID",
+  "peerQr_signingKeyHint": "输入签名密钥",
+  "peerChat_cannotConnect": "无法连接到 {name}，请确认对方在线后重试",
+  "@peerChat_cannotConnect": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "memory_typeConversation": "对话",
+  "memory_typeKnowledge": "知识",
+  "memory_typeBehavior": "行为",
+  "memory_typeEvent": "事件",
+  "memory_typeEmotion": "情感",
+  "peerApproval_superseded": "被后续审批取代",
+  "peerApproval_allow": "允许",
+  "peerApproval_deny": "拒绝",
+  "status_protocolPeer": "配对设备",
+  "status_custom": "自定义",
+  "home_statusError": "错误",
+  "addAgent_pairingCodeHelper": "Agent 主机运行 `<gateway> enroll` 得到类似 XXX-XXX-XXX 的短码，粘贴到这里即可自动授权本设备。不填写则走上方的「复制公钥 → peers add」手动流程。"
 }

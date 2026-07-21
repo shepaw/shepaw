@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../l10n/app_localizations.dart';
 import '../../models/planning_models.dart';
 import '../../theme/app_theme.dart';
 
@@ -48,6 +49,7 @@ class _PlanApprovalCardState extends State<PlanApprovalCard> {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
     final colorScheme = Theme.of(context).colorScheme;
     final responded = widget.isResponded;
     final approvedBool = widget.planData['_approved'] as bool?;
@@ -83,7 +85,7 @@ class _PlanApprovalCardState extends State<PlanApprovalCard> {
                 const SizedBox(width: 8),
                 Expanded(
                   child: Text(
-                    _plan.title.isNotEmpty ? _plan.title : '执行计划',
+                    _plan.title.isNotEmpty ? _plan.title : l10n.plan_title,
                     style: const TextStyle(
                       fontWeight: FontWeight.bold,
                       fontSize: 14,
@@ -98,7 +100,7 @@ class _PlanApprovalCardState extends State<PlanApprovalCard> {
                       borderRadius: BorderRadius.circular(12),
                     ),
                     child: Text(
-                      '等待确认',
+                      l10n.dispatch_awaitingConfirm,
                       style: TextStyle(
                         fontSize: 11,
                         color: Colors.orange.shade800,
@@ -116,7 +118,9 @@ class _PlanApprovalCardState extends State<PlanApprovalCard> {
                       borderRadius: BorderRadius.circular(12),
                     ),
                     child: Text(
-                      approvedBool == true ? '已批准' : '已反馈',
+                      approvedBool == true
+                          ? l10n.plan_approved
+                          : l10n.plan_feedbackGiven,
                       style: TextStyle(
                         fontSize: 11,
                         color: approvedBool == true
@@ -152,7 +156,7 @@ class _PlanApprovalCardState extends State<PlanApprovalCard> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 for (int i = 0; i < _plan.tasks.length; i++)
-                  _buildTaskRow(i, _plan.tasks[i], responded),
+                  _buildTaskRow(context, i, _plan.tasks[i], responded),
               ],
             ),
           ),
@@ -169,7 +173,7 @@ class _PlanApprovalCardState extends State<PlanApprovalCard> {
                   controller: _feedbackController,
                   maxLines: 3,
                   decoration: InputDecoration(
-                    hintText: '请描述你对计划的修改意见...',
+                    hintText: l10n.plan_revisionHint,
                     border: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(8),
                     ),
@@ -185,7 +189,7 @@ class _PlanApprovalCardState extends State<PlanApprovalCard> {
                   children: [
                     TextButton(
                       onPressed: () => setState(() => _showFeedbackInput = false),
-                      child: const Text('取消'),
+                      child: Text(l10n.common_cancel),
                     ),
                     const SizedBox(width: 8),
                     FilledButton(
@@ -202,7 +206,7 @@ class _PlanApprovalCardState extends State<PlanApprovalCard> {
                       style: FilledButton.styleFrom(
                         backgroundColor: Colors.orange,
                       ),
-                      child: const Text('提交意见'),
+                      child: Text(l10n.plan_submitFeedback),
                     ),
                   ],
                 ),
@@ -217,7 +221,7 @@ class _PlanApprovalCardState extends State<PlanApprovalCard> {
                         onPressed: () =>
                             setState(() => _showFeedbackInput = true),
                         icon: const Icon(Icons.edit_outlined, size: 16),
-                        label: const Text('提出修改'),
+                        label: Text(l10n.plan_requestRevision),
                       ),
                     ),
                     const SizedBox(width: 10),
@@ -232,7 +236,7 @@ class _PlanApprovalCardState extends State<PlanApprovalCard> {
                           );
                         },
                         icon: const Icon(Icons.check_circle_outline, size: 16),
-                        label: const Text('批准并执行'),
+                        label: Text(l10n.plan_approveAndRun),
                         style: FilledButton.styleFrom(
                           backgroundColor: Colors.green,
                         ),
@@ -248,7 +252,13 @@ class _PlanApprovalCardState extends State<PlanApprovalCard> {
     );
   }
 
-  Widget _buildTaskRow(int index, PlanTask task, bool responded) {
+  Widget _buildTaskRow(
+    BuildContext context,
+    int index,
+    PlanTask task,
+    bool responded,
+  ) {
+    final l10n = AppLocalizations.of(context);
     final canSkip = !responded;
     final isSkipped = _skippedTaskIds.contains(task.id);
 
@@ -308,7 +318,7 @@ class _PlanApprovalCardState extends State<PlanApprovalCard> {
                   Padding(
                     padding: const EdgeInsets.only(top: 2),
                     child: Text(
-                      '依赖: ${task.dependencies.join(', ')}',
+                      l10n.plan_dependencies(task.dependencies.join(', ')),
                       style: TextStyle(
                         fontSize: 11,
                         color: Colors.grey[500],

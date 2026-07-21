@@ -3872,4 +3872,968 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get peerList_disconnected => '未连接';
+
+  @override
+  String get common_done => '完成';
+
+  @override
+  String get common_more => '更多';
+
+  @override
+  String get common_back => '返回';
+
+  @override
+  String get common_connect => '连接';
+
+  @override
+  String get common_submit => '提交';
+
+  @override
+  String get common_next => '下一步';
+
+  @override
+  String get common_allow => '允许';
+
+  @override
+  String get common_processing => '处理中...';
+
+  @override
+  String get common_fetching => '获取中...';
+
+  @override
+  String get common_selectAll => '全选';
+
+  @override
+  String get common_openSettings => '打开设置';
+
+  @override
+  String get common_sync => '同步';
+
+  @override
+  String get common_busy => '忙碌';
+
+  @override
+  String get common_enter => '进入';
+
+  @override
+  String common_daysAgo(int count) {
+    return '$count 天前';
+  }
+
+  @override
+  String common_minutesAgo(int count) {
+    return '$count 分钟前';
+  }
+
+  @override
+  String common_hoursAgo(int count) {
+    return '$count 小时前';
+  }
+
+  @override
+  String get toolModel_needOpenRouterKey => '请先填写 OpenRouter API Key';
+
+  @override
+  String get toolModel_selectOpenRouter => '选择 OpenRouter 模型';
+
+  @override
+  String get toolModel_fetchOpenRouterFailed => '获取 OpenRouter 模型失败';
+
+  @override
+  String get toolModel_needOllamaBase => '请先填写 Ollama API Base 地址';
+
+  @override
+  String get toolModel_ollamaNoModels =>
+      'Ollama 中暂无已安装的模型，请先运行 ollama pull <model>';
+
+  @override
+  String get toolModel_selectOllama => '选择 Ollama 本地模型';
+
+  @override
+  String get toolModel_fetchOllamaFailed => '获取 Ollama 模型失败';
+
+  @override
+  String get toolModel_fetchOllamaList => '获取 Ollama 本地模型列表';
+
+  @override
+  String get toolModel_fetchOpenRouterList => '获取 OpenRouter 模型列表';
+
+  @override
+  String get toolModel_searchHint => '搜索模型名称或 ID...';
+
+  @override
+  String get toolModel_noMatch => '无匹配模型';
+
+  @override
+  String toolModel_fetchFailed(String error) {
+    return '获取模型失败: $error';
+  }
+
+  @override
+  String toolModel_filteredCount(int filtered, int total) {
+    return '$filtered / $total 个模型';
+  }
+
+  @override
+  String get remoteAgent_title => '远端助手';
+
+  @override
+  String get remoteAgent_checkingHealth => '正在检查 Agent 健康状态...';
+
+  @override
+  String remoteAgent_healthDone(int online, int total) {
+    return '健康检查完成，在线: $online/$total';
+  }
+
+  @override
+  String remoteAgent_healthFailed(String error) {
+    return '健康检查失败: $error';
+  }
+
+  @override
+  String remoteAgent_deleteConfirm(String name) {
+    return '确定要删除助手 $name 吗？\n\n删除后，远端助手将无法再使用此 Token 连接。';
+  }
+
+  @override
+  String get remoteAgent_checkHealth => '检查健康状态';
+
+  @override
+  String get remoteAgent_add => '添加助手';
+
+  @override
+  String get remoteAgent_empty => '还没有远端助手';
+
+  @override
+  String get remoteAgent_emptyHint => '点击下方按钮添加第一个助手';
+
+  @override
+  String get remoteAgent_viewToken => '查看 Token';
+
+  @override
+  String remoteAgent_loadFailed(String error) {
+    return '加载失败: $error';
+  }
+
+  @override
+  String remoteAgent_deleted(String name) {
+    return '已删除 $name';
+  }
+
+  @override
+  String remoteAgent_deleteFailed(String error) {
+    return '删除失败: $error';
+  }
+
+  @override
+  String remoteAgent_lastActive(String time) {
+    return '最后活跃: $time';
+  }
+
+  @override
+  String get workflow_detailTitle => '工作流详情';
+
+  @override
+  String get workflow_notFound => '工作流不存在';
+
+  @override
+  String get workflow_approvalSubmitted => '审批已提交，请返回群聊继续工作流';
+
+  @override
+  String workflow_approvalFailed(String error) {
+    return '审批提交失败: $error';
+  }
+
+  @override
+  String get workflow_triggerMessage => '触发消息';
+
+  @override
+  String get workflow_returnToChatForApproval => '请返回群聊消息中完成审批';
+
+  @override
+  String get workflow_lowRiskOp => '低风险操作';
+
+  @override
+  String get workflow_execSummary => '执行摘要';
+
+  @override
+  String get workflow_noSteps => '暂无步骤信息';
+
+  @override
+  String get workflow_execStages => '执行阶段';
+
+  @override
+  String get workflow_timeInfo => '时间信息';
+
+  @override
+  String get workflow_startTime => '开始时间';
+
+  @override
+  String get workflow_endTime => '完成时间';
+
+  @override
+  String get workflow_totalDuration => '总耗时';
+
+  @override
+  String workflow_stepsCompleted(int done, int total) {
+    return '$done/$total 步骤完成';
+  }
+
+  @override
+  String workflow_stepsCompletedSlash(int done, int total) {
+    return '$done / $total 步骤完成';
+  }
+
+  @override
+  String workflow_runningFor(String duration) {
+    return '已运行 $duration';
+  }
+
+  @override
+  String workflow_totalDurationValue(String duration) {
+    return '总耗时 $duration';
+  }
+
+  @override
+  String workflow_waitingToolApproval(String agentName) {
+    return '等待 @$agentName 工具审批';
+  }
+
+  @override
+  String workflow_stageN(int n) {
+    return '阶段 $n';
+  }
+
+  @override
+  String get workflow_inProgressBanner => '工作流进行中，点击查看进度与审批';
+
+  @override
+  String workflow_waitingApprovalSteps(int total) {
+    return '等待审批 · $total 步骤';
+  }
+
+  @override
+  String get workflow_allDone => '全部完成';
+
+  @override
+  String get workflow_execFailed => '执行失败';
+
+  @override
+  String get workflow_needToolConfirm => '需要确认工具操作';
+
+  @override
+  String get workflow_waitingToolApprovalShort => '等待工具审批';
+
+  @override
+  String get workflow_viewRelatedMessage => '查看相关消息';
+
+  @override
+  String get workflow_approveExec => '批准执行';
+
+  @override
+  String get workflow_revisionComment => '修改意见';
+
+  @override
+  String get workflow_revisionHint => '请描述你的修改意见...';
+
+  @override
+  String get workflow_waitingToolTap => '等待工具审批 · 点击查看';
+
+  @override
+  String workflow_stagesSteps(int stages, int steps) {
+    return '$stages 阶段 · $steps 步骤';
+  }
+
+  @override
+  String workflow_completedOf(int done, int total) {
+    return '$done/$total 完成';
+  }
+
+  @override
+  String workflow_groupTitle(String name) {
+    return '$name - 工作流';
+  }
+
+  @override
+  String get workflow_empty => '暂无工作流记录';
+
+  @override
+  String get workflow_emptyHint => '开启 Flow 模式后，群聊中的工作流执行将记录在此处';
+
+  @override
+  String get workflow_statusPendingApproval => '待审批';
+
+  @override
+  String get workflow_statusRunning => '运行中';
+
+  @override
+  String get workflow_statusCompleted => '已完成';
+
+  @override
+  String get workflow_statusFailed => '失败';
+
+  @override
+  String get workflow_statusCancelled => '已取消';
+
+  @override
+  String get workflow_stepPending => '待执行';
+
+  @override
+  String get workflow_stepRunning => '执行中';
+
+  @override
+  String get workflow_stepCompleted => '已完成';
+
+  @override
+  String get workflow_stepFailed => '失败';
+
+  @override
+  String get workflow_stepSkipped => '已跳过';
+
+  @override
+  String chat_syncedRemoteSessions(int count) {
+    return '已同步 $count 个远端会话';
+  }
+
+  @override
+  String get chat_syncRemoteSessionsTitle => '同步远端会话';
+
+  @override
+  String chat_syncRemoteSessionsBody(String agentName, int count) {
+    return '在 $agentName 上发现 $count 个尚未同步的远端会话。\n\n是否同步到本地？同步后可在会话列表中查看并继续这些会话，本地会话将与远端保持一致。\n\n此选择会记住，之后可在 Agent 设置中修改。';
+  }
+
+  @override
+  String get chat_doNotSync => '不同步';
+
+  @override
+  String get chat_sheNoModel => 'She 还没有配置 AI 模型';
+
+  @override
+  String get chat_sheNoModelTapSettings => '点击这里前往设置，为 She 选择一个 LLM 模型';
+
+  @override
+  String get chat_sheTagline => '你的专属灵宠，会越来越懂你';
+
+  @override
+  String get chat_sheConfigModelCta => '配置 AI 模型，开始对话';
+
+  @override
+  String get chat_sheNeedModelHint => 'She 使用本地 LLM 运行，请先在设置中\n为她选择一个 AI 模型';
+
+  @override
+  String get chat_syncingRemote => '同步远端…';
+
+  @override
+  String get chat_toolPendingInPanel => '工具操作待确认：请在下方工作流面板中批准或拒绝';
+
+  @override
+  String get agentToken_createdSuccess => '助手创建成功';
+
+  @override
+  String get agentToken_nextSteps => '下一步';
+
+  @override
+  String get agentToken_step1 => '复制上方的 Token';
+
+  @override
+  String get agentToken_step2 => '在远端助手的配置中粘贴 Token';
+
+  @override
+  String get agentToken_step3 => '启动远端助手，等待连接';
+
+  @override
+  String get agentToken_step4 => '连接成功后，助手将显示为在线状态';
+
+  @override
+  String get agentToken_keepSafe => '请妥善保管 Token，不要泄露给他人';
+
+  @override
+  String get channel_loadFailed => '加载频道列表失败';
+
+  @override
+  String get channel_management => '频道管理';
+
+  @override
+  String get channel_create => '创建频道';
+
+  @override
+  String get channel_empty => '暂无频道';
+
+  @override
+  String get channel_emptyHint => '点击下方按钮创建您的第一个频道';
+
+  @override
+  String get channel_knotBridge => 'Knot 桥接';
+
+  @override
+  String get channel_open => '打开频道';
+
+  @override
+  String get channel_knotRemoved => 'Knot 桥接功能已移除，请使用远端助手功能';
+
+  @override
+  String get channel_name => '频道名称';
+
+  @override
+  String get channel_nameHint => '输入频道名称';
+
+  @override
+  String get channel_descOptional => '频道描述（可选）';
+
+  @override
+  String get channel_descHint => '输入频道描述';
+
+  @override
+  String get channel_nameRequired => '请输入频道名称';
+
+  @override
+  String channel_createdSuccess(String name) {
+    return '频道 $name 创建成功';
+  }
+
+  @override
+  String get channel_createFailed => '创建频道失败';
+
+  @override
+  String channel_loaded(int count) {
+    return '加载了 $count 个频道';
+  }
+
+  @override
+  String channel_opening(String name) {
+    return '打开频道: $name';
+  }
+
+  @override
+  String channel_createdLog(String name) {
+    return '成功创建频道: $name';
+  }
+
+  @override
+  String get login_backingUp => '正在安全备份数据...';
+
+  @override
+  String get agentList_loadFailed => '加载 Agent 列表失败';
+
+  @override
+  String agentList_deleteConfirm(String name) {
+    return '确定要删除 Agent $name 吗？';
+  }
+
+  @override
+  String get agentList_deleteFailed => '删除 Agent 失败';
+
+  @override
+  String get agentList_title => 'Agent 管理';
+
+  @override
+  String get agentList_emptyHint => '点击下方按钮添加您的第一个 Agent';
+
+  @override
+  String get agentList_selectType => '选择 Agent 类型';
+
+  @override
+  String get agentList_typeOpenClaw => '通过 ACP 协议连接 OpenClaw Gateway';
+
+  @override
+  String get agentList_typeA2a => '支持 A2A 协议的通用 Agent';
+
+  @override
+  String get agentList_typeCustom => '自定义 Agent';
+
+  @override
+  String get agentList_typeCustomDesc => '手动配置的其他类型 Agent';
+
+  @override
+  String get agentList_createConversationFailed => '创建对话失败';
+
+  @override
+  String agentList_createConversationFailedDetail(String error) {
+    return '创建对话失败: $error';
+  }
+
+  @override
+  String agentList_loaded(int count) {
+    return '加载了 $count 个 Agent';
+  }
+
+  @override
+  String agentList_typeLabel(String type) {
+    return '类型: $type';
+  }
+
+  @override
+  String agentList_conversationWith(String name) {
+    return '与 $name 的对话';
+  }
+
+  @override
+  String agentList_dmCreated(String name, String id) {
+    return '创建了与 $name 的 DM 频道: $id';
+  }
+
+  @override
+  String agentList_conversationCreated(String name) {
+    return '已创建与 $name 的对话';
+  }
+
+  @override
+  String agentList_deleted(String name) {
+    return '已删除 $name';
+  }
+
+  @override
+  String get agentDetail_peerOffline => '配对设备未连接';
+
+  @override
+  String get agentDetail_modelSwitchUnsupported => '该 agent 暂不支持切换模型';
+
+  @override
+  String get agentDetail_modelSwitched => '已切换模型';
+
+  @override
+  String get agentDetail_modelSwitchFailed => '切换模型失败';
+
+  @override
+  String get agentDetail_sessionSync => '会话同步';
+
+  @override
+  String get agentDetail_sessionSyncHint =>
+      '开启后进入时自动同步远端会话列表与聊天记录；关闭后不再同步。可随时在此修改';
+
+  @override
+  String get agentDetail_refreshModels => '刷新模型列表';
+
+  @override
+  String get agentDetail_switchModelHint => '切换远端 agent 使用的 LLM 模型（作用于后续对话）';
+
+  @override
+  String get agentDetail_noModels => '暂无可用模型';
+
+  @override
+  String get agentDetail_noAiModel => '尚未配置 AI 模型';
+
+  @override
+  String get agentDetail_maxToolRounds => '最大工具调用轮次';
+
+  @override
+  String agentDetail_maxToolRoundsValue(int count) {
+    return '$count 次';
+  }
+
+  @override
+  String get agentDetail_taskTimeout => '任务超时时间';
+
+  @override
+  String agentDetail_taskTimeoutValue(int seconds) {
+    return '$seconds 秒';
+  }
+
+  @override
+  String get agentDetail_maxToolRoundsDefault => '默认 100';
+
+  @override
+  String get agentDetail_maxToolRoundsHelper => '单次对话中 LLM 最多可调用工具的轮数（1–500）';
+
+  @override
+  String get agentDetail_maxToolRoundsInvalid => '请输入 1 到 500 之间的整数';
+
+  @override
+  String get agentDetail_taskTimeoutSeconds => '任务超时时间（秒）';
+
+  @override
+  String get agentDetail_taskTimeoutDefault => '默认 600';
+
+  @override
+  String get agentDetail_taskTimeoutHelper => '单次任务的最长等待时间（60–3600 秒）';
+
+  @override
+  String get agentDetail_taskTimeoutInvalid => '请输入 60 到 3600 之间的整数';
+
+  @override
+  String agentDetail_fromSource(String name) {
+    return '来自 $name';
+  }
+
+  @override
+  String get agentDetail_createSuccess => 'Agent 创建成功';
+
+  @override
+  String get agentDetail_updateSuccess => 'Agent 更新成功';
+
+  @override
+  String get agentDetail_name => 'Agent 名称';
+
+  @override
+  String get agentDetail_nameHint => '输入 Agent 名称';
+
+  @override
+  String get agentDetail_type => 'Agent 类型';
+
+  @override
+  String get agentDetail_typeHint => '例如: assistant, chatbot';
+
+  @override
+  String get agentDetail_typeRequired => '请输入 Agent 类型';
+
+  @override
+  String get agentDetail_status => 'Agent 状态';
+
+  @override
+  String agentDetail_createdLog(String name) {
+    return '成功创建 Agent: $name';
+  }
+
+  @override
+  String agentDetail_updatedLog(String name) {
+    return '成功更新 Agent: $name';
+  }
+
+  @override
+  String get agentDetail_addTitle => '添加 Agent';
+
+  @override
+  String get agentDetail_viewTitle => 'Agent 详情';
+
+  @override
+  String get agentPair_unsupportedPlatform =>
+      '当前平台不支持扫码。请返回手动粘贴 URL + 填写配对码，或改用手机扫码。';
+
+  @override
+  String get agentPair_scanTitle => '扫描配对二维码';
+
+  @override
+  String get agentPair_torch => '手电筒';
+
+  @override
+  String get agentPair_scanHint =>
+      '对准 agent 主机上 `<gateway> enroll` / `shepaw-hub pair` 打印的二维码';
+
+  @override
+  String get agentPair_cameraDeniedTitle => '无法访问相机';
+
+  @override
+  String get agentPair_cameraDeniedBody =>
+      '扫码配对需要相机权限。请到系统设置中允许 Shepaw 访问相机，或返回手动输入配对码。';
+
+  @override
+  String get agentPair_unsupportedShort => '当前平台暂不支持扫码';
+
+  @override
+  String agentPair_scanFailed(String error) {
+    return '扫描失败：$error';
+  }
+
+  @override
+  String agentPair_cameraInitFailed(String error) {
+    return '相机初始化失败：$error';
+  }
+
+  @override
+  String get addAgent_scannedHintPrefix => '已扫码：URL 与配对码已填入。点击';
+
+  @override
+  String get addAgent_scannedHintSuffix => '完成配对。';
+
+  @override
+  String get addAgent_missingFingerprint =>
+      'URL 缺失指纹（`#fp=…`）。请使用 agent 终端启动时打印的完整 URL。';
+
+  @override
+  String get addAgent_devicePubkeyTitle => '本设备公钥（v2.1 授权凭证）';
+
+  @override
+  String get addAgent_loadingDeviceIdentity => '正在加载设备身份…';
+
+  @override
+  String get addAgent_fingerprintLabel => '指纹: ';
+
+  @override
+  String get addAgent_copyPubkey => '复制公钥';
+
+  @override
+  String get addAgent_pubkeyCopied => '公钥已复制到剪贴板';
+
+  @override
+  String get addAgent_runOnHost => '在 agent 主机上执行：';
+
+  @override
+  String get addAgent_myPhone => '我的手机';
+
+  @override
+  String get addAgent_agentFingerprintLabel => 'Agent 指纹: ';
+
+  @override
+  String get addAgent_verifyFingerprint =>
+      '请对照 agent 终端启动时打印的 Fingerprint 是否一致';
+
+  @override
+  String get addAgent_missingFpWarning =>
+      '⚠ URL 缺失 #fp=… 指纹段，配对将失败。请使用 agent 启动时打印的完整 URL。';
+
+  @override
+  String get addAgent_pairingCodeOptional => '配对码（可选，用于一键配对）';
+
+  @override
+  String get dispatch_timeout => '执行超时';
+
+  @override
+  String get dispatch_failed => '执行失败';
+
+  @override
+  String get dispatch_waitingConfirm => '等待操作确认';
+
+  @override
+  String get dispatch_running => '执行中';
+
+  @override
+  String get dispatch_goConfirm => '前往处理确认';
+
+  @override
+  String get dispatch_viewDetails => '查看执行详情';
+
+  @override
+  String get dispatch_awaitingConfirm => '等待确认';
+
+  @override
+  String get dispatch_confirmed => '已确认';
+
+  @override
+  String get dispatch_cancelled => '已取消';
+
+  @override
+  String get dispatch_confirmDispatch => '确认派发';
+
+  @override
+  String dispatch_title(String agentName) {
+    return '任务派发 · $agentName';
+  }
+
+  @override
+  String dispatch_pendingConfirm(String title) {
+    return '待确认：$title';
+  }
+
+  @override
+  String dispatch_confirmTitle(String agentName) {
+    return '派发确认 · $agentName';
+  }
+
+  @override
+  String get dispatch_completed => '已完成';
+
+  @override
+  String get relay_waiting => '等待审批';
+
+  @override
+  String get relay_processed => '已处理';
+
+  @override
+  String get relay_expired => '已过期';
+
+  @override
+  String get relay_failed => '处理失败';
+
+  @override
+  String relay_title(String agentName) {
+    return '操作确认 · $agentName';
+  }
+
+  @override
+  String relay_yourChoice(String label) {
+    return '你的选择：$label';
+  }
+
+  @override
+  String get plan_title => '执行计划';
+
+  @override
+  String get plan_approved => '已批准';
+
+  @override
+  String get plan_feedbackGiven => '已反馈';
+
+  @override
+  String get plan_revisionHint => '请描述你对计划的修改意见...';
+
+  @override
+  String get plan_submitFeedback => '提交意见';
+
+  @override
+  String get plan_requestRevision => '提出修改';
+
+  @override
+  String get plan_approveAndRun => '批准并执行';
+
+  @override
+  String plan_dependencies(String deps) {
+    return '依赖: $deps';
+  }
+
+  @override
+  String get update_emptyDownloadUrl => '下载链接为空，请联系管理员检查接口返回';
+
+  @override
+  String update_cannotOpenUrl(String url) {
+    return '无法打开下载链接: $url';
+  }
+
+  @override
+  String update_downloadComplete(String fileName) {
+    return '$fileName 下载完成';
+  }
+
+  @override
+  String get peerPairing_requestTitle => '配对请求';
+
+  @override
+  String get peerPairing_requestBody => '以下设备想要与你配对：';
+
+  @override
+  String get peerPairing_selectAgents => '选择要分享给该设备的 Agent';
+
+  @override
+  String get peerPairing_selectAgentsHint =>
+      '对方将能通过配对连接使用你选中的 Agent（需已开启「允许外部访问」）';
+
+  @override
+  String get peerPairing_confirmHint => '确认配对后，双方可以直接通讯';
+
+  @override
+  String get peerPairing_confirm => '确认配对';
+
+  @override
+  String peerPairing_confirmWithCount(int count) {
+    return '确认配对 ($count)';
+  }
+
+  @override
+  String peerPairing_failed(String error) {
+    return '配对失败: $error';
+  }
+
+  @override
+  String get peerScan_desktopUnsupported => '桌面端暂不支持摄像头扫描';
+
+  @override
+  String get peerScan_useMobile => '请在移动设备上使用扫码功能';
+
+  @override
+  String get peerScan_frameHint => '将对方的二维码放入框内';
+
+  @override
+  String peerScan_cameraError(String error) {
+    return '摄像头错误: $error';
+  }
+
+  @override
+  String get peerList_add => '添加配对';
+
+  @override
+  String get peerList_emptyHint => '扫描对方的二维码或让对方扫描你的二维码来建立加密连接';
+
+  @override
+  String peerList_pairedSuccess(String name) {
+    return '已与 $name 配对成功';
+  }
+
+  @override
+  String get peerList_editAlias => '修改备注';
+
+  @override
+  String get peerQr_fillAllFields => '请填写所有字段';
+
+  @override
+  String get peerQr_cannotStart => '无法启动配对';
+
+  @override
+  String get peerQr_scanHint => '让对方扫描此二维码完成配对';
+
+  @override
+  String get peerQr_codeLabel => '配对码';
+
+  @override
+  String get peerQr_codeCopied => '配对码已复制';
+
+  @override
+  String get peerQr_waitingScan => '等待对方扫描...';
+
+  @override
+  String get peerQr_validFiveMin => '二维码 5 分钟内有效';
+
+  @override
+  String get peerQr_wanConnect => '外网连接';
+
+  @override
+  String get peerQr_wanConnectHint => '开启后可通过外网配对，不限同一局域网';
+
+  @override
+  String get peerQr_channelConnected => 'Channel 已连接';
+
+  @override
+  String get peerQr_channelConnecting => '正在连接 Channel...';
+
+  @override
+  String get peerQr_channelReconnecting => '连接断开，正在重连...';
+
+  @override
+  String get peerQr_editConfig => '修改配置';
+
+  @override
+  String get peerQr_connectFailed => '连接失败';
+
+  @override
+  String get peerQr_starting => '正在启动...';
+
+  @override
+  String get peerQr_configureChannel => '配置 Channel 服务以启用外网连接';
+
+  @override
+  String get peerQr_channelIdHint => '输入 Channel ID';
+
+  @override
+  String get peerQr_signingKeyHint => '输入签名密钥';
+
+  @override
+  String peerChat_cannotConnect(String name) {
+    return '无法连接到 $name，请确认对方在线后重试';
+  }
+
+  @override
+  String get memory_typeConversation => '对话';
+
+  @override
+  String get memory_typeKnowledge => '知识';
+
+  @override
+  String get memory_typeBehavior => '行为';
+
+  @override
+  String get memory_typeEvent => '事件';
+
+  @override
+  String get memory_typeEmotion => '情感';
+
+  @override
+  String get peerApproval_superseded => '被后续审批取代';
+
+  @override
+  String get peerApproval_allow => '允许';
+
+  @override
+  String get peerApproval_deny => '拒绝';
+
+  @override
+  String get status_protocolPeer => '配对设备';
+
+  @override
+  String get status_custom => '自定义';
+
+  @override
+  String get home_statusError => '错误';
+
+  @override
+  String get addAgent_pairingCodeHelper =>
+      'Agent 主机运行 `<gateway> enroll` 得到类似 XXX-XXX-XXX 的短码，粘贴到这里即可自动授权本设备。不填写则走上方的「复制公钥 → peers add」手动流程。';
 }

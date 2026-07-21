@@ -1,4 +1,5 @@
 import '../models/workflow_models.dart';
+import '../l10n/app_localizations.dart';
 
 /// Pure helpers for merging / superseding peer tool-approval selections.
 class PeerApprovalSelection {
@@ -44,9 +45,13 @@ class PeerApprovalSelection {
   /// Still submitted to the peer hub so [openApprovals] can drop, but
   /// consumers must skip writing this into final message metadata when
   /// `_superseded` is true.
-  static Map<String, dynamic> buildSupersededDenyResponse() => {
+  static Map<String, dynamic> buildSupersededDenyResponse([
+    AppLocalizations? l10n,
+  ]) =>
+      {
         'selected_action_id': 'deny',
-        'selected_action_label': '被后续审批取代',
+        'selected_action_label':
+            l10n?.peerApproval_superseded ?? 'Superseded by a later approval',
         '_approval_submitted': false,
         '_superseded': true,
       };

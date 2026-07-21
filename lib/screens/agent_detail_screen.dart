@@ -60,6 +60,7 @@ class _AgentDetailScreenState extends State<AgentDetailScreen> {
 
   /// 保存 Agent
   Future<void> _saveAgent() async {
+    final l10n = AppLocalizations.of(context);
     if (!_formKey.currentState!.validate()) return;
 
     setState(() => _isLoading = true);
@@ -93,7 +94,7 @@ class _AgentDetailScreenState extends State<AgentDetailScreen> {
 
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Agent 创建成功')),
+            SnackBar(content: Text(l10n.agentDetail_createSuccess)),
           );
           Navigator.pop(context, true);
         }
@@ -118,13 +119,13 @@ class _AgentDetailScreenState extends State<AgentDetailScreen> {
 
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Agent 更新成功')),
+            SnackBar(content: Text(l10n.agentDetail_updateSuccess)),
           );
           setState(() => _isEditing = false);
         }
       }
     } catch (e) {
-      LoggerService().error('保存 Agent 失败', tag: 'AgentDetail', error: e);
+      LoggerService().error(l10n.agentDetail_saveFailed(''), tag: 'AgentDetail', error: e);
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -142,22 +143,23 @@ class _AgentDetailScreenState extends State<AgentDetailScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
     final isNewAgent = widget.agent == null;
 
     return Scaffold(
       appBar: AppBar(
         title: Text(isNewAgent
-            ? '添加 Agent'
+            ? l10n.agentDetail_addTitle
             : _isEditing
-                ? '编辑 Agent'
-                : 'Agent 详情'),
+                ? l10n.agentDetail_editTitle
+                : l10n.agentDetail_viewTitle),
         centerTitle: true,
         actions: [
           if (!isNewAgent && !_isEditing)
             IconButton(
               icon: const Icon(Icons.edit),
               onPressed: () => setState(() => _isEditing = true),
-              tooltip: '编辑',
+              tooltip: l10n.common_edit,
             ),
         ],
       ),
@@ -225,16 +227,16 @@ class _AgentDetailScreenState extends State<AgentDetailScreen> {
                     // Agent 名称
                     TextFormField(
                       controller: _nameController,
-                      decoration: const InputDecoration(
-                        labelText: 'Agent 名称',
-                        hintText: '输入 Agent 名称',
+                      decoration: InputDecoration(
+                        labelText: l10n.agentDetail_name,
+                        hintText: l10n.agentDetail_nameHint,
                         prefixIcon: Icon(Icons.badge),
                         border: OutlineInputBorder(),
                       ),
                       enabled: _isEditing,
                       validator: (value) {
                         if (value == null || value.trim().isEmpty) {
-                          return '请输入 Agent 名称';
+                          return l10n.agentDetail_nameRequired;
                         }
                         return null;
                       },
@@ -244,16 +246,16 @@ class _AgentDetailScreenState extends State<AgentDetailScreen> {
                     // Agent 类型
                     TextFormField(
                       controller: _typeController,
-                      decoration: const InputDecoration(
-                        labelText: 'Agent 类型',
-                        hintText: '例如: assistant, chatbot',
+                      decoration: InputDecoration(
+                        labelText: l10n.agentDetail_type,
+                        hintText: l10n.agentDetail_typeHint,
                         prefixIcon: Icon(Icons.category),
                         border: OutlineInputBorder(),
                       ),
                       enabled: _isEditing,
                       validator: (value) {
                         if (value == null || value.trim().isEmpty) {
-                          return '请输入 Agent 类型';
+                          return l10n.agentDetail_typeRequired;
                         }
                         return null;
                       },
@@ -263,16 +265,16 @@ class _AgentDetailScreenState extends State<AgentDetailScreen> {
                     // Agent 状态
                     DropdownButtonFormField<String>(
                       value: _selectedStatus,
-                      decoration: const InputDecoration(
-                        labelText: 'Agent 状态',
+                      decoration: InputDecoration(
+                        labelText: l10n.agentDetail_status,
                         prefixIcon: Icon(Icons.circle),
                         border: OutlineInputBorder(),
                       ),
-                      items: const [
-                        DropdownMenuItem(value: 'online', child: Text('在线')),
-                        DropdownMenuItem(value: 'offline', child: Text('离线')),
-                        DropdownMenuItem(value: 'busy', child: Text('忙碌')),
-                        DropdownMenuItem(value: 'error', child: Text('错误')),
+                      items: [
+                        DropdownMenuItem(value: 'online', child: Text(l10n.home_statusOnline)),
+                        DropdownMenuItem(value: 'offline', child: Text(l10n.home_statusOffline)),
+                        DropdownMenuItem(value: 'busy', child: Text(l10n.common_busy)),
+                        DropdownMenuItem(value: 'error', child: Text(l10n.status_error)),
                       ],
                       onChanged: _isEditing
                           ? (value) {
@@ -287,12 +289,12 @@ class _AgentDetailScreenState extends State<AgentDetailScreen> {
                     // 最大工具调用轮次
                     TextFormField(
                       controller: _maxToolRoundsController,
-                      decoration: const InputDecoration(
-                        labelText: '最大工具调用轮次',
-                        hintText: '默认 100',
+                      decoration: InputDecoration(
+                        labelText: l10n.agentDetail_maxToolRounds,
+                        hintText: l10n.agentDetail_maxToolRoundsDefault,
                         prefixIcon: Icon(Icons.repeat),
                         border: OutlineInputBorder(),
-                        helperText: '单次对话中 LLM 最多可调用工具的轮数（1–500）',
+                        helperText: l10n.agentDetail_maxToolRoundsHelper,
                       ),
                       enabled: _isEditing,
                       keyboardType: TextInputType.number,
@@ -300,7 +302,7 @@ class _AgentDetailScreenState extends State<AgentDetailScreen> {
                         if (value == null || value.trim().isEmpty) return null;
                         final n = int.tryParse(value.trim());
                         if (n == null || n < 1 || n > 500) {
-                          return '请输入 1 到 500 之间的整数';
+                          return l10n.agentDetail_maxToolRoundsInvalid;
                         }
                         return null;
                       },
@@ -310,12 +312,12 @@ class _AgentDetailScreenState extends State<AgentDetailScreen> {
                     // 任务超时时间
                     TextFormField(
                       controller: _taskTimeoutController,
-                      decoration: const InputDecoration(
-                        labelText: '任务超时时间（秒）',
-                        hintText: '默认 600',
+                      decoration: InputDecoration(
+                        labelText: l10n.agentDetail_taskTimeoutSeconds,
+                        hintText: l10n.agentDetail_taskTimeoutDefault,
                         prefixIcon: Icon(Icons.timer),
                         border: OutlineInputBorder(),
-                        helperText: '单次任务的最长等待时间（60–3600 秒）',
+                        helperText: l10n.agentDetail_taskTimeoutHelper,
                       ),
                       enabled: _isEditing,
                       keyboardType: TextInputType.number,
@@ -323,7 +325,7 @@ class _AgentDetailScreenState extends State<AgentDetailScreen> {
                         if (value == null || value.trim().isEmpty) return null;
                         final n = int.tryParse(value.trim());
                         if (n == null || n < 60 || n > 3600) {
-                          return '请输入 60 到 3600 之间的整数';
+                          return l10n.agentDetail_taskTimeoutInvalid;
                         }
                         return null;
                       },
@@ -351,7 +353,7 @@ class _AgentDetailScreenState extends State<AgentDetailScreen> {
                         child: ElevatedButton.icon(
                           onPressed: () => _startConversation(widget.agent!),
                           icon: const Icon(Icons.chat),
-                          label: const Text('发起对话'),
+                          label: Text(l10n.agentDetail_startConversation),
                           style: ElevatedButton.styleFrom(
                             padding: const EdgeInsets.symmetric(vertical: 16),
                           ),
@@ -384,7 +386,7 @@ class _AgentDetailScreenState extends State<AgentDetailScreen> {
                                         (widget.agent!.metadata?['task_timeout_seconds'] ?? 600).toString();
                                   });
                                 },
-                                child: const Text('取消'),
+                                child: Text(l10n.common_cancel),
                               ),
                             ),
                           if (!isNewAgent) const SizedBox(width: 16),
@@ -392,7 +394,7 @@ class _AgentDetailScreenState extends State<AgentDetailScreen> {
                             child: ElevatedButton.icon(
                               onPressed: _saveAgent,
                               icon: const Icon(Icons.save),
-                              label: Text(isNewAgent ? '创建' : '保存'),
+                              label: Text(isNewAgent ? l10n.createGroup_create : l10n.common_save),
                             ),
                           ),
                         ],
@@ -523,7 +525,7 @@ class _AgentDetailScreenState extends State<AgentDetailScreen> {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx),
-            child: const Text('取消'),
+            child: Text(l10n.common_cancel),
           ),
         ],
       ),
@@ -596,6 +598,7 @@ class _AgentDetailScreenState extends State<AgentDetailScreen> {
 
   /// 发起与 Agent 的对话
   Future<void> _startConversation(Agent agent) async {
+    final l10n = AppLocalizations.of(context);
     setState(() => _isLoading = true);
 
     try {
@@ -627,7 +630,7 @@ class _AgentDetailScreenState extends State<AgentDetailScreen> {
             ),
           ],
           avatar: agent.avatar,
-          description: '与 ${agent.name} 的对话',
+          description: l10n.agentList_conversationWith(agent.name),
         );
 
         existingDM = await _apiService.createChannel(dmChannel);
@@ -646,13 +649,13 @@ class _AgentDetailScreenState extends State<AgentDetailScreen> {
         );
       }
     } catch (e) {
-      LoggerService().error('创建对话失败', tag: 'AgentDetail', error: e);
+      LoggerService().error(l10n.agentList_createConversationFailed, tag: 'AgentDetail', error: e);
       setState(() => _isLoading = false);
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('创建对话失败: ${ExceptionHandler.getUserMessage(e)}'),
+            content: Text(l10n.agentList_createConversationFailedDetail(ExceptionHandler.getUserMessage(e))),
             backgroundColor: Colors.red,
           ),
         );

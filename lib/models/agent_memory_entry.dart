@@ -25,21 +25,6 @@ enum MemoryType {
     );
   }
 
-  /// 获取显示名称（中文）
-  String get displayName {
-    switch (this) {
-      case MemoryType.conversation:
-        return '对话';
-      case MemoryType.knowledge:
-        return '知识';
-      case MemoryType.behavior:
-        return '行为';
-      case MemoryType.event:
-        return '事件';
-      case MemoryType.emotion:
-        return '情感';
-    }
-  }
 }
 
 /// 来源类型常量

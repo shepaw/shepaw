@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import '../l10n/app_localizations.dart';
 
 class LocaleProvider extends ChangeNotifier {
   static const _prefKey = 'app_locale';
@@ -37,22 +38,19 @@ class LocaleProvider extends ChangeNotifier {
 
   /// Display label for the current locale selection.
   String currentLabel(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
     if (_locale == null) return _followSystemLabel(context);
     switch (_locale!.languageCode) {
       case 'en':
-        return 'English';
+        return l10n.settings_languageEnglish;
       case 'zh':
-        return '中文';
+        return l10n.settings_languageChinese;
       default:
         return _locale!.languageCode;
     }
   }
 
   String _followSystemLabel(BuildContext context) {
-    // Use a hardcoded fallback since the localized string may not be available
-    // at all times (e.g., before the widget tree has the localisation delegate).
-    final code = Localizations.maybeLocaleOf(context)?.languageCode;
-    if (code == 'zh') return '跟随系统';
-    return 'Follow System';
+    return AppLocalizations.of(context).settings_languageFollowSystem;
   }
 }

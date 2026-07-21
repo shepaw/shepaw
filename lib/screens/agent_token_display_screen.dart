@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import '../l10n/app_localizations.dart';
+import '../l10n/l10n_helpers.dart';
 import '../models/remote_agent.dart';
 import '../theme/app_theme.dart';
 
@@ -14,9 +16,10 @@ class AgentTokenDisplayScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
     return Scaffold(
       appBar: AppBar(
-        title: const Text('助手创建成功'),
+        title: Text(l10n.agentToken_createdSuccess),
         centerTitle: true,
         leading: IconButton(
           icon: const Icon(Icons.close),
@@ -83,12 +86,12 @@ class AgentTokenDisplayScreen extends StatelessWidget {
                       ],
                     ),
                     const Divider(height: 24),
-                    _buildInfoRow('协议', agent.protocolName),
+                    _buildInfoRow(l10n.agentDetail_protocol, agent.localizedProtocolName(l10n)),
                     const SizedBox(height: 8),
-                    _buildInfoRow('连接方式', agent.connectionTypeName),
+                    _buildInfoRow(l10n.agentDetail_connectionType, agent.localizedConnectionTypeName(l10n)),
                     if (agent.endpoint.isNotEmpty) ...[
                       const SizedBox(height: 8),
-                      _buildInfoRow('端点', agent.endpoint),
+                      _buildInfoRow(l10n.agentDetail_endpoint, agent.endpoint),
                     ],
                   ],
                 ),
@@ -112,7 +115,7 @@ class AgentTokenDisplayScreen extends StatelessWidget {
                         ),
                         const SizedBox(width: 8),
                         Text(
-                          '认证 Token',
+                          l10n.agentDetail_authToken,
                           style: Theme.of(context).textTheme.titleMedium?.copyWith(
                             fontWeight: FontWeight.bold,
                             color: Theme.of(context).colorScheme.primary,
@@ -140,7 +143,7 @@ class AgentTokenDisplayScreen extends StatelessWidget {
                     ElevatedButton.icon(
                       onPressed: () => _copyToken(context),
                       icon: const Icon(Icons.copy),
-                      label: const Text('复制 Token'),
+                      label: Text(l10n.agentDetail_copyToken),
                       style: ElevatedButton.styleFrom(
                         minimumSize: const Size.fromHeight(40),
                       ),
@@ -166,7 +169,7 @@ class AgentTokenDisplayScreen extends StatelessWidget {
                         ),
                         const SizedBox(width: 8),
                         Text(
-                          '下一步',
+                          l10n.agentToken_nextSteps,
                           style: Theme.of(context).textTheme.titleMedium?.copyWith(
                             fontWeight: FontWeight.bold,
                           ),
@@ -174,10 +177,10 @@ class AgentTokenDisplayScreen extends StatelessWidget {
                       ],
                     ),
                     const SizedBox(height: 12),
-                    _buildStep(1, '复制上方的 Token'),
-                    _buildStep(2, '在远端助手的配置中粘贴 Token'),
-                    _buildStep(3, '启动远端助手，等待连接'),
-                    _buildStep(4, '连接成功后，助手将显示为在线状态'),
+                    _buildStep(1, l10n.agentToken_step1),
+                    _buildStep(2, l10n.agentToken_step2),
+                    _buildStep(3, l10n.agentToken_step3),
+                    _buildStep(4, l10n.agentToken_step4),
                     const SizedBox(height: 12),
                     Container(
                       padding: const EdgeInsets.all(12),
@@ -198,7 +201,7 @@ class AgentTokenDisplayScreen extends StatelessWidget {
                           const SizedBox(width: 8),
                           Expanded(
                             child: Text(
-                              '请妥善保管 Token，不要泄露给他人',
+                              l10n.agentToken_keepSafe,
                               style: TextStyle(
                                 fontSize: 12,
                                 color: Colors.orange[800],
@@ -222,7 +225,7 @@ class AgentTokenDisplayScreen extends StatelessWidget {
               style: ElevatedButton.styleFrom(
                 padding: const EdgeInsets.symmetric(vertical: 16),
               ),
-              child: const Text('完成'),
+              child: Text(l10n.common_done),
             ),
           ],
         ),
@@ -287,10 +290,10 @@ class AgentTokenDisplayScreen extends StatelessWidget {
   }
 
   void _copyToken(BuildContext context) {
-    Clipboard.setData(ClipboardData(text: agent.token));
+    final l10n = AppLocalizations.of(context);    Clipboard.setData(ClipboardData(text: agent.token));
     ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('Token 已复制到剪贴板'),
+      SnackBar(
+        content: Text(l10n.agentDetail_tokenCopied),
         duration: Duration(seconds: 2),
       ),
     );

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../l10n/app_localizations.dart';
 import '../../models/dispatch_task.dart';
 import '../../models/message.dart';
 import '../../screens/chat_screen.dart';
@@ -15,6 +16,7 @@ class DispatchStatusCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
     final colorScheme = Theme.of(context).colorScheme;
     final meta = message.metadata ?? const {};
     final status = meta['status'] as String? ?? DispatchTask.statusRunning;
@@ -26,13 +28,14 @@ class DispatchStatusCard extends StatelessWidget {
 
     final (icon, label, color) = switch ((status, awaiting)) {
       (DispatchTask.statusDone, _) =>
-        (Icons.check_circle_outline, '已完成', Colors.green),
+        (Icons.check_circle_outline, l10n.dispatch_completed, Colors.green),
       (DispatchTask.statusTimeout, _) =>
-        (Icons.timer_off_outlined, '执行超时', Colors.deepOrange),
+        (Icons.timer_off_outlined, l10n.dispatch_timeout, Colors.deepOrange),
       (DispatchTask.statusError, _) =>
-        (Icons.error_outline, '执行失败', Colors.red),
-      (_, true) => (Icons.touch_app_outlined, '等待操作确认', Colors.blue),
-      _ => (Icons.hourglass_top_outlined, '执行中', Colors.orange),
+        (Icons.error_outline, l10n.dispatch_failed, Colors.red),
+      (_, true) =>
+        (Icons.touch_app_outlined, l10n.dispatch_waitingConfirm, Colors.blue),
+      _ => (Icons.hourglass_top_outlined, l10n.dispatch_running, Colors.orange),
     };
 
     return Center(
@@ -56,7 +59,7 @@ class DispatchStatusCard extends StatelessWidget {
                   const SizedBox(width: 6),
                   Expanded(
                     child: Text(
-                      '任务派发 · $agentName',
+                      l10n.dispatch_title(agentName),
                       style: const TextStyle(
                           fontWeight: FontWeight.bold, fontSize: 13),
                       overflow: TextOverflow.ellipsis,
@@ -80,7 +83,7 @@ class DispatchStatusCard extends StatelessWidget {
               Padding(
                 padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
                 child: Text(
-                  '待确认：$confirmTitle',
+                  l10n.dispatch_pendingConfirm(confirmTitle),
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(fontSize: 12, color: Colors.blue[700]),
@@ -106,7 +109,11 @@ class DispatchStatusCard extends StatelessWidget {
                         awaiting ? Icons.touch_app_outlined : Icons.open_in_new,
                         size: 15,
                       ),
-                      label: Text(awaiting ? '前往处理确认' : '查看执行详情'),
+                      label: Text(
+                        awaiting
+                            ? l10n.dispatch_goConfirm
+                            : l10n.dispatch_viewDetails,
+                      ),
                       style: TextButton.styleFrom(
                         visualDensity: VisualDensity.compact,
                         textStyle: const TextStyle(fontSize: 12),
@@ -134,6 +141,7 @@ class DispatchConfirmCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
     final colorScheme = Theme.of(context).colorScheme;
     final payload =
         message.metadata?['dispatch_confirm'] as Map<String, dynamic>? ?? {};
@@ -167,7 +175,7 @@ class DispatchConfirmCard extends StatelessWidget {
                   const SizedBox(width: 6),
                   Expanded(
                     child: Text(
-                      '派发确认 · $agentName',
+                      l10n.dispatch_confirmTitle(agentName),
                       style: const TextStyle(
                           fontWeight: FontWeight.bold, fontSize: 13),
                       overflow: TextOverflow.ellipsis,
@@ -175,8 +183,10 @@ class DispatchConfirmCard extends StatelessWidget {
                   ),
                   _StatusChip(
                     label: pending
-                        ? '等待确认'
-                        : (confirmed ? '已确认' : '已取消'),
+                        ? l10n.dispatch_awaitingConfirm
+                        : (confirmed
+                            ? l10n.dispatch_confirmed
+                            : l10n.dispatch_cancelled),
                     color: stateColor,
                   ),
                 ],
@@ -204,7 +214,7 @@ class DispatchConfirmCard extends StatelessWidget {
                         style: OutlinedButton.styleFrom(
                           visualDensity: VisualDensity.compact,
                         ),
-                        child: const Text('取消'),
+                        child: Text(l10n.common_cancel),
                       ),
                     ),
                     const SizedBox(width: 10),
@@ -213,7 +223,7 @@ class DispatchConfirmCard extends StatelessWidget {
                         onPressed: () => DispatchService.instance
                             .respondToConfirm(message.id, true),
                         icon: const Icon(Icons.check_circle_outline, size: 15),
-                        label: const Text('确认派发'),
+                        label: Text(l10n.dispatch_confirmDispatch),
                         style: FilledButton.styleFrom(
                           backgroundColor: Colors.green,
                           visualDensity: VisualDensity.compact,

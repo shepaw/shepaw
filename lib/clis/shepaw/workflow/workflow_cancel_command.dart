@@ -38,7 +38,7 @@ class WorkflowCancelCommand extends CliCommand {
     if (workflow.status != WorkflowStatus.pendingApproval &&
         workflow.status != WorkflowStatus.running) {
       return {
-        'error': 'Cannot cancel workflow in "${workflow.status.label}" state. Only pending or running workflows can be cancelled.',
+        'error': 'Cannot cancel workflow in "${workflow.status.dbValue}" state. Only pending or running workflows can be cancelled.',
       };
     }
 

@@ -60,8 +60,9 @@ class _PeerListScreenState extends State<PeerListScreen> {
     if (peer != null) {
       _loadPeers();
       if (mounted) {
+        final l10n = AppLocalizations.of(context);
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('已与 ${peer.deviceName} 配对成功')),
+          SnackBar(content: Text(l10n.peerList_pairedSuccess(peer.deviceName))),
         );
       }
     }
@@ -76,6 +77,7 @@ class _PeerListScreenState extends State<PeerListScreen> {
   }
 
   Future<void> _showPeerActions(PairedPeer peer) async {
+    final l10n = AppLocalizations.of(context);
     final action = await showModalBottomSheet<String>(
       context: context,
       builder: (ctx) => SafeArea(
@@ -84,12 +86,15 @@ class _PeerListScreenState extends State<PeerListScreen> {
           children: [
             ListTile(
               leading: const Icon(Icons.edit),
-              title: const Text('修改备注'),
+              title: Text(l10n.peerList_editAlias),
               onTap: () => Navigator.pop(ctx, 'rename'),
             ),
             ListTile(
               leading: Icon(Icons.delete, color: Theme.of(context).colorScheme.error),
-              title: Text('删除配对', style: TextStyle(color: Theme.of(context).colorScheme.error)),
+              title: Text(
+                l10n.peerSettings_deletePairing,
+                style: TextStyle(color: Theme.of(context).colorScheme.error),
+              ),
               onTap: () => Navigator.pop(ctx, 'delete'),
             ),
           ],
@@ -105,28 +110,29 @@ class _PeerListScreenState extends State<PeerListScreen> {
   }
 
   Future<void> _renamePeer(PairedPeer peer) async {
+    final l10n = AppLocalizations.of(context);
     final newName = await showDialog<String>(
       context: context,
       builder: (ctx) {
         final controller = TextEditingController(text: peer.deviceName);
         return AlertDialog(
-          title: const Text('修改备注'),
+          title: Text(l10n.peerSettings_editAliasTitle),
           content: TextField(
             controller: controller,
             autofocus: true,
-            decoration: const InputDecoration(
-              hintText: '输入备注名称',
-              border: OutlineInputBorder(),
+            decoration: InputDecoration(
+              hintText: l10n.peerSettings_editAliasHint,
+              border: const OutlineInputBorder(),
             ),
           ),
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(ctx),
-              child: const Text('取消'),
+              child: Text(l10n.common_cancel),
             ),
             FilledButton(
               onPressed: () => Navigator.pop(ctx, controller.text.trim()),
-              child: const Text('保存'),
+              child: Text(l10n.common_save),
             ),
           ],
         );
@@ -140,22 +146,23 @@ class _PeerListScreenState extends State<PeerListScreen> {
   }
 
   Future<void> _removePeer(PairedPeer peer) async {
+    final l10n = AppLocalizations.of(context);
     final confirm = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('删除配对'),
-        content: Text('确定要删除与 ${peer.deviceName} 的配对吗？\n所有消息记录也会被删除。'),
+        title: Text(l10n.peerSettings_deletePairing),
+        content: Text(l10n.peerSettings_deleteConfirm(peer.deviceName)),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('取消'),
+            child: Text(l10n.common_cancel),
           ),
           FilledButton(
             onPressed: () => Navigator.pop(ctx, true),
             style: FilledButton.styleFrom(
               backgroundColor: Theme.of(context).colorScheme.error,
             ),
-            child: const Text('删除'),
+            child: Text(l10n.common_delete),
           ),
         ],
       ),
@@ -169,15 +176,16 @@ class _PeerListScreenState extends State<PeerListScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
     final colorScheme = Theme.of(context).colorScheme;
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('配对设备'),
+        title: Text(l10n.peerPairing_title),
         actions: [
           IconButton(
             icon: const Icon(Icons.add),
-            tooltip: '添加配对',
+            tooltip: l10n.peerList_add,
             onPressed: _startPairing,
           ),
         ],
@@ -185,12 +193,12 @@ class _PeerListScreenState extends State<PeerListScreen> {
       body: _loading
           ? const Center(child: CircularProgressIndicator())
           : _peers.isEmpty
-              ? _buildEmptyState(colorScheme)
+              ? _buildEmptyState(colorScheme, l10n)
               : _buildPeerList(colorScheme),
     );
   }
 
-  Widget _buildEmptyState(ColorScheme colorScheme) {
+  Widget _buildEmptyState(ColorScheme colorScheme, AppLocalizations l10n) {
     return Center(
       child: Padding(
         padding: const EdgeInsets.all(32),
@@ -204,12 +212,12 @@ class _PeerListScreenState extends State<PeerListScreen> {
             ),
             const SizedBox(height: 16),
             Text(
-              '尚未配对任何设备',
+              l10n.contacts_noPeers,
               style: Theme.of(context).textTheme.titleMedium,
             ),
             const SizedBox(height: 8),
             Text(
-              '扫描对方的二维码或让对方扫描你的二维码来建立加密连接',
+              l10n.peerList_emptyHint,
               textAlign: TextAlign.center,
               style: TextStyle(color: colorScheme.onSurfaceVariant),
             ),
@@ -217,7 +225,7 @@ class _PeerListScreenState extends State<PeerListScreen> {
             FilledButton.icon(
               onPressed: _startPairing,
               icon: const Icon(Icons.qr_code_2),
-              label: const Text('开始配对'),
+              label: Text(l10n.contacts_startPairing),
             ),
           ],
         ),

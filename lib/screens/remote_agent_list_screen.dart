@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import '../l10n/app_localizations.dart';
+import '../l10n/l10n_helpers.dart';
 import '../models/remote_agent.dart';
 import '../services/remote_agent_service.dart';
 import '../service_locator.dart' show getIt;
@@ -63,8 +65,9 @@ class _RemoteAgentListScreenState extends State<RemoteAgentListScreen> {
         _isLoading = false;
       });
       if (mounted) {
+        final l10n = AppLocalizations.of(context);
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('加载失败: $e')),
+          SnackBar(content: Text(l10n.remoteAgent_loadFailed('$e'))),
         );
       }
     }
@@ -79,11 +82,12 @@ class _RemoteAgentListScreenState extends State<RemoteAgentListScreen> {
     try {
       // 显示健康检查提示
       if (mounted) {
+        final l10n = AppLocalizations.of(context);
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
+          SnackBar(
             content: Row(
               children: [
-                SizedBox(
+                const SizedBox(
                   width: 20,
                   height: 20,
                   child: CircularProgressIndicator(
@@ -91,11 +95,11 @@ class _RemoteAgentListScreenState extends State<RemoteAgentListScreen> {
                     valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
                   ),
                 ),
-                SizedBox(width: 12),
-                Text('正在检查 Agent 健康状态...'),
+                const SizedBox(width: 12),
+                Text(l10n.remoteAgent_checkingHealth),
               ],
             ),
-            duration: Duration(seconds: 3),
+            duration: const Duration(seconds: 3),
           ),
         );
       }
@@ -110,12 +114,15 @@ class _RemoteAgentListScreenState extends State<RemoteAgentListScreen> {
 
       // 显示结果
       if (mounted) {
-        final onlineCount = _agents.where((a) => a.isOnline).length;
+        final l10n = AppLocalizations.of(context);
+    final onlineCount = _agents.where((a) => a.isOnline).length;
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('健康检查完成，在线: $onlineCount/${_agents.length}'),
-            backgroundColor: onlineCount == _agents.length 
-                ? Colors.green 
+            content: Text(
+              l10n.remoteAgent_healthDone(onlineCount, _agents.length),
+            ),
+            backgroundColor: onlineCount == _agents.length
+                ? Colors.green
                 : Colors.orange,
           ),
         );
@@ -125,9 +132,10 @@ class _RemoteAgentListScreenState extends State<RemoteAgentListScreen> {
         _isLoading = false;
       });
       if (mounted) {
+        final l10n = AppLocalizations.of(context);
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('健康检查失败: $e'),
+            content: Text(l10n.remoteAgent_healthFailed('$e')),
             backgroundColor: Colors.red,
           ),
         );
@@ -138,22 +146,24 @@ class _RemoteAgentListScreenState extends State<RemoteAgentListScreen> {
   Future<void> _deleteAgent(RemoteAgent agent) async {
     final confirmed = await showDialog<bool>(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('确认删除'),
-        content: Text('确定要删除助手 "${agent.name}" 吗？\n\n'
-            '删除后，远端助手将无法再使用此 Token 连接。'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('取消'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(context, true),
-            style: TextButton.styleFrom(foregroundColor: Colors.red),
-            child: const Text('删除'),
-          ),
-        ],
-      ),
+      builder: (dialogContext) {
+        final l10n = AppLocalizations.of(dialogContext);
+        return AlertDialog(
+          title: Text(l10n.agentDetail_confirmDelete),
+          content: Text(l10n.remoteAgent_deleteConfirm(agent.name)),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext, false),
+              child: Text(l10n.common_cancel),
+            ),
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext, true),
+              style: TextButton.styleFrom(foregroundColor: Colors.red),
+              child: Text(l10n.common_delete),
+            ),
+          ],
+        );
+      },
     );
 
     if (confirmed != true) return;
@@ -161,16 +171,18 @@ class _RemoteAgentListScreenState extends State<RemoteAgentListScreen> {
     try {
       await _agentService.deleteAgent(agent.id);
       if (mounted) {
+        final l10n = AppLocalizations.of(context);
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('已删除 ${agent.name}')),
+          SnackBar(content: Text(l10n.remoteAgent_deleted(agent.name))),
         );
       }
       _loadAgents();
     } catch (e) {
       if (mounted) {
+        final l10n = AppLocalizations.of(context);
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('删除失败: $e'),
+            content: Text(l10n.remoteAgent_deleteFailed('$e')),
             backgroundColor: Colors.red,
           ),
         );
@@ -189,20 +201,21 @@ class _RemoteAgentListScreenState extends State<RemoteAgentListScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
     return Scaffold(
       appBar: AppBar(
-        title: const Text('远端助手'),
+        title: Text(l10n.remoteAgent_title),
         centerTitle: true,
         actions: [
           IconButton(
             icon: const Icon(Icons.health_and_safety),
             onPressed: _checkAgentHealth,
-            tooltip: '检查健康状态',
+            tooltip: l10n.remoteAgent_checkHealth,
           ),
           IconButton(
             icon: const Icon(Icons.refresh),
             onPressed: _loadAgents,
-            tooltip: '刷新',
+            tooltip: l10n.common_refresh,
           ),
         ],
       ),
@@ -224,12 +237,13 @@ class _RemoteAgentListScreenState extends State<RemoteAgentListScreen> {
       floatingActionButton: FloatingActionButton.extended(
         onPressed: _navigateToAddAgent,
         icon: const Icon(Icons.add),
-        label: const Text('添加助手'),
+        label: Text(l10n.remoteAgent_add),
       ),
     );
   }
 
   Widget _buildEmptyState() {
+    final l10n = AppLocalizations.of(context);
     return Center(
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
@@ -241,14 +255,14 @@ class _RemoteAgentListScreenState extends State<RemoteAgentListScreen> {
           ),
           const SizedBox(height: 16),
           Text(
-            '还没有远端助手',
+            l10n.remoteAgent_empty,
             style: Theme.of(context).textTheme.titleLarge?.copyWith(
                   color: Colors.grey[600],
                 ),
           ),
           const SizedBox(height: 8),
           Text(
-            '点击下方按钮添加第一个助手',
+            l10n.remoteAgent_emptyHint,
             style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                   color: Colors.grey[500],
                 ),
@@ -257,7 +271,7 @@ class _RemoteAgentListScreenState extends State<RemoteAgentListScreen> {
           ElevatedButton.icon(
             onPressed: _navigateToAddAgent,
             icon: const Icon(Icons.add),
-            label: const Text('添加助手'),
+            label: Text(l10n.remoteAgent_add),
           ),
         ],
       ),
@@ -265,6 +279,7 @@ class _RemoteAgentListScreenState extends State<RemoteAgentListScreen> {
   }
 
   Widget _buildAgentCard(RemoteAgent agent) {
+    final l10n = AppLocalizations.of(context);
     return Card(
       margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       child: InkWell(
@@ -328,7 +343,7 @@ class _RemoteAgentListScreenState extends State<RemoteAgentListScreen> {
                                   ),
                                   const SizedBox(width: 4),
                                   Text(
-                                    agent.statusText,
+                                    agent.localizedStatusText(l10n),
                                     style: TextStyle(
                                       fontSize: 11,
                                       color: _getStatusColor(agent.status),
@@ -356,12 +371,12 @@ class _RemoteAgentListScreenState extends State<RemoteAgentListScreen> {
                         Row(
                           children: [
                             _buildInfoChip(
-                              agent.protocolName,
+                              agent.localizedProtocolName(l10n),
                               Icons.settings_ethernet,
                             ),
                             const SizedBox(width: 8),
                             _buildInfoChip(
-                              agent.connectionTypeName,
+                              agent.localizedConnectionTypeName(l10n),
                               Icons.link,
                             ),
                           ],
@@ -380,23 +395,23 @@ class _RemoteAgentListScreenState extends State<RemoteAgentListScreen> {
                       }
                     },
                     itemBuilder: (context) => [
-                      const PopupMenuItem(
+                      PopupMenuItem(
                         value: 'view',
                         child: Row(
                           children: [
                             Icon(Icons.visibility, size: 20),
                             SizedBox(width: 8),
-                            Text('查看 Token'),
+                            Text(l10n.remoteAgent_viewToken),
                           ],
                         ),
                       ),
-                      const PopupMenuItem(
+                      PopupMenuItem(
                         value: 'delete',
                         child: Row(
                           children: [
                             Icon(Icons.delete, size: 20, color: Colors.red),
                             SizedBox(width: 8),
-                            Text('删除', style: TextStyle(color: Colors.red)),
+                            Text(l10n.common_delete, style: TextStyle(color: Colors.red)),
                           ],
                         ),
                       ),
@@ -422,7 +437,9 @@ class _RemoteAgentListScreenState extends State<RemoteAgentListScreen> {
                       ),
                       const SizedBox(width: 4),
                       Text(
-                        '最后活跃: ${_formatLastHeartbeat(agent.lastHeartbeat!)}',
+                        l10n.remoteAgent_lastActive(
+                          _formatLastHeartbeat(l10n, agent.lastHeartbeat!),
+                        ),
                         style: TextStyle(
                           fontSize: 10,
                           color: Colors.grey[600],
@@ -474,19 +491,19 @@ class _RemoteAgentListScreenState extends State<RemoteAgentListScreen> {
     }
   }
 
-  String _formatLastHeartbeat(int timestampMs) {
+  String _formatLastHeartbeat(AppLocalizations l10n, int timestampMs) {
     final now = DateTime.now();
     final time = DateTime.fromMillisecondsSinceEpoch(timestampMs);
     final diff = now.difference(time);
 
     if (diff.inMinutes < 1) {
-      return '刚刚';
+      return l10n.agentDetail_justNow;
     } else if (diff.inMinutes < 60) {
-      return '${diff.inMinutes} 分钟前';
+      return l10n.agentDetail_minutesAgo(diff.inMinutes);
     } else if (diff.inHours < 24) {
-      return '${diff.inHours} 小时前';
+      return l10n.agentDetail_hoursAgo(diff.inHours);
     } else {
-      return '${diff.inDays} 天前';
+      return l10n.common_daysAgo(diff.inDays);
     }
   }
 

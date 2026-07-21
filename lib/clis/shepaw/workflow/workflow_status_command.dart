@@ -74,7 +74,7 @@ class WorkflowStatusCommand extends CliCommand {
                   'instruction': s.instruction.length > 80
                       ? '${s.instruction.substring(0, 77)}...'
                       : s.instruction,
-                  'status': s.status.label,
+                  'status': s.status.dbValue,
                 })
             .toList(),
       };
@@ -83,7 +83,7 @@ class WorkflowStatusCommand extends CliCommand {
     return {
       'workflow_id': workflow.id,
       'title': workflow.title,
-      'status': workflow.status.label,
+      'status': workflow.status.dbValue,
       'progress': '${workflow.completedSteps}/${workflow.totalSteps} 步骤完成',
       'duration': workflow.durationLabel,
       'stages': stagesInfo,

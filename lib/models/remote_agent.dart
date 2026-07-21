@@ -433,18 +433,6 @@ class RemoteAgent {
   /// 是否有错误
   bool get hasError => status == AgentStatus.error;
 
-  /// 获取状态显示文本
-  String get statusText {
-    switch (status) {
-      case AgentStatus.online:
-        return '在线';
-      case AgentStatus.offline:
-        return '离线';
-      case AgentStatus.error:
-        return '错误';
-    }
-  }
-
   /// 获取状态图标
   String get statusIcon {
     switch (status) {
@@ -454,18 +442,6 @@ class RemoteAgent {
         return '🟡';
       case AgentStatus.error:
         return '🔴';
-    }
-  }
-
-  /// 获取协议显示名称
-  String get protocolName {
-    switch (protocol) {
-      case ProtocolType.acp:
-        return 'ACP';
-      case ProtocolType.custom:
-        return '自定义';
-      case ProtocolType.peer:
-        return '配对设备';
     }
   }
 

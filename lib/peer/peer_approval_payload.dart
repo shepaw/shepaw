@@ -19,8 +19,8 @@ class PeerApprovalPayload {
       return List<dynamic>.from(raw);
     }
     return const [
-      {'id': 'allow', 'label': '允许', 'style': 'primary'},
-      {'id': 'deny', 'label': '拒绝', 'style': 'danger'},
+      {'id': 'allow', 'label': 'Allow', 'style': 'primary'},
+      {'id': 'deny', 'label': 'Deny', 'style': 'danger'},
     ];
   }
 

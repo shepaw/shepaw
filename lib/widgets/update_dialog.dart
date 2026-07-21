@@ -156,6 +156,7 @@ class UpdateDialog extends StatelessWidget {
 
   /// 桌面平台使用应用内下载进度对话框；移动端/Web 打开外部链接
   Future<void> _handleDownload(BuildContext context) async {
+    final l10n = AppLocalizations.of(context);
     final isDesktop = !kIsWeb &&
         (defaultTargetPlatform == TargetPlatform.macOS ||
             defaultTargetPlatform == TargetPlatform.windows ||
@@ -185,7 +186,7 @@ class UpdateDialog extends StatelessWidget {
       );
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('下载链接为空，请联系管理员检查接口返回')),
+          SnackBar(content: Text(l10n.update_emptyDownloadUrl)),
         );
       }
       return;
@@ -220,7 +221,11 @@ class UpdateDialog extends StatelessWidget {
           logger.warning('launchUrl failed: $e', tag: 'UpdateDialog');
           if (context.mounted) {
             ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(content: Text('无法打开下载链接: ${updateInfo.downloadUrl}')),
+              SnackBar(
+                content: Text(
+                  l10n.update_cannotOpenUrl(updateInfo.downloadUrl),
+                ),
+              ),
             );
           }
         }

@@ -4025,4 +4025,1006 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get peerList_disconnected => 'Not connected';
+
+  @override
+  String get common_done => 'Done';
+
+  @override
+  String get common_more => 'More';
+
+  @override
+  String get common_back => 'Back';
+
+  @override
+  String get common_connect => 'Connect';
+
+  @override
+  String get common_submit => 'Submit';
+
+  @override
+  String get common_next => 'Next';
+
+  @override
+  String get common_allow => 'Allow';
+
+  @override
+  String get common_processing => 'Processing...';
+
+  @override
+  String get common_fetching => 'Fetching...';
+
+  @override
+  String get common_selectAll => 'Select All';
+
+  @override
+  String get common_openSettings => 'Open Settings';
+
+  @override
+  String get common_sync => 'Sync';
+
+  @override
+  String get common_busy => 'Busy';
+
+  @override
+  String get common_enter => 'Enter';
+
+  @override
+  String common_daysAgo(int count) {
+    return '${count}d ago';
+  }
+
+  @override
+  String common_minutesAgo(int count) {
+    return '${count}m ago';
+  }
+
+  @override
+  String common_hoursAgo(int count) {
+    return '${count}h ago';
+  }
+
+  @override
+  String get toolModel_needOpenRouterKey =>
+      'Please enter OpenRouter API Key first';
+
+  @override
+  String get toolModel_selectOpenRouter => 'Select OpenRouter Model';
+
+  @override
+  String get toolModel_fetchOpenRouterFailed =>
+      'Failed to fetch OpenRouter models';
+
+  @override
+  String get toolModel_needOllamaBase =>
+      'Please enter Ollama API Base URL first';
+
+  @override
+  String get toolModel_ollamaNoModels =>
+      'No models installed in Ollama. Run ollama pull <model> first';
+
+  @override
+  String get toolModel_selectOllama => 'Select Ollama Local Model';
+
+  @override
+  String get toolModel_fetchOllamaFailed => 'Failed to fetch Ollama models';
+
+  @override
+  String get toolModel_fetchOllamaList => 'Fetch Ollama local model list';
+
+  @override
+  String get toolModel_fetchOpenRouterList => 'Fetch OpenRouter model list';
+
+  @override
+  String get toolModel_searchHint => 'Search model name or ID...';
+
+  @override
+  String get toolModel_noMatch => 'No matching models';
+
+  @override
+  String toolModel_fetchFailed(String error) {
+    return 'Failed to fetch models: $error';
+  }
+
+  @override
+  String toolModel_filteredCount(int filtered, int total) {
+    return '$filtered / $total models';
+  }
+
+  @override
+  String get remoteAgent_title => 'Remote Assistants';
+
+  @override
+  String get remoteAgent_checkingHealth => 'Checking agent health...';
+
+  @override
+  String remoteAgent_healthDone(int online, int total) {
+    return 'Health check done, online: $online/$total';
+  }
+
+  @override
+  String remoteAgent_healthFailed(String error) {
+    return 'Health check failed: $error';
+  }
+
+  @override
+  String remoteAgent_deleteConfirm(String name) {
+    return 'Delete assistant $name?\n\nThe remote assistant will no longer be able to connect with this token.';
+  }
+
+  @override
+  String get remoteAgent_checkHealth => 'Check Health';
+
+  @override
+  String get remoteAgent_add => 'Add Assistant';
+
+  @override
+  String get remoteAgent_empty => 'No remote assistants yet';
+
+  @override
+  String get remoteAgent_emptyHint => 'Tap below to add your first assistant';
+
+  @override
+  String get remoteAgent_viewToken => 'View Token';
+
+  @override
+  String remoteAgent_loadFailed(String error) {
+    return 'Load failed: $error';
+  }
+
+  @override
+  String remoteAgent_deleted(String name) {
+    return 'Deleted $name';
+  }
+
+  @override
+  String remoteAgent_deleteFailed(String error) {
+    return 'Delete failed: $error';
+  }
+
+  @override
+  String remoteAgent_lastActive(String time) {
+    return 'Last active: $time';
+  }
+
+  @override
+  String get workflow_detailTitle => 'Workflow Details';
+
+  @override
+  String get workflow_notFound => 'Workflow not found';
+
+  @override
+  String get workflow_approvalSubmitted =>
+      'Approval submitted. Return to group chat to continue the workflow';
+
+  @override
+  String workflow_approvalFailed(String error) {
+    return 'Failed to submit approval: $error';
+  }
+
+  @override
+  String get workflow_triggerMessage => 'Trigger Message';
+
+  @override
+  String get workflow_returnToChatForApproval =>
+      'Please return to the group chat message to complete approval';
+
+  @override
+  String get workflow_lowRiskOp => 'Low-risk operation';
+
+  @override
+  String get workflow_execSummary => 'Execution Summary';
+
+  @override
+  String get workflow_noSteps => 'No step information';
+
+  @override
+  String get workflow_execStages => 'Execution Stages';
+
+  @override
+  String get workflow_timeInfo => 'Timing';
+
+  @override
+  String get workflow_startTime => 'Start Time';
+
+  @override
+  String get workflow_endTime => 'End Time';
+
+  @override
+  String get workflow_totalDuration => 'Total Duration';
+
+  @override
+  String workflow_stepsCompleted(int done, int total) {
+    return '$done/$total steps completed';
+  }
+
+  @override
+  String workflow_stepsCompletedSlash(int done, int total) {
+    return '$done / $total steps completed';
+  }
+
+  @override
+  String workflow_runningFor(String duration) {
+    return 'Running for $duration';
+  }
+
+  @override
+  String workflow_totalDurationValue(String duration) {
+    return 'Total duration $duration';
+  }
+
+  @override
+  String workflow_waitingToolApproval(String agentName) {
+    return 'Waiting for @$agentName tool approval';
+  }
+
+  @override
+  String workflow_stageN(int n) {
+    return 'Stage $n';
+  }
+
+  @override
+  String get workflow_inProgressBanner =>
+      'Workflow in progress — tap to view progress and approvals';
+
+  @override
+  String workflow_waitingApprovalSteps(int total) {
+    return 'Awaiting approval · $total steps';
+  }
+
+  @override
+  String get workflow_allDone => 'All completed';
+
+  @override
+  String get workflow_execFailed => 'Execution failed';
+
+  @override
+  String get workflow_needToolConfirm => 'Tool action confirmation needed';
+
+  @override
+  String get workflow_waitingToolApprovalShort => 'Awaiting tool approval';
+
+  @override
+  String get workflow_viewRelatedMessage => 'View related message';
+
+  @override
+  String get workflow_approveExec => 'Approve';
+
+  @override
+  String get workflow_revisionComment => 'Revision comments';
+
+  @override
+  String get workflow_revisionHint => 'Describe your revision comments...';
+
+  @override
+  String get workflow_waitingToolTap => 'Awaiting tool approval · tap to view';
+
+  @override
+  String workflow_stagesSteps(int stages, int steps) {
+    return '$stages stages · $steps steps';
+  }
+
+  @override
+  String workflow_completedOf(int done, int total) {
+    return '$done/$total done';
+  }
+
+  @override
+  String workflow_groupTitle(String name) {
+    return '$name - Workflows';
+  }
+
+  @override
+  String get workflow_empty => 'No workflow records';
+
+  @override
+  String get workflow_emptyHint =>
+      'After enabling Flow mode, workflow runs in group chat will appear here';
+
+  @override
+  String get workflow_statusPendingApproval => 'Pending approval';
+
+  @override
+  String get workflow_statusRunning => 'Running';
+
+  @override
+  String get workflow_statusCompleted => 'Completed';
+
+  @override
+  String get workflow_statusFailed => 'Failed';
+
+  @override
+  String get workflow_statusCancelled => 'Cancelled';
+
+  @override
+  String get workflow_stepPending => 'Pending';
+
+  @override
+  String get workflow_stepRunning => 'Running';
+
+  @override
+  String get workflow_stepCompleted => 'Completed';
+
+  @override
+  String get workflow_stepFailed => 'Failed';
+
+  @override
+  String get workflow_stepSkipped => 'Skipped';
+
+  @override
+  String chat_syncedRemoteSessions(int count) {
+    return 'Synced $count remote sessions';
+  }
+
+  @override
+  String get chat_syncRemoteSessionsTitle => 'Sync Remote Sessions';
+
+  @override
+  String chat_syncRemoteSessionsBody(String agentName, int count) {
+    return 'Found $count unsynced remote sessions on $agentName.\n\nSync them locally? You can then view and continue these sessions in the chat list; local sessions will stay in sync with the remote.\n\nThis choice will be remembered and can be changed in Agent settings.';
+  }
+
+  @override
+  String get chat_doNotSync => 'Don\'t sync';
+
+  @override
+  String get chat_sheNoModel => 'She has no AI model configured yet';
+
+  @override
+  String get chat_sheNoModelTapSettings =>
+      'Tap here to go to settings and choose an LLM model for She';
+
+  @override
+  String get chat_sheTagline =>
+      'Your personal companion that learns you over time';
+
+  @override
+  String get chat_sheConfigModelCta =>
+      'Configure an AI model to start chatting';
+
+  @override
+  String get chat_sheNeedModelHint =>
+      'She runs on a local LLM. Please choose an AI model\nin Settings first';
+
+  @override
+  String get chat_syncingRemote => 'Syncing remote…';
+
+  @override
+  String get chat_toolPendingInPanel =>
+      'Tool action pending: approve or reject in the workflow panel below';
+
+  @override
+  String get agentToken_createdSuccess => 'Assistant created';
+
+  @override
+  String get agentToken_nextSteps => 'Next steps';
+
+  @override
+  String get agentToken_step1 => 'Copy the token above';
+
+  @override
+  String get agentToken_step2 =>
+      'Paste the token in the remote assistant config';
+
+  @override
+  String get agentToken_step3 =>
+      'Start the remote assistant and wait for connection';
+
+  @override
+  String get agentToken_step4 =>
+      'Once connected, the assistant will show as online';
+
+  @override
+  String get agentToken_keepSafe => 'Keep the token safe and do not share it';
+
+  @override
+  String get channel_loadFailed => 'Failed to load channels';
+
+  @override
+  String get channel_management => 'Channel Management';
+
+  @override
+  String get channel_create => 'Create Channel';
+
+  @override
+  String get channel_empty => 'No channels yet';
+
+  @override
+  String get channel_emptyHint => 'Tap below to create your first channel';
+
+  @override
+  String get channel_knotBridge => 'Knot Bridge';
+
+  @override
+  String get channel_open => 'Open Channel';
+
+  @override
+  String get channel_knotRemoved =>
+      'Knot bridge has been removed. Please use remote assistants instead';
+
+  @override
+  String get channel_name => 'Channel Name';
+
+  @override
+  String get channel_nameHint => 'Enter channel name';
+
+  @override
+  String get channel_descOptional => 'Channel description (optional)';
+
+  @override
+  String get channel_descHint => 'Enter channel description';
+
+  @override
+  String get channel_nameRequired => 'Please enter a channel name';
+
+  @override
+  String channel_createdSuccess(String name) {
+    return 'Channel $name created';
+  }
+
+  @override
+  String get channel_createFailed => 'Failed to create channel';
+
+  @override
+  String channel_loaded(int count) {
+    return 'Loaded $count channels';
+  }
+
+  @override
+  String channel_opening(String name) {
+    return 'Opening channel: $name';
+  }
+
+  @override
+  String channel_createdLog(String name) {
+    return 'Successfully created channel: $name';
+  }
+
+  @override
+  String get login_backingUp => 'Securely backing up data...';
+
+  @override
+  String get agentList_loadFailed => 'Failed to load agents';
+
+  @override
+  String agentList_deleteConfirm(String name) {
+    return 'Delete agent $name?';
+  }
+
+  @override
+  String get agentList_deleteFailed => 'Failed to delete agent';
+
+  @override
+  String get agentList_title => 'Agent Management';
+
+  @override
+  String get agentList_emptyHint => 'Tap below to add your first agent';
+
+  @override
+  String get agentList_selectType => 'Select Agent Type';
+
+  @override
+  String get agentList_typeOpenClaw => 'Connect to OpenClaw Gateway via ACP';
+
+  @override
+  String get agentList_typeA2a => 'Generic agent supporting A2A protocol';
+
+  @override
+  String get agentList_typeCustom => 'Custom Agent';
+
+  @override
+  String get agentList_typeCustomDesc =>
+      'Manually configured agent of other types';
+
+  @override
+  String get agentList_createConversationFailed =>
+      'Failed to create conversation';
+
+  @override
+  String agentList_createConversationFailedDetail(String error) {
+    return 'Failed to create conversation: $error';
+  }
+
+  @override
+  String agentList_loaded(int count) {
+    return 'Loaded $count agents';
+  }
+
+  @override
+  String agentList_typeLabel(String type) {
+    return 'Type: $type';
+  }
+
+  @override
+  String agentList_conversationWith(String name) {
+    return 'Conversation with $name';
+  }
+
+  @override
+  String agentList_dmCreated(String name, String id) {
+    return 'Created DM channel with $name: $id';
+  }
+
+  @override
+  String agentList_conversationCreated(String name) {
+    return 'Created conversation with $name';
+  }
+
+  @override
+  String agentList_deleted(String name) {
+    return 'Deleted $name';
+  }
+
+  @override
+  String get agentDetail_peerOffline => 'Paired device not connected';
+
+  @override
+  String get agentDetail_modelSwitchUnsupported =>
+      'This agent does not support model switching';
+
+  @override
+  String get agentDetail_modelSwitched => 'Model switched';
+
+  @override
+  String get agentDetail_modelSwitchFailed => 'Failed to switch model';
+
+  @override
+  String get agentDetail_sessionSync => 'Session Sync';
+
+  @override
+  String get agentDetail_sessionSyncHint =>
+      'When enabled, remote sessions and chat history sync automatically on enter; disable to stop. You can change this anytime';
+
+  @override
+  String get agentDetail_refreshModels => 'Refresh model list';
+
+  @override
+  String get agentDetail_switchModelHint =>
+      'Switch the LLM model used by the remote agent (applies to future chats)';
+
+  @override
+  String get agentDetail_noModels => 'No models available';
+
+  @override
+  String get agentDetail_noAiModel => 'No AI model configured';
+
+  @override
+  String get agentDetail_maxToolRounds => 'Max tool-call rounds';
+
+  @override
+  String agentDetail_maxToolRoundsValue(int count) {
+    return '$count rounds';
+  }
+
+  @override
+  String get agentDetail_taskTimeout => 'Task timeout';
+
+  @override
+  String agentDetail_taskTimeoutValue(int seconds) {
+    return '${seconds}s';
+  }
+
+  @override
+  String get agentDetail_maxToolRoundsDefault => 'Default 100';
+
+  @override
+  String get agentDetail_maxToolRoundsHelper =>
+      'Max tool-call rounds per conversation (1–500)';
+
+  @override
+  String get agentDetail_maxToolRoundsInvalid =>
+      'Enter an integer between 1 and 500';
+
+  @override
+  String get agentDetail_taskTimeoutSeconds => 'Task timeout (seconds)';
+
+  @override
+  String get agentDetail_taskTimeoutDefault => 'Default 600';
+
+  @override
+  String get agentDetail_taskTimeoutHelper =>
+      'Max wait time per task (60–3600 seconds)';
+
+  @override
+  String get agentDetail_taskTimeoutInvalid =>
+      'Enter an integer between 60 and 3600';
+
+  @override
+  String agentDetail_fromSource(String name) {
+    return 'From $name';
+  }
+
+  @override
+  String get agentDetail_createSuccess => 'Agent created';
+
+  @override
+  String get agentDetail_updateSuccess => 'Agent updated';
+
+  @override
+  String get agentDetail_name => 'Agent Name';
+
+  @override
+  String get agentDetail_nameHint => 'Enter agent name';
+
+  @override
+  String get agentDetail_type => 'Agent Type';
+
+  @override
+  String get agentDetail_typeHint => 'e.g. assistant, chatbot';
+
+  @override
+  String get agentDetail_typeRequired => 'Please enter an agent type';
+
+  @override
+  String get agentDetail_status => 'Agent Status';
+
+  @override
+  String agentDetail_createdLog(String name) {
+    return 'Successfully created agent: $name';
+  }
+
+  @override
+  String agentDetail_updatedLog(String name) {
+    return 'Successfully updated agent: $name';
+  }
+
+  @override
+  String get agentDetail_addTitle => 'Add Agent';
+
+  @override
+  String get agentDetail_viewTitle => 'Agent Details';
+
+  @override
+  String get agentPair_unsupportedPlatform =>
+      'This platform does not support scanning. Paste the URL and pairing code manually, or scan with a phone.';
+
+  @override
+  String get agentPair_scanTitle => 'Scan Pairing QR Code';
+
+  @override
+  String get agentPair_torch => 'Flashlight';
+
+  @override
+  String get agentPair_scanHint =>
+      'Point at the QR printed by `<gateway> enroll` / `shepaw-hub pair` on the agent host';
+
+  @override
+  String get agentPair_cameraDeniedTitle => 'Camera access denied';
+
+  @override
+  String get agentPair_cameraDeniedBody =>
+      'Scanning requires camera permission. Allow Shepaw camera access in system settings, or go back and enter the pairing code manually.';
+
+  @override
+  String get agentPair_unsupportedShort =>
+      'Scanning is not supported on this platform';
+
+  @override
+  String agentPair_scanFailed(String error) {
+    return 'Scan failed: $error';
+  }
+
+  @override
+  String agentPair_cameraInitFailed(String error) {
+    return 'Camera init failed: $error';
+  }
+
+  @override
+  String get addAgent_scannedHintPrefix =>
+      'Scanned: URL and pairing code filled in. Tap';
+
+  @override
+  String get addAgent_scannedHintSuffix => 'to finish pairing.';
+
+  @override
+  String get addAgent_missingFingerprint =>
+      'URL is missing fingerprint (`#fp=…`). Use the full URL printed when the agent starts.';
+
+  @override
+  String get addAgent_devicePubkeyTitle =>
+      'This device public key (v2.1 auth credential)';
+
+  @override
+  String get addAgent_loadingDeviceIdentity => 'Loading device identity…';
+
+  @override
+  String get addAgent_fingerprintLabel => 'Fingerprint: ';
+
+  @override
+  String get addAgent_copyPubkey => 'Copy public key';
+
+  @override
+  String get addAgent_pubkeyCopied => 'Public key copied to clipboard';
+
+  @override
+  String get addAgent_runOnHost => 'Run on the agent host:';
+
+  @override
+  String get addAgent_myPhone => 'My Phone';
+
+  @override
+  String get addAgent_agentFingerprintLabel => 'Agent fingerprint: ';
+
+  @override
+  String get addAgent_verifyFingerprint =>
+      'Verify this matches the Fingerprint printed when the agent starts';
+
+  @override
+  String get addAgent_missingFpWarning =>
+      '⚠ URL is missing #fp=… fingerprint segment; pairing will fail. Use the full URL printed at agent startup.';
+
+  @override
+  String get addAgent_pairingCodeOptional =>
+      'Pairing code (optional, for one-tap pairing)';
+
+  @override
+  String get dispatch_timeout => 'Timed out';
+
+  @override
+  String get dispatch_failed => 'Failed';
+
+  @override
+  String get dispatch_waitingConfirm => 'Awaiting confirmation';
+
+  @override
+  String get dispatch_running => 'Running';
+
+  @override
+  String get dispatch_goConfirm => 'Go handle confirmation';
+
+  @override
+  String get dispatch_viewDetails => 'View execution details';
+
+  @override
+  String get dispatch_awaitingConfirm => 'Awaiting confirmation';
+
+  @override
+  String get dispatch_confirmed => 'Confirmed';
+
+  @override
+  String get dispatch_cancelled => 'Cancelled';
+
+  @override
+  String get dispatch_confirmDispatch => 'Confirm dispatch';
+
+  @override
+  String dispatch_title(String agentName) {
+    return 'Dispatch · $agentName';
+  }
+
+  @override
+  String dispatch_pendingConfirm(String title) {
+    return 'Pending: $title';
+  }
+
+  @override
+  String dispatch_confirmTitle(String agentName) {
+    return 'Dispatch confirm · $agentName';
+  }
+
+  @override
+  String get dispatch_completed => 'Completed';
+
+  @override
+  String get relay_waiting => 'Awaiting approval';
+
+  @override
+  String get relay_processed => 'Processed';
+
+  @override
+  String get relay_expired => 'Expired';
+
+  @override
+  String get relay_failed => 'Failed';
+
+  @override
+  String relay_title(String agentName) {
+    return 'Action confirm · $agentName';
+  }
+
+  @override
+  String relay_yourChoice(String label) {
+    return 'Your choice: $label';
+  }
+
+  @override
+  String get plan_title => 'Execution Plan';
+
+  @override
+  String get plan_approved => 'Approved';
+
+  @override
+  String get plan_feedbackGiven => 'Feedback sent';
+
+  @override
+  String get plan_revisionHint =>
+      'Describe your revision comments on the plan...';
+
+  @override
+  String get plan_submitFeedback => 'Submit feedback';
+
+  @override
+  String get plan_requestRevision => 'Request changes';
+
+  @override
+  String get plan_approveAndRun => 'Approve and run';
+
+  @override
+  String plan_dependencies(String deps) {
+    return 'Depends on: $deps';
+  }
+
+  @override
+  String get update_emptyDownloadUrl =>
+      'Download URL is empty. Please ask the admin to check the API response';
+
+  @override
+  String update_cannotOpenUrl(String url) {
+    return 'Cannot open download URL: $url';
+  }
+
+  @override
+  String update_downloadComplete(String fileName) {
+    return '$fileName download complete';
+  }
+
+  @override
+  String get peerPairing_requestTitle => 'Pairing Request';
+
+  @override
+  String get peerPairing_requestBody =>
+      'The following device wants to pair with you:';
+
+  @override
+  String get peerPairing_selectAgents =>
+      'Select agents to share with this device';
+
+  @override
+  String get peerPairing_selectAgentsHint =>
+      'The peer can use selected agents over the pairing (requires \"Allow External Access\")';
+
+  @override
+  String get peerPairing_confirmHint =>
+      'After confirming, both sides can communicate directly';
+
+  @override
+  String get peerPairing_confirm => 'Confirm pairing';
+
+  @override
+  String peerPairing_confirmWithCount(int count) {
+    return 'Confirm pairing ($count)';
+  }
+
+  @override
+  String peerPairing_failed(String error) {
+    return 'Pairing failed: $error';
+  }
+
+  @override
+  String get peerScan_desktopUnsupported =>
+      'Camera scanning is not supported on desktop';
+
+  @override
+  String get peerScan_useMobile => 'Please use scanning on a mobile device';
+
+  @override
+  String get peerScan_frameHint => 'Place the peer QR code inside the frame';
+
+  @override
+  String peerScan_cameraError(String error) {
+    return 'Camera error: $error';
+  }
+
+  @override
+  String get peerList_add => 'Add pairing';
+
+  @override
+  String get peerList_emptyHint =>
+      'Scan their QR code or let them scan yours to establish an encrypted connection';
+
+  @override
+  String peerList_pairedSuccess(String name) {
+    return 'Successfully paired with $name';
+  }
+
+  @override
+  String get peerList_editAlias => 'Edit alias';
+
+  @override
+  String get peerQr_fillAllFields => 'Please fill in all fields';
+
+  @override
+  String get peerQr_cannotStart => 'Cannot start pairing';
+
+  @override
+  String get peerQr_scanHint =>
+      'Have the other party scan this QR code to pair';
+
+  @override
+  String get peerQr_codeLabel => 'Pairing code';
+
+  @override
+  String get peerQr_codeCopied => 'Pairing code copied';
+
+  @override
+  String get peerQr_waitingScan => 'Waiting for scan...';
+
+  @override
+  String get peerQr_validFiveMin => 'QR code is valid for 5 minutes';
+
+  @override
+  String get peerQr_wanConnect => 'WAN connection';
+
+  @override
+  String get peerQr_wanConnectHint =>
+      'When enabled, pairing works over WAN, not limited to LAN';
+
+  @override
+  String get peerQr_channelConnected => 'Channel connected';
+
+  @override
+  String get peerQr_channelConnecting => 'Connecting to Channel...';
+
+  @override
+  String get peerQr_channelReconnecting => 'Disconnected, reconnecting...';
+
+  @override
+  String get peerQr_editConfig => 'Edit config';
+
+  @override
+  String get peerQr_connectFailed => 'Connection failed';
+
+  @override
+  String get peerQr_starting => 'Starting...';
+
+  @override
+  String get peerQr_configureChannel =>
+      'Configure Channel service to enable WAN connection';
+
+  @override
+  String get peerQr_channelIdHint => 'Enter Channel ID';
+
+  @override
+  String get peerQr_signingKeyHint => 'Enter signing key';
+
+  @override
+  String peerChat_cannotConnect(String name) {
+    return 'Cannot connect to $name. Make sure they are online and try again';
+  }
+
+  @override
+  String get memory_typeConversation => 'Conversation';
+
+  @override
+  String get memory_typeKnowledge => 'Knowledge';
+
+  @override
+  String get memory_typeBehavior => 'Behavior';
+
+  @override
+  String get memory_typeEvent => 'Event';
+
+  @override
+  String get memory_typeEmotion => 'Emotion';
+
+  @override
+  String get peerApproval_superseded => 'Superseded by a later approval';
+
+  @override
+  String get peerApproval_allow => 'Allow';
+
+  @override
+  String get peerApproval_deny => 'Deny';
+
+  @override
+  String get status_protocolPeer => 'Paired device';
+
+  @override
+  String get status_custom => 'Custom';
+
+  @override
+  String get home_statusError => 'Error';
+
+  @override
+  String get addAgent_pairingCodeHelper =>
+      'Run `<gateway> enroll` on the agent host to get a short code like XXX-XXX-XXX, paste it here to auto-authorize this device. Leave empty to use the \"Copy public key → peers add\" manual flow above.';
 }

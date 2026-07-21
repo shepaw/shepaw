@@ -85,7 +85,6 @@ class _ContactsScreenState extends State<ContactsScreen>
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
-
     return Scaffold(
       appBar: AppBar(
         title: Text(l10n.contacts_title),
@@ -114,7 +113,6 @@ class _ContactsScreenState extends State<ContactsScreen>
 
   Widget _buildAgentsList() {
     final l10n = AppLocalizations.of(context);
-
     return Column(
       children: [
         // 添加 Agent 按钮
@@ -160,7 +158,6 @@ class _ContactsScreenState extends State<ContactsScreen>
 
   Widget _buildGroupsList() {
     final l10n = AppLocalizations.of(context);
-
     return Column(
       children: [
         // 创建群组按钮
@@ -358,7 +355,6 @@ class _ContactsScreenState extends State<ContactsScreen>
 
   Widget _buildPeersList() {
     final l10n = AppLocalizations.of(context);
-
     if (_peers.isEmpty) {
       return Center(
         child: Column(
@@ -453,25 +449,32 @@ class _ContactsScreenState extends State<ContactsScreen>
   }
 
   Future<void> _showPeerActions(PairedPeer peer) async {
+    final l10n = AppLocalizations.of(context);
     final action = await showModalBottomSheet<String>(
       context: context,
-      builder: (ctx) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            ListTile(
-              leading: const Icon(Icons.edit),
-              title: const Text('修改备注'),
-              onTap: () => Navigator.pop(ctx, 'rename'),
-            ),
-            ListTile(
-              leading: Icon(Icons.delete, color: Theme.of(context).colorScheme.error),
-              title: Text('删除配对', style: TextStyle(color: Theme.of(context).colorScheme.error)),
-              onTap: () => Navigator.pop(ctx, 'delete'),
-            ),
-          ],
-        ),
-      ),
+      builder: (ctx) {
+        final sheetL10n = AppLocalizations.of(ctx);
+        return SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              ListTile(
+                leading: const Icon(Icons.edit),
+                title: Text(sheetL10n.peerList_editAlias),
+                onTap: () => Navigator.pop(ctx, 'rename'),
+              ),
+              ListTile(
+                leading: Icon(Icons.delete, color: Theme.of(context).colorScheme.error),
+                title: Text(
+                  sheetL10n.peerSettings_deletePairing,
+                  style: TextStyle(color: Theme.of(context).colorScheme.error),
+                ),
+                onTap: () => Navigator.pop(ctx, 'delete'),
+              ),
+            ],
+          ),
+        );
+      },
     );
 
     if (!mounted) return;
@@ -483,28 +486,30 @@ class _ContactsScreenState extends State<ContactsScreen>
   }
 
   Future<void> _renamePeer(PairedPeer peer) async {
+    final l10n = AppLocalizations.of(context);
     final newName = await showDialog<String>(
       context: context,
       builder: (ctx) {
+        final dialogL10n = AppLocalizations.of(ctx);
         final controller = TextEditingController(text: peer.deviceName);
         return AlertDialog(
-          title: const Text('修改备注'),
+          title: Text(dialogL10n.peerList_editAlias),
           content: TextField(
             controller: controller,
             autofocus: true,
-            decoration: const InputDecoration(
-              hintText: '输入备注名称',
-              border: OutlineInputBorder(),
+            decoration: InputDecoration(
+              hintText: dialogL10n.peerSettings_editAliasHint,
+              border: const OutlineInputBorder(),
             ),
           ),
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(ctx),
-              child: const Text('取消'),
+              child: Text(dialogL10n.common_cancel),
             ),
             FilledButton(
               onPressed: () => Navigator.pop(ctx, controller.text.trim()),
-              child: const Text('保存'),
+              child: Text(dialogL10n.common_save),
             ),
           ],
         );
@@ -520,23 +525,26 @@ class _ContactsScreenState extends State<ContactsScreen>
   Future<void> _deletePeer(PairedPeer peer) async {
     final confirm = await showDialog<bool>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('删除配对'),
-        content: Text('确定要删除与 ${peer.deviceName} 的配对吗？\n所有消息记录也会被删除。'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('取消'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            style: FilledButton.styleFrom(
-              backgroundColor: Theme.of(context).colorScheme.error,
+      builder: (ctx) {
+        final dialogL10n = AppLocalizations.of(ctx);
+        return AlertDialog(
+          title: Text(dialogL10n.peerSettings_deletePairing),
+          content: Text(dialogL10n.peerSettings_deleteConfirm(peer.deviceName)),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: Text(dialogL10n.common_cancel),
             ),
-            child: const Text('删除'),
-          ),
-        ],
-      ),
+            FilledButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              style: FilledButton.styleFrom(
+                backgroundColor: Theme.of(context).colorScheme.error,
+              ),
+              child: Text(dialogL10n.common_delete),
+            ),
+          ],
+        );
+      },
     );
 
     if (confirm == true) {
@@ -548,8 +556,9 @@ class _ContactsScreenState extends State<ContactsScreen>
   Future<void> _startPeerPairing() async {
     final peer = await PeerPairingScreen.show(context);
     if (peer != null && mounted) {
+      final l10n = AppLocalizations.of(context);
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('已与 ${peer.deviceName} 配对成功')),
+        SnackBar(content: Text(l10n.peerList_pairedSuccess(peer.deviceName))),
       );
       _loadData();
     }

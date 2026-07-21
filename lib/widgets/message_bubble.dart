@@ -1022,6 +1022,7 @@ class MessageBubble extends StatelessWidget {
   }
 
   Widget _workflowPeerApprovalHint(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
     final colorScheme = Theme.of(context).colorScheme;
     return Container(
       width: double.infinity,
@@ -1038,7 +1039,7 @@ class MessageBubble extends StatelessWidget {
           const SizedBox(width: 8),
           Expanded(
             child: Text(
-              '工具操作待确认：请在下方工作流面板中批准或拒绝',
+              l10n.chat_toolPendingInPanel,
               style: TextStyle(
                 fontSize: 12,
                 color: colorScheme.onSurface.withOpacity(0.85),

@@ -3,6 +3,7 @@ import '../models/channel.dart';
 import '../services/local_api_service.dart';
 import '../services/logger_service.dart';
 import '../utils/exceptions.dart';
+import '../l10n/app_localizations.dart';
 
 /// 频道列表页面
 class ChannelListScreen extends StatefulWidget {
@@ -26,6 +27,7 @@ class _ChannelListScreenState extends State<ChannelListScreen> {
 
   /// 加载频道列表
   Future<void> _loadChannels() async {
+    final l10n = AppLocalizations.of(context);
     setState(() {
       _isLoading = true;
       _errorMessage = null;
@@ -39,7 +41,7 @@ class _ChannelListScreenState extends State<ChannelListScreen> {
       });
       LoggerService().info('加载了 ${channels.length} 个频道', tag: 'ChannelList');
     } catch (e) {
-      LoggerService().error('加载频道列表失败', tag: 'ChannelList', error: e);
+      LoggerService().error(l10n.channel_loadFailed, tag: 'ChannelList', error: e);
       setState(() {
         _errorMessage = ExceptionHandler.getUserMessage(e);
         _isLoading = false;
@@ -49,15 +51,16 @@ class _ChannelListScreenState extends State<ChannelListScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
     return Scaffold(
       appBar: AppBar(
-        title: const Text('频道管理'),
+        title: Text(l10n.channel_management),
         centerTitle: true,
         actions: [
           IconButton(
             icon: const Icon(Icons.refresh),
             onPressed: _loadChannels,
-            tooltip: '刷新',
+            tooltip: l10n.common_refresh,
           ),
         ],
       ),
@@ -65,12 +68,13 @@ class _ChannelListScreenState extends State<ChannelListScreen> {
       floatingActionButton: FloatingActionButton.extended(
         onPressed: () => _showCreateChannelDialog(),
         icon: const Icon(Icons.add),
-        label: const Text('创建频道'),
+        label: Text(l10n.channel_create),
       ),
     );
   }
 
   Widget _buildBody() {
+    final l10n = AppLocalizations.of(context);
     if (_isLoading) {
       return const Center(
         child: CircularProgressIndicator(),
@@ -97,7 +101,7 @@ class _ChannelListScreenState extends State<ChannelListScreen> {
             ElevatedButton.icon(
               onPressed: _loadChannels,
               icon: const Icon(Icons.refresh),
-              label: const Text('重试'),
+              label: Text(l10n.common_retry),
             ),
           ],
         ),
@@ -116,14 +120,14 @@ class _ChannelListScreenState extends State<ChannelListScreen> {
             ),
             const SizedBox(height: 24),
             Text(
-              '暂无频道',
+              l10n.channel_empty,
               style: Theme.of(context).textTheme.headlineSmall?.copyWith(
                     color: Colors.grey[600],
                   ),
             ),
             const SizedBox(height: 8),
             Text(
-              '点击下方按钮创建您的第一个频道',
+              l10n.channel_emptyHint,
               style: TextStyle(color: Colors.grey[600]),
             ),
           ],
@@ -145,6 +149,7 @@ class _ChannelListScreenState extends State<ChannelListScreen> {
   }
 
   Widget _buildChannelCard(Channel channel) {
+    final l10n = AppLocalizations.of(context);
     return Card(
       margin: const EdgeInsets.only(bottom: 12),
       child: Column(
@@ -184,23 +189,23 @@ class _ChannelListScreenState extends State<ChannelListScreen> {
             ),
             trailing: PopupMenuButton(
               itemBuilder: (context) => [
-                const PopupMenuItem(
+                PopupMenuItem(
                   value: 'bridge',
                   child: Row(
                     children: [
                       Icon(Icons.link, size: 20),
                       SizedBox(width: 8),
-                      Text('Knot 桥接'),
+                      Text(l10n.channel_knotBridge),
                     ],
                   ),
                 ),
-                const PopupMenuItem(
+                PopupMenuItem(
                   value: 'open',
                   child: Row(
                     children: [
                       Icon(Icons.open_in_new, size: 20),
                       SizedBox(width: 8),
-                      Text('打开频道'),
+                      Text(l10n.channel_open),
                     ],
                   ),
                 ),
@@ -210,7 +215,7 @@ class _ChannelListScreenState extends State<ChannelListScreen> {
                   _openBridgeManagement(channel);
                 } else if (value == 'open') {
                   ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text('打开频道: ${channel.name}')),
+                    SnackBar(content: Text(l10n.channel_opening(channel.name))),
                   );
                 }
               },
@@ -226,7 +231,7 @@ class _ChannelListScreenState extends State<ChannelListScreen> {
                   child: OutlinedButton.icon(
                     onPressed: () => _openBridgeManagement(channel),
                     icon: const Icon(Icons.link, size: 18),
-                    label: const Text('Knot 桥接'),
+                    label: Text(l10n.channel_knotBridge),
                     style: OutlinedButton.styleFrom(
                       foregroundColor: Colors.teal,
                     ),
@@ -237,11 +242,11 @@ class _ChannelListScreenState extends State<ChannelListScreen> {
                   child: ElevatedButton.icon(
                     onPressed: () {
                       ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(content: Text('打开频道: ${channel.name}')),
+                        SnackBar(content: Text(l10n.channel_opening(channel.name))),
                       );
                     },
                     icon: const Icon(Icons.chat, size: 18),
-                    label: const Text('进入'),
+                    label: Text(l10n.common_enter),
                   ),
                 ),
               ],
@@ -254,39 +259,40 @@ class _ChannelListScreenState extends State<ChannelListScreen> {
 
   /// 打开桥接管理页面（已移除 Knot 功能）
   void _openBridgeManagement(Channel channel) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('Knot 桥接功能已移除，请使用远端助手功能'),
+    final l10n = AppLocalizations.of(context);    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(l10n.channel_knotRemoved),
       ),
     );
   }
 
   /// 显示创建频道对话框
   void _showCreateChannelDialog() {
+    final l10n = AppLocalizations.of(context);
     final nameController = TextEditingController();
     final descController = TextEditingController();
 
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('创建频道'),
+        title: Text(l10n.channel_create),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             TextField(
               controller: nameController,
-              decoration: const InputDecoration(
-                labelText: '频道名称',
-                hintText: '输入频道名称',
+              decoration: InputDecoration(
+                labelText: l10n.channel_name,
+                hintText: l10n.channel_nameHint,
                 border: OutlineInputBorder(),
               ),
             ),
             const SizedBox(height: 16),
             TextField(
               controller: descController,
-              decoration: const InputDecoration(
-                labelText: '频道描述（可选）',
-                hintText: '输入频道描述',
+              decoration: InputDecoration(
+                labelText: l10n.channel_descOptional,
+                hintText: l10n.channel_descHint,
                 border: OutlineInputBorder(),
               ),
               maxLines: 3,
@@ -296,14 +302,14 @@ class _ChannelListScreenState extends State<ChannelListScreen> {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child: const Text('取消'),
+            child: Text(l10n.common_cancel),
           ),
           ElevatedButton(
             onPressed: () async {
               final name = nameController.text.trim();
               if (name.isEmpty) {
                 ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('请输入频道名称')),
+                  SnackBar(content: Text(l10n.channel_nameRequired)),
                 );
                 return;
               }
@@ -311,7 +317,7 @@ class _ChannelListScreenState extends State<ChannelListScreen> {
               Navigator.pop(context);
               await _createChannel(name, descController.text.trim());
             },
-            child: const Text('创建'),
+            child: Text(l10n.createGroup_create),
           ),
         ],
       ),
@@ -320,7 +326,7 @@ class _ChannelListScreenState extends State<ChannelListScreen> {
 
   /// 创建频道
   Future<void> _createChannel(String name, String description) async {
-    try {
+    final l10n = AppLocalizations.of(context);    try {
       final channel = Channel.withMemberIds(
         id: '',
         name: name,
@@ -334,12 +340,12 @@ class _ChannelListScreenState extends State<ChannelListScreen> {
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('频道 "$name" 创建成功')),
+          SnackBar(content: Text(l10n.channel_createdSuccess(name))),
         );
         _loadChannels();
       }
     } catch (e) {
-      LoggerService().error('创建频道失败', tag: 'ChannelList', error: e);
+      LoggerService().error(l10n.channel_createFailed, tag: 'ChannelList', error: e);
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(

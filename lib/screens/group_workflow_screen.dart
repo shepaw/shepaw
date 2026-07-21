@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import '../l10n/app_localizations.dart';
 import '../models/workflow_models.dart';
 import '../services/local_database_service.dart';
 import '../services/workflow/workflow_service.dart';
@@ -68,24 +69,25 @@ class _GroupWorkflowScreenState extends State<GroupWorkflowScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
     return Scaffold(
       appBar: AppBar(
         leading: IconButton(
           icon: const Icon(Icons.arrow_back),
           onPressed: widget.onBack ?? () => Navigator.pop(context),
         ),
-        title: Text('${widget.channelName} - 工作流'),
+        title: Text(l10n.workflow_groupTitle(widget.channelName)),
         elevation: 1,
       ),
       body: _loading
           ? const Center(child: CircularProgressIndicator())
           : _executions.isEmpty
-              ? _buildEmptyState()
+              ? _buildEmptyState(l10n)
               : _buildList(),
     );
   }
 
-  Widget _buildEmptyState() {
+  Widget _buildEmptyState(AppLocalizations l10n) {
     return Center(
       child: Column(
         mainAxisSize: MainAxisSize.min,
@@ -94,7 +96,7 @@ class _GroupWorkflowScreenState extends State<GroupWorkflowScreen> {
               size: 64, color: Colors.grey.shade300),
           const SizedBox(height: 16),
           Text(
-            '暂无工作流记录',
+            l10n.workflow_empty,
             style: TextStyle(
               fontSize: 16,
               color: Colors.grey.shade500,
@@ -103,7 +105,7 @@ class _GroupWorkflowScreenState extends State<GroupWorkflowScreen> {
           ),
           const SizedBox(height: 8),
           Text(
-            '开启 Flow 模式后，群聊中的工作流执行将记录在此处',
+            l10n.workflow_emptyHint,
             style: TextStyle(
               fontSize: 13,
               color: Colors.grey.shade400,

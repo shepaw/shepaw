@@ -172,10 +172,11 @@ class _PeerChatScreenState extends State<PeerChatScreen> {
             PeerConnectionManager.instance.getPeerState(widget.peer.id);
       });
       if (event.type == PeerConnectionEventType.error) {
-        final detail = event.data is String ? event.data as String : null;
+        final l10n = AppLocalizations.of(context);
+    final detail = event.data is String ? event.data as String : null;
         showTopToast(
           context,
-          detail ?? '无法连接到 $_displayName，请确认对方在线后重试',
+          detail ?? l10n.peerChat_cannotConnect(_displayName),
           icon: Icons.error_outline,
           color: Colors.redAccent,
         );

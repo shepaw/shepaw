@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import '../../l10n/app_localizations.dart';
+import '../../l10n/l10n_helpers.dart';
 import '../../models/workflow_models.dart';
 import 'workflow_status_badge.dart';
 
@@ -15,6 +17,7 @@ class WorkflowListTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
     final isActive = execution.status == WorkflowStatus.running ||
         execution.status == WorkflowStatus.pendingApproval;
 
@@ -63,7 +66,10 @@ class WorkflowListTile extends StatelessWidget {
                       size: 14, color: Colors.grey.shade600),
                   const SizedBox(width: 4),
                   Text(
-                    '${execution.totalStages} 阶段 · ${execution.totalSteps} 步骤',
+                    l10n.workflow_stagesSteps(
+                      execution.totalStages,
+                      execution.totalSteps,
+                    ),
                     style: TextStyle(
                       fontSize: 12,
                       color: Colors.grey.shade600,
@@ -72,7 +78,10 @@ class WorkflowListTile extends StatelessWidget {
                   if (execution.status == WorkflowStatus.running) ...[
                     const SizedBox(width: 8),
                     Text(
-                      '${execution.completedSteps}/${execution.totalSteps} 完成',
+                      l10n.workflow_completedOf(
+                        execution.completedSteps,
+                        execution.totalSteps,
+                      ),
                       style: TextStyle(
                         fontSize: 12,
                         color: Colors.blue.shade700,
@@ -117,7 +126,8 @@ class WorkflowListTile extends StatelessWidget {
 
               // Timestamp
               Text(
-                _formatTime(execution.createdAt),
+                execution.createdAt.millisecondsSinceEpoch
+                    .toRelativeTime(l10n),
                 style: TextStyle(
                   fontSize: 11,
                   color: Colors.grey.shade500,
@@ -128,15 +138,5 @@ class WorkflowListTile extends StatelessWidget {
         ),
       ),
     );
-  }
-
-  String _formatTime(DateTime time) {
-    final now = DateTime.now();
-    final diff = now.difference(time);
-    if (diff.inMinutes < 1) return '刚刚';
-    if (diff.inHours < 1) return '${diff.inMinutes} 分钟前';
-    if (diff.inDays < 1) return '${diff.inHours} 小时前';
-    if (diff.inDays < 7) return '${diff.inDays} 天前';
-    return '${time.month}/${time.day} ${time.hour}:${time.minute.toString().padLeft(2, '0')}';
   }
 }

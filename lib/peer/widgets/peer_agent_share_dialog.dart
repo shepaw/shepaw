@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../l10n/app_localizations.dart';
 import '../../models/remote_agent.dart';
 import '../../widgets/avatar_image.dart';
 
@@ -68,6 +69,7 @@ class _PeerAgentShareSelectorState extends State<PeerAgentShareSelector> {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       mainAxisSize: MainAxisSize.min,
@@ -78,7 +80,7 @@ class _PeerAgentShareSelectorState extends State<PeerAgentShareSelector> {
           controlAffinity: ListTileControlAffinity.leading,
           value: _allSelected,
           onChanged: (v) => _toggleAll(v ?? false),
-          title: const Text('全选'),
+          title: Text(l10n.common_selectAll),
         ),
         const Divider(height: 1),
         ...widget.agents.map((agent) {

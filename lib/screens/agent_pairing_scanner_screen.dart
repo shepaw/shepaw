@@ -7,6 +7,7 @@ import 'package:permission_handler/permission_handler.dart';
 
 import '../services/logger_service.dart';
 import '../services/pair_deeplink.dart';
+import '../l10n/app_localizations.dart';
 
 /// Full-screen camera scanner for v2.1 pairing QR codes.
 ///
@@ -109,13 +110,14 @@ class _AgentPairingScannerScreenState extends State<AgentPairingScannerScreen>
   }
 
   Future<void> _bootstrap() async {
+    final l10n = AppLocalizations.of(context);
     if (_isDesktop) {
       // Desktop doesn't have mobile_scanner. Surface a clear message and
       // let the user back out to the typed fallback.
       setState(() {
         _busy = false;
         _lastError =
-            '当前平台不支持扫码。请返回手动粘贴 URL + 填写配对码，或改用手机扫码。';
+            l10n.agentPair_unsupportedPlatform;
       });
       return;
     }
@@ -198,7 +200,7 @@ class _AgentPairingScannerScreenState extends State<AgentPairingScannerScreen>
           error: err,
           stackTrace: stack,
         );
-        _showTransientError('扫描失败：${err.runtimeType}');
+        _showTransientError(AppLocalizations.of(context).agentPair_scanFailed('${err.runtimeType}'));
       }
     }
   }
@@ -226,6 +228,7 @@ class _AgentPairingScannerScreenState extends State<AgentPairingScannerScreen>
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
     return Scaffold(
       backgroundColor: Colors.black,
       extendBodyBehindAppBar: true,
@@ -233,7 +236,7 @@ class _AgentPairingScannerScreenState extends State<AgentPairingScannerScreen>
         backgroundColor: Colors.black.withValues(alpha: 0.4),
         foregroundColor: Colors.white,
         elevation: 0,
-        title: const Text('扫描配对二维码'),
+        title: Text(l10n.agentPair_scanTitle),
         actions: [
           if (_hasPermission)
             IconButton(
@@ -262,7 +265,7 @@ class _AgentPairingScannerScreenState extends State<AgentPairingScannerScreen>
                   return Icon(icon);
                 },
               ),
-              tooltip: '手电筒',
+              tooltip: l10n.agentPair_torch,
               onPressed: () => _controller?.toggleTorch(),
             ),
         ],
@@ -272,6 +275,7 @@ class _AgentPairingScannerScreenState extends State<AgentPairingScannerScreen>
   }
 
   Widget _buildBody(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
     if (_busy) {
       return const Center(
         child: CircularProgressIndicator(color: Colors.white),
@@ -303,8 +307,8 @@ class _AgentPairingScannerScreenState extends State<AgentPairingScannerScreen>
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              const Text(
-                '对准 agent 主机上 `<gateway> enroll` / `shepaw-hub pair` 打印的二维码',
+              Text(
+                l10n.agentPair_scanHint,
                 style: TextStyle(color: Colors.white, fontSize: 14),
                 textAlign: TextAlign.center,
               ),
@@ -327,6 +331,7 @@ class _AgentPairingScannerScreenState extends State<AgentPairingScannerScreen>
   }
 
   Widget _buildPermissionDenied(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
     return Padding(
       padding: const EdgeInsets.all(24),
       child: Column(
@@ -334,26 +339,26 @@ class _AgentPairingScannerScreenState extends State<AgentPairingScannerScreen>
         children: [
           const Icon(Icons.videocam_off, color: Colors.white70, size: 64),
           const SizedBox(height: 16),
-          const Text(
-            '无法访问相机',
+          Text(
+            l10n.agentPair_cameraDeniedTitle,
             style: TextStyle(color: Colors.white, fontSize: 18),
           ),
           const SizedBox(height: 8),
-          const Text(
-            '扫码配对需要相机权限。请到系统设置中允许 Shepaw 访问相机，或返回手动输入配对码。',
+          Text(
+            l10n.agentPair_cameraDeniedBody,
             style: TextStyle(color: Colors.white70),
             textAlign: TextAlign.center,
           ),
           const SizedBox(height: 24),
           FilledButton.icon(
             icon: const Icon(Icons.settings),
-            label: const Text('打开设置'),
+            label: Text(l10n.common_openSettings),
             onPressed: () async => openAppSettings(),
           ),
           const SizedBox(height: 12),
           TextButton(
             onPressed: () => Navigator.of(context).pop(),
-            child: const Text('返回', style: TextStyle(color: Colors.white70)),
+            child: Text(l10n.common_back, style: TextStyle(color: Colors.white70)),
           ),
         ],
       ),
@@ -361,6 +366,7 @@ class _AgentPairingScannerScreenState extends State<AgentPairingScannerScreen>
   }
 
   Widget _buildUnsupported(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
     return Padding(
       padding: const EdgeInsets.all(24),
       child: Column(
@@ -370,14 +376,14 @@ class _AgentPairingScannerScreenState extends State<AgentPairingScannerScreen>
               color: Colors.white70, size: 64),
           const SizedBox(height: 16),
           Text(
-            _lastError ?? '当前平台暂不支持扫码',
+            _lastError ?? l10n.agentPair_unsupportedShort,
             style: const TextStyle(color: Colors.white),
             textAlign: TextAlign.center,
           ),
           const SizedBox(height: 24),
           TextButton(
             onPressed: () => Navigator.of(context).pop(),
-            child: const Text('返回', style: TextStyle(color: Colors.white70)),
+            child: Text(l10n.common_back, style: TextStyle(color: Colors.white70)),
           ),
         ],
       ),
@@ -385,7 +391,7 @@ class _AgentPairingScannerScreenState extends State<AgentPairingScannerScreen>
   }
 
   Widget _buildScannerError(BuildContext context, MobileScannerException error) {
-    // Platform-level failure (e.g. hardware init). Not a parse error.
+    final l10n = AppLocalizations.of(context);    // Platform-level failure (e.g. hardware init). Not a parse error.
     return Container(
       color: Colors.black,
       padding: const EdgeInsets.all(24),
@@ -395,14 +401,14 @@ class _AgentPairingScannerScreenState extends State<AgentPairingScannerScreen>
           const Icon(Icons.error_outline, color: Colors.white70, size: 64),
           const SizedBox(height: 16),
           Text(
-            '相机初始化失败：${error.errorCode.name}',
+            AppLocalizations.of(context).agentPair_cameraInitFailed(error.errorCode.name),
             style: const TextStyle(color: Colors.white),
             textAlign: TextAlign.center,
           ),
           const SizedBox(height: 24),
           TextButton(
             onPressed: () => Navigator.of(context).pop(),
-            child: const Text('返回', style: TextStyle(color: Colors.white70)),
+            child: Text(l10n.common_back, style: TextStyle(color: Colors.white70)),
           ),
         ],
       ),

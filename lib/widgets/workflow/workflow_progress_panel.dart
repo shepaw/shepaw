@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import '../../l10n/app_localizations.dart';
 import '../../models/workflow_models.dart';
 import '../../services/local_database_service.dart';
 import '../../services/workflow/workflow_service.dart';
@@ -157,6 +158,7 @@ class _WorkflowProgressPanelState extends State<WorkflowProgressPanel>
       bool allDone,
       bool failed,
       WorkflowPeerApprovalPending? pendingPeerApproval) {
+    final l10n = AppLocalizations.of(context);
     final total = exec.totalSteps;
     final done = exec.completedSteps;
     final progress = total > 0 ? done / total : 0.0;
@@ -226,14 +228,16 @@ class _WorkflowProgressPanelState extends State<WorkflowProgressPanel>
                   ),
                   Text(
                     exec.status == WorkflowStatus.pendingApproval
-                        ? '等待审批 · ${exec.totalSteps} 步骤'
+                        ? l10n.workflow_waitingApprovalSteps(exec.totalSteps)
                         : pendingPeerApproval != null
-                            ? '等待 @${pendingPeerApproval.agentName} 工具审批'
+                            ? l10n.workflow_waitingToolApproval(
+                                pendingPeerApproval.agentName)
                             : allDone
-                            ? '全部完成'
+                            ? l10n.workflow_allDone
                             : failed
-                                ? '执行失败'
-                                : '$done / $total 步骤完成',
+                                ? l10n.workflow_execFailed
+                                : l10n.workflow_stepsCompletedSlash(
+                                    done, total),
                     style: TextStyle(
                       fontSize: 11,
                       color: Colors.grey.shade600,
@@ -261,6 +265,7 @@ class _WorkflowProgressPanelState extends State<WorkflowProgressPanel>
   }
 
   Widget _buildPeerApprovalBanner(WorkflowPeerApprovalPending pending) {
+    final l10n = AppLocalizations.of(context);
     final needsUser = pending.risk == PeerApprovalRisk.high;
     final approvalData = pending.approvalData;
     final hasInlineActions = approvalData != null &&
@@ -282,7 +287,9 @@ class _WorkflowProgressPanelState extends State<WorkflowProgressPanel>
                 const SizedBox(width: 8),
                 Expanded(
                   child: Text(
-                    needsUser ? '需要确认工具操作' : '等待工具审批',
+                    needsUser
+                        ? l10n.workflow_needToolConfirm
+                        : l10n.workflow_waitingToolApprovalShort,
                     style: TextStyle(
                       fontSize: 12,
                       fontWeight: FontWeight.w600,
@@ -328,7 +335,7 @@ class _WorkflowProgressPanelState extends State<WorkflowProgressPanel>
                     onTap: () =>
                         widget.onScrollToApproval?.call(pending.messageId!),
                     child: Text(
-                      '查看相关消息',
+                      l10n.workflow_viewRelatedMessage,
                       style: TextStyle(
                         fontSize: 12,
                         fontWeight: FontWeight.w600,
@@ -346,6 +353,7 @@ class _WorkflowProgressPanelState extends State<WorkflowProgressPanel>
   }
 
   Widget _buildApprovalButtons() {
+    final l10n = AppLocalizations.of(context);
     return Padding(
       padding: const EdgeInsets.fromLTRB(14, 4, 14, 10),
       child: Row(
@@ -356,7 +364,7 @@ class _WorkflowProgressPanelState extends State<WorkflowProgressPanel>
                 _showFeedbackDialog();
               },
               icon: const Icon(Icons.edit_outlined, size: 16),
-              label: const Text('提出修改'),
+              label: Text(l10n.plan_requestRevision),
               style: OutlinedButton.styleFrom(
                 foregroundColor: Colors.orange.shade700,
               ),
@@ -369,7 +377,7 @@ class _WorkflowProgressPanelState extends State<WorkflowProgressPanel>
                 widget.onApprovalResponse?.call(true);
               },
               icon: const Icon(Icons.check_circle_outline, size: 16),
-              label: const Text('批准执行'),
+              label: Text(l10n.workflow_approveExec),
               style: FilledButton.styleFrom(
                 backgroundColor: Colors.green,
               ),
@@ -381,23 +389,24 @@ class _WorkflowProgressPanelState extends State<WorkflowProgressPanel>
   }
 
   void _showFeedbackDialog() {
+    final l10n = AppLocalizations.of(context);
     final controller = TextEditingController();
     showDialog<void>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('修改意见'),
+        title: Text(l10n.workflow_revisionComment),
         content: TextField(
           controller: controller,
           maxLines: 3,
-          decoration: const InputDecoration(
-            hintText: '请描述你的修改意见...',
-            border: OutlineInputBorder(),
+          decoration: InputDecoration(
+            hintText: l10n.workflow_revisionHint,
+            border: const OutlineInputBorder(),
           ),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx),
-            child: const Text('取消'),
+            child: Text(l10n.common_cancel),
           ),
           FilledButton(
             onPressed: () {
@@ -408,7 +417,7 @@ class _WorkflowProgressPanelState extends State<WorkflowProgressPanel>
               );
             },
             style: FilledButton.styleFrom(backgroundColor: Colors.orange),
-            child: const Text('提交'),
+            child: Text(l10n.common_submit),
           ),
         ],
       ),
@@ -416,11 +425,12 @@ class _WorkflowProgressPanelState extends State<WorkflowProgressPanel>
   }
 
   Widget _buildExpandedContent(WorkflowExecution exec) {
+    final l10n = AppLocalizations.of(context);
     final pendingStepId = widget.pendingPeerApproval?.stepId;
     if (exec.steps.isEmpty) {
-      return const Padding(
-        padding: EdgeInsets.all(12),
-        child: Text('暂无步骤信息', style: TextStyle(fontSize: 12)),
+      return Padding(
+        padding: const EdgeInsets.all(12),
+        child: Text(l10n.workflow_noSteps, style: const TextStyle(fontSize: 12)),
       );
     }
 
@@ -442,7 +452,8 @@ class _WorkflowProgressPanelState extends State<WorkflowProgressPanel>
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: stageIndices.map((stageIdx) {
           final steps = stageMap[stageIdx]!;
-          final stageName = stageNames[stageIdx] ?? '阶段 ${stageIdx + 1}';
+          final stageName =
+              stageNames[stageIdx] ?? l10n.workflow_stageN(stageIdx + 1);
           final completedInStage = steps
               .where((s) =>
                   s.status == StepExecutionStatus.completed ||

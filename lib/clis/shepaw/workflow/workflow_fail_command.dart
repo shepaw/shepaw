@@ -37,7 +37,7 @@ class WorkflowFailCommand extends CliCommand {
     // H2: Status guard — only allow failing a running workflow
     if (workflow.status != WorkflowStatus.running) {
       return {
-        'error': 'Cannot fail workflow in "${workflow.status.label}" state. Only running workflows can be marked as failed.',
+        'error': 'Cannot fail workflow in "${workflow.status.dbValue}" state. Only running workflows can be marked as failed.',
       };
     }
 

@@ -135,6 +135,7 @@ class _ModelManagementScreenState
   }
 
   Widget _buildEmptyState(ColorScheme colorScheme, AppLocalizations l10n) {
+    final l10n = AppLocalizations.of(context);
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 48),
       child: Column(
@@ -170,6 +171,7 @@ class _ModelManagementScreenState
     ColorScheme colorScheme,
     AppLocalizations l10n,
   ) {
+    final l10n = AppLocalizations.of(context);
     return Card(
       elevation: 0,
       margin: const EdgeInsets.only(bottom: 8),
@@ -272,7 +274,7 @@ class _ModelManagementScreenState
   }
 
   String _modelTypeLabel(ModelType type, AppLocalizations l10n) {
-    switch (type) {
+    final l10n = AppLocalizations.of(context);    switch (type) {
       case ModelType.text:
         return l10n.modelType_text;
       case ModelType.imageUnderstanding:
@@ -462,9 +464,10 @@ class _ModelEditScreenState extends State<ModelEditScreen> {
 
   /// 获取 OpenRouter 模型列表
   Future<void> _fetchOpenRouterModels() async {
+    final l10n = AppLocalizations.of(context);
     if (_apiKeyController.text.trim().isEmpty) {
       setState(() {
-        _modelsError = '请先填写 OpenRouter API Key';
+        _modelsError = l10n.toolModel_needOpenRouterKey;
       });
       return;
     }
@@ -486,7 +489,7 @@ class _ModelEditScreenState extends State<ModelEditScreen> {
 
       if (mounted) {
         _showModelSelectionDialog(
-          title: '选择 OpenRouter 模型',
+          title: l10n.toolModel_selectOpenRouter,
           models: models
               .map(
                 (m) => _PickableModel(
@@ -501,19 +504,20 @@ class _ModelEditScreenState extends State<ModelEditScreen> {
       }
     } catch (e) {
       setState(() {
-        _modelsError = _formatModelFetchError(e);
+        _modelsError = _formatModelFetchError(e, AppLocalizations.of(context));
         _loadingModels = false;
       });
-      LoggerService().error('获取 OpenRouter 模型失败', tag: 'ModelEdit', error: e);
+      LoggerService().error(l10n.toolModel_fetchOpenRouterFailed, tag: 'ModelEdit', error: e);
     }
   }
 
   /// 获取 Ollama 本地模型列表
   Future<void> _fetchOllamaModels() async {
+    final l10n = AppLocalizations.of(context);
     final apiBase = _apiBaseController.text.trim();
     if (apiBase.isEmpty) {
       setState(() {
-        _modelsError = '请先填写 Ollama API Base 地址';
+        _modelsError = l10n.toolModel_needOllamaBase;
       });
       return;
     }
@@ -535,14 +539,14 @@ class _ModelEditScreenState extends State<ModelEditScreen> {
 
       if (models.isEmpty) {
         setState(() {
-          _modelsError = 'Ollama 中暂无已安装的模型，请先运行 ollama pull <model>';
+          _modelsError = l10n.toolModel_ollamaNoModels;
         });
         return;
       }
 
       if (mounted) {
         _showModelSelectionDialog(
-          title: '选择 Ollama 本地模型',
+          title: l10n.toolModel_selectOllama,
           models: models
               .map(
                 (m) => _PickableModel(
@@ -556,17 +560,18 @@ class _ModelEditScreenState extends State<ModelEditScreen> {
       }
     } catch (e) {
       setState(() {
-        _modelsError = _formatModelFetchError(e);
+        _modelsError = _formatModelFetchError(e, AppLocalizations.of(context));
         _loadingModels = false;
       });
-      LoggerService().error('获取 Ollama 模型失败', tag: 'ModelEdit', error: e);
+      LoggerService().error(l10n.toolModel_fetchOllamaFailed, tag: 'ModelEdit', error: e);
     }
   }
 
   Future<void> _testOllamaConnection() async {
+    final l10n = AppLocalizations.of(context);
     final apiBase = _apiBaseController.text.trim();
     if (apiBase.isEmpty) {
-      setState(() => _modelsError = '请先填写 Ollama API Base 地址');
+      setState(() => _modelsError = l10n.toolModel_needOllamaBase);
       return;
     }
 
@@ -600,11 +605,12 @@ class _ModelEditScreenState extends State<ModelEditScreen> {
     }
   }
 
-  String _formatModelFetchError(Object e) {
+  String _formatModelFetchError(Object e, AppLocalizations l10n) {
+    final l10n = AppLocalizations.of(context);
     if (e is FormatException) return e.message;
     if (e is NetworkException) return e.getUserMessage();
     if (e is AppException) return e.message;
-    return '获取模型失败: ${e.toString()}';
+    return l10n.toolModel_fetchFailed(e.toString());
   }
 
   /// 显示模型选择对话框
@@ -908,10 +914,10 @@ class _ModelEditScreenState extends State<ModelEditScreen> {
                                 : Icons.cloud_download),
                         label: Text(
                           _loadingModels
-                              ? '获取中...'
+                              ? l10n.common_fetching
                               : (_isOllamaSelected
-                                  ? '获取 Ollama 本地模型列表'
-                                  : '获取 OpenRouter 模型列表'),
+                                  ? l10n.toolModel_fetchOllamaList
+                                  : l10n.toolModel_fetchOpenRouterList),
                         ),
                       ),
                     ),
@@ -1134,6 +1140,7 @@ class _ModelPickerDialogState extends State<_ModelPickerDialog> {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
     final colorScheme = Theme.of(context).colorScheme;
 
     return AlertDialog(
@@ -1148,7 +1155,7 @@ class _ModelPickerDialogState extends State<_ModelPickerDialog> {
               controller: _searchController,
               autofocus: true,
               decoration: InputDecoration(
-                hintText: '搜索模型名称或 ID...',
+                hintText: l10n.toolModel_searchHint,
                 prefixIcon: const Icon(Icons.search, size: 20),
                 suffixIcon: _searchController.text.isNotEmpty
                     ? IconButton(
@@ -1170,7 +1177,7 @@ class _ModelPickerDialogState extends State<_ModelPickerDialog> {
             Align(
               alignment: Alignment.centerRight,
               child: Text(
-                '${_filtered.length} / ${widget.models.length} 个模型',
+                l10n.toolModel_filteredCount(_filtered.length, widget.models.length),
                 style: TextStyle(fontSize: 11, color: colorScheme.onSurfaceVariant),
               ),
             ),
@@ -1181,7 +1188,7 @@ class _ModelPickerDialogState extends State<_ModelPickerDialog> {
                   ? Padding(
                       padding: const EdgeInsets.symmetric(vertical: 24),
                       child: Text(
-                        '无匹配模型',
+                        l10n.toolModel_noMatch,
                         style: TextStyle(color: colorScheme.onSurfaceVariant),
                       ),
                     )
@@ -1229,7 +1236,7 @@ class _ModelPickerDialogState extends State<_ModelPickerDialog> {
       actions: [
         TextButton(
           onPressed: () => Navigator.pop(context),
-          child: const Text('取消'),
+          child: Text(l10n.common_cancel),
         ),
       ],
     );

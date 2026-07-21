@@ -1536,12 +1536,10 @@
   "scheduledTasks_form_selectMentions": "Agents to mention (optional)",
   "scheduledTasks_missingChannel": "Please select a channel",
   "scheduledTasks_missingGroupAgents": "Please select at least one agent",
-
   "scheduledTasks_form_scheduleTypeLabel": "Schedule Type",
   "scheduledTasks_form_scheduleType_interval": "Repeat Interval",
   "scheduledTasks_form_scheduleType_cron": "Cron Schedule",
   "scheduledTasks_form_scheduleType_once": "One-Time",
-
   "scheduledTasks_form_interval_value": "Interval Value",
   "scheduledTasks_form_interval_unit_minutes": "minutes",
   "scheduledTasks_form_interval_unit_hours": "hours",
@@ -1549,8 +1547,12 @@
   "scheduledTasks_form_interval_preview": "Runs every {value} {unit}",
   "@scheduledTasks_form_interval_preview": {
     "placeholders": {
-      "value": { "type": "String" },
-      "unit": { "type": "String" }
+      "value": {
+        "type": "String"
+      },
+      "unit": {
+        "type": "String"
+      }
     }
   },
   "scheduledTasks_form_preset_label": "Quick Presets",
@@ -1559,7 +1561,6 @@
   "scheduledTasks_form_preset_1h": "1 hour",
   "scheduledTasks_form_preset_6h": "6 hours",
   "scheduledTasks_form_preset_1d": "Daily",
-
   "scheduledTasks_form_cron_frequency": "Frequency",
   "scheduledTasks_form_cron_freq_daily": "Daily",
   "scheduledTasks_form_cron_freq_weekly": "Weekly",
@@ -1578,11 +1579,9 @@
   "scheduledTasks_form_cron_weekday_fri": "Fri",
   "scheduledTasks_form_cron_weekday_sat": "Sat",
   "scheduledTasks_form_cron_weekday_sun": "Sun",
-
   "scheduledTasks_form_once_datetime": "Run At",
   "scheduledTasks_form_once_pickDate": "Pick Date",
   "scheduledTasks_form_once_pickTime": "Pick Time",
-
   "scheduledTasks_form_saveAndActivate": "Save & Activate",
   "scheduledTasks_form_scheduleSection": "Schedule",
   "scheduledTasks_form_targetSection": "Execution Target",
@@ -1719,5 +1718,708 @@
   },
   "peerList_connected": "Connected",
   "peerList_connectedE2e": "Connected (End-to-end encrypted)",
-  "peerList_disconnected": "Not connected"
+  "peerList_disconnected": "Not connected",
+  "common_done": "Done",
+  "common_more": "More",
+  "common_back": "Back",
+  "common_connect": "Connect",
+  "common_submit": "Submit",
+  "common_next": "Next",
+  "common_allow": "Allow",
+  "common_processing": "Processing...",
+  "common_fetching": "Fetching...",
+  "common_selectAll": "Select All",
+  "common_openSettings": "Open Settings",
+  "common_sync": "Sync",
+  "common_busy": "Busy",
+  "common_enter": "Enter",
+  "common_daysAgo": "{count}d ago",
+  "@common_daysAgo": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "common_minutesAgo": "{count}m ago",
+  "@common_minutesAgo": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "common_hoursAgo": "{count}h ago",
+  "@common_hoursAgo": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "toolModel_needOpenRouterKey": "Please enter OpenRouter API Key first",
+  "toolModel_selectOpenRouter": "Select OpenRouter Model",
+  "toolModel_fetchOpenRouterFailed": "Failed to fetch OpenRouter models",
+  "toolModel_needOllamaBase": "Please enter Ollama API Base URL first",
+  "toolModel_ollamaNoModels": "No models installed in Ollama. Run ollama pull <model> first",
+  "toolModel_selectOllama": "Select Ollama Local Model",
+  "toolModel_fetchOllamaFailed": "Failed to fetch Ollama models",
+  "toolModel_fetchOllamaList": "Fetch Ollama local model list",
+  "toolModel_fetchOpenRouterList": "Fetch OpenRouter model list",
+  "toolModel_searchHint": "Search model name or ID...",
+  "toolModel_noMatch": "No matching models",
+  "toolModel_fetchFailed": "Failed to fetch models: {error}",
+  "@toolModel_fetchFailed": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "toolModel_filteredCount": "{filtered} / {total} models",
+  "@toolModel_filteredCount": {
+    "placeholders": {
+      "filtered": {
+        "type": "int"
+      },
+      "total": {
+        "type": "int"
+      }
+    }
+  },
+  "remoteAgent_title": "Remote Assistants",
+  "remoteAgent_checkingHealth": "Checking agent health...",
+  "remoteAgent_healthDone": "Health check done, online: {online}/{total}",
+  "@remoteAgent_healthDone": {
+    "placeholders": {
+      "online": {
+        "type": "int"
+      },
+      "total": {
+        "type": "int"
+      }
+    }
+  },
+  "remoteAgent_healthFailed": "Health check failed: {error}",
+  "@remoteAgent_healthFailed": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "remoteAgent_deleteConfirm": "Delete assistant {name}?\n\nThe remote assistant will no longer be able to connect with this token.",
+  "@remoteAgent_deleteConfirm": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "remoteAgent_checkHealth": "Check Health",
+  "remoteAgent_add": "Add Assistant",
+  "remoteAgent_empty": "No remote assistants yet",
+  "remoteAgent_emptyHint": "Tap below to add your first assistant",
+  "remoteAgent_viewToken": "View Token",
+  "remoteAgent_loadFailed": "Load failed: {error}",
+  "@remoteAgent_loadFailed": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "remoteAgent_deleted": "Deleted {name}",
+  "@remoteAgent_deleted": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "remoteAgent_deleteFailed": "Delete failed: {error}",
+  "@remoteAgent_deleteFailed": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "remoteAgent_lastActive": "Last active: {time}",
+  "@remoteAgent_lastActive": {
+    "placeholders": {
+      "time": {
+        "type": "String"
+      }
+    }
+  },
+  "workflow_detailTitle": "Workflow Details",
+  "workflow_notFound": "Workflow not found",
+  "workflow_approvalSubmitted": "Approval submitted. Return to group chat to continue the workflow",
+  "workflow_approvalFailed": "Failed to submit approval: {error}",
+  "@workflow_approvalFailed": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "workflow_triggerMessage": "Trigger Message",
+  "workflow_returnToChatForApproval": "Please return to the group chat message to complete approval",
+  "workflow_lowRiskOp": "Low-risk operation",
+  "workflow_execSummary": "Execution Summary",
+  "workflow_noSteps": "No step information",
+  "workflow_execStages": "Execution Stages",
+  "workflow_timeInfo": "Timing",
+  "workflow_startTime": "Start Time",
+  "workflow_endTime": "End Time",
+  "workflow_totalDuration": "Total Duration",
+  "workflow_stepsCompleted": "{done}/{total} steps completed",
+  "@workflow_stepsCompleted": {
+    "placeholders": {
+      "done": {
+        "type": "int"
+      },
+      "total": {
+        "type": "int"
+      }
+    }
+  },
+  "workflow_stepsCompletedSlash": "{done} / {total} steps completed",
+  "@workflow_stepsCompletedSlash": {
+    "placeholders": {
+      "done": {
+        "type": "int"
+      },
+      "total": {
+        "type": "int"
+      }
+    }
+  },
+  "workflow_runningFor": "Running for {duration}",
+  "@workflow_runningFor": {
+    "placeholders": {
+      "duration": {
+        "type": "String"
+      }
+    }
+  },
+  "workflow_totalDurationValue": "Total duration {duration}",
+  "@workflow_totalDurationValue": {
+    "placeholders": {
+      "duration": {
+        "type": "String"
+      }
+    }
+  },
+  "workflow_waitingToolApproval": "Waiting for @{agentName} tool approval",
+  "@workflow_waitingToolApproval": {
+    "placeholders": {
+      "agentName": {
+        "type": "String"
+      }
+    }
+  },
+  "workflow_stageN": "Stage {n}",
+  "@workflow_stageN": {
+    "placeholders": {
+      "n": {
+        "type": "int"
+      }
+    }
+  },
+  "workflow_inProgressBanner": "Workflow in progress — tap to view progress and approvals",
+  "workflow_waitingApprovalSteps": "Awaiting approval · {total} steps",
+  "@workflow_waitingApprovalSteps": {
+    "placeholders": {
+      "total": {
+        "type": "int"
+      }
+    }
+  },
+  "workflow_allDone": "All completed",
+  "workflow_execFailed": "Execution failed",
+  "workflow_needToolConfirm": "Tool action confirmation needed",
+  "workflow_waitingToolApprovalShort": "Awaiting tool approval",
+  "workflow_viewRelatedMessage": "View related message",
+  "workflow_approveExec": "Approve",
+  "workflow_revisionComment": "Revision comments",
+  "workflow_revisionHint": "Describe your revision comments...",
+  "workflow_waitingToolTap": "Awaiting tool approval · tap to view",
+  "workflow_stagesSteps": "{stages} stages · {steps} steps",
+  "@workflow_stagesSteps": {
+    "placeholders": {
+      "stages": {
+        "type": "int"
+      },
+      "steps": {
+        "type": "int"
+      }
+    }
+  },
+  "workflow_completedOf": "{done}/{total} done",
+  "@workflow_completedOf": {
+    "placeholders": {
+      "done": {
+        "type": "int"
+      },
+      "total": {
+        "type": "int"
+      }
+    }
+  },
+  "workflow_groupTitle": "{name} - Workflows",
+  "@workflow_groupTitle": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "workflow_empty": "No workflow records",
+  "workflow_emptyHint": "After enabling Flow mode, workflow runs in group chat will appear here",
+  "workflow_statusPendingApproval": "Pending approval",
+  "workflow_statusRunning": "Running",
+  "workflow_statusCompleted": "Completed",
+  "workflow_statusFailed": "Failed",
+  "workflow_statusCancelled": "Cancelled",
+  "workflow_stepPending": "Pending",
+  "workflow_stepRunning": "Running",
+  "workflow_stepCompleted": "Completed",
+  "workflow_stepFailed": "Failed",
+  "workflow_stepSkipped": "Skipped",
+  "chat_syncedRemoteSessions": "Synced {count} remote sessions",
+  "@chat_syncedRemoteSessions": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "chat_syncRemoteSessionsTitle": "Sync Remote Sessions",
+  "chat_syncRemoteSessionsBody": "Found {count} unsynced remote sessions on {agentName}.\n\nSync them locally? You can then view and continue these sessions in the chat list; local sessions will stay in sync with the remote.\n\nThis choice will be remembered and can be changed in Agent settings.",
+  "@chat_syncRemoteSessionsBody": {
+    "placeholders": {
+      "agentName": {
+        "type": "String"
+      },
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "chat_doNotSync": "Don't sync",
+  "chat_sheNoModel": "She has no AI model configured yet",
+  "chat_sheNoModelTapSettings": "Tap here to go to settings and choose an LLM model for She",
+  "chat_sheTagline": "Your personal companion that learns you over time",
+  "chat_sheConfigModelCta": "Configure an AI model to start chatting",
+  "chat_sheNeedModelHint": "She runs on a local LLM. Please choose an AI model\nin Settings first",
+  "chat_syncingRemote": "Syncing remote…",
+  "chat_toolPendingInPanel": "Tool action pending: approve or reject in the workflow panel below",
+  "agentToken_createdSuccess": "Assistant created",
+  "agentToken_nextSteps": "Next steps",
+  "agentToken_step1": "Copy the token above",
+  "agentToken_step2": "Paste the token in the remote assistant config",
+  "agentToken_step3": "Start the remote assistant and wait for connection",
+  "agentToken_step4": "Once connected, the assistant will show as online",
+  "agentToken_keepSafe": "Keep the token safe and do not share it",
+  "channel_loadFailed": "Failed to load channels",
+  "channel_management": "Channel Management",
+  "channel_create": "Create Channel",
+  "channel_empty": "No channels yet",
+  "channel_emptyHint": "Tap below to create your first channel",
+  "channel_knotBridge": "Knot Bridge",
+  "channel_open": "Open Channel",
+  "channel_knotRemoved": "Knot bridge has been removed. Please use remote assistants instead",
+  "channel_name": "Channel Name",
+  "channel_nameHint": "Enter channel name",
+  "channel_descOptional": "Channel description (optional)",
+  "channel_descHint": "Enter channel description",
+  "channel_nameRequired": "Please enter a channel name",
+  "channel_createdSuccess": "Channel {name} created",
+  "@channel_createdSuccess": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "channel_createFailed": "Failed to create channel",
+  "channel_loaded": "Loaded {count} channels",
+  "@channel_loaded": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "channel_opening": "Opening channel: {name}",
+  "@channel_opening": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "channel_createdLog": "Successfully created channel: {name}",
+  "@channel_createdLog": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "login_backingUp": "Securely backing up data...",
+  "agentList_loadFailed": "Failed to load agents",
+  "agentList_deleteConfirm": "Delete agent {name}?",
+  "@agentList_deleteConfirm": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "agentList_deleteFailed": "Failed to delete agent",
+  "agentList_title": "Agent Management",
+  "agentList_emptyHint": "Tap below to add your first agent",
+  "agentList_selectType": "Select Agent Type",
+  "agentList_typeOpenClaw": "Connect to OpenClaw Gateway via ACP",
+  "agentList_typeA2a": "Generic agent supporting A2A protocol",
+  "agentList_typeCustom": "Custom Agent",
+  "agentList_typeCustomDesc": "Manually configured agent of other types",
+  "agentList_createConversationFailed": "Failed to create conversation",
+  "agentList_createConversationFailedDetail": "Failed to create conversation: {error}",
+  "@agentList_createConversationFailedDetail": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "agentList_loaded": "Loaded {count} agents",
+  "@agentList_loaded": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "agentList_typeLabel": "Type: {type}",
+  "@agentList_typeLabel": {
+    "placeholders": {
+      "type": {
+        "type": "String"
+      }
+    }
+  },
+  "agentList_conversationWith": "Conversation with {name}",
+  "@agentList_conversationWith": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "agentList_dmCreated": "Created DM channel with {name}: {id}",
+  "@agentList_dmCreated": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      },
+      "id": {
+        "type": "String"
+      }
+    }
+  },
+  "agentList_conversationCreated": "Created conversation with {name}",
+  "@agentList_conversationCreated": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "agentList_deleted": "Deleted {name}",
+  "@agentList_deleted": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "agentDetail_peerOffline": "Paired device not connected",
+  "agentDetail_modelSwitchUnsupported": "This agent does not support model switching",
+  "agentDetail_modelSwitched": "Model switched",
+  "agentDetail_modelSwitchFailed": "Failed to switch model",
+  "agentDetail_sessionSync": "Session Sync",
+  "agentDetail_sessionSyncHint": "When enabled, remote sessions and chat history sync automatically on enter; disable to stop. You can change this anytime",
+  "agentDetail_refreshModels": "Refresh model list",
+  "agentDetail_switchModelHint": "Switch the LLM model used by the remote agent (applies to future chats)",
+  "agentDetail_noModels": "No models available",
+  "agentDetail_noAiModel": "No AI model configured",
+  "agentDetail_maxToolRounds": "Max tool-call rounds",
+  "agentDetail_maxToolRoundsValue": "{count} rounds",
+  "@agentDetail_maxToolRoundsValue": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "agentDetail_taskTimeout": "Task timeout",
+  "agentDetail_taskTimeoutValue": "{seconds}s",
+  "@agentDetail_taskTimeoutValue": {
+    "placeholders": {
+      "seconds": {
+        "type": "int"
+      }
+    }
+  },
+  "agentDetail_maxToolRoundsDefault": "Default 100",
+  "agentDetail_maxToolRoundsHelper": "Max tool-call rounds per conversation (1–500)",
+  "agentDetail_maxToolRoundsInvalid": "Enter an integer between 1 and 500",
+  "agentDetail_taskTimeoutSeconds": "Task timeout (seconds)",
+  "agentDetail_taskTimeoutDefault": "Default 600",
+  "agentDetail_taskTimeoutHelper": "Max wait time per task (60–3600 seconds)",
+  "agentDetail_taskTimeoutInvalid": "Enter an integer between 60 and 3600",
+  "agentDetail_fromSource": "From {name}",
+  "@agentDetail_fromSource": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "agentDetail_createSuccess": "Agent created",
+  "agentDetail_updateSuccess": "Agent updated",
+  "agentDetail_name": "Agent Name",
+  "agentDetail_nameHint": "Enter agent name",
+  "agentDetail_type": "Agent Type",
+  "agentDetail_typeHint": "e.g. assistant, chatbot",
+  "agentDetail_typeRequired": "Please enter an agent type",
+  "agentDetail_status": "Agent Status",
+  "agentDetail_createdLog": "Successfully created agent: {name}",
+  "@agentDetail_createdLog": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "agentDetail_updatedLog": "Successfully updated agent: {name}",
+  "@agentDetail_updatedLog": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "agentDetail_addTitle": "Add Agent",
+  "agentDetail_viewTitle": "Agent Details",
+  "agentPair_unsupportedPlatform": "This platform does not support scanning. Paste the URL and pairing code manually, or scan with a phone.",
+  "agentPair_scanTitle": "Scan Pairing QR Code",
+  "agentPair_torch": "Flashlight",
+  "agentPair_scanHint": "Point at the QR printed by `<gateway> enroll` / `shepaw-hub pair` on the agent host",
+  "agentPair_cameraDeniedTitle": "Camera access denied",
+  "agentPair_cameraDeniedBody": "Scanning requires camera permission. Allow Shepaw camera access in system settings, or go back and enter the pairing code manually.",
+  "agentPair_unsupportedShort": "Scanning is not supported on this platform",
+  "agentPair_scanFailed": "Scan failed: {error}",
+  "@agentPair_scanFailed": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "agentPair_cameraInitFailed": "Camera init failed: {error}",
+  "@agentPair_cameraInitFailed": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "addAgent_scannedHintPrefix": "Scanned: URL and pairing code filled in. Tap",
+  "addAgent_scannedHintSuffix": "to finish pairing.",
+  "addAgent_missingFingerprint": "URL is missing fingerprint (`#fp=…`). Use the full URL printed when the agent starts.",
+  "addAgent_devicePubkeyTitle": "This device public key (v2.1 auth credential)",
+  "addAgent_loadingDeviceIdentity": "Loading device identity…",
+  "addAgent_fingerprintLabel": "Fingerprint: ",
+  "addAgent_copyPubkey": "Copy public key",
+  "addAgent_pubkeyCopied": "Public key copied to clipboard",
+  "addAgent_runOnHost": "Run on the agent host:",
+  "addAgent_myPhone": "My Phone",
+  "addAgent_agentFingerprintLabel": "Agent fingerprint: ",
+  "addAgent_verifyFingerprint": "Verify this matches the Fingerprint printed when the agent starts",
+  "addAgent_missingFpWarning": "⚠ URL is missing #fp=… fingerprint segment; pairing will fail. Use the full URL printed at agent startup.",
+  "addAgent_pairingCodeOptional": "Pairing code (optional, for one-tap pairing)",
+  "dispatch_timeout": "Timed out",
+  "dispatch_failed": "Failed",
+  "dispatch_waitingConfirm": "Awaiting confirmation",
+  "dispatch_running": "Running",
+  "dispatch_goConfirm": "Go handle confirmation",
+  "dispatch_viewDetails": "View execution details",
+  "dispatch_awaitingConfirm": "Awaiting confirmation",
+  "dispatch_confirmed": "Confirmed",
+  "dispatch_cancelled": "Cancelled",
+  "dispatch_confirmDispatch": "Confirm dispatch",
+  "dispatch_title": "Dispatch · {agentName}",
+  "@dispatch_title": {
+    "placeholders": {
+      "agentName": {
+        "type": "String"
+      }
+    }
+  },
+  "dispatch_pendingConfirm": "Pending: {title}",
+  "@dispatch_pendingConfirm": {
+    "placeholders": {
+      "title": {
+        "type": "String"
+      }
+    }
+  },
+  "dispatch_confirmTitle": "Dispatch confirm · {agentName}",
+  "@dispatch_confirmTitle": {
+    "placeholders": {
+      "agentName": {
+        "type": "String"
+      }
+    }
+  },
+  "dispatch_completed": "Completed",
+  "relay_waiting": "Awaiting approval",
+  "relay_processed": "Processed",
+  "relay_expired": "Expired",
+  "relay_failed": "Failed",
+  "relay_title": "Action confirm · {agentName}",
+  "@relay_title": {
+    "placeholders": {
+      "agentName": {
+        "type": "String"
+      }
+    }
+  },
+  "relay_yourChoice": "Your choice: {label}",
+  "@relay_yourChoice": {
+    "placeholders": {
+      "label": {
+        "type": "String"
+      }
+    }
+  },
+  "plan_title": "Execution Plan",
+  "plan_approved": "Approved",
+  "plan_feedbackGiven": "Feedback sent",
+  "plan_revisionHint": "Describe your revision comments on the plan...",
+  "plan_submitFeedback": "Submit feedback",
+  "plan_requestRevision": "Request changes",
+  "plan_approveAndRun": "Approve and run",
+  "plan_dependencies": "Depends on: {deps}",
+  "@plan_dependencies": {
+    "placeholders": {
+      "deps": {
+        "type": "String"
+      }
+    }
+  },
+  "update_emptyDownloadUrl": "Download URL is empty. Please ask the admin to check the API response",
+  "update_cannotOpenUrl": "Cannot open download URL: {url}",
+  "@update_cannotOpenUrl": {
+    "placeholders": {
+      "url": {
+        "type": "String"
+      }
+    }
+  },
+  "update_downloadComplete": "{fileName} download complete",
+  "@update_downloadComplete": {
+    "placeholders": {
+      "fileName": {
+        "type": "String"
+      }
+    }
+  },
+  "peerPairing_requestTitle": "Pairing Request",
+  "peerPairing_requestBody": "The following device wants to pair with you:",
+  "peerPairing_selectAgents": "Select agents to share with this device",
+  "peerPairing_selectAgentsHint": "The peer can use selected agents over the pairing (requires \"Allow External Access\")",
+  "peerPairing_confirmHint": "After confirming, both sides can communicate directly",
+  "peerPairing_confirm": "Confirm pairing",
+  "peerPairing_confirmWithCount": "Confirm pairing ({count})",
+  "@peerPairing_confirmWithCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "peerPairing_failed": "Pairing failed: {error}",
+  "@peerPairing_failed": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "peerScan_desktopUnsupported": "Camera scanning is not supported on desktop",
+  "peerScan_useMobile": "Please use scanning on a mobile device",
+  "peerScan_frameHint": "Place the peer QR code inside the frame",
+  "peerScan_cameraError": "Camera error: {error}",
+  "@peerScan_cameraError": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "peerList_add": "Add pairing",
+  "peerList_emptyHint": "Scan their QR code or let them scan yours to establish an encrypted connection",
+  "peerList_pairedSuccess": "Successfully paired with {name}",
+  "@peerList_pairedSuccess": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "peerList_editAlias": "Edit alias",
+  "peerQr_fillAllFields": "Please fill in all fields",
+  "peerQr_cannotStart": "Cannot start pairing",
+  "peerQr_scanHint": "Have the other party scan this QR code to pair",
+  "peerQr_codeLabel": "Pairing code",
+  "peerQr_codeCopied": "Pairing code copied",
+  "peerQr_waitingScan": "Waiting for scan...",
+  "peerQr_validFiveMin": "QR code is valid for 5 minutes",
+  "peerQr_wanConnect": "WAN connection",
+  "peerQr_wanConnectHint": "When enabled, pairing works over WAN, not limited to LAN",
+  "peerQr_channelConnected": "Channel connected",
+  "peerQr_channelConnecting": "Connecting to Channel...",
+  "peerQr_channelReconnecting": "Disconnected, reconnecting...",
+  "peerQr_editConfig": "Edit config",
+  "peerQr_connectFailed": "Connection failed",
+  "peerQr_starting": "Starting...",
+  "peerQr_configureChannel": "Configure Channel service to enable WAN connection",
+  "peerQr_channelIdHint": "Enter Channel ID",
+  "peerQr_signingKeyHint": "Enter signing key",
+  "peerChat_cannotConnect": "Cannot connect to {name}. Make sure they are online and try again",
+  "@peerChat_cannotConnect": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "memory_typeConversation": "Conversation",
+  "memory_typeKnowledge": "Knowledge",
+  "memory_typeBehavior": "Behavior",
+  "memory_typeEvent": "Event",
+  "memory_typeEmotion": "Emotion",
+  "peerApproval_superseded": "Superseded by a later approval",
+  "peerApproval_allow": "Allow",
+  "peerApproval_deny": "Deny",
+  "status_protocolPeer": "Paired device",
+  "status_custom": "Custom",
+  "home_statusError": "Error",
+  "addAgent_pairingCodeHelper": "Run `<gateway> enroll` on the agent host to get a short code like XXX-XXX-XXX, paste it here to auto-authorize this device. Leave empty to use the \"Copy public key → peers add\" manual flow above."
 }

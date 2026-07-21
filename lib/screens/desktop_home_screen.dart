@@ -792,7 +792,7 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
           },
           child: _SidebarIcon(
             icon: Icons.more_horiz,
-            tooltip: '更多',
+            tooltip: AppLocalizations.of(context).common_more,
             color: inactiveIconColor,
             onTap: () {
               if (_morePortalController.isShowing) {

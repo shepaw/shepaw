@@ -1,9 +1,10 @@
-import 'dart:async' show unawaited;
+import 'dart:async';
 import 'dart:io' show Platform;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 
+import '../../l10n/app_localizations.dart';
 import '../models/paired_peer.dart';
 import '../models/pairing_payload.dart';
 import '../services/peer_pairing_service.dart';
@@ -70,26 +71,27 @@ class _PeerDeviceScannerScreenState extends State<PeerDeviceScannerScreen> {
   }
 
   Future<void> _doPairing(PeerPairingInfo info) async {
-    setState(() => _statusMessage = '正在连接...');
+    final l10n = AppLocalizations.of(context);
+    setState(() => _statusMessage = l10n.peerManual_connecting);
 
     // 短延迟后切换为"等待确认"提示
     Future.delayed(const Duration(seconds: 2), () {
       if (mounted && _processing && _error == null) {
-        setState(() => _statusMessage = '等待对方确认...');
+        setState(() => _statusMessage = l10n.peerManual_waitingConfirm);
       }
     });
 
     try {
       final peer = await PeerPairingService.instance.requestPairing(info);
       if (mounted) {
-        setState(() => _statusMessage = '配对成功!');
+        setState(() => _statusMessage = l10n.peerManual_success);
         await Future.delayed(const Duration(milliseconds: 500));
         widget.onPaired?.call(peer);
       }
     } on PairingRejectedException {
       if (mounted) {
         setState(() {
-          _error = '对方拒绝了配对请求';
+          _error = l10n.peerManual_rejected;
           _processing = false;
           _statusMessage = null;
         });
@@ -98,7 +100,7 @@ class _PeerDeviceScannerScreenState extends State<PeerDeviceScannerScreen> {
     } on PairingTimeoutException {
       if (mounted) {
         setState(() {
-          _error = '配对超时，请重试';
+          _error = l10n.peerManual_timeout;
           _processing = false;
           _statusMessage = null;
         });
@@ -107,7 +109,7 @@ class _PeerDeviceScannerScreenState extends State<PeerDeviceScannerScreen> {
     } catch (e) {
       if (mounted) {
         setState(() {
-          _error = '配对失败: $e';
+          _error = l10n.peerPairing_failed('$e');
           _processing = false;
           _statusMessage = null;
         });
@@ -127,6 +129,7 @@ class _PeerDeviceScannerScreenState extends State<PeerDeviceScannerScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
     final colorScheme = Theme.of(context).colorScheme;
 
     // 桌面平台不支持
@@ -139,10 +142,10 @@ class _PeerDeviceScannerScreenState extends State<PeerDeviceScannerScreen> {
             children: [
               Icon(Icons.desktop_mac_outlined, size: 48, color: colorScheme.onSurfaceVariant),
               const SizedBox(height: 16),
-              const Text('桌面端暂不支持摄像头扫描'),
+              Text(l10n.peerScan_desktopUnsupported),
               const SizedBox(height: 8),
               Text(
-                '请在移动设备上使用扫码功能',
+                l10n.peerScan_useMobile,
                 style: TextStyle(color: colorScheme.onSurfaceVariant),
               ),
             ],
@@ -160,7 +163,7 @@ class _PeerDeviceScannerScreenState extends State<PeerDeviceScannerScreen> {
             const CircularProgressIndicator(),
             const SizedBox(height: 24),
             Text(
-              _statusMessage ?? '处理中...',
+              _statusMessage ?? l10n.common_processing,
               style: Theme.of(context).textTheme.titleMedium,
             ),
           ],
@@ -182,7 +185,7 @@ class _PeerDeviceScannerScreenState extends State<PeerDeviceScannerScreen> {
                   children: [
                     Icon(Icons.error, size: 48, color: colorScheme.error),
                     const SizedBox(height: 16),
-                    Text('摄像头错误: ${error.errorCode}'),
+                    Text(l10n.peerScan_cameraError('${error.errorCode}')),
                   ],
                 ),
               );
@@ -207,7 +210,7 @@ class _PeerDeviceScannerScreenState extends State<PeerDeviceScannerScreen> {
           left: 0,
           right: 0,
           child: Text(
-            '将对方的二维码放入框内',
+            l10n.peerScan_frameHint,
             textAlign: TextAlign.center,
             style: Theme.of(context).textTheme.bodyLarge?.copyWith(
               color: Colors.white,

@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../widgets/avatar_image.dart';
+import '../l10n/l10n_helpers.dart';
 import '../l10n/app_localizations.dart';
 import '../models/remote_agent.dart';
 import '../peer/services/peer_connection_manager.dart';
@@ -127,6 +128,7 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
   }
 
   Future<void> _loadPeerModels() async {
+    final l10n = AppLocalizations.of(context);
     if (!_agent.isPeerAgent) return;
     final peerId = _agent.sourcePeerId;
     final remoteId = _agent.remoteAgentId;
@@ -136,7 +138,7 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
         setState(() {
           _peerModels = const [];
           _peerCurrentModel = null;
-          _peerModelsError = '配对设备未连接';
+          _peerModelsError = l10n.agentDetail_peerOffline;
           _peerModelsLoading = false;
         });
       }
@@ -158,12 +160,13 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
       _peerModels = list.models;
       _peerCurrentModel = list.current;
       if (list.models.isEmpty) {
-        _peerModelsError = '该 agent 暂不支持切换模型';
+        _peerModelsError = l10n.agentDetail_modelSwitchUnsupported;
       }
     });
   }
 
   Future<void> _onPeerModelSelected(String? value) async {
+    final l10n = AppLocalizations.of(context);
     if (value == null || value == _peerCurrentModel || _peerModelSetting) return;
     final peerId = _agent.sourcePeerId;
     final remoteId = _agent.remoteAgentId;
@@ -182,7 +185,7 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text(ok ? '已切换模型' : '切换模型失败'),
+        content: Text(ok ? l10n.agentDetail_modelSwitched : l10n.agentDetail_modelSwitchFailed),
         duration: const Duration(seconds: 2),
       ),
     );
@@ -379,8 +382,8 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
   }
 
   Future<void> _persistChanges({bool showFeedback = false}) async {
-    if (!_isEditing) return;
     final l10n = AppLocalizations.of(context);
+    if (!_isEditing) return;
     var name = _nameController.text.trim();
     if (name.isEmpty) {
       return;
@@ -935,6 +938,7 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
   }
 
   Widget _buildHeader() {
+    final l10n = AppLocalizations.of(context);
     return Column(
       children: [
         Container(
@@ -986,7 +990,7 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
                 Text(displayAgent.statusIcon, style: const TextStyle(fontSize: 14)),
                 const SizedBox(width: 6),
                 Text(
-                  displayAgent.statusText,
+                  displayAgent.localizedStatusText(l10n),
                   style: TextStyle(
                     fontSize: 14,
                     color: _getStatusColor(displayAgent.status),
@@ -1010,6 +1014,7 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
   /// it on enables silent auto-sync. The first chat entry asks once until a
   /// choice is saved here or via the sync dialog.
   Widget _buildPeerSyncToggle() {
+    final l10n = AppLocalizations.of(context);
     final colorScheme = Theme.of(context).colorScheme;
     return Container(
       decoration: BoxDecoration(
@@ -1018,10 +1023,10 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
       ),
       child: SwitchListTile(
         contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 2),
-        title: const Text('会话同步', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
-        subtitle: const Text(
-          '开启后进入时自动同步远端会话列表与聊天记录；关闭后不再同步。可随时在此修改',
-          style: TextStyle(fontSize: 12),
+        title: Text(l10n.agentDetail_sessionSync, style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
+        subtitle: Text(
+          l10n.agentDetail_sessionSyncHint,
+          style: const TextStyle(fontSize: 12),
         ),
         value: _peerSyncEnabled,
         onChanged: _setPeerSyncEnabled,
@@ -1032,6 +1037,7 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
   /// Upstream model picker — switches the remote agent's LLM via
   /// `agent.models.setCurrent` on the paired device.
   Widget _buildPeerModelPicker() {
+    final l10n = AppLocalizations.of(context);
     final colorScheme = Theme.of(context).colorScheme;
     final busy = _peerModelsLoading || _peerModelSetting;
     final effectiveCurrent = _peerCurrentModel ??
@@ -1050,9 +1056,9 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
             children: [
               Icon(Icons.memory_outlined, size: 18, color: colorScheme.primary),
               const SizedBox(width: 8),
-              const Text(
-                '模型',
-                style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+              Text(
+                l10n.agentDetail_model,
+                style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
               ),
               const Spacer(),
               if (busy)
@@ -1067,7 +1073,7 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
               else
                 IconButton(
                   icon: const Icon(Icons.refresh, size: 18),
-                  tooltip: '刷新模型列表',
+                  tooltip: l10n.agentDetail_refreshModels,
                   onPressed: _loadPeerModels,
                   visualDensity: VisualDensity.compact,
                   padding: EdgeInsets.zero,
@@ -1077,7 +1083,7 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
           ),
           const SizedBox(height: 4),
           Text(
-            '切换远端 agent 使用的 LLM 模型（作用于后续对话）',
+            l10n.agentDetail_switchModelHint,
             style: TextStyle(fontSize: 12, color: colorScheme.onSurfaceVariant),
           ),
           const SizedBox(height: 10),
@@ -1090,7 +1096,7 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
             const SizedBox.shrink()
           else if (_peerModels.isEmpty)
             Text(
-              '暂无可用模型',
+              l10n.agentDetail_noModels,
               style: TextStyle(fontSize: 12, color: colorScheme.onSurfaceVariant),
             )
           else
@@ -1107,7 +1113,7 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
                 filled: true,
                 fillColor: colorScheme.surface,
               ),
-              hint: const Text('选择模型'),
+              hint: Text(l10n.addAgent_selectModel),
               selectedItemBuilder: (context) => _peerModels
                   .map(
                     (m) => Align(
@@ -1152,8 +1158,9 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
 
   /// 来源标识：标记该 agent 来自某台配对设备（通过 P2P 隧道访问）。
   Widget _buildPeerSourceChip() {
+    final l10n = AppLocalizations.of(context);
     final colorScheme = Theme.of(context).colorScheme;
-    final sourceName = _agent.sourcePeerName ?? '配对设备';
+    final sourceName = _agent.sourcePeerName ?? l10n.peerPairing_title;
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
       decoration: BoxDecoration(
@@ -1166,7 +1173,7 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
           Icon(Icons.devices_outlined, size: 14, color: colorScheme.primary),
           const SizedBox(width: 6),
           Text(
-            '来自 $sourceName',
+            l10n.agentDetail_fromSource(sourceName),
             style: TextStyle(
               fontSize: 13,
               color: colorScheme.primary,
@@ -1233,9 +1240,9 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
             const Divider(height: 24),
             // Remote-only connection fields (peer agents use P2P tunnel)
             if (!_isLocalMode && !_agent.isPeerAgent) ...[
-              _buildInfoRow(l10n.agentDetail_protocol, _agent.protocolName),
+              _buildInfoRow(l10n.agentDetail_protocol, _agent.localizedProtocolName(l10n)),
               const SizedBox(height: 8),
-              _buildInfoRow(l10n.agentDetail_connectionType, _agent.connectionTypeName),
+              _buildInfoRow(l10n.agentDetail_connectionType, _agent.localizedConnectionTypeName(l10n)),
               if (_agent.endpoint.isNotEmpty) ...[
                 const SizedBox(height: 8),
                 _buildInfoRow(l10n.agentDetail_endpoint, _agent.endpoint),
@@ -1275,7 +1282,7 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
             ] else if (_isLocalMode) ...[
               // She / local agent with no model configured yet
               Text(
-                '尚未配置 AI 模型',
+                l10n.agentDetail_noAiModel,
                 style: TextStyle(
                   fontSize: 13,
                   color: Colors.orange.shade700,
@@ -1289,12 +1296,12 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
             ],
             const SizedBox(height: 8),
             if (!_agent.isPeerAgent) ...[
-              _buildInfoRow('最大工具调用轮次',
-                  '${(_agent.metadata['max_tool_rounds'] as num? ?? 100).toInt()} 次'),
+              _buildInfoRow(l10n.agentDetail_maxToolRounds,
+                  l10n.agentDetail_maxToolRoundsValue((_agent.metadata['max_tool_rounds'] as num? ?? 100).toInt())),
               const SizedBox(height: 8),
             ],
-            _buildInfoRow('任务超时时间',
-                '${(_agent.metadata['task_timeout_seconds'] as num? ?? 600).toInt()} 秒'),
+            _buildInfoRow(l10n.agentDetail_taskTimeout,
+                l10n.agentDetail_taskTimeoutValue((_agent.metadata['task_timeout_seconds'] as num? ?? 600).toInt())),
             const SizedBox(height: 8),
             _buildInfoRow(l10n.agentDetail_createdAt, _formatTimestamp(_agent.createdAt)),
           ],
@@ -1705,19 +1712,19 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
               const SizedBox(height: 12),
               TextFormField(
                 controller: _maxToolRoundsController,
-                decoration: const InputDecoration(
-                  labelText: '最大工具调用轮次',
-                  hintText: '默认 100',
+                decoration: InputDecoration(
+                  labelText: l10n.agentDetail_maxToolRounds,
+                  hintText: l10n.agentDetail_maxToolRoundsDefault,
                   border: OutlineInputBorder(),
                   prefixIcon: Icon(Icons.repeat),
-                  helperText: '单次对话中 LLM 最多可调用工具的轮数（1–500）',
+                  helperText: l10n.agentDetail_maxToolRoundsHelper,
                 ),
                 keyboardType: TextInputType.number,
                 onChanged: (_) => _scheduleAutoSave(),
                 validator: (value) {
                   if (value == null || value.trim().isEmpty) return null;
                   final n = int.tryParse(value.trim());
-                  if (n == null || n < 1 || n > 500) return '请输入 1 到 500 之间的整数';
+                  if (n == null || n < 1 || n > 500) return l10n.agentDetail_maxToolRoundsInvalid;
                   return null;
                 },
               ),
@@ -1725,19 +1732,19 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
             const SizedBox(height: 12),
             TextFormField(
               controller: _taskTimeoutController,
-              decoration: const InputDecoration(
-                labelText: '任务超时时间（秒）',
-                hintText: '默认 600',
+              decoration: InputDecoration(
+                labelText: l10n.agentDetail_taskTimeoutSeconds,
+                hintText: l10n.agentDetail_taskTimeoutDefault,
                 border: OutlineInputBorder(),
                 prefixIcon: Icon(Icons.timer),
-                helperText: '单次任务的最长等待时间（60–3600 秒）',
+                helperText: l10n.agentDetail_taskTimeoutHelper,
               ),
               keyboardType: TextInputType.number,
               onChanged: (_) => _scheduleAutoSave(),
               validator: (value) {
                 if (value == null || value.trim().isEmpty) return null;
                 final n = int.tryParse(value.trim());
-                if (n == null || n < 60 || n > 3600) return '请输入 60 到 3600 之间的整数';
+                if (n == null || n < 60 || n > 3600) return l10n.agentDetail_taskTimeoutInvalid;
                 return null;
               },
             ),
@@ -1813,7 +1820,6 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
   /// Navigation tiles for Skills and CLI Commands sub-pages (edit mode).
   Widget _buildEditConfigNavigationTiles(ColorScheme colorScheme) {
     final l10n = AppLocalizations.of(context);
-
     return Card(
       elevation: 0,
       shape: RoundedRectangleBorder(

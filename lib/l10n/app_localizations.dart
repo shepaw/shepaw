@@ -7183,6 +7183,1686 @@ abstract class AppLocalizations {
   /// In zh, this message translates to:
   /// **'未连接'**
   String get peerList_disconnected;
+
+  /// No description provided for @common_done.
+  ///
+  /// In zh, this message translates to:
+  /// **'完成'**
+  String get common_done;
+
+  /// No description provided for @common_more.
+  ///
+  /// In zh, this message translates to:
+  /// **'更多'**
+  String get common_more;
+
+  /// No description provided for @common_back.
+  ///
+  /// In zh, this message translates to:
+  /// **'返回'**
+  String get common_back;
+
+  /// No description provided for @common_connect.
+  ///
+  /// In zh, this message translates to:
+  /// **'连接'**
+  String get common_connect;
+
+  /// No description provided for @common_submit.
+  ///
+  /// In zh, this message translates to:
+  /// **'提交'**
+  String get common_submit;
+
+  /// No description provided for @common_next.
+  ///
+  /// In zh, this message translates to:
+  /// **'下一步'**
+  String get common_next;
+
+  /// No description provided for @common_allow.
+  ///
+  /// In zh, this message translates to:
+  /// **'允许'**
+  String get common_allow;
+
+  /// No description provided for @common_processing.
+  ///
+  /// In zh, this message translates to:
+  /// **'处理中...'**
+  String get common_processing;
+
+  /// No description provided for @common_fetching.
+  ///
+  /// In zh, this message translates to:
+  /// **'获取中...'**
+  String get common_fetching;
+
+  /// No description provided for @common_selectAll.
+  ///
+  /// In zh, this message translates to:
+  /// **'全选'**
+  String get common_selectAll;
+
+  /// No description provided for @common_openSettings.
+  ///
+  /// In zh, this message translates to:
+  /// **'打开设置'**
+  String get common_openSettings;
+
+  /// No description provided for @common_sync.
+  ///
+  /// In zh, this message translates to:
+  /// **'同步'**
+  String get common_sync;
+
+  /// No description provided for @common_busy.
+  ///
+  /// In zh, this message translates to:
+  /// **'忙碌'**
+  String get common_busy;
+
+  /// No description provided for @common_enter.
+  ///
+  /// In zh, this message translates to:
+  /// **'进入'**
+  String get common_enter;
+
+  /// No description provided for @common_daysAgo.
+  ///
+  /// In zh, this message translates to:
+  /// **'{count} 天前'**
+  String common_daysAgo(int count);
+
+  /// No description provided for @common_minutesAgo.
+  ///
+  /// In zh, this message translates to:
+  /// **'{count} 分钟前'**
+  String common_minutesAgo(int count);
+
+  /// No description provided for @common_hoursAgo.
+  ///
+  /// In zh, this message translates to:
+  /// **'{count} 小时前'**
+  String common_hoursAgo(int count);
+
+  /// No description provided for @toolModel_needOpenRouterKey.
+  ///
+  /// In zh, this message translates to:
+  /// **'请先填写 OpenRouter API Key'**
+  String get toolModel_needOpenRouterKey;
+
+  /// No description provided for @toolModel_selectOpenRouter.
+  ///
+  /// In zh, this message translates to:
+  /// **'选择 OpenRouter 模型'**
+  String get toolModel_selectOpenRouter;
+
+  /// No description provided for @toolModel_fetchOpenRouterFailed.
+  ///
+  /// In zh, this message translates to:
+  /// **'获取 OpenRouter 模型失败'**
+  String get toolModel_fetchOpenRouterFailed;
+
+  /// No description provided for @toolModel_needOllamaBase.
+  ///
+  /// In zh, this message translates to:
+  /// **'请先填写 Ollama API Base 地址'**
+  String get toolModel_needOllamaBase;
+
+  /// No description provided for @toolModel_ollamaNoModels.
+  ///
+  /// In zh, this message translates to:
+  /// **'Ollama 中暂无已安装的模型，请先运行 ollama pull <model>'**
+  String get toolModel_ollamaNoModels;
+
+  /// No description provided for @toolModel_selectOllama.
+  ///
+  /// In zh, this message translates to:
+  /// **'选择 Ollama 本地模型'**
+  String get toolModel_selectOllama;
+
+  /// No description provided for @toolModel_fetchOllamaFailed.
+  ///
+  /// In zh, this message translates to:
+  /// **'获取 Ollama 模型失败'**
+  String get toolModel_fetchOllamaFailed;
+
+  /// No description provided for @toolModel_fetchOllamaList.
+  ///
+  /// In zh, this message translates to:
+  /// **'获取 Ollama 本地模型列表'**
+  String get toolModel_fetchOllamaList;
+
+  /// No description provided for @toolModel_fetchOpenRouterList.
+  ///
+  /// In zh, this message translates to:
+  /// **'获取 OpenRouter 模型列表'**
+  String get toolModel_fetchOpenRouterList;
+
+  /// No description provided for @toolModel_searchHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'搜索模型名称或 ID...'**
+  String get toolModel_searchHint;
+
+  /// No description provided for @toolModel_noMatch.
+  ///
+  /// In zh, this message translates to:
+  /// **'无匹配模型'**
+  String get toolModel_noMatch;
+
+  /// No description provided for @toolModel_fetchFailed.
+  ///
+  /// In zh, this message translates to:
+  /// **'获取模型失败: {error}'**
+  String toolModel_fetchFailed(String error);
+
+  /// No description provided for @toolModel_filteredCount.
+  ///
+  /// In zh, this message translates to:
+  /// **'{filtered} / {total} 个模型'**
+  String toolModel_filteredCount(int filtered, int total);
+
+  /// No description provided for @remoteAgent_title.
+  ///
+  /// In zh, this message translates to:
+  /// **'远端助手'**
+  String get remoteAgent_title;
+
+  /// No description provided for @remoteAgent_checkingHealth.
+  ///
+  /// In zh, this message translates to:
+  /// **'正在检查 Agent 健康状态...'**
+  String get remoteAgent_checkingHealth;
+
+  /// No description provided for @remoteAgent_healthDone.
+  ///
+  /// In zh, this message translates to:
+  /// **'健康检查完成，在线: {online}/{total}'**
+  String remoteAgent_healthDone(int online, int total);
+
+  /// No description provided for @remoteAgent_healthFailed.
+  ///
+  /// In zh, this message translates to:
+  /// **'健康检查失败: {error}'**
+  String remoteAgent_healthFailed(String error);
+
+  /// No description provided for @remoteAgent_deleteConfirm.
+  ///
+  /// In zh, this message translates to:
+  /// **'确定要删除助手 {name} 吗？\n\n删除后，远端助手将无法再使用此 Token 连接。'**
+  String remoteAgent_deleteConfirm(String name);
+
+  /// No description provided for @remoteAgent_checkHealth.
+  ///
+  /// In zh, this message translates to:
+  /// **'检查健康状态'**
+  String get remoteAgent_checkHealth;
+
+  /// No description provided for @remoteAgent_add.
+  ///
+  /// In zh, this message translates to:
+  /// **'添加助手'**
+  String get remoteAgent_add;
+
+  /// No description provided for @remoteAgent_empty.
+  ///
+  /// In zh, this message translates to:
+  /// **'还没有远端助手'**
+  String get remoteAgent_empty;
+
+  /// No description provided for @remoteAgent_emptyHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'点击下方按钮添加第一个助手'**
+  String get remoteAgent_emptyHint;
+
+  /// No description provided for @remoteAgent_viewToken.
+  ///
+  /// In zh, this message translates to:
+  /// **'查看 Token'**
+  String get remoteAgent_viewToken;
+
+  /// No description provided for @remoteAgent_loadFailed.
+  ///
+  /// In zh, this message translates to:
+  /// **'加载失败: {error}'**
+  String remoteAgent_loadFailed(String error);
+
+  /// No description provided for @remoteAgent_deleted.
+  ///
+  /// In zh, this message translates to:
+  /// **'已删除 {name}'**
+  String remoteAgent_deleted(String name);
+
+  /// No description provided for @remoteAgent_deleteFailed.
+  ///
+  /// In zh, this message translates to:
+  /// **'删除失败: {error}'**
+  String remoteAgent_deleteFailed(String error);
+
+  /// No description provided for @remoteAgent_lastActive.
+  ///
+  /// In zh, this message translates to:
+  /// **'最后活跃: {time}'**
+  String remoteAgent_lastActive(String time);
+
+  /// No description provided for @workflow_detailTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'工作流详情'**
+  String get workflow_detailTitle;
+
+  /// No description provided for @workflow_notFound.
+  ///
+  /// In zh, this message translates to:
+  /// **'工作流不存在'**
+  String get workflow_notFound;
+
+  /// No description provided for @workflow_approvalSubmitted.
+  ///
+  /// In zh, this message translates to:
+  /// **'审批已提交，请返回群聊继续工作流'**
+  String get workflow_approvalSubmitted;
+
+  /// No description provided for @workflow_approvalFailed.
+  ///
+  /// In zh, this message translates to:
+  /// **'审批提交失败: {error}'**
+  String workflow_approvalFailed(String error);
+
+  /// No description provided for @workflow_triggerMessage.
+  ///
+  /// In zh, this message translates to:
+  /// **'触发消息'**
+  String get workflow_triggerMessage;
+
+  /// No description provided for @workflow_returnToChatForApproval.
+  ///
+  /// In zh, this message translates to:
+  /// **'请返回群聊消息中完成审批'**
+  String get workflow_returnToChatForApproval;
+
+  /// No description provided for @workflow_lowRiskOp.
+  ///
+  /// In zh, this message translates to:
+  /// **'低风险操作'**
+  String get workflow_lowRiskOp;
+
+  /// No description provided for @workflow_execSummary.
+  ///
+  /// In zh, this message translates to:
+  /// **'执行摘要'**
+  String get workflow_execSummary;
+
+  /// No description provided for @workflow_noSteps.
+  ///
+  /// In zh, this message translates to:
+  /// **'暂无步骤信息'**
+  String get workflow_noSteps;
+
+  /// No description provided for @workflow_execStages.
+  ///
+  /// In zh, this message translates to:
+  /// **'执行阶段'**
+  String get workflow_execStages;
+
+  /// No description provided for @workflow_timeInfo.
+  ///
+  /// In zh, this message translates to:
+  /// **'时间信息'**
+  String get workflow_timeInfo;
+
+  /// No description provided for @workflow_startTime.
+  ///
+  /// In zh, this message translates to:
+  /// **'开始时间'**
+  String get workflow_startTime;
+
+  /// No description provided for @workflow_endTime.
+  ///
+  /// In zh, this message translates to:
+  /// **'完成时间'**
+  String get workflow_endTime;
+
+  /// No description provided for @workflow_totalDuration.
+  ///
+  /// In zh, this message translates to:
+  /// **'总耗时'**
+  String get workflow_totalDuration;
+
+  /// No description provided for @workflow_stepsCompleted.
+  ///
+  /// In zh, this message translates to:
+  /// **'{done}/{total} 步骤完成'**
+  String workflow_stepsCompleted(int done, int total);
+
+  /// No description provided for @workflow_stepsCompletedSlash.
+  ///
+  /// In zh, this message translates to:
+  /// **'{done} / {total} 步骤完成'**
+  String workflow_stepsCompletedSlash(int done, int total);
+
+  /// No description provided for @workflow_runningFor.
+  ///
+  /// In zh, this message translates to:
+  /// **'已运行 {duration}'**
+  String workflow_runningFor(String duration);
+
+  /// No description provided for @workflow_totalDurationValue.
+  ///
+  /// In zh, this message translates to:
+  /// **'总耗时 {duration}'**
+  String workflow_totalDurationValue(String duration);
+
+  /// No description provided for @workflow_waitingToolApproval.
+  ///
+  /// In zh, this message translates to:
+  /// **'等待 @{agentName} 工具审批'**
+  String workflow_waitingToolApproval(String agentName);
+
+  /// No description provided for @workflow_stageN.
+  ///
+  /// In zh, this message translates to:
+  /// **'阶段 {n}'**
+  String workflow_stageN(int n);
+
+  /// No description provided for @workflow_inProgressBanner.
+  ///
+  /// In zh, this message translates to:
+  /// **'工作流进行中，点击查看进度与审批'**
+  String get workflow_inProgressBanner;
+
+  /// No description provided for @workflow_waitingApprovalSteps.
+  ///
+  /// In zh, this message translates to:
+  /// **'等待审批 · {total} 步骤'**
+  String workflow_waitingApprovalSteps(int total);
+
+  /// No description provided for @workflow_allDone.
+  ///
+  /// In zh, this message translates to:
+  /// **'全部完成'**
+  String get workflow_allDone;
+
+  /// No description provided for @workflow_execFailed.
+  ///
+  /// In zh, this message translates to:
+  /// **'执行失败'**
+  String get workflow_execFailed;
+
+  /// No description provided for @workflow_needToolConfirm.
+  ///
+  /// In zh, this message translates to:
+  /// **'需要确认工具操作'**
+  String get workflow_needToolConfirm;
+
+  /// No description provided for @workflow_waitingToolApprovalShort.
+  ///
+  /// In zh, this message translates to:
+  /// **'等待工具审批'**
+  String get workflow_waitingToolApprovalShort;
+
+  /// No description provided for @workflow_viewRelatedMessage.
+  ///
+  /// In zh, this message translates to:
+  /// **'查看相关消息'**
+  String get workflow_viewRelatedMessage;
+
+  /// No description provided for @workflow_approveExec.
+  ///
+  /// In zh, this message translates to:
+  /// **'批准执行'**
+  String get workflow_approveExec;
+
+  /// No description provided for @workflow_revisionComment.
+  ///
+  /// In zh, this message translates to:
+  /// **'修改意见'**
+  String get workflow_revisionComment;
+
+  /// No description provided for @workflow_revisionHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'请描述你的修改意见...'**
+  String get workflow_revisionHint;
+
+  /// No description provided for @workflow_waitingToolTap.
+  ///
+  /// In zh, this message translates to:
+  /// **'等待工具审批 · 点击查看'**
+  String get workflow_waitingToolTap;
+
+  /// No description provided for @workflow_stagesSteps.
+  ///
+  /// In zh, this message translates to:
+  /// **'{stages} 阶段 · {steps} 步骤'**
+  String workflow_stagesSteps(int stages, int steps);
+
+  /// No description provided for @workflow_completedOf.
+  ///
+  /// In zh, this message translates to:
+  /// **'{done}/{total} 完成'**
+  String workflow_completedOf(int done, int total);
+
+  /// No description provided for @workflow_groupTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'{name} - 工作流'**
+  String workflow_groupTitle(String name);
+
+  /// No description provided for @workflow_empty.
+  ///
+  /// In zh, this message translates to:
+  /// **'暂无工作流记录'**
+  String get workflow_empty;
+
+  /// No description provided for @workflow_emptyHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'开启 Flow 模式后，群聊中的工作流执行将记录在此处'**
+  String get workflow_emptyHint;
+
+  /// No description provided for @workflow_statusPendingApproval.
+  ///
+  /// In zh, this message translates to:
+  /// **'待审批'**
+  String get workflow_statusPendingApproval;
+
+  /// No description provided for @workflow_statusRunning.
+  ///
+  /// In zh, this message translates to:
+  /// **'运行中'**
+  String get workflow_statusRunning;
+
+  /// No description provided for @workflow_statusCompleted.
+  ///
+  /// In zh, this message translates to:
+  /// **'已完成'**
+  String get workflow_statusCompleted;
+
+  /// No description provided for @workflow_statusFailed.
+  ///
+  /// In zh, this message translates to:
+  /// **'失败'**
+  String get workflow_statusFailed;
+
+  /// No description provided for @workflow_statusCancelled.
+  ///
+  /// In zh, this message translates to:
+  /// **'已取消'**
+  String get workflow_statusCancelled;
+
+  /// No description provided for @workflow_stepPending.
+  ///
+  /// In zh, this message translates to:
+  /// **'待执行'**
+  String get workflow_stepPending;
+
+  /// No description provided for @workflow_stepRunning.
+  ///
+  /// In zh, this message translates to:
+  /// **'执行中'**
+  String get workflow_stepRunning;
+
+  /// No description provided for @workflow_stepCompleted.
+  ///
+  /// In zh, this message translates to:
+  /// **'已完成'**
+  String get workflow_stepCompleted;
+
+  /// No description provided for @workflow_stepFailed.
+  ///
+  /// In zh, this message translates to:
+  /// **'失败'**
+  String get workflow_stepFailed;
+
+  /// No description provided for @workflow_stepSkipped.
+  ///
+  /// In zh, this message translates to:
+  /// **'已跳过'**
+  String get workflow_stepSkipped;
+
+  /// No description provided for @chat_syncedRemoteSessions.
+  ///
+  /// In zh, this message translates to:
+  /// **'已同步 {count} 个远端会话'**
+  String chat_syncedRemoteSessions(int count);
+
+  /// No description provided for @chat_syncRemoteSessionsTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'同步远端会话'**
+  String get chat_syncRemoteSessionsTitle;
+
+  /// No description provided for @chat_syncRemoteSessionsBody.
+  ///
+  /// In zh, this message translates to:
+  /// **'在 {agentName} 上发现 {count} 个尚未同步的远端会话。\n\n是否同步到本地？同步后可在会话列表中查看并继续这些会话，本地会话将与远端保持一致。\n\n此选择会记住，之后可在 Agent 设置中修改。'**
+  String chat_syncRemoteSessionsBody(String agentName, int count);
+
+  /// No description provided for @chat_doNotSync.
+  ///
+  /// In zh, this message translates to:
+  /// **'不同步'**
+  String get chat_doNotSync;
+
+  /// No description provided for @chat_sheNoModel.
+  ///
+  /// In zh, this message translates to:
+  /// **'She 还没有配置 AI 模型'**
+  String get chat_sheNoModel;
+
+  /// No description provided for @chat_sheNoModelTapSettings.
+  ///
+  /// In zh, this message translates to:
+  /// **'点击这里前往设置，为 She 选择一个 LLM 模型'**
+  String get chat_sheNoModelTapSettings;
+
+  /// No description provided for @chat_sheTagline.
+  ///
+  /// In zh, this message translates to:
+  /// **'你的专属灵宠，会越来越懂你'**
+  String get chat_sheTagline;
+
+  /// No description provided for @chat_sheConfigModelCta.
+  ///
+  /// In zh, this message translates to:
+  /// **'配置 AI 模型，开始对话'**
+  String get chat_sheConfigModelCta;
+
+  /// No description provided for @chat_sheNeedModelHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'She 使用本地 LLM 运行，请先在设置中\n为她选择一个 AI 模型'**
+  String get chat_sheNeedModelHint;
+
+  /// No description provided for @chat_syncingRemote.
+  ///
+  /// In zh, this message translates to:
+  /// **'同步远端…'**
+  String get chat_syncingRemote;
+
+  /// No description provided for @chat_toolPendingInPanel.
+  ///
+  /// In zh, this message translates to:
+  /// **'工具操作待确认：请在下方工作流面板中批准或拒绝'**
+  String get chat_toolPendingInPanel;
+
+  /// No description provided for @agentToken_createdSuccess.
+  ///
+  /// In zh, this message translates to:
+  /// **'助手创建成功'**
+  String get agentToken_createdSuccess;
+
+  /// No description provided for @agentToken_nextSteps.
+  ///
+  /// In zh, this message translates to:
+  /// **'下一步'**
+  String get agentToken_nextSteps;
+
+  /// No description provided for @agentToken_step1.
+  ///
+  /// In zh, this message translates to:
+  /// **'复制上方的 Token'**
+  String get agentToken_step1;
+
+  /// No description provided for @agentToken_step2.
+  ///
+  /// In zh, this message translates to:
+  /// **'在远端助手的配置中粘贴 Token'**
+  String get agentToken_step2;
+
+  /// No description provided for @agentToken_step3.
+  ///
+  /// In zh, this message translates to:
+  /// **'启动远端助手，等待连接'**
+  String get agentToken_step3;
+
+  /// No description provided for @agentToken_step4.
+  ///
+  /// In zh, this message translates to:
+  /// **'连接成功后，助手将显示为在线状态'**
+  String get agentToken_step4;
+
+  /// No description provided for @agentToken_keepSafe.
+  ///
+  /// In zh, this message translates to:
+  /// **'请妥善保管 Token，不要泄露给他人'**
+  String get agentToken_keepSafe;
+
+  /// No description provided for @channel_loadFailed.
+  ///
+  /// In zh, this message translates to:
+  /// **'加载频道列表失败'**
+  String get channel_loadFailed;
+
+  /// No description provided for @channel_management.
+  ///
+  /// In zh, this message translates to:
+  /// **'频道管理'**
+  String get channel_management;
+
+  /// No description provided for @channel_create.
+  ///
+  /// In zh, this message translates to:
+  /// **'创建频道'**
+  String get channel_create;
+
+  /// No description provided for @channel_empty.
+  ///
+  /// In zh, this message translates to:
+  /// **'暂无频道'**
+  String get channel_empty;
+
+  /// No description provided for @channel_emptyHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'点击下方按钮创建您的第一个频道'**
+  String get channel_emptyHint;
+
+  /// No description provided for @channel_knotBridge.
+  ///
+  /// In zh, this message translates to:
+  /// **'Knot 桥接'**
+  String get channel_knotBridge;
+
+  /// No description provided for @channel_open.
+  ///
+  /// In zh, this message translates to:
+  /// **'打开频道'**
+  String get channel_open;
+
+  /// No description provided for @channel_knotRemoved.
+  ///
+  /// In zh, this message translates to:
+  /// **'Knot 桥接功能已移除，请使用远端助手功能'**
+  String get channel_knotRemoved;
+
+  /// No description provided for @channel_name.
+  ///
+  /// In zh, this message translates to:
+  /// **'频道名称'**
+  String get channel_name;
+
+  /// No description provided for @channel_nameHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'输入频道名称'**
+  String get channel_nameHint;
+
+  /// No description provided for @channel_descOptional.
+  ///
+  /// In zh, this message translates to:
+  /// **'频道描述（可选）'**
+  String get channel_descOptional;
+
+  /// No description provided for @channel_descHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'输入频道描述'**
+  String get channel_descHint;
+
+  /// No description provided for @channel_nameRequired.
+  ///
+  /// In zh, this message translates to:
+  /// **'请输入频道名称'**
+  String get channel_nameRequired;
+
+  /// No description provided for @channel_createdSuccess.
+  ///
+  /// In zh, this message translates to:
+  /// **'频道 {name} 创建成功'**
+  String channel_createdSuccess(String name);
+
+  /// No description provided for @channel_createFailed.
+  ///
+  /// In zh, this message translates to:
+  /// **'创建频道失败'**
+  String get channel_createFailed;
+
+  /// No description provided for @channel_loaded.
+  ///
+  /// In zh, this message translates to:
+  /// **'加载了 {count} 个频道'**
+  String channel_loaded(int count);
+
+  /// No description provided for @channel_opening.
+  ///
+  /// In zh, this message translates to:
+  /// **'打开频道: {name}'**
+  String channel_opening(String name);
+
+  /// No description provided for @channel_createdLog.
+  ///
+  /// In zh, this message translates to:
+  /// **'成功创建频道: {name}'**
+  String channel_createdLog(String name);
+
+  /// No description provided for @login_backingUp.
+  ///
+  /// In zh, this message translates to:
+  /// **'正在安全备份数据...'**
+  String get login_backingUp;
+
+  /// No description provided for @agentList_loadFailed.
+  ///
+  /// In zh, this message translates to:
+  /// **'加载 Agent 列表失败'**
+  String get agentList_loadFailed;
+
+  /// No description provided for @agentList_deleteConfirm.
+  ///
+  /// In zh, this message translates to:
+  /// **'确定要删除 Agent {name} 吗？'**
+  String agentList_deleteConfirm(String name);
+
+  /// No description provided for @agentList_deleteFailed.
+  ///
+  /// In zh, this message translates to:
+  /// **'删除 Agent 失败'**
+  String get agentList_deleteFailed;
+
+  /// No description provided for @agentList_title.
+  ///
+  /// In zh, this message translates to:
+  /// **'Agent 管理'**
+  String get agentList_title;
+
+  /// No description provided for @agentList_emptyHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'点击下方按钮添加您的第一个 Agent'**
+  String get agentList_emptyHint;
+
+  /// No description provided for @agentList_selectType.
+  ///
+  /// In zh, this message translates to:
+  /// **'选择 Agent 类型'**
+  String get agentList_selectType;
+
+  /// No description provided for @agentList_typeOpenClaw.
+  ///
+  /// In zh, this message translates to:
+  /// **'通过 ACP 协议连接 OpenClaw Gateway'**
+  String get agentList_typeOpenClaw;
+
+  /// No description provided for @agentList_typeA2a.
+  ///
+  /// In zh, this message translates to:
+  /// **'支持 A2A 协议的通用 Agent'**
+  String get agentList_typeA2a;
+
+  /// No description provided for @agentList_typeCustom.
+  ///
+  /// In zh, this message translates to:
+  /// **'自定义 Agent'**
+  String get agentList_typeCustom;
+
+  /// No description provided for @agentList_typeCustomDesc.
+  ///
+  /// In zh, this message translates to:
+  /// **'手动配置的其他类型 Agent'**
+  String get agentList_typeCustomDesc;
+
+  /// No description provided for @agentList_createConversationFailed.
+  ///
+  /// In zh, this message translates to:
+  /// **'创建对话失败'**
+  String get agentList_createConversationFailed;
+
+  /// No description provided for @agentList_createConversationFailedDetail.
+  ///
+  /// In zh, this message translates to:
+  /// **'创建对话失败: {error}'**
+  String agentList_createConversationFailedDetail(String error);
+
+  /// No description provided for @agentList_loaded.
+  ///
+  /// In zh, this message translates to:
+  /// **'加载了 {count} 个 Agent'**
+  String agentList_loaded(int count);
+
+  /// No description provided for @agentList_typeLabel.
+  ///
+  /// In zh, this message translates to:
+  /// **'类型: {type}'**
+  String agentList_typeLabel(String type);
+
+  /// No description provided for @agentList_conversationWith.
+  ///
+  /// In zh, this message translates to:
+  /// **'与 {name} 的对话'**
+  String agentList_conversationWith(String name);
+
+  /// No description provided for @agentList_dmCreated.
+  ///
+  /// In zh, this message translates to:
+  /// **'创建了与 {name} 的 DM 频道: {id}'**
+  String agentList_dmCreated(String name, String id);
+
+  /// No description provided for @agentList_conversationCreated.
+  ///
+  /// In zh, this message translates to:
+  /// **'已创建与 {name} 的对话'**
+  String agentList_conversationCreated(String name);
+
+  /// No description provided for @agentList_deleted.
+  ///
+  /// In zh, this message translates to:
+  /// **'已删除 {name}'**
+  String agentList_deleted(String name);
+
+  /// No description provided for @agentDetail_peerOffline.
+  ///
+  /// In zh, this message translates to:
+  /// **'配对设备未连接'**
+  String get agentDetail_peerOffline;
+
+  /// No description provided for @agentDetail_modelSwitchUnsupported.
+  ///
+  /// In zh, this message translates to:
+  /// **'该 agent 暂不支持切换模型'**
+  String get agentDetail_modelSwitchUnsupported;
+
+  /// No description provided for @agentDetail_modelSwitched.
+  ///
+  /// In zh, this message translates to:
+  /// **'已切换模型'**
+  String get agentDetail_modelSwitched;
+
+  /// No description provided for @agentDetail_modelSwitchFailed.
+  ///
+  /// In zh, this message translates to:
+  /// **'切换模型失败'**
+  String get agentDetail_modelSwitchFailed;
+
+  /// No description provided for @agentDetail_sessionSync.
+  ///
+  /// In zh, this message translates to:
+  /// **'会话同步'**
+  String get agentDetail_sessionSync;
+
+  /// No description provided for @agentDetail_sessionSyncHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'开启后进入时自动同步远端会话列表与聊天记录；关闭后不再同步。可随时在此修改'**
+  String get agentDetail_sessionSyncHint;
+
+  /// No description provided for @agentDetail_refreshModels.
+  ///
+  /// In zh, this message translates to:
+  /// **'刷新模型列表'**
+  String get agentDetail_refreshModels;
+
+  /// No description provided for @agentDetail_switchModelHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'切换远端 agent 使用的 LLM 模型（作用于后续对话）'**
+  String get agentDetail_switchModelHint;
+
+  /// No description provided for @agentDetail_noModels.
+  ///
+  /// In zh, this message translates to:
+  /// **'暂无可用模型'**
+  String get agentDetail_noModels;
+
+  /// No description provided for @agentDetail_noAiModel.
+  ///
+  /// In zh, this message translates to:
+  /// **'尚未配置 AI 模型'**
+  String get agentDetail_noAiModel;
+
+  /// No description provided for @agentDetail_maxToolRounds.
+  ///
+  /// In zh, this message translates to:
+  /// **'最大工具调用轮次'**
+  String get agentDetail_maxToolRounds;
+
+  /// No description provided for @agentDetail_maxToolRoundsValue.
+  ///
+  /// In zh, this message translates to:
+  /// **'{count} 次'**
+  String agentDetail_maxToolRoundsValue(int count);
+
+  /// No description provided for @agentDetail_taskTimeout.
+  ///
+  /// In zh, this message translates to:
+  /// **'任务超时时间'**
+  String get agentDetail_taskTimeout;
+
+  /// No description provided for @agentDetail_taskTimeoutValue.
+  ///
+  /// In zh, this message translates to:
+  /// **'{seconds} 秒'**
+  String agentDetail_taskTimeoutValue(int seconds);
+
+  /// No description provided for @agentDetail_maxToolRoundsDefault.
+  ///
+  /// In zh, this message translates to:
+  /// **'默认 100'**
+  String get agentDetail_maxToolRoundsDefault;
+
+  /// No description provided for @agentDetail_maxToolRoundsHelper.
+  ///
+  /// In zh, this message translates to:
+  /// **'单次对话中 LLM 最多可调用工具的轮数（1–500）'**
+  String get agentDetail_maxToolRoundsHelper;
+
+  /// No description provided for @agentDetail_maxToolRoundsInvalid.
+  ///
+  /// In zh, this message translates to:
+  /// **'请输入 1 到 500 之间的整数'**
+  String get agentDetail_maxToolRoundsInvalid;
+
+  /// No description provided for @agentDetail_taskTimeoutSeconds.
+  ///
+  /// In zh, this message translates to:
+  /// **'任务超时时间（秒）'**
+  String get agentDetail_taskTimeoutSeconds;
+
+  /// No description provided for @agentDetail_taskTimeoutDefault.
+  ///
+  /// In zh, this message translates to:
+  /// **'默认 600'**
+  String get agentDetail_taskTimeoutDefault;
+
+  /// No description provided for @agentDetail_taskTimeoutHelper.
+  ///
+  /// In zh, this message translates to:
+  /// **'单次任务的最长等待时间（60–3600 秒）'**
+  String get agentDetail_taskTimeoutHelper;
+
+  /// No description provided for @agentDetail_taskTimeoutInvalid.
+  ///
+  /// In zh, this message translates to:
+  /// **'请输入 60 到 3600 之间的整数'**
+  String get agentDetail_taskTimeoutInvalid;
+
+  /// No description provided for @agentDetail_fromSource.
+  ///
+  /// In zh, this message translates to:
+  /// **'来自 {name}'**
+  String agentDetail_fromSource(String name);
+
+  /// No description provided for @agentDetail_createSuccess.
+  ///
+  /// In zh, this message translates to:
+  /// **'Agent 创建成功'**
+  String get agentDetail_createSuccess;
+
+  /// No description provided for @agentDetail_updateSuccess.
+  ///
+  /// In zh, this message translates to:
+  /// **'Agent 更新成功'**
+  String get agentDetail_updateSuccess;
+
+  /// No description provided for @agentDetail_name.
+  ///
+  /// In zh, this message translates to:
+  /// **'Agent 名称'**
+  String get agentDetail_name;
+
+  /// No description provided for @agentDetail_nameHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'输入 Agent 名称'**
+  String get agentDetail_nameHint;
+
+  /// No description provided for @agentDetail_type.
+  ///
+  /// In zh, this message translates to:
+  /// **'Agent 类型'**
+  String get agentDetail_type;
+
+  /// No description provided for @agentDetail_typeHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'例如: assistant, chatbot'**
+  String get agentDetail_typeHint;
+
+  /// No description provided for @agentDetail_typeRequired.
+  ///
+  /// In zh, this message translates to:
+  /// **'请输入 Agent 类型'**
+  String get agentDetail_typeRequired;
+
+  /// No description provided for @agentDetail_status.
+  ///
+  /// In zh, this message translates to:
+  /// **'Agent 状态'**
+  String get agentDetail_status;
+
+  /// No description provided for @agentDetail_createdLog.
+  ///
+  /// In zh, this message translates to:
+  /// **'成功创建 Agent: {name}'**
+  String agentDetail_createdLog(String name);
+
+  /// No description provided for @agentDetail_updatedLog.
+  ///
+  /// In zh, this message translates to:
+  /// **'成功更新 Agent: {name}'**
+  String agentDetail_updatedLog(String name);
+
+  /// No description provided for @agentDetail_addTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'添加 Agent'**
+  String get agentDetail_addTitle;
+
+  /// No description provided for @agentDetail_viewTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'Agent 详情'**
+  String get agentDetail_viewTitle;
+
+  /// No description provided for @agentPair_unsupportedPlatform.
+  ///
+  /// In zh, this message translates to:
+  /// **'当前平台不支持扫码。请返回手动粘贴 URL + 填写配对码，或改用手机扫码。'**
+  String get agentPair_unsupportedPlatform;
+
+  /// No description provided for @agentPair_scanTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'扫描配对二维码'**
+  String get agentPair_scanTitle;
+
+  /// No description provided for @agentPair_torch.
+  ///
+  /// In zh, this message translates to:
+  /// **'手电筒'**
+  String get agentPair_torch;
+
+  /// No description provided for @agentPair_scanHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'对准 agent 主机上 `<gateway> enroll` / `shepaw-hub pair` 打印的二维码'**
+  String get agentPair_scanHint;
+
+  /// No description provided for @agentPair_cameraDeniedTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'无法访问相机'**
+  String get agentPair_cameraDeniedTitle;
+
+  /// No description provided for @agentPair_cameraDeniedBody.
+  ///
+  /// In zh, this message translates to:
+  /// **'扫码配对需要相机权限。请到系统设置中允许 Shepaw 访问相机，或返回手动输入配对码。'**
+  String get agentPair_cameraDeniedBody;
+
+  /// No description provided for @agentPair_unsupportedShort.
+  ///
+  /// In zh, this message translates to:
+  /// **'当前平台暂不支持扫码'**
+  String get agentPair_unsupportedShort;
+
+  /// No description provided for @agentPair_scanFailed.
+  ///
+  /// In zh, this message translates to:
+  /// **'扫描失败：{error}'**
+  String agentPair_scanFailed(String error);
+
+  /// No description provided for @agentPair_cameraInitFailed.
+  ///
+  /// In zh, this message translates to:
+  /// **'相机初始化失败：{error}'**
+  String agentPair_cameraInitFailed(String error);
+
+  /// No description provided for @addAgent_scannedHintPrefix.
+  ///
+  /// In zh, this message translates to:
+  /// **'已扫码：URL 与配对码已填入。点击'**
+  String get addAgent_scannedHintPrefix;
+
+  /// No description provided for @addAgent_scannedHintSuffix.
+  ///
+  /// In zh, this message translates to:
+  /// **'完成配对。'**
+  String get addAgent_scannedHintSuffix;
+
+  /// No description provided for @addAgent_missingFingerprint.
+  ///
+  /// In zh, this message translates to:
+  /// **'URL 缺失指纹（`#fp=…`）。请使用 agent 终端启动时打印的完整 URL。'**
+  String get addAgent_missingFingerprint;
+
+  /// No description provided for @addAgent_devicePubkeyTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'本设备公钥（v2.1 授权凭证）'**
+  String get addAgent_devicePubkeyTitle;
+
+  /// No description provided for @addAgent_loadingDeviceIdentity.
+  ///
+  /// In zh, this message translates to:
+  /// **'正在加载设备身份…'**
+  String get addAgent_loadingDeviceIdentity;
+
+  /// No description provided for @addAgent_fingerprintLabel.
+  ///
+  /// In zh, this message translates to:
+  /// **'指纹: '**
+  String get addAgent_fingerprintLabel;
+
+  /// No description provided for @addAgent_copyPubkey.
+  ///
+  /// In zh, this message translates to:
+  /// **'复制公钥'**
+  String get addAgent_copyPubkey;
+
+  /// No description provided for @addAgent_pubkeyCopied.
+  ///
+  /// In zh, this message translates to:
+  /// **'公钥已复制到剪贴板'**
+  String get addAgent_pubkeyCopied;
+
+  /// No description provided for @addAgent_runOnHost.
+  ///
+  /// In zh, this message translates to:
+  /// **'在 agent 主机上执行：'**
+  String get addAgent_runOnHost;
+
+  /// No description provided for @addAgent_myPhone.
+  ///
+  /// In zh, this message translates to:
+  /// **'我的手机'**
+  String get addAgent_myPhone;
+
+  /// No description provided for @addAgent_agentFingerprintLabel.
+  ///
+  /// In zh, this message translates to:
+  /// **'Agent 指纹: '**
+  String get addAgent_agentFingerprintLabel;
+
+  /// No description provided for @addAgent_verifyFingerprint.
+  ///
+  /// In zh, this message translates to:
+  /// **'请对照 agent 终端启动时打印的 Fingerprint 是否一致'**
+  String get addAgent_verifyFingerprint;
+
+  /// No description provided for @addAgent_missingFpWarning.
+  ///
+  /// In zh, this message translates to:
+  /// **'⚠ URL 缺失 #fp=… 指纹段，配对将失败。请使用 agent 启动时打印的完整 URL。'**
+  String get addAgent_missingFpWarning;
+
+  /// No description provided for @addAgent_pairingCodeOptional.
+  ///
+  /// In zh, this message translates to:
+  /// **'配对码（可选，用于一键配对）'**
+  String get addAgent_pairingCodeOptional;
+
+  /// No description provided for @dispatch_timeout.
+  ///
+  /// In zh, this message translates to:
+  /// **'执行超时'**
+  String get dispatch_timeout;
+
+  /// No description provided for @dispatch_failed.
+  ///
+  /// In zh, this message translates to:
+  /// **'执行失败'**
+  String get dispatch_failed;
+
+  /// No description provided for @dispatch_waitingConfirm.
+  ///
+  /// In zh, this message translates to:
+  /// **'等待操作确认'**
+  String get dispatch_waitingConfirm;
+
+  /// No description provided for @dispatch_running.
+  ///
+  /// In zh, this message translates to:
+  /// **'执行中'**
+  String get dispatch_running;
+
+  /// No description provided for @dispatch_goConfirm.
+  ///
+  /// In zh, this message translates to:
+  /// **'前往处理确认'**
+  String get dispatch_goConfirm;
+
+  /// No description provided for @dispatch_viewDetails.
+  ///
+  /// In zh, this message translates to:
+  /// **'查看执行详情'**
+  String get dispatch_viewDetails;
+
+  /// No description provided for @dispatch_awaitingConfirm.
+  ///
+  /// In zh, this message translates to:
+  /// **'等待确认'**
+  String get dispatch_awaitingConfirm;
+
+  /// No description provided for @dispatch_confirmed.
+  ///
+  /// In zh, this message translates to:
+  /// **'已确认'**
+  String get dispatch_confirmed;
+
+  /// No description provided for @dispatch_cancelled.
+  ///
+  /// In zh, this message translates to:
+  /// **'已取消'**
+  String get dispatch_cancelled;
+
+  /// No description provided for @dispatch_confirmDispatch.
+  ///
+  /// In zh, this message translates to:
+  /// **'确认派发'**
+  String get dispatch_confirmDispatch;
+
+  /// No description provided for @dispatch_title.
+  ///
+  /// In zh, this message translates to:
+  /// **'任务派发 · {agentName}'**
+  String dispatch_title(String agentName);
+
+  /// No description provided for @dispatch_pendingConfirm.
+  ///
+  /// In zh, this message translates to:
+  /// **'待确认：{title}'**
+  String dispatch_pendingConfirm(String title);
+
+  /// No description provided for @dispatch_confirmTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'派发确认 · {agentName}'**
+  String dispatch_confirmTitle(String agentName);
+
+  /// No description provided for @dispatch_completed.
+  ///
+  /// In zh, this message translates to:
+  /// **'已完成'**
+  String get dispatch_completed;
+
+  /// No description provided for @relay_waiting.
+  ///
+  /// In zh, this message translates to:
+  /// **'等待审批'**
+  String get relay_waiting;
+
+  /// No description provided for @relay_processed.
+  ///
+  /// In zh, this message translates to:
+  /// **'已处理'**
+  String get relay_processed;
+
+  /// No description provided for @relay_expired.
+  ///
+  /// In zh, this message translates to:
+  /// **'已过期'**
+  String get relay_expired;
+
+  /// No description provided for @relay_failed.
+  ///
+  /// In zh, this message translates to:
+  /// **'处理失败'**
+  String get relay_failed;
+
+  /// No description provided for @relay_title.
+  ///
+  /// In zh, this message translates to:
+  /// **'操作确认 · {agentName}'**
+  String relay_title(String agentName);
+
+  /// No description provided for @relay_yourChoice.
+  ///
+  /// In zh, this message translates to:
+  /// **'你的选择：{label}'**
+  String relay_yourChoice(String label);
+
+  /// No description provided for @plan_title.
+  ///
+  /// In zh, this message translates to:
+  /// **'执行计划'**
+  String get plan_title;
+
+  /// No description provided for @plan_approved.
+  ///
+  /// In zh, this message translates to:
+  /// **'已批准'**
+  String get plan_approved;
+
+  /// No description provided for @plan_feedbackGiven.
+  ///
+  /// In zh, this message translates to:
+  /// **'已反馈'**
+  String get plan_feedbackGiven;
+
+  /// No description provided for @plan_revisionHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'请描述你对计划的修改意见...'**
+  String get plan_revisionHint;
+
+  /// No description provided for @plan_submitFeedback.
+  ///
+  /// In zh, this message translates to:
+  /// **'提交意见'**
+  String get plan_submitFeedback;
+
+  /// No description provided for @plan_requestRevision.
+  ///
+  /// In zh, this message translates to:
+  /// **'提出修改'**
+  String get plan_requestRevision;
+
+  /// No description provided for @plan_approveAndRun.
+  ///
+  /// In zh, this message translates to:
+  /// **'批准并执行'**
+  String get plan_approveAndRun;
+
+  /// No description provided for @plan_dependencies.
+  ///
+  /// In zh, this message translates to:
+  /// **'依赖: {deps}'**
+  String plan_dependencies(String deps);
+
+  /// No description provided for @update_emptyDownloadUrl.
+  ///
+  /// In zh, this message translates to:
+  /// **'下载链接为空，请联系管理员检查接口返回'**
+  String get update_emptyDownloadUrl;
+
+  /// No description provided for @update_cannotOpenUrl.
+  ///
+  /// In zh, this message translates to:
+  /// **'无法打开下载链接: {url}'**
+  String update_cannotOpenUrl(String url);
+
+  /// No description provided for @update_downloadComplete.
+  ///
+  /// In zh, this message translates to:
+  /// **'{fileName} 下载完成'**
+  String update_downloadComplete(String fileName);
+
+  /// No description provided for @peerPairing_requestTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'配对请求'**
+  String get peerPairing_requestTitle;
+
+  /// No description provided for @peerPairing_requestBody.
+  ///
+  /// In zh, this message translates to:
+  /// **'以下设备想要与你配对：'**
+  String get peerPairing_requestBody;
+
+  /// No description provided for @peerPairing_selectAgents.
+  ///
+  /// In zh, this message translates to:
+  /// **'选择要分享给该设备的 Agent'**
+  String get peerPairing_selectAgents;
+
+  /// No description provided for @peerPairing_selectAgentsHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'对方将能通过配对连接使用你选中的 Agent（需已开启「允许外部访问」）'**
+  String get peerPairing_selectAgentsHint;
+
+  /// No description provided for @peerPairing_confirmHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'确认配对后，双方可以直接通讯'**
+  String get peerPairing_confirmHint;
+
+  /// No description provided for @peerPairing_confirm.
+  ///
+  /// In zh, this message translates to:
+  /// **'确认配对'**
+  String get peerPairing_confirm;
+
+  /// No description provided for @peerPairing_confirmWithCount.
+  ///
+  /// In zh, this message translates to:
+  /// **'确认配对 ({count})'**
+  String peerPairing_confirmWithCount(int count);
+
+  /// No description provided for @peerPairing_failed.
+  ///
+  /// In zh, this message translates to:
+  /// **'配对失败: {error}'**
+  String peerPairing_failed(String error);
+
+  /// No description provided for @peerScan_desktopUnsupported.
+  ///
+  /// In zh, this message translates to:
+  /// **'桌面端暂不支持摄像头扫描'**
+  String get peerScan_desktopUnsupported;
+
+  /// No description provided for @peerScan_useMobile.
+  ///
+  /// In zh, this message translates to:
+  /// **'请在移动设备上使用扫码功能'**
+  String get peerScan_useMobile;
+
+  /// No description provided for @peerScan_frameHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'将对方的二维码放入框内'**
+  String get peerScan_frameHint;
+
+  /// No description provided for @peerScan_cameraError.
+  ///
+  /// In zh, this message translates to:
+  /// **'摄像头错误: {error}'**
+  String peerScan_cameraError(String error);
+
+  /// No description provided for @peerList_add.
+  ///
+  /// In zh, this message translates to:
+  /// **'添加配对'**
+  String get peerList_add;
+
+  /// No description provided for @peerList_emptyHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'扫描对方的二维码或让对方扫描你的二维码来建立加密连接'**
+  String get peerList_emptyHint;
+
+  /// No description provided for @peerList_pairedSuccess.
+  ///
+  /// In zh, this message translates to:
+  /// **'已与 {name} 配对成功'**
+  String peerList_pairedSuccess(String name);
+
+  /// No description provided for @peerList_editAlias.
+  ///
+  /// In zh, this message translates to:
+  /// **'修改备注'**
+  String get peerList_editAlias;
+
+  /// No description provided for @peerQr_fillAllFields.
+  ///
+  /// In zh, this message translates to:
+  /// **'请填写所有字段'**
+  String get peerQr_fillAllFields;
+
+  /// No description provided for @peerQr_cannotStart.
+  ///
+  /// In zh, this message translates to:
+  /// **'无法启动配对'**
+  String get peerQr_cannotStart;
+
+  /// No description provided for @peerQr_scanHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'让对方扫描此二维码完成配对'**
+  String get peerQr_scanHint;
+
+  /// No description provided for @peerQr_codeLabel.
+  ///
+  /// In zh, this message translates to:
+  /// **'配对码'**
+  String get peerQr_codeLabel;
+
+  /// No description provided for @peerQr_codeCopied.
+  ///
+  /// In zh, this message translates to:
+  /// **'配对码已复制'**
+  String get peerQr_codeCopied;
+
+  /// No description provided for @peerQr_waitingScan.
+  ///
+  /// In zh, this message translates to:
+  /// **'等待对方扫描...'**
+  String get peerQr_waitingScan;
+
+  /// No description provided for @peerQr_validFiveMin.
+  ///
+  /// In zh, this message translates to:
+  /// **'二维码 5 分钟内有效'**
+  String get peerQr_validFiveMin;
+
+  /// No description provided for @peerQr_wanConnect.
+  ///
+  /// In zh, this message translates to:
+  /// **'外网连接'**
+  String get peerQr_wanConnect;
+
+  /// No description provided for @peerQr_wanConnectHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'开启后可通过外网配对，不限同一局域网'**
+  String get peerQr_wanConnectHint;
+
+  /// No description provided for @peerQr_channelConnected.
+  ///
+  /// In zh, this message translates to:
+  /// **'Channel 已连接'**
+  String get peerQr_channelConnected;
+
+  /// No description provided for @peerQr_channelConnecting.
+  ///
+  /// In zh, this message translates to:
+  /// **'正在连接 Channel...'**
+  String get peerQr_channelConnecting;
+
+  /// No description provided for @peerQr_channelReconnecting.
+  ///
+  /// In zh, this message translates to:
+  /// **'连接断开，正在重连...'**
+  String get peerQr_channelReconnecting;
+
+  /// No description provided for @peerQr_editConfig.
+  ///
+  /// In zh, this message translates to:
+  /// **'修改配置'**
+  String get peerQr_editConfig;
+
+  /// No description provided for @peerQr_connectFailed.
+  ///
+  /// In zh, this message translates to:
+  /// **'连接失败'**
+  String get peerQr_connectFailed;
+
+  /// No description provided for @peerQr_starting.
+  ///
+  /// In zh, this message translates to:
+  /// **'正在启动...'**
+  String get peerQr_starting;
+
+  /// No description provided for @peerQr_configureChannel.
+  ///
+  /// In zh, this message translates to:
+  /// **'配置 Channel 服务以启用外网连接'**
+  String get peerQr_configureChannel;
+
+  /// No description provided for @peerQr_channelIdHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'输入 Channel ID'**
+  String get peerQr_channelIdHint;
+
+  /// No description provided for @peerQr_signingKeyHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'输入签名密钥'**
+  String get peerQr_signingKeyHint;
+
+  /// No description provided for @peerChat_cannotConnect.
+  ///
+  /// In zh, this message translates to:
+  /// **'无法连接到 {name}，请确认对方在线后重试'**
+  String peerChat_cannotConnect(String name);
+
+  /// No description provided for @memory_typeConversation.
+  ///
+  /// In zh, this message translates to:
+  /// **'对话'**
+  String get memory_typeConversation;
+
+  /// No description provided for @memory_typeKnowledge.
+  ///
+  /// In zh, this message translates to:
+  /// **'知识'**
+  String get memory_typeKnowledge;
+
+  /// No description provided for @memory_typeBehavior.
+  ///
+  /// In zh, this message translates to:
+  /// **'行为'**
+  String get memory_typeBehavior;
+
+  /// No description provided for @memory_typeEvent.
+  ///
+  /// In zh, this message translates to:
+  /// **'事件'**
+  String get memory_typeEvent;
+
+  /// No description provided for @memory_typeEmotion.
+  ///
+  /// In zh, this message translates to:
+  /// **'情感'**
+  String get memory_typeEmotion;
+
+  /// No description provided for @peerApproval_superseded.
+  ///
+  /// In zh, this message translates to:
+  /// **'被后续审批取代'**
+  String get peerApproval_superseded;
+
+  /// No description provided for @peerApproval_allow.
+  ///
+  /// In zh, this message translates to:
+  /// **'允许'**
+  String get peerApproval_allow;
+
+  /// No description provided for @peerApproval_deny.
+  ///
+  /// In zh, this message translates to:
+  /// **'拒绝'**
+  String get peerApproval_deny;
+
+  /// No description provided for @status_protocolPeer.
+  ///
+  /// In zh, this message translates to:
+  /// **'配对设备'**
+  String get status_protocolPeer;
+
+  /// No description provided for @status_custom.
+  ///
+  /// In zh, this message translates to:
+  /// **'自定义'**
+  String get status_custom;
+
+  /// No description provided for @home_statusError.
+  ///
+  /// In zh, this message translates to:
+  /// **'错误'**
+  String get home_statusError;
+
+  /// No description provided for @addAgent_pairingCodeHelper.
+  ///
+  /// In zh, this message translates to:
+  /// **'Agent 主机运行 `<gateway> enroll` 得到类似 XXX-XXX-XXX 的短码，粘贴到这里即可自动授权本设备。不填写则走上方的「复制公钥 → peers add」手动流程。'**
+  String get addAgent_pairingCodeHelper;
 }
 
 class _AppLocalizationsDelegate

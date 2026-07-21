@@ -337,12 +337,16 @@ class _LoginScreenState extends State<LoginScreen> {
               showDialog(
                 context: context,
                 barrierDismissible: false,
-                builder: (_) => const AlertDialog(
+                builder: (dialogContext) => AlertDialog(
                   content: Row(
                     children: [
-                      CircularProgressIndicator(),
-                      SizedBox(width: 16),
-                      Expanded(child: Text('正在安全备份数据...')),
+                      const CircularProgressIndicator(),
+                      const SizedBox(width: 16),
+                      Expanded(
+                        child: Text(
+                          AppLocalizations.of(dialogContext).login_backingUp,
+                        ),
+                      ),
                     ],
                   ),
                 ),

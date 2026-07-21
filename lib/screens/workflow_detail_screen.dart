@@ -7,6 +7,7 @@ import '../services/workflow/workflow_service.dart';
 import '../widgets/action_confirmation_buttons.dart';
 import '../widgets/workflow/workflow_status_badge.dart';
 import '../widgets/workflow/workflow_step_tile.dart';
+import '../l10n/app_localizations.dart';
 
 /// Workflow detail screen showing full execution state with stages and steps.
 ///
@@ -76,6 +77,7 @@ class _WorkflowDetailScreenState extends State<WorkflowDetailScreen> {
     String actionId,
     String actionLabel,
   ) async {
+    final l10n = AppLocalizations.of(context);
     final pending = _pendingPeerApproval;
     if (pending == null || _submittingApproval) return;
     setState(() => _submittingApproval = true);
@@ -95,15 +97,16 @@ class _WorkflowDetailScreenState extends State<WorkflowDetailScreen> {
           _pendingPeerApproval = null;
           _submittingApproval = false;
         });
+        final l10n = AppLocalizations.of(context);
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('审批已提交，请返回群聊继续工作流')),
+          SnackBar(content: Text(l10n.workflow_approvalSubmitted)),
         );
       }
     } catch (e) {
       if (mounted) {
         setState(() => _submittingApproval = false);
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('审批提交失败: $e')),
+          SnackBar(content: Text(AppLocalizations.of(context).workflow_approvalFailed('$e'))),
         );
       }
     }
@@ -111,17 +114,18 @@ class _WorkflowDetailScreenState extends State<WorkflowDetailScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
     if (_loading) {
       return Scaffold(
-        appBar: AppBar(title: const Text('工作流详情')),
+        appBar: AppBar(title: Text(l10n.workflow_detailTitle)),
         body: const Center(child: CircularProgressIndicator()),
       );
     }
 
     if (_execution == null) {
       return Scaffold(
-        appBar: AppBar(title: const Text('工作流详情')),
-        body: const Center(child: Text('工作流不存在')),
+        appBar: AppBar(title: Text(l10n.workflow_detailTitle)),
+        body: Center(child: Text(l10n.workflow_notFound)),
       );
     }
 
@@ -172,7 +176,7 @@ class _WorkflowDetailScreenState extends State<WorkflowDetailScreen> {
                 exec.triggerMessage!.isNotEmpty) ...[
               _buildInfoCard(
                 icon: Icons.message_outlined,
-                title: '触发消息',
+                title: l10n.workflow_triggerMessage,
                 content: exec.triggerMessage!,
               ),
               const SizedBox(height: 12),
@@ -187,6 +191,7 @@ class _WorkflowDetailScreenState extends State<WorkflowDetailScreen> {
   }
 
   Widget _buildStatusBanner(WorkflowExecution exec) {
+    final l10n = AppLocalizations.of(context);
     final Color bgColor;
     final Color borderColor;
     switch (exec.status) {
@@ -223,7 +228,7 @@ class _WorkflowDetailScreenState extends State<WorkflowDetailScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  '${exec.completedSteps}/${exec.totalSteps} 步骤完成',
+                  l10n.workflow_stepsCompleted(exec.completedSteps, exec.totalSteps),
                   style: const TextStyle(
                     fontSize: 14,
                     fontWeight: FontWeight.w600,
@@ -232,8 +237,8 @@ class _WorkflowDetailScreenState extends State<WorkflowDetailScreen> {
                 if (exec.duration != null)
                   Text(
                     exec.status == WorkflowStatus.running
-                        ? '已运行 ${exec.durationLabel}'
-                        : '总耗时 ${exec.durationLabel}',
+                        ? l10n.workflow_runningFor(exec.durationLabel)
+                        : l10n.workflow_totalDurationValue(exec.durationLabel),
                     style: TextStyle(
                       fontSize: 12,
                       color: Colors.grey.shade600,
@@ -275,6 +280,7 @@ class _WorkflowDetailScreenState extends State<WorkflowDetailScreen> {
   }
 
   Widget _buildPeerApprovalCard(WorkflowPendingApproval pending) {
+    final l10n = AppLocalizations.of(context);
     final ui = pending.toUiPending();
     final data = pending.approvalData;
     final hasActions =
@@ -297,7 +303,7 @@ class _WorkflowDetailScreenState extends State<WorkflowDetailScreen> {
               const SizedBox(width: 8),
               Expanded(
                 child: Text(
-                  '等待 @${pending.agentName} 工具审批',
+                  l10n.workflow_waitingToolApproval(pending.agentName),
                   style: TextStyle(
                     fontSize: 14,
                     fontWeight: FontWeight.w600,
@@ -339,7 +345,7 @@ class _WorkflowDetailScreenState extends State<WorkflowDetailScreen> {
             Padding(
               padding: const EdgeInsets.only(top: 8),
               child: Text(
-                '请返回群聊消息中完成审批',
+                l10n.workflow_returnToChatForApproval,
                 style: TextStyle(fontSize: 12, color: Colors.deepOrange.shade700),
               ),
             ),
@@ -347,7 +353,7 @@ class _WorkflowDetailScreenState extends State<WorkflowDetailScreen> {
             Padding(
               padding: const EdgeInsets.only(top: 8),
               child: Text(
-                '低风险操作',
+                l10n.workflow_lowRiskOp,
                 style: TextStyle(fontSize: 11, color: Colors.grey.shade600),
               ),
             ),
@@ -357,6 +363,7 @@ class _WorkflowDetailScreenState extends State<WorkflowDetailScreen> {
   }
 
   Widget _buildSummaryCard(String summary) {
+    final l10n = AppLocalizations.of(context);
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
@@ -373,7 +380,7 @@ class _WorkflowDetailScreenState extends State<WorkflowDetailScreen> {
                   size: 16, color: Colors.green.shade700),
               const SizedBox(width: 6),
               Text(
-                '执行摘要',
+                l10n.workflow_execSummary,
                 style: TextStyle(
                   fontSize: 13,
                   fontWeight: FontWeight.w600,
@@ -425,8 +432,9 @@ class _WorkflowDetailScreenState extends State<WorkflowDetailScreen> {
   }
 
   Widget _buildStagesSection(WorkflowExecution exec) {
+    final l10n = AppLocalizations.of(context);
     if (exec.steps.isEmpty) {
-      return const Text('暂无步骤信息');
+      return Text(l10n.workflow_noSteps);
     }
 
     // Group steps by stage
@@ -444,9 +452,9 @@ class _WorkflowDetailScreenState extends State<WorkflowDetailScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text(
-          '执行阶段',
-          style: TextStyle(
+        Text(
+          l10n.workflow_execStages,
+          style: const TextStyle(
             fontSize: 15,
             fontWeight: FontWeight.w700,
           ),
@@ -454,7 +462,7 @@ class _WorkflowDetailScreenState extends State<WorkflowDetailScreen> {
         const SizedBox(height: 8),
         ...stageIndices.map((stageIdx) {
           final steps = stageMap[stageIdx]!;
-          final stageName = stageNames[stageIdx] ?? '阶段 ${stageIdx + 1}';
+          final stageName = stageNames[stageIdx] ?? l10n.workflow_stageN(stageIdx + 1);
           final isExpanded = _expandedStages.contains(stageIdx);
           final completedInStage = steps
               .where((s) =>
@@ -620,6 +628,7 @@ class _WorkflowDetailScreenState extends State<WorkflowDetailScreen> {
   }
 
   Widget _buildTimingCard(WorkflowExecution exec) {
+    final l10n = AppLocalizations.of(context);
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
@@ -635,7 +644,7 @@ class _WorkflowDetailScreenState extends State<WorkflowDetailScreen> {
               Icon(Icons.schedule, size: 14, color: Colors.grey.shade600),
               const SizedBox(width: 6),
               Text(
-                '时间信息',
+                l10n.workflow_timeInfo,
                 style: TextStyle(
                   fontSize: 12,
                   fontWeight: FontWeight.w600,
@@ -645,13 +654,13 @@ class _WorkflowDetailScreenState extends State<WorkflowDetailScreen> {
             ],
           ),
           const SizedBox(height: 8),
-          _buildTimingRow('创建时间', _formatDateTime(exec.createdAt)),
+          _buildTimingRow(l10n.agentDetail_createdAt, _formatDateTime(exec.createdAt)),
           if (exec.startedAt != null)
-            _buildTimingRow('开始时间', _formatDateTime(exec.startedAt!)),
+            _buildTimingRow(l10n.workflow_startTime, _formatDateTime(exec.startedAt!)),
           if (exec.completedAt != null)
-            _buildTimingRow('完成时间', _formatDateTime(exec.completedAt!)),
+            _buildTimingRow(l10n.workflow_endTime, _formatDateTime(exec.completedAt!)),
           if (exec.duration != null)
-            _buildTimingRow('总耗时', exec.durationLabel),
+            _buildTimingRow(l10n.workflow_totalDuration, exec.durationLabel),
         ],
       ),
     );

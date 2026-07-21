@@ -226,7 +226,7 @@ class ChatDMAppBarTitle extends StatelessWidget {
                     ),
                     const SizedBox(width: 4),
                     Text(
-                      '同步远端…',
+                      l10n.chat_syncingRemote,
                       style: TextStyle(
                         fontSize: 10,
                         color: Theme.of(context).colorScheme.primary,

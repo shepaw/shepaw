@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../l10n/app_localizations.dart';
 import '../models/paired_peer.dart';
 import '../services/peer_pairing_service.dart';
 import '../services/peer_storage_service.dart';
@@ -98,8 +99,9 @@ class _PeerPairingConfirmScreenState extends State<PeerPairingConfirmScreen> {
     } catch (e) {
       if (mounted) {
         setState(() => _processing = false);
+        final l10n = AppLocalizations.of(context);
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('配对失败: $e')),
+          SnackBar(content: Text(l10n.peerPairing_failed('$e'))),
         );
       }
     }
@@ -114,6 +116,7 @@ class _PeerPairingConfirmScreenState extends State<PeerPairingConfirmScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
     final colorScheme = Theme.of(context).colorScheme;
     final sharedCount = _selectedShares.values.where((v) => v).length;
 
@@ -123,7 +126,7 @@ class _PeerPairingConfirmScreenState extends State<PeerPairingConfirmScreen> {
         size: 40,
         color: colorScheme.primary,
       ),
-      title: const Text('配对请求'),
+      title: Text(l10n.peerPairing_requestTitle),
       content: SizedBox(
         width: double.maxFinite,
         child: SingleChildScrollView(
@@ -132,7 +135,7 @@ class _PeerPairingConfirmScreenState extends State<PeerPairingConfirmScreen> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                '以下设备想要与你配对：',
+                l10n.peerPairing_requestBody,
                 style: TextStyle(color: colorScheme.onSurfaceVariant),
               ),
               const SizedBox(height: 16),
@@ -190,12 +193,12 @@ class _PeerPairingConfirmScreenState extends State<PeerPairingConfirmScreen> {
               ] else if (_shareAgents.isNotEmpty) ...[
                 const SizedBox(height: 20),
                 Text(
-                  '选择要分享给该设备的 Agent',
+                  l10n.peerPairing_selectAgents,
                   style: Theme.of(context).textTheme.titleSmall,
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  '对方将能通过配对连接使用你选中的 Agent（需已开启「允许外部访问」）',
+                  l10n.peerPairing_selectAgentsHint,
                   style: Theme.of(context).textTheme.bodySmall?.copyWith(
                         color: colorScheme.onSurfaceVariant,
                       ),
@@ -209,7 +212,7 @@ class _PeerPairingConfirmScreenState extends State<PeerPairingConfirmScreen> {
               ] else ...[
                 const SizedBox(height: 16),
                 Text(
-                  '确认配对后，双方可以直接通讯',
+                  l10n.peerPairing_confirmHint,
                   style: Theme.of(context).textTheme.bodySmall?.copyWith(
                         color: colorScheme.onSurfaceVariant,
                       ),
@@ -222,7 +225,7 @@ class _PeerPairingConfirmScreenState extends State<PeerPairingConfirmScreen> {
       actions: [
         TextButton(
           onPressed: _processing ? null : _reject,
-          child: const Text('拒绝'),
+          child: Text(l10n.update_action_decline),
         ),
         FilledButton(
           onPressed: _processing ? null : _confirm,
@@ -232,9 +235,11 @@ class _PeerPairingConfirmScreenState extends State<PeerPairingConfirmScreen> {
                   height: 16,
                   child: CircularProgressIndicator(strokeWidth: 2),
                 )
-              : Text(_shareAgents.isEmpty
-                  ? '确认配对'
-                  : (sharedCount > 0 ? '确认配对 ($sharedCount)' : '确认配对')),
+              : Text(
+                  sharedCount > 0
+                      ? l10n.peerPairing_confirmWithCount(sharedCount)
+                      : l10n.peerPairing_confirm,
+                ),
         ),
       ],
     );

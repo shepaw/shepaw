@@ -276,7 +276,7 @@ class _UpdateDownloadDialogState extends State<UpdateDownloadDialog> {
                     const SizedBox(width: 8),
                     Expanded(
                       child: Text(
-                        '${widget.fileName} 下载完成',
+                        l10n.update_downloadComplete(widget.fileName),
                         style: theme.textTheme.bodySmall?.copyWith(
                           color: Colors.green[700],
                         ),
@@ -333,7 +333,7 @@ class _UpdateDownloadDialogState extends State<UpdateDownloadDialog> {
         if (_state != UpdateDownloadState.downloading)
           TextButton(
             onPressed: () => Navigator.of(context).pop(),
-            child: const Text('关闭'),
+            child: Text(l10n.common_close),
           ),
       ],
     );

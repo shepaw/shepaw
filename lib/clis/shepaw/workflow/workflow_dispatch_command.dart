@@ -76,7 +76,7 @@ class WorkflowDispatchCommand extends CliCommand {
 
     if (workflow.status != WorkflowStatus.running) {
       return {
-        'error': 'Workflow is not in running state (current: ${workflow.status.label})',
+        'error': 'Workflow is not in running state (current: ${workflow.status.dbValue})',
       };
     }
 

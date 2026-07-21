@@ -11,21 +11,6 @@ enum WorkflowStatus {
   failed,
   cancelled;
 
-  String get label {
-    switch (this) {
-      case WorkflowStatus.pendingApproval:
-        return '待审批';
-      case WorkflowStatus.running:
-        return '运行中';
-      case WorkflowStatus.completed:
-        return '已完成';
-      case WorkflowStatus.failed:
-        return '失败';
-      case WorkflowStatus.cancelled:
-        return '已取消';
-    }
-  }
-
   String get dbValue {
     switch (this) {
       case WorkflowStatus.pendingApproval:
@@ -69,21 +54,6 @@ enum StepExecutionStatus {
   completed,
   failed,
   skipped;
-
-  String get label {
-    switch (this) {
-      case StepExecutionStatus.pending:
-        return '待执行';
-      case StepExecutionStatus.running:
-        return '执行中';
-      case StepExecutionStatus.completed:
-        return '已完成';
-      case StepExecutionStatus.failed:
-        return '失败';
-      case StepExecutionStatus.skipped:
-        return '已跳过';
-    }
-  }
 
   String get dbValue => name;
 

@@ -174,7 +174,7 @@ class AgentMemoryBizService {
       for (final memory in memories) {
         buffer.writeln('## Memory #${memory.memoryId}');
         buffer.writeln();
-        buffer.writeln('**Type:** ${memory.memoryType.displayName}');
+        buffer.writeln('**Type:** ${memory.memoryType.name}');
         if (memory.sourceType != null) {
           buffer.writeln('**Source:** ${memory.sourceType}${memory.sourceId != null ? ' (${memory.sourceId})' : ''}');
         }

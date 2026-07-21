@@ -1059,7 +1059,7 @@ class HomeScreenState extends State<HomeScreen> {
       return '${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';
     } else if (diff.inDays < 7) {
       final l10n = AppLocalizations.of(context);
-      final weekDays = [
+    final weekDays = [
         l10n.home_weekMon,
         l10n.home_weekTue,
         l10n.home_weekWed,
@@ -1787,7 +1787,7 @@ class HomeScreenState extends State<HomeScreen> {
           ConstrainedBox(
             constraints: const BoxConstraints(maxWidth: 120),
             child: Text(
-              sourceName ?? '配对设备',
+              sourceName ?? AppLocalizations.of(context).peerPairing_title,
               style: TextStyle(fontSize: 10, color: colorScheme.primary),
               maxLines: 1,
               overflow: TextOverflow.ellipsis,

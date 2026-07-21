@@ -70,18 +70,4 @@ class AgentConversationRequest {
   DateTime get requestedDateTime =>
       DateTime.fromMillisecondsSinceEpoch(requestedAt);
 
-  String get timeAgo {
-    final now = DateTime.now();
-    final diff = now.difference(requestedDateTime);
-
-    if (diff.inMinutes < 1) {
-      return '刚刚';
-    } else if (diff.inMinutes < 60) {
-      return '${diff.inMinutes} 分钟前';
-    } else if (diff.inHours < 24) {
-      return '${diff.inHours} 小时前';
-    } else {
-      return '${diff.inDays} 天前';
-    }
-  }
 }

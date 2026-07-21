@@ -1311,7 +1311,6 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
 
   Future<void> _showGroupMembersPanel() async {
     final l10n = AppLocalizations.of(context);
-
     final content = GroupMembersPanel(
       groupAgents: _controller.groupAgents,
       channelId: _controller.currentChannelId!,
@@ -1580,6 +1579,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
     final c = _controller;
     final isMobileLayout = !LayoutUtils.isDesktopLayout(context) && !widget.embedded;
 
@@ -1744,7 +1744,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                       const SizedBox(width: 8),
                       Expanded(
                         child: Text(
-                          '工作流进行中，点击查看进度与审批',
+                          l10n.workflow_inProgressBanner,
                           style: TextStyle(
                             fontSize: 12,
                             fontWeight: FontWeight.w600,
@@ -2180,9 +2180,10 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
 
     if (!mounted || !showToastOnFirstLink) return;
     if (result.sessionsLinked > 0) {
+      final l10n = AppLocalizations.of(context);
       showTopToast(
         context,
-        '已同步 ${result.sessionsLinked} 个远端会话',
+        l10n.chat_syncedRemoteSessions(result.sessionsLinked),
         icon: Icons.sync,
         color: Colors.green,
       );
@@ -2203,25 +2204,23 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   Future<_PeerSyncChoice?> _showPeerSessionSyncDialog(String agentName, int count) async {
     return showDialog<_PeerSyncChoice>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('同步远端会话'),
-        content: Text(
-          '在 $agentName 上发现 $count 个尚未同步的远端会话。\n\n'
-          '是否同步到本地？同步后可在会话列表中查看并继续这些会话，'
-          '本地会话将与远端保持一致。\n\n'
-          '此选择会记住，之后可在 Agent 设置中修改。',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(_PeerSyncChoice.disable),
-            child: const Text('不同步'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.of(ctx).pop(_PeerSyncChoice.sync),
-            child: const Text('同步'),
-          ),
-        ],
-      ),
+      builder: (ctx) {
+        final l10n = AppLocalizations.of(ctx);
+        return AlertDialog(
+          title: Text(l10n.chat_syncRemoteSessionsTitle),
+          content: Text(l10n.chat_syncRemoteSessionsBody(agentName, count)),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(_PeerSyncChoice.disable),
+              child: Text(l10n.chat_doNotSync),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(ctx).pop(_PeerSyncChoice.sync),
+              child: Text(l10n.common_sync),
+            ),
+          ],
+        );
+      },
     );
   }
 
@@ -2235,6 +2234,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   }
 
   Widget _buildSheConfigBanner() {
+    final l10n = AppLocalizations.of(context);
     return Material(
       color: Colors.amber.shade50,
       child: InkWell(
@@ -2250,7 +2250,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      'She 还没有配置 AI 模型',
+                      l10n.chat_sheNoModel,
                       style: TextStyle(
                         fontSize: 13,
                         fontWeight: FontWeight.w600,
@@ -2258,7 +2258,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                       ),
                     ),
                     Text(
-                      '点击这里前往设置，为 She 选择一个 LLM 模型',
+                      l10n.chat_sheNoModelTapSettings,
                       style: TextStyle(fontSize: 12, color: Colors.orange.shade700),
                     ),
                   ],
@@ -2273,6 +2273,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   }
 
   Widget _buildSheWelcomeState() {
+    final l10n = AppLocalizations.of(context);
     return LayoutBuilder(
       builder: (context, constraints) {
         return SingleChildScrollView(
@@ -2296,7 +2297,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                       ),
                       const SizedBox(height: 8),
                       Text(
-                        '你的专属灵宠，会越来越懂你',
+                        l10n.chat_sheTagline,
                         style: TextStyle(fontSize: 14, color: Colors.grey[600]),
                         textAlign: TextAlign.center,
                       ),
@@ -2304,7 +2305,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                       FilledButton.icon(
                         onPressed: _openSheConfig,
                         icon: const Icon(Icons.settings_suggest_outlined),
-                        label: const Text('配置 AI 模型，开始对话'),
+                        label: Text(AppLocalizations.of(context).chat_sheConfigModelCta),
                         style: FilledButton.styleFrom(
                           backgroundColor: Colors.pink.shade400,
                           padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
@@ -2312,7 +2313,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                       ),
                       const SizedBox(height: 16),
                       Text(
-                        'She 使用本地 LLM 运行，请先在设置中\n为她选择一个 AI 模型',
+                        AppLocalizations.of(context).chat_sheNeedModelHint,
                         style: TextStyle(fontSize: 12, color: Colors.grey[500]),
                         textAlign: TextAlign.center,
                       ),

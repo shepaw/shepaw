@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../l10n/app_localizations.dart';
 import '../../models/workflow_models.dart';
 
 /// A compact row widget displaying a single workflow step's execution state.
@@ -18,6 +19,7 @@ class WorkflowStepTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
     return Material(
       color: waitingForPeerApproval
           ? Colors.deepOrange.shade50.withOpacity(0.6)
@@ -66,7 +68,7 @@ class WorkflowStepTile extends StatelessWidget {
                               size: 13, color: Colors.deepOrange.shade700),
                           const SizedBox(width: 4),
                           Text(
-                            '等待工具审批 · 点击查看',
+                            l10n.workflow_waitingToolTap,
                             style: TextStyle(
                               fontSize: 11,
                               fontWeight: FontWeight.w600,

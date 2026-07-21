@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../l10n/app_localizations.dart';
 import '../../models/message.dart';
 import '../../services/chat_service.dart';
 import '../../services/dispatch/dispatch_service.dart';
@@ -99,15 +100,16 @@ class RelayApprovalCard extends StatelessWidget {
     String selectedLabel = '',
     String errorNote = '',
   }) {
+    final l10n = AppLocalizations.of(context);
     final colorScheme = Theme.of(context).colorScheme;
     final payload = _payload;
     final actions = (payload['actions'] as List<dynamic>?) ?? const [];
 
     final (chipLabel, stateColor) = switch (state) {
-      _CardState.pending => ('等待审批', Colors.orange),
-      _CardState.resolved => ('已处理', Colors.green),
-      _CardState.expired => ('已过期', Colors.grey),
-      _CardState.failed => ('处理失败', Colors.red),
+      _CardState.pending => (l10n.relay_waiting, Colors.orange),
+      _CardState.resolved => (l10n.relay_processed, Colors.green),
+      _CardState.expired => (l10n.permission_statusExpired, Colors.grey),
+      _CardState.failed => (l10n.relay_failed, Colors.red),
     };
 
     return Center(
@@ -132,7 +134,7 @@ class RelayApprovalCard extends StatelessWidget {
                   const SizedBox(width: 6),
                   Expanded(
                     child: Text(
-                      '操作确认 · $agentName',
+                      l10n.relay_title(agentName),
                       style: const TextStyle(
                           fontWeight: FontWeight.bold, fontSize: 13),
                       overflow: TextOverflow.ellipsis,
@@ -156,7 +158,7 @@ class RelayApprovalCard extends StatelessWidget {
               Padding(
                 padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
                 child: Text(
-                  '你的选择：$selectedLabel',
+                  l10n.relay_yourChoice(selectedLabel),
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(fontSize: 12, color: Colors.green[700]),
@@ -181,7 +183,7 @@ class RelayApprovalCard extends StatelessWidget {
                   runSpacing: 6,
                   children: [
                     for (final action in actions)
-                      _actionButton(context, action),
+                      _actionButton(context, action, l10n),
                   ],
                 ),
               ),
@@ -193,13 +195,17 @@ class RelayApprovalCard extends StatelessWidget {
     );
   }
 
-  Widget _actionButton(BuildContext context, dynamic action) {
+  Widget _actionButton(
+    BuildContext context,
+    dynamic action,
+    AppLocalizations l10n,
+  ) {
     if (action is! Map) return const SizedBox.shrink();
     final id = action['id']?.toString() ?? '';
     final label = action['label']?.toString() ?? id;
     if (id.isEmpty) return const SizedBox.shrink();
 
-    final denyish = _looksLikeDeny(id) || _looksLikeDeny(label);
+    final denyish = _looksLikeDeny(id, l10n) || _looksLikeDeny(label, l10n);
     final style = denyish
         ? OutlinedButton.styleFrom(visualDensity: VisualDensity.compact)
         : FilledButton.styleFrom(
@@ -219,15 +225,16 @@ class RelayApprovalCard extends StatelessWidget {
           );
   }
 
-  static bool _looksLikeDeny(String s) {
+  static bool _looksLikeDeny(String s, AppLocalizations l10n) {
     final l = s.toLowerCase();
     return l.contains('deny') ||
         l.contains('reject') ||
         l.contains('cancel') ||
         l.contains('decline') ||
         l.contains('no') ||
-        s.contains('拒绝') ||
-        s.contains('取消');
+        s == l10n.update_action_decline ||
+        s == l10n.common_cancel ||
+        s == l10n.peerApproval_deny;
   }
 
   Widget _chip(String label, Color color) {

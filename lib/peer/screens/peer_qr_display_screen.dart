@@ -125,12 +125,13 @@ class _PeerQrDisplayScreenState extends State<PeerQrDisplayScreen> {
 
   /// 提交 Channel 配置
   Future<void> _submitConfig() async {
+    final l10n = AppLocalizations.of(context);
     final serverUrl = _serverUrlController.text.trim();
     final channelId = _channelIdController.text.trim();
     final secret = _secretController.text.trim();
 
     if (serverUrl.isEmpty || channelId.isEmpty || secret.isEmpty) {
-      setState(() => _configError = '请填写所有字段');
+      setState(() => _configError = l10n.peerQr_fillAllFields);
       return;
     }
 
@@ -212,6 +213,7 @@ class _PeerQrDisplayScreenState extends State<PeerQrDisplayScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
     final colorScheme = Theme.of(context).colorScheme;
 
     if (_loading) {
@@ -228,7 +230,7 @@ class _PeerQrDisplayScreenState extends State<PeerQrDisplayScreen> {
               Icon(Icons.error_outline, size: 48, color: colorScheme.error),
               const SizedBox(height: 16),
               Text(
-                '无法启动配对',
+                l10n.peerQr_cannotStart,
                 style: Theme.of(context).textTheme.titleMedium,
               ),
               const SizedBox(height: 8),
@@ -241,7 +243,7 @@ class _PeerQrDisplayScreenState extends State<PeerQrDisplayScreen> {
               FilledButton.icon(
                 onPressed: _startPairing,
                 icon: const Icon(Icons.refresh),
-                label: const Text('重试'),
+                label: Text(l10n.common_retry),
               ),
             ],
           ),
@@ -255,7 +257,7 @@ class _PeerQrDisplayScreenState extends State<PeerQrDisplayScreen> {
         children: [
           const SizedBox(height: 16),
           Text(
-            '让对方扫描此二维码完成配对',
+            l10n.peerQr_scanHint,
             style: Theme.of(context).textTheme.bodyLarge,
           ),
           const SizedBox(height: 24),
@@ -288,7 +290,7 @@ class _PeerQrDisplayScreenState extends State<PeerQrDisplayScreen> {
           // 配对码
           if (_pairingCode != null) ...[
             Text(
-              '配对码',
+              l10n.peerQr_codeLabel,
               style: Theme.of(context).textTheme.labelMedium?.copyWith(
                 color: colorScheme.onSurfaceVariant,
               ),
@@ -298,7 +300,7 @@ class _PeerQrDisplayScreenState extends State<PeerQrDisplayScreen> {
               onTap: () {
                 Clipboard.setData(ClipboardData(text: _pairingCode!));
                 ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('配对码已复制')),
+                  SnackBar(content: Text(l10n.peerQr_codeCopied)),
                 );
               },
               child: Container(
@@ -356,7 +358,7 @@ class _PeerQrDisplayScreenState extends State<PeerQrDisplayScreen> {
               ),
               const SizedBox(width: 12),
               Text(
-                '等待对方扫描...',
+                l10n.peerQr_waitingScan,
                 style: TextStyle(color: colorScheme.onSurfaceVariant),
               ),
             ],
@@ -364,7 +366,7 @@ class _PeerQrDisplayScreenState extends State<PeerQrDisplayScreen> {
 
           const SizedBox(height: 16),
           Text(
-            '二维码 5 分钟内有效',
+            l10n.peerQr_validFiveMin,
             style: Theme.of(context).textTheme.bodySmall?.copyWith(
               color: colorScheme.onSurfaceVariant,
             ),
@@ -377,6 +379,7 @@ class _PeerQrDisplayScreenState extends State<PeerQrDisplayScreen> {
   // ── Channel 外网配置卡片 ────────────────────────────────────────────────
 
   Widget _buildChannelCard(BuildContext context, ColorScheme colorScheme) {
+    final l10n = AppLocalizations.of(context);
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(16),
@@ -403,7 +406,7 @@ class _PeerQrDisplayScreenState extends State<PeerQrDisplayScreen> {
               const SizedBox(width: 8),
               Expanded(
                 child: Text(
-                  '外网连接',
+                  l10n.peerQr_wanConnect,
                   style: Theme.of(context).textTheme.titleSmall?.copyWith(
                     fontWeight: FontWeight.w600,
                   ),
@@ -421,7 +424,7 @@ class _PeerQrDisplayScreenState extends State<PeerQrDisplayScreen> {
             // 关闭状态：提示文案
             const SizedBox(height: 4),
             Text(
-              '开启后可通过外网配对，不限同一局域网',
+              l10n.peerQr_wanConnectHint,
               style: Theme.of(context).textTheme.bodySmall?.copyWith(
                 color: colorScheme.onSurfaceVariant,
               ),
@@ -429,17 +432,21 @@ class _PeerQrDisplayScreenState extends State<PeerQrDisplayScreen> {
           ] else ...[
             // 开启状态：根据情况显示不同内容
             const SizedBox(height: 8),
-            _buildChannelStatus(context, colorScheme),
+            _buildChannelStatus(context, colorScheme, l10n),
           ],
         ],
       ),
     );
   }
 
-  Widget _buildChannelStatus(BuildContext context, ColorScheme colorScheme) {
+  Widget _buildChannelStatus(
+    BuildContext context,
+    ColorScheme colorScheme,
+    AppLocalizations l10n,
+  ) {
     // 如果需要显示配置表单
     if (_showConfigForm) {
-      return _buildConfigForm(context, colorScheme);
+      return _buildConfigForm(context, colorScheme, l10n);
     }
 
     // 根据 tunnel 状态显示
@@ -460,7 +467,7 @@ class _PeerQrDisplayScreenState extends State<PeerQrDisplayScreen> {
                 const SizedBox(width: 6),
                 Expanded(
                   child: Text(
-                    'Channel 已连接',
+                    l10n.peerQr_channelConnected,
                     style: TextStyle(
                       fontSize: 13,
                       color: Colors.green[700],
@@ -507,7 +514,7 @@ class _PeerQrDisplayScreenState extends State<PeerQrDisplayScreen> {
             ),
             const SizedBox(width: 8),
             Text(
-              '正在连接 Channel...',
+              l10n.peerQr_channelConnecting,
               style: TextStyle(fontSize: 13, color: Colors.orange[700]),
             ),
           ],
@@ -523,14 +530,14 @@ class _PeerQrDisplayScreenState extends State<PeerQrDisplayScreen> {
                 const SizedBox(width: 6),
                 Expanded(
                   child: Text(
-                    '连接断开，正在重连...',
+                    l10n.peerQr_channelReconnecting,
                     style: TextStyle(fontSize: 13, color: Colors.grey[600]),
                   ),
                 ),
                 GestureDetector(
                   onTap: _editConfig,
                   child: Text(
-                    '修改配置',
+                    l10n.peerQr_editConfig,
                     style: TextStyle(
                       fontSize: 12,
                       color: colorScheme.primary,
@@ -551,7 +558,7 @@ class _PeerQrDisplayScreenState extends State<PeerQrDisplayScreen> {
                 Icon(Icons.error_outline, size: 16, color: Colors.red[600]),
                 const SizedBox(width: 6),
                 Text(
-                  '连接失败',
+                  l10n.peerQr_connectFailed,
                   style: TextStyle(fontSize: 13, color: Colors.red[700]),
                 ),
               ],
@@ -567,7 +574,7 @@ class _PeerQrDisplayScreenState extends State<PeerQrDisplayScreen> {
                       }
                     },
                     icon: const Icon(Icons.refresh, size: 16),
-                    label: const Text('重试'),
+                    label: Text(l10n.common_retry),
                     style: OutlinedButton.styleFrom(
                       visualDensity: VisualDensity.compact,
                     ),
@@ -578,7 +585,7 @@ class _PeerQrDisplayScreenState extends State<PeerQrDisplayScreen> {
                   child: OutlinedButton.icon(
                     onPressed: _editConfig,
                     icon: const Icon(Icons.edit_outlined, size: 16),
-                    label: const Text('修改配置'),
+                    label: Text(l10n.peerQr_editConfig),
                     style: OutlinedButton.styleFrom(
                       visualDensity: VisualDensity.compact,
                     ),
@@ -604,7 +611,7 @@ class _PeerQrDisplayScreenState extends State<PeerQrDisplayScreen> {
               ),
               const SizedBox(width: 8),
               Text(
-                '正在启动...',
+                l10n.peerQr_starting,
                 style: TextStyle(fontSize: 13, color: Colors.orange[700]),
               ),
             ],
@@ -615,12 +622,16 @@ class _PeerQrDisplayScreenState extends State<PeerQrDisplayScreen> {
     }
   }
 
-  Widget _buildConfigForm(BuildContext context, ColorScheme colorScheme) {
+  Widget _buildConfigForm(
+    BuildContext context,
+    ColorScheme colorScheme,
+    AppLocalizations l10n,
+  ) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
-          '配置 Channel 服务以启用外网连接',
+          l10n.peerQr_configureChannel,
           style: Theme.of(context).textTheme.bodySmall?.copyWith(
             color: colorScheme.onSurfaceVariant,
           ),
@@ -640,24 +651,26 @@ class _PeerQrDisplayScreenState extends State<PeerQrDisplayScreen> {
         const SizedBox(height: 10),
         TextField(
           controller: _channelIdController,
-          decoration: const InputDecoration(
+          decoration: InputDecoration(
             labelText: 'Channel ID',
-            hintText: '输入 Channel ID',
-            border: OutlineInputBorder(),
+            hintText: l10n.peerQr_channelIdHint,
+            border: const OutlineInputBorder(),
             isDense: true,
-            contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            contentPadding:
+                const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
           ),
           style: const TextStyle(fontSize: 14),
         ),
         const SizedBox(height: 10),
         TextField(
           controller: _secretController,
-          decoration: const InputDecoration(
+          decoration: InputDecoration(
             labelText: 'Secret',
-            hintText: '输入签名密钥',
-            border: OutlineInputBorder(),
+            hintText: l10n.peerQr_signingKeyHint,
+            border: const OutlineInputBorder(),
             isDense: true,
-            contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            contentPadding:
+                const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
           ),
           obscureText: true,
           style: const TextStyle(fontSize: 14),
@@ -675,7 +688,7 @@ class _PeerQrDisplayScreenState extends State<PeerQrDisplayScreen> {
           child: FilledButton.icon(
             onPressed: _submitConfig,
             icon: const Icon(Icons.cloud_done, size: 18),
-            label: const Text('连接'),
+            label: Text(l10n.common_connect),
           ),
         ),
       ],

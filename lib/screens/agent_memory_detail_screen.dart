@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import '../l10n/app_localizations.dart';
+import '../l10n/l10n_helpers.dart';
 import '../models/remote_agent.dart';
 import '../models/agent_memory_entry.dart';
 import '../services/agent_memory_biz_service.dart';
@@ -71,7 +73,7 @@ class _AgentMemoryDetailScreenState extends State<AgentMemoryDetailScreen>
       if (mounted) {
         setState(() => _isLoading = false);
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Failed to load memories')),
+          SnackBar(content: Text('Failed to load memories')),
         );
       }
     }
@@ -85,7 +87,9 @@ class _AgentMemoryDetailScreenState extends State<AgentMemoryDetailScreen>
     final result = await showDialog<Map<String, dynamic>>(
       context: context,
       builder: (context) => StatefulBuilder(
-        builder: (context, setDialogState) => AlertDialog(
+        builder: (context, setDialogState) {
+          final l10n = AppLocalizations.of(context);
+    return AlertDialog(
           title: const Text('Add New Memory'),
           content: SingleChildScrollView(
             child: Column(
@@ -115,7 +119,7 @@ class _AgentMemoryDetailScreenState extends State<AgentMemoryDetailScreen>
                   items: MemoryType.values.map((type) {
                     return DropdownMenuItem(
                       value: type,
-                      child: Text(type.displayName),
+                      child: Text(type.localizedLabel(l10n)),
                     );
                   }).toList(),
                   onChanged: (type) {
@@ -149,7 +153,7 @@ class _AgentMemoryDetailScreenState extends State<AgentMemoryDetailScreen>
                 final content = contentController.text.trim();
                 if (content.isEmpty) {
                   ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Content cannot be empty')),
+                    SnackBar(content: Text('Content cannot be empty')),
                   );
                   return;
                 }
@@ -167,7 +171,8 @@ class _AgentMemoryDetailScreenState extends State<AgentMemoryDetailScreen>
               child: const Text('Add'),
             ),
           ],
-        ),
+        );
+        },
       ),
     );
 
@@ -183,7 +188,7 @@ class _AgentMemoryDetailScreenState extends State<AgentMemoryDetailScreen>
         await _loadMemories();
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Memory added')),
+            SnackBar(content: Text('Memory added')),
           );
         }
       } catch (e) {
@@ -194,7 +199,7 @@ class _AgentMemoryDetailScreenState extends State<AgentMemoryDetailScreen>
         );
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Failed to add memory')),
+            SnackBar(content: Text('Failed to add memory')),
           );
         }
       }
@@ -231,7 +236,7 @@ class _AgentMemoryDetailScreenState extends State<AgentMemoryDetailScreen>
       await _loadMemories();
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Memory deleted')),
+          SnackBar(content: Text('Memory deleted')),
         );
       }
     } catch (e) {
@@ -272,7 +277,7 @@ class _AgentMemoryDetailScreenState extends State<AgentMemoryDetailScreen>
       await _loadMemories();
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('All memories cleared')),
+          SnackBar(content: Text('All memories cleared')),
         );
       }
     } catch (e) {
@@ -315,7 +320,7 @@ class _AgentMemoryDetailScreenState extends State<AgentMemoryDetailScreen>
       );
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Failed to export')),
+          SnackBar(content: Text('Failed to export')),
         );
       }
     }
@@ -403,6 +408,7 @@ class _AgentMemoryDetailScreenState extends State<AgentMemoryDetailScreen>
   }
 
   Widget _buildStructuredView() {
+    final l10n = AppLocalizations.of(context);
     if (_memories.isEmpty) {
       return Center(
         child: Column(
@@ -446,7 +452,7 @@ class _AgentMemoryDetailScreenState extends State<AgentMemoryDetailScreen>
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
               child: Text(
-                type.displayName,
+                type.localizedLabel(l10n),
                 style: Theme.of(context).textTheme.titleMedium,
               ),
             ),
@@ -458,6 +464,7 @@ class _AgentMemoryDetailScreenState extends State<AgentMemoryDetailScreen>
   }
 
   Widget _buildTimelineView() {
+    final l10n = AppLocalizations.of(context);
     if (_memories.isEmpty) {
       return Center(
         child: Column(
@@ -495,7 +502,7 @@ class _AgentMemoryDetailScreenState extends State<AgentMemoryDetailScreen>
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
-                            memory.memoryType.displayName,
+                            memory.memoryType.localizedLabel(l10n),
                             style: Theme.of(context).textTheme.titleSmall?.copyWith(
                               fontWeight: FontWeight.bold,
                             ),
@@ -561,10 +568,11 @@ class _AgentMemoryDetailScreenState extends State<AgentMemoryDetailScreen>
   }
 
   Widget _buildMemoryCard(AgentMemoryEntry memory) {
+    final l10n = AppLocalizations.of(context);
     return Card(
       child: ListTile(
         title: Text(
-          memory.memoryType.displayName,
+          memory.memoryType.localizedLabel(l10n),
           style: const TextStyle(fontWeight: FontWeight.bold),
         ),
         subtitle: Text(
@@ -582,10 +590,11 @@ class _AgentMemoryDetailScreenState extends State<AgentMemoryDetailScreen>
   }
 
   void _showMemoryDetail(AgentMemoryEntry memory) {
+    final l10n = AppLocalizations.of(context);
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        title: Text(memory.memoryType.displayName),
+        title: Text(memory.memoryType.localizedLabel(l10n)),
         content: SingleChildScrollView(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
