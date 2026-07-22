@@ -15,6 +15,7 @@ import '../models/pending_attachment.dart';
 import '../models/remote_agent.dart';
 import '../models/model_routing_config.dart';
 import '../services/audio_recording_service.dart';
+import '../services/composer_draft_service.dart';
 import '../services/local_database_service.dart';
 import '../services/group/group_member_session_service.dart';
 import '../utils/layout_utils.dart';
@@ -47,6 +48,7 @@ import '../widgets/workflow/workflow_progress_panel.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../peer/services/peer_agent_client_service.dart';
 import '../peer/services/peer_connection_manager.dart';
+import '../service_locator.dart' show getIt;
 
 /// User's response to the "sync remote sessions" prompt.
 /// Both choices are persisted; the dialog is only shown while undecided.
@@ -136,6 +138,9 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
 
   final _scaffoldKey = GlobalKey<ScaffoldState>();
 
+  /// Last draft key used for migrate-from-agent → channel.
+  String? _lastDraftKey;
+
   @override
   void initState() {
     super.initState();
@@ -167,6 +172,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
       }
     });
 
+    _restoreComposerDraft();
     _messageController.addListener(_onTextChanged);
     _textFieldFocusNode.addListener(_onFocusChanged);
 
@@ -205,6 +211,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     if (!kIsWeb && (Platform.isMacOS || Platform.isWindows || Platform.isLinux)) {
       HardwareKeyboard.instance.removeHandler(_handleHardwareKey);
     }
+    _persistComposerDraft();
     _eventSubscription?.cancel();
     _controller.removeListener(_onControllerChanged);
     _controller.dispose();
@@ -229,6 +236,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
 
   void _onControllerChanged() {
     if (!mounted) return;
+    _maybeMigrateComposerDraftKey();
     // During active streaming, if user is scrolled up, skip expensive
     // full rebuilds — the message list content updates in the controller
     // and will render when the user scrolls back to bottom.
@@ -425,6 +433,80 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
 
   void _onTextChanged() {
     // Mention detection is handled inside ChatInputArea
+    _persistComposerDraft();
+  }
+
+  String? _composerDraftKey() {
+    return ComposerDraftService.keyFor(
+      channelId: _controller.currentChannelId ?? widget.channelId,
+      agentId: widget.agentId,
+    );
+  }
+
+  void _restoreComposerDraft() {
+    final key = _composerDraftKey();
+    if (key == null) return;
+    _lastDraftKey = key;
+    final service = getIt<ComposerDraftService>();
+    var draft = service.getDraft(key);
+    // Channel may not have been resolved on the previous leave; fall back to
+    // the agent-scoped draft and migrate it forward.
+    final agentId = widget.agentId;
+    if (draft.isEmpty &&
+        agentId != null &&
+        agentId.isNotEmpty &&
+        key != 'agent:$agentId') {
+      final agentKey = 'agent:$agentId';
+      draft = service.getDraft(agentKey);
+      if (draft.isNotEmpty) {
+        service.migrate(fromKey: agentKey, toKey: key);
+      }
+    }
+    if (draft.isEmpty) return;
+    _messageController.value = TextEditingValue(
+      text: draft,
+      selection: TextSelection.collapsed(offset: draft.length),
+    );
+  }
+
+  void _persistComposerDraft() {
+    final key = _composerDraftKey();
+    if (key == null) return;
+    _lastDraftKey = key;
+    getIt<ComposerDraftService>().setDraft(key, _messageController.text);
+  }
+
+  void _clearComposerDraft() {
+    final key = _composerDraftKey();
+    if (key == null) return;
+    getIt<ComposerDraftService>().clearDraft(key);
+    if (widget.agentId != null) {
+      getIt<ComposerDraftService>().clearDraft('agent:${widget.agentId}');
+    }
+  }
+
+  /// When channelId resolves after load, move any agent-keyed draft over.
+  void _maybeMigrateComposerDraftKey() {
+    final channelId = _controller.currentChannelId;
+    if (channelId == null || channelId.isEmpty) return;
+    final agentId = widget.agentId;
+    if (agentId == null || agentId.isEmpty) return;
+    final fromKey = 'agent:$agentId';
+    if (_lastDraftKey == channelId) return;
+    final service = getIt<ComposerDraftService>();
+    service.migrate(fromKey: fromKey, toKey: channelId);
+    _lastDraftKey = channelId;
+    // If the input is still empty (opened without channelId draft restore),
+    // pick up the migrated draft once.
+    if (_messageController.text.isEmpty) {
+      final draft = service.getDraft(channelId);
+      if (draft.isNotEmpty) {
+        _messageController.value = TextEditingValue(
+          text: draft,
+          selection: TextSelection.collapsed(offset: draft.length),
+        );
+      }
+    }
   }
 
   void _onFocusChanged() {
@@ -809,6 +891,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
       pendingAttachments: _pendingAttachments,
       clearMessageController: () {
         _messageController.clear();
+        _clearComposerDraft();
         setState(() { _pendingQueue.clear(); });
       },
       replyToId: _controller.replyingToMessage?.id,
