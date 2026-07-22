@@ -211,7 +211,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     if (!kIsWeb && (Platform.isMacOS || Platform.isWindows || Platform.isLinux)) {
       HardwareKeyboard.instance.removeHandler(_handleHardwareKey);
     }
-    _persistComposerDraft();
+    _persistComposerDraft(notify: true);
     _eventSubscription?.cancel();
     _controller.removeListener(_onControllerChanged);
     _controller.dispose();
@@ -443,6 +443,10 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     );
   }
 
+  String? _composerGroupFamilyId() {
+    return _controller.groupChannel?.groupFamilyId;
+  }
+
   void _restoreComposerDraft() {
     final key = _composerDraftKey();
     if (key == null) return;
@@ -455,11 +459,18 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     if (draft.isEmpty &&
         agentId != null &&
         agentId.isNotEmpty &&
-        key != 'agent:$agentId') {
-      final agentKey = 'agent:$agentId';
+        key != ComposerDraftService.agentListKey(agentId)) {
+      final agentKey = ComposerDraftService.agentListKey(agentId);
       draft = service.getDraft(agentKey);
       if (draft.isNotEmpty) {
         service.migrate(fromKey: agentKey, toKey: key);
+        // Keep list alias so the conversation list can still find it.
+        service.setDraft(
+          key,
+          draft,
+          agentId: agentId,
+          groupFamilyId: _composerGroupFamilyId(),
+        );
       }
     }
     if (draft.isEmpty) return;
@@ -469,43 +480,66 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     );
   }
 
-  void _persistComposerDraft() {
+  void _persistComposerDraft({bool notify = false}) {
     final key = _composerDraftKey();
     if (key == null) return;
     _lastDraftKey = key;
-    getIt<ComposerDraftService>().setDraft(key, _messageController.text);
+    getIt<ComposerDraftService>().setDraft(
+      key,
+      _messageController.text,
+      agentId: widget.agentId,
+      groupFamilyId: _composerGroupFamilyId(),
+      notify: notify,
+    );
   }
 
   void _clearComposerDraft() {
     final key = _composerDraftKey();
     if (key == null) return;
-    getIt<ComposerDraftService>().clearDraft(key);
-    if (widget.agentId != null) {
-      getIt<ComposerDraftService>().clearDraft('agent:${widget.agentId}');
-    }
+    getIt<ComposerDraftService>().clearDraft(
+      key,
+      agentId: widget.agentId,
+      groupFamilyId: _composerGroupFamilyId(),
+    );
   }
 
-  /// When channelId resolves after load, move any agent-keyed draft over.
+  /// When channelId resolves after load, migrate drafts and write list aliases.
   void _maybeMigrateComposerDraftKey() {
     final channelId = _controller.currentChannelId;
     if (channelId == null || channelId.isEmpty) return;
-    final agentId = widget.agentId;
-    if (agentId == null || agentId.isEmpty) return;
-    final fromKey = 'agent:$agentId';
-    if (_lastDraftKey == channelId) return;
+
     final service = getIt<ComposerDraftService>();
-    service.migrate(fromKey: fromKey, toKey: channelId);
-    _lastDraftKey = channelId;
-    // If the input is still empty (opened without channelId draft restore),
-    // pick up the migrated draft once.
-    if (_messageController.text.isEmpty) {
-      final draft = service.getDraft(channelId);
-      if (draft.isNotEmpty) {
-        _messageController.value = TextEditingValue(
-          text: draft,
-          selection: TextSelection.collapsed(offset: draft.length),
+    final agentId = widget.agentId;
+    final groupFamilyId = _composerGroupFamilyId();
+
+    if (_lastDraftKey != channelId) {
+      if (agentId != null && agentId.isNotEmpty) {
+        service.migrate(
+          fromKey: ComposerDraftService.agentListKey(agentId),
+          toKey: channelId,
         );
       }
+      if (_messageController.text.isEmpty) {
+        final draft = service.getDraft(channelId);
+        if (draft.isNotEmpty) {
+          _messageController.value = TextEditingValue(
+            text: draft,
+            selection: TextSelection.collapsed(offset: draft.length),
+          );
+        }
+      }
+      _lastDraftKey = channelId;
+      if (_messageController.text.trimRight().isNotEmpty) {
+        _persistComposerDraft();
+      }
+      return;
+    }
+
+    // Channel already known — sync group list alias once it becomes available.
+    if (groupFamilyId != null &&
+        _messageController.text.trimRight().isNotEmpty &&
+        !service.hasDraft(ComposerDraftService.groupListKey(groupFamilyId))) {
+      _persistComposerDraft();
     }
   }
 

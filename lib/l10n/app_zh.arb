@@ -121,6 +121,7 @@
   "home_noAgents": "暂无 Agent",
   "home_noAgentsHint": "点击菜单添加 Agent",
   "home_noMessages": "暂无消息",
+  "home_draftPrefix": "[草稿]",
   "home_typing": "对方正在输入...",
   "home_statusOnline": "在线",
   "home_statusOffline": "离线",

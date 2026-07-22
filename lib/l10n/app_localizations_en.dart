@@ -272,6 +272,9 @@ class AppLocalizationsEn extends AppLocalizations {
   String get home_noMessages => 'No messages';
 
   @override
+  String get home_draftPrefix => '[Draft]';
+
+  @override
   String get home_typing => 'Typing...';
 
   @override

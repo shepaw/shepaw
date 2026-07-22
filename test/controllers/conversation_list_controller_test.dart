@@ -135,5 +135,29 @@ void main() {
       expect(entries.length, 1);
       expect(entries.first.group?.id, 'g1');
     });
+
+    test('draft updatedAt bumps conversation above older messages', () {
+      final draftTime = DateTime.parse('2026-07-12T12:00:00.000Z');
+      final entries = ConversationListController.buildSortedConversations(
+        filteredAgents: [
+          _agent(id: 'old', name: 'Old'),
+          _agent(id: 'drafty', name: 'Drafty'),
+        ],
+        groupChannels: const [],
+        pairedPeers: const [],
+        searchQuery: '',
+        latestMessages: {
+          'old': {'created_at': '2026-07-11T12:00:00.000Z'},
+          'drafty': {'created_at': '2026-07-01T12:00:00.000Z'},
+        },
+        groupLatestMessages: const {},
+        peerLatestTime: const {},
+        collapsedPeerIds: {},
+        draftUpdatedAtForAgent: (id) => id == 'drafty' ? draftTime : null,
+      );
+
+      expect(entries.first.agent?.id, 'drafty');
+      expect(entries[1].agent?.id, 'old');
+    });
   });
 }

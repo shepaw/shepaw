@@ -8,6 +8,7 @@ import '../widgets/model_icon.dart';
 import '../services/local_api_service.dart';
 import '../services/local_database_service.dart';
 import '../services/chat_service.dart';
+import '../services/composer_draft_service.dart';
 import 'add_remote_agent_screen.dart';
 import 'create_group_screen.dart';
 import 'chat_screen.dart';
@@ -317,7 +318,10 @@ class HomeScreenState extends State<HomeScreen> {
     if (createdAt == null) return '';
     final dateTime = DateTime.tryParse(createdAt);
     if (dateTime == null) return '';
+    return _formatDateTime(dateTime);
+  }
 
+  String _formatDateTime(DateTime dateTime) {
     final l10n = AppLocalizations.of(context);
     final now = DateTime.now();
     final today = DateTime(now.year, now.month, now.day);
@@ -336,6 +340,93 @@ class HomeScreenState extends State<HomeScreen> {
     } else {
       return '${dateTime.year}/${dateTime.month}/${dateTime.day}';
     }
+  }
+
+  String _agentDraftText(Agent agent) {
+    if (!getIt.isRegistered<ComposerDraftService>()) return '';
+    return getIt<ComposerDraftService>()
+        .getDraft(ComposerDraftService.agentListKey(agent.id));
+  }
+
+  DateTime? _agentDraftUpdatedAt(Agent agent) {
+    if (!getIt.isRegistered<ComposerDraftService>()) return null;
+    return getIt<ComposerDraftService>()
+        .draftUpdatedAt(ComposerDraftService.agentListKey(agent.id));
+  }
+
+  String _groupDraftText(Channel group) {
+    if (!getIt.isRegistered<ComposerDraftService>()) return '';
+    final service = getIt<ComposerDraftService>();
+    final byFamily =
+        service.getDraft(ComposerDraftService.groupListKey(group.groupFamilyId));
+    if (byFamily.isNotEmpty) return byFamily;
+    return service.getDraft(ComposerDraftService.groupListKey(group.id));
+  }
+
+  DateTime? _groupDraftUpdatedAt(Channel group) {
+    if (!getIt.isRegistered<ComposerDraftService>()) return null;
+    final service = getIt<ComposerDraftService>();
+    return service.draftUpdatedAt(
+          ComposerDraftService.groupListKey(group.groupFamilyId),
+        ) ??
+        service.draftUpdatedAt(ComposerDraftService.groupListKey(group.id));
+  }
+
+  /// WeChat-style subtitle: typing > draft > last message / empty.
+  Widget _buildConversationSubtitle({
+    required bool isTyping,
+    required String typingText,
+    required String draft,
+    required String lastContent,
+    required String emptyText,
+  }) {
+    final l10n = AppLocalizations.of(context);
+    if (isTyping) {
+      return Text(
+        typingText,
+        style: TextStyle(
+          fontSize: 13,
+          color: Colors.green[600],
+          fontStyle: FontStyle.italic,
+        ),
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+      );
+    }
+    if (draft.trimRight().isNotEmpty) {
+      final preview = draft.replaceAll(RegExp(r'\s+'), ' ').trim();
+      return Text.rich(
+        TextSpan(
+          children: [
+            TextSpan(
+              text: l10n.home_draftPrefix,
+              style: const TextStyle(
+                fontSize: 13,
+                color: Colors.red,
+              ),
+            ),
+            TextSpan(
+              text: preview,
+              style: TextStyle(
+                fontSize: 13,
+                color: Colors.grey[500],
+              ),
+            ),
+          ],
+        ),
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+      );
+    }
+    return Text(
+      lastContent.isNotEmpty ? lastContent : emptyText,
+      style: TextStyle(
+        fontSize: 13,
+        color: Colors.grey[500],
+      ),
+      maxLines: 1,
+      overflow: TextOverflow.ellipsis,
+    );
   }
 
   /// 主页标题：中文「惜宝」，英文「ShePaw」，居中显示（微信风格）。
@@ -1279,6 +1370,8 @@ class HomeScreenState extends State<HomeScreen> {
     final unreadCount = _groupUnreadCounts[group.id] ?? 0;
     final lastContent = latestMsg?['content'] as String? ?? '';
     final lastTime = latestMsg?['created_at'] as String?;
+    final draft = _groupDraftText(group);
+    final draftUpdatedAt = _groupDraftUpdatedAt(group);
     final memberCount = group.memberIds.where((id) => id != 'user').length;
     final sessionIds = _groupSessionChannelIds[group.id] ?? {};
     final isGroupTyping = sessionIds.intersection(_typingChannelIds).isNotEmpty;
@@ -1287,6 +1380,10 @@ class HomeScreenState extends State<HomeScreen> {
         widget.selectedConversation != null &&
         widget.selectedConversation!.groupFamilyId != null &&
         widget.selectedConversation!.groupFamilyId == group.groupFamilyId;
+
+    final timeLabel = draft.trimRight().isNotEmpty && draftUpdatedAt != null
+        ? _formatDateTime(draftUpdatedAt)
+        : (lastTime != null ? _formatTime(lastTime) : '');
 
     return InkWell(
       onTap: () async {
@@ -1388,9 +1485,9 @@ class HomeScreenState extends State<HomeScreen> {
                           overflow: TextOverflow.ellipsis,
                         ),
                       ),
-                      if (lastTime != null)
+                      if (timeLabel.isNotEmpty)
                         Text(
-                          _formatTime(lastTime),
+                          timeLabel,
                           style: TextStyle(
                             fontSize: 12,
                             color: Colors.grey[500],
@@ -1402,26 +1499,13 @@ class HomeScreenState extends State<HomeScreen> {
                   Row(
                     children: [
                       Expanded(
-                        child: isGroupTyping
-                            ? Text(
-                                l10n.home_typing,
-                                style: TextStyle(
-                                  fontSize: 13,
-                                  color: Colors.green[600],
-                                  fontStyle: FontStyle.italic,
-                                ),
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                              )
-                            : Text(
-                                lastContent.isNotEmpty ? lastContent : l10n.home_noMessages,
-                                style: TextStyle(
-                                  fontSize: 13,
-                                  color: Colors.grey[500],
-                                ),
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                              ),
+                        child: _buildConversationSubtitle(
+                          isTyping: isGroupTyping,
+                          typingText: l10n.home_typing,
+                          draft: draft,
+                          lastContent: lastContent,
+                          emptyText: l10n.home_noMessages,
+                        ),
                       ),
                       const SizedBox(width: 8),
                       Text(
@@ -1599,10 +1683,16 @@ class HomeScreenState extends State<HomeScreen> {
     final unreadCount = _unreadCounts[agent.id] ?? 0;
     final lastContent = latestMsg?['content'] as String? ?? '';
     final lastTime = latestMsg?['created_at'] as String?;
+    final draft = _agentDraftText(agent);
+    final draftUpdatedAt = _agentDraftUpdatedAt(agent);
 
     final isSelected = widget.embedded &&
         widget.selectedConversation != null &&
         widget.selectedConversation!.agentId == agent.id;
+
+    final timeLabel = draft.trimRight().isNotEmpty && draftUpdatedAt != null
+        ? _formatDateTime(draftUpdatedAt)
+        : (lastTime != null ? _formatTime(lastTime) : '');
 
     return InkWell(
       onTap: () async {
@@ -1690,10 +1780,10 @@ class HomeScreenState extends State<HomeScreen> {
                           ],
                         ),
                       ),
-                      // 最近消息时间
-                      if (lastTime != null)
+                      // 最近消息时间 / 草稿时间
+                      if (timeLabel.isNotEmpty)
                         Text(
-                          _formatTime(lastTime),
+                          timeLabel,
                           style: TextStyle(
                             fontSize: 12,
                             color: Colors.grey[500],
@@ -1702,30 +1792,17 @@ class HomeScreenState extends State<HomeScreen> {
                     ],
                   ),
                   const SizedBox(height: 4),
-                  // 最近消息内容 / typing状态 + 右侧状态
+                  // 最近消息内容 / typing状态 / 草稿 + 右侧状态
                   Row(
                     children: [
                       Expanded(
-                        child: _typingAgentIds.contains(agent.id)
-                            ? Text(
-                                l10n.home_typing,
-                                style: TextStyle(
-                                  fontSize: 13,
-                                  color: Colors.green[600],
-                                  fontStyle: FontStyle.italic,
-                                ),
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                              )
-                            : Text(
-                                lastContent.isNotEmpty ? lastContent : l10n.home_noMessages,
-                                style: TextStyle(
-                                  fontSize: 13,
-                                  color: Colors.grey[500],
-                                ),
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                              ),
+                        child: _buildConversationSubtitle(
+                          isTyping: _typingAgentIds.contains(agent.id),
+                          typingText: l10n.home_typing,
+                          draft: draft,
+                          lastContent: lastContent,
+                          emptyText: l10n.home_noMessages,
+                        ),
                       ),
                       const SizedBox(width: 8),
                       // 在线/离线/思考中 状态

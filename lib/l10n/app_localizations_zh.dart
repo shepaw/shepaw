@@ -259,6 +259,9 @@ class AppLocalizationsZh extends AppLocalizations {
   String get home_noMessages => '暂无消息';
 
   @override
+  String get home_draftPrefix => '[草稿]';
+
+  @override
   String get home_typing => '对方正在输入...';
 
   @override

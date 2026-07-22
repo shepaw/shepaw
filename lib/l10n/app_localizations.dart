@@ -572,6 +572,12 @@ abstract class AppLocalizations {
   /// **'暂无消息'**
   String get home_noMessages;
 
+  /// No description provided for @home_draftPrefix.
+  ///
+  /// In zh, this message translates to:
+  /// **'[草稿]'**
+  String get home_draftPrefix;
+
   /// No description provided for @home_typing.
   ///
   /// In zh, this message translates to:

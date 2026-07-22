@@ -16,6 +16,7 @@ import '../peer/services/peer_storage_service.dart';
 import '../service_locator.dart' show getIt;
 import '../services/app_lifecycle_service.dart';
 import '../services/chat_service.dart';
+import '../services/composer_draft_service.dart';
 import '../services/local_api_service.dart';
 import '../services/local_database_service.dart';
 import '../services/logger_service.dart';
@@ -77,6 +78,8 @@ class ConversationListController extends ChangeNotifier {
   StreamSubscription? _peerListChangedSub;
   StreamSubscription? _agentsChangedSub;
 
+  ComposerDraftService? _draftService;
+
   List<Agent> get agents => _agents;
   List<Agent> get filteredAgents => _filteredAgents;
   List<Channel> get groupChannels => _groupChannels;
@@ -101,6 +104,11 @@ class ConversationListController extends ChangeNotifier {
   void attach() {
     _chatService.typingAgentIds.addListener(_onTypingChanged);
     _chatService.typingChannelIds.addListener(_onTypingChanged);
+
+    if (getIt.isRegistered<ComposerDraftService>()) {
+      _draftService = getIt<ComposerDraftService>();
+      _draftService!.addListener(_onDraftsChanged);
+    }
 
     _peerMessageSub = PeerConnectionManager.instance.messages.listen((msg) {
       if (_disposed) return;
@@ -455,6 +463,12 @@ class ConversationListController extends ChangeNotifier {
     }).toList();
   }
 
+  void _onDraftsChanged() {
+    if (_disposed) return;
+    _rebuildEntries();
+    notifyListeners();
+  }
+
   void _rebuildEntries() {
     _entries = buildSortedConversations(
       filteredAgents: _filteredAgents,
@@ -465,7 +479,21 @@ class ConversationListController extends ChangeNotifier {
       groupLatestMessages: _groupLatestMessages,
       peerLatestTime: _peerLatestTime,
       collapsedPeerIds: _collapsedPeerIds,
+      draftUpdatedAtForAgent: _draftUpdatedAtForAgent,
+      draftUpdatedAtForGroup: _draftUpdatedAtForGroup,
     );
+  }
+
+  DateTime? _draftUpdatedAtForAgent(String agentId) {
+    final service = _draftService;
+    if (service == null) return null;
+    return service.draftUpdatedAt(ComposerDraftService.agentListKey(agentId));
+  }
+
+  DateTime? _draftUpdatedAtForGroup(String groupId) {
+    final service = _draftService;
+    if (service == null) return null;
+    return service.draftUpdatedAt(ComposerDraftService.groupListKey(groupId));
   }
 
   /// Pure builder used by [refresh] and unit tests.
@@ -478,14 +506,27 @@ class ConversationListController extends ChangeNotifier {
     required Map<String, Map<String, dynamic>?> groupLatestMessages,
     required Map<String, int> peerLatestTime,
     required Set<String> collapsedPeerIds,
+    DateTime? Function(String agentId)? draftUpdatedAtForAgent,
+    DateTime? Function(String groupId)? draftUpdatedAtForGroup,
   }) {
     final query = searchQuery.toLowerCase();
     final pairedPeerIds = pairedPeers.map((p) => p.id).toSet();
     final blocks = <ConversationListBlock>[];
 
+    DateTime? latestOf(Iterable<DateTime?> times) {
+      DateTime? latest;
+      for (final time in times) {
+        if (time == null) continue;
+        if (latest == null || time.isAfter(latest)) latest = time;
+      }
+      return latest;
+    }
+
     DateTime? agentLastMessageTime(Agent agent) {
       final timeStr = latestMessages[agent.id]?['created_at'] as String?;
-      return timeStr != null ? DateTime.tryParse(timeStr) : null;
+      final msgTime = timeStr != null ? DateTime.tryParse(timeStr) : null;
+      final draftTime = draftUpdatedAtForAgent?.call(agent.id);
+      return latestOf([msgTime, draftTime]);
     }
 
     DateTime? peerLastMessageTime(PairedPeer peer) {
@@ -497,15 +538,6 @@ class ConversationListController extends ChangeNotifier {
         return DateTime.fromMillisecondsSinceEpoch(peer.lastSeen!);
       }
       return DateTime.fromMillisecondsSinceEpoch(peer.pairedAt);
-    }
-
-    DateTime? latestOf(Iterable<DateTime?> times) {
-      DateTime? latest;
-      for (final time in times) {
-        if (time == null) continue;
-        if (latest == null || time.isAfter(latest)) latest = time;
-      }
-      return latest;
     }
 
     int compareBlocks(ConversationListBlock a, ConversationListBlock b) {
@@ -539,7 +571,10 @@ class ConversationListController extends ChangeNotifier {
         if (!matchesName && !matchesDesc) continue;
       }
       final timeStr = groupLatestMessages[group.id]?['created_at'] as String?;
-      final time = timeStr != null ? DateTime.tryParse(timeStr) : null;
+      final msgTime = timeStr != null ? DateTime.tryParse(timeStr) : null;
+      final draftTime = draftUpdatedAtForGroup?.call(group.groupFamilyId) ??
+          draftUpdatedAtForGroup?.call(group.id);
+      final time = latestOf([msgTime, draftTime]);
       blocks.add(
         ConversationListBlock.standalone(ConversationListItem.group(group, time)),
       );
@@ -595,6 +630,7 @@ class ConversationListController extends ChangeNotifier {
   @override
   void dispose() {
     _disposed = true;
+    _draftService?.removeListener(_onDraftsChanged);
     _chatService.typingAgentIds.removeListener(_onTypingChanged);
     _chatService.typingChannelIds.removeListener(_onTypingChanged);
     _healthCheckTimer?.cancel();

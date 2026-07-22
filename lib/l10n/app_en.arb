@@ -79,6 +79,7 @@
   "home_noAgents": "No Agents",
   "home_noAgentsHint": "Tap the menu to add agents",
   "home_noMessages": "No messages",
+  "home_draftPrefix": "[Draft]",
   "home_typing": "Typing...",
   "home_statusOnline": "Online",
   "home_statusOffline": "Offline",

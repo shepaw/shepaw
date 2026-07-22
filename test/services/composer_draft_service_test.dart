@@ -9,13 +9,33 @@ void main() {
     service.setDraft('ch-1', 'hello');
     expect(service.getDraft('ch-1'), 'hello');
     expect(service.getDraft('ch-2'), '');
+    expect(service.draftUpdatedAt('ch-1'), isNotNull);
 
     service.setDraft('ch-1', '   ');
     expect(service.getDraft('ch-1'), '');
+    expect(service.draftUpdatedAt('ch-1'), isNull);
 
     service.setDraft('ch-1', 'again');
     service.clearDraft('ch-1');
     expect(service.getDraft('ch-1'), '');
+  });
+
+  test('dual-writes agent and group list aliases', () {
+    final service = ComposerDraftService();
+    service.setDraft(
+      'ch-1',
+      'hello',
+      agentId: 'a1',
+      groupFamilyId: 'g1',
+    );
+    expect(service.getDraft('ch-1'), 'hello');
+    expect(service.getDraft(ComposerDraftService.agentListKey('a1')), 'hello');
+    expect(service.getDraft(ComposerDraftService.groupListKey('g1')), 'hello');
+
+    service.clearDraft('ch-1', agentId: 'a1', groupFamilyId: 'g1');
+    expect(service.getDraft('ch-1'), '');
+    expect(service.getDraft(ComposerDraftService.agentListKey('a1')), '');
+    expect(service.getDraft(ComposerDraftService.groupListKey('g1')), '');
   });
 
   test('migrate moves draft when target empty', () {
@@ -45,5 +65,23 @@ void main() {
       'agent:a1',
     );
     expect(ComposerDraftService.keyFor(), isNull);
+  });
+
+  test('publish and notify flag notify listeners', () {
+    final service = ComposerDraftService();
+    var count = 0;
+    service.addListener(() => count++);
+
+    service.setDraft('ch-1', 'quiet');
+    expect(count, 0);
+
+    service.setDraft('ch-1', 'loud', notify: true);
+    expect(count, 1);
+
+    service.publish();
+    expect(count, 2);
+
+    service.clearDraft('ch-1');
+    expect(count, 3);
   });
 }
