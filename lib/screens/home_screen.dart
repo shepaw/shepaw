@@ -162,6 +162,12 @@ class HomeScreenState extends State<HomeScreen> {
 
   Future<void> _loadAgents({bool silent = false}) => _list.refresh(silent: silent);
 
+  /// After leaving a chat, force the draft listener to re-sort (WeChat-style bump).
+  void _publishComposerDrafts() {
+    if (!getIt.isRegistered<ComposerDraftService>()) return;
+    getIt<ComposerDraftService>().publish();
+  }
+
   /// 搜索过滤
   void _onSearchChanged() {
     if (widget.embedded) {
@@ -344,14 +350,24 @@ class HomeScreenState extends State<HomeScreen> {
 
   String _agentDraftText(Agent agent) {
     if (!getIt.isRegistered<ComposerDraftService>()) return '';
-    return getIt<ComposerDraftService>()
-        .getDraft(ComposerDraftService.agentListKey(agent.id));
+    final service = getIt<ComposerDraftService>();
+    final fromAgent =
+        service.getDraft(ComposerDraftService.agentListKey(agent.id));
+    if (fromAgent.isNotEmpty) return fromAgent;
+    final channelId = _list.agentChannelId(agent.id);
+    if (channelId == null) return '';
+    return service.getDraft(channelId);
   }
 
   DateTime? _agentDraftUpdatedAt(Agent agent) {
     if (!getIt.isRegistered<ComposerDraftService>()) return null;
-    return getIt<ComposerDraftService>()
-        .draftUpdatedAt(ComposerDraftService.agentListKey(agent.id));
+    final service = getIt<ComposerDraftService>();
+    final fromAgent =
+        service.draftUpdatedAt(ComposerDraftService.agentListKey(agent.id));
+    if (fromAgent != null) return fromAgent;
+    final channelId = _list.agentChannelId(agent.id);
+    if (channelId == null) return null;
+    return service.draftUpdatedAt(channelId);
   }
 
   String _groupDraftText(Channel group) {
@@ -360,16 +376,28 @@ class HomeScreenState extends State<HomeScreen> {
     final byFamily =
         service.getDraft(ComposerDraftService.groupListKey(group.groupFamilyId));
     if (byFamily.isNotEmpty) return byFamily;
-    return service.getDraft(ComposerDraftService.groupListKey(group.id));
+    final byId = service.getDraft(ComposerDraftService.groupListKey(group.id));
+    if (byId.isNotEmpty) return byId;
+    final channelId =
+        _list.groupChannelId(group.id) ?? _list.groupChannelId(group.groupFamilyId);
+    if (channelId == null) return '';
+    return service.getDraft(channelId);
   }
 
   DateTime? _groupDraftUpdatedAt(Channel group) {
     if (!getIt.isRegistered<ComposerDraftService>()) return null;
     final service = getIt<ComposerDraftService>();
-    return service.draftUpdatedAt(
-          ComposerDraftService.groupListKey(group.groupFamilyId),
-        ) ??
+    final byFamily = service.draftUpdatedAt(
+      ComposerDraftService.groupListKey(group.groupFamilyId),
+    );
+    if (byFamily != null) return byFamily;
+    final byId =
         service.draftUpdatedAt(ComposerDraftService.groupListKey(group.id));
+    if (byId != null) return byId;
+    final channelId =
+        _list.groupChannelId(group.id) ?? _list.groupChannelId(group.groupFamilyId);
+    if (channelId == null) return null;
+    return service.draftUpdatedAt(channelId);
   }
 
   /// WeChat-style subtitle: typing > draft > last message / empty.
@@ -1415,6 +1443,7 @@ class HomeScreenState extends State<HomeScreen> {
           ),
         ).then((_) async {
           // Reload full list in case the group was deleted or modified
+          _publishComposerDrafts();
           await _loadAgents(silent: true);
         });
       },
@@ -1578,6 +1607,7 @@ class HomeScreenState extends State<HomeScreen> {
         final channelId =
             activeChannelId ?? _chatService.generateChannelId(userId, agent.id);
         await _databaseService.markChannelMessagesAsRead(channelId);
+        _publishComposerDrafts();
         _loadAgents(silent: true);
       });
     } else if (selection.channel != null) {
@@ -1740,6 +1770,7 @@ class HomeScreenState extends State<HomeScreen> {
           final channelId = activeChannelId ?? _chatService.generateChannelId(userId, agent.id);
           await _databaseService.markChannelMessagesAsRead(channelId);
           // Reload agents to pick up avatar/name changes made in detail screen
+          _publishComposerDrafts();
           _loadAgents(silent: true);
         });
       },

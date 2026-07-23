@@ -211,7 +211,25 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     if (!kIsWeb && (Platform.isMacOS || Platform.isWindows || Platform.isLinux)) {
       HardwareKeyboard.instance.removeHandler(_handleHardwareKey);
     }
-    _persistComposerDraft(notify: true);
+    // Capture text before tearing down; publish after this frame so the
+    // conversation list can reorder once navigation has settled.
+    final draftText = _messageController.text;
+    final draftKey = _composerDraftKey();
+    final agentId = widget.agentId;
+    final groupFamilyId = _composerGroupFamilyId();
+    if (draftKey != null) {
+      getIt<ComposerDraftService>().setDraft(
+        draftKey,
+        draftText,
+        agentId: agentId,
+        groupFamilyId: groupFamilyId,
+      );
+    }
+    final draftService = getIt<ComposerDraftService>();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      draftService.publish();
+    });
+
     _eventSubscription?.cancel();
     _controller.removeListener(_onControllerChanged);
     _controller.dispose();

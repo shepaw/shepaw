@@ -38,11 +38,19 @@ void main() {
     expect(service.getDraft(ComposerDraftService.groupListKey('g1')), '');
   });
 
-  test('migrate moves draft when target empty', () {
+  test('migrate copies draft and keeps list aliases', () {
     final service = ComposerDraftService();
     service.setDraft('agent:a1', 'draft');
     service.migrate(fromKey: 'agent:a1', toKey: 'ch-1');
-    expect(service.getDraft('agent:a1'), '');
+    expect(service.getDraft('agent:a1'), 'draft');
+    expect(service.getDraft('ch-1'), 'draft');
+  });
+
+  test('migrate drops non-alias source keys', () {
+    final service = ComposerDraftService();
+    service.setDraft('temp-key', 'draft');
+    service.migrate(fromKey: 'temp-key', toKey: 'ch-1');
+    expect(service.getDraft('temp-key'), '');
     expect(service.getDraft('ch-1'), 'draft');
   });
 
@@ -51,7 +59,7 @@ void main() {
     service.setDraft('agent:a1', 'from-agent');
     service.setDraft('ch-1', 'from-channel');
     service.migrate(fromKey: 'agent:a1', toKey: 'ch-1');
-    expect(service.getDraft('agent:a1'), '');
+    expect(service.getDraft('agent:a1'), 'from-agent');
     expect(service.getDraft('ch-1'), 'from-channel');
   });
 

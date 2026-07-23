@@ -68,6 +68,10 @@ class ConversationListController extends ChangeNotifier {
   final Map<String, int> _peerUnreadCounts = {};
   Set<String> _collapsedPeerIds = {};
 
+  /// Active channel id per agent / group, used to resolve drafts keyed by channel.
+  final Map<String, String> _agentChannelIds = {};
+  final Map<String, String> _groupChannelIds = {};
+
   ConversationSelection? _activeSelection;
   bool _disposed = false;
   bool _healthCheckRunning = false;
@@ -101,14 +105,17 @@ class ConversationListController extends ChangeNotifier {
   Map<String, int> get peerLatestTime => _peerLatestTime;
   Map<String, int> get peerUnreadCounts => _peerUnreadCounts;
 
+  /// Active DM channel for [agentId], if known from the last preview load.
+  String? agentChannelId(String agentId) => _agentChannelIds[agentId];
+
+  /// Active session channel for [groupId], if known from the last preview load.
+  String? groupChannelId(String groupId) => _groupChannelIds[groupId];
+
   void attach() {
     _chatService.typingAgentIds.addListener(_onTypingChanged);
     _chatService.typingChannelIds.addListener(_onTypingChanged);
 
-    if (getIt.isRegistered<ComposerDraftService>()) {
-      _draftService = getIt<ComposerDraftService>();
-      _draftService!.addListener(_onDraftsChanged);
-    }
+    _ensureDraftListener();
 
     _peerMessageSub = PeerConnectionManager.instance.messages.listen((msg) {
       if (_disposed) return;
@@ -302,6 +309,7 @@ class ConversationListController extends ChangeNotifier {
           await _databaseService.getLatestChannelMessage(channelId);
       final unreadCount =
           await _databaseService.getUnreadCountByChannel(channelId);
+      _agentChannelIds[agentId] = channelId;
       _latestMessages[agentId] = latestMsg;
       // 用户正在该频道里查看（如 She 频道收到 [Agent Reply] 注入）→
       // 角标按 0 计：消息已在其眼前，且聊天页的 reconcile 会标记已读，
@@ -338,6 +346,10 @@ class ConversationListController extends ChangeNotifier {
         }
       }
 
+      if (activeChannelId != null) {
+        _groupChannelIds[group.id] = activeChannelId;
+        _groupChannelIds[group.groupFamilyId] = activeChannelId;
+      }
       _groupLatestMessages[group.id] = activeMsg;
       _groupUnreadCounts[group.id] = totalUnread;
     }
@@ -357,6 +369,7 @@ class ConversationListController extends ChangeNotifier {
           await _databaseService.getLatestChannelMessage(channelId);
       final unreadCount =
           await _databaseService.getUnreadCountByChannel(channelId);
+      _agentChannelIds[agent.id] = channelId;
       _latestMessages[agent.id] = latestMsg;
       _unreadCounts[agent.id] =
           AppLifecycleService().activeChannelId == channelId ? 0 : unreadCount;
@@ -390,6 +403,10 @@ class ConversationListController extends ChangeNotifier {
         }
       }
 
+      if (activeChannelId != null) {
+        _groupChannelIds[group.id] = activeChannelId;
+        _groupChannelIds[group.groupFamilyId] = activeChannelId;
+      }
       _groupLatestMessages[group.id] = activeMsg;
       _groupUnreadCounts[group.id] = totalUnread;
     }
@@ -463,13 +480,24 @@ class ConversationListController extends ChangeNotifier {
     }).toList();
   }
 
+  void _ensureDraftListener() {
+    if (!getIt.isRegistered<ComposerDraftService>()) return;
+    final service = getIt<ComposerDraftService>();
+    if (identical(_draftService, service)) return;
+    _draftService?.removeListener(_onDraftsChanged);
+    _draftService = service;
+    _draftService!.addListener(_onDraftsChanged);
+  }
+
   void _onDraftsChanged() {
     if (_disposed) return;
+    _ensureDraftListener();
     _rebuildEntries();
     notifyListeners();
   }
 
   void _rebuildEntries() {
+    _ensureDraftListener();
     _entries = buildSortedConversations(
       filteredAgents: _filteredAgents,
       groupChannels: _groupChannels,
@@ -485,15 +513,31 @@ class ConversationListController extends ChangeNotifier {
   }
 
   DateTime? _draftUpdatedAtForAgent(String agentId) {
-    final service = _draftService;
-    if (service == null) return null;
-    return service.draftUpdatedAt(ComposerDraftService.agentListKey(agentId));
+    return _draftUpdatedAt(
+      listKey: ComposerDraftService.agentListKey(agentId),
+      channelId: _agentChannelIds[agentId],
+    );
   }
 
   DateTime? _draftUpdatedAtForGroup(String groupId) {
-    final service = _draftService;
+    return _draftUpdatedAt(
+      listKey: ComposerDraftService.groupListKey(groupId),
+      channelId: _groupChannelIds[groupId],
+    );
+  }
+
+  DateTime? _draftUpdatedAt({required String listKey, String? channelId}) {
+    final service = _draftService ??
+        (getIt.isRegistered<ComposerDraftService>()
+            ? getIt<ComposerDraftService>()
+            : null);
     if (service == null) return null;
-    return service.draftUpdatedAt(ComposerDraftService.groupListKey(groupId));
+    final fromList = service.draftUpdatedAt(listKey);
+    if (fromList != null) return fromList;
+    if (channelId != null && channelId.isNotEmpty) {
+      return service.draftUpdatedAt(channelId);
+    }
+    return null;
   }
 
   /// Pure builder used by [refresh] and unit tests.
@@ -524,8 +568,8 @@ class ConversationListController extends ChangeNotifier {
 
     DateTime? agentLastMessageTime(Agent agent) {
       final timeStr = latestMessages[agent.id]?['created_at'] as String?;
-      final msgTime = timeStr != null ? DateTime.tryParse(timeStr) : null;
-      final draftTime = draftUpdatedAtForAgent?.call(agent.id);
+      final msgTime = timeStr != null ? DateTime.tryParse(timeStr)?.toLocal() : null;
+      final draftTime = draftUpdatedAtForAgent?.call(agent.id)?.toLocal();
       return latestOf([msgTime, draftTime]);
     }
 
@@ -571,9 +615,10 @@ class ConversationListController extends ChangeNotifier {
         if (!matchesName && !matchesDesc) continue;
       }
       final timeStr = groupLatestMessages[group.id]?['created_at'] as String?;
-      final msgTime = timeStr != null ? DateTime.tryParse(timeStr) : null;
-      final draftTime = draftUpdatedAtForGroup?.call(group.groupFamilyId) ??
-          draftUpdatedAtForGroup?.call(group.id);
+      final msgTime = timeStr != null ? DateTime.tryParse(timeStr)?.toLocal() : null;
+      final draftTime = (draftUpdatedAtForGroup?.call(group.groupFamilyId) ??
+              draftUpdatedAtForGroup?.call(group.id))
+          ?.toLocal();
       final time = latestOf([msgTime, draftTime]);
       blocks.add(
         ConversationListBlock.standalone(ConversationListItem.group(group, time)),

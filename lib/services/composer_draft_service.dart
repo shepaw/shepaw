@@ -77,17 +77,27 @@ class ComposerDraftService extends ChangeNotifier {
     if (notify) notifyListeners();
   }
 
-  /// Moves a draft from [fromKey] to [toKey] when the conversation identity
-  /// resolves. Keeps [toKey]'s existing draft if both exist. Does not notify.
+  /// Copies a draft from [fromKey] to [toKey] when the conversation identity
+  /// resolves. Keeps [toKey]'s existing draft if both exist.
+  ///
+  /// List aliases (`agent:` / `group:`) are preserved so the conversation
+  /// list can keep finding the draft after channelId resolves.
   void migrate({required String fromKey, required String toKey}) {
     if (fromKey.isEmpty || toKey.isEmpty || fromKey == toKey) return;
-    final fromDraft = _drafts.remove(fromKey);
-    final fromAt = _updatedAt.remove(fromKey);
+    final fromDraft = _drafts[fromKey];
+    final fromAt = _updatedAt[fromKey];
     if (fromDraft == null || fromDraft.isEmpty) return;
+
     final existing = _drafts[toKey];
     if (existing == null || existing.isEmpty) {
       _drafts[toKey] = fromDraft;
       if (fromAt != null) _updatedAt[toKey] = fromAt;
+    }
+
+    // Drop only non-list keys (e.g. a temporary key). Keep agent:/group: aliases.
+    if (!_isListAliasKey(fromKey)) {
+      _drafts.remove(fromKey);
+      _updatedAt.remove(fromKey);
     }
   }
 
@@ -104,6 +114,9 @@ class ComposerDraftService extends ChangeNotifier {
   static String agentListKey(String agentId) => 'agent:$agentId';
 
   static String groupListKey(String groupFamilyId) => 'group:$groupFamilyId';
+
+  static bool _isListAliasKey(String key) =>
+      key.startsWith('agent:') || key.startsWith('group:');
 
   Set<String> _keysFor({
     required String key,
