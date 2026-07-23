@@ -1994,8 +1994,10 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
             },
           ),
 
-          // Emoji picker panel
+          // Mobile emoji picker panel (desktop uses a floating popover
+          // anchored to the emoji button inside ChatInputArea).
           if (_showEmojiPicker &&
+              !LayoutUtils.isDesktopLayout(context) &&
               !c.isViewingGroupBoundMemberSession &&
               !c.isViewingSheBoundSession)
             SizedBox(

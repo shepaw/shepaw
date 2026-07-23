@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:emoji_picker_flutter/emoji_picker_flutter.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../../models/acp_protocol.dart';
@@ -124,6 +125,12 @@ class ChatInputAreaState extends State<ChatInputArea> {
   late List<SlashCommandInfo> _slashCommands;
   StreamSubscription<List<SlashCommandInfo>>? _slashCommandsSub;
 
+  // Desktop WeChat-style floating emoji popover.
+  final LayerLink _emojiLayerLink = LayerLink();
+  final Object _emojiTapGroup = Object();
+  OverlayEntry? _emojiOverlay;
+  bool _desktopEmojiOpen = false;
+
   @override
   void initState() {
     super.initState();
@@ -149,6 +156,7 @@ class ChatInputAreaState extends State<ChatInputArea> {
 
   @override
   void dispose() {
+    _removeDesktopEmojiOverlay(updateState: false);
     widget.messageController.removeListener(_onTextChanged);
     _mentionScrollController.dispose();
     _slashScrollController.dispose();
@@ -555,8 +563,8 @@ class ChatInputAreaState extends State<ChatInputArea> {
   // ---------------------------------------------------------------------------
 
   Widget _buildDesktopInputArea() {
-    // WeChat-style desktop composer: muted surface, top toolbar, open
-    // multi-line field, and a bottom-right text "Send" button.
+    // WeChat-style desktop composer:
+    // text area on top; attachment icons + Send share one bottom toolbar.
     final l10n = AppLocalizations.of(context);
     const iconColor = Color(0xFF4C4C4C);
 
@@ -567,123 +575,126 @@ class ChatInputAreaState extends State<ChatInputArea> {
           top: BorderSide(color: Color(0xFFE7E7E7), width: 1),
         ),
       ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          // Toolbar — icons along the top, WeChat-style
-          Padding(
-            padding: const EdgeInsets.fromLTRB(10, 6, 10, 0),
-            child: Row(
-              children: [
-                _buildDesktopToolbarIcon(
-                  icon: widget.showEmojiPicker
-                      ? Icons.keyboard_outlined
-                      : Icons.sentiment_satisfied_alt_outlined,
-                  color: iconColor,
-                  tooltip: 'Emoji',
-                  onPressed: widget.onToggleEmojiPicker,
-                ),
-                _buildDesktopToolbarIcon(
-                  icon: Icons.folder_open_outlined,
-                  color: iconColor,
-                  tooltip: 'Attachment',
-                  onPressed: widget.onShowAttachmentOptions,
-                ),
-              ],
-            ),
-          ),
-          _buildPendingAttachmentsPreview(),
-          // Multi-line text area (full width, no side send icon)
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 4, 16, 0),
-            child: Actions(
-              actions: widget.onDesktopPaste != null
-                  ? {
-                      PasteTextIntent: CallbackAction<PasteTextIntent>(
-                        onInvoke: (intent) async {
-                          final handled = await widget.onDesktopPaste!();
-                          if (!handled) {
-                            // Not a file/image — paste plain text into the controller
-                            final data =
-                                await Clipboard.getData(Clipboard.kTextPlain);
-                            final text = data?.text;
-                            if (text != null && text.isNotEmpty) {
-                              final ctrl = widget.messageController;
-                              final sel = ctrl.selection;
-                              final newText = ctrl.text.replaceRange(
-                                sel.start < 0 ? ctrl.text.length : sel.start,
-                                sel.end < 0 ? ctrl.text.length : sel.end,
-                                text,
-                              );
-                              final newOffset =
-                                  (sel.start < 0 ? ctrl.text.length : sel.start) +
-                                      text.length;
-                              ctrl.value = ctrl.value.copyWith(
-                                text: newText,
-                                selection:
-                                    TextSelection.collapsed(offset: newOffset),
-                              );
+      child: TapRegion(
+        groupId: _emojiTapGroup,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            _buildPendingAttachmentsPreview(),
+            // Multi-line text area
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
+              child: Actions(
+                actions: widget.onDesktopPaste != null
+                    ? {
+                        PasteTextIntent: CallbackAction<PasteTextIntent>(
+                          onInvoke: (intent) async {
+                            final handled = await widget.onDesktopPaste!();
+                            if (!handled) {
+                              // Not a file/image — paste plain text into the controller
+                              final data =
+                                  await Clipboard.getData(Clipboard.kTextPlain);
+                              final text = data?.text;
+                              if (text != null && text.isNotEmpty) {
+                                final ctrl = widget.messageController;
+                                final sel = ctrl.selection;
+                                final newText = ctrl.text.replaceRange(
+                                  sel.start < 0 ? ctrl.text.length : sel.start,
+                                  sel.end < 0 ? ctrl.text.length : sel.end,
+                                  text,
+                                );
+                                final newOffset = (sel.start < 0
+                                        ? ctrl.text.length
+                                        : sel.start) +
+                                    text.length;
+                                ctrl.value = ctrl.value.copyWith(
+                                  text: newText,
+                                  selection: TextSelection.collapsed(
+                                      offset: newOffset),
+                                );
+                              }
                             }
-                          }
-                          return null;
-                        },
-                      ),
-                    }
-                  : const {},
-              child: Focus(
-                onKeyEvent: _handleInputKeyEvent,
-                child: ConstrainedBox(
-                  constraints: const BoxConstraints(
-                    minHeight: 100,
-                    maxHeight: 220,
-                  ),
-                  child: TextField(
-                    controller: widget.messageController,
-                    focusNode: widget.textFieldFocusNode,
-                    style: const TextStyle(
-                      fontSize: 14,
-                      height: 1.5,
-                      color: AppColors.textPrimary,
+                            return null;
+                          },
+                        ),
+                      }
+                    : const {},
+                child: Focus(
+                  onKeyEvent: _handleInputKeyEvent,
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(
+                      minHeight: 100,
+                      maxHeight: 220,
                     ),
-                    decoration: InputDecoration(
-                      hintText: l10n.chat_messageHint,
-                      hintStyle: TextStyle(
+                    child: TextField(
+                      controller: widget.messageController,
+                      focusNode: widget.textFieldFocusNode,
+                      style: const TextStyle(
                         fontSize: 14,
-                        color: Colors.grey[400],
+                        height: 1.5,
+                        color: AppColors.textPrimary,
                       ),
-                      border: InputBorder.none,
-                      isDense: true,
-                      contentPadding: const EdgeInsets.symmetric(vertical: 8),
+                      decoration: InputDecoration(
+                        hintText: l10n.chat_messageHint,
+                        hintStyle: TextStyle(
+                          fontSize: 14,
+                          color: Colors.grey[400],
+                        ),
+                        border: InputBorder.none,
+                        isDense: true,
+                        contentPadding:
+                            const EdgeInsets.symmetric(vertical: 8),
+                      ),
+                      maxLines: null,
+                      textInputAction: TextInputAction.newline,
+                      enabled: !widget.isLoading,
                     ),
-                    maxLines: null,
-                    textInputAction: TextInputAction.newline,
-                    enabled: !widget.isLoading,
                   ),
                 ),
               ),
             ),
-          ),
-          // Bottom action row — Send button bottom-right (WeChat style)
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.end,
-              children: [
-                if (widget.isLoading)
-                  SizedBox(
-                    width: 22,
-                    height: 22,
-                    child: CircularProgressIndicator(
-                      strokeWidth: 2,
-                      color: Theme.of(context).primaryColor,
+            // Bottom toolbar: icons left, Send right
+            Padding(
+              padding: const EdgeInsets.fromLTRB(8, 4, 16, 10),
+              child: Row(
+                children: [
+                  CompositedTransformTarget(
+                    link: _emojiLayerLink,
+                    child: _buildDesktopToolbarIcon(
+                      icon: _desktopEmojiOpen
+                          ? Icons.keyboard_outlined
+                          : Icons.sentiment_satisfied_alt_outlined,
+                      color: iconColor,
+                      tooltip: 'Emoji',
+                      onPressed: _toggleDesktopEmojiPopover,
                     ),
-                  )
-                else
-                  _buildDesktopSendButton(l10n.chat_send),
-              ],
+                  ),
+                  _buildDesktopToolbarIcon(
+                    icon: Icons.folder_open_outlined,
+                    color: iconColor,
+                    tooltip: 'Attachment',
+                    onPressed: () {
+                      _removeDesktopEmojiOverlay();
+                      widget.onShowAttachmentOptions();
+                    },
+                  ),
+                  const Spacer(),
+                  if (widget.isLoading)
+                    SizedBox(
+                      width: 22,
+                      height: 22,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: Theme.of(context).primaryColor,
+                      ),
+                    )
+                  else
+                    _buildDesktopSendButton(l10n.chat_send),
+                ],
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -713,7 +724,12 @@ class ChatInputAreaState extends State<ChatInputArea> {
       color: Colors.white,
       borderRadius: BorderRadius.circular(4),
       child: InkWell(
-        onTap: enabled ? widget.onSend : null,
+        onTap: enabled
+            ? () {
+                _removeDesktopEmojiOverlay();
+                widget.onSend();
+              }
+            : null,
         borderRadius: BorderRadius.circular(4),
         child: Container(
           constraints: const BoxConstraints(minWidth: 72),
@@ -738,6 +754,135 @@ class ChatInputAreaState extends State<ChatInputArea> {
         ),
       ),
     );
+  }
+
+  void _toggleDesktopEmojiPopover() {
+    if (_desktopEmojiOpen) {
+      _removeDesktopEmojiOverlay();
+      return;
+    }
+    _showDesktopEmojiOverlay();
+  }
+
+  void _showDesktopEmojiOverlay() {
+    _removeDesktopEmojiOverlay(updateState: false);
+    final overlay = Overlay.of(context);
+    final primary = Theme.of(context).primaryColor;
+
+    _emojiOverlay = OverlayEntry(
+      builder: (context) {
+        return CompositedTransformFollower(
+          link: _emojiLayerLink,
+          showWhenUnlinked: false,
+          targetAnchor: Alignment.topCenter,
+          followerAnchor: Alignment.bottomCenter,
+          offset: const Offset(0, -6),
+          child: TapRegion(
+            groupId: _emojiTapGroup,
+            onTapOutside: (_) => _removeDesktopEmojiOverlay(),
+            child: Material(
+              color: Colors.transparent,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Container(
+                    width: 360,
+                    height: 320,
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(8),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withValues(alpha: 0.12),
+                          blurRadius: 16,
+                          offset: const Offset(0, 4),
+                        ),
+                      ],
+                    ),
+                    clipBehavior: Clip.antiAlias,
+                    child: EmojiPicker(
+                      onEmojiSelected: (_, emoji) =>
+                          _insertDesktopEmoji(emoji.emoji),
+                      onBackspacePressed: _desktopEmojiBackspace,
+                      config: Config(
+                        height: 320,
+                        checkPlatformCompatibility: true,
+                        emojiViewConfig: const EmojiViewConfig(
+                          emojiSizeMax: 28,
+                          backgroundColor: Colors.white,
+                          columns: 8,
+                        ),
+                        categoryViewConfig: CategoryViewConfig(
+                          indicatorColor: primary,
+                          iconColorSelected: primary,
+                          backgroundColor: Colors.white,
+                          dividerColor: const Color(0xFFE7E7E7),
+                        ),
+                        bottomActionBarConfig: const BottomActionBarConfig(
+                          enabled: false,
+                        ),
+                        searchViewConfig: const SearchViewConfig(
+                          backgroundColor: Colors.white,
+                        ),
+                      ),
+                    ),
+                  ),
+                  // Caret pointing down to the emoji button
+                  CustomPaint(
+                    size: const Size(14, 8),
+                    painter: _EmojiPopoverCaretPainter(),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
+    );
+
+    overlay.insert(_emojiOverlay!);
+    setState(() => _desktopEmojiOpen = true);
+  }
+
+  void _removeDesktopEmojiOverlay({bool updateState = true}) {
+    _emojiOverlay?.remove();
+    _emojiOverlay = null;
+    if (_desktopEmojiOpen) {
+      _desktopEmojiOpen = false;
+      if (updateState && mounted) setState(() {});
+    }
+  }
+
+  void _insertDesktopEmoji(String emoji) {
+    final ctrl = widget.messageController;
+    final text = ctrl.text;
+    final selection = ctrl.selection;
+    final start = selection.start >= 0 ? selection.start : text.length;
+    final end = selection.end >= 0 ? selection.end : text.length;
+    final newText = text.replaceRange(start, end, emoji);
+    final newOffset = start + emoji.length;
+    ctrl.value = ctrl.value.copyWith(
+      text: newText,
+      selection: TextSelection.collapsed(offset: newOffset),
+    );
+    // Keep focus in the composer so the user can keep typing.
+    widget.textFieldFocusNode.requestFocus();
+  }
+
+  void _desktopEmojiBackspace() {
+    final ctrl = widget.messageController;
+    final text = ctrl.text;
+    final selection = ctrl.selection;
+    final cursorPos = selection.baseOffset;
+    if (cursorPos > 0 && text.isNotEmpty) {
+      final newText =
+          text.substring(0, cursorPos - 1) + text.substring(cursorPos);
+      ctrl.value = ctrl.value.copyWith(
+        text: newText,
+        selection: TextSelection.collapsed(offset: cursorPos - 1),
+      );
+    }
+    widget.textFieldFocusNode.requestFocus();
   }
 
   // ---------------------------------------------------------------------------
@@ -1122,6 +1267,12 @@ class ChatInputAreaState extends State<ChatInputArea> {
         return KeyEventResult.handled;
       }
       widget.onSend();
+      _removeDesktopEmojiOverlay();
+      return KeyEventResult.handled;
+    }
+
+    if (event.logicalKey == LogicalKeyboardKey.escape && _desktopEmojiOpen) {
+      _removeDesktopEmojiOverlay();
       return KeyEventResult.handled;
     }
 
@@ -1500,4 +1651,25 @@ class ChatInputAreaState extends State<ChatInputArea> {
     _insertMentionAtCursor(agent);
     // Focus will be requested after the async menu completes inside _insertMentionAtCursor
   }
+}
+
+/// Downward-pointing caret under the desktop emoji popover (WeChat style).
+class _EmojiPopoverCaretPainter extends CustomPainter {
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = Colors.white
+      ..style = PaintingStyle.fill;
+    final path = Path()
+      ..moveTo(0, 0)
+      ..lineTo(size.width, 0)
+      ..lineTo(size.width / 2, size.height)
+      ..close();
+    // Soft shadow under caret
+    canvas.drawShadow(path, Colors.black.withValues(alpha: 0.18), 2, true);
+    canvas.drawPath(path, paint);
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }
