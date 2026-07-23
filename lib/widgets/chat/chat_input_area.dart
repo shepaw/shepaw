@@ -664,9 +664,7 @@ class ChatInputAreaState extends State<ChatInputArea> {
                 children: [
                   _buildDesktopToolbarIcon(
                     key: _emojiButtonKey,
-                    icon: _desktopEmojiOpen
-                        ? Icons.keyboard_outlined
-                        : Icons.sentiment_satisfied_alt_outlined,
+                    icon: Icons.sentiment_satisfied_alt_outlined,
                     color: iconColor,
                     tooltip: 'Emoji',
                     onPressed: _toggleDesktopEmojiPopover,
@@ -908,6 +906,7 @@ class ChatInputAreaState extends State<ChatInputArea> {
       text: newText,
       selection: TextSelection.collapsed(offset: newOffset),
     );
+    _removeDesktopEmojiOverlay();
     // Keep focus in the composer so the user can keep typing.
     widget.textFieldFocusNode.requestFocus();
   }
