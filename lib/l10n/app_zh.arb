@@ -859,6 +859,7 @@
   },
   "chat_historyIgnored": "已忽略历史记录请求",
   "chat_messageHint": "输入消息...",
+  "chat_send": "发送",
   "chat_holdToRecord": "按住录制语音消息",
   "chat_holdToTalk": "按住 说话",
   "chat_releaseToSend": "松开 发送",

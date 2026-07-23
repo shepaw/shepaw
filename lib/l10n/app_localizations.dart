@@ -2888,6 +2888,12 @@ abstract class AppLocalizations {
   /// **'输入消息...'**
   String get chat_messageHint;
 
+  /// No description provided for @chat_send.
+  ///
+  /// In zh, this message translates to:
+  /// **'发送'**
+  String get chat_send;
+
   /// No description provided for @chat_holdToRecord.
   ///
   /// In zh, this message translates to:

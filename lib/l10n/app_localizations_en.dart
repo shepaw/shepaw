@@ -1577,6 +1577,9 @@ class AppLocalizationsEn extends AppLocalizations {
   String get chat_messageHint => 'Type a message...';
 
   @override
+  String get chat_send => 'Send';
+
+  @override
   String get chat_holdToRecord => 'Hold to record a voice message';
 
   @override

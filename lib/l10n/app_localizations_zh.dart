@@ -1521,6 +1521,9 @@ class AppLocalizationsZh extends AppLocalizations {
   String get chat_messageHint => '输入消息...';
 
   @override
+  String get chat_send => '发送';
+
+  @override
   String get chat_holdToRecord => '按住录制语音消息';
 
   @override

@@ -598,6 +598,7 @@
   "chat_historyLoadFailed": "Failed to load history: {error}",
   "chat_historyIgnored": "History request ignored",
   "chat_messageHint": "Type a message...",
+  "chat_send": "Send",
   "chat_holdToRecord": "Hold to record a voice message",
   "chat_holdToTalk": "Hold to Talk",
   "chat_releaseToSend": "Release to Send",

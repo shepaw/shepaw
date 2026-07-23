@@ -555,141 +555,187 @@ class ChatInputAreaState extends State<ChatInputArea> {
   // ---------------------------------------------------------------------------
 
   Widget _buildDesktopInputArea() {
+    // WeChat-style desktop composer: muted surface, top toolbar, open
+    // multi-line field, and a bottom-right text "Send" button.
+    final l10n = AppLocalizations.of(context);
+    const iconColor = Color(0xFF4C4C4C);
+
     return Container(
-      decoration: BoxDecoration(
-        color: Colors.white,
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.05),
-            blurRadius: 4,
-            offset: const Offset(0, -2),
-          ),
-        ],
+      decoration: const BoxDecoration(
+        color: Color(0xFFF5F5F5),
+        border: Border(
+          top: BorderSide(color: Color(0xFFE7E7E7), width: 1),
+        ),
       ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-            decoration: BoxDecoration(
-              border: Border(
-                bottom: BorderSide(color: Colors.grey[200]!, width: 0.5),
-              ),
-            ),
+          // Toolbar — icons along the top, WeChat-style
+          Padding(
+            padding: const EdgeInsets.fromLTRB(10, 6, 10, 0),
             child: Row(
               children: [
-                IconButton(
-                  icon: Icon(
-                    widget.showEmojiPicker
-                        ? Icons.keyboard
-                        : Icons.emoji_emotions_outlined,
-                    size: 22,
-                  ),
-                  color: Colors.grey[600],
-                  onPressed: widget.onToggleEmojiPicker,
+                _buildDesktopToolbarIcon(
+                  icon: widget.showEmojiPicker
+                      ? Icons.keyboard_outlined
+                      : Icons.sentiment_satisfied_alt_outlined,
+                  color: iconColor,
                   tooltip: 'Emoji',
-                  splashRadius: 18,
+                  onPressed: widget.onToggleEmojiPicker,
                 ),
-                IconButton(
-                  icon: const Icon(Icons.attach_file, size: 22),
-                  color: Colors.grey[600],
-                  onPressed: widget.onShowAttachmentOptions,
+                _buildDesktopToolbarIcon(
+                  icon: Icons.folder_open_outlined,
+                  color: iconColor,
                   tooltip: 'Attachment',
-                  splashRadius: 18,
+                  onPressed: widget.onShowAttachmentOptions,
                 ),
               ],
             ),
           ),
           _buildPendingAttachmentsPreview(),
+          // Multi-line text area (full width, no side send icon)
           Padding(
-            padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.end,
-              children: [
-                Expanded(
-                  child: Actions(
-                    actions: widget.onDesktopPaste != null
-                        ? {
-                            PasteTextIntent: CallbackAction<PasteTextIntent>(
-                              onInvoke: (intent) async {
-                                final handled = await widget.onDesktopPaste!();
-                                if (!handled) {
-                                  // Not a file/image — paste plain text into the controller
-                                  final data = await Clipboard.getData(Clipboard.kTextPlain);
-                                  final text = data?.text;
-                                  if (text != null && text.isNotEmpty) {
-                                    final ctrl = widget.messageController;
-                                    final sel = ctrl.selection;
-                                    final newText = ctrl.text.replaceRange(
-                                      sel.start < 0 ? ctrl.text.length : sel.start,
-                                      sel.end < 0 ? ctrl.text.length : sel.end,
-                                      text,
-                                    );
-                                    final newOffset = (sel.start < 0 ? ctrl.text.length : sel.start) + text.length;
-                                    ctrl.value = ctrl.value.copyWith(
-                                      text: newText,
-                                      selection: TextSelection.collapsed(offset: newOffset),
-                                    );
-                                  }
-                                }
-                                return null;
-                              },
-                            ),
+            padding: const EdgeInsets.fromLTRB(16, 4, 16, 0),
+            child: Actions(
+              actions: widget.onDesktopPaste != null
+                  ? {
+                      PasteTextIntent: CallbackAction<PasteTextIntent>(
+                        onInvoke: (intent) async {
+                          final handled = await widget.onDesktopPaste!();
+                          if (!handled) {
+                            // Not a file/image — paste plain text into the controller
+                            final data =
+                                await Clipboard.getData(Clipboard.kTextPlain);
+                            final text = data?.text;
+                            if (text != null && text.isNotEmpty) {
+                              final ctrl = widget.messageController;
+                              final sel = ctrl.selection;
+                              final newText = ctrl.text.replaceRange(
+                                sel.start < 0 ? ctrl.text.length : sel.start,
+                                sel.end < 0 ? ctrl.text.length : sel.end,
+                                text,
+                              );
+                              final newOffset =
+                                  (sel.start < 0 ? ctrl.text.length : sel.start) +
+                                      text.length;
+                              ctrl.value = ctrl.value.copyWith(
+                                text: newText,
+                                selection:
+                                    TextSelection.collapsed(offset: newOffset),
+                              );
+                            }
                           }
-                        : const {},
-                    child: Focus(
-                      onKeyEvent: _handleInputKeyEvent,
-                      child: ConstrainedBox(
-                        constraints: const BoxConstraints(
-                          minHeight: 80,
-                          maxHeight: 200,
-                        ),
-                        child: TextField(
-                          controller: widget.messageController,
-                          focusNode: widget.textFieldFocusNode,
-                          decoration: InputDecoration(
-                            hintText: AppLocalizations.of(context).chat_messageHint,
-                            border: InputBorder.none,
-                            contentPadding: const EdgeInsets.symmetric(
-                              horizontal: 8,
-                              vertical: 8,
-                            ),
-                          ),
-                          maxLines: null,
-                          textInputAction: TextInputAction.newline,
-                          enabled: !widget.isLoading,
-                        ),
+                          return null;
+                        },
                       ),
+                    }
+                  : const {},
+              child: Focus(
+                onKeyEvent: _handleInputKeyEvent,
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(
+                    minHeight: 100,
+                    maxHeight: 220,
+                  ),
+                  child: TextField(
+                    controller: widget.messageController,
+                    focusNode: widget.textFieldFocusNode,
+                    style: const TextStyle(
+                      fontSize: 14,
+                      height: 1.5,
+                      color: AppColors.textPrimary,
                     ),
+                    decoration: InputDecoration(
+                      hintText: l10n.chat_messageHint,
+                      hintStyle: TextStyle(
+                        fontSize: 14,
+                        color: Colors.grey[400],
+                      ),
+                      border: InputBorder.none,
+                      isDense: true,
+                      contentPadding: const EdgeInsets.symmetric(vertical: 8),
+                    ),
+                    maxLines: null,
+                    textInputAction: TextInputAction.newline,
+                    enabled: !widget.isLoading,
                   ),
                 ),
-                const SizedBox(width: 8),
-                Padding(
-                  padding: const EdgeInsets.only(bottom: 4),
-                  child: widget.isLoading
-                      ? Padding(
-                          padding: const EdgeInsets.all(8.0),
-                          child: SizedBox(
-                            width: 24,
-                            height: 24,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2,
-                              color: Theme.of(context).primaryColor,
-                            ),
-                          ),
-                        )
-                      : IconButton(
-                              icon: const Icon(Icons.send),
-                              color: _canSend
-                                  ? Theme.of(context).primaryColor
-                                  : Colors.grey[400],
-                              onPressed: _canSend ? widget.onSend : null,
-                            ),
-                ),
+              ),
+            ),
+          ),
+          // Bottom action row — Send button bottom-right (WeChat style)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: [
+                if (widget.isLoading)
+                  SizedBox(
+                    width: 22,
+                    height: 22,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: Theme.of(context).primaryColor,
+                    ),
+                  )
+                else
+                  _buildDesktopSendButton(l10n.chat_send),
               ],
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildDesktopToolbarIcon({
+    required IconData icon,
+    required Color color,
+    required String tooltip,
+    required VoidCallback onPressed,
+  }) {
+    return IconButton(
+      icon: Icon(icon, size: 22),
+      color: color,
+      onPressed: onPressed,
+      tooltip: tooltip,
+      splashRadius: 18,
+      padding: const EdgeInsets.all(8),
+      constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
+      visualDensity: VisualDensity.compact,
+    );
+  }
+
+  Widget _buildDesktopSendButton(String label) {
+    final enabled = _canSend;
+    final primary = Theme.of(context).primaryColor;
+    return Material(
+      color: Colors.white,
+      borderRadius: BorderRadius.circular(4),
+      child: InkWell(
+        onTap: enabled ? widget.onSend : null,
+        borderRadius: BorderRadius.circular(4),
+        child: Container(
+          constraints: const BoxConstraints(minWidth: 72),
+          padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 6),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(4),
+            border: Border.all(
+              color: const Color(0xFFE0E0E0),
+              width: 1,
+            ),
+          ),
+          alignment: Alignment.center,
+          child: Text(
+            label,
+            style: TextStyle(
+              fontSize: 13,
+              height: 1.2,
+              color: enabled ? primary : Colors.grey[400],
+              fontWeight: FontWeight.w400,
+            ),
+          ),
+        ),
       ),
     );
   }
