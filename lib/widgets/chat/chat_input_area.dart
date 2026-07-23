@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:emoji_picker_flutter/emoji_picker_flutter.dart';
 import 'package:flutter/material.dart';
@@ -126,7 +127,10 @@ class ChatInputAreaState extends State<ChatInputArea> {
   StreamSubscription<List<SlashCommandInfo>>? _slashCommandsSub;
 
   // Desktop WeChat-style floating emoji popover.
-  final LayerLink _emojiLayerLink = LayerLink();
+  // Anchored via the emoji button's global rect on the root Overlay so the
+  // panel isn't clipped / buried by the desktop conversation list (the chat
+  // lives inside a nested Navigator Overlay on the right panel).
+  final GlobalKey _emojiButtonKey = GlobalKey();
   final Object _emojiTapGroup = Object();
   OverlayEntry? _emojiOverlay;
   bool _desktopEmojiOpen = false;
@@ -658,16 +662,14 @@ class ChatInputAreaState extends State<ChatInputArea> {
               padding: const EdgeInsets.fromLTRB(8, 4, 16, 10),
               child: Row(
                 children: [
-                  CompositedTransformTarget(
-                    link: _emojiLayerLink,
-                    child: _buildDesktopToolbarIcon(
-                      icon: _desktopEmojiOpen
-                          ? Icons.keyboard_outlined
-                          : Icons.sentiment_satisfied_alt_outlined,
-                      color: iconColor,
-                      tooltip: 'Emoji',
-                      onPressed: _toggleDesktopEmojiPopover,
-                    ),
+                  _buildDesktopToolbarIcon(
+                    key: _emojiButtonKey,
+                    icon: _desktopEmojiOpen
+                        ? Icons.keyboard_outlined
+                        : Icons.sentiment_satisfied_alt_outlined,
+                    color: iconColor,
+                    tooltip: 'Emoji',
+                    onPressed: _toggleDesktopEmojiPopover,
                   ),
                   _buildDesktopToolbarIcon(
                     icon: Icons.folder_open_outlined,
@@ -700,12 +702,14 @@ class ChatInputAreaState extends State<ChatInputArea> {
   }
 
   Widget _buildDesktopToolbarIcon({
+    Key? key,
     required IconData icon,
     required Color color,
     required String tooltip,
     required VoidCallback onPressed,
   }) {
     return IconButton(
+      key: key,
       icon: Icon(icon, size: 22),
       color: color,
       onPressed: onPressed,
@@ -766,17 +770,50 @@ class ChatInputAreaState extends State<ChatInputArea> {
 
   void _showDesktopEmojiOverlay() {
     _removeDesktopEmojiOverlay(updateState: false);
-    final overlay = Overlay.of(context);
+
+    final overlay = Overlay.of(context, rootOverlay: true);
+    final buttonBox =
+        _emojiButtonKey.currentContext?.findRenderObject() as RenderBox?;
+    final overlayBox = overlay.context.findRenderObject() as RenderBox?;
+    if (buttonBox == null || overlayBox == null || !buttonBox.hasSize) {
+      return;
+    }
+
+    const popoverWidth = 360.0;
+    const popoverHeight = 320.0;
+    const caretSize = Size(14, 8);
+    const gap = 6.0;
+    const edgePadding = 8.0;
+
+    final buttonTopLeft =
+        overlayBox.globalToLocal(buttonBox.localToGlobal(Offset.zero));
+    final buttonCenterX = buttonTopLeft.dx + buttonBox.size.width / 2;
+    final buttonTop = buttonTopLeft.dy;
+
+    var left = buttonCenterX - popoverWidth / 2;
+    left = left.clamp(
+      edgePadding,
+      math.max(edgePadding, overlayBox.size.width - popoverWidth - edgePadding),
+    );
+    final panelHeight = popoverHeight + caretSize.height;
+    var top = buttonTop - gap - panelHeight;
+    top = top.clamp(
+      edgePadding,
+      math.max(edgePadding, overlayBox.size.height - panelHeight - edgePadding),
+    );
+    // Keep the caret aimed at the emoji button even when the panel is
+    // shifted horizontally to stay on-screen.
+    final caretLeft =
+        (buttonCenterX - left - caretSize.width / 2).clamp(8.0, popoverWidth - 22.0);
+
     final primary = Theme.of(context).primaryColor;
 
     _emojiOverlay = OverlayEntry(
       builder: (context) {
-        return CompositedTransformFollower(
-          link: _emojiLayerLink,
-          showWhenUnlinked: false,
-          targetAnchor: Alignment.topCenter,
-          followerAnchor: Alignment.bottomCenter,
-          offset: const Offset(0, -6),
+        return Positioned(
+          left: left,
+          top: top,
+          width: popoverWidth,
           child: TapRegion(
             groupId: _emojiTapGroup,
             onTapOutside: (_) => _removeDesktopEmojiOverlay(),
@@ -786,8 +823,8 @@ class ChatInputAreaState extends State<ChatInputArea> {
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   Container(
-                    width: 360,
-                    height: 320,
+                    width: popoverWidth,
+                    height: popoverHeight,
                     decoration: BoxDecoration(
                       color: Colors.white,
                       borderRadius: BorderRadius.circular(8),
@@ -805,7 +842,7 @@ class ChatInputAreaState extends State<ChatInputArea> {
                           _insertDesktopEmoji(emoji.emoji),
                       onBackspacePressed: _desktopEmojiBackspace,
                       config: Config(
-                        height: 320,
+                        height: popoverHeight,
                         checkPlatformCompatibility: true,
                         emojiViewConfig: const EmojiViewConfig(
                           emojiSizeMax: 28,
@@ -828,9 +865,15 @@ class ChatInputAreaState extends State<ChatInputArea> {
                     ),
                   ),
                   // Caret pointing down to the emoji button
-                  CustomPaint(
-                    size: const Size(14, 8),
-                    painter: _EmojiPopoverCaretPainter(),
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: Padding(
+                      padding: EdgeInsets.only(left: caretLeft),
+                      child: CustomPaint(
+                        size: caretSize,
+                        painter: _EmojiPopoverCaretPainter(),
+                      ),
+                    ),
                   ),
                 ],
               ),
