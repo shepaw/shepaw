@@ -44,6 +44,7 @@ class WorkflowPendingApprovalPicker {
         risk: PeerApprovalSelection.parseRisk(ac),
         confirmationId: ac['confirmation_id'] as String?,
         approvalData: ac,
+        execChannelId: ac['_workflowExecChannelId'] as String?,
       );
     }
     return null;

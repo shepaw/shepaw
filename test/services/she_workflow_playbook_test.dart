@@ -6,9 +6,21 @@ void main() {
   group('SheService.buildDmWorkflowPlaybookBlock', () {
     final block = SheService.buildDmWorkflowPlaybookBlock();
 
-    test('restricts every step agent to exactly "She"', () {
+    test('allows She and other exact agent names', () {
       expect(block, contains('"She"'));
-      expect(block, contains("Every step's `agent` MUST be exactly"));
+      expect(block, contains('agents.list'));
+      expect(block, contains('exact display name'));
+      expect(block, isNot(contains("Every step's `agent` MUST be exactly")));
+    });
+
+    test('documents parallel same-stage different agents', () {
+      expect(block, contains('same stage'));
+      expect(block, contains('parallel'));
+    });
+
+    test('keeps standalone dispatch as an option', () {
+      expect(block, contains('agents.dispatch'));
+      expect(block, contains('independent of workflows'));
     });
 
     test('instructs to end the turn after workflow create', () {

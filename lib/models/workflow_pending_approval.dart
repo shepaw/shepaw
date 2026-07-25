@@ -55,6 +55,7 @@ class WorkflowPendingApproval {
         risk: risk,
         confirmationId: confirmationId,
         approvalData: approvalData,
+        execChannelId: approvalData['_workflowExecChannelId'] as String?,
       );
 
   Map<String, dynamic> toMap() => {

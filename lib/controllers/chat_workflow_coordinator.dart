@@ -99,6 +99,7 @@ class ChatWorkflowCoordinator {
       risk: PeerApprovalSelection.parseRisk(data),
       confirmationId: confirmationId,
       approvalData: Map<String, dynamic>.from(data),
+      execChannelId: data['_workflowExecChannelId'] as String?,
     ));
     return staleConfirmationId;
   }

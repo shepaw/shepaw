@@ -61,6 +61,9 @@ class InteractiveResponseHandler {
     required String actionId,
     required String actionLabel,
     String? confirmationContext,
+    /// Override when the live turn lives on another channel (e.g. She
+    /// workflow step running in a relay session while the user is on She DM).
+    String? channelId,
   }) async {
     _optimisticUpdate(
       originalMessage: originalMessage,
@@ -98,6 +101,8 @@ class InteractiveResponseHandler {
     // just like `ChatController.processMessage` does for the main send path.
     bool awaitingAsyncTask = false;
 
+    final effectiveChannelId = channelId ?? ctx.currentChannelId;
+
     try {
       if (isMacTool || isPeerInBand) {
         // In-band (ACP blocking or peer-relayed): reply on the live turn.
@@ -115,7 +120,7 @@ class InteractiveResponseHandler {
           agent: remoteAgent,
           userId: ctx.getUserId(),
           userName: ctx.getUserName(),
-          channelId: ctx.currentChannelId,
+          channelId: effectiveChannelId,
           confirmationContext: confirmationContext,
         );
         LoggerService().info(
@@ -133,7 +138,7 @@ class InteractiveResponseHandler {
           agent: remoteAgent,
           userId: ctx.getUserId(),
           userName: ctx.getUserName(),
-          channelId: ctx.currentChannelId,
+          channelId: effectiveChannelId,
           confirmationContext: confirmationContext,
           acpCancellationToken: ctx.acpCancellationToken,
           onStreamChunk: _onStreamChunk,

@@ -355,6 +355,13 @@ class WorkflowPeerApprovalPending {
   final String? confirmationId;
   final Map<String, dynamic>? approvalData;
 
+  /// Channel where the step's agent turn is actually running.
+  ///
+  /// For She DM multi-agent workflows this is the She↔agent relay session,
+  /// while the user is viewing the She source channel. Submit paths must use
+  /// this id so [ChatService.getActiveTask] finds the live turn.
+  final String? execChannelId;
+
   const WorkflowPeerApprovalPending({
     required this.workflowId,
     required this.stepId,
@@ -365,6 +372,7 @@ class WorkflowPeerApprovalPending {
     this.risk = PeerApprovalRisk.high,
     this.confirmationId,
     this.approvalData,
+    this.execChannelId,
   });
 }
 

@@ -133,6 +133,7 @@ mixin _InteractionOps on _ChatControllerBase {
         confirmationId,
         actionId,
         actionLabel,
+        channelId: pending?.execChannelId,
       );
       if (!unblocked && workflowIdForResume != null) {
         await _resumeWorkflowExecutionIfNeeded(workflowIdForResume);
@@ -174,8 +175,9 @@ mixin _InteractionOps on _ChatControllerBase {
     Message originalMessage,
     String confirmationId,
     String actionId,
-    String actionLabel,
-  ) async {
+    String actionLabel, {
+    String? channelId,
+  }) async {
     try {
       await interactiveResponseHandler.handleActionConfirmation(
         originalMessage: originalMessage,
@@ -183,6 +185,7 @@ mixin _InteractionOps on _ChatControllerBase {
         actionId: actionId,
         actionLabel: actionLabel,
         confirmationContext: 'peer',
+        channelId: channelId,
       );
       final unblocked = _completePendingPeerApproval(
         originalMessage,

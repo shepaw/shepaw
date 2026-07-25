@@ -22,6 +22,7 @@ import 'group/planning_helpers.dart';
 import 'group/group_agent_executor.dart';
 import 'group/group_orchestration_service.dart';
 import 'workflow/workflow_service.dart';
+import 'workflow/workflow_step_agent_resolver.dart';
 import '../models/workflow_models.dart';
 import 'messaging/agent_messaging_service.dart';
 import 'group/group_session_service.dart';
@@ -31,6 +32,7 @@ import '../providers/notification_provider.dart';
 import 'foreground_task_service.dart';
 import 'logger_service.dart';
 import 'she_service.dart';
+import 'dispatch/she_relay_session_service.dart';
 import '../clis/shepaw/os/os_executor.dart' as os_exec;
 
 /// Result of a history supplement request, carrying both the agent's
@@ -1444,11 +1446,11 @@ class ChatService {
         return;
       }
 
-      // DM 工作流（She 私聊自规划自执行）：步骤通过 DM 消息路径逐个串行执行，
-      // 而非群聊执行器；收尾总结由 She 自己完成（她是自己私聊的工作流 admin）。
+      // DM 工作流（She 私聊）：步骤经 DM / 中转会话执行；She 自执行或派给
+      // 其他 agent。收尾总结由 She 完成（她是自己私聊的工作流 admin）。
       final isDmWorkflow = channel.isDM;
 
-      // Load agents
+      // Load channel agents
       final agents = <RemoteAgent>[];
       for (final agentId in channel.agentIds) {
         final agent = await _databaseService.getRemoteAgentById(agentId);
@@ -1459,6 +1461,11 @@ class ChatService {
         reachedTerminalState = true;
         return;
       }
+
+      // DM 多 agent 步骤：除频道成员外，还按名字从全局 agent 表解析。
+      final allAgentsForResolve = isDmWorkflow
+          ? await _databaseService.getAllRemoteAgents()
+          : agents;
 
       final groupName = channel.name;
       final groupDescription = channel.description ?? '';
@@ -1695,31 +1702,84 @@ class ChatService {
         await Future.wait(futures);
       }
 
-      // DM 阶段执行体：步骤逐个串行，经 DM 消息路径驱动 She 的本地回合
-      // （完整 DM prompt + 多轮工具循环）。串行是必须的——流式占位 id 与
-      // _activeTasks 均按 agent/channel 键控，同 agent 并行步骤会冲突。
+      // DM 阶段执行体：按 agent 分组 —— 同 agent 串行（共享 channel /
+      // _activeTasks），不同 agent 并行（各自中转会话）。She 步在本 DM 执行；
+      // 其他 agent 步在 She↔agent 中转会话执行。
       Future<void> executeDmStage(List<dynamic> steps) async {
-        for (final step in steps.where((s) => s.status == StepExecutionStatus.pending)) {
+        final pending = steps
+            .where((s) => s.status == StepExecutionStatus.pending)
+            .cast<WorkflowStepExecution>()
+            .toList();
+        if (pending.isEmpty) return;
+
+        final relaySessions = SheRelaySessionService(_databaseService);
+
+        Future<void> runOneStep(WorkflowStepExecution step) async {
           if (token.isCancelled) return;
 
           await _workflowService.startStep(step.id);
 
-          final agent = agents.cast<RemoteAgent?>().firstWhere(
-            (a) => a!.name == step.agentName,
-            orElse: () => null,
+          final agent = WorkflowStepAgentResolver.resolve(
+            agentName: step.agentName,
+            channelAgents: agents,
+            allAgents: allAgentsForResolve,
           );
           if (agent == null) {
-            await _workflowService.failStep(step.id, 'Agent "${step.agentName}" not found');
-            continue;
+            await _workflowService.failStep(
+              step.id,
+              'Agent "${step.agentName}" not found. '
+              'Use agents.list and match the exact name.',
+            );
+            return;
+          }
+
+          final onSheChannel =
+              WorkflowStepAgentResolver.runsOnSheChannel(agent);
+          late final String execChannelId;
+          if (onSheChannel) {
+            execChannelId = channelId;
+          } else {
+            try {
+              execChannelId = await relaySessions.ensureRelaySession(
+                sheChannelId: channelId,
+                agent: agent,
+              );
+            } catch (e) {
+              await _workflowService.failStep(
+                step.id,
+                'Failed to open relay session for "${agent.name}": $e',
+              );
+              return;
+            }
           }
 
           activeExec.onAgentStart?.call(agent.id, agent.name);
 
-          // 取消桥接：工作流取消 → 中止当前步骤的 LLM 流（而非仅步骤边界检查）
           final stepToken = ACPCancellationToken();
           token.addOnCancelled(stepToken.cancel);
 
           final stepBuffer = StringBuffer();
+
+          Map<String, dynamic> interactionPayload(Map<String, dynamic> d) => {
+                ...d,
+                '_workflowStepId': step.id,
+                '_workflowId': workflowId,
+                '_workflowExecChannelId': execChannelId,
+                if (!onSheChannel) '_workflowPeerApproval': true,
+              };
+
+          void fireAndForgetInteraction(
+            String type,
+            Map<String, dynamic> d,
+          ) {
+            serializedInteractionRequest!(
+              agent.id,
+              agent.name,
+              type,
+              interactionPayload(d),
+            ).ignore();
+          }
+
           try {
             final response = await _agentMessagingService.sendMessageToAgent(
               content: '[Workflow "${workflow.title}" — Stage ${step.stageIndex + 1}]\n'
@@ -1729,34 +1789,25 @@ class ChatService {
               agent: agent,
               userId: userId,
               userName: userName,
-              channelId: channelId,
+              channelId: execChannelId,
               acpCancellationToken: stepToken,
               onStreamChunk: (chunk) {
                 stepBuffer.write(chunk);
                 activeExec.onStreamChunk?.call(agent.id, agent.name, chunk);
               },
-              // 步骤中的交互卡片只挂载不阻塞（DM UI 工具本就 fire-and-forget，
-              // 步骤在 She 回合结束时完成）。
-              onActionConfirmation: (d) => serializedInteractionRequest!(
-                agent.id, agent.name, 'action_confirmation',
-                {...d, '_workflowStepId': step.id},
-              ).ignore(),
-              onSingleSelect: (d) => serializedInteractionRequest!(
-                agent.id, agent.name, 'single_select',
-                {...d, '_workflowStepId': step.id},
-              ).ignore(),
-              onMultiSelect: (d) => serializedInteractionRequest!(
-                agent.id, agent.name, 'multi_select',
-                {...d, '_workflowStepId': step.id},
-              ).ignore(),
-              onFileUpload: (d) => serializedInteractionRequest!(
-                agent.id, agent.name, 'file_upload',
-                {...d, '_workflowStepId': step.id},
-              ).ignore(),
-              onForm: (d) => serializedInteractionRequest!(
-                agent.id, agent.name, 'form',
-                {...d, '_workflowStepId': step.id},
-              ).ignore(),
+              // She 本地 UI 工具 fire-and-forget；其他 agent 的工具审批需挂
+              // 面板（_workflowPeerApproval），回合本身由 canUseTool 阻塞。
+              onActionConfirmation: (d) => fireAndForgetInteraction(
+                'action_confirmation',
+                d,
+              ),
+              onSingleSelect: (d) =>
+                  fireAndForgetInteraction('single_select', d),
+              onMultiSelect: (d) =>
+                  fireAndForgetInteraction('multi_select', d),
+              onFileUpload: (d) =>
+                  fireAndForgetInteraction('file_upload', d),
+              onForm: (d) => fireAndForgetInteraction('form', d),
               onFileMessage: (d) => _groupAgentExecutor.saveGroupFileMessage(
                 fileData: d,
                 agentId: agent.id,
@@ -1770,14 +1821,15 @@ class ChatService {
 
             if (token.isCancelled) return;
 
-            // 步骤输出优先取持久化的最终回复（不含 UI 工具噪声），流式 buffer 兜底
             final streamed = stepBuffer.toString();
             final output = (response != null && response.content.isNotEmpty)
                 ? response.content
                 : streamed;
             await _workflowService.completeStep(
               step.id,
-              outputSummary: output.length > 500 ? '${output.substring(0, 497)}...' : output,
+              outputSummary: output.length > 500
+                  ? '${output.substring(0, 497)}...'
+                  : output,
             );
           } catch (e) {
             await _workflowService.failStep(step.id, e.toString());
@@ -1785,6 +1837,15 @@ class ChatService {
             activeExec.onAgentDone?.call(agent.id, agent.name, false);
           }
         }
+
+        // 同 agent 串行、不同 agent 并行
+        final groups = WorkflowStepAgentResolver.groupStepExecutions(pending);
+        await Future.wait(groups.map((group) async {
+          for (final step in group) {
+            if (token.isCancelled) return;
+            await runOneStep(step);
+          }
+        }));
       }
 
       // Execute stages sequentially
@@ -1798,7 +1859,8 @@ class ChatService {
 
         final steps = stageMap[stageIdx]!;
 
-        // 按频道类型分支：群聊步骤并行（群聊执行器），DM 步骤串行（She 的 DM 回合）
+        // 按频道类型分支：群聊步骤并行（群聊执行器）；DM 同阶段不同 agent
+        // 并行、同 agent 串行（见 executeDmStage）。
         if (isDmWorkflow) {
           await executeDmStage(steps);
         } else {
