@@ -33,6 +33,7 @@ import '../widgets/chat/group_session_list_panel.dart';
 import '../widgets/chat/chat_mobile_menu_drawer.dart';
 import '../widgets/chat/group_members_panel.dart';
 import '../widgets/chat/add_group_member_panel.dart';
+import '../widgets/chat/system_prompt_panel.dart';
 import '../widgets/avatar_image.dart';
 import '../widgets/message_search_delegate.dart';
 import '../widgets/shepaw_search_page.dart';
@@ -1210,45 +1211,40 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   // DM system prompt
   // ---------------------------------------------------------------------------
 
-  void _showDmSystemPromptDialog() {
+  Future<void> _showDmSystemPromptPanel() async {
     final l10n = AppLocalizations.of(context);
-    final controller = TextEditingController(text: _controller.dmSystemPrompt ?? '');
-    showDialog<void>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text(l10n.chat_systemPromptTitle),
-        content: TextField(
-          controller: controller,
-          maxLines: 8,
-          minLines: 4,
-          decoration: InputDecoration(
-            hintText: l10n.chat_systemPromptHint,
-            border: const OutlineInputBorder(),
+    final content = SystemPromptPanel(
+      initialPrompt: _controller.dmSystemPrompt ?? '',
+      onSave: (prompt) async {
+        await _controller.updateDmSystemPrompt(prompt);
+        if (mounted) {
+          showTopToast(
+            context,
+            l10n.chat_systemPromptSaved,
+            icon: Icons.check_circle,
+            color: Colors.green,
+          );
+        }
+      },
+    );
+
+    // Same presentation as session list: right drawer on desktop, full route on mobile.
+    if (LayoutUtils.isDesktopLayout(context)) {
+      await LayoutUtils.showRightDrawer(context: context, builder: (_) => content);
+    } else {
+      await Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => Scaffold(
+            appBar: AppBar(
+              title: Text(AppLocalizations.of(context).chat_systemPromptTitle),
+              elevation: 1,
+            ),
+            body: content,
           ),
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(),
-            child: Text(l10n.common_cancel),
-          ),
-          FilledButton(
-            onPressed: () async {
-              Navigator.of(ctx).pop();
-              await _controller.updateDmSystemPrompt(controller.text);
-              if (mounted) {
-                showTopToast(
-                  context,
-                  l10n.chat_systemPromptSaved,
-                  icon: Icons.check_circle,
-                  color: Colors.green,
-                );
-              }
-            },
-            child: Text(l10n.common_save),
-          ),
-        ],
-      ),
-    );
+      );
+    }
   }
 
   // ---------------------------------------------------------------------------
@@ -1686,7 +1682,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
         onViewDetails: _navigateToAgentDetail,
         onEdit: _navigateToAgentDetailForEdit,
         onSearch: _showSearchDialog,
-        onCustomSystemPrompt: _showDmSystemPromptDialog,
+        onCustomSystemPrompt: _showDmSystemPromptPanel,
         onWorkflow: c.dmWorkflowEnabled ? _showGroupWorkflow : null,
       );
     }
@@ -1711,7 +1707,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
       onViewDetails: _navigateToAgentDetail,
       onEditAgent: _navigateToAgentDetailForEdit,
       onSearch: _showSearchDialog,
-      onCustomSystemPrompt: _showDmSystemPromptDialog,
+      onCustomSystemPrompt: _showDmSystemPromptPanel,
       onEditGroup: _editGroupInfo,
       onShowMembers: _showGroupMembersPanel,
       onWorkflow: (c.isGroupMode || c.dmWorkflowEnabled) ? _showGroupWorkflow : null,
