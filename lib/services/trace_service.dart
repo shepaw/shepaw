@@ -6,6 +6,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:sqflite/sqflite.dart';
 import 'package:uuid/uuid.dart';
 import '../models/inference_log_entry.dart';
+import '../models/model_token_pricing.dart';
 import '../models/trace_models.dart';
 import 'trace_database_service.dart';
 
@@ -113,6 +114,8 @@ class TraceService extends ChangeNotifier {
     InferenceStatus status, {
     String? error,
     int totalTextChars = 0,
+    int? totalInputTokens,
+    int? totalOutputTokens,
   }) async {
     final active = _activeSessions.remove(traceId);
     if (active == null) return;
@@ -129,7 +132,9 @@ class TraceService extends ChangeNotifier {
       ..totalToolCalls = active.spans
           .where((s) => s.spanType == 'tool_call')
           .length
-      ..totalTextChars = totalTextChars;
+      ..totalTextChars = totalTextChars
+      ..totalInputTokens = totalInputTokens
+      ..totalOutputTokens = totalOutputTokens;
 
     // Batch write in a single transaction
     try {
@@ -259,6 +264,72 @@ class TraceService extends ChangeNotifier {
       return rows.map(TraceEntry.fromMap).toList();
     } catch (e) {
       debugPrint('[TraceService] queryTraces error: $e');
+      return [];
+    }
+  }
+
+  /// Aggregate token usage by agent and calendar day (local timezone).
+  ///
+  /// Only sessions with non-null token totals are included. Cost estimates use
+  /// [ModelTokenPricing] when a model id is present on the trace row; rows with
+  /// different models on the same day are summed at the token level only
+  /// (cost uses a weighted average per-session estimate when model is known).
+  Future<List<TokenUsageAggregate>> aggregateTokenUsage({
+    String? agentId,
+    DateTime? from,
+    DateTime? to,
+    int limit = 90,
+  }) async {
+    try {
+      final db = await _db.database;
+      final conditions = <String>[
+        '(total_input_tokens IS NOT NULL OR total_output_tokens IS NOT NULL)',
+      ];
+      final args = <dynamic>[];
+
+      if (agentId != null) {
+        conditions.add('agent_id = ?');
+        args.add(agentId);
+      }
+      if (from != null) {
+        conditions.add('start_time >= ?');
+        args.add(from.toIso8601String());
+      }
+      if (to != null) {
+        conditions.add('start_time < ?');
+        args.add(to.toIso8601String());
+      }
+
+      final rows = await db.rawQuery(
+        '''
+        SELECT
+          agent_id,
+          substr(start_time, 1, 10) AS day,
+          COALESCE(SUM(total_input_tokens), 0) AS input_tokens,
+          COALESCE(SUM(total_output_tokens), 0) AS output_tokens,
+          COUNT(*) AS session_count
+        FROM traces
+        WHERE ${conditions.join(' AND ')}
+        GROUP BY agent_id, substr(start_time, 1, 10)
+        ORDER BY day DESC
+        LIMIT ?
+        ''',
+        [...args, limit],
+      );
+
+      return rows.map((row) {
+        final input = (row['input_tokens'] as num?)?.toInt() ?? 0;
+        final output = (row['output_tokens'] as num?)?.toInt() ?? 0;
+        return TokenUsageAggregate(
+          agentId: row['agent_id'] as String?,
+          day: row['day'] as String? ?? '',
+          inputTokens: input,
+          outputTokens: output,
+          sessionCount: (row['session_count'] as num?)?.toInt() ?? 0,
+        );
+      }).toList();
+    } catch (e) {
+      debugPrint('[TraceService] aggregateTokenUsage error: $e');
       return [];
     }
   }

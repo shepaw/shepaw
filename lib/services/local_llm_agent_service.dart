@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 import '../models/remote_agent.dart';
 import '../models/llm_stream_event.dart';
+import '../models/llm_token_usage.dart';
 import '../models/attachment_data.dart';
 import '../models/model_routing_config.dart';
 import '../models/agent_scenario_models.dart';
@@ -291,6 +292,7 @@ class LocalLLMAgentService {
       'model': model,
       'messages': messages,
       'stream': true,
+      'stream_options': {'include_usage': true},
     };
     if (tools.isNotEmpty) {
       requestBody['tools'] = tools;
@@ -407,18 +409,20 @@ class LocalLLMAgentService {
         yield LLMTextEvent(content);
       }
 
-      // Extract tool calls if present
       final toolCalls = _extractToolCalls(json, resolved);
       for (final tc in toolCalls) {
         yield tc;
       }
 
+      final usage = LlmTokenUsage.fromJson(json['usage']);
       yield LLMDoneEvent(
         stopReason: 'stop',
         rawAssistantMessage: {
           'role': 'assistant',
           if (content.isNotEmpty) 'content': content,
         },
+        inputTokens: usage?.inputTokens,
+        outputTokens: usage?.outputTokens,
       );
     } catch (e) {
       rethrow;
@@ -453,12 +457,15 @@ class LocalLLMAgentService {
         yield tc;
       }
 
+      final usage = LlmTokenUsage.fromJson(json['usage']);
       yield LLMDoneEvent(
         stopReason: toolCalls.isNotEmpty ? 'tool_calls' : 'stop',
         rawAssistantMessage: {
           'role': 'assistant',
           if (content.isNotEmpty) 'content': content,
         },
+        inputTokens: usage?.inputTokens,
+        outputTokens: usage?.outputTokens,
       );
     } catch (e) {
       rethrow;
@@ -800,6 +807,7 @@ class LocalLLMAgentService {
       'model': model,
       'messages': messages,
       'stream': true,
+      'stream_options': {'include_usage': true},
     };
     if (enableUITools) {
       final tools = UIComponentRegistry.instance.openAITools();
@@ -981,6 +989,7 @@ class LocalLLMAgentService {
       // Accumulate reasoning_content (Kimi thinking mode) for the raw assistant message
       final reasoningBuffer = StringBuffer();
       String? lastFinishReason;
+      LlmTokenUsage? usage;
 
       String buffer = '';
       await for (final chunk
@@ -999,6 +1008,11 @@ class LocalLLMAgentService {
 
           try {
             final json = jsonDecode(data) as Map<String, dynamic>;
+            final chunkUsage = LlmTokenUsage.fromJson(json['usage']);
+            if (chunkUsage != null) {
+              usage = (usage ?? const LlmTokenUsage()).merge(chunkUsage);
+            }
+
             final choices = json['choices'] as List<dynamic>?;
             if (choices == null || choices.isEmpty) continue;
 
@@ -1131,6 +1145,8 @@ class LocalLLMAgentService {
       yield LLMDoneEvent(
         stopReason: lastFinishReason ?? 'stop',
         rawAssistantMessage: rawAssistant,
+        inputTokens: usage?.inputTokens,
+        outputTokens: usage?.outputTokens,
       );
     } on HttpException catch (_) {
       // Force-closed by abort() — silently stop yielding.
@@ -1178,6 +1194,7 @@ class LocalLLMAgentService {
       final contentBlocks = <Map<String, dynamic>>[];
       final textBuffer = StringBuffer();
       String? stopReason;
+      LlmTokenUsage? usage;
 
       String buffer = '';
       String? currentEventType;
@@ -1213,6 +1230,10 @@ class LocalLLMAgentService {
                 final message = json['message'] as Map<String, dynamic>?;
                 if (message != null) {
                   stopReason = message['stop_reason'] as String?;
+                  final startUsage = LlmTokenUsage.fromJson(message['usage']);
+                  if (startUsage != null) {
+                    usage = (usage ?? const LlmTokenUsage()).merge(startUsage);
+                  }
                 }
                 break;
 
@@ -1284,6 +1305,10 @@ class LocalLLMAgentService {
                 if (delta != null) {
                   stopReason = delta['stop_reason'] as String? ?? stopReason;
                 }
+                final deltaUsage = LlmTokenUsage.fromJson(json['usage']);
+                if (deltaUsage != null) {
+                  usage = (usage ?? const LlmTokenUsage()).merge(deltaUsage);
+                }
                 break;
             }
           } catch (_) {
@@ -1306,6 +1331,8 @@ class LocalLLMAgentService {
           'role': 'assistant',
           'content': contentBlocks,
         },
+        inputTokens: usage?.inputTokens,
+        outputTokens: usage?.outputTokens,
       );
     } on HttpException catch (_) {
       // Force-closed by abort() — silently stop yielding.

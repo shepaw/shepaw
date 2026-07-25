@@ -39,8 +39,14 @@ class LLMDoneEvent extends LLMStreamEvent {
   /// For Claude: the full `content` array.
   final Map<String, dynamic>? rawAssistantMessage;
 
+  /// Prompt / completion token counts when the provider reported usage.
+  final int? inputTokens;
+  final int? outputTokens;
+
   LLMDoneEvent({
     required this.stopReason,
     this.rawAssistantMessage,
+    this.inputTokens,
+    this.outputTokens,
   });
 }

@@ -125,12 +125,18 @@ class InferenceLogService extends ChangeNotifier {
     // Finalize totals
     int textChars = 0;
     int toolCalls = 0;
+    int inputTokens = 0;
+    int outputTokens = 0;
     for (final round in active.rounds) {
       textChars += round.textBuffer.length;
       toolCalls += round.toolCalls.length;
+      inputTokens += round.inputTokens ?? 0;
+      outputTokens += round.outputTokens ?? 0;
     }
     active.totalTextChars = textChars;
     active.totalToolCalls = toolCalls;
+    active.totalInputTokens = inputTokens;
+    active.totalOutputTokens = outputTokens;
 
     // Persist final state
     _trace.endTrace(
@@ -138,6 +144,8 @@ class InferenceLogService extends ChangeNotifier {
       status,
       error: error,
       totalTextChars: textChars,
+      totalInputTokens: inputTokens > 0 ? inputTokens : null,
+      totalOutputTokens: outputTokens > 0 ? outputTokens : null,
     ).ignore();
 
     notifyListeners();
@@ -176,7 +184,12 @@ class InferenceLogService extends ChangeNotifier {
     // No notifyListeners — too frequent
   }
 
-  void endRound(String sessionId, {String? stopReason}) {
+  void endRound(
+    String sessionId, {
+    String? stopReason,
+    int? inputTokens,
+    int? outputTokens,
+  }) {
     if (!enabled) return;
     final active = _activeSessions[sessionId];
     if (active == null || active.rounds.isEmpty) return;
@@ -184,6 +197,8 @@ class InferenceLogService extends ChangeNotifier {
     final round = active.rounds.last;
     round.endTime = DateTime.now();
     round.stopReason = stopReason;
+    round.inputTokens = inputTokens;
+    round.outputTokens = outputTokens;
 
     active.timeline.add(InferenceTimelineEvent(
       timestamp: DateTime.now(),
@@ -191,6 +206,8 @@ class InferenceLogService extends ChangeNotifier {
       data: {
         'round': round.roundNumber,
         'stopReason': stopReason ?? 'unknown',
+        if (inputTokens != null) 'inputTokens': inputTokens,
+        if (outputTokens != null) 'outputTokens': outputTokens,
       },
     ));
 
@@ -202,6 +219,8 @@ class InferenceLogService extends ChangeNotifier {
         outputData: {
           'text': round.textBuffer.toString(),
           'stopReason': stopReason ?? 'unknown',
+          if (inputTokens != null) 'inputTokens': inputTokens,
+          if (outputTokens != null) 'outputTokens': outputTokens,
         },
         status: 'completed',
       );

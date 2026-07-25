@@ -608,7 +608,12 @@ class GroupAgentExecutor {
                 break;
               case LLMDoneEvent():
                 doneEvent = event;
-                infLogGroup.endRound(groupTraceId, stopReason: event.stopReason);
+                infLogGroup.endRound(
+                  groupTraceId,
+                  stopReason: event.stopReason,
+                  inputTokens: event.inputTokens,
+                  outputTokens: event.outputTokens,
+                );
                 break;
             }
           }

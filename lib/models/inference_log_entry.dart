@@ -39,6 +39,12 @@ class InferenceRound {
   final List<Map<String, dynamic>> toolResults = [];
   String? stopReason;
 
+  /// Provider-reported prompt tokens for this round (nullable when absent).
+  int? inputTokens;
+
+  /// Provider-reported completion tokens for this round.
+  int? outputTokens;
+
   /// Full messages array sent to the LLM in this round (for trace persistence).
   List<Map<String, dynamic>>? messages;
 
@@ -59,6 +65,8 @@ class InferenceRound {
     'toolCalls': toolCalls,
     'toolResults': toolResults,
     'stopReason': stopReason,
+    'inputTokens': inputTokens,
+    'outputTokens': outputTokens,
     'messageCount': messages?.length,
   };
 }
@@ -90,6 +98,8 @@ class InferenceLogEntry {
   // Totals (derived)
   int totalTextChars = 0;
   int totalToolCalls = 0;
+  int totalInputTokens = 0;
+  int totalOutputTokens = 0;
 
   // Error
   String? errorMessage;
@@ -134,6 +144,8 @@ class InferenceLogEntry {
     'timeline': timeline.map((e) => e.toJson()).toList(),
     'totalTextChars': totalTextChars,
     'totalToolCalls': totalToolCalls,
+    'totalInputTokens': totalInputTokens,
+    'totalOutputTokens': totalOutputTokens,
     'errorMessage': errorMessage,
   };
 }

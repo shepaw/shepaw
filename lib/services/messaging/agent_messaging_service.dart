@@ -1661,7 +1661,12 @@ class AgentMessagingService {
 
             case LLMDoneEvent():
               doneEvent = event;
-              infLog.endRound(activeTask.taskId, stopReason: event.stopReason);
+              infLog.endRound(
+                activeTask.taskId,
+                stopReason: event.stopReason,
+                inputTokens: event.inputTokens,
+                outputTokens: event.outputTokens,
+              );
               break;
           }
         }

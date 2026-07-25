@@ -692,7 +692,8 @@ class _InferenceDetailScreen extends StatelessWidget {
           style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
         ),
         Text(
-          'Rounds: ${entry.rounds.length}  |  Tool calls: ${entry.totalToolCalls}  |  Text: ${entry.totalTextChars} chars',
+          'Rounds: ${entry.rounds.length}  |  Tool calls: ${entry.totalToolCalls}  |  Text: ${entry.totalTextChars} chars'
+          '${entry.totalInputTokens + entry.totalOutputTokens > 0 ? '  |  Tokens: ${entry.totalInputTokens}→${entry.totalOutputTokens}' : ''}',
           style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
         ),
       ],
