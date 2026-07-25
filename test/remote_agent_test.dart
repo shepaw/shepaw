@@ -2,7 +2,6 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:shepaw/models/remote_agent.dart';
 import 'package:shepaw/services/token_service.dart';
 import 'package:shepaw/services/local_database_service.dart';
-import 'package:shepaw/services/remote_agent_service.dart';
 
 void main() {
   group('RemoteAgent Model Tests', () {
@@ -158,9 +157,10 @@ void main() {
         updatedAt: now,
       );
 
-      expect(agent.protocolName, 'ACP');
+      expect(agent.protocol, ProtocolType.acp);
+      expect(agent.protocol.toJson(), 'acp');
       expect(agent.connectionTypeName, 'WebSocket');
-      expect(agent.statusText, '在线');
+      expect(agent.status, AgentStatus.online);
       expect(agent.statusIcon, '🟢');
     });
 

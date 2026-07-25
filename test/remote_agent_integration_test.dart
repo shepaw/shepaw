@@ -65,9 +65,9 @@ void main() {
       print('   ID: ${agent.id}');
       print('   名称: ${agent.name}');
       print('   Token: ${agent.token}');
-      print('   协议: ${agent.protocolName}');
+      print('   协议: ${agent.protocol.toJson()}');
       print('   连接方式: ${agent.connectionTypeName}');
-      print('   状态: ${agent.statusText} ${agent.statusIcon}');
+      print('   状态: ${agent.status.toJson()} ${agent.statusIcon}');
     });
 
     test('Should retrieve created agent from database', () async {
@@ -125,7 +125,7 @@ void main() {
       print('✅ 助手列表获取成功！');
       print('   总共 ${allAgents.length} 个助手');
       for (final agent in allAgents.take(5)) {
-        print('   - ${agent.name} (${agent.protocolName}/${agent.connectionTypeName}) ${agent.statusIcon}');
+        print('   - ${agent.name} (${agent.protocol.toJson()}/${agent.connectionTypeName}) ${agent.statusIcon}');
       }
     });
 

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shepaw/l10n/app_localizations.dart';
 import 'package:shepaw/models/dispatch_task.dart';
 import 'package:shepaw/models/message.dart';
 import 'package:shepaw/widgets/chat/dispatch_card.dart';
@@ -33,7 +34,14 @@ void main() {
   Future<void> pump(WidgetTester tester, Widget child) async {
     await tester.binding.setSurfaceSize(const Size(500, 400));
     addTearDown(() => tester.binding.setSurfaceSize(null));
-    await tester.pumpWidget(MaterialApp(home: Scaffold(body: child)));
+    await tester.pumpWidget(
+      MaterialApp(
+        locale: const Locale('zh'),
+        localizationsDelegates: AppLocalizations.localizationsDelegates,
+        supportedLocales: AppLocalizations.supportedLocales,
+        home: Scaffold(body: child),
+      ),
+    );
     await tester.pumpAndSettle();
   }
 
