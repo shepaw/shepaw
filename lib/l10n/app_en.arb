@@ -1944,6 +1944,7 @@
   "workflow_needToolConfirm": "Tool action confirmation needed",
   "workflow_waitingToolApprovalShort": "Awaiting tool approval",
   "workflow_viewRelatedMessage": "View related message",
+  "workflow_goReview": "Go review",
   "workflow_approveExec": "Approve",
   "workflow_revisionComment": "Revision comments",
   "workflow_revisionHint": "Describe your revision comments...",
@@ -1979,7 +1980,7 @@
     }
   },
   "workflow_empty": "No workflow records",
-  "workflow_emptyHint": "After enabling Flow mode, workflow runs in group chat will appear here",
+  "workflow_emptyHint": "Approved and executed workflows will appear here",
   "workflow_statusPendingApproval": "Pending approval",
   "workflow_statusRunning": "Running",
   "workflow_statusCompleted": "Completed",
@@ -2294,6 +2295,7 @@
   "relay_processed": "Processed",
   "relay_expired": "Expired",
   "relay_failed": "Failed",
+  "relay_goReview": "Review in agent chat",
   "relay_title": "Action confirm · {agentName}",
   "@relay_title": {
     "placeholders": {

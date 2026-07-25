@@ -62,6 +62,7 @@ void main() {
       expect(find.text('允许执行 git push 吗？'), findsOneWidget);
       expect(find.text('允许'), findsOneWidget);
       expect(find.text('拒绝'), findsOneWidget);
+      expect(find.text('去助手会话审核'), findsOneWidget);
     });
 
     testWidgets('resolved renders selected label without buttons',

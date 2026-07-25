@@ -4134,6 +4134,9 @@ class AppLocalizationsZh extends AppLocalizations {
   String get workflow_viewRelatedMessage => '查看相关消息';
 
   @override
+  String get workflow_goReview => '去审核';
+
+  @override
   String get workflow_approveExec => '批准执行';
 
   @override
@@ -4164,7 +4167,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get workflow_empty => '暂无工作流记录';
 
   @override
-  String get workflow_emptyHint => '开启 Flow 模式后，群聊中的工作流执行将记录在此处';
+  String get workflow_emptyHint => '工作流计划获批并执行后，记录会显示在此处';
 
   @override
   String get workflow_statusPendingApproval => '待审批';
@@ -4640,6 +4643,9 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get relay_failed => '处理失败';
+
+  @override
+  String get relay_goReview => '去助手会话审核';
 
   @override
   String relay_title(String agentName) {

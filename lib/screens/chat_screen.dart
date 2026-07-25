@@ -1065,7 +1065,12 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   void _showGroupWorkflow() {
     final channelId = _controller.currentChannelId;
     if (channelId == null) return;
-    final channelName = _controller.groupChannel?.name ?? '';
+    final l10n = AppLocalizations.of(context);
+    final c = _controller;
+    final channelName = c.groupChannel?.name ??
+        (SheService.isSheIdentity(c.agentId)
+            ? SheService.resolveDisplayName(c.agentName, l10n.she_name)
+            : (c.agentName ?? ''));
     if (widget.onShowGroupWorkflow != null) {
       widget.onShowGroupWorkflow!(channelId, channelName);
       return;
@@ -1682,6 +1687,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
         onEdit: _navigateToAgentDetailForEdit,
         onSearch: _showSearchDialog,
         onCustomSystemPrompt: _showDmSystemPromptDialog,
+        onWorkflow: c.dmWorkflowEnabled ? _showGroupWorkflow : null,
       );
     }
   }
@@ -1708,7 +1714,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
       onCustomSystemPrompt: _showDmSystemPromptDialog,
       onEditGroup: _editGroupInfo,
       onShowMembers: _showGroupMembersPanel,
-      onWorkflow: _showGroupWorkflow,
+      onWorkflow: (c.isGroupMode || c.dmWorkflowEnabled) ? _showGroupWorkflow : null,
     );
   }
 

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../l10n/app_localizations.dart';
 import '../../models/message.dart';
+import '../../screens/chat_screen.dart';
 import '../../services/chat_service.dart';
 import '../../services/dispatch/dispatch_service.dart';
 
@@ -41,6 +42,16 @@ class RelayApprovalCard extends StatelessWidget {
       }
     } catch (_) {}
     return null;
+  }
+
+  void _openRelayChat(BuildContext context) {
+    final relayChannelId = _payload['relay_channel_id'] as String? ?? '';
+    if (relayChannelId.isEmpty) return;
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => ChatScreen(channelId: relayChannelId),
+      ),
+    );
   }
 
   @override
@@ -104,6 +115,8 @@ class RelayApprovalCard extends StatelessWidget {
     final colorScheme = Theme.of(context).colorScheme;
     final payload = _payload;
     final actions = (payload['actions'] as List<dynamic>?) ?? const [];
+    final relayChannelId = payload['relay_channel_id'] as String? ?? '';
+    final canOpenRelay = relayChannelId.isNotEmpty;
 
     final (chipLabel, stateColor) = switch (state) {
       _CardState.pending => (l10n.relay_waiting, Colors.orange),
@@ -178,13 +191,50 @@ class RelayApprovalCard extends StatelessWidget {
               const Divider(height: 1, indent: 12, endIndent: 12),
               Padding(
                 padding: const EdgeInsets.fromLTRB(12, 8, 12, 10),
-                child: Wrap(
-                  spacing: 8,
-                  runSpacing: 6,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    for (final action in actions)
-                      _actionButton(context, action, l10n),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 6,
+                      children: [
+                        for (final action in actions)
+                          _actionButton(context, action, l10n),
+                      ],
+                    ),
+                    if (canOpenRelay) ...[
+                      const SizedBox(height: 4),
+                      Align(
+                        alignment: Alignment.centerRight,
+                        child: TextButton.icon(
+                          onPressed: () => _openRelayChat(context),
+                          icon: const Icon(Icons.touch_app_outlined, size: 15),
+                          label: Text(l10n.relay_goReview),
+                          style: TextButton.styleFrom(
+                            visualDensity: VisualDensity.compact,
+                            textStyle: const TextStyle(fontSize: 12),
+                          ),
+                        ),
+                      ),
+                    ],
                   ],
+                ),
+              ),
+            ] else if (canOpenRelay && state == _CardState.pending) ...[
+              const Divider(height: 1, indent: 12, endIndent: 12),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(12, 6, 12, 8),
+                child: Align(
+                  alignment: Alignment.centerRight,
+                  child: TextButton.icon(
+                    onPressed: () => _openRelayChat(context),
+                    icon: const Icon(Icons.touch_app_outlined, size: 15),
+                    label: Text(l10n.relay_goReview),
+                    style: TextButton.styleFrom(
+                      visualDensity: VisualDensity.compact,
+                      textStyle: const TextStyle(fontSize: 12),
+                    ),
+                  ),
                 ),
               ),
             ] else

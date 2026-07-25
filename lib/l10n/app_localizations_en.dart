@@ -4293,6 +4293,9 @@ class AppLocalizationsEn extends AppLocalizations {
   String get workflow_viewRelatedMessage => 'View related message';
 
   @override
+  String get workflow_goReview => 'Go review';
+
+  @override
   String get workflow_approveExec => 'Approve';
 
   @override
@@ -4324,7 +4327,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get workflow_emptyHint =>
-      'After enabling Flow mode, workflow runs in group chat will appear here';
+      'Approved and executed workflows will appear here';
 
   @override
   String get workflow_statusPendingApproval => 'Pending approval';
@@ -4821,6 +4824,9 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get relay_failed => 'Failed';
+
+  @override
+  String get relay_goReview => 'Review in agent chat';
 
   @override
   String relay_title(String agentName) {

@@ -85,6 +85,8 @@ class ChatMenuHelper {
   }
 
   /// Show the DM agent menu (reset, details, system prompt, search).
+  ///
+  /// [onWorkflow] is shown for She DM when workflow management is enabled.
   static Future<void> showAgentMenu(
     BuildContext context, {
     BuildContext? anchorContext,
@@ -93,6 +95,7 @@ class ChatMenuHelper {
     required VoidCallback onSearch,
     required VoidCallback onCustomSystemPrompt,
     VoidCallback? onEdit,
+    VoidCallback? onWorkflow,
   }) async {
     final menuL10n = AppLocalizations.of(context);
 
@@ -122,6 +125,12 @@ class ChatMenuHelper {
           icon: Icons.edit_note_outlined,
           label: menuL10n.chat_customSystemPrompt,
         ),
+        if (onWorkflow != null)
+          _buildMenuItem(
+            value: 'workflow',
+            icon: Icons.account_tree_outlined,
+            label: menuL10n.chat_workflow,
+          ),
         _buildMenuItem(
           value: 'search',
           icon: Icons.search,
@@ -140,6 +149,8 @@ class ChatMenuHelper {
         onViewDetails();
       case 'systemPrompt':
         onCustomSystemPrompt();
+      case 'workflow':
+        onWorkflow?.call();
       case 'search':
         onSearch();
     }

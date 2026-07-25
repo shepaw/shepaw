@@ -2429,6 +2429,7 @@
   "workflow_needToolConfirm": "需要确认工具操作",
   "workflow_waitingToolApprovalShort": "等待工具审批",
   "workflow_viewRelatedMessage": "查看相关消息",
+  "workflow_goReview": "去审核",
   "workflow_approveExec": "批准执行",
   "workflow_revisionComment": "修改意见",
   "workflow_revisionHint": "请描述你的修改意见...",
@@ -2464,7 +2465,7 @@
     }
   },
   "workflow_empty": "暂无工作流记录",
-  "workflow_emptyHint": "开启 Flow 模式后，群聊中的工作流执行将记录在此处",
+  "workflow_emptyHint": "工作流计划获批并执行后，记录会显示在此处",
   "workflow_statusPendingApproval": "待审批",
   "workflow_statusRunning": "运行中",
   "workflow_statusCompleted": "已完成",
@@ -2779,6 +2780,7 @@
   "relay_processed": "已处理",
   "relay_expired": "已过期",
   "relay_failed": "处理失败",
+  "relay_goReview": "去助手会话审核",
   "relay_title": "操作确认 · {agentName}",
   "@relay_title": {
     "placeholders": {

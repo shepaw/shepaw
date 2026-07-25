@@ -335,7 +335,7 @@ class _WorkflowProgressPanelState extends State<WorkflowProgressPanel>
                     onTap: () =>
                         widget.onScrollToApproval?.call(pending.messageId!),
                     child: Text(
-                      l10n.workflow_viewRelatedMessage,
+                      l10n.workflow_goReview,
                       style: TextStyle(
                         fontSize: 12,
                         fontWeight: FontWeight.w600,

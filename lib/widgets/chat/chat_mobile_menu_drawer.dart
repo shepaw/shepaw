@@ -109,6 +109,12 @@ class ChatMobileMenuDrawer extends StatelessWidget {
                       title: Text(l10n.chat_customSystemPrompt),
                       onTap: () => _closeThen(context, onCustomSystemPrompt!),
                     ),
+                    if (onWorkflow != null)
+                      ListTile(
+                        leading: const Icon(Icons.account_tree_outlined),
+                        title: Text(l10n.chat_workflow),
+                        onTap: () => _closeThen(context, onWorkflow!),
+                      ),
                     ListTile(
                       leading: const Icon(Icons.search),
                       title: Text(l10n.chat_searchMessages),

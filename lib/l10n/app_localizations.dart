@@ -7622,6 +7622,12 @@ abstract class AppLocalizations {
   /// **'查看相关消息'**
   String get workflow_viewRelatedMessage;
 
+  /// No description provided for @workflow_goReview.
+  ///
+  /// In zh, this message translates to:
+  /// **'去审核'**
+  String get workflow_goReview;
+
   /// No description provided for @workflow_approveExec.
   ///
   /// In zh, this message translates to:
@@ -7673,7 +7679,7 @@ abstract class AppLocalizations {
   /// No description provided for @workflow_emptyHint.
   ///
   /// In zh, this message translates to:
-  /// **'开启 Flow 模式后，群聊中的工作流执行将记录在此处'**
+  /// **'工作流计划获批并执行后，记录会显示在此处'**
   String get workflow_emptyHint;
 
   /// No description provided for @workflow_statusPendingApproval.
@@ -8515,6 +8521,12 @@ abstract class AppLocalizations {
   /// In zh, this message translates to:
   /// **'处理失败'**
   String get relay_failed;
+
+  /// No description provided for @relay_goReview.
+  ///
+  /// In zh, this message translates to:
+  /// **'去助手会话审核'**
+  String get relay_goReview;
 
   /// No description provided for @relay_title.
   ///

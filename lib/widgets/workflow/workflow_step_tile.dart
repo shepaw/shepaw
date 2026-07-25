@@ -68,7 +68,7 @@ class WorkflowStepTile extends StatelessWidget {
                               size: 13, color: Colors.deepOrange.shade700),
                           const SizedBox(width: 4),
                           Text(
-                            l10n.workflow_waitingToolTap,
+                            l10n.workflow_goReview,
                             style: TextStyle(
                               fontSize: 11,
                               fontWeight: FontWeight.w600,
