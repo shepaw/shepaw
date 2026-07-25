@@ -1682,7 +1682,8 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
         onViewDetails: _navigateToAgentDetail,
         onEdit: _navigateToAgentDetailForEdit,
         onSearch: _showSearchDialog,
-        onCustomSystemPrompt: _showDmSystemPromptPanel,
+        onCustomSystemPrompt:
+            c.isPeerAgent ? null : _showDmSystemPromptPanel,
         onWorkflow: c.dmWorkflowEnabled ? _showGroupWorkflow : null,
       );
     }
@@ -1707,7 +1708,8 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
       onViewDetails: _navigateToAgentDetail,
       onEditAgent: _navigateToAgentDetailForEdit,
       onSearch: _showSearchDialog,
-      onCustomSystemPrompt: _showDmSystemPromptPanel,
+      onCustomSystemPrompt:
+          c.isPeerAgent ? null : _showDmSystemPromptPanel,
       onEditGroup: _editGroupInfo,
       onShowMembers: _showGroupMembersPanel,
       onWorkflow: (c.isGroupMode || c.dmWorkflowEnabled) ? _showGroupWorkflow : null,

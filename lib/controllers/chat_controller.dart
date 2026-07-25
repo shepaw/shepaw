@@ -143,6 +143,11 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
   /// 该设备的 P2P 连接状态，而非普通的健康轮询；为 null 表示非 peer agent。
   String? _agentSourcePeerId;
 
+  /// Whether the current DM agent is a peer-shared agent (protocol=peer).
+  /// Used to hide features that only apply to local/ACP agents (e.g. session
+  /// system-prompt overrides, which peer relay does not forward).
+  bool get isPeerAgent => _agentSourcePeerId != null;
+
   /// peer 连接状态变化订阅，用于让 peer agent 的在线状态实时跟随设备上/下线。
   StreamSubscription<PeerConnectionEvent>? _peerConnSub;
 
