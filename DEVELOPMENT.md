@@ -28,10 +28,13 @@ Use `lib/services/local_user_identity.dart` (`LocalUserIdentity.id` / `displayNa
 flutter pub get
 flutter analyze
 flutter test --exclude-tags=needs-plugins
+flutter test test/eval
 dart format .
 ```
 
 Integration tests that need `path_provider` / platform channels are tagged `@Tags(['needs-plugins'])` and are excluded from CI.
+
+Offline local-agent capability contracts live under `test/eval/` (see `test/eval/README.md`).
 
 Golden / visual tests live under `test/widgets/` and use `matchesGoldenFile`. Update baselines with:
 
