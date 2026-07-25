@@ -19,6 +19,7 @@ export 'database/remote_agent_dao.dart';
 export 'database/config_dao.dart';
 export 'database/scheduled_task_dao.dart';
 export 'database/dispatch_task_dao.dart';
+export 'database/history_compaction_cache_dao.dart';
 
 /// 本地数据库服务 - 使用 SQLite 存储所有数据
 ///
@@ -46,7 +47,7 @@ class LocalDatabaseService {
       // Web平台使用sqflite_common_ffi
       return await openDatabase(
         'shepaw',
-        version: 27,
+        version: 28,
         onCreate: _onCreate,
         onUpgrade: _onUpgrade,
       );
@@ -56,7 +57,7 @@ class LocalDatabaseService {
       path = join(directory.path, 'shepaw.db');
       return await openDatabase(
         path,
-        version: 27,
+        version: 28,
         onCreate: _onCreate,
         onUpgrade: _onUpgrade,
       );
@@ -67,7 +68,7 @@ class LocalDatabaseService {
 
       return await openDatabase(
         path,
-        version: 27,
+        version: 28,
         onCreate: _onCreate,
         onUpgrade: _onUpgrade,
       );
@@ -412,6 +413,18 @@ class LocalDatabaseService {
     await db.execute('CREATE INDEX IF NOT EXISTS idx_dispatch_tasks_target_channel ON dispatch_tasks(target_channel_id, status)');
     await db.execute('CREATE INDEX IF NOT EXISTS idx_dispatch_tasks_source_channel ON dispatch_tasks(source_channel_id, created_at DESC)');
 
+    // Per-channel history compaction summaries (v28)
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS history_compaction_cache (
+        channel_id TEXT PRIMARY KEY,
+        summary TEXT NOT NULL,
+        from_message_id TEXT NOT NULL,
+        until_message_id TEXT NOT NULL,
+        covered_count INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL
+      )
+    ''');
+
   }
 
   /// 数据库升级
@@ -731,6 +744,28 @@ class LocalDatabaseService {
       } catch (e) {
         LoggerService().error(
           'Failed to add source_she_channel_id (v27)',
+          tag: 'Migration',
+          error: e,
+        );
+      }
+    }
+
+    if (oldVersion < 28) {
+      // 版本 27 -> 28: 频道历史 compaction 摘要缓存，避免重复 LLM 总结
+      try {
+        await db.execute('''
+          CREATE TABLE IF NOT EXISTS history_compaction_cache (
+            channel_id TEXT PRIMARY KEY,
+            summary TEXT NOT NULL,
+            from_message_id TEXT NOT NULL,
+            until_message_id TEXT NOT NULL,
+            covered_count INTEGER NOT NULL,
+            updated_at INTEGER NOT NULL
+          )
+        ''');
+      } catch (e) {
+        LoggerService().error(
+          'Failed to create history_compaction_cache (v28)',
           tag: 'Migration',
           error: e,
         );

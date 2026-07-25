@@ -26,6 +26,7 @@ import '../she_service.dart';
 import '../../clis/shepaw/shepaw_cli.dart';
 import '../session/session_history_service.dart';
 import '../session/history_compactor.dart';
+import '../session/history_compaction_cache_service.dart';
 import '../remote_agent_service.dart';
 import '../../peer/services/peer_agent_client_service.dart';
 import '../../service_locator.dart' show getIt;
@@ -1491,11 +1492,14 @@ class AgentMessagingService {
         if (plan.needsCompaction &&
             acpCancellationToken?.isCancelled != true) {
           try {
-            final transcript = HistoryCompactor.buildTranscript(plan.older);
-            final summary = await _summarizeHistoryForCompaction(
-              agent: agent,
-              transcript: transcript,
-              cancelKey: cancelKey,
+            final summary = await HistoryCompactionCacheService.obtainSummary(
+              channelId: channelId,
+              older: plan.older,
+              summarize: (transcript) => _summarizeHistoryForCompaction(
+                agent: agent,
+                transcript: transcript,
+                cancelKey: cancelKey,
+              ),
             );
             if (summary.isNotEmpty) {
               chatHistory.add(HistoryCompactor.summaryMessage(summary));

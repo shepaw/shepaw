@@ -32,6 +32,7 @@ import '../../models/workflow_pending_approval.dart';
 import '../messaging/stream_content_splitter.dart';
 import 'group_member_session_service.dart';
 import '../session/history_compactor.dart';
+import '../session/history_compaction_cache_service.dart';
 
 /// Executes a single agent's response turn within a group chat.
 ///
@@ -310,11 +311,14 @@ class GroupAgentExecutor {
           acpCancellationToken?.addOnCancelled(() {
             LocalLLMAgentService.instance.abort(cancelKey);
           });
-          final transcript = HistoryCompactor.buildTranscript(plan.older);
-          earlierSummary = await _summarizeHistoryForCompaction(
-            agent: agent,
-            transcript: transcript,
-            cancelKey: cancelKey,
+          earlierSummary = await HistoryCompactionCacheService.obtainSummary(
+            channelId: channelId,
+            older: plan.older,
+            summarize: (transcript) => _summarizeHistoryForCompaction(
+              agent: agent,
+              transcript: transcript,
+              cancelKey: cancelKey,
+            ),
           );
           effectiveHistory = plan.recent;
           if (earlierSummary.isNotEmpty) {
