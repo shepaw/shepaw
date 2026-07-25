@@ -912,7 +912,7 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
         if (_isLocalMode) ...[
           const SizedBox(height: 16),
           _buildSkillsCard(),
-          // 外部访问卡片（仅本地 agent 显示）
+          // 分享给配对设备（仅本地 agent 显示）
           const SizedBox(height: 16),
           _buildExternalAccessCard(),
         ],
@@ -1422,10 +1422,9 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
 
   // ==================== 外部访问卡片 ====================
 
-  /// 外部访问卡片（详情模式，仅本地 agent）。
+  /// 分享给配对设备卡片（详情模式，仅本地 agent）。
   ///
-  /// 外部访问现在统一走 P2P peer 连接：开启后，该 agent 会对已配对设备可见，
-  /// 对方可直接在会话列表里看到并与之对话。无需公网 Channel 或复制 URL。
+  /// 开启后走 P2P：该 agent 对已配对设备可见，对方可在会话列表中对话。
   Widget _buildExternalAccessCard() {
     final l10n = AppLocalizations.of(context);
     final theme = Theme.of(context);
@@ -1479,7 +1478,7 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
     );
   }
 
-  /// 外部访问开关卡片（编辑模式，仅本地 agent）
+  /// 分享给配对设备开关（编辑模式，仅本地 agent）
   Widget _buildEditExternalAccessCard(ColorScheme colorScheme) {
     final l10n = AppLocalizations.of(context);
     return Card(

@@ -2946,139 +2946,7 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
-  String get settings_disableServiceTitle => 'Disable Local Service';
-
-  @override
-  String get settings_disableServiceContent =>
-      'After disabling, all agents configured with \"Allow External Access\" will no longer accept external connections, and any connected clients will be disconnected immediately.\n\nConfirm?';
-
-  @override
-  String get settings_disableServiceConfirm => 'Confirm Disable';
-
-  @override
-  String get settings_localService => 'Local Service';
-
-  @override
-  String get settings_localServiceDesc =>
-      'Allow LAN or internet devices to connect as a Remote Agent';
-
-  @override
-  String get settings_lanAddress => 'LAN Address';
-
-  @override
-  String get settings_lanAddressSub =>
-      'Devices on the same network can connect via these addresses';
-
-  @override
-  String get settings_channelTunnel => 'Channel Tunnel (Remote Access)';
-
-  @override
-  String get settings_tunnelNotConfigured => 'Not configured';
-
-  @override
-  String get settings_tunnelConnected => 'Connected';
-
-  @override
-  String get settings_tunnelConnecting => 'Connecting';
-
-  @override
-  String get settings_tunnelDisconnected => 'Disconnected';
-
-  @override
-  String get settings_tunnelError => 'Connection error';
-
-  @override
-  String get settings_configureTunnel => 'Configure Tunnel';
-
-  @override
-  String get settings_copyLanAddress => 'Copy LAN Address';
-
-  @override
-  String get settings_copyPublicAddress => 'Copy Public Address';
-
-  @override
-  String get settings_acpServerRunning => 'ACP Server running';
-
-  @override
-  String get settings_acpServerStopped => 'ACP Server not running';
-
-  @override
-  String get settings_tunnelServerUrl => 'Channel Server URL';
-
-  @override
-  String get settings_tunnelChannelId => 'Channel ID';
-
-  @override
-  String get settings_tunnelSecret => 'Secret';
-
-  @override
-  String get settings_tunnelAutoConnect => 'Auto Connect';
-
-  @override
-  String get settings_tunnelPublicAddress => 'Public Address';
-
-  @override
-  String get settings_tunnelConfigRequiredFields =>
-      'Please fill in all required fields';
-
-  @override
-  String get settings_deleteTunnelConfig => 'Delete Configuration';
-
-  @override
-  String get settings_noLanAddress => 'No LAN address found';
-
-  @override
-  String get settings_acpPort => 'Port';
-
-  @override
-  String get settings_acpPortSuffix => '(1024-65535)';
-
-  @override
-  String get settings_acpChangePort => 'Change Port';
-
-  @override
-  String get settings_acpPortHint =>
-      'App restart is required after changing the port. Other devices need to reconnect using the new address.';
-
-  @override
-  String get settings_acpPortInvalid =>
-      'Invalid port number. Please enter a value between 1024 and 65535.';
-
-  @override
-  String get settings_acpPortRestarting => 'Restarting ACP Server...';
-
-  @override
-  String get settings_acpPortRestartRequired =>
-      'Port saved. Restart the app to apply.';
-
-  @override
-  String get settings_acpToken => 'Connection Token';
-
-  @override
-  String get settings_acpTokenCopy => 'Copy Token';
-
-  @override
-  String get settings_acpTokenRefresh => 'Refresh Token';
-
-  @override
-  String get settings_acpTokenRefreshed =>
-      'Token refreshed. Existing connections must reconnect.';
-
-  @override
-  String get agent_enableExternalAccessTitle => 'Enable External Access';
-
-  @override
-  String get agent_enableExternalAccessNeedService =>
-      'The local service master switch is currently off, so external access cannot work.\n\nWould you like to enable the local service now?';
-
-  @override
-  String get agent_enableServiceAndContinue => 'Enable Local Service';
-
-  @override
-  String get agent_keepDisabled => 'Save Settings Only';
-
-  @override
-  String get agent_allowExternalAccess => 'Allow External Access';
+  String get agent_allowExternalAccess => 'Share with Paired Devices';
 
   @override
   String get agent_allowExternalAccessDesc =>
@@ -3089,69 +2957,7 @@ class AppLocalizationsEn extends AppLocalizations {
       'Enabled: paired devices can see and chat with this agent in their conversation list';
 
   @override
-  String get agent_externalAccessUrl => 'Access URL';
-
-  @override
-  String get agent_externalAccessUrlLan => 'LAN Access URL';
-
-  @override
-  String get agent_externalAccessUrlPublic => 'Public Access URL';
-
-  @override
-  String get agent_externalAccessDisabled => 'External access is disabled';
-
-  @override
-  String get agent_externalAccessNeedsService =>
-      'Enable local service in Settings first';
-
-  @override
-  String get agent_copyAccessUrl => 'Copy Access URL';
-
-  @override
-  String get agent_accessUrlCopied => 'Access URL copied';
-
-  @override
-  String get agent_accessUrlCopiedHint =>
-      'Paste it as the Endpoint URL to connect';
-
-  @override
-  String get agent_regenerateToken => 'Regenerate Token';
-
-  @override
-  String get agent_regenerateTokenConfirmTitle => 'Regenerate Token?';
-
-  @override
-  String get agent_regenerateTokenConfirmBody =>
-      'The old token will be invalidated immediately. Connected clients will need to reconnect with the new token. Continue?';
-
-  @override
-  String get agent_tokenRegenerated => 'Token updated';
-
-  @override
-  String agent_tokenRegenerateFailed(String error) {
-    return 'Failed to regenerate: $error';
-  }
-
-  @override
-  String get agent_channelConfig => 'Public Channel Config';
-
-  @override
-  String get agent_channelServerUrl => 'Server URL';
-
-  @override
-  String get agent_channelId => 'Channel ID';
-
-  @override
-  String get agent_channelSecret => 'Channel Secret';
-
-  @override
-  String get agent_channelEndpoint => 'Channel Endpoint (optional)';
-
-  @override
-  String get agent_channelNotConfigured => 'Public channel not configured';
-
-  @override
-  String get agent_channelConfigure => 'Configure';
+  String get agent_externalAccessDisabled => 'Not shared with paired devices';
 
   @override
   String get she_pinned_label => 'Pinned';
@@ -4009,7 +3815,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get peerSettings_peerEnableExternalHint =>
-      'The peer can enable \"Allow External Access\" in agent settings';
+      'The peer can enable \"Share with Paired Devices\" in agent settings';
 
   @override
   String get peerSettings_syncAgentsOnConnect =>

@@ -2836,132 +2836,7 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
-  String get settings_disableServiceTitle => '关闭本地服务';
-
-  @override
-  String get settings_disableServiceContent =>
-      '关闭后，所有已配置「允许外部访问」的 Agent 将无法接受外网连接，正在连接的客户端也会立即断开。\n\n确认关闭？';
-
-  @override
-  String get settings_disableServiceConfirm => '确认关闭';
-
-  @override
-  String get settings_localService => '本地服务';
-
-  @override
-  String get settings_localServiceDesc => '允许内网或外网设备以 Remote Agent 形式连接';
-
-  @override
-  String get settings_lanAddress => '内网连接地址';
-
-  @override
-  String get settings_lanAddressSub => '同局域网设备可通过以下地址连接';
-
-  @override
-  String get settings_channelTunnel => 'Channel Tunnel（外网穿透）';
-
-  @override
-  String get settings_tunnelNotConfigured => '未配置';
-
-  @override
-  String get settings_tunnelConnected => '已连接';
-
-  @override
-  String get settings_tunnelConnecting => '连接中';
-
-  @override
-  String get settings_tunnelDisconnected => '已断开';
-
-  @override
-  String get settings_tunnelError => '连接错误';
-
-  @override
-  String get settings_configureTunnel => '配置 Tunnel';
-
-  @override
-  String get settings_copyLanAddress => '复制内网地址';
-
-  @override
-  String get settings_copyPublicAddress => '复制外网地址';
-
-  @override
-  String get settings_acpServerRunning => 'ACP Server 运行中';
-
-  @override
-  String get settings_acpServerStopped => 'ACP Server 未运行';
-
-  @override
-  String get settings_tunnelServerUrl => 'Channel 服务地址';
-
-  @override
-  String get settings_tunnelChannelId => 'Channel ID';
-
-  @override
-  String get settings_tunnelSecret => 'Secret';
-
-  @override
-  String get settings_tunnelAutoConnect => '自动连接';
-
-  @override
-  String get settings_tunnelPublicAddress => '外网访问地址';
-
-  @override
-  String get settings_tunnelConfigRequiredFields => '请填写所有必填字段';
-
-  @override
-  String get settings_deleteTunnelConfig => '删除配置';
-
-  @override
-  String get settings_noLanAddress => '暂未获取到局域网地址';
-
-  @override
-  String get settings_acpPort => '端口';
-
-  @override
-  String get settings_acpPortSuffix => '（1024-65535）';
-
-  @override
-  String get settings_acpChangePort => '修改端口';
-
-  @override
-  String get settings_acpPortHint => '修改端口后需要重启 App 才能生效。其他设备需使用新端口重新连接。';
-
-  @override
-  String get settings_acpPortInvalid => '端口号无效，请输入 1024-65535 之间的数字';
-
-  @override
-  String get settings_acpPortRestarting => '正在重启 ACP Server...';
-
-  @override
-  String get settings_acpPortRestartRequired => '端口已保存，重启 App 后生效';
-
-  @override
-  String get settings_acpToken => '连接 Token';
-
-  @override
-  String get settings_acpTokenCopy => '复制 Token';
-
-  @override
-  String get settings_acpTokenRefresh => '刷新 Token';
-
-  @override
-  String get settings_acpTokenRefreshed => 'Token 已刷新，旧连接需重新连接';
-
-  @override
-  String get agent_enableExternalAccessTitle => '开启外网访问';
-
-  @override
-  String get agent_enableExternalAccessNeedService =>
-      '当前「本地服务总控开关」已关闭，外网访问功能无法使用。\n\n是否同时开启本地服务？';
-
-  @override
-  String get agent_enableServiceAndContinue => '开启本地服务';
-
-  @override
-  String get agent_keepDisabled => '仅保存设置';
-
-  @override
-  String get agent_allowExternalAccess => '允许外部访问';
+  String get agent_allowExternalAccess => '分享给配对设备';
 
   @override
   String get agent_allowExternalAccessDesc => '开启后，已配对的设备可在会话列表中看到并与该 agent 对话';
@@ -2971,67 +2846,7 @@ class AppLocalizationsZh extends AppLocalizations {
       '已开启：已配对的设备可在会话列表中看到并与该 agent 对话';
 
   @override
-  String get agent_externalAccessUrl => '访问地址';
-
-  @override
-  String get agent_externalAccessUrlLan => '局域网访问地址';
-
-  @override
-  String get agent_externalAccessUrlPublic => '公网访问地址';
-
-  @override
-  String get agent_externalAccessDisabled => '外部访问已关闭';
-
-  @override
-  String get agent_externalAccessNeedsService => '需先在「设置」中开启本地服务';
-
-  @override
-  String get agent_copyAccessUrl => '复制访问地址';
-
-  @override
-  String get agent_accessUrlCopied => '访问地址已复制';
-
-  @override
-  String get agent_accessUrlCopiedHint => '可粘贴到端点 URL 处进行连接';
-
-  @override
-  String get agent_regenerateToken => '刷新 Token';
-
-  @override
-  String get agent_regenerateTokenConfirmTitle => '确认刷新 Token';
-
-  @override
-  String get agent_regenerateTokenConfirmBody =>
-      '刷新后旧 Token 将立即失效，已连接的客户端需使用新 Token 重新连接。确认继续吗？';
-
-  @override
-  String get agent_tokenRegenerated => 'Token 已更新';
-
-  @override
-  String agent_tokenRegenerateFailed(String error) {
-    return '刷新失败: $error';
-  }
-
-  @override
-  String get agent_channelConfig => '公网 Channel 配置';
-
-  @override
-  String get agent_channelServerUrl => 'Server 地址';
-
-  @override
-  String get agent_channelId => 'Channel ID';
-
-  @override
-  String get agent_channelSecret => 'Channel 密钥';
-
-  @override
-  String get agent_channelEndpoint => 'Channel Endpoint（可选）';
-
-  @override
-  String get agent_channelNotConfigured => '未配置公网 Channel';
-
-  @override
-  String get agent_channelConfigure => '去配置';
+  String get agent_externalAccessDisabled => '未分享给配对设备';
 
   @override
   String get she_pinned_label => '置顶';
@@ -3857,7 +3672,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get peerSettings_noPeerAgentsOffline => '设备离线，暂无可连接的 Agent';
 
   @override
-  String get peerSettings_peerEnableExternalHint => '对方可在 Agent 设置中开启「允许外部访问」';
+  String get peerSettings_peerEnableExternalHint => '对方可在 Agent 设置中开启「分享给配对设备」';
 
   @override
   String get peerSettings_syncAgentsOnConnect => '连接后将自动同步可连接的 Agent';
