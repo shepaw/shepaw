@@ -125,6 +125,17 @@ class HistoryCompactor {
     return '[earlier omitted]\n${kept.join('\n')}';
   }
 
+  /// Drop oldest messages until total content length fits [maxChars].
+  static List<Message> fifoTruncate(List<Message> messages, int maxChars) {
+    final result = List<Message>.from(messages);
+    var totalChars = result.fold<int>(0, (sum, m) => sum + m.content.length);
+    while (totalChars > maxChars && result.isNotEmpty) {
+      totalChars -= result.first.content.length;
+      result.removeAt(0);
+    }
+    return result;
+  }
+
   /// Wrap a summary as a synthetic user context message for the LLM.
   static Map<String, dynamic> summaryMessage(String summary) {
     final clipped = summary.length <= defaultSummaryMaxChars

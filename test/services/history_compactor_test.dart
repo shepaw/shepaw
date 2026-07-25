@@ -86,4 +86,51 @@ void main() {
       expect(msg['content'], contains('User prefers dark mode.'));
     });
   });
+
+  group('HistoryCompactor.fifoTruncate', () {
+    test('keeps all messages when under budget', () {
+      final messages = [
+        _msg(id: '1', content: 'aaa', isAgent: false),
+        _msg(id: '2', content: 'bbb', isAgent: true),
+      ];
+      final kept = HistoryCompactor.fifoTruncate(messages, 1000);
+      expect(kept.map((m) => m.id), ['1', '2']);
+    });
+
+    test('drops oldest until under budget', () {
+      final messages = [
+        _msg(id: '1', content: 'a' * 100, isAgent: false),
+        _msg(id: '2', content: 'b' * 100, isAgent: true),
+        _msg(id: '3', content: 'c' * 100, isAgent: false),
+      ];
+      final kept = HistoryCompactor.fifoTruncate(messages, 150);
+      expect(kept.map((m) => m.id), ['3']);
+      expect(kept.fold<int>(0, (s, m) => s + m.content.length), 100);
+    });
+  });
+
+  group('HistoryCompactor.plan group-scale budget', () {
+    test('splits with larger keepRecent for group chats', () {
+      final messages = List.generate(
+        40,
+        (i) => _msg(
+          id: '$i',
+          content: 'g' * 2000, // 80k total
+          isAgent: i.isEven,
+        ),
+      );
+      final plan = HistoryCompactor.plan(
+        messages: messages,
+        maxChars: 60000,
+        keepRecentCount: 24,
+        keepRecentChars: 24000,
+      );
+      expect(plan.needsCompaction, isTrue);
+      expect(plan.recent.length, lessThanOrEqualTo(24));
+      expect(
+        plan.recent.fold<int>(0, (s, m) => s + m.content.length),
+        lessThanOrEqualTo(24000),
+      );
+    });
+  });
 }

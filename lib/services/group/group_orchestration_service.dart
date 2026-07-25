@@ -185,14 +185,9 @@ class GroupOrchestrationService {
       historyMessages = historyMessages.sublist(0, historyMessages.length - 1);
     }
 
-    // Truncate oldest messages if total history exceeds the character budget.
-    // This prevents context overflow in long group conversations.
-    const maxHistoryChars = 60000;
-    int totalChars = historyMessages.fold(0, (sum, m) => sum + m.content.length);
-    while (totalChars > maxHistoryChars && historyMessages.isNotEmpty) {
-      totalChars -= historyMessages.first.content.length;
-      historyMessages.removeAt(0);
-    }
+    // Per-agent context budget is applied in GroupAgentExecutor:
+    // local agents use HistoryCompactor; peer/ACP use FIFO truncate.
+    // Pass the full loaded snapshot so compaction still has material.
 
     // Build message version info for agent context sync
     final messageVersion = <String, dynamic>{

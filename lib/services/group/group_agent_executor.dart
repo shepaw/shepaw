@@ -31,6 +31,7 @@ import '../workflow/workflow_service.dart';
 import '../../models/workflow_pending_approval.dart';
 import '../messaging/stream_content_splitter.dart';
 import 'group_member_session_service.dart';
+import '../session/history_compactor.dart';
 
 /// Executes a single agent's response turn within a group chat.
 ///
@@ -291,14 +292,85 @@ class GroupAgentExecutor {
     // 'user' message so the LLM's identity comes solely from the system prompt.
     // Each line is tagged with the sender name so the agent can see who said
     // what, while "(我)" marks its own prior messages.
-    final historyLines = historyMessages.map((m) {
-      final content = LocalLLMHelpers.enrichHistoryContent(m, m.content);
-      if (m.from.isAgent && m.from.id == agent.id) {
-        return '[${m.from.name}(我)]: $content';
+    const maxHistoryChars = 60000;
+    var effectiveHistory = List<Message>.from(historyMessages);
+    String? earlierSummary;
+
+    if (agent.isLocal) {
+      final plan = HistoryCompactor.plan(
+        messages: effectiveHistory,
+        maxChars: maxHistoryChars,
+        keepRecentCount: 24,
+        keepRecentChars: 24000,
+      );
+      if (plan.needsCompaction &&
+          acpCancellationToken?.isCancelled != true) {
+        try {
+          final cancelKey = 'group_compact_${agent.id}_${_uuid.v4()}';
+          acpCancellationToken?.addOnCancelled(() {
+            LocalLLMAgentService.instance.abort(cancelKey);
+          });
+          final transcript = HistoryCompactor.buildTranscript(plan.older);
+          earlierSummary = await _summarizeHistoryForCompaction(
+            agent: agent,
+            transcript: transcript,
+            cancelKey: cancelKey,
+          );
+          effectiveHistory = plan.recent;
+          if (earlierSummary.isNotEmpty) {
+            final summaryCost = earlierSummary.length + 80;
+            var budgetLeft = maxHistoryChars - summaryCost;
+            while (effectiveHistory.isNotEmpty &&
+                effectiveHistory.fold<int>(0, (s, m) => s + m.content.length) >
+                    budgetLeft &&
+                effectiveHistory.length > 4) {
+              effectiveHistory = effectiveHistory.sublist(1);
+            }
+            LoggerService().info(
+              'Group history compacted for ${agent.name}: '
+              '${plan.older.length} older → ${earlierSummary.length} chars; '
+              'keeping ${effectiveHistory.length} recent',
+              tag: 'GroupAgentExecutor',
+            );
+          } else {
+            earlierSummary = null;
+            effectiveHistory = HistoryCompactor.fifoTruncate(
+              historyMessages,
+              maxHistoryChars,
+            );
+          }
+        } catch (e) {
+          LoggerService().warning(
+            'Group history compaction failed for ${agent.name}, '
+            'falling back to truncate: $e',
+            tag: 'GroupAgentExecutor',
+          );
+          earlierSummary = null;
+          effectiveHistory = HistoryCompactor.fifoTruncate(
+            historyMessages,
+            maxHistoryChars,
+          );
+        }
       }
-      final tag = m.from.isAgent ? 'Agent' : 'User';
-      return '[${m.from.name}($tag)]: $content';
-    }).join('\n\n');
+    } else {
+      effectiveHistory = HistoryCompactor.fifoTruncate(
+        historyMessages,
+        maxHistoryChars,
+      );
+    }
+
+    final historyLines = [
+      if (earlierSummary != null && earlierSummary.isNotEmpty)
+        HistoryCompactor.summaryMessage(earlierSummary)['content'] as String,
+      ...effectiveHistory.map((m) {
+        final content = LocalLLMHelpers.enrichHistoryContent(m, m.content);
+        if (m.from.isAgent && m.from.id == agent.id) {
+          return '[${m.from.name}(我)]: $content';
+        }
+        final tag = m.from.isAgent ? 'Agent' : 'User';
+        return '[${m.from.name}($tag)]: $content';
+      }),
+    ].join('\n\n');
 
     final responseBuffer = StringBuffer();
     bool streamingStarted = false;
@@ -801,7 +873,7 @@ class GroupAgentExecutor {
 
         // Collect attachment info for image/file/audio messages.
         final attachments = <Map<String, dynamic>>[];
-        for (final m in historyMessages) {
+        for (final m in effectiveHistory) {
           if (m.type == MessageType.image ||
               m.type == MessageType.file ||
               m.type == MessageType.audio) {
@@ -1603,5 +1675,37 @@ class GroupAgentExecutor {
       // ChatController snackbar that awaits the approval chain.
       rethrow;
     }
+  }
+
+  /// One-shot LLM summary of older group turns for in-context compaction.
+  Future<String> _summarizeHistoryForCompaction({
+    required RemoteAgent agent,
+    required String transcript,
+    required Object cancelKey,
+  }) async {
+    if (transcript.trim().isEmpty) return '';
+
+    final buf = StringBuffer();
+    await for (final event in LocalLLMAgentService.instance.runWithCancelKey(
+      cancelKey,
+      () => LocalLLMAgentService.instance.chat(
+        agent: agent,
+        message: transcript,
+        enableUITools: false,
+        includeShepawCli: false,
+        skipSheMemoryStack: true,
+        systemPromptOverride: HistoryCompactor.summarizerSystemPrompt,
+      ),
+    )) {
+      switch (event) {
+        case LLMTextEvent():
+          buf.write(event.text);
+        case LLMToolCallEvent():
+          break;
+        case LLMDoneEvent():
+          break;
+      }
+    }
+    return buf.toString().trim();
   }
 }
