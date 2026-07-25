@@ -13,6 +13,7 @@ import 'inference_log_screen.dart';
 import 'log_viewer_screen.dart';
 import 'user_profile_settings_screen.dart';
 import 'agent_memory_management_screen.dart';
+import 'storage_management_screen.dart';
 import '../utils/layout_utils.dart';
 import '../services/local_database_service.dart';
 import '../services/cognition_service.dart';
@@ -287,6 +288,23 @@ class _SettingsScreenState extends State<SettingsScreen> {
             subtitle: Text(l10n.settings_exportDataSub),
             trailing: const Icon(Icons.chevron_right),
             onTap: () => _showExportDataDialog(context),
+          ),
+
+          const Divider(),
+
+          // PC 主存储：角色 / 同步进度 / 存储用量（M1 只读）
+          ListTile(
+            leading: const Icon(Icons.storage),
+            title: Text(l10n.storage_title),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => const StorageManagementScreen(),
+                ),
+              );
+            },
           ),
 
           const Divider(),

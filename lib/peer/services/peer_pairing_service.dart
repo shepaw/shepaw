@@ -28,6 +28,10 @@ import '../../services/noise/noise_session.dart';
 import '../../services/noise/noise_envelope.dart';
 import '../../services/channel_tunnel_service.dart';
 import '../../services/logger_service.dart';
+import '../../sync/device_info.dart';
+import '../../sync/peer_sync_service.dart';
+import '../../sync/sync_frame.dart' show kSyncProtocolVersion;
+import '../../sync/sync_roles.dart';
 import '../models/paired_peer.dart';
 import '../models/pairing_payload.dart';
 import 'peer_agent_host_service.dart';
@@ -56,6 +60,18 @@ class IncomingPairingRequest {
   final String? localEndpoint;
   final int streamId;
 
+  /// 对端平台（spec §2.1，旧版 App 为 null）。
+  final String? platform;
+
+  /// 对端 App 版本。
+  final String? appVersion;
+
+  /// 对端是否具备 hub 能力。null = 旧版 App（不支持同步）。
+  final bool? hubCapable;
+
+  /// 对端支持的同步协议版本。
+  final int? syncProtocolVersion;
+
   IncomingPairingRequest({
     required this.deviceName,
     required this.deviceId,
@@ -63,6 +79,10 @@ class IncomingPairingRequest {
     this.channelEndpoint,
     this.localEndpoint,
     required this.streamId,
+    this.platform,
+    this.appVersion,
+    this.hubCapable,
+    this.syncProtocolVersion,
   });
 }
 
@@ -201,9 +221,12 @@ class PeerPairingService {
   ///
   /// [agentShares] 为配对确认弹窗中用户勾选的分享决定（agentId → 是否分享），
   /// 在建立连接前写入本地，连接后立即推送给对端。
+  /// [responderIsHubChoice] 双桌面场景下用户的主设备选择（双方都 hub_capable
+  /// 时生效）；null 时按默认规则——展示二维码的一方（本机）为 hub。
   Future<PairedPeer> confirmPairing(
     IncomingPairingRequest request, {
     Map<String, bool>? agentShares,
+    bool? responderIsHubChoice,
   }) async {
     if (_state != PairingSessionState.receivedRequest) {
       throw StateError('No pending pairing request to confirm');
@@ -223,6 +246,22 @@ class PeerPairingService {
 
     final peerId = _uuid.v4();
 
+    // 主从角色判定（spec §2.2）：本机是 responder。
+    final myInfo = await LocalDeviceInfo.collect(
+      deviceName: _getDeviceName(),
+      syncProtocolVersion: kSyncProtocolVersion,
+    );
+    final RoleDecision decision;
+    if (request.hubCapable == null) {
+      decision = kRoleUndecidable; // 旧版 App：不定主从
+    } else {
+      decision = determineRoleAuto(
+            localHubCapable: myInfo.hubCapable,
+            peerHubCapable: request.hubCapable!,
+          ) ??
+          decideForBothDesktops(localIsHub: responderIsHubChoice ?? true);
+    }
+
     // 发送 Noise handshake msg2（PairingResponse）
     final response = PairingResponse(
       accepted: true,
@@ -231,6 +270,11 @@ class PeerPairingService {
       peerId: peerId,
       channelEndpoint: myChannelEndpoint,
       localEndpoint: PeerLocalServer.instance.getLocalEndpoint(),
+      platform: myInfo.platform,
+      appVersion: myInfo.appVersion,
+      hubCapable: myInfo.hubCapable,
+      syncProtocolVersion: kSyncProtocolVersion,
+      responderIsHub: decision.localRole == SyncDeviceRole.hub ? true : null,
     );
 
     final msg2Bytes = await _responderSession!.writeHandshake2(response.toBytes());
@@ -252,9 +296,14 @@ class PeerPairingService {
       pairedAt: existingPeer?.pairedAt ?? DateTime.now().millisecondsSinceEpoch,
       // 本机展示二维码、被对方扫码连接 → 被连接方
       pairingRole: PeerPairingRole.responder,
+      deviceRole: decision.peerRole.name,
+      syncEnabled: decision.syncEnabled,
+      peerPlatform: request.platform,
+      peerHubCapable: request.hubCapable,
     );
 
     await _storage.savePeer(peer); // INSERT OR REPLACE
+    await PeerSyncService.instance.onPairingEstablished(peer, decision);
 
     if (agentShares != null) {
       await PeerStorageService().setAgentShares(peer.id, agentShares);
@@ -389,6 +438,10 @@ class PeerPairingService {
         myLocalEndpoint = PeerLocalServer.instance.getLocalEndpoint();
       } catch (_) {}
 
+      final myInfo = await LocalDeviceInfo.collect(
+        deviceName: _getDeviceName(),
+        syncProtocolVersion: kSyncProtocolVersion,
+      );
       final request = PairingRequest(
         pairingCode: info.code,
         deviceName: _getDeviceName(),
@@ -396,6 +449,10 @@ class PeerPairingService {
         channelEndpoint: myChannelEndpoint,
         localEndpoint: myLocalEndpoint,
         timestamp: DateTime.now().millisecondsSinceEpoch,
+        platform: myInfo.platform,
+        appVersion: myInfo.appVersion,
+        hubCapable: myInfo.hubCapable,
+        syncProtocolVersion: kSyncProtocolVersion,
       );
 
       // 发送 Noise handshake msg1
@@ -429,6 +486,20 @@ class PeerPairingService {
       // 配对成功 — 检查是否已配对过
       final existingPeer = await _storage.getPeerByFingerprint(info.fingerprint);
 
+      // 主从角色判定（spec §2.2）：本机是 initiator。
+      final RoleDecision decision;
+      if (response.hubCapable == null) {
+        decision = kRoleUndecidable; // 旧版 App：不定主从
+      } else {
+        decision = determineRoleAuto(
+              localHubCapable: myInfo.hubCapable,
+              peerHubCapable: response.hubCapable!,
+            ) ??
+            // 双桌面：responder 在确认时做出选择并随响应带回。
+            decideForBothDesktops(
+                localIsHub: !(response.responderIsHub ?? true));
+      }
+
       final peer = PairedPeer(
         id: existingPeer?.id ?? response.peerId, // 复用已有 ID
         deviceName: response.deviceName,
@@ -440,9 +511,14 @@ class PeerPairingService {
         pairedAt: DateTime.now().millisecondsSinceEpoch,
         // 本机扫码主动发起连接 → 发起方
         pairingRole: PeerPairingRole.initiator,
+        deviceRole: decision.peerRole.name,
+        syncEnabled: decision.syncEnabled,
+        peerPlatform: response.platform,
+        peerHubCapable: response.hubCapable,
       );
 
       await _storage.savePeer(peer);
+      await PeerSyncService.instance.onPairingEstablished(peer, decision);
 
       _state = PairingSessionState.completed;
       session.close();
@@ -534,6 +610,10 @@ class PeerPairingService {
         channelEndpoint: request.channelEndpoint,
         localEndpoint: request.localEndpoint,
         streamId: stream.streamId,
+        platform: request.platform,
+        appVersion: request.appVersion,
+        hubCapable: request.hubCapable,
+        syncProtocolVersion: request.syncProtocolVersion,
       ));
 
     } catch (e) {

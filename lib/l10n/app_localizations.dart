@@ -8527,6 +8527,162 @@ abstract class AppLocalizations {
   /// In zh, this message translates to:
   /// **'Agent 主机运行 `<gateway> enroll` 得到类似 XXX-XXX-XXX 的短码，粘贴到这里即可自动授权本设备。不填写则走上方的「复制公钥 → peers add」手动流程。'**
   String get addAgent_pairingCodeHelper;
+
+  /// No description provided for @peerPairing_roleChoiceTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'主存储设备'**
+  String get peerPairing_roleChoiceTitle;
+
+  /// No description provided for @peerPairing_roleChoiceHub.
+  ///
+  /// In zh, this message translates to:
+  /// **'以本机为主存储设备（hub），对端同步只读副本。'**
+  String get peerPairing_roleChoiceHub;
+
+  /// No description provided for @peerPairing_roleChoiceConsole.
+  ///
+  /// In zh, this message translates to:
+  /// **'以对端为主存储设备（hub），本机保留只读副本。'**
+  String get peerPairing_roleChoiceConsole;
+
+  /// No description provided for @peerPairing_roleAutoHub.
+  ///
+  /// In zh, this message translates to:
+  /// **'配对后本机将作为主存储设备（hub）。'**
+  String get peerPairing_roleAutoHub;
+
+  /// No description provided for @peerPairing_roleAutoConsole.
+  ///
+  /// In zh, this message translates to:
+  /// **'配对后本机将作为桌面端的只读副本。'**
+  String get peerPairing_roleAutoConsole;
+
+  /// No description provided for @storage_title.
+  ///
+  /// In zh, this message translates to:
+  /// **'数据存储'**
+  String get storage_title;
+
+  /// No description provided for @storage_hubCardTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'主存储设备'**
+  String get storage_hubCardTitle;
+
+  /// No description provided for @storage_hubImplFlutter.
+  ///
+  /// In zh, this message translates to:
+  /// **'Flutter 桌面版'**
+  String get storage_hubImplFlutter;
+
+  /// No description provided for @storage_thisDevice.
+  ///
+  /// In zh, this message translates to:
+  /// **'本机'**
+  String get storage_thisDevice;
+
+  /// No description provided for @storage_managedBy.
+  ///
+  /// In zh, this message translates to:
+  /// **'由工作站 {name} 管理'**
+  String storage_managedBy(String name);
+
+  /// No description provided for @storage_devicesTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'配对设备'**
+  String get storage_devicesTitle;
+
+  /// No description provided for @storage_roleHub.
+  ///
+  /// In zh, this message translates to:
+  /// **'主存储'**
+  String get storage_roleHub;
+
+  /// No description provided for @storage_roleConsole.
+  ///
+  /// In zh, this message translates to:
+  /// **'副本'**
+  String get storage_roleConsole;
+
+  /// No description provided for @storage_roleNone.
+  ///
+  /// In zh, this message translates to:
+  /// **'Peer 聊天'**
+  String get storage_roleNone;
+
+  /// No description provided for @storage_syncCursor.
+  ///
+  /// In zh, this message translates to:
+  /// **'同步游标 {seq}'**
+  String storage_syncCursor(int seq);
+
+  /// No description provided for @storage_lag.
+  ///
+  /// In zh, this message translates to:
+  /// **'落后 {count} 条'**
+  String storage_lag(int count);
+
+  /// No description provided for @storage_dbSize.
+  ///
+  /// In zh, this message translates to:
+  /// **'数据库 {size}'**
+  String storage_dbSize(String size);
+
+  /// No description provided for @storage_attachmentSize.
+  ///
+  /// In zh, this message translates to:
+  /// **'附件 {size}'**
+  String storage_attachmentSize(String size);
+
+  /// No description provided for @storage_seqWatermark.
+  ///
+  /// In zh, this message translates to:
+  /// **'seq 水位 {seq}'**
+  String storage_seqWatermark(int seq);
+
+  /// No description provided for @storage_noSyncDevices.
+  ///
+  /// In zh, this message translates to:
+  /// **'暂无开启同步的配对设备'**
+  String get storage_noSyncDevices;
+
+  /// No description provided for @storage_lastSync.
+  ///
+  /// In zh, this message translates to:
+  /// **'最近同步 {time}'**
+  String storage_lastSync(String time);
+
+  /// No description provided for @storage_state_role_negotiated.
+  ///
+  /// In zh, this message translates to:
+  /// **'已确立角色'**
+  String get storage_state_role_negotiated;
+
+  /// No description provided for @storage_state_adopting.
+  ///
+  /// In zh, this message translates to:
+  /// **'正在归并本地数据'**
+  String get storage_state_adopting;
+
+  /// No description provided for @storage_state_snapshot_sync.
+  ///
+  /// In zh, this message translates to:
+  /// **'正在全量快照同步'**
+  String get storage_state_snapshot_sync;
+
+  /// No description provided for @storage_state_active.
+  ///
+  /// In zh, this message translates to:
+  /// **'同步中'**
+  String get storage_state_active;
+
+  /// No description provided for @storage_state_unpaired.
+  ///
+  /// In zh, this message translates to:
+  /// **'未配对'**
+  String get storage_state_unpaired;
 }
 
 class _AppLocalizationsDelegate

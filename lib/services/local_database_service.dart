@@ -3,6 +3,7 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:sqflite/sqflite.dart';
 import 'package:path/path.dart';
 import 'package:path_provider/path_provider.dart';
+import '../sync/sync_schema.dart';
 import 'she_profile_database_service.dart';
 import 'she_memory_db_service.dart';
 import 'minds_database_service.dart';
@@ -47,7 +48,7 @@ class LocalDatabaseService {
       // Web平台使用sqflite_common_ffi
       return await openDatabase(
         'shepaw',
-        version: 28,
+        version: 29,
         onCreate: _onCreate,
         onUpgrade: _onUpgrade,
       );
@@ -57,7 +58,7 @@ class LocalDatabaseService {
       path = join(directory.path, 'shepaw.db');
       return await openDatabase(
         path,
-        version: 28,
+        version: 29,
         onCreate: _onCreate,
         onUpgrade: _onUpgrade,
       );
@@ -68,7 +69,7 @@ class LocalDatabaseService {
 
       return await openDatabase(
         path,
-        version: 28,
+        version: 29,
         onCreate: _onCreate,
         onUpgrade: _onUpgrade,
       );
@@ -425,6 +426,10 @@ class LocalDatabaseService {
       )
     ''');
 
+    // 同步层元数据表与业务表 seq/updated_at 列 (v29)，与 _onUpgrade 共用
+    // 同一幂等入口；hub 触发器在设备成为 hub 时由 SyncSchema.installHubTriggers 安装。
+    await SyncSchema.ensureSyncSchema(db);
+
   }
 
   /// 数据库升级
@@ -766,6 +771,21 @@ class LocalDatabaseService {
       } catch (e) {
         LoggerService().error(
           'Failed to create history_compaction_cache (v28)',
+          tag: 'Migration',
+          error: e,
+        );
+      }
+    }
+
+    if (oldVersion < 29) {
+      // 版本 28 -> 29: PC 主存储同步（docs/sync_protocol_spec.md §3）。
+      // 同步表补 seq/updated_at 列，新增 sync_clock/sync_devices/sync_cursor/
+      // sync_tombstones 元数据表。幂等，与 _onCreate 共用入口。
+      try {
+        await SyncSchema.ensureSyncSchema(db);
+      } catch (e) {
+        LoggerService().error(
+          'Failed to create sync schema (v29)',
           tag: 'Migration',
           error: e,
         );

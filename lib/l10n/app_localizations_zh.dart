@@ -4663,4 +4663,96 @@ class AppLocalizationsZh extends AppLocalizations {
   @override
   String get addAgent_pairingCodeHelper =>
       'Agent 主机运行 `<gateway> enroll` 得到类似 XXX-XXX-XXX 的短码，粘贴到这里即可自动授权本设备。不填写则走上方的「复制公钥 → peers add」手动流程。';
+
+  @override
+  String get peerPairing_roleChoiceTitle => '主存储设备';
+
+  @override
+  String get peerPairing_roleChoiceHub => '以本机为主存储设备（hub），对端同步只读副本。';
+
+  @override
+  String get peerPairing_roleChoiceConsole => '以对端为主存储设备（hub），本机保留只读副本。';
+
+  @override
+  String get peerPairing_roleAutoHub => '配对后本机将作为主存储设备（hub）。';
+
+  @override
+  String get peerPairing_roleAutoConsole => '配对后本机将作为桌面端的只读副本。';
+
+  @override
+  String get storage_title => '数据存储';
+
+  @override
+  String get storage_hubCardTitle => '主存储设备';
+
+  @override
+  String get storage_hubImplFlutter => 'Flutter 桌面版';
+
+  @override
+  String get storage_thisDevice => '本机';
+
+  @override
+  String storage_managedBy(String name) {
+    return '由工作站 $name 管理';
+  }
+
+  @override
+  String get storage_devicesTitle => '配对设备';
+
+  @override
+  String get storage_roleHub => '主存储';
+
+  @override
+  String get storage_roleConsole => '副本';
+
+  @override
+  String get storage_roleNone => 'Peer 聊天';
+
+  @override
+  String storage_syncCursor(int seq) {
+    return '同步游标 $seq';
+  }
+
+  @override
+  String storage_lag(int count) {
+    return '落后 $count 条';
+  }
+
+  @override
+  String storage_dbSize(String size) {
+    return '数据库 $size';
+  }
+
+  @override
+  String storage_attachmentSize(String size) {
+    return '附件 $size';
+  }
+
+  @override
+  String storage_seqWatermark(int seq) {
+    return 'seq 水位 $seq';
+  }
+
+  @override
+  String get storage_noSyncDevices => '暂无开启同步的配对设备';
+
+  @override
+  String storage_lastSync(String time) {
+    return '最近同步 $time';
+  }
+
+  @override
+  String get storage_state_role_negotiated => '已确立角色';
+
+  @override
+  String get storage_state_adopting => '正在归并本地数据';
+
+  @override
+  String get storage_state_snapshot_sync => '正在全量快照同步';
+
+  @override
+  String get storage_state_active => '同步中';
+
+  @override
+  String get storage_state_unpaired => '未配对';
 }

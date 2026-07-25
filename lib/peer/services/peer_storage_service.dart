@@ -42,7 +42,11 @@ class PeerStorageService {
         paired_at INTEGER NOT NULL,
         last_seen INTEGER,
         is_blocked INTEGER DEFAULT 0,
-        pairing_role TEXT
+        pairing_role TEXT,
+        device_role TEXT,
+        sync_enabled INTEGER NOT NULL DEFAULT 0,
+        peer_platform TEXT,
+        peer_hub_capable INTEGER
       )
     ''');
     // 老库迁移：为既有 paired_peers 表补充 pairing_role 列（重复执行会报错，忽略）。
@@ -51,6 +55,22 @@ class PeerStorageService {
     } catch (_) {
       // 列已存在
     }
+    // PC 主存储同步（docs/sync_protocol_spec.md §2.3）：对端主从角色 +
+    // 同步开关 + 对端设备信息（配对握手时交换）。
+    try {
+      await db.execute('ALTER TABLE paired_peers ADD COLUMN device_role TEXT');
+    } catch (_) {}
+    try {
+      await db.execute(
+          'ALTER TABLE paired_peers ADD COLUMN sync_enabled INTEGER NOT NULL DEFAULT 0');
+    } catch (_) {}
+    try {
+      await db.execute('ALTER TABLE paired_peers ADD COLUMN peer_platform TEXT');
+    } catch (_) {}
+    try {
+      await db.execute(
+          'ALTER TABLE paired_peers ADD COLUMN peer_hub_capable INTEGER');
+    } catch (_) {}
     await db.execute('''
       CREATE TABLE IF NOT EXISTS peer_messages (
         id TEXT PRIMARY KEY,

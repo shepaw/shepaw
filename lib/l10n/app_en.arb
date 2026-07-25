@@ -2358,5 +2358,80 @@
   "status_protocolPeer": "Paired device",
   "status_custom": "Custom",
   "home_statusError": "Error",
-  "addAgent_pairingCodeHelper": "Run `<gateway> enroll` on the agent host to get a short code like XXX-XXX-XXX, paste it here to auto-authorize this device. Leave empty to use the \"Copy public key → peers add\" manual flow above."
+  "addAgent_pairingCodeHelper": "Run `<gateway> enroll` on the agent host to get a short code like XXX-XXX-XXX, paste it here to auto-authorize this device. Leave empty to use the \"Copy public key → peers add\" manual flow above.",
+  "peerPairing_roleChoiceTitle": "Primary storage device",
+  "peerPairing_roleChoiceHub": "Use this device as the primary storage (hub). The other device syncs a read-only replica.",
+  "peerPairing_roleChoiceConsole": "Use the other device as the primary storage (hub). This device keeps a read-only replica.",
+  "peerPairing_roleAutoHub": "This device will be the primary storage (hub).",
+  "peerPairing_roleAutoConsole": "This device will sync as a read-only replica of the desktop.",
+  "storage_title": "Data Storage",
+  "storage_hubCardTitle": "Primary storage device",
+  "storage_hubImplFlutter": "Flutter desktop app",
+  "storage_thisDevice": "This device",
+  "storage_managedBy": "Managed by workstation {name}",
+  "storage_devicesTitle": "Paired devices",
+  "storage_roleHub": "Primary storage",
+  "storage_roleConsole": "Replica",
+  "storage_roleNone": "Peer chat",
+  "storage_syncCursor": "Sync cursor {seq}",
+  "storage_lag": "{count} behind",
+  "storage_dbSize": "Database {size}",
+  "storage_attachmentSize": "Attachments {size}",
+  "storage_seqWatermark": "Seq watermark {seq}",
+  "storage_noSyncDevices": "No paired devices with sync enabled yet",
+  "storage_lastSync": "Last sync {time}",
+  "storage_state_role_negotiated": "Role negotiated",
+  "storage_state_adopting": "Merging local data",
+  "storage_state_snapshot_sync": "Full snapshot sync",
+  "storage_state_active": "In sync",
+  "storage_state_unpaired": "Not paired",
+  "@storage_managedBy": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "@storage_syncCursor": {
+    "placeholders": {
+      "seq": {
+        "type": "int"
+      }
+    }
+  },
+  "@storage_lag": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "@storage_dbSize": {
+    "placeholders": {
+      "size": {
+        "type": "String"
+      }
+    }
+  },
+  "@storage_attachmentSize": {
+    "placeholders": {
+      "size": {
+        "type": "String"
+      }
+    }
+  },
+  "@storage_seqWatermark": {
+    "placeholders": {
+      "seq": {
+        "type": "int"
+      }
+    }
+  },
+  "@storage_lastSync": {
+    "placeholders": {
+      "time": {
+        "type": "String"
+      }
+    }
+  }
 }

@@ -95,6 +95,19 @@ class PairedPeer {
   /// 本机在这段配对中的角色（发起方 / 被连接方）。历史数据可能为 null。
   final PeerPairingRole? pairingRole;
 
+  /// 对端设备的主从角色（'hub' | 'console' | 'none'，spec §2.3）。
+  /// 本机角色与之互补：对端=hub ⇒ 本机=console。null = 未确立主从。
+  final String? deviceRole;
+
+  /// 是否开启主从同步（确立 hub/console 角色时为 true）。
+  final bool syncEnabled;
+
+  /// 对端平台（macos/windows/linux/ios/android），配对握手时交换。
+  final String? peerPlatform;
+
+  /// 对端是否具备 hub 能力（桌面端为 true）。
+  final bool? peerHubCapable;
+
   PairedPeer({
     required this.id,
     required this.deviceName,
@@ -108,6 +121,10 @@ class PairedPeer {
     this.state = PeerConnectionState.disconnected,
     this.isBlocked = false,
     this.pairingRole,
+    this.deviceRole,
+    this.syncEnabled = false,
+    this.peerPlatform,
+    this.peerHubCapable,
   });
 
   /// 获取首选连接端点（优先内网直连）
@@ -157,6 +174,12 @@ class PairedPeer {
       state: PeerConnectionState.disconnected, // 运行时状态，不从 DB 恢复
       isBlocked: (json['is_blocked'] as int? ?? 0) == 1,
       pairingRole: PeerPairingRole.fromJson(json['pairing_role'] as String?),
+      deviceRole: json['device_role'] as String?,
+      syncEnabled: (json['sync_enabled'] as int? ?? 0) == 1,
+      peerPlatform: json['peer_platform'] as String?,
+      peerHubCapable: json['peer_hub_capable'] == null
+          ? null
+          : (json['peer_hub_capable'] as int) == 1,
     );
   }
 
@@ -174,6 +197,12 @@ class PairedPeer {
       'last_seen': lastSeen,
       'is_blocked': isBlocked ? 1 : 0,
       'pairing_role': pairingRole?.toJson(),
+      'device_role': deviceRole,
+      'sync_enabled': syncEnabled ? 1 : 0,
+      'peer_platform': peerPlatform,
+      'peer_hub_capable': peerHubCapable == null
+          ? null
+          : (peerHubCapable! ? 1 : 0),
     };
   }
 
@@ -191,6 +220,10 @@ class PairedPeer {
     PeerConnectionState? state,
     bool? isBlocked,
     PeerPairingRole? pairingRole,
+    String? deviceRole,
+    bool? syncEnabled,
+    String? peerPlatform,
+    bool? peerHubCapable,
   }) {
     return PairedPeer(
       id: id ?? this.id,
@@ -205,6 +238,10 @@ class PairedPeer {
       state: state ?? this.state,
       isBlocked: isBlocked ?? this.isBlocked,
       pairingRole: pairingRole ?? this.pairingRole,
+      deviceRole: deviceRole ?? this.deviceRole,
+      syncEnabled: syncEnabled ?? this.syncEnabled,
+      peerPlatform: peerPlatform ?? this.peerPlatform,
+      peerHubCapable: peerHubCapable ?? this.peerHubCapable,
     );
   }
 

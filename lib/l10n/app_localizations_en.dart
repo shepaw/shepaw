@@ -4845,4 +4845,100 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get addAgent_pairingCodeHelper =>
       'Run `<gateway> enroll` on the agent host to get a short code like XXX-XXX-XXX, paste it here to auto-authorize this device. Leave empty to use the \"Copy public key → peers add\" manual flow above.';
+
+  @override
+  String get peerPairing_roleChoiceTitle => 'Primary storage device';
+
+  @override
+  String get peerPairing_roleChoiceHub =>
+      'Use this device as the primary storage (hub). The other device syncs a read-only replica.';
+
+  @override
+  String get peerPairing_roleChoiceConsole =>
+      'Use the other device as the primary storage (hub). This device keeps a read-only replica.';
+
+  @override
+  String get peerPairing_roleAutoHub =>
+      'This device will be the primary storage (hub).';
+
+  @override
+  String get peerPairing_roleAutoConsole =>
+      'This device will sync as a read-only replica of the desktop.';
+
+  @override
+  String get storage_title => 'Data Storage';
+
+  @override
+  String get storage_hubCardTitle => 'Primary storage device';
+
+  @override
+  String get storage_hubImplFlutter => 'Flutter desktop app';
+
+  @override
+  String get storage_thisDevice => 'This device';
+
+  @override
+  String storage_managedBy(String name) {
+    return 'Managed by workstation $name';
+  }
+
+  @override
+  String get storage_devicesTitle => 'Paired devices';
+
+  @override
+  String get storage_roleHub => 'Primary storage';
+
+  @override
+  String get storage_roleConsole => 'Replica';
+
+  @override
+  String get storage_roleNone => 'Peer chat';
+
+  @override
+  String storage_syncCursor(int seq) {
+    return 'Sync cursor $seq';
+  }
+
+  @override
+  String storage_lag(int count) {
+    return '$count behind';
+  }
+
+  @override
+  String storage_dbSize(String size) {
+    return 'Database $size';
+  }
+
+  @override
+  String storage_attachmentSize(String size) {
+    return 'Attachments $size';
+  }
+
+  @override
+  String storage_seqWatermark(int seq) {
+    return 'Seq watermark $seq';
+  }
+
+  @override
+  String get storage_noSyncDevices => 'No paired devices with sync enabled yet';
+
+  @override
+  String storage_lastSync(String time) {
+    return 'Last sync $time';
+  }
+
+  @override
+  String get storage_state_role_negotiated => 'Role negotiated';
+
+  @override
+  String get storage_state_adopting => 'Merging local data';
+
+  @override
+  String get storage_state_snapshot_sync => 'Full snapshot sync';
+
+  @override
+  String get storage_state_active => 'In sync';
+
+  @override
+  String get storage_state_unpaired => 'Not paired';
 }

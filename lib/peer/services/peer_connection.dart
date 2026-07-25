@@ -112,6 +112,8 @@ class PeerConnection {
     'agent_file_end',
     'agent_file_ack',
     'agent_file_error',
+    // PC 主从同步帧（docs/sync_protocol_spec.md §1，载荷内含 ns/op 子路由）。
+    'sync',
   };
 
   /// 连接状态变化
