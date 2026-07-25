@@ -22,9 +22,11 @@ import '../services/skill_registry.dart';
 import '../service_locator.dart' show getIt;
 import 'skill_select_screen.dart';
 import 'cli_command_select_screen.dart';
+import 'prompt_stack_config_screen.dart';
 import 'chat_screen.dart';
 import '../widgets/agent_model_config_card.dart';
 import '../utils/layout_utils.dart';
+import '../models/prompt_stack_config.dart';
 
 /// 远端 Agent 详情页面（从聊天页进入）
 class RemoteAgentDetailScreen extends StatefulWidget {
@@ -85,6 +87,10 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
 
   // CLI 命令配置
   Set<String> _enabledCliCommands = {};
+
+  /// Editable prompt-stack flags (persisted in metadata).
+  late PromptStackConfig _promptStackConfig;
+
 
   // 本地上传的头像文件路径（相对路径）
   String? _localAvatarPath;
@@ -249,6 +255,8 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
 
     // Load CLI commands from metadata
     _enabledCliCommands = _agent.enabledCliCommands;
+    _promptStackConfig = _agent.promptStackConfig;
+
 
     // Match main model — prefer stored main_model_id, then fall back to
     // matching by llm_model + llm_api_base for legacy agents.
@@ -340,6 +348,7 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
     _editingAllowExternalAccess = _agent.allowExternalAccess;
     _enabledSkills = _agent.enabledSkills;
     _enabledCliCommands = _agent.enabledCliCommands;
+    _promptStackConfig = _agent.promptStackConfig;
     _scenarioModels = AgentScenarioModels.loadForEditing(
       metadata: _agent.metadata,
       enabledToolModels: _agent.enabledToolModels,
@@ -482,6 +491,11 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
         metadata.remove('llm_model');
         metadata.remove('llm_api_base');
         metadata.remove('llm_api_key');
+      }
+
+      // Prompt stack applies to local / She agents regardless of model selection.
+      if (_isLocalMode || _selectedMainModelId != null) {
+        metadata['prompt_stack_config'] = _promptStackConfig.toJson();
       }
 
       // Save allow_external_access for local agents
@@ -1885,6 +1899,39 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
               if (result != null) {
                 setState(() {
                   _enabledCliCommands = result;
+                });
+                _scheduleAutoSave();
+              }
+            },
+          ),
+          const Divider(height: 1, indent: 16, endIndent: 16),
+          ListTile(
+            leading: Icon(Icons.layers, color: colorScheme.primary),
+            title: Text(
+              Localizations.localeOf(context).languageCode.startsWith('zh')
+                  ? '提示词栈'
+                  : 'Prompt Stack',
+            ),
+            subtitle: Text(
+              Localizations.localeOf(context).languageCode.startsWith('zh')
+                  ? '工具 / 记忆 / 认知等系统提示词分层'
+                  : 'Tools, memory, cognition layers in the system prompt',
+              style: TextStyle(color: colorScheme.onSurfaceVariant),
+            ),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () async {
+              final result = await Navigator.push<PromptStackConfig>(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => PromptStackConfigScreen(
+                    initial: _promptStackConfig,
+                    isShe: _agent.isShe,
+                  ),
+                ),
+              );
+              if (result != null) {
+                setState(() {
+                  _promptStackConfig = result;
                 });
                 _scheduleAutoSave();
               }
