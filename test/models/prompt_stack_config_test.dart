@@ -17,10 +17,12 @@ void main() {
   });
 
   group('PromptStackConfig.forShe', () {
-    test('keeps shepaw CLI and She memory defaults', () {
+    test('keeps shepaw CLI and enables companion profile/strategy', () {
       expect(PromptStackConfig.forShe.tools.includeShepawCli, isTrue);
       expect(PromptStackConfig.forShe.she.includeSheMemory, isTrue);
       expect(PromptStackConfig.forShe.she.includeMetaCognition, isTrue);
+      expect(PromptStackConfig.forShe.she.includeUserStrategy, isTrue);
+      expect(PromptStackConfig.forShe.she.includeProfileSnapshot, isTrue);
       expect(PromptStackConfig.forShe.agent.includeUserProfile, isFalse);
     });
   });

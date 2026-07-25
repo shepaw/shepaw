@@ -394,8 +394,9 @@ class SheStackConfig {
 /// Persisted as `RemoteAgent.metadata['prompt_stack_config']`.
 ///
 /// Default factory constructors:
-/// - [PromptStackConfig.forShe] — all sections enabled
-/// - [PromptStackConfig.forOtherAgent] — She sections disabled
+/// - [PromptStackConfig.forShe] — She companion sections (memory, meta, strategy,
+///   profile snapshot, session-end, …); agent sections off
+/// - [PromptStackConfig.forOtherAgent] — She sections disabled; shepaw tool on
 class PromptStackConfig {
   /// Prepend a short identity block (agent name) so the model can recognise
   /// when quoted messages refer to itself.
@@ -439,9 +440,14 @@ class PromptStackConfig {
     this.lightweightMode = false,
   });
 
-  /// Full configuration for She — all sections active.
+  /// Full configuration for She — companion stack active, including
+  /// user-understanding strategy and profile snapshot.
   static const PromptStackConfig forShe = PromptStackConfig(
     agent: AgentStackConfig.disabled,
+    she: SheStackConfig(
+      includeUserStrategy: true,
+      includeProfileSnapshot: true,
+    ),
   );
 
   /// Standard configuration for non-She agents — She sections silently off.

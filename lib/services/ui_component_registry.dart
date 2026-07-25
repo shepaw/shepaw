@@ -22,8 +22,8 @@ class UIComponentDefinition {
   /// The ACP notification method (e.g. 'ui.actionConfirmation').
   final String acpNotificationMethod;
 
-  /// Whether this component is exposed as a callable LLM tool.
-  /// False for directive-only components like request_history.
+  /// Whether this component is exposed as a callable LLM tool for local agents.
+  /// ACP remote agents may still use directive blocks for the same component.
   final bool isToolCallable;
 
   /// Usage notes for this component.
@@ -61,7 +61,7 @@ class UIComponentRegistry {
   static final UIComponentRegistry instance = UIComponentRegistry._();
 
   /// Bumped whenever component definitions change.
-  static const String version = '1.0.0';
+  static const String version = '1.1.0';
 
   // ---------------------------------------------------------------------------
   // Component definitions
@@ -370,18 +370,36 @@ class UIComponentRegistry {
       },
     ),
 
-    // 8. request_history (directive-only)
+    // 8. request_history (tool-callable for local agents; ACP still uses directive)
     UIComponentDefinition(
       name: 'request_history',
       description:
           'Request more conversation history from the user\'s app when '
-          'missing context needed to answer the current question.',
+          'missing context needed to answer the current question. '
+          'After calling this tool, STOP generating further text — the app '
+          'will send additional history and re-invoke you.',
       acpNotificationMethod: ACPMethod.uiRequestHistory,
-      isToolCallable: false,
+      isToolCallable: true,
       usageNotes:
           'reason: Explain to the user why you need more history. '
           'requested_count: How many additional messages (default: 40). '
-          'After this directive, STOP generating further text.',
+          'After this tool call, STOP generating further text.',
+      parameterSchema: {
+        'type': 'object',
+        'properties': {
+          'reason': {
+            'type': 'string',
+            'description':
+                'Explain to the user why more chat history is needed.',
+          },
+          'requested_count': {
+            'type': 'integer',
+            'description':
+                'How many additional messages to load (default: 40).',
+          },
+        },
+        'required': ['reason'],
+      },
     ),
   ];
 

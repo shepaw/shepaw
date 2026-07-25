@@ -201,6 +201,7 @@ class AgentMessagingService {
           onForm: onForm,
           onFileMessage: onFileMessage,
           onMessageMetadata: onMessageMetadata,
+          onRequestHistory: onRequestHistory,
           onOsToolConfirmation: onOsToolConfirmation,
           onWorkflowPlanCreated: onWorkflowPlanCreated,
           acpCancellationToken: acpCancellationToken,
@@ -1338,6 +1339,7 @@ class AgentMessagingService {
     void Function(Map<String, dynamic>)? onForm,
     Future<void> Function(Map<String, dynamic>)? onFileMessage,
     void Function(Map<String, dynamic>)? onMessageMetadata,
+    void Function(Map<String, dynamic>)? onRequestHistory,
     Future<bool> Function(String, Map<String, dynamic>, os_exec.RiskLevel)? onOsToolConfirmation,
     /// 工作流计划创建回调（She 在 DM 中调用 `shepaw workflow create` 成功后触发）。
     /// 参数：workflowId、可直接挂到消息 metadata 的 plan_approval 数据。
@@ -1386,6 +1388,7 @@ class AgentMessagingService {
     activeTask.onForm = onForm;
     activeTask.onFileMessage = onFileMessage;
     activeTask.onMessageMetadata = onMessageMetadata;
+    activeTask.onRequestHistory = onRequestHistory;
     activeTask.onOsToolConfirmation = onOsToolConfirmation;
 
     if (effectiveChannelId.isNotEmpty) {
@@ -1544,6 +1547,7 @@ class AgentMessagingService {
       Map<String, dynamic>? formDataCapture;
       Map<String, dynamic>? messageMetadataExtra;
       Map<String, dynamic>? planApprovalData;
+      Map<String, dynamic>? historyRequestData;
       bool fileMessageHandled = false;
 
       final maxToolRounds = (agent.metadata?['max_tool_rounds'] as num?)?.toInt() ?? 100;
@@ -1631,6 +1635,7 @@ class AgentMessagingService {
                 Map<String, dynamic>? fu,
                 Map<String, dynamic>? fd,
                 Map<String, dynamic>? mm,
+                Map<String, dynamic>? rh,
                 bool? fmh,
               }) {
                 if (ac != null) actionConfirmationData = ac;
@@ -1639,6 +1644,7 @@ class AgentMessagingService {
                 if (fu != null) fileUploadData = fu;
                 if (fd != null) formDataCapture = fd;
                 if (mm != null) messageMetadataExtra = mm;
+                if (rh != null) historyRequestData = rh;
                 if (fmh == true) fileMessageHandled = true;
               },
             );
@@ -1941,6 +1947,9 @@ class AgentMessagingService {
             : '[Stopped]';
       } else if (fileMessageHandled && visibleContent.trim().isEmpty) {
         displayContent = '[Used file_message tool]';
+      } else if (historyRequestData != null && visibleContent.trim().isEmpty) {
+        // Directive-style: no placeholder bubble — controller deletes & supplements.
+        displayContent = '';
       } else {
         displayContent = visibleContent.isNotEmpty ? visibleContent : 'Task completed';
       }
@@ -1957,8 +1966,17 @@ class AgentMessagingService {
       );
 
       await flushHelper.deletePartial();
-      await saveMessageToChannel(agentResponse, agent.id, channelId: channelId);
-      LoggerService().debug('Agent response saved', tag: 'AgentMessagingService');
+      // request_history-only turns leave empty content; controller deletes the
+      // bubble and runs the supplement flow — skip persisting a blank row.
+      if (displayContent.isNotEmpty || historyRequestData == null) {
+        await saveMessageToChannel(agentResponse, agent.id, channelId: channelId);
+        LoggerService().debug('Agent response saved', tag: 'AgentMessagingService');
+      } else {
+        LoggerService().debug(
+          'Skipped saving empty request_history response',
+          tag: 'AgentMessagingService',
+        );
+      }
 
       // She 对话计数（记忆整理触发用）
       if (agent.metadata['is_she'] == true) {

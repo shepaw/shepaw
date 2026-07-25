@@ -91,6 +91,7 @@ class LocalLLMHelpers {
   static const uiToolNames = {
     'action_confirmation', 'single_select', 'multi_select',
     'file_upload', 'form', 'file_message', 'message_metadata',
+    'request_history',
   };
 
   static bool isUiTool(String name) => uiToolNames.contains(name);
@@ -303,6 +304,7 @@ class LocalLLMHelpers {
       Map<String, dynamic>? fu,
       Map<String, dynamic>? fd,
       Map<String, dynamic>? mm,
+      Map<String, dynamic>? rh,
       bool? fmh,
     }) onCaptured,
   }) {
@@ -335,6 +337,16 @@ class LocalLLMHelpers {
       case 'message_metadata':
         onCaptured(mm: Map<String, dynamic>.from(args));
         activeTask.onMessageMetadata?.call(args);
+        break;
+      case 'request_history':
+        final payload = Map<String, dynamic>.from(args);
+        // Normalize to the shape HistoryRequestInfo / ACP callbacks expect.
+        payload['reason'] ??= 'Agent needs more context';
+        payload['requested_count'] ??= 40;
+        payload['request_id'] ??=
+            'local_hist_${DateTime.now().millisecondsSinceEpoch}';
+        onCaptured(rh: payload);
+        activeTask.onRequestHistory?.call(payload);
         break;
     }
   }
