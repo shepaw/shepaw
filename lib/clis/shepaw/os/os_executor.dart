@@ -12,6 +12,9 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../../../services/tool_config_service.dart';
 import '../../../services/network/network_service.dart';
+import '../../../services/logger_service.dart';
+import 'os_sandbox_policy.dart';
+import 'os_shell_isolator.dart';
 
 // ============================================================================
 // Risk levels
@@ -22,21 +25,6 @@ enum RiskLevel { safe, lowRisk, highRisk }
 // ============================================================================
 // Constants
 // ============================================================================
-
-/// System paths considered dangerous to modify.
-const _systemPathBlacklist = [
-  '/System',
-  '/Library',
-  '/usr',
-  '/bin',
-  '/sbin',
-  '/etc',
-  '/var',
-  '/private',
-  r'C:\Windows',
-  r'C:\Program Files',
-  r'C:\Program Files (x86)',
-];
 
 /// PIDs that must never be killed.
 const _protectedPids = {0, 1};
@@ -113,17 +101,9 @@ const _maxOutputSize = 10 * 1024; // 10 KB
 // Risk classification
 // ============================================================================
 
-/// Check if a path is within a system-protected directory.
+/// Check if a path is within a system-protected directory (sandbox deny list).
 bool _isSystemPath(String path) {
-  // Normalise: resolve `~` and get real path
-  final expanded = path.startsWith('~')
-      ? '${Platform.environment['HOME'] ?? ''}${path.substring(1)}'
-      : path;
-  final lower = expanded.toLowerCase();
-  for (final p in _systemPathBlacklist) {
-    if (lower.startsWith(p.toLowerCase())) return true;
-  }
-  return false;
+  return OsSandboxPolicy().isDeniedPath(path);
 }
 
 /// Classify risk level of a tool call based on name and arguments.
@@ -270,6 +250,16 @@ Future<Map<String, dynamic>> runTool(
     // ── 注入全局工具配置 ──────────────────────────────────────────────────────
     final resolvedArgs = await _injectToolConfig(toolName, args);
 
+    // ── 策略沙箱：硬拒绝系统区突变与灾难 shell（确认卡之外的底线）──────────────
+    final decision = OsSandboxPolicy().evaluate(toolName, resolvedArgs);
+    if (!decision.allowed) {
+      return {
+        'success': false,
+        'error': decision.reason ?? 'OS sandbox denied',
+        'sandbox_denied': true,
+      };
+    }
+
     switch (toolName) {
       case 'shell_exec':
         return await _execShell(resolvedArgs);
@@ -370,23 +360,71 @@ Future<Map<String, dynamic>> _execShell(Map<String, dynamic> args) async {
       '.';
 
   try {
+    var plan = await OsShellIsolator.resolve(
+      command: command,
+      workingDirectory: workingDir,
+    );
+
     ProcessResult result;
-    if (Platform.isWindows) {
+    try {
       result = await Process.run(
-        'cmd',
-        ['/c', command],
-        workingDirectory: workingDir,
+        plan.executable,
+        plan.arguments,
+        workingDirectory: plan.workingDirectory,
         stdoutEncoding: utf8,
         stderrEncoding: utf8,
       ).timeout(timeout);
-    } else {
-      result = await Process.run(
-        '/bin/sh',
-        ['-c', command],
+    } on ProcessException catch (e) {
+      // Wrapper binary missing / failed to spawn → fall back to bare shell.
+      if (plan.mode != 'none') {
+        LoggerService().warning(
+          'OS shell isolator (${plan.mode}) failed to spawn ($e); '
+          'falling back to unwrapped shell',
+          tag: 'OsSandbox',
+        );
+        plan = OsShellIsolator.barePlan(
+          command: command,
+          workingDirectory: workingDir,
+        );
+        result = await Process.run(
+          plan.executable,
+          plan.arguments,
+          workingDirectory: plan.workingDirectory,
+          stdoutEncoding: utf8,
+          stderrEncoding: utf8,
+        ).timeout(timeout);
+      } else {
+        rethrow;
+      }
+    }
+
+    // sandbox-exec sometimes exits non-zero with a sandbox setup error before
+    // running the command — retry bare once when the wrapper clearly failed.
+    if (plan.mode == 'sandbox-exec' &&
+        result.exitCode != 0 &&
+        _looksLikeSandboxExecFailure(result)) {
+      LoggerService().warning(
+        'sandbox-exec rejected launch; falling back to unwrapped shell',
+        tag: 'OsSandbox',
+      );
+      plan = OsShellIsolator.barePlan(
+        command: command,
         workingDirectory: workingDir,
+      );
+      result = await Process.run(
+        plan.executable,
+        plan.arguments,
+        workingDirectory: plan.workingDirectory,
         stdoutEncoding: utf8,
         stderrEncoding: utf8,
       ).timeout(timeout);
+    } else if (plan.mode == 'none' &&
+        (Platform.isLinux || Platform.isMacOS)) {
+      LoggerService().debug(
+        'OS shell running without process isolation '
+        '(${Platform.operatingSystem})',
+        tag: 'OsSandbox',
+      );
     }
 
     return {
@@ -394,6 +432,7 @@ Future<Map<String, dynamic>> _execShell(Map<String, dynamic> args) async {
       'exit_code': result.exitCode,
       'stdout': _truncate(result.stdout as String),
       'stderr': _truncate(result.stderr as String),
+      'isolation': plan.mode,
     };
   } on ProcessException catch (e) {
     return {'success': false, 'error': e.toString()};
@@ -403,6 +442,14 @@ Future<Map<String, dynamic>> _execShell(Map<String, dynamic> args) async {
     }
     return {'success': false, 'error': e.toString()};
   }
+}
+
+bool _looksLikeSandboxExecFailure(ProcessResult result) {
+  final err = '${result.stderr}\n${result.stdout}'.toLowerCase();
+  return err.contains('sandbox-exec') ||
+      err.contains('seatbelt') ||
+      (err.contains('deny') && err.contains('sandbox')) ||
+      (err.contains('operation not permitted') && result.exitCode == 1);
 }
 
 // ---------------------------------------------------------------------------
