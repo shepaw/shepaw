@@ -25,6 +25,7 @@ import '../peer_key_utils.dart';
 import '../she_service.dart';
 import '../../clis/shepaw/shepaw_cli.dart';
 import '../session/session_history_service.dart';
+import '../session/history_compactor.dart';
 import '../remote_agent_service.dart';
 import '../../peer/services/peer_agent_client_service.dart';
 import '../../service_locator.dart' show getIt;
@@ -1455,35 +1456,100 @@ class AgentMessagingService {
         dmSystemPromptOverride: dmSystemPrompt,
       ).buildSystemPrompt();
 
-      // Load history with a character budget — same helper the group flow
-      // uses; keeps long sessions from blowing up the context.
-      const historyMaxChars = 20000;
+      // Hook cancellation early so compaction LLM calls can also be aborted.
+      final cancelKey = activeTask.taskId;
+      acpCancellationToken?.addOnCancelled(() {
+        activeTask.recordInterruption('user_cancelled');
+        LocalLLMAgentService.instance.abort(cancelKey);
+      });
+
+      // Load history with a character budget. When over budget, summarize older
+      // turns instead of silently dropping them (FIFO), then keep a recent raw tail.
+      const historyMaxChars = HistoryCompactor.defaultMaxChars;
+      const historyLoadLimit = 100;
       final historyService = HistoryService(_db, _toolResultDb);
       final List<Map<String, dynamic>> chatHistory = [];
       if (channelId != null) {
-        final messages = await historyService.loadAndTruncateHistory(
+        // Load a wider window than the budget so compaction has material to summarize.
+        final loaded = await historyService.loadChannelMessages(
           channelId,
-          maxChars: historyMaxChars,
-          limit: 50,
-          excludeMessageId: userMessage.id,
+          limit: historyLoadLimit,
         );
-        if (messages.isNotEmpty) {
-          for (final m in messages) {
-            if (m.type != MessageType.system && m.type != MessageType.permissionAudit && m.id != userMessage.id) {
-              final isAgent = m.from.isAgent;
-              final rawContent = isAgent
-                  ? m.content
-                  : '[${_formatTimestamp(m.timestampMs)}] ${m.content}';
-              final entry = <String, dynamic>{
-                'role': isAgent ? 'assistant' : 'user',
-                'content': LocalLLMHelpers.enrichHistoryContent(m, rawContent),
-              };
-              if (m.type != MessageType.text && m.type != MessageType.system) {
-                entry['attachment_info'] = LocalLLMHelpers.buildAttachmentInfo(m);
+        final candidates = loaded
+            .where((m) =>
+                m.type != MessageType.system &&
+                m.type != MessageType.permissionAudit &&
+                m.id != userMessage.id)
+            .toList();
+
+        final plan = HistoryCompactor.plan(
+          messages: candidates,
+          maxChars: historyMaxChars,
+        );
+
+        List<Message> recentMessages = plan.recent;
+        if (plan.needsCompaction &&
+            acpCancellationToken?.isCancelled != true) {
+          try {
+            final transcript = HistoryCompactor.buildTranscript(plan.older);
+            final summary = await _summarizeHistoryForCompaction(
+              agent: agent,
+              transcript: transcript,
+              cancelKey: cancelKey,
+            );
+            if (summary.isNotEmpty) {
+              chatHistory.add(HistoryCompactor.summaryMessage(summary));
+              // Keep recent tail within remaining budget after the summary block.
+              final summaryCost = (chatHistory.last['content'] as String).length;
+              var budgetLeft = historyMaxChars - summaryCost;
+              while (recentMessages.isNotEmpty &&
+                  recentMessages.fold<int>(
+                          0, (s, m) => s + m.content.length) >
+                      budgetLeft &&
+                  recentMessages.length > 4) {
+                recentMessages = recentMessages.sublist(1);
               }
-              chatHistory.add(entry);
+              LoggerService().info(
+                'History compacted: ${plan.older.length} older msgs → '
+                '${summary.length} char summary; keeping ${recentMessages.length} recent',
+                tag: 'AgentMessagingService',
+              );
+            } else {
+              // Empty summary — fall back to FIFO truncate of the full set.
+              recentMessages = await historyService.loadAndTruncateHistory(
+                channelId,
+                maxChars: historyMaxChars,
+                limit: historyLoadLimit,
+                excludeMessageId: userMessage.id,
+              );
             }
+          } catch (e) {
+            LoggerService().warning(
+              'History compaction failed, falling back to truncate: $e',
+              tag: 'AgentMessagingService',
+            );
+            recentMessages = await historyService.loadAndTruncateHistory(
+              channelId,
+              maxChars: historyMaxChars,
+              limit: historyLoadLimit,
+              excludeMessageId: userMessage.id,
+            );
           }
+        }
+
+        for (final m in recentMessages) {
+          final isAgent = m.from.isAgent;
+          final rawContent = isAgent
+              ? m.content
+              : '[${_formatTimestamp(m.timestampMs)}] ${m.content}';
+          final entry = <String, dynamic>{
+            'role': isAgent ? 'assistant' : 'user',
+            'content': LocalLLMHelpers.enrichHistoryContent(m, rawContent),
+          };
+          if (m.type != MessageType.text && m.type != MessageType.system) {
+            entry['attachment_info'] = LocalLLMHelpers.buildAttachmentInfo(m);
+          }
+          chatHistory.add(entry);
         }
       }
 
@@ -1505,21 +1571,6 @@ class AgentMessagingService {
       roundMessages.add(LocalLLMHelpers.buildUserMessageContent(
         effectiveContent, attachments, isClaude,
       ));
-
-      // Hook cancellation token
-      // 每个 task 用独立的取消键，使「停止」只中止本次推理，不影响并发的其他
-      // agent（含 peer 请求）或桌面自己的会话。
-      final cancelKey = activeTask.taskId;
-      acpCancellationToken?.addOnCancelled(() {
-        activeTask.recordInterruption('user_cancelled');
-        LocalLLMAgentService.instance.abort(cancelKey);
-      });
-
-      // Always use the multi-round loop (even when only UI tools are enabled).
-      // The old single-round shortcut called LocalLLMAgentService.chat(), which
-      // rebuilt a thin prompt from metadata only and dropped AgentPromptBuilder
-      // output (identity / custom DM prompt / session-end / etc.) — so non-She
-      // local agents appeared to have "no system prompt" in traces and at runtime.
 
       // ======= Multi-round tool calling loop =======
       final infLog = InferenceLogService.instance;
@@ -2051,6 +2102,39 @@ class AgentMessagingService {
   // ---------------------------------------------------------------------------
   // Helpers
   // ---------------------------------------------------------------------------
+
+  /// One-shot LLM summary of older chat turns for in-context compaction.
+  Future<String> _summarizeHistoryForCompaction({
+    required RemoteAgent agent,
+    required String transcript,
+    required Object cancelKey,
+  }) async {
+    if (transcript.trim().isEmpty) return '';
+
+    final buf = StringBuffer();
+    await for (final event in LocalLLMAgentService.instance.runWithCancelKey(
+      cancelKey,
+      () => LocalLLMAgentService.instance.chat(
+        agent: agent,
+        message: transcript,
+        enableUITools: false,
+        includeShepawCli: false,
+        skipSheMemoryStack: true,
+        systemPromptOverride: HistoryCompactor.summarizerSystemPrompt,
+      ),
+    )) {
+      switch (event) {
+        case LLMTextEvent():
+          buf.write(event.text);
+        case LLMToolCallEvent():
+          // Compaction must not invoke tools.
+          break;
+        case LLMDoneEvent():
+          break;
+      }
+    }
+    return buf.toString().trim();
+  }
 
   /// Returns `true` when the OS tool call was denied (caller should `continue`).
   Future<bool> _confirmOsToolIfNeeded({
