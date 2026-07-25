@@ -485,6 +485,13 @@ ${parts.join('\n')}''';
   /// agents use the same formatting.
   static String wrapCustomPrompt(String prompt) => _wrapUserCustomPrompt(prompt);
 
+  /// Wraps ephemeral room/group context (not persisted into soul).
+  static String wrapEphemeralContextPrompt(String prompt) =>
+      _wrapEphemeralContextPrompt(prompt);
+
+  /// Session-end guidance for ephemeral rooms (group / temporary context).
+  static String buildEphemeralSessionEndBlock() => _ephemeralSessionInstructions();
+
   /// Unified shepaw CLI guidance block for any agent.
   ///
   /// - **She**: returns the full capability-discovery guide ([buildMetaCognitionBlock]).

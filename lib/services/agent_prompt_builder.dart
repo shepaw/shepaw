@@ -23,7 +23,7 @@ import 'model_registry.dart';
 ///                                 content scoped to each agent's actual permissions)
 ///  ④   She memory context      ← soul  [She-only via config.she.includeSheMemory]
 ///  ③.6 Current time            ← injected for all agents
-///  ⑤   Custom prompt           ← DM override or user-set system_prompt
+///  ⑤   Custom / ephemeral      ← DM override, or ephemeral room/group context
 ///  ⑥   User-strategy block     ← [She-only via config.she.includeUserStrategy]
 ///  ⑦   Profile snapshot        ← [She-only via config.she.includeProfileSnapshot]
 ///  ⑦'  She self-cognition      ← [She-only via config.she.includeSheSelfCognition]
@@ -43,9 +43,9 @@ import 'model_registry.dart';
 ///   • Step ⑤ (custom prompt) — She seeds soul; non-She injects as custom settings
 ///
 /// Everything else is driven by [PromptStackConfig] flags.  Non-She agents use
-/// [PromptStackConfig.forOtherAgent] which sets [SheStackConfig.disabled] and
-/// disables `includeShepawCli`, so all She-exclusive config checks evaluate to
-/// false automatically — no hardcoded `!agent.isShe` guard needed.
+/// [PromptStackConfig.forOtherAgent] which sets [SheStackConfig.disabled], so
+/// She-exclusive config checks evaluate to false automatically. She's
+/// data-access CLI copy is additionally gated by `agent.isShe`.
 class AgentPromptBuilder {
   final RemoteAgent agent;
 
@@ -53,9 +53,15 @@ class AgentPromptBuilder {
   /// replaces the agent's default `system_prompt` metadata value.
   final String? dmSystemPromptOverride;
 
+  /// Ephemeral room/group context (e.g. [GroupPromptBuilder] output). Injected
+  /// as a temporary room block for She — never used as soul seed. When set,
+  /// DM-only sections (workflow playbook) are skipped.
+  final String? ephemeralContext;
+
   AgentPromptBuilder({
     required this.agent,
     this.dmSystemPromptOverride,
+    this.ephemeralContext,
   });
 
   /// Build the complete system prompt according to the agent's [PromptStackConfig].
@@ -104,10 +110,11 @@ class AgentPromptBuilder {
       parts.add(SheService.buildShepawGuidanceBlock(agent));
     }
 
-    // ③'' DM workflow playbook — She only. AgentPromptBuilder is used
-    // exclusively by the DM messaging path, so She + this builder implies
-    // 1:1 context by construction (group prompts come from GroupPromptBuilder).
-    if (agent.isShe && config.she.includeMetaCognition) {
+    // ③'' DM workflow playbook — She DM only (skip when ephemeral room/group
+    // context is provided; those prompts already carry delegation rules).
+    final hasEphemeral =
+        ephemeralContext != null && ephemeralContext!.trim().isNotEmpty;
+    if (agent.isShe && config.she.includeMetaCognition && !hasEphemeral) {
       parts.add(SheService.buildDmWorkflowPlaybookBlock());
     }
 
@@ -121,18 +128,19 @@ class AgentPromptBuilder {
     // ③.6 Current time — injected for all agents so they have accurate temporal context.
     parts.add(SheService.instance.buildCurrentTimeBlock());
 
-    // ⑤ Custom / DM system prompt
-    // For She: system_prompt is soul seed only (handled below) — never shown
-    // as "Master's Custom Settings" to avoid duplicating soul content.
-    // Only a DM-channel override is injected as a custom block.
+    // ⑤ Custom / DM / ephemeral context
+    // For She: metadata system_prompt is soul seed only (never shown as custom
+    // settings). DM override → Master's Custom Settings. Ephemeral room/group
+    // context → Current Room Context (not soul-seeded).
     if (agent.isShe) {
-      // Seed soul from system_prompt when soul is still the default value
       final userSetPrompt = agent.metadata['system_prompt'] as String? ?? '';
       if (userSetPrompt.isNotEmpty) {
         await SheService.instance.seedSoulFromUserPrompt(userSetPrompt);
       }
-      // Inject DM override as custom settings block (if any)
-      if (dmSystemPromptOverride != null && dmSystemPromptOverride!.isNotEmpty) {
+      if (hasEphemeral) {
+        parts.add(SheService.wrapEphemeralContextPrompt(ephemeralContext!.trim()));
+      } else if (dmSystemPromptOverride != null &&
+          dmSystemPromptOverride!.isNotEmpty) {
         parts.add(SheService.wrapCustomPrompt(dmSystemPromptOverride!));
       }
     } else if (config.includeCustomPrompt) {
@@ -204,10 +212,13 @@ class AgentPromptBuilder {
     }
 
     // ⑨ Session-end — unified for all agents via SheService.buildSessionEndBlockFor().
-    // She: guarded by config.she.includeSessionEnd.
+    // She: guarded by config.she.includeSessionEnd; ephemeral rooms use a
+    // lighter "do not write room roles into soul" variant.
     // Non-She: always injected (config.she.includeSessionEnd is false for them,
     //          but !agent.isShe ensures they still get the lighter version).
-    if (config.she.includeSessionEnd || !agent.isShe) {
+    if (hasEphemeral && agent.isShe) {
+      parts.add(SheService.buildEphemeralSessionEndBlock());
+    } else if (config.she.includeSessionEnd || !agent.isShe) {
       parts.add(SheService.instance.buildSessionEndBlockFor(agent.id));
     }
 
@@ -385,11 +396,10 @@ ${lines.join('\n')}''';
       if (suffix.isNotEmpty) result.add(suffix);
     }
 
-    // shepaw data-access CLI — She-exclusive content (_pawCliPrompt).
-    // Non-She agents have this disabled via PromptStackConfig.forOtherAgent
-    // (tools: ToolsStackConfig(includeShepawCli: false)) so this branch
-    // only fires for She.
-    if (tools.includeShepawCli) {
+    // shepaw data-access CLI copy — She-exclusive (_pawCliPrompt).
+    // Non-She agents still get the shepaw *tool* when includeShepawCli is true,
+    // but their prompt docs come from buildShepawGuidanceBlock (meta CLI).
+    if (agent.isShe && tools.includeShepawCli) {
       final cliBlock = SheService.instance.buildShepawCliBlock(she);
       if (cliBlock.isNotEmpty) result.add(cliBlock);
     }

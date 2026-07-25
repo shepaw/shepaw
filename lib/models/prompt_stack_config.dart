@@ -32,8 +32,12 @@ class ToolsStackConfig {
   /// Tool-model tools (routed to specialised models).
   final bool includeToolModels;
 
-  /// shepaw CLI tool — **She-exclusive**.
-  /// Ignored for non-She agents even when set to true.
+  /// Inject the shepaw CLI as an API function tool (callable via tool calls).
+  ///
+  /// Applies to She and non-She. She's data-access prompt copy (`_pawCliPrompt`)
+  /// remains gated by `agent.isShe` in [AgentPromptBuilder]; non-She agents get
+  /// the lighter meta guidance via [includeShepawMetaCli] instead.
+  /// Actual command execution is still filtered by CLI whitelist / `she_only`.
   final bool includeShepawCli;
 
   /// shepaw meta/tools CLI guidance — **non-She agents only**.
@@ -441,12 +445,12 @@ class PromptStackConfig {
   );
 
   /// Standard configuration for non-She agents — She sections silently off.
-  /// `includeShepawCli` is also disabled because She's data-access CLI block
-  /// (`_pawCliPrompt`) is She-exclusive; non-She agents get the lighter
-  /// meta-CLI guidance block via `includeShepawMetaCli` instead.
+  ///
+  /// `includeShepawCli` is enabled so the shepaw function tool is available
+  /// (aligned with `includeShepawMetaCli` guidance). She's data-access prompt
+  /// block (`_pawCliPrompt`) stays She-only via `agent.isShe` in the builder.
   static const PromptStackConfig forOtherAgent = PromptStackConfig(
     she: SheStackConfig.disabled,
-    tools: ToolsStackConfig(includeShepawCli: false),
   );
 
   factory PromptStackConfig.fromJson(Map<String, dynamic> json) =>

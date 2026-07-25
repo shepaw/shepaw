@@ -6,10 +6,10 @@ import '../models/llm_stream_event.dart';
 import '../models/attachment_data.dart';
 import '../models/model_routing_config.dart';
 import '../models/agent_scenario_models.dart';
+import 'agent_prompt_builder.dart';
 import 'model_registry.dart';
 import 'ui_component_registry.dart';
 import 'logger_service.dart';
-import 'she_service.dart';
 import 'messaging/local_llm_handler.dart';
 import '../clis/shepaw/shepaw_cli.dart';
 
@@ -122,29 +122,39 @@ class LocalLLMAgentService {
   /// via [_resolveModelConfig].
   ///
   /// For She, the full companion memory stack is layered onto the system
-  /// prompt by default. Pure-task callers (group-admin decisions, image
-  /// analysis) should pass [skipSheMemoryStack] to use their override as-is.
+  /// prompt by default via [AgentPromptBuilder]. Pure-task callers (group-admin
+  /// decisions, image analysis) should pass [skipSheMemoryStack] to use their
+  /// override as-is.
+  ///
+  /// When [includeShepawCli] is null, follows [RemoteAgent.promptStackConfig].
   Stream<LLMStreamEvent> chat({
     required RemoteAgent agent,
     required String message,
     List<Map<String, dynamic>>? history,
     bool enableUITools = true,
-    bool includeShepawCli = false,
+    bool? includeShepawCli,
     String? systemPromptOverride,
     List<AttachmentData>? attachments,
     bool skipSheMemoryStack = false,
   }) async* {
     final resolved = _resolveModelConfig(agent, attachments);
-    // For She agent, inject memory context into the system prompt
-    final isEphemeralOverride = systemPromptOverride != null;
-    String systemPrompt = systemPromptOverride ??
-        (agent.metadata['system_prompt'] as String? ?? '');
-    if (agent.metadata['is_she'] == true && !skipSheMemoryStack) {
-      systemPrompt = await SheService.instance.buildSystemPromptWithMemory(
-        systemPrompt,
-        allowSoulSeed: !isEphemeralOverride,
-        isEphemeralContext: isEphemeralOverride,
-      );
+    final effectiveIncludeShepawCli =
+        includeShepawCli ?? agent.promptStackConfig.tools.includeShepawCli;
+
+    final String systemPrompt;
+    if (skipSheMemoryStack) {
+      // Pure-task path: use override (or empty) without companion / persona stack.
+      systemPrompt = systemPromptOverride ?? '';
+    } else if (systemPromptOverride != null && !agent.isShe) {
+      // Non-She group/room prompts from GroupPromptBuilder are already complete.
+      systemPrompt = systemPromptOverride;
+    } else {
+      // She (with optional ephemeral room context) and bare non-She chats:
+      // single AgentPromptBuilder path — no buildSystemPromptWithMemory fork.
+      systemPrompt = await AgentPromptBuilder(
+        agent: agent,
+        ephemeralContext: agent.isShe ? systemPromptOverride : null,
+      ).buildSystemPrompt();
     }
 
     if (resolved.apiBase.isEmpty) {
@@ -162,7 +172,7 @@ class LocalLLMAgentService {
         systemPrompt: systemPrompt,
         history: history,
         enableUITools: enableUITools,
-        includeShepawCli: includeShepawCli,
+        includeShepawCli: effectiveIncludeShepawCli,
         attachments: attachments,
       );
       return;
@@ -178,7 +188,7 @@ class LocalLLMAgentService {
           systemPrompt: systemPrompt,
           history: history,
           enableUITools: enableUITools,
-          includeShepawCli: includeShepawCli,
+          includeShepawCli: effectiveIncludeShepawCli,
           attachments: attachments,
         );
         break;
@@ -194,7 +204,7 @@ class LocalLLMAgentService {
           systemPrompt: systemPrompt,
           history: history,
           enableUITools: enableUITools,
-          includeShepawCli: includeShepawCli,
+          includeShepawCli: effectiveIncludeShepawCli,
           attachments: attachments,
         );
         break;

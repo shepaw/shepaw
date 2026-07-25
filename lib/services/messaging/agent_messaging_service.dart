@@ -1429,6 +1429,8 @@ class AgentMessagingService {
           // OS/web tools are now accessed through shepaw CLI (os/web namespaces)
           if (hasSkills && promptConfig.tools.includeSkills) ...skillRegistry.claudeTools(enabledSkills: enabledSkills),
           if (hasToolModels && promptConfig.tools.includeToolModels) ...toolModelRegistry.claudeTools(enabledToolModels: enabledToolModels, scenarioOverrides: toolModelScenarios),
+          // includeShepawCli gates the function tool for She and non-She;
+          // She-only data-access prompt copy is gated separately in AgentPromptBuilder.
           if (includeShepawCli) ShepawCLI.instance.claudeTool(),
           LocalLLMHelpers.getToolResultClaude(),
         ];
