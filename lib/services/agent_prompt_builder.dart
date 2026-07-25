@@ -58,15 +58,19 @@ class AgentPromptBuilder {
   /// DM-only sections (workflow playbook) are skipped.
   final String? ephemeralContext;
 
+  /// Optional prompt-stack override (e.g. peer-inbound stripped config).
+  final PromptStackConfig? configOverride;
+
   AgentPromptBuilder({
     required this.agent,
     this.dmSystemPromptOverride,
     this.ephemeralContext,
+    this.configOverride,
   });
 
   /// Build the complete system prompt according to the agent's [PromptStackConfig].
   Future<String> buildSystemPrompt() async {
-    final config = agent.promptStackConfig;
+    final config = configOverride ?? agent.promptStackConfig;
 
     // In lightweight mode we force tool descriptions to 'summary' and skip
     // heavy context blocks (memories, cognitions) that the agent can retrieve
@@ -143,6 +147,8 @@ class AgentPromptBuilder {
           dmSystemPromptOverride!.isNotEmpty) {
         parts.add(SheService.wrapCustomPrompt(dmSystemPromptOverride!));
       }
+    } else if (hasEphemeral) {
+      parts.add(SheService.wrapEphemeralContextPrompt(ephemeralContext!.trim()));
     } else if (config.includeCustomPrompt) {
       final custom = _resolveCustomPrompt();
       if (custom.isNotEmpty) {

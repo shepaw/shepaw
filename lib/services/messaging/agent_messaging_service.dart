@@ -29,6 +29,8 @@ import '../session/history_compactor.dart';
 import '../session/history_compaction_cache_service.dart';
 import '../remote_agent_service.dart';
 import '../../peer/services/peer_agent_client_service.dart';
+import '../../peer/services/peer_agent_host_service.dart' show isPeerAgentChannel;
+import '../../models/peer_boundary_config.dart';
 import '../../service_locator.dart' show getIt;
 import 'local_llm_handler.dart';
 import 'stream_content_splitter.dart';
@@ -1425,7 +1427,12 @@ class AgentMessagingService {
       final toolModelScenarios = agent.toolModelScenarios;
 
       // Build combined tool list (UI + OS + Skills + Tool Models + Paw for She)
-      final promptConfig = agent.promptStackConfig;
+      final isPeerInbound = isPeerAgentChannel(channelId);
+      final peerBoundary =
+          isPeerInbound ? agent.peerBoundaryConfig : PeerBoundaryConfig.open;
+      final promptConfig = isPeerInbound
+          ? agent.promptStackConfigForPeerInbound()
+          : agent.promptStackConfig;
       final includeShepawCli = promptConfig.tools.includeShepawCli;
       final List<Map<String, dynamic>> combinedTools;
       if (isClaude) {
@@ -1452,9 +1459,15 @@ class AgentMessagingService {
 
       // Build system prompt via AgentPromptBuilder (handles She and all other
       // agents uniformly; dmSystemPrompt is passed as the DM-channel override).
+      // Peer-inbound: strip host private context + inject external preamble.
+      final peerPreamble = isPeerInbound && peerBoundary.injectExternalPreamble
+          ? PeerBoundaryPrompt.buildPreamble(peerDisplayName: userName)
+          : null;
       final systemPrompt = await AgentPromptBuilder(
         agent: agent,
         dmSystemPromptOverride: dmSystemPrompt,
+        ephemeralContext: peerPreamble,
+        configOverride: isPeerInbound ? promptConfig : null,
       ).buildSystemPrompt();
 
       // Hook cancellation early so compaction LLM calls can also be aborted.
@@ -1827,12 +1840,13 @@ class AgentMessagingService {
             if (ShepawCLI.instance.isPawTool(tc.name)) {
               // 检查该 agent 是否有权限执行此 CLI 命令
               final enabledCliCommands = agent.enabledCliCommands;
+              final namespace = tc.arguments['namespace'] as String? ?? '';
+              final subcommand = tc.arguments['subcommand'] as String? ?? '';
+              final commandId =
+                  subcommand.isNotEmpty ? '$namespace.$subcommand' : namespace;
+
               if (enabledCliCommands.isNotEmpty) {
                 // Agent 有明确的 CLI 命令限制 → 检查该命令是否被允许
-                final namespace = tc.arguments['namespace'] as String? ?? '';
-                final subcommand = tc.arguments['subcommand'] as String? ?? '';
-                final commandId = subcommand.isNotEmpty ? '$namespace.$subcommand' : namespace;
-                
                 if (!enabledCliCommands.contains(commandId)) {
                   // 命令被禁止 → 返回拒绝错误
                   final denyResult = {
@@ -1857,6 +1871,40 @@ class AgentMessagingService {
                   );
                   continue;
                 }
+              }
+
+              // Peer-inbound boundary: deny OS / memory writes by default.
+              if (isPeerInbound &&
+                  peerBoundary.blocksCli(
+                    namespace: namespace,
+                    subcommand: subcommand,
+                  )) {
+                final denyResult = {
+                  'error':
+                      'CLI command "$commandId" is blocked in peer external-serving mode.',
+                  'command': commandId,
+                  'peer_boundary': true,
+                };
+                toolResults.add({
+                  'tool_call_id': tc.id,
+                  'name': tc.name,
+                  'result': jsonEncode(denyResult),
+                });
+                infLog.onToolResult(
+                  activeTask.taskId,
+                  toolCallId: tc.id,
+                  name: tc.name,
+                  result: jsonEncode(denyResult),
+                );
+                await historyService.saveToolExecution(
+                  messageId: agentMessageId,
+                  channelId: effectiveChannelId,
+                  toolCallId: tc.id,
+                  toolName: tc.name,
+                  arguments: tc.arguments,
+                  result: ToolExecutionResult.text(jsonEncode(denyResult)),
+                );
+                continue;
               }
 
               // OS 工具风险确认：非 safe 必须经用户批准

@@ -324,6 +324,11 @@ class PeerAgentHostService {
         await reject('Agent not available for external access');
         return;
       }
+      final sharedIds = await PeerStorageService().getSharedAgentIds(peerId);
+      if (!sharedIds.contains(agentId)) {
+        await reject('Agent is not shared with this peer');
+        return;
+      }
     } catch (e) {
       await reject('Failed to validate agent: $e');
       return;
@@ -527,6 +532,11 @@ class PeerAgentHostService {
       final agent = await _db.getRemoteAgentById(agentId);
       if (agent == null || !agent.isLocal || !agent.allowExternalAccess) {
         await _sendError(peerId, requestId, 'Agent not available for external access');
+        return;
+      }
+      final sharedIds = await PeerStorageService().getSharedAgentIds(peerId);
+      if (!sharedIds.contains(agentId)) {
+        await _sendError(peerId, requestId, 'Agent is not shared with this peer');
         return;
       }
 

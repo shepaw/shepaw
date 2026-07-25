@@ -4,6 +4,7 @@ import 'model_routing_config.dart';
 import 'model_definition.dart';
 import 'agent_scenario_models.dart';
 import 'prompt_stack_config.dart';
+import 'peer_boundary_config.dart';
 import '../services/model_registry.dart';
 
 /// Detect and repair a string corrupted by a UTF-16 encoding bug.
@@ -425,6 +426,60 @@ class RemoteAgent {
       return PromptStackConfig.fromJson(raw);
     }
     return isShe ? PromptStackConfig.forShe : PromptStackConfig.forOtherAgent;
+  }
+
+  /// Peer-inbound serving boundary (privacy / tool denials).
+  ///
+  /// Read from `metadata['peer_boundary']` when present; otherwise
+  /// [PeerBoundaryConfig.defaults] (privacy-first).
+  PeerBoundaryConfig get peerBoundaryConfig {
+    final raw = metadata['peer_boundary'];
+    if (raw is Map<String, dynamic>) {
+      return PeerBoundaryConfig.fromJson(raw);
+    }
+    if (raw is Map) {
+      return PeerBoundaryConfig.fromJson(Map<String, dynamic>.from(raw));
+    }
+    return PeerBoundaryConfig.defaults;
+  }
+
+  /// Apply [peerBoundaryConfig] stripping to a prompt stack for inbound peer sessions.
+  PromptStackConfig promptStackConfigForPeerInbound() {
+    final base = promptStackConfig;
+    final boundary = peerBoundaryConfig;
+    if (!boundary.stripHostUserContext && !boundary.disableSessionEndWrites) {
+      return base;
+    }
+    return base.copyWith(
+      she: base.she.copyWith(
+        includeProfileSnapshot: boundary.stripHostUserContext
+            ? false
+            : base.she.includeProfileSnapshot,
+        includeUserCognition: boundary.stripHostUserContext
+            ? false
+            : base.she.includeUserCognition,
+        includeUserStrategy: boundary.stripHostUserContext
+            ? false
+            : base.she.includeUserStrategy,
+        includeFirstMeeting: boundary.stripHostUserContext
+            ? false
+            : base.she.includeFirstMeeting,
+        includeSessionEnd: boundary.disableSessionEndWrites
+            ? false
+            : base.she.includeSessionEnd,
+      ),
+      agent: base.agent.copyWith(
+        includeUserProfile: boundary.stripHostUserContext
+            ? false
+            : base.agent.includeUserProfile,
+        includeAgentUserCognition: boundary.stripHostUserContext
+            ? false
+            : base.agent.includeAgentUserCognition,
+        includeAgentMemory: boundary.stripHostUserContext
+            ? false
+            : base.agent.includeAgentMemory,
+      ),
+    );
   }
 
   /// 是否离线
