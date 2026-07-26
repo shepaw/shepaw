@@ -1,0 +1,43 @@
+import 'dart:convert';
+import 'dart:io';
+
+import 'package:path/path.dart' as p;
+
+/// master 侧设备游标账（docs/storage_protocol_spec.md §6.1）：
+/// 每个设备目录已应用的游标 applied_seq。
+/// 持久化于 `<store>/.system/device_cursors.json`。
+class DeviceCursorStore {
+  DeviceCursorStore({required Directory storeRoot})
+      : _file = File(p.join(storeRoot.path, '.system', 'device_cursors.json'));
+
+  final File _file;
+  Map<String, int>? _cache;
+
+  Future<Map<String, int>> _load() async {
+    final cached = _cache;
+    if (cached != null) return cached;
+    if (!await _file.exists()) return _cache = <String, int>{};
+    try {
+      final decoded = jsonDecode(await _file.readAsString()) as Map;
+      return _cache =
+          decoded.map((k, v) => MapEntry(k as String, (v as num).toInt()));
+    } catch (_) {
+      return _cache = <String, int>{};
+    }
+  }
+
+  Future<int> appliedSeq(String deviceId) async => (await _load())[deviceId] ?? 0;
+
+  /// 推进游标（只进不退）。返回推进后的值。
+  Future<int> advance(String deviceId, int uptoSeq) async {
+    final map = await _load();
+    final current = map[deviceId] ?? 0;
+    final next = uptoSeq > current ? uptoSeq : current;
+    map[deviceId] = next;
+    await _file.parent.create(recursive: true);
+    final tmp = File('${_file.path}.tmp');
+    await tmp.writeAsString(jsonEncode(map));
+    await tmp.rename(_file.path);
+    return next;
+  }
+}

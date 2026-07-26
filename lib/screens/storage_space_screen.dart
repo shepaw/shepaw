@@ -407,6 +407,7 @@ class _StorageSpaceScreenState extends State<StorageSpaceScreen> {
                       style: Theme.of(context).textTheme.bodySmall),
                   const SizedBox(height: 4),
                   _buildUsageChips(),
+                  _buildSyncStatus(l10n),
                 ],
               ],
             ),
@@ -441,6 +442,65 @@ class _StorageSpaceScreenState extends State<StorageSpaceScreen> {
         ),
     ];
     return Wrap(spacing: 8, runSpacing: 4, children: chips);
+  }
+
+  /// M4：未同步占用与游标水位（§6.4 磁盘压力展示 + 超阈值告警）。
+  Widget _buildSyncStatus(AppLocalizations l10n) {
+    final unsyncedCount = _stats!['unsynced_count'] as int?;
+    final unsyncedBytes = _stats!['unsynced_bytes'] as int?;
+    final changeSeq = _stats!['change_seq'] as int?;
+    final ackSeq = _stats!['ack_seq'] as int?;
+    if (unsyncedCount == null) return const SizedBox.shrink();
+
+    const warnBytes = 200 * 1024 * 1024; // 200MB 阈值
+    final warn = (unsyncedBytes ?? 0) > warnBytes;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const SizedBox(height: 8),
+        Wrap(
+          spacing: 16,
+          runSpacing: 4,
+          children: [
+            Text(
+              l10n.storage_unsynced(
+                  unsyncedCount, _fmtBytes(unsyncedBytes ?? 0)),
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: unsyncedCount > 0
+                        ? Theme.of(context).colorScheme.tertiary
+                        : Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
+            ),
+            if (changeSeq != null && ackSeq != null)
+              Text(
+                l10n.storage_syncCursor(ackSeq, changeSeq),
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: Theme.of(context).colorScheme.onSurfaceVariant),
+              ),
+          ],
+        ),
+        if (warn)
+          Container(
+            margin: const EdgeInsets.only(top: 8),
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+              color: Theme.of(context).colorScheme.errorContainer,
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Row(
+              children: [
+                Icon(Icons.warning_amber_rounded,
+                    size: 18, color: Theme.of(context).colorScheme.error),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(l10n.storage_unsyncedWarning,
+                      style: Theme.of(context).textTheme.bodySmall),
+                ),
+              ],
+            ),
+          ),
+      ],
+    );
   }
 
   Widget _buildRecycleCard(AppLocalizations l10n) {

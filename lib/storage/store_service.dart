@@ -11,10 +11,12 @@ import '../peer/services/peer_connection_manager.dart';
 import '../peer/services/peer_storage_service.dart';
 import '../services/local_database_service.dart';
 import '../services/logger_service.dart';
+import 'device_cursor_store.dart';
 import 'device_identity.dart';
 import 'import_auth_service.dart';
 import 'local_store.dart';
 import 'store_protocol.dart';
+import 'sync_engine.dart';
 
 /// 存储空间编排服务（docs/storage_protocol_spec.md v1，M2）。
 ///
@@ -38,6 +40,7 @@ class StoreService {
 
   LocalStore? _store;
   ImportAuthService? _importAuth;
+  DeviceCursorStore? _cursorStore;
   StreamSubscription<PeerControlEvent>? _controlSub;
   final _pending = <String, Completer<Map<String, dynamic>?>>{};
 
@@ -75,6 +78,31 @@ class StoreService {
     if (existing != null) return existing;
     final store = await _localStore();
     return _importAuth = ImportAuthService(storeRoot: store.root);
+  }
+
+  Future<DeviceCursorStore> _deviceCursorStore() async {
+    final existing = _cursorStore;
+    if (existing != null) return existing;
+    final store = await _localStore();
+    return _cursorStore = DeviceCursorStore(storeRoot: store.root);
+  }
+
+  /// 本机 LocalStore（同步引擎读取本机正式区用）。
+  Future<LocalStore> localStore() => _localStore();
+
+  /// store 根目录（同步引擎/授权服务共用）。
+  Future<Directory> storeRoot() async => (await _localStore()).root;
+
+  /// 远端 master 是否在线（同步引擎用）。
+  Future<bool> masterOnline() async {
+    final masterId = await masterDeviceId();
+    final self = await DeviceIdentity.deviceId();
+    if (masterId == self) return true;
+    final peers = await _peerStorage.loadAllPeers();
+    final masterPeer =
+        peers.where((p) => p.fingerprint == masterId).firstOrNull;
+    if (masterPeer == null) return false;
+    return _manager.connectedPeerIds.contains(masterPeer.id);
   }
 
   // ────────────────────────────── master 指针 ──
@@ -402,9 +430,17 @@ class StoreService {
             frame.space!,
             (frame.payload['upload_ids'] as List).cast<String>(),
           );
+          // v3：携带 upto_seq 时推进该设备游标（spec §6.2）
+          int? appliedSeq;
+          final uptoSeq = frame.payload['upto_seq'] as int?;
+          if (uptoSeq != null && failed.isEmpty) {
+            appliedSeq = await (await _deviceCursorStore())
+                .advance(callerDeviceId, uptoSeq);
+          }
           return <String, dynamic>{
-            'committed': committed,
+            'committed': [for (final f in committed) f.path],
             'failed': failed,
+            if (appliedSeq != null) 'applied_seq': appliedSeq,
           };
 
         case StoreOp.delete:
@@ -413,7 +449,16 @@ class StoreService {
             frame.space!,
             frame.path!,
           );
-          return <String, dynamic>{'recycled': recycled};
+          int? appliedSeq;
+          final uptoSeq = frame.payload['upto_seq'] as int?;
+          if (uptoSeq != null) {
+            appliedSeq = await (await _deviceCursorStore())
+                .advance(callerDeviceId, uptoSeq);
+          }
+          return <String, dynamic>{
+            'recycled': recycled,
+            if (appliedSeq != null) 'applied_seq': appliedSeq,
+          };
 
         case StoreOp.recycleList:
           final entries = await store.recycleList();
@@ -431,7 +476,24 @@ class StoreService {
           return <String, dynamic>{'purged_bytes': purged};
 
         case StoreOp.stats:
-          return await store.stats();
+          final base = await store.stats();
+          // v3：本机未同步占用与游标水位（spec §6.1，管理页展示）
+          final journal = SyncEngine.instance.journal;
+          if (journal != null) {
+            base['unsynced_count'] = await journal.pendingCount();
+            base['unsynced_bytes'] = await journal.pendingBytes();
+            final cursors = await journal.cursors();
+            base['change_seq'] = cursors.changeSeq;
+            base['ack_seq'] = cursors.ackSeq;
+          }
+          return base;
+
+        // ── 变更游标对账（v3，spec §6.2）──
+        case StoreOp.syncHello:
+          final cursors = await _deviceCursorStore();
+          return <String, dynamic>{
+            'applied_seq': await cursors.appliedSeq(callerDeviceId),
+          };
 
         // ── 换机导入授权（v2，§5.4）──
         case StoreOp.importRequest:

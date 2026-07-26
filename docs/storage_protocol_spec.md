@@ -1,6 +1,6 @@
 # ShePaw 存储空间协议规范（store.*）
 
-> 版本：v2（M3 范围：新增 §5 换机导入授权）
+> 版本：v3（M4 范围：新增 §6 变更游标与批量原子上传、§7 读路径缓存校验）
 > 状态：Dart 与（未来）Go 实现的唯一权威定义。上游设计：`docs/storage_space_plan.md`（§2/§4/§5/§6）。
 > 传输：复用 `PeerConnection` 控制帧（WS + Noise E2E）与 Channel Tunnel；本协议不新增传输。
 
@@ -224,15 +224,67 @@
 - **远端 master 送达**：定期快照写入本机 `<device_id>/backups/` 后，经 M4
   同步引擎镜像到远端 master；M3 仅保证本机生成 + GFS，不单独实现上传通道。
 
-## 6. 本地优先与 loopback（M2 边界）
+## 6. 变更游标与批量原子上传（v3 新增，方案 §6.4）
+
+### 6.1 游标模型
+
+- **每端只为自己的 `<device_id>/` 维护单调递增变更游标** `change_seq`：
+  本机每次 `commit` / `delete` 成功 +1。游标仅用于本设备目录的镜像对账，
+  **不涉及跨设备排序**（区别于已废弃的 v4 全局序号）。
+- 客户端记录已获 master 确认的水位 `ack_seq`；master 为每个设备目录记录
+  已应用游标 `applied_seq`（持久化于 `<store>/.system/device_cursors.json`）。
+- **未同步队列**：本地写先落盘返回成功，变更条目 `{seq, kind, space, files[]}`
+  进入队列；同步引擎后台按 seq 顺序送达 master。
+- **未同步数据不可淘汰**（本地磁盘压力清理时）；管理页展示未同步占用。
+
+### 6.2 操作
+
+```json
+// 对账（连接建立后客户端主动发起）
+{"op": "sync.hello", "device": "<调用者 device_id>"}
+→ {"op": "result", "data": {"applied_seq": 41}}
+```
+
+- 客户端比较：`本地队列中 seq > applied_seq` 的条目**按游标差量重放**；
+  上传即 §2.4~2.6 的 write.begin/chunk/commit（整批按序，**commit 标记最后送达**）。
+- `commit` 帧 v3 起可携带 `upto_seq`；master 转正成功后把该设备
+  `applied_seq` 推进到 `max(applied_seq, upto_seq)`，并在 result 中返回：
+
+```json
+{"op": "commit", "space": "backups", "upload_ids": ["u-1","u-2"], "upto_seq": 43}
+→ {"op": "result", "data": {"committed": [...], "failed": [], "applied_seq": 43}}
+```
+
+- 客户端以 result 的 `applied_seq` 推进本地 `ack_seq` 并出队。
+- `delete` 重放 = 普通 delete 帧（master 侧移入 `.recycle`），ack 随其后
+  的下一笔 commit 水位推进（或专用 `upto_seq` delete 帧，二选一，实现侧
+  统一为：delete 帧也可携带 `upto_seq`，master 回 applied_seq）。
+- 冲突：last-write-wins（以 master 接收顺序为准），被覆盖旧版本进 `.recycle`。
+
+## 7. 读路径缓存校验（v3 新增，方案 §6.4 读路径）
+
+读取他端目录数据（非导入授权场景，指共享分区 artifacts/files）：
+
+1. 有本地缓存 → 先向 master（或持有副本的 owner 端）发 `store.meta` 比对内容
+   hash：**一致则直接使用缓存（零内容流量）**；不一致则重新下载并更新缓存。
+2. 无缓存且 master 在线 → 直接拉取并写入缓存。
+3. master 离线：有缓存则使用缓存并标注 `stale`（可能不是最新）；无缓存报错。
+
+- 缓存按键 = 内容 hash；LRU 容量上限默认 500MB；淘汰只作用于已验证同步
+  的副本，未同步数据不可淘汰。
+
+## 8. 本地优先与 loopback（M2 边界）
 
 - M2 的 master 默认本机：客户端调用与 master 处理走同一代码路径（loopback dispatch），无网络往返。
 - master 为他端时，请求经 peer 控制帧发送并等待 `result`（超时 15s 返回 `master_offline`）。
-- CAS、未同步队列、变更游标、批量原子上传、远程 tunnel 在 M4（方案 §6.4）；master 迁移在 M6（§6.5）。
+- CAS、未同步队列、变更游标、批量原子上传在 M4 落地（本文件 §6/§7）；master 迁移在 M6（方案 §6.5）。
+- 远程访问复用 channel tunnel：`store.*` 帧经 PeerConnectionManager 的
+  local→channel 回退链路透明传输，协议无感知。
 
-## 7. 版本与兼容
+## 9. 版本与兼容
 
-- `v=2`（本文档）。新增 op 或必填字段 ⇒ `v+1`；只增可选字段不变版本。
-- v1 → v2：新增 `import.*` 系列与读路径 `grant` 可选字段；v1 客户端不含
-  这些 op，互操作不受影响。
+- `v=3`（本文档）。新增 op 或必填字段 ⇒ `v+1`；只增可选字段不变版本。
+- v2 → v3：新增 `sync.hello`；`commit`/`delete` 新增可选 `upto_seq` 与
+  result 的 `applied_seq`；`stats` 新增 `unsynced_*` 字段。v2 客户端忽略
+  新增字段，互操作不受影响。
 - Go 节点（M7）与本规范对齐；攻击 fixture 与协议 fixture 双端共享。

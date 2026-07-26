@@ -31,6 +31,7 @@ import 'peer/services/peer_agent_host_service.dart';
 import 'peer/services/peer_agent_client_service.dart';
 import 'storage/scheduled_snapshot_service.dart';
 import 'storage/store_service.dart';
+import 'storage/sync_engine.dart';
 import 'services/she_service.dart';
 import 'services/dispatch/dispatch_service.dart';
 import 'service_locator.dart';
@@ -244,6 +245,16 @@ class AppBootstrap {
       await PeerAgentClientService.instance.start();
       // 存储空间（docs/storage_protocol_spec.md v1）：master 帧处理 + staging GC。
       await StoreService.instance.start();
+      // 同步引擎（spec v3 §6）：未同步队列 + 变更游标 + 批量原子上传。
+      await SyncEngine.instance.start(
+        storeRoot: await StoreService.instance.storeRoot(),
+        store: await StoreService.instance.localStore(),
+        transport: StoreServiceTransport(
+          (frame) => StoreService.instance.call(frame),
+          () => StoreService.instance.masterOnline(),
+        ),
+        masterDeviceIdFn: () => StoreService.instance.masterDeviceId(),
+      );
       // 定期快照（§5.1）：App 打开时检查今日快照，GFS 清理，改密自动新快照。
       await ScheduledSnapshotService.instance.ensureStarted();
       _log.info('P2P connection manager started', tag: 'App');

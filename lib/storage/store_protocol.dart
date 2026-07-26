@@ -4,7 +4,7 @@
 library;
 
 /// 协议版本。v2 新增 import.* 系列（换机导入授权，§5.4）。
-const int kStoreProtocolVersion = 2;
+const int kStoreProtocolVersion = 3;
 
 /// peer 层控制帧路由 type / 协议命名空间。
 const String kStoreControlType = 'store';
@@ -31,6 +31,9 @@ class StoreOp {
   static const importGrant = 'import.grant';
   static const importGrants = 'import.grants';
   static const importReject = 'import.reject';
+
+  // 变更游标对账（v3，spec §6）
+  static const syncHello = 'sync.hello';
 
   static const result = 'result';
   static const error = 'error';
@@ -274,6 +277,14 @@ StoreAcl checkStoreAcl(
       return loopback ? StoreAcl.allow : StoreAcl.denyAcl;
 
     case StoreOp.stats:
+      return StoreAcl.allow;
+
+    // 游标对账：仅本设备目录（spec §6.2）
+    case StoreOp.syncHello:
+      final device = frame.payload['device'];
+      if (!isValidDeviceId(device) || device != callerDeviceId) {
+        return StoreAcl.denyAcl;
+      }
       return StoreAcl.allow;
 
     default:

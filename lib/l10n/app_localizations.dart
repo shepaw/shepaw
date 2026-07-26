@@ -8917,6 +8917,24 @@ abstract class AppLocalizations {
   /// In zh, this message translates to:
   /// **'有效期至 {time}'**
   String storage_importExpires(String time);
+
+  /// No description provided for @storage_unsynced.
+  ///
+  /// In zh, this message translates to:
+  /// **'未同步 {count} 条 · {size}'**
+  String storage_unsynced(int count, String size);
+
+  /// No description provided for @storage_syncCursor.
+  ///
+  /// In zh, this message translates to:
+  /// **'同步游标 {ack}/{change}'**
+  String storage_syncCursor(int ack, int change);
+
+  /// No description provided for @storage_unsyncedWarning.
+  ///
+  /// In zh, this message translates to:
+  /// **'大量数据尚未镜像到 master，请保持 master 在线完成同步。'**
+  String get storage_unsyncedWarning;
 }
 
 class _AppLocalizationsDelegate

@@ -7,6 +7,7 @@ import 'package:path/path.dart' as p;
 import 'package:uuid/uuid.dart';
 
 import 'store_protocol.dart';
+import 'sync_journal.dart';
 
 /// store 层错误（StoreService 转为 error 帧）。
 class StoreException implements Exception {
@@ -112,6 +113,11 @@ class LocalStore {
 
   static const _uuid = Uuid();
   static const maxReadChunk = 64 * 1024;
+
+  /// 变更日志挂接点（docs/storage_protocol_spec.md §6.1）。
+  /// 由 SyncEngine.start 设置；commit/delete 成功路径内联调用，
+  /// 保证"落盘成功即入队"无窗口期。
+  static SyncJournal? syncJournal;
 
   /// sha256 内存缓存：path → (mtime, size, hash)。
   final Map<String, (int, int, String)> _hashCache = {};
@@ -337,10 +343,12 @@ class LocalStore {
     return offset + data.length > current ? offset + data.length : current;
   }
 
-  /// 原子转正（spec §2.6）：先全量验哈希，再逐个 rename；
-  /// 目标已存在时旧版本先进回收站。staging 失败项保留可重试。
-  Future<(List<String>, List<String>)> commit(
-      String deviceId, String space, List<String> uploadIds) async {
+  /// 原子转正（spec §2.6）：先全量验哈希（任一失败整批不转正），
+  /// 再逐个 rename；目标已存在时旧版本先进回收站。
+  /// 成功后经 [syncJournal] 内联记日志（本机设备目录变更入未同步队列）。
+  /// 返回（已转正文件清单，失败项）。
+  Future<(List<({String path, int size, String sha256})>, List<String>)>
+      commit(String deviceId, String space, List<String> uploadIds) async {
     final stagingDir = _stagingDir(deviceId, space);
     final verified = <(String, _StagingMeta, File)>[];
     final failed = <String>[];
@@ -368,11 +376,14 @@ class LocalStore {
       verified.add((id, meta, partFile));
     }
     if (failed.isNotEmpty) {
-      return (const <String>[], failed);
+      return (
+        const <({String path, int size, String sha256})>[],
+        failed
+      );
     }
 
     // 阶段二：逐个转正（同卷 rename 原子；单文件失败其余继续）
-    final committed = <String>[];
+    final committed = <({String path, int size, String sha256})>[];
     for (final (id, meta, partFile) in verified) {
       try {
         final finalAbs = _resolveInSpace(deviceId, space, meta.path);
@@ -386,10 +397,15 @@ class LocalStore {
         await partFile.rename(finalAbs);
         _hashCache.remove(finalAbs);
         await File(p.join(stagingDir, '$id.json')).delete();
-        committed.add(meta.path);
+        committed.add(
+            (path: meta.path, size: meta.size, sha256: meta.sha256));
       } catch (e) {
         failed.add('$id: promote failed: $e');
       }
+    }
+    // 变更日志（spec §6.1）：本机设备目录 commit 入未同步队列
+    if (committed.isNotEmpty && syncJournal != null) {
+      await syncJournal!.appendCommit(deviceId, space, committed);
     }
     return (committed, failed);
   }
@@ -397,6 +413,7 @@ class LocalStore {
   // ────────────────────────────── delete / recycle ──
 
   /// 删除：仅移入回收站（spec §2.7）。返回 recycle_path。
+  /// 成功后经 [syncJournal] 内联记日志。
   Future<String> delete(
       String targetDeviceId, String space, String relPath) async {
     final abs = _resolveInSpace(targetDeviceId, space, relPath);
@@ -405,7 +422,12 @@ class LocalStore {
       throw StoreException(StoreError.notFound, relPath);
     }
     await _checkNoSymlinkEscape(targetDeviceId, space, abs, relPath);
-    return _moveToRecycle(targetDeviceId, space, normalizeStorePath(relPath));
+    final normalized = normalizeStorePath(relPath);
+    final recycled = await _moveToRecycle(targetDeviceId, space, normalized);
+    if (syncJournal != null) {
+      await syncJournal!.appendDelete(targetDeviceId, space, normalized);
+    }
+    return recycled;
   }
 
   Future<String> _moveToRecycle(

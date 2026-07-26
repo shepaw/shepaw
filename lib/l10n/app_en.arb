@@ -2486,5 +2486,28 @@
         "type": "String"
       }
     }
+  },
+  "storage_unsynced": "Unsynced {count} · {size}",
+  "storage_syncCursor": "Sync cursor {ack}/{change}",
+  "storage_unsyncedWarning": "A lot of data is not yet mirrored to master. Keep master online.",
+  "@storage_unsynced": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      },
+      "size": {
+        "type": "String"
+      }
+    }
+  },
+  "@storage_syncCursor": {
+    "placeholders": {
+      "ack": {
+        "type": "int"
+      },
+      "change": {
+        "type": "int"
+      }
+    }
   }
 }

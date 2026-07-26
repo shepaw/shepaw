@@ -45,7 +45,7 @@ void main() {
 
       final (committed, failed) =
           await store.commit(dev, 'files', [uploadId]);
-      expect(committed, ['a/b.txt']);
+      expect(committed.map((f) => f.path), ['a/b.txt']);
       expect(failed, isEmpty);
 
       final list = await store.list(dev, 'files');
@@ -69,7 +69,7 @@ void main() {
       // 重传正确内容后可转正（offset 幂等重写）
       await store.writeChunk(dev, 'files', uploadId, 0, content);
       final (c2, f2) = await store.commit(dev, 'files', [uploadId]);
-      expect(c2, ['x.txt']);
+      expect(c2.map((f) => f.path), ['x.txt']);
       expect(f2, isEmpty);
     });
 
@@ -104,7 +104,7 @@ void main() {
       await store.writeChunk(
           dev, 'files', uploadId, 6, content.sublist(6));
       final (committed, _) = await store.commit(dev, 'files', [uploadId]);
-      expect(committed, ['resume.txt']);
+      expect(committed.map((f) => f.path), ['resume.txt']);
     });
 
     test('冲突的 upload_id（声明不同）报 staging_state', () async {

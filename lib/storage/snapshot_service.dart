@@ -300,9 +300,9 @@ class SnapshotService {
     }
     final (committed, failed) = await store.commit(deviceId, space, uploadIds);
     if (failed.isNotEmpty) {
-      for (final path in committed) {
+      for (final f in committed) {
         try {
-          await store.delete(deviceId, space, path);
+          await store.delete(deviceId, space, f.path);
         } catch (_) {}
       }
       throw StateError('snapshot store commit failed: $failed');

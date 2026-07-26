@@ -2971,5 +2971,28 @@
         "type": "String"
       }
     }
+  },
+  "storage_unsynced": "未同步 {count} 条 · {size}",
+  "storage_syncCursor": "同步游标 {ack}/{change}",
+  "storage_unsyncedWarning": "大量数据尚未镜像到 master，请保持 master 在线完成同步。",
+  "@storage_unsynced": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      },
+      "size": {
+        "type": "String"
+      }
+    }
+  },
+  "@storage_syncCursor": {
+    "placeholders": {
+      "ack": {
+        "type": "int"
+      },
+      "change": {
+        "type": "int"
+      }
+    }
   }
 }

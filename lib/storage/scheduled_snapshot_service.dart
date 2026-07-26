@@ -1,13 +1,14 @@
 import 'dart:async';
-import 'dart:io';
 import 'dart:typed_data';
 
 import '../services/local_database_service.dart';
 import '../services/logger_service.dart';
 import '../services/password_service.dart';
+import 'device_identity.dart';
 import 'gfs_retention.dart';
 import 'snapshot_crypto.dart';
 import 'snapshot_service.dart';
+import 'store_service.dart';
 
 /// 定期快照状态（UI 告警数据源）。
 class ScheduledSnapshotStatus {
@@ -136,16 +137,24 @@ class ScheduledSnapshotService {
   }
 
   /// GFS 清理（master 对本机 backups 目录；§5.1）。
+  /// 删除经 LocalStore.delete：进入回收站并记入变更日志，
+  /// 随同步引擎镜像到 master（§6.4）。
   Future<int> pruneGfs() async {
     final snapshots = await SnapshotService.instance.listSnapshots();
     if (snapshots.isEmpty) return 0;
     final selection = selectGfs([
       for (final s in snapshots) (s.id, s.manifest.createdAtMs),
     ]);
+    final store = await StoreService.instance.localStore();
+    final deviceId = await DeviceIdentity.deviceId();
     var removed = 0;
     for (final s in snapshots) {
       if (selection.deleteIds.contains(s.id)) {
-        await Directory(s.path).delete(recursive: true);
+        try {
+          await store.delete(deviceId, 'backups', s.id);
+        } catch (e) {
+          _log.warning('GFS delete ${s.id} failed: $e', tag: _tag);
+        }
         removed++;
       }
     }

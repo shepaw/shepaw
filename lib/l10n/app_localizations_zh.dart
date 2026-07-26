@@ -4879,4 +4879,17 @@ class AppLocalizationsZh extends AppLocalizations {
   String storage_importExpires(String time) {
     return '有效期至 $time';
   }
+
+  @override
+  String storage_unsynced(int count, String size) {
+    return '未同步 $count 条 · $size';
+  }
+
+  @override
+  String storage_syncCursor(int ack, int change) {
+    return '同步游标 $ack/$change';
+  }
+
+  @override
+  String get storage_unsyncedWarning => '大量数据尚未镜像到 master，请保持 master 在线完成同步。';
 }

@@ -5069,4 +5069,18 @@ class AppLocalizationsEn extends AppLocalizations {
   String storage_importExpires(String time) {
     return 'Expires $time';
   }
+
+  @override
+  String storage_unsynced(int count, String size) {
+    return 'Unsynced $count · $size';
+  }
+
+  @override
+  String storage_syncCursor(int ack, int change) {
+    return 'Sync cursor $ack/$change';
+  }
+
+  @override
+  String get storage_unsyncedWarning =>
+      'A lot of data is not yet mirrored to master. Keep master online.';
 }
