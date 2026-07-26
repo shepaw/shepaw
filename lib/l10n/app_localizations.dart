@@ -8665,6 +8665,72 @@ abstract class AppLocalizations {
   /// In zh, this message translates to:
   /// **'未校验'**
   String get storage_verifyUnknown;
+
+  /// No description provided for @storage_spaceSection.
+  ///
+  /// In zh, this message translates to:
+  /// **'存储空间'**
+  String get storage_spaceSection;
+
+  /// No description provided for @storage_masterNode.
+  ///
+  /// In zh, this message translates to:
+  /// **'主存储节点（master）'**
+  String get storage_masterNode;
+
+  /// No description provided for @storage_thisDevice.
+  ///
+  /// In zh, this message translates to:
+  /// **'本机'**
+  String get storage_thisDevice;
+
+  /// No description provided for @storage_usageTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'用量'**
+  String get storage_usageTitle;
+
+  /// No description provided for @storage_recycleSection.
+  ///
+  /// In zh, this message translates to:
+  /// **'回收站'**
+  String get storage_recycleSection;
+
+  /// No description provided for @storage_recycleEmptyHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'回收站为空'**
+  String get storage_recycleEmptyHint;
+
+  /// No description provided for @storage_recycleRestore.
+  ///
+  /// In zh, this message translates to:
+  /// **'还原'**
+  String get storage_recycleRestore;
+
+  /// No description provided for @storage_recyclePurgeAll.
+  ///
+  /// In zh, this message translates to:
+  /// **'清空回收站'**
+  String get storage_recyclePurgeAll;
+
+  /// No description provided for @storage_recyclePurgeConfirm.
+  ///
+  /// In zh, this message translates to:
+  /// **'清空后不可恢复，确定清空回收站？'**
+  String get storage_recyclePurgeConfirm;
+
+  /// No description provided for @storage_recyclePurged.
+  ///
+  /// In zh, this message translates to:
+  /// **'已清理 {size}'**
+  String storage_recyclePurged(String size);
+
+  /// No description provided for @storage_deletedAt.
+  ///
+  /// In zh, this message translates to:
+  /// **'删除于 {time}'**
+  String storage_deletedAt(String time);
 }
 
 class _AppLocalizationsDelegate

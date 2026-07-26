@@ -95,6 +95,11 @@ class PairedPeer {
   /// 本机在这段配对中的角色（发起方 / 被连接方）。历史数据可能为 null。
   final PeerPairingRole? pairingRole;
 
+  /// 配对信任分级（docs/storage_space_plan.md §4）：
+  /// `owner`（自己的设备，开放存储空间/记忆交换/执行委托）|
+  /// `friend`（他人的设备，预留；store.*/memory.* 一律拒绝并审计）。
+  final String trustLevel;
+
   PairedPeer({
     required this.id,
     required this.deviceName,
@@ -108,6 +113,7 @@ class PairedPeer {
     this.state = PeerConnectionState.disconnected,
     this.isBlocked = false,
     this.pairingRole,
+    this.trustLevel = 'owner',
   });
 
   /// 获取首选连接端点（优先内网直连）
@@ -157,6 +163,7 @@ class PairedPeer {
       state: PeerConnectionState.disconnected, // 运行时状态，不从 DB 恢复
       isBlocked: (json['is_blocked'] as int? ?? 0) == 1,
       pairingRole: PeerPairingRole.fromJson(json['pairing_role'] as String?),
+      trustLevel: json['trust_level'] as String? ?? 'owner',
     );
   }
 
@@ -174,6 +181,7 @@ class PairedPeer {
       'last_seen': lastSeen,
       'is_blocked': isBlocked ? 1 : 0,
       'pairing_role': pairingRole?.toJson(),
+      'trust_level': trustLevel,
     };
   }
 
@@ -191,6 +199,7 @@ class PairedPeer {
     PeerConnectionState? state,
     bool? isBlocked,
     PeerPairingRole? pairingRole,
+    String? trustLevel,
   }) {
     return PairedPeer(
       id: id ?? this.id,
@@ -205,6 +214,7 @@ class PairedPeer {
       state: state ?? this.state,
       isBlocked: isBlocked ?? this.isBlocked,
       pairingRole: pairingRole ?? this.pairingRole,
+      trustLevel: trustLevel ?? this.trustLevel,
     );
   }
 

@@ -29,6 +29,7 @@ import 'services/chat_service.dart';
 import 'peer/services/peer_connection_manager.dart';
 import 'peer/services/peer_agent_host_service.dart';
 import 'peer/services/peer_agent_client_service.dart';
+import 'storage/store_service.dart';
 import 'services/she_service.dart';
 import 'services/dispatch/dispatch_service.dart';
 import 'service_locator.dart';
@@ -240,6 +241,8 @@ class AppBootstrap {
       // 两侧都启动，使任意设备既可作提供方也可作消费方。
       PeerAgentHostService.instance.start();
       await PeerAgentClientService.instance.start();
+      // 存储空间（docs/storage_protocol_spec.md v1）：master 帧处理 + staging GC。
+      await StoreService.instance.start();
       _log.info('P2P connection manager started', tag: 'App');
     } catch (e) {
       _log.error('P2P connection manager start failed', tag: 'App', error: e);

@@ -42,7 +42,8 @@ class PeerStorageService {
         paired_at INTEGER NOT NULL,
         last_seen INTEGER,
         is_blocked INTEGER DEFAULT 0,
-        pairing_role TEXT
+        pairing_role TEXT,
+        trust_level TEXT NOT NULL DEFAULT 'owner'
       )
     ''');
     // 老库迁移：为既有 paired_peers 表补充 pairing_role 列（重复执行会报错，忽略）。
@@ -51,6 +52,11 @@ class PeerStorageService {
     } catch (_) {
       // 列已存在
     }
+    // 配对信任分级（docs/storage_space_plan.md §4）：owner | friend。
+    try {
+      await db.execute(
+          "ALTER TABLE paired_peers ADD COLUMN trust_level TEXT NOT NULL DEFAULT 'owner'");
+    } catch (_) {}
     await db.execute('''
       CREATE TABLE IF NOT EXISTS peer_messages (
         id TEXT PRIMARY KEY,
@@ -203,6 +209,18 @@ class PeerStorageService {
     await db.update(
       'paired_peers',
       {'device_name': name},
+      where: 'id = ?',
+      whereArgs: [peerId],
+    );
+  }
+
+  /// 设置配对信任分级（owner | friend，docs/storage_space_plan.md §4）。
+  Future<void> setTrustLevel(String peerId, String trustLevel) async {
+    assert(trustLevel == 'owner' || trustLevel == 'friend');
+    final db = await _db;
+    await db.update(
+      'paired_peers',
+      {'trust_level': trustLevel},
       where: 'id = ?',
       whereArgs: [peerId],
     );

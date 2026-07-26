@@ -2402,5 +2402,30 @@
         "type": "String"
       }
     }
+  },
+  "storage_spaceSection": "Storage space",
+  "storage_masterNode": "Master node",
+  "storage_thisDevice": "this device",
+  "storage_usageTitle": "Usage",
+  "storage_recycleSection": "Recycle bin",
+  "storage_recycleEmptyHint": "Recycle bin is empty",
+  "storage_recycleRestore": "Restore",
+  "storage_recyclePurgeAll": "Empty recycle bin",
+  "storage_recyclePurgeConfirm": "This permanently deletes everything in the recycle bin. Continue?",
+  "storage_recyclePurged": "Purged {size}",
+  "storage_deletedAt": "deleted {time}",
+  "@storage_recyclePurged": {
+    "placeholders": {
+      "size": {
+        "type": "String"
+      }
+    }
+  },
+  "@storage_deletedAt": {
+    "placeholders": {
+      "time": {
+        "type": "String"
+      }
+    }
   }
 }

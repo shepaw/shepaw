@@ -3,13 +3,17 @@ import 'package:flutter/material.dart';
 
 import '../l10n/app_localizations.dart';
 import '../services/password_service.dart';
+import '../storage/device_identity.dart';
 import '../storage/restore_service.dart';
 import '../storage/snapshot_service.dart';
+import '../storage/store_protocol.dart';
+import '../storage/store_service.dart';
 
-/// 存储空间页（docs/storage_space_plan.md §7，M1 范围：快照管理）。
+/// 存储空间页（docs/storage_space_plan.md §7）。
 ///
-/// M1 只含本机快照：生成（验密）、校验状态展示、恢复（全量替换）、
-/// 本机导出。master/同步/回收站等区块随 M2~M6 扩展。
+/// M1：本机快照（生成/校验/恢复/导出）。
+/// M2：存储空间区块——master 展示、用量统计、回收站（还原/清空，
+/// 清空仅 master 本机，docs/storage_protocol_spec.md §2.8）。
 class StorageSpaceScreen extends StatefulWidget {
   const StorageSpaceScreen({super.key});
 
@@ -22,6 +26,12 @@ class _StorageSpaceScreenState extends State<StorageSpaceScreen> {
   final Map<String, SnapshotVerifyStatus> _verifyCache = {};
   bool _busy = false;
 
+  // M2 区块状态
+  String _masterId = '';
+  String _selfId = '';
+  Map<String, dynamic>? _stats;
+  List<Map<String, dynamic>> _recycle = [];
+
   @override
   void initState() {
     super.initState();
@@ -30,13 +40,30 @@ class _StorageSpaceScreenState extends State<StorageSpaceScreen> {
 
   Future<List<SnapshotInfo>> _load() async {
     final list = await SnapshotService.instance.listSnapshots();
-    // 逐个校验（免密码哈希校验），结果进缓存
     for (final s in list) {
       if (!_verifyCache.containsKey(s.id)) {
         _verifyCache[s.id] = await SnapshotService.instance.verifySnapshot(s);
       }
     }
+    await _loadSpace();
     return list;
+  }
+
+  Future<void> _loadSpace() async {
+    _selfId = await DeviceIdentity.deviceId();
+    _masterId = await StoreService.instance.masterDeviceId();
+    final stats = await StoreService.instance
+        .call(StoreFrame(op: StoreOp.stats, payload: {}));
+    if (stats != null && !stats.containsKey('_error')) {
+      _stats = stats;
+    }
+    final recycle = await StoreService.instance
+        .call(StoreFrame(op: StoreOp.recycleList, payload: {}));
+    if (recycle != null && recycle['entries'] is List) {
+      _recycle = (recycle['entries'] as List)
+          .map((e) => (e as Map).cast<String, dynamic>())
+          .toList();
+    }
   }
 
   Future<void> _refresh() async {
@@ -177,6 +204,55 @@ class _StorageSpaceScreenState extends State<StorageSpaceScreen> {
     ));
   }
 
+  // ------------------------------------------------------------ 回收站操作
+
+  Future<void> _recycleRestore(Map<String, dynamic> entry) async {
+    setState(() => _busy = true);
+    try {
+      await StoreService.instance.call(StoreFrame(
+          op: StoreOp.recycleRestore,
+          payload: {'recycle_path': entry['recycle_path']}));
+      await _refresh();
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _recyclePurgeAll() async {
+    final l10n = AppLocalizations.of(context);
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        icon: Icon(Icons.delete_forever,
+            color: Theme.of(ctx).colorScheme.error, size: 36),
+        content: Text(l10n.storage_recyclePurgeConfirm),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: Text(l10n.common_cancel),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(
+                backgroundColor: Theme.of(ctx).colorScheme.error),
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: Text(l10n.common_confirm),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+    setState(() => _busy = true);
+    try {
+      final res = await StoreService.instance
+          .call(StoreFrame(op: StoreOp.recycleEmpty, payload: {}));
+      final purged = res?['purged_bytes'] as int? ?? 0;
+      _toast(l10n.storage_recyclePurged(_fmtBytes(purged)));
+      await _refresh();
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
   // ------------------------------------------------------------ UI
 
   @override
@@ -201,6 +277,8 @@ class _StorageSpaceScreenState extends State<StorageSpaceScreen> {
               return ListView(
                 padding: const EdgeInsets.all(16),
                 children: [
+                  _buildSpaceSection(l10n),
+                  const SizedBox(height: 20),
                   _buildHeader(l10n),
                   const SizedBox(height: 20),
                   Row(
@@ -249,6 +327,139 @@ class _StorageSpaceScreenState extends State<StorageSpaceScreen> {
         ],
       ),
     );
+  }
+
+  // ------------------------------------------------------------ M2 存储空间区块
+
+  Widget _buildSpaceSection(AppLocalizations l10n) {
+    final isMaster = _masterId == _selfId && _selfId.isNotEmpty;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(l10n.storage_spaceSection,
+            style: Theme.of(context).textTheme.titleSmall),
+        const SizedBox(height: 8),
+        Card(
+          child: Padding(
+            padding: const EdgeInsets.all(12),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Icon(Icons.dns_outlined,
+                        color: Theme.of(context).colorScheme.primary, size: 20),
+                    const SizedBox(width: 8),
+                    Text(l10n.storage_masterNode,
+                        style: Theme.of(context).textTheme.bodyMedium),
+                    const Spacer(),
+                    Text(
+                      isMaster
+                          ? '${_masterId.substring(0, 8)}…（${l10n.storage_thisDevice}）'
+                          : _masterId,
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color:
+                              Theme.of(context).colorScheme.onSurfaceVariant),
+                    ),
+                  ],
+                ),
+                if (_stats != null) ...[
+                  const Divider(height: 20),
+                  Text(l10n.storage_usageTitle,
+                      style: Theme.of(context).textTheme.bodySmall),
+                  const SizedBox(height: 4),
+                  _buildUsageChips(),
+                ],
+              ],
+            ),
+          ),
+        ),
+        const SizedBox(height: 8),
+        _buildRecycleCard(l10n),
+      ],
+    );
+  }
+
+  Widget _buildUsageChips() {
+    final devices = (_stats!['devices'] as Map?)?.cast<String, dynamic>() ?? {};
+    final mine = (devices[_selfId] as Map?)?.cast<String, dynamic>() ?? {};
+    final staging = _stats!['staging_bytes'] as int? ?? 0;
+    final recycle = _stats!['recycle_bytes'] as int? ?? 0;
+    final chips = <Widget>[
+      for (final space in ['artifacts', 'files', 'attachments', 'backups'])
+        Chip(
+          label: Text('$space ${_fmtBytes(mine[space] as int? ?? 0)}'),
+          visualDensity: VisualDensity.compact,
+        ),
+      if (staging > 0)
+        Chip(
+          label: Text('staging ${_fmtBytes(staging)}'),
+          visualDensity: VisualDensity.compact,
+        ),
+      if (recycle > 0)
+        Chip(
+          label: Text('.recycle ${_fmtBytes(recycle)}'),
+          visualDensity: VisualDensity.compact,
+        ),
+    ];
+    return Wrap(spacing: 8, runSpacing: 4, children: chips);
+  }
+
+  Widget _buildRecycleCard(AppLocalizations l10n) {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(Icons.delete_outline,
+                    color: Theme.of(context).colorScheme.primary, size: 20),
+                const SizedBox(width: 8),
+                Text(l10n.storage_recycleSection,
+                    style: Theme.of(context).textTheme.bodyMedium),
+                const Spacer(),
+                if (_recycle.isNotEmpty)
+                  TextButton(
+                    onPressed: _busy ? null : _recyclePurgeAll,
+                    child: Text(l10n.storage_recyclePurgeAll),
+                  ),
+              ],
+            ),
+            if (_recycle.isEmpty)
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 12),
+                child: Text(l10n.storage_recycleEmptyHint,
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: Theme.of(context).colorScheme.onSurfaceVariant)),
+              )
+            else
+              ..._recycle.take(20).map((e) => ListTile(
+                    dense: true,
+                    contentPadding: EdgeInsets.zero,
+                    leading: const Icon(Icons.insert_drive_file_outlined,
+                        size: 18),
+                    title: Text('${e['space']}/${e['origin_path']}',
+                        style: Theme.of(context).textTheme.bodySmall,
+                        overflow: TextOverflow.ellipsis),
+                    subtitle: Text(
+                        '${_fmtBytes(e['size'] as int? ?? 0)} · ${l10n.storage_deletedAt(_fmtRecycleDate(e['recycle_path'] as String))}'),
+                    trailing: TextButton(
+                      onPressed: _busy ? null : () => _recycleRestore(e),
+                      child: Text(l10n.storage_recycleRestore),
+                    ),
+                  )),
+          ],
+        ),
+      ),
+    );
+  }
+
+  String _fmtRecycleDate(String recyclePath) {
+    // .recycle/<yyyy-MM-dd>/...
+    final parts = recyclePath.split('/');
+    return parts.length > 1 ? parts[1] : '';
   }
 
   Widget _buildHeader(AppLocalizations l10n) {

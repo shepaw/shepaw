@@ -4739,4 +4739,41 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get storage_verifyUnknown => '未校验';
+
+  @override
+  String get storage_spaceSection => '存储空间';
+
+  @override
+  String get storage_masterNode => '主存储节点（master）';
+
+  @override
+  String get storage_thisDevice => '本机';
+
+  @override
+  String get storage_usageTitle => '用量';
+
+  @override
+  String get storage_recycleSection => '回收站';
+
+  @override
+  String get storage_recycleEmptyHint => '回收站为空';
+
+  @override
+  String get storage_recycleRestore => '还原';
+
+  @override
+  String get storage_recyclePurgeAll => '清空回收站';
+
+  @override
+  String get storage_recyclePurgeConfirm => '清空后不可恢复，确定清空回收站？';
+
+  @override
+  String storage_recyclePurged(String size) {
+    return '已清理 $size';
+  }
+
+  @override
+  String storage_deletedAt(String time) {
+    return '删除于 $time';
+  }
 }

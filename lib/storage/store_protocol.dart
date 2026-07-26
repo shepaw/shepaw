@@ -1,0 +1,267 @@
+/// store.* 帧模型、路径规范化与 ACL 判定（docs/storage_protocol_spec.md v1）。
+///
+/// 本文件为纯逻辑：不含文件系统与网络，所有判定可单测（含攻击 fixture）。
+library;
+
+/// 协议版本。
+const int kStoreProtocolVersion = 1;
+
+/// peer 层控制帧路由 type / 协议命名空间。
+const String kStoreControlType = 'store';
+
+/// store.* 操作（spec §2）。
+class StoreOp {
+  StoreOp._();
+
+  static const list = 'list';
+  static const meta = 'meta';
+  static const read = 'read';
+  static const writeBegin = 'write.begin';
+  static const writeChunk = 'write.chunk';
+  static const commit = 'commit';
+  static const delete = 'delete';
+  static const recycleList = 'recycle.list';
+  static const recycleRestore = 'recycle.restore';
+  static const recycleEmpty = 'recycle.empty';
+  static const stats = 'stats';
+
+  static const result = 'result';
+  static const error = 'error';
+}
+
+/// 错误码（spec §1）。
+class StoreError {
+  StoreError._();
+
+  static const unsupportedVersion = 'unsupported_version';
+  static const untrusted = 'untrusted';
+  static const notPaired = 'not_paired';
+  static const aclDenied = 'acl_denied';
+  static const badPath = 'bad_path';
+  static const badOp = 'bad_op';
+  static const hashMismatch = 'hash_mismatch';
+  static const notFound = 'not_found';
+  static const stagingState = 'staging_state';
+  static const masterOffline = 'master_offline';
+  static const internal = 'internal';
+}
+
+/// 目录分区（spec §0）。
+class StoreSpace {
+  StoreSpace._();
+
+  static const artifacts = 'artifacts';
+  static const files = 'files';
+  static const attachments = 'attachments';
+  static const backups = 'backups';
+
+  static const all = <String>[artifacts, files, attachments, backups];
+
+  /// 所有 owner 端可读的分区。
+  static const sharedReadable = <String>[artifacts, files];
+
+  static bool isValid(String s) => all.contains(s);
+}
+
+/// 一帧 store.* 消息。
+class StoreFrame {
+  StoreFrame({required this.op, required this.payload, this.reqId, this.v = 1});
+
+  final String op;
+  final String? reqId;
+  final int v;
+
+  /// op 特有字段（不含 type/ns/op/v/req_id）。
+  final Map<String, dynamic> payload;
+
+  Map<String, dynamic> toJson() => <String, dynamic>{
+        'type': kStoreControlType,
+        'ns': kStoreControlType,
+        'op': op,
+        'v': v,
+        if (reqId != null) 'req_id': reqId,
+        ...payload,
+      };
+
+  static StoreFrame? tryParse(Map<String, dynamic> json) {
+    if (json['ns'] != kStoreControlType) return null;
+    final op = json['op'];
+    if (op is! String) throw const FormatException('store frame missing op');
+    final payload = Map<String, dynamic>.of(json)
+      ..remove('type')
+      ..remove('ns')
+      ..remove('op')
+      ..remove('v')
+      ..remove('req_id');
+    return StoreFrame(
+      op: op,
+      reqId: json['req_id'] as String?,
+      v: json['v'] as int? ?? 0,
+      payload: payload,
+    );
+  }
+
+  bool get versionSupported => v >= 1 && v <= kStoreProtocolVersion;
+
+  String? get space => payload['space'] as String?;
+  String? get device => payload['device'] as String?;
+  String? get path => payload['path'] as String?;
+
+  @override
+  String toString() => 'StoreFrame($op req=$reqId)';
+}
+
+/// 成功响应帧。
+StoreFrame storeResult(String? reqId, Map<String, dynamic> data) => StoreFrame(
+    op: StoreOp.result, reqId: reqId, payload: <String, dynamic>{'data': data});
+
+/// 失败响应帧。
+StoreFrame storeError(String? reqId, String code, [String? message]) =>
+    StoreFrame(op: StoreOp.error, reqId: reqId, payload: <String, dynamic>{
+      'code': code,
+      if (message != null) 'message': message,
+    });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 路径规范化（spec §4）
+// ─────────────────────────────────────────────────────────────────────────────
+
+class BadPathException implements Exception {
+  BadPathException(this.reason);
+  final String reason;
+  @override
+  String toString() => 'BadPathException: $reason';
+}
+
+/// 规范化 store 相对路径：统一分隔符、去冗余段、拒绝危险形态。
+/// 返回规范化后的相对路径（不含首尾 `/`）；非法时抛 [BadPathException]。
+String normalizeStorePath(String raw) {
+  if (raw.isEmpty) throw BadPathException('empty path');
+  if (raw.contains('\x00')) throw BadPathException('NUL in path');
+  if (raw.startsWith('/') || raw.startsWith('~')) {
+    throw BadPathException('absolute path');
+  }
+  // Windows 盘符 / UNC
+  if (RegExp(r'^[a-zA-Z]:[\\/]?').hasMatch(raw) || raw.startsWith('\\\\')) {
+    throw BadPathException('drive/unc path');
+  }
+  final segments = raw.replaceAll('\\', '/').split('/');
+  final out = <String>[];
+  for (final seg in segments) {
+    if (seg.isEmpty || seg == '.') continue;
+    if (seg == '..') throw BadPathException('path traversal');
+    if (seg.startsWith('.')) throw BadPathException('dot segment: $seg');
+    out.add(seg);
+  }
+  if (out.isEmpty) throw BadPathException('resolves to empty');
+  return out.join('/');
+}
+
+/// device_id 形态校验（16 hex，Noise 公钥哈希）。
+bool isValidDeviceId(String? device) =>
+    device != null && RegExp(r'^[0-9a-f]{16}$').hasMatch(device);
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ACL 判定（spec §3）
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// ACL 判定结果。
+enum StoreAcl { allow, denyUntrusted, denyAcl, denyBadOp, denyBadPath }
+
+/// 信任等级。
+class TrustLevel {
+  TrustLevel._();
+  static const owner = 'owner';
+  static const friend = 'friend';
+}
+
+/// store.* 帧的 ACL 判定（纯函数）。
+///
+/// [callerDeviceId] 调用者设备 id（Noise 对端公钥哈希；loopback 为本机 id）。
+/// [trustLevel] 调用者信任分级。
+/// [loopback] 是否 master 本机用户本地调用（recycle.empty 唯一放行路径）。
+StoreAcl checkStoreAcl(
+  StoreFrame frame, {
+  required String callerDeviceId,
+  required String trustLevel,
+  required bool loopback,
+}) {
+  // friend 级：全部拒绝（spec §3）
+  if (trustLevel != TrustLevel.owner) return StoreAcl.denyUntrusted;
+
+  final space = frame.space;
+  final device = frame.device;
+
+  switch (frame.op) {
+    // ── 写操作：目标目录恒为调用者（写路径收敛，spec §4）──
+    case StoreOp.writeBegin:
+    case StoreOp.writeChunk:
+    case StoreOp.commit:
+      if (space != null && !StoreSpace.isValid(space)) {
+        return StoreAcl.denyBadOp;
+      }
+      // write.begin 必须带 space；chunk/commit 以 upload_id 关联（space 可省）
+      if (frame.op == StoreOp.writeBegin && space == null) {
+        return StoreAcl.denyBadOp;
+      }
+      // 伪造 device_id 写入：与调用者不符即拒绝并审计
+      if (device != null && device != callerDeviceId) {
+        return StoreAcl.denyAcl;
+      }
+      return StoreAcl.allow;
+
+    // ── 删除：共享分区可删他端，私有分区仅本端 ──
+    case StoreOp.delete:
+      if (space == null || !StoreSpace.isValid(space)) {
+        return StoreAcl.denyBadOp;
+      }
+      final targetOwn = device == null || device == callerDeviceId;
+      if (!targetOwn && !StoreSpace.sharedReadable.contains(space)) {
+        return StoreAcl.denyAcl;
+      }
+      if (device != null && !isValidDeviceId(device)) {
+        return StoreAcl.denyBadOp;
+      }
+      return StoreAcl.allow;
+
+    // ── 读取类：共享分区 owner 可读他端；私有分区仅本端（导入授权 M3）──
+    case StoreOp.list:
+    case StoreOp.meta:
+    case StoreOp.read:
+      if (space == null || !StoreSpace.isValid(space)) {
+        return StoreAcl.denyBadOp;
+      }
+      final targetOwn = device == null || device == callerDeviceId;
+      if (!targetOwn && !StoreSpace.sharedReadable.contains(space)) {
+        return StoreAcl.denyAcl;
+      }
+      if (device != null && !isValidDeviceId(device)) {
+        return StoreAcl.denyBadOp;
+      }
+      return StoreAcl.allow;
+
+    // ── 回收站 ──
+    case StoreOp.recycleList:
+    case StoreOp.recycleRestore:
+      return StoreAcl.allow; // owner 级（spec §3 M2 从宽）
+    case StoreOp.recycleEmpty:
+      // 仅 master 本机用户（loopback）
+      return loopback ? StoreAcl.allow : StoreAcl.denyAcl;
+
+    case StoreOp.stats:
+      return StoreAcl.allow;
+
+    default:
+      // 未知 op（含伪造的 import.* 授权类 op，M2 无此通道）
+      return StoreAcl.denyBadOp;
+  }
+}
+
+/// ACL 结果 → 错误码。
+String storeAclErrorCode(StoreAcl verdict) => switch (verdict) {
+      StoreAcl.denyUntrusted => StoreError.untrusted,
+      StoreAcl.denyAcl => StoreError.aclDenied,
+      StoreAcl.denyBadOp => StoreError.badOp,
+      StoreAcl.denyBadPath => StoreError.badPath,
+      StoreAcl.allow => StoreError.internal,
+    };

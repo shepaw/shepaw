@@ -2887,5 +2887,30 @@
         "type": "String"
       }
     }
+  },
+  "storage_spaceSection": "存储空间",
+  "storage_masterNode": "主存储节点（master）",
+  "storage_thisDevice": "本机",
+  "storage_usageTitle": "用量",
+  "storage_recycleSection": "回收站",
+  "storage_recycleEmptyHint": "回收站为空",
+  "storage_recycleRestore": "还原",
+  "storage_recyclePurgeAll": "清空回收站",
+  "storage_recyclePurgeConfirm": "清空后不可恢复，确定清空回收站？",
+  "storage_recyclePurged": "已清理 {size}",
+  "storage_deletedAt": "删除于 {time}",
+  "@storage_recyclePurged": {
+    "placeholders": {
+      "size": {
+        "type": "String"
+      }
+    }
+  },
+  "@storage_deletedAt": {
+    "placeholders": {
+      "time": {
+        "type": "String"
+      }
+    }
   }
 }

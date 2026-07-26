@@ -4923,4 +4923,42 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get storage_verifyUnknown => 'Not verified';
+
+  @override
+  String get storage_spaceSection => 'Storage space';
+
+  @override
+  String get storage_masterNode => 'Master node';
+
+  @override
+  String get storage_thisDevice => 'this device';
+
+  @override
+  String get storage_usageTitle => 'Usage';
+
+  @override
+  String get storage_recycleSection => 'Recycle bin';
+
+  @override
+  String get storage_recycleEmptyHint => 'Recycle bin is empty';
+
+  @override
+  String get storage_recycleRestore => 'Restore';
+
+  @override
+  String get storage_recyclePurgeAll => 'Empty recycle bin';
+
+  @override
+  String get storage_recyclePurgeConfirm =>
+      'This permanently deletes everything in the recycle bin. Continue?';
+
+  @override
+  String storage_recyclePurged(String size) {
+    return 'Purged $size';
+  }
+
+  @override
+  String storage_deletedAt(String time) {
+    return 'deleted $time';
+  }
 }
