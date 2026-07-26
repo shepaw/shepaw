@@ -98,7 +98,7 @@
 - 定期任务（默认 daily，GFS 保留 7 日/4 周/12 月——决策 4 确认）在本地生成快照，写入 `<device_id>/backups/<ts>/` 并 `commit`；同步引擎随后送达 master。
 - **GFS 在快照所属设备本机执行**（`ScheduledSnapshotService` + `selectGfs`），删除经同步队列镜像到 master——**不是** master 代管剪枝。`commit.retention` 字段保留为可选扩展，当前实现不解析。
 - 无 master 时快照天然留存本地（本地优先的必然结果）。
-- **兜底导出**（决策 3）：本机目录 / WebDAV 降级为**纯手动导出功能**，不占任何自动路径；格式相同（附件随导出打包）。
+- 兜底导出（决策 3）：本机目录 / WebDAV 降级为**纯手动导出功能**，不占任何自动路径；格式相同（**附件随导出打包**：`exportToDirectory` 按 manifest 复制到 `attachments/`）。
 - 移动端触发：App 启动 + 运行中 6h Timer + **回前台**（`AppLifecycleService.onResume`）+ **WiFi/以太网稳定**（`NetworkMonitorService.onNetworkSettled`，避免蜂窝灌库）。系统级 BGAppRefresh / WorkManager 仍为后续可选（`ForegroundTaskService` 仅 Agent 保活，不接入日快照）。距上次成功（或从未成功则距启用）超过 **3 天** 显著告警（按墙钟，非同日失败次数）。
 
 ### 5.2 快照格式
@@ -321,3 +321,4 @@ master 上的镜像树主要是各端本地数据的副本；为降低单点损�
 14. 自动快照告警按墙钟 3 天（成功或启用锚点），与同日失败次数解耦。
 15. 回收站管理 UX：清空仅 master 本机、还原反馈、列表展开；Go ACL 对齐 `seed: true`。
 16. Go `storage-node` 回收站路径/`recycle.restore`/stats/`commit` 字段与 Dart/spec 对齐。
+17. 快照手动导出按 manifest 打包本机附件（`SnapshotExportResult`）。

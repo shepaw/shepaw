@@ -250,8 +250,21 @@ class _StorageSpaceScreenState extends State<StorageSpaceScreen> {
     setState(() => _busy = true);
     try {
       final out = await SnapshotService.instance.exportToDirectory(info, dir);
-      _toast(l10n.storage_exportDone(out.path),
-          duration: const Duration(seconds: 5));
+      if (out.missingAttachments.isEmpty) {
+        _toast(
+          out.packedAttachments > 0
+              ? l10n.storage_exportDoneWithAttachments(
+                  out.directory.path, out.packedAttachments)
+              : l10n.storage_exportDone(out.directory.path),
+          duration: const Duration(seconds: 5),
+        );
+      } else {
+        _toast(
+          l10n.storage_exportDonePartial(out.directory.path,
+              out.packedAttachments, out.missingAttachments.length),
+          duration: const Duration(seconds: 6),
+        );
+      }
     } catch (e) {
       _toast(l10n.storage_snapshotFailed('$e'));
     } finally {

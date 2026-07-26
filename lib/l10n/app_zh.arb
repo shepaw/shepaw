@@ -2862,6 +2862,8 @@
   "storage_restoreDone": "恢复完成，请重启 App。",
   "storage_restoreFailed": "恢复失败：{error}",
   "storage_exportDone": "已导出到 {path}",
+  "storage_exportDoneWithAttachments": "已导出到 {path}（含 {count} 个附件）",
+  "storage_exportDonePartial": "已导出到 {path}（打包附件 {packed}，缺失 {missing}）",
   "storage_verifyOk": "校验通过",
   "storage_verifyFileTampered": "文件被篡改",
   "storage_verifyManifestTampered": "清单被篡改",
@@ -2886,6 +2888,19 @@
       "path": {
         "type": "String"
       }
+    }
+  },
+  "@storage_exportDoneWithAttachments": {
+    "placeholders": {
+      "path": { "type": "String" },
+      "count": { "type": "int" }
+    }
+  },
+  "@storage_exportDonePartial": {
+    "placeholders": {
+      "path": { "type": "String" },
+      "packed": { "type": "int" },
+      "missing": { "type": "int" }
     }
   },
   "storage_spaceSection": "存储空间",

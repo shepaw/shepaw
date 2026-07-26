@@ -207,8 +207,64 @@ void main() {
     final tmp = await Directory.systemTemp.createTemp('snapshot_export');
     final out =
         await SnapshotService.instance.exportToDirectory(info, tmp.path);
-    expect(File(p.join(out.path, 'manifest.json')).existsSync(), isTrue);
-    expect(File(p.join(out.path, 'db.sqlite.enc')).existsSync(), isTrue);
-    expect(File(p.join(out.path, 'identity.enc')).existsSync(), isTrue);
+    expect(File(p.join(out.directory.path, 'manifest.json')).existsSync(),
+        isTrue);
+    expect(File(p.join(out.directory.path, 'db.sqlite.enc')).existsSync(),
+        isTrue);
+    expect(File(p.join(out.directory.path, 'identity.enc')).existsSync(),
+        isTrue);
+    expect(out.packedAttachments, 0);
+    expect(out.missingAttachments, isEmpty);
+  });
+
+  test('本机导出：按 manifest 打包附件', () async {
+    final root = await SnapshotService.instance.deviceStoreRoot();
+    final hash = 'a' * 64;
+    final attach = File(p.join(root.path, 'attachments', hash));
+    await attach.parent.create(recursive: true);
+    await attach.writeAsBytes(utf8.encode('attach-bytes'));
+
+    final info =
+        await SnapshotService.instance.createSnapshot(password: password);
+    expect(info.manifest.attachments, contains(hash));
+
+    final tmp = await Directory.systemTemp.createTemp('snapshot_export_att');
+    addTearDown(() => tmp.delete(recursive: true));
+    final out =
+        await SnapshotService.instance.exportToDirectory(info, tmp.path);
+    expect(out.packedAttachments, greaterThanOrEqualTo(1));
+    expect(out.missingAttachments, isEmpty);
+    final packed = File(p.join(out.directory.path, 'attachments', hash));
+    expect(await packed.readAsBytes(), utf8.encode('attach-bytes'));
+  });
+
+  test('本机导出：缺失附件记入 missing', () async {
+    final info =
+        await SnapshotService.instance.createSnapshot(password: password);
+    // 伪造 manifest 引用不存在的 hash
+    final fakeManifest = SnapshotManifest(
+      deviceId: info.manifest.deviceId,
+      createdAtMs: info.manifest.createdAtMs,
+      appVersion: info.manifest.appVersion,
+      schemaVersion: info.manifest.schemaVersion,
+      dbSha256: info.manifest.dbSha256,
+      fileHashes: info.manifest.fileHashes,
+      treeRoot: info.manifest.treeRoot,
+      kdfSalt: info.manifest.kdfSalt,
+      kdfIterations: info.manifest.kdfIterations,
+      attachments: ['b' * 64],
+    );
+    final fakeInfo = SnapshotInfo(
+      id: info.id,
+      path: info.path,
+      manifest: fakeManifest,
+      totalBytes: info.totalBytes,
+    );
+    final tmp = await Directory.systemTemp.createTemp('snapshot_export_miss');
+    addTearDown(() => tmp.delete(recursive: true));
+    final out =
+        await SnapshotService.instance.exportToDirectory(fakeInfo, tmp.path);
+    expect(out.packedAttachments, 0);
+    expect(out.missingAttachments, ['b' * 64]);
   });
 }

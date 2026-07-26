@@ -121,13 +121,30 @@ class SnapshotInfo {
 /// 快照校验结果。
 enum SnapshotVerifyStatus { ok, manifestTampered, fileTampered, unreadable }
 
+/// 本机导出结果（§5.1：快照目录 + manifest 引用的附件）。
+class SnapshotExportResult {
+  SnapshotExportResult({
+    required this.directory,
+    required this.packedAttachments,
+    required this.missingAttachments,
+  });
+
+  final Directory directory;
+
+  /// 成功打包的附件数。
+  final int packedAttachments;
+
+  /// manifest 中有、本机找不到的 hash 路径。
+  final List<String> missingAttachments;
+}
+
 /// 快照引擎（docs/storage_space_plan.md §5.2，M1）。
 ///
 /// 目录布局：`<documents>/shepaw/store/<device_id>/backups/<ts>/`
 /// - manifest.json / db.sqlite.enc / identity.enc
 ///
-/// M1 范围说明：快照只含主库（shepaw.db）与设备身份；附件与其他辅助库
-/// （she_memory/minds/agent_memory_*）待 M5 CAS 与后续里程碑纳入 manifest。
+/// M1 范围说明：快照目录只含主库与设备身份；附件按 hash 列入 manifest，
+/// 手动导出时一并打包（§5.1 / §5.2）。
 class SnapshotService {
   SnapshotService._();
   static final SnapshotService instance = SnapshotService._();
@@ -445,9 +462,9 @@ class SnapshotService {
 
   // ------------------------------------------------------------- 本机导出
 
-  /// 本机导出（§5.1 决策 3：纯手动路径）：把快照目录整体复制到 [targetDir]。
-  /// 返回导出目标目录。
-  Future<Directory> exportToDirectory(
+  /// 本机导出（§5.1 决策 3：纯手动路径）：复制快照三文件，并按 manifest
+  /// 打包本机 `<device_id>/attachments/` 中引用的附件（§5.2）。
+  Future<SnapshotExportResult> exportToDirectory(
       SnapshotInfo info, String targetDir) async {
     final target = Directory(p.join(targetDir, info.id));
     if (await target.exists()) await target.delete(recursive: true);
@@ -461,8 +478,39 @@ class SnapshotService {
         await f.copy(dest.path);
       }
     }
-    _log.info('snapshot ${info.id} exported to ${target.path}', tag: _tag);
-    return target;
+
+    final missing = <String>[];
+    var packed = 0;
+    final hashes = info.manifest.attachments;
+    if (hashes.isNotEmpty) {
+      final deviceRoot = await deviceStoreRoot();
+      final attachRoot = Directory(p.join(deviceRoot.path, 'attachments'));
+      for (final hash in hashes) {
+        if (hash.isEmpty || hash.contains('..')) {
+          missing.add(hash);
+          continue;
+        }
+        final src = File(p.join(attachRoot.path, hash));
+        if (!await src.exists()) {
+          missing.add(hash);
+          continue;
+        }
+        final dest = File(p.join(target.path, 'attachments', hash));
+        await dest.parent.create(recursive: true);
+        await src.copy(dest.path);
+        packed++;
+      }
+    }
+
+    _log.info(
+        'snapshot ${info.id} exported to ${target.path} '
+        '(attachments packed=$packed missing=${missing.length})',
+        tag: _tag);
+    return SnapshotExportResult(
+      directory: target,
+      packedAttachments: packed,
+      missingAttachments: missing,
+    );
   }
 
   // ------------------------------------------------------------- 工具

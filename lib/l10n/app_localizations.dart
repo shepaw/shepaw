@@ -8636,6 +8636,18 @@ abstract class AppLocalizations {
   /// **'已导出到 {path}'**
   String storage_exportDone(String path);
 
+  /// No description provided for @storage_exportDoneWithAttachments.
+  ///
+  /// In zh, this message translates to:
+  /// **'已导出到 {path}（含 {count} 个附件）'**
+  String storage_exportDoneWithAttachments(String path, int count);
+
+  /// No description provided for @storage_exportDonePartial.
+  ///
+  /// In zh, this message translates to:
+  /// **'已导出到 {path}（打包附件 {packed}，缺失 {missing}）'**
+  String storage_exportDonePartial(String path, int packed, int missing);
+
   /// No description provided for @storage_verifyOk.
   ///
   /// In zh, this message translates to:

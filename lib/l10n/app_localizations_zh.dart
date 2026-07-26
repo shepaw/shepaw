@@ -4726,6 +4726,16 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
+  String storage_exportDoneWithAttachments(String path, int count) {
+    return '已导出到 $path（含 $count 个附件）';
+  }
+
+  @override
+  String storage_exportDonePartial(String path, int packed, int missing) {
+    return '已导出到 $path（打包附件 $packed，缺失 $missing）';
+  }
+
+  @override
   String get storage_verifyOk => '校验通过';
 
   @override

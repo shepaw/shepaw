@@ -4910,6 +4910,16 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
+  String storage_exportDoneWithAttachments(String path, int count) {
+    return 'Exported to $path ($count attachments)';
+  }
+
+  @override
+  String storage_exportDonePartial(String path, int packed, int missing) {
+    return 'Exported to $path (packed $packed, missing $missing)';
+  }
+
+  @override
   String get storage_verifyOk => 'Verified';
 
   @override
