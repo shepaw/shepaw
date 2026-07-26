@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import '../models/message.dart';
+import '../services/attachment_service.dart';
 import '../services/audio_playback_service.dart';
 import '../services/local_file_storage_service.dart';
 
@@ -88,11 +89,10 @@ class _VoiceMessageBubbleState extends State<VoiceMessageBubble> {
   }
 
   Future<void> _onTap() async {
-    final relativePath = widget.message.metadata?['path'] as String?;
-    if (relativePath == null) return;
-
-    final fullPath = await LocalFileStorageService().getFullPath(relativePath);
-    await _playbackService.playOrToggle(widget.message.id, fullPath);
+    // M5：hash 优先，旧 path 格式由 resolver 兼容回退
+    final file = await AttachmentService.resolveFile(widget.message.metadata);
+    if (file == null) return;
+    await _playbackService.playOrToggle(widget.message.id, file.path);
   }
 
   @override

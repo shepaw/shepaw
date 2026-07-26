@@ -1,4 +1,6 @@
 import 'dart:io';
+import 'dart:typed_data';
+import 'package:crypto/crypto.dart' as crypto;
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:file_picker/file_picker.dart';
@@ -9,9 +11,17 @@ import 'local_database_service.dart';
 import 'logger_service.dart';
 import '../models/message.dart';
 import '../models/attachment_data.dart';
+import '../storage/device_identity.dart';
+import '../storage/local_store.dart';
+import '../storage/store_protocol.dart';
+import '../storage/store_service.dart';
 import 'package:uuid/uuid.dart';
 
 /// 附件服务
+///
+/// M5 附件收口（docs/storage_space_plan.md §2/§11）：新附件按内容 hash 编址，
+/// 经 store write/commit 落 `<device_id>/attachments/<hash>`（hash 去重，
+/// 仅本端可读写）；消息 metadata 记 `hash`，旧 `path` 字段仅作兼容回退。
 class AttachmentService {
   final LocalFileStorageService _fileStorage;
   final LocalDatabaseService _database;
@@ -19,6 +29,101 @@ class AttachmentService {
   final _uuid = const Uuid();
 
   AttachmentService(this._fileStorage, this._database);
+
+  /// 便捷静态入口（widget 层无注入场景）。
+  static AttachmentService get shared =>
+      AttachmentService(LocalFileStorageService(), LocalDatabaseService());
+
+  /// 静态解析附件文件（hash 优先，path 兼容回退）。
+  static Future<File?> resolveFile(Map<String, dynamic>? metadata) {
+    if (metadata == null) return Future.value(null);
+    return shared.resolveAttachmentFile(metadata);
+  }
+
+  // ────────────────────────────── 附件 store 读写 ──
+
+  /// 附件内容写入 store（hash 去重），返回内容 hash。
+  Future<String> _storeAttachmentBytes(Uint8List bytes) async {
+    final hash = crypto.sha256.convert(bytes).toString();
+    final store = await StoreService.instance.localStore();
+    final deviceId = await DeviceIdentity.deviceId();
+    // 已存在即去重（内容寻址天然幂等）
+    try {
+      await store.meta(deviceId, StoreSpace.attachments, hash);
+      return hash;
+    } on StoreException {
+      // not_found → 写入
+    }
+    final (uploadId, _) = await store.writeBegin(
+      deviceId: deviceId,
+      space: StoreSpace.attachments,
+      path: hash,
+      size: bytes.length,
+      sha256: hash,
+    );
+    var offset = 0;
+    while (offset < bytes.length) {
+      final end = (offset + LocalStore.maxReadChunk) > bytes.length
+          ? bytes.length
+          : offset + LocalStore.maxReadChunk;
+      await store.writeChunk(
+          deviceId, StoreSpace.attachments, uploadId, offset,
+          bytes.sublist(offset, end));
+      offset = end;
+    }
+    final (committed, failed) =
+        await store.commit(deviceId, StoreSpace.attachments, [uploadId]);
+    if (failed.isNotEmpty || committed.isEmpty) {
+      throw StateError('attachment commit failed: $failed');
+    }
+    return hash;
+  }
+
+  /// 按 hash 读附件字节。
+  Future<Uint8List?> readAttachmentBytes(String hash) async {
+    try {
+      final store = await StoreService.instance.localStore();
+      final deviceId = await DeviceIdentity.deviceId();
+      final builder = BytesBuilder(copy: false);
+      var offset = 0;
+      while (true) {
+        final (chunk, _, eof) = await store.read(
+            deviceId, StoreSpace.attachments, hash, offset,
+            LocalStore.maxReadChunk);
+        builder.add(chunk);
+        offset += chunk.length;
+        if (eof || chunk.isEmpty) break;
+      }
+      return builder.toBytes();
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// 解析附件文件（消息气泡展示用）：
+  /// 新格式按 metadata['hash'] 经 store；旧格式按 metadata['path'] 兼容回退。
+  Future<File?> resolveAttachmentFile(Map<String, dynamic> metadata) async {
+    final hash = metadata['hash'] as String?;
+    if (hash != null && hash.isNotEmpty) {
+      try {
+        final store = await StoreService.instance.localStore();
+        final deviceId = await DeviceIdentity.deviceId();
+        final f = File(path.join(
+            store.root.path, deviceId, StoreSpace.attachments, hash));
+        if (await f.exists()) return f;
+        return null;
+      } catch (_) {
+        return null;
+      }
+    }
+    final legacyPath = metadata['path'] as String?;
+    if (legacyPath != null && legacyPath.isNotEmpty) {
+      final full = await _fileStorage.getFullPath(legacyPath);
+      final f = File(full);
+      if (await f.exists()) return f;
+    }
+    return null;
+  }
 
   /// 选择图片
   Future<File?> pickImage({ImageSource source = ImageSource.gallery}) async {
@@ -69,31 +174,13 @@ class AttachmentService {
     required String agentId,
   }) async {
     try {
-      // 生成唯一文件名
-      final extension = path.extension(file.path);
-      final fileName = '${_uuid.v4()}$extension';
-      
-      // 保存文件到本地存储
-      final savedPath = await _fileStorage.saveFile(
-        file,
-        customFileName: fileName,
-      );
-
-      if (savedPath == null) {
-        throw Exception('Failed to save file');
-      }
+      // M5：附件按内容 hash 编址写入 store（去重，仅本端可读写）
+      final bytes = await file.readAsBytes();
+      final hash = await _storeAttachmentBytes(bytes);
 
       // 判断文件类型
       final fileType = _getFileType(file.path);
-      int fileSize = await file.length();
-      // On some platforms (e.g. macOS sandbox, iCloud Drive) the original path
-      // may not be readable after the copy; fall back to the saved copy's size.
-      if (fileSize == 0) {
-        try {
-          final savedFile = await _fileStorage.getFile(savedPath);
-          if (savedFile != null) fileSize = await savedFile.length();
-        } catch (_) {}
-      }
+      final fileSize = bytes.length;
 
       // 判断消息类型
       MessageType messageType;
@@ -105,9 +192,9 @@ class AttachmentService {
         messageType = MessageType.file;
       }
 
-      // 创建附件消息
+      // 创建附件消息（metadata 以 hash 引用，原文件名/类型/大小随行）
       final attachmentData = {
-        'path': savedPath,
+        'hash': hash,
         'name': path.basename(file.path),
         'type': fileType,
         'size': fileSize,
@@ -163,21 +250,15 @@ class AttachmentService {
       final file = File(filePath);
       if (!await file.exists()) return null;
 
-      final fileSize = await file.length();
-
-      // 保存到 audio 目录
-      final savedPath = await _fileStorage.saveFile(
-        file,
-        type: ResourceType.audio,
-      );
-
-      final fileName = savedPath.split('/').last;
+      // M5：语音同样按 hash 编址写入 store
+      final bytes = await file.readAsBytes();
+      final hash = await _storeAttachmentBytes(bytes);
 
       final metadata = {
-        'path': savedPath,
-        'name': fileName,
+        'hash': hash,
+        'name': path.basename(filePath),
         'type': 'audio',
-        'size': fileSize,
+        'size': bytes.length,
         'duration_ms': durationMs,
         'waveform': waveform,
       };
@@ -251,19 +332,36 @@ class AttachmentService {
   Future<AttachmentData?> buildAttachmentData(Message message) async {
     try {
       final metadata = message.metadata;
-      if (metadata == null || metadata['path'] == null) return null;
+      if (metadata == null) return null;
 
-      final relativePath = metadata['path'] as String;
-      final fullPath = await _fileStorage.getFullPath(relativePath);
-      final file = File(fullPath);
-
-      if (!await file.exists()) {
-        LoggerService().error('Attachment file not found: $fullPath', tag: 'Attachment');
+      // M5：优先按 hash 从 store 读；旧 path 格式兼容回退
+      Uint8List? bytes;
+      String? fallbackName;
+      final hash = metadata['hash'] as String?;
+      if (hash != null && hash.isNotEmpty) {
+        bytes = await readAttachmentBytes(hash);
+        if (bytes == null) {
+          LoggerService().error('Attachment blob not found: $hash',
+              tag: 'Attachment');
+          return null;
+        }
+      } else if (metadata['path'] != null) {
+        final relativePath = metadata['path'] as String;
+        final fullPath = await _fileStorage.getFullPath(relativePath);
+        final file = File(fullPath);
+        if (!await file.exists()) {
+          LoggerService().error('Attachment file not found: $fullPath',
+              tag: 'Attachment');
+          return null;
+        }
+        bytes = await file.readAsBytes();
+        fallbackName = path.basename(fullPath);
+      } else {
         return null;
       }
 
-      final bytes = await file.readAsBytes();
-      final fileName = metadata['name'] as String? ?? path.basename(fullPath);
+      final fileName =
+          metadata['name'] as String? ?? fallbackName ?? 'attachment';
       final semanticType = metadata['type'] as String? ?? 'file';
       final sizeBytes = metadata['size'] as int? ?? bytes.length;
       final mimeType = _getMimeType(fileName, semanticType);

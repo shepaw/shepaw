@@ -11,6 +11,7 @@ import 'os/os_cli_namespace.dart';
 import 'meta/meta_namespace.dart';
 import 'help_namespace.dart';
 import 'external_cli_namespace.dart';
+import 'store/store_namespace.dart';
 import '../../services/logger_service.dart';
 import '../../services/cli_command_config_service.dart';
 import '../../services/cli_tool_registry.dart';
@@ -64,6 +65,8 @@ class ShepawCLI {
     'skills': SkillsNamespace.instance,
     'os': OsCliNamespace.instance,
     'workflow': WorkflowNamespace.instance,
+    // 存储空间产物读写（docs/storage_space_plan.md §6.3）
+    'store': StoreNamespace.instance,
 
     // ── ℹ️ META 层 - 系统元信息和诊断 ───────────────────────────────────────────
     'meta': MetaNamespace.instance,

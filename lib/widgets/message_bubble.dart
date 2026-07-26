@@ -1,9 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_markdown/flutter_markdown.dart';
 import 'package:markdown/markdown.dart' as md;
+import 'package:open_file/open_file.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'dart:io';
 import '../l10n/app_localizations.dart';
 import '../models/message.dart';
+import '../storage/artifact_service.dart';
 import '../theme/app_theme.dart';
 import 'voice_message_bubble.dart';
 import 'image_message_bubble.dart';
@@ -675,6 +679,29 @@ class MessageBubble extends StatelessWidget {
   /// Replace cc-only mention tokens with an annotated form.
   /// For mentions with notify:false, appends "(cc)" so readers can
   /// tell at a glance that the mentioned agent was not triggered.
+  /// 打开 store:// 产物引用（缓存校验读取 → 临时文件 → 系统打开）。
+  Future<void> _openStoreArtifact(
+      BuildContext context, String uriString) async {
+    try {
+      final bytes = await ArtifactService.instance.readArtifact(uriString);
+      final uri = ArtifactUri.tryParse(uriString);
+      final name = uri?.filename ?? 'artifact';
+      final dir = await getTemporaryDirectory();
+      final file = File('${dir.path}/shepaw_artifact_$name');
+      await file.writeAsBytes(bytes, flush: true);
+      await OpenFile.open(file.path);
+    } catch (e) {
+      if (context.mounted) {
+        showTopToast(
+          context,
+          AppLocalizations.of(context).widget_cannotOpenLink(uriString),
+          icon: Icons.error_outline,
+          color: Colors.red.shade400,
+        );
+      }
+    }
+  }
+
   String _processContentWithMentions(String content, Map<String, dynamic>? metadata) {
     final mentionsRaw = metadata?['mentions'] as List<dynamic>? ?? [];
     if (mentionsRaw.isEmpty) return content;
@@ -729,6 +756,12 @@ class MessageBubble extends StatelessWidget {
             if (href == null) return;
             final uri = Uri.tryParse(href);
             if (uri == null) return;
+            // 产物引用（docs/storage_space_plan.md §6.3）：store:// 经
+            // artifact_service 解析打开，不走外部浏览器。
+            if (uri.scheme == 'store') {
+              await _openStoreArtifact(context, href);
+              return;
+            }
             if (!await launchUrl(uri, mode: LaunchMode.externalApplication)) {
               if (context.mounted) {
                 showTopToast(

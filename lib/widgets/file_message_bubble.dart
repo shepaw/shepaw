@@ -115,21 +115,35 @@ class _FileMessageBubbleState extends State<FileMessageBubble> {
   }
 
   Future<void> _openFile() async {
-    final relativePath =
-        _downloadedPath ?? widget.message.metadata?['path'] as String?;
-    if (relativePath == null) {
+    // M5：已下载副本或 store/旧格式附件，经 resolver 统一解析
+    final downloaded = _downloadedPath;
+    if (downloaded != null) {
+      try {
+        final fullPath =
+            await LocalFileStorageService().getFullPath(downloaded);
+        await OpenFile.open(fullPath);
+        return;
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Cannot open file: $e')),
+          );
+        }
+        return;
+      }
+    }
+    final file =
+        await AttachmentService.resolveFile(widget.message.metadata);
+    if (file == null) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('File path not found')),
+          const SnackBar(content: Text('File not found')),
         );
       }
       return;
     }
-
     try {
-      final fullPath =
-          await LocalFileStorageService().getFullPath(relativePath);
-      await OpenFile.open(fullPath);
+      await OpenFile.open(file.path);
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(

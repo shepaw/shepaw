@@ -7,6 +7,7 @@ import '../models/remote_agent.dart';
 import '../services/logger_service.dart';
 import '../services/local_file_storage_service.dart';
 import '../services/local_database_service.dart';
+import '../services/attachment_service.dart';
 import '../services/file_download_service.dart';
 import '../services/ws_file_transfer_service.dart';
 import '../services/acp_agent_connection.dart';
@@ -73,22 +74,11 @@ class _ImageMessageBubbleState extends State<ImageMessageBubble> {
   }
 
   Future<void> _loadLocalImage() async {
-    final relativePath = widget.message.metadata?['path'] as String?;
-    if (relativePath == null) {
-      // completed but no path — treat as error / show placeholder
-      if (mounted) {
-        setState(() {
-          _imageFile = null;
-        });
-      }
-      return;
-    }
-
+    final metadata = widget.message.metadata;
     try {
-      final fullPath =
-          await LocalFileStorageService().getFullPath(relativePath);
-      final file = File(fullPath);
-      if (await file.exists()) {
+      // M5：hash 优先，旧 path 格式由 resolver 兼容回退
+      final file = await AttachmentService.resolveFile(metadata);
+      if (file != null && await file.exists()) {
         if (mounted) {
           setState(() {
             _imageFile = file;

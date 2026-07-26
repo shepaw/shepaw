@@ -27,6 +27,7 @@ import '../models/workflow_models.dart';
 import 'messaging/agent_messaging_service.dart';
 import 'group/group_session_service.dart';
 import 'session/session_history_service.dart';
+import '../storage/artifact_service.dart';
 import 'app_lifecycle_service.dart';
 import '../providers/notification_provider.dart';
 import 'foreground_task_service.dart';
@@ -1790,10 +1791,15 @@ $originalQuestion
 
           try {
             final stepBuffer = StringBuffer();
+            // §6.3：群工作流步骤注入产物引用片段（含历史消息中的引用）
+            final stepContent = ArtifactService.instance
+                .wrapWithArtifactSection(step.instruction, extraRefTexts: [
+              for (final m in historyMessages.take(20)) m.content,
+            ]);
             await _groupAgentExecutor.processGroupAgent(
               agent: agent,
               channelId: channelId,
-              content: step.instruction,
+              content: stepContent,
               userId: userId,
               userName: userName,
               groupName: groupName,
@@ -1917,7 +1923,8 @@ $originalQuestion
           try {
             final response = await _agentMessagingService.sendMessageToAgent(
               content: '[Workflow "${workflow.title}" — Stage ${step.stageIndex + 1}]\n'
-                  '${step.instruction}\n\n'
+                  // §6.3：DM 工作流步骤注入产物引用片段
+                  '${ArtifactService.instance.wrapWithArtifactSection(step.instruction)}\n\n'
                   '立即执行该步骤，你的回复将作为步骤结果记录。'
                   '不要调用 shepaw workflow create/dispatch/complete/fail/cancel。',
               agent: agent,

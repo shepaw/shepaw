@@ -217,6 +217,7 @@ class SnapshotService {
         treeRoot: SnapshotManifest.computeTreeRoot(fileHashes),
         kdfSalt: base64.encode(snapshotSalt),
         kdfIterations: 120000,
+        attachments: await _listAttachmentHashes(deviceId),
       );
       final manifestBytes = Uint8List.fromList(utf8.encode(
           const JsonEncoder.withIndent('  ').convert(manifest.toJson())));
@@ -306,6 +307,26 @@ class SnapshotService {
         } catch (_) {}
       }
       throw StateError('snapshot store commit failed: $failed');
+    }
+  }
+
+  /// 附件 hash 清单（§5.2：附件不进快照，按 hash 引用；M5 起附件
+  /// 编址即 hash，文件名即 hash 值）。
+  Future<List<String>> _listAttachmentHashes(String deviceId) async {
+    try {
+      final root = await deviceStoreRoot();
+      final dir = Directory(p.join(root.path, 'attachments'));
+      if (!await dir.exists()) return const [];
+      final hashes = <String>[];
+      await for (final f in dir.list(recursive: true)) {
+        if (f is! File) continue;
+        final rel = p.relative(f.path, from: dir.path);
+        if (rel.split(p.separator).any((s) => s.startsWith('.'))) continue;
+        hashes.add(rel.replaceAll(p.separator, '/'));
+      }
+      return hashes;
+    } catch (_) {
+      return const [];
     }
   }
 
