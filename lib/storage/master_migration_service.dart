@@ -7,6 +7,7 @@ import '../services/logger_service.dart';
 import 'device_cursor_store.dart';
 import 'device_identity.dart';
 import 'mirror_reprotect_service.dart';
+import 'mirror_seed_service.dart';
 import 'store_protocol.dart';
 import 'store_service.dart';
 import 'sync_engine.dart';
@@ -19,6 +20,7 @@ class MigrationResult {
     required this.oldMasterReachable,
     required this.seededCursors,
     required this.broadcastPeers,
+    this.seededFiles = 0,
   });
 
   final String newMasterId;
@@ -26,16 +28,20 @@ class MigrationResult {
   final bool oldMasterReachable;
   final Map<String, int> seededCursors;
   final int broadcastPeers;
+
+  /// 从旧 master 拷贝到本机的文件数（不可达时为 0）。
+  final int seededFiles;
 }
 
 /// master 迁移编排（docs/storage_space_plan.md §6.5，M6）。
 ///
 /// 流程：
 /// 1. 新 master（本机）向旧 master 拉 `sync.cursors`；不可达则用本机游标账副本；
-/// 2. 种子合并进本机 [DeviceCursorStore]；
-/// 3. 提升 epoch、写本机 master 指针；
-/// 4. 向各 owner 端广播 `master.pointer`（无 req_id）；
-/// 5. 触发 [SyncEngine.syncNow]；可选再保护镜像树。
+/// 2. 旧 master 可达时，按游标设备列表差量拉取镜像文件到本机（§6.5 种子拷贝）；
+/// 3. 种子合并进本机 [DeviceCursorStore]；
+/// 4. 提升 epoch、写本机 master 指针；
+/// 5. 向各 owner 端广播 `master.pointer`（无 req_id）；
+/// 6. 触发 [SyncEngine.syncNow]；可选再保护镜像树。
 class MasterMigrationService {
   MasterMigrationService._();
   static final MasterMigrationService instance = MasterMigrationService._();
@@ -56,6 +62,7 @@ class MasterMigrationService {
 
     var reachable = false;
     var seed = <String, int>{};
+    var seededFiles = 0;
     if (oldMaster != self) {
       final res = await StoreService.instance.callPeer(
         oldMaster,
@@ -67,6 +74,23 @@ class MasterMigrationService {
             .map((k, v) => MapEntry(k as String, (v as num).toInt()));
         _log.info('seeded ${seed.length} cursors from old master $oldMaster',
             tag: _tag);
+        // 差量镜像种子：补齐他端历史 blob（改指前完成）
+        final deviceIds = <String>{...seed.keys};
+        try {
+          final stats = await StoreService.instance.callPeer(
+            oldMaster,
+            StoreFrame(op: StoreOp.stats, payload: const {}),
+          );
+          final devices = (stats?['devices'] as Map?)?.keys;
+          if (devices != null) {
+            deviceIds.addAll(devices.cast<String>());
+          }
+        } catch (_) {}
+        seededFiles = await MirrorSeedService.instance.seedFromOldMaster(
+          oldMasterId: oldMaster,
+          deviceIds: deviceIds,
+          store: store,
+        );
       } else {
         seed = await cursors.all();
         _log.warning(
@@ -95,7 +119,7 @@ class MasterMigrationService {
 
     _log.info(
         'promoted self as master epoch=$epoch '
-        '(old=$oldMaster reachable=$reachable)',
+        '(old=$oldMaster reachable=$reachable seededFiles=$seededFiles)',
         tag: _tag);
     return MigrationResult(
       newMasterId: self,
@@ -103,6 +127,7 @@ class MasterMigrationService {
       oldMasterReachable: reachable || oldMaster == self,
       seededCursors: merged,
       broadcastPeers: broadcast,
+      seededFiles: seededFiles,
     );
   }
 

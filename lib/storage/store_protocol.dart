@@ -240,7 +240,7 @@ StoreAcl checkStoreAcl(
       return StoreAcl.allow;
 
     // ── 读取类：共享分区 owner 可读他端；私有分区仅本端——
-    // 或持有效换机导入授权（grant，spec §5.4，服务侧校验实体）──
+    // 或持有效换机导入授权（grant）；或升主种子拷贝（seed: true，owner）──
     case StoreOp.list:
     case StoreOp.meta:
     case StoreOp.read:
@@ -249,6 +249,15 @@ StoreAcl checkStoreAcl(
       }
       final targetOwn = device == null || device == callerDeviceId;
       if (!targetOwn && !StoreSpace.sharedReadable.contains(space)) {
+        final seed = frame.payload['seed'] == true;
+        if (seed) {
+          // 升主镜像种子：owner 可临时读他端私有分区（方案 §6.5）
+          // 此处 !targetOwn ⇒ device 已非空且 ≠ 调用者
+          if (!isValidDeviceId(device)) {
+            return StoreAcl.denyBadOp;
+          }
+          return StoreAcl.allow;
+        }
         final grant = frame.payload['grant'];
         if (grant is! String || grant.isEmpty) return StoreAcl.denyAcl;
       }

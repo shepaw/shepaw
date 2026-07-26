@@ -88,6 +88,7 @@ void main() {
       expect(result.newMasterId, self);
       expect(result.epoch, greaterThan(0));
       expect(result.oldMasterReachable, isFalse);
+      expect(result.seededFiles, 0);
       expect(await StoreService.instance.isMaster(), isTrue);
     });
   });

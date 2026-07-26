@@ -362,13 +362,15 @@ class StoreService {
 
     final store = await _localStore();
     try {
-      // 私有分区跨端读取：校验导入授权实体（spec §5.4）
+      // 私有分区跨端读取：校验导入授权实体（spec §5.4）；
+      // 升主种子拷贝（seed: true）已在 ACL 放行，跳过 grant。
       if ((frame.op == StoreOp.list ||
               frame.op == StoreOp.meta ||
               frame.op == StoreOp.read) &&
           frame.device != null &&
           frame.device != callerDeviceId &&
-          !StoreSpace.sharedReadable.contains(frame.space)) {
+          !StoreSpace.sharedReadable.contains(frame.space) &&
+          frame.payload['seed'] != true) {
         final grantId = frame.payload['grant'] as String?;
         final auth = await _importAuthService();
         final ok = grantId != null &&
@@ -535,6 +537,7 @@ class StoreService {
             'old_master_reachable': result.oldMasterReachable,
             'cursors': result.seededCursors,
             'broadcast_peers': result.broadcastPeers,
+            'seeded_files': result.seededFiles,
           };
 
         // ── 换机导入授权（v2，§5.4）──

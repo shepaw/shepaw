@@ -197,10 +197,11 @@
 - **故障手动处理**（决策 2）：master 失联不做自动 failover，各端本地正常工作，跨端读降级；用户择机在管理页迁移。
 - **迁移流程（与 `MasterMigrationService` 一致）**：
   1. 新 master 向旧 master 请求 `sync.cursors`；不可达则以本机游标账副本为准；
-  2. 游标种子合并（只进不退）→ bump `epoch` → 写本机 master 指针；
-  3. 向各 owner 广播 `master.pointer`；各端改指后把**本地比新 master 新的差量**（含未同步队列）`syncNow` 推送；
-  4. 可选触发镜像再保护（§6.6）。
-- **明确接受的缺口（旧 master 不可达时）**：升主只迁移**游标账**，不自动搬运他端历史 blob。新 master 上缺失的他端历史数据，依赖各端仍持有正式区并随后推送；若某端已丢本地且旧 master 不可达，该段镜像可能永久缺口。产品上应在升主 UI 提示此风险；「逐设备哈希校验后再正式改指」降为后续可选加固（当前未实现）。
+  2. **旧 master 可达时**：按游标/stats 设备列表，经 `list`/`read`（`seed: true`）差量拉取他端分区到本机（`MirrorSeedService`）；不可达则跳过（缺口风险见下）；
+  3. 游标种子合并（只进不退）→ bump `epoch` → 写本机 master 指针；
+  4. 向各 owner 广播 `master.pointer`；各端改指后把**本地比新 master 新的差量**（含未同步队列）`syncNow` 推送；
+  5. 可选触发镜像再保护（§6.6）。
+- **明确接受的缺口（旧 master 不可达时）**：升主只迁移**游标账**，不自动搬运他端历史 blob。新 master 上缺失的他端历史数据，依赖各端仍持有正式区并随后推送；若某端已丢本地且旧 master 不可达，该段镜像可能永久缺口。产品上应在升主 UI 提示此风险；「逐设备内容哈希门闩」仍为后续可选加固。
 
 ### 6.6 master 数据的再保护
 
@@ -275,7 +276,7 @@ master 上的镜像树主要是各端本地数据的副本；为降低单点损�
 | M3 快照与恢复 | ✅ 基本 | 定期快照 + 本机 GFS + 恢复 + 换机导入 + 改密；回前台 / WiFi 稳定触发已接；系统 BG 任务仍可选 |
 | M4 本地优先与远程 | ✅ 基本 | `SyncJournal`/`SyncEngine` + 游标；`LocalCas` 仅远端读缓存；tunnel 复用 peer |
 | M5 协作与附件 | ✅ 基本 | `ArtifactService` URI + 编排注入；附件经 store hash 编址 |
-| M6 master 迁移 | ✅ 基本 | 升主/指针/再保护；**无**哈希门闩与全量镜像种子（见 §6.5 缺口） |
+| M6 master 迁移 | ✅ 基本 | 升主/指针/再保护；旧 master 可达时差量镜像种子（`MirrorSeedService`）；哈希门闩仍可选 |
 | M7 Go 存储节点 | 🟡 骨架 | `storage-node/`：目录树+fixture；缺 Noise 配对与无头管理面 |
 | M8 记忆交换与多 she | ✅ 基本 | `lib/she_network/` + 管理页「她的圈子」 |
 
@@ -298,7 +299,7 @@ master 上的镜像树主要是各端本地数据的副本；为降低单点损�
 
 ## 13. 后续可选（不承诺）
 
-- 升主前逐设备内容哈希门闩 / 旧 master 可达时的镜像种子拷贝。
+- 升主前逐设备内容哈希门闩（种子拷贝已在旧 master 可达时落地）。
 - `commit.retention` 字段落地。
 - 快照差量化；回收站增强；`she.presence` 名单级；跨人 she 社交；DB 级多端互通（另案）。
 - 系统级 BGAppRefresh / WorkManager（日快照已有回前台 + WiFi 触发）。
@@ -316,3 +317,4 @@ master 上的镜像树主要是各端本地数据的副本；为降低单点损�
 9. `listSnapshots`/GFS 与再保护包隔离；再保护打包跳过既有 `reprotect-*`。
 10. master/本机 store 所在卷 ≥80% 用量告警（`VolumeUsage` + `stats.volume_*`）。
 11. 再保护包独立保留：最新 4 份，多余进回收站。
+12. 旧 master 可达时升主差量镜像种子（`MirrorSeedService` + `seed: true` ACL）。

@@ -293,15 +293,18 @@
 
 {"op": "master.migrate"}
 → {"op": "result", "data": {"master": "<new>", "epoch": 3,
-    "old_master_reachable": true, "cursors": {...}, "broadcast_peers": 2}}
+    "old_master_reachable": true, "cursors": {...}, "broadcast_peers": 2,
+    "seeded_files": 12}}
 ```
 
 - `sync.cursors`：返回本机作为（或曾作）master 持有的各设备 `applied_seq` 全表。
 - `master.migrate`：请求**本机**执行升主编排（对端发起或本机 loopback）。
   1. 向旧 master 拉 `sync.cursors`；不可达则用本机游标账副本；
-  2. 种子合并（只进不退）→ 提升 `epoch` → 写本机 master 指针；
-  3. 向各 owner 广播 `master.pointer`；触发同步引擎差量重放。
+  2. **旧 master 可达时**：按设备列表差量 `list`/`read`（payload `seed: true`）拉取他端分区到本机（`MirrorSeedService`）；`seeded_files` 为成功写入数；
+  3. 种子合并（只进不退）→ 提升 `epoch` → 写本机 master 指针；
+  4. 向各 owner 广播 `master.pointer`；触发同步引擎差量重放。
   - **注意**：旧 master 不可达时只迁移游标，不搬运他端历史 blob；缺口依赖各端正式区后续推送（方案 §6.5）。
+  - `seed: true` 仅 owner 可读他端私有分区（attachments/backups）；用于升主种子，不替代导入授权。
 
 ### 10.2 指针广播与离线改指
 
