@@ -7,10 +7,11 @@ import 'package:path/path.dart' as p;
 
 import '../services/logger_service.dart';
 
-/// 本地内容寻址存储（docs/storage_protocol_spec.md §7，方案 §6.4）。
+/// 远端读缓存的内容寻址层（docs/storage_protocol_spec.md §7，方案 §6.4）。
 ///
 /// 布局：`<store>/.cas/blobs/<sha256>` + `.cas/index.json`。
-/// 内容按 hash 去重；`synced=false` 的 blob 不可淘汰（未同步数据保护）。
+/// 仅服务他端共享区读取；本机正式区是真实文件树，不经本类写入。
+/// `synced=false` 的 blob 不可 LRU 淘汰（防御性；生产读路径写入为 `synced: true`）。
 class LocalCas {
   LocalCas({required Directory storeRoot})
       : _blobsDir = Directory(p.join(storeRoot.path, '.cas', 'blobs')),
@@ -74,15 +75,6 @@ class LocalCas {
     return target;
   }
 
-  /// 标记同步状态（master ack 后转为可淘汰缓存）。
-  Future<void> markSynced(String sha256, bool synced) async {
-    final index = await _loadIndex();
-    final entry = index[sha256];
-    if (entry == null) return;
-    entry['synced'] = synced;
-    await _saveIndex();
-  }
-
   Future<void> touch(String sha256) async {
     final index = await _loadIndex();
     final entry = index[sha256];
@@ -102,7 +94,7 @@ class LocalCas {
     return total;
   }
 
-  /// LRU 淘汰至容量内：**只淘汰 synced 的 blob**（未同步不可淘汰，§6.4）。
+  /// LRU 淘汰至容量内：**只淘汰 synced 的 blob**。
   /// 返回释放字节数。
   Future<int> evict({int capBytes = defaultCapBytes}) async {
     final index = await _loadIndex();

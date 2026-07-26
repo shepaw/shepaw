@@ -2410,7 +2410,9 @@
   "storage_becomeMaster": "Make this device master",
   "storage_migratePick": "Pick the new master device",
   "storage_migrateConfirm": "Migrate master to {device}? Peers will delta-replay by cursor.",
+  "storage_migrateGapWarning": "Current master is offline: promotion only seeds cursors and does not copy other devices' historical blobs; the mirror may be incomplete. Prefer migrating while the old master is online.",
   "storage_migrateDone": "Master switched (epoch {epoch})",
+  "storage_migrateDoneGap": "Master switched (epoch {epoch}). Old master was unreachable; the mirror may be incomplete — confirm peers sync later.",
   "storage_migrateFailed": "Migration failed: {error}",
   "storage_reprotectNow": "Reprotect mirror tree now",
   "storage_reprotectDone": "Mirror reprotect done: {id}",
@@ -2421,6 +2423,11 @@
     }
   },
   "@storage_migrateDone": {
+    "placeholders": {
+      "epoch": { "type": "int" }
+    }
+  },
+  "@storage_migrateDoneGap": {
     "placeholders": {
       "epoch": { "type": "int" }
     }

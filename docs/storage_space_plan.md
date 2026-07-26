@@ -298,7 +298,6 @@ master 上的镜像树主要是各端本地数据的副本；为降低单点损�
 - **跨端读 owner 直读回退**（master 离线或镜像校验失败时向源设备 `meta`/`read`）——协议曾暗示、代码未做。
 - 升主前逐设备内容哈希门闩 / 旧 master 可达时的镜像种子拷贝。
 - master 磁盘 80% 用量告警；`commit.retention` 字段落地。
-- 删除未使用的 `LocalCas.markSynced` 或将其纳入明确语义（当前远端缓存写入即 `synced: true`）。
 - 快照差量化；回收站增强；`she.presence` 名单级；跨人 she 社交；DB 级多端互通（另案）。
 
 ## 附录 A. v1.1 相对 v1.0 的修订摘要

@@ -8708,11 +8708,23 @@ abstract class AppLocalizations {
   /// **'将 Master 迁移到 {device}？各端将按游标差量重放。'**
   String storage_migrateConfirm(String device);
 
+  /// No description provided for @storage_migrateGapWarning.
+  ///
+  /// In zh, this message translates to:
+  /// **'当前 Master 离线：升主只迁移游标，不搬运他端历史文件；镜像可能不完整。建议等旧 Master 在线后再迁移。'**
+  String get storage_migrateGapWarning;
+
   /// No description provided for @storage_migrateDone.
   ///
   /// In zh, this message translates to:
   /// **'Master 已切换（epoch {epoch}）'**
   String storage_migrateDone(int epoch);
+
+  /// No description provided for @storage_migrateDoneGap.
+  ///
+  /// In zh, this message translates to:
+  /// **'Master 已切换（epoch {epoch}）。旧 Master 当时不可达，镜像可能不完整，请确认各端稍后同步。'**
+  String storage_migrateDoneGap(int epoch);
 
   /// No description provided for @storage_migrateFailed.
   ///

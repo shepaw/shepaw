@@ -4764,8 +4764,17 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
+  String get storage_migrateGapWarning =>
+      '当前 Master 离线：升主只迁移游标，不搬运他端历史文件；镜像可能不完整。建议等旧 Master 在线后再迁移。';
+
+  @override
   String storage_migrateDone(int epoch) {
     return 'Master 已切换（epoch $epoch）';
+  }
+
+  @override
+  String storage_migrateDoneGap(int epoch) {
+    return 'Master 已切换（epoch $epoch）。旧 Master 当时不可达，镜像可能不完整，请确认各端稍后同步。';
   }
 
   @override

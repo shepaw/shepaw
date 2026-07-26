@@ -4948,8 +4948,17 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
+  String get storage_migrateGapWarning =>
+      'Current master is offline: promotion only seeds cursors and does not copy other devices\' historical blobs; the mirror may be incomplete. Prefer migrating while the old master is online.';
+
+  @override
   String storage_migrateDone(int epoch) {
     return 'Master switched (epoch $epoch)';
+  }
+
+  @override
+  String storage_migrateDoneGap(int epoch) {
+    return 'Master switched (epoch $epoch). Old master was unreachable; the mirror may be incomplete — confirm peers sync later.';
   }
 
   @override

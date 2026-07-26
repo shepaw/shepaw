@@ -397,30 +397,61 @@ class _StorageSpaceScreenState extends State<StorageSpaceScreen> {
 
   // ------------------------------------------------------------ M6 master 迁移
 
+  /// 旧 master ≠ 本机且当前不可达时，升主存在历史 blob 缺口风险（方案 §6.5）。
+  Future<bool> _oldMasterGapRisk() async {
+    final masterId = await StoreService.instance.masterDeviceId();
+    if (masterId == _selfId) return false;
+    return !await StoreService.instance.masterOnline();
+  }
+
+  Future<bool> _confirmMigrate(String deviceLabel) async {
+    final l10n = AppLocalizations.of(context);
+    final gapRisk = await _oldMasterGapRisk();
+    if (!mounted) return false;
+    return await showDialog<bool>(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(l10n.storage_migrateConfirm(deviceLabel)),
+                if (gapRisk) ...[
+                  const SizedBox(height: 12),
+                  Text(l10n.storage_migrateGapWarning),
+                ],
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(ctx).pop(false),
+                child: Text(l10n.common_cancel),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.of(ctx).pop(true),
+                child: Text(l10n.common_confirm),
+              ),
+            ],
+          ),
+        ) ??
+        false;
+  }
+
+  void _toastMigrateDone(AppLocalizations l10n, MigrationResult result) {
+    _toast(result.oldMasterReachable
+        ? l10n.storage_migrateDone(result.epoch)
+        : l10n.storage_migrateDoneGap(result.epoch));
+  }
+
   Future<void> _becomeMaster() async {
     final l10n = AppLocalizations.of(context);
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        content: Text(l10n.storage_migrateConfirm(l10n.storage_thisDevice)),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(false),
-            child: Text(l10n.common_cancel),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.of(ctx).pop(true),
-            child: Text(l10n.common_confirm),
-          ),
-        ],
-      ),
-    );
-    if (confirmed != true) return;
+    final confirmed = await _confirmMigrate(l10n.storage_thisDevice);
+    if (!confirmed) return;
     setState(() => _busy = true);
     try {
       final result = await MasterMigrationService.instance.promoteSelf();
       await _refresh();
-      _toast(l10n.storage_migrateDone(result.epoch));
+      _toastMigrateDone(l10n, result);
     } catch (e) {
       _toast(l10n.storage_migrateFailed('$e'));
     } finally {
@@ -455,30 +486,15 @@ class _StorageSpaceScreenState extends State<StorageSpaceScreen> {
     );
     if (picked == null || !mounted) return;
     final label = choices.firstWhere((c) => c.$1 == picked).$2;
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        content: Text(l10n.storage_migrateConfirm(label)),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(false),
-            child: Text(l10n.common_cancel),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.of(ctx).pop(true),
-            child: Text(l10n.common_confirm),
-          ),
-        ],
-      ),
-    );
-    if (confirmed != true) return;
+    final confirmed = await _confirmMigrate(label);
+    if (!confirmed) return;
     setState(() => _busy = true);
     try {
       final result =
           await MasterMigrationService.instance.requestPromote(picked);
       await _refresh();
       if (result != null) {
-        _toast(l10n.storage_migrateDone(result.epoch));
+        _toastMigrateDone(l10n, result);
       }
     } catch (e) {
       _toast(l10n.storage_migrateFailed('$e'));
