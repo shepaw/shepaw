@@ -26,6 +26,7 @@ class RemoteReadResult {
 /// 1. 有缓存 → meta 比对 hash：一致零内容流量；不一致重下并更新缓存。
 /// 2. 无缓存且在线 → 拉取并写缓存。
 /// 3. 离线：有缓存标注 stale 使用；无缓存报错。
+/// 4. `not_found`：有限退避重试（URI 可能先于镜像送达 master，方案 §12）。
 ///
 /// 缓存布局：`<store>/.cache/<device>/<space>/<path>`（硬链接到 CAS blob）
 /// + `<path>.meta.json`（hash/size/fetched_at）。
@@ -34,6 +35,10 @@ class RemoteReadService {
   static final RemoteReadService instance = RemoteReadService._();
 
   static const _tag = 'RemoteRead';
+
+  /// not_found 最多额外重试次数（总尝试 = 1 + 本值）。
+  static const maxNotFoundRetries = 4;
+
   final _log = LoggerService();
 
   LocalCas? _cas;
@@ -42,6 +47,9 @@ class RemoteReadService {
   /// 测试注入点：自定义 server 调用（默认经 StoreService 到 master）。
   Future<Map<String, dynamic>?> Function(String serverDeviceId, StoreFrame frame)?
       serverCaller;
+
+  /// 测试注入：重试等待；生产默认 200ms × 2^attempt，上限 2s。
+  Future<void> Function(int attempt)? retryWait;
 
   Future<LocalCas> _localCas() async {
     final existing = _cas;
@@ -58,8 +66,52 @@ class RemoteReadService {
     return StoreService.instance.callPeer(serverDeviceId, frame);
   }
 
+  Future<void> _waitBeforeRetry(int attempt) async {
+    final custom = retryWait;
+    if (custom != null) {
+      await custom(attempt);
+      return;
+    }
+    final ms = 200 * (1 << attempt);
+    await Future<void>.delayed(
+        Duration(milliseconds: ms > 2000 ? 2000 : ms));
+  }
+
   /// 缓存校验读取。master 无缓存且离线时抛 StateError('master_offline')。
+  /// 短暂 not_found（镜像未送达）会退避重试。
   Future<RemoteReadResult> readVerified({
+    required String serverDeviceId,
+    required String deviceId,
+    required String space,
+    required String path,
+    String? grantId,
+  }) async {
+    Object? lastError;
+    for (var attempt = 0; attempt <= maxNotFoundRetries; attempt++) {
+      try {
+        return await _readVerifiedOnce(
+          serverDeviceId: serverDeviceId,
+          deviceId: deviceId,
+          space: space,
+          path: path,
+          grantId: grantId,
+        );
+      } on StoreException catch (e) {
+        lastError = e;
+        if (e.code != StoreError.notFound || attempt == maxNotFoundRetries) {
+          rethrow;
+        }
+        _log.info(
+            'not_found retry ${attempt + 1}/$maxNotFoundRetries '
+            'for $deviceId/$space/$path',
+            tag: _tag);
+        await _waitBeforeRetry(attempt);
+      }
+    }
+    throw lastError!;
+  }
+
+  Future<RemoteReadResult> _readVerifiedOnce({
     required String serverDeviceId,
     required String deviceId,
     required String space,
@@ -93,7 +145,11 @@ class RemoteReadService {
       throw StateError('master_offline');
     }
     if (metaRes.containsKey('_error')) {
-      throw StateError('meta failed: ${metaRes['_error']}');
+      final code = metaRes['_error'] as String;
+      if (code == StoreError.notFound) {
+        throw StoreException(StoreError.notFound, path);
+      }
+      throw StateError('meta failed: $code');
     }
 
     final remoteHash = metaRes['sha256'] as String;

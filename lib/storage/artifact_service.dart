@@ -1,4 +1,3 @@
-import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:crypto/crypto.dart' as crypto;
@@ -90,6 +89,7 @@ class ArtifactService {
 
   /// 写入产物并返回单行 Markdown 引用（§6.3 引用表达格式）。
   ///
+  /// 本地优先：经 [LocalStore] 写入自己设备目录并入同步队列；
   /// [description] 一句话描述（可选）；[producer] 产出者名（如 agent 名）。
   Future<String> writeArtifact({
     required String taskId,
@@ -105,45 +105,28 @@ class ArtifactService {
     final relPath = uri.storePath;
     final hash = crypto.sha256.convert(content).toString();
 
-    // 统一写入路径：经 store.* 写自己设备目录（loopback）
-    final begin = await StoreService.instance.call(StoreFrame(
-        op: StoreOp.writeBegin,
-        payload: {
-          'space': StoreSpace.artifacts,
-          'path': relPath,
-          'size': content.length,
-          'sha256': hash,
-        }));
-    if (begin == null || begin.containsKey('_error')) {
-      throw StateError('write.begin failed: ${begin?['_error']}');
-    }
-    final uploadId = begin['upload_id'] as String;
-    var offset = begin['received'] as int? ?? 0;
+    // 本地优先（与 AttachmentService 同路径）：正式区 + SyncJournal，后台镜像
+    final store = await StoreService.instance.localStore();
+    final (uploadId, _) = await store.writeBegin(
+      deviceId: deviceId,
+      space: StoreSpace.artifacts,
+      path: relPath,
+      size: content.length,
+      sha256: hash,
+    );
+    var offset = 0;
     while (offset < content.length) {
       final end = (offset + LocalStore.maxReadChunk) > content.length
           ? content.length
           : offset + LocalStore.maxReadChunk;
-      final chunk = await StoreService.instance.call(StoreFrame(
-          op: StoreOp.writeChunk,
-          payload: {
-            'space': StoreSpace.artifacts,
-            'upload_id': uploadId,
-            'offset': offset,
-            'data': base64Encode(content.sublist(offset, end)),
-          }));
-      if (chunk == null || chunk.containsKey('_error')) {
-        throw StateError('write.chunk failed: ${chunk?['_error']}');
-      }
-      offset = chunk['received'] as int? ?? end;
+      await store.writeChunk(deviceId, StoreSpace.artifacts, uploadId, offset,
+          content.sublist(offset, end));
+      offset = end;
     }
-    final commit = await StoreService.instance.call(StoreFrame(
-        op: StoreOp.commit,
-        payload: {
-          'space': StoreSpace.artifacts,
-          'upload_ids': [uploadId],
-        }));
-    if (commit == null || commit.containsKey('_error')) {
-      throw StateError('commit failed: ${commit?['_error']}');
+    final (committed, failed) =
+        await store.commit(deviceId, StoreSpace.artifacts, [uploadId]);
+    if (failed.isNotEmpty || committed.isEmpty) {
+      throw StateError('artifact commit failed: $failed');
     }
     _log.info('artifact written: $uri (${content.length} bytes)', tag: _tag);
 

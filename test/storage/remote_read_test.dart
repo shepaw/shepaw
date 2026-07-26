@@ -22,6 +22,7 @@ void main() {
 
   tearDown(() {
     RemoteReadService.instance.serverCaller = null;
+    RemoteReadService.instance.retryWait = null;
   });
 
   Uint8List bytesOf(String s) => Uint8List.fromList(utf8.encode(s));
@@ -179,6 +180,55 @@ void main() {
             space: 'files',
             path: 'doc/never.txt'),
         throwsStateError,
+      );
+    });
+
+    test('not_found 短暂缺失后重试成功', () async {
+      RemoteReadService.instance.retryWait = (_) async {};
+      var metaCalls = 0;
+      final content = bytesOf('appears after sync');
+      await serverWrite('doc/lag.txt', content);
+
+      // 前两次 meta 假装尚未镜像到 master
+      final realCaller = RemoteReadService.instance.serverCaller!;
+      RemoteReadService.instance.serverCaller =
+          (serverDeviceId, frame) async {
+        if (frame.op == StoreOp.meta) {
+          metaCalls++;
+          if (metaCalls <= 2) {
+            return <String, dynamic>{'_error': StoreError.notFound};
+          }
+        }
+        return realCaller(serverDeviceId, frame);
+      };
+
+      final r = await RemoteReadService.instance.readVerified(
+          serverDeviceId: server,
+          deviceId: device,
+          space: 'files',
+          path: 'doc/lag.txt');
+      expect(r.bytes, content);
+      expect(metaCalls, greaterThanOrEqualTo(3));
+    });
+
+    test('not_found 耗尽重试后抛出', () async {
+      RemoteReadService.instance.retryWait = (_) async {};
+      RemoteReadService.instance.serverCaller =
+          (serverDeviceId, frame) async {
+        if (frame.op == StoreOp.meta) {
+          return <String, dynamic>{'_error': StoreError.notFound};
+        }
+        return <String, dynamic>{'_error': 'unsupported'};
+      };
+
+      expect(
+        () => RemoteReadService.instance.readVerified(
+            serverDeviceId: server,
+            deviceId: device,
+            space: 'files',
+            path: 'doc/missing.txt'),
+        throwsA(isA<StoreException>()
+            .having((e) => e.code, 'code', StoreError.notFound)),
       );
     });
   });
