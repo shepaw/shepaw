@@ -99,7 +99,7 @@
 - **GFS 在快照所属设备本机执行**（`ScheduledSnapshotService` + `selectGfs`），删除经同步队列镜像到 master——**不是** master 代管剪枝。`commit.retention` 字段保留为可选扩展，当前实现不解析。
 - 无 master 时快照天然留存本地（本地优先的必然结果）。
 - **兜底导出**（决策 3）：本机目录 / WebDAV 降级为**纯手动导出功能**，不占任何自动路径；格式相同（附件随导出打包）。
-- 移动端触发：App 启动 + 运行中 6h Timer + **回前台**（`AppLifecycleService.onResume`）+ **WiFi/以太网稳定**（`NetworkMonitorService.onNetworkSettled`，避免蜂窝灌库）。系统级 BGAppRefresh / WorkManager 仍为后续可选（`ForegroundTaskService` 仅 Agent 保活，不接入日快照）。连续失败 ≥3 天显著告警。
+- 移动端触发：App 启动 + 运行中 6h Timer + **回前台**（`AppLifecycleService.onResume`）+ **WiFi/以太网稳定**（`NetworkMonitorService.onNetworkSettled`，避免蜂窝灌库）。系统级 BGAppRefresh / WorkManager 仍为后续可选（`ForegroundTaskService` 仅 Agent 保活，不接入日快照）。距上次成功（或从未成功则距启用）超过 **3 天** 显著告警（按墙钟，非同日失败次数）。
 
 ### 5.2 快照格式
 
@@ -291,7 +291,7 @@ master 上的镜像树主要是各端本地数据的副本；为降低单点损�
 - **重装丢身份**：全新安装=新 device_id，旧目录需经 5.4 授权导入；开启快照时提示「身份随快照保存，重装后请先恢复」。
 - **同路径覆盖**：后写覆盖先写，旧版进回收站 30 天可还原；产物按 task_id 归档降低撞名。
 - **恢复覆盖风险**：恢复前强制安全快照 + 界面明确替换语义。
-- **快照静默失败**：连续失败 ≥3 天显著告警，引导启用常开节点。
+- **快照静默失败**：距上次成功（或从未成功则距启用）超过 3 天且已缓存密钥 → 显著告警（`ScheduledSnapshotStatus.needsAttention`），引导检查存储或手动快照；常开节点（M7）降低漏跑风险。
 - **master 磁盘膨胀**：无自动保留期（决策 1）——手删 + 回收站 30 天；GFS 仅本机 DB `backups`（不含 `reprotect-*` 再保护包）；**卷用量 ≥80%** 告警（`stats.volume_warn`）。
 - **再保护与 DB 快照隔离**：`listSnapshots` / GFS 跳过 `reprotect-*`；再保护打包时也不再打入既有 `reprotect-*`；写入后 **只保留最新 4 份**（`pruneReprotect`）。
 - **密码遗忘/变更**：强制验密 + 解密自检；改密自动重加密新快照、旧快照支持历史密码。
@@ -310,7 +310,7 @@ master 上的镜像树主要是各端本地数据的副本；为降低单点损�
 2. CAS 降级为远端读缓存；本地写为真实文件树 + SyncJournal。
 3. GFS 改为各端本机执行，经 sync 镜像删除。
 4. 迁移去掉「哈希一致才改指」；写明旧 master 不可达时的 blob 缺口。
-5. 告警阈值对齐实现（未同步 200MB）；80% 磁盘告警降为后续。
+5. 告警阈值对齐实现（未同步 200MB）；卷用量 ≥80% 告警见附录 A.10。
 6. M7 补无头管理面验收；里程碑表标注代码状态。
 7. §8 明确逻辑在 `she_network/`，与存储解耦、管理入口同页。
 8. 跨端读增加 owner 直读回退（master `not_found`/离线无缓存）。
@@ -318,4 +318,4 @@ master 上的镜像树主要是各端本地数据的副本；为降低单点损�
 10. master/本机 store 所在卷 ≥80% 用量告警（`VolumeUsage` + `stats.volume_*`）。
 11. 再保护包独立保留：最新 4 份，多余进回收站。
 12. 旧 master 可达时升主差量镜像种子（`MirrorSeedService` + `seed: true` ACL）。
-13. 升主前内容哈希门闩（`MirrorHashGate` 软校验；`requireHashMatch` 可选硬阻断）。
+14. 自动快照告警按墙钟 3 天（成功或启用锚点），与同日失败次数解耦。

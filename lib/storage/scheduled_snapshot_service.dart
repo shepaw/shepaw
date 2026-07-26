@@ -22,6 +22,7 @@ class ScheduledSnapshotStatus {
     required this.lastSuccessMs,
     required this.consecutiveFailures,
     required this.keyCached,
+    required this.enabledAtMs,
   });
 
   final bool enabled;
@@ -31,15 +32,21 @@ class ScheduledSnapshotStatus {
   /// 自动快照密钥（缓存的密码哈希 H）是否就位。
   final bool keyCached;
 
-  /// 连续失败 ≥3 天或从未成功且已启用超过 3 天 → 显著告警（§5.1）。
-  bool get needsAttention {
+  /// 最近一次开启自动快照的时间（ms）；用于「从未成功」锚点。
+  final int enabledAtMs;
+
+  /// 距上次成功（或从未成功则距启用）超过 3 天 → 显著告警（§5.1 / §12）。
+  ///
+  /// 按墙钟毫秒差计算，与「连续失败次数」解耦（同日多次触发不会误报）。
+  bool needsAttentionAt([DateTime? clock]) {
     if (!enabled || !keyCached) return false;
-    if (consecutiveFailures >= 3) return true;
-    if (lastSuccessMs == 0) return false;
-    final days =
-        DateTime.now().millisecondsSinceEpoch - lastSuccessMs;
-    return days > const Duration(days: 3).inMilliseconds;
+    final nowMs = (clock ?? DateTime.now()).millisecondsSinceEpoch;
+    final anchorMs = lastSuccessMs > 0 ? lastSuccessMs : enabledAtMs;
+    if (anchorMs <= 0) return false;
+    return nowMs - anchorMs > const Duration(days: 3).inMilliseconds;
   }
+
+  bool get needsAttention => needsAttentionAt();
 }
 
 /// 定期快照服务（docs/storage_space_plan.md §5.1，M3）。
@@ -64,6 +71,7 @@ class ScheduledSnapshotService {
 
   static const _tag = 'ScheduledSnapshot';
   static const _enabledKey = 'storage.snapshot.enabled';
+  static const _enabledAtKey = 'storage.snapshot.enabled_at_ms';
   static const _lastSuccessKey = 'storage.snapshot.last_success_ms';
   static const _failuresKey = 'storage.snapshot.consecutive_failures';
   static const _passwordChangedAtKey = 'storage.password_changed_at';
@@ -84,6 +92,7 @@ class ScheduledSnapshotService {
 
   Future<void> ensureStarted() async {
     if (_timer != null) return;
+    await _ensureEnabledAt();
     // 改密 → 新密钥全量快照（§5.2）
     _pwSub ??= PasswordService().passwordChangedEvents.listen((newPassword) {
       unawaited(onPasswordChanged(newPassword));
@@ -226,6 +235,7 @@ class ScheduledSnapshotService {
       lastSuccessMs: await _lastSuccessMs(),
       consecutiveFailures: await _failures(),
       keyCached: await SnapshotCrypto.cachedPasswordHash() != null,
+      enabledAtMs: await _ensureEnabledAt(),
     );
   }
 
@@ -238,6 +248,10 @@ class ScheduledSnapshotService {
   Future<void> setEnabled(bool enabled) async {
     final db = LocalDatabaseService();
     await db.setUserValue(_enabledKey, enabled ? 'true' : 'false');
+    if (enabled) {
+      await db.setUserValue(
+          _enabledAtKey, '${DateTime.now().millisecondsSinceEpoch}');
+    }
   }
 
   // ────────────────────────────── KV ──
@@ -255,6 +269,18 @@ class ScheduledSnapshotService {
   Future<int> _failures() async {
     final v = await LocalDatabaseService().getUserValue(_failuresKey);
     return int.tryParse(v ?? '') ?? 0;
+  }
+
+  /// 读取启用时间；缺省时为已开启实例回填「现在」（升级兼容，避免立刻误报）。
+  Future<int> _ensureEnabledAt() async {
+    final db = LocalDatabaseService();
+    final raw = await db.getUserValue(_enabledAtKey);
+    final existing = int.tryParse(raw ?? '') ?? 0;
+    if (existing > 0) return existing;
+    if (!await _isEnabled()) return 0;
+    final now = DateTime.now().millisecondsSinceEpoch;
+    await db.setUserValue(_enabledAtKey, '$now');
+    return now;
   }
 
   Future<void> _recordSuccess() async {

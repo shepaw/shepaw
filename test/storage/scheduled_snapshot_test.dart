@@ -155,6 +155,78 @@ void main() {
       expect(status.keyCached, isTrue); // 改密流程已缓存
       expect(status.consecutiveFailures, 0);
       expect(status.needsAttention, isFalse);
+      expect(status.enabledAtMs, greaterThan(0));
+    });
+
+    test('needsAttention：从未成功且启用超 3 天 → 告警', () {
+      final enabledAt = DateTime.now()
+          .subtract(const Duration(days: 4))
+          .millisecondsSinceEpoch;
+      final status = ScheduledSnapshotStatus(
+        enabled: true,
+        lastSuccessMs: 0,
+        consecutiveFailures: 0,
+        keyCached: true,
+        enabledAtMs: enabledAt,
+      );
+      expect(status.needsAttention, isTrue);
+      expect(
+          status.needsAttentionAt(
+              DateTime.fromMillisecondsSinceEpoch(enabledAt)
+                  .add(const Duration(days: 2))),
+          isFalse);
+    });
+
+    test('needsAttention：上次成功超 3 天 → 告警', () {
+      final last = DateTime.now()
+          .subtract(const Duration(days: 4))
+          .millisecondsSinceEpoch;
+      final status = ScheduledSnapshotStatus(
+        enabled: true,
+        lastSuccessMs: last,
+        consecutiveFailures: 0,
+        keyCached: true,
+        enabledAtMs: last - const Duration(days: 30).inMilliseconds,
+      );
+      expect(status.needsAttention, isTrue);
+    });
+
+    test('needsAttention：同日连续失败次数不触发告警', () {
+      final recent = DateTime.now()
+          .subtract(const Duration(hours: 1))
+          .millisecondsSinceEpoch;
+      final status = ScheduledSnapshotStatus(
+        enabled: true,
+        lastSuccessMs: recent,
+        consecutiveFailures: 5,
+        keyCached: true,
+        enabledAtMs: recent,
+      );
+      expect(status.needsAttention, isFalse);
+    });
+
+    test('needsAttention：无密钥或禁用不告警', () {
+      final old = DateTime.now()
+          .subtract(const Duration(days: 10))
+          .millisecondsSinceEpoch;
+      expect(
+          ScheduledSnapshotStatus(
+            enabled: true,
+            lastSuccessMs: old,
+            consecutiveFailures: 0,
+            keyCached: false,
+            enabledAtMs: old,
+          ).needsAttention,
+          isFalse);
+      expect(
+          ScheduledSnapshotStatus(
+            enabled: false,
+            lastSuccessMs: old,
+            consecutiveFailures: 0,
+            keyCached: true,
+            enabledAtMs: old,
+          ).needsAttention,
+          isFalse);
     });
   });
 }
