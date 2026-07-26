@@ -89,6 +89,7 @@ void main() {
       expect(result.epoch, greaterThan(0));
       expect(result.oldMasterReachable, isFalse);
       expect(result.seededFiles, 0);
+      expect(result.hashGate.ran, isFalse);
       expect(await StoreService.instance.isMaster(), isTrue);
     });
   });

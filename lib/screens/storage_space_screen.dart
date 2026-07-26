@@ -438,9 +438,16 @@ class _StorageSpaceScreenState extends State<StorageSpaceScreen> {
   }
 
   void _toastMigrateDone(AppLocalizations l10n, MigrationResult result) {
-    _toast(result.oldMasterReachable
-        ? l10n.storage_migrateDone(result.epoch)
-        : l10n.storage_migrateDoneGap(result.epoch));
+    if (!result.oldMasterReachable) {
+      _toast(l10n.storage_migrateDoneGap(result.epoch));
+      return;
+    }
+    if (result.hashGate.ran && !result.hashGate.ok) {
+      _toast(l10n.storage_migrateDoneHashMismatch(
+          result.epoch, result.hashGate.mismatches.length));
+      return;
+    }
+    _toast(l10n.storage_migrateDone(result.epoch));
   }
 
   Future<void> _becomeMaster() async {

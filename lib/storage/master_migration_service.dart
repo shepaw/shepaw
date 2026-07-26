@@ -6,6 +6,7 @@ import '../services/local_database_service.dart';
 import '../services/logger_service.dart';
 import 'device_cursor_store.dart';
 import 'device_identity.dart';
+import 'mirror_hash_gate.dart';
 import 'mirror_reprotect_service.dart';
 import 'mirror_seed_service.dart';
 import 'store_protocol.dart';
@@ -21,7 +22,8 @@ class MigrationResult {
     required this.seededCursors,
     required this.broadcastPeers,
     this.seededFiles = 0,
-  });
+    HashGateResult? hashGate,
+  }) : hashGate = hashGate ?? HashGateResult.skipped();
 
   final String newMasterId;
   final int epoch;
@@ -31,6 +33,9 @@ class MigrationResult {
 
   /// 从旧 master 拷贝到本机的文件数（不可达时为 0）。
   final int seededFiles;
+
+  /// 升主前内容哈希门闩（旧 master 不可达时 [HashGateResult.ran] == false）。
+  final HashGateResult hashGate;
 }
 
 /// master 迁移编排（docs/storage_space_plan.md §6.5，M6）。
@@ -38,10 +43,11 @@ class MigrationResult {
 /// 流程：
 /// 1. 新 master（本机）向旧 master 拉 `sync.cursors`；不可达则用本机游标账副本；
 /// 2. 旧 master 可达时，按游标设备列表差量拉取镜像文件到本机（§6.5 种子拷贝）；
-/// 3. 种子合并进本机 [DeviceCursorStore]；
-/// 4. 提升 epoch、写本机 master 指针；
-/// 5. 向各 owner 端广播 `master.pointer`（无 req_id）；
-/// 6. 触发 [SyncEngine.syncNow]；可选再保护镜像树。
+/// 3. 种子后跑内容哈希门闩（软校验，默认不阻断）；
+/// 4. 种子合并进本机 [DeviceCursorStore]；
+/// 5. 提升 epoch、写本机 master 指针；
+/// 6. 向各 owner 端广播 `master.pointer`（无 req_id）；
+/// 7. 触发 [SyncEngine.syncNow]；可选再保护镜像树。
 class MasterMigrationService {
   MasterMigrationService._();
   static final MasterMigrationService instance = MasterMigrationService._();
@@ -54,7 +60,12 @@ class MasterMigrationService {
   final _manager = PeerConnectionManager.instance;
 
   /// 本机升为 master（方案 §6.5：新 master 驱动）。
-  Future<MigrationResult> promoteSelf({bool reprotect = true}) async {
+  ///
+  /// [requireHashMatch] 为 true 且门闩发现缺口时抛错、不改指（硬门闩，默认关）。
+  Future<MigrationResult> promoteSelf({
+    bool reprotect = true,
+    bool requireHashMatch = false,
+  }) async {
     final self = await DeviceIdentity.deviceId();
     final oldMaster = await StoreService.instance.masterDeviceId();
     final store = await StoreService.instance.localStore();
@@ -63,6 +74,7 @@ class MasterMigrationService {
     var reachable = false;
     var seed = <String, int>{};
     var seededFiles = 0;
+    var hashGate = HashGateResult.skipped();
     if (oldMaster != self) {
       final res = await StoreService.instance.callPeer(
         oldMaster,
@@ -91,6 +103,15 @@ class MasterMigrationService {
           deviceIds: deviceIds,
           store: store,
         );
+        hashGate = await MirrorHashGate.instance.verify(
+          oldMasterId: oldMaster,
+          deviceIds: deviceIds,
+          store: store,
+        );
+        if (requireHashMatch && !hashGate.ok) {
+          throw StateError(
+              'hash gate failed: ${hashGate.mismatches.length} mismatches');
+        }
       } else {
         seed = await cursors.all();
         _log.warning(
@@ -119,7 +140,8 @@ class MasterMigrationService {
 
     _log.info(
         'promoted self as master epoch=$epoch '
-        '(old=$oldMaster reachable=$reachable seededFiles=$seededFiles)',
+        '(old=$oldMaster reachable=$reachable seededFiles=$seededFiles '
+        'hashOk=${hashGate.ok})',
         tag: _tag);
     return MigrationResult(
       newMasterId: self,
@@ -128,6 +150,7 @@ class MasterMigrationService {
       seededCursors: merged,
       broadcastPeers: broadcast,
       seededFiles: seededFiles,
+      hashGate: hashGate,
     );
   }
 
@@ -150,6 +173,36 @@ class MasterMigrationService {
       epoch: epoch,
       fromDeviceId: targetDeviceId,
     );
+    final gateRaw = res['hash_gate'];
+    HashGateResult? gate;
+    if (gateRaw is Map) {
+      final mismatches = <HashMismatch>[];
+      for (final m in (gateRaw['mismatches'] as List? ?? const [])) {
+        if (m is! Map) continue;
+        mismatches.add(HashMismatch(
+          deviceId: m['device'] as String? ?? '',
+          space: m['space'] as String? ?? '',
+          path: m['path'] as String? ?? '',
+          kind: m['kind'] as String? ?? '',
+          remoteSha: m['remote_sha256'] as String?,
+          localSha: m['local_sha256'] as String?,
+        ));
+      }
+      final devices = <DeviceHashDigest>[];
+      for (final d in (gateRaw['devices'] as List? ?? const [])) {
+        if (d is! Map) continue;
+        devices.add(DeviceHashDigest(
+          deviceId: d['device'] as String? ?? '',
+          remoteDigest: d['remote_digest'] as String? ?? '',
+          localDigest: d['local_digest'] as String? ?? '',
+        ));
+      }
+      gate = HashGateResult(
+        ran: gateRaw['ran'] as bool? ?? false,
+        devices: devices,
+        mismatches: mismatches,
+      );
+    }
     return MigrationResult(
       newMasterId: master,
       epoch: epoch,
@@ -157,6 +210,8 @@ class MasterMigrationService {
       seededCursors: (res['cursors'] as Map? ?? const {})
           .map((k, v) => MapEntry(k as String, (v as num).toInt())),
       broadcastPeers: res['broadcast_peers'] as int? ?? 0,
+      seededFiles: res['seeded_files'] as int? ?? 0,
+      hashGate: gate,
     );
   }
 

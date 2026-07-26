@@ -4778,6 +4778,11 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
+  String storage_migrateDoneHashMismatch(int epoch, int count) {
+    return 'Master 已切换（epoch $epoch）。内容对账发现 $count 处差异，镜像可能不完整。';
+  }
+
+  @override
   String storage_migrateFailed(String error) {
     return '迁移失败：$error';
   }

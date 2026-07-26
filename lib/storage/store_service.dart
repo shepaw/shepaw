@@ -16,6 +16,7 @@ import 'device_identity.dart';
 import 'import_auth_service.dart';
 import 'local_store.dart';
 import 'master_migration_service.dart';
+import 'mirror_hash_gate.dart';
 import 'store_protocol.dart';
 import 'sync_engine.dart';
 import 'volume_usage.dart';
@@ -389,8 +390,16 @@ class StoreService {
       switch (frame.op) {
         case StoreOp.list:
           final device = frame.device ?? callerDeviceId;
-          final entries = await store.list(device, frame.space!,
-              prefix: frame.payload['path'] as String?);
+          final rawLimit = frame.payload['limit'] as int?;
+          final limit = rawLimit == null
+              ? 1000
+              : rawLimit.clamp(1, MirrorHashGate.listLimit);
+          final entries = await store.list(
+            device,
+            frame.space!,
+            prefix: frame.payload['path'] as String?,
+            limit: limit,
+          );
           return <String, dynamic>{
             'entries': [for (final e in entries) e.toJson()],
             'next_cursor': null,
@@ -538,6 +547,7 @@ class StoreService {
             'cursors': result.seededCursors,
             'broadcast_peers': result.broadcastPeers,
             'seeded_files': result.seededFiles,
+            'hash_gate': result.hashGate.toJson(),
           };
 
         // ── 换机导入授权（v2，§5.4）──

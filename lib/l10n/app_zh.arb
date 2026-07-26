@@ -2898,6 +2898,7 @@
   "storage_migrateGapWarning": "当前 Master 离线：升主只迁移游标，不搬运他端历史文件；镜像可能不完整。建议等旧 Master 在线后再迁移。",
   "storage_migrateDone": "Master 已切换（epoch {epoch}）",
   "storage_migrateDoneGap": "Master 已切换（epoch {epoch}）。旧 Master 当时不可达，镜像可能不完整，请确认各端稍后同步。",
+  "storage_migrateDoneHashMismatch": "Master 已切换（epoch {epoch}）。内容对账发现 {count} 处差异，镜像可能不完整。",
   "storage_migrateFailed": "迁移失败：{error}",
   "storage_reprotectNow": "立即再保护镜像树",
   "storage_reprotectDone": "镜像再保护已完成：{id}",
@@ -2915,6 +2916,12 @@
   "@storage_migrateDoneGap": {
     "placeholders": {
       "epoch": { "type": "int" }
+    }
+  },
+  "@storage_migrateDoneHashMismatch": {
+    "placeholders": {
+      "epoch": { "type": "int" },
+      "count": { "type": "int" }
     }
   },
   "@storage_migrateFailed": {

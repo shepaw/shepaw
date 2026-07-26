@@ -4962,6 +4962,11 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
+  String storage_migrateDoneHashMismatch(int epoch, int count) {
+    return 'Master switched (epoch $epoch). Content check found $count mismatches; the mirror may be incomplete.';
+  }
+
+  @override
   String storage_migrateFailed(String error) {
     return 'Migration failed: $error';
   }

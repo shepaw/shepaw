@@ -294,17 +294,20 @@
 {"op": "master.migrate"}
 → {"op": "result", "data": {"master": "<new>", "epoch": 3,
     "old_master_reachable": true, "cursors": {...}, "broadcast_peers": 2,
-    "seeded_files": 12}}
+    "seeded_files": 12, "hash_gate": {"ran": true, "ok": true,
+      "devices": [...], "mismatches": [], "mismatch_count": 0}}}
 ```
 
 - `sync.cursors`：返回本机作为（或曾作）master 持有的各设备 `applied_seq` 全表。
 - `master.migrate`：请求**本机**执行升主编排（对端发起或本机 loopback）。
   1. 向旧 master 拉 `sync.cursors`；不可达则用本机游标账副本；
   2. **旧 master 可达时**：按设备列表差量 `list`/`read`（payload `seed: true`）拉取他端分区到本机（`MirrorSeedService`）；`seeded_files` 为成功写入数；
-  3. 种子合并（只进不退）→ 提升 `epoch` → 写本机 master 指针；
-  4. 向各 owner 广播 `master.pointer`；触发同步引擎差量重放。
+  3. **内容哈希门闩**（`MirrorHashGate`）：对比旧 master 与本机 path→sha256；`hash_gate` 摘要写入结果；默认软校验不阻断；调用方可设硬阻断；
+  4. 种子合并（只进不退）→ 提升 `epoch` → 写本机 master 指针；
+  5. 向各 owner 广播 `master.pointer`；触发同步引擎差量重放。
   - **注意**：旧 master 不可达时只迁移游标，不搬运他端历史 blob；缺口依赖各端正式区后续推送（方案 §6.5）。
   - `seed: true` 仅 owner 可读他端私有分区（attachments/backups）；用于升主种子，不替代导入授权。
+  - `list.limit` 可选（默认 1000，上限 50000）；种子/门闩使用上限以免截断假缺口。
 
 ### 10.2 指针广播与离线改指
 

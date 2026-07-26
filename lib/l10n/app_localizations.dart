@@ -8726,6 +8726,12 @@ abstract class AppLocalizations {
   /// **'Master 已切换（epoch {epoch}）。旧 Master 当时不可达，镜像可能不完整，请确认各端稍后同步。'**
   String storage_migrateDoneGap(int epoch);
 
+  /// No description provided for @storage_migrateDoneHashMismatch.
+  ///
+  /// In zh, this message translates to:
+  /// **'Master 已切换（epoch {epoch}）。内容对账发现 {count} 处差异，镜像可能不完整。'**
+  String storage_migrateDoneHashMismatch(int epoch, int count);
+
   /// No description provided for @storage_migrateFailed.
   ///
   /// In zh, this message translates to:

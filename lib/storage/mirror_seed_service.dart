@@ -6,6 +6,7 @@ import 'package:crypto/crypto.dart' as crypto;
 import '../services/logger_service.dart';
 import 'device_identity.dart';
 import 'local_store.dart';
+import 'mirror_hash_gate.dart';
 import 'store_protocol.dart';
 import 'store_service.dart';
 
@@ -76,6 +77,7 @@ class MirrorSeedService {
         'device': deviceId,
         'path': '',
         'seed': true,
+        'limit': MirrorHashGate.listLimit,
       }),
     );
     if (listRes == null || listRes.containsKey('_error')) {

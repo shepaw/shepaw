@@ -2413,6 +2413,7 @@
   "storage_migrateGapWarning": "Current master is offline: promotion only seeds cursors and does not copy other devices' historical blobs; the mirror may be incomplete. Prefer migrating while the old master is online.",
   "storage_migrateDone": "Master switched (epoch {epoch})",
   "storage_migrateDoneGap": "Master switched (epoch {epoch}). Old master was unreachable; the mirror may be incomplete — confirm peers sync later.",
+  "storage_migrateDoneHashMismatch": "Master switched (epoch {epoch}). Content check found {count} mismatches; the mirror may be incomplete.",
   "storage_migrateFailed": "Migration failed: {error}",
   "storage_reprotectNow": "Reprotect mirror tree now",
   "storage_reprotectDone": "Mirror reprotect done: {id}",
@@ -2430,6 +2431,12 @@
   "@storage_migrateDoneGap": {
     "placeholders": {
       "epoch": { "type": "int" }
+    }
+  },
+  "@storage_migrateDoneHashMismatch": {
+    "placeholders": {
+      "epoch": { "type": "int" },
+      "count": { "type": "int" }
     }
   },
   "@storage_migrateFailed": {
