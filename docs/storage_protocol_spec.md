@@ -1,6 +1,6 @@
 # ShePaw 存储空间协议规范（store.*）
 
-> 版本：v4（含 M6 master 迁移；M7 Go 节点见 `storage-node/`；M8 memory/she 见 §13）
+> 版本：v4.1（与方案 v1.1 对齐：跨端读权威=master；CAS=远端读缓存；GFS 本机执行）
 > 状态：Dart 与 Go 实现的权威定义。上游设计：`docs/storage_space_plan.md`。
 > 共享 fixture：`docs/storage_fixtures/`（path 攻击 + ACL 用例）。
 > 传输：复用 `PeerConnection` 控制帧（WS + Noise E2E）与 Channel Tunnel；本协议不新增传输。
@@ -111,7 +111,7 @@
 - 校验：每个 upload 的组装内容 sha256 与 write.begin 声明一致，**全部通过才进入转正**。
 - 转正：暂存文件 rename 到最终路径（同卷原子）；目标已存在时旧版本先移入 `.recycle`。
 - 批内单文件转正失败：其余继续，响应 `failed` 标注；staging 保留可重试。
-- `retention`（可选，GFS 策略，M3 起作用于 backups）：master 持久化于该批次。
+- `retention`（可选，预留）：当前实现不解析；GFS 由各端本机 `ScheduledSnapshotService` 执行后经 sync 镜像删除，非 master 代管剪枝。
 
 ### 2.7 delete — 删除（入回收站）
 
@@ -266,13 +266,13 @@
 
 读取他端目录数据（非导入授权场景，指共享分区 artifacts/files）：
 
-1. 有本地缓存 → 先向 master（或持有副本的 owner 端）发 `store.meta` 比对内容
+1. 有本地缓存 → 向 **当前 master** 发 `store.meta` 比对内容
    hash：**一致则直接使用缓存（零内容流量）**；不一致则重新下载并更新缓存。
 2. 无缓存且 master 在线 → 直接拉取并写入缓存。
 3. master 离线：有缓存则使用缓存并标注 `stale`（可能不是最新）；无缓存报错。
 
-- 缓存按键 = 内容 hash；LRU 容量上限默认 500MB；淘汰只作用于已验证同步
-  的副本，未同步数据不可淘汰。
+- 跨端读权威 = master 镜像（与方案 v1.1 一致）。向源设备 owner 直读回退为后续可选，不在本版必选路径。
+- 缓存：`LocalCas` 按内容 hash 去重 + `.cache` 物化视图；LRU 默认 500MB，作用于远端读缓存。本机正式区为真实文件树，不经 CAS 写入；未同步数据由 `SyncJournal` 队列保护，不依赖 CAS `synced` 标志。
 
 ## 10. master 迁移与指针（v4 新增，方案 §6.5 / §6.6）
 
@@ -292,6 +292,7 @@
   1. 向旧 master 拉 `sync.cursors`；不可达则用本机游标账副本；
   2. 种子合并（只进不退）→ 提升 `epoch` → 写本机 master 指针；
   3. 向各 owner 广播 `master.pointer`；触发同步引擎差量重放。
+  - **注意**：旧 master 不可达时只迁移游标，不搬运他端历史 blob；缺口依赖各端正式区后续推送（方案 §6.5）。
 
 ### 10.2 指针广播与离线改指
 
