@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 
@@ -67,11 +69,22 @@ class _StorageSpaceScreenState extends State<StorageSpaceScreen> {
   List<PairedPeer> _ownerPeers = [];
   Map<String, int> _extCounts = {};
   String _localSheName = SheService.sheName;
+  StreamSubscription<ImportRequest>? _importCreatedSub;
 
   @override
   void initState() {
     super.initState();
     _future = _load();
+    _importCreatedSub = ImportRequestBus.instance.onCreated.listen((_) {
+      if (mounted) unawaited(_refresh());
+    });
+  }
+
+  @override
+  void dispose() {
+    _importCreatedSub?.cancel();
+    _oldDeviceController.dispose();
+    super.dispose();
   }
 
   Future<List<SnapshotInfo>> _load() async {

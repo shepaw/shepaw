@@ -553,13 +553,18 @@ class StoreService {
         // ── 换机导入授权（v2，§5.4）──
         case StoreOp.importRequest:
           final auth = await _importAuthService();
-          final req = await auth.createRequest(
+          final created = await auth.createRequest(
             oldDevice: frame.payload['old_device'] as String,
             newDevice: callerDeviceId,
           );
+          final req = created.request;
           _log.info(
-              'import request from $callerDeviceId for ${req.oldDevice}',
+              'import request from $callerDeviceId for ${req.oldDevice}'
+              '${created.created ? '' : ' (deduped)'}',
               tag: _auditTag);
+          if (created.created) {
+            ImportRequestBus.instance.emitCreated(req);
+          }
           return <String, dynamic>{
             'request_id': req.requestId,
             'status': req.status,

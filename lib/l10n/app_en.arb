@@ -2541,6 +2541,8 @@
   "storage_importMyGrants": "My import authorizations",
   "storage_importBrowse": "Browse snapshots",
   "storage_importPending": "Pending import requests",
+  "storage_importRequestNotifyTitle": "Device import request",
+  "storage_importRequestNotifyBody": "Device {device} wants to read backups and attachments. Open Storage to approve.",
   "storage_importApprove": "Approve",
   "storage_importReject": "Reject",
   "storage_importFrom": "from {device}",
@@ -2562,6 +2564,11 @@
       "device": {
         "type": "String"
       }
+    }
+  },
+  "@storage_importRequestNotifyBody": {
+    "placeholders": {
+      "device": { "type": "String" }
     }
   },
   "@storage_importFailed": {

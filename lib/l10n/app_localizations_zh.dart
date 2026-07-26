@@ -4938,6 +4938,14 @@ class AppLocalizationsZh extends AppLocalizations {
   String get storage_importPending => '待审批的导入请求';
 
   @override
+  String get storage_importRequestNotifyTitle => '换机导入请求';
+
+  @override
+  String storage_importRequestNotifyBody(String device) {
+    return '设备 $device 请求读取本机备份与附件，请在存储空间页审批。';
+  }
+
+  @override
   String get storage_importApprove => '批准';
 
   @override

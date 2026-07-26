@@ -5129,6 +5129,14 @@ class AppLocalizationsEn extends AppLocalizations {
   String get storage_importPending => 'Pending import requests';
 
   @override
+  String get storage_importRequestNotifyTitle => 'Device import request';
+
+  @override
+  String storage_importRequestNotifyBody(String device) {
+    return 'Device $device wants to read backups and attachments. Open Storage to approve.';
+  }
+
+  @override
   String get storage_importApprove => 'Approve';
 
   @override

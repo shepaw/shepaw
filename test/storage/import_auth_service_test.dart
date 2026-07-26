@@ -19,14 +19,16 @@ void main() {
     test('登记请求（同对设备去重）→ 审批签发 → 校验通过', () async {
       final r1 = await auth.createRequest(
           oldDevice: oldDev, newDevice: newDev);
+      expect(r1.created, isTrue);
       final r2 = await auth.createRequest(
           oldDevice: oldDev, newDevice: newDev);
-      expect(r2.requestId, r1.requestId); // pending 去重
+      expect(r2.created, isFalse);
+      expect(r2.request.requestId, r1.request.requestId); // pending 去重
 
       final pending = await auth.pendingRequests();
       expect(pending.single.oldDevice, oldDev);
 
-      final grant = await auth.grant(r1.requestId);
+      final grant = await auth.grant(r1.request.requestId);
       expect(grant.oldDevice, oldDev);
       expect(grant.newDevice, newDev);
       expect(grant.spaces, containsAll(['backups', 'attachments']));
@@ -54,19 +56,19 @@ void main() {
 
     test('拒绝请求后不能再签发；重复签发报错', () async {
       final r = await auth.createRequest(oldDevice: oldDev, newDevice: newDev);
-      await auth.grant(r.requestId);
-      expect(() => auth.grant(r.requestId), throwsA(anything));
+      await auth.grant(r.request.requestId);
+      expect(() => auth.grant(r.request.requestId), throwsA(anything));
 
       final r2 = await auth.createRequest(
           oldDevice: 'dddddddddddddddd', newDevice: newDev);
-      await auth.reject(r2.requestId);
+      await auth.reject(r2.request.requestId);
       expect(await auth.pendingRequests(), isEmpty);
-      expect(() => auth.grant(r2.requestId), throwsA(anything));
+      expect(() => auth.grant(r2.request.requestId), throwsA(anything));
     });
 
     test('撤销与过期', () async {
       final r = await auth.createRequest(oldDevice: oldDev, newDevice: newDev);
-      final grant = await auth.grant(r.requestId);
+      final grant = await auth.grant(r.request.requestId);
       await auth.revoke(grant.grantId);
       expect(
           await auth.validate(grant.grantId,
@@ -76,7 +78,7 @@ void main() {
       // 负 TTL = 已过期
       final r2 = await auth.createRequest(
           oldDevice: 'eeeeeeeeeeeeeeee', newDevice: newDev);
-      final g2 = await auth.grant(r2.requestId,
+      final g2 = await auth.grant(r2.request.requestId,
           ttl: const Duration(seconds: -1));
       expect(g2.expired, isTrue);
       expect(
@@ -89,7 +91,7 @@ void main() {
 
     test('持久化：新实例可读回', () async {
       final r = await auth.createRequest(oldDevice: oldDev, newDevice: newDev);
-      final grant = await auth.grant(r.requestId);
+      final grant = await auth.grant(r.request.requestId);
       final auth2 = ImportAuthService(storeRoot: tmp);
       expect(
           await auth2.validate(grant.grantId,
@@ -99,10 +101,24 @@ void main() {
 
     test('请求方：保存/列出收到的授权', () async {
       final r = await auth.createRequest(oldDevice: oldDev, newDevice: newDev);
-      final grant = await auth.grant(r.requestId);
+      final grant = await auth.grant(r.request.requestId);
       await auth.saveReceivedGrant(grant);
       final received = await auth.receivedGrants();
       expect(received.single.grantId, grant.grantId);
+    });
+
+    test('ImportRequestBus：仅新建触发', () async {
+      final seen = <String>[];
+      final sub = ImportRequestBus.instance.onCreated.listen((r) {
+        seen.add(r.requestId);
+      });
+      final r1 = await auth.createRequest(oldDevice: oldDev, newDevice: newDev);
+      ImportRequestBus.instance.emitCreated(r1.request);
+      final r2 = await auth.createRequest(oldDevice: oldDev, newDevice: newDev);
+      expect(r2.created, isFalse);
+      await Future<void>.delayed(Duration.zero);
+      expect(seen, [r1.request.requestId]);
+      await sub.cancel();
     });
   });
 }

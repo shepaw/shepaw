@@ -3026,6 +3026,8 @@
   "storage_importMyGrants": "我获得的导入授权",
   "storage_importBrowse": "浏览快照",
   "storage_importPending": "待审批的导入请求",
+  "storage_importRequestNotifyTitle": "换机导入请求",
+  "storage_importRequestNotifyBody": "设备 {device} 请求读取本机备份与附件，请在存储空间页审批。",
   "storage_importApprove": "批准",
   "storage_importReject": "拒绝",
   "storage_importFrom": "来自 {device}",
@@ -3047,6 +3049,11 @@
       "device": {
         "type": "String"
       }
+    }
+  },
+  "@storage_importRequestNotifyBody": {
+    "placeholders": {
+      "device": { "type": "String" }
     }
   },
   "@storage_importFailed": {

@@ -32,6 +32,7 @@ import 'peer/services/peer_agent_client_service.dart';
 import 'storage/scheduled_snapshot_service.dart';
 import 'storage/store_service.dart';
 import 'storage/sync_engine.dart';
+import 'storage/import_request_notifier.dart';
 import 'she_network/memory_exchange_service.dart';
 import 'she_network/presence_service.dart';
 import 'services/she_service.dart';
@@ -110,6 +111,7 @@ class AppBootstrap {
     NetworkMonitorService().init();
     await NotificationService().init();
     UpdateNotificationService().init(navigatorKey: navigatorKey);
+    ImportRequestNotifier.instance.init(navigatorKey: navigatorKey);
     ForegroundTaskService().init();
     await ScheduledTaskService().startScheduler();
 

@@ -181,7 +181,7 @@ void main() {
 
       final auth = ImportAuthService(storeRoot: storeRoot);
       final req = await auth.createRequest(oldDevice: oldDev, newDevice: self);
-      final grant = await auth.grant(req.requestId);
+      final grant = await auth.grant(req.request.requestId);
 
       final denied = await StoreService.instance.dispatchForTest(
         StoreFrame(op: StoreOp.list, payload: {

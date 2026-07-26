@@ -8990,6 +8990,18 @@ abstract class AppLocalizations {
   /// **'待审批的导入请求'**
   String get storage_importPending;
 
+  /// No description provided for @storage_importRequestNotifyTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'换机导入请求'**
+  String get storage_importRequestNotifyTitle;
+
+  /// No description provided for @storage_importRequestNotifyBody.
+  ///
+  /// In zh, this message translates to:
+  /// **'设备 {device} 请求读取本机备份与附件，请在存储空间页审批。'**
+  String storage_importRequestNotifyBody(String device);
+
   /// No description provided for @storage_importApprove.
   ///
   /// In zh, this message translates to:

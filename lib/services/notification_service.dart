@@ -17,11 +17,24 @@ class NotificationService {
 
   /// 通知点击回调，payload 为通知携带的数据
   void Function(String? payload)? _onTap;
+  final List<void Function(String? payload)> _tapHandlers = [];
 
-  /// 注册通知点击回调。
+  /// 注册通知点击回调（覆盖式，兼容旧调用方）。
   /// 在 [init] 之前或之后调用均可——回调会在点击时触发。
   void setOnNotificationTap(void Function(String? payload) handler) {
     _onTap = handler;
+  }
+
+  /// 追加通知点击回调（多订阅者；与 [setOnNotificationTap] 一并触发）。
+  void addNotificationTapHandler(void Function(String? payload) handler) {
+    _tapHandlers.add(handler);
+  }
+
+  void _dispatchTap(String? payload) {
+    _onTap?.call(payload);
+    for (final h in List.of(_tapHandlers)) {
+      h(payload);
+    }
   }
 
   /// Whether the current platform supports flutter_local_notifications.
@@ -57,7 +70,7 @@ class NotificationService {
       await _plugin.initialize(
         initSettings,
         onDidReceiveNotificationResponse: (details) {
-          _onTap?.call(details.payload);
+          _dispatchTap(details.payload);
         },
       );
 
@@ -119,7 +132,8 @@ class NotificationService {
 
   /// Show a local notification.
   /// [id] is used for dedup — same id replaces the previous notification.
-  /// [payload] is passed to the [setOnNotificationTap] callback when tapped.
+  /// [payload] is passed to tap handlers ([setOnNotificationTap] /
+  /// [addNotificationTapHandler]) when tapped.
   Future<void> showNotification({
     required int id,
     required String title,

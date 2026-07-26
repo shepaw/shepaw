@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -6,6 +7,21 @@ import 'package:uuid/uuid.dart';
 
 import 'local_store.dart' show StoreException;
 import 'store_protocol.dart';
+
+/// 新导入请求事件总线（旧设备/master 收到 `import.request` 时广播）。
+class ImportRequestBus {
+  ImportRequestBus._();
+  static final ImportRequestBus instance = ImportRequestBus._();
+
+  final _created = StreamController<ImportRequest>.broadcast();
+
+  /// 新创建的 pending 请求（去重复用不触发）。
+  Stream<ImportRequest> get onCreated => _created.stream;
+
+  void emitCreated(ImportRequest request) {
+    if (!_created.isClosed) _created.add(request);
+  }
+}
 
 /// 导入授权（docs/storage_space_plan.md §5.4，M3）。
 ///
@@ -114,7 +130,9 @@ class ImportAuthService {
   // ────────────────────────────── 请求 ──
 
   /// 登记一条导入请求（服务侧：旧设备或 master）。
-  Future<ImportRequest> createRequest({
+  ///
+  /// 返回 `(request, created)`；同一 (old,new) 已有 pending 时复用且 `created=false`。
+  Future<({ImportRequest request, bool created})> createRequest({
     required String oldDevice,
     required String newDevice,
   }) async {
@@ -124,7 +142,9 @@ class ImportAuthService {
         r.oldDevice == oldDevice &&
         r.newDevice == newDevice &&
         r.status == 'pending');
-    if (existing.isNotEmpty) return existing.first;
+    if (existing.isNotEmpty) {
+      return (request: existing.first, created: false);
+    }
     final req = ImportRequest(
       requestId: 'ir-${_uuid.v4()}',
       oldDevice: oldDevice,
@@ -133,7 +153,7 @@ class ImportAuthService {
     );
     requests.add(req);
     await _saveRequests(requests);
-    return req;
+    return (request: req, created: true);
   }
 
   Future<List<ImportRequest>> pendingRequests() async =>
