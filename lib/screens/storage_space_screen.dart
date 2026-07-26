@@ -2,7 +2,9 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 
 import '../l10n/app_localizations.dart';
+import '../peer/screens/peer_pairing_screen.dart';
 import '../peer/services/peer_connection_manager.dart';
+import '../peer/services/peer_pairing_service.dart';
 import '../peer/services/peer_storage_service.dart';
 import '../services/password_service.dart';
 import '../storage/device_identity.dart';
@@ -14,6 +16,7 @@ import '../storage/snapshot_import_service.dart';
 import '../storage/snapshot_service.dart';
 import '../storage/store_protocol.dart';
 import '../storage/store_service.dart';
+import 'storage_import_scanner_screen.dart';
 
 /// 存储空间页（docs/storage_space_plan.md §7）。
 ///
@@ -534,6 +537,36 @@ class _StorageSpaceScreenState extends State<StorageSpaceScreen> {
     }
   }
 
+  /// 扫码/粘贴旧设备 peer QR → 必要时先配对 → 填 ID 并发导入请求（§5.4 路径 A）。
+  Future<void> _scanAndImport() async {
+    final l10n = AppLocalizations.of(context);
+    final info = await StorageImportScannerScreen.show(context);
+    if (info == null || !mounted) return;
+    _oldDeviceController.text = info.fingerprint;
+    try {
+      final existing =
+          await PeerStorageService().getPeerByFingerprint(info.fingerprint);
+      if (existing == null) {
+        setState(() => _busy = true);
+        _toast(l10n.storage_importPairing);
+        try {
+          await PeerPairingService.instance.requestPairing(info);
+        } finally {
+          if (mounted) setState(() => _busy = false);
+        }
+      }
+      if (!mounted) return;
+      await _sendImportRequest();
+    } catch (e) {
+      _toast(l10n.storage_importFailed('$e'));
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _showMyPairingQr() async {
+    await PeerPairingScreen.show(context);
+  }
+
   Future<void> _approveImport(Map<String, dynamic> req, bool approve) async {
     setState(() => _busy = true);
     try {
@@ -645,8 +678,15 @@ class _StorageSpaceScreenState extends State<StorageSpaceScreen> {
                 Icon(Icons.phonelink_ring_outlined,
                     color: Theme.of(context).colorScheme.primary, size: 20),
                 const SizedBox(width: 8),
-                Text(l10n.storage_importSection,
-                    style: Theme.of(context).textTheme.bodyMedium),
+                Expanded(
+                  child: Text(l10n.storage_importSection,
+                      style: Theme.of(context).textTheme.bodyMedium),
+                ),
+                TextButton.icon(
+                  onPressed: _busy ? null : _showMyPairingQr,
+                  icon: const Icon(Icons.qr_code_2, size: 18),
+                  label: Text(l10n.storage_importShowQr),
+                ),
               ],
             ),
             const SizedBox(height: 8),
@@ -668,6 +708,12 @@ class _StorageSpaceScreenState extends State<StorageSpaceScreen> {
                   ),
                 ),
                 const SizedBox(width: 8),
+                IconButton.filledTonal(
+                  onPressed: _busy ? null : _scanAndImport,
+                  tooltip: l10n.storage_importScan,
+                  icon: const Icon(Icons.qr_code_scanner),
+                ),
+                const SizedBox(width: 4),
                 FilledButton(
                   onPressed: _busy ? null : _sendImportRequest,
                   child: Text(l10n.storage_importSend),

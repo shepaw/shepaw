@@ -54,8 +54,12 @@ void main() {
     expect(File(p.join(info.path, 'manifest.json')).existsSync(), isTrue);
     expect(File(p.join(info.path, 'db.sqlite.enc')).existsSync(), isTrue);
     expect(File(p.join(info.path, 'identity.enc')).existsSync(), isTrue);
-    // 明文 DB 不残留
+    // 明文 DB 不残留；经 store commit 后无 backups/.staging 半成品
     expect(File(p.join(info.path, 'db.raw')).existsSync(), isFalse);
+    final spaceStaging = Directory(p.join(p.dirname(info.path), '.staging'));
+    if (await spaceStaging.exists()) {
+      expect(await spaceStaging.list().isEmpty, isTrue);
+    }
 
     final m = info.manifest;
     expect(m.deviceId, deviceId);

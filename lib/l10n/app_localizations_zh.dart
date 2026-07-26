@@ -4801,13 +4801,36 @@ class AppLocalizationsZh extends AppLocalizations {
   String get storage_importSection => '换机导入';
 
   @override
-  String get storage_importRequestHint => '输入旧设备 ID 并发送导入请求，在旧设备（或 master）上确认。';
+  String get storage_importRequestHint =>
+      '扫码或输入旧设备 ID 发送导入请求；在旧设备（或 master）上确认。未配对时会先完成配对。';
 
   @override
   String get storage_oldDeviceId => '旧设备 ID（16 位十六进制）';
 
   @override
   String get storage_importSend => '发送导入请求';
+
+  @override
+  String get storage_importScan => '扫码';
+
+  @override
+  String get storage_importPaste => '粘贴链接';
+
+  @override
+  String get storage_importPasteHint =>
+      '桌面端请粘贴旧设备「我的二维码」对应的配对链接（shepaw://peer?...）。';
+
+  @override
+  String get storage_importScanTitle => '扫描旧设备二维码';
+
+  @override
+  String get storage_importScanHint => '对准旧设备上的配对二维码';
+
+  @override
+  String get storage_importShowQr => '显示本机二维码';
+
+  @override
+  String get storage_importPairing => '正在与旧设备配对…';
 
   @override
   String get storage_importSent => '请求已发送，请在旧设备（或 master）上确认。';

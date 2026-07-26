@@ -8777,7 +8777,7 @@ abstract class AppLocalizations {
   /// No description provided for @storage_importRequestHint.
   ///
   /// In zh, this message translates to:
-  /// **'输入旧设备 ID 并发送导入请求，在旧设备（或 master）上确认。'**
+  /// **'扫码或输入旧设备 ID 发送导入请求；在旧设备（或 master）上确认。未配对时会先完成配对。'**
   String get storage_importRequestHint;
 
   /// No description provided for @storage_oldDeviceId.
@@ -8791,6 +8791,48 @@ abstract class AppLocalizations {
   /// In zh, this message translates to:
   /// **'发送导入请求'**
   String get storage_importSend;
+
+  /// No description provided for @storage_importScan.
+  ///
+  /// In zh, this message translates to:
+  /// **'扫码'**
+  String get storage_importScan;
+
+  /// No description provided for @storage_importPaste.
+  ///
+  /// In zh, this message translates to:
+  /// **'粘贴链接'**
+  String get storage_importPaste;
+
+  /// No description provided for @storage_importPasteHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'桌面端请粘贴旧设备「我的二维码」对应的配对链接（shepaw://peer?...）。'**
+  String get storage_importPasteHint;
+
+  /// No description provided for @storage_importScanTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'扫描旧设备二维码'**
+  String get storage_importScanTitle;
+
+  /// No description provided for @storage_importScanHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'对准旧设备上的配对二维码'**
+  String get storage_importScanHint;
+
+  /// No description provided for @storage_importShowQr.
+  ///
+  /// In zh, this message translates to:
+  /// **'显示本机二维码'**
+  String get storage_importShowQr;
+
+  /// No description provided for @storage_importPairing.
+  ///
+  /// In zh, this message translates to:
+  /// **'正在与旧设备配对…'**
+  String get storage_importPairing;
 
   /// No description provided for @storage_importSent.
   ///

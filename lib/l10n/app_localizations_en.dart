@@ -4989,13 +4989,36 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get storage_importRequestHint =>
-      'Enter the old device\'s ID and send an import request. Confirm it on the old device (or master).';
+      'Scan or enter the old device ID and send an import request. Confirm it on the old device (or master). Unpaired devices will pair first.';
 
   @override
   String get storage_oldDeviceId => 'Old device ID (16 hex)';
 
   @override
   String get storage_importSend => 'Send import request';
+
+  @override
+  String get storage_importScan => 'Scan';
+
+  @override
+  String get storage_importPaste => 'Paste link';
+
+  @override
+  String get storage_importPasteHint =>
+      'On desktop, paste the pairing link from the old device\'s QR (shepaw://peer?...).';
+
+  @override
+  String get storage_importScanTitle => 'Scan old device QR';
+
+  @override
+  String get storage_importScanHint =>
+      'Point at the pairing QR on the old device';
+
+  @override
+  String get storage_importShowQr => 'Show my QR';
+
+  @override
+  String get storage_importPairing => 'Pairing with old device…';
 
   @override
   String get storage_importSent =>

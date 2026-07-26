@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:math' show min;
 import 'dart:typed_data';
 
 import 'package:crypto/crypto.dart' as crypto;
@@ -7,11 +8,11 @@ import 'package:cryptography/cryptography.dart' show SecretKey;
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
-import 'package:sqflite/sqflite.dart';
 
 import '../services/local_database_service.dart';
 import '../services/logger_service.dart';
 import 'device_identity.dart';
+import 'local_store.dart';
 import 'snapshot_crypto.dart';
 
 /// 快照 manifest（docs/storage_space_plan.md §5.2）。
@@ -154,12 +155,13 @@ class SnapshotService {
 
   // ------------------------------------------------------------- 生成
 
-  /// 生成快照：VACUUM INTO 一致性快照 → 加密 → 落 manifest。
+  /// 生成快照：VACUUM INTO 一致性快照 → 加密 → 经 LocalStore write/commit 落盘。
   ///
   /// 密钥来源二选一：[password]（慢路径）或 [passwordHash]（快路径，
   /// 定期快照用缓存的 H）。[cachePassword] 为 true 且走 password 慢路径时，
   /// 顺带刷新自动快照缓存；恢复安全快照等场景应传 false，避免旧密码污染缓存。
-  /// 离开本机前必须已加密（§5.2）。失败抛异常。
+  /// 离开本机前必须已加密（§5.2）；最终三文件经 store staging 转正（§5.1/§6.1）。
+  /// 失败抛异常。
   Future<SnapshotInfo> createSnapshot(
       {String? password,
       Uint8List? passwordHash,
@@ -177,13 +179,12 @@ class SnapshotService {
     final backups = await _backupsDir();
     final now = DateTime.now().toUtc();
     final id = _snapshotId(now);
-    final tmpDir = Directory(p.join(backups.path, '.$id.tmp'));
-    if (await tmpDir.exists()) await tmpDir.delete(recursive: true);
-    await tmpDir.create(recursive: true);
+    // 明文 VACUUM 与加密产物暂存系统临时目录，不进 backups/（半成品不可见）
+    final workDir = await Directory.systemTemp.createTemp('shepaw_snap_');
     try {
       // 1. 一致性快照（VACUUM INTO 无需停写）
       final db = await LocalDatabaseService().database;
-      final rawFile = File(p.join(tmpDir.path, 'db.raw'));
+      final rawFile = File(p.join(workDir.path, 'db.raw'));
       final escaped = rawFile.path.replaceAll("'", "''");
       await db.execute("VACUUM INTO '$escaped'");
       final rawBytes = await rawFile.readAsBytes();
@@ -195,12 +196,6 @@ class SnapshotService {
       final identityEnc = await SnapshotCrypto.encrypt(identityBytes, key);
       await rawFile.delete();
 
-      final dbFile = File(p.join(tmpDir.path, SnapshotManifest.fileDbEnc));
-      await dbFile.writeAsBytes(dbEnc, flush: true);
-      final idFile =
-          File(p.join(tmpDir.path, SnapshotManifest.fileIdentityEnc));
-      await idFile.writeAsBytes(identityEnc, flush: true);
-
       // 3. manifest（密文哈希 + 树根 + 明文 DB 哈希 + KDF 参数）
       final fileHashes = <String, String>{
         SnapshotManifest.fileDbEnc: crypto.sha256.convert(dbEnc).toString(),
@@ -211,8 +206,9 @@ class SnapshotService {
       try {
         appVersion = (await PackageInfo.fromPlatform()).version;
       } catch (_) {}
+      final deviceId = await DeviceIdentity.deviceId();
       final manifest = SnapshotManifest(
-        deviceId: await DeviceIdentity.deviceId(),
+        deviceId: deviceId,
         createdAtMs: now.millisecondsSinceEpoch,
         appVersion: appVersion,
         schemaVersion: _schemaVersion,
@@ -222,34 +218,94 @@ class SnapshotService {
         kdfSalt: base64.encode(snapshotSalt),
         kdfIterations: 120000,
       );
-      final manifestFile = File(p.join(tmpDir.path, 'manifest.json'));
-      await manifestFile.writeAsString(
-          const JsonEncoder.withIndent('  ').convert(manifest.toJson()),
-          flush: true);
+      final manifestBytes = Uint8List.fromList(utf8.encode(
+          const JsonEncoder.withIndent('  ').convert(manifest.toJson())));
 
-      // 4. 原子转正（rename 同卷原子）；id 秒级精度，撞名时加序号
+      // 4. 经 LocalStore write.begin/chunk/commit 原子转正；撞名加序号
       var finalId = id;
       var suffix = 2;
-      var finalDir = Directory(p.join(backups.path, finalId));
-      while (await finalDir.exists()) {
+      while (await Directory(p.join(backups.path, finalId)).exists()) {
         finalId = '$id-$suffix';
         suffix++;
-        finalDir = Directory(p.join(backups.path, finalId));
       }
-      await tmpDir.rename(finalDir.path);
+      await _commitSnapshotFiles(
+        deviceId: deviceId,
+        snapshotId: finalId,
+        files: {
+          SnapshotManifest.fileDbEnc: dbEnc,
+          SnapshotManifest.fileIdentityEnc: identityEnc,
+          'manifest.json': manifestBytes,
+        },
+      );
 
+      final finalDir = Directory(p.join(backups.path, finalId));
       final info = SnapshotInfo(
         id: finalId,
         path: finalDir.path,
         manifest: manifest,
         totalBytes: dbEnc.length + identityEnc.length,
       );
-      _log.info('snapshot created: $id (${info.totalBytes} bytes)', tag: _tag);
+      _log.info('snapshot created: $finalId (${info.totalBytes} bytes)',
+          tag: _tag);
       return info;
     } catch (e, st) {
-      _log.error('snapshot creation failed', tag: _tag, error: e, stackTrace: st);
-      if (await tmpDir.exists()) await tmpDir.delete(recursive: true);
+      _log.error('snapshot creation failed',
+          tag: _tag, error: e, stackTrace: st);
       rethrow;
+    } finally {
+      if (await workDir.exists()) {
+        try {
+          await workDir.delete(recursive: true);
+        } catch (_) {}
+      }
+    }
+  }
+
+  /// 与 [StoreService] 同根的 LocalStore（本机 loopback 写路径）。
+  Future<LocalStore> _openLocalStore() async {
+    final docs = await getApplicationDocumentsDirectory();
+    final root = Directory(p.join(docs.path, 'shepaw', 'store'));
+    await root.create(recursive: true);
+    return LocalStore(root: root);
+  }
+
+  /// 把快照三文件经 staging 写入 backups，一批 commit；失败则回滚已转正项。
+  Future<void> _commitSnapshotFiles({
+    required String deviceId,
+    required String snapshotId,
+    required Map<String, Uint8List> files,
+  }) async {
+    final store = await _openLocalStore();
+    const space = 'backups';
+    final uploadIds = <String>[];
+    for (final entry in files.entries) {
+      final rel = '$snapshotId/${entry.key}';
+      final bytes = entry.value;
+      final sha = crypto.sha256.convert(bytes).toString();
+      final (uid, _) = await store.writeBegin(
+        deviceId: deviceId,
+        space: space,
+        path: rel,
+        size: bytes.length,
+        sha256: sha,
+      );
+      var offset = 0;
+      while (offset < bytes.length) {
+        final end = min(offset + LocalStore.maxReadChunk, bytes.length);
+        await store.writeChunk(
+            deviceId, space, uid, offset, bytes.sublist(offset, end));
+        offset = end;
+      }
+      uploadIds.add(uid);
+    }
+    final (committed, failed) = await store.commit(deviceId, space, uploadIds);
+    if (failed.isNotEmpty) {
+      for (final path in committed) {
+        try {
+          await store.delete(deviceId, space, path);
+        } catch (_) {}
+      }
+      throw StateError('snapshot store commit failed: $failed');
     }
   }
 
