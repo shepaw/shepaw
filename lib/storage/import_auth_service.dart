@@ -23,6 +23,20 @@ class ImportRequestBus {
   }
 }
 
+/// 新设备收到 `import.grant` 推送时广播。
+class ImportGrantBus {
+  ImportGrantBus._();
+  static final ImportGrantBus instance = ImportGrantBus._();
+
+  final _received = StreamController<ImportGrant>.broadcast();
+
+  Stream<ImportGrant> get onReceived => _received.stream;
+
+  void emitReceived(ImportGrant grant) {
+    if (!_received.isClosed) _received.add(grant);
+  }
+}
+
 /// 导入授权（docs/storage_space_plan.md §5.4，M3）。
 ///
 /// 一次性、限旧设备私有目录（backups/attachments）只读。

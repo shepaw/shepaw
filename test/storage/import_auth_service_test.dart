@@ -120,5 +120,19 @@ void main() {
       expect(seen, [r1.request.requestId]);
       await sub.cancel();
     });
+
+    test('ImportGrantBus：收到授权触发', () async {
+      final seen = <String>[];
+      final sub = ImportGrantBus.instance.onReceived.listen((g) {
+        seen.add(g.grantId);
+      });
+      final r = await auth.createRequest(oldDevice: oldDev, newDevice: newDev);
+      final grant = await auth.grant(r.request.requestId);
+      await auth.saveReceivedGrant(grant);
+      ImportGrantBus.instance.emitReceived(grant);
+      await Future<void>.delayed(Duration.zero);
+      expect(seen, [grant.grantId]);
+      await sub.cancel();
+    });
   });
 }

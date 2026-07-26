@@ -10,7 +10,6 @@ import '../peer/services/peer_connection_manager.dart';
 import '../peer/services/peer_pairing_service.dart';
 import '../peer/services/peer_storage_service.dart';
 import '../service_locator.dart';
-import '../services/password_service.dart';
 import '../services/remote_agent_service.dart';
 import '../services/she_service.dart';
 import '../she_network/digest_service.dart';
@@ -70,6 +69,7 @@ class _StorageSpaceScreenState extends State<StorageSpaceScreen> {
   Map<String, int> _extCounts = {};
   String _localSheName = SheService.sheName;
   StreamSubscription<ImportRequest>? _importCreatedSub;
+  StreamSubscription<ImportGrant>? _importGrantSub;
 
   @override
   void initState() {
@@ -78,11 +78,15 @@ class _StorageSpaceScreenState extends State<StorageSpaceScreen> {
     _importCreatedSub = ImportRequestBus.instance.onCreated.listen((_) {
       if (mounted) unawaited(_refresh());
     });
+    _importGrantSub = ImportGrantBus.instance.onReceived.listen((_) {
+      if (mounted) unawaited(_refresh());
+    });
   }
 
   @override
   void dispose() {
     _importCreatedSub?.cancel();
+    _importGrantSub?.cancel();
     _oldDeviceController.dispose();
     super.dispose();
   }
@@ -193,17 +197,64 @@ class _StorageSpaceScreenState extends State<StorageSpaceScreen> {
     final l10n = AppLocalizations.of(context);
     final password = await _askPassword();
     if (password == null) return;
-    if (!await PasswordService().verifyPassword(password)) {
-      _toast(l10n.storage_passwordWrong);
-      return;
-    }
     setState(() => _busy = true);
     try {
       await SnapshotService.instance.createSnapshot(password: password);
-      _toast(l10n.storage_snapshotDone);
       await _refresh();
+      _toast(l10n.storage_snapshotDone);
     } catch (e) {
       _toast(l10n.storage_snapshotFailed('$e'));
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  /// 开启自动快照：强制验密（§10）；可选解密最新快照并缓存密钥。
+  Future<void> _setAutoSnapshotEnabled(bool enabled) async {
+    final l10n = AppLocalizations.of(context);
+    if (enabled) {
+      final password = await _askPassword(
+          title: l10n.storage_enableSnapshotPasswordTitle);
+      if (password == null) return;
+      setState(() => _busy = true);
+      try {
+        final result =
+            await SnapshotService.instance.checkDecryptAndCache(password);
+        await ScheduledSnapshotService.instance.setEnabled(true);
+        await _refresh();
+        _toast(result.decryptedSnapshot
+            ? l10n.storage_decryptCheckOk
+            : l10n.storage_decryptCheckOkNoSnapshot);
+      } on SnapshotDecryptException {
+        _toast(l10n.storage_passwordWrong);
+      } catch (e) {
+        _toast(l10n.storage_decryptCheckFailed('$e'));
+      } finally {
+        if (mounted) setState(() => _busy = false);
+      }
+      return;
+    }
+    await ScheduledSnapshotService.instance.setEnabled(false);
+    await _refresh();
+  }
+
+  /// 管理页解密自检（§10）。
+  Future<void> _decryptSelfCheck() async {
+    final l10n = AppLocalizations.of(context);
+    final password = await _askPassword(title: l10n.storage_decryptCheckTitle);
+    if (password == null) return;
+    setState(() => _busy = true);
+    try {
+      final result =
+          await SnapshotService.instance.checkDecryptAndCache(password);
+      await _refresh();
+      _toast(result.decryptedSnapshot
+          ? l10n.storage_decryptCheckOk
+          : l10n.storage_decryptCheckOkNoSnapshot);
+    } on SnapshotDecryptException {
+      _toast(l10n.storage_passwordWrong);
+    } catch (e) {
+      _toast(l10n.storage_decryptCheckFailed('$e'));
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -1356,12 +1407,19 @@ class _StorageSpaceScreenState extends State<StorageSpaceScreen> {
                   ),
                   Switch(
                     value: status.enabled,
-                    onChanged: (v) async {
-                      await ScheduledSnapshotService.instance.setEnabled(v);
-                      await _refresh();
-                    },
+                    onChanged: _busy
+                        ? null
+                        : (v) => unawaited(_setAutoSnapshotEnabled(v)),
                   ),
                 ],
+              ),
+              Align(
+                alignment: Alignment.centerLeft,
+                child: TextButton.icon(
+                  onPressed: _busy ? null : _decryptSelfCheck,
+                  icon: const Icon(Icons.verified_user_outlined, size: 18),
+                  label: Text(l10n.storage_decryptCheck),
+                ),
               ),
               if (status.needsAttention)
                 Container(

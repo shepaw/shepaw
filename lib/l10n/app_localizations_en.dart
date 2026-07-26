@@ -5073,6 +5073,30 @@ class AppLocalizationsEn extends AppLocalizations {
       'Create one manual snapshot to enable auto snapshots';
 
   @override
+  String get storage_enableSnapshotPasswordTitle =>
+      'Verify master password to enable auto snapshots';
+
+  @override
+  String get storage_decryptCheck => 'Decrypt check';
+
+  @override
+  String get storage_decryptCheckTitle =>
+      'Verify master password can decrypt snapshots';
+
+  @override
+  String get storage_decryptCheckOk =>
+      'Password OK; latest snapshot decrypts. Auto-snapshot key cached.';
+
+  @override
+  String get storage_decryptCheckOkNoSnapshot =>
+      'Password OK; no snapshot to decrypt yet. Key cached.';
+
+  @override
+  String storage_decryptCheckFailed(String error) {
+    return 'Decrypt check failed: $error';
+  }
+
+  @override
   String get storage_snapshotWarning =>
       'Auto snapshot failing for 3+ days. Check storage space or create a snapshot manually.';
 
@@ -5134,6 +5158,14 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String storage_importRequestNotifyBody(String device) {
     return 'Device $device wants to read backups and attachments. Open Storage to approve.';
+  }
+
+  @override
+  String get storage_importGrantNotifyTitle => 'Import authorized';
+
+  @override
+  String storage_importGrantNotifyBody(String device) {
+    return 'Device $device authorized you to read backups and attachments. Open Storage to import.';
   }
 
   @override

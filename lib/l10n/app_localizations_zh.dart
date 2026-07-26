@@ -4885,6 +4885,26 @@ class AppLocalizationsZh extends AppLocalizations {
   String get storage_noKeyHint => '先手动创建一次快照以启用自动快照';
 
   @override
+  String get storage_enableSnapshotPasswordTitle => '开启自动快照需验证主密码';
+
+  @override
+  String get storage_decryptCheck => '解密自检';
+
+  @override
+  String get storage_decryptCheckTitle => '验证主密码能否解密快照';
+
+  @override
+  String get storage_decryptCheckOk => '主密码正确，最新快照可解密；自动快照密钥已缓存';
+
+  @override
+  String get storage_decryptCheckOkNoSnapshot => '主密码正确；尚无快照可解密，密钥已缓存';
+
+  @override
+  String storage_decryptCheckFailed(String error) {
+    return '解密自检失败：$error';
+  }
+
+  @override
   String get storage_snapshotWarning => '自动快照已连续失败 3 天以上，请检查存储空间或手动快照一次。';
 
   @override
@@ -4943,6 +4963,14 @@ class AppLocalizationsZh extends AppLocalizations {
   @override
   String storage_importRequestNotifyBody(String device) {
     return '设备 $device 请求读取本机备份与附件，请在存储空间页审批。';
+  }
+
+  @override
+  String get storage_importGrantNotifyTitle => '导入授权已批准';
+
+  @override
+  String storage_importGrantNotifyBody(String device) {
+    return '设备 $device 已授权你读取备份与附件，可在存储空间页导入。';
   }
 
   @override

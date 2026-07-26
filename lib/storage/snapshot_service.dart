@@ -11,6 +11,7 @@ import 'package:path_provider/path_provider.dart';
 
 import '../services/local_database_service.dart';
 import '../services/logger_service.dart';
+import '../services/password_service.dart';
 import 'device_identity.dart';
 import 'local_store.dart';
 import 'snapshot_crypto.dart';
@@ -136,6 +137,18 @@ class SnapshotExportResult {
 
   /// manifest 中有、本机找不到的 hash 路径。
   final List<String> missingAttachments;
+}
+
+/// 管理页解密自检结果（§10）。
+class SnapshotDecryptCheckResult {
+  SnapshotDecryptCheckResult({
+    required this.decryptedSnapshot,
+    this.snapshotId,
+  });
+
+  /// 是否对某份快照完成了解密校验（无快照时为 false，仅验主密码）。
+  final bool decryptedSnapshot;
+  final String? snapshotId;
 }
 
 /// 快照引擎（docs/storage_space_plan.md §5.2，M1）。
@@ -413,6 +426,29 @@ class SnapshotService {
       throw StateError('db content hash mismatch after decrypt');
     }
     return plain;
+  }
+
+  /// 管理页解密自检（§10）：校验主密码；若有快照则解密最新一份；成功后缓存 H。
+  ///
+  /// 主密码错误或解密失败抛 [SnapshotDecryptException] / 其它异常。
+  Future<SnapshotDecryptCheckResult> checkDecryptAndCache(
+      String password) async {
+    if (!await PasswordService().verifyPassword(password)) {
+      throw SnapshotDecryptException('wrong master password');
+    }
+    final h = await SnapshotCrypto.hashPassword(password);
+    final list = await listSnapshots();
+    if (list.isEmpty) {
+      await SnapshotCrypto.cachePasswordHash(h);
+      return SnapshotDecryptCheckResult(decryptedSnapshot: false);
+    }
+    final latest = list.first;
+    await decryptDb(latest, password);
+    await SnapshotCrypto.cachePasswordHash(h);
+    return SnapshotDecryptCheckResult(
+      decryptedSnapshot: true,
+      snapshotId: latest.id,
+    );
   }
 
   /// 解密身份记录。

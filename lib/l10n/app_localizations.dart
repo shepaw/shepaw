@@ -8888,6 +8888,42 @@ abstract class AppLocalizations {
   /// **'先手动创建一次快照以启用自动快照'**
   String get storage_noKeyHint;
 
+  /// No description provided for @storage_enableSnapshotPasswordTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'开启自动快照需验证主密码'**
+  String get storage_enableSnapshotPasswordTitle;
+
+  /// No description provided for @storage_decryptCheck.
+  ///
+  /// In zh, this message translates to:
+  /// **'解密自检'**
+  String get storage_decryptCheck;
+
+  /// No description provided for @storage_decryptCheckTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'验证主密码能否解密快照'**
+  String get storage_decryptCheckTitle;
+
+  /// No description provided for @storage_decryptCheckOk.
+  ///
+  /// In zh, this message translates to:
+  /// **'主密码正确，最新快照可解密；自动快照密钥已缓存'**
+  String get storage_decryptCheckOk;
+
+  /// No description provided for @storage_decryptCheckOkNoSnapshot.
+  ///
+  /// In zh, this message translates to:
+  /// **'主密码正确；尚无快照可解密，密钥已缓存'**
+  String get storage_decryptCheckOkNoSnapshot;
+
+  /// No description provided for @storage_decryptCheckFailed.
+  ///
+  /// In zh, this message translates to:
+  /// **'解密自检失败：{error}'**
+  String storage_decryptCheckFailed(String error);
+
   /// No description provided for @storage_snapshotWarning.
   ///
   /// In zh, this message translates to:
@@ -9001,6 +9037,18 @@ abstract class AppLocalizations {
   /// In zh, this message translates to:
   /// **'设备 {device} 请求读取本机备份与附件，请在存储空间页审批。'**
   String storage_importRequestNotifyBody(String device);
+
+  /// No description provided for @storage_importGrantNotifyTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'导入授权已批准'**
+  String get storage_importGrantNotifyTitle;
+
+  /// No description provided for @storage_importGrantNotifyBody.
+  ///
+  /// In zh, this message translates to:
+  /// **'设备 {device} 已授权你读取备份与附件，可在存储空间页导入。'**
+  String storage_importGrantNotifyBody(String device);
 
   /// No description provided for @storage_importApprove.
   ///

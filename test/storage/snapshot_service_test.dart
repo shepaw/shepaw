@@ -267,4 +267,22 @@ void main() {
     expect(out.packedAttachments, 0);
     expect(out.missingAttachments, ['b' * 64]);
   });
+
+  test('解密自检：正确密码解密最新快照并缓存 H', () async {
+    await SnapshotCrypto.clearCachedPasswordHash();
+    await SnapshotService.instance.createSnapshot(password: password);
+    final result =
+        await SnapshotService.instance.checkDecryptAndCache(password);
+    expect(result.decryptedSnapshot, isTrue);
+    expect(result.snapshotId, isNotNull);
+    expect(await SnapshotCrypto.cachedPasswordHash(), isNotNull);
+  });
+
+  test('解密自检：错误密码拒绝', () async {
+    await SnapshotService.instance.createSnapshot(password: password);
+    expect(
+      () => SnapshotService.instance.checkDecryptAndCache('wrong-pw'),
+      throwsA(isA<SnapshotDecryptException>()),
+    );
+  });
 }

@@ -123,8 +123,8 @@
 
 - **device_id 跨重装不变**：设备身份（Noise 密钥对，device_id 为其公钥哈希）随加密快照保存；重装后从快照恢复即恢复原 device_id。**全新安装且不从快照恢复 = 新设备、新 device_id**。
 - **换机导入授权**：新设备恢复旧设备数据时，由用户显式选择数据来源设备——
-  - **旧设备在场**：新设备扫旧设备二维码，旧设备签发一次性**导入授权**（签名声明：允许 device_id_new 读取 `<旧 id>/backups` 与 `<旧 id>/attachments`）；旧设备收到 `import.request` 时发**系统通知**（`ImportRequestNotifier`），点击打开存储页审批；
-  - **旧设备不在场/已丢失**：输入旧 device_id，导入请求出现在 master 管理页，**由用户在 master 侧手动确认**后放行（master 同样收通知）。
+  - **旧设备在场**：新设备扫旧设备二维码，旧设备签发一次性**导入授权**（签名声明：允许 device_id_new 读取 `<旧 id>/backups` 与 `<旧 id>/attachments`）；旧设备收到 `import.request` 时发**系统通知**（`ImportRequestNotifier`），点击打开存储页审批；新设备收到 `import.grant` 推送时同样通知（`ImportGrantNotifier`），可立即浏览导入；
+  - **旧设备不在场/已丢失**：输入旧 device_id，导入请求出现在 master 管理页，**由用户在 master 侧手动确认**后放行（master 同样收请求通知；新设备收授权通知）。
 - 授权为一次性、限旧设备私有目录只读；新设备此后用自己的 device_id 写自己的目录，**两个 device_id 互不影响**；旧目录保留，用户可在管理页手动删除。
 - **附件归属迁移**：恢复的 DB 按 hash 引用旧设备附件；新设备用到时经授权惰性拉回并写入自己的 `<新 id>/attachments/`，逐步完成归属迁移。
 - **换机后需重新配对**：新 device_id 对其他端而言是新设备——需与 master 及各端重新配对（旧配对记录手动删除）；she 的数据与记忆随 DB 完整保留。
@@ -266,7 +266,7 @@ master 上的镜像树主要是各端本地数据的副本；为降低单点损�
 - 附件与共享文件：传输经 Noise 加密；master 上静态加密依赖设备 OS（owner 信任域内）；镜像树再保护副本经 6.6 链路加密。
 - 信任分级强制执行：`store.*` / `memory.*` / 执行委托帧只接受 owner 级设备；friend 级越权帧拒绝并审计。
 - 写入路径收敛（6.2）+ Noise 身份校验，串写从机制上不可能；换机导入授权需旧设备签名或 master 侧用户确认（5.4）。
-- 主密码遗忘 = 快照无法解密：开启时强制验密 + 管理页解密自检。
+- 主密码遗忘 = 快照无法解密：开启自动快照时强制验密（`checkDecryptAndCache`）+ 管理页「解密自检」入口。
 
 ## 11. 分阶段实施（状态随代码）
 
@@ -323,3 +323,5 @@ master 上的镜像树主要是各端本地数据的副本；为降低单点损�
 16. Go `storage-node` 回收站路径/`recycle.restore`/stats/`commit` 字段与 Dart/spec 对齐。
 17. 快照手动导出按 manifest 打包本机附件（`SnapshotExportResult`）。
 18. 路径 A/B 导入请求到达通知（`ImportRequestNotifier` + `ImportRequestBus`）。
+19. 新设备收到导入授权推送通知（`ImportGrantNotifier` + `ImportGrantBus`）。
+20. 开启自动快照强制验密；管理页解密自检（`checkDecryptAndCache`）。

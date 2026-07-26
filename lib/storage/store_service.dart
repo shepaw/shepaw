@@ -275,6 +275,7 @@ class StoreService {
       if (grant.oldDevice.isEmpty || grant.newDevice.isEmpty) return;
       final auth = await _importAuthService();
       await auth.saveReceivedGrant(grant);
+      ImportGrantBus.instance.emitReceived(grant);
       _log.info(
           'received import grant ${grant.grantId} from $fromDevice',
           tag: _tag);
