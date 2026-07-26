@@ -188,7 +188,7 @@
 - **删除**：本地移入 `.recycle` 后入队；master 重放后同样入 `.recycle`。
 - **读路径（跨端共享区）**：`RemoteReadService` 向 **当前 master** 发 `store.meta` / `store.read`——有缓存则比对 hash（一致零内容流量）；不一致或无缓存则下载并写入 `LocalCas` + `.cache`；master 离线有缓存则 `stale: true`。`not_found` 有限重试后仍失败，或 master 离线且无缓存时，**向源设备直读回退**（`fromOwnerFallback`）。
 - **覆盖语义**：同路径后写覆盖先写（以 master 接收/重放顺序为准），旧版本进 `.recycle`。单写者目录下正常无多端争用；竞态主要出现在迁移窗口或同设备重复投递。
-- **磁盘压力**：未同步队列占用由管理页展示；默认 **未同步 ≥200MB** 告警（实现阈值）。master 磁盘 80% 告警为后续增强（当前未做）。
+- **磁盘压力**：未同步队列占用由管理页展示；默认 **未同步 ≥200MB** 告警。master（本机 store 所在卷）用量经 `stats.volume_*` 探测，**≥80%** 显著告警（`VolumeUsage`）。
 - **master 指针**：迁移后向各 owner 广播；离线端醒来经 `master.pointer.query` 获取并按 epoch 改指，再 `syncNow`。
 
 ### 6.5 master 指定与游标迁移
@@ -206,13 +206,15 @@
 
 master 上的镜像树主要是各端本地数据的副本；为降低单点损坏风险，master 定期（或迁移后）对整棵镜像树做加密快照（`MirrorReprotectService` → `<master_id>/backups/reprotect-<ts>/`）。无缓存主密码时跳过。
 
+**保留策略**（与 DB 快照 GFS 分离）：成功写入后只保留最新 **4** 份（`defaultMaxKeep`），更早的经 `delete` 进 `.recycle`。
+
 ## 7. 存储空间管理页（独立体系）
 
 入口：设置 → 存储空间。本页是存储体系的唯一管理面，与配对流程无关。
 
 1. **本机存储卡片**：本机目录大小、未同步条数与占用（≥200MB 告警）、变更游标水位、本地安全快照。
 2. **备份与恢复**：快照列表（GFS 状态）、立即快照、恢复、**换机导入**（扫码 / 输入 device_id）、旧设备目录手动删除。
-3. **存储空间**：当前 master 及用量、指定/迁移 master（升主时提示旧 master 不可达的数据缺口风险）、按设备/分区浏览文件、文件手动删除、回收站（**支持还原**；清空仅 master 本机 loopback）、导入授权审批。
+3. **存储空间**：当前 master 及用量（卷剩余 / **≥80% 告警**）、指定/迁移 master（升主时提示旧 master 不可达的数据缺口风险）、按设备/分区浏览文件、文件手动删除、回收站（**支持还原**；清空仅 master 本机 loopback）、导入授权审批。
 4. **她的朋友圈**：每个配对 she 一行——名字、信任等级、最近交换时间、类别开关、手动触发（实现位于 `lib/she_network/`，管理入口同页，逻辑与存储解耦）。
 5. **危险区**：删除本机数据、**手动导出**（本机目录 / WebDAV）。
 
@@ -288,8 +290,8 @@ master 上的镜像树主要是各端本地数据的副本；为降低单点损�
 - **同路径覆盖**：后写覆盖先写，旧版进回收站 30 天可还原；产物按 task_id 归档降低撞名。
 - **恢复覆盖风险**：恢复前强制安全快照 + 界面明确替换语义。
 - **快照静默失败**：连续失败 ≥3 天显著告警，引导启用常开节点。
-- **master 磁盘膨胀**：无自动保留期（决策 1）——手删 + 回收站 30 天；GFS 仅本机 DB `backups`（不含 `reprotect-*` 再保护包）；磁盘 80% 告警为后续增强。
-- **再保护与 DB 快照隔离**：`listSnapshots` / GFS 跳过 `reprotect-*`；再保护打包时也不再打入既有 `reprotect-*`，避免递归膨胀。
+- **master 磁盘膨胀**：无自动保留期（决策 1）——手删 + 回收站 30 天；GFS 仅本机 DB `backups`（不含 `reprotect-*` 再保护包）；**卷用量 ≥80%** 告警（`stats.volume_warn`）。
+- **再保护与 DB 快照隔离**：`listSnapshots` / GFS 跳过 `reprotect-*`；再保护打包时也不再打入既有 `reprotect-*`；写入后 **只保留最新 4 份**（`pruneReprotect`）。
 - **密码遗忘/变更**：强制验密 + 解密自检；改密自动重加密新快照、旧快照支持历史密码。
 - **多 she 记忆分叉**：记忆交换 + 来源标注缓解；产物互通走目录读取。
 - **URI 先于镜像**：编排层传入产物 URI 时文件可能尚未 sync 到 master——`RemoteReadService` 对 `not_found` 做有限退避重试；写入方为本地优先（`ArtifactService` / 附件经 `LocalStore` + 同步队列）。
@@ -297,7 +299,7 @@ master 上的镜像树主要是各端本地数据的副本；为降低单点损�
 ## 13. 后续可选（不承诺）
 
 - 升主前逐设备内容哈希门闩 / 旧 master 可达时的镜像种子拷贝。
-- master 磁盘 80% 用量告警；`commit.retention` 字段落地；再保护包独立保留策略。
+- `commit.retention` 字段落地。
 - 快照差量化；回收站增强；`she.presence` 名单级；跨人 she 社交；DB 级多端互通（另案）。
 - 系统级 BGAppRefresh / WorkManager（日快照已有回前台 + WiFi 触发）。
 
@@ -312,3 +314,5 @@ master 上的镜像树主要是各端本地数据的副本；为降低单点损�
 7. §8 明确逻辑在 `she_network/`，与存储解耦、管理入口同页。
 8. 跨端读增加 owner 直读回退（master `not_found`/离线无缓存）。
 9. `listSnapshots`/GFS 与再保护包隔离；再保护打包跳过既有 `reprotect-*`。
+10. master/本机 store 所在卷 ≥80% 用量告警（`VolumeUsage` + `stats.volume_*`）。
+11. 再保护包独立保留：最新 4 份，多余进回收站。

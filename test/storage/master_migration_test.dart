@@ -9,6 +9,7 @@ import 'package:shepaw/services/local_database_service.dart';
 import 'package:shepaw/services/password_service.dart';
 import 'package:shepaw/storage/device_cursor_store.dart';
 import 'package:shepaw/storage/device_identity.dart';
+import 'package:shepaw/storage/local_store.dart';
 import 'package:shepaw/storage/master_migration_service.dart';
 import 'package:shepaw/storage/mirror_reprotect_service.dart';
 import 'package:shepaw/storage/snapshot_crypto.dart';
@@ -144,13 +145,52 @@ void main() {
       final junk = Uint8List(64 * 1024);
       await File(p.join(oldDir.path, 'mirror.tar.enc')).writeAsBytes(junk);
 
-      final id = await MirrorReprotectService.instance.run(passwordHash: h);
+      // maxKeep 足够大，避免本用例被 prune 干扰打包断言
+      final id = await MirrorReprotectService.instance
+          .run(passwordHash: h, maxKeep: 20);
       final manifest = jsonDecode(await File(
               p.join(store.root.path, self, 'backups', id, 'manifest.json'))
           .readAsString()) as Map<String, dynamic>;
       // 旧 reprotect 的 64KB 不应计入；file_count 不应因 junk 暴涨到含该文件
       expect(manifest['kind'], 'mirror_reprotect');
       expect(manifest['file_count'] as int, lessThan(1000));
+    });
+
+    test('selectReprotectDelete / pruneReprotect 只留最新 N 份', () async {
+      expect(
+          MirrorReprotectService.selectReprotectDelete(
+              ['r3', 'r2', 'r1', 'r0'],
+              maxKeep: 2),
+          ['r1', 'r0']);
+      expect(
+          MirrorReprotectService.selectReprotectDelete(['a', 'b'], maxKeep: 4),
+          isEmpty);
+
+      // 独立 store 根，避免与并行用例产生的今日 reprotect 抢排序
+      final tmp = await Directory.systemTemp.createTemp('reprotect_prune');
+      final store = LocalStore(root: tmp);
+      const self = 'cccccccccccccccc';
+      final backups = Directory(p.join(tmp.path, self, 'backups'));
+      await backups.create(recursive: true);
+      for (final id in [
+        'reprotect-20200101-000001',
+        'reprotect-20200102-000002',
+        'reprotect-20200103-000003',
+      ]) {
+        final dir = Directory(p.join(backups.path, id));
+        await dir.create(recursive: true);
+        await File(p.join(dir.path, 'manifest.json'))
+            .writeAsString('{"kind":"mirror_reprotect"}');
+      }
+      final removed = await MirrorReprotectService.instance.pruneReprotect(
+        store: store,
+        deviceId: self,
+        maxKeep: 2,
+      );
+      expect(removed, 1);
+      final left = await MirrorReprotectService.instance
+          .listReprotectIds(store: store, deviceId: self);
+      expect(left, ['reprotect-20200103-000003', 'reprotect-20200102-000002']);
     });
   });
 

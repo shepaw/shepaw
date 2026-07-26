@@ -4797,6 +4797,16 @@ class AppLocalizationsZh extends AppLocalizations {
   String get storage_usageTitle => '用量';
 
   @override
+  String storage_volumeFree(String free, String total) {
+    return '卷剩余 $free / $total';
+  }
+
+  @override
+  String storage_volumeWarning(int percent) {
+    return '存储卷已用约 $percent%（≥80%）。请清理文件或回收站，避免同步与快照失败。';
+  }
+
+  @override
   String get storage_recycleSection => '回收站';
 
   @override

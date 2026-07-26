@@ -18,6 +18,7 @@ import 'local_store.dart';
 import 'master_migration_service.dart';
 import 'store_protocol.dart';
 import 'sync_engine.dart';
+import 'volume_usage.dart';
 
 /// 存储空间编排服务（docs/storage_protocol_spec.md v1，M2）。
 ///
@@ -495,6 +496,14 @@ class StoreService {
             final cursors = await journal.cursors();
             base['change_seq'] = cursors.changeSeq;
             base['ack_seq'] = cursors.ackSeq;
+          }
+          // 方案 §7/§12：卷用量（供 80% 告警）；探测失败则省略字段
+          final volume = await VolumeUsage.probe(store.root.path);
+          if (volume != null) {
+            base['volume_total_bytes'] = volume.totalBytes;
+            base['volume_free_bytes'] = volume.freeBytes;
+            base['volume_used_ratio'] = volume.usedRatio;
+            base['volume_warn'] = volume.needsAttention;
           }
           return base;
 

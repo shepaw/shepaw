@@ -145,8 +145,14 @@
 {"op": "stats"}
 → {"op": "result", "data": {
     "devices": {"pc-b": {"artifacts": 1024, "files": 2048, "attachments": 0, "backups": 4096}},
-    "staging_bytes": 0, "recycle_bytes": 1048576}}
+    "staging_bytes": 0, "recycle_bytes": 1048576,
+    "unsynced_count": 0, "unsynced_bytes": 0, "change_seq": 12, "ack_seq": 12,
+    "volume_total_bytes": 500000000000, "volume_free_bytes": 80000000000,
+    "volume_used_ratio": 0.84, "volume_warn": true}}
 ```
+
+- `unsynced_*` / 游标水位：本机同步引擎挂载时附加。
+- `volume_*`：store 根所在卷探测成功时附加；`volume_warn == true` 表示已用 ≥ 80%（方案 §7）。探测失败则省略字段。
 
 ## 3. ACL 矩阵
 

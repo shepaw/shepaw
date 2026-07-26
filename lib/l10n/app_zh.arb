@@ -2928,6 +2928,19 @@
     }
   },
   "storage_usageTitle": "用量",
+  "storage_volumeFree": "卷剩余 {free} / {total}",
+  "storage_volumeWarning": "存储卷已用约 {percent}%（≥80%）。请清理文件或回收站，避免同步与快照失败。",
+  "@storage_volumeFree": {
+    "placeholders": {
+      "free": { "type": "String" },
+      "total": { "type": "String" }
+    }
+  },
+  "@storage_volumeWarning": {
+    "placeholders": {
+      "percent": { "type": "int" }
+    }
+  },
   "storage_recycleSection": "回收站",
   "storage_recycleEmptyHint": "回收站为空",
   "storage_recycleRestore": "还原",

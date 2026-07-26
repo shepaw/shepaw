@@ -581,8 +581,9 @@ class _StorageSpaceScreenState extends State<StorageSpaceScreen> {
                   Text(l10n.storage_usageTitle,
                       style: Theme.of(context).textTheme.bodySmall),
                   const SizedBox(height: 4),
-                  _buildUsageChips(),
+                  _buildUsageChips(l10n),
                   _buildSyncStatus(l10n),
+                  _buildVolumeWarning(l10n),
                 ],
               ],
             ),
@@ -769,11 +770,14 @@ class _StorageSpaceScreenState extends State<StorageSpaceScreen> {
     }
   }
 
-  Widget _buildUsageChips() {
+  Widget _buildUsageChips(AppLocalizations l10n) {
     final devices = (_stats!['devices'] as Map?)?.cast<String, dynamic>() ?? {};
     final mine = (devices[_selfId] as Map?)?.cast<String, dynamic>() ?? {};
     final staging = _stats!['staging_bytes'] as int? ?? 0;
     final recycle = _stats!['recycle_bytes'] as int? ?? 0;
+    final volumeTotal = _stats!['volume_total_bytes'] as int?;
+    final volumeFree = _stats!['volume_free_bytes'] as int?;
+    final volumeWarn = _stats!['volume_warn'] == true;
     final chips = <Widget>[
       for (final space in ['artifacts', 'files', 'attachments', 'backups'])
         Chip(
@@ -790,8 +794,43 @@ class _StorageSpaceScreenState extends State<StorageSpaceScreen> {
           label: Text('.recycle ${_fmtBytes(recycle)}'),
           visualDensity: VisualDensity.compact,
         ),
+      if (volumeTotal != null && volumeFree != null)
+        Chip(
+          label: Text(l10n.storage_volumeFree(
+              _fmtBytes(volumeFree), _fmtBytes(volumeTotal))),
+          visualDensity: VisualDensity.compact,
+          backgroundColor: volumeWarn
+              ? Theme.of(context).colorScheme.errorContainer
+              : null,
+        ),
     ];
     return Wrap(spacing: 8, runSpacing: 4, children: chips);
+  }
+
+  /// 方案 §7：卷用量 ≥80% 告警。
+  Widget _buildVolumeWarning(AppLocalizations l10n) {
+    if (_stats!['volume_warn'] != true) return const SizedBox.shrink();
+    final ratio = (_stats!['volume_used_ratio'] as num?)?.toDouble() ?? 0;
+    final pct = (ratio * 100).round();
+    return Container(
+      margin: const EdgeInsets.only(top: 8),
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        color: Theme.of(context).colorScheme.errorContainer,
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Row(
+        children: [
+          Icon(Icons.storage_rounded,
+              size: 18, color: Theme.of(context).colorScheme.error),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(l10n.storage_volumeWarning(pct),
+                style: Theme.of(context).textTheme.bodySmall),
+          ),
+        ],
+      ),
+    );
   }
 
   /// M4：未同步占用与游标水位（§6.4 磁盘压力展示 + 超阈值告警）。

@@ -19,11 +19,18 @@ import 'store_service.dart';
 /// 将 store 根下各 `<device_id>/<space>/`（跳过 .staging / .system / .recycle）
 /// 打成 tar → 主密码派生密钥加密 → 经 LocalStore commit 写入
 /// `<master_id>/backups/reprotect-<ts>/`。
+///
+/// 保留策略：成功写入后只保留最新 [defaultMaxKeep] 份（其余经 delete 进回收站），
+/// 与 DB 快照 GFS 分离。
 class MirrorReprotectService {
   MirrorReprotectService._();
   static final MirrorReprotectService instance = MirrorReprotectService._();
 
   static const _tag = 'MirrorReprotect';
+
+  /// 默认保留最近几份再保护包（日快照节奏下约一周内的冗余）。
+  static const defaultMaxKeep = 4;
+
   final _log = LoggerService();
 
   /// 仅 master 本机执行；无缓存密钥时跳过。
@@ -37,7 +44,10 @@ class MirrorReprotectService {
     return run(passwordHash: h);
   }
 
-  Future<String> run({required Uint8List passwordHash}) async {
+  Future<String> run({
+    required Uint8List passwordHash,
+    int maxKeep = defaultMaxKeep,
+  }) async {
     final store = await StoreService.instance.localStore();
     final self = await DeviceIdentity.deviceId();
     final now = DateTime.now().toUtc();
@@ -100,7 +110,14 @@ class MirrorReprotectService {
         'mirror.tar.enc': enc,
       });
 
-      _log.info('reprotect $id ($fileCount files, ${enc.length} enc bytes)',
+      final pruned = await pruneReprotect(
+        store: store,
+        deviceId: self,
+        maxKeep: maxKeep,
+      );
+      _log.info(
+          'reprotect $id ($fileCount files, ${enc.length} enc bytes'
+          '${pruned > 0 ? ', pruned $pruned' : ''})',
           tag: _tag);
       return id;
     } finally {
@@ -108,6 +125,63 @@ class MirrorReprotectService {
         if (await workDir.exists()) await workDir.delete(recursive: true);
       } catch (_) {}
     }
+  }
+
+  /// 列出再保护包 id（新→旧）。id 形如 `reprotect-YYYYMMDD-HHMMSS`。
+  Future<List<String>> listReprotectIds({
+    LocalStore? store,
+    String? deviceId,
+  }) async {
+    final s = store ?? await StoreService.instance.localStore();
+    final self = deviceId ?? await DeviceIdentity.deviceId();
+    final backups = Directory(p.join(s.root.path, self, StoreSpace.backups));
+    if (!await backups.exists()) return const [];
+    final ids = <String>[];
+    await for (final entry in backups.list()) {
+      if (entry is! Directory) continue;
+      final id = p.basename(entry.path);
+      if (!id.startsWith('reprotect-')) continue;
+      ids.add(id);
+    }
+    ids.sort((a, b) => b.compareTo(a));
+    return ids;
+  }
+
+  /// 只保留最新 [maxKeep] 份；多余的经 [LocalStore.delete] 进回收站。
+  /// 返回删除份数。
+  Future<int> pruneReprotect({
+    LocalStore? store,
+    String? deviceId,
+    int maxKeep = defaultMaxKeep,
+  }) async {
+    final s = store ?? await StoreService.instance.localStore();
+    final self = deviceId ?? await DeviceIdentity.deviceId();
+    final ids = await listReprotectIds(store: s, deviceId: self);
+    final toDelete = selectReprotectDelete(ids, maxKeep: maxKeep);
+    var removed = 0;
+    for (final id in toDelete) {
+      try {
+        await s.delete(self, StoreSpace.backups, id);
+        removed++;
+      } catch (e) {
+        _log.warning('prune reprotect $id failed: $e', tag: _tag);
+      }
+    }
+    if (removed > 0) {
+      _log.info('pruned $removed reprotect packages (keep=$maxKeep)',
+          tag: _tag);
+    }
+    return removed;
+  }
+
+  /// 纯函数：[idsNewestFirst] 中超出 [maxKeep] 的尾部应删除。
+  static List<String> selectReprotectDelete(
+    List<String> idsNewestFirst, {
+    int maxKeep = defaultMaxKeep,
+  }) {
+    if (maxKeep < 0) maxKeep = 0;
+    if (idsNewestFirst.length <= maxKeep) return const [];
+    return idsNewestFirst.sublist(maxKeep);
   }
 
   Future<void> _commitFiles(

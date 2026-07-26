@@ -8756,6 +8756,18 @@ abstract class AppLocalizations {
   /// **'用量'**
   String get storage_usageTitle;
 
+  /// No description provided for @storage_volumeFree.
+  ///
+  /// In zh, this message translates to:
+  /// **'卷剩余 {free} / {total}'**
+  String storage_volumeFree(String free, String total);
+
+  /// No description provided for @storage_volumeWarning.
+  ///
+  /// In zh, this message translates to:
+  /// **'存储卷已用约 {percent}%（≥80%）。请清理文件或回收站，避免同步与快照失败。'**
+  String storage_volumeWarning(int percent);
+
   /// No description provided for @storage_recycleSection.
   ///
   /// In zh, this message translates to:

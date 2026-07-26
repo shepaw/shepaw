@@ -4982,6 +4982,16 @@ class AppLocalizationsEn extends AppLocalizations {
   String get storage_usageTitle => 'Usage';
 
   @override
+  String storage_volumeFree(String free, String total) {
+    return 'Volume free $free / $total';
+  }
+
+  @override
+  String storage_volumeWarning(int percent) {
+    return 'Storage volume is about $percent% full (≥80%). Free space or empty the recycle bin to avoid sync/snapshot failures.';
+  }
+
+  @override
   String get storage_recycleSection => 'Recycle bin';
 
   @override

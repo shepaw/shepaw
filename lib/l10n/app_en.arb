@@ -2443,6 +2443,19 @@
     }
   },
   "storage_usageTitle": "Usage",
+  "storage_volumeFree": "Volume free {free} / {total}",
+  "storage_volumeWarning": "Storage volume is about {percent}% full (≥80%). Free space or empty the recycle bin to avoid sync/snapshot failures.",
+  "@storage_volumeFree": {
+    "placeholders": {
+      "free": { "type": "String" },
+      "total": { "type": "String" }
+    }
+  },
+  "@storage_volumeWarning": {
+    "placeholders": {
+      "percent": { "type": "int" }
+    }
+  },
   "storage_recycleSection": "Recycle bin",
   "storage_recycleEmptyHint": "Recycle bin is empty",
   "storage_recycleRestore": "Restore",
