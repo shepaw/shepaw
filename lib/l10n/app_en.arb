@@ -2366,6 +2366,13 @@
   "storage_noSnapshots": "No snapshots yet",
   "storage_restore": "Restore",
   "storage_export": "Export",
+  "storage_dangerZone": "Danger zone",
+  "storage_exportTree": "Export local store tree",
+  "storage_exportTreeTitle": "Export local store tree",
+  "storage_exportTreeDesc": "Copy this device's four partitions (committed files only) to a folder. Different from single-snapshot export.",
+  "storage_exportTreeHint": "Exports the full local store tree (artifacts / files / attachments / backups). Pick a destination folder.",
+  "storage_exportTreeDone": "Exported to {path} ({count} files, {size})",
+  "storage_exportTreeFailed": "Export failed: {error}",
   "storage_passwordTitle": "Master password",
   "storage_passwordHint": "Snapshots are encrypted with a key derived from your master password.",
   "storage_passwordWrong": "Wrong password",
@@ -2403,6 +2410,18 @@
       "path": {
         "type": "String"
       }
+    }
+  },
+  "@storage_exportTreeDone": {
+    "placeholders": {
+      "path": { "type": "String" },
+      "count": { "type": "int" },
+      "size": { "type": "String" }
+    }
+  },
+  "@storage_exportTreeFailed": {
+    "placeholders": {
+      "error": { "type": "String" }
     }
   },
   "@storage_exportDoneWithAttachments": {

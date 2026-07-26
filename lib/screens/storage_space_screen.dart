@@ -27,6 +27,7 @@ import '../storage/scheduled_snapshot_service.dart';
 import '../storage/snapshot_crypto.dart';
 import '../storage/snapshot_import_service.dart';
 import '../storage/snapshot_service.dart';
+import '../storage/store_export_service.dart';
 import '../storage/store_protocol.dart';
 import '../storage/store_service.dart';
 import 'storage_import_scanner_screen.dart';
@@ -477,6 +478,8 @@ class _StorageSpaceScreenState extends State<StorageSpaceScreen> {
                     )
                   else
                     ...list.map((s) => _buildSnapshotTile(l10n, s)),
+                  const SizedBox(height: 20),
+                  _buildDangerZoneCard(l10n),
                 ],
               );
             },
@@ -487,6 +490,84 @@ class _StorageSpaceScreenState extends State<StorageSpaceScreen> {
               child: const Center(child: CircularProgressIndicator()),
             ),
         ],
+      ),
+    );
+  }
+
+  Future<void> _exportStoreTree() async {
+    final l10n = AppLocalizations.of(context);
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        icon: Icon(Icons.folder_zip_outlined,
+            color: Theme.of(ctx).colorScheme.primary, size: 36),
+        title: Text(l10n.storage_exportTreeTitle),
+        content: Text(l10n.storage_exportTreeHint),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: Text(l10n.common_cancel),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: Text(l10n.common_confirm),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+    final dir = await FilePicker.platform.getDirectoryPath();
+    if (dir == null) return;
+    setState(() => _busy = true);
+    try {
+      final out = await StoreExportService.instance.exportSelfTree(dir);
+      _toast(
+        l10n.storage_exportTreeDone(
+            out.directory.path, out.fileCount, _fmtBytes(out.totalBytes)),
+        duration: const Duration(seconds: 6),
+      );
+    } catch (e) {
+      _toast(l10n.storage_exportTreeFailed('$e'));
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Widget _buildDangerZoneCard(AppLocalizations l10n) {
+    return Card(
+      color: Theme.of(context).colorScheme.errorContainer.withValues(alpha: 0.35),
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(Icons.warning_amber_rounded,
+                    color: Theme.of(context).colorScheme.error, size: 20),
+                const SizedBox(width: 8),
+                Text(l10n.storage_dangerZone,
+                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                          color: Theme.of(context).colorScheme.error,
+                        )),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Text(l10n.storage_exportTreeDesc,
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    )),
+            const SizedBox(height: 8),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: OutlinedButton.icon(
+                onPressed: _busy ? null : _exportStoreTree,
+                icon: const Icon(Icons.folder_copy_outlined, size: 18),
+                label: Text(l10n.storage_exportTree),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

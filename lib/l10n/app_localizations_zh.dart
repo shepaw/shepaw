@@ -4686,6 +4686,32 @@ class AppLocalizationsZh extends AppLocalizations {
   String get storage_export => '导出';
 
   @override
+  String get storage_dangerZone => '危险区';
+
+  @override
+  String get storage_exportTree => '导出本机存储目录';
+
+  @override
+  String get storage_exportTreeTitle => '导出本机存储目录';
+
+  @override
+  String get storage_exportTreeDesc => '将本机四分区正式文件复制到所选目录（不含未提交暂存）。与单份快照导出不同。';
+
+  @override
+  String get storage_exportTreeHint =>
+      '导出完整本机 store 目录树（artifacts / files / attachments / backups）。请选择目标文件夹。';
+
+  @override
+  String storage_exportTreeDone(String path, int count, String size) {
+    return '已导出到 $path（$count 个文件，$size）';
+  }
+
+  @override
+  String storage_exportTreeFailed(String error) {
+    return '导出失败：$error';
+  }
+
+  @override
   String get storage_passwordTitle => '输入主密码';
 
   @override

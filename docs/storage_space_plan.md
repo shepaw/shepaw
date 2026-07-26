@@ -218,7 +218,7 @@ master 上的镜像树主要是各端本地数据的副本；为降低单点损�
 2. **备份与恢复**：快照列表（GFS 状态）、立即快照、恢复、**换机导入**（扫码 / 输入 device_id）、旧设备目录手动删除。
 3. **存储空间**：当前 master 及用量（卷剩余 / **≥80% 告警**）、指定/迁移 master（升主时提示旧 master 不可达的数据缺口风险）、按设备/分区浏览文件、文件手动删除、回收站（**支持还原**并有结果提示；**清空仅 master 本机**显示与执行；列表可展开超过 20 条）、导入授权审批。
 4. **她的朋友圈**：每个配对 she 一行——名字、信任等级、最近交换时间、类别开关、手动触发（实现位于 `lib/she_network/`，管理入口同页，逻辑与存储解耦）。
-5. **危险区**：删除本机数据、**手动导出**（本机目录 / WebDAV）。
+5. **危险区**：本机 store 树**手动导出**（`StoreExportService`，四分区正式文件）；删除本机数据 / WebDAV 仍为后续。
 
 ## 8. 身份层：多 she 网络与记忆交换（决策）
 
@@ -301,8 +301,10 @@ master 上的镜像树主要是各端本地数据的副本；为降低单点损�
 ## 13. 后续可选（不承诺）
 
 - `commit.retention` 字段落地。
+- 危险区「删除本机数据」、WebDAV 兜底导出。
 - 快照差量化；`she.presence` 名单级；跨人 she 社交；DB 级多端互通（另案）。
 - 系统级 BGAppRefresh / WorkManager（日快照已有回前台 + WiFi 触发）。
+- 按设备/分区文件浏览与手删；master 上手动删除旧 device 镜像目录。
 
 ## 附录 A. v1.1 相对 v1.0 的修订摘要
 
@@ -325,3 +327,4 @@ master 上的镜像树主要是各端本地数据的副本；为降低单点损�
 18. 路径 A/B 导入请求到达通知（`ImportRequestNotifier` + `ImportRequestBus`）。
 19. 新设备收到导入授权推送通知（`ImportGrantNotifier` + `ImportGrantBus`）。
 20. 开启自动快照强制验密；管理页解密自检（`checkDecryptAndCache`）。
+21. 危险区本机 store 树导出（`StoreExportService`，跳过 staging）。

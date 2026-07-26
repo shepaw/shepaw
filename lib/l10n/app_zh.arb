@@ -2851,6 +2851,13 @@
   "storage_noSnapshots": "暂无快照",
   "storage_restore": "恢复",
   "storage_export": "导出",
+  "storage_dangerZone": "危险区",
+  "storage_exportTree": "导出本机存储目录",
+  "storage_exportTreeTitle": "导出本机存储目录",
+  "storage_exportTreeDesc": "将本机四分区正式文件复制到所选目录（不含未提交暂存）。与单份快照导出不同。",
+  "storage_exportTreeHint": "导出完整本机 store 目录树（artifacts / files / attachments / backups）。请选择目标文件夹。",
+  "storage_exportTreeDone": "已导出到 {path}（{count} 个文件，{size}）",
+  "storage_exportTreeFailed": "导出失败：{error}",
   "storage_passwordTitle": "输入主密码",
   "storage_passwordHint": "快照以主密码派生密钥加密。",
   "storage_passwordWrong": "密码错误",
@@ -2888,6 +2895,18 @@
       "path": {
         "type": "String"
       }
+    }
+  },
+  "@storage_exportTreeDone": {
+    "placeholders": {
+      "path": { "type": "String" },
+      "count": { "type": "int" },
+      "size": { "type": "String" }
+    }
+  },
+  "@storage_exportTreeFailed": {
+    "placeholders": {
+      "error": { "type": "String" }
     }
   },
   "@storage_exportDoneWithAttachments": {

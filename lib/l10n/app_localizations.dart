@@ -8570,6 +8570,48 @@ abstract class AppLocalizations {
   /// **'导出'**
   String get storage_export;
 
+  /// No description provided for @storage_dangerZone.
+  ///
+  /// In zh, this message translates to:
+  /// **'危险区'**
+  String get storage_dangerZone;
+
+  /// No description provided for @storage_exportTree.
+  ///
+  /// In zh, this message translates to:
+  /// **'导出本机存储目录'**
+  String get storage_exportTree;
+
+  /// No description provided for @storage_exportTreeTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'导出本机存储目录'**
+  String get storage_exportTreeTitle;
+
+  /// No description provided for @storage_exportTreeDesc.
+  ///
+  /// In zh, this message translates to:
+  /// **'将本机四分区正式文件复制到所选目录（不含未提交暂存）。与单份快照导出不同。'**
+  String get storage_exportTreeDesc;
+
+  /// No description provided for @storage_exportTreeHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'导出完整本机 store 目录树（artifacts / files / attachments / backups）。请选择目标文件夹。'**
+  String get storage_exportTreeHint;
+
+  /// No description provided for @storage_exportTreeDone.
+  ///
+  /// In zh, this message translates to:
+  /// **'已导出到 {path}（{count} 个文件，{size}）'**
+  String storage_exportTreeDone(String path, int count, String size);
+
+  /// No description provided for @storage_exportTreeFailed.
+  ///
+  /// In zh, this message translates to:
+  /// **'导出失败：{error}'**
+  String storage_exportTreeFailed(String error);
+
   /// No description provided for @storage_passwordTitle.
   ///
   /// In zh, this message translates to:

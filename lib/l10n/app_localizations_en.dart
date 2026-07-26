@@ -4869,6 +4869,33 @@ class AppLocalizationsEn extends AppLocalizations {
   String get storage_export => 'Export';
 
   @override
+  String get storage_dangerZone => 'Danger zone';
+
+  @override
+  String get storage_exportTree => 'Export local store tree';
+
+  @override
+  String get storage_exportTreeTitle => 'Export local store tree';
+
+  @override
+  String get storage_exportTreeDesc =>
+      'Copy this device\'s four partitions (committed files only) to a folder. Different from single-snapshot export.';
+
+  @override
+  String get storage_exportTreeHint =>
+      'Exports the full local store tree (artifacts / files / attachments / backups). Pick a destination folder.';
+
+  @override
+  String storage_exportTreeDone(String path, int count, String size) {
+    return 'Exported to $path ($count files, $size)';
+  }
+
+  @override
+  String storage_exportTreeFailed(String error) {
+    return 'Export failed: $error';
+  }
+
+  @override
   String get storage_passwordTitle => 'Master password';
 
   @override
