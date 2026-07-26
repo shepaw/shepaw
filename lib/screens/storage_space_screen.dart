@@ -2,9 +2,15 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 
 import '../l10n/app_localizations.dart';
+import '../peer/services/peer_connection_manager.dart';
+import '../peer/services/peer_storage_service.dart';
 import '../services/password_service.dart';
 import '../storage/device_identity.dart';
+import '../storage/import_auth_service.dart';
 import '../storage/restore_service.dart';
+import '../storage/scheduled_snapshot_service.dart';
+import '../storage/snapshot_crypto.dart';
+import '../storage/snapshot_import_service.dart';
 import '../storage/snapshot_service.dart';
 import '../storage/store_protocol.dart';
 import '../storage/store_service.dart';
@@ -31,6 +37,13 @@ class _StorageSpaceScreenState extends State<StorageSpaceScreen> {
   String _selfId = '';
   Map<String, dynamic>? _stats;
   List<Map<String, dynamic>> _recycle = [];
+
+  // M3 区块状态
+  ScheduledSnapshotStatus? _schedStatus;
+  int _passwordChangedAtMs = 0;
+  List<ImportGrant> _receivedGrants = [];
+  List<Map<String, dynamic>> _pendingImports = [];
+  final _oldDeviceController = TextEditingController();
 
   @override
   void initState() {
@@ -61,6 +74,24 @@ class _StorageSpaceScreenState extends State<StorageSpaceScreen> {
         .call(StoreFrame(op: StoreOp.recycleList, payload: {}));
     if (recycle != null && recycle['entries'] is List) {
       _recycle = (recycle['entries'] as List)
+          .map((e) => (e as Map).cast<String, dynamic>())
+          .toList();
+    }
+    // M3：调度状态 + 改密时间 + 导入授权/请求
+    _schedStatus = await ScheduledSnapshotService.instance.status();
+    _passwordChangedAtMs =
+        await ScheduledSnapshotService.instance.passwordChangedAtMs();
+    final grants = await StoreService.instance.call(StoreFrame(
+        op: StoreOp.importGrants, payload: {'role': 'received'}));
+    if (grants != null && grants['grants'] is List) {
+      _receivedGrants = (grants['grants'] as List)
+          .map((e) => ImportGrant.fromJson((e as Map).cast<String, dynamic>()))
+          .toList();
+    }
+    final pending = await StoreService.instance
+        .call(StoreFrame(op: StoreOp.importPending, payload: {}));
+    if (pending != null && pending['requests'] is List) {
+      _pendingImports = (pending['requests'] as List)
           .map((e) => (e as Map).cast<String, dynamic>())
           .toList();
     }
@@ -281,6 +312,8 @@ class _StorageSpaceScreenState extends State<StorageSpaceScreen> {
                   const SizedBox(height: 20),
                   _buildHeader(l10n),
                   const SizedBox(height: 20),
+                  _buildImportCard(l10n),
+                  const SizedBox(height: 20),
                   Row(
                     children: [
                       Text(l10n.storage_snapshotSection,
@@ -462,22 +495,329 @@ class _StorageSpaceScreenState extends State<StorageSpaceScreen> {
     return parts.length > 1 ? parts[1] : '';
   }
 
+  // ------------------------------------------------------------ M3 换机导入
+
+  /// 服务侧选择：旧设备在线则直连（路径 A），否则走 master（路径 B）。
+  Future<String> _serverFor(String oldDeviceId) async {
+    final peers = await PeerStorageService().loadAllPeers();
+    final old = peers.where((p) => p.fingerprint == oldDeviceId).firstOrNull;
+    if (old != null &&
+        PeerConnectionManager.instance.connectedPeerIds.contains(old.id)) {
+      return oldDeviceId;
+    }
+    return _masterId;
+  }
+
+  Future<void> _sendImportRequest() async {
+    final l10n = AppLocalizations.of(context);
+    final oldId = _oldDeviceController.text.trim().toLowerCase();
+    if (!RegExp(r'^[0-9a-f]{16}$').hasMatch(oldId) || oldId == _selfId) {
+      _toast(l10n.storage_oldDeviceId);
+      return;
+    }
+    setState(() => _busy = true);
+    try {
+      final server = await _serverFor(oldId);
+      final res = await StoreService.instance.callPeer(
+          server, StoreFrame(op: StoreOp.importRequest, payload: {
+        'old_device': oldId,
+      }));
+      if (res != null && res['request_id'] != null) {
+        _toast(l10n.storage_importSent);
+      } else {
+        _toast(l10n.storage_importFailed('${res?['_error']}'));
+      }
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _approveImport(Map<String, dynamic> req, bool approve) async {
+    setState(() => _busy = true);
+    try {
+      await StoreService.instance.call(StoreFrame(
+          op: approve ? StoreOp.importGrant : StoreOp.importReject,
+          payload: {'request_id': req['request_id']}));
+      await _refresh();
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  /// 浏览旧设备快照 → 选择 → 密码 → 下载 → 恢复（保留本机身份）。
+  Future<void> _browseAndImport(ImportGrant grant) async {
+    final l10n = AppLocalizations.of(context);
+    final server = await _serverFor(grant.oldDevice);
+    List<String> snapshots;
+    try {
+      snapshots = await SnapshotImportService.instance.listRemoteSnapshots(
+        serverDeviceId: server,
+        oldDeviceId: grant.oldDevice,
+        grantId: grant.grantId,
+      );
+    } catch (e) {
+      _toast(l10n.storage_importFailed('$e'));
+      return;
+    }
+    if (!mounted) return;
+    if (snapshots.isEmpty) {
+      _toast(l10n.storage_noRemoteSnapshots);
+      return;
+    }
+    final picked = await showDialog<String>(
+      context: context,
+      builder: (ctx) => SimpleDialog(
+        title: Text(l10n.storage_importPickSnapshot),
+        children: [
+          for (final id in snapshots.take(20))
+            SimpleDialogOption(
+              onPressed: () => Navigator.of(ctx).pop(id),
+              child: Text(id),
+            ),
+        ],
+      ),
+    );
+    if (picked == null || !mounted) return;
+
+    final password = await _askPassword();
+    if (password == null) return;
+
+    setState(() => _busy = true);
+    try {
+      _toast(l10n.storage_importDownloading);
+      final info = await SnapshotImportService.instance.downloadSnapshot(
+        serverDeviceId: server,
+        oldDeviceId: grant.oldDevice,
+        snapshotId: picked,
+        grantId: grant.grantId,
+      );
+      final preview =
+          await RestoreService.instance.prepareRestore(info, password);
+      if (!mounted) return;
+      final confirmed = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          icon: Icon(Icons.warning_amber_rounded,
+              color: Theme.of(ctx).colorScheme.error, size: 36),
+          content: Text(l10n.storage_importDone),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(false),
+              child: Text(l10n.common_cancel),
+            ),
+            FilledButton(
+              style: FilledButton.styleFrom(
+                  backgroundColor: Theme.of(ctx).colorScheme.error),
+              onPressed: () => Navigator.of(ctx).pop(true),
+              child: Text(l10n.storage_importRestore),
+            ),
+          ],
+        ),
+      );
+      if (confirmed != true) return;
+      // 换机导入：保留本机 device_id（§5.4）
+      await RestoreService.instance
+          .executeRestore(preview, password, restoreIdentity: false);
+      _toast(l10n.storage_restoreDone, duration: const Duration(seconds: 6));
+    } on SnapshotDecryptException {
+      _toast(l10n.storage_passwordWrong);
+    } catch (e) {
+      _toast(l10n.storage_importFailed('$e'));
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  // ------------------------------------------------------------ M3 换机导入卡片
+
+  Widget _buildImportCard(AppLocalizations l10n) {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(Icons.phonelink_ring_outlined,
+                    color: Theme.of(context).colorScheme.primary, size: 20),
+                const SizedBox(width: 8),
+                Text(l10n.storage_importSection,
+                    style: Theme.of(context).textTheme.bodyMedium),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Text(l10n.storage_importRequestHint,
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: Theme.of(context).colorScheme.onSurfaceVariant)),
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                Expanded(
+                  child: TextField(
+                    controller: _oldDeviceController,
+                    decoration: InputDecoration(
+                      isDense: true,
+                      border: const OutlineInputBorder(),
+                      hintText: l10n.storage_oldDeviceId,
+                    ),
+                    style: const TextStyle(fontFamily: 'monospace'),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                FilledButton(
+                  onPressed: _busy ? null : _sendImportRequest,
+                  child: Text(l10n.storage_importSend),
+                ),
+              ],
+            ),
+
+            // 待审批（本机为旧设备/master 时）
+            if (_pendingImports.isNotEmpty) ...[
+              const Divider(height: 24),
+              Text(l10n.storage_importPending,
+                  style: Theme.of(context).textTheme.bodySmall),
+              ..._pendingImports.map((req) => ListTile(
+                    dense: true,
+                    contentPadding: EdgeInsets.zero,
+                    leading: const Icon(Icons.hourglass_top, size: 18),
+                    title: Text(
+                        l10n.storage_importFrom(
+                            '${req['new_device']}'.substring(0, 8)),
+                        style: Theme.of(context).textTheme.bodySmall),
+                    trailing: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        TextButton(
+                          onPressed:
+                              _busy ? null : () => _approveImport(req, true),
+                          child: Text(l10n.storage_importApprove),
+                        ),
+                        TextButton(
+                          onPressed:
+                              _busy ? null : () => _approveImport(req, false),
+                          child: Text(l10n.storage_importReject),
+                        ),
+                      ],
+                    ),
+                  )),
+            ],
+
+            // 我获得的授权
+            if (_receivedGrants.isNotEmpty) ...[
+              const Divider(height: 24),
+              Text(l10n.storage_importMyGrants,
+                  style: Theme.of(context).textTheme.bodySmall),
+              ..._receivedGrants.map((g) => ListTile(
+                    dense: true,
+                    contentPadding: EdgeInsets.zero,
+                    leading: const Icon(Icons.key, size: 18),
+                    title: Text(
+                        l10n.storage_importFrom(
+                            g.oldDevice.substring(0, 8)),
+                        style: Theme.of(context).textTheme.bodySmall),
+                    subtitle: Text(
+                        l10n.storage_importExpires(_fmtTime(g.expiresAtMs)),
+                        style: Theme.of(context).textTheme.labelSmall),
+                    trailing: FilledButton.tonal(
+                      onPressed: _busy ? null : () => _browseAndImport(g),
+                      child: Text(l10n.storage_importBrowse),
+                    ),
+                  )),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  String _fmtTime(int ms) {
+    final t = DateTime.fromMillisecondsSinceEpoch(ms).toLocal();
+    return '${t.month}-${t.day} ${t.hour.toString().padLeft(2, '0')}:${t.minute.toString().padLeft(2, '0')}';
+  }
+
   Widget _buildHeader(AppLocalizations l10n) {
+    final status = _schedStatus;
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(16),
-        child: Row(
+        child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Icon(Icons.backup_outlined,
-                color: Theme.of(context).colorScheme.primary),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Text(
-                l10n.storage_snapshotDesc,
-                style: Theme.of(context).textTheme.bodyMedium,
-              ),
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Icon(Icons.backup_outlined,
+                    color: Theme.of(context).colorScheme.primary),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    l10n.storage_snapshotDesc,
+                    style: Theme.of(context).textTheme.bodyMedium,
+                  ),
+                ),
+              ],
             ),
+            if (status != null) ...[
+              const Divider(height: 24),
+              Row(
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(l10n.storage_autoSnapshot,
+                            style: Theme.of(context).textTheme.bodyMedium),
+                        Text(
+                          !status.enabled
+                              ? l10n.storage_autoSnapshotOff
+                              : !status.keyCached
+                                  ? l10n.storage_noKeyHint
+                                  : status.lastSuccessMs > 0
+                                      ? l10n.storage_lastSuccess(_fmtTime(
+                                          status.lastSuccessMs))
+                                      : l10n.storage_noSnapshots,
+                          style:
+                              Theme.of(context).textTheme.bodySmall?.copyWith(
+                                    color: Theme.of(context)
+                                        .colorScheme
+                                        .onSurfaceVariant,
+                                  ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  Switch(
+                    value: status.enabled,
+                    onChanged: (v) async {
+                      await ScheduledSnapshotService.instance.setEnabled(v);
+                      await _refresh();
+                    },
+                  ),
+                ],
+              ),
+              if (status.needsAttention)
+                Container(
+                  margin: const EdgeInsets.only(top: 8),
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: Theme.of(context).colorScheme.errorContainer,
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(Icons.warning_amber_rounded,
+                          size: 18,
+                          color: Theme.of(context).colorScheme.error),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(l10n.storage_snapshotWarning,
+                            style: Theme.of(context).textTheme.bodySmall),
+                      ),
+                    ],
+                  ),
+                ),
+            ],
           ],
         ),
       ),
@@ -506,11 +846,32 @@ class _StorageSpaceScreenState extends State<StorageSpaceScreen> {
     final timeLabel =
         '${t.year}-${t.month.toString().padLeft(2, '0')}-${t.day.toString().padLeft(2, '0')} '
         '${t.hour.toString().padLeft(2, '0')}:${t.minute.toString().padLeft(2, '0')}';
+    // 改密前的快照：需旧密码恢复（§5.2 密码变更策略）
+    final needsOldPassword = _passwordChangedAtMs > 0 &&
+        info.manifest.createdAtMs < _passwordChangedAtMs;
 
     return Card(
       child: ListTile(
         leading: const Icon(Icons.save_as_outlined),
-        title: Text(timeLabel),
+        title: Row(
+          children: [
+            Flexible(child: Text(timeLabel)),
+            if (needsOldPassword) ...[
+              const SizedBox(width: 8),
+              Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+                decoration: BoxDecoration(
+                  color:
+                      Theme.of(context).colorScheme.tertiaryContainer,
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Text(l10n.storage_needsOldPassword,
+                    style: Theme.of(context).textTheme.labelSmall),
+              ),
+            ],
+          ],
+        ),
         subtitle: Text(
           '${_fmtBytes(info.totalBytes)} · schema v${info.manifest.schemaVersion} · $label',
           style: TextStyle(color: color),

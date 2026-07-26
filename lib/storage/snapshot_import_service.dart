@@ -1,0 +1,170 @@
+import 'dart:convert';
+import 'dart:io';
+
+import 'package:crypto/crypto.dart' as crypto;
+import 'package:path/path.dart' as p;
+
+import '../services/logger_service.dart';
+import 'device_identity.dart';
+import 'local_store.dart';
+import 'snapshot_service.dart';
+import 'store_protocol.dart';
+import 'store_service.dart';
+
+/// 换机快照下载（docs/storage_space_plan.md §5.4，M3 路径 A/B 通用）。
+///
+/// 凭有效导入授权，从服务侧设备（旧设备或 master）把一个快照目录
+/// 整体拉到本机 `<self>/backups/` 下，之后走标准 [RestoreService] 流程。
+class SnapshotImportService {
+  SnapshotImportService._();
+  static final SnapshotImportService instance = SnapshotImportService._();
+
+  static const _tag = 'SnapshotImport';
+  final _log = LoggerService();
+
+  /// 列出服务侧设备上某设备目录下的快照 id（新→旧）。
+  Future<List<String>> listRemoteSnapshots({
+    required String serverDeviceId,
+    required String oldDeviceId,
+    required String grantId,
+  }) async {
+    final res = await StoreService.instance.callPeer(
+      serverDeviceId,
+      StoreFrame(op: StoreOp.list, payload: {
+        'space': 'backups',
+        'device': oldDeviceId,
+        'path': '',
+        'grant': grantId,
+      }),
+    );
+    if (res == null || res.containsKey('_error')) {
+      throw StateError('list failed: ${res?['_error']}');
+    }
+    final ids = <String>{};
+    for (final e in (res['entries'] as List).cast<Map>()) {
+      final path = e['path'] as String;
+      final first = path.split('/').first;
+      if (first.isNotEmpty) ids.add(first);
+    }
+    final list = ids.toList()..sort((a, b) => b.compareTo(a));
+    return list;
+  }
+
+  /// 下载一个快照目录到本机 backups，返回本地 [SnapshotInfo]。
+  ///
+  /// 逐文件 SHA-256 校验（协议层完整性）；解密校验在恢复时进行。
+  /// 旧格式（manifest 无 kdf_salt）无法换机恢复，直接报错。
+  Future<SnapshotInfo> downloadSnapshot({
+    required String serverDeviceId,
+    required String oldDeviceId,
+    required String snapshotId,
+    required String grantId,
+  }) async {
+    // 1. 列目录
+    final listing = await StoreService.instance.callPeer(
+      serverDeviceId,
+      StoreFrame(op: StoreOp.list, payload: {
+        'space': 'backups',
+        'device': oldDeviceId,
+        'path': '$snapshotId/',
+        'grant': grantId,
+      }),
+    );
+    if (listing == null || listing.containsKey('_error')) {
+      throw StateError('list failed: ${listing?['_error']}');
+    }
+    final entries = (listing['entries'] as List).cast<Map<String, dynamic>>();
+    if (entries.isEmpty) throw StateError('snapshot not found');
+
+    // 2. 下载到本地 backups/<ts>（重名加 -import 后缀）
+    final self = await DeviceIdentity.deviceId();
+    final backupsRoot = await SnapshotService.instance.deviceStoreRoot();
+    var localId = snapshotId;
+    var destDir = Directory(p.join(backupsRoot.path, 'backups', localId));
+    if (await destDir.exists()) {
+      localId = '$snapshotId-import';
+      destDir = Directory(p.join(backupsRoot.path, 'backups', localId));
+      if (await destDir.exists()) await destDir.delete(recursive: true);
+    }
+    await destDir.create(recursive: true);
+
+    try {
+      for (final e in entries) {
+        final rel = e['path'] as String;
+        final expectedHash = e['sha256'] as String;
+        final bytes = await _readAll(
+            serverDeviceId, oldDeviceId, rel, grantId, e['size'] as int);
+        final actualHash = crypto.sha256.convert(bytes).toString();
+        if (actualHash != expectedHash) {
+          throw StateError('hash mismatch on $rel');
+        }
+        final out = File(p.join(destDir.path, rel));
+        await out.parent.create(recursive: true);
+        await out.writeAsBytes(bytes, flush: true);
+      }
+    } catch (e) {
+      await destDir.delete(recursive: true);
+      rethrow;
+    }
+
+    // 3. 组装 SnapshotInfo（v2 格式校验）
+    final manifestFile = File(p.join(destDir.path, 'manifest.json'));
+    final manifest = SnapshotManifest.fromJson(
+        jsonDecode(await manifestFile.readAsString())
+            as Map<String, dynamic>);
+    if (manifest.kdfSalt == null) {
+      await destDir.delete(recursive: true);
+      throw StateError('旧格式快照（无 kdf_salt）不支持换机恢复，'
+          '请在旧设备上重新生成一份快照');
+    }
+    if (manifest.deviceId != oldDeviceId) {
+      _log.warning(
+          'snapshot device ${manifest.deviceId} != old $oldDeviceId',
+          tag: _tag);
+    }
+
+    var total = 0;
+    await for (final f in destDir.list(recursive: true)) {
+      if (f is File) total += await f.length();
+    }
+    _log.info('snapshot $snapshotId imported as $localId ($total bytes)',
+        tag: _tag);
+    return SnapshotInfo(
+      id: localId,
+      path: destDir.path,
+      manifest: manifest,
+      totalBytes: total,
+    );
+  }
+
+  Future<List<int>> _readAll(String serverDeviceId, String oldDeviceId,
+      String relPath, String grantId, int size) async {
+    final builder = BytesBuilder(copy: false);
+    var offset = 0;
+    while (true) {
+      final res = await StoreService.instance.callPeer(
+        serverDeviceId,
+        StoreFrame(op: StoreOp.read, payload: {
+          'space': 'backups',
+          'device': oldDeviceId,
+          'path': relPath,
+          'offset': offset,
+          'length': LocalStore.maxReadChunk,
+          'grant': grantId,
+        }),
+      );
+      if (res == null || res.containsKey('_error')) {
+        throw StateError('read failed: ${res?['_error']}');
+      }
+      final chunk = base64Decode(res['data'] as String);
+      builder.add(chunk);
+      offset += chunk.length;
+      if (res['eof'] == true || chunk.isEmpty) break;
+    }
+    final bytes = builder.toBytes();
+    if (bytes.length != size) {
+      throw StateError('size mismatch: got ${bytes.length} want $size');
+    }
+    return bytes;
+  }
+}

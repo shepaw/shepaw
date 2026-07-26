@@ -4961,4 +4961,89 @@ class AppLocalizationsEn extends AppLocalizations {
   String storage_deletedAt(String time) {
     return 'deleted $time';
   }
+
+  @override
+  String get storage_autoSnapshot => 'Auto daily snapshot';
+
+  @override
+  String get storage_autoSnapshotOff => 'Off';
+
+  @override
+  String storage_lastSuccess(String time) {
+    return 'Last success $time';
+  }
+
+  @override
+  String get storage_noKeyHint =>
+      'Create one manual snapshot to enable auto snapshots';
+
+  @override
+  String get storage_snapshotWarning =>
+      'Auto snapshot failing for 3+ days. Check storage space or create a snapshot manually.';
+
+  @override
+  String get storage_needsOldPassword => 'requires old password';
+
+  @override
+  String get storage_importSection => 'Device migration import';
+
+  @override
+  String get storage_importRequestHint =>
+      'Enter the old device\'s ID and send an import request. Confirm it on the old device (or master).';
+
+  @override
+  String get storage_oldDeviceId => 'Old device ID (16 hex)';
+
+  @override
+  String get storage_importSend => 'Send import request';
+
+  @override
+  String get storage_importSent =>
+      'Request sent. Confirm it on the old device (or master).';
+
+  @override
+  String get storage_importMyGrants => 'My import authorizations';
+
+  @override
+  String get storage_importBrowse => 'Browse snapshots';
+
+  @override
+  String get storage_importPending => 'Pending import requests';
+
+  @override
+  String get storage_importApprove => 'Approve';
+
+  @override
+  String get storage_importReject => 'Reject';
+
+  @override
+  String storage_importFrom(String device) {
+    return 'from $device';
+  }
+
+  @override
+  String get storage_importPickSnapshot => 'Pick a snapshot to import';
+
+  @override
+  String get storage_importDownloading => 'Downloading snapshot…';
+
+  @override
+  String get storage_importDone =>
+      'Snapshot imported. Restoring will replace all current data (keeping this device\'s identity).';
+
+  @override
+  String get storage_importRestore => 'Import & restore';
+
+  @override
+  String storage_importFailed(String error) {
+    return 'Import failed: $error';
+  }
+
+  @override
+  String get storage_noRemoteSnapshots => 'No snapshots on the old device';
+
+  @override
+  String storage_importExpires(String time) {
+    return 'Expires $time';
+  }
 }

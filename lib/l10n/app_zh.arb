@@ -2912,5 +2912,57 @@
         "type": "String"
       }
     }
+  },
+  "storage_autoSnapshot": "每日自动快照",
+  "storage_autoSnapshotOff": "已关闭",
+  "storage_lastSuccess": "最近成功 {time}",
+  "storage_noKeyHint": "先手动创建一次快照以启用自动快照",
+  "storage_snapshotWarning": "自动快照已连续失败 3 天以上，请检查存储空间或手动快照一次。",
+  "storage_needsOldPassword": "需旧密码",
+  "storage_importSection": "换机导入",
+  "storage_importRequestHint": "输入旧设备 ID 并发送导入请求，在旧设备（或 master）上确认。",
+  "storage_oldDeviceId": "旧设备 ID（16 位十六进制）",
+  "storage_importSend": "发送导入请求",
+  "storage_importSent": "请求已发送，请在旧设备（或 master）上确认。",
+  "storage_importMyGrants": "我获得的导入授权",
+  "storage_importBrowse": "浏览快照",
+  "storage_importPending": "待审批的导入请求",
+  "storage_importApprove": "批准",
+  "storage_importReject": "拒绝",
+  "storage_importFrom": "来自 {device}",
+  "storage_importPickSnapshot": "选择要导入的快照",
+  "storage_importDownloading": "正在下载快照…",
+  "storage_importDone": "快照已取回。恢复将全量替换当前数据（保留本机设备身份）。",
+  "storage_importRestore": "导入并恢复",
+  "storage_importFailed": "导入失败：{error}",
+  "storage_noRemoteSnapshots": "旧设备上没有快照",
+  "@storage_lastSuccess": {
+    "placeholders": {
+      "time": {
+        "type": "String"
+      }
+    }
+  },
+  "@storage_importFrom": {
+    "placeholders": {
+      "device": {
+        "type": "String"
+      }
+    }
+  },
+  "@storage_importFailed": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "storage_importExpires": "有效期至 {time}",
+  "@storage_importExpires": {
+    "placeholders": {
+      "time": {
+        "type": "String"
+      }
+    }
   }
 }

@@ -172,13 +172,29 @@ void main() {
     );
   });
 
-  test('恢复前置：错密码拒绝', () async {
+  test('恢复前置：错密码拒绝（解密即验密，不再要求等于当前密码）', () async {
     final info =
         await SnapshotService.instance.createSnapshot(password: password);
     expect(
       () => RestoreService.instance.prepareRestore(info, 'nope'),
-      throwsStateError,
+      throwsA(isA<SnapshotDecryptException>()),
     );
+  });
+
+  test('换机导入模式（restoreIdentity=false）：数据恢复但保留新设备身份', () async {
+    final identityBefore = await DeviceIdentity.deviceId();
+    await seedData('migrate');
+    final info =
+        await SnapshotService.instance.createSnapshot(password: password);
+
+    final preview =
+        await RestoreService.instance.prepareRestore(info, password);
+    await RestoreService.instance
+        .executeRestore(preview, password, restoreIdentity: false);
+
+    expect(await hasChannel('ch-migrate'), isTrue);
+    // 新设备保留自己的 device_id（§5.4：两个 device_id 互不影响）
+    expect(await DeviceIdentity.deviceId(), identityBefore);
   });
 
   test('本机导出：快照目录整体复制', () async {

@@ -4776,4 +4776,84 @@ class AppLocalizationsZh extends AppLocalizations {
   String storage_deletedAt(String time) {
     return '删除于 $time';
   }
+
+  @override
+  String get storage_autoSnapshot => '每日自动快照';
+
+  @override
+  String get storage_autoSnapshotOff => '已关闭';
+
+  @override
+  String storage_lastSuccess(String time) {
+    return '最近成功 $time';
+  }
+
+  @override
+  String get storage_noKeyHint => '先手动创建一次快照以启用自动快照';
+
+  @override
+  String get storage_snapshotWarning => '自动快照已连续失败 3 天以上，请检查存储空间或手动快照一次。';
+
+  @override
+  String get storage_needsOldPassword => '需旧密码';
+
+  @override
+  String get storage_importSection => '换机导入';
+
+  @override
+  String get storage_importRequestHint => '输入旧设备 ID 并发送导入请求，在旧设备（或 master）上确认。';
+
+  @override
+  String get storage_oldDeviceId => '旧设备 ID（16 位十六进制）';
+
+  @override
+  String get storage_importSend => '发送导入请求';
+
+  @override
+  String get storage_importSent => '请求已发送，请在旧设备（或 master）上确认。';
+
+  @override
+  String get storage_importMyGrants => '我获得的导入授权';
+
+  @override
+  String get storage_importBrowse => '浏览快照';
+
+  @override
+  String get storage_importPending => '待审批的导入请求';
+
+  @override
+  String get storage_importApprove => '批准';
+
+  @override
+  String get storage_importReject => '拒绝';
+
+  @override
+  String storage_importFrom(String device) {
+    return '来自 $device';
+  }
+
+  @override
+  String get storage_importPickSnapshot => '选择要导入的快照';
+
+  @override
+  String get storage_importDownloading => '正在下载快照…';
+
+  @override
+  String get storage_importDone => '快照已取回。恢复将全量替换当前数据（保留本机设备身份）。';
+
+  @override
+  String get storage_importRestore => '导入并恢复';
+
+  @override
+  String storage_importFailed(String error) {
+    return '导入失败：$error';
+  }
+
+  @override
+  String get storage_noRemoteSnapshots => '旧设备上没有快照';
+
+  @override
+  String storage_importExpires(String time) {
+    return '有效期至 $time';
+  }
 }

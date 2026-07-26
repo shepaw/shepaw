@@ -29,6 +29,7 @@ import 'services/chat_service.dart';
 import 'peer/services/peer_connection_manager.dart';
 import 'peer/services/peer_agent_host_service.dart';
 import 'peer/services/peer_agent_client_service.dart';
+import 'storage/scheduled_snapshot_service.dart';
 import 'storage/store_service.dart';
 import 'services/she_service.dart';
 import 'services/dispatch/dispatch_service.dart';
@@ -243,6 +244,8 @@ class AppBootstrap {
       await PeerAgentClientService.instance.start();
       // 存储空间（docs/storage_protocol_spec.md v1）：master 帧处理 + staging GC。
       await StoreService.instance.start();
+      // 定期快照（§5.1）：App 打开时检查今日快照，GFS 清理，改密自动新快照。
+      await ScheduledSnapshotService.instance.ensureStarted();
       _log.info('P2P connection manager started', tag: 'App');
     } catch (e) {
       _log.error('P2P connection manager start failed', tag: 'App', error: e);

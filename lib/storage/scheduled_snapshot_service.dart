@@ -1,0 +1,211 @@
+import 'dart:async';
+import 'dart:io';
+import 'dart:typed_data';
+
+import '../services/local_database_service.dart';
+import '../services/logger_service.dart';
+import '../services/password_service.dart';
+import 'gfs_retention.dart';
+import 'snapshot_crypto.dart';
+import 'snapshot_service.dart';
+
+/// 定期快照状态（UI 告警数据源）。
+class ScheduledSnapshotStatus {
+  ScheduledSnapshotStatus({
+    required this.enabled,
+    required this.lastSuccessMs,
+    required this.consecutiveFailures,
+    required this.keyCached,
+  });
+
+  final bool enabled;
+  final int lastSuccessMs;
+  final int consecutiveFailures;
+
+  /// 自动快照密钥（缓存的密码哈希 H）是否就位。
+  final bool keyCached;
+
+  /// 连续失败 ≥3 天或从未成功且已启用超过 3 天 → 显著告警（§5.1）。
+  bool get needsAttention {
+    if (!enabled || !keyCached) return false;
+    if (consecutiveFailures >= 3) return true;
+    if (lastSuccessMs == 0) return false;
+    final days =
+        DateTime.now().millisecondsSinceEpoch - lastSuccessMs;
+    return days > const Duration(days: 3).inMilliseconds;
+  }
+}
+
+/// 定期快照服务（docs/storage_space_plan.md §5.1，M3）。
+///
+/// - 触发：App 启动检查 + 运行中每 6h 复查（iOS 后台任务兜底待 M 后续接
+///   ForegroundTaskService）；
+/// - 密钥：用 [SnapshotCrypto.cachedPasswordHash]（手动验密时已缓存），
+///   无缓存则跳过并等待用户手动快照一次；
+/// - 每次成功后执行 GFS 清理；
+/// - 改密事件：失效旧缓存 → 派生新 H 缓存 → 立即全量快照（§5.2 密码变更
+///   策略：改密后自动生成新密钥全量快照）。
+class ScheduledSnapshotService {
+  ScheduledSnapshotService._();
+  static final ScheduledSnapshotService instance =
+      ScheduledSnapshotService._();
+
+  static const _tag = 'ScheduledSnapshot';
+  static const _enabledKey = 'storage.snapshot.enabled';
+  static const _lastSuccessKey = 'storage.snapshot.last_success_ms';
+  static const _failuresKey = 'storage.snapshot.consecutive_failures';
+  static const _passwordChangedAtKey = 'storage.password_changed_at';
+  static const _checkInterval = Duration(hours: 6);
+
+  final _log = LoggerService();
+  Timer? _timer;
+  StreamSubscription<String>? _pwSub;
+  bool _running = false;
+
+  Future<void> ensureStarted() async {
+    if (_timer != null) return;
+    // 改密 → 新密钥全量快照（§5.2）
+    _pwSub ??= PasswordService().passwordChangedEvents.listen((newPassword) {
+      unawaited(onPasswordChanged(newPassword));
+    });
+    _timer = Timer.periodic(_checkInterval, (_) => unawaited(checkNow()));
+    unawaited(checkNow());
+  }
+
+  Future<void> stop() async {
+    _timer?.cancel();
+    _timer = null;
+    await _pwSub?.cancel();
+    _pwSub = null;
+  }
+
+  // ────────────────────────────── 主流程 ──
+
+  /// 到期检查：今天还没有成功快照就生成一份，然后 GFS 清理。
+  Future<bool> checkNow() async {
+    if (_running) return false;
+    _running = true;
+    try {
+      if (!await _isEnabled()) return false;
+      final h = await SnapshotCrypto.cachedPasswordHash();
+      if (h == null) {
+        _log.debug('no cached key; waiting for a manual snapshot',
+            tag: _tag);
+        return false;
+      }
+      final last = await _lastSuccessMs();
+      final now = DateTime.now();
+      if (last > 0) {
+        final lastDay = DateTime.fromMillisecondsSinceEpoch(last);
+        if (_sameDay(lastDay, now)) return false;
+      }
+      await _createAndPrune(h);
+      return true;
+    } catch (e, st) {
+      _log.error('scheduled snapshot failed', tag: _tag, error: e, stackTrace: st);
+      await _recordFailure();
+      return false;
+    } finally {
+      _running = false;
+    }
+  }
+
+  /// 改密事件（§5.2）：旧缓存失效 → 新 H 缓存 → 全量快照。
+  /// 由 PasswordService.passwordChangedEvents 触发；测试可直接调用。
+  Future<void> onPasswordChanged(String newPassword) async {
+    try {
+      await SnapshotCrypto.clearCachedPasswordHash();
+      final h = await SnapshotCrypto.hashPassword(newPassword);
+      await SnapshotCrypto.cachePasswordHash(h);
+      final db = LocalDatabaseService();
+      await db.setUserValue(_passwordChangedAtKey,
+          '${DateTime.now().millisecondsSinceEpoch}');
+      _log.info('password changed; creating new-key snapshot', tag: _tag);
+      await _createAndPrune(h);
+    } catch (e, st) {
+      _log.error('post-password-change snapshot failed',
+          tag: _tag, error: e, stackTrace: st);
+    }
+  }
+
+  Future<void> _createAndPrune(Uint8List passwordHash) async {
+    await SnapshotService.instance
+        .createSnapshot(passwordHash: passwordHash);
+    await _recordSuccess();
+    await pruneGfs();
+  }
+
+  /// GFS 清理（master 对本机 backups 目录；§5.1）。
+  Future<int> pruneGfs() async {
+    final snapshots = await SnapshotService.instance.listSnapshots();
+    if (snapshots.isEmpty) return 0;
+    final selection = selectGfs([
+      for (final s in snapshots) (s.id, s.manifest.createdAtMs),
+    ]);
+    var removed = 0;
+    for (final s in snapshots) {
+      if (selection.deleteIds.contains(s.id)) {
+        await Directory(s.path).delete(recursive: true);
+        removed++;
+      }
+    }
+    if (removed > 0) {
+      _log.info('GFS pruned $removed snapshots', tag: _tag);
+    }
+    return removed;
+  }
+
+  // ────────────────────────────── 状态 ──
+
+  Future<ScheduledSnapshotStatus> status() async {
+    return ScheduledSnapshotStatus(
+      enabled: await _isEnabled(),
+      lastSuccessMs: await _lastSuccessMs(),
+      consecutiveFailures: await _failures(),
+      keyCached: await SnapshotCrypto.cachedPasswordHash() != null,
+    );
+  }
+
+  /// 上次改密时间（UI 标注"需旧密码"用）；从未改密为 0。
+  Future<int> passwordChangedAtMs() async {
+    final v = await LocalDatabaseService().getUserValue(_passwordChangedAtKey);
+    return int.tryParse(v ?? '') ?? 0;
+  }
+
+  Future<void> setEnabled(bool enabled) async {
+    final db = LocalDatabaseService();
+    await db.setUserValue(_enabledKey, enabled ? 'true' : 'false');
+  }
+
+  // ────────────────────────────── KV ──
+
+  Future<bool> _isEnabled() async {
+    final v = await LocalDatabaseService().getUserValue(_enabledKey);
+    return v != 'false'; // 默认开启
+  }
+
+  Future<int> _lastSuccessMs() async {
+    final v = await LocalDatabaseService().getUserValue(_lastSuccessKey);
+    return int.tryParse(v ?? '') ?? 0;
+  }
+
+  Future<int> _failures() async {
+    final v = await LocalDatabaseService().getUserValue(_failuresKey);
+    return int.tryParse(v ?? '') ?? 0;
+  }
+
+  Future<void> _recordSuccess() async {
+    final db = LocalDatabaseService();
+    await db.setUserValue(
+        _lastSuccessKey, '${DateTime.now().millisecondsSinceEpoch}');
+    await db.setUserValue(_failuresKey, '0');
+  }
+
+  Future<void> _recordFailure() async {
+    final db = LocalDatabaseService();
+    await db.setUserValue(_failuresKey, '${await _failures() + 1}');
+  }
+
+  bool _sameDay(DateTime a, DateTime b) =>
+      a.year == b.year && a.month == b.month && a.day == b.day;
+}

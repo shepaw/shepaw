@@ -11,6 +11,7 @@ import '../peer/services/peer_storage_service.dart';
 import '../services/local_database_service.dart';
 import '../services/logger_service.dart';
 import 'device_identity.dart';
+import 'import_auth_service.dart';
 import 'local_store.dart';
 import 'store_protocol.dart';
 
@@ -35,6 +36,7 @@ class StoreService {
   final _uuid = const Uuid();
 
   LocalStore? _store;
+  ImportAuthService? _importAuth;
   StreamSubscription<PeerControlEvent>? _controlSub;
   final _pending = <String, Completer<Map<String, dynamic>?>>{};
 
@@ -61,6 +63,13 @@ class StoreService {
     final root = Directory(p.join(docs.path, 'shepaw', 'store'));
     await root.create(recursive: true);
     return _store = LocalStore(root: root);
+  }
+
+  Future<ImportAuthService> _importAuthService() async {
+    final existing = _importAuth;
+    if (existing != null) return existing;
+    final store = await _localStore();
+    return _importAuth = ImportAuthService(storeRoot: store.root);
   }
 
   // ────────────────────────────── master 指针 ──
@@ -100,12 +109,37 @@ class StoreService {
     if (masterPeer == null) {
       return _errorData(StoreError.notPaired, 'master device not paired');
     }
+    return _callPeerId(masterPeer.id, frame);
+  }
+
+  /// 向指定设备（device_id）直发请求（换机导入路径 A：旧设备在场，
+  /// 由旧设备直接服务，§5.4）。
+  Future<Map<String, dynamic>?> callPeer(
+      String deviceId, StoreFrame frame) async {
+    final self = await DeviceIdentity.deviceId();
+    if (deviceId == self) {
+      return _dispatch(frame,
+          callerDeviceId: self,
+          trustLevel: TrustLevel.owner,
+          loopback: true);
+    }
+    final peers = await _peerStorage.loadAllPeers();
+    final peer = peers.where((p) => p.fingerprint == deviceId).firstOrNull;
+    if (peer == null) {
+      return _errorData(StoreError.notPaired, 'device not paired');
+    }
+    return _callPeerId(peer.id, frame);
+  }
+
+  Future<Map<String, dynamic>?> _callPeerId(
+      String peerId, StoreFrame frame) async {
     final reqId = frame.reqId ?? 'r-${_uuid.v4()}';
     final completer = Completer<Map<String, dynamic>?>();
     _pending[reqId] = completer;
     try {
-      final wire = StoreFrame(op: frame.op, reqId: reqId, payload: frame.payload);
-      final ok = await _manager.sendControl(masterPeer.id, wire.toJson());
+      final wire = StoreFrame(
+          op: frame.op, reqId: reqId, v: frame.v, payload: frame.payload);
+      final ok = await _manager.sendControl(peerId, wire.toJson());
       if (!ok) return _errorData(StoreError.masterOffline);
       return await completer.future.timeout(_callTimeout,
           onTimeout: () => _errorData(StoreError.masterOffline));
@@ -167,12 +201,67 @@ class StoreService {
       await _reply(peerId, frame, StoreError.unsupportedVersion);
       return;
     }
+    // 换机导入授权推送（请求方侧落库，无 req_id 的通知帧）
+    if (frame.op == StoreOp.importGrant && frame.reqId == null) {
+      await _receivePushedGrant(peer.fingerprint, frame);
+      return;
+    }
     // 调用者身份 = 配对指纹（= 其 device_id），写路径收敛的锚点
     final data = await _dispatch(frame,
         callerDeviceId: peer.fingerprint,
         trustLevel: peer.trustLevel,
         loopback: false);
     await _replyData(peerId, frame, data);
+  }
+
+  /// 请求方收到服务侧签发的授权推送：持久化到 received。
+  Future<void> _receivePushedGrant(
+      String fromDevice, StoreFrame frame) async {
+    try {
+      final self = await DeviceIdentity.deviceId();
+      final grant = ImportGrant(
+        grantId: frame.payload['grant_id'] as String,
+        oldDevice: fromDevice,
+        newDevice: self,
+        spaces: (frame.payload['spaces'] as List).cast<String>(),
+        issuedAtMs: frame.payload['issued_at'] as int? ?? 0,
+        expiresAtMs: frame.payload['expires_at'] as int? ?? 0,
+      );
+      if (grant.oldDevice.isEmpty || grant.newDevice.isEmpty) return;
+      final auth = await _importAuthService();
+      await auth.saveReceivedGrant(grant);
+      _log.info(
+          'received import grant ${grant.grantId} from $fromDevice',
+          tag: _tag);
+    } catch (e) {
+      _log.warning('invalid pushed import grant: $e', tag: _tag);
+    }
+  }
+
+  /// 签发后把授权推送给请求方（新设备）。
+  Future<void> _pushGrantToRequester(ImportGrant grant) async {
+    try {
+      final peers = await _peerStorage.loadAllPeers();
+      final requester =
+          peers.where((p) => p.fingerprint == grant.newDevice).firstOrNull;
+      if (requester == null) {
+        _log.warning(
+            'grant requester ${grant.newDevice} not paired; grant pending',
+            tag: _tag);
+        return;
+      }
+      await _manager.sendControl(
+          requester.id,
+          StoreFrame(op: StoreOp.importGrant, payload: <String, dynamic>{
+            'grant_id': grant.grantId,
+            'old_device': grant.oldDevice,
+            'spaces': grant.spaces,
+            'issued_at': grant.issuedAtMs,
+            'expires_at': grant.expiresAtMs,
+          }).toJson());
+    } catch (e) {
+      _log.warning('push grant failed: $e', tag: _tag);
+    }
   }
 
   Future<void> _reply(String peerId, StoreFrame frame, String code,
@@ -216,6 +305,28 @@ class StoreService {
 
     final store = await _localStore();
     try {
+      // 私有分区跨端读取：校验导入授权实体（spec §5.4）
+      if ((frame.op == StoreOp.list ||
+              frame.op == StoreOp.meta ||
+              frame.op == StoreOp.read) &&
+          frame.device != null &&
+          frame.device != callerDeviceId &&
+          !StoreSpace.sharedReadable.contains(frame.space)) {
+        final grantId = frame.payload['grant'] as String?;
+        final auth = await _importAuthService();
+        final ok = grantId != null &&
+            await auth.validate(grantId,
+                oldDevice: frame.device!,
+                newDevice: callerDeviceId,
+                space: frame.space!);
+        if (!ok) {
+          _log.warning(
+              'invalid import grant from $callerDeviceId for ${frame.device}/${frame.space}',
+              tag: _auditTag);
+          return _errorData(StoreError.aclDenied, 'invalid import grant');
+        }
+      }
+
       switch (frame.op) {
         case StoreOp.list:
           final device = frame.device ?? callerDeviceId;
@@ -303,6 +414,55 @@ class StoreService {
 
         case StoreOp.stats:
           return await store.stats();
+
+        // ── 换机导入授权（v2，§5.4）──
+        case StoreOp.importRequest:
+          final auth = await _importAuthService();
+          final req = await auth.createRequest(
+            oldDevice: frame.payload['old_device'] as String,
+            newDevice: callerDeviceId,
+          );
+          _log.info(
+              'import request from $callerDeviceId for ${req.oldDevice}',
+              tag: _auditTag);
+          return <String, dynamic>{
+            'request_id': req.requestId,
+            'status': req.status,
+          };
+
+        case StoreOp.importPending:
+          final auth = await _importAuthService();
+          final pending = await auth.pendingRequests();
+          return <String, dynamic>{
+            'requests': [for (final r in pending) r.toJson()],
+          };
+
+        case StoreOp.importGrant:
+          // 仅 loopback（用户在场确认，ACL 已强制）
+          final auth = await _importAuthService();
+          final grant = await auth
+              .grant(frame.payload['request_id'] as String);
+          _log.info(
+              'import granted ${grant.grantId} to ${grant.newDevice}',
+              tag: _auditTag);
+          // 推送授权给请求方（新设备）
+          unawaited(_pushGrantToRequester(grant));
+          return <String, dynamic>{'grant': grant.toJson()};
+
+        case StoreOp.importReject:
+          final auth = await _importAuthService();
+          await auth.reject(frame.payload['request_id'] as String);
+          return <String, dynamic>{'rejected': true};
+
+        case StoreOp.importGrants:
+          final auth = await _importAuthService();
+          final role = frame.payload['role'] as String? ?? 'received';
+          final grants = role == 'issued'
+              ? await auth.issuedGrants()
+              : await auth.receivedGrants();
+          return <String, dynamic>{
+            'grants': [for (final g in grants) g.toJson()],
+          };
 
         default:
           return _errorData(StoreError.badOp, 'unsupported op ${frame.op}');

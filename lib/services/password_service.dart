@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'package:crypto/crypto.dart';
 import 'package:encrypt/encrypt.dart' as encrypt;
@@ -8,7 +9,13 @@ import 'vault_service.dart';
 /// 密码管理服务
 /// 负责密码的加密存储、验证和管理
 /// 敏感数据存储于 SQLite user 表（KV 结构），不再使用 SharedPreferences
+///
+/// 单例：密码变更事件总线需要全局唯一来源。
 class PasswordService {
+  static final PasswordService _instance = PasswordService._internal();
+  factory PasswordService() => _instance;
+  PasswordService._internal();
+
   static const String _passwordHashKey = 'password_hash';
   static const String _passwordSaltKey = 'password_salt';
   static const String _isPasswordSetKey = 'is_password_set';
@@ -17,6 +24,12 @@ class PasswordService {
   static const String _encryptionKey = 'shepaw-secure-key-32characters';
 
   final _db = LocalDatabaseService();
+
+  /// 密码设置/变更事件（载荷为新密码明文）。
+  /// 存储层据此失效旧快照密钥缓存并生成新密钥全量快照
+  /// （docs/storage_space_plan.md §5.2 密码变更策略）。
+  final _passwordChangedController = StreamController<String>.broadcast();
+  Stream<String> get passwordChangedEvents => _passwordChangedController.stream;
 
   /// 检查是否已设置密码
   Future<bool> isPasswordSet() async {
@@ -41,6 +54,9 @@ class PasswordService {
       await _db.setUserValue(_passwordHashKey, hash);
       await _db.setUserValue(_passwordSaltKey, salt);
       await _db.setUserValue(_isPasswordSetKey, 'true');
+
+      // 通知存储层密码已确立/变更（含 changePassword 的内部调用路径）
+      _passwordChangedController.add(password);
 
       return true;
     } catch (e) {

@@ -9,7 +9,6 @@ import '../services/agent_memory_db_service.dart';
 import '../services/local_database_service.dart';
 import '../services/logger_service.dart';
 import '../services/minds_database_service.dart';
-import '../services/password_service.dart';
 import '../services/she_memory_db_service.dart';
 import '../services/she_profile_database_service.dart';
 import 'device_identity.dart';
@@ -28,8 +27,8 @@ class RestoreService {
 
   /// 恢复前检查：manifest 校验 + 密码可解 + 内容哈希一致。
   ///
-  /// 返回解密后的 DB 明文供 [executeRestore] 使用；任何一步失败抛异常，
-  /// 当前数据不受影响。
+  /// 解密即验密（§10）：旧密码可解旧快照（改密后新旧快照各用其钥），
+  /// 不要求等于当前主密码。任何一步失败抛异常，当前数据不受影响。
   Future<RestorePreview> prepareRestore(
       SnapshotInfo info, String password) async {
     if (kIsWeb) {
@@ -40,11 +39,7 @@ class RestoreService {
     if (status != SnapshotVerifyStatus.ok) {
       throw StateError('snapshot verify failed: $status');
     }
-    // 2. 密码必须与当前主密码一致（§10 强制验密）
-    if (!await PasswordService().verifyPassword(password)) {
-      throw StateError('wrong password');
-    }
-    // 3. 解密（含内容哈希校验）
+    // 2. 解密（含内容哈希校验；错密码抛 SnapshotDecryptException）
     final dbBytes = await SnapshotService.instance.decryptDb(info, password);
     final identityBytes =
         await SnapshotService.instance.decryptIdentity(info, password);
@@ -57,15 +52,27 @@ class RestoreService {
 
   /// 执行恢复。调用前必须经 [prepareRestore] 成功。
   ///
-  /// 安全网：先对当前状态做一次安全快照（同一密码），再把现有主库文件
-  /// 改名保留为 shepaw.db.pre-restore。恢复后 app 需重启生效。
-  Future<void> executeRestore(RestorePreview preview, String password) async {
+  /// [restoreIdentity]：同机重装恢复传 true（device_id 随快照恢复，§5.4）；
+  /// 换机导入传 false——新设备保留自己的 device_id，两个 id 互不影响。
+  /// [safetyPasswordHash]：安全快照用的缓存密钥（定期快照链路）；
+  /// 缺省用 [password] 慢路径派生。
+  ///
+  /// 安全网：先对当前状态做一次安全快照，再把现有主库文件改名保留为
+  /// shepaw.db.pre-restore。恢复后 app 需重启生效。
+  Future<void> executeRestore(
+    RestorePreview preview,
+    String password, {
+    bool restoreIdentity = true,
+    Uint8List? safetyPasswordHash,
+  }) async {
     if (kIsWeb) {
       throw UnsupportedError('web 平台不支持快照恢复');
     }
     // 1. 当前状态安全快照（§5.3：恢复前自动留存本机安全快照）
     try {
-      await SnapshotService.instance.createSnapshot(password: password);
+      await SnapshotService.instance.createSnapshot(
+          password: safetyPasswordHash == null ? password : null,
+          passwordHash: safetyPasswordHash);
     } catch (e) {
       _log.warning('safety snapshot failed, abort restore: $e', tag: _tag);
       throw StateError('safety snapshot failed: $e');
@@ -90,11 +97,14 @@ class RestoreService {
       rethrow;
     }
 
-    // 4. 恢复设备身份（device_id 随快照恢复，§5.4）
-    await DeviceIdentity.importIdentity(preview.identityBytes);
+    // 4. 恢复设备身份（同机重装恢复：device_id 随快照恢复，§5.4）
+    if (restoreIdentity) {
+      await DeviceIdentity.importIdentity(preview.identityBytes);
+    }
 
     _log.info(
-        'restore executed from ${preview.snapshot.id}; restart required',
+        'restore executed from ${preview.snapshot.id} '
+        '(restoreIdentity=$restoreIdentity); restart required',
         tag: _tag);
   }
 

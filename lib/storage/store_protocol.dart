@@ -3,8 +3,8 @@
 /// 本文件为纯逻辑：不含文件系统与网络，所有判定可单测（含攻击 fixture）。
 library;
 
-/// 协议版本。
-const int kStoreProtocolVersion = 1;
+/// 协议版本。v2 新增 import.* 系列（换机导入授权，§5.4）。
+const int kStoreProtocolVersion = 2;
 
 /// peer 层控制帧路由 type / 协议命名空间。
 const String kStoreControlType = 'store';
@@ -24,6 +24,13 @@ class StoreOp {
   static const recycleRestore = 'recycle.restore';
   static const recycleEmpty = 'recycle.empty';
   static const stats = 'stats';
+
+  // 换机导入授权（v2，spec §5）
+  static const importRequest = 'import.request';
+  static const importPending = 'import.pending';
+  static const importGrant = 'import.grant';
+  static const importGrants = 'import.grants';
+  static const importReject = 'import.reject';
 
   static const result = 'result';
   static const error = 'error';
@@ -224,7 +231,8 @@ StoreAcl checkStoreAcl(
       }
       return StoreAcl.allow;
 
-    // ── 读取类：共享分区 owner 可读他端；私有分区仅本端（导入授权 M3）──
+    // ── 读取类：共享分区 owner 可读他端；私有分区仅本端——
+    // 或持有效换机导入授权（grant，spec §5.4，服务侧校验实体）──
     case StoreOp.list:
     case StoreOp.meta:
     case StoreOp.read:
@@ -233,7 +241,8 @@ StoreAcl checkStoreAcl(
       }
       final targetOwn = device == null || device == callerDeviceId;
       if (!targetOwn && !StoreSpace.sharedReadable.contains(space)) {
-        return StoreAcl.denyAcl;
+        final grant = frame.payload['grant'];
+        if (grant is! String || grant.isEmpty) return StoreAcl.denyAcl;
       }
       if (device != null && !isValidDeviceId(device)) {
         return StoreAcl.denyBadOp;
@@ -248,11 +257,27 @@ StoreAcl checkStoreAcl(
       // 仅 master 本机用户（loopback）
       return loopback ? StoreAcl.allow : StoreAcl.denyAcl;
 
+    // ── 换机导入授权（v2）──
+    case StoreOp.importRequest:
+      // 新设备 → 旧设备/master 发起；目标不能是自己
+      final oldDevice = frame.payload['old_device'];
+      if (!isValidDeviceId(oldDevice) || oldDevice == callerDeviceId) {
+        return StoreAcl.denyBadOp;
+      }
+      return StoreAcl.allow;
+    case StoreOp.importPending:
+      return StoreAcl.allow;
+    case StoreOp.importGrant:
+    case StoreOp.importReject:
+    case StoreOp.importGrants:
+      // 签发/拒绝/授权清单：仅服务侧本机用户（用户在场确认是信任锚）
+      return loopback ? StoreAcl.allow : StoreAcl.denyAcl;
+
     case StoreOp.stats:
       return StoreAcl.allow;
 
     default:
-      // 未知 op（含伪造的 import.* 授权类 op，M2 无此通道）
+      // 未知 op（含伪造的授权类 op）
       return StoreAcl.denyBadOp;
   }
 }

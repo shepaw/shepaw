@@ -1,7 +1,7 @@
 # ShePaw 存储空间协议规范（store.*）
 
-> 版本：v1（M2 范围）
-> 状态：Dart 与（未来）Go 实现的唯一权威定义。上游设计：`docs/storage_space_plan.md`（§2/§4/§6）。
+> 版本：v2（M3 范围：新增 §5 换机导入授权）
+> 状态：Dart 与（未来）Go 实现的唯一权威定义。上游设计：`docs/storage_space_plan.md`（§2/§4/§5/§6）。
 > 传输：复用 `PeerConnection` 控制帧（WS + Noise E2E）与 Channel Tunnel；本协议不新增传输。
 
 ## 0. 术语
@@ -157,9 +157,12 @@
 | delete | artifacts/files | ✅ | ✅（共享文件手动删除） |
 | delete | attachments/backups | ✅ | ❌ `acl_denied` |
 | list/read/meta | artifacts/files | ✅ | ✅ owner 级 |
-| list/read/meta | attachments/backups | ✅ | ❌ `acl_denied`（导入授权除外，M3 §5.4） |
+| list/read/meta | attachments/backups | ✅ | 仅持有效导入授权（§5） |
 | recycle.list/restore | — | ✅ owner 级（回收站全局可见语义 M2 从宽） | 同左 |
 | recycle.empty | — | 仅 loopback（master 本机用户） | ❌ 恒 `acl_denied` |
+| import.request | — | ✅ owner 级（old_device ≠ 调用者） | — |
+| import.pending | — | ✅ owner 级 | — |
+| import.grant / import.reject / import.grants | — | 仅 loopback（用户在场确认是信任锚） | ❌ 恒 `acl_denied` |
 | stats | — | ✅ owner 级 | — |
 
 **friend 级设备：所有 store.* 帧一律 `untrusted` 并记审计日志。**
@@ -170,13 +173,64 @@
 - 路径规范化：必须相对路径；逐段拒绝 `..`、绝对路径、盘符、NUL、反斜杠（统一为 `/`）；落盘前 `resolve` 后必须仍以设备目录为前缀（防符号链接逃逸）；`.` 开头段拒绝（保护 `.staging`/系统目录）。
 - fixture 必含攻击用例：伪造 device_id 写入、读取他人私有目录、路径穿越、伪造导入授权（`import.*` 系列 op 在 M2 不存在，统一 `bad_op`）。
 
-## 5. 本地优先与 loopback（M2 边界）
+## 5. 换机导入授权（v2 新增，方案 §5.4）
+
+新设备读取旧设备私有分区（`backups`/`attachments`）必须持一次性导入授权。
+
+### 5.1 授权模型
+
+- 授权（grant）为 **bearer token**（`ig-<uuid4>`，122 bit 熵），内容：
+  `{grant_id, old_device, new_device, spaces, issued_at, expires_at, revoked}`。
+- **信任锚是签发通道**：旧设备在场时经 Noise E2E 通道签发（通道身份即证明）；
+  旧设备不在场时由 **master 本机用户在管理页手动确认**签发。
+- 有效期 24h，限只读、限授权分区、可撤销；一次性语义 = 单次换机事件，
+  过期/撤销后即失效。
+- 持久化：服务侧（旧设备/master）存签发记录于 `<store>/.system/import_*.json`；
+  请求方存收到的授权。
+
+### 5.2 操作流程
+
+```json
+// 1. 新设备 → 服务侧（旧设备或 master）：登记导入请求
+{"op": "import.request", "old_device": "<old_id>"}
+→ {"op": "result", "data": {"request_id": "ir-...", "status": "pending"}}
+
+// 2. 服务侧管理页（loopback）：查看待审批 / 用户确认后签发
+{"op": "import.pending"} → {"requests": [...]}
+{"op": "import.grant", "request_id": "ir-..."}
+→ {"op": "result", "data": {"grant": {...}}}
+
+// 3. 服务侧 → 新设备：授权推送（无 req_id 通知帧）
+{"op": "import.grant", "grant_id": "ig-...", "spaces": ["backups","attachments"],
+ "issued_at": 1721300000000, "expires_at": 1721386400000}
+
+// 4. 新设备 → 服务侧：凭 grant 读旧设备私有分区
+{"op": "list", "space": "backups", "device": "<old_id>", "path": "", "grant": "ig-..."}
+{"op": "read", "space": "backups", "device": "<old_id>", "path": "<ts>/db.sqlite.enc",
+ "offset": 0, "length": 65536, "grant": "ig-..."}
+```
+
+- `import.reject {request_id}`：服务侧拒绝（loopback）。
+- `import.grants {role: "issued"|"received"}`：本机授权清单（loopback）。
+- 读路径校验：grant 存在、未过期未撤销、`old_device`/`new_device`/`space` 全匹配；
+  失败回 `acl_denied` 并审计。
+- 快照跨端可解性：manifest 必须含 `kdf_salt`（v2 快照格式，两级 KDF：
+  `H = PBKDF2(主密码)`、`key = HMAC(H, kdf_salt)`）；无 `kdf_salt` 的 M1 旧
+  格式快照不支持换机恢复。
+- 换机恢复**不恢复设备身份**：新设备保留自己的 device_id（restoreIdentity=false）；
+  同机重装恢复才随快照恢复身份（§5.4）。
+- 路径 B（旧设备不在场）的镜像数据依赖 M4 同步引擎就位后才可读；
+  M3 落地协议与路径 A（旧设备在场直读）端到端。
+
+## 6. 本地优先与 loopback（M2 边界）
 
 - M2 的 master 默认本机：客户端调用与 master 处理走同一代码路径（loopback dispatch），无网络往返。
 - master 为他端时，请求经 peer 控制帧发送并等待 `result`（超时 15s 返回 `master_offline`）。
 - CAS、未同步队列、变更游标、批量原子上传、远程 tunnel 在 M4（方案 §6.4）；master 迁移在 M6（§6.5）。
 
-## 6. 版本与兼容
+## 7. 版本与兼容
 
-- `v=1`（本文档）。新增 op 或必填字段 ⇒ `v+1`；只增可选字段不变版本。
+- `v=2`（本文档）。新增 op 或必填字段 ⇒ `v+1`；只增可选字段不变版本。
+- v1 → v2：新增 `import.*` 系列与读路径 `grant` 可选字段；v1 客户端不含
+  这些 op，互操作不受影响。
 - Go 节点（M7）与本规范对齐；攻击 fixture 与协议 fixture 双端共享。

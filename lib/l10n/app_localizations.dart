@@ -8731,6 +8731,150 @@ abstract class AppLocalizations {
   /// In zh, this message translates to:
   /// **'删除于 {time}'**
   String storage_deletedAt(String time);
+
+  /// No description provided for @storage_autoSnapshot.
+  ///
+  /// In zh, this message translates to:
+  /// **'每日自动快照'**
+  String get storage_autoSnapshot;
+
+  /// No description provided for @storage_autoSnapshotOff.
+  ///
+  /// In zh, this message translates to:
+  /// **'已关闭'**
+  String get storage_autoSnapshotOff;
+
+  /// No description provided for @storage_lastSuccess.
+  ///
+  /// In zh, this message translates to:
+  /// **'最近成功 {time}'**
+  String storage_lastSuccess(String time);
+
+  /// No description provided for @storage_noKeyHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'先手动创建一次快照以启用自动快照'**
+  String get storage_noKeyHint;
+
+  /// No description provided for @storage_snapshotWarning.
+  ///
+  /// In zh, this message translates to:
+  /// **'自动快照已连续失败 3 天以上，请检查存储空间或手动快照一次。'**
+  String get storage_snapshotWarning;
+
+  /// No description provided for @storage_needsOldPassword.
+  ///
+  /// In zh, this message translates to:
+  /// **'需旧密码'**
+  String get storage_needsOldPassword;
+
+  /// No description provided for @storage_importSection.
+  ///
+  /// In zh, this message translates to:
+  /// **'换机导入'**
+  String get storage_importSection;
+
+  /// No description provided for @storage_importRequestHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'输入旧设备 ID 并发送导入请求，在旧设备（或 master）上确认。'**
+  String get storage_importRequestHint;
+
+  /// No description provided for @storage_oldDeviceId.
+  ///
+  /// In zh, this message translates to:
+  /// **'旧设备 ID（16 位十六进制）'**
+  String get storage_oldDeviceId;
+
+  /// No description provided for @storage_importSend.
+  ///
+  /// In zh, this message translates to:
+  /// **'发送导入请求'**
+  String get storage_importSend;
+
+  /// No description provided for @storage_importSent.
+  ///
+  /// In zh, this message translates to:
+  /// **'请求已发送，请在旧设备（或 master）上确认。'**
+  String get storage_importSent;
+
+  /// No description provided for @storage_importMyGrants.
+  ///
+  /// In zh, this message translates to:
+  /// **'我获得的导入授权'**
+  String get storage_importMyGrants;
+
+  /// No description provided for @storage_importBrowse.
+  ///
+  /// In zh, this message translates to:
+  /// **'浏览快照'**
+  String get storage_importBrowse;
+
+  /// No description provided for @storage_importPending.
+  ///
+  /// In zh, this message translates to:
+  /// **'待审批的导入请求'**
+  String get storage_importPending;
+
+  /// No description provided for @storage_importApprove.
+  ///
+  /// In zh, this message translates to:
+  /// **'批准'**
+  String get storage_importApprove;
+
+  /// No description provided for @storage_importReject.
+  ///
+  /// In zh, this message translates to:
+  /// **'拒绝'**
+  String get storage_importReject;
+
+  /// No description provided for @storage_importFrom.
+  ///
+  /// In zh, this message translates to:
+  /// **'来自 {device}'**
+  String storage_importFrom(String device);
+
+  /// No description provided for @storage_importPickSnapshot.
+  ///
+  /// In zh, this message translates to:
+  /// **'选择要导入的快照'**
+  String get storage_importPickSnapshot;
+
+  /// No description provided for @storage_importDownloading.
+  ///
+  /// In zh, this message translates to:
+  /// **'正在下载快照…'**
+  String get storage_importDownloading;
+
+  /// No description provided for @storage_importDone.
+  ///
+  /// In zh, this message translates to:
+  /// **'快照已取回。恢复将全量替换当前数据（保留本机设备身份）。'**
+  String get storage_importDone;
+
+  /// No description provided for @storage_importRestore.
+  ///
+  /// In zh, this message translates to:
+  /// **'导入并恢复'**
+  String get storage_importRestore;
+
+  /// No description provided for @storage_importFailed.
+  ///
+  /// In zh, this message translates to:
+  /// **'导入失败：{error}'**
+  String storage_importFailed(String error);
+
+  /// No description provided for @storage_noRemoteSnapshots.
+  ///
+  /// In zh, this message translates to:
+  /// **'旧设备上没有快照'**
+  String get storage_noRemoteSnapshots;
+
+  /// No description provided for @storage_importExpires.
+  ///
+  /// In zh, this message translates to:
+  /// **'有效期至 {time}'**
+  String storage_importExpires(String time);
 }
 
 class _AppLocalizationsDelegate

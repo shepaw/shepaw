@@ -3,6 +3,7 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:crypto/crypto.dart' as crypto;
+import 'package:cryptography/cryptography.dart' show SecretKey;
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
@@ -23,6 +24,8 @@ class SnapshotManifest {
     required this.dbSha256,
     required this.fileHashes,
     required this.treeRoot,
+    this.kdfSalt,
+    this.kdfIterations,
     this.attachments = const <String>[],
   });
 
@@ -43,7 +46,14 @@ class SnapshotManifest {
   /// 哈希树根：sha256(按文件名排序的 fileHash 拼接)。单点校验整个清单。
   final String treeRoot;
 
-  /// 附件引用（M5 CAS 上线后填充；M1 快照只含 DB 与身份）。
+  /// KDF 快照盐（base64，M3 起；null = M1 旧格式，用设备 salt，
+  /// 仅本机可解——换机导入要求 v2 格式）。
+  final String? kdfSalt;
+
+  /// KDF 迭代数（记录用，当前恒 120000）。
+  final int? kdfIterations;
+
+  /// 附件引用（M5 CAS 上线后填充；M1/M3 快照只含 DB 与身份）。
   final List<String> attachments;
 
   static const fileDbEnc = 'db.sqlite.enc';
@@ -57,6 +67,8 @@ class SnapshotManifest {
         'db_sha256': dbSha256,
         'files': fileHashes,
         'tree_root': treeRoot,
+        if (kdfSalt != null) 'kdf_salt': kdfSalt,
+        if (kdfIterations != null) 'kdf_iterations': kdfIterations,
         'attachments': attachments,
       };
 
@@ -69,6 +81,8 @@ class SnapshotManifest {
       dbSha256: json['db_sha256'] as String,
       fileHashes: (json['files'] as Map).cast<String, String>(),
       treeRoot: json['tree_root'] as String,
+      kdfSalt: json['kdf_salt'] as String?,
+      kdfIterations: json['kdf_iterations'] as int?,
       attachments:
           (json['attachments'] as List?)?.cast<String>() ?? const [],
     );
@@ -142,10 +156,21 @@ class SnapshotService {
 
   /// 生成快照：VACUUM INTO 一致性快照 → 加密 → 落 manifest。
   ///
-  /// [password] 为 App 主密码（KDF 派生密钥，§5.2 离开本机前必须已加密）。
-  /// 返回快照信息；失败抛异常。
-  Future<SnapshotInfo> createSnapshot({required String password}) async {
-    final key = await SnapshotCrypto.deriveKey(password);
+  /// 密钥来源二选一：[password]（慢路径，同时缓存 H 供自动快照）或
+  /// [passwordHash]（快路径，定期快照用缓存的 H）。
+  /// 离开本机前必须已加密（§5.2）。失败抛异常。
+  Future<SnapshotInfo> createSnapshot(
+      {String? password, Uint8List? passwordHash}) async {
+    final h = passwordHash ??
+        (password != null
+            ? await SnapshotCrypto.hashPassword(password)
+            : throw ArgumentError('password or passwordHash required'));
+    if (password != null) {
+      // 验密成功顺带刷新自动快照的缓存密钥
+      await SnapshotCrypto.cachePasswordHash(h);
+    }
+    final snapshotSalt = SnapshotCrypto.newSnapshotSalt();
+    final key = await SnapshotCrypto.deriveKeyFromHash(h, snapshotSalt);
     final backups = await _backupsDir();
     final now = DateTime.now().toUtc();
     final id = _snapshotId(now);
@@ -173,7 +198,7 @@ class SnapshotService {
           File(p.join(tmpDir.path, SnapshotManifest.fileIdentityEnc));
       await idFile.writeAsBytes(identityEnc, flush: true);
 
-      // 3. manifest（密文哈希 + 树根 + 明文 DB 哈希）
+      // 3. manifest（密文哈希 + 树根 + 明文 DB 哈希 + KDF 参数）
       final fileHashes = <String, String>{
         SnapshotManifest.fileDbEnc: crypto.sha256.convert(dbEnc).toString(),
         SnapshotManifest.fileIdentityEnc:
@@ -191,19 +216,27 @@ class SnapshotService {
         dbSha256: dbSha256,
         fileHashes: fileHashes,
         treeRoot: SnapshotManifest.computeTreeRoot(fileHashes),
+        kdfSalt: base64.encode(snapshotSalt),
+        kdfIterations: 120000,
       );
       final manifestFile = File(p.join(tmpDir.path, 'manifest.json'));
       await manifestFile.writeAsString(
           const JsonEncoder.withIndent('  ').convert(manifest.toJson()),
           flush: true);
 
-      // 4. 原子转正（rename 同卷原子）
-      final finalDir = Directory(p.join(backups.path, id));
-      if (await finalDir.exists()) await finalDir.delete(recursive: true);
+      // 4. 原子转正（rename 同卷原子）；id 秒级精度，撞名时加序号
+      var finalId = id;
+      var suffix = 2;
+      var finalDir = Directory(p.join(backups.path, finalId));
+      while (await finalDir.exists()) {
+        finalId = '$id-$suffix';
+        suffix++;
+        finalDir = Directory(p.join(backups.path, finalId));
+      }
       await tmpDir.rename(finalDir.path);
 
       final info = SnapshotInfo(
-        id: id,
+        id: finalId,
         path: finalDir.path,
         manifest: manifest,
         totalBytes: dbEnc.length + identityEnc.length,
@@ -247,9 +280,31 @@ class SnapshotService {
     return result;
   }
 
+  /// 解密用密钥：v2 manifest（含 kdf_salt）用两级 KDF；M1 旧格式回退
+  /// 设备 salt（仅本机可解）。
+  Future<SecretKey> _keyFor(
+    SnapshotInfo info, {
+    String? password,
+    Uint8List? passwordHash,
+  }) async {
+    final saltB64 = info.manifest.kdfSalt;
+    if (saltB64 == null) {
+      if (password == null) {
+        throw ArgumentError('legacy snapshot requires password');
+      }
+      return SnapshotCrypto.deriveLegacyKey(password);
+    }
+    final h = passwordHash ??
+        (password != null
+            ? await SnapshotCrypto.hashPassword(password)
+            : throw ArgumentError('password or passwordHash required'));
+    return SnapshotCrypto.deriveKeyFromHash(
+        h, Uint8List.fromList(base64.decode(saltB64)));
+  }
+
   /// 读取并解密 DB（恢复前必须先经 [verifySnapshot] 与密码校验）。
   Future<Uint8List> decryptDb(SnapshotInfo info, String password) async {
-    final key = await SnapshotCrypto.deriveKey(password);
+    final key = await _keyFor(info, password: password);
     final packed = await File(p.join(info.path, SnapshotManifest.fileDbEnc))
         .readAsBytes();
     final plain = await SnapshotCrypto.decrypt(packed, key);
@@ -262,7 +317,7 @@ class SnapshotService {
 
   /// 解密身份记录。
   Future<Uint8List> decryptIdentity(SnapshotInfo info, String password) async {
-    final key = await SnapshotCrypto.deriveKey(password);
+    final key = await _keyFor(info, password: password);
     final packed =
         await File(p.join(info.path, SnapshotManifest.fileIdentityEnc))
             .readAsBytes();
