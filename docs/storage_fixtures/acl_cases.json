@@ -44,6 +44,22 @@
       "expect": "denyAcl"
     },
     {
+      "name": "owner_list_other_backups_seed",
+      "op": "list",
+      "trust": "owner",
+      "loopback": false,
+      "payload": { "space": "backups", "device": "bbbbbbbbbbbbbbbb", "seed": true },
+      "expect": "allow"
+    },
+    {
+      "name": "friend_list_other_backups_seed",
+      "op": "list",
+      "trust": "friend",
+      "loopback": false,
+      "payload": { "space": "backups", "device": "bbbbbbbbbbbbbbbb", "seed": true },
+      "expect": "denyUntrusted"
+    },
+    {
       "name": "forge_device_on_write",
       "op": "write.begin",
       "trust": "owner",

@@ -52,6 +52,7 @@ class _StorageSpaceScreenState extends State<StorageSpaceScreen> {
   String _selfId = '';
   Map<String, dynamic>? _stats;
   List<Map<String, dynamic>> _recycle = [];
+  bool _recycleExpanded = false;
 
   // M3 区块状态
   ScheduledSnapshotStatus? _schedStatus;
@@ -269,12 +270,20 @@ class _StorageSpaceScreenState extends State<StorageSpaceScreen> {
   // ------------------------------------------------------------ 回收站操作
 
   Future<void> _recycleRestore(Map<String, dynamic> entry) async {
+    final l10n = AppLocalizations.of(context);
     setState(() => _busy = true);
     try {
-      await StoreService.instance.call(StoreFrame(
+      final res = await StoreService.instance.call(StoreFrame(
           op: StoreOp.recycleRestore,
           payload: {'recycle_path': entry['recycle_path']}));
+      if (res != null && res.containsKey('_error')) {
+        _toast(l10n.storage_recycleRestoreFailed('${res['_error']}'));
+        return;
+      }
       await _refresh();
+      _toast(l10n.storage_recycleRestored);
+    } catch (e) {
+      _toast(l10n.storage_recycleRestoreFailed('$e'));
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -282,6 +291,10 @@ class _StorageSpaceScreenState extends State<StorageSpaceScreen> {
 
   Future<void> _recyclePurgeAll() async {
     final l10n = AppLocalizations.of(context);
+    if (_masterId != _selfId || _selfId.isEmpty) {
+      _toast(l10n.storage_recyclePurgeMasterOnly);
+      return;
+    }
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -307,9 +320,15 @@ class _StorageSpaceScreenState extends State<StorageSpaceScreen> {
     try {
       final res = await StoreService.instance
           .call(StoreFrame(op: StoreOp.recycleEmpty, payload: {}));
+      if (res != null && res.containsKey('_error')) {
+        _toast(l10n.storage_recyclePurgeFailed('${res['_error']}'));
+        return;
+      }
       final purged = res?['purged_bytes'] as int? ?? 0;
       _toast(l10n.storage_recyclePurged(_fmtBytes(purged)));
       await _refresh();
+    } catch (e) {
+      _toast(l10n.storage_recyclePurgeFailed('$e'));
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -900,6 +919,11 @@ class _StorageSpaceScreenState extends State<StorageSpaceScreen> {
   }
 
   Widget _buildRecycleCard(AppLocalizations l10n) {
+    final isMaster = _masterId == _selfId && _selfId.isNotEmpty;
+    const pageSize = 20;
+    final visible = _recycleExpanded || _recycle.length <= pageSize
+        ? _recycle
+        : _recycle.take(pageSize).toList();
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(12),
@@ -914,7 +938,7 @@ class _StorageSpaceScreenState extends State<StorageSpaceScreen> {
                 Text(l10n.storage_recycleSection,
                     style: Theme.of(context).textTheme.bodyMedium),
                 const Spacer(),
-                if (_recycle.isNotEmpty)
+                if (isMaster && _recycle.isNotEmpty)
                   TextButton(
                     onPressed: _busy ? null : _recyclePurgeAll,
                     child: Text(l10n.storage_recyclePurgeAll),
@@ -928,8 +952,8 @@ class _StorageSpaceScreenState extends State<StorageSpaceScreen> {
                     style: Theme.of(context).textTheme.bodySmall?.copyWith(
                         color: Theme.of(context).colorScheme.onSurfaceVariant)),
               )
-            else
-              ..._recycle.take(20).map((e) => ListTile(
+            else ...[
+              ...visible.map((e) => ListTile(
                     dense: true,
                     contentPadding: EdgeInsets.zero,
                     leading: const Icon(Icons.insert_drive_file_outlined,
@@ -944,6 +968,18 @@ class _StorageSpaceScreenState extends State<StorageSpaceScreen> {
                       child: Text(l10n.storage_recycleRestore),
                     ),
                   )),
+              if (_recycle.length > pageSize)
+                Align(
+                  alignment: Alignment.center,
+                  child: TextButton(
+                    onPressed: () =>
+                        setState(() => _recycleExpanded = !_recycleExpanded),
+                    child: Text(_recycleExpanded
+                        ? l10n.storage_recycleShowLess
+                        : l10n.storage_recycleShowMore(_recycle.length)),
+                  ),
+                ),
+            ],
           ],
         ),
       ),

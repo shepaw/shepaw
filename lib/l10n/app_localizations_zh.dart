@@ -4821,6 +4821,14 @@ class AppLocalizationsZh extends AppLocalizations {
   String get storage_recycleRestore => '还原';
 
   @override
+  String get storage_recycleRestored => '已还原到原路径';
+
+  @override
+  String storage_recycleRestoreFailed(String error) {
+    return '还原失败：$error';
+  }
+
+  @override
   String get storage_recyclePurgeAll => '清空回收站';
 
   @override
@@ -4830,6 +4838,22 @@ class AppLocalizationsZh extends AppLocalizations {
   String storage_recyclePurged(String size) {
     return '已清理 $size';
   }
+
+  @override
+  String get storage_recyclePurgeMasterOnly => '清空回收站仅限当前 Master 本机操作';
+
+  @override
+  String storage_recyclePurgeFailed(String error) {
+    return '清空失败：$error';
+  }
+
+  @override
+  String storage_recycleShowMore(int count) {
+    return '显示全部（$count）';
+  }
+
+  @override
+  String get storage_recycleShowLess => '收起';
 
   @override
   String storage_deletedAt(String time) {

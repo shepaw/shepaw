@@ -5006,6 +5006,14 @@ class AppLocalizationsEn extends AppLocalizations {
   String get storage_recycleRestore => 'Restore';
 
   @override
+  String get storage_recycleRestored => 'Restored to original path';
+
+  @override
+  String storage_recycleRestoreFailed(String error) {
+    return 'Restore failed: $error';
+  }
+
+  @override
   String get storage_recyclePurgeAll => 'Empty recycle bin';
 
   @override
@@ -5016,6 +5024,23 @@ class AppLocalizationsEn extends AppLocalizations {
   String storage_recyclePurged(String size) {
     return 'Purged $size';
   }
+
+  @override
+  String get storage_recyclePurgeMasterOnly =>
+      'Emptying the recycle bin is only allowed on the current master device';
+
+  @override
+  String storage_recyclePurgeFailed(String error) {
+    return 'Empty failed: $error';
+  }
+
+  @override
+  String storage_recycleShowMore(int count) {
+    return 'Show all ($count)';
+  }
+
+  @override
+  String get storage_recycleShowLess => 'Show less';
 
   @override
   String storage_deletedAt(String time) {

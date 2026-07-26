@@ -8792,6 +8792,18 @@ abstract class AppLocalizations {
   /// **'还原'**
   String get storage_recycleRestore;
 
+  /// No description provided for @storage_recycleRestored.
+  ///
+  /// In zh, this message translates to:
+  /// **'已还原到原路径'**
+  String get storage_recycleRestored;
+
+  /// No description provided for @storage_recycleRestoreFailed.
+  ///
+  /// In zh, this message translates to:
+  /// **'还原失败：{error}'**
+  String storage_recycleRestoreFailed(String error);
+
   /// No description provided for @storage_recyclePurgeAll.
   ///
   /// In zh, this message translates to:
@@ -8809,6 +8821,30 @@ abstract class AppLocalizations {
   /// In zh, this message translates to:
   /// **'已清理 {size}'**
   String storage_recyclePurged(String size);
+
+  /// No description provided for @storage_recyclePurgeMasterOnly.
+  ///
+  /// In zh, this message translates to:
+  /// **'清空回收站仅限当前 Master 本机操作'**
+  String get storage_recyclePurgeMasterOnly;
+
+  /// No description provided for @storage_recyclePurgeFailed.
+  ///
+  /// In zh, this message translates to:
+  /// **'清空失败：{error}'**
+  String storage_recyclePurgeFailed(String error);
+
+  /// No description provided for @storage_recycleShowMore.
+  ///
+  /// In zh, this message translates to:
+  /// **'显示全部（{count}）'**
+  String storage_recycleShowMore(int count);
+
+  /// No description provided for @storage_recycleShowLess.
+  ///
+  /// In zh, this message translates to:
+  /// **'收起'**
+  String get storage_recycleShowLess;
 
   /// No description provided for @storage_deletedAt.
   ///

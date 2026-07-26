@@ -139,6 +139,15 @@ func CheckACL(frame Frame, callerDeviceID, trustLevel string, loopback bool) Acl
 		}
 		targetOwn := device == "" || device == callerDeviceID
 		if !targetOwn && !SharedReadable(space) {
+			seed, _ := frame.Payload["seed"].(bool)
+			if seed {
+				// Mirror seed / hash gate (plan §6.5): owner may temporarily
+				// read other devices' private partitions.
+				if device != "" && !IsValidDeviceID(device) {
+					return DenyBadOp
+				}
+				return Allow
+			}
 			grant, _ := frame.Payload["grant"].(string)
 			if grant == "" {
 				return DenyAcl

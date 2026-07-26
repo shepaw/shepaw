@@ -2951,10 +2951,31 @@
   "storage_recycleSection": "回收站",
   "storage_recycleEmptyHint": "回收站为空",
   "storage_recycleRestore": "还原",
+  "storage_recycleRestored": "已还原到原路径",
+  "storage_recycleRestoreFailed": "还原失败：{error}",
   "storage_recyclePurgeAll": "清空回收站",
   "storage_recyclePurgeConfirm": "清空后不可恢复，确定清空回收站？",
   "storage_recyclePurged": "已清理 {size}",
+  "storage_recyclePurgeMasterOnly": "清空回收站仅限当前 Master 本机操作",
+  "storage_recyclePurgeFailed": "清空失败：{error}",
+  "storage_recycleShowMore": "显示全部（{count}）",
+  "storage_recycleShowLess": "收起",
   "storage_deletedAt": "删除于 {time}",
+  "@storage_recycleRestoreFailed": {
+    "placeholders": {
+      "error": { "type": "String" }
+    }
+  },
+  "@storage_recyclePurgeFailed": {
+    "placeholders": {
+      "error": { "type": "String" }
+    }
+  },
+  "@storage_recycleShowMore": {
+    "placeholders": {
+      "count": { "type": "int" }
+    }
+  },
   "@storage_recyclePurged": {
     "placeholders": {
       "size": {
