@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:crypto/crypto.dart' as crypto;
+import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as p;
 
 import '../services/logger_service.dart';
@@ -90,15 +91,19 @@ class SnapshotImportService {
 
     try {
       for (final e in entries) {
-        final rel = e['path'] as String;
+        // list 返回相对 space 根的路径（含 snapshotId/ 前缀）；
+        // destDir 已是 backups/<localId>/，落盘时必须剥掉前缀，否则嵌套一层。
+        final spaceRel = e['path'] as String;
+        final fileRel = _stripSnapshotPrefix(spaceRel, snapshotId);
+        if (fileRel.isEmpty) continue;
         final expectedHash = e['sha256'] as String;
         final bytes = await _readAll(
-            serverDeviceId, oldDeviceId, rel, grantId, e['size'] as int);
+            serverDeviceId, oldDeviceId, spaceRel, grantId, e['size'] as int);
         final actualHash = crypto.sha256.convert(bytes).toString();
         if (actualHash != expectedHash) {
-          throw StateError('hash mismatch on $rel');
+          throw StateError('hash mismatch on $spaceRel');
         }
-        final out = File(p.join(destDir.path, rel));
+        final out = File(p.join(destDir.path, fileRel));
         await out.parent.create(recursive: true);
         await out.writeAsBytes(bytes, flush: true);
       }
@@ -136,6 +141,20 @@ class SnapshotImportService {
       totalBytes: total,
     );
   }
+
+  /// list/meta 路径相对 space 根；下载目标目录已含 snapshotId，需剥前缀。
+  @visibleForTesting
+  static String stripSnapshotPrefix(String spaceRel, String snapshotId) {
+    final prefix = '$snapshotId/';
+    if (spaceRel.startsWith(prefix)) {
+      return spaceRel.substring(prefix.length);
+    }
+    if (spaceRel == snapshotId) return '';
+    return spaceRel;
+  }
+
+  static String _stripSnapshotPrefix(String spaceRel, String snapshotId) =>
+      stripSnapshotPrefix(spaceRel, snapshotId);
 
   Future<List<int>> _readAll(String serverDeviceId, String oldDeviceId,
       String relPath, String grantId, int size) async {

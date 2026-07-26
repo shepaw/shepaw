@@ -341,7 +341,7 @@ class LocalStore {
     final verified = <(String, _StagingMeta, File)>[];
     final failed = <String>[];
 
-    // 阶段一：全量校验
+    // 阶段一：全量校验（spec §2.6：全部通过才进入转正）
     for (final id in uploadIds) {
       final metaFile = File(p.join(stagingDir, '$id.json'));
       if (!await metaFile.exists()) {
@@ -363,8 +363,11 @@ class LocalStore {
       }
       verified.add((id, meta, partFile));
     }
+    if (failed.isNotEmpty) {
+      return (const <String>[], failed);
+    }
 
-    // 阶段二：逐个转正（同卷 rename 原子）
+    // 阶段二：逐个转正（同卷 rename 原子；单文件失败其余继续）
     final committed = <String>[];
     for (final (id, meta, partFile) in verified) {
       try {

@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:uuid/uuid.dart';
@@ -282,6 +283,19 @@ class StoreService {
   }
 
   // ────────────────────────────── 统一执行器（loopback 与远端共用）──
+
+  /// 测试钩子：以指定调用者身份/信任等级走完整 dispatch（含 grant 校验）。
+  @visibleForTesting
+  Future<Map<String, dynamic>> dispatchForTest(
+    StoreFrame frame, {
+    required String callerDeviceId,
+    required String trustLevel,
+    bool loopback = false,
+  }) =>
+      _dispatch(frame,
+          callerDeviceId: callerDeviceId,
+          trustLevel: trustLevel,
+          loopback: loopback);
 
   Future<Map<String, dynamic>> _dispatch(
     StoreFrame frame, {

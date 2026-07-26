@@ -1,9 +1,13 @@
 import 'dart:convert';
+import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:crypto/crypto.dart' as crypto;
 import 'package:flutter_test/flutter_test.dart';
+import 'package:path/path.dart' as p;
+import 'package:path_provider/path_provider.dart';
 import 'package:shepaw/storage/device_identity.dart';
+import 'package:shepaw/storage/import_auth_service.dart';
 import 'package:shepaw/storage/store_protocol.dart';
 import 'package:shepaw/storage/store_service.dart';
 
@@ -151,12 +155,61 @@ void main() {
     });
 
     test('friend 级设备帧被拒（untrusted）', () async {
-      // 直接走 dispatch 层（master 侧处理逻辑的信任强制点）
-      final res = await StoreService.instance.call(StoreFrame(
-          op: StoreOp.list, payload: {'space': 'files'}));
-      // loopback 是 owner，正常返回；friend 判定在 ACL 纯函数层已由
-      // store_protocol_test 覆盖，此处确认 loopback 不误伤。
-      expect(res!.containsKey('entries'), isTrue);
+      final self = await DeviceIdentity.deviceId();
+      final res = await StoreService.instance.dispatchForTest(
+        StoreFrame(op: StoreOp.list, payload: {'space': 'files'}),
+        callerDeviceId: self,
+        trustLevel: TrustLevel.friend,
+      );
+      expect(res['_error'], StoreError.untrusted);
+    });
+
+    test('有效 grant 可读他人 backups；伪造 grant 拒绝', () async {
+      const oldDev = 'bbbbbbbbbbbbbbbb';
+      final self = await DeviceIdentity.deviceId();
+      final docs = await getApplicationDocumentsDirectory();
+      final storeRoot = Directory(p.join(docs.path, 'shepaw', 'store'));
+      // 在旧设备 backups 下直接落一份可读文件
+      final snapDir = Directory(
+          p.join(storeRoot.path, oldDev, 'backups', '20260726-120000'));
+      await snapDir.create(recursive: true);
+      final payload = utf8.encode('old-backup-bytes');
+      await File(p.join(snapDir.path, 'manifest.json'))
+          .writeAsString('{"ok":true}');
+      await File(p.join(snapDir.path, 'db.sqlite.enc'))
+          .writeAsBytes(payload);
+
+      final auth = ImportAuthService(storeRoot: storeRoot);
+      final req = await auth.createRequest(oldDevice: oldDev, newDevice: self);
+      final grant = await auth.grant(req.requestId);
+
+      final denied = await StoreService.instance.dispatchForTest(
+        StoreFrame(op: StoreOp.list, payload: {
+          'space': 'backups',
+          'device': oldDev,
+          'path': '',
+          'grant': 'ig-forged',
+        }),
+        callerDeviceId: self,
+        trustLevel: TrustLevel.owner,
+      );
+      expect(denied['_error'], StoreError.aclDenied);
+
+      final ok = await StoreService.instance.dispatchForTest(
+        StoreFrame(op: StoreOp.list, payload: {
+          'space': 'backups',
+          'device': oldDev,
+          'path': '20260726-120000/',
+          'grant': grant.grantId,
+        }),
+        callerDeviceId: self,
+        trustLevel: TrustLevel.owner,
+      );
+      expect(ok.containsKey('_error'), isFalse);
+      final paths = (ok['entries'] as List)
+          .map((e) => (e as Map)['path'] as String)
+          .toList();
+      expect(paths, contains('20260726-120000/db.sqlite.enc'));
     });
   });
 

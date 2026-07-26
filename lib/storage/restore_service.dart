@@ -12,6 +12,7 @@ import '../services/minds_database_service.dart';
 import '../services/she_memory_db_service.dart';
 import '../services/she_profile_database_service.dart';
 import 'device_identity.dart';
+import 'snapshot_crypto.dart';
 import 'snapshot_service.dart';
 
 /// 恢复引擎（docs/storage_space_plan.md §5.3）。
@@ -54,8 +55,9 @@ class RestoreService {
   ///
   /// [restoreIdentity]：同机重装恢复传 true（device_id 随快照恢复，§5.4）；
   /// 换机导入传 false——新设备保留自己的 device_id，两个 id 互不影响。
-  /// [safetyPasswordHash]：安全快照用的缓存密钥（定期快照链路）；
-  /// 缺省用 [password] 慢路径派生。
+  /// [safetyPasswordHash]：安全快照用的**当前**主密码哈希（定期快照链路）；
+  /// 缺省读 [SnapshotCrypto.cachedPasswordHash]；仍无缓存时才用 [password]
+  /// 慢路径，且不刷新自动快照缓存（恢复密码可能是旧钥）。
   ///
   /// 安全网：先对当前状态做一次安全快照，再把现有主库文件改名保留为
   /// shepaw.db.pre-restore。恢复后 app 需重启生效。
@@ -69,10 +71,16 @@ class RestoreService {
       throw UnsupportedError('web 平台不支持快照恢复');
     }
     // 1. 当前状态安全快照（§5.3：恢复前自动留存本机安全快照）
+    // 优先当前主密码缓存，避免「用旧密码恢复」污染自动快照密钥。
     try {
-      await SnapshotService.instance.createSnapshot(
-          password: safetyPasswordHash == null ? password : null,
-          passwordHash: safetyPasswordHash);
+      final cached = safetyPasswordHash ??
+          await SnapshotCrypto.cachedPasswordHash();
+      if (cached != null) {
+        await SnapshotService.instance.createSnapshot(passwordHash: cached);
+      } else {
+        await SnapshotService.instance.createSnapshot(
+            password: password, cachePassword: false);
+      }
     } catch (e) {
       _log.warning('safety snapshot failed, abort restore: $e', tag: _tag);
       throw StateError('safety snapshot failed: $e');

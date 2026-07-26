@@ -73,6 +73,23 @@ void main() {
       expect(f2, isEmpty);
     });
 
+    test('批内任一校验失败则整批不转正（spec §2.6）', () async {
+      final good = bytesOf('ok-content');
+      final badDeclared = bytesOf('declared');
+      final (uGood, _) = await begin('good.txt', good);
+      await store.writeChunk(dev, 'files', uGood, 0, good);
+      final (uBad, _) = await begin('bad.txt', badDeclared);
+      await store.writeChunk(dev, 'files', uBad, 0, bytesOf('WRONG!!!'));
+
+      final (committed, failed) =
+          await store.commit(dev, 'files', [uGood, uBad]);
+      expect(committed, isEmpty);
+      expect(failed, isNotEmpty);
+      expect(failed.any((f) => f.contains('hash mismatch')), isTrue);
+      // 好文件也不得提前转正
+      expect(await store.list(dev, 'files'), isEmpty);
+    });
+
     test('断点续传：重复 write.begin 返回已接收量', () async {
       final content = bytesOf('0123456789abcdef');
       final (uploadId, _) = await begin('resume.txt', content);

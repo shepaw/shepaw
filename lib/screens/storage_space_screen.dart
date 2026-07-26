@@ -198,7 +198,9 @@ class _StorageSpaceScreenState extends State<StorageSpaceScreen> {
     try {
       final preview =
           await RestoreService.instance.prepareRestore(info, password);
-      await RestoreService.instance.executeRestore(preview, password);
+      final safetyHash = await SnapshotCrypto.cachedPasswordHash();
+      await RestoreService.instance.executeRestore(preview, password,
+          safetyPasswordHash: safetyHash);
       _toast(l10n.storage_restoreDone, duration: const Duration(seconds: 6));
     } on StateError catch (e) {
       _toast(e.message.contains('wrong password')
@@ -615,9 +617,10 @@ class _StorageSpaceScreenState extends State<StorageSpaceScreen> {
         ),
       );
       if (confirmed != true) return;
-      // 换机导入：保留本机 device_id（§5.4）
-      await RestoreService.instance
-          .executeRestore(preview, password, restoreIdentity: false);
+      // 换机导入：保留本机 device_id（§5.4）；安全快照用当前主密码缓存
+      final safetyHash = await SnapshotCrypto.cachedPasswordHash();
+      await RestoreService.instance.executeRestore(preview, password,
+          restoreIdentity: false, safetyPasswordHash: safetyHash);
       _toast(l10n.storage_restoreDone, duration: const Duration(seconds: 6));
     } on SnapshotDecryptException {
       _toast(l10n.storage_passwordWrong);

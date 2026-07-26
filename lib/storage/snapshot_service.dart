@@ -156,16 +156,19 @@ class SnapshotService {
 
   /// 生成快照：VACUUM INTO 一致性快照 → 加密 → 落 manifest。
   ///
-  /// 密钥来源二选一：[password]（慢路径，同时缓存 H 供自动快照）或
-  /// [passwordHash]（快路径，定期快照用缓存的 H）。
+  /// 密钥来源二选一：[password]（慢路径）或 [passwordHash]（快路径，
+  /// 定期快照用缓存的 H）。[cachePassword] 为 true 且走 password 慢路径时，
+  /// 顺带刷新自动快照缓存；恢复安全快照等场景应传 false，避免旧密码污染缓存。
   /// 离开本机前必须已加密（§5.2）。失败抛异常。
   Future<SnapshotInfo> createSnapshot(
-      {String? password, Uint8List? passwordHash}) async {
+      {String? password,
+      Uint8List? passwordHash,
+      bool cachePassword = true}) async {
     final h = passwordHash ??
         (password != null
             ? await SnapshotCrypto.hashPassword(password)
             : throw ArgumentError('password or passwordHash required'));
-    if (password != null) {
+    if (password != null && cachePassword) {
       // 验密成功顺带刷新自动快照的缓存密钥
       await SnapshotCrypto.cachePasswordHash(h);
     }
