@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
@@ -11,6 +12,7 @@ import 'package:shepaw/storage/device_identity.dart';
 import 'package:shepaw/storage/master_migration_service.dart';
 import 'package:shepaw/storage/mirror_reprotect_service.dart';
 import 'package:shepaw/storage/snapshot_crypto.dart';
+import 'package:shepaw/storage/snapshot_service.dart';
 import 'package:shepaw/storage/store_protocol.dart';
 import 'package:shepaw/storage/store_service.dart';
 
@@ -116,6 +118,39 @@ void main() {
       final dir = Directory(p.join(store.root.path, self, 'backups', id));
       expect(File(p.join(dir.path, 'manifest.json')).existsSync(), isTrue);
       expect(File(p.join(dir.path, 'mirror.tar.enc')).existsSync(), isTrue);
+
+      // 再保护包不得进入 DB 快照列表 / GFS（§5.1 vs §6.6）
+      final listed = await SnapshotService.instance.listSnapshots();
+      expect(listed.any((s) => s.id.startsWith('reprotect-')), isFalse);
+    });
+
+    test('再保护打包跳过既有 reprotect-* 目录', () async {
+      const password = 'reprotect-skip-pw';
+      final h = await SnapshotCrypto.hashPassword(password);
+      await SnapshotCrypto.cachePasswordHash(h);
+      final self = await DeviceIdentity.deviceId();
+      await StoreService.instance.setMasterDeviceId(self);
+      final store = await StoreService.instance.localStore();
+
+      // 植入一份「旧」再保护目录（大文件，若被打入会显著抬高 file_count）
+      final oldId = 'reprotect-20000101-000000';
+      final oldDir =
+          Directory(p.join(store.root.path, self, 'backups', oldId));
+      await oldDir.create(recursive: true);
+      await File(p.join(oldDir.path, 'manifest.json')).writeAsString(
+          '{"kind":"mirror_reprotect","created_at":1,"master_device":"$self",'
+          '"file_count":0,"plain_sha256":"0","enc_sha256":"0",'
+          '"kdf_salt":"AA==","kdf_iterations":1}');
+      final junk = Uint8List(64 * 1024);
+      await File(p.join(oldDir.path, 'mirror.tar.enc')).writeAsBytes(junk);
+
+      final id = await MirrorReprotectService.instance.run(passwordHash: h);
+      final manifest = jsonDecode(await File(
+              p.join(store.root.path, self, 'backups', id, 'manifest.json'))
+          .readAsString()) as Map<String, dynamic>;
+      // 旧 reprotect 的 64KB 不应计入；file_count 不应因 junk 暴涨到含该文件
+      expect(manifest['kind'], 'mirror_reprotect');
+      expect(manifest['file_count'] as int, lessThan(1000));
     });
   });
 

@@ -332,7 +332,8 @@ class SnapshotService {
 
   // ------------------------------------------------------------- 列表/读取
 
-  /// 列出本机全部快照（新→旧）。
+  /// 列出本机 DB 快照（新→旧）。跳过镜像再保护包（`reprotect-*` /
+  /// `kind: mirror_reprotect`），避免误入恢复列表与 GFS。
   Future<List<SnapshotInfo>> listSnapshots() async {
     final backups = await _backupsDir();
     final result = <SnapshotInfo>[];
@@ -340,12 +341,14 @@ class SnapshotService {
       if (entry is! Directory) continue;
       final id = p.basename(entry.path);
       if (id.startsWith('.')) continue; // .tmp / 隐藏目录
+      if (id.startsWith('reprotect-')) continue;
       final manifestFile = File(p.join(entry.path, 'manifest.json'));
       if (!await manifestFile.exists()) continue;
       try {
-        final manifest = SnapshotManifest.fromJson(
-            jsonDecode(await manifestFile.readAsString())
-                as Map<String, dynamic>);
+        final json = jsonDecode(await manifestFile.readAsString())
+            as Map<String, dynamic>;
+        if (json['kind'] == 'mirror_reprotect') continue;
+        final manifest = SnapshotManifest.fromJson(json);
         var total = 0;
         await for (final f in entry.list(recursive: true)) {
           if (f is File) total += await f.length();

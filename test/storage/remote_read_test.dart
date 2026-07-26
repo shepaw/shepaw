@@ -231,5 +231,95 @@ void main() {
             .having((e) => e.code, 'code', StoreError.notFound)),
       );
     });
+
+    test('master 持续 not_found 时回退源设备直读', () async {
+      RemoteReadService.instance.retryWait = (_) async {};
+      final content = bytesOf('only on owner');
+      // 数据只在「源设备」视角的 store 里；master 永远 not_found
+      await serverWrite('doc/owner-only.txt', content);
+
+      final targets = <String>[];
+      RemoteReadService.instance.serverCaller =
+          (serverDeviceId, frame) async {
+        targets.add(serverDeviceId);
+        if (serverDeviceId == server) {
+          return <String, dynamic>{'_error': StoreError.notFound};
+        }
+        // 源设备直读
+        opLog.add(frame.op);
+        switch (frame.op) {
+          case StoreOp.meta:
+            return serverStore.meta(
+                frame.payload['device'] as String,
+                frame.payload['space'] as String,
+                frame.payload['path'] as String);
+          case StoreOp.read:
+            final (data, size, eof) = await serverStore.read(
+                frame.payload['device'] as String,
+                frame.payload['space'] as String,
+                frame.payload['path'] as String,
+                frame.payload['offset'] as int,
+                frame.payload['length'] as int);
+            return {
+              'data': base64Encode(data),
+              'size': size,
+              'eof': eof,
+            };
+          default:
+            return <String, dynamic>{'_error': 'unsupported'};
+        }
+      };
+
+      final r = await RemoteReadService.instance.readVerified(
+          serverDeviceId: server,
+          deviceId: device,
+          space: 'files',
+          path: 'doc/owner-only.txt');
+      expect(r.bytes, content);
+      expect(r.fromOwnerFallback, isTrue);
+      expect(targets.contains(device), isTrue);
+    });
+
+    test('master 离线无缓存时回退源设备直读', () async {
+      final content = bytesOf('live from owner');
+      await serverWrite('doc/owner-live.txt', content);
+
+      RemoteReadService.instance.serverCaller =
+          (serverDeviceId, frame) async {
+        if (serverDeviceId == server) {
+          return <String, dynamic>{'_error': StoreError.masterOffline};
+        }
+        switch (frame.op) {
+          case StoreOp.meta:
+            return serverStore.meta(
+                frame.payload['device'] as String,
+                frame.payload['space'] as String,
+                frame.payload['path'] as String);
+          case StoreOp.read:
+            final (data, size, eof) = await serverStore.read(
+                frame.payload['device'] as String,
+                frame.payload['space'] as String,
+                frame.payload['path'] as String,
+                frame.payload['offset'] as int,
+                frame.payload['length'] as int);
+            return {
+              'data': base64Encode(data),
+              'size': size,
+              'eof': eof,
+            };
+          default:
+            return <String, dynamic>{'_error': 'unsupported'};
+        }
+      };
+
+      final r = await RemoteReadService.instance.readVerified(
+          serverDeviceId: server,
+          deviceId: device,
+          space: 'files',
+          path: 'doc/owner-live.txt');
+      expect(r.bytes, content);
+      expect(r.fromOwnerFallback, isTrue);
+      expect(r.stale, isFalse);
+    });
   });
 }

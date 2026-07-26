@@ -13,20 +13,27 @@ import 'store_service.dart';
 
 /// 缓存校验读取的结果。
 class RemoteReadResult {
-  RemoteReadResult({required this.bytes, required this.stale});
+  RemoteReadResult({
+    required this.bytes,
+    required this.stale,
+    this.fromOwnerFallback = false,
+  });
 
   final Uint8List bytes;
 
   /// true = 来自缓存且 master 离线，可能不是最新（spec §7-3）。
   final bool stale;
+
+  /// true = master 不可用/未镜像时改从源设备直读成功（方案 §13）。
+  final bool fromOwnerFallback;
 }
 
 /// 读路径缓存校验（docs/storage_protocol_spec.md §7，方案 §6.4 读路径）。
 ///
 /// 1. 有缓存 → meta 比对 hash：一致零内容流量；不一致重下并更新缓存。
 /// 2. 无缓存且在线 → 拉取并写缓存。
-/// 3. 离线：有缓存标注 stale 使用；无缓存报错。
-/// 4. `not_found`：有限退避重试（URI 可能先于镜像送达 master，方案 §12）。
+/// 3. 离线：有缓存标注 stale 使用；无缓存则尝试源设备直读回退。
+/// 4. `not_found`：有限退避重试；仍失败且源设备 ≠ master 时直读源设备。
 ///
 /// 缓存布局：`<store>/.cache/<device>/<space>/<path>`（硬链接到 CAS blob）
 /// + `<path>.meta.json`（hash/size/fetched_at）。
@@ -77,9 +84,62 @@ class RemoteReadService {
         Duration(milliseconds: ms > 2000 ? 2000 : ms));
   }
 
-  /// 缓存校验读取。master 无缓存且离线时抛 StateError('master_offline')。
-  /// 短暂 not_found（镜像未送达）会退避重试。
+  static bool _isFallbackCandidate(Object error) {
+    if (error is StoreException && error.code == StoreError.notFound) {
+      return true;
+    }
+    if (error is StateError && error.message == 'master_offline') {
+      return true;
+    }
+    return false;
+  }
+
+  /// 缓存校验读取。
+  ///
+  /// [serverDeviceId] 通常为当前 master；失败且 [allowOwnerFallback] 时，
+  /// 若 [deviceId] ≠ server，再向源设备直读一次。
   Future<RemoteReadResult> readVerified({
+    required String serverDeviceId,
+    required String deviceId,
+    required String space,
+    required String path,
+    String? grantId,
+    bool allowOwnerFallback = true,
+  }) async {
+    try {
+      return await _readWithNotFoundRetry(
+        serverDeviceId: serverDeviceId,
+        deviceId: deviceId,
+        space: space,
+        path: path,
+        grantId: grantId,
+      );
+    } catch (e) {
+      if (!allowOwnerFallback ||
+          !_isFallbackCandidate(e) ||
+          deviceId == serverDeviceId) {
+        rethrow;
+      }
+      _log.info(
+          'owner fallback → $deviceId after $e '
+          '($space/$path)',
+          tag: _tag);
+      final result = await _readVerifiedOnce(
+        serverDeviceId: deviceId,
+        deviceId: deviceId,
+        space: space,
+        path: path,
+        grantId: grantId,
+      );
+      return RemoteReadResult(
+        bytes: result.bytes,
+        stale: result.stale,
+        fromOwnerFallback: true,
+      );
+    }
+  }
+
+  Future<RemoteReadResult> _readWithNotFoundRetry({
     required String serverDeviceId,
     required String deviceId,
     required String space,

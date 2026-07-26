@@ -10,7 +10,7 @@
 > |------|----------|------|
 > | 各端本地 `<device_id>/` | **写权威** | 写入永远先落本机正式区（真实文件树）；未同步队列保障送达 |
 > | 当前 master 上的镜像 | **跨端读权威** | 他端 `artifacts`/`files` 一律经 master `meta`/`read`；本地仅作读缓存 |
-> | 源设备本机目录 | 不作为跨端读权威 | 不做「向 owner 直读回退」（协议曾写、未实现；标为后续可选） |
+> | 源设备本机目录 | 写权威；跨端读回退 | 默认跨端读走 master；master `not_found`/离线无缓存时直读源设备 |
 >
 > 耐久性含义：未获 master ack 的数据以本机为准且不可丢；**已 ack 数据的跨端可读性绑定 master**。本机正式区默认保留自有数据（不因 ack 自动淘汰）；远端读缓存可 LRU 淘汰。
 
@@ -186,7 +186,7 @@
 - **变更游标**：每端为自己的 `<device_id>/` 维护单调递增的 `change_seq`（每次 commit/删除 +1）与已获 ack 的 `ack_seq`；master 侧 `DeviceCursorStore` 记录各设备 `applied_seq`。游标仅用于本设备目录镜像对账，不涉及跨设备排序。
 - **批量原子性**：按 seq 上传（write.begin/chunk），**commit 标记最后送达**并带 `upto_seq` → master 转正后推进 `applied_seq` → 客户端据此出队。
 - **删除**：本地移入 `.recycle` 后入队；master 重放后同样入 `.recycle`。
-- **读路径（跨端共享区）**：`RemoteReadService` 向 **当前 master** 发 `store.meta` / `store.read`——有缓存则比对 hash（一致零内容流量）；不一致或无缓存则下载并写入 `LocalCas` + `.cache`；master 离线有缓存则 `stale: true`，无缓存报 `master_offline`。**不向源设备直读**（owner 回退为后续可选，见 §13）。
+- **读路径（跨端共享区）**：`RemoteReadService` 向 **当前 master** 发 `store.meta` / `store.read`——有缓存则比对 hash（一致零内容流量）；不一致或无缓存则下载并写入 `LocalCas` + `.cache`；master 离线有缓存则 `stale: true`。`not_found` 有限重试后仍失败，或 master 离线且无缓存时，**向源设备直读回退**（`fromOwnerFallback`）。
 - **覆盖语义**：同路径后写覆盖先写（以 master 接收/重放顺序为准），旧版本进 `.recycle`。单写者目录下正常无多端争用；竞态主要出现在迁移窗口或同设备重复投递。
 - **磁盘压力**：未同步队列占用由管理页展示；默认 **未同步 ≥200MB** 告警（实现阈值）。master 磁盘 80% 告警为后续增强（当前未做）。
 - **master 指针**：迁移后向各 owner 广播；离线端醒来经 `master.pointer.query` 获取并按 epoch 改指，再 `syncNow`。
@@ -281,24 +281,25 @@ master 上的镜像树主要是各端本地数据的副本；为降低单点损�
 
 ## 12. 主要风险与对策
 
-- **跨端读滞后 / 脏缓存**：跨端读权威是 **master 镜像**；经 `meta` hash 校验发现不一致则重下。master 损坏或镜像错误时，**当前实现不会自动向源设备回源**——对策是修好 master / 升主后由各端重新推送，或启用 §13 的 owner 直读回退。
+- **跨端读滞后 / 脏缓存**：跨端读权威是 **master 镜像**；经 `meta` hash 校验发现不一致则重下。master 损坏或未镜像时，先 `not_found` 重试，再 **owner 直读回退**。
 - **master 长离线**：自有数据本地可用；跨端读仅 stale 缓存或报缺；未同步队列膨胀——管理页 ≥200MB 告警；根治靠常开节点（M7）。
 - **旧 master 不可达时升主**：只种子游标，他端历史 blob 可能缺口——升主 UI 必须提示；尽量在旧 master 仍在线时迁移。
 - **重装丢身份**：全新安装=新 device_id，旧目录需经 5.4 授权导入；开启快照时提示「身份随快照保存，重装后请先恢复」。
 - **同路径覆盖**：后写覆盖先写，旧版进回收站 30 天可还原；产物按 task_id 归档降低撞名。
 - **恢复覆盖风险**：恢复前强制安全快照 + 界面明确替换语义。
 - **快照静默失败**：连续失败 ≥3 天显著告警，引导启用常开节点。
-- **master 磁盘膨胀**：无自动保留期（决策 1）——手删 + 回收站 30 天；GFS 仅本机 backups；磁盘 80% 告警为后续增强。
+- **master 磁盘膨胀**：无自动保留期（决策 1）——手删 + 回收站 30 天；GFS 仅本机 DB `backups`（不含 `reprotect-*` 再保护包）；磁盘 80% 告警为后续增强。
+- **再保护与 DB 快照隔离**：`listSnapshots` / GFS 跳过 `reprotect-*`；再保护打包时也不再打入既有 `reprotect-*`，避免递归膨胀。
 - **密码遗忘/变更**：强制验密 + 解密自检；改密自动重加密新快照、旧快照支持历史密码。
 - **多 she 记忆分叉**：记忆交换 + 来源标注缓解；产物互通走目录读取。
 - **URI 先于镜像**：编排层传入产物 URI 时文件可能尚未 sync 到 master——`RemoteReadService` 对 `not_found` 做有限退避重试；写入方为本地优先（`ArtifactService` / 附件经 `LocalStore` + 同步队列）。
 
 ## 13. 后续可选（不承诺）
 
-- **跨端读 owner 直读回退**（master 离线或镜像校验失败时向源设备 `meta`/`read`）——协议曾暗示、代码未做。
 - 升主前逐设备内容哈希门闩 / 旧 master 可达时的镜像种子拷贝。
-- master 磁盘 80% 用量告警；`commit.retention` 字段落地。
+- master 磁盘 80% 用量告警；`commit.retention` 字段落地；再保护包独立保留策略。
 - 快照差量化；回收站增强；`she.presence` 名单级；跨人 she 社交；DB 级多端互通（另案）。
+- 系统级 BGAppRefresh / WorkManager（日快照已有回前台 + WiFi 触发）。
 
 ## 附录 A. v1.1 相对 v1.0 的修订摘要
 
@@ -309,3 +310,5 @@ master 上的镜像树主要是各端本地数据的副本；为降低单点损�
 5. 告警阈值对齐实现（未同步 200MB）；80% 磁盘告警降为后续。
 6. M7 补无头管理面验收；里程碑表标注代码状态。
 7. §8 明确逻辑在 `she_network/`，与存储解耦、管理入口同页。
+8. 跨端读增加 owner 直读回退（master `not_found`/离线无缓存）。
+9. `listSnapshots`/GFS 与再保护包隔离；再保护打包跳过既有 `reprotect-*`。

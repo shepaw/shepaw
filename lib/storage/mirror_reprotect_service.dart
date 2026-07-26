@@ -64,6 +64,11 @@ class MirrorReprotectService {
             if (f is! File) continue;
             final rel = p.relative(f.path, from: spaceDir.path);
             if (rel.split(p.separator).any((s) => s.startsWith('.'))) continue;
+            // 再保护包自身不打进下一份镜像，避免递归膨胀
+            if (space == StoreSpace.backups) {
+              final top = rel.split(p.separator).first;
+              if (top.startsWith('reprotect-')) continue;
+            }
             final bytes = await f.readAsBytes();
             final entryName = '$deviceId/$space/${rel.replaceAll(r'\', '/')}';
             archive.addFile(ArchiveFile(entryName, bytes.length, bytes));

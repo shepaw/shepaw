@@ -269,10 +269,12 @@
 1. 有本地缓存 → 向 **当前 master** 发 `store.meta` 比对内容
    hash：**一致则直接使用缓存（零内容流量）**；不一致则重新下载并更新缓存。
 2. 无缓存且 master 在线 → 直接拉取并写入缓存。
-3. master 离线：有缓存则使用缓存并标注 `stale`（可能不是最新）；无缓存报错。
-4. `not_found`：允许有限退避重试（URI 可能先于镜像送达；实现见 `RemoteReadService`）。
+3. master 离线：有缓存则使用缓存并标注 `stale`（可能不是最新）；无缓存则
+   **向源设备 `device` 直读回退**（仍失败再报错）。
+4. `not_found`：有限退避重试；耗尽后若源设备 ≠ master，再直读源设备一次
+   （`RemoteReadService`，`fromOwnerFallback`）。
 
-- 跨端读权威 = master 镜像（与方案 v1.1 一致）。向源设备 owner 直读回退为后续可选，不在本版必选路径。
+- 跨端读权威仍为 master 镜像；owner 直读是可用性回退，不改变写权威。
 - 缓存：`LocalCas` 按内容 hash 去重 + `.cache` 物化视图；LRU 默认 500MB，作用于远端读缓存。本机正式区为真实文件树，不经 CAS 写入；未同步数据由 `SyncJournal` 队列保护，不依赖 CAS `synced` 标志。
 
 ## 10. master 迁移与指针（v4 新增，方案 §6.5 / §6.6）
