@@ -1,0 +1,21 @@
+{
+  "description": "Shared path attack fixtures for Dart + Go (docs/storage_protocol_spec.md §4). Keep in sync with lib/storage/store_protocol.dart normalizeStorePath.",
+  "attacks": [
+    "/etc/passwd",
+    "~/secret",
+    "C:\\windows\\system32",
+    "a/../../b",
+    "../escape",
+    "a/../../../etc",
+    ".hidden/x",
+    "a/.staging/x",
+    "x\u0000y",
+    ""
+  ],
+  "ok": [
+    ["a/b/c.txt", "a/b/c.txt"],
+    ["a//b/./c", "a/b/c"],
+    ["a\\b\\c", "a/b/c"],
+    ["task-41/report.md", "task-41/report.md"]
+  ]
+}

@@ -1,0 +1,95 @@
+{
+  "description": "Shared ACL cases for Dart + Go (docs/storage_protocol_spec.md §3). expect one of: allow, denyUntrusted, denyAcl, denyBadOp.",
+  "caller": "aaaaaaaaaaaaaaaa",
+  "other": "bbbbbbbbbbbbbbbb",
+  "cases": [
+    {
+      "name": "friend_list",
+      "op": "list",
+      "trust": "friend",
+      "loopback": false,
+      "payload": { "space": "artifacts" },
+      "expect": "denyUntrusted"
+    },
+    {
+      "name": "friend_write",
+      "op": "write.begin",
+      "trust": "friend",
+      "loopback": false,
+      "payload": { "space": "artifacts" },
+      "expect": "denyUntrusted"
+    },
+    {
+      "name": "owner_list_own",
+      "op": "list",
+      "trust": "owner",
+      "loopback": false,
+      "payload": { "space": "artifacts" },
+      "expect": "allow"
+    },
+    {
+      "name": "owner_list_other_artifacts",
+      "op": "list",
+      "trust": "owner",
+      "loopback": false,
+      "payload": { "space": "artifacts", "device": "bbbbbbbbbbbbbbbb" },
+      "expect": "allow"
+    },
+    {
+      "name": "owner_list_other_backups_no_grant",
+      "op": "list",
+      "trust": "owner",
+      "loopback": false,
+      "payload": { "space": "backups", "device": "bbbbbbbbbbbbbbbb" },
+      "expect": "denyAcl"
+    },
+    {
+      "name": "forge_device_on_write",
+      "op": "write.begin",
+      "trust": "owner",
+      "loopback": false,
+      "payload": { "space": "artifacts", "device": "bbbbbbbbbbbbbbbb" },
+      "expect": "denyAcl"
+    },
+    {
+      "name": "recycle_empty_remote",
+      "op": "recycle.empty",
+      "trust": "owner",
+      "loopback": false,
+      "payload": {},
+      "expect": "denyAcl"
+    },
+    {
+      "name": "recycle_empty_loopback",
+      "op": "recycle.empty",
+      "trust": "owner",
+      "loopback": true,
+      "payload": {},
+      "expect": "allow"
+    },
+    {
+      "name": "unknown_op",
+      "op": "not.a.real.op",
+      "trust": "owner",
+      "loopback": false,
+      "payload": {},
+      "expect": "denyBadOp"
+    },
+    {
+      "name": "sync_hello_other_device",
+      "op": "sync.hello",
+      "trust": "owner",
+      "loopback": false,
+      "payload": { "device": "bbbbbbbbbbbbbbbb" },
+      "expect": "denyAcl"
+    },
+    {
+      "name": "sync_hello_self",
+      "op": "sync.hello",
+      "trust": "owner",
+      "loopback": false,
+      "payload": { "device": "aaaaaaaaaaaaaaaa" },
+      "expect": "allow"
+    }
+  ]
+}

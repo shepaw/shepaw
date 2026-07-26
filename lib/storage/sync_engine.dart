@@ -3,8 +3,6 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
-import 'package:path/path.dart' as p;
-
 import '../peer/services/peer_connection.dart'
     show PeerConnectionEvent, PeerConnectionEventType;
 import '../peer/services/peer_connection_manager.dart';
@@ -12,6 +10,7 @@ import '../peer/services/peer_storage_service.dart';
 import '../services/logger_service.dart';
 import 'device_identity.dart';
 import 'local_store.dart';
+import 'master_migration_service.dart';
 import 'store_protocol.dart';
 import 'sync_journal.dart';
 
@@ -92,10 +91,27 @@ class SyncEngine {
 
   Future<void> _onPeerConnected(String peerId) async {
     try {
-      final master = await _masterDeviceIdFn!();
       final peers = await PeerStorageService().loadAllPeers();
       final peer = peers.where((p) => p.id == peerId).firstOrNull;
-      if (peer != null && peer.fingerprint == master) {
+      if (peer == null || peer.trustLevel != TrustLevel.owner) return;
+
+      // 任意 owner 上线：先 query 指针（离线端醒来改指，§6.5）
+      final master = await _masterDeviceIdFn!();
+      if (peer.fingerprint != master) {
+        try {
+          final q = await MasterMigrationService.instance
+              .queryPointer(peer.fingerprint);
+          if (q != null) {
+            await MasterMigrationService.instance.applyPointer(
+              masterId: q.master,
+              epoch: q.epoch,
+              fromDeviceId: peer.fingerprint,
+            );
+          }
+        } catch (_) {}
+      }
+      final masterNow = await _masterDeviceIdFn!();
+      if (peer.fingerprint == masterNow) {
         unawaited(syncNow());
       }
     } catch (_) {}

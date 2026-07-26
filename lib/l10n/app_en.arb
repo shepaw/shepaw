@@ -2406,6 +2406,35 @@
   "storage_spaceSection": "Storage space",
   "storage_masterNode": "Master node",
   "storage_thisDevice": "this device",
+  "storage_migrateMaster": "Migrate master",
+  "storage_becomeMaster": "Make this device master",
+  "storage_migratePick": "Pick the new master device",
+  "storage_migrateConfirm": "Migrate master to {device}? Peers will delta-replay by cursor.",
+  "storage_migrateDone": "Master switched (epoch {epoch})",
+  "storage_migrateFailed": "Migration failed: {error}",
+  "storage_reprotectNow": "Reprotect mirror tree now",
+  "storage_reprotectDone": "Mirror reprotect done: {id}",
+  "storage_reprotectSkipped": "Reprotect skipped (must be master with cached password)",
+  "@storage_migrateConfirm": {
+    "placeholders": {
+      "device": { "type": "String" }
+    }
+  },
+  "@storage_migrateDone": {
+    "placeholders": {
+      "epoch": { "type": "int" }
+    }
+  },
+  "@storage_migrateFailed": {
+    "placeholders": {
+      "error": { "type": "String" }
+    }
+  },
+  "@storage_reprotectDone": {
+    "placeholders": {
+      "id": { "type": "String" }
+    }
+  },
   "storage_usageTitle": "Usage",
   "storage_recycleSection": "Recycle bin",
   "storage_recycleEmptyHint": "Recycle bin is empty",
@@ -2509,5 +2538,32 @@
         "type": "int"
       }
     }
-  }
+  },
+  "storage_sheCircleSection": "Her circle",
+  "storage_sheCircleHint": "Digest exchange is owner-only. Disabled kinds never leave this device.",
+  "storage_exchangeEnabled": "Enable memory exchange",
+  "storage_exchangeKinds": "Exchange kinds",
+  "storage_kindPreference": "Preference",
+  "storage_kindOngoing": "Ongoing",
+  "storage_kindFact": "Fact",
+  "storage_exchangeNow": "Exchange now",
+  "storage_exchangeDone": "Digest offered",
+  "storage_exchangeSkipped": "Skipped (disabled, empty, or no owner peers)",
+  "storage_renameShe": "Name this device's She",
+  "storage_renameSheHint": "Give each device's She a scene name when you have several.",
+  "storage_sheNameSaved": "Local She name updated",
+  "storage_peerTrust": "Trust: {level}",
+  "@storage_peerTrust": {
+    "placeholders": {
+      "level": { "type": "String" }
+    }
+  },
+  "storage_externalMemories": "{count} digests received",
+  "@storage_externalMemories": {
+    "placeholders": {
+      "count": { "type": "int" }
+    }
+  },
+  "storage_presenceOffline": "No online presence yet",
+  "storage_noOwnerPeers": "No owner-paired devices"
 }

@@ -28,16 +28,35 @@ class DeviceCursorStore {
 
   Future<int> appliedSeq(String deviceId) async => (await _load())[deviceId] ?? 0;
 
+  /// 全表快照（M6：新 master 向旧 master 拉取各设备游标）。
+  Future<Map<String, int>> all() async => Map<String, int>.of(await _load());
+
   /// 推进游标（只进不退）。返回推进后的值。
   Future<int> advance(String deviceId, int uptoSeq) async {
     final map = await _load();
     final current = map[deviceId] ?? 0;
     final next = uptoSeq > current ? uptoSeq : current;
     map[deviceId] = next;
+    await _persist(map);
+    return next;
+  }
+
+  /// 种子导入（只进不退合并）。返回合并后全表。
+  Future<Map<String, int>> seed(Map<String, int> cursors) async {
+    final map = await _load();
+    for (final e in cursors.entries) {
+      final current = map[e.key] ?? 0;
+      if (e.value > current) map[e.key] = e.value;
+    }
+    await _persist(map);
+    return Map<String, int>.of(map);
+  }
+
+  Future<void> _persist(Map<String, int> map) async {
+    _cache = map;
     await _file.parent.create(recursive: true);
     final tmp = File('${_file.path}.tmp');
     await tmp.writeAsString(jsonEncode(map));
     await tmp.rename(_file.path);
-    return next;
   }
 }

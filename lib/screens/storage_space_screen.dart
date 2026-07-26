@@ -2,13 +2,25 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 
 import '../l10n/app_localizations.dart';
+import '../peer/models/paired_peer.dart';
 import '../peer/screens/peer_pairing_screen.dart';
 import '../peer/services/peer_connection_manager.dart';
 import '../peer/services/peer_pairing_service.dart';
 import '../peer/services/peer_storage_service.dart';
+import '../service_locator.dart';
 import '../services/password_service.dart';
+import '../services/remote_agent_service.dart';
+import '../services/she_service.dart';
+import '../she_network/digest_service.dart';
+import '../she_network/exchange_settings.dart';
+import '../she_network/external_memory_store.dart';
+import '../she_network/memory_exchange_service.dart';
+import '../she_network/presence_service.dart';
+import '../she_network/she_network_protocol.dart';
 import '../storage/device_identity.dart';
 import '../storage/import_auth_service.dart';
+import '../storage/master_migration_service.dart';
+import '../storage/mirror_reprotect_service.dart';
 import '../storage/restore_service.dart';
 import '../storage/scheduled_snapshot_service.dart';
 import '../storage/snapshot_crypto.dart';
@@ -47,6 +59,13 @@ class _StorageSpaceScreenState extends State<StorageSpaceScreen> {
   List<ImportGrant> _receivedGrants = [];
   List<Map<String, dynamic>> _pendingImports = [];
   final _oldDeviceController = TextEditingController();
+
+  // M8 她的朋友圈
+  ExchangeSettings _exchange =
+      ExchangeSettings(enabled: false, kinds: {...DigestKind.all});
+  List<PairedPeer> _ownerPeers = [];
+  Map<String, int> _extCounts = {};
+  String _localSheName = SheService.sheName;
 
   @override
   void initState() {
@@ -98,6 +117,13 @@ class _StorageSpaceScreenState extends State<StorageSpaceScreen> {
           .map((e) => (e as Map).cast<String, dynamic>())
           .toList();
     }
+    // M8：交换设置 + owner 同伴 + 外部记忆计数
+    _exchange = await ExchangeSettings.load();
+    final peers = await PeerStorageService().loadAllPeers();
+    _ownerPeers =
+        peers.where((p) => p.trustLevel == TrustLevel.owner).toList();
+    _extCounts = await ExternalMemoryStore.instance.countsByDevice();
+    _localSheName = await DigestService.instance.localSheName();
   }
 
   Future<void> _refresh() async {
@@ -208,7 +234,7 @@ class _StorageSpaceScreenState extends State<StorageSpaceScreen> {
     } on StateError catch (e) {
       _toast(e.message.contains('wrong password')
           ? l10n.storage_passwordWrong
-          : l10n.storage_restoreFailed('${e.message}'));
+          : l10n.storage_restoreFailed(e.message));
     } catch (e) {
       _toast(l10n.storage_restoreFailed('$e'));
     } finally {
@@ -315,6 +341,8 @@ class _StorageSpaceScreenState extends State<StorageSpaceScreen> {
                 children: [
                   _buildSpaceSection(l10n),
                   const SizedBox(height: 20),
+                  _buildSheCircleSection(l10n),
+                  const SizedBox(height: 20),
                   _buildHeader(l10n),
                   const SizedBox(height: 20),
                   _buildImportCard(l10n),
@@ -367,6 +395,116 @@ class _StorageSpaceScreenState extends State<StorageSpaceScreen> {
     );
   }
 
+  // ------------------------------------------------------------ M6 master 迁移
+
+  Future<void> _becomeMaster() async {
+    final l10n = AppLocalizations.of(context);
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        content: Text(l10n.storage_migrateConfirm(l10n.storage_thisDevice)),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: Text(l10n.common_cancel),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: Text(l10n.common_confirm),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+    setState(() => _busy = true);
+    try {
+      final result = await MasterMigrationService.instance.promoteSelf();
+      await _refresh();
+      _toast(l10n.storage_migrateDone(result.epoch));
+    } catch (e) {
+      _toast(l10n.storage_migrateFailed('$e'));
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _pickMigrateTarget() async {
+    final l10n = AppLocalizations.of(context);
+    final peers = await PeerStorageService().loadAllPeers();
+    final owners = peers
+        .where((p) => p.trustLevel == 'owner' && p.fingerprint != _selfId)
+        .toList();
+    if (!mounted) return;
+    final choices = <(String, String)>[
+      (_selfId, l10n.storage_thisDevice),
+      for (final p in owners)
+        (p.fingerprint, '${p.deviceName} (${p.fingerprint.substring(0, 8)}…)'),
+    ];
+    final picked = await showDialog<String>(
+      context: context,
+      builder: (ctx) => SimpleDialog(
+        title: Text(l10n.storage_migratePick),
+        children: [
+          for (final (id, label) in choices)
+            SimpleDialogOption(
+              onPressed: () => Navigator.of(ctx).pop(id),
+              child: Text(label),
+            ),
+        ],
+      ),
+    );
+    if (picked == null || !mounted) return;
+    final label = choices.firstWhere((c) => c.$1 == picked).$2;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        content: Text(l10n.storage_migrateConfirm(label)),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: Text(l10n.common_cancel),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: Text(l10n.common_confirm),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+    setState(() => _busy = true);
+    try {
+      final result =
+          await MasterMigrationService.instance.requestPromote(picked);
+      await _refresh();
+      if (result != null) {
+        _toast(l10n.storage_migrateDone(result.epoch));
+      }
+    } catch (e) {
+      _toast(l10n.storage_migrateFailed('$e'));
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _reprotectNow() async {
+    final l10n = AppLocalizations.of(context);
+    setState(() => _busy = true);
+    try {
+      final id = await MirrorReprotectService.instance.runIfMaster();
+      if (id == null) {
+        _toast(l10n.storage_reprotectSkipped);
+      } else {
+        _toast(l10n.storage_reprotectDone(id));
+        await _refresh();
+      }
+    } catch (e) {
+      _toast(l10n.storage_migrateFailed('$e'));
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
   // ------------------------------------------------------------ M2 存储空间区块
 
   Widget _buildSpaceSection(AppLocalizations l10n) {
@@ -401,6 +539,27 @@ class _StorageSpaceScreenState extends State<StorageSpaceScreen> {
                     ),
                   ],
                 ),
+                const SizedBox(height: 8),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 4,
+                  children: [
+                    if (!isMaster)
+                      FilledButton.tonal(
+                        onPressed: _busy ? null : _becomeMaster,
+                        child: Text(l10n.storage_becomeMaster),
+                      ),
+                    OutlinedButton(
+                      onPressed: _busy ? null : _pickMigrateTarget,
+                      child: Text(l10n.storage_migrateMaster),
+                    ),
+                    if (isMaster)
+                      OutlinedButton(
+                        onPressed: _busy ? null : _reprotectNow,
+                        child: Text(l10n.storage_reprotectNow),
+                      ),
+                  ],
+                ),
                 if (_stats != null) ...[
                   const Divider(height: 20),
                   Text(l10n.storage_usageTitle,
@@ -417,6 +576,181 @@ class _StorageSpaceScreenState extends State<StorageSpaceScreen> {
         _buildRecycleCard(l10n),
       ],
     );
+  }
+
+  Widget _buildSheCircleSection(AppLocalizations l10n) {
+    final presence = PresenceService.instance.known;
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Text(l10n.storage_sheCircleSection,
+                    style: Theme.of(context).textTheme.titleSmall),
+                const Spacer(),
+                TextButton(
+                  onPressed: _busy ? null : _renameLocalShe,
+                  child: Text(l10n.storage_renameShe),
+                ),
+              ],
+            ),
+            Text(
+              '${l10n.storage_sheCircleHint}\n${SheService.resolveDisplayName(_localSheName, l10n.she_name)}',
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+            const SizedBox(height: 8),
+            SwitchListTile(
+              contentPadding: EdgeInsets.zero,
+              title: Text(l10n.storage_exchangeEnabled),
+              value: _exchange.enabled,
+              onChanged: _busy
+                  ? null
+                  : (v) async {
+                      final next = _exchange.copyWith(enabled: v);
+                      await next.save();
+                      setState(() => _exchange = next);
+                    },
+            ),
+            Text(l10n.storage_exchangeKinds,
+                style: Theme.of(context).textTheme.bodySmall),
+            const SizedBox(height: 4),
+            Wrap(
+              spacing: 8,
+              children: [
+                for (final kind in DigestKind.all)
+                  FilterChip(
+                    label: Text(_kindLabel(l10n, kind)),
+                    selected: _exchange.kinds.contains(kind),
+                    onSelected: _busy
+                        ? null
+                        : (sel) async {
+                            final kinds = Set<String>.of(_exchange.kinds);
+                            if (sel) {
+                              kinds.add(kind);
+                            } else {
+                              kinds.remove(kind);
+                            }
+                            if (kinds.isEmpty) return;
+                            final next = _exchange.copyWith(kinds: kinds);
+                            await next.save();
+                            setState(() => _exchange = next);
+                          },
+                  ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: FilledButton.tonal(
+                onPressed: _busy || !_exchange.enabled ? null : _exchangeNow,
+                child: Text(l10n.storage_exchangeNow),
+              ),
+            ),
+            const Divider(height: 24),
+            if (_ownerPeers.isEmpty)
+              Text(l10n.storage_noOwnerPeers,
+                  style: Theme.of(context).textTheme.bodySmall)
+            else
+              ..._ownerPeers.map((peer) {
+                final p = presence[peer.fingerprint];
+                final count = _extCounts[peer.fingerprint] ?? 0;
+                final title = p?.sheName.isNotEmpty == true
+                    ? p!.sheName
+                    : peer.deviceName;
+                return ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  title: Text(title),
+                  subtitle: Text(
+                    '${l10n.storage_peerTrust(peer.trustLevel)} · '
+                    '${l10n.storage_externalMemories(count)}'
+                    '${p == null ? ' · ${l10n.storage_presenceOffline}' : ''}',
+                  ),
+                  dense: true,
+                );
+              }),
+          ],
+        ),
+      ),
+    );
+  }
+
+  String _kindLabel(AppLocalizations l10n, String kind) {
+    switch (kind) {
+      case DigestKind.preference:
+        return l10n.storage_kindPreference;
+      case DigestKind.ongoing:
+        return l10n.storage_kindOngoing;
+      case DigestKind.fact:
+        return l10n.storage_kindFact;
+      default:
+        return kind;
+    }
+  }
+
+  Future<void> _exchangeNow() async {
+    setState(() => _busy = true);
+    try {
+      final ok = await MemoryExchangeService.instance.offerToAllOwners();
+      if (!mounted) return;
+      final l10n = AppLocalizations.of(context);
+      _toast(ok ? l10n.storage_exchangeDone : l10n.storage_exchangeSkipped);
+      await _loadSpace();
+      setState(() {});
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _renameLocalShe() async {
+    final l10n = AppLocalizations.of(context);
+    final controller = TextEditingController(
+      text: SheService.resolveDisplayName(_localSheName, l10n.she_name),
+    );
+    final name = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(l10n.storage_renameShe),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(l10n.storage_renameSheHint,
+                style: Theme.of(ctx).textTheme.bodySmall),
+            const SizedBox(height: 12),
+            TextField(
+              controller: controller,
+              autofocus: true,
+              decoration: InputDecoration(hintText: l10n.she_name),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: Text(MaterialLocalizations.of(ctx).cancelButtonLabel)),
+          FilledButton(
+              onPressed: () => Navigator.pop(ctx, controller.text.trim()),
+              child: Text(MaterialLocalizations.of(ctx).okButtonLabel)),
+        ],
+      ),
+    );
+    if (name == null || name.isEmpty || !mounted) return;
+    final normalized = SheService.normalizeStoredName(name, l10n.she_name);
+    try {
+      final agentService = getIt<RemoteAgentService>();
+      final agent = await agentService.getAgentById(SheService.sheId);
+      if (agent != null) {
+        await agentService.updateAgent(agent.copyWith(name: normalized));
+      }
+      await PresenceService.instance.broadcastNow(
+          localizedSheName: l10n.she_name);
+      setState(() => _localSheName = normalized);
+      _toast(l10n.storage_sheNameSaved);
+    } catch (e) {
+      _toast('$e');
+    }
   }
 
   Widget _buildUsageChips() {

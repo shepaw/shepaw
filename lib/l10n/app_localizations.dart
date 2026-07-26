@@ -8684,6 +8684,60 @@ abstract class AppLocalizations {
   /// **'本机'**
   String get storage_thisDevice;
 
+  /// No description provided for @storage_migrateMaster.
+  ///
+  /// In zh, this message translates to:
+  /// **'迁移 Master'**
+  String get storage_migrateMaster;
+
+  /// No description provided for @storage_becomeMaster.
+  ///
+  /// In zh, this message translates to:
+  /// **'本机升为 Master'**
+  String get storage_becomeMaster;
+
+  /// No description provided for @storage_migratePick.
+  ///
+  /// In zh, this message translates to:
+  /// **'选择新的 Master 设备'**
+  String get storage_migratePick;
+
+  /// No description provided for @storage_migrateConfirm.
+  ///
+  /// In zh, this message translates to:
+  /// **'将 Master 迁移到 {device}？各端将按游标差量重放。'**
+  String storage_migrateConfirm(String device);
+
+  /// No description provided for @storage_migrateDone.
+  ///
+  /// In zh, this message translates to:
+  /// **'Master 已切换（epoch {epoch}）'**
+  String storage_migrateDone(int epoch);
+
+  /// No description provided for @storage_migrateFailed.
+  ///
+  /// In zh, this message translates to:
+  /// **'迁移失败：{error}'**
+  String storage_migrateFailed(String error);
+
+  /// No description provided for @storage_reprotectNow.
+  ///
+  /// In zh, this message translates to:
+  /// **'立即再保护镜像树'**
+  String get storage_reprotectNow;
+
+  /// No description provided for @storage_reprotectDone.
+  ///
+  /// In zh, this message translates to:
+  /// **'镜像再保护已完成：{id}'**
+  String storage_reprotectDone(String id);
+
+  /// No description provided for @storage_reprotectSkipped.
+  ///
+  /// In zh, this message translates to:
+  /// **'再保护跳过（需本机为 Master 且已缓存密码）'**
+  String get storage_reprotectSkipped;
+
   /// No description provided for @storage_usageTitle.
   ///
   /// In zh, this message translates to:
@@ -8935,6 +8989,108 @@ abstract class AppLocalizations {
   /// In zh, this message translates to:
   /// **'大量数据尚未镜像到 master，请保持 master 在线完成同步。'**
   String get storage_unsyncedWarning;
+
+  /// No description provided for @storage_sheCircleSection.
+  ///
+  /// In zh, this message translates to:
+  /// **'她的朋友圈'**
+  String get storage_sheCircleSection;
+
+  /// No description provided for @storage_sheCircleHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'仅与 owner 级设备交换蒸馏摘要；关闭类别后该类别不出机。'**
+  String get storage_sheCircleHint;
+
+  /// No description provided for @storage_exchangeEnabled.
+  ///
+  /// In zh, this message translates to:
+  /// **'启用记忆交换'**
+  String get storage_exchangeEnabled;
+
+  /// No description provided for @storage_exchangeKinds.
+  ///
+  /// In zh, this message translates to:
+  /// **'交换类别'**
+  String get storage_exchangeKinds;
+
+  /// No description provided for @storage_kindPreference.
+  ///
+  /// In zh, this message translates to:
+  /// **'偏好'**
+  String get storage_kindPreference;
+
+  /// No description provided for @storage_kindOngoing.
+  ///
+  /// In zh, this message translates to:
+  /// **'进行中'**
+  String get storage_kindOngoing;
+
+  /// No description provided for @storage_kindFact.
+  ///
+  /// In zh, this message translates to:
+  /// **'事实'**
+  String get storage_kindFact;
+
+  /// No description provided for @storage_exchangeNow.
+  ///
+  /// In zh, this message translates to:
+  /// **'立即交换'**
+  String get storage_exchangeNow;
+
+  /// No description provided for @storage_exchangeDone.
+  ///
+  /// In zh, this message translates to:
+  /// **'摘要已推送'**
+  String get storage_exchangeDone;
+
+  /// No description provided for @storage_exchangeSkipped.
+  ///
+  /// In zh, this message translates to:
+  /// **'未推送（未开启、无条目或无 owner 设备）'**
+  String get storage_exchangeSkipped;
+
+  /// No description provided for @storage_renameShe.
+  ///
+  /// In zh, this message translates to:
+  /// **'为本机的她命名'**
+  String get storage_renameShe;
+
+  /// No description provided for @storage_renameSheHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'多设备时可为每台的她起名（默认按场景）。'**
+  String get storage_renameSheHint;
+
+  /// No description provided for @storage_sheNameSaved.
+  ///
+  /// In zh, this message translates to:
+  /// **'已更新本机 she 名称'**
+  String get storage_sheNameSaved;
+
+  /// No description provided for @storage_peerTrust.
+  ///
+  /// In zh, this message translates to:
+  /// **'信任：{level}'**
+  String storage_peerTrust(String level);
+
+  /// No description provided for @storage_externalMemories.
+  ///
+  /// In zh, this message translates to:
+  /// **'已收摘要 {count} 条'**
+  String storage_externalMemories(int count);
+
+  /// No description provided for @storage_presenceOffline.
+  ///
+  /// In zh, this message translates to:
+  /// **'暂无在线画像'**
+  String get storage_presenceOffline;
+
+  /// No description provided for @storage_noOwnerPeers.
+  ///
+  /// In zh, this message translates to:
+  /// **'暂无 owner 级配对设备'**
+  String get storage_noOwnerPeers;
 }
 
 class _AppLocalizationsDelegate

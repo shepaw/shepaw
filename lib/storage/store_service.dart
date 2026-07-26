@@ -15,6 +15,7 @@ import 'device_cursor_store.dart';
 import 'device_identity.dart';
 import 'import_auth_service.dart';
 import 'local_store.dart';
+import 'master_migration_service.dart';
 import 'store_protocol.dart';
 import 'sync_engine.dart';
 
@@ -237,6 +238,15 @@ class StoreService {
     // 换机导入授权推送（请求方侧落库，无 req_id 的通知帧）
     if (frame.op == StoreOp.importGrant && frame.reqId == null) {
       await _receivePushedGrant(peer.fingerprint, frame);
+      return;
+    }
+    // master 指针广播（M6，无 req_id）
+    if (frame.op == StoreOp.masterPointer && frame.reqId == null) {
+      await MasterMigrationService.instance.applyPointer(
+        masterId: frame.payload['master'] as String? ?? '',
+        epoch: frame.payload['epoch'] as int? ?? 0,
+        fromDeviceId: peer.fingerprint,
+      );
       return;
     }
     // 调用者身份 = 配对指纹（= 其 device_id），写路径收敛的锚点
@@ -493,6 +503,29 @@ class StoreService {
           final cursors = await _deviceCursorStore();
           return <String, dynamic>{
             'applied_seq': await cursors.appliedSeq(callerDeviceId),
+          };
+
+        // ── master 迁移 / 指针（v4，方案 §6.5）──
+        case StoreOp.syncCursors:
+          final cursors = await _deviceCursorStore();
+          return <String, dynamic>{'cursors': await cursors.all()};
+
+        case StoreOp.masterPointerQuery:
+          return <String, dynamic>{
+            'master': await masterDeviceId(),
+            'epoch': await MasterMigrationService.instance.currentEpoch(),
+          };
+
+        case StoreOp.masterMigrate:
+          // 对端请求本机升主
+          final result =
+              await MasterMigrationService.instance.promoteSelf();
+          return <String, dynamic>{
+            'master': result.newMasterId,
+            'epoch': result.epoch,
+            'old_master_reachable': result.oldMasterReachable,
+            'cursors': result.seededCursors,
+            'broadcast_peers': result.broadcastPeers,
           };
 
         // ── 换机导入授权（v2，§5.4）──

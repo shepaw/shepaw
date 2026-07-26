@@ -6,6 +6,7 @@ import '../services/logger_service.dart';
 import '../services/password_service.dart';
 import 'device_identity.dart';
 import 'gfs_retention.dart';
+import 'mirror_reprotect_service.dart';
 import 'snapshot_crypto.dart';
 import 'snapshot_service.dart';
 import 'store_service.dart';
@@ -134,6 +135,15 @@ class ScheduledSnapshotService {
         .createSnapshot(passwordHash: passwordHash);
     await _recordSuccess();
     await pruneGfs();
+    // §6.6：master 对本机镜像树再保护（与日快照同节奏，有密钥才跑）
+    if (await StoreService.instance.isMaster()) {
+      try {
+        await MirrorReprotectService.instance.run(passwordHash: passwordHash);
+      } catch (e, st) {
+        _log.warning('mirror reprotect failed: $e', tag: _tag);
+        _log.debug('$st', tag: _tag);
+      }
+    }
   }
 
   /// GFS 清理（master 对本机 backups 目录；§5.1）。

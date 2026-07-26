@@ -2891,6 +2891,35 @@
   "storage_spaceSection": "存储空间",
   "storage_masterNode": "主存储节点（master）",
   "storage_thisDevice": "本机",
+  "storage_migrateMaster": "迁移 Master",
+  "storage_becomeMaster": "本机升为 Master",
+  "storage_migratePick": "选择新的 Master 设备",
+  "storage_migrateConfirm": "将 Master 迁移到 {device}？各端将按游标差量重放。",
+  "storage_migrateDone": "Master 已切换（epoch {epoch}）",
+  "storage_migrateFailed": "迁移失败：{error}",
+  "storage_reprotectNow": "立即再保护镜像树",
+  "storage_reprotectDone": "镜像再保护已完成：{id}",
+  "storage_reprotectSkipped": "再保护跳过（需本机为 Master 且已缓存密码）",
+  "@storage_migrateConfirm": {
+    "placeholders": {
+      "device": { "type": "String" }
+    }
+  },
+  "@storage_migrateDone": {
+    "placeholders": {
+      "epoch": { "type": "int" }
+    }
+  },
+  "@storage_migrateFailed": {
+    "placeholders": {
+      "error": { "type": "String" }
+    }
+  },
+  "@storage_reprotectDone": {
+    "placeholders": {
+      "id": { "type": "String" }
+    }
+  },
   "storage_usageTitle": "用量",
   "storage_recycleSection": "回收站",
   "storage_recycleEmptyHint": "回收站为空",
@@ -2994,5 +3023,32 @@
         "type": "int"
       }
     }
-  }
+  },
+  "storage_sheCircleSection": "她的朋友圈",
+  "storage_sheCircleHint": "仅与 owner 级设备交换蒸馏摘要；关闭类别后该类别不出机。",
+  "storage_exchangeEnabled": "启用记忆交换",
+  "storage_exchangeKinds": "交换类别",
+  "storage_kindPreference": "偏好",
+  "storage_kindOngoing": "进行中",
+  "storage_kindFact": "事实",
+  "storage_exchangeNow": "立即交换",
+  "storage_exchangeDone": "摘要已推送",
+  "storage_exchangeSkipped": "未推送（未开启、无条目或无 owner 设备）",
+  "storage_renameShe": "为本机的她命名",
+  "storage_renameSheHint": "多设备时可为每台的她起名（默认按场景）。",
+  "storage_sheNameSaved": "已更新本机 she 名称",
+  "storage_peerTrust": "信任：{level}",
+  "@storage_peerTrust": {
+    "placeholders": {
+      "level": { "type": "String" }
+    }
+  },
+  "storage_externalMemories": "已收摘要 {count} 条",
+  "@storage_externalMemories": {
+    "placeholders": {
+      "count": { "type": "int" }
+    }
+  },
+  "storage_presenceOffline": "暂无在线画像",
+  "storage_noOwnerPeers": "暂无 owner 级配对设备"
 }

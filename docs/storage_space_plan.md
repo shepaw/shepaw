@@ -241,9 +241,9 @@ master 上的镜像树主要是各端本地数据的副本；为防止各端本�
 常开 Linux / NAS / 旧主机上的无头节点，职责单一：**master 的最佳人选**。
 
 - 常开特性让未同步队列与快照送达不受 PC 休眠影响。
-- 技术：Go；`nhooyr.io/websocket` + `flynn/noise`（与 agent-bridge 共享 protocol 包）；实现 `store.*` 全量语义与 ACL；不需要 SQLite。
-- 无屏幕配对：一次性配对码 / Web 管理页。
-- 协议一致性：与 Dart 实现共用 `docs/storage_protocol_spec.md`（版本化）和共享 fixture（含 6.2 攻击用例）。
+- 技术：Go（本仓库 `storage-node/`）；协议与 ACL 与 Dart 共用 `docs/storage_protocol_spec.md` + `docs/storage_fixtures/`。Noise/WS 配对码在后续迭代接入；当前提供 loopback HTTP JSON 口与本机目录树实现。
+- 无屏幕配对：一次性配对码 / Web 管理页（后续）。
+- 协议一致性：与 Dart 实现共享攻击/ACL fixture，双端测试全绿。
 
 ## 10. 安全
 
@@ -262,7 +262,7 @@ master 上的镜像树主要是各端本地数据的副本；为防止各端本�
 | M3 快照与恢复 | 5.1 定期快照 + GFS + 5.3 恢复 + 5.4 换机导入授权 + 密码变更策略 | 本机每日快照经 store write/commit 落盘（GFS 清理）；master 为本机时快照即落盘；**远端 master 送达依赖 M4 同步引擎**。路径 A：扫码/粘贴旧设备 peer QR（未配对则先配对）或手输 device_id → 授权导入；路径 B（master 侧镜像）依赖 M4。改密后新旧快照各用其钥 |
 | M4 本地优先与远程 | 6.4 同步引擎（CAS + 未同步队列 + 变更游标 + 批量原子上传）+ channel tunnel 远程 | 无 master 时本地完整可用；master 上线后镜像一致、游标水位对齐、commit 标记最后送达；4G 下可读写 |
 | M5 协作与附件收口 | 6.3 产物 URI + `artifact_service` + 工作流注入 + 附件直接按新模型经 store 存取 | 跨端工作流下游 Agent 凭 URI 读上游产物；附件统一经 store；快照只含 DB 与身份 |
-| M6 master 迁移 | 6.5 游标迁移流程 + 指针广播 + 6.6 再保护 | 旧 master 可达/不可达两种路径下，各端按游标差量重放后镜像树一致；离线端醒来正确改指 |
+| M6 master 迁移 | 6.5 游标迁移流程 + 指针广播 + 6.6 再保护 | 旧 master 可达/不可达两种路径下本机可升主并种子游标；`master.pointer` 广播 + owner 上线 `pointer.query` 改指；master 对镜像树加密再保护写入 backups |
 | M7 Go 存储节点 | 第 9 节 + 协议一致性 fixture | Go 节点胜任 master；与 Dart 实现 fixture 全绿；7×24 运行 |
 | M8 记忆交换与多 she | 8.1 命名 + `she.presence`（类别级）+ 8.2 `memory.*` + 类别开关 | 两设备互引摘要；三设备组网委托路由正确；关闭类别后摘要不出机 |
 

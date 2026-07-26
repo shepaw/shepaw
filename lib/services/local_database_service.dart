@@ -47,7 +47,7 @@ class LocalDatabaseService {
       // Web平台使用sqflite_common_ffi
       return await openDatabase(
         'shepaw',
-        version: 29,
+        version: 30,
         onCreate: _onCreate,
         onUpgrade: _onUpgrade,
       );
@@ -57,7 +57,7 @@ class LocalDatabaseService {
       path = join(directory.path, 'shepaw.db');
       return await openDatabase(
         path,
-        version: 29,
+        version: 30,
         onCreate: _onCreate,
         onUpgrade: _onUpgrade,
       );
@@ -68,7 +68,7 @@ class LocalDatabaseService {
 
       return await openDatabase(
         path,
-        version: 29,
+        version: 30,
         onCreate: _onCreate,
         onUpgrade: _onUpgrade,
       );
@@ -424,6 +424,22 @@ class LocalDatabaseService {
         updated_at INTEGER NOT NULL
       )
     ''');
+
+    // 外部记忆（M8，来源设备隔离、追加式）
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS external_memories (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        from_device TEXT NOT NULL,
+        kind TEXT NOT NULL,
+        text TEXT NOT NULL,
+        confidence REAL NOT NULL DEFAULT 0.8,
+        period TEXT NOT NULL DEFAULT '',
+        received_at INTEGER NOT NULL
+      )
+    ''');
+    await db.execute(
+        'CREATE INDEX IF NOT EXISTS idx_external_memories_from '
+        'ON external_memories(from_device, received_at DESC)');
 
   }
 
@@ -796,6 +812,32 @@ class LocalDatabaseService {
       } catch (e) {
         LoggerService().error(
           'Failed to clean up legacy sync schema (v29)',
+          tag: 'Migration',
+          error: e,
+        );
+      }
+    }
+
+    if (oldVersion < 30) {
+      // 版本 29 -> 30: 多 she 记忆交换（external_memories）
+      try {
+        await db.execute('''
+          CREATE TABLE IF NOT EXISTS external_memories (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            from_device TEXT NOT NULL,
+            kind TEXT NOT NULL,
+            text TEXT NOT NULL,
+            confidence REAL NOT NULL DEFAULT 0.8,
+            period TEXT NOT NULL DEFAULT '',
+            received_at INTEGER NOT NULL
+          )
+        ''');
+        await db.execute(
+            'CREATE INDEX IF NOT EXISTS idx_external_memories_from '
+            'ON external_memories(from_device, received_at DESC)');
+      } catch (e) {
+        LoggerService().error(
+          'Failed to create external_memories (v30)',
           tag: 'Migration',
           error: e,
         );

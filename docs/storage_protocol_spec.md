@@ -1,7 +1,8 @@
 # ShePaw 存储空间协议规范（store.*）
 
-> 版本：v3（M4 范围：新增 §6 变更游标与批量原子上传、§7 读路径缓存校验）
-> 状态：Dart 与（未来）Go 实现的唯一权威定义。上游设计：`docs/storage_space_plan.md`（§2/§4/§5/§6）。
+> 版本：v4（含 M6 master 迁移；M7 Go 节点见 `storage-node/`；M8 memory/she 见 §13）
+> 状态：Dart 与 Go 实现的权威定义。上游设计：`docs/storage_space_plan.md`。
+> 共享 fixture：`docs/storage_fixtures/`（path 攻击 + ACL 用例）。
 > 传输：复用 `PeerConnection` 控制帧（WS + Noise E2E）与 Channel Tunnel；本协议不新增传输。
 
 ## 0. 术语
@@ -273,18 +274,90 @@
 - 缓存按键 = 内容 hash；LRU 容量上限默认 500MB；淘汰只作用于已验证同步
   的副本，未同步数据不可淘汰。
 
-## 8. 本地优先与 loopback（M2 边界）
+## 10. master 迁移与指针（v4 新增，方案 §6.5 / §6.6）
+
+### 10.1 游标全表与升主
+
+```json
+{"op": "sync.cursors"}
+→ {"op": "result", "data": {"cursors": {"<device_id>": 41, ...}}}
+
+{"op": "master.migrate"}
+→ {"op": "result", "data": {"master": "<new>", "epoch": 3,
+    "old_master_reachable": true, "cursors": {...}, "broadcast_peers": 2}}
+```
+
+- `sync.cursors`：返回本机作为（或曾作）master 持有的各设备 `applied_seq` 全表。
+- `master.migrate`：请求**本机**执行升主编排（对端发起或本机 loopback）。
+  1. 向旧 master 拉 `sync.cursors`；不可达则用本机游标账副本；
+  2. 种子合并（只进不退）→ 提升 `epoch` → 写本机 master 指针；
+  3. 向各 owner 广播 `master.pointer`；触发同步引擎差量重放。
+
+### 10.2 指针广播与离线改指
+
+```json
+// 通知帧（无 req_id）
+{"op": "master.pointer", "master": "<id>", "epoch": 3, "from": "<issuer>"}
+
+{"op": "master.pointer.query"}
+→ {"op": "result", "data": {"master": "<id>", "epoch": 3}}
+```
+
+- 接收方仅当 `epoch` ≥ 本地 epoch 时改指并 `syncNow`。
+- 任意 owner 上线时，客户端先 `master.pointer.query` 再决定是否改指，
+  然后若对端是当前 master 则差量重放（离线端醒来正确改指）。
+
+### 10.3 镜像树再保护（§6.6）
+
+master 定期（与日快照同节奏）或迁移后：将各 `<device_id>/<space>/` 打 tar，
+主密码派生密钥加密，经 store commit 写入 `<master_id>/backups/reprotect-<ts>/`
+（`manifest.json` + `mirror.tar.enc`）。
+
+## 11. 本地优先与 loopback（M2 边界）
 
 - M2 的 master 默认本机：客户端调用与 master 处理走同一代码路径（loopback dispatch），无网络往返。
 - master 为他端时，请求经 peer 控制帧发送并等待 `result`（超时 15s 返回 `master_offline`）。
-- CAS、未同步队列、变更游标、批量原子上传在 M4 落地（本文件 §6/§7）；master 迁移在 M6（方案 §6.5）。
+- CAS、未同步队列、变更游标、批量原子上传在 M4 落地（本文件 §6/§7）；master 迁移在 M6（本文件 §10）。
 - 远程访问复用 channel tunnel：`store.*` 帧经 PeerConnectionManager 的
   local→channel 回退链路透明传输，协议无感知。
 
-## 9. 版本与兼容
+## 12. 版本与兼容
 
-- `v=3`（本文档）。新增 op 或必填字段 ⇒ `v+1`；只增可选字段不变版本。
-- v2 → v3：新增 `sync.hello`；`commit`/`delete` 新增可选 `upto_seq` 与
-  result 的 `applied_seq`；`stats` 新增 `unsynced_*` 字段。v2 客户端忽略
-  新增字段，互操作不受影响。
-- Go 节点（M7）与本规范对齐；攻击 fixture 与协议 fixture 双端共享。
+- `v=4`（本文档 store.*）。新增 op 或必填字段 ⇒ `v+1`；只增可选字段不变版本。
+- v3 → v4：新增 `sync.cursors` / `master.pointer` / `master.pointer.query` /
+  `master.migrate`。v3 客户端忽略未知 op 通知，互操作不受影响。
+- Go 节点（M7，`storage-node/`）与本规范对齐；攻击 fixture 与 ACL fixture 双端共享
+  （`docs/storage_fixtures/`）。
+
+## 13. memory.* / she.*（M8，独立控制帧 type）
+
+与 `store` 并列的 peer 控制帧命名空间（`type`/`ns` = `memory` 或 `she`），
+仅接受 **owner** 级配对；friend 一律拒绝（与 store 一致）。
+
+### 13.1 she.presence — 类别级能力画像
+
+```json
+{"type":"she","ns":"she","op":"presence",
+ "device":"<id>","she_name":"办公室的她","online":true,
+ "agent_categories":["she","assistant"],
+ "tool_categories":["filesystem","web","shell"],
+ "agent_count":1,"updated_at":1721300000000}
+
+{"type":"she","ns":"she","op":"presence.query"}
+```
+
+- 只广播**类别与数量**，不暴露具体 Agent 名单（方案 §8.1）。
+- 委托路由据此选择问谁；不足时再升级名单级（本期不做）。
+
+### 13.2 memory.digest.offer — 蒸馏摘要交换
+
+```json
+{"type":"memory","ns":"memory","op":"digest.offer",
+ "from_device":"pc-b","period":"2026-07-20/2026-07-26",
+ "entries":[{"kind":"preference|ongoing|fact","text":"...","confidence":0.8}]}
+
+{"type":"memory","ns":"memory","op":"digest.ack","accepted":2,"from_device":"..."}
+```
+
+- 原始记忆不出机；落库 `external_memories`（来源隔离、追加式）。
+- 触发：owner 连接后低频自动（每日至多一次）+ 手动；总开关 + 类别开关（关闭类别不出机/不入库）。

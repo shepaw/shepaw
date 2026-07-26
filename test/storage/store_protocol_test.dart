@@ -1,3 +1,6 @@
+import 'dart:convert';
+import 'dart:io';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shepaw/storage/store_protocol.dart';
 
@@ -45,19 +48,10 @@ void main() {
       expect(normalizeStorePath('task-41/report.md'), 'task-41/report.md');
     });
 
-    test('攻击用例：绝对路径/穿越/盘符/NUL/点段', () {
-      final attacks = <String>[
-        '/etc/passwd',
-        '~/secret',
-        r'C:\windows\system32',
-        'a/../../b',
-        '../escape',
-        'a/../../../etc',
-        '.hidden/x',
-        'a/.staging/x',
-        'x\x00y',
-        '',
-      ];
+    test('攻击用例：绝对路径/穿越/盘符/NUL/点段（共享 fixture）', () {
+      final file = File('docs/storage_fixtures/path_attacks.json');
+      final json = jsonDecode(file.readAsStringSync()) as Map<String, dynamic>;
+      final attacks = (json['attacks'] as List).cast<String>();
       for (final path in attacks) {
         expect(() => normalizeStorePath(path), throwsA(isA<BadPathException>()),
             reason: 'should reject: $path');

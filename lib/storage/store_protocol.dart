@@ -3,8 +3,8 @@
 /// 本文件为纯逻辑：不含文件系统与网络，所有判定可单测（含攻击 fixture）。
 library;
 
-/// 协议版本。v2 新增 import.* 系列（换机导入授权，§5.4）。
-const int kStoreProtocolVersion = 3;
+/// 协议版本。v2 新增 import.*；v3 新增 sync.hello；v4 新增 master 迁移/指针。
+const int kStoreProtocolVersion = 4;
 
 /// peer 层控制帧路由 type / 协议命名空间。
 const String kStoreControlType = 'store';
@@ -34,6 +34,11 @@ class StoreOp {
 
   // 变更游标对账（v3，spec §6）
   static const syncHello = 'sync.hello';
+  // master 迁移与指针（v4，方案 §6.5）
+  static const syncCursors = 'sync.cursors';
+  static const masterPointer = 'master.pointer';
+  static const masterPointerQuery = 'master.pointer.query';
+  static const masterMigrate = 'master.migrate';
 
   static const result = 'result';
   static const error = 'error';
@@ -285,6 +290,18 @@ StoreAcl checkStoreAcl(
       if (!isValidDeviceId(device) || device != callerDeviceId) {
         return StoreAcl.denyAcl;
       }
+      return StoreAcl.allow;
+
+    // master 迁移（v4，方案 §6.5）：owner 可读游标账 / 查指针；
+    // master.migrate 仅目标本机 loopback 或由对方主动执行（入站允许 owner 触发）
+    case StoreOp.syncCursors:
+    case StoreOp.masterPointerQuery:
+      return StoreAcl.allow;
+    case StoreOp.masterMigrate:
+      // 远端请求本机升主：owner 可触发；正式落盘仍在本机编排
+      return StoreAcl.allow;
+    case StoreOp.masterPointer:
+      // 通知帧在入站早退；若落入 ACL 则允许 owner
       return StoreAcl.allow;
 
     default:

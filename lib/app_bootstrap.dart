@@ -32,6 +32,8 @@ import 'peer/services/peer_agent_client_service.dart';
 import 'storage/scheduled_snapshot_service.dart';
 import 'storage/store_service.dart';
 import 'storage/sync_engine.dart';
+import 'she_network/memory_exchange_service.dart';
+import 'she_network/presence_service.dart';
 import 'services/she_service.dart';
 import 'services/dispatch/dispatch_service.dart';
 import 'service_locator.dart';
@@ -257,6 +259,9 @@ class AppBootstrap {
       );
       // 定期快照（§5.1）：App 打开时检查今日快照，GFS 清理，改密自动新快照。
       await ScheduledSnapshotService.instance.ensureStarted();
+      // 多 she 网络（§8）：presence 广播 + 记忆交换。
+      await PresenceService.instance.start();
+      await MemoryExchangeService.instance.start();
       _log.info('P2P connection manager started', tag: 'App');
     } catch (e) {
       _log.error('P2P connection manager start failed', tag: 'App', error: e);

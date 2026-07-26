@@ -4934,6 +4934,42 @@ class AppLocalizationsEn extends AppLocalizations {
   String get storage_thisDevice => 'this device';
 
   @override
+  String get storage_migrateMaster => 'Migrate master';
+
+  @override
+  String get storage_becomeMaster => 'Make this device master';
+
+  @override
+  String get storage_migratePick => 'Pick the new master device';
+
+  @override
+  String storage_migrateConfirm(String device) {
+    return 'Migrate master to $device? Peers will delta-replay by cursor.';
+  }
+
+  @override
+  String storage_migrateDone(int epoch) {
+    return 'Master switched (epoch $epoch)';
+  }
+
+  @override
+  String storage_migrateFailed(String error) {
+    return 'Migration failed: $error';
+  }
+
+  @override
+  String get storage_reprotectNow => 'Reprotect mirror tree now';
+
+  @override
+  String storage_reprotectDone(String id) {
+    return 'Mirror reprotect done: $id';
+  }
+
+  @override
+  String get storage_reprotectSkipped =>
+      'Reprotect skipped (must be master with cached password)';
+
+  @override
   String get storage_usageTitle => 'Usage';
 
   @override
@@ -5083,4 +5119,62 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get storage_unsyncedWarning =>
       'A lot of data is not yet mirrored to master. Keep master online.';
+
+  @override
+  String get storage_sheCircleSection => 'Her circle';
+
+  @override
+  String get storage_sheCircleHint =>
+      'Digest exchange is owner-only. Disabled kinds never leave this device.';
+
+  @override
+  String get storage_exchangeEnabled => 'Enable memory exchange';
+
+  @override
+  String get storage_exchangeKinds => 'Exchange kinds';
+
+  @override
+  String get storage_kindPreference => 'Preference';
+
+  @override
+  String get storage_kindOngoing => 'Ongoing';
+
+  @override
+  String get storage_kindFact => 'Fact';
+
+  @override
+  String get storage_exchangeNow => 'Exchange now';
+
+  @override
+  String get storage_exchangeDone => 'Digest offered';
+
+  @override
+  String get storage_exchangeSkipped =>
+      'Skipped (disabled, empty, or no owner peers)';
+
+  @override
+  String get storage_renameShe => 'Name this device\'s She';
+
+  @override
+  String get storage_renameSheHint =>
+      'Give each device\'s She a scene name when you have several.';
+
+  @override
+  String get storage_sheNameSaved => 'Local She name updated';
+
+  @override
+  String storage_peerTrust(String level) {
+    return 'Trust: $level';
+  }
+
+  @override
+  String storage_externalMemories(int count) {
+    return '$count digests received';
+  }
+
+  @override
+  String get storage_presenceOffline => 'No online presence yet';
+
+  @override
+  String get storage_noOwnerPeers => 'No owner-paired devices';
 }

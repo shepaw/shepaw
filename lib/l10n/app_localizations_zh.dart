@@ -4750,6 +4750,41 @@ class AppLocalizationsZh extends AppLocalizations {
   String get storage_thisDevice => '本机';
 
   @override
+  String get storage_migrateMaster => '迁移 Master';
+
+  @override
+  String get storage_becomeMaster => '本机升为 Master';
+
+  @override
+  String get storage_migratePick => '选择新的 Master 设备';
+
+  @override
+  String storage_migrateConfirm(String device) {
+    return '将 Master 迁移到 $device？各端将按游标差量重放。';
+  }
+
+  @override
+  String storage_migrateDone(int epoch) {
+    return 'Master 已切换（epoch $epoch）';
+  }
+
+  @override
+  String storage_migrateFailed(String error) {
+    return '迁移失败：$error';
+  }
+
+  @override
+  String get storage_reprotectNow => '立即再保护镜像树';
+
+  @override
+  String storage_reprotectDone(String id) {
+    return '镜像再保护已完成：$id';
+  }
+
+  @override
+  String get storage_reprotectSkipped => '再保护跳过（需本机为 Master 且已缓存密码）';
+
+  @override
   String get storage_usageTitle => '用量';
 
   @override
@@ -4892,4 +4927,59 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get storage_unsyncedWarning => '大量数据尚未镜像到 master，请保持 master 在线完成同步。';
+
+  @override
+  String get storage_sheCircleSection => '她的朋友圈';
+
+  @override
+  String get storage_sheCircleHint => '仅与 owner 级设备交换蒸馏摘要；关闭类别后该类别不出机。';
+
+  @override
+  String get storage_exchangeEnabled => '启用记忆交换';
+
+  @override
+  String get storage_exchangeKinds => '交换类别';
+
+  @override
+  String get storage_kindPreference => '偏好';
+
+  @override
+  String get storage_kindOngoing => '进行中';
+
+  @override
+  String get storage_kindFact => '事实';
+
+  @override
+  String get storage_exchangeNow => '立即交换';
+
+  @override
+  String get storage_exchangeDone => '摘要已推送';
+
+  @override
+  String get storage_exchangeSkipped => '未推送（未开启、无条目或无 owner 设备）';
+
+  @override
+  String get storage_renameShe => '为本机的她命名';
+
+  @override
+  String get storage_renameSheHint => '多设备时可为每台的她起名（默认按场景）。';
+
+  @override
+  String get storage_sheNameSaved => '已更新本机 she 名称';
+
+  @override
+  String storage_peerTrust(String level) {
+    return '信任：$level';
+  }
+
+  @override
+  String storage_externalMemories(int count) {
+    return '已收摘要 $count 条';
+  }
+
+  @override
+  String get storage_presenceOffline => '暂无在线画像';
+
+  @override
+  String get storage_noOwnerPeers => '暂无 owner 级配对设备';
 }
