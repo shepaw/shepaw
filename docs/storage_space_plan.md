@@ -99,7 +99,7 @@
 - **GFS 在快照所属设备本机执行**（`ScheduledSnapshotService` + `selectGfs`），删除经同步队列镜像到 master——**不是** master 代管剪枝。`commit.retention` 字段保留为可选扩展，当前实现不解析。
 - 无 master 时快照天然留存本地（本地优先的必然结果）。
 - **兜底导出**（决策 3）：本机目录 / WebDAV 降级为**纯手动导出功能**，不占任何自动路径；格式相同（附件随导出打包）。
-- 移动端实际触发：App 启动 + 周期性 Timer（约 6h）；系统后台任务（充电/WiFi）待接 `ForegroundTaskService`。连续失败 ≥3 天显著告警。
+- 移动端触发：App 启动 + 运行中 6h Timer + **回前台**（`AppLifecycleService.onResume`）+ **WiFi/以太网稳定**（`NetworkMonitorService.onNetworkSettled`，避免蜂窝灌库）。系统级 BGAppRefresh / WorkManager 仍为后续可选（`ForegroundTaskService` 仅 Agent 保活，不接入日快照）。连续失败 ≥3 天显著告警。
 
 ### 5.2 快照格式
 
@@ -270,7 +270,7 @@ master 上的镜像树主要是各端本地数据的副本；为降低单点损�
 |------|------|-----------|
 | M1 快照引擎 | ✅ | `SnapshotService`/`SnapshotCrypto`：格式含 identity.enc、加密、manifest、本机导出/恢复 |
 | M2 空间与协议 | ✅ | `store.*` + ACL + staging/commit + 回收站还原；friend 拒绝；loopback |
-| M3 快照与恢复 | ✅ 基本 | 定期快照 + 本机 GFS + 恢复 + 换机导入 + 改密；系统后台任务待接 |
+| M3 快照与恢复 | ✅ 基本 | 定期快照 + 本机 GFS + 恢复 + 换机导入 + 改密；回前台 / WiFi 稳定触发已接；系统 BG 任务仍可选 |
 | M4 本地优先与远程 | ✅ 基本 | `SyncJournal`/`SyncEngine` + 游标；`LocalCas` 仅远端读缓存；tunnel 复用 peer |
 | M5 协作与附件 | ✅ 基本 | `ArtifactService` URI + 编排注入；附件经 store hash 编址 |
 | M6 master 迁移 | ✅ 基本 | 升主/指针/再保护；**无**哈希门闩与全量镜像种子（见 §6.5 缺口） |

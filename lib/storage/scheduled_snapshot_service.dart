@@ -1,8 +1,12 @@
 import 'dart:async';
 import 'dart:typed_data';
 
+import 'package:connectivity_plus/connectivity_plus.dart';
+
+import '../services/app_lifecycle_service.dart';
 import '../services/local_database_service.dart';
 import '../services/logger_service.dart';
+import '../services/network_monitor_service.dart';
 import '../services/password_service.dart';
 import 'device_identity.dart';
 import 'gfs_retention.dart';
@@ -40,13 +44,19 @@ class ScheduledSnapshotStatus {
 
 /// 定期快照服务（docs/storage_space_plan.md §5.1，M3）。
 ///
-/// - 触发：App 启动检查 + 运行中每 6h 复查（iOS 后台任务兜底待 M 后续接
-///   ForegroundTaskService）；
+/// 触发点：
+/// - App 启动（[ensureStarted] 立即 [checkNow]）；
+/// - 运行中每 6h Timer；
+/// - 从后台回到前台（[AppLifecycleService.onResume]）；
+/// - WiFi/以太网恢复稳定（[NetworkMonitorService.onNetworkSettled]，避免蜂窝流量）。
+///
+/// 说明：`ForegroundTaskService` 仅用于 Agent 保活，不适合日快照；
+/// 系统级 BGAppRefresh / WorkManager 仍为后续可选。
+///
 /// - 密钥：用 [SnapshotCrypto.cachedPasswordHash]（手动验密时已缓存），
 ///   无缓存则跳过并等待用户手动快照一次；
-/// - 每次成功后执行 GFS 清理；
-/// - 改密事件：失效旧缓存 → 派生新 H 缓存 → 立即全量快照（§5.2 密码变更
-///   策略：改密后自动生成新密钥全量快照）。
+/// - 每次成功后执行本机 GFS 清理（删除经 sync 镜像）；
+/// - 改密事件：失效旧缓存 → 派生新 H 缓存 → 立即全量快照（§5.2）。
 class ScheduledSnapshotService {
   ScheduledSnapshotService._();
   static final ScheduledSnapshotService instance =
@@ -62,13 +72,29 @@ class ScheduledSnapshotService {
   final _log = LoggerService();
   Timer? _timer;
   StreamSubscription<String>? _pwSub;
+  StreamSubscription<Duration>? _resumeSub;
+  StreamSubscription<void>? _netSub;
   bool _running = false;
+
+  /// 是否应在「网络恢复」路径上跑快照（仅 WiFi/以太网，避免蜂窝灌库）。
+  static bool isPreferredNetwork(List<ConnectivityResult> results) {
+    return results.any((r) =>
+        r == ConnectivityResult.wifi || r == ConnectivityResult.ethernet);
+  }
 
   Future<void> ensureStarted() async {
     if (_timer != null) return;
     // 改密 → 新密钥全量快照（§5.2）
     _pwSub ??= PasswordService().passwordChangedEvents.listen((newPassword) {
       unawaited(onPasswordChanged(newPassword));
+    });
+    // 回前台：隔夜/多日后台后最可靠的移动端触发点
+    _resumeSub ??= AppLifecycleService().onResume.listen((_) {
+      unawaited(checkNow());
+    });
+    // WiFi/以太网稳定后再检查（同步镜像更友好）
+    _netSub ??= NetworkMonitorService().onNetworkSettled.listen((_) {
+      unawaited(checkNowOnPreferredNetwork());
     });
     _timer = Timer.periodic(_checkInterval, (_) => unawaited(checkNow()));
     unawaited(checkNow());
@@ -79,9 +105,29 @@ class ScheduledSnapshotService {
     _timer = null;
     await _pwSub?.cancel();
     _pwSub = null;
+    await _resumeSub?.cancel();
+    _resumeSub = null;
+    await _netSub?.cancel();
+    _netSub = null;
   }
 
   // ────────────────────────────── 主流程 ──
+
+  /// 网络恢复路径：仅 WiFi/以太网时执行 [checkNow]。
+  Future<bool> checkNowOnPreferredNetwork() async {
+    try {
+      final results = await Connectivity().checkConnectivity();
+      if (!isPreferredNetwork(results)) {
+        _log.debug('skip network-triggered snapshot: not wifi/ethernet',
+            tag: _tag);
+        return false;
+      }
+    } catch (e) {
+      _log.debug('connectivity check failed: $e', tag: _tag);
+      // 查不到就按「允许」走，避免误伤桌面/无插件环境
+    }
+    return checkNow();
+  }
 
   /// 到期检查：今天还没有成功快照就生成一份，然后 GFS 清理。
   Future<bool> checkNow() async {
@@ -146,9 +192,7 @@ class ScheduledSnapshotService {
     }
   }
 
-  /// GFS 清理（master 对本机 backups 目录；§5.1）。
-  /// 删除经 LocalStore.delete：进入回收站并记入变更日志，
-  /// 随同步引擎镜像到 master（§6.4）。
+  /// GFS 清理（本机 backups；删除经 sync 镜像到 master，§5.1 / §6.4）。
   Future<int> pruneGfs() async {
     final snapshots = await SnapshotService.instance.listSnapshots();
     if (snapshots.isEmpty) return 0;

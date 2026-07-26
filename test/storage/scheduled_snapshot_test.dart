@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:path/path.dart' as p;
 import 'package:shepaw/services/local_database_service.dart';
@@ -40,6 +41,29 @@ void main() {
       await ScheduledSnapshotService.instance.setEnabled(false);
       expect(await ScheduledSnapshotService.instance.checkNow(), isFalse);
       await ScheduledSnapshotService.instance.setEnabled(true);
+    });
+
+    test('isPreferredNetwork：仅 wifi/ethernet', () {
+      expect(
+          ScheduledSnapshotService.isPreferredNetwork(
+              [ConnectivityResult.wifi]),
+          isTrue);
+      expect(
+          ScheduledSnapshotService.isPreferredNetwork(
+              [ConnectivityResult.ethernet]),
+          isTrue);
+      expect(
+          ScheduledSnapshotService.isPreferredNetwork(
+              [ConnectivityResult.mobile]),
+          isFalse);
+      expect(
+          ScheduledSnapshotService.isPreferredNetwork(
+              [ConnectivityResult.none]),
+          isFalse);
+      expect(
+          ScheduledSnapshotService.isPreferredNetwork(
+              [ConnectivityResult.mobile, ConnectivityResult.wifi]),
+          isTrue);
     });
   });
 

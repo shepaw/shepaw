@@ -5,6 +5,7 @@
 /// 活性超时才会被发现。这里监听连接性变化，在网络稳定后主动：
 ///   1. 重连 Channel 隧道（让 relay 能重新经本机回推，外网 peer 才连得上）；
 ///   2. 强制刷新所有 P2P peer 连接（关闭半开旧连接并立即主动重连）。
+///   3. 广播 [onNetworkSettled] 供日快照等低优先级任务使用。
 library;
 
 import 'dart:async';
@@ -26,10 +27,18 @@ class NetworkMonitorService {
   StreamSubscription<List<ConnectivityResult>>? _sub;
   List<ConnectivityResult>? _last;
   Timer? _debounce;
+  StreamController<void> _onSettledController =
+      StreamController<void>.broadcast();
+
+  /// 网络从无/切换稳定到「有网」后触发（已去抖）；供日快照等低优先级任务使用。
+  Stream<void> get onNetworkSettled => _onSettledController.stream;
 
   /// 开始监听网络变化。可安全多次调用。
   void init() {
     if (_sub != null) return;
+    if (_onSettledController.isClosed) {
+      _onSettledController = StreamController<void>.broadcast();
+    }
     _sub = Connectivity().onConnectivityChanged.listen(
       _onChanged,
       onError: (e) => _log.warning('Connectivity stream error: $e', tag: _tag),
@@ -60,6 +69,9 @@ class NetworkMonitorService {
     // peer：强制刷新所有连接（backgroundedFor > 20s → forceRefresh=true）。
     PeerConnectionManager.instance
         .resumeAll(backgroundedFor: const Duration(minutes: 1));
+    if (!_onSettledController.isClosed) {
+      _onSettledController.add(null);
+    }
   }
 
   bool _listEquals(List<ConnectivityResult>? a, List<ConnectivityResult>? b) {
@@ -77,5 +89,8 @@ class NetworkMonitorService {
     _sub = null;
     _debounce?.cancel();
     _debounce = null;
+    if (!_onSettledController.isClosed) {
+      _onSettledController.close();
+    }
   }
 }
