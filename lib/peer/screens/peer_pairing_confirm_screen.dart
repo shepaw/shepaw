@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 
 import '../../l10n/app_localizations.dart';
-import '../../sync/device_info.dart';
 import '../models/paired_peer.dart';
 import '../services/peer_pairing_service.dart';
 import '../services/peer_storage_service.dart';
@@ -38,18 +37,6 @@ class _PeerPairingConfirmScreenState extends State<PeerPairingConfirmScreen> {
   bool _loadingAgents = true;
   List<PeerShareAgentEntry> _shareAgents = [];
   Map<String, bool> _selectedShares = {};
-
-  /// 双桌面场景的主设备选择（双方都 hub_capable 时展示）。
-  /// 默认展示二维码的一方（本机，responder）为 hub（spec §2.2）。
-  bool _responderIsHub = true;
-
-  /// 是否需要用户选择主设备：双方都具备 hub 能力（双桌面）。
-  bool get _needsRoleChoice =>
-      widget.request.hubCapable == true && LocalDeviceInfo.hubCapable;
-
-  /// 角色自动判定结果提示（非双桌面时展示）。
-  bool get _autoLocalIsHub =>
-      LocalDeviceInfo.hubCapable && widget.request.hubCapable == false;
 
   @override
   void initState() {
@@ -105,7 +92,6 @@ class _PeerPairingConfirmScreenState extends State<PeerPairingConfirmScreen> {
       final peer = await PeerPairingService.instance.confirmPairing(
         widget.request,
         agentShares: agentShares,
-        responderIsHubChoice: _needsRoleChoice ? _responderIsHub : null,
       );
       if (mounted) {
         Navigator.of(context).pop(peer);
@@ -194,36 +180,6 @@ class _PeerPairingConfirmScreenState extends State<PeerPairingConfirmScreen> {
                   ],
                 ),
               ),
-
-              // 主从角色：双桌面需用户选择主存储设备；桌面+移动自动判定。
-              if (_needsRoleChoice) ...[
-                const SizedBox(height: 16),
-                SwitchListTile(
-                  value: _responderIsHub,
-                  contentPadding: EdgeInsets.zero,
-                  onChanged: _processing
-                      ? null
-                      : (v) => setState(() => _responderIsHub = v),
-                  title: Text(l10n.peerPairing_roleChoiceTitle,
-                      style: Theme.of(context).textTheme.titleSmall),
-                  subtitle: Text(
-                    _responderIsHub
-                        ? l10n.peerPairing_roleChoiceHub
-                        : l10n.peerPairing_roleChoiceConsole,
-                    style: Theme.of(context).textTheme.bodySmall,
-                  ),
-                ),
-              ] else if (widget.request.hubCapable != null) ...[
-                const SizedBox(height: 12),
-                Text(
-                  _autoLocalIsHub
-                      ? l10n.peerPairing_roleAutoHub
-                      : l10n.peerPairing_roleAutoConsole,
-                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: colorScheme.onSurfaceVariant,
-                      ),
-                ),
-              ],
 
               if (_loadingAgents) ...[
                 const SizedBox(height: 16),

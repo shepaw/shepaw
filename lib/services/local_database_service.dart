@@ -3,7 +3,6 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:sqflite/sqflite.dart';
 import 'package:path/path.dart';
 import 'package:path_provider/path_provider.dart';
-import '../sync/sync_schema.dart';
 import 'she_profile_database_service.dart';
 import 'she_memory_db_service.dart';
 import 'minds_database_service.dart';
@@ -426,10 +425,6 @@ class LocalDatabaseService {
       )
     ''');
 
-    // 同步层元数据表与业务表 seq/updated_at 列 (v29)，与 _onUpgrade 共用
-    // 同一幂等入口；hub 触发器在设备成为 hub 时由 SyncSchema.installHubTriggers 安装。
-    await SyncSchema.ensureSyncSchema(db);
-
   }
 
   /// 数据库升级
@@ -778,14 +773,29 @@ class LocalDatabaseService {
     }
 
     if (oldVersion < 29) {
-      // 版本 28 -> 29: PC 主存储同步（docs/sync_protocol_spec.md §3）。
-      // 同步表补 seq/updated_at 列，新增 sync_clock/sync_devices/sync_cursor/
-      // sync_tombstones 元数据表。幂等，与 _onCreate 共用入口。
+      // 版本 28 -> 29: 清理 v4 主从同步模型的残留（该模型已被
+      // docs/storage_space_plan.md 的目录镜像模型取代，从未正式发布）。
+      // 跑过旧 feature 分支的开发库可能残留 sync 触发器与元数据表；
+      // seq/updated_at 列保留（SQLite 删除列兼容性差，冗余列零成本）。
       try {
-        await SyncSchema.ensureSyncSchema(db);
+        for (final t in const [
+          'agents',
+          'channels',
+          'channel_members',
+          'messages',
+          'resources'
+        ]) {
+          for (final suffix in const ['ai', 'au', 'ad']) {
+            await db.execute('DROP TRIGGER IF EXISTS sync_${t}_$suffix');
+          }
+        }
+        await db.execute('DROP TABLE IF EXISTS sync_clock');
+        await db.execute('DROP TABLE IF EXISTS sync_devices');
+        await db.execute('DROP TABLE IF EXISTS sync_cursor');
+        await db.execute('DROP TABLE IF EXISTS sync_tombstones');
       } catch (e) {
         LoggerService().error(
-          'Failed to create sync schema (v29)',
+          'Failed to clean up legacy sync schema (v29)',
           tag: 'Migration',
           error: e,
         );

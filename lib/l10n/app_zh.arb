@@ -2844,77 +2844,46 @@
   "status_custom": "自定义",
   "home_statusError": "错误",
   "addAgent_pairingCodeHelper": "Agent 主机运行 `<gateway> enroll` 得到类似 XXX-XXX-XXX 的短码，粘贴到这里即可自动授权本设备。不填写则走上方的「复制公钥 → peers add」手动流程。",
-  "peerPairing_roleChoiceTitle": "主存储设备",
-  "peerPairing_roleChoiceHub": "以本机为主存储设备（hub），对端同步只读副本。",
-  "peerPairing_roleChoiceConsole": "以对端为主存储设备（hub），本机保留只读副本。",
-  "peerPairing_roleAutoHub": "配对后本机将作为主存储设备（hub）。",
-  "peerPairing_roleAutoConsole": "配对后本机将作为桌面端的只读副本。",
-  "storage_title": "数据存储",
-  "storage_hubCardTitle": "主存储设备",
-  "storage_hubImplFlutter": "Flutter 桌面版",
-  "storage_thisDevice": "本机",
-  "storage_managedBy": "由工作站 {name} 管理",
-  "storage_devicesTitle": "配对设备",
-  "storage_roleHub": "主存储",
-  "storage_roleConsole": "副本",
-  "storage_roleNone": "Peer 聊天",
-  "storage_syncCursor": "同步游标 {seq}",
-  "storage_lag": "落后 {count} 条",
-  "storage_dbSize": "数据库 {size}",
-  "storage_attachmentSize": "附件 {size}",
-  "storage_seqWatermark": "seq 水位 {seq}",
-  "storage_noSyncDevices": "暂无开启同步的配对设备",
-  "storage_lastSync": "最近同步 {time}",
-  "storage_state_role_negotiated": "已确立角色",
-  "storage_state_adopting": "正在归并本地数据",
-  "storage_state_snapshot_sync": "正在全量快照同步",
-  "storage_state_active": "同步中",
-  "storage_state_unpaired": "未配对",
-  "@storage_managedBy": {
+  "storage_title": "存储空间",
+  "storage_snapshotSection": "本机快照",
+  "storage_snapshotDesc": "加密快照（数据库 + 设备身份）。恢复将全量替换当前数据。",
+  "storage_snapshotNow": "立即快照",
+  "storage_noSnapshots": "暂无快照",
+  "storage_restore": "恢复",
+  "storage_export": "导出",
+  "storage_passwordTitle": "输入主密码",
+  "storage_passwordHint": "快照以主密码派生密钥加密。",
+  "storage_passwordWrong": "密码错误",
+  "storage_snapshotDone": "快照已生成",
+  "storage_snapshotFailed": "快照失败：{error}",
+  "storage_restoreTitle": "恢复快照",
+  "storage_restoreWarning": "恢复是全量替换、不合并。当前数据会先自动做一次安全快照，然后被所选快照整体替换。恢复后需要重启 App。",
+  "storage_restoreConfirm": "替换并恢复",
+  "storage_restoreDone": "恢复完成，请重启 App。",
+  "storage_restoreFailed": "恢复失败：{error}",
+  "storage_exportDone": "已导出到 {path}",
+  "storage_verifyOk": "校验通过",
+  "storage_verifyFileTampered": "文件被篡改",
+  "storage_verifyManifestTampered": "清单被篡改",
+  "storage_verifyUnreadable": "无法读取",
+  "storage_verifyUnknown": "未校验",
+  "@storage_snapshotFailed": {
     "placeholders": {
-      "name": {
+      "error": {
         "type": "String"
       }
     }
   },
-  "@storage_syncCursor": {
+  "@storage_restoreFailed": {
     "placeholders": {
-      "seq": {
-        "type": "int"
-      }
-    }
-  },
-  "@storage_lag": {
-    "placeholders": {
-      "count": {
-        "type": "int"
-      }
-    }
-  },
-  "@storage_dbSize": {
-    "placeholders": {
-      "size": {
+      "error": {
         "type": "String"
       }
     }
   },
-  "@storage_attachmentSize": {
+  "@storage_exportDone": {
     "placeholders": {
-      "size": {
-        "type": "String"
-      }
-    }
-  },
-  "@storage_seqWatermark": {
-    "placeholders": {
-      "seq": {
-        "type": "int"
-      }
-    }
-  },
-  "@storage_lastSync": {
-    "placeholders": {
-      "time": {
+      "path": {
         "type": "String"
       }
     }

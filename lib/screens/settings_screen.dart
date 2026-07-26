@@ -13,7 +13,7 @@ import 'inference_log_screen.dart';
 import 'log_viewer_screen.dart';
 import 'user_profile_settings_screen.dart';
 import 'agent_memory_management_screen.dart';
-import 'storage_management_screen.dart';
+import 'storage_space_screen.dart';
 import '../utils/layout_utils.dart';
 import '../services/local_database_service.dart';
 import '../services/cognition_service.dart';
@@ -292,7 +292,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
           const Divider(),
 
-          // PC 主存储：角色 / 同步进度 / 存储用量（M1 只读）
+          // 存储空间：快照/恢复/导出（docs/storage_space_plan.md §7，M1）
           ListTile(
             leading: const Icon(Icons.storage),
             title: Text(l10n.storage_title),
@@ -301,7 +301,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
               Navigator.push(
                 context,
                 MaterialPageRoute(
-                  builder: (context) => const StorageManagementScreen(),
+                  builder: (context) => const StorageSpaceScreen(),
                 ),
               );
             },

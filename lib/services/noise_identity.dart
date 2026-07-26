@@ -193,6 +193,22 @@ class NoiseIdentity {
   /// malformed input.
   static NoiseIdentity parseRecord(String raw) => _parseRecord(raw);
 
+  /// 用备份中的身份记录替换当前身份（快照恢复路径，
+  /// docs/storage_space_plan.md §5.3：device_id 随快照恢复）。
+  ///
+  /// 先解析校验再落盘并刷新缓存；记录损坏时抛 [FormatException]，
+  /// 不触碰现有身份。
+  static Future<NoiseIdentity> importRecord(String raw) async {
+    final parsed = _parseRecord(raw);
+    await SecureKeyManager.saveSecureValue(storageKey, raw);
+    _cached = parsed;
+    LoggerService().info(
+      'Imported Noise identity from backup (fingerprint ${parsed.fingerprintHex})',
+      tag: 'Noise',
+    );
+    return parsed;
+  }
+
   static String _encodeRecord(NoiseIdentity id) {
     final priv = base64.encode(id.privateKey);
     final pub = base64.encode(id.publicKey);

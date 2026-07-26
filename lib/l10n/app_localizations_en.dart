@@ -4847,98 +4847,80 @@ class AppLocalizationsEn extends AppLocalizations {
       'Run `<gateway> enroll` on the agent host to get a short code like XXX-XXX-XXX, paste it here to auto-authorize this device. Leave empty to use the \"Copy public key → peers add\" manual flow above.';
 
   @override
-  String get peerPairing_roleChoiceTitle => 'Primary storage device';
+  String get storage_title => 'Storage Space';
 
   @override
-  String get peerPairing_roleChoiceHub =>
-      'Use this device as the primary storage (hub). The other device syncs a read-only replica.';
+  String get storage_snapshotSection => 'Local snapshots';
 
   @override
-  String get peerPairing_roleChoiceConsole =>
-      'Use the other device as the primary storage (hub). This device keeps a read-only replica.';
+  String get storage_snapshotDesc =>
+      'Encrypted snapshots of the database and device identity. Restore replaces all current data.';
 
   @override
-  String get peerPairing_roleAutoHub =>
-      'This device will be the primary storage (hub).';
+  String get storage_snapshotNow => 'Snapshot now';
 
   @override
-  String get peerPairing_roleAutoConsole =>
-      'This device will sync as a read-only replica of the desktop.';
+  String get storage_noSnapshots => 'No snapshots yet';
 
   @override
-  String get storage_title => 'Data Storage';
+  String get storage_restore => 'Restore';
 
   @override
-  String get storage_hubCardTitle => 'Primary storage device';
+  String get storage_export => 'Export';
 
   @override
-  String get storage_hubImplFlutter => 'Flutter desktop app';
+  String get storage_passwordTitle => 'Master password';
 
   @override
-  String get storage_thisDevice => 'This device';
+  String get storage_passwordHint =>
+      'Snapshots are encrypted with a key derived from your master password.';
 
   @override
-  String storage_managedBy(String name) {
-    return 'Managed by workstation $name';
+  String get storage_passwordWrong => 'Wrong password';
+
+  @override
+  String get storage_snapshotDone => 'Snapshot created';
+
+  @override
+  String storage_snapshotFailed(String error) {
+    return 'Snapshot failed: $error';
   }
 
   @override
-  String get storage_devicesTitle => 'Paired devices';
+  String get storage_restoreTitle => 'Restore snapshot';
 
   @override
-  String get storage_roleHub => 'Primary storage';
+  String get storage_restoreWarning =>
+      'Restore is a full replace, not a merge. A safety snapshot of current data is taken first, then all current data is replaced by the selected snapshot. The app must be restarted afterwards.';
 
   @override
-  String get storage_roleConsole => 'Replica';
+  String get storage_restoreConfirm => 'Replace & restore';
 
   @override
-  String get storage_roleNone => 'Peer chat';
+  String get storage_restoreDone => 'Restore complete. Please restart the app.';
 
   @override
-  String storage_syncCursor(int seq) {
-    return 'Sync cursor $seq';
+  String storage_restoreFailed(String error) {
+    return 'Restore failed: $error';
   }
 
   @override
-  String storage_lag(int count) {
-    return '$count behind';
+  String storage_exportDone(String path) {
+    return 'Exported to $path';
   }
 
   @override
-  String storage_dbSize(String size) {
-    return 'Database $size';
-  }
+  String get storage_verifyOk => 'Verified';
 
   @override
-  String storage_attachmentSize(String size) {
-    return 'Attachments $size';
-  }
+  String get storage_verifyFileTampered => 'Files tampered';
 
   @override
-  String storage_seqWatermark(int seq) {
-    return 'Seq watermark $seq';
-  }
+  String get storage_verifyManifestTampered => 'Manifest tampered';
 
   @override
-  String get storage_noSyncDevices => 'No paired devices with sync enabled yet';
+  String get storage_verifyUnreadable => 'Unreadable';
 
   @override
-  String storage_lastSync(String time) {
-    return 'Last sync $time';
-  }
-
-  @override
-  String get storage_state_role_negotiated => 'Role negotiated';
-
-  @override
-  String get storage_state_adopting => 'Merging local data';
-
-  @override
-  String get storage_state_snapshot_sync => 'Full snapshot sync';
-
-  @override
-  String get storage_state_active => 'In sync';
-
-  @override
-  String get storage_state_unpaired => 'Not paired';
+  String get storage_verifyUnknown => 'Not verified';
 }

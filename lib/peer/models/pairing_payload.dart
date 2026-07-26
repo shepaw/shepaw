@@ -23,19 +23,6 @@ class PairingRequest {
   /// 时间戳（毫秒）
   final int timestamp;
 
-  /// 平台（macos/windows/linux/ios/android），主从角色判定用（spec §2.1）。
-  /// 旧版 App 不携带时为 null。
-  final String? platform;
-
-  /// App 版本号。
-  final String? appVersion;
-
-  /// 是否具备 hub 能力（桌面端）。
-  final bool? hubCapable;
-
-  /// 支持的同步协议版本；null 表示不支持同步。
-  final int? syncProtocolVersion;
-
   PairingRequest({
     required this.pairingCode,
     required this.deviceName,
@@ -43,10 +30,6 @@ class PairingRequest {
     this.channelEndpoint,
     this.localEndpoint,
     required this.timestamp,
-    this.platform,
-    this.appVersion,
-    this.hubCapable,
-    this.syncProtocolVersion,
   });
 
   factory PairingRequest.fromJson(Map<String, dynamic> json) {
@@ -57,10 +40,6 @@ class PairingRequest {
       channelEndpoint: json['channel_endpoint'] as String?,
       localEndpoint: json['local_endpoint'] as String?,
       timestamp: json['timestamp'] as int,
-      platform: json['platform'] as String?,
-      appVersion: json['app_version'] as String?,
-      hubCapable: json['hub_capable'] as bool?,
-      syncProtocolVersion: json['sync_v'] as int?,
     );
   }
 
@@ -71,10 +50,6 @@ class PairingRequest {
     if (channelEndpoint != null) 'channel_endpoint': channelEndpoint,
     if (localEndpoint != null) 'local_endpoint': localEndpoint,
     'timestamp': timestamp,
-    if (platform != null) 'platform': platform,
-    if (appVersion != null) 'app_version': appVersion,
-    if (hubCapable != null) 'hub_capable': hubCapable,
-    if (syncProtocolVersion != null) 'sync_v': syncProtocolVersion,
   };
 
   Uint8List toBytes() => Uint8List.fromList(utf8.encode(jsonEncode(toJson())));
@@ -108,22 +83,6 @@ class PairingResponse {
   /// 拒绝原因（accepted=false 时）
   final String? rejectReason;
 
-  /// 响应方平台（spec §2.1）。旧版 App 不携带时为 null。
-  final String? platform;
-
-  /// App 版本号。
-  final String? appVersion;
-
-  /// 响应方是否具备 hub 能力。
-  final bool? hubCapable;
-
-  /// 支持的同步协议版本。
-  final int? syncProtocolVersion;
-
-  /// 双桌面场景 responder 的角色选择（true = responder 为 hub）。
-  /// 仅双方都 hub_capable 时有意义；其余场景角色由规则自动判定。
-  final bool? responderIsHub;
-
   PairingResponse({
     required this.accepted,
     required this.deviceName,
@@ -132,11 +91,6 @@ class PairingResponse {
     this.channelEndpoint,
     this.localEndpoint,
     this.rejectReason,
-    this.platform,
-    this.appVersion,
-    this.hubCapable,
-    this.syncProtocolVersion,
-    this.responderIsHub,
   });
 
   factory PairingResponse.fromJson(Map<String, dynamic> json) {
@@ -148,11 +102,6 @@ class PairingResponse {
       channelEndpoint: json['channel_endpoint'] as String?,
       localEndpoint: json['local_endpoint'] as String?,
       rejectReason: json['reject_reason'] as String?,
-      platform: json['platform'] as String?,
-      appVersion: json['app_version'] as String?,
-      hubCapable: json['hub_capable'] as bool?,
-      syncProtocolVersion: json['sync_v'] as int?,
-      responderIsHub: json['responder_is_hub'] as bool?,
     );
   }
 
@@ -164,11 +113,6 @@ class PairingResponse {
     if (channelEndpoint != null) 'channel_endpoint': channelEndpoint,
     if (localEndpoint != null) 'local_endpoint': localEndpoint,
     if (rejectReason != null) 'reject_reason': rejectReason,
-    if (platform != null) 'platform': platform,
-    if (appVersion != null) 'app_version': appVersion,
-    if (hubCapable != null) 'hub_capable': hubCapable,
-    if (syncProtocolVersion != null) 'sync_v': syncProtocolVersion,
-    if (responderIsHub != null) 'responder_is_hub': responderIsHub,
   };
 
   Uint8List toBytes() => Uint8List.fromList(utf8.encode(jsonEncode(toJson())));

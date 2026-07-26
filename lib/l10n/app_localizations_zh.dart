@@ -4665,94 +4665,78 @@ class AppLocalizationsZh extends AppLocalizations {
       'Agent 主机运行 `<gateway> enroll` 得到类似 XXX-XXX-XXX 的短码，粘贴到这里即可自动授权本设备。不填写则走上方的「复制公钥 → peers add」手动流程。';
 
   @override
-  String get peerPairing_roleChoiceTitle => '主存储设备';
+  String get storage_title => '存储空间';
 
   @override
-  String get peerPairing_roleChoiceHub => '以本机为主存储设备（hub），对端同步只读副本。';
+  String get storage_snapshotSection => '本机快照';
 
   @override
-  String get peerPairing_roleChoiceConsole => '以对端为主存储设备（hub），本机保留只读副本。';
+  String get storage_snapshotDesc => '加密快照（数据库 + 设备身份）。恢复将全量替换当前数据。';
 
   @override
-  String get peerPairing_roleAutoHub => '配对后本机将作为主存储设备（hub）。';
+  String get storage_snapshotNow => '立即快照';
 
   @override
-  String get peerPairing_roleAutoConsole => '配对后本机将作为桌面端的只读副本。';
+  String get storage_noSnapshots => '暂无快照';
 
   @override
-  String get storage_title => '数据存储';
+  String get storage_restore => '恢复';
 
   @override
-  String get storage_hubCardTitle => '主存储设备';
+  String get storage_export => '导出';
 
   @override
-  String get storage_hubImplFlutter => 'Flutter 桌面版';
+  String get storage_passwordTitle => '输入主密码';
 
   @override
-  String get storage_thisDevice => '本机';
+  String get storage_passwordHint => '快照以主密码派生密钥加密。';
 
   @override
-  String storage_managedBy(String name) {
-    return '由工作站 $name 管理';
+  String get storage_passwordWrong => '密码错误';
+
+  @override
+  String get storage_snapshotDone => '快照已生成';
+
+  @override
+  String storage_snapshotFailed(String error) {
+    return '快照失败：$error';
   }
 
   @override
-  String get storage_devicesTitle => '配对设备';
+  String get storage_restoreTitle => '恢复快照';
 
   @override
-  String get storage_roleHub => '主存储';
+  String get storage_restoreWarning =>
+      '恢复是全量替换、不合并。当前数据会先自动做一次安全快照，然后被所选快照整体替换。恢复后需要重启 App。';
 
   @override
-  String get storage_roleConsole => '副本';
+  String get storage_restoreConfirm => '替换并恢复';
 
   @override
-  String get storage_roleNone => 'Peer 聊天';
+  String get storage_restoreDone => '恢复完成，请重启 App。';
 
   @override
-  String storage_syncCursor(int seq) {
-    return '同步游标 $seq';
+  String storage_restoreFailed(String error) {
+    return '恢复失败：$error';
   }
 
   @override
-  String storage_lag(int count) {
-    return '落后 $count 条';
+  String storage_exportDone(String path) {
+    return '已导出到 $path';
   }
 
   @override
-  String storage_dbSize(String size) {
-    return '数据库 $size';
-  }
+  String get storage_verifyOk => '校验通过';
 
   @override
-  String storage_attachmentSize(String size) {
-    return '附件 $size';
-  }
+  String get storage_verifyFileTampered => '文件被篡改';
 
   @override
-  String storage_seqWatermark(int seq) {
-    return 'seq 水位 $seq';
-  }
+  String get storage_verifyManifestTampered => '清单被篡改';
 
   @override
-  String get storage_noSyncDevices => '暂无开启同步的配对设备';
+  String get storage_verifyUnreadable => '无法读取';
 
   @override
-  String storage_lastSync(String time) {
-    return '最近同步 $time';
-  }
-
-  @override
-  String get storage_state_role_negotiated => '已确立角色';
-
-  @override
-  String get storage_state_adopting => '正在归并本地数据';
-
-  @override
-  String get storage_state_snapshot_sync => '正在全量快照同步';
-
-  @override
-  String get storage_state_active => '同步中';
-
-  @override
-  String get storage_state_unpaired => '未配对';
+  String get storage_verifyUnknown => '未校验';
 }

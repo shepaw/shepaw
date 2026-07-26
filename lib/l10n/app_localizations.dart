@@ -8528,161 +8528,143 @@ abstract class AppLocalizations {
   /// **'Agent 主机运行 `<gateway> enroll` 得到类似 XXX-XXX-XXX 的短码，粘贴到这里即可自动授权本设备。不填写则走上方的「复制公钥 → peers add」手动流程。'**
   String get addAgent_pairingCodeHelper;
 
-  /// No description provided for @peerPairing_roleChoiceTitle.
-  ///
-  /// In zh, this message translates to:
-  /// **'主存储设备'**
-  String get peerPairing_roleChoiceTitle;
-
-  /// No description provided for @peerPairing_roleChoiceHub.
-  ///
-  /// In zh, this message translates to:
-  /// **'以本机为主存储设备（hub），对端同步只读副本。'**
-  String get peerPairing_roleChoiceHub;
-
-  /// No description provided for @peerPairing_roleChoiceConsole.
-  ///
-  /// In zh, this message translates to:
-  /// **'以对端为主存储设备（hub），本机保留只读副本。'**
-  String get peerPairing_roleChoiceConsole;
-
-  /// No description provided for @peerPairing_roleAutoHub.
-  ///
-  /// In zh, this message translates to:
-  /// **'配对后本机将作为主存储设备（hub）。'**
-  String get peerPairing_roleAutoHub;
-
-  /// No description provided for @peerPairing_roleAutoConsole.
-  ///
-  /// In zh, this message translates to:
-  /// **'配对后本机将作为桌面端的只读副本。'**
-  String get peerPairing_roleAutoConsole;
-
   /// No description provided for @storage_title.
   ///
   /// In zh, this message translates to:
-  /// **'数据存储'**
+  /// **'存储空间'**
   String get storage_title;
 
-  /// No description provided for @storage_hubCardTitle.
+  /// No description provided for @storage_snapshotSection.
   ///
   /// In zh, this message translates to:
-  /// **'主存储设备'**
-  String get storage_hubCardTitle;
+  /// **'本机快照'**
+  String get storage_snapshotSection;
 
-  /// No description provided for @storage_hubImplFlutter.
+  /// No description provided for @storage_snapshotDesc.
   ///
   /// In zh, this message translates to:
-  /// **'Flutter 桌面版'**
-  String get storage_hubImplFlutter;
+  /// **'加密快照（数据库 + 设备身份）。恢复将全量替换当前数据。'**
+  String get storage_snapshotDesc;
 
-  /// No description provided for @storage_thisDevice.
+  /// No description provided for @storage_snapshotNow.
   ///
   /// In zh, this message translates to:
-  /// **'本机'**
-  String get storage_thisDevice;
+  /// **'立即快照'**
+  String get storage_snapshotNow;
 
-  /// No description provided for @storage_managedBy.
+  /// No description provided for @storage_noSnapshots.
   ///
   /// In zh, this message translates to:
-  /// **'由工作站 {name} 管理'**
-  String storage_managedBy(String name);
+  /// **'暂无快照'**
+  String get storage_noSnapshots;
 
-  /// No description provided for @storage_devicesTitle.
+  /// No description provided for @storage_restore.
   ///
   /// In zh, this message translates to:
-  /// **'配对设备'**
-  String get storage_devicesTitle;
+  /// **'恢复'**
+  String get storage_restore;
 
-  /// No description provided for @storage_roleHub.
+  /// No description provided for @storage_export.
   ///
   /// In zh, this message translates to:
-  /// **'主存储'**
-  String get storage_roleHub;
+  /// **'导出'**
+  String get storage_export;
 
-  /// No description provided for @storage_roleConsole.
+  /// No description provided for @storage_passwordTitle.
   ///
   /// In zh, this message translates to:
-  /// **'副本'**
-  String get storage_roleConsole;
+  /// **'输入主密码'**
+  String get storage_passwordTitle;
 
-  /// No description provided for @storage_roleNone.
+  /// No description provided for @storage_passwordHint.
   ///
   /// In zh, this message translates to:
-  /// **'Peer 聊天'**
-  String get storage_roleNone;
+  /// **'快照以主密码派生密钥加密。'**
+  String get storage_passwordHint;
 
-  /// No description provided for @storage_syncCursor.
+  /// No description provided for @storage_passwordWrong.
   ///
   /// In zh, this message translates to:
-  /// **'同步游标 {seq}'**
-  String storage_syncCursor(int seq);
+  /// **'密码错误'**
+  String get storage_passwordWrong;
 
-  /// No description provided for @storage_lag.
+  /// No description provided for @storage_snapshotDone.
   ///
   /// In zh, this message translates to:
-  /// **'落后 {count} 条'**
-  String storage_lag(int count);
+  /// **'快照已生成'**
+  String get storage_snapshotDone;
 
-  /// No description provided for @storage_dbSize.
+  /// No description provided for @storage_snapshotFailed.
   ///
   /// In zh, this message translates to:
-  /// **'数据库 {size}'**
-  String storage_dbSize(String size);
+  /// **'快照失败：{error}'**
+  String storage_snapshotFailed(String error);
 
-  /// No description provided for @storage_attachmentSize.
+  /// No description provided for @storage_restoreTitle.
   ///
   /// In zh, this message translates to:
-  /// **'附件 {size}'**
-  String storage_attachmentSize(String size);
+  /// **'恢复快照'**
+  String get storage_restoreTitle;
 
-  /// No description provided for @storage_seqWatermark.
+  /// No description provided for @storage_restoreWarning.
   ///
   /// In zh, this message translates to:
-  /// **'seq 水位 {seq}'**
-  String storage_seqWatermark(int seq);
+  /// **'恢复是全量替换、不合并。当前数据会先自动做一次安全快照，然后被所选快照整体替换。恢复后需要重启 App。'**
+  String get storage_restoreWarning;
 
-  /// No description provided for @storage_noSyncDevices.
+  /// No description provided for @storage_restoreConfirm.
   ///
   /// In zh, this message translates to:
-  /// **'暂无开启同步的配对设备'**
-  String get storage_noSyncDevices;
+  /// **'替换并恢复'**
+  String get storage_restoreConfirm;
 
-  /// No description provided for @storage_lastSync.
+  /// No description provided for @storage_restoreDone.
   ///
   /// In zh, this message translates to:
-  /// **'最近同步 {time}'**
-  String storage_lastSync(String time);
+  /// **'恢复完成，请重启 App。'**
+  String get storage_restoreDone;
 
-  /// No description provided for @storage_state_role_negotiated.
+  /// No description provided for @storage_restoreFailed.
   ///
   /// In zh, this message translates to:
-  /// **'已确立角色'**
-  String get storage_state_role_negotiated;
+  /// **'恢复失败：{error}'**
+  String storage_restoreFailed(String error);
 
-  /// No description provided for @storage_state_adopting.
+  /// No description provided for @storage_exportDone.
   ///
   /// In zh, this message translates to:
-  /// **'正在归并本地数据'**
-  String get storage_state_adopting;
+  /// **'已导出到 {path}'**
+  String storage_exportDone(String path);
 
-  /// No description provided for @storage_state_snapshot_sync.
+  /// No description provided for @storage_verifyOk.
   ///
   /// In zh, this message translates to:
-  /// **'正在全量快照同步'**
-  String get storage_state_snapshot_sync;
+  /// **'校验通过'**
+  String get storage_verifyOk;
 
-  /// No description provided for @storage_state_active.
+  /// No description provided for @storage_verifyFileTampered.
   ///
   /// In zh, this message translates to:
-  /// **'同步中'**
-  String get storage_state_active;
+  /// **'文件被篡改'**
+  String get storage_verifyFileTampered;
 
-  /// No description provided for @storage_state_unpaired.
+  /// No description provided for @storage_verifyManifestTampered.
   ///
   /// In zh, this message translates to:
-  /// **'未配对'**
-  String get storage_state_unpaired;
+  /// **'清单被篡改'**
+  String get storage_verifyManifestTampered;
+
+  /// No description provided for @storage_verifyUnreadable.
+  ///
+  /// In zh, this message translates to:
+  /// **'无法读取'**
+  String get storage_verifyUnreadable;
+
+  /// No description provided for @storage_verifyUnknown.
+  ///
+  /// In zh, this message translates to:
+  /// **'未校验'**
+  String get storage_verifyUnknown;
 }
 
 class _AppLocalizationsDelegate
