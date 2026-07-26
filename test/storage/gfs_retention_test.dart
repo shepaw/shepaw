@@ -14,10 +14,24 @@ void main() {
           ('day-$i', ms(now.subtract(Duration(days: i)))),
       ];
       final sel = selectGfs(snaps, nowMs: ms(now));
-      // 最近 7 天保留（day-0..day-6），day-7/8/9 进入周级判定
+      // 最近 7 个日历日保留（day-0..day-6）；day-7 起仅靠周/月级
       for (var i = 0; i < 7; i++) {
         expect(sel.keepIds, contains('day-$i'), reason: 'day-$i kept');
       }
+    });
+
+    test('日窗口边界：dayDiff==7 不计入日级（仅 0..6）', () {
+      final now = DateTime(2026, 7, 26, 12, 0);
+      // 关闭周/月窗口，隔离日级
+      final snaps = [
+        ('d0', ms(now)),
+        ('d6', ms(now.subtract(const Duration(days: 6)))),
+        ('d7', ms(now.subtract(const Duration(days: 7)))),
+      ];
+      final sel = selectGfs(snaps,
+          nowMs: ms(now), weeklyWindow: 0, monthlyWindow: 0);
+      expect(sel.keepIds, containsAll(['d0', 'd6']));
+      expect(sel.deleteIds, contains('d7'));
     });
 
     test('同日多份只留最新', () {

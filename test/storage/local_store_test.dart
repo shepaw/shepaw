@@ -124,6 +124,41 @@ void main() {
             e is StoreException && e.code == StoreError.stagingState)),
       );
     });
+
+    test('write.chunk 超过 64KB 拒绝', () async {
+      final big = Uint8List(LocalStore.maxReadChunk + 1);
+      final (uploadId, _) = await begin('toobig.bin', big);
+      expect(
+        () => store.writeChunk(dev, 'files', uploadId, 0, big),
+        throwsA(predicate((e) =>
+            e is StoreException && e.code == StoreError.badOp)),
+      );
+    });
+
+    test('commit 目标路径含 symlink 时拒绝转正', () async {
+      final content = bytesOf('escape');
+      final (uploadId, _) = await begin('linky/x.txt', content);
+      await store.writeChunk(dev, 'files', uploadId, 0, content);
+
+      final spaceDir = Directory(p.join(tmp.path, dev, 'files'));
+      await spaceDir.create(recursive: true);
+      final outside = await Directory.systemTemp.createTemp('symlink_out');
+      addTearDown(() async {
+        if (await outside.exists()) await outside.delete(recursive: true);
+      });
+      try {
+        await Link(p.join(spaceDir.path, 'linky')).create(outside.path);
+      } on FileSystemException catch (_) {
+        // 部分 CI/沙箱禁止创建 symlink，跳过
+        return;
+      }
+
+      final (committed, failed) =
+          await store.commit(dev, 'files', [uploadId]);
+      expect(committed, isEmpty);
+      expect(failed, isNotEmpty);
+      expect(failed.single.toLowerCase(), contains('symlink'));
+    });
   });
 
   group('read/meta', () {
@@ -131,7 +166,16 @@ void main() {
       final content = Uint8List.fromList(
           List.generate(200 * 1024, (i) => i % 256));
       final (uploadId, _) = await begin('big.bin', content);
-      await store.writeChunk(dev, 'files', uploadId, 0, content);
+      // 按协议 ≤64KB 分块写入
+      var off = 0;
+      while (off < content.length) {
+        final end = (off + LocalStore.maxReadChunk < content.length)
+            ? off + LocalStore.maxReadChunk
+            : content.length;
+        await store.writeChunk(
+            dev, 'files', uploadId, off, content.sublist(off, end));
+        off = end;
+      }
       await store.commit(dev, 'files', [uploadId]);
 
       final (c1, size1, eof1) =
@@ -303,6 +347,28 @@ void main() {
       final (committed, failed) = await store.commit(dev, 'files', [u]);
       expect(committed, isEmpty);
       expect(failed.single, contains('unknown upload_id'));
+    });
+
+    test('gcRecycle 清理超过 30 天的日期目录', () async {
+      final c = bytesOf('old-trash');
+      final (u, _) = await begin('old.txt', c);
+      await store.writeChunk(dev, 'files', u, 0, c);
+      await store.commit(dev, 'files', [u]);
+      await store.delete(dev, 'files', 'old.txt');
+
+      // 把今日目录改名为 31 天前
+      final recycleRoot = Directory(p.join(tmp.path, '.recycle'));
+      final todayName = p.basename((await recycleRoot.list().first).path);
+      final oldDate = DateTime.now().subtract(const Duration(days: 31));
+      final oldName =
+          '${oldDate.year}-${oldDate.month.toString().padLeft(2, '0')}-${oldDate.day.toString().padLeft(2, '0')}';
+      await Directory(p.join(recycleRoot.path, todayName))
+          .rename(p.join(recycleRoot.path, oldName));
+
+      expect(await store.recycleList(), isNotEmpty);
+      final purged = await store.gcRecycle();
+      expect(purged, greaterThan(0));
+      expect(await store.recycleList(), isEmpty);
     });
 
     test('路径穿越攻击在 FS 层同样被拒', () async {

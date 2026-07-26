@@ -307,9 +307,13 @@ class LocalStore {
     return (id, 0);
   }
 
-  /// 写数据块（offset ≤ 已接收长度，顺序追加；spec §2.5）。
+  /// 写数据块（offset ≤ 已接收长度，顺序追加；spec §2.5；单块 ≤64KB）。
   Future<int> writeChunk(String deviceId, String space, String uploadId,
       int offset, Uint8List data) async {
+    if (data.length > maxReadChunk) {
+      throw StoreException(
+          StoreError.badOp, 'chunk must be ≤$maxReadChunk bytes');
+    }
     final stagingDir = _stagingDir(deviceId, space);
     final metaFile = File(p.join(stagingDir, '$uploadId.json'));
     if (!await metaFile.exists()) {
@@ -372,6 +376,8 @@ class LocalStore {
     for (final (id, meta, partFile) in verified) {
       try {
         final finalAbs = _resolveInSpace(deviceId, space, meta.path);
+        // 转正前检查目标路径（含父目录）无 symlink 逃逸
+        await _checkNoSymlinkEscape(deviceId, space, finalAbs, meta.path);
         if (await File(finalAbs).exists()) {
           // 被覆盖旧版本进回收站（spec §6.2）
           await _moveToRecycle(deviceId, space, meta.path);
@@ -575,6 +581,28 @@ class LocalStore {
       }
     }
     return removed;
+  }
+
+  /// 清理超过保留期的回收站日期目录（默认 30 天，spec §2.7）。
+  /// 返回清理的字节数。
+  Future<int> gcRecycle({Duration olderThan = const Duration(days: 30)}) async {
+    final recycleDir = Directory(p.join(root.path, '.recycle'));
+    if (!await recycleDir.exists()) return 0;
+    final today = DateTime.now();
+    final cutoff = DateTime(today.year, today.month, today.day)
+        .subtract(olderThan);
+    var purgedBytes = 0;
+    await for (final dateDir in recycleDir.list()) {
+      if (dateDir is! Directory) continue;
+      final parsed = DateTime.tryParse(p.basename(dateDir.path));
+      if (parsed == null) continue;
+      final dateOnly = DateTime(parsed.year, parsed.month, parsed.day);
+      if (!dateOnly.isBefore(cutoff)) continue;
+      purgedBytes += await _dirSize(dateDir);
+      await dateDir.delete(recursive: true);
+    }
+    await _pruneEmptyRecycleDirs();
+    return purgedBytes;
   }
 
   // ────────────────────────────── 内部工具 ──

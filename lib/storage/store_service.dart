@@ -50,6 +50,10 @@ class StoreService {
     if (removed > 0) {
       _log.info('gc staging: removed $removed stale sessions', tag: _tag);
     }
+    final purged = await store.gcRecycle();
+    if (purged > 0) {
+      _log.info('gc recycle: purged $purged bytes', tag: _tag);
+    }
   }
 
   Future<void> stop() async {

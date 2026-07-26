@@ -16,8 +16,8 @@ class GfsSelection {
 ///
 /// [snapshots] 为 (id, createdAtMs) 列表；[nowMs] 注入当前时间。
 /// 规则（同一快照可被多级命中，命中一级即保留）：
-/// - 日级：距今 ≤ [dailyWindow] 天的日期内，每天最新一份；
-/// - 周级：距今 ≤ [weeklyWindow] 天的 ISO 周内，每周最新一份；
+/// - 日级：距今 < [dailyWindow] 天的日期内，每天最新一份（window=7 → 今日起共 7 个日历日）；
+/// - 周级：距今 < [weeklyWindow] 天的 ISO 周内，每周最新一份（window=28 → 最近 4 周）；
 /// - 月级：距今 < [monthlyWindow] 个自然月内，每月最新一份。
 GfsSelection selectGfs(
   List<(String, int)> snapshots, {
@@ -57,9 +57,9 @@ GfsSelection selectGfs(
     final monthDiff = (now.year * 12 + now.month) - monthKey;
 
     // 日级：窗口内每天最新一份（降序遍历，首次见即最新）
-    if (dayDiff <= dailyWindow && seenDays.add(dayKey)) keep.add(id);
+    if (dayDiff < dailyWindow && seenDays.add(dayKey)) keep.add(id);
     // 周级：窗口内每周最新一份
-    if (weekStartDiff <= weeklyWindow && seenWeeks.add(weekKey)) keep.add(id);
+    if (weekStartDiff < weeklyWindow && seenWeeks.add(weekKey)) keep.add(id);
     // 月级：窗口内每月最新一份
     if (monthDiff < monthlyWindow && seenMonths.add(monthKey)) keep.add(id);
   }
