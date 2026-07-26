@@ -278,7 +278,7 @@ master 上的镜像树主要是各端本地数据的副本；为降低单点损�
 | M4 本地优先与远程 | ✅ 基本 | `SyncJournal`/`SyncEngine` + 游标；`LocalCas` 仅远端读缓存；tunnel 复用 peer |
 | M5 协作与附件 | ✅ 基本 | `ArtifactService` URI + 编排注入；附件经 store hash 编址 |
 | M6 master 迁移 | ✅ 基本 | 升主/指针/再保护；差量镜像种子 + 内容哈希门闩（软校验，可选硬阻断） |
-| M7 Go 存储节点 | 🟡 骨架 | `storage-node/`：目录树+fixture；缺 Noise 配对与无头管理面 |
+| M7 Go 存储节点 | 🟡 基本 | `storage-node/`：目录树+fixture；回收站/stats/seed ACL 已对齐 Dart；缺 Noise 配对与无头管理面 |
 | M8 记忆交换与多 she | ✅ 基本 | `lib/she_network/` + 管理页「她的圈子」 |
 
 代码位置：`lib/storage/`、`lib/she_network/`、`lib/screens/storage_space_screen.dart`；`lib/peer/` 仅帧路由。
@@ -320,3 +320,4 @@ master 上的镜像树主要是各端本地数据的副本；为降低单点损�
 12. 旧 master 可达时升主差量镜像种子（`MirrorSeedService` + `seed: true` ACL）。
 14. 自动快照告警按墙钟 3 天（成功或启用锚点），与同日失败次数解耦。
 15. 回收站管理 UX：清空仅 master 本机、还原反馈、列表展开；Go ACL 对齐 `seed: true`。
+16. Go `storage-node` 回收站路径/`recycle.restore`/stats/`commit` 字段与 Dart/spec 对齐。

@@ -7,7 +7,7 @@
 ## 范围（本切片）
 
 - 路径规范化 + ACL 纯逻辑（与 Dart fixture 全绿）
-- 本机目录树：`list` / `meta` / `read` / `write.begin|chunk` / `commit` / `delete` / `stats` / recycle
+- 本机目录树：`list` / `meta` / `read` / `write.begin|chunk` / `commit` / `delete` / `stats`（含 `devices` + 卷用量）/ `recycle.list|restore|empty`（路径与 Dart 同构）
 - HTTP 健康检查 + 简易 JSON 控制口（便于联调；Noise/WS 配对码后续补齐）
 
 > 说明：仓库内无 Go 版 agent-bridge（sibling 为 TypeScript）。本模块独立实现协议，不依赖共享 Go package。

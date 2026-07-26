@@ -28,11 +28,12 @@ type Local struct {
 }
 
 type upload struct {
-	Space string
-	Path  string
-	Tmp   string
-	Size  int64
-	Hash  hashWriter
+	Device string
+	Space  string
+	Path   string
+	Tmp    string
+	Size   int64
+	Hash   hashWriter
 }
 
 type hashWriter struct {
@@ -95,6 +96,8 @@ func (l *Local) Handle(frame protocol.Frame, caller, trust string, loopback bool
 		return l.stats()
 	case "recycle.list":
 		return l.recycleList()
+	case "recycle.restore":
+		return l.recycleRestore(frame)
 	case "recycle.empty":
 		return l.recycleEmpty()
 	default:
@@ -249,7 +252,13 @@ func (l *Local) writeBegin(frame protocol.Frame, caller string) (map[string]any,
 	}
 	tmp := filepath.Join(staging, "blob")
 	l.mu.Lock()
-	l.uploads[id] = &upload{Space: frame.Space(), Path: norm, Tmp: tmp, Hash: newHashWriter()}
+	l.uploads[id] = &upload{
+		Device: caller,
+		Space:  frame.Space(),
+		Path:   norm,
+		Tmp:    tmp,
+		Hash:   newHashWriter(),
+	}
 	l.mu.Unlock()
 	return map[string]any{"upload_id": id}, nil
 }
@@ -324,21 +333,30 @@ func (l *Local) commit(frame protocol.Frame) (map[string]any, error) {
 		batch = append(batch, pending{id: id, u: u, sum: sum})
 	}
 	committed := []map[string]any{}
+	failed := []map[string]any{}
 	for _, p := range batch {
-		dest := filepath.Join(l.Root, l.DeviceID, p.u.Space, filepath.FromSlash(p.u.Path))
+		dest := filepath.Join(l.Root, p.u.Device, p.u.Space, filepath.FromSlash(p.u.Path))
 		if err := os.MkdirAll(filepath.Dir(dest), 0o755); err != nil {
-			return nil, err
+			failed = append(failed, map[string]any{"upload_id": p.id, "error": err.Error()})
+			continue
 		}
 		if err := os.Rename(p.u.Tmp, dest); err != nil {
-			return nil, err
+			failed = append(failed, map[string]any{"upload_id": p.id, "error": err.Error()})
+			continue
 		}
 		_ = os.RemoveAll(filepath.Dir(p.u.Tmp))
 		l.mu.Lock()
 		delete(l.uploads, p.id)
 		l.mu.Unlock()
-		committed = append(committed, map[string]any{"path": p.u.Path, "size": p.u.Size, "sha256": p.sum})
+		committed = append(committed, map[string]any{
+			"upload_id": p.id, "path": p.u.Path, "size": p.u.Size, "sha256": p.sum,
+		})
 	}
-	return map[string]any{"files": committed}, nil
+	return map[string]any{
+		"files":     committed,
+		"committed": committed,
+		"failed":    failed,
+	}, nil
 }
 
 func (l *Local) delete(frame protocol.Frame, caller string) (map[string]any, error) {
@@ -347,55 +365,242 @@ func (l *Local) delete(frame protocol.Frame, caller string) (map[string]any, err
 		device = caller
 	}
 	path, _ := frame.Payload["path"].(string)
-	full, err := l.resolve(frame.Space(), device, path)
+	norm, err := protocol.NormalizePath(path)
+	if err != nil {
+		return nil, &OpError{Code: "bad_path", Msg: err.Error()}
+	}
+	recycled, err := l.moveToRecycle(device, frame.Space(), norm)
 	if err != nil {
 		return nil, err
 	}
+	return map[string]any{"recycled": recycled}, nil
+}
+
+func (l *Local) moveToRecycle(device, space, normalizedRel string) (string, error) {
+	full, err := l.resolve(space, device, normalizedRel)
+	if err != nil {
+		return "", err
+	}
 	if _, err := os.Stat(full); err != nil {
-		return nil, &OpError{Code: "not_found", Msg: err.Error()}
+		return "", &OpError{Code: "not_found", Msg: err.Error()}
 	}
-	recycle := filepath.Join(l.Root, ".recycle", fmt.Sprintf("%d-%s", time.Now().UnixNano(), filepath.Base(full)))
-	if err := os.Rename(full, recycle); err != nil {
-		return nil, err
+	date := time.Now().Format("2006-01-02")
+	recycleRel := filepath.ToSlash(filepath.Join(".recycle", date, device, space, filepath.FromSlash(normalizedRel)))
+	dest := filepath.Join(l.Root, filepath.FromSlash(recycleRel))
+	if _, err := os.Stat(dest); err == nil {
+		recycleRel = fmt.Sprintf("%s~%d", recycleRel, time.Now().UnixMilli())
+		dest = filepath.Join(l.Root, filepath.FromSlash(recycleRel))
 	}
-	meta, _ := json.Marshal(map[string]any{"from": full, "at": time.Now().UnixMilli()})
-	_ = os.WriteFile(recycle+".meta.json", meta, 0o644)
-	return map[string]any{"ok": true}, nil
+	if err := os.MkdirAll(filepath.Dir(dest), 0o755); err != nil {
+		return "", err
+	}
+	if err := os.Rename(full, dest); err != nil {
+		return "", err
+	}
+	return recycleRel, nil
 }
 
 func (l *Local) stats() (map[string]any, error) {
-	var total int64
-	_ = filepath.Walk(l.Root, func(_ string, info os.FileInfo, err error) error {
-		if err == nil && info != nil && !info.IsDir() {
-			total += info.Size()
+	devices := map[string]any{}
+	ents, _ := os.ReadDir(l.Root)
+	for _, e := range ents {
+		if !e.IsDir() {
+			continue
 		}
-		return nil
-	})
-	return map[string]any{"bytes": total, "device": l.DeviceID}, nil
+		name := e.Name()
+		if !protocol.IsValidDeviceID(name) {
+			continue
+		}
+		perSpace := map[string]any{}
+		for _, sp := range []string{"artifacts", "files", "attachments", "backups"} {
+			perSpace[sp] = dirSize(filepath.Join(l.Root, name, sp), true)
+		}
+		devices[name] = perSpace
+	}
+	var stagingBytes int64
+	for deviceID := range devices {
+		for _, sp := range []string{"artifacts", "files", "attachments", "backups"} {
+			stagingBytes += dirSize(filepath.Join(l.Root, deviceID, sp, ".staging"), false)
+		}
+	}
+	out := map[string]any{
+		"devices":       devices,
+		"staging_bytes": stagingBytes,
+		"recycle_bytes": dirSize(filepath.Join(l.Root, ".recycle"), false),
+	}
+	if total, free, ok := probeVolume(l.Root); ok {
+		usedRatio := 0.0
+		if total > 0 {
+			used := total - free
+			if used < 0 {
+				used = 0
+			}
+			if used > total {
+				used = total
+			}
+			usedRatio = float64(used) / float64(total)
+		}
+		out["volume_total_bytes"] = total
+		out["volume_free_bytes"] = free
+		out["volume_used_ratio"] = usedRatio
+		out["volume_warn"] = usedRatio >= 0.8
+	}
+	return out, nil
 }
 
 func (l *Local) recycleList() (map[string]any, error) {
 	dir := filepath.Join(l.Root, ".recycle")
-	ents, _ := os.ReadDir(dir)
 	out := []map[string]any{}
-	for _, e := range ents {
-		if strings.HasSuffix(e.Name(), ".meta.json") {
-			continue
+	_ = filepath.Walk(dir, func(p string, info os.FileInfo, err error) error {
+		if err != nil || info == nil {
+			return nil
 		}
-		info, err := e.Info()
+		if info.IsDir() {
+			if strings.HasPrefix(info.Name(), ".") && info.Name() != ".recycle" {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		rel, err := filepath.Rel(l.Root, p)
 		if err != nil {
-			continue
+			return nil
 		}
-		out = append(out, map[string]any{"name": e.Name(), "size": info.Size()})
+		rel = filepath.ToSlash(rel)
+		parts := strings.Split(rel, "/")
+		// .recycle/<date>/<device>/<space>/<origin...>
+		if len(parts) < 5 || parts[0] != ".recycle" {
+			return nil
+		}
+		date := parts[1]
+		device := parts[2]
+		space := parts[3]
+		originParts := append([]string{}, parts[4:]...)
+		originParts[len(originParts)-1] = stripRecycleSuffix(originParts[len(originParts)-1])
+		out = append(out, map[string]any{
+			"recycle_path":  rel,
+			"origin_device": device,
+			"space":         space,
+			"origin_path":   strings.Join(originParts, "/"),
+			"size":          info.Size(),
+			"deleted_at":    parseRecycleDateMs(date, info.ModTime()),
+		})
+		return nil
+	})
+	// newest first
+	for i := 0; i < len(out); i++ {
+		for j := i + 1; j < len(out); j++ {
+			ai, _ := out[i]["deleted_at"].(int64)
+			aj, _ := out[j]["deleted_at"].(int64)
+			if aj > ai {
+				out[i], out[j] = out[j], out[i]
+			}
+		}
 	}
 	return map[string]any{"entries": out}, nil
 }
 
+func (l *Local) recycleRestore(frame protocol.Frame) (map[string]any, error) {
+	recyclePath, _ := frame.Payload["recycle_path"].(string)
+	normalized := strings.ReplaceAll(recyclePath, "\\", "/")
+	if !strings.HasPrefix(normalized, ".recycle/") || strings.Contains(normalized, "..") {
+		return nil, &OpError{Code: "bad_path", Msg: "invalid recycle path"}
+	}
+	abs := filepath.Join(l.Root, filepath.FromSlash(normalized))
+	if _, err := os.Stat(abs); err != nil {
+		return nil, &OpError{Code: "not_found", Msg: recyclePath}
+	}
+	parts := strings.Split(normalized, "/")
+	if len(parts) < 5 {
+		return nil, &OpError{Code: "bad_path", Msg: "malformed recycle path"}
+	}
+	device := parts[2]
+	space := parts[3]
+	originParts := append([]string{}, parts[4:]...)
+	originParts[len(originParts)-1] = stripRecycleSuffix(originParts[len(originParts)-1])
+	originRel := strings.Join(originParts, "/")
+	dest, err := l.resolve(space, device, originRel)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := os.Stat(dest); err == nil {
+		if _, err := l.moveToRecycle(device, space, originRel); err != nil {
+			return nil, err
+		}
+	}
+	if err := os.MkdirAll(filepath.Dir(dest), 0o755); err != nil {
+		return nil, err
+	}
+	if err := os.Rename(abs, dest); err != nil {
+		return nil, err
+	}
+	l.pruneEmptyRecycleDirs()
+	return map[string]any{"restored": originRel}, nil
+}
+
 func (l *Local) recycleEmpty() (map[string]any, error) {
 	dir := filepath.Join(l.Root, ".recycle")
+	purged := dirSize(dir, false)
 	_ = os.RemoveAll(dir)
 	_ = os.MkdirAll(dir, 0o755)
-	return map[string]any{"ok": true}, nil
+	return map[string]any{"purged_bytes": purged}, nil
+}
+
+func (l *Local) pruneEmptyRecycleDirs() {
+	root := filepath.Join(l.Root, ".recycle")
+	var dirs []string
+	_ = filepath.Walk(root, func(p string, info os.FileInfo, err error) error {
+		if err == nil && info != nil && info.IsDir() && p != root {
+			dirs = append(dirs, p)
+		}
+		return nil
+	})
+	for i := len(dirs) - 1; i >= 0; i-- {
+		_ = os.Remove(dirs[i]) // only succeeds if empty
+	}
+}
+
+func stripRecycleSuffix(name string) string {
+	if i := strings.LastIndex(name, "~"); i > 0 {
+		suffix := name[i+1:]
+		allDigit := len(suffix) >= 10
+		for _, c := range suffix {
+			if c < '0' || c > '9' {
+				allDigit = false
+				break
+			}
+		}
+		if allDigit {
+			return name[:i]
+		}
+	}
+	return name
+}
+
+func parseRecycleDateMs(date string, fallback time.Time) int64 {
+	t, err := time.ParseInLocation("2006-01-02", date, time.Local)
+	if err != nil {
+		return fallback.UnixMilli()
+	}
+	return t.UnixMilli()
+}
+
+func dirSize(path string, skipDotDirs bool) int64 {
+	var total int64
+	_ = filepath.Walk(path, func(p string, info os.FileInfo, err error) error {
+		if err != nil || info == nil {
+			return nil
+		}
+		if info.IsDir() {
+			name := info.Name()
+			if skipDotDirs && strings.HasPrefix(name, ".") && p != path {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		total += info.Size()
+		return nil
+	})
+	return total
 }
 
 func fileSHA(path string) (string, int64) {
