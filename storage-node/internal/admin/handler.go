@@ -41,6 +41,7 @@ func (s *Server) Mount(mux *http.ServeMux) {
 	api.HandleFunc("/peers", s.handlePeers)
 	api.HandleFunc("/peers/remove", s.handlePeerRemove)
 	api.HandleFunc("/gc", s.handleGC)
+	api.HandleFunc("/master/migrate", s.handleMasterMigrate)
 	api.HandleFunc("/devices/purge", s.handleDevicePurge)
 	api.HandleFunc("/devices/wipe-self", s.handleWipeSelf)
 	api.HandleFunc("/browse", s.handleBrowse)
@@ -333,6 +334,19 @@ func (s *Server) handleGC(w http.ResponseWriter, r *http.Request) {
 		"staging_removed": stagingRemoved,
 		"recycle_bytes":   recycleBytes,
 	})
+}
+
+func (s *Server) handleMasterMigrate(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "POST only", http.StatusMethodNotAllowed)
+		return
+	}
+	data, err := s.Store.Handle(protocol.Frame{Op: "master.migrate"}, s.Device, protocol.TrustOwner, true)
+	if err != nil {
+		writeErr(w, err)
+		return
+	}
+	writeJSON(w, data)
 }
 
 func (s *Server) handleDevicePurge(w http.ResponseWriter, r *http.Request) {

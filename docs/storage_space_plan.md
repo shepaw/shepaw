@@ -257,7 +257,7 @@ master 上的镜像树主要是各端本地数据的副本；为降低单点损�
 
 - 常开特性让未同步队列与快照送达不受 PC 休眠影响。
 - 技术：Go（本仓库 `storage-node/`）；协议与 ACL 与 Dart 共用规范。**Noise IK + `/peer/ws` 配对/重连**已接入（与 App 同 suite/prologue；重连可交换 Channel/Local 端点）；**`sync.hello` / `sync.cursors` / `upto_seq` 游标水位**已对齐；提供 loopback HTTP JSON、本机目录树、**`/admin` 无头管理面**。
-- **管理面必须与无头形态匹配**：回收站清空、导入授权审批、升主/用量不能只假设 App 本机 UI。M7 已提供受控 **`/admin` Web 页 + REST**（**Noise 配对 / 解除配对** / **已配对重连** / **分区浏览手删** / **他端镜像手删** / **本机 wipeSelf** / **GC** / 用量 / 回收站 / 换机导入审批；`-admin-token` 或 loopback 鉴权）。配对 QR / `PairingResponse` 可带 **`-channel` / `SHEPAW_CHANNEL_ENDPOINT`** 外网端点。
+- **管理面必须与无头形态匹配**：回收站清空、导入授权审批、升主/用量不能只假设 App 本机 UI。M7 已提供受控 **`/admin` Web 页 + REST**（**Noise 配对 / 解除配对** / **已配对重连** / **分区浏览手删** / **他端镜像手删** / **本机 wipeSelf** / **GC** / **薄升主 `master.migrate`** / 用量 / 回收站 / 换机导入审批；`-admin-token` 或 loopback 鉴权）。配对 QR / `PairingResponse` 可带 **`-channel` / `SHEPAW_CHANNEL_ENDPOINT`** 外网端点。
 - 协议一致性：与 Dart 实现共享攻击/ACL fixture，双端测试全绿（含升主 `seed: true` 读他端私有分区）。
 
 ## 10. 安全
@@ -278,7 +278,7 @@ master 上的镜像树主要是各端本地数据的副本；为降低单点损�
 | M4 本地优先与远程 | ✅ 基本 | `SyncJournal`/`SyncEngine` + 游标；`LocalCas` 仅远端读缓存；tunnel 复用 peer |
 | M5 协作与附件 | ✅ 基本 | `ArtifactService` URI + 编排注入；附件经 store hash 编址 |
 | M6 master 迁移 | ✅ 基本 | 升主/指针/再保护；差量镜像种子 + 内容哈希门闩（软校验，可选硬阻断） |
-| M7 Go 存储节点 | ✅ 基本 | `storage-node/`：目录树+fixture；import/retention；**sync 游标**；**master 指针**；**Noise IK**；**无头 `/admin`（browse/purge/wipe/unpair/gc/volume_warn）** |
+| M7 Go 存储节点 | ✅ 基本 | `storage-node/`：目录树+fixture；import/retention；**sync 游标**；**master 指针/薄升主**；**Noise IK**；**无头 `/admin`（browse/purge/wipe/unpair/gc/volume_warn/升主）** |
 | M8 记忆交换与多 she | ✅ 基本 | `lib/she_network/` + 管理页「她的圈子」；presence **真实 Agent 类别/数量**（非名单） |
 
 代码位置：`lib/storage/`、`lib/she_network/`、`lib/screens/storage_space_screen.dart`；`lib/peer/` 仅帧路由。
@@ -345,3 +345,4 @@ master 上的镜像树主要是各端本地数据的副本；为降低单点损�
 39. Go staging/回收站 GC（启动时自动 + `/admin/api/gc`；对齐 App `gcStaging`/`gcRecycle`）。
 40. Go `master.pointer` / `master.pointer.query`（`.system/master_pointer.json`；按 epoch 改指；`stats.master`/`master_epoch`）；`/peer/ws` 接受 Dart 扁平 store 帧并回 `type/ns/req_id`。
 41. 无头 admin `volume_warn` 横幅（≥80% 卷用量，对齐 App 管理页告警）。
+42. Go 薄升主 `master.migrate`（bump epoch + 写本机指针；无出站种子/哈希门闩/广播，他端靠 `pointer.query`；`/admin/api/master/migrate` + UI）。

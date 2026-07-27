@@ -126,6 +126,8 @@ func (l *Local) Handle(frame protocol.Frame, caller, trust string, loopback bool
 		return l.masterPointerQuery()
 	case "master.pointer":
 		return l.masterPointerApply(frame)
+	case "master.migrate":
+		return l.masterMigrate()
 	default:
 		return nil, &OpError{Code: "bad_op", Msg: frame.Op}
 	}

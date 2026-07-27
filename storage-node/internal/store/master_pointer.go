@@ -82,3 +82,43 @@ func (l *Local) masterPointerApply(frame protocol.Frame) (map[string]any, error)
 	}
 	return map[string]any{"applied": true, "master": master, "epoch": epoch}, nil
 }
+
+// masterMigrate promotes this node to master (thin M7 slice).
+// No outbound seed/hash-gate/broadcast yet — peers learn via master.pointer.query on reconnect.
+func (l *Local) masterMigrate() (map[string]any, error) {
+	cur, err := l.loadPointer()
+	if err != nil {
+		return nil, err
+	}
+	epoch := cur.Epoch + 1
+	if epoch < 1 {
+		epoch = 1
+	}
+	next := masterPointer{Master: l.DeviceID, Epoch: epoch}
+	if err := l.savePointer(next); err != nil {
+		return nil, err
+	}
+	cursorsRaw, err := l.cursors.all()
+	if err != nil {
+		cursorsRaw = map[string]int64{}
+	}
+	cursors := make(map[string]any, len(cursorsRaw))
+	for k, v := range cursorsRaw {
+		cursors[k] = v
+	}
+	return map[string]any{
+		"master":               l.DeviceID,
+		"epoch":                epoch,
+		"old_master_reachable": false,
+		"cursors":              cursors,
+		"broadcast_peers":      0,
+		"seeded_files":         0,
+		"hash_gate": map[string]any{
+			"ran":            false,
+			"ok":             true,
+			"devices":        []any{},
+			"mismatches":     []any{},
+			"mismatch_count": 0,
+		},
+	}, nil
+}

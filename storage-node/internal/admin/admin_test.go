@@ -400,3 +400,54 @@ func TestAdminUI(t *testing.T) {
 		t.Fatalf("unexpected ui response ct=%s len=%d", ct, rec.Body.Len())
 	}
 }
+
+func TestAdminMasterMigrate(t *testing.T) {
+	root := t.TempDir()
+	device := "aaaaaaaaaaaaaaaa"
+	s, err := store.Open(root, device)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = s.Handle(protocol.Frame{
+		Op:      "master.pointer",
+		Payload: map[string]any{"master": "bbbbbbbbbbbbbbbb", "epoch": 1},
+	}, device, protocol.TrustOwner, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv := &admin.Server{
+		Store:  s,
+		Device: device,
+		Auth:   admin.AuthConfig{Token: "secret"},
+	}
+	mux := http.NewServeMux()
+	srv.Mount(mux)
+
+	req := httptest.NewRequest(http.MethodPost, "/admin/api/master/migrate", nil)
+	req.Header.Set("Authorization", "Bearer secret")
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("want 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	var body map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	if body["master"] != device {
+		t.Fatalf("body=%v", body)
+	}
+	if int64(body["epoch"].(float64)) != 2 {
+		t.Fatalf("epoch=%v", body["epoch"])
+	}
+
+	statsReq := httptest.NewRequest(http.MethodGet, "/admin/api/stats", nil)
+	statsReq.Header.Set("Authorization", "Bearer secret")
+	statsRec := httptest.NewRecorder()
+	mux.ServeHTTP(statsRec, statsReq)
+	var stats map[string]any
+	_ = json.Unmarshal(statsRec.Body.Bytes(), &stats)
+	if stats["master"] != device || int64(stats["master_epoch"].(float64)) != 2 {
+		t.Fatalf("stats=%v", stats)
+	}
+}
