@@ -82,7 +82,7 @@
 | 附件 | `attachment_service`、`local_file_storage_service` | 附件改走 store（产品未上线，直接按新模型实现，无存量迁移负担） |
 | 导出 | `data_export_import_service.dart` | 快照序列化/加密的实现基础 |
 | 群组编排 | `lib/services/group/`（orchestration / planning / flow） | 跨端工作流中注入产物引用（6.3） |
-| Go 存储节点 | `storage-node/`（骨架） | M7：协议/目录树已有；Noise 配对与无头管理面待补 |
+| Go 存储节点 | `storage-node/` | M7：协议/目录树、Noise 配对、无头 `/admin` 已落地 |
 
 ## 4. 配对信任分级（预留字段）
 
@@ -251,7 +251,7 @@ master 上的镜像树主要是各端本地数据的副本；为降低单点损�
 - 协议隔离：`she.social.*` 独立命名空间。
 - 已知硬骨头——异步送达：纯 P2P 需双方同时在线；加密信箱哑中继与"无服务端"原则有张力，届时再权衡。
 
-## 9. Go 存储节点（M7，骨架已有）
+## 9. Go 存储节点（M7）
 
 常开 Linux / NAS / 旧主机上的无头节点，职责单一：**master 的最佳人选**。
 
@@ -278,7 +278,7 @@ master 上的镜像树主要是各端本地数据的副本；为降低单点损�
 | M4 本地优先与远程 | ✅ 基本 | `SyncJournal`/`SyncEngine` + 游标；`LocalCas` 仅远端读缓存；tunnel 复用 peer |
 | M5 协作与附件 | ✅ 基本 | `ArtifactService` URI + 编排注入；附件经 store hash 编址 |
 | M6 master 迁移 | ✅ 基本 | 升主/指针/再保护；差量镜像种子 + 内容哈希门闩（软校验，可选硬阻断） |
-| M7 Go 存储节点 | ✅ 基本 | `storage-node/`：目录树+fixture；import/retention；**sync 游标**；**master 指针/薄升主+在线 fanout**；**import.grant 推送**；**Noise IK**；**无头 `/admin`（browse/purge/wipe/unpair/gc/volume_warn/升主）** |
+| M7 Go 存储节点 | ✅ 基本 | `storage-node/`：目录树+fixture；import/retention；**sync 游标**；**master 指针/升主+在线 seed/fanout**；**import.grant 推送/入站**；**Noise IK**；**无头 `/admin`（browse/purge/wipe/unpair/gc/volume_warn/升主/received）** |
 | M8 记忆交换与多 she | ✅ 基本 | `lib/she_network/` + 管理页「她的圈子」；presence **真实 Agent 类别/数量**（非名单） |
 
 代码位置：`lib/storage/`、`lib/she_network/`、`lib/screens/storage_space_screen.dart`；`lib/peer/` 仅帧路由。
@@ -350,3 +350,6 @@ master 上的镜像树主要是各端本地数据的副本；为降低单点损�
 44. 无头 `import.grant` 签发后向请求方在线会话推送（`PushImportGrant`；响应 `pushed`；对齐 App `_pushGrantToRequester`）。
 45. 路径 B 导入授权推送：App `_receivePushedGrant` 采信 payload `old_device`（master 代签时 ≠ 发送方 fingerprint；缺省回退 fromDevice）。
 46. Go 接收无 `req_id` 的 `import.grant` 推送落库（`ReceivePushedGrant`；路径 B 采信 payload `old_device`；不回包）。
+47. 无头 admin 展示已获授权（`role=received`）；方案表去掉「骨架/待补」过时表述。
+48. Go 升主在线 seed：旧 master 在 `SessionRegistry` 时拉 `sync.cursors` + `list`/`read`（`seed: true`）；WS 读循环投递 RPC 回包并并发 Handle。
+49. 并发 Handle 下串行化 Noise `Encrypt`+写 WS（`encryptWrite` / `writeMu`），避免升主 seed 与回包抢 cipher nonce。

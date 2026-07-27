@@ -27,6 +27,7 @@ type Local struct {
 	uploads  map[string]*upload
 	imports  *importAuth
 	cursors  *deviceCursors
+	peerRPC  PeerRPC
 }
 
 type upload struct {

@@ -245,6 +245,18 @@ func (s *Server) serveTransport(conn *websocket.Conn, sess *noise.Session, fp st
 			log.Printf("decrypt: %v", err)
 			return
 		}
+		var raw map[string]any
+		if err := json.Unmarshal(plain, &raw); err != nil {
+			continue
+		}
+		op, _ := raw["op"].(string)
+		reqID, _ := raw["req_id"].(string)
+		// Outbound RPC replies: complete CallStore waiters (must stay on read loop).
+		if (op == "result" || op == "error") && reqID != "" && s.Sessions != nil {
+			if s.Sessions.DeliverReply(fp, reqID, raw) {
+				continue
+			}
+		}
 		op, reqID, payload, ok := parseStoreControl(plain)
 		if !ok {
 			continue
@@ -262,41 +274,58 @@ func (s *Server) serveTransport(conn *websocket.Conn, sess *noise.Session, fp st
 				continue
 			}
 		}
-		data, err := s.Store.Handle(protocol.Frame{Op: op, Payload: payload}, fp, protocol.TrustOwner, false)
-		if err == nil && op == "master.migrate" {
-			s.overlayMigrateBroadcast(data)
-		}
-		var reply map[string]any
-		if err != nil {
-			code := "internal"
-			msg := err.Error()
-			if oe, ok := err.(*store.OpError); ok {
-				code = oe.Code
-				msg = oe.Msg
-			}
-			reply = map[string]any{
-				"type": "store", "ns": "store", "op": "error", "v": 1,
-				"code": code, "message": msg,
-			}
-		} else {
-			reply = map[string]any{
-				"type": "store", "ns": "store", "op": "result", "v": 1,
-				"data": data,
-			}
-		}
-		if reqID != "" {
-			reply["req_id"] = reqID
-		}
-		rawReply, _ := json.Marshal(reply)
-		ct, err := sess.Encrypt(rawReply)
-		if err != nil {
-			return
-		}
-		enc, _ := noise.EncodeFrame(noise.Frame{Type: noise.FrameData, Payload: ct})
-		writeMu.Lock()
-		_ = conn.WriteMessage(websocket.TextMessage, []byte(enc))
-		writeMu.Unlock()
+		// Handle concurrently so migrate can CallStore the same or other sessions.
+		go s.handleStoreRequest(conn, sess, &writeMu, fp, op, reqID, payload)
 	}
+}
+
+func (s *Server) handleStoreRequest(
+	conn *websocket.Conn,
+	sess *noise.Session,
+	writeMu *sync.Mutex,
+	fp, op, reqID string,
+	payload map[string]any,
+) {
+	data, err := s.Store.Handle(protocol.Frame{Op: op, Payload: payload}, fp, protocol.TrustOwner, false)
+	if err == nil && op == "master.migrate" {
+		s.overlayMigrateBroadcast(data)
+	}
+	var reply map[string]any
+	if err != nil {
+		code := "internal"
+		msg := err.Error()
+		if oe, ok := err.(*store.OpError); ok {
+			code = oe.Code
+			msg = oe.Msg
+		}
+		reply = map[string]any{
+			"type": "store", "ns": "store", "op": "error", "v": 1,
+			"code": code, "message": msg,
+		}
+	} else {
+		reply = map[string]any{
+			"type": "store", "ns": "store", "op": "result", "v": 1,
+			"data": data,
+		}
+	}
+	if reqID != "" {
+		reply["req_id"] = reqID
+	}
+	rawReply, _ := json.Marshal(reply)
+	// Encrypt under writeMu: concurrent Handle + CallStore share the send cipher.
+	writeMu.Lock()
+	ct, err := sess.Encrypt(rawReply)
+	if err != nil {
+		writeMu.Unlock()
+		return
+	}
+	enc, encErr := noise.EncodeFrame(noise.Frame{Type: noise.FrameData, Payload: ct})
+	if encErr != nil {
+		writeMu.Unlock()
+		return
+	}
+	_ = conn.WriteMessage(websocket.TextMessage, []byte(enc))
+	writeMu.Unlock()
 }
 
 // overlayMigrateBroadcast fans out master.pointer to live sessions and sets broadcast_peers.

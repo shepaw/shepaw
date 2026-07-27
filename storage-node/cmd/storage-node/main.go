@@ -58,6 +58,7 @@ func main() {
 	sessions := peer.NewSessionRegistry()
 	localEndpoint := peer.AdvertiseLocalWS(*listen)
 	channelEndpoint := strings.TrimSpace(*channel)
+	s.SetPeerRPC(sessions)
 	peerSrv := &peer.Server{
 		Store:           s,
 		Hub:             hub,

@@ -2,7 +2,10 @@ package peer
 
 import (
 	"encoding/json"
+	"fmt"
 	"sync"
+	"sync/atomic"
+	"time"
 
 	"github.com/gorilla/websocket"
 	"github.com/shepaw/storage-node/internal/noise"
@@ -10,17 +13,35 @@ import (
 
 // liveSession is one Noise-encrypted peer WS transport.
 type liveSession struct {
-	fp      string
-	conn    *websocket.Conn
-	sess    *noise.Session
-	writeMu *sync.Mutex
+	fp       string
+	conn     *websocket.Conn
+	sess     *noise.Session
+	writeMu  *sync.Mutex
+	pending  map[string]chan map[string]any
+	pendingM sync.Mutex
+}
+
+// encryptWrite serializes Noise Encrypt + WS write (cipher nonce is not concurrent-safe).
+func (ls *liveSession) encryptWrite(plain []byte) error {
+	ls.writeMu.Lock()
+	defer ls.writeMu.Unlock()
+	ct, err := ls.sess.Encrypt(plain)
+	if err != nil {
+		return err
+	}
+	enc, err := noise.EncodeFrame(noise.Frame{Type: noise.FrameData, Payload: ct})
+	if err != nil {
+		return err
+	}
+	return ls.conn.WriteMessage(websocket.TextMessage, []byte(enc))
 }
 
 // SessionRegistry tracks active /peer/ws transports for push fanout
-// (master.pointer after migrate, future import.grant, etc.).
+// and outbound store RPCs (migrate seed, etc.).
 type SessionRegistry struct {
 	mu   sync.Mutex
 	byFP map[string]*liveSession
+	seq  atomic.Uint64
 }
 
 func NewSessionRegistry() *SessionRegistry {
@@ -34,7 +55,13 @@ func (r *SessionRegistry) Add(fp string, conn *websocket.Conn, sess *noise.Sessi
 	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	r.byFP[fp] = &liveSession{fp: fp, conn: conn, sess: sess, writeMu: writeMu}
+	r.byFP[fp] = &liveSession{
+		fp:      fp,
+		conn:    conn,
+		sess:    sess,
+		writeMu: writeMu,
+		pending: map[string]chan map[string]any{},
+	}
 }
 
 // Remove drops the session only if conn still matches (reconnect-safe).
@@ -49,6 +76,12 @@ func (r *SessionRegistry) Remove(fp string, conn *websocket.Conn) {
 		return
 	}
 	delete(r.byFP, fp)
+	cur.pendingM.Lock()
+	for id, ch := range cur.pending {
+		close(ch)
+		delete(cur.pending, id)
+	}
+	cur.pendingM.Unlock()
 }
 
 // Len returns the number of registered sessions.
@@ -59,6 +92,111 @@ func (r *SessionRegistry) Len() int {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	return len(r.byFP)
+}
+
+// Has reports whether a live session exists for device fingerprint.
+func (r *SessionRegistry) Has(deviceID string) bool {
+	if r == nil || deviceID == "" {
+		return false
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	_, ok := r.byFP[deviceID]
+	return ok
+}
+
+func (r *SessionRegistry) get(fp string) *liveSession {
+	if r == nil {
+		return nil
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.byFP[fp]
+}
+
+// DeliverReply completes a pending CallStore waiter. Returns true if delivered.
+func (r *SessionRegistry) DeliverReply(fp, reqID string, msg map[string]any) bool {
+	ls := r.get(fp)
+	if ls == nil || reqID == "" {
+		return false
+	}
+	ls.pendingM.Lock()
+	ch := ls.pending[reqID]
+	if ch != nil {
+		delete(ls.pending, reqID)
+	}
+	ls.pendingM.Unlock()
+	if ch == nil {
+		return false
+	}
+	select {
+	case ch <- msg:
+	default:
+	}
+	return true
+}
+
+// Call invokes a store op on a live peer and waits for result/error (PeerRPC).
+func (r *SessionRegistry) Call(deviceID, op string, payload map[string]any) (map[string]any, error) {
+	return r.CallStore(deviceID, op, payload, 20*time.Second)
+}
+
+// CallStore sends a flat Dart-style store frame and waits for the matching reply.
+func (r *SessionRegistry) CallStore(fp, op string, payload map[string]any, timeout time.Duration) (map[string]any, error) {
+	ls := r.get(fp)
+	if ls == nil {
+		return nil, fmt.Errorf("peer offline: %s", fp)
+	}
+	if payload == nil {
+		payload = map[string]any{}
+	}
+	reqID := fmt.Sprintf("rpc-%d", r.seq.Add(1))
+	frame := map[string]any{
+		"type": "store", "ns": "store", "op": op, "v": 1, "req_id": reqID,
+	}
+	for k, v := range payload {
+		frame[k] = v
+	}
+	raw, err := json.Marshal(frame)
+	if err != nil {
+		return nil, err
+	}
+	ch := make(chan map[string]any, 1)
+	ls.pendingM.Lock()
+	ls.pending[reqID] = ch
+	ls.pendingM.Unlock()
+	defer func() {
+		ls.pendingM.Lock()
+		delete(ls.pending, reqID)
+		ls.pendingM.Unlock()
+	}()
+
+	if err := ls.encryptWrite(raw); err != nil {
+		return nil, err
+	}
+
+	timer := time.NewTimer(timeout)
+	defer timer.Stop()
+	select {
+	case msg, ok := <-ch:
+		if !ok || msg == nil {
+			return nil, fmt.Errorf("session closed")
+		}
+		if msg["op"] == "error" {
+			code, _ := msg["code"].(string)
+			m, _ := msg["message"].(string)
+			if code == "" {
+				code = "internal"
+			}
+			return nil, fmt.Errorf("%s: %s", code, m)
+		}
+		if data, ok := msg["data"].(map[string]any); ok {
+			return data, nil
+		}
+		return map[string]any{}, nil
+	case <-timer.C:
+		return nil, fmt.Errorf("timeout calling %s on %s", op, fp)
+	}
 }
 
 // FanoutJSON encrypts and sends a store control JSON object to every live session.
@@ -80,18 +218,7 @@ func (r *SessionRegistry) FanoutJSON(plain map[string]any) int {
 
 	n := 0
 	for _, ls := range sessions {
-		ct, err := ls.sess.Encrypt(raw)
-		if err != nil {
-			continue
-		}
-		enc, err := noise.EncodeFrame(noise.Frame{Type: noise.FrameData, Payload: ct})
-		if err != nil {
-			continue
-		}
-		ls.writeMu.Lock()
-		err = ls.conn.WriteMessage(websocket.TextMessage, []byte(enc))
-		ls.writeMu.Unlock()
-		if err == nil {
+		if err := ls.encryptWrite(raw); err == nil {
 			n++
 		}
 	}
@@ -115,24 +242,11 @@ func (r *SessionRegistry) SendJSON(fp string, plain map[string]any) bool {
 	if err != nil {
 		return false
 	}
-	r.mu.Lock()
-	ls := r.byFP[fp]
-	r.mu.Unlock()
+	ls := r.get(fp)
 	if ls == nil {
 		return false
 	}
-	ct, err := ls.sess.Encrypt(raw)
-	if err != nil {
-		return false
-	}
-	enc, err := noise.EncodeFrame(noise.Frame{Type: noise.FrameData, Payload: ct})
-	if err != nil {
-		return false
-	}
-	ls.writeMu.Lock()
-	err = ls.conn.WriteMessage(websocket.TextMessage, []byte(enc))
-	ls.writeMu.Unlock()
-	return err == nil
+	return ls.encryptWrite(raw) == nil
 }
 
 // PushImportGrant sends a no-req_id import.grant notification to the requester (new_device).

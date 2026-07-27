@@ -56,7 +56,7 @@ td, th { text-align: left; padding: .35rem .25rem; border-bottom: 1px solid
       <button id="promoteMaster">升为本机 master</button>
     </div>
     <div class="row" style="justify-content:space-between;margin-bottom:.5rem">
-      <span class="muted">启动时会自动 GC；也可手动触发。升主后会向在线 /peer/ws 会话 fanout master.pointer；离线端靠重连 query 改指（无种子/哈希门闩）。</span>
+      <span class="muted">启动时会自动 GC；也可手动触发。升主时若旧 master 在线会经 /peer/ws 拉游标与镜像种子；并 fanout master.pointer。离线端靠重连 query 改指。</span>
       <button id="runGc">GC staging/回收站</button>
     </div>
     <pre id="stats">…</pre>
@@ -87,6 +87,9 @@ td, th { text-align: left; padding: .35rem .25rem; border-bottom: 1px solid
     <div id="imports"></div>
     <h2 style="margin-top:1rem">已签发授权</h2>
     <pre id="issued" class="muted">…</pre>
+    <h2 style="margin-top:1rem">已获授权</h2>
+    <p class="muted">本节点作为新设备收到的推送（路径 A/B；对齐 App import_received）。</p>
+    <pre id="received" class="muted">…</pre>
   </div>
   <div class="card">
     <div class="row" style="justify-content:space-between">
@@ -303,7 +306,13 @@ async function refresh() {
       });
     }
     const issued = await api('/admin/api/import/grants?role=issued');
-    $('issued').textContent = JSON.stringify(issued.grants || [], null, 2);
+    const issuedList = issued.grants || [];
+    $('issued').textContent = issuedList.length
+      ? JSON.stringify(issuedList, null, 2) : '（无）';
+    const received = await api('/admin/api/import/grants?role=received');
+    const receivedList = received.grants || [];
+    $('received').textContent = receivedList.length
+      ? JSON.stringify(receivedList, null, 2) : '（无）';
 
     const rec = await api('/admin/api/recycle');
     const entries = rec.entries || [];
@@ -403,7 +412,9 @@ $('promoteMaster').onclick = async () => {
   try {
     const out = await api('/admin/api/master/migrate', {method:'POST'});
     alert('已升主：' + shortId(out.master) + ' · epoch ' + out.epoch +
-      ' · 已推送 ' + (out.broadcast_peers||0) + ' 个在线会话');
+      ' · 推送 ' + (out.broadcast_peers||0) +
+      ' · 种子文件 ' + (out.seeded_files||0) +
+      (out.old_master_reachable ? '（旧 master 在线）' : '（旧 master 未在线）'));
     refresh();
   } catch (e) { $('msg').textContent = String(e.message||e); }
 };

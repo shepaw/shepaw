@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/shepaw/storage-node/internal/admin"
@@ -403,6 +404,55 @@ func TestAdminUI(t *testing.T) {
 	}
 	if ct := rec.Header().Get("Content-Type"); ct == "" || rec.Body.Len() < 100 {
 		t.Fatalf("unexpected ui response ct=%s len=%d", ct, rec.Body.Len())
+	}
+	body := rec.Body.String()
+	if !strings.Contains(body, "已获授权") || !strings.Contains(body, `id="received"`) {
+		t.Fatal("ui missing received grants section")
+	}
+	if !strings.Contains(body, "role=received") {
+		t.Fatal("ui should fetch role=received")
+	}
+}
+
+func TestAdminImportGrantsReceived(t *testing.T) {
+	root := t.TempDir()
+	device := "aaaaaaaaaaaaaaaa"
+	s, err := store.Open(root, device)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.ReceivePushedGrant("eeeeeeeeeeeeeeee", map[string]any{
+		"grant_id":   "ig-admin-recv",
+		"old_device": "dddddddddddddddd",
+		"spaces":     []string{"backups"},
+		"issued_at":  int64(1),
+		"expires_at": int64(9999999999999),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	srv := &admin.Server{
+		Store:  s,
+		Device: device,
+		Auth:   admin.AuthConfig{Token: "t"},
+	}
+	mux := http.NewServeMux()
+	srv.Mount(mux)
+	req := httptest.NewRequest(http.MethodGet, "/admin/api/import/grants?role=received", nil)
+	req.Header.Set("Authorization", "Bearer t")
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	var out map[string]any
+	_ = json.Unmarshal(rec.Body.Bytes(), &out)
+	grants, _ := out["grants"].([]any)
+	if len(grants) != 1 {
+		t.Fatalf("out=%v", out)
+	}
+	g := grants[0].(map[string]any)
+	if g["grant_id"] != "ig-admin-recv" || g["old_device"] != "dddddddddddddddd" {
+		t.Fatalf("g=%v", g)
 	}
 }
 
