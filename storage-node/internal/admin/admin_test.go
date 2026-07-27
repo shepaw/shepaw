@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/shepaw/storage-node/internal/admin"
+	"github.com/shepaw/storage-node/internal/peer"
 	"github.com/shepaw/storage-node/internal/protocol"
 	"github.com/shepaw/storage-node/internal/store"
 )
@@ -322,6 +323,55 @@ func TestAdminWipeSelfAPI(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(dir, "a.txt")); !os.IsNotExist(err) {
 		t.Fatal("file should be wiped")
+	}
+}
+
+func TestAdminPeerRemoveAndGC(t *testing.T) {
+	root := t.TempDir()
+	self := "aaaaaaaaaaaaaaaa"
+	s, err := store.Open(root, self)
+	if err != nil {
+		t.Fatal(err)
+	}
+	peers := peer.NewStore(root)
+	_ = peers.Upsert(peer.Peer{
+		Fingerprint: "bbbbbbbbbbbbbbbb",
+		PublicKeyB64: "x",
+		DeviceName:  "phone",
+		PeerID:      "peer-1",
+		TrustLevel:  protocol.TrustOwner,
+		PairedAtMs:  peer.NowMs(),
+	})
+
+	srv := &admin.Server{
+		Store:  s,
+		Device: self,
+		Auth:   admin.AuthConfig{Token: "t"},
+		Peers:  peers,
+	}
+	mux := http.NewServeMux()
+	srv.Mount(mux)
+
+	body, _ := json.Marshal(map[string]string{"fingerprint": "bbbbbbbbbbbbbbbb"})
+	req := httptest.NewRequest(http.MethodPost, "/admin/api/peers/remove", bytes.NewReader(body))
+	req.Header.Set("Authorization", "Bearer t")
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("remove: %d %s", rec.Code, rec.Body.String())
+	}
+	list, _ := peers.List()
+	if len(list) != 0 {
+		t.Fatalf("peers=%v", list)
+	}
+
+	req = httptest.NewRequest(http.MethodPost, "/admin/api/gc", nil)
+	req.Header.Set("Authorization", "Bearer t")
+	rec = httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("gc: %d %s", rec.Code, rec.Body.String())
 	}
 }
 

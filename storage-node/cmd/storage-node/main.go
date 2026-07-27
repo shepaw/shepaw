@@ -43,6 +43,16 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
+	if n, err := s.GcStaging(0); err != nil {
+		log.Printf("gc staging: %v", err)
+	} else if n > 0 {
+		log.Printf("gc staging: removed %d abandoned uploads", n)
+	}
+	if b, err := s.GcRecycle(0); err != nil {
+		log.Printf("gc recycle: %v", err)
+	} else if b > 0 {
+		log.Printf("gc recycle: purged %d bytes", b)
+	}
 	peers := peer.NewStore(*root)
 	hub := peer.NewPairingHub(identity, peers, *deviceName)
 	localEndpoint := peer.AdvertiseLocalWS(*listen)

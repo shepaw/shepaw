@@ -39,6 +39,8 @@ func (s *Server) Mount(mux *http.ServeMux) {
 	api.HandleFunc("/pairing/pending", s.handlePairingPending)
 	api.HandleFunc("/pairing/decide", s.handlePairingDecide)
 	api.HandleFunc("/peers", s.handlePeers)
+	api.HandleFunc("/peers/remove", s.handlePeerRemove)
+	api.HandleFunc("/gc", s.handleGC)
 	api.HandleFunc("/devices/purge", s.handleDevicePurge)
 	api.HandleFunc("/devices/wipe-self", s.handleWipeSelf)
 	api.HandleFunc("/browse", s.handleBrowse)
@@ -281,6 +283,56 @@ func (s *Server) handlePeers(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, map[string]any{"peers": peers})
+}
+
+func (s *Server) handlePeerRemove(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "POST only", http.StatusMethodNotAllowed)
+		return
+	}
+	if s.Peers == nil {
+		http.Error(w, "peers unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	var body struct {
+		Fingerprint string `json:"fingerprint"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.Fingerprint == "" {
+		http.Error(w, "fingerprint required", http.StatusBadRequest)
+		return
+	}
+	ok, err := s.Peers.Remove(body.Fingerprint)
+	if err != nil {
+		writeErr(w, err)
+		return
+	}
+	if !ok {
+		writeJSON(w, map[string]any{"ok": false, "error": "not_found"})
+		return
+	}
+	writeJSON(w, map[string]any{"ok": true, "fingerprint": body.Fingerprint})
+}
+
+func (s *Server) handleGC(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "POST only", http.StatusMethodNotAllowed)
+		return
+	}
+	stagingRemoved, err := s.Store.GcStaging(0)
+	if err != nil {
+		writeErr(w, err)
+		return
+	}
+	recycleBytes, err := s.Store.GcRecycle(0)
+	if err != nil {
+		writeErr(w, err)
+		return
+	}
+	writeJSON(w, map[string]any{
+		"ok":              true,
+		"staging_removed": stagingRemoved,
+		"recycle_bytes":   recycleBytes,
+	})
 }
 
 func (s *Server) handleDevicePurge(w http.ResponseWriter, r *http.Request) {

@@ -41,10 +41,14 @@ td, th { text-align: left; padding: .35rem .25rem; border-bottom: 1px solid
     <pre id="pairInfo" class="muted">点击「开始配对」生成 QR / 配对码，用 App 扫描后在此批准。</pre>
     <div id="pairPending"></div>
     <h2 style="margin-top:1rem">已配对设备</h2>
-    <pre id="peers" class="muted">…</pre>
+    <div id="peers"></div>
   </div>
   <div class="card">
     <h2>用量 stats</h2>
+    <div class="row" style="justify-content:space-between;margin-bottom:.5rem">
+      <span class="muted">启动时会自动 GC；也可手动触发。</span>
+      <button id="runGc">GC staging/回收站</button>
+    </div>
     <pre id="stats">…</pre>
     <h2 style="margin-top:1rem">设备镜像</h2>
     <p class="muted">永久删除他端镜像目录（不可进回收站；禁删本机）。</p>
@@ -175,7 +179,32 @@ async function refresh() {
 
     try {
       const peers = await api('/admin/api/peers');
-      $('peers').textContent = JSON.stringify(peers.peers || [], null, 2);
+      const plist = peers.peers || [];
+      if (!plist.length) {
+        $('peers').innerHTML = '<p class="muted">暂无已配对设备</p>';
+      } else {
+        let phtml = '<table><thead><tr><th>名称</th><th>fingerprint</th><th></th></tr></thead><tbody>';
+        for (const p of plist) {
+          phtml += '<tr><td>' + (p.device_name||'') +
+            '</td><td>' + shortId(p.fingerprint) +
+            '</td><td><button data-fp="' + (p.fingerprint||'') +
+            '" class="unpair">解除配对</button></td></tr>';
+        }
+        phtml += '</tbody></table>';
+        $('peers').innerHTML = phtml;
+        document.querySelectorAll('.unpair').forEach(btn => {
+          btn.onclick = async () => {
+            if (!confirm('解除配对 ' + shortId(btn.dataset.fp) + '？')) return;
+            try {
+              await api('/admin/api/peers/remove', {
+                method:'POST', headers:{'Content-Type':'application/json'},
+                body: JSON.stringify({fingerprint: btn.dataset.fp})
+              });
+              refresh();
+            } catch (e) { $('msg').textContent = String(e.message||e); }
+          };
+        });
+      }
       const pendingPair = await api('/admin/api/pairing/pending');
       const p = pendingPair.pending;
       if (!p) {
@@ -338,6 +367,14 @@ async function loadBrowse() {
   } catch (e) { $('msg').textContent = String(e.message||e); }
 }
 $('browseLoad').onclick = loadBrowse;
+$('runGc').onclick = async () => {
+  try {
+    const out = await api('/admin/api/gc', {method:'POST'});
+    alert('GC 完成：staging 清理 ' + (out.staging_removed||0) +
+      ' 个，回收站释放 ' + fmtBytes(out.recycle_bytes));
+    refresh();
+  } catch (e) { $('msg').textContent = String(e.message||e); }
+};
 $('wipeSelf').onclick = async () => {
   const confirm = ($('wipeConfirm').value || '').trim();
   if (confirm !== 'DELETE') {

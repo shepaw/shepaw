@@ -560,6 +560,53 @@ func TestSyncHelloAndUptoSeq(t *testing.T) {
 	}
 }
 
+func TestGcStagingAndRecycle(t *testing.T) {
+	root := t.TempDir()
+	device := "aaaaaaaaaaaaaaaa"
+	s, err := store.Open(root, device)
+	if err != nil {
+		t.Fatal(err)
+	}
+	oldStaging := filepath.Join(root, device, "files", ".staging", "old-upload")
+	if err := os.MkdirAll(oldStaging, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	_ = os.WriteFile(filepath.Join(oldStaging, "blob"), []byte("x"), 0o644)
+	oldTime := time.Now().Add(-48 * time.Hour)
+	_ = os.Chtimes(oldStaging, oldTime, oldTime)
+
+	fresh := filepath.Join(root, device, "files", ".staging", "fresh-upload")
+	_ = os.MkdirAll(fresh, 0o755)
+
+	n, err := s.GcStaging(24 * time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n != 1 {
+		t.Fatalf("staging removed=%d", n)
+	}
+	if _, err := os.Stat(oldStaging); !os.IsNotExist(err) {
+		t.Fatal("old staging should be gone")
+	}
+	if _, err := os.Stat(fresh); err != nil {
+		t.Fatal("fresh staging should remain")
+	}
+
+	oldRecycle := filepath.Join(root, ".recycle", "2020-01-01", device, "files")
+	_ = os.MkdirAll(oldRecycle, 0o755)
+	_ = os.WriteFile(filepath.Join(oldRecycle, "gone.txt"), []byte("bye"), 0o644)
+	b, err := s.GcRecycle(30 * 24 * time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if b <= 0 {
+		t.Fatalf("recycle purged=%d", b)
+	}
+	if _, err := os.Stat(filepath.Join(root, ".recycle", "2020-01-01")); !os.IsNotExist(err) {
+		t.Fatal("old recycle date dir should be gone")
+	}
+}
+
 func TestPurgeDeviceNotFound(t *testing.T) {
 	root := t.TempDir()
 	self := "aaaaaaaaaaaaaaaa"

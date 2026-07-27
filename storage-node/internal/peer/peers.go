@@ -88,6 +88,29 @@ func (s *Store) Get(fp string) (*Peer, error) {
 	return nil, nil
 }
 
+// Remove deletes a paired peer by fingerprint. Returns false if not found.
+func (s *Store) Remove(fp string) (bool, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	peers, err := s.load()
+	if err != nil {
+		return false, err
+	}
+	out := make([]Peer, 0, len(peers))
+	found := false
+	for _, x := range peers {
+		if x.Fingerprint == fp {
+			found = true
+			continue
+		}
+		out = append(out, x)
+	}
+	if !found {
+		return false, nil
+	}
+	return true, s.save(out)
+}
+
 func (s *Store) load() ([]Peer, error) {
 	raw, err := os.ReadFile(s.path)
 	if err != nil {
