@@ -275,11 +275,16 @@ async function refresh() {
       document.querySelectorAll('.grant').forEach(btn => {
         btn.onclick = async () => {
           try {
-            await api('/admin/api/import/grant', {
+            const out = await api('/admin/api/import/grant', {
               method: 'POST',
               headers: {'Content-Type':'application/json'},
               body: JSON.stringify({request_id: btn.dataset.id})
             });
+            if (out.pushed) {
+              $('msg').textContent = '';
+            } else {
+              $('msg').textContent = '已签发；请求方当前不在线，待其重连后自行拉取/再授权推送。';
+            }
             refresh();
           } catch (e) { $('msg').textContent = String(e.message||e); }
         };

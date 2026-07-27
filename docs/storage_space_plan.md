@@ -278,7 +278,7 @@ master 上的镜像树主要是各端本地数据的副本；为降低单点损�
 | M4 本地优先与远程 | ✅ 基本 | `SyncJournal`/`SyncEngine` + 游标；`LocalCas` 仅远端读缓存；tunnel 复用 peer |
 | M5 协作与附件 | ✅ 基本 | `ArtifactService` URI + 编排注入；附件经 store hash 编址 |
 | M6 master 迁移 | ✅ 基本 | 升主/指针/再保护；差量镜像种子 + 内容哈希门闩（软校验，可选硬阻断） |
-| M7 Go 存储节点 | ✅ 基本 | `storage-node/`：目录树+fixture；import/retention；**sync 游标**；**master 指针/薄升主+在线 fanout**；**Noise IK**；**无头 `/admin`（browse/purge/wipe/unpair/gc/volume_warn/升主）** |
+| M7 Go 存储节点 | ✅ 基本 | `storage-node/`：目录树+fixture；import/retention；**sync 游标**；**master 指针/薄升主+在线 fanout**；**import.grant 推送**；**Noise IK**；**无头 `/admin`（browse/purge/wipe/unpair/gc/volume_warn/升主）** |
 | M8 记忆交换与多 she | ✅ 基本 | `lib/she_network/` + 管理页「她的圈子」；presence **真实 Agent 类别/数量**（非名单） |
 
 代码位置：`lib/storage/`、`lib/she_network/`、`lib/screens/storage_space_screen.dart`；`lib/peer/` 仅帧路由。
@@ -347,3 +347,4 @@ master 上的镜像树主要是各端本地数据的副本；为降低单点损�
 41. 无头 admin `volume_warn` 横幅（≥80% 卷用量，对齐 App 管理页告警）。
 42. Go 薄升主 `master.migrate`（bump epoch + 写本机指针；无出站种子/哈希门闩/广播，他端靠 `pointer.query`；`/admin/api/master/migrate` + UI）。
 43. 在线会话 registry + 升主后 fanout `master.pointer`（`SessionRegistry`；`broadcast_peers` 为送达数；离线端仍靠 query）。
+44. 无头 `import.grant` 签发后向请求方在线会话推送（`PushImportGrant`；响应 `pushed`；对齐 App `_pushGrantToRequester`）。

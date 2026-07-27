@@ -181,6 +181,11 @@ func TestAdminImportGrant(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("grant: %d %s", rec.Code, rec.Body.String())
 	}
+	var grantBody map[string]any
+	_ = json.Unmarshal(rec.Body.Bytes(), &grantBody)
+	if grantBody["pushed"] != false {
+		t.Fatalf("offline requester should not be pushed: %v", grantBody)
+	}
 }
 
 func TestAdminDevicePurge(t *testing.T) {

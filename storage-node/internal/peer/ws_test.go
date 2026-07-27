@@ -503,3 +503,118 @@ func TestMigrateFanoutMasterPointer(t *testing.T) {
 		t.Fatalf("pointer must not have req_id: %v", msgB)
 	}
 }
+
+func TestImportGrantPushToRequester(t *testing.T) {
+	root := t.TempDir()
+	nodeID, err := noise.LoadOrCreate(root + "/node.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	newID, err := noise.LoadOrCreate(root + "/new.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	oldDev := "cccccccccccccccc"
+	st, err := store.Open(root+"/data", nodeID.Fingerprint())
+	if err != nil {
+		t.Fatal(err)
+	}
+	peers := NewStore(root)
+	if err := peers.Upsert(Peer{
+		Fingerprint:  newID.Fingerprint(),
+		PublicKeyB64: newID.PublicKeyBase64(),
+		DeviceName:   "new-phone",
+		PeerID:       "peer-new",
+		TrustLevel:   protocol.TrustOwner,
+		PairedAtMs:   NowMs(),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	sessions := NewSessionRegistry()
+	srv := &Server{
+		Store:      st,
+		Hub:        NewPairingHub(nodeID, peers, "node"),
+		Peers:      peers,
+		Sessions:   sessions,
+		Identity:   nodeID,
+		DeviceName: "node",
+	}
+	hs := httptest.NewServer(http.HandlerFunc(srv.HandleWS))
+	defer hs.Close()
+	wsURL := "ws" + strings.TrimPrefix(hs.URL, "http") + "/peer/ws"
+
+	conn, _, err := websocket.DefaultDialer.Dial(wsURL, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	initSess, err := noise.NewInitiator(newID, nodeID.PublicKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	msg1, err := initSess.WriteHandshake1([]byte(`{"type":"reconnect"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	frame1, _ := noise.EncodeFrame(noise.Frame{Type: noise.FrameHS, Payload: msg1})
+	_ = conn.WriteMessage(websocket.TextMessage, []byte(frame1))
+	_ = conn.SetReadDeadline(time.Now().Add(5 * time.Second))
+	_, raw2, err := conn.ReadMessage()
+	if err != nil {
+		t.Fatal(err)
+	}
+	fr2, _ := noise.DecodeFrame(string(raw2))
+	if _, err := initSess.ReadHandshake2(fr2.Payload); err != nil {
+		t.Fatal(err)
+	}
+	deadline := time.Now().Add(2 * time.Second)
+	for sessions.Len() < 1 && time.Now().Before(deadline) {
+		time.Sleep(20 * time.Millisecond)
+	}
+
+	created, err := st.Handle(protocol.Frame{
+		Op:      "import.request",
+		Payload: map[string]any{"old_device": oldDev},
+	}, newID.Fingerprint(), protocol.TrustOwner, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	requestID := created["request_id"].(string)
+
+	granted, err := st.Handle(protocol.Frame{
+		Op:      "import.grant",
+		Payload: map[string]any{"request_id": requestID},
+	}, nodeID.Fingerprint(), protocol.TrustOwner, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	grant, _ := granted["grant"].(map[string]any)
+	if !sessions.PushImportGrant(grant) {
+		t.Fatal("expected push to online requester")
+	}
+
+	_ = conn.SetReadDeadline(time.Now().Add(5 * time.Second))
+	_, rawP, err := conn.ReadMessage()
+	if err != nil {
+		t.Fatal(err)
+	}
+	frP, _ := noise.DecodeFrame(string(rawP))
+	plain, err := initSess.Decrypt(frP.Payload)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var msg map[string]any
+	_ = json.Unmarshal(plain, &msg)
+	if msg["op"] != "import.grant" {
+		t.Fatalf("msg=%v", msg)
+	}
+	if _, has := msg["req_id"]; has {
+		t.Fatalf("must not have req_id: %v", msg)
+	}
+	if msg["grant_id"] != grant["grant_id"] {
+		t.Fatalf("grant_id mismatch %v vs %v", msg["grant_id"], grant["grant_id"])
+	}
+	if msg["old_device"] != oldDev {
+		t.Fatalf("old_device=%v", msg["old_device"])
+	}
+}

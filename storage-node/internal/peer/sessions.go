@@ -105,3 +105,52 @@ func (r *SessionRegistry) FanoutMasterPointer(master string, epoch int64, fromDe
 		"master": master, "epoch": epoch, "from": fromDevice,
 	})
 }
+
+// SendJSON encrypts and sends a store control JSON object to one live session by fingerprint.
+func (r *SessionRegistry) SendJSON(fp string, plain map[string]any) bool {
+	if r == nil || fp == "" || plain == nil {
+		return false
+	}
+	raw, err := json.Marshal(plain)
+	if err != nil {
+		return false
+	}
+	r.mu.Lock()
+	ls := r.byFP[fp]
+	r.mu.Unlock()
+	if ls == nil {
+		return false
+	}
+	ct, err := ls.sess.Encrypt(raw)
+	if err != nil {
+		return false
+	}
+	enc, err := noise.EncodeFrame(noise.Frame{Type: noise.FrameData, Payload: ct})
+	if err != nil {
+		return false
+	}
+	ls.writeMu.Lock()
+	err = ls.conn.WriteMessage(websocket.TextMessage, []byte(enc))
+	ls.writeMu.Unlock()
+	return err == nil
+}
+
+// PushImportGrant sends a no-req_id import.grant notification to the requester (new_device).
+// Payload shape matches Dart StoreService._pushGrantToRequester.
+func (r *SessionRegistry) PushImportGrant(grant map[string]any) bool {
+	if grant == nil {
+		return false
+	}
+	newDevice, _ := grant["new_device"].(string)
+	if newDevice == "" {
+		return false
+	}
+	return r.SendJSON(newDevice, map[string]any{
+		"type": "store", "ns": "store", "op": "import.grant", "v": 1,
+		"grant_id":   grant["grant_id"],
+		"old_device": grant["old_device"],
+		"spaces":     grant["spaces"],
+		"issued_at":  grant["issued_at"],
+		"expires_at": grant["expires_at"],
+	})
+}

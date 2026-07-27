@@ -160,6 +160,11 @@ func (s *Server) handleImportGrant(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, err)
 		return
 	}
+	pushed := false
+	if grant, ok := data["grant"].(map[string]any); ok && s.Sessions != nil {
+		pushed = s.Sessions.PushImportGrant(grant)
+	}
+	data["pushed"] = pushed
 	writeJSON(w, data)
 }
 
