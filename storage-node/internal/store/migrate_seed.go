@@ -7,6 +7,8 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"sort"
+	"strings"
 
 	"github.com/shepaw/storage-node/internal/protocol"
 )
@@ -17,9 +19,12 @@ type PeerRPC interface {
 	Call(deviceID, op string, payload map[string]any) (map[string]any, error)
 }
 
-const mirrorSeedListLimit = 50000
+const (
+	mirrorSeedListLimit       = 50000
+	maxReportedHashMismatches = 50
+)
 
-// SetPeerRPC attaches live-session RPC used by master.migrate seed.
+// SetPeerRPC attaches live-session RPC used by master.migrate seed / hash gate.
 func (l *Local) SetPeerRPC(rpc PeerRPC) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
@@ -48,24 +53,49 @@ func (l *Local) MergeCursors(seed map[string]int64) (map[string]int64, error) {
 	return l.cursors.all()
 }
 
+// skippedHashGate matches Dart HashGateResult.skipped().
+func skippedHashGate() map[string]any {
+	return map[string]any{
+		"ran":            false,
+		"ok":             true,
+		"devices":        []any{},
+		"mismatches":     []any{},
+		"mismatch_count": 0,
+	}
+}
+
 // masterMigrate promotes this node to master.
 // When PeerRPC is set and the previous master is online, pulls sync.cursors and
-// mirror files via seed:true before bumping the pointer.
-func (l *Local) masterMigrate() (map[string]any, error) {
+// mirror files via seed:true, then runs a soft MirrorHashGate before bumping.
+// Payload require_hash_match=true hard-blocks on mismatches (Dart promoteSelf).
+func (l *Local) masterMigrate(frame protocol.Frame) (map[string]any, error) {
 	cur, err := l.loadPointer()
 	if err != nil {
 		return nil, err
 	}
+	requireMatch, _ := frame.Payload["require_hash_match"].(bool)
 	oldMaster := cur.Master
 	reachable := false
 	seededFiles := 0
+	hashGate := skippedHashGate()
 	rpc := l.getPeerRPC()
 	if rpc != nil && protocol.IsValidDeviceID(oldMaster) && oldMaster != l.DeviceID && rpc.Has(oldMaster) {
-		if n, err := l.seedFromLiveMaster(rpc, oldMaster); err != nil {
+		n, deviceIDs, err := l.seedFromLiveMaster(rpc, oldMaster)
+		if err != nil {
 			log.Printf("master.migrate seed from %s: %v", oldMaster, err)
 		} else {
 			reachable = true
 			seededFiles = n
+			hashGate = l.runHashGate(rpc, oldMaster, deviceIDs)
+			if requireMatch {
+				ok, _ := hashGate["ok"].(bool)
+				if !ok {
+					return nil, &OpError{
+						Code: "hash_gate",
+						Msg:  "hash gate failed: mismatches present",
+					}
+				}
+			}
 		}
 	}
 
@@ -92,20 +122,14 @@ func (l *Local) masterMigrate() (map[string]any, error) {
 		"cursors":              cursors,
 		"broadcast_peers":      0,
 		"seeded_files":         seededFiles,
-		"hash_gate": map[string]any{
-			"ran":            false,
-			"ok":             true,
-			"devices":        []any{},
-			"mismatches":     []any{},
-			"mismatch_count": 0,
-		},
+		"hash_gate":            hashGate,
 	}, nil
 }
 
-func (l *Local) seedFromLiveMaster(rpc PeerRPC, oldMaster string) (int, error) {
+func (l *Local) seedFromLiveMaster(rpc PeerRPC, oldMaster string) (int, []string, error) {
 	cursorsData, err := rpc.Call(oldMaster, "sync.cursors", map[string]any{})
 	if err != nil {
-		return 0, err
+		return 0, nil, err
 	}
 	seed := map[string]int64{}
 	if raw, ok := cursorsData["cursors"].(map[string]any); ok {
@@ -114,26 +138,30 @@ func (l *Local) seedFromLiveMaster(rpc PeerRPC, oldMaster string) (int, error) {
 		}
 	}
 	if _, err := l.MergeCursors(seed); err != nil {
-		return 0, err
+		return 0, nil, err
 	}
 
-	deviceIDs := map[string]struct{}{}
+	deviceSet := map[string]struct{}{}
 	for id := range seed {
-		deviceIDs[id] = struct{}{}
+		deviceSet[id] = struct{}{}
 	}
 	if stats, err := rpc.Call(oldMaster, "stats", map[string]any{}); err == nil {
 		if devices, ok := stats["devices"].(map[string]any); ok {
 			for id := range devices {
-				deviceIDs[id] = struct{}{}
+				deviceSet[id] = struct{}{}
 			}
 		}
 	}
 
-	written := 0
-	for deviceID := range deviceIDs {
-		if !protocol.IsValidDeviceID(deviceID) || deviceID == l.DeviceID {
-			continue
+	deviceIDs := make([]string, 0, len(deviceSet))
+	for id := range deviceSet {
+		if protocol.IsValidDeviceID(id) && id != l.DeviceID {
+			deviceIDs = append(deviceIDs, id)
 		}
+	}
+
+	written := 0
+	for _, deviceID := range deviceIDs {
 		for _, space := range []string{"artifacts", "files", "attachments", "backups"} {
 			n, err := l.seedSpace(rpc, oldMaster, deviceID, space)
 			if err != nil {
@@ -143,7 +171,159 @@ func (l *Local) seedFromLiveMaster(rpc PeerRPC, oldMaster string) (int, error) {
 			written += n
 		}
 	}
-	return written, nil
+	return written, deviceIDs, nil
+}
+
+func (l *Local) runHashGate(rpc PeerRPC, oldMaster string, deviceIDs []string) map[string]any {
+	devicesOut := make([]any, 0)
+	mismatches := make([]any, 0)
+	for _, deviceID := range deviceIDs {
+		if !protocol.IsValidDeviceID(deviceID) || deviceID == l.DeviceID {
+			continue
+		}
+		remoteMap := map[string]string{}
+		localMap := map[string]string{}
+		for _, space := range []string{"artifacts", "files", "attachments", "backups"} {
+			for k, sha := range l.listRemoteShas(rpc, oldMaster, deviceID, space) {
+				remoteMap[space+"/"+k] = sha
+			}
+			for k, sha := range l.listLocalShas(deviceID, space) {
+				localMap[space+"/"+k] = sha
+			}
+		}
+		devicesOut = append(devicesOut, map[string]any{
+			"device":         deviceID,
+			"remote_digest":  digestPathMap(remoteMap),
+			"local_digest":   digestPathMap(localMap),
+			"matched":        digestPathMap(remoteMap) == digestPathMap(localMap),
+		})
+		keys := make([]string, 0, len(remoteMap)+len(localMap))
+		seen := map[string]struct{}{}
+		for k := range remoteMap {
+			if _, ok := seen[k]; !ok {
+				seen[k] = struct{}{}
+				keys = append(keys, k)
+			}
+		}
+		for k := range localMap {
+			if _, ok := seen[k]; !ok {
+				seen[k] = struct{}{}
+				keys = append(keys, k)
+			}
+		}
+		sort.Strings(keys)
+		for _, key := range keys {
+			if len(mismatches) >= maxReportedHashMismatches {
+				break
+			}
+			slash := strings.IndexByte(key, '/')
+			space, path := key, ""
+			if slash >= 0 {
+				space = key[:slash]
+				path = key[slash+1:]
+			}
+			r, rOK := remoteMap[key]
+			loc, lOK := localMap[key]
+			switch {
+			case rOK && !lOK:
+				mismatches = append(mismatches, map[string]any{
+					"device": deviceID, "space": space, "path": path,
+					"kind": "missing_local", "remote_sha256": r,
+				})
+			case !rOK && lOK:
+				mismatches = append(mismatches, map[string]any{
+					"device": deviceID, "space": space, "path": path,
+					"kind": "missing_remote", "local_sha256": loc,
+				})
+			case rOK && lOK && r != loc:
+				mismatches = append(mismatches, map[string]any{
+					"device": deviceID, "space": space, "path": path,
+					"kind": "hash_mismatch", "remote_sha256": r, "local_sha256": loc,
+				})
+			}
+		}
+	}
+	ok := len(mismatches) == 0
+	return map[string]any{
+		"ran":            true,
+		"ok":             ok,
+		"devices":        devicesOut,
+		"mismatches":     mismatches,
+		"mismatch_count": len(mismatches),
+	}
+}
+
+func (l *Local) listRemoteShas(rpc PeerRPC, oldMaster, deviceID, space string) map[string]string {
+	out := map[string]string{}
+	res, err := rpc.Call(oldMaster, "list", map[string]any{
+		"space": space, "device": deviceID, "path": "", "seed": true,
+		"limit": mirrorSeedListLimit,
+	})
+	if err != nil {
+		log.Printf("hash gate remote list %s/%s: %v", deviceID, space, err)
+		return out
+	}
+	entries, _ := res["entries"].([]any)
+	for _, raw := range entries {
+		e, ok := raw.(map[string]any)
+		if !ok {
+			continue
+		}
+		path, _ := e["path"].(string)
+		sha, _ := e["sha256"].(string)
+		if path != "" && sha != "" {
+			out[path] = sha
+		}
+	}
+	return out
+}
+
+func (l *Local) listLocalShas(deviceID, space string) map[string]string {
+	out := map[string]string{}
+	listed, err := l.AdminList(deviceID, space, "")
+	if err != nil {
+		return out
+	}
+	switch entries := listed["entries"].(type) {
+	case []map[string]any:
+		for _, e := range entries {
+			path, _ := e["path"].(string)
+			sha, _ := e["sha256"].(string)
+			if path != "" && sha != "" {
+				out[path] = sha
+			}
+		}
+	case []any:
+		for _, raw := range entries {
+			e, ok := raw.(map[string]any)
+			if !ok {
+				continue
+			}
+			path, _ := e["path"].(string)
+			sha, _ := e["sha256"].(string)
+			if path != "" && sha != "" {
+				out[path] = sha
+			}
+		}
+	}
+	return out
+}
+
+func digestPathMap(pathToSha map[string]string) string {
+	keys := make([]string, 0, len(pathToSha))
+	for k := range pathToSha {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	var b strings.Builder
+	for _, k := range keys {
+		b.WriteString(k)
+		b.WriteByte(0)
+		b.WriteString(pathToSha[k])
+		b.WriteByte('\n')
+	}
+	sum := sha256.Sum256([]byte(b.String()))
+	return hex.EncodeToString(sum[:])
 }
 
 func (l *Local) seedSpace(rpc PeerRPC, oldMaster, deviceID, space string) (int, error) {

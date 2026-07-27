@@ -414,7 +414,11 @@ $('promoteMaster').onclick = async () => {
     alert('已升主：' + shortId(out.master) + ' · epoch ' + out.epoch +
       ' · 推送 ' + (out.broadcast_peers||0) +
       ' · 种子文件 ' + (out.seeded_files||0) +
-      (out.old_master_reachable ? '（旧 master 在线）' : '（旧 master 未在线）'));
+      (out.old_master_reachable ? '（旧 master 在线）' : '（旧 master 未在线）') +
+      (out.hash_gate && out.hash_gate.ran
+        ? (' · 哈希门闩 mismatches=' + (out.hash_gate.mismatch_count||0) +
+           (out.hash_gate.ok ? ' ok' : ' 有缺口'))
+        : ''));
     refresh();
   } catch (e) { $('msg').textContent = String(e.message||e); }
 };

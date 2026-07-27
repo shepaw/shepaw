@@ -353,3 +353,4 @@ master 上的镜像树主要是各端本地数据的副本；为降低单点损�
 47. 无头 admin 展示已获授权（`role=received`）；方案表去掉「骨架/待补」过时表述。
 48. Go 升主在线 seed：旧 master 在 `SessionRegistry` 时拉 `sync.cursors` + `list`/`read`（`seed: true`）；WS 读循环投递 RPC 回包并并发 Handle。
 49. 并发 Handle 下串行化 Noise `Encrypt`+写 WS（`encryptWrite` / `writeMu`），避免升主 seed 与回包抢 cipher nonce。
+50. Go 升主软 `MirrorHashGate`（seed 后 list 对账；`require_hash_match` 可硬阻断；对齐 Dart）。
