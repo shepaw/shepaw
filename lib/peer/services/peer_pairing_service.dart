@@ -435,7 +435,7 @@ class PeerPairingService {
         deviceId: response.deviceId,
         publicKey: info.publicKey,
         fingerprint: info.fingerprint,
-        channelEndpoint: response.channelEndpoint,
+        channelEndpoint: response.channelEndpoint ?? info.channelEndpoint,
         localEndpoint: response.localEndpoint ?? info.localEndpoint,
         pairedAt: DateTime.now().millisecondsSinceEpoch,
         // 本机扫码主动发起连接 → 发起方

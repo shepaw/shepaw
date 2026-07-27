@@ -2,6 +2,7 @@ package store_test
 
 import (
 	"encoding/base64"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"testing"
@@ -315,5 +316,70 @@ func TestCommitRetentionKeepLast(t *testing.T) {
 	}
 	if dirs != 2 {
 		t.Fatalf("want 2 top-level dirs, got %d", dirs)
+	}
+}
+
+func TestPurgeDevice(t *testing.T) {
+	root := t.TempDir()
+	self := "aaaaaaaaaaaaaaaa"
+	other := "bbbbbbbbbbbbbbbb"
+	s, err := store.Open(root, self)
+	if err != nil {
+		t.Fatal(err)
+	}
+	otherDir := filepath.Join(root, other, "files")
+	if err := os.MkdirAll(otherDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(otherDir, "x.txt"), []byte("hello"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cursorPath := filepath.Join(root, ".system", "device_cursors.json")
+	if err := os.MkdirAll(filepath.Dir(cursorPath), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(cursorPath, []byte(`{"bbbbbbbbbbbbbbbb":42,"aaaaaaaaaaaaaaaa":1}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := s.PurgeDevice(self, self); err == nil {
+		t.Fatal("expected cannot purge self")
+	}
+	freed, err := s.PurgeDevice(other, self)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if freed <= 0 {
+		t.Fatalf("freed=%d", freed)
+	}
+	if _, err := os.Stat(filepath.Join(root, other)); !os.IsNotExist(err) {
+		t.Fatalf("other dir still exists: %v", err)
+	}
+	raw, err := os.ReadFile(cursorPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var m map[string]any
+	if err := json.Unmarshal(raw, &m); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := m[other]; ok {
+		t.Fatalf("cursor still has other: %s", raw)
+	}
+	if _, ok := m[self]; !ok {
+		t.Fatalf("cursor lost self: %s", raw)
+	}
+}
+
+func TestPurgeDeviceNotFound(t *testing.T) {
+	root := t.TempDir()
+	self := "aaaaaaaaaaaaaaaa"
+	s, err := store.Open(root, self)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = s.PurgeDevice("cccccccccccccccc", self)
+	if err == nil {
+		t.Fatal("expected not_found")
 	}
 }

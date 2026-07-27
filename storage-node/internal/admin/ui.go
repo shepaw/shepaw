@@ -46,6 +46,9 @@ td, th { text-align: left; padding: .35rem .25rem; border-bottom: 1px solid
   <div class="card">
     <h2>用量 stats</h2>
     <pre id="stats">…</pre>
+    <h2 style="margin-top:1rem">设备镜像</h2>
+    <p class="muted">永久删除他端镜像目录（不可进回收站；禁删本机）。</p>
+    <div id="devices"></div>
   </div>
   <div class="card">
     <div class="row" style="justify-content:space-between">
@@ -100,6 +103,40 @@ async function refresh() {
   try {
     const stats = await api('/admin/api/stats');
     $('stats').textContent = JSON.stringify(stats, null, 2);
+    const selfId = stats.self_device || stats.device || '';
+    const devices = stats.devices || {};
+    const ids = Object.keys(devices);
+    if (!ids.length) {
+      $('devices').innerHTML = '<p class="muted">无设备目录</p>';
+    } else {
+      let dhtml = '<table><thead><tr><th>device</th><th>占用</th><th></th></tr></thead><tbody>';
+      for (const id of ids) {
+        const spaces = devices[id] || {};
+        let total = 0;
+        for (const k of Object.keys(spaces)) total += Number(spaces[k])||0;
+        const isSelf = id === selfId;
+        dhtml += '<tr><td>' + shortId(id) + (isSelf ? ' <span class="muted">(本机)</span>' : '') +
+          '</td><td>' + fmtBytes(total) + '</td><td>';
+        if (!isSelf) {
+          dhtml += '<button data-id="' + id + '" class="purgeDev">删除镜像</button>';
+        }
+        dhtml += '</td></tr>';
+      }
+      dhtml += '</tbody></table>';
+      $('devices').innerHTML = dhtml;
+      document.querySelectorAll('.purgeDev').forEach(btn => {
+        btn.onclick = async () => {
+          if (!confirm('永久删除设备 ' + shortId(btn.dataset.id) + ' 的镜像？不可还原。')) return;
+          try {
+            await api('/admin/api/devices/purge', {
+              method:'POST', headers:{'Content-Type':'application/json'},
+              body: JSON.stringify({device_id: btn.dataset.id})
+            });
+            refresh();
+          } catch (e) { $('msg').textContent = String(e.message||e); }
+        };
+      });
+    }
 
     try {
       const peers = await api('/admin/api/peers');

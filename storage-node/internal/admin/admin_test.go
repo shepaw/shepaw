@@ -6,6 +6,8 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/shepaw/storage-node/internal/admin"
@@ -177,6 +179,58 @@ func TestAdminImportGrant(t *testing.T) {
 	mux.ServeHTTP(rec, req)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("grant: %d %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestAdminDevicePurge(t *testing.T) {
+	root := t.TempDir()
+	self := "aaaaaaaaaaaaaaaa"
+	other := "bbbbbbbbbbbbbbbb"
+	s, err := store.Open(root, self)
+	if err != nil {
+		t.Fatal(err)
+	}
+	otherDir := filepath.Join(root, other, "files")
+	if err := os.MkdirAll(otherDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	_ = os.WriteFile(filepath.Join(otherDir, "x.txt"), []byte("data"), 0o644)
+
+	srv := &admin.Server{
+		Store:  s,
+		Device: self,
+		Auth:   admin.AuthConfig{Token: "t"},
+	}
+	mux := http.NewServeMux()
+	srv.Mount(mux)
+
+	body, _ := json.Marshal(map[string]string{"device_id": other})
+	req := httptest.NewRequest(http.MethodPost, "/admin/api/devices/purge", bytes.NewReader(body))
+	req.Header.Set("Authorization", "Bearer t")
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("purge: %d %s", rec.Code, rec.Body.String())
+	}
+	var out map[string]any
+	_ = json.Unmarshal(rec.Body.Bytes(), &out)
+	if out["ok"] != true {
+		t.Fatalf("%v", out)
+	}
+	if _, err := os.Stat(filepath.Join(root, other)); !os.IsNotExist(err) {
+		t.Fatal("dir should be gone")
+	}
+
+	// cannot purge self
+	body, _ = json.Marshal(map[string]string{"device_id": self})
+	req = httptest.NewRequest(http.MethodPost, "/admin/api/devices/purge", bytes.NewReader(body))
+	req.Header.Set("Authorization", "Bearer t")
+	req.Header.Set("Content-Type", "application/json")
+	rec = httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+	if rec.Code == http.StatusOK {
+		t.Fatal("self purge should fail")
 	}
 }
 

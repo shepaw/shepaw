@@ -257,7 +257,7 @@ master 上的镜像树主要是各端本地数据的副本；为降低单点损�
 
 - 常开特性让未同步队列与快照送达不受 PC 休眠影响。
 - 技术：Go（本仓库 `storage-node/`）；协议与 ACL 与 Dart 共用规范。**Noise IK + `/peer/ws` 配对/重连**已接入（与 App 同 suite/prologue）；提供 loopback HTTP JSON、本机目录树、**`/admin` 无头管理面**。
-- **管理面必须与无头形态匹配**：回收站清空、导入授权审批、升主/用量不能只假设 App 本机 UI。M7 已提供受控 **`/admin` Web 页 + REST**（**Noise 配对 / 已配对重连** / 用量 / 回收站 / 换机导入审批；`-admin-token` 或 loopback 鉴权）。配对 QR / `PairingResponse` 可带 **`-channel` / `SHEPAW_CHANNEL_ENDPOINT`** 外网端点。
+- **管理面必须与无头形态匹配**：回收站清空、导入授权审批、升主/用量不能只假设 App 本机 UI。M7 已提供受控 **`/admin` Web 页 + REST**（**Noise 配对 / 已配对重连** / **他端镜像手删** / 用量 / 回收站 / 换机导入审批；`-admin-token` 或 loopback 鉴权）。配对 QR / `PairingResponse` 可带 **`-channel` / `SHEPAW_CHANNEL_ENDPOINT`** 外网端点。
 - 协议一致性：与 Dart 实现共享攻击/ACL fixture，双端测试全绿（含升主 `seed: true` 读他端私有分区）。
 
 ## 10. 安全
@@ -278,7 +278,7 @@ master 上的镜像树主要是各端本地数据的副本；为降低单点损�
 | M4 本地优先与远程 | ✅ 基本 | `SyncJournal`/`SyncEngine` + 游标；`LocalCas` 仅远端读缓存；tunnel 复用 peer |
 | M5 协作与附件 | ✅ 基本 | `ArtifactService` URI + 编排注入；附件经 store hash 编址 |
 | M6 master 迁移 | ✅ 基本 | 升主/指针/再保护；差量镜像种子 + 内容哈希门闩（软校验，可选硬阻断） |
-| M7 Go 存储节点 | ✅ 基本 | `storage-node/`：目录树+fixture；import/retention；**Noise IK `/peer/ws` 配对+重连+Channel QR**；**无头 `/admin`** |
+| M7 Go 存储节点 | ✅ 基本 | `storage-node/`：目录树+fixture；import/retention；**Noise IK `/peer/ws` 配对+重连+Channel QR**；**无头 `/admin`（含 purge 镜像）** |
 | M8 记忆交换与多 she | ✅ 基本 | `lib/she_network/` + 管理页「她的圈子」 |
 
 代码位置：`lib/storage/`、`lib/she_network/`、`lib/screens/storage_space_screen.dart`；`lib/peer/` 仅帧路由。
@@ -335,3 +335,4 @@ master 上的镜像树主要是各端本地数据的副本；为降低单点损�
 29. M7 Noise IK 配对（`/peer/ws` + fingerprint device_id；`/admin` 开始/批准配对）。
 30. M7 已配对重连（`/peer/ws`：无配对码时按 fingerprint 匹配 `paired_peers`，`reconnect_ack` 后加密 store 帧）。
 31. M7 Channel 端点写入配对 QR / `PairingResponse`（`-channel` / `SHEPAW_CHANNEL_ENDPOINT`；App 扫码可外网连节点）。
+32. M7 无头手删他端镜像（`PurgeDevice` + 清游标；`/admin/api/devices/purge`；配对持久化 `channel` 回退 QR）。

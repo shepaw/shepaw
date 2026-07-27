@@ -39,6 +39,7 @@ func (s *Server) Mount(mux *http.ServeMux) {
 	api.HandleFunc("/pairing/pending", s.handlePairingPending)
 	api.HandleFunc("/pairing/decide", s.handlePairingDecide)
 	api.HandleFunc("/peers", s.handlePeers)
+	api.HandleFunc("/devices/purge", s.handleDevicePurge)
 
 	mux.Handle("/admin/api/", RequireAuth(s.Auth, http.StripPrefix("/admin/api", api)))
 	mux.Handle("/admin", RequireAuth(s.Auth, http.HandlerFunc(s.handleUI)))
@@ -64,6 +65,7 @@ func (s *Server) handleStats(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, err)
 		return
 	}
+	data["self_device"] = s.Device
 	writeJSON(w, data)
 }
 
@@ -276,6 +278,30 @@ func (s *Server) handlePeers(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, map[string]any{"peers": peers})
+}
+
+func (s *Server) handleDevicePurge(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "POST only", http.StatusMethodNotAllowed)
+		return
+	}
+	var body struct {
+		DeviceID string `json:"device_id"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.DeviceID == "" {
+		http.Error(w, "device_id required", http.StatusBadRequest)
+		return
+	}
+	freed, err := s.Store.PurgeDevice(body.DeviceID, s.Device)
+	if err != nil {
+		writeErr(w, err)
+		return
+	}
+	writeJSON(w, map[string]any{
+		"ok":           true,
+		"device_id":    body.DeviceID,
+		"purged_bytes": freed,
+	})
 }
 
 func advertiseLocalWS(listen string) string {
