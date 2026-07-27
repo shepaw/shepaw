@@ -13,6 +13,7 @@ import '../services/local_database_service.dart';
 import '../services/logger_service.dart';
 import '../services/password_service.dart';
 import 'device_identity.dart';
+import 'commit_retention.dart';
 import 'local_store.dart';
 import 'snapshot_crypto.dart';
 
@@ -329,7 +330,14 @@ class SnapshotService {
       }
       uploadIds.add(uid);
     }
-    final (committed, failed) = await store.commit(deviceId, space, uploadIds);
+    final (committed, failed) = await store.commit(
+      deviceId,
+      space,
+      uploadIds,
+      retention: const GfsRetentionPolicy(
+        excludePrefix: 'reprotect-',
+      ).toJson(),
+    );
     if (failed.isNotEmpty) {
       for (final f in committed) {
         try {

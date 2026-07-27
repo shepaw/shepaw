@@ -2,8 +2,10 @@ package store_test
 
 import (
 	"encoding/base64"
+	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/shepaw/storage-node/internal/protocol"
 	"github.com/shepaw/storage-node/internal/store"
@@ -217,5 +219,101 @@ func TestFriendRejected(t *testing.T) {
 	oe := err.(*store.OpError)
 	if oe.Code != "untrusted" {
 		t.Fatalf("code=%s", oe.Code)
+	}
+}
+
+func TestCommitRetentionKeepLast(t *testing.T) {
+	root := t.TempDir()
+	device := "aaaaaaaaaaaaaaaa"
+	s, err := store.Open(root, device)
+	if err != nil {
+		t.Fatal(err)
+	}
+	put := func(path string) {
+		begin, err := s.Handle(protocol.Frame{
+			Op: "write.begin",
+			Payload: map[string]any{
+				"space": "backups",
+				"path":  path,
+			},
+		}, device, protocol.TrustOwner, true)
+		if err != nil {
+			t.Fatal(err)
+		}
+		id := begin["upload_id"].(string)
+		_, err = s.Handle(protocol.Frame{
+			Op: "write.chunk",
+			Payload: map[string]any{
+				"upload_id": id,
+				"data":      base64.StdEncoding.EncodeToString([]byte("x")),
+			},
+		}, device, protocol.TrustOwner, true)
+		if err != nil {
+			t.Fatal(err)
+		}
+		_, err = s.Handle(protocol.Frame{
+			Op: "commit",
+			Payload: map[string]any{
+				"upload_ids": []any{id},
+			},
+		}, device, protocol.TrustOwner, true)
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	put("snap-0/f.txt")
+	time.Sleep(5 * time.Millisecond)
+	put("snap-1/f.txt")
+	time.Sleep(5 * time.Millisecond)
+	put("snap-2/f.txt")
+	time.Sleep(5 * time.Millisecond)
+
+	begin, err := s.Handle(protocol.Frame{
+		Op: "write.begin",
+		Payload: map[string]any{
+			"space": "backups",
+			"path":  "snap-3/f.txt",
+		},
+	}, device, protocol.TrustOwner, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	id := begin["upload_id"].(string)
+	_, err = s.Handle(protocol.Frame{
+		Op: "write.chunk",
+		Payload: map[string]any{
+			"upload_id": id,
+			"data":      base64.StdEncoding.EncodeToString([]byte("y")),
+		},
+	}, device, protocol.TrustOwner, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = s.Handle(protocol.Frame{
+		Op: "commit",
+		Payload: map[string]any{
+			"upload_ids": []any{id},
+			"retention": map[string]any{
+				"policy": "keep_last",
+				"keep":   2,
+			},
+		},
+	}, device, protocol.TrustOwner, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	ents, err := os.ReadDir(filepath.Join(root, device, "backups"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	dirs := 0
+	for _, e := range ents {
+		if e.IsDir() && e.Name()[0] != '.' {
+			dirs++
+		}
+	}
+	if dirs != 2 {
+		t.Fatalf("want 2 top-level dirs, got %d", dirs)
 	}
 }

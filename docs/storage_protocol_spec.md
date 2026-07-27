@@ -111,7 +111,10 @@
 - 校验：每个 upload 的组装内容 sha256 与 write.begin 声明一致，**全部通过才进入转正**。
 - 转正：暂存文件 rename 到最终路径（同卷原子）；目标已存在时旧版本先移入 `.recycle`。
 - 批内单文件转正失败：其余继续，响应 `failed` 标注；staging 保留可重试。
-- `retention`（可选，预留）：当前实现不解析；GFS 由各端本机 `ScheduledSnapshotService` 执行后经 sync 镜像删除，非 master 代管剪枝。
+- `retention`（可选）：转正成功后按策略剪枝同分区**顶层目录**。
+  - `{"policy":"keep_last","keep":4,"include_prefix"?: "...","exclude_prefix"?: "..."}`
+  - `{"policy":"gfs","daily":7,"weekly":28,"monthly":12,"exclude_prefix"?: "reprotect-"}`
+  - 删除经 `delete` 进回收站；本机变更仍入 SyncJournal。快照 commit 默认带 GFS（排除 `reprotect-`）；再保护 commit 默认 `keep_last`（仅 `reprotect-`）。
 
 ### 2.7 delete — 删除（入回收站）
 

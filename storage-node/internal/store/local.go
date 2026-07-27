@@ -352,6 +352,11 @@ func (l *Local) commit(frame protocol.Frame) (map[string]any, error) {
 			"upload_id": p.id, "path": p.u.Path, "size": p.u.Size, "sha256": p.sum,
 		})
 	}
+	if len(committed) > 0 {
+		if device := batch[0].u.Device; device != "" {
+			l.applyRetention(device, batch[0].u.Space, frame.Payload["retention"])
+		}
+	}
 	return map[string]any{
 		"files":     committed,
 		"committed": committed,

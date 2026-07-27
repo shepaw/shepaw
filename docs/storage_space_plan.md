@@ -96,7 +96,7 @@
 ### 5.1 快照生成与送达
 
 - 定期任务（默认 daily，GFS 保留 7 日/4 周/12 月——决策 4 确认）在本地生成快照，写入 `<device_id>/backups/<ts>/` 并 `commit`；同步引擎随后送达 master。
-- **GFS 在快照所属设备本机执行**（`ScheduledSnapshotService` + `selectGfs`），删除经同步队列镜像到 master——**不是** master 代管剪枝。`commit.retention` 字段保留为可选扩展，当前实现不解析。
+- **GFS 在快照所属设备本机执行**（`ScheduledSnapshotService` + `commit.retention`/`selectGfs`），删除经同步队列镜像到 master——**不是** master 代管剪枝。`commit.retention` 支持 `keep_last` / `gfs`（见协议 §2.6）。
 - 无 master 时快照天然留存本地（本地优先的必然结果）。
 - 兜底导出（决策 3）：本机目录 / WebDAV 降级为**纯手动导出功能**，不占任何自动路径；格式相同（**附件随导出打包**：`exportToDirectory` 按 manifest 复制到 `attachments/`）。
 - 移动端触发：App 启动 + 运行中 6h Timer + **回前台**（`AppLifecycleService.onResume`）+ **WiFi/以太网稳定**（`NetworkMonitorService.onNetworkSettled`，避免蜂窝灌库）。系统级 BGAppRefresh / WorkManager 仍为后续可选（`ForegroundTaskService` 仅 Agent 保活，不接入日快照）。距上次成功（或从未成功则距启用）超过 **3 天** 显著告警（按墙钟，非同日失败次数）。
@@ -300,7 +300,6 @@ master 上的镜像树主要是各端本地数据的副本；为降低单点损�
 
 ## 13. 后续可选（不承诺）
 
-- `commit.retention` 字段落地。
 - WebDAV 兜底导出。
 - 快照差量化；`she.presence` 名单级；跨人 she 社交；DB 级多端互通（另案）。
 - 系统级 BGAppRefresh / WorkManager（日快照已有回前台 + WiFi 触发）。
@@ -330,3 +329,4 @@ master 上的镜像树主要是各端本地数据的副本；为降低单点损�
 22. master 上手动删除旧 device 镜像（`purgeDevice` + 清游标；禁删本机）。
 23. 危险区删除本机 store 数据（`StoreWipeService` / `wipeSelf`，输入 DELETE；清队列保留 seq）。
 24. 按设备/分区浏览与手删（`StorageBrowserScreen`；master 可删他端镜像）。
+25. `commit.retention` 落地（`keep_last` / `gfs`；快照与再保护接入；Go 对齐）。

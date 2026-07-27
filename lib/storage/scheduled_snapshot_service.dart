@@ -189,6 +189,7 @@ class ScheduledSnapshotService {
     await SnapshotService.instance
         .createSnapshot(passwordHash: passwordHash);
     await _recordSuccess();
+    // GFS 已在 snapshot commit.retention 内执行；此处再跑一遍作幂等兜底。
     await pruneGfs();
     // §6.6：master 对本机镜像树再保护（与日快照同节奏，有密钥才跑）
     if (await StoreService.instance.isMaster()) {

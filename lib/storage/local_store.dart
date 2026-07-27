@@ -8,6 +8,7 @@ import 'package:uuid/uuid.dart';
 
 import 'store_protocol.dart';
 import 'sync_journal.dart';
+import 'commit_retention.dart';
 
 /// store 层错误（StoreService 转为 error 帧）。
 class StoreException implements Exception {
@@ -346,9 +347,15 @@ class LocalStore {
   /// 原子转正（spec §2.6）：先全量验哈希（任一失败整批不转正），
   /// 再逐个 rename；目标已存在时旧版本先进回收站。
   /// 成功后经 [syncJournal] 内联记日志（本机设备目录变更入未同步队列）。
+  /// 可选 [retention]：转正成功后按策略剪枝同分区顶层目录（§13 / spec retention）。
   /// 返回（已转正文件清单，失败项）。
   Future<(List<({String path, int size, String sha256})>, List<String>)>
-      commit(String deviceId, String space, List<String> uploadIds) async {
+      commit(
+    String deviceId,
+    String space,
+    List<String> uploadIds, {
+    Map<String, dynamic>? retention,
+  }) async {
     final stagingDir = _stagingDir(deviceId, space);
     final verified = <(String, _StagingMeta, File)>[];
     final failed = <String>[];
@@ -406,6 +413,17 @@ class LocalStore {
     // 变更日志（spec §6.1）：本机设备目录 commit 入未同步队列
     if (committed.isNotEmpty && syncJournal != null) {
       await syncJournal!.appendCommit(deviceId, space, committed);
+    }
+    if (committed.isNotEmpty && retention != null) {
+      final policy = CommitRetention.tryParse(retention);
+      if (policy != null) {
+        await CommitRetention.apply(
+          this,
+          deviceId: deviceId,
+          space: space,
+          policy: policy,
+        );
+      }
     }
     return (committed, failed);
   }

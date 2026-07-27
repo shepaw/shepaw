@@ -8,6 +8,7 @@ import 'package:crypto/crypto.dart' as crypto;
 import 'package:path/path.dart' as p;
 
 import '../services/logger_service.dart';
+import 'commit_retention.dart';
 import 'device_identity.dart';
 import 'local_store.dart';
 import 'snapshot_crypto.dart';
@@ -108,16 +109,11 @@ class MirrorReprotectService {
       await _commitFiles(store, self, id, {
         'manifest.json': manifestBytes,
         'mirror.tar.enc': enc,
-      });
+      }, maxKeep: maxKeep);
 
-      final pruned = await pruneReprotect(
-        store: store,
-        deviceId: self,
-        maxKeep: maxKeep,
-      );
       _log.info(
           'reprotect $id ($fileCount files, ${enc.length} enc bytes'
-          '${pruned > 0 ? ', pruned $pruned' : ''})',
+          ', retention keep_last=$maxKeep)',
           tag: _tag);
       return id;
     } finally {
@@ -188,8 +184,9 @@ class MirrorReprotectService {
     LocalStore store,
     String deviceId,
     String snapshotId,
-    Map<String, Uint8List> files,
-  ) async {
+    Map<String, Uint8List> files, {
+    int maxKeep = defaultMaxKeep,
+  }) async {
     const space = 'backups';
     final uploadIds = <String>[];
     for (final e in files.entries) {
@@ -211,7 +208,15 @@ class MirrorReprotectService {
       }
       uploadIds.add(uid);
     }
-    final (committed, failed) = await store.commit(deviceId, space, uploadIds);
+    final (committed, failed) = await store.commit(
+      deviceId,
+      space,
+      uploadIds,
+      retention: KeepLastRetention(
+        keep: maxKeep,
+        includePrefix: 'reprotect-',
+      ).toJson(),
+    );
     if (failed.isNotEmpty) {
       for (final f in committed) {
         try {

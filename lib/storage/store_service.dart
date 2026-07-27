@@ -448,10 +448,15 @@ class StoreService {
           return <String, dynamic>{'received': received};
 
         case StoreOp.commit:
+          final retentionRaw = frame.payload['retention'];
+          final retention = retentionRaw is Map
+              ? Map<String, dynamic>.from(retentionRaw)
+              : null;
           final (committed, failed) = await store.commit(
             callerDeviceId,
             frame.space!,
             (frame.payload['upload_ids'] as List).cast<String>(),
+            retention: retention,
           );
           // v3：携带 upto_seq 时推进该设备游标（spec §6.2）
           int? appliedSeq;
