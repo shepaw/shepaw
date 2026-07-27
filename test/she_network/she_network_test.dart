@@ -2,8 +2,10 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shepaw/models/remote_agent.dart';
 import 'package:shepaw/she_network/digest_service.dart';
 import 'package:shepaw/she_network/exchange_settings.dart';
+import 'package:shepaw/she_network/presence_profile.dart';
 import 'package:shepaw/she_network/presence_service.dart';
 import 'package:shepaw/she_network/she_network_protocol.dart';
 import 'package:shepaw/storage/store_protocol.dart'
@@ -119,6 +121,52 @@ void main() {
       final web = await svc.routeByCategory('web');
       expect(web.map((e) => e.deviceId), contains('2222222222222222'));
       expect(web.map((e) => e.deviceId), isNot(contains('3333333333333333')));
+    });
+  });
+
+  group('aggregatePresenceProfile', () {
+    test('空列表 → fallback', () {
+      final p = aggregatePresenceProfile(const []);
+      expect(p.agentCount, 1);
+      expect(p.agentCategories, contains('she'));
+    });
+
+    test('从 isShe / os tools 聚合类别，不暴露名单', () {
+      final now = DateTime.now();
+      final she = RemoteAgent(
+        id: 'a1',
+        name: 'She',
+        token: 't',
+        endpoint: 'http://x',
+        protocol: ProtocolType.acp,
+        connectionType: ConnectionType.websocket,
+        status: AgentStatus.online,
+        createdAt: now.millisecondsSinceEpoch,
+        updatedAt: now.millisecondsSinceEpoch,
+        isPinned: true,
+        metadata: {
+          'is_she': true,
+          'enabled_os_tools': ['filesystem', 'shell'],
+        },
+      );
+      final other = RemoteAgent(
+        id: 'a2',
+        name: 'Helper',
+        token: 't2',
+        endpoint: 'http://y',
+        protocol: ProtocolType.acp,
+        connectionType: ConnectionType.websocket,
+        status: AgentStatus.online,
+        createdAt: now.millisecondsSinceEpoch,
+        updatedAt: now.millisecondsSinceEpoch,
+        capabilities: const ['web_search'],
+        metadata: const {},
+      );
+      final p = aggregatePresenceProfile([she, other]);
+      expect(p.agentCount, 2);
+      expect(p.agentCategories, ['assistant', 'she']);
+      expect(p.toolCategories, containsAll(['filesystem', 'shell', 'web']));
+      expect(p.agentCategories, isNot(contains('a1')));
     });
   });
 

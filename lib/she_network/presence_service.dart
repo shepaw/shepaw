@@ -6,10 +6,13 @@ import '../peer/services/peer_connection.dart'
     show PeerConnectionEvent, PeerConnectionEventType;
 import '../peer/services/peer_connection_manager.dart';
 import '../peer/services/peer_storage_service.dart';
+import '../service_locator.dart';
 import '../services/logger_service.dart';
+import '../services/remote_agent_service.dart';
 import '../storage/device_identity.dart';
 import '../storage/store_protocol.dart' show TrustLevel;
 import 'digest_service.dart';
+import 'presence_profile.dart';
 import 'she_network_protocol.dart';
 
 /// she.presence 广播与缓存（方案 §8.1：只广播类别，不暴露名单）。
@@ -25,6 +28,7 @@ class PresenceService {
   final _cache = <String, ShePresence>{};
   StreamSubscription<PeerControlEvent>? _controlSub;
   StreamSubscription<PeerConnectionEvent>? _connSub;
+  StreamSubscription<void>? _agentsSub;
   bool _started = false;
 
   Map<String, ShePresence> get known => Map.unmodifiable(_cache);
@@ -36,8 +40,17 @@ class PresenceService {
     _connSub = _manager.events.listen((e) {
       if (e.type == PeerConnectionEventType.connected) {
         unawaited(_onPeerConnected(e.peerId));
+      } else if (e.type == PeerConnectionEventType.disconnected) {
+        unawaited(_onPeerDisconnected(e.peerId));
       }
     });
+    try {
+      if (getIt.isRegistered<RemoteAgentService>()) {
+        _agentsSub = getIt<RemoteAgentService>().agentsChanged.listen((_) {
+          unawaited(broadcastNow());
+        });
+      }
+    } catch (_) {}
     unawaited(broadcastNow());
   }
 
@@ -46,6 +59,8 @@ class PresenceService {
     _controlSub = null;
     await _connSub?.cancel();
     _connSub = null;
+    await _agentsSub?.cancel();
+    _agentsSub = null;
     _started = false;
   }
 
@@ -57,21 +72,36 @@ class PresenceService {
     final self = await DeviceIdentity.deviceId();
     final name = await DigestService.instance
         .localSheName(localizedDefault: localizedSheName);
-    // 类别级：内置 she + 可选通用 tool 类别（不列具体 agent id）
+    final profile = await _loadLocalProfile();
     return ShePresence(
       deviceId: self,
       sheName: name,
       online: true,
-      agentCategories: const ['she', 'assistant'],
-      toolCategories: const ['filesystem', 'web', 'shell'],
-      agentCount: 1,
+      agentCategories: profile.agentCategories,
+      toolCategories: profile.toolCategories,
+      agentCount: profile.agentCount,
       updatedAtMs: DateTime.now().millisecondsSinceEpoch,
     );
+  }
+
+  Future<PresenceProfile> _loadLocalProfile() async {
+    try {
+      if (!getIt.isRegistered<RemoteAgentService>()) {
+        return PresenceProfile.fallback;
+      }
+      final agents = await getIt<RemoteAgentService>().getAllAgents();
+      return aggregatePresenceProfile(agents);
+    } catch (e) {
+      _log.debug('presence profile fallback: $e', tag: _tag);
+      return PresenceProfile.fallback;
+    }
   }
 
   Future<void> broadcastNow({String localizedSheName = 'She'}) async {
     final presence =
         await buildLocalPresence(localizedSheName: localizedSheName);
+    // 本机也写入缓存，方便圈子 UI 展示自身画像
+    _cache[presence.deviceId] = presence;
     final peers = await _peerStorage.loadAllPeers();
     for (final peer in peers) {
       if (peer.trustLevel != TrustLevel.owner) continue;
@@ -106,6 +136,25 @@ class PresenceService {
       await _manager.sendControl(
         peerId,
         SheFrame(op: SheOp.presenceQuery, payload: const {}).toJson(),
+      );
+    } catch (_) {}
+  }
+
+  Future<void> _onPeerDisconnected(String peerId) async {
+    try {
+      final peer = await _peerStorage.getPeerById(peerId);
+      if (peer == null) return;
+      final key = peer.fingerprint;
+      final existing = _cache[key];
+      if (existing == null) return;
+      _cache[key] = ShePresence(
+        deviceId: existing.deviceId,
+        sheName: existing.sheName,
+        online: false,
+        agentCategories: existing.agentCategories,
+        toolCategories: existing.toolCategories,
+        agentCount: existing.agentCount,
+        updatedAtMs: DateTime.now().millisecondsSinceEpoch,
       );
     } catch (_) {}
   }

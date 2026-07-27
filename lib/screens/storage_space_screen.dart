@@ -1156,7 +1156,7 @@ class _StorageSpaceScreenState extends State<StorageSpaceScreen> {
                   subtitle: Text(
                     '${l10n.storage_peerTrust(peer.trustLevel)} · '
                     '${l10n.storage_externalMemories(count)}'
-                    '${p == null ? ' · ${l10n.storage_presenceOffline}' : ''}',
+                    '${_presenceSubtitle(l10n, p)}',
                   ),
                   dense: true,
                 );
@@ -1165,6 +1165,18 @@ class _StorageSpaceScreenState extends State<StorageSpaceScreen> {
         ),
       ),
     );
+  }
+
+  String _presenceSubtitle(AppLocalizations l10n, ShePresence? p) {
+    if (p == null || !p.online) {
+      return ' · ${l10n.storage_presenceOffline}';
+    }
+    final cats = <String>[
+      ...p.agentCategories,
+      ...p.toolCategories,
+    ];
+    final catPart = cats.isEmpty ? '' : ' · ${cats.join('/')}';
+    return ' · ${p.agentCount}$catPart';
   }
 
   String _kindLabel(AppLocalizations l10n, String kind) {

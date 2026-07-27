@@ -227,7 +227,7 @@ master 上的镜像树主要是各端本地数据的副本；为降低单点损�
 - 每台设备的 she 是**独立个体**，身份绑定设备场景；多台 PC / 手机各自持有独立的她，组成多 she 网络。"双 she"只是 N=2 的特例。
 - 能力边界清晰：每个 she 只管理本机 Agent；需要对方设备能力时通过 peer 通道**与对方 she 对话委托**（复用现有 peer agent / 审批链路）。
 - **命名**：多台设备时用户可为每台的她起名（默认按设备场景）。
-- **委托路由**：`she.presence` 帧广播能力画像——**只广播类别**（决策 5：Agent 类别与数量、工具类别、在线状态），不暴露具体 Agent 名单；委托方据此选择问谁，用户可显式点名；粒度不足时再升级为名单级。
+- **委托路由**：`she.presence` 帧广播能力画像——**只广播类别**（决策 5：Agent 类别与数量、工具类别、在线状态；本机从 `RemoteAgentService` 聚合，仍不暴露名单）；委托方据此选择问谁，用户可显式点名；粒度不足时再升级为名单级。
 - 跨端协作走**可寻址的产物文件**（读其他端 `artifacts` 目录），而不是私有数据的融合。
 
 ### 8.2 记忆交换
@@ -279,7 +279,7 @@ master 上的镜像树主要是各端本地数据的副本；为降低单点损�
 | M5 协作与附件 | ✅ 基本 | `ArtifactService` URI + 编排注入；附件经 store hash 编址 |
 | M6 master 迁移 | ✅ 基本 | 升主/指针/再保护；差量镜像种子 + 内容哈希门闩（软校验，可选硬阻断） |
 | M7 Go 存储节点 | ✅ 基本 | `storage-node/`：目录树+fixture；import/retention；**sync 游标水位**；**Noise IK `/peer/ws` 配对+重连+Channel**；**无头 `/admin`（browse/purge/wipe）** |
-| M8 记忆交换与多 she | ✅ 基本 | `lib/she_network/` + 管理页「她的圈子」 |
+| M8 记忆交换与多 she | ✅ 基本 | `lib/she_network/` + 管理页「她的圈子」；presence **真实 Agent 类别/数量**（非名单） |
 
 代码位置：`lib/storage/`、`lib/she_network/`、`lib/screens/storage_space_screen.dart`；`lib/peer/` 仅帧路由。
 
@@ -340,3 +340,4 @@ master 上的镜像树主要是各端本地数据的副本；为降低单点损�
 34. M7 无头危险区 wipeSelf（`WipeSelf`；`/admin/api/devices/wipe-self` 需 `confirm=DELETE`；不动他端/回收站/.system）。
 35. 重连握手学习 Channel/Local 端点（msg1/`reconnect_ack` 可选端点；Go `MergeEndpoints`；App `updateChannelEndpoint`）。
 36. Go 同步游标水位（`sync.hello` / `sync.cursors`；`commit`/`delete` 的 `upto_seq` → `applied_seq`；`device_cursors.json`）。
+37. `she.presence` 真实 Agent 类别计数（`aggregatePresenceProfile`；断线标离线；圈子展示 count/类别，仍不暴露名单）。
