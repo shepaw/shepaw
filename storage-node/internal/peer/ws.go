@@ -20,11 +20,13 @@ var upgrader = websocket.Upgrader{
 
 // Server handles /peer/ws Noise pairing + reconnect + encrypted store control frames.
 type Server struct {
-	Store      *store.Local
-	Hub        *PairingHub
-	Peers      *Store
-	Identity   *noise.Identity
-	DeviceName string
+	Store           *store.Local
+	Hub             *PairingHub
+	Peers           *Store
+	Identity        *noise.Identity
+	DeviceName      string
+	LocalEndpoint   string // advertised ws://host:port/peer/ws
+	ChannelEndpoint string // optional wss://channel.../peer/ws
 }
 
 func (s *Server) HandleWS(w http.ResponseWriter, r *http.Request) {
@@ -121,13 +123,17 @@ func (s *Server) handlePairing(
 		peerID = NewPeerID()
 	}
 	resp := PairingResponse{
-		Accepted:   accept,
-		DeviceName: s.DeviceName,
-		DeviceID:   s.Identity.Fingerprint(),
-		PeerID:     peerID,
+		Accepted:        accept,
+		DeviceName:      s.DeviceName,
+		DeviceID:        s.Identity.Fingerprint(),
+		PeerID:          peerID,
+		LocalEndpoint:   s.LocalEndpoint,
+		ChannelEndpoint: s.ChannelEndpoint,
 	}
 	if !accept {
 		resp.RejectReason = "rejected"
+		resp.LocalEndpoint = ""
+		resp.ChannelEndpoint = ""
 	}
 	b, _ := encodePairingResponse(resp)
 	msg2, err := sess.WriteHandshake2(b)
@@ -144,14 +150,17 @@ func (s *Server) handlePairing(
 	}
 
 	_ = s.Peers.Upsert(Peer{
-		Fingerprint:  fp,
-		PublicKeyB64: base64.StdEncoding.EncodeToString(peerPub),
-		DeviceName:   req.DeviceName,
-		PeerID:       peerID,
-		TrustLevel:   protocol.TrustOwner,
-		PairedAtMs:   NowMs(),
+		Fingerprint:     fp,
+		PublicKeyB64:    base64.StdEncoding.EncodeToString(peerPub),
+		DeviceName:      req.DeviceName,
+		PeerID:          peerID,
+		TrustLevel:      protocol.TrustOwner,
+		PairedAtMs:      NowMs(),
+		LocalEndpoint:   req.LocalEndpoint,
+		ChannelEndpoint: req.ChannelEndpoint,
 	})
-	log.Printf("paired peer fp=%s name=%s", fp, req.DeviceName)
+	log.Printf("paired peer fp=%s name=%s local=%s channel=%s",
+		fp, req.DeviceName, req.LocalEndpoint, req.ChannelEndpoint)
 	s.serveTransport(conn, sess, fp)
 }
 

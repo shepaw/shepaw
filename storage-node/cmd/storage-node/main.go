@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/shepaw/storage-node/internal/admin"
 	"github.com/shepaw/storage-node/internal/noise"
@@ -22,6 +23,8 @@ func main() {
 	adminToken := flag.String("admin-token", os.Getenv("SHEPAW_ADMIN_TOKEN"),
 		"admin UI/API token (env SHEPAW_ADMIN_TOKEN); empty = loopback-only")
 	deviceName := flag.String("name", "storage-node", "device display name for pairing")
+	channel := flag.String("channel", os.Getenv("SHEPAW_CHANNEL_ENDPOINT"),
+		"optional Channel WS endpoint for pairing QR/response (env SHEPAW_CHANNEL_ENDPOINT)")
 	flag.Parse()
 
 	idPath := filepath.Join(*root, ".system", "noise_identity.json")
@@ -42,12 +45,16 @@ func main() {
 	}
 	peers := peer.NewStore(*root)
 	hub := peer.NewPairingHub(identity, peers, *deviceName)
+	localEndpoint := peer.AdvertiseLocalWS(*listen)
+	channelEndpoint := strings.TrimSpace(*channel)
 	peerSrv := &peer.Server{
-		Store:      s,
-		Hub:        hub,
-		Peers:      peers,
-		Identity:   identity,
-		DeviceName: *deviceName,
+		Store:           s,
+		Hub:             hub,
+		Peers:           peers,
+		Identity:        identity,
+		DeviceName:      *deviceName,
+		LocalEndpoint:   localEndpoint,
+		ChannelEndpoint: channelEndpoint,
 	}
 
 	mux := http.NewServeMux()
@@ -98,13 +105,14 @@ func main() {
 	mux.HandleFunc("/peer/ws", peerSrv.HandleWS)
 
 	adminSrv := &admin.Server{
-		Store:    s,
-		Device:   device,
-		Auth:     admin.AuthConfig{Token: *adminToken},
-		Hub:      hub,
-		Peers:    peers,
-		Identity: identity,
-		Listen:   *listen,
+		Store:           s,
+		Device:          device,
+		Auth:            admin.AuthConfig{Token: *adminToken},
+		Hub:             hub,
+		Peers:           peers,
+		Identity:        identity,
+		Listen:          *listen,
+		ChannelEndpoint: channelEndpoint,
 	}
 	adminSrv.Mount(mux)
 
@@ -113,8 +121,11 @@ func main() {
 	} else {
 		log.Printf("admin: token required for /admin")
 	}
-	log.Printf("storage-node device=%s name=%s root=%s listen=%s (Noise IK /peer/ws)",
-		device, *deviceName, *root, *listen)
+	if channelEndpoint != "" {
+		log.Printf("channel endpoint: %s", channelEndpoint)
+	}
+	log.Printf("storage-node device=%s name=%s root=%s listen=%s local=%s (Noise IK /peer/ws)",
+		device, *deviceName, *root, *listen, localEndpoint)
 	if err := http.ListenAndServe(*listen, mux); err != nil {
 		log.Println(err)
 		os.Exit(1)

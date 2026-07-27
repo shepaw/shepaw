@@ -14,12 +14,14 @@ import (
 
 // Peer is a paired owner device.
 type Peer struct {
-	Fingerprint string `json:"fingerprint"`
-	PublicKeyB64 string `json:"public_key_b64"`
-	DeviceName  string `json:"device_name"`
-	PeerID      string `json:"peer_id"`
-	TrustLevel  string `json:"trust_level"`
-	PairedAtMs  int64  `json:"paired_at_ms"`
+	Fingerprint     string `json:"fingerprint"`
+	PublicKeyB64    string `json:"public_key_b64"`
+	DeviceName      string `json:"device_name"`
+	PeerID          string `json:"peer_id"`
+	TrustLevel      string `json:"trust_level"`
+	PairedAtMs      int64  `json:"paired_at_ms"`
+	LocalEndpoint   string `json:"local_endpoint,omitempty"`
+	ChannelEndpoint string `json:"channel_endpoint,omitempty"`
 }
 
 type Store struct {

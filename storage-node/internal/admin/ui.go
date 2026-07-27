@@ -209,7 +209,9 @@ $('refresh').onclick = refresh;
 $('pairStart').onclick = async () => {
   try {
     const out = await api('/admin/api/pairing/start', {method:'POST'});
-    $('pairInfo').textContent = 'code=' + out.code + '\nendpoint=' + out.local_endpoint +
+    $('pairInfo').textContent = 'code=' + out.code +
+      '\nlocal=' + out.local_endpoint +
+      (out.channel_endpoint ? ('\nchannel=' + out.channel_endpoint) : '') +
       '\nfp=' + out.fingerprint + '\n\n' + out.qr;
     refresh();
   } catch (e) { $('msg').textContent = String(e.message||e); }

@@ -2,8 +2,6 @@ package admin
 
 import (
 	"encoding/json"
-	"fmt"
-	"net"
 	"net/http"
 	"strings"
 
@@ -15,13 +13,14 @@ import (
 
 // Server exposes privileged admin APIs over the local store (M7 headless).
 type Server struct {
-	Store    *store.Local
-	Auth     AuthConfig
-	Device   string
-	Hub      *peer.PairingHub
-	Peers    *peer.Store
-	Identity *noise.Identity
-	Listen   string
+	Store           *store.Local
+	Auth            AuthConfig
+	Device          string
+	Hub             *peer.PairingHub
+	Peers           *peer.Store
+	Identity        *noise.Identity
+	Listen          string
+	ChannelEndpoint string // optional wss://.../peer/ws for QR + pairing start
 }
 
 // Mount registers /admin/ (UI) and /admin/api/* on mux.
@@ -213,13 +212,18 @@ func (s *Server) handlePairingStart(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	local := advertiseLocalWS(s.Listen)
-	qr := peer.EncodeQR(local, code, s.Identity.Fingerprint(), s.Identity.PublicKey)
-	writeJSON(w, map[string]any{
-		"code":          code,
-		"qr":            qr,
+	channel := strings.TrimSpace(s.ChannelEndpoint)
+	qr := peer.EncodeQR(local, channel, code, s.Identity.Fingerprint(), s.Identity.PublicKey)
+	out := map[string]any{
+		"code":           code,
+		"qr":             qr,
 		"local_endpoint": local,
-		"fingerprint":   s.Identity.Fingerprint(),
-	})
+		"fingerprint":    s.Identity.Fingerprint(),
+	}
+	if channel != "" {
+		out["channel_endpoint"] = channel
+	}
+	writeJSON(w, out)
 }
 
 func (s *Server) handlePairingPending(w http.ResponseWriter, r *http.Request) {
@@ -275,50 +279,7 @@ func (s *Server) handlePeers(w http.ResponseWriter, r *http.Request) {
 }
 
 func advertiseLocalWS(listen string) string {
-	host, port, err := net.SplitHostPort(listen)
-	if err != nil {
-		return "ws://127.0.0.1:8787/peer/ws"
-	}
-	if host == "" || host == "0.0.0.0" || host == "::" {
-		host = firstNonLoopbackIPv4()
-		if host == "" {
-			host = "127.0.0.1"
-		}
-	}
-	if strings.Contains(host, ":") {
-		host = "[" + host + "]"
-	}
-	return fmt.Sprintf("ws://%s:%s/peer/ws", host, port)
-}
-
-func firstNonLoopbackIPv4() string {
-	ifaces, err := net.Interfaces()
-	if err != nil {
-		return ""
-	}
-	for _, iface := range ifaces {
-		if iface.Flags&net.FlagUp == 0 || iface.Flags&net.FlagLoopback != 0 {
-			continue
-		}
-		addrs, _ := iface.Addrs()
-		for _, a := range addrs {
-			var ip net.IP
-			switch v := a.(type) {
-			case *net.IPNet:
-				ip = v.IP
-			case *net.IPAddr:
-				ip = v.IP
-			}
-			if ip == nil || ip.IsLoopback() {
-				continue
-			}
-			ip = ip.To4()
-			if ip != nil {
-				return ip.String()
-			}
-		}
-	}
-	return ""
+	return peer.AdvertiseLocalWS(listen)
 }
 
 func (s *Server) handleUI(w http.ResponseWriter, r *http.Request) {

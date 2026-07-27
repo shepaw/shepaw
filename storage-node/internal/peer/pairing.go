@@ -115,10 +115,16 @@ func (h *PairingHub) Decide(accept bool) error {
 }
 
 // EncodeQR builds shepaw://peer?... matching Dart PeerPairingInfo.encode.
-func EncodeQR(localEndpoint, code, fingerprint string, publicKey []byte) string {
+// At least one of localEndpoint / channelEndpoint must be non-empty.
+func EncodeQR(localEndpoint, channelEndpoint, code, fingerprint string, publicKey []byte) string {
 	pk := noiseToBase64URL(publicKey)
 	q := url.Values{}
-	q.Set("local", localEndpoint)
+	if localEndpoint != "" {
+		q.Set("local", localEndpoint)
+	}
+	if channelEndpoint != "" {
+		q.Set("channel", channelEndpoint)
+	}
 	q.Set("code", code)
 	return fmt.Sprintf("shepaw://peer?%s#fp=%s&pk=%s", q.Encode(), fingerprint, pk)
 }
