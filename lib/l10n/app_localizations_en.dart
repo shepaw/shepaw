@@ -4896,6 +4896,42 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
+  String get storage_exportWebdav => 'Export to WebDAV';
+
+  @override
+  String get storage_exportWebdavTitle => 'Export to WebDAV';
+
+  @override
+  String get storage_exportWebdavDesc =>
+      'Upload this device\'s four partitions (committed files) to WebDAV. Manual fallback only.';
+
+  @override
+  String get storage_exportWebdavHint =>
+      'Enter the WebDAV base URL and credentials. Files go under prefix/device_id/…. Credentials are used once and not saved.';
+
+  @override
+  String get storage_exportWebdavUrl => 'Server URL';
+
+  @override
+  String get storage_exportWebdavUser => 'Username';
+
+  @override
+  String get storage_exportWebdavPassword => 'Password';
+
+  @override
+  String get storage_exportWebdavPrefix => 'Remote folder prefix';
+
+  @override
+  String storage_exportWebdavDone(String path, int count, String size) {
+    return 'Uploaded to $path ($count files, $size)';
+  }
+
+  @override
+  String storage_exportWebdavFailed(String error) {
+    return 'WebDAV export failed: $error';
+  }
+
+  @override
   String get storage_wipeSelf => 'Wipe local store data';
 
   @override

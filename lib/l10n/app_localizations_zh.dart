@@ -4712,6 +4712,41 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
+  String get storage_exportWebdav => '导出到 WebDAV';
+
+  @override
+  String get storage_exportWebdavTitle => '导出到 WebDAV';
+
+  @override
+  String get storage_exportWebdavDesc => '将本机四分区正式文件上传到 WebDAV（手动兜底，不占自动路径）。';
+
+  @override
+  String get storage_exportWebdavHint =>
+      '输入 WebDAV 根地址与凭据。文件将上传到「前缀/device_id/…」。凭据仅用于本次导出，不会保存。';
+
+  @override
+  String get storage_exportWebdavUrl => '服务器 URL';
+
+  @override
+  String get storage_exportWebdavUser => '用户名';
+
+  @override
+  String get storage_exportWebdavPassword => '密码';
+
+  @override
+  String get storage_exportWebdavPrefix => '远程目录前缀';
+
+  @override
+  String storage_exportWebdavDone(String path, int count, String size) {
+    return '已上传到 $path（$count 个文件，$size）';
+  }
+
+  @override
+  String storage_exportWebdavFailed(String error) {
+    return 'WebDAV 导出失败：$error';
+  }
+
+  @override
   String get storage_wipeSelf => '删除本机存储数据';
 
   @override

@@ -2373,6 +2373,16 @@
   "storage_exportTreeHint": "Exports the full local store tree (artifacts / files / attachments / backups). Pick a destination folder.",
   "storage_exportTreeDone": "Exported to {path} ({count} files, {size})",
   "storage_exportTreeFailed": "Export failed: {error}",
+  "storage_exportWebdav": "Export to WebDAV",
+  "storage_exportWebdavTitle": "Export to WebDAV",
+  "storage_exportWebdavDesc": "Upload this device's four partitions (committed files) to WebDAV. Manual fallback only.",
+  "storage_exportWebdavHint": "Enter the WebDAV base URL and credentials. Files go under prefix/device_id/…. Credentials are used once and not saved.",
+  "storage_exportWebdavUrl": "Server URL",
+  "storage_exportWebdavUser": "Username",
+  "storage_exportWebdavPassword": "Password",
+  "storage_exportWebdavPrefix": "Remote folder prefix",
+  "storage_exportWebdavDone": "Uploaded to {path} ({count} files, {size})",
+  "storage_exportWebdavFailed": "WebDAV export failed: {error}",
   "storage_wipeSelf": "Wipe local store data",
   "storage_wipeSelfTitle": "Wipe local store data",
   "storage_wipeSelfDesc": "Clears this device's four partitions and staging (keeps other mirrors, recycle, DB, and device identity). Export first if needed.",
@@ -2450,6 +2460,18 @@
     }
   },
   "@storage_exportTreeFailed": {
+    "placeholders": {
+      "error": { "type": "String" }
+    }
+  },
+  "@storage_exportWebdavDone": {
+    "placeholders": {
+      "path": { "type": "String" },
+      "count": { "type": "int" },
+      "size": { "type": "String" }
+    }
+  },
+  "@storage_exportWebdavFailed": {
     "placeholders": {
       "error": { "type": "String" }
     }

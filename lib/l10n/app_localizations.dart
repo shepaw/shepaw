@@ -8612,6 +8612,66 @@ abstract class AppLocalizations {
   /// **'导出失败：{error}'**
   String storage_exportTreeFailed(String error);
 
+  /// No description provided for @storage_exportWebdav.
+  ///
+  /// In zh, this message translates to:
+  /// **'导出到 WebDAV'**
+  String get storage_exportWebdav;
+
+  /// No description provided for @storage_exportWebdavTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'导出到 WebDAV'**
+  String get storage_exportWebdavTitle;
+
+  /// No description provided for @storage_exportWebdavDesc.
+  ///
+  /// In zh, this message translates to:
+  /// **'将本机四分区正式文件上传到 WebDAV（手动兜底，不占自动路径）。'**
+  String get storage_exportWebdavDesc;
+
+  /// No description provided for @storage_exportWebdavHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'输入 WebDAV 根地址与凭据。文件将上传到「前缀/device_id/…」。凭据仅用于本次导出，不会保存。'**
+  String get storage_exportWebdavHint;
+
+  /// No description provided for @storage_exportWebdavUrl.
+  ///
+  /// In zh, this message translates to:
+  /// **'服务器 URL'**
+  String get storage_exportWebdavUrl;
+
+  /// No description provided for @storage_exportWebdavUser.
+  ///
+  /// In zh, this message translates to:
+  /// **'用户名'**
+  String get storage_exportWebdavUser;
+
+  /// No description provided for @storage_exportWebdavPassword.
+  ///
+  /// In zh, this message translates to:
+  /// **'密码'**
+  String get storage_exportWebdavPassword;
+
+  /// No description provided for @storage_exportWebdavPrefix.
+  ///
+  /// In zh, this message translates to:
+  /// **'远程目录前缀'**
+  String get storage_exportWebdavPrefix;
+
+  /// No description provided for @storage_exportWebdavDone.
+  ///
+  /// In zh, this message translates to:
+  /// **'已上传到 {path}（{count} 个文件，{size}）'**
+  String storage_exportWebdavDone(String path, int count, String size);
+
+  /// No description provided for @storage_exportWebdavFailed.
+  ///
+  /// In zh, this message translates to:
+  /// **'WebDAV 导出失败：{error}'**
+  String storage_exportWebdavFailed(String error);
+
   /// No description provided for @storage_wipeSelf.
   ///
   /// In zh, this message translates to:

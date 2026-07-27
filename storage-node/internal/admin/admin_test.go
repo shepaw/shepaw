@@ -1,0 +1,156 @@
+package admin_test
+
+import (
+	"bytes"
+	"encoding/base64"
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
+	"testing"
+
+	"github.com/shepaw/storage-node/internal/admin"
+	"github.com/shepaw/storage-node/internal/protocol"
+	"github.com/shepaw/storage-node/internal/store"
+)
+
+func TestAdminAuthTokenRequired(t *testing.T) {
+	root := t.TempDir()
+	device := "aaaaaaaaaaaaaaaa"
+	s, err := store.Open(root, device)
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv := &admin.Server{
+		Store:  s,
+		Device: device,
+		Auth:   admin.AuthConfig{Token: "secret"},
+	}
+	mux := http.NewServeMux()
+	srv.Mount(mux)
+
+	req := httptest.NewRequest(http.MethodGet, "/admin/api/stats", nil)
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("want 401, got %d", rec.Code)
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/admin/api/stats", nil)
+	req.Header.Set("Authorization", "Bearer secret")
+	rec = httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("want 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestAdminRecycleEmpty(t *testing.T) {
+	root := t.TempDir()
+	device := "aaaaaaaaaaaaaaaa"
+	s, err := store.Open(root, device)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// seed a file then delete into recycle
+	begin, err := s.Handle(protocol.Frame{
+		Op: "write.begin",
+		Payload: map[string]any{
+			"space": "files",
+			"path":  "gone.txt",
+		},
+	}, device, protocol.TrustOwner, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	id := begin["upload_id"].(string)
+	_, err = s.Handle(protocol.Frame{
+		Op: "write.chunk",
+		Payload: map[string]any{
+			"upload_id": id,
+			"data":      base64.StdEncoding.EncodeToString([]byte("x")),
+		},
+	}, device, protocol.TrustOwner, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = s.Handle(protocol.Frame{
+		Op:      "commit",
+		Payload: map[string]any{"upload_ids": []any{id}},
+	}, device, protocol.TrustOwner, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = s.Handle(protocol.Frame{
+		Op:      "delete",
+		Payload: map[string]any{"space": "files", "path": "gone.txt"},
+	}, device, protocol.TrustOwner, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	srv := &admin.Server{
+		Store:  s,
+		Device: device,
+		Auth:   admin.AuthConfig{Token: "t"},
+	}
+	mux := http.NewServeMux()
+	srv.Mount(mux)
+
+	req := httptest.NewRequest(http.MethodGet, "/admin/api/recycle", nil)
+	req.Header.Set("X-Admin-Token", "t")
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("recycle list: %d %s", rec.Code, rec.Body.String())
+	}
+	var listed map[string]any
+	_ = json.Unmarshal(rec.Body.Bytes(), &listed)
+	entries, _ := listed["entries"].([]any)
+	if len(entries) == 0 {
+		t.Fatal("expected recycle entries")
+	}
+
+	req = httptest.NewRequest(http.MethodPost, "/admin/api/recycle/empty", bytes.NewReader(nil))
+	req.Header.Set("Authorization", "Bearer t")
+	rec = httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("empty: %d %s", rec.Code, rec.Body.String())
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/admin/api/recycle", nil)
+	req.Header.Set("Authorization", "Bearer t")
+	rec = httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+	_ = json.Unmarshal(rec.Body.Bytes(), &listed)
+	entries, _ = listed["entries"].([]any)
+	if len(entries) != 0 {
+		t.Fatalf("want empty recycle, got %v", entries)
+	}
+}
+
+func TestAdminUI(t *testing.T) {
+	root := t.TempDir()
+	device := "aaaaaaaaaaaaaaaa"
+	s, err := store.Open(root, device)
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv := &admin.Server{
+		Store:  s,
+		Device: device,
+		Auth:   admin.AuthConfig{Token: "ui"},
+	}
+	mux := http.NewServeMux()
+	srv.Mount(mux)
+	req := httptest.NewRequest(http.MethodGet, "/admin/", nil)
+	req.Header.Set("Authorization", "Bearer ui")
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("ui: %d", rec.Code)
+	}
+	if ct := rec.Header().Get("Content-Type"); ct == "" || rec.Body.Len() < 100 {
+		t.Fatalf("unexpected ui response ct=%s len=%d", ct, rec.Body.Len())
+	}
+}

@@ -22,7 +22,7 @@ class StoreExportResult {
 
 /// 导出本机 `<device_id>/{artifacts,files,attachments,backups}/` 正式区树。
 ///
-/// 跳过 `.staging` 与一切 `.` 开头目录；不做 WebDAV（§13 可选）。
+/// 跳过 `.staging` 与一切 `.` 开头目录；WebDAV 见 [StoreWebdavExportService]。
 class StoreExportService {
   StoreExportService._();
   static final StoreExportService instance = StoreExportService._();

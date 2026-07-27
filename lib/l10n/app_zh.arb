@@ -2858,6 +2858,16 @@
   "storage_exportTreeHint": "导出完整本机 store 目录树（artifacts / files / attachments / backups）。请选择目标文件夹。",
   "storage_exportTreeDone": "已导出到 {path}（{count} 个文件，{size}）",
   "storage_exportTreeFailed": "导出失败：{error}",
+  "storage_exportWebdav": "导出到 WebDAV",
+  "storage_exportWebdavTitle": "导出到 WebDAV",
+  "storage_exportWebdavDesc": "将本机四分区正式文件上传到 WebDAV（手动兜底，不占自动路径）。",
+  "storage_exportWebdavHint": "输入 WebDAV 根地址与凭据。文件将上传到「前缀/device_id/…」。凭据仅用于本次导出，不会保存。",
+  "storage_exportWebdavUrl": "服务器 URL",
+  "storage_exportWebdavUser": "用户名",
+  "storage_exportWebdavPassword": "密码",
+  "storage_exportWebdavPrefix": "远程目录前缀",
+  "storage_exportWebdavDone": "已上传到 {path}（{count} 个文件，{size}）",
+  "storage_exportWebdavFailed": "WebDAV 导出失败：{error}",
   "storage_wipeSelf": "删除本机存储数据",
   "storage_wipeSelfTitle": "删除本机存储数据",
   "storage_wipeSelfDesc": "清空本机四分区正式文件与暂存（不删他端镜像、回收站、数据库与设备身份）。建议先导出。",
@@ -2935,6 +2945,18 @@
     }
   },
   "@storage_exportTreeFailed": {
+    "placeholders": {
+      "error": { "type": "String" }
+    }
+  },
+  "@storage_exportWebdavDone": {
+    "placeholders": {
+      "path": { "type": "String" },
+      "count": { "type": "int" },
+      "size": { "type": "String" }
+    }
+  },
+  "@storage_exportWebdavFailed": {
     "placeholders": {
       "error": { "type": "String" }
     }

@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 
+	"github.com/shepaw/storage-node/internal/admin"
 	"github.com/shepaw/storage-node/internal/protocol"
 	"github.com/shepaw/storage-node/internal/store"
 )
@@ -15,6 +16,8 @@ func main() {
 	root := flag.String("root", "./data", "store root directory")
 	device := flag.String("device", "0000000000000001", "this node device_id (16 hex)")
 	listen := flag.String("listen", ":8787", "HTTP listen address")
+	adminToken := flag.String("admin-token", os.Getenv("SHEPAW_ADMIN_TOKEN"),
+		"admin UI/API token (env SHEPAW_ADMIN_TOKEN); empty = loopback-only")
 	flag.Parse()
 
 	s, err := store.Open(*root, *device)
@@ -67,6 +70,18 @@ func main() {
 		_ = json.NewEncoder(w).Encode(map[string]any{"op": "result", "data": data})
 	})
 
+	adminSrv := &admin.Server{
+		Store:  s,
+		Device: *device,
+		Auth:   admin.AuthConfig{Token: *adminToken},
+	}
+	adminSrv.Mount(mux)
+
+	if *adminToken == "" {
+		log.Printf("admin: no token set — /admin only allows loopback")
+	} else {
+		log.Printf("admin: token required for /admin")
+	}
 	log.Printf("storage-node device=%s root=%s listen=%s", *device, *root, *listen)
 	if err := http.ListenAndServe(*listen, mux); err != nil {
 		log.Println(err)
