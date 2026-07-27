@@ -81,6 +81,14 @@ td, th { text-align: left; padding: .35rem .25rem; border-bottom: 1px solid
     </div>
     <div id="recycle"></div>
   </div>
+  <div class="card">
+    <h2>危险区</h2>
+    <p class="muted">清空本机四分区正式文件与暂存（不删他端镜像、回收站、.system）。不可从回收站还原。</p>
+    <div class="row">
+      <input id="wipeConfirm" placeholder="输入 DELETE 确认" style="min-width:12rem"/>
+      <button id="wipeSelf" style="color:#c62828">清空本机 store</button>
+    </div>
+  </div>
   <p id="msg" class="err"></p>
 <script>
 const $ = (id) => document.getElementById(id);
@@ -330,6 +338,24 @@ async function loadBrowse() {
   } catch (e) { $('msg').textContent = String(e.message||e); }
 }
 $('browseLoad').onclick = loadBrowse;
+$('wipeSelf').onclick = async () => {
+  const confirm = ($('wipeConfirm').value || '').trim();
+  if (confirm !== 'DELETE') {
+    $('msg').textContent = '请先在输入框输入 DELETE';
+    return;
+  }
+  if (!window.confirm('确认清空本机 store？此操作不可从回收站还原。')) return;
+  try {
+    const out = await api('/admin/api/devices/wipe-self', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({confirm: 'DELETE'})
+    });
+    $('wipeConfirm').value = '';
+    $('msg').textContent = '';
+    alert('已清空本机 store，释放 ' + fmtBytes(out.freed_bytes));
+    refresh();
+  } catch (e) { $('msg').textContent = String(e.message||e); }
+};
 refresh();
 </script>
 </body>

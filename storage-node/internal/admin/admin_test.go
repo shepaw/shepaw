@@ -281,6 +281,50 @@ func TestAdminBrowseAPI(t *testing.T) {
 	}
 }
 
+func TestAdminWipeSelfAPI(t *testing.T) {
+	root := t.TempDir()
+	self := "aaaaaaaaaaaaaaaa"
+	s, err := store.Open(root, self)
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := filepath.Join(root, self, "files")
+	_ = os.MkdirAll(dir, 0o755)
+	_ = os.WriteFile(filepath.Join(dir, "a.txt"), []byte("x"), 0o644)
+
+	srv := &admin.Server{
+		Store:  s,
+		Device: self,
+		Auth:   admin.AuthConfig{Token: "t"},
+	}
+	mux := http.NewServeMux()
+	srv.Mount(mux)
+
+	// missing confirm
+	body, _ := json.Marshal(map[string]string{"confirm": "nope"})
+	req := httptest.NewRequest(http.MethodPost, "/admin/api/devices/wipe-self", bytes.NewReader(body))
+	req.Header.Set("Authorization", "Bearer t")
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+	if rec.Code == http.StatusOK {
+		t.Fatal("expected reject without DELETE")
+	}
+
+	body, _ = json.Marshal(map[string]string{"confirm": "DELETE"})
+	req = httptest.NewRequest(http.MethodPost, "/admin/api/devices/wipe-self", bytes.NewReader(body))
+	req.Header.Set("Authorization", "Bearer t")
+	req.Header.Set("Content-Type", "application/json")
+	rec = httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("wipe: %d %s", rec.Code, rec.Body.String())
+	}
+	if _, err := os.Stat(filepath.Join(dir, "a.txt")); !os.IsNotExist(err) {
+		t.Fatal("file should be wiped")
+	}
+}
+
 func TestAdminUI(t *testing.T) {
 	root := t.TempDir()
 	device := "aaaaaaaaaaaaaaaa"

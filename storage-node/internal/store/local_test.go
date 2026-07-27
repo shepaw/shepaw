@@ -410,6 +410,55 @@ func TestAdminListDelete(t *testing.T) {
 	}
 }
 
+func TestWipeSelf(t *testing.T) {
+	root := t.TempDir()
+	self := "aaaaaaaaaaaaaaaa"
+	other := "bbbbbbbbbbbbbbbb"
+	s, err := store.Open(root, self)
+	if err != nil {
+		t.Fatal(err)
+	}
+	selfDir := filepath.Join(root, self, "files")
+	if err := os.MkdirAll(selfDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(selfDir, "a.txt"), []byte("data"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	otherDir := filepath.Join(root, other, "files")
+	if err := os.MkdirAll(otherDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(otherDir, "keep.txt"), []byte("keep"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	recycle := filepath.Join(root, ".recycle", "x")
+	_ = os.MkdirAll(recycle, 0o755)
+
+	freed, err := s.WipeSelf(self)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if freed <= 0 {
+		t.Fatalf("freed=%d", freed)
+	}
+	if _, err := os.Stat(filepath.Join(selfDir, "a.txt")); !os.IsNotExist(err) {
+		t.Fatal("self file should be gone")
+	}
+	if _, err := os.Stat(filepath.Join(root, self)); err != nil {
+		t.Fatal("self dir should be recreated")
+	}
+	if _, err := os.Stat(filepath.Join(otherDir, "keep.txt")); err != nil {
+		t.Fatal("other mirror must remain")
+	}
+	if _, err := os.Stat(recycle); err != nil {
+		t.Fatal("recycle must remain")
+	}
+	if _, err := s.WipeSelf(other); err == nil {
+		t.Fatal("cannot wipe other as self")
+	}
+}
+
 func TestPurgeDeviceNotFound(t *testing.T) {
 	root := t.TempDir()
 	self := "aaaaaaaaaaaaaaaa"

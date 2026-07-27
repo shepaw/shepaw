@@ -40,6 +40,7 @@ func (s *Server) Mount(mux *http.ServeMux) {
 	api.HandleFunc("/pairing/decide", s.handlePairingDecide)
 	api.HandleFunc("/peers", s.handlePeers)
 	api.HandleFunc("/devices/purge", s.handleDevicePurge)
+	api.HandleFunc("/devices/wipe-self", s.handleWipeSelf)
 	api.HandleFunc("/browse", s.handleBrowse)
 	api.HandleFunc("/browse/delete", s.handleBrowseDelete)
 
@@ -303,6 +304,34 @@ func (s *Server) handleDevicePurge(w http.ResponseWriter, r *http.Request) {
 		"ok":           true,
 		"device_id":    body.DeviceID,
 		"purged_bytes": freed,
+	})
+}
+
+func (s *Server) handleWipeSelf(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "POST only", http.StatusMethodNotAllowed)
+		return
+	}
+	var body struct {
+		Confirm string `json:"confirm"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		http.Error(w, "bad json", http.StatusBadRequest)
+		return
+	}
+	if body.Confirm != "DELETE" {
+		http.Error(w, `confirm must be "DELETE"`, http.StatusBadRequest)
+		return
+	}
+	freed, err := s.Store.WipeSelf(s.Device)
+	if err != nil {
+		writeErr(w, err)
+		return
+	}
+	writeJSON(w, map[string]any{
+		"ok":          true,
+		"device_id":   s.Device,
+		"freed_bytes": freed,
 	})
 }
 
