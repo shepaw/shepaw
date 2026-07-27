@@ -33,6 +33,7 @@ import '../storage/store_export_service.dart';
 import '../storage/store_wipe_service.dart';
 import '../storage/store_protocol.dart';
 import '../storage/store_service.dart';
+import 'storage_browser_screen.dart';
 import 'storage_import_scanner_screen.dart';
 
 /// 存储空间页（docs/storage_space_plan.md §7）。
@@ -838,6 +839,19 @@ class _StorageSpaceScreenState extends State<StorageSpaceScreen> {
                         onPressed: _busy ? null : _reprotectNow,
                         child: Text(l10n.storage_reprotectNow),
                       ),
+                    OutlinedButton(
+                      onPressed: _busy
+                          ? null
+                          : () {
+                              Navigator.of(context).push(
+                                MaterialPageRoute<void>(
+                                  builder: (_) =>
+                                      const StorageBrowserScreen(),
+                                ),
+                              );
+                            },
+                      child: Text(l10n.storage_browseFiles),
+                    ),
                   ],
                 ),
                 if (_stats != null) ...[

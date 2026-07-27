@@ -2865,6 +2865,22 @@
   "storage_wipeSelfTypeHint": "输入 DELETE",
   "storage_wipeSelfDone": "已清空本机存储（释放 {size}）",
   "storage_wipeSelfFailed": "删除失败：{error}",
+  "storage_browseFiles": "浏览文件",
+  "storage_browserTitle": "存储文件",
+  "storage_browserHint": "浏览本机 store 正式文件。master 可查看并删除他端镜像文件（进入回收站）。",
+  "storage_browserDevice": "设备",
+  "storage_browserPrefix": "路径前缀",
+  "storage_browserPrefixHint": "例如 docs/ 或 task/",
+  "storage_browserEmpty": "该分区暂无文件",
+  "storage_browserCount": "显示 {count} 个文件",
+  "storage_browserLoadMore": "加载更多",
+  "storage_browserRefresh": "刷新",
+  "storage_browserDelete": "删除",
+  "storage_browserDeleteTitle": "删除文件",
+  "storage_browserDeleteConfirm": "将删除 {path} 并移入回收站。确认？",
+  "storage_browserDeleted": "已删除 {path}",
+  "storage_browserDeleteFailed": "删除失败：{error}",
+  "storage_browserDeleteDenied": "无权删除他端文件（仅 master 本机）",
   "storage_mirroredDevices": "他端镜像目录",
   "storage_purgeDevice": "删除",
   "storage_purgeDeviceTitle": "删除旧设备镜像",
@@ -2929,6 +2945,26 @@
     }
   },
   "@storage_wipeSelfFailed": {
+    "placeholders": {
+      "error": { "type": "String" }
+    }
+  },
+  "@storage_browserCount": {
+    "placeholders": {
+      "count": { "type": "int" }
+    }
+  },
+  "@storage_browserDeleteConfirm": {
+    "placeholders": {
+      "path": { "type": "String" }
+    }
+  },
+  "@storage_browserDeleted": {
+    "placeholders": {
+      "path": { "type": "String" }
+    }
+  },
+  "@storage_browserDeleteFailed": {
     "placeholders": {
       "error": { "type": "String" }
     }

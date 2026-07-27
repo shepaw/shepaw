@@ -4739,6 +4739,63 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
+  String get storage_browseFiles => '浏览文件';
+
+  @override
+  String get storage_browserTitle => '存储文件';
+
+  @override
+  String get storage_browserHint =>
+      '浏览本机 store 正式文件。master 可查看并删除他端镜像文件（进入回收站）。';
+
+  @override
+  String get storage_browserDevice => '设备';
+
+  @override
+  String get storage_browserPrefix => '路径前缀';
+
+  @override
+  String get storage_browserPrefixHint => '例如 docs/ 或 task/';
+
+  @override
+  String get storage_browserEmpty => '该分区暂无文件';
+
+  @override
+  String storage_browserCount(int count) {
+    return '显示 $count 个文件';
+  }
+
+  @override
+  String get storage_browserLoadMore => '加载更多';
+
+  @override
+  String get storage_browserRefresh => '刷新';
+
+  @override
+  String get storage_browserDelete => '删除';
+
+  @override
+  String get storage_browserDeleteTitle => '删除文件';
+
+  @override
+  String storage_browserDeleteConfirm(String path) {
+    return '将删除 $path 并移入回收站。确认？';
+  }
+
+  @override
+  String storage_browserDeleted(String path) {
+    return '已删除 $path';
+  }
+
+  @override
+  String storage_browserDeleteFailed(String error) {
+    return '删除失败：$error';
+  }
+
+  @override
+  String get storage_browserDeleteDenied => '无权删除他端文件（仅 master 本机）';
+
+  @override
   String get storage_mirroredDevices => '他端镜像目录';
 
   @override

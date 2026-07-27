@@ -216,7 +216,7 @@ master 上的镜像树主要是各端本地数据的副本；为降低单点损�
 
 1. **本机存储卡片**：本机目录大小、未同步条数与占用（≥200MB 告警）、变更游标水位、本地安全快照。
 2. **备份与恢复**：快照列表（GFS 状态）、立即快照、恢复、**换机导入**（扫码 / 输入 device_id）。
-3. **存储空间**：当前 master 及用量（卷剩余 / **≥80% 告警**）、指定/迁移 master（升主时提示旧 master 不可达的数据缺口风险）、**他端镜像目录手删**（`LocalStore.purgeDevice`，仅 master 本机、禁删自身、同步清游标）、按设备/分区浏览文件、文件手动删除、回收站（**支持还原**并有结果提示；**清空仅 master 本机**显示与执行；列表可展开超过 20 条）、导入授权审批。
+3. **存储空间**：当前 master 及用量（卷剩余 / **≥80% 告警**）、指定/迁移 master（升主时提示旧 master 不可达的数据缺口风险）、**他端镜像目录手删**（`LocalStore.purgeDevice`，仅 master 本机、禁删自身、同步清游标）、**按设备/分区浏览与手删**（`StorageBrowserScreen`，本地 list；本机可删自身，master 可删他端镜像进回收站）、回收站（**支持还原**并有结果提示；**清空仅 master 本机**显示与执行；列表可展开超过 20 条）、导入授权审批。
 4. **她的朋友圈**：每个配对 she 一行——名字、信任等级、最近交换时间、类别开关、手动触发（实现位于 `lib/she_network/`，管理入口同页，逻辑与存储解耦）。
 5. **危险区**：本机 store 树**手动导出**（`StoreExportService`）；**删除本机存储数据**（`StoreWipeService`，需输入 `DELETE`；清队列保留 change_seq；不删他端镜像 / 回收站 / DB / 身份）；WebDAV 仍为后续。
 
@@ -304,7 +304,6 @@ master 上的镜像树主要是各端本地数据的副本；为降低单点损�
 - WebDAV 兜底导出。
 - 快照差量化；`she.presence` 名单级；跨人 she 社交；DB 级多端互通（另案）。
 - 系统级 BGAppRefresh / WorkManager（日快照已有回前台 + WiFi 触发）。
-- 按设备/分区文件浏览与手删。
 
 ## 附录 A. v1.1 相对 v1.0 的修订摘要
 
@@ -330,3 +329,4 @@ master 上的镜像树主要是各端本地数据的副本；为降低单点损�
 21. 危险区本机 store 树导出（`StoreExportService`，跳过 staging）。
 22. master 上手动删除旧 device 镜像（`purgeDevice` + 清游标；禁删本机）。
 23. 危险区删除本机 store 数据（`StoreWipeService` / `wipeSelf`，输入 DELETE；清队列保留 seq）。
+24. 按设备/分区浏览与手删（`StorageBrowserScreen`；master 可删他端镜像）。

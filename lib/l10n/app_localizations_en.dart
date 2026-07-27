@@ -4923,6 +4923,64 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
+  String get storage_browseFiles => 'Browse files';
+
+  @override
+  String get storage_browserTitle => 'Store files';
+
+  @override
+  String get storage_browserHint =>
+      'Browse committed store files on this device. The master can also view and delete mirrored files (moved to recycle).';
+
+  @override
+  String get storage_browserDevice => 'Device';
+
+  @override
+  String get storage_browserPrefix => 'Path prefix';
+
+  @override
+  String get storage_browserPrefixHint => 'e.g. docs/ or task/';
+
+  @override
+  String get storage_browserEmpty => 'No files in this space';
+
+  @override
+  String storage_browserCount(int count) {
+    return 'Showing $count files';
+  }
+
+  @override
+  String get storage_browserLoadMore => 'Load more';
+
+  @override
+  String get storage_browserRefresh => 'Refresh';
+
+  @override
+  String get storage_browserDelete => 'Delete';
+
+  @override
+  String get storage_browserDeleteTitle => 'Delete file';
+
+  @override
+  String storage_browserDeleteConfirm(String path) {
+    return 'Delete $path and move it to recycle?';
+  }
+
+  @override
+  String storage_browserDeleted(String path) {
+    return 'Deleted $path';
+  }
+
+  @override
+  String storage_browserDeleteFailed(String error) {
+    return 'Delete failed: $error';
+  }
+
+  @override
+  String get storage_browserDeleteDenied =>
+      'Cannot delete other devices\' files (master only)';
+
+  @override
   String get storage_mirroredDevices => 'Mirrored device directories';
 
   @override

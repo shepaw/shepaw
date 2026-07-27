@@ -8654,6 +8654,102 @@ abstract class AppLocalizations {
   /// **'删除失败：{error}'**
   String storage_wipeSelfFailed(String error);
 
+  /// No description provided for @storage_browseFiles.
+  ///
+  /// In zh, this message translates to:
+  /// **'浏览文件'**
+  String get storage_browseFiles;
+
+  /// No description provided for @storage_browserTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'存储文件'**
+  String get storage_browserTitle;
+
+  /// No description provided for @storage_browserHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'浏览本机 store 正式文件。master 可查看并删除他端镜像文件（进入回收站）。'**
+  String get storage_browserHint;
+
+  /// No description provided for @storage_browserDevice.
+  ///
+  /// In zh, this message translates to:
+  /// **'设备'**
+  String get storage_browserDevice;
+
+  /// No description provided for @storage_browserPrefix.
+  ///
+  /// In zh, this message translates to:
+  /// **'路径前缀'**
+  String get storage_browserPrefix;
+
+  /// No description provided for @storage_browserPrefixHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'例如 docs/ 或 task/'**
+  String get storage_browserPrefixHint;
+
+  /// No description provided for @storage_browserEmpty.
+  ///
+  /// In zh, this message translates to:
+  /// **'该分区暂无文件'**
+  String get storage_browserEmpty;
+
+  /// No description provided for @storage_browserCount.
+  ///
+  /// In zh, this message translates to:
+  /// **'显示 {count} 个文件'**
+  String storage_browserCount(int count);
+
+  /// No description provided for @storage_browserLoadMore.
+  ///
+  /// In zh, this message translates to:
+  /// **'加载更多'**
+  String get storage_browserLoadMore;
+
+  /// No description provided for @storage_browserRefresh.
+  ///
+  /// In zh, this message translates to:
+  /// **'刷新'**
+  String get storage_browserRefresh;
+
+  /// No description provided for @storage_browserDelete.
+  ///
+  /// In zh, this message translates to:
+  /// **'删除'**
+  String get storage_browserDelete;
+
+  /// No description provided for @storage_browserDeleteTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'删除文件'**
+  String get storage_browserDeleteTitle;
+
+  /// No description provided for @storage_browserDeleteConfirm.
+  ///
+  /// In zh, this message translates to:
+  /// **'将删除 {path} 并移入回收站。确认？'**
+  String storage_browserDeleteConfirm(String path);
+
+  /// No description provided for @storage_browserDeleted.
+  ///
+  /// In zh, this message translates to:
+  /// **'已删除 {path}'**
+  String storage_browserDeleted(String path);
+
+  /// No description provided for @storage_browserDeleteFailed.
+  ///
+  /// In zh, this message translates to:
+  /// **'删除失败：{error}'**
+  String storage_browserDeleteFailed(String error);
+
+  /// No description provided for @storage_browserDeleteDenied.
+  ///
+  /// In zh, this message translates to:
+  /// **'无权删除他端文件（仅 master 本机）'**
+  String get storage_browserDeleteDenied;
+
   /// No description provided for @storage_mirroredDevices.
   ///
   /// In zh, this message translates to:

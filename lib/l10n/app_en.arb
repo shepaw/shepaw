@@ -2380,6 +2380,22 @@
   "storage_wipeSelfTypeHint": "Type DELETE",
   "storage_wipeSelfDone": "Local store wiped (freed {size})",
   "storage_wipeSelfFailed": "Wipe failed: {error}",
+  "storage_browseFiles": "Browse files",
+  "storage_browserTitle": "Store files",
+  "storage_browserHint": "Browse committed store files on this device. The master can also view and delete mirrored files (moved to recycle).",
+  "storage_browserDevice": "Device",
+  "storage_browserPrefix": "Path prefix",
+  "storage_browserPrefixHint": "e.g. docs/ or task/",
+  "storage_browserEmpty": "No files in this space",
+  "storage_browserCount": "Showing {count} files",
+  "storage_browserLoadMore": "Load more",
+  "storage_browserRefresh": "Refresh",
+  "storage_browserDelete": "Delete",
+  "storage_browserDeleteTitle": "Delete file",
+  "storage_browserDeleteConfirm": "Delete {path} and move it to recycle?",
+  "storage_browserDeleted": "Deleted {path}",
+  "storage_browserDeleteFailed": "Delete failed: {error}",
+  "storage_browserDeleteDenied": "Cannot delete other devices' files (master only)",
   "storage_mirroredDevices": "Mirrored device directories",
   "storage_purgeDevice": "Delete",
   "storage_purgeDeviceTitle": "Delete device mirror",
@@ -2444,6 +2460,26 @@
     }
   },
   "@storage_wipeSelfFailed": {
+    "placeholders": {
+      "error": { "type": "String" }
+    }
+  },
+  "@storage_browserCount": {
+    "placeholders": {
+      "count": { "type": "int" }
+    }
+  },
+  "@storage_browserDeleteConfirm": {
+    "placeholders": {
+      "path": { "type": "String" }
+    }
+  },
+  "@storage_browserDeleted": {
+    "placeholders": {
+      "path": { "type": "String" }
+    }
+  },
+  "@storage_browserDeleteFailed": {
     "placeholders": {
       "error": { "type": "String" }
     }
