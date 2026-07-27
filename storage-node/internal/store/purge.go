@@ -1,7 +1,6 @@
 package store
 
 import (
-	"encoding/json"
 	"os"
 	"path/filepath"
 
@@ -27,34 +26,6 @@ func (l *Local) PurgeDevice(deviceID, selfDeviceID string) (int64, error) {
 	if err := os.RemoveAll(dir); err != nil {
 		return 0, err
 	}
-	_ = removeDeviceCursor(l.Root, deviceID)
+	_ = l.cursors.remove(deviceID)
 	return freed, nil
-}
-
-func removeDeviceCursor(root, deviceID string) error {
-	path := filepath.Join(root, ".system", "device_cursors.json")
-	raw, err := os.ReadFile(path)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return nil
-		}
-		return err
-	}
-	var m map[string]any
-	if err := json.Unmarshal(raw, &m); err != nil {
-		return err
-	}
-	if _, ok := m[deviceID]; !ok {
-		return nil
-	}
-	delete(m, deviceID)
-	out, err := json.Marshal(m)
-	if err != nil {
-		return err
-	}
-	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, out, 0o644); err != nil {
-		return err
-	}
-	return os.Rename(tmp, path)
 }

@@ -26,6 +26,7 @@ type Local struct {
 	mu       sync.Mutex
 	uploads  map[string]*upload
 	imports  *importAuth
+	cursors  *deviceCursors
 }
 
 type upload struct {
@@ -76,6 +77,7 @@ func Open(root, deviceID string) (*Local, error) {
 		DeviceID: deviceID,
 		uploads:  map[string]*upload{},
 		imports:  newImportAuth(root),
+		cursors:  newDeviceCursors(root),
 	}, nil
 }
 
@@ -95,7 +97,7 @@ func (l *Local) Handle(frame protocol.Frame, caller, trust string, loopback bool
 	case "write.chunk":
 		return l.writeChunk(frame)
 	case "commit":
-		return l.commit(frame)
+		return l.commit(frame, caller)
 	case "delete":
 		return l.delete(frame, caller)
 	case "stats":
@@ -116,6 +118,10 @@ func (l *Local) Handle(frame protocol.Frame, caller, trust string, loopback bool
 		return l.importReject(frame)
 	case "import.grants":
 		return l.importGrants(frame)
+	case "sync.hello":
+		return l.syncHello(caller)
+	case "sync.cursors":
+		return l.syncCursors()
 	default:
 		return nil, &OpError{Code: "bad_op", Msg: frame.Op}
 	}
@@ -317,7 +323,7 @@ func (l *Local) writeChunk(frame protocol.Frame) (map[string]any, error) {
 	return map[string]any{"accepted": len(raw)}, nil
 }
 
-func (l *Local) commit(frame protocol.Frame) (map[string]any, error) {
+func (l *Local) commit(frame protocol.Frame, caller string) (map[string]any, error) {
 	ids, _ := frame.Payload["upload_ids"].([]any)
 	if ids == nil {
 		if one, ok := frame.Payload["upload_id"].(string); ok {
@@ -382,11 +388,19 @@ func (l *Local) commit(frame protocol.Frame) (map[string]any, error) {
 			l.applyRetention(device, batch[0].u.Space, frame.Payload["retention"])
 		}
 	}
-	return map[string]any{
+	out := map[string]any{
 		"files":     committed,
 		"committed": committed,
 		"failed":    failed,
-	}, nil
+	}
+	if upto, ok := payloadInt64(frame.Payload, "upto_seq"); ok && len(failed) == 0 {
+		applied, err := l.cursors.advance(caller, upto)
+		if err != nil {
+			return nil, err
+		}
+		out["applied_seq"] = applied
+	}
+	return out, nil
 }
 
 func (l *Local) delete(frame protocol.Frame, caller string) (map[string]any, error) {
@@ -403,7 +417,15 @@ func (l *Local) delete(frame protocol.Frame, caller string) (map[string]any, err
 	if err != nil {
 		return nil, err
 	}
-	return map[string]any{"recycled": recycled}, nil
+	out := map[string]any{"recycled": recycled}
+	if upto, ok := payloadInt64(frame.Payload, "upto_seq"); ok {
+		applied, err := l.cursors.advance(caller, upto)
+		if err != nil {
+			return nil, err
+		}
+		out["applied_seq"] = applied
+	}
+	return out, nil
 }
 
 func (l *Local) moveToRecycle(device, space, normalizedRel string) (string, error) {
@@ -457,6 +479,9 @@ func (l *Local) stats() (map[string]any, error) {
 		"devices":       devices,
 		"staging_bytes": stagingBytes,
 		"recycle_bytes": dirSize(filepath.Join(l.Root, ".recycle"), false),
+	}
+	if cursors, err := l.cursors.all(); err == nil && len(cursors) > 0 {
+		out["device_cursors"] = cursors
 	}
 	if total, free, ok := probeVolume(l.Root); ok {
 		usedRatio := 0.0
@@ -754,4 +779,28 @@ func (l *Local) importGrants(frame protocol.Frame) (map[string]any, error) {
 		out = append(out, g.toMap())
 	}
 	return map[string]any{"grants": out}, nil
+}
+
+func (l *Local) syncHello(caller string) (map[string]any, error) {
+	if !protocol.IsValidDeviceID(caller) {
+		return nil, &OpError{Code: "bad_path", Msg: "invalid caller"}
+	}
+	seq, err := l.cursors.appliedSeq(caller)
+	if err != nil {
+		return nil, err
+	}
+	return map[string]any{"applied_seq": seq}, nil
+}
+
+func (l *Local) syncCursors() (map[string]any, error) {
+	m, err := l.cursors.all()
+	if err != nil {
+		return nil, err
+	}
+	// JSON-friendly map (empty object if none)
+	out := make(map[string]any, len(m))
+	for k, v := range m {
+		out[k] = v
+	}
+	return map[string]any{"cursors": out}, nil
 }

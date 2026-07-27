@@ -459,6 +459,107 @@ func TestWipeSelf(t *testing.T) {
 	}
 }
 
+func TestSyncHelloAndUptoSeq(t *testing.T) {
+	root := t.TempDir()
+	device := "aaaaaaaaaaaaaaaa"
+	s, err := store.Open(root, device)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	hello, err := s.Handle(protocol.Frame{
+		Op:      "sync.hello",
+		Payload: map[string]any{"device": device},
+	}, device, protocol.TrustOwner, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if hello["applied_seq"].(int64) != 0 {
+		t.Fatalf("want 0, got %v", hello["applied_seq"])
+	}
+
+	begin, err := s.Handle(protocol.Frame{
+		Op: "write.begin",
+		Payload: map[string]any{
+			"space": "files",
+			"path":  "sync.txt",
+		},
+	}, device, protocol.TrustOwner, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	id := begin["upload_id"].(string)
+	_, err = s.Handle(protocol.Frame{
+		Op: "write.chunk",
+		Payload: map[string]any{
+			"upload_id": id,
+			"data":      base64.StdEncoding.EncodeToString([]byte("hi")),
+		},
+	}, device, protocol.TrustOwner, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	commit, err := s.Handle(protocol.Frame{
+		Op: "commit",
+		Payload: map[string]any{
+			"upload_ids": []any{id},
+			"upto_seq":   7,
+		},
+	}, device, protocol.TrustOwner, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if commit["applied_seq"].(int64) != 7 {
+		t.Fatalf("applied=%v", commit["applied_seq"])
+	}
+
+	hello2, err := s.Handle(protocol.Frame{
+		Op:      "sync.hello",
+		Payload: map[string]any{"device": device},
+	}, device, protocol.TrustOwner, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if hello2["applied_seq"].(int64) != 7 {
+		t.Fatalf("hello2=%v", hello2)
+	}
+
+	// only advance forward
+	commit2, err := s.Handle(protocol.Frame{
+		Op: "commit",
+		Payload: map[string]any{
+			"upload_ids": []any{},
+			"upto_seq":   3,
+		},
+	}, device, protocol.TrustOwner, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if commit2["applied_seq"].(int64) != 7 {
+		t.Fatalf("should not regress: %v", commit2)
+	}
+
+	_, err = s.Handle(protocol.Frame{
+		Op: "delete",
+		Payload: map[string]any{
+			"space":    "files",
+			"path":     "sync.txt",
+			"upto_seq": 9,
+		},
+	}, device, protocol.TrustOwner, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cursors, err := s.Handle(protocol.Frame{Op: "sync.cursors"}, device, protocol.TrustOwner, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	m := cursors["cursors"].(map[string]any)
+	if m[device].(int64) != 9 {
+		t.Fatalf("cursors=%v", cursors)
+	}
+}
+
 func TestPurgeDeviceNotFound(t *testing.T) {
 	root := t.TempDir()
 	self := "aaaaaaaaaaaaaaaa"
