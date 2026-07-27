@@ -580,6 +580,25 @@ class LocalStore {
     };
   }
 
+  /// 永久删除某设备目录（方案 §5.4 / §7.2：换机后旧镜像手删）。
+  ///
+  /// 禁止删除 [selfDeviceId]；返回删除前占用字节数。
+  Future<int> purgeDevice(String deviceId, {required String selfDeviceId}) async {
+    if (!isValidDeviceId(deviceId)) {
+      throw StoreException(StoreError.badPath, 'invalid device id');
+    }
+    if (deviceId == selfDeviceId) {
+      throw StoreException(StoreError.aclDenied, 'cannot purge self');
+    }
+    final dir = Directory(p.join(root.path, deviceId));
+    if (!await dir.exists()) {
+      throw StoreException(StoreError.notFound, deviceId);
+    }
+    final bytes = await _dirSize(dir);
+    await dir.delete(recursive: true);
+    return bytes;
+  }
+
   /// 清理超时未 commit 的暂存（默认 24h，spec §2.4）。
   Future<int> gcStaging({Duration olderThan = const Duration(hours: 24)}) async {
     var removed = 0;

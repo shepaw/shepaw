@@ -4896,6 +4896,34 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
+  String get storage_mirroredDevices => 'Mirrored device directories';
+
+  @override
+  String get storage_purgeDevice => 'Delete';
+
+  @override
+  String get storage_purgeDeviceTitle => 'Delete device mirror';
+
+  @override
+  String storage_purgeDeviceConfirm(String deviceId, String size) {
+    return 'Permanently delete the mirror for device $deviceId on this master (~$size). It cannot be restored from recycle. Continue?';
+  }
+
+  @override
+  String storage_purgeDeviceDone(String deviceId, String size) {
+    return 'Deleted $deviceId (freed $size)';
+  }
+
+  @override
+  String storage_purgeDeviceFailed(String error) {
+    return 'Delete failed: $error';
+  }
+
+  @override
+  String get storage_purgeDeviceMasterOnly =>
+      'Only the master device can delete other mirrors';
+
+  @override
   String get storage_passwordTitle => 'Master password';
 
   @override

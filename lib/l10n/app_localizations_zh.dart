@@ -4712,6 +4712,33 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
+  String get storage_mirroredDevices => '他端镜像目录';
+
+  @override
+  String get storage_purgeDevice => '删除';
+
+  @override
+  String get storage_purgeDeviceTitle => '删除旧设备镜像';
+
+  @override
+  String storage_purgeDeviceConfirm(String deviceId, String size) {
+    return '将永久删除 master 上设备 $deviceId 的镜像目录（约 $size），不可从回收站还原。确认继续？';
+  }
+
+  @override
+  String storage_purgeDeviceDone(String deviceId, String size) {
+    return '已删除 $deviceId（释放 $size）';
+  }
+
+  @override
+  String storage_purgeDeviceFailed(String error) {
+    return '删除失败：$error';
+  }
+
+  @override
+  String get storage_purgeDeviceMasterOnly => '仅 master 本机可删除他端镜像';
+
+  @override
   String get storage_passwordTitle => '输入主密码';
 
   @override

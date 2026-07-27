@@ -2373,6 +2373,13 @@
   "storage_exportTreeHint": "Exports the full local store tree (artifacts / files / attachments / backups). Pick a destination folder.",
   "storage_exportTreeDone": "Exported to {path} ({count} files, {size})",
   "storage_exportTreeFailed": "Export failed: {error}",
+  "storage_mirroredDevices": "Mirrored device directories",
+  "storage_purgeDevice": "Delete",
+  "storage_purgeDeviceTitle": "Delete device mirror",
+  "storage_purgeDeviceConfirm": "Permanently delete the mirror for device {deviceId} on this master (~{size}). It cannot be restored from recycle. Continue?",
+  "storage_purgeDeviceDone": "Deleted {deviceId} (freed {size})",
+  "storage_purgeDeviceFailed": "Delete failed: {error}",
+  "storage_purgeDeviceMasterOnly": "Only the master device can delete other mirrors",
   "storage_passwordTitle": "Master password",
   "storage_passwordHint": "Snapshots are encrypted with a key derived from your master password.",
   "storage_passwordWrong": "Wrong password",
@@ -2420,6 +2427,23 @@
     }
   },
   "@storage_exportTreeFailed": {
+    "placeholders": {
+      "error": { "type": "String" }
+    }
+  },
+  "@storage_purgeDeviceConfirm": {
+    "placeholders": {
+      "deviceId": { "type": "String" },
+      "size": { "type": "String" }
+    }
+  },
+  "@storage_purgeDeviceDone": {
+    "placeholders": {
+      "deviceId": { "type": "String" },
+      "size": { "type": "String" }
+    }
+  },
+  "@storage_purgeDeviceFailed": {
     "placeholders": {
       "error": { "type": "String" }
     }

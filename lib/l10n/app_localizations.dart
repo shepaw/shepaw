@@ -8612,6 +8612,48 @@ abstract class AppLocalizations {
   /// **'导出失败：{error}'**
   String storage_exportTreeFailed(String error);
 
+  /// No description provided for @storage_mirroredDevices.
+  ///
+  /// In zh, this message translates to:
+  /// **'他端镜像目录'**
+  String get storage_mirroredDevices;
+
+  /// No description provided for @storage_purgeDevice.
+  ///
+  /// In zh, this message translates to:
+  /// **'删除'**
+  String get storage_purgeDevice;
+
+  /// No description provided for @storage_purgeDeviceTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'删除旧设备镜像'**
+  String get storage_purgeDeviceTitle;
+
+  /// No description provided for @storage_purgeDeviceConfirm.
+  ///
+  /// In zh, this message translates to:
+  /// **'将永久删除 master 上设备 {deviceId} 的镜像目录（约 {size}），不可从回收站还原。确认继续？'**
+  String storage_purgeDeviceConfirm(String deviceId, String size);
+
+  /// No description provided for @storage_purgeDeviceDone.
+  ///
+  /// In zh, this message translates to:
+  /// **'已删除 {deviceId}（释放 {size}）'**
+  String storage_purgeDeviceDone(String deviceId, String size);
+
+  /// No description provided for @storage_purgeDeviceFailed.
+  ///
+  /// In zh, this message translates to:
+  /// **'删除失败：{error}'**
+  String storage_purgeDeviceFailed(String error);
+
+  /// No description provided for @storage_purgeDeviceMasterOnly.
+  ///
+  /// In zh, this message translates to:
+  /// **'仅 master 本机可删除他端镜像'**
+  String get storage_purgeDeviceMasterOnly;
+
   /// No description provided for @storage_passwordTitle.
   ///
   /// In zh, this message translates to:

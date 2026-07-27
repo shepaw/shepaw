@@ -18,8 +18,10 @@ import '../she_network/external_memory_store.dart';
 import '../she_network/memory_exchange_service.dart';
 import '../she_network/presence_service.dart';
 import '../she_network/she_network_protocol.dart';
+import '../storage/device_cursor_store.dart';
 import '../storage/device_identity.dart';
 import '../storage/import_auth_service.dart';
+import '../storage/local_store.dart';
 import '../storage/master_migration_service.dart';
 import '../storage/mirror_reprotect_service.dart';
 import '../storage/restore_service.dart';
@@ -35,7 +37,7 @@ import 'storage_import_scanner_screen.dart';
 /// 存储空间页（docs/storage_space_plan.md §7）。
 ///
 /// M1：本机快照（生成/校验/恢复/导出）。
-/// M2：存储空间区块——master 展示、用量统计、回收站（还原/清空，
+/// M2：存储空间区块——master 展示、用量统计、他端镜像删除、回收站（还原/清空，
 /// 清空仅 master 本机，docs/storage_protocol_spec.md §2.8）。
 class StorageSpaceScreen extends StatefulWidget {
   const StorageSpaceScreen({super.key});
@@ -768,6 +770,7 @@ class _StorageSpaceScreenState extends State<StorageSpaceScreen> {
                   _buildUsageChips(l10n),
                   _buildSyncStatus(l10n),
                   _buildVolumeWarning(l10n),
+                  if (isMaster) _buildMirroredDevices(l10n),
                 ],
               ],
             ),
@@ -777,6 +780,90 @@ class _StorageSpaceScreenState extends State<StorageSpaceScreen> {
         _buildRecycleCard(l10n),
       ],
     );
+  }
+
+  /// master 上他端镜像目录：展示用量并允许手动删除（§5.4 / §7.2）。
+  Widget _buildMirroredDevices(AppLocalizations l10n) {
+    final devices = (_stats!['devices'] as Map?)?.cast<String, dynamic>() ?? {};
+    final others = devices.keys.where((id) => id != _selfId).toList()..sort();
+    if (others.isEmpty) return const SizedBox.shrink();
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Divider(height: 20),
+        Text(l10n.storage_mirroredDevices,
+            style: Theme.of(context).textTheme.bodySmall),
+        const SizedBox(height: 4),
+        ...others.map((id) {
+          final spaces = (devices[id] as Map?)?.cast<String, dynamic>() ?? {};
+          var total = 0;
+          for (final space in StoreSpace.all) {
+            total += spaces[space] as int? ?? 0;
+          }
+          final short = id.length >= 8 ? '${id.substring(0, 8)}…' : id;
+          return ListTile(
+            dense: true,
+            contentPadding: EdgeInsets.zero,
+            leading: const Icon(Icons.devices_other, size: 18),
+            title: Text(short, style: Theme.of(context).textTheme.bodySmall),
+            subtitle: Text(_fmtBytes(total),
+                style: Theme.of(context).textTheme.labelSmall),
+            trailing: TextButton(
+              onPressed: _busy ? null : () => _purgeMirroredDevice(id, total),
+              child: Text(l10n.storage_purgeDevice),
+            ),
+          );
+        }),
+      ],
+    );
+  }
+
+  Future<void> _purgeMirroredDevice(String deviceId, int bytesHint) async {
+    final l10n = AppLocalizations.of(context);
+    if (_masterId != _selfId || _selfId.isEmpty) {
+      _toast(l10n.storage_purgeDeviceMasterOnly);
+      return;
+    }
+    final short =
+        deviceId.length >= 8 ? '${deviceId.substring(0, 8)}…' : deviceId;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        icon: Icon(Icons.delete_forever,
+            color: Theme.of(ctx).colorScheme.error, size: 36),
+        title: Text(l10n.storage_purgeDeviceTitle),
+        content: Text(l10n.storage_purgeDeviceConfirm(
+            short, _fmtBytes(bytesHint))),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: Text(l10n.common_cancel),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(
+                backgroundColor: Theme.of(ctx).colorScheme.error),
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: Text(l10n.common_confirm),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+    setState(() => _busy = true);
+    try {
+      final store = await StoreService.instance.localStore();
+      final purged = await store.purgeDevice(deviceId, selfDeviceId: _selfId);
+      final cursors = DeviceCursorStore(storeRoot: store.root);
+      await cursors.remove(deviceId);
+      await _refresh();
+      _toast(l10n.storage_purgeDeviceDone(short, _fmtBytes(purged)));
+    } on StoreException catch (e) {
+      _toast(l10n.storage_purgeDeviceFailed(e.message.isEmpty ? e.code : e.message));
+    } catch (e) {
+      _toast(l10n.storage_purgeDeviceFailed('$e'));
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
   }
 
   Widget _buildSheCircleSection(AppLocalizations l10n) {

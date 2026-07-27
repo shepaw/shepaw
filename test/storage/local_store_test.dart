@@ -387,5 +387,33 @@ void main() {
           throwsA(predicate(
               (e) => e is StoreException && e.code == StoreError.badOp)));
     });
+
+    test('purgeDevice 删他端目录且禁删本机', () async {
+      final c = bytesOf('purge-me');
+      final (u, _) = await store.writeBegin(
+          deviceId: devB,
+          space: 'files',
+          path: 'old.txt',
+          size: c.length,
+          sha256: sha(c));
+      await store.writeChunk(devB, 'files', u, 0, c);
+      await store.commit(devB, 'files', [u]);
+
+      expect(
+          () => store.purgeDevice(dev, selfDeviceId: dev),
+          throwsA(predicate(
+              (e) => e is StoreException && e.code == StoreError.aclDenied)));
+
+      final freed = await store.purgeDevice(devB, selfDeviceId: dev);
+      expect(freed, c.length);
+      expect(await Directory(p.join(tmp.path, devB)).exists(), isFalse);
+      final stats = await store.stats();
+      expect((stats['devices'] as Map).containsKey(devB), isFalse);
+
+      expect(
+          () => store.purgeDevice(devB, selfDeviceId: dev),
+          throwsA(predicate(
+              (e) => e is StoreException && e.code == StoreError.notFound)));
+    });
   });
 }

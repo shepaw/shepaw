@@ -2858,6 +2858,13 @@
   "storage_exportTreeHint": "导出完整本机 store 目录树（artifacts / files / attachments / backups）。请选择目标文件夹。",
   "storage_exportTreeDone": "已导出到 {path}（{count} 个文件，{size}）",
   "storage_exportTreeFailed": "导出失败：{error}",
+  "storage_mirroredDevices": "他端镜像目录",
+  "storage_purgeDevice": "删除",
+  "storage_purgeDeviceTitle": "删除旧设备镜像",
+  "storage_purgeDeviceConfirm": "将永久删除 master 上设备 {deviceId} 的镜像目录（约 {size}），不可从回收站还原。确认继续？",
+  "storage_purgeDeviceDone": "已删除 {deviceId}（释放 {size}）",
+  "storage_purgeDeviceFailed": "删除失败：{error}",
+  "storage_purgeDeviceMasterOnly": "仅 master 本机可删除他端镜像",
   "storage_passwordTitle": "输入主密码",
   "storage_passwordHint": "快照以主密码派生密钥加密。",
   "storage_passwordWrong": "密码错误",
@@ -2905,6 +2912,23 @@
     }
   },
   "@storage_exportTreeFailed": {
+    "placeholders": {
+      "error": { "type": "String" }
+    }
+  },
+  "@storage_purgeDeviceConfirm": {
+    "placeholders": {
+      "deviceId": { "type": "String" },
+      "size": { "type": "String" }
+    }
+  },
+  "@storage_purgeDeviceDone": {
+    "placeholders": {
+      "deviceId": { "type": "String" },
+      "size": { "type": "String" }
+    }
+  },
+  "@storage_purgeDeviceFailed": {
     "placeholders": {
       "error": { "type": "String" }
     }

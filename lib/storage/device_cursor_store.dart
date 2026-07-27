@@ -52,6 +52,14 @@ class DeviceCursorStore {
     return Map<String, int>.of(map);
   }
 
+  /// 删除某设备游标账（镜像目录被手动 purge 后）。
+  Future<void> remove(String deviceId) async {
+    final map = await _load();
+    if (!map.containsKey(deviceId)) return;
+    map.remove(deviceId);
+    await _persist(map);
+  }
+
   Future<void> _persist(Map<String, int> map) async {
     _cache = map;
     await _file.parent.create(recursive: true);
