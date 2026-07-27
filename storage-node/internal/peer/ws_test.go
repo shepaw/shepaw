@@ -339,3 +339,167 @@ func TestReconnectUnknownPeerNack(t *testing.T) {
 		t.Fatalf("expected nack, got %v", ack)
 	}
 }
+
+func TestMigrateFanoutMasterPointer(t *testing.T) {
+	root := t.TempDir()
+	nodeID, err := noise.LoadOrCreate(root + "/node.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	clientA, err := noise.LoadOrCreate(root + "/client_a.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	clientB, err := noise.LoadOrCreate(root + "/client_b.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	st, err := store.Open(root+"/data", nodeID.Fingerprint())
+	if err != nil {
+		t.Fatal(err)
+	}
+	peers := NewStore(root)
+	for _, id := range []*noise.Identity{clientA, clientB} {
+		if err := peers.Upsert(Peer{
+			Fingerprint:  id.Fingerprint(),
+			PublicKeyB64: id.PublicKeyBase64(),
+			DeviceName:   "phone",
+			PeerID:       "peer-" + id.Fingerprint()[:4],
+			TrustLevel:   protocol.TrustOwner,
+			PairedAtMs:   NowMs(),
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	sessions := NewSessionRegistry()
+	srv := &Server{
+		Store:      st,
+		Hub:        NewPairingHub(nodeID, peers, "node"),
+		Peers:      peers,
+		Sessions:   sessions,
+		Identity:   nodeID,
+		DeviceName: "node",
+	}
+	hs := httptest.NewServer(http.HandlerFunc(srv.HandleWS))
+	defer hs.Close()
+	wsURL := "ws" + strings.TrimPrefix(hs.URL, "http") + "/peer/ws"
+
+	dial := func(id *noise.Identity) (*websocket.Conn, *noise.Session) {
+		t.Helper()
+		conn, _, err := websocket.DefaultDialer.Dial(wsURL, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		initSess, err := noise.NewInitiator(id, nodeID.PublicKey)
+		if err != nil {
+			t.Fatal(err)
+		}
+		msg1, err := initSess.WriteHandshake1([]byte(`{"type":"reconnect"}`))
+		if err != nil {
+			t.Fatal(err)
+		}
+		frame1, _ := noise.EncodeFrame(noise.Frame{Type: noise.FrameHS, Payload: msg1})
+		_ = conn.WriteMessage(websocket.TextMessage, []byte(frame1))
+		_ = conn.SetReadDeadline(time.Now().Add(5 * time.Second))
+		_, raw2, err := conn.ReadMessage()
+		if err != nil {
+			t.Fatal(err)
+		}
+		fr2, err := noise.DecodeFrame(string(raw2))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := initSess.ReadHandshake2(fr2.Payload); err != nil {
+			t.Fatal(err)
+		}
+		return conn, initSess
+	}
+
+	connA, sessA := dial(clientA)
+	defer connA.Close()
+	connB, sessB := dial(clientB)
+	defer connB.Close()
+
+	deadline := time.Now().Add(2 * time.Second)
+	for sessions.Len() < 2 && time.Now().Before(deadline) {
+		time.Sleep(20 * time.Millisecond)
+	}
+	if sessions.Len() != 2 {
+		t.Fatalf("sessions=%d", sessions.Len())
+	}
+
+	req, _ := json.Marshal(map[string]any{
+		"type": "store", "ns": "store", "op": "master.migrate", "v": 1,
+		"req_id": "r-migrate",
+	})
+	ct, err := sessA.Encrypt(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	enc, _ := noise.EncodeFrame(noise.Frame{Type: noise.FrameData, Payload: ct})
+	_ = connA.WriteMessage(websocket.TextMessage, []byte(enc))
+
+	// A may receive pointer notify then result (or reverse if ordering changes).
+	var gotResult, gotPointerA bool
+	_ = connA.SetReadDeadline(time.Now().Add(5 * time.Second))
+	for i := 0; i < 3 && !(gotResult && gotPointerA); i++ {
+		_, raw, err := connA.ReadMessage()
+		if err != nil {
+			t.Fatal(err)
+		}
+		fr, _ := noise.DecodeFrame(string(raw))
+		plain, err := sessA.Decrypt(fr.Payload)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var msg map[string]any
+		_ = json.Unmarshal(plain, &msg)
+		switch msg["op"] {
+		case "result":
+			if msg["req_id"] != "r-migrate" {
+				t.Fatalf("result=%v", msg)
+			}
+			data, _ := msg["data"].(map[string]any)
+			if data["master"] != nodeID.Fingerprint() {
+				t.Fatalf("data=%v", data)
+			}
+			bp := asInt64(data["broadcast_peers"])
+			if bp != 2 {
+				t.Fatalf("broadcast_peers=%v want 2", data["broadcast_peers"])
+			}
+			gotResult = true
+		case "master.pointer":
+			gotPointerA = true
+		default:
+			t.Fatalf("unexpected A msg=%v", msg)
+		}
+	}
+	if !gotResult {
+		t.Fatal("A missing migrate result")
+	}
+
+	_ = connB.SetReadDeadline(time.Now().Add(5 * time.Second))
+	_, rawB, err := connB.ReadMessage()
+	if err != nil {
+		t.Fatal(err)
+	}
+	frB, _ := noise.DecodeFrame(string(rawB))
+	plainB, err := sessB.Decrypt(frB.Payload)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var msgB map[string]any
+	_ = json.Unmarshal(plainB, &msgB)
+	if msgB["op"] != "master.pointer" {
+		t.Fatalf("B expected pointer, got %v", msgB)
+	}
+	if msgB["master"] != nodeID.Fingerprint() {
+		t.Fatalf("B pointer=%v", msgB)
+	}
+	if asInt64(msgB["epoch"]) < 1 {
+		t.Fatalf("B epoch=%v", msgB["epoch"])
+	}
+	if _, hasReq := msgB["req_id"]; hasReq {
+		t.Fatalf("pointer must not have req_id: %v", msgB)
+	}
+}

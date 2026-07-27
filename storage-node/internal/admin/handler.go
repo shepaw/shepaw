@@ -18,6 +18,7 @@ type Server struct {
 	Device          string
 	Hub             *peer.PairingHub
 	Peers           *peer.Store
+	Sessions        *peer.SessionRegistry
 	Identity        *noise.Identity
 	Listen          string
 	ChannelEndpoint string // optional wss://.../peer/ws for QR + pairing start
@@ -345,6 +346,23 @@ func (s *Server) handleMasterMigrate(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		writeErr(w, err)
 		return
+	}
+	if data != nil {
+		master, _ := data["master"].(string)
+		epoch := int64(0)
+		switch v := data["epoch"].(type) {
+		case int64:
+			epoch = v
+		case int:
+			epoch = int64(v)
+		case float64:
+			epoch = int64(v)
+		}
+		n := 0
+		if s.Sessions != nil {
+			n = s.Sessions.FanoutMasterPointer(master, epoch, s.Device)
+		}
+		data["broadcast_peers"] = n
 	}
 	writeJSON(w, data)
 }

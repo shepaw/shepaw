@@ -23,6 +23,7 @@ type Server struct {
 	Store           *store.Local
 	Hub             *PairingHub
 	Peers           *Store
+	Sessions        *SessionRegistry
 	Identity        *noise.Identity
 	DeviceName      string
 	LocalEndpoint   string // advertised ws://host:port/peer/ws
@@ -225,6 +226,10 @@ func (s *Server) handleReconnect(conn *websocket.Conn, sess *noise.Session, fp s
 func (s *Server) serveTransport(conn *websocket.Conn, sess *noise.Session, fp string) {
 	_ = conn.SetReadDeadline(time.Time{})
 	var writeMu sync.Mutex
+	if s.Sessions != nil {
+		s.Sessions.Add(fp, conn, sess, &writeMu)
+		defer s.Sessions.Remove(fp, conn)
+	}
 	for {
 		_ = conn.SetReadDeadline(time.Now().Add(30 * time.Minute))
 		_, msg, err := conn.ReadMessage()
@@ -250,6 +255,9 @@ func (s *Server) serveTransport(conn *websocket.Conn, sess *noise.Session, fp st
 			continue
 		}
 		data, err := s.Store.Handle(protocol.Frame{Op: op, Payload: payload}, fp, protocol.TrustOwner, false)
+		if err == nil && op == "master.migrate" {
+			s.overlayMigrateBroadcast(data)
+		}
 		var reply map[string]any
 		if err != nil {
 			code := "internal"
@@ -280,6 +288,37 @@ func (s *Server) serveTransport(conn *websocket.Conn, sess *noise.Session, fp st
 		writeMu.Lock()
 		_ = conn.WriteMessage(websocket.TextMessage, []byte(enc))
 		writeMu.Unlock()
+	}
+}
+
+// overlayMigrateBroadcast fans out master.pointer to live sessions and sets broadcast_peers.
+func (s *Server) overlayMigrateBroadcast(data map[string]any) {
+	if data == nil {
+		return
+	}
+	master, _ := data["master"].(string)
+	epoch := asInt64(data["epoch"])
+	from := s.Identity.Fingerprint()
+	n := 0
+	if s.Sessions != nil {
+		n = s.Sessions.FanoutMasterPointer(master, epoch, from)
+	}
+	data["broadcast_peers"] = n
+}
+
+func asInt64(v any) int64 {
+	switch x := v.(type) {
+	case int64:
+		return x
+	case int:
+		return int64(x)
+	case float64:
+		return int64(x)
+	case json.Number:
+		i, _ := x.Int64()
+		return i
+	default:
+		return 0
 	}
 }
 

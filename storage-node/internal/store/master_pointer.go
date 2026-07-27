@@ -84,7 +84,9 @@ func (l *Local) masterPointerApply(frame protocol.Frame) (map[string]any, error)
 }
 
 // masterMigrate promotes this node to master (thin M7 slice).
-// No outbound seed/hash-gate/broadcast yet — peers learn via master.pointer.query on reconnect.
+// No outbound seed/hash-gate yet. Live /peer/ws sessions get master.pointer
+// fanout from peer/admin layers (broadcast_peers filled there); offline peers
+// still learn via master.pointer.query on reconnect.
 func (l *Local) masterMigrate() (map[string]any, error) {
 	cur, err := l.loadPointer()
 	if err != nil {

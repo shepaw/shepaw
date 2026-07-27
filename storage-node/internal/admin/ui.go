@@ -56,7 +56,7 @@ td, th { text-align: left; padding: .35rem .25rem; border-bottom: 1px solid
       <button id="promoteMaster">升为本机 master</button>
     </div>
     <div class="row" style="justify-content:space-between;margin-bottom:.5rem">
-      <span class="muted">启动时会自动 GC；也可手动触发。升主薄切片：不拉旧 master 种子/哈希门闩；他端靠重连 query 改指。</span>
+      <span class="muted">启动时会自动 GC；也可手动触发。升主后会向在线 /peer/ws 会话 fanout master.pointer；离线端靠重连 query 改指（无种子/哈希门闩）。</span>
       <button id="runGc">GC staging/回收站</button>
     </div>
     <pre id="stats">…</pre>
@@ -394,10 +394,11 @@ async function loadBrowse() {
 }
 $('browseLoad').onclick = loadBrowse;
 $('promoteMaster').onclick = async () => {
-  if (!window.confirm('将本节点升为 master？薄切片不拉旧 master 种子；他端上线后经 pointer.query 改指。旧 master 不可达时可能有镜像缺口。')) return;
+  if (!window.confirm('将本节点升为 master？在线会话会收到 master.pointer；离线端上线后经 pointer.query 改指。旧 master 不可达时可能有镜像缺口。')) return;
   try {
     const out = await api('/admin/api/master/migrate', {method:'POST'});
-    alert('已升主：' + shortId(out.master) + ' · epoch ' + out.epoch);
+    alert('已升主：' + shortId(out.master) + ' · epoch ' + out.epoch +
+      ' · 已推送 ' + (out.broadcast_peers||0) + ' 个在线会话');
     refresh();
   } catch (e) { $('msg').textContent = String(e.message||e); }
 };

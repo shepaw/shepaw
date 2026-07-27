@@ -55,12 +55,14 @@ func main() {
 	}
 	peers := peer.NewStore(*root)
 	hub := peer.NewPairingHub(identity, peers, *deviceName)
+	sessions := peer.NewSessionRegistry()
 	localEndpoint := peer.AdvertiseLocalWS(*listen)
 	channelEndpoint := strings.TrimSpace(*channel)
 	peerSrv := &peer.Server{
 		Store:           s,
 		Hub:             hub,
 		Peers:           peers,
+		Sessions:        sessions,
 		Identity:        identity,
 		DeviceName:      *deviceName,
 		LocalEndpoint:   localEndpoint,
@@ -120,6 +122,7 @@ func main() {
 		Auth:            admin.AuthConfig{Token: *adminToken},
 		Hub:             hub,
 		Peers:           peers,
+		Sessions:        sessions,
 		Identity:        identity,
 		Listen:          *listen,
 		ChannelEndpoint: channelEndpoint,
