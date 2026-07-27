@@ -6,11 +6,11 @@
 
 ## 范围
 
-- 路径规范化 + ACL 纯逻辑（与 Dart fixture 全绿）
-- 本机目录树：`list` / `meta` / `read` / `write.begin|chunk` / `commit`（含 `retention`）/ `delete` / `stats` / `recycle.*`
-- HTTP 健康检查 + 简易 JSON 控制口 `/store`（联调）
-- **无头管理面** `/admin`：用量、回收站、**换机导入审批**；本机鉴权（admin token 或 loopback）
-- Noise/WS 配对码仍为后续
+- 路径规范化 + ACL；本机目录树 `list/meta/read/write/commit/delete/stats/recycle/import.*`
+- `commit.retention`（`keep_last` / `gfs`）
+- HTTP `/health`、`/store`（联调 JSON）
+- **Noise IK 配对**：`/peer/ws`（信封 v2 + `Noise_IK_25519_ChaChaPoly_BLAKE2b`，prologue `shepaw-acp/2.1`）；device_id = Noise fingerprint
+- **无头管理面** `/admin`：配对 QR/批准、用量、回收站、换机导入审批；token 或 loopback 鉴权
 
 ## 运行
 
@@ -20,11 +20,12 @@ go test ./...
 go run ./cmd/storage-node \
   -root /var/lib/shepaw-store \
   -listen :8787 \
+  -name "nas-master" \
   -admin-token "$SHEPAW_ADMIN_TOKEN"
 ```
 
-- 未设置 `-admin-token` / `SHEPAW_ADMIN_TOKEN` 时，`/admin` **仅允许 loopback**。
-- 浏览器打开 `http://127.0.0.1:8787/admin/`，在页面填入 token（若已配置）。
-- API：`GET /admin/api/stats`、`GET /admin/api/recycle`、`POST /admin/api/recycle/empty|restore`、`GET /admin/api/import/pending`、`POST /admin/api/import/grant|reject`、`GET /admin/api/import/grants`（`Authorization: Bearer <token>` 或 `X-Admin-Token`）。
+1. 打开 `http://127.0.0.1:8787/admin/`，点「开始配对」得到 `shepaw://peer?...` QR。
+2. App 扫码发起配对；节点 `/admin` 出现入站请求后批准。
+3. 配对成功后 App 可经 Noise 加密 WS 发送 store 控制帧。
 
-配对码 / Noise 握手将在后续迭代接入。
+身份文件：`<root>/.system/noise_identity.json`；配对表：`paired_peers.json`。

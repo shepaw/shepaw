@@ -6,29 +6,55 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"path/filepath"
 
 	"github.com/shepaw/storage-node/internal/admin"
+	"github.com/shepaw/storage-node/internal/noise"
+	"github.com/shepaw/storage-node/internal/peer"
 	"github.com/shepaw/storage-node/internal/protocol"
 	"github.com/shepaw/storage-node/internal/store"
 )
 
 func main() {
 	root := flag.String("root", "./data", "store root directory")
-	device := flag.String("device", "0000000000000001", "this node device_id (16 hex)")
+	deviceFlag := flag.String("device", "", "override device_id (default: Noise fingerprint)")
 	listen := flag.String("listen", ":8787", "HTTP listen address")
 	adminToken := flag.String("admin-token", os.Getenv("SHEPAW_ADMIN_TOKEN"),
 		"admin UI/API token (env SHEPAW_ADMIN_TOKEN); empty = loopback-only")
+	deviceName := flag.String("name", "storage-node", "device display name for pairing")
 	flag.Parse()
 
-	s, err := store.Open(*root, *device)
+	idPath := filepath.Join(*root, ".system", "noise_identity.json")
+	identity, err := noise.LoadOrCreate(idPath)
 	if err != nil {
 		log.Fatal(err)
+	}
+	device := identity.Fingerprint()
+	if *deviceFlag != "" {
+		if *deviceFlag != device {
+			log.Fatalf("-device %s does not match Noise fingerprint %s", *deviceFlag, device)
+		}
+	}
+
+	s, err := store.Open(*root, device)
+	if err != nil {
+		log.Fatal(err)
+	}
+	peers := peer.NewStore(*root)
+	hub := peer.NewPairingHub(identity, peers, *deviceName)
+	peerSrv := &peer.Server{
+		Store:      s,
+		Hub:        hub,
+		Peers:      peers,
+		Identity:   identity,
+		DeviceName: *deviceName,
 	}
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/health", func(w http.ResponseWriter, _ *http.Request) {
 		_ = json.NewEncoder(w).Encode(map[string]any{
-			"ok": true, "device": *device, "protocol": protocol.ProtocolVersion,
+			"ok": true, "device": device, "protocol": protocol.ProtocolVersion,
+			"noise": true, "fingerprint": device,
 		})
 	})
 	mux.HandleFunc("/store", func(w http.ResponseWriter, r *http.Request) {
@@ -48,7 +74,7 @@ func main() {
 			return
 		}
 		if body.Caller == "" {
-			body.Caller = *device
+			body.Caller = device
 		}
 		if body.Trust == "" {
 			body.Trust = protocol.TrustOwner
@@ -69,11 +95,16 @@ func main() {
 		}
 		_ = json.NewEncoder(w).Encode(map[string]any{"op": "result", "data": data})
 	})
+	mux.HandleFunc("/peer/ws", peerSrv.HandleWS)
 
 	adminSrv := &admin.Server{
-		Store:  s,
-		Device: *device,
-		Auth:   admin.AuthConfig{Token: *adminToken},
+		Store:    s,
+		Device:   device,
+		Auth:     admin.AuthConfig{Token: *adminToken},
+		Hub:      hub,
+		Peers:    peers,
+		Identity: identity,
+		Listen:   *listen,
 	}
 	adminSrv.Mount(mux)
 
@@ -82,7 +113,8 @@ func main() {
 	} else {
 		log.Printf("admin: token required for /admin")
 	}
-	log.Printf("storage-node device=%s root=%s listen=%s", *device, *root, *listen)
+	log.Printf("storage-node device=%s name=%s root=%s listen=%s (Noise IK /peer/ws)",
+		device, *deviceName, *root, *listen)
 	if err := http.ListenAndServe(*listen, mux); err != nil {
 		log.Println(err)
 		os.Exit(1)

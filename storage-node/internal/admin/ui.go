@@ -27,11 +27,21 @@ td, th { text-align: left; padding: .35rem .25rem; border-bottom: 1px solid
 </head>
 <body>
   <h1>ShePaw Storage Admin</h1>
-  <p class="muted">无头节点管理面 · 用量 / 回收站 / 换机导入审批</p>
+  <p class="muted">无头节点管理面 · Noise 配对 / 用量 / 回收站 / 换机导入</p>
   <div class="card row">
     <label>Token <input id="token" type="password" placeholder="admin token" style="min-width:14rem"/></label>
     <button id="saveToken">保存</button>
     <button id="refresh">刷新</button>
+  </div>
+  <div class="card">
+    <div class="row" style="justify-content:space-between">
+      <h2>Noise 配对</h2>
+      <button id="pairStart">开始配对</button>
+    </div>
+    <pre id="pairInfo" class="muted">点击「开始配对」生成 QR / 配对码，用 App 扫描后在此批准。</pre>
+    <div id="pairPending"></div>
+    <h2 style="margin-top:1rem">已配对设备</h2>
+    <pre id="peers" class="muted">…</pre>
   </div>
   <div class="card">
     <h2>用量 stats</h2>
@@ -90,6 +100,35 @@ async function refresh() {
   try {
     const stats = await api('/admin/api/stats');
     $('stats').textContent = JSON.stringify(stats, null, 2);
+
+    try {
+      const peers = await api('/admin/api/peers');
+      $('peers').textContent = JSON.stringify(peers.peers || [], null, 2);
+      const pendingPair = await api('/admin/api/pairing/pending');
+      const p = pendingPair.pending;
+      if (!p) {
+        $('pairPending').innerHTML = '';
+      } else {
+        $('pairPending').innerHTML = '<div class="row">入站请求：' +
+          (p.device_name||'') + ' (' + shortId(p.fingerprint) + ') ' +
+          '<button id="pairAccept">批准</button>' +
+          '<button id="pairReject">拒绝</button></div>';
+        $('pairAccept').onclick = async () => {
+          await api('/admin/api/pairing/decide', {
+            method:'POST', headers:{'Content-Type':'application/json'},
+            body: JSON.stringify({accept:true})
+          });
+          refresh();
+        };
+        $('pairReject').onclick = async () => {
+          await api('/admin/api/pairing/decide', {
+            method:'POST', headers:{'Content-Type':'application/json'},
+            body: JSON.stringify({accept:false})
+          });
+          refresh();
+        };
+      }
+    } catch (_) {}
 
     const pending = await api('/admin/api/import/pending');
     const reqs = pending.requests || [];
@@ -167,6 +206,14 @@ async function refresh() {
   }
 }
 $('refresh').onclick = refresh;
+$('pairStart').onclick = async () => {
+  try {
+    const out = await api('/admin/api/pairing/start', {method:'POST'});
+    $('pairInfo').textContent = 'code=' + out.code + '\nendpoint=' + out.local_endpoint +
+      '\nfp=' + out.fingerprint + '\n\n' + out.qr;
+    refresh();
+  } catch (e) { $('msg').textContent = String(e.message||e); }
+};
 $('empty').onclick = async () => {
   if (!confirm('确认清空回收站？不可还原。')) return;
   try {
