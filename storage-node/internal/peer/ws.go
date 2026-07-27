@@ -18,12 +18,12 @@ var upgrader = websocket.Upgrader{
 	CheckOrigin: func(r *http.Request) bool { return true },
 }
 
-// Server handles /peer/ws Noise pairing + encrypted store control frames.
+// Server handles /peer/ws Noise pairing + reconnect + encrypted store control frames.
 type Server struct {
-	Store   *store.Local
-	Hub     *PairingHub
-	Peers   *Store
-	Identity *noise.Identity
+	Store      *store.Local
+	Hub        *PairingHub
+	Peers      *Store
+	Identity   *noise.Identity
 	DeviceName string
 }
 
@@ -46,12 +46,6 @@ func (s *Server) HandleWS(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	code := s.Hub.Code()
-	if code == "" {
-		log.Printf("peer ws: no active pairing session")
-		return
-	}
-
 	sess, err := noise.NewResponder(s.Identity)
 	if err != nil {
 		log.Printf("noise responder: %v", err)
@@ -62,11 +56,28 @@ func (s *Server) HandleWS(w http.ResponseWriter, r *http.Request) {
 		log.Printf("hs1: %v", err)
 		return
 	}
-	req, err := parsePairingRequest(payload)
-	if err != nil {
-		log.Printf("pairing request: %v", err)
-		return
+	fp := FingerprintFromKey(peerPub)
+
+	code := s.Hub.Code()
+	if code != "" {
+		if req, err := parsePairingRequest(payload); err == nil && req.PairingCode != "" {
+			s.handlePairing(conn, sess, peerPub, fp, req, code)
+			return
+		}
 	}
+
+	// No active pairing (or payload is not a pairing request): treat as reconnect.
+	s.handleReconnect(conn, sess, fp)
+}
+
+func (s *Server) handlePairing(
+	conn *websocket.Conn,
+	sess *noise.Session,
+	peerPub []byte,
+	fp string,
+	req PairingRequest,
+	code string,
+) {
 	if !ConstantTimeEqual(req.PairingCode, code) {
 		resp := PairingResponse{
 			Accepted:     false,
@@ -84,7 +95,6 @@ func (s *Server) HandleWS(w http.ResponseWriter, r *http.Request) {
 	}
 
 	sessionID := NewPeerID()
-	fp := FingerprintFromKey(peerPub)
 	wait := s.Hub.beginAcceptWait()
 	s.Hub.setPending(&PendingRequest{
 		DeviceName:  req.DeviceName,
@@ -142,8 +152,46 @@ func (s *Server) HandleWS(w http.ResponseWriter, r *http.Request) {
 		PairedAtMs:   NowMs(),
 	})
 	log.Printf("paired peer fp=%s name=%s", fp, req.DeviceName)
+	s.serveTransport(conn, sess, fp)
+}
 
-	// Transport: encrypted store control frames (JSON store ops).
+func (s *Server) handleReconnect(conn *websocket.Conn, sess *noise.Session, fp string) {
+	known, err := s.Peers.Get(fp)
+	if err != nil || known == nil {
+		log.Printf("peer ws: reconnect rejected unknown fp=%s", fp)
+		// Still complete Noise msg2 so initiator does not hang on decrypt;
+		// payload marks rejection. Then close — no transport.
+		ack, _ := json.Marshal(map[string]any{
+			"type":      "reconnect_nack",
+			"device_id": s.Identity.Fingerprint(),
+			"reason":    "unknown_peer",
+		})
+		msg2, err := sess.WriteHandshake2(ack)
+		if err == nil {
+			out, _ := noise.EncodeFrame(noise.Frame{Type: noise.FrameHS, Payload: msg2})
+			_ = conn.WriteMessage(websocket.TextMessage, []byte(out))
+		}
+		return
+	}
+
+	ack, _ := json.Marshal(map[string]any{
+		"type":      "reconnect_ack",
+		"device_id": s.Identity.Fingerprint(),
+	})
+	msg2, err := sess.WriteHandshake2(ack)
+	if err != nil {
+		log.Printf("reconnect hs2: %v", err)
+		return
+	}
+	out, _ := noise.EncodeFrame(noise.Frame{Type: noise.FrameHS, Payload: msg2})
+	if err := conn.WriteMessage(websocket.TextMessage, []byte(out)); err != nil {
+		return
+	}
+	log.Printf("reconnected peer fp=%s name=%s", fp, known.DeviceName)
+	s.serveTransport(conn, sess, fp)
+}
+
+func (s *Server) serveTransport(conn *websocket.Conn, sess *noise.Session, fp string) {
 	_ = conn.SetReadDeadline(time.Time{})
 	var writeMu sync.Mutex
 	for {
