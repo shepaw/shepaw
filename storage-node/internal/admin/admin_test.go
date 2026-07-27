@@ -234,6 +234,53 @@ func TestAdminDevicePurge(t *testing.T) {
 	}
 }
 
+func TestAdminBrowseAPI(t *testing.T) {
+	root := t.TempDir()
+	self := "aaaaaaaaaaaaaaaa"
+	other := "bbbbbbbbbbbbbbbb"
+	s, err := store.Open(root, self)
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := filepath.Join(root, other, "files")
+	_ = os.MkdirAll(dir, 0o755)
+	_ = os.WriteFile(filepath.Join(dir, "a.txt"), []byte("hi"), 0o644)
+
+	srv := &admin.Server{
+		Store:  s,
+		Device: self,
+		Auth:   admin.AuthConfig{Token: "t"},
+	}
+	mux := http.NewServeMux()
+	srv.Mount(mux)
+
+	req := httptest.NewRequest(http.MethodGet, "/admin/api/browse?device="+other+"&space=files", nil)
+	req.Header.Set("Authorization", "Bearer t")
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("browse: %d %s", rec.Code, rec.Body.String())
+	}
+	var listed map[string]any
+	_ = json.Unmarshal(rec.Body.Bytes(), &listed)
+	entries, _ := listed["entries"].([]any)
+	if len(entries) != 1 {
+		t.Fatalf("%v", listed)
+	}
+
+	body, _ := json.Marshal(map[string]string{
+		"device": other, "space": "files", "path": "a.txt",
+	})
+	req = httptest.NewRequest(http.MethodPost, "/admin/api/browse/delete", bytes.NewReader(body))
+	req.Header.Set("Authorization", "Bearer t")
+	req.Header.Set("Content-Type", "application/json")
+	rec = httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("delete: %d %s", rec.Code, rec.Body.String())
+	}
+}
+
 func TestAdminUI(t *testing.T) {
 	root := t.TempDir()
 	device := "aaaaaaaaaaaaaaaa"

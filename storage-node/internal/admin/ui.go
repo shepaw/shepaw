@@ -15,7 +15,7 @@ h2 { font-size: 1rem; margin: 0 0 .5rem; }
 .muted { opacity: .7; font-size: .9rem; }
 .card { border: 1px solid color-mix(in srgb, CanvasText 20%, transparent);
   border-radius: 10px; padding: 1rem; margin: 1rem 0; }
-button, input { font: inherit; padding: .4rem .7rem; }
+button, input, select { font: inherit; padding: .4rem .7rem; }
 button { cursor: pointer; }
 .row { display: flex; gap: .5rem; flex-wrap: wrap; align-items: center; }
 pre { white-space: pre-wrap; word-break: break-word; font-size: .85rem; }
@@ -27,7 +27,7 @@ td, th { text-align: left; padding: .35rem .25rem; border-bottom: 1px solid
 </head>
 <body>
   <h1>ShePaw Storage Admin</h1>
-  <p class="muted">无头节点管理面 · Noise 配对 / 用量 / 回收站 / 换机导入</p>
+  <p class="muted">无头节点管理面 · Noise 配对 / 浏览手删 / 用量 / 回收站 / 换机导入</p>
   <div class="card row">
     <label>Token <input id="token" type="password" placeholder="admin token" style="min-width:14rem"/></label>
     <button id="saveToken">保存</button>
@@ -49,6 +49,22 @@ td, th { text-align: left; padding: .35rem .25rem; border-bottom: 1px solid
     <h2 style="margin-top:1rem">设备镜像</h2>
     <p class="muted">永久删除他端镜像目录（不可进回收站；禁删本机）。</p>
     <div id="devices"></div>
+  </div>
+  <div class="card">
+    <h2>分区浏览</h2>
+    <p class="muted">对齐 App 存储浏览器：列出正式文件并删除（进回收站）。</p>
+    <div class="row">
+      <label>设备 <select id="browseDevice"></select></label>
+      <label>分区 <select id="browseSpace">
+        <option value="files">files</option>
+        <option value="artifacts">artifacts</option>
+        <option value="attachments">attachments</option>
+        <option value="backups">backups</option>
+      </select></label>
+      <label>前缀 <input id="browsePath" placeholder="可选子路径" style="min-width:10rem"/></label>
+      <button id="browseLoad">列出</button>
+    </div>
+    <div id="browse" style="margin-top:.75rem"></div>
   </div>
   <div class="card">
     <div class="row" style="justify-content:space-between">
@@ -137,6 +153,17 @@ async function refresh() {
         };
       });
     }
+
+    // populate browse device select
+    const browseSel = $('browseDevice');
+    const prevBrowse = browseSel.value;
+    const browseIds = ids.length ? ids.slice() : (selfId ? [selfId] : []);
+    if (selfId && !browseIds.includes(selfId)) browseIds.unshift(selfId);
+    browseSel.innerHTML = browseIds.map(id =>
+      '<option value="' + id + '"' + (id === selfId ? ' selected' : '') + '>' +
+      shortId(id) + (id === selfId ? ' (本机)' : '') + '</option>'
+    ).join('');
+    if (prevBrowse && browseIds.includes(prevBrowse)) browseSel.value = prevBrowse;
 
     try {
       const peers = await api('/admin/api/peers');
@@ -260,6 +287,49 @@ $('empty').onclick = async () => {
     refresh();
   } catch (e) { $('msg').textContent = String(e.message||e); }
 };
+async function loadBrowse() {
+  $('msg').textContent = '';
+  try {
+    const device = $('browseDevice').value;
+    const space = $('browseSpace').value;
+    const path = ($('browsePath').value || '').trim();
+    const q = new URLSearchParams({device, space});
+    if (path) q.set('path', path);
+    const out = await api('/admin/api/browse?' + q.toString());
+    const entries = out.entries || [];
+    if (!entries.length) {
+      $('browse').innerHTML = '<p class="muted">无文件</p>';
+      return;
+    }
+    let html = '<table><thead><tr><th>路径</th><th>大小</th><th></th></tr></thead><tbody>';
+    for (const e of entries) {
+      html += '<tr><td>' + (e.path||'') + '</td><td>' + fmtBytes(e.size) +
+        '</td><td><button data-path="' + encodeURIComponent(e.path||'') +
+        '" class="browseDel">删除</button></td></tr>';
+    }
+    html += '</tbody></table>';
+    $('browse').innerHTML = html;
+    document.querySelectorAll('.browseDel').forEach(btn => {
+      btn.onclick = async () => {
+        const p = decodeURIComponent(btn.dataset.path);
+        if (!confirm('删除 ' + p + '？将移入回收站。')) return;
+        try {
+          await api('/admin/api/browse/delete', {
+            method:'POST', headers:{'Content-Type':'application/json'},
+            body: JSON.stringify({
+              device: $('browseDevice').value,
+              space: $('browseSpace').value,
+              path: p
+            })
+          });
+          loadBrowse();
+          refresh();
+        } catch (e) { $('msg').textContent = String(e.message||e); }
+      };
+    });
+  } catch (e) { $('msg').textContent = String(e.message||e); }
+}
+$('browseLoad').onclick = loadBrowse;
 refresh();
 </script>
 </body>

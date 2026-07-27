@@ -371,6 +371,45 @@ func TestPurgeDevice(t *testing.T) {
 	}
 }
 
+func TestAdminListDelete(t *testing.T) {
+	root := t.TempDir()
+	self := "aaaaaaaaaaaaaaaa"
+	other := "bbbbbbbbbbbbbbbb"
+	s, err := store.Open(root, self)
+	if err != nil {
+		t.Fatal(err)
+	}
+	otherDir := filepath.Join(root, other, "attachments")
+	if err := os.MkdirAll(otherDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(otherDir, "secret.bin"), []byte("secret"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	listed, err := s.AdminList(other, "attachments", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ents := listed["entries"].([]map[string]any)
+	if len(ents) != 1 {
+		t.Fatalf("entries=%v", listed)
+	}
+
+	del, err := s.AdminDelete(other, "attachments", "secret.bin")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if del["recycled"] == nil {
+		t.Fatalf("%v", del)
+	}
+	listed2, _ := s.AdminList(other, "attachments", "")
+	ents2 := listed2["entries"].([]map[string]any)
+	if len(ents2) != 0 {
+		t.Fatalf("still listed: %v", listed2)
+	}
+}
+
 func TestPurgeDeviceNotFound(t *testing.T) {
 	root := t.TempDir()
 	self := "aaaaaaaaaaaaaaaa"

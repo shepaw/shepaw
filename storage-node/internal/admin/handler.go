@@ -40,6 +40,8 @@ func (s *Server) Mount(mux *http.ServeMux) {
 	api.HandleFunc("/pairing/decide", s.handlePairingDecide)
 	api.HandleFunc("/peers", s.handlePeers)
 	api.HandleFunc("/devices/purge", s.handleDevicePurge)
+	api.HandleFunc("/browse", s.handleBrowse)
+	api.HandleFunc("/browse/delete", s.handleBrowseDelete)
 
 	mux.Handle("/admin/api/", RequireAuth(s.Auth, http.StripPrefix("/admin/api", api)))
 	mux.Handle("/admin", RequireAuth(s.Auth, http.HandlerFunc(s.handleUI)))
@@ -302,6 +304,60 @@ func (s *Server) handleDevicePurge(w http.ResponseWriter, r *http.Request) {
 		"device_id":    body.DeviceID,
 		"purged_bytes": freed,
 	})
+}
+
+func (s *Server) handleBrowse(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "GET only", http.StatusMethodNotAllowed)
+		return
+	}
+	device := r.URL.Query().Get("device")
+	if device == "" {
+		device = s.Device
+	}
+	space := r.URL.Query().Get("space")
+	if space == "" {
+		space = "files"
+	}
+	path := r.URL.Query().Get("path")
+	data, err := s.Store.AdminList(device, space, path)
+	if err != nil {
+		writeErr(w, err)
+		return
+	}
+	data["device"] = device
+	data["space"] = space
+	data["path"] = path
+	writeJSON(w, data)
+}
+
+func (s *Server) handleBrowseDelete(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "POST only", http.StatusMethodNotAllowed)
+		return
+	}
+	var body struct {
+		Device string `json:"device"`
+		Space  string `json:"space"`
+		Path   string `json:"path"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		http.Error(w, "bad json", http.StatusBadRequest)
+		return
+	}
+	if body.Device == "" {
+		body.Device = s.Device
+	}
+	if body.Space == "" || body.Path == "" {
+		http.Error(w, "space and path required", http.StatusBadRequest)
+		return
+	}
+	data, err := s.Store.AdminDelete(body.Device, body.Space, body.Path)
+	if err != nil {
+		writeErr(w, err)
+		return
+	}
+	writeJSON(w, data)
 }
 
 func advertiseLocalWS(listen string) string {
