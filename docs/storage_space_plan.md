@@ -278,7 +278,7 @@ master 上的镜像树主要是各端本地数据的副本；为降低单点损�
 | M4 本地优先与远程 | ✅ 基本 | `SyncJournal`/`SyncEngine` + 游标；`LocalCas` 仅远端读缓存；tunnel 复用 peer |
 | M5 协作与附件 | ✅ 基本 | `ArtifactService` URI + 编排注入；附件经 store hash 编址 |
 | M6 master 迁移 | ✅ 基本 | 升主/指针/再保护；差量镜像种子 + 内容哈希门闩（软校验，可选硬阻断） |
-| M7 Go 存储节点 | ✅ 基本 | `storage-node/`：目录树+fixture；import/retention；**sync 游标**；**Noise IK**；**无头 `/admin`（browse/purge/wipe/unpair/gc）** |
+| M7 Go 存储节点 | ✅ 基本 | `storage-node/`：目录树+fixture；import/retention；**sync 游标**；**master 指针**；**Noise IK**；**无头 `/admin`（browse/purge/wipe/unpair/gc/volume_warn）** |
 | M8 记忆交换与多 she | ✅ 基本 | `lib/she_network/` + 管理页「她的圈子」；presence **真实 Agent 类别/数量**（非名单） |
 
 代码位置：`lib/storage/`、`lib/she_network/`、`lib/screens/storage_space_screen.dart`；`lib/peer/` 仅帧路由。
@@ -343,3 +343,5 @@ master 上的镜像树主要是各端本地数据的副本；为降低单点损�
 37. `she.presence` 真实 Agent 类别计数（`aggregatePresenceProfile`；断线标离线；圈子展示 count/类别，仍不暴露名单）。
 38. M7 无头解除配对（`Peers.Remove`；`/admin/api/peers/remove`）。
 39. Go staging/回收站 GC（启动时自动 + `/admin/api/gc`；对齐 App `gcStaging`/`gcRecycle`）。
+40. Go `master.pointer` / `master.pointer.query`（`.system/master_pointer.json`；按 epoch 改指；`stats.master`/`master_epoch`）；`/peer/ws` 接受 Dart 扁平 store 帧并回 `type/ns/req_id`。
+41. 无头 admin `volume_warn` 横幅（≥80% 卷用量，对齐 App 管理页告警）。

@@ -20,6 +20,11 @@ button { cursor: pointer; }
 .row { display: flex; gap: .5rem; flex-wrap: wrap; align-items: center; }
 pre { white-space: pre-wrap; word-break: break-word; font-size: .85rem; }
 .err { color: #c62828; }
+.warn {
+  display: none; margin: 0 0 1rem; padding: .75rem 1rem; border-radius: 8px;
+  background: color-mix(in srgb, #f9a825 22%, Canvas); border: 1px solid #f9a825;
+}
+.warn.show { display: block; }
 table { width: 100%; border-collapse: collapse; font-size: .9rem; }
 td, th { text-align: left; padding: .35rem .25rem; border-bottom: 1px solid
   color-mix(in srgb, CanvasText 12%, transparent); }
@@ -28,6 +33,7 @@ td, th { text-align: left; padding: .35rem .25rem; border-bottom: 1px solid
 <body>
   <h1>ShePaw Storage Admin</h1>
   <p class="muted">无头节点管理面 · Noise 配对 / 浏览手删 / 用量 / 回收站 / 换机导入</p>
+  <div id="volumeWarn" class="warn" role="alert"></div>
   <div class="card row">
     <label>Token <input id="token" type="password" placeholder="admin token" style="min-width:14rem"/></label>
     <button id="saveToken">保存</button>
@@ -131,6 +137,17 @@ async function refresh() {
   try {
     const stats = await api('/admin/api/stats');
     $('stats').textContent = JSON.stringify(stats, null, 2);
+    const volWarn = $('volumeWarn');
+    if (stats.volume_warn) {
+      const pct = Math.round((Number(stats.volume_used_ratio)||0) * 100);
+      const free = fmtBytes(stats.volume_free_bytes);
+      const total = fmtBytes(stats.volume_total_bytes);
+      volWarn.textContent = '卷用量告警：已用约 ' + pct + '%（剩余 ' + free + ' / 共 ' + total + '）。请清理镜像或扩大磁盘。';
+      volWarn.classList.add('show');
+    } else {
+      volWarn.textContent = '';
+      volWarn.classList.remove('show');
+    }
     const selfId = stats.self_device || stats.device || '';
     const devices = stats.devices || {};
     const ids = Object.keys(devices);

@@ -240,17 +240,16 @@ func (s *Server) serveTransport(conn *websocket.Conn, sess *noise.Session, fp st
 			log.Printf("decrypt: %v", err)
 			return
 		}
-		var body struct {
-			Op      string         `json:"op"`
-			Payload map[string]any `json:"payload"`
-		}
-		if err := json.Unmarshal(plain, &body); err != nil {
+		op, reqID, payload, ok := parseStoreControl(plain)
+		if !ok {
 			continue
 		}
-		if body.Payload == nil {
-			body.Payload = map[string]any{}
+		// Notification: master.pointer without req_id — apply, no reply.
+		if op == "master.pointer" && reqID == "" {
+			_, _ = s.Store.Handle(protocol.Frame{Op: op, Payload: payload}, fp, protocol.TrustOwner, false)
+			continue
 		}
-		data, err := s.Store.Handle(protocol.Frame{Op: body.Op, Payload: body.Payload}, fp, protocol.TrustOwner, false)
+		data, err := s.Store.Handle(protocol.Frame{Op: op, Payload: payload}, fp, protocol.TrustOwner, false)
 		var reply map[string]any
 		if err != nil {
 			code := "internal"
@@ -259,9 +258,18 @@ func (s *Server) serveTransport(conn *websocket.Conn, sess *noise.Session, fp st
 				code = oe.Code
 				msg = oe.Msg
 			}
-			reply = map[string]any{"op": "error", "code": code, "message": msg}
+			reply = map[string]any{
+				"type": "store", "ns": "store", "op": "error", "v": 1,
+				"code": code, "message": msg,
+			}
 		} else {
-			reply = map[string]any{"op": "result", "data": data}
+			reply = map[string]any{
+				"type": "store", "ns": "store", "op": "result", "v": 1,
+				"data": data,
+			}
+		}
+		if reqID != "" {
+			reply["req_id"] = reqID
 		}
 		rawReply, _ := json.Marshal(reply)
 		ct, err := sess.Encrypt(rawReply)
@@ -273,4 +281,30 @@ func (s *Server) serveTransport(conn *websocket.Conn, sess *noise.Session, fp st
 		_ = conn.WriteMessage(websocket.TextMessage, []byte(enc))
 		writeMu.Unlock()
 	}
+}
+
+// parseStoreControl accepts Dart flat StoreFrame JSON and nested {op,payload} (tests).
+func parseStoreControl(plain []byte) (op, reqID string, payload map[string]any, ok bool) {
+	var raw map[string]any
+	if err := json.Unmarshal(plain, &raw); err != nil {
+		return "", "", nil, false
+	}
+	op, _ = raw["op"].(string)
+	if op == "" {
+		return "", "", nil, false
+	}
+	reqID, _ = raw["req_id"].(string)
+	if nested, isMap := raw["payload"].(map[string]any); isMap && raw["ns"] == nil {
+		return op, reqID, nested, true
+	}
+	payload = make(map[string]any)
+	for k, v := range raw {
+		switch k {
+		case "type", "ns", "op", "v", "req_id":
+			continue
+		default:
+			payload[k] = v
+		}
+	}
+	return op, reqID, payload, true
 }

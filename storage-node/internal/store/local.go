@@ -122,6 +122,10 @@ func (l *Local) Handle(frame protocol.Frame, caller, trust string, loopback bool
 		return l.syncHello(caller)
 	case "sync.cursors":
 		return l.syncCursors()
+	case "master.pointer.query":
+		return l.masterPointerQuery()
+	case "master.pointer":
+		return l.masterPointerApply(frame)
 	default:
 		return nil, &OpError{Code: "bad_op", Msg: frame.Op}
 	}
@@ -479,6 +483,10 @@ func (l *Local) stats() (map[string]any, error) {
 		"devices":       devices,
 		"staging_bytes": stagingBytes,
 		"recycle_bytes": dirSize(filepath.Join(l.Root, ".recycle"), false),
+	}
+	if p, err := l.loadPointer(); err == nil {
+		out["master"] = p.Master
+		out["master_epoch"] = p.Epoch
 	}
 	if cursors, err := l.cursors.all(); err == nil && len(cursors) > 0 {
 		out["device_cursors"] = cursors
