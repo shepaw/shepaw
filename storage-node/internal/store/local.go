@@ -758,6 +758,59 @@ func (l *Local) importGrant(frame protocol.Frame) (map[string]any, error) {
 	return map[string]any{"grant": g.toMap()}, nil
 }
 
+// ReceivePushedGrant persists an inbound no-req_id import.grant notification
+// (path A/B). Prefer payload old_device when valid; else fall back to fromDevice.
+func (l *Local) ReceivePushedGrant(fromDevice string, payload map[string]any) error {
+	if payload == nil {
+		return &OpError{Code: "bad_op", Msg: "empty grant"}
+	}
+	grantID, _ := payload["grant_id"].(string)
+	if grantID == "" {
+		return &OpError{Code: "bad_op", Msg: "grant_id required"}
+	}
+	payloadOld, _ := payload["old_device"].(string)
+	oldDevice := fromDevice
+	if protocol.IsValidDeviceID(payloadOld) {
+		oldDevice = payloadOld
+	}
+	if !protocol.IsValidDeviceID(oldDevice) {
+		return &OpError{Code: "bad_op", Msg: "invalid old_device"}
+	}
+	spaces := stringSlice(payload["spaces"])
+	if len(spaces) == 0 {
+		spaces = append([]string(nil), grantSpaces...)
+	}
+	g := importGrant{
+		GrantID:   grantID,
+		OldDevice: oldDevice,
+		NewDevice: l.DeviceID,
+		Spaces:    spaces,
+		IssuedAt:  anyToInt64(payload["issued_at"]),
+		ExpiresAt: anyToInt64(payload["expires_at"]),
+	}
+	if g.ExpiresAt <= 0 {
+		g.ExpiresAt = time.Now().UnixMilli() + importDefaultTTL.Milliseconds()
+	}
+	return l.imports.saveReceived(g)
+}
+
+func stringSlice(v any) []string {
+	switch x := v.(type) {
+	case []string:
+		return append([]string(nil), x...)
+	case []any:
+		out := make([]string, 0, len(x))
+		for _, e := range x {
+			if s, ok := e.(string); ok && s != "" {
+				out = append(out, s)
+			}
+		}
+		return out
+	default:
+		return nil
+	}
+}
+
 func (l *Local) importReject(frame protocol.Frame) (map[string]any, error) {
 	requestID, _ := frame.Payload["request_id"].(string)
 	if requestID == "" {

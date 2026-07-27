@@ -211,6 +211,33 @@ void main() {
           .toList();
       expect(paths, contains('20260726-120000/db.sqlite.enc'));
     });
+
+    test('路径 B：master 代签推送采信 payload old_device', () async {
+      const lostOld = 'dddddddddddddddd';
+      const masterIssuer = 'eeeeeeeeeeeeeeee'; // ≠ old_device
+      final self = await DeviceIdentity.deviceId();
+      final docs = await getApplicationDocumentsDirectory();
+      final storeRoot = Directory(p.join(docs.path, 'shepaw', 'store'));
+      final auth = ImportAuthService(storeRoot: storeRoot);
+
+      await StoreService.instance.receivePushedGrantForTest(
+        masterIssuer,
+        StoreFrame(op: StoreOp.importGrant, payload: {
+          'grant_id': 'ig-path-b-test',
+          'old_device': lostOld,
+          'spaces': ['backups', 'attachments'],
+          'issued_at': 1,
+          'expires_at': 9999999999999,
+        }),
+      );
+
+      final received = await auth.receivedGrants();
+      final hit = received.where((g) => g.grantId == 'ig-path-b-test').toList();
+      expect(hit, isNotEmpty);
+      expect(hit.single.oldDevice, lostOld);
+      expect(hit.single.oldDevice, isNot(masterIssuer));
+      expect(hit.single.newDevice, self);
+    });
   });
 
   group('远端 master 不可达', () {

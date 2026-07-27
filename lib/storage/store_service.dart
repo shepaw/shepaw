@@ -260,13 +260,19 @@ class StoreService {
   }
 
   /// 请求方收到服务侧签发的授权推送：持久化到 received。
+  ///
+  /// 路径 B（master 代签）时发送方 fingerprint ≠ `old_device`，必须采信
+  /// payload 中的 `old_device`；缺省/非法时才回退 [fromDevice]（路径 A）。
   Future<void> _receivePushedGrant(
       String fromDevice, StoreFrame frame) async {
     try {
       final self = await DeviceIdentity.deviceId();
+      final payloadOld = frame.payload['old_device'] as String?;
+      final oldDevice =
+          isValidDeviceId(payloadOld) ? payloadOld! : fromDevice;
       final grant = ImportGrant(
         grantId: frame.payload['grant_id'] as String,
-        oldDevice: fromDevice,
+        oldDevice: oldDevice,
         newDevice: self,
         spaces: (frame.payload['spaces'] as List).cast<String>(),
         issuedAtMs: frame.payload['issued_at'] as int? ?? 0,
@@ -277,12 +283,19 @@ class StoreService {
       await auth.saveReceivedGrant(grant);
       ImportGrantBus.instance.emitReceived(grant);
       _log.info(
-          'received import grant ${grant.grantId} from $fromDevice',
+          'received import grant ${grant.grantId} from $fromDevice '
+          '(old=${grant.oldDevice})',
           tag: _tag);
     } catch (e) {
       _log.warning('invalid pushed import grant: $e', tag: _tag);
     }
   }
+
+  /// 测试钩子：模拟入站无 req_id 的 `import.grant` 推送。
+  @visibleForTesting
+  Future<void> receivePushedGrantForTest(
+          String fromDevice, StoreFrame frame) =>
+      _receivePushedGrant(fromDevice, frame);
 
   /// 签发后把授权推送给请求方（新设备）。
   Future<void> _pushGrantToRequester(ImportGrant grant) async {

@@ -348,3 +348,5 @@ master 上的镜像树主要是各端本地数据的副本；为降低单点损�
 42. Go 薄升主 `master.migrate`（bump epoch + 写本机指针；无出站种子/哈希门闩/广播，他端靠 `pointer.query`；`/admin/api/master/migrate` + UI）。
 43. 在线会话 registry + 升主后 fanout `master.pointer`（`SessionRegistry`；`broadcast_peers` 为送达数；离线端仍靠 query）。
 44. 无头 `import.grant` 签发后向请求方在线会话推送（`PushImportGrant`；响应 `pushed`；对齐 App `_pushGrantToRequester`）。
+45. 路径 B 导入授权推送：App `_receivePushedGrant` 采信 payload `old_device`（master 代签时 ≠ 发送方 fingerprint；缺省回退 fromDevice）。
+46. Go 接收无 `req_id` 的 `import.grant` 推送落库（`ReceivePushedGrant`；路径 B 采信 payload `old_device`；不回包）。

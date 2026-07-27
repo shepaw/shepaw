@@ -249,10 +249,18 @@ func (s *Server) serveTransport(conn *websocket.Conn, sess *noise.Session, fp st
 		if !ok {
 			continue
 		}
-		// Notification: master.pointer without req_id — apply, no reply.
-		if op == "master.pointer" && reqID == "" {
-			_, _ = s.Store.Handle(protocol.Frame{Op: op, Payload: payload}, fp, protocol.TrustOwner, false)
-			continue
+		// Notifications without req_id: apply/persist, no reply.
+		if reqID == "" {
+			switch op {
+			case "master.pointer":
+				_, _ = s.Store.Handle(protocol.Frame{Op: op, Payload: payload}, fp, protocol.TrustOwner, false)
+				continue
+			case "import.grant":
+				if err := s.Store.ReceivePushedGrant(fp, payload); err != nil {
+					log.Printf("import.grant push from %s: %v", fp, err)
+				}
+				continue
+			}
 		}
 		data, err := s.Store.Handle(protocol.Frame{Op: op, Payload: payload}, fp, protocol.TrustOwner, false)
 		if err == nil && op == "master.migrate" {

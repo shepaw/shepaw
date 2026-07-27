@@ -618,3 +618,99 @@ func TestImportGrantPushToRequester(t *testing.T) {
 		t.Fatalf("old_device=%v", msg["old_device"])
 	}
 }
+
+func TestImportGrantPushInboundNoReply(t *testing.T) {
+	root := t.TempDir()
+	nodeID, err := noise.LoadOrCreate(root + "/node.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	issuerID, err := noise.LoadOrCreate(root + "/issuer.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	lostOld := "dddddddddddddddd"
+	st, err := store.Open(root+"/data", nodeID.Fingerprint())
+	if err != nil {
+		t.Fatal(err)
+	}
+	peers := NewStore(root)
+	if err := peers.Upsert(Peer{
+		Fingerprint:  issuerID.Fingerprint(),
+		PublicKeyB64: issuerID.PublicKeyBase64(),
+		DeviceName:   "issuer",
+		PeerID:       "peer-issuer",
+		TrustLevel:   protocol.TrustOwner,
+		PairedAtMs:   NowMs(),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	sessions := NewSessionRegistry()
+	srv := &Server{
+		Store:      st,
+		Hub:        NewPairingHub(nodeID, peers, "node"),
+		Peers:      peers,
+		Sessions:   sessions,
+		Identity:   nodeID,
+		DeviceName: "node",
+	}
+	hs := httptest.NewServer(http.HandlerFunc(srv.HandleWS))
+	defer hs.Close()
+	wsURL := "ws" + strings.TrimPrefix(hs.URL, "http") + "/peer/ws"
+
+	conn, _, err := websocket.DefaultDialer.Dial(wsURL, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	initSess, err := noise.NewInitiator(issuerID, nodeID.PublicKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	msg1, err := initSess.WriteHandshake1([]byte(`{"type":"reconnect"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	frame1, _ := noise.EncodeFrame(noise.Frame{Type: noise.FrameHS, Payload: msg1})
+	_ = conn.WriteMessage(websocket.TextMessage, []byte(frame1))
+	_ = conn.SetReadDeadline(time.Now().Add(5 * time.Second))
+	_, raw2, err := conn.ReadMessage()
+	if err != nil {
+		t.Fatal(err)
+	}
+	fr2, _ := noise.DecodeFrame(string(raw2))
+	if _, err := initSess.ReadHandshake2(fr2.Payload); err != nil {
+		t.Fatal(err)
+	}
+
+	notify, _ := json.Marshal(map[string]any{
+		"type": "store", "ns": "store", "op": "import.grant", "v": 1,
+		"grant_id": "ig-inbound-b", "old_device": lostOld,
+		"spaces": []string{"backups"}, "issued_at": 1, "expires_at": 9999999999999,
+	})
+	ct, err := initSess.Encrypt(notify)
+	if err != nil {
+		t.Fatal(err)
+	}
+	enc, _ := noise.EncodeFrame(noise.Frame{Type: noise.FrameData, Payload: ct})
+	_ = conn.WriteMessage(websocket.TextMessage, []byte(enc))
+	_ = conn.SetReadDeadline(time.Now().Add(400 * time.Millisecond))
+	if _, _, err := conn.ReadMessage(); err == nil {
+		t.Fatal("expected no reply for import.grant notification")
+	}
+
+	res, err := st.Handle(protocol.Frame{
+		Op:      "import.grants",
+		Payload: map[string]any{"role": "received"},
+	}, nodeID.Fingerprint(), protocol.TrustOwner, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	grants := res["grants"].([]map[string]any)
+	if len(grants) != 1 || grants[0]["old_device"] != lostOld {
+		t.Fatalf("grants=%v", res)
+	}
+	if grants[0]["grant_id"] != "ig-inbound-b" {
+		t.Fatalf("grant_id=%v", grants[0]["grant_id"])
+	}
+}
