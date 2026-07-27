@@ -2373,6 +2373,13 @@
   "storage_exportTreeHint": "Exports the full local store tree (artifacts / files / attachments / backups). Pick a destination folder.",
   "storage_exportTreeDone": "Exported to {path} ({count} files, {size})",
   "storage_exportTreeFailed": "Export failed: {error}",
+  "storage_wipeSelf": "Wipe local store data",
+  "storage_wipeSelfTitle": "Wipe local store data",
+  "storage_wipeSelfDesc": "Clears this device's four partitions and staging (keeps other mirrors, recycle, DB, and device identity). Export first if needed.",
+  "storage_wipeSelfConfirm": "This cannot be restored from recycle. Old mirrors of this device on the master are not auto-removed. Type DELETE to confirm.",
+  "storage_wipeSelfTypeHint": "Type DELETE",
+  "storage_wipeSelfDone": "Local store wiped (freed {size})",
+  "storage_wipeSelfFailed": "Wipe failed: {error}",
   "storage_mirroredDevices": "Mirrored device directories",
   "storage_purgeDevice": "Delete",
   "storage_purgeDeviceTitle": "Delete device mirror",
@@ -2427,6 +2434,16 @@
     }
   },
   "@storage_exportTreeFailed": {
+    "placeholders": {
+      "error": { "type": "String" }
+    }
+  },
+  "@storage_wipeSelfDone": {
+    "placeholders": {
+      "size": { "type": "String" }
+    }
+  },
+  "@storage_wipeSelfFailed": {
     "placeholders": {
       "error": { "type": "String" }
     }

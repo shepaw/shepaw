@@ -30,6 +30,7 @@ import '../storage/snapshot_crypto.dart';
 import '../storage/snapshot_import_service.dart';
 import '../storage/snapshot_service.dart';
 import '../storage/store_export_service.dart';
+import '../storage/store_wipe_service.dart';
 import '../storage/store_protocol.dart';
 import '../storage/store_service.dart';
 import 'storage_import_scanner_screen.dart';
@@ -568,10 +569,87 @@ class _StorageSpaceScreenState extends State<StorageSpaceScreen> {
                 label: Text(l10n.storage_exportTree),
               ),
             ),
+            const SizedBox(height: 12),
+            Text(l10n.storage_wipeSelfDesc,
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    )),
+            const SizedBox(height: 8),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: OutlinedButton.icon(
+                onPressed: _busy ? null : _wipeSelfStore,
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: Theme.of(context).colorScheme.error,
+                ),
+                icon: const Icon(Icons.delete_forever, size: 18),
+                label: Text(l10n.storage_wipeSelf),
+              ),
+            ),
           ],
         ),
       ),
     );
+  }
+
+  Future<void> _wipeSelfStore() async {
+    final l10n = AppLocalizations.of(context);
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) {
+        final controller = TextEditingController();
+        return StatefulBuilder(
+          builder: (ctx, setLocal) {
+            final ok = controller.text.trim() == 'DELETE';
+            return AlertDialog(
+              icon: Icon(Icons.delete_forever,
+                  color: Theme.of(ctx).colorScheme.error, size: 36),
+              title: Text(l10n.storage_wipeSelfTitle),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(l10n.storage_wipeSelfConfirm),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: controller,
+                    autofocus: true,
+                    decoration: InputDecoration(
+                      hintText: l10n.storage_wipeSelfTypeHint,
+                    ),
+                    onChanged: (_) => setLocal(() {}),
+                  ),
+                ],
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(ctx).pop(false),
+                  child: Text(l10n.common_cancel),
+                ),
+                FilledButton(
+                  style: FilledButton.styleFrom(
+                      backgroundColor: Theme.of(ctx).colorScheme.error),
+                  onPressed:
+                      ok ? () => Navigator.of(ctx).pop(true) : null,
+                  child: Text(l10n.common_confirm),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+    if (confirmed != true) return;
+    setState(() => _busy = true);
+    try {
+      final out = await StoreWipeService.instance.wipeSelfTree();
+      await _refresh();
+      _toast(l10n.storage_wipeSelfDone(_fmtBytes(out.freedBytes)));
+    } catch (e) {
+      _toast(l10n.storage_wipeSelfFailed('$e'));
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
   }
 
   // ------------------------------------------------------------ M6 master 迁移

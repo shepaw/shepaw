@@ -208,6 +208,16 @@ class SyncJournal {
   Future<List<SyncQueueEntry>> pending() async =>
       List.of(await _loadQueue());
 
+  /// 清空待同步队列，**保留** change_seq / ack_seq（危险区 wipe 后继续写不撞 master 游标）。
+  Future<void> clearPendingQueue() async {
+    await _locked(() async {
+      await _loadState();
+      _queue = <SyncQueueEntry>[];
+      await _saveQueue();
+      await _saveState();
+    });
+  }
+
   Future<({int changeSeq, int ackSeq})> cursors() async {
     final (c, a) = await _loadState();
     return (changeSeq: c, ackSeq: a);

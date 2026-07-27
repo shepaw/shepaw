@@ -4712,6 +4712,33 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
+  String get storage_wipeSelf => '删除本机存储数据';
+
+  @override
+  String get storage_wipeSelfTitle => '删除本机存储数据';
+
+  @override
+  String get storage_wipeSelfDesc =>
+      '清空本机四分区正式文件与暂存（不删他端镜像、回收站、数据库与设备身份）。建议先导出。';
+
+  @override
+  String get storage_wipeSelfConfirm =>
+      '此操作不可从回收站还原。master 上本机旧镜像不会自动清除。请输入 DELETE 确认。';
+
+  @override
+  String get storage_wipeSelfTypeHint => '输入 DELETE';
+
+  @override
+  String storage_wipeSelfDone(String size) {
+    return '已清空本机存储（释放 $size）';
+  }
+
+  @override
+  String storage_wipeSelfFailed(String error) {
+    return '删除失败：$error';
+  }
+
+  @override
   String get storage_mirroredDevices => '他端镜像目录';
 
   @override

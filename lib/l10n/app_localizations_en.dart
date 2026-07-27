@@ -4896,6 +4896,33 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
+  String get storage_wipeSelf => 'Wipe local store data';
+
+  @override
+  String get storage_wipeSelfTitle => 'Wipe local store data';
+
+  @override
+  String get storage_wipeSelfDesc =>
+      'Clears this device\'s four partitions and staging (keeps other mirrors, recycle, DB, and device identity). Export first if needed.';
+
+  @override
+  String get storage_wipeSelfConfirm =>
+      'This cannot be restored from recycle. Old mirrors of this device on the master are not auto-removed. Type DELETE to confirm.';
+
+  @override
+  String get storage_wipeSelfTypeHint => 'Type DELETE';
+
+  @override
+  String storage_wipeSelfDone(String size) {
+    return 'Local store wiped (freed $size)';
+  }
+
+  @override
+  String storage_wipeSelfFailed(String error) {
+    return 'Wipe failed: $error';
+  }
+
+  @override
   String get storage_mirroredDevices => 'Mirrored device directories';
 
   @override

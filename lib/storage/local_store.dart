@@ -599,6 +599,21 @@ class LocalStore {
     return bytes;
   }
 
+  /// 清空本机设备目录（危险区 §7.5）：删四分区含 staging，**不**动他端镜像 /
+  /// `.recycle` / `.system`。返回释放字节数。
+  Future<int> wipeSelf(String selfDeviceId) async {
+    if (!isValidDeviceId(selfDeviceId)) {
+      throw StoreException(StoreError.badPath, 'invalid device id');
+    }
+    final dir = _deviceDir(selfDeviceId);
+    if (!await dir.exists()) return 0;
+    final bytes = await _dirSize(dir);
+    await dir.delete(recursive: true);
+    await dir.create(recursive: true);
+    _hashCache.clear();
+    return bytes;
+  }
+
   /// 清理超时未 commit 的暂存（默认 24h，spec §2.4）。
   Future<int> gcStaging({Duration olderThan = const Duration(hours: 24)}) async {
     var removed = 0;

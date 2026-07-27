@@ -2858,6 +2858,13 @@
   "storage_exportTreeHint": "导出完整本机 store 目录树（artifacts / files / attachments / backups）。请选择目标文件夹。",
   "storage_exportTreeDone": "已导出到 {path}（{count} 个文件，{size}）",
   "storage_exportTreeFailed": "导出失败：{error}",
+  "storage_wipeSelf": "删除本机存储数据",
+  "storage_wipeSelfTitle": "删除本机存储数据",
+  "storage_wipeSelfDesc": "清空本机四分区正式文件与暂存（不删他端镜像、回收站、数据库与设备身份）。建议先导出。",
+  "storage_wipeSelfConfirm": "此操作不可从回收站还原。master 上本机旧镜像不会自动清除。请输入 DELETE 确认。",
+  "storage_wipeSelfTypeHint": "输入 DELETE",
+  "storage_wipeSelfDone": "已清空本机存储（释放 {size}）",
+  "storage_wipeSelfFailed": "删除失败：{error}",
   "storage_mirroredDevices": "他端镜像目录",
   "storage_purgeDevice": "删除",
   "storage_purgeDeviceTitle": "删除旧设备镜像",
@@ -2912,6 +2919,16 @@
     }
   },
   "@storage_exportTreeFailed": {
+    "placeholders": {
+      "error": { "type": "String" }
+    }
+  },
+  "@storage_wipeSelfDone": {
+    "placeholders": {
+      "size": { "type": "String" }
+    }
+  },
+  "@storage_wipeSelfFailed": {
     "placeholders": {
       "error": { "type": "String" }
     }

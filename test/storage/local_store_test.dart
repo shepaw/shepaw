@@ -415,5 +415,27 @@ void main() {
           throwsA(predicate(
               (e) => e is StoreException && e.code == StoreError.notFound)));
     });
+
+    test('wipeSelf 清空本机目录且不删他端', () async {
+      final c = bytesOf('wipe-self');
+      final (u, _) = await begin('keep-peer.txt', c);
+      await store.writeChunk(dev, 'files', u, 0, c);
+      await store.commit(dev, 'files', [u]);
+
+      final (u2, _) = await store.writeBegin(
+          deviceId: devB,
+          space: 'files',
+          path: 'peer.txt',
+          size: c.length,
+          sha256: sha(c));
+      await store.writeChunk(devB, 'files', u2, 0, c);
+      await store.commit(devB, 'files', [u2]);
+
+      final freed = await store.wipeSelf(dev);
+      expect(freed, greaterThanOrEqualTo(c.length));
+      expect(await store.list(dev, 'files'), isEmpty);
+      expect((await store.list(devB, 'files')).single.path, 'peer.txt');
+      expect(await Directory(p.join(tmp.path, '.recycle')).exists(), isFalse);
+    });
   });
 }

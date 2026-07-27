@@ -8612,6 +8612,48 @@ abstract class AppLocalizations {
   /// **'导出失败：{error}'**
   String storage_exportTreeFailed(String error);
 
+  /// No description provided for @storage_wipeSelf.
+  ///
+  /// In zh, this message translates to:
+  /// **'删除本机存储数据'**
+  String get storage_wipeSelf;
+
+  /// No description provided for @storage_wipeSelfTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'删除本机存储数据'**
+  String get storage_wipeSelfTitle;
+
+  /// No description provided for @storage_wipeSelfDesc.
+  ///
+  /// In zh, this message translates to:
+  /// **'清空本机四分区正式文件与暂存（不删他端镜像、回收站、数据库与设备身份）。建议先导出。'**
+  String get storage_wipeSelfDesc;
+
+  /// No description provided for @storage_wipeSelfConfirm.
+  ///
+  /// In zh, this message translates to:
+  /// **'此操作不可从回收站还原。master 上本机旧镜像不会自动清除。请输入 DELETE 确认。'**
+  String get storage_wipeSelfConfirm;
+
+  /// No description provided for @storage_wipeSelfTypeHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'输入 DELETE'**
+  String get storage_wipeSelfTypeHint;
+
+  /// No description provided for @storage_wipeSelfDone.
+  ///
+  /// In zh, this message translates to:
+  /// **'已清空本机存储（释放 {size}）'**
+  String storage_wipeSelfDone(String size);
+
+  /// No description provided for @storage_wipeSelfFailed.
+  ///
+  /// In zh, this message translates to:
+  /// **'删除失败：{error}'**
+  String storage_wipeSelfFailed(String error);
+
   /// No description provided for @storage_mirroredDevices.
   ///
   /// In zh, this message translates to:
