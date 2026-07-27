@@ -129,6 +129,57 @@ func TestAdminRecycleEmpty(t *testing.T) {
 	}
 }
 
+func TestAdminImportGrant(t *testing.T) {
+	root := t.TempDir()
+	device := "aaaaaaaaaaaaaaaa"
+	newDev := "bbbbbbbbbbbbbbbb"
+	oldDev := "cccccccccccccccc"
+	s, err := store.Open(root, device)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = s.Handle(protocol.Frame{
+		Op:      "import.request",
+		Payload: map[string]any{"old_device": oldDev},
+	}, newDev, protocol.TrustOwner, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	srv := &admin.Server{
+		Store:  s,
+		Device: device,
+		Auth:   admin.AuthConfig{Token: "t"},
+	}
+	mux := http.NewServeMux()
+	srv.Mount(mux)
+
+	req := httptest.NewRequest(http.MethodGet, "/admin/api/import/pending", nil)
+	req.Header.Set("Authorization", "Bearer t")
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("pending: %d %s", rec.Code, rec.Body.String())
+	}
+	var pending map[string]any
+	_ = json.Unmarshal(rec.Body.Bytes(), &pending)
+	arr := pending["requests"].([]any)
+	if len(arr) != 1 {
+		t.Fatalf("%v", pending)
+	}
+	requestID := arr[0].(map[string]any)["request_id"].(string)
+
+	body, _ := json.Marshal(map[string]string{"request_id": requestID})
+	req = httptest.NewRequest(http.MethodPost, "/admin/api/import/grant", bytes.NewReader(body))
+	req.Header.Set("Authorization", "Bearer t")
+	req.Header.Set("Content-Type", "application/json")
+	rec = httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("grant: %d %s", rec.Code, rec.Body.String())
+	}
+}
+
 func TestAdminUI(t *testing.T) {
 	root := t.TempDir()
 	device := "aaaaaaaaaaaaaaaa"

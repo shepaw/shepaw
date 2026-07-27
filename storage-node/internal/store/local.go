@@ -25,6 +25,7 @@ type Local struct {
 	DeviceID string
 	mu       sync.Mutex
 	uploads  map[string]*upload
+	imports  *importAuth
 }
 
 type upload struct {
@@ -70,7 +71,12 @@ func Open(root, deviceID string) (*Local, error) {
 	if err := os.MkdirAll(filepath.Join(root, ".recycle"), 0o755); err != nil {
 		return nil, err
 	}
-	return &Local{Root: root, DeviceID: deviceID, uploads: map[string]*upload{}}, nil
+	return &Local{
+		Root:     root,
+		DeviceID: deviceID,
+		uploads:  map[string]*upload{},
+		imports:  newImportAuth(root),
+	}, nil
 }
 
 func (l *Local) Handle(frame protocol.Frame, caller, trust string, loopback bool) (map[string]any, error) {
@@ -100,6 +106,16 @@ func (l *Local) Handle(frame protocol.Frame, caller, trust string, loopback bool
 		return l.recycleRestore(frame)
 	case "recycle.empty":
 		return l.recycleEmpty()
+	case "import.request":
+		return l.importRequest(frame, caller)
+	case "import.pending":
+		return l.importPending()
+	case "import.grant":
+		return l.importGrant(frame)
+	case "import.reject":
+		return l.importReject(frame)
+	case "import.grants":
+		return l.importGrants(frame)
 	default:
 		return nil, &OpError{Code: "bad_op", Msg: frame.Op}
 	}
@@ -147,6 +163,9 @@ func (l *Local) resolve(space, device, rel string) (string, error) {
 }
 
 func (l *Local) list(frame protocol.Frame, caller string) (map[string]any, error) {
+	if err := l.requireImportGrant(frame, caller); err != nil {
+		return nil, err
+	}
 	device := frame.Device()
 	if device == "" {
 		device = caller
@@ -183,6 +202,9 @@ func (l *Local) list(frame protocol.Frame, caller string) (map[string]any, error
 }
 
 func (l *Local) meta(frame protocol.Frame, caller string) (map[string]any, error) {
+	if err := l.requireImportGrant(frame, caller); err != nil {
+		return nil, err
+	}
 	device := frame.Device()
 	if device == "" {
 		device = caller
@@ -204,6 +226,9 @@ func (l *Local) meta(frame protocol.Frame, caller string) (map[string]any, error
 }
 
 func (l *Local) read(frame protocol.Frame, caller string) (map[string]any, error) {
+	if err := l.requireImportGrant(frame, caller); err != nil {
+		return nil, err
+	}
 	device := frame.Device()
 	if device == "" {
 		device = caller
@@ -633,4 +658,100 @@ func num(v any) float64 {
 	default:
 		return 0
 	}
+}
+
+// requireImportGrant enforces §5.4 for private-space reads of other devices.
+func (l *Local) requireImportGrant(frame protocol.Frame, caller string) error {
+	device := frame.Device()
+	if device == "" || device == caller {
+		return nil
+	}
+	space := frame.Space()
+	if protocol.SharedReadable(space) {
+		return nil
+	}
+	if seed, _ := frame.Payload["seed"].(bool); seed {
+		return nil
+	}
+	grantID, _ := frame.Payload["grant"].(string)
+	if grantID == "" {
+		return &OpError{Code: "acl_denied", Msg: "import grant required"}
+	}
+	ok, err := l.imports.validate(grantID, device, caller, space)
+	if err != nil {
+		return err
+	}
+	if !ok {
+		return &OpError{Code: "acl_denied", Msg: "invalid import grant"}
+	}
+	return nil
+}
+
+func (l *Local) importRequest(frame protocol.Frame, caller string) (map[string]any, error) {
+	old, _ := frame.Payload["old_device"].(string)
+	req, _, err := l.imports.createRequest(old, caller)
+	if err != nil {
+		return nil, err
+	}
+	return map[string]any{
+		"request_id": req.RequestID,
+		"status":     req.Status,
+	}, nil
+}
+
+func (l *Local) importPending() (map[string]any, error) {
+	pending, err := l.imports.pendingRequests()
+	if err != nil {
+		return nil, err
+	}
+	out := make([]map[string]any, 0, len(pending))
+	for _, r := range pending {
+		out = append(out, r.toMap())
+	}
+	return map[string]any{"requests": out}, nil
+}
+
+func (l *Local) importGrant(frame protocol.Frame) (map[string]any, error) {
+	requestID, _ := frame.Payload["request_id"].(string)
+	if requestID == "" {
+		return nil, &OpError{Code: "bad_op", Msg: "request_id required"}
+	}
+	g, err := l.imports.grant(requestID)
+	if err != nil {
+		return nil, err
+	}
+	return map[string]any{"grant": g.toMap()}, nil
+}
+
+func (l *Local) importReject(frame protocol.Frame) (map[string]any, error) {
+	requestID, _ := frame.Payload["request_id"].(string)
+	if requestID == "" {
+		return nil, &OpError{Code: "bad_op", Msg: "request_id required"}
+	}
+	if err := l.imports.reject(requestID); err != nil {
+		return nil, err
+	}
+	return map[string]any{"rejected": true}, nil
+}
+
+func (l *Local) importGrants(frame protocol.Frame) (map[string]any, error) {
+	role, _ := frame.Payload["role"].(string)
+	if role == "" {
+		role = "received"
+	}
+	var grants []importGrant
+	var err error
+	if role == "issued" {
+		grants, err = l.imports.issuedGrants()
+	} else {
+		grants, err = l.imports.receivedGrants()
+	}
+	if err != nil {
+		return nil, err
+	}
+	out := make([]map[string]any, 0, len(grants))
+	for _, g := range grants {
+		out = append(out, g.toMap())
+	}
+	return map[string]any{"grants": out}, nil
 }

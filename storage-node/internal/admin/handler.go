@@ -23,6 +23,10 @@ func (s *Server) Mount(mux *http.ServeMux) {
 	api.HandleFunc("/recycle", s.handleRecycle)
 	api.HandleFunc("/recycle/empty", s.handleRecycleEmpty)
 	api.HandleFunc("/recycle/restore", s.handleRecycleRestore)
+	api.HandleFunc("/import/pending", s.handleImportPending)
+	api.HandleFunc("/import/grant", s.handleImportGrant)
+	api.HandleFunc("/import/reject", s.handleImportReject)
+	api.HandleFunc("/import/grants", s.handleImportGrants)
 
 	mux.Handle("/admin/api/", RequireAuth(s.Auth, http.StripPrefix("/admin/api", api)))
 	mux.Handle("/admin", RequireAuth(s.Auth, http.HandlerFunc(s.handleUI)))
@@ -94,6 +98,85 @@ func (s *Server) handleRecycleRestore(w http.ResponseWriter, r *http.Request) {
 		Payload: map[string]any{
 			"recycle_path": body.RecyclePath,
 		},
+	}, s.Device, protocol.TrustOwner, true)
+	if err != nil {
+		writeErr(w, err)
+		return
+	}
+	writeJSON(w, data)
+}
+
+func (s *Server) handleImportPending(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "GET only", http.StatusMethodNotAllowed)
+		return
+	}
+	data, err := s.Store.Handle(protocol.Frame{Op: "import.pending"}, s.Device, protocol.TrustOwner, true)
+	if err != nil {
+		writeErr(w, err)
+		return
+	}
+	writeJSON(w, data)
+}
+
+func (s *Server) handleImportGrant(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "POST only", http.StatusMethodNotAllowed)
+		return
+	}
+	var body struct {
+		RequestID string `json:"request_id"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.RequestID == "" {
+		http.Error(w, "request_id required", http.StatusBadRequest)
+		return
+	}
+	data, err := s.Store.Handle(protocol.Frame{
+		Op:      "import.grant",
+		Payload: map[string]any{"request_id": body.RequestID},
+	}, s.Device, protocol.TrustOwner, true)
+	if err != nil {
+		writeErr(w, err)
+		return
+	}
+	writeJSON(w, data)
+}
+
+func (s *Server) handleImportReject(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "POST only", http.StatusMethodNotAllowed)
+		return
+	}
+	var body struct {
+		RequestID string `json:"request_id"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.RequestID == "" {
+		http.Error(w, "request_id required", http.StatusBadRequest)
+		return
+	}
+	data, err := s.Store.Handle(protocol.Frame{
+		Op:      "import.reject",
+		Payload: map[string]any{"request_id": body.RequestID},
+	}, s.Device, protocol.TrustOwner, true)
+	if err != nil {
+		writeErr(w, err)
+		return
+	}
+	writeJSON(w, data)
+}
+
+func (s *Server) handleImportGrants(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "GET only", http.StatusMethodNotAllowed)
+		return
+	}
+	role := r.URL.Query().Get("role")
+	if role == "" {
+		role = "issued"
+	}
+	data, err := s.Store.Handle(protocol.Frame{
+		Op:      "import.grants",
+		Payload: map[string]any{"role": role},
 	}, s.Device, protocol.TrustOwner, true)
 	if err != nil {
 		writeErr(w, err)
