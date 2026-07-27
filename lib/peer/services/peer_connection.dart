@@ -18,7 +18,9 @@ import '../../services/noise/noise_envelope.dart';
 import '../../services/logger_service.dart';
 import '../models/paired_peer.dart';
 import '../models/peer_message.dart';
+import 'peer_advertise.dart';
 import 'peer_channel_bridge.dart';
+import 'peer_storage_service.dart';
 
 /// 连接事件类型
 enum PeerConnectionEventType {
@@ -328,11 +330,20 @@ class PeerConnection {
       pinnedPeerStaticPublicKey: peer.publicKey,
     );
 
-    // 发送 msg1
-    final msg1Payload = Uint8List.fromList(utf8.encode(jsonEncode({
+    final advertise = await advertisePeerEndpoints();
+    final msg1Body = <String, dynamic>{
       'type': 'reconnect',
       'device_id': identity.fingerprintHex,
-    })));
+    };
+    if (advertise.local != null) {
+      msg1Body['local_endpoint'] = advertise.local;
+    }
+    if (advertise.channel != null) {
+      msg1Body['channel_endpoint'] = advertise.channel;
+    }
+
+    // 发送 msg1
+    final msg1Payload = Uint8List.fromList(utf8.encode(jsonEncode(msg1Body)));
     final msg1 = await _noiseSession!.writeHandshake1(msg1Payload);
     final frame1 = encodeFrame(Frame(t: FrameType.hs, payload: msg1));
     _send(frame1);
@@ -343,7 +354,35 @@ class PeerConnection {
     if (msg2Frame.t != FrameType.hs) {
       throw StateError('Expected handshake frame, got ${msg2Frame.t}');
     }
-    await _noiseSession!.readHandshake2(msg2Frame.payload);
+    final result = await _noiseSession!.readHandshake2(msg2Frame.payload);
+    await _learnEndpointsFromPayload(result.msg2Payload);
+  }
+
+  /// 从 reconnect_ack（或对端 msg1）学习并持久化端点。
+  Future<void> _learnEndpointsFromPayload(Uint8List raw) async {
+    try {
+      final map = jsonDecode(utf8.decode(raw)) as Map<String, dynamic>;
+      final channel = map['channel_endpoint'] as String?;
+      final local = map['local_endpoint'] as String?;
+      if (channel == null && local == null) return;
+      final storage = PeerStorageService();
+      if (channel != null &&
+          channel.isNotEmpty &&
+          channel != peer.channelEndpoint) {
+        await storage.updateChannelEndpoint(peer.id, channel);
+        _log.debug('Learned channel endpoint for ${peer.deviceName}: $channel',
+            tag: _tag);
+      }
+      if (local != null &&
+          local.isNotEmpty &&
+          local != peer.localEndpoint) {
+        await storage.updateLocalEndpoint(peer.id, local);
+        _log.debug(
+            'Learned local endpoint for ${peer.deviceName}: $local', tag: _tag);
+      }
+    } catch (e) {
+      _log.debug('Skip endpoint learning: $e', tag: _tag);
+    }
   }
 
   void _listenWebSocket() {

@@ -41,11 +41,13 @@ func TestReconnectKnownPeer(t *testing.T) {
 	}
 
 	srv := &Server{
-		Store:      st,
-		Hub:        NewPairingHub(nodeID, peers, "node"),
-		Peers:      peers,
-		Identity:   nodeID,
-		DeviceName: "node",
+		Store:           st,
+		Hub:             NewPairingHub(nodeID, peers, "node"),
+		Peers:           peers,
+		Identity:        nodeID,
+		DeviceName:      "node",
+		LocalEndpoint:   "ws://10.0.0.1:8787/peer/ws",
+		ChannelEndpoint: "wss://channel.example/proxy/node/peer/ws",
 	}
 	hs := httptest.NewServer(http.HandlerFunc(srv.HandleWS))
 	defer hs.Close()
@@ -62,8 +64,10 @@ func TestReconnectKnownPeer(t *testing.T) {
 		t.Fatal(err)
 	}
 	msg1Payload, _ := json.Marshal(map[string]any{
-		"type":      "reconnect",
-		"device_id": clientID.Fingerprint(),
+		"type":             "reconnect",
+		"device_id":        clientID.Fingerprint(),
+		"local_endpoint":   "ws://192.168.1.50:17680/peer/ws",
+		"channel_endpoint": "wss://channel.example/proxy/phone/peer/ws",
 	})
 	msg1, err := initSess.WriteHandshake1(msg1Payload)
 	if err != nil {
@@ -96,6 +100,23 @@ func TestReconnectKnownPeer(t *testing.T) {
 	}
 	if ack["type"] != "reconnect_ack" {
 		t.Fatalf("ack=%v", ack)
+	}
+	if ack["local_endpoint"] != "ws://10.0.0.1:8787/peer/ws" {
+		t.Fatalf("ack local=%v", ack["local_endpoint"])
+	}
+	if ack["channel_endpoint"] != "wss://channel.example/proxy/node/peer/ws" {
+		t.Fatalf("ack channel=%v", ack["channel_endpoint"])
+	}
+
+	stored, err := peers.Get(clientID.Fingerprint())
+	if err != nil || stored == nil {
+		t.Fatal(err)
+	}
+	if stored.LocalEndpoint != "ws://192.168.1.50:17680/peer/ws" {
+		t.Fatalf("stored local=%s", stored.LocalEndpoint)
+	}
+	if stored.ChannelEndpoint != "wss://channel.example/proxy/phone/peer/ws" {
+		t.Fatalf("stored channel=%s", stored.ChannelEndpoint)
 	}
 
 	req, _ := json.Marshal(map[string]any{

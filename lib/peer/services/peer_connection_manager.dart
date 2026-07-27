@@ -20,6 +20,7 @@ import '../models/paired_peer.dart';
 import '../models/peer_message.dart';
 import 'peer_connection.dart';
 import 'peer_channel_bridge.dart';
+import 'peer_advertise.dart';
 import 'peer_local_server.dart';
 import 'peer_pairing_service.dart';
 import 'peer_storage_service.dart';
@@ -544,6 +545,31 @@ class PeerConnectionManager {
       stream.close();
       return;
     }
+    var peer = matchedPeer;
+
+    // 从 reconnect msg1 学习对端广告的 channel / local 端点。
+    try {
+      final map =
+          jsonDecode(utf8.decode(result.msg1Payload)) as Map<String, dynamic>;
+      final channel = map['channel_endpoint'] as String?;
+      final local = map['local_endpoint'] as String?;
+      if (channel != null &&
+          channel.isNotEmpty &&
+          channel != peer.channelEndpoint) {
+        await _storage.updateChannelEndpoint(peer.id, channel);
+        peer = peer.copyWith(channelEndpoint: channel);
+        _log.debug(
+          'Learned channel endpoint for ${peer.deviceName}: $channel',
+          tag: _tag,
+        );
+      }
+      if (local != null &&
+          local.isNotEmpty &&
+          local != peer.localEndpoint) {
+        await _storage.updateLocalEndpoint(peer.id, local);
+        peer = peer.copyWith(localEndpoint: local);
+      }
+    } catch (_) {}
 
     // 学习并持久化对端当前内网地址：换网 / 重连 WiFi 后对端 IP 常会变化，
     // 存储里的旧 localEndpoint 会失效，导致本机主动直连一直超时。每次对端连入时
@@ -552,11 +578,11 @@ class PeerConnectionManager {
     if (learnedAddr != null && learnedAddr.isNotEmpty) {
       final learnedEndpoint =
           'ws://$learnedAddr:${PeerLocalServer.defaultPort}/peer/ws';
-      if (learnedEndpoint != matchedPeer.localEndpoint) {
-        await _storage.updateLocalEndpoint(matchedPeer.id, learnedEndpoint);
-        matchedPeer = matchedPeer.copyWith(localEndpoint: learnedEndpoint);
+      if (learnedEndpoint != peer.localEndpoint) {
+        await _storage.updateLocalEndpoint(peer.id, learnedEndpoint);
+        peer = peer.copyWith(localEndpoint: learnedEndpoint);
         _log.debug(
-          'Learned local endpoint for ${matchedPeer.deviceName}: $learnedEndpoint',
+          'Learned local endpoint for ${peer.deviceName}: $learnedEndpoint',
           tag: _tag,
         );
       }
@@ -580,12 +606,12 @@ class PeerConnectionManager {
     // 真 glare、由指定发起方拒绝入站；否则一律接受入站并替换可能已失效的旧连接。
     final iAmInitiator = _isDesignatedInitiator(
       identity.fingerprintHex,
-      matchedPeer.fingerprint,
+      peer.fingerprint,
     );
-    final iAmActivelyConnecting = _connecting.contains(matchedPeer.id);
+    final iAmActivelyConnecting = _connecting.contains(peer.id);
     if (iAmInitiator && iAmActivelyConnecting) {
       _log.debug(
-        'Glare with ${matchedPeer.deviceName}: keep my outbound, reject inbound '
+        'Glare with ${peer.deviceName}: keep my outbound, reject inbound '
         '(designated initiator & actively connecting)',
         tag: _tag,
       );
@@ -596,11 +622,19 @@ class PeerConnectionManager {
     }
     // 其余情况一律接受入站：旧连接（可能已半开失效）会在注册新连接前被关闭。
 
-    // 发送 msg2 完成握手
-    final msg2Payload = Uint8List.fromList(utf8.encode(jsonEncode({
+    // 发送 msg2 完成握手（附带本机广告端点，供 initiator 学习）
+    final advertise = await advertisePeerEndpoints();
+    final ackBody = <String, dynamic>{
       'type': 'reconnect_ack',
       'device_id': identity.fingerprintHex,
-    })));
+    };
+    if (advertise.local != null) {
+      ackBody['local_endpoint'] = advertise.local;
+    }
+    if (advertise.channel != null) {
+      ackBody['channel_endpoint'] = advertise.channel;
+    }
+    final msg2Payload = Uint8List.fromList(utf8.encode(jsonEncode(ackBody)));
     final msg2 = await noiseSession.writeHandshake2(msg2Payload);
     final frame2 = encodeFrame(Frame(t: FrameType.hs, payload: msg2));
     stream.send(Uint8List.fromList(utf8.encode(frame2)));
@@ -609,26 +643,26 @@ class PeerConnectionManager {
     handshakeDone = true;
 
     // 关闭旧连接，注册新连接
-    final oldConn = _connections.remove(matchedPeer.id);
+    final oldConn = _connections.remove(peer.id);
     if (oldConn != null) await oldConn.close();
-    _reconnectTimers[matchedPeer.id]?.cancel();
-    _fallbackTimers[matchedPeer.id]?.cancel();
-    _fallbackTimers.remove(matchedPeer.id);
+    _reconnectTimers[peer.id]?.cancel();
+    _fallbackTimers[peer.id]?.cancel();
+    _fallbackTimers.remove(peer.id);
 
     final conn = PeerConnection.fromEstablishedSession(
-      peer: matchedPeer,
+      peer: peer,
       noiseSession: noiseSession,
       tunnelStream: stream,
       incomingStream: relayCtrl.stream,
     );
-    _connections[matchedPeer.id] = conn;
-    _wireConnection(conn, matchedPeer);
+    _connections[peer.id] = conn;
+    _wireConnection(conn, peer);
 
     // 连接创建时已是 connected 状态，stateChanges 不会再发出 connected 事件，
     // 因此在此手动触发连接建立后的副作用（发事件、更新 lastSeen、补发离线消息）。
-    _onConnected(matchedPeer);
+    _onConnected(peer);
 
-    _log.info('Accepted reconnection from ${matchedPeer.deviceName}', tag: _tag);
+    _log.info('Accepted reconnection from ${peer.deviceName}', tag: _tag);
   }
 
   /// 钳制入站消息的时间戳（见 [clampPeerMessageTimestamp] 的规则说明）。

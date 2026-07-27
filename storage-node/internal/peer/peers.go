@@ -56,6 +56,24 @@ func (s *Store) Upsert(p Peer) error {
 	return s.save(out)
 }
 
+// MergeEndpoints updates non-empty local/channel endpoints for a known peer.
+func (s *Store) MergeEndpoints(fp, local, channel string) error {
+	if local == "" && channel == "" {
+		return nil
+	}
+	p, err := s.Get(fp)
+	if err != nil || p == nil {
+		return err
+	}
+	if local != "" {
+		p.LocalEndpoint = local
+	}
+	if channel != "" {
+		p.ChannelEndpoint = channel
+	}
+	return s.Upsert(*p)
+}
+
 func (s *Store) Get(fp string) (*Peer, error) {
 	peers, err := s.List()
 	if err != nil {

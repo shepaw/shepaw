@@ -69,7 +69,7 @@ func (s *Server) HandleWS(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// No active pairing (or payload is not a pairing request): treat as reconnect.
-	s.handleReconnect(conn, sess, fp)
+	s.handleReconnect(conn, sess, fp, payload)
 }
 
 func (s *Server) handlePairing(
@@ -164,7 +164,7 @@ func (s *Server) handlePairing(
 	s.serveTransport(conn, sess, fp)
 }
 
-func (s *Server) handleReconnect(conn *websocket.Conn, sess *noise.Session, fp string) {
+func (s *Server) handleReconnect(conn *websocket.Conn, sess *noise.Session, fp string, payload []byte) {
 	known, err := s.Peers.Get(fp)
 	if err != nil || known == nil {
 		log.Printf("peer ws: reconnect rejected unknown fp=%s", fp)
@@ -183,11 +183,33 @@ func (s *Server) handleReconnect(conn *websocket.Conn, sess *noise.Session, fp s
 		return
 	}
 
-	ack, _ := json.Marshal(map[string]any{
+	var req struct {
+		Type            string `json:"type"`
+		LocalEndpoint   string `json:"local_endpoint"`
+		ChannelEndpoint string `json:"channel_endpoint"`
+	}
+	_ = json.Unmarshal(payload, &req)
+	if req.LocalEndpoint != "" || req.ChannelEndpoint != "" {
+		if err := s.Peers.MergeEndpoints(fp, req.LocalEndpoint, req.ChannelEndpoint); err != nil {
+			log.Printf("reconnect merge endpoints: %v", err)
+		} else {
+			log.Printf("reconnect learned endpoints fp=%s local=%s channel=%s",
+				fp, req.LocalEndpoint, req.ChannelEndpoint)
+		}
+	}
+
+	ack := map[string]any{
 		"type":      "reconnect_ack",
 		"device_id": s.Identity.Fingerprint(),
-	})
-	msg2, err := sess.WriteHandshake2(ack)
+	}
+	if s.LocalEndpoint != "" {
+		ack["local_endpoint"] = s.LocalEndpoint
+	}
+	if s.ChannelEndpoint != "" {
+		ack["channel_endpoint"] = s.ChannelEndpoint
+	}
+	ackBytes, _ := json.Marshal(ack)
+	msg2, err := sess.WriteHandshake2(ackBytes)
 	if err != nil {
 		log.Printf("reconnect hs2: %v", err)
 		return
