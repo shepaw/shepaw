@@ -491,6 +491,9 @@ class AppLocalizationsZh extends AppLocalizations {
   String get settings_dataManagement => '数据管理';
 
   @override
+  String get settings_toolsSection => '工具与能力';
+
+  @override
   String get settings_exportData => '导出数据';
 
   @override
@@ -4665,7 +4668,7 @@ class AppLocalizationsZh extends AppLocalizations {
       'Agent 主机运行 `<gateway> enroll` 得到类似 XXX-XXX-XXX 的短码，粘贴到这里即可自动授权本设备。不填写则走上方的「复制公钥 → peers add」手动流程。';
 
   @override
-  String get storage_title => '存储空间';
+  String get storage_title => '储物袋';
 
   @override
   String get storage_snapshotSection => '本机快照';

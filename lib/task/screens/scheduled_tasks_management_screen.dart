@@ -9,6 +9,7 @@ import '../../services/local_database_service.dart';
 import '../services/scheduled_task_service.dart';
 import '../../services/remote_agent_service.dart';
 import '../../service_locator.dart' show getIt;
+import 'scheduled_task_form_screen.dart';
 
 /// Screen for managing scheduled tasks.
 class ScheduledTasksManagementScreen extends StatefulWidget {
@@ -45,6 +46,39 @@ class _ScheduledTasksManagementScreenState
       _tasksFuture = _loadTasks();
       _agentsFuture = _loadAgents();
     });
+  }
+
+  Future<void> _openCreateTask() async {
+    if (widget.onCreateTask != null) {
+      widget.onCreateTask!();
+      return;
+    }
+    await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => ScheduledTaskFormScreen(
+          onDone: () => Navigator.pop(context),
+        ),
+      ),
+    );
+    if (mounted) _refresh();
+  }
+
+  Future<void> _openEditTask(ScheduledTask task) async {
+    if (widget.onEditTask != null) {
+      widget.onEditTask!(task);
+      return;
+    }
+    await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => ScheduledTaskFormScreen(
+          task: task,
+          onDone: () => Navigator.pop(context),
+        ),
+      ),
+    );
+    if (mounted) _refresh();
   }
 
   Future<List<ScheduledTask>> _loadTasks() async {
@@ -125,7 +159,7 @@ class _ScheduledTasksManagementScreenState
             ],
           ),
           floatingActionButton: FloatingActionButton(
-            onPressed: () => widget.onCreateTask?.call(),
+            onPressed: _openCreateTask,
             child: const Icon(Icons.add),
           ),
         );
@@ -332,7 +366,7 @@ class _ScheduledTasksManagementScreenState
                 ),
                 const SizedBox(width: 8),
                 TextButton(
-                  onPressed: () => widget.onEditTask?.call(task),
+                  onPressed: () => _openEditTask(task),
                   child: Text(l10n.common_edit),
                 ),
                 const SizedBox(width: 8),

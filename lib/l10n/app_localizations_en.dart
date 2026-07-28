@@ -515,6 +515,9 @@ class AppLocalizationsEn extends AppLocalizations {
   String get settings_dataManagement => 'Data Management';
 
   @override
+  String get settings_toolsSection => 'Tools & Capabilities';
+
+  @override
   String get settings_exportData => 'Export Data';
 
   @override
@@ -4847,7 +4850,7 @@ class AppLocalizationsEn extends AppLocalizations {
       'Run `<gateway> enroll` on the agent host to get a short code like XXX-XXX-XXX, paste it here to auto-authorize this device. Leave empty to use the \"Copy public key → peers add\" manual flow above.';
 
   @override
-  String get storage_title => 'Storage Space';
+  String get storage_title => 'Storage Bag';
 
   @override
   String get storage_snapshotSection => 'Local snapshots';

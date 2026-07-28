@@ -31,6 +31,13 @@ class AgentModelConfigCard extends StatefulWidget {
 }
 
 class _AgentModelConfigCardState extends State<AgentModelConfigCard> {
+  /// Sentinel dropdown value — selecting it opens model management.
+  static const _addModelSentinel = '__add_model__';
+
+  /// Bumps when returning from model management so the dropdown remounts
+  /// (avoids sticking on the sentinel after [initialValue] was set).
+  int _modelPickerEpoch = 0;
+
   ModelDefinition? get _mainDef => widget.mainModelId != null
       ? ModelRegistry.instance.getById(widget.mainModelId!)
       : null;
@@ -43,6 +50,16 @@ class _AgentModelConfigCardState extends State<AgentModelConfigCard> {
       if (!mainModelCoversModality(mainDef, modality)) return true;
     }
     return false;
+  }
+
+  Future<void> _openModelManagement() async {
+    await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => const ModelManagementScreen(),
+      ),
+    );
+    if (mounted) setState(() => _modelPickerEpoch++);
   }
 
   @override
@@ -96,6 +113,9 @@ class _AgentModelConfigCardState extends State<AgentModelConfigCard> {
               _LabeledField(
                 label: l10n.agentModelConfig_mainChat,
                 child: DropdownButtonFormField<String>(
+                  key: ValueKey(
+                    'main-model-${widget.mainModelId}-$_modelPickerEpoch-${defs.length}',
+                  ),
                   initialValue: widget.mainModelId,
                   isExpanded: true,
                   decoration: InputDecoration(
@@ -104,20 +124,47 @@ class _AgentModelConfigCardState extends State<AgentModelConfigCard> {
                     isDense: true,
                   ),
                   hint: Text(l10n.agentModelConfig_selectMainChat),
-                  selectedItemBuilder: (context) =>
-                      defs.map((def) => _buildCompactModelLabel(def, colorScheme, l10n)).toList(),
-                  items: defs
-                      .map(
-                        (def) => DropdownMenuItem<String>(
-                          value: def.id,
-                          child: Padding(
-                            padding: const EdgeInsets.symmetric(vertical: 6),
-                            child: _buildExpandedModelLabel(def, colorScheme, l10n),
-                          ),
+                  selectedItemBuilder: (context) => [
+                    ...defs.map(
+                      (def) => _buildCompactModelLabel(def, colorScheme, l10n),
+                    ),
+                    // Matching slot for the add-model item (never shown as selected).
+                    const SizedBox.shrink(),
+                  ],
+                  items: [
+                    ...defs.map(
+                      (def) => DropdownMenuItem<String>(
+                        value: def.id,
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 6),
+                          child: _buildExpandedModelLabel(def, colorScheme, l10n),
                         ),
-                      )
-                      .toList(),
-                  onChanged: widget.onMainModelChanged,
+                      ),
+                    ),
+                    DropdownMenuItem<String>(
+                      value: _addModelSentinel,
+                      child: Row(
+                        children: [
+                          Icon(Icons.add, size: 18, color: colorScheme.primary),
+                          const SizedBox(width: 8),
+                          Text(
+                            l10n.toolModel_addTitle,
+                            style: TextStyle(
+                              color: colorScheme.primary,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                  onChanged: (id) {
+                    if (id == _addModelSentinel) {
+                      _openModelManagement();
+                      return;
+                    }
+                    widget.onMainModelChanged(id);
+                  },
                   validator: widget.mainModelValidator,
                 ),
               ),
@@ -209,15 +256,7 @@ class _AgentModelConfigCardState extends State<AgentModelConfigCard> {
         Align(
           alignment: Alignment.centerRight,
           child: TextButton.icon(
-            onPressed: () async {
-              await Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (_) => const ModelManagementScreen(),
-                ),
-              );
-              if (mounted) setState(() {});
-            },
+            onPressed: _openModelManagement,
             icon: const Icon(Icons.settings_outlined, size: 16),
             label: Text(l10n.toolModel_goToManagement),
             style: TextButton.styleFrom(

@@ -4,7 +4,6 @@ import 'package:flutter_svg/flutter_svg.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import '../models/agent.dart';
 import '../models/channel.dart';
-import '../widgets/model_icon.dart';
 import '../services/local_api_service.dart';
 import '../services/local_database_service.dart';
 import '../services/chat_service.dart';
@@ -14,11 +13,7 @@ import 'create_group_screen.dart';
 import 'chat_screen.dart';
 import 'settings_screen.dart';
 import 'contacts_screen.dart';
-import 'model_management_screen.dart';
-import 'skill_management_screen.dart';
-import 'cli_config_management_screen.dart';
-import '../task/screens/scheduled_tasks_management_screen.dart';
-import '../services/model_registry.dart';
+import 'storage_space_screen.dart';
 import '../widgets/agent_search_delegate.dart';
 import '../widgets/shepaw_search_page.dart';
 import '../widgets/avatar_image.dart';
@@ -697,50 +692,6 @@ class HomeScreenState extends State<HomeScreen> {
                 padding: EdgeInsets.zero,
                 children: [
                   ListTile(
-                    leading: const ModelIcon(),
-                    title: Text(l10n.toolModel_managementTitle),
-                    subtitle: Text(
-                      l10n.toolModel_count(ModelRegistry.instance.definitions.length),
-                    ),
-                    onTap: () async {
-                      Navigator.pop(context);
-                      await Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (context) => const ModelManagementScreen(),
-                        ),
-                      );
-                      if (mounted) setState(() {});
-                    },
-                  ),
-                  ListTile(
-                    leading: const Icon(Icons.auto_awesome_outlined),
-                    title: Text(l10n.skillMgmt_title),
-                    onTap: () {
-                      Navigator.pop(context);
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (context) => const SkillManagementScreen(),
-                        ),
-                      );
-                    },
-                  ),
-                  ListTile(
-                    leading: const Icon(Icons.terminal),
-                    title: Text(l10n.osTool_configTitle),
-                    onTap: () {
-                      Navigator.pop(context);
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (context) => const CliConfigManagementScreen(),
-                        ),
-                      );
-                      if (mounted) setState(() {});
-                    },
-                  ),
-                  ListTile(
                     leading: const Icon(Icons.contacts_outlined),
                     title: Text(l10n.drawer_contacts),
                     onTap: () {
@@ -753,20 +704,20 @@ class HomeScreenState extends State<HomeScreen> {
                       ).then((_) => _loadAgents(silent: true));
                     },
                   ),
-                  const Divider(),
                   ListTile(
-                    leading: const Icon(Icons.schedule),
-                    title: Text(l10n.scheduledTasks_title),
+                    leading: const Icon(Icons.work_outline),
+                    title: Text(l10n.storage_title),
                     onTap: () {
                       Navigator.pop(context);
                       Navigator.push(
                         context,
                         MaterialPageRoute(
-                          builder: (context) => const ScheduledTasksManagementScreen(),
+                          builder: (context) => const StorageSpaceScreen(),
                         ),
                       );
                     },
                   ),
+                  const Divider(),
                   ListTile(
                     leading: const Icon(Icons.settings_outlined),
                     title: Text(l10n.drawer_settings),

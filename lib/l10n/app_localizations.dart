@@ -1016,6 +1016,12 @@ abstract class AppLocalizations {
   /// **'数据管理'**
   String get settings_dataManagement;
 
+  /// No description provided for @settings_toolsSection.
+  ///
+  /// In zh, this message translates to:
+  /// **'工具与能力'**
+  String get settings_toolsSection;
+
   /// No description provided for @settings_exportData.
   ///
   /// In zh, this message translates to:
@@ -8531,7 +8537,7 @@ abstract class AppLocalizations {
   /// No description provided for @storage_title.
   ///
   /// In zh, this message translates to:
-  /// **'存储空间'**
+  /// **'储物袋'**
   String get storage_title;
 
   /// No description provided for @storage_snapshotSection.

@@ -13,7 +13,10 @@ import 'inference_log_screen.dart';
 import 'log_viewer_screen.dart';
 import 'user_profile_settings_screen.dart';
 import 'agent_memory_management_screen.dart';
-import 'storage_space_screen.dart';
+import 'model_management_screen.dart';
+import 'skill_management_screen.dart';
+import 'cli_config_management_screen.dart';
+import '../task/screens/scheduled_tasks_management_screen.dart';
 import '../utils/layout_utils.dart';
 import '../services/local_database_service.dart';
 import '../services/cognition_service.dart';
@@ -25,6 +28,8 @@ import '../services/logger_service.dart';
 import '../services/biometric_service.dart';
 import '../services/inference_log_service.dart';
 import '../widgets/update_dialog.dart';
+import '../widgets/model_icon.dart';
+import '../services/model_registry.dart';
 import 'dart:io' show Platform;
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter_foreground_task/flutter_foreground_task.dart';
@@ -236,6 +241,86 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
           const Divider(height: 32),
 
+          // Tools & capabilities (moved from primary menu)
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            child: Text(
+              l10n.settings_toolsSection,
+              style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                color: Colors.grey[600],
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ),
+
+          ListTile(
+            leading: const ModelIcon(),
+            title: Text(l10n.toolModel_managementTitle),
+            subtitle: Text(
+              l10n.toolModel_count(ModelRegistry.instance.definitions.length),
+            ),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => const ModelManagementScreen(),
+                ),
+              );
+            },
+          ),
+
+          const Divider(),
+
+          ListTile(
+            leading: const Icon(Icons.auto_awesome_outlined),
+            title: Text(l10n.skillMgmt_title),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => const SkillManagementScreen(),
+                ),
+              );
+            },
+          ),
+
+          const Divider(),
+
+          ListTile(
+            leading: const Icon(Icons.terminal),
+            title: Text(l10n.osTool_configTitle),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => const CliConfigManagementScreen(),
+                ),
+              );
+            },
+          ),
+
+          const Divider(),
+
+          ListTile(
+            leading: const Icon(Icons.schedule),
+            title: Text(l10n.scheduledTasks_title),
+            subtitle: Text(l10n.scheduledTasks_description),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => const ScheduledTasksManagementScreen(),
+                ),
+              );
+            },
+          ),
+
+          const Divider(height: 32),
+
           // Data management section
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
@@ -288,23 +373,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
             subtitle: Text(l10n.settings_exportDataSub),
             trailing: const Icon(Icons.chevron_right),
             onTap: () => _showExportDataDialog(context),
-          ),
-
-          const Divider(),
-
-          // 存储空间：快照/恢复/导出（docs/storage_space_plan.md §7，M1）
-          ListTile(
-            leading: const Icon(Icons.storage),
-            title: Text(l10n.storage_title),
-            trailing: const Icon(Icons.chevron_right),
-            onTap: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (context) => const StorageSpaceScreen(),
-                ),
-              );
-            },
           ),
 
           const Divider(),

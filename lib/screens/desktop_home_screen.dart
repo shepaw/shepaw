@@ -2,7 +2,6 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import '../models/conversation_selection.dart';
 import '../l10n/app_localizations.dart';
-import '../widgets/model_icon.dart';
 import '../peer/models/paired_peer.dart';
 import '../peer/screens/peer_chat_screen.dart';
 import '../peer/screens/peer_pairing_screen.dart';
@@ -16,12 +15,7 @@ import 'add_remote_agent_screen.dart';
 import 'create_group_screen.dart';
 import 'settings_screen.dart';
 import 'contacts_screen.dart';
-import 'skill_management_screen.dart';
-import 'model_management_screen.dart';
-import 'cli_config_management_screen.dart';
-import '../task/screens/scheduled_tasks_management_screen.dart';
-import '../task/screens/scheduled_task_form_screen.dart';
-import '../task/models/scheduled_task.dart';
+import 'storage_space_screen.dart';
 import '../utils/layout_utils.dart';
 import '../services/native_window_service.dart';
 
@@ -46,12 +40,7 @@ enum _RightPanelView {
   contacts,
   traces,
   groupWorkflow,
-  modelManagement,
-  skillManagement,
-  toolConfigManagement,
-  scheduledTaskManagement,
-  createScheduledTask,
-  editScheduledTask,
+  storageSpace,
 }
 
 /// Describes one item in the icon sidebar.
@@ -61,20 +50,15 @@ class _SidebarItemDef {
   final Color Function(BuildContext) colorBuilder;
   final VoidCallback onTap;
 
-  /// Optional custom glyph (e.g. an SVG-based icon) rendered instead of [icon].
-  final Widget Function(double size, Color color)? iconBuilder;
-
   const _SidebarItemDef({
     required this.icon,
     required this.tooltip,
     required this.colorBuilder,
-    this.iconBuilder,
     required this.onTap,
   });
 }
 
 class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
-  final OverlayPortalController _morePortalController = OverlayPortalController();
   StreamSubscription? _peerEventSub;
   StreamSubscription? _peerListChangedSub;
 
@@ -127,9 +111,6 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
   final GlobalKey<HomeScreenState> _homeKey = GlobalKey<HomeScreenState>();
 
   _RightPanelView _rightPanel = _RightPanelView.empty;
-
-  /// The task being edited in the editScheduledTask panel.
-  ScheduledTask? _editingTask;
 
   /// The actual channelId of the chat that triggered the traces view.
   /// May differ from _selected?.channelId when the controller created/loaded
@@ -409,47 +390,8 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
           onBack: _onGroupWorkflowBack,
         );
 
-      case _RightPanelView.modelManagement:
-        return const ModelManagementScreen();
-
-      case _RightPanelView.skillManagement:
-        return const SkillManagementScreen();
-
-      case _RightPanelView.toolConfigManagement:
-        return const CliConfigManagementScreen();
-
-      case _RightPanelView.scheduledTaskManagement:
-        return ScheduledTasksManagementScreen(
-          onCreateTask: () {
-            setState(() {
-              _editingTask = null;
-              _rightPanel = _RightPanelView.createScheduledTask;
-              _navGeneration++;
-            });
-          },
-          onEditTask: (task) {
-            setState(() {
-              _editingTask = task;
-              _rightPanel = _RightPanelView.editScheduledTask;
-              _navGeneration++;
-            });
-          },
-        );
-
-      case _RightPanelView.createScheduledTask:
-        return ScheduledTaskFormScreen(
-          onDone: () {
-            _showPanel(_RightPanelView.scheduledTaskManagement);
-          },
-        );
-
-      case _RightPanelView.editScheduledTask:
-        return ScheduledTaskFormScreen(
-          task: _editingTask,
-          onDone: () {
-            _showPanel(_RightPanelView.scheduledTaskManagement);
-          },
-        );
+      case _RightPanelView.storageSpace:
+        return const StorageSpaceScreen();
 
       case _RightPanelView.empty:
         return _buildEmptyState();
@@ -487,47 +429,19 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
             _rightPanel == _RightPanelView.contacts ? activeColor : iconColor,
         onTap: () => _showPanel(_RightPanelView.contacts),
       ),
+      _SidebarItemDef(
+        icon: Icons.work_outline,
+        tooltip: l10n.storage_title,
+        colorBuilder: (_) =>
+            _rightPanel == _RightPanelView.storageSpace ? activeColor : iconColor,
+        onTap: () => _showPanel(_RightPanelView.storageSpace),
+      ),
     ];
 
-    // Bottom section items (collapsed when height is insufficient)
-    // Index 0–4: before divider; after that: settings
+    // Bottom section: divider + settings
     final bottomItems = [
       _SidebarItemDef(
-        icon: Icons.psychology,
-        iconBuilder: (size, color) => ModelIcon(size: size, color: color),
-        tooltip: l10n.toolModel_managementTitle,
-        colorBuilder: (_) => _rightPanel == _RightPanelView.modelManagement
-            ? activeColor
-            : iconColor,
-        onTap: () => _showPanel(_RightPanelView.modelManagement),
-      ),
-      _SidebarItemDef(
-        icon: Icons.auto_awesome_outlined,
-        tooltip: l10n.skillMgmt_title,
-        colorBuilder: (_) => _rightPanel == _RightPanelView.skillManagement
-            ? activeColor
-            : iconColor,
-        onTap: () => _showPanel(_RightPanelView.skillManagement),
-      ),
-      _SidebarItemDef(
-        icon: Icons.terminal,
-        tooltip: 'CLI Commands',
-        colorBuilder: (_) => _rightPanel == _RightPanelView.toolConfigManagement
-            ? activeColor
-            : iconColor,
-        onTap: () => _showPanel(_RightPanelView.toolConfigManagement),
-      ),
-      _SidebarItemDef(
-        icon: Icons.schedule,
-        tooltip: l10n.scheduledTasks_title,
-        colorBuilder: (_) => _rightPanel == _RightPanelView.scheduledTaskManagement
-            ? activeColor
-            : iconColor,
-        onTap: () => _showPanel(_RightPanelView.scheduledTaskManagement),
-      ),
-      // divider placeholder – index 5
-      _SidebarItemDef(
-        icon: Icons.horizontal_rule, // sentinel, won't render directly
+        icon: Icons.horizontal_rule, // sentinel → rendered as Divider
         tooltip: '',
         colorBuilder: (_) => Colors.transparent,
         onTap: () {},
@@ -540,7 +454,6 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
         onTap: () => _showPanel(_RightPanelView.settings),
       ),
     ];
-    const dividerIndex = 5; // index in bottomItems that is the divider sentinel
 
     return Container(
       width: _sidebarWidth,
@@ -548,150 +461,34 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
       child: LayoutBuilder(
         builder: (context, constraints) {
           final availableHeight = constraints.maxHeight;
-
-          // Fixed height constants
           const double topPadding = 12.0;
-          const double logoHeight = 52.0; // 8+36+8
-          const double itemHeight = 42.0; // 10+22+10
-          const double dividerHeight = 17.0; // Divider height: 1 + 16 padding
+          const double logoHeight = 52.0;
+          const double itemHeight = 42.0;
+          const double dividerHeight = 17.0;
           const double bottomPadding = 12.0;
-          const double moreItemHeight = itemHeight; // same as a regular item
 
-          // Fixed overhead: top padding + logo + spacer is flexible
-          // We just need to figure out total of non-spacer items
-          final double topItemsHeight = topItems.length * itemHeight;
-
-          // Calculate bottom section natural height
-          double bottomNaturalHeight = 0;
-          for (int i = 0; i < bottomItems.length; i++) {
-            if (i == dividerIndex) {
-              bottomNaturalHeight += dividerHeight;
-            } else {
-              bottomNaturalHeight += itemHeight;
-            }
-          }
-
-          // How much space is available for bottom items
-          // (spacer can shrink to 0 if needed)
-          final double spaceForBottom =
-              availableHeight - topPadding - logoHeight - topItemsHeight - bottomPadding;
-
-          // Determine which bottom items to show vs overflow
-          List<_SidebarItemDef> visibleBottom = [];
-          List<_SidebarItemDef> overflowItems = [];
-          bool needsMoreButton = false;
-
-          if (spaceForBottom >= bottomNaturalHeight) {
-            // Enough space for everything
-            visibleBottom = List.from(bottomItems);
-          } else {
-            // Need to figure out what fits.
-            // Strategy: pack from the end (settings+logout must show if possible),
-            // then fill remaining from the start.
-            // Actually simpler: remove items from the MIDDLE (index 0 upward)
-            // keeping settings+logout always visible at the bottom.
-            // But per user request: overflow goes from top of bottom section.
-            needsMoreButton = true;
-
-            // Minimum bottom section: just the "more" button + divider + settings
-            // = moreItemHeight + dividerHeight + itemHeight
-            const double minBottomHeight =
-                moreItemHeight + dividerHeight + itemHeight;
-
-            // Available height for bottom section (allow spacer to compress to 0)
-            final double usableForBottom =
-                (spaceForBottom).clamp(minBottomHeight, double.infinity);
-
-            // Items to always keep: divider + settings (indices 7,8)
-            const alwaysKeep = [7, 8]; // divider, settings
-            double alwaysHeight = dividerHeight + itemHeight;
-
-            // Remaining budget for collapsible items (indices 0-6) + more button
-            double budget = usableForBottom - alwaysHeight - moreItemHeight;
-
-            // Pack collapsible items from end to beginning (last ones have priority)
-            final collapsibleIndices = [6, 5, 4, 3, 2, 1, 0];
-            List<int> shownCollapsible = [];
-            for (final idx in collapsibleIndices) {
-              if (budget >= itemHeight) {
-                shownCollapsible.insert(0, idx);
-                budget -= itemHeight;
-              }
-            }
-
-            final shownSet = {...shownCollapsible, ...alwaysKeep};
-            for (int i = 0; i < bottomItems.length; i++) {
-              if (shownSet.contains(i)) {
-                visibleBottom.add(bottomItems[i]);
-              } else {
-                if (i != dividerIndex) {
-                  overflowItems.add(bottomItems[i]);
-                }
-              }
-            }
-          }
-
-          // Build bottom section widgets
-          Widget buildItem(_SidebarItemDef item, BuildContext ctx) {
-            return _SidebarIcon(
-              icon: item.icon,
-              tooltip: item.tooltip,
-              color: item.colorBuilder(ctx),
-              onTap: item.onTap,
-              iconBuilder: item.iconBuilder,
-            );
-          }
-
-          final List<Widget> bottomWidgets = [];
-          bool dividerInserted = false;
-          bool moreInserted = false;
-
-          for (int i = 0; i < visibleBottom.length; i++) {
-            final item = visibleBottom[i];
-
-            // Insert "more" button before the divider (before always-keep section)
-            if (!moreInserted && needsMoreButton) {
-              // Check if this is the divider sentinel or the first always-keep item
-              final originalIndex = bottomItems.indexOf(item);
-              if (originalIndex >= dividerIndex && !dividerInserted) {
-                // Insert "more" button here
-                bottomWidgets.add(_buildMoreButton(overflowItems, iconColor));
-                moreInserted = true;
-              }
-            }
-
-            if (item.icon == Icons.horizontal_rule) {
-              // Render divider
-              bottomWidgets
-                  .add(const Divider(indent: 12, endIndent: 12, height: 17));
-              dividerInserted = true;
-            } else {
-              bottomWidgets.add(buildItem(item, context));
-            }
-          }
-
-          // If more button wasn't inserted yet (edge case)
-          if (needsMoreButton && !moreInserted) {
-            bottomWidgets.insert(0, _buildMoreButton(overflowItems, iconColor));
-          }
-
-          // Spacer height (can be 0 if not enough space)
-          final double spacerHeight = (availableHeight -
+          final topItemsHeight = topItems.length * itemHeight;
+          final bottomHeight = dividerHeight + itemHeight;
+          final spacerHeight = (availableHeight -
                   topPadding -
                   logoHeight -
                   topItemsHeight -
                   bottomPadding -
-                  visibleBottom.fold<double>(0.0, (sum, item) {
-                    if (item.icon == Icons.horizontal_rule) return sum + dividerHeight;
-                    return sum + itemHeight;
-                  }) -
-                  (needsMoreButton ? moreItemHeight : 0))
+                  bottomHeight)
               .clamp(0.0, double.infinity);
+
+          Widget buildItem(_SidebarItemDef item) {
+            return _SidebarIcon(
+              icon: item.icon,
+              tooltip: item.tooltip,
+              color: item.colorBuilder(context),
+              onTap: item.onTap,
+            );
+          }
 
           return Column(
             children: [
               const SizedBox(height: 12),
-              // App avatar / brand
               Padding(
                 padding: const EdgeInsets.symmetric(vertical: 8),
                 child: ClipRRect(
@@ -703,108 +500,18 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
                   ),
                 ),
               ),
-              // Top items
-              ...topItems.map((item) => _SidebarIcon(
-                    icon: item.icon,
-                    tooltip: item.tooltip,
-                    color: item.colorBuilder(context),
-                    onTap: item.onTap,
-                    iconBuilder: item.iconBuilder,
-                  )),
-              // Flexible spacer
+              ...topItems.map(buildItem),
               SizedBox(height: spacerHeight),
-              // Bottom items
-              ...bottomWidgets,
+              for (final item in bottomItems)
+                if (item.icon == Icons.horizontal_rule)
+                  const Divider(indent: 12, endIndent: 12, height: 17)
+                else
+                  buildItem(item),
               const SizedBox(height: 12),
             ],
           );
         },
       ),
-    );
-  }
-
-  /// Builds the "more (···)" button with an OverlayPortal popup.
-  Widget _buildMoreButton(
-    List<_SidebarItemDef> overflowItems,
-    Color inactiveIconColor,
-  ) {
-    // Use a Builder so we can capture the button's own BuildContext
-    final colorScheme = Theme.of(context).colorScheme;
-    // for accurate RenderBox position lookup inside overlayChildBuilder.
-    return Builder(
-      builder: (buttonCtx) {
-        return OverlayPortal(
-          controller: _morePortalController,
-          overlayChildBuilder: (ctx) {
-            // Obtain the position of the "more" button in global coordinates
-            final renderBox =
-                buttonCtx.findRenderObject() as RenderBox?;
-            Offset buttonOffset = Offset.zero;
-            if (renderBox != null && renderBox.hasSize) {
-              buttonOffset = renderBox.localToGlobal(Offset.zero);
-            }
-            return Stack(
-              children: [
-                // Barrier to close on outside tap
-                Positioned.fill(
-                  child: GestureDetector(
-                    behavior: HitTestBehavior.translucent,
-                    onTap: () {
-                      _morePortalController.hide();
-                      setState(() {});
-                    },
-                  ),
-                ),
-                // Popup panel: right of sidebar, vertically aligned to button
-                Positioned(
-                  left: _sidebarWidth,
-                  top: buttonOffset.dy,
-                  child: Material(
-                    elevation: 6,
-                    borderRadius: BorderRadius.circular(8),
-                    color: colorScheme.surfaceContainerHighest,
-                    child: SizedBox(
-                      width: _sidebarWidth,
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(vertical: 6),
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: overflowItems.map((item) {
-                            return _SidebarIcon(
-                              icon: item.icon,
-                              tooltip: item.tooltip,
-                              color: item.colorBuilder(ctx),
-                              iconBuilder: item.iconBuilder,
-                              onTap: () {
-                                _morePortalController.hide();
-                                setState(() {});
-                                item.onTap();
-                              },
-                            );
-                          }).toList(),
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-              ],
-            );
-          },
-          child: _SidebarIcon(
-            icon: Icons.more_horiz,
-            tooltip: AppLocalizations.of(context).common_more,
-            color: inactiveIconColor,
-            onTap: () {
-              if (_morePortalController.isShowing) {
-                _morePortalController.hide();
-              } else {
-                _morePortalController.show();
-              }
-              setState(() {});
-            },
-          ),
-        );
-      },
     );
   }
 
@@ -840,14 +547,12 @@ class _SidebarIcon extends StatelessWidget {
   final String tooltip;
   final Color color;
   final VoidCallback onTap;
-  final Widget Function(double size, Color color)? iconBuilder;
 
   const _SidebarIcon({
     required this.icon,
     required this.tooltip,
     required this.color,
     required this.onTap,
-    this.iconBuilder,
   });
 
   @override
@@ -861,9 +566,7 @@ class _SidebarIcon extends StatelessWidget {
         borderRadius: BorderRadius.circular(8),
         child: Padding(
           padding: const EdgeInsets.symmetric(vertical: 10),
-          child: iconBuilder != null
-              ? iconBuilder!(22, color)
-              : Icon(icon, size: 22, color: color),
+          child: Icon(icon, size: 22, color: color),
         ),
       ),
     );
