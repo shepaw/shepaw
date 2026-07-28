@@ -494,6 +494,18 @@ class AppLocalizationsZh extends AppLocalizations {
   String get settings_toolsSection => '工具与能力';
 
   @override
+  String get settings_batteryOptimization => '电池优化';
+
+  @override
+  String get settings_batteryOptimizationSub => '关闭后可减少后台任务被系统中断';
+
+  @override
+  String get settings_skillsSub => '导入与管理 Agent 技能包';
+
+  @override
+  String get settings_cliSub => '配置系统 CLI 与 OS 工具';
+
+  @override
   String get settings_exportData => '导出数据';
 
   @override
@@ -4669,6 +4681,9 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get storage_title => '储物袋';
+
+  @override
+  String get storage_subtitle => '快照、产物与跨端共享文件';
 
   @override
   String get storage_snapshotSection => '本机快照';

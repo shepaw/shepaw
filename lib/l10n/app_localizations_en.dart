@@ -518,6 +518,19 @@ class AppLocalizationsEn extends AppLocalizations {
   String get settings_toolsSection => 'Tools & Capabilities';
 
   @override
+  String get settings_batteryOptimization => 'Battery Optimization';
+
+  @override
+  String get settings_batteryOptimizationSub =>
+      'Disable to keep agent tasks running in the background';
+
+  @override
+  String get settings_skillsSub => 'Import and manage agent skill packs';
+
+  @override
+  String get settings_cliSub => 'Configure system CLI and OS tools';
+
+  @override
   String get settings_exportData => 'Export Data';
 
   @override
@@ -4851,6 +4864,9 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get storage_title => 'Storage Bag';
+
+  @override
+  String get storage_subtitle => 'Snapshots, artifacts, and shared files';
 
   @override
   String get storage_snapshotSection => 'Local snapshots';

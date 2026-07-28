@@ -705,8 +705,9 @@ class HomeScreenState extends State<HomeScreen> {
                     },
                   ),
                   ListTile(
-                    leading: const Icon(Icons.work_outline),
+                    leading: const Icon(Icons.inventory_2_outlined),
                     title: Text(l10n.storage_title),
+                    subtitle: Text(l10n.storage_subtitle),
                     onTap: () {
                       Navigator.pop(context);
                       Navigator.push(

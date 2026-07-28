@@ -30,6 +30,7 @@ import '../services/inference_log_service.dart';
 import '../widgets/update_dialog.dart';
 import '../widgets/model_icon.dart';
 import '../services/model_registry.dart';
+import '../services/skill_registry.dart';
 import 'dart:io' show Platform;
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter_foreground_task/flutter_foreground_task.dart';
@@ -100,6 +101,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
         ),
       );
     }
+  }
+
+  /// Push a tool/settings sub-page and refresh list tiles (counts) on return.
+  Future<void> _openAndRefresh(Widget page) async {
+    await Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => page),
+    );
+    if (mounted) setState(() {});
   }
 
   @override
@@ -230,8 +240,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
             const Divider(),
             ListTile(
               leading: const Icon(Icons.battery_saver),
-              title: const Text('Battery Optimization'),
-              subtitle: const Text('Disable to prevent agent tasks from being interrupted in background'),
+              title: Text(l10n.settings_batteryOptimization),
+              subtitle: Text(l10n.settings_batteryOptimizationSub),
               trailing: const Icon(Icons.chevron_right),
               onTap: () {
                 FlutterForegroundTask.requestIgnoreBatteryOptimization();
@@ -260,14 +270,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
               l10n.toolModel_count(ModelRegistry.instance.definitions.length),
             ),
             trailing: const Icon(Icons.chevron_right),
-            onTap: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (context) => const ModelManagementScreen(),
-                ),
-              );
-            },
+            onTap: () => _openAndRefresh(
+              const ModelManagementScreen(),
+            ),
           ),
 
           const Divider(),
@@ -275,15 +280,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ListTile(
             leading: const Icon(Icons.auto_awesome_outlined),
             title: Text(l10n.skillMgmt_title),
+            subtitle: Text(
+              SkillRegistry.instance.skills.isEmpty
+                  ? l10n.settings_skillsSub
+                  : l10n.skillMgmt_skillCount(SkillRegistry.instance.skills.length),
+            ),
             trailing: const Icon(Icons.chevron_right),
-            onTap: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (context) => const SkillManagementScreen(),
-                ),
-              );
-            },
+            onTap: () => _openAndRefresh(
+              const SkillManagementScreen(),
+            ),
           ),
 
           const Divider(),
@@ -291,15 +296,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ListTile(
             leading: const Icon(Icons.terminal),
             title: Text(l10n.osTool_configTitle),
+            subtitle: Text(l10n.settings_cliSub),
             trailing: const Icon(Icons.chevron_right),
-            onTap: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (context) => const CliConfigManagementScreen(),
-                ),
-              );
-            },
+            onTap: () => _openAndRefresh(
+              const CliConfigManagementScreen(),
+            ),
           ),
 
           const Divider(),
@@ -309,14 +310,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
             title: Text(l10n.scheduledTasks_title),
             subtitle: Text(l10n.scheduledTasks_description),
             trailing: const Icon(Icons.chevron_right),
-            onTap: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (context) => const ScheduledTasksManagementScreen(),
-                ),
-              );
-            },
+            onTap: () => _openAndRefresh(
+              const ScheduledTasksManagementScreen(),
+            ),
           ),
 
           const Divider(height: 32),
@@ -335,8 +331,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
           ListTile(
             leading: const Icon(Icons.person),
-            title: const Text('Personal Profile'),
-            subtitle: const Text('Manage your personal information'),
+            title: Text(l10n.settings_userProfile),
+            subtitle: Text(l10n.settings_userProfileSub),
             trailing: const Icon(Icons.chevron_right),
             onTap: () {
               Navigator.push(
@@ -352,8 +348,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
           ListTile(
             leading: const Icon(Icons.memory),
-            title: const Text('Agent Memories'),
-            subtitle: const Text('View and manage memories for each agent'),
+            title: Text(l10n.settings_agentMemories),
+            subtitle: Text(l10n.settings_agentMemoriesSub),
             trailing: const Icon(Icons.chevron_right),
             onTap: () {
               Navigator.push(

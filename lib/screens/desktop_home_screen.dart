@@ -430,7 +430,7 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
         onTap: () => _showPanel(_RightPanelView.contacts),
       ),
       _SidebarItemDef(
-        icon: Icons.work_outline,
+        icon: Icons.inventory_2_outlined,
         tooltip: l10n.storage_title,
         colorBuilder: (_) =>
             _rightPanel == _RightPanelView.storageSpace ? activeColor : iconColor,

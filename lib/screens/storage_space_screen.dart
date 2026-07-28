@@ -429,12 +429,14 @@ class _StorageSpaceScreenState extends State<StorageSpaceScreen> {
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
+    final colorScheme = Theme.of(context).colorScheme;
     return Scaffold(
       appBar: AppBar(
         title: Text(l10n.storage_title),
         actions: [
           IconButton(
             icon: const Icon(Icons.refresh),
+            tooltip: l10n.common_refresh,
             onPressed: _busy ? null : _refresh,
           ),
         ],
@@ -448,6 +450,8 @@ class _StorageSpaceScreenState extends State<StorageSpaceScreen> {
               return ListView(
                 padding: const EdgeInsets.all(16),
                 children: [
+                  _buildBagIntro(l10n, colorScheme),
+                  const SizedBox(height: 16),
                   _buildSpaceSection(l10n),
                   const SizedBox(height: 20),
                   _buildSheCircleSection(l10n),
@@ -501,6 +505,49 @@ class _StorageSpaceScreenState extends State<StorageSpaceScreen> {
               color: Colors.black26,
               child: const Center(child: CircularProgressIndicator()),
             ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildBagIntro(AppLocalizations l10n, ColorScheme colorScheme) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: colorScheme.primaryContainer.withValues(alpha: 0.35),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: colorScheme.primary.withValues(alpha: 0.18),
+        ),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(Icons.inventory_2_outlined, color: colorScheme.primary, size: 22),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  l10n.storage_title,
+                  style: TextStyle(
+                    fontWeight: FontWeight.w600,
+                    color: colorScheme.onSurface,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  l10n.storage_subtitle,
+                  style: TextStyle(
+                    fontSize: 13,
+                    color: colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              ],
+            ),
+          ),
         ],
       ),
     );

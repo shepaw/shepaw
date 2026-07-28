@@ -1022,6 +1022,30 @@ abstract class AppLocalizations {
   /// **'工具与能力'**
   String get settings_toolsSection;
 
+  /// No description provided for @settings_batteryOptimization.
+  ///
+  /// In zh, this message translates to:
+  /// **'电池优化'**
+  String get settings_batteryOptimization;
+
+  /// No description provided for @settings_batteryOptimizationSub.
+  ///
+  /// In zh, this message translates to:
+  /// **'关闭后可减少后台任务被系统中断'**
+  String get settings_batteryOptimizationSub;
+
+  /// No description provided for @settings_skillsSub.
+  ///
+  /// In zh, this message translates to:
+  /// **'导入与管理 Agent 技能包'**
+  String get settings_skillsSub;
+
+  /// No description provided for @settings_cliSub.
+  ///
+  /// In zh, this message translates to:
+  /// **'配置系统 CLI 与 OS 工具'**
+  String get settings_cliSub;
+
   /// No description provided for @settings_exportData.
   ///
   /// In zh, this message translates to:
@@ -8539,6 +8563,12 @@ abstract class AppLocalizations {
   /// In zh, this message translates to:
   /// **'储物袋'**
   String get storage_title;
+
+  /// No description provided for @storage_subtitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'快照、产物与跨端共享文件'**
+  String get storage_subtitle;
 
   /// No description provided for @storage_snapshotSection.
   ///
