@@ -59,7 +59,7 @@ func (l *Local) masterPointerQuery() (map[string]any, error) {
 }
 
 // masterPointerApply applies an inbound pointer (broadcast or RPC).
-// Only advances when epoch is newer (or same epoch with different master).
+// Only advances when epoch is strictly newer. Same-epoch different master is rejected.
 func (l *Local) masterPointerApply(frame protocol.Frame) (map[string]any, error) {
 	master, _ := frame.Payload["master"].(string)
 	epoch := anyToInt64(frame.Payload["epoch"])
@@ -73,8 +73,11 @@ func (l *Local) masterPointerApply(frame protocol.Frame) (map[string]any, error)
 	if epoch < cur.Epoch {
 		return map[string]any{"applied": false, "reason": "stale"}, nil
 	}
-	if epoch == cur.Epoch && cur.Master == master {
-		return map[string]any{"applied": false, "reason": "unchanged"}, nil
+	if epoch == cur.Epoch {
+		if cur.Master == master {
+			return map[string]any{"applied": false, "reason": "unchanged"}, nil
+		}
+		return map[string]any{"applied": false, "reason": "same_epoch_conflict"}, nil
 	}
 	next := masterPointer{Master: master, Epoch: epoch}
 	if err := l.savePointer(next); err != nil {

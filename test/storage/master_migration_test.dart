@@ -54,7 +54,7 @@ void main() {
   });
 
   group('MasterMigrationService.applyPointer', () {
-    test('更高 epoch 改指；更低 epoch 忽略', () async {
+    test('更高 epoch 改指；更低 epoch 忽略；同 epoch 异 master 拒绝', () async {
       final self = await DeviceIdentity.deviceId();
       await StoreService.instance.setMasterDeviceId(self);
       await LocalDatabaseService()
@@ -75,6 +75,14 @@ void main() {
         fromDeviceId: 'cccccccccccccccc',
       );
       expect(ignored, isFalse);
+      expect(await StoreService.instance.masterDeviceId(), 'bbbbbbbbbbbbbbbb');
+
+      final conflict = await MasterMigrationService.instance.applyPointer(
+        masterId: 'dddddddddddddddd',
+        epoch: 2,
+        fromDeviceId: 'dddddddddddddddd',
+      );
+      expect(conflict, isFalse);
       expect(await StoreService.instance.masterDeviceId(), 'bbbbbbbbbbbbbbbb');
     });
   });

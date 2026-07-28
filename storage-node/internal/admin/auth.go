@@ -51,6 +51,9 @@ func isLoopback(remoteAddr string) bool {
 	return ip.IsLoopback()
 }
 
+// IsLoopback reports whether remoteAddr is a loopback client.
+func IsLoopback(remoteAddr string) bool { return isLoopback(remoteAddr) }
+
 func RequireAuth(cfg AuthConfig, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if !cfg.Authorize(r) {

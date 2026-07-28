@@ -124,7 +124,9 @@ class MasterMigrationService {
     }
 
     final merged = await cursors.seed(seed);
-    final epoch = await _bumpEpoch();
+    // 安全：epoch 取 fleet 最大值 +1，避免过期端假升主丢队列
+    final epoch = await _nextEpoch(preferPeer: oldMaster);
+    await _setEpoch(epoch);
     await StoreService.instance.setMasterDeviceId(self);
 
     final broadcast = await broadcastPointer(
@@ -220,10 +222,25 @@ class MasterMigrationService {
     return int.tryParse(raw ?? '') ?? 0;
   }
 
-  Future<int> _bumpEpoch() async {
-    final next = (await currentEpoch()) + 1;
-    await LocalDatabaseService().setUserValue(epochKey, '$next');
-    return next;
+  /// 取本机与可达 owner 的最大 epoch + 1（防过期端假升主）。
+  Future<int> _nextEpoch({String? preferPeer}) async {
+    var maxEpoch = await currentEpoch();
+    Future<void> consider(String peerId) async {
+      if (peerId.isEmpty) return;
+      try {
+        final q = await queryPointer(peerId);
+        if (q != null && q.epoch > maxEpoch) maxEpoch = q.epoch;
+      } catch (_) {}
+    }
+
+    if (preferPeer != null) await consider(preferPeer);
+    final peers = await _peerStorage.loadAllPeers();
+    for (final peer in peers) {
+      if (peer.trustLevel != TrustLevel.owner) continue;
+      if (peer.fingerprint == preferPeer) continue;
+      await consider(peer.fingerprint);
+    }
+    return maxEpoch + 1;
   }
 
   Future<void> _setEpoch(int epoch) async {
@@ -259,6 +276,8 @@ class MasterMigrationService {
   }
 
   /// 应用指针（广播入站 / query 响应）。仅当 [epoch] 更新时改指。
+  ///
+  /// 同 epoch 异 master：拒绝改指（防双主脑裂）；更高 epoch 才接受。
   Future<bool> applyPointer({
     required String masterId,
     required int epoch,
@@ -275,7 +294,11 @@ class MasterMigrationService {
     if (epoch == localEpoch) {
       final current = await StoreService.instance.masterDeviceId();
       if (current == masterId) return false;
-      // 同 epoch 不同 master：取广播为准（罕见竞态）
+      _log.warning(
+          'reject same-epoch competing pointer master=$masterId '
+          '(local=$current) from $fromDeviceId',
+          tag: _tag);
+      return false;
     }
     await _setEpoch(epoch);
     await StoreService.instance.setMasterDeviceId(masterId);

@@ -17,6 +17,7 @@ import 'import_auth_service.dart';
 import 'local_store.dart';
 import 'master_migration_service.dart';
 import 'mirror_hash_gate.dart';
+import 'seed_authorization.dart';
 import 'store_protocol.dart';
 import 'sync_engine.dart';
 import 'volume_usage.dart';
@@ -35,11 +36,14 @@ class StoreService {
   static const _auditTag = 'StoreAudit';
   static const _masterKey = 'storage.master_device_id';
   static const _callTimeout = Duration(seconds: 15);
+  static const _migrateThrottle = Duration(seconds: 30);
 
   final _log = LoggerService();
   final _manager = PeerConnectionManager.instance;
   final _peerStorage = PeerStorageService();
   final _uuid = const Uuid();
+  final seedAuth = SeedAuthorization();
+  DateTime? _lastMigrateAt;
 
   LocalStore? _store;
   ImportAuthService? _importAuth;
@@ -244,8 +248,16 @@ class StoreService {
     }
     // master 指针广播（M6，无 req_id）
     if (frame.op == StoreOp.masterPointer && frame.reqId == null) {
+      final masterId = frame.payload['master'] as String? ?? '';
+      // 安全：广播声称的 master 必须是发送者本人（防任意 owner 劫持指针）
+      if (masterId != peer.fingerprint) {
+        _log.warning(
+            'reject forged master.pointer master=$masterId from ${peer.fingerprint}',
+            tag: _auditTag);
+        return;
+      }
       await MasterMigrationService.instance.applyPointer(
-        masterId: frame.payload['master'] as String? ?? '',
+        masterId: masterId,
         epoch: frame.payload['epoch'] as int? ?? 0,
         fromDeviceId: peer.fingerprint,
       );
@@ -378,26 +390,35 @@ class StoreService {
     final store = await _localStore();
     try {
       // 私有分区跨端读取：校验导入授权实体（spec §5.4）；
-      // 升主种子拷贝（seed: true）已在 ACL 放行，跳过 grant。
+      // 升主种子拷贝（seed: true）须经 SeedAuthorization（sync.cursors 开启）。
       if ((frame.op == StoreOp.list ||
               frame.op == StoreOp.meta ||
               frame.op == StoreOp.read) &&
           frame.device != null &&
           frame.device != callerDeviceId &&
-          !StoreSpace.sharedReadable.contains(frame.space) &&
-          frame.payload['seed'] != true) {
-        final grantId = frame.payload['grant'] as String?;
-        final auth = await _importAuthService();
-        final ok = grantId != null &&
-            await auth.validate(grantId,
-                oldDevice: frame.device!,
-                newDevice: callerDeviceId,
-                space: frame.space!);
-        if (!ok) {
-          _log.warning(
-              'invalid import grant from $callerDeviceId for ${frame.device}/${frame.space}',
-              tag: _auditTag);
-          return _errorData(StoreError.aclDenied, 'invalid import grant');
+          !StoreSpace.sharedReadable.contains(frame.space)) {
+        if (frame.payload['seed'] == true) {
+          if (!loopback && !seedAuth.isAuthorized(callerDeviceId)) {
+            _log.warning(
+                'seed denied (no migrate window) caller=$callerDeviceId '
+                '${frame.device}/${frame.space}',
+                tag: _auditTag);
+            return _errorData(StoreError.aclDenied, 'seed not authorized');
+          }
+        } else {
+          final grantId = frame.payload['grant'] as String?;
+          final auth = await _importAuthService();
+          final ok = grantId != null &&
+              await auth.validate(grantId,
+                  oldDevice: frame.device!,
+                  newDevice: callerDeviceId,
+                  space: frame.space!);
+          if (!ok) {
+            _log.warning(
+                'invalid import grant from $callerDeviceId for ${frame.device}/${frame.space}',
+                tag: _auditTag);
+            return _errorData(StoreError.aclDenied, 'invalid import grant');
+          }
         }
       }
 
@@ -546,6 +567,8 @@ class StoreService {
 
         // ── master 迁移 / 指针（v4，方案 §6.5）──
         case StoreOp.syncCursors:
+          // 拉游标 = 升主种子窗口开启信号（短时授权 seed 读私有分区）
+          seedAuth.authorize(callerDeviceId);
           final cursors = await _deviceCursorStore();
           return <String, dynamic>{'cursors': await cursors.all()};
 
@@ -556,6 +579,14 @@ class StoreService {
           };
 
         case StoreOp.masterMigrate:
+          // 节流：防任意 owner 连打升主
+          final now = DateTime.now();
+          if (!loopback &&
+              _lastMigrateAt != null &&
+              now.difference(_lastMigrateAt!) < _migrateThrottle) {
+            return _errorData(StoreError.badOp, 'migrate rate limited');
+          }
+          _lastMigrateAt = now;
           // 对端请求本机升主
           final result =
               await MasterMigrationService.instance.promoteSelf();

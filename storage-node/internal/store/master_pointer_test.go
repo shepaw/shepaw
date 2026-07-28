@@ -70,7 +70,7 @@ func TestMasterPointerApplyAdvances(t *testing.T) {
 		t.Fatalf("stale=%v", stale)
 	}
 
-	// same epoch different master → apply (Dart race rule)
+	// same epoch different master → reject (anti-split-brain)
 	race, err := s.Handle(protocol.Frame{
 		Op: "master.pointer",
 		Payload: map[string]any{
@@ -81,11 +81,11 @@ func TestMasterPointerApplyAdvances(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if race["applied"] != true {
+	if race["applied"] != false || race["reason"] != "same_epoch_conflict" {
 		t.Fatalf("race=%v", race)
 	}
 	q2, _ := s.Handle(protocol.Frame{Op: "master.pointer.query"}, device, protocol.TrustOwner, true)
-	if q2["master"] != device {
+	if q2["master"] != other || q2["epoch"].(int64) != 3 {
 		t.Fatalf("q2=%v", q2)
 	}
 
@@ -93,7 +93,7 @@ func TestMasterPointerApplyAdvances(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if stats["master"] != device || stats["master_epoch"].(int64) != 3 {
+	if stats["master"] != other || stats["master_epoch"].(int64) != 3 {
 		t.Fatalf("stats pointer=%v", stats)
 	}
 }

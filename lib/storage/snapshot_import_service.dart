@@ -61,6 +61,11 @@ class SnapshotImportService {
     required String snapshotId,
     required String grantId,
   }) async {
+    // 安全：snapshotId 与 list 返回的路径全部来自远端服务侧，
+    // 必须客户端校验（恶意服务侧可路径注入覆盖本地任意文件）。
+    if (!RegExp(r'^[0-9A-Za-z-]{1,64}$').hasMatch(snapshotId)) {
+      throw ArgumentError('invalid snapshot id');
+    }
     // 1. 列目录
     final listing = await StoreService.instance.callPeer(
       serverDeviceId,
@@ -96,14 +101,23 @@ class SnapshotImportService {
         final spaceRel = e['path'] as String;
         final fileRel = _stripSnapshotPrefix(spaceRel, snapshotId);
         if (fileRel.isEmpty) continue;
+        // 安全：剥前缀后再规范化并做包含检查（防 ../../ 逃逸）
+        final normalized = normalizeStorePath(fileRel);
+        final outPath = p.normalize(p.join(destDir.path, normalized));
+        if (!p.isWithin(p.normalize(destDir.path), outPath)) {
+          throw StateError('path escapes dest dir: $spaceRel');
+        }
         final expectedHash = e['sha256'] as String;
+        if (!RegExp(r'^[0-9a-f]{64}$').hasMatch(expectedHash)) {
+          throw StateError('invalid sha256 from server');
+        }
         final bytes = await _readAll(
             serverDeviceId, oldDeviceId, spaceRel, grantId, e['size'] as int);
         final actualHash = crypto.sha256.convert(bytes).toString();
         if (actualHash != expectedHash) {
           throw StateError('hash mismatch on $spaceRel');
         }
-        final out = File(p.join(destDir.path, fileRel));
+        final out = File(outPath);
         await out.parent.create(recursive: true);
         await out.writeAsBytes(bytes, flush: true);
       }
@@ -178,6 +192,10 @@ class SnapshotImportService {
       final chunk = base64Decode(res['data'] as String);
       builder.add(chunk);
       offset += chunk.length;
+      // 恶意服务侧永不置 eof：超出声明 size 即中止（内存防护）
+      if (builder.length > size) {
+        throw StateError('server sent more than declared size');
+      }
       if (res['eof'] == true || chunk.isEmpty) break;
     }
     final bytes = builder.toBytes();

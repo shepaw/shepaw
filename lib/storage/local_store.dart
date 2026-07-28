@@ -120,6 +120,15 @@ class LocalStore {
   /// 保证"落盘成功即入队"无窗口期。
   static SyncJournal? syncJournal;
 
+  /// upload_id 形态校验（安全：调用者可自报 upload_id，
+  /// 未校验可路径穿越写任意设备目录）。
+  static final _uploadIdPattern = RegExp(r'^[A-Za-z0-9-]{1,64}$');
+  static void checkUploadId(String uploadId) {
+    if (!_uploadIdPattern.hasMatch(uploadId)) {
+      throw StoreException(StoreError.badOp, 'invalid upload_id');
+    }
+  }
+
   /// sha256 内存缓存：path → (mtime, size, hash)。
   final Map<String, (int, int, String)> _hashCache = {};
 
@@ -287,6 +296,10 @@ class LocalStore {
     await stagingDir.create(recursive: true);
 
     final id = uploadId ?? 'u-${_uuid.v4()}';
+    checkUploadId(id);
+    if (!isValidContentSha256(sha256)) {
+      throw StoreException(StoreError.badOp, 'invalid sha256');
+    }
     final partFile = File(p.join(stagingDir.path, '$id.part'));
     final metaFile = File(p.join(stagingDir.path, '$id.json'));
 
@@ -321,6 +334,7 @@ class LocalStore {
       throw StoreException(
           StoreError.badOp, 'chunk must be ≤$maxReadChunk bytes');
     }
+    checkUploadId(uploadId);
     final stagingDir = _stagingDir(deviceId, space);
     final metaFile = File(p.join(stagingDir, '$uploadId.json'));
     if (!await metaFile.exists()) {
@@ -362,6 +376,7 @@ class LocalStore {
 
     // 阶段一：全量校验（spec §2.6：全部通过才进入转正）
     for (final id in uploadIds) {
+      checkUploadId(id);
       final metaFile = File(p.join(stagingDir, '$id.json'));
       if (!await metaFile.exists()) {
         failed.add('$id: unknown upload_id');

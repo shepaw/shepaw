@@ -21,14 +21,15 @@ import (
 const maxChunk = 65536
 
 type Local struct {
-	Root     string
-	DeviceID string
-	mu       sync.Mutex
-	uploads  map[string]*upload
-	imports  *importAuth
-	cursors  *deviceCursors
-	peerRPC  PeerRPC
+	Root       string
+	DeviceID   string
+	mu         sync.Mutex
+	uploads    map[string]*upload
+	imports    *importAuth
+	cursors    *deviceCursors
+	peerRPC    PeerRPC
 	peerEnsure PeerEnsure
+	seedAuth   map[string]time.Time // caller → expire (migrate seed window)
 }
 
 type upload struct {
@@ -80,6 +81,7 @@ func Open(root, deviceID string) (*Local, error) {
 		uploads:  map[string]*upload{},
 		imports:  newImportAuth(root),
 		cursors:  newDeviceCursors(root),
+		seedAuth: map[string]time.Time{},
 	}, nil
 }
 
@@ -123,6 +125,7 @@ func (l *Local) Handle(frame protocol.Frame, caller, trust string, loopback bool
 	case "sync.hello":
 		return l.syncHello(caller)
 	case "sync.cursors":
+		l.authorizeSeed(caller)
 		return l.syncCursors()
 	case "master.pointer.query":
 		return l.masterPointerQuery()
@@ -708,6 +711,9 @@ func (l *Local) requireImportGrant(frame protocol.Frame, caller string) error {
 		return nil
 	}
 	if seed, _ := frame.Payload["seed"].(bool); seed {
+		if !l.isSeedAuthorized(caller) {
+			return &OpError{Code: "acl_denied", Msg: "seed not authorized"}
+		}
 		return nil
 	}
 	grantID, _ := frame.Payload["grant"].(string)
@@ -722,6 +728,34 @@ func (l *Local) requireImportGrant(frame protocol.Frame, caller string) error {
 		return &OpError{Code: "acl_denied", Msg: "invalid import grant"}
 	}
 	return nil
+}
+
+const seedAuthTTL = 15 * time.Minute
+
+func (l *Local) authorizeSeed(caller string) {
+	if caller == "" {
+		return
+	}
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if l.seedAuth == nil {
+		l.seedAuth = map[string]time.Time{}
+	}
+	l.seedAuth[caller] = time.Now().Add(seedAuthTTL)
+}
+
+func (l *Local) isSeedAuthorized(caller string) bool {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	exp, ok := l.seedAuth[caller]
+	if !ok {
+		return false
+	}
+	if time.Now().After(exp) {
+		delete(l.seedAuth, caller)
+		return false
+	}
+	return true
 }
 
 func (l *Local) importRequest(frame protocol.Frame, caller string) (map[string]any, error) {

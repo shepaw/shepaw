@@ -426,15 +426,26 @@ class PeerPairingService {
         throw PairingRejectedException(response.rejectReason);
       }
 
-      // 配对成功 — 检查是否已配对过
-      final existingPeer = await _storage.getPeerByFingerprint(info.fingerprint);
+      // 配对成功 — 检查是否已配对过。
+      // 安全：fingerprint 一律从 Noise 会话公钥重算，不采信 QR 自报
+      // （攻击者 QR 可自报受害设备 fingerprint 实现身份冒名）。
+      final peerFingerprint = _fingerprintFromKey(info.publicKey);
+      final existingPeer = await _storage.getPeerByFingerprint(peerFingerprint);
+      if (existingPeer != null &&
+          !_samePublicKey(existingPeer.publicKey, info.publicKey)) {
+        session.close();
+        ws.sink.close();
+        _state = PairingSessionState.failed;
+        throw PairingRejectedException(
+            'fingerprint collision with different public key');
+      }
 
       final peer = PairedPeer(
         id: existingPeer?.id ?? response.peerId, // 复用已有 ID
         deviceName: response.deviceName,
         deviceId: response.deviceId,
         publicKey: info.publicKey,
-        fingerprint: info.fingerprint,
+        fingerprint: peerFingerprint,
         channelEndpoint: response.channelEndpoint ?? info.channelEndpoint,
         localEndpoint: response.localEndpoint ?? info.localEndpoint,
         pairedAt: DateTime.now().millisecondsSinceEpoch,
@@ -570,6 +581,15 @@ class PeerPairingService {
       sb.write(digest[i].toRadixString(16).padLeft(2, '0'));
     }
     return sb.toString();
+  }
+
+  bool _samePublicKey(Uint8List a, Uint8List b) {
+    if (a.length != b.length) return false;
+    var result = 0;
+    for (var i = 0; i < a.length; i++) {
+      result |= a[i] ^ b[i];
+    }
+    return result == 0;
   }
 
   /// 获取本设备名称（优先用户自定义，否则系统 hostname）

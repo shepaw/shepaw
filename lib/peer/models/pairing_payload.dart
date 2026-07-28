@@ -1,7 +1,19 @@
 import 'dart:convert';
 import 'dart:typed_data';
 
+import 'package:crypto/crypto.dart' as crypto;
+
 import '../../services/noise/noise_envelope.dart';
+
+/// 公钥 → 16 hex 指纹（与 NoiseIdentity.fingerprintHex 同一算法）。
+String _fingerprintOf(Uint8List publicKey) {
+  final digest = crypto.sha256.convert(publicKey).bytes;
+  final sb = StringBuffer();
+  for (var i = 0; i < 8; i++) {
+    sb.write(digest[i].toRadixString(16).padLeft(2, '0'));
+  }
+  return sb.toString();
+}
 
 /// 配对请求（Noise msg1 payload，Initiator/Scanner → Responder/QR-Generator）
 class PairingRequest {
@@ -197,6 +209,9 @@ class PeerPairingInfo {
 
       final publicKey = fromBase64Url(pk);
       if (publicKey.length != 32) return null;
+
+      // 安全：fp 必须等于公钥哈希（防攻击者 QR 自报受害设备 fingerprint）。
+      if (_fingerprintOf(publicKey) != fp.toLowerCase()) return null;
 
       return PeerPairingInfo(
         localEndpoint: effectiveLocal,

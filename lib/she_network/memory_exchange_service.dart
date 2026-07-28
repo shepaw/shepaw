@@ -120,16 +120,37 @@ class MemoryExchangeService {
       case MemoryOp.digestOffer:
         final settings = await ExchangeSettings.load();
         if (!settings.enabled) return;
-        final from = frame.payload['from_device'] as String? ?? peer.fingerprint;
+        // 安全：来源锚定通道身份，不采信帧内自报 from_device
+        final claimed = frame.payload['from_device'] as String?;
+        final from = peer.fingerprint;
+        if (claimed != null &&
+            claimed.isNotEmpty &&
+            claimed != from) {
+          _log.warning(
+              'digest.offer from_device mismatch claimed=$claimed '
+              'peer=$from — using peer fingerprint',
+              tag: _tag);
+        }
         final period = frame.payload['period'] as String? ?? '';
         final raw = (frame.payload['entries'] as List?) ?? const [];
         final entries = <DigestEntry>[];
+        // 入站限频：条数 / 单条长度上限
+        const maxEntries = 32;
+        const maxTextLen = 512;
         for (final e in raw) {
+          if (entries.length >= maxEntries) break;
           if (e is! Map) continue;
           final entry = DigestEntry.fromJson(Map<String, dynamic>.from(e));
           if (!DigestKind.isValid(entry.kind)) continue;
           if (!settings.kinds.contains(entry.kind)) continue; // 类别关闭则不入库
-          entries.add(entry);
+          final text = entry.text.length > maxTextLen
+              ? entry.text.substring(0, maxTextLen)
+              : entry.text;
+          entries.add(DigestEntry(
+            kind: entry.kind,
+            text: text,
+            confidence: entry.confidence,
+          ));
         }
         await ExternalMemoryStore.instance.appendOffer(
           fromDevice: from,

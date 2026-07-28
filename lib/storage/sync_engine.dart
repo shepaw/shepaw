@@ -95,21 +95,18 @@ class SyncEngine {
       final peer = peers.where((p) => p.id == peerId).firstOrNull;
       if (peer == null || peer.trustLevel != TrustLevel.owner) return;
 
-      // 任意 owner 上线：先 query 指针（离线端醒来改指，§6.5）
-      final master = await _masterDeviceIdFn!();
-      if (peer.fingerprint != master) {
-        try {
-          final q = await MasterMigrationService.instance
-              .queryPointer(peer.fingerprint);
-          if (q != null) {
-            await MasterMigrationService.instance.applyPointer(
-              masterId: q.master,
-              epoch: q.epoch,
-              fromDeviceId: peer.fingerprint,
-            );
-          }
-        } catch (_) {}
-      }
+      // 任意 owner 上线：先 query 指针（离线端醒来改指，§6.5 / spec §10.2）
+      try {
+        final q = await MasterMigrationService.instance
+            .queryPointer(peer.fingerprint);
+        if (q != null) {
+          await MasterMigrationService.instance.applyPointer(
+            masterId: q.master,
+            epoch: q.epoch,
+            fromDeviceId: peer.fingerprint,
+          );
+        }
+      } catch (_) {}
       final masterNow = await _masterDeviceIdFn!();
       if (peer.fingerprint == masterNow) {
         unawaited(syncNow());

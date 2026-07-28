@@ -176,6 +176,10 @@ String normalizeStorePath(String raw) {
 bool isValidDeviceId(String? device) =>
     device != null && RegExp(r'^[0-9a-f]{16}$').hasMatch(device);
 
+/// 内容哈希形态（64 hex）。
+bool isValidContentSha256(String? sha) =>
+    sha != null && RegExp(r'^[0-9a-f]{64}$').hasMatch(sha);
+
 // ─────────────────────────────────────────────────────────────────────────────
 // ACL 判定（spec §3）
 // ─────────────────────────────────────────────────────────────────────────────
@@ -195,6 +199,9 @@ class TrustLevel {
 /// [callerDeviceId] 调用者设备 id（Noise 对端公钥哈希；loopback 为本机 id）。
 /// [trustLevel] 调用者信任分级。
 /// [loopback] 是否 master 本机用户本地调用（recycle.empty 唯一放行路径）。
+///
+/// 注意：`seed: true` 在 ACL 层对 owner 粗放行；服务侧须另做短时授权
+/// （见 [SeedAuthorization]，由 `sync.cursors` 开启）。
 StoreAcl checkStoreAcl(
   StoreFrame frame, {
   required String callerDeviceId,
@@ -249,10 +256,9 @@ StoreAcl checkStoreAcl(
       }
       final targetOwn = device == null || device == callerDeviceId;
       if (!targetOwn && !StoreSpace.sharedReadable.contains(space)) {
+        // seed:true：ACL 粗放行；运行时由 SeedAuthorization 收敛为迁移窗口
         final seed = frame.payload['seed'] == true;
         if (seed) {
-          // 升主镜像种子：owner 可临时读他端私有分区（方案 §6.5）
-          // 此处 !targetOwn ⇒ device 已非空且 ≠ 调用者
           if (!isValidDeviceId(device)) {
             return StoreAcl.denyBadOp;
           }

@@ -31,6 +31,9 @@ class LocalCas {
   /// 写入内容（按 hash 去重，已存在直接复用）。返回 blob 文件。
   Future<File> put(Uint8List bytes, {bool synced = false}) async {
     final hash = crypto.sha256.convert(bytes).toString();
+    if (!RegExp(r'^[0-9a-f]{64}$').hasMatch(hash)) {
+      throw ArgumentError('invalid content sha256');
+    }
     await _blobsDir.create(recursive: true);
     final blob = File(p.join(_blobsDir.path, hash));
     final index = await _loadIndex();
@@ -50,6 +53,7 @@ class LocalCas {
 
   /// 已存在的 blob。
   Future<File?> get(String sha256) async {
+    if (!RegExp(r'^[0-9a-f]{64}$').hasMatch(sha256)) return null;
     final blob = File(p.join(_blobsDir.path, sha256));
     if (!await blob.exists()) return null;
     await touch(sha256);

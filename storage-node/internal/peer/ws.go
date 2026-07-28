@@ -249,6 +249,23 @@ func (s *Server) serveTransport(conn *websocket.Conn, sess *noise.Session, fp st
 		if err := json.Unmarshal(plain, &raw); err != nil {
 			continue
 		}
+		// App PeerConnection liveness: reply to ping with encrypted pong.
+		if t, _ := raw["type"].(string); t == "ping" {
+			pong, _ := json.Marshal(map[string]any{
+				"type":      "pong",
+				"timestamp": time.Now().UnixMilli(),
+			})
+			writeMu.Lock()
+			ct, err := sess.Encrypt(pong)
+			if err == nil {
+				enc, encErr := noise.EncodeFrame(noise.Frame{Type: noise.FrameData, Payload: ct})
+				if encErr == nil {
+					_ = conn.WriteMessage(websocket.TextMessage, []byte(enc))
+				}
+			}
+			writeMu.Unlock()
+			continue
+		}
 		op, _ := raw["op"].(string)
 		reqID, _ := raw["req_id"].(string)
 		// Outbound RPC replies: complete CallStore waiters (must stay on read loop).

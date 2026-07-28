@@ -67,6 +67,14 @@ void main() {
           ),
           StoreAcl.denyUntrusted);
     });
+
+    test('upload_id 非法形态拒绝', () {
+      expect(
+        () => LocalStore.checkUploadId('../escape'),
+        throwsA(isA<StoreException>()),
+      );
+      expect(() => LocalStore.checkUploadId('u-ok-123'), returnsNormally);
+    });
   });
 
   group('MirrorSeedService', () {

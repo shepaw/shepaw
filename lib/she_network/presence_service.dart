@@ -198,32 +198,33 @@ class PresenceService {
     switch (frame.op) {
       case SheOp.presence:
         final p = ShePresence.fromJson(frame.payload);
-        if (p.deviceId.isEmpty) {
-          final rawAgents = frame.payload['agents'] as List? ?? const [];
-          final agents = <PresenceAgentEntry>[];
-          for (final e in rawAgents) {
-            if (e is! Map) continue;
-            final entry =
-                PresenceAgentEntry.fromJson(Map<String, dynamic>.from(e));
-            if (entry != null) agents.add(entry);
-          }
-          _cache[peer.fingerprint] = ShePresence(
-            deviceId: peer.fingerprint,
-            sheName: frame.payload['she_name'] as String? ?? 'She',
-            online: true,
-            agentCategories:
-                (frame.payload['agent_categories'] as List?)?.cast<String>() ??
-                    const [],
-            toolCategories:
-                (frame.payload['tool_categories'] as List?)?.cast<String>() ??
-                    const [],
-            agentCount: frame.payload['agent_count'] as int? ?? 0,
-            agents: agents,
-            updatedAtMs: DateTime.now().millisecondsSinceEpoch,
-          );
-        } else {
-          _cache[p.deviceId] = p;
+        // 安全：缓存键一律 peer.fingerprint，防自报 device 投毒
+        if (p.deviceId.isNotEmpty && p.deviceId != peer.fingerprint) {
+          _log.warning(
+              'presence device mismatch claimed=${p.deviceId} '
+              'peer=${peer.fingerprint}',
+              tag: _tag);
         }
+        _cache[peer.fingerprint] = ShePresence(
+          deviceId: peer.fingerprint,
+          sheName: p.sheName.isNotEmpty
+              ? p.sheName
+              : (frame.payload['she_name'] as String? ?? 'She'),
+          online: true,
+          agentCategories: p.agentCategories.isNotEmpty
+              ? p.agentCategories
+              : (frame.payload['agent_categories'] as List?)?.cast<String>() ??
+                  const [],
+          toolCategories: p.toolCategories.isNotEmpty
+              ? p.toolCategories
+              : (frame.payload['tool_categories'] as List?)?.cast<String>() ??
+                  const [],
+          agentCount: p.agentCount > 0
+              ? p.agentCount
+              : frame.payload['agent_count'] as int? ?? 0,
+          agents: p.agents,
+          updatedAtMs: DateTime.now().millisecondsSinceEpoch,
+        );
         break;
       case SheOp.presenceQuery:
         final local = await buildLocalPresence();

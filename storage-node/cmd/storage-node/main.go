@@ -79,32 +79,28 @@ func main() {
 			"noise": true, "fingerprint": device,
 		})
 	})
-	mux.HandleFunc("/store", func(w http.ResponseWriter, r *http.Request) {
+	authCfg := admin.AuthConfig{Token: *adminToken}
+	mux.Handle("/store", admin.RequireAuth(authCfg, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
 			http.Error(w, "POST only", http.StatusMethodNotAllowed)
 			return
 		}
 		var body struct {
-			Op       string         `json:"op"`
-			Payload  map[string]any `json:"payload"`
-			Caller   string         `json:"caller"`
-			Trust    string         `json:"trust"`
-			Loopback bool           `json:"loopback"`
+			Op      string         `json:"op"`
+			Payload map[string]any `json:"payload"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 			http.Error(w, err.Error(), 400)
 			return
 		}
-		if body.Caller == "" {
-			body.Caller = device
-		}
-		if body.Trust == "" {
-			body.Trust = protocol.TrustOwner
-		}
 		if body.Payload == nil {
 			body.Payload = map[string]any{}
 		}
-		data, err := s.Handle(protocol.Frame{Op: body.Op, Payload: body.Payload}, body.Caller, body.Trust, body.Loopback)
+		// 安全：忽略请求体自报的 caller/trust/loopback（联调口仅本机身份）
+		caller := device
+		trust := protocol.TrustOwner
+		loopback := admin.IsLoopback(r.RemoteAddr)
+		data, err := s.Handle(protocol.Frame{Op: body.Op, Payload: body.Payload}, caller, trust, loopback)
 		if err != nil {
 			code := "internal"
 			msg := err.Error()
@@ -116,7 +112,7 @@ func main() {
 			return
 		}
 		_ = json.NewEncoder(w).Encode(map[string]any{"op": "result", "data": data})
-	})
+	})))
 	mux.HandleFunc("/peer/ws", peerSrv.HandleWS)
 
 	adminSrv := &admin.Server{

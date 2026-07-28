@@ -90,7 +90,7 @@ class MemoryFrame {
       return null;
     }
     final op = json['op'];
-    if (op is! String) throw const FormatException('memory frame missing op');
+    if (op is! String) return null;
     final payload = Map<String, dynamic>.of(json)
       ..remove('type')
       ..remove('ns')
@@ -128,7 +128,7 @@ class SheFrame {
       return null;
     }
     final op = json['op'];
-    if (op is! String) throw const FormatException('she frame missing op');
+    if (op is! String) return null;
     final payload = Map<String, dynamic>.of(json)
       ..remove('type')
       ..remove('ns')
