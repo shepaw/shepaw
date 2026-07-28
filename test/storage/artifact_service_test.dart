@@ -91,8 +91,9 @@ void main() {
           ArtifactService.instance.buildAvailableArtifactsSection(refs);
       expect(section, startsWith('## 可用产物\n'));
       expect(section, contains('- [report.md]'));
-      expect(section, contains('store_read 原样传入括号内 URI'));
-      expect(section, contains('store_write 返回新 URI 即完成共享'));
+      expect(section, contains('shepaw store write'));
+      expect(section, contains('勿默认写 OS 路径'));
+      expect(section, contains('shepaw store read'));
       expect(
           ArtifactService.instance.buildAvailableArtifactsSection(const []),
           isEmpty);

@@ -20,7 +20,8 @@ class StoreNamespace extends CliNamespace {
 
   @override
   String get description =>
-      'Artifact store: write artifacts (share via URI) and read them back';
+      'Artifact store (preferred for produced outputs): write artifacts via '
+      'store:// URI and read them back — prefer over OS file paths';
 
   @override
   Map<String, CliCommand> get commands => {
@@ -36,7 +37,8 @@ class StoreWriteCommand extends CliCommand {
 
   @override
   String get description =>
-      'Write an artifact and get back a shareable store:// URI reference';
+      'Preferred path for produced artifacts: write to store and get a shareable '
+      'store:// URI (prefer this over os.file.write for reports/code/docs)';
 
   @override
   String get usage =>

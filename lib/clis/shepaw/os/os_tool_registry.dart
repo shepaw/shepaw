@@ -147,7 +147,10 @@ class OsToolRegistry {
     OsToolDefinition(
       name: 'file_write',
       cliPath: 'os.file.write',
-      description: 'Write content to a file. Creates the file if it does not exist.',
+      description:
+          'Write content to an OS filesystem path. Not for shareable artifacts — '
+          'prefer `shepaw store write` for reports/code/docs; use this only when '
+          'the user names an OS path or you need a real system file.',
       parameterSchema: {
         'type': 'object',
         'properties': {

@@ -64,6 +64,14 @@ void main() {
       expect(block, contains('Do NOT'));
       expect(block, contains('soul'));
     });
+
+    test('buildMetaCognitionBlock prefers store for produced artifacts', () {
+      final block = SheService.buildMetaCognitionBlock();
+      expect(block, contains('shepaw store write'));
+      expect(block, contains('Produced Artifacts'));
+      expect(block, contains('prefer store'));
+      expect(block, contains('Prefer store for produced artifacts'));
+    });
   });
 
   group('AgentPromptBuilder non-She', () {
@@ -75,6 +83,8 @@ void main() {
 
       expect(prompt, contains('Your name is Coder.'));
       expect(prompt, contains('Tool Discovery'));
+      expect(prompt, contains('shepaw store write'));
+      expect(prompt, contains('prefer store'));
       expect(prompt, isNot(contains('shepaw CLI — Data Access')));
       expect(prompt, isNot(contains('buildDmWorkflowPlaybookBlock')));
     });

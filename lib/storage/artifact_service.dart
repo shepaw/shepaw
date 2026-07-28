@@ -194,8 +194,8 @@ class ArtifactService {
     for (final ref in refs) {
       buffer.writeln('- ${ref.toMarkdownLine()}');
     }
-    buffer.writeln('读取：store_read 原样传入括号内 URI；'
-        '产出：store_write 返回新 URI 即完成共享。');
+    buffer.writeln('新产出优先 `shepaw store write`（勿默认写 OS 路径）；'
+        '读取：`shepaw store read` 原样传入括号内 URI。');
     return buffer.toString();
   }
 

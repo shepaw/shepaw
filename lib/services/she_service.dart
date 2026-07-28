@@ -336,6 +336,17 @@ class SheService {
   /// Section ①: She's core identity (immutable).
   String buildCoreIdentityBlock() => _coreIdentityPrompt();
 
+  /// Shared artifact-store preference (She + non-She guidance).
+  /// Produced files go to store by default; OS paths only when explicitly needed.
+  static const String _artifactStorePreferenceSection = '''
+### Produced Artifacts (prefer store — FIRST, not OS paths)
+
+When you create a durable/shareable output (report, code, script, data, doc, etc.):
+1. **Prefer** `shepaw store write --filename <name> --content "..."` (optional `--task <id>` / `--desc "..."`)
+2. In your reply, cite the returned `reference` / `store://` URI as-is — **never invent or hand-build URIs**
+3. Read existing artifacts with `shepaw store read --uri <store://...>`
+4. Use `shepaw os file.write` **only** when the user explicitly names an OS path, or you truly need a local system file (e.g. to execute/open outside the app). Do **not** default to `/tmp` or other OS paths for ordinary outputs.''';
+
   /// Meta-cognition block: tells She what capabilities she has and how to
   /// discover them on demand via the shepaw CLI.
   /// Injected early in the prompt so She knows to query before assuming.
@@ -356,6 +367,8 @@ Call `shepaw tools web.search --query "..."` **immediately** when the question r
 **Do NOT try to answer from training knowledge first for real-time topics.**
 If there is any doubt about whether your knowledge is current, search first.
 
+$_artifactStorePreferenceSection
+
 ### Historical Images & Attachments (MANDATORY — use CLI, do not guess)
 
 Chat history stores attachment **metadata only** (e.g. "📷 Image: photo.jpg"), not actual image pixels.
@@ -374,6 +387,7 @@ When the user asks about a **past** image/file/audio ("这张图说了什么", "
 - `shepaw tools web.fetch --url "..."` — fetch a webpage
 
 ### OS (local system)
+- Prefer store for produced artifacts (see above). Use OS file tools only when the user names an OS path or you need a real system file.
 - `shepaw os --help` — list all available OS tools
 - `shepaw os file.{read,write,delete,list}` / `os command.exec` / `os clipboard.{read,write}`
 
@@ -534,6 +548,8 @@ Call `shepaw tools web.search --query "..."` **immediately** when the question r
 **Do NOT try to answer from training knowledge first for real-time topics.**
 If there is any doubt about whether your knowledge is current, search first.
 
+$_artifactStorePreferenceSection
+
 ### Your Data & Context
 - `shepaw context memory.query --keys soul,self_notes` / `memory.write --key soul/self_notes --value "..."` / `memory.append --key self_notes --value "..."`
 
@@ -542,6 +558,7 @@ If there is any doubt about whether your knowledge is current, search first.
 - `shepaw tools web.fetch --url "..."` — fetch a webpage
 
 ### OS (local system)
+- Prefer store for produced artifacts (see above). Use OS file tools only when the user names an OS path or you need a real system file.
 - `shepaw os --help` — list all available OS tools
 - `shepaw os file.{read,write,delete,list}` / `os command.exec` / `os clipboard.{read,write}`
 
