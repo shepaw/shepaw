@@ -5248,4 +5248,19 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get storage_noOwnerPeers => '暂无 owner 级配对设备';
+
+  @override
+  String get storage_sharePresenceRoster => '向圈子分享 Agent 名单';
+
+  @override
+  String get storage_sharePresenceRosterHint =>
+      '关闭时仅广播类别与数量；开启后 owner 可见本机 Agent 名称并可点名委托。';
+
+  @override
+  String storage_presenceAgents(String names) {
+    return 'Agent：$names';
+  }
+
+  @override
+  String get storage_pickDelegateAgent => '选择委托 Agent';
 }

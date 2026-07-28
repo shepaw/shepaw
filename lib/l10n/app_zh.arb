@@ -3256,5 +3256,14 @@
     }
   },
   "storage_presenceOffline": "暂无在线画像",
-  "storage_noOwnerPeers": "暂无 owner 级配对设备"
+  "storage_noOwnerPeers": "暂无 owner 级配对设备",
+  "storage_sharePresenceRoster": "向圈子分享 Agent 名单",
+  "storage_sharePresenceRosterHint": "关闭时仅广播类别与数量；开启后 owner 可见本机 Agent 名称并可点名委托。",
+  "storage_presenceAgents": "Agent：{names}",
+  "@storage_presenceAgents": {
+    "placeholders": {
+      "names": { "type": "String" }
+    }
+  },
+  "storage_pickDelegateAgent": "选择委托 Agent"
 }

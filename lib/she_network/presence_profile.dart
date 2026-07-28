@@ -1,16 +1,51 @@
 import '../models/remote_agent.dart';
 
-/// 类别级 presence 画像（方案 §8.1：不暴露 Agent 名单）。
+/// 名单级 Agent 条目（方案 §8.1 升级；需用户开启分享）。
+class PresenceAgentEntry {
+  const PresenceAgentEntry({
+    required this.id,
+    required this.name,
+    required this.category,
+  });
+
+  final String id;
+  final String name;
+
+  /// `she` | `assistant`
+  final String category;
+
+  Map<String, dynamic> toJson() => <String, dynamic>{
+        'id': id,
+        'name': name,
+        'category': category,
+      };
+
+  static PresenceAgentEntry? fromJson(Map<String, dynamic>? json) {
+    if (json == null) return null;
+    final id = json['id'] as String? ?? '';
+    final name = json['name'] as String? ?? '';
+    if (id.isEmpty || name.isEmpty) return null;
+    return PresenceAgentEntry(
+      id: id,
+      name: name,
+      category: json['category'] as String? ?? 'assistant',
+    );
+  }
+}
+
+/// 类别级 presence 画像（方案 §8.1；可选附带 Agent 名单）。
 class PresenceProfile {
   const PresenceProfile({
     required this.agentCategories,
     required this.toolCategories,
     required this.agentCount,
+    this.agents = const [],
   });
 
   final List<String> agentCategories;
   final List<String> toolCategories;
   final int agentCount;
+  final List<PresenceAgentEntry> agents;
 
   /// 无 Agent 时的保守默认（兼容旧广播）。
   static const fallback = PresenceProfile(
@@ -27,19 +62,19 @@ PresenceProfile aggregatePresenceProfile(Iterable<RemoteAgent> agents) {
 
   final agentCats = <String>{};
   final toolCats = <String>{};
+  final roster = <PresenceAgentEntry>[];
   for (final a in list) {
-    agentCats.add(a.isShe ? 'she' : 'assistant');
+    final cat = a.isShe ? 'she' : 'assistant';
+    agentCats.add(cat);
+    roster.add(PresenceAgentEntry(id: a.id, name: a.name, category: cat));
     for (final t in a.enabledOsTools) {
-      final cat = _normalizeToolCategory(t);
-      if (cat != null) toolCats.add(cat);
+      final c = _normalizeToolCategory(t);
+      if (c != null) toolCats.add(c);
     }
     for (final c in a.capabilities) {
-      final cat = _normalizeToolCategory(c);
-      if (cat != null) toolCats.add(cat);
+      final cat2 = _normalizeToolCategory(c);
+      if (cat2 != null) toolCats.add(cat2);
     }
-  }
-  if (toolCats.isEmpty) {
-    // 至少有 Agent 但未声明工具时，不虚构 tool 类别
   }
   final agentSorted = agentCats.toList()..sort();
   final toolSorted = toolCats.toList()..sort();
@@ -47,6 +82,7 @@ PresenceProfile aggregatePresenceProfile(Iterable<RemoteAgent> agents) {
     agentCategories: agentSorted,
     toolCategories: toolSorted,
     agentCount: list.length,
+    agents: roster,
   );
 }
 

@@ -99,7 +99,7 @@
 - **GFS 在快照所属设备本机执行**（`ScheduledSnapshotService` + `commit.retention`/`selectGfs`），删除经同步队列镜像到 master——**不是** master 代管剪枝。`commit.retention` 支持 `keep_last` / `gfs`（见协议 §2.6）。
 - 无 master 时快照天然留存本地（本地优先的必然结果）。
 - 兜底导出（决策 3）：本机目录 / WebDAV 降级为**纯手动导出功能**，不占任何自动路径；格式相同（**附件随导出打包**：`exportToDirectory` 按 manifest 复制到 `attachments/`）。
-- 移动端触发：App 启动 + 运行中 6h Timer + **回前台**（`AppLifecycleService.onResume`）+ **WiFi/以太网稳定**（`NetworkMonitorService.onNetworkSettled`，避免蜂窝灌库）。系统级 BGAppRefresh / WorkManager 仍为后续可选（`ForegroundTaskService` 仅 Agent 保活，不接入日快照）。距上次成功（或从未成功则距启用）超过 **3 天** 显著告警（按墙钟，非同日失败次数）。
+- 移动端触发：App 启动 + 运行中 6h Timer + **回前台**（`AppLifecycleService.onResume`）+ **WiFi/以太网稳定**（`NetworkMonitorService.onNetworkSettled`，避免蜂窝灌库）+ **系统 BG**（Android WorkManager / iOS BGAppRefresh，`BackgroundSnapshotScheduler`，与上列同一 `checkNow` 入口去重）。`ForegroundTaskService` 仅 Agent 保活。距上次成功（或从未成功则距启用）超过 **3 天** 显著告警（按墙钟，非同日失败次数）。
 
 ### 5.2 快照格式
 
@@ -227,7 +227,7 @@ master 上的镜像树主要是各端本地数据的副本；为降低单点损�
 - 每台设备的 she 是**独立个体**，身份绑定设备场景；多台 PC / 手机各自持有独立的她，组成多 she 网络。"双 she"只是 N=2 的特例。
 - 能力边界清晰：每个 she 只管理本机 Agent；需要对方设备能力时通过 peer 通道**与对方 she 对话委托**（复用现有 peer agent / 审批链路）。
 - **命名**：多台设备时用户可为每台的她起名（默认按设备场景）。
-- **委托路由**：`she.presence` 帧广播能力画像——**只广播类别**（决策 5：Agent 类别与数量、工具类别、在线状态；本机从 `RemoteAgentService` 聚合，仍不暴露名单）；委托方据此选择问谁，用户可显式点名；粒度不足时再升级为名单级。
+- **委托路由**：`she.presence` 帧广播能力画像——默认**类别与数量**（决策 5）；用户开启「分享 Agent 名单」后附带 owner 可见的 id/name 列表；委托方可按类别或按名单点名（复用 peer agent 审批链路）；friend 仍不可见存储与名单。
 - 跨端协作走**可寻址的产物文件**（读其他端 `artifacts` 目录），而不是私有数据的融合。
 
 ### 8.2 记忆交换
@@ -274,12 +274,12 @@ master 上的镜像树主要是各端本地数据的副本；为降低单点损�
 |------|------|-----------|
 | M1 快照引擎 | ✅ | `SnapshotService`/`SnapshotCrypto`：格式含 identity.enc、加密、manifest、本机导出/恢复 |
 | M2 空间与协议 | ✅ | `store.*` + ACL + staging/commit + 回收站还原；friend 拒绝；loopback |
-| M3 快照与恢复 | ✅ 基本 | 定期快照 + 本机 GFS + 恢复 + 换机导入 + 改密；回前台 / WiFi 稳定触发已接；系统 BG 任务仍可选 |
+| M3 快照与恢复 | ✅ 基本 | 定期快照 + 本机 GFS + 恢复 + 换机导入 + 改密；回前台 / WiFi 稳定 + **系统 BG** 触发 |
 | M4 本地优先与远程 | ✅ 基本 | `SyncJournal`/`SyncEngine` + 游标；`LocalCas` 仅远端读缓存；tunnel 复用 peer |
 | M5 协作与附件 | ✅ 基本 | `ArtifactService` URI + 编排注入；附件经 store hash 编址 |
 | M6 master 迁移 | ✅ 基本 | 升主/指针/再保护；差量镜像种子 + 内容哈希门闩（软校验，可选硬阻断） |
 | M7 Go 存储节点 | ✅ 基本 | `storage-node/`：目录树+fixture；import/retention；**sync 游标**；**master 指针/升主+在线 seed/fanout**；**import.grant 推送/入站**；**Noise IK**；**无头 `/admin`（browse/purge/wipe/unpair/gc/volume_warn/升主/received）** |
-| M8 记忆交换与多 she | ✅ 基本 | `lib/she_network/` + 管理页「她的圈子」；presence **真实 Agent 类别/数量**（非名单） |
+| M8 记忆交换与多 she | ✅ 基本 | `lib/she_network/` + 管理页「她的圈子」；presence 类别/数量 + **可选名单级**（`share_roster`） |
 
 代码位置：`lib/storage/`、`lib/she_network/`、`lib/screens/storage_space_screen.dart`；`lib/peer/` 仅帧路由。
 
@@ -300,8 +300,8 @@ master 上的镜像树主要是各端本地数据的副本；为降低单点损�
 
 ## 13. 后续可选（不承诺）
 
-- 快照差量化；`she.presence` 名单级；跨人 she 社交；DB 级多端互通（另案）。
-- 系统级 BGAppRefresh / WorkManager（日快照已有回前台 + WiFi 触发）。
+- 快照差量化；跨人 she 社交；DB 级多端互通（另案）。
+- （已落地）`she.presence` 名单级；系统级 BGAppRefresh / WorkManager 日快照钩子。
 
 ## 附录 A. v1.1 相对 v1.0 的修订摘要
 
@@ -340,7 +340,7 @@ master 上的镜像树主要是各端本地数据的副本；为降低单点损�
 34. M7 无头危险区 wipeSelf（`WipeSelf`；`/admin/api/devices/wipe-self` 需 `confirm=DELETE`；不动他端/回收站/.system）。
 35. 重连握手学习 Channel/Local 端点（msg1/`reconnect_ack` 可选端点；Go `MergeEndpoints`；App `updateChannelEndpoint`）。
 36. Go 同步游标水位（`sync.hello` / `sync.cursors`；`commit`/`delete` 的 `upto_seq` → `applied_seq`；`device_cursors.json`）。
-37. `she.presence` 真实 Agent 类别计数（`aggregatePresenceProfile`；断线标离线；圈子展示 count/类别，仍不暴露名单）。
+37. `she.presence` 真实 Agent 类别计数（`aggregatePresenceProfile`；断线标离线；圈子展示 count/类别）。
 38. M7 无头解除配对（`Peers.Remove`；`/admin/api/peers/remove`）。
 39. Go staging/回收站 GC（启动时自动 + `/admin/api/gc`；对齐 App `gcStaging`/`gcRecycle`）。
 40. Go `master.pointer` / `master.pointer.query`（`.system/master_pointer.json`；按 epoch 改指；`stats.master`/`master_epoch`）；`/peer/ws` 接受 Dart 扁平 store 帧并回 `type/ns/req_id`。
@@ -354,3 +354,6 @@ master 上的镜像树主要是各端本地数据的副本；为降低单点损�
 48. Go 升主在线 seed：旧 master 在 `SessionRegistry` 时拉 `sync.cursors` + `list`/`read`（`seed: true`）；WS 读循环投递 RPC 回包并并发 Handle。
 49. 并发 Handle 下串行化 Noise `Encrypt`+写 WS（`encryptWrite` / `writeMu`），避免升主 seed 与回包抢 cipher nonce。
 50. Go 升主软 `MirrorHashGate`（seed 后 list 对账；`require_hash_match` 可硬阻断；对齐 Dart）。
+51. Go 升主出站拨号 seed（`Dialer.Ensure`：Local→Channel Noise 重连；短连接 Release；失败仍升主并回 `dial_error`）。
+52. `she.presence` 名单级（KV `share_roster` opt-in；payload `agents[]`；圈子展示/点名 `routeByAgentId`；复用 peer agent 链路）。
+53. 系统 BG 日快照（`BackgroundSnapshotScheduler`：WorkManager unmetered + iOS BGAppRefresh；与 `ScheduledSnapshotService.checkNow` 去重）。

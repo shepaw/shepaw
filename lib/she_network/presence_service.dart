@@ -13,9 +13,10 @@ import '../storage/device_identity.dart';
 import '../storage/store_protocol.dart' show TrustLevel;
 import 'digest_service.dart';
 import 'presence_profile.dart';
+import 'presence_settings.dart';
 import 'she_network_protocol.dart';
 
-/// she.presence 广播与缓存（方案 §8.1：只广播类别，不暴露名单）。
+/// she.presence 广播与缓存（方案 §8.1：默认类别级；可选名单级）。
 class PresenceService {
   PresenceService._();
   static final PresenceService instance = PresenceService._();
@@ -67,12 +68,16 @@ class PresenceService {
   @visibleForTesting
   void putPresence(ShePresence p) => _cache[p.deviceId] = p;
 
+  @visibleForTesting
+  void clearCacheForTest() => _cache.clear();
+
   Future<ShePresence> buildLocalPresence(
       {String localizedSheName = 'She'}) async {
     final self = await DeviceIdentity.deviceId();
     final name = await DigestService.instance
         .localSheName(localizedDefault: localizedSheName);
     final profile = await _loadLocalProfile();
+    final settings = await PresenceSettings.load();
     return ShePresence(
       deviceId: self,
       sheName: name,
@@ -80,6 +85,7 @@ class PresenceService {
       agentCategories: profile.agentCategories,
       toolCategories: profile.toolCategories,
       agentCount: profile.agentCount,
+      agents: settings.shareRoster ? profile.agents : const [],
       updatedAtMs: DateTime.now().millisecondsSinceEpoch,
     );
   }
@@ -90,7 +96,9 @@ class PresenceService {
         return PresenceProfile.fallback;
       }
       final agents = await getIt<RemoteAgentService>().getAllAgents();
-      return aggregatePresenceProfile(agents);
+      // 只广播本机 Agent；peer 注入的镜像不进入 presence 名单。
+      return aggregatePresenceProfile(
+          agents.where((a) => !a.isPeerAgent));
     } catch (e) {
       _log.debug('presence profile fallback: $e', tag: _tag);
       return PresenceProfile.fallback;
@@ -128,6 +136,20 @@ class PresenceService {
         .toList();
   }
 
+  /// 按 Agent id 点名委托：返回名单中含该 id 的在线设备（不含本机）。
+  ///
+  /// 对端未开分享时 [ShePresence.agents] 为空，本方法自然选不到。
+  Future<List<ShePresence>> routeByAgentId(String agentId) async {
+    if (agentId.isEmpty) return const [];
+    final self = await DeviceIdentity.deviceId();
+    return _cache.values
+        .where((p) =>
+            p.deviceId != self &&
+            p.online &&
+            p.agents.any((a) => a.id == agentId))
+        .toList();
+  }
+
   Future<void> _onPeerConnected(String peerId) async {
     try {
       final peer = await _peerStorage.getPeerById(peerId);
@@ -154,6 +176,7 @@ class PresenceService {
         agentCategories: existing.agentCategories,
         toolCategories: existing.toolCategories,
         agentCount: existing.agentCount,
+        agents: existing.agents,
         updatedAtMs: DateTime.now().millisecondsSinceEpoch,
       );
     } catch (_) {}
@@ -176,6 +199,14 @@ class PresenceService {
       case SheOp.presence:
         final p = ShePresence.fromJson(frame.payload);
         if (p.deviceId.isEmpty) {
+          final rawAgents = frame.payload['agents'] as List? ?? const [];
+          final agents = <PresenceAgentEntry>[];
+          for (final e in rawAgents) {
+            if (e is! Map) continue;
+            final entry =
+                PresenceAgentEntry.fromJson(Map<String, dynamic>.from(e));
+            if (entry != null) agents.add(entry);
+          }
           _cache[peer.fingerprint] = ShePresence(
             deviceId: peer.fingerprint,
             sheName: frame.payload['she_name'] as String? ?? 'She',
@@ -187,6 +218,7 @@ class PresenceService {
                 (frame.payload['tool_categories'] as List?)?.cast<String>() ??
                     const [],
             agentCount: frame.payload['agent_count'] as int? ?? 0,
+            agents: agents,
             updatedAtMs: DateTime.now().millisecondsSinceEpoch,
           );
         } else {

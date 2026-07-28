@@ -353,20 +353,22 @@ master 定期（与日快照同节奏）或迁移后：将各 `<device_id>/<spac
 与 `store` 并列的 peer 控制帧命名空间（`type`/`ns` = `memory` 或 `she`），
 仅接受 **owner** 级配对；friend 一律拒绝（与 store 一致）。
 
-### 13.1 she.presence — 类别级能力画像
+### 13.1 she.presence — 能力画像（类别级 + 可选名单）
 
 ```json
 {"type":"she","ns":"she","op":"presence",
  "device":"<id>","she_name":"办公室的她","online":true,
  "agent_categories":["she","assistant"],
  "tool_categories":["filesystem","web","shell"],
- "agent_count":1,"updated_at":1721300000000}
+ "agent_count":2,
+ "agents":[{"id":"<agent_id>","name":"She","category":"she"}],
+ "updated_at":1721300000000}
 
 {"type":"she","ns":"she","op":"presence.query"}
 ```
 
-- 只广播**类别与数量**，不暴露具体 Agent 名单（方案 §8.1）。
-- 委托路由据此选择问谁；不足时再升级名单级（本期不做）。
+- 默认只广播**类别与数量**；用户开启分享名单后附带 `agents[]`（owner 级可见；friend 仍拒绝整帧）。
+- 委托路由：`routeByCategory` / `routeByAgentId`；点名复用现有 peer agent 审批链路。
 
 ### 13.2 memory.digest.offer — 蒸馏摘要交换
 

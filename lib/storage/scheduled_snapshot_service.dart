@@ -14,6 +14,7 @@ import 'mirror_reprotect_service.dart';
 import 'snapshot_crypto.dart';
 import 'snapshot_service.dart';
 import 'store_service.dart';
+import 'background_snapshot_scheduler.dart';
 
 /// 定期快照状态（UI 告警数据源）。
 class ScheduledSnapshotStatus {
@@ -55,10 +56,10 @@ class ScheduledSnapshotStatus {
 /// - App 启动（[ensureStarted] 立即 [checkNow]）；
 /// - 运行中每 6h Timer；
 /// - 从后台回到前台（[AppLifecycleService.onResume]）；
-/// - WiFi/以太网恢复稳定（[NetworkMonitorService.onNetworkSettled]，避免蜂窝流量）。
+/// - WiFi/以太网恢复稳定（[NetworkMonitorService.onNetworkSettled]，避免蜂窝流量）；
+/// - 移动端系统 BG：WorkManager / BGAppRefresh（[BackgroundSnapshotScheduler]，与上列同一入口去重）。
 ///
-/// 说明：`ForegroundTaskService` 仅用于 Agent 保活，不适合日快照；
-/// 系统级 BGAppRefresh / WorkManager 仍为后续可选。
+/// 说明：`ForegroundTaskService` 仅用于 Agent 保活，不接入日快照。
 ///
 /// - 密钥：用 [SnapshotCrypto.cachedPasswordHash]（手动验密时已缓存），
 ///   无缓存则跳过并等待用户手动快照一次；
@@ -107,6 +108,8 @@ class ScheduledSnapshotService {
     });
     _timer = Timer.periodic(_checkInterval, (_) => unawaited(checkNow()));
     unawaited(checkNow());
+    // 系统 BG（不替代上列前台路径）
+    unawaited(BackgroundSnapshotScheduler.ensureRegistered());
   }
 
   Future<void> stop() async {

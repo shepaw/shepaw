@@ -19,6 +19,12 @@ type PeerRPC interface {
 	Call(deviceID, op string, payload map[string]any) (map[string]any, error)
 }
 
+// PeerEnsure dials a paired peer when not already connected (outbound reconnect).
+type PeerEnsure interface {
+	Ensure(deviceID string) error
+	Release(deviceID string)
+}
+
 const (
 	mirrorSeedListLimit       = 50000
 	maxReportedHashMismatches = 50
@@ -31,10 +37,23 @@ func (l *Local) SetPeerRPC(rpc PeerRPC) {
 	l.peerRPC = rpc
 }
 
+// SetPeerEnsure attaches outbound dialer used when old master is not inbound.
+func (l *Local) SetPeerEnsure(e PeerEnsure) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.peerEnsure = e
+}
+
 func (l *Local) getPeerRPC() PeerRPC {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	return l.peerRPC
+}
+
+func (l *Local) getPeerEnsure() PeerEnsure {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.peerEnsure
 }
 
 // MergeCursors advances each device applied_seq to max(local, seed) (Dart seed semantics).
@@ -78,21 +97,33 @@ func (l *Local) masterMigrate(frame protocol.Frame) (map[string]any, error) {
 	reachable := false
 	seededFiles := 0
 	hashGate := skippedHashGate()
+	dialErr := ""
 	rpc := l.getPeerRPC()
-	if rpc != nil && protocol.IsValidDeviceID(oldMaster) && oldMaster != l.DeviceID && rpc.Has(oldMaster) {
-		n, deviceIDs, err := l.seedFromLiveMaster(rpc, oldMaster)
-		if err != nil {
-			log.Printf("master.migrate seed from %s: %v", oldMaster, err)
-		} else {
-			reachable = true
-			seededFiles = n
-			hashGate = l.runHashGate(rpc, oldMaster, deviceIDs)
-			if requireMatch {
-				ok, _ := hashGate["ok"].(bool)
-				if !ok {
-					return nil, &OpError{
-						Code: "hash_gate",
-						Msg:  "hash gate failed: mismatches present",
+	ensure := l.getPeerEnsure()
+	if rpc != nil && protocol.IsValidDeviceID(oldMaster) && oldMaster != l.DeviceID {
+		if !rpc.Has(oldMaster) && ensure != nil {
+			if err := ensure.Ensure(oldMaster); err != nil {
+				log.Printf("master.migrate dial old master %s: %v", oldMaster, err)
+				dialErr = err.Error()
+			} else {
+				defer ensure.Release(oldMaster)
+			}
+		}
+		if rpc.Has(oldMaster) {
+			n, deviceIDs, err := l.seedFromLiveMaster(rpc, oldMaster)
+			if err != nil {
+				log.Printf("master.migrate seed from %s: %v", oldMaster, err)
+			} else {
+				reachable = true
+				seededFiles = n
+				hashGate = l.runHashGate(rpc, oldMaster, deviceIDs)
+				if requireMatch {
+					ok, _ := hashGate["ok"].(bool)
+					if !ok {
+						return nil, &OpError{
+							Code: "hash_gate",
+							Msg:  "hash gate failed: mismatches present",
+						}
 					}
 				}
 			}
@@ -115,7 +146,7 @@ func (l *Local) masterMigrate(frame protocol.Frame) (map[string]any, error) {
 	for k, v := range cursorsRaw {
 		cursors[k] = v
 	}
-	return map[string]any{
+	out := map[string]any{
 		"master":               l.DeviceID,
 		"epoch":                epoch,
 		"old_master_reachable": reachable,
@@ -123,7 +154,11 @@ func (l *Local) masterMigrate(frame protocol.Frame) (map[string]any, error) {
 		"broadcast_peers":      0,
 		"seeded_files":         seededFiles,
 		"hash_gate":            hashGate,
-	}, nil
+	}
+	if dialErr != "" {
+		out["dial_error"] = dialErr
+	}
+	return out, nil
 }
 
 func (l *Local) seedFromLiveMaster(rpc PeerRPC, oldMaster string) (int, []string, error) {

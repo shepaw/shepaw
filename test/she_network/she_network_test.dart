@@ -7,6 +7,7 @@ import 'package:shepaw/she_network/digest_service.dart';
 import 'package:shepaw/she_network/exchange_settings.dart';
 import 'package:shepaw/she_network/presence_profile.dart';
 import 'package:shepaw/she_network/presence_service.dart';
+import 'package:shepaw/she_network/presence_settings.dart';
 import 'package:shepaw/she_network/she_network_protocol.dart';
 import 'package:shepaw/storage/store_protocol.dart'
     show BadPathException, TrustLevel, normalizeStorePath;
@@ -51,6 +52,34 @@ void main() {
       expect(ShePresence.fromJson(sp.payload).sheName, '办公室的她');
     });
 
+    test('ShePresence 可选 agents 名单编解码', () {
+      final s = ShePresence(
+        deviceId: 'cccccccccccccccc',
+        sheName: '书房的她',
+        online: true,
+        agentCategories: const ['she', 'assistant'],
+        toolCategories: const ['web'],
+        agentCount: 2,
+        agents: const [
+          PresenceAgentEntry(id: 'a1', name: 'She', category: 'she'),
+          PresenceAgentEntry(id: 'a2', name: 'Helper', category: 'assistant'),
+        ],
+      );
+      final round = ShePresence.fromJson(s.toJson());
+      expect(round.agents.length, 2);
+      expect(round.agents.first.name, 'She');
+      // 无 agents 字段时兼容旧 payload
+      final legacy = ShePresence.fromJson({
+        'device': 'd',
+        'she_name': 'x',
+        'online': true,
+        'agent_categories': ['she'],
+        'tool_categories': [],
+        'agent_count': 1,
+      });
+      expect(legacy.agents, isEmpty);
+    });
+
     test('friend 拒绝 memory/she', () {
       expect(memorySheAllowed(TrustLevel.owner), isTrue);
       expect(memorySheAllowed(TrustLevel.friend), isFalse);
@@ -82,9 +111,13 @@ void main() {
     });
   });
 
-  group('PresenceService.routeByCategory', () {
+  group('PresenceService.routeByCategory / routeByAgentId', () {
     setUpAll(() async {
       await StorageTestHarness.init();
+    });
+
+    setUp(() {
+      PresenceService.instance.clearCacheForTest();
     });
 
     test('三设备：按类别选目标（不含离线）', () async {
@@ -122,6 +155,45 @@ void main() {
       expect(web.map((e) => e.deviceId), contains('2222222222222222'));
       expect(web.map((e) => e.deviceId), isNot(contains('3333333333333333')));
     });
+
+    test('按 Agent id 点名（需名单；离线排除）', () async {
+      final svc = PresenceService.instance;
+      svc.putPresence(ShePresence(
+        deviceId: '1111111111111111',
+        sheName: 'A',
+        online: true,
+        agentCategories: const ['she'],
+        toolCategories: const [],
+        agentCount: 1,
+        agents: const [
+          PresenceAgentEntry(id: 'agent-she', name: 'She', category: 'she'),
+        ],
+      ));
+      svc.putPresence(ShePresence(
+        deviceId: '2222222222222222',
+        sheName: 'B',
+        online: true,
+        agentCategories: const ['assistant'],
+        toolCategories: const [],
+        agentCount: 1,
+        // 未开分享 → 无名单
+      ));
+      svc.putPresence(ShePresence(
+        deviceId: '3333333333333333',
+        sheName: 'C',
+        online: false,
+        agentCategories: const ['she'],
+        toolCategories: const [],
+        agentCount: 1,
+        agents: const [
+          PresenceAgentEntry(id: 'agent-she', name: 'She', category: 'she'),
+        ],
+      ));
+
+      final hit = await svc.routeByAgentId('agent-she');
+      expect(hit.map((e) => e.deviceId), ['1111111111111111']);
+      expect(await svc.routeByAgentId('missing'), isEmpty);
+    });
   });
 
   group('aggregatePresenceProfile', () {
@@ -131,7 +203,7 @@ void main() {
       expect(p.agentCategories, contains('she'));
     });
 
-    test('从 isShe / os tools 聚合类别，不暴露名单', () {
+    test('从 isShe / os tools 聚合类别与名单', () {
       final now = DateTime.now();
       final she = RemoteAgent(
         id: 'a1',
@@ -166,7 +238,23 @@ void main() {
       expect(p.agentCount, 2);
       expect(p.agentCategories, ['assistant', 'she']);
       expect(p.toolCategories, containsAll(['filesystem', 'shell', 'web']));
-      expect(p.agentCategories, isNot(contains('a1')));
+      expect(p.agents.map((a) => a.id), ['a1', 'a2']);
+      expect(p.agents.map((a) => a.name), ['She', 'Helper']);
+    });
+  });
+
+  group('PresenceSettings', () {
+    setUpAll(() async {
+      await StorageTestHarness.init();
+    });
+
+    test('share_roster 默认关闭并可持久化', () async {
+      final off = PresenceSettings(shareRoster: false);
+      await off.save();
+      expect((await PresenceSettings.load()).shareRoster, isFalse);
+      await PresenceSettings(shareRoster: true).save();
+      expect((await PresenceSettings.load()).shareRoster, isTrue);
+      await PresenceSettings(shareRoster: false).save();
     });
   });
 

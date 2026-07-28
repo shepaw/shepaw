@@ -28,6 +28,7 @@ type Local struct {
 	imports  *importAuth
 	cursors  *deviceCursors
 	peerRPC  PeerRPC
+	peerEnsure PeerEnsure
 }
 
 type upload struct {

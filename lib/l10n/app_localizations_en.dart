@@ -5452,4 +5452,19 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get storage_noOwnerPeers => 'No owner-paired devices';
+
+  @override
+  String get storage_sharePresenceRoster => 'Share agent roster with circle';
+
+  @override
+  String get storage_sharePresenceRosterHint =>
+      'When off, only categories and counts are broadcast. When on, owners see local agent names and can route by name.';
+
+  @override
+  String storage_presenceAgents(String names) {
+    return 'Agents: $names';
+  }
+
+  @override
+  String get storage_pickDelegateAgent => 'Pick an agent to delegate';
 }

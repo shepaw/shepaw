@@ -56,7 +56,7 @@ td, th { text-align: left; padding: .35rem .25rem; border-bottom: 1px solid
       <button id="promoteMaster">升为本机 master</button>
     </div>
     <div class="row" style="justify-content:space-between;margin-bottom:.5rem">
-      <span class="muted">启动时会自动 GC；也可手动触发。升主时若旧 master 在线会经 /peer/ws 拉游标与镜像种子；并 fanout master.pointer。离线端靠重连 query 改指。</span>
+      <span class="muted">启动时会自动 GC；也可手动触发。升主时若旧 master 未入站会按配对端点主动拨号再 seed；并 fanout master.pointer。离线端靠重连 query 改指。</span>
       <button id="runGc">GC staging/回收站</button>
     </div>
     <pre id="stats">…</pre>
@@ -415,6 +415,7 @@ $('promoteMaster').onclick = async () => {
       ' · 推送 ' + (out.broadcast_peers||0) +
       ' · 种子文件 ' + (out.seeded_files||0) +
       (out.old_master_reachable ? '（旧 master 在线）' : '（旧 master 未在线）') +
+      (out.dial_error ? (' · 拨号失败: ' + out.dial_error) : '') +
       (out.hash_gate && out.hash_gate.ran
         ? (' · 哈希门闩 mismatches=' + (out.hash_gate.mismatch_count||0) +
            (out.hash_gate.ok ? ' ok' : ' 有缺口'))

@@ -59,6 +59,8 @@ func main() {
 	localEndpoint := peer.AdvertiseLocalWS(*listen)
 	channelEndpoint := strings.TrimSpace(*channel)
 	s.SetPeerRPC(sessions)
+	dialer := peer.NewDialer(identity, peers, sessions, localEndpoint, channelEndpoint)
+	s.SetPeerEnsure(dialer)
 	peerSrv := &peer.Server{
 		Store:           s,
 		Hub:             hub,

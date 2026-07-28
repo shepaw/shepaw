@@ -16,8 +16,12 @@ import '../she_network/digest_service.dart';
 import '../she_network/exchange_settings.dart';
 import '../she_network/external_memory_store.dart';
 import '../she_network/memory_exchange_service.dart';
+import '../she_network/presence_profile.dart' show PresenceAgentEntry;
 import '../she_network/presence_service.dart';
+import '../she_network/presence_settings.dart';
 import '../she_network/she_network_protocol.dart';
+import '../peer/services/peer_agent_client_service.dart' show peerAgentLocalId;
+import 'remote_agent_detail_screen.dart';
 import '../storage/device_cursor_store.dart';
 import '../storage/device_identity.dart';
 import '../storage/import_auth_service.dart';
@@ -72,6 +76,7 @@ class _StorageSpaceScreenState extends State<StorageSpaceScreen> {
   // M8 她的朋友圈
   ExchangeSettings _exchange =
       ExchangeSettings(enabled: false, kinds: {...DigestKind.all});
+  PresenceSettings _presenceSettings = PresenceSettings(shareRoster: false);
   List<PairedPeer> _ownerPeers = [];
   Map<String, int> _extCounts = {};
   String _localSheName = SheService.sheName;
@@ -142,8 +147,9 @@ class _StorageSpaceScreenState extends State<StorageSpaceScreen> {
           .map((e) => (e as Map).cast<String, dynamic>())
           .toList();
     }
-    // M8：交换设置 + owner 同伴 + 外部记忆计数
+    // M8：交换设置 + presence 名单开关 + owner 同伴 + 外部记忆计数
     _exchange = await ExchangeSettings.load();
+    _presenceSettings = await PresenceSettings.load();
     final peers = await PeerStorageService().loadAllPeers();
     _ownerPeers =
         peers.where((p) => p.trustLevel == TrustLevel.owner).toList();
@@ -1104,6 +1110,24 @@ class _StorageSpaceScreenState extends State<StorageSpaceScreen> {
                       setState(() => _exchange = next);
                     },
             ),
+            SwitchListTile(
+              contentPadding: EdgeInsets.zero,
+              title: Text(l10n.storage_sharePresenceRoster),
+              subtitle: Text(l10n.storage_sharePresenceRosterHint,
+                  style: Theme.of(context).textTheme.bodySmall),
+              value: _presenceSettings.shareRoster,
+              onChanged: _busy
+                  ? null
+                  : (v) async {
+                      final next =
+                          _presenceSettings.copyWith(shareRoster: v);
+                      await next.save();
+                      setState(() => _presenceSettings = next);
+                      await PresenceService.instance.broadcastNow(
+                          localizedSheName: l10n.she_name);
+                      if (mounted) setState(() {});
+                    },
+            ),
             Text(l10n.storage_exchangeKinds,
                 style: Theme.of(context).textTheme.bodySmall),
             const SizedBox(height: 4),
@@ -1159,6 +1183,9 @@ class _StorageSpaceScreenState extends State<StorageSpaceScreen> {
                     '${_presenceSubtitle(l10n, p)}',
                   ),
                   dense: true,
+                  onTap: p != null && p.agents.isNotEmpty
+                      ? () => _pickDelegateAgent(l10n, peer, p)
+                      : null,
                 );
               }),
           ],
@@ -1176,7 +1203,51 @@ class _StorageSpaceScreenState extends State<StorageSpaceScreen> {
       ...p.toolCategories,
     ];
     final catPart = cats.isEmpty ? '' : ' · ${cats.join('/')}';
-    return ' · ${p.agentCount}$catPart';
+    final rosterPart = p.agents.isEmpty
+        ? ''
+        : ' · ${l10n.storage_presenceAgents(p.agents.map((a) => a.name).join(', '))}';
+    return ' · ${p.agentCount}$catPart$rosterPart';
+  }
+
+  Future<void> _pickDelegateAgent(
+    AppLocalizations l10n,
+    PairedPeer peer,
+    ShePresence presence,
+  ) async {
+    final picked = await showModalBottomSheet<PresenceAgentEntry>(
+      context: context,
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(title: Text(l10n.storage_pickDelegateAgent)),
+            for (final a in presence.agents)
+              ListTile(
+                title: Text(a.name),
+                subtitle: Text(a.category),
+                onTap: () => Navigator.pop(ctx, a),
+              ),
+          ],
+        ),
+      ),
+    );
+    if (picked == null || !mounted) return;
+    // 复用现有 peer agent 注入 id；点名打开对端 Agent 详情（审批/对话链路不变）。
+    final localId = peerAgentLocalId(peer.id, picked.id);
+    try {
+      final agent = await getIt<RemoteAgentService>().getAgentById(localId);
+      if (agent == null || !mounted) {
+        _toast(l10n.storage_presenceOffline);
+        return;
+      }
+      await Navigator.of(context).push(
+        MaterialPageRoute<void>(
+          builder: (_) => RemoteAgentDetailScreen(agent: agent),
+        ),
+      );
+    } catch (e) {
+      _toast('$e');
+    }
   }
 
   String _kindLabel(AppLocalizations l10n, String kind) {

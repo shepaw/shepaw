@@ -1,6 +1,8 @@
 /// memory.* / she.* 帧模型与 ACL（docs/storage_space_plan.md §8，M8）。
 library;
 
+import 'presence_profile.dart' show PresenceAgentEntry;
+
 /// peer 控制帧 type / ns。
 const String kMemoryControlType = 'memory';
 const String kSheControlType = 'she';
@@ -142,7 +144,7 @@ class SheFrame {
   }
 }
 
-/// 类别级能力画像（方案 §8.1：不暴露具体 Agent 名单）。
+/// 能力画像（方案 §8.1：默认类别级；开启分享后附带 Agent 名单）。
 class ShePresence {
   ShePresence({
     required this.deviceId,
@@ -151,6 +153,7 @@ class ShePresence {
     required this.agentCategories,
     required this.toolCategories,
     required this.agentCount,
+    this.agents = const [],
     this.updatedAtMs = 0,
   });
 
@@ -160,6 +163,9 @@ class ShePresence {
   final List<String> agentCategories;
   final List<String> toolCategories;
   final int agentCount;
+
+  /// 可选名单（对端未开分享时为空）。
+  final List<PresenceAgentEntry> agents;
   final int updatedAtMs;
 
   Map<String, dynamic> toJson() => <String, dynamic>{
@@ -169,20 +175,33 @@ class ShePresence {
         'agent_categories': agentCategories,
         'tool_categories': toolCategories,
         'agent_count': agentCount,
+        if (agents.isNotEmpty)
+          'agents': [for (final a in agents) a.toJson()],
         'updated_at': updatedAtMs,
       };
 
-  static ShePresence fromJson(Map<String, dynamic> json) => ShePresence(
-        deviceId: json['device'] as String? ?? '',
-        sheName: json['she_name'] as String? ?? 'She',
-        online: json['online'] as bool? ?? false,
-        agentCategories:
-            (json['agent_categories'] as List?)?.cast<String>() ?? const [],
-        toolCategories:
-            (json['tool_categories'] as List?)?.cast<String>() ?? const [],
-        agentCount: json['agent_count'] as int? ?? 0,
-        updatedAtMs: json['updated_at'] as int? ?? 0,
-      );
+  static ShePresence fromJson(Map<String, dynamic> json) {
+    final rawAgents = json['agents'] as List? ?? const [];
+    final agents = <PresenceAgentEntry>[];
+    for (final e in rawAgents) {
+      if (e is! Map) continue;
+      final entry =
+          PresenceAgentEntry.fromJson(Map<String, dynamic>.from(e));
+      if (entry != null) agents.add(entry);
+    }
+    return ShePresence(
+      deviceId: json['device'] as String? ?? '',
+      sheName: json['she_name'] as String? ?? 'She',
+      online: json['online'] as bool? ?? false,
+      agentCategories:
+          (json['agent_categories'] as List?)?.cast<String>() ?? const [],
+      toolCategories:
+          (json['tool_categories'] as List?)?.cast<String>() ?? const [],
+      agentCount: json['agent_count'] as int? ?? 0,
+      agents: agents,
+      updatedAtMs: json['updated_at'] as int? ?? 0,
+    );
+  }
 }
 
 /// friend 级一律拒绝 memory/she（与 store 一致）。

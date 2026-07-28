@@ -2771,5 +2771,14 @@
     }
   },
   "storage_presenceOffline": "No online presence yet",
-  "storage_noOwnerPeers": "No owner-paired devices"
+  "storage_noOwnerPeers": "No owner-paired devices",
+  "storage_sharePresenceRoster": "Share agent roster with circle",
+  "storage_sharePresenceRosterHint": "When off, only categories and counts are broadcast. When on, owners see local agent names and can route by name.",
+  "storage_presenceAgents": "Agents: {names}",
+  "@storage_presenceAgents": {
+    "placeholders": {
+      "names": { "type": "String" }
+    }
+  },
+  "storage_pickDelegateAgent": "Pick an agent to delegate"
 }

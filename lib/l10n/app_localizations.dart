@@ -9511,6 +9511,30 @@ abstract class AppLocalizations {
   /// In zh, this message translates to:
   /// **'暂无 owner 级配对设备'**
   String get storage_noOwnerPeers;
+
+  /// No description provided for @storage_sharePresenceRoster.
+  ///
+  /// In zh, this message translates to:
+  /// **'向圈子分享 Agent 名单'**
+  String get storage_sharePresenceRoster;
+
+  /// No description provided for @storage_sharePresenceRosterHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'关闭时仅广播类别与数量；开启后 owner 可见本机 Agent 名称并可点名委托。'**
+  String get storage_sharePresenceRosterHint;
+
+  /// No description provided for @storage_presenceAgents.
+  ///
+  /// In zh, this message translates to:
+  /// **'Agent：{names}'**
+  String storage_presenceAgents(String names);
+
+  /// No description provided for @storage_pickDelegateAgent.
+  ///
+  /// In zh, this message translates to:
+  /// **'选择委托 Agent'**
+  String get storage_pickDelegateAgent;
 }
 
 class _AppLocalizationsDelegate
