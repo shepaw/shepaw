@@ -32,8 +32,8 @@ class MirrorSeedService {
   }
 
   /// 从 [oldMasterId] 拉取 [deviceIds] 各分区文件；跳过本机目录与已一致文件。
-  /// 返回成功写入的文件数。
-  Future<int> seedFromOldMaster({
+  /// 返回成功写入的文件数，以及**完整成功**（四分区均无抛错）的设备集合。
+  Future<({int written, Set<String> completedDevices})> seedFromOldMaster({
     required String oldMasterId,
     required Iterable<String> deviceIds,
     LocalStore? store,
@@ -41,9 +41,14 @@ class MirrorSeedService {
     final local = store ?? await StoreService.instance.localStore();
     final self = await DeviceIdentity.deviceId();
     var written = 0;
+    final completed = <String>{};
     for (final deviceId in deviceIds) {
       if (!isValidDeviceId(deviceId)) continue;
-      if (deviceId == self) continue; // 本机目录已是权威
+      if (deviceId == self) {
+        completed.add(deviceId); // 本机目录已是权威
+        continue;
+      }
+      var deviceOk = true;
       for (final space in StoreSpace.all) {
         try {
           written += await _seedSpace(
@@ -53,15 +58,19 @@ class MirrorSeedService {
             local: local,
           );
         } catch (e, st) {
+          deviceOk = false;
           _log.warning(
               'seed $deviceId/$space failed: $e', tag: _tag);
           _log.debug('$st', tag: _tag);
         }
       }
+      if (deviceOk) completed.add(deviceId);
     }
-    _log.info('mirror seed done: wrote $written files from $oldMasterId',
+    _log.info(
+        'mirror seed done: wrote $written files from $oldMasterId '
+        '(completed=${completed.length})',
         tag: _tag);
-    return written;
+    return (written: written, completedDevices: completed);
   }
 
   Future<int> _seedSpace({

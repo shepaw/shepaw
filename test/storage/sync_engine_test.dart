@@ -77,13 +77,33 @@ class FakeMaster {
           if (applied != null) 'applied_seq': applied,
         };
       case StoreOp.delete:
-        await _silent(() => store.delete(caller, frame.payload['space'] as String,
-            frame.payload['path'] as String));
+        try {
+          await _silent(() => store.delete(caller, frame.payload['space'] as String,
+              frame.payload['path'] as String));
+        } on StoreException catch (e) {
+          if (e.code != StoreError.notFound) rethrow;
+          final upto = frame.payload['upto_seq'] as int?;
+          return {
+            'recycled': '',
+            'already_gone': true,
+            if (upto != null) 'applied_seq': await cursors.advance(caller, upto),
+          };
+        }
         final upto = frame.payload['upto_seq'] as int?;
         return {
           'recycled': '.recycle/x',
           if (upto != null) 'applied_seq': await cursors.advance(caller, upto),
         };
+      case StoreOp.meta:
+        try {
+          return await store.meta(
+            frame.payload['device'] as String? ?? caller,
+            frame.payload['space'] as String,
+            frame.payload['path'] as String,
+          );
+        } on StoreException catch (e) {
+          return {'_error': e.code};
+        }
       default:
         return {'_error': 'unsupported'};
     }
@@ -246,6 +266,54 @@ void main() {
     expect(await masterStore.list(selfId, 'files'), isEmpty);
     final recycle = await masterStore.recycleList();
     expect(recycle.any((e) => e.originPath == 'd.txt'), isTrue);
+  });
+
+  test('删除幂等：master 已无文件时重放仍成功出队', () async {
+    await clientCommit('gone.txt', bytesOf('g'));
+    await engine.syncNow();
+    // 模拟 master 侧已被别处删除（不经本机 journal）
+    final prev = LocalStore.syncJournal;
+    LocalStore.syncJournal = null;
+    await masterStore.delete(selfId, 'files', 'gone.txt');
+    LocalStore.syncJournal = prev;
+    await clientStore.delete(selfId, 'files', 'gone.txt');
+    await engine.syncNow();
+    expect((await engine.journal!.pending()), isEmpty);
+    expect((await engine.journal!.cursors()).ackSeq, 2);
+  });
+
+  test('ack 自愈：master applied 落后时回退 ack 并差量重推', () async {
+    final c = bytesOf('heal-me');
+    await clientCommit('heal.txt', c);
+    await engine.syncNow();
+    expect((await engine.journal!.cursors()).ackSeq, 1);
+
+    // 模拟新 master：游标落后且缺 blob（种子缺口）
+    final prev = LocalStore.syncJournal;
+    LocalStore.syncJournal = null;
+    await masterStore.delete(selfId, 'files', 'heal.txt');
+    LocalStore.syncJournal = prev;
+    final cursorFile =
+        File(p.join(masterRoot.path, '.system', 'device_cursors.json'));
+    await cursorFile.parent.create(recursive: true);
+    await cursorFile.writeAsString(jsonEncode({selfId: 0}));
+    master = FakeMaster(masterStore, DeviceCursorStore(storeRoot: masterRoot));
+    transport = FakeTransport(master, selfId);
+    await engine.stop();
+    LocalStore.syncJournal = null;
+    engine = SyncEngine();
+    await engine.start(
+      storeRoot: clientRoot,
+      store: clientStore,
+      transport: transport,
+      masterDeviceIdFn: () async => 'ffffffffffffffff',
+      autoSync: false,
+    );
+    expect((await engine.journal!.cursors()).ackSeq, 1);
+
+    await engine.syncNow();
+    expect(await masterReadAll('heal.txt', c.length), c);
+    expect(await master.cursors.appliedSeq(selfId), greaterThanOrEqualTo(1));
   });
 
   test('上传失败保序：失败条目留队，恢复后从断点续传', () async {

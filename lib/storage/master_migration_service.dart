@@ -98,11 +98,18 @@ class MasterMigrationService {
             deviceIds.addAll(devices.cast<String>());
           }
         } catch (_) {}
-        seededFiles = await MirrorSeedService.instance.seedFromOldMaster(
+        final seedResult = await MirrorSeedService.instance.seedFromOldMaster(
           oldMasterId: oldMaster,
           deviceIds: deviceIds,
           store: store,
         );
+        seededFiles = seedResult.written;
+        // B2：仅合并种子完整成功的设备游标，避免部分失败后 applied_seq 虚高丢同步
+        seed = {
+          for (final e in seed.entries)
+            if (seedResult.completedDevices.contains(e.key) || e.key == self)
+              e.key: e.value,
+        };
         hashGate = await MirrorHashGate.instance.verify(
           oldMasterId: oldMaster,
           deviceIds: deviceIds,

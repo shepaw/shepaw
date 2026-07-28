@@ -19,12 +19,10 @@ func TestImportRequestGrantAndPrivateRead(t *testing.T) {
 	}
 
 	// seed old device private file on this master mirror
+	body := []byte(`{"ok":true}`)
 	begin, err := s.Handle(protocol.Frame{
-		Op: "write.begin",
-		Payload: map[string]any{
-			"space": "backups",
-			"path":  "snap/manifest.json",
-		},
+		Op:      "write.begin",
+		Payload: writeBeginPayload("backups", "snap/manifest.json", body),
 	}, oldDev, protocol.TrustOwner, true)
 	if err != nil {
 		t.Fatal(err)
@@ -34,7 +32,8 @@ func TestImportRequestGrantAndPrivateRead(t *testing.T) {
 		Op: "write.chunk",
 		Payload: map[string]any{
 			"upload_id": id,
-			"data":      base64.StdEncoding.EncodeToString([]byte(`{"ok":true}`)),
+			"offset":    0,
+			"data":      base64.StdEncoding.EncodeToString(body),
 		},
 	}, oldDev, protocol.TrustOwner, true)
 	if err != nil {

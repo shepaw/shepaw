@@ -143,6 +143,16 @@ class SyncEngine {
           payload: {'device': _deviceId}));
       if (hello == null || hello.containsKey('_error')) return;
       final applied = hello['applied_seq'] as int? ?? 0;
+      final local = await journal.cursors();
+
+      // B2：master applied 落后于本地 ack → 回退 ack，并重推本地正式区差量
+      if (applied < local.ackSeq) {
+        _log.warning(
+            'heal: master applied_seq=$applied < local ack=${local.ackSeq}',
+            tag: _tag);
+        await journal.resetAckTo(applied);
+        await _reconcileLocalToMaster(applied);
+      }
 
       final pending = await journal.pending();
       for (final entry in pending) {
@@ -235,7 +245,45 @@ class SyncEngine {
           'path': entry.path,
           'upto_seq': entry.seq,
         }));
-    return res != null && !res.containsKey('_error');
+    if (res == null) return false;
+    final err = res['_error'];
+    // 幂等：已删除 / 本就不存在 → 视为成功（重放不死锁）
+    if (err == StoreError.notFound) return true;
+    return !res.containsKey('_error');
+  }
+
+  /// master applied 落后时：按 hash 对账本机正式区并差量重推。
+  Future<void> _reconcileLocalToMaster(int appliedSeq) async {
+    final store = _store;
+    final deviceId = _deviceId;
+    final transport = _transport;
+    final journal = _journal;
+    if (store == null || deviceId == null || transport == null || journal == null) {
+      return;
+    }
+    for (final space in StoreSpace.all) {
+      final entries = await store.list(deviceId, space);
+      for (final e in entries) {
+        final meta = await transport.call(StoreFrame(
+          op: StoreOp.meta,
+          payload: {
+            'space': space,
+            'device': deviceId,
+            'path': e.path,
+          },
+        ));
+        final remoteSha = meta?['sha256'] as String?;
+        if (meta != null &&
+            !meta.containsKey('_error') &&
+            remoteSha == e.sha256) {
+          continue;
+        }
+        // 缺或 hash 不一致 → 重新入队（新 seq），稍后按序上传
+        await journal.appendCommit(deviceId, space, [
+          (path: e.path, size: e.size, sha256: e.sha256),
+        ]);
+      }
+    }
   }
 
   Future<Uint8List?> _readLocalAll(

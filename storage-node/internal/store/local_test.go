@@ -2,6 +2,7 @@ package store_test
 
 import (
 	"encoding/base64"
+	"fmt"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -19,22 +20,20 @@ func TestWriteCommitRead(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	payload := []byte("hello-storage-node")
 	begin, err := s.Handle(protocol.Frame{
-		Op: "write.begin",
-		Payload: map[string]any{
-			"space": "artifacts",
-			"path":  "task-1/hello.txt",
-		},
+		Op:      "write.begin",
+		Payload: writeBeginPayload("artifacts", "task-1/hello.txt", payload),
 	}, device, protocol.TrustOwner, true)
 	if err != nil {
 		t.Fatal(err)
 	}
 	id := begin["upload_id"].(string)
-	payload := []byte("hello-storage-node")
 	_, err = s.Handle(protocol.Frame{
 		Op: "write.chunk",
 		Payload: map[string]any{
 			"upload_id": id,
+			"offset":    0,
 			"data":      base64.StdEncoding.EncodeToString(payload),
 		},
 	}, device, protocol.TrustOwner, true)
@@ -84,12 +83,10 @@ func TestDeleteRestoreRecycleEmpty(t *testing.T) {
 	}
 	writeFile := func(path, body string) {
 		t.Helper()
+		raw := []byte(body)
 		begin, err := s.Handle(protocol.Frame{
-			Op: "write.begin",
-			Payload: map[string]any{
-				"space": "artifacts",
-				"path":  path,
-			},
+			Op:      "write.begin",
+			Payload: writeBeginPayload("artifacts", path, raw),
 		}, device, protocol.TrustOwner, true)
 		if err != nil {
 			t.Fatal(err)
@@ -99,7 +96,8 @@ func TestDeleteRestoreRecycleEmpty(t *testing.T) {
 			Op: "write.chunk",
 			Payload: map[string]any{
 				"upload_id": id,
-				"data":      base64.StdEncoding.EncodeToString([]byte(body)),
+				"offset":    0,
+				"data":      base64.StdEncoding.EncodeToString(raw),
 			},
 		}, device, protocol.TrustOwner, true)
 		if err != nil {
@@ -231,12 +229,10 @@ func TestCommitRetentionKeepLast(t *testing.T) {
 		t.Fatal(err)
 	}
 	put := func(path string) {
+		raw := []byte("x")
 		begin, err := s.Handle(protocol.Frame{
-			Op: "write.begin",
-			Payload: map[string]any{
-				"space": "backups",
-				"path":  path,
-			},
+			Op:      "write.begin",
+			Payload: writeBeginPayload("backups", path, raw),
 		}, device, protocol.TrustOwner, true)
 		if err != nil {
 			t.Fatal(err)
@@ -246,7 +242,8 @@ func TestCommitRetentionKeepLast(t *testing.T) {
 			Op: "write.chunk",
 			Payload: map[string]any{
 				"upload_id": id,
-				"data":      base64.StdEncoding.EncodeToString([]byte("x")),
+				"offset":    0,
+				"data":      base64.StdEncoding.EncodeToString(raw),
 			},
 		}, device, protocol.TrustOwner, true)
 		if err != nil {
@@ -269,12 +266,10 @@ func TestCommitRetentionKeepLast(t *testing.T) {
 	put("snap-2/f.txt")
 	time.Sleep(5 * time.Millisecond)
 
+	rawY := []byte("y")
 	begin, err := s.Handle(protocol.Frame{
-		Op: "write.begin",
-		Payload: map[string]any{
-			"space": "backups",
-			"path":  "snap-3/f.txt",
-		},
+		Op:      "write.begin",
+		Payload: writeBeginPayload("backups", "snap-3/f.txt", rawY),
 	}, device, protocol.TrustOwner, true)
 	if err != nil {
 		t.Fatal(err)
@@ -284,7 +279,8 @@ func TestCommitRetentionKeepLast(t *testing.T) {
 		Op: "write.chunk",
 		Payload: map[string]any{
 			"upload_id": id,
-			"data":      base64.StdEncoding.EncodeToString([]byte("y")),
+			"offset":    0,
+			"data":      base64.StdEncoding.EncodeToString(rawY),
 		},
 	}, device, protocol.TrustOwner, true)
 	if err != nil {
@@ -478,12 +474,10 @@ func TestSyncHelloAndUptoSeq(t *testing.T) {
 		t.Fatalf("want 0, got %v", hello["applied_seq"])
 	}
 
+	rawHi := []byte("hi")
 	begin, err := s.Handle(protocol.Frame{
-		Op: "write.begin",
-		Payload: map[string]any{
-			"space": "files",
-			"path":  "sync.txt",
-		},
+		Op:      "write.begin",
+		Payload: writeBeginPayload("files", "sync.txt", rawHi),
 	}, device, protocol.TrustOwner, true)
 	if err != nil {
 		t.Fatal(err)
@@ -493,7 +487,8 @@ func TestSyncHelloAndUptoSeq(t *testing.T) {
 		Op: "write.chunk",
 		Payload: map[string]any{
 			"upload_id": id,
-			"data":      base64.StdEncoding.EncodeToString([]byte("hi")),
+			"offset":    0,
+			"data":      base64.StdEncoding.EncodeToString(rawHi),
 		},
 	}, device, protocol.TrustOwner, true)
 	if err != nil {
@@ -567,28 +562,40 @@ func TestGcStagingAndRecycle(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	oldStaging := filepath.Join(root, device, "files", ".staging", "old-upload")
-	if err := os.MkdirAll(oldStaging, 0o755); err != nil {
+	staging := filepath.Join(root, device, "files", ".staging")
+	if err := os.MkdirAll(staging, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	_ = os.WriteFile(filepath.Join(oldStaging, "blob"), []byte("x"), 0o644)
 	oldTime := time.Now().Add(-48 * time.Hour)
-	_ = os.Chtimes(oldStaging, oldTime, oldTime)
-
-	fresh := filepath.Join(root, device, "files", ".staging", "fresh-upload")
-	_ = os.MkdirAll(fresh, 0o755)
+	// Legacy dir layout
+	oldDir := filepath.Join(staging, "old-upload")
+	_ = os.MkdirAll(oldDir, 0o755)
+	_ = os.WriteFile(filepath.Join(oldDir, "blob"), []byte("x"), 0o644)
+	_ = os.Chtimes(oldDir, oldTime, oldTime)
+	// Flat .part/.json layout (created_ms in meta)
+	_ = os.WriteFile(filepath.Join(staging, "flat-old.part"), []byte("y"), 0o644)
+	_ = os.WriteFile(filepath.Join(staging, "flat-old.json"),
+		[]byte(`{"path":"a.txt","size":1,"sha256":"00","created_ms":1}`), 0o644)
+	freshPart := filepath.Join(staging, "fresh.part")
+	freshJSON := filepath.Join(staging, "fresh.json")
+	_ = os.WriteFile(freshPart, []byte("z"), 0o644)
+	_ = os.WriteFile(freshJSON,
+		[]byte(fmt.Sprintf(`{"path":"b.txt","size":1,"sha256":"00","created_ms":%d}`, time.Now().UnixMilli())), 0o644)
 
 	n, err := s.GcStaging(24 * time.Hour)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if n != 1 {
-		t.Fatalf("staging removed=%d", n)
+	if n != 2 {
+		t.Fatalf("staging removed=%d want 2", n)
 	}
-	if _, err := os.Stat(oldStaging); !os.IsNotExist(err) {
-		t.Fatal("old staging should be gone")
+	if _, err := os.Stat(oldDir); !os.IsNotExist(err) {
+		t.Fatal("old staging dir should be gone")
 	}
-	if _, err := os.Stat(fresh); err != nil {
+	if _, err := os.Stat(filepath.Join(staging, "flat-old.json")); !os.IsNotExist(err) {
+		t.Fatal("old flat staging should be gone")
+	}
+	if _, err := os.Stat(freshJSON); err != nil {
 		t.Fatal("fresh staging should remain")
 	}
 

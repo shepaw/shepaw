@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/shepaw/storage-node/internal/admin"
 	"github.com/shepaw/storage-node/internal/noise"
@@ -53,6 +54,7 @@ func main() {
 	} else if b > 0 {
 		log.Printf("gc recycle: purged %d bytes", b)
 	}
+	s.StartPeriodicGC(time.Hour)
 	peers := peer.NewStore(*root)
 	hub := peer.NewPairingHub(identity, peers, *deviceName)
 	sessions := peer.NewSessionRegistry()

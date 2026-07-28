@@ -141,7 +141,7 @@ void main() {
         deviceIds: [peerDevice, await DeviceIdentity.deviceId()],
         store: local,
       );
-      expect(written, 1);
+      expect(written.written, 1);
       final meta = await local.meta(peerDevice, StoreSpace.artifacts, 't/a.txt');
       expect(meta['sha256'], sha(content));
       final f = File(p.join(
@@ -154,7 +154,7 @@ void main() {
         deviceIds: [peerDevice],
         store: local,
       );
-      expect(again, 0);
+      expect(again.written, 0);
     });
   });
 }

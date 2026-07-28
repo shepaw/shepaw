@@ -7,7 +7,6 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"hash"
 	"io"
 	"os"
 	"path/filepath"
@@ -30,34 +29,20 @@ type Local struct {
 	peerRPC    PeerRPC
 	peerEnsure PeerEnsure
 	seedAuth   map[string]time.Time // caller → expire (migrate seed window)
+	gcStop     chan struct{}
 }
 
+// upload tracks an in-flight write; durable state lives in .staging/<id>.{part,json}.
 type upload struct {
-	Device string
-	Space  string
-	Path   string
-	Tmp    string
-	Size   int64
-	Hash   hashWriter
-}
-
-type hashWriter struct {
-	h hash.Hash
-	n int64
-}
-
-func newHashWriter() hashWriter {
-	return hashWriter{h: sha256.New()}
-}
-
-func (h *hashWriter) Write(p []byte) (int, error) {
-	n, err := h.h.Write(p)
-	h.n += int64(n)
-	return n, err
-}
-
-func (h *hashWriter) Sum() string {
-	return hex.EncodeToString(h.h.Sum(nil))
+	Device       string
+	Space        string
+	Path         string
+	Tmp          string
+	MetaPath     string
+	DeclaredSize int64
+	DeclaredSha  string
+	Received     int64
+	writeMu      *sync.Mutex
 }
 
 func Open(root, deviceID string) (*Local, error) {
@@ -88,6 +73,12 @@ func Open(root, deviceID string) (*Local, error) {
 func (l *Local) Handle(frame protocol.Frame, caller, trust string, loopback bool) (map[string]any, error) {
 	if v := protocol.CheckACL(frame, caller, trust, loopback); v != protocol.Allow {
 		return nil, &OpError{Code: aclCode(v), Msg: string(v)}
+	}
+	// Fencing: demoted nodes must not accept sync mutations / hello (B2).
+	if needsMasterFence(frame.Op) {
+		if err := l.requireMaster(); err != nil {
+			return nil, err
+		}
 	}
 	switch frame.Op {
 	case "list":
@@ -138,6 +129,29 @@ func (l *Local) Handle(frame protocol.Frame, caller, trust string, loopback bool
 	}
 }
 
+func needsMasterFence(op string) bool {
+	switch op {
+	case "write.begin", "write.chunk", "commit", "delete", "sync.hello":
+		return true
+	default:
+		return false
+	}
+}
+
+func (l *Local) requireMaster() error {
+	p, err := l.loadPointer()
+	if err != nil {
+		return err
+	}
+	if p.Master != l.DeviceID {
+		return &OpError{
+			Code: "not_master",
+			Msg:  fmt.Sprintf("master=%s epoch=%d", p.Master, p.Epoch),
+		}
+	}
+	return nil
+}
+
 type OpError struct {
 	Code string
 	Msg  string
@@ -166,6 +180,9 @@ func (l *Local) resolve(space, device, rel string) (string, error) {
 	}
 	base := filepath.Join(l.Root, device, space)
 	if rel == "" || rel == "/" {
+		if err := rejectSymlinkUnder(base, base); err != nil {
+			return "", err
+		}
 		return base, nil
 	}
 	norm, err := protocol.NormalizePath(rel)
@@ -175,6 +192,9 @@ func (l *Local) resolve(space, device, rel string) (string, error) {
 	full := filepath.Join(base, filepath.FromSlash(norm))
 	if !strings.HasPrefix(full, base+string(os.PathSeparator)) && full != base {
 		return "", &OpError{Code: "bad_path", Msg: "escape"}
+	}
+	if err := rejectSymlinkUnder(base, full); err != nil {
+		return "", err
 	}
 	return full, nil
 }
@@ -188,9 +208,17 @@ func (l *Local) list(frame protocol.Frame, caller string) (map[string]any, error
 		device = caller
 	}
 	path, _ := frame.Payload["path"].(string)
+	spaceRoot, err := l.resolve(frame.Space(), device, "")
+	if err != nil {
+		return nil, err
+	}
 	dir, err := l.resolve(frame.Space(), device, path)
 	if err != nil {
 		return nil, err
+	}
+	limit := int(num(frame.Payload["limit"]))
+	if limit <= 0 {
+		limit = 1000
 	}
 	entries := []map[string]any{}
 	_ = filepath.Walk(dir, func(p string, info os.FileInfo, err error) error {
@@ -200,6 +228,9 @@ func (l *Local) list(frame protocol.Frame, caller string) (map[string]any, error
 		if info.IsDir() {
 			name := info.Name()
 			if strings.HasPrefix(name, ".") || name == ".staging" {
+				if p == dir {
+					return nil
+				}
 				return filepath.SkipDir
 			}
 			return nil
@@ -207,12 +238,15 @@ func (l *Local) list(frame protocol.Frame, caller string) (map[string]any, error
 		if strings.HasPrefix(info.Name(), ".") {
 			return nil
 		}
-		rel, _ := filepath.Rel(dir, p)
+		rel, _ := filepath.Rel(spaceRoot, p)
 		rel = filepath.ToSlash(rel)
 		sum, size := fileSHA(p)
 		entries = append(entries, map[string]any{
 			"path": rel, "size": size, "sha256": sum, "mtime": info.ModTime().UnixMilli(),
 		})
+		if len(entries) >= limit {
+			return io.EOF
+		}
 		return nil
 	})
 	return map[string]any{"entries": entries}, nil
@@ -281,139 +315,6 @@ func (l *Local) read(frame protocol.Frame, caller string) (map[string]any, error
 	}, nil
 }
 
-func (l *Local) writeBegin(frame protocol.Frame, caller string) (map[string]any, error) {
-	path, _ := frame.Payload["path"].(string)
-	norm, err := protocol.NormalizePath(path)
-	if err != nil {
-		return nil, &OpError{Code: "bad_path", Msg: err.Error()}
-	}
-	id := fmt.Sprintf("%d", time.Now().UnixNano())
-	staging := filepath.Join(l.Root, caller, frame.Space(), ".staging", id)
-	if err := os.MkdirAll(staging, 0o755); err != nil {
-		return nil, err
-	}
-	tmp := filepath.Join(staging, "blob")
-	l.mu.Lock()
-	l.uploads[id] = &upload{
-		Device: caller,
-		Space:  frame.Space(),
-		Path:   norm,
-		Tmp:    tmp,
-		Hash:   newHashWriter(),
-	}
-	l.mu.Unlock()
-	return map[string]any{"upload_id": id}, nil
-}
-
-func (l *Local) writeChunk(frame protocol.Frame) (map[string]any, error) {
-	id, _ := frame.Payload["upload_id"].(string)
-	dataB64, _ := frame.Payload["data"].(string)
-	raw, err := base64.StdEncoding.DecodeString(dataB64)
-	if err != nil {
-		return nil, &OpError{Code: "bad_op", Msg: "bad base64"}
-	}
-	if len(raw) > maxChunk {
-		return nil, &OpError{Code: "bad_op", Msg: "chunk too large"}
-	}
-	l.mu.Lock()
-	u := l.uploads[id]
-	l.mu.Unlock()
-	if u == nil {
-		return nil, &OpError{Code: "staging_state", Msg: "unknown upload"}
-	}
-	f, err := os.OpenFile(u.Tmp, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644)
-	if err != nil {
-		return nil, err
-	}
-	defer f.Close()
-	if _, err := f.Write(raw); err != nil {
-		return nil, err
-	}
-	_, _ = u.Hash.Write(raw)
-	u.Size += int64(len(raw))
-	return map[string]any{"accepted": len(raw)}, nil
-}
-
-func (l *Local) commit(frame protocol.Frame, caller string) (map[string]any, error) {
-	ids, _ := frame.Payload["upload_ids"].([]any)
-	if ids == nil {
-		if one, ok := frame.Payload["upload_id"].(string); ok {
-			ids = []any{one}
-		}
-	}
-	expected := map[string]string{}
-	if arr, ok := frame.Payload["files"].([]any); ok {
-		for _, it := range arr {
-			m, _ := it.(map[string]any)
-			if m == nil {
-				continue
-			}
-			id, _ := m["upload_id"].(string)
-			sum, _ := m["sha256"].(string)
-			expected[id] = sum
-		}
-	}
-	// Validate all first (all-or-nothing).
-	type pending struct {
-		id  string
-		u   *upload
-		sum string
-	}
-	batch := make([]pending, 0, len(ids))
-	for _, rawID := range ids {
-		id, _ := rawID.(string)
-		l.mu.Lock()
-		u := l.uploads[id]
-		l.mu.Unlock()
-		if u == nil {
-			return nil, &OpError{Code: "staging_state", Msg: "unknown " + id}
-		}
-		sum := u.Hash.Sum()
-		if want, ok := expected[id]; ok && want != "" && want != sum {
-			return nil, &OpError{Code: "hash_mismatch", Msg: id}
-		}
-		batch = append(batch, pending{id: id, u: u, sum: sum})
-	}
-	committed := []map[string]any{}
-	failed := []map[string]any{}
-	for _, p := range batch {
-		dest := filepath.Join(l.Root, p.u.Device, p.u.Space, filepath.FromSlash(p.u.Path))
-		if err := os.MkdirAll(filepath.Dir(dest), 0o755); err != nil {
-			failed = append(failed, map[string]any{"upload_id": p.id, "error": err.Error()})
-			continue
-		}
-		if err := os.Rename(p.u.Tmp, dest); err != nil {
-			failed = append(failed, map[string]any{"upload_id": p.id, "error": err.Error()})
-			continue
-		}
-		_ = os.RemoveAll(filepath.Dir(p.u.Tmp))
-		l.mu.Lock()
-		delete(l.uploads, p.id)
-		l.mu.Unlock()
-		committed = append(committed, map[string]any{
-			"upload_id": p.id, "path": p.u.Path, "size": p.u.Size, "sha256": p.sum,
-		})
-	}
-	if len(committed) > 0 {
-		if device := batch[0].u.Device; device != "" {
-			l.applyRetention(device, batch[0].u.Space, frame.Payload["retention"])
-		}
-	}
-	out := map[string]any{
-		"files":     committed,
-		"committed": committed,
-		"failed":    failed,
-	}
-	if upto, ok := payloadInt64(frame.Payload, "upto_seq"); ok && len(failed) == 0 {
-		applied, err := l.cursors.advance(caller, upto)
-		if err != nil {
-			return nil, err
-		}
-		out["applied_seq"] = applied
-	}
-	return out, nil
-}
-
 func (l *Local) delete(frame protocol.Frame, caller string) (map[string]any, error) {
 	device := frame.Device()
 	if device == "" {
@@ -424,11 +325,19 @@ func (l *Local) delete(frame protocol.Frame, caller string) (map[string]any, err
 	if err != nil {
 		return nil, &OpError{Code: "bad_path", Msg: err.Error()}
 	}
+	out := map[string]any{}
 	recycled, err := l.moveToRecycle(device, frame.Space(), norm)
 	if err != nil {
-		return nil, err
+		// Idempotent delete: already-gone is success (sync replay / B2).
+		if oe, ok := err.(*OpError); ok && oe.Code == "not_found" {
+			out["recycled"] = ""
+			out["already_gone"] = true
+		} else {
+			return nil, err
+		}
+	} else {
+		out["recycled"] = recycled
 	}
-	out := map[string]any{"recycled": recycled}
 	if upto, ok := payloadInt64(frame.Payload, "upto_seq"); ok {
 		applied, err := l.cursors.advance(caller, upto)
 		if err != nil {

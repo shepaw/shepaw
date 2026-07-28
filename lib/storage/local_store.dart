@@ -648,6 +648,7 @@ class LocalStore {
   }
 
   /// 清理超时未 commit 的暂存（默认 24h，spec §2.4）。
+  /// 优先用 `.json` 的 `created_ms`，避免活跃 chunk 写刷新 mtime 绕过 GC。
   Future<int> gcStaging({Duration olderThan = const Duration(hours: 24)}) async {
     var removed = 0;
     final deadline = DateTime.now().subtract(olderThan);
@@ -659,17 +660,45 @@ class LocalStore {
       for (final space in StoreSpace.all) {
         final staging = Directory(p.join(devDir.path, space, '.staging'));
         if (!await staging.exists()) continue;
+        final seen = <String>{};
         await for (final f in staging.list()) {
           if (f is! File) continue;
-          final mtime = (await f.stat()).modified;
-          if (mtime.isBefore(deadline)) {
-            await f.delete();
-            if (f.path.endsWith('.json')) removed++;
+          final name = p.basename(f.path);
+          String? id;
+          if (name.endsWith('.json')) {
+            id = name.substring(0, name.length - 5);
+          } else if (name.endsWith('.part')) {
+            id = name.substring(0, name.length - 5);
+          }
+          if (id == null || !seen.add(id)) continue;
+          final created = await _stagingCreated(staging.path, id, f);
+          if (created.isBefore(deadline)) {
+            final part = File(p.join(staging.path, '$id.part'));
+            final meta = File(p.join(staging.path, '$id.json'));
+            if (await part.exists()) await part.delete();
+            if (await meta.exists()) await meta.delete();
+            removed++;
           }
         }
       }
     }
     return removed;
+  }
+
+  Future<DateTime> _stagingCreated(
+      String stagingDir, String id, File fallback) async {
+    final metaFile = File(p.join(stagingDir, '$id.json'));
+    if (await metaFile.exists()) {
+      try {
+        final raw =
+            jsonDecode(await metaFile.readAsString()) as Map<String, dynamic>;
+        final ms = raw['created_ms'] as int?;
+        if (ms != null && ms > 0) {
+          return DateTime.fromMillisecondsSinceEpoch(ms);
+        }
+      } catch (_) {}
+    }
+    return (await fallback.stat()).modified;
   }
 
   /// 清理超过保留期的回收站日期目录（默认 30 天，spec §2.7）。

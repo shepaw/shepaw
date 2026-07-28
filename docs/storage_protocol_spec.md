@@ -43,6 +43,7 @@
 | `not_found` | 目标不存在 |
 | `staging_state` | upload_id 状态非法（重复 commit / 未知 id） |
 | `master_offline` | master 不可达（客户端本地判定） |
+| `not_master` | 本节点已非当前 master（fencing：拒绝 sync 写入/`sync.hello`） |
 | `internal` | 其他内部错误 |
 
 ## 2. 操作清单

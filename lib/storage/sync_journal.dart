@@ -205,6 +205,19 @@ class SyncJournal {
     });
   }
 
+  /// 将 ack 回退到 [seq]（master applied 落后于本地 ack 时的自愈）。
+  /// 不改 change_seq；不清空队列。
+  Future<void> resetAckTo(int seq) async {
+    await _locked(() async {
+      await _loadState();
+      if (seq < 0) seq = 0;
+      if (_ackSeq != null && seq < _ackSeq!) {
+        _ackSeq = seq;
+        await _saveState();
+      }
+    });
+  }
+
   Future<List<SyncQueueEntry>> pending() async =>
       List.of(await _loadQueue());
 

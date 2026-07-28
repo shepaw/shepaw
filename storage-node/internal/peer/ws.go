@@ -303,7 +303,13 @@ func (s *Server) handleStoreRequest(
 	fp, op, reqID string,
 	payload map[string]any,
 ) {
-	data, err := s.Store.Handle(protocol.Frame{Op: op, Payload: payload}, fp, protocol.TrustOwner, false)
+	trust := protocol.TrustOwner
+	if s.Peers != nil {
+		if p, err := s.Peers.Get(fp); err == nil && p != nil && p.TrustLevel != "" {
+			trust = p.TrustLevel
+		}
+	}
+	data, err := s.Store.Handle(protocol.Frame{Op: op, Payload: payload}, fp, trust, false)
 	if err == nil && op == "master.migrate" {
 		s.overlayMigrateBroadcast(data)
 	}

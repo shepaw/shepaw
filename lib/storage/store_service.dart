@@ -387,6 +387,15 @@ class StoreService {
       return _errorData(storeAclErrorCode(verdict));
     }
 
+    // B2 fencing：已罢免节点拒绝 sync 写入与 hello（防幽灵 ack）
+    if (_needsMasterFence(frame.op) && !await isMaster()) {
+      final master = await masterDeviceId();
+      _log.warning(
+          'not_master fence: ${frame.op} caller=$callerDeviceId master=$master',
+          tag: _auditTag);
+      return _errorData(StoreError.notMaster, 'master=$master');
+    }
+
     final store = await _localStore();
     try {
       // 私有分区跨端读取：校验导入授权实体（spec §5.4）；
@@ -506,11 +515,19 @@ class StoreService {
           };
 
         case StoreOp.delete:
-          final recycled = await store.delete(
-            frame.device ?? callerDeviceId,
-            frame.space!,
-            frame.path!,
-          );
+          String recycled = '';
+          var alreadyGone = false;
+          try {
+            recycled = await store.delete(
+              frame.device ?? callerDeviceId,
+              frame.space!,
+              frame.path!,
+            );
+          } on StoreException catch (e) {
+            if (e.code != StoreError.notFound) rethrow;
+            // 幂等：sync 重放时目标已不存在仍推进游标
+            alreadyGone = true;
+          }
           int? appliedSeq;
           final uptoSeq = frame.payload['upto_seq'] as int?;
           if (uptoSeq != null) {
@@ -519,6 +536,7 @@ class StoreService {
           }
           return <String, dynamic>{
             'recycled': recycled,
+            if (alreadyGone) 'already_gone': true,
             if (appliedSeq != null) 'applied_seq': appliedSeq,
           };
 
@@ -666,6 +684,19 @@ class StoreService {
     } catch (e) {
       _log.error('dispatch ${frame.op} failed', tag: _tag, error: e);
       return _errorData(StoreError.internal, '$e');
+    }
+  }
+
+  static bool _needsMasterFence(String op) {
+    switch (op) {
+      case StoreOp.writeBegin:
+      case StoreOp.writeChunk:
+      case StoreOp.commit:
+      case StoreOp.delete:
+      case StoreOp.syncHello:
+        return true;
+      default:
+        return false;
     }
   }
 }

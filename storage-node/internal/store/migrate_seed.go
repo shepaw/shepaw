@@ -172,9 +172,6 @@ func (l *Local) seedFromLiveMaster(rpc PeerRPC, oldMaster string) (int, []string
 			seed[k] = anyToInt64(v)
 		}
 	}
-	if _, err := l.MergeCursors(seed); err != nil {
-		return 0, nil, err
-	}
 
 	deviceSet := map[string]struct{}{}
 	for id := range seed {
@@ -196,17 +193,41 @@ func (l *Local) seedFromLiveMaster(rpc PeerRPC, oldMaster string) (int, []string
 	}
 
 	written := 0
+	completed := map[string]struct{}{l.DeviceID: {}}
 	for _, deviceID := range deviceIDs {
+		deviceOK := true
 		for _, space := range []string{"artifacts", "files", "attachments", "backups"} {
 			n, err := l.seedSpace(rpc, oldMaster, deviceID, space)
 			if err != nil {
 				log.Printf("seed %s/%s: %v", deviceID, space, err)
+				deviceOK = false
 				continue
 			}
 			written += n
 		}
+		if deviceOK {
+			completed[deviceID] = struct{}{}
+		}
 	}
-	return written, deviceIDs, nil
+
+	// Only merge cursors for fully seeded devices (B2 seed gate).
+	filtered := map[string]int64{}
+	for id, seq := range seed {
+		if _, ok := completed[id]; ok {
+			filtered[id] = seq
+		}
+	}
+	if _, err := l.MergeCursors(filtered); err != nil {
+		return 0, nil, err
+	}
+
+	outIDs := make([]string, 0, len(completed))
+	for id := range completed {
+		if id != l.DeviceID {
+			outIDs = append(outIDs, id)
+		}
+	}
+	return written, outIDs, nil
 }
 
 func (l *Local) runHashGate(rpc PeerRPC, oldMaster string, deviceIDs []string) map[string]any {

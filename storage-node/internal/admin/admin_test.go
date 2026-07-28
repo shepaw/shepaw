@@ -1,6 +1,8 @@
 package admin_test
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"bytes"
 	"encoding/base64"
 	"encoding/json"
@@ -56,11 +58,15 @@ func TestAdminRecycleEmpty(t *testing.T) {
 		t.Fatal(err)
 	}
 	// seed a file then delete into recycle
+	body := []byte("x")
+	sum := sha256.Sum256(body)
 	begin, err := s.Handle(protocol.Frame{
 		Op: "write.begin",
 		Payload: map[string]any{
-			"space": "files",
-			"path":  "gone.txt",
+			"space":  "files",
+			"path":   "gone.txt",
+			"size":   len(body),
+			"sha256": hex.EncodeToString(sum[:]),
 		},
 	}, device, protocol.TrustOwner, true)
 	if err != nil {
@@ -71,7 +77,8 @@ func TestAdminRecycleEmpty(t *testing.T) {
 		Op: "write.chunk",
 		Payload: map[string]any{
 			"upload_id": id,
-			"data":      base64.StdEncoding.EncodeToString([]byte("x")),
+			"offset":    0,
+			"data":      base64.StdEncoding.EncodeToString(body),
 		},
 	}, device, protocol.TrustOwner, true)
 	if err != nil {

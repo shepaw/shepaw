@@ -333,14 +333,14 @@ void main() {
     test('gcStaging 清理超期暂存', () async {
       final (u, _) = await begin('stale.txt', bytesOf('stale'));
       await store.writeChunk(dev, 'files', u, 0, bytesOf('st'));
-      // 手工把 staging 文件 mtime 改到 2 天前
-      final stagingDir = Directory(p.join(tmp.path, dev, 'files', '.staging'));
-      await for (final f in stagingDir.list()) {
-        if (f is File) {
-          await f.setLastModified(
-              DateTime.now().subtract(const Duration(days: 2)));
-        }
-      }
+      // 手工把 staging meta 的 created_ms 改到 2 天前（GC 按创建时间，非 mtime）
+      final metaFile =
+          File(p.join(tmp.path, dev, 'files', '.staging', '$u.json'));
+      final meta =
+          jsonDecode(await metaFile.readAsString()) as Map<String, dynamic>;
+      meta['created_ms'] =
+          DateTime.now().subtract(const Duration(days: 2)).millisecondsSinceEpoch;
+      await metaFile.writeAsString(jsonEncode(meta));
       final removed = await store.gcStaging();
       expect(removed, 1);
       // 再 commit 应报 unknown upload_id

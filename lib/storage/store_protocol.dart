@@ -58,6 +58,7 @@ class StoreError {
   static const notFound = 'not_found';
   static const stagingState = 'staging_state';
   static const masterOffline = 'master_offline';
+  static const notMaster = 'not_master';
   static const internal = 'internal';
 }
 
