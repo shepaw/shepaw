@@ -1,5 +1,3 @@
-import 'dart:io';
-
 import 'package:flutter/material.dart';
 import 'package:uuid/uuid.dart';
 import '../l10n/app_localizations.dart';
@@ -10,6 +8,7 @@ import '../services/local_api_service.dart';
 import '../services/local_database_service.dart';
 import '../services/group/group_member_session_service.dart';
 import '../services/she_service.dart';
+import '../widgets/avatar_image.dart';
 import 'chat_screen.dart';
 
 class CreateGroupScreen extends StatefulWidget {
@@ -204,42 +203,13 @@ class _CreateGroupScreenState extends State<CreateGroupScreen> {
   }
 
   Widget _buildAgentAvatar(Agent agent, {double size = 40, double fontSize = 28}) {
-    if (agent.avatar.length <= 2) {
-      return SizedBox(
-        width: size,
-        height: size,
-        child: Center(
-          child: Text(
-            agent.avatar,
-            style: TextStyle(fontSize: fontSize),
-          ),
-        ),
-      );
-    }
-    // Image URL or file path
-    final ImageProvider imageProvider;
-    if (agent.avatar.startsWith('assets/')) {
-      imageProvider = AssetImage(agent.avatar);
-    } else if (agent.avatar.startsWith('/') && !agent.avatar.startsWith('http')) {
-      imageProvider = FileImage(File(agent.avatar));
-    } else {
-      imageProvider = NetworkImage(agent.avatar);
-    }
-    return ClipOval(
-      child: SizedBox(
-        width: size,
-        height: size,
-        child: Image(
-          image: imageProvider,
-          fit: BoxFit.cover,
-          errorBuilder: (_, __, ___) => CircleAvatar(
-            radius: size / 2,
-            child: Text(
-              agent.name.isNotEmpty ? agent.name[0].toUpperCase() : '?',
-              style: TextStyle(fontSize: fontSize * 0.6),
-            ),
-          ),
-        ),
+    return AvatarImage(
+      avatar: agent.avatar,
+      size: size,
+      borderRadius: size / 2,
+      fallback: Text(
+        agent.name.isNotEmpty ? agent.name[0].toUpperCase() : '?',
+        style: TextStyle(fontSize: fontSize * 0.6),
       ),
     );
   }

@@ -5,6 +5,7 @@ import '../service_locator.dart' show getIt;
 import '../services/agent_memory_biz_service.dart';
 import '../services/logger_service.dart';
 import '../theme/app_theme.dart';
+import '../widgets/avatar_image.dart';
 import 'agent_memory_detail_screen.dart';
 
 /// Agent 记忆管理列表页面（新版本）
@@ -149,8 +150,14 @@ class _AgentMemoryManagementScreenState
   Widget _buildAgentCard(RemoteAgent agent, int memoryCount) {
     return Card(
       child: ListTile(
-        leading: CircleAvatar(
-          child: Text(agent.avatar),
+        leading: AvatarImage(
+          avatar: agent.avatar.isNotEmpty ? agent.avatar : '🤖',
+          size: 40,
+          borderRadius: 20,
+          fallback: Text(
+            agent.name.isNotEmpty ? agent.name[0] : '?',
+            style: const TextStyle(fontSize: 18),
+          ),
         ),
         title: Text(agent.name),
         subtitle: Text(

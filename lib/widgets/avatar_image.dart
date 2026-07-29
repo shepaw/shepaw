@@ -87,13 +87,18 @@ class AvatarImage extends StatelessWidget {
             );
       return ClipRRect(
         borderRadius: BorderRadius.circular(borderRadius),
-        child: assetWidget,
+        child: SizedBox(width: size, height: size, child: assetWidget),
       );
     }
 
     if (!isLocal && !isNetwork) {
-      // 既不是本地文件也不是网络 URL，返回兜底
-      return fallback;
+      // Emoji / 短文本默认头像：铺满区域，避免四周大片空隙。
+      return _EmojiAvatar(
+        avatar: avatar,
+        size: size,
+        borderRadius: borderRadius,
+        fallback: fallback,
+      );
     }
 
     // Web has no dart:io filesystem for local avatar paths.
@@ -104,25 +109,21 @@ class AvatarImage extends StatelessWidget {
     final Widget imageWidget;
 
     if (isSvg(avatar)) {
-      imageWidget = SizedBox(
-        width: size,
-        height: size,
-        child: isLocal
-            ? local_file.svgFile(
-                avatar,
-                width: size,
-                height: size,
-                fit: fit,
-                placeholder: fallback,
-              )
-            : SvgPicture.network(
-                avatar,
-                width: size,
-                height: size,
-                fit: fit,
-                placeholderBuilder: (_) => fallback,
-              ),
-      );
+      imageWidget = isLocal
+          ? local_file.svgFile(
+              avatar,
+              width: size,
+              height: size,
+              fit: fit,
+              placeholder: fallback,
+            )
+          : SvgPicture.network(
+              avatar,
+              width: size,
+              height: size,
+              fit: fit,
+              placeholderBuilder: (_) => fallback,
+            );
     } else {
       imageWidget = isLocal
           ? local_file.rasterFile(
@@ -143,7 +144,53 @@ class AvatarImage extends StatelessWidget {
 
     return ClipRRect(
       borderRadius: BorderRadius.circular(borderRadius),
-      child: imageWidget,
+      child: SizedBox(width: size, height: size, child: imageWidget),
+    );
+  }
+}
+
+/// 将 emoji 默认头像放大到接近 [size]，减少灰底空隙。
+class _EmojiAvatar extends StatelessWidget {
+  final String avatar;
+  final double size;
+  final double borderRadius;
+  final Widget fallback;
+
+  const _EmojiAvatar({
+    required this.avatar,
+    required this.size,
+    required this.borderRadius,
+    required this.fallback,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final glyph = avatar.trim();
+    if (glyph.isEmpty) {
+      return SizedBox(
+        width: size,
+        height: size,
+        child: Center(child: fallback),
+      );
+    }
+
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(borderRadius),
+      child: SizedBox(
+        width: size,
+        height: size,
+        child: Center(
+          // height: 1 去掉 emoji 字体多余行高；字号接近容器边长以铺满。
+          child: Text(
+            glyph,
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              fontSize: size * 0.86,
+              height: 1.0,
+            ),
+          ),
+        ),
+      ),
     );
   }
 }

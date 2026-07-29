@@ -245,18 +245,16 @@ class AgentSearchDelegate extends SearchDelegate<Agent?> {
           color: Colors.grey[200],
           borderRadius: BorderRadius.circular(10),
         ),
-        alignment: Alignment.center,
-        child: agent.avatar.length <= 2
-            ? Text(agent.avatar, style: const TextStyle(fontSize: 20))
-            : AvatarImage(
-                avatar: agent.avatar,
-                size: 40,
-                borderRadius: 10,
-                fallback: Text(
-                  agent.name.isNotEmpty ? agent.name[0] : 'A',
-                  style: const TextStyle(fontSize: 20),
-                ),
-              ),
+        clipBehavior: Clip.antiAlias,
+        child: AvatarImage(
+          avatar: agent.avatar,
+          size: 40,
+          borderRadius: 10,
+          fallback: Text(
+            agent.name.isNotEmpty ? agent.name[0] : 'A',
+            style: const TextStyle(fontSize: 20),
+          ),
+        ),
       ),
       title: Text(agent.name),
       subtitle: Text(agent.description ?? agent.type ?? 'AI Agent'),

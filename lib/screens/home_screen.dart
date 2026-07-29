@@ -236,21 +236,16 @@ class HomeScreenState extends State<HomeScreen> {
             color: Colors.grey[200],
             borderRadius: BorderRadius.circular(12),
           ),
-          alignment: Alignment.center,
-          child: agent.avatar.length <= 2
-              ? Text(
-                  agent.avatar,
-                  style: const TextStyle(fontSize: 24),
-                )
-              : AvatarImage(
-                  avatar: agent.avatar,
-                  size: 56,
-                  borderRadius: 12,
-                  fallback: Text(
-                    agent.name.isNotEmpty ? agent.name[0] : 'A',
-                    style: const TextStyle(fontSize: 24),
-                  ),
-                ),
+          clipBehavior: Clip.antiAlias,
+          child: AvatarImage(
+            avatar: agent.avatar,
+            size: 56,
+            borderRadius: 12,
+            fallback: Text(
+              agent.name.isNotEmpty ? agent.name[0] : 'A',
+              style: const TextStyle(fontSize: 24),
+            ),
+          ),
         ),
         // 未读消息红点
         if (unreadCount > 0)
@@ -881,18 +876,16 @@ class HomeScreenState extends State<HomeScreen> {
           color: Colors.grey[200],
           borderRadius: BorderRadius.circular(10),
         ),
-        alignment: Alignment.center,
-        child: agent.avatar.length <= 2
-            ? Text(agent.avatar, style: const TextStyle(fontSize: 20))
-            : AvatarImage(
-                avatar: agent.avatar,
-                size: 40,
-                borderRadius: 10,
-                fallback: Text(
-                  agent.name.isNotEmpty ? agent.name[0] : 'A',
-                  style: const TextStyle(fontSize: 20),
-                ),
-              ),
+        clipBehavior: Clip.antiAlias,
+        child: AvatarImage(
+          avatar: agent.avatar,
+          size: 40,
+          borderRadius: 10,
+          fallback: Text(
+            agent.name.isNotEmpty ? agent.name[0] : 'A',
+            style: const TextStyle(fontSize: 20),
+          ),
+        ),
       ),
       title: Text(displayName, maxLines: 1, overflow: TextOverflow.ellipsis),
       subtitle: Text(

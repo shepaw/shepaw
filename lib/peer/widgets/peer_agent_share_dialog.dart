@@ -104,27 +104,11 @@ class _PeerAgentShareSelectorState extends State<PeerAgentShareSelector> {
   }
 
   Widget _buildAvatar(String avatar) {
-    final isPath = (avatar.startsWith('/') && !avatar.startsWith('http')) ||
-        avatar.startsWith('http') ||
-        AvatarImage.isAsset(avatar);
-    if (isPath) {
-      return AvatarImage(
-        avatar: avatar,
-        size: 36,
-        borderRadius: 9,
-        fallback: const Icon(Icons.smart_toy_outlined),
-      );
-    }
-    return Container(
-      width: 36,
-      height: 36,
-      alignment: Alignment.center,
-      decoration: BoxDecoration(
-        color: Colors.indigo[50],
-        borderRadius: BorderRadius.circular(9),
-      ),
-      child: Text(avatar.isNotEmpty ? avatar : '🤖',
-          style: const TextStyle(fontSize: 18)),
+    return AvatarImage(
+      avatar: avatar.isNotEmpty ? avatar : '🤖',
+      size: 36,
+      borderRadius: 9,
+      fallback: const Icon(Icons.smart_toy_outlined),
     );
   }
 }

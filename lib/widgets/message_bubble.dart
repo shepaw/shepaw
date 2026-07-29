@@ -1143,9 +1143,25 @@ class MessageBubble extends StatelessWidget {
         );
       }
       // 纯 emoji 或普通字符串
-      return Text(senderAvatar!, style: const TextStyle(fontSize: 24));
+      return AvatarImage(
+        avatar: senderAvatar!,
+        size: 32,
+        borderRadius: 8,
+        fallback: Text(
+          message.from.isAgent ? '🤖' : '👤',
+          style: const TextStyle(fontSize: 24),
+        ),
+      );
     }
 
-    return Text(_getAvatar(), style: const TextStyle(fontSize: 24));
+    return AvatarImage(
+      avatar: _getAvatar(),
+      size: 32,
+      borderRadius: 8,
+      fallback: Text(
+        message.from.isAgent ? '🤖' : '👤',
+        style: const TextStyle(fontSize: 24),
+      ),
+    );
   }
 }

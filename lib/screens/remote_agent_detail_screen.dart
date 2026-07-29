@@ -806,36 +806,16 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
 
   // ==================== 头像展示 ====================
 
-  /// 判断 avatar 是否为本地文件路径
-  bool _isLocalFilePath(String avatar) {
-    return avatar.startsWith('/') && !avatar.startsWith('http');
-  }
-
-  /// 判断 avatar 是否为网络 URL
-  bool _isNetworkUrl(String avatar) {
-    return avatar.startsWith('http://') || avatar.startsWith('https://');
-  }
-
   Widget _buildAvatarWidget(String avatar, double size) {
     final borderRadius = size * 0.25;
     final fallback = Icon(Icons.smart_toy, size: size * 0.6);
 
-    if (_isLocalFilePath(avatar) ||
-        _isNetworkUrl(avatar) ||
-        AvatarImage.isAsset(avatar)) {
-      return AvatarImage(
-        avatar: avatar,
-        size: size,
-        borderRadius: borderRadius,
-        fallback: fallback,
-      );
-    } else {
-      // Emoji
-      return Text(
-        avatar,
-        style: TextStyle(fontSize: size * 0.4),
-      );
-    }
+    return AvatarImage(
+      avatar: avatar.isNotEmpty ? avatar : '🤖',
+      size: size,
+      borderRadius: borderRadius,
+      fallback: fallback,
+    );
   }
 
   // ==================== Build ====================

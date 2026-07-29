@@ -733,27 +733,12 @@ class _AddRemoteAgentScreenState extends State<AddRemoteAgentScreen> {
 
   /// 构建头像 widget（支持本地文件路径、网络 URL、emoji）
   Widget _buildAvatarWidget(String avatar, double size) {
-    if (avatar.isEmpty) {
-      return Icon(Icons.smart_toy, size: size * 0.5);
-    }
-
-    if (AvatarImage.isLocalFile(avatar) || AvatarImage.isNetworkUrl(avatar)) {
-      return ClipRRect(
-        borderRadius: BorderRadius.circular(size * 0.25),
-        child: AvatarImage(
-          avatar: avatar,
-          size: size,
-          borderRadius: size * 0.25,
-          fallback: Icon(Icons.smart_toy, size: size * 0.5),
-        ),
-      );
-    } else {
-      // Emoji
-      return Text(
-        avatar,
-        style: TextStyle(fontSize: size * 0.43),
-      );
-    }
+    return AvatarImage(
+      avatar: avatar.isNotEmpty ? avatar : '🤖',
+      size: size,
+      borderRadius: size * 0.25,
+      fallback: Icon(Icons.smart_toy, size: size * 0.5),
+    );
   }
 
   /// 基本信息卡片

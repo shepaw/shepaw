@@ -368,29 +368,11 @@ class _AgentAvatar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final isPath = (avatar.startsWith('/') && !avatar.startsWith('http')) ||
-        avatar.startsWith('http') ||
-        AvatarImage.isAsset(avatar);
-    if (isPath) {
-      return AvatarImage(
-        avatar: avatar,
-        size: 40,
-        borderRadius: 10,
-        fallback: const Icon(Icons.smart_toy_outlined),
-      );
-    }
-    return Container(
-      width: 40,
-      height: 40,
-      alignment: Alignment.center,
-      decoration: BoxDecoration(
-        color: Colors.indigo[50],
-        borderRadius: BorderRadius.circular(10),
-      ),
-      child: Text(
-        avatar.isNotEmpty ? avatar : '🤖',
-        style: const TextStyle(fontSize: 20),
-      ),
+    return AvatarImage(
+      avatar: avatar.isNotEmpty ? avatar : '🤖',
+      size: 40,
+      borderRadius: 10,
+      fallback: const Icon(Icons.smart_toy_outlined),
     );
   }
 }

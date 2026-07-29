@@ -415,22 +415,12 @@ class _AgentDetailScreenState extends State<AgentDetailScreen> {
 
     if (avatar.isEmpty) return fallback;
 
-    if (AvatarImage.isLocalFile(avatar) ||
-        AvatarImage.isNetworkUrl(avatar) ||
-        AvatarImage.isAsset(avatar)) {
-      return AvatarImage(
-        avatar: avatar,
-        size: size,
-        borderRadius: borderRadius,
-        fallback: fallback,
-      );
-    } else {
-      // Emoji
-      return Text(
-        avatar,
-        style: TextStyle(fontSize: size * 0.4),
-      );
-    }
+    return AvatarImage(
+      avatar: avatar,
+      size: size,
+      borderRadius: borderRadius,
+      fallback: fallback,
+    );
   }
 
   /// 显示头像选择面板

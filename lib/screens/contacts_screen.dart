@@ -612,18 +612,16 @@ class ContactsScreenState extends State<ContactsScreen> {
               color: Colors.grey[200],
               borderRadius: BorderRadius.circular(8),
             ),
-            alignment: Alignment.center,
-            child: agent.avatar.length <= 2
-                ? Text(agent.avatar, style: const TextStyle(fontSize: 18))
-                : AvatarImage(
-                    avatar: agent.avatar,
-                    size: 40,
-                    borderRadius: 8,
-                    fallback: Text(
-                      agent.name.isNotEmpty ? agent.name[0] : 'A',
-                      style: const TextStyle(fontSize: 18),
-                    ),
-                  ),
+            clipBehavior: Clip.antiAlias,
+            child: AvatarImage(
+              avatar: agent.avatar,
+              size: 40,
+              borderRadius: 8,
+              fallback: Text(
+                agent.name.isNotEmpty ? agent.name[0] : 'A',
+                style: const TextStyle(fontSize: 18),
+              ),
+            ),
           ),
           Positioned(
             right: 0,

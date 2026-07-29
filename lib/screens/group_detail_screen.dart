@@ -10,6 +10,7 @@ import '../services/local_database_service.dart';
 import '../services/group/group_member_session_service.dart';
 import '../services/logger_service.dart';
 import '../widgets/form_bottom_bar.dart';
+import '../widgets/avatar_image.dart';
 import 'chat_screen.dart';
 
 /// Group detail screen, similar to RemoteAgentDetailScreen but for groups.
@@ -497,26 +498,29 @@ class _GroupDetailScreenState extends State<GroupDetailScreen> {
     final isAdmin = member.role == 'admin';
 
     return ListTile(
-      leading: Container(
-        width: 40,
-        height: 40,
-        decoration: BoxDecoration(
-          color: Colors.grey[200],
-          borderRadius: BorderRadius.circular(10),
-        ),
-        alignment: Alignment.center,
-        child: remoteAgent != null
-            ? Text(
+      leading: remoteAgent != null
+          ? Container(
+              width: 40,
+              height: 40,
+              decoration: BoxDecoration(
+                color: Colors.grey[200],
+                borderRadius: BorderRadius.circular(10),
+              ),
+              alignment: Alignment.center,
+              child: Text(
                 remoteAgent.name.isNotEmpty ? remoteAgent.name[0] : '?',
                 style: const TextStyle(fontSize: 18),
-              )
-            : agent != null && agent.avatar.length <= 2
-                ? Text(agent.avatar, style: const TextStyle(fontSize: 18))
-                : Text(
-                    agent?.name.isNotEmpty == true ? agent!.name[0] : '?',
-                    style: const TextStyle(fontSize: 18),
-                  ),
-      ),
+              ),
+            )
+          : AvatarImage(
+              avatar: agent?.avatar.isNotEmpty == true ? agent!.avatar : '🤖',
+              size: 40,
+              borderRadius: 10,
+              fallback: Text(
+                agent?.name.isNotEmpty == true ? agent!.name[0] : '?',
+                style: const TextStyle(fontSize: 18),
+              ),
+            ),
       title: Row(
         children: [
           Flexible(
