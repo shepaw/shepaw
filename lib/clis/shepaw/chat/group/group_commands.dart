@@ -63,9 +63,13 @@ class GroupCreateCommand extends CliCommand {
     if (name == null || name.trim().isEmpty) {
       return {'error': 'Missing required flag: --name'};
     }
+    final actorId = ChatAgentScope.agentId.isNotEmpty
+        ? ChatAgentScope.agentId
+        : SheService.sheId;
     final description = flags['description'] ?? flags['purpose'];
     final result = await _service.createGroup(
       name: name,
+      actorId: actorId,
       agentRefs: GroupManagementService.parseAgentRefs(flags['agents']),
       description: description,
       systemPrompt: flags['system-prompt'] ?? flags['system_prompt'],
@@ -86,7 +90,7 @@ class GroupAddCommand extends CliCommand {
 
   @override
   String get description =>
-      'Add an agent to a group (requires She to be the group admin)';
+      'Add an agent to a group (admin only — non-admins are denied)';
 
   @override
   String get usage =>
@@ -154,7 +158,7 @@ class GroupKickCommand extends CliCommand {
 
   @override
   String get description =>
-      'Remove an agent from a group (requires She to be the group admin)';
+      'Remove an agent from a group (admin only — non-admins are denied)';
 
   @override
   String get usage =>
@@ -216,7 +220,7 @@ class GroupRenameCommand extends CliCommand {
 
   @override
   String get description =>
-      'Rename a group chat (requires She to be the group admin)';
+      'Rename a group chat (admin only — non-admins are denied)';
 
   @override
   String get usage =>

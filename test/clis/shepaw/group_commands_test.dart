@@ -1,8 +1,27 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shepaw/clis/shepaw/chat/group/group_commands.dart';
 import 'package:shepaw/models/channel.dart';
+import 'package:shepaw/services/group/group_admin_gate.dart';
 import 'package:shepaw/services/group/group_management_service.dart';
 import 'package:shepaw/services/she_service.dart';
+
+Channel _group({
+  required String adminId,
+  List<String> memberIds = const [],
+}) {
+  return Channel(
+    id: 'group_1',
+    name: 'Team',
+    type: 'group',
+    members: [
+      ChannelMember(id: 'user', type: 'user', role: 'member', joinedAt: 1),
+      ChannelMember(id: adminId, type: 'agent', role: 'admin', joinedAt: 1),
+      ...memberIds.map(
+        (id) => ChannelMember(id: id, type: 'agent', role: 'member', joinedAt: 1),
+      ),
+    ],
+  );
+}
 
 void main() {
   group('GroupManagementService helpers', () {
@@ -31,36 +50,68 @@ void main() {
     });
   });
 
-  group('Channel admin check', () {
-    test('isAdmin reflects member role', () {
-      final channel = Channel(
-        id: 'group_1',
-        name: 'Team',
-        type: 'group',
+  group('GroupAdminGate', () {
+    test('allows the admin and denies non-admin members', () {
+      final channel = _group(
+        adminId: SheService.sheId,
+        memberIds: const ['coder-1'],
+      );
+      expect(
+        GroupAdminGate.denyReason(
+          channel: channel,
+          channelId: channel.id,
+          actorId: SheService.sheId,
+        ),
+        isNull,
+      );
+      expect(GroupAdminGate.canMutate(channel: channel, actorId: SheService.sheId), isTrue);
+
+      final denied = GroupAdminGate.denyReason(
+        channel: channel,
+        channelId: channel.id,
+        actorId: 'coder-1',
+      );
+      expect(denied, contains('Permission denied'));
+      expect(denied, contains('not the admin'));
+      expect(GroupAdminGate.canMutate(channel: channel, actorId: 'coder-1'), isFalse);
+    });
+
+    test('denies missing channel, non-group, and empty actor', () {
+      expect(
+        GroupAdminGate.denyReason(
+          channel: null,
+          channelId: 'missing',
+          actorId: SheService.sheId,
+        ),
+        contains('Channel not found'),
+      );
+
+      final dm = Channel(
+        id: 'dm_1',
+        name: 'DM',
+        type: 'dm',
         members: [
-          ChannelMember(
-            id: 'user',
-            type: 'user',
-            role: 'member',
-            joinedAt: 1,
-          ),
-          ChannelMember(
-            id: SheService.sheId,
-            type: 'agent',
-            role: 'admin',
-            joinedAt: 1,
-          ),
-          ChannelMember(
-            id: 'coder-1',
-            type: 'agent',
-            role: 'member',
-            joinedAt: 1,
-          ),
+          ChannelMember(id: SheService.sheId, type: 'agent', role: 'admin', joinedAt: 1),
         ],
       );
-      expect(channel.isAdmin(SheService.sheId), isTrue);
-      expect(channel.isAdmin('coder-1'), isFalse);
-      expect(channel.adminAgentId, SheService.sheId);
+      expect(
+        GroupAdminGate.denyReason(
+          channel: dm,
+          channelId: dm.id,
+          actorId: SheService.sheId,
+        ),
+        contains('Not a group channel'),
+      );
+
+      final group = _group(adminId: SheService.sheId);
+      expect(
+        GroupAdminGate.denyReason(
+          channel: group,
+          channelId: group.id,
+          actorId: '',
+        ),
+        contains('Permission denied'),
+      );
     });
   });
 
@@ -100,13 +151,6 @@ void main() {
         'channel': 'group_1',
       });
       expect(missingName['error'], contains('--name'));
-    });
-
-    test('resolveChannelId used by add accepts channel_id injection', () {
-      expect(
-        GroupManagementService.resolveChannelId({'channel_id': 'group_x'}),
-        'group_x',
-      );
     });
   });
 }

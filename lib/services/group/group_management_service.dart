@@ -7,6 +7,7 @@ import '../local_database_service.dart';
 import '../local_user_identity.dart';
 import '../logger_service.dart';
 import '../she_service.dart';
+import 'group_admin_gate.dart';
 import 'group_member_session_service.dart';
 
 /// Result of a group-management CLI / service operation.
@@ -29,13 +30,18 @@ class GroupManagementResult {
 
   Map<String, dynamic> toJson() => ok
       ? {'status': 'ok', ...data}
-      : {'error': error};
+      : {
+          'error': error,
+          if (error != null && error!.contains('Permission denied'))
+            'permission_denied': true,
+        };
 }
 
-/// Shared group create / member / rename operations for She CLI (and UI reuse).
+/// Shared group create / member / rename operations for She CLI.
 ///
-/// Mutating ops (add / kick / rename) require [actorId] to be the group's admin.
-/// [createGroup] always installs She as admin.
+/// - [createGroup] is She-only and always installs She as admin.
+/// - [addMember] / [kickMember] / [renameGroup] require [actorId] to be the
+///   group's admin; non-admins always fail before any DB write.
 class GroupManagementService {
   GroupManagementService({
     LocalDatabaseService? db,
@@ -47,7 +53,7 @@ class GroupManagementService {
   final ChatService _chat;
   static const _tag = 'GroupManagement';
 
-  /// Resolve `--channel` / `--channel_id` (injected when She is already in a group).
+  /// Resolve `--channel` / `--channel_id` (injected when already in a group).
   static String? resolveChannelId(Map<String, String> flags) {
     final explicit = flags['channel']?.trim();
     if (explicit != null && explicit.isNotEmpty) return explicit;
@@ -91,9 +97,10 @@ class GroupManagementService {
     return out;
   }
 
-  /// Create a group with She as admin (always). Optional extra agents by name/id.
+  /// Create a group. Only [SheService.sheId] may create; She is always admin.
   Future<GroupManagementResult> createGroup({
     required String name,
+    required String actorId,
     List<String> agentRefs = const [],
     String? description,
     String? systemPrompt,
@@ -101,6 +108,12 @@ class GroupManagementService {
     int? maxLoopRounds,
     String userId = LocalUserIdentity.id,
   }) async {
+    if (actorId != SheService.sheId) {
+      return GroupManagementResult.failure(
+        'Permission denied: only She can create group chats via CLI.',
+      );
+    }
+
     final trimmed = name.trim();
     if (trimmed.isEmpty) {
       return GroupManagementResult.failure('Missing required flag: --name');
@@ -113,7 +126,6 @@ class GroupManagementService {
       return GroupManagementResult.failure(e.message);
     }
 
-    // She must be a member and the admin.
     final she = await _db.getRemoteAgentById(SheService.sheId);
     if (she == null) {
       return GroupManagementResult.failure(
@@ -140,6 +152,7 @@ class GroupManagementService {
         (a) => ChannelMember(
           id: a.id,
           type: 'agent',
+          // Creator (She) is always admin; never promote others via create.
           role: a.id == SheService.sheId ? 'admin' : 'member',
           joinedAt: now,
         ),
@@ -161,6 +174,12 @@ class GroupManagementService {
       mentionMode: mentionMode,
       isPrivate: true,
     );
+
+    if (!channel.isAdmin(SheService.sheId)) {
+      return GroupManagementResult.failure(
+        'Internal error: createGroup failed to assign She as admin.',
+      );
+    }
 
     await _db.createChannel(channel, userId);
     await GroupMemberSessionService(_db).ensureMemberSessionsForGroup(
@@ -214,6 +233,7 @@ class GroupManagementService {
       );
     }
 
+    // New members are never admin; admin cannot be granted via add.
     await _db.addChannelMember(
       channelId,
       agent.id,
@@ -263,9 +283,9 @@ class GroupManagementService {
         '${agent.name} is not a member of this group.',
       );
     }
-    if (agent.id == actorId) {
+    if (agent.id == actorId || channel.isAdmin(agent.id)) {
       return GroupManagementResult.failure(
-        'Cannot kick yourself (the admin). Transfer admin first or leave via UI.',
+        'Cannot kick the group admin. Transfer admin first or leave via UI.',
       );
     }
     if (channel.agentIds.length <= 1) {
@@ -324,24 +344,23 @@ class GroupManagementService {
     });
   }
 
+  /// Loads the channel and denies unless [actorId] is its admin.
   Future<({Channel? channel, String? error})> _requireAdminGroup(
     String channelId,
     String actorId,
   ) async {
     final channel = await _db.getChannelById(channelId);
-    if (channel == null) {
-      return (channel: null, error: 'Channel not found: $channelId');
-    }
-    if (!channel.isGroup) {
-      return (channel: null, error: 'Not a group channel: $channelId');
-    }
-    if (!channel.isAdmin(actorId)) {
-      return (
-        channel: null,
-        error:
-            'Permission denied: only the group admin can perform this action. '
-            'You are not the admin of "${channel.name}".',
+    final denied = GroupAdminGate.denyReason(
+      channel: channel,
+      channelId: channelId,
+      actorId: actorId,
+    );
+    if (denied != null) {
+      LoggerService().warning(
+        'Group mutation denied for actor=$actorId channel=$channelId: $denied',
+        tag: _tag,
       );
+      return (channel: null, error: denied);
     }
     return (channel: channel, error: null);
   }

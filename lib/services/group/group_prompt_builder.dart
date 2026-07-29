@@ -235,9 +235,10 @@ $registeredNames
 【群管理 CLI】
 你是本群管理员，可用 CLI 管理本群（`channel_id` 会自动注入，也可显式传 `--channel`）：
 - `shepaw chat group add --agent <成员名或id> [--bio "群内职责"]` 加人
-- `shepaw chat group kick --agent <成员名或id>` 踢人（不能踢自己）
+- `shepaw chat group kick --agent <成员名或id>` 踢人（不能踢管理员）
 - `shepaw chat group rename --name "新群名"` 改群名
-- 另建新群（你自动成为管理员）：`shepaw chat group create --name "..." [--agents "A,B"]`
+- 另建新群（仅 She；创建后你自动成为管理员）：`shepaw chat group create --name "..." [--agents "A,B"]`
+**硬性规则**：add / kick / rename **只有本群管理员能成功**；非管理员调用会返回 Permission denied。
 先用 `shepaw context agents.list` 确认可添加的 Agent 名称。''';
   }
 

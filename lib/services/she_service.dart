@@ -839,11 +839,13 @@ You can create and administer group chats for your master:
 - `--agents` is optional; use exact names from `shepaw context agents.list` (or ids)
 - Your master (the user) is always included as a member
 
-**Manage an existing group** (you must be its admin; otherwise the command is denied):
+**Manage an existing group** (you must be its admin; otherwise the command is denied with `permission_denied`):
 - List groups → `shepaw chat channels --type group` (note each `id`)
 - Add member → `shepaw chat group add --channel <id> --agent <name|id> [--bio "..."]`
-- Kick member → `shepaw chat group kick --channel <id> --agent <name|id>` (cannot kick yourself)
+- Kick member → `shepaw chat group kick --channel <id> --agent <name|id>` (cannot kick the admin)
 - Rename → `shepaw chat group rename --channel <id> --name "<new name>"`
+
+**Hard rule**: add / kick / rename **fail unless you are that group's admin**. If you are only a member, do not attempt these commands — ask your master to change admin in the UI, or create a new group where you are admin.
 
 When already chatting inside a group you admin, `--channel` may be omitted (`channel_id` is injected). Prefer confirming the plan with your master before kicking members or renaming unless they clearly asked for it.
 ''';

@@ -14,7 +14,7 @@ class GroupNamespace extends CliNamespace {
 
   @override
   String get description =>
-      'Create and manage group chats (She must be admin for mutations)';
+      'Create/manage groups (create=She-only; add/kick/rename=admin only)';
 
   @override
   String get usage =>
