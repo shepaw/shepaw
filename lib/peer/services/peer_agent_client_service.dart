@@ -25,6 +25,7 @@ import '../../services/local_database_service.dart';
 import '../../services/local_file_storage_service.dart';
 import '../../services/logger_service.dart';
 import '../../service_locator.dart' show getIt;
+import '../../utils/engine_avatars.dart';
 import 'peer_connection.dart' show PeerConnectionEvent, PeerConnectionEventType;
 import '../peer_approval_payload.dart';
 import 'peer_connection_manager.dart';
@@ -1909,6 +1910,7 @@ class PeerAgentClientService {
                 ?.map((e) => e.toString())
                 .toList() ??
             const <String>[];
+        final engine = (raw['engine'] as String?)?.trim();
         final avatar = await _resolvePeerAvatar(raw, existing);
 
         final agent = RemoteAgent(
@@ -1927,6 +1929,7 @@ class PeerAgentClientService {
             'source_peer_id': peerId,
             'source_peer_name': peerName,
             'remote_agent_id': remoteId,
+            if (engine != null && engine.isNotEmpty) 'engine': engine,
             if (supportedModalities.isNotEmpty)
               'supported_modalities': supportedModalities,
             // 保留本地头像自定义标记，使其在每次同步后依然生效。
@@ -1962,10 +1965,11 @@ class PeerAgentClientService {
 
   /// 解析对端 agent 的头像值，落地为本地可展示的形式。
   ///
+  /// - 本地已手动改头像（`avatar_overridden`）：始终以本地为准。
   /// - 对端附带了图片字节（`avatar_data`）：解码后写入本地存储，返回其绝对路径；
   ///   若该 peer agent 此前已有本地头像文件，则原地覆盖以保持路径稳定、避免堆积。
   /// - 无字节：直接用 `avatar` 字符串（emoji / asset / 网络 URL 可在本端解析）；
-  ///   但若它是对端的本机绝对路径，本端无法访问，回退到默认 emoji。
+  ///   若是对端本机绝对路径、空值或通用占位 🤖，则按 `engine` 回退到引擎默认头像。
   Future<String> _resolvePeerAvatar(Map raw, RemoteAgent? existing) async {
     // 本地已自定义该 peer agent 头像 → 以本地为准，忽略对端分享的头像。
     final existingAvatar = existing?.avatar;
@@ -1974,6 +1978,9 @@ class PeerAgentClientService {
         existingAvatar.isNotEmpty) {
       return existingAvatar;
     }
+
+    final engine = (raw['engine'] as String?)?.trim();
+    final engineDefault = defaultAvatarForEngine(engine);
 
     final data = raw['avatar_data'] as String?;
     if (data != null && data.isNotEmpty) {
@@ -2002,10 +2009,14 @@ class PeerAgentClientService {
       }
     }
 
-    final avatar = raw['avatar'] as String? ?? '🤖';
-    // 对端的本机绝对路径在本端不存在，回退默认 emoji。
-    if (avatar.startsWith('/') && !avatar.startsWith('http')) return '🤖';
-    return avatar.isEmpty ? '🤖' : avatar;
+    final avatar = raw['avatar'] as String? ?? '';
+    // 对端的本机绝对路径在本端不存在 → 引擎默认头像。
+    if (avatar.startsWith('/') && !avatar.startsWith('http')) {
+      return engineDefault;
+    }
+    // 空值 / 通用占位 → 升级为引擎默认（兼容旧 Hub 仍发 🤖 的情况）。
+    if (isGenericDefaultAvatar(avatar)) return engineDefault;
+    return avatar;
   }
 
   Future<void> _markPeerAgentsOffline(String peerId) async {

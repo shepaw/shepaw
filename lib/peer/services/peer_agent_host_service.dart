@@ -216,12 +216,14 @@ class PeerAgentHostService {
       // 超预算的头像不附带字节，由对端回退到默认头像。
       var avatarBudget = _avatarBudgetBytes;
       for (final a in shared) {
+        final engine = (a.metadata['engine'] as String?)?.trim();
         final entry = <String, dynamic>{
           'id': a.id,
           'name': a.name,
           'avatar': a.avatar,
           'bio': a.bio,
           'capabilities': a.capabilities,
+          if (engine != null && engine.isNotEmpty) 'engine': engine,
           // Input modalities the peer client should expose (e.g. image picker).
           // Audio is omitted: peer voice input is not supported yet.
           'supported_modalities': [
