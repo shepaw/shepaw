@@ -3,7 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import '../l10n/app_localizations.dart';
-import '../screens/storage_space_screen.dart';
+import '../screens/storage_import_screen.dart';
 import '../services/logger_service.dart';
 import '../services/notification_service.dart';
 import 'import_auth_service.dart';
@@ -65,7 +65,7 @@ class ImportGrantNotifier {
     if (nav == null) return;
     nav.push(
       MaterialPageRoute<void>(
-        builder: (_) => const StorageSpaceScreen(),
+        builder: (_) => const StorageImportScreen(),
       ),
     );
   }
