@@ -120,6 +120,7 @@ class AgentPromptBuilder {
         ephemeralContext != null && ephemeralContext!.trim().isNotEmpty;
     if (agent.isShe && config.she.includeMetaCognition && !hasEphemeral) {
       parts.add(SheService.buildDmWorkflowPlaybookBlock());
+      parts.add(SheService.buildDmGroupManagementPlaybookBlock());
     }
 
     // ④ She memory context (soul) — guarded by SheStackConfig flag.

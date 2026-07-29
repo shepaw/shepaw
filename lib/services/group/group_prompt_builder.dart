@@ -78,6 +78,7 @@ class GroupPromptBuilder {
       final planningSection = isFlowMode
           ? _buildWorkflowCliSection(delegateableAgents)
           : '';
+      final groupMgmtSection = _buildGroupManagementCliSection();
 
       final attachmentSection = _buildAdminAttachmentSection();
 
@@ -143,7 +144,7 @@ $memberList
 - **警惕重复失败**：如果同一个任务已经被委派给成员执行了 2 次以上仍未成功，必须停下来重新评估
 - **换思路而非重试**：当某个方案反复失败时，应该考虑：换一个成员来处理、换一种方法或策略、简化任务目标、或者向用户说明困难并请求指导
 - **及时止损**：如果经过多轮尝试后问题仍无法解决，应诚实地向用户汇报当前情况和遇到的困难，而不是继续无意义的循环
-- **关注进展而非次数**：每轮审视结果时，判断是否有实质性进展。如果连续多轮没有任何进展，果断终止并反馈$attachmentSection$loopSummarizeSection$planningSection''';
+- **关注进展而非次数**：每轮审视结果时，判断是否有实质性进展。如果连续多轮没有任何进展，果断终止并反馈$attachmentSection$loopSummarizeSection$planningSection$groupMgmtSection''';
     }
 
     final mentionNotice = isMentioned
@@ -225,6 +226,19 @@ $registeredNames
 ```json
 {"dispatch": {"mode": "concurrent", "steps": [{"step": 1, "agents": ["$exampleName"], "task": "任务说明"}]}, "continue": false, "done": false}
 ```''';
+  }
+
+  /// Admin-only CLI for managing this group's membership and title.
+  String _buildGroupManagementCliSection() {
+    return '''
+
+【群管理 CLI】
+你是本群管理员，可用 CLI 管理本群（`channel_id` 会自动注入，也可显式传 `--channel`）：
+- `shepaw chat group add --agent <成员名或id> [--bio "群内职责"]` 加人
+- `shepaw chat group kick --agent <成员名或id>` 踢人（不能踢自己）
+- `shepaw chat group rename --name "新群名"` 改群名
+- 另建新群（你自动成为管理员）：`shepaw chat group create --name "..." [--agents "A,B"]`
+先用 `shepaw context agents.list` 确认可添加的 Agent 名称。''';
   }
 
   /// Build the workflow CLI usage section for Admin's system prompt.

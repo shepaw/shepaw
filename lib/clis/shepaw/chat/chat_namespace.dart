@@ -1,6 +1,7 @@
 import '../../cli_base.dart';
 import '../../../services/she_service.dart';
 import 'channels_command.dart';
+import 'group/group_namespace.dart';
 import 'message_namespace.dart';
 import 'messages_command.dart';
 
@@ -13,6 +14,7 @@ import 'messages_command.dart';
 /// - `channels`  列出所有对话频道
 /// - `messages`  查询频道消息（--channel <id> 或 --agent <agent_id>）
 /// - `message.get` 按 message_id 获取完整消息 / 附件 / 图片分析
+/// - `group.*`   创建 / 加人 / 踢人 / 改群名（变更操作需 She 为管理员）
 class ChatNamespace extends CliNamespace {
   static final instance = ChatNamespace._();
   ChatNamespace._();
@@ -25,11 +27,12 @@ class ChatNamespace extends CliNamespace {
   String get namespace => 'chat';
 
   @override
-  String get description => 'Conversation channels and messages';
+  String get description => 'Conversation channels, messages, and group management';
 
   @override
   Map<String, CliNamespace> get subNamespaces => {
         'message': MessageNamespace(),
+        'group': GroupNamespace(),
       };
 
   @override
