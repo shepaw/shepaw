@@ -55,7 +55,6 @@ enum _RightPanelView {
   contactPeer,
   traces,
   groupWorkflow,
-  storageOverview,
   storageSnapshots,
   storageSpaceManage,
   storageImport,
@@ -319,7 +318,7 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
         return;
       }
       if (_isStorageDetailPanel && _leftMode == _LeftPanelMode.storage) {
-        _showStorageOverview();
+        _showStorage();
         _reloadStorage();
       }
     });
@@ -352,16 +351,9 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
       _leftMode = _LeftPanelMode.storage;
       _selected = null;
       _clearContactSelectionFields();
-      _storageEntry = null;
-      _rightPanel = _RightPanelView.storageOverview;
-      _navGeneration++;
-    });
-  }
-
-  void _showStorageOverview() {
-    setState(() {
-      _storageEntry = null;
-      _rightPanel = _RightPanelView.storageOverview;
+      // 默认直接展示用量详情（空间与同步），无需再点一次。
+      _storageEntry = StorageBagEntry.space;
+      _rightPanel = _RightPanelView.storageSpaceManage;
       _navGeneration++;
     });
   }
@@ -376,7 +368,7 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
       if (!_isContactDetailPanel) {
         _clearContactSelectionFields();
       }
-      if (!_isStorageDetailPanel && panel != _RightPanelView.storageOverview) {
+      if (!_isStorageDetailPanel) {
         _storageEntry = null;
       }
       _navGeneration++;
@@ -651,11 +643,6 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
           channelId: _workflowChannelId ?? '',
           channelName: _workflowChannelName ?? '',
           onBack: _onGroupWorkflowBack,
-        );
-
-      case _RightPanelView.storageOverview:
-        return StorageOverviewPanel(
-          onOpenEntry: _onStorageEntrySelected,
         );
 
       case _RightPanelView.storageSnapshots:
