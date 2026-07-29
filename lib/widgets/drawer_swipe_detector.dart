@@ -1,12 +1,11 @@
 import 'package:flutter/material.dart';
 
-/// Wraps [child] with a higher vertical scroll drag threshold so horizontal
-/// drawer edge swipes are less likely to be interpreted as list scrolling.
+/// Helps [Scaffold] drawer edge-drag coexist with vertical list scrolling.
 ///
-/// Pair with [Scaffold.drawerEnableOpenDragGesture] /
-/// [Scaffold.endDrawerEnableOpenDragGesture] and a wide
-/// [Scaffold.drawerEdgeDragWidth] so the platform drawer follows the finger
-/// and can be cancelled by swiping back.
+/// Pair with [Scaffold.drawerEnableOpenDragGesture] and a moderate
+/// [Scaffold.drawerEdgeDragWidth] (edge strip, not full screen). Prefer a
+/// [verticalScrollSlop] near [kTouchSlop] so up/down scrolls with a slight
+/// horizontal bias are not claimed by the drawer.
 ///
 /// When [blockLeadingEdgeDrawerGesture] is true, a narrow strip on the left
 /// screen edge (below the AppBar) absorbs pointer events so the scaffold
@@ -16,7 +15,7 @@ class DrawerSwipeDetector extends StatelessWidget {
     super.key,
     required this.child,
     this.enabled = true,
-    this.verticalScrollSlop = 36,
+    this.verticalScrollSlop = 18,
     this.blockLeadingEdgeDrawerGesture = false,
     this.leadingEdgeBlockWidth,
   });
@@ -25,6 +24,7 @@ class DrawerSwipeDetector extends StatelessWidget {
   final bool enabled;
 
   /// Vertical travel required before descendant scroll views start dragging.
+  /// Keep near [kTouchSlop] so vertical list scrolls win over drawer open.
   final double verticalScrollSlop;
 
   /// When true, block drawer drag gestures that start on the left edge.

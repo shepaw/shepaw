@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:package_info_plus/package_info_plus.dart';
@@ -451,11 +452,18 @@ class HomeScreenState extends State<HomeScreen> {
     final iconColor = IconTheme.of(context).color ?? Theme.of(context).colorScheme.onSurface;
     final isSearching = widget.embedded && _searchController.text.trim().isNotEmpty;
 
-    final screenWidth = MediaQuery.sizeOf(context).width;
+    // Edge-only open zone: full-screen drag made vertical list scrolls with a
+    // slight horizontal bias steal the drawer gesture. Keep a strip wide enough
+    // to sit beyond the system-back AbsorbPointer, but not the whole list.
+    final leadingBlock =
+        DrawerSwipeDetector.resolveLeadingEdgeBlockWidth(context);
+    final drawerEdgeDragWidth =
+        widget.embedded ? null : math.max(72.0, leadingBlock + 48);
 
     return DrawerSwipeDetector(
       enabled: !widget.embedded,
-      verticalScrollSlop: 36,
+      // Match kTouchSlop so vertical scrolls win when movement is mostly up/down.
+      verticalScrollSlop: 18,
       blockLeadingEdgeDrawerGesture: !widget.embedded,
       child: Scaffold(
         appBar: widget.embedded
@@ -482,7 +490,7 @@ class HomeScreenState extends State<HomeScreen> {
         // 左侧抽屉菜单 (hidden in embedded mode)
         drawer: widget.embedded ? null : _buildDrawer(),
         drawerEnableOpenDragGesture: !widget.embedded,
-        drawerEdgeDragWidth: widget.embedded ? null : screenWidth,
+        drawerEdgeDragWidth: drawerEdgeDragWidth,
         body: isSearching ? _buildEmbeddedSearchBody() : _buildBody(),
       ),
     );
