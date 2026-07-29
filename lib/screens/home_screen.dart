@@ -1884,7 +1884,7 @@ class HomeScreenState extends State<HomeScreen> {
             Stack(
               clipBehavior: Clip.none,
               children: [
-                PeerDeviceIcon(peer: peer, size: 48, borderRadius: 12),
+                PeerDeviceIcon(peer: peer, size: 56, borderRadius: 12),
                 // 在线状态
                 Positioned(
                   right: 0,
