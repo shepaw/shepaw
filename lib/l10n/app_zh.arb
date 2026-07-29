@@ -1545,13 +1545,13 @@
   "addAgent_configureModelRouting": "配置模型路由",
   "contacts_title": "通讯录",
   "contacts_agents": "Agent",
-  "contacts_groups": "群组",
+  "contacts_groups": "群聊",
   "contacts_devices": "设备",
   "contacts_noPeers": "尚未配对任何设备",
   "contacts_startPairing": "开始配对",
   "contacts_addPairingDevice": "添加配对设备",
   "contacts_noAgents": "暂无 Agent",
-  "contacts_noGroups": "暂无群组",
+  "contacts_noGroups": "暂无群聊",
   "contacts_agentCount": "{count} 个 Agent",
   "@contacts_agentCount": {
     "placeholders": {
@@ -1560,7 +1560,7 @@
       }
     }
   },
-  "contacts_groupCount": "{count} 个群组",
+  "contacts_groupCount": "{count} 个群聊",
   "@contacts_groupCount": {
     "placeholders": {
       "count": {

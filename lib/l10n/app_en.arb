@@ -1060,13 +1060,13 @@
   "addAgent_configureModelRouting": "Configure Model Routing",
   "contacts_title": "Contacts",
   "contacts_agents": "Agents",
-  "contacts_groups": "Groups",
+  "contacts_groups": "Group Chats",
   "contacts_devices": "Devices",
   "contacts_noPeers": "No paired devices yet",
   "contacts_startPairing": "Start Pairing",
   "contacts_addPairingDevice": "Add Paired Device",
   "contacts_noAgents": "No agents yet",
-  "contacts_noGroups": "No groups yet",
+  "contacts_noGroups": "No group chats yet",
   "contacts_agentCount": "{count} agents",
   "@contacts_agentCount": {
     "placeholders": {
@@ -1075,7 +1075,7 @@
       }
     }
   },
-  "contacts_groupCount": "{count} groups",
+  "contacts_groupCount": "{count} group chats",
   "@contacts_groupCount": {
     "placeholders": {
       "count": {

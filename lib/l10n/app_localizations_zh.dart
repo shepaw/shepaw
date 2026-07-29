@@ -2551,7 +2551,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get contacts_agents => 'Agent';
 
   @override
-  String get contacts_groups => '群组';
+  String get contacts_groups => '群聊';
 
   @override
   String get contacts_devices => '设备';
@@ -2569,7 +2569,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get contacts_noAgents => '暂无 Agent';
 
   @override
-  String get contacts_noGroups => '暂无群组';
+  String get contacts_noGroups => '暂无群聊';
 
   @override
   String contacts_agentCount(int count) {
@@ -2578,7 +2578,7 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String contacts_groupCount(int count) {
-    return '$count 个群组';
+    return '$count 个群聊';
   }
 
   @override

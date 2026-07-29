@@ -2644,7 +2644,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get contacts_agents => 'Agents';
 
   @override
-  String get contacts_groups => 'Groups';
+  String get contacts_groups => 'Group Chats';
 
   @override
   String get contacts_devices => 'Devices';
@@ -2662,7 +2662,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get contacts_noAgents => 'No agents yet';
 
   @override
-  String get contacts_noGroups => 'No groups yet';
+  String get contacts_noGroups => 'No group chats yet';
 
   @override
   String contacts_agentCount(int count) {
@@ -2671,7 +2671,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String contacts_groupCount(int count) {
-    return '$count groups';
+    return '$count group chats';
   }
 
   @override

@@ -19,7 +19,8 @@ import 'group_detail_screen.dart';
 import 'add_remote_agent_screen.dart';
 import 'create_group_screen.dart';
 
-/// Contacts management screen with Agents and Groups tabs.
+/// WeChat-style contacts screen with collapsible sections.
+/// Section order: Devices → Group Chats → Agents.
 class ContactsScreen extends StatefulWidget {
   const ContactsScreen({super.key});
 
@@ -27,27 +28,40 @@ class ContactsScreen extends StatefulWidget {
   State<ContactsScreen> createState() => _ContactsScreenState();
 }
 
-class _ContactsScreenState extends State<ContactsScreen>
-    with SingleTickerProviderStateMixin {
-  late TabController _tabController;
+enum _ContactsSection { devices, groups, agents }
+
+class _ContactsScreenState extends State<ContactsScreen> {
   final LocalApiService _apiService = LocalApiService();
   final LocalDatabaseService _databaseService = LocalDatabaseService();
+  final TextEditingController _searchController = TextEditingController();
 
   List<Agent> _agents = [];
   List<Channel> _groups = [];
   List<PairedPeer> _peers = [];
   bool _isLoading = true;
+  String _query = '';
+
+  final Set<_ContactsSection> _expanded = {
+    _ContactsSection.devices,
+    _ContactsSection.groups,
+    _ContactsSection.agents,
+  };
 
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 3, vsync: this);
+    _searchController.addListener(() {
+      final next = _searchController.text.trim().toLowerCase();
+      if (next != _query) {
+        setState(() => _query = next);
+      }
+    });
     _loadData();
   }
 
   @override
   void dispose() {
-    _tabController.dispose();
+    _searchController.dispose();
     super.dispose();
   }
 
@@ -82,122 +96,294 @@ class _ContactsScreenState extends State<ContactsScreen>
     }
   }
 
+  List<PairedPeer> get _filteredPeers {
+    if (_query.isEmpty) return _peers;
+    return _peers
+        .where((p) => p.deviceName.toLowerCase().contains(_query))
+        .toList();
+  }
+
+  List<Channel> get _filteredGroups {
+    if (_query.isEmpty) return _groups;
+    return _groups
+        .where((g) =>
+            g.name.toLowerCase().contains(_query) ||
+            (g.description?.toLowerCase().contains(_query) ?? false))
+        .toList();
+  }
+
+  List<Agent> get _filteredAgents {
+    if (_query.isEmpty) return _agents;
+    return _agents.where((a) {
+      final name = a.name.toLowerCase();
+      final bio = a.bio?.toLowerCase() ?? '';
+      return name.contains(_query) || bio.contains(_query);
+    }).toList();
+  }
+
+  void _toggleSection(_ContactsSection section) {
+    setState(() {
+      if (_expanded.contains(section)) {
+        _expanded.remove(section);
+      } else {
+        _expanded.add(section);
+      }
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
     return Scaffold(
       appBar: AppBar(
         title: Text(l10n.contacts_title),
-        elevation: 1,
-        bottom: TabBar(
-          controller: _tabController,
-          tabs: [
-            Tab(text: l10n.contacts_agents),
-            Tab(text: l10n.contacts_groups),
-            Tab(text: l10n.contacts_devices),
-          ],
-        ),
+        elevation: 0,
+        actions: [
+          PopupMenuButton<String>(
+            icon: const Icon(Icons.add),
+            onSelected: (value) {
+              switch (value) {
+                case 'device':
+                  _startPeerPairing();
+                case 'group':
+                  _createGroup();
+                case 'agent':
+                  _addAgent();
+              }
+            },
+            itemBuilder: (context) => [
+              PopupMenuItem(
+                value: 'device',
+                child: Text(l10n.contacts_addPairingDevice),
+              ),
+              PopupMenuItem(
+                value: 'group',
+                child: Text(l10n.home_createGroup),
+              ),
+              PopupMenuItem(
+                value: 'agent',
+                child: Text(l10n.home_addAgent),
+              ),
+            ],
+          ),
+        ],
       ),
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
-          : TabBarView(
-              controller: _tabController,
+          : Column(
               children: [
-                _buildAgentsList(),
-                _buildGroupsList(),
-                _buildPeersList(),
+                _buildSearchBar(l10n),
+                Expanded(
+                  child: RefreshIndicator(
+                    onRefresh: _loadData,
+                    child: _buildSectionList(l10n),
+                  ),
+                ),
               ],
             ),
     );
   }
 
-  Widget _buildAgentsList() {
-    final l10n = AppLocalizations.of(context);
-    return Column(
-      children: [
-        // 添加 Agent 按钮
-        Padding(
-          padding: const EdgeInsets.all(12),
-          child: SizedBox(
-            width: double.infinity,
-            child: OutlinedButton.icon(
-              onPressed: _addAgent,
-              icon: const Icon(Icons.person_add_outlined),
-              label: Text(l10n.home_addAgent),
-            ),
+  Widget _buildSearchBar(AppLocalizations l10n) {
+    final colorScheme = Theme.of(context).colorScheme;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(12, 4, 12, 8),
+      child: TextField(
+        controller: _searchController,
+        decoration: InputDecoration(
+          hintText: l10n.common_search,
+          prefixIcon: const Icon(Icons.search, size: 20),
+          suffixIcon: _query.isEmpty
+              ? null
+              : IconButton(
+                  icon: const Icon(Icons.clear, size: 18),
+                  onPressed: () => _searchController.clear(),
+                ),
+          isDense: true,
+          filled: true,
+          fillColor: colorScheme.surfaceContainerHighest.withValues(alpha: 0.6),
+          contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(8),
+            borderSide: BorderSide.none,
           ),
         ),
-        Expanded(
-          child: _agents.isEmpty
-              ? Center(
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Icon(Icons.smart_toy_outlined,
-                          size: 64, color: Colors.grey[300]),
-                      const SizedBox(height: 16),
-                      Text(
-                        l10n.contacts_noAgents,
-                        style: TextStyle(fontSize: 16, color: Colors.grey[400]),
-                      ),
-                    ],
-                  ),
-                )
-              : RefreshIndicator(
-                  onRefresh: _loadData,
-                  child: ListView.builder(
-                    itemCount: _agents.length,
-                    itemBuilder: (context, index) =>
-                        _buildAgentTile(_agents[index]),
-                  ),
-                ),
-        ),
-      ],
+      ),
     );
   }
 
-  Widget _buildGroupsList() {
-    final l10n = AppLocalizations.of(context);
-    return Column(
-      children: [
-        // 创建群组按钮
-        Padding(
-          padding: const EdgeInsets.all(12),
-          child: SizedBox(
-            width: double.infinity,
-            child: OutlinedButton.icon(
-              onPressed: _createGroup,
-              icon: const Icon(Icons.group_add_outlined),
-              label: Text(l10n.home_createGroup),
+  Widget _buildSectionList(AppLocalizations l10n) {
+    final peers = _filteredPeers;
+    final groups = _filteredGroups;
+    final agents = _filteredAgents;
+
+    final children = <Widget>[
+      // Order: Devices → Group Chats → Agents (WeChat-style)
+      _buildSectionHeader(
+        section: _ContactsSection.devices,
+        title: l10n.contacts_devices,
+        count: peers.length,
+        icon: Icons.devices_other_outlined,
+        iconColor: const Color(0xFF576B95),
+      ),
+      if (_expanded.contains(_ContactsSection.devices))
+        ..._buildPeerChildren(peers, l10n),
+      _buildSectionHeader(
+        section: _ContactsSection.groups,
+        title: l10n.contacts_groups,
+        count: groups.length,
+        icon: Icons.group_outlined,
+        iconColor: const Color(0xFF07C160),
+      ),
+      if (_expanded.contains(_ContactsSection.groups))
+        ..._buildGroupChildren(groups, l10n),
+      _buildSectionHeader(
+        section: _ContactsSection.agents,
+        title: l10n.contacts_agents,
+        count: agents.length,
+        icon: Icons.smart_toy_outlined,
+        iconColor: AppColors.primary,
+      ),
+      if (_expanded.contains(_ContactsSection.agents))
+        ..._buildAgentChildren(agents, l10n),
+      const SizedBox(height: 24),
+    ];
+
+    return ListView(
+      physics: const AlwaysScrollableScrollPhysics(),
+      children: children,
+    );
+  }
+
+  Widget _buildSectionHeader({
+    required _ContactsSection section,
+    required String title,
+    required int count,
+    required IconData icon,
+    required Color iconColor,
+  }) {
+    final expanded = _expanded.contains(section);
+    final colorScheme = Theme.of(context).colorScheme;
+
+    return InkWell(
+      onTap: () => _toggleSection(section),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        child: Row(
+          children: [
+            AnimatedRotation(
+              turns: expanded ? 0.25 : 0,
+              duration: const Duration(milliseconds: 180),
+              child: Icon(
+                Icons.chevron_right,
+                size: 20,
+                color: colorScheme.onSurfaceVariant,
+              ),
+            ),
+            const SizedBox(width: 4),
+            Container(
+              width: 36,
+              height: 36,
+              decoration: BoxDecoration(
+                color: iconColor.withValues(alpha: 0.12),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              alignment: Alignment.center,
+              child: Icon(icon, size: 20, color: iconColor),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                title,
+                style: const TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ),
+            Text(
+              '$count',
+              style: TextStyle(
+                fontSize: 14,
+                color: colorScheme.onSurfaceVariant,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  List<Widget> _buildPeerChildren(List<PairedPeer> peers, AppLocalizations l10n) {
+    if (peers.isEmpty) {
+      return [
+        _buildEmptyHint(
+          icon: Icons.devices_other,
+          message: l10n.contacts_noPeers,
+          actionLabel: l10n.contacts_startPairing,
+          onAction: _startPeerPairing,
+        ),
+      ];
+    }
+    return peers.map(_buildPeerTile).toList();
+  }
+
+  List<Widget> _buildGroupChildren(List<Channel> groups, AppLocalizations l10n) {
+    if (groups.isEmpty) {
+      return [
+        _buildEmptyHint(
+          icon: Icons.group_outlined,
+          message: l10n.contacts_noGroups,
+          actionLabel: l10n.home_createGroup,
+          onAction: _createGroup,
+        ),
+      ];
+    }
+    return groups.map(_buildGroupTile).toList();
+  }
+
+  List<Widget> _buildAgentChildren(List<Agent> agents, AppLocalizations l10n) {
+    if (agents.isEmpty) {
+      return [
+        _buildEmptyHint(
+          icon: Icons.smart_toy_outlined,
+          message: l10n.contacts_noAgents,
+          actionLabel: l10n.home_addAgent,
+          onAction: _addAgent,
+        ),
+      ];
+    }
+    return agents.map(_buildAgentTile).toList();
+  }
+
+  Widget _buildEmptyHint({
+    required IconData icon,
+    required String message,
+    required String actionLabel,
+    required VoidCallback onAction,
+  }) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(52, 8, 16, 16),
+      child: Row(
+        children: [
+          Icon(icon, size: 18, color: Colors.grey[400]),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              message,
+              style: TextStyle(fontSize: 13, color: Colors.grey[500]),
             ),
           ),
-        ),
-        Expanded(
-          child: _groups.isEmpty
-              ? Center(
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Icon(Icons.group_outlined,
-                          size: 64, color: Colors.grey[300]),
-                      const SizedBox(height: 16),
-                      Text(
-                        l10n.contacts_noGroups,
-                        style: TextStyle(fontSize: 16, color: Colors.grey[400]),
-                      ),
-                    ],
-                  ),
-                )
-              : RefreshIndicator(
-                  onRefresh: _loadData,
-                  child: ListView.builder(
-                    itemCount: _groups.length,
-                    itemBuilder: (context, index) =>
-                        _buildGroupTile(_groups[index]),
-                  ),
-                ),
-        ),
-      ],
+          TextButton(
+            onPressed: onAction,
+            style: TextButton.styleFrom(
+              visualDensity: VisualDensity.compact,
+              padding: const EdgeInsets.symmetric(horizontal: 8),
+            ),
+            child: Text(actionLabel, style: const TextStyle(fontSize: 13)),
+          ),
+        ],
+      ),
     );
   }
 
@@ -229,41 +415,41 @@ class _ContactsScreenState extends State<ContactsScreen>
         : agent.name;
 
     return ListTile(
+      contentPadding: const EdgeInsets.only(left: 52, right: 16),
       leading: Stack(
         children: [
           Container(
-            width: 48,
-            height: 48,
+            width: 40,
+            height: 40,
             decoration: BoxDecoration(
               color: Colors.grey[200],
-              borderRadius: BorderRadius.circular(12),
+              borderRadius: BorderRadius.circular(8),
             ),
             alignment: Alignment.center,
             child: agent.avatar.length <= 2
-                ? Text(agent.avatar, style: const TextStyle(fontSize: 20))
+                ? Text(agent.avatar, style: const TextStyle(fontSize: 18))
                 : AvatarImage(
                     avatar: agent.avatar,
-                    size: 48,
-                    borderRadius: 12,
+                    size: 40,
+                    borderRadius: 8,
                     fallback: Text(
                       agent.name.isNotEmpty ? agent.name[0] : 'A',
-                      style: const TextStyle(fontSize: 20),
+                      style: const TextStyle(fontSize: 18),
                     ),
                   ),
           ),
-          // Online status dot
           Positioned(
             right: 0,
             bottom: 0,
             child: Container(
-              width: 12,
-              height: 12,
+              width: 10,
+              height: 10,
               decoration: BoxDecoration(
                 color: isOnline ? Colors.green : Colors.grey,
                 shape: BoxShape.circle,
                 border: Border.all(
                   color: Theme.of(context).scaffoldBackgroundColor,
-                  width: 2,
+                  width: 1.5,
                 ),
               ),
             ),
@@ -288,7 +474,6 @@ class _ContactsScreenState extends State<ContactsScreen>
                 color: isOnline ? Colors.green : Colors.grey,
               ),
             ),
-      trailing: const Icon(Icons.chevron_right, color: Colors.grey),
       onTap: () => _openAgentDetail(agent),
     );
   }
@@ -298,15 +483,16 @@ class _ContactsScreenState extends State<ContactsScreen>
     final memberCount = group.members.where((m) => m.id != 'user').length;
 
     return ListTile(
+      contentPadding: const EdgeInsets.only(left: 52, right: 16),
       leading: Container(
-        width: 48,
-        height: 48,
+        width: 40,
+        height: 40,
         decoration: BoxDecoration(
           color: AppColors.primaryContainer,
-          borderRadius: BorderRadius.circular(12),
+          borderRadius: BorderRadius.circular(8),
         ),
         alignment: Alignment.center,
-        child: const Icon(Icons.group, size: 24, color: AppColors.primary),
+        child: const Icon(Icons.group, size: 20, color: AppColors.primary),
       ),
       title: Text(
         group.name,
@@ -320,13 +506,11 @@ class _ContactsScreenState extends State<ContactsScreen>
         overflow: TextOverflow.ellipsis,
         style: TextStyle(fontSize: 12, color: Colors.grey[500]),
       ),
-      trailing: const Icon(Icons.chevron_right, color: Colors.grey),
       onTap: () => _openGroupDetail(group),
     );
   }
 
   Future<void> _openAgentDetail(Agent agent) async {
-    // Load the RemoteAgent from database for the detail screen
     final remoteAgent = await _databaseService.getRemoteAgentById(agent.id);
     if (remoteAgent == null || !mounted) return;
 
@@ -336,7 +520,6 @@ class _ContactsScreenState extends State<ContactsScreen>
         builder: (context) => RemoteAgentDetailScreen(agent: remoteAgent),
       ),
     );
-    // Reload on return in case of edits or deletion
     _loadData();
   }
 
@@ -347,62 +530,7 @@ class _ContactsScreenState extends State<ContactsScreen>
         builder: (context) => GroupDetailScreen(channel: group),
       ),
     );
-    // Reload on return in case of deletion
     _loadData();
-  }
-
-  // ── 配对设备列表 ─────────────────────────────────────────────────────
-
-  Widget _buildPeersList() {
-    final l10n = AppLocalizations.of(context);
-    if (_peers.isEmpty) {
-      return Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(Icons.devices_other, size: 64, color: Colors.grey[300]),
-            const SizedBox(height: 16),
-            Text(
-              l10n.contacts_noPeers,
-              style: TextStyle(fontSize: 16, color: Colors.grey[400]),
-            ),
-            const SizedBox(height: 24),
-            FilledButton.icon(
-              onPressed: _startPeerPairing,
-              icon: const Icon(Icons.qr_code_2),
-              label: Text(l10n.contacts_startPairing),
-            ),
-          ],
-        ),
-      );
-    }
-
-    return Column(
-      children: [
-        // 添加配对按钮
-        Padding(
-          padding: const EdgeInsets.all(12),
-          child: SizedBox(
-            width: double.infinity,
-            child: OutlinedButton.icon(
-              onPressed: _startPeerPairing,
-              icon: const Icon(Icons.add),
-              label: Text(l10n.contacts_addPairingDevice),
-            ),
-          ),
-        ),
-        // 设备列表
-        Expanded(
-          child: RefreshIndicator(
-            onRefresh: _loadData,
-            child: ListView.builder(
-              itemCount: _peers.length,
-              itemBuilder: (context, index) => _buildPeerTile(_peers[index]),
-            ),
-          ),
-        ),
-      ],
-    );
   }
 
   Widget _buildPeerTile(PairedPeer peer) {
@@ -410,21 +538,22 @@ class _ContactsScreenState extends State<ContactsScreen>
     final isConnected = peer.state == PeerConnectionState.connected;
 
     return ListTile(
+      contentPadding: const EdgeInsets.only(left: 52, right: 16),
       leading: Stack(
         children: [
-          PeerDeviceIcon(peer: peer, size: 48, borderRadius: 12),
+          PeerDeviceIcon(peer: peer, size: 40, borderRadius: 8),
           Positioned(
             right: 0,
             bottom: 0,
             child: Container(
-              width: 12,
-              height: 12,
+              width: 10,
+              height: 10,
               decoration: BoxDecoration(
                 color: isConnected ? Colors.green : Colors.grey,
                 shape: BoxShape.circle,
                 border: Border.all(
                   color: Theme.of(context).scaffoldBackgroundColor,
-                  width: 2,
+                  width: 1.5,
                 ),
               ),
             ),
@@ -442,14 +571,12 @@ class _ContactsScreenState extends State<ContactsScreen>
           color: isConnected ? Colors.green : Colors.grey,
         ),
       ),
-      trailing: const Icon(Icons.chevron_right, color: Colors.grey),
       onTap: () => _openPeerDetail(peer),
       onLongPress: () => _showPeerActions(peer),
     );
   }
 
   Future<void> _showPeerActions(PairedPeer peer) async {
-    final l10n = AppLocalizations.of(context);
     final action = await showModalBottomSheet<String>(
       context: context,
       builder: (ctx) {
@@ -486,7 +613,6 @@ class _ContactsScreenState extends State<ContactsScreen>
   }
 
   Future<void> _renamePeer(PairedPeer peer) async {
-    final l10n = AppLocalizations.of(context);
     final newName = await showDialog<String>(
       context: context,
       builder: (ctx) {
@@ -566,7 +692,6 @@ class _ContactsScreenState extends State<ContactsScreen>
 
   Future<void> _openPeerDetail(PairedPeer peer) async {
     await PeerSettingsScreen.show(context, peer);
-    // 详情页可能改了备注或删除了配对，返回后刷新列表。
     if (mounted) _loadData();
   }
 }

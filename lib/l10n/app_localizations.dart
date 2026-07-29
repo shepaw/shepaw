@@ -4697,7 +4697,7 @@ abstract class AppLocalizations {
   /// No description provided for @contacts_groups.
   ///
   /// In zh, this message translates to:
-  /// **'群组'**
+  /// **'群聊'**
   String get contacts_groups;
 
   /// No description provided for @contacts_devices.
@@ -4733,7 +4733,7 @@ abstract class AppLocalizations {
   /// No description provided for @contacts_noGroups.
   ///
   /// In zh, this message translates to:
-  /// **'暂无群组'**
+  /// **'暂无群聊'**
   String get contacts_noGroups;
 
   /// No description provided for @contacts_agentCount.
@@ -4745,7 +4745,7 @@ abstract class AppLocalizations {
   /// No description provided for @contacts_groupCount.
   ///
   /// In zh, this message translates to:
-  /// **'{count} 个群组'**
+  /// **'{count} 个群聊'**
   String contacts_groupCount(int count);
 
   /// No description provided for @contacts_memberCount.
