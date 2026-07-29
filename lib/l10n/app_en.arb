@@ -1059,7 +1059,7 @@
   "addAgent_configureSkills": "Configure Skills",
   "addAgent_configureModelRouting": "Configure Model Routing",
   "contacts_title": "Contacts",
-  "contacts_agents": "Agents",
+  "contacts_agents": "This Device",
   "contacts_groups": "Group Chats",
   "contacts_devices": "Devices",
   "contacts_noPeers": "No paired devices yet",

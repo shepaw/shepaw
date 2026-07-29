@@ -21,7 +21,7 @@ import 'add_remote_agent_screen.dart';
 import 'create_group_screen.dart';
 
 /// WeChat-style contacts screen with collapsible sections.
-/// Section order: Devices → Group Chats → Agents.
+/// Order: each paired device (foldable, with peer agents) → Group Chats → Local.
 ///
 /// When [embedded] is true (desktop middle column), selection callbacks open
 /// details in the parent right panel instead of pushing a new route.
@@ -51,7 +51,7 @@ class ContactsScreen extends StatefulWidget {
   State<ContactsScreen> createState() => ContactsScreenState();
 }
 
-enum _ContactsSection { devices, groups, agents }
+enum _ContactsSection { groups, local }
 
 class ContactsScreenState extends State<ContactsScreen> {
   final LocalApiService _apiService = LocalApiService();
@@ -65,10 +65,12 @@ class ContactsScreenState extends State<ContactsScreen> {
   String _query = '';
 
   final Set<_ContactsSection> _expanded = {
-    _ContactsSection.devices,
     _ContactsSection.groups,
-    _ContactsSection.agents,
+    _ContactsSection.local,
   };
+
+  /// Peer ids whose nested agent list is expanded.
+  final Set<String> _expandedPeerIds = {};
 
   Future<void> reload() => _loadData();
 
@@ -88,6 +90,18 @@ class ContactsScreenState extends State<ContactsScreen> {
   void dispose() {
     _searchController.dispose();
     super.dispose();
+  }
+
+  @override
+  void didUpdateWidget(covariant ContactsScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // Keep the selected peer's agent list expanded when details open on the right.
+    final selected = widget.selectedContactId;
+    if (selected != null &&
+        selected != oldWidget.selectedContactId &&
+        _peers.any((p) => p.id == selected)) {
+      _expandedPeerIds.add(selected);
+    }
   }
 
   Future<void> _loadData() async {
@@ -121,11 +135,40 @@ class ContactsScreenState extends State<ContactsScreen> {
     }
   }
 
+  Set<String> get _pairedPeerIds => _peers.map((p) => p.id).toSet();
+
+  List<Agent> _agentsForPeer(String peerId) {
+    final list = _agents
+        .where((a) => a.isPeerAgent && a.sourcePeerId == peerId)
+        .toList();
+    if (_query.isEmpty) return list;
+    return list.where(_agentMatchesQuery).toList();
+  }
+
+  List<Agent> get _localAgents {
+    final paired = _pairedPeerIds;
+    final list = _agents.where((a) {
+      // 本机：非 peer agent；若 peer 已解配则暂挂在本机以免丢失入口。
+      if (!a.isPeerAgent) return true;
+      final src = a.sourcePeerId;
+      return src == null || !paired.contains(src);
+    }).toList();
+    if (_query.isEmpty) return list;
+    return list.where(_agentMatchesQuery).toList();
+  }
+
+  bool _agentMatchesQuery(Agent a) {
+    final name = a.name.toLowerCase();
+    final bio = a.bio?.toLowerCase() ?? '';
+    return name.contains(_query) || bio.contains(_query);
+  }
+
   List<PairedPeer> get _filteredPeers {
     if (_query.isEmpty) return _peers;
-    return _peers
-        .where((p) => p.deviceName.toLowerCase().contains(_query))
-        .toList();
+    return _peers.where((p) {
+      if (p.deviceName.toLowerCase().contains(_query)) return true;
+      return _agentsForPeer(p.id).isNotEmpty;
+    }).toList();
   }
 
   List<Channel> get _filteredGroups {
@@ -137,15 +180,6 @@ class ContactsScreenState extends State<ContactsScreen> {
         .toList();
   }
 
-  List<Agent> get _filteredAgents {
-    if (_query.isEmpty) return _agents;
-    return _agents.where((a) {
-      final name = a.name.toLowerCase();
-      final bio = a.bio?.toLowerCase() ?? '';
-      return name.contains(_query) || bio.contains(_query);
-    }).toList();
-  }
-
   void _toggleSection(_ContactsSection section) {
     setState(() {
       if (_expanded.contains(section)) {
@@ -154,6 +188,17 @@ class ContactsScreenState extends State<ContactsScreen> {
         _expanded.add(section);
       }
     });
+  }
+
+  void _onPeerTap(PairedPeer peer) {
+    setState(() {
+      if (_expandedPeerIds.contains(peer.id)) {
+        _expandedPeerIds.remove(peer.id);
+      } else {
+        _expandedPeerIds.add(peer.id);
+      }
+    });
+    _openPeerDetail(peer);
   }
 
   @override
@@ -252,19 +297,29 @@ class ContactsScreenState extends State<ContactsScreen> {
   Widget _buildSectionList(AppLocalizations l10n) {
     final peers = _filteredPeers;
     final groups = _filteredGroups;
-    final agents = _filteredAgents;
+    final localAgents = _localAgents;
 
     final children = <Widget>[
-      // Order: Devices → Group Chats → Agents (WeChat-style)
-      _buildSectionHeader(
-        section: _ContactsSection.devices,
-        title: l10n.contacts_devices,
-        count: peers.length,
-        icon: Icons.devices_other_outlined,
-        iconColor: const Color(0xFF576B95),
-      ),
-      if (_expanded.contains(_ContactsSection.devices))
-        ..._buildPeerChildren(peers, l10n),
+      // Each paired device is its own foldable row (with nested peer agents).
+      if (peers.isEmpty)
+        _buildEmptyHint(
+          icon: Icons.devices_other,
+          message: l10n.contacts_noPeers,
+          actionLabel: l10n.contacts_startPairing,
+          onAction: _startPeerPairing,
+          indent: 16,
+        )
+      else
+        for (final peer in peers) ...[
+          _buildPeerFoldHeader(peer, l10n),
+          if (_expandedPeerIds.contains(peer.id) ||
+              (_query.isNotEmpty && _agentsForPeer(peer.id).isNotEmpty))
+            ..._agentsForPeer(peer.id).map(
+              (a) => _buildAgentTile(a, indent: 72),
+            ),
+        ],
+
+      // Group chats
       _buildSectionHeader(
         section: _ContactsSection.groups,
         title: l10n.contacts_groups,
@@ -274,15 +329,17 @@ class ContactsScreenState extends State<ContactsScreen> {
       ),
       if (_expanded.contains(_ContactsSection.groups))
         ..._buildGroupChildren(groups, l10n),
+
+      // Local agents (本机)
       _buildSectionHeader(
-        section: _ContactsSection.agents,
+        section: _ContactsSection.local,
         title: l10n.contacts_agents,
-        count: agents.length,
-        icon: Icons.smart_toy_outlined,
+        count: localAgents.length,
+        icon: Icons.smartphone_outlined,
         iconColor: AppColors.primary,
       ),
-      if (_expanded.contains(_ContactsSection.agents))
-        ..._buildAgentChildren(agents, l10n),
+      if (_expanded.contains(_ContactsSection.local))
+        ..._buildLocalAgentChildren(localAgents, l10n),
       const SizedBox(height: 24),
     ];
 
@@ -351,18 +408,94 @@ class ContactsScreenState extends State<ContactsScreen> {
     );
   }
 
-  List<Widget> _buildPeerChildren(List<PairedPeer> peers, AppLocalizations l10n) {
-    if (peers.isEmpty) {
-      return [
-        _buildEmptyHint(
-          icon: Icons.devices_other,
-          message: l10n.contacts_noPeers,
-          actionLabel: l10n.contacts_startPairing,
-          onAction: _startPeerPairing,
+  /// Device row: chevron + device icon + name; tap toggles fold and opens detail.
+  Widget _buildPeerFoldHeader(PairedPeer peer, AppLocalizations l10n) {
+    final isConnected = peer.state == PeerConnectionState.connected;
+    final expanded = _expandedPeerIds.contains(peer.id) ||
+        (_query.isNotEmpty && _agentsForPeer(peer.id).isNotEmpty);
+    final agentCount = _agents
+        .where((a) => a.isPeerAgent && a.sourcePeerId == peer.id)
+        .length;
+    final selected = widget.selectedContactId == peer.id;
+    final colorScheme = Theme.of(context).colorScheme;
+
+    return Material(
+      color: selected
+          ? colorScheme.primary.withValues(alpha: 0.08)
+          : Colors.transparent,
+      child: InkWell(
+        onTap: () => _onPeerTap(peer),
+        onLongPress: widget.embedded ? null : () => _showPeerActions(peer),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+          child: Row(
+            children: [
+              AnimatedRotation(
+                turns: expanded ? 0.25 : 0,
+                duration: const Duration(milliseconds: 180),
+                child: Icon(
+                  Icons.chevron_right,
+                  size: 20,
+                  color: colorScheme.onSurfaceVariant,
+                ),
+              ),
+              const SizedBox(width: 4),
+              Stack(
+                children: [
+                  PeerDeviceIcon(peer: peer, size: 36, borderRadius: 8),
+                  Positioned(
+                    right: 0,
+                    bottom: 0,
+                    child: Container(
+                      width: 10,
+                      height: 10,
+                      decoration: BoxDecoration(
+                        color: isConnected ? Colors.green : Colors.grey,
+                        shape: BoxShape.circle,
+                        border: Border.all(
+                          color: Theme.of(context).scaffoldBackgroundColor,
+                          width: 1.5,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      peer.deviceName,
+                      style: const TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                    Text(
+                      peer.state.listStatusLabel(l10n, showE2eWhenConnected: true),
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: isConnected ? Colors.green : Colors.grey,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              if (agentCount > 0)
+                Text(
+                  '$agentCount',
+                  style: TextStyle(
+                    fontSize: 14,
+                    color: colorScheme.onSurfaceVariant,
+                  ),
+                ),
+            ],
+          ),
         ),
-      ];
-    }
-    return peers.map(_buildPeerTile).toList();
+      ),
+    );
   }
 
   List<Widget> _buildGroupChildren(List<Channel> groups, AppLocalizations l10n) {
@@ -379,7 +512,10 @@ class ContactsScreenState extends State<ContactsScreen> {
     return groups.map(_buildGroupTile).toList();
   }
 
-  List<Widget> _buildAgentChildren(List<Agent> agents, AppLocalizations l10n) {
+  List<Widget> _buildLocalAgentChildren(
+    List<Agent> agents,
+    AppLocalizations l10n,
+  ) {
     if (agents.isEmpty) {
       return [
         _buildEmptyHint(
@@ -390,7 +526,7 @@ class ContactsScreenState extends State<ContactsScreen> {
         ),
       ];
     }
-    return agents.map(_buildAgentTile).toList();
+    return agents.map((a) => _buildAgentTile(a)).toList();
   }
 
   Widget _buildEmptyHint({
@@ -398,9 +534,10 @@ class ContactsScreenState extends State<ContactsScreen> {
     required String message,
     required String actionLabel,
     required VoidCallback onAction,
+    double indent = 52,
   }) {
     return Padding(
-      padding: const EdgeInsets.fromLTRB(52, 8, 16, 16),
+      padding: EdgeInsets.fromLTRB(indent, 8, 16, 16),
       child: Row(
         children: [
           Icon(icon, size: 18, color: Colors.grey[400]),
@@ -452,7 +589,7 @@ class ContactsScreenState extends State<ContactsScreen> {
     if (mounted) _loadData();
   }
 
-  Widget _buildAgentTile(Agent agent) {
+  Widget _buildAgentTile(Agent agent, {double indent = 52}) {
     final l10n = AppLocalizations.of(context);
     final isOnline = agent.status.isOnline;
     final displayName = SheService.isSheIdentity(agent.id, agent.metadata)
@@ -465,7 +602,7 @@ class ContactsScreenState extends State<ContactsScreen> {
     return ListTile(
       selected: selected,
       selectedTileColor: colorScheme.primary.withValues(alpha: 0.08),
-      contentPadding: const EdgeInsets.only(left: 52, right: 16),
+      contentPadding: EdgeInsets.only(left: indent, right: 16),
       leading: Stack(
         children: [
           Container(
@@ -595,53 +732,6 @@ class ContactsScreenState extends State<ContactsScreen> {
       ),
     );
     _loadData();
-  }
-
-  Widget _buildPeerTile(PairedPeer peer) {
-    final l10n = AppLocalizations.of(context);
-    final isConnected = peer.state == PeerConnectionState.connected;
-    final selected = widget.selectedContactId == peer.id;
-    final colorScheme = Theme.of(context).colorScheme;
-
-    return ListTile(
-      selected: selected,
-      selectedTileColor: colorScheme.primary.withValues(alpha: 0.08),
-      contentPadding: const EdgeInsets.only(left: 52, right: 16),
-      leading: Stack(
-        children: [
-          PeerDeviceIcon(peer: peer, size: 40, borderRadius: 8),
-          Positioned(
-            right: 0,
-            bottom: 0,
-            child: Container(
-              width: 10,
-              height: 10,
-              decoration: BoxDecoration(
-                color: isConnected ? Colors.green : Colors.grey,
-                shape: BoxShape.circle,
-                border: Border.all(
-                  color: Theme.of(context).scaffoldBackgroundColor,
-                  width: 1.5,
-                ),
-              ),
-            ),
-          ),
-        ],
-      ),
-      title: Text(
-        peer.deviceName,
-        style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w500),
-      ),
-      subtitle: Text(
-        peer.state.listStatusLabel(l10n, showE2eWhenConnected: true),
-        style: TextStyle(
-          fontSize: 12,
-          color: isConnected ? Colors.green : Colors.grey,
-        ),
-      ),
-      onTap: () => _openPeerDetail(peer),
-      onLongPress: widget.embedded ? null : () => _showPeerActions(peer),
-    );
   }
 
   Future<void> _showPeerActions(PairedPeer peer) async {

@@ -1544,7 +1544,7 @@
   "addAgent_configureSkills": "配置技能",
   "addAgent_configureModelRouting": "配置模型路由",
   "contacts_title": "通讯录",
-  "contacts_agents": "Agent",
+  "contacts_agents": "本机",
   "contacts_groups": "群聊",
   "contacts_devices": "设备",
   "contacts_noPeers": "尚未配对任何设备",

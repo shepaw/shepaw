@@ -2548,7 +2548,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get contacts_title => '通讯录';
 
   @override
-  String get contacts_agents => 'Agent';
+  String get contacts_agents => '本机';
 
   @override
   String get contacts_groups => '群聊';

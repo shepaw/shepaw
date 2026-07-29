@@ -4691,7 +4691,7 @@ abstract class AppLocalizations {
   /// No description provided for @contacts_agents.
   ///
   /// In zh, this message translates to:
-  /// **'Agent'**
+  /// **'本机'**
   String get contacts_agents;
 
   /// No description provided for @contacts_groups.

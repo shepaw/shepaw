@@ -2641,7 +2641,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get contacts_title => 'Contacts';
 
   @override
-  String get contacts_agents => 'Agents';
+  String get contacts_agents => 'This Device';
 
   @override
   String get contacts_groups => 'Group Chats';
