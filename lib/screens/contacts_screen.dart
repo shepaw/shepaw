@@ -198,7 +198,7 @@ class ContactsScreenState extends State<ContactsScreen> {
     });
   }
 
-  void _onPeerTap(PairedPeer peer) {
+  void _togglePeerExpanded(PairedPeer peer) {
     setState(() {
       if (_expandedPeerIds.contains(peer.id)) {
         _expandedPeerIds.remove(peer.id);
@@ -206,7 +206,15 @@ class ContactsScreenState extends State<ContactsScreen> {
         _expandedPeerIds.add(peer.id);
       }
     });
-    _openPeerDetail(peer);
+  }
+
+  /// Desktop: expand + show detail in the right panel.
+  /// Mobile: expand/collapse only — settings via info button or long-press menu.
+  void _onPeerTap(PairedPeer peer) {
+    _togglePeerExpanded(peer);
+    if (widget.embedded) {
+      _openPeerDetail(peer);
+    }
   }
 
   @override
@@ -418,7 +426,7 @@ class ContactsScreenState extends State<ContactsScreen> {
     );
   }
 
-  /// Device row: chevron + device icon + name; tap toggles fold and opens detail.
+  /// Device row: chevron + device icon + name; tap toggles fold (mobile) or fold + detail (desktop).
   Widget _buildPeerFoldHeader(PairedPeer peer, AppLocalizations l10n) {
     final isConnected = peer.state == PeerConnectionState.connected;
     final expanded = _expandedPeerIds.contains(peer.id) ||
@@ -509,6 +517,21 @@ class ContactsScreenState extends State<ContactsScreen> {
                     color: colorScheme.onSurfaceVariant,
                   ),
                 ),
+              if (!widget.embedded) ...[
+                const SizedBox(width: 4),
+                IconButton(
+                  icon: Icon(
+                    Icons.info_outline,
+                    size: 20,
+                    color: colorScheme.onSurfaceVariant,
+                  ),
+                  visualDensity: VisualDensity.compact,
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                  tooltip: l10n.peerSettings_title,
+                  onPressed: () => _openPeerDetail(peer),
+                ),
+              ],
             ],
           ),
         ),
@@ -769,6 +792,11 @@ class ContactsScreenState extends State<ContactsScreen> {
             mainAxisSize: MainAxisSize.min,
             children: [
               ListTile(
+                leading: const Icon(Icons.settings_outlined),
+                title: Text(sheetL10n.peerSettings_title),
+                onTap: () => Navigator.pop(ctx, 'settings'),
+              ),
+              ListTile(
                 leading: const Icon(Icons.edit),
                 title: Text(sheetL10n.peerList_editAlias),
                 onTap: () => Navigator.pop(ctx, 'rename'),
@@ -788,7 +816,9 @@ class ContactsScreenState extends State<ContactsScreen> {
     );
 
     if (!mounted) return;
-    if (action == 'rename') {
+    if (action == 'settings') {
+      await _openPeerDetail(peer);
+    } else if (action == 'rename') {
       await _renamePeer(peer);
     } else if (action == 'delete') {
       await _deletePeer(peer);
