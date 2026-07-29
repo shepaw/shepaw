@@ -26,7 +26,7 @@ class ConversationListItem {
   bool get isPeer => peer != null;
 }
 
-/// A sortable block in the home conversation list (single row or peer device + agents).
+/// A sortable block in the home conversation list (one row each).
 class ConversationListBlock {
   final DateTime? sortTime;
   final bool isShe;
@@ -35,12 +35,4 @@ class ConversationListBlock {
   ConversationListBlock.standalone(ConversationListItem item, {this.isShe = false})
       : sortTime = item.lastMessageTime,
         items = [item];
-
-  ConversationListBlock.peerGroup({
-    required ConversationListItem peerItem,
-    required List<ConversationListItem> agentItems,
-    required DateTime? sortTime,
-  })  : isShe = false,
-        sortTime = sortTime,
-        items = [peerItem, ...agentItems];
 }

@@ -62,19 +62,18 @@ void main() {
         },
         groupLatestMessages: const {},
         peerLatestTime: const {},
-        collapsedPeerIds: {},
       );
 
       expect(entries.first.agent?.id, 'she');
       expect(entries[1].agent?.id, 'a1');
     });
 
-    test('nests peer agents under peer and hides them when collapsed', () {
+    test('sorts peer agents and devices independently by activation time', () {
       final peer = _peer('p1', 'Phone');
       final child = _agent(id: 'pa', name: 'PeerAgent', sourcePeerId: 'p1');
       final local = _agent(id: 'local', name: 'Local');
 
-      final expanded = ConversationListController.buildSortedConversations(
+      final entries = ConversationListController.buildSortedConversations(
         filteredAgents: [child, local],
         groupChannels: const [],
         pairedPeers: [peer],
@@ -87,32 +86,14 @@ void main() {
         peerLatestTime: {
           'p1': DateTime.parse('2026-07-09T12:00:00.000Z').millisecondsSinceEpoch,
         },
-        collapsedPeerIds: {},
       );
 
-      expect(expanded[0].isPeer, isTrue);
-      expect(expanded[1].agent?.id, 'pa');
-      expect(expanded[2].agent?.id, 'local');
-
-      final collapsed = ConversationListController.buildSortedConversations(
-        filteredAgents: [child, local],
-        groupChannels: const [],
-        pairedPeers: [peer],
-        searchQuery: '',
-        latestMessages: {
-          'pa': {'created_at': '2026-07-11T12:00:00.000Z'},
-          'local': {'created_at': '2026-07-10T12:00:00.000Z'},
-        },
-        groupLatestMessages: const {},
-        peerLatestTime: {
-          'p1': DateTime.parse('2026-07-09T12:00:00.000Z').millisecondsSinceEpoch,
-        },
-        collapsedPeerIds: {'p1'},
-      );
-
-      expect(collapsed.length, 2);
-      expect(collapsed[0].isPeer, isTrue);
-      expect(collapsed[1].agent?.id, 'local');
+      // Newest first: peer agent → local agent → device (no nesting).
+      expect(entries.length, 3);
+      expect(entries[0].agent?.id, 'pa');
+      expect(entries[1].agent?.id, 'local');
+      expect(entries[2].isPeer, isTrue);
+      expect(entries[2].peer?.id, 'p1');
     });
 
     test('includes matching groups by name', () {
@@ -129,7 +110,6 @@ void main() {
           'g1': {'created_at': '2026-07-11T12:00:00.000Z'},
         },
         peerLatestTime: const {},
-        collapsedPeerIds: {},
       );
 
       expect(entries.length, 1);
@@ -152,7 +132,6 @@ void main() {
         },
         groupLatestMessages: const {},
         peerLatestTime: const {},
-        collapsedPeerIds: {},
         draftUpdatedAtForAgent: (id) => id == 'drafty' ? draftTime : null,
       );
 

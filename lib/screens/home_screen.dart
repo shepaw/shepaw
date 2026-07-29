@@ -98,7 +98,6 @@ class HomeScreenState extends State<HomeScreen> {
   Map<String, String> get _peerLatestContent => _list.peerLatestContent;
   Map<String, int> get _peerLatestTime => _list.peerLatestTime;
   Map<String, int> get _peerUnreadCounts => _list.peerUnreadCounts;
-  Set<String> get _collapsedPeerIds => _list.collapsedPeerIds;
 
   /// Public accessor so DesktopHomeScreen can trigger a refresh via GlobalKey.
   void reloadAgents() => _list.refresh(silent: true);
@@ -119,7 +118,6 @@ class HomeScreenState extends State<HomeScreen> {
     _list.attach();
     _messageSearchService = MessageSearchService(_databaseService);
     _list.refresh();
-    _list.loadCollapsedPeerIds();
     _searchController.addListener(_onSearchChanged);
   }
 
@@ -150,10 +148,6 @@ class HomeScreenState extends State<HomeScreen> {
     _list.dispose();
     super.dispose();
   }
-
-  int _peerAgentCount(String peerId) => _list.peerAgentCount(peerId);
-
-  void _togglePeerCollapsed(String peerId) => _list.togglePeerCollapsed(peerId);
 
   Future<void> _loadAgents({bool silent = false}) => _list.refresh(silent: silent);
 
@@ -1861,8 +1855,6 @@ class HomeScreenState extends State<HomeScreen> {
         ? DateTime.fromMillisecondsSinceEpoch(lastTimestamp).toIso8601String()
         : null;
     final unreadCount = _peerUnreadCounts[peer.id] ?? 0;
-    final agentCount = _peerAgentCount(peer.id);
-    final isCollapsed = _collapsedPeerIds.contains(peer.id);
 
     final isSelected = widget.embedded &&
         widget.selectedConversation != null &&
@@ -1972,13 +1964,11 @@ class HomeScreenState extends State<HomeScreen> {
                       const SizedBox(width: 4),
                       Expanded(
                         child: Text(
-                          isCollapsed && agentCount > 0
-                              ? l10n.home_agentsCount(agentCount)
-                              : (lastContent.isNotEmpty
-                                  ? lastContent
-                                  : (isConnected
-                                      ? l10n.peerSettings_online
-                                      : l10n.peerSettings_offline)),
+                          lastContent.isNotEmpty
+                              ? lastContent
+                              : (isConnected
+                                  ? l10n.peerSettings_online
+                                  : l10n.peerSettings_offline),
                           style: TextStyle(
                             fontSize: 13,
                             color: Colors.grey[500],
@@ -1992,26 +1982,6 @@ class HomeScreenState extends State<HomeScreen> {
                 ],
               ),
             ),
-            if (agentCount > 0) ...[
-              const SizedBox(width: 4),
-              IconButton(
-                icon: Icon(
-                  isCollapsed ? Icons.expand_more : Icons.expand_less,
-                  size: 20,
-                  color: Colors.grey[600],
-                ),
-                tooltip: isCollapsed
-                    ? l10n.home_expandPeerAgents
-                    : l10n.home_collapsePeerAgents,
-                padding: EdgeInsets.zero,
-                constraints: const BoxConstraints.tightFor(width: 32, height: 32),
-                style: IconButton.styleFrom(
-                  minimumSize: Size.zero,
-                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                ),
-                onPressed: () => _togglePeerCollapsed(peer.id),
-              ),
-            ],
           ],
         ),
       ),

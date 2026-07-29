@@ -1,7 +1,6 @@
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/agent.dart';
 import '../models/channel.dart';
@@ -43,8 +42,6 @@ class ConversationListController extends ChangeNotifier {
   final LocalDatabaseService _databaseService;
   final ChatService _chatService;
 
-  static const _prefKeyCollapsedPeers = 'home_collapsed_peer_ids';
-
   List<Agent> _agents = [];
   List<Agent> _filteredAgents = [];
   List<Channel> _groupChannels = [];
@@ -66,7 +63,6 @@ class ConversationListController extends ChangeNotifier {
   final Map<String, String> _peerLatestContent = {};
   final Map<String, int> _peerLatestTime = {};
   final Map<String, int> _peerUnreadCounts = {};
-  Set<String> _collapsedPeerIds = {};
 
   /// Active channel id per agent / group, used to resolve drafts keyed by channel.
   final Map<String, String> _agentChannelIds = {};
@@ -92,7 +88,6 @@ class ConversationListController extends ChangeNotifier {
   bool get isLoading => _isLoading;
   Set<String> get typingAgentIds => _typingAgentIds;
   Set<String> get typingChannelIds => _typingChannelIds;
-  Set<String> get collapsedPeerIds => _collapsedPeerIds;
 
   Map<String, Map<String, dynamic>?> get latestMessages => _latestMessages;
   Map<String, int> get unreadCounts => _unreadCounts;
@@ -167,40 +162,6 @@ class ConversationListController extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<void> loadCollapsedPeerIds() async {
-    final prefs = await SharedPreferences.getInstance();
-    final ids = prefs.getStringList(_prefKeyCollapsedPeers) ?? [];
-    if (_disposed) return;
-    _collapsedPeerIds = ids.toSet();
-    _rebuildEntries();
-    notifyListeners();
-  }
-
-  Future<void> _saveCollapsedPeerIds() async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setStringList(
-      _prefKeyCollapsedPeers,
-      _collapsedPeerIds.toList(),
-    );
-  }
-
-  int peerAgentCount(String peerId) {
-    return _agents
-        .where((a) => a.isPeerAgent && a.sourcePeerId == peerId)
-        .length;
-  }
-
-  void togglePeerCollapsed(String peerId) {
-    if (_collapsedPeerIds.contains(peerId)) {
-      _collapsedPeerIds.remove(peerId);
-    } else {
-      _collapsedPeerIds.add(peerId);
-    }
-    _rebuildEntries();
-    notifyListeners();
-    _saveCollapsedPeerIds();
-  }
-
   void clearAgentUnread(String agentId) {
     _unreadCounts[agentId] = 0;
     notifyListeners();
@@ -243,11 +204,6 @@ class ConversationListController extends ChangeNotifier {
         _peerLatestContent.removeWhere((id, _) => !liveIds.contains(id));
         _peerLatestTime.removeWhere((id, _) => !liveIds.contains(id));
         _peerUnreadCounts.removeWhere((id, _) => !liveIds.contains(id));
-        final collapsedBefore = _collapsedPeerIds.length;
-        _collapsedPeerIds.removeWhere((id) => !liveIds.contains(id));
-        if (_collapsedPeerIds.length != collapsedBefore) {
-          await _saveCollapsedPeerIds();
-        }
         await _loadPeerPreviews(peers);
       } catch (_) {}
 
@@ -506,7 +462,6 @@ class ConversationListController extends ChangeNotifier {
       latestMessages: _latestMessages,
       groupLatestMessages: _groupLatestMessages,
       peerLatestTime: _peerLatestTime,
-      collapsedPeerIds: _collapsedPeerIds,
       draftUpdatedAtForAgent: _draftUpdatedAtForAgent,
       draftUpdatedAtForGroup: _draftUpdatedAtForGroup,
     );
@@ -541,6 +496,9 @@ class ConversationListController extends ChangeNotifier {
   }
 
   /// Pure builder used by [refresh] and unit tests.
+  ///
+  /// Agent / group / peer 各自成行，按最近激活时间降序；She 置顶。
+  /// 设备与 peer Agent 不再聚合（聚合在通讯录中完成）。
   static List<ConversationListItem> buildSortedConversations({
     required List<Agent> filteredAgents,
     required List<Channel> groupChannels,
@@ -549,12 +507,10 @@ class ConversationListController extends ChangeNotifier {
     required Map<String, Map<String, dynamic>?> latestMessages,
     required Map<String, Map<String, dynamic>?> groupLatestMessages,
     required Map<String, int> peerLatestTime,
-    required Set<String> collapsedPeerIds,
     DateTime? Function(String agentId)? draftUpdatedAtForAgent,
     DateTime? Function(String groupId)? draftUpdatedAtForGroup,
   }) {
     final query = searchQuery.toLowerCase();
-    final pairedPeerIds = pairedPeers.map((p) => p.id).toSet();
     final blocks = <ConversationListBlock>[];
 
     DateTime? latestOf(Iterable<DateTime?> times) {
@@ -594,11 +550,6 @@ class ConversationListController extends ChangeNotifier {
     }
 
     for (final agent in filteredAgents) {
-      if (agent.isPeerAgent &&
-          agent.sourcePeerId != null &&
-          pairedPeerIds.contains(agent.sourcePeerId)) {
-        continue;
-      }
       final time = agentLastMessageTime(agent);
       final item = ConversationListItem.agent(agent, time);
       blocks.add(ConversationListBlock.standalone(
@@ -626,46 +577,16 @@ class ConversationListController extends ChangeNotifier {
     }
 
     for (final peer in pairedPeers) {
-      final peerNameMatches =
-          query.isEmpty || peer.deviceName.toLowerCase().contains(query);
-
-      final childAgents = <Agent>[];
-      for (final agent in filteredAgents) {
-        if (!agent.isPeerAgent || agent.sourcePeerId != peer.id) continue;
-        childAgents.add(agent);
-      }
-
-      if (query.isNotEmpty && !peerNameMatches && childAgents.isEmpty) {
+      if (query.isNotEmpty &&
+          !peer.deviceName.toLowerCase().contains(query)) {
         continue;
       }
-
       final peerTime = peerLastMessageTime(peer);
-      final peerItem = ConversationListItem.peer(peer, peerTime);
-
-      final visibleAgentItems = <ConversationListItem>[];
-      final allAgentTimes = <DateTime?>[];
-      for (final agent in childAgents) {
-        final time = agentLastMessageTime(agent);
-        allAgentTimes.add(time);
-        final isCollapsed =
-            query.isEmpty && collapsedPeerIds.contains(peer.id);
-        if (!isCollapsed) {
-          visibleAgentItems.add(ConversationListItem.agent(agent, time));
-        }
-      }
-
-      visibleAgentItems.sort((a, b) {
-        if (a.lastMessageTime == null && b.lastMessageTime == null) return 0;
-        if (a.lastMessageTime == null) return 1;
-        if (b.lastMessageTime == null) return -1;
-        return b.lastMessageTime!.compareTo(a.lastMessageTime!);
-      });
-
-      blocks.add(ConversationListBlock.peerGroup(
-        peerItem: peerItem,
-        agentItems: visibleAgentItems,
-        sortTime: latestOf([peerTime, ...allAgentTimes]),
-      ));
+      blocks.add(
+        ConversationListBlock.standalone(
+          ConversationListItem.peer(peer, peerTime),
+        ),
+      );
     }
 
     blocks.sort(compareBlocks);
