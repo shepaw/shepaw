@@ -2,6 +2,7 @@ import '../models/workflow_models.dart';
 import '../peer/peer_approval_selection.dart';
 import '../services/chat_service.dart';
 import '../services/logger_service.dart';
+import '../services/workflow/workflow_plan_approval_sync.dart';
 import 'chat_workflow_panel_state.dart';
 
 /// Owns workflow panel + local execution bookkeeping for [ChatController].
@@ -20,6 +21,12 @@ class ChatWorkflowCoordinator {
   /// Workflow step streaming placeholders keyed by agent id.
   final Map<String, String> streamingIds = {};
   final Map<String, String> streamingContents = {};
+
+  /// Panel/card decisions awaiting write to a durable plan_approval message.
+  ///
+  /// She DM attaches the card to a `streaming_*` bubble first; the final UUID
+  /// row is saved later. Stashing prevents reload from reviving "pending".
+  final Map<String, WorkflowPlanApprovalResponse> pendingPlanResponses = {};
 
   String? get activeWorkflowId => panel.activeWorkflowId;
 
@@ -42,6 +49,16 @@ class ChatWorkflowCoordinator {
   void reopenPanel() => panel.reopen();
 
   void clearPeerApproval() => panel.clearPeerApproval();
+
+  void stashPlanApprovalResponse(
+    String workflowId,
+    WorkflowPlanApprovalResponse response,
+  ) {
+    pendingPlanResponses[workflowId] = response;
+  }
+
+  WorkflowPlanApprovalResponse? takePlanApprovalResponse(String workflowId) =>
+      pendingPlanResponses.remove(workflowId);
 
   /// Key used in `pendingGroupInteractions` for a step interaction.
   ///

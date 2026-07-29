@@ -141,12 +141,14 @@ mixin _LoadOps on _ChatControllerBase {
       final loadedMessages =
           await chatService.loadChannelMessages(currentChannelId!);
 
+      _preserveInMemoryPlanApprovalResponses();
       if (isGroupMode) {
         messages = loadedMessages;
       } else {
         _mergeDmStreamingPlaceholders(loadedMessages);
       }
       rebuildMessageIdMap();
+      _reapplyStashedPlanApprovalResponses();
       isLoading = false;
       _notify();
 
@@ -167,6 +169,7 @@ mixin _LoadOps on _ChatControllerBase {
         // 消息 metadata 持久化，无 Completer 需要重挂。
         await _restoreWorkflowContext();
       }
+      await _flushAllStashedPlanApprovalResponses();
     } catch (e) {
       isLoading = false;
       _notify();

@@ -253,6 +253,20 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
   Future<void> handleWorkflowApproval(bool approved, {String? feedback});
   Future<void> _resumeWorkflowExecutionIfNeeded(String workflowId);
   Future<void> _restoreWorkflowContext();
+  void _markPlanApprovalRespondedForWorkflow(
+    String workflowId,
+    bool approved, {
+    String? feedback,
+    bool completeCompleter = true,
+  });
+  Future<void> _flushPlanApprovalResponseToDb(
+    String workflowId,
+    bool approved, {
+    String? feedback,
+  });
+  void _preserveInMemoryPlanApprovalResponses();
+  void _reapplyStashedPlanApprovalResponses();
+  Future<void> _flushAllStashedPlanApprovalResponses();
   Future<void> loadMessages();
 
 
@@ -497,6 +511,7 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
 
   Future<void> reloadMessagesFromDB() async {
     if (currentChannelId == null) return;
+    _preserveInMemoryPlanApprovalResponses();
     final dbMessages = await chatService.loadChannelMessages(currentChannelId!);
     if (isGroupMode) {
       messages.clear();
@@ -515,6 +530,8 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
       _mergeDmStreamingPlaceholders(dbMessages);
       rebuildMessageIdMap();
     }
+    _reapplyStashedPlanApprovalResponses();
+    unawaited(_flushAllStashedPlanApprovalResponses());
     _notify();
     // 消息已展示在当前打开的页面（如 She 频道里的 [Agent Reply] 注入、
     // 服务侧回合的最终回复）→ 同步标记已读，避免对话列表出现"看得见

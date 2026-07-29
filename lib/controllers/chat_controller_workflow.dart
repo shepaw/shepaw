@@ -89,6 +89,7 @@ mixin _WorkflowOps on _ChatControllerBase {
     if (workflowId == null || currentChannelId == null) return;
 
     // Keep the in-chat plan_approval card in sync with the panel action.
+    // She DM may still be on a streaming_* host — stash + flush after save.
     _markPlanApprovalRespondedForWorkflow(
       workflowId,
       approved,
@@ -116,50 +117,186 @@ mixin _WorkflowOps on _ChatControllerBase {
     } catch (e) {
       _emit(ShowErrorSnackBarEvent('$e'));
     }
+
+    // After DM create-turn save (waited inside startExecution), write the
+    // decision onto the durable UUID row so loadMessages cannot revive pending.
+    await _flushPlanApprovalResponseToDb(
+      workflowId,
+      approved,
+      feedback: feedback,
+    );
+  }
+
+  /// Capture in-memory plan decisions before a DB reload can wipe them.
+  @override
+  void _preserveInMemoryPlanApprovalResponses() {
+    for (final msg in messages) {
+      final plan = msg.metadata?['plan_approval'] as Map<String, dynamic>?;
+      if (plan == null) continue;
+      final workflowId = plan['_workflowId'] as String?;
+      if (workflowId == null || workflowId.isEmpty) continue;
+      if (workflow.pendingPlanResponses.containsKey(workflowId)) continue;
+      final responded =
+          msg.metadata?['plan_approval_responded'] as Map<String, dynamic>?;
+      final approved = responded?['approved'] as bool? ?? plan['_approved'] as bool?;
+      if (approved == null) continue;
+      workflow.stashPlanApprovalResponse(
+        workflowId,
+        WorkflowPlanApprovalResponse(
+          approved: approved,
+          feedback: responded?['feedback'] as String?,
+        ),
+      );
+    }
   }
 
   /// Mirror panel approve/reject onto the message bubble's plan_approval card.
+  @override
   void _markPlanApprovalRespondedForWorkflow(
     String workflowId,
     bool approved, {
     String? feedback,
+    bool completeCompleter = true,
   }) {
-    final target = WorkflowPlanApprovalSync.findPlanApprovalMessage(
-      messages: messages,
-      workflowId: workflowId,
+    workflow.stashPlanApprovalResponse(
+      workflowId,
+      WorkflowPlanApprovalResponse(approved: approved, feedback: feedback),
     );
-    if (target == null) return;
 
-    _updateGroupStreamingMetadata(
-      target.id,
-      'plan_approval_responded',
-      WorkflowPlanApprovalSync.buildRespondedPatch(
+    // Update every in-memory card for this workflow (streaming host and/or
+    // already-persisted UUID) so the badge flips immediately.
+    for (final msg in List<Message>.from(messages)) {
+      final plan = msg.metadata?['plan_approval'] as Map<String, dynamic>?;
+      if (plan == null || plan['_workflowId'] != workflowId) continue;
+      _applyPlanApprovalResponseToMessageId(
+        msg.id,
         approved: approved,
         feedback: feedback,
-      ),
-    );
-    final existingPlan =
-        target.metadata?['plan_approval'] as Map<String, dynamic>?;
-    if (existingPlan != null) {
-      _updateGroupStreamingMetadata(
-        target.id,
-        'plan_approval',
-        WorkflowPlanApprovalSync.mergeApprovedFlag(existingPlan, approved),
       );
     }
-    final meta =
-        Map<String, dynamic>.from(messageIdMap[target.id]?.metadata ?? {});
-    localDatabaseService.updateMessageMetadata(target.id, meta).ignore();
 
     // Also complete any ChatService-held plan approval Completer so the
     // orchestration path (if still waiting) does not hang.
-    if (currentChannelId != null) {
+    if (completeCompleter && currentChannelId != null) {
       chatService.completePlanApproval(
         currentChannelId!,
         WorkflowPlanApprovalSync.buildCompleterPayload(
           approved: approved,
           feedback: feedback,
         ),
+      );
+    }
+  }
+
+  void _applyPlanApprovalResponseToMessageId(
+    String messageId, {
+    required bool approved,
+    String? feedback,
+  }) {
+    final existing = messageIdMap[messageId];
+    if (existing == null) return;
+    final existingPlan =
+        existing.metadata?['plan_approval'] as Map<String, dynamic>?;
+    _updateGroupStreamingMetadata(
+      messageId,
+      'plan_approval_responded',
+      WorkflowPlanApprovalSync.buildRespondedPatch(
+        approved: approved,
+        feedback: feedback,
+      ),
+    );
+    if (existingPlan != null) {
+      _updateGroupStreamingMetadata(
+        messageId,
+        'plan_approval',
+        WorkflowPlanApprovalSync.mergeApprovedFlag(existingPlan, approved),
+      );
+    }
+  }
+
+  /// Persist a stashed panel/card decision onto the durable plan_approval row.
+  @override
+  Future<void> _flushPlanApprovalResponseToDb(
+    String workflowId,
+    bool approved, {
+    String? feedback,
+  }) async {
+    if (currentChannelId == null) return;
+
+    Message? target = WorkflowPlanApprovalSync.findPlanApprovalMessage(
+      messages: messages,
+      workflowId: workflowId,
+      preferPersisted: true,
+    );
+    if (target == null ||
+        WorkflowPlanApprovalSync.isEphemeralHostId(target.id)) {
+      final dbMessages =
+          await chatService.loadChannelMessages(currentChannelId!);
+      target = WorkflowPlanApprovalSync.findPlanApprovalMessage(
+        messages: dbMessages,
+        workflowId: workflowId,
+        preferPersisted: true,
+      );
+    }
+    if (target == null ||
+        WorkflowPlanApprovalSync.isEphemeralHostId(target.id)) {
+      return;
+    }
+
+    final baseMeta = messageIdMap[target.id]?.metadata ?? target.metadata;
+    final meta = WorkflowPlanApprovalSync.applyResponseToMetadata(
+      baseMeta,
+      approved: approved,
+      feedback: feedback,
+    );
+    await localDatabaseService.updateMessageMetadata(target.id, meta);
+
+    _applyPlanApprovalResponseToMessageId(
+      target.id,
+      approved: approved,
+      feedback: feedback,
+    );
+    // Ephemeral host may still be on screen until streaming clears — keep it
+    // visually in sync too.
+    for (final msg in List<Message>.from(messages)) {
+      if (!WorkflowPlanApprovalSync.isEphemeralHostId(msg.id)) continue;
+      final plan = msg.metadata?['plan_approval'] as Map<String, dynamic>?;
+      if (plan == null || plan['_workflowId'] != workflowId) continue;
+      _applyPlanApprovalResponseToMessageId(
+        msg.id,
+        approved: approved,
+        feedback: feedback,
+      );
+    }
+
+    workflow.takePlanApprovalResponse(workflowId);
+    _notify();
+  }
+
+  /// Re-apply stashed panel decisions after load/reload wiped streaming hosts.
+  @override
+  void _reapplyStashedPlanApprovalResponses() {
+    if (workflow.pendingPlanResponses.isEmpty) return;
+    for (final entry in workflow.pendingPlanResponses.entries) {
+      _markPlanApprovalRespondedForWorkflow(
+        entry.key,
+        entry.value.approved,
+        feedback: entry.value.feedback,
+        completeCompleter: false,
+      );
+    }
+  }
+
+  @override
+  Future<void> _flushAllStashedPlanApprovalResponses() async {
+    final pending = Map<String, WorkflowPlanApprovalResponse>.from(
+      workflow.pendingPlanResponses,
+    );
+    for (final entry in pending.entries) {
+      await _flushPlanApprovalResponseToDb(
+        entry.key,
+        entry.value.approved,
+        feedback: entry.value.feedback,
       );
     }
   }

@@ -216,34 +216,50 @@ mixin _InteractionOps on _ChatControllerBase {
     String? feedback,
     List<String>? skippedTaskIds,
   }) async {
-    // Update UI immediately
-    _updateGroupStreamingMetadata(
-      originalMessage.id,
-      'plan_approval_responded',
-      WorkflowPlanApprovalSync.buildRespondedPatch(
-        approved: approved,
+    final existing = messageIdMap[originalMessage.id] ?? originalMessage;
+    final planMeta =
+        existing.metadata?['plan_approval'] as Map<String, dynamic>?;
+    final workflowId = planMeta?['_workflowId'] as String?;
+
+    if (workflowId != null) {
+      // Shared path with the floating panel: stash + update all hosts for
+      // this workflow (covers She DM streaming_* → UUID handoff).
+      _markPlanApprovalRespondedForWorkflow(
+        workflowId,
+        approved,
         feedback: feedback,
-      ),
-    );
-    // Merge _approved into the plan_approval data so the card badge updates
-    final existing = messageIdMap[originalMessage.id];
-    if (existing != null) {
-      final existingPlanData = existing.metadata?['plan_approval'] as Map<String, dynamic>?;
+        completeCompleter: false,
+      );
+    } else {
+      // Update UI immediately on the source bubble when workflow id is absent.
+      _updateGroupStreamingMetadata(
+        originalMessage.id,
+        'plan_approval_responded',
+        WorkflowPlanApprovalSync.buildRespondedPatch(
+          approved: approved,
+          feedback: feedback,
+        ),
+      );
+      final existingPlanData =
+          messageIdMap[originalMessage.id]?.metadata?['plan_approval']
+              as Map<String, dynamic>?;
       if (existingPlanData != null) {
         _updateGroupStreamingMetadata(
           originalMessage.id,
           'plan_approval',
-          WorkflowPlanApprovalSync.mergeApprovedFlag(existingPlanData, approved),
+          WorkflowPlanApprovalSync.mergeApprovedFlag(
+            existingPlanData,
+            approved,
+          ),
         );
       }
+      final meta = Map<String, dynamic>.from(
+        messageIdMap[originalMessage.id]?.metadata ?? {},
+      );
+      localDatabaseService
+          .updateMessageMetadata(originalMessage.id, meta)
+          .ignore();
     }
-    // Persist so channel reload / reconcile cannot revive the pending card.
-    final meta = Map<String, dynamic>.from(
-      messageIdMap[originalMessage.id]?.metadata ?? {},
-    );
-    localDatabaseService
-        .updateMessageMetadata(originalMessage.id, meta)
-        .ignore();
 
     // Submit result through ChatService Completer (survives channel switch)
     if (currentChannelId != null) {
@@ -257,14 +273,17 @@ mixin _InteractionOps on _ChatControllerBase {
       );
 
       // If approved and has workflow ID, start execution immediately.
-      if (approved) {
-        final existingMsg = messageIdMap[originalMessage.id];
-        final planMeta = existingMsg?.metadata?['plan_approval'] as Map<String, dynamic>?;
-        final workflowId = planMeta?['_workflowId'] as String?;
-        if (workflowId != null) {
-          setActiveWorkflowId(workflowId);
-          await handleWorkflowApproval(true);
-        }
+      if (approved && workflowId != null) {
+        setActiveWorkflowId(workflowId);
+        await handleWorkflowApproval(true);
+      } else if (workflowId != null) {
+        // Reject from the in-chat card: persist onto the durable row so a
+        // concurrent DM loadMessages cannot revive the pending badge.
+        await _flushPlanApprovalResponseToDb(
+          workflowId,
+          approved,
+          feedback: feedback,
+        );
       }
     }
   }
