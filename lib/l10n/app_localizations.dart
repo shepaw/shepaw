@@ -8144,6 +8144,33 @@ abstract class AppLocalizations {
   /// **'确认派发'**
   String get dispatch_confirmDispatch;
 
+  /// No description provided for @group_approvalBridgeTitle.
+  String group_approvalBridgeTitle(String groupName);
+
+  /// No description provided for @group_approvalBridgePending.
+  String get group_approvalBridgePending;
+
+  /// No description provided for @group_approvalBridgeBody.
+  String group_approvalBridgeBody(String agentName, String kind);
+
+  /// No description provided for @group_approvalBridgeOpen.
+  String get group_approvalBridgeOpen;
+
+  /// No description provided for @group_approvalKindPlan.
+  String get group_approvalKindPlan;
+
+  /// No description provided for @group_approvalKindAction.
+  String get group_approvalKindAction;
+
+  /// No description provided for @group_approvalKindForm.
+  String get group_approvalKindForm;
+
+  /// No description provided for @group_approvalKindSelect.
+  String get group_approvalKindSelect;
+
+  /// No description provided for @group_approvalKindUpload.
+  String get group_approvalKindUpload;
+
   /// No description provided for @dispatch_title.
   ///
   /// In zh, this message translates to:

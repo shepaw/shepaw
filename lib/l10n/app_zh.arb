@@ -2689,6 +2689,32 @@
   "dispatch_confirmed": "已确认",
   "dispatch_cancelled": "已取消",
   "dispatch_confirmDispatch": "确认派发",
+  "group_approvalBridgeTitle": "群审核 · {groupName}",
+  "@group_approvalBridgeTitle": {
+    "placeholders": {
+      "groupName": {
+        "type": "String"
+      }
+    }
+  },
+  "group_approvalBridgePending": "待审核",
+  "group_approvalBridgeBody": "{agentName} 在绑定群会话中需要你进行{kind}。",
+  "@group_approvalBridgeBody": {
+    "placeholders": {
+      "agentName": {
+        "type": "String"
+      },
+      "kind": {
+        "type": "String"
+      }
+    }
+  },
+  "group_approvalBridgeOpen": "打开群会话",
+  "group_approvalKindPlan": "工作流计划审批",
+  "group_approvalKindAction": "操作确认",
+  "group_approvalKindForm": "表单填写",
+  "group_approvalKindSelect": "选项确认",
+  "group_approvalKindUpload": "文件上传",
   "dispatch_title": "任务派发 · {agentName}",
   "@dispatch_title": {
     "placeholders": {

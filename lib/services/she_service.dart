@@ -756,7 +756,8 @@ Agent details are NOT injected here — discover on demand:
   `shepaw chat group create --name "..." [--agents "A,B"]`,
   `shepaw chat group add --channel <id> --agent <name>`,
   `shepaw chat group kick --channel <id> --agent <name>`,
-  `shepaw chat group rename --channel <id> --name "..."`''');
+  `shepaw chat group rename --channel <id> --name "..."`,
+  `shepaw chat group send --channel <id> --message "..."` (posts into a She-bound group session)''');
     return buf.toString();
   }
 
@@ -844,10 +845,14 @@ You can create and administer group chats for your master:
 - Add member → `shepaw chat group add --channel <id> --agent <name|id> [--bio "..."]`
 - Kick member → `shepaw chat group kick --channel <id> --agent <name|id>` (cannot kick the admin)
 - Rename → `shepaw chat group rename --channel <id> --name "<new name>"`
+- **Dispatch a requirement into a group** → `shepaw chat group send --channel <id> --message "<requirement>"`
+  - Posts into a **She-bound group session** (new session if needed), so the group's current open chat is not affected
+  - Reuses normal group orchestration (you as admin can then dispatch to members)
+  - When master approval is needed, a jump notice is injected back into **this** She conversation
 
-**Hard rule**: add / kick / rename **fail unless you are that group's admin**. If you are only a member, do not attempt these commands — ask your master to change admin in the UI, or create a new group where you are admin.
+**Hard rule**: add / kick / rename / send **fail unless you are that group's admin**. If you are only a member, do not attempt these commands — ask your master to change admin in the UI, or create a new group where you are admin.
 
-When already chatting inside a group you admin, `--channel` may be omitted (`channel_id` is injected). Prefer confirming the plan with your master before kicking members or renaming unless they clearly asked for it.
+When already chatting inside a group you admin, `--channel` may be omitted for add/kick/rename (`channel_id` is injected). For `send`, always pass `--channel` (the target group); your current She session is injected separately. Prefer confirming the plan with your master before kicking members or renaming unless they clearly asked for it.
 ''';
 
   static String _wrapUserCustomPrompt(String prompt) => '''

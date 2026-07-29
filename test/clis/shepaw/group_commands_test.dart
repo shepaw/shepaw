@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shepaw/clis/shepaw/chat/group/group_commands.dart';
+import 'package:shepaw/clis/shepaw/chat/group/group_namespace.dart';
 import 'package:shepaw/models/channel.dart';
 import 'package:shepaw/services/group/group_admin_gate.dart';
 import 'package:shepaw/services/group/group_management_service.dart';
@@ -151,6 +152,43 @@ void main() {
         'channel': 'group_1',
       });
       expect(missingName['error'], contains('--name'));
+    });
+
+    test('send requires --channel, --message, and She channel_id', () async {
+      final missingChannel = await GroupSendCommand().execute({
+        'message': 'do the thing',
+        'channel_id': 'she_dm_1',
+      });
+      expect(missingChannel['error'], contains('--channel'));
+
+      final missingMessage = await GroupSendCommand().execute({
+        'channel': 'group_1',
+        'channel_id': 'she_dm_1',
+      });
+      expect(missingMessage['error'], contains('--message'));
+
+      final missingSheSession = await GroupSendCommand().execute({
+        'channel': 'group_1',
+        'message': 'do the thing',
+      });
+      expect(missingSheSession['error'], contains('She session'));
+    });
+
+    test('send does not treat injected channel_id as target group', () async {
+      // Without --channel, even with channel_id (She DM), send must fail.
+      final result = await GroupSendCommand().execute({
+        'channel_id': 'she_dm_1',
+        'message': 'do the thing',
+      });
+      expect(result['error'], contains('--channel'));
+    });
+  });
+
+  group('GroupNamespace', () {
+    test('registers send command', () {
+      final ns = GroupNamespace();
+      expect(ns.commands.keys, contains('send'));
+      expect(ns.commands['send'], isA<GroupSendCommand>());
     });
   });
 }

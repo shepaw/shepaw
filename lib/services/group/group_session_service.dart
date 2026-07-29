@@ -24,9 +24,13 @@ class GroupSessionService {
         _acpConnections = acpConnections;
 
   /// Create a new group session with the same members and name as the original group.
+  ///
+  /// When [sourceSheChannelId] is set, the new session is bound to that She↔user
+  /// DM so She-triggered work does not land in the group's current open chat.
   Future<String> createNewGroupSession({
     required String channelId,
     required String userId,
+    String? sourceSheChannelId,
   }) async {
     final currentChannel = await _db.getChannelById(channelId);
     if (currentChannel == null) throw Exception('Channel not found');
@@ -42,6 +46,7 @@ class GroupSessionService {
       description: currentChannel.description,
       isPrivate: currentChannel.isPrivate,
       parentGroupId: parentGroupId,
+      sourceSheChannelId: sourceSheChannelId,
       systemPrompt: currentChannel.systemPrompt,
       maxLoopRounds: currentChannel.maxLoopRounds,
       mentionMode: currentChannel.mentionMode,
@@ -53,7 +58,63 @@ class GroupSessionService {
       groupChannel: channel,
       userId: userId,
     );
+    notifyChannelUpdate(newChannelId);
     return newChannelId;
+  }
+
+  /// Ensure a group session bound to [sheChannelId] for the family of [channelId].
+  ///
+  /// Reuses an existing bound session when present; otherwise creates a new
+  /// child session so She-triggered sends do not affect the group's current chat.
+  Future<String> ensureSheBoundGroupSession({
+    required String channelId,
+    required String sheChannelId,
+    required String userId,
+  }) async {
+    final current = await _db.getChannelById(channelId);
+    if (current == null || !current.isGroup) {
+      throw Exception('Group channel not found: $channelId');
+    }
+    final familyId = current.groupFamilyId;
+    final existing = await _db.findSheBoundGroupSession(
+      sheChannelId: sheChannelId,
+      groupFamilyId: familyId,
+    );
+    if (existing != null) return existing.id;
+
+    return createNewGroupSession(
+      channelId: familyId,
+      userId: userId,
+      sourceSheChannelId: sheChannelId,
+    );
+  }
+
+  /// When She opens a new DM session, fork a new bound group session for each
+  /// group family that was linked to [oldSheChannelId].
+  Future<List<String>> cascadeSheBoundGroupSessions({
+    required String oldSheChannelId,
+    required String newSheChannelId,
+    required String userId,
+  }) async {
+    final bound = await _db.getSheBoundGroupSessions(oldSheChannelId);
+    final seenFamilies = <String>{};
+    final created = <String>[];
+    for (final session in bound) {
+      final familyId = session.groupFamilyId;
+      if (!seenFamilies.add(familyId)) continue;
+      final already = await _db.findSheBoundGroupSession(
+        sheChannelId: newSheChannelId,
+        groupFamilyId: familyId,
+      );
+      if (already != null) continue;
+      final id = await createNewGroupSession(
+        channelId: familyId,
+        userId: userId,
+        sourceSheChannelId: newSheChannelId,
+      );
+      created.add(id);
+    }
+    return created;
   }
 
   /// Get all sessions for a group (by parentGroupId).

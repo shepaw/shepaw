@@ -4445,6 +4445,37 @@ class AppLocalizationsZh extends AppLocalizations {
   String get dispatch_confirmDispatch => '确认派发';
 
   @override
+  String group_approvalBridgeTitle(String groupName) {
+    return '群审核 · $groupName';
+  }
+
+  @override
+  String get group_approvalBridgePending => '待审核';
+
+  @override
+  String group_approvalBridgeBody(String agentName, String kind) {
+    return '$agentName 在绑定群会话中需要你进行$kind。';
+  }
+
+  @override
+  String get group_approvalBridgeOpen => '打开群会话';
+
+  @override
+  String get group_approvalKindPlan => '工作流计划审批';
+
+  @override
+  String get group_approvalKindAction => '操作确认';
+
+  @override
+  String get group_approvalKindForm => '表单填写';
+
+  @override
+  String get group_approvalKindSelect => '选项确认';
+
+  @override
+  String get group_approvalKindUpload => '文件上传';
+
+  @override
   String dispatch_title(String agentName) {
     return '任务派发 · $agentName';
   }

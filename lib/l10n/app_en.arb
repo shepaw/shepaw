@@ -2204,6 +2204,32 @@
   "dispatch_confirmed": "Confirmed",
   "dispatch_cancelled": "Cancelled",
   "dispatch_confirmDispatch": "Confirm dispatch",
+  "group_approvalBridgeTitle": "Group review · {groupName}",
+  "@group_approvalBridgeTitle": {
+    "placeholders": {
+      "groupName": {
+        "type": "String"
+      }
+    }
+  },
+  "group_approvalBridgePending": "Needs review",
+  "group_approvalBridgeBody": "{agentName} needs your {kind} in the bound group session.",
+  "@group_approvalBridgeBody": {
+    "placeholders": {
+      "agentName": {
+        "type": "String"
+      },
+      "kind": {
+        "type": "String"
+      }
+    }
+  },
+  "group_approvalBridgeOpen": "Open group session",
+  "group_approvalKindPlan": "workflow plan approval",
+  "group_approvalKindAction": "action confirmation",
+  "group_approvalKindForm": "form input",
+  "group_approvalKindSelect": "selection",
+  "group_approvalKindUpload": "file upload",
   "dispatch_title": "Dispatch · {agentName}",
   "@dispatch_title": {
     "placeholders": {

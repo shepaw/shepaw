@@ -228,6 +228,9 @@ class MessageBubble extends StatelessWidget {
       if (dispatchMeta?['dispatch_confirm'] != null) {
         return DispatchConfirmCard(message: message);
       }
+      if (dispatchMeta?['group_approval_bridge'] != null) {
+        return GroupApprovalBridgeCard(message: message);
+      }
       if (dispatchMeta?['relay_approval'] != null) {
         return RelayApprovalCard(message: message);
       }

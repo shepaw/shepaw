@@ -269,3 +269,79 @@ class GroupRenameCommand extends CliCommand {
     return result.toJson();
   }
 }
+
+/// shepaw chat group send — post into a She-bound group session (admin only).
+class GroupSendCommand extends CliCommand {
+  GroupSendCommand({GroupManagementService? service})
+      : _service = service ?? GroupManagementService();
+
+  final GroupManagementService _service;
+
+  @override
+  String get name => 'send';
+
+  @override
+  String get description =>
+      'Send a message to a group you admin via a She-bound group session '
+      '(does not affect the group\'s current open chat)';
+
+  @override
+  String get usage =>
+      'shepaw chat group send --channel <id> --message "requirement..."';
+
+  @override
+  Map<String, dynamic> getHelp() {
+    final base = super.getHelp();
+    base['flags'] = {
+      'channel': {
+        'description':
+            'Target group channel id (any session in the family, or the parent id)',
+        'required': true,
+        'type': 'string',
+      },
+      'message': {
+        'description': 'Requirement / message text to post into the bound group session',
+        'required': true,
+        'type': 'string',
+      },
+    };
+    return base;
+  }
+
+  @override
+  Future<Map<String, dynamic>> execute(Map<String, String> flags) async {
+    // Target group: prefer explicit --channel; do NOT fall back to injected
+    // channel_id (that is the She DM when called from a She conversation).
+    final channelId = flags['channel']?.trim();
+    if (channelId == null || channelId.isEmpty) {
+      return {
+        'error':
+            'Missing --channel. List groups with `shepaw chat channels --type group`.',
+      };
+    }
+    final message = flags['message'];
+    if (message == null || message.trim().isEmpty) {
+      return {'error': 'Missing required flag: --message'};
+    }
+
+    // She session that triggered the send (injected when She runs CLI).
+    final sheChannelId = flags['channel_id']?.trim() ?? '';
+    if (sheChannelId.isEmpty) {
+      return {
+        'error':
+            'Cannot determine the current She session. Run group send from a She conversation.',
+      };
+    }
+
+    final actorId = ChatAgentScope.agentId.isNotEmpty
+        ? ChatAgentScope.agentId
+        : SheService.sheId;
+    final result = await _service.sendToGroup(
+      channelId: channelId,
+      message: message,
+      actorId: actorId,
+      sheChannelId: sheChannelId,
+    );
+    return result.toJson();
+  }
+}

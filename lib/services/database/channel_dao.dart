@@ -233,6 +233,44 @@ extension ChannelDao on LocalDatabaseService {
     return channels;
   }
 
+  /// 查询绑定到指定 She↔用户 会话的群会话（She 外部触发派发用）。
+  Future<List<Channel>> getSheBoundGroupSessions(String sheChannelId) async {
+    final db = await database;
+    final results = await db.query(
+      'channels',
+      where: "type = 'group' AND source_she_channel_id = ?",
+      whereArgs: [sheChannelId],
+      orderBy: 'created_at DESC',
+    );
+
+    final channels = <Channel>[];
+    for (final map in results) {
+      final members = await getChannelMembers(map['id'] as String);
+      channels.add(_channelFromMap(map, members));
+    }
+    return channels;
+  }
+
+  /// 查找某群家族下绑定到指定 She 会话的群会话（至多一个）。
+  Future<Channel?> findSheBoundGroupSession({
+    required String sheChannelId,
+    required String groupFamilyId,
+  }) async {
+    final db = await database;
+    final results = await db.rawQuery('''
+      SELECT c.* FROM channels c
+      WHERE c.type = 'group'
+        AND c.source_she_channel_id = ?
+        AND (c.id = ? OR c.parent_group_id = ?)
+      ORDER BY c.created_at DESC
+      LIMIT 1
+    ''', [sheChannelId, groupFamilyId, groupFamilyId]);
+    if (results.isEmpty) return null;
+    final map = results.first;
+    final members = await getChannelMembers(map['id'] as String);
+    return _channelFromMap(map, members);
+  }
+
   /// 查询绑定到指定群会话的所有成员 DM 会话。
   Future<List<Channel>> getMemberSessionsForGroupChannel(String groupChannelId) async {
     final db = await database;

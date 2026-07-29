@@ -28,7 +28,7 @@ import '../../services/cli_tool_registry.dart';
 ///
 /// ─── 💬 COMMUNICATION 层（实时对话和通信）───────────────────
 ///   chat      对话频道与消息（channels / messages / message.get / group.*）
-///             group.create / add / kick / rename — 群管理（变更需管理员）
+///             group.create / add / kick / rename / send — 群管理（变更需管理员）
 ///
 /// ─── 🔧 TOOLING 层（系统工具和功能能力）────────────────────
 ///   tools     系统工具（os.* / network.* / web.*）

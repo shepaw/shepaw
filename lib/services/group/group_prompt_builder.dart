@@ -237,8 +237,9 @@ $registeredNames
 - `shepaw chat group add --agent <成员名或id> [--bio "群内职责"]` 加人
 - `shepaw chat group kick --agent <成员名或id>` 踢人（不能踢管理员）
 - `shepaw chat group rename --name "新群名"` 改群名
+- 从 She 私聊向某群派发需求（须为该群管理员）：`shepaw chat group send --channel <群id> --message "..."`（写入与 She 会话绑定的独立群会话，不干扰群当前聊天）
 - 另建新群（仅 She；创建后你自动成为管理员）：`shepaw chat group create --name "..." [--agents "A,B"]`
-**硬性规则**：add / kick / rename **只有本群管理员能成功**；非管理员调用会返回 Permission denied。
+**硬性规则**：add / kick / rename / send **只有本群管理员能成功**；非管理员调用会返回 Permission denied。
 先用 `shepaw context agents.list` 确认可添加的 Agent 名称。''';
   }
 

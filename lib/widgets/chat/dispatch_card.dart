@@ -242,6 +242,124 @@ class DispatchConfirmCard extends StatelessWidget {
   }
 }
 
+/// She DM jump card: bound group session needs master review.
+class GroupApprovalBridgeCard extends StatelessWidget {
+  final Message message;
+
+  const GroupApprovalBridgeCard({super.key, required this.message});
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
+    final colorScheme = Theme.of(context).colorScheme;
+    final payload =
+        message.metadata?['group_approval_bridge'] as Map<String, dynamic>? ??
+            {};
+    final groupName = payload['group_name'] as String? ?? '';
+    final groupChannelId = payload['group_channel_id'] as String? ?? '';
+    final interactionType = payload['interaction_type'] as String? ?? '';
+    final agentName = payload['agent_name'] as String? ?? '';
+
+    return Center(
+      child: Container(
+        margin: const EdgeInsets.symmetric(vertical: 4),
+        constraints: const BoxConstraints(maxWidth: 420),
+        decoration: BoxDecoration(
+          color: colorScheme.surfaceContainerHighest.withOpacity(0.5),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: Colors.amber.withOpacity(0.55), width: 1.2),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(12, 10, 12, 8),
+              child: Row(
+                children: [
+                  const Icon(Icons.rule_folder_outlined,
+                      size: 16, color: Colors.amber),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: Text(
+                      l10n.group_approvalBridgeTitle(groupName),
+                      style: const TextStyle(
+                          fontWeight: FontWeight.bold, fontSize: 13),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                  _StatusChip(
+                    label: l10n.group_approvalBridgePending,
+                    color: Colors.amber,
+                  ),
+                ],
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
+              child: Text(
+                l10n.group_approvalBridgeBody(
+                  agentName.isNotEmpty ? agentName : 'She',
+                  _interactionLabel(l10n, interactionType),
+                ),
+                maxLines: 3,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(fontSize: 12, color: Colors.grey[700]),
+              ),
+            ),
+            if (groupChannelId.isNotEmpty) ...[
+              const Divider(height: 1, indent: 12, endIndent: 12),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(12, 6, 12, 8),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.end,
+                  children: [
+                    TextButton.icon(
+                      onPressed: () {
+                        Navigator.of(context).push(
+                          MaterialPageRoute(
+                            builder: (_) =>
+                                ChatScreen(channelId: groupChannelId),
+                          ),
+                        );
+                      },
+                      icon: const Icon(Icons.open_in_new, size: 15),
+                      label: Text(l10n.group_approvalBridgeOpen),
+                      style: TextButton.styleFrom(
+                        visualDensity: VisualDensity.compact,
+                        textStyle: const TextStyle(fontSize: 12),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ] else
+              const SizedBox(height: 6),
+          ],
+        ),
+      ),
+    );
+  }
+
+  static String _interactionLabel(AppLocalizations l10n, String type) {
+    switch (type) {
+      case 'plan_approval':
+        return l10n.group_approvalKindPlan;
+      case 'action_confirmation':
+        return l10n.group_approvalKindAction;
+      case 'form':
+        return l10n.group_approvalKindForm;
+      case 'single_select':
+      case 'multi_select':
+        return l10n.group_approvalKindSelect;
+      case 'file_upload':
+        return l10n.group_approvalKindUpload;
+      default:
+        return type;
+    }
+  }
+}
+
 class _StatusChip extends StatelessWidget {
   final String label;
   final Color color;

@@ -14,7 +14,7 @@ import 'messages_command.dart';
 /// - `channels`  列出所有对话频道
 /// - `messages`  查询频道消息（--channel <id> 或 --agent <agent_id>）
 /// - `message.get` 按 message_id 获取完整消息 / 附件 / 图片分析
-/// - `group.*`   创建 / 加人 / 踢人 / 改群名（变更操作需 She 为管理员）
+/// - `group.*`   创建 / 加人 / 踢人 / 改群名 / 向绑定群会话发消息（变更需管理员）
 class ChatNamespace extends CliNamespace {
   static final instance = ChatNamespace._();
   ChatNamespace._();

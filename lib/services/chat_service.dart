@@ -2083,7 +2083,36 @@ $originalQuestion
   Future<String> createNewGroupSession({
     required String channelId,
     required String userId,
-  }) => _groupSessionService.createNewGroupSession(channelId: channelId, userId: userId);
+    String? sourceSheChannelId,
+  }) => _groupSessionService.createNewGroupSession(
+        channelId: channelId,
+        userId: userId,
+        sourceSheChannelId: sourceSheChannelId,
+      );
+
+  /// Ensure a She-bound group session for external She triggers.
+  Future<String> ensureSheBoundGroupSession({
+    required String channelId,
+    required String sheChannelId,
+    required String userId,
+  }) =>
+      _groupSessionService.ensureSheBoundGroupSession(
+        channelId: channelId,
+        sheChannelId: sheChannelId,
+        userId: userId,
+      );
+
+  /// Cascade new She-bound group sessions when She opens a new DM.
+  Future<List<String>> cascadeSheBoundGroupSessions({
+    required String oldSheChannelId,
+    required String newSheChannelId,
+    required String userId,
+  }) =>
+      _groupSessionService.cascadeSheBoundGroupSessions(
+        oldSheChannelId: oldSheChannelId,
+        newSheChannelId: newSheChannelId,
+        userId: userId,
+      );
 
   /// Get all sessions for a group (by parentGroupId).
   Future<List<Channel>> getGroupSessions({required String parentGroupId}) =>

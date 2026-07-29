@@ -8,17 +8,18 @@ import 'group_commands.dart';
 /// - `add`     添加成员
 /// - `kick`    移除成员
 /// - `rename`  修改群名
+/// - `send`    向绑定群会话发消息（外部触发编排，不影响群当前聊天）
 class GroupNamespace extends CliNamespace {
   @override
   String get namespace => 'group';
 
   @override
   String get description =>
-      'Create/manage groups (create=She-only; add/kick/rename=admin only)';
+      'Create/manage groups (create=She-only; add/kick/rename/send=admin only)';
 
   @override
   String get usage =>
-      'shepaw chat group <create|add|kick|rename> [flags]';
+      'shepaw chat group <create|add|kick|rename|send> [flags]';
 
   @override
   Map<String, CliCommand> get commands => {
@@ -26,5 +27,6 @@ class GroupNamespace extends CliNamespace {
         'add': GroupAddCommand(),
         'kick': GroupKickCommand(),
         'rename': GroupRenameCommand(),
+        'send': GroupSendCommand(),
       };
 }

@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:uuid/uuid.dart';
 
 import '../../models/channel.dart';
@@ -9,6 +11,7 @@ import '../logger_service.dart';
 import '../she_service.dart';
 import 'group_admin_gate.dart';
 import 'group_member_session_service.dart';
+import 'she_group_approval_bridge.dart';
 
 /// Result of a group-management CLI / service operation.
 class GroupManagementResult {
@@ -46,11 +49,18 @@ class GroupManagementService {
   GroupManagementService({
     LocalDatabaseService? db,
     ChatService? chatService,
+    SheGroupApprovalBridge? approvalBridge,
   })  : _db = db ?? LocalDatabaseService(),
-        _chat = chatService ?? ChatService();
+        _chat = chatService ?? ChatService(),
+        _approvalBridge = approvalBridge ??
+            SheGroupApprovalBridge(
+              db: db,
+              chatService: chatService,
+            );
 
   final LocalDatabaseService _db;
   final ChatService _chat;
+  final SheGroupApprovalBridge _approvalBridge;
   static const _tag = 'GroupManagement';
 
   /// Resolve `--channel` / `--channel_id` (injected when already in a group).
@@ -341,6 +351,111 @@ class GroupManagementService {
       'channel_id': channelId,
       'name': trimmed,
       'previous_name': channel.name,
+    });
+  }
+
+  /// Send a message into a She-bound group session (external trigger).
+  ///
+  /// Requires [actorId] to be the group admin. Uses [sheChannelId] (She↔user
+  /// DM) to ensure/create a dedicated group session so the group's current
+  /// chat is not affected. Orchestration reuses [ChatService.sendMessageToGroup].
+  Future<GroupManagementResult> sendToGroup({
+    required String channelId,
+    required String message,
+    required String actorId,
+    required String sheChannelId,
+    String userId = LocalUserIdentity.id,
+    String userName = LocalUserIdentity.displayName,
+  }) async {
+    final content = message.trim();
+    if (content.isEmpty) {
+      return GroupManagementResult.failure('Missing required flag: --message');
+    }
+    if (sheChannelId.trim().isEmpty) {
+      return GroupManagementResult.failure(
+        'Missing She session channel_id. Run group send from a She conversation.',
+      );
+    }
+
+    final gate = await _requireAdminGroup(channelId, actorId);
+    if (gate.error != null) {
+      return GroupManagementResult.failure(gate.error!);
+    }
+    final channel = gate.channel!;
+
+    final String boundChannelId;
+    try {
+      boundChannelId = await _chat.ensureSheBoundGroupSession(
+        channelId: channel.id,
+        sheChannelId: sheChannelId,
+        userId: userId,
+      );
+    } catch (e) {
+      return GroupManagementResult.failure(
+        'Failed to open She-bound group session: $e',
+      );
+    }
+
+    final bound = await _db.getChannelById(boundChannelId);
+    if (bound == null) {
+      return GroupManagementResult.failure(
+        'Bound group session not found: $boundChannelId',
+      );
+    }
+    final agentIds = bound.agentIds;
+    if (agentIds.isEmpty) {
+      return GroupManagementResult.failure(
+        'Group has no agent members to notify.',
+      );
+    }
+
+    final groupName = bound.name;
+    unawaited(() async {
+      try {
+        await _chat.sendMessageToGroup(
+          channelId: boundChannelId,
+          content: content,
+          userId: userId,
+          userName: userName,
+          agentIds: agentIds,
+          adminAgentId: bound.adminAgentId,
+          flowMode: bound.flowMode,
+          onInteractionRequest: (agentId, agentName, interactionType, data) =>
+              _approvalBridge.handleInteraction(
+            sheChannelId: sheChannelId,
+            groupChannelId: boundChannelId,
+            groupName: groupName,
+            agentId: agentId,
+            agentName: agentName,
+            interactionType: interactionType,
+            data: data,
+          ),
+        );
+      } catch (e, st) {
+        LoggerService().error(
+          'She group send orchestration failed for $boundChannelId',
+          tag: _tag,
+          error: e,
+          stackTrace: st,
+        );
+      }
+    }());
+
+    LoggerService().info(
+      'She group send queued: she=$sheChannelId → bound=$boundChannelId '
+      '(family=${bound.groupFamilyId})',
+      tag: _tag,
+    );
+
+    return GroupManagementResult.success({
+      'channel_id': boundChannelId,
+      'group_family_id': bound.groupFamilyId,
+      'group_name': groupName,
+      'she_channel_id': sheChannelId,
+      'note':
+          'Message posted to a She-bound group session; orchestration started. '
+          'Approvals appear in that group session; a jump notice will be '
+          'injected here when master review is needed.',
     });
   }
 

@@ -19,6 +19,7 @@ mixin _SessionOps on _ChatControllerBase {
 
     final userId = getUserId();
     final userName = getUserName();
+    final previousChannelId = currentChannelId;
 
     try {
       final newChannelId = await chatService.createNewSession(
@@ -27,6 +28,25 @@ mixin _SessionOps on _ChatControllerBase {
         agentId: agentId!,
         agentName: agentName ?? 'Agent',
       );
+
+      // She DM ↔ bound group sessions: opening a new She session also forks
+      // a fresh bound group session for each previously linked group family.
+      if (SheService.isSheIdentity(agentId!) &&
+          previousChannelId != null &&
+          previousChannelId.isNotEmpty) {
+        try {
+          await chatService.cascadeSheBoundGroupSessions(
+            oldSheChannelId: previousChannelId,
+            newSheChannelId: newChannelId,
+            userId: userId,
+          );
+        } catch (e) {
+          LoggerService().warning(
+            'Failed to cascade She-bound group sessions: $e',
+            tag: 'ChatController',
+          );
+        }
+      }
 
       await localDatabaseService.touchChannelUpdatedAt(newChannelId);
 

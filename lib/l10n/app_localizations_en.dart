@@ -4618,6 +4618,37 @@ class AppLocalizationsEn extends AppLocalizations {
   String get dispatch_confirmDispatch => 'Confirm dispatch';
 
   @override
+  String group_approvalBridgeTitle(String groupName) {
+    return 'Group review · $groupName';
+  }
+
+  @override
+  String get group_approvalBridgePending => 'Needs review';
+
+  @override
+  String group_approvalBridgeBody(String agentName, String kind) {
+    return '$agentName needs your $kind in the bound group session.';
+  }
+
+  @override
+  String get group_approvalBridgeOpen => 'Open group session';
+
+  @override
+  String get group_approvalKindPlan => 'workflow plan approval';
+
+  @override
+  String get group_approvalKindAction => 'action confirmation';
+
+  @override
+  String get group_approvalKindForm => 'form input';
+
+  @override
+  String get group_approvalKindSelect => 'selection';
+
+  @override
+  String get group_approvalKindUpload => 'file upload';
+
+  @override
   String dispatch_title(String agentName) {
     return 'Dispatch · $agentName';
   }
