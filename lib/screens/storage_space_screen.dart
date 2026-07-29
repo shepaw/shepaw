@@ -1,92 +1,54 @@
 import 'dart:async';
 
-import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 
 import '../l10n/app_localizations.dart';
-import '../peer/models/paired_peer.dart';
-import '../peer/screens/peer_pairing_screen.dart';
-import '../peer/services/peer_connection_manager.dart';
-import '../peer/services/peer_pairing_service.dart';
-import '../peer/services/peer_storage_service.dart';
-import '../service_locator.dart';
-import '../services/remote_agent_service.dart';
-import '../services/she_service.dart';
-import '../she_network/digest_service.dart';
-import '../she_network/exchange_settings.dart';
-import '../she_network/external_memory_store.dart';
-import '../she_network/memory_exchange_service.dart';
-import '../she_network/presence_profile.dart' show PresenceAgentEntry;
-import '../she_network/presence_service.dart';
-import '../she_network/presence_settings.dart';
-import '../she_network/she_network_protocol.dart';
-import '../peer/services/peer_agent_client_service.dart' show peerAgentLocalId;
-import 'remote_agent_detail_screen.dart';
-import '../storage/device_cursor_store.dart';
-import '../storage/device_identity.dart';
 import '../storage/import_auth_service.dart';
-import '../storage/local_store.dart';
-import '../storage/master_migration_service.dart';
-import '../storage/mirror_reprotect_service.dart';
-import '../storage/restore_service.dart';
-import '../storage/scheduled_snapshot_service.dart';
-import '../storage/snapshot_crypto.dart';
-import '../storage/snapshot_import_service.dart';
-import '../storage/snapshot_service.dart';
-import '../storage/store_export_service.dart';
-import '../storage/store_webdav_export_service.dart';
-import '../storage/store_wipe_service.dart';
-import '../storage/store_protocol.dart';
-import '../storage/store_service.dart';
-import '../storage/webdav_uploader.dart';
-import 'storage_browser_screen.dart';
-import 'storage_import_scanner_screen.dart';
+import 'she_circle_screen.dart';
+import 'storage_advanced_screen.dart';
+import 'storage_import_screen.dart';
+import 'storage_shared.dart';
+import 'storage_snapshots_screen.dart';
+import 'storage_space_manage_screen.dart';
 
-/// 存储空间页（docs/storage_space_plan.md §7）。
-///
-/// M1：本机快照（生成/校验/恢复/导出）。
-/// M2：存储空间区块——master 展示、用量统计、他端镜像删除、回收站（还原/清空，
-/// 清空仅 master 本机，docs/storage_protocol_spec.md §2.8）。
-class StorageSpaceScreen extends StatefulWidget {
-  const StorageSpaceScreen({super.key});
-
-  @override
-  State<StorageSpaceScreen> createState() => _StorageSpaceScreenState();
+/// 储物袋功能入口（桌面中间栏列表 / 总览告警跳转共用）。
+enum StorageBagEntry {
+  snapshots,
+  space,
+  import,
+  sheCircle,
+  advanced,
 }
 
-class _StorageSpaceScreenState extends State<StorageSpaceScreen> {
-  late Future<List<SnapshotInfo>> _future;
-  final Map<String, SnapshotVerifyStatus> _verifyCache = {};
-  bool _busy = false;
+/// 储物袋总览页（重构：原 7 区块单页堆叠 → 总览仪表盘 + 子页）。
+///
+/// 移动端：用量总览 + 告警 + 5 个功能入口（push 子页）。
+/// 桌面 embedded：仅入口列表，选中回调由父级在右侧展示详情。
+class StorageSpaceScreen extends StatefulWidget {
+  final bool embedded;
+  final StorageBagEntry? selectedEntry;
+  final ValueChanged<StorageBagEntry>? onEntrySelected;
 
-  // M2 区块状态
-  String _masterId = '';
-  String _selfId = '';
-  Map<String, dynamic>? _stats;
-  List<Map<String, dynamic>> _recycle = [];
-  bool _recycleExpanded = false;
+  const StorageSpaceScreen({
+    super.key,
+    this.embedded = false,
+    this.selectedEntry,
+    this.onEntrySelected,
+  });
 
-  // M3 区块状态
-  ScheduledSnapshotStatus? _schedStatus;
-  int _passwordChangedAtMs = 0;
-  List<ImportGrant> _receivedGrants = [];
-  List<Map<String, dynamic>> _pendingImports = [];
-  final _oldDeviceController = TextEditingController();
+  @override
+  State<StorageSpaceScreen> createState() => StorageSpaceScreenState();
+}
 
-  // M8 她的朋友圈
-  ExchangeSettings _exchange =
-      ExchangeSettings(enabled: false, kinds: {...DigestKind.all});
-  PresenceSettings _presenceSettings = PresenceSettings(shareRoster: false);
-  List<PairedPeer> _ownerPeers = [];
-  Map<String, int> _extCounts = {};
-  String _localSheName = SheService.sheName;
+class StorageSpaceScreenState extends State<StorageSpaceScreen> {
+  late Future<StorageOverviewSummary> _future;
   StreamSubscription<ImportRequest>? _importCreatedSub;
   StreamSubscription<ImportGrant>? _importGrantSub;
 
   @override
   void initState() {
     super.initState();
-    _future = _load();
+    _future = loadStorageOverview();
     _importCreatedSub = ImportRequestBus.instance.onCreated.listen((_) {
       if (mounted) unawaited(_refresh());
     });
@@ -99,329 +61,29 @@ class _StorageSpaceScreenState extends State<StorageSpaceScreen> {
   void dispose() {
     _importCreatedSub?.cancel();
     _importGrantSub?.cancel();
-    _oldDeviceController.dispose();
     super.dispose();
   }
 
-  Future<List<SnapshotInfo>> _load() async {
-    final list = await SnapshotService.instance.listSnapshots();
-    for (final s in list) {
-      if (!_verifyCache.containsKey(s.id)) {
-        _verifyCache[s.id] = await SnapshotService.instance.verifySnapshot(s);
-      }
-    }
-    await _loadSpace();
-    return list;
-  }
-
-  Future<void> _loadSpace() async {
-    _selfId = await DeviceIdentity.deviceId();
-    _masterId = await StoreService.instance.masterDeviceId();
-    final stats = await StoreService.instance
-        .call(StoreFrame(op: StoreOp.stats, payload: {}));
-    if (stats != null && !stats.containsKey('_error')) {
-      _stats = stats;
-    }
-    final recycle = await StoreService.instance
-        .call(StoreFrame(op: StoreOp.recycleList, payload: {}));
-    if (recycle != null && recycle['entries'] is List) {
-      _recycle = (recycle['entries'] as List)
-          .map((e) => (e as Map).cast<String, dynamic>())
-          .toList();
-    }
-    // M3：调度状态 + 改密时间 + 导入授权/请求
-    _schedStatus = await ScheduledSnapshotService.instance.status();
-    _passwordChangedAtMs =
-        await ScheduledSnapshotService.instance.passwordChangedAtMs();
-    final grants = await StoreService.instance.call(StoreFrame(
-        op: StoreOp.importGrants, payload: {'role': 'received'}));
-    if (grants != null && grants['grants'] is List) {
-      _receivedGrants = (grants['grants'] as List)
-          .map((e) => ImportGrant.fromJson((e as Map).cast<String, dynamic>()))
-          .toList();
-    }
-    final pending = await StoreService.instance
-        .call(StoreFrame(op: StoreOp.importPending, payload: {}));
-    if (pending != null && pending['requests'] is List) {
-      _pendingImports = (pending['requests'] as List)
-          .map((e) => (e as Map).cast<String, dynamic>())
-          .toList();
-    }
-    // M8：交换设置 + presence 名单开关 + owner 同伴 + 外部记忆计数
-    _exchange = await ExchangeSettings.load();
-    _presenceSettings = await PresenceSettings.load();
-    final peers = await PeerStorageService().loadAllPeers();
-    _ownerPeers =
-        peers.where((p) => p.trustLevel == TrustLevel.owner).toList();
-    _extCounts = await ExternalMemoryStore.instance.countsByDevice();
-    _localSheName = await DigestService.instance.localSheName();
-  }
+  Future<void> reload() => _refresh();
 
   Future<void> _refresh() async {
-    _verifyCache.clear();
-    setState(() => _future = _load());
+    setState(() => _future = loadStorageOverview());
   }
 
-  // ------------------------------------------------------------ 操作
-
-  /// 密码输入对话框；返回密码或 null（取消）。
-  Future<String?> _askPassword({String? title}) async {
-    final l10n = AppLocalizations.of(context);
-    final controller = TextEditingController();
-    final result = await showDialog<String>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text(title ?? l10n.storage_passwordTitle),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(l10n.storage_passwordHint,
-                style: Theme.of(ctx).textTheme.bodySmall),
-            const SizedBox(height: 12),
-            TextField(
-              controller: controller,
-              obscureText: true,
-              autofocus: true,
-              decoration: const InputDecoration(
-                border: OutlineInputBorder(),
-                prefixIcon: Icon(Icons.lock_outline),
-              ),
-              onSubmitted: (v) => Navigator.of(ctx).pop(v),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(),
-            child: Text(l10n.common_cancel),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.of(ctx).pop(controller.text),
-            child: Text(l10n.common_confirm),
-          ),
-        ],
-      ),
+  /// 进入子页；返回后刷新摘要（子页操作可能改变状态）。
+  Future<void> _open(Widget screen) async {
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(builder: (_) => screen),
     );
-    return (result == null || result.isEmpty) ? null : result;
+    if (mounted) unawaited(_refresh());
   }
 
-  Future<void> _snapshotNow() async {
-    final l10n = AppLocalizations.of(context);
-    final password = await _askPassword();
-    if (password == null) return;
-    setState(() => _busy = true);
-    try {
-      await SnapshotService.instance.createSnapshot(password: password);
-      await _refresh();
-      _toast(l10n.storage_snapshotDone);
-    } catch (e) {
-      _toast(l10n.storage_snapshotFailed('$e'));
-    } finally {
-      if (mounted) setState(() => _busy = false);
-    }
-  }
-
-  /// 开启自动快照：强制验密（§10）；可选解密最新快照并缓存密钥。
-  Future<void> _setAutoSnapshotEnabled(bool enabled) async {
-    final l10n = AppLocalizations.of(context);
-    if (enabled) {
-      final password = await _askPassword(
-          title: l10n.storage_enableSnapshotPasswordTitle);
-      if (password == null) return;
-      setState(() => _busy = true);
-      try {
-        final result =
-            await SnapshotService.instance.checkDecryptAndCache(password);
-        await ScheduledSnapshotService.instance.setEnabled(true);
-        await _refresh();
-        _toast(result.decryptedSnapshot
-            ? l10n.storage_decryptCheckOk
-            : l10n.storage_decryptCheckOkNoSnapshot);
-      } on SnapshotDecryptException {
-        _toast(l10n.storage_passwordWrong);
-      } catch (e) {
-        _toast(l10n.storage_decryptCheckFailed('$e'));
-      } finally {
-        if (mounted) setState(() => _busy = false);
-      }
+  void _selectOrOpen(StorageBagEntry entry, Widget screen) {
+    if (widget.onEntrySelected != null) {
+      widget.onEntrySelected!(entry);
       return;
     }
-    await ScheduledSnapshotService.instance.setEnabled(false);
-    await _refresh();
-  }
-
-  /// 管理页解密自检（§10）。
-  Future<void> _decryptSelfCheck() async {
-    final l10n = AppLocalizations.of(context);
-    final password = await _askPassword(title: l10n.storage_decryptCheckTitle);
-    if (password == null) return;
-    setState(() => _busy = true);
-    try {
-      final result =
-          await SnapshotService.instance.checkDecryptAndCache(password);
-      await _refresh();
-      _toast(result.decryptedSnapshot
-          ? l10n.storage_decryptCheckOk
-          : l10n.storage_decryptCheckOkNoSnapshot);
-    } on SnapshotDecryptException {
-      _toast(l10n.storage_passwordWrong);
-    } catch (e) {
-      _toast(l10n.storage_decryptCheckFailed('$e'));
-    } finally {
-      if (mounted) setState(() => _busy = false);
-    }
-  }
-
-  Future<void> _restore(SnapshotInfo info) async {
-    final l10n = AppLocalizations.of(context);
-    // 全量替换语义强提示（§5.3）
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        icon: Icon(Icons.warning_amber_rounded,
-            color: Theme.of(ctx).colorScheme.error, size: 36),
-        title: Text(l10n.storage_restoreTitle),
-        content: Text(l10n.storage_restoreWarning),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(false),
-            child: Text(l10n.common_cancel),
-          ),
-          FilledButton(
-            style: FilledButton.styleFrom(
-                backgroundColor: Theme.of(ctx).colorScheme.error),
-            onPressed: () => Navigator.of(ctx).pop(true),
-            child: Text(l10n.storage_restoreConfirm),
-          ),
-        ],
-      ),
-    );
-    if (confirmed != true) return;
-
-    final password = await _askPassword();
-    if (password == null) return;
-    setState(() => _busy = true);
-    try {
-      final preview =
-          await RestoreService.instance.prepareRestore(info, password);
-      final safetyHash = await SnapshotCrypto.cachedPasswordHash();
-      await RestoreService.instance.executeRestore(preview, password,
-          safetyPasswordHash: safetyHash);
-      _toast(l10n.storage_restoreDone, duration: const Duration(seconds: 6));
-    } on StateError catch (e) {
-      _toast(e.message.contains('wrong password')
-          ? l10n.storage_passwordWrong
-          : l10n.storage_restoreFailed(e.message));
-    } catch (e) {
-      _toast(l10n.storage_restoreFailed('$e'));
-    } finally {
-      if (mounted) setState(() => _busy = false);
-    }
-  }
-
-  Future<void> _export(SnapshotInfo info) async {
-    final l10n = AppLocalizations.of(context);
-    final dir = await FilePicker.platform.getDirectoryPath();
-    if (dir == null) return;
-    setState(() => _busy = true);
-    try {
-      final out = await SnapshotService.instance.exportToDirectory(info, dir);
-      if (out.missingAttachments.isEmpty) {
-        _toast(
-          out.packedAttachments > 0
-              ? l10n.storage_exportDoneWithAttachments(
-                  out.directory.path, out.packedAttachments)
-              : l10n.storage_exportDone(out.directory.path),
-          duration: const Duration(seconds: 5),
-        );
-      } else {
-        _toast(
-          l10n.storage_exportDonePartial(out.directory.path,
-              out.packedAttachments, out.missingAttachments.length),
-          duration: const Duration(seconds: 6),
-        );
-      }
-    } catch (e) {
-      _toast(l10n.storage_snapshotFailed('$e'));
-    } finally {
-      if (mounted) setState(() => _busy = false);
-    }
-  }
-
-  void _toast(String message, {Duration? duration}) {
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-      content: Text(message),
-      duration: duration ?? const Duration(seconds: 3),
-    ));
-  }
-
-  // ------------------------------------------------------------ 回收站操作
-
-  Future<void> _recycleRestore(Map<String, dynamic> entry) async {
-    final l10n = AppLocalizations.of(context);
-    setState(() => _busy = true);
-    try {
-      final res = await StoreService.instance.call(StoreFrame(
-          op: StoreOp.recycleRestore,
-          payload: {'recycle_path': entry['recycle_path']}));
-      if (res != null && res.containsKey('_error')) {
-        _toast(l10n.storage_recycleRestoreFailed('${res['_error']}'));
-        return;
-      }
-      await _refresh();
-      _toast(l10n.storage_recycleRestored);
-    } catch (e) {
-      _toast(l10n.storage_recycleRestoreFailed('$e'));
-    } finally {
-      if (mounted) setState(() => _busy = false);
-    }
-  }
-
-  Future<void> _recyclePurgeAll() async {
-    final l10n = AppLocalizations.of(context);
-    if (_masterId != _selfId || _selfId.isEmpty) {
-      _toast(l10n.storage_recyclePurgeMasterOnly);
-      return;
-    }
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        icon: Icon(Icons.delete_forever,
-            color: Theme.of(ctx).colorScheme.error, size: 36),
-        content: Text(l10n.storage_recyclePurgeConfirm),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(false),
-            child: Text(l10n.common_cancel),
-          ),
-          FilledButton(
-            style: FilledButton.styleFrom(
-                backgroundColor: Theme.of(ctx).colorScheme.error),
-            onPressed: () => Navigator.of(ctx).pop(true),
-            child: Text(l10n.common_confirm),
-          ),
-        ],
-      ),
-    );
-    if (confirmed != true) return;
-    setState(() => _busy = true);
-    try {
-      final res = await StoreService.instance
-          .call(StoreFrame(op: StoreOp.recycleEmpty, payload: {}));
-      if (res != null && res.containsKey('_error')) {
-        _toast(l10n.storage_recyclePurgeFailed('${res['_error']}'));
-        return;
-      }
-      final purged = res?['purged_bytes'] as int? ?? 0;
-      _toast(l10n.storage_recyclePurged(_fmtBytes(purged)));
-      await _refresh();
-    } catch (e) {
-      _toast(l10n.storage_recyclePurgeFailed('$e'));
-    } finally {
-      if (mounted) setState(() => _busy = false);
-    }
+    unawaited(_open(screen));
   }
 
   // ------------------------------------------------------------ UI
@@ -429,1601 +91,481 @@ class _StorageSpaceScreenState extends State<StorageSpaceScreen> {
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
-    final colorScheme = Theme.of(context).colorScheme;
     return Scaffold(
       appBar: AppBar(
         title: Text(l10n.storage_title),
+        elevation: widget.embedded ? 0 : null,
         actions: [
           IconButton(
             icon: const Icon(Icons.refresh),
             tooltip: l10n.common_refresh,
-            onPressed: _busy ? null : _refresh,
+            onPressed: _refresh,
           ),
         ],
       ),
-      body: Stack(
-        children: [
-          FutureBuilder<List<SnapshotInfo>>(
-            future: _future,
-            builder: (context, snap) {
-              final list = snap.data ?? const <SnapshotInfo>[];
-              return ListView(
-                padding: const EdgeInsets.all(16),
-                children: [
-                  _buildBagIntro(l10n, colorScheme),
-                  const SizedBox(height: 16),
-                  _buildSpaceSection(l10n),
-                  const SizedBox(height: 20),
-                  _buildSheCircleSection(l10n),
-                  const SizedBox(height: 20),
-                  _buildHeader(l10n),
-                  const SizedBox(height: 20),
-                  _buildImportCard(l10n),
-                  const SizedBox(height: 20),
-                  Row(
-                    children: [
-                      Text(l10n.storage_snapshotSection,
-                          style: Theme.of(context).textTheme.titleSmall),
-                      const Spacer(),
-                      FilledButton.icon(
-                        onPressed: _busy ? null : _snapshotNow,
-                        icon: const Icon(Icons.add_a_photo_outlined, size: 18),
-                        label: Text(l10n.storage_snapshotNow),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 8),
-                  if (snap.connectionState != ConnectionState.done)
-                    const Padding(
-                      padding: EdgeInsets.all(32),
-                      child: Center(child: CircularProgressIndicator()),
-                    )
-                  else if (list.isEmpty)
-                    Padding(
-                      padding: const EdgeInsets.symmetric(vertical: 40),
-                      child: Center(
-                        child: Text(l10n.storage_noSnapshots,
-                            style: Theme.of(context)
-                                .textTheme
-                                .bodyMedium
-                                ?.copyWith(
-                                    color: Theme.of(context)
-                                        .colorScheme
-                                        .onSurfaceVariant)),
-                      ),
-                    )
-                  else
-                    ...list.map((s) => _buildSnapshotTile(l10n, s)),
-                  const SizedBox(height: 20),
-                  _buildDangerZoneCard(l10n),
-                ],
-              );
-            },
-          ),
-          if (_busy)
-            Container(
-              color: Colors.black26,
-              child: const Center(child: CircularProgressIndicator()),
-            ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildBagIntro(AppLocalizations l10n, ColorScheme colorScheme) {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: colorScheme.primaryContainer.withValues(alpha: 0.35),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(
-          color: colorScheme.primary.withValues(alpha: 0.18),
-        ),
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Icon(Icons.inventory_2_outlined, color: colorScheme.primary, size: 22),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+      body: FutureBuilder<StorageOverviewSummary>(
+        future: _future,
+        builder: (context, snap) {
+          final s = snap.data;
+          if (widget.embedded) {
+            return ListView(
+              padding: const EdgeInsets.symmetric(vertical: 8),
               children: [
-                Text(
-                  l10n.storage_title,
-                  style: TextStyle(
-                    fontWeight: FontWeight.w600,
-                    color: colorScheme.onSurface,
-                  ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  l10n.storage_subtitle,
-                  style: TextStyle(
-                    fontSize: 13,
-                    color: colorScheme.onSurfaceVariant,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Future<void> _exportStoreTree() async {
-    final l10n = AppLocalizations.of(context);
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        icon: Icon(Icons.folder_zip_outlined,
-            color: Theme.of(ctx).colorScheme.primary, size: 36),
-        title: Text(l10n.storage_exportTreeTitle),
-        content: Text(l10n.storage_exportTreeHint),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(false),
-            child: Text(l10n.common_cancel),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.of(ctx).pop(true),
-            child: Text(l10n.common_confirm),
-          ),
-        ],
-      ),
-    );
-    if (confirmed != true) return;
-    final dir = await FilePicker.platform.getDirectoryPath();
-    if (dir == null) return;
-    setState(() => _busy = true);
-    try {
-      final out = await StoreExportService.instance.exportSelfTree(dir);
-      _toast(
-        l10n.storage_exportTreeDone(
-            out.directory.path, out.fileCount, _fmtBytes(out.totalBytes)),
-        duration: const Duration(seconds: 6),
-      );
-    } catch (e) {
-      _toast(l10n.storage_exportTreeFailed('$e'));
-    } finally {
-      if (mounted) setState(() => _busy = false);
-    }
-  }
-
-  Future<void> _exportStoreWebdav() async {
-    final l10n = AppLocalizations.of(context);
-    final urlCtrl = TextEditingController();
-    final userCtrl = TextEditingController();
-    final passCtrl = TextEditingController();
-    final prefixCtrl = TextEditingController(text: 'shepaw-export');
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        icon: Icon(Icons.cloud_upload_outlined,
-            color: Theme.of(ctx).colorScheme.primary, size: 36),
-        title: Text(l10n.storage_exportWebdavTitle),
-        content: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(l10n.storage_exportWebdavHint,
-                  style: Theme.of(ctx).textTheme.bodySmall),
-              const SizedBox(height: 12),
-              TextField(
-                controller: urlCtrl,
-                decoration: InputDecoration(
-                  labelText: l10n.storage_exportWebdavUrl,
-                  hintText: 'https://dav.example.com/remote.php/dav/files/u',
-                ),
-                keyboardType: TextInputType.url,
-                autofocus: true,
-              ),
-              const SizedBox(height: 8),
-              TextField(
-                controller: userCtrl,
-                decoration:
-                    InputDecoration(labelText: l10n.storage_exportWebdavUser),
-              ),
-              const SizedBox(height: 8),
-              TextField(
-                controller: passCtrl,
-                obscureText: true,
-                decoration: InputDecoration(
-                    labelText: l10n.storage_exportWebdavPassword),
-              ),
-              const SizedBox(height: 8),
-              TextField(
-                controller: prefixCtrl,
-                decoration: InputDecoration(
-                  labelText: l10n.storage_exportWebdavPrefix,
-                  hintText: 'shepaw-export',
-                ),
-              ),
-            ],
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(false),
-            child: Text(l10n.common_cancel),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.of(ctx).pop(true),
-            child: Text(l10n.common_confirm),
-          ),
-        ],
-      ),
-    );
-    if (confirmed != true) return;
-    final url = urlCtrl.text.trim();
-    if (url.isEmpty) {
-      _toast(l10n.storage_exportWebdavFailed('URL'));
-      return;
-    }
-    setState(() => _busy = true);
-    final uploader = DioWebdavUploader(
-      baseUrl: url,
-      username: userCtrl.text.trim(),
-      password: passCtrl.text,
-    );
-    try {
-      final out = await StoreWebdavExportService.instance.exportSelfTree(
-        uploader: uploader,
-        remotePrefix: prefixCtrl.text.trim(),
-      );
-      _toast(
-        l10n.storage_exportWebdavDone(
-            out.remoteRoot, out.fileCount, _fmtBytes(out.totalBytes)),
-        duration: const Duration(seconds: 6),
-      );
-    } catch (e) {
-      _toast(l10n.storage_exportWebdavFailed('$e'));
-    } finally {
-      await uploader.close();
-      if (mounted) setState(() => _busy = false);
-    }
-  }
-
-  Widget _buildDangerZoneCard(AppLocalizations l10n) {
-    return Card(
-      color: Theme.of(context).colorScheme.errorContainer.withValues(alpha: 0.35),
-      child: Padding(
-        padding: const EdgeInsets.all(12),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Icon(Icons.warning_amber_rounded,
-                    color: Theme.of(context).colorScheme.error, size: 20),
-                const SizedBox(width: 8),
-                Text(l10n.storage_dangerZone,
-                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                          color: Theme.of(context).colorScheme.error,
-                        )),
-              ],
-            ),
-            const SizedBox(height: 8),
-            Text(l10n.storage_exportTreeDesc,
-                style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: Theme.of(context).colorScheme.onSurfaceVariant,
-                    )),
-            const SizedBox(height: 8),
-            Align(
-              alignment: Alignment.centerLeft,
-              child: OutlinedButton.icon(
-                onPressed: _busy ? null : _exportStoreTree,
-                icon: const Icon(Icons.folder_copy_outlined, size: 18),
-                label: Text(l10n.storage_exportTree),
-              ),
-            ),
-            const SizedBox(height: 8),
-            Text(l10n.storage_exportWebdavDesc,
-                style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: Theme.of(context).colorScheme.onSurfaceVariant,
-                    )),
-            const SizedBox(height: 8),
-            Align(
-              alignment: Alignment.centerLeft,
-              child: OutlinedButton.icon(
-                onPressed: _busy ? null : _exportStoreWebdav,
-                icon: const Icon(Icons.cloud_upload_outlined, size: 18),
-                label: Text(l10n.storage_exportWebdav),
-              ),
-            ),
-            const SizedBox(height: 12),
-            Text(l10n.storage_wipeSelfDesc,
-                style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: Theme.of(context).colorScheme.onSurfaceVariant,
-                    )),
-            const SizedBox(height: 8),
-            Align(
-              alignment: Alignment.centerLeft,
-              child: OutlinedButton.icon(
-                onPressed: _busy ? null : _wipeSelfStore,
-                style: OutlinedButton.styleFrom(
-                  foregroundColor: Theme.of(context).colorScheme.error,
-                ),
-                icon: const Icon(Icons.delete_forever, size: 18),
-                label: Text(l10n.storage_wipeSelf),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Future<void> _wipeSelfStore() async {
-    final l10n = AppLocalizations.of(context);
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (ctx) {
-        final controller = TextEditingController();
-        return StatefulBuilder(
-          builder: (ctx, setLocal) {
-            final ok = controller.text.trim() == 'DELETE';
-            return AlertDialog(
-              icon: Icon(Icons.delete_forever,
-                  color: Theme.of(ctx).colorScheme.error, size: 36),
-              title: Text(l10n.storage_wipeSelfTitle),
-              content: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(l10n.storage_wipeSelfConfirm),
-                  const SizedBox(height: 12),
-                  TextField(
-                    controller: controller,
-                    autofocus: true,
-                    decoration: InputDecoration(
-                      hintText: l10n.storage_wipeSelfTypeHint,
-                    ),
-                    onChanged: (_) => setLocal(() {}),
-                  ),
-                ],
-              ),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.of(ctx).pop(false),
-                  child: Text(l10n.common_cancel),
-                ),
-                FilledButton(
-                  style: FilledButton.styleFrom(
-                      backgroundColor: Theme.of(ctx).colorScheme.error),
-                  onPressed:
-                      ok ? () => Navigator.of(ctx).pop(true) : null,
-                  child: Text(l10n.common_confirm),
-                ),
+                _buildEntries(l10n, s, asCard: false),
               ],
             );
-          },
-        );
-      },
-    );
-    if (confirmed != true) return;
-    setState(() => _busy = true);
-    try {
-      final out = await StoreWipeService.instance.wipeSelfTree();
-      await _refresh();
-      _toast(l10n.storage_wipeSelfDone(_fmtBytes(out.freedBytes)));
-    } catch (e) {
-      _toast(l10n.storage_wipeSelfFailed('$e'));
-    } finally {
-      if (mounted) setState(() => _busy = false);
-    }
-  }
-
-  // ------------------------------------------------------------ M6 master 迁移
-
-  /// 旧 master ≠ 本机且当前不可达时，升主存在历史 blob 缺口风险（方案 §6.5）。
-  Future<bool> _oldMasterGapRisk() async {
-    final masterId = await StoreService.instance.masterDeviceId();
-    if (masterId == _selfId) return false;
-    return !await StoreService.instance.masterOnline();
-  }
-
-  Future<bool> _confirmMigrate(String deviceLabel) async {
-    final l10n = AppLocalizations.of(context);
-    final gapRisk = await _oldMasterGapRisk();
-    if (!mounted) return false;
-    return await showDialog<bool>(
-          context: context,
-          builder: (ctx) => AlertDialog(
-            content: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(l10n.storage_migrateConfirm(deviceLabel)),
-                if (gapRisk) ...[
-                  const SizedBox(height: 12),
-                  Text(l10n.storage_migrateGapWarning),
-                ],
-              ],
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.of(ctx).pop(false),
-                child: Text(l10n.common_cancel),
+          }
+          return ListView(
+            padding: const EdgeInsets.all(16),
+            children: [
+              StorageOverviewBody(
+                summary: s,
+                onOpenEntry: (entry) => _selectOrOpen(entry, entry.screen),
               ),
-              FilledButton(
-                onPressed: () => Navigator.of(ctx).pop(true),
-                child: Text(l10n.common_confirm),
-              ),
+              const SizedBox(height: 20),
+              _buildEntries(l10n, s, asCard: true),
             ],
-          ),
-        ) ??
-        false;
+          );
+        },
+      ),
+    );
   }
 
-  void _toastMigrateDone(AppLocalizations l10n, MigrationResult result) {
-    if (!result.oldMasterReachable) {
-      _toast(l10n.storage_migrateDoneGap(result.epoch));
-      return;
-    }
-    if (result.hashGate.ran && !result.hashGate.ok) {
-      _toast(l10n.storage_migrateDoneHashMismatch(
-          result.epoch, result.hashGate.mismatches.length));
-      return;
-    }
-    _toast(l10n.storage_migrateDone(result.epoch));
-  }
+  /// 功能入口列表。
+  Widget _buildEntries(
+    AppLocalizations l10n,
+    StorageOverviewSummary? s, {
+    required bool asCard,
+  }) {
+    final sched = s?.schedStatus;
+    final snapshotSubtitle = s == null
+        ? ''
+        : '${sched != null && sched.enabled ? l10n.storage_autoShortOn : l10n.storage_autoShortOff}'
+            ' · ${l10n.storage_snapshotCount(s.snapshotCount)}'
+            '${sched != null && sched.lastSuccessMs > 0 ? ' · ${l10n.storage_lastSuccess(_fmtTime(sched.lastSuccessMs))}' : ''}';
 
-  Future<void> _becomeMaster() async {
-    final l10n = AppLocalizations.of(context);
-    final confirmed = await _confirmMigrate(l10n.storage_thisDevice);
-    if (!confirmed) return;
-    setState(() => _busy = true);
-    try {
-      final result = await MasterMigrationService.instance.promoteSelf();
-      await _refresh();
-      _toastMigrateDone(l10n, result);
-    } catch (e) {
-      _toast(l10n.storage_migrateFailed('$e'));
-    } finally {
-      if (mounted) setState(() => _busy = false);
-    }
-  }
+    final spaceSubtitle = s == null
+        ? ''
+        : '${s.isMaster ? l10n.storage_masterIsSelf : _shortId(s.masterId)}'
+            ' · ${s.unsyncedCount > 0 ? l10n.storage_unsynced(s.unsyncedCount, fmtStorageBytes(s.unsyncedBytes)) : l10n.storage_synced}';
 
-  Future<void> _pickMigrateTarget() async {
-    final l10n = AppLocalizations.of(context);
-    final peers = await PeerStorageService().loadAllPeers();
-    final owners = peers
-        .where((p) => p.trustLevel == 'owner' && p.fingerprint != _selfId)
-        .toList();
-    if (!mounted) return;
-    final choices = <(String, String)>[
-      (_selfId, l10n.storage_thisDevice),
-      for (final p in owners)
-        (p.fingerprint, '${p.deviceName} (${p.fingerprint.substring(0, 8)}…)'),
+    final importSubtitle = s != null && s.pendingImportCount > 0
+        ? l10n.storage_alertPendingImports(s.pendingImportCount)
+        : l10n.storage_importEntryHint;
+
+    final circleSubtitle = s == null
+        ? ''
+        : s.exchangeEnabled
+            ? l10n.storage_ownerPeerCount(s.ownerPeerCount)
+            : l10n.storage_autoSnapshotOff;
+
+    final tiles = <Widget>[
+      _entryTile(
+        entry: StorageBagEntry.snapshots,
+        icon: Icons.backup_outlined,
+        title: l10n.storage_entrySnapshots,
+        subtitle: snapshotSubtitle,
+        onTap: () => _selectOrOpen(
+          StorageBagEntry.snapshots,
+          const StorageSnapshotsScreen(),
+        ),
+      ),
+      _entryTile(
+        entry: StorageBagEntry.space,
+        icon: Icons.dns_outlined,
+        title: l10n.storage_entrySpace,
+        subtitle: spaceSubtitle,
+        onTap: () => _selectOrOpen(
+          StorageBagEntry.space,
+          const StorageSpaceManageScreen(),
+        ),
+      ),
+      _entryTile(
+        entry: StorageBagEntry.import,
+        icon: Icons.phonelink_ring_outlined,
+        title: l10n.storage_importSection,
+        subtitle: importSubtitle,
+        alert: s != null && s.pendingImportCount > 0,
+        onTap: () => _selectOrOpen(
+          StorageBagEntry.import,
+          const StorageImportScreen(),
+        ),
+      ),
+      _entryTile(
+        entry: StorageBagEntry.sheCircle,
+        icon: Icons.favorite_outline,
+        title: l10n.storage_sheCircleSection,
+        subtitle: circleSubtitle,
+        onTap: () => _selectOrOpen(
+          StorageBagEntry.sheCircle,
+          const SheCircleScreen(),
+        ),
+      ),
+      _entryTile(
+        entry: StorageBagEntry.advanced,
+        icon: Icons.settings_suggest_outlined,
+        title: l10n.storage_entryAdvanced,
+        subtitle: l10n.storage_advancedEntryHint,
+        onTap: () => _selectOrOpen(
+          StorageBagEntry.advanced,
+          const StorageAdvancedScreen(),
+        ),
+      ),
     ];
-    final picked = await showDialog<String>(
-      context: context,
-      builder: (ctx) => SimpleDialog(
-        title: Text(l10n.storage_migratePick),
+
+    if (!asCard) {
+      return Column(
         children: [
-          for (final (id, label) in choices)
-            SimpleDialogOption(
-              onPressed: () => Navigator.of(ctx).pop(id),
-              child: Text(label),
-            ),
+          for (var i = 0; i < tiles.length; i++) ...[
+            tiles[i],
+            if (i < tiles.length - 1) const Divider(height: 1, indent: 56),
+          ],
+        ],
+      );
+    }
+
+    return Card(
+      clipBehavior: Clip.antiAlias,
+      child: Column(
+        children: [
+          for (var i = 0; i < tiles.length; i++) ...[
+            tiles[i],
+            if (i < tiles.length - 1) const Divider(height: 1, indent: 56),
+          ],
         ],
       ),
     );
-    if (picked == null || !mounted) return;
-    final label = choices.firstWhere((c) => c.$1 == picked).$2;
-    final confirmed = await _confirmMigrate(label);
-    if (!confirmed) return;
-    setState(() => _busy = true);
-    try {
-      final result =
-          await MasterMigrationService.instance.requestPromote(picked);
-      await _refresh();
-      if (result != null) {
-        _toastMigrateDone(l10n, result);
-      }
-    } catch (e) {
-      _toast(l10n.storage_migrateFailed('$e'));
-    } finally {
-      if (mounted) setState(() => _busy = false);
-    }
   }
 
-  Future<void> _reprotectNow() async {
+  Widget _entryTile({
+    required StorageBagEntry entry,
+    required IconData icon,
+    required String title,
+    required String subtitle,
+    required VoidCallback onTap,
+    bool alert = false,
+  }) {
+    final selected = widget.selectedEntry == entry;
+    final colorScheme = Theme.of(context).colorScheme;
+    return ListTile(
+      selected: selected,
+      selectedTileColor: colorScheme.primary.withValues(alpha: 0.08),
+      leading: Icon(icon, color: colorScheme.primary),
+      title: Text(title),
+      subtitle: subtitle.isEmpty
+          ? null
+          : Text(
+              subtitle,
+              style: alert ? TextStyle(color: colorScheme.error) : null,
+            ),
+      trailing: widget.embedded
+          ? null
+          : const Icon(Icons.chevron_right, size: 20),
+      onTap: onTap,
+    );
+  }
+
+  String _shortId(String id) =>
+      id.length >= 8 ? '${id.substring(0, 8)}…' : id;
+
+  String _fmtTime(int ms) {
+    final t = DateTime.fromMillisecondsSinceEpoch(ms).toLocal();
+    return '${t.month}-${t.day} ${t.hour.toString().padLeft(2, '0')}:${t.minute.toString().padLeft(2, '0')}';
+  }
+}
+
+extension StorageBagEntryX on StorageBagEntry {
+  Widget get screen {
+    switch (this) {
+      case StorageBagEntry.snapshots:
+        return const StorageSnapshotsScreen();
+      case StorageBagEntry.space:
+        return const StorageSpaceManageScreen();
+      case StorageBagEntry.import:
+        return const StorageImportScreen();
+      case StorageBagEntry.sheCircle:
+        return const SheCircleScreen();
+      case StorageBagEntry.advanced:
+        return const StorageAdvancedScreen();
+    }
+  }
+}
+
+/// 桌面右侧默认展示的用量总览（含告警）。
+class StorageOverviewPanel extends StatefulWidget {
+  final ValueChanged<StorageBagEntry>? onOpenEntry;
+
+  const StorageOverviewPanel({
+    super.key,
+    this.onOpenEntry,
+  });
+
+  @override
+  State<StorageOverviewPanel> createState() => _StorageOverviewPanelState();
+}
+
+class _StorageOverviewPanelState extends State<StorageOverviewPanel> {
+  late Future<StorageOverviewSummary> _future;
+  StreamSubscription<ImportRequest>? _importCreatedSub;
+  StreamSubscription<ImportGrant>? _importGrantSub;
+
+  @override
+  void initState() {
+    super.initState();
+    _future = loadStorageOverview();
+    _importCreatedSub = ImportRequestBus.instance.onCreated.listen((_) {
+      if (mounted) unawaited(_refresh());
+    });
+    _importGrantSub = ImportGrantBus.instance.onReceived.listen((_) {
+      if (mounted) unawaited(_refresh());
+    });
+  }
+
+  @override
+  void dispose() {
+    _importCreatedSub?.cancel();
+    _importGrantSub?.cancel();
+    super.dispose();
+  }
+
+  Future<void> _refresh() async {
+    setState(() => _future = loadStorageOverview());
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
-    setState(() => _busy = true);
-    try {
-      final id = await MirrorReprotectService.instance.runIfMaster();
-      if (id == null) {
-        _toast(l10n.storage_reprotectSkipped);
-      } else {
-        _toast(l10n.storage_reprotectDone(id));
-        await _refresh();
-      }
-    } catch (e) {
-      _toast(l10n.storage_migrateFailed('$e'));
-    } finally {
-      if (mounted) setState(() => _busy = false);
+    return Scaffold(
+      appBar: AppBar(
+        title: Text(l10n.storage_usageTitle),
+        elevation: 0,
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.refresh),
+            tooltip: l10n.common_refresh,
+            onPressed: _refresh,
+          ),
+        ],
+      ),
+      body: FutureBuilder<StorageOverviewSummary>(
+        future: _future,
+        builder: (context, snap) {
+          return ListView(
+            padding: const EdgeInsets.all(16),
+            children: [
+              StorageOverviewBody(
+                summary: snap.data,
+                onOpenEntry: widget.onOpenEntry,
+              ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+}
+
+/// 用量卡 + 告警（总览主体，移动端仪表盘与桌面右侧共用）。
+class StorageOverviewBody extends StatelessWidget {
+  final StorageOverviewSummary? summary;
+  final ValueChanged<StorageBagEntry>? onOpenEntry;
+
+  const StorageOverviewBody({
+    super.key,
+    required this.summary,
+    this.onOpenEntry,
+  });
+
+  void _open(BuildContext context, StorageBagEntry entry) {
+    if (onOpenEntry != null) {
+      onOpenEntry!(entry);
+      return;
     }
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(builder: (_) => entry.screen),
+    );
   }
 
-  // ------------------------------------------------------------ M2 存储空间区块
-
-  Widget _buildSpaceSection(AppLocalizations l10n) {
-    final isMaster = _masterId == _selfId && _selfId.isNotEmpty;
+  @override
+  Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
+    final s = summary;
     return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Text(l10n.storage_spaceSection,
-            style: Theme.of(context).textTheme.titleSmall),
-        const SizedBox(height: 8),
-        Card(
-          child: Padding(
-            padding: const EdgeInsets.all(12),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
+        _buildUsageCard(context, l10n, s),
+        if (s != null) ..._buildAlerts(context, l10n, s),
+      ],
+    );
+  }
+
+  Widget _buildUsageCard(
+    BuildContext context,
+    AppLocalizations l10n,
+    StorageOverviewSummary? s,
+  ) {
+    final ratio = s?.volumeUsedRatio;
+    final warn = s?.volumeWarn ?? false;
+    return Card(
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: () => _open(context, StorageBagEntry.space),
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: s == null
+              ? const Padding(
+                  padding: EdgeInsets.all(16),
+                  child: Center(child: CircularProgressIndicator()),
+                )
+              : Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Icon(Icons.dns_outlined,
-                        color: Theme.of(context).colorScheme.primary, size: 20),
-                    const SizedBox(width: 8),
-                    Text(l10n.storage_masterNode,
-                        style: Theme.of(context).textTheme.bodyMedium),
-                    const Spacer(),
+                    Row(
+                      children: [
+                        Icon(Icons.pie_chart_outline,
+                            color: Theme.of(context).colorScheme.primary,
+                            size: 20),
+                        const SizedBox(width: 8),
+                        Text(l10n.storage_usageTitle,
+                            style: Theme.of(context).textTheme.titleSmall),
+                        const Spacer(),
+                        if (s.volumeTotalBytes != null &&
+                            s.volumeFreeBytes != null)
+                          Text(
+                            l10n.storage_volumeFree(
+                                fmtStorageBytes(s.volumeFreeBytes!),
+                                fmtStorageBytes(s.volumeTotalBytes!)),
+                            style: Theme.of(context)
+                                .textTheme
+                                .bodySmall
+                                ?.copyWith(
+                                  color: warn
+                                      ? Theme.of(context).colorScheme.error
+                                      : Theme.of(context)
+                                          .colorScheme
+                                          .onSurfaceVariant,
+                                ),
+                          )
+                        else
+                          Text(
+                            fmtStorageBytes(s.myTotalBytes),
+                            style: Theme.of(context)
+                                .textTheme
+                                .bodySmall
+                                ?.copyWith(
+                                  color: Theme.of(context)
+                                      .colorScheme
+                                      .onSurfaceVariant,
+                                ),
+                          ),
+                        const SizedBox(width: 4),
+                        Icon(Icons.chevron_right,
+                            size: 18,
+                            color:
+                                Theme.of(context).colorScheme.onSurfaceVariant),
+                      ],
+                    ),
+                    if (ratio != null) ...[
+                      const SizedBox(height: 12),
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(4),
+                        child: LinearProgressIndicator(
+                          value: ratio,
+                          minHeight: 8,
+                          backgroundColor: Theme.of(context)
+                              .colorScheme
+                              .surfaceContainerHighest,
+                          valueColor: AlwaysStoppedAnimation<Color>(
+                            warn
+                                ? Theme.of(context).colorScheme.error
+                                : Theme.of(context).colorScheme.primary,
+                          ),
+                        ),
+                      ),
+                    ],
+                    const SizedBox(height: 8),
                     Text(
-                      isMaster
-                          ? '${_masterId.substring(0, 8)}…（${l10n.storage_thisDevice}）'
-                          : _masterId,
+                      '${l10n.storage_thisDevice} '
+                      '${fmtStorageBytes(s.myTotalBytes)}'
+                      ' · ${l10n.storage_recycleSection} '
+                      '${fmtStorageBytes(s.recycleBytes)}'
+                      '${s.stagingBytes > 0 ? ' · staging ${fmtStorageBytes(s.stagingBytes)}' : ''}',
                       style: Theme.of(context).textTheme.bodySmall?.copyWith(
                           color:
                               Theme.of(context).colorScheme.onSurfaceVariant),
                     ),
                   ],
                 ),
-                const SizedBox(height: 8),
-                Wrap(
-                  spacing: 8,
-                  runSpacing: 4,
+        ),
+      ),
+    );
+  }
+
+  List<Widget> _buildAlerts(
+    BuildContext context,
+    AppLocalizations l10n,
+    StorageOverviewSummary s,
+  ) {
+    final alerts = <(String, StorageBagEntry)>[];
+
+    if (s.schedStatus?.needsAttention ?? false) {
+      alerts.add((
+        l10n.storage_snapshotWarning,
+        StorageBagEntry.snapshots,
+      ));
+    }
+    if (s.volumeWarn) {
+      final pct = ((s.volumeUsedRatio ?? 0) * 100).round();
+      alerts.add((
+        l10n.storage_volumeWarning(pct),
+        StorageBagEntry.space,
+      ));
+    }
+    if (s.unsyncedWarn) {
+      alerts.add((
+        l10n.storage_unsyncedWarning,
+        StorageBagEntry.space,
+      ));
+    }
+    if (s.pendingImportCount > 0) {
+      alerts.add((
+        l10n.storage_alertPendingImports(s.pendingImportCount),
+        StorageBagEntry.import,
+      ));
+    }
+    if (alerts.isEmpty) return const [];
+
+    return [
+      const SizedBox(height: 12),
+      for (final (message, entry) in alerts)
+        Padding(
+          padding: const EdgeInsets.only(bottom: 8),
+          child: Material(
+            color: Theme.of(context).colorScheme.errorContainer,
+            borderRadius: BorderRadius.circular(10),
+            child: InkWell(
+              borderRadius: BorderRadius.circular(10),
+              onTap: () => _open(context, entry),
+              child: Padding(
+                padding: const EdgeInsets.all(12),
+                child: Row(
                   children: [
-                    if (!isMaster)
-                      FilledButton.tonal(
-                        onPressed: _busy ? null : _becomeMaster,
-                        child: Text(l10n.storage_becomeMaster),
-                      ),
-                    OutlinedButton(
-                      onPressed: _busy ? null : _pickMigrateTarget,
-                      child: Text(l10n.storage_migrateMaster),
+                    Icon(Icons.warning_amber_rounded,
+                        size: 18, color: Theme.of(context).colorScheme.error),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(message,
+                          style: Theme.of(context).textTheme.bodySmall),
                     ),
-                    if (isMaster)
-                      OutlinedButton(
-                        onPressed: _busy ? null : _reprotectNow,
-                        child: Text(l10n.storage_reprotectNow),
-                      ),
-                    OutlinedButton(
-                      onPressed: _busy
-                          ? null
-                          : () {
-                              Navigator.of(context).push(
-                                MaterialPageRoute<void>(
-                                  builder: (_) =>
-                                      const StorageBrowserScreen(),
-                                ),
-                              );
-                            },
-                      child: Text(l10n.storage_browseFiles),
-                    ),
+                    Icon(Icons.chevron_right,
+                        size: 18,
+                        color: Theme.of(context).colorScheme.onSurfaceVariant),
                   ],
                 ),
-                if (_stats != null) ...[
-                  const Divider(height: 20),
-                  Text(l10n.storage_usageTitle,
-                      style: Theme.of(context).textTheme.bodySmall),
-                  const SizedBox(height: 4),
-                  _buildUsageChips(l10n),
-                  _buildSyncStatus(l10n),
-                  _buildVolumeWarning(l10n),
-                  if (isMaster) _buildMirroredDevices(l10n),
-                ],
-              ],
-            ),
-          ),
-        ),
-        const SizedBox(height: 8),
-        _buildRecycleCard(l10n),
-      ],
-    );
-  }
-
-  /// master 上他端镜像目录：展示用量并允许手动删除（§5.4 / §7.2）。
-  Widget _buildMirroredDevices(AppLocalizations l10n) {
-    final devices = (_stats!['devices'] as Map?)?.cast<String, dynamic>() ?? {};
-    final others = devices.keys.where((id) => id != _selfId).toList()..sort();
-    if (others.isEmpty) return const SizedBox.shrink();
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        const Divider(height: 20),
-        Text(l10n.storage_mirroredDevices,
-            style: Theme.of(context).textTheme.bodySmall),
-        const SizedBox(height: 4),
-        ...others.map((id) {
-          final spaces = (devices[id] as Map?)?.cast<String, dynamic>() ?? {};
-          var total = 0;
-          for (final space in StoreSpace.all) {
-            total += spaces[space] as int? ?? 0;
-          }
-          final short = id.length >= 8 ? '${id.substring(0, 8)}…' : id;
-          return ListTile(
-            dense: true,
-            contentPadding: EdgeInsets.zero,
-            leading: const Icon(Icons.devices_other, size: 18),
-            title: Text(short, style: Theme.of(context).textTheme.bodySmall),
-            subtitle: Text(_fmtBytes(total),
-                style: Theme.of(context).textTheme.labelSmall),
-            trailing: TextButton(
-              onPressed: _busy ? null : () => _purgeMirroredDevice(id, total),
-              child: Text(l10n.storage_purgeDevice),
-            ),
-          );
-        }),
-      ],
-    );
-  }
-
-  Future<void> _purgeMirroredDevice(String deviceId, int bytesHint) async {
-    final l10n = AppLocalizations.of(context);
-    if (_masterId != _selfId || _selfId.isEmpty) {
-      _toast(l10n.storage_purgeDeviceMasterOnly);
-      return;
-    }
-    final short =
-        deviceId.length >= 8 ? '${deviceId.substring(0, 8)}…' : deviceId;
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        icon: Icon(Icons.delete_forever,
-            color: Theme.of(ctx).colorScheme.error, size: 36),
-        title: Text(l10n.storage_purgeDeviceTitle),
-        content: Text(l10n.storage_purgeDeviceConfirm(
-            short, _fmtBytes(bytesHint))),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(false),
-            child: Text(l10n.common_cancel),
-          ),
-          FilledButton(
-            style: FilledButton.styleFrom(
-                backgroundColor: Theme.of(ctx).colorScheme.error),
-            onPressed: () => Navigator.of(ctx).pop(true),
-            child: Text(l10n.common_confirm),
-          ),
-        ],
-      ),
-    );
-    if (confirmed != true) return;
-    setState(() => _busy = true);
-    try {
-      final store = await StoreService.instance.localStore();
-      final purged = await store.purgeDevice(deviceId, selfDeviceId: _selfId);
-      final cursors = DeviceCursorStore(storeRoot: store.root);
-      await cursors.remove(deviceId);
-      await _refresh();
-      _toast(l10n.storage_purgeDeviceDone(short, _fmtBytes(purged)));
-    } on StoreException catch (e) {
-      _toast(l10n.storage_purgeDeviceFailed(e.message.isEmpty ? e.code : e.message));
-    } catch (e) {
-      _toast(l10n.storage_purgeDeviceFailed('$e'));
-    } finally {
-      if (mounted) setState(() => _busy = false);
-    }
-  }
-
-  Widget _buildSheCircleSection(AppLocalizations l10n) {
-    final presence = PresenceService.instance.known;
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Text(l10n.storage_sheCircleSection,
-                    style: Theme.of(context).textTheme.titleSmall),
-                const Spacer(),
-                TextButton(
-                  onPressed: _busy ? null : _renameLocalShe,
-                  child: Text(l10n.storage_renameShe),
-                ),
-              ],
-            ),
-            Text(
-              '${l10n.storage_sheCircleHint}\n${SheService.resolveDisplayName(_localSheName, l10n.she_name)}',
-              style: Theme.of(context).textTheme.bodySmall,
-            ),
-            const SizedBox(height: 8),
-            SwitchListTile(
-              contentPadding: EdgeInsets.zero,
-              title: Text(l10n.storage_exchangeEnabled),
-              value: _exchange.enabled,
-              onChanged: _busy
-                  ? null
-                  : (v) async {
-                      final next = _exchange.copyWith(enabled: v);
-                      await next.save();
-                      setState(() => _exchange = next);
-                    },
-            ),
-            SwitchListTile(
-              contentPadding: EdgeInsets.zero,
-              title: Text(l10n.storage_sharePresenceRoster),
-              subtitle: Text(l10n.storage_sharePresenceRosterHint,
-                  style: Theme.of(context).textTheme.bodySmall),
-              value: _presenceSettings.shareRoster,
-              onChanged: _busy
-                  ? null
-                  : (v) async {
-                      final next =
-                          _presenceSettings.copyWith(shareRoster: v);
-                      await next.save();
-                      setState(() => _presenceSettings = next);
-                      await PresenceService.instance.broadcastNow(
-                          localizedSheName: l10n.she_name);
-                      if (mounted) setState(() {});
-                    },
-            ),
-            Text(l10n.storage_exchangeKinds,
-                style: Theme.of(context).textTheme.bodySmall),
-            const SizedBox(height: 4),
-            Wrap(
-              spacing: 8,
-              children: [
-                for (final kind in DigestKind.all)
-                  FilterChip(
-                    label: Text(_kindLabel(l10n, kind)),
-                    selected: _exchange.kinds.contains(kind),
-                    onSelected: _busy
-                        ? null
-                        : (sel) async {
-                            final kinds = Set<String>.of(_exchange.kinds);
-                            if (sel) {
-                              kinds.add(kind);
-                            } else {
-                              kinds.remove(kind);
-                            }
-                            if (kinds.isEmpty) return;
-                            final next = _exchange.copyWith(kinds: kinds);
-                            await next.save();
-                            setState(() => _exchange = next);
-                          },
-                  ),
-              ],
-            ),
-            const SizedBox(height: 8),
-            Align(
-              alignment: Alignment.centerLeft,
-              child: FilledButton.tonal(
-                onPressed: _busy || !_exchange.enabled ? null : _exchangeNow,
-                child: Text(l10n.storage_exchangeNow),
               ),
             ),
-            const Divider(height: 24),
-            if (_ownerPeers.isEmpty)
-              Text(l10n.storage_noOwnerPeers,
-                  style: Theme.of(context).textTheme.bodySmall)
-            else
-              ..._ownerPeers.map((peer) {
-                final p = presence[peer.fingerprint];
-                final count = _extCounts[peer.fingerprint] ?? 0;
-                final title = p?.sheName.isNotEmpty == true
-                    ? p!.sheName
-                    : peer.deviceName;
-                return ListTile(
-                  contentPadding: EdgeInsets.zero,
-                  title: Text(title),
-                  subtitle: Text(
-                    '${l10n.storage_peerTrust(peer.trustLevel)} · '
-                    '${l10n.storage_externalMemories(count)}'
-                    '${_presenceSubtitle(l10n, p)}',
-                  ),
-                  dense: true,
-                  onTap: p != null && p.agents.isNotEmpty
-                      ? () => _pickDelegateAgent(l10n, peer, p)
-                      : null,
-                );
-              }),
-          ],
-        ),
-      ),
-    );
-  }
-
-  String _presenceSubtitle(AppLocalizations l10n, ShePresence? p) {
-    if (p == null || !p.online) {
-      return ' · ${l10n.storage_presenceOffline}';
-    }
-    final cats = <String>[
-      ...p.agentCategories,
-      ...p.toolCategories,
-    ];
-    final catPart = cats.isEmpty ? '' : ' · ${cats.join('/')}';
-    final rosterPart = p.agents.isEmpty
-        ? ''
-        : ' · ${l10n.storage_presenceAgents(p.agents.map((a) => a.name).join(', '))}';
-    return ' · ${p.agentCount}$catPart$rosterPart';
-  }
-
-  Future<void> _pickDelegateAgent(
-    AppLocalizations l10n,
-    PairedPeer peer,
-    ShePresence presence,
-  ) async {
-    final picked = await showModalBottomSheet<PresenceAgentEntry>(
-      context: context,
-      builder: (ctx) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            ListTile(title: Text(l10n.storage_pickDelegateAgent)),
-            for (final a in presence.agents)
-              ListTile(
-                title: Text(a.name),
-                subtitle: Text(a.category),
-                onTap: () => Navigator.pop(ctx, a),
-              ),
-          ],
-        ),
-      ),
-    );
-    if (picked == null || !mounted) return;
-    // 复用现有 peer agent 注入 id；点名打开对端 Agent 详情（审批/对话链路不变）。
-    final localId = peerAgentLocalId(peer.id, picked.id);
-    try {
-      final agent = await getIt<RemoteAgentService>().getAgentById(localId);
-      if (agent == null || !mounted) {
-        _toast(l10n.storage_presenceOffline);
-        return;
-      }
-      await Navigator.of(context).push(
-        MaterialPageRoute<void>(
-          builder: (_) => RemoteAgentDetailScreen(agent: agent),
-        ),
-      );
-    } catch (e) {
-      _toast('$e');
-    }
-  }
-
-  String _kindLabel(AppLocalizations l10n, String kind) {
-    switch (kind) {
-      case DigestKind.preference:
-        return l10n.storage_kindPreference;
-      case DigestKind.ongoing:
-        return l10n.storage_kindOngoing;
-      case DigestKind.fact:
-        return l10n.storage_kindFact;
-      default:
-        return kind;
-    }
-  }
-
-  Future<void> _exchangeNow() async {
-    setState(() => _busy = true);
-    try {
-      final ok = await MemoryExchangeService.instance.offerToAllOwners();
-      if (!mounted) return;
-      final l10n = AppLocalizations.of(context);
-      _toast(ok ? l10n.storage_exchangeDone : l10n.storage_exchangeSkipped);
-      await _loadSpace();
-      setState(() {});
-    } finally {
-      if (mounted) setState(() => _busy = false);
-    }
-  }
-
-  Future<void> _renameLocalShe() async {
-    final l10n = AppLocalizations.of(context);
-    final controller = TextEditingController(
-      text: SheService.resolveDisplayName(_localSheName, l10n.she_name),
-    );
-    final name = await showDialog<String>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text(l10n.storage_renameShe),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(l10n.storage_renameSheHint,
-                style: Theme.of(ctx).textTheme.bodySmall),
-            const SizedBox(height: 12),
-            TextField(
-              controller: controller,
-              autofocus: true,
-              decoration: InputDecoration(hintText: l10n.she_name),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-              onPressed: () => Navigator.pop(ctx),
-              child: Text(MaterialLocalizations.of(ctx).cancelButtonLabel)),
-          FilledButton(
-              onPressed: () => Navigator.pop(ctx, controller.text.trim()),
-              child: Text(MaterialLocalizations.of(ctx).okButtonLabel)),
-        ],
-      ),
-    );
-    if (name == null || name.isEmpty || !mounted) return;
-    final normalized = SheService.normalizeStoredName(name, l10n.she_name);
-    try {
-      final agentService = getIt<RemoteAgentService>();
-      final agent = await agentService.getAgentById(SheService.sheId);
-      if (agent != null) {
-        await agentService.updateAgent(agent.copyWith(name: normalized));
-      }
-      await PresenceService.instance.broadcastNow(
-          localizedSheName: l10n.she_name);
-      setState(() => _localSheName = normalized);
-      _toast(l10n.storage_sheNameSaved);
-    } catch (e) {
-      _toast('$e');
-    }
-  }
-
-  Widget _buildUsageChips(AppLocalizations l10n) {
-    final devices = (_stats!['devices'] as Map?)?.cast<String, dynamic>() ?? {};
-    final mine = (devices[_selfId] as Map?)?.cast<String, dynamic>() ?? {};
-    final staging = _stats!['staging_bytes'] as int? ?? 0;
-    final recycle = _stats!['recycle_bytes'] as int? ?? 0;
-    final volumeTotal = _stats!['volume_total_bytes'] as int?;
-    final volumeFree = _stats!['volume_free_bytes'] as int?;
-    final volumeWarn = _stats!['volume_warn'] == true;
-    final chips = <Widget>[
-      for (final space in ['artifacts', 'files', 'attachments', 'backups'])
-        Chip(
-          label: Text('$space ${_fmtBytes(mine[space] as int? ?? 0)}'),
-          visualDensity: VisualDensity.compact,
-        ),
-      if (staging > 0)
-        Chip(
-          label: Text('staging ${_fmtBytes(staging)}'),
-          visualDensity: VisualDensity.compact,
-        ),
-      if (recycle > 0)
-        Chip(
-          label: Text('.recycle ${_fmtBytes(recycle)}'),
-          visualDensity: VisualDensity.compact,
-        ),
-      if (volumeTotal != null && volumeFree != null)
-        Chip(
-          label: Text(l10n.storage_volumeFree(
-              _fmtBytes(volumeFree), _fmtBytes(volumeTotal))),
-          visualDensity: VisualDensity.compact,
-          backgroundColor: volumeWarn
-              ? Theme.of(context).colorScheme.errorContainer
-              : null,
+          ),
         ),
     ];
-    return Wrap(spacing: 8, runSpacing: 4, children: chips);
-  }
-
-  /// 方案 §7：卷用量 ≥80% 告警。
-  Widget _buildVolumeWarning(AppLocalizations l10n) {
-    if (_stats!['volume_warn'] != true) return const SizedBox.shrink();
-    final ratio = (_stats!['volume_used_ratio'] as num?)?.toDouble() ?? 0;
-    final pct = (ratio * 100).round();
-    return Container(
-      margin: const EdgeInsets.only(top: 8),
-      padding: const EdgeInsets.all(10),
-      decoration: BoxDecoration(
-        color: Theme.of(context).colorScheme.errorContainer,
-        borderRadius: BorderRadius.circular(8),
-      ),
-      child: Row(
-        children: [
-          Icon(Icons.storage_rounded,
-              size: 18, color: Theme.of(context).colorScheme.error),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Text(l10n.storage_volumeWarning(pct),
-                style: Theme.of(context).textTheme.bodySmall),
-          ),
-        ],
-      ),
-    );
-  }
-
-  /// M4：未同步占用与游标水位（§6.4 磁盘压力展示 + 超阈值告警）。
-  Widget _buildSyncStatus(AppLocalizations l10n) {
-    final unsyncedCount = _stats!['unsynced_count'] as int?;
-    final unsyncedBytes = _stats!['unsynced_bytes'] as int?;
-    final changeSeq = _stats!['change_seq'] as int?;
-    final ackSeq = _stats!['ack_seq'] as int?;
-    if (unsyncedCount == null) return const SizedBox.shrink();
-
-    const warnBytes = 200 * 1024 * 1024; // 200MB 阈值
-    final warn = (unsyncedBytes ?? 0) > warnBytes;
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        const SizedBox(height: 8),
-        Wrap(
-          spacing: 16,
-          runSpacing: 4,
-          children: [
-            Text(
-              l10n.storage_unsynced(
-                  unsyncedCount, _fmtBytes(unsyncedBytes ?? 0)),
-              style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: unsyncedCount > 0
-                        ? Theme.of(context).colorScheme.tertiary
-                        : Theme.of(context).colorScheme.onSurfaceVariant,
-                  ),
-            ),
-            if (changeSeq != null && ackSeq != null)
-              Text(
-                l10n.storage_syncCursor(ackSeq, changeSeq),
-                style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: Theme.of(context).colorScheme.onSurfaceVariant),
-              ),
-          ],
-        ),
-        if (warn)
-          Container(
-            margin: const EdgeInsets.only(top: 8),
-            padding: const EdgeInsets.all(10),
-            decoration: BoxDecoration(
-              color: Theme.of(context).colorScheme.errorContainer,
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: Row(
-              children: [
-                Icon(Icons.warning_amber_rounded,
-                    size: 18, color: Theme.of(context).colorScheme.error),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Text(l10n.storage_unsyncedWarning,
-                      style: Theme.of(context).textTheme.bodySmall),
-                ),
-              ],
-            ),
-          ),
-      ],
-    );
-  }
-
-  Widget _buildRecycleCard(AppLocalizations l10n) {
-    final isMaster = _masterId == _selfId && _selfId.isNotEmpty;
-    const pageSize = 20;
-    final visible = _recycleExpanded || _recycle.length <= pageSize
-        ? _recycle
-        : _recycle.take(pageSize).toList();
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(12),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Icon(Icons.delete_outline,
-                    color: Theme.of(context).colorScheme.primary, size: 20),
-                const SizedBox(width: 8),
-                Text(l10n.storage_recycleSection,
-                    style: Theme.of(context).textTheme.bodyMedium),
-                const Spacer(),
-                if (isMaster && _recycle.isNotEmpty)
-                  TextButton(
-                    onPressed: _busy ? null : _recyclePurgeAll,
-                    child: Text(l10n.storage_recyclePurgeAll),
-                  ),
-              ],
-            ),
-            if (_recycle.isEmpty)
-              Padding(
-                padding: const EdgeInsets.symmetric(vertical: 12),
-                child: Text(l10n.storage_recycleEmptyHint,
-                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: Theme.of(context).colorScheme.onSurfaceVariant)),
-              )
-            else ...[
-              ...visible.map((e) => ListTile(
-                    dense: true,
-                    contentPadding: EdgeInsets.zero,
-                    leading: const Icon(Icons.insert_drive_file_outlined,
-                        size: 18),
-                    title: Text('${e['space']}/${e['origin_path']}',
-                        style: Theme.of(context).textTheme.bodySmall,
-                        overflow: TextOverflow.ellipsis),
-                    subtitle: Text(
-                        '${_fmtBytes(e['size'] as int? ?? 0)} · ${l10n.storage_deletedAt(_fmtRecycleDate(e['recycle_path'] as String))}'),
-                    trailing: TextButton(
-                      onPressed: _busy ? null : () => _recycleRestore(e),
-                      child: Text(l10n.storage_recycleRestore),
-                    ),
-                  )),
-              if (_recycle.length > pageSize)
-                Align(
-                  alignment: Alignment.center,
-                  child: TextButton(
-                    onPressed: () =>
-                        setState(() => _recycleExpanded = !_recycleExpanded),
-                    child: Text(_recycleExpanded
-                        ? l10n.storage_recycleShowLess
-                        : l10n.storage_recycleShowMore(_recycle.length)),
-                  ),
-                ),
-            ],
-          ],
-        ),
-      ),
-    );
-  }
-
-  String _fmtRecycleDate(String recyclePath) {
-    // .recycle/<yyyy-MM-dd>/...
-    final parts = recyclePath.split('/');
-    return parts.length > 1 ? parts[1] : '';
-  }
-
-  // ------------------------------------------------------------ M3 换机导入
-
-  /// 服务侧选择：旧设备在线则直连（路径 A），否则走 master（路径 B）。
-  Future<String> _serverFor(String oldDeviceId) async {
-    final peers = await PeerStorageService().loadAllPeers();
-    final old = peers.where((p) => p.fingerprint == oldDeviceId).firstOrNull;
-    if (old != null &&
-        PeerConnectionManager.instance.connectedPeerIds.contains(old.id)) {
-      return oldDeviceId;
-    }
-    return _masterId;
-  }
-
-  Future<void> _sendImportRequest() async {
-    final l10n = AppLocalizations.of(context);
-    final oldId = _oldDeviceController.text.trim().toLowerCase();
-    if (!RegExp(r'^[0-9a-f]{16}$').hasMatch(oldId) || oldId == _selfId) {
-      _toast(l10n.storage_oldDeviceId);
-      return;
-    }
-    setState(() => _busy = true);
-    try {
-      final server = await _serverFor(oldId);
-      final res = await StoreService.instance.callPeer(
-          server, StoreFrame(op: StoreOp.importRequest, payload: {
-        'old_device': oldId,
-      }));
-      if (res != null && res['request_id'] != null) {
-        _toast(l10n.storage_importSent);
-      } else {
-        _toast(l10n.storage_importFailed('${res?['_error']}'));
-      }
-    } finally {
-      if (mounted) setState(() => _busy = false);
-    }
-  }
-
-  /// 扫码/粘贴旧设备 peer QR → 必要时先配对 → 填 ID 并发导入请求（§5.4 路径 A）。
-  Future<void> _scanAndImport() async {
-    final l10n = AppLocalizations.of(context);
-    final info = await StorageImportScannerScreen.show(context);
-    if (info == null || !mounted) return;
-    _oldDeviceController.text = info.fingerprint;
-    try {
-      final existing =
-          await PeerStorageService().getPeerByFingerprint(info.fingerprint);
-      if (existing == null) {
-        setState(() => _busy = true);
-        _toast(l10n.storage_importPairing);
-        try {
-          await PeerPairingService.instance.requestPairing(info);
-        } finally {
-          if (mounted) setState(() => _busy = false);
-        }
-      }
-      if (!mounted) return;
-      await _sendImportRequest();
-    } catch (e) {
-      _toast(l10n.storage_importFailed('$e'));
-      if (mounted) setState(() => _busy = false);
-    }
-  }
-
-  Future<void> _showMyPairingQr() async {
-    await PeerPairingScreen.show(context);
-  }
-
-  Future<void> _approveImport(Map<String, dynamic> req, bool approve) async {
-    setState(() => _busy = true);
-    try {
-      await StoreService.instance.call(StoreFrame(
-          op: approve ? StoreOp.importGrant : StoreOp.importReject,
-          payload: {'request_id': req['request_id']}));
-      await _refresh();
-    } finally {
-      if (mounted) setState(() => _busy = false);
-    }
-  }
-
-  /// 浏览旧设备快照 → 选择 → 密码 → 下载 → 恢复（保留本机身份）。
-  Future<void> _browseAndImport(ImportGrant grant) async {
-    final l10n = AppLocalizations.of(context);
-    final server = await _serverFor(grant.oldDevice);
-    List<String> snapshots;
-    try {
-      snapshots = await SnapshotImportService.instance.listRemoteSnapshots(
-        serverDeviceId: server,
-        oldDeviceId: grant.oldDevice,
-        grantId: grant.grantId,
-      );
-    } catch (e) {
-      _toast(l10n.storage_importFailed('$e'));
-      return;
-    }
-    if (!mounted) return;
-    if (snapshots.isEmpty) {
-      _toast(l10n.storage_noRemoteSnapshots);
-      return;
-    }
-    final picked = await showDialog<String>(
-      context: context,
-      builder: (ctx) => SimpleDialog(
-        title: Text(l10n.storage_importPickSnapshot),
-        children: [
-          for (final id in snapshots.take(20))
-            SimpleDialogOption(
-              onPressed: () => Navigator.of(ctx).pop(id),
-              child: Text(id),
-            ),
-        ],
-      ),
-    );
-    if (picked == null || !mounted) return;
-
-    final password = await _askPassword();
-    if (password == null) return;
-
-    setState(() => _busy = true);
-    try {
-      _toast(l10n.storage_importDownloading);
-      final info = await SnapshotImportService.instance.downloadSnapshot(
-        serverDeviceId: server,
-        oldDeviceId: grant.oldDevice,
-        snapshotId: picked,
-        grantId: grant.grantId,
-      );
-      final preview =
-          await RestoreService.instance.prepareRestore(info, password);
-      if (!mounted) return;
-      final confirmed = await showDialog<bool>(
-        context: context,
-        builder: (ctx) => AlertDialog(
-          icon: Icon(Icons.warning_amber_rounded,
-              color: Theme.of(ctx).colorScheme.error, size: 36),
-          content: Text(l10n.storage_importDone),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(ctx).pop(false),
-              child: Text(l10n.common_cancel),
-            ),
-            FilledButton(
-              style: FilledButton.styleFrom(
-                  backgroundColor: Theme.of(ctx).colorScheme.error),
-              onPressed: () => Navigator.of(ctx).pop(true),
-              child: Text(l10n.storage_importRestore),
-            ),
-          ],
-        ),
-      );
-      if (confirmed != true) return;
-      // 换机导入：保留本机 device_id（§5.4）；安全快照用当前主密码缓存
-      final safetyHash = await SnapshotCrypto.cachedPasswordHash();
-      await RestoreService.instance.executeRestore(preview, password,
-          restoreIdentity: false, safetyPasswordHash: safetyHash);
-      _toast(l10n.storage_restoreDone, duration: const Duration(seconds: 6));
-    } on SnapshotDecryptException {
-      _toast(l10n.storage_passwordWrong);
-    } catch (e) {
-      _toast(l10n.storage_importFailed('$e'));
-    } finally {
-      if (mounted) setState(() => _busy = false);
-    }
-  }
-
-  // ------------------------------------------------------------ M3 换机导入卡片
-
-  Widget _buildImportCard(AppLocalizations l10n) {
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(12),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Icon(Icons.phonelink_ring_outlined,
-                    color: Theme.of(context).colorScheme.primary, size: 20),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Text(l10n.storage_importSection,
-                      style: Theme.of(context).textTheme.bodyMedium),
-                ),
-                TextButton.icon(
-                  onPressed: _busy ? null : _showMyPairingQr,
-                  icon: const Icon(Icons.qr_code_2, size: 18),
-                  label: Text(l10n.storage_importShowQr),
-                ),
-              ],
-            ),
-            const SizedBox(height: 8),
-            Text(l10n.storage_importRequestHint,
-                style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: Theme.of(context).colorScheme.onSurfaceVariant)),
-            const SizedBox(height: 8),
-            Row(
-              children: [
-                Expanded(
-                  child: TextField(
-                    controller: _oldDeviceController,
-                    decoration: InputDecoration(
-                      isDense: true,
-                      border: const OutlineInputBorder(),
-                      hintText: l10n.storage_oldDeviceId,
-                    ),
-                    style: const TextStyle(fontFamily: 'monospace'),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                IconButton.filledTonal(
-                  onPressed: _busy ? null : _scanAndImport,
-                  tooltip: l10n.storage_importScan,
-                  icon: const Icon(Icons.qr_code_scanner),
-                ),
-                const SizedBox(width: 4),
-                FilledButton(
-                  onPressed: _busy ? null : _sendImportRequest,
-                  child: Text(l10n.storage_importSend),
-                ),
-              ],
-            ),
-
-            // 待审批（本机为旧设备/master 时）
-            if (_pendingImports.isNotEmpty) ...[
-              const Divider(height: 24),
-              Text(l10n.storage_importPending,
-                  style: Theme.of(context).textTheme.bodySmall),
-              ..._pendingImports.map((req) => ListTile(
-                    dense: true,
-                    contentPadding: EdgeInsets.zero,
-                    leading: const Icon(Icons.hourglass_top, size: 18),
-                    title: Text(
-                        l10n.storage_importFrom(
-                            '${req['new_device']}'.substring(0, 8)),
-                        style: Theme.of(context).textTheme.bodySmall),
-                    trailing: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        TextButton(
-                          onPressed:
-                              _busy ? null : () => _approveImport(req, true),
-                          child: Text(l10n.storage_importApprove),
-                        ),
-                        TextButton(
-                          onPressed:
-                              _busy ? null : () => _approveImport(req, false),
-                          child: Text(l10n.storage_importReject),
-                        ),
-                      ],
-                    ),
-                  )),
-            ],
-
-            // 我获得的授权
-            if (_receivedGrants.isNotEmpty) ...[
-              const Divider(height: 24),
-              Text(l10n.storage_importMyGrants,
-                  style: Theme.of(context).textTheme.bodySmall),
-              ..._receivedGrants.map((g) => ListTile(
-                    dense: true,
-                    contentPadding: EdgeInsets.zero,
-                    leading: const Icon(Icons.key, size: 18),
-                    title: Text(
-                        l10n.storage_importFrom(
-                            g.oldDevice.substring(0, 8)),
-                        style: Theme.of(context).textTheme.bodySmall),
-                    subtitle: Text(
-                        l10n.storage_importExpires(_fmtTime(g.expiresAtMs)),
-                        style: Theme.of(context).textTheme.labelSmall),
-                    trailing: FilledButton.tonal(
-                      onPressed: _busy ? null : () => _browseAndImport(g),
-                      child: Text(l10n.storage_importBrowse),
-                    ),
-                  )),
-            ],
-          ],
-        ),
-      ),
-    );
-  }
-
-  String _fmtTime(int ms) {
-    final t = DateTime.fromMillisecondsSinceEpoch(ms).toLocal();
-    return '${t.month}-${t.day} ${t.hour.toString().padLeft(2, '0')}:${t.minute.toString().padLeft(2, '0')}';
-  }
-
-  Widget _buildHeader(AppLocalizations l10n) {
-    final status = _schedStatus;
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Icon(Icons.backup_outlined,
-                    color: Theme.of(context).colorScheme.primary),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Text(
-                    l10n.storage_snapshotDesc,
-                    style: Theme.of(context).textTheme.bodyMedium,
-                  ),
-                ),
-              ],
-            ),
-            if (status != null) ...[
-              const Divider(height: 24),
-              Row(
-                children: [
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(l10n.storage_autoSnapshot,
-                            style: Theme.of(context).textTheme.bodyMedium),
-                        Text(
-                          !status.enabled
-                              ? l10n.storage_autoSnapshotOff
-                              : !status.keyCached
-                                  ? l10n.storage_noKeyHint
-                                  : status.lastSuccessMs > 0
-                                      ? l10n.storage_lastSuccess(_fmtTime(
-                                          status.lastSuccessMs))
-                                      : l10n.storage_noSnapshots,
-                          style:
-                              Theme.of(context).textTheme.bodySmall?.copyWith(
-                                    color: Theme.of(context)
-                                        .colorScheme
-                                        .onSurfaceVariant,
-                                  ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  Switch(
-                    value: status.enabled,
-                    onChanged: _busy
-                        ? null
-                        : (v) => unawaited(_setAutoSnapshotEnabled(v)),
-                  ),
-                ],
-              ),
-              Align(
-                alignment: Alignment.centerLeft,
-                child: TextButton.icon(
-                  onPressed: _busy ? null : _decryptSelfCheck,
-                  icon: const Icon(Icons.verified_user_outlined, size: 18),
-                  label: Text(l10n.storage_decryptCheck),
-                ),
-              ),
-              if (status.needsAttention)
-                Container(
-                  margin: const EdgeInsets.only(top: 8),
-                  padding: const EdgeInsets.all(10),
-                  decoration: BoxDecoration(
-                    color: Theme.of(context).colorScheme.errorContainer,
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Row(
-                    children: [
-                      Icon(Icons.warning_amber_rounded,
-                          size: 18,
-                          color: Theme.of(context).colorScheme.error),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: Text(l10n.storage_snapshotWarning,
-                            style: Theme.of(context).textTheme.bodySmall),
-                      ),
-                    ],
-                  ),
-                ),
-            ],
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildSnapshotTile(AppLocalizations l10n, SnapshotInfo info) {
-    final status = _verifyCache[info.id];
-    final (label, color) = switch (status) {
-      SnapshotVerifyStatus.ok => (l10n.storage_verifyOk, Colors.green),
-      SnapshotVerifyStatus.fileTampered => (
-          l10n.storage_verifyFileTampered,
-          Theme.of(context).colorScheme.error
-        ),
-      SnapshotVerifyStatus.manifestTampered => (
-          l10n.storage_verifyManifestTampered,
-          Theme.of(context).colorScheme.error
-        ),
-      SnapshotVerifyStatus.unreadable => (
-          l10n.storage_verifyUnreadable,
-          Theme.of(context).colorScheme.error
-        ),
-      null => (l10n.storage_verifyUnknown, Theme.of(context).colorScheme.outline),
-    };
-    final t = info.createdAt;
-    final timeLabel =
-        '${t.year}-${t.month.toString().padLeft(2, '0')}-${t.day.toString().padLeft(2, '0')} '
-        '${t.hour.toString().padLeft(2, '0')}:${t.minute.toString().padLeft(2, '0')}';
-    // 改密前的快照：需旧密码恢复（§5.2 密码变更策略）
-    final needsOldPassword = _passwordChangedAtMs > 0 &&
-        info.manifest.createdAtMs < _passwordChangedAtMs;
-
-    return Card(
-      child: ListTile(
-        leading: const Icon(Icons.save_as_outlined),
-        title: Row(
-          children: [
-            Flexible(child: Text(timeLabel)),
-            if (needsOldPassword) ...[
-              const SizedBox(width: 8),
-              Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
-                decoration: BoxDecoration(
-                  color:
-                      Theme.of(context).colorScheme.tertiaryContainer,
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Text(l10n.storage_needsOldPassword,
-                    style: Theme.of(context).textTheme.labelSmall),
-              ),
-            ],
-          ],
-        ),
-        subtitle: Text(
-          '${_fmtBytes(info.totalBytes)} · schema v${info.manifest.schemaVersion} · $label',
-          style: TextStyle(color: color),
-        ),
-        trailing: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextButton(
-              onPressed: _busy ? null : () => _export(info),
-              child: Text(l10n.storage_export),
-            ),
-            TextButton(
-              onPressed:
-                  _busy || status != SnapshotVerifyStatus.ok
-                      ? null
-                      : () => _restore(info),
-              child: Text(l10n.storage_restore),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  String _fmtBytes(int bytes) {
-    if (bytes < 1024) return '$bytes B';
-    if (bytes < 1024 * 1024) return '${(bytes / 1024).toStringAsFixed(1)} KB';
-    return '${(bytes / 1024 / 1024).toStringAsFixed(1)} MB';
   }
 }

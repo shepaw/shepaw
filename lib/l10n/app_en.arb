@@ -2615,6 +2615,33 @@
   "storage_recycleShowMore": "Show all ({count})",
   "storage_recycleShowLess": "Show less",
   "storage_deletedAt": "deleted {time}",
+  "storage_entrySnapshots": "Snapshots & Backup",
+  "storage_entrySpace": "Space & Sync",
+  "storage_entryAdvanced": "Advanced & Danger Zone",
+  "storage_importEntryHint": "Migrate snapshots and data from an old device",
+  "storage_advancedEntryHint": "Folder export · WebDAV · Wipe",
+  "storage_snapshotCount": "{count} snapshots",
+  "storage_alertPendingImports": "{count} import requests pending approval",
+  "storage_ownerPeerCount": "{count} owner devices",
+  "storage_synced": "Synced",
+  "storage_masterIsSelf": "This device is the master",
+  "storage_autoShortOn": "Auto on",
+  "storage_autoShortOff": "Auto off",
+  "@storage_snapshotCount": {
+    "placeholders": {
+      "count": { "type": "int" }
+    }
+  },
+  "@storage_alertPendingImports": {
+    "placeholders": {
+      "count": { "type": "int" }
+    }
+  },
+  "@storage_ownerPeerCount": {
+    "placeholders": {
+      "count": { "type": "int" }
+    }
+  },
   "@storage_recycleRestoreFailed": {
     "placeholders": {
       "error": { "type": "String" }

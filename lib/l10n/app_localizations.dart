@@ -9182,6 +9182,78 @@ abstract class AppLocalizations {
   /// **'删除于 {time}'**
   String storage_deletedAt(String time);
 
+  /// No description provided for @storage_entrySnapshots.
+  ///
+  /// In zh, this message translates to:
+  /// **'快照与备份'**
+  String get storage_entrySnapshots;
+
+  /// No description provided for @storage_entrySpace.
+  ///
+  /// In zh, this message translates to:
+  /// **'空间与同步'**
+  String get storage_entrySpace;
+
+  /// No description provided for @storage_entryAdvanced.
+  ///
+  /// In zh, this message translates to:
+  /// **'高级与危险区'**
+  String get storage_entryAdvanced;
+
+  /// No description provided for @storage_importEntryHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'从旧设备迁入快照与数据'**
+  String get storage_importEntryHint;
+
+  /// No description provided for @storage_advancedEntryHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'目录导出 · WebDAV · 抹除'**
+  String get storage_advancedEntryHint;
+
+  /// No description provided for @storage_snapshotCount.
+  ///
+  /// In zh, this message translates to:
+  /// **'{count} 份快照'**
+  String storage_snapshotCount(int count);
+
+  /// No description provided for @storage_alertPendingImports.
+  ///
+  /// In zh, this message translates to:
+  /// **'{count} 条导入请求待审批'**
+  String storage_alertPendingImports(int count);
+
+  /// No description provided for @storage_ownerPeerCount.
+  ///
+  /// In zh, this message translates to:
+  /// **'{count} 位 owner 设备'**
+  String storage_ownerPeerCount(int count);
+
+  /// No description provided for @storage_synced.
+  ///
+  /// In zh, this message translates to:
+  /// **'已同步'**
+  String get storage_synced;
+
+  /// No description provided for @storage_masterIsSelf.
+  ///
+  /// In zh, this message translates to:
+  /// **'主节点为本机'**
+  String get storage_masterIsSelf;
+
+  /// No description provided for @storage_autoShortOn.
+  ///
+  /// In zh, this message translates to:
+  /// **'自动开'**
+  String get storage_autoShortOn;
+
+  /// No description provided for @storage_autoShortOff.
+  ///
+  /// In zh, this message translates to:
+  /// **'自动关'**
+  String get storage_autoShortOff;
+
   /// No description provided for @storage_autoSnapshot.
   ///
   /// In zh, this message translates to:

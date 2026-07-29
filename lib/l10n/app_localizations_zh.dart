@@ -5061,6 +5061,48 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
+  String get storage_entrySnapshots => '快照与备份';
+
+  @override
+  String get storage_entrySpace => '空间与同步';
+
+  @override
+  String get storage_entryAdvanced => '高级与危险区';
+
+  @override
+  String get storage_importEntryHint => '从旧设备迁入快照与数据';
+
+  @override
+  String get storage_advancedEntryHint => '目录导出 · WebDAV · 抹除';
+
+  @override
+  String storage_snapshotCount(int count) {
+    return '$count 份快照';
+  }
+
+  @override
+  String storage_alertPendingImports(int count) {
+    return '$count 条导入请求待审批';
+  }
+
+  @override
+  String storage_ownerPeerCount(int count) {
+    return '$count 位 owner 设备';
+  }
+
+  @override
+  String get storage_synced => '已同步';
+
+  @override
+  String get storage_masterIsSelf => '主节点为本机';
+
+  @override
+  String get storage_autoShortOn => '自动开';
+
+  @override
+  String get storage_autoShortOff => '自动关';
+
+  @override
   String get storage_autoSnapshot => '每日自动快照';
 
   @override

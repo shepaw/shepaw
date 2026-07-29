@@ -3100,6 +3100,33 @@
   "storage_recycleShowMore": "显示全部（{count}）",
   "storage_recycleShowLess": "收起",
   "storage_deletedAt": "删除于 {time}",
+  "storage_entrySnapshots": "快照与备份",
+  "storage_entrySpace": "空间与同步",
+  "storage_entryAdvanced": "高级与危险区",
+  "storage_importEntryHint": "从旧设备迁入快照与数据",
+  "storage_advancedEntryHint": "目录导出 · WebDAV · 抹除",
+  "storage_snapshotCount": "{count} 份快照",
+  "storage_alertPendingImports": "{count} 条导入请求待审批",
+  "storage_ownerPeerCount": "{count} 位 owner 设备",
+  "storage_synced": "已同步",
+  "storage_masterIsSelf": "主节点为本机",
+  "storage_autoShortOn": "自动开",
+  "storage_autoShortOff": "自动关",
+  "@storage_snapshotCount": {
+    "placeholders": {
+      "count": { "type": "int" }
+    }
+  },
+  "@storage_alertPendingImports": {
+    "placeholders": {
+      "count": { "type": "int" }
+    }
+  },
+  "@storage_ownerPeerCount": {
+    "placeholders": {
+      "count": { "type": "int" }
+    }
+  },
   "@storage_recycleRestoreFailed": {
     "placeholders": {
       "error": { "type": "String" }

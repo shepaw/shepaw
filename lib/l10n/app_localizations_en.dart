@@ -5253,6 +5253,49 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
+  String get storage_entrySnapshots => 'Snapshots & Backup';
+
+  @override
+  String get storage_entrySpace => 'Space & Sync';
+
+  @override
+  String get storage_entryAdvanced => 'Advanced & Danger Zone';
+
+  @override
+  String get storage_importEntryHint =>
+      'Migrate snapshots and data from an old device';
+
+  @override
+  String get storage_advancedEntryHint => 'Folder export · WebDAV · Wipe';
+
+  @override
+  String storage_snapshotCount(int count) {
+    return '$count snapshots';
+  }
+
+  @override
+  String storage_alertPendingImports(int count) {
+    return '$count import requests pending approval';
+  }
+
+  @override
+  String storage_ownerPeerCount(int count) {
+    return '$count owner devices';
+  }
+
+  @override
+  String get storage_synced => 'Synced';
+
+  @override
+  String get storage_masterIsSelf => 'This device is the master';
+
+  @override
+  String get storage_autoShortOn => 'Auto on';
+
+  @override
+  String get storage_autoShortOff => 'Auto off';
+
+  @override
   String get storage_autoSnapshot => 'Auto daily snapshot';
 
   @override

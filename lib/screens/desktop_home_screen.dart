@@ -21,12 +21,17 @@ import 'remote_agent_detail_screen.dart';
 import 'settings_screen.dart';
 import 'contacts_screen.dart';
 import 'storage_space_screen.dart';
+import 'storage_snapshots_screen.dart';
+import 'storage_space_manage_screen.dart';
+import 'storage_import_screen.dart';
+import 'storage_advanced_screen.dart';
+import 'she_circle_screen.dart';
 import '../utils/layout_utils.dart';
 import '../services/native_window_service.dart';
 
 /// Desktop split-panel layout similar to WeChat desktop.
-/// Left: icon sidebar + conversation list or contacts list.
-/// Right: chat / contact detail / settings / etc.
+/// Left: icon sidebar + conversation / contacts / storage list.
+/// Right: chat / contact detail / storage overview or entry / settings.
 class DesktopHomeScreen extends StatefulWidget {
   const DesktopHomeScreen({Key? key}) : super(key: key);
 
@@ -35,7 +40,7 @@ class DesktopHomeScreen extends StatefulWidget {
 }
 
 /// Middle column content (WeChat-style).
-enum _LeftPanelMode { conversations, contacts }
+enum _LeftPanelMode { conversations, contacts, storage }
 
 /// Tracks what the right panel is currently displaying.
 enum _RightPanelView {
@@ -50,7 +55,12 @@ enum _RightPanelView {
   contactPeer,
   traces,
   groupWorkflow,
-  storageSpace,
+  storageOverview,
+  storageSnapshots,
+  storageSpaceManage,
+  storageImport,
+  storageSheCircle,
+  storageAdvanced,
 }
 
 /// Describes one item in the icon sidebar.
@@ -136,6 +146,8 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
   final GlobalKey<HomeScreenState> _homeKey = GlobalKey<HomeScreenState>();
   final GlobalKey<ContactsScreenState> _contactsKey =
       GlobalKey<ContactsScreenState>();
+  final GlobalKey<StorageSpaceScreenState> _storageKey =
+      GlobalKey<StorageSpaceScreenState>();
 
   _LeftPanelMode _leftMode = _LeftPanelMode.conversations;
   _RightPanelView _rightPanel = _RightPanelView.empty;
@@ -143,6 +155,7 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
   RemoteAgent? _contactAgent;
   Channel? _contactGroup;
   PairedPeer? _contactPeer;
+  StorageBagEntry? _storageEntry;
 
   String? get _selectedContactId {
     switch (_rightPanel) {
@@ -180,9 +193,19 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
   static const double _maxLeftPanelWidth = 480;
   static const double _sidebarWidth = 56;
 
-  bool get _isUtilityPanel =>
-      _rightPanel == _RightPanelView.settings ||
-      _rightPanel == _RightPanelView.storageSpace;
+  bool get _isUtilityPanel => _rightPanel == _RightPanelView.settings;
+
+  bool get _isStorageDetailPanel =>
+      _rightPanel == _RightPanelView.storageSnapshots ||
+      _rightPanel == _RightPanelView.storageSpaceManage ||
+      _rightPanel == _RightPanelView.storageImport ||
+      _rightPanel == _RightPanelView.storageSheCircle ||
+      _rightPanel == _RightPanelView.storageAdvanced;
+
+  bool get _isContactDetailPanel =>
+      _rightPanel == _RightPanelView.contactAgent ||
+      _rightPanel == _RightPanelView.contactGroup ||
+      _rightPanel == _RightPanelView.contactPeer;
 
   void _onConversationSelected(ConversationSelection selection) {
     setState(() {
@@ -190,6 +213,7 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
       _previousPanel = null;
       _selected = selection;
       _clearContactSelectionFields();
+      _storageEntry = null;
       _rightPanel = _RightPanelView.chat;
       _navGeneration++;
     });
@@ -268,6 +292,10 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
     _contactsKey.currentState?.reload();
   }
 
+  void _reloadStorage() {
+    _storageKey.currentState?.reload();
+  }
+
   void _clearContactSelectionFields() {
     _contactAgent = null;
     _contactGroup = null;
@@ -286,12 +314,14 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
   void _onRightPanelRootPopped() {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
-      final wasContactDetail =
-          _rightPanel == _RightPanelView.contactAgent ||
-          _rightPanel == _RightPanelView.contactGroup ||
-          _rightPanel == _RightPanelView.contactPeer;
-      if (!wasContactDetail) return;
-      _clearContactDetail(reloadList: true);
+      if (_isContactDetailPanel) {
+        _clearContactDetail(reloadList: true);
+        return;
+      }
+      if (_isStorageDetailPanel && _leftMode == _LeftPanelMode.storage) {
+        _showStorageOverview();
+        _reloadStorage();
+      }
     });
   }
 
@@ -299,6 +329,7 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
     setState(() {
       _leftMode = _LeftPanelMode.conversations;
       _clearContactSelectionFields();
+      _storageEntry = null;
       _selected = null;
       _rightPanel = _RightPanelView.empty;
       _navGeneration++;
@@ -310,7 +341,27 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
       _leftMode = _LeftPanelMode.contacts;
       _selected = null;
       _clearContactSelectionFields();
+      _storageEntry = null;
       _rightPanel = _RightPanelView.empty;
+      _navGeneration++;
+    });
+  }
+
+  void _showStorage() {
+    setState(() {
+      _leftMode = _LeftPanelMode.storage;
+      _selected = null;
+      _clearContactSelectionFields();
+      _storageEntry = null;
+      _rightPanel = _RightPanelView.storageOverview;
+      _navGeneration++;
+    });
+  }
+
+  void _showStorageOverview() {
+    setState(() {
+      _storageEntry = null;
+      _rightPanel = _RightPanelView.storageOverview;
       _navGeneration++;
     });
   }
@@ -322,11 +373,28 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
       if (panel != _RightPanelView.chat) {
         _selected = null;
       }
-      if (panel != _RightPanelView.contactAgent &&
-          panel != _RightPanelView.contactGroup &&
-          panel != _RightPanelView.contactPeer) {
+      if (!_isContactDetailPanel) {
         _clearContactSelectionFields();
       }
+      if (!_isStorageDetailPanel && panel != _RightPanelView.storageOverview) {
+        _storageEntry = null;
+      }
+      _navGeneration++;
+    });
+  }
+
+  void _onStorageEntrySelected(StorageBagEntry entry) {
+    setState(() {
+      _storageEntry = entry;
+      _selected = null;
+      _clearContactSelectionFields();
+      _rightPanel = switch (entry) {
+        StorageBagEntry.snapshots => _RightPanelView.storageSnapshots,
+        StorageBagEntry.space => _RightPanelView.storageSpaceManage,
+        StorageBagEntry.import => _RightPanelView.storageImport,
+        StorageBagEntry.sheCircle => _RightPanelView.storageSheCircle,
+        StorageBagEntry.advanced => _RightPanelView.storageAdvanced,
+      };
       _navGeneration++;
     });
   }
@@ -336,6 +404,7 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
       _contactAgent = agent;
       _contactGroup = null;
       _contactPeer = null;
+      _storageEntry = null;
       _selected = null;
       _rightPanel = _RightPanelView.contactAgent;
       _navGeneration++;
@@ -347,6 +416,7 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
       _contactGroup = group;
       _contactAgent = null;
       _contactPeer = null;
+      _storageEntry = null;
       _selected = null;
       _rightPanel = _RightPanelView.contactGroup;
       _navGeneration++;
@@ -358,6 +428,7 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
       _contactPeer = peer;
       _contactAgent = null;
       _contactGroup = null;
+      _storageEntry = null;
       _selected = null;
       _rightPanel = _RightPanelView.contactPeer;
       _navGeneration++;
@@ -372,30 +443,37 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
           // WeChat-style icon sidebar
           _buildSidebar(),
 
-          // Conversation list / contacts list panel
+          // Conversation / contacts / storage list panel
           SizedBox(
             width: _leftPanelWidth,
-            child: _leftMode == _LeftPanelMode.conversations
-                ? HomeScreen(
-                    key: _homeKey,
-                    embedded: true,
-                    selectedConversation: _selected,
-                    onConversationSelected: _onConversationSelected,
-                    onAddAgent: () => _showPanel(_RightPanelView.addAgent),
-                    onCreateGroup: () => _showPanel(_RightPanelView.createGroup),
-                    onPairDevice: () => _showPanel(_RightPanelView.pairDevice),
-                  )
-                : ContactsScreen(
-                    key: _contactsKey,
-                    embedded: true,
-                    selectedContactId: _selectedContactId,
-                    onAgentSelected: _onContactAgentSelected,
-                    onGroupSelected: _onContactGroupSelected,
-                    onPeerSelected: _onContactPeerSelected,
-                    onAddAgent: () => _showPanel(_RightPanelView.addAgent),
-                    onCreateGroup: () => _showPanel(_RightPanelView.createGroup),
-                    onPairDevice: () => _showPanel(_RightPanelView.pairDevice),
-                  ),
+            child: switch (_leftMode) {
+              _LeftPanelMode.conversations => HomeScreen(
+                  key: _homeKey,
+                  embedded: true,
+                  selectedConversation: _selected,
+                  onConversationSelected: _onConversationSelected,
+                  onAddAgent: () => _showPanel(_RightPanelView.addAgent),
+                  onCreateGroup: () => _showPanel(_RightPanelView.createGroup),
+                  onPairDevice: () => _showPanel(_RightPanelView.pairDevice),
+                ),
+              _LeftPanelMode.contacts => ContactsScreen(
+                  key: _contactsKey,
+                  embedded: true,
+                  selectedContactId: _selectedContactId,
+                  onAgentSelected: _onContactAgentSelected,
+                  onGroupSelected: _onContactGroupSelected,
+                  onPeerSelected: _onContactPeerSelected,
+                  onAddAgent: () => _showPanel(_RightPanelView.addAgent),
+                  onCreateGroup: () => _showPanel(_RightPanelView.createGroup),
+                  onPairDevice: () => _showPanel(_RightPanelView.pairDevice),
+                ),
+              _LeftPanelMode.storage => StorageSpaceScreen(
+                  key: _storageKey,
+                  embedded: true,
+                  selectedEntry: _storageEntry,
+                  onEntrySelected: _onStorageEntrySelected,
+                ),
+            },
           ),
 
           // Resizable divider
@@ -575,8 +653,25 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
           onBack: _onGroupWorkflowBack,
         );
 
-      case _RightPanelView.storageSpace:
-        return const StorageSpaceScreen();
+      case _RightPanelView.storageOverview:
+        return StorageOverviewPanel(
+          onOpenEntry: _onStorageEntrySelected,
+        );
+
+      case _RightPanelView.storageSnapshots:
+        return const StorageSnapshotsScreen();
+
+      case _RightPanelView.storageSpaceManage:
+        return const StorageSpaceManageScreen();
+
+      case _RightPanelView.storageImport:
+        return const StorageImportScreen();
+
+      case _RightPanelView.storageSheCircle:
+        return const SheCircleScreen();
+
+      case _RightPanelView.storageAdvanced:
+        return const StorageAdvancedScreen();
 
       case _RightPanelView.empty:
         return _buildEmptyState();
@@ -620,8 +715,10 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
         icon: Icons.inventory_2_outlined,
         tooltip: l10n.storage_title,
         colorBuilder: (_) =>
-            _rightPanel == _RightPanelView.storageSpace ? activeColor : iconColor,
-        onTap: () => _showPanel(_RightPanelView.storageSpace),
+            _leftMode == _LeftPanelMode.storage && !_isUtilityPanel
+                ? activeColor
+                : iconColor,
+        onTap: _showStorage,
       ),
     ];
 
@@ -704,19 +801,27 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
 
   Widget _buildEmptyState() {
     final l10n = AppLocalizations.of(context);
-    final isContacts = _leftMode == _LeftPanelMode.contacts;
+    final IconData icon;
+    final String label;
+    switch (_leftMode) {
+      case _LeftPanelMode.contacts:
+        icon = Icons.contacts_outlined;
+        label = l10n.contacts_title;
+      case _LeftPanelMode.storage:
+        icon = Icons.inventory_2_outlined;
+        label = l10n.storage_title;
+      case _LeftPanelMode.conversations:
+        icon = Icons.chat_bubble_outline;
+        label = l10n.home_noMessages;
+    }
     return Center(
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(
-            isContacts ? Icons.contacts_outlined : Icons.chat_bubble_outline,
-            size: 64,
-            color: Colors.grey[300],
-          ),
+          Icon(icon, size: 64, color: Colors.grey[300]),
           const SizedBox(height: 16),
           Text(
-            isContacts ? l10n.contacts_title : l10n.home_noMessages,
+            label,
             style: TextStyle(
               fontSize: 16,
               color: Colors.grey[400],
