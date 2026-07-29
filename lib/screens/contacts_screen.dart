@@ -14,6 +14,7 @@ import '../services/local_database_service.dart';
 import '../services/she_service.dart';
 import '../services/logger_service.dart';
 import '../widgets/avatar_image.dart';
+import '../models/remote_agent.dart';
 import 'remote_agent_detail_screen.dart';
 import 'group_detail_screen.dart';
 import 'add_remote_agent_screen.dart';
@@ -21,16 +22,38 @@ import 'create_group_screen.dart';
 
 /// WeChat-style contacts screen with collapsible sections.
 /// Section order: Devices → Group Chats → Agents.
+///
+/// When [embedded] is true (desktop middle column), selection callbacks open
+/// details in the parent right panel instead of pushing a new route.
 class ContactsScreen extends StatefulWidget {
-  const ContactsScreen({super.key});
+  final bool embedded;
+  final String? selectedContactId;
+  final ValueChanged<RemoteAgent>? onAgentSelected;
+  final ValueChanged<Channel>? onGroupSelected;
+  final ValueChanged<PairedPeer>? onPeerSelected;
+  final VoidCallback? onAddAgent;
+  final VoidCallback? onCreateGroup;
+  final VoidCallback? onPairDevice;
+
+  const ContactsScreen({
+    super.key,
+    this.embedded = false,
+    this.selectedContactId,
+    this.onAgentSelected,
+    this.onGroupSelected,
+    this.onPeerSelected,
+    this.onAddAgent,
+    this.onCreateGroup,
+    this.onPairDevice,
+  });
 
   @override
-  State<ContactsScreen> createState() => _ContactsScreenState();
+  State<ContactsScreen> createState() => ContactsScreenState();
 }
 
 enum _ContactsSection { devices, groups, agents }
 
-class _ContactsScreenState extends State<ContactsScreen> {
+class ContactsScreenState extends State<ContactsScreen> {
   final LocalApiService _apiService = LocalApiService();
   final LocalDatabaseService _databaseService = LocalDatabaseService();
   final TextEditingController _searchController = TextEditingController();
@@ -46,6 +69,8 @@ class _ContactsScreenState extends State<ContactsScreen> {
     _ContactsSection.groups,
     _ContactsSection.agents,
   };
+
+  Future<void> reload() => _loadData();
 
   @override
   void initState() {
@@ -144,11 +169,23 @@ class _ContactsScreenState extends State<ContactsScreen> {
             onSelected: (value) {
               switch (value) {
                 case 'device':
-                  _startPeerPairing();
+                  if (widget.onPairDevice != null) {
+                    widget.onPairDevice!();
+                  } else {
+                    _startPeerPairing();
+                  }
                 case 'group':
-                  _createGroup();
+                  if (widget.onCreateGroup != null) {
+                    widget.onCreateGroup!();
+                  } else {
+                    _createGroup();
+                  }
                 case 'agent':
-                  _addAgent();
+                  if (widget.onAddAgent != null) {
+                    widget.onAddAgent!();
+                  } else {
+                    _addAgent();
+                  }
               }
             },
             itemBuilder: (context) => [
@@ -388,6 +425,10 @@ class _ContactsScreenState extends State<ContactsScreen> {
   }
 
   Future<void> _addAgent() async {
+    if (widget.onAddAgent != null) {
+      widget.onAddAgent!();
+      return;
+    }
     await Navigator.push(
       context,
       MaterialPageRoute(
@@ -398,6 +439,10 @@ class _ContactsScreenState extends State<ContactsScreen> {
   }
 
   Future<void> _createGroup() async {
+    if (widget.onCreateGroup != null) {
+      widget.onCreateGroup!();
+      return;
+    }
     await Navigator.push(
       context,
       MaterialPageRoute(
@@ -414,7 +459,12 @@ class _ContactsScreenState extends State<ContactsScreen> {
         ? SheService.resolveDisplayName(agent.name, l10n.she_name)
         : agent.name;
 
+    final selected = widget.selectedContactId == agent.id;
+    final colorScheme = Theme.of(context).colorScheme;
+
     return ListTile(
+      selected: selected,
+      selectedTileColor: colorScheme.primary.withValues(alpha: 0.08),
       contentPadding: const EdgeInsets.only(left: 52, right: 16),
       leading: Stack(
         children: [
@@ -481,8 +531,12 @@ class _ContactsScreenState extends State<ContactsScreen> {
   Widget _buildGroupTile(Channel group) {
     final l10n = AppLocalizations.of(context);
     final memberCount = group.members.where((m) => m.id != 'user').length;
+    final selected = widget.selectedContactId == group.id;
+    final colorScheme = Theme.of(context).colorScheme;
 
     return ListTile(
+      selected: selected,
+      selectedTileColor: colorScheme.primary.withValues(alpha: 0.08),
       contentPadding: const EdgeInsets.only(left: 52, right: 16),
       leading: Container(
         width: 40,
@@ -514,6 +568,11 @@ class _ContactsScreenState extends State<ContactsScreen> {
     final remoteAgent = await _databaseService.getRemoteAgentById(agent.id);
     if (remoteAgent == null || !mounted) return;
 
+    if (widget.onAgentSelected != null) {
+      widget.onAgentSelected!(remoteAgent);
+      return;
+    }
+
     await Navigator.push(
       context,
       MaterialPageRoute(
@@ -524,6 +583,11 @@ class _ContactsScreenState extends State<ContactsScreen> {
   }
 
   Future<void> _openGroupDetail(Channel group) async {
+    if (widget.onGroupSelected != null) {
+      widget.onGroupSelected!(group);
+      return;
+    }
+
     await Navigator.push(
       context,
       MaterialPageRoute(
@@ -536,8 +600,12 @@ class _ContactsScreenState extends State<ContactsScreen> {
   Widget _buildPeerTile(PairedPeer peer) {
     final l10n = AppLocalizations.of(context);
     final isConnected = peer.state == PeerConnectionState.connected;
+    final selected = widget.selectedContactId == peer.id;
+    final colorScheme = Theme.of(context).colorScheme;
 
     return ListTile(
+      selected: selected,
+      selectedTileColor: colorScheme.primary.withValues(alpha: 0.08),
       contentPadding: const EdgeInsets.only(left: 52, right: 16),
       leading: Stack(
         children: [
@@ -572,7 +640,7 @@ class _ContactsScreenState extends State<ContactsScreen> {
         ),
       ),
       onTap: () => _openPeerDetail(peer),
-      onLongPress: () => _showPeerActions(peer),
+      onLongPress: widget.embedded ? null : () => _showPeerActions(peer),
     );
   }
 
@@ -680,6 +748,10 @@ class _ContactsScreenState extends State<ContactsScreen> {
   }
 
   Future<void> _startPeerPairing() async {
+    if (widget.onPairDevice != null) {
+      widget.onPairDevice!();
+      return;
+    }
     final peer = await PeerPairingScreen.show(context);
     if (peer != null && mounted) {
       final l10n = AppLocalizations.of(context);
@@ -691,6 +763,10 @@ class _ContactsScreenState extends State<ContactsScreen> {
   }
 
   Future<void> _openPeerDetail(PairedPeer peer) async {
+    if (widget.onPeerSelected != null) {
+      widget.onPeerSelected!(peer);
+      return;
+    }
     await PeerSettingsScreen.show(context, peer);
     if (mounted) _loadData();
   }
