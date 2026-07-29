@@ -54,6 +54,14 @@ class ContactsScreen extends StatefulWidget {
 enum _ContactsSection { groups, local }
 
 class ContactsScreenState extends State<ContactsScreen> {
+  /// 折叠箭头列宽 + 间距，使子项头像与父节点头像左对齐。
+  static const double _rowPadH = 12;
+  static const double _chevronSize = 20;
+  static const double _chevronGap = 4;
+  static const double _avatarSize = 36;
+  static const double _childIndent =
+      _rowPadH + _chevronSize + _chevronGap; // 对齐父节点头像
+
   final LocalApiService _apiService = LocalApiService();
   final LocalDatabaseService _databaseService = LocalDatabaseService();
   final TextEditingController _searchController = TextEditingController();
@@ -315,7 +323,7 @@ class ContactsScreenState extends State<ContactsScreen> {
           if (_expandedPeerIds.contains(peer.id) ||
               (_query.isNotEmpty && _agentsForPeer(peer.id).isNotEmpty))
             ..._agentsForPeer(peer.id).map(
-              (a) => _buildAgentTile(a, indent: 72),
+              (a) => _buildAgentTile(a),
             ),
         ],
 
@@ -370,14 +378,14 @@ class ContactsScreenState extends State<ContactsScreen> {
               duration: const Duration(milliseconds: 180),
               child: Icon(
                 Icons.chevron_right,
-                size: 20,
+                size: _chevronSize,
                 color: colorScheme.onSurfaceVariant,
               ),
             ),
-            const SizedBox(width: 4),
+            const SizedBox(width: _chevronGap),
             Container(
-              width: 36,
-              height: 36,
+              width: _avatarSize,
+              height: _avatarSize,
               decoration: BoxDecoration(
                 color: iconColor.withValues(alpha: 0.12),
                 borderRadius: BorderRadius.circular(8),
@@ -389,6 +397,8 @@ class ContactsScreenState extends State<ContactsScreen> {
             Expanded(
               child: Text(
                 title,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
                 style: const TextStyle(
                   fontSize: 16,
                   fontWeight: FontWeight.w500,
@@ -435,14 +445,18 @@ class ContactsScreenState extends State<ContactsScreen> {
                 duration: const Duration(milliseconds: 180),
                 child: Icon(
                   Icons.chevron_right,
-                  size: 20,
+                  size: _chevronSize,
                   color: colorScheme.onSurfaceVariant,
                 ),
               ),
-              const SizedBox(width: 4),
+              const SizedBox(width: _chevronGap),
               Stack(
                 children: [
-                  PeerDeviceIcon(peer: peer, size: 36, borderRadius: 8),
+                  PeerDeviceIcon(
+                    peer: peer,
+                    size: _avatarSize,
+                    borderRadius: 8,
+                  ),
                   Positioned(
                     right: 0,
                     bottom: 0,
@@ -468,6 +482,8 @@ class ContactsScreenState extends State<ContactsScreen> {
                   children: [
                     Text(
                       peer.deviceName,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
                       style: const TextStyle(
                         fontSize: 16,
                         fontWeight: FontWeight.w500,
@@ -475,6 +491,8 @@ class ContactsScreenState extends State<ContactsScreen> {
                     ),
                     Text(
                       peer.state.listStatusLabel(l10n, showE2eWhenConnected: true),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
                       style: TextStyle(
                         fontSize: 12,
                         color: isConnected ? Colors.green : Colors.grey,
@@ -534,7 +552,7 @@ class ContactsScreenState extends State<ContactsScreen> {
     required String message,
     required String actionLabel,
     required VoidCallback onAction,
-    double indent = 52,
+    double indent = _childIndent,
   }) {
     return Padding(
       padding: EdgeInsets.fromLTRB(indent, 8, 16, 16),
@@ -545,6 +563,8 @@ class ContactsScreenState extends State<ContactsScreen> {
           Expanded(
             child: Text(
               message,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
               style: TextStyle(fontSize: 13, color: Colors.grey[500]),
             ),
           ),
@@ -589,7 +609,7 @@ class ContactsScreenState extends State<ContactsScreen> {
     if (mounted) _loadData();
   }
 
-  Widget _buildAgentTile(Agent agent, {double indent = 52}) {
+  Widget _buildAgentTile(Agent agent) {
     final l10n = AppLocalizations.of(context);
     final isOnline = agent.status.isOnline;
     final displayName = SheService.isSheIdentity(agent.id, agent.metadata)
@@ -602,12 +622,13 @@ class ContactsScreenState extends State<ContactsScreen> {
     return ListTile(
       selected: selected,
       selectedTileColor: colorScheme.primary.withValues(alpha: 0.08),
-      contentPadding: EdgeInsets.only(left: indent, right: 16),
+      // 与父节点（设备 / 分区）头像左对齐，不再额外缩进。
+      contentPadding: const EdgeInsets.only(left: _childIndent, right: 16),
       leading: Stack(
         children: [
           Container(
-            width: 40,
-            height: 40,
+            width: _avatarSize,
+            height: _avatarSize,
             decoration: BoxDecoration(
               color: Colors.grey[200],
               borderRadius: BorderRadius.circular(8),
@@ -615,11 +636,11 @@ class ContactsScreenState extends State<ContactsScreen> {
             clipBehavior: Clip.antiAlias,
             child: AvatarImage(
               avatar: agent.avatar,
-              size: 40,
+              size: _avatarSize,
               borderRadius: 8,
               fallback: Text(
                 agent.name.isNotEmpty ? agent.name[0] : 'A',
-                style: const TextStyle(fontSize: 18),
+                style: const TextStyle(fontSize: 16),
               ),
             ),
           ),
@@ -643,6 +664,8 @@ class ContactsScreenState extends State<ContactsScreen> {
       ),
       title: Text(
         displayName,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
         style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w500),
       ),
       subtitle: agent.bio != null && agent.bio!.isNotEmpty
@@ -654,6 +677,8 @@ class ContactsScreenState extends State<ContactsScreen> {
             )
           : Text(
               isOnline ? l10n.home_statusOnline : l10n.home_statusOffline,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
               style: TextStyle(
                 fontSize: 12,
                 color: isOnline ? Colors.green : Colors.grey,
@@ -672,10 +697,10 @@ class ContactsScreenState extends State<ContactsScreen> {
     return ListTile(
       selected: selected,
       selectedTileColor: colorScheme.primary.withValues(alpha: 0.08),
-      contentPadding: const EdgeInsets.only(left: 52, right: 16),
+      contentPadding: const EdgeInsets.only(left: _childIndent, right: 16),
       leading: Container(
-        width: 40,
-        height: 40,
+        width: _avatarSize,
+        height: _avatarSize,
         decoration: BoxDecoration(
           color: AppColors.primaryContainer,
           borderRadius: BorderRadius.circular(8),
@@ -685,6 +710,8 @@ class ContactsScreenState extends State<ContactsScreen> {
       ),
       title: Text(
         group.name,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
         style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w500),
       ),
       subtitle: Text(
