@@ -149,6 +149,11 @@ mixin _LoadOps on _ChatControllerBase {
       }
       rebuildMessageIdMap();
       _reapplyStashedPlanApprovalResponses();
+      await PendingApprovalHub.instance.reconcileForChannel(
+        currentChannelId!,
+        messages,
+        workflowService: WorkflowService(db: localDatabaseService),
+      );
       isLoading = false;
       _notify();
 

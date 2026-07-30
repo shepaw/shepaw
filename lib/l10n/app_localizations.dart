@@ -7370,6 +7370,12 @@ abstract class AppLocalizations {
   /// **'还有 {count} 条待审'**
   String approval_morePending(int count);
 
+  /// No description provided for @approval_dismissReminder.
+  ///
+  /// In zh, this message translates to:
+  /// **'忽略'**
+  String get approval_dismissReminder;
+
   /// No description provided for @workflow_approveExec.
   ///
   /// In zh, this message translates to:

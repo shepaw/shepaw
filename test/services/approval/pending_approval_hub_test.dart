@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shepaw/models/message.dart';
 import 'package:shepaw/services/approval/pending_approval_hub.dart';
 import 'package:shepaw/services/approval/pending_approval_item.dart';
 
@@ -75,6 +76,81 @@ void main() {
     );
     hub.resolveByConfirmationId('c1');
     expect(hub.all, isEmpty);
+  });
+
+  test('reconcileForChannel drops resolved plan reminder', () async {
+    hub.upsert(
+      PendingApprovalItem(
+        id: 'plan:wf1',
+        channelId: 'ch1',
+        messageId: 'm1',
+        agentId: 'a1',
+        agentName: 'Agent',
+        kind: PendingApprovalKind.plan,
+        createdAt: 1,
+      ),
+    );
+
+    await hub.reconcileForChannel(
+      'ch1',
+      [
+        Message(
+          id: 'm1',
+          content: 'plan',
+          timestampMs: 1,
+          from: MessageFrom(id: 'a1', type: 'agent', name: 'Agent'),
+          type: MessageType.text,
+          metadata: {
+            'plan_approval': {'_workflowId': 'wf1', '_approved': true},
+            'plan_approval_responded': {'approved': true},
+          },
+        ),
+      ],
+    );
+
+    expect(hub.all, isEmpty);
+  });
+
+  test('dismiss hides reminder until approval resolves', () {
+    hub.upsert(
+      PendingApprovalItem(
+        id: 'plan:wf1',
+        channelId: 'ch1',
+        agentId: 'a1',
+        agentName: 'Agent',
+        kind: PendingApprovalKind.plan,
+        createdAt: 1,
+      ),
+    );
+    expect(hub.all, hasLength(1));
+
+    hub.dismiss('plan:wf1');
+    expect(hub.all, isEmpty);
+
+    hub.upsert(
+      PendingApprovalItem(
+        id: 'plan:wf1',
+        channelId: 'ch1',
+        agentId: 'a1',
+        agentName: 'Agent',
+        kind: PendingApprovalKind.plan,
+        createdAt: 2,
+      ),
+    );
+    expect(hub.all, isEmpty);
+
+    hub.resolveByWorkflowId('wf1');
+    hub.upsert(
+      PendingApprovalItem(
+        id: 'plan:wf1',
+        channelId: 'ch1',
+        agentId: 'a1',
+        agentName: 'Agent',
+        kind: PendingApprovalKind.plan,
+        createdAt: 3,
+      ),
+    );
+    expect(hub.all, hasLength(1));
   });
 
   test('fromInteraction builds plan and action ids', () {

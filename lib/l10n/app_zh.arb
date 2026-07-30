@@ -2397,6 +2397,7 @@
       }
     }
   },
+  "approval_dismissReminder": "忽略",
   "workflow_approveExec": "批准执行",
   "workflow_revisionComment": "修改意见",
   "workflow_revisionHint": "请描述你的修改意见...",

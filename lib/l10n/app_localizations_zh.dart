@@ -4008,6 +4008,9 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
+  String get approval_dismissReminder => '忽略';
+
+  @override
   String get workflow_approveExec => '批准执行';
 
   @override

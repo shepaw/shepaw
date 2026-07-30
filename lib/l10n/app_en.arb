@@ -1912,6 +1912,7 @@
       }
     }
   },
+  "approval_dismissReminder": "Dismiss",
   "workflow_approveExec": "Approve",
   "workflow_revisionComment": "Revision comments",
   "workflow_revisionHint": "Describe your revision comments...",

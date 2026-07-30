@@ -51,6 +51,15 @@ class _PendingApprovalBannerState extends State<PendingApprovalBanner> {
     return _items.where((i) => i.channelId != active).toList();
   }
 
+  void _openReview(PendingApprovalItem item) {
+    ChatNavigationService.instance.openChannel(
+      channelId: item.channelId,
+      messageId: item.messageId,
+      agentId: item.agentId.isEmpty ? null : item.agentId,
+      agentName: item.agentName,
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final visible = _visible;
@@ -64,84 +73,87 @@ class _PendingApprovalBannerState extends State<PendingApprovalBanner> {
         : l10n.approval_kindAction;
     final title = l10n.approval_bannerTitle(latest.agentName, kindLabel);
     final subtitle = more > 0 ? l10n.approval_morePending(more) : null;
+    final colorScheme = Theme.of(context).colorScheme;
 
     return Column(
       children: [
-        Material(
-          color: Theme.of(context).colorScheme.primaryContainer,
-          elevation: 1,
-          child: SafeArea(
-            bottom: false,
-            child: InkWell(
-              onTap: () {
-                ChatNavigationService.instance.openChannel(
-                  channelId: latest.channelId,
-                  messageId: latest.messageId,
-                  agentId: latest.agentId.isEmpty ? null : latest.agentId,
-                  agentName: latest.agentName,
-                );
-              },
-              child: Padding(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                child: Row(
-                  children: [
-                    Icon(
-                      Icons.rate_review_outlined,
-                      size: 20,
-                      color: Theme.of(context).colorScheme.onPrimaryContainer,
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            title,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: TextStyle(
-                              fontSize: 13,
-                              fontWeight: FontWeight.w600,
-                              color: Theme.of(context)
-                                  .colorScheme
-                                  .onPrimaryContainer,
-                            ),
-                          ),
-                          if (subtitle != null)
+        Dismissible(
+          key: ValueKey('approval_banner_${latest.id}'),
+          direction: DismissDirection.horizontal,
+          background: _DismissBackground(
+            label: l10n.approval_dismissReminder,
+            align: Alignment.centerLeft,
+            color: colorScheme.surfaceContainerHighest,
+            foreground: colorScheme.onSurfaceVariant,
+            icon: Icons.close,
+          ),
+          secondaryBackground: _DismissBackground(
+            label: l10n.approval_dismissReminder,
+            align: Alignment.centerRight,
+            color: colorScheme.surfaceContainerHighest,
+            foreground: colorScheme.onSurfaceVariant,
+            icon: Icons.close,
+          ),
+          confirmDismiss: (_) async {
+            PendingApprovalHub.instance.dismiss(latest.id);
+            return true;
+          },
+          child: Material(
+            color: colorScheme.primaryContainer,
+            elevation: 1,
+            child: SafeArea(
+              bottom: false,
+              child: InkWell(
+                onTap: () => _openReview(latest),
+                child: Padding(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  child: Row(
+                    children: [
+                      Icon(
+                        Icons.rate_review_outlined,
+                        size: 20,
+                        color: colorScheme.onPrimaryContainer,
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
                             Text(
-                              subtitle,
+                              title,
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
                               style: TextStyle(
-                                fontSize: 11,
-                                color: Theme.of(context)
-                                    .colorScheme
-                                    .onPrimaryContainer
-                                    .withValues(alpha: 0.8),
+                                fontSize: 13,
+                                fontWeight: FontWeight.w600,
+                                color: colorScheme.onPrimaryContainer,
                               ),
                             ),
-                        ],
+                            if (subtitle != null)
+                              Text(
+                                subtitle,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  color: colorScheme.onPrimaryContainer
+                                      .withValues(alpha: 0.8),
+                                ),
+                              ),
+                          ],
+                        ),
                       ),
-                    ),
-                    TextButton(
-                      onPressed: () {
-                        ChatNavigationService.instance.openChannel(
-                          channelId: latest.channelId,
-                          messageId: latest.messageId,
-                          agentId:
-                              latest.agentId.isEmpty ? null : latest.agentId,
-                          agentName: latest.agentName,
-                        );
-                      },
-                      style: TextButton.styleFrom(
-                        visualDensity: VisualDensity.compact,
-                        foregroundColor:
-                            Theme.of(context).colorScheme.onPrimaryContainer,
+                      TextButton(
+                        onPressed: () => _openReview(latest),
+                        style: TextButton.styleFrom(
+                          visualDensity: VisualDensity.compact,
+                          foregroundColor: colorScheme.onPrimaryContainer,
+                        ),
+                        child: Text(l10n.approval_goReview),
                       ),
-                      child: Text(l10n.approval_goReview),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
               ),
             ),
@@ -149,6 +161,57 @@ class _PendingApprovalBannerState extends State<PendingApprovalBanner> {
         ),
         Expanded(child: widget.child),
       ],
+    );
+  }
+}
+
+class _DismissBackground extends StatelessWidget {
+  final String label;
+  final Alignment align;
+  final Color color;
+  final Color foreground;
+  final IconData icon;
+
+  const _DismissBackground({
+    required this.label,
+    required this.align,
+    required this.color,
+    required this.foreground,
+    required this.icon,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      color: color,
+      alignment: align,
+      padding: const EdgeInsets.symmetric(horizontal: 20),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (align == Alignment.centerRight) ...[
+            Text(
+              label,
+              style: TextStyle(
+                color: foreground,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            const SizedBox(width: 8),
+          ],
+          Icon(icon, color: foreground, size: 20),
+          if (align == Alignment.centerLeft) ...[
+            const SizedBox(width: 8),
+            Text(
+              label,
+              style: TextStyle(
+                color: foreground,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ],
+        ],
+      ),
     );
   }
 }

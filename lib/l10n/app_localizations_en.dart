@@ -4159,6 +4159,9 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
+  String get approval_dismissReminder => 'Dismiss';
+
+  @override
   String get workflow_approveExec => 'Approve';
 
   @override

@@ -2,9 +2,11 @@ import 'dart:async';
 
 import '../../models/workflow_models.dart';
 import '../../models/workflow_pending_approval.dart';
+import '../../models/message.dart';
 import '../logger_service.dart';
 import '../workflow/workflow_service.dart';
 import 'pending_approval_item.dart';
+import 'pending_approval_reconciler.dart';
 
 /// Global aggregator of high-priority pending approvals for reachability UI.
 ///
@@ -17,6 +19,7 @@ class PendingApprovalHub {
   static const _tag = 'PendingApprovalHub';
 
   final Map<String, PendingApprovalItem> _items = {};
+  final Set<String> _dismissedIds = {};
   final _controller =
       StreamController<List<PendingApprovalItem>>.broadcast();
 
@@ -42,6 +45,7 @@ class PendingApprovalHub {
   PendingApprovalItem? get latest => all.isEmpty ? null : all.first;
 
   void upsert(PendingApprovalItem item) {
+    if (_dismissedIds.contains(item.id)) return;
     final existing = _items[item.id];
     if (existing != null) {
       final merged = existing.copyWith(
@@ -66,6 +70,7 @@ class PendingApprovalHub {
 
   /// Insert without emitting; used by [hydrate] to batch one stream event.
   void _upsertSilent(PendingApprovalItem item) {
+    if (_dismissedIds.contains(item.id)) return;
     final existing = _items[item.id];
     if (existing != null) {
       _items[item.id] = existing.copyWith(
@@ -79,8 +84,18 @@ class PendingApprovalHub {
   }
 
   void resolve(String id) {
+    _dismissedIds.remove(id);
     if (_items.remove(id) != null) {
       _emit();
+    }
+  }
+
+  /// User dismissed the reachability banner; keep the in-chat approval card.
+  void dismiss(String id) {
+    _dismissedIds.add(id);
+    if (_items.remove(id) != null) {
+      _emit();
+      LoggerService().info('Dismissed approval reminder $id', tag: _tag);
     }
   }
 
@@ -99,6 +114,40 @@ class PendingApprovalHub {
       _items.remove(id);
     }
     _emit();
+  }
+
+  /// Drop hub reminders that no longer match message / DB state.
+  ///
+  /// Called after [loadMessages] so a resolved in-chat card cannot keep
+  /// reviving the global approval banner when the user leaves the channel.
+  Future<void> reconcileForChannel(
+    String channelId,
+    Iterable<Message> messages, {
+    WorkflowService? workflowService,
+  }) async {
+    final channelItems =
+        _items.values.where((i) => i.channelId == channelId).toList();
+    if (channelItems.isEmpty) return;
+
+    final wf = workflowService ?? WorkflowService.instance;
+    var changed = false;
+    for (final item in channelItems) {
+      final stillPending = await PendingApprovalReconciler.isStillPending(
+        item: item,
+        messages: messages,
+        workflowService: wf,
+      );
+      if (!stillPending && _items.remove(item.id) != null) {
+        changed = true;
+      }
+    }
+    if (changed) {
+      _emit();
+      LoggerService().info(
+        'Reconciled stale approval reminder(s) for $channelId',
+        tag: _tag,
+      );
+    }
   }
 
   /// Load durable pending approvals from DB (safe to call multiple times).
@@ -141,6 +190,7 @@ class PendingApprovalHub {
   /// Test helper: clear in-memory state.
   void resetForTest() {
     _items.clear();
+    _dismissedIds.clear();
     _hydrated = false;
     _emit();
   }
