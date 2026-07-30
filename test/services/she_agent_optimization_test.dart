@@ -32,6 +32,17 @@ void main() {
     });
   });
 
+  group('SheService.buildCoreIdentityBlock (addressing)', () {
+    test('includes strict rules against honorific spam', () {
+      final block = SheService.instance.buildCoreIdentityBlock();
+      expect(block, contains('How to Address Them'));
+      expect(block, contains('Do NOT'));
+      expect(block, contains('主人'));
+      expect(block, contains('once per reply'));
+      expect(block, contains('internal role label'));
+    });
+  });
+
   group('SheService.buildSessionEndBlock (single-source memory)', () {
     test('self-reflections go to she_memory.db via memory.append', () {
       final block = SheService.instance.buildSessionEndBlock();
