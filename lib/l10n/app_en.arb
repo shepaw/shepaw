@@ -754,6 +754,9 @@
   "notif_showPreview": "Show Preview",
   "notif_showPreviewSub": "Show message content in notifications",
   "notif_permissionDenied": "Notification permission denied. Please enable it in system settings.",
+  "notif_osPermissionOffTitle": "System notifications are off",
+  "notif_osPermissionOffBody": "Allow notifications for this app in system settings, or you won't be alerted when an agent needs review while you're away.",
+  "notif_openSystemSettings": "Open system settings",
   "notif_newMessage": "New message",
   "notif_newMessageFrom": "New message from {name}",
   "@notif_newMessageFrom": {
@@ -1883,6 +1886,32 @@
   "workflow_waitingToolApprovalShort": "Awaiting tool approval",
   "workflow_viewRelatedMessage": "View related message",
   "workflow_goReview": "Go review",
+  "approval_goReview": "Go review",
+  "approval_waitingReview": "Awaiting review",
+  "approval_needsReviewTitle": "Needs your review",
+  "approval_needsPlanReview": "Workflow plan awaiting your approval",
+  "approval_needsActionReview": "Action awaiting your confirmation",
+  "approval_kindPlan": "plan",
+  "approval_kindAction": "action",
+  "approval_bannerTitle": "{agentName} needs review ({kind})",
+  "@approval_bannerTitle": {
+    "placeholders": {
+      "agentName": {
+        "type": "String"
+      },
+      "kind": {
+        "type": "String"
+      }
+    }
+  },
+  "approval_morePending": "{count} more pending",
+  "@approval_morePending": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
   "workflow_approveExec": "Approve",
   "workflow_revisionComment": "Revision comments",
   "workflow_revisionHint": "Describe your revision comments...",

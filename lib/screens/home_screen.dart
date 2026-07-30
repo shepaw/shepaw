@@ -220,8 +220,8 @@ class HomeScreenState extends State<HomeScreen> {
     });
   }
 
-  /// Agent头像（右下角显示未读红点）
-  Widget _buildAgentAvatar(Agent agent, int unreadCount) {
+  /// Agent头像（右下角显示未读红点；待审时橙色角标）
+  Widget _buildAgentAvatar(Agent agent, int unreadCount, {bool pendingApproval = false}) {
     return Stack(
       children: [
         Container(
@@ -267,6 +267,23 @@ class HomeScreenState extends State<HomeScreen> {
                   color: Colors.white,
                   fontSize: 10,
                   fontWeight: FontWeight.bold,
+                ),
+              ),
+            ),
+          )
+        else if (pendingApproval)
+          Positioned(
+            right: 0,
+            top: 0,
+            child: Container(
+              width: 12,
+              height: 12,
+              decoration: BoxDecoration(
+                color: Colors.orange[700],
+                shape: BoxShape.circle,
+                border: Border.all(
+                  color: Theme.of(context).scaffoldBackgroundColor,
+                  width: 1.5,
                 ),
               ),
             ),
@@ -385,13 +402,14 @@ class HomeScreenState extends State<HomeScreen> {
     return service.draftUpdatedAt(channelId);
   }
 
-  /// WeChat-style subtitle: typing > draft > last message / empty.
+  /// WeChat-style subtitle: typing > pending approval > draft > last message / empty.
   Widget _buildConversationSubtitle({
     required bool isTyping,
     required String typingText,
     required String draft,
     required String lastContent,
     required String emptyText,
+    bool pendingApproval = false,
   }) {
     final l10n = AppLocalizations.of(context);
     if (isTyping) {
@@ -401,6 +419,18 @@ class HomeScreenState extends State<HomeScreen> {
           fontSize: 13,
           color: Colors.green[600],
           fontStyle: FontStyle.italic,
+        ),
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+      );
+    }
+    if (pendingApproval) {
+      return Text(
+        l10n.approval_waitingReview,
+        style: TextStyle(
+          fontSize: 13,
+          color: Colors.orange[800],
+          fontWeight: FontWeight.w500,
         ),
         maxLines: 1,
         overflow: TextOverflow.ellipsis,
@@ -1350,6 +1380,7 @@ class HomeScreenState extends State<HomeScreen> {
     final memberCount = group.memberIds.where((id) => id != 'user').length;
     final sessionIds = _groupSessionChannelIds[group.id] ?? {};
     final isGroupTyping = sessionIds.intersection(_typingChannelIds).isNotEmpty;
+    final pendingApproval = _list.groupHasPendingApproval(group);
 
     final isSelected = widget.embedded &&
         widget.selectedConversation != null &&
@@ -1439,6 +1470,23 @@ class HomeScreenState extends State<HomeScreen> {
                         ),
                       ),
                     ),
+                  )
+                else if (pendingApproval)
+                  Positioned(
+                    right: 0,
+                    top: 0,
+                    child: Container(
+                      width: 12,
+                      height: 12,
+                      decoration: BoxDecoration(
+                        color: Colors.orange[700],
+                        shape: BoxShape.circle,
+                        border: Border.all(
+                          color: Theme.of(context).scaffoldBackgroundColor,
+                          width: 1.5,
+                        ),
+                      ),
+                    ),
                   ),
               ],
             ),
@@ -1481,6 +1529,7 @@ class HomeScreenState extends State<HomeScreen> {
                           draft: draft,
                           lastContent: lastContent,
                           emptyText: l10n.home_noMessages,
+                          pendingApproval: pendingApproval,
                         ),
                       ),
                       const SizedBox(width: 8),
@@ -1662,6 +1711,7 @@ class HomeScreenState extends State<HomeScreen> {
     final lastTime = latestMsg?['created_at'] as String?;
     final draft = _agentDraftText(agent);
     final draftUpdatedAt = _agentDraftUpdatedAt(agent);
+    final pendingApproval = _list.agentHasPendingApproval(agent.id);
 
     final isSelected = widget.embedded &&
         widget.selectedConversation != null &&
@@ -1726,8 +1776,8 @@ class HomeScreenState extends State<HomeScreen> {
         color: isSelected ? AppColors.primary.withValues(alpha: 0.08) : null,
         child: Row(
           children: [
-            // Agent头像 + 未读红点
-            _buildAgentAvatar(agent, unreadCount),
+            // Agent头像 + 未读红点 / 待审角标
+            _buildAgentAvatar(agent, unreadCount, pendingApproval: pendingApproval),
             const SizedBox(width: 12),
             // 中间：名称 + 最近消息
             Expanded(
@@ -1780,6 +1830,7 @@ class HomeScreenState extends State<HomeScreen> {
                           draft: draft,
                           lastContent: lastContent,
                           emptyText: l10n.home_noMessages,
+                          pendingApproval: pendingApproval,
                         ),
                       ),
                       const SizedBox(width: 8),

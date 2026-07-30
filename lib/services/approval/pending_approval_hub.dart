@@ -1,0 +1,165 @@
+import 'dart:async';
+
+import '../../models/workflow_models.dart';
+import '../../models/workflow_pending_approval.dart';
+import '../logger_service.dart';
+import '../workflow/workflow_service.dart';
+import 'pending_approval_item.dart';
+
+/// Global aggregator of high-priority pending approvals for reachability UI.
+///
+/// Approval cards still live in chat messages; this hub only tracks reminders
+/// for list badges, in-app banner, and system notifications.
+class PendingApprovalHub {
+  PendingApprovalHub._();
+  static final PendingApprovalHub instance = PendingApprovalHub._();
+
+  static const _tag = 'PendingApprovalHub';
+
+  final Map<String, PendingApprovalItem> _items = {};
+  final _controller =
+      StreamController<List<PendingApprovalItem>>.broadcast();
+
+  bool _hydrated = false;
+
+  List<PendingApprovalItem> get all {
+    final list = _items.values.toList()
+      ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+    return list;
+  }
+
+  Stream<List<PendingApprovalItem>> get stream async* {
+    yield all;
+    yield* _controller.stream;
+  }
+
+  List<PendingApprovalItem> itemsForChannel(String channelId) =>
+      all.where((i) => i.channelId == channelId).toList();
+
+  int countForChannel(String channelId) =>
+      _items.values.where((i) => i.channelId == channelId).length;
+
+  PendingApprovalItem? get latest => all.isEmpty ? null : all.first;
+
+  void upsert(PendingApprovalItem item) {
+    final existing = _items[item.id];
+    if (existing != null) {
+      final merged = existing.copyWith(
+        messageId: item.messageId ?? existing.messageId,
+        agentName:
+            item.agentName.isNotEmpty ? item.agentName : existing.agentName,
+      );
+      // Skip no-op updates so reachability UI / notifications are not churned.
+      if (merged.messageId == existing.messageId &&
+          merged.agentName == existing.agentName &&
+          merged.channelId == existing.channelId &&
+          merged.agentId == existing.agentId &&
+          merged.kind == existing.kind) {
+        return;
+      }
+      _items[item.id] = merged;
+    } else {
+      _items[item.id] = item;
+    }
+    _emit();
+  }
+
+  /// Insert without emitting; used by [hydrate] to batch one stream event.
+  void _upsertSilent(PendingApprovalItem item) {
+    final existing = _items[item.id];
+    if (existing != null) {
+      _items[item.id] = existing.copyWith(
+        messageId: item.messageId ?? existing.messageId,
+        agentName:
+            item.agentName.isNotEmpty ? item.agentName : existing.agentName,
+      );
+    } else {
+      _items[item.id] = item;
+    }
+  }
+
+  void resolve(String id) {
+    if (_items.remove(id) != null) {
+      _emit();
+    }
+  }
+
+  void resolveByWorkflowId(String workflowId) => resolve(PendingApprovalItem.planId(workflowId));
+
+  void resolveByConfirmationId(String confirmationId) =>
+      resolve(PendingApprovalItem.actionId(confirmationId));
+
+  void resolveChannel(String channelId) {
+    final ids = _items.values
+        .where((i) => i.channelId == channelId)
+        .map((i) => i.id)
+        .toList();
+    if (ids.isEmpty) return;
+    for (final id in ids) {
+      _items.remove(id);
+    }
+    _emit();
+  }
+
+  /// Load durable pending approvals from DB (safe to call multiple times).
+  Future<void> hydrate({WorkflowService? workflowService}) async {
+    if (_hydrated) return;
+    _hydrated = true;
+    final wf = workflowService ?? WorkflowService.instance;
+    try {
+      final plans = await wf.getWorkflowsByStatus(WorkflowStatus.pendingApproval);
+      for (final exec in plans) {
+        _upsertSilent(
+          PendingApprovalItem(
+            id: PendingApprovalItem.planId(exec.id),
+            channelId: exec.channelId,
+            messageId: null,
+            agentId: '',
+            agentName: exec.title.isNotEmpty ? exec.title : 'Workflow',
+            kind: PendingApprovalKind.plan,
+            createdAt: exec.createdAt.millisecondsSinceEpoch,
+          ),
+        );
+      }
+
+      final actions = await wf.getAllPendingApprovals();
+      for (final a in actions) {
+        _upsertSilent(_fromWorkflowPending(a));
+      }
+      _emit();
+      LoggerService().info(
+        'Hydrated ${_items.length} pending approval(s)',
+        tag: _tag,
+      );
+    } catch (e) {
+      LoggerService().warning('Hydrate failed: $e', tag: _tag);
+      // Allow retry on next call.
+      _hydrated = false;
+    }
+  }
+
+  /// Test helper: clear in-memory state.
+  void resetForTest() {
+    _items.clear();
+    _hydrated = false;
+    _emit();
+  }
+
+  void _emit() {
+    if (!_controller.isClosed) {
+      _controller.add(all);
+    }
+  }
+
+  static PendingApprovalItem _fromWorkflowPending(WorkflowPendingApproval a) {
+    return PendingApprovalItem(
+      id: PendingApprovalItem.actionId(a.confirmationId),
+      channelId: a.channelId,
+      messageId: a.messageId,
+      agentId: a.agentId,
+      agentName: a.agentName.isNotEmpty ? a.agentName : a.agentId,
+      kind: PendingApprovalKind.action,
+      createdAt: a.createdAt,
+    );
+  }
+}

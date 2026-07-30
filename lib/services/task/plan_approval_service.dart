@@ -30,6 +30,10 @@ class PlanApprovalService {
 
   final Map<String, PlanApprovalHandle> _pendingApprovals = {};
 
+  /// Optional reachability hook (injected to avoid hard import cycles in tests).
+  void Function(PlanApprovalHandle handle)? onPending;
+  void Function(PlanApprovalHandle handle)? onResolved;
+
   /// Register a pending plan approval for [channelId].
   /// Any stale handle for the same channel is cancelled first.
   Future<Map<String, dynamic>?> awaitPlanApproval({
@@ -43,6 +47,7 @@ class PlanApprovalService {
     final stale = _pendingApprovals[channelId];
     if (stale != null && !stale.completer.isCompleted) {
       stale.completer.complete(null);
+      onResolved?.call(stale);
     }
     final handle = PlanApprovalHandle(
       channelId: channelId,
@@ -53,6 +58,7 @@ class PlanApprovalService {
       completer: Completer(),
     );
     _pendingApprovals[channelId] = handle;
+    onPending?.call(handle);
     return handle.completer.future;
   }
 
@@ -63,16 +69,22 @@ class PlanApprovalService {
   /// Submit user's plan approval result (approve/reject/feedback).
   void completePlanApproval(String channelId, Map<String, dynamic> result) {
     final handle = _pendingApprovals.remove(channelId);
-    if (handle != null && !handle.completer.isCompleted) {
-      handle.completer.complete(result);
+    if (handle != null) {
+      if (!handle.completer.isCompleted) {
+        handle.completer.complete(result);
+      }
+      onResolved?.call(handle);
     }
   }
 
   /// Cancel pending plan_approval for [channelId] (e.g. user explicitly stops).
   void cancelPlanApproval(String channelId) {
     final handle = _pendingApprovals.remove(channelId);
-    if (handle != null && !handle.completer.isCompleted) {
-      handle.completer.complete(null);
+    if (handle != null) {
+      if (!handle.completer.isCompleted) {
+        handle.completer.complete(null);
+      }
+      onResolved?.call(handle);
     }
   }
 }

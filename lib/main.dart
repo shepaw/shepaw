@@ -22,6 +22,7 @@ import 'screens/password_setup_screen.dart';
 import 'screens/login_screen.dart';
 import 'screens/adaptive_home_screen.dart';
 import 'widgets/window_title_sync.dart';
+import 'widgets/approval/pending_approval_banner.dart';
 
 // 重新导出 ACP 常量，保持 settings_screen / remote_agent_detail_screen 等
 // 现有 `import '../main.dart' show kAcpServer...` 的引用不受影响。
@@ -269,8 +270,11 @@ class _MyAppState extends State<MyApp> {
                 return const Locale('zh');
               },
               theme: AppTheme.light,
-              builder: (context, child) =>
-                  WindowTitleSync(child: child ?? const SizedBox.shrink()),
+              builder: (context, child) => WindowTitleSync(
+                child: PendingApprovalBanner(
+                  child: child ?? const SizedBox.shrink(),
+                ),
+              ),
               home: const SplashScreen(),
               routes: {
                 '/setup': (context) => const PasswordSetupScreen(),

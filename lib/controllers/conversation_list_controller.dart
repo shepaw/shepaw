@@ -14,6 +14,8 @@ import '../peer/services/peer_pairing_service.dart';
 import '../peer/services/peer_storage_service.dart';
 import '../service_locator.dart' show getIt;
 import '../services/app_lifecycle_service.dart';
+import '../services/approval/pending_approval_hub.dart';
+import '../services/approval/pending_approval_item.dart';
 import '../services/chat_service.dart';
 import '../services/composer_draft_service.dart';
 import '../services/local_api_service.dart';
@@ -77,6 +79,7 @@ class ConversationListController extends ChangeNotifier {
   StreamSubscription? _peerEventSub;
   StreamSubscription? _peerListChangedSub;
   StreamSubscription? _agentsChangedSub;
+  StreamSubscription<List<PendingApprovalItem>>? _approvalHubSub;
 
   ComposerDraftService? _draftService;
 
@@ -106,11 +109,41 @@ class ConversationListController extends ChangeNotifier {
   /// Active session channel for [groupId], if known from the last preview load.
   String? groupChannelId(String groupId) => _groupChannelIds[groupId];
 
+  /// Whether [agentId]'s DM has a pending high-priority approval.
+  bool agentHasPendingApproval(String agentId) {
+    final channelId = _agentChannelIds[agentId];
+    return PendingApprovalHub.instance.all.any(
+      (i) =>
+          (i.agentId.isNotEmpty && i.agentId == agentId) ||
+          (channelId != null && i.channelId == channelId),
+    );
+  }
+
+  /// Whether [group] (or any of its sessions) has a pending approval.
+  bool groupHasPendingApproval(Channel group) {
+    final ids = <String>{
+      group.id,
+      group.groupFamilyId,
+      if (_groupChannelIds[group.id] != null) _groupChannelIds[group.id]!,
+      if (_groupChannelIds[group.groupFamilyId] != null)
+        _groupChannelIds[group.groupFamilyId]!,
+      ...?_groupSessionChannelIds[group.id],
+      ...?_groupSessionChannelIds[group.groupFamilyId],
+    };
+    return PendingApprovalHub.instance.all
+        .any((i) => ids.contains(i.channelId));
+  }
+
   void attach() {
     _chatService.typingAgentIds.addListener(_onTypingChanged);
     _chatService.typingChannelIds.addListener(_onTypingChanged);
 
     _ensureDraftListener();
+
+    _approvalHubSub = PendingApprovalHub.instance.stream.listen((_) {
+      if (_disposed) return;
+      notifyListeners();
+    });
 
     _peerMessageSub = PeerConnectionManager.instance.messages.listen((msg) {
       if (_disposed) return;
@@ -604,6 +637,7 @@ class ConversationListController extends ChangeNotifier {
     _peerEventSub?.cancel();
     _peerListChangedSub?.cancel();
     _agentsChangedSub?.cancel();
+    _approvalHubSub?.cancel();
     super.dispose();
   }
 }

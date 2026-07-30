@@ -1197,6 +1197,9 @@
   "notif_showPreview": "显示预览",
   "notif_showPreviewSub": "在通知中显示消息内容",
   "notif_permissionDenied": "通知权限被拒绝，请在系统设置中开启。",
+  "notif_osPermissionOffTitle": "系统通知未开启",
+  "notif_osPermissionOffBody": "请在系统设置中允许本应用发送通知，否则无法在离开 App 时提醒你审核。",
+  "notif_openSystemSettings": "去系统设置",
   "notif_newMessage": "新消息",
   "notif_newMessageFrom": "来自 {name} 的新消息",
   "@notif_newMessageFrom": {
@@ -2368,6 +2371,32 @@
   "workflow_waitingToolApprovalShort": "等待工具审批",
   "workflow_viewRelatedMessage": "查看相关消息",
   "workflow_goReview": "去审核",
+  "approval_goReview": "去审核",
+  "approval_waitingReview": "等待审核",
+  "approval_needsReviewTitle": "需要你审核",
+  "approval_needsPlanReview": "工作流计划等待你批准",
+  "approval_needsActionReview": "操作等待你确认",
+  "approval_kindPlan": "计划",
+  "approval_kindAction": "操作",
+  "approval_bannerTitle": "{agentName} 等待审核（{kind}）",
+  "@approval_bannerTitle": {
+    "placeholders": {
+      "agentName": {
+        "type": "String"
+      },
+      "kind": {
+        "type": "String"
+      }
+    }
+  },
+  "approval_morePending": "还有 {count} 条待审",
+  "@approval_morePending": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
   "workflow_approveExec": "批准执行",
   "workflow_revisionComment": "修改意见",
   "workflow_revisionHint": "请描述你的修改意见...",

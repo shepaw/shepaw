@@ -9,6 +9,8 @@ import '../local_database_service.dart';
 import '../logger_service.dart';
 import '../she_service.dart';
 import '../task/plan_approval_service.dart';
+import '../approval/pending_approval_hub.dart';
+import '../approval/pending_approval_item.dart';
 
 /// Headless interaction + She-DM jump bridge for She-triggered group sends.
 ///
@@ -85,6 +87,18 @@ class SheGroupApprovalBridge {
         planData: payload,
         messageId: savedMessageId,
       );
+    }
+
+    final hubItem = PendingApprovalItem.fromInteraction(
+      channelId: groupChannelId,
+      agentId: agentId,
+      agentName: agentName,
+      interactionType: interactionType,
+      data: payload,
+      messageId: savedMessageId,
+    );
+    if (hubItem != null) {
+      PendingApprovalHub.instance.upsert(hubItem);
     }
 
     await injectBridgeNotice(

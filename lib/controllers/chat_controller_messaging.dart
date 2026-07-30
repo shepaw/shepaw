@@ -1233,6 +1233,20 @@ mixin _MessagingOps on _ChatControllerBase {
     _notify();
     _emit(event);
 
+    if (currentChannelId != null) {
+      final hubItem = PendingApprovalItem.fromInteraction(
+        channelId: currentChannelId!,
+        agentId: agentId,
+        agentName: agentName,
+        interactionType: interactionType,
+        data: data,
+        messageId: sid,
+      );
+      if (hubItem != null) {
+        PendingApprovalHub.instance.upsert(hubItem);
+      }
+    }
+
     if (GroupInteractionPlanner.isNonBlocking(interactionType)) {
       if (!event.result.isCompleted) {
         event.result.complete(GroupInteractionPlanner.nonBlockingResult());

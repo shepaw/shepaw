@@ -3782,6 +3782,24 @@ abstract class AppLocalizations {
   /// **'通知权限被拒绝，请在系统设置中开启。'**
   String get notif_permissionDenied;
 
+  /// No description provided for @notif_osPermissionOffTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'系统通知未开启'**
+  String get notif_osPermissionOffTitle;
+
+  /// No description provided for @notif_osPermissionOffBody.
+  ///
+  /// In zh, this message translates to:
+  /// **'请在系统设置中允许本应用发送通知，否则无法在离开 App 时提醒你审核。'**
+  String get notif_osPermissionOffBody;
+
+  /// No description provided for @notif_openSystemSettings.
+  ///
+  /// In zh, this message translates to:
+  /// **'去系统设置'**
+  String get notif_openSystemSettings;
+
   /// No description provided for @notif_newMessage.
   ///
   /// In zh, this message translates to:
@@ -7298,6 +7316,60 @@ abstract class AppLocalizations {
   /// **'去审核'**
   String get workflow_goReview;
 
+  /// No description provided for @approval_goReview.
+  ///
+  /// In zh, this message translates to:
+  /// **'去审核'**
+  String get approval_goReview;
+
+  /// No description provided for @approval_waitingReview.
+  ///
+  /// In zh, this message translates to:
+  /// **'等待审核'**
+  String get approval_waitingReview;
+
+  /// No description provided for @approval_needsReviewTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'需要你审核'**
+  String get approval_needsReviewTitle;
+
+  /// No description provided for @approval_needsPlanReview.
+  ///
+  /// In zh, this message translates to:
+  /// **'工作流计划等待你批准'**
+  String get approval_needsPlanReview;
+
+  /// No description provided for @approval_needsActionReview.
+  ///
+  /// In zh, this message translates to:
+  /// **'操作等待你确认'**
+  String get approval_needsActionReview;
+
+  /// No description provided for @approval_kindPlan.
+  ///
+  /// In zh, this message translates to:
+  /// **'计划'**
+  String get approval_kindPlan;
+
+  /// No description provided for @approval_kindAction.
+  ///
+  /// In zh, this message translates to:
+  /// **'操作'**
+  String get approval_kindAction;
+
+  /// No description provided for @approval_bannerTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'{agentName} 等待审核（{kind}）'**
+  String approval_bannerTitle(String agentName, String kind);
+
+  /// No description provided for @approval_morePending.
+  ///
+  /// In zh, this message translates to:
+  /// **'还有 {count} 条待审'**
+  String approval_morePending(int count);
+
   /// No description provided for @workflow_approveExec.
   ///
   /// In zh, this message translates to:
@@ -8145,30 +8217,57 @@ abstract class AppLocalizations {
   String get dispatch_confirmDispatch;
 
   /// No description provided for @group_approvalBridgeTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'群审核 · {groupName}'**
   String group_approvalBridgeTitle(String groupName);
 
   /// No description provided for @group_approvalBridgePending.
+  ///
+  /// In zh, this message translates to:
+  /// **'待审核'**
   String get group_approvalBridgePending;
 
   /// No description provided for @group_approvalBridgeBody.
+  ///
+  /// In zh, this message translates to:
+  /// **'{agentName} 在绑定群会话中需要你进行{kind}。'**
   String group_approvalBridgeBody(String agentName, String kind);
 
   /// No description provided for @group_approvalBridgeOpen.
+  ///
+  /// In zh, this message translates to:
+  /// **'打开群会话'**
   String get group_approvalBridgeOpen;
 
   /// No description provided for @group_approvalKindPlan.
+  ///
+  /// In zh, this message translates to:
+  /// **'工作流计划审批'**
   String get group_approvalKindPlan;
 
   /// No description provided for @group_approvalKindAction.
+  ///
+  /// In zh, this message translates to:
+  /// **'操作确认'**
   String get group_approvalKindAction;
 
   /// No description provided for @group_approvalKindForm.
+  ///
+  /// In zh, this message translates to:
+  /// **'表单填写'**
   String get group_approvalKindForm;
 
   /// No description provided for @group_approvalKindSelect.
+  ///
+  /// In zh, this message translates to:
+  /// **'选项确认'**
   String get group_approvalKindSelect;
 
   /// No description provided for @group_approvalKindUpload.
+  ///
+  /// In zh, this message translates to:
+  /// **'文件上传'**
   String get group_approvalKindUpload;
 
   /// No description provided for @dispatch_title.

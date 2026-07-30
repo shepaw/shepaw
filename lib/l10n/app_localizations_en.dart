@@ -2100,6 +2100,16 @@ class AppLocalizationsEn extends AppLocalizations {
       'Notification permission denied. Please enable it in system settings.';
 
   @override
+  String get notif_osPermissionOffTitle => 'System notifications are off';
+
+  @override
+  String get notif_osPermissionOffBody =>
+      'Allow notifications for this app in system settings, or you won\'t be alerted when an agent needs review while you\'re away.';
+
+  @override
+  String get notif_openSystemSettings => 'Open system settings';
+
+  @override
   String get notif_newMessage => 'New message';
 
   @override
@@ -4116,6 +4126,37 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get workflow_goReview => 'Go review';
+
+  @override
+  String get approval_goReview => 'Go review';
+
+  @override
+  String get approval_waitingReview => 'Awaiting review';
+
+  @override
+  String get approval_needsReviewTitle => 'Needs your review';
+
+  @override
+  String get approval_needsPlanReview => 'Workflow plan awaiting your approval';
+
+  @override
+  String get approval_needsActionReview => 'Action awaiting your confirmation';
+
+  @override
+  String get approval_kindPlan => 'plan';
+
+  @override
+  String get approval_kindAction => 'action';
+
+  @override
+  String approval_bannerTitle(String agentName, String kind) {
+    return '$agentName needs review ($kind)';
+  }
+
+  @override
+  String approval_morePending(int count) {
+    return '$count more pending';
+  }
 
   @override
   String get workflow_approveExec => 'Approve';

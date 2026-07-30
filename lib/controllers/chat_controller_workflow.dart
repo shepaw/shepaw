@@ -24,6 +24,20 @@ mixin _WorkflowOps on _ChatControllerBase {
   ) {
     setActiveWorkflowId(workflowId);
     _updateStreamingMetadata({'plan_approval': planData});
+    final channelId = currentChannelId;
+    if (channelId != null) {
+      PendingApprovalHub.instance.upsert(
+        PendingApprovalItem(
+          id: PendingApprovalItem.planId(workflowId),
+          channelId: channelId,
+          messageId: streamingMessageId,
+          agentId: agentId ?? '',
+          agentName: agentName ?? initialAgentName ?? 'Agent',
+          kind: PendingApprovalKind.plan,
+          createdAt: DateTime.now().millisecondsSinceEpoch,
+        ),
+      );
+    }
   }
 
   /// Peer agent tool approval blocking a workflow step (for progress panel UI).
@@ -486,6 +500,20 @@ mixin _WorkflowOps on _ChatControllerBase {
     pendingGroupInteractions[pendingKey] = event;
     _notify();
     _emit(event);
+
+    if (currentChannelId != null) {
+      final hubItem = PendingApprovalItem.fromInteraction(
+        channelId: currentChannelId!,
+        agentId: agentId,
+        agentName: agentName,
+        interactionType: interactionType,
+        data: data,
+        messageId: sid,
+      );
+      if (hubItem != null) {
+        PendingApprovalHub.instance.upsert(hubItem);
+      }
+    }
 
     if (interactionType == 'action_confirmation') {
       final staleConfirmationId = workflow.registerWorkflowPeerApproval(

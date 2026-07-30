@@ -34,6 +34,11 @@ import 'storage/store_service.dart';
 import 'storage/sync_engine.dart';
 import 'storage/import_request_notifier.dart';
 import 'storage/import_grant_notifier.dart';
+import 'services/approval/pending_approval_hub.dart';
+import 'services/approval/pending_approval_item.dart';
+import 'services/approval/approval_reachability_notifier.dart';
+import 'services/chat_navigation_service.dart';
+import 'services/task/plan_approval_service.dart';
 import 'she_network/memory_exchange_service.dart';
 import 'she_network/presence_service.dart';
 import 'services/she_service.dart';
@@ -114,6 +119,10 @@ class AppBootstrap {
     UpdateNotificationService().init(navigatorKey: navigatorKey);
     ImportRequestNotifier.instance.init(navigatorKey: navigatorKey);
     ImportGrantNotifier.instance.init(navigatorKey: navigatorKey);
+    ChatNavigationService.instance.init(navigatorKey: navigatorKey);
+    _wirePlanApprovalReachability();
+    await PendingApprovalHub.instance.hydrate();
+    ApprovalReachabilityNotifier.instance.init(navigatorKey: navigatorKey);
     ForegroundTaskService().init();
     await ScheduledTaskService().startScheduler();
 
@@ -134,6 +143,47 @@ class AppBootstrap {
       acpServer: acp?.$1,
       permissionService: acp?.$2,
     );
+  }
+
+  /// Wire [PlanApprovalService] Completer registry into [PendingApprovalHub].
+  static void _wirePlanApprovalReachability() {
+    final plans = PlanApprovalService.instance;
+    plans.onPending = (handle) {
+      final workflowId = handle.planData['_workflowId'] as String?;
+      PendingApprovalHub.instance.upsert(
+        PendingApprovalItem(
+          id: workflowId != null
+              ? PendingApprovalItem.planId(workflowId)
+              : PendingApprovalItem.fallbackId(
+                  kind: PendingApprovalKind.plan,
+                  channelId: handle.channelId,
+                  messageId: handle.messageId,
+                  agentId: handle.agentId,
+                ),
+          channelId: handle.channelId,
+          messageId: handle.messageId,
+          agentId: handle.agentId,
+          agentName: handle.agentName,
+          kind: PendingApprovalKind.plan,
+          createdAt: DateTime.now().millisecondsSinceEpoch,
+        ),
+      );
+    };
+    plans.onResolved = (handle) {
+      final workflowId = handle.planData['_workflowId'] as String?;
+      if (workflowId != null) {
+        PendingApprovalHub.instance.resolveByWorkflowId(workflowId);
+      } else {
+        PendingApprovalHub.instance.resolve(
+          PendingApprovalItem.fallbackId(
+            kind: PendingApprovalKind.plan,
+            channelId: handle.channelId,
+            messageId: handle.messageId,
+            agentId: handle.agentId,
+          ),
+        );
+      }
+    };
   }
 
   /// Web/Windows/Linux 平台初始化 FFI 数据库工厂。

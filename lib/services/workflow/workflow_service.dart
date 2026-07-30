@@ -5,6 +5,8 @@ import 'package:uuid/uuid.dart';
 import '../../models/planning_models.dart';
 import '../../models/workflow_models.dart';
 import '../../models/workflow_pending_approval.dart';
+import '../approval/pending_approval_hub.dart';
+import '../approval/pending_approval_item.dart';
 import '../local_database_service.dart';
 import '../logger_service.dart';
 
@@ -101,6 +103,16 @@ class WorkflowService {
     LoggerService().info(
       'WorkflowService: created workflow $workflowId with ${steps.length} steps',
       tag: 'WorkflowService',
+    );
+    PendingApprovalHub.instance.upsert(
+      PendingApprovalItem(
+        id: PendingApprovalItem.planId(workflowId),
+        channelId: channelId,
+        agentId: '',
+        agentName: execution.title.isNotEmpty ? execution.title : 'Workflow',
+        kind: PendingApprovalKind.plan,
+        createdAt: execution.createdAt.millisecondsSinceEpoch,
+      ),
     );
     return execution;
   }
@@ -206,6 +218,7 @@ class WorkflowService {
       where: 'id = ? AND status = ?',
       whereArgs: [workflowId, WorkflowStatus.pendingApproval.dbValue],
     );
+    PendingApprovalHub.instance.resolveByWorkflowId(workflowId);
     _notify(workflowId);
   }
 
@@ -295,6 +308,7 @@ class WorkflowService {
       where: 'workflow_execution_id = ? AND status = ?',
       whereArgs: [workflowId, StepExecutionStatus.pending.dbValue],
     );
+    PendingApprovalHub.instance.resolveByWorkflowId(workflowId);
     _notify(workflowId);
   }
 
@@ -437,6 +451,18 @@ class WorkflowService {
       approval.toMap(),
       conflictAlgorithm: ConflictAlgorithm.replace,
     );
+    PendingApprovalHub.instance.upsert(
+      PendingApprovalItem(
+        id: PendingApprovalItem.actionId(approval.confirmationId),
+        channelId: approval.channelId,
+        messageId: approval.messageId,
+        agentId: approval.agentId,
+        agentName:
+            approval.agentName.isNotEmpty ? approval.agentName : approval.agentId,
+        kind: PendingApprovalKind.action,
+        createdAt: approval.createdAt,
+      ),
+    );
     _notify(approval.workflowId);
   }
 
@@ -453,7 +479,22 @@ class WorkflowService {
       whereArgs: [approvalId, approvalId],
     );
     final pending = await getPendingApprovalById(approvalId);
-    if (pending != null) _notify(pending.workflowId);
+    if (pending != null) {
+      PendingApprovalHub.instance.upsert(
+        PendingApprovalItem(
+          id: PendingApprovalItem.actionId(pending.confirmationId),
+          channelId: pending.channelId,
+          messageId: messageId,
+          agentId: pending.agentId,
+          agentName: pending.agentName.isNotEmpty
+              ? pending.agentName
+              : pending.agentId,
+          kind: PendingApprovalKind.action,
+          createdAt: pending.createdAt,
+        ),
+      );
+      _notify(pending.workflowId);
+    }
   }
 
   /// Mark a pending approval as submitted after the user taps Allow/Deny.
@@ -478,7 +519,11 @@ class WorkflowService {
       whereArgs: [approvalId, approvalId],
     );
     final pending = await getPendingApprovalById(approvalId);
-    if (pending != null) _notify(pending.workflowId);
+    if (pending != null) {
+      PendingApprovalHub.instance
+          .resolveByConfirmationId(pending.confirmationId);
+      _notify(pending.workflowId);
+    }
   }
 
   Future<WorkflowPendingApproval?> getPendingApprovalById(String id) async {
@@ -521,5 +566,33 @@ class WorkflowService {
       orderBy: 'created_at DESC',
     );
     return rows.map(WorkflowPendingApproval.fromMap).toList();
+  }
+
+  /// All pending peer tool approvals across channels (newest first).
+  Future<List<WorkflowPendingApproval>> getAllPendingApprovals() async {
+    final db = await _db.database;
+    final rows = await db.query(
+      'workflow_pending_approvals',
+      where: 'status = ?',
+      whereArgs: ['pending'],
+      orderBy: 'created_at DESC',
+    );
+    return rows.map(WorkflowPendingApproval.fromMap).toList();
+  }
+
+  /// Workflows in a given status (newest first).
+  Future<List<WorkflowExecution>> getWorkflowsByStatus(
+    WorkflowStatus status, {
+    int limit = 100,
+  }) async {
+    final db = await _db.database;
+    final rows = await db.query(
+      'workflow_executions',
+      where: 'status = ?',
+      whereArgs: [status.dbValue],
+      orderBy: 'created_at DESC',
+      limit: limit,
+    );
+    return rows.map(WorkflowExecution.fromMap).toList();
   }
 }

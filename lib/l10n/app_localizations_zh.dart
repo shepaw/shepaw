@@ -2027,6 +2027,16 @@ class AppLocalizationsZh extends AppLocalizations {
   String get notif_permissionDenied => '通知权限被拒绝，请在系统设置中开启。';
 
   @override
+  String get notif_osPermissionOffTitle => '系统通知未开启';
+
+  @override
+  String get notif_osPermissionOffBody =>
+      '请在系统设置中允许本应用发送通知，否则无法在离开 App 时提醒你审核。';
+
+  @override
+  String get notif_openSystemSettings => '去系统设置';
+
+  @override
   String get notif_newMessage => '新消息';
 
   @override
@@ -3965,6 +3975,37 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get workflow_goReview => '去审核';
+
+  @override
+  String get approval_goReview => '去审核';
+
+  @override
+  String get approval_waitingReview => '等待审核';
+
+  @override
+  String get approval_needsReviewTitle => '需要你审核';
+
+  @override
+  String get approval_needsPlanReview => '工作流计划等待你批准';
+
+  @override
+  String get approval_needsActionReview => '操作等待你确认';
+
+  @override
+  String get approval_kindPlan => '计划';
+
+  @override
+  String get approval_kindAction => '操作';
+
+  @override
+  String approval_bannerTitle(String agentName, String kind) {
+    return '$agentName 等待审核（$kind）';
+  }
+
+  @override
+  String approval_morePending(int count) {
+    return '还有 $count 条待审';
+  }
 
   @override
   String get workflow_approveExec => '批准执行';

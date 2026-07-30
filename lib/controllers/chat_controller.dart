@@ -21,6 +21,8 @@ import '../services/interactive_response_handler.dart';
 import '../services/logger_service.dart';
 import '../services/she_service.dart';
 import '../services/workflow/workflow_service.dart';
+import '../services/approval/pending_approval_hub.dart';
+import '../services/approval/pending_approval_item.dart';
 import '../models/workflow_models.dart';
 import '../models/workflow_pending_approval.dart';
 import '../peer/services/peer_agent_client_service.dart';

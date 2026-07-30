@@ -118,6 +118,7 @@ mixin _InteractionOps on _ChatControllerBase {
     String actionId,
     String actionLabel,
   ) async {
+    PendingApprovalHub.instance.resolveByConfirmationId(confirmationId);
     final pending = workflowPeerApprovalPending;
     final workflowIdForResume = pending?.workflowId;
     Message? msg;
@@ -272,6 +273,19 @@ mixin _InteractionOps on _ChatControllerBase {
         ),
       );
 
+      if (workflowId != null) {
+        PendingApprovalHub.instance.resolveByWorkflowId(workflowId);
+      } else {
+        PendingApprovalHub.instance.resolve(
+          PendingApprovalItem.fallbackId(
+            kind: PendingApprovalKind.plan,
+            channelId: currentChannelId!,
+            messageId: originalMessage.id,
+            agentId: agentId,
+          ),
+        );
+      }
+
       // If approved and has workflow ID, start execution immediately.
       if (approved && workflowId != null) {
         setActiveWorkflowId(workflowId);
@@ -301,6 +315,8 @@ mixin _InteractionOps on _ChatControllerBase {
       'context=$confirmationContext, isProcessing=$isProcessing',
       tag: 'ChatController',
     );
+
+    PendingApprovalHub.instance.resolveByConfirmationId(confirmationId);
 
     // Peer in-band approvals in group chat: the original P2P sendChat turn is
     // still live on GroupAgentExecutor. Submit via submitApproval instead of

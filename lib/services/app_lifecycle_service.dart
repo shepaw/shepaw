@@ -29,6 +29,12 @@ class AppLifecycleService with WidgetsBindingObserver {
   /// carrying the duration it was backgrounded.
   Stream<Duration> get onResume => _onResumeController.stream;
 
+  final StreamController<String?> _activeChannelController =
+      StreamController<String?>.broadcast();
+
+  /// Fires whenever [setActiveChannel] changes the viewed channel.
+  Stream<String?> get onActiveChannelChanged => _activeChannelController.stream;
+
   /// Start observing the app lifecycle. Safe to call multiple times.
   void init() {
     if (_observing) return;
@@ -38,7 +44,11 @@ class AppLifecycleService with WidgetsBindingObserver {
 
   /// Set the active channel (call from ChatScreen).
   void setActiveChannel(String? channelId) {
+    if (activeChannelId == channelId) return;
     activeChannelId = channelId;
+    if (!_activeChannelController.isClosed) {
+      _activeChannelController.add(channelId);
+    }
   }
 
   /// Returns true when the notification should be suppressed:
@@ -76,5 +86,6 @@ class AppLifecycleService with WidgetsBindingObserver {
       _observing = false;
     }
     _onResumeController.close();
+    _activeChannelController.close();
   }
 }

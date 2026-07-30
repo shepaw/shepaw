@@ -28,6 +28,7 @@ import 'storage_advanced_screen.dart';
 import 'she_circle_screen.dart';
 import '../utils/layout_utils.dart';
 import '../services/native_window_service.dart';
+import '../services/chat_navigation_service.dart';
 
 /// Desktop split-panel layout similar to WeChat desktop.
 /// Left: icon sidebar + conversation / contacts / storage list.
@@ -86,6 +87,7 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
   void initState() {
     super.initState();
     _navObserver = _RightPanelNavigatorObserver(_onRightPanelRootPopped);
+    ChatNavigationService.instance.setDesktopHandler(_onConversationSelected);
     // 监听 peer 事件，删除 peer 后右面板切回空
     _peerEventSub = PeerConnectionManager.instance.events.listen((event) {
       if (event.type == PeerConnectionEventType.disconnected &&
@@ -133,6 +135,7 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
 
   @override
   void dispose() {
+    ChatNavigationService.instance.setDesktopHandler(null);
     _peerEventSub?.cancel();
     _peerListChangedSub?.cancel();
     FloatingPanelManager.instance.closeAll();
