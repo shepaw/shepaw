@@ -1,13 +1,22 @@
 import 'dart:io' show Platform;
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter_foreground_task/flutter_foreground_task.dart';
+import 'package:wakelock_plus/wakelock_plus.dart';
 import 'logger_service.dart';
 
-/// Manages an Android foreground service to keep the app alive while agent
-/// tasks are running. Uses reference counting so the service stays active as
-/// long as at least one agent task is in progress.
+/// Keeps the app and screen alive while agent tasks are running.
 ///
-/// On non-Android platforms this is a silent no-op.
+/// Two complementary mechanisms, both driven by the same reference counts:
+///
+/// 1. **Screen wakelock** (iOS + Android + desktop): prevents the display from
+///    auto-sleeping while a turn is in progress. Screen-off otherwise suspends
+///    the process (especially on iOS) and kills ACP WebSockets → connection
+///    timeout / "interrupted while in background".
+/// 2. **Android foreground service**: keeps the process alive if the user
+///    backgrounds the app mid-turn. No-op on other platforms.
+///
+/// Uses reference counting so both stay active as long as at least one agent
+/// task is in progress.
 class ForegroundTaskService {
   ForegroundTaskService._();
   static final ForegroundTaskService _instance = ForegroundTaskService._();
@@ -19,16 +28,21 @@ class ForegroundTaskService {
 
   bool _initialized = false;
   bool _running = false;
+  bool _screenWakelockHeld = false;
 
-  /// Whether the foreground service is currently active.
+  /// Whether the Android foreground service is currently active.
   bool get isRunning => _running;
 
   /// True only on Android (not web).
-  bool get _isSupported => !kIsWeb && Platform.isAndroid;
+  bool get _isAndroidFgsSupported => !kIsWeb && Platform.isAndroid;
+
+  /// Screen wakelock is useful on any non-web platform that can sleep the
+  /// display and suspend the isolate.
+  bool get _isScreenWakelockSupported => !kIsWeb;
 
   /// Call once during app startup (after [WidgetsFlutterBinding.ensureInitialized]).
   void init() {
-    if (!_isSupported || _initialized) return;
+    if (!_isAndroidFgsSupported || _initialized) return;
     _initialized = true;
 
     FlutterForegroundTask.init(
@@ -50,23 +64,29 @@ class ForegroundTaskService {
     );
   }
 
-  /// Increment the reference count for [agentName] and start the foreground
-  /// service if it is not already running.
+  /// Increment the reference count for [agentName] and start keep-alive
+  /// mechanisms if they are not already running.
   Future<void> acquireTask(String agentName) async {
-    if (!_isSupported) return;
+    if (kIsWeb) return;
 
     _activeAgentCounts[agentName] = (_activeAgentCounts[agentName] ?? 0) + 1;
-    LoggerService().debug('acquire "$agentName" (count: ${_activeAgentCounts[agentName]}, total agents: ${_activeAgentCounts.length})', tag: 'ForegroundTask');
+    LoggerService().debug(
+      'acquire "$agentName" (count: ${_activeAgentCounts[agentName]}, '
+      'total agents: ${_activeAgentCounts.length})',
+      tag: 'ForegroundTask',
+    );
 
-    if (!_running) {
+    await _syncScreenWakelock();
+
+    if (_isAndroidFgsSupported && !_running) {
       await _startService();
     }
   }
 
   /// Decrement the reference count for [agentName]. When all counts reach zero
-  /// the foreground service is stopped.
+  /// keep-alive mechanisms are stopped.
   Future<void> releaseTask(String agentName) async {
-    if (!_isSupported) return;
+    if (kIsWeb) return;
 
     final current = _activeAgentCounts[agentName] ?? 0;
     if (current <= 1) {
@@ -75,20 +95,53 @@ class ForegroundTaskService {
       _activeAgentCounts[agentName] = current - 1;
     }
 
-    LoggerService().debug('release "$agentName" (count: ${_activeAgentCounts[agentName] ?? 0}, total agents: ${_activeAgentCounts.length})', tag: 'ForegroundTask');
+    LoggerService().debug(
+      'release "$agentName" (count: ${_activeAgentCounts[agentName] ?? 0}, '
+      'total agents: ${_activeAgentCounts.length})',
+      tag: 'ForegroundTask',
+    );
 
-    if (_activeAgentCounts.isEmpty && _running) {
+    await _syncScreenWakelock();
+
+    if (_isAndroidFgsSupported && _activeAgentCounts.isEmpty && _running) {
       await _stopService();
     }
   }
 
-  /// Emergency cleanup — release all tasks and stop the service immediately.
+  /// Emergency cleanup — release all tasks and stop keep-alive immediately.
   Future<void> releaseAllTasks() async {
-    if (!_isSupported) return;
+    if (kIsWeb) return;
 
     _activeAgentCounts.clear();
-    if (_running) {
+    await _syncScreenWakelock();
+    if (_isAndroidFgsSupported && _running) {
       await _stopService();
+    }
+  }
+
+  Future<void> _syncScreenWakelock() async {
+    if (!_isScreenWakelockSupported) return;
+
+    final shouldHold = _activeAgentCounts.isNotEmpty;
+    if (shouldHold == _screenWakelockHeld) return;
+
+    try {
+      if (shouldHold) {
+        await WakelockPlus.enable();
+        _screenWakelockHeld = true;
+        LoggerService().info('Screen wakelock enabled', tag: 'ForegroundTask');
+      } else {
+        await WakelockPlus.disable();
+        _screenWakelockHeld = false;
+        LoggerService().info('Screen wakelock disabled', tag: 'ForegroundTask');
+      }
+    } catch (e) {
+      LoggerService().error(
+        'Failed to sync screen wakelock (want=$shouldHold)',
+        tag: 'ForegroundTask',
+        error: e,
+      );
+      // Leave _screenWakelockHeld unchanged so the next acquire/release retries.
     }
   }
 

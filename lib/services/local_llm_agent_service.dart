@@ -137,6 +137,10 @@ class LocalLLMAgentService {
     String? systemPromptOverride,
     List<AttachmentData>? attachments,
     bool skipSheMemoryStack = false,
+    /// Extra OpenAI/Claude tool defs merged into the request (e.g. group_dispatch).
+    List<Map<String, dynamic>>? extraTools,
+    /// UI tool names to omit (e.g. request_history in group chat).
+    Set<String> excludeUIToolNames = const {},
   }) async* {
     final resolved = _resolveModelConfig(agent, attachments);
     final effectiveIncludeShepawCli =
@@ -175,6 +179,8 @@ class LocalLLMAgentService {
         enableUITools: enableUITools,
         includeShepawCli: effectiveIncludeShepawCli,
         attachments: attachments,
+        extraTools: extraTools,
+        excludeUIToolNames: excludeUIToolNames,
       );
       return;
     }
@@ -191,6 +197,8 @@ class LocalLLMAgentService {
           enableUITools: enableUITools,
           includeShepawCli: effectiveIncludeShepawCli,
           attachments: attachments,
+          extraTools: extraTools,
+          excludeUIToolNames: excludeUIToolNames,
         );
         break;
       case 'glm':
@@ -207,9 +215,43 @@ class LocalLLMAgentService {
           enableUITools: enableUITools,
           includeShepawCli: effectiveIncludeShepawCli,
           attachments: attachments,
+          extraTools: extraTools,
+          excludeUIToolNames: excludeUIToolNames,
         );
         break;
     }
+  }
+
+  /// Build the tools array for a chat request.
+  List<Map<String, dynamic>> _buildChatTools({
+    required bool isClaude,
+    required bool enableUITools,
+    required bool includeShepawCli,
+    List<Map<String, dynamic>>? extraTools,
+    Set<String> excludeUIToolNames = const {},
+  }) {
+    final tools = <Map<String, dynamic>>[];
+    if (enableUITools) {
+      final ui = isClaude
+          ? UIComponentRegistry.instance.claudeTools()
+          : UIComponentRegistry.instance.openAITools();
+      for (final t in ui) {
+        final name = isClaude
+            ? t['name'] as String?
+            : (t['function'] as Map?)?['name'] as String?;
+        if (name != null && excludeUIToolNames.contains(name)) continue;
+        tools.add(t);
+      }
+    }
+    if (extraTools != null) tools.addAll(extraTools);
+    if (includeShepawCli) {
+      tools.add(
+        isClaude
+            ? ShepawCLI.instance.claudeTool()
+            : ShepawCLI.instance.openAITool(),
+      );
+    }
+    return tools;
   }
 
   // =========================================================================
@@ -378,6 +420,8 @@ class LocalLLMAgentService {
     bool enableUITools = true,
     bool includeShepawCli = false,
     List<AttachmentData>? attachments,
+    List<Map<String, dynamic>>? extraTools,
+    Set<String> excludeUIToolNames = const {},
   }) async* {
     final messages = <Map<String, dynamic>>[];
     if (systemPrompt.isNotEmpty) {
@@ -740,6 +784,8 @@ class LocalLLMAgentService {
     bool enableUITools = true,
     bool includeShepawCli = false,
     List<AttachmentData>? attachments,
+    List<Map<String, dynamic>>? extraTools,
+    Set<String> excludeUIToolNames = const {},
   }) async* {
     final effectiveSystemPrompt = enableUITools
         ? '$systemPrompt${UIComponentRegistry.instance.systemPromptSuffix}'
@@ -809,9 +855,14 @@ class LocalLLMAgentService {
       'stream': true,
       'stream_options': {'include_usage': true},
     };
-    if (enableUITools) {
-      final tools = UIComponentRegistry.instance.openAITools();
-      if (includeShepawCli) tools.add(ShepawCLI.instance.openAITool());
+    final tools = _buildChatTools(
+      isClaude: false,
+      enableUITools: enableUITools,
+      includeShepawCli: includeShepawCli,
+      extraTools: extraTools,
+      excludeUIToolNames: excludeUIToolNames,
+    );
+    if (tools.isNotEmpty) {
       requestBody['tools'] = tools;
     }
 
@@ -843,6 +894,8 @@ class LocalLLMAgentService {
     bool enableUITools = true,
     bool includeShepawCli = false,
     List<AttachmentData>? attachments,
+    List<Map<String, dynamic>>? extraTools,
+    Set<String> excludeUIToolNames = const {},
   }) async* {
     final effectiveSystemPrompt = enableUITools
         ? '$systemPrompt${UIComponentRegistry.instance.systemPromptSuffix}'
@@ -872,9 +925,14 @@ class LocalLLMAgentService {
     if (effectiveSystemPrompt.isNotEmpty) {
       requestBody['system'] = effectiveSystemPrompt;
     }
-    if (enableUITools) {
-      final tools = UIComponentRegistry.instance.claudeTools();
-      if (includeShepawCli) tools.add(ShepawCLI.instance.claudeTool());
+    final tools = _buildChatTools(
+      isClaude: true,
+      enableUITools: enableUITools,
+      includeShepawCli: includeShepawCli,
+      extraTools: extraTools,
+      excludeUIToolNames: excludeUIToolNames,
+    );
+    if (tools.isNotEmpty) {
       requestBody['tools'] = tools;
     }
 

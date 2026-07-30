@@ -16,6 +16,7 @@ import 'group_dispatch_parser.dart';
 import 'group_agent_executor.dart';
 import 'group_prompt_builder.dart';
 import 'group_member_session_service.dart';
+import 'group_turn_result.dart';
 import 'planning_helpers.dart';
 import '../../storage/artifact_service.dart';
 
@@ -275,6 +276,7 @@ class GroupOrchestrationService {
           ).catchError((e) {
             LoggerService().error('Group agent ${agent.name} uncaught error', tag: 'GroupOrchestrationService', error: e);
             onAgentDone?.call(agent.id, agent.name, true);
+            return const GroupTurnResult();
           }),
         );
       }
@@ -344,6 +346,7 @@ class GroupOrchestrationService {
               ).catchError((e) {
                 LoggerService().error('Cascade agent (5a) ${agent.name} uncaught error', tag: 'GroupOrchestrationService', error: e);
                 onAgentDone?.call(agent.id, agent.name, true);
+                return const GroupTurnResult();
               }),
             );
           }
@@ -538,13 +541,47 @@ class GroupOrchestrationService {
         final maxRounds = channel?.effectiveMaxLoopRounds ?? 50;
         int currentRound = 0;
         String adminResponseContent = '';
+        var adminTurn = const GroupTurnResult();
+
+        GroupTurnResult resolveAdminDecision(GroupTurnResult toolTurn) {
+          final text = adminResponseContent;
+          if (toolTurn.hasOrchestrationSignal) {
+            return GroupTurnResult(
+              content: text.isNotEmpty ? text : toolTurn.content,
+              steps: toolTurn.steps,
+              wantsContinue: toolTurn.wantsContinue,
+              isDone: toolTurn.isDone || toolTurn.isPause,
+              isPause: toolTurn.isPause,
+              parseError: toolTurn.parseError,
+              unresolvedNames: toolTurn.unresolvedNames,
+              hasOrchestrationSignal: true,
+            );
+          }
+          // Legacy fallback: ```json``` dispatch block in chat text.
+          final parsed =
+              _dispatchParser.parseStructuredDispatch(text, nonAdminAgents);
+          if (parsed.parseError != null && parsed.steps.isEmpty) {
+            return GroupTurnResult(
+              content: text,
+              parseError: parsed.parseError,
+              unresolvedNames: parsed.unresolvedNames,
+            );
+          }
+          return GroupTurnResult(
+            content: text,
+            steps: parsed.steps,
+            wantsContinue: parsed.wantsContinue,
+            isDone: parsed.steps.isEmpty && !parsed.wantsContinue,
+            unresolvedNames: parsed.unresolvedNames,
+          );
+        }
 
         // 1. First admin call
         onAgentStart?.call(adminAgent.id, adminAgent.name);
         final isFirstMessage = !agentIdsWithHistory.contains(adminAgent.id);
         adminResponseContent = '';
         try {
-          await _executor.processGroupAgent(
+          adminTurn = await _executor.processGroupAgent(
             agent: adminAgent,
             channelId: channelId,
             content: effectiveContent,
@@ -577,6 +614,7 @@ class GroupOrchestrationService {
           onAgentDone?.call(adminAgent.id, adminAgent.name, adminResponseContent.trim().isEmpty);
         }
         currentRound++;
+        adminTurn = resolveAdminDecision(adminTurn);
 
         // If the first admin reply already contains a plan or dispatch, create a workflow
         // before entering the delegation loop.
@@ -598,8 +636,7 @@ class GroupOrchestrationService {
           }
         }
 
-        final firstDispatch =
-            _dispatchParser.parseStructuredDispatch(adminResponseContent, nonAdminAgents);
+        final firstDispatch = adminTurn;
         if (firstDispatch.steps.isNotEmpty) {
           await _dispatchParser.stripDispatchJsonFromLastMessage(channelId, adminAgent.id);
           final dispatchPlan = _dispatchParser.buildFlowPlanFromDispatch(
@@ -753,8 +790,9 @@ class GroupOrchestrationService {
             break;
           }
 
-          // Parse structured JSON dispatch from admin's response
-          final dispatch = _dispatchParser.parseStructuredDispatch(adminResponseContent, nonAdminAgents);
+          // Prefer tool-first orchestration; fall back to legacy text JSON.
+          final dispatch = resolveAdminDecision(adminTurn);
+          adminTurn = dispatch;
           final adminWantsContinue = dispatch.wantsContinue;
           final delegatedIds = dispatch.steps
               .expand((s) => s.agentIds)
@@ -777,15 +815,12 @@ class GroupOrchestrationService {
             }
           }
 
-          // Nudge on unparsable dispatch: the admin emitted a ```json block
-          // that yielded no usable step (broken JSON, malformed steps, or all
-          // names unmatched). Ask for a well-formed re-emit instead of
-          // silently treating the turn as "done".
+          // Nudge when dispatch tool/text failed to produce usable steps.
           if (dispatch.parseError != null && dispatch.steps.isEmpty) {
             if (dispatchNudgeCount < maxDispatchNudges) {
               dispatchNudgeCount++;
               LoggerService().warning(
-                'Dispatch parse failed at round $currentRound (${dispatch.parseError}); nudging admin ($dispatchNudgeCount/$maxDispatchNudges)',
+                'Dispatch failed at round $currentRound (${dispatch.parseError}); nudging admin ($dispatchNudgeCount/$maxDispatchNudges)',
                 tag: 'GroupOrchestrationService',
               );
               await _dispatchParser.stripDispatchJsonFromLastMessage(channelId, adminAgent.id);
@@ -793,10 +828,10 @@ class GroupOrchestrationService {
               adminResponseContent = '';
               onAgentStart?.call(adminAgent.id, adminAgent.name);
               try {
-                await _executor.processGroupAgent(
+                adminTurn = await _executor.processGroupAgent(
                   agent: adminAgent,
                   channelId: channelId,
-                  content: '$effectiveContent\n\n[SYSTEM] 你上一条回复中的派发指令无法执行：${dispatch.parseError}。请核对群成员注册名与 JSON 格式，重新输出规范的 ```json 派发块；若无需派发，请直接给出最终答复。',
+                  content: '$effectiveContent\n\n[SYSTEM] 你上一条回复中的派发指令无法执行：${dispatch.parseError}。请调用 `group_dispatch` 重新派活（agents 必须用注册名），或调用 `group_finish`（done/continue/pause）；若无需派发请直接给出最终答复并 finish。',
                   attachments: attachments,
                   userId: userId,
                   userName: userName,
@@ -807,7 +842,7 @@ class GroupOrchestrationService {
                   mentionedAgentIds: const [],
                   isFirstMessage: false,
                   isAdmin: true,
-                  isLoopSummarize: true,
+                  isDispatchNudge: true,
                   loopRound: currentRound + 1,
                   messageVersion: messageVersion,
                   channelMembers: channelMembers,
@@ -828,7 +863,9 @@ class GroupOrchestrationService {
                 break;
               }
               currentRound++;
-              if (adminResponseContent.trim().isEmpty) {
+              adminTurn = resolveAdminDecision(adminTurn);
+              if (adminResponseContent.trim().isEmpty &&
+                  !adminTurn.hasOrchestrationSignal) {
                 LoggerService().warning('Admin nudge produced empty response at round $currentRound, stopping', tag: 'GroupOrchestrationService');
                 break;
               }
@@ -943,7 +980,7 @@ class GroupOrchestrationService {
             adminResponseContent = '';
             onAgentStart?.call(adminAgent.id, adminAgent.name);
             try {
-              await _executor.processGroupAgent(
+              adminTurn = await _executor.processGroupAgent(
                 agent: adminAgent,
                 channelId: channelId,
                 content: effectiveContent,
@@ -978,9 +1015,11 @@ class GroupOrchestrationService {
               break;
             }
             currentRound++;
+            adminTurn = resolveAdminDecision(adminTurn);
 
             // Guard against empty responses to prevent stuck loops
-            if (adminResponseContent.trim().isEmpty) {
+            if (adminResponseContent.trim().isEmpty &&
+                !adminTurn.hasOrchestrationSignal) {
               LoggerService().warning('Admin continue produced empty response at round $currentRound, stopping', tag: 'GroupOrchestrationService');
               break;
             }
@@ -1061,6 +1100,7 @@ class GroupOrchestrationService {
                     LoggerService().error('Step ${step.step} agent ${agent.name} uncaught error', tag: 'GroupOrchestrationService', error: e);
                     failedAgentNames.add(agent.name);
                     onAgentDone?.call(agent.id, agent.name, true);
+                    return const GroupTurnResult();
                   }),
                 );
               }
@@ -1103,6 +1143,7 @@ class GroupOrchestrationService {
                   LoggerService().error('Delegated agent ${agent.name} uncaught error', tag: 'GroupOrchestrationService', error: e);
                   failedAgentNames.add(agent.name);
                   onAgentDone?.call(agent.id, agent.name, true);
+                  return const GroupTurnResult();
                 }),
               );
             }
@@ -1175,6 +1216,7 @@ class GroupOrchestrationService {
                   ).catchError((e) {
                     LoggerService().error('Cascade agent ${agent.name} uncaught error', tag: 'GroupOrchestrationService', error: e);
                     onAgentDone?.call(agent.id, agent.name, true);
+                    return const GroupTurnResult();
                   }),
                 );
               }
@@ -1238,7 +1280,7 @@ class GroupOrchestrationService {
           adminResponseContent = '';
           onAgentStart?.call(adminAgent.id, adminAgent.name);
           try {
-            await _executor.processGroupAgent(
+            adminTurn = await _executor.processGroupAgent(
               agent: adminAgent,
               channelId: channelId,
               content: lastDispatchNote != null
@@ -1275,6 +1317,7 @@ class GroupOrchestrationService {
             break;
           }
           currentRound++;
+          adminTurn = resolveAdminDecision(adminTurn);
 
         }
 
@@ -1315,6 +1358,7 @@ class GroupOrchestrationService {
           ).catchError((e) {
             LoggerService().error('Group agent ${agent.name} uncaught error', tag: 'GroupOrchestrationService', error: e);
             onAgentDone?.call(agent.id, agent.name, true);
+            return const GroupTurnResult();
           }),
         );
       }

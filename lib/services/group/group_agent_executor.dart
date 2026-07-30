@@ -22,7 +22,9 @@ import '../foreground_task_service.dart';
 import '../logger_service.dart';
 import '../task/task_models.dart';
 import 'group_dispatch_parser.dart';
+import 'group_orchestration_tools.dart';
 import 'group_prompt_builder.dart';
+import 'group_turn_result.dart';
 import 'group_interaction_handler.dart';
 import '../../peer/services/peer_agent_client_service.dart';
 import '../../peer/peer_approval_selection.dart';
@@ -224,7 +226,7 @@ class GroupAgentExecutor {
     }
   }
 
-  Future<void> processGroupAgent({
+  Future<GroupTurnResult> processGroupAgent({
     required RemoteAgent agent,
     required String channelId,
     required String content,
@@ -243,6 +245,7 @@ class GroupAgentExecutor {
     String? customSystemPrompt,
     bool isLoopSummarize = false,
     bool isAbortSummarize = false,
+    bool isDispatchNudge = false,
     int? loopRound,
     String mentionMode = 'adminOnly',
     List<String> failedAgentNames = const [],
@@ -283,6 +286,7 @@ class GroupAgentExecutor {
       customSystemPrompt: customSystemPrompt,
       isLoopSummarize: isLoopSummarize,
       isAbortSummarize: isAbortSummarize,
+      isDispatchNudge: isDispatchNudge,
       loopRound: loopRound,
       mentionMode: mentionMode,
       failedAgentNames: failedAgentNames,
@@ -386,6 +390,25 @@ class GroupAgentExecutor {
     Map<String, dynamic>? formDataCapture;
     Map<String, dynamic>? messageMetadataExtra;
 
+    // Tool-first orchestration capture (admin only).
+    var orchHasSignal = false;
+    var orchSteps = <DispatchStep>[];
+    var orchUnresolved = <String>[];
+    String? orchParseError;
+    var orchWantsContinue = false;
+    var orchIsDone = false;
+    var orchIsPause = false;
+
+    final delegateableNames = allAgents
+        .where((a) => a.id != agent.id)
+        .map((a) => a.name)
+        .toList();
+    final adminExtraTools = isAdmin
+        ? (LocalLLMAgentService.instance.resolveProviderType(agent) == 'claude'
+            ? GroupOrchestrationTools.claudeTools(agentNames: delegateableNames)
+            : GroupOrchestrationTools.openAITools(agentNames: delegateableNames))
+        : null;
+
     Future<void>? peerApprovalInFlight;
 
     // Register a GroupActiveTask so the UI can reattach after navigating away
@@ -469,6 +492,8 @@ class GroupAgentExecutor {
             includeShepawCli: isAdmin,
             systemPromptOverride: systemPrompt,
             attachments: toolRound == 0 ? attachments : null,
+            extraTools: adminExtraTools,
+            excludeUIToolNames: GroupOrchestrationTools.excludedUiToolNames,
           )) {
             if (acpCancellationToken?.isCancelled == true) break;
             switch (event) {
@@ -510,6 +535,108 @@ class GroupAgentExecutor {
                     break;
                   case 'message_metadata':
                     messageMetadataExtra = Map<String, dynamic>.from(event.arguments);
+                    break;
+                  case GroupOrchestrationTools.dispatchName:
+                    orchHasSignal = true;
+                    final parsed = GroupOrchestrationTools.parseDispatchArgs(
+                      event.arguments,
+                      allAgents.where((a) => a.id != agent.id).toList(),
+                    );
+                    if (parsed.steps.isNotEmpty) {
+                      orchSteps = parsed.steps;
+                      orchUnresolved = parsed.unresolvedNames;
+                      orchParseError = null;
+                    } else {
+                      orchParseError = parsed.parseError;
+                      orchUnresolved = parsed.unresolvedNames;
+                    }
+                    final dispatchResult = parsed.steps.isNotEmpty
+                        ? jsonEncode({
+                            'ok': true,
+                            'step_count': parsed.steps.length,
+                            if (parsed.unresolvedNames.isNotEmpty)
+                              'unresolved_names': parsed.unresolvedNames,
+                          })
+                        : jsonEncode({
+                            'ok': false,
+                            'error': parsed.parseError ?? 'invalid group_dispatch',
+                            if (parsed.unresolvedNames.isNotEmpty)
+                              'unresolved_names': parsed.unresolvedNames,
+                          });
+                    pawToolCalls.add(event);
+                    pawToolResults.add({
+                      'tool_call_id': event.id,
+                      'name': event.name,
+                      'result': dispatchResult,
+                    });
+                    infLogGroup.onToolResult(
+                      groupTraceId,
+                      toolCallId: event.id,
+                      name: event.name,
+                      result: dispatchResult,
+                    );
+                    break;
+                  case GroupOrchestrationTools.finishName:
+                    orchHasSignal = true;
+                    final action =
+                        GroupOrchestrationTools.parseFinishAction(event.arguments);
+                    if (action == null) {
+                      orchParseError =
+                          'group_finish.action must be done|continue|pause';
+                      final err = jsonEncode({
+                        'ok': false,
+                        'error': orchParseError,
+                      });
+                      pawToolCalls.add(event);
+                      pawToolResults.add({
+                        'tool_call_id': event.id,
+                        'name': event.name,
+                        'result': err,
+                      });
+                      infLogGroup.onToolResult(
+                        groupTraceId,
+                        toolCallId: event.id,
+                        name: event.name,
+                        result: err,
+                      );
+                    } else {
+                      orchIsDone = action == 'done';
+                      orchWantsContinue = action == 'continue';
+                      orchIsPause = action == 'pause';
+                      final ok = jsonEncode({'ok': true, 'action': action});
+                      pawToolCalls.add(event);
+                      pawToolResults.add({
+                        'tool_call_id': event.id,
+                        'name': event.name,
+                        'result': ok,
+                      });
+                      infLogGroup.onToolResult(
+                        groupTraceId,
+                        toolCallId: event.id,
+                        name: event.name,
+                        result: ok,
+                      );
+                    }
+                    break;
+                  case 'request_history':
+                    // Group turns already inject truncated history; refuse the tool.
+                    final refused = jsonEncode({
+                      'ok': false,
+                      'error':
+                          'request_history is unavailable in group chat; history is already injected. Call group_dispatch or group_finish instead.',
+                    });
+                    pawToolCalls.add(event);
+                    pawToolResults.add({
+                      'tool_call_id': event.id,
+                      'name': event.name,
+                      'result': refused,
+                    });
+                    infLogGroup.onToolResult(
+                      groupTraceId,
+                      toolCallId: event.id,
+                      name: event.name,
+                      result: refused,
+                    );
                     break;
                   default:
                     // Handle shepaw CLI tool calls
@@ -704,7 +831,7 @@ class GroupAgentExecutor {
         infLogGroup.endSession(groupTraceId, InferenceStatus.error,
             error: 'missing peer metadata');
         onAgentDone?.call(agent.id, agent.name, true);
-        return;
+        return const GroupTurnResult();
       }
 
       final peerMessage = _buildPeerGroupMessage(
@@ -1287,7 +1414,7 @@ class GroupAgentExecutor {
       updateTypingAgentIds();
       ForegroundTaskService().releaseTask(agent.name);
       onAgentDone?.call(agent.id, agent.name, true);
-      return;
+      return GroupTurnResult(content: responseContent);
     }
 
     if (responseContent.isEmpty && hasPeerApprovalCard) {
@@ -1462,6 +1589,16 @@ class GroupAgentExecutor {
 
     LoggerService().debug('_processGroupAgent DONE: ${agent.name}, contentLen=${responseContent.length}', tag: 'GroupAgentExecutor');
     onAgentDone?.call(agent.id, agent.name, false);
+    return GroupTurnResult(
+      content: responseContent,
+      steps: orchSteps,
+      wantsContinue: orchWantsContinue,
+      isDone: orchIsDone,
+      isPause: orchIsPause,
+      parseError: orchParseError,
+      unresolvedNames: orchUnresolved,
+      hasOrchestrationSignal: orchHasSignal,
+    );
   }
 
   /// Compose a single text payload for peer relay: system prompt + history + turn.

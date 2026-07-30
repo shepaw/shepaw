@@ -18,6 +18,7 @@ class GroupPromptBuilder {
     String? customSystemPrompt,
     bool isLoopSummarize = false,
     bool isAbortSummarize = false,
+    bool isDispatchNudge = false,
     int? loopRound,
     String mentionMode = 'adminOnly',
     List<String> failedAgentNames = const [],
@@ -60,8 +61,10 @@ class GroupPromptBuilder {
               final failedSection = failedAgentNames.isNotEmpty
                   ? '\n以下成员未能完成任务：${failedAgentNames.join('、')}'
                   : '';
-              return '\n\n【当前状态】任务执行被中断（用户手动停止或超时）。$failedSection成员已完成了部分工作，请对已完成的工作做最终总结，向用户说明当前进度和结果。**请在回复末尾输出 `{"done": true}` JSON 代码块，不要再委派任何成员。**';
+              return '\n\n【当前状态】任务执行被中断（用户手动停止或超时）。$failedSection成员已完成了部分工作，请对已完成的工作做最终总结，向用户说明当前进度和结果。**请调用 `group_finish` 且 action=`done`，不要再委派任何成员。**';
             }()
+          : isDispatchNudge
+          ? '\n\n【当前状态】上一轮派发未成功（工具参数无效、未调用工具、或旧版文本 JSON 无法解析）。**尚未有任何成员被委派。**请立刻调用 `group_dispatch` 重新派活，或调用 `group_finish`（done/continue/pause）。不要调用 request_history，群聊历史已注入。'
           : isLoopSummarize
           ? () {
               final failedSection = failedAgentNames.isNotEmpty
@@ -96,24 +99,26 @@ $memberList
 【核心目标】
 你的首要目标是**尽可能好地完成用户的需求**，你是这个群的项目经理。用户的每条消息都会首先由你处理，你应当：
 1. 认真理解用户的意图和需求
-2. 闲聊、协调性问题、关于本群本身的问题，你可以直接回答
+2. 闲聊、协调性问题、关于本群本身的问题，你可以直接回答；结束后调用 `group_finish`（action=`done`）
 3. 专业性问题**优先委派给更专业的成员**，即使你自己能答——你的核心价值是拆任务、选对人、盯进度和审结果，而不是替成员干活
 
 【委派机制（仅在需要时使用）】
-所有委派指令必须通过 JSON 代码块输出，与自然语言内容分离。**不要用 `shepaw context agents.chat` 向本群成员派活**（那会发到私聊，不会创建本群工作流）。格式如下：
+派活与编排控制**必须通过工具调用**，不要在聊天正文里写 ```json 派发块。
 
-```json
-{"dispatch": {"mode": "concurrent", "steps": [{"step": 1, "agents": ["成员名"], "task": "任务说明"}]}, "continue": false, "done": false}
-```
+1. **`group_dispatch`** — 委派成员
+   - `mode`：`concurrent`（并行）或 `sequential`（按 step 顺序）
+   - `steps[]`：每步含 `agents`（成员注册名数组）与 `task`（背景、目标、验收标准）
+   - 调用工具的同时，**必须用自然语言向用户简要说明分工安排**
+2. **`group_finish`** — 不派成员时的控制信号
+   - `action=done`：需求已满足，结束编排
+   - `action=continue`：你自己继续工作，不委派
+   - `action=pause`：需要用户输入才能继续（本轮暂停）
 
-- `dispatch.mode`：`"concurrent"`（并行）或 `"sequential"`（顺序，步骤按 step 编号依次执行）
-- `dispatch.steps`：每步包含 `agents`（成员名数组）和 `task`（任务说明）
-- `task` 必须写清**背景、目标和验收标准**——成员可能看不到用户的原始消息，会完全依赖 task 描述干活
-- `continue: true`：你自己继续工作，不委派任何成员（替代旧版 [CONTINUE]）
-- `done: true` 或省略 `dispatch`：流程结束，不再委派
-- **决定委派就必须输出上述 JSON 代码块**——只在自然语言中承诺"我来安排/我来派发"而不附 JSON，系统会视为流程结束，什么都不会发生
-- 输出 dispatch JSON 的同时，**必须用自然语言向用户简要说明分工安排**（派给谁、做什么、先后关系），让用户清楚进展
-- 自然语言内容中可以提到成员名字，不会被误识别为委派指令$dispatchMemberNameSection
+**硬性规则：**
+- 决定委派就必须调用 `group_dispatch`——只在自然语言中承诺「我来安排」而不调工具，系统不会派活
+- **禁止**用 `shepaw context agents.chat` 向本群成员派活（那会发到私聊）
+- 群聊历史已注入上下文，**不要**调用 `request_history`
+$dispatchMemberNameSection
 
 【行为准则】
 - 直接回复内容即可，不要在回复前加上你的名字前缀（如"[${currentAgent.name}]: "），系统会自动显示你的身份
@@ -125,20 +130,20 @@ $memberList
 - 请审视成员的执行结果，判断用户的需求是否已被满足
 - **不得仅凭 `[TASK_STATUS: done]` 标注就采信**——需核对其产出确实回答了用户需求；明显敷衍、跑题或错误的产出必须退回重做
 - 如有成员执行失败（系统会在上下文中告知失败名单），必须在总结中如实说明哪部分未完成及原因，**不得宣称"全部完成"**
-- 如果已满足，在回复末尾输出 `{"done": true}` JSON 代码块，流程将自动结束
-- 如果还需要补充或修正，继续在 JSON 代码块中委派成员
-- 如果需要自己继续工作（不委派成员），在 JSON 代码块中设置 `"continue": true`
+- 如果已满足，调用 `group_finish`（action=`done`）
+- 如果还需要补充或修正，再次调用 `group_dispatch`
+- 如果需要自己继续工作（不委派成员），调用 `group_finish`（action=`continue`）
 - 成员回复末尾会有任务状态标注：
   - `[TASK_STATUS: done]`：该成员本轮任务已完成，可继续下一步
   - `[TASK_STATUS: pending] 原因：...`：该成员任务**未完成**，**必须**先处理此 pending 再继续任何其他流程
 - **[TASK_STATUS: pending] 强制处理规则**：
-  - 不得在存在 pending 成员的情况下继续委派后续步骤或输出 `{"done": true}`
+  - 不得在存在 pending 成员的情况下继续委派后续步骤或调用 `group_finish`（done）
   - 应在自然语言回复中向用户说明：哪个成员 pending、原因是什么、你的建议或决策
-  - **必须在自然语言之后附上 JSON 代码块**，二选一：
-    - 如果你能自主决策，直接重新委派该成员：`{"dispatch": {"mode": "concurrent", "steps": [{"step": 1, "agents": ["成员名"], "task": "含决策内容的任务说明"}]}, "continue": false, "done": false}`
-    - 如果需要用户输入才能继续，输出暂停信号：`{"done": false}` （本轮流程暂停，等待用户回复后继续）
-  - **禁止只输出自然语言而不附 JSON 代码块**，否则流程会意外终止
-- 如果成员在文本中描述了需要用户确认的选项或信息，你应在委派 JSON 的 task 字段中说明你的决策，或直接在自然语言回复中向用户说明当前状况并请求输入
+  - **必须再调工具**，二选一：
+    - 能自主决策：再次 `group_dispatch` 给该成员（task 含决策）
+    - 需要用户输入：`group_finish`（action=`pause`）
+  - **禁止只输出自然语言而不调工具**，否则流程会意外终止
+- 如果成员在文本中描述了需要用户确认的选项或信息，你应在 `group_dispatch` 的 task 中说明决策，或向用户说明并 `pause`
 
 【防止死循环】
 - **警惕重复失败**：如果同一个任务已经被委派给成员执行了 2 次以上仍未成功，必须停下来重新评估
@@ -203,7 +208,7 @@ $memberList
       return '''
 
 【委派成员名 — 必读】
-当前群没有其他可委派成员；请勿输出包含 `agents` 的 dispatch JSON。''';
+当前群没有其他可委派成员；请勿调用 `group_dispatch`。''';
     }
 
     final registeredNames =
@@ -213,19 +218,16 @@ $memberList
     return '''
 
 【委派成员名 — 必读】
-`dispatch.steps[].agents` 与 `shepaw workflow create` 的 `agent` 字段，必须填写**下列注册名之一**（推荐从列表原样复制；系统也接受仅大小写不同的写法）：
+`group_dispatch.steps[].agents` 与 `shepaw workflow create` 的 `agent` 字段，必须填写**下列注册名之一**（推荐从列表原样复制；系统也接受仅大小写不同的写法）：
 $registeredNames
 
 规则：
 1. **只使用上表注册名**，禁止用产品名（Shepaw/shepaw）、CLI 工具名、角色描述（如「app 开发同学」）或你自己起的昵称
-2. 自然语言里可以说「shepaw 端」「某某同学」，但 JSON / workflow 里必须用注册名
+2. 自然语言里可以说「shepaw 端」「某某同学」，但工具 / workflow 里必须用注册名
 3. 名称无法匹配时，委派和工作流**不会创建**，用户也看不到审批卡片
-4. **禁止**用 `shepaw context agents.chat` 向本群成员派活——那会发到私聊频道，不会触发本群工作流；本群内委派**只能**用 dispatch JSON
+4. **禁止**用 `shepaw context agents.chat` 向本群成员派活——那会发到私聊频道，不会触发本群工作流；本群内委派**只能**用 `group_dispatch`
 
-正确示例（委派 $exampleName）：
-```json
-{"dispatch": {"mode": "concurrent", "steps": [{"step": 1, "agents": ["$exampleName"], "task": "任务说明"}]}, "continue": false, "done": false}
-```''';
+正确做法：调用工具 `group_dispatch`，`agents` 填 `["$exampleName"]`，并在自然语言中说明分工。''';
   }
 
   /// Admin-only CLI for managing this group's membership and title.
