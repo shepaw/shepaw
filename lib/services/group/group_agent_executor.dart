@@ -257,6 +257,7 @@ class GroupAgentExecutor {
       String agentId, String agentName, String interactionType, Map<String, dynamic> data,
     )? onInteractionRequest,
     bool isFlowMode = false,
+    bool isClosingSummary = false,
     bool isWorkflowStep = false,
     String? workflowId,
     String? workflowStepId,
@@ -291,6 +292,7 @@ class GroupAgentExecutor {
       mentionMode: mentionMode,
       failedAgentNames: failedAgentNames,
       isFlowMode: isFlowMode,
+      isClosingSummary: isClosingSummary,
     );
 
     // Build chat history: pack the entire group conversation into a single
@@ -465,19 +467,31 @@ class GroupAgentExecutor {
         ...chatHistory,
         LocalLLMHelpers.buildUserMessageContent(content, attachments, isClaude),
       ];
-      const maxToolRounds = 5;
-
-      infLogGroup.beginRound(
-        groupTraceId,
-        requestSummary: 'Group round 1',
-        messages: [
-          if (systemPrompt.isNotEmpty) {'role': 'system', 'content': systemPrompt},
-          ...roundMessages,
-        ],
-      );
+      final maxToolRounds =
+          (agent.metadata['max_tool_rounds'] as num?)?.toInt() ?? 100;
 
       try {
-        for (int toolRound = 0; toolRound < maxToolRounds; toolRound++) {
+        var allowOneFinalRound = false;
+        for (int toolRound = 0;
+            toolRound < maxToolRounds || allowOneFinalRound;
+            toolRound++) {
+          final isForcedFinalRound = allowOneFinalRound;
+          if (allowOneFinalRound) allowOneFinalRound = false;
+
+          infLogGroup.beginRound(
+            groupTraceId,
+            requestSummary: isForcedFinalRound
+                ? 'Group round ${toolRound + 1} (final)'
+                : 'Group round ${toolRound + 1}',
+            messages: toolRound == 0
+                ? [
+                    if (systemPrompt.isNotEmpty)
+                      {'role': 'system', 'content': systemPrompt},
+                    ...roundMessages,
+                  ]
+                : null,
+          );
+
           final pawToolCalls = <LLMToolCallEvent>[];
           final pawToolResults = <Map<String, dynamic>>[];
           LLMDoneEvent? doneEvent;
@@ -747,7 +761,9 @@ class GroupAgentExecutor {
 
           // If there were CLI tool calls AND we have a rawAssistantMessage,
           // feed results back to LLM for continuation (multi-turn).
-          if (pawToolCalls.isNotEmpty && doneEvent?.rawAssistantMessage != null) {
+          if (pawToolCalls.isNotEmpty &&
+              doneEvent?.rawAssistantMessage != null &&
+              !isForcedFinalRound) {
             LoggerService().info(
               'Multi-turn: ${pawToolCalls.length} tool calls in round ${toolRound + 1}, continuing...',
               tag: 'GroupAgentExecutor',
@@ -759,8 +775,23 @@ class GroupAgentExecutor {
               LocalLLMHelpers.appendToolRoundOpenAI(
                   roundMessages, doneEvent!.rawAssistantMessage!, pawToolCalls, pawToolResults);
             }
-            infLogGroup.beginRound(groupTraceId, requestSummary: 'Group round ${toolRound + 2}');
-            continue; // Next round
+            if (toolRound + 1 < maxToolRounds) {
+              continue; // Next round
+            }
+            // Hit max tool rounds — run one final text-only synthesis round.
+            LoggerService().warning(
+              'Group agent ${agent.name} hit max tool rounds ($maxToolRounds); '
+              'running final synthesis round',
+              tag: 'GroupAgentExecutor',
+            );
+            roundMessages.add({
+              'role': 'user',
+              'content':
+                  '[SYSTEM] 工具调用轮次已达上限。请根据已有工具结果和群聊历史，'
+                  '直接向用户输出完整总结，不要再调用任何工具。',
+            });
+            allowOneFinalRound = true;
+            continue;
           }
 
           // No tool calls or stream done — exit loop

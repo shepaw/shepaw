@@ -23,6 +23,7 @@ class GroupPromptBuilder {
     String mentionMode = 'adminOnly',
     List<String> failedAgentNames = const [],
     bool isFlowMode = false,
+    bool isClosingSummary = false,
   }) {
     final memberList = allAgents.map((a) {
       final channelMember = channelMembers.where((m) => m.id == a.id).firstOrNull;
@@ -56,7 +57,13 @@ class GroupPromptBuilder {
           ? '\n\n【用户自定义约束】\n$customSystemPrompt'
           : '';
 
-      final loopSummarizeSection = isAbortSummarize
+      final loopSummarizeSection = isClosingSummary
+          ? '\n\n【当前状态】工作流全部阶段已执行完毕。请根据群聊历史中各成员的执行结果，向用户做**最终总结汇报**：\n'
+              '- 如实说明完成情况、产物 store:// URI（若成员已在回复中提供）、未完成或失败的部分\n'
+              '- 若历史中找不到产物 URI，如实告知用户「成员未在回复中提供可访问的产物链接」，**禁止**猜测或编造 URI\n'
+              '- 若仍需成员补交产物，可调用 `group_dispatch`；若任务整体已结束，调用 `group_finish`（action=`done`）\n'
+              '- **务必输出完整的自然语言总结**，禁止在只调用工具而不向用户输出总结的情况下结束'
+          : isAbortSummarize
           ? () {
               final failedSection = failedAgentNames.isNotEmpty
                   ? '\n以下成员未能完成任务：${failedAgentNames.join('、')}'

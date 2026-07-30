@@ -1641,6 +1641,7 @@ $originalQuestion
             mentionedAgentIds: const [],
             isFirstMessage: false,
             isAdmin: true,
+            isClosingSummary: true,
             channelMembers: channelMembers,
             customSystemPrompt: customSystemPrompt,
             mentionMode: mentionMode,

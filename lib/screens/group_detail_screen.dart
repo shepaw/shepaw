@@ -42,6 +42,7 @@ class _GroupDetailScreenState extends State<GroupDetailScreen> {
   late TextEditingController _nameController;
   late TextEditingController _descController;
   late TextEditingController _systemPromptController;
+  late TextEditingController _maxRoundsController;
   late String _selectedMentionMode;
   bool _isSaving = false;
 
@@ -60,6 +61,9 @@ class _GroupDetailScreenState extends State<GroupDetailScreen> {
     _nameController = TextEditingController(text: _channel.name);
     _descController = TextEditingController(text: _channel.description ?? '');
     _systemPromptController = TextEditingController(text: _channel.systemPrompt ?? '');
+    _maxRoundsController = TextEditingController(
+      text: _channel.maxLoopRounds?.toString() ?? '',
+    );
     _selectedMentionMode = _channel.effectiveMentionMode;
   }
 
@@ -68,6 +72,7 @@ class _GroupDetailScreenState extends State<GroupDetailScreen> {
     _nameController.dispose();
     _descController.dispose();
     _systemPromptController.dispose();
+    _maxRoundsController.dispose();
     super.dispose();
   }
 
@@ -100,6 +105,7 @@ class _GroupDetailScreenState extends State<GroupDetailScreen> {
     _nameController.text = _channel.name;
     _descController.text = _channel.description ?? '';
     _systemPromptController.text = _channel.systemPrompt ?? '';
+    _maxRoundsController.text = _channel.maxLoopRounds?.toString() ?? '';
     _selectedMentionMode = _channel.effectiveMentionMode;
     setState(() => _isEditing = true);
   }
@@ -118,6 +124,18 @@ class _GroupDetailScreenState extends State<GroupDetailScreen> {
       return;
     }
 
+    final maxRoundsText = _maxRoundsController.text.trim();
+    int? maxLoopRounds;
+    if (maxRoundsText.isNotEmpty) {
+      maxLoopRounds = int.tryParse(maxRoundsText);
+      if (maxLoopRounds == null || maxLoopRounds < 1) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(l10n.createGroup_maxLoopRoundsHint)),
+        );
+        return;
+      }
+    }
+
     setState(() => _isSaving = true);
     try {
       final newSystemPrompt = _systemPromptController.text.trim();
@@ -133,7 +151,7 @@ class _GroupDetailScreenState extends State<GroupDetailScreen> {
         systemPrompt: newSystemPrompt.isNotEmpty ? newSystemPrompt : null,
         avatar: _channel.avatar,
         isPrivate: _channel.isPrivate,
-        maxLoopRounds: _channel.maxLoopRounds,
+        maxLoopRounds: maxLoopRounds,
         mentionMode: _selectedMentionMode,
         parentGroupId: _channel.parentGroupId,
       );
@@ -308,31 +326,34 @@ class _GroupDetailScreenState extends State<GroupDetailScreen> {
         ],
 
         // Max loop rounds section
-        if (_channel.maxLoopRounds != null) ...[
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-            child: Row(
-              children: [
-                Icon(Icons.loop, size: 16, color: Colors.grey[600]),
-                const SizedBox(width: 8),
-                Text(
-                  l10n.groupDetail_maxLoopRounds,
-                  style: TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w600,
-                    color: Colors.grey[600],
-                  ),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          child: Row(
+            children: [
+              Icon(Icons.loop, size: 16, color: Colors.grey[600]),
+              const SizedBox(width: 8),
+              Text(
+                l10n.groupDetail_maxLoopRounds,
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                  color: Colors.grey[600],
                 ),
-                const Spacer(),
-                Text(
-                  '${_channel.maxLoopRounds}',
-                  style: const TextStyle(fontSize: 13),
+              ),
+              const Spacer(),
+              Text(
+                '${_channel.effectiveMaxLoopRounds}',
+                style: TextStyle(
+                  fontSize: 13,
+                  color: _channel.maxLoopRounds == null
+                      ? Colors.grey[500]
+                      : null,
                 ),
-              ],
-            ),
+              ),
+            ],
           ),
-          const Divider(height: 1),
-        ],
+        ),
+        const Divider(height: 1),
 
         // Members section
         Padding(
@@ -478,6 +499,17 @@ class _GroupDetailScreenState extends State<GroupDetailScreen> {
                             ? l10n.chat_mentionModeAllMembersDesc
                             : l10n.chat_mentionModeAdminOnlyDesc,
                         style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    TextField(
+                      controller: _maxRoundsController,
+                      keyboardType: TextInputType.number,
+                      decoration: InputDecoration(
+                        labelText: l10n.groupDetail_maxLoopRounds,
+                        hintText: l10n.createGroup_maxLoopRoundsHint,
+                        border: const OutlineInputBorder(),
+                        prefixIcon: const Icon(Icons.loop),
                       ),
                     ),
                   ],

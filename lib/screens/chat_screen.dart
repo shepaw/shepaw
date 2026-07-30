@@ -1325,10 +1325,14 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   }
 
   void _editGroupInfoDesktop() {
-    final nameController = TextEditingController(text: _controller.groupChannel?.name ?? '');
-    final descController = TextEditingController(text: _controller.groupChannel?.description ?? '');
-    final systemPromptController = TextEditingController(text: _controller.groupChannel?.systemPrompt ?? '');
-    String selectedMentionMode = _controller.groupChannel?.effectiveMentionMode ?? 'adminOnly';
+    final channel = _controller.groupChannel;
+    final nameController = TextEditingController(text: channel?.name ?? '');
+    final descController = TextEditingController(text: channel?.description ?? '');
+    final systemPromptController = TextEditingController(text: channel?.systemPrompt ?? '');
+    final maxRoundsController = TextEditingController(
+      text: channel?.maxLoopRounds?.toString() ?? '',
+    );
+    String selectedMentionMode = channel?.effectiveMentionMode ?? 'adminOnly';
 
     LayoutUtils.showRightDrawer(
       context: context,
@@ -1391,6 +1395,17 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                         style: TextStyle(fontSize: 12, color: Colors.grey[600]),
                       ),
                     ),
+                    const SizedBox(height: 16),
+                    TextField(
+                      controller: maxRoundsController,
+                      keyboardType: TextInputType.number,
+                      decoration: InputDecoration(
+                        labelText: panelL10n.groupDetail_maxLoopRounds,
+                        hintText: panelL10n.createGroup_maxLoopRoundsHint,
+                        border: const OutlineInputBorder(),
+                        prefixIcon: const Icon(Icons.loop),
+                      ),
+                    ),
                     const SizedBox(height: 24),
                     Row(
                       mainAxisAlignment: MainAxisAlignment.end,
@@ -1409,6 +1424,20 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                               );
                               return;
                             }
+                            final maxRoundsText = maxRoundsController.text.trim();
+                            int? maxLoopRounds;
+                            if (maxRoundsText.isNotEmpty) {
+                              maxLoopRounds = int.tryParse(maxRoundsText);
+                              if (maxLoopRounds == null || maxLoopRounds < 1) {
+                                showTopToast(
+                                  ctx,
+                                  panelL10n.createGroup_maxLoopRoundsHint,
+                                  icon: Icons.warning_amber,
+                                  color: Colors.orange,
+                                );
+                                return;
+                              }
+                            }
                             final old = _controller.groupChannel!;
                             final newSystemPrompt = systemPromptController.text.trim();
                             final updated = Channel(
@@ -1417,7 +1446,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                               description: descController.text.trim().isNotEmpty ? descController.text.trim() : null,
                               systemPrompt: newSystemPrompt.isNotEmpty ? newSystemPrompt : null,
                               avatar: old.avatar, isPrivate: old.isPrivate,
-                              maxLoopRounds: old.maxLoopRounds,
+                              maxLoopRounds: maxLoopRounds,
                               mentionMode: selectedMentionMode,
                               parentGroupId: old.parentGroupId,
                             );
