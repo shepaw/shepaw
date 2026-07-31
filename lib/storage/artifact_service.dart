@@ -199,6 +199,31 @@ class ArtifactService {
     return buffer.toString();
   }
 
+  /// 从 [text] 提取产物引用行，去重合并进 [target]（工作流跨步骤累积用）。
+  void mergeReferenceLines(List<String> target, String text) {
+    for (final ref in parseReferences(text)) {
+      final line = ref.toMarkdownLine();
+      if (!target.contains(line)) target.add(line);
+    }
+  }
+
+  /// 工作流步骤摘要：超长时优先保留末尾的 store:// 引用行。
+  String truncateStepSummary(String output, {int maxLen = 500}) {
+    if (output.length <= maxLen) return output;
+    final refs = parseReferences(output);
+    if (refs.isEmpty) {
+      return '${output.substring(0, maxLen - 3)}...';
+    }
+    final suffix = refs.map((r) => r.toMarkdownLine()).join('\n');
+    final suffixBlock = '\n$suffix';
+    if (suffixBlock.length >= maxLen) {
+      return suffixBlock.substring(0, maxLen);
+    }
+    final prefixLen = maxLen - suffixBlock.length;
+    if (prefixLen <= 3) return suffixBlock.substring(0, maxLen);
+    return '${output.substring(0, prefixLen - 3)}...$suffixBlock';
+  }
+
   /// 编排层注入包装（§6.3）：解析 [text]（及 [extraRefTexts]）中的产物
   /// 引用，去重后以标准"## 可用产物"片段追加到任务上下文。
   /// 无引用时原文返回（不注水）。

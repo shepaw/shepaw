@@ -503,7 +503,7 @@ class GroupAgentExecutor {
                 ? (chatHistory.isNotEmpty ? chatHistory : null)
                 : roundMessages,
             enableUITools: true,
-            includeShepawCli: isAdmin,
+            includeShepawCli: agent.isLocal,
             systemPromptOverride: systemPrompt,
             attachments: toolRound == 0 ? attachments : null,
             extraTools: adminExtraTools,
@@ -711,8 +711,12 @@ class GroupAgentExecutor {
                         return stepBuffer.toString();
                       });
 
-                      // Execute CLI command
-                      final cliResult = await ShepawCLI.instance.execute(args, agentId: agent.id);
+                      // Execute CLI command (members: store + help only)
+                      final cliResult = await _executeShepawCliForGroup(
+                        args: args,
+                        agent: agent,
+                        isAdmin: isAdmin,
+                      );
                       LoggerService().info(
                         'CLI result (${args['namespace']} ${args['subcommand'] ?? ''}): ${cliResult.length > 200 ? '${cliResult.substring(0, 200)}...' : cliResult}',
                         tag: 'GroupAgentExecutor',
@@ -1852,6 +1856,28 @@ class GroupAgentExecutor {
       // ChatController snackbar that awaits the approval chain.
       rethrow;
     }
+  }
+
+  /// Group-local agents: admin gets full shepaw CLI; members may only use
+  /// [store] (write/read artifacts) and [help] (discovery).
+  Future<String> _executeShepawCliForGroup({
+    required Map<String, dynamic> args,
+    required RemoteAgent agent,
+    required bool isAdmin,
+  }) async {
+    if (!isAdmin) {
+      final namespace = (args['namespace'] as String?)?.trim() ?? '';
+      if (namespace != 'store' && namespace != 'help') {
+        return jsonEncode({
+          'ok': false,
+          'error':
+              '群成员仅可使用 store 与 help 命名空间。产出请用 shepaw store write，'
+              '读取请用 shepaw store read --uri <store://...>。',
+          'allowed_namespaces': ['store', 'help'],
+        });
+      }
+    }
+    return ShepawCLI.instance.execute(args, agentId: agent.id);
   }
 
   /// One-shot LLM summary of older group turns for in-context compaction.

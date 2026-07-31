@@ -191,8 +191,8 @@ $memberList
 6. 直接回复内容即可，不要在回复前加上你的名字前缀（如"[${currentAgent.name}]: "），系统会自动显示你的身份
 7. 如果你发现自己在重复执行相同的任务且反复失败，应主动换一种方法或策略，而不是用同样的方式继续重试。如果确实无法完成，请如实说明遇到的困难
 8. 如果任务执行过程中需要用户确认信息或做出选择，请用**文字描述**所有选项和所需信息，不要调用 form、action_confirmation、single_select、multi_select 等 UI 工具。管理员会读取你的描述并做出决策。
-9. **产物优先写入 store**：需要持久化/可分享的文件产出时，优先用 `shepaw store write`，在回复中原样引用返回的 URI；不要默认写 `/tmp` 等 OS 路径（仅用户明确指定 OS 路径时才用 `os.file.write`）
-10. 在每次回复的**最后一行**，必须输出任务状态标注，格式为：\n   - 任务已完成：`[TASK_STATUS: done]`\n   - 任务未完成或需要更多信息：`[TASK_STATUS: pending] 原因：<简要说明>`\n管理员会根据此标注决定下一步安排。$mentionNotice$allMembersMentionSection''';
+9. **产物优先写入 store**：需要持久化/可分享的文件产出时，**必须**调用 `shepaw store write --filename <名> --content "..."`（可选 `--task` / `--desc`），并在回复中**原样**引用命令返回的 `[filename](store://...)` 单行；读取已有产物用 `shepaw store read --uri <store://...>`。禁止编造 URI，不要默认写 `/tmp` 等 OS 路径（仅用户明确指定 OS 路径时才用 `os.file.write`）
+10. 在每次回复的**最后一行**，必须输出任务状态标注，格式为：\n   - 任务已完成（且已写入 store 并引用 URI，或确实无文件产出）：`[TASK_STATUS: done]`\n   - 任务未完成或需要更多信息：`[TASK_STATUS: pending] 原因：<简要说明>`\n管理员会根据此标注决定下一步安排。$mentionNotice$allMembersMentionSection''';
   }
 
   /// Shepaw CLI guidance for group admin — historical attachments are metadata only.

@@ -99,6 +99,28 @@ void main() {
           isEmpty);
     });
 
+    test('mergeReferenceLines 去重累积引用行', () {
+      final lines = <String>[];
+      const ref =
+          '[a.md](store://artifacts/0123456789abcdef/task-41/a.md) — desc';
+      ArtifactService.instance.mergeReferenceLines(lines, ref);
+      ArtifactService.instance.mergeReferenceLines(lines, ref);
+      expect(lines.length, 1);
+      expect(lines.single, ref);
+    });
+
+    test('truncateStepSummary 超长时保留 store 引用行', () {
+      final longBody = 'x' * 600;
+      const ref =
+          '[report.md](store://artifacts/0123456789abcdef/task-41/report.md)';
+      final output = '$longBody\n$ref';
+      final summary =
+          ArtifactService.instance.truncateStepSummary(output, maxLen: 500);
+      expect(summary.length, lessThanOrEqualTo(500));
+      expect(summary, contains('store://artifacts/'));
+      expect(summary, contains('report.md'));
+    });
+
     test('filename 路径穿越防护', () async {
       final ref = await ArtifactService.instance.writeArtifact(
         taskId: 'task-x',

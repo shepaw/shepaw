@@ -1743,6 +1743,31 @@ $originalQuestion
       // Load history once
       final historyMessages = await loadChannelMessages(channelId, limit: 50);
 
+      // §6.3：工作流跨步骤累积 store:// 引用，注入后续步骤 instruction。
+      final workflowArtifactLines = <String>[];
+      for (final step in effectiveWorkflow.steps) {
+        if (step.status == StepExecutionStatus.completed) {
+          final summary = step.outputSummary;
+          if (summary != null && summary.isNotEmpty) {
+            ArtifactService.instance
+                .mergeReferenceLines(workflowArtifactLines, summary);
+          }
+        }
+      }
+      ArtifactService.instance.mergeReferenceLines(
+        workflowArtifactLines,
+        historyMessages.map((m) => m.content).join('\n'),
+      );
+
+      List<String> workflowArtifactExtras() => [
+            ...workflowArtifactLines,
+            for (final m in historyMessages.take(20)) m.content,
+          ];
+
+      void absorbWorkflowArtifacts(String output) {
+        ArtifactService.instance.mergeReferenceLines(workflowArtifactLines, output);
+      }
+
       // H5: Serialize user interactions within a stage to prevent starvation.
       // When multiple parallel steps need user input, they queue through this lock.
       Completer<void>? _interactionLock;
@@ -1792,11 +1817,10 @@ $originalQuestion
 
           try {
             final stepBuffer = StringBuffer();
-            // §6.3：群工作流步骤注入产物引用片段（含历史消息中的引用）
+            // §6.3：群工作流步骤注入产物引用片段（含历史与工作流累积引用）
             final stepContent = ArtifactService.instance
-                .wrapWithArtifactSection(step.instruction, extraRefTexts: [
-              for (final m in historyMessages.take(20)) m.content,
-            ]);
+                .wrapWithArtifactSection(step.instruction,
+                    extraRefTexts: workflowArtifactExtras());
             await _groupAgentExecutor.processGroupAgent(
               agent: agent,
               channelId: channelId,
@@ -1830,9 +1854,10 @@ $originalQuestion
             if (token.isCancelled) return;
 
             final output = stepBuffer.toString();
+            absorbWorkflowArtifacts(output);
             await _workflowService.completeStep(
               step.id,
-              outputSummary: output.length > 500 ? '${output.substring(0, 497)}...' : output,
+              outputSummary: ArtifactService.instance.truncateStepSummary(output),
             );
           } catch (e) {
             await _workflowService.failStep(step.id, e.toString());
@@ -1925,7 +1950,7 @@ $originalQuestion
             final response = await _agentMessagingService.sendMessageToAgent(
               content: '[Workflow "${workflow.title}" — Stage ${step.stageIndex + 1}]\n'
                   // §6.3：DM 工作流步骤注入产物引用片段
-                  '${ArtifactService.instance.wrapWithArtifactSection(step.instruction)}\n\n'
+                  '${ArtifactService.instance.wrapWithArtifactSection(step.instruction, extraRefTexts: workflowArtifactExtras())}\n\n'
                   '立即执行该步骤，你的回复将作为步骤结果记录。'
                   '不要调用 shepaw workflow create/dispatch/complete/fail/cancel。',
               agent: agent,
@@ -1967,11 +1992,10 @@ $originalQuestion
             final output = (response != null && response.content.isNotEmpty)
                 ? response.content
                 : streamed;
+            absorbWorkflowArtifacts(output);
             await _workflowService.completeStep(
               step.id,
-              outputSummary: output.length > 500
-                  ? '${output.substring(0, 497)}...'
-                  : output,
+              outputSummary: ArtifactService.instance.truncateStepSummary(output),
             );
           } catch (e) {
             await _workflowService.failStep(step.id, e.toString());
