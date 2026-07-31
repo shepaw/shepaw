@@ -10,6 +10,8 @@ import '../storage/scheduled_snapshot_service.dart';
 import '../storage/snapshot_service.dart';
 import '../storage/store_protocol.dart';
 import '../storage/store_service.dart';
+import '../storage/sync_engine.dart';
+import '../storage/volume_usage.dart';
 
 String fmtStorageBytes(int bytes) {
   if (bytes < 1024) return '$bytes B';
@@ -79,11 +81,10 @@ class StorageBusyOverlay extends StatelessWidget {
   }
 }
 
-/// 储物袋主页需要的轻量汇总（各子页仍各自加载完整数据）。
+/// 储物袋主页需要的轻量汇总（仅本机 App 数据；不含多设备镜像管理）。
 class StorageOverviewSummary {
   StorageOverviewSummary({
     required this.selfId,
-    required this.masterId,
     required this.stats,
     required this.schedStatus,
     required this.snapshotCount,
@@ -93,15 +94,12 @@ class StorageOverviewSummary {
   });
 
   final String selfId;
-  final String masterId;
   final Map<String, dynamic>? stats;
   final ScheduledSnapshotStatus? schedStatus;
   final int snapshotCount;
   final int pendingImportCount;
   final bool exchangeEnabled;
   final int ownerPeerCount;
-
-  bool get isMaster => masterId == selfId && selfId.isNotEmpty;
 
   /// 本机四分区用量合计。
   int get myTotalBytes {
@@ -135,15 +133,23 @@ class StorageOverviewSummary {
   bool get unsyncedWarn => unsyncedBytes > unsyncedWarnBytes;
 }
 
+/// 加载本机 store 用量（不经远端 master，避免展示多设备镜像数据）。
 Future<StorageOverviewSummary> loadStorageOverview() async {
   final selfId = await DeviceIdentity.deviceId();
-  final masterId = await StoreService.instance.masterDeviceId();
+  final store = await StoreService.instance.localStore();
 
-  Map<String, dynamic>? stats;
-  final statsRes = await StoreService.instance
-      .call(StoreFrame(op: StoreOp.stats, payload: {}));
-  if (statsRes != null && !statsRes.containsKey('_error')) {
-    stats = statsRes;
+  final stats = await store.stats();
+  final journal = SyncEngine.instance.journal;
+  if (journal != null) {
+    stats['unsynced_count'] = await journal.pendingCount();
+    stats['unsynced_bytes'] = await journal.pendingBytes();
+  }
+  final volume = await VolumeUsage.probe(store.root.path);
+  if (volume != null) {
+    stats['volume_total_bytes'] = volume.totalBytes;
+    stats['volume_free_bytes'] = volume.freeBytes;
+    stats['volume_used_ratio'] = volume.usedRatio;
+    stats['volume_warn'] = volume.needsAttention;
   }
 
   final schedStatus = await ScheduledSnapshotService.instance.status();
@@ -163,7 +169,6 @@ Future<StorageOverviewSummary> loadStorageOverview() async {
 
   return StorageOverviewSummary(
     selfId: selfId,
-    masterId: masterId,
     stats: stats,
     schedStatus: schedStatus,
     snapshotCount: snapshots.length,

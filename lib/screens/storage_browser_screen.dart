@@ -6,10 +6,9 @@ import '../storage/local_store.dart';
 import '../storage/store_protocol.dart';
 import '../storage/store_service.dart';
 
-/// 按设备 / 分区浏览 store 正式文件并手删（方案 §7.3）。
+/// 浏览本机 App store 正式文件并手删（进回收站）。
 ///
-/// 本机始终可浏览自身目录；master 可浏览磁盘上他端镜像并删除（进回收站）。
-/// 仅读本地 [LocalStore]，不经远端 list。
+/// 仅操作当前设备目录；他端镜像浏览/清理归 Nexuspouch 管理。
 class StorageBrowserScreen extends StatefulWidget {
   const StorageBrowserScreen({super.key});
 
@@ -21,18 +20,13 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen> {
   static const _pageStep = 100;
 
   String _selfId = '';
-  String _masterId = '';
-  String _deviceId = '';
   String _space = StoreSpace.files;
   String _prefix = '';
   int _limit = _pageStep;
   bool _busy = false;
   bool _loading = true;
-  List<String> _devices = const [];
   List<StoreEntry> _entries = const [];
   String? _error;
-
-  bool get _isMaster => _masterId == _selfId && _selfId.isNotEmpty;
 
   @override
   void initState() {
@@ -42,23 +36,13 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen> {
 
   Future<void> _bootstrap() async {
     final self = await DeviceIdentity.deviceId();
-    final master = await StoreService.instance.masterDeviceId();
-    final store = await StoreService.instance.localStore();
-    final stats = await store.stats();
-    final devicesMap =
-        (stats['devices'] as Map?)?.cast<String, dynamic>() ?? {};
-    final devices = <String>{self, ...devicesMap.keys}.toList()..sort();
     if (!mounted) return;
-    setState(() {
-      _selfId = self;
-      _masterId = master;
-      _deviceId = self;
-      _devices = devices;
-    });
+    setState(() => _selfId = self);
     await _reload();
   }
 
   Future<void> _reload() async {
+    if (_selfId.isEmpty) return;
     setState(() {
       _busy = true;
       _error = null;
@@ -66,7 +50,7 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen> {
     try {
       final store = await StoreService.instance.localStore();
       final entries = await store.list(
-        _deviceId,
+        _selfId,
         _space,
         prefix: _prefix.isEmpty ? null : _prefix,
         limit: _limit,
@@ -88,17 +72,8 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen> {
     }
   }
 
-  bool _canDelete(String deviceId) {
-    if (deviceId == _selfId) return true;
-    return _isMaster;
-  }
-
   Future<void> _deleteEntry(StoreEntry entry) async {
     final l10n = AppLocalizations.of(context);
-    if (!_canDelete(_deviceId)) {
-      _toast(l10n.storage_browserDeleteDenied);
-      return;
-    }
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -122,7 +97,7 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen> {
     setState(() => _busy = true);
     try {
       final store = await StoreService.instance.localStore();
-      await store.delete(_deviceId, _space, entry.path);
+      await store.delete(_selfId, _space, entry.path);
       _toast(l10n.storage_browserDeleted(entry.path));
       await _reload();
     } on StoreException catch (e) {
@@ -140,14 +115,6 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen> {
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
   }
 
-  String _shortDevice(String id) {
-    if (id == _selfId) {
-      final short = id.length >= 8 ? '${id.substring(0, 8)}…' : id;
-      return '$short (${AppLocalizations.of(context).storage_thisDevice})';
-    }
-    return id.length >= 8 ? '${id.substring(0, 8)}…' : id;
-  }
-
   String _fmtBytes(int n) {
     if (n < 1024) return '$n B';
     if (n < 1024 * 1024) return '${(n / 1024).toStringAsFixed(1)} KB';
@@ -160,9 +127,6 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen> {
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
-    final selectableDevices = _isMaster
-        ? _devices
-        : _devices.where((d) => d == _selfId).toList();
 
     return Scaffold(
       appBar: AppBar(
@@ -185,39 +149,6 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen> {
                           color:
                               Theme.of(context).colorScheme.onSurfaceVariant,
                         )),
-                const SizedBox(height: 12),
-                InputDecorator(
-                  decoration: InputDecoration(
-                    labelText: l10n.storage_browserDevice,
-                    border: const OutlineInputBorder(),
-                    isDense: true,
-                  ),
-                  child: DropdownButtonHideUnderline(
-                    child: DropdownButton<String>(
-                      isExpanded: true,
-                      value: selectableDevices.contains(_deviceId)
-                          ? _deviceId
-                          : (_selfId.isEmpty ? null : _selfId),
-                      items: [
-                        for (final id in selectableDevices)
-                          DropdownMenuItem(
-                            value: id,
-                            child: Text(_shortDevice(id)),
-                          ),
-                      ],
-                      onChanged: _busy
-                          ? null
-                          : (v) {
-                              if (v == null) return;
-                              setState(() {
-                                _deviceId = v;
-                                _limit = _pageStep;
-                              });
-                              _reload();
-                            },
-                    ),
-                  ),
-                ),
                 const SizedBox(height: 12),
                 Wrap(
                   spacing: 8,
@@ -280,7 +211,6 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen> {
                   ),
                   const SizedBox(height: 4),
                   ..._entries.map((e) {
-                    final canDelete = _canDelete(_deviceId);
                     return ListTile(
                       contentPadding: EdgeInsets.zero,
                       dense: true,
@@ -291,16 +221,13 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen> {
                           overflow: TextOverflow.ellipsis),
                       subtitle: Text(_fmtBytes(e.size),
                           style: Theme.of(context).textTheme.labelSmall),
-                      trailing: canDelete
-                          ? IconButton(
-                              icon: Icon(Icons.delete_outline,
-                                  size: 18,
-                                  color: Theme.of(context).colorScheme.error),
-                              onPressed:
-                                  _busy ? null : () => _deleteEntry(e),
-                              tooltip: l10n.storage_browserDelete,
-                            )
-                          : null,
+                      trailing: IconButton(
+                        icon: Icon(Icons.delete_outline,
+                            size: 18,
+                            color: Theme.of(context).colorScheme.error),
+                        onPressed: _busy ? null : () => _deleteEntry(e),
+                        tooltip: l10n.storage_browserDelete,
+                      ),
                     );
                   }),
                   if (_entries.length >= _limit)

@@ -4758,7 +4758,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get storage_title => '储物袋';
 
   @override
-  String get storage_subtitle => '快照、产物与跨端共享文件';
+  String get storage_subtitle => '管理本机快照、附件与产物占用';
 
   @override
   String get storage_snapshotSection => '本机快照';
@@ -4846,12 +4846,10 @@ class AppLocalizationsZh extends AppLocalizations {
   String get storage_wipeSelfTitle => '删除本机存储数据';
 
   @override
-  String get storage_wipeSelfDesc =>
-      '清空本机四分区正式文件与暂存（不删他端镜像、回收站、数据库与设备身份）。建议先导出。';
+  String get storage_wipeSelfDesc => '清空本机四分区正式文件与暂存（不删回收站、数据库与设备身份）。建议先导出。';
 
   @override
-  String get storage_wipeSelfConfirm =>
-      '此操作不可从回收站还原。master 上本机旧镜像不会自动清除。请输入 DELETE 确认。';
+  String get storage_wipeSelfConfirm => '此操作不可从回收站还原。请输入 DELETE 确认。';
 
   @override
   String get storage_wipeSelfTypeHint => '输入 DELETE';
@@ -4873,8 +4871,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get storage_browserTitle => '存储文件';
 
   @override
-  String get storage_browserHint =>
-      '浏览本机 store 正式文件。master 可查看并删除他端镜像文件（进入回收站）。';
+  String get storage_browserHint => '浏览本机 store 正式文件（删除后进入回收站）。多设备镜像请在同步节点管理。';
 
   @override
   String get storage_browserDevice => '设备';
@@ -5139,7 +5136,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get storage_entrySnapshots => '快照与备份';
 
   @override
-  String get storage_entrySpace => '空间与同步';
+  String get storage_entrySpace => '本机空间';
 
   @override
   String get storage_entryAdvanced => '高级与危险区';
@@ -5327,7 +5324,7 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
-  String get storage_unsyncedWarning => '大量数据尚未镜像到 master，请保持 master 在线完成同步。';
+  String get storage_unsyncedWarning => '大量数据仍占用本机待上传队列，可清理本机文件或等待同步节点接收。';
 
   @override
   String get storage_sheCircleSection => '她的朋友圈';

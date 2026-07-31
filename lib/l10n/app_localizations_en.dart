@@ -4941,7 +4941,8 @@ class AppLocalizationsEn extends AppLocalizations {
   String get storage_title => 'Storage Bag';
 
   @override
-  String get storage_subtitle => 'Snapshots, artifacts, and shared files';
+  String get storage_subtitle =>
+      'Manage local snapshots, attachments, and artifact space';
 
   @override
   String get storage_snapshotSection => 'Local snapshots';
@@ -5033,11 +5034,11 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get storage_wipeSelfDesc =>
-      'Clears this device\'s four partitions and staging (keeps other mirrors, recycle, DB, and device identity). Export first if needed.';
+      'Clears this device\'s four partitions and staging (keeps recycle, DB, and device identity). Export first if needed.';
 
   @override
   String get storage_wipeSelfConfirm =>
-      'This cannot be restored from recycle. Old mirrors of this device on the master are not auto-removed. Type DELETE to confirm.';
+      'This cannot be restored from recycle. Type DELETE to confirm.';
 
   @override
   String get storage_wipeSelfTypeHint => 'Type DELETE';
@@ -5060,7 +5061,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get storage_browserHint =>
-      'Browse committed store files on this device. The master can also view and delete mirrored files (moved to recycle).';
+      'Browse committed store files on this device (deleted files go to recycle). Multi-device mirrors are managed on the sync node.';
 
   @override
   String get storage_browserDevice => 'Device';
@@ -5331,7 +5332,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get storage_entrySnapshots => 'Snapshots & Backup';
 
   @override
-  String get storage_entrySpace => 'Space & Sync';
+  String get storage_entrySpace => 'Local Space';
 
   @override
   String get storage_entryAdvanced => 'Advanced & Danger Zone';
@@ -5530,7 +5531,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get storage_unsyncedWarning =>
-      'A lot of data is not yet mirrored to master. Keep master online.';
+      'A large pending upload queue is using local disk. Free local files or wait for the sync node to accept them.';
 
   @override
   String get storage_sheCircleSection => 'Her circle';

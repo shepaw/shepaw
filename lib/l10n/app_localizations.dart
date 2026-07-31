@@ -8699,7 +8699,7 @@ abstract class AppLocalizations {
   /// No description provided for @storage_subtitle.
   ///
   /// In zh, this message translates to:
-  /// **'快照、产物与跨端共享文件'**
+  /// **'管理本机快照、附件与产物占用'**
   String get storage_subtitle;
 
   /// No description provided for @storage_snapshotSection.
@@ -8855,13 +8855,13 @@ abstract class AppLocalizations {
   /// No description provided for @storage_wipeSelfDesc.
   ///
   /// In zh, this message translates to:
-  /// **'清空本机四分区正式文件与暂存（不删他端镜像、回收站、数据库与设备身份）。建议先导出。'**
+  /// **'清空本机四分区正式文件与暂存（不删回收站、数据库与设备身份）。建议先导出。'**
   String get storage_wipeSelfDesc;
 
   /// No description provided for @storage_wipeSelfConfirm.
   ///
   /// In zh, this message translates to:
-  /// **'此操作不可从回收站还原。master 上本机旧镜像不会自动清除。请输入 DELETE 确认。'**
+  /// **'此操作不可从回收站还原。请输入 DELETE 确认。'**
   String get storage_wipeSelfConfirm;
 
   /// No description provided for @storage_wipeSelfTypeHint.
@@ -8897,7 +8897,7 @@ abstract class AppLocalizations {
   /// No description provided for @storage_browserHint.
   ///
   /// In zh, this message translates to:
-  /// **'浏览本机 store 正式文件。master 可查看并删除他端镜像文件（进入回收站）。'**
+  /// **'浏览本机 store 正式文件（删除后进入回收站）。多设备镜像请在同步节点管理。'**
   String get storage_browserHint;
 
   /// No description provided for @storage_browserDevice.
@@ -9323,7 +9323,7 @@ abstract class AppLocalizations {
   /// No description provided for @storage_entrySpace.
   ///
   /// In zh, this message translates to:
-  /// **'空间与同步'**
+  /// **'本机空间'**
   String get storage_entrySpace;
 
   /// No description provided for @storage_entryAdvanced.
@@ -9647,7 +9647,7 @@ abstract class AppLocalizations {
   /// No description provided for @storage_unsyncedWarning.
   ///
   /// In zh, this message translates to:
-  /// **'大量数据尚未镜像到 master，请保持 master 在线完成同步。'**
+  /// **'大量数据仍占用本机待上传队列，可清理本机文件或等待同步节点接收。'**
   String get storage_unsyncedWarning;
 
   /// No description provided for @storage_sheCircleSection.

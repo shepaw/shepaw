@@ -146,8 +146,8 @@ class StorageSpaceScreenState extends State<StorageSpaceScreen> {
 
     final spaceSubtitle = s == null
         ? ''
-        : '${s.isMaster ? l10n.storage_masterIsSelf : _shortId(s.masterId)}'
-            ' · ${s.unsyncedCount > 0 ? l10n.storage_unsynced(s.unsyncedCount, fmtStorageBytes(s.unsyncedBytes)) : l10n.storage_synced}';
+        : '${fmtStorageBytes(s.myTotalBytes)}'
+            '${s.unsyncedCount > 0 ? ' · ${l10n.storage_unsynced(s.unsyncedCount, fmtStorageBytes(s.unsyncedBytes))}' : ''}';
 
     final importSubtitle = s != null && s.pendingImportCount > 0
         ? l10n.storage_alertPendingImports(s.pendingImportCount)
@@ -264,9 +264,6 @@ class StorageSpaceScreenState extends State<StorageSpaceScreen> {
       onTap: onTap,
     );
   }
-
-  String _shortId(String id) =>
-      id.length >= 8 ? '${id.substring(0, 8)}…' : id;
 
   String _fmtTime(int ms) {
     final t = DateTime.fromMillisecondsSinceEpoch(ms).toLocal();
