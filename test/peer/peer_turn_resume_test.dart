@@ -57,7 +57,7 @@ void main() {
         evaluateTurnWatchdog(
           now: now,
           startedAt: startedAt,
-          noOpenApprovalsSince: startedAt,
+          idleSince: startedAt,
           suspendedSince: null,
           openApprovals: 0,
           chatTimeout: chatTimeout,
@@ -68,13 +68,31 @@ void main() {
       );
     });
 
-    test('无审批空闲超时 → idleTimeout', () {
+    test('持续有输出时 idle 计时重置 → none', () {
+      final lastOutput = startedAt.add(const Duration(minutes: 4, seconds: 50));
+      final now = startedAt.add(const Duration(minutes: 5, seconds: 30));
+      expect(
+        evaluateTurnWatchdog(
+          now: now,
+          startedAt: startedAt,
+          idleSince: lastOutput,
+          suspendedSince: null,
+          openApprovals: 0,
+          chatTimeout: chatTimeout,
+          suspendWaitHardCap: suspendCap,
+          approvalWaitHardCap: hardCap,
+        ),
+        TurnWatchdogVerdict.none,
+      );
+    });
+
+    test('无输出空闲超时 → idleTimeout', () {
       final now = startedAt.add(const Duration(seconds: 301));
       expect(
         evaluateTurnWatchdog(
           now: now,
           startedAt: startedAt,
-          noOpenApprovalsSince: startedAt,
+          idleSince: startedAt,
           suspendedSince: null,
           openApprovals: 0,
           chatTimeout: chatTimeout,
@@ -91,7 +109,7 @@ void main() {
         evaluateTurnWatchdog(
           now: now,
           startedAt: startedAt,
-          noOpenApprovalsSince: startedAt,
+          idleSince: startedAt,
           suspendedSince: null,
           openApprovals: 1,
           chatTimeout: chatTimeout,
@@ -109,7 +127,7 @@ void main() {
         evaluateTurnWatchdog(
           now: now,
           startedAt: startedAt,
-          noOpenApprovalsSince: startedAt,
+          idleSince: startedAt,
           suspendedSince: suspendedAt,
           openApprovals: 0,
           chatTimeout: chatTimeout,
@@ -127,7 +145,7 @@ void main() {
         evaluateTurnWatchdog(
           now: now,
           startedAt: startedAt,
-          noOpenApprovalsSince: startedAt,
+          idleSince: startedAt,
           suspendedSince: suspendedAt,
           openApprovals: 0,
           chatTimeout: chatTimeout,
@@ -145,7 +163,7 @@ void main() {
         evaluateTurnWatchdog(
           now: now,
           startedAt: startedAt,
-          noOpenApprovalsSince: startedAt,
+          idleSince: startedAt,
           suspendedSince: suspendedAt,
           openApprovals: 1,
           chatTimeout: chatTimeout,

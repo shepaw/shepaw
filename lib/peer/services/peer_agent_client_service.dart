@@ -301,11 +301,12 @@ class _PendingRequest {
   final Completer<PeerChatResult> completer = Completer<PeerChatResult>();
   /// In-flight tool approvals not yet submitted by the user.
   int openApprovals = 0;
-  /// Last moment this turn had zero open approvals (turn start, or when the
-  /// last open approval was submitted). The chat watchdog measures from here
-  /// so the time the user spends reading an approval card never counts
-  /// against the 300s turn budget.
-  DateTime noOpenApprovalsSince = DateTime.now();
+  /// Last moment this turn had agent output or entered a non-idle state (turn
+  /// start, each chunk/metadata, when the last open approval was submitted, or
+  /// after a successful turn resume). The chat watchdog measures idle from
+  /// here so streaming output and time spent reading an approval card never
+  /// count against the 300s turn budget.
+  DateTime idleSince = DateTime.now();
   /// agent_done payload held until [openApprovals] reaches zero.
   Map<String, dynamic>? bufferedDone;
   /// 已接收 chunk 内容的累计长度（UTF-16 码元，与 hub 的 accumulated 对齐）。
@@ -336,11 +337,11 @@ class PeerAgentClientService {
 
   static const _tag = 'PeerAgentClient';
 
-  /// Upper bound for a single peer agent chat request. Aligned with the ACP
-  /// group task timeout (300s) so a peer that stays connected but never
-  /// answers cannot hang a group orchestration forever.
-  ///
-  /// Only runs while no approval card is open — see [approvalWaitHardCap].
+  /// Upper bound for a single peer agent chat request when the agent produces
+  /// no output. Aligned with the ACP group task timeout (300s) so a peer that
+  /// stays connected but never answers cannot hang a group orchestration
+  /// forever. Each streaming chunk/metadata resets the idle clock; approval
+  /// waits are excluded — see [approvalWaitHardCap].
   static const Duration chatTimeout = Duration(seconds: 300);
 
   /// Hard upper bound for a turn even while an approval is open. The bridge
@@ -691,12 +692,10 @@ class PeerAgentClientService {
 
   /// Await the turn with an approval-aware watchdog.
   ///
-  /// [chatTimeout] only runs while no approval card is open: the time the
-  /// user spends reading a tool approval must not count against the turn —
-  /// the bridge allows 20 minutes per approval. Firing the timeout mid-
-  /// approval cancels the remote turn and strands the verdict, which looks
-  /// exactly like "approved but stuck". [approvalWaitHardCap] bounds even
-  /// the approval-waiting state in case the bridge's denial never arrives.
+  /// [chatTimeout] only runs while no approval card is open and the agent has
+  /// produced no output for that duration: streaming chunks/metadata reset the
+  /// idle clock, and the time the user spends reading a tool approval must not
+  /// count against the turn — the bridge allows 20 minutes per approval.
   ///
   /// Suspended turns (peer disconnected, waiting for resume) freeze the idle
   /// clock too — the remote can't possibly send frames while the link is
@@ -715,7 +714,7 @@ class PeerAgentClientService {
       final verdict = evaluateTurnWatchdog(
         now: DateTime.now(),
         startedAt: startedAt,
-        noOpenApprovalsSince: pending.noOpenApprovalsSince,
+        idleSince: pending.idleSince,
         suspendedSince: pending.suspendedSince,
         openApprovals: pending.openApprovals,
         chatTimeout: chatTimeout,
@@ -1644,8 +1643,8 @@ class PeerAgentClientService {
       if (pending != null && pending.openApprovals > 0) {
         pending.openApprovals--;
         if (pending.openApprovals == 0) {
-          // Verdict is on the wire — the plain chat clock runs from here.
-          pending.noOpenApprovalsSince = DateTime.now();
+          // Verdict is on the wire — idle clock runs from here.
+          pending.idleSince = DateTime.now();
         }
       }
       // Async-confirmation agents may have buffered agent_done while the
@@ -1663,6 +1662,9 @@ class PeerAgentClientService {
     // 先计数再分发：与 hub 的 accumulated 同序列（同为 UTF-16 码元长度），
     // resume 的断点偏移才精确。
     p.receivedLength += content.length;
+    if (content.isNotEmpty) {
+      p.idleSince = DateTime.now();
+    }
     p.onChunk?.call(content);
   }
 
@@ -1674,7 +1676,10 @@ class PeerAgentClientService {
         ? Map<String, dynamic>.from(raw)
         : <String, dynamic>{};
     if (metadata.isEmpty) return;
-    _pending[requestId]?.onMetadata?.call(metadata);
+    final p = _pending[requestId];
+    if (p == null) return;
+    p.idleSince = DateTime.now();
+    p.onMetadata?.call(metadata);
   }
 
   void _finishPending(String requestId, Map<String, dynamic> data) {
@@ -1870,6 +1875,7 @@ class PeerAgentClientService {
     }
     if (delta.isNotEmpty) {
       p.receivedLength += delta.length;
+      p.idleSince = DateTime.now();
       p.onChunk?.call(delta);
     }
     p.suspendedSince = null;
@@ -1883,7 +1889,7 @@ class PeerAgentClientService {
     switch (status) {
       case 'streaming':
         // 续传成功 —— idle 看门狗从此刻重新计时。
-        p.noOpenApprovalsSince = DateTime.now();
+        p.idleSince = DateTime.now();
         break;
       case 'done':
         _onDone({

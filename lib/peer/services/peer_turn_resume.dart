@@ -27,7 +27,7 @@ enum TurnWatchdogVerdict {
   /// 一切正常，继续等待。
   none,
 
-  /// 无审批且非挂起状态下，超过 chatTimeout 未收到任何活动。
+  /// 无审批且非挂起状态下，超过 chatTimeout 未收到任何 agent 输出。
   idleTimeout,
 
   /// 挂起（断连等待重连续传）超过 suspendWaitHardCap。
@@ -44,12 +44,13 @@ enum TurnWatchdogVerdict {
 ///   就不会有帧到达），但受 suspendWaitHardCap 约束；
 /// - 审批等待中（openApprovals > 0）：idle 计时冻结（用户读卡片的时间
 ///   不计入），只受 hardCap 约束；
-/// - 其余情况：距上次无审批状态超过 chatTimeout → idleTimeout；
+/// - 其余情况：距上次 agent 输出（或 turn 开始 / 审批结束）超过 chatTimeout
+///   → idleTimeout；
 /// - 无论何种状态：总时长超过 approvalWaitHardCap → hardCap（优先级最高）。
 TurnWatchdogVerdict evaluateTurnWatchdog({
   required DateTime now,
   required DateTime startedAt,
-  required DateTime noOpenApprovalsSince,
+  required DateTime idleSince,
   required DateTime? suspendedSince,
   required int openApprovals,
   required Duration chatTimeout,
@@ -66,8 +67,7 @@ TurnWatchdogVerdict evaluateTurnWatchdog({
     }
     return TurnWatchdogVerdict.none;
   }
-  if (openApprovals == 0 &&
-      now.difference(noOpenApprovalsSince) > chatTimeout) {
+  if (openApprovals == 0 && now.difference(idleSince) > chatTimeout) {
     return TurnWatchdogVerdict.idleTimeout;
   }
   return TurnWatchdogVerdict.none;
