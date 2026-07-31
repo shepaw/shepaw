@@ -108,4 +108,53 @@ void main() {
 
     expect(PendingApprovalReconciler.isResolvedInMessages(item, messages), isFalse);
   });
+
+  test('findResolvedMessage returns matching plan message', () {
+    const item = PendingApprovalItem(
+      id: 'plan:wf-1',
+      channelId: 'ch1',
+      agentId: 'a1',
+      agentName: 'Agent',
+      kind: PendingApprovalKind.plan,
+      createdAt: 1,
+    );
+    final message = _msg(
+      id: 'other',
+      metadata: {
+        'plan_approval': {'_workflowId': 'wf-1', '_approved': true},
+        'plan_approval_responded': {'approved': true},
+      },
+    );
+
+    expect(
+      PendingApprovalReconciler.findResolvedMessage(item, [message])?.id,
+      'other',
+    );
+    expect(PendingApprovalReconciler.planApprovalDecision(message), isTrue);
+  });
+
+  test('actionSelectedId prefers selected_action_id then responded action_id', () {
+    final withSelected = _msg(
+      id: 'm1',
+      metadata: {
+        'action_confirmation': {
+          'confirmation_id': 'cid-1',
+          'selected_action_id': 'allow',
+        },
+      },
+    );
+    final withResponded = _msg(
+      id: 'm2',
+      metadata: {
+        'action_confirmation': {'confirmation_id': 'cid-2'},
+        'action_confirmation_responded': {
+          'action_id': 'deny',
+          'action_label': 'Deny',
+        },
+      },
+    );
+
+    expect(PendingApprovalReconciler.actionSelectedId(withSelected), 'allow');
+    expect(PendingApprovalReconciler.actionSelectedId(withResponded), 'deny');
+  });
 }

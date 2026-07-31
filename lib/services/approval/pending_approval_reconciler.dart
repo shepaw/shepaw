@@ -1,11 +1,14 @@
 import '../../models/message.dart';
 import '../../models/workflow_models.dart';
+import '../logger_service.dart';
 import '../workflow/workflow_service.dart';
 import 'pending_approval_item.dart';
 
 /// Decides whether a [PendingApprovalItem] still needs reachability UI.
 class PendingApprovalReconciler {
   PendingApprovalReconciler._();
+
+  static const _tag = 'PendingApprovalReconciler';
 
   static bool isPlanMessageResolved(Message msg) {
     final plan = msg.metadata?['plan_approval'] as Map<String, dynamic>?;
@@ -24,17 +27,43 @@ class PendingApprovalReconciler {
     return responded != null;
   }
 
-  static bool isResolvedInMessages(
+  static bool? planApprovalDecision(Message msg) {
+    if (!isPlanMessageResolved(msg)) return null;
+    final responded =
+        msg.metadata?['plan_approval_responded'] as Map<String, dynamic>?;
+    if (responded != null) {
+      return responded['approved'] as bool?;
+    }
+    final plan = msg.metadata?['plan_approval'] as Map<String, dynamic>?;
+    return plan?['_approved'] as bool?;
+  }
+
+  static String? actionSelectedId(Message msg) {
+    final ac = msg.metadata?['action_confirmation'] as Map<String, dynamic>?;
+    if (ac != null) {
+      final selected = ac['selected_action_id'] as String?;
+      if (selected != null && selected.isNotEmpty) return selected;
+    }
+    final responded =
+        msg.metadata?['action_confirmation_responded'] as Map<String, dynamic>?;
+    final fromResponded = responded?['action_id'] as String?;
+    if (fromResponded != null && fromResponded.isNotEmpty) return fromResponded;
+    return null;
+  }
+
+  /// First chat message that shows this hub item as already answered.
+  static Message? findResolvedMessage(
     PendingApprovalItem item,
     Iterable<Message> messages,
   ) {
     if (item.messageId != null) {
       for (final msg in messages) {
         if (msg.id != item.messageId) continue;
-        return switch (item.kind) {
+        final resolved = switch (item.kind) {
           PendingApprovalKind.plan => isPlanMessageResolved(msg),
           PendingApprovalKind.action => isActionMessageResolved(msg),
         };
+        if (resolved) return msg;
       }
     }
 
@@ -47,7 +76,7 @@ class PendingApprovalReconciler {
           if (parsed.workflowId != null &&
               plan['_workflowId'] == parsed.workflowId &&
               isPlanMessageResolved(msg)) {
-            return true;
+            return msg;
           }
         case PendingApprovalKind.action:
           final ac = msg.metadata?['action_confirmation'] as Map<String, dynamic>?;
@@ -55,11 +84,89 @@ class PendingApprovalReconciler {
           if (parsed.confirmationId != null &&
               ac['confirmation_id'] == parsed.confirmationId &&
               isActionMessageResolved(msg)) {
-            return true;
+            return msg;
           }
       }
     }
-    return false;
+    return null;
+  }
+
+  static bool isResolvedInMessages(
+    PendingApprovalItem item,
+    Iterable<Message> messages,
+  ) =>
+      findResolvedMessage(item, messages) != null;
+
+  /// Replay missing workflow DB updates when chat metadata already shows a decision.
+  static Future<void> healStalePersistence({
+    required PendingApprovalItem item,
+    required Iterable<Message> messages,
+    required WorkflowService workflowService,
+  }) async {
+    final resolvedMessage = findResolvedMessage(item, messages);
+    if (resolvedMessage == null) return;
+
+    try {
+      switch (item.kind) {
+        case PendingApprovalKind.plan:
+          await _healPlan(item, resolvedMessage, workflowService);
+        case PendingApprovalKind.action:
+          await _healAction(item, resolvedMessage, workflowService);
+      }
+    } catch (e) {
+      LoggerService().warning(
+        'Failed to heal stale approval persistence for ${item.id}: $e',
+        tag: _tag,
+      );
+    }
+  }
+
+  static Future<void> _healPlan(
+    PendingApprovalItem item,
+    Message resolvedMessage,
+    WorkflowService workflowService,
+  ) async {
+    final workflowId = _parseHubId(item).workflowId;
+    if (workflowId == null) return;
+
+    final exec =
+        await workflowService.getWorkflowExecutionWithSteps(workflowId);
+    if (exec == null || exec.status != WorkflowStatus.pendingApproval) return;
+
+    final approved = planApprovalDecision(resolvedMessage);
+    if (approved == null) return;
+
+    if (approved) {
+      await workflowService.startWorkflow(workflowId);
+    } else {
+      await workflowService.cancelWorkflow(workflowId);
+    }
+    LoggerService().info(
+      'Healed stale plan approval for $workflowId (approved=$approved)',
+      tag: _tag,
+    );
+  }
+
+  static Future<void> _healAction(
+    PendingApprovalItem item,
+    Message resolvedMessage,
+    WorkflowService workflowService,
+  ) async {
+    final confirmationId = _parseHubId(item).confirmationId;
+    if (confirmationId == null) return;
+
+    final record =
+        await workflowService.getPendingApprovalById(confirmationId);
+    if (record == null || !record.isPending) return;
+
+    await workflowService.markPendingApprovalSubmitted(
+      confirmationId,
+      selectedActionId: actionSelectedId(resolvedMessage),
+    );
+    LoggerService().info(
+      'Healed stale action approval for $confirmationId',
+      tag: _tag,
+    );
   }
 
   /// Returns true when the banner / badge should still remind the user.

@@ -18,6 +18,7 @@ import '../messaging/local_llm_handler.dart';
 import '../acp_agent_connection.dart';
 import '../file_download_service.dart';
 import '../inference_log_service.dart';
+import '../trace_service.dart';
 import '../foreground_task_service.dart';
 import '../logger_service.dart';
 import '../task/task_models.dart';
@@ -904,6 +905,32 @@ class GroupAgentExecutor {
           sessionId: peerSessionId,
           attachments: attachments,
           cancelToken: acpCancellationToken,
+          onRequestStarted: (requestId) {
+            final spanId = TraceService.instance.addSpan(
+              traceId: groupTraceId,
+              spanType: 'peer_request',
+              name: 'agent_chat',
+              metadata: {
+                'request_id': requestId,
+                'peer_id': peerId,
+                'remote_agent_id': remoteAgentId,
+                'peer_session_id': peerSessionId,
+                'parent_trace_id': orchestrationTraceId,
+              },
+            );
+            TraceService.instance.endSpan(
+              spanId,
+              outputData: {'status': 'sent'},
+            );
+            messageMetadataExtra = Map<String, dynamic>.from(
+              messageMetadataExtra ?? {},
+            )..addAll({
+                'request_id': requestId,
+                'peer_id': peerId,
+                'remote_agent_id': remoteAgentId,
+                'peer_session_id': peerSessionId,
+              });
+          },
           onChunk: (chunk) {
             final answerDelta = splitter.onChunk(chunk);
             if (answerDelta.isNotEmpty) {
@@ -992,6 +1019,9 @@ class GroupAgentExecutor {
         messageMetadataExtra = Map<String, dynamic>.from(
           messageMetadataExtra ?? {},
         )..addAll(splitter.finalProgressMetadata());
+        if (result.requestId != null) {
+          messageMetadataExtra!['request_id'] = result.requestId;
+        }
         if (result.metadata != null && result.metadata!.isNotEmpty) {
           messageMetadataExtra!.addAll(result.metadata!);
         }

@@ -166,7 +166,17 @@ class _ChannelTraceScreenState extends State<ChannelTraceScreen> {
   Widget _buildTraceCard(TraceEntry trace) {
     final isSelected = trace.id == _selectedTraceId;
     final isOrchestration = trace.traceRole == 'group_orchestration';
+    final isPeerDelivery = trace.traceRole == 'peer_message_delivery';
+    final isPeerConnection = trace.traceRole == 'peer_connection';
     final isChildAgent = trace.parentTraceId != null;
+
+    final title = isOrchestration
+        ? 'Orchestration — ${trace.agentName}'
+        : isPeerDelivery
+            ? 'Peer message — ${trace.agentName}'
+            : isPeerConnection
+                ? 'Peer connect — ${trace.agentName}'
+                : '${trace.agentName} — ${trace.model ?? "unknown"}';
 
     return Card(
       margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
@@ -182,11 +192,31 @@ class _ChannelTraceScreenState extends State<ChannelTraceScreen> {
                 ),
                 child: const Icon(Icons.account_tree, size: 20, color: Colors.deepOrange),
               )
-            : _statusIcon(trace.status),
+            : isPeerDelivery
+                ? Container(
+                    width: 40,
+                    height: 40,
+                    decoration: BoxDecoration(
+                      color: Colors.indigo.withValues(alpha: 0.12),
+                      shape: BoxShape.circle,
+                      border: Border.all(color: Colors.indigo.withValues(alpha: 0.4)),
+                    ),
+                    child: const Icon(Icons.mail_outline, size: 20, color: Colors.indigo),
+                  )
+                : isPeerConnection
+                    ? Container(
+                        width: 40,
+                        height: 40,
+                        decoration: BoxDecoration(
+                          color: Colors.blueGrey.withValues(alpha: 0.12),
+                          shape: BoxShape.circle,
+                          border: Border.all(color: Colors.blueGrey.withValues(alpha: 0.4)),
+                        ),
+                        child: const Icon(Icons.link, size: 20, color: Colors.blueGrey),
+                      )
+                    : _statusIcon(trace.status),
         title: Text(
-          isOrchestration
-              ? 'Orchestration — ${trace.agentName}'
-              : '${trace.agentName} — ${trace.model ?? "unknown"}',
+          title,
           style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
         ),
         subtitle: Column(
@@ -203,6 +233,9 @@ class _ChannelTraceScreenState extends State<ChannelTraceScreen> {
                 if (isOrchestration)
                   _chip(trace.executionMode ?? 'orchestration',
                       Colors.deepOrange.shade50, Colors.deepOrange)
+                else if (isPeerDelivery || isPeerConnection)
+                  _chip(trace.executionMode ?? trace.traceRole ?? 'peer',
+                      Colors.indigo.shade50, Colors.indigo)
                 else ...[
                   _chip('${trace.totalRounds}r', Colors.purple.shade50, Colors.purple),
                   const SizedBox(width: 4),
@@ -324,12 +357,15 @@ class _ChannelTraceScreenState extends State<ChannelTraceScreen> {
   }
 
   Future<void> _export() async {
-    final jsonl = await _service.exportAsJsonl();
+    // Prefer channel-scoped export so a pasted debug bundle matches this chat.
+    final jsonl = await _service.exportAsJsonl(channelId: widget.channelId);
     if (!mounted) return;
     await showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Export JSONL'),
+        title: Text(widget.channelId != null
+            ? 'Export Channel JSONL'
+            : 'Export JSONL'),
         content: SizedBox(
           width: double.maxFinite,
           height: 200,
@@ -400,6 +436,26 @@ class _TraceDetailScreenState extends State<TraceDetailScreen> {
     }
   }
 
+  Future<void> _copyJson() async {
+    final root = _trace;
+    if (root == null) return;
+    final childDetails = <Map<String, dynamic>>[];
+    for (final child in _childTraces) {
+      final detail = await TraceService.instance.getTraceDetail(child.id);
+      childDetails.add((detail ?? child).toJson());
+    }
+    final payload = <String, dynamic>{
+      ...root.toJson(),
+      if (childDetails.isNotEmpty) 'child_traces': childDetails,
+    };
+    final json = const JsonEncoder.withIndent('  ').convert(payload);
+    await Clipboard.setData(ClipboardData(text: json));
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Copied')),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -409,13 +465,7 @@ class _TraceDetailScreenState extends State<TraceDetailScreen> {
           IconButton(
             icon: const Icon(Icons.copy),
             tooltip: 'Copy JSON',
-            onPressed: _trace == null ? null : () {
-              final json = const JsonEncoder.withIndent('  ').convert(_trace!.toJson());
-              Clipboard.setData(ClipboardData(text: json));
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Copied')),
-              );
-            },
+            onPressed: _trace == null ? null : () => _copyJson(),
           ),
         ],
       ),

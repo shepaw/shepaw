@@ -95,7 +95,13 @@ List<PeerRemoteSession> selectDirtySessions(
 class PeerChatResult {
   final String content;
   final Map<String, dynamic>? metadata;
-  PeerChatResult({required this.content, this.metadata});
+  /// P2P `agent_chat` request id — correlates frames, approvals, and traces.
+  final String? requestId;
+  PeerChatResult({
+    required this.content,
+    this.metadata,
+    this.requestId,
+  });
 }
 
 /// 对端某个 agent 已知的一条会话（由 `agent_sessions_resp` 返回）。
@@ -592,6 +598,8 @@ class PeerAgentClientService {
     void Function(String chunk)? onChunk,
     void Function(Map<String, dynamic>)? onMetadata,
     void Function(Map<String, dynamic>)? onActionConfirmation,
+    /// Fired once [requestId] is allocated, before the control frame is sent.
+    void Function(String requestId)? onRequestStarted,
     ACPCancellationToken? cancelToken,
   }) async {
     List<Map<String, dynamic>>? attachmentRefs;
@@ -625,6 +633,7 @@ class PeerAgentClientService {
     if (_requestAgents.length > 200) {
       _requestAgents.remove(_requestAgents.keys.first);
     }
+    onRequestStarted?.call(requestId);
 
     cancelToken?.addOnCancelled(() {
       unawaited(PeerConnectionManager.instance.sendControl(peerId, {
@@ -643,7 +652,9 @@ class PeerAgentClientService {
             );
           }
         }
-        p.completer.complete(PeerChatResult(content: '[Stopped]'));
+        p.completer.complete(
+          PeerChatResult(content: '[Stopped]', requestId: requestId),
+        );
       }
     });
 
@@ -663,7 +674,19 @@ class PeerAgentClientService {
       throw Exception('配对设备未连接，无法发送');
     }
 
-    return _awaitTurnCompletion(requestId, pending, peerId);
+    _log.info(
+      'agent_chat sent requestId=$requestId peerId=$peerId '
+      'remoteAgentId=$remoteAgentId sessionId=${sessionId ?? '-'} '
+      'attachments=${attachmentRefs?.length ?? 0}',
+      tag: 'PeerAgentClient',
+    );
+
+    final result = await _awaitTurnCompletion(requestId, pending, peerId);
+    return PeerChatResult(
+      content: result.content,
+      metadata: result.metadata,
+      requestId: requestId,
+    );
   }
 
   /// Await the turn with an approval-aware watchdog.
@@ -1665,6 +1688,7 @@ class PeerAgentClientService {
     p.completer.complete(PeerChatResult(
       content: data['content'] as String? ?? '',
       metadata: (data['metadata'] as Map?)?.cast<String, dynamic>(),
+      requestId: requestId,
     ));
   }
 

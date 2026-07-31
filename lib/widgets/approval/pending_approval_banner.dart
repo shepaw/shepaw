@@ -119,6 +119,7 @@ class _PendingApprovalBannerState extends State<PendingApprovalBanner> {
                       Expanded(
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
+                          mainAxisSize: MainAxisSize.min,
                           children: [
                             Text(
                               title,
@@ -149,6 +150,10 @@ class _PendingApprovalBannerState extends State<PendingApprovalBanner> {
                         style: TextButton.styleFrom(
                           visualDensity: VisualDensity.compact,
                           foregroundColor: colorScheme.onPrimaryContainer,
+                          textStyle: const TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600,
+                          ),
                         ),
                         child: Text(l10n.approval_goReview),
                       ),
@@ -182,35 +187,39 @@ class _DismissBackground extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
+    final labelStyle = Theme.of(context).textTheme.labelMedium?.copyWith(
+          color: foreground,
+          fontSize: 13,
+          fontWeight: FontWeight.w600,
+          height: 1.2,
+        );
+
+    final trailing = align == Alignment.centerRight;
+
+    return Material(
       color: color,
-      alignment: align,
-      padding: const EdgeInsets.symmetric(horizontal: 20),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          if (align == Alignment.centerRight) ...[
-            Text(
-              label,
-              style: TextStyle(
-                color: foreground,
-                fontWeight: FontWeight.w600,
-              ),
+      child: SafeArea(
+        bottom: false,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          child: Align(
+            alignment: align,
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (trailing) ...[
+                  Text(label, style: labelStyle),
+                  const SizedBox(width: 6),
+                  Icon(icon, color: foreground, size: 18),
+                ] else ...[
+                  Icon(icon, color: foreground, size: 18),
+                  const SizedBox(width: 6),
+                  Text(label, style: labelStyle),
+                ],
+              ],
             ),
-            const SizedBox(width: 8),
-          ],
-          Icon(icon, color: foreground, size: 20),
-          if (align == Alignment.centerLeft) ...[
-            const SizedBox(width: 8),
-            Text(
-              label,
-              style: TextStyle(
-                color: foreground,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ],
-        ],
+          ),
+        ),
       ),
     );
   }

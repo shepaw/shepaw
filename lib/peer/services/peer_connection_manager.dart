@@ -24,6 +24,7 @@ import 'peer_advertise.dart';
 import 'peer_local_server.dart';
 import 'peer_pairing_service.dart';
 import 'peer_storage_service.dart';
+import 'peer_delivery_trace_service.dart';
 
 /// 钳制入站 peer 消息的时间戳，保证持久化顺序 == 到达（因果）顺序。
 ///
@@ -335,6 +336,11 @@ class PeerConnectionManager {
   ///
   /// 待发队列中的消息会在连接恢复后由 [_flushPendingMessages] 自动补发。
   Future<void> sendMessage(String peerId, PeerMessage message) async {
+    PeerDeliveryTraceService.instance.beginOutboundMessage(
+      peerId: peerId,
+      message: message,
+    );
+
     final conn = _connections[peerId];
     if (conn != null && conn.state == PeerConnectionState.connected) {
       try {
@@ -345,6 +351,11 @@ class PeerConnectionManager {
         // 发送失败（如 WiFi 刚断、连接半开）：保留为待发队列，主动重连后补发
         _log.warning('sendMessage failed, queuing: $e', tag: _tag);
         await _storage.updateMessageDelivery(message.id, PeerMessageDelivery.pending);
+        PeerDeliveryTraceService.instance.recordOutboundSend(
+          message.id,
+          status: 'queued_offline',
+          error: e.toString(),
+        );
         _triggerImmediateReconnect(peerId);
       }
     } else {
@@ -352,6 +363,10 @@ class PeerConnectionManager {
       await _storage.saveMessage(message.copyWith(
         delivery: PeerMessageDelivery.pending,
       ));
+      PeerDeliveryTraceService.instance.recordOutboundSend(
+        message.id,
+        status: 'queued_offline',
+      );
       _triggerImmediateReconnect(peerId);
     }
   }
@@ -359,6 +374,7 @@ class PeerConnectionManager {
   /// 广播本地投递状态变化（如发送成功 / 补发成功），供打开的聊天页更新气泡状态。
   /// 复用 ack 事件流，status 取值与回执一致（'sent' / 'delivered' / 'read'）。
   void _emitLocalDelivery(String messageId, String status) {
+    PeerDeliveryTraceService.instance.recordDeliveryAck(messageId, status);
     if (!_ackController.isClosed) {
       _ackController.add(PeerAckEvent(messageId: messageId, status: status));
     }
@@ -449,6 +465,11 @@ class PeerConnectionManager {
       await _acceptIncomingConnection(stream);
     } catch (e) {
       _log.error('Failed to accept incoming connection', tag: _tag, error: e);
+      PeerDeliveryTraceService.instance.recordConnectionFailure(
+        peerId: 'unknown',
+        stage: 'accept_incoming',
+        error: e.toString(),
+      );
       stream.close();
     }
   }
@@ -615,12 +636,30 @@ class PeerConnectionManager {
         '(designated initiator & actively connecting)',
         tag: _tag,
       );
+      PeerDeliveryTraceService.instance.beginConnectionAttempt(
+        peerId: peer.id,
+        deviceName: peer.deviceName,
+        role: 'responder',
+        trigger: 'inbound_glare_rejected',
+      );
+      PeerDeliveryTraceService.instance.recordConnectionFailure(
+        peerId: peer.id,
+        stage: 'glare_rejected',
+        error: 'designated initiator kept outbound',
+      );
       noiseSession.close();
       await sub.cancel();
       stream.close();
       return;
     }
     // 其余情况一律接受入站：旧连接（可能已半开失效）会在注册新连接前被关闭。
+
+    PeerDeliveryTraceService.instance.beginConnectionAttempt(
+      peerId: peer.id,
+      deviceName: peer.deviceName,
+      role: 'responder',
+      trigger: 'inbound',
+    );
 
     // 发送 msg2 完成握手（附带本机广告端点，供 initiator 学习）
     final advertise = await advertisePeerEndpoints();
@@ -661,6 +700,17 @@ class PeerConnectionManager {
     // 连接创建时已是 connected 状态，stateChanges 不会再发出 connected 事件，
     // 因此在此手动触发连接建立后的副作用（发事件、更新 lastSeen、补发离线消息）。
     _onConnected(peer);
+
+    PeerDeliveryTraceService.instance.recordHandshakeSuccess(
+      peerId: peer.id,
+      role: 'responder',
+      transport: stream.remoteAddress != null ? 'local' : 'channel',
+      endpoints: {
+        if (peer.channelEndpoint != null)
+          'channel_endpoint': peer.channelEndpoint!,
+        if (peer.localEndpoint != null) 'local_endpoint': peer.localEndpoint!,
+      },
+    );
 
     _log.info('Accepted reconnection from ${peer.deviceName}', tag: _tag);
   }
@@ -707,6 +757,10 @@ class PeerConnectionManager {
             ? PeerMessageDelivery.read
             : PeerMessageDelivery.delivered;
         _storage.updateMessageDelivery(ack.messageId, delivery);
+        PeerDeliveryTraceService.instance.recordDeliveryAck(
+          ack.messageId,
+          ack.status,
+        );
         _ackController.add(ack);
       }),
       conn.control.listen((json) {
@@ -870,7 +924,15 @@ class PeerConnectionManager {
     if (_connecting.contains(peer.id)) return;
     _connecting.add(peer.id);
 
+    PeerDeliveryTraceService.instance.beginConnectionAttempt(
+      peerId: peer.id,
+      deviceName: peer.deviceName,
+      role: 'initiator',
+      trigger: ignoreTieBreak ? 'fallback' : 'scheduled',
+    );
+
     PeerConnection? conn;
+    String? connectedTransport;
     try {
       conn = PeerConnection(peer: peer);
       // 关闭旧的非活跃连接
@@ -892,8 +954,22 @@ class PeerConnectionManager {
         try {
           await conn.connectViaWebSocket(fixedUrl, timeout: _localConnectTimeout);
           connected = true;
+          connectedTransport = 'local_fixed';
+          PeerDeliveryTraceService.instance.recordTransportAttempt(
+            peerId: peer.id,
+            transport: 'local_fixed',
+            success: true,
+            endpoint: fixedUrl,
+          );
           _log.debug('Connected to ${peer.deviceName} via local network (fixed port)', tag: _tag);
         } catch (e) {
+          PeerDeliveryTraceService.instance.recordTransportAttempt(
+            peerId: peer.id,
+            transport: 'local_fixed',
+            success: false,
+            endpoint: fixedUrl,
+            error: e.toString(),
+          );
           _log.debug('Fixed port connection failed: $e', tag: _tag);
           // 回退到存储的完整 localEndpoint（可能有正确的随机端口）
           if (!conn.isClosed &&
@@ -902,8 +978,22 @@ class PeerConnectionManager {
             try {
               await conn.connectViaWebSocket(peer.localEndpoint!, timeout: _localConnectTimeout);
               connected = true;
+              connectedTransport = 'local_stored';
+              PeerDeliveryTraceService.instance.recordTransportAttempt(
+                peerId: peer.id,
+                transport: 'local_stored',
+                success: true,
+                endpoint: peer.localEndpoint,
+              );
               _log.debug('Connected to ${peer.deviceName} via local network (stored port)', tag: _tag);
             } catch (e2) {
+              PeerDeliveryTraceService.instance.recordTransportAttempt(
+                peerId: peer.id,
+                transport: 'local_stored',
+                success: false,
+                endpoint: peer.localEndpoint,
+                error: e2.toString(),
+              );
               _log.debug('Stored port connection also failed: $e2', tag: _tag);
             }
           }
@@ -914,8 +1004,22 @@ class PeerConnectionManager {
         try {
           await conn.connectViaWebSocket(peer.channelEndpoint!);
           connected = true;
+          connectedTransport = 'channel';
+          PeerDeliveryTraceService.instance.recordTransportAttempt(
+            peerId: peer.id,
+            transport: 'channel',
+            success: true,
+            endpoint: peer.channelEndpoint,
+          );
           _log.debug('Connected to ${peer.deviceName} via channel relay', tag: _tag);
         } catch (e) {
+          PeerDeliveryTraceService.instance.recordTransportAttempt(
+            peerId: peer.id,
+            transport: 'channel',
+            success: false,
+            endpoint: peer.channelEndpoint,
+            error: e.toString(),
+          );
           _log.debug('Channel connection to ${peer.deviceName} failed: $e', tag: _tag);
         }
       }
@@ -924,8 +1028,24 @@ class PeerConnectionManager {
         throw StateError('No available endpoint for ${peer.deviceName}');
       }
 
+      PeerDeliveryTraceService.instance.recordHandshakeSuccess(
+        peerId: peer.id,
+        role: 'initiator',
+        transport: connectedTransport ?? 'unknown',
+        endpoints: {
+          if (peer.channelEndpoint != null)
+            'channel_endpoint': peer.channelEndpoint!,
+          if (peer.localEndpoint != null) 'local_endpoint': peer.localEndpoint!,
+        },
+      );
+
     } catch (e) {
       _log.warning('Failed to connect to ${peer.deviceName}: $e', tag: _tag);
+      PeerDeliveryTraceService.instance.recordConnectionFailure(
+        peerId: peer.id,
+        stage: 'connect',
+        error: e.toString(),
+      );
       // 只移除属于本次 _doConnect 创建的连接（避免误删 _acceptIncoming 创建的）
       if (_connections[peer.id] == conn) {
         _connections.remove(peer.id);

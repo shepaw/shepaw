@@ -74,6 +74,10 @@ class TraceService extends ChangeNotifier {
   }
 
   /// Begin a group orchestration root trace. Returns the orchestration trace id.
+  ///
+  /// [routePath] records how the turn was routed (`mention_direct`,
+  /// `admin_first`, `broadcast`, …). [mentionedAgentIds] are the user @targets
+  /// for the turn (empty for admin-first / broadcast-all).
   String beginGroupOrchestration({
     required String channelId,
     required String adminAgentId,
@@ -81,6 +85,9 @@ class TraceService extends ChangeNotifier {
     required String userMessage,
     required List<String> memberAgentIds,
     bool flowMode = false,
+    String? routePath,
+    List<String>? mentionedAgentIds,
+    String? userMessageId,
   }) {
     final sessionId = _uuid.v4();
     final now = DateTime.now();
@@ -102,6 +109,9 @@ class TraceService extends ChangeNotifier {
       systemPrompt: json.encode({
         'member_agent_ids': memberAgentIds,
         'flow_mode': flowMode,
+        if (routePath != null) 'route_path': routePath,
+        if (mentionedAgentIds != null) 'mentioned_agent_ids': mentionedAgentIds,
+        if (userMessageId != null) 'user_message_id': userMessageId,
       }),
     );
     _activeSessions[sessionId] = _ActiveTrace(entry: entry);
@@ -465,11 +475,23 @@ class TraceService extends ChangeNotifier {
     }
   }
 
-  /// Export all traces as JSONL (one JSON object per line).
-  Future<String> exportAsJsonl() async {
+  /// Export traces as JSONL (one JSON object per line).
+  ///
+  /// When [channelId] is set, exports that channel's root traces only and
+  /// nests group children under `child_traces` — one pasteable conversation
+  /// bundle. Without [channelId], exports the full flat history.
+  Future<String> exportAsJsonl({String? channelId}) async {
     try {
       final db = await _db.database;
-      final traceRows = await db.query('traces', orderBy: 'start_time DESC');
+      final where = channelId != null
+          ? 'channel_id = ? AND parent_trace_id IS NULL'
+          : null;
+      final traceRows = await db.query(
+        'traces',
+        where: where,
+        whereArgs: channelId != null ? [channelId] : null,
+        orderBy: 'start_time DESC',
+      );
       final buffer = StringBuffer();
 
       for (final row in traceRows) {
@@ -481,7 +503,21 @@ class TraceService extends ChangeNotifier {
           orderBy: 'sequence_number ASC',
         );
         entry.spans = spanRows.map(TraceSpan.fromMap).toList();
-        buffer.writeln(json.encode(entry.toJson()));
+        final jsonMap = entry.toJson();
+        if (channelId != null &&
+            (entry.traceRole == 'group_orchestration' ||
+                entry.parentTraceId == null)) {
+          final children = await getChildTraces(entry.id);
+          if (children.isNotEmpty) {
+            final childDetails = <Map<String, dynamic>>[];
+            for (final child in children) {
+              final detail = await getTraceDetail(child.id);
+              if (detail != null) childDetails.add(detail.toJson());
+            }
+            jsonMap['child_traces'] = childDetails;
+          }
+        }
+        buffer.writeln(json.encode(jsonMap));
       }
 
       return buffer.toString();

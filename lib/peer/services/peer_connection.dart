@@ -20,6 +20,7 @@ import '../models/paired_peer.dart';
 import '../models/peer_message.dart';
 import 'peer_advertise.dart';
 import 'peer_channel_bridge.dart';
+import 'peer_delivery_trace_service.dart';
 import 'peer_storage_service.dart';
 
 /// 连接事件类型
@@ -449,7 +450,7 @@ class PeerConnection {
           );
           _messageController.add(msg);
           // 自动回复已送达回执（不 await，避免阻塞接收）
-          _sendAck(msg.id, 'delivered');
+          unawaited(_sendDeliveredAckWithTrace(msg));
           break;
 
         case 'ack':
@@ -492,6 +493,28 @@ class PeerConnection {
     } catch (e) {
       _log.debug('Failed to send ack ($status) for $messageId: $e', tag: _tag);
     }
+  }
+
+  Future<void> _sendDeliveredAckWithTrace(PeerMessage msg) async {
+    var ackSent = false;
+    String? ackError;
+    try {
+      await _serializedSend(Uint8List.fromList(utf8.encode(jsonEncode({
+        'type': 'ack',
+        'message_id': msg.id,
+        'status': 'delivered',
+      }))));
+      ackSent = true;
+    } catch (e) {
+      ackError = e.toString();
+      _log.debug('Failed to send ack (delivered) for ${msg.id}: $e', tag: _tag);
+    }
+    PeerDeliveryTraceService.instance.traceInboundMessage(
+      peerId: peer.id,
+      message: msg,
+      ackSent: ackSent,
+      ackError: ackError,
+    );
   }
 
   /// 发送已读回执（批量）

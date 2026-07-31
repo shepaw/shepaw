@@ -120,6 +120,8 @@ class PendingApprovalHub {
   ///
   /// Called after [loadMessages] so a resolved in-chat card cannot keep
   /// reviving the global approval banner when the user leaves the channel.
+  /// When chat metadata shows a decision but workflow tables are still pending,
+  /// also replays the missing DB lifecycle update.
   Future<void> reconcileForChannel(
     String channelId,
     Iterable<Message> messages, {
@@ -137,7 +139,14 @@ class PendingApprovalHub {
         messages: messages,
         workflowService: wf,
       );
-      if (!stillPending && _items.remove(item.id) != null) {
+      if (stillPending) continue;
+
+      await PendingApprovalReconciler.healStalePersistence(
+        item: item,
+        messages: messages,
+        workflowService: wf,
+      );
+      if (_items.remove(item.id) != null) {
         changed = true;
       }
     }
@@ -151,7 +160,15 @@ class PendingApprovalHub {
   }
 
   /// Load durable pending approvals from DB (safe to call multiple times).
-  Future<void> hydrate({WorkflowService? workflowService}) async {
+  ///
+  /// When [loadChannelMessages] is provided, each affected channel is reconciled
+  /// against chat metadata so stale DB rows cannot revive false banners.
+  Future<void> hydrate({
+    WorkflowService? workflowService,
+    Future<List<Message>> Function(String channelId, {int limit})?
+        loadChannelMessages,
+    int reconcileMessageLimit = 200,
+  }) async {
     if (_hydrated) return;
     _hydrated = true;
     final wf = workflowService ?? WorkflowService.instance;
@@ -175,7 +192,32 @@ class PendingApprovalHub {
       for (final a in actions) {
         _upsertSilent(_fromWorkflowPending(a));
       }
-      _emit();
+
+      if (loadChannelMessages != null && _items.isNotEmpty) {
+        final channelIds =
+            _items.values.map((i) => i.channelId).toSet().toList();
+        for (final channelId in channelIds) {
+          try {
+            final messages = await loadChannelMessages(
+              channelId,
+              limit: reconcileMessageLimit,
+            );
+            await reconcileForChannel(
+              channelId,
+              messages,
+              workflowService: wf,
+            );
+          } catch (e) {
+            LoggerService().warning(
+              'Hydrate reconcile failed for $channelId: $e',
+              tag: _tag,
+            );
+          }
+        }
+      } else {
+        _emit();
+      }
+
       LoggerService().info(
         'Hydrated ${_items.length} pending approval(s)',
         tag: _tag,

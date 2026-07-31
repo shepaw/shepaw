@@ -213,22 +213,6 @@ class GroupOrchestrationService {
     // 5. Route to the appropriate flow based on admin setting and @mentions
     LoggerService().debug('Routing: mentions=${mentionedAgentIds.length}, admin=$adminAgentId, agents=${agents.map((a) => a.name).toList()}', tag: 'GroupOrchestrationService');
 
-    // Begin orchestration-level trace when admin is present (path 5b)
-    String? orchTraceId;
-    if (adminAgentId != null) {
-      final adminAgent = agents.where((a) => a.id == adminAgentId).firstOrNull;
-      if (adminAgent != null) {
-        orchTraceId = TraceService.instance.beginGroupOrchestration(
-          channelId: channelId,
-          adminAgentId: adminAgentId,
-          adminAgentName: adminAgent.name,
-          userMessage: content,
-          memberAgentIds: agentIds,
-          flowMode: flowMode,
-        );
-      }
-    }
-
     // If the only @mentioned agent is the admin itself, treat this as an
     // admin-first flow (path 5b) so that:
     //  (a) the admin is invoked with its admin system prompt and can generate
@@ -240,6 +224,49 @@ class GroupOrchestrationService {
             mentionedAgentIds.first == adminAgentId)
         ? <String>[]
         : mentionedAgentIds;
+
+    final routePath = effectiveMentionedAgentIds.isNotEmpty
+        ? 'mention_direct'
+        : adminAgentId != null
+            ? (flowMode ? 'admin_flow' : 'admin_first')
+            : 'broadcast';
+
+    // Always create an orchestration root so @mention-direct / broadcast
+    // turns also parent their member traces (and get persisted on exit).
+    final adminForTrace = adminAgentId != null
+        ? agents.where((a) => a.id == adminAgentId).firstOrNull
+        : null;
+    String? orchTraceId = TraceService.instance.beginGroupOrchestration(
+      channelId: channelId,
+      adminAgentId: adminForTrace?.id ?? 'system',
+      adminAgentName: adminForTrace?.name ?? 'system',
+      userMessage: content,
+      memberAgentIds: agentIds,
+      flowMode: flowMode,
+      routePath: routePath,
+      mentionedAgentIds: effectiveMentionedAgentIds,
+      userMessageId: userMessage.id,
+    );
+    final routeSpanId = TraceService.instance.addSpan(
+      traceId: orchTraceId,
+      spanType: 'dispatch_decision',
+      name: 'route',
+      metadata: {
+        'route_path': routePath,
+        'mentioned_agent_ids': effectiveMentionedAgentIds,
+        'admin_agent_id': adminAgentId,
+        'user_message_id': userMessage.id,
+        'mention_mode': mentionMode,
+      },
+    );
+    TraceService.instance.endSpan(routeSpanId, status: 'completed');
+
+    Future<void> endOrchTrace(InferenceStatus status) async {
+      if (orchTraceId != null) {
+        await TraceService.instance.endTrace(orchTraceId!, status);
+        orchTraceId = null;
+      }
+    }
 
     if (effectiveMentionedAgentIds.isNotEmpty) {
       // 5a. User explicitly @mentioned agents — those agents respond directly
@@ -273,6 +300,7 @@ class GroupOrchestrationService {
             onStreamChunk: onStreamChunk,
             onAgentDone: onAgentDone,
             onInteractionRequest: onInteractionRequest,
+            orchestrationTraceId: orchTraceId,
           ).catchError((e) {
             LoggerService().error('Group agent ${agent.name} uncaught error', tag: 'GroupOrchestrationService', error: e);
             onAgentDone?.call(agent.id, agent.name, true);
@@ -343,6 +371,7 @@ class GroupOrchestrationService {
                 onStreamChunk: onStreamChunk,
                 onAgentDone: onAgentDone,
                 onInteractionRequest: onInteractionRequest,
+                orchestrationTraceId: orchTraceId,
               ).catchError((e) {
                 LoggerService().error('Cascade agent (5a) ${agent.name} uncaught error', tag: 'GroupOrchestrationService', error: e);
                 onAgentDone?.call(agent.id, agent.name, true);
@@ -354,6 +383,10 @@ class GroupOrchestrationService {
           respondedAgentIds.addAll(newMentionedIds);
         }
       }
+
+      await endOrchTrace(InferenceStatus.completed);
+      onAllDone?.call();
+      return;
     } else if (adminAgentId != null) {
       // 5b. Admin-first flow: only admin responds, then delegates via @mentions
       final adminAgent = agents.where((a) => a.id == adminAgentId).firstOrNull;
@@ -428,14 +461,6 @@ class GroupOrchestrationService {
           onInteractionRequest: onInteractionRequest,
           orchestrationTraceId: orchTraceId,
         );
-
-        // Helper to end orchestration trace on any exit path
-        Future<void> endOrchTrace(InferenceStatus status) async {
-          if (orchTraceId != null) {
-            await TraceService.instance.endTrace(orchTraceId!, status);
-            orchTraceId = null;
-          }
-        }
 
         // Detect non-text modality in recent history (e.g. images sent by user)
         final detectedModality = const GroupPromptBuilder().detectRecentAttachmentModality(historyMessages);
@@ -1355,6 +1380,7 @@ class GroupOrchestrationService {
             onStreamChunk: onStreamChunk,
             onAgentDone: onAgentDone,
             onInteractionRequest: onInteractionRequest,
+            orchestrationTraceId: orchTraceId,
           ).catchError((e) {
             LoggerService().error('Group agent ${agent.name} uncaught error', tag: 'GroupOrchestrationService', error: e);
             onAgentDone?.call(agent.id, agent.name, true);
@@ -1365,6 +1391,7 @@ class GroupOrchestrationService {
       await Future.wait(futures);
     }
 
+    await endOrchTrace(InferenceStatus.completed);
     onAllDone?.call();
   }
 

@@ -11,7 +11,9 @@ import '../services/peer_pairing_service.dart';
 import '../services/peer_storage_service.dart';
 import '../../l10n/app_localizations.dart';
 import '../../models/remote_agent.dart';
+import '../../screens/channel_trace_screen.dart';
 import '../../screens/chat_screen.dart';
+import '../services/peer_delivery_trace_service.dart';
 import '../../services/error_handler_service.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/peer_message_search_delegate.dart';
@@ -400,6 +402,17 @@ class _PeerChatScreenState extends State<PeerChatScreen> {
     );
   }
 
+  void _showChannelTraces() {
+    Navigator.of(context, rootNavigator: widget.embedded).push(
+      MaterialPageRoute(
+        builder: (_) => ChannelTraceScreen(
+          channelId: PeerDeliveryTraceService.channelIdForPeer(widget.peer.id),
+          channelName: _displayName,
+        ),
+      ),
+    );
+  }
+
   Future<void> _openSettings() async {
     final deleted = await PeerSettingsScreen.show(context, widget.peer);
     if (deleted == true && mounted) {
@@ -466,6 +479,11 @@ class _PeerChatScreenState extends State<PeerChatScreen> {
           ),
         ),
         actions: [
+          IconButton(
+            icon: const Icon(Icons.psychology_outlined, size: 20),
+            tooltip: 'Traces',
+            onPressed: _showChannelTraces,
+          ),
           IconButton(
             icon: const Icon(Icons.search, size: 20),
             tooltip: l10n.chat_searchMessages,

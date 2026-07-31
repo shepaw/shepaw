@@ -19,6 +19,7 @@ import '../skill_registry.dart';
 import '../model_registry.dart';
 import '../ui_component_registry.dart';
 import '../inference_log_service.dart';
+import '../trace_service.dart';
 import '../foreground_task_service.dart';
 import '../logger_service.dart';
 import '../peer_key_utils.dart';
@@ -1146,6 +1147,7 @@ class AgentMessagingService {
     final splitter = StreamContentSplitter();
     final infLogPeer = InferenceLogService.instance;
     final traceId = activeTask.taskId;
+    String? peerRequestId;
     infLogPeer.beginSession(
       sessionId: traceId,
       agentId: agent.id,
@@ -1153,6 +1155,12 @@ class AgentMessagingService {
       channelId: effectiveChannelId.isNotEmpty ? effectiveChannelId : null,
       executionMode: 'peer_dm',
       userMessage: userMessage.content,
+      systemPrompt: json.encode({
+        'peer_id': peerId,
+        'remote_agent_id': remoteAgentId,
+        'peer_session_id': peerSessionId,
+        'user_message_id': userMessage.id,
+      }),
     );
     infLogPeer.beginRound(traceId, requestSummary: 'Peer DM request');
 
@@ -1182,6 +1190,30 @@ class AgentMessagingService {
         sessionId: peerSessionId,
         attachments: attachments,
         cancelToken: acpCancellationToken,
+        onRequestStarted: (requestId) {
+          peerRequestId = requestId;
+          final spanId = TraceService.instance.addSpan(
+            traceId: traceId,
+            spanType: 'peer_request',
+            name: 'agent_chat',
+            metadata: {
+              'request_id': requestId,
+              'peer_id': peerId,
+              'remote_agent_id': remoteAgentId,
+              'peer_session_id': peerSessionId,
+              'user_message_id': userMessage.id,
+            },
+          );
+          TraceService.instance.endSpan(
+            spanId,
+            outputData: {'status': 'sent'},
+          );
+          publishMetadata({
+            'request_id': requestId,
+            'peer_id': peerId,
+            'remote_agent_id': remoteAgentId,
+          });
+        },
         onChunk: (chunk) {
           final answerDelta = splitter.onChunk(chunk);
           if (answerDelta.isNotEmpty) {
@@ -1245,10 +1277,19 @@ class AgentMessagingService {
 
       final meta = <String, dynamic>{
         'trace_id': traceId,
+        'peer_id': peerId,
+        'remote_agent_id': remoteAgentId,
+        if (peerRequestId != null || result.requestId != null)
+          'request_id': peerRequestId ?? result.requestId,
+        if (peerSessionId != null) 'peer_session_id': peerSessionId,
+        'user_message_id': userMessage.id,
       };
       if (result.metadata != null) meta.addAll(result.metadata!);
       meta.addAll(splitter.finalProgressMetadata());
       meta['trace_id'] = traceId;
+      if (peerRequestId != null || result.requestId != null) {
+        meta['request_id'] = peerRequestId ?? result.requestId;
+      }
       if (wasCancelled) {
         meta['status'] = 'stopped';
         meta['interruption_reason'] = 'user_cancelled';
