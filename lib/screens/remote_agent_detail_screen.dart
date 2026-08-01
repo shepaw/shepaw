@@ -19,6 +19,7 @@ import '../services/model_registry.dart';
 import '../models/agent_scenario_models.dart';
 import '../models/llm_provider_config.dart';
 import '../services/skill_registry.dart';
+import '../services/cli_namespace_registry.dart';
 import '../service_locator.dart' show getIt;
 import 'skill_select_screen.dart';
 import 'cli_command_select_screen.dart';
@@ -902,10 +903,12 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
       children: [
         _buildHeader(),
         const SizedBox(height: 24),
-        if (!_agent.isPeerAgent) _buildInfoCard(),
+        _buildInfoCard(),
         if (_isLocalMode) ...[
           const SizedBox(height: 16),
           _buildSkillsCard(),
+          const SizedBox(height: 16),
+          _buildCliCommandsCard(),
           // 分享给配对设备（仅本地 agent 显示）
           const SizedBox(height: 16),
           _buildExternalAccessCard(),
@@ -1186,16 +1189,23 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
     final llmModel = _agent.metadata['llm_model'] as String?;
     final llmApiBase = _agent.metadata['llm_api_base'] as String?;
 
+    // 主模型优先从 ModelRegistry 按 main_model_id 解析（保存时只存 id，
+    // llm_model / llm_api_base 会被清除），找不到再回退到 legacy 字段。
+    final mainModelId = _agent.metadata['main_model_id'] as String?;
+    final modelDef = mainModelId != null
+        ? ModelRegistry.instance.getById(mainModelId)
+        : null;
+    final displayModel = modelDef != null && modelDef.displayName.isNotEmpty
+        ? modelDef.displayName
+        : llmModel;
+    final displayApiBase = modelDef?.route.apiBase ?? llmApiBase;
+
     // Derive a friendly provider name from the model definition.
     // Try to match by apiBase first (unique per provider), then fall back to
     // capitalising the stored providerType string.
     String? llmProvider;
     if (llmProviderType != null) {
-      final mainModelId = _agent.metadata['main_model_id'] as String?;
-      final modelDef = mainModelId != null
-          ? ModelRegistry.instance.getById(mainModelId)
-          : null;
-      final apiBase = modelDef?.route.apiBase ?? llmApiBase;
+      final apiBase = displayApiBase;
 
       if (apiBase != null && apiBase.isNotEmpty) {
         // Match by defaultApiBase (strip trailing slash for comparison).
@@ -1244,10 +1254,17 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
               const SizedBox(height: 8),
               _buildInfoRow('Agent ID',
                   (_agent.metadata['target_agent_id'] as String?) ?? _agent.id),
-              if (_agent.capabilities.isNotEmpty) ...[
-                const SizedBox(height: 8),
-                _buildInfoRow(l10n.agentDetail_capabilities, _agent.capabilities.join(', ')),
-              ],
+            ],
+            // Peer agent：来源设备 + P2P 隧道连接
+            if (_agent.isPeerAgent) ...[
+              _buildInfoRow(l10n.agentDetail_sourceDevice,
+                  _agent.sourcePeerName ?? _agent.sourcePeerId ?? '-'),
+              const SizedBox(height: 8),
+              _buildInfoRow(l10n.agentDetail_connectionType, l10n.agentDetail_peerTunnel),
+            ],
+            if (_agent.capabilities.isNotEmpty) ...[
+              const SizedBox(height: 8),
+              _buildInfoRow(l10n.agentDetail_capabilities, _agent.capabilities.join(', ')),
             ],
             if (systemPrompt != null && systemPrompt.isNotEmpty) ...[
               if (!_isLocalMode) const SizedBox(height: 8),
@@ -1265,13 +1282,13 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
                 const SizedBox(height: 8),
               ],
               _buildInfoRow(l10n.agentDetail_provider, llmProvider),
-              if (llmModel != null && llmModel.isNotEmpty) ...[
+              if (displayModel != null && displayModel.isNotEmpty) ...[
                 const SizedBox(height: 8),
-                _buildInfoRow(l10n.agentDetail_model, llmModel),
+                _buildInfoRow(l10n.agentDetail_model, displayModel),
               ],
-              if (llmApiBase != null && llmApiBase.isNotEmpty) ...[
+              if (displayApiBase != null && displayApiBase.isNotEmpty) ...[
                 const SizedBox(height: 8),
-                _buildInfoRow('API Base', llmApiBase),
+                _buildInfoRow('API Base', displayApiBase),
               ],
             ] else if (_isLocalMode) ...[
               // She / local agent with no model configured yet
@@ -1296,8 +1313,15 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
             ],
             _buildInfoRow(l10n.agentDetail_taskTimeout,
                 l10n.agentDetail_taskTimeoutValue((_agent.metadata['task_timeout_seconds'] as num? ?? 600).toInt())),
+            // 本地 / peer agent 的 Agent ID 放在底部信息区（远端 agent 已在连接区展示）
+            if (_isLocalMode || _agent.isPeerAgent) ...[
+              const SizedBox(height: 8),
+              _buildInfoRow('Agent ID', _agent.id),
+            ],
             const SizedBox(height: 8),
             _buildInfoRow(l10n.agentDetail_createdAt, _formatTimestamp(_agent.createdAt)),
+            const SizedBox(height: 8),
+            _buildInfoRow(l10n.agentDetail_updatedAt, _formatTimestamp(_agent.updatedAt)),
           ],
         ),
       ),
@@ -1402,6 +1426,110 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
                               maxLines: 2,
                               overflow: TextOverflow.ellipsis,
                             ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              );
+            }),
+        ],
+      ),
+    );
+  }
+
+  /// CLI 命令卡（详情模式，仅本地 agent）。
+  ///
+  /// 与编辑页的 [CliCommandSelectScreen] 对应：`enabledCliCommands` 为空表示
+  /// 全部放行（默认），非空表示仅放行选中的命令。按命名空间分组展示。
+  Widget _buildCliCommandsCard() {
+    final l10n = AppLocalizations.of(context);
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+    final registry = CliNamespaceRegistry.instance;
+    final enabledCommands = _agent.enabledCliCommands;
+    final isRestricted = enabledCommands.isNotEmpty;
+
+    // 按顶层命名空间分组已放行的命令，便于浏览
+    final grouped = registry.namespaces.values
+        .map((ns) => MapEntry(
+            ns, ns.commands.where(enabledCommands.contains).toList()))
+        .where((entry) => entry.value.isNotEmpty)
+        .toList();
+
+    return Card(
+      elevation: 0,
+      clipBehavior: Clip.antiAlias,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12),
+        side: BorderSide(color: colorScheme.outlineVariant),
+      ),
+      child: ExpansionTile(
+        leading: Icon(Icons.terminal, size: 18, color: colorScheme.primary),
+        title: Row(
+          children: [
+            Text(
+              l10n.agentDetail_cliCommands,
+              style: theme.textTheme.titleMedium?.copyWith(
+                fontWeight: FontWeight.bold,
+                color: colorScheme.primary,
+              ),
+            ),
+            const Spacer(),
+            _buildCountBadge(
+              '${isRestricted ? enabledCommands.length : registry.allCommandIds.length}',
+              true,
+              colorScheme,
+            ),
+          ],
+        ),
+        tilePadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+        childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+        initiallyExpanded: false,
+        children: [
+          const SizedBox(height: 8),
+          if (!isRestricted)
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 8),
+              child: Text(
+                l10n.agentDetail_allCliCommands,
+                style: TextStyle(
+                  fontSize: 13,
+                  color: colorScheme.onSurfaceVariant,
+                  fontStyle: FontStyle.italic,
+                ),
+              ),
+            )
+          else
+            ...grouped.map((entry) {
+              final ns = entry.key;
+              final commands = entry.value;
+              return Padding(
+                padding: const EdgeInsets.symmetric(vertical: 4),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Icon(
+                      Icons.chevron_right,
+                      size: 16,
+                      color: colorScheme.onSurface,
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            '${ns.label} (${commands.length})',
+                            style: const TextStyle(
+                                fontSize: 13, fontWeight: FontWeight.w500),
+                          ),
+                          Text(
+                            commands.join(', '),
+                            style: TextStyle(
+                                fontSize: 11,
+                                color: colorScheme.onSurfaceVariant),
+                          ),
                         ],
                       ),
                     ),

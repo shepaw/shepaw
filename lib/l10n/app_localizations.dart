@@ -2294,6 +2294,36 @@ abstract class AppLocalizations {
   /// **'创建时间'**
   String get agentDetail_createdAt;
 
+  /// No description provided for @agentDetail_updatedAt.
+  ///
+  /// In zh, this message translates to:
+  /// **'更新时间'**
+  String get agentDetail_updatedAt;
+
+  /// No description provided for @agentDetail_sourceDevice.
+  ///
+  /// In zh, this message translates to:
+  /// **'来源设备'**
+  String get agentDetail_sourceDevice;
+
+  /// No description provided for @agentDetail_peerTunnel.
+  ///
+  /// In zh, this message translates to:
+  /// **'P2P 隧道（配对设备）'**
+  String get agentDetail_peerTunnel;
+
+  /// No description provided for @agentDetail_cliCommands.
+  ///
+  /// In zh, this message translates to:
+  /// **'CLI 命令'**
+  String get agentDetail_cliCommands;
+
+  /// No description provided for @agentDetail_allCliCommands.
+  ///
+  /// In zh, this message translates to:
+  /// **'全部可用（默认放行）'**
+  String get agentDetail_allCliCommands;
+
   /// No description provided for @agentDetail_authToken.
   ///
   /// In zh, this message translates to:

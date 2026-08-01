@@ -1227,6 +1227,21 @@ class AppLocalizationsEn extends AppLocalizations {
   String get agentDetail_createdAt => 'Created';
 
   @override
+  String get agentDetail_updatedAt => 'Updated';
+
+  @override
+  String get agentDetail_sourceDevice => 'Source Device';
+
+  @override
+  String get agentDetail_peerTunnel => 'P2P tunnel (paired device)';
+
+  @override
+  String get agentDetail_cliCommands => 'CLI Commands';
+
+  @override
+  String get agentDetail_allCliCommands => 'All commands available (default)';
+
+  @override
   String get agentDetail_authToken => 'Auth Token';
 
   @override

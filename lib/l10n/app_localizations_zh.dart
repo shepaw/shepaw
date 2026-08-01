@@ -1186,6 +1186,21 @@ class AppLocalizationsZh extends AppLocalizations {
   String get agentDetail_createdAt => '创建时间';
 
   @override
+  String get agentDetail_updatedAt => '更新时间';
+
+  @override
+  String get agentDetail_sourceDevice => '来源设备';
+
+  @override
+  String get agentDetail_peerTunnel => 'P2P 隧道（配对设备）';
+
+  @override
+  String get agentDetail_cliCommands => 'CLI 命令';
+
+  @override
+  String get agentDetail_allCliCommands => '全部可用（默认放行）';
+
+  @override
   String get agentDetail_authToken => '认证 Token';
 
   @override
