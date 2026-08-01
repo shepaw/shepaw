@@ -225,20 +225,20 @@ class HomeScreenState extends State<HomeScreen> {
     return Stack(
       children: [
         Container(
-          width: 56,
-          height: 56,
+          width: 40,
+          height: 40,
           decoration: BoxDecoration(
             color: Colors.grey[200],
-            borderRadius: BorderRadius.circular(12),
+            borderRadius: BorderRadius.circular(10),
           ),
           clipBehavior: Clip.antiAlias,
           child: AvatarImage(
             avatar: agent.avatar,
-            size: 56,
-            borderRadius: 12,
+            size: 40,
+            borderRadius: 10,
             fallback: Text(
               agent.name.isNotEmpty ? agent.name[0] : 'A',
-              style: const TextStyle(fontSize: 24),
+              style: const TextStyle(fontSize: 20),
             ),
           ),
         ),
@@ -1439,14 +1439,14 @@ class HomeScreenState extends State<HomeScreen> {
             Stack(
               children: [
                 Container(
-                  width: 56,
-                  height: 56,
+                  width: 40,
+                  height: 40,
                   decoration: BoxDecoration(
                     color: AppColors.primaryContainer,
-                    borderRadius: BorderRadius.circular(12),
+                    borderRadius: BorderRadius.circular(10),
                   ),
                   alignment: Alignment.center,
-                  child: const Icon(Icons.group, size: 28, color: AppColors.primary),
+                  child: const Icon(Icons.group, size: 20, color: AppColors.primary),
                 ),
                 if (unreadCount > 0)
                   Positioned(
@@ -1953,7 +1953,7 @@ class HomeScreenState extends State<HomeScreen> {
             Stack(
               clipBehavior: Clip.none,
               children: [
-                PeerDeviceIcon(peer: peer, size: 56, borderRadius: 12),
+                PeerDeviceIcon(peer: peer, size: 40, borderRadius: 10),
                 // 在线状态
                 Positioned(
                   right: 0,
