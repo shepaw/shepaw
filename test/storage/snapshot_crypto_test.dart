@@ -1,5 +1,7 @@
 import 'dart:typed_data';
 
+import 'package:convert/convert.dart';
+import 'package:cryptography/cryptography.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shepaw/storage/snapshot_crypto.dart';
 
@@ -13,6 +15,22 @@ void main() {
   });
 
   group('两级 KDF', () {
+    test('Nexuspouch 跨端 KDF golden vector', () async {
+      // docs/storage_fixtures/reprotect_kdf_vector.json (Nexuspouch)
+      final h = await SnapshotCrypto.hashPassword('vector-password');
+      expect(
+        hex.encode(h),
+        'e16e67533b238dd9b81256288ff7acbf3007619dcc6e6facf2279fd163dfe3de',
+      );
+      final salt = Uint8List.fromList(List.filled(32, 0xAB));
+      final key = await SnapshotCrypto.deriveKeyFromHash(h, salt);
+      final keyBytes = await key.extractBytes();
+      expect(
+        hex.encode(keyBytes),
+        '27471c6533ccb021a64d371ac66c11028977c85cc0a79ee6d6a274ebbd75c0f0',
+      );
+    });
+
     test('加密/解密往返', () async {
       final salt = SnapshotCrypto.newSnapshotSalt();
       final key =
