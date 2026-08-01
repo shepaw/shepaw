@@ -50,6 +50,10 @@ class StoreOp {
   static const handoffAck = 'handoff.ack';
   static const artifactState = 'artifact.state';
 
+  // v4.3 空间属性模型（Step 2）
+  static const spaceList = 'space.list';
+  static const spaceDeclare = 'space.declare';
+
   static const result = 'result';
   static const error = 'error';
 }
@@ -91,6 +95,12 @@ class StoreSpace {
   static const sharedReadable = <String>[artifacts, files];
 
   static bool isValid(String s) => all.contains(s);
+
+  /// 自定义空间语法：`^[a-z][a-z0-9-]{0,31}$`（与 Rust space.declare 一致）。
+  static bool isValidSyntax(String s) =>
+      s.length >= 1 &&
+      s.length <= 32 &&
+      RegExp(r'^[a-z][a-z0-9-]*$').hasMatch(s);
 }
 
 /// 一帧 store.* 消息。
@@ -325,12 +335,39 @@ StoreAcl checkStoreAcl(
   required String callerDeviceId,
   required String trustLevel,
   required bool loopback,
+}) =>
+    checkStoreAclWith(
+      frame,
+      callerDeviceId: callerDeviceId,
+      trustLevel: trustLevel,
+      loopback: loopback,
+      visibility: _builtinVisibility,
+    );
+
+/// 内置空间可见性：`true`=shared，`false`=private，`null`=未知。
+bool? _builtinVisibility(String space) => switch (space) {
+      StoreSpace.artifacts || StoreSpace.files => true,
+      StoreSpace.attachments || StoreSpace.backups => false,
+      _ => null,
+    };
+
+/// 属性驱动 ACL（Step 2）：`visibility(space)` 返回 `true`(shared) /
+/// `false`(private) / `null`(未知)。未知空间 → denyBadOp。
+StoreAcl checkStoreAclWith(
+  StoreFrame frame, {
+  required String callerDeviceId,
+  required String trustLevel,
+  required bool loopback,
+  bool? Function(String space)? visibility,
 }) {
+  bool? vis(String s) => visibility?.call(s) ?? _builtinVisibility(s);
   // friend 级：全部拒绝（spec §3）
   if (trustLevel != TrustLevel.owner) return StoreAcl.denyUntrusted;
 
   final space = frame.space;
   final device = frame.device;
+  bool known(String s) => vis(s) != null || StoreSpace.isValid(s);
+  bool shared(String s) => vis(s) == true;
 
   switch (frame.op) {
     // ── 写操作：目标目录恒为调用者（写路径收敛，spec §4）──
@@ -338,7 +375,7 @@ StoreAcl checkStoreAcl(
     case StoreOp.writeChunk:
     case StoreOp.commit:
     case StoreOp.handoffCreate:
-      if (space != null && !StoreSpace.isValid(space)) {
+      if (space != null && !known(space)) {
         return StoreAcl.denyBadOp;
       }
       // write.begin 必须带 space；chunk/commit 以 upload_id 关联（space 可省）
@@ -354,11 +391,11 @@ StoreAcl checkStoreAcl(
     // ── 删除：共享分区可删他端，私有分区仅本端 ──
     case StoreOp.delete:
     case StoreOp.handoffAck:
-      if (space == null || !StoreSpace.isValid(space)) {
+      if (space == null || !known(space)) {
         return StoreAcl.denyBadOp;
       }
       final targetOwn = device == null || device == callerDeviceId;
-      if (!targetOwn && !StoreSpace.sharedReadable.contains(space)) {
+      if (!targetOwn && !shared(space)) {
         return StoreAcl.denyAcl;
       }
       if (device != null && !isValidDeviceId(device)) {
@@ -375,11 +412,11 @@ StoreAcl checkStoreAcl(
     case StoreOp.versionsRead:
     case StoreOp.manifest:
     case StoreOp.artifactState:
-      if (space == null || !StoreSpace.isValid(space)) {
+      if (space == null || !known(space)) {
         return StoreAcl.denyBadOp;
       }
       final targetOwn = device == null || device == callerDeviceId;
-      if (!targetOwn && !StoreSpace.sharedReadable.contains(space)) {
+      if (!targetOwn && !shared(space)) {
         // seed:true：ACL 粗放行；运行时由 SeedAuthorization 收敛为迁移窗口
         final seed = frame.payload['seed'] == true;
         if (seed) {
@@ -421,7 +458,11 @@ StoreAcl checkStoreAcl(
       return loopback ? StoreAcl.allow : StoreAcl.denyAcl;
 
     case StoreOp.stats:
+    case StoreOp.spaceList:
       return StoreAcl.allow;
+    case StoreOp.spaceDeclare:
+      // 自定义空间声明：仅 master 本机（loopback）
+      return loopback ? StoreAcl.allow : StoreAcl.denyAcl;
 
     // 游标对账：仅本设备目录（spec §6.2）
     case StoreOp.syncHello:

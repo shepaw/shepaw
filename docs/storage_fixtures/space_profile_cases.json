@@ -1,0 +1,94 @@
+{
+  "description": "Space profile ACL cases (Step 2). check_acl_with uses declared-space visibility: models=shared, vault=private. Rust (master) first; Dart checkStoreAcl custom-space support is a follow-up.",
+  "caller": "aaaaaaaaaaaaaaaa",
+  "other": "bbbbbbbbbbbbbbbb",
+  "known": { "models": "shared", "vault": "private" },
+  "cases": [
+    {
+      "name": "models_list_other",
+      "op": "list",
+      "trust": "owner",
+      "loopback": false,
+      "payload": { "space": "models", "device": "bbbbbbbbbbbbbbbb" },
+      "expect": "allow"
+    },
+    {
+      "name": "models_write_forge",
+      "op": "write.begin",
+      "trust": "owner",
+      "loopback": false,
+      "payload": { "space": "models", "device": "bbbbbbbbbbbbbbbb" },
+      "expect": "denyAcl"
+    },
+    {
+      "name": "models_write_own",
+      "op": "write.begin",
+      "trust": "owner",
+      "loopback": false,
+      "payload": { "space": "models" },
+      "expect": "allow"
+    },
+    {
+      "name": "vault_read_other",
+      "op": "read",
+      "trust": "owner",
+      "loopback": false,
+      "payload": { "space": "vault", "device": "bbbbbbbbbbbbbbbb" },
+      "expect": "denyAcl"
+    },
+    {
+      "name": "vault_read_own",
+      "op": "read",
+      "trust": "owner",
+      "loopback": false,
+      "payload": { "space": "vault" },
+      "expect": "allow"
+    },
+    {
+      "name": "vault_read_other_seed",
+      "op": "list",
+      "trust": "owner",
+      "loopback": false,
+      "payload": { "space": "vault", "device": "bbbbbbbbbbbbbbbb", "seed": true },
+      "expect": "allow"
+    },
+    {
+      "name": "unknown_space_read",
+      "op": "list",
+      "trust": "owner",
+      "loopback": false,
+      "payload": { "space": "mystery" },
+      "expect": "denyBadOp"
+    },
+    {
+      "name": "declare_remote_denied",
+      "op": "space.declare",
+      "trust": "owner",
+      "loopback": false,
+      "payload": { "name": "models", "visibility": "shared" },
+      "expect": "denyAcl"
+    },
+    {
+      "name": "declare_loopback_ok",
+      "op": "space.declare",
+      "trust": "owner",
+      "loopback": true,
+      "payload": { "name": "models", "visibility": "shared" },
+      "expect": "allow"
+    },
+    {
+      "name": "declare_friend",
+      "op": "space.declare",
+      "trust": "friend",
+      "loopback": true,
+      "expect": "denyUntrusted"
+    },
+    {
+      "name": "space_list_owner",
+      "op": "space.list",
+      "trust": "owner",
+      "loopback": false,
+      "expect": "allow"
+    }
+  ]
+}

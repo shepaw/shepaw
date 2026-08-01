@@ -244,5 +244,29 @@ void main() {
         expect(v.name, c['expect'], reason: c['name'] as String);
       }
     });
+
+    test('space_profile_cases fixture（属性驱动 ACL，v4.3 Step 2）', () {
+      const caller = 'aaaaaaaaaaaaaaaa';
+      final file = File('docs/storage_fixtures/space_profile_cases.json');
+      final json = jsonDecode(file.readAsStringSync()) as Map<String, dynamic>;
+      final known = (json['known'] as Map).cast<String, dynamic>();
+      bool? vis(String space) {
+        final v = known[space];
+        if (v == null) return null;
+        return v == 'shared';
+      }
+
+      for (final c in (json['cases'] as List).cast<Map<String, dynamic>>()) {
+        final frame = StoreFrame(
+            op: c['op'] as String,
+            payload: (c['payload'] as Map? ?? const {}).cast<String, dynamic>());
+        final v = checkStoreAclWith(frame,
+            callerDeviceId: caller,
+            trustLevel: c['trust'] as String,
+            loopback: c['loopback'] as bool? ?? false,
+            visibility: vis);
+        expect(v.name, c['expect'], reason: c['name'] as String);
+      }
+    });
   });
 }
