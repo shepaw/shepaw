@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:package_info_plus/package_info_plus.dart';
@@ -75,6 +74,7 @@ class HomeScreenState extends State<HomeScreen> {
   late final ConversationListController _list;
   final TextEditingController _searchController = TextEditingController();
   final GlobalKey _addButtonKey = GlobalKey();
+  final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
   late final MessageSearchService _messageSearchService;
   List<Channel> _searchChannelResults = [];
   List<MessageSearchResult> _searchMessageResults = [];
@@ -482,20 +482,18 @@ class HomeScreenState extends State<HomeScreen> {
     final iconColor = IconTheme.of(context).color ?? Theme.of(context).colorScheme.onSurface;
     final isSearching = widget.embedded && _searchController.text.trim().isNotEmpty;
 
-    // Edge-only open zone: full-screen drag made vertical list scrolls with a
-    // slight horizontal bias steal the drawer gesture. Keep a strip wide enough
-    // to sit beyond the system-back AbsorbPointer, but not the whole list.
-    final leadingBlock =
-        DrawerSwipeDetector.resolveLeadingEdgeBlockWidth(context);
-    final drawerEdgeDragWidth =
-        widget.embedded ? null : math.max(72.0, leadingBlock + 48);
-
+    // Full-area open via DrawerSwipeDetector: clearly rightward swipes open the
+    // drawer from the middle; vertical-dominant moves yield to list scrolling.
+    // Scaffold's built-in edge drag stays off so it cannot steal diagonal scrolls.
     return DrawerSwipeDetector(
       enabled: !widget.embedded,
-      // Match kTouchSlop so vertical scrolls win when movement is mostly up/down.
+      onOpenDrawer: widget.embedded
+          ? null
+          : () => _scaffoldKey.currentState?.openDrawer(),
       verticalScrollSlop: 18,
       blockLeadingEdgeDrawerGesture: !widget.embedded,
       child: Scaffold(
+        key: _scaffoldKey,
         appBar: widget.embedded
             ? _buildEmbeddedAppBar(iconColor)
             : AppBar(
@@ -509,18 +507,15 @@ class HomeScreenState extends State<HomeScreen> {
                 centerTitle: true,
                 elevation: 0,
                 scrolledUnderElevation: 0.5,
-                leading: Builder(
-                  builder: (context) => IconButton(
-                    icon: const Icon(Icons.menu),
-                    onPressed: () => Scaffold.of(context).openDrawer(),
-                  ),
+                leading: IconButton(
+                  icon: const Icon(Icons.menu),
+                  onPressed: () => _scaffoldKey.currentState?.openDrawer(),
                 ),
                 actions: [_buildAppBarTrailingActions(iconColor)],
               ),
         // 左侧抽屉菜单 (hidden in embedded mode)
         drawer: widget.embedded ? null : _buildDrawer(),
-        drawerEnableOpenDragGesture: !widget.embedded,
-        drawerEdgeDragWidth: drawerEdgeDragWidth,
+        drawerEnableOpenDragGesture: false,
         body: isSearching ? _buildEmbeddedSearchBody() : _buildBody(),
       ),
     );
