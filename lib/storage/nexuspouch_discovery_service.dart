@@ -173,12 +173,22 @@ Map<String, String> _parseTxt(String raw) {
       continue;
     }
   }
-  // Fallback: scan for known keys if separators were stripped.
-  for (final key in ['fp', 'name', 'path', 'proto']) {
-    if (out.containsKey(key)) continue;
-    final re = RegExp('$key=([^\\x00\\s]+)');
-    final m = re.firstMatch(raw);
-    if (m != null) out[key] = m.group(1)!;
+  // Fallback when separators were stripped (fp is always 16 hex).
+  if (!out.containsKey('fp')) {
+    final m = RegExp(r'fp=([0-9a-f]{16})').firstMatch(raw);
+    if (m != null) out['fp'] = m.group(1)!;
+  }
+  if (!out.containsKey('path')) {
+    final m = RegExp(r'path=(/[^\x00\s]*)').firstMatch(raw);
+    if (m != null) out['path'] = m.group(1)!;
+  }
+  if (!out.containsKey('name')) {
+    final m = RegExp(r'name=([^\x00]+?)(?=(?:fp|path|proto)=|$)').firstMatch(raw);
+    if (m != null) out['name'] = m.group(1)!;
+  }
+  if (!out.containsKey('proto')) {
+    final m = RegExp(r'proto=(\d+)').firstMatch(raw);
+    if (m != null) out['proto'] = m.group(1)!;
   }
   return out;
 }
