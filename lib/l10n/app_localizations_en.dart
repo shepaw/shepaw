@@ -5338,6 +5338,52 @@ class AppLocalizationsEn extends AppLocalizations {
   String get storage_entryAdvanced => 'Advanced & Danger Zone';
 
   @override
+  String get storage_entryNas => 'LAN Nexuspouch';
+
+  @override
+  String get storage_nasEntryHint =>
+      'Discover always-on store masters on your network';
+
+  @override
+  String get storage_nasHint =>
+      'Scan for Nexuspouch nodes advertising _nexuspouch._tcp. First pairing still needs a QR code from the node admin UI; afterward Connect refreshes the LAN endpoint and sets it as store master.';
+
+  @override
+  String get storage_nasScanning => 'Scanning LAN…';
+
+  @override
+  String get storage_nasEmpty =>
+      'No Nexuspouch nodes found. Is the node running on this Wi‑Fi?';
+
+  @override
+  String get storage_nasConnect => 'Connect';
+
+  @override
+  String storage_nasConnected(String name) {
+    return 'Connected to $name';
+  }
+
+  @override
+  String storage_nasConnectFailed(String error) {
+    return 'Connect failed: $error';
+  }
+
+  @override
+  String get storage_nasMissingFingerprint =>
+      'Discovery result has no fingerprint; pair via QR instead.';
+
+  @override
+  String get storage_nasNotPairedTitle => 'Not paired yet';
+
+  @override
+  String storage_nasNotPairedBody(String name) {
+    return '$name is on the LAN but not paired with this app. Scan the node QR to pair first.';
+  }
+
+  @override
+  String get storage_nasOpenPairing => 'Open pairing';
+
+  @override
   String get storage_importEntryHint =>
       'Migrate snapshots and data from an old device';
 

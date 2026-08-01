@@ -5142,6 +5142,49 @@ class AppLocalizationsZh extends AppLocalizations {
   String get storage_entryAdvanced => '高级与危险区';
 
   @override
+  String get storage_entryNas => '局域网 Nexuspouch';
+
+  @override
+  String get storage_nasEntryHint => '发现同网段常开存储节点';
+
+  @override
+  String get storage_nasHint =>
+      '扫描广播 _nexuspouch._tcp 的 Nexuspouch 节点。首次仍需在节点 /admin 扫码配对；配对后点「连接」可刷新局域网端点并设为 store master。';
+
+  @override
+  String get storage_nasScanning => '正在扫描局域网…';
+
+  @override
+  String get storage_nasEmpty => '未发现 Nexuspouch 节点。请确认节点已在同一 Wi‑Fi 运行。';
+
+  @override
+  String get storage_nasConnect => '连接';
+
+  @override
+  String storage_nasConnected(String name) {
+    return '已连接到 $name';
+  }
+
+  @override
+  String storage_nasConnectFailed(String error) {
+    return '连接失败：$error';
+  }
+
+  @override
+  String get storage_nasMissingFingerprint => '发现结果缺少指纹，请改用扫码配对。';
+
+  @override
+  String get storage_nasNotPairedTitle => '尚未配对';
+
+  @override
+  String storage_nasNotPairedBody(String name) {
+    return '$name 在局域网中，但尚未与本 App 配对。请先扫描节点二维码完成配对。';
+  }
+
+  @override
+  String get storage_nasOpenPairing => '打开配对';
+
+  @override
   String get storage_importEntryHint => '从旧设备迁入快照与数据';
 
   @override

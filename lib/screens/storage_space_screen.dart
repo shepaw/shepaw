@@ -7,6 +7,7 @@ import '../storage/import_auth_service.dart';
 import 'she_circle_screen.dart';
 import 'storage_advanced_screen.dart';
 import 'storage_import_screen.dart';
+import 'storage_nexuspouch_screen.dart';
 import 'storage_shared.dart';
 import 'storage_snapshots_screen.dart';
 import 'storage_space_manage_screen.dart';
@@ -15,6 +16,7 @@ import 'storage_space_manage_screen.dart';
 enum StorageBagEntry {
   snapshots,
   space,
+  nas,
   import,
   sheCircle,
   advanced,
@@ -181,6 +183,16 @@ class StorageSpaceScreenState extends State<StorageSpaceScreen> {
         ),
       ),
       _entryTile(
+        entry: StorageBagEntry.nas,
+        icon: Icons.lan_outlined,
+        title: l10n.storage_entryNas,
+        subtitle: l10n.storage_nasEntryHint,
+        onTap: () => _selectOrOpen(
+          StorageBagEntry.nas,
+          const StorageNexuspouchScreen(),
+        ),
+      ),
+      _entryTile(
         entry: StorageBagEntry.import,
         icon: Icons.phonelink_ring_outlined,
         title: l10n.storage_importSection,
@@ -278,6 +290,8 @@ extension StorageBagEntryX on StorageBagEntry {
         return const StorageSnapshotsScreen();
       case StorageBagEntry.space:
         return const StorageSpaceManageScreen();
+      case StorageBagEntry.nas:
+        return const StorageNexuspouchScreen();
       case StorageBagEntry.import:
         return const StorageImportScreen();
       case StorageBagEntry.sheCircle:

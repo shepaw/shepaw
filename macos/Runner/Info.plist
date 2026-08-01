@@ -53,5 +53,11 @@
 	<string>ShePaw needs microphone access to record voice messages.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>ShePaw needs photo library access to select images for sharing with agents.</string>
+	<key>NSBonjourServices</key>
+	<array>
+		<string>_nexuspouch._tcp</string>
+	</array>
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>Discover Nexuspouch storage nodes on your local network.</string>
 </dict>
 </plist>

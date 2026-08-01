@@ -3159,6 +3159,33 @@
   "storage_entrySnapshots": "快照与备份",
   "storage_entrySpace": "本机空间",
   "storage_entryAdvanced": "高级与危险区",
+  "storage_entryNas": "局域网 Nexuspouch",
+  "storage_nasEntryHint": "发现同网段常开存储节点",
+  "storage_nasHint": "扫描广播 _nexuspouch._tcp 的 Nexuspouch 节点。首次仍需在节点 /admin 扫码配对；配对后点「连接」可刷新局域网端点并设为 store master。",
+  "storage_nasScanning": "正在扫描局域网…",
+  "storage_nasEmpty": "未发现 Nexuspouch 节点。请确认节点已在同一 Wi‑Fi 运行。",
+  "storage_nasConnect": "连接",
+  "storage_nasConnected": "已连接到 {name}",
+  "@storage_nasConnected": {
+    "placeholders": {
+      "name": {"type": "String"}
+    }
+  },
+  "storage_nasConnectFailed": "连接失败：{error}",
+  "@storage_nasConnectFailed": {
+    "placeholders": {
+      "error": {"type": "String"}
+    }
+  },
+  "storage_nasMissingFingerprint": "发现结果缺少指纹，请改用扫码配对。",
+  "storage_nasNotPairedTitle": "尚未配对",
+  "storage_nasNotPairedBody": "{name} 在局域网中，但尚未与本 App 配对。请先扫描节点二维码完成配对。",
+  "@storage_nasNotPairedBody": {
+    "placeholders": {
+      "name": {"type": "String"}
+    }
+  },
+  "storage_nasOpenPairing": "打开配对",
   "storage_importEntryHint": "从旧设备迁入快照与数据",
   "storage_advancedEntryHint": "目录导出 · WebDAV · 抹除",
   "storage_snapshotCount": "{count} 份快照",

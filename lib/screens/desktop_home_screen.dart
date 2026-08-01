@@ -25,6 +25,7 @@ import 'storage_snapshots_screen.dart';
 import 'storage_space_manage_screen.dart';
 import 'storage_import_screen.dart';
 import 'storage_advanced_screen.dart';
+import 'storage_nexuspouch_screen.dart';
 import 'she_circle_screen.dart';
 import '../utils/layout_utils.dart';
 import '../services/native_window_service.dart';
@@ -58,6 +59,7 @@ enum _RightPanelView {
   groupWorkflow,
   storageSnapshots,
   storageSpaceManage,
+  storageNas,
   storageImport,
   storageSheCircle,
   storageAdvanced,
@@ -200,6 +202,7 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
   bool get _isStorageDetailPanel =>
       _rightPanel == _RightPanelView.storageSnapshots ||
       _rightPanel == _RightPanelView.storageSpaceManage ||
+      _rightPanel == _RightPanelView.storageNas ||
       _rightPanel == _RightPanelView.storageImport ||
       _rightPanel == _RightPanelView.storageSheCircle ||
       _rightPanel == _RightPanelView.storageAdvanced;
@@ -386,6 +389,7 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
       _rightPanel = switch (entry) {
         StorageBagEntry.snapshots => _RightPanelView.storageSnapshots,
         StorageBagEntry.space => _RightPanelView.storageSpaceManage,
+        StorageBagEntry.nas => _RightPanelView.storageNas,
         StorageBagEntry.import => _RightPanelView.storageImport,
         StorageBagEntry.sheCircle => _RightPanelView.storageSheCircle,
         StorageBagEntry.advanced => _RightPanelView.storageAdvanced,
@@ -653,6 +657,9 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
 
       case _RightPanelView.storageSpaceManage:
         return const StorageSpaceManageScreen();
+
+      case _RightPanelView.storageNas:
+        return const StorageNexuspouchScreen();
 
       case _RightPanelView.storageImport:
         return const StorageImportScreen();

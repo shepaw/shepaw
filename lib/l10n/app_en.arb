@@ -2674,6 +2674,33 @@
   "storage_entrySnapshots": "Snapshots & Backup",
   "storage_entrySpace": "Local Space",
   "storage_entryAdvanced": "Advanced & Danger Zone",
+  "storage_entryNas": "LAN Nexuspouch",
+  "storage_nasEntryHint": "Discover always-on store masters on your network",
+  "storage_nasHint": "Scan for Nexuspouch nodes advertising _nexuspouch._tcp. First pairing still needs a QR code from the node admin UI; afterward Connect refreshes the LAN endpoint and sets it as store master.",
+  "storage_nasScanning": "Scanning LAN…",
+  "storage_nasEmpty": "No Nexuspouch nodes found. Is the node running on this Wi‑Fi?",
+  "storage_nasConnect": "Connect",
+  "storage_nasConnected": "Connected to {name}",
+  "@storage_nasConnected": {
+    "placeholders": {
+      "name": {"type": "String"}
+    }
+  },
+  "storage_nasConnectFailed": "Connect failed: {error}",
+  "@storage_nasConnectFailed": {
+    "placeholders": {
+      "error": {"type": "String"}
+    }
+  },
+  "storage_nasMissingFingerprint": "Discovery result has no fingerprint; pair via QR instead.",
+  "storage_nasNotPairedTitle": "Not paired yet",
+  "storage_nasNotPairedBody": "{name} is on the LAN but not paired with this app. Scan the node QR to pair first.",
+  "@storage_nasNotPairedBody": {
+    "placeholders": {
+      "name": {"type": "String"}
+    }
+  },
+  "storage_nasOpenPairing": "Open pairing",
   "storage_importEntryHint": "Migrate snapshots and data from an old device",
   "storage_advancedEntryHint": "Folder export · WebDAV · Wipe",
   "storage_snapshotCount": "{count} snapshots",

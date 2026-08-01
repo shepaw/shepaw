@@ -9332,6 +9332,78 @@ abstract class AppLocalizations {
   /// **'高级与危险区'**
   String get storage_entryAdvanced;
 
+  /// No description provided for @storage_entryNas.
+  ///
+  /// In zh, this message translates to:
+  /// **'局域网 Nexuspouch'**
+  String get storage_entryNas;
+
+  /// No description provided for @storage_nasEntryHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'发现同网段常开存储节点'**
+  String get storage_nasEntryHint;
+
+  /// No description provided for @storage_nasHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'扫描广播 _nexuspouch._tcp 的 Nexuspouch 节点。首次仍需在节点 /admin 扫码配对；配对后点「连接」可刷新局域网端点并设为 store master。'**
+  String get storage_nasHint;
+
+  /// No description provided for @storage_nasScanning.
+  ///
+  /// In zh, this message translates to:
+  /// **'正在扫描局域网…'**
+  String get storage_nasScanning;
+
+  /// No description provided for @storage_nasEmpty.
+  ///
+  /// In zh, this message translates to:
+  /// **'未发现 Nexuspouch 节点。请确认节点已在同一 Wi‑Fi 运行。'**
+  String get storage_nasEmpty;
+
+  /// No description provided for @storage_nasConnect.
+  ///
+  /// In zh, this message translates to:
+  /// **'连接'**
+  String get storage_nasConnect;
+
+  /// No description provided for @storage_nasConnected.
+  ///
+  /// In zh, this message translates to:
+  /// **'已连接到 {name}'**
+  String storage_nasConnected(String name);
+
+  /// No description provided for @storage_nasConnectFailed.
+  ///
+  /// In zh, this message translates to:
+  /// **'连接失败：{error}'**
+  String storage_nasConnectFailed(String error);
+
+  /// No description provided for @storage_nasMissingFingerprint.
+  ///
+  /// In zh, this message translates to:
+  /// **'发现结果缺少指纹，请改用扫码配对。'**
+  String get storage_nasMissingFingerprint;
+
+  /// No description provided for @storage_nasNotPairedTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'尚未配对'**
+  String get storage_nasNotPairedTitle;
+
+  /// No description provided for @storage_nasNotPairedBody.
+  ///
+  /// In zh, this message translates to:
+  /// **'{name} 在局域网中，但尚未与本 App 配对。请先扫描节点二维码完成配对。'**
+  String storage_nasNotPairedBody(String name);
+
+  /// No description provided for @storage_nasOpenPairing.
+  ///
+  /// In zh, this message translates to:
+  /// **'打开配对'**
+  String get storage_nasOpenPairing;
+
   /// No description provided for @storage_importEntryHint.
   ///
   /// In zh, this message translates to:
