@@ -1,6 +1,5 @@
 import 'dart:async';
 import 'dart:io';
-import 'package:flutter/foundation.dart';
 import 'package:record/record.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:path_provider/path_provider.dart';
@@ -73,7 +72,7 @@ class AudioRecordingService {
   /// 请求麦克风权限
   Future<bool> requestPermission() async {
     // permission_handler 在 macOS/Linux 桌面端没有实现，跳过权限检查
-    if (!kIsWeb && (Platform.isMacOS || Platform.isLinux || Platform.isWindows)) {
+    if (Platform.isMacOS || Platform.isLinux || Platform.isWindows) {
       return true;
     }
     try {

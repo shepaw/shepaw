@@ -1,4 +1,3 @@
-import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:sqflite/sqflite.dart';
 import 'package:path/path.dart';
 import 'package:path_provider/path_provider.dart';
@@ -43,14 +42,6 @@ class MindsDatabaseService {
   }
 
   Future<Database> _initDatabase() async {
-    if (kIsWeb) {
-      return await openDatabase(
-        'minds',
-        version: _dbVersion,
-        onCreate: _onCreate,
-      );
-    }
-
     final directory = await getApplicationDocumentsDirectory();
     final path = join(directory.path, _dbName);
 
@@ -310,12 +301,10 @@ class MindsDatabaseService {
   /// 删除整个数据库文件
   Future<void> deleteDatabase() async {
     await close();
-    if (!kIsWeb) {
-      final directory = await getApplicationDocumentsDirectory();
-      final path = join(directory.path, _dbName);
-      try {
-        await databaseFactory.deleteDatabase(path);
-      } catch (_) {}
-    }
+    final directory = await getApplicationDocumentsDirectory();
+    final path = join(directory.path, _dbName);
+    try {
+      await databaseFactory.deleteDatabase(path);
+    } catch (_) {}
   }
 }

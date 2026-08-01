@@ -1,4 +1,3 @@
-import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 
@@ -99,11 +98,6 @@ class AvatarImage extends StatelessWidget {
         borderRadius: borderRadius,
         fallback: fallback,
       );
-    }
-
-    // Web has no dart:io filesystem for local avatar paths.
-    if (isLocal && kIsWeb) {
-      return fallback;
     }
 
     final Widget imageWidget;

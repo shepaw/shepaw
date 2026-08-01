@@ -1,7 +1,6 @@
 import 'dart:io';
 import 'dart:typed_data';
 
-import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 
@@ -32,9 +31,6 @@ class RestoreService {
   /// 不要求等于当前主密码。任何一步失败抛异常，当前数据不受影响。
   Future<RestorePreview> prepareRestore(
       SnapshotInfo info, String password) async {
-    if (kIsWeb) {
-      throw UnsupportedError('web 平台不支持快照恢复');
-    }
     // 1. manifest / 密文完整性
     final status = await SnapshotService.instance.verifySnapshot(info);
     if (status != SnapshotVerifyStatus.ok) {
@@ -67,9 +63,6 @@ class RestoreService {
     bool restoreIdentity = true,
     Uint8List? safetyPasswordHash,
   }) async {
-    if (kIsWeb) {
-      throw UnsupportedError('web 平台不支持快照恢复');
-    }
     // 1. 当前状态安全快照（§5.3：恢复前自动留存本机安全快照）
     // 优先当前主密码缓存，避免「用旧密码恢复」污染自动快照密钥。
     try {
@@ -118,7 +111,6 @@ class RestoreService {
 
   /// 恢复后清理：删除 .pre-restore 兜底文件（用户确认恢复成功后）。
   Future<void> discardPreRestoreBackup() async {
-    if (kIsWeb) return;
     final docs = await getApplicationDocumentsDirectory();
     final backup = File(p.join(docs.path, 'shepaw.db.pre-restore'));
     if (await backup.exists()) await backup.delete();

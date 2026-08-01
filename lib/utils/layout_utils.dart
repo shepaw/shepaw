@@ -1,5 +1,4 @@
 import 'dart:io' show Platform;
-import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/locale_provider.dart';
@@ -11,7 +10,6 @@ class LayoutUtils {
   /// Returns true when running on a desktop OS (macOS/Windows/Linux)
   /// with a window width >= 600 logical pixels.
   static bool isDesktopLayout(BuildContext context) {
-    if (kIsWeb) return false;
     final isDesktopOS = Platform.isMacOS || Platform.isWindows || Platform.isLinux;
     if (!isDesktopOS) return false;
     return MediaQuery.of(context).size.width >= 600;

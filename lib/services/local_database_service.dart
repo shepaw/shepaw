@@ -1,5 +1,4 @@
-import 'dart:io' show Platform, File, Directory;
-import 'package:flutter/foundation.dart' show kIsWeb;
+import 'dart:io' show File, Directory;
 import 'package:sqflite/sqflite.dart';
 import 'package:path/path.dart';
 import 'package:path_provider/path_provider.dart';
@@ -41,38 +40,14 @@ class LocalDatabaseService {
 
   /// 初始化数据库
   Future<Database> _initDatabase() async {
-    String path;
-
-    if (kIsWeb) {
-      // Web平台使用sqflite_common_ffi
-      return await openDatabase(
-        'shepaw',
-        version: 30,
-        onCreate: _onCreate,
-        onUpgrade: _onUpgrade,
-      );
-    } else if (!kIsWeb && (Platform.isWindows || Platform.isLinux)) {
-      // Windows/Linux 使用 sqflite_common_ffi
-      final directory = await getApplicationDocumentsDirectory();
-      path = join(directory.path, 'shepaw.db');
-      return await openDatabase(
-        path,
-        version: 30,
-        onCreate: _onCreate,
-        onUpgrade: _onUpgrade,
-      );
-    } else {
-      // 移动平台使用sqflite
-      final directory = await getApplicationDocumentsDirectory();
-      path = join(directory.path, 'shepaw.db');
-
-      return await openDatabase(
-        path,
-        version: 30,
-        onCreate: _onCreate,
-        onUpgrade: _onUpgrade,
-      );
-    }
+    final directory = await getApplicationDocumentsDirectory();
+    final path = join(directory.path, 'shepaw.db');
+    return await openDatabase(
+      path,
+      version: 30,
+      onCreate: _onCreate,
+      onUpgrade: _onUpgrade,
+    );
   }
 
   /// 创建数据库表
@@ -877,8 +852,6 @@ class LocalDatabaseService {
   ///
   /// 注意：调用前应已通过 [VaultService.createVault] 完成数据备份。
   static Future<void> clearAllDatabases() async {
-    if (kIsWeb) return;
-
     final dbDir = (await getApplicationDocumentsDirectory()).path;
 
     // 1. 关闭所有数据库连接（将各 DB 服务的 _database 置 null）

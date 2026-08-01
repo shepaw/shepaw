@@ -32,7 +32,6 @@ import '../widgets/model_icon.dart';
 import '../services/model_registry.dart';
 import '../services/skill_registry.dart';
 import 'dart:io' show Platform;
-import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter_foreground_task/flutter_foreground_task.dart';
 
 /// Settings screen
@@ -236,7 +235,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ),
 
           // Battery optimization (Android only)
-          if (!kIsWeb && Platform.isAndroid) ...[
+          if (Platform.isAndroid) ...[
             const Divider(),
             ListTile(
               leading: const Icon(Icons.battery_saver),

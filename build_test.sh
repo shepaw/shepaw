@@ -54,25 +54,6 @@ quick_build_test() {
     print_info "获取依赖..."
     flutter pub get
     
-    # 构建 Web（最快，无需签名）
-    print_info "测试构建 Web 应用..."
-    flutter build web --release 2>&1 | tail -20
-    
-    if [ -d "build/web" ]; then
-        print_success "Web 构建成功！"
-        print_info "Web 构建产物: build/web/"
-        
-        # 测试产物
-        WEB_FILES=$(find build/web -name "*.html" -o -name "*.js" -o -name "*.css" | head -5)
-        if [ -n "$WEB_FILES" ]; then
-            print_success "Web 文件生成正常:"
-            echo "$WEB_FILES"
-        fi
-    else
-        print_error "Web 构建失败"
-        exit 1
-    fi
-    
     # 构建 Android debug（无需签名）
     print_info "测试构建 Android debug APK..."
     flutter build apk --debug 2>&1 | tail -20
@@ -107,12 +88,11 @@ Flutter 版本: $(flutter --version | head -1)
 系统: $(uname -a)
 
 测试结果:
-- Web 构建: $(if [ -d "build/web" ]; then echo "成功"; else echo "失败"; fi)
 - Android debug APK: $(if [ -f "build/app/outputs/flutter-apk/app-debug.apk" ]; then echo "成功"; else echo "失败"; fi)
 - macOS 构建: $(if [[ "$OSTYPE" == "darwin"* ]] && [ -d "build/macos" ]; then echo "成功"; else echo "跳过"; fi)
 
 构建目录内容:
-$(find build -type f -name "*.apk" -o -name "*.html" -o -name "*.js" 2>/dev/null | head -10)
+$(find build -type f -name "*.apk" 2>/dev/null | head -10)
 EOF
     
     print_success "测试报告已生成: build-test-report.txt"

@@ -1,7 +1,6 @@
 import 'dart:convert';
 import 'dart:io' show Platform;
 
-import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:desktop_multi_window/desktop_multi_window.dart';
 
 /// Service to manage native OS sub-windows on desktop platforms.
@@ -14,10 +13,8 @@ class NativeWindowService {
   static final NativeWindowService instance = NativeWindowService._();
 
   /// Whether native multi-window is supported on the current platform.
-  static bool get isSupported {
-    if (kIsWeb) return false;
-    return Platform.isMacOS || Platform.isWindows || Platform.isLinux;
-  }
+  static bool get isSupported =>
+      Platform.isMacOS || Platform.isWindows || Platform.isLinux;
 
   /// Tracks open sub-windows by logical key (e.g. 'inference_log', 'system_log').
   final Map<String, WindowController> _windows = {};

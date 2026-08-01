@@ -1,6 +1,5 @@
 import 'dart:async' show unawaited;
 import 'dart:io' show Platform;
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 import 'package:permission_handler/permission_handler.dart';
@@ -415,12 +414,9 @@ class _AgentPairingScannerScreenState extends State<AgentPairingScannerScreen>
     );
   }
 
-  /// mobile_scanner doesn't ship for desktop. We could probably add web
-  /// later, but for now bail early with a clean message.
-  bool get _isDesktop {
-    if (kIsWeb) return false; // treat web as "mobile-ish" if enabled later
-    return Platform.isMacOS || Platform.isLinux || Platform.isWindows;
-  }
+  /// mobile_scanner doesn't ship for desktop; bail early with a clean message.
+  bool get _isDesktop =>
+      Platform.isMacOS || Platform.isLinux || Platform.isWindows;
 }
 
 /// Darkened overlay with a centered square cutout. Keeps the layout

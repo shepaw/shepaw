@@ -1,5 +1,4 @@
 import 'dart:io' show Platform;
-import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'logger_service.dart';
@@ -40,8 +39,7 @@ class NotificationService {
 
   /// Whether the current platform supports flutter_local_notifications.
   bool get _platformSupported =>
-      !kIsWeb &&
-      (Platform.isAndroid || Platform.isIOS || Platform.isMacOS || Platform.isLinux);
+      Platform.isAndroid || Platform.isIOS || Platform.isMacOS || Platform.isLinux;
 
   /// Android notification channel for agent messages.
   static const _androidChannel = AndroidNotificationChannel(
@@ -85,7 +83,7 @@ class NotificationService {
       );
 
       // Create the Android notification channels.
-      if (!kIsWeb && Platform.isAndroid) {
+      if (Platform.isAndroid) {
         final androidPlugin =
             _plugin.resolvePlatformSpecificImplementation<
                 AndroidFlutterLocalNotificationsPlugin>();
@@ -201,7 +199,6 @@ class NotificationService {
   /// Opens the system settings page for this app so the user can enable
   /// notification permission (used when the OS dialog can no longer be shown).
   Future<bool> openSystemSettings() async {
-    if (kIsWeb) return false;
     try {
       return await openAppSettings();
     } catch (e) {

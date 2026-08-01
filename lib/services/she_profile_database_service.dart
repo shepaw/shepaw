@@ -1,4 +1,3 @@
-import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:sqflite/sqflite.dart';
 import 'package:path/path.dart';
 import 'package:path_provider/path_provider.dart';
@@ -38,15 +37,6 @@ class SheProfileDatabaseService {
   }
 
   Future<Database> _initDatabase() async {
-    if (kIsWeb) {
-      return await openDatabase(
-        'she_profile',
-        version: _version,
-        onCreate: _onCreate,
-        onUpgrade: _onUpgrade,
-      );
-    }
-
     final directory = await getApplicationDocumentsDirectory();
     final path = join(directory.path, _dbName);
 
@@ -217,12 +207,10 @@ class SheProfileDatabaseService {
   /// 删除整个数据库文件并重置（不影响主库 shepaw.db）。
   Future<void> deleteDatabase() async {
     await close();
-    if (!kIsWeb) {
-      final directory = await getApplicationDocumentsDirectory();
-      final path = join(directory.path, _dbName);
-      try {
-        await databaseFactory.deleteDatabase(path);
-      } catch (_) {}
-    }
+    final directory = await getApplicationDocumentsDirectory();
+    final path = join(directory.path, _dbName);
+    try {
+      await databaseFactory.deleteDatabase(path);
+    } catch (_) {}
   }
 }

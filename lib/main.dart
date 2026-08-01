@@ -2,7 +2,6 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io' show Platform;
 import 'dart:ui' show PlatformDispatcher;
-import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:desktop_multi_window/desktop_multi_window.dart';
@@ -48,7 +47,7 @@ Future<void> main(List<String> args) async {
       WidgetsFlutterBinding.ensureInitialized();
 
       // Detect if this is a sub-window by checking the current engine's arguments.
-      if (!kIsWeb && (Platform.isMacOS || Platform.isWindows || Platform.isLinux)) {
+      if (Platform.isMacOS || Platform.isWindows || Platform.isLinux) {
         try {
           final windowController = await WindowController.fromCurrentEngine();
           final windowArgs = windowController.arguments;

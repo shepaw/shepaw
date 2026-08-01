@@ -1,5 +1,4 @@
 import 'dart:io' show File;
-import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:sqflite/sqflite.dart';
 import 'package:path/path.dart';
 import 'package:path_provider/path_provider.dart';
@@ -59,10 +58,8 @@ class AgentMemoryDbService {
   ///
   /// 先关闭并清空实例缓存，再扫描文档目录删除 `agent_memory_*.db`，
   /// 因此连缓存之外的（如已删除 Agent 遗留的）记忆库也会被清除。
-  /// Web 平台无文件概念，仅清空实例缓存。
   static Future<void> deleteAllDatabases() async {
     await closeAll();
-    if (kIsWeb) return;
     try {
       final directory = await getApplicationDocumentsDirectory();
       await for (final entity in directory.list()) {
@@ -116,14 +113,6 @@ class AgentMemoryDbService {
   }
 
   Future<Database> _initDatabase() async {
-    if (kIsWeb) {
-      return await openDatabase(
-        'agent_memory_${_sanitizeAgentId(_agentId)}',
-        version: _dbVersion,
-        onCreate: _onCreate,
-      );
-    }
-
     final directory = await getApplicationDocumentsDirectory();
     final path = join(directory.path, _dbFileName);
 
@@ -465,22 +454,20 @@ class AgentMemoryDbService {
   /// 警告：此操作不可逆，将永久删除所有记忆数据。
   Future<void> deleteDatabase() async {
     await close();
-    if (!kIsWeb) {
-      try {
-        final directory = await getApplicationDocumentsDirectory();
-        final path = join(directory.path, _dbFileName);
-        await databaseFactory.deleteDatabase(path);
-        LoggerService().info(
-          'Memory database deleted: $_dbFileName',
-          tag: 'AgentMemoryDbService[$_agentId]',
-        );
-      } catch (e) {
-        LoggerService().error(
-          'Failed to delete database: $_dbFileName',
-          tag: 'AgentMemoryDbService[$_agentId]',
-          error: e,
-        );
-      }
+    try {
+      final directory = await getApplicationDocumentsDirectory();
+      final path = join(directory.path, _dbFileName);
+      await databaseFactory.deleteDatabase(path);
+      LoggerService().info(
+        'Memory database deleted: $_dbFileName',
+        tag: 'AgentMemoryDbService[$_agentId]',
+      );
+    } catch (e) {
+      LoggerService().error(
+        'Failed to delete database: $_dbFileName',
+        tag: 'AgentMemoryDbService[$_agentId]',
+        error: e,
+      );
     }
   }
 }

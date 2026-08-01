@@ -1,6 +1,5 @@
 import 'dart:convert';
 import 'dart:io' show File;
-import 'package:flutter/foundation.dart' show kIsWeb;
 
 /// 工具执行结果的类型标识
 ///
@@ -202,7 +201,6 @@ class ToolExecutionResult {
   /// 其他类型行为与 [toClaudeContent] 一致。
   Future<dynamic> toClaudeContentAsync() async {
     if (type != ToolResultType.binaryRef) return toClaudeContent();
-    if (kIsWeb) return toClaudeContent(); // Web 不支持本地文件
 
     final ref = jsonDecode(serialized) as Map<String, dynamic>;
     final filePath = ref['file_path'] as String;

@@ -154,13 +154,12 @@ class UpdateDialog extends StatelessWidget {
     );
   }
 
-  /// 桌面平台使用应用内下载进度对话框；移动端/Web 打开外部链接
+  /// 桌面平台使用应用内下载进度对话框；移动端打开外部链接
   Future<void> _handleDownload(BuildContext context) async {
     final l10n = AppLocalizations.of(context);
-    final isDesktop = !kIsWeb &&
-        (defaultTargetPlatform == TargetPlatform.macOS ||
-            defaultTargetPlatform == TargetPlatform.windows ||
-            defaultTargetPlatform == TargetPlatform.linux);
+    final isDesktop = defaultTargetPlatform == TargetPlatform.macOS ||
+        defaultTargetPlatform == TargetPlatform.windows ||
+        defaultTargetPlatform == TargetPlatform.linux;
 
     // Add comprehensive logging for debugging
     final urlPreview = updateInfo.downloadUrl.isEmpty
@@ -171,7 +170,6 @@ class UpdateDialog extends StatelessWidget {
     logger.info(
       'Download handler called - isDesktop=$isDesktop, '
       'downloadUrl="$urlPreview", '
-      'kIsWeb=$kIsWeb, '
       'platform=$defaultTargetPlatform, '
       'mandatory=${updateInfo.isMandatory}',
       tag: 'UpdateDialog',

@@ -1,7 +1,6 @@
 import 'dart:async';
 import 'dart:io' show Platform;
 
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
@@ -36,7 +35,7 @@ class _StorageImportScannerScreenState extends State<StorageImportScannerScreen>
   String? _error;
 
   bool get _isDesktop =>
-      !kIsWeb && (Platform.isMacOS || Platform.isWindows || Platform.isLinux);
+      Platform.isMacOS || Platform.isWindows || Platform.isLinux;
 
   @override
   void initState() {

@@ -1,5 +1,4 @@
 import 'dart:io' show Platform;
-import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter_foreground_task/flutter_foreground_task.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 import 'logger_service.dart';
@@ -33,12 +32,8 @@ class ForegroundTaskService {
   /// Whether the Android foreground service is currently active.
   bool get isRunning => _running;
 
-  /// True only on Android (not web).
-  bool get _isAndroidFgsSupported => !kIsWeb && Platform.isAndroid;
-
-  /// Screen wakelock is useful on any non-web platform that can sleep the
-  /// display and suspend the isolate.
-  bool get _isScreenWakelockSupported => !kIsWeb;
+  /// True only on Android.
+  bool get _isAndroidFgsSupported => Platform.isAndroid;
 
   /// Call once during app startup (after [WidgetsFlutterBinding.ensureInitialized]).
   void init() {
@@ -67,8 +62,6 @@ class ForegroundTaskService {
   /// Increment the reference count for [agentName] and start keep-alive
   /// mechanisms if they are not already running.
   Future<void> acquireTask(String agentName) async {
-    if (kIsWeb) return;
-
     _activeAgentCounts[agentName] = (_activeAgentCounts[agentName] ?? 0) + 1;
     LoggerService().debug(
       'acquire "$agentName" (count: ${_activeAgentCounts[agentName]}, '
@@ -86,8 +79,6 @@ class ForegroundTaskService {
   /// Decrement the reference count for [agentName]. When all counts reach zero
   /// keep-alive mechanisms are stopped.
   Future<void> releaseTask(String agentName) async {
-    if (kIsWeb) return;
-
     final current = _activeAgentCounts[agentName] ?? 0;
     if (current <= 1) {
       _activeAgentCounts.remove(agentName);
@@ -110,8 +101,6 @@ class ForegroundTaskService {
 
   /// Emergency cleanup — release all tasks and stop keep-alive immediately.
   Future<void> releaseAllTasks() async {
-    if (kIsWeb) return;
-
     _activeAgentCounts.clear();
     await _syncScreenWakelock();
     if (_isAndroidFgsSupported && _running) {
@@ -120,8 +109,6 @@ class ForegroundTaskService {
   }
 
   Future<void> _syncScreenWakelock() async {
-    if (!_isScreenWakelockSupported) return;
-
     final shouldHold = _activeAgentCounts.isNotEmpty;
     if (shouldHold == _screenWakelockHeld) return;
 

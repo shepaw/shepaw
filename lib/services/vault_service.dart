@@ -6,7 +6,6 @@ import 'package:archive/archive.dart';
 import 'package:archive/archive_io.dart';
 import 'package:crypto/crypto.dart';
 import 'package:encrypt/encrypt.dart' as enc;
-import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 
@@ -90,11 +89,6 @@ class VaultService {
     required String passwordHash,
     required String salt,
   }) async {
-    if (kIsWeb) {
-      _logger.warning('Vault not supported on Web platform', tag: 'Vault');
-      return null;
-    }
-
     try {
       final dbDir = await _getDbDirectory();
       final vaultsDir = await _getVaultsDirectory();
@@ -175,8 +169,6 @@ class VaultService {
 
   /// 获取所有历史 vault 列表（按时间倒序）
   Future<List<VaultInfo>> listVaults() async {
-    if (kIsWeb) return [];
-
     try {
       final vaultsDir = await _getVaultsDirectory();
       final dir = Directory(vaultsDir);
@@ -222,8 +214,6 @@ class VaultService {
     required String password,
     required String salt,
   }) async {
-    if (kIsWeb) return false;
-
     try {
       final vaultFile = await _getVaultFile(vaultId);
       if (!await vaultFile.exists()) return false;
@@ -267,8 +257,6 @@ class VaultService {
     required String password,
     required String salt,
   }) async {
-    if (kIsWeb) return false;
-
     try {
       final vaultFile = await _getVaultFile(vaultId);
       if (!await vaultFile.exists()) {
@@ -327,8 +315,6 @@ class VaultService {
 
   /// 删除指定 vault 文件
   Future<void> deleteVault(String vaultId) async {
-    if (kIsWeb) return;
-
     try {
       final vaultFile = await _getVaultFile(vaultId);
       if (await vaultFile.exists()) {
@@ -344,8 +330,6 @@ class VaultService {
   ///
   /// 返回 null 表示该 vault 不含 salt 信息（旧版 vault）。
   Future<String?> getVaultSalt(String vaultId) async {
-    if (kIsWeb) return null;
-
     try {
       final vaultFile = await _getVaultFile(vaultId);
       if (!await vaultFile.exists()) return null;

@@ -1,6 +1,5 @@
 import 'dart:async';
 import 'dart:io' show Platform;
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 
@@ -42,7 +41,7 @@ class _PeerDeviceScannerScreenState extends State<PeerDeviceScannerScreen> {
 
   void _initScanner() {
     // 桌面平台不支持摄像头扫描
-    if (!kIsWeb && (Platform.isMacOS || Platform.isWindows || Platform.isLinux)) {
+    if (Platform.isMacOS || Platform.isWindows || Platform.isLinux) {
       return;
     }
     _controller = MobileScannerController(
@@ -133,7 +132,7 @@ class _PeerDeviceScannerScreenState extends State<PeerDeviceScannerScreen> {
     final colorScheme = Theme.of(context).colorScheme;
 
     // 桌面平台不支持
-    if (!kIsWeb && (Platform.isMacOS || Platform.isWindows || Platform.isLinux)) {
+    if (Platform.isMacOS || Platform.isWindows || Platform.isLinux) {
       return Center(
         child: Padding(
           padding: const EdgeInsets.all(32),

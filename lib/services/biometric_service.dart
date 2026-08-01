@@ -1,5 +1,4 @@
 import 'dart:io' show Platform;
-import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:local_auth/local_auth.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -10,7 +9,7 @@ class BiometricService {
 
   /// Whether the current platform supports biometric via local_auth.
   bool get _platformSupported =>
-      !kIsWeb && (Platform.isAndroid || Platform.isIOS || Platform.isMacOS);
+      Platform.isAndroid || Platform.isIOS || Platform.isMacOS;
 
   /// Check if the device supports biometric authentication.
   ///

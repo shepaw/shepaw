@@ -168,7 +168,7 @@ shepaw/
 │   └── gorup_chat_flow.md               # Group channel flow documentation
 ├── scripts/
 │   └── mock_agents/                     # Mock agent test environment (4 agents)
-├── android/ ios/ macos/ windows/ web/   # Platform entry points
+├── android/ ios/ macos/ windows/        # Platform entry points
 ├── assets/                              # Static assets
 ├── pubspec.yaml
 ├── BUILD_GUIDE.md                       # Multi-platform build guide

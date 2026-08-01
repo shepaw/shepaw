@@ -1,10 +1,8 @@
 import 'dart:io' show Platform;
-import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/widgets.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:uuid/uuid.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
-import 'package:sqflite_common_ffi_web/sqflite_ffi_web.dart';
 
 import 'services/local_database_service.dart';
 import 'services/local_api_service.dart';
@@ -189,12 +187,9 @@ class AppBootstrap {
     };
   }
 
-  /// Web/Windows/Linux 平台初始化 FFI 数据库工厂。
+  /// Windows/Linux 平台初始化 FFI 数据库工厂。
   static void _initDatabaseFactory() {
-    if (kIsWeb) {
-      sqfliteFfiInit();
-      databaseFactory = databaseFactoryFfiWeb;
-    } else if (Platform.isWindows || Platform.isLinux) {
+    if (Platform.isWindows || Platform.isLinux) {
       sqfliteFfiInit();
       databaseFactory = databaseFactoryFfi;
     }

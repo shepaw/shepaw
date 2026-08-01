@@ -18,13 +18,6 @@ flutter_launcher_icons:
     generate: true
     image_path: "assets/shepaw_icon_macos_1024.png"
 
-  # Web 配置
-  web:
-    generate: true
-    image_path: "assets/shepaw_icon_1024.png"
-    background_color: "#FFF8F0"
-    theme_color: "#EE7A1E"
-
   # Windows 配置
   windows:
     generate: true

@@ -1,6 +1,5 @@
 import 'dart:async';
 import 'dart:io';
-import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart' show ScrollDirection;
 import 'package:flutter/services.dart';
@@ -177,7 +176,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     _messageController.addListener(_onTextChanged);
     _textFieldFocusNode.addListener(_onFocusChanged);
 
-    if (!kIsWeb && (Platform.isMacOS || Platform.isWindows || Platform.isLinux)) {
+    if (Platform.isMacOS || Platform.isWindows || Platform.isLinux) {
       HardwareKeyboard.instance.addHandler(_handleHardwareKey);
     }
 
@@ -209,7 +208,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
-    if (!kIsWeb && (Platform.isMacOS || Platform.isWindows || Platform.isLinux)) {
+    if (Platform.isMacOS || Platform.isWindows || Platform.isLinux) {
       HardwareKeyboard.instance.removeHandler(_handleHardwareKey);
     }
     // Capture text before tearing down; publish after this frame so the

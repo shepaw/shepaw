@@ -31,7 +31,7 @@ cp android/app/shepaw-release.jks data/shepaw-release.jks
 ```bash
 ./data/build.sh              # 本机可构建的全部平台
 ./data/build_all.sh android  # 同上（别名）
-./data/build.sh macos web
+./data/build.sh macos
 ./data/build.sh android --debug
 ```
 
@@ -47,12 +47,6 @@ cp data/apple.properties.example data/apple.properties
 ```
 
 Windows 桌面请在 Windows 上运行：`.\data\build_windows.ps1`
-
-### Web 构建与 Flutter 镜像
-
-若本机设置了 `FLUTTER_STORAGE_BASE_URL`（如清华镜像），部分 engine 版本的 `flutter-web-sdk.zip` 可能 404。`build_all.sh` 的 **web** 目标会临时改用 `storage.googleapis.com` 拉取 Web SDK，其它平台仍走你配置的镜像。
-
-Web release 还会带上 `--no-tree-shake-icons`（CLI 配置里有运行时 `IconData`）和 `--no-wasm-dry-run`。
 
 ## Git 忽略规则
 

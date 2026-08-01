@@ -1,7 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
-import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -277,7 +276,6 @@ class UpdateService {
 
   /// 获取当前平台字符串
   String? _getPlatformString() {
-    if (kIsWeb) return null;
     if (Platform.isIOS) return 'ios';
     if (Platform.isAndroid) return 'android';
     if (Platform.isMacOS) return 'macos';

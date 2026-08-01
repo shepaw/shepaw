@@ -12,7 +12,7 @@ chmod +x build_all.sh
 
 # 指定平台（可多选）
 ./build_all.sh android
-./build_all.sh macos web
+./build_all.sh macos
 ./build_all.sh ios --debug
 ./build_all.sh android-apk --clean --out releases
 ```
@@ -32,8 +32,7 @@ chmod +x build_all.sh
 | `android-aab` | `shepaw-<ver>-android-release.aab` | 需要 `android/key.properties` |
 | `ios` | `shepaw-<ver>-ios-*.tar.gz` | 仅 macOS；`--no-codesign`，真机需 Xcode 签名 |
 | `macos` | `.tar.gz` + 解压后的 `ShePaw.app` | 仅 macOS |
-| `web` | `web/` + `.tar.gz` | 任意主机 |
-| `all` | android + ios + macos + web | 默认；本机不支持的会跳过 |
+| `all` | android + ios + macos | 默认；本机不支持的会跳过 |
 | `windows` | 见下方 | **请用 `build_windows.ps1`，不要依赖 `build_all.sh`** |
 
 ### 关于 Windows
@@ -58,7 +57,7 @@ Flutter **不支持**从 macOS / Linux 交叉编译 Windows 桌面包。请在 *
 
 产物示例：`dist/shepaw-<ver>-windows-release.zip` 与解压目录 `dist/ShePaw/`。
 
-日常在 Mac 上发包继续用 `./build_all.sh`（`macos` / `android` / `ios` / `web`）即可。
+日常在 Mac 上发包继续用 `./build_all.sh`（`macos` / `android` / `ios`）即可。
 
 版本号从 `pubspec.yaml` 的 `version:` 自动读取。
 
@@ -111,8 +110,6 @@ dist/
   shepaw-1.0.17-android-release.aab
   shepaw-1.0.17-macos-release.tar.gz
   ShePaw.app/
-  shepaw-1.0.17-web-release.tar.gz
-  web/
   build-report-YYYYMMDD-HHMMSS.txt
 ```
 
@@ -125,9 +122,9 @@ dist/
 
 ## 与旧脚本的关系
 
-- `build_all.sh`：macOS/Linux 上构建 android / ios / macos / web
+- `build_all.sh`：macOS/Linux 上构建 android / ios / macos
 - `build_windows.ps1` / `build_windows.bat`：仅 Windows 桌面包
-- `build_test.sh`：快速冒烟（Web + Android debug），不替代正式发包
+- `build_test.sh`：快速冒烟（Android debug + macOS），不替代正式发包
 
 ## 许可证
 

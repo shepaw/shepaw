@@ -563,7 +563,6 @@ class TraceService extends ChangeNotifier {
 
   /// Get the size of the trace database file in bytes, or null if unavailable.
   Future<int?> getDatabaseSizeBytes() async {
-    if (kIsWeb) return null;
     try {
       final directory = await getApplicationDocumentsDirectory();
       final path = join(directory.path, 'agent_traces.db');

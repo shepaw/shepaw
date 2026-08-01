@@ -166,7 +166,7 @@ shepaw/
 │   └── gorup_chat_flow.md               # Group Channel 流程文档
 ├── scripts/
 │   └── mock_agents/                     # Mock Agent 测试环境（4 个测试 Agent）
-├── android/ ios/ macos/ windows/ web/   # 各平台入口
+├── android/ ios/ macos/ windows/        # 各平台入口
 ├── assets/                              # 静态资源
 ├── pubspec.yaml
 ├── BUILD_GUIDE.md                       # 多平台构建指南

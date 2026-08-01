@@ -8,8 +8,7 @@
 #   ./build_all.sh android-aab
 #   ./build_all.sh ios
 #   ./build_all.sh macos
-#   ./build_all.sh web
-#   ./build_all.sh android macos web
+#   ./build_all.sh android macos
 #   ./build_all.sh all --debug
 #
 # Options:
@@ -55,8 +54,7 @@ Platforms:
   android-aab   App Bundle only (requires signing)
   ios           iOS (macOS + Xcode; --no-codesign)
   macos         macOS .app archive
-  web           Web build
-  all           android + ios + macos + web (host-supported only)
+  all           android + ios + macos (host-supported only)
 
   windows       Prefer build_windows.ps1 on a Windows host (kept for discovery).
                 This bash target only errors on non-Windows machines.
@@ -69,7 +67,7 @@ Options:
   -h | --help             Show help
 
 Examples:
-  ./build_all.sh macos web
+  ./build_all.sh macos
   ./build_all.sh android --debug
   ./build_all.sh all --clean --out releases
 EOF
@@ -94,7 +92,7 @@ while [[ $# -gt 0 ]]; do
       OUTPUT_DIR="$2"
       shift 2
       ;;
-    all|android|android-apk|android-aab|ios|macos|web|windows)
+    all|android|android-apk|android-aab|ios|macos|windows)
       RAW_TARGETS="${RAW_TARGETS} $1"
       shift
       ;;
@@ -117,7 +115,7 @@ for t in $RAW_TARGETS; do
   case "$t" in
     # Windows is intentionally excluded from `all`: Flutter cannot cross-compile
     # Windows desktop from macOS/Linux.
-    all)     expand="android-apk android-aab ios macos web" ;;
+    all)     expand="android-apk android-aab ios macos" ;;
     android) expand="android-apk android-aab" ;;
     *)       expand="$t" ;;
   esac
@@ -392,26 +390,6 @@ build_macos() {
   copy_artifact "$app" "$app_name"
 }
 
-build_web() {
-  info "Building Web ($BUILD_MODE)..."
-  # Domestic Flutter mirrors (e.g. Tsinghua) often 404 on flutter-web-sdk.zip
-  # for newer engine hashes. Fall back to Google CDN for this target only.
-  # --no-wasm-dry-run: app targets dart2js, not Wasm.
-  # --no-tree-shake-icons: CLI UI builds IconData from runtime codepoints.
-  if [[ -n "${FLUTTER_STORAGE_BASE_URL:-}" ]]; then
-    warn "Mirror FLUTTER_STORAGE_BASE_URL may lack flutter-web-sdk; using storage.googleapis.com for web"
-    (
-      export FLUTTER_STORAGE_BASE_URL="https://storage.googleapis.com"
-      flutter build web "--${BUILD_MODE}" --no-wasm-dry-run --no-tree-shake-icons
-    ) || return $?
-  else
-    flutter build web "--${BUILD_MODE}" --no-wasm-dry-run --no-tree-shake-icons || return $?
-  fi
-  [[ -d build/web ]] || die "Web build produced no build/web"
-  archive_dir "build/web" "${ARTIFACT_PREFIX}-web-${BUILD_MODE}.tar.gz" "web"
-  copy_artifact "build/web" "web"
-}
-
 build_windows() {
   # Flutter desktop Windows builds require a Windows host + MSVC toolchain.
   # Prefer the dedicated PowerShell script on Windows.
@@ -464,7 +442,6 @@ run_target() {
     android-aab) build_android_aab ;;
     ios)         build_ios ;;
     macos)       build_macos ;;
-    web)         build_web ;;
     windows)     build_windows ;;
     *) die "Internal error: unknown target $t" ;;
   esac

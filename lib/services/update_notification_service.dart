@@ -1,7 +1,6 @@
 import 'dart:async';
 import 'dart:io';
 
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:open_file/open_file.dart';
@@ -288,11 +287,6 @@ class UpdateNotificationService {
     );
 
     try {
-      if (kIsWeb) {
-        // Web 不支持本地安装
-        return;
-      }
-
       if (Platform.isAndroid) {
         // 通过系统包安装器安装 APK
         await OpenFile.open(filePath);

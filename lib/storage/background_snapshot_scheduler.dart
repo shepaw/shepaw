@@ -11,7 +11,7 @@ import 'store_service.dart';
 /// - Android：WorkManager 周期性任务（`NetworkType.unmetered` ≈ 优先 WiFi）
 /// - iOS：BGAppRefresh（workmanager `registerPeriodicTask`）
 /// - 不替代前台路径（启动 / 6h Timer / 回前台 / WiFi settled）；失败仍走 3 天墙钟告警
-/// - 桌面 / Web：no-op
+/// - 桌面：no-op
 class BackgroundSnapshotScheduler {
   BackgroundSnapshotScheduler._();
 
@@ -24,11 +24,9 @@ class BackgroundSnapshotScheduler {
   static final _log = LoggerService();
   static bool _registered = false;
 
-  static bool get isSupportedPlatform {
-    if (kIsWeb) return false;
-    return defaultTargetPlatform == TargetPlatform.android ||
-        defaultTargetPlatform == TargetPlatform.iOS;
-  }
+  static bool get isSupportedPlatform =>
+      defaultTargetPlatform == TargetPlatform.android ||
+      defaultTargetPlatform == TargetPlatform.iOS;
 
   /// 由 [ScheduledSnapshotService.ensureStarted] 调用；幂等。
   static Future<void> ensureRegistered() async {

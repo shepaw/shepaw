@@ -4,7 +4,7 @@
 # Usage:
 #   ./data/build.sh                  # all host-supported platforms
 #   ./data/build.sh android
-#   ./data/build.sh macos web
+#   ./data/build.sh macos
 #   ./data/build.sh android --debug
 #   ./data/build.sh --help
 #
@@ -39,7 +39,7 @@ Usage:
   ./data/build.sh [platforms...] [options]
 
 Platforms (same as build_all.sh):
-  android | android-apk | android-aab | ios | macos | web | all
+  android | android-apk | android-aab | ios | macos | all
 
 Options:
   --release | --debug
