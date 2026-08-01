@@ -1,0 +1,87 @@
+{
+  "description": "Shared handoff ACL fixtures for Dart + Rust (docs/storage_protocol_spec.md §2.9/§3). expect: allow | denyUntrusted | denyAcl | denyBadOp.",
+  "caller": "aaaaaaaaaaaaaaaa",
+  "other": "bbbbbbbbbbbbbbbb",
+  "cases": [
+    {
+      "name": "create_own",
+      "op": "handoff.create",
+      "trust": "owner",
+      "loopback": false,
+      "payload": { "space": "artifacts" },
+      "expect": "allow"
+    },
+    {
+      "name": "create_forge_device",
+      "op": "handoff.create",
+      "trust": "owner",
+      "loopback": false,
+      "payload": { "space": "artifacts", "device": "bbbbbbbbbbbbbbbb" },
+      "expect": "denyAcl"
+    },
+    {
+      "name": "create_friend",
+      "op": "handoff.create",
+      "trust": "friend",
+      "loopback": false,
+      "payload": { "space": "artifacts" },
+      "expect": "denyUntrusted"
+    },
+    {
+      "name": "ack_own_shared",
+      "op": "handoff.ack",
+      "trust": "owner",
+      "loopback": false,
+      "payload": { "space": "artifacts", "device": "aaaaaaaaaaaaaaaa" },
+      "expect": "allow"
+    },
+    {
+      "name": "ack_other_shared",
+      "op": "handoff.ack",
+      "trust": "owner",
+      "loopback": false,
+      "payload": { "space": "artifacts", "device": "bbbbbbbbbbbbbbbb" },
+      "expect": "allow"
+    },
+    {
+      "name": "ack_other_private",
+      "op": "handoff.ack",
+      "trust": "owner",
+      "loopback": false,
+      "payload": { "space": "backups", "device": "bbbbbbbbbbbbbbbb" },
+      "expect": "denyAcl"
+    },
+    {
+      "name": "ack_friend",
+      "op": "handoff.ack",
+      "trust": "friend",
+      "loopback": false,
+      "payload": { "space": "artifacts" },
+      "expect": "denyUntrusted"
+    },
+    {
+      "name": "state_own",
+      "op": "artifact.state",
+      "trust": "owner",
+      "loopback": false,
+      "payload": { "space": "artifacts", "device": "aaaaaaaaaaaaaaaa" },
+      "expect": "allow"
+    },
+    {
+      "name": "state_other_private_no_grant",
+      "op": "artifact.state",
+      "trust": "owner",
+      "loopback": false,
+      "payload": { "space": "backups", "device": "bbbbbbbbbbbbbbbb" },
+      "expect": "denyAcl"
+    },
+    {
+      "name": "ack_bad_space",
+      "op": "handoff.ack",
+      "trust": "owner",
+      "loopback": false,
+      "payload": { "space": "videos", "device": "aaaaaaaaaaaaaaaa" },
+      "expect": "denyBadOp"
+    }
+  ]
+}

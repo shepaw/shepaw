@@ -1,0 +1,126 @@
+{
+  "description": "Shared store URI + version ref fixtures for Dart + Rust (docs/storage_protocol_spec.md §1.5). expect: ok | bad_uri | bad_path | ambiguous_ref | not_found. Implemented by milestone M2; v4.2 fixes the contract in advance.",
+  "device": "aaaaaaaaaaaaaaaa",
+  "other": "bbbbbbbbbbbbbbbb",
+  "cases": [
+    {
+      "name": "latest_no_ref",
+      "uri": "store://artifacts/aaaaaaaaaaaaaaaa/task-1/out.txt",
+      "expect": "ok",
+      "space": "artifacts",
+      "device": "aaaaaaaaaaaaaaaa",
+      "path": "task-1/out.txt",
+      "ref_kind": "latest"
+    },
+    {
+      "name": "hash_ref_short",
+      "uri": "store://artifacts/aaaaaaaaaaaaaaaa/task-1/out.txt@3f9a2c1d4e5f6071",
+      "expect": "ok",
+      "space": "artifacts",
+      "device": "aaaaaaaaaaaaaaaa",
+      "path": "task-1/out.txt",
+      "ref_kind": "hash",
+      "ref_value": "3f9a2c1d4e5f6071"
+    },
+    {
+      "name": "hash_ref_full",
+      "uri": "store://files/aaaaaaaaaaaaaaaa/docs/a.md@3f9a2c1d4e5f60718293a4b5c6d7e8f90123456789abcdef0123456789abcdef",
+      "expect": "ok",
+      "space": "files",
+      "device": "aaaaaaaaaaaaaaaa",
+      "path": "docs/a.md",
+      "ref_kind": "hash"
+    },
+    {
+      "name": "hash_ref_too_short",
+      "uri": "store://artifacts/aaaaaaaaaaaaaaaa/a.txt@3f9a2c1d",
+      "expect": "bad_uri"
+    },
+    {
+      "name": "hash_ref_bad_chars",
+      "uri": "store://artifacts/aaaaaaaaaaaaaaaa/a.txt@zzzzzzzzzzzzzzzz",
+      "expect": "bad_uri"
+    },
+    {
+      "name": "seq_ref",
+      "uri": "store://artifacts/aaaaaaaaaaaaaaaa/task-1/out.txt@v3",
+      "expect": "ok",
+      "space": "artifacts",
+      "device": "aaaaaaaaaaaaaaaa",
+      "path": "task-1/out.txt",
+      "ref_kind": "seq",
+      "ref_value": "3"
+    },
+    {
+      "name": "seq_ref_v0",
+      "uri": "store://artifacts/aaaaaaaaaaaaaaaa/a.txt@v0",
+      "expect": "bad_uri"
+    },
+    {
+      "name": "seq_ref_bad",
+      "uri": "store://artifacts/aaaaaaaaaaaaaaaa/a.txt@vx",
+      "expect": "bad_uri"
+    },
+    {
+      "name": "query_ref_equivalent",
+      "uri": "store://artifacts/aaaaaaaaaaaaaaaa/a.txt?ref=v2",
+      "expect": "ok",
+      "space": "artifacts",
+      "device": "aaaaaaaaaaaaaaaa",
+      "path": "a.txt",
+      "ref_kind": "seq",
+      "ref_value": "2"
+    },
+    {
+      "name": "path_style_uri",
+      "uri": "store:///files/aaaaaaaaaaaaaaaa/docs/readme.md",
+      "expect": "ok",
+      "space": "files",
+      "device": "aaaaaaaaaaaaaaaa",
+      "path": "docs/readme.md",
+      "ref_kind": "latest"
+    },
+    {
+      "name": "dot_versions_access",
+      "uri": "store://files/aaaaaaaaaaaaaaaa/.versions/x",
+      "expect": "bad_path"
+    },
+    {
+      "name": "dot_nexuspouch_access",
+      "uri": "store://artifacts/aaaaaaaaaaaaaaaa/task-1/.nexuspouch/manifest.json",
+      "expect": "bad_path"
+    },
+    {
+      "name": "dot_staging_access",
+      "uri": "store://artifacts/aaaaaaaaaaaaaaaa/.staging/u-1/data.bin",
+      "expect": "bad_path"
+    },
+    {
+      "name": "traversal_in_path",
+      "uri": "store://files/aaaaaaaaaaaaaaaa/a/../../b.txt",
+      "expect": "bad_path"
+    },
+    {
+      "name": "bad_space",
+      "uri": "store://videos/aaaaaaaaaaaaaaaa/a.mp4",
+      "expect": "bad_uri"
+    },
+    {
+      "name": "bad_device",
+      "uri": "store://artifacts/not-a-device/a.txt",
+      "expect": "bad_uri"
+    },
+    {
+      "name": "hash_prefix_conflict",
+      "uri": "store://artifacts/aaaaaaaaaaaaaaaa/a.txt@3f9a2c1d4e5f6071",
+      "note": "Contract only: server resolves hash prefix; two versions sharing this prefix MUST return ambiguous_ref. Fixture marks the resolution outcome, not parse validity.",
+      "expect": "ambiguous_ref"
+    },
+    {
+      "name": "hash_ref_unknown",
+      "uri": "store://artifacts/aaaaaaaaaaaaaaaa/a.txt@3f9a2c1d4e5f6071",
+      "note": "Contract only: valid syntax, no matching version in store -> not_found. Implemented in M2.",
+      "expect": "not_found"
+    }
+  ]
+}

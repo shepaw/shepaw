@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
@@ -6,6 +7,7 @@ import 'package:crypto/crypto.dart' as crypto;
 import 'package:path/path.dart' as p;
 
 import '../services/logger_service.dart';
+import 'device_identity.dart';
 import 'local_cas.dart';
 import 'local_store.dart';
 import 'store_protocol.dart';
@@ -107,13 +109,23 @@ class RemoteReadService {
     bool allowOwnerFallback = true,
   }) async {
     try {
-      return await _readWithNotFoundRetry(
+      final result = await _readWithNotFoundRetry(
         serverDeviceId: serverDeviceId,
         deviceId: deviceId,
         space: space,
         path: path,
         grantId: grantId,
       );
+      // M3 交接：master 权威读取成功后自动 ack（best-effort，不阻塞调用方）。
+      if (result.bytes.isNotEmpty) {
+        unawaited(_ackHandoff(
+          serverDeviceId: serverDeviceId,
+          deviceId: deviceId,
+          space: space,
+          path: path,
+        ));
+      }
+      return result;
     } catch (e) {
       if (!allowOwnerFallback ||
           !_isFallbackCandidate(e) ||
@@ -136,6 +148,25 @@ class RemoteReadService {
         stale: result.stale,
         fromOwnerFallback: true,
       );
+    }
+  }
+
+  Future<void> _ackHandoff({
+    required String serverDeviceId,
+    required String deviceId,
+    required String space,
+    required String path,
+  }) async {
+    try {
+      final self = await DeviceIdentity.deviceId();
+      final uri = storeUriWithRef(space, deviceId, path);
+      await _callServer(
+          serverDeviceId,
+          StoreFrame(
+              op: StoreOp.handoffAck,
+              payload: <String, dynamic>{'uri': uri, 'agent_id': self}));
+    } catch (_) {
+      // best-effort：ack 失败不影响读取结果
     }
   }
 

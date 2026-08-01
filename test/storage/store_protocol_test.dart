@@ -177,4 +177,72 @@ void main() {
           StoreAcl.denyBadOp);
     });
   });
+
+  group('store URI 与版本引用（spec §1.5，v4.2）', () {
+    test('parseStoreUri 基本形态', () {
+      final u = parseStoreUri(
+          'store://artifacts/aaaaaaaaaaaaaaaa/task-1/out.txt@v3');
+      expect(u.space, 'artifacts');
+      expect(u.device, 'aaaaaaaaaaaaaaaa');
+      expect(u.path, 'task-1/out.txt');
+      expect(u.ref.kind, StoreUriRefKind.seq);
+      expect(u.ref.value, 3);
+      expect(
+          storeUriWithRef('artifacts', 'aaaaaaaaaaaaaaaa', 'a.txt',
+              const StoreUriRef.seq(2)),
+          'store://artifacts/aaaaaaaaaaaaaaaa/a.txt@v2');
+      // 文件名里的 @ 不误伤（后缀非引用形态）。
+      expect(
+          parseStoreUri('store://files/aaaaaaaaaaaaaaaa/contact@home.txt').path,
+          'contact@home.txt');
+    });
+
+    test('version_cases fixture（共享契约，parse 层）', () {
+      final file = File('docs/storage_fixtures/version_cases.json');
+      final json = jsonDecode(file.readAsStringSync()) as Map<String, dynamic>;
+      for (final c in (json['cases'] as List).cast<Map<String, dynamic>>()) {
+        final name = c['name'] as String;
+        final uri = c['uri'] as String;
+        final expected = c['expect'] as String;
+        try {
+          final u = parseStoreUri(uri);
+          expect(['ok', 'ambiguous_ref', 'not_found'], contains(expected),
+              reason: '$name should not parse');
+          if (expected == 'ok') {
+            expect(u.space, c['space'], reason: name);
+            expect(u.device, c['device'], reason: name);
+            expect(u.path, c['path'], reason: name);
+            final kind = c['ref_kind'] as String;
+            if (kind == 'latest') {
+              expect(u.ref.isLatest, isTrue, reason: name);
+            } else if (kind == 'hash') {
+              expect(u.ref.kind, StoreUriRefKind.hash, reason: name);
+            } else {
+              expect(u.ref.kind, StoreUriRefKind.seq, reason: name);
+            }
+          }
+        } on FormatException {
+          expect('bad_uri', expected, reason: name);
+        } on BadPathException {
+          expect('bad_path', expected, reason: name);
+        }
+      }
+    });
+
+    test('handoff_cases fixture（ACL 契约，spec §2.9）', () {
+      const caller = 'aaaaaaaaaaaaaaaa';
+      final file = File('docs/storage_fixtures/handoff_cases.json');
+      final json = jsonDecode(file.readAsStringSync()) as Map<String, dynamic>;
+      for (final c in (json['cases'] as List).cast<Map<String, dynamic>>()) {
+        final frame = StoreFrame(
+            op: c['op'] as String,
+            payload: (c['payload'] as Map).cast<String, dynamic>());
+        final v = checkStoreAcl(frame,
+            callerDeviceId: caller,
+            trustLevel: c['trust'] as String,
+            loopback: c['loopback'] as bool? ?? false);
+        expect(v.name, c['expect'], reason: c['name'] as String);
+      }
+    });
+  });
 }

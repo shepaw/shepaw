@@ -3,7 +3,8 @@
 /// 本文件为纯逻辑：不含文件系统与网络，所有判定可单测（含攻击 fixture）。
 library;
 
-/// 协议版本。v2 新增 import.*；v3 新增 sync.hello；v4 新增 master 迁移/指针。
+/// 协议版本。v2 新增 import.*；v3 新增 sync.hello；v4 新增 master 迁移/指针；
+/// v4.2 新增版本化 URI（versions.*/manifest）与交接（handoff.*/artifact.state）。
 const int kStoreProtocolVersion = 4;
 
 /// peer 层控制帧路由 type / 协议命名空间。
@@ -40,6 +41,15 @@ class StoreOp {
   static const masterPointerQuery = 'master.pointer.query';
   static const masterMigrate = 'master.migrate';
 
+  // v4.2 版本化与血缘（spec §1.5）
+  static const versionsList = 'versions.list';
+  static const versionsRead = 'versions.read';
+  static const manifest = 'manifest';
+  // v4.2 交接与产物状态机（spec §2.9）
+  static const handoffCreate = 'handoff.create';
+  static const handoffAck = 'handoff.ack';
+  static const artifactState = 'artifact.state';
+
   static const result = 'result';
   static const error = 'error';
 }
@@ -56,6 +66,10 @@ class StoreError {
   static const badOp = 'bad_op';
   static const hashMismatch = 'hash_mismatch';
   static const notFound = 'not_found';
+  static const ambiguousRef = 'ambiguous_ref';
+  static const badUri = 'bad_uri';
+  static const quotaExceeded = 'quota_exceeded';
+  static const stateConflict = 'state_conflict';
   static const stagingState = 'staging_state';
   static const masterOffline = 'master_offline';
   static const notMaster = 'not_master';
@@ -182,6 +196,109 @@ bool isValidContentSha256(String? sha) =>
     sha != null && RegExp(r'^[0-9a-f]{64}$').hasMatch(sha);
 
 // ─────────────────────────────────────────────────────────────────────────────
+// store URI 与版本引用（spec §1.5，v4.2）
+// ─────────────────────────────────────────────────────────────────────────────
+
+enum StoreUriRefKind { latest, hash, seq }
+
+/// `store://<space>/<device>/<path>@<ref>` 的版本引用段。
+class StoreUriRef {
+  const StoreUriRef.latest()
+      : kind = StoreUriRefKind.latest,
+        value = null;
+  const StoreUriRef.hash(String this.value) : kind = StoreUriRefKind.hash;
+  const StoreUriRef.seq(int value)
+      : value = value,
+        kind = StoreUriRefKind.seq;
+
+  final StoreUriRefKind kind;
+  final Object? value;
+
+  bool get isLatest => kind == StoreUriRefKind.latest;
+
+  @override
+  String toString() => switch (kind) {
+        StoreUriRefKind.latest => '',
+        StoreUriRefKind.hash => '@$value',
+        StoreUriRefKind.seq => '@v$value',
+      };
+}
+
+/// 解析 store:// URI（含可选 `@ref` / `?ref=`），返回 space/device/path/ref。
+/// 与 Rust `src/uri.rs` 对齐：畸形引用 → [FormatException](bad_uri)；
+/// 点段/穿越 → [BadPathException]。
+({String space, String device, String path, StoreUriRef ref}) parseStoreUri(
+    String raw) {
+  final withoutQuery = raw.split('?').first;
+  final rest =
+      withoutQuery.startsWith('store://') ? withoutQuery.substring(8) : raw;
+  final segments = rest.split('/').where((s) => s.isNotEmpty).toList();
+  if (segments.length < 3) {
+    throw FormatException('bad_uri: missing space/device/path');
+  }
+  final space = segments[0];
+  if (!StoreSpace.isValid(space)) {
+    throw FormatException('bad_uri: unknown space $space');
+  }
+  final device = segments[1];
+  if (!isValidDeviceId(device)) {
+    throw FormatException('bad_uri: invalid device id');
+  }
+  var rel = segments.sublist(2).join('/');
+
+  // 点前缀段保留（.staging/.recycle/.versions/.nexuspouch 系统目录）。
+  for (final seg in rel.split('/')) {
+    if (seg.startsWith('.')) throw BadPathException('dot segment: $seg');
+    if (seg == '..') throw BadPathException('path traversal');
+  }
+
+  var ref = const StoreUriRef.latest();
+  final at = rel.lastIndexOf('@');
+  if (at >= 0) {
+    final suffix = rel.substring(at + 1);
+    final parsed = _parseRefToken(suffix);
+    if (parsed != null) {
+      rel = rel.substring(0, at);
+      ref = parsed;
+    } else if (_looksLikeRefAttempt(suffix)) {
+      throw FormatException('bad_uri: invalid version ref @$suffix');
+    }
+  }
+  if (ref.isLatest) {
+    final query = raw.contains('?') ? raw.substring(raw.indexOf('?') + 1) : '';
+    final refParam = query.split('&').firstWhere(
+        (kv) => kv.startsWith('ref='),
+        orElse: () => '');
+    if (refParam.isNotEmpty) {
+      final v = refParam.substring(4);
+      ref = _parseRefToken(v) ?? (throw FormatException('bad_uri: invalid ref $v'));
+    }
+  }
+  return (space: space, device: device, path: rel, ref: ref);
+}
+
+StoreUriRef? _parseRefToken(String s) {
+  if (s.length >= 16 && RegExp(r'^[0-9a-fA-F]{16,}$').hasMatch(s)) {
+    return StoreUriRef.hash(s.toLowerCase());
+  }
+  if (s.startsWith('v')) {
+    final n = int.tryParse(s.substring(1));
+    if (n != null && n >= 1) return StoreUriRef.seq(n);
+  }
+  return null;
+}
+
+bool _looksLikeRefAttempt(String s) =>
+    s.startsWith('v') ||
+    (s.isNotEmpty && RegExp(r'^[0-9a-fA-F]+$').hasMatch(s)) ||
+    (s.length >= 16 && RegExp(r'^[0-9a-zA-Z]+$').hasMatch(s));
+
+/// 格式化带版本引用的 store URI。
+String storeUriWithRef(String space, String device, String path,
+        [StoreUriRef? ref]) =>
+    'store://$space/$device/$path${ref?.toString() ?? ''}';
+
+// ─────────────────────────────────────────────────────────────────────────────
 // ACL 判定（spec §3）
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -220,6 +337,7 @@ StoreAcl checkStoreAcl(
     case StoreOp.writeBegin:
     case StoreOp.writeChunk:
     case StoreOp.commit:
+    case StoreOp.handoffCreate:
       if (space != null && !StoreSpace.isValid(space)) {
         return StoreAcl.denyBadOp;
       }
@@ -235,6 +353,7 @@ StoreAcl checkStoreAcl(
 
     // ── 删除：共享分区可删他端，私有分区仅本端 ──
     case StoreOp.delete:
+    case StoreOp.handoffAck:
       if (space == null || !StoreSpace.isValid(space)) {
         return StoreAcl.denyBadOp;
       }
@@ -252,6 +371,10 @@ StoreAcl checkStoreAcl(
     case StoreOp.list:
     case StoreOp.meta:
     case StoreOp.read:
+    case StoreOp.versionsList:
+    case StoreOp.versionsRead:
+    case StoreOp.manifest:
+    case StoreOp.artifactState:
       if (space == null || !StoreSpace.isValid(space)) {
         return StoreAcl.denyBadOp;
       }

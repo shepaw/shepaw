@@ -152,6 +152,67 @@ class StoreService {
     return _callPeerId(masterPeer.id, frame);
   }
 
+  // ── v4.2 客户端方法：版本化 / 血缘 / 交接（spec §1.5 / §2.9）──
+
+  /// 版本清单。
+  Future<Map<String, dynamic>?> versionsList({
+    required String space,
+    required String device,
+    required String path,
+  }) =>
+      call(StoreFrame(
+          op: StoreOp.versionsList,
+          payload: <String, dynamic>{
+            'space': space,
+            'device': device,
+            'path': path,
+          }));
+
+  /// 读取指定版本（`ref` = `v<N>` 或 `<sha256[:16+]>`）。
+  Future<Map<String, dynamic>?> versionsRead({
+    required String space,
+    required String device,
+    required String path,
+    required String ref,
+    int offset = 0,
+    int length = LocalStore.maxReadChunk,
+  }) =>
+      call(StoreFrame(
+          op: StoreOp.versionsRead,
+          payload: <String, dynamic>{
+            'space': space,
+            'device': device,
+            'path': path,
+            'ref': ref,
+            'offset': offset,
+            'length': length,
+          }));
+
+  /// 任务血缘 manifest。
+  Future<Map<String, dynamic>?> manifest({
+    required String space,
+    required String device,
+    required String path,
+  }) =>
+      call(StoreFrame(
+          op: StoreOp.manifest,
+          payload: <String, dynamic>{
+            'space': space,
+            'device': device,
+            'path': path,
+          }));
+
+  /// 产物状态 + 血缘。
+  Future<Map<String, dynamic>?> artifactState(String uri) =>
+      call(StoreFrame(
+          op: StoreOp.artifactState, payload: <String, dynamic>{'uri': uri}));
+
+  /// 交接确认（幂等；agentId 通常为本机 device_id 伪 agent）。
+  Future<Map<String, dynamic>?> handoffAck(String uri, String agentId) =>
+      call(StoreFrame(
+          op: StoreOp.handoffAck,
+          payload: <String, dynamic>{'uri': uri, 'agent_id': agentId}));
+
   /// 向指定设备（device_id）直发请求（换机导入路径 A：旧设备在场，
   /// 由旧设备直接服务，§5.4）。
   Future<Map<String, dynamic>?> callPeer(
