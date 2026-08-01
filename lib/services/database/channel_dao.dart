@@ -338,6 +338,21 @@ extension ChannelDao on LocalDatabaseService {
     return channels;
   }
 
+  /// 获取 channel 的 updated_at（会话活跃时间：创建/进入/发消息都会刷新）。
+  ///
+  /// 会话列表排序用它兜底：新建空会话还没有消息时，也能按活跃时间排在前面。
+  Future<DateTime?> getChannelUpdatedAt(String channelId) async {
+    final db = await database;
+    final results = await db.query(
+      'channels',
+      columns: ['updated_at'],
+      where: 'id = ?',
+      whereArgs: [channelId],
+    );
+    if (results.isEmpty) return null;
+    return DateTime.tryParse(results.first['updated_at'] as String? ?? '');
+  }
+
   /// 获取 channel 最新一条消息（用于会话列表预览）
   Future<Map<String, dynamic>?> getLatestChannelMessage(String channelId) async {
     final db = await database;

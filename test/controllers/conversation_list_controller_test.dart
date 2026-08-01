@@ -138,5 +138,79 @@ void main() {
       expect(entries.first.agent?.id, 'drafty');
       expect(entries[1].agent?.id, 'old');
     });
+
+    test('empty new session sorts by session activity instead of sinking', () {
+      // 新建空会话（无消息、无草稿）时，按活跃 channel 的 updated_at 排序，
+      // 避免刚创建的会话沉底找不到。
+      final sessionCreatedAt = DateTime.parse('2026-07-12T09:00:00.000Z');
+      final entries = ConversationListController.buildSortedConversations(
+        filteredAgents: [
+          _agent(id: 'chatted', name: 'Chatted'),
+          _agent(id: 'fresh', name: 'Fresh'),
+        ],
+        groupChannels: const [],
+        pairedPeers: const [],
+        searchQuery: '',
+        latestMessages: {
+          'chatted': {'created_at': '2026-07-11T12:00:00.000Z'},
+          'fresh': null,
+        },
+        groupLatestMessages: const {},
+        peerLatestTime: const {},
+        sessionActivityForAgent: (id) =>
+            id == 'fresh' ? sessionCreatedAt : null,
+      );
+
+      expect(entries.first.agent?.id, 'fresh');
+      expect(entries[1].agent?.id, 'chatted');
+    });
+
+    test('older message time wins over older session activity', () {
+      // 消息时间晚于会话活跃时间时，仍以消息时间为准（max 语义）。
+      final entries = ConversationListController.buildSortedConversations(
+        filteredAgents: [
+          _agent(id: 'a', name: 'A'),
+          _agent(id: 'b', name: 'B'),
+        ],
+        groupChannels: const [],
+        pairedPeers: const [],
+        searchQuery: '',
+        latestMessages: {
+          'a': {'created_at': '2026-07-11T12:00:00.000Z'},
+          'b': {'created_at': '2026-07-10T12:00:00.000Z'},
+        },
+        groupLatestMessages: const {},
+        peerLatestTime: const {},
+        sessionActivityForAgent: (id) =>
+            DateTime.parse('2026-07-01T00:00:00.000Z'),
+      );
+
+      expect(entries.first.agent?.id, 'a');
+      expect(entries[1].agent?.id, 'b');
+    });
+
+    test('empty new group session sorts by session activity', () {
+      final sessionCreatedAt = DateTime.parse('2026-07-12T09:00:00.000Z');
+      final entries = ConversationListController.buildSortedConversations(
+        filteredAgents: const [],
+        groupChannels: [
+          _group('g-chatted', 'Chatted Group'),
+          _group('g-fresh', 'Fresh Group'),
+        ],
+        pairedPeers: const [],
+        searchQuery: '',
+        latestMessages: const {},
+        groupLatestMessages: {
+          'g-chatted': {'created_at': '2026-07-11T12:00:00.000Z'},
+          'g-fresh': null,
+        },
+        peerLatestTime: const {},
+        sessionActivityForGroup: (id) =>
+            id == 'g-fresh' ? sessionCreatedAt : null,
+      );
+
+      expect(entries.first.group?.id, 'g-fresh');
+      expect(entries[1].group?.id, 'g-chatted');
+    });
   });
 }

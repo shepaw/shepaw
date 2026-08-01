@@ -66,6 +66,11 @@ class ConversationListController extends ChangeNotifier {
   final Map<String, int> _peerLatestTime = {};
   final Map<String, int> _peerUnreadCounts = {};
 
+  /// 活跃 channel 的 updated_at（创建/进入/发消息时刷新）。
+  /// 新建空会话还没有消息时，排序用它兜底，避免会话沉底找不到。
+  final Map<String, DateTime> _agentSessionActivity = {};
+  final Map<String, DateTime> _groupSessionActivity = {};
+
   /// Active channel id per agent / group, used to resolve drafts keyed by channel.
   final Map<String, String> _agentChannelIds = {};
   final Map<String, String> _groupChannelIds = {};
@@ -102,6 +107,10 @@ class ConversationListController extends ChangeNotifier {
   Map<String, String> get peerLatestContent => _peerLatestContent;
   Map<String, int> get peerLatestTime => _peerLatestTime;
   Map<String, int> get peerUnreadCounts => _peerUnreadCounts;
+
+  /// 活跃 channel 的 updated_at（按 agentId / groupId 索引），供行内时间标签兜底。
+  Map<String, DateTime> get agentSessionActivity => _agentSessionActivity;
+  Map<String, DateTime> get groupSessionActivity => _groupSessionActivity;
 
   /// Active DM channel for [agentId], if known from the last preview load.
   String? agentChannelId(String agentId) => _agentChannelIds[agentId];
@@ -298,8 +307,14 @@ class ConversationListController extends ChangeNotifier {
           await _databaseService.getLatestChannelMessage(channelId);
       final unreadCount =
           await _databaseService.getUnreadCountByChannel(channelId);
+      final activityAt = await _databaseService.getChannelUpdatedAt(channelId);
       _agentChannelIds[agentId] = channelId;
       _latestMessages[agentId] = latestMsg;
+      if (activityAt != null) {
+        _agentSessionActivity[agentId] = activityAt.toLocal();
+      } else {
+        _agentSessionActivity.remove(agentId);
+      }
       // 用户正在该频道里查看（如 She 频道收到 [Agent Reply] 注入）→
       // 角标按 0 计：消息已在其眼前，且聊天页的 reconcile 会标记已读，
       // 此处兜底消除"标记已读"与"角标重算"的先后竞态。
@@ -338,6 +353,13 @@ class ConversationListController extends ChangeNotifier {
       if (activeChannelId != null) {
         _groupChannelIds[group.id] = activeChannelId;
         _groupChannelIds[group.groupFamilyId] = activeChannelId;
+        final activityAt =
+            await _databaseService.getChannelUpdatedAt(activeChannelId);
+        if (activityAt != null) {
+          _groupSessionActivity[group.id] = activityAt.toLocal();
+        } else {
+          _groupSessionActivity.remove(group.id);
+        }
       }
       _groupLatestMessages[group.id] = activeMsg;
       _groupUnreadCounts[group.id] = totalUnread;
@@ -358,8 +380,14 @@ class ConversationListController extends ChangeNotifier {
           await _databaseService.getLatestChannelMessage(channelId);
       final unreadCount =
           await _databaseService.getUnreadCountByChannel(channelId);
+      final activityAt = await _databaseService.getChannelUpdatedAt(channelId);
       _agentChannelIds[agent.id] = channelId;
       _latestMessages[agent.id] = latestMsg;
+      if (activityAt != null) {
+        _agentSessionActivity[agent.id] = activityAt.toLocal();
+      } else {
+        _agentSessionActivity.remove(agent.id);
+      }
       _unreadCounts[agent.id] =
           AppLifecycleService().activeChannelId == channelId ? 0 : unreadCount;
     }
@@ -395,6 +423,15 @@ class ConversationListController extends ChangeNotifier {
       if (activeChannelId != null) {
         _groupChannelIds[group.id] = activeChannelId;
         _groupChannelIds[group.groupFamilyId] = activeChannelId;
+        final activityAt =
+            await _databaseService.getChannelUpdatedAt(activeChannelId);
+        if (activityAt != null) {
+          _groupSessionActivity[group.id] = activityAt.toLocal();
+        } else {
+          _groupSessionActivity.remove(group.id);
+        }
+      } else {
+        _groupSessionActivity.remove(group.id);
       }
       _groupLatestMessages[group.id] = activeMsg;
       _groupUnreadCounts[group.id] = totalUnread;
@@ -497,6 +534,8 @@ class ConversationListController extends ChangeNotifier {
       peerLatestTime: _peerLatestTime,
       draftUpdatedAtForAgent: _draftUpdatedAtForAgent,
       draftUpdatedAtForGroup: _draftUpdatedAtForGroup,
+      sessionActivityForAgent: (id) => _agentSessionActivity[id],
+      sessionActivityForGroup: (id) => _groupSessionActivity[id],
     );
   }
 
@@ -532,6 +571,9 @@ class ConversationListController extends ChangeNotifier {
   ///
   /// Agent / group / peer 各自成行，按最近激活时间降序；She 置顶。
   /// 设备与 peer Agent 不再聚合（聚合在通讯录中完成）。
+  ///
+  /// 排序时间取「最新消息 / 草稿 / 活跃会话 updated_at」三者最大：
+  /// 新建空会话还没有消息时，也能按会话创建（活跃）时间排在前面，避免沉底找不到。
   static List<ConversationListItem> buildSortedConversations({
     required List<Agent> filteredAgents,
     required List<Channel> groupChannels,
@@ -542,6 +584,8 @@ class ConversationListController extends ChangeNotifier {
     required Map<String, int> peerLatestTime,
     DateTime? Function(String agentId)? draftUpdatedAtForAgent,
     DateTime? Function(String groupId)? draftUpdatedAtForGroup,
+    DateTime? Function(String agentId)? sessionActivityForAgent,
+    DateTime? Function(String groupId)? sessionActivityForGroup,
   }) {
     final query = searchQuery.toLowerCase();
     final blocks = <ConversationListBlock>[];
@@ -559,7 +603,8 @@ class ConversationListController extends ChangeNotifier {
       final timeStr = latestMessages[agent.id]?['created_at'] as String?;
       final msgTime = timeStr != null ? DateTime.tryParse(timeStr)?.toLocal() : null;
       final draftTime = draftUpdatedAtForAgent?.call(agent.id)?.toLocal();
-      return latestOf([msgTime, draftTime]);
+      final activityTime = sessionActivityForAgent?.call(agent.id)?.toLocal();
+      return latestOf([msgTime, draftTime, activityTime]);
     }
 
     DateTime? peerLastMessageTime(PairedPeer peer) {
@@ -603,7 +648,10 @@ class ConversationListController extends ChangeNotifier {
       final draftTime = (draftUpdatedAtForGroup?.call(group.groupFamilyId) ??
               draftUpdatedAtForGroup?.call(group.id))
           ?.toLocal();
-      final time = latestOf([msgTime, draftTime]);
+      final activityTime = (sessionActivityForGroup?.call(group.groupFamilyId) ??
+              sessionActivityForGroup?.call(group.id))
+          ?.toLocal();
+      final time = latestOf([msgTime, draftTime, activityTime]);
       blocks.add(
         ConversationListBlock.standalone(ConversationListItem.group(group, time)),
       );
