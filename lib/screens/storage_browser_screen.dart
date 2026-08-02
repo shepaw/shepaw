@@ -8,7 +8,7 @@ import '../storage/store_service.dart';
 
 /// 浏览本机 App store 正式文件并手删（进回收站）。
 ///
-/// 仅操作当前设备目录；他端镜像浏览/清理归 Nexuspouch 管理。
+/// 版本 / 血缘 / 搜索经 Noise 调 master（见 docs/APP_CONSUMER_UI.md）。
 class StorageBrowserScreen extends StatefulWidget {
   const StorageBrowserScreen({super.key});
 
@@ -110,6 +110,207 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen> {
     }
   }
 
+  Future<void> _showEntryActions(StoreEntry entry) async {
+    final l10n = AppLocalizations.of(context);
+    await showModalBottomSheet<void>(
+      context: context,
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              title: Text(entry.path,
+                  maxLines: 2, overflow: TextOverflow.ellipsis),
+              subtitle: Text(_fmtBytes(entry.size)),
+            ),
+            const Divider(height: 1),
+            ListTile(
+              leading: const Icon(Icons.history),
+              title: Text(l10n.storage_browserVersions),
+              onTap: () {
+                Navigator.of(ctx).pop();
+                _showVersions(entry);
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.account_tree_outlined),
+              title: Text(l10n.storage_browserManifest),
+              onTap: () {
+                Navigator.of(ctx).pop();
+                _showManifest(entry);
+              },
+            ),
+            ListTile(
+              leading: Icon(Icons.delete_outline,
+                  color: Theme.of(ctx).colorScheme.error),
+              title: Text(l10n.storage_browserDelete),
+              onTap: () {
+                Navigator.of(ctx).pop();
+                _deleteEntry(entry);
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _showVersions(StoreEntry entry) async {
+    final l10n = AppLocalizations.of(context);
+    if (await StoreService.instance.isMaster()) {
+      _toast(l10n.storage_browserNeedMaster);
+      return;
+    }
+    setState(() => _busy = true);
+    Map<String, dynamic>? data;
+    String? err;
+    try {
+      data = await StoreService.instance.versionsList(
+        space: _space,
+        device: _selfId,
+        path: entry.path,
+      );
+      if (data != null && data['_error'] != null) {
+        err = '${data['_error']}: ${data['message'] ?? ''}';
+        data = null;
+      }
+    } catch (e) {
+      err = '$e';
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+    if (!mounted) return;
+    if (err != null) {
+      _toast(l10n.storage_browserVersionsFailed(err));
+      return;
+    }
+    final versions = (data?['versions'] as List?) ?? const [];
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      builder: (ctx) => DraggableScrollableSheet(
+        expand: false,
+        initialChildSize: 0.5,
+        minChildSize: 0.3,
+        maxChildSize: 0.9,
+        builder: (_, scroll) => Column(
+          children: [
+            Padding(
+              padding: const EdgeInsets.all(16),
+              child: Text(l10n.storage_browserVersionsTitle,
+                  style: Theme.of(ctx).textTheme.titleMedium),
+            ),
+            Expanded(
+              child: versions.isEmpty
+                  ? Center(child: Text(l10n.storage_browserVersionsEmpty))
+                  : ListView.builder(
+                      controller: scroll,
+                      itemCount: versions.length,
+                      itemBuilder: (_, i) {
+                        final v = versions[i] as Map;
+                        final ver = v['v'] ?? '?';
+                        final size = v['size'] ?? 0;
+                        final sha = '${v['sha256'] ?? ''}';
+                        final shaShort = sha.length >= 16
+                            ? sha.substring(0, 16)
+                            : sha;
+                        final protected = v['protected'] == true;
+                        return ListTile(
+                          dense: true,
+                          leading: Text('v$ver'),
+                          title: Text(_fmtBytes(size is int ? size : 0)),
+                          subtitle: Text(shaShort),
+                          trailing: protected
+                              ? const Icon(Icons.lock_outline, size: 16)
+                              : null,
+                        );
+                      },
+                    ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _showManifest(StoreEntry entry) async {
+    final l10n = AppLocalizations.of(context);
+    if (await StoreService.instance.isMaster()) {
+      _toast(l10n.storage_browserNeedMaster);
+      return;
+    }
+    setState(() => _busy = true);
+    Map<String, dynamic>? data;
+    String? err;
+    try {
+      data = await StoreService.instance.manifest(
+        space: _space,
+        device: _selfId,
+        path: entry.path,
+      );
+      if (data != null && data['_error'] != null) {
+        err = '${data['_error']}: ${data['message'] ?? ''}';
+        data = null;
+      }
+    } catch (e) {
+      err = '$e';
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+    if (!mounted) return;
+    if (err != null) {
+      _toast(l10n.storage_browserManifestFailed(err));
+      return;
+    }
+    if (data == null || data.isEmpty) {
+      _toast(l10n.storage_browserManifestEmpty);
+      return;
+    }
+    final producer = data['producer']?.toString() ?? '';
+    final summary = data['summary']?.toString() ?? '';
+    final parents = (data['parent_uris'] as List?)?.join('\n') ?? '';
+    final state = data['state']?.toString() ?? '';
+    await showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(l10n.storage_browserManifestTitle),
+        content: SingleChildScrollView(
+          child: SelectableText([
+            if (state.isNotEmpty) 'state: $state',
+            if (producer.isNotEmpty) 'producer: $producer',
+            if (summary.isNotEmpty) 'summary: $summary',
+            if (parents.isNotEmpty) 'parents:\n$parents',
+            if (state.isEmpty &&
+                producer.isEmpty &&
+                summary.isEmpty &&
+                parents.isEmpty)
+              l10n.storage_browserManifestEmpty,
+          ].join('\n\n')),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: Text(l10n.common_confirm),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _openSearch() async {
+    final l10n = AppLocalizations.of(context);
+    if (await StoreService.instance.isMaster()) {
+      if (!mounted) return;
+      _toast(l10n.storage_browserNeedMaster);
+      return;
+    }
+    if (!mounted) return;
+    await showSearch<void>(
+      context: context,
+      delegate: _StoreSearchDelegate(space: _space),
+    );
+  }
+
   void _toast(String msg) {
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
@@ -132,6 +333,11 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen> {
       appBar: AppBar(
         title: Text(l10n.storage_browserTitle),
         actions: [
+          IconButton(
+            onPressed: _busy ? null : _openSearch,
+            icon: const Icon(Icons.search),
+            tooltip: l10n.storage_browserSearchTitle,
+          ),
           IconButton(
             onPressed: _busy ? null : _reload,
             icon: const Icon(Icons.refresh),
@@ -179,7 +385,7 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen> {
                     border: const OutlineInputBorder(),
                     isDense: true,
                     suffixIcon: IconButton(
-                      icon: const Icon(Icons.search),
+                      icon: const Icon(Icons.filter_alt_outlined),
                       onPressed: _busy ? null : _reload,
                     ),
                   ),
@@ -221,6 +427,7 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen> {
                           overflow: TextOverflow.ellipsis),
                       subtitle: Text(_fmtBytes(e.size),
                           style: Theme.of(context).textTheme.labelSmall),
+                      onTap: _busy ? null : () => _showEntryActions(e),
                       trailing: IconButton(
                         icon: Icon(Icons.delete_outline,
                             size: 18,
@@ -246,6 +453,90 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen> {
                 ],
               ],
             ),
+    );
+  }
+}
+
+class _StoreSearchDelegate extends SearchDelegate<void> {
+  _StoreSearchDelegate({required this.space});
+
+  final String space;
+
+  @override
+  List<Widget>? buildActions(BuildContext context) {
+    return [
+      if (query.isNotEmpty)
+        IconButton(
+          icon: const Icon(Icons.clear),
+          onPressed: () => query = '',
+        ),
+    ];
+  }
+
+  @override
+  Widget? buildLeading(BuildContext context) {
+    return IconButton(
+      icon: const Icon(Icons.arrow_back),
+      onPressed: () => close(context, null),
+    );
+  }
+
+  @override
+  Widget buildResults(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
+    final q = query.trim();
+    if (q.isEmpty) {
+      return Center(child: Text(l10n.storage_browserSearchHint));
+    }
+    return FutureBuilder<Map<String, dynamic>?>(
+      future: StoreService.instance.search(q: q, space: space),
+      builder: (context, snap) {
+        if (snap.connectionState != ConnectionState.done) {
+          return const Center(child: CircularProgressIndicator());
+        }
+        final data = snap.data;
+        if (data != null && data['_error'] != null) {
+          return Center(
+            child: Text(l10n.storage_browserSearchFailed(
+                '${data['_error']}: ${data['message'] ?? ''}')),
+          );
+        }
+        if (snap.hasError) {
+          return Center(
+              child: Text(l10n.storage_browserSearchFailed('${snap.error}')));
+        }
+        final list = (data?['results'] as List?) ?? const [];
+        if (list.isEmpty) {
+          return Center(child: Text(l10n.storage_browserSearchEmpty));
+        }
+        return ListView.builder(
+          itemCount: list.length,
+          itemBuilder: (_, i) {
+            final r = Map<String, dynamic>.from(list[i] as Map);
+            final path = '${r['path'] ?? ''}';
+            final snippet = '${r['snippet'] ?? ''}';
+            final uri = '${r['uri'] ?? ''}';
+            return ListTile(
+              title: Text(path, overflow: TextOverflow.ellipsis),
+              subtitle: Text(
+                snippet.isNotEmpty ? snippet : uri,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+              ),
+              dense: true,
+            );
+          },
+        );
+      },
+    );
+  }
+
+  @override
+  Widget buildSuggestions(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
+    return Center(
+      child: Text(l10n.storage_browserSearchHint,
+          style: Theme.of(context).textTheme.bodySmall),
     );
   }
 }

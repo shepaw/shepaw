@@ -106,6 +106,38 @@
       "loopback": false,
       "payload": { "device": "aaaaaaaaaaaaaaaa" },
       "expect": "allow"
+    },
+    {
+      "name": "owner_search",
+      "op": "search",
+      "trust": "owner",
+      "loopback": false,
+      "payload": { "q": "hello" },
+      "expect": "allow"
+    },
+    {
+      "name": "friend_search",
+      "op": "search",
+      "trust": "friend",
+      "loopback": false,
+      "payload": { "q": "hello" },
+      "expect": "denyUntrusted"
+    },
+    {
+      "name": "owner_events_list",
+      "op": "events.list",
+      "trust": "owner",
+      "loopback": false,
+      "payload": { "since": 0 },
+      "expect": "allow"
+    },
+    {
+      "name": "friend_events_list",
+      "op": "events.list",
+      "trust": "friend",
+      "loopback": false,
+      "payload": { "since": 0 },
+      "expect": "denyUntrusted"
     }
   ]
 }

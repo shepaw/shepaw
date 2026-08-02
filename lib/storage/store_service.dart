@@ -213,6 +213,32 @@ class StoreService {
           op: StoreOp.handoffAck,
           payload: <String, dynamic>{'uri': uri, 'agent_id': agentId}));
 
+  /// 全文检索（M5；经 Noise 调 master 的 `search` 帧）。
+  Future<Map<String, dynamic>?> search({
+    required String q,
+    String? space,
+    String? device,
+    String? state,
+    int limit = 50,
+  }) {
+    final payload = <String, dynamic>{'q': q, 'limit': limit};
+    if (space != null) payload['space'] = space;
+    if (device != null) payload['device'] = device;
+    if (state != null) payload['state'] = state;
+    return call(StoreFrame(op: StoreOp.search, payload: payload));
+  }
+
+  /// 事件列表（`seq > since`；可选 `kind` 过滤，如 `handoff.created`）。
+  Future<Map<String, dynamic>?> eventsList({
+    int since = 0,
+    int limit = 50,
+    String? kind,
+  }) {
+    final payload = <String, dynamic>{'since': since, 'limit': limit};
+    if (kind != null) payload['kind'] = kind;
+    return call(StoreFrame(op: StoreOp.eventsList, payload: payload));
+  }
+
   /// 向指定设备（device_id）直发请求（换机导入路径 A：旧设备在场，
   /// 由旧设备直接服务，§5.4）。
   Future<Map<String, dynamic>?> callPeer(

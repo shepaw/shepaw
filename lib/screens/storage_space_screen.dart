@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import '../l10n/app_localizations.dart';
+import '../storage/handoff_notify_service.dart';
 import '../storage/import_auth_service.dart';
 import 'she_circle_screen.dart';
 import 'storage_advanced_screen.dart';
@@ -46,16 +47,21 @@ class StorageSpaceScreenState extends State<StorageSpaceScreen> {
   late Future<StorageOverviewSummary> _future;
   StreamSubscription<ImportRequest>? _importCreatedSub;
   StreamSubscription<ImportGrant>? _importGrantSub;
+  StreamSubscription<void>? _handoffSub;
 
   @override
   void initState() {
     super.initState();
     _future = loadStorageOverview();
+    HandoffNotifyService.instance.start();
     _importCreatedSub = ImportRequestBus.instance.onCreated.listen((_) {
       if (mounted) unawaited(_refresh());
     });
     _importGrantSub = ImportGrantBus.instance.onReceived.listen((_) {
       if (mounted) unawaited(_refresh());
+    });
+    _handoffSub = HandoffNotifyService.instance.onChanged.listen((_) {
+      if (mounted) setState(() {});
     });
   }
 
@@ -63,6 +69,7 @@ class StorageSpaceScreenState extends State<StorageSpaceScreen> {
   void dispose() {
     _importCreatedSub?.cancel();
     _importGrantSub?.cancel();
+    _handoffSub?.cancel();
     super.dispose();
   }
 
@@ -323,6 +330,73 @@ class StorageOverviewBody extends StatelessWidget {
     );
   }
 
+  Future<void> _showHandoffs(BuildContext context) async {
+    final l10n = AppLocalizations.of(context);
+    final notices = HandoffNotifyService.instance.notices;
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      builder: (ctx) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(l10n.storage_handoffTitle,
+                        style: Theme.of(ctx).textTheme.titleMedium),
+                  ),
+                  TextButton(
+                    onPressed: () {
+                      HandoffNotifyService.instance.dismissAll();
+                      Navigator.of(ctx).pop();
+                    },
+                    child: Text(l10n.storage_handoffClear),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              if (notices.isEmpty)
+                Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 24),
+                  child: Text(l10n.storage_handoffEmpty,
+                      textAlign: TextAlign.center),
+                )
+              else
+                SizedBox(
+                  height: MediaQuery.of(ctx).size.height * 0.4,
+                  child: ListView.builder(
+                    itemCount: notices.length,
+                    itemBuilder: (_, i) {
+                      final n = notices[i];
+                      return ListTile(
+                        dense: true,
+                        leading: const Icon(Icons.handshake_outlined, size: 18),
+                        title: Text(n.uri,
+                            maxLines: 2, overflow: TextOverflow.ellipsis),
+                        subtitle: Text(
+                          [
+                            if (n.context != null && n.context!.isNotEmpty)
+                              n.context!,
+                            if (n.device.isNotEmpty) n.device,
+                          ].join(' · '),
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      );
+                    },
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
@@ -470,10 +544,49 @@ class StorageOverviewBody extends StatelessWidget {
         StorageBagEntry.import,
       ));
     }
-    if (alerts.isEmpty) return const [];
+    final handoffCount = HandoffNotifyService.instance.count;
+    final widgets = <Widget>[];
+    if (handoffCount > 0) {
+      widgets.add(
+        Padding(
+          padding: const EdgeInsets.only(bottom: 8),
+          child: Material(
+            color: Theme.of(context).colorScheme.tertiaryContainer,
+            borderRadius: BorderRadius.circular(10),
+            child: InkWell(
+              borderRadius: BorderRadius.circular(10),
+              onTap: () => _showHandoffs(context),
+              child: Padding(
+                padding: const EdgeInsets.all(12),
+                child: Row(
+                  children: [
+                    Icon(Icons.handshake_outlined,
+                        color:
+                            Theme.of(context).colorScheme.onTertiaryContainer),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        l10n.storage_alertHandoffs(handoffCount),
+                        style: TextStyle(
+                          color: Theme.of(context)
+                              .colorScheme
+                              .onTertiaryContainer,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+    if (alerts.isEmpty && widgets.isEmpty) return const [];
 
     return [
       const SizedBox(height: 12),
+      ...widgets,
       for (final (message, entry) in alerts)
         Padding(
           padding: const EdgeInsets.only(bottom: 8),

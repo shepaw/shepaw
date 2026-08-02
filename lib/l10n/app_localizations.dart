@@ -9008,6 +9008,126 @@ abstract class AppLocalizations {
   /// **'无权删除他端文件（仅 master 本机）'**
   String get storage_browserDeleteDenied;
 
+  /// No description provided for @storage_browserVersions.
+  ///
+  /// In zh, this message translates to:
+  /// **'版本'**
+  String get storage_browserVersions;
+
+  /// No description provided for @storage_browserManifest.
+  ///
+  /// In zh, this message translates to:
+  /// **'血缘'**
+  String get storage_browserManifest;
+
+  /// No description provided for @storage_browserVersionsTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'版本历史'**
+  String get storage_browserVersionsTitle;
+
+  /// No description provided for @storage_browserVersionsEmpty.
+  ///
+  /// In zh, this message translates to:
+  /// **'暂无版本记录（需连接 NAS/节点）'**
+  String get storage_browserVersionsEmpty;
+
+  /// No description provided for @storage_browserVersionsFailed.
+  ///
+  /// In zh, this message translates to:
+  /// **'加载版本失败：{error}'**
+  String storage_browserVersionsFailed(String error);
+
+  /// No description provided for @storage_browserManifestTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'任务血缘'**
+  String get storage_browserManifestTitle;
+
+  /// No description provided for @storage_browserManifestEmpty.
+  ///
+  /// In zh, this message translates to:
+  /// **'无血缘信息'**
+  String get storage_browserManifestEmpty;
+
+  /// No description provided for @storage_browserManifestFailed.
+  ///
+  /// In zh, this message translates to:
+  /// **'加载血缘失败：{error}'**
+  String storage_browserManifestFailed(String error);
+
+  /// No description provided for @storage_browserSearchTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'搜索产物'**
+  String get storage_browserSearchTitle;
+
+  /// No description provided for @storage_browserSearchHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'关键词'**
+  String get storage_browserSearchHint;
+
+  /// No description provided for @storage_browserSearchEmpty.
+  ///
+  /// In zh, this message translates to:
+  /// **'无匹配结果'**
+  String get storage_browserSearchEmpty;
+
+  /// No description provided for @storage_browserSearchFailed.
+  ///
+  /// In zh, this message translates to:
+  /// **'搜索失败：{error}'**
+  String storage_browserSearchFailed(String error);
+
+  /// No description provided for @storage_browserNeedMaster.
+  ///
+  /// In zh, this message translates to:
+  /// **'请先连接 NAS/节点作为 master'**
+  String get storage_browserNeedMaster;
+
+  /// No description provided for @storage_alertHandoffs.
+  ///
+  /// In zh, this message translates to:
+  /// **'有 {count} 条交接通知'**
+  String storage_alertHandoffs(int count);
+
+  /// No description provided for @storage_handoffTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'交接通知'**
+  String get storage_handoffTitle;
+
+  /// No description provided for @storage_handoffEmpty.
+  ///
+  /// In zh, this message translates to:
+  /// **'暂无交接通知'**
+  String get storage_handoffEmpty;
+
+  /// No description provided for @storage_handoffClear.
+  ///
+  /// In zh, this message translates to:
+  /// **'清除'**
+  String get storage_handoffClear;
+
+  /// No description provided for @storage_agentsAdmin.
+  ///
+  /// In zh, this message translates to:
+  /// **'节点 Admin（Agents）'**
+  String get storage_agentsAdmin;
+
+  /// No description provided for @storage_agentsAdminHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'在浏览器管理 agent 身份与配额'**
+  String get storage_agentsAdminHint;
+
+  /// No description provided for @storage_agentsAdminMissing.
+  ///
+  /// In zh, this message translates to:
+  /// **'未发现可用节点地址'**
+  String get storage_agentsAdminMissing;
+
   /// No description provided for @storage_mirroredDevices.
   ///
   /// In zh, this message translates to:

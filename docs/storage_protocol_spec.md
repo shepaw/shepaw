@@ -1,7 +1,8 @@
 # ShePaw 存储空间协议规范（store.*）
 
-> 版本：v4.1（与方案 v1.1 对齐：跨端读权威=master；CAS=远端读缓存；GFS 本机执行）
-> 状态：Dart 与 Go 实现的权威定义。上游设计：`docs/storage_space_plan.md`。
+> 版本：v4.3（Step 1 文档化：空间属性模型 + 三层边界。承接 v4.2：store URI 规范、
+> op 扩展策略、agent 身份承载。与方案 v1.1 对齐：跨端读权威=master；CAS=远端读缓存；GFS 本机执行）
+> 状态：Dart（ShePaw App）与 Rust（Nexuspouch）实现的权威定义。上游设计：`docs/storage_space_plan.md`。
 > 共享 fixture：`docs/storage_fixtures/`（path 攻击 + ACL 用例）。
 > 传输：复用 `PeerConnection` 控制帧（WS + Noise E2E）与 Channel Tunnel；本协议不新增传输。
 
@@ -11,10 +12,45 @@
 |------|------|
 | 设备目录 | `<device_id>/`，每端实体数据的唯一归属；`device_id` = Noise 静态公钥哈希（16 hex）。 |
 | master | 镜像汇聚点 + 跨端读取权威。同一时间唯一；M2 默认本机（loopback），指定/迁移见方案 §6.5（M6）。 |
-| space | 目录分区：`artifacts` / `files` / `attachments` / `backups`。 |
+| space | 属性驱动的目录分区（见 §0.5 空间属性模型）。内置：`artifacts` / `files` / `attachments` / `backups`。 |
 | staging | `<device_id>/<space>/.staging/<upload_id>/`，未 commit 的半成品，对 `list`/恢复不可见。 |
-| `.recycle` | 回收站（store 根级系统目录），删除与被覆盖旧版本的去处；仅 master 本机用户可清空。 |
+| `.recycle` | 回收站（store 根级系统目录），删除与被覆盖旧版本的最终去处（覆盖先经 `.versions` 再修剪，见 §2.6/§1.5）；仅 master 本机用户可清空。 |
+| `.versions` | 版本库（store 根级系统目录），被覆盖旧版本的不可变存档；仅内部 `versions.*` op 可访问。 |
+| `.nexuspouch` | 任务元数据目录（`<space>/<task>/.nexuspouch/`），manifest / 状态 / ack 记录；仅内部 op 可读。 |
 | trust_level | 配对信任分级（`paired_peers.trust_level`）：`owner`（自己的设备）/ `friend`（预留，本期拒绝一切 store.*）。 |
+
+## 0.5 空间属性模型（v4.3 通用化边界，Step 1 文档化）
+
+空间不再是协议写死的四个名字，而是「属性驱动的分区」——**行为由属性决定，名字只是 key**。
+
+### 0.5.1 属性
+
+| 属性 | 取值 | 含义 |
+|------|------|------|
+| `visibility` | `shared` \| `private` | `shared` → owner 端可读他端；`private` → 仅本端 + 显式例外（导入授权 / 迁移 seed） |
+| `encryption` | `client` \| `none` | `client` → 内容离开设备前必须已加密，节点不持有密钥、不做解密 |
+| `retention` | `keep_last` \| `gfs` \| `none` | 原语，参数由调用方按内容给；执行方可为本机或属主设备 |
+| `import_grant` | `allowed` \| `denied` | 换机导入授权是否允许该空间（迁移例外显式化） |
+
+### 0.5.2 内置 profile（v4 兼容，行为不变）
+
+| space | visibility | encryption | retention | import_grant |
+|-------|-----------|-----------|-----------|--------------|
+| `artifacts` | shared | none | none | allowed |
+| `files` | shared | none | none | allowed |
+| `attachments` | private | client | none | allowed |
+| `backups` | private | client | gfs（属主设备本机执行） | allowed |
+
+### 0.5.3 边界
+
+- 自定义空间经 admin `space.declare` 声明（已落地，Step 2；`space.list` 可查），
+  声明时校验命名与保留前缀；
+- `dot` 前缀目录仍为系统保留（`.system` / `.recycle` / `.versions` / `.staging` /
+  `.nexuspouch`），任何空间都不可寻址；
+- 业务约定（快照格式、附件寻址、GFS 用法、`task_id` 语义）**不属于协议层**，
+  见 [docs/CLIENT_PROFILES.md](CLIENT_PROFILES.md)（ShePaw 客户端 profile）；
+- 边界判定：新需求问「节点需要理解它才能正确执行吗？」——不需要 → 放客户端 profile；
+  需要 → 才进协议通用层。
 
 ## 1. 帧格式
 
@@ -22,7 +58,7 @@
 {"type": "store", "ns": "store", "op": "<操作>", "v": 1, "req_id": "<uuid>", "...": "op 特有字段"}
 ```
 
-- `type`/`ns` 恒为 `"store"`：peer 层按 `type` 路由控制帧；`ns` 供协议层与 Go 实现校验。
+- `type`/`ns` 恒为 `"store"`：peer 层按 `type` 路由控制帧；`ns` 供协议层与各端实现校验。
 - `req_id`：请求方生成的 uuid。**响应帧**回带同一 `req_id`：
   - 成功：`{"op": "result", "req_id": ..., "data": {...}}`
   - 失败：`{"op": "error", "req_id": ..., "code": "...", "message": "..."}`
@@ -38,13 +74,53 @@
 | `not_paired` | 未配对设备 |
 | `acl_denied` | 越权（见 §3 ACL 矩阵） |
 | `bad_path` | 路径非法（绝对路径/`..` 穿越/非法字符/符号链接逃逸） |
+| `bad_uri` | store URI 非法（scheme/space/device/ref 语法错误） |
+| `ambiguous_ref` | `@ref` 哈希前缀命中多个版本，需更长前缀 |
 | `bad_op` | 未知 op 或 op 参数非法（含伪造的导入授权类 op） |
 | `hash_mismatch` | commit 校验 sha256 不符 |
 | `not_found` | 目标不存在 |
+| `quota_exceeded` | agent 写入超配额或卷空间预算收紧（见 docs/AGENTS.md） |
+| `state_conflict` | 状态机不允许该转换（如 ack 非 published 产物、重复 ack 已被他人 ack） |
 | `staging_state` | upload_id 状态非法（重复 commit / 未知 id） |
 | `master_offline` | master 不可达（客户端本地判定） |
 | `not_master` | 本节点已非当前 master（fencing：拒绝 sync 写入/`sync.hello`） |
 | `internal` | 其他内部错误 |
+
+## 1.5 store URI 规范（v4.2 新增；M2 里程碑实现）
+
+### 1.5.1 语法
+
+```
+store://<space>/<device>/<relpath>[@<ref>]
+```
+
+- `space` ∈ `artifacts | files | attachments | backups`（必填单值）。
+- `device` = 16 位小写 hex（Noise 公钥哈希）。
+- `<relpath>` 必须相对路径，符合 §4 规范化（拒绝 `..`、绝对路径、盘符、NUL、反斜杠统一为 `/`）。
+- 兼容路径式写法：`store:///artifacts/<device>/<relpath>`（三段式）与 host 式等价。
+- **点前缀段保留**：`<relpath>` 任何段不得以 `.` 开头（`.staging` / `.recycle` / `.versions` / `.nexuspouch` 等系统目录机制上不可寻址），否则 `bad_path`。
+
+### 1.5.2 版本引用 `<ref>`
+
+引用段可省略（= 当前最新版本，与 v4.1 行为一致）。两种形式，哈希为规范形式：
+
+| 形式 | 示例 | 语义 |
+|------|------|------|
+| 内容寻址 | `.../out.json@3f9a2c…（≥16 hex）` | 按 sha256 前缀解析；前缀冲突 → `ambiguous_ref` |
+| 顺序别名 | `.../out.json@v3` | 按版本索引解析；`v1` = 首次 commit；`v0`/非法 → `bad_uri` |
+| 查询参数等价 | `.../out.json?ref=v2` 或 `?ref=<hash>` | 与 `@` 写法等价（兼容 URL 工具） |
+
+- 版本解析失败（格式非法）→ `bad_uri`；格式合法但不存在 → `not_found`。
+- 版本语义（M2）：commit 使目标不可变；被覆盖旧版本迁入 `.versions` 并保留索引；发布产物（`publish: true`）永久保留，非发布产物按 §8 空间预算（方案）修剪。
+- Agent 纪律：**引用原样传递，不构造、不改写 URI**；`store_read` / `store_write` 单参数调用（方案 §6.3）。
+
+### 1.5.3 版本操作（M2 实现）
+
+| op | 请求 | 响应要点 |
+|----|------|---------|
+| `versions.list` | `{space, device, path}` | `{"versions": [{"v":1,"sha256":"…","size":…,"mtime":…,"producer":…}]}` |
+| `versions.read` | `{space, device, path, ref}` | 同 `read`（`data`/`eof`） |
+| `manifest` | `{space, device, path}` | 任务 `manifest.json`（血缘：producer / parent_uris / files / state） |
 
 ## 2. 操作清单
 
@@ -110,7 +186,11 @@
 ```
 
 - 校验：每个 upload 的组装内容 sha256 与 write.begin 声明一致，**全部通过才进入转正**。
-- 转正：暂存文件 rename 到最终路径（同卷原子）；目标已存在时旧版本先移入 `.recycle`。
+- 转正：暂存文件 rename 到最终路径（同卷原子）；目标已存在时旧版本先迁入 `.versions`
+  并保留版本索引（§1.5.3；M2 起覆盖不再直接进 `.recycle`），非发布产物按
+  `keep_last` 预算修剪，修剪与 `delete` 才进 `.recycle`。`commit` 可选携带
+  `"manifest"`（producer / parent_uris / summary / state）与 `"publish": true`
+  （发布产物全部版本永久保留）。
 - 批内单文件转正失败：其余继续，响应 `failed` 标注；staging 保留可重试。
 - `retention`（可选）：转正成功后按策略剪枝同分区**顶层目录**。
   - `{"policy":"keep_last","keep":4,"include_prefix"?: "...","exclude_prefix"?: "..."}`
@@ -143,7 +223,37 @@
 - `recycle.restore` 移回原路径；原位置已有文件时先将其移入回收站（新版本优先保留语义）。
 - **`recycle.empty` 仅 master 本机用户（loopback）可执行；远端调用一律 `acl_denied`。**
 
-### 2.9 stats — 用量
+### 2.9 handoff.* / artifact.state — 交接与产物状态机（M3 新增）
+
+产物生命周期：`committed → published → acked`；被覆盖的旧版本 → `superseded`
+（仍可经版本引用读取，不可再变）。artifacts 空间默认 `published`；files 空间
+需 `publish: true` 才发布。
+
+```json
+// 交接：commit + 发布 + 上下文（to_agent 可选，事件 handoff.created）
+{"op": "handoff.create", "space": "artifacts", "upload_ids": ["u-1"],
+ "context": "精修后 ack", "to_agent": "a-desktop", "manifest": {...}}
+→ {"op": "result", "data": {"committed": [...], "handoff_uri": "store://...",
+    "state": "published"}}
+
+// 消费方确认（幂等；重复 ack 返回 already_acked=true）
+{"op": "handoff.ack", "uri": "store://artifacts/pc-a/t-41/out.md", "agent_id": "a-desktop"}
+→ {"op": "result", "data": {"uri": "...", "state": "acked", "acked_by": "a-desktop"}}
+
+// 状态 + 血缘查询（uri 可带 @ref 查旧版本）
+{"op": "artifact.state", "uri": "store://artifacts/pc-a/t-41/out.md@v1"}
+→ {"op": "result", "data": {"uri": "...", "state": "superseded",
+    "producer": {...}, "parent_uris": [...], "context": "..."}}
+```
+
+- `handoff.ack` 仅接受 `published` 状态；同 `agent_id` 重复 ack 幂等，
+  他人已 ack 后再 ack → `state_conflict`。ack 记录持久化于
+  `<task>/.nexuspouch/acks.json`。
+- ACL：`handoff.create` 同写组（仅自有目录）；`handoff.ack` 同删除组
+  （自有恒可，他端仅共享分区）；`artifact.state` 同读组。帧可只带 `uri`
+  （服务端解析出 space/device）。
+
+### 2.10 stats — 用量
 
 ```json
 {"op": "stats"}
@@ -157,6 +267,28 @@
 
 - `unsynced_*` / 游标水位：本机同步引擎挂载时附加。
 - `volume_*`：store 根所在卷探测成功时附加；`volume_warn == true` 表示已用 ≥ 80%（方案 §7）。探测失败则省略字段。
+
+### 2.11 search / events.list — 检索与事件（M5 App 通道）
+
+App 经 Noise 配对调用，与 HTTP `/api/v1/search`、`/api/v1/events*` 语义对齐；
+不升协议版本（§12）。详见 [APP_CONSUMER_UI.md](APP_CONSUMER_UI.md)。
+
+```json
+// 全文检索（FTS5；q 必填非空）
+{"op": "search", "q": "关键词", "space": "artifacts", "device": "…", "state": "…", "limit": 50}
+→ {"op": "result", "data": {"query": "关键词", "total": 1, "results": [
+    {"uri": "store://…", "space": "artifacts", "device": "…", "path": "…",
+     "sha256": "…", "size": 35, "state": "committed", "snippet": "…", "score": -1.0}]}}
+
+// 事件列表（seq > since；升序；可选 kind 过滤）
+{"op": "events.list", "since": 0, "limit": 50, "kind": "handoff.created"}
+→ {"op": "result", "data": {"events": [/* StoreEvent */], "latest_seq": 12}}
+```
+
+- ACL：同 `stats`（owner 允许；friend → `untrusted`）。
+- `search`：可选 `space`/`device`/`state`/`limit`（默认 50，上限 200）；
+  未知 space 名 → `bad_op`。
+- `events.list`：`since` 缺省 0；无事件总线时返回空列表与 `latest_seq: 0`。
 
 ## 3. ACL 矩阵
 
@@ -343,11 +475,26 @@ master 定期（与日快照同节奏）或迁移后：将各 `<device_id>/<spac
 
 ## 12. 版本与兼容
 
-- `v=4`（本文档 store.*）。新增 op 或必填字段 ⇒ `v+1`；只增可选字段不变版本。
+- `v=4`（本文档 store.*，文档修订 v4.2）。
+- **v4.2 扩展策略（M0 定稿）**：新增 op / 新增可选字段**不升版本号**——
+  未知 op 一律 `bad_op`，未知可选字段按 op 语义忽略或报参数错；
+  仅以下破坏性变更才升 `v+1`：
+  - 帧信封（`type`/`ns`/`req_id` 结构）改变；
+  - 既有 op 增加必填字段或改变语义（含错误码含义）；
+  - 加密套件 / prologue / 传输通道改变；
+  - 安全边界收窄（ACL 语义收紧必须双端同步并升版本）。
+- 已落地的 v4.2 增量 op（随里程碑落地，先有 fixture 契约）：`versions.list` / `versions.read` / `manifest`（M2）、`handoff.create` / `handoff.ack` / `artifact.state`（M3）。
+- 已落地的 v4.3 增量 op：`space.declare`（仅 loopback / admin）、`space.list`（owner）、
+  `search` / `events.list`（M5 App 通道，§2.11）。
+- 事件：`StoreEvent` 携带单调 `seq`；`.system/events.jsonl` 持久化；watcher 用
+  `GET /api/v1/events?since=<seq>` 或帧 `events.list` 重放历史再切实时（不丢不重）。
 - v3 → v4：新增 `sync.cursors` / `master.pointer` / `master.pointer.query` /
   `master.migrate`。v3 客户端忽略未知 op 通知，互操作不受影响。
-- Go 节点（M7，`storage-node/`）与本规范对齐；攻击 fixture 与 ACL fixture 双端共享
-  （`docs/storage_fixtures/`）。
+- **agent 身份承载（M4 已实现，v4.2 定稿边界）**：`store.*` 帧仍以设备身份鉴权，
+  帧内不新增 agent 字段；agent 身份仅承载于 HTTP/MCP 层（Bearer token 绑定
+  `agent_id`，作用域/配额见 `docs/AGENTS.md`），避免破坏 App 与 Noise peer 兼容面。
+- 双端实现（Dart + Rust）与本规范对齐；攻击/ACL/URI/agent fixture 双端共享
+  （`docs/storage_fixtures/`），任一实现修改 fixture 必须双端测试同步全绿。
 
 ## 13. memory.* / she.*（M8，独立控制帧 type）
 

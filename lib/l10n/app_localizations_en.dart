@@ -5127,6 +5127,75 @@ class AppLocalizationsEn extends AppLocalizations {
       'Cannot delete other devices\' files (master only)';
 
   @override
+  String get storage_browserVersions => 'Versions';
+
+  @override
+  String get storage_browserManifest => 'Lineage';
+
+  @override
+  String get storage_browserVersionsTitle => 'Version history';
+
+  @override
+  String get storage_browserVersionsEmpty => 'No versions (connect a NAS/node)';
+
+  @override
+  String storage_browserVersionsFailed(String error) {
+    return 'Failed to load versions: $error';
+  }
+
+  @override
+  String get storage_browserManifestTitle => 'Task lineage';
+
+  @override
+  String get storage_browserManifestEmpty => 'No lineage';
+
+  @override
+  String storage_browserManifestFailed(String error) {
+    return 'Failed to load lineage: $error';
+  }
+
+  @override
+  String get storage_browserSearchTitle => 'Search artifacts';
+
+  @override
+  String get storage_browserSearchHint => 'Keyword';
+
+  @override
+  String get storage_browserSearchEmpty => 'No matches';
+
+  @override
+  String storage_browserSearchFailed(String error) {
+    return 'Search failed: $error';
+  }
+
+  @override
+  String get storage_browserNeedMaster => 'Connect a NAS/node as master first';
+
+  @override
+  String storage_alertHandoffs(int count) {
+    return '$count handoff notifications';
+  }
+
+  @override
+  String get storage_handoffTitle => 'Handoffs';
+
+  @override
+  String get storage_handoffEmpty => 'No handoff notifications';
+
+  @override
+  String get storage_handoffClear => 'Clear';
+
+  @override
+  String get storage_agentsAdmin => 'Node Admin (Agents)';
+
+  @override
+  String get storage_agentsAdminHint =>
+      'Manage agent identity and quotas in the browser';
+
+  @override
+  String get storage_agentsAdminMissing => 'No node address available';
+
+  @override
   String get storage_mirroredDevices => 'Mirrored device directories';
 
   @override

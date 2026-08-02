@@ -101,8 +101,18 @@
       "expect": "bad_path"
     },
     {
-      "name": "bad_space",
+      "name": "custom_space_syntax",
       "uri": "store://videos/aaaaaaaaaaaaaaaa/a.mp4",
+      "expect": "ok",
+      "space": "videos",
+      "device": "aaaaaaaaaaaaaaaa",
+      "path": "a.mp4",
+      "ref_kind": "latest",
+      "note": "Parse accepts valid custom space syntax; undeclared spaces fail at op/ACL."
+    },
+    {
+      "name": "bad_space",
+      "uri": "store://Videos/aaaaaaaaaaaaaaaa/a.mp4",
       "expect": "bad_uri"
     },
     {

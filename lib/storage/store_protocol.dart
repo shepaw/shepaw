@@ -54,6 +54,10 @@ class StoreOp {
   static const spaceList = 'space.list';
   static const spaceDeclare = 'space.declare';
 
+  // v4.3 M5 App 通道（search / events.list）
+  static const search = 'search';
+  static const eventsList = 'events.list';
+
   static const result = 'result';
   static const error = 'error';
 }
@@ -247,7 +251,8 @@ class StoreUriRef {
     throw FormatException('bad_uri: missing space/device/path');
   }
   final space = segments[0];
-  if (!StoreSpace.isValid(space)) {
+  // 自定义空间：语法合法即可（属性/ACL 由服务端 space registry 裁定）。
+  if (!StoreSpace.isValidSyntax(space)) {
     throw FormatException('bad_uri: unknown space $space');
   }
   final device = segments[1];
@@ -459,6 +464,8 @@ StoreAcl checkStoreAclWith(
 
     case StoreOp.stats:
     case StoreOp.spaceList:
+    case StoreOp.search:
+    case StoreOp.eventsList:
       return StoreAcl.allow;
     case StoreOp.spaceDeclare:
       // 自定义空间声明：仅 master 本机（loopback）

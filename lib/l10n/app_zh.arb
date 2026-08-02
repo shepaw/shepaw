@@ -2958,6 +2958,54 @@
   "storage_browserDeleted": "已删除 {path}",
   "storage_browserDeleteFailed": "删除失败：{error}",
   "storage_browserDeleteDenied": "无权删除他端文件（仅 master 本机）",
+  "storage_browserVersions": "版本",
+  "storage_browserManifest": "血缘",
+  "storage_browserVersionsTitle": "版本历史",
+  "storage_browserVersionsEmpty": "暂无版本记录（需连接 NAS/节点）",
+  "storage_browserVersionsFailed": "加载版本失败：{error}",
+  "@storage_browserVersionsFailed": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "storage_browserManifestTitle": "任务血缘",
+  "storage_browserManifestEmpty": "无血缘信息",
+  "storage_browserManifestFailed": "加载血缘失败：{error}",
+  "@storage_browserManifestFailed": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "storage_browserSearchTitle": "搜索产物",
+  "storage_browserSearchHint": "关键词",
+  "storage_browserSearchEmpty": "无匹配结果",
+  "storage_browserSearchFailed": "搜索失败：{error}",
+  "@storage_browserSearchFailed": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "storage_browserNeedMaster": "请先连接 NAS/节点作为 master",
+  "storage_alertHandoffs": "有 {count} 条交接通知",
+  "@storage_alertHandoffs": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "storage_handoffTitle": "交接通知",
+  "storage_handoffEmpty": "暂无交接通知",
+  "storage_handoffClear": "清除",
+  "storage_agentsAdmin": "节点 Admin（Agents）",
+  "storage_agentsAdminHint": "在浏览器管理 agent 身份与配额",
+  "storage_agentsAdminMissing": "未发现可用节点地址",
   "storage_mirroredDevices": "他端镜像目录",
   "storage_purgeDevice": "删除",
   "storage_purgeDeviceTitle": "删除旧设备镜像",

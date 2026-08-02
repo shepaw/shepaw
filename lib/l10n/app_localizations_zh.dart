@@ -4936,6 +4936,74 @@ class AppLocalizationsZh extends AppLocalizations {
   String get storage_browserDeleteDenied => '无权删除他端文件（仅 master 本机）';
 
   @override
+  String get storage_browserVersions => '版本';
+
+  @override
+  String get storage_browserManifest => '血缘';
+
+  @override
+  String get storage_browserVersionsTitle => '版本历史';
+
+  @override
+  String get storage_browserVersionsEmpty => '暂无版本记录（需连接 NAS/节点）';
+
+  @override
+  String storage_browserVersionsFailed(String error) {
+    return '加载版本失败：$error';
+  }
+
+  @override
+  String get storage_browserManifestTitle => '任务血缘';
+
+  @override
+  String get storage_browserManifestEmpty => '无血缘信息';
+
+  @override
+  String storage_browserManifestFailed(String error) {
+    return '加载血缘失败：$error';
+  }
+
+  @override
+  String get storage_browserSearchTitle => '搜索产物';
+
+  @override
+  String get storage_browserSearchHint => '关键词';
+
+  @override
+  String get storage_browserSearchEmpty => '无匹配结果';
+
+  @override
+  String storage_browserSearchFailed(String error) {
+    return '搜索失败：$error';
+  }
+
+  @override
+  String get storage_browserNeedMaster => '请先连接 NAS/节点作为 master';
+
+  @override
+  String storage_alertHandoffs(int count) {
+    return '有 $count 条交接通知';
+  }
+
+  @override
+  String get storage_handoffTitle => '交接通知';
+
+  @override
+  String get storage_handoffEmpty => '暂无交接通知';
+
+  @override
+  String get storage_handoffClear => '清除';
+
+  @override
+  String get storage_agentsAdmin => '节点 Admin（Agents）';
+
+  @override
+  String get storage_agentsAdminHint => '在浏览器管理 agent 身份与配额';
+
+  @override
+  String get storage_agentsAdminMissing => '未发现可用节点地址';
+
+  @override
   String get storage_mirroredDevices => '他端镜像目录';
 
   @override

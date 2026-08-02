@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../l10n/app_localizations.dart';
 import '../peer/models/paired_peer.dart';
@@ -363,8 +364,54 @@ class _StorageNexuspouchScreenState extends State<StorageNexuspouchScreen> {
                   : l10n.storage_nasOpenPairing,
             ),
           ),
+          const SizedBox(height: 16),
+          ListTile(
+            contentPadding: EdgeInsets.zero,
+            leading: const Icon(Icons.smart_toy_outlined),
+            title: Text(l10n.storage_agentsAdmin),
+            subtitle: Text(l10n.storage_agentsAdminHint),
+            trailing: const Icon(Icons.open_in_new, size: 18),
+            onTap: _openAgentsAdmin,
+          ),
         ],
       ),
     );
+  }
+
+  Future<void> _openAgentsAdmin() async {
+    final l10n = AppLocalizations.of(context);
+    String? adminUrl;
+    if (_masterId != null) {
+      for (final n in _peers) {
+        if (n.fingerprint == _masterId) {
+          adminUrl = 'http://${n.host}:${n.port}/admin';
+          break;
+        }
+      }
+    }
+    adminUrl ??= _peers.isNotEmpty
+        ? 'http://${_peers.first.host}:${_peers.first.port}/admin'
+        : null;
+    if (adminUrl == null) {
+      for (final p in _paired) {
+        final ep = p.preferredEndpoint;
+        if (ep == null || ep.isEmpty) continue;
+        final uri = Uri.tryParse(ep);
+        if (uri != null && uri.host.isNotEmpty) {
+          final port = uri.hasPort ? uri.port : 8787;
+          adminUrl = 'http://${uri.host}:$port/admin';
+          break;
+        }
+      }
+    }
+    if (adminUrl == null) {
+      storageToast(context, l10n.storage_agentsAdminMissing);
+      return;
+    }
+    final ok = await launchUrl(Uri.parse(adminUrl),
+        mode: LaunchMode.externalApplication);
+    if (!ok && mounted) {
+      storageToast(context, adminUrl);
+    }
   }
 }

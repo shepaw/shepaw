@@ -83,11 +83,13 @@ void main() {
         StoreOp.commit,
         StoreOp.delete,
         StoreOp.stats,
+        StoreOp.search,
+        StoreOp.eventsList,
         StoreOp.recycleList,
         StoreOp.recycleEmpty,
       ]) {
         final v = acl(
-            StoreFrame(op: op, payload: {'space': 'artifacts'}),
+            StoreFrame(op: op, payload: {'space': 'artifacts', 'q': 'x'}),
             trust: TrustLevel.friend);
         expect(v, StoreAcl.denyUntrusted, reason: 'op=$op');
       }

@@ -2473,6 +2473,54 @@
   "storage_browserDeleted": "Deleted {path}",
   "storage_browserDeleteFailed": "Delete failed: {error}",
   "storage_browserDeleteDenied": "Cannot delete other devices' files (master only)",
+  "storage_browserVersions": "Versions",
+  "storage_browserManifest": "Lineage",
+  "storage_browserVersionsTitle": "Version history",
+  "storage_browserVersionsEmpty": "No versions (connect a NAS/node)",
+  "storage_browserVersionsFailed": "Failed to load versions: {error}",
+  "storage_browserManifestTitle": "Task lineage",
+  "storage_browserManifestEmpty": "No lineage",
+  "storage_browserManifestFailed": "Failed to load lineage: {error}",
+  "storage_browserSearchTitle": "Search artifacts",
+  "storage_browserSearchHint": "Keyword",
+  "storage_browserSearchEmpty": "No matches",
+  "storage_browserSearchFailed": "Search failed: {error}",
+  "storage_browserNeedMaster": "Connect a NAS/node as master first",
+  "storage_alertHandoffs": "{count} handoff notifications",
+  "@storage_alertHandoffs": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "storage_handoffTitle": "Handoffs",
+  "storage_handoffEmpty": "No handoff notifications",
+  "storage_handoffClear": "Clear",
+  "storage_agentsAdmin": "Node Admin (Agents)",
+  "storage_agentsAdminHint": "Manage agent identity and quotas in the browser",
+  "storage_agentsAdminMissing": "No node address available",
+  "@storage_browserVersionsFailed": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "@storage_browserManifestFailed": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "@storage_browserSearchFailed": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
   "storage_mirroredDevices": "Mirrored device directories",
   "storage_purgeDevice": "Delete",
   "storage_purgeDeviceTitle": "Delete device mirror",
