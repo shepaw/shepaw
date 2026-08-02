@@ -71,6 +71,43 @@ void main() {
     expect(await recycled.exists(), isTrue);
   });
 
+  test('绑定 rename：同内容改名保留 store 路径历史（非 delete+add）', () async {
+    final svc = FolderBindingService.instance;
+    final binding = await svc.add(
+      label: 'ren',
+      external: external.path,
+      space: 'files',
+      folder: 'ren',
+    );
+    final src = File(p.join(external.path, 'old.txt'))..writeAsStringSync('same');
+    final r1 = await svc.syncOne(binding);
+    expect(r1.added, 1);
+    expect(await (await storeFile('ren/old.txt')).exists(), isTrue);
+
+    src.renameSync(p.join(external.path, 'new.txt'));
+    final r2 = await svc.syncOne(binding);
+    expect(r2.renamed, 1, reason: 'sha match should rename');
+    expect(r2.added, 0);
+    expect(r2.deleted, 0);
+    expect(await (await storeFile('ren/old.txt')).exists(), isFalse);
+    expect(await (await storeFile('ren/new.txt')).readAsString(), 'same');
+  });
+
+  test('绑定嵌套目录相对路径正确', () async {
+    final svc = FolderBindingService.instance;
+    final binding = await svc.add(
+      label: 'nest',
+      external: external.path,
+      space: 'files',
+      folder: 'nest',
+    );
+    Directory(p.join(external.path, 'sub')).createSync();
+    File(p.join(external.path, 'sub', 'a.txt')).writeAsStringSync('nested');
+    final r = await svc.syncOne(binding);
+    expect(r.added, 1);
+    expect(await (await storeFile('nest/sub/a.txt')).readAsString(), 'nested');
+  });
+
   test('绑定列表持久化 + 外部目录缺失报告', () async {
     final svc = FolderBindingService.instance;
     final binding = await svc.add(

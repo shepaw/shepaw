@@ -4,6 +4,7 @@
 //!   删除进回收站；store 内始终是真实文件（无符号链接）；
 //! - 对账 = 全量扫描 + sha256/size/mtime 对比（事件只是唤醒信号，
 //!   正确性不依赖事件）；`startAutoSync` = DirectoryWatcher 去抖 + 周期兜底；
+//! - rename：消失+新出现且 sha 相同 → store.rename（保留本体，避免 delete+add）；
 //! - 摄取走 LocalStore 写路径（write.begin/chunk/commit），自动进
 //!   SyncJournal → 镜像到 master；忽略规则与 `.` 前缀默认跳过。
 
@@ -70,6 +71,7 @@ class BindingSyncReport {
   int added = 0;
   int updated = 0;
   int deleted = 0;
+  int renamed = 0;
   int skipped = 0;
   final List<String> errors = <String>[];
 
@@ -78,9 +80,25 @@ class BindingSyncReport {
         'added': added,
         'updated': updated,
         'deleted': deleted,
+        'renamed': renamed,
         'skipped': skipped,
         'errors': errors,
       };
+}
+
+class _ScanEntry {
+  _ScanEntry({
+    required this.rel,
+    required this.file,
+    required this.size,
+    required this.mtime,
+    required this.sha,
+  });
+  final String rel;
+  final File file;
+  final int size;
+  final int mtime;
+  final String sha;
 }
 
 class FolderBindingService {
@@ -161,6 +179,9 @@ class FolderBindingService {
     if (_autoSyncStarted) await _rewatch();
   }
 
+  String _destRel(FolderBinding binding, String rel) =>
+      binding.folder.isEmpty ? rel : '${binding.folder}/$rel';
+
   Future<BindingSyncReport> syncOne(FolderBinding binding) async {
     final report = BindingSyncReport(binding.id);
     final external = Directory(binding.external);
@@ -173,50 +194,118 @@ class FolderBindingService {
     final indexFile = await _indexFile(binding.id);
     final index = await _loadIndex(indexFile);
 
-    final seen = <String>{};
-    await for (final item in _walk(external, binding.ignore)) {
+    final entries = <_ScanEntry>[];
+    await for (final item in _walk(external, external, binding.ignore)) {
       final rel = item.rel;
-      seen.add(rel);
       final stat = await item.file.stat();
       final size = stat.size;
       final mtime = stat.modified.millisecondsSinceEpoch;
       final prev = index[rel];
-      if (prev != null &&
-          prev['size'] == size &&
-          prev['mtime'] == mtime) {
+      if (prev != null && prev['size'] == size && prev['mtime'] == mtime) {
         report.skipped++;
+        entries.add(_ScanEntry(
+          rel: rel,
+          file: item.file,
+          size: size,
+          mtime: mtime,
+          sha: (prev['sha'] as String?) ?? '',
+        ));
         continue;
       }
       final sha = await _sha256File(item.file);
-      if (prev != null && prev['sha'] == sha && prev['size'] == size) {
-        report.skipped++;
+      entries.add(_ScanEntry(
+        rel: rel,
+        file: item.file,
+        size: size,
+        mtime: mtime,
+        sha: sha,
+      ));
+    }
+
+    final seen = {for (final e in entries) e.rel};
+    final vanished = [
+      for (final rel in index.keys)
+        if (!seen.contains(rel)) rel,
+    ];
+    final appeared = [
+      for (final e in entries)
+        if (!index.containsKey(e.rel)) e,
+    ];
+    final renamedTo = <String>{};
+
+    for (final fromRel in vanished) {
+      final prev = index[fromRel];
+      if (prev == null) continue;
+      final prevSha = (prev['sha'] as String?) ?? '';
+      if (prevSha.isEmpty) continue;
+      final matchIdx = appeared.indexWhere(
+        (a) => !renamedTo.contains(a.rel) && a.sha == prevSha,
+      );
+      if (matchIdx < 0) continue;
+      final to = appeared.removeAt(matchIdx);
+      try {
+        await store.rename(
+          device,
+          binding.space,
+          _destRel(binding, fromRel),
+          _destRel(binding, to.rel),
+          sha256: to.sha,
+          size: to.size,
+        );
+        index.remove(fromRel);
+        index[to.rel] = <String, dynamic>{
+          'sha': to.sha,
+          'size': to.size,
+          'mtime': to.mtime,
+        };
+        renamedTo.add(to.rel);
+        report.renamed++;
+      } catch (e) {
+        report.errors.add('rename $fromRel->${to.rel}: $e');
+      }
+    }
+
+    for (final e in entries) {
+      if (renamedTo.contains(e.rel)) continue;
+      if (e.sha.isEmpty) continue; // meta-skip already counted
+      final prev = index[e.rel];
+      if (prev != null && prev['sha'] == e.sha && prev['size'] == e.size) {
+        index[e.rel] = <String, dynamic>{
+          'sha': e.sha,
+          'size': e.size,
+          'mtime': e.mtime,
+        };
         continue;
       }
-      final destRel =
-          binding.folder.isEmpty ? rel : '${binding.folder}/$rel';
       try {
-        await _ingest(store, device, binding.space, destRel, item.file, size, sha);
-        index[rel] = <String, dynamic>{
-          'sha': sha,
-          'size': size,
-          'mtime': mtime,
+        await _ingest(
+          store,
+          device,
+          binding.space,
+          _destRel(binding, e.rel),
+          e.file,
+          e.size,
+          e.sha,
+        );
+        index[e.rel] = <String, dynamic>{
+          'sha': e.sha,
+          'size': e.size,
+          'mtime': e.mtime,
         };
         if (prev == null) {
           report.added++;
         } else {
           report.updated++;
         }
-      } catch (e) {
-        report.errors.add('$rel: $e');
+      } catch (err) {
+        report.errors.add('${e.rel}: $err');
       }
     }
 
     for (final rel in index.keys.toList()) {
       if (seen.contains(rel)) continue;
-      final destRel =
-          binding.folder.isEmpty ? rel : '${binding.folder}/$rel';
       try {
-        await store.delete(device, binding.space, destRel);
+        await store.delete(device, binding.space, _destRel(binding, rel));
         index.remove(rel);
         report.deleted++;
       } catch (e) {
@@ -304,7 +393,10 @@ class FolderBindingService {
   }
 
   Stream<({String rel, File file})> _walk(
-      Directory dir, List<String> ignore) async* {
+    Directory root,
+    Directory dir,
+    List<String> ignore,
+  ) async* {
     await for (final ent in dir.list(followLinks: false)) {
       final name = p.basename(ent.path);
       if (name.startsWith('.')) continue;
@@ -312,9 +404,11 @@ class FolderBindingService {
       final type = await FileSystemEntity.type(ent.path, followLinks: false);
       if (type == FileSystemEntityType.link) continue;
       if (ent is Directory) {
-        yield* _walk(ent, ignore);
+        yield* _walk(root, ent, ignore);
       } else if (ent is File) {
-        final rel = p.relative(ent.path, from: dir.path);
+        final rel = p
+            .relative(ent.path, from: root.path)
+            .replaceAll('\\', '/');
         yield (rel: rel, file: ent);
       }
     }

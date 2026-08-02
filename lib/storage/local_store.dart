@@ -443,6 +443,47 @@ class LocalStore {
     return (committed, failed);
   }
 
+  // ────────────────────────────── rename ──
+
+  /// 同 space 内改名（不经回收站）。用于绑定 rename 识别，保留本地文件本体。
+  /// 镜像队列记 `delete(from)` + `commit(to)`，远端仍按增删同步。
+  Future<void> rename(
+    String deviceId,
+    String space,
+    String fromRel,
+    String toRel, {
+    required String sha256,
+    required int size,
+  }) async {
+    final fromNorm = normalizeStorePath(fromRel);
+    final toNorm = normalizeStorePath(toRel);
+    if (fromNorm == toNorm) return;
+    final fromAbs = _resolveInSpace(deviceId, space, fromNorm);
+    final toAbs = _resolveInSpace(deviceId, space, toNorm);
+    final fromType =
+        await FileSystemEntity.type(fromAbs, followLinks: false);
+    if (fromType == FileSystemEntityType.notFound) {
+      throw StoreException(StoreError.notFound, fromNorm);
+    }
+    if (fromType != FileSystemEntityType.file) {
+      throw StoreException(StoreError.badOp, 'rename source not a file');
+    }
+    await _checkNoSymlinkEscape(deviceId, space, fromAbs, fromNorm);
+    final toType = await FileSystemEntity.type(toAbs, followLinks: false);
+    if (toType != FileSystemEntityType.notFound) {
+      throw StoreException(StoreError.badOp, 'rename dest exists: $toNorm');
+    }
+    await Directory(p.dirname(toAbs)).create(recursive: true);
+    await File(fromAbs).rename(toAbs);
+    _hashCache.remove(fromAbs);
+    if (syncJournal != null) {
+      await syncJournal!.appendDelete(deviceId, space, fromNorm);
+      await syncJournal!.appendCommit(deviceId, space, [
+        (path: toNorm, size: size, sha256: sha256),
+      ]);
+    }
+  }
+
   // ────────────────────────────── delete / recycle ──
 
   /// 删除：仅移入回收站（spec §2.7）。返回 recycle_path。
