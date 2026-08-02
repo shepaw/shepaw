@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../l10n/app_localizations.dart';
 import '../storage/device_identity.dart';
+import '../storage/folder_binding_service.dart';
 import '../storage/local_store.dart';
 import '../storage/store_service.dart';
 import '../storage/sync_engine.dart';
@@ -28,6 +29,9 @@ class _StorageSpaceManageScreenState extends State<StorageSpaceManageScreen> {
   Map<String, dynamic>? _stats;
   List<Map<String, dynamic>> _recycle = [];
   bool _recycleExpanded = false;
+  List<FolderBinding> _bindings = [];
+  final _bindPath = TextEditingController();
+  final _bindFolder = TextEditingController();
 
   @override
   void initState() {
@@ -58,6 +62,8 @@ class _StorageSpaceManageScreenState extends State<StorageSpaceManageScreen> {
       stats['volume_warn'] = volume.needsAttention;
     }
 
+    _bindings = await FolderBindingService.instance.list();
+
     final recycle = await store.recycleList();
     final selfRecycle = recycle
         .where((e) => e.originDevice == _selfId)
@@ -70,6 +76,52 @@ class _StorageSpaceManageScreenState extends State<StorageSpaceManageScreen> {
         _recycle = selfRecycle;
       });
     }
+  }
+
+  Future<void> _addBinding() async {
+    final path = _bindPath.text.trim();
+    final folder = _bindFolder.text.trim();
+    if (path.isEmpty || folder.isEmpty) {
+      storageToast(context, '请输入外部目录路径与映射文件夹名');
+      return;
+    }
+    setState(() => _busy = true);
+    try {
+      await FolderBindingService.instance.add(
+        label: folder,
+        external: path,
+        space: 'files',
+        folder: folder,
+      );
+      _bindPath.clear();
+      _bindFolder.clear();
+      await _refresh();
+      storageToast(context, '目录绑定已添加，正在首次同步…');
+      await FolderBindingService.instance.syncAll();
+      if (mounted) await _refresh();
+    } catch (e) {
+      if (mounted) storageToast(context, '绑定失败：$e');
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _syncBindings() async {
+    setState(() => _busy = true);
+    try {
+      await FolderBindingService.instance.syncAll();
+      await _refresh();
+      storageToast(context, '目录绑定同步完成');
+    } catch (e) {
+      if (mounted) storageToast(context, '同步失败：$e');
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _removeBinding(String id) async {
+    await FolderBindingService.instance.remove(id);
+    await _refresh();
   }
 
   Future<void> _refresh() => _load();
@@ -157,11 +209,95 @@ class _StorageSpaceManageScreenState extends State<StorageSpaceManageScreen> {
               const SizedBox(height: 16),
               _buildActionsCard(l10n),
               const SizedBox(height: 16),
+              _buildBindingsCard(l10n),
+              const SizedBox(height: 16),
               _buildRecycleCard(l10n),
             ],
           ),
           if (_busy) const StorageBusyOverlay(),
         ],
+      ),
+    );
+  }
+
+  Widget _buildBindingsCard(AppLocalizations l10n) {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(Icons.folder_copy_outlined,
+                    color: Theme.of(context).colorScheme.primary, size: 20),
+                const SizedBox(width: 8),
+                Text('目录绑定（单向摄取）',
+                    style: Theme.of(context).textTheme.titleSmall),
+                const Spacer(),
+                IconButton(
+                  icon: const Icon(Icons.sync),
+                  tooltip: '立即同步',
+                  onPressed: _busy ? null : _syncBindings,
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            TextField(
+              controller: _bindPath,
+              decoration: const InputDecoration(
+                isDense: true,
+                hintText: '外部目录路径，如 /Users/me/Downloads',
+              ),
+            ),
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                Expanded(
+                  child: TextField(
+                    controller: _bindFolder,
+                    decoration: const InputDecoration(
+                      isDense: true,
+                      hintText: '映射文件夹名（files/<name>）',
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                FilledButton.tonal(
+                  onPressed: _busy ? null : _addBinding,
+                  child: const Text('添加'),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            for (final b in _bindings)
+              ListTile(
+                dense: true,
+                contentPadding: EdgeInsets.zero,
+                leading: const Icon(Icons.folder_outlined, size: 18),
+                title: Text(b.folder, style: Theme.of(context).textTheme.bodyMedium),
+                subtitle: Text(b.external,
+                    style: Theme.of(context).textTheme.bodySmall,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis),
+                trailing: IconButton(
+                  icon: const Icon(Icons.delete_outline, size: 18),
+                  onPressed: () => _removeBinding(b.id),
+                ),
+              ),
+            if (_bindings.isEmpty)
+              Text('未配置绑定目录',
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: Theme.of(context).colorScheme.onSurfaceVariant)),
+            const SizedBox(height: 4),
+            Text(
+              '单向：目录内容摄取进 files/<folder> 并镜像到 master；删除进回收站；'
+              'App 内周期自动同步（事件驱动为后续增强）。',
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: Theme.of(context).colorScheme.onSurfaceVariant),
+            ),
+          ],
+        ),
       ),
     );
   }

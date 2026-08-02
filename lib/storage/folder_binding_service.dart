@@ -1,11 +1,11 @@
-/// 目录绑定（M6a）：用户选择的本地目录 → store 摄取。
-///
-/// - 单向输入源：外部目录内容摄取进 `files/<device>/<folder>/`（copy），
-///   删除进回收站；store 内始终是真实文件（无符号链接）；
-/// - 对账 = 全量扫描 + sha256/size/mtime 对比（事件只是唤醒信号，
-///   正确性不依赖事件）；本实现提供轮询式周期同步（watcher 为后续增强）；
-/// - 摄取走 LocalStore 写路径（write.begin/chunk/commit），自动进
-///   SyncJournal → 镜像到 master；忽略规则与 `.` 前缀默认跳过。
+//! 目录绑定（M6a）：用户选择的本地目录 → store 摄取。
+//!
+//! - 单向输入源：外部目录内容摄取进 `files/<device>/<folder>/`（copy），
+//!   删除进回收站；store 内始终是真实文件（无符号链接）；
+//! - 对账 = 全量扫描 + sha256/size/mtime 对比（事件只是唤醒信号，
+//!   正确性不依赖事件）；本实现提供轮询式周期同步（watcher 为后续增强）；
+//! - 摄取走 LocalStore 写路径（write.begin/chunk/commit），自动进
+//!   SyncJournal → 镜像到 master；忽略规则与 `.` 前缀默认跳过。
 
 import 'dart:async';
 import 'dart:convert';
