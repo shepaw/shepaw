@@ -192,11 +192,13 @@ class BadPathException implements Exception {
 String normalizeStorePath(String raw) {
   if (raw.isEmpty) throw BadPathException('empty path');
   if (raw.contains('\x00')) throw BadPathException('NUL in path');
-  if (raw.startsWith('/') || raw.startsWith('~')) {
+  if (raw.startsWith('/') || raw.startsWith('~') || raw.startsWith('\\')) {
     throw BadPathException('absolute path');
   }
-  // Windows 盘符 / UNC
-  if (RegExp(r'^[a-zA-Z]:[\\/]?').hasMatch(raw) || raw.startsWith('\\\\')) {
+  // Windows 盘符 / UNC（含 `\\?\` 扩展路径与 `//server/...`）
+  if (RegExp(r'^[a-zA-Z]:[\\/]?').hasMatch(raw) ||
+      raw.startsWith('\\\\') ||
+      raw.startsWith('//')) {
     throw BadPathException('drive/unc path');
   }
   final segments = raw.replaceAll('\\', '/').split('/');
