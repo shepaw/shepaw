@@ -9080,6 +9080,24 @@ abstract class AppLocalizations {
   /// **'搜索失败：{error}'**
   String storage_browserSearchFailed(String error);
 
+  /// No description provided for @storage_browserSearchSemantic.
+  ///
+  /// In zh, this message translates to:
+  /// **'语义'**
+  String get storage_browserSearchSemantic;
+
+  /// No description provided for @storage_browserSearchKeyword.
+  ///
+  /// In zh, this message translates to:
+  /// **'关键词'**
+  String get storage_browserSearchKeyword;
+
+  /// No description provided for @storage_browserSearchDegraded.
+  ///
+  /// In zh, this message translates to:
+  /// **'已降级为关键词检索'**
+  String get storage_browserSearchDegraded;
+
   /// No description provided for @storage_browserNeedMaster.
   ///
   /// In zh, this message translates to:

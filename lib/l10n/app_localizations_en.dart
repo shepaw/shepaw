@@ -5169,6 +5169,15 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
+  String get storage_browserSearchSemantic => 'Semantic';
+
+  @override
+  String get storage_browserSearchKeyword => 'Keyword';
+
+  @override
+  String get storage_browserSearchDegraded => 'Degraded to keyword search';
+
+  @override
   String get storage_browserNeedMaster => 'Connect a NAS/node as master first';
 
   @override

@@ -2984,6 +2984,9 @@
   "storage_browserSearchHint": "关键词",
   "storage_browserSearchEmpty": "无匹配结果",
   "storage_browserSearchFailed": "搜索失败：{error}",
+  "storage_browserSearchSemantic": "语义",
+  "storage_browserSearchKeyword": "关键词",
+  "storage_browserSearchDegraded": "已降级为关键词检索",
   "@storage_browserSearchFailed": {
     "placeholders": {
       "error": {

@@ -360,7 +360,7 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen> {
                   spacing: 8,
                   runSpacing: 4,
                   children: [
-                    for (final space in StoreSpace.all)
+                    for (final space in StoreSpace.browserSpaces)
                       ChoiceChip(
                         label: Text(space),
                         selected: _space == space,
@@ -461,10 +461,26 @@ class _StoreSearchDelegate extends SearchDelegate<void> {
   _StoreSearchDelegate({required this.space});
 
   final String space;
+  bool semantic = false;
 
   @override
   List<Widget>? buildActions(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
     return [
+      IconButton(
+        icon: Icon(semantic ? Icons.psychology : Icons.text_fields),
+        tooltip: semantic
+            ? l10n.storage_browserSearchSemantic
+            : l10n.storage_browserSearchKeyword,
+        onPressed: () {
+          semantic = !semantic;
+          if (query.trim().isNotEmpty) {
+            showResults(context);
+          } else {
+            showSuggestions(context);
+          }
+        },
+      ),
       if (query.isNotEmpty)
         IconButton(
           icon: const Icon(Icons.clear),
@@ -489,7 +505,8 @@ class _StoreSearchDelegate extends SearchDelegate<void> {
       return Center(child: Text(l10n.storage_browserSearchHint));
     }
     return FutureBuilder<Map<String, dynamic>?>(
-      future: StoreService.instance.search(q: q, space: space),
+      future: StoreService.instance
+          .search(q: q, space: space, semantic: semantic),
       builder: (context, snap) {
         if (snap.connectionState != ConnectionState.done) {
           return const Center(child: CircularProgressIndicator());
@@ -506,13 +523,31 @@ class _StoreSearchDelegate extends SearchDelegate<void> {
               child: Text(l10n.storage_browserSearchFailed('${snap.error}')));
         }
         final list = (data?['results'] as List?) ?? const [];
+        final degraded = data?['degraded'] == true;
+        final scoreType = '${data?['score_type'] ?? ''}';
         if (list.isEmpty) {
           return Center(child: Text(l10n.storage_browserSearchEmpty));
         }
         return ListView.builder(
-          itemCount: list.length,
+          itemCount: list.length + (degraded || scoreType.isNotEmpty ? 1 : 0),
           itemBuilder: (_, i) {
-            final r = Map<String, dynamic>.from(list[i] as Map);
+            if (i == 0 && (degraded || scoreType.isNotEmpty)) {
+              return Padding(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                child: Text(
+                  degraded
+                      ? l10n.storage_browserSearchDegraded
+                      : (semantic
+                          ? l10n.storage_browserSearchSemantic
+                          : l10n.storage_browserSearchKeyword),
+                  style: Theme.of(context).textTheme.labelSmall,
+                ),
+              );
+            }
+            final idx =
+                i - ((degraded || scoreType.isNotEmpty) ? 1 : 0);
+            final r = Map<String, dynamic>.from(list[idx] as Map);
             final path = '${r['path'] ?? ''}';
             final snippet = '${r['snippet'] ?? ''}';
             final uri = '${r['uri'] ?? ''}';
@@ -535,8 +570,11 @@ class _StoreSearchDelegate extends SearchDelegate<void> {
   Widget buildSuggestions(BuildContext context) {
     final l10n = AppLocalizations.of(context);
     return Center(
-      child: Text(l10n.storage_browserSearchHint,
-          style: Theme.of(context).textTheme.bodySmall),
+      child: Text(
+        '${l10n.storage_browserSearchHint}'
+        ' · ${semantic ? l10n.storage_browserSearchSemantic : l10n.storage_browserSearchKeyword}',
+        style: Theme.of(context).textTheme.bodySmall,
+      ),
     );
   }
 }

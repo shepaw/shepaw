@@ -4978,6 +4978,15 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
+  String get storage_browserSearchSemantic => '语义';
+
+  @override
+  String get storage_browserSearchKeyword => '关键词';
+
+  @override
+  String get storage_browserSearchDegraded => '已降级为关键词检索';
+
+  @override
   String get storage_browserNeedMaster => '请先连接 NAS/节点作为 master';
 
   @override

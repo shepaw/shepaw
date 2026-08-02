@@ -92,8 +92,18 @@ class StoreSpace {
   static const files = 'files';
   static const attachments = 'attachments';
   static const backups = 'backups';
+  /// Well-known custom space (node auto-seeds); not in [all] builtins.
+  static const memory = 'memory';
 
   static const all = <String>[artifacts, files, attachments, backups];
+  /// Browser chips: builtins + distilled memory.
+  static const browserSpaces = <String>[
+    artifacts,
+    files,
+    attachments,
+    backups,
+    memory,
+  ];
 
   /// 所有 owner 端可读的分区。
   static const sharedReadable = <String>[artifacts, files];

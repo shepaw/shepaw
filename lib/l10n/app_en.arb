@@ -2485,6 +2485,9 @@
   "storage_browserSearchHint": "Keyword",
   "storage_browserSearchEmpty": "No matches",
   "storage_browserSearchFailed": "Search failed: {error}",
+  "storage_browserSearchSemantic": "Semantic",
+  "storage_browserSearchKeyword": "Keyword",
+  "storage_browserSearchDegraded": "Degraded to keyword search",
   "storage_browserNeedMaster": "Connect a NAS/node as master first",
   "storage_alertHandoffs": "{count} handoff notifications",
   "@storage_alertHandoffs": {
