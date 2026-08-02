@@ -5361,7 +5361,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get storage_nasHint =>
-      'Scan for Nexuspouch nodes advertising _nexuspouch._tcp. First pairing still needs a QR code from the node admin UI; afterward Connect refreshes the LAN endpoint and sets it as store master.';
+      'Scan for Nexuspouch nodes advertising _nexuspouch._tcp. After pairing via the node admin QR, paired devices appear below with a master badge; Connect refreshes the LAN endpoint.';
 
   @override
   String get storage_nasScanning => 'Scanning LAN…';
@@ -5397,6 +5397,25 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get storage_nasOpenPairing => 'Open pairing';
+
+  @override
+  String get storage_nasAddDevice => 'Add device';
+
+  @override
+  String get storage_nasPaired => 'Paired';
+
+  @override
+  String get storage_pairedSection => 'Paired devices';
+
+  @override
+  String get storage_pairedEmpty =>
+      'No store node paired yet. Scan the node admin QR to pair.';
+
+  @override
+  String get storage_discoveredSection => 'LAN discovery';
+
+  @override
+  String get storage_masterBadge => 'master';
 
   @override
   String get storage_importEntryHint =>

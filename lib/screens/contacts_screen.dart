@@ -13,6 +13,7 @@ import '../services/local_api_service.dart';
 import '../services/local_database_service.dart';
 import '../services/she_service.dart';
 import '../services/logger_service.dart';
+import '../storage/store_service.dart';
 import '../widgets/avatar_image.dart';
 import '../models/remote_agent.dart';
 import 'remote_agent_detail_screen.dart';
@@ -69,6 +70,7 @@ class ContactsScreenState extends State<ContactsScreen> {
   List<Agent> _agents = [];
   List<Channel> _groups = [];
   List<PairedPeer> _peers = [];
+  String? _masterId;
   bool _isLoading = true;
   String _query = '';
 
@@ -122,9 +124,11 @@ class ContactsScreenState extends State<ContactsScreen> {
           .toList();
 
       List<PairedPeer> peers = [];
+      String? masterId;
       try {
         await PeerConnectionManager.instance.start();
         peers = await PeerConnectionManager.instance.getAllPeers();
+        masterId = await StoreService.instance.masterDeviceId();
       } catch (_) {}
 
       if (mounted) {
@@ -132,6 +136,7 @@ class ContactsScreenState extends State<ContactsScreen> {
           _agents = agents;
           _groups = groups;
           _peers = peers;
+          _masterId = masterId;
           _isLoading = false;
         });
       }
@@ -429,6 +434,7 @@ class ContactsScreenState extends State<ContactsScreen> {
   /// Device row: chevron + device icon + name; tap toggles fold (mobile) or fold + detail (desktop).
   Widget _buildPeerFoldHeader(PairedPeer peer, AppLocalizations l10n) {
     final isConnected = peer.state == PeerConnectionState.connected;
+    final isMaster = _masterId == peer.fingerprint;
     final expanded = _expandedPeerIds.contains(peer.id) ||
         (_query.isNotEmpty && _agentsForPeer(peer.id).isNotEmpty);
     final agentCount = _agents
@@ -488,14 +494,39 @@ class ContactsScreenState extends State<ContactsScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
-                      peer.deviceName,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w500,
-                      ),
+                    Row(
+                      children: [
+                        Flexible(
+                          child: Text(
+                            peer.deviceName,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                        ),
+                        if (isMaster) ...[
+                          const SizedBox(width: 6),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 6, vertical: 1),
+                            decoration: BoxDecoration(
+                              color: colorScheme.primaryContainer,
+                              borderRadius: BorderRadius.circular(999),
+                            ),
+                            child: Text(
+                              l10n.storage_masterBadge,
+                              style: TextStyle(
+                                fontSize: 10,
+                                fontWeight: FontWeight.w600,
+                                color: colorScheme.onPrimaryContainer,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ],
                     ),
                     Text(
                       peer.state.listStatusLabel(l10n, showE2eWhenConnected: true),

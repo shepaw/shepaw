@@ -285,13 +285,36 @@ class MasterMigrationService {
   /// 应用指针（广播入站 / query 响应）。仅当 [epoch] 更新时改指。
   ///
   /// 同 epoch 异 master：拒绝改指（防双主脑裂）；更高 epoch 才接受。
+  /// epoch=0 仅允许「本机仍是默认 master」时的首次 bootstrap（采纳存储节点）。
   Future<bool> applyPointer({
     required String masterId,
     required int epoch,
     required String fromDeviceId,
   }) async {
-    if (!isValidDeviceId(masterId) || epoch <= 0) return false;
+    if (!isValidDeviceId(masterId) || epoch < 0) return false;
     final localEpoch = await currentEpoch();
+    final current = await StoreService.instance.masterDeviceId();
+    final self = await DeviceIdentity.deviceId();
+
+    // Bootstrap: 节点初始 pointer 可能仍是 epoch=0；手机本地也是 0 且默认自己是 master。
+    if (epoch == 0 && localEpoch == 0) {
+      if (current == masterId) return false;
+      if (current != self) {
+        _log.warning(
+            'reject epoch-0 competing pointer master=$masterId '
+            '(local=$current) from $fromDeviceId',
+            tag: _tag);
+        return false;
+      }
+      await StoreService.instance.setMasterDeviceId(masterId);
+      _log.info(
+          'master pointer bootstrap → $masterId (from $fromDeviceId)',
+          tag: _tag);
+      SyncEngine.instance.poke();
+      return true;
+    }
+    if (epoch <= 0) return false;
+
     if (epoch < localEpoch) {
       _log.info(
           'ignore stale pointer epoch=$epoch < local=$localEpoch from $fromDeviceId',
@@ -299,7 +322,6 @@ class MasterMigrationService {
       return false;
     }
     if (epoch == localEpoch) {
-      final current = await StoreService.instance.masterDeviceId();
       if (current == masterId) return false;
       _log.warning(
           'reject same-epoch competing pointer master=$masterId '

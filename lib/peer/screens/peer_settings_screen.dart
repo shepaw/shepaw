@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import '../../l10n/app_localizations.dart';
+import '../../storage/store_service.dart';
 import '../../widgets/form_bottom_bar.dart';
 import '../models/paired_peer.dart';
 import '../services/peer_connection_manager.dart';
@@ -32,6 +33,7 @@ class PeerSettingsScreen extends StatefulWidget {
 class _PeerSettingsScreenState extends State<PeerSettingsScreen> {
   late String _deviceName;
   late bool _isConnected;
+  bool _isMaster = false;
   StreamSubscription<void>? _peerListSub;
 
   @override
@@ -43,6 +45,13 @@ class _PeerSettingsScreenState extends State<PeerSettingsScreen> {
     _peerListSub = PeerConnectionManager.instance.peerListChanged.listen((_) {
       _refreshConnectionState();
     });
+    _loadMaster();
+  }
+
+  Future<void> _loadMaster() async {
+    final master = await StoreService.instance.masterDeviceId();
+    if (!mounted) return;
+    setState(() => _isMaster = master == widget.peer.fingerprint);
   }
 
   @override
@@ -179,6 +188,25 @@ class _PeerSettingsScreenState extends State<PeerSettingsScreen> {
                         color: _isConnected ? Colors.green : Colors.grey,
                       ),
                     ),
+                    if (_isMaster) ...[
+                      const SizedBox(width: 10),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 8, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: colorScheme.primaryContainer,
+                          borderRadius: BorderRadius.circular(999),
+                        ),
+                        child: Text(
+                          l10n.storage_masterBadge,
+                          style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w600,
+                            color: colorScheme.onPrimaryContainer,
+                          ),
+                        ),
+                      ),
+                    ],
                   ],
                 ),
               ],
@@ -196,6 +224,12 @@ class _PeerSettingsScreenState extends State<PeerSettingsScreen> {
               trailing: const Icon(Icons.chevron_right),
               onTap: _editName,
             ),
+            if (_isMaster)
+              ListTile(
+                leading: const Icon(Icons.star_outline),
+                title: Text(l10n.storage_masterNode),
+                subtitle: Text(l10n.storage_nasPaired),
+              ),
             ListTile(
               leading: const Icon(Icons.fingerprint),
               title: Text(l10n.peerSettings_fingerprint),

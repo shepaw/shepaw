@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import '../../l10n/app_localizations.dart';
+import '../../storage/store_service.dart';
 import '../models/paired_peer.dart';
 import '../services/peer_connection_manager.dart';
 import '../services/peer_storage_service.dart';
@@ -19,6 +20,7 @@ class PeerListScreen extends StatefulWidget {
 
 class _PeerListScreenState extends State<PeerListScreen> {
   List<PairedPeer> _peers = [];
+  String? _masterId;
   bool _loading = true;
   StreamSubscription? _eventSub;
 
@@ -42,9 +44,11 @@ class _PeerListScreenState extends State<PeerListScreen> {
     setState(() => _loading = true);
     try {
       final peers = await PeerConnectionManager.instance.getAllPeers();
+      final master = await StoreService.instance.masterDeviceId();
       if (mounted) {
         setState(() {
           _peers = peers;
+          _masterId = master;
           _loading = false;
         });
       }
@@ -194,7 +198,7 @@ class _PeerListScreenState extends State<PeerListScreen> {
           ? const Center(child: CircularProgressIndicator())
           : _peers.isEmpty
               ? _buildEmptyState(colorScheme, l10n)
-              : _buildPeerList(colorScheme),
+              : _buildPeerList(colorScheme, l10n),
     );
   }
 
@@ -233,7 +237,7 @@ class _PeerListScreenState extends State<PeerListScreen> {
     );
   }
 
-  Widget _buildPeerList(ColorScheme colorScheme) {
+  Widget _buildPeerList(ColorScheme colorScheme, AppLocalizations l10n) {
     return RefreshIndicator(
       onRefresh: _loadPeers,
       child: ListView.builder(
@@ -242,6 +246,8 @@ class _PeerListScreenState extends State<PeerListScreen> {
           final peer = _peers[index];
           return _PeerListItem(
             peer: peer,
+            isMaster: _masterId == peer.fingerprint,
+            masterLabel: l10n.storage_masterBadge,
             onTap: () => _openChat(peer),
             onLongPress: () => _showPeerActions(peer),
           );
@@ -253,11 +259,15 @@ class _PeerListScreenState extends State<PeerListScreen> {
 
 class _PeerListItem extends StatelessWidget {
   final PairedPeer peer;
+  final bool isMaster;
+  final String masterLabel;
   final VoidCallback onTap;
   final VoidCallback onLongPress;
 
   const _PeerListItem({
     required this.peer,
+    required this.isMaster,
+    required this.masterLabel,
     required this.onTap,
     required this.onLongPress,
   });
@@ -292,7 +302,35 @@ class _PeerListItem extends StatelessWidget {
           ),
         ],
       ),
-      title: Text(peer.deviceName),
+      title: Row(
+        children: [
+          Flexible(
+            child: Text(
+              peer.deviceName,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+          if (isMaster) ...[
+            const SizedBox(width: 6),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+              decoration: BoxDecoration(
+                color: colorScheme.primaryContainer,
+                borderRadius: BorderRadius.circular(999),
+              ),
+              child: Text(
+                masterLabel,
+                style: TextStyle(
+                  fontSize: 10,
+                  fontWeight: FontWeight.w600,
+                  color: colorScheme.onPrimaryContainer,
+                ),
+              ),
+            ),
+          ],
+        ],
+      ),
       subtitle: Text(
         peer.state.listStatusLabel(l10n),
         style: TextStyle(

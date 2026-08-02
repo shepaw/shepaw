@@ -9377,7 +9377,7 @@ abstract class AppLocalizations {
   /// No description provided for @storage_nasHint.
   ///
   /// In zh, this message translates to:
-  /// **'扫描广播 _nexuspouch._tcp 的 Nexuspouch 节点。首次仍需在节点 /admin 扫码配对；配对后点「连接」可刷新局域网端点并设为 store master。'**
+  /// **'扫描广播 _nexuspouch._tcp 的 Nexuspouch 节点。首次在节点 /admin 扫码配对后，下方会列出已配对设备并标注 master；已配对节点可点「连接」刷新端点。'**
   String get storage_nasHint;
 
   /// No description provided for @storage_nasScanning.
@@ -9433,6 +9433,42 @@ abstract class AppLocalizations {
   /// In zh, this message translates to:
   /// **'打开配对'**
   String get storage_nasOpenPairing;
+
+  /// No description provided for @storage_nasAddDevice.
+  ///
+  /// In zh, this message translates to:
+  /// **'添加设备'**
+  String get storage_nasAddDevice;
+
+  /// No description provided for @storage_nasPaired.
+  ///
+  /// In zh, this message translates to:
+  /// **'已配对'**
+  String get storage_nasPaired;
+
+  /// No description provided for @storage_pairedSection.
+  ///
+  /// In zh, this message translates to:
+  /// **'已配对设备'**
+  String get storage_pairedSection;
+
+  /// No description provided for @storage_pairedEmpty.
+  ///
+  /// In zh, this message translates to:
+  /// **'尚未配对存储节点。请扫描节点 admin 二维码完成配对。'**
+  String get storage_pairedEmpty;
+
+  /// No description provided for @storage_discoveredSection.
+  ///
+  /// In zh, this message translates to:
+  /// **'局域网发现'**
+  String get storage_discoveredSection;
+
+  /// No description provided for @storage_masterBadge.
+  ///
+  /// In zh, this message translates to:
+  /// **'master'**
+  String get storage_masterBadge;
 
   /// No description provided for @storage_importEntryHint.
   ///
