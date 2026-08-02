@@ -27,6 +27,7 @@ import 'services/chat_service.dart';
 import 'peer/services/peer_connection_manager.dart';
 import 'peer/services/peer_agent_host_service.dart';
 import 'peer/services/peer_agent_client_service.dart';
+import 'storage/folder_binding_service.dart';
 import 'storage/scheduled_snapshot_service.dart';
 import 'storage/store_service.dart';
 import 'storage/sync_engine.dart';
@@ -126,6 +127,11 @@ class AppBootstrap {
     ApprovalReachabilityNotifier.instance.init(navigatorKey: navigatorKey);
     ForegroundTaskService().init();
     await ScheduledTaskService().startScheduler();
+
+    // 目录绑定：FS watcher + 周期兜底（失败不阻断启动）
+    try {
+      await FolderBindingService.instance.startAutoSync();
+    } catch (_) {}
 
     // 初始化技能注册表
     await SkillRegistry.instance.initialize();

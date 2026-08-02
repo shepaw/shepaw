@@ -3,7 +3,7 @@
 //! - 单向输入源：外部目录内容摄取进 `files/<device>/<folder>/`（copy），
 //!   删除进回收站；store 内始终是真实文件（无符号链接）；
 //! - 对账 = 全量扫描 + sha256/size/mtime 对比（事件只是唤醒信号，
-//!   正确性不依赖事件）；本实现提供轮询式周期同步（watcher 为后续增强）；
+//!   正确性不依赖事件）；`startAutoSync` = DirectoryWatcher 去抖 + 周期兜底；
 //! - 摄取走 LocalStore 写路径（write.begin/chunk/commit），自动进
 //!   SyncJournal → 镜像到 master；忽略规则与 `.` 前缀默认跳过。
 
@@ -16,6 +16,7 @@ import 'dart:typed_data';
 import 'package:crypto/crypto.dart' as crypto;
 import 'package:path/path.dart' as p;
 import 'package:uuid/uuid.dart';
+import 'package:watcher/watcher.dart';
 
 import 'device_identity.dart';
 import 'local_store.dart';
@@ -87,6 +88,10 @@ class FolderBindingService {
   static final FolderBindingService instance = FolderBindingService._();
 
   final _uuid = const Uuid();
+  void Function()? _stopPeriodic;
+  final List<StreamSubscription<WatchEvent>> _watchSubs = [];
+  final Map<String, Timer> _debounceByBinding = {};
+  bool _autoSyncStarted = false;
 
   Future<Directory> _systemDir() async {
     final root = await StoreService.instance.storeRoot();
@@ -145,6 +150,7 @@ class FolderBindingService {
     final all = await list();
     all.add(binding);
     await _saveAll(all);
+    if (_autoSyncStarted) await _rewatch();
     return binding;
   }
 
@@ -152,6 +158,7 @@ class FolderBindingService {
     final all = await list();
     all.removeWhere((b) => b.id == id);
     await _saveAll(all);
+    if (_autoSyncStarted) await _rewatch();
   }
 
   Future<BindingSyncReport> syncOne(FolderBinding binding) async {
@@ -228,12 +235,62 @@ class FolderBindingService {
     return reports;
   }
 
-  /// 轮询式周期同步（v1；watcher 事件驱动为后续增强）。
+  /// 轮询式周期同步（兜底；优先用 [startAutoSync]）。
   Future<void Function()> startPeriodic(Duration interval) async {
     final timer = Timer.periodic(interval, (_) {
       unawaited(syncAll());
     });
     return () => timer.cancel();
+  }
+
+  /// 事件驱动（DirectoryWatcher 去抖）+ 低频周期兜底。幂等可重复调用。
+  Future<void> startAutoSync({
+    Duration periodic = const Duration(minutes: 2),
+    Duration debounce = const Duration(seconds: 2),
+  }) async {
+    await stopAutoSync();
+    _autoSyncStarted = true;
+    _stopPeriodic = await startPeriodic(periodic);
+    await _rewatch(debounce: debounce);
+    unawaited(syncAll());
+  }
+
+  Future<void> stopAutoSync() async {
+    _autoSyncStarted = false;
+    _stopPeriodic?.call();
+    _stopPeriodic = null;
+    for (final t in _debounceByBinding.values) {
+      t.cancel();
+    }
+    _debounceByBinding.clear();
+    for (final s in _watchSubs) {
+      await s.cancel();
+    }
+    _watchSubs.clear();
+  }
+
+  Future<void> _rewatch({
+    Duration debounce = const Duration(seconds: 2),
+  }) async {
+    for (final s in _watchSubs) {
+      await s.cancel();
+    }
+    _watchSubs.clear();
+    for (final b in await list()) {
+      final dir = Directory(b.external);
+      if (!await dir.exists()) continue;
+      try {
+        final w = DirectoryWatcher(b.external);
+        _watchSubs.add(w.events.listen((_) {
+          _debounceByBinding[b.id]?.cancel();
+          _debounceByBinding[b.id] = Timer(debounce, () {
+            unawaited(syncOne(b));
+          });
+        }));
+      } catch (_) {
+        // Unsupported platform / permission — periodic sync still covers it.
+      }
+    }
   }
 
   // ── 内部 ─────────────────────────────────────────────

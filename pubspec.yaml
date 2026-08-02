@@ -53,6 +53,9 @@ dependencies:
   image_picker: ^1.0.7
   file_picker: ^8.0.0
 
+  # 目录绑定：本地 FS 事件驱动同步（辅以周期兜底）
+  watcher: ^1.1.0
+
   # 桌面端剪贴板图片
   pasteboard: ^0.3.0
 

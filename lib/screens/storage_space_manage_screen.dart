@@ -1,4 +1,6 @@
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import 'package:path/path.dart' as p;
 
 import '../l10n/app_localizations.dart';
 import '../storage/device_identity.dart';
@@ -78,11 +80,22 @@ class _StorageSpaceManageScreenState extends State<StorageSpaceManageScreen> {
     }
   }
 
+  Future<void> _pickBindDir() async {
+    final dir = await FilePicker.platform.getDirectoryPath();
+    if (dir == null || !mounted) return;
+    setState(() {
+      _bindPath.text = dir;
+      if (_bindFolder.text.trim().isEmpty) {
+        _bindFolder.text = p.basename(dir);
+      }
+    });
+  }
+
   Future<void> _addBinding() async {
     final path = _bindPath.text.trim();
     final folder = _bindFolder.text.trim();
     if (path.isEmpty || folder.isEmpty) {
-      storageToast(context, '请输入外部目录路径与映射文件夹名');
+      storageToast(context, '请选择或输入外部目录路径与映射文件夹名');
       return;
     }
     setState(() => _busy = true);
@@ -243,12 +256,23 @@ class _StorageSpaceManageScreenState extends State<StorageSpaceManageScreen> {
               ],
             ),
             const SizedBox(height: 8),
-            TextField(
-              controller: _bindPath,
-              decoration: const InputDecoration(
-                isDense: true,
-                hintText: '外部目录路径，如 /Users/me/Downloads',
-              ),
+            Row(
+              children: [
+                Expanded(
+                  child: TextField(
+                    controller: _bindPath,
+                    decoration: const InputDecoration(
+                      isDense: true,
+                      hintText: '外部目录路径，如 /Users/me/Downloads',
+                    ),
+                  ),
+                ),
+                IconButton(
+                  icon: const Icon(Icons.folder_open),
+                  tooltip: '选择目录',
+                  onPressed: _busy ? null : _pickBindDir,
+                ),
+              ],
             ),
             const SizedBox(height: 8),
             Row(
@@ -292,7 +316,7 @@ class _StorageSpaceManageScreenState extends State<StorageSpaceManageScreen> {
             const SizedBox(height: 4),
             Text(
               '单向：目录内容摄取进 files/<folder> 并镜像到 master；删除进回收站；'
-              'App 内周期自动同步（事件驱动为后续增强）。',
+              '本地目录变更会事件驱动同步，并辅以低频周期兜底。',
               style: Theme.of(context).textTheme.bodySmall?.copyWith(
                   color: Theme.of(context).colorScheme.onSurfaceVariant),
             ),
