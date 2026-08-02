@@ -151,11 +151,22 @@ class PeerHistoryMessage {
   /// this field.
   final DateTime? createdAt;
 
+  /// Pre-split progress section (thinking/tools/plan) reconstructed by
+  /// agent-bridge from the engine transcript. Rendered via the same
+  /// `metadata.progress_content` collapsible the live stream uses, so a
+  /// synced bubble looks like the live one.
+  final String? progressContent;
+  final String? progressTitle;
+  final bool? progressAutoCollapse;
+
   PeerHistoryMessage({
     required this.role,
     required this.content,
     this.messageId,
     this.createdAt,
+    this.progressContent,
+    this.progressTitle,
+    this.progressAutoCollapse,
   });
 
   static PeerHistoryMessage? fromJson(Map<String, dynamic> json) {
@@ -167,11 +178,16 @@ class PeerHistoryMessage {
     if (rawCreated is String && rawCreated.isNotEmpty) {
       createdAt = DateTime.tryParse(rawCreated);
     }
+    final rawProgress = json['progress_content'] as String?;
     return PeerHistoryMessage(
       role: role,
       content: content,
       messageId: json['message_id'] as String?,
       createdAt: createdAt,
+      progressContent:
+          (rawProgress?.isNotEmpty ?? false) ? rawProgress : null,
+      progressTitle: json['progress_title'] as String?,
+      progressAutoCollapse: json['progress_auto_collapse'] as bool?,
     );
   }
 }
@@ -229,6 +245,36 @@ String peerHistoryMessageId(PeerHistoryMessage m, String channelId, int index) {
     return 'peerhist_${m.messageId}';
   }
   return 'peerhist_${channelId}_$index';
+}
+
+/// `progress_content` stored in a local message row's metadata JSON ('' if none).
+String _rowProgressContent(Map<String, dynamic> row) {
+  final raw = row['metadata'] as String?;
+  if (raw == null || raw.isEmpty) return '';
+  try {
+    final decoded = jsonDecode(raw);
+    if (decoded is Map && decoded['progress_content'] is String) {
+      return decoded['progress_content'] as String;
+    }
+  } catch (_) {
+    // Treat undecodable metadata as "no progress".
+  }
+  return '';
+}
+
+/// Metadata to persist for a synced history message: the reconstructed
+/// progress section (thinking/tools/plan) in the same shape the live stream
+/// produces, so the bubble renders the identical collapsible block.
+/// Returns null when the message carries no progress.
+Map<String, dynamic>? peerHistoryMessageMetadata(PeerHistoryMessage m) {
+  final progress = m.progressContent;
+  if (progress == null || progress.isEmpty) return null;
+  return {
+    'progress_content': progress,
+    'collapsible': true,
+    'collapsible_title': m.progressTitle ?? 'Details',
+    'auto_collapse': m.progressAutoCollapse ?? true,
+  };
 }
 
 /// One upstream model option from `agent_models_resp`.
@@ -1296,7 +1342,7 @@ class PeerAgentClientService {
     );
 
     // Skip the rewrite (and UI flicker) when local already matches remote
-    // content and the resolved send times.
+    // content, resolved send times, and progress sections.
     if (existingAsc.length == history.length) {
       var identical = true;
       for (var i = 0; i < history.length; i++) {
@@ -1314,6 +1360,10 @@ class PeerAgentClientService {
           identical = false;
           break;
         }
+        if (_rowProgressContent(row) != (history[i].progressContent ?? '')) {
+          identical = false;
+          break;
+        }
       }
       if (identical) return 0;
     }
@@ -1324,6 +1374,10 @@ class PeerAgentClientService {
       final isUser = m.role == 'user';
       final msgId = peerHistoryMessageId(m, channelId, i);
       remoteIds.add(msgId);
+      // Fold the reconstructed progress section (thinking/tools/plan) into the
+      // same metadata shape the live stream produces — the bubble renders it
+      // as one collapsible block above the answer.
+      final metadata = peerHistoryMessageMetadata(m);
       await _db.createMessage(
         id: msgId,
         channelId: channelId,
@@ -1331,6 +1385,7 @@ class PeerAgentClientService {
         senderType: isUser ? 'user' : 'agent',
         senderName: isUser ? userName : agentName,
         content: m.content,
+        metadata: metadata,
         createdAt: createdAts[i],
         conflictAlgorithm: ConflictAlgorithm.replace,
       );

@@ -71,6 +71,68 @@ void main() {
     });
   });
 
+  group('PeerHistoryMessage.fromJson progress fields', () {
+    test('parses the reconstructed progress section', () {
+      final m = PeerHistoryMessage.fromJson({
+        'role': 'agent',
+        'content': 'Done.',
+        'progress_content': 'Thinking…\n[completed] Bash\n```\nls\n```',
+        'progress_title': 'Bash',
+        'progress_auto_collapse': false,
+      })!;
+      expect(m.progressContent, contains('[completed] Bash'));
+      expect(m.progressTitle, 'Bash');
+      expect(m.progressAutoCollapse, isFalse);
+    });
+
+    test('treats missing/empty progress as absent (backward compatible)', () {
+      final legacy = PeerHistoryMessage.fromJson({
+        'role': 'agent',
+        'content': 'plain',
+      })!;
+      expect(legacy.progressContent, isNull);
+      expect(legacy.progressTitle, isNull);
+      expect(legacy.progressAutoCollapse, isNull);
+
+      final empty = PeerHistoryMessage.fromJson({
+        'role': 'agent',
+        'content': 'plain',
+        'progress_content': '',
+      })!;
+      expect(empty.progressContent, isNull);
+    });
+  });
+
+  group('peerHistoryMessageMetadata', () {
+    test('maps progress into the live stream metadata shape', () {
+      final meta = peerHistoryMessageMetadata(
+        PeerHistoryMessage(
+          role: 'agent',
+          content: 'answer',
+          progressContent: 'thinking',
+          progressTitle: 'Thinking',
+        ),
+      )!;
+      expect(meta['progress_content'], 'thinking');
+      expect(meta['collapsible'], isTrue);
+      expect(meta['collapsible_title'], 'Thinking');
+      expect(meta['auto_collapse'], isTrue);
+    });
+
+    test('falls back to Details title and null when no progress', () {
+      final titled = peerHistoryMessageMetadata(
+        PeerHistoryMessage(role: 'agent', content: 'a', progressContent: 'p'),
+      )!;
+      expect(titled['collapsible_title'], 'Details');
+      expect(
+        peerHistoryMessageMetadata(
+          PeerHistoryMessage(role: 'agent', content: 'a'),
+        ),
+        isNull,
+      );
+    });
+  });
+
   group('assignPeerHistoryTimestamps', () {
     final end = DateTime.utc(2026, 7, 12, 12, 0);
 
