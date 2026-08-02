@@ -213,15 +213,20 @@ class StoreService {
           op: StoreOp.handoffAck,
           payload: <String, dynamic>{'uri': uri, 'agent_id': agentId}));
 
-  /// 全文检索（M5；经 Noise 调 master 的 `search` 帧）。
+  /// 全文 / 语义检索（M5 / 向量 P1；经 Noise 调 master 的 `search` 帧）。
   Future<Map<String, dynamic>?> search({
     required String q,
     String? space,
     String? device,
     String? state,
     int limit = 50,
+    bool semantic = false,
   }) {
-    final payload = <String, dynamic>{'q': q, 'limit': limit};
+    final payload = <String, dynamic>{
+      'q': q,
+      'limit': limit,
+      if (semantic) 'semantic': true,
+    };
     if (space != null) payload['space'] = space;
     if (device != null) payload['device'] = device;
     if (state != null) payload['state'] = state;
