@@ -32,13 +32,35 @@ class StoreFilePreview {
     );
   }
 
+  /// Local file preview — avoids holding a second encoded copy in Dart heap.
+  static Future<void> showImageFile(
+    BuildContext context, {
+    required String fileName,
+    required File file,
+  }) {
+    return showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      builder: (ctx) => _PreviewScaffold(
+        fileName: fileName,
+        sourceFile: file,
+        body: InteractiveViewer(
+          child: Center(child: Image.file(file, fit: BoxFit.contain)),
+        ),
+      ),
+    );
+  }
+
   static Future<void> showText(
     BuildContext context, {
     required String fileName,
     required String text,
-    required Uint8List bytes,
+    Uint8List? bytes,
+    File? sourceFile,
     bool asMarkdown = false,
   }) {
+    assert(bytes != null || sourceFile != null);
     return showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
@@ -60,6 +82,7 @@ class StoreFilePreview {
         return _PreviewScaffold(
           fileName: fileName,
           bytes: bytes,
+          sourceFile: sourceFile,
           body: body,
         );
       },
@@ -70,19 +93,31 @@ class StoreFilePreview {
 class _PreviewScaffold extends StatelessWidget {
   const _PreviewScaffold({
     required this.fileName,
-    required this.bytes,
     required this.body,
+    this.bytes,
+    this.sourceFile,
   });
 
   final String fileName;
-  final Uint8List bytes;
+  final Uint8List? bytes;
+  final File? sourceFile;
   final Widget body;
 
   Future<void> _openExternally() async {
+    if (sourceFile != null) {
+      final dir = await getTemporaryDirectory();
+      final safe = AttachmentData.safeFileName(fileName);
+      final dest = File(p.join(dir.path, 'shepaw_store_$safe'));
+      await sourceFile!.copy(dest.path);
+      await OpenFile.open(dest.path);
+      return;
+    }
+    final data = bytes;
+    if (data == null) return;
     final dir = await getTemporaryDirectory();
     final safe = AttachmentData.safeFileName(fileName);
     final file = File(p.join(dir.path, 'shepaw_store_$safe'));
-    await file.writeAsBytes(bytes, flush: true);
+    await file.writeAsBytes(data, flush: true);
     await OpenFile.open(file.path);
   }
 
