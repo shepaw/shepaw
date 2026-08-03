@@ -7,6 +7,7 @@ import '../services/local_file_storage_service.dart';
 import '../services/local_database_service.dart';
 import '../services/file_download_service.dart';
 import '../services/attachment_service.dart';
+import '../services/store_open_service.dart';
 import '../services/ws_file_transfer_service.dart';
 import '../services/acp_agent_connection.dart';
 import '../services/chat_service.dart';
@@ -115,6 +116,13 @@ class _FileMessageBubbleState extends State<FileMessageBubble> {
   }
 
   Future<void> _openFile() async {
+    // 储物袋引用：StoreUriReader → App 预览或 temp + 系统打开（勿直接 OpenFile 私有路径）
+    final storeUri = widget.message.metadata?['store_uri'] as String?;
+    if (storeUri != null && storeUri.isNotEmpty) {
+      await StoreOpenService.instance.openStoreUri(context, storeUri);
+      return;
+    }
+
     // M5：已下载副本或 store/旧格式附件，经 resolver 统一解析
     final downloaded = _downloadedPath;
     if (downloaded != null) {
