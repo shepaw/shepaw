@@ -6,6 +6,7 @@ import '../model_registry.dart';
 import '../ui_component_registry.dart';
 import '../../clis/shepaw/shepaw_cli.dart';
 import '../task/task_models.dart';
+import 'message_implicit_prompt.dart';
 
 /// Utility helpers for the local LLM execution path.
 ///
@@ -170,27 +171,31 @@ class LocalLLMHelpers {
     return info;
   }
 
-  /// Append a visible fetch hint so the LLM sees message_id in plain text.
+  /// Append LLM-only hints so historical attachments stay actionable.
   ///
-  /// `attachment_info` alone may be ignored by the model; inlining the CLI
-  /// command into [baseContent] makes historical attachments actionable.
-  /// Store pouch refs also surface `store://` + `shepaw store read`.
+  /// Store:// refs get a per-message `[implicit]` block (not system-prompt
+  /// bloat). Non-store attachments keep the `chat message get` fetch hint.
   static String enrichHistoryContent(Message m, String baseContent) {
-    if (m.type == MessageType.text ||
-        m.type == MessageType.system ||
+    if (m.type == MessageType.system ||
         m.type == MessageType.permissionAudit) {
       return baseContent;
     }
-    final storeUri = m.metadata?['store_uri'] as String?;
-    if (storeUri != null && storeUri.isNotEmpty) {
-      return '$baseContent\n'
-          '(attachment message_id=${m.id} store_uri=$storeUri — '
-          'prefer: shepaw store read --uri $storeUri; '
-          'or: shepaw chat message get --id ${m.id} --analyze "your question")';
+
+    var content = baseContent;
+    final storeHint = MessageImplicitPrompt.forHistoryMessage(m);
+    if (storeHint != null) {
+      content = MessageImplicitPrompt.appendHint(content, storeHint);
     }
-    return '$baseContent\n'
+
+    if (m.type == MessageType.text) {
+      return content;
+    }
+
+    // Non-text attachment: always surface message_id for chat message get.
+    final fetchHint =
         '(attachment message_id=${m.id} — to read/analyze call: '
         'shepaw chat message get --id ${m.id} --analyze "your question")';
+    return MessageImplicitPrompt.appendHint(content, fetchHint);
   }
 
   /// Build a user message map, with multimodal content for image/audio attachments.
@@ -199,13 +204,22 @@ class LocalLLMHelpers {
   /// - Audio is embedded as OpenAI `input_audio` for non-Claude providers.
   ///   Claude Messages API has no stable audio-input block, so audio becomes a
   ///   text description there (same as other non-image files).
+  /// - store:// pouch refs get a per-message `[implicit]` read hint (LLM-only).
   static Map<String, dynamic> buildUserMessageContent(
     String text,
     List<AttachmentData>? attachments,
     bool isClaude,
   ) {
+    final implicit = MessageImplicitPrompt.forCurrentTurn(
+      text: text,
+      attachments: attachments,
+    );
+
     if (attachments == null || attachments.isEmpty) {
-      return {'role': 'user', 'content': text};
+      return {
+        'role': 'user',
+        'content': MessageImplicitPrompt.appendHint(text, implicit),
+      };
     }
 
     final imageAttachments =
@@ -226,6 +240,7 @@ class LocalLLMHelpers {
           textOnlyAttachments.map((a) => a.textDescription).join('\n');
       effectiveText = '$descriptions\n\n$effectiveText';
     }
+    effectiveText = MessageImplicitPrompt.appendHint(effectiveText, implicit);
 
     final embedAudio = !isClaude && audioAttachments.isNotEmpty;
     if (imageAttachments.isEmpty && !embedAudio) {

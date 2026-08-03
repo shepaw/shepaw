@@ -175,7 +175,7 @@ void main() {
     expect(data!.bytes, content);
     expect(data.extraMetadata?['store_uri'], ref.storeUri);
     expect(data.textDescription, contains(ref.storeUri));
-    expect(data.textDescription, contains('shepaw store read'));
+    expect(data.textDescription, isNot(contains('shepaw store read')));
 
     final resolved = await svc.resolveAttachmentFile(msg.metadata!);
     expect(resolved, isNotNull);

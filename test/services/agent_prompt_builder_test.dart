@@ -65,16 +65,15 @@ void main() {
       expect(block, contains('soul'));
     });
 
-    test('buildMetaCognitionBlock prefers store for produced artifacts', () {
+    test('buildMetaCognitionBlock prefers store write; read via per-message hints', () {
       final block = SheService.buildMetaCognitionBlock();
       expect(block, contains('shepaw store write'));
-      expect(block, contains('Produced Artifacts'));
-      expect(block, contains('prefer store'));
-      expect(block, contains('Prefer store for'));
+      expect(block, contains('prefer store write'));
       expect(block, contains('store://'));
+      expect(block, contains('[implicit]'));
       expect(block, contains('shepaw store read'));
-      expect(block, contains('Do NOT'));
-      expect(block, contains('shepaw os file.read'));
+      // Detailed MUST/Do-NOT store-read lecture moved off the system prompt.
+      expect(block, isNot(contains('MUST** read/operate via store CLI')));
     });
   });
 

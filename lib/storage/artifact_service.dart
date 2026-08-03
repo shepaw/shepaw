@@ -173,7 +173,7 @@ class ArtifactService {
       buffer.writeln('- ${ref.toMarkdownLine()}');
     }
     buffer.writeln('新产出优先 `shepaw store write`（勿默认写 OS 路径）；'
-        '任何 `store://` 用 `shepaw store read` 原样传入括号内 URI（勿用 os.file.read）。');
+        '读 `store://` 遵循消息内 `[implicit]` 提示（`shepaw store read`）。');
     return buffer.toString();
   }
 

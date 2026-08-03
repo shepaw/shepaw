@@ -134,7 +134,7 @@ void main() {
         expect(audioNoDuration.textDescription, '[Audio: clip.mp3 (1.0 KB)]');
       });
 
-      test('should include store_uri read hint', () {
+      test('should include store_uri markdown link without CLI lecture', () {
         final storeFile = AttachmentData(
           fileName: 'note.txt',
           mimeType: 'text/plain',
@@ -152,8 +152,8 @@ void main() {
             desc,
             contains(
                 '[note.txt](store://files/0123456789abcdef/docs/note.txt)'));
-        expect(desc, contains('shepaw store read --uri'));
-        expect(desc, contains('do NOT use os.file.read'));
+        expect(desc, isNot(contains('shepaw store read')));
+        expect(desc, isNot(contains('[implicit]')));
       });
     });
 

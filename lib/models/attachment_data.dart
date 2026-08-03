@@ -125,8 +125,9 @@ class AttachmentData {
 
   /// Human-readable text description, e.g. "[Image: photo.jpg (2.1MB)]"
   ///
-  /// When [extraMetadata] contains `store_uri`, appends the Markdown link and
-  /// an explicit `shepaw store read` hint so the model does not use OS paths.
+  /// When [extraMetadata] contains `store_uri`, appends a Markdown link.
+  /// How-to-read instructions are injected as a per-message `[implicit]`
+  /// block at LLM assembly time (not this string).
   String get textDescription {
     final formattedSize = _formatSize(sizeBytes);
     final prefix = switch (semanticType) {
@@ -148,10 +149,7 @@ class AttachmentData {
     final base = '[$prefix: $fileName ($formattedSize$extra)]';
     final storeUri = extraMetadata?['store_uri'] as String?;
     if (storeUri == null || storeUri.isEmpty) return base;
-    return '$base\n'
-        '[$fileName]($storeUri)\n'
-        'Read with: shepaw store read --uri $storeUri '
-        '(do NOT use os.file.read / OS paths for store:// URIs)';
+    return '$base\n[$fileName]($storeUri)';
   }
 
   /// Serialize to the JSON map sent over ACP protocol (includes base64).

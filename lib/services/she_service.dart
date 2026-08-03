@@ -337,22 +337,13 @@ class SheService {
   /// Section ①: She's core identity (immutable).
   String buildCoreIdentityBlock() => _coreIdentityPrompt();
 
-  /// Shared store preference (She + non-She guidance).
-  /// Produced files go to store by default; any `store://` uses store CLI.
+  /// Shared store preference (She + non-She guidance) — keep short.
+  /// Detailed store:// read instructions are per-message `[implicit]` hints.
   static const String _artifactStorePreferenceSection = '''
-### Store URIs (`store://…`) — use store CLI, NOT OS file tools
+### Store (prefer store write; read via per-message hints)
 
-Whenever you see a `store://…` URI (user pouch attachment, Markdown link, prior tool output, chat history):
-1. **MUST** read/operate via store CLI — e.g. `shepaw store read --uri <store://…>` (pass the URI **as-is**)
-2. **Do NOT** use `shepaw os file.read` / `os.file.write` / absolute OS paths for `store://` links
-3. **Never invent or hand-build** `store://` URIs — only transcribe URIs you were given or that `store write` returned
-
-### Produced Artifacts (prefer store — FIRST, not OS paths)
-
-When you create a durable/shareable output (report, code, script, data, doc, etc.):
-1. **Prefer** `shepaw store write --filename <name> --content "..."` (optional `--task <id>` / `--desc "..."`)
-2. In your reply, cite the returned `reference` / `store://` URI as-is
-3. Use `shepaw os file.write` **only** when the user explicitly names an OS path, or you truly need a local system file (e.g. to execute/open outside the app). Do **not** default to `/tmp` or other OS paths for ordinary outputs.''';
+- **Produce**: prefer `shepaw store write --filename <name> --content "..."`; cite returned `store://` as-is — never invent URIs. Use `os.file.write` only when the user names an OS path.
+- **Read**: when a message includes `store://` or an `[implicit]` store block, follow that message's instructions (`shepaw store read --uri …`). Do not put store-read procedures in your own memory of the system prompt.''';
 
   /// Meta-cognition block: tells She what capabilities she has and how to
   /// discover them on demand via the shepaw CLI.
@@ -398,7 +389,7 @@ When the user asks about a **past** image/file/audio ("这张图说了什么", "
 - `shepaw store write --filename … --content "…"` — write shareable artifacts
 
 ### OS (local system)
-- Prefer store for `store://` and produced artifacts (see above). Use OS file tools only for real OS paths the user named.
+- Prefer store for produced artifacts; follow per-message `[implicit]` for `store://`. Use OS file tools only for real OS paths the user named.
 - `shepaw os --help` — list all available OS tools
 - `shepaw os file.{read,write,delete,list}` / `os command.exec` / `os clipboard.{read,write}`
 
@@ -573,7 +564,7 @@ $_artifactStorePreferenceSection
 - `shepaw store write --filename … --content "…"` — write shareable artifacts
 
 ### OS (local system)
-- Prefer store for `store://` and produced artifacts (see above). Use OS file tools only for real OS paths the user named.
+- Prefer store for produced artifacts; follow per-message `[implicit]` for `store://`. Use OS file tools only for real OS paths the user named.
 - `shepaw os --help` — list all available OS tools
 - `shepaw os file.{read,write,delete,list}` / `os command.exec` / `os clipboard.{read,write}`
 
