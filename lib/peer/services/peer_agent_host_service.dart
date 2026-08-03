@@ -28,6 +28,7 @@ import '../../models/attachment_data.dart';
 import '../../models/channel.dart';
 import '../../models/message.dart';
 import '../../models/model_definition.dart';
+import '../../services/messaging/message_implicit_prompt.dart';
 import '../../models/model_routing_config.dart';
 import '../../models/remote_agent.dart';
 import '../../services/acp_agent_connection.dart';
@@ -580,14 +581,44 @@ class PeerAgentHostService {
         );
       }
 
+      // Wire may carry [implicit] store hints (sender-side). Persist a clean
+      // bubble, but pass the full wire text into the LLM path.
+      final wireContent = message;
+      Message? existingUserMessage;
+      if (MessageImplicitPrompt.containsImplicitBlock(wireContent)) {
+        final displayContent =
+            MessageImplicitPrompt.stripImplicitBlocks(wireContent);
+        final msgId = const Uuid().v4();
+        final now = DateTime.now().millisecondsSinceEpoch;
+        existingUserMessage = Message(
+          id: msgId,
+          channelId: channelId,
+          from: MessageFrom(id: userId, type: 'user', name: userName),
+          to: MessageFrom(id: agentId, type: 'agent', name: agent.name),
+          type: MessageType.text,
+          content: displayContent,
+          timestampMs: now,
+        );
+        await _db.createMessage(
+          id: msgId,
+          channelId: channelId,
+          senderId: userId,
+          senderType: 'user',
+          senderName: userName,
+          content: displayContent,
+          messageType: 'text',
+        );
+      }
+
       var response = await _chat.sendMessageToAgent(
-        content: message,
+        content: wireContent,
         agent: agent,
         userId: userId,
         userName: userName,
         channelId: channelId,
         acpCancellationToken: token,
         attachments: attachments,
+        existingUserMessage: existingUserMessage,
         // Relay raw stream; the phone client folds progress once.
         foldProgressContent: false,
         onStreamChunk: (chunk) {

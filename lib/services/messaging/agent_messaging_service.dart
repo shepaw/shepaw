@@ -34,6 +34,7 @@ import '../../peer/services/peer_agent_host_service.dart' show isPeerAgentChanne
 import '../../models/peer_boundary_config.dart';
 import '../../service_locator.dart' show getIt;
 import 'local_llm_handler.dart';
+import 'message_implicit_prompt.dart';
 import 'stream_content_splitter.dart';
 import 'streaming_flush_helper.dart';
 import 'connection_retry_policy.dart';
@@ -1186,7 +1187,11 @@ class AgentMessagingService {
       final result = await PeerAgentClientService.instance.sendChat(
         peerId: peerId,
         remoteAgentId: remoteAgentId,
-        message: userMessage.content,
+        // Wire-only enrichment: local DB/bubble keeps userMessage.content.
+        message: MessageImplicitPrompt.forPeerWireMessage(
+          message: userMessage.content,
+          attachments: attachments,
+        ),
         sessionId: peerSessionId,
         attachments: attachments,
         cancelToken: acpCancellationToken,

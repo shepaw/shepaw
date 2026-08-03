@@ -87,5 +87,82 @@ void main() {
       expect(MessageImplicitPrompt.appendHint('', 'hint'), 'hint');
       expect(MessageImplicitPrompt.appendHint('a', 'hint'), 'a\nhint');
     });
+
+    test('forPeerWireMessage appends hint without mutating plain message when no store',
+        () {
+      expect(
+        MessageImplicitPrompt.forPeerWireMessage(message: 'hello'),
+        'hello',
+      );
+    });
+
+    test('forPeerWireMessage appends implicit for store attachment', () {
+      final att = AttachmentData(
+        fileName: 'note.txt',
+        mimeType: 'text/plain',
+        sizeBytes: 1,
+        bytes: Uint8List(0),
+        semanticType: 'document',
+        extraMetadata: {
+          'store_uri': 'store://files/0123456789abcdef/docs/note.txt',
+        },
+      );
+      final wire = MessageImplicitPrompt.forPeerWireMessage(
+        message: 'please summarize',
+        attachments: [att],
+      );
+      expect(wire, startsWith('please summarize'));
+      expect(wire, contains('[implicit]'));
+      expect(wire, contains('Nexuspouch'));
+      expect(wire, contains('store://files/0123456789abcdef/docs/note.txt'));
+    });
+
+    test('forCurrentTurn skips when wire already has implicit (no double inject)',
+        () {
+      const uri = 'store://files/0123456789abcdef/docs/note.txt';
+      final att = AttachmentData(
+        fileName: 'note.txt',
+        mimeType: 'text/plain',
+        sizeBytes: 1,
+        bytes: Uint8List(0),
+        semanticType: 'document',
+        extraMetadata: {'store_uri': uri},
+      );
+      final wire = MessageImplicitPrompt.forPeerWireMessage(
+        message: 'hi',
+        attachments: [att],
+      );
+      expect(
+        MessageImplicitPrompt.forCurrentTurn(text: wire, attachments: [att]),
+        isNull,
+      );
+      // Non-implicit hints still append; re-appending an implicit block is skipped.
+      expect(
+        MessageImplicitPrompt.appendHint(wire, 'another'),
+        '$wire\nanother',
+      );
+      final again = MessageImplicitPrompt.renderStoreReadHint({uri});
+      expect(MessageImplicitPrompt.appendHint(wire, again), wire);
+    });
+
+    test('stripImplicitBlocks removes hint for UI persistence', () {
+      final att = AttachmentData(
+        fileName: 'note.txt',
+        mimeType: 'text/plain',
+        sizeBytes: 1,
+        bytes: Uint8List(0),
+        semanticType: 'document',
+        extraMetadata: {
+          'store_uri': 'store://files/0123456789abcdef/docs/note.txt',
+        },
+      );
+      final wire = MessageImplicitPrompt.forPeerWireMessage(
+        message: 'please summarize',
+        attachments: [att],
+      );
+      final display = MessageImplicitPrompt.stripImplicitBlocks(wire);
+      expect(display, 'please summarize');
+      expect(display, isNot(contains('[implicit]')));
+    });
   });
 }
