@@ -21,6 +21,8 @@ import '../models/peer_message.dart';
 import 'peer_advertise.dart';
 import 'peer_channel_bridge.dart';
 import 'peer_delivery_trace_service.dart';
+import 'peer_endpoint_utils.dart';
+import 'peer_local_server.dart';
 import 'peer_storage_service.dart';
 
 /// 连接事件类型
@@ -377,9 +379,21 @@ class PeerConnection {
       if (local != null &&
           local.isNotEmpty &&
           local != peer.localEndpoint) {
-        await storage.updateLocalEndpoint(peer.id, local);
-        _log.debug(
-            'Learned local endpoint for ${peer.deviceName}: $local', tag: _tag);
+        final server = PeerLocalServer.instance;
+        if (isOwnLocalEndpoint(
+          local,
+          ownHost: server.address,
+          ownPort: server.port,
+        )) {
+          _log.debug(
+            'Skip learning own PeerLocalServer as peer endpoint',
+            tag: _tag,
+          );
+        } else {
+          await storage.updateLocalEndpoint(peer.id, local);
+          _log.debug(
+              'Learned local endpoint for ${peer.deviceName}: $local', tag: _tag);
+        }
       }
     } catch (e) {
       _log.debug('Skip endpoint learning: $e', tag: _tag);

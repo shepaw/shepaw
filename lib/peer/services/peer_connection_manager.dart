@@ -21,6 +21,7 @@ import '../models/peer_message.dart';
 import 'peer_connection.dart';
 import 'peer_channel_bridge.dart';
 import 'peer_advertise.dart';
+import 'peer_endpoint_utils.dart';
 import 'peer_local_server.dart';
 import 'peer_pairing_service.dart';
 import 'peer_storage_service.dart';
@@ -586,20 +587,27 @@ class PeerConnectionManager {
       }
       if (local != null &&
           local.isNotEmpty &&
-          local != peer.localEndpoint) {
+          local != peer.localEndpoint &&
+          !_isOwnLocalEndpoint(local)) {
         await _storage.updateLocalEndpoint(peer.id, local);
         peer = peer.copyWith(localEndpoint: local);
       }
     } catch (_) {}
 
-    // 学习并持久化对端当前内网地址：换网 / 重连 WiFi 后对端 IP 常会变化，
-    // 存储里的旧 localEndpoint 会失效，导致本机主动直连一直超时。每次对端连入时
-    // 用其实际来源 IP 刷新 localEndpoint，使后续本机主动直连能命中正确地址。
+    // 学习并持久化对端当前内网地址：换网 / 重连 WiFi 后对端 IP 常会变化。
+    // 只刷新 host，保留已有 port/path——本机 Nexuspouch 等节点端口 ≠ 18792，
+    // 若强行写成 defaultPort 会把端点学成 App 自己的 PeerLocalServer。
     final learnedAddr = stream.remoteAddress;
     if (learnedAddr != null && learnedAddr.isNotEmpty) {
-      final learnedEndpoint =
-          'ws://$learnedAddr:${PeerLocalServer.defaultPort}/peer/ws';
-      if (learnedEndpoint != peer.localEndpoint) {
+      final localServer = PeerLocalServer.instance;
+      final learnedEndpoint = learnLocalEndpointFromRemoteAddress(
+        remoteAddress: learnedAddr,
+        existingLocalEndpoint: peer.localEndpoint,
+        defaultPort: PeerLocalServer.defaultPort,
+        ownHost: localServer.address,
+        ownPort: localServer.port,
+      );
+      if (learnedEndpoint != null) {
         await _storage.updateLocalEndpoint(peer.id, learnedEndpoint);
         peer = peer.copyWith(localEndpoint: learnedEndpoint);
         _log.debug(
@@ -828,18 +836,34 @@ class PeerConnectionManager {
     return result == 0;
   }
 
-  /// 从 localEndpoint URL 中提取 IP 地址
+  /// 从 localEndpoint URL 中提取局域网 IP（排除 loopback）。
   /// 例如 "ws://192.168.31.79:44315/peer/ws" → "192.168.31.79"
-  String? _extractLocalAddress(String? localEndpoint) {
+  /// loopback 不用于推导固定端口（127.0.0.1:18792 即本机监听）。
+  String? _extractLanAddress(String? localEndpoint) {
     if (localEndpoint == null) return null;
     try {
       final uri = Uri.parse(localEndpoint);
       final host = uri.host;
-      if (host.isEmpty || host == '127.0.0.1' || host == 'localhost') return null;
+      if (host.isEmpty ||
+          host == '127.0.0.1' ||
+          host == 'localhost' ||
+          host == '::1') {
+        return null;
+      }
       return host;
     } catch (_) {
       return null;
     }
+  }
+
+  /// 目标是否指向本进程 PeerLocalServer（同机 Nexuspouch 不同端口不算）。
+  bool _isOwnLocalEndpoint(String? endpoint) {
+    final server = PeerLocalServer.instance;
+    return isOwnLocalEndpoint(
+      endpoint,
+      ownHost: server.address,
+      ownPort: server.port,
+    );
   }
 
   /// 内网端点建连超时 — 不可达时快速失败以便回退到 Channel
@@ -942,15 +966,18 @@ class PeerConnectionManager {
 
       _wireConnection(conn, peer);
 
-      // 优先内网直连，失败回退 Channel
+      // 优先内网直连，失败回退 Channel。
+      // 跳过本机 PeerLocalServer 监听端点，避免同机自连触发 NoiseAeadFailure；
+      // 同 IP、不同端口（本机 Nexuspouch）仍可走 stored/mDNS endpoint。
       bool connected = false;
+      final storedLocal = peer.localEndpoint;
+      final lanAddr = _extractLanAddress(storedLocal);
+      String? fixedUrl;
+      if (lanAddr != null) {
+        fixedUrl = 'ws://$lanAddr:${PeerLocalServer.defaultPort}/peer/ws';
+      }
 
-      // 尝试内网直连：从存储的 localEndpoint 提取 IP，使用固定端口
-      // 内网不可达时用短超时（2s）快速失败，避免长时间阻塞 Channel 回退
-      final localAddr = _extractLocalAddress(peer.localEndpoint);
-      if (localAddr != null) {
-        // 先尝试固定端口
-        final fixedUrl = 'ws://$localAddr:${PeerLocalServer.defaultPort}/peer/ws';
+      if (fixedUrl != null && !_isOwnLocalEndpoint(fixedUrl)) {
         try {
           await conn.connectViaWebSocket(fixedUrl, timeout: _localConnectTimeout);
           connected = true;
@@ -961,7 +988,10 @@ class PeerConnectionManager {
             success: true,
             endpoint: fixedUrl,
           );
-          _log.debug('Connected to ${peer.deviceName} via local network (fixed port)', tag: _tag);
+          _log.debug(
+            'Connected to ${peer.deviceName} via local network (fixed port)',
+            tag: _tag,
+          );
         } catch (e) {
           PeerDeliveryTraceService.instance.recordTransportAttempt(
             peerId: peer.id,
@@ -971,33 +1001,54 @@ class PeerConnectionManager {
             error: e.toString(),
           );
           _log.debug('Fixed port connection failed: $e', tag: _tag);
-          // 回退到存储的完整 localEndpoint（可能有正确的随机端口）
-          if (!conn.isClosed &&
-              peer.localEndpoint != null &&
-              peer.localEndpoint != fixedUrl) {
-            try {
-              await conn.connectViaWebSocket(peer.localEndpoint!, timeout: _localConnectTimeout);
-              connected = true;
-              connectedTransport = 'local_stored';
-              PeerDeliveryTraceService.instance.recordTransportAttempt(
-                peerId: peer.id,
-                transport: 'local_stored',
-                success: true,
-                endpoint: peer.localEndpoint,
-              );
-              _log.debug('Connected to ${peer.deviceName} via local network (stored port)', tag: _tag);
-            } catch (e2) {
-              PeerDeliveryTraceService.instance.recordTransportAttempt(
-                peerId: peer.id,
-                transport: 'local_stored',
-                success: false,
-                endpoint: peer.localEndpoint,
-                error: e2.toString(),
-              );
-              _log.debug('Stored port connection also failed: $e2', tag: _tag);
-            }
-          }
         }
+      } else if (fixedUrl != null) {
+        _log.debug(
+          'Skip fixed port for ${peer.deviceName}: would hit own PeerLocalServer',
+          tag: _tag,
+        );
+      }
+
+      // 存储/mDNS 端点（含非默认端口、localhost → Nexuspouch）
+      if (!connected &&
+          !conn.isClosed &&
+          storedLocal != null &&
+          storedLocal != fixedUrl &&
+          !_isOwnLocalEndpoint(storedLocal)) {
+        try {
+          await conn.connectViaWebSocket(
+            storedLocal,
+            timeout: _localConnectTimeout,
+          );
+          connected = true;
+          connectedTransport = 'local_stored';
+          PeerDeliveryTraceService.instance.recordTransportAttempt(
+            peerId: peer.id,
+            transport: 'local_stored',
+            success: true,
+            endpoint: storedLocal,
+          );
+          _log.debug(
+            'Connected to ${peer.deviceName} via local network (stored port)',
+            tag: _tag,
+          );
+        } catch (e2) {
+          PeerDeliveryTraceService.instance.recordTransportAttempt(
+            peerId: peer.id,
+            transport: 'local_stored',
+            success: false,
+            endpoint: storedLocal,
+            error: e2.toString(),
+          );
+          _log.debug('Stored port connection also failed: $e2', tag: _tag);
+        }
+      } else if (!connected &&
+          storedLocal != null &&
+          _isOwnLocalEndpoint(storedLocal)) {
+        _log.debug(
+          'Skip stored local endpoint for ${peer.deviceName}: own PeerLocalServer',
+          tag: _tag,
+        );
       }
 
       if (!connected && !conn.isClosed && peer.channelEndpoint != null) {

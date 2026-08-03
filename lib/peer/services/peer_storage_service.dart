@@ -46,18 +46,16 @@ class PeerStorageService {
         trust_level TEXT NOT NULL DEFAULT 'owner'
       )
     ''');
-    // 老库迁移：为既有 paired_peers 表补充 pairing_role 列（重复执行会报错，忽略）。
-    try {
+    // 老库迁移：仅当列不存在时 ALTER，避免每次启动刷 sqflite 原生 duplicate column 日志。
+    final columns = await db.rawQuery('PRAGMA table_info(paired_peers)');
+    final columnNames = columns.map((r) => r['name'] as String).toSet();
+    if (!columnNames.contains('pairing_role')) {
       await db.execute('ALTER TABLE paired_peers ADD COLUMN pairing_role TEXT');
-    } catch (_) {
-      // 列已存在
     }
-    // 配对信任分级（docs/storage_space_plan.md §4）：owner | friend。
-    try {
+    if (!columnNames.contains('trust_level')) {
       await db.execute(
           "ALTER TABLE paired_peers ADD COLUMN trust_level TEXT NOT NULL DEFAULT 'owner'");
-    } catch (_) {}
-    await db.execute('''
+    }    await db.execute('''
       CREATE TABLE IF NOT EXISTS peer_messages (
         id TEXT PRIMARY KEY,
         peer_id TEXT NOT NULL,

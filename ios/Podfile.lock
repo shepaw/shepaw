@@ -154,6 +154,10 @@ PODS:
     - TensorFlowLiteSwift/Metal (= 2.12.0)
   - url_launcher_ios (0.0.1):
     - Flutter
+  - wakelock_plus (0.0.1):
+    - Flutter
+  - workmanager_apple (0.0.1):
+    - Flutter
 
 DEPENDENCIES:
   - audioplayers_darwin (from `.symlinks/plugins/audioplayers_darwin/darwin`)
@@ -178,6 +182,8 @@ DEPENDENCIES:
   - sqflite_darwin (from `.symlinks/plugins/sqflite_darwin/darwin`)
   - tflite_flutter (from `.symlinks/plugins/tflite_flutter/ios`)
   - url_launcher_ios (from `.symlinks/plugins/url_launcher_ios/ios`)
+  - wakelock_plus (from `.symlinks/plugins/wakelock_plus/ios`)
+  - workmanager_apple (from `.symlinks/plugins/workmanager_apple/ios`)
 
 SPEC REPOS:
   trunk:
@@ -245,6 +251,10 @@ EXTERNAL SOURCES:
     :path: ".symlinks/plugins/tflite_flutter/ios"
   url_launcher_ios:
     :path: ".symlinks/plugins/url_launcher_ios/ios"
+  wakelock_plus:
+    :path: ".symlinks/plugins/wakelock_plus/ios"
+  workmanager_apple:
+    :path: ".symlinks/plugins/workmanager_apple/ios"
 
 SPEC CHECKSUMS:
   audioplayers_darwin: f15e209a3e856d1a7edcf98dc029f484fead2242
@@ -287,7 +297,9 @@ SPEC CHECKSUMS:
   TensorFlowLiteSwift: 3a4928286e9e35bdd3e17970f48e53c80d25e793
   tflite_flutter: 9433d086a3060431bbc9f3c7c20d017db0e72d08
   url_launcher_ios: bb13df5870e8c4234ca12609d04010a21be43dfa
+  wakelock_plus: 76957ab028e12bfa4e66813c99e46637f367fc7e
+  workmanager_apple: 7bac258335c310689a641e2d66e88d4845d372e9
 
-PODFILE CHECKSUM: c08b13190aa0c502e382563f292ab5e5560cd8b1
+PODFILE CHECKSUM: b0f1000d1da10f8717223440984f7ba3fc8fd313
 
 COCOAPODS: 1.16.2
