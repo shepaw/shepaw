@@ -33,7 +33,6 @@ OverlayEntry showMessageContextMenu(
   required VoidCallback onDelete,
   VoidCallback? onViewTrace,
   VoidCallback? onDismiss,
-  GlobalKey<SelectionAreaState>? selectionAreaKey,
   void Function(Rect panelRect)? onPanelBoundsChanged,
 }) {
   final menuL10n = AppLocalizations.of(context);
@@ -50,12 +49,11 @@ OverlayEntry showMessageContextMenu(
   }
 
   void copyText() {
-    final region = selectionAreaKey?.currentState?.selectableRegion;
-    if (region != null) {
-      region.copySelection(SelectionChangedCause.toolbar);
-    } else {
-      Clipboard.setData(ClipboardData(text: message.content));
-    }
+    // Always write to the clipboard explicitly. SelectableRegion.copySelection
+    // no-ops when the selection is empty (common on mobile before Markdown
+    // selectables finish registering / selectAll races), which looked like a
+    // successful Copy with nothing pasted.
+    Clipboard.setData(ClipboardData(text: message.content));
     showTopToast(
       context,
       menuL10n.chat_copiedToClipboard,
@@ -150,9 +148,17 @@ class _MessageFloatingMenuOverlayState
     WidgetsBinding.instance.addPostFrameCallback((_) => _reportBounds());
   }
 
-  void _reportBounds() {
+  void _reportBounds({int retries = 3}) {
     final box = _panelKey.currentContext?.findRenderObject() as RenderBox?;
-    if (box == null || !box.hasSize) return;
+    if (box == null || !box.hasSize) {
+      if (retries > 0) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!mounted) return;
+          _reportBounds(retries: retries - 1);
+        });
+      }
+      return;
+    }
     widget.onPanelBoundsChanged?.call(
       box.localToGlobal(Offset.zero) & box.size,
     );

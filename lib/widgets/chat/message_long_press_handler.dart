@@ -139,7 +139,13 @@ class _MessageLongPressHandlerState extends State<MessageLongPressHandler> {
       return;
     }
 
-    final onMenu = _menuPanelRect?.contains(event.position) ?? false;
+    // Panel bounds are reported post-frame. If they are not ready yet, do not
+    // treat the tap as "outside" — otherwise the Copy button is dismissed on
+    // PointerDown before GestureDetector.onTap can run.
+    final panelRect = _menuPanelRect;
+    if (panelRect == null) return;
+
+    final onMenu = panelRect.inflate(12).contains(event.position);
     final onMessage =
         _anchorRect()?.inflate(28).contains(event.position) ?? false;
     if (!onMenu && !onMessage) {
@@ -196,8 +202,6 @@ class _MessageLongPressHandlerState extends State<MessageLongPressHandler> {
       onDelete: widget.onDelete,
       onViewTrace: widget.onViewTrace,
       onDismiss: _onMenuDismissed,
-      selectionAreaKey:
-          widget.hasSelectableText ? _selectionAreaKey : null,
       onPanelBoundsChanged: (panelRect) {
         _menuPanelRect = panelRect;
       },
