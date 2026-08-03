@@ -736,13 +736,15 @@ class MessageBubble extends StatelessWidget {
           extensionSet: md.ExtensionSet.gitHubWeb,
           onTapLink: (text, href, title) async {
             if (href == null) return;
-            final uri = Uri.tryParse(href);
-            if (uri == null) return;
-            // store:// (pouch files / artifacts): preview or system open via temp.
-            if (uri.scheme == 'store') {
+            // Markdown percent-encodes non-ASCII; openStoreUri/parseStoreUri
+            // decode path segments. Prefer prefix check — Uri.tryParse can
+            // still succeed with scheme=store.
+            if (href.startsWith('store://')) {
               await _openStoreLink(context, href);
               return;
             }
+            final uri = Uri.tryParse(href);
+            if (uri == null) return;
             if (!await launchUrl(uri, mode: LaunchMode.externalApplication)) {
               if (context.mounted) {
                 showTopToast(
@@ -886,12 +888,12 @@ class MessageBubble extends StatelessWidget {
             extensionSet: md.ExtensionSet.gitHubWeb,
             onTapLink: (text, href, title) async {
               if (href == null) return;
-              final uri = Uri.tryParse(href);
-              if (uri == null) return;
-              if (uri.scheme == 'store') {
+              if (href.startsWith('store://')) {
                 await _openStoreLink(context, href);
                 return;
               }
+              final uri = Uri.tryParse(href);
+              if (uri == null) return;
               if (!await launchUrl(uri, mode: LaunchMode.externalApplication)) {
                 if (context.mounted) {
                   showTopToast(

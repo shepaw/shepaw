@@ -271,7 +271,11 @@ class StoreUriRef {
   if (!isValidDeviceId(device)) {
     throw FormatException('bad_uri: invalid device id');
   }
-  var rel = segments.sublist(2).join('/');
+  // Markdown / Uri.tryParse 常把非 ASCII 路径编成 %XX；磁盘上是 UTF-8 文件名。
+  var rel = segments
+      .sublist(2)
+      .map(_decodeStoreUriSegment)
+      .join('/');
 
   // 点前缀段保留（.staging/.recycle/.versions/.nexuspouch 系统目录）。
   for (final seg in rel.split('/')) {
@@ -302,6 +306,15 @@ class StoreUriRef {
     }
   }
   return (space: space, device: device, path: rel, ref: ref);
+}
+
+/// Decode one path segment; leave alone if not valid percent-encoding.
+String _decodeStoreUriSegment(String segment) {
+  try {
+    return Uri.decodeComponent(segment);
+  } catch (_) {
+    return segment;
+  }
 }
 
 StoreUriRef? _parseRefToken(String s) {

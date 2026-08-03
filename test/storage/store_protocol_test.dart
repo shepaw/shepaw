@@ -199,6 +199,18 @@ void main() {
           'contact@home.txt');
     });
 
+    test('parseStoreUri 解码 Markdown 百分号编码的中文路径', () {
+      const encoded =
+          'store://artifacts/352821253aefdfba/general/%E6%95%B0%E7%8B%AC%E5%B0%8F%E6%B8%B8%E6%88%8F%E8%AE%BE%E8%AE%A1%E6%96%87%E6%A1%A3.md';
+      const raw =
+          'store://artifacts/352821253aefdfba/general/数独小游戏设计文档.md';
+      final fromEncoded = parseStoreUri(encoded);
+      final fromRaw = parseStoreUri(raw);
+      expect(fromEncoded.path, 'general/数独小游戏设计文档.md');
+      expect(fromRaw.path, 'general/数独小游戏设计文档.md');
+      expect(fromEncoded.device, '352821253aefdfba');
+    });
+
     test('version_cases fixture（共享契约，parse 层）', () {
       final file = File('docs/storage_fixtures/version_cases.json');
       final json = jsonDecode(file.readAsStringSync()) as Map<String, dynamic>;

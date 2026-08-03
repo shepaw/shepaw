@@ -34,11 +34,27 @@ class ArtifactUri {
     if (segments.length < 3) return null;
     if (segments[0] != 'artifacts') return null;
     if (!isValidDeviceId(segments[1])) return null;
-    final filename = segments.sublist(3).join('/');
+    final filename = segments
+        .sublist(3)
+        .map((s) {
+          try {
+            return Uri.decodeComponent(s);
+          } catch (_) {
+            return s;
+          }
+        })
+        .join('/');
     if (filename.isEmpty || filename.contains('..')) return null;
+    final taskId = () {
+      try {
+        return Uri.decodeComponent(segments[2]);
+      } catch (_) {
+        return segments[2];
+      }
+    }();
     return ArtifactUri(
       deviceId: segments[1],
-      taskId: segments[2],
+      taskId: taskId,
       filename: filename,
     );
   }
