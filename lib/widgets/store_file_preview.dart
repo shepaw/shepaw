@@ -8,8 +8,13 @@ import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 
 import '../models/attachment_data.dart';
+import '../utils/layout_utils.dart';
 
-/// Simple in-app preview sheets for store:// files (image / text).
+/// In-app preview for store:// files (image / text).
+///
+/// - Desktop (left list + chat pane): pushed on the chat [Navigator], fills
+///   the entire chat area without covering the left panel.
+/// - Mobile: full-screen page.
 class StoreFilePreview {
   StoreFilePreview._();
 
@@ -18,11 +23,9 @@ class StoreFilePreview {
     required String fileName,
     required Uint8List bytes,
   }) {
-    return showModalBottomSheet<void>(
-      context: context,
-      isScrollControlled: true,
-      useSafeArea: true,
-      builder: (ctx) => _PreviewScaffold(
+    return _push(
+      context,
+      StoreFilePreviewPage(
         fileName: fileName,
         bytes: bytes,
         body: InteractiveViewer(
@@ -38,11 +41,9 @@ class StoreFilePreview {
     required String fileName,
     required File file,
   }) {
-    return showModalBottomSheet<void>(
-      context: context,
-      isScrollControlled: true,
-      useSafeArea: true,
-      builder: (ctx) => _PreviewScaffold(
+    return _push(
+      context,
+      StoreFilePreviewPage(
         fileName: fileName,
         sourceFile: file,
         body: InteractiveViewer(
@@ -61,37 +62,49 @@ class StoreFilePreview {
     bool asMarkdown = false,
   }) {
     assert(bytes != null || sourceFile != null);
-    return showModalBottomSheet<void>(
-      context: context,
-      isScrollControlled: true,
-      useSafeArea: true,
-      builder: (ctx) {
-        final body = asMarkdown
-            ? Markdown(data: text, selectable: true)
-            : SingleChildScrollView(
-                padding: const EdgeInsets.all(16),
-                child: SelectableText(
-                  text,
-                  style: const TextStyle(
-                    fontFamily: 'monospace',
-                    fontSize: 13,
-                    height: 1.35,
-                  ),
-                ),
-              );
-        return _PreviewScaffold(
-          fileName: fileName,
-          bytes: bytes,
-          sourceFile: sourceFile,
-          body: body,
-        );
-      },
+    final body = asMarkdown
+        ? Markdown(
+            data: text,
+            selectable: true,
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
+          )
+        : SingleChildScrollView(
+            padding: const EdgeInsets.all(16),
+            child: SelectableText(
+              text,
+              style: const TextStyle(
+                fontFamily: 'monospace',
+                fontSize: 13,
+                height: 1.35,
+              ),
+            ),
+          );
+    return _push(
+      context,
+      StoreFilePreviewPage(
+        fileName: fileName,
+        bytes: bytes,
+        sourceFile: sourceFile,
+        body: body,
+      ),
+    );
+  }
+
+  /// Nearest navigator: desktop chat pane / mobile full screen.
+  static Future<void> _push(BuildContext context, Widget page) {
+    return Navigator.of(context).push<void>(
+      MaterialPageRoute<void>(
+        builder: (_) => page,
+        fullscreenDialog: !LayoutUtils.isDesktopLayout(context),
+      ),
     );
   }
 }
 
-class _PreviewScaffold extends StatelessWidget {
-  const _PreviewScaffold({
+/// Full-area preview page (chat pane on desktop, screen on mobile).
+class StoreFilePreviewPage extends StatelessWidget {
+  const StoreFilePreviewPage({
+    super.key,
     required this.fileName,
     required this.body,
     this.bytes,
@@ -123,40 +136,24 @@ class _PreviewScaffold extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final height = MediaQuery.sizeOf(context).height * 0.85;
-    return SizedBox(
-      height: height,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(8, 8, 8, 0),
-            child: Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    fileName,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: Theme.of(context).textTheme.titleMedium,
-                  ),
-                ),
-                IconButton(
-                  tooltip: 'Open with system app',
-                  icon: const Icon(Icons.open_in_new),
-                  onPressed: _openExternally,
-                ),
-                IconButton(
-                  icon: const Icon(Icons.close),
-                  onPressed: () => Navigator.of(context).pop(),
-                ),
-              ],
-            ),
+    final desktop = LayoutUtils.isDesktopLayout(context);
+    return Scaffold(
+      appBar: AppBar(
+        title: Text(fileName, maxLines: 1, overflow: TextOverflow.ellipsis),
+        leading: IconButton(
+          tooltip: desktop ? '关闭' : '返回',
+          icon: Icon(desktop ? Icons.close : Icons.arrow_back),
+          onPressed: () => Navigator.of(context).maybePop(),
+        ),
+        actions: [
+          IconButton(
+            tooltip: '用系统应用打开',
+            icon: const Icon(Icons.open_in_new),
+            onPressed: _openExternally,
           ),
-          const Divider(height: 1),
-          Expanded(child: body),
         ],
       ),
+      body: SafeArea(child: body),
     );
   }
 }
