@@ -86,6 +86,244 @@ class RemoteReadService {
         Duration(milliseconds: ms > 2000 ? 2000 : ms));
   }
 
+  /// 仅查远端/缓存 meta 的 size（不拉内容）。
+  Future<int> probeSize({
+    required String serverDeviceId,
+    required String deviceId,
+    required String space,
+    required String path,
+    String? grantId,
+  }) async {
+    await _localCas();
+    final cacheFile = File(p.join(_cacheRoot!.path, deviceId, space, path));
+    final metaFile = File('${cacheFile.path}.meta.json');
+
+    final metaRes = await _callServer(
+        serverDeviceId,
+        StoreFrame(op: StoreOp.meta, payload: {
+          'space': space,
+          'device': deviceId,
+          'path': path,
+          if (grantId != null) 'grant': grantId,
+        }));
+    final offline = metaRes == null ||
+        metaRes['_error'] == StoreError.masterOffline ||
+        metaRes['_error'] == StoreError.notPaired;
+    if (offline) {
+      if (await metaFile.exists()) {
+        final cachedMeta = jsonDecode(await metaFile.readAsString());
+        final size = cachedMeta['size'] as int?;
+        if (size != null) return size;
+      }
+      if (await cacheFile.exists()) return cacheFile.length();
+      throw StateError('master_offline');
+    }
+    if (metaRes.containsKey('_error')) {
+      final code = metaRes['_error'] as String;
+      if (code == StoreError.notFound) {
+        throw StoreException(StoreError.notFound, path);
+      }
+      throw StateError('meta failed: $code');
+    }
+    return metaRes['size'] as int;
+  }
+
+  /// 流式物化到 [dest]（缓存命中则 copy；否则分块下载，不整包进堆）。
+  ///
+  /// [maxBytes] 超过则抛 [StoreException]（`bad_op`）。
+  Future<void> materializeToFile({
+    required String serverDeviceId,
+    required String deviceId,
+    required String space,
+    required String path,
+    required File dest,
+    String? grantId,
+    int? maxBytes,
+    void Function(int done, int total)? onProgress,
+    bool allowOwnerFallback = true,
+  }) async {
+    try {
+      await _materializeToFileOnce(
+        serverDeviceId: serverDeviceId,
+        deviceId: deviceId,
+        space: space,
+        path: path,
+        dest: dest,
+        grantId: grantId,
+        maxBytes: maxBytes,
+        onProgress: onProgress,
+      );
+      unawaited(_ackHandoff(
+        serverDeviceId: serverDeviceId,
+        deviceId: deviceId,
+        space: space,
+        path: path,
+      ));
+    } catch (e) {
+      if (!allowOwnerFallback ||
+          !_isFallbackCandidate(e) ||
+          deviceId == serverDeviceId) {
+        rethrow;
+      }
+      _log.info(
+          'owner fallback materialize → $deviceId after $e ($space/$path)',
+          tag: _tag);
+      await _materializeToFileOnce(
+        serverDeviceId: deviceId,
+        deviceId: deviceId,
+        space: space,
+        path: path,
+        dest: dest,
+        grantId: grantId,
+        maxBytes: maxBytes,
+        onProgress: onProgress,
+      );
+    }
+  }
+
+  Future<void> _materializeToFileOnce({
+    required String serverDeviceId,
+    required String deviceId,
+    required String space,
+    required String path,
+    required File dest,
+    String? grantId,
+    int? maxBytes,
+    void Function(int done, int total)? onProgress,
+  }) async {
+    final cas = await _localCas();
+    final cacheFile = File(p.join(_cacheRoot!.path, deviceId, space, path));
+    final metaFile = File('${cacheFile.path}.meta.json');
+
+    final metaRes = await _callServer(
+        serverDeviceId,
+        StoreFrame(op: StoreOp.meta, payload: {
+          'space': space,
+          'device': deviceId,
+          'path': path,
+          if (grantId != null) 'grant': grantId,
+        }));
+    final offline = metaRes == null ||
+        metaRes['_error'] == StoreError.masterOffline ||
+        metaRes['_error'] == StoreError.notPaired;
+
+    if (offline) {
+      if (await cacheFile.exists()) {
+        final size = await cacheFile.length();
+        if (maxBytes != null && size > maxBytes) {
+          throw StoreException(
+              StoreError.badOp, 'file too large: $size > $maxBytes');
+        }
+        await dest.parent.create(recursive: true);
+        await cacheFile.copy(dest.path);
+        onProgress?.call(size, size);
+        return;
+      }
+      throw StateError('master_offline');
+    }
+    if (metaRes.containsKey('_error')) {
+      final code = metaRes['_error'] as String;
+      if (code == StoreError.notFound) {
+        throw StoreException(StoreError.notFound, path);
+      }
+      throw StateError('meta failed: $code');
+    }
+
+    final remoteHash = metaRes['sha256'] as String;
+    final remoteSize = metaRes['size'] as int;
+    if (maxBytes != null && remoteSize > maxBytes) {
+      throw StoreException(
+          StoreError.badOp, 'file too large: $remoteSize > $maxBytes');
+    }
+
+    Future<void> copyKnown(File source) async {
+      await dest.parent.create(recursive: true);
+      await source.copy(dest.path);
+      onProgress?.call(remoteSize, remoteSize);
+    }
+
+    if (await cacheFile.exists() && await metaFile.exists()) {
+      final cachedMeta = jsonDecode(await metaFile.readAsString());
+      if (cachedMeta['sha256'] == remoteHash) {
+        await cas.touch(remoteHash);
+        await copyKnown(cacheFile);
+        return;
+      }
+    }
+
+    final blob = await cas.get(remoteHash);
+    if (blob != null) {
+      await copyKnown(blob);
+      await _writeCacheFromFile(cacheFile, metaFile, remoteHash, remoteSize);
+      return;
+    }
+
+    await dest.parent.create(recursive: true);
+    final tmp = File('${dest.path}.partial');
+    if (await tmp.exists()) await tmp.delete();
+    final sink = tmp.openWrite();
+    var offset = 0;
+    try {
+      while (true) {
+        final res = await _callServer(
+            serverDeviceId,
+            StoreFrame(op: StoreOp.read, payload: {
+              'space': space,
+              'device': deviceId,
+              'path': path,
+              'offset': offset,
+              'length': LocalStore.maxReadChunk,
+              if (grantId != null) 'grant': grantId,
+            }));
+        if (res == null || res.containsKey('_error')) {
+          throw StateError('read failed: ${res?['_error']}');
+        }
+        final chunk = base64Decode(res['data'] as String);
+        if (chunk.isNotEmpty) sink.add(chunk);
+        offset += chunk.length;
+        onProgress?.call(offset, remoteSize);
+        if (res['eof'] == true || chunk.isEmpty) break;
+      }
+    } catch (e) {
+      await sink.close();
+      if (await tmp.exists()) await tmp.delete();
+      rethrow;
+    }
+    await sink.close();
+    if (offset != remoteSize) {
+      await tmp.delete();
+      throw StateError('size mismatch: $offset != $remoteSize');
+    }
+    final actualHash =
+        (await crypto.sha256.bind(tmp.openRead()).first).toString();
+    if (actualHash != remoteHash) {
+      await tmp.delete();
+      throw StateError('hash mismatch after download');
+    }
+    if (await dest.exists()) await dest.delete();
+    await tmp.rename(dest.path);
+
+    await cas.putFromFile(dest, remoteHash, synced: true, size: remoteSize);
+    await _writeCacheFromFile(cacheFile, metaFile, remoteHash, remoteSize);
+    await cas.evict();
+  }
+
+  Future<void> _writeCacheFromFile(
+    File cacheFile,
+    File metaFile,
+    String hash,
+    int size,
+  ) async {
+    final cas = await _localCas();
+    await cas.materialize(hash, cacheFile.path);
+    await metaFile.parent.create(recursive: true);
+    await metaFile.writeAsString(jsonEncode({
+      'sha256': hash,
+      'size': size,
+      'fetched_at': DateTime.now().millisecondsSinceEpoch,
+    }));
+  }
+
   static bool _isFallbackCandidate(Object error) {
     if (error is StoreException && error.code == StoreError.notFound) {
       return true;

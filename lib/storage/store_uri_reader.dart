@@ -1,5 +1,7 @@
+import 'dart:io';
 import 'dart:typed_data';
 
+import '../models/store_attachment_ref.dart';
 import 'device_identity.dart';
 import 'local_store.dart';
 import 'remote_read_service.dart';
@@ -47,6 +49,104 @@ class StoreUriReader {
     return result.bytes;
   }
 
+  /// 仅查文件大小（本机 `stat` / 远端 meta，不拉内容）。
+  Future<int> sizeOf(String uriString) async {
+    final parsed = _parseLatest(uriString);
+    final self = await DeviceIdentity.deviceId();
+    _assertReadable(parsed.space, parsed.device, self);
+
+    if (parsed.device == self) {
+      final local = await StoreAttachmentRef.fileFromStoreUri(uriString);
+      if (local != null) return local.length();
+      final store = await StoreService.instance.localStore();
+      final meta = await store.meta(parsed.device, parsed.space, parsed.path);
+      final size = meta['size'] as int?;
+      if (size == null) {
+        throw StateError('not a file: $uriString');
+      }
+      return size;
+    }
+
+    final masterId = await StoreService.instance.masterDeviceId();
+    return RemoteReadService.instance.probeSize(
+      serverDeviceId: masterId,
+      deviceId: parsed.device,
+      space: parsed.space,
+      path: parsed.path,
+    );
+  }
+
+  /// 流式/拷贝物化到 [dest]，避免整文件 [Uint8List]。
+  Future<void> copyTo(
+    String uriString,
+    File dest, {
+    int? maxBytes,
+    void Function(int done, int total)? onProgress,
+  }) async {
+    final parsed = _parseLatest(uriString);
+    final self = await DeviceIdentity.deviceId();
+    _assertReadable(parsed.space, parsed.device, self);
+
+    final local = await StoreAttachmentRef.fileFromStoreUri(uriString);
+    if (local != null) {
+      final size = await local.length();
+      if (maxBytes != null && size > maxBytes) {
+        throw StoreException(
+            StoreError.badOp, 'file too large: $size > $maxBytes');
+      }
+      await dest.parent.create(recursive: true);
+      if (onProgress == null || size < 4 * 1024 * 1024) {
+        await local.copy(dest.path);
+        onProgress?.call(size, size);
+        return;
+      }
+      await _copyFileWithProgress(local, dest, size, onProgress);
+      return;
+    }
+
+    if (parsed.device == self) {
+      final store = await StoreService.instance.localStore();
+      final meta = await store.meta(parsed.device, parsed.space, parsed.path);
+      final size = meta['size'] as int? ?? 0;
+      if (maxBytes != null && size > maxBytes) {
+        throw StoreException(
+            StoreError.badOp, 'file too large: $size > $maxBytes');
+      }
+      await dest.parent.create(recursive: true);
+      final sink = dest.openWrite();
+      var offset = 0;
+      try {
+        while (true) {
+          final (chunk, _, eof) = await store.read(
+            parsed.device,
+            parsed.space,
+            parsed.path,
+            offset,
+            LocalStore.maxReadChunk,
+          );
+          if (chunk.isNotEmpty) sink.add(chunk);
+          offset += chunk.length;
+          onProgress?.call(offset, size > 0 ? size : offset);
+          if (eof || chunk.isEmpty) break;
+        }
+      } finally {
+        await sink.close();
+      }
+      return;
+    }
+
+    final masterId = await StoreService.instance.masterDeviceId();
+    await RemoteReadService.instance.materializeToFile(
+      serverDeviceId: masterId,
+      deviceId: parsed.device,
+      space: parsed.space,
+      path: parsed.path,
+      dest: dest,
+      maxBytes: maxBytes,
+      onProgress: onProgress,
+    );
+  }
+
   Future<Uint8List> _readLocal(
       String deviceId, String space, String path) async {
     final store = await StoreService.instance.localStore();
@@ -65,5 +165,43 @@ class StoreUriReader {
       if (eof || chunk.isEmpty) break;
     }
     return builder.takeBytes();
+  }
+
+  static ({String space, String device, String path, StoreUriRef ref})
+      _parseLatest(String uriString) {
+    final parsed = parseStoreUri(uriString);
+    if (!parsed.ref.isLatest) {
+      throw ArgumentError(
+          'versioned store URI not supported yet: $uriString');
+    }
+    return parsed;
+  }
+
+  static void _assertReadable(String space, String device, String self) {
+    final isOwn = device == self;
+    final isShared = StoreSpace.sharedReadable.contains(space);
+    if (!isOwn && !isShared) {
+      throw ArgumentError(
+          'acl_denied: space "$space" is only readable for own device');
+    }
+  }
+
+  static Future<void> _copyFileWithProgress(
+    File source,
+    File dest,
+    int total,
+    void Function(int done, int total) onProgress,
+  ) async {
+    final sink = dest.openWrite();
+    var done = 0;
+    try {
+      await for (final chunk in source.openRead()) {
+        sink.add(chunk);
+        done += chunk.length;
+        onProgress(done, total);
+      }
+    } finally {
+      await sink.close();
+    }
   }
 }

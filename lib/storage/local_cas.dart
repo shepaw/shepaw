@@ -51,6 +51,34 @@ class LocalCas {
     return blob;
   }
 
+  /// 写入已有文件（按 [hash] 去重，不把整文件读进内存）。
+  Future<File> putFromFile(
+    File source,
+    String hash, {
+    bool synced = false,
+    int? size,
+  }) async {
+    if (!RegExp(r'^[0-9a-f]{64}$').hasMatch(hash)) {
+      throw ArgumentError('invalid content sha256');
+    }
+    await _blobsDir.create(recursive: true);
+    final blob = File(p.join(_blobsDir.path, hash));
+    final index = await _loadIndex();
+    if (!await blob.exists()) {
+      final tmp = File('${blob.path}.tmp');
+      await source.copy(tmp.path);
+      await tmp.rename(blob.path);
+    }
+    final resolvedSize = size ?? await source.length();
+    index[hash] = {
+      'size': resolvedSize,
+      'synced': synced || (index[hash]?['synced'] == true),
+      'last_used': DateTime.now().millisecondsSinceEpoch,
+    };
+    await _saveIndex();
+    return blob;
+  }
+
   /// 已存在的 blob。
   Future<File?> get(String sha256) async {
     if (!RegExp(r'^[0-9a-f]{64}$').hasMatch(sha256)) return null;

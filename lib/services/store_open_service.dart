@@ -7,26 +7,21 @@ import 'package:open_file/open_file.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 
+import '../l10n/app_localizations.dart';
 import '../models/attachment_data.dart';
 import '../models/store_attachment_ref.dart';
-import '../storage/device_identity.dart';
 import '../storage/local_store.dart';
 import '../storage/store_protocol.dart';
-import '../storage/store_service.dart';
 import '../storage/store_uri_reader.dart';
 import '../widgets/store_file_preview.dart';
 import 'logger_service.dart';
 
 /// Opens / previews `store://` files for chat UI.
 ///
-/// Prefer cheap local paths:
-/// - image/text under size caps → in-app preview ([Image.file] / text; no temp)
-/// - other / oversized → [File.copy] to temp when local, else chunked write;
-///   then [OpenFile.open]
-///
-/// Remote URIs still pay for a verified read (cache layer); materialize then
-/// prefers copying the on-disk cache when available rather than rewriting
-/// from an in-memory buffer twice when we only have bytes.
+/// Size tiers:
+/// - within preview caps → in-app image/text preview
+/// - above [_confirmMaterializeBytes] → confirm, then materialize with progress
+/// - above [_hardLimitBytes] → refuse (no auto copy / download)
 class StoreOpenService {
   StoreOpenService._();
   static final instance = StoreOpenService._();
@@ -34,6 +29,10 @@ class StoreOpenService {
   static const _tag = 'StoreOpen';
   static const _maxTextPreviewBytes = 2 * 1024 * 1024;
   static const _maxImagePreviewBytes = 20 * 1024 * 1024;
+  /// Ask before copying / downloading into temp.
+  static const confirmMaterializeBytes = 32 * 1024 * 1024;
+  /// Refuse automatic open (user should use storage UI / share).
+  static const hardLimitBytes = 512 * 1024 * 1024;
 
   final _log = LoggerService();
 
@@ -43,24 +42,53 @@ class StoreOpenService {
       final parsed = parseStoreUri(uriString);
       final name = p.basename(parsed.path);
       final kind = _previewKind(name);
-      final local = await StoreAttachmentRef.fileFromStoreUri(uriString);
+      final size = await StoreUriReader.instance.sizeOf(uriString);
 
-      if (local != null) {
-        if (!context.mounted) return;
-        await _presentLocal(context, fileName: name, file: local, kind: kind);
-        return;
-      }
-
-      // Remote / not a plain local file: preview still needs bytes; materialize
-      // streams through the store read API when possible.
-      if (kind == _PreviewKind.other) {
-        await materializeUriAndOpen(uriString, name);
-        return;
-      }
-
-      final bytes = await StoreUriReader.instance.read(uriString);
       if (!context.mounted) return;
-      await _presentBytes(context, fileName: name, bytes: bytes, kind: kind);
+
+      if (size > hardLimitBytes) {
+        await _showTooLarge(context, name, size);
+        return;
+      }
+
+      final canPreview = (kind == _PreviewKind.image &&
+              size <= _maxImagePreviewBytes) ||
+          (kind == _PreviewKind.text && size <= _maxTextPreviewBytes);
+
+      if (canPreview) {
+        final local = await StoreAttachmentRef.fileFromStoreUri(uriString);
+        if (!context.mounted) return;
+        if (local != null) {
+          await _presentLocal(context, fileName: name, file: local, kind: kind);
+          return;
+        }
+        final bytes = await StoreUriReader.instance.read(uriString);
+        if (!context.mounted) return;
+        await _presentBytes(context, fileName: name, bytes: bytes, kind: kind);
+        return;
+      }
+
+      // Materialize path (system open).
+      if (size >= confirmMaterializeBytes) {
+        final ok = await _confirmLargeOpen(context, name, size);
+        if (!ok || !context.mounted) return;
+      }
+
+      await materializeUriAndOpen(
+        context,
+        uriString,
+        name,
+        size: size,
+        showProgress: size >= confirmMaterializeBytes,
+      );
+    } on StoreException catch (e) {
+      _log.warning('openStoreUri failed: $e', tag: _tag, error: e);
+      if (context.mounted) {
+        final msg = e.code == StoreError.badOp && e.message.contains('too large')
+            ? 'File too large to open here'
+            : 'Cannot open: $uriString';
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
+      }
     } catch (e) {
       _log.warning('openStoreUri failed: $e', tag: _tag, error: e);
       if (context.mounted) {
@@ -110,7 +138,8 @@ class StoreOpenService {
       try {
         text = await file.readAsString();
       } catch (_) {
-        await copyAndOpen(file, fileName);
+        if (!context.mounted) return;
+        await copyAndOpen(context, file, fileName, size: size);
         return;
       }
       if (!context.mounted) return;
@@ -124,7 +153,8 @@ class StoreOpenService {
       );
       return;
     }
-    await copyAndOpen(file, fileName);
+    if (!context.mounted) return;
+    await copyAndOpen(context, file, fileName, size: size);
   }
 
   Future<void> _presentBytes(
@@ -163,10 +193,31 @@ class StoreOpenService {
     await writeBytesAndOpen(fileName, bytes);
   }
 
-  /// OS-level copy of a local store file into temp, then system open.
-  Future<OpenResult> copyAndOpen(File source, String fileName) async {
+  Future<OpenResult> copyAndOpen(
+    BuildContext context,
+    File source,
+    String fileName, {
+    int? size,
+  }) async {
+    final n = size ?? await source.length();
+    if (n > hardLimitBytes) {
+      if (context.mounted) await _showTooLarge(context, fileName, n);
+      return OpenResult(type: ResultType.error, message: 'too large');
+    }
+    if (n >= confirmMaterializeBytes && context.mounted) {
+      final ok = await _confirmLargeOpen(context, fileName, n);
+      if (!ok) {
+        return OpenResult(type: ResultType.error, message: 'cancelled');
+      }
+    }
     final dest = await _tempTarget(fileName);
-    await source.copy(dest.path);
+    if (n >= confirmMaterializeBytes && context.mounted) {
+      await _runWithProgress(context, fileName, n, (onProgress) async {
+        await _copyFileWithProgress(source, dest, n, onProgress);
+      });
+    } else {
+      await source.copy(dest.path);
+    }
     return _openPath(dest.path);
   }
 
@@ -180,56 +231,32 @@ class StoreOpenService {
     return _openPath(dest.path);
   }
 
-  /// Materialize a URI to temp without holding the whole file in a Dart
-  /// [Uint8List] when a local path or chunked local store read is available.
+  /// Materialize a URI to temp (chunked / File.copy), then system open.
   Future<OpenResult> materializeUriAndOpen(
+    BuildContext context,
     String uriString,
-    String fileName,
-  ) async {
-    final local = await StoreAttachmentRef.fileFromStoreUri(uriString);
-    if (local != null) {
-      return copyAndOpen(local, fileName);
-    }
-
+    String fileName, {
+    required int size,
+    bool showProgress = false,
+  }) async {
     final dest = await _tempTarget(fileName);
-    final parsed = parseStoreUri(uriString);
-    final self = await DeviceIdentity.deviceId();
-    if (parsed.device == self) {
-      await _streamLocalStoreTo(dest, parsed.device, parsed.space, parsed.path);
-      return _openPath(dest.path);
-    }
-
-    // Remote verified read already buffers; reuse those bytes once.
-    final bytes = await StoreUriReader.instance.read(uriString);
-    await dest.writeAsBytes(bytes, flush: true);
-    return _openPath(dest.path);
-  }
-
-  Future<void> _streamLocalStoreTo(
-    File dest,
-    String deviceId,
-    String space,
-    String path,
-  ) async {
-    final store = await StoreService.instance.localStore();
-    final sink = dest.openWrite();
-    try {
-      var offset = 0;
-      while (true) {
-        final (chunk, _, eof) = await store.read(
-          deviceId,
-          space,
-          path,
-          offset,
-          LocalStore.maxReadChunk,
+    if (showProgress && context.mounted) {
+      await _runWithProgress(context, fileName, size, (onProgress) async {
+        await StoreUriReader.instance.copyTo(
+          uriString,
+          dest,
+          maxBytes: hardLimitBytes,
+          onProgress: onProgress,
         );
-        if (chunk.isNotEmpty) sink.add(chunk);
-        offset += chunk.length;
-        if (eof || chunk.isEmpty) break;
-      }
-    } finally {
-      await sink.close();
+      });
+    } else {
+      await StoreUriReader.instance.copyTo(
+        uriString,
+        dest,
+        maxBytes: hardLimitBytes,
+      );
     }
+    return _openPath(dest.path);
   }
 
   Future<File> _tempTarget(String fileName) async {
@@ -247,6 +274,135 @@ class StoreOpenService {
       );
     }
     return result;
+  }
+
+  Future<bool> _confirmLargeOpen(
+    BuildContext context,
+    String fileName,
+    int size,
+  ) async {
+    final l10n = AppLocalizations.of(context);
+    final result = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(l10n.common_confirm),
+        content: Text(
+          '「$fileName」约 ${formatBytes(size)}。\n'
+          '打开前会先复制到临时目录，可能占用时间和存储空间。是否继续？',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: Text(l10n.common_cancel),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: Text(l10n.common_confirm),
+          ),
+        ],
+      ),
+    );
+    return result == true;
+  }
+
+  Future<void> _showTooLarge(
+    BuildContext context,
+    String fileName,
+    int size,
+  ) async {
+    final l10n = AppLocalizations.of(context);
+    await showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(fileName),
+        content: Text(
+          '该文件约 ${formatBytes(size)}，超过可在聊天中打开的上限 '
+          '（${formatBytes(hardLimitBytes)}）。\n'
+          '请到储物袋中查看或导出。',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: Text(l10n.common_confirm),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _runWithProgress(
+    BuildContext context,
+    String fileName,
+    int total,
+    Future<void> Function(void Function(int done, int total) onProgress) work,
+  ) async {
+    final progress = ValueNotifier<(int, int)>((0, total));
+    showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => PopScope(
+        canPop: false,
+        child: AlertDialog(
+          title: Text(fileName),
+          content: ValueListenableBuilder<(int, int)>(
+            valueListenable: progress,
+            builder: (_, value, __) {
+              final done = value.$1;
+              final tot = value.$2 <= 0 ? 1 : value.$2;
+              return Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  LinearProgressIndicator(value: (done / tot).clamp(0.0, 1.0)),
+                  const SizedBox(height: 12),
+                  Text('${formatBytes(done)} / ${formatBytes(tot)}'),
+                ],
+              );
+            },
+          ),
+        ),
+      ),
+    );
+    try {
+      await work((done, tot) {
+        progress.value = (done, tot);
+      });
+    } finally {
+      progress.dispose();
+      if (context.mounted) {
+        Navigator.of(context, rootNavigator: true).pop();
+      }
+    }
+  }
+
+  static Future<void> _copyFileWithProgress(
+    File source,
+    File dest,
+    int total,
+    void Function(int done, int total) onProgress,
+  ) async {
+    final sink = dest.openWrite();
+    var done = 0;
+    try {
+      await for (final chunk in source.openRead()) {
+        sink.add(chunk);
+        done += chunk.length;
+        onProgress(done, total);
+      }
+    } finally {
+      await sink.close();
+    }
+  }
+
+  static String formatBytes(int bytes) {
+    if (bytes < 1024) return '$bytes B';
+    if (bytes < 1024 * 1024) {
+      return '${(bytes / 1024).toStringAsFixed(1)} KB';
+    }
+    if (bytes < 1024 * 1024 * 1024) {
+      return '${(bytes / (1024 * 1024)).toStringAsFixed(1)} MB';
+    }
+    return '${(bytes / (1024 * 1024 * 1024)).toStringAsFixed(2)} GB';
   }
 
   static _PreviewKind _previewKind(String fileName) {
