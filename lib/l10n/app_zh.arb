@@ -878,6 +878,19 @@
   "chat_photoLibrary": "相册",
   "chat_camera": "相机",
   "chat_file": "文件",
+  "chat_storageBag": "储物袋",
+  "chat_storageFilePickerTitle": "选择储物袋文件",
+  "chat_storageFilePickerHint": "从本机储物袋空间选择文件作为聊天附件。",
+  "chat_storageFilePickerConfirm": "添加",
+  "chat_storageFilePickerEmpty": "当前空间暂无文件",
+  "chat_storageFilePickerSelected": "已选 {count}",
+  "@chat_storageFilePickerSelected": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
   "chat_sendImageError": "发送图片失败: {error}",
   "@chat_sendImageError": {
     "placeholders": {

@@ -3,6 +3,7 @@ import 'dart:io';
 import '../models/attachment_data.dart';
 import '../models/message.dart';
 import '../models/pending_attachment.dart';
+import '../models/store_attachment_ref.dart';
 import '../services/attachment_service.dart';
 
 /// Result of persisting UI-pending attachments into the channel DB.
@@ -46,6 +47,15 @@ class PendingAttachmentQueue {
       file,
       isFromClipboard: isFromClipboard,
     );
+    items.add(attachment);
+    return true;
+  }
+
+  /// Stage a store reference (no file copy). Returns false when full or missing.
+  Future<bool> addFromStoreRef(StoreAttachmentRef ref) async {
+    if (isFull) return false;
+    final attachment = await PendingAttachment.fromStoreRef(ref);
+    if (attachment == null) return false;
     items.add(attachment);
     return true;
   }
@@ -96,6 +106,8 @@ class ChatAttachmentCoordinator {
     for (final att in pending) {
       final message = await _attachmentService.saveAttachment(
         file: att.file,
+        storeUri: att.storeRef?.storeUri,
+        displayName: att.storeRef?.displayName ?? att.fileName,
         channelId: channelId,
         userId: userId,
         userName: userName,

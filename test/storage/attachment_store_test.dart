@@ -7,7 +7,10 @@ import 'package:path/path.dart' as p;
 import 'package:shepaw/services/attachment_service.dart';
 import 'package:shepaw/services/local_database_service.dart';
 import 'package:shepaw/services/local_file_storage_service.dart';
+import 'package:shepaw/models/store_attachment_ref.dart';
 import 'package:shepaw/storage/device_identity.dart';
+import 'package:shepaw/storage/local_store.dart';
+import 'package:shepaw/storage/store_protocol.dart';
 import 'package:shepaw/storage/snapshot_service.dart';
 import 'package:shepaw/storage/store_service.dart';
 
@@ -114,6 +117,66 @@ void main() {
     final legacyResolved = await svc
         .resolveAttachmentFile({'path': legacy, 'name': 'legacy.txt'});
     expect(legacyResolved, isNotNull);
+  });
+
+  test('saveAttachment store_uri：引用储物袋文件，不写入 attachments', () async {
+    final store = await StoreService.instance.localStore();
+    final deviceId = await DeviceIdentity.deviceId();
+    final content = Uint8List.fromList('store ref bytes'.codeUnits);
+    final relPath = 'docs/ref-report.txt';
+
+    final (uploadId, _) = await store.writeBegin(
+      deviceId: deviceId,
+      space: StoreSpace.files,
+      path: relPath,
+      size: content.length,
+      sha256: crypto.sha256.convert(content).toString(),
+    );
+    await store.writeChunk(
+        deviceId, StoreSpace.files, uploadId, 0, content);
+    await store.commit(deviceId, StoreSpace.files, [uploadId]);
+
+    final ref = StoreAttachmentRef.fromEntry(
+      deviceId: deviceId,
+      space: StoreSpace.files,
+      entry: StoreEntry(
+        path: relPath,
+        size: content.length,
+        sha256: crypto.sha256.convert(content).toString(),
+        mtimeMs: DateTime.now().millisecondsSinceEpoch,
+      ),
+    );
+    final localFile = await ref.resolveLocalFile();
+    expect(localFile, isNotNull);
+
+    final svc = newService();
+    final msg = await svc.saveAttachment(
+      file: localFile!,
+      storeUri: ref.storeUri,
+      displayName: ref.displayName,
+      channelId: 'ch-att',
+      userId: 'u1',
+      userName: 'U',
+      agentId: 'a1',
+    );
+    expect(msg, isNotNull);
+    expect(msg!.metadata!['store_uri'], ref.storeUri);
+    expect(msg.metadata!['name'], 'ref-report.txt');
+    expect(msg.metadata!.containsKey('hash'), isFalse);
+
+    final root = await StoreService.instance.storeRoot();
+    final hash = crypto.sha256.convert(content).toString();
+    final copiedBlob =
+        File(p.join(root.path, deviceId, StoreSpace.attachments, hash));
+    expect(await copiedBlob.exists(), isFalse);
+
+    final data = await svc.buildAttachmentData(msg);
+    expect(data, isNotNull);
+    expect(data!.bytes, content);
+
+    final resolved = await svc.resolveAttachmentFile(msg.metadata!);
+    expect(resolved, isNotNull);
+    expect(await resolved!.readAsBytes(), content);
   });
 
   test('快照 manifest.attachments 引用实际附件 hash', () async {

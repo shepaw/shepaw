@@ -3002,6 +3002,42 @@ abstract class AppLocalizations {
   /// **'文件'**
   String get chat_file;
 
+  /// No description provided for @chat_storageBag.
+  ///
+  /// In zh, this message translates to:
+  /// **'储物袋'**
+  String get chat_storageBag;
+
+  /// No description provided for @chat_storageFilePickerTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'选择储物袋文件'**
+  String get chat_storageFilePickerTitle;
+
+  /// No description provided for @chat_storageFilePickerHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'从本机储物袋空间选择文件作为聊天附件。'**
+  String get chat_storageFilePickerHint;
+
+  /// No description provided for @chat_storageFilePickerConfirm.
+  ///
+  /// In zh, this message translates to:
+  /// **'添加'**
+  String get chat_storageFilePickerConfirm;
+
+  /// No description provided for @chat_storageFilePickerEmpty.
+  ///
+  /// In zh, this message translates to:
+  /// **'当前空间暂无文件'**
+  String get chat_storageFilePickerEmpty;
+
+  /// No description provided for @chat_storageFilePickerSelected.
+  ///
+  /// In zh, this message translates to:
+  /// **'已选 {count}'**
+  String chat_storageFilePickerSelected(int count);
+
   /// No description provided for @chat_sendImageError.
   ///
   /// In zh, this message translates to:

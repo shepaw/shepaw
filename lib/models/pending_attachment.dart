@@ -3,6 +3,8 @@ import 'dart:typed_data';
 import 'package:uuid/uuid.dart';
 import 'package:path/path.dart' as path;
 
+import 'store_attachment_ref.dart';
+
 enum PendingAttachmentType { image, file }
 
 class PendingAttachment {
@@ -13,6 +15,8 @@ class PendingAttachment {
   final PendingAttachmentType type;
   final Uint8List? thumbnailBytes;
   final bool isFromClipboard;
+  /// 非空时表示来自储物袋引用，发送时不复制到 attachments 空间。
+  final StoreAttachmentRef? storeRef;
 
   PendingAttachment({
     required this.id,
@@ -22,7 +26,10 @@ class PendingAttachment {
     required this.type,
     this.thumbnailBytes,
     this.isFromClipboard = false,
+    this.storeRef,
   });
+
+  bool get isStoreReference => storeRef != null;
 
   static const _imageExtensions = {
     '.jpg', '.jpeg', '.png', '.gif', '.bmp', '.webp',
@@ -58,6 +65,29 @@ class PendingAttachment {
       type: type,
       thumbnailBytes: thumbnail,
       isFromClipboard: isFromClipboard,
+    );
+  }
+
+  static Future<PendingAttachment?> fromStoreRef(StoreAttachmentRef ref) async {
+    final file = await ref.resolveLocalFile();
+    if (file == null) return null;
+
+    final type = inferType(ref.displayName);
+    Uint8List? thumbnail;
+    if (type == PendingAttachmentType.image) {
+      try {
+        thumbnail = await file.readAsBytes();
+      } catch (_) {}
+    }
+
+    return PendingAttachment(
+      id: const Uuid().v4(),
+      file: file,
+      fileName: ref.displayName,
+      fileSize: ref.sizeBytes,
+      type: type,
+      thumbnailBytes: thumbnail,
+      storeRef: ref,
     );
   }
 

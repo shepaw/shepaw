@@ -617,6 +617,19 @@
   "chat_photoLibrary": "Photo Library",
   "chat_camera": "Camera",
   "chat_file": "File",
+  "chat_storageBag": "Storage Bag",
+  "chat_storageFilePickerTitle": "Pick from Storage Bag",
+  "chat_storageFilePickerHint": "Select files from your local storage bag to attach in chat.",
+  "chat_storageFilePickerConfirm": "Add",
+  "chat_storageFilePickerEmpty": "No files in this space",
+  "chat_storageFilePickerSelected": "{count} selected",
+  "@chat_storageFilePickerSelected": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
   "chat_sendImageError": "Error sending image: {error}",
   "chat_sendFileError": "Error sending file: {error}",
   "chat_searchError": "Search error: {error}",

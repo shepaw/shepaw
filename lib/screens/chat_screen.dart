@@ -23,6 +23,8 @@ import '../controllers/chat_controller.dart';
 import '../controllers/chat_attachment_coordinator.dart';
 import '../theme/app_theme.dart';
 import '../widgets/chat/chat_app_bar.dart';
+import '../models/store_attachment_ref.dart';
+import '../widgets/chat/storage_file_picker_screen.dart';
 import '../widgets/chat/chat_menu.dart';
 import '../widgets/chat/chat_input_area.dart';
 import '../widgets/chat/chat_message_list.dart';
@@ -804,34 +806,79 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
 
   void _showAttachmentOptions() {
     LoggerService().debug('_showAttachmentOptions called, isDesktop=${LayoutUtils.isDesktopLayout(context)}', tag: 'ChatScreen');
-    if (LayoutUtils.isDesktopLayout(context)) {
-      _pickAndStageFile();
-      return;
-    }
     final l10n = AppLocalizations.of(context);
+    final isDesktop = LayoutUtils.isDesktopLayout(context);
     LayoutUtils.showAdaptivePanel(
       context: context,
       builder: (context) => Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          ListTile(
-            leading: const Icon(Icons.photo_library),
-            title: Text(l10n.chat_photoLibrary),
-            onTap: () { Navigator.pop(context); _pickAndStageImage(); },
-          ),
-          ListTile(
-            leading: const Icon(Icons.camera_alt),
-            title: Text(l10n.chat_camera),
-            onTap: () { Navigator.pop(context); _pickAndStageImage(); },
-          ),
+          if (!isDesktop) ...[
+            ListTile(
+              leading: const Icon(Icons.photo_library),
+              title: Text(l10n.chat_photoLibrary),
+              onTap: () { Navigator.pop(context); _pickAndStageImage(); },
+            ),
+            ListTile(
+              leading: const Icon(Icons.camera_alt),
+              title: Text(l10n.chat_camera),
+              onTap: () { Navigator.pop(context); _pickAndStageImage(); },
+            ),
+          ],
           ListTile(
             leading: const Icon(Icons.insert_drive_file),
             title: Text(l10n.chat_file),
             onTap: () { Navigator.pop(context); _pickAndStageFile(); },
           ),
+          ListTile(
+            leading: const Icon(Icons.inventory_2_outlined),
+            title: Text(l10n.chat_storageBag),
+            onTap: () { Navigator.pop(context); _pickFromStorageBag(); },
+          ),
         ],
       ),
     );
+  }
+
+  Future<void> _pickFromStorageBag() async {
+    final remaining = _pendingQueue.maxItems - _pendingQueue.length;
+    if (remaining <= 0) {
+      if (mounted) {
+        showTopToast(
+          context,
+          AppLocalizations.of(context).chat_maxAttachments(_pendingQueue.maxItems),
+          icon: Icons.attachment,
+          color: Colors.orange,
+        );
+      }
+      return;
+    }
+    try {
+      final refs = await Navigator.push<List<StoreAttachmentRef>>(
+        context,
+        MaterialPageRoute(
+          builder: (_) => StorageFilePickerScreen(maxSelection: remaining),
+        ),
+      );
+      if (refs == null || refs.isEmpty) return;
+      for (final ref in refs) {
+        if (_pendingQueue.isFull) break;
+        final added = await _pendingQueue.addFromStoreRef(ref);
+        if (added && mounted) {
+          setState(() {});
+        }
+      }
+    } catch (e) {
+      LoggerService().error('_pickFromStorageBag error', tag: 'ChatScreen', error: e);
+      if (mounted) {
+        showTopToast(
+          context,
+          AppLocalizations.of(context).chat_sendFileError('$e'),
+          icon: Icons.error_outline,
+          color: Colors.red.shade400,
+        );
+      }
+    }
   }
 
   Future<void> _pickAndStageFile() async {

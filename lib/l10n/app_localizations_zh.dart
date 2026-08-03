@@ -1578,6 +1578,26 @@ class AppLocalizationsZh extends AppLocalizations {
   String get chat_file => '文件';
 
   @override
+  String get chat_storageBag => '储物袋';
+
+  @override
+  String get chat_storageFilePickerTitle => '选择储物袋文件';
+
+  @override
+  String get chat_storageFilePickerHint => '从本机储物袋空间选择文件作为聊天附件。';
+
+  @override
+  String get chat_storageFilePickerConfirm => '添加';
+
+  @override
+  String get chat_storageFilePickerEmpty => '当前空间暂无文件';
+
+  @override
+  String chat_storageFilePickerSelected(int count) {
+    return '已选 $count';
+  }
+
+  @override
   String chat_sendImageError(String error) {
     return '发送图片失败: $error';
   }

@@ -1636,6 +1636,27 @@ class AppLocalizationsEn extends AppLocalizations {
   String get chat_file => 'File';
 
   @override
+  String get chat_storageBag => 'Storage Bag';
+
+  @override
+  String get chat_storageFilePickerTitle => 'Pick from Storage Bag';
+
+  @override
+  String get chat_storageFilePickerHint =>
+      'Select files from your local storage bag to attach in chat.';
+
+  @override
+  String get chat_storageFilePickerConfirm => 'Add';
+
+  @override
+  String get chat_storageFilePickerEmpty => 'No files in this space';
+
+  @override
+  String chat_storageFilePickerSelected(int count) {
+    return '$count selected';
+  }
+
+  @override
   String chat_sendImageError(String error) {
     return 'Error sending image: $error';
   }
