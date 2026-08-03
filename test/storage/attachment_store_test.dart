@@ -173,10 +173,14 @@ void main() {
     final data = await svc.buildAttachmentData(msg);
     expect(data, isNotNull);
     expect(data!.bytes, content);
+    expect(data.extraMetadata?['store_uri'], ref.storeUri);
+    expect(data.textDescription, contains(ref.storeUri));
+    expect(data.textDescription, contains('shepaw store read'));
 
     final resolved = await svc.resolveAttachmentFile(msg.metadata!);
     expect(resolved, isNotNull);
     expect(await resolved!.readAsBytes(), content);
+    expect(msg.content, contains(ref.storeUri));
   });
 
   test('快照 manifest.attachments 引用实际附件 hash', () async {

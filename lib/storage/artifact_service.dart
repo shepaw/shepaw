@@ -6,9 +6,9 @@ import 'package:path/path.dart' as p;
 import '../services/logger_service.dart';
 import 'device_identity.dart';
 import 'local_store.dart';
-import 'remote_read_service.dart';
 import 'store_protocol.dart';
 import 'store_service.dart';
+import 'store_uri_reader.dart';
 
 /// 产物 URI（docs/storage_space_plan.md §6.3）：
 /// `store://artifacts/<device_id>/<task_id>/<filename>`。
@@ -140,36 +140,14 @@ class ArtifactService {
 
   /// 读取产物（单参数 URI；缓存/分块由本层处理）。
   /// 本机直读；他端经缓存校验（可能 stale，调用方可用 bytes 内容 hash 复核）。
+  ///
+  /// 仅接受 `store://artifacts/...`；通用 `files` 等请用 [StoreUriReader.read]。
   Future<Uint8List> readArtifact(String uriString) async {
     final uri = ArtifactUri.tryParse(uriString);
     if (uri == null) {
       throw ArgumentError('invalid artifact uri: $uriString');
     }
-    final self = await DeviceIdentity.deviceId();
-    if (uri.deviceId == self) {
-      // 本机直读
-      final store = await StoreService.instance.localStore();
-      final builder = BytesBuilder(copy: false);
-      var offset = 0;
-      while (true) {
-        final (chunk, _, eof) = await store.read(
-            self, StoreSpace.artifacts, uri.storePath, offset,
-            LocalStore.maxReadChunk);
-        builder.add(chunk);
-        offset += chunk.length;
-        if (eof || chunk.isEmpty) break;
-      }
-      return builder.toBytes();
-    }
-    // 他端：经 master 缓存校验拉取（§7）
-    final masterId = await StoreService.instance.masterDeviceId();
-    final result = await RemoteReadService.instance.readVerified(
-      serverDeviceId: masterId,
-      deviceId: uri.deviceId,
-      space: StoreSpace.artifacts,
-      path: uri.storePath,
-    );
-    return result.bytes;
+    return StoreUriReader.instance.read(uriString);
   }
 
   /// 从文本提取全部产物引用（Agent 输出/用户消息）。
@@ -195,7 +173,7 @@ class ArtifactService {
       buffer.writeln('- ${ref.toMarkdownLine()}');
     }
     buffer.writeln('新产出优先 `shepaw store write`（勿默认写 OS 路径）；'
-        '读取：`shepaw store read` 原样传入括号内 URI。');
+        '任何 `store://` 用 `shepaw store read` 原样传入括号内 URI（勿用 os.file.read）。');
     return buffer.toString();
   }
 

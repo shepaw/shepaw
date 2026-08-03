@@ -396,10 +396,17 @@ class AttachmentService {
       final sizeBytes = metadata['size'] as int? ?? bytes.length;
       final mimeType = _getMimeType(fileName, semanticType);
 
-      // Collect extra metadata (e.g. duration_ms for audio)
+      // Collect extra metadata (e.g. duration_ms for audio, store_uri for pouch)
       Map<String, dynamic>? extra;
+      void putExtra(String key, dynamic value) {
+        extra ??= <String, dynamic>{};
+        extra![key] = value;
+      }
       if (metadata.containsKey('duration_ms')) {
-        extra = {'duration_ms': metadata['duration_ms']};
+        putExtra('duration_ms', metadata['duration_ms']);
+      }
+      if (storeUri != null && storeUri.isNotEmpty) {
+        putExtra('store_uri', storeUri);
       }
 
       return AttachmentData(
@@ -476,7 +483,8 @@ class AttachmentService {
     final fileName = attachmentData['name'] ?? 'Unknown file';
     final fileType = attachmentData['type'] ?? 'file';
     final fileSize = attachmentData['size'] ?? 0;
-    
+    final storeUri = attachmentData['store_uri'] as String?;
+
     // 格式化文件大小
     String formattedSize;
     if (fileSize < 1024) {
@@ -487,15 +495,18 @@ class AttachmentService {
       formattedSize = '${(fileSize / (1024 * 1024)).toStringAsFixed(1)} MB';
     }
 
+    final String base;
     if (fileType == 'image') {
-      return '📷 Image: $fileName ($formattedSize)';
+      base = '📷 Image: $fileName ($formattedSize)';
     } else if (fileType == 'video') {
-      return '🎥 Video: $fileName ($formattedSize)';
+      base = '🎥 Video: $fileName ($formattedSize)';
     } else if (fileType == 'audio') {
-      return '🎵 Audio: $fileName ($formattedSize)';
+      base = '🎵 Audio: $fileName ($formattedSize)';
     } else {
-      return '📎 File: $fileName ($formattedSize)';
+      base = '📎 File: $fileName ($formattedSize)';
     }
+    if (storeUri == null || storeUri.isEmpty) return base;
+    return '$base\n[$fileName]($storeUri)';
   }
 
   /// 格式化文件大小

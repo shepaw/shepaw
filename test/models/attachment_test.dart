@@ -133,6 +133,28 @@ void main() {
         );
         expect(audioNoDuration.textDescription, '[Audio: clip.mp3 (1.0 KB)]');
       });
+
+      test('should include store_uri read hint', () {
+        final storeFile = AttachmentData(
+          fileName: 'note.txt',
+          mimeType: 'text/plain',
+          sizeBytes: 12,
+          bytes: Uint8List.fromList('hello'.codeUnits),
+          semanticType: 'document',
+          extraMetadata: {
+            'store_uri':
+                'store://files/0123456789abcdef/docs/note.txt',
+          },
+        );
+        final desc = storeFile.textDescription;
+        expect(desc, contains('[Document: note.txt (12 B)]'));
+        expect(
+            desc,
+            contains(
+                '[note.txt](store://files/0123456789abcdef/docs/note.txt)'));
+        expect(desc, contains('shepaw store read --uri'));
+        expect(desc, contains('do NOT use os.file.read'));
+      });
     });
 
     group('toJson', () {

@@ -70,7 +70,11 @@ void main() {
       expect(block, contains('shepaw store write'));
       expect(block, contains('Produced Artifacts'));
       expect(block, contains('prefer store'));
-      expect(block, contains('Prefer store for produced artifacts'));
+      expect(block, contains('Prefer store for'));
+      expect(block, contains('store://'));
+      expect(block, contains('shepaw store read'));
+      expect(block, contains('Do NOT'));
+      expect(block, contains('shepaw os file.read'));
     });
   });
 

@@ -158,7 +158,14 @@ class LocalLLMHelpers {
       if (m.metadata!['name'] != null) info['file_name'] = m.metadata!['name'];
       if (m.metadata!['size'] != null) info['file_size'] = m.metadata!['size'];
       if (m.metadata!['type'] != null) info['mime_type'] = m.metadata!['type'];
-      if (m.metadata!['duration_ms'] != null) info['duration_ms'] = m.metadata!['duration_ms'];
+      if (m.metadata!['duration_ms'] != null) {
+        info['duration_ms'] = m.metadata!['duration_ms'];
+      }
+      final storeUri = m.metadata!['store_uri'] as String?;
+      if (storeUri != null && storeUri.isNotEmpty) {
+        info['store_uri'] = storeUri;
+        info['store_read_command'] = 'shepaw store read --uri $storeUri';
+      }
     }
     return info;
   }
@@ -167,11 +174,19 @@ class LocalLLMHelpers {
   ///
   /// `attachment_info` alone may be ignored by the model; inlining the CLI
   /// command into [baseContent] makes historical attachments actionable.
+  /// Store pouch refs also surface `store://` + `shepaw store read`.
   static String enrichHistoryContent(Message m, String baseContent) {
     if (m.type == MessageType.text ||
         m.type == MessageType.system ||
         m.type == MessageType.permissionAudit) {
       return baseContent;
+    }
+    final storeUri = m.metadata?['store_uri'] as String?;
+    if (storeUri != null && storeUri.isNotEmpty) {
+      return '$baseContent\n'
+          '(attachment message_id=${m.id} store_uri=$storeUri — '
+          'prefer: shepaw store read --uri $storeUri; '
+          'or: shepaw chat message get --id ${m.id} --analyze "your question")';
     }
     return '$baseContent\n'
         '(attachment message_id=${m.id} — to read/analyze call: '

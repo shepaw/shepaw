@@ -3,14 +3,16 @@ import 'dart:typed_data';
 
 import '../../cli_base.dart';
 import '../../../storage/artifact_service.dart';
+import '../../../storage/store_uri_reader.dart';
 
-/// [TOOLING 层] store 命名空间 - 存储空间产物读写
+/// [TOOLING 层] store 命名空间 - 存储空间产物/文件读写
 ///
 /// 对应 docs/storage_space_plan.md §6.3 的 Agent 侧纪律：
 /// - `store_write`（`write`）：产出写入自己设备目录，返回新 URI 即完成共享；
-/// - `store_read`（`read`）：单参数 URI 读取产物，分块/缓存由工具层处理。
+/// - `store_read`（`read`）：单参数 URI 读取（`artifacts` / `files` 等），分块/缓存由工具层处理。
 ///
 /// Agent 只"转述"URI，不构造 URI（URI 从本命令输出或用户/上游输入获得）。
+/// 遇到 `store://...` 一律用本命名空间，不要用 OS `file_read`。
 class StoreNamespace extends CliNamespace {
   static final instance = StoreNamespace._();
   StoreNamespace._();
@@ -20,8 +22,8 @@ class StoreNamespace extends CliNamespace {
 
   @override
   String get description =>
-      'Artifact store (preferred for produced outputs): write artifacts via '
-      'store:// URI and read them back — prefer over OS file paths';
+      'Store URIs (store://…): write artifacts and read files/artifacts — '
+      'prefer over OS file paths whenever you see a store:// link';
 
   @override
   Map<String, CliCommand> get commands => {
@@ -89,10 +91,12 @@ class StoreReadCommand extends CliCommand {
 
   @override
   String get description =>
-      'Read an artifact by its store:// URI (cache-validated)';
+      'Read a store:// URI (artifacts, files, or own-device private spaces; '
+      'cache-validated). Use this for ANY store:// link — never os.file.read.';
 
   @override
   String get usage =>
+      'shepaw store read --uri store://files/0123456789abcdef/docs/note.txt\n'
       'shepaw store read --uri store://artifacts/0123456789abcdef/task-41/report.md';
 
   @override
@@ -102,7 +106,7 @@ class StoreReadCommand extends CliCommand {
       return {'success': false, 'error': 'missing --uri'};
     }
     try {
-      final bytes = await ArtifactService.instance.readArtifact(uri);
+      final bytes = await StoreUriReader.instance.read(uri);
       // 文本优先直接返回；二进制给 base64
       String? text;
       try {
@@ -110,6 +114,7 @@ class StoreReadCommand extends CliCommand {
       } catch (_) {}
       return <String, dynamic>{
         'success': true,
+        'uri': uri,
         'size': bytes.length,
         if (text != null) 'content': text else 'content_base64': base64Encode(bytes),
         if (text == null) 'encoding': 'base64',

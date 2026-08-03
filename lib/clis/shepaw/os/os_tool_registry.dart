@@ -131,11 +131,17 @@ class OsToolRegistry {
     OsToolDefinition(
       name: 'file_read',
       cliPath: 'os.file.read',
-      description: 'Read the contents of a file.',
+      description:
+          'Read an OS filesystem path. Not for store:// URIs — '
+          'use `shepaw store read --uri <store://…>` instead.',
       parameterSchema: {
         'type': 'object',
         'properties': {
-          'path': {'type': 'string', 'description': 'Absolute path to the file to read'},
+          'path': {
+            'type': 'string',
+            'description':
+                'Absolute OS path (never a store:// URI)',
+          },
           'max_bytes': {'type': 'integer', 'description': 'Maximum bytes to read (default: 10240)'},
         },
         'required': ['path'],
