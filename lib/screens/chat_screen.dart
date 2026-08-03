@@ -124,6 +124,11 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
 
   // Scroll state (UI-bound)
   bool _isUserScrolledUp = false;
+  /// True while we drive scroll via jumpTo/scrollTo. Programmatic motion can
+  /// emit [UserScrollNotification] and falsely set [_isUserScrolledUp], which
+  /// then skips [setState] for the rest of a streaming turn (blank UI until
+  /// leave/re-enter).
+  bool _isProgrammaticScrolling = false;
   int _unreadMessageCount = 0;
 
   // Pending highlight from search navigation
@@ -349,6 +354,13 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
             _scrollToMessage(mid);
           });
         } else {
+          // Force (new send / reattach) always resumes live follow — otherwise a
+          // stuck scrolled-up flag from a prior turn keeps skipping rebuilds.
+          if (force && _isUserScrolledUp) {
+            _isUserScrolledUp = false;
+            _unreadMessageCount = 0;
+            _controller.isUserScrolledUp = false;
+          }
           _scrollToBottom(force: force);
         }
       case ShowHistoryRequestDialogEvent(:final reason, :final result):
@@ -570,7 +582,11 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   }
 
   void _onUserScroll(ScrollDirection direction) {
-    // Only react to user-initiated scroll gestures (not programmatic scrolls).
+    // Ignore idle and programmatic jumpTo/scrollTo — those can report
+    // ScrollDirection.forward and freeze streaming UI updates.
+    if (_isProgrammaticScrolling || direction == ScrollDirection.idle) {
+      return;
+    }
     // In a reverse list, ScrollDirection.forward means scrolling toward older
     // messages (upward visually), and ScrollDirection.reverse means scrolling
     // toward newer messages (downward visually).
@@ -615,16 +631,29 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
       _controller.markMessagesAsReadIfAtBottom();
     }
     // In reverse mode, index 0 is the newest (bottom) message.
+    // During streaming, jump instantly: a 300ms scrollTo per chunk races with
+    // UserScrollNotification and can stick [_isUserScrolledUp], freezing UI.
+    final streamingFollow = _controller.streamingMessageId != null ||
+        _controller.groupStreamingMessageIds.isNotEmpty;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted || _controller.messages.isEmpty) return;
-      if (force) {
+      if (!_itemScrollController.isAttached) return;
+      _isProgrammaticScrolling = true;
+      if (force || streamingFollow) {
         _itemScrollController.jumpTo(index: 0, alignment: 0.0);
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          _isProgrammaticScrolling = false;
+        });
       } else {
-        _itemScrollController.scrollTo(
+        _itemScrollController
+            .scrollTo(
           index: 0,
           duration: const Duration(milliseconds: 300),
           curve: Curves.easeOut,
-        );
+        )
+            .whenComplete(() {
+          if (mounted) _isProgrammaticScrolling = false;
+        });
       }
     });
   }
@@ -635,9 +664,13 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     _controller.isUserScrolledUp = false;
     _controller.markMessagesAsReadIfAtBottom();
     setState(() {});
-    if (_controller.messages.isNotEmpty) {
+    if (_controller.messages.isNotEmpty && _itemScrollController.isAttached) {
       // In reverse mode, index 0 is the newest (bottom) message.
+      _isProgrammaticScrolling = true;
       _itemScrollController.jumpTo(index: 0, alignment: 0.0);
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _isProgrammaticScrolling = false;
+      });
     }
   }
 

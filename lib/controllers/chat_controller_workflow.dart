@@ -403,9 +403,7 @@ mixin _WorkflowOps on _ChatControllerBase {
       messageIdMap,
     );
     scheduleStreamingRebuild();
-    if (!isUserScrolledUp) {
-      _emit(RequestScrollToBottomEvent());
-    }
+    scheduleStreamingScrollToBottom();
   }
 
   void _onWorkflowAgentDone(String aid, String anm, bool skipped) {

@@ -230,6 +230,7 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
 
   // ---- Frame coalescing ----
   bool _pendingStreamingRebuild = false;
+  bool _pendingStreamingScroll = false;
 
   /// Workflow panel + local execution bookkeeping.
   final ChatWorkflowCoordinator workflow = ChatWorkflowCoordinator();
@@ -495,6 +496,7 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
   void reattachToGroupActiveTasks();
   void _reattachPendingPlanApproval();
   void scheduleStreamingRebuild();
+  void scheduleStreamingScrollToBottom();
   Future<void> processNextInQueue();
   void _updateStreamingMetadata(Map<String, dynamic> metadata);
   Future<void> processMessage(String content, {String? replyToId, List<AttachmentData>? attachments, List<Message>? attachmentMessages});

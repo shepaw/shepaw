@@ -83,14 +83,12 @@ mixin _MessagingOps on _ChatControllerBase {
         streaming.append(chunk);
         streaming.applyContentTo(messages, messageIdMap);
         scheduleStreamingRebuild();
-        if (!isUserScrolledUp) {
-          _emit(RequestScrollToBottomEvent());
-        }
+        scheduleStreamingScrollToBottom();
       },
       onActionConfirmation: _handleStreamingActionConfirmation,
       onMessageMetadata: (metadata) {
         streaming.applyMetadataTo(messages, messageIdMap, metadata);
-        _notify();
+        scheduleStreamingRebuild();
       },
       onTaskFinished: () async {
         await activeTask.dbSaveCompleter.future;
@@ -144,9 +142,7 @@ mixin _MessagingOps on _ChatControllerBase {
           return;
         }
         scheduleStreamingRebuild();
-        if (!isUserScrolledUp) {
-          _emit(RequestScrollToBottomEvent());
-        }
+        scheduleStreamingScrollToBottom();
       },
       onTaskFinished: (aid, agentNameVal) {
         final sid = turn.finish(aid);
@@ -566,9 +562,7 @@ mixin _MessagingOps on _ChatControllerBase {
           streaming.append(chunk);
           streaming.applyContentTo(messages, messageIdMap);
           scheduleStreamingRebuild();
-          if (!isUserScrolledUp) {
-            _emit(RequestScrollToBottomEvent());
-          }
+          scheduleStreamingScrollToBottom();
         },
         onActionConfirmation: _handleStreamingActionConfirmation,
         onSingleSelect: (selectData) {
@@ -588,7 +582,7 @@ mixin _MessagingOps on _ChatControllerBase {
         },
         onMessageMetadata: (metadata) {
           streaming.applyMetadataTo(messages, messageIdMap, metadata);
-          _notify();
+          scheduleStreamingRebuild();
         },
         onWorkflowPlanCreated: _handleDmWorkflowPlanCreated,
         onRequestHistory: (historyData) {
@@ -746,9 +740,7 @@ mixin _MessagingOps on _ChatControllerBase {
             streaming.append(chunk);
             streaming.applyContentTo(messages, messageIdMap);
             scheduleStreamingRebuild();
-            if (!isUserScrolledUp) {
-              _emit(RequestScrollToBottomEvent());
-            }
+            scheduleStreamingScrollToBottom();
           },
           acpCancellationToken: acpCancellationToken,
         );
@@ -1115,9 +1107,7 @@ mixin _MessagingOps on _ChatControllerBase {
             return;
           }
           scheduleStreamingRebuild();
-          if (!isUserScrolledUp) {
-            _emit(RequestScrollToBottomEvent());
-          }
+          scheduleStreamingScrollToBottom();
         },
         onAgentDone: (aid, anm, skipped) {
           final sid = turn.idFor(aid);
@@ -1343,9 +1333,7 @@ mixin _MessagingOps on _ChatControllerBase {
           streaming.append(chunk);
           streaming.applyContentTo(messages, messageIdMap);
           scheduleStreamingRebuild();
-          if (!isUserScrolledUp) {
-            _emit(RequestScrollToBottomEvent());
-          }
+          scheduleStreamingScrollToBottom();
         },
       );
 
@@ -1382,6 +1370,18 @@ mixin _MessagingOps on _ChatControllerBase {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _pendingStreamingRebuild = false;
       _notify();
+    });
+  }
+
+  @override
+  void scheduleStreamingScrollToBottom() {
+    if (isUserScrolledUp) return;
+    if (_pendingStreamingScroll) return;
+    _pendingStreamingScroll = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _pendingStreamingScroll = false;
+      if (isUserScrolledUp) return;
+      _emit(RequestScrollToBottomEvent());
     });
   }
 
