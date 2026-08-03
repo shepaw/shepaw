@@ -258,6 +258,10 @@ class AgentMessagingService {
           ),
           type: MessageType.text,
           replyTo: replyToId,
+          metadata: MessageImplicitPrompt.metadataForTurn(
+            text: content,
+            attachments: attachments,
+          ),
         );
 
         LoggerService().debug('Created user message: ${userMessage.id}', tag: 'AgentMessagingService');
@@ -1187,10 +1191,12 @@ class AgentMessagingService {
       final result = await PeerAgentClientService.instance.sendChat(
         peerId: peerId,
         remoteAgentId: remoteAgentId,
-        // Wire-only enrichment: local DB/bubble keeps userMessage.content.
+        // Wire-only enrichment: local DB/bubble keeps userMessage.content;
+        // prefer persisted metadata.implicit_prompt when present.
         message: MessageImplicitPrompt.forPeerWireMessage(
           message: userMessage.content,
           attachments: attachments,
+          messageMetadata: userMessage.metadata,
         ),
         sessionId: peerSessionId,
         attachments: attachments,
@@ -1414,6 +1420,10 @@ class AgentMessagingService {
         to: MessageFrom(id: agent.id, type: 'agent', name: agent.name),
         type: MessageType.text,
         replyTo: replyToId,
+        metadata: MessageImplicitPrompt.metadataForTurn(
+          text: content,
+          attachments: attachments,
+        ),
       );
       await saveMessageToChannel(userMessage, agent.id, channelId: channelId);
       LoggerService().debug('User message saved', tag: 'AgentMessagingService');

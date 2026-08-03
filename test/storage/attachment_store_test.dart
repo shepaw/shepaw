@@ -7,6 +7,7 @@ import 'package:path/path.dart' as p;
 import 'package:shepaw/services/attachment_service.dart';
 import 'package:shepaw/services/local_database_service.dart';
 import 'package:shepaw/services/local_file_storage_service.dart';
+import 'package:shepaw/services/messaging/message_implicit_prompt.dart';
 import 'package:shepaw/models/store_attachment_ref.dart';
 import 'package:shepaw/storage/device_identity.dart';
 import 'package:shepaw/storage/local_store.dart';
@@ -163,6 +164,12 @@ void main() {
     expect(msg!.metadata!['store_uri'], ref.storeUri);
     expect(msg.metadata!['name'], 'ref-report.txt');
     expect(msg.metadata!.containsKey('hash'), isFalse);
+    expect(msg.metadata![MessageImplicitPrompt.metaKey], isNotNull);
+    expect(
+      msg.metadata![MessageImplicitPrompt.metaKey] as String,
+      contains('shepaw store read'),
+    );
+    expect(msg.metadata![MessageImplicitPrompt.urisMetaKey], [ref.storeUri]);
 
     final root = await StoreService.instance.storeRoot();
     final hash = crypto.sha256.convert(content).toString();

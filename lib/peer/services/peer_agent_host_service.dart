@@ -496,6 +496,17 @@ class PeerAgentHostService {
         'file_id': fileId,
         if (att.extraMetadata != null) ...att.extraMetadata!,
       };
+      final storeUri = metadata['store_uri'] as String?;
+      if (storeUri != null &&
+          storeUri.isNotEmpty &&
+          MessageImplicitPrompt.fromMetadata(metadata) == null) {
+        final hint = MessageImplicitPrompt.renderStoreReadHint([storeUri]);
+        MessageImplicitPrompt.putInMetadata(
+          metadata,
+          hint: hint,
+          uris: [storeUri],
+        );
+      }
       final id = Uuid().v4();
       await _db.createMessage(
         id: id,
@@ -582,12 +593,22 @@ class PeerAgentHostService {
       }
 
       // Wire may carry [implicit] store hints (sender-side). Persist a clean
-      // bubble, but pass the full wire text into the LLM path.
+      // bubble + metadata.implicit_prompt; LLM still receives full wire text.
       final wireContent = message;
       Message? existingUserMessage;
       if (MessageImplicitPrompt.containsImplicitBlock(wireContent)) {
         final displayContent =
             MessageImplicitPrompt.stripImplicitBlocks(wireContent);
+        final block =
+            MessageImplicitPrompt.extractImplicitBlock(wireContent);
+        final meta = <String, dynamic>{};
+        if (block != null) {
+          MessageImplicitPrompt.putInMetadata(
+            meta,
+            hint: block,
+            uris: MessageImplicitPrompt.extractStoreUris(block),
+          );
+        }
         final msgId = const Uuid().v4();
         final now = DateTime.now().millisecondsSinceEpoch;
         existingUserMessage = Message(
@@ -598,6 +619,7 @@ class PeerAgentHostService {
           type: MessageType.text,
           content: displayContent,
           timestampMs: now,
+          metadata: meta.isEmpty ? null : meta,
         );
         await _db.createMessage(
           id: msgId,
@@ -607,6 +629,7 @@ class PeerAgentHostService {
           senderName: userName,
           content: displayContent,
           messageType: 'text',
+          metadata: meta.isEmpty ? null : meta,
         );
       }
 

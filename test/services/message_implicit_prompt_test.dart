@@ -82,6 +82,29 @@ void main() {
       expect(hint, contains('[implicit]'));
     });
 
+    test('metadataForTurn / fromMetadata / forHistoryMessage prefer DB field',
+        () {
+      const uri = 'store://files/0123456789abcdef/docs/note.txt';
+      final meta = MessageImplicitPrompt.metadataForTurn(
+        text: 'see $uri',
+      );
+      expect(meta, isNotNull);
+      expect(meta![MessageImplicitPrompt.metaKey], contains('[implicit]'));
+      expect(meta[MessageImplicitPrompt.urisMetaKey], [uri]);
+
+      final m = Message(
+        id: 'm1',
+        from: MessageFrom(id: 'u', type: 'user', name: 'U'),
+        type: MessageType.text,
+        content: 'see note', // clean bubble — no store:// in content
+        timestampMs: 0,
+        metadata: meta,
+      );
+      final hint = MessageImplicitPrompt.forHistoryMessage(m);
+      expect(hint, meta[MessageImplicitPrompt.metaKey]);
+      expect(MessageImplicitPrompt.fromMetadata(meta), hint);
+    });
+
     test('appendHint', () {
       expect(MessageImplicitPrompt.appendHint('a', null), 'a');
       expect(MessageImplicitPrompt.appendHint('', 'hint'), 'hint');

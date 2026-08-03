@@ -1,48 +1,125 @@
 import '../../models/attachment_data.dart';
 import '../../models/message.dart';
 
-/// Per-message implicit prompts injected only into LLM message content
-/// (not shown in chat UI bubbles).
+/// Per-message implicit prompts for store:// / pouch attachments.
 ///
-/// Today covers store:// / pouch attachments; shape is open for more kinds later.
+/// Persisted on the message row as [metaKey] (and optional [urisMetaKey]),
+/// kept out of user-visible [Message.content]. Assembled into LLM / peer wire
+/// content at send time.
 class MessageImplicitPrompt {
   MessageImplicitPrompt._();
 
   static const markerOpen = '[implicit]';
   static const markerClose = '[/implicit]';
 
+  /// DB / wire metadata key for the rendered hint block.
+  static const metaKey = 'implicit_prompt';
+
+  /// Optional structured URI list alongside [metaKey].
+  static const urisMetaKey = 'store_uris';
+
   /// Matches `store://…` tokens (stops at whitespace / `]` / `)`).
   static final RegExp storeUriPattern = RegExp(r'store://[^\s\]\)]+');
+
+  static final RegExp _blockPattern = RegExp(
+    r'\[implicit\][\s\S]*?\[/implicit\]',
+    multiLine: true,
+  );
 
   /// True when [text] already carries an `[implicit]…[/implicit]` block.
   static bool containsImplicitBlock(String text) =>
       text.contains(markerOpen) && text.contains(markerClose);
 
+  /// Read a persisted hint from message / attachment metadata.
+  static String? fromMetadata(Map<String, dynamic>? metadata) {
+    final raw = metadata?[metaKey];
+    if (raw is! String || raw.isEmpty) return null;
+    return raw;
+  }
+
+  /// Merge hint (+ optional URI list) into a metadata map (mutates [target]).
+  static void putInMetadata(
+    Map<String, dynamic> target, {
+    String? hint,
+    Iterable<String>? uris,
+  }) {
+    if (hint != null && hint.isNotEmpty) {
+      target[metaKey] = hint;
+    }
+    if (uris != null) {
+      final list = uris.where((u) => u.isNotEmpty).toSet().toList()..sort();
+      if (list.isNotEmpty) target[urisMetaKey] = list;
+    }
+  }
+
+  /// Build metadata map for a new message that may reference store://.
+  static Map<String, dynamic>? metadataForTurn({
+    required String text,
+    List<AttachmentData>? attachments,
+  }) {
+    final uris = collectUris(text: text, attachments: attachments);
+    final hint = renderStoreReadHint(uris);
+    if (hint == null) return null;
+    final meta = <String, dynamic>{};
+    putInMetadata(meta, hint: hint, uris: uris);
+    return meta;
+  }
+
+  /// Collect store:// URIs from text + attachment extras / descriptions.
+  static Set<String> collectUris({
+    String text = '',
+    List<AttachmentData>? attachments,
+  }) {
+    final uris = <String>{...extractStoreUris(text)};
+    if (attachments != null) {
+      for (final a in attachments) {
+        final uri = a.extraMetadata?['store_uri'] as String?;
+        if (uri != null && uri.isNotEmpty) uris.add(uri);
+        uris.addAll(extractStoreUris(a.textDescription));
+        final listed = a.extraMetadata?[urisMetaKey];
+        if (listed is List) {
+          for (final item in listed) {
+            if (item is String && item.isNotEmpty) uris.add(item);
+          }
+        }
+      }
+    }
+    return uris;
+  }
+
   /// Build store-read hint from current-turn attachments, or null if none.
   static String? forAttachments(List<AttachmentData>? attachments) {
     if (attachments == null || attachments.isEmpty) return null;
-    final uris = <String>{};
     for (final a in attachments) {
-      final uri = a.extraMetadata?['store_uri'] as String?;
-      if (uri != null && uri.isNotEmpty) uris.add(uri);
-      uris.addAll(extractStoreUris(a.textDescription));
+      final stored = fromMetadata(a.extraMetadata);
+      if (stored != null) return stored;
     }
-    return renderStoreReadHint(uris);
+    return renderStoreReadHint(collectUris(attachments: attachments));
   }
 
-  /// Build hint from a history [Message] (metadata + content scan).
+  /// Hint for a history [Message]: prefer persisted metadata, else synthesize.
   static String? forHistoryMessage(Message m) {
-    if (containsImplicitBlock(m.content)) return null;
+    final stored = fromMetadata(m.metadata);
+    if (stored != null) return stored;
+    if (containsImplicitBlock(m.content)) {
+      return extractImplicitBlock(m.content);
+    }
     final uris = <String>{};
     final metaUri = m.metadata?['store_uri'] as String?;
     if (metaUri != null && metaUri.isNotEmpty) uris.add(metaUri);
+    final listed = m.metadata?[urisMetaKey];
+    if (listed is List) {
+      for (final item in listed) {
+        if (item is String && item.isNotEmpty) uris.add(item);
+      }
+    }
     uris.addAll(extractStoreUris(m.content));
     return renderStoreReadHint(uris);
   }
 
   /// Scan free-form user text for store:// links.
   static String? forUserText(String text) {
-    if (containsImplicitBlock(text)) return null;
+    if (containsImplicitBlock(text)) return extractImplicitBlock(text);
     return renderStoreReadHint(extractStoreUris(text));
   }
 
@@ -55,27 +132,26 @@ class MessageImplicitPrompt {
     List<AttachmentData>? attachments,
   }) {
     if (containsImplicitBlock(text)) return null;
-    final uris = <String>{
-      ...extractStoreUris(text),
-    };
     if (attachments != null) {
       for (final a in attachments) {
-        final uri = a.extraMetadata?['store_uri'] as String?;
-        if (uri != null && uri.isNotEmpty) uris.add(uri);
-        uris.addAll(extractStoreUris(a.textDescription));
+        final stored = fromMetadata(a.extraMetadata);
+        if (stored != null) return stored;
       }
     }
-    return renderStoreReadHint(uris);
+    return renderStoreReadHint(
+      collectUris(text: text, attachments: attachments),
+    );
   }
 
-  /// Enrich a peer `agent_chat.message` for the wire only (do not persist).
-  ///
-  /// Keeps Nexuspouch `store://` read instructions on the wire so the remote
-  /// agent can follow them even without this app's system-prompt scaffolding.
+  /// Enrich a peer `agent_chat.message` for the wire only (do not put in bubble).
   static String forPeerWireMessage({
     required String message,
     List<AttachmentData>? attachments,
+    Map<String, dynamic>? messageMetadata,
   }) {
+    if (containsImplicitBlock(message)) return message;
+    final fromMeta = fromMetadata(messageMetadata);
+    if (fromMeta != null) return appendHint(message, fromMeta);
     final hint = forCurrentTurn(text: message, attachments: attachments);
     return appendHint(message, hint);
   }
@@ -96,6 +172,12 @@ class MessageImplicitPrompt {
       if (uri.startsWith('store://')) out.add(uri);
     }
     return out;
+  }
+
+  /// First `[implicit]…[/implicit]` block in [text], or null.
+  static String? extractImplicitBlock(String text) {
+    final match = _blockPattern.firstMatch(text);
+    return match?.group(0);
   }
 
   /// Render the `[implicit]…[/implicit]` store-read block, or null if empty.
@@ -128,7 +210,7 @@ class MessageImplicitPrompt {
     return '$base\n$hint';
   }
 
-  /// Remove `[implicit]…[/implicit]` blocks for UI / DB persistence.
+  /// Remove `[implicit]…[/implicit]` blocks for UI / DB content field.
   static String stripImplicitBlocks(String text) {
     if (!containsImplicitBlock(text)) return text;
     final stripped = text.replaceAll(

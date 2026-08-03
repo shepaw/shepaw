@@ -16,6 +16,7 @@ import '../storage/device_identity.dart';
 import '../storage/local_store.dart';
 import '../storage/store_protocol.dart';
 import '../storage/store_service.dart';
+import 'messaging/message_implicit_prompt.dart';
 import 'package:uuid/uuid.dart';
 
 /// 附件服务
@@ -197,6 +198,12 @@ class AttachmentService {
           'type': fileType,
           'size': fileSize,
         };
+        final hint = MessageImplicitPrompt.renderStoreReadHint([storeUri]);
+        MessageImplicitPrompt.putInMetadata(
+          attachmentData,
+          hint: hint,
+          uris: [storeUri],
+        );
       } else {
         // M5：系统文件按内容 hash 编址写入 store（去重，仅本端可读写）
         final bytes = await file.readAsBytes();
@@ -407,6 +414,14 @@ class AttachmentService {
       }
       if (storeUri != null && storeUri.isNotEmpty) {
         putExtra('store_uri', storeUri);
+      }
+      final implicit = MessageImplicitPrompt.fromMetadata(metadata);
+      if (implicit != null) {
+        putExtra(MessageImplicitPrompt.metaKey, implicit);
+      }
+      final listed = metadata[MessageImplicitPrompt.urisMetaKey];
+      if (listed is List && listed.isNotEmpty) {
+        putExtra(MessageImplicitPrompt.urisMetaKey, listed);
       }
 
       return AttachmentData(
