@@ -2480,6 +2480,35 @@
   "storage_browserCount": "Showing {count} files",
   "storage_browserLoadMore": "Load more",
   "storage_browserRefresh": "Refresh",
+  "storage_browserPreview": "Preview",
+  "storage_browserExport": "Export to…",
+  "storage_browserExportDone": "Exported to {path}",
+  "@storage_browserExportDone": {
+    "placeholders": {
+      "path": {
+        "type": "String"
+      }
+    }
+  },
+  "storage_browserExportFailed": "Export failed: {error}",
+  "@storage_browserExportFailed": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "storage_browserExportConfirmLarge": "“{name}” is about {size}. Export will copy it to the chosen folder. Continue?",
+  "@storage_browserExportConfirmLarge": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      },
+      "size": {
+        "type": "String"
+      }
+    }
+  },
   "storage_browserDelete": "Delete",
   "storage_browserDeleteTitle": "Delete file",
   "storage_browserDeleteConfirm": "Delete {path} and move it to recycle?",

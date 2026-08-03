@@ -9008,6 +9008,36 @@ abstract class AppLocalizations {
   /// **'刷新'**
   String get storage_browserRefresh;
 
+  /// No description provided for @storage_browserPreview.
+  ///
+  /// In zh, this message translates to:
+  /// **'预览'**
+  String get storage_browserPreview;
+
+  /// No description provided for @storage_browserExport.
+  ///
+  /// In zh, this message translates to:
+  /// **'导出到…'**
+  String get storage_browserExport;
+
+  /// No description provided for @storage_browserExportDone.
+  ///
+  /// In zh, this message translates to:
+  /// **'已导出到 {path}'**
+  String storage_browserExportDone(String path);
+
+  /// No description provided for @storage_browserExportFailed.
+  ///
+  /// In zh, this message translates to:
+  /// **'导出失败：{error}'**
+  String storage_browserExportFailed(String error);
+
+  /// No description provided for @storage_browserExportConfirmLarge.
+  ///
+  /// In zh, this message translates to:
+  /// **'「{name}」约 {size}。导出将复制到所选目录，是否继续？'**
+  String storage_browserExportConfirmLarge(String name, String size);
+
   /// No description provided for @storage_browserDelete.
   ///
   /// In zh, this message translates to:

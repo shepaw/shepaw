@@ -4932,6 +4932,27 @@ class AppLocalizationsZh extends AppLocalizations {
   String get storage_browserRefresh => '刷新';
 
   @override
+  String get storage_browserPreview => '预览';
+
+  @override
+  String get storage_browserExport => '导出到…';
+
+  @override
+  String storage_browserExportDone(String path) {
+    return '已导出到 $path';
+  }
+
+  @override
+  String storage_browserExportFailed(String error) {
+    return '导出失败：$error';
+  }
+
+  @override
+  String storage_browserExportConfirmLarge(String name, String size) {
+    return '「$name」约 $size。导出将复制到所选目录，是否继续？';
+  }
+
+  @override
   String get storage_browserDelete => '删除';
 
   @override

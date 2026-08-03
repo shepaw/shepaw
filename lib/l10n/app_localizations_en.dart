@@ -5123,6 +5123,27 @@ class AppLocalizationsEn extends AppLocalizations {
   String get storage_browserRefresh => 'Refresh';
 
   @override
+  String get storage_browserPreview => 'Preview';
+
+  @override
+  String get storage_browserExport => 'Export to…';
+
+  @override
+  String storage_browserExportDone(String path) {
+    return 'Exported to $path';
+  }
+
+  @override
+  String storage_browserExportFailed(String error) {
+    return 'Export failed: $error';
+  }
+
+  @override
+  String storage_browserExportConfirmLarge(String name, String size) {
+    return '“$name” is about $size. Export will copy it to the chosen folder. Continue?';
+  }
+
+  @override
   String get storage_browserDelete => 'Delete';
 
   @override

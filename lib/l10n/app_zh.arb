@@ -2965,6 +2965,35 @@
   "storage_browserCount": "显示 {count} 个文件",
   "storage_browserLoadMore": "加载更多",
   "storage_browserRefresh": "刷新",
+  "storage_browserPreview": "预览",
+  "storage_browserExport": "导出到…",
+  "storage_browserExportDone": "已导出到 {path}",
+  "@storage_browserExportDone": {
+    "placeholders": {
+      "path": {
+        "type": "String"
+      }
+    }
+  },
+  "storage_browserExportFailed": "导出失败：{error}",
+  "@storage_browserExportFailed": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "storage_browserExportConfirmLarge": "「{name}」约 {size}。导出将复制到所选目录，是否继续？",
+  "@storage_browserExportConfirmLarge": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      },
+      "size": {
+        "type": "String"
+      }
+    }
+  },
   "storage_browserDelete": "删除",
   "storage_browserDeleteTitle": "删除文件",
   "storage_browserDeleteConfirm": "将删除 {path} 并移入回收站。确认？",

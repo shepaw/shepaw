@@ -1,10 +1,16 @@
+import 'dart:io';
+
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import 'package:path/path.dart' as p;
 
 import '../l10n/app_localizations.dart';
+import '../services/store_open_service.dart';
 import '../storage/device_identity.dart';
 import '../storage/local_store.dart';
 import '../storage/store_protocol.dart';
 import '../storage/store_service.dart';
+import '../storage/store_uri_reader.dart';
 
 /// 浏览本机 App store 正式文件并手删（进回收站）。
 ///
@@ -18,6 +24,8 @@ class StorageBrowserScreen extends StatefulWidget {
 
 class _StorageBrowserScreenState extends State<StorageBrowserScreen> {
   static const _pageStep = 100;
+  /// Align with chat store-open confirm threshold.
+  static const _confirmExportBytes = StoreOpenService.confirmMaterializeBytes;
 
   String _selfId = '';
   String _space = StoreSpace.files;
@@ -33,6 +41,9 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen> {
     super.initState();
     _bootstrap();
   }
+
+  String _uriFor(StoreEntry entry) =>
+      storeUriWithRef(_space, _selfId, entry.path);
 
   Future<void> _bootstrap() async {
     final self = await DeviceIdentity.deviceId();
@@ -67,6 +78,67 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen> {
         _entries = const [];
         _loading = false;
       });
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _previewEntry(StoreEntry entry) async {
+    if (_selfId.isEmpty) return;
+    await StoreOpenService.instance.openStoreUri(context, _uriFor(entry));
+  }
+
+  Future<void> _exportEntry(StoreEntry entry) async {
+    final l10n = AppLocalizations.of(context);
+    final name = p.basename(entry.path);
+    if (entry.size >= _confirmExportBytes) {
+      final ok = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: Text(l10n.storage_browserExport),
+          content: Text(l10n.storage_browserExportConfirmLarge(
+            name,
+            StoreOpenService.formatBytes(entry.size),
+          )),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(false),
+              child: Text(l10n.common_cancel),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(ctx).pop(true),
+              child: Text(l10n.common_confirm),
+            ),
+          ],
+        ),
+      );
+      if (ok != true) return;
+    }
+    if (!mounted) return;
+    final dir = await FilePicker.platform.getDirectoryPath(
+      dialogTitle: l10n.storage_browserExport,
+    );
+    if (dir == null || !mounted) return;
+
+    setState(() => _busy = true);
+    try {
+      var destPath = p.join(dir, name);
+      var dest = File(destPath);
+      if (await dest.exists()) {
+        final stem = p.withoutExtension(name);
+        final ext = p.extension(name);
+        var i = 1;
+        do {
+          destPath = p.join(dir, '$stem ($i)$ext');
+          dest = File(destPath);
+          i++;
+        } while (await dest.exists());
+      }
+      await StoreUriReader.instance.copyTo(_uriFor(entry), dest);
+      if (!mounted) return;
+      _toast(l10n.storage_browserExportDone(dest.path));
+    } catch (e) {
+      if (mounted) _toast(l10n.storage_browserExportFailed('$e'));
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -124,6 +196,22 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen> {
               subtitle: Text(_fmtBytes(entry.size)),
             ),
             const Divider(height: 1),
+            ListTile(
+              leading: const Icon(Icons.visibility_outlined),
+              title: Text(l10n.storage_browserPreview),
+              onTap: () {
+                Navigator.of(ctx).pop();
+                _previewEntry(entry);
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.folder_open_outlined),
+              title: Text(l10n.storage_browserExport),
+              onTap: () {
+                Navigator.of(ctx).pop();
+                _exportEntry(entry);
+              },
+            ),
             ListTile(
               leading: const Icon(Icons.history),
               title: Text(l10n.storage_browserVersions),
@@ -427,13 +515,11 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen> {
                           overflow: TextOverflow.ellipsis),
                       subtitle: Text(_fmtBytes(e.size),
                           style: Theme.of(context).textTheme.labelSmall),
-                      onTap: _busy ? null : () => _showEntryActions(e),
+                      onTap: _busy ? null : () => _previewEntry(e),
                       trailing: IconButton(
-                        icon: Icon(Icons.delete_outline,
-                            size: 18,
-                            color: Theme.of(context).colorScheme.error),
-                        onPressed: _busy ? null : () => _deleteEntry(e),
-                        tooltip: l10n.storage_browserDelete,
+                        icon: const Icon(Icons.more_horiz, size: 18),
+                        onPressed:
+                            _busy ? null : () => _showEntryActions(e),
                       ),
                     );
                   }),
