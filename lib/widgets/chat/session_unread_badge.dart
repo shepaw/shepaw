@@ -43,6 +43,31 @@ class SessionUnreadBadge extends StatelessWidget {
   }
 }
 
+/// Positions [SessionUnreadBadge] with its center on the host avatar's
+/// top-right corner so the badge sits mostly outside the 40×40 avatar.
+class AvatarUnreadBadgeOverlay extends StatelessWidget {
+  final int count;
+
+  const AvatarUnreadBadgeOverlay({super.key, required this.count});
+
+  @override
+  Widget build(BuildContext context) {
+    if (count <= 0) return const SizedBox.shrink();
+
+    return Positioned(
+      right: 0,
+      top: 0,
+      child: FractionalTranslation(
+        translation: const Offset(0.5, -0.5),
+        child: SessionUnreadBadge(
+          count: count,
+          overlayOnAvatar: true,
+        ),
+      ),
+    );
+  }
+}
+
 /// Small red dot for icon buttons (e.g. session history entry).
 class SessionUnreadDot extends StatelessWidget {
   const SessionUnreadDot({super.key});

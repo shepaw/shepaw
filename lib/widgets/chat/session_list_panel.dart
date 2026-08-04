@@ -336,15 +336,7 @@ class _SessionListContentState extends State<_SessionListContent> {
               size: 20,
             ),
           ),
-          if (unreadCount > 0)
-            Positioned(
-              right: 0,
-              top: 0,
-              child: SessionUnreadBadge(
-                count: unreadCount,
-                overlayOnAvatar: true,
-              ),
-            ),
+          if (unreadCount > 0) AvatarUnreadBadgeOverlay(count: unreadCount),
         ],
       ),
       title: Row(

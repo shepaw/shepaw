@@ -17,6 +17,7 @@ import 'storage_space_screen.dart';
 import '../widgets/agent_search_delegate.dart';
 import '../widgets/shepaw_search_page.dart';
 import '../widgets/avatar_image.dart';
+import '../widgets/chat/session_unread_badge.dart';
 import '../services/message_search_service.dart';
 import '../services/she_service.dart';
 import '../l10n/app_localizations.dart';
@@ -220,9 +221,10 @@ class HomeScreenState extends State<HomeScreen> {
     });
   }
 
-  /// Agent头像（右下角显示未读红点；待审时橙色角标）
+  /// Agent头像（右上角显示未读角标；待审时橙色角标）
   Widget _buildAgentAvatar(Agent agent, int unreadCount, {bool pendingApproval = false}) {
     return Stack(
+      clipBehavior: Clip.none,
       children: [
         Container(
           width: 40,
@@ -242,35 +244,8 @@ class HomeScreenState extends State<HomeScreen> {
             ),
           ),
         ),
-        // 未读消息红点
         if (unreadCount > 0)
-          Positioned(
-            right: 0,
-            top: 0,
-            child: Container(
-              padding: unreadCount > 9
-                  ? const EdgeInsets.symmetric(horizontal: 4, vertical: 1)
-                  : const EdgeInsets.all(0),
-              constraints: const BoxConstraints(minWidth: 18, minHeight: 18),
-              decoration: BoxDecoration(
-                color: Colors.red,
-                borderRadius: BorderRadius.circular(10),
-                border: Border.all(
-                  color: Theme.of(context).scaffoldBackgroundColor,
-                  width: 1.5,
-                ),
-              ),
-              alignment: Alignment.center,
-              child: Text(
-                unreadCount > 99 ? '99+' : '$unreadCount',
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 10,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-            ),
-          )
+          AvatarUnreadBadgeOverlay(count: unreadCount)
         else if (pendingApproval)
           Positioned(
             right: 0,
@@ -1427,6 +1402,7 @@ class HomeScreenState extends State<HomeScreen> {
           children: [
             // Group avatar
             Stack(
+              clipBehavior: Clip.none,
               children: [
                 Container(
                   width: 40,
@@ -1439,33 +1415,7 @@ class HomeScreenState extends State<HomeScreen> {
                   child: const Icon(Icons.group, size: 20, color: AppColors.primary),
                 ),
                 if (unreadCount > 0)
-                  Positioned(
-                    right: 0,
-                    top: 0,
-                    child: Container(
-                      padding: unreadCount > 9
-                          ? const EdgeInsets.symmetric(horizontal: 4, vertical: 1)
-                          : const EdgeInsets.all(0),
-                      constraints: const BoxConstraints(minWidth: 18, minHeight: 18),
-                      decoration: BoxDecoration(
-                        color: Colors.red,
-                        borderRadius: BorderRadius.circular(10),
-                        border: Border.all(
-                          color: Theme.of(context).scaffoldBackgroundColor,
-                          width: 1.5,
-                        ),
-                      ),
-                      alignment: Alignment.center,
-                      child: Text(
-                        unreadCount > 99 ? '99+' : '$unreadCount',
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 10,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                    ),
-                  )
+                  AvatarUnreadBadgeOverlay(count: unreadCount)
                 else if (pendingApproval)
                   Positioned(
                     right: 0,
@@ -1958,21 +1908,7 @@ class HomeScreenState extends State<HomeScreen> {
                 ),
                 // 未读数
                 if (unreadCount > 0)
-                  Positioned(
-                    right: -4,
-                    top: -4,
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
-                      decoration: BoxDecoration(
-                        color: Colors.red,
-                        borderRadius: BorderRadius.circular(10),
-                      ),
-                      child: Text(
-                        unreadCount > 99 ? '99+' : '$unreadCount',
-                        style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold),
-                      ),
-                    ),
-                  ),
+                  AvatarUnreadBadgeOverlay(count: unreadCount),
               ],
             ),
             const SizedBox(width: 12),
