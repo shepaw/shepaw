@@ -366,6 +366,53 @@ extension ChannelDao on LocalDatabaseService {
     return results.isEmpty ? null : results.first;
   }
 
+  /// Agent 所有 DM 会话中最新一条消息（跨会话，用于列表排序/预览）。
+  Future<Map<String, dynamic>?> getLatestMessageForAgent(String agentId) async {
+    final db = await database;
+    final results = await db.rawQuery('''
+      SELECT m.* FROM messages m
+      INNER JOIN channels c ON m.channel_id = c.id
+      INNER JOIN channel_members cm ON c.id = cm.channel_id AND cm.agent_id = ?
+      WHERE c.type = 'dm'
+        AND (c.source_group_channel_id IS NULL OR c.source_group_channel_id = '')
+        AND (c.source_she_channel_id IS NULL OR c.source_she_channel_id = '')
+      ORDER BY m.created_at DESC
+      LIMIT 1
+    ''', [agentId]);
+    return results.isEmpty ? null : results.first;
+  }
+
+  /// Agent 所有 DM 会话的未读总数（跨会话）。
+  Future<int> getUnreadCountForAgent(String agentId) async {
+    final db = await database;
+    final result = await db.rawQuery('''
+      SELECT COUNT(*) as count FROM messages m
+      INNER JOIN channels c ON m.channel_id = c.id
+      INNER JOIN channel_members cm ON c.id = cm.channel_id AND cm.agent_id = ?
+      WHERE c.type = 'dm'
+        AND (c.source_group_channel_id IS NULL OR c.source_group_channel_id = '')
+        AND (c.source_she_channel_id IS NULL OR c.source_she_channel_id = '')
+        AND m.is_read = 0 AND m.sender_type != ?
+    ''', [agentId, 'user']);
+    return (result.first['count'] as int?) ?? 0;
+  }
+
+  /// 群家族所有会话中最新一条消息（跨子会话，用于列表排序/预览）。
+  Future<Map<String, dynamic>?> getLatestMessageForGroupFamily(
+    String parentGroupId,
+  ) async {
+    final db = await database;
+    final results = await db.rawQuery('''
+      SELECT m.* FROM messages m
+      INNER JOIN channels c ON m.channel_id = c.id
+      WHERE c.type = 'group'
+        AND (c.id = ? OR c.parent_group_id = ?)
+      ORDER BY m.created_at DESC
+      LIMIT 1
+    ''', [parentGroupId, parentGroupId]);
+    return results.isEmpty ? null : results.first;
+  }
+
   /// 获取 channel 未读消息数（仅统计 agent 发送的未读消息）
   Future<int> getUnreadCountByChannel(String channelId) async {
     final db = await database;

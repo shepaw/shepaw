@@ -37,6 +37,7 @@ import 'services/approval/pending_approval_hub.dart';
 import 'services/approval/pending_approval_item.dart';
 import 'services/approval/approval_reachability_notifier.dart';
 import 'services/chat_navigation_service.dart';
+import 'services/composer_draft_service.dart';
 import 'services/task/plan_approval_service.dart';
 import 'she_network/memory_exchange_service.dart';
 import 'she_network/presence_service.dart';
@@ -120,6 +121,9 @@ class AppBootstrap {
     ImportGrantNotifier.instance.init(navigatorKey: navigatorKey);
     ChatNavigationService.instance.init(navigatorKey: navigatorKey);
     _wirePlanApprovalReachability();
+    if (getIt.isRegistered<ComposerDraftService>()) {
+      await getIt<ComposerDraftService>().restoreFromDisk();
+    }
     await PendingApprovalHub.instance.hydrate();
     ApprovalReachabilityNotifier.instance.init(navigatorKey: navigatorKey);
     ForegroundTaskService().init();

@@ -139,33 +139,28 @@ void main() {
       expect(entries[1].agent?.id, 'old');
     });
 
-    test('empty new session sorts by session activity instead of sinking', () {
-      // 新建空会话（无消息、无草稿）时，按活跃 channel 的 updated_at 排序，
-      // 避免刚创建的会话沉底找不到。
-      final sessionCreatedAt = DateTime.parse('2026-07-12T09:00:00.000Z');
+    test('opening without messages or draft does not bump sort time', () {
       final entries = ConversationListController.buildSortedConversations(
         filteredAgents: [
           _agent(id: 'chatted', name: 'Chatted'),
-          _agent(id: 'fresh', name: 'Fresh'),
+          _agent(id: 'peeked', name: 'Peeked'),
         ],
         groupChannels: const [],
         pairedPeers: const [],
         searchQuery: '',
         latestMessages: {
           'chatted': {'created_at': '2026-07-11T12:00:00.000Z'},
-          'fresh': null,
+          'peeked': null,
         },
         groupLatestMessages: const {},
         peerLatestTime: const {},
-        sessionActivityForAgent: (id) =>
-            id == 'fresh' ? sessionCreatedAt : null,
       );
 
-      expect(entries.first.agent?.id, 'fresh');
-      expect(entries[1].agent?.id, 'chatted');
+      expect(entries.first.agent?.id, 'chatted');
+      expect(entries[1].agent?.id, 'peeked');
     });
 
-    test('older message time wins over older session activity', () {
+    test('older message time wins when neither has draft', () {
       // 消息时间晚于会话活跃时间时，仍以消息时间为准（max 语义）。
       final entries = ConversationListController.buildSortedConversations(
         filteredAgents: [
@@ -181,16 +176,13 @@ void main() {
         },
         groupLatestMessages: const {},
         peerLatestTime: const {},
-        sessionActivityForAgent: (id) =>
-            DateTime.parse('2026-07-01T00:00:00.000Z'),
       );
 
       expect(entries.first.agent?.id, 'a');
       expect(entries[1].agent?.id, 'b');
     });
 
-    test('empty new group session sorts by session activity', () {
-      final sessionCreatedAt = DateTime.parse('2026-07-12T09:00:00.000Z');
+    test('empty new group without messages stays below chatted group', () {
       final entries = ConversationListController.buildSortedConversations(
         filteredAgents: const [],
         groupChannels: [
@@ -205,12 +197,10 @@ void main() {
           'g-fresh': null,
         },
         peerLatestTime: const {},
-        sessionActivityForGroup: (id) =>
-            id == 'g-fresh' ? sessionCreatedAt : null,
       );
 
-      expect(entries.first.group?.id, 'g-fresh');
-      expect(entries[1].group?.id, 'g-chatted');
+      expect(entries.first.group?.id, 'g-chatted');
+      expect(entries[1].group?.id, 'g-fresh');
     });
   });
 }

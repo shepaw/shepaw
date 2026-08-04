@@ -1384,12 +1384,7 @@ class HomeScreenState extends State<HomeScreen> {
 
     final timeLabel = draft.trimRight().isNotEmpty && draftUpdatedAt != null
         ? _formatDateTime(draftUpdatedAt)
-        : (lastTime != null
-            ? _formatTime(lastTime)
-            // 空会话（新建未发言）按会话活跃时间排序，时间标签同步兜底
-            : (_list.groupSessionActivity[group.id] != null
-                ? _formatDateTime(_list.groupSessionActivity[group.id]!)
-                : ''));
+        : (lastTime != null ? _formatTime(lastTime) : '');
 
     return InkWell(
       onTap: () async {
@@ -1719,12 +1714,7 @@ class HomeScreenState extends State<HomeScreen> {
 
     final timeLabel = draft.trimRight().isNotEmpty && draftUpdatedAt != null
         ? _formatDateTime(draftUpdatedAt)
-        : (lastTime != null
-            ? _formatTime(lastTime)
-            // 空会话（新建未发言）按会话活跃时间排序，时间标签同步兜底
-            : (_list.agentSessionActivity[agent.id] != null
-                ? _formatDateTime(_list.agentSessionActivity[agent.id]!)
-                : ''));
+        : (lastTime != null ? _formatTime(lastTime) : '');
 
     return InkWell(
       onTap: () async {

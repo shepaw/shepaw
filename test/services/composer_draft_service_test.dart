@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:shepaw/services/composer_draft_service.dart';
 
 void main() {
@@ -91,5 +92,27 @@ void main() {
 
     service.clearDraft('ch-1');
     expect(count, 3);
+  });
+
+  test('setDraft does not bump updatedAt when text is unchanged', () {
+    final service = ComposerDraftService();
+    service.setDraft('ch-1', 'hello');
+    final first = service.draftUpdatedAt('ch-1');
+    service.setDraft('ch-1', 'hello');
+    expect(service.draftUpdatedAt('ch-1'), first);
+  });
+
+  test('restoreFromDisk loads persisted drafts', () async {
+    TestWidgetsFlutterBinding.ensureInitialized();
+    SharedPreferences.setMockInitialValues({
+      'composer_drafts_v1': '''
+{"drafts":{"agent:a1":"saved draft"},"updatedAt":{"agent:a1":"2026-07-12T12:00:00.000Z"}}
+''',
+    });
+
+    final service = ComposerDraftService();
+    await service.restoreFromDisk();
+    expect(service.getDraft('agent:a1'), 'saved draft');
+    expect(service.draftUpdatedAt('agent:a1'), isNotNull);
   });
 }
