@@ -618,6 +618,11 @@ mixin _MessagingOps on _ChatControllerBase {
               processNextInQueue();
             }
           };
+        } else {
+          // Fast async completion: task finished (and was removed) before we
+          // could hook onTaskFinished — reload from DB so the reply appears
+          // without leaving the chat.
+          await loadMessages();
         }
       }
 

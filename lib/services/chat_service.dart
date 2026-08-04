@@ -1158,7 +1158,11 @@ $originalQuestion
 
   /// Notify channel update
   void _notifyChannelUpdate(String channelId) {
-    _messageControllers[channelId]?.add([]);
+    if (!_messageControllers.containsKey(channelId)) {
+      _messageControllers[channelId] =
+          StreamController<List<Message>>.broadcast();
+    }
+    _messageControllers[channelId]!.add([]);
   }
 
   /// Public alias for external callers (e.g. ACPServerService) that need to

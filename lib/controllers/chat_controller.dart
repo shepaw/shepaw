@@ -9,6 +9,7 @@ import '../models/remote_agent.dart';
 import '../models/attachment_data.dart';
 import '../models/pending_attachment.dart';
 import '../services/chat_service.dart';
+import '../services/messaging/agent_messaging_service.dart';
 import '../services/local_database_service.dart';
 import '../services/attachment_service.dart';
 import '../services/message_search_service.dart';
@@ -169,6 +170,7 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
   /// messages, member failure notices) so they surface in the chat
   /// immediately instead of waiting for the next full reconcile.
   StreamSubscription<List<Message>>? _channelUpdateSub;
+  StreamSubscription<AgentTaskCompletion>? _agentTaskCompletionSub;
   VoidCallback? _typingListener;
 
   bool get isAppActive => lifecycle.isAppActive;
@@ -353,6 +355,7 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
     _peerConnSub?.cancel();
     _orphanApprovalSub?.cancel();
     _channelUpdateSub?.cancel();
+    _agentTaskCompletionSub?.cancel();
     if (_typingListener != null) {
       chatService.typingChannelIds.removeListener(_typingListener!);
       _typingListener = null;
@@ -541,6 +544,10 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
       if (streaming.isActive) streaming.clear();
       _mergeDmStreamingPlaceholders(dbMessages);
       rebuildMessageIdMap();
+      if (chatService.getActiveTask(currentChannelId!) == null) {
+        isProcessing = false;
+        acpCancellationToken = null;
+      }
     }
     _reapplyStashedPlanApprovalResponses();
     unawaited(_flushAllStashedPlanApprovalResponses());
@@ -800,6 +807,7 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
     final cid = currentChannelId;
     if (cid == null) return;
     _channelUpdateSub?.cancel();
+    _agentTaskCompletionSub?.cancel();
     _channelUpdateSub = chatService.getMessageStream(cid).listen((_) {
       if (isGroupMode) {
         unawaited(reconcileGroupMessages());
@@ -807,7 +815,34 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
         unawaited(reloadMessagesFromDB());
       }
     });
+    _agentTaskCompletionSub =
+        chatService.agentTaskCompletionStream.listen((event) {
+      if (isGroupMode) return;
+      if (event.channelId != cid) return;
+      unawaited(_handleAgentTaskCompleted(event));
+    });
     _subscribeTypingForReattach();
+  }
+
+  /// 1:1 回合终态（消息已落库）后的 UI 自愈：补做可能因竞态/detach 漏掉的刷新。
+  Future<void> _handleAgentTaskCompleted(AgentTaskCompletion event) async {
+    if (_eventController.isClosed) return;
+    if (currentChannelId != event.channelId) return;
+
+    _dmReconcileAfterStreaming = false;
+
+    if (streaming.isActive &&
+        chatService.getActiveTask(event.channelId) == null) {
+      streaming.clear();
+    }
+
+    await reloadMessagesFromDB();
+
+    if (chatService.getActiveTask(event.channelId) == null) {
+      isProcessing = false;
+      acpCancellationToken = null;
+      _notify();
+    }
   }
 
   /// 服务侧发起的回合（DispatchService 唤起 She、peer 入站等）开始时，
