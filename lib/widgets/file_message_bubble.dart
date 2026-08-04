@@ -13,6 +13,7 @@ import '../services/acp_agent_connection.dart';
 import '../services/chat_service.dart';
 import '../services/peer_key_utils.dart';
 import '../service_locator.dart' show acpServerOrNull;
+import '../theme/app_theme.dart';
 
 /// Displays file messages as a card component showing icon, name, and size.
 /// Supports three download states:
@@ -344,11 +345,11 @@ class _FileMessageBubbleState extends State<FileMessageBubble> {
     // downloading → no-op
   }
 
-  Widget _buildTrailingWidget() {
+  Widget _buildTrailingWidget(Color trailingColor) {
     if (_downloadStatus == 'pending') {
       return Icon(
         Icons.download_rounded,
-        color: widget.isMyMessage ? Colors.white70 : Colors.blueGrey,
+        color: trailingColor,
         size: 22,
       );
     }
@@ -359,9 +360,7 @@ class _FileMessageBubbleState extends State<FileMessageBubble> {
         child: CircularProgressIndicator(
           value: _progress > 0 ? _progress : null,
           strokeWidth: 2.5,
-          valueColor: AlwaysStoppedAnimation<Color>(
-            widget.isMyMessage ? Colors.white70 : Colors.blueGrey,
-          ),
+          valueColor: AlwaysStoppedAnimation<Color>(trailingColor),
         ),
       );
     }
@@ -371,11 +370,16 @@ class _FileMessageBubbleState extends State<FileMessageBubble> {
 
   @override
   Widget build(BuildContext context) {
+    // 自己发送的消息气泡为橘色：附件卡片用白底深字，避免与气泡背景融为一体。
     final bgColor = widget.isMyMessage
-        ? Colors.white.withValues(alpha: 0.15)
+        ? Colors.white
         : Colors.black.withValues(alpha: 0.05);
-    final textColor = widget.isMyMessage ? Colors.white : Colors.black87;
-    final subtitleColor = widget.isMyMessage ? Colors.white70 : Colors.black54;
+    final textColor =
+        widget.isMyMessage ? AppColors.textPrimary : Colors.black87;
+    final subtitleColor =
+        widget.isMyMessage ? AppColors.textSecondary : Colors.black54;
+    final trailingColor =
+        widget.isMyMessage ? AppColors.primary : Colors.blueGrey;
 
     return GestureDetector(
       onTap: _handleTap,
@@ -385,6 +389,9 @@ class _FileMessageBubbleState extends State<FileMessageBubble> {
         decoration: BoxDecoration(
           color: bgColor,
           borderRadius: BorderRadius.circular(8),
+          border: widget.isMyMessage
+              ? Border.all(color: Colors.black.withValues(alpha: 0.06))
+              : null,
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
@@ -426,7 +433,7 @@ class _FileMessageBubbleState extends State<FileMessageBubble> {
               ),
             ),
             const SizedBox(width: 8),
-            _buildTrailingWidget(),
+            _buildTrailingWidget(trailingColor),
           ],
         ),
       ),
