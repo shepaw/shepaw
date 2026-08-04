@@ -492,14 +492,6 @@ class ChatService {
   void cancelPlanApproval(String channelId) =>
       _planApprovalService.cancelPlanApproval(channelId);
 
-  /// Close the message stream controller for a single [channelId].
-  /// Use this when a ChatScreen for that channel is disposed, instead of
-  /// the global [detachUI] which tears down controllers for every channel.
-  void closeChannelStream(String channelId) {
-    final controller = _messageControllers.remove(channelId);
-    controller?.close();
-  }
-
   /// Get message stream for a channel
   Stream<List<Message>> getMessageStream(String channelId) {
     if (!_messageControllers.containsKey(channelId)) {

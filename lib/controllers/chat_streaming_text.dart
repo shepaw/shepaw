@@ -86,6 +86,17 @@ class ChatStreamingSession {
 
   bool get isActive => messageId != null;
 
+  /// DM 全量刷新（reloadMessagesFromDB）的推迟判定。
+  ///
+  /// 流式会话存活且服务侧任务仍在运行时，全量替换会顶掉流式占位气泡，
+  /// 应推迟到回合结束；任务已不存在（回调被摘除 / 完成事件丢失）时，
+  /// 继续推迟会永远等不到回合结束 —— 必须立即刷新让 UI 自愈。
+  static bool shouldDeferReload({
+    required bool streamingActive,
+    required bool hasLiveTask,
+  }) =>
+      streamingActive && hasLiveTask;
+
   void begin(String id) {
     messageId = id;
     content = '';

@@ -83,6 +83,39 @@ void main() {
       expect(session.isActive, isFalse);
       expect(session.content, isEmpty);
     });
+
+    test('shouldDeferReload only while a live task backs the session', () {
+      // 流式进行中 + 任务存活 → 推迟（保护流式气泡不被全量替换顶掉）。
+      expect(
+        ChatStreamingSession.shouldDeferReload(
+          streamingActive: true,
+          hasLiveTask: true,
+        ),
+        isTrue,
+      );
+      // 僵尸会话（任务已消失但 streaming 未 clear）→ 不推迟，立即刷新自愈。
+      expect(
+        ChatStreamingSession.shouldDeferReload(
+          streamingActive: true,
+          hasLiveTask: false,
+        ),
+        isFalse,
+      );
+      expect(
+        ChatStreamingSession.shouldDeferReload(
+          streamingActive: false,
+          hasLiveTask: true,
+        ),
+        isFalse,
+      );
+      expect(
+        ChatStreamingSession.shouldDeferReload(
+          streamingActive: false,
+          hasLiveTask: false,
+        ),
+        isFalse,
+      );
+    });
   });
 
   group('ChatStreamingText helpers', () {
