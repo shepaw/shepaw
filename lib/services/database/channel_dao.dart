@@ -397,6 +397,42 @@ extension ChannelDao on LocalDatabaseService {
     return (result.first['count'] as int?) ?? 0;
   }
 
+  /// Agent 其他 DM 会话（不含 [excludeChannelId]）的未读总数。
+  Future<int> getUnreadCountForAgentExcludingChannel(
+    String agentId,
+    String excludeChannelId,
+  ) async {
+    final db = await database;
+    final result = await db.rawQuery('''
+      SELECT COUNT(*) as count FROM messages m
+      INNER JOIN channels c ON m.channel_id = c.id
+      INNER JOIN channel_members cm ON c.id = cm.channel_id AND cm.agent_id = ?
+      WHERE c.type = 'dm'
+        AND (c.source_group_channel_id IS NULL OR c.source_group_channel_id = '')
+        AND (c.source_she_channel_id IS NULL OR c.source_she_channel_id = '')
+        AND m.channel_id != ?
+        AND m.is_read = 0 AND m.sender_type != ?
+    ''', [agentId, excludeChannelId, 'user']);
+    return (result.first['count'] as int?) ?? 0;
+  }
+
+  /// 群家族其他会话（不含 [excludeChannelId]）的未读总数。
+  Future<int> getUnreadCountForGroupFamilyExcludingChannel(
+    String parentGroupId,
+    String excludeChannelId,
+  ) async {
+    final db = await database;
+    final result = await db.rawQuery('''
+      SELECT COUNT(*) as count FROM messages m
+      INNER JOIN channels c ON m.channel_id = c.id
+      WHERE c.type = 'group'
+        AND (c.id = ? OR c.parent_group_id = ?)
+        AND m.channel_id != ?
+        AND m.is_read = 0 AND m.sender_type != ?
+    ''', [parentGroupId, parentGroupId, excludeChannelId, 'user']);
+    return (result.first['count'] as int?) ?? 0;
+  }
+
   /// 群家族所有会话中最新一条消息（跨子会话，用于列表排序/预览）。
   Future<Map<String, dynamic>?> getLatestMessageForGroupFamily(
     String parentGroupId,

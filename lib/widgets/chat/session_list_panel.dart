@@ -3,6 +3,7 @@ import '../../controllers/chat_controller.dart';
 import '../../models/channel.dart';
 import '../../services/local_database_service.dart';
 import '../../l10n/app_localizations.dart';
+import 'session_unread_badge.dart';
 
 /// Session list panel for DM (1-on-1) chat sessions.
 ///
@@ -190,10 +191,18 @@ class _SessionListContentState extends State<_SessionListContent> {
         }
         final session = widget.sessions[index - 1];
         final isCurrent = session.id == widget.currentChannelId;
-        return FutureBuilder<Map<String, dynamic>?>(
-          future: _databaseService.getLatestChannelMessage(session.id),
+        return FutureBuilder<(Map<String, dynamic>?, int)>(
+          future: _loadSessionPreview(session.id, isCurrent),
           builder: (context, snapshot) {
-            final tile = _buildSessionTile(context, session, isCurrent, snapshot.data);
+            final latestMessage = snapshot.data?.$1;
+            final unreadCount = snapshot.data?.$2 ?? 0;
+            final tile = _buildSessionTile(
+              context,
+              session,
+              isCurrent,
+              latestMessage,
+              unreadCount: unreadCount,
+            );
             if (!_isSelectionMode) return tile;
             return ListTile(
               leading: Checkbox(
@@ -256,7 +265,24 @@ class _SessionListContentState extends State<_SessionListContent> {
     );
   }
 
-  Widget _buildSessionTile(BuildContext context, Channel session, bool isCurrentSession, Map<String, dynamic>? latestMessage) {
+  Future<(Map<String, dynamic>?, int)> _loadSessionPreview(
+    String channelId,
+    bool isCurrent,
+  ) async {
+    final latestMessage =
+        await _databaseService.getLatestChannelMessage(channelId);
+    var unreadCount = await _databaseService.getUnreadCountByChannel(channelId);
+    if (isCurrent) unreadCount = 0;
+    return (latestMessage, unreadCount);
+  }
+
+  Widget _buildSessionTile(
+    BuildContext context,
+    Channel session,
+    bool isCurrentSession,
+    Map<String, dynamic>? latestMessage, {
+    int unreadCount = 0,
+  }) {
     final isGroupBound = session.isGroupBoundMemberSession;
     final isSheBound = session.isSheBoundSession;
     final isBound = isGroupBound || isSheBound;
@@ -277,35 +303,49 @@ class _SessionListContentState extends State<_SessionListContent> {
     }
 
     return ListTile(
-      leading: Container(
-        width: 40,
-        height: 40,
-        decoration: BoxDecoration(
-          color: isCurrentSession
-              ? Theme.of(context).primaryColor
-              : isSheBound
-                  ? Colors.orange.withOpacity(0.15)
+      leading: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          Container(
+            width: 40,
+            height: 40,
+            decoration: BoxDecoration(
+              color: isCurrentSession
+                  ? Theme.of(context).primaryColor
+                  : isSheBound
+                      ? Colors.orange.withOpacity(0.15)
+                      : isGroupBound
+                          ? Colors.teal.withOpacity(0.15)
+                          : Colors.grey[300],
+              borderRadius: BorderRadius.circular(10),
+            ),
+            alignment: Alignment.center,
+            child: Icon(
+              isSheBound
+                  ? Icons.pets_outlined
                   : isGroupBound
-                      ? Colors.teal.withOpacity(0.15)
-                      : Colors.grey[300],
-          borderRadius: BorderRadius.circular(10),
-        ),
-        alignment: Alignment.center,
-        child: Icon(
-          isSheBound
-              ? Icons.pets_outlined
-              : isGroupBound
-                  ? Icons.groups_outlined
-                  : Icons.chat_bubble_outline,
-          color: isCurrentSession
-              ? Colors.white
-              : isSheBound
-                  ? Colors.orange[700]
-                  : isGroupBound
-                      ? Colors.teal[700]
-                      : Colors.grey[600],
-          size: 20,
-        ),
+                      ? Icons.groups_outlined
+                      : Icons.chat_bubble_outline,
+              color: isCurrentSession
+                  ? Colors.white
+                  : isSheBound
+                      ? Colors.orange[700]
+                      : isGroupBound
+                          ? Colors.teal[700]
+                          : Colors.grey[600],
+              size: 20,
+            ),
+          ),
+          if (unreadCount > 0)
+            Positioned(
+              right: 0,
+              top: 0,
+              child: SessionUnreadBadge(
+                count: unreadCount,
+                overlayOnAvatar: true,
+              ),
+            ),
+        ],
       ),
       title: Row(
         children: [

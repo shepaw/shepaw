@@ -4,6 +4,7 @@ import '../../models/channel.dart';
 import '../../services/local_database_service.dart';
 import '../../utils/session_utils.dart';
 import '../../l10n/app_localizations.dart';
+import 'session_unread_badge.dart';
 
 /// Session list panel for group chat sessions.
 ///
@@ -191,10 +192,18 @@ class _GroupSessionListContentState extends State<_GroupSessionListContent> {
         final isCurrent = session.id == widget.currentChannelId;
         final isParent = session.parentGroupId == null;
         final isDisabled = isCurrent || isParent;
-        return FutureBuilder<Map<String, dynamic>?>(
-          future: _databaseService.getLatestChannelMessage(session.id),
+        return FutureBuilder<(Map<String, dynamic>?, int)>(
+          future: _loadSessionPreview(session.id, isCurrent),
           builder: (context, snapshot) {
-            final tile = _buildGroupSessionTile(context, session, isCurrent, snapshot.data);
+            final latestMessage = snapshot.data?.$1;
+            final unreadCount = snapshot.data?.$2 ?? 0;
+            final tile = _buildGroupSessionTile(
+              context,
+              session,
+              isCurrent,
+              latestMessage,
+              unreadCount: unreadCount,
+            );
             if (!_isSelectionMode) return tile;
             return ListTile(
               leading: Checkbox(
@@ -257,7 +266,24 @@ class _GroupSessionListContentState extends State<_GroupSessionListContent> {
     );
   }
 
-  Widget _buildGroupSessionTile(BuildContext context, Channel session, bool isCurrentSession, Map<String, dynamic>? latestMessage) {
+  Future<(Map<String, dynamic>?, int)> _loadSessionPreview(
+    String channelId,
+    bool isCurrent,
+  ) async {
+    final latestMessage =
+        await _databaseService.getLatestChannelMessage(channelId);
+    var unreadCount = await _databaseService.getUnreadCountByChannel(channelId);
+    if (isCurrent) unreadCount = 0;
+    return (latestMessage, unreadCount);
+  }
+
+  Widget _buildGroupSessionTile(
+    BuildContext context,
+    Channel session,
+    bool isCurrentSession,
+    Map<String, dynamic>? latestMessage, {
+    int unreadCount = 0,
+  }) {
     final preview = latestMessage?['content'] as String? ?? 'No messages';
     final createdAtStr = latestMessage?['created_at'] as String?;
     String timeText = '';
@@ -279,19 +305,35 @@ class _GroupSessionListContentState extends State<_GroupSessionListContent> {
         : SessionUtils.shortSessionId(session.id, groupChannel: widget.groupChannel);
 
     return ListTile(
-      leading: Container(
-        width: 40,
-        height: 40,
-        decoration: BoxDecoration(
-          color: isCurrentSession ? Theme.of(context).primaryColor : Colors.grey[300],
-          borderRadius: BorderRadius.circular(10),
-        ),
-        alignment: Alignment.center,
-        child: Icon(
-          Icons.group,
-          color: isCurrentSession ? Colors.white : Colors.grey[600],
-          size: 20,
-        ),
+      leading: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          Container(
+            width: 40,
+            height: 40,
+            decoration: BoxDecoration(
+              color: isCurrentSession
+                  ? Theme.of(context).primaryColor
+                  : Colors.grey[300],
+              borderRadius: BorderRadius.circular(10),
+            ),
+            alignment: Alignment.center,
+            child: Icon(
+              Icons.group,
+              color: isCurrentSession ? Colors.white : Colors.grey[600],
+              size: 20,
+            ),
+          ),
+          if (unreadCount > 0)
+            Positioned(
+              right: 0,
+              top: 0,
+              child: SessionUnreadBadge(
+                count: unreadCount,
+                overlayOnAvatar: true,
+              ),
+            ),
+        ],
       ),
       title: Row(
         children: [

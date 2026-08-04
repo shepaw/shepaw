@@ -31,6 +31,7 @@ import '../widgets/chat/chat_message_list.dart';
 import '../widgets/chat/chat_reply_preview.dart';
 import '../widgets/chat/session_list_panel.dart';
 import '../widgets/chat/group_session_list_panel.dart';
+import '../widgets/chat/session_unread_badge.dart';
 import '../widgets/chat/chat_mobile_menu_drawer.dart';
 import '../widgets/chat/group_members_panel.dart';
 import '../widgets/chat/add_group_member_panel.dart';
@@ -131,6 +132,10 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   bool _isProgrammaticScrolling = false;
   int _unreadMessageCount = 0;
 
+  /// Unread agent/group messages in sessions other than the one being viewed.
+  int _otherSessionsUnreadCount = 0;
+  int _trackedMessageCount = 0;
+
   // Pending highlight from search navigation
   String? _pendingHighlightMessageId;
 
@@ -187,7 +192,11 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
       HardwareKeyboard.instance.addHandler(_handleHardwareKey);
     }
 
-    _controller.init();
+    unawaited(_controller.init().then((_) {
+      if (!mounted) return;
+      _trackedMessageCount = _controller.messages.length;
+      _refreshOtherSessionsUnread();
+    }));
     _audioRecordingService.requestPermission();
     _pendingHighlightMessageId = widget.highlightMessageId;
     _checkSheNeedsConfig();
@@ -262,6 +271,11 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   void _onControllerChanged() {
     if (!mounted) return;
     _maybeMigrateComposerDraftKey();
+    final messageCount = _controller.messages.length;
+    if (messageCount != _trackedMessageCount) {
+      _trackedMessageCount = messageCount;
+      unawaited(_refreshOtherSessionsUnread());
+    }
     // During active streaming, if user is scrolled up, skip expensive
     // full rebuilds — the message list content updates in the controller
     // and will render when the user scrolls back to bottom.
@@ -614,6 +628,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
         _unreadMessageCount = 0;
         _controller.isUserScrolledUp = false;
         _controller.markMessagesAsReadIfAtBottom();
+        unawaited(_refreshOtherSessionsUnread());
         setState(() {});
       }
     }
@@ -658,11 +673,45 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     });
   }
 
+  Future<void> _refreshOtherSessionsUnread() async {
+    final channelId = _controller.currentChannelId;
+    if (channelId == null) {
+      if (_otherSessionsUnreadCount != 0 && mounted) {
+        setState(() => _otherSessionsUnreadCount = 0);
+      }
+      return;
+    }
+
+    var count = 0;
+    try {
+      if (_controller.isGroupMode) {
+        final group = _controller.groupChannel;
+        if (group != null) {
+          count = await _controller.localDatabaseService
+              .getUnreadCountForGroupFamilyExcludingChannel(
+            group.groupFamilyId,
+            channelId,
+          );
+        }
+      } else if (widget.agentId != null) {
+        count = await _controller.localDatabaseService
+            .getUnreadCountForAgentExcludingChannel(
+          widget.agentId!,
+          channelId,
+        );
+      }
+    } catch (_) {}
+
+    if (!mounted || count == _otherSessionsUnreadCount) return;
+    setState(() => _otherSessionsUnreadCount = count);
+  }
+
   void _jumpToBottom() {
     _isUserScrolledUp = false;
     _unreadMessageCount = 0;
     _controller.isUserScrolledUp = false;
     _controller.markMessagesAsReadIfAtBottom();
+    unawaited(_refreshOtherSessionsUnread());
     setState(() {});
     if (_controller.messages.isNotEmpty && _itemScrollController.isAttached) {
       // In reverse mode, index 0 is the newest (bottom) message.
@@ -1871,10 +1920,22 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                     : null,
               ),
         actions: [
-          IconButton(
-            icon: const Icon(Icons.history, size: 20),
-            tooltip: AppLocalizations.of(context).chat_sessionList,
-            onPressed: c.isGroupMode ? _showGroupSessionList : _showSessionList,
+          Stack(
+            clipBehavior: Clip.none,
+            children: [
+              IconButton(
+                icon: const Icon(Icons.history, size: 20),
+                tooltip: AppLocalizations.of(context).chat_sessionList,
+                onPressed:
+                    c.isGroupMode ? _showGroupSessionList : _showSessionList,
+              ),
+              if (_otherSessionsUnreadCount > 0)
+                const Positioned(
+                  right: 8,
+                  top: 8,
+                  child: SessionUnreadDot(),
+                ),
+            ],
           ),
           Builder(
             builder: (moreButtonContext) => IconButton(
