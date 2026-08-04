@@ -120,10 +120,7 @@ class AppBootstrap {
     ImportGrantNotifier.instance.init(navigatorKey: navigatorKey);
     ChatNavigationService.instance.init(navigatorKey: navigatorKey);
     _wirePlanApprovalReachability();
-    await PendingApprovalHub.instance.hydrate(
-      loadChannelMessages: (channelId, {int limit = 200}) =>
-          getIt<ChatService>().loadChannelMessages(channelId, limit: limit),
-    );
+    await PendingApprovalHub.instance.hydrate();
     ApprovalReachabilityNotifier.instance.init(navigatorKey: navigatorKey);
     ForegroundTaskService().init();
     await ScheduledTaskService().startScheduler();

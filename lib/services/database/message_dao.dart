@@ -53,6 +53,26 @@ extension MessageDao on LocalDatabaseService {
     );
   }
 
+  /// 按 metadata JSON 子串检索频道消息（不受「最近 N 条」窗口限制）。
+  ///
+  /// 用于启动时的审批对账：直接定位某条 plan_approval / action_confirmation
+  /// 卡片，避免旧卡片落在消息页窗口外导致脏行永远无法自愈。
+  /// [needle] 必须是 jsonEncode 后的确定子串，如 `"_workflowId":"<uuid>"`。
+  Future<List<Map<String, dynamic>>> getChannelMessagesByMetadataMatch(
+    String channelId,
+    String needle, {
+    int limit = 20,
+  }) async {
+    final db = await database;
+    return await db.query(
+      'messages',
+      where: 'channel_id = ? AND metadata LIKE ?',
+      whereArgs: [channelId, '%$needle%'],
+      orderBy: 'created_at DESC',
+      limit: limit,
+    );
+  }
+
   /// 根据 ID 获取单条消息
   Future<Map<String, dynamic>?> getMessageById(String messageId) async {
     final db = await database;

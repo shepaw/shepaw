@@ -3,6 +3,7 @@ import 'dart:async';
 import '../../models/workflow_models.dart';
 import '../../models/workflow_pending_approval.dart';
 import '../../models/message.dart';
+import '../local_database_service.dart';
 import '../logger_service.dart';
 import '../workflow/workflow_service.dart';
 import 'pending_approval_item.dart';
@@ -161,17 +162,18 @@ class PendingApprovalHub {
 
   /// Load durable pending approvals from DB (safe to call multiple times).
   ///
-  /// When [loadChannelMessages] is provided, each affected channel is reconciled
-  /// against chat metadata so stale DB rows cannot revive false banners.
+  /// Every restored row is reconciled against the FULL message history
+  /// (no recency window): rows whose card was already answered replay their
+  /// terminal state into the workflow tables, orphan rows with no card at
+  /// all are closed, and only genuinely unanswered cards keep a reminder.
   Future<void> hydrate({
     WorkflowService? workflowService,
-    Future<List<Message>> Function(String channelId, {int limit})?
-        loadChannelMessages,
-    int reconcileMessageLimit = 200,
+    LocalDatabaseService? db,
   }) async {
     if (_hydrated) return;
     _hydrated = true;
     final wf = workflowService ?? WorkflowService.instance;
+    final database = db ?? LocalDatabaseService();
     try {
       final plans = await wf.getWorkflowsByStatus(WorkflowStatus.pendingApproval);
       for (final exec in plans) {
@@ -193,30 +195,22 @@ class PendingApprovalHub {
         _upsertSilent(_fromWorkflowPending(a));
       }
 
-      if (loadChannelMessages != null && _items.isNotEmpty) {
-        final channelIds =
-            _items.values.map((i) => i.channelId).toSet().toList();
-        for (final channelId in channelIds) {
-          try {
-            final messages = await loadChannelMessages(
-              channelId,
-              limit: reconcileMessageLimit,
-            );
-            await reconcileForChannel(
-              channelId,
-              messages,
-              workflowService: wf,
-            );
-          } catch (e) {
-            LoggerService().warning(
-              'Hydrate reconcile failed for $channelId: $e',
-              tag: _tag,
-            );
-          }
+      for (final item in _items.values.toList()) {
+        try {
+          final keep = await PendingApprovalReconciler.reconcileWithDatabase(
+            item: item,
+            workflowService: wf,
+            db: database,
+          );
+          if (!keep) _items.remove(item.id);
+        } catch (e) {
+          LoggerService().warning(
+            'Hydrate reconcile failed for ${item.id}: $e',
+            tag: _tag,
+          );
         }
-      } else {
-        _emit();
       }
+      _emit();
 
       LoggerService().info(
         'Hydrated ${_items.length} pending approval(s)',
