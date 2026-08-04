@@ -331,8 +331,17 @@ mixin _MessagingOps on _ChatControllerBase {
       _notify();
     }
 
+    if (currentChannelId != null) {
+      unawaited(chatService.cancelActiveDmTask(
+        currentChannelId!,
+        contentOverride:
+            streamingContent.isNotEmpty ? streamingContent : null,
+      ));
+    }
+
     acpCancellationToken?.cancel();
     // DO NOT clear messageQueue — let processNextInQueue() pick up the next one
+    isProcessing = false;
     _notify();
   }
 
@@ -404,10 +413,19 @@ mixin _MessagingOps on _ChatControllerBase {
       _notify();
     }
 
+    if (currentChannelId != null) {
+      unawaited(chatService.cancelActiveDmTask(
+        currentChannelId!,
+        contentOverride:
+            streamingContent.isNotEmpty ? streamingContent : null,
+      ));
+    }
+
     acpCancellationToken?.cancel();
 
     // Clear queued messages so they won't be sent after stopping
     messageQueue.clear();
+    isProcessing = false;
     _notify();
   }
 

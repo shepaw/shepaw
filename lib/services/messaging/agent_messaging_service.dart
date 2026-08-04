@@ -119,6 +119,10 @@ class AgentMessagingService {
         _acpConnections = acpConnections,
         _activeTasks = activeTasks;
 
+  /// Channels whose DM task was finalized early by an explicit user stop.
+  /// Guards background send / async-finalize paths against duplicate DB saves.
+  final Set<String> _userStoppedChannels = {};
+
   // ---------------------------------------------------------------------------
   // Task-completion broadcast
   // ---------------------------------------------------------------------------
@@ -151,6 +155,89 @@ class AgentMessagingService {
   // ---------------------------------------------------------------------------
   // Public API
   // ---------------------------------------------------------------------------
+
+  /// Force-stop the in-flight 1:1 task for [channelId]: mark complete
+  /// synchronously (prevents reattach), persist `[Stopped]` to DB, and
+  /// release foreground/typing state.
+  Future<void> finalizeActiveDmTaskAsStopped({
+    required String channelId,
+    String? contentOverride,
+  }) async {
+    final task = _activeTasks[channelId];
+    if (task == null || task.isComplete) return;
+
+    // Sync — must run before the first await so `unawaited(...)` from the UI
+    // blocks reattach/typing immediately.
+    task.isComplete = true;
+    task.recordInterruption('user_cancelled');
+    task.detachUI();
+    _userStoppedChannels.add(channelId);
+    updateTypingAgentIds();
+
+    final content = buildPeerFinalContent(
+      answerContent: contentOverride ?? '',
+      progressContent: '',
+      accumulatedContent: task.accumulatedContent,
+      resultContent: '[Stopped]',
+      wasCancelled: true,
+    );
+
+    final partialId = task.partialMessageId;
+    if (partialId != null) {
+      try {
+        await _db.deleteMessage(partialId);
+      } catch (e) {
+        LoggerService().warning(
+          'Failed to delete partial message on user stop ($partialId)',
+          tag: 'AgentMessagingService',
+          error: e,
+        );
+      }
+      task.partialMessageId = null;
+    }
+
+    final meta = Map<String, dynamic>.from(task.metadata ?? {});
+    meta['status'] = 'stopped';
+    meta['interruption_reason'] = 'user_cancelled';
+    if (meta['trace_id'] == null) meta['trace_id'] = task.taskId;
+
+    final msg = Message(
+      id: _uuid.v4(),
+      content: content,
+      timestampMs: DateTime.now().millisecondsSinceEpoch,
+      from: MessageFrom(id: task.agentId, type: 'agent', name: task.agentName),
+      to: MessageFrom(id: task.userId, type: 'user', name: task.userName),
+      type: MessageType.text,
+      replyTo: task.userMessageId,
+      metadata: meta,
+    );
+
+    try {
+      await saveMessageToChannel(msg, task.agentId, channelId: channelId);
+      final agent = await _db.getRemoteAgentById(task.agentId);
+      if (agent != null) {
+        _emitCompletion(
+          channelId: channelId,
+          agent: agent,
+          outcome: AgentTaskOutcome.stopped,
+          finalMessage: msg,
+        );
+      }
+    } catch (e, st) {
+      LoggerService().error(
+        'Failed to persist user-stopped DM task for $channelId',
+        tag: 'AgentMessagingService',
+        error: e,
+        stackTrace: st,
+      );
+    } finally {
+      _activeTasks.remove(channelId);
+      releaseForegroundTask(task.agentName);
+      if (!task.dbSaveCompleter.isCompleted) {
+        task.dbSaveCompleter.complete();
+      }
+    }
+  }
 
   Future<Message?> sendMessageToAgent({
     required String content,
@@ -342,6 +429,22 @@ class AgentMessagingService {
           tag: 'AgentMessagingService',
         );
         return null;
+      }
+
+      if (channelId != null && _userStoppedChannels.remove(channelId)) {
+        LoggerService().debug(
+          'Skipping agent response save — channel finalized by user stop',
+          tag: 'AgentMessagingService',
+        );
+        final task = _activeTasks.remove(channelId);
+        updateTypingAgentIds();
+        if (task != null) {
+          releaseForegroundTask(task.agentName);
+          if (!task.dbSaveCompleter.isCompleted) {
+            task.dbSaveCompleter.complete();
+          }
+        }
+        return agentResponse;
       }
 
       if (agentResponse != null) {
@@ -654,7 +757,16 @@ class AgentMessagingService {
       }) async {
         if (asyncFinalizeStarted) return;
         asyncFinalizeStarted = true;
+        final skipSave = effectiveChannelIdForAsync.isNotEmpty &&
+            _userStoppedChannels.remove(effectiveChannelIdForAsync);
         try {
+          if (skipSave) {
+            LoggerService().debug(
+              'Skipping async finalize save — channel finalized by user stop',
+              tag: 'AgentMessagingService',
+            );
+            return;
+          }
           final Message msg;
           if (isError) {
             msg = Message(
@@ -2132,9 +2244,18 @@ class AgentMessagingService {
       await flushHelper.deletePartial();
       // request_history-only turns leave empty content; controller deletes the
       // bubble and runs the supplement flow — skip persisting a blank row.
-      if (displayContent.isNotEmpty || historyRequestData == null) {
+      final skipSave = effectiveChannelId.isNotEmpty &&
+          _userStoppedChannels.contains(effectiveChannelId);
+      if (!skipSave &&
+          (displayContent.isNotEmpty || historyRequestData == null)) {
         await saveMessageToChannel(agentResponse, agent.id, channelId: channelId);
         LoggerService().debug('Agent response saved', tag: 'AgentMessagingService');
+      } else if (skipSave) {
+        _userStoppedChannels.remove(effectiveChannelId);
+        LoggerService().debug(
+          'Skipping local LLM save — channel finalized by user stop',
+          tag: 'AgentMessagingService',
+        );
       } else {
         LoggerService().debug(
           'Skipped saving empty request_history response',

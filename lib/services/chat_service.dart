@@ -460,6 +460,17 @@ class ChatService {
     _updateTypingAgentIds();
   }
 
+  /// Force-stop the in-flight 1:1 DM task for [channelId]: persist
+  /// `[Stopped]` and prevent [reattachToActiveTask] from resuming it.
+  Future<void> cancelActiveDmTask(
+    String channelId, {
+    String? contentOverride,
+  }) =>
+      _agentMessagingService.finalizeActiveDmTaskAsStopped(
+        channelId: channelId,
+        contentOverride: contentOverride,
+      );
+
   // ---------------------------------------------------------------------------
   // Plan-approval persistence (survives channel navigation)
   // ---------------------------------------------------------------------------
