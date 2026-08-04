@@ -759,178 +759,36 @@ class MessageBubble extends StatelessWidget {
           styleSheet: styleSheet,
         );
         final markdownWidget = _wrapWithTextSelection(markdownBody);
+        final hasAnswer = message.content.trim().isNotEmpty;
 
-        // Workflow plan approval card (persisted on admin message metadata).
-        final planApproval =
-            message.metadata?['plan_approval'] as Map<String, dynamic>?;
-        if (planApproval != null && onPlanApprovalResponded != null) {
-          final planResponded =
-              message.metadata?['plan_approval_responded'] as Map<String, dynamic>?;
-          final isPlanResponded =
-              planResponded != null || planApproval['_approved'] != null;
+        final progressSection = _buildProgressCollapsibleSection(
+          context,
+          styleSheet: styleSheet,
+          hasAnswer: hasAnswer,
+        );
+        final interactiveFooter = _buildInteractiveFooter(context);
+
+        if (progressSection != null || interactiveFooter != null) {
+          final children = <Widget>[];
+          if (progressSection != null) {
+            children.add(progressSection);
+            if (hasAnswer) {
+              children.add(const SizedBox(height: 8));
+              children.add(markdownWidget);
+            }
+          } else if (hasAnswer) {
+            children.add(markdownWidget);
+          }
+          if (interactiveFooter != null) {
+            if (children.isNotEmpty) {
+              children.add(const SizedBox(height: 10));
+            }
+            children.add(interactiveFooter);
+          }
+          if (children.length == 1) return children.first;
           return Column(
             crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              if (message.content.trim().isNotEmpty) markdownWidget,
-              if (message.content.trim().isNotEmpty) const SizedBox(height: 10),
-              PlanApprovalCard(
-                planData: planApproval,
-                isResponded: isPlanResponded,
-                onRespond: onPlanApprovalResponded!,
-              ),
-            ],
-          );
-        }
-
-        // Check for action confirmation data
-        final actionConfirmation = message.metadata?['action_confirmation'] as Map<String, dynamic>?;
-        if (actionConfirmation != null) {
-          final isWorkflowPeerApproval =
-              actionConfirmation['_workflowPeerApproval'] == true &&
-              actionConfirmation['selected_action_id'] == null;
-          return Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              markdownWidget,
-              const SizedBox(height: 10),
-              if (isWorkflowPeerApproval)
-                _workflowPeerApprovalHint(context)
-              else
-                ActionConfirmationButtons(
-                  actionData: actionConfirmation,
-                  onActionSelected: onActionSelected,
-                  isAgentOffline: isAgentOffline,
-                ),
-            ],
-          );
-        }
-
-        // Check for single-select data
-
-        // Check for single-select data
-        final singleSelect = message.metadata?['single_select'] as Map<String, dynamic>?;
-        if (singleSelect != null) {
-          return Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              markdownWidget,
-              const SizedBox(height: 10),
-              SingleSelectBubble(
-                selectData: singleSelect,
-                onSelectSubmitted: onSingleSelectSubmitted,
-              ),
-            ],
-          );
-        }
-
-        // Check for multi-select data
-        final multiSelect = message.metadata?['multi_select'] as Map<String, dynamic>?;
-        if (multiSelect != null) {
-          return Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              markdownWidget,
-              const SizedBox(height: 10),
-              MultiSelectBubble(
-                selectData: multiSelect,
-                onSelectSubmitted: onMultiSelectSubmitted,
-              ),
-            ],
-          );
-        }
-
-        // Check for file upload data
-        final fileUpload = message.metadata?['file_upload'] as Map<String, dynamic>?;
-        if (fileUpload != null) {
-          return Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              markdownWidget,
-              const SizedBox(height: 10),
-              FileUploadBubble(
-                uploadData: fileUpload,
-                onUploadSubmitted: onFileUploadSubmitted,
-              ),
-            ],
-          );
-        }
-
-        // Check for form data
-        final formData = message.metadata?['form'] as Map<String, dynamic>?;
-        if (formData != null) {
-          return Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              markdownWidget,
-              const SizedBox(height: 10),
-              FormBubble(
-                formData: formData,
-                onFormSubmitted: onFormSubmitted,
-              ),
-            ],
-          );
-        }
-
-        // Check for separated progress (thinking/tools) vs answer content.
-        // Peer/ACP streams fold progress into metadata.progress_content so the
-        // main bubble stays readable.
-        final progressContent =
-            message.metadata?['progress_content'] as String?;
-        if (progressContent != null && progressContent.isNotEmpty) {
-          final progressTitle =
-              message.metadata?['collapsible_title'] as String?;
-          final autoCollapse =
-              message.metadata?['auto_collapse'] != false;
-          final hasAnswer = message.content.trim().isNotEmpty;
-          final progressBody = MarkdownBody(
-            data: progressContent,
-            selectable: false,
-            extensionSet: md.ExtensionSet.gitHubWeb,
-            onTapLink: (text, href, title) async {
-              if (href == null) return;
-              if (href.startsWith('store://')) {
-                await _openStoreLink(context, href);
-                return;
-              }
-              final uri = Uri.tryParse(href);
-              if (uri == null) return;
-              if (!await launchUrl(uri, mode: LaunchMode.externalApplication)) {
-                if (context.mounted) {
-                  showTopToast(
-                    context,
-                    AppLocalizations.of(context).widget_cannotOpenLink(href),
-                    icon: Icons.error_outline,
-                    color: Colors.red.shade400,
-                  );
-                }
-              }
-            },
-            styleSheet: styleSheet,
-          );
-          final progressBubble = CollapsibleMessageBubble(
-            title: progressTitle ??
-                AppLocalizations.of(context).widget_details,
-            // Collapse when an answer is present (or stream finished with
-            // autoCollapse). Keep expanded while only progress is streaming.
-            initiallyCollapsed: hasAnswer || (!isStreaming && autoCollapse),
-            autoCollapseOnComplete: autoCollapse && hasAnswer,
-            isStreaming: isStreaming && !hasAnswer,
-            isMyMessage: isMyMessage,
-            // When answer is also shown, don't reuse selectionAreaKey —
-            // markdownWidget already owns it.
-            child: _wrapWithTextSelection(
-              progressBody,
-              useSharedSelectionKey: !hasAnswer,
-            ),
-          );
-          if (!hasAnswer) return progressBubble;
-          return Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              progressBubble,
-              const SizedBox(height: 8),
-              markdownWidget,
-            ],
+            children: children,
           );
         }
 
@@ -951,6 +809,128 @@ class MessageBubble extends StatelessWidget {
 
         return markdownWidget;
     }
+  }
+
+  /// Collapsible progress/thinking block from [metadata.progress_content].
+  Widget? _buildProgressCollapsibleSection(
+    BuildContext context, {
+    required MarkdownStyleSheet styleSheet,
+    required bool hasAnswer,
+  }) {
+    final progressContent =
+        message.metadata?['progress_content'] as String?;
+    if (progressContent == null || progressContent.isEmpty) {
+      return null;
+    }
+
+    final progressTitle = message.metadata?['collapsible_title'] as String?;
+    final autoCollapse = message.metadata?['auto_collapse'] != false;
+    final progressBody = MarkdownBody(
+      data: progressContent,
+      selectable: false,
+      extensionSet: md.ExtensionSet.gitHubWeb,
+      onTapLink: (text, href, title) async {
+        if (href == null) return;
+        if (href.startsWith('store://')) {
+          await _openStoreLink(context, href);
+          return;
+        }
+        final uri = Uri.tryParse(href);
+        if (uri == null) return;
+        if (!await launchUrl(uri, mode: LaunchMode.externalApplication)) {
+          if (context.mounted) {
+            showTopToast(
+              context,
+              AppLocalizations.of(context).widget_cannotOpenLink(href),
+              icon: Icons.error_outline,
+              color: Colors.red.shade400,
+            );
+          }
+        }
+      },
+      styleSheet: styleSheet,
+    );
+    return CollapsibleMessageBubble(
+      title: progressTitle ?? AppLocalizations.of(context).widget_details,
+      initiallyCollapsed: hasAnswer || (!isStreaming && autoCollapse),
+      autoCollapseOnComplete: autoCollapse && hasAnswer,
+      isStreaming: isStreaming && !hasAnswer,
+      isMyMessage: isMyMessage,
+      child: _wrapWithTextSelection(
+        progressBody,
+        useSharedSelectionKey: !hasAnswer,
+      ),
+    );
+  }
+
+  /// Interactive cards/buttons appended below message text (approval, forms, etc.).
+  Widget? _buildInteractiveFooter(BuildContext context) {
+    final planApproval =
+        message.metadata?['plan_approval'] as Map<String, dynamic>?;
+    if (planApproval != null && onPlanApprovalResponded != null) {
+      final planResponded =
+          message.metadata?['plan_approval_responded'] as Map<String, dynamic>?;
+      final isPlanResponded =
+          planResponded != null || planApproval['_approved'] != null;
+      return PlanApprovalCard(
+        planData: planApproval,
+        isResponded: isPlanResponded,
+        onRespond: onPlanApprovalResponded!,
+      );
+    }
+
+    final actionConfirmation =
+        message.metadata?['action_confirmation'] as Map<String, dynamic>?;
+    if (actionConfirmation != null) {
+      final isWorkflowPeerApproval =
+          actionConfirmation['_workflowPeerApproval'] == true &&
+          actionConfirmation['selected_action_id'] == null;
+      if (isWorkflowPeerApproval) {
+        return _workflowPeerApprovalHint(context);
+      }
+      return ActionConfirmationButtons(
+        actionData: actionConfirmation,
+        onActionSelected: onActionSelected,
+        isAgentOffline: isAgentOffline,
+      );
+    }
+
+    final singleSelect =
+        message.metadata?['single_select'] as Map<String, dynamic>?;
+    if (singleSelect != null) {
+      return SingleSelectBubble(
+        selectData: singleSelect,
+        onSelectSubmitted: onSingleSelectSubmitted,
+      );
+    }
+
+    final multiSelect =
+        message.metadata?['multi_select'] as Map<String, dynamic>?;
+    if (multiSelect != null) {
+      return MultiSelectBubble(
+        selectData: multiSelect,
+        onSelectSubmitted: onMultiSelectSubmitted,
+      );
+    }
+
+    final fileUpload =
+        message.metadata?['file_upload'] as Map<String, dynamic>?;
+    if (fileUpload != null) {
+      return FileUploadBubble(
+        uploadData: fileUpload,
+        onUploadSubmitted: onFileUploadSubmitted,
+      );
+    }
+
+    final formData = message.metadata?['form'] as Map<String, dynamic>?;
+    if (formData != null) {
+      return FormBubble(
+        formData: formData,
+        onFormSubmitted: onFormSubmitted,
+      );
+    }
+
+    return null;
   }
 
   Widget _buildQuoteBlock(BuildContext context) {
