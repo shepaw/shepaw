@@ -151,21 +151,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
             },
           ),
 
-          ListTile(
-            leading: const Icon(Icons.archive_outlined),
-            title: Text(l10n.settings_dataVault),
-            subtitle: Text(l10n.settings_dataVaultSub),
-            trailing: const Icon(Icons.chevron_right),
-            onTap: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (context) => const VaultRestoreScreen(),
-                ),
-              );
-            },
-          ),
-
           const Divider(),
 
           ListTile(
@@ -304,15 +289,18 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
           const Divider(),
 
-          ListTile(
-            leading: const Icon(Icons.schedule),
-            title: Text(l10n.scheduledTasks_title),
-            subtitle: Text(l10n.scheduledTasks_description),
-            trailing: const Icon(Icons.chevron_right),
-            onTap: () => _openAndRefresh(
-              const ScheduledTasksManagementScreen(),
+          // 定时任务配置不适合移动端操作，入口仅在桌面端提供；
+          // 已创建的任务不受入口隐藏影响，调度器照常运行。
+          if (!(Platform.isAndroid || Platform.isIOS))
+            ListTile(
+              leading: const Icon(Icons.schedule),
+              title: Text(l10n.scheduledTasks_title),
+              subtitle: Text(l10n.scheduledTasks_description),
+              trailing: const Icon(Icons.chevron_right),
+              onTap: () => _openAndRefresh(
+                const ScheduledTasksManagementScreen(),
+              ),
             ),
-          ),
 
           const Divider(height: 32),
 
