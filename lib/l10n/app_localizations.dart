@@ -3512,6 +3512,12 @@ abstract class AppLocalizations {
   /// **'{count} 个会话'**
   String chat_sessionsCount(int count);
 
+  /// No description provided for @chat_markAllSessionsRead.
+  ///
+  /// In zh, this message translates to:
+  /// **'全部已读'**
+  String get chat_markAllSessionsRead;
+
   /// No description provided for @chat_mentionAll.
   ///
   /// In zh, this message translates to:

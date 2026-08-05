@@ -716,6 +716,7 @@
   "chat_openLinkedShe": "Open She chat",
   "chat_sessions": "Sessions",
   "chat_sessionsCount": "{count} sessions",
+  "chat_markAllSessionsRead": "Mark all read",
   "chat_mentionAll": "All",
   "chat_mentionAllSub": "Mention all {count} agents",
   "chat_mentionNotify": "Notify (trigger reply)",

@@ -1867,6 +1867,9 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
+  String get chat_markAllSessionsRead => '全部已读';
+
+  @override
   String get chat_mentionAll => '全部';
 
   @override

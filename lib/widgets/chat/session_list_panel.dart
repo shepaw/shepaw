@@ -4,6 +4,7 @@ import '../../models/channel.dart';
 import '../../services/local_database_service.dart';
 import '../../l10n/app_localizations.dart';
 import 'session_unread_badge.dart';
+import 'session_list_header_menu.dart';
 
 /// Session list panel for DM (1-on-1) chat sessions.
 ///
@@ -22,6 +23,7 @@ class SessionListPanel extends StatelessWidget {
   final String? agentAvatar;
   final String? agentId;
   final VoidCallback? onShowTraces;
+  final VoidCallback? onAllSessionsMarkedRead;
 
   const SessionListPanel({
     super.key,
@@ -35,6 +37,7 @@ class SessionListPanel extends StatelessWidget {
     this.agentAvatar,
     this.agentId,
     this.onShowTraces,
+    this.onAllSessionsMarkedRead,
   });
 
   @override
@@ -46,6 +49,7 @@ class SessionListPanel extends StatelessWidget {
       onSwitchSession: onSwitchSession,
       onBatchDelete: onBatchDelete,
       onShowTraces: onShowTraces,
+      onAllSessionsMarkedRead: onAllSessionsMarkedRead,
     );
   }
 }
@@ -57,6 +61,7 @@ class _SessionListContent extends StatefulWidget {
   final ValueChanged<String> onSwitchSession;
   final ValueChanged<List<String>> onBatchDelete;
   final VoidCallback? onShowTraces;
+  final VoidCallback? onAllSessionsMarkedRead;
 
   const _SessionListContent({
     required this.sessions,
@@ -65,6 +70,7 @@ class _SessionListContent extends StatefulWidget {
     required this.onSwitchSession,
     required this.onBatchDelete,
     this.onShowTraces,
+    this.onAllSessionsMarkedRead,
   });
 
   @override
@@ -74,6 +80,7 @@ class _SessionListContent extends StatefulWidget {
 class _SessionListContentState extends State<_SessionListContent> {
   bool _isSelectionMode = false;
   Set<String> _selectedIds = {};
+  int _listRefreshTick = 0;
   final _databaseService = LocalDatabaseService();
 
   @override
@@ -88,6 +95,15 @@ class _SessionListContentState extends State<_SessionListContent> {
         if (_isSelectionMode) _buildBottomBar(l10n),
       ],
     );
+  }
+
+  Future<void> _markAllSessionsRead() async {
+    for (final session in widget.sessions) {
+      await _databaseService.markChannelMessagesAsRead(session.id);
+    }
+    if (!mounted) return;
+    setState(() => _listRefreshTick++);
+    widget.onAllSessionsMarkedRead?.call();
   }
 
   Widget _buildHeader(AppLocalizations l10n) {
@@ -158,23 +174,19 @@ class _SessionListContentState extends State<_SessionListContent> {
             style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
           ),
           const Spacer(),
-          if (widget.onShowTraces != null)
-            IconButton(
-              icon: const Icon(Icons.psychology_outlined, size: 20),
-              tooltip: 'Traces',
-              onPressed: widget.onShowTraces,
-            ),
-          if (widget.sessions.length > 1)
-            IconButton(
-              icon: const Icon(Icons.edit_outlined, size: 20),
-              tooltip: l10n.chat_selectSessions,
-              onPressed: () => setState(() {
-                _isSelectionMode = true;
-              }),
-            ),
           Text(
             l10n.chat_sessionsCount(widget.sessions.length),
             style: TextStyle(fontSize: 14, color: Colors.grey[600]),
+          ),
+          SessionListHeaderMoreButton(
+            sessions: widget.sessions,
+            databaseService: _databaseService,
+            listRefreshTick: _listRefreshTick,
+            onMarkAll: _markAllSessionsRead,
+            onShowTraces: widget.onShowTraces,
+            onEnterSelectionMode: widget.sessions.length > 1
+                ? () => setState(() => _isSelectionMode = true)
+                : null,
           ),
         ],
       ),
@@ -192,6 +204,7 @@ class _SessionListContentState extends State<_SessionListContent> {
         final session = widget.sessions[index - 1];
         final isCurrent = session.id == widget.currentChannelId;
         return FutureBuilder<(Map<String, dynamic>?, int)>(
+          key: ValueKey('${session.id}_$_listRefreshTick'),
           future: _loadSessionPreview(session.id, isCurrent),
           builder: (context, snapshot) {
             final latestMessage = snapshot.data?.$1;

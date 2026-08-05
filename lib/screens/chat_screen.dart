@@ -1250,6 +1250,10 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
           Navigator.pop(context);
           _showChannelTraces();
         },
+        onAllSessionsMarkedRead: () {
+          unawaited(_refreshOtherSessionsUnread());
+          unawaited(_controller.markMessagesAsReadIfAtBottom());
+        },
       );
 
       if (LayoutUtils.isDesktopLayout(context)) {
@@ -1307,6 +1311,10 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
         onShowTraces: () {
           Navigator.pop(context);
           _showChannelTraces();
+        },
+        onAllSessionsMarkedRead: () {
+          unawaited(_refreshOtherSessionsUnread());
+          unawaited(_controller.markMessagesAsReadIfAtBottom());
         },
       );
 

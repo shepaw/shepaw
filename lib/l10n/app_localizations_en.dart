@@ -1935,6 +1935,9 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
+  String get chat_markAllSessionsRead => 'Mark all read';
+
+  @override
   String get chat_mentionAll => 'All';
 
   @override

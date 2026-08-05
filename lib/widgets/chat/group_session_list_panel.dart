@@ -5,6 +5,7 @@ import '../../services/local_database_service.dart';
 import '../../utils/session_utils.dart';
 import '../../l10n/app_localizations.dart';
 import 'session_unread_badge.dart';
+import 'session_list_header_menu.dart';
 
 /// Session list panel for group chat sessions.
 ///
@@ -20,6 +21,7 @@ class GroupSessionListPanel extends StatelessWidget {
   final ValueChanged<String> onSwitchSession;
   final ValueChanged<List<String>> onBatchDelete;
   final VoidCallback? onShowTraces;
+  final VoidCallback? onAllSessionsMarkedRead;
 
   const GroupSessionListPanel({
     super.key,
@@ -30,6 +32,7 @@ class GroupSessionListPanel extends StatelessWidget {
     required this.onSwitchSession,
     required this.onBatchDelete,
     this.onShowTraces,
+    this.onAllSessionsMarkedRead,
   });
 
   @override
@@ -42,6 +45,7 @@ class GroupSessionListPanel extends StatelessWidget {
       onSwitchSession: onSwitchSession,
       onBatchDelete: onBatchDelete,
       onShowTraces: onShowTraces,
+      onAllSessionsMarkedRead: onAllSessionsMarkedRead,
     );
   }
 }
@@ -54,6 +58,7 @@ class _GroupSessionListContent extends StatefulWidget {
   final ValueChanged<String> onSwitchSession;
   final ValueChanged<List<String>> onBatchDelete;
   final VoidCallback? onShowTraces;
+  final VoidCallback? onAllSessionsMarkedRead;
 
   const _GroupSessionListContent({
     required this.sessions,
@@ -63,6 +68,7 @@ class _GroupSessionListContent extends StatefulWidget {
     required this.onSwitchSession,
     required this.onBatchDelete,
     this.onShowTraces,
+    this.onAllSessionsMarkedRead,
   });
 
   @override
@@ -72,6 +78,7 @@ class _GroupSessionListContent extends StatefulWidget {
 class _GroupSessionListContentState extends State<_GroupSessionListContent> {
   bool _isSelectionMode = false;
   Set<String> _selectedIds = {};
+  int _listRefreshTick = 0;
   final _databaseService = LocalDatabaseService();
 
   @override
@@ -86,6 +93,15 @@ class _GroupSessionListContentState extends State<_GroupSessionListContent> {
         if (_isSelectionMode) _buildBottomBar(l10n),
       ],
     );
+  }
+
+  Future<void> _markAllSessionsRead() async {
+    for (final session in widget.sessions) {
+      await _databaseService.markChannelMessagesAsRead(session.id);
+    }
+    if (!mounted) return;
+    setState(() => _listRefreshTick++);
+    widget.onAllSessionsMarkedRead?.call();
   }
 
   Widget _buildHeader(AppLocalizations l10n) {
@@ -157,23 +173,19 @@ class _GroupSessionListContentState extends State<_GroupSessionListContent> {
             style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
           ),
           const Spacer(),
-          if (widget.onShowTraces != null)
-            IconButton(
-              icon: const Icon(Icons.psychology_outlined, size: 20),
-              tooltip: 'Traces',
-              onPressed: widget.onShowTraces,
-            ),
-          if (widget.sessions.length > 1)
-            IconButton(
-              icon: const Icon(Icons.edit_outlined, size: 20),
-              tooltip: l10n.chat_selectSessions,
-              onPressed: () => setState(() {
-                _isSelectionMode = true;
-              }),
-            ),
           Text(
             l10n.chat_sessionsCount(widget.sessions.length),
             style: TextStyle(fontSize: 14, color: Colors.grey[600]),
+          ),
+          SessionListHeaderMoreButton(
+            sessions: widget.sessions,
+            databaseService: _databaseService,
+            listRefreshTick: _listRefreshTick,
+            onMarkAll: _markAllSessionsRead,
+            onShowTraces: widget.onShowTraces,
+            onEnterSelectionMode: widget.sessions.length > 1
+                ? () => setState(() => _isSelectionMode = true)
+                : null,
           ),
         ],
       ),
@@ -193,6 +205,7 @@ class _GroupSessionListContentState extends State<_GroupSessionListContent> {
         final isParent = session.parentGroupId == null;
         final isDisabled = isCurrent || isParent;
         return FutureBuilder<(Map<String, dynamic>?, int)>(
+          key: ValueKey('${session.id}_$_listRefreshTick'),
           future: _loadSessionPreview(session.id, isCurrent),
           builder: (context, snapshot) {
             final latestMessage = snapshot.data?.$1;

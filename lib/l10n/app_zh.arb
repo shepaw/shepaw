@@ -1075,6 +1075,7 @@
       }
     }
   },
+  "chat_markAllSessionsRead": "全部已读",
   "chat_mentionAll": "全部",
   "chat_mentionAllSub": "提及全部 {count} 个 Agent",
   "@chat_mentionAllSub": {
