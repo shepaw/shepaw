@@ -5,6 +5,7 @@ import '../../models/message.dart';
 import '../../models/remote_agent.dart';
 import '../../models/attachment_data.dart';
 import '../../models/llm_stream_event.dart';
+import '../../models/llm_token_usage.dart';
 import '../../models/inference_log_entry.dart';
 import '../../models/tool_execution_result.dart';
 import '../local_database_service.dart';
@@ -661,6 +662,8 @@ class AgentMessagingService {
       Map<String, dynamic>? fileUploadData;
       Map<String, dynamic>? formDataCapture;
       Map<String, dynamic>? messageMetadataExtra;
+      // Self-reported usage from the remote agent's `task.completed` params.
+      LlmTokenUsage? remoteTokenUsage;
       final splitter = StreamContentSplitter();
 
       void publishSplitMetadata(Map<String, dynamic> meta) {
@@ -694,6 +697,10 @@ class AgentMessagingService {
         meta['trace_id'] = activeTask.taskId;
         if (messageMetadataExtra != null) {
           meta.addAll(messageMetadataExtra!);
+        }
+        final usage = remoteTokenUsage;
+        if (usage != null && usage.hasAny) {
+          meta[LlmTokenUsage.metadataKey] = usage.toJson();
         }
         if (foldProgressContent) {
           meta.addAll(splitter.finalProgressMetadata());
@@ -913,6 +920,7 @@ class AgentMessagingService {
         onTaskCompleted: (data) {
           flushHelper?.cancel();
 
+          remoteTokenUsage = LlmTokenUsage.fromJson(data['usage']);
           infLogAcp.endRound(effectiveTaskId, stopReason: 'stop');
           infLogAcp.endSession(effectiveTaskId, InferenceStatus.completed);
           activeTask.isComplete = true;
@@ -1786,6 +1794,10 @@ class AgentMessagingService {
       Map<String, dynamic>? historyRequestData;
       bool fileMessageHandled = false;
 
+      // Summed across tool-calling rounds; written to the saved message
+      // metadata so the bubble can show per-message token cost.
+      var turnTokenUsage = const LlmTokenUsage();
+
       final maxToolRounds = (agent.metadata?['max_tool_rounds'] as num?)?.toInt() ?? 100;
 
       for (int round = 0; round < maxToolRounds; round++) {
@@ -1829,6 +1841,10 @@ class AgentMessagingService {
 
             case LLMDoneEvent():
               doneEvent = event;
+              turnTokenUsage = turnTokenUsage.plus(LlmTokenUsage(
+                inputTokens: event.inputTokens,
+                outputTokens: event.outputTokens,
+              ));
               infLog.endRound(
                 activeTask.taskId,
                 stopReason: event.stopReason,
@@ -2205,6 +2221,10 @@ class AgentMessagingService {
       final meta = <String, dynamic>{};
       meta['trace_id'] = activeTask.taskId;
       if (messageMetadataExtra != null) meta.addAll(messageMetadataExtra!);
+      // Measured usage wins over any agent-injected `token_usage` key.
+      if (turnTokenUsage.hasAny) {
+        meta[LlmTokenUsage.metadataKey] = turnTokenUsage.toJson();
+      }
       if (actionConfirmationData != null) meta['action_confirmation'] = actionConfirmationData;
       if (singleSelectData != null) meta['single_select'] = singleSelectData;
       if (multiSelectData != null) meta['multi_select'] = multiSelectData;

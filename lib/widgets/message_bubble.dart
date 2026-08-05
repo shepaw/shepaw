@@ -3,6 +3,7 @@ import 'package:flutter_markdown/flutter_markdown.dart';
 import 'package:markdown/markdown.dart' as md;
 import 'package:url_launcher/url_launcher.dart';
 import '../l10n/app_localizations.dart';
+import '../models/llm_token_usage.dart';
 import '../models/message.dart';
 import '../services/store_open_service.dart';
 import '../theme/app_theme.dart';
@@ -348,12 +349,9 @@ class MessageBubble extends StatelessWidget {
                           ),
                         ),
                         const SizedBox(width: 8),
-                        Text(
-                          message.timeString,
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: Colors.grey[500],
-                          ),
+                        _buildTimestampLabel(
+                          fontSize: 12,
+                          color: Colors.grey[500],
                         ),
                       ],
                     ),
@@ -470,12 +468,9 @@ class MessageBubble extends StatelessWidget {
           ),
         ),
         const SizedBox(width: 8),
-        Text(
-          message.timeString,
-          style: TextStyle(
-            fontSize: 12,
-            color: Colors.grey[500],
-          ),
+        _buildTimestampLabel(
+          fontSize: 12,
+          color: Colors.grey[500],
         ),
         if (canToggle) ...[
           const SizedBox(width: 4),
@@ -649,12 +644,35 @@ class MessageBubble extends StatelessWidget {
             ),
           Padding(
             padding: const EdgeInsets.only(top: 4),
-            child: Text(
-              message.timeString,
-              style: const TextStyle(
-                fontSize: 10,
-                color: Colors.grey,
-              ),
+            child: _buildTimestampLabel(
+              fontSize: 10,
+              color: Colors.grey,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Time label, optionally followed by compact token usage for agent messages.
+  Widget _buildTimestampLabel({required double fontSize, Color? color}) {
+    final style = TextStyle(fontSize: fontSize, color: color);
+    final usageLabel = message.from.isAgent
+        ? LlmTokenUsage.fromMetadata(message.metadata)?.compactLabel
+        : null;
+    if (usageLabel == null) {
+      return Text(message.timeString, style: style);
+    }
+    return Text.rich(
+      TextSpan(
+        style: style,
+        children: [
+          TextSpan(text: message.timeString),
+          TextSpan(
+            text: '  $usageLabel',
+            style: TextStyle(
+              fontSize: fontSize,
+              color: color?.withValues(alpha: 0.85) ?? Colors.grey,
             ),
           ),
         ],

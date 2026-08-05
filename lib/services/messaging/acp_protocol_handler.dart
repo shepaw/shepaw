@@ -5,6 +5,7 @@ import '../../models/remote_agent.dart';
 import '../../models/attachment_data.dart';
 import '../../models/acp_protocol.dart';
 import '../../models/inference_log_entry.dart';
+import '../../models/llm_token_usage.dart';
 import '../acp_agent_connection.dart';
 import '../local_database_service.dart';
 import '../inference_log_service.dart';
@@ -114,6 +115,8 @@ class ACPProtocolHandler {
       Map<String, dynamic>? fileUploadData;
       Map<String, dynamic>? formDataCapture;
       Map<String, dynamic>? messageMetadataExtra;
+      // Self-reported usage from the remote agent's `task.completed` params.
+      LlmTokenUsage? remoteTokenUsage;
 
       acpCancellationToken?.addOnCancelled(() {
         activeTask.isComplete = true;
@@ -161,6 +164,7 @@ class ACPProtocolHandler {
           activeTask.onRequestHistory?.call(data);
         },
         onTaskCompleted: (data) {
+          remoteTokenUsage = LlmTokenUsage.fromJson(data['usage']);
           infLogAcp.endRound(effectiveTaskId, stopReason: 'stop');
           infLogAcp.endSession(effectiveTaskId, InferenceStatus.completed);
           activeTask.isComplete = true;
@@ -244,6 +248,10 @@ class ACPProtocolHandler {
       final meta = <String, dynamic>{};
       meta['trace_id'] = activeTask.taskId;
       if (messageMetadataExtra != null) meta.addAll(messageMetadataExtra!);
+      final remoteUsage = remoteTokenUsage;
+      if (remoteUsage != null && remoteUsage.hasAny) {
+        meta[LlmTokenUsage.metadataKey] = remoteUsage.toJson();
+      }
       if (actionConfirmationData != null) meta['action_confirmation'] = actionConfirmationData;
       if (singleSelectData != null) meta['single_select'] = singleSelectData;
       if (multiSelectData != null) meta['multi_select'] = multiSelectData;

@@ -37,6 +37,7 @@ import 'dispatch/she_relay_session_service.dart';
 import '../clis/shepaw/os/os_executor.dart' as os_exec;
 import 'local_llm_agent_service.dart';
 import '../models/llm_stream_event.dart';
+import '../models/llm_token_usage.dart';
 
 /// Result of a history supplement request, carrying both the agent's
 /// re-answer message and how many history entries were actually sent.
@@ -702,6 +703,7 @@ $originalQuestion
 
     final responseBuffer = StringBuffer();
     Map<String, dynamic>? capturedHistoryRequest;
+    var turnTokenUsage = const LlmTokenUsage();
 
     try {
       await for (final event in LocalLLMAgentService.instance.runWithCancelKey(
@@ -730,6 +732,10 @@ $originalQuestion
               onRequestHistory?.call(payload);
             }
           case LLMDoneEvent():
+            turnTokenUsage = turnTokenUsage.plus(LlmTokenUsage(
+              inputTokens: event.inputTokens,
+              outputTokens: event.outputTokens,
+            ));
             break;
         }
       }
@@ -744,6 +750,9 @@ $originalQuestion
 
     final responseContent = responseBuffer.toString();
     final wasCancelled = acpCancellationToken?.isCancelled == true;
+    final tokenUsageMeta = turnTokenUsage.hasAny
+        ? <String, dynamic>{LlmTokenUsage.metadataKey: turnTokenUsage.toJson()}
+        : null;
 
     if (wasCancelled) {
       final responseMessage = Message(
@@ -752,6 +761,7 @@ $originalQuestion
         timestampMs: DateTime.now().millisecondsSinceEpoch,
         from: MessageFrom(id: agent.id, type: 'agent', name: agent.name),
         type: MessageType.text,
+        metadata: tokenUsageMeta,
       );
       if (responseContent.isNotEmpty) {
         await _saveMessageToChannel(responseMessage, agent.id, channelId: sessionId);
@@ -782,6 +792,7 @@ $originalQuestion
       timestampMs: DateTime.now().millisecondsSinceEpoch,
       from: MessageFrom(id: agent.id, type: 'agent', name: agent.name),
       type: MessageType.text,
+      metadata: tokenUsageMeta,
     );
     await _saveMessageToChannel(responseMessage, agent.id, channelId: sessionId);
 
@@ -810,6 +821,7 @@ $originalQuestion
     final taskCompleter = Completer<void>();
     String responseContent = '';
     Map<String, dynamic>? capturedHistoryRequest;
+    LlmTokenUsage? remoteTokenUsage;
 
     // Hook cancellation token so the completer resolves immediately on cancel.
     acpCancellationToken?.addOnCancelled(() {
@@ -829,6 +841,7 @@ $originalQuestion
         onRequestHistory?.call(data);
       },
       onTaskCompleted: (data) {
+        remoteTokenUsage = LlmTokenUsage.fromJson(data['usage']);
         if (!taskCompleter.isCompleted) taskCompleter.complete();
       },
       onTaskError: (data) {
@@ -853,6 +866,11 @@ $originalQuestion
 
     connection.unregisterTaskCallbacks(taskId);
 
+    final acpUsage = remoteTokenUsage;
+    final tokenUsageMeta = (acpUsage != null && acpUsage.hasAny)
+        ? <String, dynamic>{LlmTokenUsage.metadataKey: acpUsage.toJson()}
+        : null;
+
     // If cancelled, return partial content immediately.
     if (acpCancellationToken?.isCancelled == true) {
       final responseMessage = Message(
@@ -861,6 +879,7 @@ $originalQuestion
         timestampMs: DateTime.now().millisecondsSinceEpoch,
         from: MessageFrom(id: agent.id, type: 'agent', name: agent.name),
         type: MessageType.text,
+        metadata: tokenUsageMeta,
       );
       if (responseContent.isNotEmpty) {
         await _saveMessageToChannel(responseMessage, agent.id, channelId: sessionId);
@@ -893,6 +912,7 @@ $originalQuestion
       timestampMs: DateTime.now().millisecondsSinceEpoch,
       from: MessageFrom(id: agent.id, type: 'agent', name: agent.name),
       type: MessageType.text,
+      metadata: tokenUsageMeta,
     );
 
     await _saveMessageToChannel(responseMessage, agent.id, channelId: sessionId);

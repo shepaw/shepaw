@@ -9,6 +9,7 @@ import 'dart:typed_data';
 import 'package:uuid/uuid.dart';
 import '../models/acp_protocol.dart';
 import '../models/acp_server_message.dart';
+import '../models/llm_token_usage.dart';
 import '../models/remote_agent.dart';
 import '../models/attachment_data.dart';
 import '../models/channel.dart';
@@ -517,9 +518,12 @@ class ACPServerService {
     final chatService = ChatService();
     final StringBuffer responseBuffer = StringBuffer();
     bool hasError = false;
+    // Token usage from the completed turn, echoed in `task.completed` so the
+    // connected client can display per-message cost (optional ACP field).
+    Map<String, dynamic>? tokenUsage;
 
     try {
-      await chatService.sendMessageToAgent(
+      final resultMessage = await chatService.sendMessageToAgent(
         content: message,
         agent: agent,
         userId: userId,
@@ -611,6 +615,8 @@ class ACPServerService {
           });
         },
       );
+      final usage = LlmTokenUsage.fromMetadata(resultMessage?.metadata);
+      if (usage != null && usage.hasAny) tokenUsage = usage.toJson();
     } catch (e) {
       hasError = true;
       LoggerService().error('Local LLM chat error for agent $targetAgentId', tag: 'ACPServer', error: e);
@@ -633,6 +639,7 @@ class ACPServerService {
         'params': {
           'task_id': taskId,
           'content': responseBuffer.toString(),
+          if (tokenUsage != null) 'usage': tokenUsage,
         },
       });
     }

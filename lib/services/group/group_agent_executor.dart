@@ -7,6 +7,7 @@ import '../../models/remote_agent.dart';
 import '../../models/channel.dart';
 import '../../models/attachment_data.dart';
 import '../../models/llm_stream_event.dart';
+import '../../models/llm_token_usage.dart';
 import '../../models/inference_log_entry.dart';
 import '../../models/planning_models.dart';
 import '../../clis/shepaw/shepaw_cli.dart';
@@ -392,6 +393,9 @@ class GroupAgentExecutor {
     Map<String, dynamic>? fileUploadData;
     Map<String, dynamic>? formDataCapture;
     Map<String, dynamic>? messageMetadataExtra;
+    // Token usage for the final message bubble: summed across local tool
+    // rounds, or self-reported by a remote agent in `task.completed`.
+    var turnTokenUsage = const LlmTokenUsage();
 
     // Tool-first orchestration capture (admin only).
     var orchHasSignal = false;
@@ -754,6 +758,10 @@ class GroupAgentExecutor {
                 break;
               case LLMDoneEvent():
                 doneEvent = event;
+                turnTokenUsage = turnTokenUsage.plus(LlmTokenUsage(
+                  inputTokens: event.inputTokens,
+                  outputTokens: event.outputTokens,
+                ));
                 infLogGroup.endRound(
                   groupTraceId,
                   stopReason: event.stopReason,
@@ -1123,6 +1131,8 @@ class GroupAgentExecutor {
             infLogGroup.onTextChunk(groupTraceId, chunk);
           },
           onTaskCompleted: (data) {
+            turnTokenUsage =
+                turnTokenUsage.plus(LlmTokenUsage.fromJson(data['usage']));
             infLogGroup.endRound(groupTraceId, stopReason: 'stop');
             infLogGroup.endSession(groupTraceId, InferenceStatus.completed);
             if (!taskCompleter.isCompleted) {
@@ -1494,6 +1504,9 @@ class GroupAgentExecutor {
     final meta = <String, dynamic>{};
     meta['trace_id'] = groupTraceId;
     if (messageMetadataExtra != null) meta.addAll(messageMetadataExtra!);
+    if (turnTokenUsage.hasAny) {
+      meta[LlmTokenUsage.metadataKey] = turnTokenUsage.toJson();
+    }
     if (actionConfirmationData != null) meta['action_confirmation'] = actionConfirmationData;
     if (singleSelectData != null) meta['single_select'] = singleSelectData;
     if (multiSelectData != null) meta['multi_select'] = multiSelectData;
