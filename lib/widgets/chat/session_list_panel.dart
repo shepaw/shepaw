@@ -215,24 +215,10 @@ class _SessionListContentState extends State<_SessionListContent> {
               isCurrent,
               latestMessage,
               unreadCount: unreadCount,
-            );
-            if (!_isSelectionMode) return tile;
-            return ListTile(
-              leading: Checkbox(
-                value: _selectedIds.contains(session.id),
-                onChanged: isCurrent
-                    ? null
-                    : (val) => setState(() {
-                          if (val == true) {
-                            _selectedIds.add(session.id);
-                          } else {
-                            _selectedIds.remove(session.id);
-                          }
-                        }),
-              ),
-              title: tile,
-              contentPadding: EdgeInsets.zero,
-              onTap: isCurrent
+              selectionMode: _isSelectionMode,
+              selected: _selectedIds.contains(session.id),
+              selectionEnabled: !isCurrent,
+              onSelectionToggle: isCurrent
                   ? null
                   : () => setState(() {
                         if (_selectedIds.contains(session.id)) {
@@ -242,6 +228,7 @@ class _SessionListContentState extends State<_SessionListContent> {
                         }
                       }),
             );
+            return tile;
           },
         );
       },
@@ -295,6 +282,10 @@ class _SessionListContentState extends State<_SessionListContent> {
     bool isCurrentSession,
     Map<String, dynamic>? latestMessage, {
     int unreadCount = 0,
+    bool selectionMode = false,
+    bool selected = false,
+    bool selectionEnabled = true,
+    VoidCallback? onSelectionToggle,
   }) {
     final isGroupBound = session.isGroupBoundMemberSession;
     final isSheBound = session.isSheBoundSession;
@@ -315,43 +306,65 @@ class _SessionListContentState extends State<_SessionListContent> {
       } catch (_) {}
     }
 
-    return ListTile(
-      leading: Stack(
-        clipBehavior: Clip.none,
-        children: [
-          Container(
-            width: 40,
-            height: 40,
-            decoration: BoxDecoration(
-              color: isCurrentSession
-                  ? Theme.of(context).primaryColor
-                  : isSheBound
-                      ? Colors.orange.withOpacity(0.15)
-                      : isGroupBound
-                          ? Colors.teal.withOpacity(0.15)
-                          : Colors.grey[300],
-              borderRadius: BorderRadius.circular(10),
-            ),
-            alignment: Alignment.center,
-            child: Icon(
-              isSheBound
-                  ? Icons.pets_outlined
-                  : isGroupBound
-                      ? Icons.groups_outlined
-                      : Icons.chat_bubble_outline,
-              color: isCurrentSession
-                  ? Colors.white
-                  : isSheBound
-                      ? Colors.orange[700]
-                      : isGroupBound
-                          ? Colors.teal[700]
-                          : Colors.grey[600],
-              size: 20,
-            ),
+    final avatar = Stack(
+      clipBehavior: Clip.none,
+      children: [
+        Container(
+          width: 40,
+          height: 40,
+          decoration: BoxDecoration(
+            color: isCurrentSession
+                ? Theme.of(context).primaryColor
+                : isSheBound
+                    ? Colors.orange.withOpacity(0.15)
+                    : isGroupBound
+                        ? Colors.teal.withOpacity(0.15)
+                        : Colors.grey[300],
+            borderRadius: BorderRadius.circular(10),
           ),
-          if (unreadCount > 0) AvatarUnreadBadgeOverlay(count: unreadCount),
-        ],
-      ),
+          alignment: Alignment.center,
+          child: Icon(
+            isSheBound
+                ? Icons.pets_outlined
+                : isGroupBound
+                    ? Icons.groups_outlined
+                    : Icons.chat_bubble_outline,
+            color: isCurrentSession
+                ? Colors.white
+                : isSheBound
+                    ? Colors.orange[700]
+                    : isGroupBound
+                        ? Colors.teal[700]
+                        : Colors.grey[600],
+            size: 20,
+          ),
+        ),
+        if (unreadCount > 0) AvatarUnreadBadgeOverlay(count: unreadCount),
+      ],
+    );
+
+    return ListTile(
+      contentPadding: selectionMode
+          ? const EdgeInsets.fromLTRB(8, 0, 16, 0)
+          : const EdgeInsets.symmetric(horizontal: 16),
+      horizontalTitleGap: selectionMode ? 8 : 16,
+      leading: selectionMode
+          ? Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Checkbox(
+                  value: selected,
+                  onChanged: selectionEnabled
+                      ? (_) => onSelectionToggle?.call()
+                      : null,
+                  materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  visualDensity: VisualDensity.compact,
+                ),
+                const SizedBox(width: 4),
+                avatar,
+              ],
+            )
+          : avatar,
       title: Row(
         children: [
           Expanded(
@@ -434,12 +447,14 @@ class _SessionListContentState extends State<_SessionListContent> {
               ),
             )
           : null,
-      onTap: isCurrentSession
-          ? () => Navigator.of(context).pop()
-          : () {
-              Navigator.of(context).pop();
-              widget.onSwitchSession(session.id);
-            },
+      onTap: selectionMode
+          ? (selectionEnabled ? onSelectionToggle : null)
+          : isCurrentSession
+              ? () => Navigator.of(context).pop()
+              : () {
+                  Navigator.of(context).pop();
+                  widget.onSwitchSession(session.id);
+                },
     );
   }
 

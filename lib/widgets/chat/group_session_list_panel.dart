@@ -216,24 +216,10 @@ class _GroupSessionListContentState extends State<_GroupSessionListContent> {
               isCurrent,
               latestMessage,
               unreadCount: unreadCount,
-            );
-            if (!_isSelectionMode) return tile;
-            return ListTile(
-              leading: Checkbox(
-                value: _selectedIds.contains(session.id),
-                onChanged: isDisabled
-                    ? null
-                    : (val) => setState(() {
-                          if (val == true) {
-                            _selectedIds.add(session.id);
-                          } else {
-                            _selectedIds.remove(session.id);
-                          }
-                        }),
-              ),
-              title: tile,
-              contentPadding: EdgeInsets.zero,
-              onTap: isDisabled
+              selectionMode: _isSelectionMode,
+              selected: _selectedIds.contains(session.id),
+              selectionEnabled: !isDisabled,
+              onSelectionToggle: isDisabled
                   ? null
                   : () => setState(() {
                         if (_selectedIds.contains(session.id)) {
@@ -243,6 +229,7 @@ class _GroupSessionListContentState extends State<_GroupSessionListContent> {
                         }
                       }),
             );
+            return tile;
           },
         );
       },
@@ -296,6 +283,10 @@ class _GroupSessionListContentState extends State<_GroupSessionListContent> {
     bool isCurrentSession,
     Map<String, dynamic>? latestMessage, {
     int unreadCount = 0,
+    bool selectionMode = false,
+    bool selected = false,
+    bool selectionEnabled = true,
+    VoidCallback? onSelectionToggle,
   }) {
     final preview = latestMessage?['content'] as String? ?? 'No messages';
     final createdAtStr = latestMessage?['created_at'] as String?;
@@ -317,29 +308,51 @@ class _GroupSessionListContentState extends State<_GroupSessionListContent> {
         ? 'Session #default'
         : SessionUtils.shortSessionId(session.id, groupChannel: widget.groupChannel);
 
-    return ListTile(
-      leading: Stack(
-        clipBehavior: Clip.none,
-        children: [
-          Container(
-            width: 40,
-            height: 40,
-            decoration: BoxDecoration(
-              color: isCurrentSession
-                  ? Theme.of(context).primaryColor
-                  : Colors.grey[300],
-              borderRadius: BorderRadius.circular(10),
-            ),
-            alignment: Alignment.center,
-            child: Icon(
-              Icons.group,
-              color: isCurrentSession ? Colors.white : Colors.grey[600],
-              size: 20,
-            ),
+    final avatar = Stack(
+      clipBehavior: Clip.none,
+      children: [
+        Container(
+          width: 40,
+          height: 40,
+          decoration: BoxDecoration(
+            color: isCurrentSession
+                ? Theme.of(context).primaryColor
+                : Colors.grey[300],
+            borderRadius: BorderRadius.circular(10),
           ),
-          if (unreadCount > 0) AvatarUnreadBadgeOverlay(count: unreadCount),
-        ],
-      ),
+          alignment: Alignment.center,
+          child: Icon(
+            Icons.group,
+            color: isCurrentSession ? Colors.white : Colors.grey[600],
+            size: 20,
+          ),
+        ),
+        if (unreadCount > 0) AvatarUnreadBadgeOverlay(count: unreadCount),
+      ],
+    );
+
+    return ListTile(
+      contentPadding: selectionMode
+          ? const EdgeInsets.fromLTRB(8, 0, 16, 0)
+          : const EdgeInsets.symmetric(horizontal: 16),
+      horizontalTitleGap: selectionMode ? 8 : 16,
+      leading: selectionMode
+          ? Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Checkbox(
+                  value: selected,
+                  onChanged: selectionEnabled
+                      ? (_) => onSelectionToggle?.call()
+                      : null,
+                  materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  visualDensity: VisualDensity.compact,
+                ),
+                const SizedBox(width: 4),
+                avatar,
+              ],
+            )
+          : avatar,
       title: Row(
         children: [
           Expanded(
@@ -386,12 +399,14 @@ class _GroupSessionListContentState extends State<_GroupSessionListContent> {
               ),
             )
           : null,
-      onTap: isCurrentSession
-          ? () => Navigator.of(context).pop()
-          : () {
-              Navigator.of(context).pop();
-              widget.onSwitchSession(session.id);
-            },
+      onTap: selectionMode
+          ? (selectionEnabled ? onSelectionToggle : null)
+          : isCurrentSession
+              ? () => Navigator.of(context).pop()
+              : () {
+                  Navigator.of(context).pop();
+                  widget.onSwitchSession(session.id);
+                },
     );
   }
 
