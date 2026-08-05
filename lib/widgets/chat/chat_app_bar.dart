@@ -141,7 +141,6 @@ class ChatDMAppBarTitle extends StatelessWidget {
                 ],
               ),
               Row(
-                mainAxisSize: MainAxisSize.min,
                 children: [
                   if (isProcessing) ...[
                     SizedBox(
@@ -153,12 +152,16 @@ class ChatDMAppBarTitle extends StatelessWidget {
                       ),
                     ),
                     const SizedBox(width: 6),
-                    Text(
-                      l10n.widget_typing,
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: Theme.of(context).primaryColor,
-                        fontStyle: FontStyle.italic,
+                    Flexible(
+                      child: Text(
+                        l10n.widget_typing,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: Theme.of(context).primaryColor,
+                          fontStyle: FontStyle.italic,
+                        ),
                       ),
                     ),
                     if (onStopGenerating != null) ...[
@@ -173,12 +176,16 @@ class ChatDMAppBarTitle extends StatelessWidget {
                       ),
                     ],
                   ] else if (isCheckingHealth) ...[
-                    Text(
-                      l10n.status_connecting,
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: Colors.grey[400],
-                        fontStyle: FontStyle.italic,
+                    Flexible(
+                      child: Text(
+                        l10n.status_connecting,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: Colors.grey[400],
+                          fontStyle: FontStyle.italic,
+                        ),
                       ),
                     ),
                   ] else ...[
@@ -205,6 +212,7 @@ class ChatDMAppBarTitle extends StatelessWidget {
                           color: Colors.grey[500],
                           fontFamily: 'monospace',
                         ),
+                        maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                       ),
                     ),
@@ -225,11 +233,15 @@ class ChatDMAppBarTitle extends StatelessWidget {
                       ),
                     ),
                     const SizedBox(width: 4),
-                    Text(
-                      l10n.chat_syncingRemote,
-                      style: TextStyle(
-                        fontSize: 10,
-                        color: Theme.of(context).colorScheme.primary,
+                    Flexible(
+                      child: Text(
+                        l10n.chat_syncingRemote,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontSize: 10,
+                          color: Theme.of(context).colorScheme.primary,
+                        ),
                       ),
                     ),
                   ],
@@ -302,7 +314,6 @@ class ChatGroupAppBarTitle extends StatelessWidget {
               ),
               if (isProcessing)
                 Row(
-                  mainAxisSize: MainAxisSize.min,
                   children: [
                     SizedBox(
                       width: 10,
@@ -342,30 +353,37 @@ class ChatGroupAppBarTitle extends StatelessWidget {
               else
                 Row(
                   children: [
-                    Text(
-                      mentionOnlyMode
-                          ? '$memberCount agents · @mention mode'
-                          : groupChannel?.isAllMembersMentionMode == true
-                              ? '$memberCount agents · all-mention mode'
-                              : '$memberCount agents',
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: Colors.grey[500],
+                    Flexible(
+                      child: Text(
+                        mentionOnlyMode
+                            ? '$memberCount agents · @mention mode'
+                            : groupChannel?.isAllMembersMentionMode == true
+                                ? '$memberCount agents · all-mention mode'
+                                : '$memberCount agents',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: Colors.grey[500],
+                        ),
                       ),
                     ),
-                    if (currentChannelId != null && groupChannel?.parentGroupId != null) ...[
+                    if (currentChannelId != null &&
+                        groupChannel?.parentGroupId != null) ...[
                       Text(
                         '  |  ',
                         style: TextStyle(fontSize: 10, color: Colors.grey[400]),
                       ),
                       Flexible(
                         child: Text(
-                          SessionUtils.shortSessionId(currentChannelId!, groupChannel: groupChannel),
+                          SessionUtils.shortSessionId(currentChannelId!,
+                              groupChannel: groupChannel),
                           style: TextStyle(
                             fontSize: 10,
                             color: Colors.grey[500],
                             fontFamily: 'monospace',
                           ),
+                          maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                         ),
                       ),

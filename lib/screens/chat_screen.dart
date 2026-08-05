@@ -1928,22 +1928,28 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                     : null,
               ),
         actions: [
-          Stack(
-            clipBehavior: Clip.none,
-            children: [
-              IconButton(
-                icon: const Icon(Icons.history, size: 20),
-                tooltip: AppLocalizations.of(context).chat_sessionList,
-                onPressed:
-                    c.isGroupMode ? _showGroupSessionList : _showSessionList,
+          IconButton(
+            icon: SizedBox(
+              width: 24,
+              height: 24,
+              child: Stack(
+                clipBehavior: Clip.none,
+                children: [
+                  const Center(
+                    child: Icon(Icons.history, size: 20),
+                  ),
+                  if (_otherSessionsUnreadCount > 0)
+                    const Positioned(
+                      right: -2,
+                      top: -2,
+                      child: SessionUnreadDot(),
+                    ),
+                ],
               ),
-              if (_otherSessionsUnreadCount > 0)
-                const Positioned(
-                  right: 8,
-                  top: 8,
-                  child: SessionUnreadDot(),
-                ),
-            ],
+            ),
+            tooltip: AppLocalizations.of(context).chat_sessionList,
+            onPressed:
+                c.isGroupMode ? _showGroupSessionList : _showSessionList,
           ),
           Builder(
             builder: (moreButtonContext) => IconButton(
