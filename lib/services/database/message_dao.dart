@@ -18,6 +18,7 @@ extension MessageDao on LocalDatabaseService {
     Map<String, dynamic>? metadata,
     String? replyToId,
     DateTime? createdAt,
+    int isRead = 0,
     ConflictAlgorithm conflictAlgorithm = ConflictAlgorithm.abort,
   }) async {
     final db = await database;
@@ -34,7 +35,7 @@ extension MessageDao on LocalDatabaseService {
         'metadata': metadata != null ? jsonEncode(metadata) : null,
         'reply_to_id': replyToId,
         'created_at': (createdAt ?? DateTime.now()).toIso8601String(),
-        'is_read': 0,
+        'is_read': isRead,
       },
       conflictAlgorithm: conflictAlgorithm,
     );

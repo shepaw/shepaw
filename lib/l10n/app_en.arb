@@ -166,6 +166,12 @@
   "vault_deleted": "Backup deleted",
   "vault_restore": "Restore",
   "vault_deleteTooltip": "Delete backup",
+  "vault_count": "{count} backups",
+  "@vault_count": {
+    "placeholders": {
+      "count": { "type": "int" }
+    }
+  },
   "settings_biometric": "Biometric Authentication",
   "settings_biometricSub": "Use fingerprint or face ID",
   "settings_biometricComingSoon": "Biometric authentication coming soon",
@@ -2770,7 +2776,7 @@
   "storage_recycleShowMore": "Show all ({count})",
   "storage_recycleShowLess": "Show less",
   "storage_deletedAt": "deleted {time}",
-  "storage_entrySnapshots": "Snapshots & Backup",
+  "storage_entrySnapshots": "Backup & Restore",
   "storage_entrySpace": "Local Space",
   "storage_entryAdvanced": "Advanced & Danger Zone",
   "storage_entryNas": "LAN Nexuspouch",

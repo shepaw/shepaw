@@ -446,6 +446,11 @@ class AppLocalizationsZh extends AppLocalizations {
   String get vault_deleteTooltip => '删除备份';
 
   @override
+  String vault_count(int count) {
+    return '$count 个备份';
+  }
+
+  @override
   String get settings_biometric => '生物识别认证';
 
   @override
@@ -5269,7 +5274,7 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
-  String get storage_entrySnapshots => '快照与备份';
+  String get storage_entrySnapshots => '备份与恢复';
 
   @override
   String get storage_entrySpace => '本机空间';

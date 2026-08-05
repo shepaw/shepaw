@@ -4,13 +4,16 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 
 import '../l10n/app_localizations.dart';
+import '../services/vault_service.dart';
 import '../storage/restore_service.dart';
 import '../storage/scheduled_snapshot_service.dart';
 import '../storage/snapshot_crypto.dart';
 import '../storage/snapshot_service.dart';
 import 'storage_shared.dart';
+import 'vault_restore_screen.dart';
 
-/// 快照与备份子页（储物袋重构 §子页）：自动快照设置 + 本机快照列表。
+/// 备份与恢复子页（储物袋重构 §子页）：自动快照设置 + 本机快照列表 +
+/// 历史数据保险库入口（自设置页迁入，同属加密备份恢复）。
 /// 业务逻辑与原 storage_space_screen.dart M1/M3 区块一致。
 class StorageSnapshotsScreen extends StatefulWidget {
   const StorageSnapshotsScreen({super.key});
@@ -23,6 +26,9 @@ class _StorageSnapshotsScreenState extends State<StorageSnapshotsScreen> {
   late Future<List<SnapshotInfo>> _future;
   final Map<String, SnapshotVerifyStatus> _verifyCache = {};
   bool _busy = false;
+
+  final VaultService _vaultService = VaultService();
+  int _vaultCount = 0;
 
   ScheduledSnapshotStatus? _schedStatus;
   int _passwordChangedAtMs = 0;
@@ -43,6 +49,7 @@ class _StorageSnapshotsScreenState extends State<StorageSnapshotsScreen> {
     _schedStatus = await ScheduledSnapshotService.instance.status();
     _passwordChangedAtMs =
         await ScheduledSnapshotService.instance.passwordChangedAtMs();
+    _vaultCount = (await _vaultService.listVaults()).length;
     return list;
   }
 
@@ -216,6 +223,14 @@ class _StorageSnapshotsScreenState extends State<StorageSnapshotsScreen> {
     }
   }
 
+  /// 进入历史数据保险库；返回后刷新数量（可能恢复/删除了 vault）。
+  Future<void> _openVault() async {
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(builder: (_) => const VaultRestoreScreen()),
+    );
+    if (mounted) unawaited(_refresh());
+  }
+
   // ------------------------------------------------------------ UI
 
   @override
@@ -268,12 +283,30 @@ class _StorageSnapshotsScreenState extends State<StorageSnapshotsScreen> {
                     )
                   else
                     ...list.map((s) => _buildSnapshotTile(l10n, s)),
+                  const SizedBox(height: 20),
+                  _buildVaultTile(l10n),
                 ],
               );
             },
           ),
           if (_busy) const StorageBusyOverlay(),
         ],
+      ),
+    );
+  }
+
+  /// 历史数据保险库入口卡（重置密码前的加密备份，用旧密码恢复）。
+  Widget _buildVaultTile(AppLocalizations l10n) {
+    return Card(
+      clipBehavior: Clip.antiAlias,
+      child: ListTile(
+        leading: const Icon(Icons.archive_outlined),
+        title: Text(l10n.settings_dataVault),
+        subtitle: Text(
+          '${l10n.settings_dataVaultSub} · ${l10n.vault_count(_vaultCount)}',
+        ),
+        trailing: const Icon(Icons.chevron_right),
+        onTap: _busy ? null : () => unawaited(_openVault()),
       ),
     );
   }

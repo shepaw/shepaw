@@ -103,6 +103,45 @@ void main() {
     });
   });
 
+  group('preservedReadStateForHistorySync', () {
+    test('returns 0 for brand-new remote rows', () {
+      expect(
+        preservedReadStateForHistorySync(
+          remote: PeerHistoryMessage(role: 'agent', content: 'hi'),
+        ),
+        0,
+      );
+    });
+
+    test('preserves read bit when role and content are unchanged', () {
+      expect(
+        preservedReadStateForHistorySync(
+          remote: PeerHistoryMessage(role: 'agent', content: 'hi'),
+          existingRow: {
+            'sender_type': 'agent',
+            'content': 'hi',
+            'is_read': 1,
+          },
+        ),
+        1,
+      );
+    });
+
+    test('resets to unread when content changed on remote', () {
+      expect(
+        preservedReadStateForHistorySync(
+          remote: PeerHistoryMessage(role: 'agent', content: 'updated'),
+          existingRow: {
+            'sender_type': 'agent',
+            'content': 'old',
+            'is_read': 1,
+          },
+        ),
+        0,
+      );
+    });
+  });
+
   group('peerHistoryMessageMetadata', () {
     test('maps progress into the live stream metadata shape', () {
       final meta = peerHistoryMessageMetadata(

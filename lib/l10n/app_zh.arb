@@ -215,6 +215,12 @@
   "vault_deleted": "备份已删除",
   "vault_restore": "恢复",
   "vault_deleteTooltip": "删除备份",
+  "vault_count": "{count} 个备份",
+  "@vault_count": {
+    "placeholders": {
+      "count": { "type": "int" }
+    }
+  },
   "settings_biometric": "生物识别认证",
   "settings_biometricSub": "使用指纹或面容 ID",
   "settings_biometricComingSoon": "生物识别认证即将推出",
@@ -3255,7 +3261,7 @@
   "storage_recycleShowMore": "显示全部（{count}）",
   "storage_recycleShowLess": "收起",
   "storage_deletedAt": "删除于 {time}",
-  "storage_entrySnapshots": "快照与备份",
+  "storage_entrySnapshots": "备份与恢复",
   "storage_entrySpace": "本机空间",
   "storage_entryAdvanced": "高级与危险区",
   "storage_entryNas": "局域网 Nexuspouch",

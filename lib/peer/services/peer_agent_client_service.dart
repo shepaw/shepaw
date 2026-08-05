@@ -21,6 +21,7 @@ import '../../models/channel.dart';
 import '../../models/remote_agent.dart';
 import '../../models/acp_protocol.dart';
 import '../../services/acp_agent_connection.dart';
+import '../../services/app_lifecycle_service.dart';
 import '../../services/local_database_service.dart';
 import '../../services/local_file_storage_service.dart';
 import '../../services/logger_service.dart';
@@ -275,6 +276,21 @@ Map<String, dynamic>? peerHistoryMessageMetadata(PeerHistoryMessage m) {
     'collapsible_title': m.progressTitle ?? 'Details',
     'auto_collapse': m.progressAutoCollapse ?? true,
   };
+}
+
+/// When re-upserting a synced history row, keep the prior read bit if the
+/// turn content is unchanged. [ConflictAlgorithm.replace] would otherwise reset
+/// `is_read` to 0 and resurrect unread badges for locally-created sessions.
+int preservedReadStateForHistorySync({
+  required PeerHistoryMessage remote,
+  Map<String, dynamic>? existingRow,
+}) {
+  if (existingRow == null) return 0;
+  final prevRole =
+      (existingRow['sender_type'] as String?) == 'user' ? 'user' : 'agent';
+  if (prevRole != remote.role) return 0;
+  if ((existingRow['content'] as String? ?? '') != remote.content) return 0;
+  return existingRow['is_read'] as int? ?? 0;
 }
 
 /// One upstream model option from `agent_models_resp`.
@@ -1326,10 +1342,12 @@ class PeerAgentClientService {
     final existing = await _db.getChannelMessages(channelId, limit: 2000);
     final existingAsc = existing.reversed.toList();
     final existingById = <String, DateTime>{};
+    final existingRowsById = <String, Map<String, dynamic>>{};
     for (final row in existingAsc) {
       final id = row['id'] as String?;
       final rawAt = row['created_at'] as String?;
       if (id == null || rawAt == null) continue;
+      existingRowsById[id] = row;
       final at = DateTime.tryParse(rawAt);
       if (at != null) existingById[id] = at;
     }
@@ -1378,6 +1396,10 @@ class PeerAgentClientService {
       // same metadata shape the live stream produces — the bubble renders it
       // as one collapsible block above the answer.
       final metadata = peerHistoryMessageMetadata(m);
+      final isRead = preservedReadStateForHistorySync(
+        remote: m,
+        existingRow: existingRowsById[msgId],
+      );
       await _db.createMessage(
         id: msgId,
         channelId: channelId,
@@ -1387,6 +1409,7 @@ class PeerAgentClientService {
         content: m.content,
         metadata: metadata,
         createdAt: createdAts[i],
+        isRead: isRead,
         conflictAlgorithm: ConflictAlgorithm.replace,
       );
     }
@@ -1398,6 +1421,12 @@ class PeerAgentClientService {
       if (id != null && !remoteIds.contains(id)) {
         await _db.deleteMessage(id);
       }
+    }
+
+    // User is actively viewing this channel — synced rows must not resurrect
+    // unread (covers the loadMessages ↔ syncHistory race on chat entry).
+    if (AppLifecycleService().shouldSuppressNotification(channelId)) {
+      await _db.markChannelMessagesAsRead(channelId);
     }
 
     _log.info(

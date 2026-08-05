@@ -467,6 +467,11 @@ class AppLocalizationsEn extends AppLocalizations {
   String get vault_deleteTooltip => 'Delete backup';
 
   @override
+  String vault_count(int count) {
+    return '$count backups';
+  }
+
+  @override
   String get settings_biometric => 'Biometric Authentication';
 
   @override
@@ -5467,7 +5472,7 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
-  String get storage_entrySnapshots => 'Snapshots & Backup';
+  String get storage_entrySnapshots => 'Backup & Restore';
 
   @override
   String get storage_entrySpace => 'Local Space';

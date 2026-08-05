@@ -926,6 +926,12 @@ abstract class AppLocalizations {
   /// **'删除备份'**
   String get vault_deleteTooltip;
 
+  /// No description provided for @vault_count.
+  ///
+  /// In zh, this message translates to:
+  /// **'{count} 个备份'**
+  String vault_count(int count);
+
   /// No description provided for @settings_biometric.
   ///
   /// In zh, this message translates to:
@@ -9557,7 +9563,7 @@ abstract class AppLocalizations {
   /// No description provided for @storage_entrySnapshots.
   ///
   /// In zh, this message translates to:
-  /// **'快照与备份'**
+  /// **'备份与恢复'**
   String get storage_entrySnapshots;
 
   /// No description provided for @storage_entrySpace.

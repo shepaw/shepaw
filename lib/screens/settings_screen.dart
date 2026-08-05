@@ -7,7 +7,6 @@ import '../providers/locale_provider.dart';
 import 'change_password_screen.dart';
 import 'privacy_policy_screen.dart';
 import 'notification_settings_screen.dart';
-import 'vault_restore_screen.dart';
 import 'language_settings_screen.dart';
 import 'inference_log_screen.dart';
 import 'log_viewer_screen.dart';
