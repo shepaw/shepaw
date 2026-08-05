@@ -47,6 +47,14 @@ class SyncEngine {
 
   SyncJournal? get journal => _journal;
 
+  /// 待同步到 master 的队列条目数（未启动则为 0）。
+  Future<int> pendingCount() async =>
+      (await _journal?.pendingCount()) ?? 0;
+
+  /// 待同步字节估算。
+  Future<int> pendingBytes() async =>
+      (await _journal?.pendingBytes()) ?? 0;
+
   /// 启动（app_bootstrap，StoreService.start 之后）。
   /// [autoSync] 为 false 时不自动触发同步（测试手动驱动 syncNow）。
   Future<void> start({

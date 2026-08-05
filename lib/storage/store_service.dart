@@ -103,13 +103,63 @@ class StoreService {
   /// 远端 master 是否在线（同步引擎用）。
   Future<bool> masterOnline() async {
     final masterId = await masterDeviceId();
+    return isDeviceOnline(masterId);
+  }
+
+  /// 指定 device_id（指纹）是否可达：本机恒 true；否则要求已配对且已连接。
+  Future<bool> isDeviceOnline(String deviceId) async {
     final self = await DeviceIdentity.deviceId();
-    if (masterId == self) return true;
+    if (deviceId == self) return true;
     final peers = await _peerStorage.loadAllPeers();
-    final masterPeer =
-        peers.where((p) => p.fingerprint == masterId).firstOrNull;
-    if (masterPeer == null) return false;
-    return _manager.connectedPeerIds.contains(masterPeer.id);
+    final peer = peers.where((p) => p.fingerprint == deviceId).firstOrNull;
+    if (peer == null) return false;
+    return _manager.connectedPeerIds.contains(peer.id);
+  }
+
+  /// 跨端读优先服务端：属主在线 → 直读属主；否则走 master（镜像备份）。
+  ///
+  /// 共享储物袋产品语义：配对即可读对方当前内容；指定 master 后还可在属主
+  /// 离线时读其备份镜像。
+  Future<String> preferredReadServer(String ownerDeviceId) async {
+    if (await isDeviceOnline(ownerDeviceId)) return ownerDeviceId;
+    return masterDeviceId();
+  }
+
+  /// 列出某设备某分区目录（本机直列；他端经 [preferredReadServer]）。
+  Future<List<StoreEntry>> listDevice({
+    required String deviceId,
+    required String space,
+    String? prefix,
+    int limit = 100,
+  }) async {
+    final self = await DeviceIdentity.deviceId();
+    if (deviceId == self) {
+      final store = await _localStore();
+      return store.list(deviceId, space, prefix: prefix, limit: limit);
+    }
+    final server = await preferredReadServer(deviceId);
+    final data = await callPeer(
+      server,
+      StoreFrame(
+        op: StoreOp.list,
+        payload: <String, dynamic>{
+          'space': space,
+          'device': deviceId,
+          if (prefix != null && prefix.isNotEmpty) 'path': prefix,
+          'limit': limit,
+        },
+      ),
+    );
+    if (data == null || data.containsKey('_error')) {
+      final code = data?['_error'] as String? ?? StoreError.masterOffline;
+      throw StoreException(code, data?['message'] as String? ?? '');
+    }
+    final raw = data['entries'] as List? ?? const [];
+    return [
+      for (final e in raw)
+        if (e is Map)
+          StoreEntry.fromJson(Map<String, dynamic>.from(e)),
+    ];
   }
 
   // ────────────────────────────── master 指针 ──

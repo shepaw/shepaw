@@ -10,7 +10,7 @@ import 'store_service.dart';
 
 /// 按 `store://` URI 读取内容（Agent CLI / 附件引用共用）。
 ///
-/// - `artifacts` / `files`：本机直读或经 [RemoteReadService] 缓存校验；
+/// - `artifacts` / `files`：本机直读；他端优先直连属主，属主离线再走 master 镜像；
 /// - 私有分区（`attachments` / `backups` 等）：仅本机自身 device 可读。
 /// - 当前仅支持 latest（无 `@ref`）；版本引用后续扩展。
 class StoreUriReader {
@@ -39,14 +39,32 @@ class StoreUriReader {
       return _readLocal(device, space, path);
     }
 
-    final masterId = await StoreService.instance.masterDeviceId();
-    final result = await RemoteReadService.instance.readVerified(
-      serverDeviceId: masterId,
-      deviceId: device,
-      space: space,
-      path: path,
-    );
-    return result.bytes;
+    final preferred =
+        await StoreService.instance.preferredReadServer(device);
+    try {
+      final result = await RemoteReadService.instance.readVerified(
+        serverDeviceId: preferred,
+        deviceId: device,
+        space: space,
+        path: path,
+        allowOwnerFallback: false,
+      );
+      return result.bytes;
+    } catch (e) {
+      final masterId = await StoreService.instance.masterDeviceId();
+      // 属主直读失败时回退 master 镜像（备份路径）。
+      if (preferred != masterId) {
+        final result = await RemoteReadService.instance.readVerified(
+          serverDeviceId: masterId,
+          deviceId: device,
+          space: space,
+          path: path,
+          allowOwnerFallback: false,
+        );
+        return result.bytes;
+      }
+      rethrow;
+    }
   }
 
   /// 仅查文件大小（本机 `stat` / 远端 meta，不拉内容）。
@@ -67,9 +85,10 @@ class StoreUriReader {
       return size;
     }
 
-    final masterId = await StoreService.instance.masterDeviceId();
+    final server =
+        await StoreService.instance.preferredReadServer(parsed.device);
     return RemoteReadService.instance.probeSize(
-      serverDeviceId: masterId,
+      serverDeviceId: server,
       deviceId: parsed.device,
       space: parsed.space,
       path: parsed.path,
@@ -135,15 +154,17 @@ class StoreUriReader {
       return;
     }
 
-    final masterId = await StoreService.instance.masterDeviceId();
+    final server =
+        await StoreService.instance.preferredReadServer(parsed.device);
     await RemoteReadService.instance.materializeToFile(
-      serverDeviceId: masterId,
+      serverDeviceId: server,
       deviceId: parsed.device,
       space: parsed.space,
       path: parsed.path,
       dest: dest,
       maxBytes: maxBytes,
       onProgress: onProgress,
+      allowOwnerFallback: server != parsed.device,
     );
   }
 

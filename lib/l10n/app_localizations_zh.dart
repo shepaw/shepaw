@@ -5283,27 +5283,27 @@ class AppLocalizationsZh extends AppLocalizations {
   String get storage_entryAdvanced => '高级与危险区';
 
   @override
-  String get storage_entryNas => '局域网 Nexuspouch';
+  String get storage_entryNas => '共享储物袋';
 
   @override
-  String get storage_nasEntryHint => '发现同网段常开存储节点';
+  String get storage_nasEntryHint => '查看配对设备储物袋，并可指定 master 备份';
 
   @override
   String get storage_nasHint =>
-      '扫描广播 _nexuspouch._tcp 的 Nexuspouch 节点。首次在节点 /admin 扫码配对后，下方会列出已配对设备并标注 master；已配对节点可点「连接」刷新端点。';
+      '配对成功后即可浏览对方 files/artifacts。将 PC 等设备设为 master 后，本机变更会定期镜像备份到该端。下方还可发现局域网 Nexuspouch 节点。';
 
   @override
   String get storage_nasScanning => '正在扫描局域网…';
 
   @override
-  String get storage_nasEmpty => '未发现 Nexuspouch 节点。请确认节点已在同一 Wi‑Fi 运行。';
+  String get storage_nasEmpty => '未发现 Nexuspouch 节点。也可直接配对手机/电脑互相浏览储物袋。';
 
   @override
-  String get storage_nasConnect => '连接';
+  String get storage_nasConnect => '连接并设为 master';
 
   @override
   String storage_nasConnected(String name) {
-    return '已连接到 $name';
+    return '已连接 $name 并设为 master';
   }
 
   @override
@@ -5335,10 +5335,42 @@ class AppLocalizationsZh extends AppLocalizations {
   String get storage_pairedSection => '已配对设备';
 
   @override
-  String get storage_pairedEmpty => '尚未配对存储节点。请扫描节点 admin 二维码完成配对。';
+  String get storage_pairedEmpty => '暂无配对设备。扫码配对后即可互读储物袋。';
 
   @override
   String get storage_discoveredSection => '局域网发现';
+
+  @override
+  String get storage_sharedDevicesSection => '共享设备';
+
+  @override
+  String get storage_sharedThisDevice => '本机';
+
+  @override
+  String get storage_sharedBrowse => '浏览储物袋';
+
+  @override
+  String get storage_sharedBrowseHint =>
+      '只读浏览该设备共享分区（files / artifacts）。属主在线直读；离线时尝试 master 镜像。';
+
+  @override
+  String get storage_sharedSetMaster => '设为 master（备份目标）';
+
+  @override
+  String storage_sharedMasterSet(String name) {
+    return '已将 $name 设为 master，本机将开始镜像备份';
+  }
+
+  @override
+  String storage_sharedSyncPending(int count, String bytes) {
+    return '待同步到 master：$count 项（约 $bytes）';
+  }
+
+  @override
+  String get storage_sharedSyncPendingHint => '手机等移动端可将储物袋备份到 PC master';
+
+  @override
+  String get storage_sharedSyncNow => '立即同步';
 
   @override
   String get storage_masterBadge => 'master';

@@ -5481,29 +5481,29 @@ class AppLocalizationsEn extends AppLocalizations {
   String get storage_entryAdvanced => 'Advanced & Danger Zone';
 
   @override
-  String get storage_entryNas => 'LAN Nexuspouch';
+  String get storage_entryNas => 'Shared Pouch';
 
   @override
   String get storage_nasEntryHint =>
-      'Discover always-on store masters on your network';
+      'Browse paired devices\' stores; set a master for backup';
 
   @override
   String get storage_nasHint =>
-      'Scan for Nexuspouch nodes advertising _nexuspouch._tcp. After pairing via the node admin QR, paired devices appear below with a master badge; Connect refreshes the LAN endpoint.';
+      'After pairing, browse each other\'s files/artifacts. Set a PC as master to mirror this device\'s pouch for backup. LAN Nexuspouch discovery remains below.';
 
   @override
   String get storage_nasScanning => 'Scanning LAN…';
 
   @override
   String get storage_nasEmpty =>
-      'No Nexuspouch nodes found. Is the node running on this Wi‑Fi?';
+      'No Nexuspouch nodes found. You can still pair phones/PCs to browse shared pouches.';
 
   @override
-  String get storage_nasConnect => 'Connect';
+  String get storage_nasConnect => 'Connect & set master';
 
   @override
   String storage_nasConnected(String name) {
-    return 'Connected to $name';
+    return 'Connected to $name and set as master';
   }
 
   @override
@@ -5537,10 +5537,43 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get storage_pairedEmpty =>
-      'No store node paired yet. Scan the node admin QR to pair.';
+      'No paired devices yet. Pair to read each other\'s pouches.';
 
   @override
   String get storage_discoveredSection => 'LAN discovery';
+
+  @override
+  String get storage_sharedDevicesSection => 'Shared devices';
+
+  @override
+  String get storage_sharedThisDevice => 'This device';
+
+  @override
+  String get storage_sharedBrowse => 'Browse pouch';
+
+  @override
+  String get storage_sharedBrowseHint =>
+      'Read-only shared spaces (files / artifacts). Prefer live owner; fall back to master mirror when offline.';
+
+  @override
+  String get storage_sharedSetMaster => 'Set as master (backup target)';
+
+  @override
+  String storage_sharedMasterSet(String name) {
+    return 'Set $name as master; this device will start mirroring';
+  }
+
+  @override
+  String storage_sharedSyncPending(int count, String bytes) {
+    return 'Pending sync to master: $count items (~$bytes)';
+  }
+
+  @override
+  String get storage_sharedSyncPendingHint =>
+      'Mobile pouches can back up to a PC master';
+
+  @override
+  String get storage_sharedSyncNow => 'Sync now';
 
   @override
   String get storage_masterBadge => 'master';

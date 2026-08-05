@@ -2779,13 +2779,13 @@
   "storage_entrySnapshots": "Backup & Restore",
   "storage_entrySpace": "Local Space",
   "storage_entryAdvanced": "Advanced & Danger Zone",
-  "storage_entryNas": "LAN Nexuspouch",
-  "storage_nasEntryHint": "Discover always-on store masters on your network",
-  "storage_nasHint": "Scan for Nexuspouch nodes advertising _nexuspouch._tcp. After pairing via the node admin QR, paired devices appear below with a master badge; Connect refreshes the LAN endpoint.",
+  "storage_entryNas": "Shared Pouch",
+  "storage_nasEntryHint": "Browse paired devices' stores; set a master for backup",
+  "storage_nasHint": "After pairing, browse each other's files/artifacts. Set a PC as master to mirror this device's pouch for backup. LAN Nexuspouch discovery remains below.",
   "storage_nasScanning": "Scanning LAN…",
-  "storage_nasEmpty": "No Nexuspouch nodes found. Is the node running on this Wi‑Fi?",
-  "storage_nasConnect": "Connect",
-  "storage_nasConnected": "Connected to {name}",
+  "storage_nasEmpty": "No Nexuspouch nodes found. You can still pair phones/PCs to browse shared pouches.",
+  "storage_nasConnect": "Connect & set master",
+  "storage_nasConnected": "Connected to {name} and set as master",
   "@storage_nasConnected": {
     "placeholders": {
       "name": {"type": "String"}
@@ -2809,8 +2809,28 @@
   "storage_nasAddDevice": "Add device",
   "storage_nasPaired": "Paired",
   "storage_pairedSection": "Paired devices",
-  "storage_pairedEmpty": "No store node paired yet. Scan the node admin QR to pair.",
+  "storage_pairedEmpty": "No paired devices yet. Pair to read each other's pouches.",
   "storage_discoveredSection": "LAN discovery",
+  "storage_sharedDevicesSection": "Shared devices",
+  "storage_sharedThisDevice": "This device",
+  "storage_sharedBrowse": "Browse pouch",
+  "storage_sharedBrowseHint": "Read-only shared spaces (files / artifacts). Prefer live owner; fall back to master mirror when offline.",
+  "storage_sharedSetMaster": "Set as master (backup target)",
+  "storage_sharedMasterSet": "Set {name} as master; this device will start mirroring",
+  "@storage_sharedMasterSet": {
+    "placeholders": {
+      "name": {"type": "String"}
+    }
+  },
+  "storage_sharedSyncPending": "Pending sync to master: {count} items (~{bytes})",
+  "@storage_sharedSyncPending": {
+    "placeholders": {
+      "count": {"type": "int"},
+      "bytes": {"type": "String"}
+    }
+  },
+  "storage_sharedSyncPendingHint": "Mobile pouches can back up to a PC master",
+  "storage_sharedSyncNow": "Sync now",
   "storage_masterBadge": "master",
   "storage_importEntryHint": "Migrate snapshots and data from an old device",
   "storage_advancedEntryHint": "Folder export · WebDAV · Wipe",

@@ -12,11 +12,30 @@ import '../storage/store_protocol.dart';
 import '../storage/store_service.dart';
 import '../storage/store_uri_reader.dart';
 
-/// 浏览本机 App store 正式文件并手删（进回收站）。
+/// 浏览 App store 正式文件。
 ///
-/// 版本 / 血缘 / 搜索经 Noise 调 master（见 docs/APP_CONSUMER_UI.md）。
+/// - 默认浏览本机全部空间，可删/导出；
+/// - 传入 [deviceId] 可浏览配对设备的共享分区（[readOnly] 默认 true，不可删）。
 class StorageBrowserScreen extends StatefulWidget {
-  const StorageBrowserScreen({super.key});
+  const StorageBrowserScreen({
+    super.key,
+    this.deviceId,
+    this.deviceName,
+    this.readOnly = false,
+    this.initialSpace,
+  });
+
+  /// 目标设备 fingerprint；null = 本机。
+  final String? deviceId;
+
+  /// 展示用设备名（远端浏览时用）。
+  final String? deviceName;
+
+  /// 只读模式：隐藏删除；远端默认只读。
+  final bool readOnly;
+
+  /// 初始分区；远端默认 files。
+  final String? initialSpace;
 
   @override
   State<StorageBrowserScreen> createState() => _StorageBrowserScreenState();
@@ -28,7 +47,8 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen> {
   static const _confirmExportBytes = StoreOpenService.confirmMaterializeBytes;
 
   String _selfId = '';
-  String _space = StoreSpace.files;
+  String _targetId = '';
+  late String _space;
   String _prefix = '';
   int _limit = _pageStep;
   bool _busy = false;
@@ -36,33 +56,49 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen> {
   List<StoreEntry> _entries = const [];
   String? _error;
 
+  bool get _isRemote =>
+      _targetId.isNotEmpty && _selfId.isNotEmpty && _targetId != _selfId;
+
+  bool get _readOnly => widget.readOnly || _isRemote;
+
+  List<String> get _spaces => _isRemote
+      ? StoreSpace.sharedReadable
+      : StoreSpace.browserSpaces;
+
   @override
   void initState() {
     super.initState();
+    _space = widget.initialSpace ?? StoreSpace.files;
     _bootstrap();
   }
 
   String _uriFor(StoreEntry entry) =>
-      storeUriWithRef(_space, _selfId, entry.path);
+      storeUriWithRef(_space, _targetId, entry.path);
 
   Future<void> _bootstrap() async {
     final self = await DeviceIdentity.deviceId();
     if (!mounted) return;
-    setState(() => _selfId = self);
+    final target = widget.deviceId ?? self;
+    setState(() {
+      _selfId = self;
+      _targetId = target;
+      if (_isRemote && !StoreSpace.sharedReadable.contains(_space)) {
+        _space = StoreSpace.files;
+      }
+    });
     await _reload();
   }
 
   Future<void> _reload() async {
-    if (_selfId.isEmpty) return;
+    if (_targetId.isEmpty) return;
     setState(() {
       _busy = true;
       _error = null;
     });
     try {
-      final store = await StoreService.instance.localStore();
-      final entries = await store.list(
-        _selfId,
-        _space,
+      final entries = await StoreService.instance.listDevice(
+        deviceId: _targetId,
+        space: _space,
         prefix: _prefix.isEmpty ? null : _prefix,
         limit: _limit,
       );
@@ -84,7 +120,7 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen> {
   }
 
   Future<void> _previewEntry(StoreEntry entry) async {
-    if (_selfId.isEmpty) return;
+    if (_targetId.isEmpty) return;
     await StoreOpenService.instance.openStoreUri(context, _uriFor(entry));
   }
 
@@ -145,6 +181,10 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen> {
   }
 
   Future<void> _deleteEntry(StoreEntry entry) async {
+    if (_readOnly) {
+      _toast(AppLocalizations.of(context).storage_browserDeleteDenied);
+      return;
+    }
     final l10n = AppLocalizations.of(context);
     final confirmed = await showDialog<bool>(
       context: context,
@@ -169,7 +209,7 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen> {
     setState(() => _busy = true);
     try {
       final store = await StoreService.instance.localStore();
-      await store.delete(_selfId, _space, entry.path);
+      await store.delete(_targetId, _space, entry.path);
       _toast(l10n.storage_browserDeleted(entry.path));
       await _reload();
     } on StoreException catch (e) {
@@ -228,15 +268,16 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen> {
                 _showManifest(entry);
               },
             ),
-            ListTile(
-              leading: Icon(Icons.delete_outline,
-                  color: Theme.of(ctx).colorScheme.error),
-              title: Text(l10n.storage_browserDelete),
-              onTap: () {
-                Navigator.of(ctx).pop();
-                _deleteEntry(entry);
-              },
-            ),
+            if (!_readOnly)
+              ListTile(
+                leading: Icon(Icons.delete_outline,
+                    color: Theme.of(ctx).colorScheme.error),
+                title: Text(l10n.storage_browserDelete),
+                onTap: () {
+                  Navigator.of(ctx).pop();
+                  _deleteEntry(entry);
+                },
+              ),
           ],
         ),
       ),
@@ -255,7 +296,7 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen> {
     try {
       data = await StoreService.instance.versionsList(
         space: _space,
-        device: _selfId,
+        device: _targetId,
         path: entry.path,
       );
       if (data != null && data['_error'] != null) {
@@ -333,7 +374,7 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen> {
     try {
       data = await StoreService.instance.manifest(
         space: _space,
-        device: _selfId,
+        device: _targetId,
         path: entry.path,
       );
       if (data != null && data['_error'] != null) {
@@ -419,13 +460,18 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: Text(l10n.storage_browserTitle),
+        title: Text(
+          widget.deviceName != null && _isRemote
+              ? '${l10n.storage_browserTitle} · ${widget.deviceName}'
+              : l10n.storage_browserTitle,
+        ),
         actions: [
-          IconButton(
-            onPressed: _busy ? null : _openSearch,
-            icon: const Icon(Icons.search),
-            tooltip: l10n.storage_browserSearchTitle,
-          ),
+          if (!_isRemote)
+            IconButton(
+              onPressed: _busy ? null : _openSearch,
+              icon: const Icon(Icons.search),
+              tooltip: l10n.storage_browserSearchTitle,
+            ),
           IconButton(
             onPressed: _busy ? null : _reload,
             icon: const Icon(Icons.refresh),
@@ -438,7 +484,10 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen> {
           : ListView(
               padding: const EdgeInsets.all(16),
               children: [
-                Text(l10n.storage_browserHint,
+                Text(
+                    _isRemote
+                        ? l10n.storage_sharedBrowseHint
+                        : l10n.storage_browserHint,
                     style: Theme.of(context).textTheme.bodySmall?.copyWith(
                           color:
                               Theme.of(context).colorScheme.onSurfaceVariant,
@@ -448,7 +497,7 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen> {
                   spacing: 8,
                   runSpacing: 4,
                   children: [
-                    for (final space in StoreSpace.browserSpaces)
+                    for (final space in _spaces)
                       ChoiceChip(
                         label: Text(space),
                         selected: _space == space,

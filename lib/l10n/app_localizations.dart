@@ -9581,19 +9581,19 @@ abstract class AppLocalizations {
   /// No description provided for @storage_entryNas.
   ///
   /// In zh, this message translates to:
-  /// **'局域网 Nexuspouch'**
+  /// **'共享储物袋'**
   String get storage_entryNas;
 
   /// No description provided for @storage_nasEntryHint.
   ///
   /// In zh, this message translates to:
-  /// **'发现同网段常开存储节点'**
+  /// **'查看配对设备储物袋，并可指定 master 备份'**
   String get storage_nasEntryHint;
 
   /// No description provided for @storage_nasHint.
   ///
   /// In zh, this message translates to:
-  /// **'扫描广播 _nexuspouch._tcp 的 Nexuspouch 节点。首次在节点 /admin 扫码配对后，下方会列出已配对设备并标注 master；已配对节点可点「连接」刷新端点。'**
+  /// **'配对成功后即可浏览对方 files/artifacts。将 PC 等设备设为 master 后，本机变更会定期镜像备份到该端。下方还可发现局域网 Nexuspouch 节点。'**
   String get storage_nasHint;
 
   /// No description provided for @storage_nasScanning.
@@ -9605,19 +9605,19 @@ abstract class AppLocalizations {
   /// No description provided for @storage_nasEmpty.
   ///
   /// In zh, this message translates to:
-  /// **'未发现 Nexuspouch 节点。请确认节点已在同一 Wi‑Fi 运行。'**
+  /// **'未发现 Nexuspouch 节点。也可直接配对手机/电脑互相浏览储物袋。'**
   String get storage_nasEmpty;
 
   /// No description provided for @storage_nasConnect.
   ///
   /// In zh, this message translates to:
-  /// **'连接'**
+  /// **'连接并设为 master'**
   String get storage_nasConnect;
 
   /// No description provided for @storage_nasConnected.
   ///
   /// In zh, this message translates to:
-  /// **'已连接到 {name}'**
+  /// **'已连接 {name} 并设为 master'**
   String storage_nasConnected(String name);
 
   /// No description provided for @storage_nasConnectFailed.
@@ -9671,7 +9671,7 @@ abstract class AppLocalizations {
   /// No description provided for @storage_pairedEmpty.
   ///
   /// In zh, this message translates to:
-  /// **'尚未配对存储节点。请扫描节点 admin 二维码完成配对。'**
+  /// **'暂无配对设备。扫码配对后即可互读储物袋。'**
   String get storage_pairedEmpty;
 
   /// No description provided for @storage_discoveredSection.
@@ -9679,6 +9679,60 @@ abstract class AppLocalizations {
   /// In zh, this message translates to:
   /// **'局域网发现'**
   String get storage_discoveredSection;
+
+  /// No description provided for @storage_sharedDevicesSection.
+  ///
+  /// In zh, this message translates to:
+  /// **'共享设备'**
+  String get storage_sharedDevicesSection;
+
+  /// No description provided for @storage_sharedThisDevice.
+  ///
+  /// In zh, this message translates to:
+  /// **'本机'**
+  String get storage_sharedThisDevice;
+
+  /// No description provided for @storage_sharedBrowse.
+  ///
+  /// In zh, this message translates to:
+  /// **'浏览储物袋'**
+  String get storage_sharedBrowse;
+
+  /// No description provided for @storage_sharedBrowseHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'只读浏览该设备共享分区（files / artifacts）。属主在线直读；离线时尝试 master 镜像。'**
+  String get storage_sharedBrowseHint;
+
+  /// No description provided for @storage_sharedSetMaster.
+  ///
+  /// In zh, this message translates to:
+  /// **'设为 master（备份目标）'**
+  String get storage_sharedSetMaster;
+
+  /// No description provided for @storage_sharedMasterSet.
+  ///
+  /// In zh, this message translates to:
+  /// **'已将 {name} 设为 master，本机将开始镜像备份'**
+  String storage_sharedMasterSet(String name);
+
+  /// No description provided for @storage_sharedSyncPending.
+  ///
+  /// In zh, this message translates to:
+  /// **'待同步到 master：{count} 项（约 {bytes}）'**
+  String storage_sharedSyncPending(int count, String bytes);
+
+  /// No description provided for @storage_sharedSyncPendingHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'手机等移动端可将储物袋备份到 PC master'**
+  String get storage_sharedSyncPendingHint;
+
+  /// No description provided for @storage_sharedSyncNow.
+  ///
+  /// In zh, this message translates to:
+  /// **'立即同步'**
+  String get storage_sharedSyncNow;
 
   /// No description provided for @storage_masterBadge.
   ///
