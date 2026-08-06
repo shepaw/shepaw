@@ -9,7 +9,7 @@ void main() {
         // dm_userId_agentId (3 parts)
         expect(
           SessionUtils.shortSessionId('dm_user1_agent1'),
-          'Session #default',
+          '#default',
         );
       });
 
@@ -17,14 +17,14 @@ void main() {
         // dm_userId_agentId_timestamp (4+ parts)
         expect(
           SessionUtils.shortSessionId('dm_user1_agent1_1700000000000'),
-          'Session #000000',
+          '#000000',
         );
       });
 
       test('should handle short timestamp suffix', () {
         expect(
           SessionUtils.shortSessionId('dm_user1_agent1_abc'),
-          'Session #abc',
+          '#abc',
         );
       });
 
@@ -32,20 +32,20 @@ void main() {
         // group_<uuid>
         expect(
           SessionUtils.shortSessionId('group_abc12345-6789-0def'),
-          'Session #9-0def',
+          '#9-0def',
         );
       });
 
       test('should handle short group uuid', () {
         expect(
           SessionUtils.shortSessionId('group_ab'),
-          'Session #ab',
+          '#ab',
         );
       });
 
       test('should return default for unknown format', () {
-        expect(SessionUtils.shortSessionId('unknown'), 'Session #default');
-        expect(SessionUtils.shortSessionId('single'), 'Session #default');
+        expect(SessionUtils.shortSessionId('unknown'), '#default');
+        expect(SessionUtils.shortSessionId('single'), '#default');
       });
 
       group('with groupChannel parameter', () {
@@ -59,7 +59,7 @@ void main() {
 
           expect(
             SessionUtils.shortSessionId('group_abc123', groupChannel: channel),
-            'Session #default',
+            '#default',
           );
         });
 
@@ -77,7 +77,7 @@ void main() {
             'group_child1',
             groupChannel: childChannel,
           );
-          expect(result, 'Session #child1');
+          expect(result, '#child1');
         });
 
         test('should not affect DM channels', () {
@@ -91,7 +91,7 @@ void main() {
           // DM channel - isGroup is false, so the group logic won't apply
           expect(
             SessionUtils.shortSessionId('dm_user1_agent1', groupChannel: dmChannel),
-            'Session #default',
+            '#default',
           );
         });
       });

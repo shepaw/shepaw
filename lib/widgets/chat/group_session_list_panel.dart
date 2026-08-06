@@ -305,7 +305,7 @@ class _GroupSessionListContentState extends State<_GroupSessionListContent> {
 
     final isParent = session.parentGroupId == null;
     final label = isParent
-        ? 'Session #default'
+        ? '#default'
         : SessionUtils.shortSessionId(session.id, groupChannel: widget.groupChannel);
 
     final avatar = Stack(

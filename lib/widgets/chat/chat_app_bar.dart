@@ -48,28 +48,31 @@ class ChatDMAppBarTitle extends StatelessWidget {
         ? null
         : SheService.resolveDisplayName(agentName, l10n.she_name);
 
+    const avatarSize = 32.0;
+
     return Row(
+      crossAxisAlignment: CrossAxisAlignment.center,
       children: [
         GestureDetector(
           onTap: onAvatarTap,
           child: Container(
-            width: 40,
-            height: 40,
+            width: avatarSize,
+            height: avatarSize,
             decoration: BoxDecoration(
               color: Colors.grey[200],
-              borderRadius: BorderRadius.circular(10),
+              borderRadius: BorderRadius.circular(8),
             ),
             alignment: Alignment.center,
             child: agentAvatar != null && agentAvatar!.length > 2
                 ? AvatarImage(
                     avatar: agentAvatar!,
-                    size: 40,
-                    borderRadius: 10,
+                    size: avatarSize,
+                    borderRadius: 8,
                     fallback: Text(
                       displayName?.isNotEmpty == true
                           ? displayName![0]
                           : 'A',
-                      style: const TextStyle(fontSize: 28),
+                      style: const TextStyle(fontSize: 18),
                     ),
                   )
                 : Text(
@@ -77,11 +80,11 @@ class ChatDMAppBarTitle extends StatelessWidget {
                     (displayName?.isNotEmpty == true
                         ? displayName![0]
                         : 'A'),
-                    style: const TextStyle(fontSize: 28),
+                    style: const TextStyle(fontSize: 18),
                   ),
           ),
         ),
-        const SizedBox(width: 12),
+        const SizedBox(width: 10),
         Expanded(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -283,22 +286,25 @@ class ChatGroupAppBarTitle extends StatelessWidget {
     final groupName = groupChannel?.name ?? 'Group';
     final memberCount = groupAgents.length;
 
+    const avatarSize = 32.0;
+
     return Row(
+      crossAxisAlignment: CrossAxisAlignment.center,
       children: [
         GestureDetector(
           onTap: onAvatarTap,
           child: Container(
-            width: 40,
-            height: 40,
+            width: avatarSize,
+            height: avatarSize,
             decoration: BoxDecoration(
               color: AppColors.primaryContainer,
-              borderRadius: BorderRadius.circular(10),
+              borderRadius: BorderRadius.circular(8),
             ),
             alignment: Alignment.center,
-            child: const Icon(Icons.group, size: 24, color: AppColors.primary),
+            child: const Icon(Icons.group, size: 20, color: AppColors.primary),
           ),
         ),
-        const SizedBox(width: 12),
+        const SizedBox(width: 10),
         Expanded(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
