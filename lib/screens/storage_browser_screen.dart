@@ -548,29 +548,20 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
   }
 
   Future<void> _openSearch() async {
-    final l10n = AppLocalizations.of(context);
-    if (_mobileInFolder(context)) {
-      await showSearch<void>(
-        context: context,
-        delegate: _FolderScopedSearchDelegate(
-          files: _files,
-          space: _mineSpace,
-          pathPrefix: _navPath.isEmpty ? '' : '$_navPath/',
-          onOpen: _previewFile,
-        ),
-      );
-      return;
-    }
-    if (await StoreService.instance.isMaster()) {
-      if (!mounted) return;
-      _toast(l10n.storage_browserNeedMaster);
-      return;
-    }
-    if (!mounted) return;
+    // 全平台本地按文件名模糊搜索；不依赖 NAS/master。
+    final onSpaceTab = _tabs.index == 1;
+    final spaceFilter = onSpaceTab ? _navSpace : null;
+    final pathPrefix =
+        (onSpaceTab && _navSpace != null && _navPath.isNotEmpty)
+            ? '$_navPath/'
+            : '';
     await showSearch<void>(
       context: context,
-      delegate: _StoreSearchDelegate(
-        space: _navSpace ?? StoreSpace.files,
+      delegate: _LocalFileSearchDelegate(
+        files: _files,
+        space: spaceFilter,
+        pathPrefix: pathPrefix,
+        onOpen: _previewFile,
       ),
     );
   }
@@ -1046,6 +1037,7 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
       PopupMenuButton<dynamic>(
         icon: const Icon(Icons.add_circle_outline),
         tooltip: l10n.storage_moreSettings,
+        position: PopupMenuPosition.under,
         onSelected: _handleMobileMoreSelected,
         itemBuilder: (ctx) => [
           if (includeCreate) ...[
@@ -1554,129 +1546,8 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
   }
 }
 
-class _StoreSearchDelegate extends SearchDelegate<void> {
-  _StoreSearchDelegate({required this.space});
-
-  final String space;
-  bool semantic = false;
-
-  @override
-  List<Widget>? buildActions(BuildContext context) {
-    final l10n = AppLocalizations.of(context);
-    return [
-      IconButton(
-        icon: Icon(semantic ? Icons.psychology : Icons.text_fields),
-        tooltip: semantic
-            ? l10n.storage_browserSearchSemantic
-            : l10n.storage_browserSearchKeyword,
-        onPressed: () {
-          semantic = !semantic;
-          if (query.trim().isNotEmpty) {
-            showResults(context);
-          } else {
-            showSuggestions(context);
-          }
-        },
-      ),
-      if (query.isNotEmpty)
-        IconButton(
-          icon: const Icon(Icons.clear),
-          onPressed: () => query = '',
-        ),
-    ];
-  }
-
-  @override
-  Widget? buildLeading(BuildContext context) {
-    return IconButton(
-      icon: const Icon(Icons.arrow_back),
-      onPressed: () => close(context, null),
-    );
-  }
-
-  @override
-  Widget buildResults(BuildContext context) {
-    final l10n = AppLocalizations.of(context);
-    final q = query.trim();
-    if (q.isEmpty) {
-      return Center(child: Text(l10n.storage_browserSearchHint));
-    }
-    return FutureBuilder<Map<String, dynamic>?>(
-      future: StoreService.instance
-          .search(q: q, space: space, semantic: semantic),
-      builder: (context, snap) {
-        if (snap.connectionState != ConnectionState.done) {
-          return const Center(child: CircularProgressIndicator());
-        }
-        final data = snap.data;
-        if (data != null && data['_error'] != null) {
-          return Center(
-            child: Text(l10n.storage_browserSearchFailed(
-                '${data['_error']}: ${data['message'] ?? ''}')),
-          );
-        }
-        if (snap.hasError) {
-          return Center(
-              child: Text(l10n.storage_browserSearchFailed('${snap.error}')));
-        }
-        final list = (data?['results'] as List?) ?? const [];
-        final degraded = data?['degraded'] == true;
-        final scoreType = '${data?['score_type'] ?? ''}';
-        if (list.isEmpty) {
-          return Center(child: Text(l10n.storage_browserSearchEmpty));
-        }
-        return ListView.builder(
-          itemCount: list.length + (degraded || scoreType.isNotEmpty ? 1 : 0),
-          itemBuilder: (_, i) {
-            if (i == 0 && (degraded || scoreType.isNotEmpty)) {
-              return Padding(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                child: Text(
-                  degraded
-                      ? l10n.storage_browserSearchDegraded
-                      : (semantic
-                          ? l10n.storage_browserSearchSemantic
-                          : l10n.storage_browserSearchKeyword),
-                  style: Theme.of(context).textTheme.labelSmall,
-                ),
-              );
-            }
-            final idx = i - ((degraded || scoreType.isNotEmpty) ? 1 : 0);
-            final r = Map<String, dynamic>.from(list[idx] as Map);
-            final path = '${r['path'] ?? ''}';
-            final snippet = '${r['snippet'] ?? ''}';
-            final uri = '${r['uri'] ?? ''}';
-            return ListTile(
-              title: Text(path, overflow: TextOverflow.ellipsis),
-              subtitle: Text(
-                snippet.isNotEmpty ? snippet : uri,
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-              ),
-              dense: true,
-            );
-          },
-        );
-      },
-    );
-  }
-
-  @override
-  Widget buildSuggestions(BuildContext context) {
-    final l10n = AppLocalizations.of(context);
-    return Center(
-      child: Text(
-        '${l10n.storage_browserSearchHint}'
-        ' · ${semantic ? l10n.storage_browserSearchSemantic : l10n.storage_browserSearchKeyword}',
-        style: Theme.of(context).textTheme.bodySmall,
-      ),
-    );
-  }
-}
-
-class _FolderScopedSearchDelegate extends SearchDelegate<void> {
-  _FolderScopedSearchDelegate({
+class _LocalFileSearchDelegate extends SearchDelegate<void> {
+  _LocalFileSearchDelegate({
     required this.files,
     required this.space,
     required this.pathPrefix,
@@ -1684,23 +1555,68 @@ class _FolderScopedSearchDelegate extends SearchDelegate<void> {
   });
 
   final List<_BrowsedFile> files;
-  final String space;
+
+  /// null = 不限分区（「最近」或 store 根）。
+  final String? space;
   final String pathPrefix;
   final void Function(_BrowsedFile file) onOpen;
+
+  /// 子序列模糊：needle 各字符按序出现在 text 中即可。
+  static bool _fuzzySubsequence(String text, String needle) {
+    if (needle.isEmpty) return true;
+    var i = 0;
+    for (final c in text.codeUnits) {
+      if (c == needle.codeUnitAt(i)) {
+        i++;
+        if (i >= needle.length) return true;
+      }
+    }
+    return false;
+  }
+
+  /// 越高越靠前；0 = 不匹配。
+  static int _matchScore(String path, String needle) {
+    final name = p.basename(path).toLowerCase();
+    final full = path.toLowerCase();
+    if (name == needle) return 500;
+    if (name.startsWith(needle)) return 400;
+    if (name.contains(needle)) return 300;
+    if (_fuzzySubsequence(name, needle)) return 200;
+    if (full.contains(needle)) return 100;
+    if (_fuzzySubsequence(full, needle)) return 50;
+    return 0;
+  }
 
   List<_BrowsedFile> _matches(String q) {
     final needle = q.trim().toLowerCase();
     if (needle.isEmpty) return const [];
-    return files.where((f) {
-      if (f.space != space) return false;
-      if (pathPrefix.isNotEmpty && !f.path.startsWith(pathPrefix)) return false;
+    final tokens =
+        needle.split(RegExp(r'\s+')).where((t) => t.isNotEmpty).toList();
+    final scored = <(_BrowsedFile, int)>[];
+    for (final f in files) {
+      if (space != null && f.space != space) continue;
+      if (pathPrefix.isNotEmpty && !f.path.startsWith(pathPrefix)) continue;
       if (p.basename(f.path) == _StorageBrowserScreenState._folderMarker) {
-        return false;
+        continue;
       }
-      return f.path.toLowerCase().contains(needle) ||
-          p.basename(f.path).toLowerCase().contains(needle);
-    }).toList()
-      ..sort((a, b) => b.mtimeMs.compareTo(a.mtimeMs));
+      var score = 0;
+      var ok = true;
+      for (final token in tokens) {
+        final s = _matchScore(f.path, token);
+        if (s <= 0) {
+          ok = false;
+          break;
+        }
+        score += s;
+      }
+      if (ok) scored.add((f, score));
+    }
+    scored.sort((a, b) {
+      final byScore = b.$2.compareTo(a.$2);
+      if (byScore != 0) return byScore;
+      return b.$1.mtimeMs.compareTo(a.$1.mtimeMs);
+    });
+    return [for (final e in scored) e.$1];
   }
 
   @override
@@ -1745,7 +1661,11 @@ class _FolderScopedSearchDelegate extends SearchDelegate<void> {
         final name = p.basename(f.path);
         return ListTile(
           title: Text(name, overflow: TextOverflow.ellipsis),
-          subtitle: Text(f.path, maxLines: 2, overflow: TextOverflow.ellipsis),
+          subtitle: Text(
+            '${f.space}/${f.path}',
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+          ),
           onTap: () {
             close(context, null);
             onOpen(f);

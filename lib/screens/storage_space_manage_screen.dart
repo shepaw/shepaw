@@ -60,6 +60,7 @@ class _StorageSpaceManageScreenState extends State<StorageSpaceManageScreen> {
         PopupMenuButton<StorageSpaceSettingsSection>(
           tooltip: l10n.storage_moreSettings,
           icon: const Icon(Icons.more_horiz),
+          position: PopupMenuPosition.under,
           onSelected: _openSettings,
           itemBuilder: (ctx) => _settingsMenuItems(l10n),
         ),
