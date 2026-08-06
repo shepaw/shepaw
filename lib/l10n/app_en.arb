@@ -2485,7 +2485,7 @@
   "storage_browserPrefixHint": "e.g. docs/ or task/",
   "storage_browserEmpty": "No files in this space",
   "storage_browserTabFlat": "All",
-  "storage_browserTabSpace": "Folders",
+  "storage_browserTabSpace": "Space",
   "storage_browserTabRecent": "Recent",
   "storage_browserTabMine": "Mine",
   "storage_browserLastAccessed": "Last accessed {time}",

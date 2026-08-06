@@ -149,7 +149,9 @@ class LocalStore {
   }
 
   String _spaceDir(String deviceId, String space) {
-    if (!StoreSpace.isValid(space)) {
+    // 内置 + 已声明自定义空间（如 memory）：语法合法即可寻址；
+    // 属性/ACL 由上层 space registry 裁定（spec §0.5）。
+    if (!StoreSpace.isValidSyntax(space)) {
       throw StoreException(StoreError.badOp, 'invalid space');
     }
     return p.join(_deviceDir(deviceId).path, space);

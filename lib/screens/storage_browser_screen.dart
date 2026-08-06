@@ -31,7 +31,7 @@ class _BrowsedFile {
 ///
 /// - 默认浏览本机全部空间，可删/导出；
 /// - 传入 [deviceId] 可浏览配对设备的共享分区（[readOnly] 默认 true，不可删）。
-/// - 「最近」平铺按修改时间倒序；「我的」按分区/文件夹层级导航。
+/// - 「最近」平铺按修改时间倒序；「空间」按分区/文件夹层级导航。
 class StorageBrowserScreen extends StatefulWidget {
   const StorageBrowserScreen({
     super.key,
@@ -766,14 +766,6 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
     return parts.isNotEmpty ? parts.last : path;
   }
 
-  String _appBarTitle(AppLocalizations l10n) {
-    if (widget.title != null) return widget.title!;
-    if (widget.deviceName != null && _isRemote) {
-      return '${l10n.storage_browserTitle} · ${widget.deviceName}';
-    }
-    return l10n.storage_browserTitle;
-  }
-
   void _enterSpace(String space) {
     setState(() {
       _navSpace = space;
@@ -921,7 +913,7 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
       elevation: 0,
       scrolledUnderElevation: 0,
       centerTitle: true,
-      title: _buildMobileTabHeader(l10n),
+      title: _buildTabHeader(l10n),
       actions: _buildMobileActions(l10n, includeCreate: _mobileMineWritable(context)),
     );
   }
@@ -929,7 +921,10 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
   PreferredSizeWidget _buildDesktopAppBar(AppLocalizations l10n) {
     final used = widget.usedBytes;
     return AppBar(
-      title: Text(_appBarTitle(l10n)),
+      elevation: 0,
+      scrolledUnderElevation: 0,
+      centerTitle: true,
+      title: _buildTabHeader(l10n),
       actions: [
         if (used != null)
           Padding(
@@ -956,28 +951,21 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
           tooltip: l10n.storage_browserRefresh,
         ),
       ],
-      bottom: TabBar(
-        controller: _tabs,
-        tabs: [
-          Tab(text: l10n.storage_browserTabFlat),
-          Tab(text: l10n.storage_browserTabSpace),
-        ],
-      ),
     );
   }
 
-  Widget _buildMobileTabHeader(AppLocalizations l10n) {
+  Widget _buildTabHeader(AppLocalizations l10n) {
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        _mobileTabChip(
+        _tabChip(
           label: l10n.storage_browserTabRecent,
           selected: _tabs.index == 0,
           onTap: () => _tabs.animateTo(0),
         ),
         const SizedBox(width: 28),
-        _mobileTabChip(
-          label: l10n.storage_browserTabMine,
+        _tabChip(
+          label: l10n.storage_browserTabSpace,
           selected: _tabs.index == 1,
           onTap: () => _tabs.animateTo(1),
         ),
@@ -985,7 +973,7 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
     );
   }
 
-  Widget _mobileTabChip({
+  Widget _tabChip({
     required String label,
     required bool selected,
     required VoidCallback onTap,

@@ -5123,7 +5123,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get storage_browserTabFlat => 'All';
 
   @override
-  String get storage_browserTabSpace => 'Folders';
+  String get storage_browserTabSpace => 'Space';
 
   @override
   String get storage_browserTabRecent => 'Recent';

@@ -386,6 +386,14 @@ void main() {
       expect(() => store.list('not-a-device', 'files'),
           throwsA(predicate(
               (e) => e is StoreException && e.code == StoreError.badOp)));
+      // 非法 space 名（非自定义语法）
+      expect(() => store.list(dev, '../escape'),
+          throwsA(predicate((e) =>
+              e is StoreException &&
+              e.code == StoreError.badOp &&
+              e.message == 'invalid space')));
+      // 合法自定义空间（如 memory）可 list，目录不存在时返回空
+      expect(await store.list(dev, StoreSpace.memory), isEmpty);
     });
 
     test('purgeDevice 删他端目录且禁删本机', () async {
