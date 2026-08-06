@@ -19,13 +19,14 @@ class StoreException implements Exception {
   String toString() => 'StoreException($code): $message';
 }
 
-/// list/meta 返回的文件条目。
+/// list/meta 返回的文件/目录条目。
 class StoreEntry {
   StoreEntry({
     required this.path,
     required this.size,
     required this.sha256,
     required this.mtimeMs,
+    this.kind = 'file',
   });
 
   final String path;
@@ -33,11 +34,17 @@ class StoreEntry {
   final String sha256;
   final int mtimeMs;
 
+  /// `'file'` | `'dir'`（有限 depth 列表时目录也会出现）。
+  final String kind;
+
+  bool get isDir => kind == 'dir';
+
   Map<String, dynamic> toJson() => <String, dynamic>{
         'path': path,
         'size': size,
         'sha256': sha256,
         'mtime': mtimeMs,
+        if (kind != 'file') 'kind': kind,
       };
 
   factory StoreEntry.fromJson(Map<String, dynamic> json) => StoreEntry(
@@ -45,6 +52,7 @@ class StoreEntry {
         size: json['size'] as int? ?? 0,
         sha256: json['sha256'] as String? ?? '',
         mtimeMs: (json['mtime'] as int?) ?? (json['mtime_ms'] as int?) ?? 0,
+        kind: json['kind'] as String? ?? 'file',
       );
 }
 
@@ -196,17 +204,71 @@ class LocalStore {
 
   // ────────────────────────────── list / meta / read ──
 
-  /// 递归列出 space 下文件（跳过 .staging 与一切 . 开头目录）。
+  /// 列出 space 下条目。
+  ///
+  /// - [depth] 省略 / ≤0：递归列出全部文件（兼容同步；不含目录行）。
+  /// - [depth] ≥1：从 [prefix] 目录起最多下钻 depth 层，含 `kind:dir`，
+  ///   便于跨 agent（`agents/<uuid>/`）一层一层浏览。
   Future<List<StoreEntry>> list(
     String deviceId,
     String space, {
     String? prefix,
     int limit = 1000,
+    int? depth,
   }) async {
     final baseAbs = _spaceDir(deviceId, space);
     final base = Directory(baseAbs);
     if (!await base.exists()) return const [];
+    final maxDepth = (depth != null && depth > 0) ? depth : 0;
     final entries = <StoreEntry>[];
+
+    if (maxDepth > 0) {
+      final startRel = (prefix ?? '').replaceAll(RegExp(r'^/+|/+$'), '');
+      final startAbs =
+          startRel.isEmpty ? baseAbs : _resolveInSpace(deviceId, space, startRel);
+      final startType =
+          await FileSystemEntity.type(startAbs, followLinks: true);
+      if (startType != FileSystemEntityType.directory) return const [];
+
+      Future<void> walkShallow(
+          String dirAbs, String rel, int remaining) async {
+        if (entries.length >= limit || remaining < 1) return;
+        final dir = Directory(dirAbs);
+        await for (final entity in dir.list(followLinks: true)) {
+          if (entries.length >= limit) return;
+          final name = p.basename(entity.path);
+          if (name.startsWith('.')) continue;
+          final childRel = rel.isEmpty ? name : '$rel/$name';
+          if (entity is Directory) {
+            final stat = await entity.stat();
+            entries.add(StoreEntry(
+              path: childRel.replaceAll(p.separator, '/'),
+              size: 0,
+              sha256: '',
+              mtimeMs: stat.modified.millisecondsSinceEpoch,
+              kind: 'dir',
+            ));
+            if (remaining > 1) {
+              await walkShallow(entity.path, childRel, remaining - 1);
+            }
+          } else if (entity is File) {
+            final stat = await entity.stat();
+            entries.add(StoreEntry(
+              path: childRel.replaceAll(p.separator, '/'),
+              size: stat.size,
+              sha256: await _hashOf(entity, stat),
+              mtimeMs: stat.modified.millisecondsSinceEpoch,
+              kind: 'file',
+            ));
+          }
+        }
+      }
+
+      await walkShallow(startAbs, startRel, maxDepth);
+      entries.sort((a, b) => a.path.compareTo(b.path));
+      return entries;
+    }
+
     await for (final entity in base.list(recursive: true)) {
       if (entity is! File) continue;
       final rel = p.relative(entity.path, from: baseAbs);

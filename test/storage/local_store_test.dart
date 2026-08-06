@@ -54,6 +54,26 @@ void main() {
       expect(list.single.size, content.length);
     });
 
+    test('depth=1 一层列出目录与文件（跨 agent 下钻）', () async {
+      for (final agent in ['agent-aaa', 'agent-bbb']) {
+        final content = bytesOf('note-$agent');
+        final (u, _) = await begin('$agent/note.txt', content, space: 'agents');
+        await store.writeChunk(dev, 'agents', u, 0, content);
+        await store.commit(dev, 'agents', [u]);
+      }
+
+      final root = await store.list(dev, 'agents', depth: 1);
+      expect(root.map((e) => e.path).toList()..sort(),
+          ['agent-aaa', 'agent-bbb']);
+      expect(root.every((e) => e.isDir), isTrue);
+
+      final one =
+          await store.list(dev, 'agents', prefix: 'agent-aaa', depth: 1);
+      expect(one, hasLength(1));
+      expect(one.single.path, 'agent-aaa/note.txt');
+      expect(one.single.kind, 'file');
+    });
+
     test('哈希不符拒绝转正，staging 保留可重传', () async {
       final content = bytesOf('good');
       final (uploadId, _) = await begin('x.txt', content);

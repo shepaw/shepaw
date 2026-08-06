@@ -3,13 +3,16 @@ import 'dart:typed_data';
 
 import '../../cli_base.dart';
 import '../../../storage/artifact_service.dart';
+import '../../../storage/store_service.dart';
 import '../../../storage/store_uri_reader.dart';
 
 /// [TOOLING 层] store 命名空间 - 存储空间产物/文件读写
 ///
 /// 对应 docs/storage_space_plan.md §6.3 的 Agent 侧纪律：
 /// - `store_write`（`write`）：产出写入自己设备目录，返回新 URI 即完成共享；
-/// - `store_read`（`read`）：单参数 URI 读取（`artifacts` / `files` 等），分块/缓存由工具层处理。
+/// - `store_read`（`read`）：单参数 URI 读取（`artifacts` / `files` 等），分块/缓存由工具层处理；
+/// - `store_list`（`list`）：默认 `--depth 1` 一层一层列目录（含 `kind:dir`），
+///   便于跨 agent（`store://agents/<device>/<uuid>/`）遍历；`--depth 0` 才递归全量文件。
 ///
 /// Agent 只"转述"URI，不构造 URI（URI 从本命令输出或用户/上游输入获得）。
 /// 遇到 `store://...` 一律用本命名空间，不要用 OS `file_read`。
@@ -22,13 +25,15 @@ class StoreNamespace extends CliNamespace {
 
   @override
   String get description =>
-      'Store URIs (store://…): write artifacts and read files/artifacts — '
-      'prefer over OS file paths whenever you see a store:// link';
+      'Store URIs (store://…): write artifacts, read files, list folders '
+      '(prefer --depth 1 for agents/workspaces trees) — prefer over OS paths '
+      'whenever you see a store:// link';
 
   @override
   Map<String, CliCommand> get commands => {
         'write': StoreWriteCommand(),
         'read': StoreReadCommand(),
+        'list': StoreListCommand(),
       };
 }
 
@@ -123,4 +128,74 @@ class StoreReadCommand extends CliCommand {
       return {'success': false, 'error': '$e'};
     }
   }
+}
+
+/// `shepaw store list --uri <store://...> [--depth 1]`
+///
+/// 默认 depth=1：只列当前目录一层（含文件夹），便于跨 agent 目录逐层下钻。
+class StoreListCommand extends CliCommand {
+  @override
+  String get name => 'list';
+
+  @override
+  String get description =>
+      'List a store:// directory. Default --depth 1 for one folder level '
+      '(includes dirs); use --depth 0 for full recursive files. Prefer this '
+      'over os.file.list for store://agents/… and store://workspaces/… trees.';
+
+  @override
+  String get usage =>
+      'shepaw store list --uri store://agents/0123456789abcdef --depth 1\n'
+      'shepaw store list --uri store://agents/0123456789abcdef/<agent-uuid>/ --depth 1\n'
+      'shepaw store list --uri store://files/0123456789abcdef/docs --depth 0';
+
+  @override
+  Future<Map<String, dynamic>> execute(Map<String, String> flags) async {
+    final uri = flags['uri'];
+    if (uri == null || uri.isEmpty) {
+      return {'success': false, 'error': 'missing --uri'};
+    }
+    final depth = int.tryParse(flags['depth'] ?? '1') ?? 1;
+    try {
+      final parsed = parseStoreUriLoose(uri);
+      final entries = await StoreService.instance.listDevice(
+        deviceId: parsed.device,
+        space: parsed.space,
+        prefix: parsed.path.isEmpty ? null : parsed.path,
+        limit: 1000,
+        depth: depth,
+      );
+      return <String, dynamic>{
+        'success': true,
+        'uri': uri,
+        'depth': depth,
+        'entries': [for (final e in entries) e.toJson()],
+      };
+    } catch (e) {
+      return {'success': false, 'error': '$e'};
+    }
+  }
+}
+
+/// Allow `store://space/device` (space root) for list; stricter [parseStoreUri]
+/// still requires a path segment for read.
+({String space, String device, String path}) parseStoreUriLoose(String raw) {
+  final withoutQuery = raw.split('?').first;
+  final rest =
+      withoutQuery.startsWith('store://') ? withoutQuery.substring(8) : raw;
+  final segments = rest.split('/').where((s) => s.isNotEmpty).toList();
+  if (segments.length < 2) {
+    throw FormatException('bad_uri: missing space/device');
+  }
+  final space = segments[0];
+  final device = segments[1];
+  final path = segments.length <= 2
+      ? ''
+      : segments.sublist(2).join('/').replaceAll(RegExp(r'/+$'), '');
+  for (final seg in path.split('/')) {
+    if (seg.isEmpty) continue;
+    if (seg.startsWith('.')) throw FormatException('bad_path: dot segment');
+    if (seg == '..') throw FormatException('bad_path: path traversal');
+  }
+  return (space: space, device: device, path: path);
 }

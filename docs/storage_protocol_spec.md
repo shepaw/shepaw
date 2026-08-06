@@ -134,7 +134,12 @@ store://<space>/<device>/<relpath>[@<ref>]
     {"path": "task-41/report.md", "size": 12288, "sha256": "...", "mtime": 1721300000000}]}}
 ```
 
-- 递归列出 `path` 前缀下的文件；不含 `.staging`、`.` 开头目录与 `.recycle`。
+- 默认（无 `depth` / `depth≤0`）：递归列出 `path` 前缀下的**文件**；不含 `.staging`、`.` 开头目录与 `.recycle`。
+- **`depth≥1`**：从 `path` 作为起始目录起最多下钻 `depth` 层，返回文件与目录（目录带 `"kind":"dir"`）。用于跨 agent 树（`agents/<uuid>/`、`workspaces/…`）一层一层浏览：
+  ```json
+  {"op": "list", "space": "agents", "device": "pc-b", "path": "", "depth": 1}
+  → {"entries": [{"path": "<agent-uuid>", "kind": "dir", "size": 0, "sha256": "", "mtime": …}]}
+  ```
 - 大量文件时分页：`cursor`（请求）/ `next_cursor`（响应），每页 ≤ 1000 条。
 
 ### 2.2 meta — 元数据（缓存校验，§6.1）

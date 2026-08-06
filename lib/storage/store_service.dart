@@ -126,16 +126,21 @@ class StoreService {
   }
 
   /// 列出某设备某分区目录（本机直列；他端经 [preferredReadServer]）。
+  ///
+  /// [depth] ≥1 时只下钻指定层（含目录行），便于跨 agent 一层层浏览；
+  /// 省略则递归列全部文件（同步/用量统计兼容）。
   Future<List<StoreEntry>> listDevice({
     required String deviceId,
     required String space,
     String? prefix,
     int limit = 100,
+    int? depth,
   }) async {
     final self = await DeviceIdentity.deviceId();
     if (deviceId == self) {
       final store = await _localStore();
-      return store.list(deviceId, space, prefix: prefix, limit: limit);
+      return store.list(deviceId, space,
+          prefix: prefix, limit: limit, depth: depth);
     }
     final server = await preferredReadServer(deviceId);
     final data = await callPeer(
@@ -147,6 +152,7 @@ class StoreService {
           'device': deviceId,
           if (prefix != null && prefix.isNotEmpty) 'path': prefix,
           'limit': limit,
+          if (depth != null) 'depth': depth,
         },
       ),
     );
@@ -580,11 +586,18 @@ class StoreService {
           final limit = rawLimit == null
               ? 1000
               : rawLimit.clamp(1, MirrorHashGate.listLimit);
+          final rawDepth = frame.payload['depth'];
+          final depth = rawDepth is int
+              ? rawDepth
+              : rawDepth is num
+                  ? rawDepth.toInt()
+                  : int.tryParse('$rawDepth');
           final entries = await store.list(
             device,
             frame.space!,
             prefix: frame.payload['path'] as String?,
             limit: limit,
+            depth: depth,
           );
           return <String, dynamic>{
             'entries': [for (final e in entries) e.toJson()],
