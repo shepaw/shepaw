@@ -71,6 +71,100 @@ void main() {
     });
   });
 
+  group('collectLocalBoundRemoteSessionIds', () {
+    test('includes psess channels and legacy live channels', () {
+      final remote = {'sess-a', 'dm_user_agent_123'};
+      final bound = collectLocalBoundRemoteSessionIds(
+        [
+          'psess_sess-a',
+          'dm_user_agent_123',
+          'dm_user_agent_999', // unknown locally — not bound
+        ],
+        remote,
+      );
+      expect(bound, {'sess-a', 'dm_user_agent_123'});
+    });
+  });
+
+  group('resolveLocalPeerChannelId', () {
+    test('prefers legacy live channel over psess shell', () {
+      expect(
+        resolveLocalPeerChannelId(
+          'dm_user_agent_123',
+          psessExists: true,
+          legacyExists: true,
+        ),
+        'dm_user_agent_123',
+      );
+    });
+
+    test('uses psess when only psess exists', () {
+      expect(
+        resolveLocalPeerChannelId(
+          'sess-a',
+          psessExists: true,
+          legacyExists: false,
+        ),
+        'psess_sess-a',
+      );
+    });
+
+    test('defaults to psess for brand-new remote session', () {
+      expect(
+        resolveLocalPeerChannelId(
+          'sess-new',
+          psessExists: false,
+          legacyExists: false,
+        ),
+        'psess_sess-new',
+      );
+    });
+  });
+
+  group('peerRemoteSessionIdForLocalChannel', () {
+    test('maps psess and legacy channels', () {
+      final known = {'dm_user_agent_123', 'sess-b'};
+      expect(
+        peerRemoteSessionIdForLocalChannel(
+          'psess_sess-b',
+          knownRemoteSessionIds: known,
+        ),
+        'sess-b',
+      );
+      expect(
+        peerRemoteSessionIdForLocalChannel(
+          'dm_user_agent_123',
+          knownRemoteSessionIds: known,
+        ),
+        'dm_user_agent_123',
+      );
+      expect(
+        peerRemoteSessionIdForLocalChannel(
+          'dm_user_agent_other',
+          knownRemoteSessionIds: known,
+        ),
+        isNull,
+      );
+    });
+  });
+
+  group('localChannelBindsRemoteSession', () {
+    test('matches psess and legacy ids', () {
+      expect(
+        localChannelBindsRemoteSession('psess_abc', 'abc'),
+        isTrue,
+      );
+      expect(
+        localChannelBindsRemoteSession('dm_user_agent_1', 'dm_user_agent_1'),
+        isTrue,
+      );
+      expect(
+        localChannelBindsRemoteSession('psess_abc', 'xyz'),
+        isFalse,
+      );
+    });
+  });
+
   group('PeerHistoryMessage.fromJson progress fields', () {
     test('parses the reconstructed progress section', () {
       final m = PeerHistoryMessage.fromJson({

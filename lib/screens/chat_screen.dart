@@ -2430,10 +2430,12 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
 
       final localChannels =
           await _controller.localDatabaseService.getChannelsForAgent(agentId);
-      final localRemoteIds = localChannels
-          .map((c) => remoteSessionIdFromChannelId(c.id))
-          .whereType<String>()
-          .toSet();
+      final remoteSessionIds =
+          sessions.map((s) => s.sessionId).toSet();
+      final localRemoteIds = collectLocalBoundRemoteSessionIds(
+        localChannels.map((c) => c.id),
+        remoteSessionIds,
+      );
       final missing =
           sessions.where((s) => !localRemoteIds.contains(s.sessionId)).toList();
 
@@ -2470,8 +2472,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     bool showToastOnFirstLink = false,
   }) async {
     final channelId = widget.channelId;
-    final prioritizeCurrent =
-        channelId != null && channelId.startsWith(kSyncedPeerSessionPrefix);
+    final prioritizeCurrent = channelId != null;
     if (prioritizeCurrent && mounted) {
       setState(() => _syncingPeerHistory = true);
     }
@@ -2485,7 +2486,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
         agentName: agentName,
         userId: _controller.getUserId(),
         userName: _controller.getUserName(),
-        prioritizeChannelId: prioritizeCurrent ? channelId : null,
+        prioritizeChannelId: channelId,
         onPrioritizedChannelDone: (written) async {
           if (mounted) setState(() => _syncingPeerHistory = false);
           if (written > 0 &&

@@ -61,6 +61,66 @@ String? remoteSessionIdFromChannelId(String channelId) =>
         ? channelId.substring(kSyncedPeerSessionPrefix.length)
         : null;
 
+/// Remote session ids already represented by local peer-agent channels.
+///
+/// Includes both `psess_<remoteSessionId>` shells and legacy live channels whose
+/// id was sent to the peer as `session_id` (typically `dm_*` / timestamped ids).
+Set<String> collectLocalBoundRemoteSessionIds(
+  Iterable<String> localChannelIds,
+  Set<String> remoteSessionIds,
+) {
+  final bound = <String>{};
+  for (final id in localChannelIds) {
+    final fromPsess = remoteSessionIdFromChannelId(id);
+    if (fromPsess != null) {
+      bound.add(fromPsess);
+    } else if (remoteSessionIds.contains(id)) {
+      bound.add(id);
+    }
+  }
+  return bound;
+}
+
+/// Map a local chat channel to the peer-visible session id, when known.
+String? peerRemoteSessionIdForLocalChannel(
+  String? localChannelId, {
+  Set<String>? knownRemoteSessionIds,
+}) {
+  if (localChannelId == null || localChannelId.isEmpty) return null;
+  final fromPsess = remoteSessionIdFromChannelId(localChannelId);
+  if (fromPsess != null) return fromPsess;
+  if (knownRemoteSessionIds != null &&
+      knownRemoteSessionIds.contains(localChannelId)) {
+    return localChannelId;
+  }
+  return null;
+}
+
+/// Choose the local channel id to mirror [remoteSessionId].
+///
+/// Prefer an existing live channel whose id equals the remote session id so
+/// incremental sync does not fork a duplicate `psess_` shell. Otherwise reuse
+/// an existing `psess_` channel or default to creating one.
+String resolveLocalPeerChannelId(
+  String remoteSessionId, {
+  required bool psessExists,
+  required bool legacyExists,
+}) {
+  if (legacyExists) return remoteSessionId;
+  if (psessExists) return syncedPeerChannelId(remoteSessionId);
+  return syncedPeerChannelId(remoteSessionId);
+}
+
+/// Whether [localChannelId] and [remoteSessionId] refer to the same peer session.
+bool localChannelBindsRemoteSession(
+  String localChannelId,
+  String remoteSessionId,
+) {
+  final fromPsess = remoteSessionIdFromChannelId(localChannelId);
+  if (fromPsess != null) return fromPsess == remoteSessionId;
+  return localChannelId == remoteSessionId;
+}
+
 /// Sessions whose transcripts should be re-fetched for an incremental sync.
 ///
 /// When [lastSyncAt] is null (first sync), every session is dirty. Otherwise a
@@ -1103,6 +1163,30 @@ class PeerAgentClientService {
     if (completer != null && !completer.isCompleted) completer.complete(sessions);
   }
 
+  /// Drop a redundant `psess_` shell when the live legacy channel already
+  /// binds the same remote session id.
+  Future<void> _removeDuplicatePeerSessionShell({
+    required String preferredChannelId,
+    required String duplicateChannelId,
+  }) async {
+    try {
+      await _db.deleteChannelMessages(duplicateChannelId);
+      await _db.deleteChannel(duplicateChannelId);
+      _log.info(
+        'Removed duplicate peer session channel $duplicateChannelId '
+        '(kept $preferredChannelId)',
+        tag: _tag,
+      );
+    } catch (e, st) {
+      _log.warning(
+        'Failed to dedupe peer session channels '
+        '$duplicateChannelId → $preferredChannelId: $e\n$st',
+        tag: _tag,
+        error: e,
+      );
+    }
+  }
+
   /// Mirror a peer agent's remote sessions into local channels (shell only).
   ///
   /// For each remote session we create/update one local channel whose id binds
@@ -1121,7 +1205,21 @@ class PeerAgentClientService {
     if (sessions.isEmpty) return 0;
     var linked = 0;
     for (final s in sessions) {
-      final channelId = syncedPeerChannelId(s.sessionId);
+      final psessId = syncedPeerChannelId(s.sessionId);
+      final legacyId = s.sessionId;
+      final psessExisting = await _db.getChannelById(psessId);
+      final legacyExisting = await _db.getChannelById(legacyId);
+      if (legacyExisting != null && psessExisting != null) {
+        await _removeDuplicatePeerSessionShell(
+          preferredChannelId: legacyId,
+          duplicateChannelId: psessId,
+        );
+      }
+      final channelId = resolveLocalPeerChannelId(
+        s.sessionId,
+        psessExists: psessExisting != null,
+        legacyExists: legacyExisting != null,
+      );
       final name = s.title ?? 'Session';
       final existing = await _db.getChannelById(channelId);
       if (existing == null) {
@@ -1226,9 +1324,12 @@ class PeerAgentClientService {
     );
 
     final lastSyncAt = await getLastHistorySyncAt(localAgentId);
-    final prioritizeSessionId = prioritizeChannelId != null
-        ? remoteSessionIdFromChannelId(prioritizeChannelId)
-        : null;
+    final remoteSessionIds =
+        sessions.map((s) => s.sessionId).toSet();
+    final prioritizeSessionId = peerRemoteSessionIdForLocalChannel(
+      prioritizeChannelId,
+      knownRemoteSessionIds: remoteSessionIds,
+    );
     final dirty = selectDirtySessions(
       sessions,
       lastSyncAt: lastSyncAt,
@@ -1242,7 +1343,13 @@ class PeerAgentClientService {
 
     try {
       for (final session in dirty) {
-        final channelId = syncedPeerChannelId(session.sessionId);
+        final psessId = syncedPeerChannelId(session.sessionId);
+        final legacyId = session.sessionId;
+        final channelId = resolveLocalPeerChannelId(
+          session.sessionId,
+          psessExists: await _db.getChannelById(psessId) != null,
+          legacyExists: await _db.getChannelById(legacyId) != null,
+        );
         final written = await syncHistory(
           peerId: peerId,
           remoteAgentId: remoteAgentId,
@@ -1329,8 +1436,8 @@ class PeerAgentClientService {
     required String userName,
     DateTime? sessionUpdatedAt,
   }) async {
-    final remoteSessionId = remoteSessionIdFromChannelId(channelId);
-    if (remoteSessionId == null) return 0;
+    final remoteSessionId =
+        remoteSessionIdFromChannelId(channelId) ?? channelId;
 
     final history = await fetchHistory(
       peerId: peerId,
