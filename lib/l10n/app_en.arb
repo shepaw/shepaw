@@ -2778,6 +2778,14 @@
   "storage_deletedAt": "deleted {time}",
   "storage_entrySnapshots": "Backup & Restore",
   "storage_entrySpace": "Local Space",
+  "storage_moreSettings": "More settings",
+  "storage_usedBadge": "{size} used",
+  "@storage_usedBadge": {
+    "placeholders": {
+      "size": {"type": "String"}
+    }
+  },
+  "storage_bindingsSection": "Folder bindings",
   "storage_entryAdvanced": "Advanced & Danger Zone",
   "storage_entryNas": "Shared Pouch",
   "storage_nasEntryHint": "Browse paired devices' stores; set a master for backup",

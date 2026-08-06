@@ -3263,6 +3263,14 @@
   "storage_deletedAt": "删除于 {time}",
   "storage_entrySnapshots": "备份与恢复",
   "storage_entrySpace": "本机空间",
+  "storage_moreSettings": "更多设置",
+  "storage_usedBadge": "已使用 {size}",
+  "@storage_usedBadge": {
+    "placeholders": {
+      "size": {"type": "String"}
+    }
+  },
+  "storage_bindingsSection": "目录绑定",
   "storage_entryAdvanced": "高级与危险区",
   "storage_entryNas": "共享储物袋",
   "storage_nasEntryHint": "查看配对设备储物袋，并可指定 master 备份",

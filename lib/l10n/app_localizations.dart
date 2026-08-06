@@ -9572,6 +9572,24 @@ abstract class AppLocalizations {
   /// **'本机空间'**
   String get storage_entrySpace;
 
+  /// No description provided for @storage_moreSettings.
+  ///
+  /// In zh, this message translates to:
+  /// **'更多设置'**
+  String get storage_moreSettings;
+
+  /// No description provided for @storage_usedBadge.
+  ///
+  /// In zh, this message translates to:
+  /// **'已使用 {size}'**
+  String storage_usedBadge(String size);
+
+  /// No description provided for @storage_bindingsSection.
+  ///
+  /// In zh, this message translates to:
+  /// **'目录绑定'**
+  String get storage_bindingsSection;
+
   /// No description provided for @storage_entryAdvanced.
   ///
   /// In zh, this message translates to:

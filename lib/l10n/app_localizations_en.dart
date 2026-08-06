@@ -5478,6 +5478,17 @@ class AppLocalizationsEn extends AppLocalizations {
   String get storage_entrySpace => 'Local Space';
 
   @override
+  String get storage_moreSettings => 'More settings';
+
+  @override
+  String storage_usedBadge(String size) {
+    return '$size used';
+  }
+
+  @override
+  String get storage_bindingsSection => 'Folder bindings';
+
+  @override
   String get storage_entryAdvanced => 'Advanced & Danger Zone';
 
   @override

@@ -5280,6 +5280,17 @@ class AppLocalizationsZh extends AppLocalizations {
   String get storage_entrySpace => '本机空间';
 
   @override
+  String get storage_moreSettings => '更多设置';
+
+  @override
+  String storage_usedBadge(String size) {
+    return '已使用 $size';
+  }
+
+  @override
+  String get storage_bindingsSection => '目录绑定';
+
+  @override
   String get storage_entryAdvanced => '高级与危险区';
 
   @override

@@ -23,6 +23,9 @@ class StorageBrowserScreen extends StatefulWidget {
     this.deviceName,
     this.readOnly = false,
     this.initialSpace,
+    this.title,
+    this.extraActions,
+    this.usedBytes,
   });
 
   /// 目标设备 fingerprint；null = 本机。
@@ -36,6 +39,15 @@ class StorageBrowserScreen extends StatefulWidget {
 
   /// 初始分区；远端默认 files。
   final String? initialSpace;
+
+  /// 覆盖 AppBar 标题；null 时用默认「存储文件」文案。
+  final String? title;
+
+  /// 追加到 AppBar actions（刷新按钮之前）。
+  final List<Widget>? extraActions;
+
+  /// 非 null 时在 AppBar 展示「已使用 xxx」轻量 badge。
+  final int? usedBytes;
 
   @override
   State<StorageBrowserScreen> createState() => _StorageBrowserScreenState();
@@ -454,24 +466,42 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen> {
     return '${(n / (1024 * 1024 * 1024)).toStringAsFixed(1)} GB';
   }
 
+  String _appBarTitle(AppLocalizations l10n) {
+    if (widget.title != null) return widget.title!;
+    if (widget.deviceName != null && _isRemote) {
+      return '${l10n.storage_browserTitle} · ${widget.deviceName}';
+    }
+    return l10n.storage_browserTitle;
+  }
+
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
+    final used = widget.usedBytes;
 
     return Scaffold(
       appBar: AppBar(
-        title: Text(
-          widget.deviceName != null && _isRemote
-              ? '${l10n.storage_browserTitle} · ${widget.deviceName}'
-              : l10n.storage_browserTitle,
-        ),
+        title: Text(_appBarTitle(l10n)),
         actions: [
+          if (used != null)
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 4),
+              child: Center(
+                child: Text(
+                  l10n.storage_usedBadge(_fmtBytes(used)),
+                  style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      ),
+                ),
+              ),
+            ),
           if (!_isRemote)
             IconButton(
               onPressed: _busy ? null : _openSearch,
               icon: const Icon(Icons.search),
               tooltip: l10n.storage_browserSearchTitle,
             ),
+          ...?widget.extraActions,
           IconButton(
             onPressed: _busy ? null : _reload,
             icon: const Icon(Icons.refresh),
