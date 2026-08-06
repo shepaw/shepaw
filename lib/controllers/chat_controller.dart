@@ -13,7 +13,6 @@ import '../services/messaging/agent_messaging_service.dart';
 import '../services/local_database_service.dart';
 import '../services/attachment_service.dart';
 import '../services/message_search_service.dart';
-import '../services/local_file_storage_service.dart';
 import '../services/acp_agent_connection.dart';
 import '../services/local_llm_agent_service.dart';
 import '../services/app_lifecycle_service.dart';
@@ -292,10 +291,7 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
     final databaseService = LocalDatabaseService();
     localDatabaseService = databaseService;
     chatService = ChatService();
-    attachmentService = AttachmentService(
-      LocalFileStorageService(),
-      databaseService,
-    );
+    attachmentService = AttachmentService(databaseService);
     attachmentCoordinator = ChatAttachmentCoordinator(attachmentService);
     searchService = MessageSearchService(databaseService);
     interactiveResponseHandler = InteractiveResponseHandler(this);

@@ -1,5 +1,8 @@
+import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 
+import 'package:crypto/crypto.dart' as crypto;
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:path/path.dart' as p;
@@ -11,11 +14,24 @@ import '../storage/local_store.dart';
 import '../storage/store_protocol.dart';
 import '../storage/store_service.dart';
 import '../storage/store_uri_reader.dart';
+import '../utils/layout_utils.dart';
+
+class _BrowsedFile {
+  const _BrowsedFile({required this.space, required this.entry});
+
+  final String space;
+  final StoreEntry entry;
+
+  String get path => entry.path;
+  int get size => entry.size;
+  int get mtimeMs => entry.mtimeMs;
+}
 
 /// 浏览 App store 正式文件。
 ///
 /// - 默认浏览本机全部空间，可删/导出；
 /// - 传入 [deviceId] 可浏览配对设备的共享分区（[readOnly] 默认 true，不可删）。
+/// - 「最近」平铺按修改时间倒序；「我的」按分区/文件夹层级导航。
 class StorageBrowserScreen extends StatefulWidget {
   const StorageBrowserScreen({
     super.key,
@@ -25,6 +41,8 @@ class StorageBrowserScreen extends StatefulWidget {
     this.initialSpace,
     this.title,
     this.extraActions,
+    this.extraMenuItems,
+    this.onExtraMenuSelected,
     this.usedBytes,
   });
 
@@ -37,14 +55,21 @@ class StorageBrowserScreen extends StatefulWidget {
   /// 只读模式：隐藏删除；远端默认只读。
   final bool readOnly;
 
-  /// 初始分区；远端默认 files。
+  /// 初始分区（仅影响「空间」Tab 起始位置）；远端默认 files。
   final String? initialSpace;
 
   /// 覆盖 AppBar 标题；null 时用默认「存储文件」文案。
   final String? title;
 
-  /// 追加到 AppBar actions（刷新按钮之前）。
+  /// 追加到 AppBar actions（刷新按钮之前）；桌面端使用。
   final List<Widget>? extraActions;
+
+  /// 移动端「更多」菜单追加项（不含内置刷新）。
+  final List<PopupMenuEntry<dynamic>> Function(BuildContext context)?
+      extraMenuItems;
+
+  /// [extraMenuItems] 选中回调。
+  final void Function(dynamic value)? onExtraMenuSelected;
 
   /// 非 null 时在 AppBar 展示「已使用 xxx」轻量 badge。
   final int? usedBytes;
@@ -53,20 +78,33 @@ class StorageBrowserScreen extends StatefulWidget {
   State<StorageBrowserScreen> createState() => _StorageBrowserScreenState();
 }
 
-class _StorageBrowserScreenState extends State<StorageBrowserScreen> {
-  static const _pageStep = 100;
+class _StorageBrowserScreenState extends State<StorageBrowserScreen>
+    with SingleTickerProviderStateMixin {
+  static const _listLimit = 5000;
+  static const _folderMarker = '__folder__';
+  static const _menuRefresh = Object();
+  static const _menuNewFolder = Object();
+  static const _menuUploadLocal = Object();
+  static const _menuNewDocument = Object();
+  static const _menuNewSpreadsheet = Object();
+
   /// Align with chat store-open confirm threshold.
   static const _confirmExportBytes = StoreOpenService.confirmMaterializeBytes;
 
+  late final TabController _tabs;
+
   String _selfId = '';
   String _targetId = '';
-  late String _space;
-  String _prefix = '';
-  int _limit = _pageStep;
   bool _busy = false;
   bool _loading = true;
-  List<StoreEntry> _entries = const [];
+  List<_BrowsedFile> _files = const [];
   String? _error;
+
+  /// 「空间」Tab：null = 分区根列表；非 null = 已进入某分区。
+  String? _navSpace;
+
+  /// 当前分区内路径（无首尾 `/`）；空串 = 分区根。
+  String _navPath = '';
 
   bool get _isRemote =>
       _targetId.isNotEmpty && _selfId.isNotEmpty && _targetId != _selfId;
@@ -77,15 +115,52 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen> {
       ? StoreSpace.sharedReadable
       : StoreSpace.browserSpaces;
 
+  String get _mineSpace => _navSpace ?? StoreSpace.files;
+
+  String? get _effectiveNavSpace {
+    if (_navSpace != null) return _navSpace;
+    if (_tabs.index == 1 && !_isRemote) return StoreSpace.files;
+    return null;
+  }
+
+  bool _isMobileLayout(BuildContext context) =>
+      !LayoutUtils.isDesktopLayout(context);
+
+  bool _mobileInFolder(BuildContext context) =>
+      _isMobileLayout(context) && _tabs.index == 1 && _navPath.isNotEmpty;
+
+  bool _mobileMineWritable(BuildContext context) =>
+      _isMobileLayout(context) && _tabs.index == 1 && !_readOnly;
+
+  bool _isFolderMarkerPath(String path) => p.basename(path) == _folderMarker;
+
   @override
   void initState() {
     super.initState();
-    _space = widget.initialSpace ?? StoreSpace.files;
+    _tabs = TabController(length: 2, vsync: this);
+    _tabs.addListener(() {
+      if (_tabs.indexIsChanging) return;
+      if (_tabs.index == 1 && _navSpace == null && !_isRemote) {
+        setState(() => _navSpace = StoreSpace.files);
+        return;
+      }
+      if (mounted) setState(() {});
+    });
+    final initial = widget.initialSpace;
+    if (initial != null && initial.isNotEmpty) {
+      _navSpace = initial;
+    }
     _bootstrap();
   }
 
-  String _uriFor(StoreEntry entry) =>
-      storeUriWithRef(_space, _targetId, entry.path);
+  @override
+  void dispose() {
+    _tabs.dispose();
+    super.dispose();
+  }
+
+  String _uriFor(_BrowsedFile file) =>
+      storeUriWithRef(file.space, _targetId, file.path);
 
   Future<void> _bootstrap() async {
     final self = await DeviceIdentity.deviceId();
@@ -94,8 +169,11 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen> {
     setState(() {
       _selfId = self;
       _targetId = target;
-      if (_isRemote && !StoreSpace.sharedReadable.contains(_space)) {
-        _space = StoreSpace.files;
+      if (_isRemote &&
+          _navSpace != null &&
+          !StoreSpace.sharedReadable.contains(_navSpace)) {
+        _navSpace = StoreSpace.files;
+        _navPath = '';
       }
     });
     await _reload();
@@ -108,22 +186,28 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen> {
       _error = null;
     });
     try {
-      final entries = await StoreService.instance.listDevice(
-        deviceId: _targetId,
-        space: _space,
-        prefix: _prefix.isEmpty ? null : _prefix,
-        limit: _limit,
-      );
+      final all = <_BrowsedFile>[];
+      for (final space in _spaces) {
+        final entries = await StoreService.instance.listDevice(
+          deviceId: _targetId,
+          space: space,
+          limit: _listLimit,
+        );
+        for (final e in entries) {
+          all.add(_BrowsedFile(space: space, entry: e));
+        }
+      }
+      all.sort((a, b) => b.mtimeMs.compareTo(a.mtimeMs));
       if (!mounted) return;
       setState(() {
-        _entries = entries;
+        _files = all;
         _loading = false;
       });
     } catch (e) {
       if (!mounted) return;
       setState(() {
         _error = '$e';
-        _entries = const [];
+        _files = const [];
         _loading = false;
       });
     } finally {
@@ -131,22 +215,22 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen> {
     }
   }
 
-  Future<void> _previewEntry(StoreEntry entry) async {
+  Future<void> _previewFile(_BrowsedFile file) async {
     if (_targetId.isEmpty) return;
-    await StoreOpenService.instance.openStoreUri(context, _uriFor(entry));
+    await StoreOpenService.instance.openStoreUri(context, _uriFor(file));
   }
 
-  Future<void> _exportEntry(StoreEntry entry) async {
+  Future<void> _exportFile(_BrowsedFile file) async {
     final l10n = AppLocalizations.of(context);
-    final name = p.basename(entry.path);
-    if (entry.size >= _confirmExportBytes) {
+    final name = p.basename(file.path);
+    if (file.size >= _confirmExportBytes) {
       final ok = await showDialog<bool>(
         context: context,
         builder: (ctx) => AlertDialog(
           title: Text(l10n.storage_browserExport),
           content: Text(l10n.storage_browserExportConfirmLarge(
             name,
-            StoreOpenService.formatBytes(entry.size),
+            StoreOpenService.formatBytes(file.size),
           )),
           actions: [
             TextButton(
@@ -182,7 +266,7 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen> {
           i++;
         } while (await dest.exists());
       }
-      await StoreUriReader.instance.copyTo(_uriFor(entry), dest);
+      await StoreUriReader.instance.copyTo(_uriFor(file), dest);
       if (!mounted) return;
       _toast(l10n.storage_browserExportDone(dest.path));
     } catch (e) {
@@ -192,7 +276,7 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen> {
     }
   }
 
-  Future<void> _deleteEntry(StoreEntry entry) async {
+  Future<void> _deleteFile(_BrowsedFile file) async {
     if (_readOnly) {
       _toast(AppLocalizations.of(context).storage_browserDeleteDenied);
       return;
@@ -202,7 +286,7 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen> {
       context: context,
       builder: (ctx) => AlertDialog(
         title: Text(l10n.storage_browserDeleteTitle),
-        content: Text(l10n.storage_browserDeleteConfirm(entry.path)),
+        content: Text(l10n.storage_browserDeleteConfirm(file.path)),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(false),
@@ -221,8 +305,8 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen> {
     setState(() => _busy = true);
     try {
       final store = await StoreService.instance.localStore();
-      await store.delete(_targetId, _space, entry.path);
-      _toast(l10n.storage_browserDeleted(entry.path));
+      await store.delete(_targetId, file.space, file.path);
+      _toast(l10n.storage_browserDeleted(file.path));
       await _reload();
     } on StoreException catch (e) {
       _toast(l10n.storage_browserDeleteFailed(
@@ -234,7 +318,7 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen> {
     }
   }
 
-  Future<void> _showEntryActions(StoreEntry entry) async {
+  Future<void> _showEntryActions(_BrowsedFile file) async {
     final l10n = AppLocalizations.of(context);
     await showModalBottomSheet<void>(
       context: context,
@@ -243,9 +327,9 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen> {
           mainAxisSize: MainAxisSize.min,
           children: [
             ListTile(
-              title: Text(entry.path,
+              title: Text('${file.space}/${file.path}',
                   maxLines: 2, overflow: TextOverflow.ellipsis),
-              subtitle: Text(_fmtBytes(entry.size)),
+              subtitle: Text(_fmtBytes(file.size)),
             ),
             const Divider(height: 1),
             ListTile(
@@ -253,7 +337,7 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen> {
               title: Text(l10n.storage_browserPreview),
               onTap: () {
                 Navigator.of(ctx).pop();
-                _previewEntry(entry);
+                _previewFile(file);
               },
             ),
             ListTile(
@@ -261,7 +345,7 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen> {
               title: Text(l10n.storage_browserExport),
               onTap: () {
                 Navigator.of(ctx).pop();
-                _exportEntry(entry);
+                _exportFile(file);
               },
             ),
             ListTile(
@@ -269,7 +353,7 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen> {
               title: Text(l10n.storage_browserVersions),
               onTap: () {
                 Navigator.of(ctx).pop();
-                _showVersions(entry);
+                _showVersions(file);
               },
             ),
             ListTile(
@@ -277,7 +361,7 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen> {
               title: Text(l10n.storage_browserManifest),
               onTap: () {
                 Navigator.of(ctx).pop();
-                _showManifest(entry);
+                _showManifest(file);
               },
             ),
             if (!_readOnly)
@@ -287,7 +371,7 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen> {
                 title: Text(l10n.storage_browserDelete),
                 onTap: () {
                   Navigator.of(ctx).pop();
-                  _deleteEntry(entry);
+                  _deleteFile(file);
                 },
               ),
           ],
@@ -296,7 +380,7 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen> {
     );
   }
 
-  Future<void> _showVersions(StoreEntry entry) async {
+  Future<void> _showVersions(_BrowsedFile file) async {
     final l10n = AppLocalizations.of(context);
     if (await StoreService.instance.isMaster()) {
       _toast(l10n.storage_browserNeedMaster);
@@ -307,9 +391,9 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen> {
     String? err;
     try {
       data = await StoreService.instance.versionsList(
-        space: _space,
+        space: file.space,
         device: _targetId,
-        path: entry.path,
+        path: file.path,
       );
       if (data != null && data['_error'] != null) {
         err = '${data['_error']}: ${data['message'] ?? ''}';
@@ -352,9 +436,8 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen> {
                         final ver = v['v'] ?? '?';
                         final size = v['size'] ?? 0;
                         final sha = '${v['sha256'] ?? ''}';
-                        final shaShort = sha.length >= 16
-                            ? sha.substring(0, 16)
-                            : sha;
+                        final shaShort =
+                            sha.length >= 16 ? sha.substring(0, 16) : sha;
                         final protected = v['protected'] == true;
                         return ListTile(
                           dense: true,
@@ -374,7 +457,7 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen> {
     );
   }
 
-  Future<void> _showManifest(StoreEntry entry) async {
+  Future<void> _showManifest(_BrowsedFile file) async {
     final l10n = AppLocalizations.of(context);
     if (await StoreService.instance.isMaster()) {
       _toast(l10n.storage_browserNeedMaster);
@@ -385,9 +468,9 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen> {
     String? err;
     try {
       data = await StoreService.instance.manifest(
-        space: _space,
+        space: file.space,
         device: _targetId,
-        path: entry.path,
+        path: file.path,
       );
       if (data != null && data['_error'] != null) {
         err = '${data['_error']}: ${data['message'] ?? ''}';
@@ -440,6 +523,18 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen> {
 
   Future<void> _openSearch() async {
     final l10n = AppLocalizations.of(context);
+    if (_mobileInFolder(context)) {
+      await showSearch<void>(
+        context: context,
+        delegate: _FolderScopedSearchDelegate(
+          files: _files,
+          space: _mineSpace,
+          pathPrefix: _navPath.isEmpty ? '' : '$_navPath/',
+          onOpen: _previewFile,
+        ),
+      );
+      return;
+    }
     if (await StoreService.instance.isMaster()) {
       if (!mounted) return;
       _toast(l10n.storage_browserNeedMaster);
@@ -448,13 +543,194 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen> {
     if (!mounted) return;
     await showSearch<void>(
       context: context,
-      delegate: _StoreSearchDelegate(space: _space),
+      delegate: _StoreSearchDelegate(
+        space: _navSpace ?? StoreSpace.files,
+      ),
     );
   }
 
   void _toast(String msg) {
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
+  }
+
+  String _fmtRelativeTime(int ms) {
+    if (ms <= 0) return '';
+    final t = DateTime.fromMillisecondsSinceEpoch(ms).toLocal();
+    final time =
+        '${t.hour.toString().padLeft(2, '0')}:${t.minute.toString().padLeft(2, '0')}';
+    final locale = Localizations.localeOf(context);
+    final datePart = locale.languageCode == 'zh'
+        ? '${t.month}月${t.day}日'
+        : '${t.month}/${t.day}';
+    return '$datePart $time';
+  }
+
+  String _destRelPath(String name) {
+    final normalized = normalizeStorePath(name);
+    if (_navPath.isEmpty) return normalized;
+    return normalizeStorePath('$_navPath/$normalized');
+  }
+
+  Future<void> _commitBytes({
+    required String space,
+    required String path,
+    required Uint8List bytes,
+  }) async {
+    final sha = crypto.sha256.convert(bytes).toString();
+    final store = await StoreService.instance.localStore();
+    final (uid, _) = await store.writeBegin(
+      deviceId: _targetId,
+      space: space,
+      path: path,
+      size: bytes.length,
+      sha256: sha,
+    );
+    if (bytes.isNotEmpty) {
+      await store.writeChunk(_targetId, space, uid, 0, bytes);
+    }
+    final (_, failed) = await store.commit(_targetId, space, [uid]);
+    if (failed.isNotEmpty) {
+      throw StateError(failed.join(', '));
+    }
+  }
+
+  Future<void> _promptNewFolder() async {
+    final l10n = AppLocalizations.of(context);
+    final controller = TextEditingController();
+    final name = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(l10n.storage_browserNewFolder),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          decoration:
+              InputDecoration(hintText: l10n.storage_browserNewFolderHint),
+          onSubmitted: (v) => Navigator.of(ctx).pop(v.trim()),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: Text(l10n.common_cancel),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(ctx).pop(controller.text.trim()),
+            child: Text(l10n.common_confirm),
+          ),
+        ],
+      ),
+    );
+    controller.dispose();
+    if (name == null || name.isEmpty || _busy) return;
+    if (name.contains('/') || name.contains('\\')) {
+      _toast(l10n.storage_browserNewFolderFailed('invalid name'));
+      return;
+    }
+    setState(() => _busy = true);
+    try {
+      final markerPath = _destRelPath('$name/$_folderMarker');
+      await _commitBytes(
+        space: _mineSpace,
+        path: markerPath,
+        bytes: Uint8List(0),
+      );
+      await _reload();
+    } catch (e) {
+      _toast(l10n.storage_browserNewFolderFailed('$e'));
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _uploadLocalFiles() async {
+    final l10n = AppLocalizations.of(context);
+    final picked = await FilePicker.platform.pickFiles(allowMultiple: true);
+    if (picked == null || picked.files.isEmpty || _busy) return;
+    setState(() => _busy = true);
+    try {
+      for (final item in picked.files) {
+        final localPath = item.path;
+        if (localPath == null) continue;
+        final file = File(localPath);
+        if (!await file.exists()) continue;
+        final bytes = await file.readAsBytes();
+        final dest = _destRelPath(p.basename(localPath));
+        await _commitBytes(space: _mineSpace, path: dest, bytes: bytes);
+        if (mounted) {
+          _toast(l10n.storage_browserUploadDone(p.basename(localPath)));
+        }
+      }
+      await _reload();
+    } catch (e) {
+      _toast(l10n.storage_browserUploadFailed('$e'));
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  String _uniqueBaseName(String base, String ext) {
+    final existing = _files
+        .where((f) => f.space == _mineSpace)
+        .map((f) => f.path)
+        .toSet();
+    var i = 0;
+    while (true) {
+      final suffix = i == 0 ? '' : ' ($i)';
+      final fileName = ext.isEmpty ? '$base$suffix' : '$base$suffix.$ext';
+      final rel = _destRelPath(fileName);
+      if (!existing.contains(rel)) return fileName;
+      i++;
+    }
+  }
+
+  Future<void> _createNewDocument({required bool spreadsheet}) async {
+    final l10n = AppLocalizations.of(context);
+    if (_busy) return;
+    setState(() => _busy = true);
+    try {
+      final fileName = spreadsheet
+          ? _uniqueBaseName(l10n.storage_browserNewSpreadsheet, 'csv')
+          : _uniqueBaseName(l10n.storage_browserNewDocument, 'md');
+      final title = p.basenameWithoutExtension(fileName);
+      final bytes = spreadsheet
+          ? utf8.encode('$title\n')
+          : utf8.encode('# $title\n\n');
+      await _commitBytes(
+        space: _mineSpace,
+        path: _destRelPath(fileName),
+        bytes: Uint8List.fromList(bytes),
+      );
+      await _reload();
+    } catch (e) {
+      _toast(l10n.storage_browserNewFileFailed('$e'));
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  void _handleMobileMoreSelected(dynamic value) {
+    if (value == _menuRefresh) {
+      _reload();
+      return;
+    }
+    if (value == _menuNewFolder) {
+      _promptNewFolder();
+      return;
+    }
+    if (value == _menuUploadLocal) {
+      _uploadLocalFiles();
+      return;
+    }
+    if (value == _menuNewDocument) {
+      _createNewDocument(spreadsheet: false);
+      return;
+    }
+    if (value == _menuNewSpreadsheet) {
+      _createNewDocument(spreadsheet: true);
+      return;
+    }
+    widget.onExtraMenuSelected?.call(value);
   }
 
   String _fmtBytes(int n) {
@@ -466,6 +742,30 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen> {
     return '${(n / (1024 * 1024 * 1024)).toStringAsFixed(1)} GB';
   }
 
+  String _fmtMtime(int ms) {
+    if (ms <= 0) return '';
+    final t = DateTime.fromMillisecondsSinceEpoch(ms).toLocal();
+    String two(int n) => n.toString().padLeft(2, '0');
+    return '${t.year}-${two(t.month)}-${two(t.day)} ${two(t.hour)}:${two(t.minute)}';
+  }
+
+  String _fmtRecentAccess(int ms, AppLocalizations l10n) {
+    final rel = _fmtRelativeTime(ms);
+    if (rel.isEmpty) return '';
+    return l10n.storage_browserLastAccessed(rel);
+  }
+
+  String _fmtLastModified(int ms, AppLocalizations l10n) {
+    final rel = _fmtRelativeTime(ms);
+    if (rel.isEmpty) return '';
+    return l10n.storage_browserLastModified(rel);
+  }
+
+  String _fileName(String path) {
+    final parts = path.split('/');
+    return parts.isNotEmpty ? parts.last : path;
+  }
+
   String _appBarTitle(AppLocalizations l10n) {
     if (widget.title != null) return widget.title!;
     if (widget.deviceName != null && _isRemote) {
@@ -474,150 +774,731 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen> {
     return l10n.storage_browserTitle;
   }
 
+  void _enterSpace(String space) {
+    setState(() {
+      _navSpace = space;
+      _navPath = '';
+    });
+  }
+
+  void _enterFolder(String name) {
+    setState(() {
+      _navSpace ??= StoreSpace.files;
+      _navPath = _navPath.isEmpty ? name : '$_navPath/$name';
+    });
+  }
+
+  void _navUp() {
+    setState(() {
+      if (_navPath.isNotEmpty) {
+        final i = _navPath.lastIndexOf('/');
+        _navPath = i < 0 ? '' : _navPath.substring(0, i);
+      } else if (_tabs.index != 1) {
+        _navSpace = null;
+      }
+    });
+  }
+
+  void _navToRoot() {
+    setState(() {
+      _navSpace = null;
+      _navPath = '';
+    });
+  }
+
+  void _navToSpaceRoot() {
+    setState(() => _navPath = '');
+  }
+
+  void _navToPath(String path) {
+    setState(() => _navPath = path);
+  }
+
+  /// 当前目录下的子文件夹名（排序）与文件。
+  ({List<String> folders, List<_BrowsedFile> files}) _folderChildren() {
+    final space = _effectiveNavSpace;
+    if (space == null) {
+      return (folders: const [], files: const []);
+    }
+    final prefix = _navPath.isEmpty ? '' : '$_navPath/';
+    final folders = <String>{};
+    final files = <_BrowsedFile>[];
+    for (final f in _files) {
+      if (f.space != space) continue;
+      if (prefix.isEmpty) {
+        final slash = f.path.indexOf('/');
+        if (slash < 0) {
+          if (!_isFolderMarkerPath(f.path)) files.add(f);
+        } else {
+          folders.add(f.path.substring(0, slash));
+        }
+      } else {
+        if (!f.path.startsWith(prefix)) continue;
+        final rest = f.path.substring(prefix.length);
+        if (rest.isEmpty) continue;
+        final slash = rest.indexOf('/');
+        if (slash < 0) {
+          if (!_isFolderMarkerPath(f.path)) files.add(f);
+        } else {
+          folders.add(rest.substring(0, slash));
+        }
+      }
+    }
+    final folderList = folders.toList()
+      ..sort((a, b) => _folderMtimeMs(space, b).compareTo(_folderMtimeMs(space, a)));
+    files.sort((a, b) => b.mtimeMs.compareTo(a.mtimeMs));
+    return (folders: folderList, files: files);
+  }
+
+  int _folderMtimeMs(String space, String folderName) {
+    final prefix = _navPath.isEmpty ? '$folderName/' : '$_navPath/$folderName/';
+    var maxMs = 0;
+    for (final f in _files) {
+      if (f.space != space) continue;
+      if (f.path.startsWith(prefix) && f.mtimeMs > maxMs) {
+        maxMs = f.mtimeMs;
+      }
+    }
+    return maxMs;
+  }
+
+  String _currentFolderTitle() {
+    if (_navPath.isEmpty) return '';
+    final parts = _navPath.split('/');
+    return parts.last;
+  }
+
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
-    final used = widget.usedBytes;
+    final mobile = _isMobileLayout(context);
 
-    return Scaffold(
-      appBar: AppBar(
-        title: Text(_appBarTitle(l10n)),
-        actions: [
-          if (used != null)
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 4),
-              child: Center(
-                child: Text(
-                  l10n.storage_usedBadge(_fmtBytes(used)),
-                  style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                        color: Theme.of(context).colorScheme.onSurfaceVariant,
-                      ),
-                ),
+    return PopScope(
+      canPop: !_mobileInFolder(context),
+      onPopInvokedWithResult: (didPop, result) {
+        if (!didPop && _mobileInFolder(context)) _navUp();
+      },
+      child: Scaffold(
+        appBar: mobile
+            ? (_mobileInFolder(context)
+                ? _buildMobileFolderAppBar(l10n)
+                : _buildMobileAppBar(l10n))
+            : _buildDesktopAppBar(l10n),
+        body: _loading && _files.isEmpty
+            ? const Center(child: CircularProgressIndicator())
+            : TabBarView(
+                controller: _tabs,
+                children: [
+                  _buildFlatTab(l10n, mobile: mobile),
+                  _buildSpaceTab(l10n, mobile: mobile),
+                ],
+              ),
+      ),
+    );
+  }
+
+  PreferredSizeWidget _buildMobileFolderAppBar(AppLocalizations l10n) {
+    return AppBar(
+      elevation: 0,
+      scrolledUnderElevation: 0,
+      centerTitle: true,
+      leading: IconButton(
+        icon: const Icon(Icons.arrow_back),
+        onPressed: _navUp,
+      ),
+      title: Text(
+        _currentFolderTitle(),
+        style: Theme.of(context).textTheme.titleMedium?.copyWith(
+              fontWeight: FontWeight.w700,
+            ),
+      ),
+      actions: _buildMobileActions(l10n, includeCreate: !_readOnly),
+    );
+  }
+
+  PreferredSizeWidget _buildMobileAppBar(AppLocalizations l10n) {
+    return AppBar(
+      elevation: 0,
+      scrolledUnderElevation: 0,
+      centerTitle: true,
+      title: _buildMobileTabHeader(l10n),
+      actions: _buildMobileActions(l10n, includeCreate: _mobileMineWritable(context)),
+    );
+  }
+
+  PreferredSizeWidget _buildDesktopAppBar(AppLocalizations l10n) {
+    final used = widget.usedBytes;
+    return AppBar(
+      title: Text(_appBarTitle(l10n)),
+      actions: [
+        if (used != null)
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 4),
+            child: Center(
+              child: Text(
+                l10n.storage_usedBadge(_fmtBytes(used)),
+                style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    ),
               ),
             ),
-          if (!_isRemote)
-            IconButton(
-              onPressed: _busy ? null : _openSearch,
-              icon: const Icon(Icons.search),
-              tooltip: l10n.storage_browserSearchTitle,
-            ),
-          ...?widget.extraActions,
+          ),
+        if (!_isRemote)
           IconButton(
-            onPressed: _busy ? null : _reload,
-            icon: const Icon(Icons.refresh),
-            tooltip: l10n.storage_browserRefresh,
+            onPressed: _busy ? null : _openSearch,
+            icon: const Icon(Icons.search),
+            tooltip: l10n.storage_browserSearchTitle,
+          ),
+        ...?widget.extraActions,
+        IconButton(
+          onPressed: _busy ? null : _reload,
+          icon: const Icon(Icons.refresh),
+          tooltip: l10n.storage_browserRefresh,
+        ),
+      ],
+      bottom: TabBar(
+        controller: _tabs,
+        tabs: [
+          Tab(text: l10n.storage_browserTabFlat),
+          Tab(text: l10n.storage_browserTabSpace),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildMobileTabHeader(AppLocalizations l10n) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        _mobileTabChip(
+          label: l10n.storage_browserTabRecent,
+          selected: _tabs.index == 0,
+          onTap: () => _tabs.animateTo(0),
+        ),
+        const SizedBox(width: 28),
+        _mobileTabChip(
+          label: l10n.storage_browserTabMine,
+          selected: _tabs.index == 1,
+          onTap: () => _tabs.animateTo(1),
+        ),
+      ],
+    );
+  }
+
+  Widget _mobileTabChip({
+    required String label,
+    required bool selected,
+    required VoidCallback onTap,
+  }) {
+    final theme = Theme.of(context);
+    final color = selected
+        ? theme.colorScheme.onSurface
+        : theme.colorScheme.onSurfaceVariant;
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(4),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              label,
+              style: theme.textTheme.titleMedium?.copyWith(
+                fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
+                color: color,
+              ),
+            ),
+            const SizedBox(height: 6),
+            AnimatedContainer(
+              duration: const Duration(milliseconds: 180),
+              height: 3,
+              width: selected ? 28 : 0,
+              decoration: BoxDecoration(
+                color: theme.colorScheme.onSurface,
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  List<Widget> _buildMobileActions(
+    AppLocalizations l10n, {
+    required bool includeCreate,
+  }) {
+    final muted = Theme.of(context).colorScheme.onSurfaceVariant;
+    return [
+      if (!_isRemote)
+        IconButton(
+          onPressed: _busy ? null : _openSearch,
+          icon: const Icon(Icons.search),
+          tooltip: l10n.storage_browserSearchTitle,
+        ),
+      PopupMenuButton<dynamic>(
+        icon: const Icon(Icons.add_circle_outline),
+        tooltip: l10n.storage_moreSettings,
+        onSelected: _handleMobileMoreSelected,
+        itemBuilder: (ctx) => [
+          if (includeCreate) ...[
+            PopupMenuItem(
+              value: _menuNewFolder,
+              child: Row(
+                children: [
+                  Icon(Icons.create_new_folder_outlined, size: 20, color: muted),
+                  const SizedBox(width: 12),
+                  Expanded(child: Text(l10n.storage_browserNewFolder)),
+                ],
+              ),
+            ),
+            PopupMenuItem(
+              value: _menuUploadLocal,
+              child: Row(
+                children: [
+                  Icon(Icons.file_upload_outlined, size: 20, color: muted),
+                  const SizedBox(width: 12),
+                  Expanded(child: Text(l10n.storage_browserUploadLocal)),
+                ],
+              ),
+            ),
+            PopupMenuItem(
+              value: _menuNewDocument,
+              child: Row(
+                children: [
+                  Icon(Icons.note_add_outlined, size: 20, color: muted),
+                  const SizedBox(width: 12),
+                  Expanded(child: Text(l10n.storage_browserNewDocument)),
+                ],
+              ),
+            ),
+            PopupMenuItem(
+              value: _menuNewSpreadsheet,
+              child: Row(
+                children: [
+                  Icon(Icons.grid_on_outlined, size: 20, color: muted),
+                  const SizedBox(width: 12),
+                  Expanded(child: Text(l10n.storage_browserNewSpreadsheet)),
+                ],
+              ),
+            ),
+          ],
+          PopupMenuItem(
+            value: _menuRefresh,
+            child: Text(l10n.storage_browserRefresh),
+          ),
+          ...?widget.extraMenuItems?.call(ctx),
+        ],
+      ),
+    ];
+  }
+
+  Widget _buildFolderIcon() {
+    return const Icon(
+      Icons.folder_rounded,
+      color: Color(0xFFF5C542),
+      size: 44,
+    );
+  }
+
+  Widget _buildMobileFolderRow(String name, AppLocalizations l10n) {
+    final space = _mineSpace;
+    final modified = _fmtLastModified(_folderMtimeMs(space, name), l10n);
+    return InkWell(
+      onTap: _busy ? null : () => _enterFolder(name),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            SizedBox(width: 42, child: Center(child: _buildFolderIcon())),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    name,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                          fontWeight: FontWeight.w600,
+                          height: 1.35,
+                        ),
+                  ),
+                  if (modified.isNotEmpty) ...[
+                    const SizedBox(height: 6),
+                    Text(
+                      modified,
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                            color: Theme.of(context)
+                                .colorScheme
+                                .onSurfaceVariant,
+                          ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildMobileFolderEmpty(AppLocalizations l10n) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(32),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              Icons.save_outlined,
+              size: 72,
+              color: Theme.of(context).colorScheme.onSurfaceVariant.withValues(alpha: 0.45),
+            ),
+            const SizedBox(height: 16),
+            Text(
+              l10n.storage_browserFolderEmpty,
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
+              textAlign: TextAlign.center,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildDocIcon() {
+    const iconColor = Color(0xFF5B9BD5);
+    const bgColor = Color(0xFFE8F2FC);
+    return Container(
+      width: 42,
+      height: 50,
+      decoration: BoxDecoration(
+        color: bgColor,
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Container(
+            width: 22,
+            height: 2.5,
+            decoration: BoxDecoration(
+              color: iconColor,
+              borderRadius: BorderRadius.circular(1),
+            ),
+          ),
+          const SizedBox(height: 5),
+          Container(
+            width: 16,
+            height: 2.5,
+            decoration: BoxDecoration(
+              color: iconColor,
+              borderRadius: BorderRadius.circular(1),
+            ),
           ),
         ],
       ),
-      body: _loading && _entries.isEmpty
-          ? const Center(child: CircularProgressIndicator())
-          : ListView(
-              padding: const EdgeInsets.all(16),
-              children: [
-                Text(
-                    _isRemote
-                        ? l10n.storage_sharedBrowseHint
-                        : l10n.storage_browserHint,
-                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          color:
-                              Theme.of(context).colorScheme.onSurfaceVariant,
-                        )),
-                const SizedBox(height: 12),
-                Wrap(
-                  spacing: 8,
-                  runSpacing: 4,
+    );
+  }
+
+  Widget _buildMobileFileRow(
+    _BrowsedFile file,
+    AppLocalizations l10n, {
+    bool useModified = false,
+  }) {
+    final subtitle = useModified
+        ? _fmtLastModified(file.mtimeMs, l10n)
+        : _fmtRecentAccess(file.mtimeMs, l10n);
+    return InkWell(
+      onTap: _busy ? null : () => _previewFile(file),
+      onLongPress: _busy ? null : () => _showEntryActions(file),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _buildDocIcon(),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    _fileName(file.path),
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                          fontWeight: FontWeight.w600,
+                          height: 1.35,
+                        ),
+                  ),
+                  if (subtitle.isNotEmpty) ...[
+                    const SizedBox(height: 6),
+                    Text(
+                      subtitle,
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                            color: Theme.of(context)
+                                .colorScheme
+                                .onSurfaceVariant,
+                          ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildFlatTab(AppLocalizations l10n, {required bool mobile}) {
+    if (_error != null) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Text(_error!,
+              style: TextStyle(color: Theme.of(context).colorScheme.error)),
+        ),
+      );
+    }
+    if (_files.isEmpty) {
+      return Center(
+        child: Text(l10n.storage_browserEmpty,
+            style: Theme.of(context).textTheme.bodySmall),
+      );
+    }
+    if (mobile) {
+      return ListView.separated(
+        padding: const EdgeInsets.only(top: 4, bottom: 16),
+        itemCount: _files.length,
+        separatorBuilder: (_, __) => const SizedBox(height: 2),
+        itemBuilder: (context, i) =>
+            _buildMobileFileRow(_files[i], l10n),
+      );
+    }
+    return ListView.builder(
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      itemCount: _files.length,
+      itemBuilder: (context, i) {
+        final f = _files[i];
+        final mtime = _fmtMtime(f.mtimeMs);
+        return ListTile(
+          dense: true,
+          leading: const Icon(Icons.insert_drive_file_outlined, size: 20),
+          title: Text(_fileName(f.path), overflow: TextOverflow.ellipsis),
+          subtitle: Text(
+            [
+              '${f.space}/${f.path}',
+              _fmtBytes(f.size),
+              if (mtime.isNotEmpty) mtime,
+            ].join(' · '),
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: Theme.of(context).textTheme.labelSmall,
+          ),
+          onTap: _busy ? null : () => _previewFile(f),
+          trailing: IconButton(
+            icon: const Icon(Icons.more_horiz, size: 18),
+            onPressed: _busy ? null : () => _showEntryActions(f),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildSpaceTab(AppLocalizations l10n, {required bool mobile}) {
+    if (_error != null) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Text(_error!,
+              style: TextStyle(color: Theme.of(context).colorScheme.error)),
+        ),
+      );
+    }
+
+    if (mobile && _tabs.index == 1) {
+      final children = _folderChildren();
+      final empty = children.folders.isEmpty && children.files.isEmpty;
+      if (empty) return _buildMobileFolderEmpty(l10n);
+      final rows = <Widget>[
+        for (final name in children.folders)
+          _buildMobileFolderRow(name, l10n),
+        for (final f in children.files)
+          _buildMobileFileRow(f, l10n, useModified: true),
+      ];
+      return ListView.separated(
+        padding: const EdgeInsets.only(top: 4, bottom: 16),
+        itemCount: rows.length,
+        separatorBuilder: (_, __) => const SizedBox(height: 2),
+        itemBuilder: (_, i) => rows[i],
+      );
+    }
+
+    if (_navSpace == null) {
+      return ListView(
+        padding: const EdgeInsets.symmetric(vertical: 8),
+        children: [
+          for (final space in _spaces)
+            ListTile(
+              leading: const Icon(Icons.folder_outlined),
+              title: Text(space),
+              subtitle: Text(
+                l10n.storage_browserCount(
+                    _files.where((f) => f.space == space).length),
+                style: Theme.of(context).textTheme.labelSmall,
+              ),
+              trailing: const Icon(Icons.chevron_right, size: 20),
+              onTap: () => _enterSpace(space),
+            ),
+        ],
+      );
+    }
+
+    final children = _folderChildren();
+    final empty = children.folders.isEmpty && children.files.isEmpty;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        _buildBreadcrumb(),
+        const Divider(height: 1),
+        Expanded(
+          child: empty
+              ? Center(
+                  child: Text(l10n.storage_browserEmpty,
+                      style: Theme.of(context).textTheme.bodySmall),
+                )
+              : ListView(
+                  padding: const EdgeInsets.symmetric(vertical: 8),
                   children: [
-                    for (final space in _spaces)
-                      ChoiceChip(
-                        label: Text(space),
-                        selected: _space == space,
-                        onSelected: _busy
-                            ? null
-                            : (selected) {
-                                if (!selected) return;
-                                setState(() {
-                                  _space = space;
-                                  _limit = _pageStep;
-                                });
-                                _reload();
-                              },
+                    for (final name in children.folders)
+                      ListTile(
+                        leading: const Icon(Icons.folder_outlined),
+                        title: Text(name),
+                        trailing: const Icon(Icons.chevron_right, size: 20),
+                        onTap: () => _enterFolder(name),
+                      ),
+                    for (final f in children.files)
+                      ListTile(
+                        dense: true,
+                        leading: const Icon(Icons.insert_drive_file_outlined,
+                            size: 20),
+                        title: Text(_fileName(f.path),
+                            overflow: TextOverflow.ellipsis),
+                        subtitle: Text(
+                          [
+                            _fmtBytes(f.size),
+                            if (_fmtMtime(f.mtimeMs).isNotEmpty)
+                              _fmtMtime(f.mtimeMs),
+                          ].join(' · '),
+                          style: Theme.of(context).textTheme.labelSmall,
+                        ),
+                        onTap: _busy ? null : () => _previewFile(f),
+                        trailing: IconButton(
+                          icon: const Icon(Icons.more_horiz, size: 18),
+                          onPressed:
+                              _busy ? null : () => _showEntryActions(f),
+                        ),
                       ),
                   ],
                 ),
-                const SizedBox(height: 12),
-                TextField(
-                  decoration: InputDecoration(
-                    labelText: l10n.storage_browserPrefix,
-                    hintText: l10n.storage_browserPrefixHint,
-                    border: const OutlineInputBorder(),
-                    isDense: true,
-                    suffixIcon: IconButton(
-                      icon: const Icon(Icons.filter_alt_outlined),
-                      onPressed: _busy ? null : _reload,
-                    ),
-                  ),
-                  onChanged: (v) => _prefix = v.trim(),
-                  onSubmitted: (_) {
-                    setState(() => _limit = _pageStep);
-                    _reload();
-                  },
-                ),
-                const SizedBox(height: 8),
-                if (_error != null)
-                  Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 8),
-                    child: Text(_error!,
-                        style: TextStyle(
-                            color: Theme.of(context).colorScheme.error)),
-                  )
-                else if (_entries.isEmpty)
-                  Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 24),
-                    child: Text(l10n.storage_browserEmpty,
-                        textAlign: TextAlign.center,
-                        style: Theme.of(context).textTheme.bodySmall),
-                  )
-                else ...[
-                  Text(
-                    l10n.storage_browserCount(_entries.length),
-                    style: Theme.of(context).textTheme.labelMedium,
-                  ),
-                  const SizedBox(height: 4),
-                  ..._entries.map((e) {
-                    return ListTile(
-                      contentPadding: EdgeInsets.zero,
-                      dense: true,
-                      leading: const Icon(Icons.insert_drive_file_outlined,
-                          size: 18),
-                      title: Text(e.path,
-                          style: Theme.of(context).textTheme.bodySmall,
-                          overflow: TextOverflow.ellipsis),
-                      subtitle: Text(_fmtBytes(e.size),
-                          style: Theme.of(context).textTheme.labelSmall),
-                      onTap: _busy ? null : () => _previewEntry(e),
-                      trailing: IconButton(
-                        icon: const Icon(Icons.more_horiz, size: 18),
-                        onPressed:
-                            _busy ? null : () => _showEntryActions(e),
-                      ),
-                    );
-                  }),
-                  if (_entries.length >= _limit)
-                    Align(
-                      alignment: Alignment.center,
-                      child: TextButton(
-                        onPressed: _busy
-                            ? null
-                            : () {
-                                setState(() => _limit += _pageStep);
-                                _reload();
-                              },
-                        child: Text(l10n.storage_browserLoadMore),
-                      ),
-                    ),
-                ],
-              ],
+        ),
+      ],
+    );
+  }
+
+  Widget _buildBreadcrumb() {
+    final segments = <({String label, VoidCallback? onTap})>[
+      (
+        label: '/',
+        onTap: _navSpace == null && _navPath.isEmpty ? null : _navToRoot,
+      ),
+    ];
+    if (_navSpace != null) {
+      segments.add((
+        label: _navSpace!,
+        onTap: _navPath.isEmpty ? null : _navToSpaceRoot,
+      ));
+      if (_navPath.isNotEmpty) {
+        final parts = _navPath.split('/');
+        var acc = '';
+        for (var i = 0; i < parts.length; i++) {
+          acc = acc.isEmpty ? parts[i] : '$acc/${parts[i]}';
+          final target = acc;
+          final isLast = i == parts.length - 1;
+          segments.add((
+            label: parts[i],
+            onTap: isLast ? null : () => _navToPath(target),
+          ));
+        }
+      }
+    }
+
+    return Material(
+      color: Theme.of(context).colorScheme.surfaceContainerLowest,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
+        child: Row(
+          children: [
+            IconButton(
+              icon: const Icon(Icons.arrow_upward, size: 18),
+              tooltip: MaterialLocalizations.of(context).backButtonTooltip,
+              onPressed: _navSpace == null ? null : _navUp,
             ),
+            Expanded(
+              child: SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                child: Row(
+                  children: [
+                    for (var i = 0; i < segments.length; i++) ...[
+                      if (i > 0)
+                        Text(' / ',
+                            style: Theme.of(context)
+                                .textTheme
+                                .bodySmall
+                                ?.copyWith(
+                                  color: Theme.of(context)
+                                      .colorScheme
+                                      .onSurfaceVariant,
+                                )),
+                      InkWell(
+                        onTap: segments[i].onTap,
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 4, vertical: 6),
+                          child: Text(
+                            segments[i].label,
+                            style: Theme.of(context)
+                                .textTheme
+                                .bodySmall
+                                ?.copyWith(
+                                  fontWeight: segments[i].onTap == null
+                                      ? FontWeight.w600
+                                      : FontWeight.normal,
+                                  color: segments[i].onTap == null
+                                      ? Theme.of(context).colorScheme.primary
+                                      : null,
+                                ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }
@@ -710,8 +1591,7 @@ class _StoreSearchDelegate extends SearchDelegate<void> {
                 ),
               );
             }
-            final idx =
-                i - ((degraded || scoreType.isNotEmpty) ? 1 : 0);
+            final idx = i - ((degraded || scoreType.isNotEmpty) ? 1 : 0);
             final r = Map<String, dynamic>.from(list[idx] as Map);
             final path = '${r['path'] ?? ''}';
             final snippet = '${r['snippet'] ?? ''}';
@@ -740,6 +1620,87 @@ class _StoreSearchDelegate extends SearchDelegate<void> {
         ' · ${semantic ? l10n.storage_browserSearchSemantic : l10n.storage_browserSearchKeyword}',
         style: Theme.of(context).textTheme.bodySmall,
       ),
+    );
+  }
+}
+
+class _FolderScopedSearchDelegate extends SearchDelegate<void> {
+  _FolderScopedSearchDelegate({
+    required this.files,
+    required this.space,
+    required this.pathPrefix,
+    required this.onOpen,
+  });
+
+  final List<_BrowsedFile> files;
+  final String space;
+  final String pathPrefix;
+  final void Function(_BrowsedFile file) onOpen;
+
+  List<_BrowsedFile> _matches(String q) {
+    final needle = q.trim().toLowerCase();
+    if (needle.isEmpty) return const [];
+    return files.where((f) {
+      if (f.space != space) return false;
+      if (pathPrefix.isNotEmpty && !f.path.startsWith(pathPrefix)) return false;
+      if (p.basename(f.path) == _StorageBrowserScreenState._folderMarker) {
+        return false;
+      }
+      return f.path.toLowerCase().contains(needle) ||
+          p.basename(f.path).toLowerCase().contains(needle);
+    }).toList()
+      ..sort((a, b) => b.mtimeMs.compareTo(a.mtimeMs));
+  }
+
+  @override
+  List<Widget>? buildActions(BuildContext context) {
+    if (query.isEmpty) return null;
+    return [
+      IconButton(
+        icon: const Icon(Icons.clear),
+        onPressed: () => query = '',
+      ),
+    ];
+  }
+
+  @override
+  Widget? buildLeading(BuildContext context) {
+    return IconButton(
+      icon: const Icon(Icons.arrow_back),
+      onPressed: () => close(context, null),
+    );
+  }
+
+  @override
+  Widget buildResults(BuildContext context) => _buildList(context);
+
+  @override
+  Widget buildSuggestions(BuildContext context) => _buildList(context);
+
+  Widget _buildList(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
+    final q = query.trim();
+    if (q.isEmpty) {
+      return Center(child: Text(l10n.storage_browserSearchHint));
+    }
+    final list = _matches(q);
+    if (list.isEmpty) {
+      return Center(child: Text(l10n.storage_browserSearchEmpty));
+    }
+    return ListView.builder(
+      itemCount: list.length,
+      itemBuilder: (_, i) {
+        final f = list[i];
+        final name = p.basename(f.path);
+        return ListTile(
+          title: Text(name, overflow: TextOverflow.ellipsis),
+          subtitle: Text(f.path, maxLines: 2, overflow: TextOverflow.ellipsis),
+          onTap: () {
+            close(context, null);
+            onOpen(f);
+          },
+        );
+      },
     );
   }
 }

@@ -4929,6 +4929,66 @@ class AppLocalizationsZh extends AppLocalizations {
   String get storage_browserEmpty => '该分区暂无文件';
 
   @override
+  String get storage_browserTabFlat => '全部';
+
+  @override
+  String get storage_browserTabSpace => '空间';
+
+  @override
+  String get storage_browserTabRecent => '最近';
+
+  @override
+  String get storage_browserTabMine => '我的';
+
+  @override
+  String storage_browserLastAccessed(String time) {
+    return '最近访问于 $time';
+  }
+
+  @override
+  String storage_browserLastModified(String time) {
+    return '最近修改于 $time';
+  }
+
+  @override
+  String get storage_browserFolderEmpty => '这里还没有任何文件';
+
+  @override
+  String get storage_browserNewFolder => '新建文件夹';
+
+  @override
+  String get storage_browserUploadLocal => '上传本地文件';
+
+  @override
+  String get storage_browserNewDocument => '新建文档';
+
+  @override
+  String get storage_browserNewSpreadsheet => '新建表格';
+
+  @override
+  String get storage_browserNewFolderHint => '文件夹名称';
+
+  @override
+  String storage_browserNewFolderFailed(Object error) {
+    return '创建文件夹失败：$error';
+  }
+
+  @override
+  String storage_browserUploadFailed(Object error) {
+    return '上传失败：$error';
+  }
+
+  @override
+  String storage_browserUploadDone(String name) {
+    return '已上传 $name';
+  }
+
+  @override
+  String storage_browserNewFileFailed(Object error) {
+    return '创建失败：$error';
+  }
+
+  @override
   String storage_browserCount(int count) {
     return '显示 $count 个文件';
   }

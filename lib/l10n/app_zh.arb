@@ -2969,6 +2969,43 @@
   "storage_browserPrefix": "路径前缀",
   "storage_browserPrefixHint": "例如 docs/ 或 task/",
   "storage_browserEmpty": "该分区暂无文件",
+  "storage_browserTabFlat": "全部",
+  "storage_browserTabSpace": "空间",
+  "storage_browserTabRecent": "最近",
+  "storage_browserTabMine": "我的",
+  "storage_browserLastAccessed": "最近访问于 {time}",
+  "@storage_browserLastAccessed": {
+    "placeholders": {
+      "time": {
+        "type": "String"
+      }
+    }
+  },
+  "storage_browserLastModified": "最近修改于 {time}",
+  "@storage_browserLastModified": {
+    "placeholders": {
+      "time": {
+        "type": "String"
+      }
+    }
+  },
+  "storage_browserFolderEmpty": "这里还没有任何文件",
+  "storage_browserNewFolder": "新建文件夹",
+  "storage_browserUploadLocal": "上传本地文件",
+  "storage_browserNewDocument": "新建文档",
+  "storage_browserNewSpreadsheet": "新建表格",
+  "storage_browserNewFolderHint": "文件夹名称",
+  "storage_browserNewFolderFailed": "创建文件夹失败：{error}",
+  "storage_browserUploadFailed": "上传失败：{error}",
+  "storage_browserUploadDone": "已上传 {name}",
+  "@storage_browserUploadDone": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "storage_browserNewFileFailed": "创建失败：{error}",
   "storage_browserCount": "显示 {count} 个文件",
   "storage_browserLoadMore": "加载更多",
   "storage_browserRefresh": "刷新",

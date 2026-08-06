@@ -92,6 +92,8 @@ class StoreSpace {
   static const files = 'files';
   static const attachments = 'attachments';
   static const backups = 'backups';
+  /// ShePaw client profile: chat uploads live at `files/chat/<sha256>`.
+  static const chatAttachmentPrefix = 'chat';
   /// Well-known custom space (node auto-seeds); not in [all] builtins.
   static const memory = 'memory';
 

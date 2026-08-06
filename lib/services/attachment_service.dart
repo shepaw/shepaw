@@ -5,8 +5,6 @@ import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:path/path.dart' as path;
-import 'package:path_provider/path_provider.dart';
-import 'local_file_storage_service.dart';
 import 'local_database_service.dart';
 import 'logger_service.dart';
 import '../models/message.dart';
@@ -19,24 +17,19 @@ import '../storage/store_service.dart';
 import 'messaging/message_implicit_prompt.dart';
 import 'package:uuid/uuid.dart';
 
-/// 附件服务
-///
-/// M5 附件收口（docs/storage_space_plan.md §2/§11）：新附件按内容 hash 编址，
-/// 经 store write/commit 落 `<device_id>/attachments/<hash>`（hash 去重，
-/// 仅本端可读写）；消息 metadata 记 `hash`，旧 `path` 字段仅作兼容回退。
+/// 附件服务：聊天附件经 store 写入 `files/chat/<hash>`，消息 metadata 存 `store_uri`。
 class AttachmentService {
-  final LocalFileStorageService _fileStorage;
   final LocalDatabaseService _database;
   final ImagePicker _imagePicker = ImagePicker();
   final _uuid = const Uuid();
 
-  AttachmentService(this._fileStorage, this._database);
+  AttachmentService(this._database);
 
   /// 便捷静态入口（widget 层无注入场景）。
   static AttachmentService get shared =>
-      AttachmentService(LocalFileStorageService(), LocalDatabaseService());
+      AttachmentService(LocalDatabaseService());
 
-  /// 静态解析附件文件（hash 优先，path 兼容回退）。
+  /// 静态解析附件文件（`store_uri` → 本机 [File]）。
   static Future<File?> resolveFile(Map<String, dynamic>? metadata) {
     if (metadata == null) return Future.value(null);
     return shared.resolveAttachmentFile(metadata);
@@ -44,22 +37,23 @@ class AttachmentService {
 
   // ────────────────────────────── 附件 store 读写 ──
 
-  /// 附件内容写入 store（hash 去重），返回内容 hash。
+  /// 附件内容写入 `files/chat/<hash>`（hash 去重），返回 store URI。
   Future<String> _storeAttachmentBytes(Uint8List bytes) async {
     final hash = crypto.sha256.convert(bytes).toString();
+    final relPath = '${StoreSpace.chatAttachmentPrefix}/$hash';
     final store = await StoreService.instance.localStore();
     final deviceId = await DeviceIdentity.deviceId();
     // 已存在即去重（内容寻址天然幂等）
     try {
-      await store.meta(deviceId, StoreSpace.attachments, hash);
-      return hash;
+      await store.meta(deviceId, StoreSpace.files, relPath);
+      return storeUriWithRef(StoreSpace.files, deviceId, relPath);
     } on StoreException {
       // not_found → 写入
     }
     final (uploadId, _) = await store.writeBegin(
       deviceId: deviceId,
-      space: StoreSpace.attachments,
-      path: hash,
+      space: StoreSpace.files,
+      path: relPath,
       size: bytes.length,
       sha256: hash,
     );
@@ -69,66 +63,35 @@ class AttachmentService {
           ? bytes.length
           : offset + LocalStore.maxReadChunk;
       await store.writeChunk(
-          deviceId, StoreSpace.attachments, uploadId, offset,
+          deviceId, StoreSpace.files, uploadId, offset,
           bytes.sublist(offset, end));
       offset = end;
     }
     final (committed, failed) =
-        await store.commit(deviceId, StoreSpace.attachments, [uploadId]);
+        await store.commit(deviceId, StoreSpace.files, [uploadId]);
     if (failed.isNotEmpty || committed.isEmpty) {
       throw StateError('attachment commit failed: $failed');
     }
-    return hash;
+    return storeUriWithRef(StoreSpace.files, deviceId, relPath);
   }
 
-  /// 按 hash 读附件字节。
-  Future<Uint8List?> readAttachmentBytes(String hash) async {
-    try {
-      final store = await StoreService.instance.localStore();
-      final deviceId = await DeviceIdentity.deviceId();
-      final builder = BytesBuilder(copy: false);
-      var offset = 0;
-      while (true) {
-        final (chunk, _, eof) = await store.read(
-            deviceId, StoreSpace.attachments, hash, offset,
-            LocalStore.maxReadChunk);
-        builder.add(chunk);
-        offset += chunk.length;
-        if (eof || chunk.isEmpty) break;
-      }
-      return builder.toBytes();
-    } catch (_) {
-      return null;
-    }
+  static void _putStoreUriMetadata(
+    Map<String, dynamic> target,
+    String storeUri,
+  ) {
+    final hint = MessageImplicitPrompt.renderStoreReadHint([storeUri]);
+    MessageImplicitPrompt.putInMetadata(
+      target,
+      hint: hint,
+      uris: [storeUri],
+    );
   }
 
-  /// 解析附件文件（消息气泡展示用）：
-  /// store_uri 引用 → hash 编址 attachments → 旧 path 兼容回退。
+  /// 解析附件文件（消息气泡展示用）。
   Future<File?> resolveAttachmentFile(Map<String, dynamic> metadata) async {
     final storeUri = metadata['store_uri'] as String?;
-    if (storeUri != null && storeUri.isNotEmpty) {
-      return StoreAttachmentRef.fileFromStoreUri(storeUri);
-    }
-    final hash = metadata['hash'] as String?;
-    if (hash != null && hash.isNotEmpty) {
-      try {
-        final store = await StoreService.instance.localStore();
-        final deviceId = await DeviceIdentity.deviceId();
-        final f = File(path.join(
-            store.root.path, deviceId, StoreSpace.attachments, hash));
-        if (await f.exists()) return f;
-        return null;
-      } catch (_) {
-        return null;
-      }
-    }
-    final legacyPath = metadata['path'] as String?;
-    if (legacyPath != null && legacyPath.isNotEmpty) {
-      final full = await _fileStorage.getFullPath(legacyPath);
-      final f = File(full);
-      if (await f.exists()) return f;
-    }
-    return null;
+    if (storeUri == null || storeUri.isEmpty) return null;
+    return StoreAttachmentRef.fileFromStoreUri(storeUri);
   }
 
   /// 选择图片
@@ -173,7 +136,7 @@ class AttachmentService {
 
   /// 保存附件并创建消息。
   ///
-  /// [storeUri] 非空时引用储物袋已有文件，不复制到 attachments 空间。
+  /// [storeUri] 非空时引用储物袋已有文件，不复制；否则写入 `files/chat/<hash>`。
   Future<Message?> saveAttachment({
     required File file,
     String? storeUri,
@@ -190,31 +153,17 @@ class AttachmentService {
       final fileType = _getFileType(name);
       final fileSize = await file.length();
 
-      final Map<String, dynamic> attachmentData;
-      if (storeUri != null && storeUri.isNotEmpty) {
-        attachmentData = {
-          'store_uri': storeUri,
-          'name': name,
-          'type': fileType,
-          'size': fileSize,
-        };
-        final hint = MessageImplicitPrompt.renderStoreReadHint([storeUri]);
-        MessageImplicitPrompt.putInMetadata(
-          attachmentData,
-          hint: hint,
-          uris: [storeUri],
-        );
-      } else {
-        // M5：系统文件按内容 hash 编址写入 store（去重，仅本端可读写）
-        final bytes = await file.readAsBytes();
-        final hash = await _storeAttachmentBytes(bytes);
-        attachmentData = {
-          'hash': hash,
-          'name': name,
-          'type': fileType,
-          'size': fileSize,
-        };
-      }
+      final resolvedUri = (storeUri != null && storeUri.isNotEmpty)
+          ? storeUri
+          : await _storeAttachmentBytes(await file.readAsBytes());
+
+      final attachmentData = {
+        'store_uri': resolvedUri,
+        'name': name,
+        'type': fileType,
+        'size': fileSize,
+      };
+      _putStoreUriMetadata(attachmentData, resolvedUri);
 
       MessageType messageType;
       if (fileType == 'image') {
@@ -275,18 +224,18 @@ class AttachmentService {
       final file = File(filePath);
       if (!await file.exists()) return null;
 
-      // M5：语音同样按 hash 编址写入 store
       final bytes = await file.readAsBytes();
-      final hash = await _storeAttachmentBytes(bytes);
+      final storeUri = await _storeAttachmentBytes(bytes);
 
       final metadata = {
-        'hash': hash,
+        'store_uri': storeUri,
         'name': path.basename(filePath),
         'type': 'audio',
         'size': bytes.length,
         'duration_ms': durationMs,
         'waveform': waveform,
       };
+      _putStoreUriMetadata(metadata, storeUri);
 
       final durationSec = (durationMs / 1000).round();
       final content = 'Voice message (${durationSec}s)';
@@ -331,17 +280,10 @@ class AttachmentService {
     }
   }
 
-  /// 删除附件
+  /// 删除附件消息（blob 内容寻址可共享，仅删 DB 记录）。
   Future<bool> deleteAttachment(Message message) async {
     try {
-      // 删除文件
-      if (message.metadata != null && message.metadata!['path'] != null) {
-        await _fileStorage.deleteFile(message.metadata!['path']);
-      }
-
-      // 删除数据库记录
       await _database.deleteMessage(message.id);
-
       return true;
     } catch (e) {
       LoggerService().error('Error deleting attachment', tag: 'Attachment', error: e);
@@ -359,46 +301,20 @@ class AttachmentService {
       final metadata = message.metadata;
       if (metadata == null) return null;
 
-      // store_uri 引用 → hash 编址 attachments → 旧 path 兼容回退
-      Uint8List? bytes;
-      String? fallbackName;
       final storeUri = metadata['store_uri'] as String?;
-      if (storeUri != null && storeUri.isNotEmpty) {
-        final file = await StoreAttachmentRef.fileFromStoreUri(storeUri);
-        if (file == null) {
-          LoggerService().error('Store attachment not found: $storeUri',
-              tag: 'Attachment');
-          return null;
-        }
-        bytes = await file.readAsBytes();
-        fallbackName = path.basename(file.path);
-      } else {
-        final hash = metadata['hash'] as String?;
-        if (hash != null && hash.isNotEmpty) {
-          bytes = await readAttachmentBytes(hash);
-          if (bytes == null) {
-            LoggerService().error('Attachment blob not found: $hash',
-                tag: 'Attachment');
-            return null;
-          }
-        } else if (metadata['path'] != null) {
-          final relativePath = metadata['path'] as String;
-          final fullPath = await _fileStorage.getFullPath(relativePath);
-          final file = File(fullPath);
-          if (!await file.exists()) {
-            LoggerService().error('Attachment file not found: $fullPath',
-                tag: 'Attachment');
-            return null;
-          }
-          bytes = await file.readAsBytes();
-          fallbackName = path.basename(fullPath);
-        } else {
-          return null;
-        }
+      if (storeUri == null || storeUri.isEmpty) return null;
+
+      final file = await StoreAttachmentRef.fileFromStoreUri(storeUri);
+      if (file == null) {
+        LoggerService().error('Store attachment not found: $storeUri',
+            tag: 'Attachment');
+        return null;
       }
+      final bytes = await file.readAsBytes();
+      final fallbackName = path.basename(file.path);
 
       final fileName =
-          metadata['name'] as String? ?? fallbackName ?? 'attachment';
+          metadata['name'] as String? ?? fallbackName;
       final semanticType = metadata['type'] as String? ?? 'file';
       final sizeBytes = metadata['size'] as int? ?? bytes.length;
       final mimeType = _getMimeType(fileName, semanticType);
@@ -412,9 +328,7 @@ class AttachmentService {
       if (metadata.containsKey('duration_ms')) {
         putExtra('duration_ms', metadata['duration_ms']);
       }
-      if (storeUri != null && storeUri.isNotEmpty) {
-        putExtra('store_uri', storeUri);
-      }
+      putExtra('store_uri', storeUri);
       final implicit = MessageImplicitPrompt.fromMetadata(metadata);
       if (implicit != null) {
         putExtra(MessageImplicitPrompt.metaKey, implicit);

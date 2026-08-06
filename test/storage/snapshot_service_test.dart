@@ -10,6 +10,7 @@ import 'package:shepaw/storage/device_identity.dart';
 import 'package:shepaw/storage/restore_service.dart';
 import 'package:shepaw/storage/snapshot_crypto.dart';
 import 'package:shepaw/storage/snapshot_service.dart';
+import 'package:shepaw/storage/store_protocol.dart';
 
 import 'test_harness.dart';
 
@@ -217,16 +218,22 @@ void main() {
     expect(out.missingAttachments, isEmpty);
   });
 
-  test('本机导出：按 manifest 打包附件', () async {
+  test('本机导出：按 manifest 打包 files/chat 附件', () async {
     final root = await SnapshotService.instance.deviceStoreRoot();
     final hash = 'a' * 64;
-    final attach = File(p.join(root.path, 'attachments', hash));
+    final ref = '${StoreSpace.chatAttachmentPrefix}/$hash';
+    final attach = File(p.join(
+      root.path,
+      StoreSpace.files,
+      StoreSpace.chatAttachmentPrefix,
+      hash,
+    ));
     await attach.parent.create(recursive: true);
     await attach.writeAsBytes(utf8.encode('attach-bytes'));
 
     final info =
         await SnapshotService.instance.createSnapshot(password: password);
-    expect(info.manifest.attachments, contains(hash));
+    expect(info.manifest.attachments, contains(ref));
 
     final tmp = await Directory.systemTemp.createTemp('snapshot_export_att');
     addTearDown(() => tmp.delete(recursive: true));
@@ -234,14 +241,13 @@ void main() {
         await SnapshotService.instance.exportToDirectory(info, tmp.path);
     expect(out.packedAttachments, greaterThanOrEqualTo(1));
     expect(out.missingAttachments, isEmpty);
-    final packed = File(p.join(out.directory.path, 'attachments', hash));
+    final packed = File(p.join(out.directory.path, StoreSpace.files, ref));
     expect(await packed.readAsBytes(), utf8.encode('attach-bytes'));
   });
 
   test('本机导出：缺失附件记入 missing', () async {
     final info =
         await SnapshotService.instance.createSnapshot(password: password);
-    // 伪造 manifest 引用不存在的 hash
     final fakeManifest = SnapshotManifest(
       deviceId: info.manifest.deviceId,
       createdAtMs: info.manifest.createdAtMs,
@@ -252,7 +258,7 @@ void main() {
       treeRoot: info.manifest.treeRoot,
       kdfSalt: info.manifest.kdfSalt,
       kdfIterations: info.manifest.kdfIterations,
-      attachments: ['b' * 64],
+      attachments: ['${StoreSpace.chatAttachmentPrefix}/${'b' * 64}'],
     );
     final fakeInfo = SnapshotInfo(
       id: info.id,
@@ -265,7 +271,8 @@ void main() {
     final out =
         await SnapshotService.instance.exportToDirectory(fakeInfo, tmp.path);
     expect(out.packedAttachments, 0);
-    expect(out.missingAttachments, ['b' * 64]);
+    expect(out.missingAttachments,
+        ['${StoreSpace.chatAttachmentPrefix}/${'b' * 64}']);
   });
 
   test('解密自检：正确密码解密最新快照并缓存 H', () async {

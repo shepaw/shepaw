@@ -55,29 +55,40 @@ class _StorageSpaceManageScreenState extends State<StorageSpaceManageScreen> {
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
     return StorageBrowserScreen(
-      title: l10n.storage_entrySpace,
       usedBytes: _usedBytes,
       extraActions: [
         PopupMenuButton<StorageSpaceSettingsSection>(
           tooltip: l10n.storage_moreSettings,
           icon: const Icon(Icons.more_horiz),
           onSelected: _openSettings,
-          itemBuilder: (ctx) => [
-            PopupMenuItem(
-              value: StorageSpaceSettingsSection.usage,
-              child: Text(l10n.storage_usageTitle),
-            ),
-            PopupMenuItem(
-              value: StorageSpaceSettingsSection.bindings,
-              child: Text(l10n.storage_bindingsSection),
-            ),
-            PopupMenuItem(
-              value: StorageSpaceSettingsSection.recycle,
-              child: Text(l10n.storage_recycleSection),
-            ),
-          ],
+          itemBuilder: (ctx) => _settingsMenuItems(l10n),
         ),
       ],
+      extraMenuItems: (ctx) => _settingsMenuItems(l10n),
+      onExtraMenuSelected: (value) {
+        if (value is StorageSpaceSettingsSection) {
+          _openSettings(value);
+        }
+      },
     );
+  }
+
+  List<PopupMenuEntry<StorageSpaceSettingsSection>> _settingsMenuItems(
+    AppLocalizations l10n,
+  ) {
+    return [
+      PopupMenuItem(
+        value: StorageSpaceSettingsSection.usage,
+        child: Text(l10n.storage_usageTitle),
+      ),
+      PopupMenuItem(
+        value: StorageSpaceSettingsSection.bindings,
+        child: Text(l10n.storage_bindingsSection),
+      ),
+      PopupMenuItem(
+        value: StorageSpaceSettingsSection.recycle,
+        child: Text(l10n.storage_recycleSection),
+      ),
+    ];
   }
 }

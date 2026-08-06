@@ -16,6 +16,7 @@ import 'device_identity.dart';
 import 'commit_retention.dart';
 import 'local_store.dart';
 import 'snapshot_crypto.dart';
+import 'store_protocol.dart';
 
 /// 快照 manifest（docs/storage_space_plan.md §5.2）。
 class SnapshotManifest {
@@ -248,7 +249,7 @@ class SnapshotService {
         treeRoot: SnapshotManifest.computeTreeRoot(fileHashes),
         kdfSalt: base64.encode(snapshotSalt),
         kdfIterations: 120000,
-        attachments: await _listAttachmentHashes(deviceId),
+        attachments: await _listAttachmentRefs(deviceId),
       );
       final manifestBytes = Uint8List.fromList(utf8.encode(
           const JsonEncoder.withIndent('  ').convert(manifest.toJson())));
@@ -348,25 +349,38 @@ class SnapshotService {
     }
   }
 
-  /// 附件 hash 清单（§5.2：附件不进快照，按 hash 引用；M5 起附件
-  /// 编址即 hash，文件名即 hash 值）。
-  Future<List<String>> _listAttachmentHashes(String deviceId) async {
+  /// 附件引用清单（§5.2：`files/chat/<hash>`，不进快照密文包）。
+  Future<List<String>> _listAttachmentRefs(String deviceId) async {
     try {
       final root = await deviceStoreRoot();
-      final dir = Directory(p.join(root.path, 'attachments'));
-      if (!await dir.exists()) return const [];
-      final hashes = <String>[];
-      await for (final f in dir.list(recursive: true)) {
+      final chatDir = Directory(p.join(
+        root.path,
+        StoreSpace.files,
+        StoreSpace.chatAttachmentPrefix,
+      ));
+      if (!await chatDir.exists()) return const [];
+      final refs = <String>[];
+      await for (final f in chatDir.list(recursive: true)) {
         if (f is! File) continue;
-        final rel = p.relative(f.path, from: dir.path);
+        final rel = p.relative(f.path, from: chatDir.path);
         if (rel.split(p.separator).any((s) => s.startsWith('.'))) continue;
-        hashes.add(rel.replaceAll(p.separator, '/'));
+        refs.add('${StoreSpace.chatAttachmentPrefix}/'
+            '${rel.replaceAll(p.separator, '/')}');
       }
-      return hashes;
+      return refs;
     } catch (_) {
       return const [];
     }
   }
+
+  Future<File?> _attachmentRefSource(String deviceRoot, String ref) async {
+    if (!ref.startsWith('${StoreSpace.chatAttachmentPrefix}/')) return null;
+    final f = File(p.join(deviceRoot, StoreSpace.files, ref));
+    return await f.exists() ? f : null;
+  }
+
+  static String _attachmentExportRel(String ref) =>
+      p.join(StoreSpace.files, ref);
 
   // ------------------------------------------------------------- 列表/读取
 
@@ -525,21 +539,20 @@ class SnapshotService {
 
     final missing = <String>[];
     var packed = 0;
-    final hashes = info.manifest.attachments;
-    if (hashes.isNotEmpty) {
+    final refs = info.manifest.attachments;
+    if (refs.isNotEmpty) {
       final deviceRoot = await deviceStoreRoot();
-      final attachRoot = Directory(p.join(deviceRoot.path, 'attachments'));
-      for (final hash in hashes) {
-        if (hash.isEmpty || hash.contains('..')) {
-          missing.add(hash);
+      for (final ref in refs) {
+        if (ref.isEmpty || ref.contains('..')) {
+          missing.add(ref);
           continue;
         }
-        final src = File(p.join(attachRoot.path, hash));
-        if (!await src.exists()) {
-          missing.add(hash);
+        final src = await _attachmentRefSource(deviceRoot.path, ref);
+        if (src == null) {
+          missing.add(ref);
           continue;
         }
-        final dest = File(p.join(target.path, 'attachments', hash));
+        final dest = File(p.join(target.path, _attachmentExportRel(ref)));
         await dest.parent.create(recursive: true);
         await src.copy(dest.path);
         packed++;

@@ -15,7 +15,7 @@ class PendingAttachment {
   final PendingAttachmentType type;
   final Uint8List? thumbnailBytes;
   final bool isFromClipboard;
-  /// 非空时表示来自储物袋引用，发送时不复制到 attachments 空间。
+  /// 非空时表示来自储物袋引用，发送时不复制。
   final StoreAttachmentRef? storeRef;
 
   PendingAttachment({

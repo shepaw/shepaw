@@ -2484,6 +2484,43 @@
   "storage_browserPrefix": "Path prefix",
   "storage_browserPrefixHint": "e.g. docs/ or task/",
   "storage_browserEmpty": "No files in this space",
+  "storage_browserTabFlat": "All",
+  "storage_browserTabSpace": "Folders",
+  "storage_browserTabRecent": "Recent",
+  "storage_browserTabMine": "Mine",
+  "storage_browserLastAccessed": "Last accessed {time}",
+  "@storage_browserLastAccessed": {
+    "placeholders": {
+      "time": {
+        "type": "String"
+      }
+    }
+  },
+  "storage_browserLastModified": "Last modified {time}",
+  "@storage_browserLastModified": {
+    "placeholders": {
+      "time": {
+        "type": "String"
+      }
+    }
+  },
+  "storage_browserFolderEmpty": "No files here yet",
+  "storage_browserNewFolder": "New folder",
+  "storage_browserUploadLocal": "Upload local file",
+  "storage_browserNewDocument": "New document",
+  "storage_browserNewSpreadsheet": "New spreadsheet",
+  "storage_browserNewFolderHint": "Folder name",
+  "storage_browserNewFolderFailed": "Failed to create folder: {error}",
+  "storage_browserUploadFailed": "Upload failed: {error}",
+  "storage_browserUploadDone": "Uploaded {name}",
+  "@storage_browserUploadDone": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "storage_browserNewFileFailed": "Failed to create: {error}",
   "storage_browserCount": "Showing {count} files",
   "storage_browserLoadMore": "Load more",
   "storage_browserRefresh": "Refresh",

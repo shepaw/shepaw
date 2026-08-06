@@ -76,7 +76,7 @@ class _ImageMessageBubbleState extends State<ImageMessageBubble> {
   Future<void> _loadLocalImage() async {
     final metadata = widget.message.metadata;
     try {
-      // M5：hash 优先，旧 path 格式由 resolver 兼容回退
+      // store_uri → 本机文件
       final file = await AttachmentService.resolveFile(metadata);
       if (file != null && await file.exists()) {
         if (mounted) {

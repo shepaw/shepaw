@@ -6,7 +6,7 @@ import '../storage/local_store.dart';
 import '../storage/store_protocol.dart';
 import '../storage/store_service.dart';
 
-/// 储物袋 store 内文件的引用（聊天附件引用模式，不复制到 attachments 空间）。
+/// 储物袋 store 内文件的引用（聊天附件引用模式，不复制）。
 class StoreAttachmentRef {
   const StoreAttachmentRef({
     required this.deviceId,

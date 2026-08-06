@@ -30,7 +30,6 @@ class _StorageFilePickerScreenState extends State<StorageFilePickerScreen> {
 
   String _selfId = '';
   String _space = StoreSpace.files;
-  String _prefix = '';
   int _limit = _pageStep;
   bool _busy = false;
   bool _loading = true;
@@ -64,7 +63,6 @@ class _StorageFilePickerScreenState extends State<StorageFilePickerScreen> {
       final entries = await store.list(
         _selfId,
         _space,
-        prefix: _prefix.isEmpty ? null : _prefix,
         limit: _limit,
       );
       if (!mounted) return;
@@ -205,24 +203,6 @@ class _StorageFilePickerScreenState extends State<StorageFilePickerScreen> {
                               },
                       ),
                   ],
-                ),
-                const SizedBox(height: 12),
-                TextField(
-                  decoration: InputDecoration(
-                    labelText: l10n.storage_browserPrefix,
-                    hintText: l10n.storage_browserPrefixHint,
-                    border: const OutlineInputBorder(),
-                    isDense: true,
-                    suffixIcon: IconButton(
-                      icon: const Icon(Icons.filter_alt_outlined),
-                      onPressed: _busy ? null : _reload,
-                    ),
-                  ),
-                  onChanged: (v) => _prefix = v.trim(),
-                  onSubmitted: (_) {
-                    setState(() => _limit = _pageStep);
-                    _reload();
-                  },
                 ),
                 const SizedBox(height: 8),
                 if (_error != null)

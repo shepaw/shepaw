@@ -5120,6 +5120,66 @@ class AppLocalizationsEn extends AppLocalizations {
   String get storage_browserEmpty => 'No files in this space';
 
   @override
+  String get storage_browserTabFlat => 'All';
+
+  @override
+  String get storage_browserTabSpace => 'Folders';
+
+  @override
+  String get storage_browserTabRecent => 'Recent';
+
+  @override
+  String get storage_browserTabMine => 'Mine';
+
+  @override
+  String storage_browserLastAccessed(String time) {
+    return 'Last accessed $time';
+  }
+
+  @override
+  String storage_browserLastModified(String time) {
+    return 'Last modified $time';
+  }
+
+  @override
+  String get storage_browserFolderEmpty => 'No files here yet';
+
+  @override
+  String get storage_browserNewFolder => 'New folder';
+
+  @override
+  String get storage_browserUploadLocal => 'Upload local file';
+
+  @override
+  String get storage_browserNewDocument => 'New document';
+
+  @override
+  String get storage_browserNewSpreadsheet => 'New spreadsheet';
+
+  @override
+  String get storage_browserNewFolderHint => 'Folder name';
+
+  @override
+  String storage_browserNewFolderFailed(Object error) {
+    return 'Failed to create folder: $error';
+  }
+
+  @override
+  String storage_browserUploadFailed(Object error) {
+    return 'Upload failed: $error';
+  }
+
+  @override
+  String storage_browserUploadDone(String name) {
+    return 'Uploaded $name';
+  }
+
+  @override
+  String storage_browserNewFileFailed(Object error) {
+    return 'Failed to create: $error';
+  }
+
+  @override
   String storage_browserCount(int count) {
     return 'Showing $count files';
   }

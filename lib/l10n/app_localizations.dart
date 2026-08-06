@@ -9002,6 +9002,102 @@ abstract class AppLocalizations {
   /// **'该分区暂无文件'**
   String get storage_browserEmpty;
 
+  /// No description provided for @storage_browserTabFlat.
+  ///
+  /// In zh, this message translates to:
+  /// **'全部'**
+  String get storage_browserTabFlat;
+
+  /// No description provided for @storage_browserTabSpace.
+  ///
+  /// In zh, this message translates to:
+  /// **'空间'**
+  String get storage_browserTabSpace;
+
+  /// No description provided for @storage_browserTabRecent.
+  ///
+  /// In zh, this message translates to:
+  /// **'最近'**
+  String get storage_browserTabRecent;
+
+  /// No description provided for @storage_browserTabMine.
+  ///
+  /// In zh, this message translates to:
+  /// **'我的'**
+  String get storage_browserTabMine;
+
+  /// No description provided for @storage_browserLastAccessed.
+  ///
+  /// In zh, this message translates to:
+  /// **'最近访问于 {time}'**
+  String storage_browserLastAccessed(String time);
+
+  /// No description provided for @storage_browserLastModified.
+  ///
+  /// In zh, this message translates to:
+  /// **'最近修改于 {time}'**
+  String storage_browserLastModified(String time);
+
+  /// No description provided for @storage_browserFolderEmpty.
+  ///
+  /// In zh, this message translates to:
+  /// **'这里还没有任何文件'**
+  String get storage_browserFolderEmpty;
+
+  /// No description provided for @storage_browserNewFolder.
+  ///
+  /// In zh, this message translates to:
+  /// **'新建文件夹'**
+  String get storage_browserNewFolder;
+
+  /// No description provided for @storage_browserUploadLocal.
+  ///
+  /// In zh, this message translates to:
+  /// **'上传本地文件'**
+  String get storage_browserUploadLocal;
+
+  /// No description provided for @storage_browserNewDocument.
+  ///
+  /// In zh, this message translates to:
+  /// **'新建文档'**
+  String get storage_browserNewDocument;
+
+  /// No description provided for @storage_browserNewSpreadsheet.
+  ///
+  /// In zh, this message translates to:
+  /// **'新建表格'**
+  String get storage_browserNewSpreadsheet;
+
+  /// No description provided for @storage_browserNewFolderHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'文件夹名称'**
+  String get storage_browserNewFolderHint;
+
+  /// No description provided for @storage_browserNewFolderFailed.
+  ///
+  /// In zh, this message translates to:
+  /// **'创建文件夹失败：{error}'**
+  String storage_browserNewFolderFailed(Object error);
+
+  /// No description provided for @storage_browserUploadFailed.
+  ///
+  /// In zh, this message translates to:
+  /// **'上传失败：{error}'**
+  String storage_browserUploadFailed(Object error);
+
+  /// No description provided for @storage_browserUploadDone.
+  ///
+  /// In zh, this message translates to:
+  /// **'已上传 {name}'**
+  String storage_browserUploadDone(String name);
+
+  /// No description provided for @storage_browserNewFileFailed.
+  ///
+  /// In zh, this message translates to:
+  /// **'创建失败：{error}'**
+  String storage_browserNewFileFailed(Object error);
+
   /// No description provided for @storage_browserCount.
   ///
   /// In zh, this message translates to:

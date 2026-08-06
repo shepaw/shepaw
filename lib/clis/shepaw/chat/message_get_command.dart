@@ -6,7 +6,6 @@ import '../../../models/llm_stream_event.dart';
 import '../../../models/message.dart';
 import '../../../services/attachment_service.dart';
 import '../../../services/local_database_service.dart';
-import '../../../services/local_file_storage_service.dart';
 import '../../../services/local_llm_agent_service.dart';
 import '../../../services/messaging/local_llm_handler.dart';
 import '../../../models/model_routing_config.dart';
@@ -17,10 +16,7 @@ class MessageGetCommand extends CliCommand {
   MessageGetCommand();
 
   final _db = LocalDatabaseService();
-  late final _attachmentService = AttachmentService(
-    LocalFileStorageService(),
-    _db,
-  );
+  late final _attachmentService = AttachmentService(_db);
 
   @override
   String get name => 'get';

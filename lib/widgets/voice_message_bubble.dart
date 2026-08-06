@@ -89,7 +89,7 @@ class _VoiceMessageBubbleState extends State<VoiceMessageBubble> {
   }
 
   Future<void> _onTap() async {
-    // M5：hash 优先，旧 path 格式由 resolver 兼容回退
+    // store_uri → 本机文件
     final file = await AttachmentService.resolveFile(widget.message.metadata);
     if (file == null) return;
     await _playbackService.playOrToggle(widget.message.id, file.path);
