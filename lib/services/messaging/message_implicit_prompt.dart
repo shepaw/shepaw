@@ -18,8 +18,17 @@ class MessageImplicitPrompt {
   /// Optional structured URI list alongside [metaKey].
   static const urisMetaKey = 'store_uris';
 
-  /// Matches `store://…` tokens (stops at whitespace / `]` / `)`).
-  static final RegExp storeUriPattern = RegExp(r'store://[^\s\]\)]+');
+  /// Matches well-formed `store://<space>/<16-hex device>/<path>` URIs
+  /// (stops at whitespace / `]` / `)`).
+  ///
+  /// Strict on purpose: placeholders (`store://xxx`) and doc templates
+  /// (`store://<space>/<device>/<path>`) mentioned while *discussing* the
+  /// protocol must not trigger the implicit read hint. The store layer
+  /// always mints this shape (see ArtifactService / DeviceIdentity).
+  /// Spaces are intentionally not enumerated so new spaces need no change.
+  static final RegExp storeUriPattern = RegExp(
+    r'store://[a-z]+/[0-9a-f]{16}/[^\s\]\)<>]+',
+  );
 
   static final RegExp _blockPattern = RegExp(
     r'\[implicit\][\s\S]*?\[/implicit\]',
@@ -186,12 +195,15 @@ class MessageImplicitPrompt {
     if (list.isEmpty) return null;
     final buf = StringBuffer()
       ..writeln(markerOpen)
-      ..writeln('This message references store:// URI(s). Read with:')
+      ..writeln('This message mentions store:// URI(s). If you need their')
+      ..writeln('contents, read each with:')
       ..writeln('`shepaw store read --uri <uri-as-is>`')
       ..writeln(
-          'Do not use os.file.read / OS paths for store:// links.')
+          'store:// URIs are not OS paths; never read them as local files.')
       ..writeln(
           'Across paired Nexuspouch devices the same URI is readable via store CLI.')
+      ..writeln(
+          'If a URI is only being discussed (not an actual reference), skip reading it.')
       ..writeln('URIs: ${list.join(', ')}')
       ..write(markerClose);
     return buf.toString();

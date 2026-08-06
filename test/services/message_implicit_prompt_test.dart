@@ -21,6 +21,26 @@ void main() {
       );
     });
 
+    test('extractStoreUris ignores placeholders and doc templates', () {
+      const text =
+          'Talking about the store://xxx protocol, the '
+          'store://<space>/<device>/<path> shape, a malformed '
+          'store://files/notahexdevice/x.txt and a pathless '
+          'store://files/0123456789abcdef — but do read '
+          'store://files/0123456789abcdef/docs/a.txt please';
+      final uris = MessageImplicitPrompt.extractStoreUris(text);
+      expect(uris, {'store://files/0123456789abcdef/docs/a.txt'});
+    });
+
+    test('forUserText null when message only discusses the protocol', () {
+      expect(
+        MessageImplicitPrompt.forUserText(
+          '现在外接 agent 是如何认识 store://xxx 协议的 uri 呢',
+        ),
+        isNull,
+      );
+    });
+
     test('forUserText null when no store uri', () {
       expect(MessageImplicitPrompt.forUserText('hello'), isNull);
     });
@@ -42,7 +62,7 @@ void main() {
       expect(hint, contains('[/implicit]'));
       expect(hint, contains('shepaw store read'));
       expect(hint, contains('store://files/0123456789abcdef/docs/note.txt'));
-      expect(hint, contains('os.file.read'));
+      expect(hint, contains('not OS paths'));
     });
 
     test('forCurrentTurn dedupes uri from text and attachment', () {
