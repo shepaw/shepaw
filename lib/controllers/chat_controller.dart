@@ -327,7 +327,10 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
       final peerId = event['peer_id'] as String?;
       final remoteId = event['remote_agent_id'] as String?;
       if (peerId == null || remoteId == null) return;
-      if (peerAgentLocalId(peerId, remoteId) != agentId) return;
+      if (peerAgentLocalId(peerId, remoteId) != agentId &&
+          legacyPeerAgentLocalId(peerId, remoteId) != agentId) {
+        return;
+      }
       _handleStreamingActionConfirmation(event);
     });
   }

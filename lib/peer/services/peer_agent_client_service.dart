@@ -32,9 +32,32 @@ import '../peer_approval_payload.dart';
 import 'peer_connection_manager.dart';
 import 'peer_turn_resume.dart';
 
-/// peer-agent 在本地 `agents` 表中的稳定 id（保证重复注入是 upsert 而非新增）。
-String peerAgentLocalId(String peerId, String remoteAgentId) =>
+/// peer-agent 在本地 `agents` 表中的稳定 id。
+///
+/// Hub 下发的 `agent_id`（UUID）即权威 id：App **直接复用**，不再合成新 id。
+/// [peerId] 保留仅为调用方兼容；新注入不再拼进 id。
+String peerAgentLocalId(String peerId, String remoteAgentId) => remoteAgentId;
+
+/// 旧版本地 id（`peeragent_<peer>_<remote>`）。仅用于读取/迁移已有落库行。
+String legacyPeerAgentLocalId(String peerId, String remoteAgentId) =>
     'peeragent_${peerId}_$remoteAgentId';
+
+/// Resolve which local agent row id to use for a hub remote agent id.
+///
+/// Prefers the Hub UUID; falls back to a pre-existing legacy row so upserts
+/// do not fork a second agent entry.
+Future<String> resolvePeerAgentRowId(
+  LocalDatabaseService db,
+  String peerId,
+  String remoteAgentId,
+) async {
+  final byRemote = await db.getRemoteAgentById(remoteAgentId);
+  if (byRemote != null) return remoteAgentId;
+  final legacy = legacyPeerAgentLocalId(peerId, remoteAgentId);
+  final byLegacy = await db.getRemoteAgentById(legacy);
+  if (byLegacy != null) return legacy;
+  return remoteAgentId;
+}
 
 /// 「已同步的远端 peer 会话」在本地 channel id 上的前缀。
 ///
@@ -1612,8 +1635,20 @@ class PeerAgentClientService {
         // Skip malformed entries rather than dropping the whole list.
       }
     }
-    final localId = peerAgentLocalId(peerId, remoteId);
+    unawaited(_applyCommandsResp(peerId, remoteId, commands));
+  }
+
+  Future<void> _applyCommandsResp(
+    String peerId,
+    String remoteId,
+    List<SlashCommandInfo> commands,
+  ) async {
+    final localId = await resolvePeerAgentRowId(_db, peerId, remoteId);
     _commandsCache[localId] = commands;
+    // Also index by Hub UUID so callers that already reuse remote id hit cache.
+    if (localId != remoteId) {
+      _commandsCache[remoteId] = commands;
+    }
     // Mirror ACP's snapshot hook so the "/" resolver can read from either path.
     ACPAgentConnection.slashCommandsSnapshotHook?.call(localId, commands);
     final stream = _slashCommandsStreams[localId];
@@ -2124,7 +2159,7 @@ class PeerAgentClientService {
         if (remoteId == null) continue;
         seenRemoteIds.add(remoteId);
 
-        final localId = peerAgentLocalId(peerId, remoteId);
+        final localId = await resolvePeerAgentRowId(_db, peerId, remoteId);
         final existing = await _db.getRemoteAgentById(localId);
         final capabilities = (raw['capabilities'] as List?)?.cast<String>() ?? const [];
         final supportedModalities = (raw['supported_modalities'] as List?)

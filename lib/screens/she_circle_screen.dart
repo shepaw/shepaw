@@ -4,9 +4,10 @@ import 'package:flutter/material.dart';
 
 import '../l10n/app_localizations.dart';
 import '../peer/models/paired_peer.dart';
-import '../peer/services/peer_agent_client_service.dart' show peerAgentLocalId;
+import '../peer/services/peer_agent_client_service.dart' show resolvePeerAgentRowId;
 import '../peer/services/peer_storage_service.dart';
 import '../service_locator.dart';
+import '../services/local_database_service.dart';
 import '../services/remote_agent_service.dart';
 import '../services/she_service.dart';
 import '../she_network/digest_service.dart';
@@ -145,8 +146,12 @@ class _SheCircleScreenState extends State<SheCircleScreen> {
       ),
     );
     if (picked == null || !mounted) return;
-    // 复用现有 peer agent 注入 id；点名打开对端 Agent 详情（审批/对话链路不变）。
-    final localId = peerAgentLocalId(peer.id, picked.id);
+    // 复用 Hub 下发的 agent UUID；兼容旧版 peeragent_* 落库行。
+    final localId = await resolvePeerAgentRowId(
+      getIt<LocalDatabaseService>(),
+      peer.id,
+      picked.id,
+    );
     try {
       final agent = await getIt<RemoteAgentService>().getAgentById(localId);
       if (agent == null || !mounted) {
