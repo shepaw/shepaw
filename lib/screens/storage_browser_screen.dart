@@ -86,6 +86,11 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
   static const _menuUploadLocal = Object();
   static const _menuNewDocument = Object();
   static const _menuNewSpreadsheet = Object();
+  static const _entryPreview = Object();
+  static const _entryExport = Object();
+  static const _entryVersions = Object();
+  static const _entryManifest = Object();
+  static const _entryDelete = Object();
 
   /// Align with chat store-open confirm threshold.
   static const _confirmExportBytes = StoreOpenService.confirmMaterializeBytes;
@@ -316,6 +321,62 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
     }
   }
 
+  void _handleEntryAction(_BrowsedFile file, Object? action) {
+    if (action == _entryPreview) {
+      _previewFile(file);
+    } else if (action == _entryExport) {
+      _exportFile(file);
+    } else if (action == _entryVersions) {
+      _showVersions(file);
+    } else if (action == _entryManifest) {
+      _showManifest(file);
+    } else if (action == _entryDelete) {
+      _deleteFile(file);
+    }
+  }
+
+  List<PopupMenuEntry<Object>> _entryActionItems(AppLocalizations l10n) {
+    final errorColor = Theme.of(context).colorScheme.error;
+    return [
+      PopupMenuItem(
+        value: _entryPreview,
+        child: Text(l10n.storage_browserPreview),
+      ),
+      PopupMenuItem(
+        value: _entryExport,
+        child: Text(l10n.storage_browserExport),
+      ),
+      PopupMenuItem(
+        value: _entryVersions,
+        child: Text(l10n.storage_browserVersions),
+      ),
+      PopupMenuItem(
+        value: _entryManifest,
+        child: Text(l10n.storage_browserManifest),
+      ),
+      if (!_readOnly)
+        PopupMenuItem(
+          value: _entryDelete,
+          child: Text(
+            l10n.storage_browserDelete,
+            style: TextStyle(color: errorColor),
+          ),
+        ),
+    ];
+  }
+
+  Widget _buildEntryMoreButton(_BrowsedFile file) {
+    final l10n = AppLocalizations.of(context);
+    return PopupMenuButton<Object>(
+      icon: const Icon(Icons.more_horiz, size: 18),
+      enabled: !_busy,
+      position: PopupMenuPosition.under,
+      onSelected: (action) => _handleEntryAction(file, action),
+      itemBuilder: (_) => _entryActionItems(l10n),
+    );
+  }
+
+  /// 移动端长按：底部菜单（无行内「更多」按钮）。
   Future<void> _showEntryActions(_BrowsedFile file) async {
     final l10n = AppLocalizations.of(context);
     await showModalBottomSheet<void>(
@@ -330,48 +391,15 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
               subtitle: Text(_fmtBytes(file.size)),
             ),
             const Divider(height: 1),
-            ListTile(
-              leading: const Icon(Icons.visibility_outlined),
-              title: Text(l10n.storage_browserPreview),
-              onTap: () {
-                Navigator.of(ctx).pop();
-                _previewFile(file);
-              },
-            ),
-            ListTile(
-              leading: const Icon(Icons.folder_open_outlined),
-              title: Text(l10n.storage_browserExport),
-              onTap: () {
-                Navigator.of(ctx).pop();
-                _exportFile(file);
-              },
-            ),
-            ListTile(
-              leading: const Icon(Icons.history),
-              title: Text(l10n.storage_browserVersions),
-              onTap: () {
-                Navigator.of(ctx).pop();
-                _showVersions(file);
-              },
-            ),
-            ListTile(
-              leading: const Icon(Icons.account_tree_outlined),
-              title: Text(l10n.storage_browserManifest),
-              onTap: () {
-                Navigator.of(ctx).pop();
-                _showManifest(file);
-              },
-            ),
-            if (!_readOnly)
-              ListTile(
-                leading: Icon(Icons.delete_outline,
-                    color: Theme.of(ctx).colorScheme.error),
-                title: Text(l10n.storage_browserDelete),
-                onTap: () {
-                  Navigator.of(ctx).pop();
-                  _deleteFile(file);
-                },
-              ),
+            for (final item in _entryActionItems(l10n))
+              if (item is PopupMenuItem<Object>)
+                ListTile(
+                  title: item.child,
+                  onTap: () {
+                    Navigator.of(ctx).pop();
+                    _handleEntryAction(file, item.value);
+                  },
+                ),
           ],
         ),
       ),
@@ -1279,10 +1307,7 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
             style: Theme.of(context).textTheme.labelSmall,
           ),
           onTap: _busy ? null : () => _previewFile(f),
-          trailing: IconButton(
-            icon: const Icon(Icons.more_horiz, size: 18),
-            onPressed: _busy ? null : () => _showEntryActions(f),
-          ),
+          trailing: _buildEntryMoreButton(f),
         );
       },
     );
@@ -1360,11 +1385,7 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
                           style: Theme.of(context).textTheme.labelSmall,
                         ),
                         onTap: _busy ? null : () => _previewFile(f),
-                        trailing: IconButton(
-                          icon: const Icon(Icons.more_horiz, size: 18),
-                          onPressed:
-                              _busy ? null : () => _showEntryActions(f),
-                        ),
+                        trailing: _buildEntryMoreButton(f),
                       ),
                   ],
                 ),
