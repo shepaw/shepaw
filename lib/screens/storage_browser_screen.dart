@@ -61,10 +61,10 @@ class StorageBrowserScreen extends StatefulWidget {
   /// 覆盖 AppBar 标题；null 时用默认「存储文件」文案。
   final String? title;
 
-  /// 追加到 AppBar actions（刷新按钮之前）；桌面端使用。
+  /// 追加到 AppBar actions；桌面端使用。
   final List<Widget>? extraActions;
 
-  /// 移动端「更多」菜单追加项（不含内置刷新）。
+  /// 移动端「更多」菜单追加项。
   final List<PopupMenuEntry<dynamic>> Function(BuildContext context)?
       extraMenuItems;
 
@@ -82,7 +82,6 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
     with SingleTickerProviderStateMixin {
   static const _listLimit = 5000;
   static const _folderMarker = '__folder__';
-  static const _menuRefresh = Object();
   static const _menuNewFolder = Object();
   static const _menuUploadLocal = Object();
   static const _menuNewDocument = Object();
@@ -709,10 +708,6 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
   }
 
   void _handleMobileMoreSelected(dynamic value) {
-    if (value == _menuRefresh) {
-      _reload();
-      return;
-    }
     if (value == _menuNewFolder) {
       _promptNewFolder();
       return;
@@ -945,11 +940,6 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
             tooltip: l10n.storage_browserSearchTitle,
           ),
         ...?widget.extraActions,
-        IconButton(
-          onPressed: _busy ? null : _reload,
-          icon: const Icon(Icons.refresh),
-          tooltip: l10n.storage_browserRefresh,
-        ),
       ],
     );
   }
@@ -1072,10 +1062,6 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
               ),
             ),
           ],
-          PopupMenuItem(
-            value: _menuRefresh,
-            child: Text(l10n.storage_browserRefresh),
-          ),
           ...?widget.extraMenuItems?.call(ctx),
         ],
       ),

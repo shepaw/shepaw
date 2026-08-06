@@ -104,13 +104,6 @@ class StorageSpaceScreenState extends State<StorageSpaceScreen> {
       appBar: AppBar(
         title: Text(l10n.storage_title),
         elevation: widget.embedded ? 0 : null,
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.refresh),
-            tooltip: l10n.common_refresh,
-            onPressed: _refresh,
-          ),
-        ],
       ),
       body: FutureBuilder<StorageOverviewSummary>(
         future: _future,
