@@ -115,22 +115,25 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
       ? StoreSpace.sharedReadable
       : StoreSpace.browserSpaces;
 
-  String get _mineSpace => _navSpace ?? StoreSpace.files;
+  /// 当前已进入的分区；根目录（分区列表）时为 null。
+  String? get _effectiveNavSpace => _navSpace;
 
-  String? get _effectiveNavSpace {
-    if (_navSpace != null) return _navSpace;
-    if (_tabs.index == 1 && !_isRemote) return StoreSpace.files;
-    return null;
-  }
+  /// 写入目标分区；仅在已进入某分区时使用。
+  String get _mineSpace => _navSpace ?? StoreSpace.files;
 
   bool _isMobileLayout(BuildContext context) =>
       !LayoutUtils.isDesktopLayout(context);
 
+  /// 移动端：已进入某分区（含分区根），可返回上级 / store 根。
   bool _mobileInFolder(BuildContext context) =>
-      _isMobileLayout(context) && _tabs.index == 1 && _navPath.isNotEmpty;
+      _isMobileLayout(context) && _tabs.index == 1 && _navSpace != null;
 
+  /// 移动端：仅在已进入分区且可写时展示新建/上传。
   bool _mobileMineWritable(BuildContext context) =>
-      _isMobileLayout(context) && _tabs.index == 1 && !_readOnly;
+      _isMobileLayout(context) &&
+      _tabs.index == 1 &&
+      !_readOnly &&
+      _navSpace != null;
 
   bool _isFolderMarkerPath(String path) => p.basename(path) == _folderMarker;
 
@@ -140,10 +143,6 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
     _tabs = TabController(length: 2, vsync: this);
     _tabs.addListener(() {
       if (_tabs.indexIsChanging) return;
-      if (_tabs.index == 1 && _navSpace == null && !_isRemote) {
-        setState(() => _navSpace = StoreSpace.files);
-        return;
-      }
       if (mounted) setState(() {});
     });
     final initial = widget.initialSpace;
@@ -775,7 +774,6 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
 
   void _enterFolder(String name) {
     setState(() {
-      _navSpace ??= StoreSpace.files;
       _navPath = _navPath.isEmpty ? name : '$_navPath/$name';
     });
   }
@@ -785,7 +783,7 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
       if (_navPath.isNotEmpty) {
         final i = _navPath.lastIndexOf('/');
         _navPath = i < 0 ? '' : _navPath.substring(0, i);
-      } else if (_tabs.index != 1) {
+      } else {
         _navSpace = null;
       }
     });
@@ -855,9 +853,11 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
   }
 
   String _currentFolderTitle() {
-    if (_navPath.isEmpty) return '';
-    final parts = _navPath.split('/');
-    return parts.last;
+    if (_navPath.isNotEmpty) {
+      final parts = _navPath.split('/');
+      return parts.isNotEmpty ? parts.last : _navPath;
+    }
+    return _navSpace ?? '';
   }
 
   @override
@@ -1313,9 +1313,15 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
       );
     }
 
-    if (mobile && _tabs.index == 1) {
-      final children = _folderChildren();
-      final empty = children.folders.isEmpty && children.files.isEmpty;
+    // store 根：列出各分区，不默认进入 files。
+    if (_navSpace == null) {
+      return _buildSpaceRootList(l10n, mobile: mobile);
+    }
+
+    final children = _folderChildren();
+    final empty = children.folders.isEmpty && children.files.isEmpty;
+
+    if (mobile) {
       if (empty) return _buildMobileFolderEmpty(l10n);
       final rows = <Widget>[
         for (final name in children.folders)
@@ -1330,29 +1336,6 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
         itemBuilder: (_, i) => rows[i],
       );
     }
-
-    if (_navSpace == null) {
-      return ListView(
-        padding: const EdgeInsets.symmetric(vertical: 8),
-        children: [
-          for (final space in _spaces)
-            ListTile(
-              leading: const Icon(Icons.folder_outlined),
-              title: Text(space),
-              subtitle: Text(
-                l10n.storage_browserCount(
-                    _files.where((f) => f.space == space).length),
-                style: Theme.of(context).textTheme.labelSmall,
-              ),
-              trailing: const Icon(Icons.chevron_right, size: 20),
-              onTap: () => _enterSpace(space),
-            ),
-        ],
-      );
-    }
-
-    final children = _folderChildren();
-    final empty = children.folders.isEmpty && children.files.isEmpty;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -1400,6 +1383,79 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
                   ],
                 ),
         ),
+      ],
+    );
+  }
+
+  Widget _buildSpaceRootList(AppLocalizations l10n, {required bool mobile}) {
+    if (mobile) {
+      return ListView.separated(
+        padding: const EdgeInsets.only(top: 4, bottom: 16),
+        itemCount: _spaces.length,
+        separatorBuilder: (_, __) => const SizedBox(height: 2),
+        itemBuilder: (context, i) {
+          final space = _spaces[i];
+          final count = _files.where((f) => f.space == space).length;
+          final subtitle = l10n.storage_browserCount(count);
+          return InkWell(
+            onTap: _busy ? null : () => _enterSpace(space),
+            child: Padding(
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  SizedBox(width: 42, child: Center(child: _buildFolderIcon())),
+                  const SizedBox(width: 14),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          space,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style:
+                              Theme.of(context).textTheme.titleSmall?.copyWith(
+                                    fontWeight: FontWeight.w600,
+                                    height: 1.35,
+                                  ),
+                        ),
+                        const SizedBox(height: 6),
+                        Text(
+                          subtitle,
+                          style:
+                              Theme.of(context).textTheme.bodySmall?.copyWith(
+                                    color: Theme.of(context)
+                                        .colorScheme
+                                        .onSurfaceVariant,
+                                  ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          );
+        },
+      );
+    }
+    return ListView(
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      children: [
+        for (final space in _spaces)
+          ListTile(
+            leading: const Icon(Icons.folder_outlined),
+            title: Text(space),
+            subtitle: Text(
+              l10n.storage_browserCount(
+                  _files.where((f) => f.space == space).length),
+              style: Theme.of(context).textTheme.labelSmall,
+            ),
+            trailing: const Icon(Icons.chevron_right, size: 20),
+            onTap: () => _enterSpace(space),
+          ),
       ],
     );
   }
