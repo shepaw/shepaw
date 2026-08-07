@@ -2575,6 +2575,23 @@
   "storage_browserSearchKeyword": "Keyword",
   "storage_browserSearchDegraded": "Degraded to keyword search",
   "storage_browserNeedMaster": "Connect a NAS/node as master first",
+  "storage_fileKindImage": "Image",
+  "storage_fileKindAudio": "Audio",
+  "storage_fileKindVideo": "Video",
+  "storage_fileKindPdf": "PDF",
+  "storage_fileKindDocument": "Document",
+  "storage_fileKindSpreadsheet": "Spreadsheet",
+  "storage_fileKindPresentation": "Presentation",
+  "storage_fileKindText": "Text",
+  "storage_fileKindArchive": "Archive",
+  "storage_fileKindFile": "File",
+  "storage_chatAttachmentLabel": "Chat {kind} · {hash}",
+  "@storage_chatAttachmentLabel": {
+    "placeholders": {
+      "kind": {"type": "String"},
+      "hash": {"type": "String"}
+    }
+  },
   "storage_alertHandoffs": "{count} handoff notifications",
   "@storage_alertHandoffs": {
     "placeholders": {

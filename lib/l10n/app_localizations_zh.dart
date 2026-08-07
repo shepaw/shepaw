@@ -5099,6 +5099,41 @@ class AppLocalizationsZh extends AppLocalizations {
   String get storage_browserNeedMaster => '请先连接 NAS/节点作为 master';
 
   @override
+  String get storage_fileKindImage => '图片';
+
+  @override
+  String get storage_fileKindAudio => '音频';
+
+  @override
+  String get storage_fileKindVideo => '视频';
+
+  @override
+  String get storage_fileKindPdf => 'PDF';
+
+  @override
+  String get storage_fileKindDocument => '文档';
+
+  @override
+  String get storage_fileKindSpreadsheet => '表格';
+
+  @override
+  String get storage_fileKindPresentation => '演示文稿';
+
+  @override
+  String get storage_fileKindText => '文本';
+
+  @override
+  String get storage_fileKindArchive => '压缩包';
+
+  @override
+  String get storage_fileKindFile => '文件';
+
+  @override
+  String storage_chatAttachmentLabel(String kind, String hash) {
+    return '聊天$kind · $hash';
+  }
+
+  @override
   String storage_alertHandoffs(int count) {
     return '有 $count 条交接通知';
   }

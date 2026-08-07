@@ -9278,6 +9278,72 @@ abstract class AppLocalizations {
   /// **'请先连接 NAS/节点作为 master'**
   String get storage_browserNeedMaster;
 
+  /// No description provided for @storage_fileKindImage.
+  ///
+  /// In zh, this message translates to:
+  /// **'图片'**
+  String get storage_fileKindImage;
+
+  /// No description provided for @storage_fileKindAudio.
+  ///
+  /// In zh, this message translates to:
+  /// **'音频'**
+  String get storage_fileKindAudio;
+
+  /// No description provided for @storage_fileKindVideo.
+  ///
+  /// In zh, this message translates to:
+  /// **'视频'**
+  String get storage_fileKindVideo;
+
+  /// No description provided for @storage_fileKindPdf.
+  ///
+  /// In zh, this message translates to:
+  /// **'PDF'**
+  String get storage_fileKindPdf;
+
+  /// No description provided for @storage_fileKindDocument.
+  ///
+  /// In zh, this message translates to:
+  /// **'文档'**
+  String get storage_fileKindDocument;
+
+  /// No description provided for @storage_fileKindSpreadsheet.
+  ///
+  /// In zh, this message translates to:
+  /// **'表格'**
+  String get storage_fileKindSpreadsheet;
+
+  /// No description provided for @storage_fileKindPresentation.
+  ///
+  /// In zh, this message translates to:
+  /// **'演示文稿'**
+  String get storage_fileKindPresentation;
+
+  /// No description provided for @storage_fileKindText.
+  ///
+  /// In zh, this message translates to:
+  /// **'文本'**
+  String get storage_fileKindText;
+
+  /// No description provided for @storage_fileKindArchive.
+  ///
+  /// In zh, this message translates to:
+  /// **'压缩包'**
+  String get storage_fileKindArchive;
+
+  /// No description provided for @storage_fileKindFile.
+  ///
+  /// In zh, this message translates to:
+  /// **'文件'**
+  String get storage_fileKindFile;
+
+  /// No description provided for @storage_chatAttachmentLabel.
+  ///
+  /// In zh, this message translates to:
+  /// **'聊天{kind} · {hash}'**
+  String storage_chatAttachmentLabel(String kind, String hash);
+
   /// No description provided for @storage_alertHandoffs.
   ///
   /// In zh, this message translates to:

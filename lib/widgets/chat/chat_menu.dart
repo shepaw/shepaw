@@ -1,65 +1,9 @@
 import 'package:flutter/material.dart';
 import '../../l10n/app_localizations.dart';
 
-/// Unified helper for showing agent/group chat menus.
-///
-/// Visual style matches the home screen add-button dropdown.
+/// Unified helper for agent/group chat overflow menus.
 class ChatMenuHelper {
   ChatMenuHelper._();
-
-  static const double _menuWidth = 220.0;
-  static const double _gap = 6.0;
-  static const double _appBarActionEdgeGap = 12.0;
-
-  static RelativeRect _menuPosition(
-    BuildContext context, {
-    BuildContext? anchorContext,
-  }) {
-    final overlay = Overlay.of(context).context.findRenderObject() as RenderBox;
-    final overlaySize = overlay.size;
-
-    final anchorBox = anchorContext?.findRenderObject() as RenderBox?;
-    if (anchorBox != null) {
-      final bottomRight = anchorBox.localToGlobal(
-        anchorBox.size.bottomRight(Offset.zero),
-        ancestor: overlay,
-      );
-      return RelativeRect.fromLTRB(
-        bottomRight.dx - _menuWidth,
-        bottomRight.dy + _gap,
-        overlaySize.width - bottomRight.dx,
-        overlaySize.height - bottomRight.dy - _gap,
-      );
-    }
-
-    return RelativeRect.fromLTRB(
-      overlaySize.width - _menuWidth - _appBarActionEdgeGap,
-      kToolbarHeight + MediaQuery.of(context).padding.top + _gap,
-      _appBarActionEdgeGap,
-      0,
-    );
-  }
-
-  static Future<String?> _showStyledMenu(
-    BuildContext context, {
-    required List<PopupMenuEntry<String>> items,
-    BuildContext? anchorContext,
-  }) {
-    final colorScheme = Theme.of(context).colorScheme;
-
-    return showMenu<String>(
-      context: context,
-      position: _menuPosition(context, anchorContext: anchorContext),
-      constraints: const BoxConstraints.tightFor(width: _menuWidth),
-      color: colorScheme.surface,
-      elevation: 4,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(8),
-        side: BorderSide(color: colorScheme.outline.withValues(alpha: 0.6)),
-      ),
-      items: items,
-    );
-  }
 
   static PopupMenuItem<String> _buildMenuItem({
     required String value,
@@ -84,64 +28,64 @@ class ChatMenuHelper {
     );
   }
 
-  /// Show the DM agent menu (reset, details, system prompt, search).
+  /// DM agent overflow menu entries.
   ///
-  /// [onWorkflow] is shown for She DM when workflow management is enabled.
   /// [onCustomSystemPrompt] is omitted for peer agents (relay does not forward it).
-  static Future<void> showAgentMenu(
+  static List<PopupMenuEntry<String>> agentMenuItems(
     BuildContext context, {
-    BuildContext? anchorContext,
+    VoidCallback? onCustomSystemPrompt,
+    VoidCallback? onEdit,
+    VoidCallback? onWorkflow,
+  }) {
+    final menuL10n = AppLocalizations.of(context);
+
+    return [
+      _buildMenuItem(
+        value: 'reset',
+        icon: Icons.refresh,
+        label: menuL10n.chat_resetSession,
+      ),
+      const PopupMenuDivider(),
+      if (onEdit != null)
+        _buildMenuItem(
+          value: 'edit',
+          icon: Icons.edit_outlined,
+          label: menuL10n.chat_editAgent,
+        ),
+      _buildMenuItem(
+        value: 'details',
+        icon: Icons.info_outline,
+        label: menuL10n.chat_viewDetails,
+      ),
+      if (onCustomSystemPrompt != null)
+        _buildMenuItem(
+          value: 'systemPrompt',
+          icon: Icons.edit_note_outlined,
+          label: menuL10n.chat_customSystemPrompt,
+        ),
+      if (onWorkflow != null)
+        _buildMenuItem(
+          value: 'workflow',
+          icon: Icons.account_tree_outlined,
+          label: menuL10n.chat_workflow,
+        ),
+      _buildMenuItem(
+        value: 'search',
+        icon: Icons.search,
+        label: menuL10n.chat_searchMessages,
+      ),
+    ];
+  }
+
+  static void handleAgentMenuSelection(
+    String value, {
     required VoidCallback onReset,
     required VoidCallback onViewDetails,
     required VoidCallback onSearch,
     VoidCallback? onCustomSystemPrompt,
     VoidCallback? onEdit,
     VoidCallback? onWorkflow,
-  }) async {
-    final menuL10n = AppLocalizations.of(context);
-
-    final value = await _showStyledMenu(
-      context,
-      anchorContext: anchorContext,
-      items: [
-        _buildMenuItem(
-          value: 'reset',
-          icon: Icons.refresh,
-          label: menuL10n.chat_resetSession,
-        ),
-        const PopupMenuDivider(),
-        if (onEdit != null)
-          _buildMenuItem(
-            value: 'edit',
-            icon: Icons.edit_outlined,
-            label: menuL10n.chat_editAgent,
-          ),
-        _buildMenuItem(
-          value: 'details',
-          icon: Icons.info_outline,
-          label: menuL10n.chat_viewDetails,
-        ),
-        if (onCustomSystemPrompt != null)
-          _buildMenuItem(
-            value: 'systemPrompt',
-            icon: Icons.edit_note_outlined,
-            label: menuL10n.chat_customSystemPrompt,
-          ),
-        if (onWorkflow != null)
-          _buildMenuItem(
-            value: 'workflow',
-            icon: Icons.account_tree_outlined,
-            label: menuL10n.chat_workflow,
-          ),
-        _buildMenuItem(
-          value: 'search',
-          icon: Icons.search,
-          label: menuL10n.chat_searchMessages,
-        ),
-      ],
-    );
-
-    if (value == null) return;
+  }) {
     switch (value) {
       case 'edit':
         onEdit?.call();
@@ -158,46 +102,45 @@ class ChatMenuHelper {
     }
   }
 
-  /// Show the group chat menu (edit, members, workflow, search).
-  static Future<void> showGroupMenu(
+  /// Group chat overflow menu entries.
+  static List<PopupMenuEntry<String>> groupMenuItems(
     BuildContext context, {
-    BuildContext? anchorContext,
+    VoidCallback? onWorkflow,
+  }) {
+    final menuL10n = AppLocalizations.of(context);
+
+    return [
+      _buildMenuItem(
+        value: 'editGroup',
+        icon: Icons.edit_outlined,
+        label: menuL10n.chat_editGroupInfo,
+      ),
+      _buildMenuItem(
+        value: 'members',
+        icon: Icons.group_outlined,
+        label: menuL10n.chat_groupMembers,
+      ),
+      if (onWorkflow != null)
+        _buildMenuItem(
+          value: 'workflow',
+          icon: Icons.account_tree_outlined,
+          label: menuL10n.chat_workflow,
+        ),
+      _buildMenuItem(
+        value: 'search',
+        icon: Icons.search,
+        label: menuL10n.chat_searchMessages,
+      ),
+    ];
+  }
+
+  static void handleGroupMenuSelection(
+    String value, {
     required VoidCallback onEditGroup,
     required VoidCallback onShowMembers,
     required VoidCallback onSearch,
     VoidCallback? onWorkflow,
-  }) async {
-    final menuL10n = AppLocalizations.of(context);
-
-    final value = await _showStyledMenu(
-      context,
-      anchorContext: anchorContext,
-      items: [
-        _buildMenuItem(
-          value: 'editGroup',
-          icon: Icons.edit_outlined,
-          label: menuL10n.chat_editGroupInfo,
-        ),
-        _buildMenuItem(
-          value: 'members',
-          icon: Icons.group_outlined,
-          label: menuL10n.chat_groupMembers,
-        ),
-        if (onWorkflow != null)
-          _buildMenuItem(
-            value: 'workflow',
-            icon: Icons.account_tree_outlined,
-            label: menuL10n.chat_workflow,
-          ),
-        _buildMenuItem(
-          value: 'search',
-          icon: Icons.search,
-          label: menuL10n.chat_searchMessages,
-        ),
-      ],
-    );
-
-    if (value == null) return;
+  }) {
     switch (value) {
       case 'editGroup':
         onEditGroup();

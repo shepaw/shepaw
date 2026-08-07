@@ -13,6 +13,7 @@ import '../models/store_attachment_ref.dart';
 import '../storage/local_store.dart';
 import '../storage/store_protocol.dart';
 import '../storage/store_uri_reader.dart';
+import '../storage/store_file_visual.dart';
 import '../widgets/store_file_preview.dart';
 import 'logger_service.dart';
 
@@ -41,7 +42,7 @@ class StoreOpenService {
     try {
       final parsed = parseStoreUri(uriString);
       final name = p.basename(parsed.path);
-      final kind = _previewKind(name);
+      var kind = await _resolvePreviewKind(uriString, parsed.path, name);
       final size = await StoreUriReader.instance.sizeOf(uriString);
 
       if (!context.mounted) return;
@@ -394,6 +395,40 @@ class StoreOpenService {
     }
   }
 
+  Future<_PreviewKind> _resolvePreviewKind(
+    String uriString,
+    String storePath,
+    String fileName,
+  ) async {
+    final ext = p.extension(fileName).toLowerCase();
+    if (ext.isNotEmpty && !StoreFileVisual.isChatAttachmentPath(storePath)) {
+      return _mapPreviewKind(StoreFileVisual.previewKind(storePath));
+    }
+
+    final local = await StoreAttachmentRef.fileFromStoreUri(uriString);
+    if (local != null) {
+      try {
+        final head = await local.openRead(0, 16).fold<List<int>>(
+              <int>[],
+              (prev, chunk) => prev..addAll(chunk),
+            );
+        return _mapPreviewKind(
+          StoreFileVisual.previewKind(storePath, head: head),
+        );
+      } catch (_) {}
+    }
+
+    return _mapPreviewKind(StoreFileVisual.previewKind(storePath));
+  }
+
+  static _PreviewKind _mapPreviewKind(StorePreviewKind kind) {
+    return switch (kind) {
+      StorePreviewKind.image => _PreviewKind.image,
+      StorePreviewKind.text => _PreviewKind.text,
+      StorePreviewKind.other => _PreviewKind.other,
+    };
+  }
+
   static String formatBytes(int bytes) {
     if (bytes < 1024) return '$bytes B';
     if (bytes < 1024 * 1024) {
@@ -403,48 +438,6 @@ class StoreOpenService {
       return '${(bytes / (1024 * 1024)).toStringAsFixed(1)} MB';
     }
     return '${(bytes / (1024 * 1024 * 1024)).toStringAsFixed(2)} GB';
-  }
-
-  static _PreviewKind _previewKind(String fileName) {
-    final ext = p.extension(fileName).toLowerCase();
-    switch (ext) {
-      case '.png':
-      case '.jpg':
-      case '.jpeg':
-      case '.gif':
-      case '.webp':
-      case '.bmp':
-        return _PreviewKind.image;
-      case '.txt':
-      case '.md':
-      case '.markdown':
-      case '.json':
-      case '.csv':
-      case '.log':
-      case '.yaml':
-      case '.yml':
-      case '.xml':
-      case '.html':
-      case '.htm':
-      case '.dart':
-      case '.py':
-      case '.js':
-      case '.ts':
-      case '.swift':
-      case '.kt':
-      case '.java':
-      case '.go':
-      case '.rs':
-      case '.c':
-      case '.h':
-      case '.cpp':
-      case '.cc':
-      case '.css':
-      case '.sh':
-        return _PreviewKind.text;
-      default:
-        return _PreviewKind.other;
-    }
   }
 }
 

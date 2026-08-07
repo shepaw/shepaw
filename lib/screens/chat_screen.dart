@@ -32,7 +32,6 @@ import '../widgets/chat/chat_reply_preview.dart';
 import '../widgets/chat/session_list_panel.dart';
 import '../widgets/chat/group_session_list_panel.dart';
 import '../widgets/chat/session_unread_badge.dart';
-import '../widgets/chat/chat_mobile_menu_drawer.dart';
 import '../widgets/chat/group_members_panel.dart';
 import '../widgets/chat/add_group_member_panel.dart';
 import '../widgets/chat/system_prompt_panel.dart';
@@ -147,8 +146,6 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
 
   // Whether the current agent supports image input routing
   bool _agentSupportsImage = false;
-
-  final _scaffoldKey = GlobalKey<ScaffoldState>();
 
   /// Last draft key used for migrate-from-agent → channel.
   String? _lastDraftKey;
@@ -1821,25 +1818,19 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   // Build
   // ---------------------------------------------------------------------------
 
-  void _showChatMenu({BuildContext? anchorContext}) {
+  void _handleChatMenuSelected(String value) {
     final c = _controller;
-    if (!LayoutUtils.isDesktopLayout(context) && !widget.embedded) {
-      _scaffoldKey.currentState?.openEndDrawer();
-      return;
-    }
     if (c.isGroupMode) {
-      ChatMenuHelper.showGroupMenu(
-        context,
-        anchorContext: anchorContext,
+      ChatMenuHelper.handleGroupMenuSelection(
+        value,
         onEditGroup: _editGroupInfo,
         onShowMembers: _showGroupMembersPanel,
         onSearch: _showSearchDialog,
         onWorkflow: _showGroupWorkflow,
       );
     } else {
-      ChatMenuHelper.showAgentMenu(
-        context,
-        anchorContext: anchorContext,
+      ChatMenuHelper.handleAgentMenuSelection(
+        value,
         onReset: () {
           _messageController.text = '/reset';
           _sendMessage();
@@ -1854,30 +1845,25 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     }
   }
 
-  Widget? _buildMobileEndDrawer(BuildContext context) {
+  Widget _buildChatMenuButton(AppLocalizations l10n) {
     final c = _controller;
-    final l10n = AppLocalizations.of(context);
-    final title = c.isGroupMode
-        ? (c.groupChannel?.name ?? l10n.chat_editGroupInfo)
-        : (SheService.isSheIdentity(c.agentId)
-            ? SheService.resolveDisplayName(c.agentName, l10n.she_name)
-            : (c.agentName ?? 'AI Agent'));
-
-    return ChatMobileMenuDrawer(
-      isGroupMode: c.isGroupMode,
-      title: title,
-      onResetSession: () {
-        _messageController.text = '/reset';
-        _sendMessage();
-      },
-      onViewDetails: _navigateToAgentDetail,
-      onEditAgent: _navigateToAgentDetailForEdit,
-      onSearch: _showSearchDialog,
-      onCustomSystemPrompt:
-          c.isPeerAgent ? null : _showDmSystemPromptPanel,
-      onEditGroup: _editGroupInfo,
-      onShowMembers: _showGroupMembersPanel,
-      onWorkflow: (c.isGroupMode || c.dmWorkflowEnabled) ? _showGroupWorkflow : null,
+    return PopupMenuButton<String>(
+      tooltip: l10n.chat_moreActions,
+      icon: const Icon(Icons.more_vert),
+      position: PopupMenuPosition.under,
+      onSelected: _handleChatMenuSelected,
+      itemBuilder: (ctx) => c.isGroupMode
+          ? ChatMenuHelper.groupMenuItems(
+              ctx,
+              onWorkflow: _showGroupWorkflow,
+            )
+          : ChatMenuHelper.agentMenuItems(
+              ctx,
+              onEdit: _navigateToAgentDetailForEdit,
+              onCustomSystemPrompt:
+                  c.isPeerAgent ? null : _showDmSystemPromptPanel,
+              onWorkflow: c.dmWorkflowEnabled ? _showGroupWorkflow : null,
+            ),
     );
   }
 
@@ -1885,12 +1871,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
     final c = _controller;
-    final isMobileLayout = !LayoutUtils.isDesktopLayout(context) && !widget.embedded;
-
     return Scaffold(
-        key: _scaffoldKey,
-        endDrawerEnableOpenDragGesture: false,
-        endDrawer: isMobileLayout ? _buildMobileEndDrawer(context) : null,
         appBar: AppBar(
         elevation: 1,
         automaticallyImplyLeading: !widget.embedded,
@@ -1951,12 +1932,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
             onPressed:
                 c.isGroupMode ? _showGroupSessionList : _showSessionList,
           ),
-          Builder(
-            builder: (moreButtonContext) => IconButton(
-              icon: const Icon(Icons.more_vert),
-              onPressed: () => _showChatMenu(anchorContext: moreButtonContext),
-            ),
-          ),
+          _buildChatMenuButton(l10n),
         ],
         ),
         body: Column(

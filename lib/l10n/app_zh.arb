@@ -3081,6 +3081,23 @@
     }
   },
   "storage_browserNeedMaster": "请先连接 NAS/节点作为 master",
+  "storage_fileKindImage": "图片",
+  "storage_fileKindAudio": "音频",
+  "storage_fileKindVideo": "视频",
+  "storage_fileKindPdf": "PDF",
+  "storage_fileKindDocument": "文档",
+  "storage_fileKindSpreadsheet": "表格",
+  "storage_fileKindPresentation": "演示文稿",
+  "storage_fileKindText": "文本",
+  "storage_fileKindArchive": "压缩包",
+  "storage_fileKindFile": "文件",
+  "storage_chatAttachmentLabel": "聊天{kind} · {hash}",
+  "@storage_chatAttachmentLabel": {
+    "placeholders": {
+      "kind": {"type": "String"},
+      "hash": {"type": "String"}
+    }
+  },
   "storage_alertHandoffs": "有 {count} 条交接通知",
   "@storage_alertHandoffs": {
     "placeholders": {

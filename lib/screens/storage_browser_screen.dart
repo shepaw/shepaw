@@ -8,13 +8,16 @@ import 'package:flutter/material.dart';
 import 'package:path/path.dart' as p;
 
 import '../l10n/app_localizations.dart';
+import '../models/store_attachment_ref.dart';
 import '../services/store_open_service.dart';
 import '../storage/device_identity.dart';
 import '../storage/local_store.dart';
+import '../storage/store_file_visual.dart';
 import '../storage/store_protocol.dart';
 import '../storage/store_service.dart';
 import '../storage/store_uri_reader.dart';
 import '../utils/layout_utils.dart';
+import '../widgets/storage/store_file_list_avatar.dart';
 
 class _BrowsedFile {
   const _BrowsedFile({required this.space, required this.entry});
@@ -44,6 +47,8 @@ class StorageBrowserScreen extends StatefulWidget {
     this.extraMenuItems,
     this.onExtraMenuSelected,
     this.usedBytes,
+    this.pickForAttachment = false,
+    this.maxPickCount = 9,
   });
 
   /// 目标设备 fingerprint；null = 本机。
@@ -74,6 +79,12 @@ class StorageBrowserScreen extends StatefulWidget {
   /// 非 null 时在 AppBar 展示「已使用 xxx」轻量 badge。
   final int? usedBytes;
 
+  /// 聊天附件选择：复用浏览排版，多选后 pop [StoreAttachmentRef] 列表。
+  final bool pickForAttachment;
+
+  /// [pickForAttachment] 时最多可选文件数。
+  final int maxPickCount;
+
   @override
   State<StorageBrowserScreen> createState() => _StorageBrowserScreenState();
 }
@@ -103,6 +114,7 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
   bool _loading = true;
   List<_BrowsedFile> _files = const [];
   String? _error;
+  final Map<String, _BrowsedFile> _selectedFiles = {};
 
   /// 「空间」Tab：null = 分区根列表；非 null = 已进入某分区。
   String? _navSpace;
@@ -140,6 +152,73 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
       _navSpace != null;
 
   bool _isFolderMarkerPath(String path) => p.basename(path) == _folderMarker;
+
+  bool get _pickMode => widget.pickForAttachment;
+
+  bool get _atPickLimit => _selectedFiles.length >= widget.maxPickCount;
+
+  String _fileKey(_BrowsedFile file) => '${file.space}:${file.path}';
+
+  bool _isPicked(_BrowsedFile file) => _selectedFiles.containsKey(_fileKey(file));
+
+  void _togglePick(_BrowsedFile file) {
+    final key = _fileKey(file);
+    setState(() {
+      if (_selectedFiles.containsKey(key)) {
+        _selectedFiles.remove(key);
+      } else if (!_atPickLimit) {
+        _selectedFiles[key] = file;
+      }
+    });
+  }
+
+  Future<void> _confirmPick() async {
+    if (_selectedFiles.isEmpty || _busy) return;
+    setState(() => _busy = true);
+    try {
+      final refs = <StoreAttachmentRef>[];
+      for (final file in _selectedFiles.values) {
+        final ref = StoreAttachmentRef.fromEntry(
+          deviceId: _targetId,
+          space: file.space,
+          entry: file.entry,
+        );
+        if (await ref.resolveLocalFile() == null) continue;
+        refs.add(ref);
+      }
+      if (!mounted) return;
+      Navigator.of(context).pop(refs);
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  void _onFileTap(_BrowsedFile file) {
+    if (_pickMode) {
+      _togglePick(file);
+      return;
+    }
+    _previewFile(file);
+  }
+
+  List<Widget> _pickModeActions(AppLocalizations l10n) {
+    return [
+      if (_selectedFiles.isNotEmpty)
+        Padding(
+          padding: const EdgeInsets.only(right: 4),
+          child: Center(
+            child: Text(
+              l10n.chat_storageFilePickerSelected(_selectedFiles.length),
+              style: Theme.of(context).textTheme.labelLarge,
+            ),
+          ),
+        ),
+      TextButton(
+        onPressed: _selectedFiles.isEmpty || _busy ? null : _confirmPick,
+        child: Text(l10n.chat_storageFilePickerConfirm),
+      ),
+    ];
+  }
 
   @override
   void initState() {
@@ -561,7 +640,7 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
         files: _files,
         space: spaceFilter,
         pathPrefix: pathPrefix,
-        onOpen: _previewFile,
+        onOpen: _pickMode ? _togglePick : _previewFile,
       ),
     );
   }
@@ -774,9 +853,17 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
     return l10n.storage_browserLastModified(rel);
   }
 
-  String _fileName(String path) {
-    final parts = path.split('/');
-    return parts.isNotEmpty ? parts.last : path;
+  String _displayFileName(AppLocalizations l10n, _BrowsedFile file) {
+    return StoreFileVisual.displayName(l10n, file.path);
+  }
+
+  Widget _buildFileAvatar(_BrowsedFile file) {
+    return StoreFileListAvatar(
+      deviceId: _targetId,
+      space: file.space,
+      path: file.path,
+      sizeBytes: file.size,
+    );
   }
 
   void _enterSpace(String space) {
@@ -918,7 +1005,17 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
               fontWeight: FontWeight.w700,
             ),
       ),
-      actions: _buildMobileActions(l10n, includeCreate: !_readOnly),
+      actions: [
+        if (_pickMode) ..._pickModeActions(l10n),
+        if (!_pickMode && !_isRemote)
+          IconButton(
+            onPressed: _busy ? null : _openSearch,
+            icon: const Icon(Icons.search),
+            tooltip: l10n.storage_browserSearchTitle,
+          ),
+        if (!_pickMode)
+          ..._buildMobileActions(l10n, includeCreate: !_readOnly),
+      ],
     );
   }
 
@@ -928,7 +1025,10 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
       scrolledUnderElevation: 0,
       centerTitle: true,
       title: _buildTabHeader(l10n),
-      actions: _buildMobileActions(l10n, includeCreate: _mobileMineWritable(context)),
+      actions: [
+        if (_pickMode) ..._pickModeActions(l10n),
+        if (!_pickMode) ..._buildMobileActions(l10n, includeCreate: _mobileMineWritable(context)),
+      ],
     );
   }
 
@@ -952,13 +1052,14 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
               ),
             ),
           ),
-        if (!_isRemote)
+        if (_pickMode) ..._pickModeActions(l10n),
+        if (!_pickMode && !_isRemote)
           IconButton(
             onPressed: _busy ? null : _openSearch,
             icon: const Icon(Icons.search),
             tooltip: l10n.storage_browserSearchTitle,
           ),
-        ...?widget.extraActions,
+        if (!_pickMode) ...?widget.extraActions,
       ],
     );
   }
@@ -1167,41 +1268,6 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
     );
   }
 
-  Widget _buildDocIcon() {
-    const iconColor = Color(0xFF5B9BD5);
-    const bgColor = Color(0xFFE8F2FC);
-    return Container(
-      width: 42,
-      height: 50,
-      decoration: BoxDecoration(
-        color: bgColor,
-        borderRadius: BorderRadius.circular(10),
-      ),
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Container(
-            width: 22,
-            height: 2.5,
-            decoration: BoxDecoration(
-              color: iconColor,
-              borderRadius: BorderRadius.circular(1),
-            ),
-          ),
-          const SizedBox(height: 5),
-          Container(
-            width: 16,
-            height: 2.5,
-            decoration: BoxDecoration(
-              color: iconColor,
-              borderRadius: BorderRadius.circular(1),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
   Widget _buildMobileFileRow(
     _BrowsedFile file,
     AppLocalizations l10n, {
@@ -1210,22 +1276,25 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
     final subtitle = useModified
         ? _fmtLastModified(file.mtimeMs, l10n)
         : _fmtRecentAccess(file.mtimeMs, l10n);
+    final picked = _isPicked(file);
+    final disabled = _pickMode && !picked && _atPickLimit;
+    final scheme = Theme.of(context).colorScheme;
     return InkWell(
-      onTap: _busy ? null : () => _previewFile(file),
-      onLongPress: _busy ? null : () => _showEntryActions(file),
+      onTap: _busy || disabled ? null : () => _onFileTap(file),
+      onLongPress: _busy || _pickMode ? null : () => _showEntryActions(file),
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            _buildDocIcon(),
+            _buildFileAvatar(file),
             const SizedBox(width: 14),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    _fileName(file.path),
+                    _displayFileName(l10n, file),
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                     style: Theme.of(context).textTheme.titleSmall?.copyWith(
@@ -1238,15 +1307,20 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
                     Text(
                       subtitle,
                       style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                            color: Theme.of(context)
-                                .colorScheme
-                                .onSurfaceVariant,
+                            color: scheme.onSurfaceVariant,
                           ),
                     ),
                   ],
                 ],
               ),
             ),
+            if (_pickMode) ...[
+              const SizedBox(width: 8),
+              Icon(
+                picked ? Icons.check_circle : Icons.circle_outlined,
+                color: picked ? scheme.primary : scheme.outline,
+              ),
+            ],
           ],
         ),
       ),
@@ -1284,10 +1358,19 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
       itemBuilder: (context, i) {
         final f = _files[i];
         final mtime = _fmtMtime(f.mtimeMs);
+        final picked = _isPicked(f);
+        final disabled = _pickMode && !picked && _atPickLimit;
         return ListTile(
           dense: true,
-          leading: const Icon(Icons.insert_drive_file_outlined, size: 20),
-          title: Text(_fileName(f.path), overflow: TextOverflow.ellipsis),
+          leading: _pickMode
+              ? Checkbox(
+                  value: picked,
+                  onChanged: _busy || disabled
+                      ? null
+                      : (_) => _togglePick(f),
+                )
+              : _buildFileAvatar(f),
+          title: Text(_displayFileName(l10n, f), overflow: TextOverflow.ellipsis),
           subtitle: Text(
             [
               '${f.space}/${f.path}',
@@ -1298,8 +1381,8 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
             overflow: TextOverflow.ellipsis,
             style: Theme.of(context).textTheme.labelSmall,
           ),
-          onTap: _busy ? null : () => _previewFile(f),
-          trailing: _buildEntryMoreButton(f),
+          onTap: _busy || disabled ? null : () => _onFileTap(f),
+          trailing: _pickMode ? null : _buildEntryMoreButton(f),
         );
       },
     );
@@ -1364,9 +1447,16 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
                     for (final f in children.files)
                       ListTile(
                         dense: true,
-                        leading: const Icon(Icons.insert_drive_file_outlined,
-                            size: 20),
-                        title: Text(_fileName(f.path),
+                        leading: _pickMode
+                            ? Checkbox(
+                                value: _isPicked(f),
+                                onChanged: _busy ||
+                                        (!_isPicked(f) && _atPickLimit)
+                                    ? null
+                                    : (_) => _togglePick(f),
+                              )
+                            : _buildFileAvatar(f),
+                        title: Text(_displayFileName(l10n, f),
                             overflow: TextOverflow.ellipsis),
                         subtitle: Text(
                           [
@@ -1376,8 +1466,12 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
                           ].join(' · '),
                           style: Theme.of(context).textTheme.labelSmall,
                         ),
-                        onTap: _busy ? null : () => _previewFile(f),
-                        trailing: _buildEntryMoreButton(f),
+                        onTap: _busy ||
+                                (_pickMode && !_isPicked(f) && _atPickLimit)
+                            ? null
+                            : () => _onFileTap(f),
+                        trailing:
+                            _pickMode ? null : _buildEntryMoreButton(f),
                       ),
                   ],
                 ),

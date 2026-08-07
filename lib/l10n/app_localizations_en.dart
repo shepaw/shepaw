@@ -5291,6 +5291,41 @@ class AppLocalizationsEn extends AppLocalizations {
   String get storage_browserNeedMaster => 'Connect a NAS/node as master first';
 
   @override
+  String get storage_fileKindImage => 'Image';
+
+  @override
+  String get storage_fileKindAudio => 'Audio';
+
+  @override
+  String get storage_fileKindVideo => 'Video';
+
+  @override
+  String get storage_fileKindPdf => 'PDF';
+
+  @override
+  String get storage_fileKindDocument => 'Document';
+
+  @override
+  String get storage_fileKindSpreadsheet => 'Spreadsheet';
+
+  @override
+  String get storage_fileKindPresentation => 'Presentation';
+
+  @override
+  String get storage_fileKindText => 'Text';
+
+  @override
+  String get storage_fileKindArchive => 'Archive';
+
+  @override
+  String get storage_fileKindFile => 'File';
+
+  @override
+  String storage_chatAttachmentLabel(String kind, String hash) {
+    return 'Chat $kind · $hash';
+  }
+
+  @override
   String storage_alertHandoffs(int count) {
     return '$count handoff notifications';
   }
