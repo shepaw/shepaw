@@ -146,7 +146,8 @@ class _SheCircleScreenState extends State<SheCircleScreen> {
       ),
     );
     if (picked == null || !mounted) return;
-    // 复用 Hub 下发的 agent UUID；兼容旧版 peeragent_* 落库行。
+    // Hub UUID when safe; reserved ids (惜宝) and legacy rows resolve via
+    // resolvePeerAgentRowId / decidePeerAgentRowId.
     final localId = await resolvePeerAgentRowId(
       getIt<LocalDatabaseService>(),
       peer.id,

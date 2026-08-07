@@ -29,34 +29,27 @@ import '../../service_locator.dart' show getIt;
 import '../../utils/engine_avatars.dart';
 import 'peer_connection.dart' show PeerConnectionEvent, PeerConnectionEventType;
 import '../peer_approval_payload.dart';
+import 'peer_agent_ids.dart';
 import 'peer_connection_manager.dart';
 import 'peer_turn_resume.dart';
 
-/// peer-agent 在本地 `agents` 表中的稳定 id。
-///
-/// Hub 下发的 `agent_id`（UUID）即权威 id：App **直接复用**，不再合成新 id。
-/// [peerId] 保留仅为调用方兼容；新注入不再拼进 id。
-String peerAgentLocalId(String peerId, String remoteAgentId) => remoteAgentId;
-
-/// 旧版本地 id（`peeragent_<peer>_<remote>`）。仅用于读取/迁移已有落库行。
-String legacyPeerAgentLocalId(String peerId, String remoteAgentId) =>
-    'peeragent_${peerId}_$remoteAgentId';
+export 'peer_agent_ids.dart';
 
 /// Resolve which local agent row id to use for a hub remote agent id.
-///
-/// Prefers the Hub UUID; falls back to a pre-existing legacy row so upserts
-/// do not fork a second agent entry.
 Future<String> resolvePeerAgentRowId(
   LocalDatabaseService db,
   String peerId,
   String remoteAgentId,
 ) async {
-  final byRemote = await db.getRemoteAgentById(remoteAgentId);
-  if (byRemote != null) return remoteAgentId;
   final legacy = legacyPeerAgentLocalId(peerId, remoteAgentId);
   final byLegacy = await db.getRemoteAgentById(legacy);
-  if (byLegacy != null) return legacy;
-  return remoteAgentId;
+  final byRemote = await db.getRemoteAgentById(remoteAgentId);
+  return decidePeerAgentRowId(
+    peerId: peerId,
+    remoteAgentId: remoteAgentId,
+    existingByRemoteId: byRemote,
+    existingByLegacyId: byLegacy,
+  );
 }
 
 /// 「已同步的远端 peer 会话」在本地 channel id 上的前缀。
