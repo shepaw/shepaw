@@ -1,12 +1,14 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 
+import '../../config/product_features.dart';
 import '../../l10n/app_localizations.dart';
 import '../../storage/store_service.dart';
 import '../models/paired_peer.dart';
 import '../services/peer_connection_manager.dart';
 import '../services/peer_storage_service.dart';
 import 'peer_chat_screen.dart';
+import 'peer_settings_screen.dart';
 import '../widgets/peer_device_icon.dart';
 import 'peer_pairing_screen.dart';
 
@@ -72,12 +74,16 @@ class _PeerListScreenState extends State<PeerListScreen> {
     }
   }
 
-  void _openChat(PairedPeer peer) {
-    Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (_) => PeerChatScreen(peer: peer),
-      ),
-    );
+  void _openPeer(PairedPeer peer) {
+    if (ProductFeatures.deviceChatUiEnabled) {
+      Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (_) => PeerChatScreen(peer: peer),
+        ),
+      );
+      return;
+    }
+    PeerSettingsScreen.show(context, peer);
   }
 
   Future<void> _showPeerActions(PairedPeer peer) async {
@@ -248,7 +254,7 @@ class _PeerListScreenState extends State<PeerListScreen> {
             peer: peer,
             isMaster: _masterId == peer.fingerprint,
             masterLabel: l10n.storage_masterBadge,
-            onTap: () => _openChat(peer),
+            onTap: () => _openPeer(peer),
             onLongPress: () => _showPeerActions(peer),
           );
         },

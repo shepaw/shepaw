@@ -27,6 +27,7 @@ import '../theme/app_theme.dart';
 import '../providers/notification_provider.dart';
 import '../models/conversation_selection.dart';
 import '../models/conversation_list_entry.dart';
+import '../config/product_features.dart';
 import '../controllers/conversation_list_controller.dart';
 import '../service_locator.dart' show getIt;
 import '../peer/models/paired_peer.dart';
@@ -208,10 +209,12 @@ class HomeScreenState extends State<HomeScreen> {
       );
     } catch (_) {}
     try {
-      peerMessageResults = await PeerStorageService().searchMessages(
-        query: query,
-        limit: 20,
-      );
+      if (ProductFeatures.deviceChatUiEnabled) {
+        peerMessageResults = await PeerStorageService().searchMessages(
+          query: query,
+          limit: 20,
+        );
+      }
     } catch (_) {}
 
     if (!mounted || _searchController.text.trim() != query) return;
@@ -771,7 +774,9 @@ class HomeScreenState extends State<HomeScreen> {
     final hasAgents = agentResults.isNotEmpty;
     final hasChannels = _searchChannelResults.isNotEmpty;
     final hasMessages = _searchMessageResults.isNotEmpty;
-    final hasPeerMessages = _searchPeerMessageResults.isNotEmpty;
+    final hasPeerMessages =
+        ProductFeatures.deviceChatUiEnabled &&
+            _searchPeerMessageResults.isNotEmpty;
 
     if (_isEmbeddedSearching &&
         !hasAgents &&
@@ -1619,7 +1624,8 @@ class HomeScreenState extends State<HomeScreen> {
       ).then((_) async {
         await _loadAgents(silent: true);
       });
-    } else if (selection.peerId != null) {
+    } else if (selection.peerId != null &&
+        ProductFeatures.deviceChatUiEnabled) {
       final peerId = selection.peerId!;
       final peer = _pairedPeers.where((p) => p.id == peerId).firstOrNull;
 
@@ -1871,20 +1877,24 @@ class HomeScreenState extends State<HomeScreen> {
         widget.selectedConversation!.peerId == peer.id;
 
     return InkWell(
-      onTap: () {
-        if (widget.embedded && widget.onConversationSelected != null) {
-          _list.clearPeerUnread(peer.id);
-          widget.onConversationSelected!(ConversationSelection(peerId: peer.id));
-          return;
-        }
-        _list.clearPeerUnread(peer.id);
-        Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder: (context) => PeerChatScreen(peer: peer),
-          ),
-        ).then((_) => _loadAgents(silent: true));
-      },
+      onTap: ProductFeatures.deviceChatUiEnabled
+          ? () {
+              if (widget.embedded && widget.onConversationSelected != null) {
+                _list.clearPeerUnread(peer.id);
+                widget.onConversationSelected!(
+                  ConversationSelection(peerId: peer.id),
+                );
+                return;
+              }
+              _list.clearPeerUnread(peer.id);
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => PeerChatScreen(peer: peer),
+                ),
+              ).then((_) => _loadAgents(silent: true));
+            }
+          : null,
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
         color: isSelected ? AppColors.primary.withValues(alpha: 0.08) : null,

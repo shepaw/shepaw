@@ -4,6 +4,7 @@ import '../models/channel.dart';
 import '../models/conversation_selection.dart';
 import '../models/remote_agent.dart';
 import '../l10n/app_localizations.dart';
+import '../config/product_features.dart';
 import '../peer/models/paired_peer.dart';
 import '../peer/screens/peer_chat_screen.dart';
 import '../peer/screens/peer_pairing_screen.dart';
@@ -522,6 +523,9 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
         if (_selected != null) {
           // P2P 设备聊天
           if (_selected!.peerId != null) {
+            if (!ProductFeatures.deviceChatUiEnabled) {
+              return _buildEmptyState();
+            }
             return FutureBuilder<PairedPeer?>(
               key: ValueKey('peer_${_selected!.peerId}'),
               future: PeerConnectionManager.instance.getAllPeers().then(
@@ -605,11 +609,11 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
           onPaired: (peer) {
             _reloadAgents();
             _reloadContacts();
-            if (_leftMode == _LeftPanelMode.contacts) {
+            if (_leftMode == _LeftPanelMode.contacts ||
+                !ProductFeatures.deviceChatUiEnabled) {
               _onContactPeerSelected(peer);
               return;
             }
-            // 配对成功后直接打开与该设备的聊天。
             _onConversationSelected(ConversationSelection(peerId: peer.id));
           },
         );

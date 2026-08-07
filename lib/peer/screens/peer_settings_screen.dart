@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import '../../config/product_features.dart';
 import '../../l10n/app_localizations.dart';
 import '../../storage/store_service.dart';
 import '../../widgets/form_bottom_bar.dart';
@@ -296,13 +297,14 @@ class _PeerSettingsScreenState extends State<PeerSettingsScreen> {
               ],
             ),
           ),
-          FormBottomBar(
-            child: FormPrimaryButton(
-              onPressed: _startChat,
-              icon: Icons.chat_bubble_outline,
-              label: l10n.peerSettings_startChat,
+          if (ProductFeatures.deviceChatUiEnabled)
+            FormBottomBar(
+              child: FormPrimaryButton(
+                onPressed: _startChat,
+                icon: Icons.chat_bubble_outline,
+                label: l10n.peerSettings_startChat,
+              ),
             ),
-          ),
         ],
       ),
     );

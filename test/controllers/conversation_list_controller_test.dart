@@ -86,6 +86,7 @@ void main() {
         peerLatestTime: {
           'p1': DateTime.parse('2026-07-09T12:00:00.000Z').millisecondsSinceEpoch,
         },
+        deviceChatUiEnabled: true,
       );
 
       // Newest first: peer agent → local agent → device (no nesting).
@@ -94,6 +95,24 @@ void main() {
       expect(entries[1].agent?.id, 'local');
       expect(entries[2].isPeer, isTrue);
       expect(entries[2].peer?.id, 'p1');
+    });
+
+    test('omits peer device rows when device chat UI is disabled', () {
+      final peer = _peer('p1', 'Phone');
+      final entries = ConversationListController.buildSortedConversations(
+        filteredAgents: const [],
+        groupChannels: const [],
+        pairedPeers: [peer],
+        searchQuery: '',
+        latestMessages: const {},
+        groupLatestMessages: const {},
+        peerLatestTime: const {
+          'p1': 1700000000000,
+        },
+        deviceChatUiEnabled: false,
+      );
+
+      expect(entries, isEmpty);
     });
 
     test('includes matching groups by name', () {

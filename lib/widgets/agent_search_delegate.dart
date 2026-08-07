@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../config/product_features.dart';
 import '../models/agent.dart';
 import '../models/channel.dart';
 import '../peer/services/peer_storage_service.dart';
@@ -114,7 +115,9 @@ class AgentSearchDelegate extends SearchDelegate<Agent?> {
         final hasAgents = agentResults.isNotEmpty;
         final hasChannels = channelResults.isNotEmpty;
         final hasMessages = messageResults.isNotEmpty;
-        final hasPeerMessages = peerMessageResults.isNotEmpty;
+        final hasPeerMessages =
+            ProductFeatures.deviceChatUiEnabled &&
+                peerMessageResults.isNotEmpty;
 
         if (!hasAgents && !hasChannels && !hasMessages && !hasPeerMessages) {
           if (snapshot.connectionState == ConnectionState.waiting) {
@@ -173,10 +176,12 @@ class AgentSearchDelegate extends SearchDelegate<Agent?> {
       query: searchQuery,
       limit: 20,
     );
-    final peerMessages = await PeerStorageService().searchMessages(
-      query: searchQuery,
-      limit: 20,
-    );
+    final peerMessages = ProductFeatures.deviceChatUiEnabled
+        ? await PeerStorageService().searchMessages(
+            query: searchQuery,
+            limit: 20,
+          )
+        : <PeerMessageSearchResult>[];
     return _GlobalSearchResults(
       channels: channels,
       messages: messages,

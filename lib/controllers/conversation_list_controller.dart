@@ -21,6 +21,7 @@ import '../services/composer_draft_service.dart';
 import '../services/local_api_service.dart';
 import '../services/local_database_service.dart';
 import '../services/logger_service.dart';
+import '../config/product_features.dart';
 import '../services/remote_agent_service.dart';
 
 /// Owns home conversation-list data: load, preview caches, P2P subscriptions,
@@ -489,6 +490,7 @@ class ConversationListController extends ChangeNotifier {
       peerLatestTime: _peerLatestTime,
       draftUpdatedAtForAgent: _draftUpdatedAtForAgent,
       draftUpdatedAtForGroup: _draftUpdatedAtForGroup,
+      deviceChatUiEnabled: ProductFeatures.deviceChatUiEnabled,
     );
   }
 
@@ -537,6 +539,7 @@ class ConversationListController extends ChangeNotifier {
     required Map<String, int> peerLatestTime,
     DateTime? Function(String agentId)? draftUpdatedAtForAgent,
     DateTime? Function(String groupId)? draftUpdatedAtForGroup,
+    bool deviceChatUiEnabled = ProductFeatures.deviceChatUiEnabled,
   }) {
     final query = searchQuery.toLowerCase();
     final blocks = <ConversationListBlock>[];
@@ -604,17 +607,19 @@ class ConversationListController extends ChangeNotifier {
       );
     }
 
-    for (final peer in pairedPeers) {
-      if (query.isNotEmpty &&
-          !peer.deviceName.toLowerCase().contains(query)) {
-        continue;
+    if (deviceChatUiEnabled) {
+      for (final peer in pairedPeers) {
+        if (query.isNotEmpty &&
+            !peer.deviceName.toLowerCase().contains(query)) {
+          continue;
+        }
+        final peerTime = peerLastMessageTime(peer);
+        blocks.add(
+          ConversationListBlock.standalone(
+            ConversationListItem.peer(peer, peerTime),
+          ),
+        );
       }
-      final peerTime = peerLastMessageTime(peer);
-      blocks.add(
-        ConversationListBlock.standalone(
-          ConversationListItem.peer(peer, peerTime),
-        ),
-      );
     }
 
     blocks.sort(compareBlocks);
