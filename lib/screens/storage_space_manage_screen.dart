@@ -4,10 +4,12 @@ import '../l10n/app_localizations.dart';
 import '../storage/device_identity.dart';
 import '../storage/store_protocol.dart';
 import '../storage/store_service.dart';
+import '../utils/layout_utils.dart';
+import '../widgets/storage/storage_space_hub.dart';
 import 'storage_browser_screen.dart';
 import 'storage_space_settings_screen.dart';
 
-/// 本机空间：直接展示 store 文件列表；用量 / 目录绑定 / 回收站收入「更多设置」。
+/// 储物袋空间：桌面端直接文件列表；移动端本机 + 共享设备分区入口。
 class StorageSpaceManageScreen extends StatefulWidget {
   const StorageSpaceManageScreen({super.key});
 
@@ -54,6 +56,15 @@ class _StorageSpaceManageScreenState extends State<StorageSpaceManageScreen> {
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
+    if (!LayoutUtils.isDesktopLayout(context)) {
+      return Scaffold(
+        appBar: AppBar(
+          title: Text(l10n.storage_entrySpace),
+        ),
+        body: StorageSpaceHub(localUsedBytes: _usedBytes),
+      );
+    }
+
     return StorageBrowserScreen(
       usedBytes: _usedBytes,
       extraActions: [

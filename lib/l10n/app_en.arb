@@ -2878,6 +2878,9 @@
   "storage_sharedBrowse": "Browse pouch",
   "storage_sharedBrowseHint": "Read-only shared spaces (files / artifacts). Prefer live owner; fall back to master mirror when offline.",
   "storage_sharedSetMaster": "Set as master (backup target)",
+  "storage_setMasterExplainBody": "When a device is set as the master storage node, changes to this device's files/artifacts pouch are mirrored to it on a schedule. When a device is offline, reads may fall back to the master mirror.",
+  "storage_browseLocalSpace": "Browse local pouch",
+  "storage_peerSpaceEntry": "Device pouch",
   "storage_sharedMasterSet": "Set {name} as master; this device will start mirroring",
   "@storage_sharedMasterSet": {
     "placeholders": {

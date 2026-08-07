@@ -9890,6 +9890,24 @@ abstract class AppLocalizations {
   /// **'设为 master（备份目标）'**
   String get storage_sharedSetMaster;
 
+  /// No description provided for @storage_setMasterExplainBody.
+  ///
+  /// In zh, this message translates to:
+  /// **'将某台设备设为主存储节点（master）后，本机储物袋的 files/artifacts 变更会定期镜像备份到该端。设备离线时，可尝试从 master 读取镜像副本。'**
+  String get storage_setMasterExplainBody;
+
+  /// No description provided for @storage_browseLocalSpace.
+  ///
+  /// In zh, this message translates to:
+  /// **'浏览本机储物袋'**
+  String get storage_browseLocalSpace;
+
+  /// No description provided for @storage_peerSpaceEntry.
+  ///
+  /// In zh, this message translates to:
+  /// **'设备储物袋'**
+  String get storage_peerSpaceEntry;
+
   /// No description provided for @storage_sharedMasterSet.
   ///
   /// In zh, this message translates to:

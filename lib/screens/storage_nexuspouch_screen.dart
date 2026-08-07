@@ -94,6 +94,10 @@ class _StorageNexuspouchScreenState extends State<StorageNexuspouchScreen> {
   bool _isPaired(String fp) =>
       fp.isNotEmpty && _paired.any((p) => p.fingerprint == fp);
 
+  /// 仅展示已配对且在局域网可见的节点；陌生节点不在 UI 中列出。
+  List<DiscoveredNexuspouch> get _visibleDiscoveredPeers =>
+      _peers.where((n) => _isPaired(n.fingerprint)).toList(growable: false);
+
   bool _isConnected(PairedPeer peer) =>
       peer.state == PeerConnectionState.connected ||
       PeerConnectionManager.instance.getPeerState(peer.id) ==
@@ -427,7 +431,7 @@ class _StorageNexuspouchScreenState extends State<StorageNexuspouchScreen> {
                 ),
           ),
           const SizedBox(height: 8),
-          if (_peers.isEmpty)
+          if (_visibleDiscoveredPeers.isEmpty)
             Padding(
               padding: const EdgeInsets.symmetric(vertical: 24),
               child: Center(
@@ -442,9 +446,8 @@ class _StorageNexuspouchScreenState extends State<StorageNexuspouchScreen> {
               ),
             )
           else
-            ..._peers.map((n) {
+            ..._visibleDiscoveredPeers.map((n) {
               final busy = _busyFp == n.fingerprint;
-              final paired = _isPaired(n.fingerprint);
               final isMaster = _masterId == n.fingerprint;
               PairedPeer? localPeer;
               for (final p in _paired) {
@@ -458,7 +461,7 @@ class _StorageNexuspouchScreenState extends State<StorageNexuspouchScreen> {
               return Card(
                 child: ListTile(
                   leading: Icon(
-                    paired ? Icons.storage : Icons.storage_outlined,
+                    Icons.storage,
                     color: isMaster ? scheme.primary : null,
                   ),
                   title: Row(
@@ -474,7 +477,7 @@ class _StorageNexuspouchScreenState extends State<StorageNexuspouchScreen> {
                   ),
                   subtitle: Text(
                     [
-                      if (paired) l10n.storage_nasPaired,
+                      l10n.storage_nasPaired,
                       if (n.fingerprint.isNotEmpty) n.shortFp,
                       n.endpoint,
                     ].join('\n'),
@@ -486,22 +489,17 @@ class _StorageNexuspouchScreenState extends State<StorageNexuspouchScreen> {
                           height: 24,
                           child: CircularProgressIndicator(strokeWidth: 2),
                         )
-                      : paired
-                          ? (connected
-                              ? Text(
-                                  l10n.peerList_connected,
-                                  style: TextStyle(
-                                    color: scheme.primary,
-                                    fontWeight: FontWeight.w600,
-                                  ),
-                                )
-                              : FilledButton(
-                                  onPressed: () => _connect(n),
-                                  child: Text(l10n.storage_nasConnect),
-                                ))
+                      : connected
+                          ? Text(
+                              l10n.peerList_connected,
+                              style: TextStyle(
+                                color: scheme.primary,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            )
                           : FilledButton(
                               onPressed: () => _connect(n),
-                              child: Text(l10n.storage_nasOpenPairing),
+                              child: Text(l10n.storage_nasConnect),
                             ),
                 ),
               );

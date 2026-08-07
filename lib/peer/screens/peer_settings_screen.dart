@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import '../../config/product_features.dart';
 import '../../l10n/app_localizations.dart';
+import '../../screens/storage_browser_screen.dart';
 import '../../storage/store_service.dart';
 import '../../widgets/form_bottom_bar.dart';
 import '../models/paired_peer.dart';
@@ -112,6 +113,18 @@ class _PeerSettingsScreenState extends State<PeerSettingsScreen> {
       context,
       MaterialPageRoute(
         builder: (context) => PeerChatScreen(peer: widget.peer),
+      ),
+    );
+  }
+
+  void _browsePeerStorage() {
+    Navigator.of(context).push<void>(
+      MaterialPageRoute<void>(
+        builder: (_) => StorageBrowserScreen(
+          deviceId: widget.peer.fingerprint,
+          deviceName: _deviceName,
+          readOnly: true,
+        ),
       ),
     );
   }
@@ -253,6 +266,18 @@ class _PeerSettingsScreenState extends State<PeerSettingsScreen> {
                   '${widget.peer.pairingRoleShortLabel(l10n)} · ${widget.peer.pairingRoleDescription(l10n)}',
                 ),
               ),
+          ]),
+
+          const SizedBox(height: 16),
+
+          _buildSection(context, l10n.storage_spaceSection, [
+            ListTile(
+              leading: const Icon(Icons.inventory_2_outlined),
+              title: Text(l10n.storage_peerSpaceEntry),
+              subtitle: Text(l10n.storage_sharedBrowseHint),
+              trailing: const Icon(Icons.chevron_right),
+              onTap: _browsePeerStorage,
+            ),
           ]),
 
           const SizedBox(height: 16),

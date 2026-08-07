@@ -5665,6 +5665,16 @@ class AppLocalizationsEn extends AppLocalizations {
   String get storage_sharedSetMaster => 'Set as master (backup target)';
 
   @override
+  String get storage_setMasterExplainBody =>
+      'When a device is set as the master storage node, changes to this device\'s files/artifacts pouch are mirrored to it on a schedule. When a device is offline, reads may fall back to the master mirror.';
+
+  @override
+  String get storage_browseLocalSpace => 'Browse local pouch';
+
+  @override
+  String get storage_peerSpaceEntry => 'Device pouch';
+
+  @override
   String storage_sharedMasterSet(String name) {
     return 'Set $name as master; this device will start mirroring';
   }
