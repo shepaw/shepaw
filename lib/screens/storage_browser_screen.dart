@@ -834,13 +834,6 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
     return '${(n / (1024 * 1024 * 1024)).toStringAsFixed(1)} GB';
   }
 
-  String _fmtMtime(int ms) {
-    if (ms <= 0) return '';
-    final t = DateTime.fromMillisecondsSinceEpoch(ms).toLocal();
-    String two(int n) => n.toString().padLeft(2, '0');
-    return '${t.year}-${two(t.month)}-${two(t.day)} ${two(t.hour)}:${two(t.minute)}';
-  }
-
   String _fmtRecentAccess(int ms, AppLocalizations l10n) {
     final rel = _fmtRelativeTime(ms);
     if (rel.isEmpty) return '';
@@ -1268,10 +1261,11 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
     );
   }
 
-  Widget _buildMobileFileRow(
+  Widget _buildFileRow(
     _BrowsedFile file,
     AppLocalizations l10n, {
     bool useModified = false,
+    bool showMoreButton = false,
   }) {
     final subtitle = useModified
         ? _fmtLastModified(file.mtimeMs, l10n)
@@ -1281,7 +1275,9 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
     final scheme = Theme.of(context).colorScheme;
     return InkWell(
       onTap: _busy || disabled ? null : () => _onFileTap(file),
-      onLongPress: _busy || _pickMode ? null : () => _showEntryActions(file),
+      onLongPress: _busy || _pickMode || showMoreButton
+          ? null
+          : () => _showEntryActions(file),
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
         child: Row(
@@ -1320,6 +1316,9 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
                 picked ? Icons.check_circle : Icons.circle_outlined,
                 color: picked ? scheme.primary : scheme.outline,
               ),
+            ] else if (showMoreButton) ...[
+              const SizedBox(width: 4),
+              _buildEntryMoreButton(file),
             ],
           ],
         ),
@@ -1343,48 +1342,15 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
             style: Theme.of(context).textTheme.bodySmall),
       );
     }
-    if (mobile) {
-      return ListView.separated(
-        padding: const EdgeInsets.only(top: 4, bottom: 16),
-        itemCount: _files.length,
-        separatorBuilder: (_, __) => const SizedBox(height: 2),
-        itemBuilder: (context, i) =>
-            _buildMobileFileRow(_files[i], l10n),
-      );
-    }
-    return ListView.builder(
-      padding: const EdgeInsets.symmetric(vertical: 8),
+    return ListView.separated(
+      padding: const EdgeInsets.only(top: 4, bottom: 16),
       itemCount: _files.length,
-      itemBuilder: (context, i) {
-        final f = _files[i];
-        final mtime = _fmtMtime(f.mtimeMs);
-        final picked = _isPicked(f);
-        final disabled = _pickMode && !picked && _atPickLimit;
-        return ListTile(
-          dense: true,
-          leading: _pickMode
-              ? Checkbox(
-                  value: picked,
-                  onChanged: _busy || disabled
-                      ? null
-                      : (_) => _togglePick(f),
-                )
-              : _buildFileAvatar(f),
-          title: Text(_displayFileName(l10n, f), overflow: TextOverflow.ellipsis),
-          subtitle: Text(
-            [
-              '${f.space}/${f.path}',
-              _fmtBytes(f.size),
-              if (mtime.isNotEmpty) mtime,
-            ].join(' · '),
-            maxLines: 2,
-            overflow: TextOverflow.ellipsis,
-            style: Theme.of(context).textTheme.labelSmall,
-          ),
-          onTap: _busy || disabled ? null : () => _onFileTap(f),
-          trailing: _pickMode ? null : _buildEntryMoreButton(f),
-        );
-      },
+      separatorBuilder: (_, __) => const SizedBox(height: 2),
+      itemBuilder: (context, i) => _buildFileRow(
+        _files[i],
+        l10n,
+        showMoreButton: !mobile && !_pickMode,
+      ),
     );
   }
 
@@ -1413,7 +1379,7 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
         for (final name in children.folders)
           _buildMobileFolderRow(name, l10n),
         for (final f in children.files)
-          _buildMobileFileRow(f, l10n, useModified: true),
+          _buildFileRow(f, l10n, useModified: true),
       ];
       return ListView.separated(
         padding: const EdgeInsets.only(top: 4, bottom: 16),
@@ -1435,7 +1401,7 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
                       style: Theme.of(context).textTheme.bodySmall),
                 )
               : ListView(
-                  padding: const EdgeInsets.symmetric(vertical: 8),
+                  padding: const EdgeInsets.only(top: 4, bottom: 16),
                   children: [
                     for (final name in children.folders)
                       ListTile(
@@ -1445,33 +1411,11 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
                         onTap: () => _enterFolder(name),
                       ),
                     for (final f in children.files)
-                      ListTile(
-                        dense: true,
-                        leading: _pickMode
-                            ? Checkbox(
-                                value: _isPicked(f),
-                                onChanged: _busy ||
-                                        (!_isPicked(f) && _atPickLimit)
-                                    ? null
-                                    : (_) => _togglePick(f),
-                              )
-                            : _buildFileAvatar(f),
-                        title: Text(_displayFileName(l10n, f),
-                            overflow: TextOverflow.ellipsis),
-                        subtitle: Text(
-                          [
-                            _fmtBytes(f.size),
-                            if (_fmtMtime(f.mtimeMs).isNotEmpty)
-                              _fmtMtime(f.mtimeMs),
-                          ].join(' · '),
-                          style: Theme.of(context).textTheme.labelSmall,
-                        ),
-                        onTap: _busy ||
-                                (_pickMode && !_isPicked(f) && _atPickLimit)
-                            ? null
-                            : () => _onFileTap(f),
-                        trailing:
-                            _pickMode ? null : _buildEntryMoreButton(f),
+                      _buildFileRow(
+                        f,
+                        l10n,
+                        useModified: true,
+                        showMoreButton: !_pickMode,
                       ),
                   ],
                 ),

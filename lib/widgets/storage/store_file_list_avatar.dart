@@ -93,12 +93,12 @@ class _StoreFileListAvatarState extends State<StoreFileListAvatar> {
     if (widget.deviceId.isEmpty) return null;
     try {
       final store = await StoreService.instance.localStore();
-      final abs = p.joinAll([
+      final abs = p.normalize(p.joinAll([
         store.root.path,
         widget.deviceId,
         widget.space,
-        ...widget.path.split('/'),
-      ]);
+        ...widget.path.split('/').where((s) => s.isNotEmpty),
+      ]));
       final file = File(abs);
       if (await file.exists()) return file;
     } catch (_) {}
@@ -117,6 +117,7 @@ class _StoreFileListAvatarState extends State<StoreFileListAvatar> {
             height: StoreFileVisual.avatarHeight,
             fit: BoxFit.cover,
             gaplessPlayback: true,
+            filterQuality: FilterQuality.medium,
             errorBuilder: (_, __, ___) => _typeIcon(),
           ),
         ),
