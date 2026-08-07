@@ -9,7 +9,7 @@ import '../widgets/storage/storage_space_hub.dart';
 import 'storage_browser_screen.dart';
 import 'storage_space_settings_screen.dart';
 
-/// 储物袋空间：桌面端直接文件列表；移动端本机 + 共享设备分区入口。
+/// 储物袋空间：桌面端直接文件列表；移动端扁平展示本机 + 共享设备。
 class StorageSpaceManageScreen extends StatefulWidget {
   const StorageSpaceManageScreen({super.key});
 
@@ -59,7 +59,7 @@ class _StorageSpaceManageScreenState extends State<StorageSpaceManageScreen> {
     if (!LayoutUtils.isDesktopLayout(context)) {
       return Scaffold(
         appBar: AppBar(
-          title: Text(l10n.storage_entrySpace),
+          title: Text(l10n.storage_title),
         ),
         body: StorageSpaceHub(localUsedBytes: _usedBytes),
       );

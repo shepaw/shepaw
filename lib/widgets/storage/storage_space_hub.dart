@@ -6,19 +6,17 @@ import '../../l10n/app_localizations.dart';
 import '../../peer/models/paired_peer.dart';
 import '../../peer/screens/peer_pairing_screen.dart';
 import '../../peer/services/peer_connection_manager.dart';
+import '../../peer/widgets/peer_device_icon.dart';
 import '../../screens/storage_browser_screen.dart';
 import '../../screens/storage_nexuspouch_screen.dart';
 import '../../screens/storage_shared.dart';
 import '../../screens/storage_space_settings_screen.dart';
-import '../../peer/widgets/peer_device_icon.dart';
 import '../../storage/device_identity.dart';
 import '../../storage/store_service.dart';
 import '../../storage/sync_engine.dart';
 import '../../theme/app_theme.dart';
 
-enum _StorageHubSection { local, shared }
-
-/// 移动端储物袋空间：本机 + 配对共享设备（通讯录式折叠列表）。
+/// 移动端储物袋空间：扁平展示本机 + 配对共享设备，点击直接进入对应空间。
 class StorageSpaceHub extends StatefulWidget {
   final int? localUsedBytes;
 
@@ -29,13 +27,8 @@ class StorageSpaceHub extends StatefulWidget {
 }
 
 class _StorageSpaceHubState extends State<StorageSpaceHub> {
-  static const double _rowPadH = 12;
-  static const double _chevronSize = 20;
-  static const double _chevronGap = 4;
   static const double _avatarSize = 36;
-  static const double _childIndent = _rowPadH + _chevronSize + _chevronGap;
 
-  final Set<_StorageHubSection> _expanded = {_StorageHubSection.local};
   List<PairedPeer> _peers = const [];
   String? _masterId;
   String _selfId = '';
@@ -99,16 +92,6 @@ class _StorageSpaceHubState extends State<StorageSpaceHub> {
 
   bool get _selfIsMaster =>
       _masterId != null && _masterId!.isNotEmpty && _masterId == _selfId;
-
-  void _toggleSection(_StorageHubSection section) {
-    setState(() {
-      if (_expanded.contains(section)) {
-        _expanded.remove(section);
-      } else {
-        _expanded.add(section);
-      }
-    });
-  }
 
   Future<void> _browseLocal() async {
     await Navigator.of(context).push<void>(
@@ -239,111 +222,77 @@ class _StorageSpaceHubState extends State<StorageSpaceHub> {
     );
   }
 
-  Widget _buildSectionHeader({
-    required _StorageHubSection section,
-    required String title,
-    required int count,
-    required IconData icon,
-    required Color iconColor,
-    bool showMasterBadge = false,
-  }) {
-    final l10n = AppLocalizations.of(context);
-    final expanded = _expanded.contains(section);
+  Widget _buildLocalRow(AppLocalizations l10n) {
     final colorScheme = Theme.of(context).colorScheme;
-
-    return InkWell(
-      onTap: () => _toggleSection(section),
-      onLongPress: section == _StorageHubSection.local && !_selfIsMaster
-          ? () => _confirmSetMaster(
-                deviceId: _selfId,
-                name: l10n.storage_sharedThisDevice,
-              )
-          : null,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-        child: Row(
-          children: [
-            AnimatedRotation(
-              turns: expanded ? 0.25 : 0,
-              duration: const Duration(milliseconds: 180),
-              child: Icon(
-                Icons.chevron_right,
-                size: _chevronSize,
-                color: colorScheme.onSurfaceVariant,
+    final used = widget.localUsedBytes;
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: _selfId.isEmpty ? null : _browseLocal,
+        onLongPress: !_selfIsMaster && _selfId.isNotEmpty
+            ? () => _confirmSetMaster(
+                  deviceId: _selfId,
+                  name: l10n.storage_sharedThisDevice,
+                )
+            : null,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+          child: Row(
+            children: [
+              Container(
+                width: _avatarSize,
+                height: _avatarSize,
+                decoration: BoxDecoration(
+                  color: AppColors.primary.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                alignment: Alignment.center,
+                child: const Icon(
+                  Icons.phone_android_outlined,
+                  size: 20,
+                  color: AppColors.primary,
+                ),
               ),
-            ),
-            const SizedBox(width: _chevronGap),
-            Container(
-              width: _avatarSize,
-              height: _avatarSize,
-              decoration: BoxDecoration(
-                color: iconColor.withValues(alpha: 0.12),
-                borderRadius: BorderRadius.circular(8),
-              ),
-              alignment: Alignment.center,
-              child: Icon(icon, size: 20, color: iconColor),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Row(
-                children: [
-                  Flexible(
-                    child: Text(
-                      title,
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Flexible(
+                          child: Text(
+                            l10n.storage_sharedThisDevice,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              fontSize: 15,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                        ),
+                        if (_selfIsMaster) ...[
+                          const SizedBox(width: 6),
+                          _masterChip(l10n, colorScheme),
+                        ],
+                      ],
+                    ),
+                    Text(
+                      used != null
+                          ? fmtStorageBytes(used)
+                          : l10n.storage_sharedBrowseHint,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w500,
-                      ),
+                      style: TextStyle(fontSize: 12, color: Colors.grey[600]),
                     ),
-                  ),
-                  if (showMasterBadge) ...[
-                    const SizedBox(width: 6),
-                    _masterChip(l10n, colorScheme),
                   ],
-                ],
+                ),
               ),
-            ),
-            Text(
-              '$count',
-              style: TextStyle(
-                fontSize: 14,
-                color: colorScheme.onSurfaceVariant,
-              ),
-            ),
-          ],
+              const Icon(Icons.chevron_right, size: 20),
+            ],
+          ),
         ),
       ),
-    );
-  }
-
-  Widget _buildLocalChild(AppLocalizations l10n) {
-    final used = widget.localUsedBytes;
-    return ListTile(
-      contentPadding: const EdgeInsets.only(left: _childIndent, right: 16),
-      leading: Container(
-        width: _avatarSize,
-        height: _avatarSize,
-        decoration: BoxDecoration(
-          color: AppColors.primary.withValues(alpha: 0.12),
-          borderRadius: BorderRadius.circular(8),
-        ),
-        alignment: Alignment.center,
-        child: Icon(Icons.folder_open_outlined, color: AppColors.primary, size: 20),
-      ),
-      title: Text(
-        l10n.storage_browseLocalSpace,
-        style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w500),
-      ),
-      subtitle: Text(
-        used != null ? fmtStorageBytes(used) : l10n.storage_sharedBrowseHint,
-        maxLines: 2,
-        overflow: TextOverflow.ellipsis,
-        style: TextStyle(fontSize: 12, color: Colors.grey[600]),
-      ),
-      trailing: const Icon(Icons.chevron_right, size: 20),
-      onTap: _browseLocal,
     );
   }
 
@@ -359,7 +308,7 @@ class _StorageSpaceHubState extends State<StorageSpaceHub> {
         onTap: busy ? null : () => _browsePeer(peer),
         onLongPress: busy ? null : () => _showPeerActions(peer),
         child: Padding(
-          padding: const EdgeInsets.only(left: _childIndent, right: 16, top: 6, bottom: 6),
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
           child: Row(
             children: [
               Stack(
@@ -436,7 +385,7 @@ class _StorageSpaceHubState extends State<StorageSpaceHub> {
 
   Widget _buildSharedEmpty(AppLocalizations l10n) {
     return Padding(
-      padding: const EdgeInsets.fromLTRB(_childIndent, 8, 16, 12),
+      padding: const EdgeInsets.fromLTRB(16, 4, 8, 8),
       child: Row(
         children: [
           Icon(Icons.devices_other, size: 18, color: Colors.grey[400]),
@@ -455,7 +404,10 @@ class _StorageSpaceHubState extends State<StorageSpaceHub> {
               visualDensity: VisualDensity.compact,
               padding: const EdgeInsets.symmetric(horizontal: 8),
             ),
-            child: Text(l10n.storage_nasOpenPairing, style: const TextStyle(fontSize: 13)),
+            child: Text(
+              l10n.storage_nasOpenPairing,
+              style: const TextStyle(fontSize: 13),
+            ),
           ),
         ],
       ),
@@ -474,28 +426,11 @@ class _StorageSpaceHubState extends State<StorageSpaceHub> {
       child: ListView(
         physics: const AlwaysScrollableScrollPhysics(),
         children: [
-          _buildSectionHeader(
-            section: _StorageHubSection.local,
-            title: l10n.storage_sharedThisDevice,
-            count: 1,
-            icon: Icons.phone_android_outlined,
-            iconColor: AppColors.primary,
-            showMasterBadge: _selfIsMaster,
-          ),
-          if (_expanded.contains(_StorageHubSection.local)) _buildLocalChild(l10n),
-          _buildSectionHeader(
-            section: _StorageHubSection.shared,
-            title: l10n.storage_sharedDevicesSection,
-            count: _peers.length,
-            icon: Icons.devices_outlined,
-            iconColor: const Color(0xFF576B95),
-          ),
-          if (_expanded.contains(_StorageHubSection.shared)) ...[
-            if (_peers.isEmpty)
-              _buildSharedEmpty(l10n)
-            else
-              for (final peer in _peers) _buildPeerRow(peer, l10n),
-          ],
+          _buildLocalRow(l10n),
+          if (_peers.isEmpty)
+            _buildSharedEmpty(l10n)
+          else
+            for (final peer in _peers) _buildPeerRow(peer, l10n),
           const SizedBox(height: 8),
           ListTile(
             leading: const Icon(Icons.lan_outlined),
