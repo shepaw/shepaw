@@ -1,5 +1,4 @@
 import 'dart:io';
-import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:path/path.dart' as p;
@@ -28,7 +27,7 @@ class StoreFileListAvatar extends StatefulWidget {
 
 class _StoreFileListAvatarState extends State<StoreFileListAvatar> {
   StoreFileVisualKind _kind = StoreFileVisualKind.generic;
-  Uint8List? _thumbnailBytes;
+  File? _imageFile;
   bool _loaded = false;
 
   @override
@@ -45,7 +44,7 @@ class _StoreFileListAvatarState extends State<StoreFileListAvatar> {
         oldWidget.path != widget.path ||
         oldWidget.sizeBytes != widget.sizeBytes) {
       _loaded = false;
-      _thumbnailBytes = null;
+      _imageFile = null;
       _kind = StoreFileVisualKind.generic;
       _load();
     }
@@ -57,6 +56,7 @@ class _StoreFileListAvatarState extends State<StoreFileListAvatar> {
       if (mounted) {
         setState(() {
           _kind = StoreFileVisual.resolveKind(path: widget.path);
+          _imageFile = null;
           _loaded = true;
         });
       }
@@ -72,19 +72,15 @@ class _StoreFileListAvatarState extends State<StoreFileListAvatar> {
     } catch (_) {}
 
     final kind = StoreFileVisual.resolveKind(path: widget.path, head: head);
-    Uint8List? thumb;
-    if (kind == StoreFileVisualKind.image &&
-        widget.sizeBytes > 0 &&
-        widget.sizeBytes <= StoreFileVisual.maxThumbnailBytes) {
-      try {
-        thumb = await file.readAsBytes();
-      } catch (_) {}
-    }
+    // Decode via Image.file + cacheWidth; skip pathological giants only.
+    final canThumb = kind == StoreFileVisualKind.image &&
+        (widget.sizeBytes <= 0 ||
+            widget.sizeBytes <= StoreFileVisual.maxThumbnailSourceBytes);
 
     if (!mounted) return;
     setState(() {
       _kind = kind;
-      _thumbnailBytes = thumb;
+      _imageFile = canThumb ? file : null;
       _loaded = true;
     });
   }
@@ -93,29 +89,42 @@ class _StoreFileListAvatarState extends State<StoreFileListAvatar> {
     if (widget.deviceId.isEmpty) return null;
     try {
       final store = await StoreService.instance.localStore();
-      final abs = p.normalize(p.joinAll([
+      final segments = widget.path.split('/').where((s) => s.isNotEmpty);
+      final formal = File(p.normalize(p.joinAll([
         store.root.path,
         widget.deviceId,
         widget.space,
-        ...widget.path.split('/').where((s) => s.isNotEmpty),
-      ]));
-      final file = File(abs);
-      if (await file.exists()) return file;
+        ...segments,
+      ])));
+      if (await formal.exists()) return formal;
+
+      // Remote-read materialization: <store>/.cache/<device>/<space>/<path>
+      final cached = File(p.normalize(p.joinAll([
+        store.root.path,
+        '.cache',
+        widget.deviceId,
+        widget.space,
+        ...segments,
+      ])));
+      if (await cached.exists()) return cached;
     } catch (_) {}
     return null;
   }
 
   @override
   Widget build(BuildContext context) {
-    if (_thumbnailBytes != null) {
+    if (_imageFile != null) {
+      final dpr = MediaQuery.devicePixelRatioOf(context);
       return _frame(
         child: ClipRRect(
           borderRadius: BorderRadius.circular(8),
-          child: Image.memory(
-            _thumbnailBytes!,
+          child: Image.file(
+            _imageFile!,
             width: StoreFileVisual.avatarWidth,
             height: StoreFileVisual.avatarHeight,
             fit: BoxFit.cover,
+            cacheWidth: (StoreFileVisual.avatarWidth * dpr).round(),
+            cacheHeight: (StoreFileVisual.avatarHeight * dpr).round(),
             gaplessPlayback: true,
             filterQuality: FilterQuality.medium,
             errorBuilder: (_, __, ___) => _typeIcon(),

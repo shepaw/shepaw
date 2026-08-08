@@ -25,7 +25,10 @@ class StoreFileVisual {
 
   static const avatarWidth = 42.0;
   static const avatarHeight = 50.0;
-  static const maxThumbnailBytes = 512 * 1024;
+
+  /// Soft ceiling for list-row image decode via [Image.file] + cacheWidth.
+  /// Far above typical photos; only skips pathological giants.
+  static const maxThumbnailSourceBytes = 50 * 1024 * 1024;
 
   static final RegExp _sha256Leaf =
       RegExp(r'^[0-9a-f]{64}$', caseSensitive: false);
