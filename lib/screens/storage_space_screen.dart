@@ -5,7 +5,6 @@ import 'package:flutter/material.dart';
 import '../l10n/app_localizations.dart';
 import '../storage/handoff_notify_service.dart';
 import '../storage/import_auth_service.dart';
-import 'she_circle_screen.dart';
 import 'storage_advanced_screen.dart';
 import 'storage_import_screen.dart';
 import 'storage_nexuspouch_screen.dart';
@@ -19,7 +18,6 @@ enum StorageBagEntry {
   space,
   nas,
   import,
-  sheCircle,
   advanced,
 }
 
@@ -155,12 +153,6 @@ class StorageSpaceScreenState extends State<StorageSpaceScreen> {
         ? l10n.storage_alertPendingImports(s.pendingImportCount)
         : l10n.storage_importEntryHint;
 
-    final circleSubtitle = s == null
-        ? ''
-        : s.exchangeEnabled
-            ? l10n.storage_ownerPeerCount(s.ownerPeerCount)
-            : l10n.storage_autoSnapshotOff;
-
     final tiles = <Widget>[
       _entryTile(
         entry: StorageBagEntry.snapshots,
@@ -201,16 +193,6 @@ class StorageSpaceScreenState extends State<StorageSpaceScreen> {
         onTap: () => _selectOrOpen(
           StorageBagEntry.import,
           const StorageImportScreen(),
-        ),
-      ),
-      _entryTile(
-        entry: StorageBagEntry.sheCircle,
-        icon: Icons.favorite_outline,
-        title: l10n.storage_sheCircleSection,
-        subtitle: circleSubtitle,
-        onTap: () => _selectOrOpen(
-          StorageBagEntry.sheCircle,
-          const SheCircleScreen(),
         ),
       ),
       _entryTile(
@@ -294,8 +276,6 @@ extension StorageBagEntryX on StorageBagEntry {
         return const StorageNexuspouchScreen();
       case StorageBagEntry.import:
         return const StorageImportScreen();
-      case StorageBagEntry.sheCircle:
-        return const SheCircleScreen();
       case StorageBagEntry.advanced:
         return const StorageAdvancedScreen();
     }

@@ -26,6 +26,7 @@ import 'cli_command_select_screen.dart';
 import 'prompt_stack_config_screen.dart';
 import 'chat_screen.dart';
 import '../widgets/agent_model_config_card.dart';
+import 'she_circle_screen.dart';
 import '../utils/layout_utils.dart';
 import '../models/prompt_stack_config.dart';
 
@@ -904,6 +905,10 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
         _buildHeader(),
         const SizedBox(height: 24),
         _buildInfoCard(),
+        if (_agent.isShe && !_agent.isPeerAgent) ...[
+          const SizedBox(height: 16),
+          _buildSheCircleEntry(),
+        ],
         if (_isLocalMode) ...[
           const SizedBox(height: 16),
           _buildSkillsCard(),
@@ -1178,6 +1183,37 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  /// 她的朋友圈：仅本机 She 详情入口（已从储物袋迁出）。
+  Widget _buildSheCircleEntry() {
+    final l10n = AppLocalizations.of(context);
+    final colorScheme = Theme.of(context).colorScheme;
+    return Card(
+      elevation: 0,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12),
+        side: BorderSide(color: colorScheme.outlineVariant),
+      ),
+      child: ListTile(
+        leading: Icon(Icons.favorite_outline, color: colorScheme.primary),
+        title: Text(l10n.storage_sheCircleSection),
+        subtitle: Text(
+          l10n.storage_sheCircleHint,
+          maxLines: 2,
+          overflow: TextOverflow.ellipsis,
+          style: TextStyle(color: colorScheme.onSurfaceVariant),
+        ),
+        trailing: const Icon(Icons.chevron_right),
+        onTap: () {
+          Navigator.of(context).push(
+            MaterialPageRoute<void>(
+              builder: (_) => const SheCircleScreen(),
+            ),
+          );
+        },
       ),
     );
   }

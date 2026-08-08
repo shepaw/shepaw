@@ -28,7 +28,6 @@ import 'storage_import_screen.dart';
 import 'storage_advanced_screen.dart';
 import 'storage_nexuspouch_screen.dart';
 import 'storage_browser_screen.dart';
-import 'she_circle_screen.dart';
 import '../widgets/storage/storage_space_hub.dart';
 import '../utils/layout_utils.dart';
 import '../services/native_window_service.dart';
@@ -65,7 +64,6 @@ enum _RightPanelView {
   storagePeerBrowse,
   storageNas,
   storageImport,
-  storageSheCircle,
   storageAdvanced,
 }
 
@@ -226,7 +224,6 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
       _rightPanel == _RightPanelView.storagePeerBrowse ||
       _rightPanel == _RightPanelView.storageNas ||
       _rightPanel == _RightPanelView.storageImport ||
-      _rightPanel == _RightPanelView.storageSheCircle ||
       _rightPanel == _RightPanelView.storageAdvanced;
 
   bool get _storageLocalSelected =>
@@ -454,7 +451,6 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
         StorageBagEntry.space => _RightPanelView.storageSpaceManage,
         StorageBagEntry.nas => _RightPanelView.storageNas,
         StorageBagEntry.import => _RightPanelView.storageImport,
-        StorageBagEntry.sheCircle => _RightPanelView.storageSheCircle,
         StorageBagEntry.advanced => _RightPanelView.storageAdvanced,
       };
       _navGeneration++;
@@ -750,9 +746,6 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
       case _RightPanelView.storageImport:
         return const StorageImportScreen();
 
-      case _RightPanelView.storageSheCircle:
-        return const SheCircleScreen();
-
       case _RightPanelView.storageAdvanced:
         return const StorageAdvancedScreen();
 
@@ -794,12 +787,6 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
         icon: Icons.phonelink_ring_outlined,
         title: l10n.storage_importSection,
         subtitle: l10n.storage_importEntryHint,
-      ),
-      tile(
-        entry: StorageBagEntry.sheCircle,
-        icon: Icons.favorite_outline,
-        title: l10n.storage_sheCircleSection,
-        subtitle: '',
       ),
       tile(
         entry: StorageBagEntry.advanced,

@@ -22,8 +22,8 @@ import '../storage/store_protocol.dart' show TrustLevel;
 import 'remote_agent_detail_screen.dart';
 import 'storage_shared.dart';
 
-/// 她的朋友圈子页（储物袋重构 §子页）：与 owner 级设备交换蒸馏摘要。
-/// 业务逻辑与原 M8 区块一致。
+/// 她的朋友圈子页：与 owner 级设备交换蒸馏摘要。
+/// 入口在本机 She 详情页（已从储物袋迁出）。
 class SheCircleScreen extends StatefulWidget {
   const SheCircleScreen({super.key});
 
