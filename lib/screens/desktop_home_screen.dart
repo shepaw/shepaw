@@ -24,8 +24,6 @@ import 'contacts_screen.dart';
 import 'storage_space_screen.dart';
 import 'storage_snapshots_screen.dart';
 import 'storage_space_manage_screen.dart';
-import 'storage_import_screen.dart';
-import 'storage_advanced_screen.dart';
 import 'storage_nexuspouch_screen.dart';
 import 'storage_browser_screen.dart';
 import '../widgets/storage/storage_space_hub.dart';
@@ -63,8 +61,6 @@ enum _RightPanelView {
   storageSpaceManage,
   storagePeerBrowse,
   storageNas,
-  storageImport,
-  storageAdvanced,
 }
 
 /// Describes one item in the icon sidebar.
@@ -222,9 +218,7 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
       _rightPanel == _RightPanelView.storageSnapshots ||
       _rightPanel == _RightPanelView.storageSpaceManage ||
       _rightPanel == _RightPanelView.storagePeerBrowse ||
-      _rightPanel == _RightPanelView.storageNas ||
-      _rightPanel == _RightPanelView.storageImport ||
-      _rightPanel == _RightPanelView.storageAdvanced;
+      _rightPanel == _RightPanelView.storageNas;
 
   bool get _storageLocalSelected =>
       _leftMode == _LeftPanelMode.storage &&
@@ -450,8 +444,6 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
         StorageBagEntry.snapshots => _RightPanelView.storageSnapshots,
         StorageBagEntry.space => _RightPanelView.storageSpaceManage,
         StorageBagEntry.nas => _RightPanelView.storageNas,
-        StorageBagEntry.import => _RightPanelView.storageImport,
-        StorageBagEntry.advanced => _RightPanelView.storageAdvanced,
       };
       _navGeneration++;
     });
@@ -743,12 +735,6 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
       case _RightPanelView.storageNas:
         return const StorageNexuspouchScreen();
 
-      case _RightPanelView.storageImport:
-        return const StorageImportScreen();
-
-      case _RightPanelView.storageAdvanced:
-        return const StorageAdvancedScreen();
-
       case _RightPanelView.empty:
         return _buildEmptyState();
     }
@@ -781,18 +767,6 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
         icon: Icons.backup_outlined,
         title: l10n.storage_entrySnapshots,
         subtitle: '',
-      ),
-      tile(
-        entry: StorageBagEntry.import,
-        icon: Icons.phonelink_ring_outlined,
-        title: l10n.storage_importSection,
-        subtitle: l10n.storage_importEntryHint,
-      ),
-      tile(
-        entry: StorageBagEntry.advanced,
-        icon: Icons.settings_suggest_outlined,
-        title: l10n.storage_entryAdvanced,
-        subtitle: l10n.storage_advancedEntryHint,
       ),
     ];
   }

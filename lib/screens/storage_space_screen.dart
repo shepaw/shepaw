@@ -4,9 +4,6 @@ import 'package:flutter/material.dart';
 
 import '../l10n/app_localizations.dart';
 import '../storage/handoff_notify_service.dart';
-import '../storage/import_auth_service.dart';
-import 'storage_advanced_screen.dart';
-import 'storage_import_screen.dart';
 import 'storage_nexuspouch_screen.dart';
 import 'storage_shared.dart';
 import 'storage_snapshots_screen.dart';
@@ -17,8 +14,6 @@ enum StorageBagEntry {
   snapshots,
   space,
   nas,
-  import,
-  advanced,
 }
 
 /// 储物袋总览页（重构：原 7 区块单页堆叠 → 总览仪表盘 + 子页）。
@@ -43,8 +38,6 @@ class StorageSpaceScreen extends StatefulWidget {
 
 class StorageSpaceScreenState extends State<StorageSpaceScreen> {
   late Future<StorageOverviewSummary> _future;
-  StreamSubscription<ImportRequest>? _importCreatedSub;
-  StreamSubscription<ImportGrant>? _importGrantSub;
   StreamSubscription<void>? _handoffSub;
 
   @override
@@ -52,12 +45,6 @@ class StorageSpaceScreenState extends State<StorageSpaceScreen> {
     super.initState();
     _future = loadStorageOverview();
     HandoffNotifyService.instance.start();
-    _importCreatedSub = ImportRequestBus.instance.onCreated.listen((_) {
-      if (mounted) unawaited(_refresh());
-    });
-    _importGrantSub = ImportGrantBus.instance.onReceived.listen((_) {
-      if (mounted) unawaited(_refresh());
-    });
     _handoffSub = HandoffNotifyService.instance.onChanged.listen((_) {
       if (mounted) setState(() {});
     });
@@ -65,8 +52,6 @@ class StorageSpaceScreenState extends State<StorageSpaceScreen> {
 
   @override
   void dispose() {
-    _importCreatedSub?.cancel();
-    _importGrantSub?.cancel();
     _handoffSub?.cancel();
     super.dispose();
   }
@@ -149,10 +134,6 @@ class StorageSpaceScreenState extends State<StorageSpaceScreen> {
         : '${fmtStorageBytes(s.myTotalBytes)}'
             '${s.unsyncedCount > 0 ? ' · ${l10n.storage_unsynced(s.unsyncedCount, fmtStorageBytes(s.unsyncedBytes))}' : ''}';
 
-    final importSubtitle = s != null && s.pendingImportCount > 0
-        ? l10n.storage_alertPendingImports(s.pendingImportCount)
-        : l10n.storage_importEntryHint;
-
     final tiles = <Widget>[
       _entryTile(
         entry: StorageBagEntry.snapshots,
@@ -182,27 +163,6 @@ class StorageSpaceScreenState extends State<StorageSpaceScreen> {
         onTap: () => _selectOrOpen(
           StorageBagEntry.nas,
           const StorageNexuspouchScreen(),
-        ),
-      ),
-      _entryTile(
-        entry: StorageBagEntry.import,
-        icon: Icons.phonelink_ring_outlined,
-        title: l10n.storage_importSection,
-        subtitle: importSubtitle,
-        alert: s != null && s.pendingImportCount > 0,
-        onTap: () => _selectOrOpen(
-          StorageBagEntry.import,
-          const StorageImportScreen(),
-        ),
-      ),
-      _entryTile(
-        entry: StorageBagEntry.advanced,
-        icon: Icons.settings_suggest_outlined,
-        title: l10n.storage_entryAdvanced,
-        subtitle: l10n.storage_advancedEntryHint,
-        onTap: () => _selectOrOpen(
-          StorageBagEntry.advanced,
-          const StorageAdvancedScreen(),
         ),
       ),
     ];
@@ -274,10 +234,6 @@ extension StorageBagEntryX on StorageBagEntry {
         return const StorageSpaceManageScreen();
       case StorageBagEntry.nas:
         return const StorageNexuspouchScreen();
-      case StorageBagEntry.import:
-        return const StorageImportScreen();
-      case StorageBagEntry.advanced:
-        return const StorageAdvancedScreen();
     }
   }
 }
@@ -509,12 +465,6 @@ class StorageOverviewBody extends StatelessWidget {
       alerts.add((
         l10n.storage_unsyncedWarning,
         StorageBagEntry.space,
-      ));
-    }
-    if (s.pendingImportCount > 0) {
-      alerts.add((
-        l10n.storage_alertPendingImports(s.pendingImportCount),
-        StorageBagEntry.import,
       ));
     }
     final handoffCount = HandoffNotifyService.instance.count;

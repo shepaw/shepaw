@@ -88,7 +88,6 @@ class StorageOverviewSummary {
     required this.stats,
     required this.schedStatus,
     required this.snapshotCount,
-    required this.pendingImportCount,
     required this.exchangeEnabled,
     required this.ownerPeerCount,
   });
@@ -97,7 +96,6 @@ class StorageOverviewSummary {
   final Map<String, dynamic>? stats;
   final ScheduledSnapshotStatus? schedStatus;
   final int snapshotCount;
-  final int pendingImportCount;
   final bool exchangeEnabled;
   final int ownerPeerCount;
 
@@ -155,13 +153,6 @@ Future<StorageOverviewSummary> loadStorageOverview() async {
   final schedStatus = await ScheduledSnapshotService.instance.status();
   final snapshots = await SnapshotService.instance.listSnapshots();
 
-  var pendingImportCount = 0;
-  final pending = await StoreService.instance
-      .call(StoreFrame(op: StoreOp.importPending, payload: {}));
-  if (pending != null && pending['requests'] is List) {
-    pendingImportCount = (pending['requests'] as List).length;
-  }
-
   final exchange = await ExchangeSettings.load();
   final peers = await PeerStorageService().loadAllPeers();
   final ownerPeerCount =
@@ -172,7 +163,6 @@ Future<StorageOverviewSummary> loadStorageOverview() async {
     stats: stats,
     schedStatus: schedStatus,
     snapshotCount: snapshots.length,
-    pendingImportCount: pendingImportCount,
     exchangeEnabled: exchange.enabled,
     ownerPeerCount: ownerPeerCount,
   );

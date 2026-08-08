@@ -31,8 +31,6 @@ import 'storage/folder_binding_service.dart';
 import 'storage/scheduled_snapshot_service.dart';
 import 'storage/store_service.dart';
 import 'storage/sync_engine.dart';
-import 'storage/import_request_notifier.dart';
-import 'storage/import_grant_notifier.dart';
 import 'services/approval/pending_approval_hub.dart';
 import 'services/approval/pending_approval_item.dart';
 import 'services/approval/approval_reachability_notifier.dart';
@@ -117,8 +115,6 @@ class AppBootstrap {
     NetworkMonitorService().init();
     await NotificationService().init();
     UpdateNotificationService().init(navigatorKey: navigatorKey);
-    ImportRequestNotifier.instance.init(navigatorKey: navigatorKey);
-    ImportGrantNotifier.instance.init(navigatorKey: navigatorKey);
     ChatNavigationService.instance.init(navigatorKey: navigatorKey);
     _wirePlanApprovalReachability();
     if (getIt.isRegistered<ComposerDraftService>()) {
