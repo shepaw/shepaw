@@ -99,15 +99,6 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
     with SingleTickerProviderStateMixin {
   static const _listLimit = 5000;
   static const _folderMarker = '__folder__';
-  static const _menuNewFolder = Object();
-  static const _menuUploadLocal = Object();
-  static const _menuNewDocument = Object();
-  static const _menuNewSpreadsheet = Object();
-  static const _entryPreview = Object();
-  static const _entryExport = Object();
-  static const _entryVersions = Object();
-  static const _entryManifest = Object();
-  static const _entryDelete = Object();
 
   /// Align with chat store-open confirm threshold.
   static const _confirmExportBytes = StoreOpenService.confirmMaterializeBytes;
@@ -425,16 +416,19 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
   }
 
   void _handleEntryAction(_BrowsedFile file, Object? action) {
-    if (action == _entryPreview) {
-      _previewFile(file);
-    } else if (action == _entryExport) {
-      _exportFile(file);
-    } else if (action == _entryVersions) {
-      _showVersions(file);
-    } else if (action == _entryManifest) {
-      _showManifest(file);
-    } else if (action == _entryDelete) {
-      _deleteFile(file);
+    switch (action) {
+      case _EntryAction.preview:
+        _previewFile(file);
+      case _EntryAction.export:
+        _exportFile(file);
+      case _EntryAction.versions:
+        _showVersions(file);
+      case _EntryAction.manifest:
+        _showManifest(file);
+      case _EntryAction.delete:
+        _deleteFile(file);
+      default:
+        break;
     }
   }
 
@@ -442,24 +436,24 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
     final errorColor = Theme.of(context).colorScheme.error;
     return [
       PopupMenuItem(
-        value: _entryPreview,
+        value: _EntryAction.preview,
         child: Text(l10n.storage_browserPreview),
       ),
       PopupMenuItem(
-        value: _entryExport,
+        value: _EntryAction.export,
         child: Text(l10n.storage_browserExport),
       ),
       PopupMenuItem(
-        value: _entryVersions,
+        value: _EntryAction.versions,
         child: Text(l10n.storage_browserVersions),
       ),
       PopupMenuItem(
-        value: _entryManifest,
+        value: _EntryAction.manifest,
         child: Text(l10n.storage_browserManifest),
       ),
       if (!_readOnly)
         PopupMenuItem(
-          value: _entryDelete,
+          value: _EntryAction.delete,
           child: Text(
             l10n.storage_browserDelete,
             style: TextStyle(color: errorColor),
@@ -830,23 +824,18 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
   }
 
   void _handleMobileMoreSelected(dynamic value) {
-    if (value == _menuNewFolder) {
-      _promptNewFolder();
-      return;
+    switch (value) {
+      case _CreateMenuAction.newFolder:
+        _promptNewFolder();
+      case _CreateMenuAction.uploadLocal:
+        _uploadLocalFiles();
+      case _CreateMenuAction.newDocument:
+        _createNewDocument(spreadsheet: false);
+      case _CreateMenuAction.newSpreadsheet:
+        _createNewDocument(spreadsheet: true);
+      default:
+        widget.onExtraMenuSelected?.call(value);
     }
-    if (value == _menuUploadLocal) {
-      _uploadLocalFiles();
-      return;
-    }
-    if (value == _menuNewDocument) {
-      _createNewDocument(spreadsheet: false);
-      return;
-    }
-    if (value == _menuNewSpreadsheet) {
-      _createNewDocument(spreadsheet: true);
-      return;
-    }
-    widget.onExtraMenuSelected?.call(value);
   }
 
   String _fmtBytes(int n) {
@@ -1160,7 +1149,7 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
         itemBuilder: (ctx) => [
           if (includeCreate) ...[
             PopupMenuItem(
-              value: _menuNewFolder,
+              value: _CreateMenuAction.newFolder,
               child: Row(
                 children: [
                   Icon(Icons.create_new_folder_outlined, size: 20, color: muted),
@@ -1170,7 +1159,7 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
               ),
             ),
             PopupMenuItem(
-              value: _menuUploadLocal,
+              value: _CreateMenuAction.uploadLocal,
               child: Row(
                 children: [
                   Icon(Icons.file_upload_outlined, size: 20, color: muted),
@@ -1180,7 +1169,7 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
               ),
             ),
             PopupMenuItem(
-              value: _menuNewDocument,
+              value: _CreateMenuAction.newDocument,
               child: Row(
                 children: [
                   Icon(Icons.note_add_outlined, size: 20, color: muted),
@@ -1190,7 +1179,7 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
               ),
             ),
             PopupMenuItem(
-              value: _menuNewSpreadsheet,
+              value: _CreateMenuAction.newSpreadsheet,
               child: Row(
                 children: [
                   Icon(Icons.grid_on_outlined, size: 20, color: muted),
@@ -1743,4 +1732,19 @@ class _LocalFileSearchDelegate extends SearchDelegate<void> {
       },
     );
   }
+}
+
+enum _CreateMenuAction {
+  newFolder,
+  uploadLocal,
+  newDocument,
+  newSpreadsheet,
+}
+
+enum _EntryAction {
+  preview,
+  export,
+  versions,
+  manifest,
+  delete,
 }
