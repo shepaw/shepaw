@@ -25,8 +25,8 @@ enum StorageBagEntry {
 
 /// 储物袋总览页（重构：原 7 区块单页堆叠 → 总览仪表盘 + 子页）。
 ///
-/// 移动端：用量总览 + 告警 + 5 个功能入口（push 子页）。
-/// 桌面 embedded：仅入口列表，选中回调由父级在右侧展示详情。
+/// 移动端：用量总览 + 告警 + 功能入口（push 子页）。
+/// 桌面储物袋中间栏已改为 [StorageSpaceHub] 设备列表；本页仍可作总览/告警入口。
 class StorageSpaceScreen extends StatefulWidget {
   final bool embedded;
   final StorageBagEntry? selectedEntry;

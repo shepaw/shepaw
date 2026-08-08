@@ -12,21 +12,53 @@ import '../../screens/storage_nexuspouch_screen.dart';
 import '../../screens/storage_shared.dart';
 import '../../screens/storage_space_settings_screen.dart';
 import '../../storage/device_identity.dart';
+import '../../storage/store_protocol.dart';
 import '../../storage/store_service.dart';
 import '../../storage/sync_engine.dart';
 import '../../theme/app_theme.dart';
 
-/// 移动端储物袋空间：扁平展示本机 + 配对共享设备，点击直接进入对应空间。
+/// 储物袋空间：扁平展示本机 + 配对共享设备。
+///
+/// 移动端：点击 push 进入对应空间。
+/// 桌面 [embedded]：选中回调由父级在右侧 master-detail 展示。
 class StorageSpaceHub extends StatefulWidget {
   final int? localUsedBytes;
+  final bool embedded;
 
-  const StorageSpaceHub({super.key, this.localUsedBytes});
+  /// Embedded：是否高亮「本机」。
+  final bool localSelected;
+
+  /// Embedded：当前选中的配对 peer id（[PairedPeer.id]）。
+  final String? selectedPeerId;
+
+  /// Embedded：是否高亮「共享储物袋」。
+  final bool nasSelected;
+
+  final VoidCallback? onLocalSelected;
+  final ValueChanged<PairedPeer>? onPeerSelected;
+  final VoidCallback? onNasSelected;
+
+  /// 追加在列表底部的入口（桌面次级功能：备份 / 导入等）。
+  final List<Widget> footer;
+
+  const StorageSpaceHub({
+    super.key,
+    this.localUsedBytes,
+    this.embedded = false,
+    this.localSelected = false,
+    this.selectedPeerId,
+    this.nasSelected = false,
+    this.onLocalSelected,
+    this.onPeerSelected,
+    this.onNasSelected,
+    this.footer = const [],
+  });
 
   @override
-  State<StorageSpaceHub> createState() => _StorageSpaceHubState();
+  State<StorageSpaceHub> createState() => StorageSpaceHubState();
 }
 
-class _StorageSpaceHubState extends State<StorageSpaceHub> {
+class StorageSpaceHubState extends State<StorageSpaceHub> {
   static const double _avatarSize = 36;
 
   List<PairedPeer> _peers = const [];
@@ -34,19 +66,30 @@ class _StorageSpaceHubState extends State<StorageSpaceHub> {
   String _selfId = '';
   bool _loading = true;
   String? _busyFp;
+  int? _usedBytes;
   StreamSubscription<dynamic>? _peerEventsSub;
   StreamSubscription<void>? _peerListSub;
 
   @override
   void initState() {
     super.initState();
+    _usedBytes = widget.localUsedBytes;
     _peerEventsSub = PeerConnectionManager.instance.events.listen((_) {
-      unawaited(_reload());
+      unawaited(reload());
     });
     _peerListSub = PeerConnectionManager.instance.peerListChanged.listen((_) {
-      unawaited(_reload());
+      unawaited(reload());
     });
-    unawaited(_reload());
+    unawaited(reload());
+  }
+
+  @override
+  void didUpdateWidget(covariant StorageSpaceHub oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.localUsedBytes != oldWidget.localUsedBytes &&
+        widget.localUsedBytes != null) {
+      _usedBytes = widget.localUsedBytes;
+    }
   }
 
   @override
@@ -56,21 +99,39 @@ class _StorageSpaceHubState extends State<StorageSpaceHub> {
     super.dispose();
   }
 
-  Future<void> _reload() async {
+  Future<void> reload() async {
     try {
       await PeerConnectionManager.instance.start();
       final peers = await PeerConnectionManager.instance.getAllPeers();
       final master = await StoreService.instance.masterDeviceId();
       final self = await DeviceIdentity.deviceId();
+      final used = widget.localUsedBytes ?? await _loadUsedBytes(self);
       if (!mounted) return;
       setState(() {
         _peers = _sortedPeers(peers);
         _masterId = master;
         _selfId = self;
+        _usedBytes = used;
         _loading = false;
       });
     } catch (_) {
       if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  Future<int?> _loadUsedBytes(String selfId) async {
+    try {
+      final store = await StoreService.instance.localStore();
+      final stats = await store.stats();
+      final devices = (stats['devices'] as Map?)?.cast<String, dynamic>() ?? {};
+      final mine = (devices[selfId] as Map?)?.cast<String, dynamic>() ?? {};
+      var total = 0;
+      for (final space in StoreSpace.all) {
+        total += mine[space] as int? ?? 0;
+      }
+      return total;
+    } catch (_) {
+      return null;
     }
   }
 
@@ -93,15 +154,32 @@ class _StorageSpaceHubState extends State<StorageSpaceHub> {
   bool get _selfIsMaster =>
       _masterId != null && _masterId!.isNotEmpty && _masterId == _selfId;
 
+  void _onLocalTap() {
+    if (_selfId.isEmpty) return;
+    if (widget.embedded) {
+      widget.onLocalSelected?.call();
+      return;
+    }
+    unawaited(_browseLocal());
+  }
+
   Future<void> _browseLocal() async {
     await Navigator.of(context).push<void>(
       MaterialPageRoute<void>(
         builder: (_) => StorageSpaceManageBrowser(
-          usedBytes: widget.localUsedBytes,
+          usedBytes: _usedBytes,
         ),
       ),
     );
-    if (mounted) unawaited(_reload());
+    if (mounted) unawaited(reload());
+  }
+
+  void _onPeerTap(PairedPeer peer) {
+    if (widget.embedded) {
+      widget.onPeerSelected?.call(peer);
+      return;
+    }
+    _browsePeer(peer);
   }
 
   void _browsePeer(PairedPeer peer) {
@@ -113,6 +191,18 @@ class _StorageSpaceHubState extends State<StorageSpaceHub> {
           peerId: peer.id,
           readOnly: true,
         ),
+      ),
+    );
+  }
+
+  void _onNasTap() {
+    if (widget.embedded) {
+      widget.onNasSelected?.call();
+      return;
+    }
+    Navigator.of(context).push<void>(
+      MaterialPageRoute<void>(
+        builder: (_) => const StorageNexuspouchScreen(),
       ),
     );
   }
@@ -149,7 +239,7 @@ class _StorageSpaceHubState extends State<StorageSpaceHub> {
     try {
       await StoreService.instance.setMasterDeviceId(deviceId);
       unawaited(SyncEngine.instance.syncNow());
-      await _reload();
+      await reload();
       if (mounted) {
         storageToast(context, l10n.storage_sharedMasterSet(name));
       }
@@ -191,7 +281,7 @@ class _StorageSpaceHubState extends State<StorageSpaceHub> {
     if (!mounted || action == null) return;
     switch (action) {
       case 'browse':
-        _browsePeer(peer);
+        _onPeerTap(peer);
       case 'master':
         await _confirmSetMaster(
           deviceId: peer.fingerprint,
@@ -202,7 +292,7 @@ class _StorageSpaceHubState extends State<StorageSpaceHub> {
 
   Future<void> _openPairing() async {
     final peer = await PeerPairingScreen.show(context);
-    if (peer != null) await _reload();
+    if (peer != null) await reload();
   }
 
   Widget _masterChip(AppLocalizations l10n, ColorScheme scheme) {
@@ -225,11 +315,14 @@ class _StorageSpaceHubState extends State<StorageSpaceHub> {
 
   Widget _buildLocalRow(AppLocalizations l10n) {
     final colorScheme = Theme.of(context).colorScheme;
-    final used = widget.localUsedBytes;
+    final used = _usedBytes;
+    final selected = widget.embedded && widget.localSelected;
     return Material(
-      color: Colors.transparent,
+      color: selected
+          ? colorScheme.primary.withValues(alpha: 0.08)
+          : Colors.transparent,
       child: InkWell(
-        onTap: _selfId.isEmpty ? null : _browseLocal,
+        onTap: _selfId.isEmpty ? null : _onLocalTap,
         onLongPress: !_selfIsMaster && _selfId.isNotEmpty
             ? () => _confirmSetMaster(
                   deviceId: _selfId,
@@ -248,8 +341,10 @@ class _StorageSpaceHubState extends State<StorageSpaceHub> {
                   borderRadius: BorderRadius.circular(8),
                 ),
                 alignment: Alignment.center,
-                child: const Icon(
-                  Icons.phone_android_outlined,
+                child: Icon(
+                  widget.embedded
+                      ? Icons.computer_outlined
+                      : Icons.phone_android_outlined,
                   size: 20,
                   color: AppColors.primary,
                 ),
@@ -289,7 +384,7 @@ class _StorageSpaceHubState extends State<StorageSpaceHub> {
                   ],
                 ),
               ),
-              const Icon(Icons.chevron_right, size: 20),
+              if (!widget.embedded) const Icon(Icons.chevron_right, size: 20),
             ],
           ),
         ),
@@ -302,11 +397,15 @@ class _StorageSpaceHubState extends State<StorageSpaceHub> {
     final isConnected = _isConnected(peer);
     final isMaster = _masterId == peer.fingerprint;
     final busy = _busyFp == peer.fingerprint;
+    final selected =
+        widget.embedded && widget.selectedPeerId == peer.id;
 
     return Material(
-      color: Colors.transparent,
+      color: selected
+          ? colorScheme.primary.withValues(alpha: 0.08)
+          : Colors.transparent,
       child: InkWell(
-        onTap: busy ? null : () => _browsePeer(peer),
+        onTap: busy ? null : () => _onPeerTap(peer),
         onLongPress: busy ? null : () => _showPeerActions(peer),
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
@@ -375,7 +474,7 @@ class _StorageSpaceHubState extends State<StorageSpaceHub> {
                   height: 20,
                   child: CircularProgressIndicator(strokeWidth: 2),
                 )
-              else
+              else if (!widget.embedded)
                 const Icon(Icons.chevron_right, size: 20),
             ],
           ),
@@ -415,15 +514,27 @@ class _StorageSpaceHubState extends State<StorageSpaceHub> {
     );
   }
 
-  @override
-  Widget build(BuildContext context) {
-    final l10n = AppLocalizations.of(context);
+  Widget _buildNasTile(AppLocalizations l10n) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final selected = widget.embedded && widget.nasSelected;
+    return ListTile(
+      selected: selected,
+      selectedTileColor: colorScheme.primary.withValues(alpha: 0.08),
+      leading: Icon(Icons.lan_outlined, color: colorScheme.primary),
+      title: Text(l10n.storage_entryNas),
+      subtitle: Text(l10n.storage_nasEntryHint),
+      trailing: widget.embedded ? null : const Icon(Icons.chevron_right, size: 20),
+      onTap: _onNasTap,
+    );
+  }
+
+  Widget _buildBody(AppLocalizations l10n) {
     if (_loading) {
       return const Center(child: CircularProgressIndicator());
     }
 
     return RefreshIndicator(
-      onRefresh: _reload,
+      onRefresh: reload,
       child: ListView(
         physics: const AlwaysScrollableScrollPhysics(),
         children: [
@@ -433,22 +544,26 @@ class _StorageSpaceHubState extends State<StorageSpaceHub> {
           else
             for (final peer in _peers) _buildPeerRow(peer, l10n),
           const SizedBox(height: 8),
-          ListTile(
-            leading: const Icon(Icons.lan_outlined),
-            title: Text(l10n.storage_entryNas),
-            subtitle: Text(l10n.storage_nasEntryHint),
-            trailing: const Icon(Icons.chevron_right, size: 20),
-            onTap: () {
-              Navigator.of(context).push<void>(
-                MaterialPageRoute<void>(
-                  builder: (_) => const StorageNexuspouchScreen(),
-                ),
-              );
-            },
-          ),
+          _buildNasTile(l10n),
+          ...widget.footer,
           const SizedBox(height: 24),
         ],
       ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
+    final body = _buildBody(l10n);
+    if (!widget.embedded) return body;
+
+    return Scaffold(
+      appBar: AppBar(
+        title: Text(l10n.storage_title),
+        elevation: 0,
+      ),
+      body: body,
     );
   }
 }

@@ -27,7 +27,9 @@ import 'storage_space_manage_screen.dart';
 import 'storage_import_screen.dart';
 import 'storage_advanced_screen.dart';
 import 'storage_nexuspouch_screen.dart';
+import 'storage_browser_screen.dart';
 import 'she_circle_screen.dart';
+import '../widgets/storage/storage_space_hub.dart';
 import '../utils/layout_utils.dart';
 import '../services/native_window_service.dart';
 import '../services/chat_navigation_service.dart';
@@ -60,6 +62,7 @@ enum _RightPanelView {
   groupWorkflow,
   storageSnapshots,
   storageSpaceManage,
+  storagePeerBrowse,
   storageNas,
   storageImport,
   storageSheCircle,
@@ -104,6 +107,7 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
         PeerConnectionManager.instance.peerListChanged.listen((_) {
       _resetIfSelectedPeerRemoved(_selected?.peerId);
       _resetIfContactPeerRemoved();
+      _resetIfStoragePeerRemoved();
     });
   }
 
@@ -136,6 +140,21 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
     });
   }
 
+  void _resetIfStoragePeerRemoved() {
+    final peerId = _storagePeer?.id;
+    if (peerId == null || _rightPanel != _RightPanelView.storagePeerBrowse) {
+      return;
+    }
+    PeerConnectionManager.instance.getAllPeers().then((peers) {
+      if (mounted &&
+          _storagePeer?.id == peerId &&
+          !peers.any((p) => p.id == peerId)) {
+        _showStorage();
+        _reloadStorage();
+      }
+    });
+  }
+
   @override
   void dispose() {
     ChatNavigationService.instance.setDesktopHandler(null);
@@ -151,8 +170,8 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
   final GlobalKey<HomeScreenState> _homeKey = GlobalKey<HomeScreenState>();
   final GlobalKey<ContactsScreenState> _contactsKey =
       GlobalKey<ContactsScreenState>();
-  final GlobalKey<StorageSpaceScreenState> _storageKey =
-      GlobalKey<StorageSpaceScreenState>();
+  final GlobalKey<StorageSpaceHubState> _storageKey =
+      GlobalKey<StorageSpaceHubState>();
 
   _LeftPanelMode _leftMode = _LeftPanelMode.conversations;
   _RightPanelView _rightPanel = _RightPanelView.empty;
@@ -160,6 +179,7 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
   RemoteAgent? _contactAgent;
   Channel? _contactGroup;
   PairedPeer? _contactPeer;
+  PairedPeer? _storagePeer;
   StorageBagEntry? _storageEntry;
 
   String? get _selectedContactId {
@@ -203,10 +223,24 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
   bool get _isStorageDetailPanel =>
       _rightPanel == _RightPanelView.storageSnapshots ||
       _rightPanel == _RightPanelView.storageSpaceManage ||
+      _rightPanel == _RightPanelView.storagePeerBrowse ||
       _rightPanel == _RightPanelView.storageNas ||
       _rightPanel == _RightPanelView.storageImport ||
       _rightPanel == _RightPanelView.storageSheCircle ||
       _rightPanel == _RightPanelView.storageAdvanced;
+
+  bool get _storageLocalSelected =>
+      _leftMode == _LeftPanelMode.storage &&
+      _rightPanel == _RightPanelView.storageSpaceManage;
+
+  bool get _storageNasSelected =>
+      _leftMode == _LeftPanelMode.storage &&
+      _rightPanel == _RightPanelView.storageNas;
+
+  String? get _storageSelectedPeerId =>
+      _rightPanel == _RightPanelView.storagePeerBrowse
+          ? _storagePeer?.id
+          : null;
 
   bool get _isContactDetailPanel =>
       _rightPanel == _RightPanelView.contactAgent ||
@@ -220,6 +254,7 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
       _selected = selection;
       _clearContactSelectionFields();
       _storageEntry = null;
+      _storagePeer = null;
       _rightPanel = _RightPanelView.chat;
       _navGeneration++;
     });
@@ -336,6 +371,7 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
       _leftMode = _LeftPanelMode.conversations;
       _clearContactSelectionFields();
       _storageEntry = null;
+      _storagePeer = null;
       _selected = null;
       _rightPanel = _RightPanelView.empty;
       _navGeneration++;
@@ -348,6 +384,7 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
       _selected = null;
       _clearContactSelectionFields();
       _storageEntry = null;
+      _storagePeer = null;
       _rightPanel = _RightPanelView.empty;
       _navGeneration++;
     });
@@ -358,8 +395,9 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
       _leftMode = _LeftPanelMode.storage;
       _selected = null;
       _clearContactSelectionFields();
-      // 默认直接展示用量详情（空间与同步），无需再点一次。
-      _storageEntry = StorageBagEntry.space;
+      // 默认选中本机，与移动端「本机置顶」对齐。
+      _storageEntry = null;
+      _storagePeer = null;
       _rightPanel = _RightPanelView.storageSpaceManage;
       _navGeneration++;
     });
@@ -377,7 +415,30 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
       }
       if (!_isStorageDetailPanel) {
         _storageEntry = null;
+        _storagePeer = null;
       }
+      _navGeneration++;
+    });
+  }
+
+  void _onStorageLocalSelected() {
+    setState(() {
+      _storagePeer = null;
+      _storageEntry = null;
+      _selected = null;
+      _clearContactSelectionFields();
+      _rightPanel = _RightPanelView.storageSpaceManage;
+      _navGeneration++;
+    });
+  }
+
+  void _onStoragePeerSelected(PairedPeer peer) {
+    setState(() {
+      _storagePeer = peer;
+      _storageEntry = null;
+      _selected = null;
+      _clearContactSelectionFields();
+      _rightPanel = _RightPanelView.storagePeerBrowse;
       _navGeneration++;
     });
   }
@@ -385,6 +446,7 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
   void _onStorageEntrySelected(StorageBagEntry entry) {
     setState(() {
       _storageEntry = entry;
+      _storagePeer = null;
       _selected = null;
       _clearContactSelectionFields();
       _rightPanel = switch (entry) {
@@ -405,6 +467,7 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
       _contactGroup = null;
       _contactPeer = null;
       _storageEntry = null;
+      _storagePeer = null;
       _selected = null;
       _rightPanel = _RightPanelView.contactAgent;
       _navGeneration++;
@@ -417,6 +480,7 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
       _contactAgent = null;
       _contactPeer = null;
       _storageEntry = null;
+      _storagePeer = null;
       _selected = null;
       _rightPanel = _RightPanelView.contactGroup;
       _navGeneration++;
@@ -429,6 +493,7 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
       _contactAgent = null;
       _contactGroup = null;
       _storageEntry = null;
+      _storagePeer = null;
       _selected = null;
       _rightPanel = _RightPanelView.contactPeer;
       _navGeneration++;
@@ -467,11 +532,17 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
                   onCreateGroup: () => _showPanel(_RightPanelView.createGroup),
                   onPairDevice: () => _showPanel(_RightPanelView.pairDevice),
                 ),
-              _LeftPanelMode.storage => StorageSpaceScreen(
+              _LeftPanelMode.storage => StorageSpaceHub(
                   key: _storageKey,
                   embedded: true,
-                  selectedEntry: _storageEntry,
-                  onEntrySelected: _onStorageEntrySelected,
+                  localSelected: _storageLocalSelected,
+                  selectedPeerId: _storageSelectedPeerId,
+                  nasSelected: _storageNasSelected,
+                  onLocalSelected: _onStorageLocalSelected,
+                  onPeerSelected: _onStoragePeerSelected,
+                  onNasSelected: () =>
+                      _onStorageEntrySelected(StorageBagEntry.nas),
+                  footer: _buildStorageToolFooter(),
                 ),
             },
           ),
@@ -662,6 +733,17 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
       case _RightPanelView.storageSpaceManage:
         return const StorageSpaceManageScreen();
 
+      case _RightPanelView.storagePeerBrowse:
+        final peer = _storagePeer;
+        if (peer == null) return _buildEmptyState();
+        return StorageBrowserScreen(
+          key: ValueKey('storage_peer_${peer.id}'),
+          deviceId: peer.fingerprint,
+          deviceName: peer.deviceName,
+          peerId: peer.id,
+          readOnly: true,
+        );
+
       case _RightPanelView.storageNas:
         return const StorageNexuspouchScreen();
 
@@ -677,6 +759,55 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
       case _RightPanelView.empty:
         return _buildEmptyState();
     }
+  }
+
+  List<Widget> _buildStorageToolFooter() {
+    final l10n = AppLocalizations.of(context);
+    final colorScheme = Theme.of(context).colorScheme;
+
+    Widget tile({
+      required StorageBagEntry entry,
+      required IconData icon,
+      required String title,
+      required String subtitle,
+    }) {
+      final selected = _storageEntry == entry;
+      return ListTile(
+        selected: selected,
+        selectedTileColor: colorScheme.primary.withValues(alpha: 0.08),
+        leading: Icon(icon, color: colorScheme.primary),
+        title: Text(title),
+        subtitle: subtitle.isEmpty ? null : Text(subtitle),
+        onTap: () => _onStorageEntrySelected(entry),
+      );
+    }
+
+    return [
+      tile(
+        entry: StorageBagEntry.snapshots,
+        icon: Icons.backup_outlined,
+        title: l10n.storage_entrySnapshots,
+        subtitle: '',
+      ),
+      tile(
+        entry: StorageBagEntry.import,
+        icon: Icons.phonelink_ring_outlined,
+        title: l10n.storage_importSection,
+        subtitle: l10n.storage_importEntryHint,
+      ),
+      tile(
+        entry: StorageBagEntry.sheCircle,
+        icon: Icons.favorite_outline,
+        title: l10n.storage_sheCircleSection,
+        subtitle: '',
+      ),
+      tile(
+        entry: StorageBagEntry.advanced,
+        icon: Icons.settings_suggest_outlined,
+        title: l10n.storage_entryAdvanced,
+        subtitle: l10n.storage_advancedEntryHint,
+      ),
+    ];
   }
 
   /// WeChat-style narrow icon sidebar on the far left.
