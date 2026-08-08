@@ -8,8 +8,8 @@ import '../../peer/screens/peer_pairing_screen.dart';
 import '../../peer/services/peer_connection_manager.dart';
 import '../../peer/widgets/peer_device_icon.dart';
 import '../../screens/storage_browser_screen.dart';
-import '../../screens/storage_nexuspouch_screen.dart';
 import '../../screens/storage_shared.dart';
+import '../../screens/storage_snapshots_screen.dart';
 import '../../screens/storage_space_settings_screen.dart';
 import '../../storage/device_identity.dart';
 import '../../storage/store_protocol.dart';
@@ -31,14 +31,14 @@ class StorageSpaceHub extends StatefulWidget {
   /// Embedded：当前选中的配对 peer id（[PairedPeer.id]）。
   final String? selectedPeerId;
 
-  /// Embedded：是否高亮「共享储物袋」。
-  final bool nasSelected;
+  /// Embedded：是否高亮「备份与恢复」。
+  final bool snapshotsSelected;
 
   final VoidCallback? onLocalSelected;
   final ValueChanged<PairedPeer>? onPeerSelected;
-  final VoidCallback? onNasSelected;
+  final VoidCallback? onSnapshotsSelected;
 
-  /// 追加在列表底部的入口（桌面次级功能：备份 / 导入等）。
+  /// 追加在列表底部的入口。
   final List<Widget> footer;
 
   const StorageSpaceHub({
@@ -47,10 +47,10 @@ class StorageSpaceHub extends StatefulWidget {
     this.embedded = false,
     this.localSelected = false,
     this.selectedPeerId,
-    this.nasSelected = false,
+    this.snapshotsSelected = false,
     this.onLocalSelected,
     this.onPeerSelected,
-    this.onNasSelected,
+    this.onSnapshotsSelected,
     this.footer = const [],
   });
 
@@ -195,14 +195,14 @@ class StorageSpaceHubState extends State<StorageSpaceHub> {
     );
   }
 
-  void _onNasTap() {
+  void _onSnapshotsTap() {
     if (widget.embedded) {
-      widget.onNasSelected?.call();
+      widget.onSnapshotsSelected?.call();
       return;
     }
     Navigator.of(context).push<void>(
       MaterialPageRoute<void>(
-        builder: (_) => const StorageNexuspouchScreen(),
+        builder: (_) => const StorageSnapshotsScreen(),
       ),
     );
   }
@@ -514,17 +514,17 @@ class StorageSpaceHubState extends State<StorageSpaceHub> {
     );
   }
 
-  Widget _buildNasTile(AppLocalizations l10n) {
+  Widget _buildSnapshotsTile(AppLocalizations l10n) {
     final colorScheme = Theme.of(context).colorScheme;
-    final selected = widget.embedded && widget.nasSelected;
+    final selected = widget.embedded && widget.snapshotsSelected;
     return ListTile(
       selected: selected,
       selectedTileColor: colorScheme.primary.withValues(alpha: 0.08),
-      leading: Icon(Icons.lan_outlined, color: colorScheme.primary),
-      title: Text(l10n.storage_entryNas),
-      subtitle: Text(l10n.storage_nasEntryHint),
-      trailing: widget.embedded ? null : const Icon(Icons.chevron_right, size: 20),
-      onTap: _onNasTap,
+      leading: Icon(Icons.backup_outlined, color: colorScheme.primary),
+      title: Text(l10n.storage_entrySnapshots),
+      trailing:
+          widget.embedded ? null : const Icon(Icons.chevron_right, size: 20),
+      onTap: _onSnapshotsTap,
     );
   }
 
@@ -544,7 +544,7 @@ class StorageSpaceHubState extends State<StorageSpaceHub> {
           else
             for (final peer in _peers) _buildPeerRow(peer, l10n),
           const SizedBox(height: 8),
-          _buildNasTile(l10n),
+          _buildSnapshotsTile(l10n),
           ...widget.footer,
           const SizedBox(height: 24),
         ],

@@ -4,7 +4,6 @@ import 'package:flutter/material.dart';
 
 import '../l10n/app_localizations.dart';
 import '../storage/handoff_notify_service.dart';
-import 'storage_nexuspouch_screen.dart';
 import 'storage_shared.dart';
 import 'storage_snapshots_screen.dart';
 import 'storage_space_manage_screen.dart';
@@ -13,7 +12,6 @@ import 'storage_space_manage_screen.dart';
 enum StorageBagEntry {
   snapshots,
   space,
-  nas,
 }
 
 /// 储物袋总览页（重构：原 7 区块单页堆叠 → 总览仪表盘 + 子页）。
@@ -155,16 +153,6 @@ class StorageSpaceScreenState extends State<StorageSpaceScreen> {
           const StorageSpaceManageScreen(),
         ),
       ),
-      _entryTile(
-        entry: StorageBagEntry.nas,
-        icon: Icons.lan_outlined,
-        title: l10n.storage_entryNas,
-        subtitle: l10n.storage_nasEntryHint,
-        onTap: () => _selectOrOpen(
-          StorageBagEntry.nas,
-          const StorageNexuspouchScreen(),
-        ),
-      ),
     ];
 
     if (!asCard) {
@@ -232,8 +220,6 @@ extension StorageBagEntryX on StorageBagEntry {
         return const StorageSnapshotsScreen();
       case StorageBagEntry.space:
         return const StorageSpaceManageScreen();
-      case StorageBagEntry.nas:
-        return const StorageNexuspouchScreen();
     }
   }
 }
