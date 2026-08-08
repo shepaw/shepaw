@@ -101,12 +101,12 @@ class StoreSpace {
   static const memory = 'memory';
 
   static const all = <String>[artifacts, files, attachments, backups];
-  /// Browser chips: builtins + distilled memory.
+  /// Browser chips: user-facing spaces only — [backups] is managed via
+  /// 「备份与恢复」, not as a browsable folder of ciphertext.
   static const browserSpaces = <String>[
     artifacts,
     files,
     attachments,
-    backups,
     memory,
   ];
 
