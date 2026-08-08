@@ -12,11 +12,11 @@ const ProtocolVersion = 4
 type AclVerdict string
 
 const (
-	Allow          AclVerdict = "allow"
-	DenyUntrusted  AclVerdict = "denyUntrusted"
-	DenyAcl        AclVerdict = "denyAcl"
-	DenyBadOp      AclVerdict = "denyBadOp"
-	DenyBadPath    AclVerdict = "denyBadPath"
+	Allow         AclVerdict = "allow"
+	DenyUntrusted AclVerdict = "denyUntrusted"
+	DenyAcl       AclVerdict = "denyAcl"
+	DenyBadOp     AclVerdict = "denyBadOp"
+	DenyBadPath   AclVerdict = "denyBadPath"
 )
 
 const (
@@ -43,6 +43,13 @@ func (f Frame) Space() string {
 
 func (f Frame) Device() string {
 	if v, ok := f.Payload["device"].(string); ok {
+		return v
+	}
+	return ""
+}
+
+func (f Frame) Path() string {
+	if v, ok := f.Payload["path"].(string); ok {
 		return v
 	}
 	return ""
@@ -76,6 +83,10 @@ func NormalizePath(raw string) (string, error) {
 	if strings.HasPrefix(raw, "/") || strings.HasPrefix(raw, "~") {
 		return "", fmt.Errorf("absolute path")
 	}
+	// Leading backslash (Windows absolute / UNC-ish) is not a relative store path.
+	if strings.HasPrefix(raw, `\`) {
+		return "", fmt.Errorf("absolute path")
+	}
 	if driveRe.MatchString(raw) || strings.HasPrefix(raw, `\\`) {
 		return "", fmt.Errorf("drive/unc path")
 	}
@@ -99,16 +110,53 @@ func NormalizePath(raw string) (string, error) {
 	return strings.Join(out, "/"), nil
 }
 
+// ShareAllowedFunc reports whether cross-device access to space/path is allowed.
+// path may be empty for list root.
+type ShareAllowedFunc func(space, path string) bool
+
+func friendDeniedOp(op string) bool {
+	switch op {
+	case "recycle.list", "recycle.restore", "recycle.empty",
+		"import.request", "import.pending", "import.grant", "import.reject", "import.grants",
+		"sync.hello", "sync.cursors", "master.pointer", "master.pointer.query", "master.migrate",
+		"space.declare", "space.list", "stats", "search", "events.list",
+		"handoff.create", "handoff.ack":
+		return true
+	default:
+		return false
+	}
+}
+
+func crossSharedAccess(trustLevel, space, path string, shareAllowed ShareAllowedFunc) AclVerdict {
+	if shareAllowed != nil {
+		if shareAllowed(space, path) {
+			return Allow
+		}
+		return DenyAcl
+	}
+	if trustLevel == TrustOwner {
+		return Allow
+	}
+	return DenyAcl
+}
+
 // CheckACL mirrors Dart checkStoreAcl (M2–M4 ops used by fixtures).
 func CheckACL(frame Frame, callerDeviceID, trustLevel string, loopback bool) AclVerdict {
-	if trustLevel != TrustOwner {
+	return CheckACLWith(frame, callerDeviceID, trustLevel, loopback, nil)
+}
+
+// CheckACLWith adds optional share allowlist for cross-device shared spaces.
+func CheckACLWith(frame Frame, callerDeviceID, trustLevel string, loopback bool, shareAllowed ShareAllowedFunc) AclVerdict {
+	isOwner := trustLevel == TrustOwner
+	if !isOwner && friendDeniedOp(frame.Op) {
 		return DenyUntrusted
 	}
+
 	space := frame.Space()
 	device := frame.Device()
 
 	switch frame.Op {
-	case "write.begin", "write.chunk", "commit":
+	case "write.begin", "write.chunk", "commit", "handoff.create":
 		if space != "" && !IsValidSpace(space) {
 			return DenyBadOp
 		}
@@ -120,29 +168,40 @@ func CheckACL(frame Frame, callerDeviceID, trustLevel string, loopback bool) Acl
 		}
 		return Allow
 
-	case "delete":
+	case "delete", "handoff.ack":
 		if space == "" || !IsValidSpace(space) {
 			return DenyBadOp
 		}
 		targetOwn := device == "" || device == callerDeviceID
-		if !targetOwn && !SharedReadable(space) {
-			return DenyAcl
+		if !targetOwn {
+			if !SharedReadable(space) {
+				return DenyAcl
+			}
+			if v := crossSharedAccess(trustLevel, space, frame.Path(), shareAllowed); v != Allow {
+				return v
+			}
 		}
 		if device != "" && !IsValidDeviceID(device) {
 			return DenyBadOp
 		}
 		return Allow
 
-	case "list", "meta", "read":
+	case "list", "meta", "read", "versions.list", "versions.read", "manifest", "artifact.state":
 		if space == "" || !IsValidSpace(space) {
 			return DenyBadOp
 		}
 		targetOwn := device == "" || device == callerDeviceID
-		if !targetOwn && !SharedReadable(space) {
+		if !targetOwn && SharedReadable(space) {
+			path := frame.Path()
+			if v := crossSharedAccess(trustLevel, space, path, shareAllowed); v != Allow {
+				return v
+			}
+		} else if !targetOwn && !SharedReadable(space) {
 			seed, _ := frame.Payload["seed"].(bool)
 			if seed {
-				// Mirror seed / hash gate (plan §6.5): owner may temporarily
-				// read other devices' private partitions.
+				if !isOwner {
+					return DenyUntrusted
+				}
 				if device != "" && !IsValidDeviceID(device) {
 					return DenyBadOp
 				}
@@ -151,6 +210,9 @@ func CheckACL(frame Frame, callerDeviceID, trustLevel string, loopback bool) Acl
 			grant, _ := frame.Payload["grant"].(string)
 			if grant == "" {
 				return DenyAcl
+			}
+			if !isOwner {
+				return DenyUntrusted
 			}
 		}
 		if device != "" && !IsValidDeviceID(device) {
@@ -180,8 +242,13 @@ func CheckACL(frame Frame, callerDeviceID, trustLevel string, loopback bool) Acl
 		}
 		return DenyAcl
 
-	case "stats":
+	case "stats", "space.list", "search", "events.list":
 		return Allow
+	case "space.declare":
+		if loopback {
+			return Allow
+		}
+		return DenyAcl
 
 	case "sync.hello":
 		d, _ := frame.Payload["device"].(string)
@@ -191,6 +258,9 @@ func CheckACL(frame Frame, callerDeviceID, trustLevel string, loopback bool) Acl
 		return Allow
 
 	case "sync.cursors", "master.pointer.query", "master.migrate", "master.pointer":
+		return Allow
+
+	case "share.announce":
 		return Allow
 
 	default:

@@ -2,15 +2,19 @@ import 'package:flutter/material.dart';
 
 import '../../l10n/app_localizations.dart';
 import '../models/paired_peer.dart';
+import '../models/peer_store_share.dart';
 import '../services/peer_pairing_service.dart';
 import '../services/peer_storage_service.dart';
 import '../widgets/peer_agent_share_dialog.dart';
+import '../widgets/peer_store_share_selector.dart';
 import '../../service_locator.dart' show getIt;
 import '../../services/local_database_service.dart';
+import '../../storage/store_protocol.dart' show TrustLevel;
 
 /// 配对确认弹窗（Responder 侧）
 ///
-/// 当对方扫描 QR 码后，显示对方设备信息；用户可同时选择要分享的 Agent，确认后完成配对。
+/// 当对方扫描 QR 码后，显示对方设备信息；用户可选择信任级别、要分享的 Agent
+/// 与储物袋空间，确认后完成配对。
 class PeerPairingConfirmScreen extends StatefulWidget {
   final IncomingPairingRequest request;
 
@@ -29,7 +33,8 @@ class PeerPairingConfirmScreen extends StatefulWidget {
   }
 
   @override
-  State<PeerPairingConfirmScreen> createState() => _PeerPairingConfirmScreenState();
+  State<PeerPairingConfirmScreen> createState() =>
+      _PeerPairingConfirmScreenState();
 }
 
 class _PeerPairingConfirmScreenState extends State<PeerPairingConfirmScreen> {
@@ -37,11 +42,42 @@ class _PeerPairingConfirmScreenState extends State<PeerPairingConfirmScreen> {
   bool _loadingAgents = true;
   List<PeerShareAgentEntry> _shareAgents = [];
   Map<String, bool> _selectedShares = {};
+  String _trustLevel = TrustLevel.owner;
+  Map<String, PeerStoreShareSpaceState> _storeStates =
+      defaultStoreShareStates(TrustLevel.owner);
+  List<PeerStoreShareEntry> _storeShares =
+      PeerStorageService.ownerDefaultStoreShares();
+  int _storeSelectorKey = 0;
 
   @override
   void initState() {
     super.initState();
     _loadShareableAgents();
+    _loadExistingStoreShares();
+  }
+
+  Future<void> _loadExistingStoreShares() async {
+    try {
+      final existingPeer = await PeerStorageService()
+          .getPeerByFingerprint(widget.request.fingerprint);
+      if (existingPeer == null) return;
+      final entries =
+          await PeerStorageService().getSharedStoreEntries(existingPeer.id);
+      if (!mounted) return;
+      setState(() {
+        _trustLevel = existingPeer.trustLevel;
+        if (entries.isNotEmpty) {
+          _storeStates = storeShareStatesFromEntries(entries);
+          _storeShares = entries;
+        } else {
+          _storeStates = defaultStoreShareStates(_trustLevel);
+          _storeShares = _trustLevel == TrustLevel.owner
+              ? PeerStorageService.ownerDefaultStoreShares()
+              : [];
+        }
+        _storeSelectorKey++;
+      });
+    } catch (_) {}
   }
 
   Future<void> _loadShareableAgents() async {
@@ -85,6 +121,17 @@ class _PeerPairingConfirmScreenState extends State<PeerPairingConfirmScreen> {
     return saved[agentId] ?? true;
   }
 
+  void _onTrustChanged(String level) {
+    setState(() {
+      _trustLevel = level;
+      _storeStates = defaultStoreShareStates(level);
+      _storeShares = level == TrustLevel.owner
+          ? PeerStorageService.ownerDefaultStoreShares()
+          : [];
+      _storeSelectorKey++;
+    });
+  }
+
   Future<void> _confirm() async {
     setState(() => _processing = true);
     try {
@@ -92,6 +139,8 @@ class _PeerPairingConfirmScreenState extends State<PeerPairingConfirmScreen> {
       final peer = await PeerPairingService.instance.confirmPairing(
         widget.request,
         agentShares: agentShares,
+        storeShares: _storeShares,
+        trustLevel: _trustLevel,
       );
       if (mounted) {
         Navigator.of(context).pop(peer);
@@ -118,7 +167,8 @@ class _PeerPairingConfirmScreenState extends State<PeerPairingConfirmScreen> {
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
     final colorScheme = Theme.of(context).colorScheme;
-    final sharedCount = _selectedShares.values.where((v) => v).length;
+    final sharedCount = _selectedShares.values.where((v) => v).length +
+        _storeShares.length;
 
     return AlertDialog(
       icon: Icon(
@@ -179,6 +229,55 @@ class _PeerPairingConfirmScreenState extends State<PeerPairingConfirmScreen> {
                     ),
                   ],
                 ),
+              ),
+
+              const SizedBox(height: 20),
+              Text(
+                l10n.peerPairing_trustLevel,
+                style: Theme.of(context).textTheme.titleSmall,
+              ),
+              const SizedBox(height: 4),
+              Text(
+                l10n.peerPairing_trustLevelHint,
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: colorScheme.onSurfaceVariant,
+                    ),
+              ),
+              const SizedBox(height: 8),
+              SegmentedButton<String>(
+                segments: [
+                  ButtonSegment(
+                    value: TrustLevel.owner,
+                    label: Text(l10n.peerPairing_trustOwner),
+                    icon: const Icon(Icons.home_outlined, size: 16),
+                  ),
+                  ButtonSegment(
+                    value: TrustLevel.friend,
+                    label: Text(l10n.peerPairing_trustFriend),
+                    icon: const Icon(Icons.people_outline, size: 16),
+                  ),
+                ],
+                selected: {_trustLevel},
+                onSelectionChanged: (s) => _onTrustChanged(s.first),
+              ),
+
+              const SizedBox(height: 20),
+              Text(
+                l10n.peerPairing_selectStoreSpaces,
+                style: Theme.of(context).textTheme.titleSmall,
+              ),
+              const SizedBox(height: 4),
+              Text(
+                l10n.peerPairing_selectStoreSpacesHint,
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: colorScheme.onSurfaceVariant,
+                    ),
+              ),
+              const SizedBox(height: 8),
+              PeerStoreShareSelector(
+                key: ValueKey(_storeSelectorKey),
+                initialStates: _storeStates,
+                onChanged: (shares) => setState(() => _storeShares = shares),
               ),
 
               if (_loadingAgents) ...[

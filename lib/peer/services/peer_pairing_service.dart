@@ -29,9 +29,11 @@ import '../../services/noise/noise_envelope.dart';
 import '../../services/channel_tunnel_service.dart';
 import '../../services/logger_service.dart';
 import '../../storage/master_migration_service.dart';
+import '../../storage/store_protocol.dart' show TrustLevel;
 import '../../storage/store_service.dart';
 import '../models/paired_peer.dart';
 import '../models/pairing_payload.dart';
+import '../models/peer_store_share.dart';
 import 'peer_agent_host_service.dart';
 import 'peer_channel_bridge.dart';
 import 'peer_connection_manager.dart';
@@ -202,10 +204,13 @@ class PeerPairingService {
   /// 确认配对请求（Responder 侧）。
   ///
   /// [agentShares] 为配对确认弹窗中用户勾选的分享决定（agentId → 是否分享），
+  /// [storeShares] 为本机储物袋分享条目，[trustLevel] 为 owner/friend。
   /// 在建立连接前写入本地，连接后立即推送给对端。
   Future<PairedPeer> confirmPairing(
     IncomingPairingRequest request, {
     Map<String, bool>? agentShares,
+    List<PeerStoreShareEntry>? storeShares,
+    String trustLevel = TrustLevel.owner,
   }) async {
     if (_state != PairingSessionState.receivedRequest) {
       throw StateError('No pending pairing request to confirm');
@@ -254,6 +259,9 @@ class PeerPairingService {
       pairedAt: existingPeer?.pairedAt ?? DateTime.now().millisecondsSinceEpoch,
       // 本机展示二维码、被对方扫码连接 → 被连接方
       pairingRole: PeerPairingRole.responder,
+      trustLevel: trustLevel == TrustLevel.friend
+          ? TrustLevel.friend
+          : TrustLevel.owner,
     );
 
     await _storage.savePeer(peer); // INSERT OR REPLACE
@@ -261,6 +269,12 @@ class PeerPairingService {
     if (agentShares != null) {
       await PeerStorageService().setAgentShares(peer.id, agentShares);
     }
+
+    final shares = storeShares ??
+        (peer.trustLevel == TrustLevel.owner
+            ? PeerStorageService.ownerDefaultStoreShares()
+            : <PeerStoreShareEntry>[]);
+    await PeerStorageService().replaceStoreShares(peer.id, shares);
 
     _state = PairingSessionState.completed;
     _cleanup();
@@ -271,6 +285,7 @@ class PeerPairingService {
       _log.warning('Post-pairing connect failed: $e', tag: _tag);
     });
     await PeerAgentHostService.instance.pushAgentList(peer.id);
+    await StoreService.instance.pushShareAnnounce(peer.id);
 
     _log.info('Pairing confirmed: ${peer.deviceName} (${peer.fingerprint})', tag: _tag);
     return peer;

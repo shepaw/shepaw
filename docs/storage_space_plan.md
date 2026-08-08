@@ -88,8 +88,8 @@
 
 `paired_peers` 新增 `trust_level TEXT`（`owner` | `friend`），本期即落字段与协议校验：
 
-- `owner`（自己的设备）：开放存储空间访问（按第 2 节 ACL）、记忆交换、执行委托。
-- `friend`（他人的设备，为跨人社交预留）：仅受监督对话；`store.*` / `memory.*` 帧一律拒绝并记录审计日志。
+- `owner`（自己的设备）：默认开放 `files`/`artifacts` 整区；用户可在配对确认与设置中按分区/目录前缀收窄；记忆交换与执行委托仍按 owner 开放。
+- `friend`（他人的设备）：默认不分享储物袋；跨端读仅限显式 `peer_store_shares` 白名单；管理/同步类 `store.*`（`stats`/`sync.*`/`master.*`/`recycle.*`/`import.*` 等）拒绝并审计。
 
 ## 5. 私有域：快照、恢复与设备身份
 

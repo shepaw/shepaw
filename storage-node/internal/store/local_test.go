@@ -204,20 +204,44 @@ func TestDeleteRestoreRecycleEmpty(t *testing.T) {
 func TestFriendRejected(t *testing.T) {
 	root := t.TempDir()
 	device := "aaaaaaaaaaaaaaaa"
+	other := "bbbbbbbbbbbbbbbb"
 	s, err := store.Open(root, device)
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = s.Handle(protocol.Frame{
+	// friend 自有目录 list 允许
+	if _, err = s.Handle(protocol.Frame{
 		Op:      "list",
 		Payload: map[string]any{"space": "artifacts"},
+	}, device, protocol.TrustFriend, false); err != nil {
+		t.Fatalf("own list should allow: %v", err)
+	}
+	// friend 跨端共享分区无白名单 → acl_denied（Handle 侧仍走 CheckACL 无 share）
+	_, err = s.Handle(protocol.Frame{
+		Op: "list",
+		Payload: map[string]any{
+			"space":  "artifacts",
+			"device": other,
+		},
 	}, device, protocol.TrustFriend, false)
 	if err == nil {
-		t.Fatal("expected untrusted")
+		t.Fatal("expected acl denied for cross-device without share")
 	}
 	oe := err.(*store.OpError)
+	if oe.Code != "acl_denied" {
+		t.Fatalf("code=%s want acl_denied", oe.Code)
+	}
+	// friend 管理类仍 untrusted
+	_, err = s.Handle(protocol.Frame{
+		Op:      "stats",
+		Payload: map[string]any{},
+	}, device, protocol.TrustFriend, false)
+	if err == nil {
+		t.Fatal("expected untrusted for stats")
+	}
+	oe = err.(*store.OpError)
 	if oe.Code != "untrusted" {
-		t.Fatalf("code=%s", oe.Code)
+		t.Fatalf("code=%s want untrusted", oe.Code)
 	}
 }
 

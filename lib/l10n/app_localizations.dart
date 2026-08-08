@@ -8534,6 +8534,114 @@ abstract class AppLocalizations {
   /// **'配对失败: {error}'**
   String peerPairing_failed(String error);
 
+  /// No description provided for @peerPairing_trustLevel.
+  ///
+  /// In zh, this message translates to:
+  /// **'信任级别'**
+  String get peerPairing_trustLevel;
+
+  /// No description provided for @peerPairing_trustLevelHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'自己的设备选「本人」可默认开放更大储物袋分区；他人设备选「好友」默认不共享，需手动勾选。'**
+  String get peerPairing_trustLevelHint;
+
+  /// No description provided for @peerPairing_trustOwner.
+  ///
+  /// In zh, this message translates to:
+  /// **'本人'**
+  String get peerPairing_trustOwner;
+
+  /// No description provided for @peerPairing_trustFriend.
+  ///
+  /// In zh, this message translates to:
+  /// **'好友'**
+  String get peerPairing_trustFriend;
+
+  /// No description provided for @peerPairing_selectStoreSpaces.
+  ///
+  /// In zh, this message translates to:
+  /// **'选择要分享的储物袋空间'**
+  String get peerPairing_selectStoreSpaces;
+
+  /// No description provided for @peerPairing_selectStoreSpacesHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'仅勾选的分区/目录可被对方只读访问；attachments 与 backups 不可在此分享。'**
+  String get peerPairing_selectStoreSpacesHint;
+
+  /// No description provided for @peerStoreShare_wholeSpace.
+  ///
+  /// In zh, this message translates to:
+  /// **'整区共享'**
+  String get peerStoreShare_wholeSpace;
+
+  /// No description provided for @peerStoreShare_wholeSpaceToggle.
+  ///
+  /// In zh, this message translates to:
+  /// **'共享整个分区'**
+  String get peerStoreShare_wholeSpaceToggle;
+
+  /// No description provided for @peerStoreShare_notShared.
+  ///
+  /// In zh, this message translates to:
+  /// **'未共享'**
+  String get peerStoreShare_notShared;
+
+  /// No description provided for @peerStoreShare_noFolders.
+  ///
+  /// In zh, this message translates to:
+  /// **'该分区暂无顶层目录'**
+  String get peerStoreShare_noFolders;
+
+  /// No description provided for @peerStoreShare_foldersCount.
+  ///
+  /// In zh, this message translates to:
+  /// **'已选 {count} 个目录'**
+  String peerStoreShare_foldersCount(int count);
+
+  /// No description provided for @peerStoreShare_panelTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'储物袋分享'**
+  String get peerStoreShare_panelTitle;
+
+  /// No description provided for @peerStoreShare_panelHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'管理本机储物袋对该设备的可见范围'**
+  String get peerStoreShare_panelHint;
+
+  /// No description provided for @peerSettings_trustLevel.
+  ///
+  /// In zh, this message translates to:
+  /// **'信任级别'**
+  String get peerSettings_trustLevel;
+
+  /// No description provided for @peerSettings_trustOwnerHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'切换为本人后，是否套用默认的 files+artifacts 整区分享？'**
+  String get peerSettings_trustOwnerHint;
+
+  /// No description provided for @peerSettings_applyOwnerDefaults.
+  ///
+  /// In zh, this message translates to:
+  /// **'套用默认分享'**
+  String get peerSettings_applyOwnerDefaults;
+
+  /// No description provided for @peerSettings_keepShares.
+  ///
+  /// In zh, this message translates to:
+  /// **'保留现有分享'**
+  String get peerSettings_keepShares;
+
+  /// No description provided for @peerSettings_trustFriendHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'降为好友后，未分享的空间将不可被对方访问；已有分享不会自动清空。'**
+  String get peerSettings_trustFriendHint;
+
   /// No description provided for @peerScan_desktopUnsupported.
   ///
   /// In zh, this message translates to:

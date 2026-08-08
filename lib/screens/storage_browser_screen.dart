@@ -9,6 +9,8 @@ import 'package:path/path.dart' as p;
 
 import '../l10n/app_localizations.dart';
 import '../models/store_attachment_ref.dart';
+import '../peer/models/peer_store_share.dart';
+import '../peer/services/peer_storage_service.dart';
 import '../services/store_open_service.dart';
 import '../storage/device_identity.dart';
 import '../storage/local_store.dart';
@@ -40,6 +42,7 @@ class StorageBrowserScreen extends StatefulWidget {
     super.key,
     this.deviceId,
     this.deviceName,
+    this.peerId,
     this.readOnly = false,
     this.initialSpace,
     this.title,
@@ -56,6 +59,9 @@ class StorageBrowserScreen extends StatefulWidget {
 
   /// 展示用设备名（远端浏览时用）。
   final String? deviceName;
+
+  /// 配对关系 id；远端浏览时用于读取入站分享目录。
+  final String? peerId;
 
   /// 只读模式：隐藏删除；远端默认只读。
   final bool readOnly;
@@ -127,9 +133,18 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
 
   bool get _readOnly => widget.readOnly || _isRemote;
 
-  List<String> get _spaces => _isRemote
-      ? StoreSpace.sharedReadable
-      : StoreSpace.browserSpaces;
+  PeerStoreShareAllowlist? _inboundShares;
+
+  List<String> get _spaces {
+    if (!_isRemote) return StoreSpace.browserSpaces;
+    final inbound = _inboundShares;
+    if (inbound != null && !inbound.isEmpty) {
+      final spaces = inbound.spaces.toList()..sort();
+      return spaces;
+    }
+    // 尚未收到 announce 时回退到内置共享分区（ACL 仍会拦截未分享路径）
+    return StoreSpace.sharedReadable;
+  }
 
   /// 当前已进入的分区；根目录（分区列表）时为 null。
   String? get _effectiveNavSpace => _navSpace;
@@ -248,13 +263,22 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
     final self = await DeviceIdentity.deviceId();
     if (!mounted) return;
     final target = widget.deviceId ?? self;
+    PeerStoreShareAllowlist? inbound;
+    final peerId = widget.peerId;
+    if (peerId != null && peerId.isNotEmpty && target != self) {
+      try {
+        inbound = await PeerStorageService().getInboundStoreAllowlist(peerId);
+      } catch (_) {}
+    }
+    if (!mounted) return;
     setState(() {
       _selfId = self;
       _targetId = target;
+      _inboundShares = inbound;
       if (_isRemote &&
           _navSpace != null &&
-          !StoreSpace.sharedReadable.contains(_navSpace)) {
-        _navSpace = StoreSpace.files;
+          !_spaces.contains(_navSpace)) {
+        _navSpace = _spaces.isNotEmpty ? _spaces.first : StoreSpace.files;
         _navPath = '';
       }
     });

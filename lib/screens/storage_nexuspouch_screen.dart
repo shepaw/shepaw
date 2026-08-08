@@ -186,6 +186,7 @@ class _StorageNexuspouchScreenState extends State<StorageNexuspouchScreen> {
   void _browseDevice({
     required String deviceId,
     required String name,
+    String? peerId,
     bool readOnly = true,
   }) {
     Navigator.of(context).push(
@@ -193,6 +194,7 @@ class _StorageNexuspouchScreenState extends State<StorageNexuspouchScreen> {
         builder: (_) => StorageBrowserScreen(
           deviceId: deviceId,
           deviceName: name,
+          peerId: peerId,
           readOnly: readOnly,
         ),
       ),
@@ -389,6 +391,7 @@ class _StorageNexuspouchScreenState extends State<StorageNexuspouchScreen> {
                                 _browseDevice(
                                   deviceId: peer.fingerprint,
                                   name: peer.deviceName,
+                                  peerId: peer.id,
                                 );
                               case 'master':
                                 await _setMaster(
@@ -419,6 +422,7 @@ class _StorageNexuspouchScreenState extends State<StorageNexuspouchScreen> {
                   onTap: () => _browseDevice(
                     deviceId: peer.fingerprint,
                     name: peer.deviceName,
+                    peerId: peer.id,
                   ),
                 ),
               );

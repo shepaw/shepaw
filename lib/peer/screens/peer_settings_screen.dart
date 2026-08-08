@@ -5,11 +5,13 @@ import 'package:flutter/material.dart';
 import '../../config/product_features.dart';
 import '../../l10n/app_localizations.dart';
 import '../../screens/storage_browser_screen.dart';
+import '../../storage/store_protocol.dart' show TrustLevel;
 import '../../storage/store_service.dart';
 import '../../widgets/form_bottom_bar.dart';
 import '../models/paired_peer.dart';
 import '../services/peer_connection_manager.dart';
 import '../services/peer_storage_service.dart';
+import '../widgets/peer_store_share_panel.dart';
 import 'peer_chat_screen.dart';
 import '../widgets/peer_device_icon.dart';
 
@@ -35,6 +37,7 @@ class PeerSettingsScreen extends StatefulWidget {
 class _PeerSettingsScreenState extends State<PeerSettingsScreen> {
   late String _deviceName;
   late bool _isConnected;
+  late String _trustLevel;
   bool _isMaster = false;
   StreamSubscription<void>? _peerListSub;
 
@@ -42,6 +45,7 @@ class _PeerSettingsScreenState extends State<PeerSettingsScreen> {
   void initState() {
     super.initState();
     _deviceName = widget.peer.deviceName;
+    _trustLevel = widget.peer.trustLevel;
     _isConnected = PeerConnectionManager.instance.getPeerState(widget.peer.id) ==
         PeerConnectionState.connected;
     _peerListSub = PeerConnectionManager.instance.peerListChanged.listen((_) {
@@ -124,6 +128,83 @@ class _PeerSettingsScreenState extends State<PeerSettingsScreen> {
           deviceId: widget.peer.fingerprint,
           deviceName: _deviceName,
           readOnly: true,
+          peerId: widget.peer.id,
+        ),
+      ),
+    );
+  }
+
+  Future<void> _changeTrustLevel() async {
+    final l10n = AppLocalizations.of(context);
+    final selected = await showDialog<String>(
+      context: context,
+      builder: (ctx) => SimpleDialog(
+        title: Text(l10n.peerSettings_trustLevel),
+        children: [
+          RadioListTile<String>(
+            title: Text(l10n.peerPairing_trustOwner),
+            value: TrustLevel.owner,
+            groupValue: _trustLevel,
+            onChanged: (v) => Navigator.pop(ctx, v),
+          ),
+          RadioListTile<String>(
+            title: Text(l10n.peerPairing_trustFriend),
+            value: TrustLevel.friend,
+            groupValue: _trustLevel,
+            onChanged: (v) => Navigator.pop(ctx, v),
+          ),
+        ],
+      ),
+    );
+    if (selected == null || selected == _trustLevel || !mounted) return;
+
+    if (selected == TrustLevel.owner && _trustLevel == TrustLevel.friend) {
+      final apply = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: Text(l10n.peerSettings_trustLevel),
+          content: Text(l10n.peerSettings_trustOwnerHint),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: Text(l10n.peerSettings_keepShares),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: Text(l10n.peerSettings_applyOwnerDefaults),
+            ),
+          ],
+        ),
+      );
+      await PeerStorageService().setTrustLevel(widget.peer.id, selected);
+      if (apply == true) {
+        await StoreService.instance.setOutboundStoreShares(
+          widget.peer.id,
+          PeerStorageService.ownerDefaultStoreShares(),
+        );
+      }
+    } else if (selected == TrustLevel.friend) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(l10n.peerSettings_trustFriendHint)),
+        );
+      }
+      await PeerStorageService().setTrustLevel(widget.peer.id, selected);
+    } else {
+      await PeerStorageService().setTrustLevel(widget.peer.id, selected);
+    }
+
+    if (mounted) setState(() => _trustLevel = selected);
+    PeerConnectionManager.instance.notifyPeerListChanged();
+  }
+
+  void _openStoreSharePanel() {
+    final l10n = AppLocalizations.of(context);
+    Navigator.of(context).push<void>(
+      MaterialPageRoute<void>(
+        builder: (_) => Scaffold(
+          appBar: AppBar(title: Text(l10n.peerStoreShare_panelTitle)),
+          body: PeerStoreSharePanel(peerId: widget.peer.id),
         ),
       ),
     );
@@ -277,6 +358,22 @@ class _PeerSettingsScreenState extends State<PeerSettingsScreen> {
               subtitle: Text(l10n.storage_sharedBrowseHint),
               trailing: const Icon(Icons.chevron_right),
               onTap: _browsePeerStorage,
+            ),
+            ListTile(
+              leading: const Icon(Icons.folder_shared_outlined),
+              title: Text(l10n.peerStoreShare_panelTitle),
+              subtitle: Text(l10n.peerStoreShare_panelHint),
+              trailing: const Icon(Icons.chevron_right),
+              onTap: _openStoreSharePanel,
+            ),
+            ListTile(
+              leading: const Icon(Icons.verified_user_outlined),
+              title: Text(l10n.peerSettings_trustLevel),
+              subtitle: Text(_trustLevel == TrustLevel.friend
+                  ? l10n.peerPairing_trustFriend
+                  : l10n.peerPairing_trustOwner),
+              trailing: const Icon(Icons.chevron_right),
+              onTap: _changeTrustLevel,
             ),
           ]),
 

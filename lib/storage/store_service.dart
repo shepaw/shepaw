@@ -7,6 +7,10 @@ import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:uuid/uuid.dart';
 
+import '../peer/models/paired_peer.dart' show PeerConnectionState;
+import '../peer/models/peer_store_share.dart';
+import '../peer/services/peer_connection.dart'
+    show PeerConnectionEvent, PeerConnectionEventType;
 import '../peer/services/peer_connection_manager.dart';
 import '../peer/services/peer_storage_service.dart';
 import '../services/local_database_service.dart';
@@ -26,7 +30,7 @@ import 'volume_usage.dart';
 ///
 /// - master 指针（KV 持久化，默认本机）与 loopback 入口；
 /// - 客户端调用：master 是本机 → loopback；否则经 peer 控制帧远程调用；
-/// - master 侧：处理入站 store 帧——trust_level 强制（friend 拒绝+审计）、
+/// - master 侧：处理入站 store 帧——按 trust_level + 出站分享白名单做 ACL、
 ///   调用者身份 = 配对指纹（写路径收敛的锚点）。
 class StoreService {
   StoreService._();
@@ -49,12 +53,18 @@ class StoreService {
   ImportAuthService? _importAuth;
   DeviceCursorStore? _cursorStore;
   StreamSubscription<PeerControlEvent>? _controlSub;
+  StreamSubscription<PeerConnectionEvent>? _connSub;
   final _pending = <String, Completer<Map<String, dynamic>?>>{};
 
   // ────────────────────────────── 生命周期 ──
 
   Future<void> start() async {
     _controlSub ??= _manager.controlEvents.listen(_onControl);
+    _connSub ??= _manager.events.listen((e) {
+      if (e.type == PeerConnectionEventType.connected) {
+        unawaited(pushShareAnnounce(e.peerId));
+      }
+    });
     final store = await _localStore();
     final removed = await store.gcStaging();
     if (removed > 0) {
@@ -69,6 +79,8 @@ class StoreService {
   Future<void> stop() async {
     await _controlSub?.cancel();
     _controlSub = null;
+    await _connSub?.cancel();
+    _connSub = null;
   }
 
   Future<LocalStore> _localStore() async {
@@ -377,8 +389,14 @@ class StoreService {
       }
       return;
     }
-    // friend 级：一律拒绝并审计（spec §3）
-    if (peer.trustLevel != TrustLevel.owner) {
+    // 分享目录宣布（无 req_id）：缓存对端分享给我的 space/path
+    if (frame.op == StoreOp.shareAnnounce && frame.reqId == null) {
+      await _receiveShareAnnounce(peerId, peer.fingerprint, frame);
+      return;
+    }
+    // friend 级管理/同步类 op 仍拒绝（读共享分区走白名单，见 ACL）
+    if (peer.trustLevel != TrustLevel.owner &&
+        _friendRejectedAtGate(frame.op)) {
       _log.warning(
           'reject ${frame.op} from friend-level peer ${peer.deviceName} ($peerId)',
           tag: _auditTag);
@@ -411,12 +429,95 @@ class StoreService {
       );
       return;
     }
+    final allowlist = await _peerStorage.getSharedStoreAllowlist(peerId);
     // 调用者身份 = 配对指纹（= 其 device_id），写路径收敛的锚点
-    final data = await _dispatch(frame,
-        callerDeviceId: peer.fingerprint,
-        trustLevel: peer.trustLevel,
-        loopback: false);
+    final data = await _dispatch(
+      frame,
+      callerDeviceId: peer.fingerprint,
+      trustLevel: peer.trustLevel,
+      loopback: false,
+      shareAllowlist: allowlist,
+    );
     await _replyData(peerId, frame, data);
+  }
+
+  /// 入站早拒：friend 不可做的管理/同步类（与 ACL `_friendDeniedOp` 对齐的子集，
+  /// 避免无 req_id 通知以外的请求进入 dispatch）。
+  bool _friendRejectedAtGate(String op) => switch (op) {
+        StoreOp.syncHello ||
+        StoreOp.syncCursors ||
+        StoreOp.masterPointer ||
+        StoreOp.masterPointerQuery ||
+        StoreOp.masterMigrate ||
+        StoreOp.importRequest ||
+        StoreOp.importPending ||
+        StoreOp.recycleEmpty ||
+        StoreOp.spaceDeclare =>
+          true,
+        _ => false,
+      };
+
+  Future<void> _receiveShareAnnounce(
+    String peerId,
+    String fromDevice,
+    StoreFrame frame,
+  ) async {
+    try {
+      final device = frame.payload['device'] as String? ?? fromDevice;
+      final raw = frame.payload['shares'];
+      final entries = <PeerStoreShareEntry>[];
+      if (raw is List) {
+        for (final item in raw) {
+          if (item is Map) {
+            entries.add(PeerStoreShareEntry.fromAnnounceJson(
+                item.cast<String, dynamic>()));
+          }
+        }
+      }
+      await _peerStorage.replaceInboundStoreShares(
+        peerId,
+        deviceId: device,
+        entries: entries,
+      );
+      _log.info(
+          'received share.announce from $peerId device=$device '
+          'entries=${entries.length}',
+          tag: _tag);
+    } catch (e) {
+      _log.warning('invalid share.announce: $e', tag: _tag);
+    }
+  }
+
+  /// 向配对设备推送本机出站分享目录。
+  Future<void> pushShareAnnounce(String peerId) async {
+    try {
+      final self = await DeviceIdentity.deviceId();
+      final entries = await _peerStorage.getSharedStoreEntries(peerId);
+      await _manager.sendControl(
+        peerId,
+        StoreFrame(
+          op: StoreOp.shareAnnounce,
+          payload: <String, dynamic>{
+            'device': self,
+            'shares': [for (final e in entries) e.toAnnounceJson()],
+          },
+        ).toJson(),
+      );
+    } catch (e) {
+      _log.warning('push share.announce failed: $e', tag: _tag);
+    }
+  }
+
+  /// 替换出站分享并在在线时推送 announce。
+  Future<void> setOutboundStoreShares(
+    String peerId,
+    Iterable<PeerStoreShareEntry> entries,
+  ) async {
+    await _peerStorage.replaceStoreShares(peerId, entries);
+    if (_manager.getPeerState(peerId) ==
+        PeerConnectionState.connected) {
+      await pushShareAnnounce(peerId);
+    }
   }
 
   /// 请求方收到服务侧签发的授权推送：持久化到 received。
@@ -509,23 +610,31 @@ class StoreService {
     required String callerDeviceId,
     required String trustLevel,
     bool loopback = false,
+    PeerStoreShareAllowlist? shareAllowlist,
   }) =>
       _dispatch(frame,
           callerDeviceId: callerDeviceId,
           trustLevel: trustLevel,
-          loopback: loopback);
+          loopback: loopback,
+          shareAllowlist: shareAllowlist);
 
   Future<Map<String, dynamic>> _dispatch(
     StoreFrame frame, {
     required String callerDeviceId,
     required String trustLevel,
     required bool loopback,
+    PeerStoreShareAllowlist? shareAllowlist,
   }) async {
     // ACL（含路径/形态校验的粗筛；细粒度路径错误在执行期抛出）
-    final verdict = checkStoreAcl(frame,
-        callerDeviceId: callerDeviceId,
-        trustLevel: trustLevel,
-        loopback: loopback);
+    final verdict = checkStoreAcl(
+      frame,
+      callerDeviceId: callerDeviceId,
+      trustLevel: trustLevel,
+      loopback: loopback,
+      shareAllowed: shareAllowlist == null
+          ? null
+          : (space, path) => shareAllowlist.allows(space, path),
+    );
     if (verdict != StoreAcl.allow) {
       if (verdict == StoreAcl.denyAcl) {
         _log.warning(
@@ -592,13 +701,22 @@ class StoreService {
               : rawDepth is num
                   ? rawDepth.toInt()
                   : int.tryParse('$rawDepth');
-          final entries = await store.list(
+          var entries = await store.list(
             device,
             frame.space!,
             prefix: frame.payload['path'] as String?,
             limit: limit,
             depth: depth,
           );
+          // 跨端 list：按出站分享白名单过滤条目
+          if (shareAllowlist != null &&
+              device != callerDeviceId &&
+              !shareAllowlist.isWholeSpace(frame.space!)) {
+            entries = [
+              for (final e in entries)
+                if (shareAllowlist.allowsListedPath(frame.space!, e.path)) e
+            ];
+          }
           return <String, dynamic>{
             'entries': [for (final e in entries) e.toJson()],
             'next_cursor': null,

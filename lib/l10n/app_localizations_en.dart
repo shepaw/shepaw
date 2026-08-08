@@ -4853,6 +4853,68 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
+  String get peerPairing_trustLevel => 'Trust level';
+
+  @override
+  String get peerPairing_trustLevelHint =>
+      'Choose Owner for your own devices (broader default pouch access). Choose Friend for others (nothing shared by default).';
+
+  @override
+  String get peerPairing_trustOwner => 'Owner';
+
+  @override
+  String get peerPairing_trustFriend => 'Friend';
+
+  @override
+  String get peerPairing_selectStoreSpaces => 'Select pouch spaces to share';
+
+  @override
+  String get peerPairing_selectStoreSpacesHint =>
+      'Only checked spaces/folders are readable by the peer. attachments and backups cannot be shared here.';
+
+  @override
+  String get peerStoreShare_wholeSpace => 'Entire space';
+
+  @override
+  String get peerStoreShare_wholeSpaceToggle => 'Share entire space';
+
+  @override
+  String get peerStoreShare_notShared => 'Not shared';
+
+  @override
+  String get peerStoreShare_noFolders =>
+      'No top-level folders in this space yet';
+
+  @override
+  String peerStoreShare_foldersCount(int count) {
+    return '$count folders selected';
+  }
+
+  @override
+  String get peerStoreShare_panelTitle => 'Pouch sharing';
+
+  @override
+  String get peerStoreShare_panelHint =>
+      'Control which local pouch spaces this device can read';
+
+  @override
+  String get peerSettings_trustLevel => 'Trust level';
+
+  @override
+  String get peerSettings_trustOwnerHint =>
+      'Apply default files+artifacts whole-space sharing after switching to Owner?';
+
+  @override
+  String get peerSettings_applyOwnerDefaults => 'Apply defaults';
+
+  @override
+  String get peerSettings_keepShares => 'Keep current shares';
+
+  @override
+  String get peerSettings_trustFriendHint =>
+      'As Friend, unshared spaces stay inaccessible. Existing shares are kept unless you change them.';
+
+  @override
   String get peerScan_desktopUnsupported =>
       'Camera scanning is not supported on desktop';
 

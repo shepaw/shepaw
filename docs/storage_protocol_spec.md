@@ -17,7 +17,7 @@
 | `.recycle` | 回收站（store 根级系统目录），删除与被覆盖旧版本的最终去处（覆盖先经 `.versions` 再修剪，见 §2.6/§1.5）；仅 master 本机用户可清空。 |
 | `.versions` | 版本库（store 根级系统目录），被覆盖旧版本的不可变存档；仅内部 `versions.*` op 可访问。 |
 | `.nexuspouch` | 任务元数据目录（`<space>/<task>/.nexuspouch/`），manifest / 状态 / ack 记录；仅内部 op 可读。 |
-| trust_level | 配对信任分级（`paired_peers.trust_level`）：`owner`（自己的设备）/ `friend`（预留，本期拒绝一切 store.*）。 |
+| trust_level | 配对信任分级（`paired_peers.trust_level`）：`owner`（自己的设备，默认开放更大储物袋分区）/ `friend`（他人设备；管理/同步类 store.* 拒绝；跨端读仅限显式分享的 space/path）。 |
 
 ## 0.5 空间属性模型（v4.3 通用化边界，Step 1 文档化）
 
@@ -70,7 +70,7 @@
 | code | 含义 |
 |------|------|
 | `unsupported_version` | 协议版本不兼容 |
-| `untrusted` | friend 级设备发送 store.*（拒绝并审计） |
+| `untrusted` | friend 级设备发送管理/同步类 store.*，或无授权访问 |
 | `not_paired` | 未配对设备 |
 | `acl_denied` | 越权（见 §3 ACL 矩阵） |
 | `bad_path` | 路径非法（绝对路径/`..` 穿越/非法字符/符号链接逃逸） |
@@ -299,12 +299,12 @@ App 经 Noise 配对调用，与 HTTP `/api/v1/search`、`/api/v1/events*` 语�
 
 调用者身份 = Noise 会话对端公钥哈希（= 其 device_id）。master 据此构造写目标目录。
 
-| 操作 | space | 自有目录 | 他端 owner 目录 |
+| 操作 | space | 自有目录 | 他端目录 |
 |------|-------|---------|----------------|
 | write.\*/commit | 任意 | ✅（device 字段缺省或=调用者；不符即 `acl_denied`+审计） | ❌ 机制上不可能 |
-| delete | artifacts/files | ✅ | ✅（共享文件手动删除） |
+| delete | artifacts/files | ✅ | ✅ 且须命中出站分享白名单（整区或 path 前缀） |
 | delete | attachments/backups | ✅ | ❌ `acl_denied` |
-| list/read/meta | artifacts/files | ✅ | ✅ owner 级 |
+| list/read/meta | artifacts/files | ✅ | ✅ 且须命中出站分享白名单；无白名单回调时 owner 兼容整区 |
 | list/read/meta | attachments/backups | ✅ | 仅持有效导入授权（§5） |
 | recycle.list/restore | — | ✅ owner 级（回收站全局可见语义 M2 从宽） | 同左 |
 | recycle.empty | — | 仅 loopback（master 本机用户） | ❌ 恒 `acl_denied` |
@@ -312,8 +312,14 @@ App 经 Noise 配对调用，与 HTTP `/api/v1/search`、`/api/v1/events*` 语�
 | import.pending | — | ✅ owner 级 | — |
 | import.grant / import.reject / import.grants | — | 仅 loopback（用户在场确认是信任锚） | ❌ 恒 `acl_denied` |
 | stats | — | ✅ owner 级 | — |
+| share.announce | — | 通知帧：推送本机出站分享目录（无 req_id） | — |
 
-**friend 级设备：所有 store.* 帧一律 `untrusted` 并记审计日志。**
+**信任与分享白名单：**
+
+- `owner`：配对默认分享 `files`+`artifacts` 整区；用户可在配对确认/设置中收窄到目录前缀。
+- `friend`：配对默认不分享任何空间；管理/同步类 op（`stats`/`sync.*`/`master.*`/`recycle.*`/`import.*`/`space.*` 等）仍 `untrusted`；跨端读 shared 分区仅当 `peer_store_shares` 命中。
+- 出站分享表 `peer_store_shares(peer_id, space, path, shared)`：`path=""` 表示整区；否则为相对 path 前缀。
+- `share.announce` 将出站分享目录推送给对端缓存（UX）；ACL 权威仍在属主侧。
 
 ## 4. 写路径收敛（§6.2）
 

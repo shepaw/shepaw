@@ -4674,6 +4674,65 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
+  String get peerPairing_trustLevel => '信任级别';
+
+  @override
+  String get peerPairing_trustLevelHint =>
+      '自己的设备选「本人」可默认开放更大储物袋分区；他人设备选「好友」默认不共享，需手动勾选。';
+
+  @override
+  String get peerPairing_trustOwner => '本人';
+
+  @override
+  String get peerPairing_trustFriend => '好友';
+
+  @override
+  String get peerPairing_selectStoreSpaces => '选择要分享的储物袋空间';
+
+  @override
+  String get peerPairing_selectStoreSpacesHint =>
+      '仅勾选的分区/目录可被对方只读访问；attachments 与 backups 不可在此分享。';
+
+  @override
+  String get peerStoreShare_wholeSpace => '整区共享';
+
+  @override
+  String get peerStoreShare_wholeSpaceToggle => '共享整个分区';
+
+  @override
+  String get peerStoreShare_notShared => '未共享';
+
+  @override
+  String get peerStoreShare_noFolders => '该分区暂无顶层目录';
+
+  @override
+  String peerStoreShare_foldersCount(int count) {
+    return '已选 $count 个目录';
+  }
+
+  @override
+  String get peerStoreShare_panelTitle => '储物袋分享';
+
+  @override
+  String get peerStoreShare_panelHint => '管理本机储物袋对该设备的可见范围';
+
+  @override
+  String get peerSettings_trustLevel => '信任级别';
+
+  @override
+  String get peerSettings_trustOwnerHint =>
+      '切换为本人后，是否套用默认的 files+artifacts 整区分享？';
+
+  @override
+  String get peerSettings_applyOwnerDefaults => '套用默认分享';
+
+  @override
+  String get peerSettings_keepShares => '保留现有分享';
+
+  @override
+  String get peerSettings_trustFriendHint => '降为好友后，未分享的空间将不可被对方访问；已有分享不会自动清空。';
+
+  @override
   String get peerScan_desktopUnsupported => '桌面端暂不支持摄像头扫描';
 
   @override

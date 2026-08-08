@@ -110,6 +110,7 @@ class _StorageSpaceHubState extends State<StorageSpaceHub> {
         builder: (_) => StorageBrowserScreen(
           deviceId: peer.fingerprint,
           deviceName: peer.deviceName,
+          peerId: peer.id,
           readOnly: true,
         ),
       ),

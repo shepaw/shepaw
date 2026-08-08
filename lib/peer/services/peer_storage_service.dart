@@ -2,8 +2,10 @@ import 'package:sqflite/sqflite.dart';
 import '../models/paired_peer.dart';
 import '../models/peer_message.dart';
 import '../models/peer_hub_pending_approval.dart';
+import '../models/peer_store_share.dart';
 import '../../services/local_storage_service.dart';
 import '../../services/logger_service.dart';
+import '../../storage/store_protocol.dart' show StoreSpace, TrustLevel;
 
 /// P2P 配对设备和消息的持久化存储服务
 class PeerStorageService {
@@ -55,7 +57,8 @@ class PeerStorageService {
     if (!columnNames.contains('trust_level')) {
       await db.execute(
           "ALTER TABLE paired_peers ADD COLUMN trust_level TEXT NOT NULL DEFAULT 'owner'");
-    }    await db.execute('''
+    }
+    await db.execute('''
       CREATE TABLE IF NOT EXISTS peer_messages (
         id TEXT PRIMARY KEY,
         peer_id TEXT NOT NULL,
@@ -82,6 +85,28 @@ class PeerStorageService {
         PRIMARY KEY (peer_id, agent_id)
       )
     ''');
+    // 本机储物袋分享给配对设备（space + path 前缀；path='' 表示整区）。
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS peer_store_shares (
+        peer_id TEXT NOT NULL,
+        space TEXT NOT NULL,
+        path TEXT NOT NULL DEFAULT '',
+        shared INTEGER NOT NULL DEFAULT 1,
+        updated_at INTEGER NOT NULL DEFAULT 0,
+        PRIMARY KEY (peer_id, space, path)
+      )
+    ''');
+    // 对端宣布「对方分享给我」的缓存（供远程浏览器渲染）。
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS peer_store_shares_inbound (
+        peer_id TEXT NOT NULL,
+        device_id TEXT NOT NULL,
+        space TEXT NOT NULL,
+        path TEXT NOT NULL DEFAULT '',
+        updated_at INTEGER NOT NULL DEFAULT 0,
+        PRIMARY KEY (peer_id, space, path)
+      )
+    ''');
     await db.execute('''
       CREATE TABLE IF NOT EXISTS peer_hub_pending_approvals (
         approval_id TEXT PRIMARY KEY,
@@ -101,8 +126,45 @@ class PeerStorageService {
     await db.execute(
       'CREATE INDEX IF NOT EXISTS idx_peer_hub_pending_status ON peer_hub_pending_approvals(status, created_at DESC)',
     );
+    await _migrateOwnerStoreSharesIfNeeded(db);
     _tablesReady = true;
     _log.debug('P2P tables ensured', tag: _tag);
+  }
+
+  /// 存量 owner 且无出站分享记录 → 写入 files+artifacts 整区，保持现网互读行为。
+  Future<void> _migrateOwnerStoreSharesIfNeeded(Database db) async {
+    final peers = await db.query(
+      'paired_peers',
+      columns: ['id', 'trust_level'],
+    );
+    final now = DateTime.now().millisecondsSinceEpoch;
+    for (final row in peers) {
+      final peerId = row['id'] as String;
+      final trust = row['trust_level'] as String? ?? TrustLevel.owner;
+      if (trust != TrustLevel.owner) continue;
+      final existing = await db.query(
+        'peer_store_shares',
+        where: 'peer_id = ?',
+        whereArgs: [peerId],
+        limit: 1,
+      );
+      if (existing.isNotEmpty) continue;
+      final batch = db.batch();
+      for (final space in StoreSpace.sharedReadable) {
+        batch.insert(
+          'peer_store_shares',
+          {
+            'peer_id': peerId,
+            'space': space,
+            'path': '',
+            'shared': 1,
+            'updated_at': now,
+          },
+          conflictAlgorithm: ConflictAlgorithm.ignore,
+        );
+      }
+      await batch.commit(noResult: true);
+    }
   }
 
   // ── PairedPeer CRUD ─────────────────────────────────────────────────────
@@ -224,11 +286,14 @@ class PeerStorageService {
     );
   }
 
-  /// 删除配对（同时删除消息记录与 agent 分享决定）
+  /// 删除配对（同时删除消息记录与分享决定）
   Future<void> removePeer(String peerId) async {
     final db = await _db;
     await db.delete('peer_messages', where: 'peer_id = ?', whereArgs: [peerId]);
     await db.delete('peer_agent_shares', where: 'peer_id = ?', whereArgs: [peerId]);
+    await db.delete('peer_store_shares', where: 'peer_id = ?', whereArgs: [peerId]);
+    await db.delete(
+        'peer_store_shares_inbound', where: 'peer_id = ?', whereArgs: [peerId]);
     await db.delete('paired_peers', where: 'id = ?', whereArgs: [peerId]);
     _log.info('Removed peer: $peerId', tag: _tag);
   }
@@ -302,6 +367,197 @@ class PeerStorageService {
   Future<void> removeAgentShares(String agentId) async {
     final db = await _db;
     await db.delete('peer_agent_shares', where: 'agent_id = ?', whereArgs: [agentId]);
+  }
+
+  // ── 储物袋分享决定（host 侧：本机 space/path 分享给哪些配对设备） ─────────
+
+  /// 该设备是否已有任意出站储物袋分享记录。
+  Future<bool> hasAnyStoreShare(String peerId) async {
+    final db = await _db;
+    final rows = await db.query(
+      'peer_store_shares',
+      where: 'peer_id = ?',
+      whereArgs: [peerId],
+      limit: 1,
+    );
+    return rows.isNotEmpty;
+  }
+
+  /// 获取分享给该设备的允许项（仅 shared=1）。
+  Future<List<PeerStoreShareEntry>> getSharedStoreEntries(String peerId) async {
+    final db = await _db;
+    final rows = await db.query(
+      'peer_store_shares',
+      where: 'peer_id = ? AND shared = 1',
+      whereArgs: [peerId],
+    );
+    return [
+      for (final r in rows)
+        PeerStoreShareEntry(
+          space: r['space'] as String,
+          path: r['path'] as String? ?? '',
+          shared: true,
+        ),
+    ];
+  }
+
+  /// ACL 用白名单。
+  Future<PeerStoreShareAllowlist> getSharedStoreAllowlist(String peerId) async {
+    final entries = await getSharedStoreEntries(peerId);
+    return PeerStoreShareAllowlist.fromEntries(entries);
+  }
+
+  /// 设置页：该设备全部分享行（含 shared=0）。
+  Future<List<PeerStoreShareEntry>> getStoreShares(String peerId) async {
+    final db = await _db;
+    final rows = await db.query(
+      'peer_store_shares',
+      where: 'peer_id = ?',
+      whereArgs: [peerId],
+    );
+    return [
+      for (final r in rows)
+        PeerStoreShareEntry(
+          space: r['space'] as String,
+          path: r['path'] as String? ?? '',
+          shared: (r['shared'] as int?) == 1,
+        ),
+    ];
+  }
+
+  /// 用完整条目列表替换该 peer 的出站分享（先删后写）。
+  Future<void> replaceStoreShares(
+    String peerId,
+    Iterable<PeerStoreShareEntry> entries,
+  ) async {
+    final db = await _db;
+    final now = DateTime.now().millisecondsSinceEpoch;
+    await db.delete('peer_store_shares', where: 'peer_id = ?', whereArgs: [peerId]);
+    final batch = db.batch();
+    for (final e in entries) {
+      if (e.space.isEmpty) continue;
+      batch.insert(
+        'peer_store_shares',
+        {
+          'peer_id': peerId,
+          'space': e.space,
+          'path': e.path,
+          'shared': e.shared ? 1 : 0,
+          'updated_at': now,
+        },
+        conflictAlgorithm: ConflictAlgorithm.replace,
+      );
+    }
+    await batch.commit(noResult: true);
+  }
+
+  /// 写入/更新单条分享（整区或某一 path 前缀）。
+  Future<void> setStoreShare(
+    String peerId, {
+    required String space,
+    String path = '',
+    required bool shared,
+  }) async {
+    final db = await _db;
+    final now = DateTime.now().millisecondsSinceEpoch;
+    if (shared && path.isEmpty) {
+      // 整区分享：清掉同 space 下的 path 细项，避免歧义
+      await db.delete(
+        'peer_store_shares',
+        where: 'peer_id = ? AND space = ? AND path != ?',
+        whereArgs: [peerId, space, ''],
+      );
+    }
+    if (!shared && path.isEmpty) {
+      await db.delete(
+        'peer_store_shares',
+        where: 'peer_id = ? AND space = ?',
+        whereArgs: [peerId, space],
+      );
+      await db.insert(
+        'peer_store_shares',
+        {
+          'peer_id': peerId,
+          'space': space,
+          'path': '',
+          'shared': 0,
+          'updated_at': now,
+        },
+        conflictAlgorithm: ConflictAlgorithm.replace,
+      );
+      return;
+    }
+    await db.insert(
+      'peer_store_shares',
+      {
+        'peer_id': peerId,
+        'space': space,
+        'path': path,
+        'shared': shared ? 1 : 0,
+        'updated_at': now,
+      },
+      conflictAlgorithm: ConflictAlgorithm.replace,
+    );
+  }
+
+  /// owner 默认分享条目（files + artifacts 整区）。
+  static List<PeerStoreShareEntry> ownerDefaultStoreShares() => const [
+        PeerStoreShareEntry(space: StoreSpace.files),
+        PeerStoreShareEntry(space: StoreSpace.artifacts),
+      ];
+
+  // ── 入站分享目录缓存（对端 announce） ───────────────────────────────────
+
+  Future<void> replaceInboundStoreShares(
+    String peerId, {
+    required String deviceId,
+    required Iterable<PeerStoreShareEntry> entries,
+  }) async {
+    final db = await _db;
+    final now = DateTime.now().millisecondsSinceEpoch;
+    await db.delete(
+      'peer_store_shares_inbound',
+      where: 'peer_id = ?',
+      whereArgs: [peerId],
+    );
+    final batch = db.batch();
+    for (final e in entries) {
+      if (!e.shared || e.space.isEmpty) continue;
+      batch.insert(
+        'peer_store_shares_inbound',
+        {
+          'peer_id': peerId,
+          'device_id': deviceId,
+          'space': e.space,
+          'path': e.path,
+          'updated_at': now,
+        },
+        conflictAlgorithm: ConflictAlgorithm.replace,
+      );
+    }
+    await batch.commit(noResult: true);
+  }
+
+  Future<List<PeerStoreShareEntry>> getInboundStoreShares(String peerId) async {
+    final db = await _db;
+    final rows = await db.query(
+      'peer_store_shares_inbound',
+      where: 'peer_id = ?',
+      whereArgs: [peerId],
+    );
+    return [
+      for (final r in rows)
+        PeerStoreShareEntry(
+          space: r['space'] as String,
+          path: r['path'] as String? ?? '',
+          shared: true,
+        ),
+    ];
+  }
+
+  Future<PeerStoreShareAllowlist> getInboundStoreAllowlist(String peerId) async {
+    return PeerStoreShareAllowlist.fromEntries(
+        await getInboundStoreShares(peerId));
   }
 
   // ── PeerMessage CRUD ────────────────────────────────────────────────────

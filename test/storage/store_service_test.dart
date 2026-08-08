@@ -154,14 +154,31 @@ void main() {
       expect(res!['_error'], StoreError.badOp);
     });
 
-    test('friend 级设备帧被拒（untrusted）', () async {
+    test('friend 级：自有可读；跨端无白名单拒绝；管理类 untrusted', () async {
       final self = await DeviceIdentity.deviceId();
-      final res = await StoreService.instance.dispatchForTest(
+      const other = 'bbbbbbbbbbbbbbbb';
+      final own = await StoreService.instance.dispatchForTest(
         StoreFrame(op: StoreOp.list, payload: {'space': 'files'}),
         callerDeviceId: self,
         trustLevel: TrustLevel.friend,
       );
-      expect(res['_error'], StoreError.untrusted);
+      expect(own.containsKey('_error'), isFalse);
+
+      final cross = await StoreService.instance.dispatchForTest(
+        StoreFrame(
+            op: StoreOp.list,
+            payload: {'space': 'files', 'device': other}),
+        callerDeviceId: self,
+        trustLevel: TrustLevel.friend,
+      );
+      expect(cross['_error'], StoreError.aclDenied);
+
+      final stats = await StoreService.instance.dispatchForTest(
+        StoreFrame(op: StoreOp.stats, payload: {}),
+        callerDeviceId: self,
+        trustLevel: TrustLevel.friend,
+      );
+      expect(stats['_error'], StoreError.untrusted);
     });
 
     test('有效 grant 可读他人 backups；伪造 grant 拒绝', () async {

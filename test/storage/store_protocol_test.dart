@@ -71,28 +71,116 @@ void main() {
     const other = 'bbbbbbbbbbbbbbbb';
 
     StoreAcl acl(StoreFrame f,
-            {String trust = TrustLevel.owner, bool loopback = false}) =>
+            {String trust = TrustLevel.owner,
+            bool loopback = false,
+            bool Function(String space, String? path)? shareAllowed}) =>
         checkStoreAcl(f,
-            callerDeviceId: caller, trustLevel: trust, loopback: loopback);
+            callerDeviceId: caller,
+            trustLevel: trust,
+            loopback: loopback,
+            shareAllowed: shareAllowed);
 
-    test('friend 级全部拒绝', () {
+    test('friend 级管理/同步类拒绝；读未分享跨端拒绝', () {
       for (final op in [
-        StoreOp.list,
-        StoreOp.read,
-        StoreOp.writeBegin,
-        StoreOp.commit,
-        StoreOp.delete,
         StoreOp.stats,
         StoreOp.search,
         StoreOp.eventsList,
         StoreOp.recycleList,
         StoreOp.recycleEmpty,
+        StoreOp.syncHello,
       ]) {
         final v = acl(
-            StoreFrame(op: op, payload: {'space': 'artifacts', 'q': 'x'}),
+            StoreFrame(op: op, payload: {'space': 'artifacts', 'q': 'x', 'device': caller}),
             trust: TrustLevel.friend);
         expect(v, StoreAcl.denyUntrusted, reason: 'op=$op');
       }
+      // 跨端共享分区无白名单 → acl_denied
+      expect(
+          acl(
+              StoreFrame(
+                  op: StoreOp.read,
+                  payload: {
+                    'space': 'files',
+                    'device': other,
+                    'path': 'docs/a.txt',
+                  }),
+              trust: TrustLevel.friend),
+          StoreAcl.denyAcl);
+      // 自有目录读写允许
+      expect(
+          acl(
+              StoreFrame(
+                  op: StoreOp.writeBegin,
+                  payload: {'space': 'files', 'path': 'x', 'device': caller}),
+              trust: TrustLevel.friend),
+          StoreAcl.allow);
+    });
+
+    test('friend 白名单放行跨端共享分区', () {
+      bool allowDocs(String space, String? path) {
+        if (space != 'files') return false;
+        final p = path ?? '';
+        return p.isEmpty || p == 'docs' || p.startsWith('docs/');
+      }
+
+      expect(
+          acl(
+              StoreFrame(
+                  op: StoreOp.read,
+                  payload: {
+                    'space': 'files',
+                    'device': other,
+                    'path': 'docs/a.txt',
+                  }),
+              trust: TrustLevel.friend,
+              shareAllowed: allowDocs),
+          StoreAcl.allow);
+      expect(
+          acl(
+              StoreFrame(
+                  op: StoreOp.read,
+                  payload: {
+                    'space': 'files',
+                    'device': other,
+                    'path': 'secret/a.txt',
+                  }),
+              trust: TrustLevel.friend,
+              shareAllowed: allowDocs),
+          StoreAcl.denyAcl);
+      expect(
+          acl(
+              StoreFrame(
+                  op: StoreOp.list,
+                  payload: {'space': 'artifacts', 'device': other}),
+              trust: TrustLevel.friend,
+              shareAllowed: allowDocs),
+          StoreAcl.denyAcl);
+    });
+
+    test('owner 白名单可收窄跨端共享分区', () {
+      bool onlyArtifacts(String space, String? path) => space == 'artifacts';
+      expect(
+          acl(
+              StoreFrame(
+                  op: StoreOp.read,
+                  payload: {
+                    'space': 'files',
+                    'device': other,
+                    'path': 'x',
+                  }),
+              shareAllowed: onlyArtifacts),
+          StoreAcl.denyAcl);
+      expect(
+          acl(
+              StoreFrame(
+                  op: StoreOp.read,
+                  payload: {
+                    'space': 'artifacts',
+                    'device': other,
+                    'path': 'x',
+                  }),
+              shareAllowed: onlyArtifacts),
+          StoreAcl.allow);
     });
 
     test('写路径收敛：自有可写，伪造 device_id 拒绝', () {
@@ -123,7 +211,7 @@ void main() {
     });
 
     test('共享分区跨端可读可删；私有分区仅本端', () {
-      // 读他端 artifacts/files → 允许
+      // 读他端 artifacts/files → 允许（无白名单时 owner 兼容）
       expect(
           acl(StoreFrame(
               op: StoreOp.read,

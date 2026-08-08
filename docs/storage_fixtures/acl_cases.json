@@ -9,7 +9,7 @@
       "trust": "friend",
       "loopback": false,
       "payload": { "space": "artifacts" },
-      "expect": "denyUntrusted"
+      "expect": "allow"
     },
     {
       "name": "friend_write",
@@ -17,7 +17,15 @@
       "trust": "friend",
       "loopback": false,
       "payload": { "space": "artifacts" },
-      "expect": "denyUntrusted"
+      "expect": "allow"
+    },
+    {
+      "name": "friend_list_other_artifacts_no_share",
+      "op": "list",
+      "trust": "friend",
+      "loopback": false,
+      "payload": { "space": "artifacts", "device": "bbbbbbbbbbbbbbbb" },
+      "expect": "denyAcl"
     },
     {
       "name": "owner_list_own",

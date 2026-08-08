@@ -2870,6 +2870,31 @@
       }
     }
   },
+  "peerPairing_trustLevel": "信任级别",
+  "peerPairing_trustLevelHint": "自己的设备选「本人」可默认开放更大储物袋分区；他人设备选「好友」默认不共享，需手动勾选。",
+  "peerPairing_trustOwner": "本人",
+  "peerPairing_trustFriend": "好友",
+  "peerPairing_selectStoreSpaces": "选择要分享的储物袋空间",
+  "peerPairing_selectStoreSpacesHint": "仅勾选的分区/目录可被对方只读访问；attachments 与 backups 不可在此分享。",
+  "peerStoreShare_wholeSpace": "整区共享",
+  "peerStoreShare_wholeSpaceToggle": "共享整个分区",
+  "peerStoreShare_notShared": "未共享",
+  "peerStoreShare_noFolders": "该分区暂无顶层目录",
+  "peerStoreShare_foldersCount": "已选 {count} 个目录",
+  "@peerStoreShare_foldersCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "peerStoreShare_panelTitle": "储物袋分享",
+  "peerStoreShare_panelHint": "管理本机储物袋对该设备的可见范围",
+  "peerSettings_trustLevel": "信任级别",
+  "peerSettings_trustOwnerHint": "切换为本人后，是否套用默认的 files+artifacts 整区分享？",
+  "peerSettings_applyOwnerDefaults": "套用默认分享",
+  "peerSettings_keepShares": "保留现有分享",
+  "peerSettings_trustFriendHint": "降为好友后，未分享的空间将不可被对方访问；已有分享不会自动清空。",
   "peerScan_desktopUnsupported": "桌面端暂不支持摄像头扫描",
   "peerScan_useMobile": "请在移动设备上使用扫码功能",
   "peerScan_frameHint": "将对方的二维码放入框内",

@@ -58,6 +58,9 @@ class StoreOp {
   static const search = 'search';
   static const eventsList = 'events.list';
 
+  /// 出站分享目录宣布（无 req_id 通知帧）：本机分享给对端的 space/path 白名单。
+  static const shareAnnounce = 'share.announce';
+
   static const result = 'result';
   static const error = 'error';
 }
@@ -359,6 +362,8 @@ class TrustLevel {
 /// [callerDeviceId] 调用者设备 id（Noise 对端公钥哈希；loopback 为本机 id）。
 /// [trustLevel] 调用者信任分级。
 /// [loopback] 是否 master 本机用户本地调用（recycle.empty 唯一放行路径）。
+/// [shareAllowed] 跨端读/删 shared 分区时的 path 白名单；`null` 时 owner 保持
+/// 整区开放（测试/存量兼容），friend 拒绝跨端 shared 访问。
 ///
 /// 注意：`seed: true` 在 ACL 层对 owner 粗放行；服务侧须另做短时授权
 /// （见 [SeedAuthorization]，由 `sync.cursors` 开启）。
@@ -367,6 +372,7 @@ StoreAcl checkStoreAcl(
   required String callerDeviceId,
   required String trustLevel,
   required bool loopback,
+  bool Function(String space, String? path)? shareAllowed,
 }) =>
     checkStoreAclWith(
       frame,
@@ -374,6 +380,7 @@ StoreAcl checkStoreAcl(
       trustLevel: trustLevel,
       loopback: loopback,
       visibility: _builtinVisibility,
+      shareAllowed: shareAllowed,
     );
 
 /// 内置空间可见性：`true`=shared，`false`=private，`null`=未知。
@@ -383,6 +390,47 @@ bool? _builtinVisibility(String space) => switch (space) {
       _ => null,
     };
 
+/// friend 仍一律拒绝的管理/同步类 op（不可靠白名单开放）。
+bool _friendDeniedOp(String op) => switch (op) {
+      StoreOp.recycleList ||
+      StoreOp.recycleRestore ||
+      StoreOp.recycleEmpty ||
+      StoreOp.importRequest ||
+      StoreOp.importPending ||
+      StoreOp.importGrant ||
+      StoreOp.importReject ||
+      StoreOp.importGrants ||
+      StoreOp.syncHello ||
+      StoreOp.syncCursors ||
+      StoreOp.masterPointer ||
+      StoreOp.masterPointerQuery ||
+      StoreOp.masterMigrate ||
+      StoreOp.spaceDeclare ||
+      StoreOp.spaceList ||
+      StoreOp.stats ||
+      StoreOp.search ||
+      StoreOp.eventsList ||
+      StoreOp.handoffCreate ||
+      StoreOp.handoffAck =>
+        true,
+      _ => false,
+    };
+
+/// 跨端访问 shared 分区时是否允许（读/删）。
+StoreAcl _crossSharedAccess({
+  required String trustLevel,
+  required String space,
+  required String? path,
+  required bool Function(String space, String? path)? shareAllowed,
+}) {
+  if (shareAllowed != null) {
+    return shareAllowed(space, path) ? StoreAcl.allow : StoreAcl.denyAcl;
+  }
+  // 无白名单回调：owner 整区兼容；friend 拒绝
+  if (trustLevel == TrustLevel.owner) return StoreAcl.allow;
+  return StoreAcl.denyAcl;
+}
+
 /// 属性驱动 ACL（Step 2）：`visibility(space)` 返回 `true`(shared) /
 /// `false`(private) / `null`(未知)。未知空间 → denyBadOp。
 StoreAcl checkStoreAclWith(
@@ -391,10 +439,13 @@ StoreAcl checkStoreAclWith(
   required String trustLevel,
   required bool loopback,
   bool? Function(String space)? visibility,
+  bool Function(String space, String? path)? shareAllowed,
 }) {
   bool? vis(String s) => visibility?.call(s) ?? _builtinVisibility(s);
-  // friend 级：全部拒绝（spec §3）
-  if (trustLevel != TrustLevel.owner) return StoreAcl.denyUntrusted;
+  final isOwner = trustLevel == TrustLevel.owner;
+  if (!isOwner && _friendDeniedOp(frame.op)) {
+    return StoreAcl.denyUntrusted;
+  }
 
   final space = frame.space;
   final device = frame.device;
@@ -420,22 +471,29 @@ StoreAcl checkStoreAclWith(
       }
       return StoreAcl.allow;
 
-    // ── 删除：共享分区可删他端，私有分区仅本端 ──
+    // ── 删除：共享分区可删他端（须白名单）；私有分区仅本端 ──
     case StoreOp.delete:
     case StoreOp.handoffAck:
       if (space == null || !known(space)) {
         return StoreAcl.denyBadOp;
       }
       final targetOwn = device == null || device == callerDeviceId;
-      if (!targetOwn && !shared(space)) {
-        return StoreAcl.denyAcl;
+      if (!targetOwn) {
+        if (!shared(space)) return StoreAcl.denyAcl;
+        final cross = _crossSharedAccess(
+          trustLevel: trustLevel,
+          space: space,
+          path: frame.path,
+          shareAllowed: shareAllowed,
+        );
+        if (cross != StoreAcl.allow) return cross;
       }
       if (device != null && !isValidDeviceId(device)) {
         return StoreAcl.denyBadOp;
       }
       return StoreAcl.allow;
 
-    // ── 读取类：共享分区 owner 可读他端；私有分区仅本端——
+    // ── 读取类：共享分区可读他端（须白名单）；私有分区仅本端——
     // 或持有效换机导入授权（grant）；或升主种子拷贝（seed: true，owner）──
     case StoreOp.list:
     case StoreOp.meta:
@@ -448,10 +506,22 @@ StoreAcl checkStoreAclWith(
         return StoreAcl.denyBadOp;
       }
       final targetOwn = device == null || device == callerDeviceId;
-      if (!targetOwn && !shared(space)) {
+      if (!targetOwn && shared(space)) {
+        final path = frame.op == StoreOp.list
+            ? (frame.payload['path'] as String?)
+            : frame.path;
+        final cross = _crossSharedAccess(
+          trustLevel: trustLevel,
+          space: space,
+          path: path,
+          shareAllowed: shareAllowed,
+        );
+        if (cross != StoreAcl.allow) return cross;
+      } else if (!targetOwn && !shared(space)) {
         // seed:true：ACL 粗放行；运行时由 SeedAuthorization 收敛为迁移窗口
         final seed = frame.payload['seed'] == true;
         if (seed) {
+          if (!isOwner) return StoreAcl.denyUntrusted;
           if (!isValidDeviceId(device)) {
             return StoreAcl.denyBadOp;
           }
@@ -459,6 +529,7 @@ StoreAcl checkStoreAclWith(
         }
         final grant = frame.payload['grant'];
         if (grant is! String || grant.isEmpty) return StoreAcl.denyAcl;
+        if (!isOwner) return StoreAcl.denyUntrusted;
       }
       if (device != null && !isValidDeviceId(device)) {
         return StoreAcl.denyBadOp;
@@ -516,6 +587,10 @@ StoreAcl checkStoreAclWith(
       return StoreAcl.allow;
     case StoreOp.masterPointer:
       // 通知帧在入站早退；若落入 ACL 则允许 owner
+      return StoreAcl.allow;
+
+    case StoreOp.shareAnnounce:
+      // 通知帧在入站早退；落入 ACL 时放行（owner/friend 均可推送自己的分享目录）
       return StoreAcl.allow;
 
     default:
