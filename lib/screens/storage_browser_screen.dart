@@ -553,15 +553,30 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
                       itemBuilder: (_, i) {
                         final v = versions[i] as Map;
                         final ver = v['v'] ?? '?';
-                        final size = v['size'] ?? 0;
+                        final sizeRaw = v['size'];
+                        final size = sizeRaw is int
+                            ? sizeRaw
+                            : sizeRaw is num
+                                ? sizeRaw.toInt()
+                                : 0;
+                        final mtimeRaw = v['mtime'];
+                        final mtime = mtimeRaw is int
+                            ? mtimeRaw
+                            : mtimeRaw is num
+                                ? mtimeRaw.toInt()
+                                : 0;
                         final sha = '${v['sha256'] ?? ''}';
                         final shaShort =
                             sha.length >= 16 ? sha.substring(0, 16) : sha;
                         final protected = v['protected'] == true;
+                        final when = mtime > 0 ? _fmtRelativeTime(mtime) : '';
+                        final title = when.isEmpty
+                            ? _fmtBytes(size)
+                            : '$when · ${_fmtBytes(size)}';
                         return ListTile(
                           dense: true,
                           leading: Text('v$ver'),
-                          title: Text(_fmtBytes(size is int ? size : 0)),
+                          title: Text(title),
                           subtitle: Text(shaShort),
                           trailing: protected
                               ? const Icon(Icons.lock_outline, size: 16)

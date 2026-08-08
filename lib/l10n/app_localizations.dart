@@ -9317,7 +9317,7 @@ abstract class AppLocalizations {
   /// No description provided for @storage_browserVersionsEmpty.
   ///
   /// In zh, this message translates to:
-  /// **'暂无版本记录（需连接 NAS/节点）'**
+  /// **'暂无版本记录（覆盖写入后才会产生）'**
   String get storage_browserVersionsEmpty;
 
   /// No description provided for @storage_browserVersionsFailed.
