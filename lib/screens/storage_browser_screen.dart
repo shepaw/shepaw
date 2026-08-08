@@ -1429,7 +1429,10 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
                   children: [
                     for (final name in children.folders)
                       ListTile(
-                        leading: const Icon(Icons.folder_outlined),
+                        leading: SizedBox(
+                          width: 42,
+                          child: Center(child: _buildFolderIcon()),
+                        ),
                         title: Text(name),
                         trailing: const Icon(Icons.chevron_right, size: 20),
                         onTap: () => _enterFolder(name),
@@ -1507,7 +1510,10 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
       children: [
         for (final space in _spaces)
           ListTile(
-            leading: const Icon(Icons.folder_outlined),
+            leading: SizedBox(
+              width: 42,
+              child: Center(child: _buildFolderIcon()),
+            ),
             title: Text(space),
             subtitle: Text(
               l10n.storage_browserCount(
