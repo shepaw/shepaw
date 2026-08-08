@@ -5182,6 +5182,9 @@ class AppLocalizationsEn extends AppLocalizations {
   String get storage_browserEmpty => 'No files in this space';
 
   @override
+  String get storage_browserHome => 'home';
+
+  @override
   String get storage_browserTabFlat => 'All';
 
   @override

@@ -1528,9 +1528,10 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
   }
 
   Widget _buildBreadcrumb() {
+    final l10n = AppLocalizations.of(context);
     final segments = <({String label, VoidCallback? onTap})>[
       (
-        label: '/',
+        label: l10n.storage_browserHome,
         onTap: _navSpace == null && _navPath.isEmpty ? null : _navToRoot,
       ),
     ];

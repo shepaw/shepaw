@@ -2994,6 +2994,7 @@
   "storage_browserPrefix": "路径前缀",
   "storage_browserPrefixHint": "例如 docs/ 或 task/",
   "storage_browserEmpty": "该分区暂无文件",
+  "storage_browserHome": "首页",
   "storage_browserTabFlat": "全部",
   "storage_browserTabSpace": "空间",
   "storage_browserTabRecent": "最近",

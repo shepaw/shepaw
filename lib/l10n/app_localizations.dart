@@ -9110,6 +9110,12 @@ abstract class AppLocalizations {
   /// **'该分区暂无文件'**
   String get storage_browserEmpty;
 
+  /// No description provided for @storage_browserHome.
+  ///
+  /// In zh, this message translates to:
+  /// **'首页'**
+  String get storage_browserHome;
+
   /// No description provided for @storage_browserTabFlat.
   ///
   /// In zh, this message translates to:

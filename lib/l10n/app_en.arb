@@ -2509,6 +2509,7 @@
   "storage_browserPrefix": "Path prefix",
   "storage_browserPrefixHint": "e.g. docs/ or task/",
   "storage_browserEmpty": "No files in this space",
+  "storage_browserHome": "home",
   "storage_browserTabFlat": "All",
   "storage_browserTabSpace": "Space",
   "storage_browserTabRecent": "Recent",

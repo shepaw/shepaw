@@ -4988,6 +4988,9 @@ class AppLocalizationsZh extends AppLocalizations {
   String get storage_browserEmpty => '该分区暂无文件';
 
   @override
+  String get storage_browserHome => '首页';
+
+  @override
   String get storage_browserTabFlat => '全部';
 
   @override
