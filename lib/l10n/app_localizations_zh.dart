@@ -5590,6 +5590,10 @@ class AppLocalizationsZh extends AppLocalizations {
   String get storage_autoSnapshotOff => '已关闭';
 
   @override
+  String get storage_autoSnapshotRetention =>
+      '不会无限堆积：按 GFS 保留最近 7 日、4 周、12 个月快照，更早的会自动清理。';
+
+  @override
   String storage_lastSuccess(String time) {
     return '最近成功 $time';
   }

@@ -10112,6 +10112,12 @@ abstract class AppLocalizations {
   /// **'已关闭'**
   String get storage_autoSnapshotOff;
 
+  /// No description provided for @storage_autoSnapshotRetention.
+  ///
+  /// In zh, this message translates to:
+  /// **'不会无限堆积：按 GFS 保留最近 7 日、4 周、12 个月快照，更早的会自动清理。'**
+  String get storage_autoSnapshotRetention;
+
   /// No description provided for @storage_lastSuccess.
   ///
   /// In zh, this message translates to:

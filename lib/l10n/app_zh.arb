@@ -3467,6 +3467,7 @@
   },
   "storage_autoSnapshot": "每日自动快照",
   "storage_autoSnapshotOff": "已关闭",
+  "storage_autoSnapshotRetention": "不会无限堆积：按 GFS 保留最近 7 日、4 周、12 个月快照，更早的会自动清理。",
   "storage_lastSuccess": "最近成功 {time}",
   "storage_noKeyHint": "先手动创建一次快照以启用自动快照",
   "storage_enableSnapshotPasswordTitle": "开启自动快照需验证主密码",

@@ -2982,6 +2982,7 @@
   },
   "storage_autoSnapshot": "Auto daily snapshot",
   "storage_autoSnapshotOff": "Off",
+  "storage_autoSnapshotRetention": "Storage is capped: GFS keeps the latest 7 daily, 4 weekly, and 12 monthly snapshots; older ones are pruned automatically.",
   "storage_lastSuccess": "Last success {time}",
   "storage_noKeyHint": "Create one manual snapshot to enable auto snapshots",
   "storage_enableSnapshotPasswordTitle": "Verify master password to enable auto snapshots",

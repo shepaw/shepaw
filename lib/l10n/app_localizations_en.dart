@@ -5797,6 +5797,10 @@ class AppLocalizationsEn extends AppLocalizations {
   String get storage_autoSnapshotOff => 'Off';
 
   @override
+  String get storage_autoSnapshotRetention =>
+      'Storage is capped: GFS keeps the latest 7 daily, 4 weekly, and 12 monthly snapshots; older ones are pruned automatically.';
+
+  @override
   String storage_lastSuccess(String time) {
     return 'Last success $time';
   }

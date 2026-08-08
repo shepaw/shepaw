@@ -359,6 +359,16 @@ class _StorageSnapshotsScreenState extends State<StorageSnapshotsScreen> {
                                         .onSurfaceVariant,
                                   ),
                         ),
+                        const SizedBox(height: 4),
+                        Text(
+                          l10n.storage_autoSnapshotRetention,
+                          style:
+                              Theme.of(context).textTheme.bodySmall?.copyWith(
+                                    color: Theme.of(context)
+                                        .colorScheme
+                                        .onSurfaceVariant,
+                                  ),
+                        ),
                       ],
                     ),
                   ),
