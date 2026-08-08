@@ -115,19 +115,27 @@ class _StoreFileListAvatarState extends State<StoreFileListAvatar> {
   Widget build(BuildContext context) {
     if (_imageFile != null) {
       final dpr = MediaQuery.devicePixelRatioOf(context);
+      // Only constrain one decode axis so aspect ratio is preserved.
+      final cacheSide = (StoreFileVisual.avatarWidth > StoreFileVisual.avatarHeight
+              ? StoreFileVisual.avatarWidth
+              : StoreFileVisual.avatarHeight) *
+          dpr;
+      final scheme = Theme.of(context).colorScheme;
       return _frame(
         child: ClipRRect(
           borderRadius: BorderRadius.circular(8),
-          child: Image.file(
-            _imageFile!,
-            width: StoreFileVisual.avatarWidth,
-            height: StoreFileVisual.avatarHeight,
-            fit: BoxFit.cover,
-            cacheWidth: (StoreFileVisual.avatarWidth * dpr).round(),
-            cacheHeight: (StoreFileVisual.avatarHeight * dpr).round(),
-            gaplessPlayback: true,
-            filterQuality: FilterQuality.medium,
-            errorBuilder: (_, __, ___) => _typeIcon(),
+          child: ColoredBox(
+            color: scheme.surfaceContainerHighest.withValues(alpha: 0.6),
+            child: Image.file(
+              _imageFile!,
+              width: StoreFileVisual.avatarWidth,
+              height: StoreFileVisual.avatarHeight,
+              fit: BoxFit.contain,
+              cacheWidth: cacheSide.round(),
+              gaplessPlayback: true,
+              filterQuality: FilterQuality.medium,
+              errorBuilder: (_, __, ___) => _typeIcon(),
+            ),
           ),
         ),
       );
