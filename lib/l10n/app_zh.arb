@@ -3073,7 +3073,7 @@
   "storage_browserVersions": "版本",
   "storage_browserManifest": "血缘",
   "storage_browserVersionsTitle": "版本历史",
-  "storage_browserVersionsEmpty": "暂无版本记录（需连接 NAS/节点）",
+  "storage_browserVersionsEmpty": "暂无版本记录（覆盖写入后才会产生）",
   "storage_browserVersionsFailed": "加载版本失败：{error}",
   "@storage_browserVersionsFailed": {
     "placeholders": {

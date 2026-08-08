@@ -505,10 +505,6 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
 
   Future<void> _showVersions(_BrowsedFile file) async {
     final l10n = AppLocalizations.of(context);
-    if (await StoreService.instance.isMaster()) {
-      _toast(l10n.storage_browserNeedMaster);
-      return;
-    }
     setState(() => _busy = true);
     Map<String, dynamic>? data;
     String? err;
@@ -582,10 +578,6 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
 
   Future<void> _showManifest(_BrowsedFile file) async {
     final l10n = AppLocalizations.of(context);
-    if (await StoreService.instance.isMaster()) {
-      _toast(l10n.storage_browserNeedMaster);
-      return;
-    }
     setState(() => _busy = true);
     Map<String, dynamic>? data;
     String? err;

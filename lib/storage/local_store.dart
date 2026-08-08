@@ -119,6 +119,7 @@ class _StagingMeta {
 /// ```
 /// <device_id>/<space>/...            正式区
 /// <device_id>/<space>/.staging/      未 commit 半成品（list/meta 不可见）
+/// .versions/<device_id>/<space>/...  覆盖旧版本（versions.* 只读）
 /// .recycle/<yyyy-MM-dd>/<device_id>/<space>/...  回收站
 /// ```
 class LocalStore {
@@ -430,9 +431,11 @@ class LocalStore {
   }
 
   /// 原子转正（spec §2.6）：先全量验哈希（任一失败整批不转正），
-  /// 再逐个 rename；目标已存在时旧版本先进回收站。
+  /// 再逐个 rename；目标已存在时旧版本先进 `.versions` 并保留索引。
   /// 成功后经 [syncJournal] 内联记日志（本机设备目录变更入未同步队列）。
   /// 可选 [retention]：转正成功后按策略剪枝同分区顶层目录（§13 / spec retention）。
+  /// 可选 [manifest]：写入任务 `.nexuspouch/manifest.json`（血缘）。
+  /// 可选 [publish]：标记版本 `protected`（发布产物修剪时保留）。
   /// 返回（已转正文件清单，失败项）。
   Future<(List<({String path, int size, String sha256})>, List<String>)>
       commit(
@@ -440,6 +443,8 @@ class LocalStore {
     String space,
     List<String> uploadIds, {
     Map<String, dynamic>? retention,
+    Map<String, dynamic>? manifest,
+    bool publish = false,
   }) async {
     final stagingDir = _stagingDir(deviceId, space);
     final verified = <(String, _StagingMeta, File)>[];
@@ -483,13 +488,21 @@ class LocalStore {
         // 转正前检查目标路径（含父目录）无 symlink 逃逸
         await _checkNoSymlinkEscape(deviceId, space, finalAbs, meta.path);
         if (await File(finalAbs).exists()) {
-          // 被覆盖旧版本进回收站（spec §6.2）
-          await _moveToRecycle(deviceId, space, meta.path);
+          // 被覆盖旧版本进 .versions（spec §1.5 / §2.6）
+          await _archiveToVersions(deviceId, space, meta.path);
         }
         await File(finalAbs).parent.create(recursive: true);
         await partFile.rename(finalAbs);
         _hashCache.remove(finalAbs);
         await File(p.join(stagingDir, '$id.json')).delete();
+        await _recordCurrentVersion(
+          deviceId,
+          space,
+          meta.path,
+          sha256: meta.sha256,
+          size: meta.size,
+          protected: publish,
+        );
         committed.add(
             (path: meta.path, size: meta.size, sha256: meta.sha256));
       } catch (e) {
@@ -511,7 +524,277 @@ class LocalStore {
         );
       }
     }
+    if (committed.isNotEmpty && manifest != null) {
+      await _writeTaskManifest(deviceId, space, committed.first.path, manifest);
+    }
     return (committed, failed);
+  }
+
+  // ────────────────────────────── versions / manifest（spec §1.5）──
+
+  /// `.versions/<device>/<space>/<relpath>/`
+  String _versionsDir(String deviceId, String space, String normalizedRel) =>
+      p.join(root.path, '.versions', deviceId, space, normalizedRel);
+
+  String _versionsIndexPath(String deviceId, String space, String normalizedRel) =>
+      p.join(_versionsDir(deviceId, space, normalizedRel), 'index.json');
+
+  String _versionsBlobPath(
+          String deviceId, String space, String normalizedRel, String sha256) =>
+      p.join(_versionsDir(deviceId, space, normalizedRel), sha256);
+
+  Future<List<Map<String, dynamic>>> _loadVersionEntries(
+      String deviceId, String space, String normalizedRel) async {
+    final indexFile =
+        File(_versionsIndexPath(deviceId, space, normalizedRel));
+    if (!await indexFile.exists()) return [];
+    try {
+      final json = jsonDecode(await indexFile.readAsString());
+      final list = (json is Map ? json['versions'] : null) as List? ?? const [];
+      return [
+        for (final e in list)
+          if (e is Map) Map<String, dynamic>.from(e)
+      ];
+    } catch (_) {
+      return [];
+    }
+  }
+
+  Future<void> _saveVersionEntries(String deviceId, String space,
+      String normalizedRel, List<Map<String, dynamic>> entries) async {
+    final dir = Directory(_versionsDir(deviceId, space, normalizedRel));
+    await dir.create(recursive: true);
+    final indexFile =
+        File(_versionsIndexPath(deviceId, space, normalizedRel));
+    await indexFile.writeAsString(jsonEncode({'versions': entries}));
+  }
+
+  /// 覆盖前：把正式区现有文件迁入 `.versions` 并确保索引含该版本。
+  Future<void> _archiveToVersions(
+      String deviceId, String space, String relPath) async {
+    final normalized = normalizeStorePath(relPath);
+    final abs = _resolveInSpace(deviceId, space, normalized);
+    final file = File(abs);
+    if (!await file.exists()) return;
+    final stat = await file.stat();
+    final hash = await _hashOf(file, stat);
+    final entries = await _loadVersionEntries(deviceId, space, normalized);
+    final already =
+        entries.any((e) => e['sha256'] == hash && e['size'] == stat.size);
+    if (!already) {
+      final nextV = entries.isEmpty
+          ? 1
+          : ((entries.last['v'] as num?)?.toInt() ?? entries.length) + 1;
+      entries.add(<String, dynamic>{
+        'v': nextV,
+        'sha256': hash,
+        'size': stat.size,
+        'mtime': stat.modified.millisecondsSinceEpoch,
+        'protected': false,
+      });
+      await _saveVersionEntries(deviceId, space, normalized, entries);
+    }
+    final blob = File(_versionsBlobPath(deviceId, space, normalized, hash));
+    await blob.parent.create(recursive: true);
+    if (await blob.exists()) {
+      await file.delete();
+    } else {
+      await file.rename(blob.path);
+    }
+    _hashCache.remove(abs);
+  }
+
+  /// 转正后：把当前正式区内容记入版本索引（最新一条）。
+  Future<void> _recordCurrentVersion(
+    String deviceId,
+    String space,
+    String relPath, {
+    required String sha256,
+    required int size,
+    bool protected = false,
+  }) async {
+    final normalized = normalizeStorePath(relPath);
+    final abs = _resolveInSpace(deviceId, space, normalized);
+    final file = File(abs);
+    final mtime = await file.exists()
+        ? (await file.stat()).modified.millisecondsSinceEpoch
+        : DateTime.now().millisecondsSinceEpoch;
+    final entries = await _loadVersionEntries(deviceId, space, normalized);
+    if (entries.isNotEmpty && entries.last['sha256'] == sha256) {
+      if (protected && entries.last['protected'] != true) {
+        entries.last['protected'] = true;
+        await _saveVersionEntries(deviceId, space, normalized, entries);
+      }
+      return;
+    }
+    final nextV = entries.isEmpty
+        ? 1
+        : ((entries.last['v'] as num?)?.toInt() ?? entries.length) + 1;
+    entries.add(<String, dynamic>{
+      'v': nextV,
+      'sha256': sha256,
+      'size': size,
+      'mtime': mtime,
+      'protected': protected,
+    });
+    await _saveVersionEntries(deviceId, space, normalized, entries);
+  }
+
+  /// 版本清单（含当前最新；无索引时若正式区有文件则合成 v1）。
+  Future<Map<String, dynamic>> versionsList(
+    String deviceId,
+    String space,
+    String relPath,
+  ) async {
+    final normalized = normalizeStorePath(relPath);
+    var entries = await _loadVersionEntries(deviceId, space, normalized);
+    if (entries.isEmpty) {
+      final abs = _resolveInSpace(deviceId, space, normalized);
+      final file = File(abs);
+      if (await file.exists()) {
+        final stat = await file.stat();
+        entries = [
+          <String, dynamic>{
+            'v': 1,
+            'sha256': await _hashOf(file, stat),
+            'size': stat.size,
+            'mtime': stat.modified.millisecondsSinceEpoch,
+            'protected': false,
+          }
+        ];
+      }
+    }
+    return <String, dynamic>{'versions': entries};
+  }
+
+  /// 按 `vN` 或 sha256 前缀读取历史内容。
+  Future<(Uint8List data, int size, bool eof)> versionsRead(
+    String deviceId,
+    String space,
+    String relPath,
+    String ref, {
+    int offset = 0,
+    int length = maxReadChunk,
+  }) async {
+    if (length < 1 || length > maxReadChunk) {
+      throw StoreException(
+          StoreError.badOp, 'length must be 1..$maxReadChunk');
+    }
+    if (offset < 0) throw StoreException(StoreError.badOp, 'negative offset');
+
+    final normalized = normalizeStorePath(relPath);
+    final parsed = parseStoreVersionRef(ref);
+    if (parsed == null || parsed.isLatest) {
+      throw StoreException(StoreError.badUri, 'invalid version ref $ref');
+    }
+
+    final entries = (await versionsList(deviceId, space, normalized))['versions']
+        as List;
+    Map<String, dynamic>? hit;
+    if (parsed.kind == StoreUriRefKind.seq) {
+      final v = parsed.value as int;
+      for (final e in entries) {
+        final m = e as Map<String, dynamic>;
+        if ((m['v'] as num?)?.toInt() == v) {
+          hit = m;
+          break;
+        }
+      }
+    } else {
+      final prefix = (parsed.value as String).toLowerCase();
+      final matches = <Map<String, dynamic>>[];
+      for (final e in entries) {
+        final m = e as Map<String, dynamic>;
+        final sha = '${m['sha256'] ?? ''}'.toLowerCase();
+        if (sha.startsWith(prefix)) matches.add(m);
+      }
+      if (matches.length > 1) {
+        throw StoreException(StoreError.ambiguousRef, prefix);
+      }
+      if (matches.length == 1) hit = matches.first;
+    }
+    if (hit == null) {
+      throw StoreException(StoreError.notFound, 'ref=$ref');
+    }
+
+    final sha = '${hit['sha256']}';
+    final size = (hit['size'] as num?)?.toInt() ?? 0;
+    // 优先 blob；否则若与正式区哈希一致则读正式区
+    final blob = File(_versionsBlobPath(deviceId, space, normalized, sha));
+    File source;
+    if (await blob.exists()) {
+      source = blob;
+    } else {
+      final live = File(_resolveInSpace(deviceId, space, normalized));
+      if (!await live.exists()) {
+        throw StoreException(StoreError.notFound, 'blob missing for $sha');
+      }
+      final liveStat = await live.stat();
+      final liveHash = await _hashOf(live, liveStat);
+      if (liveHash != sha) {
+        throw StoreException(StoreError.notFound, 'blob missing for $sha');
+      }
+      source = live;
+    }
+
+    if (offset >= size) {
+      return (Uint8List(0), size, true);
+    }
+    final end = (offset + length).clamp(0, size);
+    final raf = await source.open();
+    try {
+      await raf.setPosition(offset);
+      final data = await raf.read(end - offset);
+      return (data, size, end >= size);
+    } finally {
+      await raf.close();
+    }
+  }
+
+  /// 任务血缘：在路径祖先中查找 `.nexuspouch/manifest.json`。
+  Future<Map<String, dynamic>> readManifest(
+    String deviceId,
+    String space,
+    String relPath,
+  ) async {
+    final normalized = normalizeStorePath(relPath);
+    final segments = normalized.split('/');
+    // 从文件所在目录向上，到 space 根下第一层任务目录
+    for (var i = segments.length - 1; i >= 1; i--) {
+      final taskRel = segments.sublist(0, i).join('/');
+      final manifestAbs = p.join(
+          _spaceDir(deviceId, space), taskRel, '.nexuspouch', 'manifest.json');
+      final f = File(manifestAbs);
+      if (await f.exists()) {
+        final decoded = jsonDecode(await f.readAsString());
+        if (decoded is Map<String, dynamic>) return decoded;
+        if (decoded is Map) return Map<String, dynamic>.from(decoded);
+      }
+    }
+    // 单段路径：task 即第一段（文件本身也在任务根下时）
+    if (segments.length == 1) {
+      return <String, dynamic>{};
+    }
+    return <String, dynamic>{};
+  }
+
+  Future<void> _writeTaskManifest(
+    String deviceId,
+    String space,
+    String fileRelPath,
+    Map<String, dynamic> manifest,
+  ) async {
+    final normalized = normalizeStorePath(fileRelPath);
+    final segments = normalized.split('/');
+    final taskRel =
+        segments.length > 1 ? segments.first : normalized;
+    // 点前缀目录不走 normalizeStorePath；直接拼在 space 下
+    final dir = Directory(
+        p.join(_spaceDir(deviceId, space), taskRel, '.nexuspouch'));
+    await dir.create(recursive: true);
+    final file = File(p.join(dir.path, 'manifest.json'));
+    await file.writeAsString(
+        const JsonEncoder.withIndent('  ').convert(manifest));
   }
 
   // ────────────────────────────── rename ──

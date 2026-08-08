@@ -768,11 +768,18 @@ class StoreService {
           final retention = retentionRaw is Map
               ? Map<String, dynamic>.from(retentionRaw)
               : null;
+          final manifestRaw = frame.payload['manifest'];
+          final manifest = manifestRaw is Map
+              ? Map<String, dynamic>.from(manifestRaw)
+              : null;
+          final publish = frame.payload['publish'] == true;
           final (committed, failed) = await store.commit(
             callerDeviceId,
             frame.space!,
             (frame.payload['upload_ids'] as List).cast<String>(),
             retention: retention,
+            manifest: manifest,
+            publish: publish,
           );
           // v3：携带 upto_seq 时推进该设备游标（spec §6.2）
           int? appliedSeq;
@@ -827,6 +834,35 @@ class StoreService {
         case StoreOp.recycleEmpty:
           final purged = await store.recycleEmpty();
           return <String, dynamic>{'purged_bytes': purged};
+
+        case StoreOp.versionsList:
+          return await store.versionsList(
+            frame.device ?? callerDeviceId,
+            frame.space!,
+            frame.path!,
+          );
+
+        case StoreOp.versionsRead:
+          final (data, size, eof) = await store.versionsRead(
+            frame.device ?? callerDeviceId,
+            frame.space!,
+            frame.path!,
+            frame.payload['ref'] as String? ?? '',
+            offset: frame.payload['offset'] as int? ?? 0,
+            length: frame.payload['length'] as int? ?? LocalStore.maxReadChunk,
+          );
+          return <String, dynamic>{
+            'data': base64Encode(data),
+            'size': size,
+            'eof': eof,
+          };
+
+        case StoreOp.manifest:
+          return await store.readManifest(
+            frame.device ?? callerDeviceId,
+            frame.space!,
+            frame.path!,
+          );
 
         case StoreOp.stats:
           final base = await store.stats();

@@ -2588,7 +2588,7 @@
   "storage_browserVersions": "Versions",
   "storage_browserManifest": "Lineage",
   "storage_browserVersionsTitle": "Version history",
-  "storage_browserVersionsEmpty": "No versions (connect a NAS/node)",
+  "storage_browserVersionsEmpty": "No versions yet (created when a file is overwritten)",
   "storage_browserVersionsFailed": "Failed to load versions: {error}",
   "storage_browserManifestTitle": "Task lineage",
   "storage_browserManifestEmpty": "No lineage",

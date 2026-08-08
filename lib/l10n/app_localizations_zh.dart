@@ -5116,7 +5116,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get storage_browserVersionsTitle => '版本历史';
 
   @override
-  String get storage_browserVersionsEmpty => '暂无版本记录（需连接 NAS/节点）';
+  String get storage_browserVersionsEmpty => '暂无版本记录（覆盖写入后才会产生）';
 
   @override
   String storage_browserVersionsFailed(String error) {

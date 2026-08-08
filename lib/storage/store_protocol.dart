@@ -322,6 +322,12 @@ String _decodeStoreUriSegment(String segment) {
   }
 }
 
+StoreUriRef? parseStoreVersionRef(String s) {
+  if (s.startsWith('@')) s = s.substring(1);
+  if (s.startsWith('?ref=')) s = s.substring(5);
+  return _parseRefToken(s);
+}
+
 StoreUriRef? _parseRefToken(String s) {
   if (s.length >= 16 && RegExp(r'^[0-9a-fA-F]{16,}$').hasMatch(s)) {
     return StoreUriRef.hash(s.toLowerCase());

@@ -263,7 +263,7 @@ void main() {
       expect(await store.recycleList(), isEmpty);
     });
 
-    test('覆盖写：旧版本进回收站', () async {
+    test('覆盖写：旧版本进 .versions', () async {
       final v1 = bytesOf('version one');
       final (u1, _) = await begin('o.txt', v1);
       await store.writeChunk(dev, 'files', u1, 0, v1);
@@ -274,11 +274,36 @@ void main() {
       await store.writeChunk(dev, 'files', u2, 0, v2);
       await store.commit(dev, 'files', [u2]);
 
-      final recycle = await store.recycleList();
-      expect(recycle.single.originPath, 'o.txt');
-      // 回收站里的应是 v1
-      final (data, _, __) = await store.read(dev, 'files', 'o.txt', 0, 64);
+      expect(await store.recycleList(), isEmpty);
+      final listed = await store.versionsList(dev, 'files', 'o.txt');
+      final versions = listed['versions'] as List;
+      expect(versions, hasLength(2));
+      expect(versions[0]['v'], 1);
+      expect(versions[0]['sha256'], sha(v1));
+      expect(versions[1]['v'], 2);
+      expect(versions[1]['sha256'], sha(v2));
+
+      final (oldData, _, __) =
+          await store.versionsRead(dev, 'files', 'o.txt', 'v1');
+      expect(utf8.decode(oldData), 'version one');
+      final (data, _, ___) = await store.read(dev, 'files', 'o.txt', 0, 64);
       expect(utf8.decode(data), 'version two!');
+    });
+
+    test('manifest：commit 写入任务血缘；读回', () async {
+      final c = bytesOf('artifact');
+      final (u, _) = await begin('task-1/out.txt', c, space: 'artifacts');
+      await store.writeChunk(dev, 'artifacts', u, 0, c);
+      await store.commit(dev, 'artifacts', [u], manifest: {
+        'producer': 'agent-a',
+        'parent_uris': ['store://files/$dev/in.txt'],
+        'summary': 'demo',
+        'state': 'published',
+      });
+      final m = await store.readManifest(dev, 'artifacts', 'task-1/out.txt');
+      expect(m['producer'], 'agent-a');
+      expect(m['state'], 'published');
+      expect(m['parent_uris'], ['store://files/$dev/in.txt']);
     });
 
     test('还原时原位置有文件：现有文件先回收入站', () async {

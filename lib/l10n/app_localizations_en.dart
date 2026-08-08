@@ -5311,7 +5311,8 @@ class AppLocalizationsEn extends AppLocalizations {
   String get storage_browserVersionsTitle => 'Version history';
 
   @override
-  String get storage_browserVersionsEmpty => 'No versions (connect a NAS/node)';
+  String get storage_browserVersionsEmpty =>
+      'No versions yet (created when a file is overwritten)';
 
   @override
   String storage_browserVersionsFailed(String error) {
