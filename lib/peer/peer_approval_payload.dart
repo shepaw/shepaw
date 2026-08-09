@@ -1,3 +1,25 @@
+/// Thrown when the user taps a peer approval card that is no longer tracked
+/// locally (turn finished / timed out / already submitted / app restarted
+/// without a hub replay). Callers must keep the UI selection and persist it —
+/// rolling back would revive a dead "pending" card on the next reload.
+class PeerApprovalExpiredException implements Exception {
+  final String message;
+
+  const PeerApprovalExpiredException([
+    this.message = '审批已失效（对话已结束或结果已提交），无需重复操作',
+  ]);
+
+  @override
+  String toString() => message;
+
+  /// Whether [error] (or nested causes) is an expired peer-approval verdict.
+  static bool matches(Object? error) {
+    if (error is PeerApprovalExpiredException) return true;
+    final text = error?.toString() ?? '';
+    return text.contains('审批已失效');
+  }
+}
+
 /// Pure helpers for peer tool-approval hub payloads.
 ///
 /// Kept free of [PeerAgentClientService] / connection state so openApprovals

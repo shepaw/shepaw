@@ -2,6 +2,35 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:shepaw/peer/peer_approval_payload.dart';
 
 void main() {
+  group('PeerApprovalExpiredException', () {
+    test('matches typed exception and legacy message', () {
+      expect(
+        PeerApprovalExpiredException.matches(
+          const PeerApprovalExpiredException(),
+        ),
+        isTrue,
+      );
+      expect(
+        PeerApprovalExpiredException.matches(
+          Exception('审批已失效（对话已结束或结果已提交），无需重复操作'),
+        ),
+        isTrue,
+      );
+      expect(
+        PeerApprovalExpiredException.matches(Exception('peer not connected')),
+        isFalse,
+      );
+      expect(PeerApprovalExpiredException.matches(null), isFalse);
+    });
+
+    test('toString exposes user-facing message', () {
+      expect(
+        const PeerApprovalExpiredException().toString(),
+        contains('审批已失效'),
+      );
+    });
+  });
+
   group('PeerApprovalPayload', () {
     test('normalizeApprovalId keeps non-empty hub id', () {
       expect(

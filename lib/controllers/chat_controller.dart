@@ -31,6 +31,7 @@ import '../peer/services/peer_storage_service.dart';
 import '../peer/services/peer_connection_manager.dart';
 import '../peer/services/peer_connection.dart' show PeerConnectionEvent;
 import '../peer/peer_approval_selection.dart';
+import '../peer/peer_approval_payload.dart';
 import '../peer/models/paired_peer.dart' show PeerConnectionState;
 import '../services/workflow/workflow_restore_planner.dart';
 import '../services/workflow/workflow_pending_approval_picker.dart';

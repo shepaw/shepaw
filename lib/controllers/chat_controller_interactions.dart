@@ -168,6 +168,21 @@ mixin _InteractionOps on _ChatControllerBase {
       }
       await _resumeWorkflowExecutionIfNeeded(record.workflowId);
     } catch (e) {
+      if (PeerApprovalExpiredException.matches(e)) {
+        await WorkflowService.instance.markPendingApprovalSubmitted(
+          confirmationId,
+          selectedActionId: actionId,
+        );
+        setWorkflowPeerApprovalPending(null);
+        if (record.messageId != null &&
+            messageIdMap.containsKey(record.messageId)) {
+          _markActionConfirmationSelected(
+            record.messageId!,
+            actionId: actionId,
+            actionLabel: actionLabel,
+          );
+        }
+      }
       _emit(ShowErrorSnackBarEvent('$e'));
     }
   }
@@ -206,6 +221,20 @@ mixin _InteractionOps on _ChatControllerBase {
       );
       return unblocked;
     } catch (e) {
+      if (PeerApprovalExpiredException.matches(e)) {
+        // Expired: keep the tapped button state so restart does not revive
+        // a dead pending card (InteractiveResponseHandler also skips rollback).
+        _markActionConfirmationSelected(
+          originalMessage.id,
+          actionId: actionId,
+          actionLabel: actionLabel,
+        );
+        await WorkflowService.instance.markPendingApprovalSubmitted(
+          confirmationId,
+          selectedActionId: actionId,
+        );
+        setWorkflowPeerApprovalPending(null);
+      }
       _emit(ShowErrorSnackBarEvent('$e'));
       return false;
     }

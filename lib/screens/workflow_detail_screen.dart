@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import '../models/workflow_models.dart';
 import '../models/workflow_pending_approval.dart';
+import '../peer/peer_approval_payload.dart';
 import '../peer/services/peer_agent_client_service.dart';
 import '../services/workflow/workflow_service.dart';
 import '../widgets/action_confirmation_buttons.dart';
@@ -77,7 +78,6 @@ class _WorkflowDetailScreenState extends State<WorkflowDetailScreen> {
     String actionId,
     String actionLabel,
   ) async {
-    final l10n = AppLocalizations.of(context);
     final pending = _pendingPeerApproval;
     if (pending == null || _submittingApproval) return;
     setState(() => _submittingApproval = true);
@@ -103,8 +103,22 @@ class _WorkflowDetailScreenState extends State<WorkflowDetailScreen> {
         );
       }
     } catch (e) {
-      if (mounted) {
+      if (PeerApprovalExpiredException.matches(e)) {
+        // Dead turn — still clear local pending so the panel does not revive.
+        await widget.workflowService.markPendingApprovalSubmitted(
+          confirmationId,
+          selectedActionId: actionId,
+        );
+        if (mounted) {
+          setState(() {
+            _pendingPeerApproval = null;
+            _submittingApproval = false;
+          });
+        }
+      } else if (mounted) {
         setState(() => _submittingApproval = false);
+      }
+      if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text(AppLocalizations.of(context).workflow_approvalFailed('$e'))),
         );

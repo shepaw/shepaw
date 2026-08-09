@@ -1810,7 +1810,7 @@ class PeerAgentClientService {
         'send a verdict that would be dropped remotely',
         tag: 'PeerApproval',
       );
-      throw Exception('审批已失效（对话已结束或结果已提交），无需重复操作');
+      throw const PeerApprovalExpiredException();
     }
     final payload = <String, dynamic>{
       'type': 'agent_approval_resp',

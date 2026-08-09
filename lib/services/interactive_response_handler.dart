@@ -1,4 +1,5 @@
 import '../models/message.dart';
+import '../peer/peer_approval_payload.dart';
 import '../services/chat_service.dart';
 import '../services/local_database_service.dart';
 import '../services/acp_agent_connection.dart';
@@ -177,9 +178,14 @@ class InteractiveResponseHandler {
         await ctx.loadMessages();
       }
     } catch (e) {
-      // The verdict never reached the agent — roll back the optimistic
-      // selection so the card becomes tappable again instead of looking
-      // "approved" while the agent is still waiting.
+      if (PeerApprovalExpiredException.matches(e)) {
+        // Turn is already dead — keep the tapped selection so reload / restart
+        // does not revive a pending card the hub will never accept again.
+        await _persistOptimisticSelection(originalMessage);
+        rethrow;
+      }
+      // Transient failure (offline send, etc.): roll back so the card stays
+      // tappable for a retry instead of looking approved while the agent waits.
       await _rollbackOptimisticUpdate(originalMessage);
       if (!isPeerInBand) {
         await ctx.loadMessages();
@@ -337,6 +343,23 @@ class InteractiveResponseHandler {
       );
     } catch (_) {
       /* row may not exist */
+    }
+  }
+
+  /// Keep the optimistic selection on an expired peer approval and flush it to
+  /// DB (ChatService may have written it already; this covers races / partial
+  /// paths so a later channel reload cannot revive the pending card).
+  Future<void> _persistOptimisticSelection(Message originalMessage) async {
+    final current = ctx.messageIdMap[originalMessage.id];
+    final meta = current?.metadata;
+    if (meta == null) return;
+    try {
+      await ctx.localDatabaseService.updateMessageMetadata(
+        originalMessage.id,
+        meta,
+      );
+    } catch (_) {
+      /* row may not exist for ephemeral hosts */
     }
   }
 
