@@ -45,6 +45,7 @@ class StorageBrowserScreen extends StatefulWidget {
     this.peerId,
     this.readOnly = false,
     this.initialSpace,
+    this.initialPath,
     this.title,
     this.extraActions,
     this.extraMenuItems,
@@ -68,6 +69,9 @@ class StorageBrowserScreen extends StatefulWidget {
 
   /// 初始分区（仅影响「空间」Tab 起始位置）；远端默认 files。
   final String? initialSpace;
+
+  /// 「空间」Tab 内初始相对路径（无首尾 `/`）；需配合 [initialSpace]。
+  final String? initialPath;
 
   /// 覆盖 AppBar 标题；null 时用默认「存储文件」文案。
   final String? title;
@@ -237,6 +241,13 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
     final initial = widget.initialSpace;
     if (initial != null && initial.isNotEmpty) {
       _navSpace = initial;
+      final path = (widget.initialPath ?? '')
+          .replaceAll(RegExp(r'^/+|/+$'), '');
+      _navPath = path;
+      // 有明确路径时直接落在「空间」Tab。
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted && _tabs.index != 1) _tabs.index = 1;
+      });
     }
     _bootstrap();
   }

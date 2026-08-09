@@ -30,6 +30,7 @@ import 'she_circle_screen.dart';
 import '../utils/layout_utils.dart';
 import '../models/prompt_stack_config.dart';
 import '../storage/runtime_share_service.dart';
+import 'agent_runtime_context_screen.dart';
 
 /// 远端 Agent 详情页面（从聊天页进入）
 class RemoteAgentDetailScreen extends StatefulWidget {
@@ -906,6 +907,8 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
         _buildHeader(),
         const SizedBox(height: 24),
         _buildInfoCard(),
+        const SizedBox(height: 16),
+        _buildRuntimeContextEntry(),
         if (_agent.isShe && !_agent.isPeerAgent) ...[
           const SizedBox(height: 16),
           _buildSheCircleEntry(),
@@ -1184,6 +1187,43 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  /// 记忆 / Soul / 产物 / 附件（SQLite 权威 + runtime 文件）。
+  Widget _buildRuntimeContextEntry() {
+    final colorScheme = Theme.of(context).colorScheme;
+    final zh = Localizations.localeOf(context).languageCode.startsWith('zh');
+    return Card(
+      elevation: 0,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12),
+        side: BorderSide(color: colorScheme.outlineVariant),
+      ),
+      child: ListTile(
+        leading: Icon(Icons.inventory_2_outlined, color: colorScheme.primary),
+        title: Text(zh ? '记忆 · Soul · 产物 · 附件' : 'Memory · Soul · Artifacts · Attachments'),
+        subtitle: Text(
+          zh
+              ? '查看该 Agent 的认知与 runtime 文件'
+              : 'Browse cognition and runtime files for this agent',
+          maxLines: 2,
+          overflow: TextOverflow.ellipsis,
+          style: TextStyle(color: colorScheme.onSurfaceVariant),
+        ),
+        trailing: const Icon(Icons.chevron_right),
+        onTap: () {
+          Navigator.of(context).push(
+            MaterialPageRoute<void>(
+              builder: (_) => AgentRuntimeContextScreen(
+                ownerId: _agent.id,
+                displayName: _agent.name,
+                agent: _agent,
+              ),
+            ),
+          );
+        },
       ),
     );
   }

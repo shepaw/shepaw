@@ -12,6 +12,7 @@ import '../services/logger_service.dart';
 import '../storage/runtime_share_service.dart';
 import '../widgets/form_bottom_bar.dart';
 import '../widgets/avatar_image.dart';
+import 'agent_runtime_context_screen.dart';
 import 'chat_screen.dart';
 
 /// Group detail screen, similar to RemoteAgentDetailScreen but for groups.
@@ -353,6 +354,36 @@ class _GroupDetailScreenState extends State<GroupDetailScreen> {
               ),
             ],
           ),
+        ),
+        const Divider(height: 1),
+
+        ListTile(
+          leading: Icon(Icons.inventory_2_outlined, color: colorScheme.primary),
+          title: Text(
+            Localizations.localeOf(context).languageCode.startsWith('zh')
+                ? '记忆 · Soul · 产物 · 附件'
+                : 'Memory · Soul · Artifacts · Attachments',
+          ),
+          subtitle: Text(
+            Localizations.localeOf(context).languageCode.startsWith('zh')
+                ? '查看该群的 runtime 上下文文件'
+                : 'Browse runtime context for this group',
+            style: TextStyle(color: colorScheme.onSurfaceVariant),
+          ),
+          trailing: const Icon(Icons.chevron_right),
+          onTap: () {
+            final ownerId = _channel.parentGroupId?.isNotEmpty == true
+                ? _channel.parentGroupId!
+                : _channel.id;
+            Navigator.of(context).push(
+              MaterialPageRoute<void>(
+                builder: (_) => AgentRuntimeContextScreen(
+                  ownerId: ownerId,
+                  displayName: _channel.name,
+                ),
+              ),
+            );
+          },
         ),
         const Divider(height: 1),
 
