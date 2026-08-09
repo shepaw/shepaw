@@ -268,5 +268,84 @@ void main() {
       );
       expect(result.messages.map((m) => m.id).toList(), ['db1', 'db2']);
     });
+
+    test('keeps unresolved group_peer_approval host beside same-agent db row',
+        () {
+      final approvalHost = _agent(
+        'group_peer_approval_cid1',
+        agentId: 'peer-a',
+        content: 'Allow shell?',
+        ts: 20,
+        metadata: {
+          'action_confirmation': {
+            'confirmation_id': 'cid1',
+            'confirmation_context': 'peer',
+            'prompt': 'Allow shell?',
+            'actions': [
+              {'id': 'allow', 'label': 'Allow'},
+            ],
+          },
+        },
+      );
+      final dbReply = _agent(
+        'db_peer_reply',
+        agentId: 'peer-a',
+        content: 'working…',
+        ts: 21,
+      );
+      final result = ChatMessageReconciler.reconcileGroupMessages(
+        current: [approvalHost],
+        dbMessages: [dbReply],
+      );
+      // Pass-2 adopts the host onto the DB row but must keep the card.
+      final adopted = result.messages.firstWhere((m) => m.id == 'db_peer_reply');
+      expect(
+        adopted.metadata?['action_confirmation']?['confirmation_id'],
+        'cid1',
+      );
+      expect(result.pendingKeyMigrations['group_peer_approval_cid1'], 'db_peer_reply');
+    });
+
+    test('drops resolved group_peer_approval host when same-agent db exists',
+        () {
+      final approvalHost = _agent(
+        'group_peer_approval_cid2',
+        agentId: 'peer-a',
+        content: 'Allow shell?',
+        ts: 20,
+        metadata: {
+          'action_confirmation': {
+            'confirmation_id': 'cid2',
+            'selected_action_id': 'allow',
+          },
+        },
+      );
+      final dbReply = _agent(
+        'db_peer_reply',
+        agentId: 'peer-a',
+        content: 'done',
+        ts: 21,
+        metadata: {
+          'action_confirmation': {
+            'confirmation_id': 'cid2',
+            'selected_action_id': 'allow',
+          },
+        },
+      );
+      final result = ChatMessageReconciler.reconcileGroupMessages(
+        current: [approvalHost],
+        dbMessages: [dbReply],
+      );
+      expect(
+        result.messages.any((m) => m.id == 'group_peer_approval_cid2'),
+        isFalse,
+      );
+      expect(
+        result.messages
+            .firstWhere((m) => m.id == 'db_peer_reply')
+            .metadata?['action_confirmation']?['selected_action_id'],
+        'allow',
+      );
+    });
   });
 }

@@ -43,6 +43,57 @@ class ChatMessageReconciler {
   static bool isFlushedStreamingPartial(Message m) =>
       m.from.isAgent && m.metadata?['status'] == 'streaming';
 
+  /// Fold pending interactive metadata from a temp host onto the DB row that
+  /// replaces it. Critical for orphan peer approvals: pass-2 sender matching
+  /// would otherwise drop `action_confirmation` when the saved turn message
+  /// raced ahead of `agent_approval_req`.
+  static Message mergeTempInteractionOntoDb({
+    required Message temp,
+    required Message dbMsg,
+  }) {
+    const keys = [
+      'action_confirmation',
+      'plan_approval',
+      'single_select',
+      'multi_select',
+      'form',
+      'file_upload',
+    ];
+    final tempMeta = temp.metadata;
+    if (tempMeta == null || tempMeta.isEmpty) return dbMsg;
+
+    final merged = Map<String, dynamic>.from(dbMsg.metadata ?? {});
+    var changed = false;
+    for (final key in keys) {
+      final tempSection = tempMeta[key];
+      if (tempSection is! Map) continue;
+      final dbSection = merged[key];
+      final dbSelected = dbSection is Map ? dbSection['selected_action_id'] : null;
+      final dbOption = dbSection is Map ? dbSection['selected_option_id'] : null;
+      final dbOptions = dbSection is Map ? dbSection['selected_option_ids'] : null;
+      final alreadyResolved =
+          dbSelected != null || dbOption != null || dbOptions != null;
+      if (alreadyResolved) continue;
+      if (dbSection == null) {
+        merged[key] = Map<String, dynamic>.from(tempSection);
+        changed = true;
+      }
+    }
+    if (!changed) return dbMsg;
+
+    return Message(
+      id: dbMsg.id,
+      content: dbMsg.content.trim().isNotEmpty ? dbMsg.content : temp.content,
+      timestampMs: dbMsg.timestampMs,
+      from: dbMsg.from,
+      to: dbMsg.to ?? temp.to,
+      type: dbMsg.type,
+      replyTo: dbMsg.replyTo ?? temp.replyTo,
+      channelId: dbMsg.channelId ?? temp.channelId,
+      metadata: merged,
+    );
+  }
+
   /// Find a DB / in-memory host bubble to reuse when reattaching a live DM task.
   ///
   /// Prefers [partialMessageId] (the ActiveTask flush row), then the latest
@@ -173,7 +224,8 @@ class ChatMessageReconciler {
 
     void adopt(String tempId, Message dbMsg) {
       final idx = tempMessages[tempId]!;
-      messages[idx] = dbMsg;
+      final tempMsg = messages[idx];
+      messages[idx] = mergeTempInteractionOntoDb(temp: tempMsg, dbMsg: dbMsg);
       matchedDbIds.add(dbMsg.id);
       usedTempIds.add(tempId);
       pendingKeyMigrations[tempId] = dbMsg.id;
@@ -221,6 +273,16 @@ class ChatMessageReconciler {
               m.id.startsWith('group_peer_approval_')) &&
           !dbSenderIds.contains(m.from.id)) {
         return false;
+      }
+      // Orphan peer approvals that raced past agent_done land on a dedicated
+      // host. Keep unresolved cards even when the same agent already has a DB
+      // row — otherwise reconcile drops the only review entry and the peer
+      // stays blocked.
+      if (m.id.startsWith('group_peer_approval_')) {
+        final ac = m.metadata?['action_confirmation'];
+        if (ac is Map && ac['selected_action_id'] == null) {
+          return false;
+        }
       }
       return true;
     });

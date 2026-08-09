@@ -1000,6 +1000,76 @@ mixin _MessagingOps on _ChatControllerBase {
     return sid;
   }
 
+  /// Surface a peer `agent_approval_req` that arrived after group `sendChat`
+  /// already completed (orphan). Without this, the card never appears in the
+  /// group and the remote agent stays blocked on the hub.
+  @override
+  void _handleGroupOrphanPeerApproval({
+    required String agentId,
+    required String agentName,
+    required Map<String, dynamic> actionData,
+  }) {
+    if (currentChannelId == null) return;
+
+    final data = Map<String, dynamic>.from(actionData);
+    data['confirmation_context'] ??= 'peer';
+    // Strip routing-only fields so message metadata stays card-shaped.
+    data.remove('peer_id');
+    data.remove('remote_agent_id');
+
+    final confirmationId = data['confirmation_id'] as String? ?? '';
+    LoggerService().info(
+      'group orphan peer approval: agent=$agentName '
+      'confirmationId=$confirmationId channel=$currentChannelId',
+      tag: 'PeerApproval',
+    );
+
+    // Prefer an existing same-agent bubble (latest), else create fallback host.
+    String? preferredSid;
+    for (final m in messages.reversed) {
+      if (m.from.isAgent && m.from.id == agentId) {
+        preferredSid = m.id;
+        break;
+      }
+    }
+
+    final sid = _resolveGroupInteractionMessageId(
+      agentId: agentId,
+      agentName: agentName,
+      interactionType: 'action_confirmation',
+      data: data,
+      preferredSid: preferredSid,
+    );
+    if (sid == null) return;
+
+    _updateGroupStreamingMetadata(sid, 'action_confirmation', data);
+    localDatabaseService
+        .updateMessageMetadata(
+          sid,
+          GroupInteractionPlanner.metadataForPersist(
+            existing: messageIdMap[sid]?.metadata,
+            interactionType: 'action_confirmation',
+            data: data,
+          ),
+        )
+        .ignore();
+
+    final hubItem = PendingApprovalItem.fromInteraction(
+      channelId: currentChannelId!,
+      agentId: agentId,
+      agentName: agentName,
+      interactionType: 'action_confirmation',
+      data: data,
+      messageId: sid,
+    );
+    if (hubItem != null) {
+      PendingApprovalHub.instance.upsert(hubItem);
+    }
+
+    _notify();
+    _emit(RequestScrollToBottomEvent(force: true));
+  }
+
   @override
   void _updateGroupStreamingMetadata(String streamingId, String key, Map<String, dynamic> data) {
     ChatGroupStreamingTracker.putMetadataKey(

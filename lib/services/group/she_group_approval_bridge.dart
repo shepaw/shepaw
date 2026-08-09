@@ -45,9 +45,24 @@ class SheGroupApprovalBridge {
     required Map<String, dynamic> data,
   }) async {
     final payload = Map<String, dynamic>.from(data);
-    final savedMessageId =
-        GroupInteractionPlanner.takeSavedMessageId(payload) ??
-            await _lastAgentMessageId(groupChannelId, agentId);
+    final explicitSavedId = GroupInteractionPlanner.takeSavedMessageId(payload);
+    final isPeerAction = interactionType == 'action_confirmation' &&
+        (payload['confirmation_context'] as String?) == 'peer';
+
+    // Peer in-band approvals often fire before the turn message is persisted.
+    // Never glue the card onto a stale prior agent bubble — create a dedicated
+    // host so the bound group session always has a tappable review entry.
+    String? savedMessageId = explicitSavedId;
+    if (savedMessageId == null && isPeerAction) {
+      savedMessageId = await _ensurePeerApprovalHostMessage(
+        groupChannelId: groupChannelId,
+        agentId: agentId,
+        agentName: agentName,
+        data: payload,
+      );
+    } else {
+      savedMessageId ??= await _lastAgentMessageId(groupChannelId, agentId);
+    }
 
     if (savedMessageId != null) {
       try {
@@ -110,6 +125,56 @@ class SheGroupApprovalBridge {
     );
 
     return GroupInteractionPlanner.nonBlockingResult();
+  }
+
+  /// Create a dedicated peer-approval host in the bound group when headless
+  /// (no ChatController streaming bubble).
+  Future<String> _ensurePeerApprovalHostMessage({
+    required String groupChannelId,
+    required String agentId,
+    required String agentName,
+    required Map<String, dynamic> data,
+  }) async {
+    final confirmationId = data['confirmation_id'] as String? ?? '';
+    // Stable id so hub reconnect / duplicate interaction callbacks update
+    // the same card instead of stacking hosts.
+    final id = confirmationId.isNotEmpty
+        ? 'group_peer_approval_$confirmationId'
+        : 'group_peer_approval_${agentId}_${DateTime.now().millisecondsSinceEpoch}';
+
+    final existing = await _db.getMessageById(id);
+    final prompt = (data['prompt'] as String?)?.trim();
+    final content =
+        (prompt != null && prompt.isNotEmpty) ? prompt : '需要您的确认';
+    final metadata = GroupInteractionPlanner.metadataForPersist(
+      existing: null,
+      interactionType: 'action_confirmation',
+      data: data,
+    );
+
+    if (existing != null) {
+      await _db.updateMessageMetadata(id, metadata);
+      return id;
+    }
+
+    await _db.createMessage(
+      id: id,
+      channelId: groupChannelId,
+      senderId: agentId,
+      senderType: 'agent',
+      senderName: agentName,
+      content: content,
+      messageType: 'text',
+      metadata: metadata,
+    );
+    await _db.markMessageAsRead(id);
+    _chat.notifyChannelUpdate(groupChannelId);
+    LoggerService().info(
+      'Created peer approval host $id in group $groupChannelId '
+      'for $agentName ($confirmationId)',
+      tag: _tag,
+    );
+    return id;
   }
 
   Future<void> injectBridgeNotice({

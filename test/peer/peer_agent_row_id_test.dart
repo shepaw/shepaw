@@ -28,6 +28,64 @@ void main() {
   const peerId = 'peer-android-aa38';
   const uuid = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee';
 
+  group('matchGroupPeerAgent', () {
+    test('matches by remote_agent_id + source_peer_id', () {
+      final peer = _agent(
+        id: uuid,
+        protocol: ProtocolType.peer,
+        metadata: {
+          'source_peer_id': peerId,
+          'remote_agent_id': uuid,
+        },
+      );
+      final other = _agent(
+        id: 'local-admin',
+        protocol: ProtocolType.acp,
+      );
+      expect(
+        matchGroupPeerAgent(
+          groupAgents: [other, peer],
+          peerId: peerId,
+          remoteAgentId: uuid,
+        ),
+        peer,
+      );
+    });
+
+    test('matches legacy namespaced local id', () {
+      final legacyId = legacyPeerAgentLocalId(peerId, uuid);
+      final peer = _agent(
+        id: legacyId,
+        protocol: ProtocolType.peer,
+        metadata: {
+          'source_peer_id': peerId,
+          'remote_agent_id': uuid,
+        },
+      );
+      expect(
+        matchGroupPeerAgent(
+          groupAgents: [peer],
+          peerId: peerId,
+          remoteAgentId: uuid,
+        ),
+        peer,
+      );
+    });
+
+    test('returns null when peer is not a group member', () {
+      expect(
+        matchGroupPeerAgent(
+          groupAgents: [
+            _agent(id: 'admin', protocol: ProtocolType.acp),
+          ],
+          peerId: peerId,
+          remoteAgentId: uuid,
+        ),
+        isNull,
+      );
+    });
+  });
+
   group('decidePeerAgentRowId', () {
     test('reuses hub UUID when no local row exists', () {
       expect(

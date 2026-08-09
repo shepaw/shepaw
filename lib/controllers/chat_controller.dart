@@ -322,11 +322,30 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
     // 孤儿审批（hub 重启后重放、或 agent_done 抢先完成 turn 的审批）没有
     // 活动 turn 的回调可挂，经这里渲染成普通卡片；点击走 submitApproval
     // 只需 approval_id，bridge 侧有 deferred relay 兜底。
+    //
+    // 群聊必须按 groupAgents 匹配 peer 成员——Controller.agentId 不是 peer
+    // 成员 id，若仍按 DM 过滤，审核卡会静默丢失，peer 一直卡在待审。
     _orphanApprovalSub =
         PeerAgentClientService.instance.orphanApprovalEvents.listen((event) {
       final peerId = event['peer_id'] as String?;
       final remoteId = event['remote_agent_id'] as String?;
       if (peerId == null || remoteId == null) return;
+
+      if (isGroupMode) {
+        final member = matchGroupPeerAgent(
+          groupAgents: groupAgents,
+          peerId: peerId,
+          remoteAgentId: remoteId,
+        );
+        if (member == null) return;
+        _handleGroupOrphanPeerApproval(
+          agentId: member.id,
+          agentName: member.name,
+          actionData: event,
+        );
+        return;
+      }
+
       if (peerAgentLocalId(peerId, remoteId) != agentId &&
           legacyPeerAgentLocalId(peerId, remoteId) != agentId) {
         return;
@@ -376,6 +395,15 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
   /// Implemented by [_MessagingOps]: attach/replace an action-confirmation
   /// card on a host bubble. Called from the base's orphan-approval listener.
   void _handleStreamingActionConfirmation(Map<String, dynamic> actionData);
+
+  /// Implemented by [_MessagingOps]: surface a peer orphan approval onto a
+  /// group-chat host bubble (and PendingApprovalHub) when sendChat already
+  /// finished before `agent_approval_req` arrived.
+  void _handleGroupOrphanPeerApproval({
+    required String agentId,
+    required String agentName,
+    required Map<String, dynamic> actionData,
+  });
 
   void _notify() {
     if (_eventController.isClosed) return;
@@ -781,6 +809,21 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
       if (pendingGroupInteractions.containsKey(entry.key)) {
         pendingGroupInteractions[entry.value] =
             pendingGroupInteractions.remove(entry.key)!;
+      }
+      // Persist interaction cards folded from temp hosts onto DB rows
+      // (orphan peer approvals that raced past agent_done).
+      Message? migrated;
+      for (final m in result.messages) {
+        if (m.id == entry.value) {
+          migrated = m;
+          break;
+        }
+      }
+      final meta = migrated?.metadata;
+      if (meta != null &&
+          (meta['action_confirmation'] != null ||
+              meta['plan_approval'] != null)) {
+        localDatabaseService.updateMessageMetadata(entry.value, meta).ignore();
       }
     }
 

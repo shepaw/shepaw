@@ -29,6 +29,28 @@ bool isOwnedPeerAgentRow(
   return rid == null || rid == remoteAgentId;
 }
 
+/// Match a hub orphan `agent_approval_req` to a group member peer agent.
+///
+/// Group chat Controllers do not set [ChatController.agentId] to the peer
+/// member — orphan cards must be routed by peerId + remoteAgentId against
+/// [groupAgents], otherwise approvals that race past `agent_done` are dropped.
+RemoteAgent? matchGroupPeerAgent({
+  required List<RemoteAgent> groupAgents,
+  required String peerId,
+  required String remoteAgentId,
+}) {
+  final preferred = peerAgentLocalId(peerId, remoteAgentId);
+  final legacy = legacyPeerAgentLocalId(peerId, remoteAgentId);
+  for (final agent in groupAgents) {
+    if (!agent.isPeerAgent) continue;
+    if (agent.sourcePeerId != peerId) continue;
+    final rid = agent.remoteAgentId;
+    if (rid != null && rid == remoteAgentId) return agent;
+    if (agent.id == preferred || agent.id == legacy) return agent;
+  }
+  return null;
+}
+
 /// Pure decision for which local `agents.id` to use for a hub remote agent.
 ///
 /// Priority:
