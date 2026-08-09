@@ -65,16 +65,23 @@ class ArtifactUri {
     }
 
     if (space == StoreSpace.runtime) {
-      // runtime/<device>/<owner>/<channel>/artifacts/<task>/<file...>
-      if (segments.length < 7) return null;
-      if (segments[4] != 'artifacts') return null;
-      final filename = segments.sublist(6).map(decode).join('/');
+      // runtime/<device>/<owner>/<channel>/[wf_scope/]artifacts/<task>/<file...>
+      final artIdx = segments.indexOf('artifacts');
+      if (artIdx < 4 || artIdx + 2 >= segments.length) return null;
+      final channelParts =
+          segments.sublist(3, artIdx).map(decode).toList(growable: false);
+      if (channelParts.isEmpty) return null;
+      // 多段时还原为可再拆的 scoped id：channel__wf_…__step_…
+      final channelId = channelParts.length == 1
+          ? channelParts.first
+          : '${channelParts.first}__${channelParts.skip(1).join('__')}';
+      final filename = segments.sublist(artIdx + 2).map(decode).join('/');
       if (filename.isEmpty || filename.contains('..')) return null;
       return ArtifactUri(
         deviceId: segments[1],
         ownerId: decode(segments[2]),
-        channelId: decode(segments[3]),
-        taskId: decode(segments[5]),
+        channelId: channelId,
+        taskId: decode(segments[artIdx + 1]),
         filename: filename,
         space: StoreSpace.runtime,
       );
@@ -97,8 +104,7 @@ class ArtifactUri {
     if (isLegacy) {
       return '$scheme://artifacts/$deviceId/$taskId/$filename';
     }
-    return '$scheme://runtime/$deviceId/${ownerId ?? 'default'}/'
-        '${channelId ?? taskId}/artifacts/$taskId/$filename';
+    return '$scheme://runtime/$deviceId/$storePath';
   }
 }
 

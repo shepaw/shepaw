@@ -34,10 +34,14 @@
 │   ├── workspace.md                  # workspace_ids 绑定（引用，不复制）
 │   ├── context.manifest.json         # ContextBundle 最小清单
 │   └── <channel_id>/
-│       ├── sessions/session.json     # 最近窗口
+│       ├── sessions/session.json     # 最近窗口（无 workflow 时）
 │       ├── sessions/archive-<ts>.json
 │       ├── attachments/<sha256>
-│       └── artifacts/<task_id>/<file>
+│       ├── artifacts/<task_id>/<file>
+│       └── <wf_<workflowId>__step_<stepId>>/   # 工作流步隔离（可选）
+│           ├── sessions/session.json
+│           ├── attachments/<sha256>
+│           └── artifacts/<task_id>/<file>
 ├── files/...                         # 沉淀区（owner 可读，仅本端写）
 ├── public/...                        # 可引用 files URI，不强制 copy
 ├── backups/...                       # 私有灾备
@@ -68,6 +72,9 @@ URI：`store://<space>/<device_id>/<relpath>`。
 | 外接 ACP | agent id | Hub device；否则本机 fallback |
 
 群聊 key：优先 `parentGroupId`，否则群 channel `id`。
+
+工作流 peer session 的逻辑 id 仍为 `channel__wf_<wf>__step_<step>`（保证步间会话隔离）；
+落盘时拆成 `runtime/<owner>/<channel>/wf_<wf>__step_<step>/…`，**channel 单独一级目录**。
 
 ## 4. ContextBundle（最小 manifest）
 

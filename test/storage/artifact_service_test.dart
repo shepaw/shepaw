@@ -52,6 +52,26 @@ void main() {
       expect(parsed.isLegacy, isFalse);
     });
 
+    test('runtime workflow scoped：channel 与 wf 分目录往返', () {
+      final uri = ArtifactUri(
+        deviceId: '0123456789abcdef',
+        ownerId: 'peeragent_x_claude',
+        channelId: 'psess_group_abc__wf_w1__step_s1',
+        taskId: 'task-41',
+        filename: 'report.md',
+      );
+      final text = uri.toString();
+      expect(
+        text,
+        'store://runtime/0123456789abcdef/peeragent_x_claude/'
+        'psess_group_abc/wf_w1__step_s1/artifacts/task-41/report.md',
+      );
+      final parsed = ArtifactUri.tryParse(text)!;
+      expect(parsed.ownerId, 'peeragent_x_claude');
+      expect(parsed.channelId, 'psess_group_abc__wf_w1__step_s1');
+      expect(parsed.storePath, uri.storePath);
+    });
+
     test('非法 URI 拒绝', () {
       for (final bad in [
         'http://artifacts/0123456789abcdef/t/f',

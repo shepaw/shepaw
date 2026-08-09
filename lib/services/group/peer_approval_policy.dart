@@ -90,6 +90,11 @@ class PeerApprovalPolicy {
   }
 
   /// Scoped peer session id so workflow steps do not share DM/group history.
+  ///
+  /// 格式：`<channelId>__wf_<workflowId>__step_<workflowStepId>`。
+  /// 储物袋路径会拆成两级目录：
+  /// `runtime/<owner>/<channelId>/wf_<wf>__step_<step>/…`
+  /// （见 RuntimePaths.channelRoot / workflowScopeMarker）。
   static String? workflowSessionId({
     required String channelId,
     required String? workflowId,

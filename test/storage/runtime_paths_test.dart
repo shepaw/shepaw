@@ -43,6 +43,39 @@ void main() {
       );
     });
 
+    test('workflow scoped channel：channel 与 wf/step 分目录', () {
+      const scoped =
+          'psess_group_77899647-8d7e-4eea-8357-37bd10bc5aeb'
+          '__wf_af8faa46-bffc-4a3d-82a2-f33427095ae8'
+          '__step_79647862-af5b-4871-afa6-6b7353548d90';
+      final split = RuntimePaths.splitChannelId(scoped);
+      expect(
+        split.channelId,
+        'psess_group_77899647-8d7e-4eea-8357-37bd10bc5aeb',
+      );
+      expect(
+        split.workflowScope,
+        'wf_af8faa46-bffc-4a3d-82a2-f33427095ae8'
+        '__step_79647862-af5b-4871-afa6-6b7353548d90',
+      );
+      expect(
+        RuntimePaths.sessionJson('peeragent_x_channel-claude', scoped),
+        'peeragent_x_channel-claude/'
+        'psess_group_77899647-8d7e-4eea-8357-37bd10bc5aeb/'
+        'wf_af8faa46-bffc-4a3d-82a2-f33427095ae8'
+        '__step_79647862-af5b-4871-afa6-6b7353548d90/'
+        'sessions/session.json',
+      );
+      expect(
+        RuntimePaths.channelRoot(
+          'owner',
+          'psess_group_abc',
+          workflowScope: 'wf_1__step_2',
+        ),
+        'owner/psess_group_abc/wf_1__step_2',
+      );
+    });
+
     test('uri 组装', () {
       final uri = RuntimePaths.uri(
         deviceId: '0123456789abcdef',
