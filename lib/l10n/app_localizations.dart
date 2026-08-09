@@ -9236,6 +9236,30 @@ abstract class AppLocalizations {
   /// **'预览'**
   String get storage_browserPreview;
 
+  /// No description provided for @storage_browserCopyPath.
+  ///
+  /// In zh, this message translates to:
+  /// **'复制路径'**
+  String get storage_browserCopyPath;
+
+  /// No description provided for @storage_browserShareLink.
+  ///
+  /// In zh, this message translates to:
+  /// **'分享链接'**
+  String get storage_browserShareLink;
+
+  /// No description provided for @storage_browserPathCopied.
+  ///
+  /// In zh, this message translates to:
+  /// **'路径已复制'**
+  String get storage_browserPathCopied;
+
+  /// No description provided for @storage_browserLinkCopied.
+  ///
+  /// In zh, this message translates to:
+  /// **'分享链接已复制'**
+  String get storage_browserLinkCopied;
+
   /// No description provided for @storage_browserExport.
   ///
   /// In zh, this message translates to:

@@ -1,11 +1,12 @@
 import 'dart:convert';
 import 'dart:io';
-import 'dart:typed_data';
 
 import 'package:crypto/crypto.dart' as crypto;
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:path/path.dart' as p;
+import 'package:share_plus/share_plus.dart';
 
 import '../l10n/app_localizations.dart';
 import '../models/store_attachment_ref.dart';
@@ -261,6 +262,35 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
   String _uriFor(_BrowsedFile file) =>
       storeUriWithRef(file.space, _targetId, file.path);
 
+  /// 分区 / 文件夹 URI（空 path 时为分区根）。
+  String _uriForFolderPath(String space, String relPath) =>
+      storeUriWithRef(space, _targetId, relPath);
+
+  String _folderRelPath(String folderName) =>
+      _navPath.isEmpty ? folderName : '$_navPath/$folderName';
+
+  Future<void> _copyPathText(String uri) async {
+    final l10n = AppLocalizations.of(context);
+    await Clipboard.setData(ClipboardData(text: uri));
+    if (!mounted) return;
+    _toast(l10n.storage_browserPathCopied);
+  }
+
+  Future<void> _shareMarkdownLink({
+    required String displayName,
+    required String uri,
+  }) async {
+    final l10n = AppLocalizations.of(context);
+    final md = formatStoreMarkdownLink(displayName, uri);
+    if (LayoutUtils.isDesktopLayout(context)) {
+      await Clipboard.setData(ClipboardData(text: md));
+      if (!mounted) return;
+      _toast(l10n.storage_browserLinkCopied);
+      return;
+    }
+    await Share.share(md, subject: displayName);
+  }
+
   Future<void> _bootstrap() async {
     final self = await DeviceIdentity.deviceId();
     if (!mounted) return;
@@ -430,6 +460,13 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
     switch (action) {
       case _EntryAction.preview:
         _previewFile(file);
+      case _EntryAction.copyPath:
+        _copyPathText(_uriFor(file));
+      case _EntryAction.shareLink:
+        _shareMarkdownLink(
+          displayName: p.basename(file.path),
+          uri: _uriFor(file),
+        );
       case _EntryAction.export:
         _exportFile(file);
       case _EntryAction.versions:
@@ -449,6 +486,14 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
       PopupMenuItem(
         value: _EntryAction.preview,
         child: Text(l10n.storage_browserPreview),
+      ),
+      PopupMenuItem(
+        value: _EntryAction.copyPath,
+        child: Text(l10n.storage_browserCopyPath),
+      ),
+      PopupMenuItem(
+        value: _EntryAction.shareLink,
+        child: Text(l10n.storage_browserShareLink),
       ),
       PopupMenuItem(
         value: _EntryAction.export,
@@ -471,6 +516,88 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
           ),
         ),
     ];
+  }
+
+  List<PopupMenuEntry<Object>> _pathActionItems(AppLocalizations l10n) {
+    return [
+      PopupMenuItem(
+        value: _EntryAction.copyPath,
+        child: Text(l10n.storage_browserCopyPath),
+      ),
+      PopupMenuItem(
+        value: _EntryAction.shareLink,
+        child: Text(l10n.storage_browserShareLink),
+      ),
+    ];
+  }
+
+  void _handlePathAction({
+    required String displayName,
+    required String uri,
+    Object? action,
+  }) {
+    switch (action) {
+      case _EntryAction.copyPath:
+        _copyPathText(uri);
+      case _EntryAction.shareLink:
+        _shareMarkdownLink(displayName: displayName, uri: uri);
+      default:
+        break;
+    }
+  }
+
+  Widget _buildPathMoreButton({
+    required String displayName,
+    required String uri,
+  }) {
+    final l10n = AppLocalizations.of(context);
+    return PopupMenuButton<Object>(
+      icon: const Icon(Icons.more_horiz, size: 18),
+      enabled: !_busy,
+      position: PopupMenuPosition.under,
+      onSelected: (action) => _handlePathAction(
+        displayName: displayName,
+        uri: uri,
+        action: action,
+      ),
+      itemBuilder: (_) => _pathActionItems(l10n),
+    );
+  }
+
+  Future<void> _showPathActions({
+    required String title,
+    required String displayName,
+    required String uri,
+  }) async {
+    final l10n = AppLocalizations.of(context);
+    await showModalBottomSheet<void>(
+      context: context,
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              title: Text(title, maxLines: 2, overflow: TextOverflow.ellipsis),
+              subtitle: Text(uri, maxLines: 2, overflow: TextOverflow.ellipsis),
+            ),
+            const Divider(height: 1),
+            for (final item in _pathActionItems(l10n))
+              if (item is PopupMenuItem<Object>)
+                ListTile(
+                  title: item.child,
+                  onTap: () {
+                    Navigator.of(ctx).pop();
+                    _handlePathAction(
+                      displayName: displayName,
+                      uri: uri,
+                      action: item.value,
+                    );
+                  },
+                ),
+          ],
+        ),
+      ),
+    );
   }
 
   Widget _buildEntryMoreButton(_BrowsedFile file) {
@@ -1224,8 +1351,17 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
   Widget _buildMobileFolderRow(String name, AppLocalizations l10n) {
     final space = _mineSpace;
     final modified = _fmtLastModified(_folderMtimeMs(space, name), l10n);
+    final rel = _folderRelPath(name);
+    final uri = _uriForFolderPath(space, rel);
     return InkWell(
       onTap: _busy ? null : () => _enterFolder(name),
+      onLongPress: _busy
+          ? null
+          : () => _showPathActions(
+                title: '$space/$rel',
+                displayName: name,
+                uri: uri,
+              ),
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
         child: Row(
@@ -1441,8 +1577,28 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
                           child: Center(child: _buildFolderIcon()),
                         ),
                         title: Text(name),
-                        trailing: const Icon(Icons.chevron_right, size: 20),
+                        trailing: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            _buildPathMoreButton(
+                              displayName: name,
+                              uri: _uriForFolderPath(
+                                _navSpace!,
+                                _folderRelPath(name),
+                              ),
+                            ),
+                            const Icon(Icons.chevron_right, size: 20),
+                          ],
+                        ),
                         onTap: () => _enterFolder(name),
+                        onLongPress: () => _showPathActions(
+                          title: '$_navSpace/${_folderRelPath(name)}',
+                          displayName: name,
+                          uri: _uriForFolderPath(
+                            _navSpace!,
+                            _folderRelPath(name),
+                          ),
+                        ),
                       ),
                     for (final f in children.files)
                       _buildFileRow(
@@ -1470,6 +1626,13 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
           final subtitle = l10n.storage_browserCount(count);
           return InkWell(
             onTap: _busy ? null : () => _enterSpace(space),
+            onLongPress: _busy
+                ? null
+                : () => _showPathActions(
+                      title: space,
+                      displayName: space,
+                      uri: _uriForFolderPath(space, ''),
+                    ),
             child: Padding(
               padding:
                   const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
@@ -1527,8 +1690,22 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
                   _files.where((f) => f.space == space).length),
               style: Theme.of(context).textTheme.labelSmall,
             ),
-            trailing: const Icon(Icons.chevron_right, size: 20),
+            trailing: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                _buildPathMoreButton(
+                  displayName: space,
+                  uri: _uriForFolderPath(space, ''),
+                ),
+                const Icon(Icons.chevron_right, size: 20),
+              ],
+            ),
             onTap: () => _enterSpace(space),
+            onLongPress: () => _showPathActions(
+              title: space,
+              displayName: space,
+              uri: _uriForFolderPath(space, ''),
+            ),
           ),
       ],
     );
@@ -1761,6 +1938,8 @@ enum _CreateMenuAction {
 
 enum _EntryAction {
   preview,
+  copyPath,
+  shareLink,
   export,
   versions,
   manifest,

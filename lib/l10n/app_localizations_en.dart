@@ -5259,6 +5259,18 @@ class AppLocalizationsEn extends AppLocalizations {
   String get storage_browserPreview => 'Preview';
 
   @override
+  String get storage_browserCopyPath => 'Copy path';
+
+  @override
+  String get storage_browserShareLink => 'Share link';
+
+  @override
+  String get storage_browserPathCopied => 'Path copied';
+
+  @override
+  String get storage_browserLinkCopied => 'Share link copied';
+
+  @override
   String get storage_browserExport => 'Export to…';
 
   @override

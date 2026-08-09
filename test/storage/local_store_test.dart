@@ -264,6 +264,8 @@ void main() {
     });
 
     test('覆盖写：旧版本进 .versions', () async {
+      // 关闭合并窗口，验证逐次覆盖各留一版
+      store = LocalStore(root: tmp, versionCoalesceWindow: Duration.zero);
       final v1 = bytesOf('version one');
       final (u1, _) = await begin('o.txt', v1);
       await store.writeChunk(dev, 'files', u1, 0, v1);
@@ -288,6 +290,62 @@ void main() {
       expect(utf8.decode(oldData), 'version one');
       final (data, _, ___) = await store.read(dev, 'files', 'o.txt', 0, 64);
       expect(utf8.decode(data), 'version two!');
+    });
+
+    test('覆盖写：合并窗口内多次改动只记一版', () async {
+      final a = bytesOf('draft-a');
+      final (u1, _) = await begin('c.txt', a);
+      await store.writeChunk(dev, 'files', u1, 0, a);
+      await store.commit(dev, 'files', [u1]);
+
+      final b = bytesOf('draft-b');
+      final (u2, _) = await begin('c.txt', b);
+      await store.writeChunk(dev, 'files', u2, 0, b);
+      await store.commit(dev, 'files', [u2]);
+
+      final c = bytesOf('final-c');
+      final (u3, _) = await begin('c.txt', c);
+      await store.writeChunk(dev, 'files', u3, 0, c);
+      await store.commit(dev, 'files', [u3]);
+
+      final listed = await store.versionsList(dev, 'files', 'c.txt');
+      final versions = listed['versions'] as List;
+      expect(versions, hasLength(1));
+      expect(versions[0]['v'], 1);
+      expect(versions[0]['sha256'], sha(c));
+      final (data, _, __) = await store.read(dev, 'files', 'c.txt', 0, 64);
+      expect(utf8.decode(data), 'final-c');
+    });
+
+    test('覆盖写：合并窗口外新开版本', () async {
+      final a = bytesOf('settled-a');
+      final (u1, _) = await begin('w.txt', a);
+      await store.writeChunk(dev, 'files', u1, 0, a);
+      await store.commit(dev, 'files', [u1]);
+
+      // 将末条 mtime 拨到窗口外，模拟一次完整变更已结束
+      final indexFile = File(
+          p.join(tmp.path, '.versions', dev, 'files', 'w.txt', 'index.json'));
+      final json =
+          jsonDecode(await indexFile.readAsString()) as Map<String, dynamic>;
+      final versions = (json['versions'] as List).cast<Map<String, dynamic>>();
+      versions.last['mtime'] = DateTime.now()
+              .millisecondsSinceEpoch -
+          LocalStore.defaultVersionCoalesceWindow.inMilliseconds -
+          1000;
+      await indexFile.writeAsString(jsonEncode({'versions': versions}));
+
+      final b = bytesOf('next-b');
+      final (u2, _) = await begin('w.txt', b);
+      await store.writeChunk(dev, 'files', u2, 0, b);
+      await store.commit(dev, 'files', [u2]);
+
+      final listed = await store.versionsList(dev, 'files', 'w.txt');
+      final listedVersions = listed['versions'] as List;
+      expect(listedVersions, hasLength(2));
+      expect(listedVersions[0]['sha256'], sha(a));
+      expect(listedVersions[1]['v'], 2);
+      expect(listedVersions[1]['sha256'], sha(b));
     });
 
     test('manifest：commit 写入任务血缘；读回', () async {

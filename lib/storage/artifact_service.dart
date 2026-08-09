@@ -115,7 +115,7 @@ class ArtifactReference {
   final String description;
 
   String toMarkdownLine() {
-    final base = '[$linkText]($uri)';
+    final base = formatStoreMarkdownLink(linkText, uri.toString());
     return description.isEmpty ? base : '$base — $description';
   }
 }

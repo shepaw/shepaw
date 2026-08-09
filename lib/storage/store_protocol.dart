@@ -380,6 +380,10 @@ String storeUriWithRef(String space, String device, String path,
         [StoreUriRef? ref]) =>
     'store://$space/$device/$path${ref?.toString() ?? ''}';
 
+/// 文件分享链接：Markdown `[displayName](storeUri)`。
+String formatStoreMarkdownLink(String displayName, String storeUri) =>
+    '[$displayName]($storeUri)';
+
 // ─────────────────────────────────────────────────────────────────────────────
 // ACL 判定（spec §3）
 // ─────────────────────────────────────────────────────────────────────────────

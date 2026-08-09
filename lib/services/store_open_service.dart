@@ -60,12 +60,24 @@ class StoreOpenService {
         final local = await StoreAttachmentRef.fileFromStoreUri(uriString);
         if (!context.mounted) return;
         if (local != null) {
-          await _presentLocal(context, fileName: name, file: local, kind: kind);
+          await _presentLocal(
+            context,
+            fileName: name,
+            file: local,
+            kind: kind,
+            storeUri: uriString,
+          );
           return;
         }
         final bytes = await StoreUriReader.instance.read(uriString);
         if (!context.mounted) return;
-        await _presentBytes(context, fileName: name, bytes: bytes, kind: kind);
+        await _presentBytes(
+          context,
+          fileName: name,
+          bytes: bytes,
+          kind: kind,
+          storeUri: uriString,
+        );
         return;
       }
 
@@ -123,6 +135,7 @@ class StoreOpenService {
     required String fileName,
     required File file,
     required _PreviewKind kind,
+    String? storeUri,
   }) async {
     final size = await file.length();
     if (kind == _PreviewKind.image && size <= _maxImagePreviewBytes) {
@@ -131,6 +144,7 @@ class StoreOpenService {
         context,
         fileName: fileName,
         file: file,
+        storeUri: storeUri,
       );
       return;
     }
@@ -149,6 +163,7 @@ class StoreOpenService {
         fileName: fileName,
         text: text,
         sourceFile: file,
+        storeUri: storeUri,
         asMarkdown: fileName.toLowerCase().endsWith('.md') ||
             fileName.toLowerCase().endsWith('.markdown'),
       );
@@ -163,12 +178,14 @@ class StoreOpenService {
     required String fileName,
     required Uint8List bytes,
     required _PreviewKind kind,
+    String? storeUri,
   }) async {
     if (kind == _PreviewKind.image && bytes.length <= _maxImagePreviewBytes) {
       await StoreFilePreview.showImage(
         context,
         fileName: fileName,
         bytes: bytes,
+        storeUri: storeUri,
       );
       return;
     }
@@ -186,6 +203,7 @@ class StoreOpenService {
         fileName: fileName,
         text: text,
         bytes: bytes,
+        storeUri: storeUri,
         asMarkdown: fileName.toLowerCase().endsWith('.md') ||
             fileName.toLowerCase().endsWith('.markdown'),
       );

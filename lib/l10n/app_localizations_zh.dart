@@ -5065,6 +5065,18 @@ class AppLocalizationsZh extends AppLocalizations {
   String get storage_browserPreview => '预览';
 
   @override
+  String get storage_browserCopyPath => '复制路径';
+
+  @override
+  String get storage_browserShareLink => '分享链接';
+
+  @override
+  String get storage_browserPathCopied => '路径已复制';
+
+  @override
+  String get storage_browserLinkCopied => '分享链接已复制';
+
+  @override
   String get storage_browserExport => '导出到…';
 
   @override

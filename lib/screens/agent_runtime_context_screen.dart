@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
+import 'package:share_plus/share_plus.dart';
 
 import '../models/agent_memory_entry.dart';
 import '../models/remote_agent.dart';
@@ -11,6 +13,7 @@ import '../storage/device_identity.dart';
 import '../storage/runtime_paths.dart';
 import '../storage/store_protocol.dart';
 import '../storage/store_service.dart';
+import '../utils/layout_utils.dart';
 import '../widgets/storage/store_file_list_avatar.dart';
 import 'agent_memory_detail_screen.dart';
 import 'storage_browser_screen.dart';
@@ -201,6 +204,71 @@ class _AgentRuntimeContextScreenState extends State<AgentRuntimeContextScreen>
 
   Future<void> _openFile(_RuntimeFile file) async {
     await StoreOpenService.instance.openStoreUri(context, file.uri);
+  }
+
+  Future<void> _copyPath(_RuntimeFile file) async {
+    await Clipboard.setData(ClipboardData(text: file.uri));
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(_zh ? '路径已复制' : 'Path copied')),
+    );
+  }
+
+  Future<void> _shareLink(_RuntimeFile file) async {
+    final name = file.path.split('/').last;
+    final md = formatStoreMarkdownLink(name, file.uri);
+    if (LayoutUtils.isDesktopLayout(context)) {
+      await Clipboard.setData(ClipboardData(text: md));
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(_zh ? '分享链接已复制' : 'Share link copied')),
+      );
+      return;
+    }
+    await Share.share(md, subject: name);
+  }
+
+  Future<void> _showFileActions(_RuntimeFile file) async {
+    final name = file.path.split('/').last;
+    await showModalBottomSheet<void>(
+      context: context,
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              title: Text(name, maxLines: 1, overflow: TextOverflow.ellipsis),
+              subtitle: Text(file.uri, maxLines: 2, overflow: TextOverflow.ellipsis),
+            ),
+            const Divider(height: 1),
+            ListTile(
+              leading: const Icon(Icons.link),
+              title: Text(_zh ? '复制路径' : 'Copy path'),
+              onTap: () {
+                Navigator.of(ctx).pop();
+                _copyPath(file);
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.ios_share_outlined),
+              title: Text(_zh ? '分享链接' : 'Share link'),
+              onTap: () {
+                Navigator.of(ctx).pop();
+                _shareLink(file);
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.open_in_new),
+              title: Text(_zh ? '打开' : 'Open'),
+              onTap: () {
+                Navigator.of(ctx).pop();
+                _openFile(file);
+              },
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   @override
@@ -432,6 +500,7 @@ class _AgentRuntimeContextScreenState extends State<AgentRuntimeContextScreen>
               ),
             ),
             onTap: () => _openFile(f),
+            onLongPress: () => _showFileActions(f),
           );
         },
       ),

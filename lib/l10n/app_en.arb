@@ -2551,6 +2551,10 @@
   "storage_browserLoadMore": "Load more",
   "storage_browserRefresh": "Refresh",
   "storage_browserPreview": "Preview",
+  "storage_browserCopyPath": "Copy path",
+  "storage_browserShareLink": "Share link",
+  "storage_browserPathCopied": "Path copied",
+  "storage_browserLinkCopied": "Share link copied",
   "storage_browserExport": "Export to…",
   "storage_browserExportDone": "Exported to {path}",
   "@storage_browserExportDone": {

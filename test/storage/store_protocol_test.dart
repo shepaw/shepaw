@@ -356,6 +356,13 @@ void main() {
           storeUriWithRef('artifacts', 'aaaaaaaaaaaaaaaa', 'a.txt',
               const StoreUriRef.seq(2)),
           'store://artifacts/aaaaaaaaaaaaaaaa/a.txt@v2');
+      expect(
+        formatStoreMarkdownLink(
+          'report.md',
+          'store://runtime/aaaaaaaaaaaaaaaa/a/b/artifacts/t/report.md',
+        ),
+        '[report.md](store://runtime/aaaaaaaaaaaaaaaa/a/b/artifacts/t/report.md)',
+      );
       // 文件名里的 @ 不误伤（后缀非引用形态）。
       expect(
           parseStoreUri('store://files/aaaaaaaaaaaaaaaa/contact@home.txt').path,

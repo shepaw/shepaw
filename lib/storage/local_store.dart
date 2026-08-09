@@ -123,10 +123,20 @@ class _StagingMeta {
 /// .recycle/<yyyy-MM-dd>/<device_id>/<space>/...  回收站
 /// ```
 class LocalStore {
-  LocalStore({required this.root});
+  LocalStore({
+    required this.root,
+    this.versionCoalesceWindow = defaultVersionCoalesceWindow,
+  });
 
   /// store 根目录（…/shepaw/store）。
   final Directory root;
+
+  /// 同一路径连续覆盖时，窗口内未保护版本合并为一次变更（替换索引末条）。
+  /// 设为 [Duration.zero] 可关闭合并（测试或需要逐次留档时）。
+  final Duration versionCoalesceWindow;
+
+  /// 默认合并窗口：一次编辑会话内的多次 commit 只留最终版本。
+  static const Duration defaultVersionCoalesceWindow = Duration(seconds: 30);
 
   static const _uuid = Uuid();
   static const maxReadChunk = 64 * 1024;
@@ -605,6 +615,10 @@ class LocalStore {
   }
 
   /// 转正后：把当前正式区内容记入版本索引（最新一条）。
+  ///
+  /// 频繁覆盖时：若末条未 `protected` 且距其 mtime 仍在
+  /// [versionCoalesceWindow] 内，则**替换**末条（同 v 号），不新增版本；
+  /// 同时删除被替换内容的 `.versions` blob。窗口外或发布产物则新开版本。
   Future<void> _recordCurrentVersion(
     String deviceId,
     String space,
@@ -626,6 +640,29 @@ class LocalStore {
         await _saveVersionEntries(deviceId, space, normalized, entries);
       }
       return;
+    }
+    if (entries.isNotEmpty &&
+        !protected &&
+        entries.last['protected'] != true &&
+        versionCoalesceWindow > Duration.zero) {
+      final lastMtime = (entries.last['mtime'] as num?)?.toInt() ?? 0;
+      if (mtime - lastMtime <= versionCoalesceWindow.inMilliseconds) {
+        final oldSha = '${entries.last['sha256'] ?? ''}';
+        entries.last['sha256'] = sha256;
+        entries.last['size'] = size;
+        entries.last['mtime'] = mtime;
+        await _saveVersionEntries(deviceId, space, normalized, entries);
+        if (oldSha.isNotEmpty && oldSha != sha256) {
+          final oldBlob =
+              File(_versionsBlobPath(deviceId, space, normalized, oldSha));
+          if (await oldBlob.exists()) {
+            try {
+              await oldBlob.delete();
+            } catch (_) {}
+          }
+        }
+        return;
+      }
     }
     final nextV = entries.isEmpty
         ? 1
