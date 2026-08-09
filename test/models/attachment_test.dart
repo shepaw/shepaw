@@ -254,6 +254,28 @@ void main() {
         expect(ref['file_name'], 'photo.jpg');
         expect(ref.containsKey('data'), false);
       });
+
+      test('stripClientStoreUri drops local store keys', () {
+        final att = AttachmentData(
+          fileName: 'a.txt',
+          mimeType: 'text/plain',
+          sizeBytes: 1,
+          bytes: Uint8List.fromList([1]),
+          semanticType: 'file',
+          extraMetadata: {
+            'store_uri': 'store://runtime/dev1/a/ch/attachments/x',
+            'implicit_prompt': 'hint',
+            'store_uris': ['store://runtime/dev1/a/ch/attachments/x'],
+            'duration_ms': 12,
+          },
+        );
+        final ref = att.toPeerRefJson('fid', stripClientStoreUri: true);
+        final extra = ref['extra'] as Map<String, dynamic>;
+        expect(extra.containsKey('store_uri'), isFalse);
+        expect(extra.containsKey('implicit_prompt'), isFalse);
+        expect(extra.containsKey('store_uris'), isFalse);
+        expect(extra['duration_ms'], 12);
+      });
     });
 
     group('peerRefListFromJson', () {

@@ -321,7 +321,7 @@ App 经 Noise 配对调用，与 HTTP `/api/v1/search`、`/api/v1/events*` 语�
 
 **信任与分享白名单：**
 
-- `owner`：配对默认分享 `files`+`artifacts` 整区；用户可在配对确认/设置中收窄到目录前缀。
+- `owner`：配对默认分享 `workspaces`/`files`/`public`/`artifacts` 整区（出示二维码确认方与扫码发起方均写入；旧配对在重连时若尚无出站分享行则回填）；用户可在配对确认/设置中收窄到目录前缀。
 - `friend`：配对默认不分享任何空间；管理/同步类 op（`stats`/`sync.*`/`master.*`/`recycle.*`/`import.*`/`space.*` 等）仍 `untrusted`；跨端读 shared 分区仅当 `peer_store_shares` 命中。
 - 出站分享表 `peer_store_shares(peer_id, space, path, shared)`：`path=""` 表示整区；否则为相对 path 前缀。
 - `share.announce` 将出站分享目录推送给对端缓存（UX）；ACL 权威仍在属主侧。

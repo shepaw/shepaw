@@ -31,13 +31,14 @@ import '../../models/model_definition.dart';
 import '../../services/messaging/message_implicit_prompt.dart';
 import '../../models/model_routing_config.dart';
 import '../../models/remote_agent.dart';
+import '../../models/store_attachment_ref.dart';
 import '../../services/acp_agent_connection.dart';
 import '../../services/chat_service.dart';
 import '../../services/local_database_service.dart';
-import '../../services/local_file_storage_service.dart';
 import '../../services/logger_service.dart';
 import '../../services/task/task_models.dart';
 import '../../service_locator.dart' show getIt;
+import '../../storage/attachment_store_writer.dart';
 import '../models/peer_hub_pending_approval.dart';
 import 'peer_connection_manager.dart';
 import 'peer_connection.dart' show PeerConnectionEvent, PeerConnectionEventType;
@@ -46,6 +47,7 @@ import 'peer_storage_service.dart';
 /// In-progress chunked file receive.
 class _IncomingPeerFile {
   final String agentId;
+  final String channelId;
   final String fileId;
   final String fileName;
   final String mimeType;
@@ -55,6 +57,7 @@ class _IncomingPeerFile {
 
   _IncomingPeerFile({
     required this.agentId,
+    required this.channelId,
     required this.fileId,
     required this.fileName,
     required this.mimeType,
@@ -65,7 +68,8 @@ class _IncomingPeerFile {
 
 class _StoredPeerFile {
   final String agentId;
-  final String relativePath;
+  final String channelId;
+  final String storeUri;
   final String fileName;
   final String mimeType;
   final String semanticType;
@@ -73,7 +77,8 @@ class _StoredPeerFile {
 
   const _StoredPeerFile({
     required this.agentId,
-    required this.relativePath,
+    required this.channelId,
+    required this.storeUri,
     required this.fileName,
     required this.mimeType,
     required this.semanticType,
@@ -138,13 +143,12 @@ class PeerAgentHostService {
   /// In-progress file pushes (fileId → buffer state).
   final Map<String, _IncomingPeerFile> _incomingFiles = {};
 
-  /// Completed peer file pushes (fileId → relative path under app storage).
+  /// Completed peer file pushes (fileId → host runtime store URI).
   final Map<String, _StoredPeerFile> _storedFiles = {};
 
   LocalDatabaseService get _db => getIt<LocalDatabaseService>();
   ChatService get _chat => getIt<ChatService>();
   final PeerStorageService _peerStorage = PeerStorageService();
-  final LocalFileStorageService _fileStorage = LocalFileStorageService();
 
   void start() {
     if (_running) return;
@@ -292,6 +296,7 @@ class PeerAgentHostService {
         data['semantic_type'] as String? ??
         'file';
     final size = data['size'] as int? ?? 0;
+    final clientSessionId = data['session_id'] as String?;
 
     if (fileId == null || fileId.isEmpty || agentId == null || agentId.isEmpty) {
       return;
@@ -311,9 +316,12 @@ class PeerAgentHostService {
       return;
     }
 
+    final channelId = peerAgentChannelId(peerId, agentId, clientSessionId);
+
     // Reserve before any await so early chunks are not dropped.
     _incomingFiles[fileId] = _IncomingPeerFile(
       agentId: agentId,
+      channelId: channelId,
       fileId: fileId,
       fileName: fileName,
       mimeType: mimeType,
@@ -405,15 +413,15 @@ class PeerAgentHostService {
         throw StateError('assembled file exceeds size limit');
       }
 
-      final relativePath = await _fileStorage.savePeerInboundBytes(
-        agentId: incoming.agentId,
-        fileId: incoming.fileId,
-        fileName: AttachmentData.safeFileName(incoming.fileName),
-        bytes: bytes,
+      final storeUri = await AttachmentStoreWriter.storeBytes(
+        bytes,
+        ownerId: incoming.agentId,
+        channelId: incoming.channelId,
       );
       _storedFiles[fileId] = _StoredPeerFile(
         agentId: incoming.agentId,
-        relativePath: relativePath,
+        channelId: incoming.channelId,
+        storeUri: storeUri,
         fileName: incoming.fileName,
         mimeType: incoming.mimeType,
         semanticType: incoming.semanticType,
@@ -424,6 +432,7 @@ class PeerAgentHostService {
         'file_id': fileId,
         'ok': true,
         'stage': 'end',
+        'store_uri': storeUri,
       });
     } catch (e) {
       _log.warning('agent_file_end failed: $e', tag: _tag);
@@ -450,13 +459,34 @@ class PeerAgentHostService {
       if (stored == null || stored.agentId != agentId) {
         throw Exception('Unknown or mismatched attachment file_id: $fileId');
       }
-      final fullPath = await _fileStorage.getFullPath(stored.relativePath);
-      final file = File(fullPath);
-      if (!await file.exists()) {
+      final file = await StoreAttachmentRef.fileFromStoreUri(stored.storeUri);
+      if (file == null || !await file.exists()) {
         throw Exception('Attachment file missing on host: $fileId');
       }
       final bytes = await file.readAsBytes();
-      final extra = ref['extra'];
+      // Host-authored store_uri only — drop client-side store:// pointing at
+      // the peer's own device (agent cannot read those).
+      final extra = <String, dynamic>{
+        'store_uri': stored.storeUri,
+      };
+      final hint = MessageImplicitPrompt.renderStoreReadHint([stored.storeUri]);
+      MessageImplicitPrompt.putInMetadata(
+        extra,
+        hint: hint,
+        uris: [stored.storeUri],
+      );
+      final clientExtra = ref['extra'];
+      if (clientExtra is Map) {
+        for (final e in clientExtra.entries) {
+          final key = e.key.toString();
+          if (key == 'store_uri' ||
+              key == MessageImplicitPrompt.metaKey ||
+              key == MessageImplicitPrompt.urisMetaKey) {
+            continue;
+          }
+          extra[key] = e.value;
+        }
+      }
       out.add(AttachmentData(
         fileName: stored.fileName,
         mimeType: stored.mimeType,
@@ -464,9 +494,7 @@ class PeerAgentHostService {
         bytes: bytes,
         semanticType: stored.semanticType,
         fileId: fileId,
-        extraMetadata: extra is Map
-            ? Map<String, dynamic>.from(extra)
-            : null,
+        extraMetadata: extra,
       ));
     }
     return out;
@@ -488,25 +516,29 @@ class PeerAgentHostService {
         'audio' => 'audio',
         _ => 'file',
       };
-      final metadata = {
-        'path': stored.relativePath,
+      final metadata = <String, dynamic>{
+        'store_uri': stored.storeUri,
         'name': stored.fileName,
         'type': stored.semanticType,
         'size': stored.size,
         'file_id': fileId,
-        if (att.extraMetadata != null) ...att.extraMetadata!,
       };
-      final storeUri = metadata['store_uri'] as String?;
-      if (storeUri != null &&
-          storeUri.isNotEmpty &&
-          MessageImplicitPrompt.fromMetadata(metadata) == null) {
-        final hint = MessageImplicitPrompt.renderStoreReadHint([storeUri]);
-        MessageImplicitPrompt.putInMetadata(
-          metadata,
-          hint: hint,
-          uris: [storeUri],
-        );
+      if (att.extraMetadata != null) {
+        for (final e in att.extraMetadata!.entries) {
+          if (e.key == 'store_uri' ||
+              e.key == MessageImplicitPrompt.metaKey ||
+              e.key == MessageImplicitPrompt.urisMetaKey) {
+            continue;
+          }
+          metadata[e.key] = e.value;
+        }
       }
+      final hint = MessageImplicitPrompt.renderStoreReadHint([stored.storeUri]);
+      MessageImplicitPrompt.putInMetadata(
+        metadata,
+        hint: hint,
+        uris: [stored.storeUri],
+      );
       final id = Uuid().v4();
       await _db.createMessage(
         id: id,

@@ -466,7 +466,8 @@ class _PendingRequest {
 
 class _PendingFilePush {
   final Completer<void> begin = Completer<void>();
-  final Completer<void> end = Completer<void>();
+  /// Completes with host `store_uri` (may be null on legacy hosts).
+  final Completer<String?> end = Completer<String?>();
 }
 
 class PeerAgentClientService {
@@ -632,13 +633,15 @@ class PeerAgentClientService {
 
   // ── 发送（消费方 → 提供方） ────────────────────────────────────────────
 
-  /// Push [attachment] bytes to the peer host under [remoteAgentId]'s directory.
+  /// Push [attachment] bytes to the peer host under [remoteAgentId]'s runtime.
   ///
-  /// Returns the `file_id` acknowledged by the host.
-  Future<String> pushFile({
+  /// Returns `(fileId, hostStoreUri)` acknowledged by the host.
+  /// [sessionId] scopes the host channel (`peer__…__s_…`).
+  Future<({String fileId, String? storeUri})> pushFile({
     required String peerId,
     required String remoteAgentId,
     required AttachmentData attachment,
+    String? sessionId,
   }) async {
     if (attachment.exceedsSizeLimit) {
       throw Exception(
@@ -660,6 +663,7 @@ class PeerAgentClientService {
       'mime_type': attachment.mimeType,
       'file_type': attachment.semanticType,
       'size': attachment.sizeBytes,
+      if (sessionId != null && sessionId.isNotEmpty) 'session_id': sessionId,
     });
     if (!beginSent) {
       clearPending();
@@ -710,8 +714,10 @@ class PeerAgentClientService {
       throw Exception('推送附件结束帧失败（连接中断）');
     }
 
+    late final String? hostStoreUri;
     try {
-      await pending.end.future.timeout(const Duration(seconds: 60));
+      hostStoreUri =
+          await pending.end.future.timeout(const Duration(seconds: 60));
     } on TimeoutException {
       clearPending();
       throw Exception('推送附件超时: ${attachment.fileName}');
@@ -720,7 +726,7 @@ class PeerAgentClientService {
       rethrow;
     }
     clearPending();
-    return fileId;
+    return (fileId: fileId, storeUri: hostStoreUri);
   }
 
   /// 通过 P2P 通道把消息发给对端的本地 agent，流式接收回复。
@@ -751,12 +757,16 @@ class PeerAgentClientService {
             '${att.fileName}',
           );
         }
-        final fileId = await pushFile(
+        final pushed = await pushFile(
           peerId: peerId,
           remoteAgentId: remoteAgentId,
           attachment: att,
+          sessionId: sessionId,
         );
-        attachmentRefs.add(att.toPeerRefJson(fileId));
+        attachmentRefs.add(att.toPeerRefJson(
+          pushed.fileId,
+          stripClientStoreUri: true,
+        ));
       }
     }
 
@@ -970,21 +980,34 @@ class PeerAgentClientService {
     final ok = data['ok'] != false;
     final stage = data['stage'] as String? ?? 'end';
     final error = data['error'] as String? ?? '附件推送被对端拒绝';
+    final storeUri = data['store_uri'] as String?;
 
-    void fail(Completer<void> c) {
-      if (!c.isCompleted) c.completeError(Exception(error));
+    void failBegin() {
+      if (!pending.begin.isCompleted) {
+        pending.begin.completeError(Exception(error));
+      }
     }
 
-    void succeed(Completer<void> c) {
-      if (!c.isCompleted) c.complete();
+    void failEnd() {
+      if (!pending.end.isCompleted) {
+        pending.end.completeError(Exception(error));
+      }
+    }
+
+    void succeedBegin() {
+      if (!pending.begin.isCompleted) pending.begin.complete();
+    }
+
+    void succeedEnd([String? uri]) {
+      if (!pending.end.isCompleted) pending.end.complete(uri);
     }
 
     if (stage == 'begin') {
       if (ok) {
-        succeed(pending.begin);
+        succeedBegin();
       } else {
-        fail(pending.begin);
-        fail(pending.end);
+        failBegin();
+        failEnd();
         _pendingFilePushes.remove(fileId);
       }
       return;
@@ -993,11 +1016,11 @@ class PeerAgentClientService {
     // stage == end (or legacy ack without stage)
     if (ok) {
       // If begin was skipped somehow, still unblock it.
-      succeed(pending.begin);
-      succeed(pending.end);
+      succeedBegin();
+      succeedEnd(storeUri);
     } else {
-      fail(pending.begin);
-      fail(pending.end);
+      failBegin();
+      failEnd();
       _pendingFilePushes.remove(fileId);
     }
   }

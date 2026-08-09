@@ -8,6 +8,7 @@ import 'package:shepaw/services/attachment_service.dart';
 import 'package:shepaw/services/local_database_service.dart';
 import 'package:shepaw/services/messaging/message_implicit_prompt.dart';
 import 'package:shepaw/models/store_attachment_ref.dart';
+import 'package:shepaw/storage/attachment_store_writer.dart';
 import 'package:shepaw/storage/device_identity.dart';
 import 'package:shepaw/storage/local_store.dart';
 import 'package:shepaw/storage/store_protocol.dart';
@@ -257,5 +258,33 @@ void main() {
     expect(snap.manifest.fileHashes.keys,
         containsAll(['db.sqlite.enc', 'identity.enc']));
     expect(snap.manifest.fileHashes.length, 2);
+  });
+
+  test('AttachmentStoreWriter：peer 入站频道落到 runtime/<A>/<peer__…>/attachments',
+      () async {
+    final content = Uint8List.fromList('peer inbound bytes'.codeUnits);
+    final hash = crypto.sha256.convert(content).toString();
+    final deviceId = await DeviceIdentity.deviceId();
+    const agentId = 'agent-a';
+    const channelId = 'peer__p1__agent-a__s_sess1';
+    final uri = await AttachmentStoreWriter.storeBytes(
+      content,
+      ownerId: agentId,
+      channelId: channelId,
+    );
+    final rel = '$agentId/$channelId/attachments/$hash';
+    expect(uri, storeUriWithRef(StoreSpace.runtime, deviceId, rel));
+    final root = await StoreService.instance.storeRoot();
+    final blob = File(p.join(
+      root.path,
+      deviceId,
+      StoreSpace.runtime,
+      agentId,
+      channelId,
+      'attachments',
+      hash,
+    ));
+    expect(await blob.exists(), isTrue);
+    expect(await blob.readAsBytes(), content);
   });
 }

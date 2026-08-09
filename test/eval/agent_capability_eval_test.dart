@@ -74,6 +74,7 @@ void main() {
         c.blocksCli(namespace: 'tools', subcommand: 'web.search'),
         isFalse,
       );
+      expect(c.blocksCli(namespace: 'store', subcommand: 'write'), isFalse);
     });
 
     test('open boundary allows os and memory writes', () {

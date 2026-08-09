@@ -68,7 +68,7 @@ URI：`store://<space>/<device_id>/<relpath>`。
 |------|------------------------|-------------|
 | 本机 LLM 单聊 | `agent_id` | 本机 |
 | 群聊 | `parentGroupId` 或群 `channel_id` | 群主设备（metadata `runtime_owner_device_id`；缺省本机） |
-| Peer 隧道 agent | 对端 `remote_agent_id` | 对端（MVP 可本机 fallback + `placement=local_fallback`） |
+| Peer 隧道 agent | 对端 `remote_agent_id` | **对端权威**：附件经 `agent_file_*` 写入对端 `runtime/<A>/<peer__…>/attachments/`；本机可另存同形态缓存（气泡离线预览，`placement=local_fallback`） |
 | 外接 ACP | agent id | Hub device；否则本机 fallback |
 
 群聊 key：优先 `parentGroupId`，否则群 channel `id`。

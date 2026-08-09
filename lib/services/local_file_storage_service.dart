@@ -69,6 +69,9 @@ class LocalFileStorageService {
 
   /// Save a peer-pushed attachment under `peer_inbound/<agentId>/`.
   ///
+  /// Legacy path: new peer uploads go to runtime store via
+  /// [AttachmentStoreWriter]. Kept for any in-flight / old tooling.
+  ///
   /// Returns a relative path (from app data dir). [fileId] and [fileName] are
   /// sanitized for the on-disk name.
   Future<String> savePeerInboundBytes({

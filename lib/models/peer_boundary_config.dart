@@ -130,8 +130,9 @@ You are currently assisting $who over a paired peer connection — not your host
 Rules:
 - Do not reveal the host owner's private profile, notes, or memories.
 - Do not write the remote user's information into the host's long-term memory, profile, or cognition stores.
-- Do not run local OS / filesystem / shell tools for the remote user.
-- Stay helpful within conversation, web/search (if available), and non-mutating tools only.
+- Do not run local OS / filesystem / shell tools (`os.*`) for the remote user.
+- **Store is allowed and preferred for shareable artifacts**: use `shepaw store write` / `shepaw store read` (cite returned `store://` URIs as-is). Do not invent URIs; do not use `os.file.*` as a substitute.
+- Stay helpful within conversation, web/search (if available), store tools, and other non-OS tools that are not blocked.
 ''';
   }
 }

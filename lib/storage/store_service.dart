@@ -64,7 +64,7 @@ class StoreService {
     _controlSub ??= _manager.controlEvents.listen(_onControl);
     _connSub ??= _manager.events.listen((e) {
       if (e.type == PeerConnectionEventType.connected) {
-        unawaited(pushShareAnnounce(e.peerId));
+        unawaited(_onPeerConnected(e.peerId));
       }
     });
     final store = await _localStore();
@@ -248,8 +248,8 @@ class StoreService {
 
   /// 跨端读优先服务端：属主在线 → 直读属主；否则走 master（镜像备份）。
   ///
-  /// 共享储物袋产品语义：配对即可读对方当前内容；指定 master 后还可在属主
-  /// 离线时读其备份镜像。
+  /// 共享储物袋产品语义：owner 配对默认互读对方当前分享内容（双方写出站
+  /// 白名单）；指定 master 后还可在属主离线时读其备份镜像。
   Future<String> preferredReadServer(String ownerDeviceId) async {
     if (await isDeviceOnline(ownerDeviceId)) return ownerDeviceId;
     return masterDeviceId();
@@ -604,6 +604,16 @@ class StoreService {
     } catch (e) {
       _log.warning('invalid share.announce: $e', tag: _tag);
     }
+  }
+
+  /// 重连时：owner 且从未配置出站分享则回填默认，再 announce。
+  Future<void> _onPeerConnected(String peerId) async {
+    try {
+      await _peerStorage.ensureOwnerDefaultOutboundSharesIfUnset(peerId);
+    } catch (e) {
+      _log.warning('ensure owner default shares failed: $e', tag: _tag);
+    }
+    await pushShareAnnounce(peerId);
   }
 
   /// 向配对设备推送本机出站分享目录。

@@ -472,6 +472,11 @@ class PeerPairingService {
 
       await _storage.savePeer(peer);
 
+      // 扫码方此前未写出站分享 → 对端浏览本机储物袋会 acl_denied。
+      // 与 responder「本人」默认分享对齐（已有分享行则不覆盖）。
+      await PeerStorageService()
+          .ensureOwnerDefaultOutboundSharesIfUnset(peer.id);
+
       _state = PairingSessionState.completed;
       session.close();
       ws.sink.close();
@@ -488,6 +493,11 @@ class PeerPairingService {
       // 配对成功后通知 ConnectionManager 建立连接，并刷新会话/设备列表
       PeerConnectionManager.instance.notifyPeerListChanged();
       PeerConnectionManager.instance.connectToPeer(peer).then((_) async {
+        try {
+          await StoreService.instance.pushShareAnnounce(peer.id);
+        } catch (e) {
+          _log.warning('post-pairing share.announce failed: $e', tag: _tag);
+        }
         if (!_looksLikeStoreNode(peer)) return;
         try {
           final q = await MasterMigrationService.instance

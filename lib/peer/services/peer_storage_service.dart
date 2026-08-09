@@ -506,6 +506,18 @@ class PeerStorageService {
           PeerStoreShareEntry(space: space),
       ];
 
+  /// 若 peer 为 owner 且从未配置过出站分享行，写入默认整区分享。
+  ///
+  /// 用于扫码发起方配对补齐，以及旧配对在重连时回填（与「本人」默认可互读一致）。
+  /// 已有任意 `peer_store_shares` 行（含 shared=0）则不改动，避免覆盖用户收窄。
+  Future<bool> ensureOwnerDefaultOutboundSharesIfUnset(String peerId) async {
+    final peer = await getPeerById(peerId);
+    if (peer == null || peer.trustLevel != TrustLevel.owner) return false;
+    if (await hasAnyStoreShare(peerId)) return false;
+    await replaceStoreShares(peerId, ownerDefaultStoreShares());
+    return true;
+  }
+
   // ── 入站分享目录缓存（对端 announce） ───────────────────────────────────
 
   Future<void> replaceInboundStoreShares(

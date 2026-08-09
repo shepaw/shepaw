@@ -43,6 +43,14 @@ void main() {
         c.blocksCli(namespace: 'tools', subcommand: 'web.search'),
         isFalse,
       );
+      expect(
+        c.blocksCli(namespace: 'store', subcommand: 'write'),
+        isFalse,
+      );
+      expect(
+        c.blocksCli(namespace: 'store', subcommand: 'read'),
+        isFalse,
+      );
     });
 
     test('open allows os and memory writes', () {
@@ -71,11 +79,14 @@ void main() {
   });
 
   group('PeerBoundaryPrompt', () {
-    test('preamble mentions external serving', () {
+    test('preamble mentions external serving and allows store', () {
       final text = PeerBoundaryPrompt.buildPreamble(peerDisplayName: 'Phone');
       expect(text, contains('External serving mode'));
       expect(text, contains('Phone'));
       expect(text, contains('Do not reveal'));
+      expect(text, contains('shepaw store write'));
+      expect(text, contains('os.*'));
+      expect(text, isNot(contains('non-mutating tools only')));
     });
   });
 

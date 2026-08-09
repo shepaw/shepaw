@@ -164,14 +164,27 @@ class AttachmentData {
       };
 
   /// Peer `agent_chat` attachment reference (no `data`).
-  Map<String, dynamic> toPeerRefJson(String fileId) => {
-        'file_id': fileId,
-        'file_name': fileName,
-        'mime_type': mimeType,
-        'size': sizeBytes,
-        'type': semanticType,
-        if (extraMetadata != null) 'extra': extraMetadata,
-      };
+  Map<String, dynamic> toPeerRefJson(
+    String fileId, {
+    bool stripClientStoreUri = false,
+  }) {
+    Map<String, dynamic>? extra = extraMetadata;
+    if (stripClientStoreUri && extra != null) {
+      final filtered = Map<String, dynamic>.from(extra)
+        ..remove('store_uri')
+        ..remove('implicit_prompt')
+        ..remove('store_uris');
+      extra = filtered.isEmpty ? null : filtered;
+    }
+    return {
+      'file_id': fileId,
+      'file_name': fileName,
+      'mime_type': mimeType,
+      'size': sizeBytes,
+      'type': semanticType,
+      if (extra != null) 'extra': extra,
+    };
+  }
 
   AttachmentData copyWith({
     String? fileName,

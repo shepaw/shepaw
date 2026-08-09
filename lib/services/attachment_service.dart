@@ -1,6 +1,5 @@
 import 'dart:io';
 import 'dart:typed_data';
-import 'package:crypto/crypto.dart' as crypto;
 import 'package:image_picker/image_picker.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:path/path.dart' as path;
@@ -9,12 +8,9 @@ import 'logger_service.dart';
 import '../models/message.dart';
 import '../models/attachment_data.dart';
 import '../models/store_attachment_ref.dart';
-import '../storage/device_identity.dart';
-import '../storage/local_store.dart';
+import '../storage/attachment_store_writer.dart';
 import '../storage/runtime_mirror_service.dart';
 import '../storage/runtime_paths.dart';
-import '../storage/store_protocol.dart';
-import '../storage/store_service.dart';
 import 'messaging/message_implicit_prompt.dart';
 import 'package:uuid/uuid.dart';
 
@@ -80,41 +76,12 @@ class AttachmentService {
     Uint8List bytes, {
     required String ownerId,
     required String channelId,
-  }) async {
-    final hash = crypto.sha256.convert(bytes).toString();
-    final relPath = RuntimePaths.attachmentBlob(ownerId, channelId, hash);
-    final store = await StoreService.instance.localStore();
-    final deviceId = await DeviceIdentity.deviceId();
-    try {
-      await store.meta(deviceId, StoreSpace.runtime, relPath);
-      return storeUriWithRef(StoreSpace.runtime, deviceId, relPath);
-    } on StoreException {
-      // not_found → 写入
-    }
-    final (uploadId, _) = await store.writeBegin(
-      deviceId: deviceId,
-      space: StoreSpace.runtime,
-      path: relPath,
-      size: bytes.length,
-      sha256: hash,
-    );
-    var offset = 0;
-    while (offset < bytes.length) {
-      final end = (offset + LocalStore.maxReadChunk) > bytes.length
-          ? bytes.length
-          : offset + LocalStore.maxReadChunk;
-      await store.writeChunk(
-          deviceId, StoreSpace.runtime, uploadId, offset,
-          bytes.sublist(offset, end));
-      offset = end;
-    }
-    final (committed, failed) =
-        await store.commit(deviceId, StoreSpace.runtime, [uploadId]);
-    if (failed.isNotEmpty || committed.isEmpty) {
-      throw StateError('attachment commit failed: $failed');
-    }
-    return storeUriWithRef(StoreSpace.runtime, deviceId, relPath);
-  }
+  }) =>
+      AttachmentStoreWriter.storeBytes(
+        bytes,
+        ownerId: ownerId,
+        channelId: channelId,
+      );
 
   static void _putStoreUriMetadata(
     Map<String, dynamic> target,
