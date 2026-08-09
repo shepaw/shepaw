@@ -1,7 +1,7 @@
 import '../../cli_base.dart';
 import '../../../models/agent_scenario_models.dart';
 import '../../../models/model_routing_config.dart';
-import '../../../services/agent_memory_db_service.dart';
+import '../../../services/agent_memory_store_service.dart';
 import '../../../services/chat_service.dart';
 import '../../../services/local_database_service.dart';
 import '../../../services/logger_service.dart';
@@ -120,7 +120,7 @@ class GetCommand extends CliCommand {
   /// She 记录的适配经验（keyword = dispatch 的 agent 记忆，最新 3 条）
   Future<List<String>> _dispatchLearnings(String agentId) async {
     try {
-      final mems = await AgentMemoryDbService.forAgent(agentId)
+      final mems = await AgentMemoryStoreService.forAgent(agentId)
           .queryByKeyword('dispatch', limit: 3);
       return mems.map((m) => m.memoryContent).toList();
     } catch (e) {

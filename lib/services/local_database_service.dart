@@ -6,6 +6,7 @@ import 'she_profile_database_service.dart';
 import 'she_memory_db_service.dart';
 import 'minds_database_service.dart';
 import 'agent_memory_db_service.dart';
+import 'agent_memory_store_service.dart';
 import 'logger_service.dart';
 
 // 各业务领域的数据访问层（DAO）以 extension 形式拆分到 database/ 目录下，
@@ -860,6 +861,8 @@ class LocalDatabaseService {
     await SheMemoryDbService.instance.close();
     await MindsDatabaseService().close();
     await AgentMemoryDbService.closeAll();
+    await AgentMemoryStoreService.closeAll();
+    await AgentMemoryStoreService.deleteAllAgentMemories();
 
     // 2. 删除核心 DB 文件
     const coreNames = [
@@ -875,7 +878,7 @@ class LocalDatabaseService {
       }
     }
 
-    // 3. 删除所有 agent_memory_*.db 文件
+    // 3. 删除遗留 agent_memory_*.db（store 权威已在上面清掉）
     final dir = Directory(dbDir);
     await for (final entity in dir.list()) {
       if (entity is File) {

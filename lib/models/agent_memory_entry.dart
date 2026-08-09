@@ -45,10 +45,11 @@ class MemorySourceType {
 
 /// Agent 记忆条目
 ///
-/// 表示一个 Agent 的单条结构化记忆，存储在该 Agent 独立的 SQLite 数据库文件中。
+/// 表示一个 Agent 的单条结构化记忆，权威存储在储物袋
+/// `store://memory/<device>/<agentId>/entries/<id>.json`。
 ///
 /// ### 字段说明
-/// - [memoryId]       自增整数主键，由数据库生成（插入前为 null）
+/// - [memoryId]       整数主键（由 memory/meta.json 的 next_id 分配）
 /// - [memoryContent]  记忆内容（自由文本）
 /// - [memoryTime]     记忆时间戳（毫秒），表示记忆发生的时间
 /// - [memoryType]     记忆分类（[MemoryType] 枚举）
@@ -58,7 +59,7 @@ class MemorySourceType {
 /// - [createdAt]      记录写入时间（毫秒）
 /// - [updatedAt]      记录最后更新时间（毫秒）
 class AgentMemoryEntry {
-  /// 自增主键，插入前为 null，写入后由数据库分配
+  /// 主键，插入前为 null，写入后由 store 分配
   final int? memoryId;
   final String memoryContent;
   final int memoryTime;

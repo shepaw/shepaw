@@ -5,6 +5,7 @@ import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 
 import '../services/agent_memory_db_service.dart';
+import '../services/agent_memory_store_service.dart';
 import '../services/local_database_service.dart';
 import '../services/logger_service.dart';
 import '../services/minds_database_service.dart';
@@ -122,6 +123,7 @@ class RestoreService {
     await SheMemoryDbService.instance.close();
     await MindsDatabaseService().close();
     await AgentMemoryDbService.closeAll();
+    await AgentMemoryStoreService.closeAll();
   }
 }
 

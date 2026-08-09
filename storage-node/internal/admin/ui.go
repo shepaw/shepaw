@@ -72,6 +72,7 @@ td, th { text-align: left; padding: .35rem .25rem; border-bottom: 1px solid
       <label>分区 <select id="browseSpace">
         <option value="workspaces">workspaces</option>
         <option value="runtime">runtime</option>
+        <option value="memory">memory</option>
         <option value="files">files</option>
         <option value="public">public</option>
         <option value="artifacts">artifacts</option>

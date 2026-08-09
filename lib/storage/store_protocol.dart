@@ -106,7 +106,7 @@ class StoreSpace {
 
   /// Legacy chat uploads under `files/chat/<sha256>`（旧 URI 兼容）。
   static const chatAttachmentPrefix = 'chat';
-  /// Well-known custom space (node auto-seeds); not in [all] builtins.
+  /// Agent 结构化记忆权威空间（`memory/<agentId>/entries/*.json`）。
   static const memory = 'memory';
 
   /// 同步/导出枚举：新内置 + legacy（旧树仍需镜像）。
@@ -116,6 +116,7 @@ class StoreSpace {
     files,
     public_,
     backups,
+    memory,
     artifacts,
     attachments,
   ];
@@ -126,11 +127,11 @@ class StoreSpace {
     runtime,
     files,
     public_,
-    artifacts,
     memory,
+    artifacts,
   ];
 
-  /// Owner 端默认可跨端读的分区（不含 private 的 runtime）。
+  /// Owner 端默认可跨端读的分区（不含 private 的 runtime / memory）。
   static const sharedReadable = <String>[
     workspaces,
     files,

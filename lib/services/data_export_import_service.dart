@@ -10,8 +10,12 @@ import '../services/logger_service.dart';
 import '../services/she_memory_db_service.dart';
 import '../services/minds_database_service.dart';
 import '../services/agent_memory_db_service.dart';
+import '../services/agent_memory_store_service.dart';
 import '../models/cognition.dart';
 import '../models/agent_memory_entry.dart';
+import '../storage/device_identity.dart';
+import '../storage/store_protocol.dart';
+import '../storage/store_service.dart';
 
 /// 数据导入导出服务
 /// 
@@ -256,10 +260,36 @@ class DataExportImportService {
       _logger.warning('Failed to export cognitions', error: e);
     }
 
-    // 各 Agent 独立记忆库（按文件名枚举，已删除 Agent 的遗留库也包含）
+    // Agent 记忆：权威在储物袋 memory/；兼扫遗留 agent_memory_*.db
     try {
-      final docsDir = await getApplicationDocumentsDirectory();
       final memDir = Directory('${dataDir.path}/agent_memory');
+      await memDir.create(recursive: true);
+      final exported = <String>{};
+
+      try {
+        final deviceId = await DeviceIdentity.deviceId();
+        final store = await StoreService.instance.localStore();
+        final roots = await store.list(
+          deviceId,
+          StoreSpace.memory,
+          depth: 1,
+          limit: 5000,
+        );
+        for (final e in roots) {
+          if (!e.isDir) continue;
+          final agentId = e.path;
+          final memories = await AgentMemoryStoreService.forAgent(agentId)
+              .getAllMemories(limit: 100000);
+          if (memories.isEmpty) continue;
+          await File('${memDir.path}/$agentId.json').writeAsString(
+              json.encode(memories.map((m) => m.toMap()).toList()));
+          exported.add(agentId);
+        }
+      } catch (e) {
+        _logger.warning('store memory export partial fail: $e');
+      }
+
+      final docsDir = await getApplicationDocumentsDirectory();
       await for (final entity in docsDir.list()) {
         final name = entity.path.split('/').last;
         if (entity is! File ||
@@ -268,10 +298,10 @@ class DataExportImportService {
           continue;
         }
         final agentId = name.substring('agent_memory_'.length, name.length - 3);
-        final memories =
-            await AgentMemoryDbService.forAgent(agentId).getAllMemories(limit: 100000);
+        if (exported.contains(agentId)) continue;
+        final memories = await AgentMemoryDbService.forAgent(agentId)
+            .getAllMemories(limit: 100000);
         if (memories.isEmpty) continue;
-        await memDir.create(recursive: true);
         await File('${memDir.path}/$agentId.json').writeAsString(
             json.encode(memories.map((m) => m.toMap()).toList()));
       }
@@ -452,19 +482,20 @@ class DataExportImportService {
       _logger.warning('Failed to import cognitions', error: e);
     }
 
-    // 各 Agent 独立记忆库（memory_id 随备份保留，replace 语义 → 重复导入幂等）
+    // Agent 记忆 → 储物袋 memory/（memory_id 随备份保留）
     try {
       final memDir = Directory('${dataDir.path}/agent_memory');
       if (await memDir.exists()) {
         await for (final entity in memDir.list()) {
           if (entity is! File || !entity.path.endsWith('.json')) continue;
           final agentId = entity.path.split('/').last.replaceAll('.json', '');
-          final service = AgentMemoryDbService.forAgent(agentId);
+          final service = AgentMemoryStoreService.forAgent(agentId);
           if (!overwrite && await service.getMemoryCount() > 0) continue;
+          if (overwrite) await service.clearAllMemories();
           final list = json.decode(await entity.readAsString()) as List;
           for (final raw in list) {
-            await service.addMemory(AgentMemoryEntry.fromMap(
-                (raw as Map).cast<String, dynamic>()));
+            final map = (raw as Map).cast<String, dynamic>();
+            await service.importEntry(AgentMemoryEntry.fromMap(map));
           }
         }
         _logger.debug('Imported agent memories');

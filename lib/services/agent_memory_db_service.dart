@@ -6,32 +6,10 @@ import '../models/agent_memory_entry.dart';
 import 'logger_service.dart';
 import '../storage/runtime_mirror_service.dart';
 
-/// Agent 独立记忆数据库服务
+/// Agent 独立记忆数据库服务（**遗留**）。
 ///
-/// 为每个 Agent 创建并管理一个独立的 SQLite 数据库文件。
-///
-/// ### 数据库命名规则
-/// 文件名：`agent_memory_{sanitized_agent_id}.db`
-/// 其中 `sanitized_agent_id` 将 UUID 中的 `-` 替换为 `_`，以保证文件名合法。
-///
-/// ### 使用方式
-/// ```dart
-/// final service = AgentMemoryDbService.forAgent(agentId);
-/// final id = await service.addMemory(entry);
-/// ```
-///
-/// ### 表结构（memories）
-/// | 字段            | 类型         | 说明                          |
-/// |----------------|--------------|-------------------------------|
-/// | memory_id      | INTEGER PK   | 自增主键                      |
-/// | memory_content | TEXT         | 记忆内容                      |
-/// | memory_time    | INTEGER      | 记忆发生时间戳（毫秒）         |
-/// | memory_type    | TEXT         | 枚举字符串（MemoryType.name） |
-/// | memory_keywords| TEXT         | JSON 数组字符串               |
-/// | source_type    | TEXT         | 来源类型（direct/group/system）|
-/// | source_id      | TEXT         | 来源 ID（如 channel_id）      |
-/// | created_at     | INTEGER      | 写入时间戳（毫秒）             |
-/// | updated_at     | INTEGER      | 最后更新时间戳（毫秒）         |
+/// 新权威为储物袋 [AgentMemoryStoreService]（`memory/<agentId>/entries/`）。
+/// 本类仅保留供一次性迁移与旧备份扫描；业务请走 [AgentMemoryBizService]。
 class AgentMemoryDbService {
   // ---------------------------------------------------------------------------
   // 单例实例池（每个 agentId 对应一个服务实例）

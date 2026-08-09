@@ -276,8 +276,8 @@ class _AgentRuntimeContextScreenState extends State<AgentRuntimeContextScreen>
             title: Text(_zh ? '完整记忆管理' : 'Full memory manager'),
             subtitle: Text(
               _zh
-                  ? '共 ${_memories.length} 条 · 权威在 SQLite'
-                  : '${_memories.length} entries · SQLite is authoritative',
+                  ? '共 ${_memories.length} 条 · 权威在储物袋 memory/'
+                  : '${_memories.length} entries · pouch memory/ is authoritative',
             ),
             trailing: const Icon(Icons.chevron_right),
             onTap: _openMemoryDetail,

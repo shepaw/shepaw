@@ -62,7 +62,7 @@ func IsValidDeviceID(device string) bool {
 // BuiltinSpaces mirrors Dart StoreSpace.all (new + legacy).
 func BuiltinSpaces() []string {
 	return []string{
-		"workspaces", "runtime", "files", "public", "backups",
+		"workspaces", "runtime", "files", "public", "backups", "memory",
 		"artifacts", "attachments",
 	}
 }

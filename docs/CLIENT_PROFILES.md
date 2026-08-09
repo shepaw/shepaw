@@ -3,28 +3,32 @@
 > 权威补充：[`storage_protocol_spec.md`](storage_protocol_spec.md)（协议）+ [`storage_space_plan.md`](storage_space_plan.md)（方案）。
 > 本文只约定 **ShePaw App 客户端** 的路径、权威分层与上下文镜像语义；节点不必理解业务路径。
 
-## 1. 永久双层：SQLite 权威 + runtime 镜像
+## 1. 永久双层：权威分层 + runtime 镜像
 
 | 数据 | 本机权威（读 / 搜 / UI） | runtime 镜像（非权威） |
 |------|--------------------------|------------------------|
 | 会话消息 | `shepaw.db` `messages` | `runtime/<owner>/<channel>/sessions/session.json` |
-| Agent / 群记忆 | `agent_memory_*.db` / minds | `runtime/<owner>/memory.md` |
+| Agent 结构化记忆 | **`memory/<agentId>/entries/*.json`**（储物袋） | `runtime/<owner>/memory.md`（人读摘要） |
 | Soul | minds / she_memory | `runtime/<owner>/soul.md` |
 
 **硬性约定**
 
-- App 聊天与搜索 **只信 SQLite**；永不把镜像当主库。
-- 镜像为 **单向**：落库成功 → debounce 覆盖写文件；**禁止**从 json/md 回灌本机库。
-- 镜像用途：人可读浏览、`store://` **分享**、跨设备 **只读上下文**（不合并对方 DB）。
-- 灾难恢复权威仍是 `backups/` 加密快照，不是 runtime 文件。
+- App 聊天消息与搜索 **只信 SQLite**；永不把 session 镜像当主库。
+- Agent **结构化记忆权威在储物袋 `memory/`**；旧 `agent_memory_*.db` 仅作一次性迁移源。
+- runtime 镜像为 **单向**（debounce 覆盖写）；`memory.md` / `soul.md` **禁止**回灌权威。
+- 镜像用途：人可读浏览、`store://` **分享**、跨设备 **只读上下文**。
+- 灾难恢复权威仍是 `backups/` 加密快照。
 
 ## 2. 设备目录（内置 space）
 
 ```
 <device_id>/
 ├── workspaces/<workspace_id>/...     # owner 可读可写（含跨 device）
+├── memory/<agent_id>/                # Agent 结构化记忆权威
+│   ├── meta.json                     # next_id / migrated_from_sqlite
+│   └── entries/<id>.json
 ├── runtime/<agent_id|group_id>/
-│   ├── memory.md
+│   ├── memory.md                     # 记忆摘要镜像（非权威）
 │   ├── soul.md
 │   ├── workspace.md                  # workspace_ids 等设置（引用，不复制）
 │   ├── context.manifest.json         # ContextBundle 最小清单

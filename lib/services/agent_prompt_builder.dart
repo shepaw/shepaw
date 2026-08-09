@@ -1,6 +1,6 @@
 import '../models/prompt_stack_config.dart';
 import '../models/remote_agent.dart';
-import 'agent_memory_db_service.dart';
+import 'agent_memory_store_service.dart';
 import 'cognition_service.dart';
 import 'logger_service.dart';
 import 'she_service.dart';
@@ -330,7 +330,7 @@ ${lines.join('\n')}''';
   /// Fetches up to [limit] memories sorted by `memory_time` descending.
   /// Returns empty string when the agent has no memories yet.
   Future<String> _buildAgentMemoriesBlock(int limit) async {
-    final memories = await AgentMemoryDbService.forAgent(agent.id)
+    final memories = await AgentMemoryStoreService.forAgent(agent.id)
         .getAllMemories(limit: limit);
     if (memories.isEmpty) return '';
 
