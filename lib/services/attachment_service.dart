@@ -8,6 +8,7 @@ import 'logger_service.dart';
 import '../models/message.dart';
 import '../models/attachment_data.dart';
 import '../models/store_attachment_ref.dart';
+import '../peer/services/peer_attachment_placement.dart';
 import '../storage/attachment_store_writer.dart';
 import '../storage/runtime_mirror_service.dart';
 import '../storage/runtime_paths.dart';
@@ -72,16 +73,55 @@ class AttachmentService {
   }
 
   /// 附件内容写入 runtime attachments（hash 去重），返回 store URI。
+  ///
+  /// [deviceId] 非空时写入该 device 目录（peer 缓存与宿主 URI 对齐）。
   Future<String> _storeAttachmentBytes(
     Uint8List bytes, {
     required String ownerId,
     required String channelId,
+    String? deviceId,
   }) =>
       AttachmentStoreWriter.storeBytes(
         bytes,
         ownerId: ownerId,
         channelId: channelId,
+        deviceId: deviceId,
       );
+
+  /// Peer 隧道：落点与宿主 `runtime/<A>/<peer__…>/` 一致；本机 DM 用本地 owner/channel。
+  Future<({String ownerId, String channelId, String? deviceId})>
+      _resolveStoreTarget({
+    required String agentId,
+    required String channelId,
+    String? channelType,
+    String? parentGroupId,
+  }) async {
+    try {
+      final agent = await _database.getRemoteAgentById(agentId);
+      if (agent != null) {
+        final peer = await resolvePeerAttachmentPlacement(
+          agent: agent,
+          localChannelId: channelId,
+        );
+        if (peer != null) {
+          return (
+            ownerId: peer.ownerId,
+            channelId: peer.channelId,
+            deviceId: peer.deviceId,
+          );
+        }
+      }
+    } catch (_) {
+      /* fall through to local */
+    }
+    final ownerId = await _resolveRuntimeOwner(
+      agentId: agentId,
+      channelId: channelId,
+      channelType: channelType,
+      parentGroupId: parentGroupId,
+    );
+    return (ownerId: ownerId, channelId: channelId, deviceId: null);
+  }
 
   static void _putStoreUriMetadata(
     Map<String, dynamic> target,
@@ -164,7 +204,7 @@ class AttachmentService {
       final name = displayName ?? path.basename(file.path);
       final fileType = _getFileType(name);
       final fileSize = await file.length();
-      final ownerId = await _resolveRuntimeOwner(
+      final target = await _resolveStoreTarget(
         agentId: agentId,
         channelId: channelId,
         channelType: channelType,
@@ -175,8 +215,9 @@ class AttachmentService {
           ? storeUri
           : await _storeAttachmentBytes(
               await file.readAsBytes(),
-              ownerId: ownerId,
-              channelId: channelId,
+              ownerId: target.ownerId,
+              channelId: target.channelId,
+              deviceId: target.deviceId,
             );
 
       final attachmentData = {
@@ -226,8 +267,8 @@ class AttachmentService {
       );
 
       RuntimeMirrorService.instance.scheduleSessionMirror(
-        ownerId: ownerId,
-        channelId: channelId,
+        ownerId: target.ownerId,
+        channelId: target.channelId,
       );
 
       return message;
@@ -253,7 +294,7 @@ class AttachmentService {
       final file = File(filePath);
       if (!await file.exists()) return null;
 
-      final ownerId = await _resolveRuntimeOwner(
+      final target = await _resolveStoreTarget(
         agentId: agentId,
         channelId: channelId,
         channelType: channelType,
@@ -262,8 +303,9 @@ class AttachmentService {
       final bytes = await file.readAsBytes();
       final storeUri = await _storeAttachmentBytes(
         bytes,
-        ownerId: ownerId,
-        channelId: channelId,
+        ownerId: target.ownerId,
+        channelId: target.channelId,
+        deviceId: target.deviceId,
       );
 
       final metadata = {
@@ -308,8 +350,8 @@ class AttachmentService {
       );
 
       RuntimeMirrorService.instance.scheduleSessionMirror(
-        ownerId: ownerId,
-        channelId: channelId,
+        ownerId: target.ownerId,
+        channelId: target.channelId,
       );
 
       // 删除临时文件
