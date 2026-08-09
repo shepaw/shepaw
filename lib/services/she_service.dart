@@ -346,9 +346,13 @@ class SheService {
     await _sheMemoryDb.setSheMemory('user_info', info);
   }
 
-  /// Update She's soul (self-awareness)
+  /// Update She's soul (self-awareness) — 权威在储物袋 memory/
   Future<void> updateSoul(String content) async {
-    await _sheMemoryDb.setSheMemory(_soulKey, content);
+    await CognitionService.instance.updateAgentSoul(sheId, content);
+    // 兼容旧 KV 读路径
+    try {
+      await _sheMemoryDb.setSheMemory(_soulKey, content);
+    } catch (_) {}
     LoggerService().info('She soul updated', tag: 'She');
   }
 
@@ -366,9 +370,10 @@ class SheService {
   /// Seed the soul from user's system_prompt (only when soul is still the default value)
   Future<void> seedSoulFromUserPrompt(String userPrompt) async {
     if (userPrompt.trim().isEmpty) return;
-    final currentSoul = await _sheMemoryDb.getSheMemory(_soulKey) ?? '';
+    final currentSoul =
+        (await CognitionService.instance.getAgentSoul(sheId)) ?? '';
     if (currentSoul == _defaultSoul || currentSoul.isEmpty) {
-      await _sheMemoryDb.setSheMemory(_soulKey, userPrompt.trim());
+      await updateSoul(userPrompt.trim());
       LoggerService().info('She soul seeded from user system_prompt', tag: 'She');
     }
   }
@@ -774,14 +779,15 @@ If you learned something new, record it silently:
 
   /// Read soul for prompt injection; auto-heal if polluted by ephemeral room context.
   Future<String> _getSoulForPrompt() async {
-    final raw = await _sheMemoryDb.getSheMemory(_soulKey) ?? _defaultSoul;
+    final raw =
+        (await CognitionService.instance.getAgentSoul(sheId)) ?? _defaultSoul;
     if (!_isRoomContextPollution(raw)) return raw;
 
     LoggerService().warning(
       'Soul contained ephemeral room context (e.g. group admin prompt); resetting to default',
       tag: 'She',
     );
-    await _sheMemoryDb.setSheMemory(_soulKey, _defaultSoul);
+    await updateSoul(_defaultSoul);
     return _defaultSoul;
   }
 

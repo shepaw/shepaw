@@ -1,9 +1,9 @@
 import '../models/cognition.dart';
+import 'agent_memory_store_service.dart';
 import 'minds_database_service.dart';
 import 'she_memory_db_service.dart';
 import 'she_profile_database_service.dart';
 import 'logger_service.dart';
-import '../storage/runtime_mirror_service.dart';
 
 /// 认知业务逻辑服务
 ///
@@ -47,18 +47,19 @@ class CognitionService {
   // Self cognition — Soul & SelfNotes
   // ---------------------------------------------------------------------------
 
-  /// 读取指定 Agent 的 soul
+  /// 读取指定 Agent 的 soul（权威：储物袋 memory/<agent>/soul.md）
   Future<String?> getAgentSoul(String agentId) async {
-    final self = await _db.getSelfCognition(agentId);
-    return self?.soul;
+    return AgentMemoryStoreService.forAgent(agentId).getSoul();
   }
 
-  /// 写入指定 Agent 的 soul（不存在则创建）
+  /// 写入指定 Agent 的 soul（储物袋权威 + runtime 镜像）
   Future<void> updateAgentSoul(String agentId, String soul) async {
-    await _db.updateSoul(agentId, soul);
+    await AgentMemoryStoreService.forAgent(agentId).setSoul(soul);
+    // 兼容：仍写一份到 minds，便于未迁完的旁路读
+    try {
+      await _db.updateSoul(agentId, soul);
+    } catch (_) {}
     LoggerService().info('Soul updated for agent=$agentId', tag: 'CognitionService');
-    // ignore: unawaited_futures
-    RuntimeMirrorService.instance.mirrorSoul(agentId, soul);
   }
 
   /// 读取指定 Agent 的 self_notes

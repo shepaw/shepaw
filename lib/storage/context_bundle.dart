@@ -138,7 +138,7 @@ class ContextBundleService {
       buf.writeln('channel: `$channelId`');
     }
     buf.writeln(
-        '用 `shepaw store read --uri <store://…>` 拉取；勿假设已内嵌全文。');
+        '先 `shepaw store read` 拉取 **context.manifest.json**，再按需读取其中的 soul/memory/session/workspace URI；勿假设已内嵌全文。');
     if (unique.isEmpty) {
       buf.writeln('- （暂无 URI；可先 list `runtime/$ownerId/`）');
     } else {
@@ -150,9 +150,12 @@ class ContextBundleService {
   }
 
   /// 读取本机 bundle 并生成注入段。
+  ///
+  /// 默认只注入 **manifest URI**（瘦身）；[expandUris]=true 时附带 collectUris。
   Future<String> buildLocalContextSection({
     required String ownerId,
     String? channelId,
+    bool expandUris = false,
   }) async {
     final deviceId = await DeviceIdentity.deviceId();
     final manifestUri = RuntimePaths.uri(
@@ -160,9 +163,11 @@ class ContextBundleService {
       relPath: RuntimePaths.contextManifest(ownerId),
     );
     final uris = <String>[manifestUri];
-    final bundle = await loadLocal(ownerId);
-    if (bundle != null) {
-      uris.addAll(bundle.collectUris(preferChannelId: channelId));
+    if (expandUris) {
+      final bundle = await loadLocal(ownerId);
+      if (bundle != null) {
+        uris.addAll(bundle.collectUris(preferChannelId: channelId));
+      }
     }
     return buildContextSection(
       ownerId: ownerId,
@@ -171,12 +176,13 @@ class ContextBundleService {
     );
   }
 
-  /// 在任务文本后追加产物引用 + ContextBundle（去重、不注水失败路径）。
+  /// 在任务文本后追加产物引用 + ContextBundle（默认只挂 manifest URI）。
   Future<String> wrapWithContextBundle(
     String text, {
     required String ownerId,
     String? channelId,
     List<String> extraRefTexts = const [],
+    bool expandUris = false,
   }) async {
     final withArts = ArtifactService.instance
         .wrapWithArtifactSection(text, extraRefTexts: extraRefTexts);
@@ -184,6 +190,7 @@ class ContextBundleService {
       final section = await buildLocalContextSection(
         ownerId: ownerId,
         channelId: channelId,
+        expandUris: expandUris,
       );
       if (withArts.contains('## 可用上下文')) return withArts;
       return '$withArts\n\n$section';

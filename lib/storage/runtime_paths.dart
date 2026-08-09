@@ -73,6 +73,13 @@ class RuntimePaths {
   static String sessionJson(String ownerId, String channelId) =>
       '${channelRoot(ownerId, channelId)}/sessions/session.json';
 
+  static String sessionArchive(
+    String ownerId,
+    String channelId,
+    String utcStamp,
+  ) =>
+      '${channelRoot(ownerId, channelId)}/sessions/archive-${sanitizeSegment(utcStamp)}.json';
+
   static String attachmentsDir(String ownerId, String channelId) =>
       '${channelRoot(ownerId, channelId)}/attachments';
 

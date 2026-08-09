@@ -347,7 +347,9 @@ class _AgentRuntimeContextScreenState extends State<AgentRuntimeContextScreen>
         padding: const EdgeInsets.all(16),
         children: [
           Text(
-            _zh ? '来自认知库（SQLite）；runtime/soul.md 为镜像' : 'From cognition DB; runtime/soul.md is a mirror',
+            _zh
+                ? '来自储物袋 memory/<agent>/soul.md；runtime/soul.md 为镜像'
+                : 'From pouch memory/<agent>/soul.md; runtime/soul.md is a mirror',
             style: TextStyle(
               fontSize: 12,
               color: colorScheme.onSurfaceVariant,

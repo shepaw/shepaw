@@ -22,6 +22,9 @@ class MemoryPaths {
   static String entryJson(String agentId, int memoryId) =>
       '${entriesDir(agentId)}/$memoryId.json';
 
+  /// Soul 权威正文（与 entries 并列）。
+  static String soulMd(String agentId) => '${agentRoot(agentId)}/soul.md';
+
   static String uri({
     required String deviceId,
     required String relPath,

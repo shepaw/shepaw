@@ -7,15 +7,15 @@
 
 | 数据 | 本机权威（读 / 搜 / UI） | runtime 镜像（非权威） |
 |------|--------------------------|------------------------|
-| 会话消息 | `shepaw.db` `messages` | `runtime/<owner>/<channel>/sessions/session.json` |
-| Agent 结构化记忆 | **`memory/<agentId>/entries/*.json`**（储物袋） | `runtime/<owner>/memory.md`（人读摘要） |
-| Soul | minds / she_memory | `runtime/<owner>/soul.md` |
+| 会话消息 | `shepaw.db` `messages` | `runtime/<owner>/<channel>/sessions/session.json`（可滚动 archive） |
+| Agent 结构化记忆 | **`memory/<agentId>/entries/*.json`** | `runtime/<owner>/memory.md`（人读摘要） |
+| Soul | **`memory/<agentId>/soul.md`** | `runtime/<owner>/soul.md` |
 
 **硬性约定**
 
 - App 聊天消息与搜索 **只信 SQLite**；永不把 session 镜像当主库。
-- Agent **结构化记忆权威在储物袋 `memory/`**；旧 `agent_memory_*.db` 仅作一次性迁移源。
-- runtime 镜像为 **单向**（debounce 覆盖写）；`memory.md` / `soul.md` **禁止**回灌权威。
+- Agent **结构化记忆与 Soul 权威在储物袋 `memory/`**；旧 SQLite 仅作一次性迁移源。
+- runtime 镜像为 **单向**（debounce 覆盖写）；`memory.md` / `soul.md`（runtime 下）**禁止**回灌权威。
 - 镜像用途：人可读浏览、`store://` **分享**、跨设备 **只读上下文**。
 - 灾难恢复权威仍是 `backups/` 加密快照。
 
@@ -24,16 +24,18 @@
 ```
 <device_id>/
 ├── workspaces/<workspace_id>/...     # owner 可读可写（含跨 device）
-├── memory/<agent_id>/                # Agent 结构化记忆权威
-│   ├── meta.json                     # next_id / migrated_from_sqlite
+├── memory/<agent_id>/                # Agent 记忆 + Soul 权威
+│   ├── meta.json                     # next_id / migrated flags
+│   ├── soul.md                       # Soul 权威正文
 │   └── entries/<id>.json
 ├── runtime/<agent_id|group_id>/
 │   ├── memory.md                     # 记忆摘要镜像（非权威）
-│   ├── soul.md
-│   ├── workspace.md                  # workspace_ids 等设置（引用，不复制）
+│   ├── soul.md                       # Soul 镜像（非权威）
+│   ├── workspace.md                  # workspace_ids 绑定（引用，不复制）
 │   ├── context.manifest.json         # ContextBundle 最小清单
 │   └── <channel_id>/
-│       ├── sessions/session.json
+│       ├── sessions/session.json     # 最近窗口
+│       ├── sessions/archive-<ts>.json
 │       ├── attachments/<sha256>
 │       └── artifacts/<task_id>/<file>
 ├── files/...                         # 沉淀区（owner 可读，仅本端写）
@@ -51,6 +53,7 @@ URI：`store://<space>/<device_id>/<relpath>`。
 |-------|------------|-----|
 | `workspaces` | shared | **所有 owner 可写任意 owner 的该区** |
 | `runtime` | private（可按前缀分享只读） | 仅属主 |
+| `memory` | private | 仅本端（Agent 记忆 + Soul 权威） |
 | `files` / `public` | shared | 仅本端 |
 | `backups` | private | 仅本端 |
 | `artifacts` / `attachments` | legacy | 旧数据可读；新写入走 runtime |
@@ -76,9 +79,9 @@ URI：`store://<space>/<device_id>/<relpath>`。
   "owner_id": "<agent_or_group_id>",
   "source_device": "<device_id>",
   "updated_at": "ISO-8601",
-  "soul_uri": "store://runtime/.../soul.md",
-  "memory_uri": "store://runtime/.../memory.md",
-  "workspace_refs": [],
+  "soul_uri": "store://memory/<device>/<agent>/soul.md",
+  "memory_uri": "store://memory/<device>/<agent>/entries/",
+  "workspace_refs": ["store://workspaces/<device>/<workspace_id>/"],
   "channels": {
     "<channel_id>": {
       "session_uri": "store://runtime/.../sessions/session.json"
@@ -87,11 +90,11 @@ URI：`store://<space>/<device_id>/<relpath>`。
 }
 ```
 
-群编排 / handoff 应优先传 bundle / 子 URI，而不是贴全文。
+群编排 / handoff 应优先传 **manifest URI**（ContextBundle），而不是贴全文或展开全部子 URI。
 
 ## 5. session.json / memory.md 格式
 
-`sessions/session.json`：
+`sessions/session.json`（最近窗口；超阈值滚动到 `archive-<ts>.json`）：
 
 ```json
 {
@@ -99,15 +102,18 @@ URI：`store://<space>/<device_id>/<relpath>`。
     "channel_id": "...",
     "owner_id": "...",
     "updated_at": "...",
-    "schema_version": 1
+    "schema_version": 1,
+    "window_size": 100,
+    "archived_at": "ISO-8601?",
+    "archive_uri": "store://runtime/.../sessions/archive-....json?"
   },
   "messages": [ { "id", "sender_id", "sender_type", "content", "message_type", "created_at", "store_uri?" } ]
 }
 ```
 
-附件只存 `store_uri`，不内嵌字节。
+附件只存 `store_uri`，不内嵌字节。滚动阈值：≥200 条或序列化 ≥256KB 时归档全量并保留最近 100 条。
 
-`memory.md` / `soul.md`：UTF-8 文本导出；头部可含 HTML 注释 meta（`updated_at` 等）。
+`memory.md` / `soul.md`（runtime 下）：UTF-8 人读镜像；权威见 `memory/` 空间。
 
 ## 6. 引用不复制
 

@@ -62,7 +62,7 @@
 | `<device_id>/artifacts/`（legacy） | 仅本端（新写入走 runtime） | 所有 owner 端 |
 | `<device_id>/attachments/`（legacy） | 仅本端 | **仅本端** |
 
-**App 聊天权威**：消息 / 记忆 / soul 以本机 SQLite 为准；runtime 文件为单向镜像（分享与跨设备上下文），永不回灌、不迁权威。
+**App 聊天权威**：消息仍以本机 SQLite 为准；**Agent 结构化记忆与 Soul** 权威在储物袋 `memory/<agentId>/`；runtime 文件为单向镜像（分享与跨设备上下文），永不回灌、不迁权威到 session 文件。
 
 - **同步引擎的唯一职责**：把本端 `<device_id>/*` 的变更镜像到 master（本地优先：先写本地，后台送达）。
 - **备份策略坍缩**：定期任务在本地生成 DB 快照写入 `<device_id>/backups/<ts>/` 并 `commit`，同步引擎自然送达 master——备份就是镜像，没有第二套机制。

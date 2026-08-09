@@ -31,6 +31,7 @@ import '../utils/layout_utils.dart';
 import '../models/prompt_stack_config.dart';
 import '../storage/runtime_share_service.dart';
 import 'agent_runtime_context_screen.dart';
+import 'workspace_binding_screen.dart';
 
 /// 远端 Agent 详情页面（从聊天页进入）
 class RemoteAgentDetailScreen extends StatefulWidget {
@@ -909,6 +910,8 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
         _buildInfoCard(),
         const SizedBox(height: 16),
         _buildRuntimeContextEntry(),
+        const SizedBox(height: 16),
+        _buildWorkspaceBindingEntry(),
         if (_agent.isShe && !_agent.isPeerAgent) ...[
           const SizedBox(height: 16),
           _buildSheCircleEntry(),
@@ -1187,6 +1190,42 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  /// 绑定 workspaces → runtime/workspace.md
+  Widget _buildWorkspaceBindingEntry() {
+    final colorScheme = Theme.of(context).colorScheme;
+    final zh = Localizations.localeOf(context).languageCode.startsWith('zh');
+    return Card(
+      elevation: 0,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12),
+        side: BorderSide(color: colorScheme.outlineVariant),
+      ),
+      child: ListTile(
+        leading: Icon(Icons.folder_special_outlined, color: colorScheme.primary),
+        title: Text(zh ? '绑定工作区' : 'Bind workspaces'),
+        subtitle: Text(
+          zh
+              ? '写入 runtime/workspace.md，供 ContextBundle 引用'
+              : 'Write runtime/workspace.md for ContextBundle refs',
+          maxLines: 2,
+          overflow: TextOverflow.ellipsis,
+          style: TextStyle(color: colorScheme.onSurfaceVariant),
+        ),
+        trailing: const Icon(Icons.chevron_right),
+        onTap: () {
+          Navigator.of(context).push(
+            MaterialPageRoute<void>(
+              builder: (_) => WorkspaceBindingScreen(
+                ownerId: _agent.id,
+                displayName: _agent.name,
+              ),
+            ),
+          );
+        },
       ),
     );
   }

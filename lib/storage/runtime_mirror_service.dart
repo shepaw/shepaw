@@ -8,13 +8,14 @@ import '../services/local_database_service.dart';
 import '../services/logger_service.dart';
 import 'device_identity.dart';
 import 'local_store.dart';
+import 'memory_paths.dart';
 import 'runtime_paths.dart';
 import 'store_protocol.dart';
 import 'store_service.dart';
 
-/// SQLite → runtime 单向镜像（docs/CLIENT_PROFILES.md）。
+/// SQLite / memory-store → runtime 单向镜像（docs/CLIENT_PROFILES.md）。
 ///
-/// 失败 fail-open：不影响聊天；永不从文件回灌 SQLite。
+/// 失败 fail-open：不影响聊天；永不从文件回灌权威。
 class RuntimeMirrorService {
   RuntimeMirrorService._();
   static final RuntimeMirrorService instance = RuntimeMirrorService._();
@@ -24,6 +25,13 @@ class RuntimeMirrorService {
   final _pendingSession = <String, Timer>{};
   final _pendingMemory = <String, Timer>{};
   Duration debounce = const Duration(milliseconds: 400);
+
+  /// session.json 最近窗口条数；超出则滚动到 archive。
+  static const sessionWindowSize = 100;
+  /// 触发滚动的消息条数阈值（含窗口外）。
+  static const sessionRollMessageThreshold = 200;
+  /// 触发滚动的序列化体积阈值（字节）。
+  static const sessionRollBytesThreshold = 256 * 1024;
 
   /// 消息落库后的轻量入口：解析 channel → owner，再 debounce 镜像。
   void onMessageCreated(String channelId) {
@@ -79,12 +87,12 @@ class RuntimeMirrorService {
     await _writeTextIfAbsent(
       deviceId,
       RuntimePaths.soulMd(ownerId),
-      '<!-- mirrored soul; authoritative store is SQLite/minds -->\n',
+      '<!-- mirrored soul; authoritative store is memory/<agent>/soul.md -->\n',
     );
     await _writeTextIfAbsent(
       deviceId,
       RuntimePaths.memoryMd(ownerId),
-      '<!-- mirrored memory; authoritative store is SQLite -->\n',
+      '<!-- mirrored memory summary; authoritative store is memory/<agent>/entries -->\n',
     );
     await _writeTextIfAbsent(
       deviceId,
@@ -99,10 +107,11 @@ class RuntimeMirrorService {
         'owner_id': ownerId,
         'source_device': deviceId,
         'updated_at': now,
-        'soul_uri': RuntimePaths.uri(
-            deviceId: deviceId, relPath: RuntimePaths.soulMd(ownerId)),
-        'memory_uri': RuntimePaths.uri(
-            deviceId: deviceId, relPath: RuntimePaths.memoryMd(ownerId)),
+        'soul_uri': MemoryPaths.uri(
+            deviceId: deviceId, relPath: MemoryPaths.soulMd(ownerId)),
+        'memory_uri': MemoryPaths.uri(
+            deviceId: deviceId,
+            relPath: MemoryPaths.entriesDir(ownerId)),
         'workspace_refs': <String>[],
         'channels': <String, dynamic>{},
       }),
@@ -140,20 +149,45 @@ class RuntimeMirrorService {
           if (meta?['store_uri'] != null) 'store_uri': meta!['store_uri'],
         });
       }
-      final payload = {
-        'meta': {
+      final payload = <String, dynamic>{
+        'meta': <String, dynamic>{
           'channel_id': channelId,
           'owner_id': ownerId,
           'updated_at': DateTime.now().toUtc().toIso8601String(),
           'schema_version': 1,
           'source_device': deviceId,
+          'window_size': sessionWindowSize,
         },
         'messages': messages,
       };
+      var body = const JsonEncoder.withIndent('  ').convert(payload);
+      final shouldRoll = messages.length >= sessionRollMessageThreshold ||
+          body.length >= sessionRollBytesThreshold;
+      if (shouldRoll && messages.length > sessionWindowSize) {
+        final ts = DateTime.now()
+            .toUtc()
+            .toIso8601String()
+            .replaceAll(':', '-')
+            .replaceAll('.', '-');
+        await _writeText(
+          deviceId,
+          RuntimePaths.sessionArchive(ownerId, channelId, ts),
+          body,
+        );
+        final window = messages.sublist(messages.length - sessionWindowSize);
+        payload['messages'] = window;
+        final meta = payload['meta'] as Map<String, dynamic>;
+        meta['archived_at'] = DateTime.now().toUtc().toIso8601String();
+        meta['archive_uri'] = RuntimePaths.uri(
+          deviceId: deviceId,
+          relPath: RuntimePaths.sessionArchive(ownerId, channelId, ts),
+        );
+        body = const JsonEncoder.withIndent('  ').convert(payload);
+      }
       await _writeText(
         deviceId,
         RuntimePaths.sessionJson(ownerId, channelId),
-        const JsonEncoder.withIndent('  ').convert(payload),
+        body,
       );
       await _touchManifestChannel(deviceId, ownerId, channelId);
     } catch (e) {
@@ -230,8 +264,23 @@ class RuntimeMirrorService {
     };
     try {
       final store = await StoreService.instance.localStore();
-      final (bytes, _, _) = await store.read(deviceId, StoreSpace.runtime, rel, 0, 1 << 20);
-      manifest = jsonDecode(utf8.decode(bytes)) as Map<String, dynamic>;
+      final buf = BytesBuilder(copy: false);
+      var offset = 0;
+      while (true) {
+        final (chunk, size, eof) = await store.read(
+          deviceId,
+          StoreSpace.runtime,
+          rel,
+          offset,
+          LocalStore.maxReadChunk,
+        );
+        if (chunk.isNotEmpty) buf.add(chunk);
+        offset += chunk.length;
+        if (eof || offset >= size) break;
+      }
+      if (buf.length > 0) {
+        manifest = jsonDecode(utf8.decode(buf.takeBytes())) as Map<String, dynamic>;
+      }
     } catch (_) {}
     final channels = Map<String, dynamic>.from(
         (manifest['channels'] as Map?)?.cast<String, dynamic>() ?? {});
@@ -243,10 +292,12 @@ class RuntimeMirrorService {
     };
     manifest['channels'] = channels;
     manifest['updated_at'] = DateTime.now().toUtc().toIso8601String();
-    manifest['soul_uri'] = RuntimePaths.uri(
-        deviceId: deviceId, relPath: RuntimePaths.soulMd(ownerId));
-    manifest['memory_uri'] = RuntimePaths.uri(
-        deviceId: deviceId, relPath: RuntimePaths.memoryMd(ownerId));
+    manifest['soul_uri'] = MemoryPaths.uri(
+        deviceId: deviceId, relPath: MemoryPaths.soulMd(ownerId));
+    manifest['memory_uri'] = MemoryPaths.uri(
+        deviceId: deviceId, relPath: MemoryPaths.entriesDir(ownerId));
+    // Preserve workspace_refs if already set by WorkspaceBindingService.
+    manifest.putIfAbsent('workspace_refs', () => <String>[]);
     await _writeText(
       deviceId,
       rel,

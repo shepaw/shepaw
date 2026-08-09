@@ -12,6 +12,8 @@ import '../storage/store_protocol.dart';
 import '../storage/store_service.dart';
 import 'agent_memory_db_service.dart';
 import 'logger_service.dart';
+import 'minds_database_service.dart';
+import 'she_memory_db_service.dart';
 
 /// Agent 结构化记忆：权威落在储物袋 `memory/<agentId>/entries/*.json`。
 ///
@@ -72,6 +74,7 @@ class AgentMemoryStoreService {
   Future<void> _ensure() async {
     if (_ensured) return;
     await _migrateFromSqliteIfNeeded();
+    await _migrateSoulFromSqliteIfNeeded();
     _ensured = true;
   }
 
@@ -146,14 +149,50 @@ class AgentMemoryStoreService {
     }
   }
 
+  Future<void> _writeText(String relPath, String text) async {
+    await _writeBytes(relPath, Uint8List.fromList(utf8.encode(text)));
+  }
+
+  Future<String?> _readText(String relPath) async {
+    try {
+      final deviceId = await _deviceId();
+      final store = await _store();
+      final buf = BytesBuilder(copy: false);
+      var offset = 0;
+      while (true) {
+        final (chunk, size, eof) = await store.read(
+          deviceId,
+          StoreSpace.memory,
+          relPath,
+          offset,
+          LocalStore.maxReadChunk,
+        );
+        if (chunk.isNotEmpty) buf.add(chunk);
+        offset += chunk.length;
+        if (eof || offset >= size) break;
+      }
+      final bytes = buf.takeBytes();
+      if (bytes.isEmpty) return null;
+      return utf8.decode(bytes);
+    } on StoreException catch (e) {
+      if (e.code == StoreError.notFound) return null;
+      rethrow;
+    }
+  }
+
   Future<_MemoryMeta> _loadMeta() async {
     final raw = await _readJson(MemoryPaths.metaJson(_agentId));
     if (raw == null) {
-      return _MemoryMeta(nextId: 1, migratedFromSqlite: false);
+      return const _MemoryMeta(
+        nextId: 1,
+        migratedFromSqlite: false,
+        soulMigratedFromSqlite: false,
+      );
     }
     return _MemoryMeta(
       nextId: (raw['next_id'] as num?)?.toInt() ?? 1,
       migratedFromSqlite: raw['migrated_from_sqlite'] == true,
+      soulMigratedFromSqlite: raw['soul_migrated_from_sqlite'] == true,
       schemaVersion: (raw['schema_version'] as num?)?.toInt() ?? 1,
     );
   }
@@ -432,7 +471,76 @@ class AgentMemoryStoreService {
     _ensured = false;
   }
 
-  /// 删除该 Agent 在 memory 空间下的整棵目录（含 meta + entries）。
+  // ── Soul ──────────────────────────────────────────────────────────────
+
+  /// 读取 Soul 权威（`memory/<agent>/soul.md`）。
+  Future<String?> getSoul() async {
+    await _ensure();
+    final text = await _readText(MemoryPaths.soulMd(_agentId));
+    if (text == null) return null;
+    // Strip optional HTML comment header from mirrored exports.
+    return text
+        .replaceFirst(RegExp(r'^<!--[\s\S]*?-->\s*'), '')
+        .trimRight();
+  }
+
+  /// 写入 Soul 权威，并镜像到 runtime/soul.md。
+  Future<void> setSoul(String soul) async {
+    await _ensure();
+    final header =
+        '<!-- updated_at: ${DateTime.now().toUtc().toIso8601String()} -->\n';
+    await _writeText(MemoryPaths.soulMd(_agentId), '$header$soul\n');
+    final meta = await _loadMeta();
+    if (!meta.soulMigratedFromSqlite) {
+      await _saveMeta(meta.copyWith(soulMigratedFromSqlite: true));
+    }
+    // ignore: unawaited_futures
+    RuntimeMirrorService.instance.mirrorSoul(_agentId, soul);
+    _log.info('Soul written to store', tag: '$_tag[$_agentId]');
+  }
+
+  Future<void> _migrateSoulFromSqliteIfNeeded() async {
+    final meta = await _loadMeta();
+    if (meta.soulMigratedFromSqlite) return;
+    final existing = await _readText(MemoryPaths.soulMd(_agentId));
+    if (existing != null && existing.trim().isNotEmpty) {
+      await _saveMeta(meta.copyWith(soulMigratedFromSqlite: true));
+      return;
+    }
+    try {
+      // Avoid hard dep cycle: minds via Cognition would recurse; read DB lightly.
+      final fromMinds = await _readSoulFromMinds(_agentId);
+      if (fromMinds != null && fromMinds.trim().isNotEmpty) {
+        final header =
+            '<!-- migrated_from_minds: ${DateTime.now().toUtc().toIso8601String()} -->\n';
+        await _writeText(
+            MemoryPaths.soulMd(_agentId), '$header${fromMinds.trim()}\n');
+        await RuntimeMirrorService.instance.mirrorSoul(_agentId, fromMinds);
+        _log.info('migrated soul from minds → store', tag: '$_tag[$_agentId]');
+      }
+    } catch (e) {
+      _log.warning('soul migrate skipped: $e', tag: '$_tag[$_agentId]');
+    }
+    await _saveMeta(meta.copyWith(soulMigratedFromSqlite: true));
+  }
+
+  Future<String?> _readSoulFromMinds(String agentId) async {
+    try {
+      final self = await MindsDatabaseService().getSelfCognition(agentId);
+      final soul = self?.soul.trim();
+      if (soul != null && soul.isNotEmpty) return soul;
+    } catch (_) {}
+    // She 旧 KV
+    if (agentId == 'she-builtin-agent-001') {
+      try {
+        final v = await SheMemoryDbService.instance.getSheMemory('soul');
+        if (v != null && v.trim().isNotEmpty) return v;
+      } catch (_) {}
+    }
+    return null;
+  }
+
+  /// 删除该 Agent 在 memory 空间下的整棵目录（含 meta + entries + soul）。
   Future<void> deleteAll() async {
     await close();
     try {
@@ -459,21 +567,26 @@ class _MemoryMeta {
   const _MemoryMeta({
     required this.nextId,
     required this.migratedFromSqlite,
+    this.soulMigratedFromSqlite = false,
     this.schemaVersion = 1,
   });
 
   final int nextId;
   final bool migratedFromSqlite;
+  final bool soulMigratedFromSqlite;
   final int schemaVersion;
 
   _MemoryMeta copyWith({
     int? nextId,
     bool? migratedFromSqlite,
+    bool? soulMigratedFromSqlite,
     int? schemaVersion,
   }) =>
       _MemoryMeta(
         nextId: nextId ?? this.nextId,
         migratedFromSqlite: migratedFromSqlite ?? this.migratedFromSqlite,
+        soulMigratedFromSqlite:
+            soulMigratedFromSqlite ?? this.soulMigratedFromSqlite,
         schemaVersion: schemaVersion ?? this.schemaVersion,
       );
 
@@ -481,6 +594,7 @@ class _MemoryMeta {
         'schema_version': schemaVersion,
         'next_id': nextId,
         'migrated_from_sqlite': migratedFromSqlite,
+        'soul_migrated_from_sqlite': soulMigratedFromSqlite,
         'updated_at': DateTime.now().toUtc().toIso8601String(),
       };
 }
