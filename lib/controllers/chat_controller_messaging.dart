@@ -247,6 +247,10 @@ mixin _MessagingOps on _ChatControllerBase {
       userId: getUserId(),
       userName: getUserName(),
       agentId: agentId ?? '',
+      channelType: isGroupMode ? 'group' : null,
+      parentGroupId: isGroupMode
+          ? (groupChannel?.groupFamilyId ?? currentChannelId)
+          : null,
       onMessageSaved: (message) {
         messages.add(message);
         messageIdMap[message.id] = message;

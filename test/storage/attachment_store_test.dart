@@ -74,6 +74,48 @@ void main() {
     expect(await blob.readAsBytes(), content);
   });
 
+  test('saveAttachment：群聊落到 group owner 而非 agent', () async {
+    final content = Uint8List.fromList('group attachment'.codeUnits);
+    final f = await tempFile('g.txt', content);
+    final hash = crypto.sha256.convert(content).toString();
+    final deviceId = await DeviceIdentity.deviceId();
+    const groupId = 'group_att_owner_1';
+    const sessionId = 'group_att_session_1';
+
+    final msg = await newService().saveAttachment(
+      file: f,
+      channelId: sessionId,
+      userId: 'u1',
+      userName: 'U',
+      agentId: 'agent-should-not-own',
+      channelType: 'group',
+      parentGroupId: groupId,
+    );
+    expect(msg, isNotNull);
+    final uri = msg!.metadata!['store_uri'] as String;
+    expect(
+      uri,
+      storeUriWithRef(
+        StoreSpace.runtime,
+        deviceId,
+        '$groupId/$sessionId/attachments/$hash',
+      ),
+    );
+    expect(uri.contains('agent-should-not-own'), isFalse);
+
+    final root = await StoreService.instance.storeRoot();
+    final blob = File(p.join(
+      root.path,
+      deviceId,
+      StoreSpace.runtime,
+      groupId,
+      sessionId,
+      'attachments',
+      hash,
+    ));
+    expect(await blob.exists(), isTrue);
+  });
+
   test('hash 去重：同内容两次保存共用一个 blob 与 store_uri', () async {
     final content = Uint8List.fromList('dedup me'.codeUnits);
     final f1 = await tempFile('a.txt', content);

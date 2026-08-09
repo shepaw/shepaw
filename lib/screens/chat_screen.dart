@@ -1048,6 +1048,11 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
       userId: userId,
       userName: userName,
       agentId: widget.agentId ?? '',
+      channelType: _controller.isGroupMode ? 'group' : null,
+      parentGroupId: _controller.isGroupMode
+          ? (_controller.groupChannel?.groupFamilyId ??
+              _controller.currentChannelId)
+          : null,
     );
 
     if (message != null) {

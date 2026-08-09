@@ -94,6 +94,8 @@ class ChatAttachmentCoordinator {
     required String userId,
     required String userName,
     required String agentId,
+    String? channelType,
+    String? parentGroupId,
     void Function(Message message)? onMessageSaved,
   }) async {
     if (pending.isEmpty) {
@@ -112,6 +114,8 @@ class ChatAttachmentCoordinator {
         userId: userId,
         userName: userName,
         agentId: agentId,
+        channelType: channelType,
+        parentGroupId: parentGroupId,
       );
       if (att.isFromClipboard) {
         deleteClipboardTempIfNeeded(att);
