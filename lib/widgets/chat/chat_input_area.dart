@@ -986,7 +986,7 @@ class ChatInputAreaState extends State<ChatInputArea> {
     const verticalPadding = 8.0;
     const itemCount = 2;
     const popoverHeight = itemCount * itemHeight + verticalPadding * 2;
-    const panelHeight = popoverHeight + caretSize.height;
+    final panelHeight = popoverHeight + caretSize.height;
     var top = buttonTop - gap - panelHeight;
     top = top.clamp(
       edgePadding,
