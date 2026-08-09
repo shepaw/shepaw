@@ -133,7 +133,8 @@ class ArtifactService {
 
   /// 写入产物并返回单行 Markdown 引用。
   ///
-  /// [runtimeOwnerId] / [channelId] 缺省时用 `default` / [taskId]。
+  /// [runtimeOwnerId] / [channelId] 缺省时分别回退到 `default` / [taskId]
+  /// （CLI 应始终注入真实 agent/channel，避免落到 default/general）。
   Future<String> writeArtifact({
     required String taskId,
     required String filename,
@@ -145,8 +146,18 @@ class ArtifactService {
   }) async {
     final deviceId = await DeviceIdentity.deviceId();
     final safeName = p.basename(filename);
-    final owner = RuntimePaths.sanitizeSegment(runtimeOwnerId ?? 'default');
-    final channel = RuntimePaths.sanitizeSegment(channelId ?? taskId);
+    final owner = RuntimePaths.sanitizeSegment(
+      (runtimeOwnerId != null && runtimeOwnerId.trim().isNotEmpty)
+          ? runtimeOwnerId
+          : 'default',
+    );
+    final channel = RuntimePaths.sanitizeSegment(
+      (channelId != null && channelId.trim().isNotEmpty)
+          ? channelId
+          : ((runtimeOwnerId != null && runtimeOwnerId.trim().isNotEmpty)
+              ? runtimeOwnerId
+              : taskId),
+    );
     final uri = ArtifactUri(
       deviceId: deviceId,
       taskId: RuntimePaths.sanitizeSegment(taskId),

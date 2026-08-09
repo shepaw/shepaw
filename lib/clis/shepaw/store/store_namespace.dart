@@ -2,8 +2,11 @@ import 'dart:convert';
 import 'dart:typed_data';
 
 import '../../cli_base.dart';
+import '../chat/chat_agent_scope.dart';
+import '../../../services/local_database_service.dart';
 import '../../../storage/artifact_service.dart';
 import '../../../storage/public_store_service.dart';
+import '../../../storage/runtime_paths.dart';
 import '../../../storage/store_protocol.dart';
 import '../../../storage/store_service.dart';
 import '../../../storage/store_uri_reader.dart';
@@ -41,6 +44,9 @@ class StoreNamespace extends CliNamespace {
 
 /// `shepaw store write --filename <name> --content <text> [--task <id>] [--desc <text>]`
 /// 或 `… write --space public --filename <name> --content <text>`
+///
+/// 落点：`runtime/<owner>/<channel>/artifacts/<task>/<file>`。
+/// [owner]/[channel] 优先取 flags，否则取 [ChatAgentScope]（由 ShepawCLI 注入）。
 class StoreWriteCommand extends CliCommand {
   @override
   String get name => 'write';
@@ -86,13 +92,26 @@ class StoreWriteCommand extends CliCommand {
     }
     final taskId = flags['task'] ?? 'general';
     final desc = flags['desc'];
+    final agentId = (flags['agent_id'] ?? flags['owner'] ?? ChatAgentScope.agentId)
+        .trim();
+    final channelId =
+        (flags['channel_id'] ?? flags['channel'] ?? ChatAgentScope.channelId)
+            .trim();
     try {
+      final ownerId = await _resolveRuntimeOwner(
+        agentId: agentId.isNotEmpty ? agentId : ChatAgentScope.agentId,
+        channelId: channelId.isNotEmpty ? channelId : null,
+      );
+      final effectiveChannel =
+          channelId.isNotEmpty ? channelId : ownerId;
       final reference = await ArtifactService.instance.writeArtifact(
         taskId: taskId,
         filename: filename,
         content: Uint8List.fromList(utf8.encode(contentText)),
         description: desc,
-        producer: flags['producer'],
+        producer: flags['producer'] ?? agentId,
+        runtimeOwnerId: ownerId,
+        channelId: effectiveChannel,
       );
       final uri = ArtifactService.instance
           .parseReferences(reference)
@@ -103,10 +122,33 @@ class StoreWriteCommand extends CliCommand {
         'success': true,
         'uri': uri,
         'reference': reference,
+        'owner_id': ownerId,
+        'channel_id': effectiveChannel,
         'note': '返回即完成共享（本地优先，后台同步）。引用时原样使用 reference 单行。',
       };
     } catch (e) {
       return {'success': false, 'error': '$e'};
+    }
+  }
+
+  /// 群聊用 group/parentGroupId；单聊用 agentId。
+  Future<String> _resolveRuntimeOwner({
+    required String agentId,
+    String? channelId,
+  }) async {
+    if (channelId == null || channelId.isEmpty) {
+      return RuntimePaths.sanitizeSegment(agentId);
+    }
+    try {
+      final ch = await LocalDatabaseService().getChannelById(channelId);
+      return RuntimePaths.resolveOwnerId(
+        agentId: agentId,
+        channelId: channelId,
+        channelType: ch?.type,
+        parentGroupId: ch?.parentGroupId,
+      );
+    } catch (_) {
+      return RuntimePaths.sanitizeSegment(agentId);
     }
   }
 }

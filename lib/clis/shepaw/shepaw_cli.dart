@@ -217,11 +217,13 @@ class ShepawCLI {
         }
       }
 
-      // 透传当前执行者的 agentId 到支持多 agent 的命名空间
+      // 透传当前执行者的 agentId / channelId（store write 等依赖）
+      ChatAgentScope.agentId = agentId;
+      ChatAgentScope.channelId =
+          (flags['channel_id'] ?? flags['channel'] ?? '').trim();
       if (ns is ContextNamespace) ns.agentId = agentId;
       if (ns is ChatNamespace) {
         ns.agentId = agentId;
-        ChatAgentScope.agentId = agentId;
       }
       if (ns is WorkflowNamespace) {
         final chId = flags['channel_id'];
