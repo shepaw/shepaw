@@ -885,25 +885,25 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
 
   void _showAttachmentOptions() {
     LoggerService().debug('_showAttachmentOptions called, isDesktop=${LayoutUtils.isDesktopLayout(context)}', tag: 'ChatScreen');
+    // Desktop uses a floating popover anchored to the attachment button
+    // inside ChatInputArea (same interaction as emoji). This path is for
+    // mobile bottom sheet only.
     final l10n = AppLocalizations.of(context);
-    final isDesktop = LayoutUtils.isDesktopLayout(context);
     LayoutUtils.showAdaptivePanel(
       context: context,
       builder: (context) => Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          if (!isDesktop) ...[
-            ListTile(
-              leading: const Icon(Icons.photo_library),
-              title: Text(l10n.chat_photoLibrary),
-              onTap: () { Navigator.pop(context); _pickAndStageImage(); },
-            ),
-            ListTile(
-              leading: const Icon(Icons.camera_alt),
-              title: Text(l10n.chat_camera),
-              onTap: () { Navigator.pop(context); _pickAndStageImage(); },
-            ),
-          ],
+          ListTile(
+            leading: const Icon(Icons.photo_library),
+            title: Text(l10n.chat_photoLibrary),
+            onTap: () { Navigator.pop(context); _pickAndStageImage(); },
+          ),
+          ListTile(
+            leading: const Icon(Icons.camera_alt),
+            title: Text(l10n.chat_camera),
+            onTap: () { Navigator.pop(context); _pickAndStageImage(); },
+          ),
           ListTile(
             leading: const Icon(Icons.insert_drive_file),
             title: Text(l10n.chat_file),
@@ -2119,6 +2119,8 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
             onSend: _sendMessage,
             onToggleEmojiPicker: _toggleEmojiPicker,
             onShowAttachmentOptions: _showAttachmentOptions,
+            onPickFile: _pickAndStageFile,
+            onPickFromStorageBag: _pickFromStorageBag,
             onSendVoice: _sendVoiceMessage,
             showEmojiPicker: _showEmojiPicker,
             onRemoveAttachment: _removePendingAttachment,

@@ -37,6 +37,10 @@ class ChatInputArea extends StatefulWidget {
   final VoidCallback onSend;
   final VoidCallback onToggleEmojiPicker;
   final VoidCallback onShowAttachmentOptions;
+  /// Desktop attachment popover actions (mobile still uses
+  /// [onShowAttachmentOptions] bottom sheet).
+  final VoidCallback onPickFile;
+  final VoidCallback onPickFromStorageBag;
   final VoidCallback? onSendVoice;
   final bool showEmojiPicker;
   final ValueChanged<PendingAttachment> onRemoveAttachment;
@@ -80,6 +84,8 @@ class ChatInputArea extends StatefulWidget {
     required this.onSend,
     required this.onToggleEmojiPicker,
     required this.onShowAttachmentOptions,
+    required this.onPickFile,
+    required this.onPickFromStorageBag,
     this.onSendVoice,
     required this.showEmojiPicker,
     required this.onRemoveAttachment,
@@ -126,14 +132,19 @@ class ChatInputAreaState extends State<ChatInputArea> {
   late List<SlashCommandInfo> _slashCommands;
   StreamSubscription<List<SlashCommandInfo>>? _slashCommandsSub;
 
-  // Desktop WeChat-style floating emoji popover.
-  // Anchored via the emoji button's global rect on the root Overlay so the
+  // Desktop WeChat-style floating emoji / attachment popovers.
+  // Anchored via the toolbar button's global rect on the root Overlay so the
   // panel isn't clipped / buried by the desktop conversation list (the chat
   // lives inside a nested Navigator Overlay on the right panel).
   final GlobalKey _emojiButtonKey = GlobalKey();
   final Object _emojiTapGroup = Object();
   OverlayEntry? _emojiOverlay;
   bool _desktopEmojiOpen = false;
+
+  final GlobalKey _attachmentButtonKey = GlobalKey();
+  final Object _attachmentTapGroup = Object();
+  OverlayEntry? _attachmentOverlay;
+  bool _desktopAttachmentOpen = false;
 
   @override
   void initState() {
@@ -161,6 +172,7 @@ class ChatInputAreaState extends State<ChatInputArea> {
   @override
   void dispose() {
     _removeDesktopEmojiOverlay(updateState: false);
+    _removeDesktopAttachmentOverlay(updateState: false);
     widget.messageController.removeListener(_onTextChanged);
     _mentionScrollController.dispose();
     _slashScrollController.dispose();
@@ -581,119 +593,120 @@ class ChatInputAreaState extends State<ChatInputArea> {
       ),
       child: TapRegion(
         groupId: _emojiTapGroup,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            _buildPendingAttachmentsPreview(),
-            // Multi-line text area
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
-              child: Actions(
-                actions: widget.onDesktopPaste != null
-                    ? {
-                        PasteTextIntent: CallbackAction<PasteTextIntent>(
-                          onInvoke: (intent) async {
-                            final handled = await widget.onDesktopPaste!();
-                            if (!handled) {
-                              // Not a file/image — paste plain text into the controller
-                              final data =
-                                  await Clipboard.getData(Clipboard.kTextPlain);
-                              final text = data?.text;
-                              if (text != null && text.isNotEmpty) {
-                                final ctrl = widget.messageController;
-                                final sel = ctrl.selection;
-                                final newText = ctrl.text.replaceRange(
-                                  sel.start < 0 ? ctrl.text.length : sel.start,
-                                  sel.end < 0 ? ctrl.text.length : sel.end,
-                                  text,
-                                );
-                                final newOffset = (sel.start < 0
-                                        ? ctrl.text.length
-                                        : sel.start) +
-                                    text.length;
-                                ctrl.value = ctrl.value.copyWith(
-                                  text: newText,
-                                  selection: TextSelection.collapsed(
-                                      offset: newOffset),
-                                );
+        child: TapRegion(
+          groupId: _attachmentTapGroup,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              _buildPendingAttachmentsPreview(),
+              // Multi-line text area
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
+                child: Actions(
+                  actions: widget.onDesktopPaste != null
+                      ? {
+                          PasteTextIntent: CallbackAction<PasteTextIntent>(
+                            onInvoke: (intent) async {
+                              final handled = await widget.onDesktopPaste!();
+                              if (!handled) {
+                                // Not a file/image — paste plain text into the controller
+                                final data =
+                                    await Clipboard.getData(Clipboard.kTextPlain);
+                                final text = data?.text;
+                                if (text != null && text.isNotEmpty) {
+                                  final ctrl = widget.messageController;
+                                  final sel = ctrl.selection;
+                                  final newText = ctrl.text.replaceRange(
+                                    sel.start < 0 ? ctrl.text.length : sel.start,
+                                    sel.end < 0 ? ctrl.text.length : sel.end,
+                                    text,
+                                  );
+                                  final newOffset = (sel.start < 0
+                                          ? ctrl.text.length
+                                          : sel.start) +
+                                      text.length;
+                                  ctrl.value = ctrl.value.copyWith(
+                                    text: newText,
+                                    selection: TextSelection.collapsed(
+                                        offset: newOffset),
+                                  );
+                                }
                               }
-                            }
-                            return null;
-                          },
-                        ),
-                      }
-                    : const {},
-                child: Focus(
-                  onKeyEvent: _handleInputKeyEvent,
-                  child: ConstrainedBox(
-                    constraints: const BoxConstraints(
-                      minHeight: 100,
-                      maxHeight: 220,
-                    ),
-                    child: TextField(
-                      controller: widget.messageController,
-                      focusNode: widget.textFieldFocusNode,
-                      style: const TextStyle(
-                        fontSize: 14,
-                        height: 1.5,
-                        color: AppColors.textPrimary,
+                              return null;
+                            },
+                          ),
+                        }
+                      : const {},
+                  child: Focus(
+                    onKeyEvent: _handleInputKeyEvent,
+                    child: ConstrainedBox(
+                      constraints: const BoxConstraints(
+                        minHeight: 100,
+                        maxHeight: 220,
                       ),
-                      decoration: InputDecoration(
-                        hintText: l10n.chat_messageHint,
-                        hintStyle: TextStyle(
+                      child: TextField(
+                        controller: widget.messageController,
+                        focusNode: widget.textFieldFocusNode,
+                        style: const TextStyle(
                           fontSize: 14,
-                          color: Colors.grey[400],
+                          height: 1.5,
+                          color: AppColors.textPrimary,
                         ),
-                        border: InputBorder.none,
-                        isDense: true,
-                        contentPadding:
-                            const EdgeInsets.symmetric(vertical: 8),
+                        decoration: InputDecoration(
+                          hintText: l10n.chat_messageHint,
+                          hintStyle: TextStyle(
+                            fontSize: 14,
+                            color: Colors.grey[400],
+                          ),
+                          border: InputBorder.none,
+                          isDense: true,
+                          contentPadding:
+                              const EdgeInsets.symmetric(vertical: 8),
+                        ),
+                        maxLines: null,
+                        textInputAction: TextInputAction.newline,
+                        enabled: !widget.isLoading,
                       ),
-                      maxLines: null,
-                      textInputAction: TextInputAction.newline,
-                      enabled: !widget.isLoading,
                     ),
                   ),
                 ),
               ),
-            ),
-            // Bottom toolbar: icons left, Send right
-            Padding(
-              padding: const EdgeInsets.fromLTRB(8, 4, 16, 10),
-              child: Row(
-                children: [
-                  _buildDesktopToolbarIcon(
-                    key: _emojiButtonKey,
-                    icon: Icons.sentiment_satisfied_alt_outlined,
-                    color: iconColor,
-                    tooltip: 'Emoji',
-                    onPressed: _toggleDesktopEmojiPopover,
-                  ),
-                  _buildDesktopToolbarIcon(
-                    icon: Icons.folder_open_outlined,
-                    color: iconColor,
-                    tooltip: 'Attachment',
-                    onPressed: () {
-                      _removeDesktopEmojiOverlay();
-                      widget.onShowAttachmentOptions();
-                    },
-                  ),
-                  const Spacer(),
-                  if (widget.isLoading)
-                    SizedBox(
-                      width: 22,
-                      height: 22,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2,
-                        color: Theme.of(context).primaryColor,
-                      ),
-                    )
-                  else
-                    _buildDesktopSendButton(l10n.chat_send),
-                ],
+              // Bottom toolbar: icons left, Send right
+              Padding(
+                padding: const EdgeInsets.fromLTRB(8, 4, 16, 10),
+                child: Row(
+                  children: [
+                    _buildDesktopToolbarIcon(
+                      key: _emojiButtonKey,
+                      icon: Icons.sentiment_satisfied_alt_outlined,
+                      color: iconColor,
+                      tooltip: 'Emoji',
+                      onPressed: _toggleDesktopEmojiPopover,
+                    ),
+                    _buildDesktopToolbarIcon(
+                      key: _attachmentButtonKey,
+                      icon: Icons.folder_open_outlined,
+                      color: iconColor,
+                      tooltip: 'Attachment',
+                      onPressed: _toggleDesktopAttachmentPopover,
+                    ),
+                    const Spacer(),
+                    if (widget.isLoading)
+                      SizedBox(
+                        width: 22,
+                        height: 22,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: Theme.of(context).primaryColor,
+                        ),
+                      )
+                    else
+                      _buildDesktopSendButton(l10n.chat_send),
+                  ],
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
@@ -729,6 +742,7 @@ class ChatInputAreaState extends State<ChatInputArea> {
         onTap: enabled
             ? () {
                 _removeDesktopEmojiOverlay();
+                _removeDesktopAttachmentOverlay();
                 widget.onSend();
               }
             : null,
@@ -763,6 +777,7 @@ class ChatInputAreaState extends State<ChatInputArea> {
       _removeDesktopEmojiOverlay();
       return;
     }
+    _removeDesktopAttachmentOverlay();
     _showDesktopEmojiOverlay();
   }
 
@@ -869,7 +884,7 @@ class ChatInputAreaState extends State<ChatInputArea> {
                       padding: EdgeInsets.only(left: caretLeft),
                       child: CustomPaint(
                         size: caretSize,
-                        painter: _EmojiPopoverCaretPainter(),
+                        painter: _PopoverCaretPainter(),
                       ),
                     ),
                   ),
@@ -925,6 +940,176 @@ class ChatInputAreaState extends State<ChatInputArea> {
       );
     }
     widget.textFieldFocusNode.requestFocus();
+  }
+
+  void _toggleDesktopAttachmentPopover() {
+    if (_desktopAttachmentOpen) {
+      _removeDesktopAttachmentOverlay();
+      return;
+    }
+    _removeDesktopEmojiOverlay();
+    _showDesktopAttachmentOverlay();
+  }
+
+  void _showDesktopAttachmentOverlay() {
+    _removeDesktopAttachmentOverlay(updateState: false);
+
+    final overlay = Overlay.of(context, rootOverlay: true);
+    final buttonBox =
+        _attachmentButtonKey.currentContext?.findRenderObject() as RenderBox?;
+    final overlayBox = overlay.context.findRenderObject() as RenderBox?;
+    if (buttonBox == null || overlayBox == null || !buttonBox.hasSize) {
+      return;
+    }
+
+    const popoverWidth = 200.0;
+    const caretSize = Size(14, 8);
+    const gap = 6.0;
+    const edgePadding = 8.0;
+
+    final buttonTopLeft =
+        overlayBox.globalToLocal(buttonBox.localToGlobal(Offset.zero));
+    final buttonCenterX = buttonTopLeft.dx + buttonBox.size.width / 2;
+    final buttonTop = buttonTopLeft.dy;
+
+    var left = buttonCenterX - popoverWidth / 2;
+    left = left.clamp(
+      edgePadding,
+      math.max(edgePadding, overlayBox.size.width - popoverWidth - edgePadding),
+    );
+
+    final l10n = AppLocalizations.of(context);
+    final iconColor = Colors.grey[700]!;
+
+    // Fixed height matching two menu rows (+ padding).
+    const itemHeight = 44.0;
+    const verticalPadding = 8.0;
+    const itemCount = 2;
+    const popoverHeight = itemCount * itemHeight + verticalPadding * 2;
+    const panelHeight = popoverHeight + caretSize.height;
+    var top = buttonTop - gap - panelHeight;
+    top = top.clamp(
+      edgePadding,
+      math.max(edgePadding, overlayBox.size.height - panelHeight - edgePadding),
+    );
+    final caretLeft =
+        (buttonCenterX - left - caretSize.width / 2).clamp(8.0, popoverWidth - 22.0);
+
+    void select(VoidCallback action) {
+      _removeDesktopAttachmentOverlay();
+      action();
+    }
+
+    _attachmentOverlay = OverlayEntry(
+      builder: (context) {
+        return Positioned(
+          left: left,
+          top: top,
+          width: popoverWidth,
+          child: TapRegion(
+            groupId: _attachmentTapGroup,
+            onTapOutside: (_) => _removeDesktopAttachmentOverlay(),
+            child: Material(
+              color: Colors.transparent,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Container(
+                    width: popoverWidth,
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(8),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withValues(alpha: 0.12),
+                          blurRadius: 16,
+                          offset: const Offset(0, 4),
+                        ),
+                      ],
+                    ),
+                    clipBehavior: Clip.antiAlias,
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(vertical: verticalPadding),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          _buildDesktopAttachmentMenuItem(
+                            icon: Icons.insert_drive_file_outlined,
+                            iconColor: iconColor,
+                            label: l10n.chat_file,
+                            onTap: () => select(widget.onPickFile),
+                          ),
+                          _buildDesktopAttachmentMenuItem(
+                            icon: Icons.inventory_2_outlined,
+                            iconColor: iconColor,
+                            label: l10n.chat_storageBag,
+                            onTap: () => select(widget.onPickFromStorageBag),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: Padding(
+                      padding: EdgeInsets.only(left: caretLeft),
+                      child: CustomPaint(
+                        size: caretSize,
+                        painter: _PopoverCaretPainter(),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
+    );
+
+    overlay.insert(_attachmentOverlay!);
+    setState(() => _desktopAttachmentOpen = true);
+  }
+
+  Widget _buildDesktopAttachmentMenuItem({
+    required IconData icon,
+    required Color iconColor,
+    required String label,
+    required VoidCallback onTap,
+  }) {
+    return InkWell(
+      onTap: onTap,
+      child: SizedBox(
+        height: 44,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 14),
+          child: Row(
+            children: [
+              Icon(icon, size: 20, color: iconColor),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  label,
+                  style: const TextStyle(
+                    fontSize: 14,
+                    color: AppColors.textPrimary,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _removeDesktopAttachmentOverlay({bool updateState = true}) {
+    _attachmentOverlay?.remove();
+    _attachmentOverlay = null;
+    if (_desktopAttachmentOpen) {
+      _desktopAttachmentOpen = false;
+      if (updateState && mounted) setState(() {});
+    }
   }
 
   // ---------------------------------------------------------------------------
@@ -1310,11 +1495,14 @@ class ChatInputAreaState extends State<ChatInputArea> {
       }
       widget.onSend();
       _removeDesktopEmojiOverlay();
+      _removeDesktopAttachmentOverlay();
       return KeyEventResult.handled;
     }
 
-    if (event.logicalKey == LogicalKeyboardKey.escape && _desktopEmojiOpen) {
+    if (event.logicalKey == LogicalKeyboardKey.escape &&
+        (_desktopEmojiOpen || _desktopAttachmentOpen)) {
       _removeDesktopEmojiOverlay();
+      _removeDesktopAttachmentOverlay();
       return KeyEventResult.handled;
     }
 
@@ -1695,8 +1883,8 @@ class ChatInputAreaState extends State<ChatInputArea> {
   }
 }
 
-/// Downward-pointing caret under the desktop emoji popover (WeChat style).
-class _EmojiPopoverCaretPainter extends CustomPainter {
+/// Downward-pointing caret under desktop toolbar popovers (WeChat style).
+class _PopoverCaretPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     final paint = Paint()
