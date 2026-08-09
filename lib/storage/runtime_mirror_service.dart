@@ -4,6 +4,7 @@ import 'dart:typed_data';
 
 import 'package:crypto/crypto.dart' as crypto;
 
+import '../peer/services/peer_attachment_placement.dart';
 import '../services/local_database_service.dart';
 import '../services/logger_service.dart';
 import 'device_identity.dart';
@@ -40,12 +41,37 @@ class RuntimeMirrorService {
 
   Future<void> _resolveAndScheduleSession(String channelId) async {
     try {
-      final ch = await LocalDatabaseService().getChannelById(channelId);
+      final db = LocalDatabaseService();
+      final ch = await db.getChannelById(channelId);
       final agentId = ch?.members
               .where((m) => m.type == 'agent')
               .map((m) => m.id)
               .firstOrNull ??
           channelId;
+
+      // Peer 隧道：本机缓存与宿主 URI 对齐（device=对端 fingerprint，
+      // path channel=peer__…；消息仍从本地 SQLite channel 读取）。
+      try {
+        final agent = await db.getRemoteAgentById(agentId);
+        if (agent != null && agent.isPeerAgent) {
+          final peer = await resolvePeerAttachmentPlacement(
+            agent: agent,
+            localChannelId: channelId,
+          );
+          if (peer != null) {
+            scheduleSessionMirror(
+              ownerId: peer.ownerId,
+              channelId: peer.channelId,
+              deviceId: peer.deviceId,
+              messagesChannelId: channelId,
+            );
+            return;
+          }
+        }
+      } catch (_) {
+        /* fall through */
+      }
+
       final ownerId = RuntimePaths.resolveOwnerId(
         agentId: agentId,
         channelId: channelId,
@@ -59,15 +85,26 @@ class RuntimeMirrorService {
   }
 
   /// 消息落库后调用：debounce 刷新该 channel 的 session.json。
+  ///
+  /// [deviceId] 非空时写入该 device 目录（peer 缓存）；缺省为本机。
+  /// [messagesChannelId] 非空时从该 SQLite channel 读消息（peer 本地会话 id），
+  /// 落盘路径仍用 [channelId]（宿主 peer__ channel）。
   void scheduleSessionMirror({
     required String ownerId,
     required String channelId,
+    String? deviceId,
+    String? messagesChannelId,
   }) {
-    final key = '$ownerId::$channelId';
+    final key = '${deviceId ?? '_'}::$ownerId::$channelId';
     _pendingSession[key]?.cancel();
     _pendingSession[key] = Timer(debounce, () {
       _pendingSession.remove(key);
-      unawaited(_mirrorSession(ownerId: ownerId, channelId: channelId));
+      unawaited(_mirrorSession(
+        ownerId: ownerId,
+        channelId: channelId,
+        deviceId: deviceId,
+        messagesChannelId: messagesChannelId,
+      ));
     });
   }
 
@@ -81,36 +118,39 @@ class RuntimeMirrorService {
     });
   }
 
-  Future<void> ensureRuntimeScaffold(String ownerId) async {
-    final deviceId = await DeviceIdentity.deviceId();
+  Future<void> ensureRuntimeScaffold(
+    String ownerId, {
+    String? deviceId,
+  }) async {
+    final device = deviceId ?? await DeviceIdentity.deviceId();
     final now = DateTime.now().toUtc().toIso8601String();
     await _writeTextIfAbsent(
-      deviceId,
+      device,
       RuntimePaths.soulMd(ownerId),
       '<!-- mirrored soul; authoritative store is memory/<agent>/soul.md -->\n',
     );
     await _writeTextIfAbsent(
-      deviceId,
+      device,
       RuntimePaths.memoryMd(ownerId),
       '<!-- mirrored memory summary; authoritative store is memory/<agent>/entries -->\n',
     );
     await _writeTextIfAbsent(
-      deviceId,
+      device,
       RuntimePaths.workspaceMd(ownerId),
       '# Workspace bindings\n\nworkspace_ids: []\n',
     );
     await _writeText(
-      deviceId,
+      device,
       RuntimePaths.contextManifest(ownerId),
       const JsonEncoder.withIndent('  ').convert({
         'schema_version': 1,
         'owner_id': ownerId,
-        'source_device': deviceId,
+        'source_device': device,
         'updated_at': now,
         'soul_uri': MemoryPaths.uri(
-            deviceId: deviceId, relPath: MemoryPaths.soulMd(ownerId)),
+            deviceId: device, relPath: MemoryPaths.soulMd(ownerId)),
         'memory_uri': MemoryPaths.uri(
-            deviceId: deviceId,
+            deviceId: device,
             relPath: MemoryPaths.entriesDir(ownerId)),
         'workspace_refs': <String>[],
         'channels': <String, dynamic>{},
@@ -121,12 +161,20 @@ class RuntimeMirrorService {
   Future<void> _mirrorSession({
     required String ownerId,
     required String channelId,
+    String? deviceId,
+    String? messagesChannelId,
   }) async {
     try {
-      await ensureRuntimeScaffold(ownerId);
-      final deviceId = await DeviceIdentity.deviceId();
+      final self = await DeviceIdentity.deviceId();
+      final device = deviceId ?? self;
+      final isPeerCache = device != self;
+      // Peer 缓存只写 session，不在对端 device 树下伪造 soul/memory scaffold。
+      if (!isPeerCache) {
+        await ensureRuntimeScaffold(ownerId, deviceId: device);
+      }
+      final loadChannel = messagesChannelId ?? channelId;
       final rows = await LocalDatabaseService()
-          .getChannelMessages(channelId, limit: 500, offset: 0);
+          .getChannelMessages(loadChannel, limit: 500, offset: 0);
       // DAO returns newest-first; mirror chronological.
       final chronological = rows.reversed.toList();
       final messages = <Map<String, dynamic>>[];
@@ -155,8 +203,11 @@ class RuntimeMirrorService {
           'owner_id': ownerId,
           'updated_at': DateTime.now().toUtc().toIso8601String(),
           'schema_version': 1,
-          'source_device': deviceId,
+          'source_device': device,
           'window_size': sessionWindowSize,
+          if (isPeerCache) 'placement': 'local_fallback',
+          if (messagesChannelId != null && messagesChannelId != channelId)
+            'local_channel_id': messagesChannelId,
         },
         'messages': messages,
       };
@@ -170,7 +221,7 @@ class RuntimeMirrorService {
             .replaceAll(':', '-')
             .replaceAll('.', '-');
         await _writeText(
-          deviceId,
+          device,
           RuntimePaths.sessionArchive(ownerId, channelId, ts),
           body,
         );
@@ -179,17 +230,19 @@ class RuntimeMirrorService {
         final meta = payload['meta'] as Map<String, dynamic>;
         meta['archived_at'] = DateTime.now().toUtc().toIso8601String();
         meta['archive_uri'] = RuntimePaths.uri(
-          deviceId: deviceId,
+          deviceId: device,
           relPath: RuntimePaths.sessionArchive(ownerId, channelId, ts),
         );
         body = const JsonEncoder.withIndent('  ').convert(payload);
       }
       await _writeText(
-        deviceId,
+        device,
         RuntimePaths.sessionJson(ownerId, channelId),
         body,
       );
-      await _touchManifestChannel(deviceId, ownerId, channelId);
+      if (!isPeerCache) {
+        await _touchManifestChannel(device, ownerId, channelId);
+      }
     } catch (e) {
       _log.warning('session mirror failed owner=$ownerId ch=$channelId: $e',
           tag: _tag);

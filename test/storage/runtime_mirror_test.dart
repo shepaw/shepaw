@@ -63,4 +63,40 @@ void main() {
     );
     expect(utf8.decode(bytes), 'hello workspace');
   });
+
+  test('peer session mirror 写入对端 device 的 runtime session.json', () async {
+    final mirror = RuntimeMirrorService.instance;
+    mirror.debounce = Duration.zero;
+    const hostDevice = 'aabbccddeeff0011';
+    const owner = 'remote-agent-a';
+    const hostChannel = 'peer__pair1__remote-agent-a__s_dm_local';
+    const localChannel = 'dm_local';
+
+    mirror.scheduleSessionMirror(
+      ownerId: owner,
+      channelId: hostChannel,
+      deviceId: hostDevice,
+      messagesChannelId: localChannel,
+    );
+    // debounce=0 still schedules via Timer; wait for write.
+    await Future<void>.delayed(const Duration(milliseconds: 100));
+
+    final store = await StoreService.instance.localStore();
+    final rel = RuntimePaths.sessionJson(owner, hostChannel);
+    final meta = await store.meta(hostDevice, StoreSpace.runtime, rel);
+    expect(meta['size'] as int, greaterThan(0));
+    final (bytes, _, _) = await store.read(
+      hostDevice,
+      StoreSpace.runtime,
+      rel,
+      0,
+      1 << 16,
+    );
+    final json = jsonDecode(utf8.decode(bytes)) as Map<String, dynamic>;
+    final sessionMeta = json['meta'] as Map<String, dynamic>;
+    expect(sessionMeta['source_device'], hostDevice);
+    expect(sessionMeta['placement'], 'local_fallback');
+    expect(sessionMeta['local_channel_id'], localChannel);
+    expect(sessionMeta['channel_id'], hostChannel);
+  });
 }

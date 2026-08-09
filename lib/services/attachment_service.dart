@@ -269,6 +269,8 @@ class AttachmentService {
       RuntimeMirrorService.instance.scheduleSessionMirror(
         ownerId: target.ownerId,
         channelId: target.channelId,
+        deviceId: target.deviceId,
+        messagesChannelId: channelId,
       );
 
       return message;
@@ -352,6 +354,8 @@ class AttachmentService {
       RuntimeMirrorService.instance.scheduleSessionMirror(
         ownerId: target.ownerId,
         channelId: target.channelId,
+        deviceId: target.deviceId,
+        messagesChannelId: channelId,
       );
 
       // 删除临时文件
