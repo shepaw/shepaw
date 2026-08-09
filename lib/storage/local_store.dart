@@ -49,9 +49,11 @@ class StoreEntry {
 
   factory StoreEntry.fromJson(Map<String, dynamic> json) => StoreEntry(
         path: json['path'] as String? ?? '',
-        size: json['size'] as int? ?? 0,
+        size: (json['size'] as num?)?.toInt() ?? 0,
         sha256: json['sha256'] as String? ?? '',
-        mtimeMs: (json['mtime'] as int?) ?? (json['mtime_ms'] as int?) ?? 0,
+        mtimeMs: (json['mtime'] as num?)?.toInt() ??
+            (json['mtime_ms'] as num?)?.toInt() ??
+            0,
         kind: json['kind'] as String? ?? 'file',
       );
 }

@@ -549,4 +549,18 @@ void main() {
       expect(await Directory(p.join(tmp.path, '.recycle')).exists(), isFalse);
     });
   });
+
+  group('StoreEntry.fromJson', () {
+    test('accepts JSON numbers decoded as double', () {
+      final entry = StoreEntry.fromJson({
+        'path': 'a/b.txt',
+        'size': 1024.0,
+        'sha256': 'abc',
+        'mtime': 1700000000000.0,
+      });
+      expect(entry.path, 'a/b.txt');
+      expect(entry.size, 1024);
+      expect(entry.mtimeMs, 1700000000000);
+    });
+  });
 }
