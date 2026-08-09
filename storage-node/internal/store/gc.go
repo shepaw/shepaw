@@ -35,7 +35,7 @@ func (l *Local) GcStaging(olderThan time.Duration) (int, error) {
 		if !e.IsDir() || !protocol.IsValidDeviceID(e.Name()) {
 			continue
 		}
-		for _, sp := range []string{"artifacts", "files", "attachments", "backups"} {
+		for _, sp := range protocol.BuiltinSpaces() {
 			staging := filepath.Join(l.Root, e.Name(), sp, ".staging")
 			uploads, err := os.ReadDir(staging)
 			if err != nil {

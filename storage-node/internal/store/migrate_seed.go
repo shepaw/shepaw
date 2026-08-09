@@ -196,7 +196,7 @@ func (l *Local) seedFromLiveMaster(rpc PeerRPC, oldMaster string) (int, []string
 	completed := map[string]struct{}{l.DeviceID: {}}
 	for _, deviceID := range deviceIDs {
 		deviceOK := true
-		for _, space := range []string{"artifacts", "files", "attachments", "backups"} {
+		for _, space := range protocol.BuiltinSpaces() {
 			n, err := l.seedSpace(rpc, oldMaster, deviceID, space)
 			if err != nil {
 				log.Printf("seed %s/%s: %v", deviceID, space, err)
@@ -239,7 +239,7 @@ func (l *Local) runHashGate(rpc PeerRPC, oldMaster string, deviceIDs []string) m
 		}
 		remoteMap := map[string]string{}
 		localMap := map[string]string{}
-		for _, space := range []string{"artifacts", "files", "attachments", "backups"} {
+		for _, space := range protocol.BuiltinSpaces() {
 			for k, sha := range l.listRemoteShas(rpc, oldMaster, deviceID, space) {
 				remoteMap[space+"/"+k] = sha
 			}

@@ -4,6 +4,7 @@ import 'package:path/path.dart';
 import 'package:path_provider/path_provider.dart';
 import '../models/agent_memory_entry.dart';
 import 'logger_service.dart';
+import '../storage/runtime_mirror_service.dart';
 
 /// Agent 独立记忆数据库服务
 ///
@@ -178,6 +179,10 @@ class AgentMemoryDbService {
         'Memory added: #$id',
         tag: 'AgentMemoryDbService[$_agentId]',
       );
+      RuntimeMirrorService.instance.scheduleMemoryMirror(_agentId);
+      // Best-effort export of recent memories as markdown
+      // ignore: unawaited_futures
+      _exportMemoryMarkdown();
       return id;
     } catch (e) {
       LoggerService().error(
@@ -441,6 +446,22 @@ class AgentMemoryDbService {
   // ---------------------------------------------------------------------------
   // 生命周期管理
   // ---------------------------------------------------------------------------
+
+  Future<void> _exportMemoryMarkdown() async {
+    try {
+      final entries = await getAllMemories(limit: 200);
+      final buf = StringBuffer('# Memory export\n\n');
+      for (final e in entries) {
+        buf.writeln('- (${e.memoryType.name}) ${e.memoryContent}');
+      }
+      await RuntimeMirrorService.instance.mirrorMemory(_agentId, buf.toString());
+    } catch (e) {
+      LoggerService().warning(
+        'memory.md export failed: $e',
+        tag: 'AgentMemoryDbService[$_agentId]',
+      );
+    }
+  }
 
   /// 关闭数据库连接（不删除文件）
   Future<void> close() async {

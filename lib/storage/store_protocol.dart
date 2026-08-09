@@ -87,33 +87,63 @@ class StoreError {
   static const internal = 'internal';
 }
 
-/// 目录分区（spec §0）。
+/// 目录分区（spec §0 / docs/CLIENT_PROFILES.md）。
 class StoreSpace {
   StoreSpace._();
 
-  static const artifacts = 'artifacts';
+  /// 跨 owner 共享工作区（owner 可跨 device 读写）。
+  static const workspaces = 'workspaces';
+  /// Agent/群运行时镜像与 channel 附件/产物（默认 private）。
+  static const runtime = 'runtime';
   static const files = 'files';
-  static const attachments = 'attachments';
+  static const public_ = 'public';
   static const backups = 'backups';
-  /// ShePaw client profile: chat uploads live at `files/chat/<sha256>`.
+
+  /// Legacy：旧产物区（只读兼容；新写入走 [runtime]）。
+  static const artifacts = 'artifacts';
+  /// Legacy：旧私有附件区（只读兼容）。
+  static const attachments = 'attachments';
+
+  /// Legacy chat uploads under `files/chat/<sha256>`（旧 URI 兼容）。
   static const chatAttachmentPrefix = 'chat';
   /// Well-known custom space (node auto-seeds); not in [all] builtins.
   static const memory = 'memory';
 
-  static const all = <String>[artifacts, files, attachments, backups];
-  /// Browser chips: user-facing spaces only — [backups] is managed via
-  /// 「备份与恢复」, not as a browsable folder of ciphertext.
-  static const browserSpaces = <String>[
-    artifacts,
+  /// 同步/导出枚举：新内置 + legacy（旧树仍需镜像）。
+  static const all = <String>[
+    workspaces,
+    runtime,
     files,
+    public_,
+    backups,
+    artifacts,
     attachments,
+  ];
+
+  /// Browser chips：用户可见区（不含 backups 密文；legacy artifacts 仍可浏览）。
+  static const browserSpaces = <String>[
+    workspaces,
+    runtime,
+    files,
+    public_,
+    artifacts,
     memory,
   ];
 
-  /// 所有 owner 端可读的分区。
-  static const sharedReadable = <String>[artifacts, files];
+  /// Owner 端默认可跨端读的分区（不含 private 的 runtime）。
+  static const sharedReadable = <String>[
+    workspaces,
+    files,
+    public_,
+    artifacts,
+  ];
+
+  /// Owner 默认可跨 device **写** 的分区（仅 workspaces）。
+  static const ownerCrossWritable = <String>[workspaces];
 
   static bool isValid(String s) => all.contains(s);
+
+  static bool isOwnerCrossWritable(String s) => ownerCrossWritable.contains(s);
 
   /// 自定义空间语法：`^[a-z][a-z0-9-]{0,31}$`（与 Rust space.declare 一致）。
   static bool isValidSyntax(String s) =>
@@ -391,8 +421,15 @@ StoreAcl checkStoreAcl(
 
 /// 内置空间可见性：`true`=shared，`false`=private，`null`=未知。
 bool? _builtinVisibility(String space) => switch (space) {
-      StoreSpace.artifacts || StoreSpace.files => true,
-      StoreSpace.attachments || StoreSpace.backups => false,
+      StoreSpace.workspaces ||
+      StoreSpace.files ||
+      StoreSpace.public_ ||
+      StoreSpace.artifacts =>
+        true,
+      StoreSpace.runtime ||
+      StoreSpace.attachments ||
+      StoreSpace.backups =>
+        false,
       _ => null,
     };
 
@@ -459,7 +496,7 @@ StoreAcl checkStoreAclWith(
   bool shared(String s) => vis(s) == true;
 
   switch (frame.op) {
-    // ── 写操作：目标目录恒为调用者（写路径收敛，spec §4）──
+    // ── 写操作：默认目标目录恒为调用者；workspaces 允许 owner 跨 device 写 ──
     case StoreOp.writeBegin:
     case StoreOp.writeChunk:
     case StoreOp.commit:
@@ -471,8 +508,14 @@ StoreAcl checkStoreAclWith(
       if (frame.op == StoreOp.writeBegin && space == null) {
         return StoreAcl.denyBadOp;
       }
-      // 伪造 device_id 写入：与调用者不符即拒绝并审计
       if (device != null && device != callerDeviceId) {
+        // workspaces：owner 可写任意 owner 设备目录；friend / 其它 space 拒绝
+        if (space != null &&
+            StoreSpace.isOwnerCrossWritable(space) &&
+            isOwner &&
+            isValidDeviceId(device)) {
+          return StoreAcl.allow;
+        }
         return StoreAcl.denyAcl;
       }
       return StoreAcl.allow;

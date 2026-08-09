@@ -1,3 +1,5 @@
+import '../../storage/store_protocol.dart';
+
 /// 本机储物袋分享给某配对设备的一条允许项。
 ///
 /// [path] 为空字符串表示整区；非空为相对 path 前缀（含子路径）。
@@ -69,11 +71,11 @@ class PeerStoreShareAllowlist {
     return PeerStoreShareAllowlist(map);
   }
 
-  /// owner 默认：files + artifacts 整区。
+  /// owner 默认：sharedReadable 整区（workspaces/files/public/artifacts）。
   factory PeerStoreShareAllowlist.ownerDefaults() =>
-      PeerStoreShareAllowlist.fromEntries(const [
-        PeerStoreShareEntry(space: 'files'),
-        PeerStoreShareEntry(space: 'artifacts'),
+      PeerStoreShareAllowlist.fromEntries([
+        for (final space in StoreSpace.sharedReadable)
+          PeerStoreShareEntry(space: space),
       ]);
 
   bool get isEmpty => _bySpace.isEmpty;

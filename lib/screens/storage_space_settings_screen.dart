@@ -6,6 +6,7 @@ import '../l10n/app_localizations.dart';
 import '../storage/device_identity.dart';
 import '../storage/folder_binding_service.dart';
 import '../storage/local_store.dart';
+import '../storage/store_protocol.dart';
 import '../storage/store_service.dart';
 import '../storage/sync_engine.dart';
 import '../storage/volume_usage.dart';
@@ -446,7 +447,7 @@ class _StorageSpaceSettingsScreenState extends State<StorageSpaceSettingsScreen>
     final staging = _stats!['staging_bytes'] as int? ?? 0;
     final recycle = _stats!['recycle_bytes'] as int? ?? 0;
     final chips = <Widget>[
-      for (final space in ['artifacts', 'files', 'attachments', 'backups'])
+      for (final space in StoreSpace.all)
         Chip(
           label: Text('$space ${fmtStorageBytes(mine[space] as int? ?? 0)}'),
           visualDensity: VisualDensity.compact,

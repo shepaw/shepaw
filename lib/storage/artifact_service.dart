@@ -6,68 +6,103 @@ import 'package:path/path.dart' as p;
 import '../services/logger_service.dart';
 import 'device_identity.dart';
 import 'local_store.dart';
+import 'runtime_paths.dart';
 import 'store_protocol.dart';
 import 'store_service.dart';
 import 'store_uri_reader.dart';
 
-/// 产物 URI（docs/storage_space_plan.md §6.3）：
-/// `store://artifacts/<device_id>/<task_id>/<filename>`。
-/// URI 与具体 master 解耦，由本服务解析（本机直读 / master 缓存校验拉取）。
+/// 产物 URI：
+/// - 新：`store://runtime/<device>/<owner>/<channel>/artifacts/<task>/<file>`
+/// - legacy：`store://artifacts/<device>/<task>/<file>`
 class ArtifactUri {
   ArtifactUri({
     required this.deviceId,
     required this.taskId,
     required this.filename,
+    this.ownerId,
+    this.channelId,
+    this.space = StoreSpace.runtime,
   });
 
   final String deviceId;
   final String taskId;
   final String filename;
+  final String? ownerId;
+  final String? channelId;
+  final String space;
 
   static const scheme = 'store';
 
-  /// 解析；非法返回 null。
+  bool get isLegacy => space == StoreSpace.artifacts;
+
+  /// 解析；非法返回 null。兼容 legacy artifacts 与 runtime 路径。
   static ArtifactUri? tryParse(String uri) {
     if (!uri.startsWith('$scheme://')) return null;
     final rest = uri.substring(scheme.length + 3);
     final segments = rest.split('/');
     if (segments.length < 3) return null;
-    if (segments[0] != 'artifacts') return null;
+    final space = segments[0];
     if (!isValidDeviceId(segments[1])) return null;
-    final filename = segments
-        .sublist(3)
-        .map((s) {
-          try {
-            return Uri.decodeComponent(s);
-          } catch (_) {
-            return s;
-          }
-        })
-        .join('/');
-    if (filename.isEmpty || filename.contains('..')) return null;
-    final taskId = () {
+
+    String decode(String s) {
       try {
-        return Uri.decodeComponent(segments[2]);
+        return Uri.decodeComponent(s);
       } catch (_) {
-        return segments[2];
+        return s;
       }
-    }();
-    return ArtifactUri(
-      deviceId: segments[1],
+    }
+
+    if (space == StoreSpace.artifacts) {
+      if (segments.length < 3) return null;
+      final filename = segments.sublist(3).map(decode).join('/');
+      if (filename.isEmpty || filename.contains('..')) return null;
+      return ArtifactUri(
+        deviceId: segments[1],
+        taskId: decode(segments[2]),
+        filename: filename,
+        space: StoreSpace.artifacts,
+      );
+    }
+
+    if (space == StoreSpace.runtime) {
+      // runtime/<device>/<owner>/<channel>/artifacts/<task>/<file...>
+      if (segments.length < 7) return null;
+      if (segments[4] != 'artifacts') return null;
+      final filename = segments.sublist(6).map(decode).join('/');
+      if (filename.isEmpty || filename.contains('..')) return null;
+      return ArtifactUri(
+        deviceId: segments[1],
+        ownerId: decode(segments[2]),
+        channelId: decode(segments[3]),
+        taskId: decode(segments[5]),
+        filename: filename,
+        space: StoreSpace.runtime,
+      );
+    }
+    return null;
+  }
+
+  String get storePath {
+    if (isLegacy) return '$taskId/$filename';
+    return RuntimePaths.artifactFile(
+      ownerId: ownerId ?? 'default',
+      channelId: channelId ?? taskId,
       taskId: taskId,
       filename: filename,
     );
   }
 
-  /// store 内的相对路径（<space>/<task>/<filename>）。
-  String get storePath => '$taskId/$filename';
-
   @override
-  String toString() =>
-      '$scheme://artifacts/$deviceId/$taskId/$filename';
+  String toString() {
+    if (isLegacy) {
+      return '$scheme://artifacts/$deviceId/$taskId/$filename';
+    }
+    return '$scheme://runtime/$deviceId/${ownerId ?? 'default'}/'
+        '${channelId ?? taskId}/artifacts/$taskId/$filename';
+  }
 }
 
-/// 从文本中提取的产物引用（Markdown 链接 + 单行描述，§6.3）。
+/// 从文本中提取的产物引用（Markdown 链接 + 单行描述）。
 class ArtifactReference {
   ArtifactReference({
     required this.uri,
@@ -79,20 +114,13 @@ class ArtifactReference {
   final String linkText;
   final String description;
 
-  /// 单行引用格式（Agent 间传递的唯一格式）。
   String toMarkdownLine() {
     final base = '[$linkText]($uri)';
     return description.isEmpty ? base : '$base — $description';
   }
 }
 
-/// 产物服务（§6.3）。
-///
-/// - 写入：任何端的 Agent（含 master 本机）产出统一经 store.* 写入
-///   自己设备目录（无特权路径），返回即完成共享（本地优先，后台同步）。
-/// - 读取：本机直读；他端经 RemoteReadService 缓存校验（hash 一致零
-///   内容流量），分块/缓存/大文件由工具层处理。
-/// - 引用：Agent 只"转述"URI，从不"构造"URI（改写/拼接路径由本服务完成）。
+/// 产物服务：新写入落 runtime；legacy URI 仍可读。
 class ArtifactService {
   ArtifactService._();
   static final ArtifactService instance = ArtifactService._();
@@ -101,31 +129,39 @@ class ArtifactService {
   final _log = LoggerService();
 
   static final _referencePattern = RegExp(
-      r'\[([^\]]+)\]\((store://artifacts/[0-9a-f]{16}/[^)]+)\)(?:\s*—\s*([^\n]+))?');
+      r'\[([^\]]+)\]\((store://(?:artifacts|runtime)/[0-9a-f]{16}/[^)]+)\)(?:\s*—\s*([^\n]+))?');
 
-  /// 写入产物并返回单行 Markdown 引用（§6.3 引用表达格式）。
+  /// 写入产物并返回单行 Markdown 引用。
   ///
-  /// 本地优先：经 [LocalStore] 写入自己设备目录并入同步队列；
-  /// [description] 一句话描述（可选）；[producer] 产出者名（如 agent 名）。
+  /// [runtimeOwnerId] / [channelId] 缺省时用 `default` / [taskId]。
   Future<String> writeArtifact({
     required String taskId,
     required String filename,
     required Uint8List content,
     String? description,
     String? producer,
+    String? runtimeOwnerId,
+    String? channelId,
   }) async {
     final deviceId = await DeviceIdentity.deviceId();
-    final safeName = p.basename(filename); // 防路径穿越
-    final uri =
-        ArtifactUri(deviceId: deviceId, taskId: taskId, filename: safeName);
+    final safeName = p.basename(filename);
+    final owner = RuntimePaths.sanitizeSegment(runtimeOwnerId ?? 'default');
+    final channel = RuntimePaths.sanitizeSegment(channelId ?? taskId);
+    final uri = ArtifactUri(
+      deviceId: deviceId,
+      taskId: RuntimePaths.sanitizeSegment(taskId),
+      filename: safeName,
+      ownerId: owner,
+      channelId: channel,
+      space: StoreSpace.runtime,
+    );
     final relPath = uri.storePath;
     final hash = crypto.sha256.convert(content).toString();
 
-    // 本地优先（与 AttachmentService 同路径）：正式区 + SyncJournal，后台镜像
     final store = await StoreService.instance.localStore();
     final (uploadId, _) = await store.writeBegin(
       deviceId: deviceId,
-      space: StoreSpace.artifacts,
+      space: StoreSpace.runtime,
       path: relPath,
       size: content.length,
       sha256: hash,
@@ -135,12 +171,12 @@ class ArtifactService {
       final end = (offset + LocalStore.maxReadChunk) > content.length
           ? content.length
           : offset + LocalStore.maxReadChunk;
-      await store.writeChunk(deviceId, StoreSpace.artifacts, uploadId, offset,
+      await store.writeChunk(deviceId, StoreSpace.runtime, uploadId, offset,
           content.sublist(offset, end));
       offset = end;
     }
     final (committed, failed) =
-        await store.commit(deviceId, StoreSpace.artifacts, [uploadId]);
+        await store.commit(deviceId, StoreSpace.runtime, [uploadId]);
     if (failed.isNotEmpty || committed.isEmpty) {
       throw StateError('artifact commit failed: $failed');
     }
@@ -154,10 +190,7 @@ class ArtifactService {
     ).toMarkdownLine();
   }
 
-  /// 读取产物（单参数 URI；缓存/分块由本层处理）。
-  /// 本机直读；他端经缓存校验（可能 stale，调用方可用 bytes 内容 hash 复核）。
-  ///
-  /// 仅接受 `store://artifacts/...`；通用 `files` 等请用 [StoreUriReader.read]。
+  /// 读取产物（legacy artifacts 与 runtime 均可）。
   Future<Uint8List> readArtifact(String uriString) async {
     final uri = ArtifactUri.tryParse(uriString);
     if (uri == null) {
@@ -166,7 +199,6 @@ class ArtifactService {
     return StoreUriReader.instance.read(uriString);
   }
 
-  /// 从文本提取全部产物引用（Agent 输出/用户消息）。
   List<ArtifactReference> parseReferences(String text) {
     final refs = <ArtifactReference>[];
     for (final match in _referencePattern.allMatches(text)) {

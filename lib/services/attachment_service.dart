@@ -1,7 +1,6 @@
 import 'dart:io';
 import 'dart:typed_data';
 import 'package:crypto/crypto.dart' as crypto;
-import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:path/path.dart' as path;
@@ -12,12 +11,16 @@ import '../models/attachment_data.dart';
 import '../models/store_attachment_ref.dart';
 import '../storage/device_identity.dart';
 import '../storage/local_store.dart';
+import '../storage/runtime_mirror_service.dart';
+import '../storage/runtime_paths.dart';
 import '../storage/store_protocol.dart';
 import '../storage/store_service.dart';
 import 'messaging/message_implicit_prompt.dart';
 import 'package:uuid/uuid.dart';
 
-/// 附件服务：聊天附件经 store 写入 `files/chat/<hash>`，消息 metadata 存 `store_uri`。
+/// 附件服务：聊天附件经 store 写入
+/// `runtime/<owner>/<channel>/attachments/<hash>`，消息 metadata 存 `store_uri`。
+/// 旧 `files/chat/<hash>` URI 仍可读。
 class AttachmentService {
   final LocalDatabaseService _database;
   final ImagePicker _imagePicker = ImagePicker();
@@ -37,22 +40,25 @@ class AttachmentService {
 
   // ────────────────────────────── 附件 store 读写 ──
 
-  /// 附件内容写入 `files/chat/<hash>`（hash 去重），返回 store URI。
-  Future<String> _storeAttachmentBytes(Uint8List bytes) async {
+  /// 附件内容写入 runtime attachments（hash 去重），返回 store URI。
+  Future<String> _storeAttachmentBytes(
+    Uint8List bytes, {
+    required String ownerId,
+    required String channelId,
+  }) async {
     final hash = crypto.sha256.convert(bytes).toString();
-    final relPath = '${StoreSpace.chatAttachmentPrefix}/$hash';
+    final relPath = RuntimePaths.attachmentBlob(ownerId, channelId, hash);
     final store = await StoreService.instance.localStore();
     final deviceId = await DeviceIdentity.deviceId();
-    // 已存在即去重（内容寻址天然幂等）
     try {
-      await store.meta(deviceId, StoreSpace.files, relPath);
-      return storeUriWithRef(StoreSpace.files, deviceId, relPath);
+      await store.meta(deviceId, StoreSpace.runtime, relPath);
+      return storeUriWithRef(StoreSpace.runtime, deviceId, relPath);
     } on StoreException {
       // not_found → 写入
     }
     final (uploadId, _) = await store.writeBegin(
       deviceId: deviceId,
-      space: StoreSpace.files,
+      space: StoreSpace.runtime,
       path: relPath,
       size: bytes.length,
       sha256: hash,
@@ -63,16 +69,16 @@ class AttachmentService {
           ? bytes.length
           : offset + LocalStore.maxReadChunk;
       await store.writeChunk(
-          deviceId, StoreSpace.files, uploadId, offset,
+          deviceId, StoreSpace.runtime, uploadId, offset,
           bytes.sublist(offset, end));
       offset = end;
     }
     final (committed, failed) =
-        await store.commit(deviceId, StoreSpace.files, [uploadId]);
+        await store.commit(deviceId, StoreSpace.runtime, [uploadId]);
     if (failed.isNotEmpty || committed.isEmpty) {
       throw StateError('attachment commit failed: $failed');
     }
-    return storeUriWithRef(StoreSpace.files, deviceId, relPath);
+    return storeUriWithRef(StoreSpace.runtime, deviceId, relPath);
   }
 
   static void _putStoreUriMetadata(
@@ -136,7 +142,9 @@ class AttachmentService {
 
   /// 保存附件并创建消息。
   ///
-  /// [storeUri] 非空时引用储物袋已有文件，不复制；否则写入 `files/chat/<hash>`。
+  /// [storeUri] 非空时引用储物袋已有文件，不复制；否则写入
+  /// `runtime/<owner>/<channel>/attachments/<hash>`。
+  /// [channelType] / [parentGroupId] 用于群聊 runtime owner 解析。
   Future<Message?> saveAttachment({
     required File file,
     String? storeUri,
@@ -145,6 +153,8 @@ class AttachmentService {
     required String userId,
     required String userName,
     required String agentId,
+    String? channelType,
+    String? parentGroupId,
   }) async {
     try {
       if (!await file.exists()) return null;
@@ -152,10 +162,20 @@ class AttachmentService {
       final name = displayName ?? path.basename(file.path);
       final fileType = _getFileType(name);
       final fileSize = await file.length();
+      final ownerId = RuntimePaths.resolveOwnerId(
+        agentId: agentId,
+        channelId: channelId,
+        channelType: channelType,
+        parentGroupId: parentGroupId,
+      );
 
       final resolvedUri = (storeUri != null && storeUri.isNotEmpty)
           ? storeUri
-          : await _storeAttachmentBytes(await file.readAsBytes());
+          : await _storeAttachmentBytes(
+              await file.readAsBytes(),
+              ownerId: ownerId,
+              channelId: channelId,
+            );
 
       final attachmentData = {
         'store_uri': resolvedUri,
@@ -203,6 +223,11 @@ class AttachmentService {
         metadata: attachmentData,
       );
 
+      RuntimeMirrorService.instance.scheduleSessionMirror(
+        ownerId: ownerId,
+        channelId: channelId,
+      );
+
       return message;
     } catch (e) {
       LoggerService().error('Error saving attachment', tag: 'Attachment', error: e);
@@ -219,13 +244,25 @@ class AttachmentService {
     required String userId,
     required String userName,
     required String agentId,
+    String? channelType,
+    String? parentGroupId,
   }) async {
     try {
       final file = File(filePath);
       if (!await file.exists()) return null;
 
+      final ownerId = RuntimePaths.resolveOwnerId(
+        agentId: agentId,
+        channelId: channelId,
+        channelType: channelType,
+        parentGroupId: parentGroupId,
+      );
       final bytes = await file.readAsBytes();
-      final storeUri = await _storeAttachmentBytes(bytes);
+      final storeUri = await _storeAttachmentBytes(
+        bytes,
+        ownerId: ownerId,
+        channelId: channelId,
+      );
 
       final metadata = {
         'store_uri': storeUri,
@@ -266,6 +303,11 @@ class AttachmentService {
         content: content,
         messageType: 'audio',
         metadata: metadata,
+      );
+
+      RuntimeMirrorService.instance.scheduleSessionMirror(
+        ownerId: ownerId,
+        channelId: channelId,
       );
 
       // 删除临时文件

@@ -29,6 +29,7 @@ import '../widgets/agent_model_config_card.dart';
 import 'she_circle_screen.dart';
 import '../utils/layout_utils.dart';
 import '../models/prompt_stack_config.dart';
+import '../storage/runtime_share_service.dart';
 
 /// 远端 Agent 详情页面（从聊天页进入）
 class RemoteAgentDetailScreen extends StatefulWidget {
@@ -2046,6 +2047,36 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
                 });
                 _scheduleAutoSave();
               }
+            },
+          ),
+          const Divider(height: 1, indent: 16, endIndent: 16),
+          ListTile(
+            leading: Icon(Icons.share_outlined, color: colorScheme.primary),
+            title: Text(
+              Localizations.localeOf(context).languageCode.startsWith('zh')
+                  ? '分享运行时上下文'
+                  : 'Share runtime context',
+            ),
+            subtitle: Text(
+              Localizations.localeOf(context).languageCode.startsWith('zh')
+                  ? '将 runtime/${_agent.id}/ 只读分享给 Owner 配对设备'
+                  : 'Share runtime/${_agent.id}/ read-only with Owner peers',
+              style: TextStyle(color: colorScheme.onSurfaceVariant),
+            ),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () async {
+              final n = await RuntimeShareService.instance
+                  .shareOwnerRuntimeWithOwnerPeers(_agent.id);
+              if (!mounted) return;
+              final zh =
+                  Localizations.localeOf(context).languageCode.startsWith('zh');
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text(zh
+                      ? '已向 $n 台 Owner 设备分享运行时前缀'
+                      : 'Shared runtime prefix with $n Owner peer(s)'),
+                ),
+              );
             },
           ),
           const Divider(height: 1, indent: 16, endIndent: 16),

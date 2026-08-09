@@ -59,17 +59,36 @@ func IsValidDeviceID(device string) bool {
 	return deviceIDRe.MatchString(device)
 }
 
+// BuiltinSpaces mirrors Dart StoreSpace.all (new + legacy).
+func BuiltinSpaces() []string {
+	return []string{
+		"workspaces", "runtime", "files", "public", "backups",
+		"artifacts", "attachments",
+	}
+}
+
 func IsValidSpace(s string) bool {
+	for _, sp := range BuiltinSpaces() {
+		if s == sp {
+			return true
+		}
+	}
+	return false
+}
+
+// SharedReadable: owner 默认可跨端读（不含 private runtime）。
+func SharedReadable(s string) bool {
 	switch s {
-	case "artifacts", "files", "attachments", "backups":
+	case "workspaces", "files", "public", "artifacts":
 		return true
 	default:
 		return false
 	}
 }
 
-func SharedReadable(s string) bool {
-	return s == "artifacts" || s == "files"
+// OwnerCrossWritable: 仅 workspaces 允许 owner 跨 device 写。
+func OwnerCrossWritable(s string) bool {
+	return s == "workspaces"
 }
 
 // NormalizePath mirrors Dart normalizeStorePath.
@@ -164,6 +183,10 @@ func CheckACLWith(frame Frame, callerDeviceID, trustLevel string, loopback bool,
 			return DenyBadOp
 		}
 		if device != "" && device != callerDeviceID {
+			// workspaces：owner 可写任意 owner 设备目录
+			if OwnerCrossWritable(space) && isOwner && IsValidDeviceID(device) {
+				return Allow
+			}
 			return DenyAcl
 		}
 		return Allow

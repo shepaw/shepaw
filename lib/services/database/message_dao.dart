@@ -3,6 +3,7 @@ import 'package:sqflite/sqflite.dart';
 import 'package:uuid/uuid.dart';
 import '../local_database_service.dart';
 import '../logger_service.dart';
+import '../../storage/runtime_mirror_service.dart';
 
 /// 消息（含流式/部分消息）相关的数据访问层。
 extension MessageDao on LocalDatabaseService {
@@ -39,6 +40,8 @@ extension MessageDao on LocalDatabaseService {
       },
       conflictAlgorithm: conflictAlgorithm,
     );
+    // SQLite 权威；runtime session.json 单向镜像（fail-open）
+    RuntimeMirrorService.instance.onMessageCreated(channelId);
   }
 
   /// 获取 Channel 的消息

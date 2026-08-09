@@ -28,6 +28,7 @@ import 'messaging/agent_messaging_service.dart';
 import 'group/group_session_service.dart';
 import 'session/session_history_service.dart';
 import '../storage/artifact_service.dart';
+import '../storage/context_bundle.dart';
 import 'app_lifecycle_service.dart';
 import '../providers/notification_provider.dart';
 import 'foreground_task_service.dart';
@@ -1844,10 +1845,17 @@ $originalQuestion
 
           try {
             final stepBuffer = StringBuffer();
-            // §6.3：群工作流步骤注入产物引用片段（含历史与工作流累积引用）
-            final stepContent = ArtifactService.instance
-                .wrapWithArtifactSection(step.instruction,
-                    extraRefTexts: workflowArtifactExtras());
+            // §6.3 + ContextBundle：群工作流步骤注入产物 + runtime 上下文
+            final groupOwnerId = channel.parentGroupId?.isNotEmpty == true
+                ? channel.parentGroupId!
+                : channelId;
+            final stepContent =
+                await ContextBundleService.instance.wrapWithContextBundle(
+              step.instruction,
+              ownerId: groupOwnerId,
+              channelId: channelId,
+              extraRefTexts: workflowArtifactExtras(),
+            );
             await _groupAgentExecutor.processGroupAgent(
               agent: agent,
               channelId: channelId,
@@ -1974,10 +1982,17 @@ $originalQuestion
           }
 
           try {
+            final stepPrompt =
+                await ContextBundleService.instance.wrapWithContextBundle(
+              step.instruction,
+              ownerId: agent.id,
+              channelId: execChannelId,
+              extraRefTexts: workflowArtifactExtras(),
+            );
             final response = await _agentMessagingService.sendMessageToAgent(
               content: '[Workflow "${workflow.title}" — Stage ${step.stageIndex + 1}]\n'
-                  // §6.3：DM 工作流步骤注入产物引用片段
-                  '${ArtifactService.instance.wrapWithArtifactSection(step.instruction, extraRefTexts: workflowArtifactExtras())}\n\n'
+                  // §6.3 + ContextBundle：DM 工作流步骤注入
+                  '$stepPrompt\n\n'
                   '立即执行该步骤，你的回复将作为步骤结果记录。'
                   '不要调用 shepaw workflow create/dispatch/complete/fail/cancel。',
               agent: agent,

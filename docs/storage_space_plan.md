@@ -19,9 +19,9 @@
 **目标**
 - **存储空间体系完全独立**：自成一套模块，不拥有、不依赖设备配对流程的生命周期；只消费配对结果（设备列表、信任等级、加密通道）。
 - **统一的设备目录模型**：每端 app 产生的所有实体数据都放在 `<device_id>/` 下（实体文件不进 DB，DB 快照也是目录里的文件）；**写入永远先落本地**，同步引擎只负责把 `<device_id>/*` 镜像到 master——没有独立的备份协议与离线策略，它们都是镜像模型的自然结果。
-- **写权限收敛**：任何端只能写自己的 `<device_id>/`，跨目录写在机制上不可能。
-- **跨端协作**：`<device_id>/artifacts` 与 `<device_id>/files` 对所有 owner 端可读——不同端的 Agent 通过产物 URI 感知并引用彼此输出。
-- **私有数据受保护**：`<device_id>/backups`（加密快照）与 `<device_id>/attachments` 仅本端可读写。
+- **写权限收敛**：默认任何端只能写自己的 `<device_id>/`；**例外**：`workspaces` 允许 owner 跨 device 写（见 CLIENT_PROFILES）。
+- **跨端协作**：`workspaces` / `files` / `public`（及 legacy `artifacts`）对 owner 端可读；`runtime` 默认私有，可按前缀分享只读上下文镜像。
+- **私有数据受保护**：`<device_id>/backups`、legacy `attachments`、默认 `runtime` 仅本端可读写（runtime 可显式分享）。
 - **变更游标**：每端为自己的目录维护单调递增的变更游标，用于镜像对账与 master 迁移（6.4/6.5）。
 - 设备身份跨重装保持稳定；换机经导入授权读取旧设备目录（5.4）。
 - 每台设备的 she 是独立个体，组成多 she 网络（第 8 节）。
@@ -38,27 +38,37 @@
 
 ## 2. 模型：设备目录 + 镜像同步 + 三层分离
 
-**目录布局（每端本地与 master 同构）**：
+**目录布局（每端本地与 master 同构；ShePaw client profile 见 [CLIENT_PROFILES.md](CLIENT_PROFILES.md)）**：
 
 ```
 <device_id>/
-├── backups/<snapshot-ts>/    # DB 快照 + 身份（加密，仅本端可读写）
-├── attachments/<hash>        # 聊天附件，hash 去重（仅本端可读写）
-├── artifacts/<task_id>/...   # Agent 产物（本端写，所有 owner 端可读）
-└── files/...                 # 用户文件（本端写，所有 owner 端可读）
-.recycle/                     # 回收站（系统目录，可还原，仅 master 本机用户可清空）
+├── workspaces/<workspace_id>/...   # owner 跨设备可读可写
+├── runtime/<agent|group>/...       # 会话/记忆/soul 镜像 + channel 附件/产物（默认 private）
+├── files/...                       # 沉淀区（owner 可读，仅本端写）
+├── public/...                      # 可引用 files，不强制 copy
+├── backups/<snapshot-ts>/          # DB 快照 + 身份（加密，仅本端）
+├── artifacts/...                   # legacy 产物（只读兼容）
+└── attachments/<hash>              # legacy 私有附件
+.recycle/
 ```
 
 | 目录 | 写 | 读 |
 |------|----|----|
-| `<device_id>/artifacts/` | 仅本端 | 所有 owner 端 |
+| `<device_id>/workspaces/` | **所有 owner 端** | 所有 owner 端 |
+| `<device_id>/runtime/` | 仅本端 | 仅本端（可按前缀分享只读） |
 | `<device_id>/files/` | 仅本端 | 所有 owner 端 |
-| `<device_id>/attachments/` | 仅本端 | **仅本端**（换机导入授权除外） |
-| `<device_id>/backups/` | 仅本端 | **仅本端**（换机导入授权除外） |
+| `<device_id>/public/` | 仅本端 | 所有 owner 端 |
+| `<device_id>/backups/` | 仅本端 | **仅本端** |
+| `<device_id>/artifacts/`（legacy） | 仅本端（新写入走 runtime） | 所有 owner 端 |
+| `<device_id>/attachments/`（legacy） | 仅本端 | **仅本端** |
+
+**App 聊天权威**：消息 / 记忆 / soul 以本机 SQLite 为准；runtime 文件为单向镜像（分享与跨设备上下文），永不回灌、不迁权威。
 
 - **同步引擎的唯一职责**：把本端 `<device_id>/*` 的变更镜像到 master（本地优先：先写本地，后台送达）。
 - **备份策略坍缩**：定期任务在本地生成 DB 快照写入 `<device_id>/backups/<ts>/` 并 `commit`，同步引擎自然送达 master——备份就是镜像，没有第二套机制。
-- **master 的角色**：镜像汇聚点 + **跨端读取权威**。master 故障时：各端**自有正式区仍完整可用**；跨端读仅能用本地读缓存（`stale`）或报缺——不宣称「跨端协作在 master 离线时仍完整」。
+- **master 的角色**：镜像汇聚点 + **跨端读取权威**（workspaces 另支持 owner 跨端写汇聚）。master 故障时：各端**自有正式区仍完整可用**；跨端读仅能用本地读缓存（`stale`）或报缺——不宣称「跨端协作在 master 离线时仍完整」。
+
+**写权限**：除 `workspaces` 外，任何端只能写自己的 `<device_id>/`；`workspaces` 允许 `trust_level=owner` 写入其他 owner 设备目录（后写覆盖 + versions）。
 
 **三层分离**不变：
 

@@ -70,7 +70,10 @@ td, th { text-align: left; padding: .35rem .25rem; border-bottom: 1px solid
     <div class="row">
       <label>设备 <select id="browseDevice"></select></label>
       <label>分区 <select id="browseSpace">
+        <option value="workspaces">workspaces</option>
+        <option value="runtime">runtime</option>
         <option value="files">files</option>
+        <option value="public">public</option>
         <option value="artifacts">artifacts</option>
         <option value="attachments">attachments</option>
         <option value="backups">backups</option>

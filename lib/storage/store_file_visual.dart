@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:path/path.dart' as p;
 
 import '../l10n/app_localizations.dart';
+import 'runtime_paths.dart';
 import 'store_protocol.dart';
 
 /// Visual / preview classification for store browser list rows.
@@ -35,9 +36,13 @@ class StoreFileVisual {
 
   static bool isChatAttachmentPath(String path) {
     final parts = path.split('/');
-    if (parts.length != 2) return false;
-    return parts[0] == StoreSpace.chatAttachmentPrefix &&
-        _sha256Leaf.hasMatch(parts[1]);
+    if (parts.length == 2 &&
+        parts[0] == StoreSpace.chatAttachmentPrefix &&
+        _sha256Leaf.hasMatch(parts[1])) {
+      return true;
+    }
+    // runtime/<owner>/<channel>/attachments/<sha256>
+    return RuntimePaths.isRuntimeAttachmentPath(path);
   }
 
   static StoreFileVisualKind resolveKind({

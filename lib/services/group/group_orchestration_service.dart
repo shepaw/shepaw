@@ -18,7 +18,7 @@ import 'group_prompt_builder.dart';
 import 'group_member_session_service.dart';
 import 'group_turn_result.dart';
 import 'planning_helpers.dart';
-import '../../storage/artifact_service.dart';
+import '../../storage/context_bundle.dart';
 
 class GroupOrchestrationService {
   final LocalDatabaseService _db;
@@ -206,9 +206,15 @@ class GroupOrchestrationService {
         effectiveContent = '[引用 ${quotedMessage.from.name} 的消息: "${quotedMessage.content}"]\n\n$content';
       }
     }
-    // §6.3：群编排委派注入产物引用片段
-    effectiveContent =
-        ArtifactService.instance.wrapWithArtifactSection(effectiveContent);
+    // §6.3 + ContextBundle：群编排委派注入产物 URI + runtime 上下文清单
+    final groupOwnerId = (channel?.parentGroupId?.isNotEmpty == true)
+        ? channel!.parentGroupId!
+        : channelId;
+    effectiveContent = await ContextBundleService.instance.wrapWithContextBundle(
+      effectiveContent,
+      ownerId: groupOwnerId,
+      channelId: channelId,
+    );
 
     // 5. Route to the appropriate flow based on admin setting and @mentions
     LoggerService().debug('Routing: mentions=${mentionedAgentIds.length}, admin=$adminAgentId, agents=${agents.map((a) => a.name).toList()}', tag: 'GroupOrchestrationService');

@@ -1,7 +1,9 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 
+import 'package:crypto/crypto.dart' as crypto;
 import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
@@ -126,6 +128,122 @@ class StoreService {
     final peer = peers.where((p) => p.fingerprint == deviceId).firstOrNull;
     if (peer == null) return false;
     return _manager.connectedPeerIds.contains(peer.id);
+  }
+
+  /// 跨端写优先服务端（workspaces）：属主在线 → 属主；否则 master 镜像。
+  Future<String> preferredWriteServer(String ownerDeviceId) async {
+    if (await isDeviceOnline(ownerDeviceId)) return ownerDeviceId;
+    return masterDeviceId();
+  }
+
+  /// 写入 workspaces（可跨 owner device）。本机直接落盘；他端经属主/master。
+  ///
+  /// 返回 `store://workspaces/<homeDeviceId>/<relPath>`。
+  Future<String> writeWorkspaceFile({
+    required String homeDeviceId,
+    required String relPath,
+    required Uint8List content,
+    String? sha256Hex,
+  }) async {
+    final self = await DeviceIdentity.deviceId();
+    final hash = sha256Hex ?? crypto.sha256.convert(content).toString();
+    final path = normalizeStorePath(relPath);
+
+    Future<void> putVia(Future<Map<String, dynamic>?> Function(StoreFrame) send) async {
+      final begin = await send(StoreFrame(
+        op: StoreOp.writeBegin,
+        payload: <String, dynamic>{
+          'space': StoreSpace.workspaces,
+          'device': homeDeviceId,
+          'path': path,
+          'size': content.length,
+          'sha256': hash,
+        },
+      ));
+      if (begin == null || begin.containsKey('_error')) {
+        throw StoreException(
+          begin?['_error'] as String? ?? StoreError.internal,
+          begin?['message'] as String? ?? 'write.begin failed',
+        );
+      }
+      final uploadId = begin['upload_id'] as String;
+      var offset = 0;
+      while (offset < content.length) {
+        final end = (offset + LocalStore.maxReadChunk) > content.length
+            ? content.length
+            : offset + LocalStore.maxReadChunk;
+        final chunk = await send(StoreFrame(
+          op: StoreOp.writeChunk,
+          payload: <String, dynamic>{
+            'space': StoreSpace.workspaces,
+            'device': homeDeviceId,
+            'upload_id': uploadId,
+            'offset': offset,
+            'data': base64Encode(content.sublist(offset, end)),
+          },
+        ));
+        if (chunk == null || chunk.containsKey('_error')) {
+          throw StoreException(
+            chunk?['_error'] as String? ?? StoreError.internal,
+            chunk?['message'] as String? ?? 'write.chunk failed',
+          );
+        }
+        offset = end;
+      }
+      final committed = await send(StoreFrame(
+        op: StoreOp.commit,
+        payload: <String, dynamic>{
+          'space': StoreSpace.workspaces,
+          'device': homeDeviceId,
+          'upload_ids': [uploadId],
+        },
+      ));
+      if (committed == null ||
+          committed.containsKey('_error') ||
+          (committed['failed'] as List?)?.isNotEmpty == true) {
+        throw StoreException(
+          committed?['_error'] as String? ?? StoreError.internal,
+          committed?['message'] as String? ??
+              'commit failed: ${committed?['failed']}',
+        );
+      }
+    }
+
+    if (homeDeviceId == self) {
+      final store = await _localStore();
+      final (uploadId, _) = await store.writeBegin(
+        deviceId: self,
+        space: StoreSpace.workspaces,
+        path: path,
+        size: content.length,
+        sha256: hash,
+      );
+      var offset = 0;
+      while (offset < content.length) {
+        final end = (offset + LocalStore.maxReadChunk) > content.length
+            ? content.length
+            : offset + LocalStore.maxReadChunk;
+        await store.writeChunk(
+            self, StoreSpace.workspaces, uploadId, offset, content.sublist(offset, end));
+        offset = end;
+      }
+      final (ok, failed) =
+          await store.commit(self, StoreSpace.workspaces, [uploadId]);
+      if (failed.isNotEmpty || ok.isEmpty) {
+        throw StateError('workspace commit failed: $failed');
+      }
+    } else {
+      final server = await preferredWriteServer(homeDeviceId);
+      if (server == self) {
+        await putVia((f) => _dispatch(f,
+            callerDeviceId: self,
+            trustLevel: TrustLevel.owner,
+            loopback: true));
+      } else {
+        await putVia((f) => callPeer(server, f));
+      }
+    }
+    return storeUriWithRef(StoreSpace.workspaces, homeDeviceId, path);
   }
 
   /// 跨端读优先服务端：属主在线 → 直读属主；否则走 master（镜像备份）。
@@ -603,6 +721,18 @@ class StoreService {
 
   // ────────────────────────────── 统一执行器（loopback 与远端共用）──
 
+  /// 写目标 device：默认调用者；workspaces 允许 frame.device 指向他端（ACL 已放行）。
+  String _writeDeviceId(StoreFrame frame, String callerDeviceId) {
+    final device = frame.device;
+    if (device == null || device.isEmpty || device == callerDeviceId) {
+      return callerDeviceId;
+    }
+    if (frame.space != null && StoreSpace.isOwnerCrossWritable(frame.space!)) {
+      return device;
+    }
+    return callerDeviceId;
+  }
+
   /// 测试钩子：以指定调用者身份/信任等级走完整 dispatch（含 grant 校验）。
   @visibleForTesting
   Future<Map<String, dynamic>> dispatchForTest(
@@ -740,8 +870,9 @@ class StoreService {
           };
 
         case StoreOp.writeBegin:
+          final writeDevice = _writeDeviceId(frame, callerDeviceId);
           final (uploadId, received) = await store.writeBegin(
-            deviceId: callerDeviceId, // 写路径收敛：恒为调用者目录
+            deviceId: writeDevice,
             space: frame.space!,
             path: frame.path!,
             size: frame.payload['size'] as int? ?? -1,
@@ -751,11 +882,13 @@ class StoreService {
           return <String, dynamic>{
             'upload_id': uploadId,
             'received': received,
+            'device': writeDevice,
           };
 
         case StoreOp.writeChunk:
+          final writeDevice = _writeDeviceId(frame, callerDeviceId);
           final received = await store.writeChunk(
-            callerDeviceId,
+            writeDevice,
             frame.space!,
             frame.payload['upload_id'] as String,
             frame.payload['offset'] as int? ?? 0,
@@ -764,6 +897,7 @@ class StoreService {
           return <String, dynamic>{'received': received};
 
         case StoreOp.commit:
+          final writeDevice = _writeDeviceId(frame, callerDeviceId);
           final retentionRaw = frame.payload['retention'];
           final retention = retentionRaw is Map
               ? Map<String, dynamic>.from(retentionRaw)
@@ -774,7 +908,7 @@ class StoreService {
               : null;
           final publish = frame.payload['publish'] == true;
           final (committed, failed) = await store.commit(
-            callerDeviceId,
+            writeDevice,
             frame.space!,
             (frame.payload['upload_ids'] as List).cast<String>(),
             retention: retention,
@@ -786,7 +920,7 @@ class StoreService {
           final uptoSeq = frame.payload['upto_seq'] as int?;
           if (uptoSeq != null && failed.isEmpty) {
             appliedSeq = await (await _deviceCursorStore())
-                .advance(callerDeviceId, uptoSeq);
+                .advance(writeDevice, uptoSeq);
           }
           return <String, dynamic>{
             'committed': [for (final f in committed) f.path],

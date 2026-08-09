@@ -3,6 +3,8 @@ import 'dart:typed_data';
 
 import '../../cli_base.dart';
 import '../../../storage/artifact_service.dart';
+import '../../../storage/public_store_service.dart';
+import '../../../storage/store_protocol.dart';
 import '../../../storage/store_service.dart';
 import '../../../storage/store_uri_reader.dart';
 
@@ -38,6 +40,7 @@ class StoreNamespace extends CliNamespace {
 }
 
 /// `shepaw store write --filename <name> --content <text> [--task <id>] [--desc <text>]`
+/// 或 `… write --space public --filename <name> --content <text>`
 class StoreWriteCommand extends CliCommand {
   @override
   String get name => 'write';
@@ -45,12 +48,14 @@ class StoreWriteCommand extends CliCommand {
   @override
   String get description =>
       'Preferred path for produced artifacts: write to store and get a shareable '
-      'store:// URI (prefer this over os.file.write for reports/code/docs)';
+      'store:// URI (prefer this over os.file.write for reports/code/docs). '
+      'Use --space public for the public partition.';
 
   @override
   String get usage =>
       'shepaw store write --filename report.md --content "# Q2 report" '
-      '--task task-41 --desc "Q2 销售报告"';
+      '--task task-41 --desc "Q2 销售报告"\n'
+      'shepaw store write --space public --filename note.md --content "hello"';
 
   @override
   Future<Map<String, dynamic>> execute(Map<String, String> flags) async {
@@ -61,6 +66,23 @@ class StoreWriteCommand extends CliCommand {
     final contentText = flags['content'] ?? '';
     if (contentText.isEmpty) {
       return {'success': false, 'error': 'missing --content'};
+    }
+    final space = flags['space'] ?? '';
+    if (space == StoreSpace.public_) {
+      try {
+        final uri = await PublicStoreService.instance.writeText(
+          relPath: filename,
+          content: contentText,
+        );
+        return {
+          'success': true,
+          'uri': uri,
+          'space': StoreSpace.public_,
+          'note': '已写入 public/；可用 store:// 引用。',
+        };
+      } catch (e) {
+        return {'success': false, 'error': '$e'};
+      }
     }
     final taskId = flags['task'] ?? 'general';
     final desc = flags['desc'];

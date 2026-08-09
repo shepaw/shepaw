@@ -12,7 +12,7 @@
 |------|------|
 | 设备目录 | `<device_id>/`，每端实体数据的唯一归属；`device_id` = Noise 静态公钥哈希（16 hex）。 |
 | master | 镜像汇聚点 + 跨端读取权威。同一时间唯一；M2 默认本机（loopback），指定/迁移见方案 §6.5（M6）。 |
-| space | 属性驱动的目录分区（见 §0.5 空间属性模型）。内置：`artifacts` / `files` / `attachments` / `backups`。 |
+| space | 属性驱动的目录分区（见 §0.5 空间属性模型）。内置：`workspaces` / `runtime` / `files` / `public` / `backups`；legacy：`artifacts` / `attachments`。业务路径见 [CLIENT_PROFILES.md](CLIENT_PROFILES.md)。 |
 | staging | `<device_id>/<space>/.staging/<upload_id>/`，未 commit 的半成品，对 `list`/恢复不可见。 |
 | `.recycle` | 回收站（store 根级系统目录），删除与被覆盖旧版本的最终去处（覆盖先经 `.versions` 再修剪，见 §2.6/§1.5）；仅 master 本机用户可清空。 |
 | `.versions` | 版本库（store 根级系统目录），被覆盖旧版本的不可变存档；仅内部 `versions.*` op 可访问。 |
@@ -36,10 +36,15 @@
 
 | space | visibility | encryption | retention | import_grant |
 |-------|-----------|-----------|-----------|--------------|
-| `artifacts` | shared | none | none | allowed |
+| `workspaces` | shared | none | none | allowed |
+| `runtime` | private | none | none | allowed |
 | `files` | shared | none | none | allowed |
-| `attachments` | private | client | none | allowed |
+| `public` | shared | none | none | allowed |
 | `backups` | private | client | gfs（属主设备本机执行） | allowed |
+| `artifacts`（legacy） | shared | none | none | allowed |
+| `attachments`（legacy） | private | client | none | allowed |
+
+**写路径例外**：默认写操作目标 device 必须等于调用者；`space=workspaces` 且 `trust_level=owner` 时可写其他 owner 的 `device`（后写覆盖）。业务约定见 CLIENT_PROFILES。
 
 ### 0.5.3 边界
 
@@ -94,7 +99,7 @@
 store://<space>/<device>/<relpath>[@<ref>]
 ```
 
-- `space` ∈ `artifacts | files | attachments | backups`（必填单值）。
+- `space` ∈ 内置/legacy 分区名（见 §0.5）；必填单值。
 - `device` = 16 位小写 hex（Noise 公钥哈希）。
 - `<relpath>` 必须相对路径，符合 §4 规范化（拒绝 `..`、绝对路径、盘符、NUL、反斜杠统一为 `/`）。
 - 兼容路径式写法：`store:///artifacts/<device>/<relpath>`（三段式）与 host 式等价。

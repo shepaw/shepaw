@@ -33,15 +33,17 @@ void main() {
     return f;
   }
 
-  test('saveAttachment：写入 files/chat/<hash>，metadata 以 store_uri 引用', () async {
+  test('saveAttachment：写入 runtime/.../attachments/<hash>，metadata 以 store_uri 引用', () async {
     final content = Uint8List.fromList('attachment bytes'.codeUnits);
     final f = await tempFile('report.txt', content);
     final hash = crypto.sha256.convert(content).toString();
     final deviceId = await DeviceIdentity.deviceId();
+    final rel =
+        'a1/ch-att/attachments/$hash';
     final expectedUri = storeUriWithRef(
-      StoreSpace.files,
+      StoreSpace.runtime,
       deviceId,
-      '${StoreSpace.chatAttachmentPrefix}/$hash',
+      rel,
     );
 
     final msg = await newService().saveAttachment(
@@ -62,8 +64,10 @@ void main() {
     final blob = File(p.join(
       root.path,
       deviceId,
-      StoreSpace.files,
-      StoreSpace.chatAttachmentPrefix,
+      StoreSpace.runtime,
+      'a1',
+      'ch-att',
+      'attachments',
       hash,
     ));
     expect(await blob.exists(), isTrue);
@@ -191,7 +195,7 @@ void main() {
     expect(msg.content, contains(ref.storeUri));
   });
 
-  test('快照 manifest.attachments 引用 files/chat/<hash>', () async {
+  test('快照 manifest.attachments 引用 runtime/.../attachments/<hash>', () async {
     final content = Uint8List.fromList('in snapshot manifest'.codeUnits);
     final f = await tempFile('s.txt', content);
     final hash = crypto.sha256.convert(content).toString();
@@ -206,7 +210,7 @@ void main() {
         await SnapshotService.instance.createSnapshot(password: 'm5-pw');
     expect(
       snap.manifest.attachments,
-      contains('${StoreSpace.chatAttachmentPrefix}/$hash'),
+      contains('${StoreSpace.runtime}/a1/ch-att/attachments/$hash'),
     );
     expect(snap.manifest.fileHashes.keys,
         containsAll(['db.sqlite.enc', 'identity.enc']));

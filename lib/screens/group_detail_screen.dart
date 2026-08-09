@@ -9,6 +9,7 @@ import '../services/local_api_service.dart';
 import '../services/local_database_service.dart';
 import '../services/group/group_member_session_service.dart';
 import '../services/logger_service.dart';
+import '../storage/runtime_share_service.dart';
 import '../widgets/form_bottom_bar.dart';
 import '../widgets/avatar_image.dart';
 import 'chat_screen.dart';
@@ -352,6 +353,40 @@ class _GroupDetailScreenState extends State<GroupDetailScreen> {
               ),
             ],
           ),
+        ),
+        const Divider(height: 1),
+
+        ListTile(
+          leading: Icon(Icons.share_outlined, color: colorScheme.primary),
+          title: Text(
+            Localizations.localeOf(context).languageCode.startsWith('zh')
+                ? '分享运行时上下文'
+                : 'Share runtime context',
+          ),
+          subtitle: Text(
+            Localizations.localeOf(context).languageCode.startsWith('zh')
+                ? '将 runtime/${_channel.id}/ 只读分享给 Owner 配对设备'
+                : 'Share runtime/${_channel.id}/ read-only with Owner peers',
+            style: TextStyle(color: colorScheme.onSurfaceVariant),
+          ),
+          trailing: const Icon(Icons.chevron_right),
+          onTap: () async {
+            final ownerId = _channel.parentGroupId?.isNotEmpty == true
+                ? _channel.parentGroupId!
+                : _channel.id;
+            final n = await RuntimeShareService.instance
+                .shareOwnerRuntimeWithOwnerPeers(ownerId);
+            if (!mounted) return;
+            final zh =
+                Localizations.localeOf(context).languageCode.startsWith('zh');
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text(zh
+                    ? '已向 $n 台 Owner 设备分享运行时前缀'
+                    : 'Shared runtime prefix with $n Owner peer(s)'),
+              ),
+            );
+          },
         ),
         const Divider(height: 1),
 

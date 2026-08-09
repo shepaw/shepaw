@@ -15,6 +15,7 @@ import '../services/password_service.dart';
 import 'device_identity.dart';
 import 'commit_retention.dart';
 import 'local_store.dart';
+import 'runtime_paths.dart';
 import 'snapshot_crypto.dart';
 import 'store_protocol.dart';
 
@@ -349,23 +350,38 @@ class SnapshotService {
     }
   }
 
-  /// 附件引用清单（§5.2：`files/chat/<hash>`，不进快照密文包）。
+  /// 附件引用清单（§5.2：legacy `files/chat/<hash>` + runtime `…/attachments/<hash>`）。
   Future<List<String>> _listAttachmentRefs(String deviceId) async {
     try {
       final root = await deviceStoreRoot();
+      final refs = <String>[];
+
       final chatDir = Directory(p.join(
         root.path,
         StoreSpace.files,
         StoreSpace.chatAttachmentPrefix,
       ));
-      if (!await chatDir.exists()) return const [];
-      final refs = <String>[];
-      await for (final f in chatDir.list(recursive: true)) {
-        if (f is! File) continue;
-        final rel = p.relative(f.path, from: chatDir.path);
-        if (rel.split(p.separator).any((s) => s.startsWith('.'))) continue;
-        refs.add('${StoreSpace.chatAttachmentPrefix}/'
-            '${rel.replaceAll(p.separator, '/')}');
+      if (await chatDir.exists()) {
+        await for (final f in chatDir.list(recursive: true)) {
+          if (f is! File) continue;
+          final rel = p.relative(f.path, from: chatDir.path);
+          if (rel.split(p.separator).any((s) => s.startsWith('.'))) continue;
+          refs.add('${StoreSpace.chatAttachmentPrefix}/'
+              '${rel.replaceAll(p.separator, '/')}');
+        }
+      }
+
+      final runtimeDir = Directory(p.join(root.path, StoreSpace.runtime));
+      if (await runtimeDir.exists()) {
+        await for (final f in runtimeDir.list(recursive: true)) {
+          if (f is! File) continue;
+          final rel = p.relative(f.path, from: runtimeDir.path)
+              .replaceAll(p.separator, '/');
+          if (rel.split('/').any((s) => s.startsWith('.'))) continue;
+          if (RuntimePaths.isRuntimeAttachmentPath(rel)) {
+            refs.add('${StoreSpace.runtime}/$rel');
+          }
+        }
       }
       return refs;
     } catch (_) {
@@ -374,13 +390,21 @@ class SnapshotService {
   }
 
   Future<File?> _attachmentRefSource(String deviceRoot, String ref) async {
-    if (!ref.startsWith('${StoreSpace.chatAttachmentPrefix}/')) return null;
-    final f = File(p.join(deviceRoot, StoreSpace.files, ref));
-    return await f.exists() ? f : null;
+    if (ref.startsWith('${StoreSpace.chatAttachmentPrefix}/')) {
+      final f = File(p.join(deviceRoot, StoreSpace.files, ref));
+      return await f.exists() ? f : null;
+    }
+    if (ref.startsWith('${StoreSpace.runtime}/')) {
+      final f = File(p.join(deviceRoot, ref));
+      return await f.exists() ? f : null;
+    }
+    return null;
   }
 
-  static String _attachmentExportRel(String ref) =>
-      p.join(StoreSpace.files, ref);
+  static String _attachmentExportRel(String ref) {
+    if (ref.startsWith('${StoreSpace.runtime}/')) return ref;
+    return p.join(StoreSpace.files, ref);
+  }
 
   // ------------------------------------------------------------- 列表/读取
 

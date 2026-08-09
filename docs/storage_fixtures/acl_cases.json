@@ -146,6 +146,46 @@
       "loopback": false,
       "payload": { "since": 0 },
       "expect": "denyUntrusted"
+    },
+    {
+      "name": "owner_write_other_workspaces",
+      "op": "write.begin",
+      "trust": "owner",
+      "loopback": false,
+      "payload": { "space": "workspaces", "device": "bbbbbbbbbbbbbbbb", "path": "ws1/a.txt" },
+      "expect": "allow"
+    },
+    {
+      "name": "friend_write_other_workspaces",
+      "op": "write.begin",
+      "trust": "friend",
+      "loopback": false,
+      "payload": { "space": "workspaces", "device": "bbbbbbbbbbbbbbbb", "path": "ws1/a.txt" },
+      "expect": "denyAcl"
+    },
+    {
+      "name": "owner_write_other_runtime_denied",
+      "op": "write.begin",
+      "trust": "owner",
+      "loopback": false,
+      "payload": { "space": "runtime", "device": "bbbbbbbbbbbbbbbb", "path": "a1/soul.md" },
+      "expect": "denyAcl"
+    },
+    {
+      "name": "owner_list_other_files",
+      "op": "list",
+      "trust": "owner",
+      "loopback": false,
+      "payload": { "space": "files", "device": "bbbbbbbbbbbbbbbb" },
+      "expect": "allow"
+    },
+    {
+      "name": "owner_list_other_runtime_no_share",
+      "op": "list",
+      "trust": "owner",
+      "loopback": false,
+      "payload": { "space": "runtime", "device": "bbbbbbbbbbbbbbbb" },
+      "expect": "denyAcl"
     }
   ]
 }

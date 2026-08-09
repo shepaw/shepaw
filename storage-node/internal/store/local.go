@@ -52,7 +52,7 @@ func Open(root, deviceID string) (*Local, error) {
 	if err := os.MkdirAll(root, 0o755); err != nil {
 		return nil, err
 	}
-	for _, sp := range []string{"artifacts", "files", "attachments", "backups"} {
+	for _, sp := range protocol.BuiltinSpaces() {
 		if err := os.MkdirAll(filepath.Join(root, deviceID, sp), 0o755); err != nil {
 			return nil, err
 		}
@@ -384,14 +384,14 @@ func (l *Local) stats() (map[string]any, error) {
 			continue
 		}
 		perSpace := map[string]any{}
-		for _, sp := range []string{"artifacts", "files", "attachments", "backups"} {
+		for _, sp := range protocol.BuiltinSpaces() {
 			perSpace[sp] = dirSize(filepath.Join(l.Root, name, sp), true)
 		}
 		devices[name] = perSpace
 	}
 	var stagingBytes int64
 	for deviceID := range devices {
-		for _, sp := range []string{"artifacts", "files", "attachments", "backups"} {
+		for _, sp := range protocol.BuiltinSpaces() {
 			stagingBytes += dirSize(filepath.Join(l.Root, deviceID, sp, ".staging"), false)
 		}
 	}

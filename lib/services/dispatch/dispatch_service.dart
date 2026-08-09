@@ -12,7 +12,7 @@ import '../logger_service.dart';
 import '../messaging/agent_messaging_service.dart';
 import '../she_service.dart';
 import '../trace_service.dart';
-import '../../storage/artifact_service.dart';
+import '../../storage/context_bundle.dart';
 import 'she_relay_session_service.dart';
 
 /// She 单聊任务派发服务：登记 → 跟踪 → 回传闭环。
@@ -203,9 +203,12 @@ class DispatchService {
 
     // 3. 以 She 身份构造任务消息并存入目标频道。
     //    必须自己保存：sendMessageToAgent 见到 existingUserMessage 会跳过保存。
-    //    §6.3：跨端派活时把任务中的产物引用规范化为"## 可用产物"片段注入。
-    final taskPrompt =
-        ArtifactService.instance.wrapWithArtifactSection(prompt);
+    //    §6.3 + ContextBundle：产物引用 + runtime 上下文清单。
+    final taskPrompt = await ContextBundleService.instance.wrapWithContextBundle(
+      prompt,
+      ownerId: targetAgent.id,
+      channelId: targetChannelId,
+    );
     final userMsg = Message(
       id: _uuid.v4(),
       content: taskPrompt,

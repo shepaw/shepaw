@@ -131,7 +131,7 @@ class PeerStorageService {
     _log.debug('P2P tables ensured', tag: _tag);
   }
 
-  /// 存量 owner 且无出站分享记录 → 写入 files+artifacts 整区，保持现网互读行为。
+  /// 存量 owner 且无出站分享记录 → 写入 sharedReadable 整区，保持互读行为。
   Future<void> _migrateOwnerStoreSharesIfNeeded(Database db) async {
     final peers = await db.query(
       'paired_peers',
@@ -500,10 +500,10 @@ class PeerStorageService {
     );
   }
 
-  /// owner 默认分享条目（files + artifacts 整区）。
-  static List<PeerStoreShareEntry> ownerDefaultStoreShares() => const [
-        PeerStoreShareEntry(space: StoreSpace.files),
-        PeerStoreShareEntry(space: StoreSpace.artifacts),
+  /// owner 默认分享条目（sharedReadable 整区；不含 runtime）。
+  static List<PeerStoreShareEntry> ownerDefaultStoreShares() => [
+        for (final space in StoreSpace.sharedReadable)
+          PeerStoreShareEntry(space: space),
       ];
 
   // ── 入站分享目录缓存（对端 announce） ───────────────────────────────────

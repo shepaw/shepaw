@@ -3,6 +3,7 @@ import 'minds_database_service.dart';
 import 'she_memory_db_service.dart';
 import 'she_profile_database_service.dart';
 import 'logger_service.dart';
+import '../storage/runtime_mirror_service.dart';
 
 /// 认知业务逻辑服务
 ///
@@ -56,6 +57,8 @@ class CognitionService {
   Future<void> updateAgentSoul(String agentId, String soul) async {
     await _db.updateSoul(agentId, soul);
     LoggerService().info('Soul updated for agent=$agentId', tag: 'CognitionService');
+    // ignore: unawaited_futures
+    RuntimeMirrorService.instance.mirrorSoul(agentId, soul);
   }
 
   /// 读取指定 Agent 的 self_notes

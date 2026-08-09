@@ -183,6 +183,81 @@ void main() {
           StoreAcl.allow);
     });
 
+    test('workspaces：owner 可跨 device 写；runtime 不可', () {
+      expect(
+        acl(StoreFrame(
+          op: StoreOp.writeBegin,
+          payload: {
+            'space': StoreSpace.workspaces,
+            'device': other,
+            'path': 'ws1/a.txt',
+          },
+        )),
+        StoreAcl.allow,
+      );
+      expect(
+        acl(StoreFrame(
+          op: StoreOp.writeBegin,
+          payload: {
+            'space': StoreSpace.workspaces,
+            'device': other,
+            'path': 'ws1/a.txt',
+          },
+        ),
+            trust: TrustLevel.friend),
+        StoreAcl.denyAcl,
+      );
+      expect(
+        acl(StoreFrame(
+          op: StoreOp.writeBegin,
+          payload: {
+            'space': StoreSpace.runtime,
+            'device': other,
+            'path': 'a1/soul.md',
+          },
+        )),
+        StoreAcl.denyAcl,
+      );
+      expect(
+        acl(StoreFrame(
+          op: StoreOp.list,
+          payload: {
+            'space': StoreSpace.runtime,
+            'device': other,
+          },
+        )),
+        StoreAcl.denyAcl,
+      );
+    });
+
+    test('acl_cases.json fixture（含 workspaces 跨写）', () {
+      final file = File('docs/storage_fixtures/acl_cases.json');
+      final json = jsonDecode(file.readAsStringSync()) as Map<String, dynamic>;
+      final cases = (json['cases'] as List).cast<Map<String, dynamic>>();
+      final callerId = json['caller'] as String;
+      for (final c in cases) {
+        final frame = StoreFrame(
+          op: c['op'] as String,
+          payload: Map<String, dynamic>.from(c['payload'] as Map? ?? {}),
+        );
+        final v = checkStoreAcl(
+          frame,
+          callerDeviceId: callerId,
+          trustLevel: c['trust'] as String,
+          loopback: c['loopback'] as bool? ?? false,
+        );
+        final expectName = c['expect'] as String;
+        final expected = switch (expectName) {
+          'allow' => StoreAcl.allow,
+          'denyAcl' => StoreAcl.denyAcl,
+          'denyUntrusted' => StoreAcl.denyUntrusted,
+          'denyBadOp' => StoreAcl.denyBadOp,
+          _ => throw StateError('unknown expect $expectName'),
+        };
+        expect(v, expected, reason: c['name'] as String);
+      }
+    });
+
     test('写路径收敛：自有可写，伪造 device_id 拒绝', () {
       // device 缺省 → 调用者目录
       expect(

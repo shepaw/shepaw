@@ -17,11 +17,12 @@ void main() {
   });
 
   group('ArtifactUri', () {
-    test('构造/解析往返', () {
+    test('legacy 构造/解析往返', () {
       final uri = ArtifactUri(
           deviceId: '0123456789abcdef',
           taskId: 'task-41',
-          filename: 'report.md');
+          filename: 'report.md',
+          space: StoreSpace.artifacts);
       final text = uri.toString();
       expect(text, 'store://artifacts/0123456789abcdef/task-41/report.md');
       final parsed = ArtifactUri.tryParse(text)!;
@@ -29,12 +30,32 @@ void main() {
       expect(parsed.taskId, uri.taskId);
       expect(parsed.filename, uri.filename);
       expect(parsed.storePath, 'task-41/report.md');
+      expect(parsed.isLegacy, isTrue);
+    });
+
+    test('runtime 构造/解析往返', () {
+      final uri = ArtifactUri(
+        deviceId: '0123456789abcdef',
+        ownerId: 'agent-1',
+        channelId: 'ch-1',
+        taskId: 'task-41',
+        filename: 'report.md',
+      );
+      final text = uri.toString();
+      expect(
+        text,
+        'store://runtime/0123456789abcdef/agent-1/ch-1/artifacts/task-41/report.md',
+      );
+      final parsed = ArtifactUri.tryParse(text)!;
+      expect(parsed.ownerId, 'agent-1');
+      expect(parsed.channelId, 'ch-1');
+      expect(parsed.isLegacy, isFalse);
     });
 
     test('非法 URI 拒绝', () {
       for (final bad in [
         'http://artifacts/0123456789abcdef/t/f',
-        'store://files/0123456789abcdef/t/f', // 非 artifacts
+        'store://files/0123456789abcdef/t/f', // 非 artifacts/runtime
         'store://artifacts/not-a-device/t/f',
         'store://artifacts/0123456789abcdef/t', // 缺文件名
         'store://artifacts/0123456789abcdef/t/../x',
@@ -54,16 +75,16 @@ void main() {
         content: content,
         description: 'Q2 销售报告，markdown',
         producer: 'codebot',
+        runtimeOwnerId: 'agent-x',
+        channelId: 'ch-x',
       );
 
-      // 引用格式：单行 Markdown 链接 + 描述（§6.3）
-      expect(ref, startsWith('[report.md](store://artifacts/'));
-      expect(ref, contains('/task-m5/report.md)'));
+      expect(ref, startsWith('[report.md](store://runtime/'));
+      expect(ref, contains('/agent-x/ch-x/artifacts/task-m5/report.md)'));
       expect(ref, contains('— Q2 销售报告，markdown'));
       expect(ref, contains('codebot 产出'));
       expect(ref.contains('\n'), isFalse);
 
-      // 本机可读回（内容一致）
       final uri =
           ArtifactService.instance.parseReferences(ref).single.uri.toString();
       final back = await ArtifactService.instance.readArtifact(uri);
