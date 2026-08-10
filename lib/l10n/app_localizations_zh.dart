@@ -743,10 +743,10 @@ class AppLocalizationsZh extends AppLocalizations {
   String get addAgent_agentBioHint => '简单描述这个助手的功能';
 
   @override
-  String get addAgent_systemPrompt => '系统提示词（可选）';
+  String get addAgent_systemPrompt => 'Soul（可选）';
 
   @override
-  String get addAgent_systemPromptHint => '定义 Agent 的角色和能力范围';
+  String get addAgent_systemPromptHint => '定义 Agent 的身份、角色与原则（写入 soul.md）';
 
   @override
   String get addAgent_connectConfig => '连接配置';
@@ -1173,7 +1173,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get agentDetail_capabilities => '能力';
 
   @override
-  String get agentDetail_systemPrompt => '系统提示词';
+  String get agentDetail_systemPrompt => 'Soul';
 
   @override
   String get agentDetail_llmConfig => '模型配置';
@@ -1773,16 +1773,31 @@ class AppLocalizationsZh extends AppLocalizations {
   String get chat_storageSpace => '储物空间';
 
   @override
-  String get chat_customSystemPrompt => '自定义系统提示词';
+  String get chat_customSystemPrompt => '编辑 Soul';
 
   @override
-  String get chat_systemPromptTitle => '自定义系统提示词';
+  String get chat_systemPromptTitle => '编辑 Soul';
 
   @override
-  String get chat_systemPromptHint => '为本会话覆盖 Agent 的系统提示词';
+  String get chat_systemPromptHint => 'Agent 的身份与角色定义（soul.md）';
 
   @override
-  String get chat_systemPromptSaved => '系统提示词已保存';
+  String get chat_systemPromptSaved => 'Soul 已保存';
+
+  @override
+  String get chat_soulTitle => '编辑 Soul';
+
+  @override
+  String get chat_soulHint => 'Agent 的身份与角色定义（soul.md）';
+
+  @override
+  String get chat_soulSaved => 'Soul 已保存';
+
+  @override
+  String get chat_soulDenied => '对端未允许修改 Soul';
+
+  @override
+  String get chat_soulReadOnlyPeer => '只读：宿主未开启配对设备修改 Soul';
 
   @override
   String get chat_moreActions => '更多操作';
@@ -2914,6 +2929,13 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get agent_allowExternalAccessDesc => '开启后，已配对的设备可在会话列表中看到并与该 agent 对话';
+
+  @override
+  String get agent_allowPeerSoulEdit => '允许配对设备修改 Soul';
+
+  @override
+  String get agent_allowPeerSoulEditDesc =>
+      '开启后，已分享该 agent 的配对设备可远程读取并修改其 Soul';
 
   @override
   String get agent_externalAccessPeerEnabled =>

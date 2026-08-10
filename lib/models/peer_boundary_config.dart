@@ -22,12 +22,16 @@ class PeerBoundaryConfig {
   /// Skip session-end instructions that encourage writing to host memory.
   final bool disableSessionEndWrites;
 
+  /// Allow paired devices to read/write this agent's soul over P2P.
+  final bool allowPeerSoulEdit;
+
   const PeerBoundaryConfig({
     this.injectExternalPreamble = true,
     this.stripHostUserContext = true,
     this.disableOsTools = true,
     this.disableMemoryWrites = true,
     this.disableSessionEndWrites = true,
+    this.allowPeerSoulEdit = false,
   });
 
   /// Shipping defaults for external serving (privacy-first).
@@ -40,6 +44,7 @@ class PeerBoundaryConfig {
     disableOsTools: false,
     disableMemoryWrites: false,
     disableSessionEndWrites: false,
+    allowPeerSoulEdit: true,
   );
 
   factory PeerBoundaryConfig.fromJson(Map<String, dynamic> json) {
@@ -54,6 +59,8 @@ class PeerBoundaryConfig {
           flag('disable_memory_writes', defaults.disableMemoryWrites),
       disableSessionEndWrites:
           flag('disable_session_end_writes', defaults.disableSessionEndWrites),
+      allowPeerSoulEdit:
+          flag('allow_peer_soul_edit', defaults.allowPeerSoulEdit),
     );
   }
 
@@ -63,6 +70,7 @@ class PeerBoundaryConfig {
         'disable_os_tools': disableOsTools,
         'disable_memory_writes': disableMemoryWrites,
         'disable_session_end_writes': disableSessionEndWrites,
+        'allow_peer_soul_edit': allowPeerSoulEdit,
       };
 
   PeerBoundaryConfig copyWith({
@@ -71,6 +79,7 @@ class PeerBoundaryConfig {
     bool? disableOsTools,
     bool? disableMemoryWrites,
     bool? disableSessionEndWrites,
+    bool? allowPeerSoulEdit,
   }) {
     return PeerBoundaryConfig(
       injectExternalPreamble:
@@ -80,6 +89,7 @@ class PeerBoundaryConfig {
       disableMemoryWrites: disableMemoryWrites ?? this.disableMemoryWrites,
       disableSessionEndWrites:
           disableSessionEndWrites ?? this.disableSessionEndWrites,
+      allowPeerSoulEdit: allowPeerSoulEdit ?? this.allowPeerSoulEdit,
     );
   }
 

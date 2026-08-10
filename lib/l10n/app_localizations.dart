@@ -1463,13 +1463,13 @@ abstract class AppLocalizations {
   /// No description provided for @addAgent_systemPrompt.
   ///
   /// In zh, this message translates to:
-  /// **'系统提示词（可选）'**
+  /// **'Soul（可选）'**
   String get addAgent_systemPrompt;
 
   /// No description provided for @addAgent_systemPromptHint.
   ///
   /// In zh, this message translates to:
-  /// **'定义 Agent 的角色和能力范围'**
+  /// **'定义 Agent 的身份、角色与原则（写入 soul.md）'**
   String get addAgent_systemPromptHint;
 
   /// No description provided for @addAgent_connectConfig.
@@ -2267,7 +2267,7 @@ abstract class AppLocalizations {
   /// No description provided for @agentDetail_systemPrompt.
   ///
   /// In zh, this message translates to:
-  /// **'系统提示词'**
+  /// **'Soul'**
   String get agentDetail_systemPrompt;
 
   /// No description provided for @agentDetail_llmConfig.
@@ -3347,26 +3347,56 @@ abstract class AppLocalizations {
   /// No description provided for @chat_customSystemPrompt.
   ///
   /// In zh, this message translates to:
-  /// **'自定义系统提示词'**
+  /// **'编辑 Soul'**
   String get chat_customSystemPrompt;
 
   /// No description provided for @chat_systemPromptTitle.
   ///
   /// In zh, this message translates to:
-  /// **'自定义系统提示词'**
+  /// **'编辑 Soul'**
   String get chat_systemPromptTitle;
 
   /// No description provided for @chat_systemPromptHint.
   ///
   /// In zh, this message translates to:
-  /// **'为本会话覆盖 Agent 的系统提示词'**
+  /// **'Agent 的身份与角色定义（soul.md）'**
   String get chat_systemPromptHint;
 
   /// No description provided for @chat_systemPromptSaved.
   ///
   /// In zh, this message translates to:
-  /// **'系统提示词已保存'**
+  /// **'Soul 已保存'**
   String get chat_systemPromptSaved;
+
+  /// No description provided for @chat_soulTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'编辑 Soul'**
+  String get chat_soulTitle;
+
+  /// No description provided for @chat_soulHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'Agent 的身份与角色定义（soul.md）'**
+  String get chat_soulHint;
+
+  /// No description provided for @chat_soulSaved.
+  ///
+  /// In zh, this message translates to:
+  /// **'Soul 已保存'**
+  String get chat_soulSaved;
+
+  /// No description provided for @chat_soulDenied.
+  ///
+  /// In zh, this message translates to:
+  /// **'对端未允许修改 Soul'**
+  String get chat_soulDenied;
+
+  /// No description provided for @chat_soulReadOnlyPeer.
+  ///
+  /// In zh, this message translates to:
+  /// **'只读：宿主未开启配对设备修改 Soul'**
+  String get chat_soulReadOnlyPeer;
 
   /// No description provided for @chat_moreActions.
   ///
@@ -5365,6 +5395,18 @@ abstract class AppLocalizations {
   /// In zh, this message translates to:
   /// **'开启后，已配对的设备可在会话列表中看到并与该 agent 对话'**
   String get agent_allowExternalAccessDesc;
+
+  /// No description provided for @agent_allowPeerSoulEdit.
+  ///
+  /// In zh, this message translates to:
+  /// **'允许配对设备修改 Soul'**
+  String get agent_allowPeerSoulEdit;
+
+  /// No description provided for @agent_allowPeerSoulEditDesc.
+  ///
+  /// In zh, this message translates to:
+  /// **'开启后，已分享该 agent 的配对设备可远程读取并修改其 Soul'**
+  String get agent_allowPeerSoulEditDesc;
 
   /// No description provided for @agent_externalAccessPeerEnabled.
   ///

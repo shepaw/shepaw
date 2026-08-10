@@ -401,6 +401,14 @@ class PeerModelsList {
   const PeerModelsList({required this.models, this.current});
 }
 
+/// Soul text + edit permission from `agent_soul_resp`.
+class PeerSoulInfo {
+  final String soul;
+  final bool editable;
+
+  const PeerSoulInfo({required this.soul, required this.editable});
+}
+
 /// Result of [PeerAgentClientService.syncAgentIncremental].
 class PeerAgentIncrementalSyncResult {
   /// Channels linked/repaired by [PeerAgentClientService.syncSessions].
@@ -532,6 +540,12 @@ class PeerAgentClientService {
 
   /// Outstanding agent_models_set_req per "agentId::model" key.
   final Map<String, Completer<bool>> _pendingModelSet = {};
+
+  /// Outstanding agent_soul_req per remote agent id.
+  final Map<String, Completer<PeerSoulInfo?>> _pendingSoulGet = {};
+
+  /// Outstanding agent_soul_set_req per remote agent id.
+  final Map<String, Completer<bool>> _pendingSoulSet = {};
 
   /// Maps hub approval_id → agent_chat request_id for deferred completion.
   final Map<String, String> _approvalToRequest = {};
@@ -963,6 +977,12 @@ class PeerAgentClientService {
       case 'agent_models_set_resp':
         _onModelsSetResp(event.data);
         break;
+      case 'agent_soul_resp':
+        _onSoulResp(event.data);
+        break;
+      case 'agent_soul_set_resp':
+        _onSoulSetResp(event.data);
+        break;
       case 'agent_file_ack':
         _onFileAck(event.data);
         break;
@@ -1118,6 +1138,91 @@ class PeerAgentClientService {
     if (remoteId == null || model == null) return;
     final ok = data['ok'] == true;
     final completer = _pendingModelSet.remove('$remoteId::$model');
+    if (completer != null && !completer.isCompleted) completer.complete(ok);
+  }
+
+  /// Fetch soul from a shared peer agent (`agent_soul_req` relay).
+  Future<PeerSoulInfo?> fetchSoulInfo({
+    required String peerId,
+    required String remoteAgentId,
+  }) async {
+    if (_pendingSoulGet.containsKey(remoteAgentId)) {
+      return _pendingSoulGet[remoteAgentId]!.future;
+    }
+    final completer = Completer<PeerSoulInfo?>();
+    _pendingSoulGet[remoteAgentId] = completer;
+    final sent = await PeerConnectionManager.instance.sendControl(peerId, {
+      'type': 'agent_soul_req',
+      'agent_id': remoteAgentId,
+    });
+    if (!sent) {
+      _pendingSoulGet.remove(remoteAgentId);
+      return null;
+    }
+    return completer.future.timeout(const Duration(seconds: 15), onTimeout: () {
+      _pendingSoulGet.remove(remoteAgentId);
+      return null;
+    });
+  }
+
+  /// Convenience: soul text only (empty string when missing).
+  Future<String?> fetchSoul({
+    required String peerId,
+    required String remoteAgentId,
+  }) async {
+    final info = await fetchSoulInfo(
+      peerId: peerId,
+      remoteAgentId: remoteAgentId,
+    );
+    return info?.soul;
+  }
+
+  void _onSoulResp(Map<String, dynamic> data) {
+    final remoteId = data['agent_id'] as String?;
+    if (remoteId == null) return;
+    final completer = _pendingSoulGet.remove(remoteId);
+    if (completer == null || completer.isCompleted) return;
+    if (data['ok'] != true) {
+      completer.complete(null);
+      return;
+    }
+    completer.complete(PeerSoulInfo(
+      soul: data['soul'] as String? ?? '',
+      editable: data['editable'] == true,
+    ));
+  }
+
+  /// Update soul on a shared peer agent when host allows it.
+  Future<bool> setSoul({
+    required String peerId,
+    required String remoteAgentId,
+    required String soul,
+  }) async {
+    if (_pendingSoulSet.containsKey(remoteAgentId)) {
+      return _pendingSoulSet[remoteAgentId]!.future;
+    }
+    final completer = Completer<bool>();
+    _pendingSoulSet[remoteAgentId] = completer;
+    final sent = await PeerConnectionManager.instance.sendControl(peerId, {
+      'type': 'agent_soul_set_req',
+      'agent_id': remoteAgentId,
+      'soul': soul,
+    });
+    if (!sent) {
+      _pendingSoulSet.remove(remoteAgentId);
+      return false;
+    }
+    return completer.future.timeout(const Duration(seconds: 15), onTimeout: () {
+      _pendingSoulSet.remove(remoteAgentId);
+      return false;
+    });
+  }
+
+  void _onSoulSetResp(Map<String, dynamic> data) {
+    final remoteId = data['agent_id'] as String?;
+    if (remoteId == null) return;
+    final ok = data['ok'] == true;
+    final completer = _pendingSoulSet.remove(remoteId);
     if (completer != null && !completer.isCompleted) completer.complete(ok);
   }
 

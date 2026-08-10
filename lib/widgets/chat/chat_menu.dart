@@ -62,7 +62,7 @@ class ChatMenuHelper {
 
   /// DM agent overflow menu entries.
   ///
-  /// [onCustomSystemPrompt] is omitted for peer agents (relay does not forward it).
+  /// [onCustomSystemPrompt] opens the agent Soul editor (local file or relay).
   /// When [sessionActionsInMenu] is true (mobile), 新建会话 / 会话历史 / 重置会话
   /// appear at the top; the title bar session button is hidden.
   static List<PopupMenuEntry<String>> agentMenuItems(

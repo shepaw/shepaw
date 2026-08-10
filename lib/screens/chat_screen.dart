@@ -34,7 +34,9 @@ import '../widgets/chat/group_session_list_panel.dart';
 import '../widgets/chat/session_unread_badge.dart';
 import '../widgets/chat/group_members_panel.dart';
 import '../widgets/chat/add_group_member_panel.dart';
-import '../widgets/chat/system_prompt_panel.dart';
+import '../widgets/chat/soul_panel.dart';
+import '../services/agent_soul_service.dart';
+import '../peer/services/peer_agent_client_service.dart';
 import '../widgets/avatar_image.dart';
 import '../widgets/message_search_delegate.dart';
 import '../widgets/shepaw_search_page.dart';
@@ -49,7 +51,6 @@ import 'channel_trace_screen.dart';
 import 'group_workflow_screen.dart';
 import '../widgets/workflow/workflow_progress_panel.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import '../peer/services/peer_agent_client_service.dart';
 import '../peer/services/peer_connection_manager.dart';
 import '../service_locator.dart' show getIt;
 
@@ -1401,27 +1402,68 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   }
 
   // ---------------------------------------------------------------------------
-  // DM system prompt
+  // Agent Soul
   // ---------------------------------------------------------------------------
 
-  Future<void> _showDmSystemPromptPanel() async {
+  Future<void> _showAgentSoulPanel() async {
     final l10n = AppLocalizations.of(context);
-    final content = SystemPromptPanel(
-      initialPrompt: _controller.dmSystemPrompt ?? '',
-      onSave: (prompt) async {
-        await _controller.updateDmSystemPrompt(prompt);
+    final agentId = widget.agentId;
+    if (agentId == null) return;
+    final agent =
+        await _controller.localDatabaseService.getRemoteAgentById(agentId);
+    if (agent == null || !mounted) return;
+
+    var readOnly = false;
+    if (agent.isPeerAgent) {
+      final peerId = agent.sourcePeerId;
+      final remoteId = agent.remoteAgentId;
+      if (peerId == null || remoteId == null) return;
+      if (!PeerConnectionManager.instance.connectedPeerIds.contains(peerId)) {
         if (mounted) {
           showTopToast(
             context,
-            l10n.chat_systemPromptSaved,
-            icon: Icons.check_circle,
-            color: Colors.green,
+            l10n.agentDetail_peerOffline,
+            icon: Icons.cloud_off,
+            color: Colors.orange,
           );
         }
+        return;
+      }
+      final info = await PeerAgentClientService.instance.fetchSoulInfo(
+        peerId: peerId,
+        remoteAgentId: remoteId,
+      );
+      if (!mounted) return;
+      readOnly = !(info?.editable ?? false);
+    }
+
+    final initialSoul = await AgentSoulService.instance.getSoul(agent);
+    if (!mounted) return;
+
+    final content = SoulPanel(
+      initialSoul: initialSoul,
+      readOnly: readOnly,
+      onSave: (soul) async {
+        final ok = await AgentSoulService.instance.updateSoul(agent, soul);
+        if (!mounted) return;
+        if (!ok && agent.isPeerAgent) {
+          showTopToast(
+            context,
+            l10n.chat_soulDenied,
+            icon: Icons.block,
+            color: Colors.orange,
+          );
+          return;
+        }
+        showTopToast(
+          context,
+          l10n.chat_soulSaved,
+          icon: Icons.check_circle,
+          color: Colors.green,
+        );
       },
     );
 
-    // Same presentation as session list: right drawer on desktop, full route on mobile.
     if (LayoutUtils.isDesktopLayout(context)) {
       await LayoutUtils.showRightDrawer(context: context, builder: (_) => content);
     } else {
@@ -1430,7 +1472,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
         MaterialPageRoute(
           builder: (context) => Scaffold(
             appBar: AppBar(
-              title: Text(AppLocalizations.of(context).chat_systemPromptTitle),
+              title: Text(AppLocalizations.of(context).chat_soulTitle),
               elevation: 1,
             ),
             body: content,
@@ -1904,8 +1946,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
         onStorageSpace: _navigateToStorageSpace,
         onEdit: _navigateToAgentDetailForEdit,
         onSearch: _showSearchDialog,
-        onCustomSystemPrompt:
-            c.isPeerAgent ? null : _showDmSystemPromptPanel,
+        onCustomSystemPrompt: _showAgentSoulPanel,
         onWorkflow: c.dmWorkflowEnabled ? _showGroupWorkflow : null,
       );
     }
@@ -1931,8 +1972,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
               sessionActionsInMenu: sessionActionsInMenu,
               sessionUnreadCount: _otherSessionsUnreadCount,
               onEdit: _navigateToAgentDetailForEdit,
-              onCustomSystemPrompt:
-                  c.isPeerAgent ? null : _showDmSystemPromptPanel,
+              onCustomSystemPrompt: _showAgentSoulPanel,
               onWorkflow: c.dmWorkflowEnabled ? _showGroupWorkflow : null,
             ),
     );

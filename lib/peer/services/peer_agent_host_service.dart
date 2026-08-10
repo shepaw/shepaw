@@ -33,6 +33,7 @@ import '../../models/model_routing_config.dart';
 import '../../models/remote_agent.dart';
 import '../../models/store_attachment_ref.dart';
 import '../../services/acp_agent_connection.dart';
+import '../../services/agent_soul_service.dart';
 import '../../services/chat_service.dart';
 import '../../services/local_database_service.dart';
 import '../../services/logger_service.dart';
@@ -199,6 +200,12 @@ class PeerAgentHostService {
       case 'agent_file_end':
         unawaited(_handleFileEnd(event.peerId, event.data));
         break;
+      case 'agent_soul_req':
+        unawaited(_handleSoulGet(event.peerId, event.data));
+        break;
+      case 'agent_soul_set_req':
+        unawaited(_handleSoulSet(event.peerId, event.data));
+        break;
     }
   }
 
@@ -256,6 +263,91 @@ class PeerAgentHostService {
   Future<List<RemoteAgent>> _eligibleAgents() async {
     final agents = await _db.getAllRemoteAgents();
     return agents.where((a) => a.isLocal && a.allowExternalAccess).toList();
+  }
+
+  /// Returns the local agent if [peerId] may access it; otherwise null.
+  Future<RemoteAgent?> _resolveSharedAgent(String peerId, String agentId) async {
+    final agent = await _db.getRemoteAgentById(agentId);
+    if (agent == null || !agent.isLocal || !agent.allowExternalAccess) {
+      return null;
+    }
+    final sharedIds = await PeerStorageService().getSharedAgentIds(peerId);
+    if (!sharedIds.contains(agentId)) return null;
+    return agent;
+  }
+
+  Future<void> _handleSoulGet(String peerId, Map<String, dynamic> data) async {
+    final agentId = data['agent_id'] as String?;
+    if (agentId == null) return;
+    try {
+      final agent = await _resolveSharedAgent(peerId, agentId);
+      if (agent == null) {
+        await PeerConnectionManager.instance.sendControl(peerId, {
+          'type': 'agent_soul_resp',
+          'agent_id': agentId,
+          'ok': false,
+          'error': 'not_available',
+        });
+        return;
+      }
+      final soul = await AgentSoulService.instance.getSoul(agent);
+      await PeerConnectionManager.instance.sendControl(peerId, {
+        'type': 'agent_soul_resp',
+        'agent_id': agentId,
+        'ok': true,
+        'soul': soul,
+        'editable': agent.peerBoundaryConfig.allowPeerSoulEdit,
+      });
+    } catch (e) {
+      _log.warning('agent_soul_req failed: $e', tag: _tag);
+      await PeerConnectionManager.instance.sendControl(peerId, {
+        'type': 'agent_soul_resp',
+        'agent_id': agentId,
+        'ok': false,
+        'error': e.toString(),
+      });
+    }
+  }
+
+  Future<void> _handleSoulSet(String peerId, Map<String, dynamic> data) async {
+    final agentId = data['agent_id'] as String?;
+    final soul = data['soul'] as String? ?? '';
+    if (agentId == null) return;
+    try {
+      final agent = await _resolveSharedAgent(peerId, agentId);
+      if (agent == null) {
+        await PeerConnectionManager.instance.sendControl(peerId, {
+          'type': 'agent_soul_set_resp',
+          'agent_id': agentId,
+          'ok': false,
+          'error': 'not_available',
+        });
+        return;
+      }
+      if (!agent.peerBoundaryConfig.allowPeerSoulEdit) {
+        await PeerConnectionManager.instance.sendControl(peerId, {
+          'type': 'agent_soul_set_resp',
+          'agent_id': agentId,
+          'ok': false,
+          'error': 'denied',
+        });
+        return;
+      }
+      final ok = await AgentSoulService.instance.updateSoul(agent, soul);
+      await PeerConnectionManager.instance.sendControl(peerId, {
+        'type': 'agent_soul_set_resp',
+        'agent_id': agentId,
+        'ok': ok,
+      });
+    } catch (e) {
+      _log.warning('agent_soul_set_req failed: $e', tag: _tag);
+      await PeerConnectionManager.instance.sendControl(peerId, {
+        'type': 'agent_soul_set_resp',
+        'agent_id': agentId,
+        'ok': false,
+        'error': e.toString(),
+      });
+    }
   }
 
   /// 单个头像随控制消息传输的体积上限（base64 前的原始字节）。

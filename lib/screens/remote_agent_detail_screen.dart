@@ -14,6 +14,7 @@ import '../peer/services/peer_connection.dart' show PeerConnectionEvent, PeerCon
 import '../peer/models/paired_peer.dart' show PeerConnectionState;
 import '../services/remote_agent_service.dart';
 import '../services/she_service.dart';
+import '../services/agent_soul_service.dart';
 import '../services/local_file_storage_service.dart';
 import '../services/model_registry.dart';
 import '../models/agent_scenario_models.dart';
@@ -60,6 +61,16 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
 
   /// Whether remote-session sync is enabled for this peer agent (default on).
   bool _peerSyncEnabled = true;
+
+  /// Cached soul text for view mode (loaded from file / peer / metadata).
+  String _displaySoul = '';
+  bool _soulLoading = false;
+
+  /// Peer agent: host allows remote soul edit.
+  bool _peerSoulEditable = false;
+
+  /// Local agent: allow paired devices to edit soul.
+  bool _allowPeerSoulEdit = false;
 
   /// Upstream model list from the paired device's agent (peer agents only).
   List<PeerAgentModel> _peerModels = const [];
@@ -120,7 +131,9 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
     super.initState();
     _agent = widget.agent;
     _isEditing = widget.initialEditMode;
+    _allowPeerSoulEdit = _agent.peerBoundaryConfig.allowPeerSoulEdit;
     _initEditingControllers();
+    unawaited(_loadSoul());
 
     // peer agent 的在线状态完全取决于来源配对设备是否在线，订阅连接状态变化
     // 以便设备上/下线时即时刷新页面顶部的状态徽标。
@@ -135,6 +148,45 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
       });
       _loadPeerSyncPref();
       if (_isEditing) _loadPeerModels();
+    }
+  }
+
+  Future<void> _loadSoul() async {
+    if (!mounted) return;
+    setState(() => _soulLoading = true);
+    try {
+      if (_agent.isPeerAgent) {
+        final peerId = _agent.sourcePeerId;
+        final remoteId = _agent.remoteAgentId;
+        if (peerId != null &&
+            remoteId != null &&
+            PeerConnectionManager.instance.connectedPeerIds.contains(peerId)) {
+          final info = await PeerAgentClientService.instance.fetchSoulInfo(
+            peerId: peerId,
+            remoteAgentId: remoteId,
+          );
+          if (!mounted) return;
+          setState(() {
+            _displaySoul = info?.soul ?? '';
+            _peerSoulEditable = info?.editable ?? false;
+            _systemPromptController.text = _displaySoul;
+            _soulLoading = false;
+          });
+          return;
+        }
+      } else if (AgentSoulService.instance.usesSoulFile(_agent)) {
+        await AgentSoulService.instance.migrateLegacySystemPromptIfNeeded(_agent);
+      }
+      final soul = await AgentSoulService.instance.getSoul(_agent);
+      if (!mounted) return;
+      setState(() {
+        _displaySoul = soul;
+        _systemPromptController.text = soul;
+        _soulLoading = false;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _soulLoading = false);
     }
   }
 
@@ -247,6 +299,7 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
     _editingProtocol = _agent.protocol;
     _editingConnectionType = _agent.connectionType;
     _editingAllowExternalAccess = _agent.allowExternalAccess;
+    _allowPeerSoulEdit = _agent.peerBoundaryConfig.allowPeerSoulEdit;
 
     // Load skills from metadata
     _enabledSkills = _agent.enabledSkills;
@@ -338,8 +391,7 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
         : _agent.name;
     _bioController.text = _agent.bio ?? '';
     _endpointController.text = _agent.endpoint;
-    _systemPromptController.text =
-        _agent.metadata['system_prompt'] as String? ?? '';
+    _systemPromptController.text = _displaySoul;
     _remoteAgentIdController.text =
         (_agent.metadata['target_agent_id'] as String?) ?? '';
     _maxToolRoundsController.text =
@@ -351,6 +403,7 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
     _editingProtocol = _agent.protocol;
     _editingConnectionType = _agent.connectionType;
     _editingAllowExternalAccess = _agent.allowExternalAccess;
+    _allowPeerSoulEdit = _agent.peerBoundaryConfig.allowPeerSoulEdit;
     _enabledSkills = _agent.enabledSkills;
     _enabledCliCommands = _agent.enabledCliCommands;
     _promptStackConfig = _agent.promptStackConfig;
@@ -437,12 +490,14 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
         metadata['avatar_overridden'] = true;
       }
 
-      // System prompt
-      final systemPrompt = _systemPromptController.text.trim();
-      if (systemPrompt.isNotEmpty) {
-        metadata['system_prompt'] = systemPrompt;
-      } else {
-        metadata.remove('system_prompt');
+      // Soul is persisted via [AgentSoulService] after the agent row update.
+      metadata.remove('system_prompt');
+
+      // Peer-inbound boundary (local agents shared over P2P).
+      if (_isLocalMode) {
+        metadata['peer_boundary'] = _agent.peerBoundaryConfig
+            .copyWith(allowPeerSoulEdit: _allowPeerSoulEdit)
+            .toJson();
       }
 
       // LLM config
@@ -550,8 +605,24 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
       final agentService = getIt<RemoteAgentService>();
       await agentService.updateAgent(updatedAgent);
 
+      final soulText = _systemPromptController.text;
+      final canWriteSoul =
+          !_agent.isPeerAgent || _peerSoulEditable;
+      if (canWriteSoul) {
+        final ok = await AgentSoulService.instance.updateSoul(
+          updatedAgent,
+          soulText,
+        );
+        if (_agent.isPeerAgent && !ok && mounted && showFeedback) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text(l10n.chat_soulDenied)),
+          );
+        }
+      }
+
       setState(() {
         _agent = updatedAgent;
+        _displaySoul = soulText.trim();
         _isSaving = false;
       });
 
@@ -1300,7 +1371,9 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
 
   Widget _buildInfoCard() {
     final l10n = AppLocalizations.of(context);
-    final systemPrompt = _agent.metadata['system_prompt'] as String?;
+    final systemPrompt = _displaySoul.trim().isNotEmpty
+        ? _displaySoul
+        : (_agent.metadata['system_prompt'] as String?);
     final llmProviderType = _agent.metadata['llm_provider'] as String?;
     final llmModel = _agent.metadata['llm_model'] as String?;
     final llmApiBase = _agent.metadata['llm_api_base'] as String?;
@@ -1385,6 +1458,9 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
             if (systemPrompt != null && systemPrompt.isNotEmpty) ...[
               if (!_isLocalMode) const SizedBox(height: 8),
               _buildInfoRow(l10n.agentDetail_systemPrompt, systemPrompt),
+            ] else if (_soulLoading) ...[
+              if (!_isLocalMode) const SizedBox(height: 8),
+              const LinearProgressIndicator(),
             ],
             if (llmProvider != null) ...[
               if (_isLocalMode) const SizedBox(height: 0) else const Divider(height: 24),
@@ -1725,22 +1801,47 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
         borderRadius: BorderRadius.circular(12),
         side: BorderSide(color: colorScheme.outlineVariant),
       ),
-      child: SwitchListTile(
-        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-        secondary: Icon(Icons.open_in_new_outlined, color: colorScheme.primary),
-        title: Text(
-          l10n.agent_allowExternalAccess,
-          style: const TextStyle(fontWeight: FontWeight.w600),
-        ),
-        subtitle: Text(
-          l10n.agent_allowExternalAccessDesc,
-          style: TextStyle(fontSize: 12, color: Colors.grey[600]),
-        ),
-        value: _editingAllowExternalAccess,
-        onChanged: (value) {
-          setState(() => _editingAllowExternalAccess = value);
-          _scheduleAutoSave();
-        },
+      child: Column(
+        children: [
+          SwitchListTile(
+            contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+            secondary: Icon(Icons.open_in_new_outlined, color: colorScheme.primary),
+            title: Text(
+              l10n.agent_allowExternalAccess,
+              style: const TextStyle(fontWeight: FontWeight.w600),
+            ),
+            subtitle: Text(
+              l10n.agent_allowExternalAccessDesc,
+              style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+            ),
+            value: _editingAllowExternalAccess,
+            onChanged: (value) {
+              setState(() => _editingAllowExternalAccess = value);
+              _scheduleAutoSave();
+            },
+          ),
+          if (_editingAllowExternalAccess) ...[
+            const Divider(height: 1),
+            SwitchListTile(
+              contentPadding:
+                  const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+              secondary: Icon(Icons.psychology_outlined, color: colorScheme.primary),
+              title: Text(
+                l10n.agent_allowPeerSoulEdit,
+                style: const TextStyle(fontWeight: FontWeight.w600),
+              ),
+              subtitle: Text(
+                l10n.agent_allowPeerSoulEditDesc,
+                style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+              ),
+              value: _allowPeerSoulEdit,
+              onChanged: (value) {
+                setState(() => _allowPeerSoulEdit = value);
+                _scheduleAutoSave();
+              },
+            ),
+          ],
+        ],
       ),
     );
   }
@@ -1934,12 +2035,16 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
             const SizedBox(height: 12),
             TextFormField(
               controller: _systemPromptController,
+              readOnly: _agent.isPeerAgent && !_peerSoulEditable,
               decoration: InputDecoration(
                 labelText: l10n.addAgent_systemPrompt,
                 hintText: l10n.addAgent_systemPromptHint,
                 border: const OutlineInputBorder(),
-                prefixIcon: const Icon(Icons.tune),
+                prefixIcon: const Icon(Icons.psychology_outlined),
                 alignLabelWithHint: true,
+                helperText: _agent.isPeerAgent && !_peerSoulEditable
+                    ? l10n.chat_soulReadOnlyPeer
+                    : null,
               ),
               maxLines: 4,
               minLines: 2,

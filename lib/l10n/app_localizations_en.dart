@@ -771,11 +771,11 @@ class AppLocalizationsEn extends AppLocalizations {
       'Briefly describe the agent\'s capabilities';
 
   @override
-  String get addAgent_systemPrompt => 'System Prompt (optional)';
+  String get addAgent_systemPrompt => 'Soul (optional)';
 
   @override
   String get addAgent_systemPromptHint =>
-      'Define the agent\'s role and capabilities';
+      'Define the agent\'s identity, role, and principles (stored in soul.md)';
 
   @override
   String get addAgent_connectConfig => 'Connection Configuration';
@@ -1214,7 +1214,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get agentDetail_capabilities => 'Capabilities';
 
   @override
-  String get agentDetail_systemPrompt => 'System Prompt';
+  String get agentDetail_systemPrompt => 'Soul';
 
   @override
   String get agentDetail_llmConfig => 'Model Configuration';
@@ -1836,17 +1836,32 @@ class AppLocalizationsEn extends AppLocalizations {
   String get chat_storageSpace => 'Storage Space';
 
   @override
-  String get chat_customSystemPrompt => 'Custom System Prompt';
+  String get chat_customSystemPrompt => 'Edit Soul';
 
   @override
-  String get chat_systemPromptTitle => 'Custom System Prompt';
+  String get chat_systemPromptTitle => 'Edit Soul';
 
   @override
-  String get chat_systemPromptHint =>
-      'Override the agent\'s system prompt for this chat';
+  String get chat_systemPromptHint => 'Agent identity and persona (soul.md)';
 
   @override
-  String get chat_systemPromptSaved => 'System prompt saved';
+  String get chat_systemPromptSaved => 'Soul saved';
+
+  @override
+  String get chat_soulTitle => 'Edit Soul';
+
+  @override
+  String get chat_soulHint => 'Agent identity and persona (soul.md)';
+
+  @override
+  String get chat_soulSaved => 'Soul saved';
+
+  @override
+  String get chat_soulDenied => 'Peer is not allowed to edit Soul';
+
+  @override
+  String get chat_soulReadOnlyPeer =>
+      'Read-only: host has not enabled peer Soul editing';
 
   @override
   String get chat_moreActions => 'More Actions';
@@ -3027,6 +3042,13 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get agent_allowExternalAccessDesc =>
       'When enabled, paired devices can see and chat with this agent in their conversation list';
+
+  @override
+  String get agent_allowPeerSoulEdit => 'Allow Paired Devices to Edit Soul';
+
+  @override
+  String get agent_allowPeerSoulEditDesc =>
+      'When enabled, paired devices that have access to this agent can read and update its Soul remotely';
 
   @override
   String get agent_externalAccessPeerEnabled =>

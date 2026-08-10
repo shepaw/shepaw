@@ -31,6 +31,7 @@ void main() {
       expect(c.stripHostUserContext, isTrue);
       expect(c.disableOsTools, isTrue);
       expect(c.disableMemoryWrites, isTrue);
+      expect(c.allowPeerSoulEdit, isFalse);
       expect(
         c.blocksCli(namespace: 'os', subcommand: 'command.exec'),
         isTrue,

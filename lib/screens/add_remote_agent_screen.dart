@@ -6,6 +6,7 @@ import '../l10n/app_localizations.dart';
 import '../models/agent_scenario_models.dart';
 import '../models/remote_agent.dart';
 import '../services/model_registry.dart';
+import '../services/agent_soul_service.dart';
 import '../services/remote_agent_service.dart';
 import '../services/local_file_storage_service.dart';
 import '../services/noise_identity.dart';
@@ -266,12 +267,14 @@ class _AddRemoteAgentScreenState extends State<AddRemoteAgentScreen> {
           _applyScenarioModelsMetadata(metadata);
         }
       }
-      // system_prompt is a general agent config, independent of LLM provider
-      if (_systemPromptController.text.trim().isNotEmpty) {
-        metadata['system_prompt'] = _systemPromptController.text.trim();
+      // Soul: local agents → soul.md; remote-only → metadata (handled above).
+      final soulText = _systemPromptController.text.trim();
+      final isLocalCreate = metadata['llm_provider'] != null;
+      if (soulText.isNotEmpty && !isLocalCreate) {
+        metadata['system_prompt'] = soulText;
       }
 
-      await _agentService.createAgent(
+      final created = await _agentService.createAgent(
         name: _nameController.text.trim(),
         protocol: ProtocolType.acp,
         connectionType: ConnectionType.websocket,
@@ -283,6 +286,10 @@ class _AddRemoteAgentScreenState extends State<AddRemoteAgentScreen> {
         metadata: metadata,
         initialStatus: initialStatus,
       );
+
+      if (soulText.isNotEmpty && created.isLocal) {
+        await AgentSoulService.instance.updateSoul(created, soulText);
+      }
 
       if (!mounted) return;
 

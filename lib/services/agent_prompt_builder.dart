@@ -254,9 +254,18 @@ class AgentPromptBuilder {
     if (agent.isShe) {
       return SheService.instance.buildCoreIdentityBlock();
     }
-    // For non-She agents the description IS the system_prompt.
-    // The custom/DM override is handled separately in ⑤, so here we return
-    // the agent's stored prompt only.
+    // Soul (memory/<agent>/soul.md) is canonical for local agents; remote
+    // agents keep legacy metadata system_prompt until migrated.
+    if (agent.isLocal) {
+      try {
+        final soul = await CognitionService.instance.getAgentSoul(agent.id);
+        if (soul != null && soul.trim().isNotEmpty) {
+          return soul.trim();
+        }
+      } catch (_) {
+        // Store unavailable (e.g. unit tests) — fall back to metadata.
+      }
+    }
     return agent.metadata['system_prompt'] as String? ?? '';
   }
 
@@ -274,6 +283,14 @@ class AgentPromptBuilder {
 
   /// Build the agent's self-cognition block (soul) from minds.db.
   Future<String> _buildAgentSelfCognitionBlock() async {
+    // When soul file is authoritative it is already injected in block ②.
+    if (agent.isLocal) {
+      try {
+        final fileSoul = await CognitionService.instance.getAgentSoul(agent.id);
+        if (fileSoul != null && fileSoul.trim().isNotEmpty) return '';
+      } catch (_) {}
+    }
+
     final self = await CognitionService.instance.getSelfCognition(agent.id);
     if (self == null || self.soul.isEmpty) return '';
 
