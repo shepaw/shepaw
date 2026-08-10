@@ -45,6 +45,7 @@ class StorageBrowserScreen extends StatefulWidget {
     this.deviceName,
     this.peerId,
     this.readOnly = false,
+    this.preferLocalCache = false,
     this.initialSpace,
     this.initialPath,
     this.title,
@@ -67,6 +68,9 @@ class StorageBrowserScreen extends StatefulWidget {
 
   /// 只读模式：隐藏删除；远端默认只读。
   final bool readOnly;
+
+  /// 浏览本机磁盘上的他端 device 树（peer local_fallback 缓存），不走跨端 list。
+  final bool preferLocalCache;
 
   /// 初始分区（仅影响「空间」Tab 起始位置）；远端默认 files。
   final String? initialSpace;
@@ -125,9 +129,13 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
   String _navPath = '';
 
   bool get _isRemote =>
-      _targetId.isNotEmpty && _selfId.isNotEmpty && _targetId != _selfId;
+      !widget.preferLocalCache &&
+      _targetId.isNotEmpty &&
+      _selfId.isNotEmpty &&
+      _targetId != _selfId;
 
-  bool get _readOnly => widget.readOnly || _isRemote;
+  bool get _readOnly =>
+      widget.readOnly || _isRemote || widget.preferLocalCache;
 
   PeerStoreShareAllowlist? _inboundShares;
 
@@ -330,6 +338,7 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
           deviceId: _targetId,
           space: space,
           limit: _listLimit,
+          preferLocalCache: widget.preferLocalCache,
         );
         for (final e in entries) {
           all.add(_BrowsedFile(space: space, entry: e));

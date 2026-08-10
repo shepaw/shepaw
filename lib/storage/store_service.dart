@@ -265,9 +265,12 @@ class StoreService {
     String? prefix,
     int limit = 100,
     int? depth,
+    /// 为 true 时始终读本机磁盘上的 `<deviceId>/…`（peer 本地缓存 /
+    /// local_fallback），不走跨端 store.list。
+    bool preferLocalCache = false,
   }) async {
     final self = await DeviceIdentity.deviceId();
-    if (deviceId == self) {
+    if (deviceId == self || preferLocalCache) {
       final store = await _localStore();
       return store.list(deviceId, space,
           prefix: prefix, limit: limit, depth: depth);

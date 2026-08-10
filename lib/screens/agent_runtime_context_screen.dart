@@ -5,6 +5,7 @@ import 'package:share_plus/share_plus.dart';
 
 import '../models/agent_memory_entry.dart';
 import '../models/remote_agent.dart';
+import '../peer/services/peer_attachment_placement.dart';
 import '../services/agent_memory_biz_service.dart';
 import '../services/cognition_service.dart';
 import '../services/logger_service.dart';
@@ -58,9 +59,16 @@ class _AgentRuntimeContextScreenState extends State<AgentRuntimeContextScreen>
   bool _filesLoading = true;
   String? _filesError;
   String _deviceId = '';
+  /// Peer 缓存：列本机磁盘上的宿主 device 树。
+  bool _preferLocalCache = false;
+  /// runtime 目录第一段（peer 用 remoteAgentId）。
+  String _runtimeOwnerId = '';
 
   bool get _zh =>
       Localizations.localeOf(context).languageCode.startsWith('zh');
+
+  String get _effectiveOwnerId =>
+      _runtimeOwnerId.isNotEmpty ? _runtimeOwnerId : widget.ownerId;
 
   @override
   void initState() {
@@ -133,13 +141,31 @@ class _AgentRuntimeContextScreenState extends State<AgentRuntimeContextScreen>
       _filesError = null;
     });
     try {
-      final deviceId = await DeviceIdentity.deviceId();
-      final root = RuntimePaths.runtimeRoot(widget.ownerId);
+      var deviceId = await DeviceIdentity.deviceId();
+      var ownerId = widget.ownerId;
+      var preferLocalCache = false;
+      final agent = widget.agent;
+      if (agent != null && agent.isPeerAgent) {
+        final placement = await resolvePeerAttachmentPlacement(
+          agent: agent,
+          localChannelId: '',
+        );
+        if (placement != null) {
+          deviceId = placement.deviceId;
+          ownerId = placement.ownerId;
+          preferLocalCache = true;
+        } else {
+          final remote = agent.remoteAgentId?.trim();
+          if (remote != null && remote.isNotEmpty) ownerId = remote;
+        }
+      }
+      final root = RuntimePaths.runtimeRoot(ownerId);
       final entries = await StoreService.instance.listDevice(
         deviceId: deviceId,
         space: StoreSpace.runtime,
         prefix: '$root/',
         limit: 5000,
+        preferLocalCache: preferLocalCache,
       );
       final arts = <_RuntimeFile>[];
       final atts = <_RuntimeFile>[];
@@ -164,6 +190,8 @@ class _AgentRuntimeContextScreenState extends State<AgentRuntimeContextScreen>
       if (!mounted) return;
       setState(() {
         _deviceId = deviceId;
+        _runtimeOwnerId = ownerId;
+        _preferLocalCache = preferLocalCache;
         _artifacts = arts;
         _attachments = atts;
         _filesLoading = false;
@@ -192,8 +220,11 @@ class _AgentRuntimeContextScreenState extends State<AgentRuntimeContextScreen>
     Navigator.of(context).push(
       MaterialPageRoute<void>(
         builder: (_) => StorageBrowserScreen(
+          deviceId: _deviceId.isNotEmpty ? _deviceId : null,
+          preferLocalCache: _preferLocalCache,
+          readOnly: _preferLocalCache,
           initialSpace: StoreSpace.runtime,
-          initialPath: RuntimePaths.runtimeRoot(widget.ownerId),
+          initialPath: RuntimePaths.runtimeRoot(_effectiveOwnerId),
           title: _zh
               ? '${widget.displayName} · runtime'
               : '${widget.displayName} · runtime',
@@ -465,7 +496,7 @@ class _AgentRuntimeContextScreenState extends State<AgentRuntimeContextScreen>
       );
     }
     final fmt = DateFormat.yMMMd().add_Hm();
-    final root = RuntimePaths.runtimeRoot(widget.ownerId);
+    final root = RuntimePaths.runtimeRoot(_effectiveOwnerId);
     return RefreshIndicator(
       onRefresh: _loadFiles,
       child: ListView.separated(
