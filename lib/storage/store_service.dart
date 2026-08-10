@@ -550,7 +550,17 @@ class StoreService {
       );
       return;
     }
-    final allowlist = await _peerStorage.getSharedStoreAllowlist(peerId);
+    final configured = await _peerStorage.getSharedStoreAllowlist(peerId);
+    final allowlist =
+        await _peerStorage.effectiveOutboundAllowlist(peerId);
+    // owner 从未配置出站分享：ACL 用默认；异步落库并 announce。
+    if (configured.isEmpty && peer.trustLevel == TrustLevel.owner) {
+      unawaited(() async {
+        final seeded =
+            await _peerStorage.ensureOwnerDefaultOutboundSharesIfUnset(peerId);
+        if (seeded) await pushShareAnnounce(peerId);
+      }());
+    }
     // 调用者身份 = 配对指纹（= 其 device_id），写路径收敛的锚点
     final data = await _dispatch(
       frame,

@@ -407,6 +407,22 @@ class PeerStorageService {
     return PeerStoreShareAllowlist.fromEntries(entries);
   }
 
+  /// 入站 ACL 用的有效白名单：owner 且从未配置出站分享时，等同默认整区
+  /// （扫码方旧配对未写表时仍可互读；用户写过 shared=0 行则不回退）。
+  Future<PeerStoreShareAllowlist> effectiveOutboundAllowlist(
+    String peerId,
+  ) async {
+    final list = await getSharedStoreAllowlist(peerId);
+    if (!list.isEmpty) return list;
+    final peer = await getPeerById(peerId);
+    if (peer != null &&
+        peer.trustLevel == TrustLevel.owner &&
+        !await hasAnyStoreShare(peerId)) {
+      return PeerStoreShareAllowlist.ownerDefaults();
+    }
+    return list;
+  }
+
   /// 设置页：该设备全部分享行（含 shared=0）。
   Future<List<PeerStoreShareEntry>> getStoreShares(String peerId) async {
     final db = await _db;

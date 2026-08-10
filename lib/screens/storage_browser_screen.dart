@@ -333,15 +333,28 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
     });
     try {
       final all = <_BrowsedFile>[];
+      Object? lastError;
+      var anyOk = false;
       for (final space in _spaces) {
-        final entries = await StoreService.instance.listDevice(
-          deviceId: _targetId,
-          space: space,
-          limit: _listLimit,
-          preferLocalCache: widget.preferLocalCache,
-        );
-        for (final e in entries) {
-          all.add(_BrowsedFile(space: space, entry: e));
+        try {
+          final entries = await StoreService.instance.listDevice(
+            deviceId: _targetId,
+            space: space,
+            limit: _listLimit,
+            preferLocalCache: widget.preferLocalCache,
+          );
+          anyOk = true;
+          for (final e in entries) {
+            all.add(_BrowsedFile(space: space, entry: e));
+          }
+        } on StoreException catch (e) {
+          // 单分区未分享 / 权限不足：跳过，避免整页被一个 acl_denied 打挂。
+          if (e.code == StoreError.aclDenied ||
+              e.code == StoreError.untrusted) {
+            lastError = e;
+            continue;
+          }
+          rethrow;
         }
       }
       all.sort((a, b) => b.mtimeMs.compareTo(a.mtimeMs));
@@ -349,6 +362,9 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
       setState(() {
         _files = all;
         _loading = false;
+        if (!anyOk && lastError != null) {
+          _error = '$lastError';
+        }
       });
     } catch (e) {
       if (!mounted) return;

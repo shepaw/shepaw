@@ -32,7 +32,10 @@ void main() {
       final a = PeerStoreShareAllowlist.ownerDefaults();
       expect(a.isWholeSpace('files'), isTrue);
       expect(a.isWholeSpace('artifacts'), isTrue);
+      expect(a.isWholeSpace('workspaces'), isTrue);
+      expect(a.isWholeSpace('public'), isTrue);
       expect(a.allows('attachments', 'x'), isFalse);
+      expect(a.isEmpty, isFalse);
     });
   });
 }
