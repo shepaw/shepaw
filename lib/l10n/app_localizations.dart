@@ -3278,6 +3278,12 @@ abstract class AppLocalizations {
   /// **'会话列表'**
   String get chat_sessionList;
 
+  /// No description provided for @chat_sessionHistory.
+  ///
+  /// In zh, this message translates to:
+  /// **'会话历史'**
+  String get chat_sessionHistory;
+
   /// No description provided for @chat_clearSessionHistory.
   ///
   /// In zh, this message translates to:
@@ -3331,6 +3337,12 @@ abstract class AppLocalizations {
   /// In zh, this message translates to:
   /// **'查看详情'**
   String get chat_viewDetails;
+
+  /// No description provided for @chat_storageSpace.
+  ///
+  /// In zh, this message translates to:
+  /// **'储物空间'**
+  String get chat_storageSpace;
 
   /// No description provided for @chat_customSystemPrompt.
   ///

@@ -41,6 +41,7 @@ import '../widgets/shepaw_search_page.dart';
 import '../widgets/voice_record_overlay.dart';
 import 'remote_agent_detail_screen.dart';
 import 'group_detail_screen.dart';
+import 'agent_runtime_context_screen.dart';
 import '../services/logger_service.dart';
 import '../services/error_handler_service.dart';
 import '../services/she_service.dart';
@@ -1173,6 +1174,42 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     }
   }
 
+  Future<void> _navigateToStorageSpace() async {
+    final c = _controller;
+    if (c.isGroupMode) {
+      final channel = c.groupChannel;
+      if (channel == null) return;
+      final ownerId = channel.parentGroupId?.isNotEmpty == true
+          ? channel.parentGroupId!
+          : channel.id;
+      if (!mounted) return;
+      await Navigator.of(context).push(
+        MaterialPageRoute<void>(
+          builder: (_) => AgentRuntimeContextScreen(
+            ownerId: ownerId,
+            displayName: channel.name,
+          ),
+        ),
+      );
+      return;
+    }
+
+    final agentId = widget.agentId;
+    if (agentId == null) return;
+    final remoteAgent =
+        await c.localDatabaseService.getRemoteAgentById(agentId);
+    if (!mounted) return;
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => AgentRuntimeContextScreen(
+          ownerId: agentId,
+          displayName: c.agentName ?? remoteAgent?.name ?? agentId,
+          agent: remoteAgent,
+        ),
+      ),
+    );
+  }
+
   // ---------------------------------------------------------------------------
   // Session list
   // ---------------------------------------------------------------------------
@@ -1342,6 +1379,24 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
           color: Colors.red.shade400,
         );
       }
+    }
+  }
+
+  void _createNewSessionFromMenu() {
+    final c = _controller;
+    if (c.isGroupMode) {
+      unawaited(c.createNewGroupSession());
+    } else {
+      unawaited(c.createNewSession());
+    }
+  }
+
+  void _showSessionHistoryFromMenu() {
+    final c = _controller;
+    if (c.isGroupMode) {
+      unawaited(_showGroupSessionList());
+    } else {
+      unawaited(_showSessionList());
     }
   }
 
@@ -1830,6 +1885,9 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
         value,
         onEditGroup: _editGroupInfo,
         onShowMembers: _showGroupMembersPanel,
+        onNewSession: _createNewSessionFromMenu,
+        onSessionHistory: _showSessionHistoryFromMenu,
+        onStorageSpace: _navigateToStorageSpace,
         onSearch: _showSearchDialog,
         onWorkflow: _showGroupWorkflow,
       );
@@ -1840,7 +1898,10 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
           _messageController.text = '/reset';
           _sendMessage();
         },
+        onNewSession: _createNewSessionFromMenu,
+        onSessionHistory: _showSessionHistoryFromMenu,
         onViewDetails: _navigateToAgentDetail,
+        onStorageSpace: _navigateToStorageSpace,
         onEdit: _navigateToAgentDetailForEdit,
         onSearch: _showSearchDialog,
         onCustomSystemPrompt:
@@ -1852,6 +1913,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
 
   Widget _buildChatMenuButton(AppLocalizations l10n) {
     final c = _controller;
+    final sessionActionsInMenu = !LayoutUtils.isDesktopLayout(context);
     return PopupMenuButton<String>(
       tooltip: l10n.chat_moreActions,
       icon: const Icon(Icons.more_vert),
@@ -1860,10 +1922,14 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
       itemBuilder: (ctx) => c.isGroupMode
           ? ChatMenuHelper.groupMenuItems(
               ctx,
+              sessionActionsInMenu: sessionActionsInMenu,
+              sessionUnreadCount: _otherSessionsUnreadCount,
               onWorkflow: _showGroupWorkflow,
             )
           : ChatMenuHelper.agentMenuItems(
               ctx,
+              sessionActionsInMenu: sessionActionsInMenu,
+              sessionUnreadCount: _otherSessionsUnreadCount,
               onEdit: _navigateToAgentDetailForEdit,
               onCustomSystemPrompt:
                   c.isPeerAgent ? null : _showDmSystemPromptPanel,
@@ -1914,29 +1980,30 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                     : null,
               ),
         actions: [
-          IconButton(
-            icon: SizedBox(
-              width: 24,
-              height: 24,
-              child: Stack(
-                clipBehavior: Clip.none,
-                children: [
-                  const Center(
-                    child: Icon(Icons.history, size: 20),
-                  ),
-                  if (_otherSessionsUnreadCount > 0)
-                    const Positioned(
-                      right: -2,
-                      top: -2,
-                      child: SessionUnreadDot(),
+          if (LayoutUtils.isDesktopLayout(context))
+            IconButton(
+              icon: SizedBox(
+                width: 24,
+                height: 24,
+                child: Stack(
+                  clipBehavior: Clip.none,
+                  children: [
+                    const Center(
+                      child: Icon(Icons.history, size: 20),
                     ),
-                ],
+                    if (_otherSessionsUnreadCount > 0)
+                      const Positioned(
+                        right: -2,
+                        top: -2,
+                        child: SessionUnreadDot(),
+                      ),
+                  ],
+                ),
               ),
+              tooltip: AppLocalizations.of(context).chat_sessionList,
+              onPressed:
+                  c.isGroupMode ? _showGroupSessionList : _showSessionList,
             ),
-            tooltip: AppLocalizations.of(context).chat_sessionList,
-            onPressed:
-                c.isGroupMode ? _showGroupSessionList : _showSessionList,
-          ),
           _buildChatMenuButton(l10n),
         ],
         ),

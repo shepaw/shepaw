@@ -1740,6 +1740,9 @@ class AppLocalizationsZh extends AppLocalizations {
   String get chat_sessionList => '会话列表';
 
   @override
+  String get chat_sessionHistory => '会话历史';
+
+  @override
   String get chat_clearSessionHistory => '清除会话历史';
 
   @override
@@ -1765,6 +1768,9 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get chat_viewDetails => '查看详情';
+
+  @override
+  String get chat_storageSpace => '储物空间';
 
   @override
   String get chat_customSystemPrompt => '自定义系统提示词';

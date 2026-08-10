@@ -1801,6 +1801,9 @@ class AppLocalizationsEn extends AppLocalizations {
   String get chat_sessionList => 'Session List';
 
   @override
+  String get chat_sessionHistory => 'Session History';
+
+  @override
   String get chat_clearSessionHistory => 'Clear Session History';
 
   @override
@@ -1828,6 +1831,9 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get chat_viewDetails => 'View Details';
+
+  @override
+  String get chat_storageSpace => 'Storage Space';
 
   @override
   String get chat_customSystemPrompt => 'Custom System Prompt';
