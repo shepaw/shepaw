@@ -34,9 +34,6 @@ import '../widgets/chat/group_session_list_panel.dart';
 import '../widgets/chat/session_unread_badge.dart';
 import '../widgets/chat/group_members_panel.dart';
 import '../widgets/chat/add_group_member_panel.dart';
-import '../widgets/chat/soul_panel.dart';
-import '../services/agent_soul_service.dart';
-import '../peer/services/peer_agent_client_service.dart';
 import '../widgets/avatar_image.dart';
 import '../widgets/message_search_delegate.dart';
 import '../widgets/shepaw_search_page.dart';
@@ -52,6 +49,7 @@ import 'group_workflow_screen.dart';
 import '../widgets/workflow/workflow_progress_panel.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../peer/services/peer_connection_manager.dart';
+import '../peer/services/peer_agent_client_service.dart';
 import '../service_locator.dart' show getIt;
 
 /// User's response to the "sync remote sessions" prompt.
@@ -1402,87 +1400,6 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   }
 
   // ---------------------------------------------------------------------------
-  // Agent Soul
-  // ---------------------------------------------------------------------------
-
-  Future<void> _showAgentSoulPanel() async {
-    final l10n = AppLocalizations.of(context);
-    final agentId = widget.agentId;
-    if (agentId == null) return;
-    final agent =
-        await _controller.localDatabaseService.getRemoteAgentById(agentId);
-    if (agent == null || !mounted) return;
-
-    var readOnly = false;
-    if (agent.isPeerAgent) {
-      final peerId = agent.sourcePeerId;
-      final remoteId = agent.remoteAgentId;
-      if (peerId == null || remoteId == null) return;
-      if (!PeerConnectionManager.instance.connectedPeerIds.contains(peerId)) {
-        if (mounted) {
-          showTopToast(
-            context,
-            l10n.agentDetail_peerOffline,
-            icon: Icons.cloud_off,
-            color: Colors.orange,
-          );
-        }
-        return;
-      }
-      final info = await PeerAgentClientService.instance.fetchSoulInfo(
-        peerId: peerId,
-        remoteAgentId: remoteId,
-      );
-      if (!mounted) return;
-      readOnly = !(info?.editable ?? false);
-    }
-
-    final initialSoul = await AgentSoulService.instance.getSoul(agent);
-    if (!mounted) return;
-
-    final content = SoulPanel(
-      initialSoul: initialSoul,
-      readOnly: readOnly,
-      onSave: (soul) async {
-        final ok = await AgentSoulService.instance.updateSoul(agent, soul);
-        if (!mounted) return;
-        if (!ok && agent.isPeerAgent) {
-          showTopToast(
-            context,
-            l10n.chat_soulDenied,
-            icon: Icons.block,
-            color: Colors.orange,
-          );
-          return;
-        }
-        showTopToast(
-          context,
-          l10n.chat_soulSaved,
-          icon: Icons.check_circle,
-          color: Colors.green,
-        );
-      },
-    );
-
-    if (LayoutUtils.isDesktopLayout(context)) {
-      await LayoutUtils.showRightDrawer(context: context, builder: (_) => content);
-    } else {
-      await Navigator.push(
-        context,
-        MaterialPageRoute(
-          builder: (context) => Scaffold(
-            appBar: AppBar(
-              title: Text(AppLocalizations.of(context).chat_soulTitle),
-              elevation: 1,
-            ),
-            body: content,
-          ),
-        ),
-      );
-    }
-  }
-
-  // ---------------------------------------------------------------------------
   // Search
   // ---------------------------------------------------------------------------
 
@@ -1946,7 +1863,6 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
         onStorageSpace: _navigateToStorageSpace,
         onEdit: _navigateToAgentDetailForEdit,
         onSearch: _showSearchDialog,
-        onCustomSystemPrompt: _showAgentSoulPanel,
         onWorkflow: c.dmWorkflowEnabled ? _showGroupWorkflow : null,
       );
     }
@@ -1972,7 +1888,6 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
               sessionActionsInMenu: sessionActionsInMenu,
               sessionUnreadCount: _otherSessionsUnreadCount,
               onEdit: _navigateToAgentDetailForEdit,
-              onCustomSystemPrompt: _showAgentSoulPanel,
               onWorkflow: c.dmWorkflowEnabled ? _showGroupWorkflow : null,
             ),
     );

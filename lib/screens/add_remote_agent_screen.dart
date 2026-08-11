@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
 import '../l10n/app_localizations.dart';
 import '../models/agent_scenario_models.dart';
+import '../models/peer_boundary_config.dart';
 import '../models/remote_agent.dart';
 import '../services/model_registry.dart';
 import '../services/agent_soul_service.dart';
@@ -52,6 +53,7 @@ class _AddRemoteAgentScreenState extends State<AddRemoteAgentScreen> {
   String _selectedAvatar = '🤖';
   bool _isCreating = false;
   bool _allowExternalAccess = false;
+  bool _allowPeerSoulEdit = false;
   String? _localAvatarPath; // 本地图片相对路径
 
   final ImagePicker _imagePicker = ImagePicker();
@@ -263,6 +265,9 @@ class _AddRemoteAgentScreenState extends State<AddRemoteAgentScreen> {
 
           // Save allow_external_access
           metadata['allow_external_access'] = _allowExternalAccess;
+          metadata['peer_boundary'] = PeerBoundaryConfig.defaults
+              .copyWith(allowPeerSoulEdit: _allowPeerSoulEdit)
+              .toJson();
 
           _applyScenarioModelsMetadata(metadata);
         }
@@ -1337,7 +1342,7 @@ class _AddRemoteAgentScreenState extends State<AddRemoteAgentScreen> {
     );
   }
 
-  /// 允许外部访问卡片（创建模式）
+  /// 允许外部访问 + Soul 编辑权限（创建模式）
   Widget _buildExternalAccessCard(ColorScheme colorScheme) {
     final l10n = AppLocalizations.of(context);
     return Card(
@@ -1346,21 +1351,45 @@ class _AddRemoteAgentScreenState extends State<AddRemoteAgentScreen> {
         borderRadius: BorderRadius.circular(12),
         side: BorderSide(color: colorScheme.outlineVariant),
       ),
-      child: SwitchListTile(
-        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-        secondary: Icon(Icons.open_in_new_outlined, color: colorScheme.primary),
-        title: Text(
-          l10n.agent_allowExternalAccess,
-          style: const TextStyle(fontWeight: FontWeight.w600),
-        ),
-        subtitle: Text(
-          l10n.agent_allowExternalAccessDesc,
-          style: TextStyle(fontSize: 12, color: Colors.grey[600]),
-        ),
-        value: _allowExternalAccess,
-        onChanged: (value) {
-          setState(() => _allowExternalAccess = value);
-        },
+      child: Column(
+        children: [
+          SwitchListTile(
+            contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+            secondary: Icon(Icons.open_in_new_outlined, color: colorScheme.primary),
+            title: Text(
+              l10n.agent_allowExternalAccess,
+              style: const TextStyle(fontWeight: FontWeight.w600),
+            ),
+            subtitle: Text(
+              l10n.agent_allowExternalAccessDesc,
+              style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+            ),
+            value: _allowExternalAccess,
+            onChanged: (value) {
+              setState(() => _allowExternalAccess = value);
+            },
+          ),
+          if (_allowExternalAccess) ...[
+            const Divider(height: 1),
+            SwitchListTile(
+              contentPadding:
+                  const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+              secondary: Icon(Icons.psychology_outlined, color: colorScheme.primary),
+              title: Text(
+                l10n.agent_allowPeerSoulEdit,
+                style: const TextStyle(fontWeight: FontWeight.w600),
+              ),
+              subtitle: Text(
+                l10n.agent_allowPeerSoulEditDesc,
+                style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+              ),
+              value: _allowPeerSoulEdit,
+              onChanged: (value) {
+                setState(() => _allowPeerSoulEdit = value);
+              },
+            ),
+          ],
+        ],
       ),
     );
   }

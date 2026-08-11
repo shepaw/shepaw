@@ -62,14 +62,12 @@ class ChatMenuHelper {
 
   /// DM agent overflow menu entries.
   ///
-  /// [onCustomSystemPrompt] opens the agent Soul editor (local file or relay).
   /// When [sessionActionsInMenu] is true (mobile), 新建会话 / 会话历史 / 重置会话
   /// appear at the top; the title bar session button is hidden.
   static List<PopupMenuEntry<String>> agentMenuItems(
     BuildContext context, {
     bool sessionActionsInMenu = false,
     int sessionUnreadCount = 0,
-    VoidCallback? onCustomSystemPrompt,
     VoidCallback? onEdit,
     VoidCallback? onWorkflow,
   }) {
@@ -106,12 +104,6 @@ class ChatMenuHelper {
         icon: Icons.inventory_2_outlined,
         label: menuL10n.chat_storageSpace,
       ),
-      if (onCustomSystemPrompt != null)
-        _buildMenuItem(
-          value: 'systemPrompt',
-          icon: Icons.edit_note_outlined,
-          label: menuL10n.chat_customSystemPrompt,
-        ),
       if (onWorkflow != null)
         _buildMenuItem(
           value: 'workflow',
@@ -134,7 +126,6 @@ class ChatMenuHelper {
     required VoidCallback onViewDetails,
     required VoidCallback onStorageSpace,
     required VoidCallback onSearch,
-    VoidCallback? onCustomSystemPrompt,
     VoidCallback? onEdit,
     VoidCallback? onWorkflow,
   }) {
@@ -151,8 +142,6 @@ class ChatMenuHelper {
         onViewDetails();
       case 'storageSpace':
         onStorageSpace();
-      case 'systemPrompt':
-        onCustomSystemPrompt?.call();
       case 'workflow':
         onWorkflow?.call();
       case 'search':

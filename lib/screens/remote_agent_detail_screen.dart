@@ -32,6 +32,7 @@ import '../utils/layout_utils.dart';
 import '../models/prompt_stack_config.dart';
 import '../storage/runtime_share_service.dart';
 import 'agent_runtime_context_screen.dart';
+import 'agent_soul_edit_screen.dart';
 import 'workspace_binding_screen.dart';
 
 /// 远端 Agent 详情页面（从聊天页进入）
@@ -126,6 +127,8 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
       _agent.isLocal ||
       _agent.metadata['is_she'] == true;
 
+  bool get _canEditSoul => !_agent.isPeerAgent || _peerSoulEditable;
+
   @override
   void initState() {
     super.initState();
@@ -143,6 +146,7 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
         if (event.peerId != _agent.sourcePeerId || !mounted) return;
         if (event.type == PeerConnectionEventType.connected) {
           unawaited(_loadPeerModels());
+          unawaited(_loadSoul());
         }
         setState(() {});
       });
@@ -371,6 +375,7 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
   void _enterEditMode() {
     _syncControllersFromAgent();
     setState(() => _isEditing = true);
+    unawaited(_loadSoul());
     if (_agent.isPeerAgent) {
       unawaited(_loadPeerModels());
     }
@@ -382,6 +387,30 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
     _autoSaveDebounce = Timer(const Duration(milliseconds: 600), () {
       unawaited(_persistChanges());
     });
+  }
+
+  Future<void> _openSoulEditor() async {
+    final l10n = AppLocalizations.of(context);
+    if (!_canEditSoul) return;
+    if (_agent.isPeerAgent) {
+      final peerId = _agent.sourcePeerId;
+      if (peerId == null ||
+          !PeerConnectionManager.instance.connectedPeerIds.contains(peerId)) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text(l10n.agentDetail_peerOffline)),
+          );
+        }
+        return;
+      }
+    }
+    await Navigator.push<void>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => AgentSoulEditScreen(agent: _agent),
+      ),
+    );
+    if (mounted) unawaited(_loadSoul());
   }
 
   void _syncControllersFromAgent() {
@@ -605,24 +634,8 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
       final agentService = getIt<RemoteAgentService>();
       await agentService.updateAgent(updatedAgent);
 
-      final soulText = _systemPromptController.text;
-      final canWriteSoul =
-          !_agent.isPeerAgent || _peerSoulEditable;
-      if (canWriteSoul) {
-        final ok = await AgentSoulService.instance.updateSoul(
-          updatedAgent,
-          soulText,
-        );
-        if (_agent.isPeerAgent && !ok && mounted && showFeedback) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text(l10n.chat_soulDenied)),
-          );
-        }
-      }
-
       setState(() {
         _agent = updatedAgent;
-        _displaySoul = soulText.trim();
         _isSaving = false;
       });
 
@@ -965,6 +978,7 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
 
   Widget _buildDetailBody() {
     final l10n = AppLocalizations.of(context);
+    final colorScheme = Theme.of(context).colorScheme;
     // DEBUG: Check if this is She
     if (_agent.name == 'She' || _agent.metadata['is_she'] == true) {
       debugPrint('DEBUG: She Agent found! '
@@ -992,9 +1006,9 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
           _buildSkillsCard(),
           const SizedBox(height: 16),
           _buildCliCommandsCard(),
-          // 分享给配对设备（仅本地 agent 显示）
+          // 分享给配对设备（仅本地 agent 显示，查看模式只读）
           const SizedBox(height: 16),
-          _buildExternalAccessCard(),
+          _buildExternalAccessCard(colorScheme),
         ],
         // She is a built-in agent and cannot be deleted
         if (_agent.metadata['is_she'] != true) ...[
@@ -1734,16 +1748,14 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
     );
   }
 
-  // ==================== 外部访问卡片 ====================
+  // ==================== 外部访问（查看模式） ====================
 
-  /// 分享给配对设备卡片（详情模式，仅本地 agent）。
-  ///
-  /// 开启后走 P2P：该 agent 对已配对设备可见，对方可在会话列表中对话。
-  Widget _buildExternalAccessCard() {
+  /// 分享给配对设备卡片（详情模式，仅本地 agent，只读）。
+  Widget _buildExternalAccessCard(ColorScheme colorScheme) {
     final l10n = AppLocalizations.of(context);
     final theme = Theme.of(context);
-    final colorScheme = theme.colorScheme;
     final isEnabled = _agent.allowExternalAccess;
+    final soulEditEnabled = _agent.peerBoundaryConfig.allowPeerSoulEdit;
 
     return Card(
       elevation: 0,
@@ -1786,14 +1798,47 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
                 fontSize: 13,
               ),
             ),
+            if (isEnabled) ...[
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  Icon(
+                    Icons.psychology_outlined,
+                    size: 16,
+                    color: colorScheme.onSurfaceVariant,
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      soulEditEnabled
+                          ? l10n.agent_allowPeerSoulEdit
+                          : l10n.chat_soulReadOnlyPeer,
+                      style: TextStyle(
+                        fontSize: 13,
+                        color: colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ),
+                  Icon(
+                    soulEditEnabled ? Icons.check_circle : Icons.cancel,
+                    size: 16,
+                    color: soulEditEnabled
+                        ? Colors.green
+                        : colorScheme.onSurfaceVariant,
+                  ),
+                ],
+              ),
+            ],
           ],
         ),
       ),
     );
   }
 
-  /// 分享给配对设备开关（编辑模式，仅本地 agent）
-  Widget _buildEditExternalAccessCard(ColorScheme colorScheme) {
+  // ==================== 分享给配对设备（编辑模式） ====================
+
+  /// 分享给配对设备 + Soul 编辑权限（仅编辑模式）。
+  Widget _buildEditSharingSettingsCard(ColorScheme colorScheme) {
     final l10n = AppLocalizations.of(context);
     return Card(
       elevation: 0,
@@ -1842,6 +1887,38 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
             ),
           ],
         ],
+      ),
+    );
+  }
+
+  Widget _buildEditSoulEntry(ColorScheme colorScheme) {
+    final l10n = AppLocalizations.of(context);
+    final preview = _displaySoul.trim();
+    final subtitle = preview.isEmpty
+        ? l10n.addAgent_systemPromptHint
+        : (preview.length > 80 ? '${preview.substring(0, 80)}…' : preview);
+
+    return Card(
+      elevation: 0,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12),
+        side: BorderSide(color: colorScheme.outlineVariant),
+      ),
+      child: ListTile(
+        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+        leading: Icon(Icons.psychology_outlined, color: colorScheme.primary),
+        title: Text(
+          l10n.chat_customSystemPrompt,
+          style: const TextStyle(fontWeight: FontWeight.w600),
+        ),
+        subtitle: Text(
+          _soulLoading ? '…' : subtitle,
+          maxLines: 2,
+          overflow: TextOverflow.ellipsis,
+          style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+        ),
+        trailing: const Icon(Icons.chevron_right),
+        onTap: _soulLoading ? null : _openSoulEditor,
       ),
     );
   }
@@ -1903,6 +1980,10 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
 
         // 卡片 1: 基本信息
         _buildEditBasicInfoCard(colorScheme),
+        if (_canEditSoul) ...[
+          const SizedBox(height: 16),
+          _buildEditSoulEntry(colorScheme),
+        ],
         const SizedBox(height: 16),
 
         // 卡片 2: 连接配置（仅自管远端 agent，不含 peer agent）
@@ -1945,7 +2026,7 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
         // 卡片 4: 允许外部访问（仅本地 agent 显示）
         if (_isLocalMode) ...[
           const SizedBox(height: 16),
-          _buildEditExternalAccessCard(colorScheme),
+          _buildEditSharingSettingsCard(colorScheme),
         ],
 
         // 卡片 5: OS 工具 / 技能 / 生成能力导航入口（仅在选择了主模型时显示）
@@ -2030,24 +2111,6 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
                 prefixIcon: const Icon(Icons.description),
               ),
               maxLines: 2,
-              onChanged: (_) => _scheduleAutoSave(),
-            ),
-            const SizedBox(height: 12),
-            TextFormField(
-              controller: _systemPromptController,
-              readOnly: _agent.isPeerAgent && !_peerSoulEditable,
-              decoration: InputDecoration(
-                labelText: l10n.addAgent_systemPrompt,
-                hintText: l10n.addAgent_systemPromptHint,
-                border: const OutlineInputBorder(),
-                prefixIcon: const Icon(Icons.psychology_outlined),
-                alignLabelWithHint: true,
-                helperText: _agent.isPeerAgent && !_peerSoulEditable
-                    ? l10n.chat_soulReadOnlyPeer
-                    : null,
-              ),
-              maxLines: 4,
-              minLines: 2,
               onChanged: (_) => _scheduleAutoSave(),
             ),
             if (!_agent.isPeerAgent) ...[

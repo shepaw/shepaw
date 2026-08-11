@@ -9,7 +9,7 @@ import '../../utils/layout_utils.dart';
 /// [Scaffold] route on mobile — same presentation as [SessionListPanel].
 class SoulPanel extends StatefulWidget {
   final String initialSoul;
-  final Future<void> Function(String soul) onSave;
+  final Future<bool> Function(String soul) onSave;
   final bool readOnly;
 
   const SoulPanel({
@@ -43,8 +43,8 @@ class _SoulPanelState extends State<SoulPanel> {
     if (_saving || widget.readOnly) return;
     setState(() => _saving = true);
     try {
-      await widget.onSave(_controller.text);
-      if (mounted) Navigator.of(context).pop();
+      final shouldClose = await widget.onSave(_controller.text);
+      if (mounted && shouldClose) Navigator.of(context).pop();
     } finally {
       if (mounted) setState(() => _saving = false);
     }
