@@ -1897,43 +1897,49 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
     final c = _controller;
+    final hasCustomLeading = widget.showBackButton && widget.onClose != null;
     return Scaffold(
         appBar: AppBar(
         elevation: 1,
         automaticallyImplyLeading: !widget.embedded,
-        leading: widget.showBackButton && widget.onClose != null
+        centerTitle: false,
+        titleSpacing: hasCustomLeading || widget.embedded ? 0 : null,
+        leading: hasCustomLeading
             ? IconButton(
                 icon: const Icon(Icons.arrow_back),
                 onPressed: widget.onClose,
               )
             : null,
-        title: c.isGroupMode
-            ? ChatGroupAppBarTitle(
-                groupChannel: c.groupChannel,
-                groupAgents: c.groupAgents,
-                isProcessing: c.isProcessing,
-                respondingAgentNames: c.respondingAgentNames,
-                mentionOnlyMode: c.mentionOnlyMode,
-                currentChannelId: c.currentChannelId,
-                onAvatarTap: _navigateToGroupDetail,
-                onStopGenerating: c.isProcessing
-                    ? () => c.stopGroupStreaming()
-                    : null,
-              )
-            : ChatDMAppBarTitle(
-                agentName: c.agentName,
-                agentAvatar: c.agentAvatar,
-                isProcessing: c.isProcessing,
-                isCheckingHealth: c.isCheckingHealth,
-                isAgentOnline: c.isAgentOnline,
-                currentChannelId: c.currentChannelId,
-                sourceDeviceLabel: c.sourceDeviceLabel,
-                syncingRemote: _syncingPeerHistory,
-                onAvatarTap: _navigateToAgentDetail,
-                onStopGenerating: c.isProcessing
-                    ? () => c.stopStreaming()
-                    : null,
-              ),
+        title: SizedBox(
+          width: double.infinity,
+          child: c.isGroupMode
+              ? ChatGroupAppBarTitle(
+                  groupChannel: c.groupChannel,
+                  groupAgents: c.groupAgents,
+                  isProcessing: c.isProcessing,
+                  respondingAgentNames: c.respondingAgentNames,
+                  mentionOnlyMode: c.mentionOnlyMode,
+                  currentChannelId: c.currentChannelId,
+                  onAvatarTap: _navigateToGroupDetail,
+                  onStopGenerating: c.isProcessing
+                      ? () => c.stopGroupStreaming()
+                      : null,
+                )
+              : ChatDMAppBarTitle(
+                  agentName: c.agentName,
+                  agentAvatar: c.agentAvatar,
+                  isProcessing: c.isProcessing,
+                  isCheckingHealth: c.isCheckingHealth,
+                  isAgentOnline: c.isAgentOnline,
+                  currentChannelId: c.currentChannelId,
+                  sourceDeviceLabel: c.sourceDeviceLabel,
+                  syncingRemote: _syncingPeerHistory,
+                  onAvatarTap: _navigateToAgentDetail,
+                  onStopGenerating: c.isProcessing
+                      ? () => c.stopStreaming()
+                      : null,
+                ),
+        ),
         actions: [
           if (LayoutUtils.isDesktopLayout(context))
             IconButton(

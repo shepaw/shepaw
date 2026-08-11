@@ -91,7 +91,7 @@ class ChatDMAppBarTitle extends StatelessWidget {
             children: [
               Row(
                 children: [
-                  Flexible(
+                  Expanded(
                     child: Text(
                       displayName ?? 'AI Agent',
                       maxLines: 1,
@@ -106,6 +106,7 @@ class ChatDMAppBarTitle extends StatelessWidget {
                       sourceDeviceLabel!.isNotEmpty) ...[
                     const SizedBox(width: 8),
                     Flexible(
+                      fit: FlexFit.loose,
                       child: Container(
                         padding: const EdgeInsets.symmetric(
                             horizontal: 6, vertical: 2),
@@ -125,6 +126,7 @@ class ChatDMAppBarTitle extends StatelessWidget {
                             ),
                             const SizedBox(width: 3),
                             Flexible(
+                              fit: FlexFit.loose,
                               child: Text(
                                 sourceDeviceLabel!,
                                 maxLines: 1,
