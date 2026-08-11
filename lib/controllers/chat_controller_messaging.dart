@@ -72,6 +72,8 @@ mixin _MessagingOps on _ChatControllerBase {
       messages.add(seeded);
     }
     messageIdMap[seeded.id] = seeded;
+    // Same sticky-flag race as processMessage — clear before async force-scroll.
+    isUserScrolledUp = false;
     _notify();
     _emit(RequestScrollToBottomEvent(force: true));
 
@@ -132,6 +134,7 @@ mixin _MessagingOps on _ChatControllerBase {
       messages.add(streamingMessage);
       messageIdMap[streamingMessage.id] = streamingMessage;
     }
+    isUserScrolledUp = false;
     _notify();
     _emit(RequestScrollToBottomEvent(force: true));
 
@@ -548,6 +551,10 @@ mixin _MessagingOps on _ChatControllerBase {
       messages.add(optimistic.streaming);
       messageIdMap[optimistic.user.id] = optimistic.user;
       messageIdMap[optimistic.streaming.id] = optimistic.streaming;
+      // Resume live follow before the async scroll event is delivered — a
+      // sticky scrolled-up flag from a prior turn would otherwise suppress
+      // streaming rebuilds and follow-scrolls for this turn.
+      isUserScrolledUp = false;
       _notify();
       _emit(RequestScrollToBottomEvent(force: true));
 
@@ -1151,6 +1158,7 @@ mixin _MessagingOps on _ChatControllerBase {
     );
     messages.add(userMessage);
     messageIdMap[userMessage.id] = userMessage;
+    isUserScrolledUp = false;
     _notify();
     _emit(RequestScrollToBottomEvent(force: true));
 
@@ -1413,6 +1421,7 @@ mixin _MessagingOps on _ChatControllerBase {
 
       messages.add(sm);
       messageIdMap[sm.id] = sm;
+      isUserScrolledUp = false;
       _notify();
       _emit(RequestScrollToBottomEvent(force: true));
 

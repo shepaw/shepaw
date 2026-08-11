@@ -127,8 +127,11 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   /// True while we drive scroll via jumpTo/scrollTo. Programmatic motion can
   /// emit [UserScrollNotification] and falsely set [_isUserScrolledUp], which
   /// then skips [setState] for the rest of a streaming turn (blank UI until
-  /// leave/re-enter).
+  /// leave/re-enter). Cleared after a short settle window — not a single
+  /// frame — because ScrollablePositionedList may notify after the next frame.
   bool _isProgrammaticScrolling = false;
+  int _programmaticScrollGeneration = 0;
+  Timer? _programmaticScrollClearTimer;
   int _unreadMessageCount = 0;
 
   /// Unread agent/group messages in sessions other than the one being viewed.
@@ -184,6 +187,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     _restoreComposerDraft();
     _messageController.addListener(_onTextChanged);
     _textFieldFocusNode.addListener(_onFocusChanged);
+    _itemPositionsListener.itemPositions.addListener(_onItemPositionsChanged);
 
     if (Platform.isMacOS || Platform.isWindows || Platform.isLinux) {
       HardwareKeyboard.instance.addHandler(_handleHardwareKey);
@@ -247,6 +251,8 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     _controller.removeListener(_onControllerChanged);
     _controller.dispose();
     _recordingSubscription?.cancel();
+    _itemPositionsListener.itemPositions.removeListener(_onItemPositionsChanged);
+    _programmaticScrollClearTimer?.cancel();
     _audioRecordingService.dispose();
     _messageController.dispose();
     _textFieldFocusNode.dispose();
@@ -273,12 +279,17 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
       _trackedMessageCount = messageCount;
       unawaited(_refreshOtherSessionsUnread());
     }
+    final isStreaming = _controller.streamingMessageId != null ||
+        _controller.groupStreamingMessageIds.isNotEmpty;
+    // Recover from a false scrolled-up sticky flag: if the newest item is
+    // still visible, keep following the stream instead of freezing the UI.
+    if (_isUserScrolledUp && isStreaming && _isNewestMessageVisible()) {
+      _clearScrolledUpState(notify: false);
+    }
     // During active streaming, if user is scrolled up, skip expensive
     // full rebuilds — the message list content updates in the controller
     // and will render when the user scrolls back to bottom.
-    if (_isUserScrolledUp &&
-        (_controller.streamingMessageId != null ||
-         _controller.groupStreamingMessageIds.isNotEmpty)) {
+    if (_isUserScrolledUp && isStreaming) {
       return;
     }
     setState(() {});
@@ -368,9 +379,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
           // Force (new send / reattach) always resumes live follow — otherwise a
           // stuck scrolled-up flag from a prior turn keeps skipping rebuilds.
           if (force && _isUserScrolledUp) {
-            _isUserScrolledUp = false;
-            _unreadMessageCount = 0;
-            _controller.isUserScrolledUp = false;
+            _clearScrolledUpState(notify: false);
           }
           _scrollToBottom(force: force);
         }
@@ -592,6 +601,41 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     }
   }
 
+  /// Reverse list: index 0 is the newest message at the visual bottom.
+  bool _isNewestMessageVisible() {
+    final positions = _itemPositionsListener.itemPositions.value;
+    if (positions.isEmpty) return true;
+    return positions.any((p) => p.index == 0);
+  }
+
+  void _clearScrolledUpState({bool notify = true}) {
+    _isUserScrolledUp = false;
+    _unreadMessageCount = 0;
+    _controller.isUserScrolledUp = false;
+    if (notify && mounted) setState(() {});
+  }
+
+  void _beginProgrammaticScroll() {
+    _isProgrammaticScrolling = true;
+    final generation = ++_programmaticScrollGeneration;
+    _programmaticScrollClearTimer?.cancel();
+    // jumpTo can emit UserScrollNotification after the next frame; keep the
+    // guard long enough to cover that settle window.
+    _programmaticScrollClearTimer = Timer(const Duration(milliseconds: 250), () {
+      if (!mounted || generation != _programmaticScrollGeneration) return;
+      _isProgrammaticScrolling = false;
+    });
+  }
+
+  void _onItemPositionsChanged() {
+    if (!mounted || _isProgrammaticScrolling) return;
+    if (_isUserScrolledUp && _isNewestMessageVisible()) {
+      _clearScrolledUpState();
+      _controller.markMessagesAsReadIfAtBottom();
+      unawaited(_refreshOtherSessionsUnread());
+    }
+  }
+
   void _onUserScroll(ScrollDirection direction) {
     // Ignore idle and programmatic jumpTo/scrollTo — those can report
     // ScrollDirection.forward and freeze streaming UI updates.
@@ -602,6 +646,9 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     // messages (upward visually), and ScrollDirection.reverse means scrolling
     // toward newer messages (downward visually).
     if (direction == ScrollDirection.forward) {
+      // Direction alone is not enough: programmatic settles can look like
+      // forward while index 0 is still on screen.
+      if (_isNewestMessageVisible()) return;
       if (!_isUserScrolledUp) {
         // Update the flag synchronously before setState so that
         // _onControllerChanged can read the correct value immediately in the
@@ -611,7 +658,8 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
         setState(() {});
       }
     } else if (direction == ScrollDirection.reverse) {
-      // User is scrolling toward the bottom — handled in _onScrollEnd.
+      // User is scrolling toward the bottom — handled in _onScrollEnd /
+      // item position listener.
     }
   }
 
@@ -621,12 +669,9 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     // minScrollExtent == 0 corresponds to the bottom in a reverse list.
     if (metrics.atEdge && metrics.pixels == metrics.minScrollExtent) {
       if (_isUserScrolledUp) {
-        _isUserScrolledUp = false;
-        _unreadMessageCount = 0;
-        _controller.isUserScrolledUp = false;
+        _clearScrolledUpState();
         _controller.markMessagesAsReadIfAtBottom();
         unawaited(_refreshOtherSessionsUnread());
-        setState(() {});
       }
     }
   }
@@ -650,12 +695,9 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted || _controller.messages.isEmpty) return;
       if (!_itemScrollController.isAttached) return;
-      _isProgrammaticScrolling = true;
+      _beginProgrammaticScroll();
       if (force || streamingFollow) {
         _itemScrollController.jumpTo(index: 0, alignment: 0.0);
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          _isProgrammaticScrolling = false;
-        });
       } else {
         _itemScrollController
             .scrollTo(
@@ -664,7 +706,10 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
           curve: Curves.easeOut,
         )
             .whenComplete(() {
-          if (mounted) _isProgrammaticScrolling = false;
+          if (!mounted) return;
+          // Animated scroll already spans >250ms; extend guard slightly past
+          // completion so trailing UserScrollNotifications are ignored.
+          _beginProgrammaticScroll();
         });
       }
     });
@@ -704,19 +749,13 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   }
 
   void _jumpToBottom() {
-    _isUserScrolledUp = false;
-    _unreadMessageCount = 0;
-    _controller.isUserScrolledUp = false;
+    _clearScrolledUpState();
     _controller.markMessagesAsReadIfAtBottom();
     unawaited(_refreshOtherSessionsUnread());
-    setState(() {});
     if (_controller.messages.isNotEmpty && _itemScrollController.isAttached) {
       // In reverse mode, index 0 is the newest (bottom) message.
-      _isProgrammaticScrolling = true;
+      _beginProgrammaticScroll();
       _itemScrollController.jumpTo(index: 0, alignment: 0.0);
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        _isProgrammaticScrolling = false;
-      });
     }
   }
 
