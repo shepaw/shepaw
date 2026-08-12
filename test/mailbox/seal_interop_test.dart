@@ -1,0 +1,44 @@
+import 'dart:convert';
+import 'dart:io';
+import 'dart:typed_data';
+
+import 'package:cryptography/cryptography.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:shepaw/services/mailbox/mailbox_seal.dart';
+
+void main() {
+  test('dart self roundtrip', () async {
+    final kp = await X25519().newKeyPair();
+    final pub = Uint8List.fromList((await kp.extractPublicKey()).bytes);
+    final priv = Uint8List.fromList(await kp.extractPrivateKeyBytes());
+    final sealed = await mailboxSealJson({'message': 'hello mailbox', 'ts': 123}, pub);
+    final opened = await mailboxOpenJson(sealed, priv);
+    expect(opened['message'], 'hello mailbox');
+    expect(opened['ts'], 123);
+  });
+
+  test('opens TS-sealed fixture', () async {
+    final f = File('/tmp/seal_fixture.json');
+    expect(f.existsSync(), isTrue);
+    final fixture = jsonDecode(f.readAsStringSync()) as Map<String, dynamic>;
+    final priv = Uint8List.fromList(base64Decode(fixture['priv'] as String));
+    final sealedB64 = fixture['sealed'] as String;
+    final opened = await mailboxOpen(Uint8List.fromList(base64Decode(sealedB64)), priv);
+    final plain = utf8.decode(opened);
+    expect(plain, contains('hello mailbox'));
+    final obj = jsonDecode(plain) as Map<String, dynamic>;
+    expect(obj['ts'], 123);
+  });
+
+  test('dart seal opened by writing fixture for TS', () async {
+    final kp = await X25519().newKeyPair();
+    final pub = Uint8List.fromList((await kp.extractPublicKey()).bytes);
+    final priv = Uint8List.fromList(await kp.extractPrivateKeyBytes());
+    final sealed = await mailboxSeal(Uint8List.fromList(utf8.encode('{"from":"dart"}')), pub);
+    File('/tmp/seal_fixture_dart.json').writeAsStringSync(jsonEncode({
+      'pub': base64Encode(pub),
+      'priv': base64Encode(priv),
+      'sealed': base64Encode(sealed),
+    }));
+  });
+}

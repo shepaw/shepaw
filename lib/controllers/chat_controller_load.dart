@@ -138,10 +138,23 @@ mixin _LoadOps on _ChatControllerBase {
         }
       }
 
-      final loadedMessages = await chatService.loadChannelMessages(
+      var loadedMessages = List<Message>.from(await chatService.loadChannelMessages(
         currentChannelId!,
         limit: ChatMessageWindow.initialLimit,
-      );
+      ));
+
+      // 进页先收信：拉 channel 信箱中已回复的密文，解密合并进本地
+      if (agentId != null && !isGroupMode) {
+        final mailboxMsgs = await chatService.fetchMailboxReplies(
+          channelId: currentChannelId!,
+          agentId: agentId!,
+          userId: userId,
+        );
+        if (mailboxMsgs.isNotEmpty) {
+          loadedMessages.addAll(mailboxMsgs);
+          loadedMessages.sort((a, b) => a.timestampMs.compareTo(b.timestampMs));
+        }
+      }
 
       _preserveInMemoryPlanApprovalResponses();
       if (isGroupMode) {

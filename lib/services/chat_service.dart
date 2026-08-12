@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/widgets.dart';
+import 'package:sqflite/sqflite.dart' show ConflictAlgorithm;
 import 'package:uuid/uuid.dart';
 import '../models/message.dart';
 import '../models/channel.dart';
@@ -34,6 +35,9 @@ import '../providers/notification_provider.dart';
 import 'foreground_task_service.dart';
 import 'logger_service.dart';
 import 'she_service.dart';
+import 'noise_identity.dart';
+import 'mailbox/mailbox_seal.dart';
+import 'mailbox/channel_mailbox_service.dart';
 import 'dispatch/she_relay_session_service.dart';
 import '../clis/shepaw/os/os_executor.dart' as os_exec;
 import 'local_llm_agent_service.dart';
@@ -2264,6 +2268,115 @@ $originalQuestion
       connection.dispose();
     }
     _acpConnections.clear();
+  }
+
+  /// Pull sealed replies from channel mailbox, decrypt, persist as assistant
+  /// messages. Returns newly inserted messages (may be empty). Best-effort.
+  Future<List<Message>> fetchMailboxReplies({
+    required String channelId,
+    required String agentId,
+    required String userId,
+  }) async {
+    try {
+      final agent = await _databaseService.getRemoteAgentById(agentId);
+      if (agent == null) return const [];
+
+      final channelBase =
+          ChannelMailboxService.channelBaseFromEndpoint(agent.endpoint);
+      final acpAgentId = (agent.metadata['target_agent_id'] as String?) ??
+          ChannelMailboxService.resolveAgentId(
+            agent.endpoint,
+            fallback: '',
+          );
+      if (channelBase == null || acpAgentId.isEmpty) return const [];
+
+      final identity = await NoiseIdentity.loadOrCreate();
+      final mailbox = ChannelMailboxService();
+      final replies = await mailbox.fetchReplies(
+        channelBase: channelBase,
+        agentId: acpAgentId,
+        callerFp: identity.fingerprintHex,
+      );
+      if (replies.isEmpty) return const [];
+
+      final inserted = <Message>[];
+      final ackIds = <String>[];
+
+      for (final reply in replies) {
+        try {
+          final payload = await mailboxOpenJson(
+            reply.ciphertext,
+            identity.privateKey,
+          );
+          final content = payload['content']?.toString() ?? '';
+          if (content.isEmpty) {
+            ackIds.add(reply.id);
+            continue;
+          }
+          final msgId = reply.messageId.isNotEmpty
+              ? reply.messageId
+              : const Uuid().v4();
+          // Skip if already persisted (idempotent)
+          final existing = await _databaseService.getMessageById(msgId);
+          if (existing != null) {
+            ackIds.add(reply.id);
+            continue;
+          }
+
+          final msg = Message(
+            id: msgId,
+            channelId: channelId,
+            content: content,
+            timestampMs: DateTime.now().millisecondsSinceEpoch,
+            from: MessageFrom(id: agent.id, type: 'agent', name: agent.name),
+            to: MessageFrom(id: userId, type: 'user', name: userId),
+            type: MessageType.text,
+            replyTo: reply.replyTo.isNotEmpty ? reply.replyTo : null,
+            metadata: {
+              'status': 'completed',
+              'from_mailbox': true,
+              'session_id': reply.sessionId,
+            },
+          );
+          await _databaseService.createMessage(
+            id: msg.id,
+            channelId: channelId,
+            senderId: msg.from.id,
+            senderType: msg.from.type,
+            senderName: msg.from.name,
+            content: msg.content,
+            messageType: 'text',
+            replyToId: msg.replyTo,
+            metadata: msg.metadata,
+            conflictAlgorithm: ConflictAlgorithm.ignore,
+          );
+          inserted.add(msg);
+          ackIds.add(reply.id);
+        } catch (e) {
+          LoggerService().warning(
+            'Failed to open mailbox reply ${reply.id}: $e',
+            tag: 'ChatService',
+          );
+          // Don't ack — leave for retry / TTL
+        }
+      }
+
+      if (ackIds.isNotEmpty) {
+        await mailbox.ackReplies(
+          channelBase: channelBase,
+          agentId: acpAgentId,
+          callerFp: identity.fingerprintHex,
+          ids: ackIds,
+        );
+      }
+      return inserted;
+    } catch (e) {
+      LoggerService().warning(
+        'fetchMailboxReplies failed: $e',
+        tag: 'ChatService',
+      );
+      return const [];
+    }
   }
 
 }

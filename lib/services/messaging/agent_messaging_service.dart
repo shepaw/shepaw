@@ -25,6 +25,9 @@ import '../foreground_task_service.dart';
 import '../logger_service.dart';
 import '../peer_key_utils.dart';
 import '../she_service.dart';
+import '../noise_identity.dart';
+import '../mailbox/mailbox_seal.dart';
+import '../mailbox/channel_mailbox_service.dart';
 import '../../clis/shepaw/shepaw_cli.dart';
 import '../session/session_history_service.dart';
 import '../session/history_compactor.dart';
@@ -967,7 +970,7 @@ class AgentMessagingService {
           .toList();
 
       // Send chat message
-      await connection.sendChatMessage(
+      final chatResp = await connection.sendChatMessage(
         taskId: effectiveTaskId,
         sessionId: sessionId ?? '',
         message: userMessage.content,
@@ -978,6 +981,28 @@ class AgentMessagingService {
         systemPrompt: dmSystemPrompt ?? agent.metadata['system_prompt'] as String?,
         attachments: serializedAttachments,
       );
+
+      // 超并发：agent 回 busy → 结束本会话，密文留言到 channel 信箱
+      final busyStatus = chatResp.result is Map
+          ? (chatResp.result as Map)['status']?.toString()
+          : null;
+      if (busyStatus == 'busy') {
+        flushHelper?.cancel();
+        flushHelper?.deletePartialUnawaited();
+        connection.unregisterTaskCallbacks(effectiveTaskId);
+        activeTask.isComplete = true;
+        if (!taskCompleter.isCompleted) {
+          taskCompleter.complete();
+        }
+
+        final left = await _leaveMailboxMessage(
+          agent: agent,
+          userMessage: userMessage,
+          sessionId: sessionId ?? '',
+          chatHistory: chatHistory,
+        );
+        return left;
+      }
 
       // Async-confirmation path: don't block on `task.completed`. The
       // registered TaskCallbacks above will handle DB save + cleanup when
@@ -2463,5 +2488,93 @@ class AgentMessagingService {
     final mi = dt.minute.toString().padLeft(2, '0');
     final s = dt.second.toString().padLeft(2, '0');
     return '$y-$mo-$d $h:$mi:$s';
+  }
+
+  /// Agent busy → seal message into channel mailbox; mark user msg as left_message.
+  Future<Message> _leaveMailboxMessage({
+    required RemoteAgent agent,
+    required Message userMessage,
+    required String sessionId,
+    List<Map<String, dynamic>>? chatHistory,
+  }) async {
+    Message notice({required String content}) => Message(
+          id: const Uuid().v4(),
+          content: content,
+          timestampMs: DateTime.now().millisecondsSinceEpoch,
+          from: MessageFrom(id: agent.id, type: 'agent', name: agent.name),
+          to: MessageFrom(
+            id: userMessage.from.id,
+            type: 'user',
+            name: userMessage.from.name,
+          ),
+          type: MessageType.system,
+          replyTo: userMessage.id,
+          metadata: {'status': 'left_message'},
+        );
+
+    try {
+      final channelBase =
+          ChannelMailboxService.channelBaseFromEndpoint(agent.endpoint);
+      final agentPub = decodeCachedPeerPublicKey(
+        agent.metadata['cached_peer_static_public_key'],
+      );
+      final acpAgentId = (agent.metadata['target_agent_id'] as String?) ??
+          ChannelMailboxService.resolveAgentId(
+            agent.endpoint,
+            fallback: agent.id,
+          );
+
+      if (channelBase == null || agentPub == null || acpAgentId.isEmpty) {
+        LoggerService().warning(
+          'Cannot leave mailbox message: missing channelBase/pubkey/agentId',
+          tag: 'AgentMessagingService',
+        );
+        return notice(
+          content: '对方正忙，且当前无法留言（缺少通道或公钥信息）。请稍后再试。',
+        );
+      }
+
+      final identity = await NoiseIdentity.loadOrCreate();
+      final ciphertext = await mailboxSealJson(
+        {
+          'message': userMessage.content,
+          'message_id': userMessage.id,
+          'session_id': sessionId,
+          'history': chatHistory,
+          'ts': DateTime.now().millisecondsSinceEpoch,
+        },
+        agentPub,
+      );
+
+      final mailbox = ChannelMailboxService();
+      final pending = await mailbox.depositMessage(
+        channelBase: channelBase,
+        agentId: acpAgentId,
+        callerFp: identity.fingerprintHex,
+        messageId: userMessage.id,
+        sessionId: sessionId,
+        ciphertext: ciphertext,
+      );
+
+      await _db.updateMessageMetadata(userMessage.id, {
+        ...?userMessage.metadata,
+        'status': 'left_message',
+        'mailbox_pending': pending,
+      });
+
+      return notice(
+        content: pending > 0
+            ? '对方正忙，消息已留言（前面还有 ${pending - 1} 条）。下次进入聊天页时会自动收取回复。'
+            : '对方正忙，消息已留言。下次进入聊天页时会自动收取回复。',
+      );
+    } catch (e, st) {
+      LoggerService().error(
+        'Leave mailbox failed: $e',
+        tag: 'AgentMessagingService',
+        error: e,
+        stackTrace: st,
+      );
+      return notice(content: '对方正忙，留言失败：$e');
+    }
   }
 }
