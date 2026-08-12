@@ -5,6 +5,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../l10n/app_localizations.dart';
 import '../models/llm_token_usage.dart';
 import '../models/message.dart';
+import '../controllers/chat_message_window.dart';
 import '../services/store_open_service.dart';
 import '../theme/app_theme.dart';
 import 'voice_message_bubble.dart';
@@ -820,6 +821,19 @@ class MessageBubble extends StatelessWidget {
             initiallyCollapsed: !isStreaming && autoCollapse,
             autoCollapseOnComplete: autoCollapse,
             isStreaming: isStreaming,
+            isMyMessage: isMyMessage,
+            child: markdownWidget,
+          );
+        }
+
+        // Long finished replies: collapse by default to bound layout cost.
+        if (!isStreaming &&
+            message.content.length >= ChatMessageWindow.longContentChars) {
+          return CollapsibleMessageBubble(
+            title: AppLocalizations.of(context).widget_details,
+            initiallyCollapsed: true,
+            autoCollapseOnComplete: false,
+            isStreaming: false,
             isMyMessage: isMyMessage,
             child: markdownWidget,
           );

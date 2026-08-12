@@ -55,10 +55,12 @@ import 'streaming_action_confirmation.dart';
 import 'inbound_file_message_parser.dart';
 import 'peer_approval_completer_resolver.dart';
 import 'chat_events.dart';
+import 'chat_message_window.dart';
 
 // ChatEvent 及其全部子类已拆分到 chat_events.dart，这里重新导出，
 // 使现有 `import '../controllers/chat_controller.dart'` 的调用方无需改动。
 export 'chat_events.dart';
+export 'chat_message_window.dart';
 
 // 部分低耦合的方法簇（会话管理、群成员管理）以 part + mixin 形式拆到独立文件，
 // 与本文件同属一个库，因此可直接访问 _ChatControllerBase 的私有字段与辅助方法。
@@ -107,6 +109,12 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
   bool isLoading = false;
   bool isSearching = false;
   String searchQuery = '';
+
+  /// True when older history may still exist beyond the in-memory window.
+  bool hasMoreOlderMessages = false;
+
+  /// True while [loadOlderMessages] is in flight.
+  bool isLoadingOlderMessages = false;
 
   // ---- Streaming state ----
   final ChatStreamingSession streaming = ChatStreamingSession();
@@ -273,6 +281,10 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
   void _reapplyStashedPlanApprovalResponses();
   Future<void> _flushAllStashedPlanApprovalResponses();
   Future<void> loadMessages();
+  /// Prefetch older history when the user scrolls up. Returns how many
+  /// messages were prepended (0 if none / busy / exhausted).
+  Future<int> loadOlderMessages();
+  Future<void> _refreshHasMoreOlderMessages();
 
 
   _ChatControllerBase({
@@ -504,7 +516,10 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
     }
 
     if (messageContent == null) {
-      final dbMessages = await chatService.loadChannelMessages(currentChannelId!);
+      final dbMessages = await chatService.loadChannelMessages(
+        currentChannelId!,
+        limit: ChatMessageWindow.maxCached,
+      );
       for (final msg in dbMessages.reversed) {
         if (msg.id == userMsgId) {
           messageContent = msg.content;
@@ -548,7 +563,16 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
   Future<void> reloadMessagesFromDB() async {
     if (currentChannelId == null) return;
     _preserveInMemoryPlanApprovalResponses();
-    final dbMessages = await chatService.loadChannelMessages(currentChannelId!);
+    final windowLimit = messages.isEmpty
+        ? ChatMessageWindow.initialLimit
+        : messages.length.clamp(
+            ChatMessageWindow.initialLimit,
+            ChatMessageWindow.maxCached,
+          );
+    final dbMessages = await chatService.loadChannelMessages(
+      currentChannelId!,
+      limit: windowLimit,
+    );
     if (isGroupMode) {
       messages.clear();
       messageIdMap.clear();
@@ -577,6 +601,7 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
         acpCancellationToken = null;
       }
     }
+    unawaited(_refreshHasMoreOlderMessages());
     _reapplyStashedPlanApprovalResponses();
     unawaited(_flushAllStashedPlanApprovalResponses());
     _notify();
@@ -603,6 +628,7 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
       if (!loadedMessages.any((m) => m.id == messageId)) return false;
       messages = loadedMessages;
       rebuildMessageIdMap();
+      unawaited(_refreshHasMoreOlderMessages());
       _notify();
       return true;
     } catch (e) {
@@ -794,7 +820,16 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
   Future<void> reconcileGroupMessages() async {
     if (currentChannelId == null) return;
 
-    final dbMessages = await chatService.loadChannelMessages(currentChannelId!);
+    final windowLimit = messages.isEmpty
+        ? ChatMessageWindow.initialLimit
+        : messages.length.clamp(
+            ChatMessageWindow.initialLimit,
+            ChatMessageWindow.maxCached,
+          );
+    final dbMessages = await chatService.loadChannelMessages(
+      currentChannelId!,
+      limit: windowLimit,
+    );
     final result = ChatMessageReconciler.reconcileGroupMessages(
       current: messages,
       dbMessages: dbMessages,
@@ -830,6 +865,7 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
 
     messages = result.messages;
     rebuildMessageIdMap();
+    unawaited(_refreshHasMoreOlderMessages());
     LoggerService().debug(
       'reconcileGroupMessages done: ${messages.length} messages',
       tag: 'ChatController',

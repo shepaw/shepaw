@@ -82,6 +82,24 @@ class HistoryService {
     return _mapsToMessages(messageMaps, channelId);
   }
 
+  /// Load messages strictly older than [beforeCreatedAt] (ISO-8601).
+  Future<List<Message>> loadOlderChannelMessages(
+    String channelId, {
+    required String beforeCreatedAt,
+    int limit = 50,
+  }) async {
+    final messageMaps = await _db.getChannelMessagesBefore(
+      channelId,
+      beforeCreatedAt,
+      limit: limit,
+    );
+    return _mapsToMessages(messageMaps, channelId);
+  }
+
+  /// Total rows in the channel (all message types).
+  Future<int> countChannelMessages(String channelId) =>
+      _db.countChannelMessages(channelId);
+
   /// Load enough recent messages to include [messageId], plus [paddingAfter] newer ones.
   Future<List<Message>> loadChannelMessagesIncluding(
     String channelId,

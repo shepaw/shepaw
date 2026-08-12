@@ -138,8 +138,10 @@ mixin _LoadOps on _ChatControllerBase {
         }
       }
 
-      final loadedMessages =
-          await chatService.loadChannelMessages(currentChannelId!);
+      final loadedMessages = await chatService.loadChannelMessages(
+        currentChannelId!,
+        limit: ChatMessageWindow.initialLimit,
+      );
 
       _preserveInMemoryPlanApprovalResponses();
       if (isGroupMode) {
@@ -148,6 +150,7 @@ mixin _LoadOps on _ChatControllerBase {
         _mergeDmStreamingPlaceholders(loadedMessages);
       }
       rebuildMessageIdMap();
+      await _refreshHasMoreOlderMessages();
       _reapplyStashedPlanApprovalResponses();
       await PendingApprovalHub.instance.reconcileForChannel(
         currentChannelId!,
@@ -179,6 +182,82 @@ mixin _LoadOps on _ChatControllerBase {
       isLoading = false;
       _notify();
       _emit(ShowErrorSnackBarEvent('chat_loadFailed:$e'));
+    }
+  }
+
+  @override
+  Future<int> loadOlderMessages() async {
+    final channelId = currentChannelId;
+    if (channelId == null) return 0;
+    if (!hasMoreOlderMessages || isLoadingOlderMessages) return 0;
+    if (messages.isEmpty) return 0;
+
+    isLoadingOlderMessages = true;
+    _notify();
+
+    try {
+      // Prefer the persisted created_at cursor so local/UTC formatting matches
+      // the SQLite row exactly (avoids missing/duplicating the boundary row).
+      final oldest = messages.first;
+      final beforeCreatedAt =
+          await localDatabaseService.getMessageCreatedAt(oldest.id) ??
+              DateTime.fromMillisecondsSinceEpoch(oldest.timestampMs)
+                  .toIso8601String();
+      final older = await chatService.loadOlderChannelMessages(
+        channelId,
+        beforeCreatedAt: beforeCreatedAt,
+        limit: ChatMessageWindow.pageSize,
+      );
+
+      final fresh = <Message>[];
+      for (final m in older) {
+        if (messageIdMap.containsKey(m.id)) continue;
+        fresh.add(m);
+      }
+
+      if (fresh.isNotEmpty) {
+        messages.insertAll(0, fresh);
+        for (final m in fresh) {
+          messageIdMap[m.id] = m;
+        }
+      }
+
+      // Exhausted when the DB page was short, or everything was already present.
+      hasMoreOlderMessages = older.length >= ChatMessageWindow.pageSize;
+      return fresh.length;
+    } catch (e) {
+      LoggerService().warning(
+        'loadOlderMessages failed: $e',
+        tag: 'ChatController',
+        error: e,
+      );
+      return 0;
+    } finally {
+      isLoadingOlderMessages = false;
+      _notify();
+    }
+  }
+
+  @override
+  Future<void> _refreshHasMoreOlderMessages() async {
+    final channelId = currentChannelId;
+    if (channelId == null) {
+      hasMoreOlderMessages = false;
+      return;
+    }
+    try {
+      final total = await chatService.countChannelMessages(channelId);
+      // In-memory may include optimistic streaming placeholders not in DB.
+      final persistedApprox = messages.where((m) {
+        final id = m.id;
+        return !id.startsWith('streaming_') &&
+            !id.startsWith('group_streaming_') &&
+            !id.startsWith('hint_');
+      }).length;
+      hasMoreOlderMessages = total > persistedApprox;
+    } catch (_) {
+      hasMoreOlderMessages =
+          messages.length >= ChatMessageWindow.initialLimit;
     }
   }
 

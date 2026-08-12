@@ -1172,6 +1172,22 @@ $originalQuestion
   Future<List<Message>> loadChannelMessages(String channelId, {int limit = 100}) =>
       _historyService.loadChannelMessages(channelId, limit: limit);
 
+  /// Load messages older than [beforeCreatedAt] for upward pagination.
+  Future<List<Message>> loadOlderChannelMessages(
+    String channelId, {
+    required String beforeCreatedAt,
+    int limit = 50,
+  }) =>
+      _historyService.loadOlderChannelMessages(
+        channelId,
+        beforeCreatedAt: beforeCreatedAt,
+        limit: limit,
+      );
+
+  /// Total message rows in a channel.
+  Future<int> countChannelMessages(String channelId) =>
+      _historyService.countChannelMessages(channelId);
+
   /// Load recent messages sufficient to include [messageId] for scroll-to-search.
   Future<List<Message>> loadChannelMessagesIncluding(
     String channelId,

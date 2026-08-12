@@ -57,6 +57,32 @@ extension MessageDao on LocalDatabaseService {
     );
   }
 
+  /// 加载严格早于 [beforeCreatedAt] 的更早消息（`created_at DESC`，调用方再排序）。
+  Future<List<Map<String, dynamic>>> getChannelMessagesBefore(
+    String channelId,
+    String beforeCreatedAt, {
+    int limit = 50,
+  }) async {
+    final db = await database;
+    return await db.query(
+      'messages',
+      where: 'channel_id = ? AND created_at < ?',
+      whereArgs: [channelId, beforeCreatedAt],
+      orderBy: 'created_at DESC',
+      limit: limit,
+    );
+  }
+
+  /// 频道全部消息条数（含非 text），用于分页 hasMore 判定。
+  Future<int> countChannelMessages(String channelId) async {
+    final db = await database;
+    final result = await db.rawQuery(
+      'SELECT COUNT(*) as cnt FROM messages WHERE channel_id = ?',
+      [channelId],
+    );
+    return (result.first['cnt'] as int?) ?? 0;
+  }
+
   /// 按 metadata JSON 子串检索频道消息（不受「最近 N 条」窗口限制）。
   ///
   /// 用于启动时的审批对账：直接定位某条 plan_approval / action_confirmation

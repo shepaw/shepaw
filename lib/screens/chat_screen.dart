@@ -656,6 +656,51 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
       _controller.markMessagesAsReadIfAtBottom();
       unawaited(_refreshOtherSessionsUnread());
     }
+    unawaited(_maybeLoadOlderMessages());
+  }
+
+  /// When the user scrolls near the oldest loaded edge, prepend the next page
+  /// and re-anchor so the viewport does not jump.
+  Future<void> _maybeLoadOlderMessages() async {
+    final c = _controller;
+    if (!c.hasMoreOlderMessages || c.isLoadingOlderMessages) return;
+    if (c.messages.isEmpty) return;
+    // Stay out of the way of live follow / programmatic jumpTo.
+    if (_liveFollowStreaming || _isProgrammaticScrolling) return;
+
+    final positions = _itemPositionsListener.itemPositions.value;
+    if (positions.isEmpty) return;
+
+    final itemCount = c.messages.length;
+    var maxIndex = 0;
+    ItemPosition? topMost;
+    for (final p in positions) {
+      if (p.index >= maxIndex) {
+        maxIndex = p.index;
+        topMost = p;
+      }
+    }
+    // Reverse list: high index == older. Trigger when within 4 of the oldest.
+    if (maxIndex < itemCount - 4) return;
+    if (topMost == null) return;
+
+    final anchorIndex = topMost.index;
+    final anchorAlignment = topMost.itemLeadingEdge;
+
+    final added = await c.loadOlderMessages();
+    if (!mounted || added <= 0) return;
+    if (!_itemScrollController.isAttached) return;
+
+    _beginProgrammaticScroll();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || !_itemScrollController.isAttached) return;
+      final newIndex = anchorIndex + added;
+      if (newIndex < 0 || newIndex >= _controller.messages.length) return;
+      _itemScrollController.jumpTo(
+        index: newIndex,
+        alignment: anchorAlignment,
+      );
+    });
   }
 
   void _onUserScroll(ScrollDirection direction) {
@@ -2117,6 +2162,19 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                     right: 16,
                     bottom: 12,
                     child: _buildScrollToBottomButton(),
+                  ),
+                if (_controller.isLoadingOlderMessages)
+                  const Positioned(
+                    top: 8,
+                    left: 0,
+                    right: 0,
+                    child: Center(
+                      child: SizedBox(
+                        width: 22,
+                        height: 22,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      ),
+                    ),
                   ),
               ],
             ),
