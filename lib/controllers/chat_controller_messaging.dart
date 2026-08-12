@@ -1481,7 +1481,10 @@ mixin _MessagingOps on _ChatControllerBase {
 
   @override
   void scheduleStreamingScrollToBottom() {
-    if (isUserScrolledUp) return;
+    // Do not gate on isUserScrolledUp at schedule time — a sticky false
+    // positive (common with long lists after jumpTo) would drop every chunk's
+    // follow-scroll for the rest of the turn. Check at emit time instead;
+    // ChatScreen also resumes live-follow after force sends.
     if (_pendingStreamingScroll) return;
     _pendingStreamingScroll = true;
     WidgetsBinding.instance.addPostFrameCallback((_) {

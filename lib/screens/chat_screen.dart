@@ -125,13 +125,16 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   // Scroll state (UI-bound)
   bool _isUserScrolledUp = false;
   /// True while we drive scroll via jumpTo/scrollTo. Programmatic motion can
-  /// emit [UserScrollNotification] and falsely set [_isUserScrolledUp], which
-  /// then skips [setState] for the rest of a streaming turn (blank UI until
-  /// leave/re-enter). Cleared after a short settle window — not a single
-  /// frame — because ScrollablePositionedList may notify after the next frame.
+  /// emit [UserScrollNotification] and falsely set [_isUserScrolledUp].
+  /// Cleared after newest item is visible again (or a hard timeout) — long
+  /// lists settle slower than a single frame / short fixed delay.
   bool _isProgrammaticScrolling = false;
   int _programmaticScrollGeneration = 0;
   Timer? _programmaticScrollClearTimer;
+  /// After send/reattach, keep following the stream until the user clearly
+  /// scrolls away from the newest message. Prevents long-list jumpTo from
+  /// freezing UI with a sticky scrolled-up flag.
+  bool _liveFollowStreaming = false;
   int _unreadMessageCount = 0;
 
   /// Unread agent/group messages in sessions other than the one being viewed.
@@ -281,17 +284,18 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     }
     final isStreaming = _controller.streamingMessageId != null ||
         _controller.groupStreamingMessageIds.isNotEmpty;
-    // Recover from a false scrolled-up sticky flag: if the newest item is
-    // still visible, keep following the stream instead of freezing the UI.
-    if (_isUserScrolledUp && isStreaming && _isNewestMessageVisible()) {
+    if (!isStreaming) {
+      _liveFollowStreaming = false;
+    } else if (_liveFollowStreaming && _isUserScrolledUp) {
+      // Live-follow turn: never let a sticky scrolled-up flag starve rebuilds.
+      _clearScrolledUpState(notify: false);
+    } else if (_isUserScrolledUp && _isNewestMessageVisible()) {
       _clearScrolledUpState(notify: false);
     }
-    // During active streaming, if user is scrolled up, skip expensive
-    // full rebuilds — the message list content updates in the controller
-    // and will render when the user scrolls back to bottom.
-    if (_isUserScrolledUp && isStreaming) {
-      return;
-    }
+    // Always rebuild while streaming. Skipping setState when "scrolled up"
+    // used to freeze the bubble for the whole turn (especially with long
+    // lists where jumpTo falsely sticks the flag). Follow-scroll is gated
+    // separately; chunk notifies are already coalesced to one per frame.
     setState(() {});
   }
 
@@ -377,9 +381,13 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
           });
         } else {
           // Force (new send / reattach) always resumes live follow — otherwise a
-          // stuck scrolled-up flag from a prior turn keeps skipping rebuilds.
-          if (force && _isUserScrolledUp) {
-            _clearScrolledUpState(notify: false);
+          // stuck scrolled-up flag from a prior turn keeps skipping rebuilds /
+          // follow-scrolls (worse with long message lists).
+          if (force) {
+            _liveFollowStreaming = true;
+            if (_isUserScrolledUp) {
+              _clearScrolledUpState(notify: false);
+            }
           }
           _scrollToBottom(force: force);
         }
@@ -619,12 +627,26 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     _isProgrammaticScrolling = true;
     final generation = ++_programmaticScrollGeneration;
     _programmaticScrollClearTimer?.cancel();
-    // jumpTo can emit UserScrollNotification after the next frame; keep the
-    // guard long enough to cover that settle window.
-    _programmaticScrollClearTimer = Timer(const Duration(milliseconds: 250), () {
+
+    // Long lists may take several frames before jumpTo lands and before
+    // ItemPositionsListener reports index 0. Keep the guard until then,
+    // with a hard ceiling so a failed jump cannot stick forever.
+    final startedAt = DateTime.now();
+    const maxWait = Duration(milliseconds: 800);
+
+    void settle() {
       if (!mounted || generation != _programmaticScrollGeneration) return;
-      _isProgrammaticScrolling = false;
-    });
+      if (_isNewestMessageVisible() ||
+          DateTime.now().difference(startedAt) >= maxWait) {
+        _isProgrammaticScrolling = false;
+        return;
+      }
+      _programmaticScrollClearTimer =
+          Timer(const Duration(milliseconds: 50), settle);
+    }
+
+    _programmaticScrollClearTimer =
+        Timer(const Duration(milliseconds: 50), settle);
   }
 
   void _onItemPositionsChanged() {
@@ -647,12 +669,15 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     // toward newer messages (downward visually).
     if (direction == ScrollDirection.forward) {
       // Direction alone is not enough: programmatic settles can look like
-      // forward while index 0 is still on screen.
+      // forward while index 0 is still on screen. Long lists also leave a
+      // window where positions are stale and index 0 is briefly unreported.
       if (_isNewestMessageVisible()) return;
+      // Intentional leave-bottom: stop live follow for this turn.
+      _liveFollowStreaming = false;
       if (!_isUserScrolledUp) {
         // Update the flag synchronously before setState so that
         // _onControllerChanged can read the correct value immediately in the
-        // same frame and skip the rebuild that would interrupt the gesture.
+        // same frame.
         _isUserScrolledUp = true;
         _controller.isUserScrolledUp = true;
         setState(() {});
@@ -678,7 +703,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
 
   void _scrollToBottom({bool force = false, bool isNewMessage = false}) {
     if (_controller.messages.isEmpty) return;
-    if (!force && _isUserScrolledUp) {
+    if (!force && _isUserScrolledUp && !_liveFollowStreaming) {
       if (isNewMessage) {
         setState(() { _unreadMessageCount++; });
       }
@@ -690,7 +715,8 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     // In reverse mode, index 0 is the newest (bottom) message.
     // During streaming, jump instantly: a 300ms scrollTo per chunk races with
     // UserScrollNotification and can stick [_isUserScrolledUp], freezing UI.
-    final streamingFollow = _controller.streamingMessageId != null ||
+    final streamingFollow = _liveFollowStreaming ||
+        _controller.streamingMessageId != null ||
         _controller.groupStreamingMessageIds.isNotEmpty;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted || _controller.messages.isEmpty) return;
@@ -707,8 +733,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
         )
             .whenComplete(() {
           if (!mounted) return;
-          // Animated scroll already spans >250ms; extend guard slightly past
-          // completion so trailing UserScrollNotifications are ignored.
+          // Extend guard past animation so trailing notifications are ignored.
           _beginProgrammaticScroll();
         });
       }
