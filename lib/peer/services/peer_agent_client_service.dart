@@ -409,6 +409,50 @@ class PeerSoulInfo {
   const PeerSoulInfo({required this.soul, required this.editable});
 }
 
+/// One hub instance as returned by `agent_manage_resp`.
+class PeerAgentManageEntry {
+  final String id;
+  final String name;
+  final String engine;
+  final bool running;
+  final bool enabled;
+  final bool manageable;
+
+  const PeerAgentManageEntry({
+    required this.id,
+    required this.name,
+    this.engine = '',
+    required this.running,
+    required this.enabled,
+    required this.manageable,
+  });
+
+  factory PeerAgentManageEntry.fromJson(Map<String, dynamic> json) {
+    return PeerAgentManageEntry(
+      id: json['id'] as String? ?? '',
+      name: json['name'] as String? ?? '',
+      engine: json['engine'] as String? ?? '',
+      running: json['running'] == true,
+      enabled: json['enabled'] != false,
+      manageable: json['manageable'] == true,
+    );
+  }
+}
+
+class PeerAgentManageResult {
+  final bool ok;
+  final String? error;
+  final List<PeerAgentManageEntry> agents;
+  final bool unsupported;
+
+  const PeerAgentManageResult({
+    required this.ok,
+    this.error,
+    this.agents = const [],
+    this.unsupported = false,
+  });
+}
+
 /// Result of [PeerAgentClientService.syncAgentIncremental].
 class PeerAgentIncrementalSyncResult {
   /// Channels linked/repaired by [PeerAgentClientService.syncSessions].
@@ -547,6 +591,9 @@ class PeerAgentClientService {
   /// Outstanding agent_soul_set_req per remote agent id.
   final Map<String, Completer<bool>> _pendingSoulSet = {};
 
+  /// Outstanding agent_manage_req keyed by request_id.
+  final Map<String, Completer<PeerAgentManageResult>> _pendingManage = {};
+
   /// Maps hub approval_id → agent_chat request_id for deferred completion.
   final Map<String, String> _approvalToRequest = {};
 
@@ -642,6 +689,12 @@ class PeerAgentClientService {
       if (!c.isCompleted) c.complete(false);
     }
     _pendingModelSet.clear();
+    for (final c in _pendingManage.values) {
+      if (!c.isCompleted) {
+        c.complete(const PeerAgentManageResult(ok: false, error: 'stopped'));
+      }
+    }
+    _pendingManage.clear();
     _approvalToRequest.clear();
   }
 
@@ -983,6 +1036,9 @@ class PeerAgentClientService {
       case 'agent_soul_set_resp':
         _onSoulSetResp(event.data);
         break;
+      case 'agent_manage_resp':
+        _onManageResp(event.data);
+        break;
       case 'agent_file_ack':
         _onFileAck(event.data);
         break;
@@ -1224,6 +1280,58 @@ class PeerAgentClientService {
     final ok = data['ok'] == true;
     final completer = _pendingSoulSet.remove(remoteId);
     if (completer != null && !completer.isCompleted) completer.complete(ok);
+  }
+
+  /// Remote instance control: list / start / stop / set_enabled.
+  Future<PeerAgentManageResult> manageAgents({
+    required String peerId,
+    required String op,
+    String? agentId,
+    bool? enabled,
+  }) async {
+    final requestId = _uuid.v4();
+    final completer = Completer<PeerAgentManageResult>();
+    _pendingManage[requestId] = completer;
+    final payload = <String, dynamic>{
+      'type': 'agent_manage_req',
+      'request_id': requestId,
+      'op': op,
+      if (agentId != null) 'agent_id': agentId,
+      if (enabled != null) 'enabled': enabled,
+    };
+    final sent = await PeerConnectionManager.instance.sendControl(peerId, payload);
+    if (!sent) {
+      _pendingManage.remove(requestId);
+      return const PeerAgentManageResult(ok: false, error: 'offline');
+    }
+    return completer.future.timeout(const Duration(seconds: 20), onTimeout: () {
+      _pendingManage.remove(requestId);
+      return const PeerAgentManageResult(
+        ok: false,
+        unsupported: true,
+        error: 'timeout',
+      );
+    });
+  }
+
+  void _onManageResp(Map<String, dynamic> data) {
+    final requestId = data['request_id'] as String?;
+    if (requestId == null) return;
+    final completer = _pendingManage.remove(requestId);
+    if (completer == null || completer.isCompleted) return;
+    final raw = (data['agents'] as List?) ?? const [];
+    final agents = <PeerAgentManageEntry>[];
+    for (final item in raw) {
+      if (item is! Map) continue;
+      agents.add(PeerAgentManageEntry.fromJson(Map<String, dynamic>.from(item)));
+    }
+    final error = data['error'] as String?;
+    completer.complete(PeerAgentManageResult(
+      ok: data['ok'] == true,
+      error: error,
+      agents: agents,
+      unsupported: error == 'unsupported',
+    ));
   }
 
   /// Fetch a remote session's transcript (oldest → newest) so the app can
@@ -2289,6 +2397,10 @@ class PeerAgentClientService {
             const <String>[];
         final engine = (raw['engine'] as String?)?.trim();
         final avatar = await _resolvePeerAvatar(raw, existing);
+        final manageable = raw['manageable'] == true;
+        final enabled = raw['enabled'] != false;
+        final running = raw['running'] == true;
+        final online = !manageable || (enabled && running);
 
         final agent = RemoteAgent(
           id: localId,
@@ -2299,7 +2411,7 @@ class PeerAgentClientService {
           endpoint: 'peer://$peerId/$remoteId',
           protocol: ProtocolType.peer,
           connectionType: ConnectionType.websocket,
-          status: AgentStatus.online,
+          status: online ? AgentStatus.online : AgentStatus.offline,
           connectedAt: now,
           capabilities: capabilities,
           metadata: {
@@ -2309,6 +2421,9 @@ class PeerAgentClientService {
             if (engine != null && engine.isNotEmpty) 'engine': engine,
             if (supportedModalities.isNotEmpty)
               'supported_modalities': supportedModalities,
+            if (manageable) 'manageable': true,
+            'enabled': enabled,
+            'running': running,
             // 保留本地头像自定义标记，使其在每次同步后依然生效。
             if (existing?.metadata['avatar_overridden'] == true)
               'avatar_overridden': true,

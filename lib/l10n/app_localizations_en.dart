@@ -3928,6 +3928,39 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
+  String get peerSettings_sectionAgents => 'Agent Management';
+
+  @override
+  String get peerSettings_agentEnabled => 'Enabled';
+
+  @override
+  String get peerSettings_agentDisabled => 'Disabled';
+
+  @override
+  String get peerSettings_agentStart => 'Start';
+
+  @override
+  String get peerSettings_agentStop => 'Stop';
+
+  @override
+  String get peerSettings_agentRunning => 'Running';
+
+  @override
+  String get peerSettings_agentStopped => 'Stopped';
+
+  @override
+  String get peerSettings_agentManageOffline =>
+      'Device is offline. Agent management is unavailable.';
+
+  @override
+  String get peerSettings_noManagedAgents => 'This device has no agents yet';
+
+  @override
+  String peerSettings_agentOpFailed(String error) {
+    return 'Operation failed: $error';
+  }
+
+  @override
   String get peerList_connected => 'Connected';
 
   @override

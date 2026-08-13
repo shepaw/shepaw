@@ -2178,6 +2178,23 @@
       }
     }
   },
+  "peerSettings_sectionAgents": "Agent 管理",
+  "peerSettings_agentEnabled": "启用",
+  "peerSettings_agentDisabled": "已禁用",
+  "peerSettings_agentStart": "启动",
+  "peerSettings_agentStop": "停止",
+  "peerSettings_agentRunning": "运行中",
+  "peerSettings_agentStopped": "已停止",
+  "peerSettings_agentManageOffline": "设备离线，无法管理 Agent",
+  "peerSettings_noManagedAgents": "该设备上还没有 Agent",
+  "peerSettings_agentOpFailed": "操作失败：{error}",
+  "@peerSettings_agentOpFailed": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
   "peerList_connected": "已连接",
   "peerList_connectedE2e": "已连接 (端到端加密)",
   "peerList_disconnected": "未连接",

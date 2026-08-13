@@ -11,6 +11,7 @@ import '../../widgets/form_bottom_bar.dart';
 import '../models/paired_peer.dart';
 import '../services/peer_connection_manager.dart';
 import '../services/peer_storage_service.dart';
+import '../widgets/peer_agent_manage_panel.dart';
 import '../widgets/peer_store_share_panel.dart';
 import 'peer_chat_screen.dart';
 import '../widgets/peer_device_icon.dart';
@@ -376,6 +377,13 @@ class _PeerSettingsScreenState extends State<PeerSettingsScreen> {
               onTap: _changeTrustLevel,
             ),
           ]),
+
+          const SizedBox(height: 16),
+
+          PeerAgentManagePanel(
+            peerId: widget.peer.id,
+            isPeerConnected: _isConnected,
+          ),
 
           const SizedBox(height: 16),
 

@@ -92,6 +92,8 @@ class PeerConnection {
   static const Set<String> _controlTypes = {
     'agent_list_req',
     'agent_list_resp',
+    'agent_manage_req',
+    'agent_manage_resp',
     'agent_chat',
     'agent_chunk',
     'agent_metadata',

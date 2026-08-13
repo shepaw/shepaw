@@ -6998,6 +6998,66 @@ abstract class AppLocalizations {
   /// **'可连接的 Agent ({count})'**
   String peerSettings_connectableAgentsTitleCount(int count);
 
+  /// No description provided for @peerSettings_sectionAgents.
+  ///
+  /// In zh, this message translates to:
+  /// **'Agent 管理'**
+  String get peerSettings_sectionAgents;
+
+  /// No description provided for @peerSettings_agentEnabled.
+  ///
+  /// In zh, this message translates to:
+  /// **'启用'**
+  String get peerSettings_agentEnabled;
+
+  /// No description provided for @peerSettings_agentDisabled.
+  ///
+  /// In zh, this message translates to:
+  /// **'已禁用'**
+  String get peerSettings_agentDisabled;
+
+  /// No description provided for @peerSettings_agentStart.
+  ///
+  /// In zh, this message translates to:
+  /// **'启动'**
+  String get peerSettings_agentStart;
+
+  /// No description provided for @peerSettings_agentStop.
+  ///
+  /// In zh, this message translates to:
+  /// **'停止'**
+  String get peerSettings_agentStop;
+
+  /// No description provided for @peerSettings_agentRunning.
+  ///
+  /// In zh, this message translates to:
+  /// **'运行中'**
+  String get peerSettings_agentRunning;
+
+  /// No description provided for @peerSettings_agentStopped.
+  ///
+  /// In zh, this message translates to:
+  /// **'已停止'**
+  String get peerSettings_agentStopped;
+
+  /// No description provided for @peerSettings_agentManageOffline.
+  ///
+  /// In zh, this message translates to:
+  /// **'设备离线，无法管理 Agent'**
+  String get peerSettings_agentManageOffline;
+
+  /// No description provided for @peerSettings_noManagedAgents.
+  ///
+  /// In zh, this message translates to:
+  /// **'该设备上还没有 Agent'**
+  String get peerSettings_noManagedAgents;
+
+  /// No description provided for @peerSettings_agentOpFailed.
+  ///
+  /// In zh, this message translates to:
+  /// **'操作失败：{error}'**
+  String peerSettings_agentOpFailed(String error);
+
   /// No description provided for @peerList_connected.
   ///
   /// In zh, this message translates to:

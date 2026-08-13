@@ -3782,6 +3782,38 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
+  String get peerSettings_sectionAgents => 'Agent 管理';
+
+  @override
+  String get peerSettings_agentEnabled => '启用';
+
+  @override
+  String get peerSettings_agentDisabled => '已禁用';
+
+  @override
+  String get peerSettings_agentStart => '启动';
+
+  @override
+  String get peerSettings_agentStop => '停止';
+
+  @override
+  String get peerSettings_agentRunning => '运行中';
+
+  @override
+  String get peerSettings_agentStopped => '已停止';
+
+  @override
+  String get peerSettings_agentManageOffline => '设备离线，无法管理 Agent';
+
+  @override
+  String get peerSettings_noManagedAgents => '该设备上还没有 Agent';
+
+  @override
+  String peerSettings_agentOpFailed(String error) {
+    return '操作失败：$error';
+  }
+
+  @override
   String get peerList_connected => '已连接';
 
   @override

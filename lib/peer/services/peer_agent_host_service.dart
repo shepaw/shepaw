@@ -206,11 +206,56 @@ class PeerAgentHostService {
       case 'agent_soul_set_req':
         unawaited(_handleSoulSet(event.peerId, event.data));
         break;
+      case 'agent_manage_req':
+        unawaited(_handleManageReq(event.peerId, event.data));
+        break;
     }
   }
 
   Future<void> _handleListReq(String peerId) async {
     await pushAgentList(peerId);
+  }
+
+  Future<void> _handleManageReq(String peerId, Map<String, dynamic> data) async {
+    final requestId = data['request_id'] as String? ?? '';
+    final op = data['op'] as String? ?? '';
+    if (op != 'list') {
+      await PeerConnectionManager.instance.sendControl(peerId, {
+        'type': 'agent_manage_resp',
+        'request_id': requestId,
+        'ok': false,
+        'error': 'unsupported',
+      });
+      return;
+    }
+    try {
+      final eligible = await _eligibleAgents();
+      final sharedIds = await PeerStorageService().getSharedAgentIds(peerId);
+      final agents = eligible
+          .where((a) => sharedIds.contains(a.id))
+          .map((a) => {
+                'id': a.id,
+                'name': a.name,
+                'engine': (a.metadata['engine'] as String?) ?? '',
+                'running': true,
+                'enabled': true,
+                'manageable': false,
+              })
+          .toList();
+      await PeerConnectionManager.instance.sendControl(peerId, {
+        'type': 'agent_manage_resp',
+        'request_id': requestId,
+        'ok': true,
+        'agents': agents,
+      });
+    } catch (e) {
+      await PeerConnectionManager.instance.sendControl(peerId, {
+        'type': 'agent_manage_resp',
+        'request_id': requestId,
+        'ok': false,
+        'error': e.toString(),
+      });
+    }
   }
 
   /// 按「分享给该设备」的决定构建并推送可访问的 agent 列表。

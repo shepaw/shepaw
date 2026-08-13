@@ -1693,6 +1693,23 @@
       }
     }
   },
+  "peerSettings_sectionAgents": "Agent Management",
+  "peerSettings_agentEnabled": "Enabled",
+  "peerSettings_agentDisabled": "Disabled",
+  "peerSettings_agentStart": "Start",
+  "peerSettings_agentStop": "Stop",
+  "peerSettings_agentRunning": "Running",
+  "peerSettings_agentStopped": "Stopped",
+  "peerSettings_agentManageOffline": "Device is offline. Agent management is unavailable.",
+  "peerSettings_noManagedAgents": "This device has no agents yet",
+  "peerSettings_agentOpFailed": "Operation failed: {error}",
+  "@peerSettings_agentOpFailed": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
   "peerList_connected": "Connected",
   "peerList_connectedE2e": "Connected (End-to-end encrypted)",
   "peerList_disconnected": "Not connected",

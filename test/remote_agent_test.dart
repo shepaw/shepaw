@@ -186,5 +186,30 @@ void main() {
       final error = online.copyWith(status: AgentStatus.error);
       expect(error.statusIcon, '🔴');
     });
+
+    test('peer agent manage flags default to enabled / not manageable', () {
+      final now = DateTime.now().millisecondsSinceEpoch;
+      final agent = RemoteAgent(
+        id: 'peer-agent',
+        name: 'Hub Agent',
+        token: '',
+        endpoint: 'peer://p1/a1',
+        protocol: ProtocolType.peer,
+        connectionType: ConnectionType.websocket,
+        status: AgentStatus.offline,
+        createdAt: now,
+        updatedAt: now,
+        metadata: {
+          'source_peer_id': 'p1',
+          'remote_agent_id': 'a1',
+          'manageable': true,
+          'enabled': false,
+          'running': false,
+        },
+      );
+      expect(agent.peerAgentManageable, isTrue);
+      expect(agent.peerAgentEnabled, isFalse);
+      expect(agent.peerAgentRunning, isFalse);
+    });
   });
 }
