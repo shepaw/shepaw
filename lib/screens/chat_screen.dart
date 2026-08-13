@@ -63,9 +63,11 @@ class ChatScreen extends StatefulWidget {
   final String? channelId;
   final bool embedded;
   final VoidCallback? onClose;
-  final void Function(String channelId, {String? highlightMessageId})? onSwitchChannel;
+  final void Function(String channelId, {String? highlightMessageId})?
+      onSwitchChannel;
   final ValueChanged<String?>? onShowTraces;
-  final void Function(String channelId, String channelName)? onShowGroupWorkflow;
+  final void Function(String channelId, String channelName)?
+      onShowGroupWorkflow;
 
   /// When set, scroll to and highlight this message after loading.
   final String? highlightMessageId;
@@ -127,6 +129,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
 
   // Scroll state (UI-bound)
   bool _isUserScrolledUp = false;
+
   /// True while we drive scroll via jumpTo/scrollTo. Programmatic motion can
   /// emit [UserScrollNotification] and falsely set [_isUserScrolledUp].
   /// Cleared after newest item is visible again (or a hard timeout) — long
@@ -134,6 +137,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   bool _isProgrammaticScrolling = false;
   int _programmaticScrollGeneration = 0;
   Timer? _programmaticScrollClearTimer;
+
   /// After send/reattach, keep following the stream until the user clearly
   /// scrolls away from the newest message. Prevents long-list jumpTo from
   /// freezing UI with a sticky scrolled-up flag.
@@ -264,7 +268,8 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     _controller.removeListener(_onControllerChanged);
     _controller.dispose();
     _recordingSubscription?.cancel();
-    _itemPositionsListener.itemPositions.removeListener(_onItemPositionsChanged);
+    _itemPositionsListener.itemPositions
+        .removeListener(_onItemPositionsChanged);
     _programmaticScrollClearTimer?.cancel();
     _audioRecordingService.dispose();
     _messageController.dispose();
@@ -346,14 +351,21 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
         );
       case HideReconnectingSnackBarEvent():
         hideTopToast();
-      case NavigateToSessionEvent(:final channelId, :final agentId, :final agentName, :final agentAvatar, :final embedded):
+      case NavigateToSessionEvent(
+          :final channelId,
+          :final agentId,
+          :final agentName,
+          :final agentAvatar,
+          :final embedded
+        ):
         if (embedded && widget.onSwitchChannel != null) {
           widget.onSwitchChannel!(channelId);
         } else {
           Navigator.pushReplacement(
             context,
             PageRouteBuilder(
-              pageBuilder: (context, animation, secondaryAnimation) => ChatScreen(
+              pageBuilder: (context, animation, secondaryAnimation) =>
+                  ChatScreen(
                 agentId: agentId ?? widget.agentId,
                 agentName: agentName ?? _controller.agentName,
                 agentAvatar: agentAvatar ?? _controller.agentAvatar,
@@ -362,14 +374,16 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                 onClose: widget.onClose,
                 onSwitchChannel: widget.onSwitchChannel,
               ),
-              transitionsBuilder: (context, animation, secondaryAnimation, child) {
+              transitionsBuilder:
+                  (context, animation, secondaryAnimation, child) {
                 return FadeTransition(
                   opacity: animation,
                   child: SlideTransition(
                     position: Tween<Offset>(
                       begin: const Offset(0.0, 0.05),
                       end: Offset.zero,
-                    ).animate(CurvedAnimation(parent: animation, curve: Curves.easeOut)),
+                    ).animate(CurvedAnimation(
+                        parent: animation, curve: Curves.easeOut)),
                     child: child,
                   ),
                 );
@@ -405,7 +419,12 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
         _showHistoryRequestDialog(reason).then((approved) {
           if (!result.isCompleted) result.complete(approved);
         });
-      case ShowOsToolConfirmationEvent(:final toolName, :final args, :final risk, :final result):
+      case ShowOsToolConfirmationEvent(
+          :final toolName,
+          :final args,
+          :final risk,
+          :final result
+        ):
         _showOsToolConfirmation(toolName, args, risk).then((approved) {
           if (!result.isCompleted) result.complete(approved);
         });
@@ -615,7 +634,9 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
 
   void _onFocusChanged() {
     if (_textFieldFocusNode.hasFocus && _showEmojiPicker) {
-      setState(() { _showEmojiPicker = false; });
+      setState(() {
+        _showEmojiPicker = false;
+      });
     }
   }
 
@@ -760,7 +781,9 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     if (_controller.messages.isEmpty) return;
     if (!force && _isUserScrolledUp && !_liveFollowStreaming) {
       if (isNewMessage) {
-        setState(() { _unreadMessageCount++; });
+        setState(() {
+          _unreadMessageCount++;
+        });
       }
       return;
     }
@@ -853,10 +876,14 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     await _scrollToReversedIndex(reversedIdx);
     if (!mounted) return;
 
-    setState(() { _controller.highlightedMessageId = messageId; });
+    setState(() {
+      _controller.highlightedMessageId = messageId;
+    });
     Future.delayed(const Duration(seconds: 2), () {
       if (mounted) {
-        setState(() { _controller.highlightedMessageId = null; });
+        setState(() {
+          _controller.highlightedMessageId = null;
+        });
       }
     });
   }
@@ -891,11 +918,15 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
 
   void _toggleEmojiPicker() {
     if (_showEmojiPicker) {
-      setState(() { _showEmojiPicker = false; });
+      setState(() {
+        _showEmojiPicker = false;
+      });
       _textFieldFocusNode.requestFocus();
     } else {
       _textFieldFocusNode.unfocus();
-      setState(() { _showEmojiPicker = true; });
+      setState(() {
+        _showEmojiPicker = true;
+      });
     }
   }
 
@@ -905,11 +936,15 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     final cursorPos = selection.baseOffset;
     if (cursorPos < 0) {
       _messageController.text = text + emoji.emoji;
-      _messageController.selection = TextSelection.collapsed(offset: _messageController.text.length);
+      _messageController.selection =
+          TextSelection.collapsed(offset: _messageController.text.length);
     } else {
-      final newText = text.substring(0, cursorPos) + emoji.emoji + text.substring(cursorPos);
+      final newText = text.substring(0, cursorPos) +
+          emoji.emoji +
+          text.substring(cursorPos);
       _messageController.text = newText;
-      _messageController.selection = TextSelection.collapsed(offset: cursorPos + emoji.emoji.length);
+      _messageController.selection =
+          TextSelection.collapsed(offset: cursorPos + emoji.emoji.length);
     }
   }
 
@@ -918,9 +953,11 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     final selection = _messageController.selection;
     final cursorPos = selection.baseOffset;
     if (cursorPos > 0 && text.isNotEmpty) {
-      final newText = text.substring(0, cursorPos - 1) + text.substring(cursorPos);
+      final newText =
+          text.substring(0, cursorPos - 1) + text.substring(cursorPos);
       _messageController.text = newText;
-      _messageController.selection = TextSelection.collapsed(offset: cursorPos - 1);
+      _messageController.selection =
+          TextSelection.collapsed(offset: cursorPos - 1);
     }
   }
 
@@ -956,13 +993,15 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
       final imageBytes = await Pasteboard.image;
       if (imageBytes != null && imageBytes.isNotEmpty) {
         final tempDir = await getTemporaryDirectory();
-        final tempFile = File('${tempDir.path}/paste_${DateTime.now().millisecondsSinceEpoch}.png');
+        final tempFile = File(
+            '${tempDir.path}/paste_${DateTime.now().millisecondsSinceEpoch}.png');
         await tempFile.writeAsBytes(imageBytes);
         await _addPendingAttachment(tempFile, isFromClipboard: true);
         return true;
       }
     } catch (e) {
-      LoggerService().error('Error handling clipboard paste', tag: 'ChatScreen', error: e);
+      LoggerService()
+          .error('Error handling clipboard paste', tag: 'ChatScreen', error: e);
     }
     return false;
   }
@@ -971,12 +1010,14 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   // Attachments
   // ---------------------------------------------------------------------------
 
-  Future<void> _addPendingAttachment(File file, {bool isFromClipboard = false}) async {
+  Future<void> _addPendingAttachment(File file,
+      {bool isFromClipboard = false}) async {
     if (_pendingQueue.isFull) {
       if (mounted) {
         showTopToast(
           context,
-          AppLocalizations.of(context).chat_maxAttachments(_pendingQueue.maxItems),
+          AppLocalizations.of(context)
+              .chat_maxAttachments(_pendingQueue.maxItems),
           icon: Icons.attachment,
           color: Colors.orange,
         );
@@ -992,7 +1033,8 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
         setState(() {});
       }
     } catch (e) {
-      LoggerService().error('Error staging attachment', tag: 'ChatScreen', error: e);
+      LoggerService()
+          .error('Error staging attachment', tag: 'ChatScreen', error: e);
     }
   }
 
@@ -1003,7 +1045,9 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   }
 
   void _showAttachmentOptions() {
-    LoggerService().debug('_showAttachmentOptions called, isDesktop=${LayoutUtils.isDesktopLayout(context)}', tag: 'ChatScreen');
+    LoggerService().debug(
+        '_showAttachmentOptions called, isDesktop=${LayoutUtils.isDesktopLayout(context)}',
+        tag: 'ChatScreen');
     // Desktop uses a floating popover anchored to the attachment button
     // inside ChatInputArea (same interaction as emoji). This path is for
     // mobile bottom sheet only.
@@ -1016,22 +1060,34 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
           ListTile(
             leading: const Icon(Icons.photo_library),
             title: Text(l10n.chat_photoLibrary),
-            onTap: () { Navigator.pop(context); _pickAndStageImage(); },
+            onTap: () {
+              Navigator.pop(context);
+              _pickAndStageImage();
+            },
           ),
           ListTile(
             leading: const Icon(Icons.camera_alt),
             title: Text(l10n.chat_camera),
-            onTap: () { Navigator.pop(context); _pickAndStageImage(); },
+            onTap: () {
+              Navigator.pop(context);
+              _pickAndStageImage();
+            },
           ),
           ListTile(
             leading: const Icon(Icons.insert_drive_file),
             title: Text(l10n.chat_file),
-            onTap: () { Navigator.pop(context); _pickAndStageFile(); },
+            onTap: () {
+              Navigator.pop(context);
+              _pickAndStageFile();
+            },
           ),
           ListTile(
             leading: const Icon(Icons.inventory_2_outlined),
             title: Text(l10n.chat_storageBag),
-            onTap: () { Navigator.pop(context); _pickFromStorageBag(); },
+            onTap: () {
+              Navigator.pop(context);
+              _pickFromStorageBag();
+            },
           ),
         ],
       ),
@@ -1044,7 +1100,8 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
       if (mounted) {
         showTopToast(
           context,
-          AppLocalizations.of(context).chat_maxAttachments(_pendingQueue.maxItems),
+          AppLocalizations.of(context)
+              .chat_maxAttachments(_pendingQueue.maxItems),
           icon: Icons.attachment,
           color: Colors.orange,
         );
@@ -1067,7 +1124,8 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
         }
       }
     } catch (e) {
-      LoggerService().error('_pickFromStorageBag error', tag: 'ChatScreen', error: e);
+      LoggerService()
+          .error('_pickFromStorageBag error', tag: 'ChatScreen', error: e);
       if (mounted) {
         showTopToast(
           context,
@@ -1087,7 +1145,8 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
       if (file == null) return;
       await _addPendingAttachment(file);
     } catch (e) {
-      LoggerService().error('_pickAndStageFile error', tag: 'ChatScreen', error: e);
+      LoggerService()
+          .error('_pickAndStageFile error', tag: 'ChatScreen', error: e);
       if (mounted) {
         showTopToast(
           context,
@@ -1152,7 +1211,9 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
         icon: Icons.mic_off,
         color: Colors.orange,
       );
-      try { await File(result.filePath).delete(); } catch (_) {}
+      try {
+        await File(result.filePath).delete();
+      } catch (_) {}
       return;
     }
 
@@ -1194,7 +1255,9 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
       clearMessageController: () {
         _messageController.clear();
         _clearComposerDraft();
-        setState(() { _pendingQueue.clear(); });
+        setState(() {
+          _pendingQueue.clear();
+        });
       },
       replyToId: _controller.replyingToMessage?.id,
       mentions: mentions,
@@ -1213,7 +1276,8 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   /// 直接以编辑模式打开 Agent 详情页，无需先进入详情再点击编辑
   Future<void> _navigateToAgentDetailForEdit() async {
     if (widget.agentId == null) return;
-    final remoteAgent = await _controller.localDatabaseService.getRemoteAgentById(widget.agentId!);
+    final remoteAgent = await _controller.localDatabaseService
+        .getRemoteAgentById(widget.agentId!);
     if (remoteAgent != null && mounted) {
       final result = await Navigator.push(
         context,
@@ -1231,7 +1295,8 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
           Navigator.pop(context);
         }
       } else if (mounted) {
-        final updated = await _controller.localDatabaseService.getRemoteAgentById(widget.agentId!);
+        final updated = await _controller.localDatabaseService
+            .getRemoteAgentById(widget.agentId!);
         if (updated != null) {
           _controller.updateAgentInfo(updated.name, updated.avatar);
         }
@@ -1242,7 +1307,8 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   }
 
   Future<void> _navigateToAgentDetailById(String agentId) async {
-    final remoteAgent = await _controller.localDatabaseService.getRemoteAgentById(agentId);
+    final remoteAgent =
+        await _controller.localDatabaseService.getRemoteAgentById(agentId);
     if (remoteAgent != null && mounted) {
       final result = await Navigator.push(
         context,
@@ -1261,7 +1327,8 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
           }
         }
       } else if (mounted) {
-        final updated = await _controller.localDatabaseService.getRemoteAgentById(agentId);
+        final updated =
+            await _controller.localDatabaseService.getRemoteAgentById(agentId);
         if (updated != null) {
           _controller.updateAgentInfo(updated.name, updated.avatar);
         }
@@ -1374,7 +1441,8 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   Future<void> _showSessionList() async {
     if (widget.agentId == null) return;
     try {
-      final sessions = await _controller.chatService.getAgentSessions(agentId: widget.agentId!);
+      final sessions = await _controller.chatService
+          .getAgentSessions(agentId: widget.agentId!);
       if (!mounted) return;
 
       final content = SessionListPanel(
@@ -1384,7 +1452,8 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
         onNewSession: () => _controller.createNewSession(),
         onSwitchSession: (channelId) async {
           // Stay in the agent DM chat — group-bound sessions are view-only here.
-          await _controller.localDatabaseService.touchChannelUpdatedAt(channelId);
+          await _controller.localDatabaseService
+              .touchChannelUpdatedAt(channelId);
           if (!mounted) return;
           if (widget.embedded) {
             widget.onSwitchChannel?.call(channelId);
@@ -1402,7 +1471,8 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
             );
           }
         },
-        onBatchDelete: (ids) => _controller.batchDeleteSessions(ids, isGroup: false),
+        onBatchDelete: (ids) =>
+            _controller.batchDeleteSessions(ids, isGroup: false),
         onShowTraces: () {
           Navigator.pop(context);
           _showChannelTraces();
@@ -1420,7 +1490,9 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
           context,
           MaterialPageRoute(
             builder: (context) => Scaffold(
-              appBar: AppBar(title: Text(AppLocalizations.of(context).chat_sessionList), elevation: 1),
+              appBar: AppBar(
+                  title: Text(AppLocalizations.of(context).chat_sessionList),
+                  elevation: 1),
               body: content,
             ),
           ),
@@ -1442,7 +1514,8 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     if (_controller.groupChannel == null) return;
     try {
       final parentGroupId = _controller.groupChannel!.groupFamilyId;
-      final sessions = await _controller.chatService.getGroupSessions(parentGroupId: parentGroupId);
+      final sessions = await _controller.chatService
+          .getGroupSessions(parentGroupId: parentGroupId);
       if (!mounted) return;
 
       final content = GroupSessionListPanel(
@@ -1451,7 +1524,8 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
         controller: _controller,
         onNewSession: () => _controller.createNewGroupSession(),
         onSwitchSession: (channelId) async {
-          await _controller.localDatabaseService.touchChannelUpdatedAt(channelId);
+          await _controller.localDatabaseService
+              .touchChannelUpdatedAt(channelId);
           if (!mounted) return;
           if (widget.embedded) {
             widget.onSwitchChannel?.call(channelId);
@@ -1464,7 +1538,8 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
             );
           }
         },
-        onBatchDelete: (ids) => _controller.batchDeleteSessions(ids, isGroup: true),
+        onBatchDelete: (ids) =>
+            _controller.batchDeleteSessions(ids, isGroup: true),
         onShowTraces: () {
           Navigator.pop(context);
           _showChannelTraces();
@@ -1482,7 +1557,9 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
           context,
           MaterialPageRoute(
             builder: (context) => Scaffold(
-              appBar: AppBar(title: Text(AppLocalizations.of(context).chat_sessionList), elevation: 1),
+              appBar: AppBar(
+                  title: Text(AppLocalizations.of(context).chat_sessionList),
+                  elevation: 1),
               body: content,
             ),
           ),
@@ -1528,7 +1605,8 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
       agentChannelIds = [_controller.currentChannelId!];
     } else if (widget.agentId != null) {
       try {
-        final channels = await _controller.localDatabaseService.getChannelsForAgent(widget.agentId!);
+        final channels = await _controller.localDatabaseService
+            .getChannelsForAgent(widget.agentId!);
         agentChannelIds = channels.map((c) => c.id).toList();
       } catch (_) {}
     }
@@ -1598,8 +1676,10 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   void _editGroupInfoDesktop() {
     final channel = _controller.groupChannel;
     final nameController = TextEditingController(text: channel?.name ?? '');
-    final descController = TextEditingController(text: channel?.description ?? '');
-    final systemPromptController = TextEditingController(text: channel?.systemPrompt ?? '');
+    final descController =
+        TextEditingController(text: channel?.description ?? '');
+    final systemPromptController =
+        TextEditingController(text: channel?.systemPrompt ?? '');
     final maxRoundsController = TextEditingController(
       text: channel?.maxLoopRounds?.toString() ?? '',
     );
@@ -1611,135 +1691,180 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
         final panelL10n = AppLocalizations.of(ctx);
         return StatefulBuilder(
           builder: (ctx, setDrawerState) => Column(
-          children: [
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
-              child: Row(
-                children: [
-                  Expanded(child: Text(panelL10n.chat_editGroupInfo, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold))),
-                  IconButton(icon: const Icon(Icons.close), onPressed: () => Navigator.pop(ctx)),
-                ],
-              ),
-            ),
-            const Divider(height: 1),
-            Expanded(
-              child: SingleChildScrollView(
-                padding: const EdgeInsets.all(16),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Padding(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+                child: Row(
                   children: [
-                    TextField(controller: nameController, decoration: InputDecoration(labelText: panelL10n.chat_groupName, border: const OutlineInputBorder()), autofocus: true),
-                    const SizedBox(height: 16),
-                    TextField(controller: descController, decoration: InputDecoration(labelText: panelL10n.chat_groupDescriptionOptional, border: const OutlineInputBorder()), maxLines: 2),
-                    const SizedBox(height: 16),
-                    TextField(controller: systemPromptController, decoration: InputDecoration(labelText: panelL10n.chat_groupSystemPrompt, hintText: panelL10n.chat_groupSystemPromptHint, border: const OutlineInputBorder()), maxLines: 4),
-                    const SizedBox(height: 16),
-                    DropdownButtonFormField<String>(
-                      value: selectedMentionMode,
-                      decoration: InputDecoration(
-                        labelText: panelL10n.chat_mentionMode,
-                        border: const OutlineInputBorder(),
-                        prefixIcon: const Icon(Icons.alternate_email),
-                      ),
-                      items: [
-                        DropdownMenuItem(
-                          value: 'adminOnly',
-                          child: Text(panelL10n.chat_mentionModeAdminOnly),
+                    Expanded(
+                        child: Text(panelL10n.chat_editGroupInfo,
+                            style: const TextStyle(
+                                fontSize: 18, fontWeight: FontWeight.bold))),
+                    IconButton(
+                        icon: const Icon(Icons.close),
+                        onPressed: () => Navigator.pop(ctx)),
+                  ],
+                ),
+              ),
+              const Divider(height: 1),
+              Expanded(
+                child: SingleChildScrollView(
+                  padding: const EdgeInsets.all(16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      TextField(
+                          controller: nameController,
+                          decoration: InputDecoration(
+                              labelText: panelL10n.chat_groupName,
+                              border: const OutlineInputBorder()),
+                          autofocus: true),
+                      const SizedBox(height: 16),
+                      TextField(
+                          controller: descController,
+                          decoration: InputDecoration(
+                              labelText:
+                                  panelL10n.chat_groupDescriptionOptional,
+                              border: const OutlineInputBorder()),
+                          maxLines: 2),
+                      const SizedBox(height: 16),
+                      TextField(
+                          controller: systemPromptController,
+                          decoration: InputDecoration(
+                              labelText: panelL10n.chat_groupSystemPrompt,
+                              hintText: panelL10n.chat_groupSystemPromptHint,
+                              border: const OutlineInputBorder()),
+                          maxLines: 4),
+                      const SizedBox(height: 16),
+                      DropdownButtonFormField<String>(
+                        value: selectedMentionMode,
+                        decoration: InputDecoration(
+                          labelText: panelL10n.chat_mentionMode,
+                          border: const OutlineInputBorder(),
+                          prefixIcon: const Icon(Icons.alternate_email),
                         ),
-                        DropdownMenuItem(
-                          value: 'allMembers',
-                          child: Text(panelL10n.chat_mentionModeAllMembers),
+                        items: [
+                          DropdownMenuItem(
+                            value: 'adminOnly',
+                            child: Text(panelL10n.chat_mentionModeAdminOnly),
+                          ),
+                          DropdownMenuItem(
+                            value: 'allMembers',
+                            child: Text(panelL10n.chat_mentionModeAllMembers),
+                          ),
+                        ],
+                        onChanged: (value) {
+                          if (value != null) {
+                            setDrawerState(() {
+                              selectedMentionMode = value;
+                            });
+                          }
+                        },
+                      ),
+                      Padding(
+                        padding: const EdgeInsets.only(top: 4, left: 4),
+                        child: Text(
+                          selectedMentionMode == 'allMembers'
+                              ? panelL10n.chat_mentionModeAllMembersDesc
+                              : panelL10n.chat_mentionModeAdminOnlyDesc,
+                          style:
+                              TextStyle(fontSize: 12, color: Colors.grey[600]),
                         ),
-                      ],
-                      onChanged: (value) {
-                        if (value != null) {
-                          setDrawerState(() { selectedMentionMode = value; });
-                        }
-                      },
-                    ),
-                    Padding(
-                      padding: const EdgeInsets.only(top: 4, left: 4),
-                      child: Text(
-                        selectedMentionMode == 'allMembers'
-                            ? panelL10n.chat_mentionModeAllMembersDesc
-                            : panelL10n.chat_mentionModeAdminOnlyDesc,
-                        style: TextStyle(fontSize: 12, color: Colors.grey[600]),
                       ),
-                    ),
-                    const SizedBox(height: 16),
-                    TextField(
-                      controller: maxRoundsController,
-                      keyboardType: TextInputType.number,
-                      decoration: InputDecoration(
-                        labelText: panelL10n.groupDetail_maxLoopRounds,
-                        hintText: panelL10n.createGroup_maxLoopRoundsHint,
-                        border: const OutlineInputBorder(),
-                        prefixIcon: const Icon(Icons.loop),
+                      const SizedBox(height: 16),
+                      TextField(
+                        controller: maxRoundsController,
+                        keyboardType: TextInputType.number,
+                        decoration: InputDecoration(
+                          labelText: panelL10n.groupDetail_maxLoopRounds,
+                          hintText: panelL10n.createGroup_maxLoopRoundsHint,
+                          border: const OutlineInputBorder(),
+                          prefixIcon: const Icon(Icons.loop),
+                        ),
                       ),
-                    ),
-                    const SizedBox(height: 24),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.end,
-                      children: [
-                        TextButton(onPressed: () => Navigator.pop(ctx), child: Text(panelL10n.common_cancel)),
-                        const SizedBox(width: 8),
-                        FilledButton(
-                          onPressed: () async {
-                            final newName = nameController.text.trim();
-                            if (newName.isEmpty) {
-                              showTopToast(
-                                ctx,
-                                panelL10n.chat_groupNameEmpty,
-                                icon: Icons.warning_amber,
-                                color: Colors.orange,
-                              );
-                              return;
-                            }
-                            final maxRoundsText = maxRoundsController.text.trim();
-                            int? maxLoopRounds;
-                            if (maxRoundsText.isNotEmpty) {
-                              maxLoopRounds = int.tryParse(maxRoundsText);
-                              if (maxLoopRounds == null || maxLoopRounds < 1) {
+                      const SizedBox(height: 24),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.end,
+                        children: [
+                          TextButton(
+                              onPressed: () => Navigator.pop(ctx),
+                              child: Text(panelL10n.common_cancel)),
+                          const SizedBox(width: 8),
+                          FilledButton(
+                            onPressed: () async {
+                              final newName = nameController.text.trim();
+                              if (newName.isEmpty) {
                                 showTopToast(
                                   ctx,
-                                  panelL10n.createGroup_maxLoopRoundsHint,
+                                  panelL10n.chat_groupNameEmpty,
                                   icon: Icons.warning_amber,
                                   color: Colors.orange,
                                 );
                                 return;
                               }
-                            }
-                            final old = _controller.groupChannel!;
-                            final newSystemPrompt = systemPromptController.text.trim();
-                            final updated = Channel(
-                              id: old.id, name: newName, type: old.type, members: old.members,
-                              createdBy: old.createdBy, createdAt: old.createdAt,
-                              description: descController.text.trim().isNotEmpty ? descController.text.trim() : null,
-                              systemPrompt: newSystemPrompt.isNotEmpty ? newSystemPrompt : null,
-                              avatar: old.avatar, isPrivate: old.isPrivate,
-                              maxLoopRounds: maxLoopRounds,
-                              mentionMode: selectedMentionMode,
-                              parentGroupId: old.parentGroupId,
-                            );
-                            await _controller.localDatabaseService.updateChannel(updated);
-                            await GroupMemberSessionService(_controller.localDatabaseService)
-                                .syncTitlesForGroupFamily(
-                              parentGroupId: updated.groupFamilyId,
-                              groupName: newName,
-                            );
-                            if (mounted) { _controller.updateGroupChannelInfo(updated); }
-                            if (ctx.mounted) Navigator.pop(ctx);
-                          },
-                          child: Text(panelL10n.common_save),
-                        ),
-                      ],
-                    ),
-                  ],
+                              final maxRoundsText =
+                                  maxRoundsController.text.trim();
+                              int? maxLoopRounds;
+                              if (maxRoundsText.isNotEmpty) {
+                                maxLoopRounds = int.tryParse(maxRoundsText);
+                                if (maxLoopRounds == null ||
+                                    maxLoopRounds < 1) {
+                                  showTopToast(
+                                    ctx,
+                                    panelL10n.createGroup_maxLoopRoundsHint,
+                                    icon: Icons.warning_amber,
+                                    color: Colors.orange,
+                                  );
+                                  return;
+                                }
+                              }
+                              final old = _controller.groupChannel!;
+                              final newSystemPrompt =
+                                  systemPromptController.text.trim();
+                              final updated = Channel(
+                                id: old.id,
+                                name: newName,
+                                type: old.type,
+                                members: old.members,
+                                createdBy: old.createdBy,
+                                createdAt: old.createdAt,
+                                description:
+                                    descController.text.trim().isNotEmpty
+                                        ? descController.text.trim()
+                                        : null,
+                                systemPrompt: newSystemPrompt.isNotEmpty
+                                    ? newSystemPrompt
+                                    : null,
+                                avatar: old.avatar,
+                                isPrivate: old.isPrivate,
+                                maxLoopRounds: maxLoopRounds,
+                                mentionMode: selectedMentionMode,
+                                parentGroupId: old.parentGroupId,
+                              );
+                              await _controller.localDatabaseService
+                                  .updateChannel(updated);
+                              await GroupMemberSessionService(
+                                      _controller.localDatabaseService)
+                                  .syncTitlesForGroupFamily(
+                                parentGroupId: updated.groupFamilyId,
+                                groupName: newName,
+                              );
+                              if (mounted) {
+                                _controller.updateGroupChannelInfo(updated);
+                              }
+                              if (ctx.mounted) Navigator.pop(ctx);
+                            },
+                            child: Text(panelL10n.common_save),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
                 ),
               ),
-            ),
-          ],
-        ),
+            ],
+          ),
         );
       },
     );
@@ -1754,16 +1879,21 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
       channelMembers: _controller.groupChannel?.members ?? [],
       onAddMember: _addGroupMemberFromPanel,
       onBatchRemoveMembers: _batchRemoveGroupMembersFromPanel,
-      onSaveGroupBio: (agent, bio) => _controller.saveMemberGroupBio(agent, bio),
+      onSaveGroupBio: (agent, bio) =>
+          _controller.saveMemberGroupBio(agent, bio),
       onChangeAdmin: (agent) async {
         if (agent.id == _controller.groupAdminAgentId) return;
-        final parentGroupId = _controller.groupChannel?.groupFamilyId ?? _controller.currentChannelId!;
-        final sessions = await _controller.localDatabaseService.getGroupSessions(parentGroupId);
+        final parentGroupId = _controller.groupChannel?.groupFamilyId ??
+            _controller.currentChannelId!;
+        final sessions = await _controller.localDatabaseService
+            .getGroupSessions(parentGroupId);
         for (final session in sessions) {
           if (_controller.groupAdminAgentId != null) {
-            await _controller.localDatabaseService.updateChannelMemberRole(session.id, _controller.groupAdminAgentId!, 'member');
+            await _controller.localDatabaseService.updateChannelMemberRole(
+                session.id, _controller.groupAdminAgentId!, 'member');
           }
-          await _controller.localDatabaseService.updateChannelMemberRole(session.id, agent.id, 'admin');
+          await _controller.localDatabaseService
+              .updateChannelMemberRole(session.id, agent.id, 'admin');
         }
         await _controller.refreshGroupMembers();
         if (mounted) {
@@ -1782,7 +1912,8 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     );
 
     if (LayoutUtils.isDesktopLayout(context)) {
-      await LayoutUtils.showRightDrawer(context: context, builder: (_) => content);
+      await LayoutUtils.showRightDrawer(
+          context: context, builder: (_) => content);
     } else {
       await Navigator.push(
         context,
@@ -1837,9 +1968,11 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
 
   Future<bool> _addGroupMember({required BuildContext panelContext}) async {
     final l10n = AppLocalizations.of(context);
-    final allAgents = await _controller.localDatabaseService.getAllRemoteAgents();
+    final allAgents =
+        await _controller.localDatabaseService.getAllRemoteAgents();
     final currentIds = _controller.groupAgents.map((a) => a.id).toSet();
-    final available = allAgents.where((a) => !currentIds.contains(a.id)).toList();
+    final available =
+        allAgents.where((a) => !currentIds.contains(a.id)).toList();
 
     if (!mounted) return false;
     if (available.isEmpty) {
@@ -1902,23 +2035,32 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
         title: Text(l10n.chat_historyRequestTitle),
         content: Text(reason),
         actions: [
-          TextButton(onPressed: () => Navigator.of(ctx).pop(false), child: Text(l10n.chat_historyIgnore)),
-          ElevatedButton(onPressed: () => Navigator.of(ctx).pop(true), child: Text(l10n.chat_historyApprove)),
+          TextButton(
+              onPressed: () => Navigator.of(ctx).pop(false),
+              child: Text(l10n.chat_historyIgnore)),
+          ElevatedButton(
+              onPressed: () => Navigator.of(ctx).pop(true),
+              child: Text(l10n.chat_historyApprove)),
         ],
       ),
     );
     return result ?? false;
   }
 
-  Future<bool> _showOsToolConfirmation(String toolName, Map<String, dynamic> args, dynamic risk) async {
+  Future<bool> _showOsToolConfirmation(
+      String toolName, Map<String, dynamic> args, dynamic risk) async {
     final result = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
         title: Text('OS Tool: $toolName'),
         content: Text('Allow execution?\nArgs: $args'),
         actions: [
-          TextButton(onPressed: () => Navigator.of(ctx).pop(false), child: const Text('Deny')),
-          ElevatedButton(onPressed: () => Navigator.of(ctx).pop(true), child: const Text('Allow')),
+          TextButton(
+              onPressed: () => Navigator.of(ctx).pop(false),
+              child: const Text('Deny')),
+          ElevatedButton(
+              onPressed: () => Navigator.of(ctx).pop(true),
+              child: const Text('Allow')),
         ],
       ),
     );
@@ -1989,10 +2131,16 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
 
   Widget _buildChatMenuButton(AppLocalizations l10n) {
     final c = _controller;
-    final sessionActionsInMenu = !LayoutUtils.isDesktopLayout(context);
+    final isDesktop = LayoutUtils.isDesktopLayout(context);
+    final sessionActionsInMenu = !isDesktop;
+    final buttonWidth = isDesktop ? 36.0 : 40.0;
     return PopupMenuButton<String>(
       tooltip: l10n.chat_moreActions,
       icon: const Icon(Icons.more_vert),
+      iconSize: 22,
+      padding: EdgeInsets.zero,
+      constraints: BoxConstraints.tightFor(width: buttonWidth, height: 40),
+      splashRadius: 20,
       position: PopupMenuPosition.under,
       onSelected: _handleChatMenuSelected,
       itemBuilder: (ctx) => c.isGroupMode
@@ -2012,17 +2160,51 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     );
   }
 
+  Widget _buildDesktopSessionHistoryButton() {
+    return IconButton(
+      icon: SizedBox(
+        width: 22,
+        height: 22,
+        child: Stack(
+          clipBehavior: Clip.none,
+          children: [
+            const Center(child: Icon(Icons.history, size: 22)),
+            if (_otherSessionsUnreadCount > 0)
+              const Positioned(
+                right: -3,
+                top: -3,
+                child: SessionUnreadDot(),
+              ),
+          ],
+        ),
+      ),
+      iconSize: 22,
+      padding: EdgeInsets.zero,
+      constraints: const BoxConstraints.tightFor(width: 36, height: 40),
+      visualDensity: VisualDensity.compact,
+      tooltip: AppLocalizations.of(context).chat_sessionList,
+      onPressed:
+          _controller.isGroupMode ? _showGroupSessionList : _showSessionList,
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
     final c = _controller;
+    final isDesktop = LayoutUtils.isDesktopLayout(context);
     final hasCustomLeading = widget.showBackButton && widget.onClose != null;
+    final hasLeading = hasCustomLeading ||
+        (!widget.embedded && Navigator.of(context).canPop());
     return Scaffold(
-        appBar: AppBar(
-        elevation: 1,
+      appBar: AppBar(
+        elevation: 0,
+        scrolledUnderElevation: 0.5,
         automaticallyImplyLeading: !widget.embedded,
         centerTitle: false,
-        titleSpacing: hasCustomLeading || widget.embedded ? 0 : null,
+        leadingWidth: hasLeading && !isDesktop ? 48 : null,
+        // 有返回键时贴齐箭头；桌面嵌入无 leading 时留 16px，避免头像贴分割线。
+        titleSpacing: hasLeading ? 0 : 16,
         leading: hasCustomLeading
             ? IconButton(
                 icon: const Icon(Icons.arrow_back),
@@ -2040,9 +2222,8 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                   mentionOnlyMode: c.mentionOnlyMode,
                   currentChannelId: c.currentChannelId,
                   onAvatarTap: _navigateToGroupDetail,
-                  onStopGenerating: c.isProcessing
-                      ? () => c.stopGroupStreaming()
-                      : null,
+                  onStopGenerating:
+                      c.isProcessing ? () => c.stopGroupStreaming() : null,
                 )
               : ChatDMAppBarTitle(
                   agentName: c.agentName,
@@ -2054,50 +2235,29 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                   sourceDeviceLabel: c.sourceDeviceLabel,
                   syncingRemote: _syncingPeerHistory,
                   onAvatarTap: _navigateToAgentDetail,
-                  onStopGenerating: c.isProcessing
-                      ? () => c.stopStreaming()
-                      : null,
+                  onStopGenerating:
+                      c.isProcessing ? () => c.stopStreaming() : null,
                 ),
         ),
+        actionsPadding: const EdgeInsets.only(right: 8),
         actions: [
-          if (LayoutUtils.isDesktopLayout(context))
-            IconButton(
-              icon: SizedBox(
-                width: 24,
-                height: 24,
-                child: Stack(
-                  clipBehavior: Clip.none,
-                  children: [
-                    const Center(
-                      child: Icon(Icons.history, size: 20),
-                    ),
-                    if (_otherSessionsUnreadCount > 0)
-                      const Positioned(
-                        right: -2,
-                        top: -2,
-                        child: SessionUnreadDot(),
-                      ),
-                  ],
-                ),
-              ),
-              tooltip: AppLocalizations.of(context).chat_sessionList,
-              onPressed:
-                  c.isGroupMode ? _showGroupSessionList : _showSessionList,
-            ),
+          if (isDesktop) _buildDesktopSessionHistoryButton(),
           _buildChatMenuButton(l10n),
         ],
-        ),
-        body: Column(
-          children: [
-            // She config banner — shown when She has no LLM model configured
-            if (_sheNeedsConfig) _buildSheConfigBanner(),
+      ),
+      body: Column(
+        children: [
+          // She config banner — shown when She has no LLM model configured
+          if (_sheNeedsConfig) _buildSheConfigBanner(),
 
-            // Message list
+          // Message list
           Expanded(
             child: Stack(
               children: [
                 c.messages.isEmpty && !c.isLoading
-                    ? (_sheNeedsConfig ? _buildSheWelcomeState() : _buildEmptyState())
+                    ? (_sheNeedsConfig
+                        ? _buildSheWelcomeState()
+                        : _buildEmptyState())
                     : NotificationListener<ScrollNotification>(
                         onNotification: (notification) {
                           if (notification is UserScrollNotification) {
@@ -2119,38 +2279,48 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                           onStopStreaming: () => c.isGroupMode
                               ? c.stopCurrentGroupMessageOnly()
                               : c.stopCurrentMessageOnly(),
-                          onActionSelected: (msg, cid, aid, alabel, {confirmationContext}) {
-                            c.handleActionSelected(msg, cid, aid, alabel, confirmationContext: confirmationContext);
+                          onActionSelected: (msg, cid, aid, alabel,
+                              {confirmationContext}) {
+                            c.handleActionSelected(msg, cid, aid, alabel,
+                                confirmationContext: confirmationContext);
                           },
                           onSingleSelectSubmitted: (msg, sid, oid, olabel) {
-                            c.handleSingleSelectSubmitted(msg, sid, oid, olabel);
+                            c.handleSingleSelectSubmitted(
+                                msg, sid, oid, olabel);
                           },
                           onMultiSelectSubmitted: (msg, sid, oids, summary) {
-                            c.handleMultiSelectSubmitted(msg, sid, oids, summary);
+                            c.handleMultiSelectSubmitted(
+                                msg, sid, oids, summary);
                           },
                           onFileUploadSubmitted: (msg, uid, files, summary) {
-                            c.handleFileUploadSubmitted(msg, uid, files, summary);
+                            c.handleFileUploadSubmitted(
+                                msg, uid, files, summary);
                           },
                           onFormSubmitted: (msg, fid, values, summary) {
                             c.handleFormSubmitted(msg, fid, values, summary);
                           },
-                          onPlanApprovalResponded: (msg, approved, {feedback, skippedTaskIds}) =>
+                          onPlanApprovalResponded: (msg, approved,
+                                  {feedback, skippedTaskIds}) =>
                               c.handlePlanApprovalResponded(msg, approved,
-                                  feedback: feedback, skippedTaskIds: skippedTaskIds),
+                                  feedback: feedback,
+                                  skippedTaskIds: skippedTaskIds),
                           onReply: (msg) => c.startReply(msg),
                           onRollback: (msg) => c.rollbackMessage(msg),
-                          onRollbackReEdit: (msg, {bool reEdit = false}) => c.rollbackMessage(msg, reEdit: reEdit),
+                          onRollbackReEdit: (msg, {bool reEdit = false}) =>
+                              c.rollbackMessage(msg, reEdit: reEdit),
                           onDelete: (msg) => c.deleteMessage(msg),
                           onAgentAvatarTap: _navigateToAgentDetailById,
                           onScrollToMessage: _scrollToMessage,
                           highlightedMessageId: c.highlightedMessageId,
                           onViewTrace: (message) {
-                            final traceId = message.metadata?['trace_id'] as String?;
+                            final traceId =
+                                message.metadata?['trace_id'] as String?;
                             if (traceId != null) {
                               Navigator.push(
                                 context,
                                 MaterialPageRoute(
-                                  builder: (_) => TraceDetailScreen(traceId: traceId),
+                                  builder: (_) =>
+                                      TraceDetailScreen(traceId: traceId),
                                 ),
                               );
                             }
@@ -2158,10 +2328,11 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                           agentAvatarMap: c.isGroupMode
                               ? {
                                   for (final a in c.groupAgents)
-                                    if (a.avatar.isNotEmpty)
-                                      a.id: a.avatar,
+                                    if (a.avatar.isNotEmpty) a.id: a.avatar,
                                 }
-                              : (c.agentId != null && c.agentAvatar != null && c.agentAvatar!.isNotEmpty
+                              : (c.agentId != null &&
+                                      c.agentAvatar != null &&
+                                      c.agentAvatar!.isNotEmpty
                                   ? {c.agentId!: c.agentAvatar!}
                                   : const {}),
                           isAgentOffline: !c.isAgentOnline,
@@ -2271,58 +2442,61 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
             _buildSheBoundSessionBar(c)
           else
             ChatInputArea(
-            key: _chatInputKey,
-            messageController: _messageController,
-            textFieldFocusNode: _textFieldFocusNode,
-            isLoading: c.isLoading,
-            isGroupMode: c.isGroupMode,
-            pendingAttachments: _pendingAttachments,
-            groupAgents: c.groupAgents,
-            audioRecordingService: _audioRecordingService,
-            isRecording: _isRecording,
-            isCancelZone: _isCancelZone,
-            onSend: _sendMessage,
-            onToggleEmojiPicker: _toggleEmojiPicker,
-            onShowAttachmentOptions: _showAttachmentOptions,
-            onPickFile: _pickAndStageFile,
-            onPickFromStorageBag: _pickFromStorageBag,
-            onSendVoice: _sendVoiceMessage,
-            showEmojiPicker: _showEmojiPicker,
-            onRemoveAttachment: _removePendingAttachment,
-            onMentionPickerChanged: () {
-              if (mounted) setState(() {});
-            },
-            onDesktopPaste: _handleDesktopPaste,
-            hasAudioModel: _agentSupportsAudio,
-            slashCommands: c.agentId == null
-                ? const []
-                : (c.chatService.getACPConnection(c.agentId!)?.slashCommands ??
-                    c.chatService.getSlashCommandsSnapshot(c.agentId!)),
-            slashCommandsStream: c.agentId == null
-                ? null
-                : (c.chatService
-                        .getACPConnection(c.agentId!)
-                        ?.slashCommandsStream ??
-                    PeerAgentClientService.instance
-                        .slashCommandsStream(c.agentId!)),
-            // Live resolver: read the current snapshot on every keystroke.
-            // Falls back to the process-wide snapshot cache (populated by
-            // any past ACP connection — including the short-lived
-            // health-check connection) when no persistent connection is
-            // active yet. This is what lets the "/" palette work before
-            // the user has sent their first message.
-            slashCommandsResolver: () {
-              if (c.agentId == null) return const [];
-              final conn = c.chatService.getACPConnection(c.agentId!);
-              final live = conn?.slashCommands ?? const [];
-              if (live.isNotEmpty) return live;
-              final snap = c.chatService.getSlashCommandsSnapshot(c.agentId!);
-              if (snap.isNotEmpty) return snap;
-              // Peer agents have no ACP connection — use the prefetched
-              // slash-command cache from PeerAgentClientService.
-              return PeerAgentClientService.instance.getSlashCommands(c.agentId!);
-            },
-          ),
+              key: _chatInputKey,
+              messageController: _messageController,
+              textFieldFocusNode: _textFieldFocusNode,
+              isLoading: c.isLoading,
+              isGroupMode: c.isGroupMode,
+              pendingAttachments: _pendingAttachments,
+              groupAgents: c.groupAgents,
+              audioRecordingService: _audioRecordingService,
+              isRecording: _isRecording,
+              isCancelZone: _isCancelZone,
+              onSend: _sendMessage,
+              onToggleEmojiPicker: _toggleEmojiPicker,
+              onShowAttachmentOptions: _showAttachmentOptions,
+              onPickFile: _pickAndStageFile,
+              onPickFromStorageBag: _pickFromStorageBag,
+              onSendVoice: _sendVoiceMessage,
+              showEmojiPicker: _showEmojiPicker,
+              onRemoveAttachment: _removePendingAttachment,
+              onMentionPickerChanged: () {
+                if (mounted) setState(() {});
+              },
+              onDesktopPaste: _handleDesktopPaste,
+              hasAudioModel: _agentSupportsAudio,
+              slashCommands: c.agentId == null
+                  ? const []
+                  : (c.chatService
+                          .getACPConnection(c.agentId!)
+                          ?.slashCommands ??
+                      c.chatService.getSlashCommandsSnapshot(c.agentId!)),
+              slashCommandsStream: c.agentId == null
+                  ? null
+                  : (c.chatService
+                          .getACPConnection(c.agentId!)
+                          ?.slashCommandsStream ??
+                      PeerAgentClientService.instance
+                          .slashCommandsStream(c.agentId!)),
+              // Live resolver: read the current snapshot on every keystroke.
+              // Falls back to the process-wide snapshot cache (populated by
+              // any past ACP connection — including the short-lived
+              // health-check connection) when no persistent connection is
+              // active yet. This is what lets the "/" palette work before
+              // the user has sent their first message.
+              slashCommandsResolver: () {
+                if (c.agentId == null) return const [];
+                final conn = c.chatService.getACPConnection(c.agentId!);
+                final live = conn?.slashCommands ?? const [];
+                if (live.isNotEmpty) return live;
+                final snap = c.chatService.getSlashCommandsSnapshot(c.agentId!);
+                if (snap.isNotEmpty) return snap;
+                // Peer agents have no ACP connection — use the prefetched
+                // slash-command cache from PeerAgentClientService.
+                return PeerAgentClientService.instance
+                    .getSlashCommands(c.agentId!);
+              },
+            ),
 
           // Mobile emoji picker panel (desktop uses a floating popover
           // anchored to the emoji button inside ChatInputArea).
@@ -2347,12 +2521,13 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                     backgroundColor: Colors.white,
                   ),
                   searchViewConfig: const SearchViewConfig(),
-                  bottomActionBarConfig: const BottomActionBarConfig(enabled: false),
+                  bottomActionBarConfig:
+                      const BottomActionBarConfig(enabled: false),
                 ),
               ),
             ),
-          ],
-        ),
+        ],
+      ),
     );
   }
 
@@ -2375,7 +2550,8 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
           padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
           child: Row(
             children: [
-              Icon(Icons.groups_outlined, size: 22, color: Colors.teal.shade700),
+              Icon(Icons.groups_outlined,
+                  size: 22, color: Colors.teal.shade700),
               const SizedBox(width: 10),
               Expanded(
                 child: Text(
@@ -2397,7 +2573,8 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Text(openLabel, style: const TextStyle(fontWeight: FontWeight.w600)),
+                    Text(openLabel,
+                        style: const TextStyle(fontWeight: FontWeight.w600)),
                     const SizedBox(width: 2),
                     const Icon(Icons.arrow_forward, size: 16),
                   ],
@@ -2442,7 +2619,8 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
           padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
           child: Row(
             children: [
-              Icon(Icons.pets_outlined, size: 22, color: Colors.orange.shade700),
+              Icon(Icons.pets_outlined,
+                  size: 22, color: Colors.orange.shade700),
               const SizedBox(width: 10),
               Expanded(
                 child: Text(
@@ -2507,7 +2685,8 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   Future<void> _checkSheNeedsConfig() async {
     final agentId = widget.agentId;
     if (agentId == null || agentId != SheService.sheId) return;
-    final agent = await _controller.localDatabaseService.getRemoteAgentById(agentId);
+    final agent =
+        await _controller.localDatabaseService.getRemoteAgentById(agentId);
     if (!mounted) return;
     final needsConfig = agent != null && !agent.isLocal;
     if (needsConfig != _sheNeedsConfig) {
@@ -2518,9 +2697,11 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   Future<void> _checkAgentImageSupport() async {
     final agentId = widget.agentId;
     if (agentId == null) return;
-    final agent = await _controller.localDatabaseService.getRemoteAgentById(agentId);
+    final agent =
+        await _controller.localDatabaseService.getRemoteAgentById(agentId);
     if (!mounted) return;
-    final supportsImage = agent != null && agent.supportsModality(ModalityType.image);
+    final supportsImage =
+        agent != null && agent.supportsModality(ModalityType.image);
     if (supportsImage != _agentSupportsImage) {
       setState(() => _agentSupportsImage = supportsImage);
     }
@@ -2530,9 +2711,11 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   Future<void> _checkAgentAudioSupport() async {
     final agentId = widget.agentId;
     if (agentId == null) return;
-    final agent = await _controller.localDatabaseService.getRemoteAgentById(agentId);
+    final agent =
+        await _controller.localDatabaseService.getRemoteAgentById(agentId);
     if (!mounted) return;
-    final supportsAudio = agent != null && agent.supportsModality(ModalityType.audio);
+    final supportsAudio =
+        agent != null && agent.supportsModality(ModalityType.audio);
     if (supportsAudio != _agentSupportsAudio) {
       setState(() => _agentSupportsAudio = supportsAudio);
     }
@@ -2572,7 +2755,8 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   Future<void> _maybeSyncPeerAgent({bool promptIfUndecided = true}) async {
     final agentId = widget.agentId;
     if (agentId == null) return;
-    final agent = await _controller.localDatabaseService.getRemoteAgentById(agentId);
+    final agent =
+        await _controller.localDatabaseService.getRemoteAgentById(agentId);
     if (agent == null || !agent.isPeerAgent) return;
     final peerId = agent.sourcePeerId;
     final remoteAgentId = agent.remoteAgentId;
@@ -2584,7 +2768,8 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
 
     // Need a live connection to enumerate remote sessions; retry on a later
     // open if the peer isn't connected yet.
-    if (!PeerConnectionManager.instance.connectedPeerIds.contains(peerId)) return;
+    if (!PeerConnectionManager.instance.connectedPeerIds.contains(peerId))
+      return;
 
     // Undecided — prompt only when there are remote sessions not yet mirrored.
     var showToastOnFirstLink = false;
@@ -2598,8 +2783,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
 
       final localChannels =
           await _controller.localDatabaseService.getChannelsForAgent(agentId);
-      final remoteSessionIds =
-          sessions.map((s) => s.sessionId).toSet();
+      final remoteSessionIds = sessions.map((s) => s.sessionId).toSet();
       final localRemoteIds = collectLocalBoundRemoteSessionIds(
         localChannels.map((c) => c.id),
         remoteSessionIds,
@@ -2610,7 +2794,8 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
       if (missing.isNotEmpty) {
         final choice =
             await _showPeerSessionSyncDialog(agent.name, missing.length);
-        if (!mounted || choice == null) return; // dismissed → ask again next time
+        if (!mounted || choice == null)
+          return; // dismissed → ask again next time
         if (choice == _PeerSyncChoice.disable) {
           await prefs.setBool('peer_sync_disabled_$agentId', true);
           return;
@@ -2689,12 +2874,14 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   Future<void> _ensurePeerSlashCommands() async {
     final agentId = widget.agentId;
     if (agentId == null) return;
-    final agent = await _controller.localDatabaseService.getRemoteAgentById(agentId);
+    final agent =
+        await _controller.localDatabaseService.getRemoteAgentById(agentId);
     if (agent == null || !agent.isPeerAgent) return;
     await PeerAgentClientService.instance.ensureCommandsForLocalAgent(agentId);
   }
 
-  Future<_PeerSyncChoice?> _showPeerSessionSyncDialog(String agentName, int count) async {
+  Future<_PeerSyncChoice?> _showPeerSessionSyncDialog(
+      String agentName, int count) async {
     return showDialog<_PeerSyncChoice>(
       context: context,
       builder: (ctx) {
@@ -2736,7 +2923,8 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
           child: Row(
             children: [
-              const Icon(Icons.settings_suggest_outlined, size: 20, color: Colors.orange),
+              const Icon(Icons.settings_suggest_outlined,
+                  size: 20, color: Colors.orange),
               const SizedBox(width: 10),
               Expanded(
                 child: Column(
@@ -2752,12 +2940,14 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                     ),
                     Text(
                       l10n.chat_sheNoModelTapSettings,
-                      style: TextStyle(fontSize: 12, color: Colors.orange.shade700),
+                      style: TextStyle(
+                          fontSize: 12, color: Colors.orange.shade700),
                     ),
                   ],
                 ),
               ),
-              Icon(Icons.chevron_right, size: 20, color: Colors.orange.shade600),
+              Icon(Icons.chevron_right,
+                  size: 20, color: Colors.orange.shade600),
             ],
           ),
         ),
@@ -2781,11 +2971,14 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                     mainAxisAlignment: MainAxisAlignment.center,
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      const Text('🌸', style: TextStyle(fontSize: 72), textAlign: TextAlign.center),
+                      const Text('🌸',
+                          style: TextStyle(fontSize: 72),
+                          textAlign: TextAlign.center),
                       const SizedBox(height: 16),
                       Text(
                         AppLocalizations.of(context).she_name,
-                        style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
+                        style: const TextStyle(
+                            fontSize: 24, fontWeight: FontWeight.bold),
                         textAlign: TextAlign.center,
                       ),
                       const SizedBox(height: 8),
@@ -2798,10 +2991,12 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                       FilledButton.icon(
                         onPressed: _openSheConfig,
                         icon: const Icon(Icons.settings_suggest_outlined),
-                        label: Text(AppLocalizations.of(context).chat_sheConfigModelCta),
+                        label: Text(AppLocalizations.of(context)
+                            .chat_sheConfigModelCta),
                         style: FilledButton.styleFrom(
                           backgroundColor: Colors.pink.shade400,
-                          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 24, vertical: 12),
                         ),
                       ),
                       const SizedBox(height: 16),
@@ -2834,26 +3029,34 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
               borderRadius: BorderRadius.circular(20),
             ),
             alignment: Alignment.center,
-            child: _controller.agentAvatar != null && _controller.agentAvatar!.length > 2
+            child: _controller.agentAvatar != null &&
+                    _controller.agentAvatar!.length > 2
                 ? AvatarImage(
                     avatar: _controller.agentAvatar!,
                     size: 80,
                     borderRadius: 20,
                     fallback: Text(
-                      _controller.agentName?.isNotEmpty == true ? _controller.agentName![0] : 'A',
+                      _controller.agentName?.isNotEmpty == true
+                          ? _controller.agentName![0]
+                          : 'A',
                       style: const TextStyle(fontSize: 56),
                     ),
                   )
                 : Text(
                     _controller.agentAvatar ??
-                    (_controller.agentName?.isNotEmpty == true ? _controller.agentName![0] : 'A'),
+                        (_controller.agentName?.isNotEmpty == true
+                            ? _controller.agentName![0]
+                            : 'A'),
                     style: const TextStyle(fontSize: 56),
                   ),
           ),
           const SizedBox(height: 16),
-          Text(_controller.agentName ?? 'AI Agent', style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
+          Text(_controller.agentName ?? 'AI Agent',
+              style:
+                  const TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
           const SizedBox(height: 8),
-          Text('Send a message to start chatting', style: TextStyle(color: Colors.grey[600])),
+          Text('Send a message to start chatting',
+              style: TextStyle(color: Colors.grey[600])),
         ],
       ),
     );
@@ -2868,7 +3071,10 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
           color: Colors.white,
           borderRadius: BorderRadius.circular(20),
           boxShadow: [
-            BoxShadow(color: Colors.black.withOpacity(0.15), blurRadius: 8, offset: const Offset(0, 2)),
+            BoxShadow(
+                color: Colors.black.withOpacity(0.15),
+                blurRadius: 8,
+                offset: const Offset(0, 2)),
           ],
         ),
         child: Row(
@@ -2877,10 +3083,15 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
             if (_unreadMessageCount > 0) ...[
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                decoration: BoxDecoration(color: Theme.of(context).primaryColor, borderRadius: BorderRadius.circular(10)),
+                decoration: BoxDecoration(
+                    color: Theme.of(context).primaryColor,
+                    borderRadius: BorderRadius.circular(10)),
                 child: Text(
                   _unreadMessageCount > 99 ? '99+' : '$_unreadMessageCount',
-                  style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.w600),
+                  style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600),
                 ),
               ),
               const SizedBox(width: 4),
@@ -2904,7 +3115,8 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       decoration: BoxDecoration(
         color: AppColors.primaryContainer,
-        border: const Border(top: BorderSide(color: AppColors.primaryLight, width: 1)),
+        border: const Border(
+            top: BorderSide(color: AppColors.primaryLight, width: 1)),
       ),
       child: Row(
         children: [
@@ -2917,17 +3129,32 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
               children: [
                 Text(
                   count == 1 ? '1 message queued' : '$count messages queued',
-                  style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500, color: AppColors.primaryDark),
+                  style: const TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w500,
+                      color: AppColors.primaryDark),
                 ),
-                Text(preview, style: const TextStyle(fontSize: 11, color: AppColors.primary), maxLines: 1, overflow: TextOverflow.ellipsis),
+                Text(preview,
+                    style:
+                        const TextStyle(fontSize: 11, color: AppColors.primary),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis),
               ],
             ),
           ),
           GestureDetector(
-            onTap: () { setState(() { _controller.messageQueue.clear(); }); },
+            onTap: () {
+              setState(() {
+                _controller.messageQueue.clear();
+              });
+            },
             child: Padding(
               padding: const EdgeInsets.only(left: 8),
-              child: Text('Clear', style: TextStyle(fontSize: 12, color: Colors.red[400], fontWeight: FontWeight.w500)),
+              child: Text('Clear',
+                  style: TextStyle(
+                      fontSize: 12,
+                      color: Colors.red[400],
+                      fontWeight: FontWeight.w500)),
             ),
           ),
         ],

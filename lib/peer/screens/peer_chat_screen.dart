@@ -67,7 +67,8 @@ class _PeerChatScreenState extends State<PeerChatScreen> {
     _initDeviceId();
     _loadMessages();
     _subscribeToMessages();
-    _connectionState = PeerConnectionManager.instance.getPeerState(widget.peer.id);
+    _connectionState =
+        PeerConnectionManager.instance.getPeerState(widget.peer.id);
     _tryConnect();
 
     _itemPositionsListener.itemPositions.addListener(_onItemPositionsChanged);
@@ -91,7 +92,8 @@ class _PeerChatScreenState extends State<PeerChatScreen> {
   @override
   void dispose() {
     _textController.dispose();
-    _itemPositionsListener.itemPositions.removeListener(_onItemPositionsChanged);
+    _itemPositionsListener.itemPositions
+        .removeListener(_onItemPositionsChanged);
     _messageSub?.cancel();
     _eventSub?.cancel();
     _ackSub?.cancel();
@@ -136,7 +138,8 @@ class _PeerChatScreenState extends State<PeerChatScreen> {
       }
       // 标记所有对方发来的未读消息为已读
       final unreadIds = _messages
-          .where((m) => !_isMyMessage(m) && m.delivery != PeerMessageDelivery.read)
+          .where(
+              (m) => !_isMyMessage(m) && m.delivery != PeerMessageDelivery.read)
           .map((m) => m.id)
           .toList();
       if (unreadIds.isNotEmpty) {
@@ -175,7 +178,7 @@ class _PeerChatScreenState extends State<PeerChatScreen> {
       });
       if (event.type == PeerConnectionEventType.error) {
         final l10n = AppLocalizations.of(context);
-    final detail = event.data is String ? event.data as String : null;
+        final detail = event.data is String ? event.data as String : null;
         showTopToast(
           context,
           detail ?? l10n.peerChat_cannotConnect(_displayName),
@@ -236,7 +239,8 @@ class _PeerChatScreenState extends State<PeerChatScreen> {
   }
 
   Future<void> _tryConnect() async {
-    final currentState = PeerConnectionManager.instance.getPeerState(widget.peer.id);
+    final currentState =
+        PeerConnectionManager.instance.getPeerState(widget.peer.id);
     if (currentState == PeerConnectionState.connected) return;
 
     if (mounted) {
@@ -355,8 +359,7 @@ class _PeerChatScreenState extends State<PeerChatScreen> {
 
   Future<void> _showAgentList() async {
     final l10n = AppLocalizations.of(context);
-    final isConnected =
-        _connectionState == PeerConnectionState.connected;
+    final isConnected = _connectionState == PeerConnectionState.connected;
 
     final content = PeerAgentListPanel(
       peerId: widget.peer.id,
@@ -365,7 +368,8 @@ class _PeerChatScreenState extends State<PeerChatScreen> {
     );
 
     if (LayoutUtils.isDesktopLayout(context)) {
-      await LayoutUtils.showRightDrawer(context: context, builder: (_) => content);
+      await LayoutUtils.showRightDrawer(
+          context: context, builder: (_) => content);
     } else {
       await Navigator.push(
         context,
@@ -423,7 +427,8 @@ class _PeerChatScreenState extends State<PeerChatScreen> {
       }
     } else {
       // 可能改了名称，重新加载
-      final updatedPeer = await PeerStorageService().getPeerById(widget.peer.id);
+      final updatedPeer =
+          await PeerStorageService().getPeerById(widget.peer.id);
       if (updatedPeer != null && mounted) {
         setState(() => _displayName = updatedPeer.deviceName);
       }
@@ -440,20 +445,30 @@ class _PeerChatScreenState extends State<PeerChatScreen> {
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
-    // 嵌入桌面右面板时没有返回按钮（leading），title 会贴左边界；
-    // 此时给一点左间距，移动端有返回箭头则保持紧凑。
+    final isDesktop = LayoutUtils.isDesktopLayout(context);
     final hasLeading = Navigator.of(context).canPop();
+    final avatarSize = isDesktop ? 36.0 : 32.0;
     return Scaffold(
       appBar: AppBar(
+        elevation: 0,
+        scrolledUnderElevation: 0.5,
+        leadingWidth: hasLeading && !isDesktop ? 48 : null,
         titleSpacing: hasLeading ? 0 : 16,
+        actionsPadding: const EdgeInsets.only(right: 8),
         title: GestureDetector(
           onTap: _openSettings,
           child: Row(
             children: [
-              PeerDeviceIcon(peer: widget.peer, size: 36, borderRadius: 10),
-              const SizedBox(width: 10),
+              PeerDeviceIcon(
+                peer: widget.peer,
+                size: avatarSize,
+                borderRadius: isDesktop ? 10 : 8,
+              ),
+              SizedBox(width: isDesktop ? 12 : 8),
               Expanded(
                 child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  mainAxisAlignment: MainAxisAlignment.center,
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Row(
@@ -461,7 +476,11 @@ class _PeerChatScreenState extends State<PeerChatScreen> {
                         Flexible(
                           child: Text(
                             _displayName,
-                            style: const TextStyle(fontSize: 16),
+                            style: const TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w600,
+                              height: 1.2,
+                            ),
                             overflow: TextOverflow.ellipsis,
                           ),
                         ),
@@ -471,6 +490,7 @@ class _PeerChatScreenState extends State<PeerChatScreen> {
                         ],
                       ],
                     ),
+                    const SizedBox(height: 2),
                     _buildConnectionStatus(l10n),
                   ],
                 ),
@@ -479,18 +499,18 @@ class _PeerChatScreenState extends State<PeerChatScreen> {
           ),
         ),
         actions: [
-          IconButton(
-            icon: const Icon(Icons.psychology_outlined, size: 20),
+          _buildTitleActionButton(
+            icon: Icons.psychology_outlined,
             tooltip: 'Traces',
             onPressed: _showChannelTraces,
           ),
-          IconButton(
-            icon: const Icon(Icons.search, size: 20),
+          _buildTitleActionButton(
+            icon: Icons.search,
             tooltip: l10n.chat_searchMessages,
             onPressed: _showSearch,
           ),
-          IconButton(
-            icon: const Icon(Icons.smart_toy_outlined, size: 20),
+          _buildTitleActionButton(
+            icon: Icons.smart_toy_outlined,
             tooltip: l10n.peerChat_agentList,
             onPressed: _showAgentList,
           ),
@@ -507,13 +527,15 @@ class _PeerChatScreenState extends State<PeerChatScreen> {
                         child: Text(
                           l10n.peerChat_emptyMessages,
                           textAlign: TextAlign.center,
-                          style: TextStyle(color: Colors.grey[400], height: 1.5),
+                          style:
+                              TextStyle(color: Colors.grey[400], height: 1.5),
                         ),
                       )
                     : ScrollablePositionedList.builder(
                         itemScrollController: _itemScrollController,
                         itemPositionsListener: _itemPositionsListener,
-                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 12, vertical: 8),
                         itemCount: _messages.length,
                         itemBuilder: (context, index) {
                           final message = _messages[index];
@@ -533,7 +555,8 @@ class _PeerChatScreenState extends State<PeerChatScreen> {
                     bottom: 16,
                     child: FloatingActionButton.small(
                       onPressed: () => _scrollToBottom(),
-                      backgroundColor: Theme.of(context).colorScheme.surfaceContainerHighest,
+                      backgroundColor:
+                          Theme.of(context).colorScheme.surfaceContainerHighest,
                       child: Icon(
                         Icons.keyboard_arrow_down,
                         color: Theme.of(context).colorScheme.onSurface,
@@ -574,7 +597,9 @@ class _PeerChatScreenState extends State<PeerChatScreen> {
               controller: _textController,
               decoration: InputDecoration(
                 // 离线时仍可输入：消息会进入待发队列，连接恢复后自动补发
-                hintText: isConnected ? l10n.peerChat_hintOnline : l10n.peerChat_hintOffline,
+                hintText: isConnected
+                    ? l10n.peerChat_hintOnline
+                    : l10n.peerChat_hintOffline,
                 hintStyle: TextStyle(color: Colors.grey[400]),
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(24),
@@ -613,6 +638,24 @@ class _PeerChatScreenState extends State<PeerChatScreen> {
     );
   }
 
+  Widget _buildTitleActionButton({
+    required IconData icon,
+    required String tooltip,
+    required VoidCallback onPressed,
+  }) {
+    final isDesktop = LayoutUtils.isDesktopLayout(context);
+    final width = isDesktop ? 36.0 : 40.0;
+    return IconButton(
+      icon: Icon(icon, size: 22),
+      iconSize: 22,
+      tooltip: tooltip,
+      onPressed: onPressed,
+      padding: EdgeInsets.zero,
+      constraints: BoxConstraints.tightFor(width: width, height: 40),
+      visualDensity: VisualDensity.compact,
+    );
+  }
+
   Widget _buildRoleBadge(AppLocalizations l10n) {
     final isInitiator = widget.peer.pairingRole == PeerPairingRole.initiator;
     final color = PeerDeviceStyle.forPeer(widget.peer).labelColor;
@@ -642,23 +685,34 @@ class _PeerChatScreenState extends State<PeerChatScreen> {
 
   Widget _buildConnectionStatus(AppLocalizations l10n) {
     final textStyle = Theme.of(context).textTheme.bodySmall?.copyWith(
-      color: _connectionStateColor(),
-    );
+          color: _connectionStateColor(),
+        );
 
     // 已连接时，把端到端加密锁内联展示在“在线”与“端到端加密”之间
     if (_connectionState == PeerConnectionState.connected) {
       return Row(
-        mainAxisSize: MainAxisSize.min,
         children: [
           Text(l10n.peerChat_statusOnlinePrefix, style: textStyle),
           Icon(Icons.lock, size: 12, color: _connectionStateColor()),
           const SizedBox(width: 3),
-          Text(l10n.peerChat_e2eEncryption, style: textStyle),
+          Flexible(
+            child: Text(
+              l10n.peerChat_e2eEncryption,
+              style: textStyle,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
         ],
       );
     }
 
-    return Text(_connectionStateText(l10n), style: textStyle);
+    return Text(
+      _connectionStateText(l10n),
+      style: textStyle,
+      maxLines: 1,
+      overflow: TextOverflow.ellipsis,
+    );
   }
 
   String _connectionStateText(AppLocalizations l10n) {
@@ -783,13 +837,16 @@ class _PeerMessageBubble extends StatelessWidget {
     final l10n = AppLocalizations.of(context);
     final dt = DateTime.fromMillisecondsSinceEpoch(timestamp);
     final now = DateTime.now();
-    final timeStr = '${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';
+    final timeStr =
+        '${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';
 
     if (dt.year == now.year && dt.month == now.month && dt.day == now.day) {
       return timeStr;
     }
     final yesterday = now.subtract(const Duration(days: 1));
-    if (dt.year == yesterday.year && dt.month == yesterday.month && dt.day == yesterday.day) {
+    if (dt.year == yesterday.year &&
+        dt.month == yesterday.month &&
+        dt.day == yesterday.day) {
       return l10n.peerChat_yesterday(timeStr);
     }
     return '${dt.month}/${dt.day} $timeStr';
