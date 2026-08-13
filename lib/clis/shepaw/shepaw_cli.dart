@@ -180,10 +180,14 @@ class ShepawCLI {
   /// [args] 命令参数（namespace / subcommand / flags）
   /// [agentId] 当前执行命令的 Agent ID（默认为 She 的 ID）
   /// [isUiOperation] 是否来自 UI 操作（UI 操作跳过权限检查，默认 false）
+  /// [channelId] 当前对话频道；flags 未带 channel 时作为 store 落点
+  /// [runtimeOwnerId] 群聊时传入群 id，强制产物写入群 runtime
   Future<String> execute(
     Map<String, dynamic> args, {
     String agentId = SheService.sheId,
     bool isUiOperation = false,
+    String? channelId,
+    String? runtimeOwnerId,
   }) async {
     final namespace = args['namespace'] as String? ?? 'help';
     final subcommand = args['subcommand'] as String? ?? '';
@@ -217,10 +221,14 @@ class ShepawCLI {
         }
       }
 
-      // 透传当前执行者的 agentId / channelId（store write 等依赖）
+      // 透传当前执行者的 agentId / channelId / 群 runtime owner（store write 等依赖）
       ChatAgentScope.agentId = agentId;
-      ChatAgentScope.channelId =
+      final flagChannel =
           (flags['channel_id'] ?? flags['channel'] ?? '').trim();
+      ChatAgentScope.channelId = flagChannel.isNotEmpty
+          ? flagChannel
+          : (channelId ?? '').trim();
+      ChatAgentScope.runtimeOwnerId = (runtimeOwnerId ?? '').trim();
       if (ns is ContextNamespace) ns.agentId = agentId;
       if (ns is ChatNamespace) {
         ns.agentId = agentId;

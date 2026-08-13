@@ -80,15 +80,48 @@ class RuntimePaths {
     String? channelId,
     String? channelType,
     String? parentGroupId,
+    String? sourceGroupChannelId,
   }) {
+    return resolveStoreTarget(
+      agentId: agentId,
+      channelId: channelId,
+      channelType: channelType,
+      parentGroupId: parentGroupId,
+      sourceGroupChannelId: sourceGroupChannelId,
+    ).ownerId;
+  }
+
+  /// `store write` 落点：群产物进群 runtime，不进成员自己的储物袋。
+  ///
+  /// - 群频道 → owner=群，channel=该群
+  /// - 群绑定成员 DM（[sourceGroupChannelId]）→ owner/channel=该群
+  /// - 普通单聊 → owner=agent，channel=该 DM
+  static ({String ownerId, String channelId}) resolveStoreTarget({
+    required String agentId,
+    String? channelId,
+    String? channelType,
+    String? parentGroupId,
+    String? sourceGroupChannelId,
+  }) {
+    final agent = sanitizeSegment(agentId);
+    final ch = (channelId != null && channelId.trim().isNotEmpty)
+        ? sanitizeSegment(channelId)
+        : '';
+    if (ch.isEmpty) {
+      return (ownerId: agent, channelId: agent);
+    }
     if (channelType == 'group') {
       final g = parentGroupId?.trim();
-      if (g != null && g.isNotEmpty) return sanitizeSegment(g);
-      if (channelId != null && channelId.isNotEmpty) {
-        return sanitizeSegment(channelId);
-      }
+      final owner =
+          (g != null && g.isNotEmpty) ? sanitizeSegment(g) : ch;
+      return (ownerId: owner, channelId: ch);
     }
-    return sanitizeSegment(agentId);
+    final src = sourceGroupChannelId?.trim();
+    if (src != null && src.isNotEmpty) {
+      final group = sanitizeSegment(src);
+      return (ownerId: group, channelId: group);
+    }
+    return (ownerId: agent, channelId: ch);
   }
 
   static String runtimeRoot(String ownerId) => sanitizeSegment(ownerId);

@@ -9,4 +9,8 @@ class ChatAgentScope {
 
   /// 当前对话频道；空字符串表示未知。
   static String channelId = '';
+
+  /// 非空时 `store write` 强制写入该 runtime owner（群 id），
+  /// 避免成员落到自己的 `runtime/<agentId>/`。
+  static String runtimeOwnerId = '';
 }

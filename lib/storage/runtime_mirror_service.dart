@@ -121,19 +121,24 @@ class RuntimeMirrorService {
   Future<void> ensureRuntimeScaffold(
     String ownerId, {
     String? deviceId,
+    bool? includePersonaMirror,
   }) async {
     final device = deviceId ?? await DeviceIdentity.deviceId();
+    final persona =
+        includePersonaMirror ?? !await _ownerIsGroupChannel(ownerId);
     final now = DateTime.now().toUtc().toIso8601String();
-    await _writeTextIfAbsent(
-      device,
-      RuntimePaths.soulMd(ownerId),
-      '<!-- mirrored soul; authoritative store is memory/<agent>/soul.md -->\n',
-    );
-    await _writeTextIfAbsent(
-      device,
-      RuntimePaths.memoryMd(ownerId),
-      '<!-- mirrored memory summary; authoritative store is memory/<agent>/entries -->\n',
-    );
+    if (persona) {
+      await _writeTextIfAbsent(
+        device,
+        RuntimePaths.soulMd(ownerId),
+        '<!-- mirrored soul; authoritative store is memory/<agent>/soul.md -->\n',
+      );
+      await _writeTextIfAbsent(
+        device,
+        RuntimePaths.memoryMd(ownerId),
+        '<!-- mirrored memory summary; authoritative store is memory/<agent>/entries -->\n',
+      );
+    }
     await _writeTextIfAbsent(
       device,
       RuntimePaths.workspaceMd(ownerId),
@@ -147,11 +152,12 @@ class RuntimeMirrorService {
         'owner_id': ownerId,
         'source_device': device,
         'updated_at': now,
-        'soul_uri': MemoryPaths.uri(
-            deviceId: device, relPath: MemoryPaths.soulMd(ownerId)),
-        'memory_uri': MemoryPaths.uri(
-            deviceId: device,
-            relPath: MemoryPaths.entriesDir(ownerId)),
+        if (persona)
+          'soul_uri': MemoryPaths.uri(
+              deviceId: device, relPath: MemoryPaths.soulMd(ownerId)),
+        if (persona)
+          'memory_uri': MemoryPaths.uri(
+              deviceId: device, relPath: MemoryPaths.entriesDir(ownerId)),
         'workspace_refs': <String>[],
         'channels': <String, dynamic>{},
       }),
@@ -345,10 +351,16 @@ class RuntimeMirrorService {
     };
     manifest['channels'] = channels;
     manifest['updated_at'] = DateTime.now().toUtc().toIso8601String();
-    manifest['soul_uri'] = MemoryPaths.uri(
-        deviceId: deviceId, relPath: MemoryPaths.soulMd(ownerId));
-    manifest['memory_uri'] = MemoryPaths.uri(
-        deviceId: deviceId, relPath: MemoryPaths.entriesDir(ownerId));
+    final persona = !await _ownerIsGroupChannel(ownerId);
+    if (persona) {
+      manifest['soul_uri'] = MemoryPaths.uri(
+          deviceId: deviceId, relPath: MemoryPaths.soulMd(ownerId));
+      manifest['memory_uri'] = MemoryPaths.uri(
+          deviceId: deviceId, relPath: MemoryPaths.entriesDir(ownerId));
+    } else {
+      manifest.remove('soul_uri');
+      manifest.remove('memory_uri');
+    }
     // Preserve workspace_refs if already set by WorkspaceBindingService.
     manifest.putIfAbsent('workspace_refs', () => <String>[]);
     await _writeText(
@@ -356,6 +368,15 @@ class RuntimeMirrorService {
       rel,
       const JsonEncoder.withIndent('  ').convert(manifest),
     );
+  }
+
+  Future<bool> _ownerIsGroupChannel(String ownerId) async {
+    try {
+      final ch = await LocalDatabaseService().getChannelById(ownerId);
+      return ch != null && ch.type == 'group';
+    } catch (_) {
+      return false;
+    }
   }
 
   Future<void> _writeTextIfAbsent(

@@ -3,6 +3,7 @@ import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shepaw/storage/device_identity.dart';
+import 'package:shepaw/storage/local_store.dart';
 import 'package:shepaw/storage/runtime_mirror_service.dart';
 import 'package:shepaw/storage/runtime_paths.dart';
 import 'package:shepaw/storage/store_protocol.dart';
@@ -43,6 +44,35 @@ void main() {
       RuntimePaths.contextManifest('agent-mirror'),
     );
     expect(manifestMeta['size'] as int, greaterThan(0));
+  });
+
+  test('群 runtime scaffold 不写 soul.md', () async {
+    final mirror = RuntimeMirrorService.instance;
+    await mirror.ensureRuntimeScaffold(
+      'group-no-soul',
+      includePersonaMirror: false,
+    );
+    final deviceId = await DeviceIdentity.deviceId();
+    final store = await StoreService.instance.localStore();
+    expect(
+      () => store.meta(
+        deviceId,
+        StoreSpace.runtime,
+        RuntimePaths.soulMd('group-no-soul'),
+      ),
+      throwsA(isA<StoreException>()),
+    );
+    final (bytes, _, _) = await store.read(
+      deviceId,
+      StoreSpace.runtime,
+      RuntimePaths.contextManifest('group-no-soul'),
+      0,
+      1 << 16,
+    );
+    final json = jsonDecode(utf8.decode(bytes)) as Map<String, dynamic>;
+    expect(json.containsKey('soul_uri'), isFalse);
+    expect(json.containsKey('memory_uri'), isFalse);
+    expect(json['owner_id'], 'group-no-soul');
   });
 
   test('writeWorkspaceFile 本机落盘', () async {

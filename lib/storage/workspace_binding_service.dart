@@ -6,7 +6,6 @@ import 'package:crypto/crypto.dart' as crypto;
 import '../services/logger_service.dart';
 import 'device_identity.dart';
 import 'local_store.dart';
-import 'memory_paths.dart';
 import 'runtime_mirror_service.dart';
 import 'runtime_paths.dart';
 import 'store_protocol.dart';
@@ -127,14 +126,18 @@ class WorkspaceBindingService {
       for (final id in workspaceIds)
         storeUriWithRef(StoreSpace.workspaces, deviceId, id),
     ];
-    manifest['soul_uri'] = MemoryPaths.uri(
-      deviceId: deviceId,
-      relPath: MemoryPaths.soulMd(ownerId),
-    );
-    manifest['memory_uri'] = MemoryPaths.uri(
-      deviceId: deviceId,
-      relPath: MemoryPaths.entriesDir(ownerId),
-    );
+    final keepSoul = manifest['soul_uri'];
+    final keepMemory = manifest['memory_uri'];
+    if (keepSoul is String && keepSoul.isNotEmpty) {
+      manifest['soul_uri'] = keepSoul;
+    } else {
+      manifest.remove('soul_uri');
+    }
+    if (keepMemory is String && keepMemory.isNotEmpty) {
+      manifest['memory_uri'] = keepMemory;
+    } else {
+      manifest.remove('memory_uri');
+    }
     manifest['updated_at'] = DateTime.now().toUtc().toIso8601String();
     await _writeRuntimeText(
       deviceId,

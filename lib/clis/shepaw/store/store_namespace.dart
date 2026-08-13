@@ -98,57 +98,74 @@ class StoreWriteCommand extends CliCommand {
         (flags['channel_id'] ?? flags['channel'] ?? ChatAgentScope.channelId)
             .trim();
     try {
-      final ownerId = await _resolveRuntimeOwner(
+      final target = await _resolveStoreTarget(
         agentId: agentId.isNotEmpty ? agentId : ChatAgentScope.agentId,
         channelId: channelId.isNotEmpty ? channelId : null,
       );
-      final effectiveChannel =
-          channelId.isNotEmpty ? channelId : ownerId;
       final reference = await ArtifactService.instance.writeArtifact(
         taskId: taskId,
         filename: filename,
         content: Uint8List.fromList(utf8.encode(contentText)),
         description: desc,
         producer: flags['producer'] ?? agentId,
-        runtimeOwnerId: ownerId,
-        channelId: effectiveChannel,
+        runtimeOwnerId: target.ownerId,
+        channelId: target.channelId,
       );
       final uri = ArtifactService.instance
           .parseReferences(reference)
           .single
           .uri
           .toString();
+      final isGroupBag = target.ownerId !=
+          RuntimePaths.sanitizeSegment(
+            agentId.isNotEmpty ? agentId : ChatAgentScope.agentId,
+          );
       return {
         'success': true,
         'uri': uri,
         'reference': reference,
-        'owner_id': ownerId,
-        'channel_id': effectiveChannel,
-        'note': '返回即完成共享（本地优先，后台同步）。引用时原样使用 reference 单行。',
+        'owner_id': target.ownerId,
+        'channel_id': target.channelId,
+        'bag': isGroupBag ? 'group' : 'agent',
+        'note': isGroupBag
+            ? '已写入本群储物袋 runtime/${target.ownerId}/（不是你个人的储物袋）。引用时原样使用 reference 单行。'
+            : '已写入 runtime/${target.ownerId}/。引用时原样使用 reference 单行。',
       };
     } catch (e) {
       return {'success': false, 'error': '$e'};
     }
   }
 
-  /// 群聊用 group/parentGroupId；单聊用 agentId。
-  Future<String> _resolveRuntimeOwner({
+  /// 群聊 / 群绑定成员 DM → 群 runtime；单聊 → 该 Agent 的 runtime。
+  /// [ChatAgentScope.runtimeOwnerId] 非空时优先（群执行器注入，避免查库失败落到自己袋）。
+  Future<({String ownerId, String channelId})> _resolveStoreTarget({
     required String agentId,
     String? channelId,
   }) async {
+    final scopedOwner = ChatAgentScope.runtimeOwnerId.trim();
+    if (scopedOwner.isNotEmpty) {
+      final owner = RuntimePaths.sanitizeSegment(scopedOwner);
+      final ch = (channelId != null && channelId.isNotEmpty)
+          ? RuntimePaths.sanitizeSegment(channelId)
+          : owner;
+      return (ownerId: owner, channelId: ch);
+    }
     if (channelId == null || channelId.isEmpty) {
-      return RuntimePaths.sanitizeSegment(agentId);
+      final agent = RuntimePaths.sanitizeSegment(agentId);
+      return (ownerId: agent, channelId: agent);
     }
     try {
       final ch = await LocalDatabaseService().getChannelById(channelId);
-      return RuntimePaths.resolveOwnerId(
+      return RuntimePaths.resolveStoreTarget(
         agentId: agentId,
         channelId: channelId,
         channelType: ch?.type,
         parentGroupId: ch?.parentGroupId,
+        sourceGroupChannelId: ch?.sourceGroupChannelId,
       );
     } catch (_) {
-      return RuntimePaths.sanitizeSegment(agentId);
+      final agent = RuntimePaths.sanitizeSegment(agentId);
+      return (ownerId: agent, channelId: agent);
     }
   }
 }

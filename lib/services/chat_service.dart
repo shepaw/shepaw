@@ -1875,6 +1875,7 @@ $originalQuestion
               ownerId: groupOwnerId,
               channelId: channelId,
               extraRefTexts: workflowArtifactExtras(),
+              isGroup: true,
             );
             await _groupAgentExecutor.processGroupAgent(
               agent: agent,

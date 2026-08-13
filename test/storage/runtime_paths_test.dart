@@ -27,6 +27,38 @@ void main() {
       );
     });
 
+    test('resolveStoreTarget：群聊产物进群 runtime', () {
+      final t = RuntimePaths.resolveStoreTarget(
+        agentId: 'agent-1',
+        channelId: 'ch-g',
+        channelType: 'group',
+        parentGroupId: 'group-9',
+      );
+      expect(t.ownerId, 'group-9');
+      expect(t.channelId, 'ch-g');
+    });
+
+    test('resolveStoreTarget：群绑定成员 DM 仍进群 runtime', () {
+      final t = RuntimePaths.resolveStoreTarget(
+        agentId: 'agent-1',
+        channelId: 'gmd_group-9__agent-1',
+        channelType: 'dm',
+        sourceGroupChannelId: 'group-9',
+      );
+      expect(t.ownerId, 'group-9');
+      expect(t.channelId, 'group-9');
+    });
+
+    test('resolveStoreTarget：普通单聊进自己的 runtime', () {
+      final t = RuntimePaths.resolveStoreTarget(
+        agentId: 'agent-1',
+        channelId: 'ch-dm',
+        channelType: 'dm',
+      );
+      expect(t.ownerId, 'agent-1');
+      expect(t.channelId, 'ch-dm');
+    });
+
     test('attachment / session / artifact 路径', () {
       final att = RuntimePaths.attachmentBlob('a1', 'c1', 'a' * 64);
       expect(att, 'a1/c1/attachments/${'a' * 64}');

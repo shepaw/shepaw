@@ -72,10 +72,15 @@ class ContextBundle {
       };
 
   /// 注入用的全部 store://（soul/memory/session/workspace）。
-  List<String> collectUris({String? preferChannelId}) {
+  List<String> collectUris({
+    String? preferChannelId,
+    bool omitPersona = false,
+  }) {
     final out = <String>{};
-    if (soulUri != null && soulUri!.isNotEmpty) out.add(soulUri!);
-    if (memoryUri != null && memoryUri!.isNotEmpty) out.add(memoryUri!);
+    if (!omitPersona) {
+      if (soulUri != null && soulUri!.isNotEmpty) out.add(soulUri!);
+      if (memoryUri != null && memoryUri!.isNotEmpty) out.add(memoryUri!);
+    }
     for (final w in workspaceRefs) {
       if (w.startsWith('store://')) out.add(w);
     }
@@ -130,6 +135,7 @@ class ContextBundleService {
     required String ownerId,
     String? channelId,
     required List<String> uris,
+    bool isGroup = false,
   }) {
     final unique = uris.where((u) => u.isNotEmpty).toSet().toList()..sort();
     final buf = StringBuffer('## 可用上下文（ContextBundle）\n');
@@ -137,8 +143,18 @@ class ContextBundleService {
     if (channelId != null && channelId.isNotEmpty) {
       buf.writeln('channel: `$channelId`');
     }
-    buf.writeln(
-        '先 `shepaw store read` 拉取 **context.manifest.json**，再按需读取其中的 soul/memory/session/workspace URI；勿假设已内嵌全文。');
+    if (isGroup) {
+      buf.writeln(
+        '这是**本群储物袋**（不是你个人的 runtime/<你的agentId>/）。'
+        '`shepaw store write` 已绑定本群，产物会进该 owner。'
+        '浏览：`shepaw store list --uri <runtime根> --depth 1`；'
+        '读取：`shepaw store read --uri …`。本群无 soul/memory 文件。',
+      );
+    } else {
+      buf.writeln(
+        '先 `shepaw store read` 拉取 **context.manifest.json**，再按需读取其中的 soul/memory/session/workspace URI；勿假设已内嵌全文。',
+      );
+    }
     if (unique.isEmpty) {
       buf.writeln('- （暂无 URI；可先 list `runtime/$ownerId/`）');
     } else {
@@ -156,23 +172,32 @@ class ContextBundleService {
     required String ownerId,
     String? channelId,
     bool expandUris = false,
+    bool isGroup = false,
   }) async {
     final deviceId = await DeviceIdentity.deviceId();
     final manifestUri = RuntimePaths.uri(
       deviceId: deviceId,
       relPath: RuntimePaths.contextManifest(ownerId),
     );
-    final uris = <String>[manifestUri];
+    final runtimeRootUri = RuntimePaths.uri(
+      deviceId: deviceId,
+      relPath: RuntimePaths.runtimeRoot(ownerId),
+    );
+    final uris = <String>[manifestUri, runtimeRootUri];
     if (expandUris) {
       final bundle = await loadLocal(ownerId);
       if (bundle != null) {
-        uris.addAll(bundle.collectUris(preferChannelId: channelId));
+        uris.addAll(bundle.collectUris(
+          preferChannelId: channelId,
+          omitPersona: isGroup,
+        ));
       }
     }
     return buildContextSection(
       ownerId: ownerId,
       channelId: channelId,
       uris: uris,
+      isGroup: isGroup,
     );
   }
 
@@ -183,6 +208,7 @@ class ContextBundleService {
     String? channelId,
     List<String> extraRefTexts = const [],
     bool expandUris = false,
+    bool isGroup = false,
   }) async {
     final withArts = ArtifactService.instance
         .wrapWithArtifactSection(text, extraRefTexts: extraRefTexts);
@@ -191,6 +217,7 @@ class ContextBundleService {
         ownerId: ownerId,
         channelId: channelId,
         expandUris: expandUris,
+        isGroup: isGroup,
       );
       if (withArts.contains('## 可用上下文')) return withArts;
       return '$withArts\n\n$section';

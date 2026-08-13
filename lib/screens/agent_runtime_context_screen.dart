@@ -19,9 +19,10 @@ import '../widgets/storage/store_file_list_avatar.dart';
 import 'agent_memory_detail_screen.dart';
 import 'storage_browser_screen.dart';
 
-/// Agent / Group 运行时上下文：记忆、Soul、产物、附件。
+/// Agent / Group 运行时上下文。
 ///
-/// 记忆 / Soul 以 SQLite 为准；产物与附件来自 `runtime/<owner>/…` 镜像树。
+/// Agent：记忆、Soul、产物、附件。
+/// Group：仅产物与附件（群没有 soul；人格在各成员自己的储物袋）。
 class AgentRuntimeContextScreen extends StatefulWidget {
   const AgentRuntimeContextScreen({
     super.key,
@@ -70,10 +71,12 @@ class _AgentRuntimeContextScreenState extends State<AgentRuntimeContextScreen>
   String get _effectiveOwnerId =>
       _runtimeOwnerId.isNotEmpty ? _runtimeOwnerId : widget.ownerId;
 
+  bool get _isGroupContext => widget.agent == null;
+
   @override
   void initState() {
     super.initState();
-    _tabs = TabController(length: 4, vsync: this);
+    _tabs = TabController(length: _isGroupContext ? 2 : 4, vsync: this);
     _loadAll();
   }
 
@@ -84,6 +87,10 @@ class _AgentRuntimeContextScreenState extends State<AgentRuntimeContextScreen>
   }
 
   Future<void> _loadAll() async {
+    if (_isGroupContext) {
+      await _loadFiles();
+      return;
+    }
     await Future.wait([_loadSoul(), _loadMemories(), _loadFiles()]);
   }
 
@@ -326,8 +333,8 @@ class _AgentRuntimeContextScreenState extends State<AgentRuntimeContextScreen>
           controller: _tabs,
           isScrollable: true,
           tabs: [
-            Tab(text: _zh ? '记忆' : 'Memory'),
-            Tab(text: 'Soul'),
+            if (!_isGroupContext) Tab(text: _zh ? '记忆' : 'Memory'),
+            if (!_isGroupContext) const Tab(text: 'Soul'),
             Tab(text: _zh ? '产物' : 'Artifacts'),
             Tab(text: _zh ? '附件' : 'Attachments'),
           ],
@@ -336,8 +343,8 @@ class _AgentRuntimeContextScreenState extends State<AgentRuntimeContextScreen>
       body: TabBarView(
         controller: _tabs,
         children: [
-          _buildMemoryTab(colorScheme),
-          _buildSoulTab(colorScheme),
+          if (!_isGroupContext) _buildMemoryTab(colorScheme),
+          if (!_isGroupContext) _buildSoulTab(colorScheme),
           _buildFilesTab(
             colorScheme,
             files: _artifacts,

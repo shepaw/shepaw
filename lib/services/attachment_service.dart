@@ -38,9 +38,7 @@ class AttachmentService {
   // ────────────────────────────── 附件 store 读写 ──
 
   /// 解析 runtime owner：群聊 → groupFamilyId / channelId；单聊 → agentId。
-  ///
-  /// 调用方未传 [channelType]/[parentGroupId] 时，按 [channelId] 查库补全，
-  /// 避免群聊附件误落到 agent 目录。
+  /// 群绑定成员 DM 走 sourceGroupChannelId，避免附件落到成员自己的 runtime。
   Future<String> _resolveRuntimeOwner({
     required String agentId,
     required String channelId,
@@ -49,26 +47,25 @@ class AttachmentService {
   }) async {
     var type = channelType?.trim();
     var parent = parentGroupId?.trim();
-    if (type == null ||
-        type.isEmpty ||
-        (type == 'group' && (parent == null || parent.isEmpty))) {
-      try {
-        final ch = await _database.getChannelById(channelId);
-        if (ch != null) {
-          type = (type == null || type.isEmpty) ? ch.type : type;
-          if (type == 'group' && (parent == null || parent.isEmpty)) {
-            parent = ch.groupFamilyId;
-          }
+    String? sourceGroup;
+    try {
+      final ch = await _database.getChannelById(channelId);
+      if (ch != null) {
+        if (type == null || type.isEmpty) type = ch.type;
+        if (type == 'group' && (parent == null || parent.isEmpty)) {
+          parent = ch.groupFamilyId;
         }
-      } catch (_) {
-        /* fail-open：回退 agentId */
+        sourceGroup = ch.sourceGroupChannelId;
       }
+    } catch (_) {
+      /* fail-open：回退 agentId */
     }
     return RuntimePaths.resolveOwnerId(
       agentId: agentId,
       channelId: channelId,
       channelType: type,
       parentGroupId: parent,
+      sourceGroupChannelId: sourceGroup,
     );
   }
 

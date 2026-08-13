@@ -37,6 +37,7 @@ import '../messaging/stream_content_splitter.dart';
 import 'group_member_session_service.dart';
 import '../session/history_compactor.dart';
 import '../session/history_compaction_cache_service.dart';
+import '../../storage/runtime_paths.dart';
 
 /// Executes a single agent's response turn within a group chat.
 ///
@@ -721,6 +722,7 @@ class GroupAgentExecutor {
                         args: args,
                         agent: agent,
                         isAdmin: isAdmin,
+                        channelId: channelId,
                       );
                       LoggerService().info(
                         'CLI result (${args['namespace']} ${args['subcommand'] ?? ''}): ${cliResult.length > 200 ? '${cliResult.substring(0, 200)}...' : cliResult}',
@@ -1907,6 +1909,7 @@ class GroupAgentExecutor {
     required Map<String, dynamic> args,
     required RemoteAgent agent,
     required bool isAdmin,
+    required String channelId,
   }) async {
     if (!isAdmin) {
       final namespace = (args['namespace'] as String?)?.trim() ?? '';
@@ -1915,12 +1918,31 @@ class GroupAgentExecutor {
           'ok': false,
           'error':
               '群成员仅可使用 store 与 help 命名空间。产出请用 shepaw store write，'
-              '读取请用 shepaw store read --uri <store://...>。',
+              '读取请用 shepaw store read --uri <store://...>。'
+              '产物写入本群储物袋，不是你个人的 runtime。',
           'allowed_namespaces': ['store', 'help'],
         });
       }
     }
-    return ShepawCLI.instance.execute(args, agentId: agent.id);
+    String? runtimeOwnerId;
+    try {
+      final ch = await _db.getChannelById(channelId);
+      if (ch != null) {
+        runtimeOwnerId = RuntimePaths.resolveStoreTarget(
+          agentId: agent.id,
+          channelId: channelId,
+          channelType: ch.type,
+          parentGroupId: ch.parentGroupId,
+          sourceGroupChannelId: ch.sourceGroupChannelId,
+        ).ownerId;
+      }
+    } catch (_) {}
+    return ShepawCLI.instance.execute(
+      args,
+      agentId: agent.id,
+      channelId: channelId,
+      runtimeOwnerId: runtimeOwnerId,
+    );
   }
 
   /// One-shot LLM summary of older group turns for in-context compaction.

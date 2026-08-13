@@ -214,6 +214,7 @@ class GroupOrchestrationService {
       effectiveContent,
       ownerId: groupOwnerId,
       channelId: channelId,
+      isGroup: true,
     );
 
     // 5. Route to the appropriate flow based on admin setting and @mentions

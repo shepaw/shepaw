@@ -62,4 +62,17 @@ void main() {
     final json = jsonDecode(utf8.decode(bytes)) as Map<String, dynamic>;
     expect(json['owner_id'], 'agent-bundle');
   });
+
+  test('wrapWithContextBundle 群上下文不含 soul 说明', () async {
+    final out = await ContextBundleService.instance.wrapWithContextBundle(
+      'do group work',
+      ownerId: 'group-bundle',
+      channelId: 'ch-g',
+      isGroup: true,
+    );
+    expect(out, contains('本群储物袋'));
+    expect(out, contains('不是你个人的 runtime'));
+    expect(out, contains('store list'));
+    expect(out, isNot(contains('soul/memory/session/workspace')));
+  });
 }
