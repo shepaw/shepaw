@@ -553,6 +553,23 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
     }
   }
 
+  /// Mutate state without scheduling a rebuild during Overlay teardown / dispose.
+  void _safeSetState(VoidCallback fn) {
+    if (!mounted) {
+      fn();
+      return;
+    }
+    switch (SchedulerBinding.instance.schedulerPhase) {
+      case SchedulerPhase.idle:
+      case SchedulerPhase.postFrameCallbacks:
+        setState(fn);
+      case SchedulerPhase.transientCallbacks:
+      case SchedulerPhase.midFrameMicrotasks:
+      case SchedulerPhase.persistentCallbacks:
+        fn();
+    }
+  }
+
   Future<void> _persistChanges({bool showFeedback = false}) async {
     final l10n = AppLocalizations.of(context);
     if (!_isEditing) return;
@@ -572,17 +589,27 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
       return;
     }
 
+    // Snapshot controller values before any await — deactivate/dispose may
+    // run in this same frame while Overlay is rebuilding.
+    final avatarSeed = _editingAvatar;
+    final localAvatarPath = _localAvatarPath;
+    final bioText = _bioController.text.trim();
+    final endpoint = _endpointController.text.trim();
+    final remoteAgentId = _remoteAgentIdController.text.trim();
+    final maxToolRoundsText = _maxToolRoundsController.text.trim();
+    final taskTimeoutText = _taskTimeoutController.text.trim();
+
     // v2.1: token is no longer required — authentication is handled via Noise
     // public-key pinning. Keep reading the field so users who still have an
     // old token stored can clear or update it, but never block saving on it.
 
-    setState(() => _isSaving = true);
+    _safeSetState(() => _isSaving = true);
 
     try {
       // 如果有本地上传的图片，先解析出完整路径存储
-      String avatar = _editingAvatar;
-      if (_localAvatarPath != null) {
-        final fullPath = await _fileStorage.getFullPath(_localAvatarPath!);
+      String avatar = avatarSeed;
+      if (localAvatarPath != null) {
+        final fullPath = await _fileStorage.getFullPath(localAvatarPath);
         avatar = fullPath;
       }
 
@@ -672,8 +699,6 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
       // 清理可能残留的旧字段。
       metadata.remove('channel_config');
 
-      // Save remote agent ID (target_agent_id)
-      final remoteAgentId = _remoteAgentIdController.text.trim();
       if (remoteAgentId.isNotEmpty) {
         metadata['target_agent_id'] = remoteAgentId;
       } else {
@@ -682,14 +707,14 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
 
       // Save tool call limits (local / self-managed remote agents only)
       if (!_agent.isPeerAgent) {
-        final maxToolRounds = int.tryParse(_maxToolRoundsController.text.trim());
+        final maxToolRounds = int.tryParse(maxToolRoundsText);
         if (maxToolRounds != null && maxToolRounds >= 1 && maxToolRounds <= 500) {
           metadata['max_tool_rounds'] = maxToolRounds;
         } else {
           metadata['max_tool_rounds'] = 100;
         }
       }
-      final taskTimeout = int.tryParse(_taskTimeoutController.text.trim());
+      final taskTimeout = int.tryParse(taskTimeoutText);
       if (taskTimeout != null && taskTimeout >= 60 && taskTimeout <= 3600) {
         metadata['task_timeout_seconds'] = taskTimeout;
       } else {
@@ -698,9 +723,9 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
 
       final updatedAgent = _agent.copyWith(
         name: name,
-        bio: _bioController.text.trim().isEmpty ? null : _bioController.text.trim(),
+        bio: bioText.isEmpty ? null : bioText,
         avatar: avatar,
-        endpoint: _endpointController.text.trim(),
+        endpoint: endpoint,
         protocol: _editingProtocol,
         connectionType: _editingConnectionType,
         metadata: metadata,
@@ -710,7 +735,7 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
       final agentService = getIt<RemoteAgentService>();
       await agentService.updateAgent(updatedAgent);
 
-      setState(() {
+      _safeSetState(() {
         _agent = updatedAgent;
         _isSaving = false;
       });
@@ -721,7 +746,7 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
         );
       }
     } catch (e) {
-      setState(() => _isSaving = false);
+      _safeSetState(() => _isSaving = false);
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
