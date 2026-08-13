@@ -47,11 +47,31 @@ class ChannelMailboxService {
 
   final http.Client _client;
 
+  /// True only for Channel Service relay URLs (`/proxy/<id>/…` or `/c/<alias>/…`).
+  /// LAN / loopback ACP endpoints (`ws://192.168.x.x:port/acp/ws`) must not
+  /// match — otherwise the app would hit a non-existent mailbox API and stall.
+  static bool isChannelRelayEndpoint(String endpoint) {
+    final trimmed = endpoint.trim();
+    if (trimmed.isEmpty) return false;
+    try {
+      final normalized = trimmed
+          .replaceFirst(RegExp(r'^wss://'), 'https://')
+          .replaceFirst(RegExp(r'^ws://'), 'http://');
+      final path = Uri.parse(normalized).path;
+      return path.contains('/proxy/') ||
+          path.startsWith('/proxy/') ||
+          path.startsWith('/c/');
+    } catch (_) {
+      return false;
+    }
+  }
+
   /// Derive HTTPS channel base from an agent WS/HTTP endpoint.
+  /// Returns null for non-relay (LAN) endpoints so mailbox/access stay optional.
   /// e.g. `wss://host/proxy/xxx/acp/ws` → `https://host`
   static String? channelBaseFromEndpoint(String endpoint) {
+    if (!isChannelRelayEndpoint(endpoint)) return null;
     final trimmed = endpoint.trim();
-    if (trimmed.isEmpty) return null;
     try {
       final normalized = trimmed
           .replaceFirst(RegExp(r'^wss://'), 'https://')

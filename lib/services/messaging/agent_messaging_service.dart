@@ -2526,12 +2526,11 @@ class AgentMessagingService {
 
       if (channelBase == null || agentPub == null || acpAgentId.isEmpty) {
         LoggerService().warning(
-          'Cannot leave mailbox message: missing channelBase/pubkey/agentId',
+          'Cannot leave mailbox message: missing channelBase/pubkey/agentId '
+          '(LAN/local agents have no channel mailbox — this is expected)',
           tag: 'AgentMessagingService',
         );
-        return notice(
-          content: '对方正忙，且当前无法留言（缺少通道或公钥信息）。请稍后再试。',
-        );
+        return notice(content: '对方正忙，请稍后再试。');
       }
 
       final identity = await NoiseIdentity.loadOrCreate();

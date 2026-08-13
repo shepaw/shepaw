@@ -143,7 +143,7 @@ mixin _LoadOps on _ChatControllerBase {
         limit: ChatMessageWindow.initialLimit,
       ));
 
-      // 进页先收信：拉 channel 信箱中已回复的密文，解密合并进本地
+      // 进页先收信：仅 channel 中继 agent 才拉信箱；内网直连跳过
       if (agentId != null && !isGroupMode) {
         final mailboxMsgs = await chatService.fetchMailboxReplies(
           channelId: currentChannelId!,

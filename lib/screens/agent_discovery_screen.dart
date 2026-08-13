@@ -187,10 +187,15 @@ class _AgentDiscoveryScreenState extends State<AgentDiscoveryScreen> {
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
+          Text(
+            '仅公网发现需要 Channel。内网请继续用扫码/配对，不填此项也能用。',
+            style: Theme.of(context).textTheme.bodySmall,
+          ),
+          const SizedBox(height: 12),
           TextField(
             controller: _baseCtrl,
             decoration: const InputDecoration(
-              labelText: 'Channel 服务地址',
+              labelText: 'Channel 服务地址（可选）',
               hintText: 'https://channel.example.com',
               border: OutlineInputBorder(),
             ),
