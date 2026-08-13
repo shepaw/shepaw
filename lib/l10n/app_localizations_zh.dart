@@ -1185,6 +1185,9 @@ class AppLocalizationsZh extends AppLocalizations {
   String get agentDetail_model => '模型';
 
   @override
+  String get agentDetail_mode => '模式';
+
+  @override
   String get agentDetail_lastActive => '最后活跃';
 
   @override
@@ -4396,6 +4399,24 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get agentDetail_noModels => '暂无可用模型';
+
+  @override
+  String get agentDetail_modeSwitchUnsupported => '该 agent 暂不支持切换模式';
+
+  @override
+  String get agentDetail_modeSwitched => '已切换模式';
+
+  @override
+  String get agentDetail_modeSwitchFailed => '切换模式失败';
+
+  @override
+  String get agentDetail_refreshModes => '刷新模式列表';
+
+  @override
+  String get agentDetail_switchModeHint => '切换远端 agent 的会话模式（作用于当前及后续对话）';
+
+  @override
+  String get agentDetail_noModes => '暂无可用模式';
 
   @override
   String get agentDetail_noAiModel => '尚未配置 AI 模型';

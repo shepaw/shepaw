@@ -401,6 +401,38 @@ class PeerModelsList {
   const PeerModelsList({required this.models, this.current});
 }
 
+/// One upstream session-mode option from `agent_modes_resp`.
+class PeerAgentMode {
+  final String value;
+  final String displayName;
+  final String description;
+
+  PeerAgentMode({
+    required this.value,
+    required this.displayName,
+    this.description = '',
+  });
+
+  static PeerAgentMode? fromJson(Map<String, dynamic> json) {
+    final value = json['value'] as String?;
+    if (value == null || value.isEmpty) return null;
+    final display = (json['display_name'] as String?)?.trim();
+    return PeerAgentMode(
+      value: value,
+      displayName: (display != null && display.isNotEmpty) ? display : value,
+      description: (json['description'] as String?) ?? '',
+    );
+  }
+}
+
+/// Upstream session-mode list + current selection (`agent_modes_resp`).
+class PeerModesList {
+  final List<PeerAgentMode> modes;
+  final String? current;
+
+  const PeerModesList({required this.modes, this.current});
+}
+
 /// Soul text + edit permission from `agent_soul_resp`.
 class PeerSoulInfo {
   final String soul;
@@ -535,15 +567,19 @@ class PeerAgentClientService {
   /// waits are excluded — see [approvalWaitHardCap].
   static const Duration chatTimeout = Duration(seconds: 300);
 
-  /// Hard upper bound for a turn even while an approval is open. The bridge
+  /// Hard upper bound for a turn WHILE an approval is open. The bridge
   /// denies an unanswered approval after 20 min (agent-hub
   /// APPROVAL_TIMEOUT_MS), which also ends the turn — waiting past 25 min
-  /// means the verdict path is gone for good.
+  /// means the verdict path is gone for good. Turns without open approvals
+  /// are not capped: a healthy long-running task may stream arbitrarily long
+  /// (idle chunks reset the clock; a dead one trips [chatTimeout]).
   static const Duration approvalWaitHardCap = Duration(minutes: 25);
 
   /// 断连挂起（等待重连续传）的最长时长。挂起期间 idle 计时冻结（对端本来
   /// 就不可能有帧到达），超过该时长说明重连无望，判 turn 失败。
-  static const Duration suspendWaitHardCap = Duration(minutes: 10);
+  /// 与 hub 侧 TURN_RESULT_TTL_MS（25min，终态结果的可回放窗口）对齐：
+  /// app 先于 hub 放弃会让「hub 还留着结果、app 已判死」的窗口白白浪费。
+  static const Duration suspendWaitHardCap = Duration(minutes: 25);
 
   /// resume_req 发出后对端无应答的容忍时长（旧版本 hub 不支持续传时
   /// 不会回复），超时按「对端不支持续传」失败，避免无限悬挂。
@@ -585,6 +621,12 @@ class PeerAgentClientService {
   /// Outstanding agent_models_set_req per "agentId::model" key.
   final Map<String, Completer<bool>> _pendingModelSet = {};
 
+  /// Outstanding agent_modes_req per remote agent id.
+  final Map<String, Completer<PeerModesList>> _pendingModes = {};
+
+  /// Outstanding agent_modes_set_req per "agentId::mode" key.
+  final Map<String, Completer<bool>> _pendingModeSet = {};
+
   /// Outstanding agent_soul_req per remote agent id.
   final Map<String, Completer<PeerSoulInfo?>> _pendingSoulGet = {};
 
@@ -611,6 +653,17 @@ class PeerAgentClientService {
   /// 重连后对这些 requestId 补发 agent_cancel 而非 resume_req。
   /// 有界：超过 100 条时淘汰最旧。
   final Map<String, String> _cancelledWhileSuspended = {};
+
+  /// 因断连而不可恢复地失败的 turn 所属的「peerId::remoteAgentId」。
+  /// 这些 turn 的完整结果可能仍留在远端 transcript（hub 的 turn registry
+  /// 或上游 agent 的会话历史）—— 重连后通过增量历史同步补回对话。
+  /// 有界：超过 50 条时淘汰最旧。
+  final Set<String> _reconcileNeeded = <String>{};
+
+  /// 重连后需要做一次历史 reconcile 的「peerId::remoteAgentId」事件。
+  /// 聊天页订阅后在 consent 允许时触发增量同步。
+  final _reconcileController = StreamController<String>.broadcast();
+  Stream<String> get reconcileRequests => _reconcileController.stream;
 
   /// requestId → owning agent, retained briefly after a turn finishes so an
   /// approval that outlives its sendChat request (e.g. the hub restarted
@@ -668,6 +721,7 @@ class PeerAgentClientService {
     _orphanedApprovals.clear();
     _submittedApprovals.clear();
     _cancelledWhileSuspended.clear();
+    _reconcileNeeded.clear();
     _requestAgents.clear();
     for (final c in _pendingSessions.values) {
       if (!c.isCompleted) c.complete(const []);
@@ -953,6 +1007,33 @@ class PeerAgentClientService {
     }
   }
 
+  /// 登记一个「本地判死、但远端可能已完成」的 turn —— 重连后应对其所属
+  /// agent 做一次历史 reconcile（结果可能仍留在远端 transcript）。
+  void _markReconcileNeeded(String requestId) {
+    final owner = _requestAgents[requestId];
+    if (owner == null) return;
+    final key = '${owner.peerId}::${owner.remoteAgentId}';
+    _reconcileNeeded.add(key);
+    if (_reconcileNeeded.length > 50) {
+      _reconcileNeeded.remove(_reconcileNeeded.first);
+    }
+    _log.info(
+      'marked history reconcile for $key (turn $requestId failed remotely-recoverable)',
+      tag: _tag,
+    );
+  }
+
+  /// 重连成功后把该 peer 的 reconcile 提示发出去（聊天页据此触发增量同步）。
+  void _flushReconcileHints(String peerId) {
+    if (_reconcileNeeded.isEmpty) return;
+    for (final key in _reconcileNeeded.toList()) {
+      if (!key.startsWith('$peerId::')) continue;
+      _reconcileNeeded.remove(key);
+      _log.info('reconnected → request history reconcile for $key', tag: _tag);
+      _reconcileController.add(key);
+    }
+  }
+
   /// Shared timeout path: drop the pending entry so late frames are ignored,
   /// tell the remote to abort so its side does not keep running, and fail
   /// the future.
@@ -968,6 +1049,11 @@ class PeerAgentClientService {
       'type': 'agent_cancel',
       'request_id': requestId,
     }));
+    if (duringSuspend) {
+      // 断连期间 cancel 到不了对端 —— hub 侧的 turn 会继续跑完并保留结果。
+      // 登记下来，重连后用历史同步把结果补回对话。
+      _markReconcileNeeded(requestId);
+    }
     for (final entry in _approvalToRequest.entries.toList()) {
       if (entry.value == requestId) {
         _approvalToRequest.remove(entry.key);
@@ -1029,6 +1115,12 @@ class PeerAgentClientService {
         break;
       case 'agent_models_set_resp':
         _onModelsSetResp(event.data);
+        break;
+      case 'agent_modes_resp':
+        _onModesResp(event.data);
+        break;
+      case 'agent_modes_set_resp':
+        _onModesSetResp(event.data);
         break;
       case 'agent_soul_resp':
         _onSoulResp(event.data);
@@ -1194,6 +1286,91 @@ class PeerAgentClientService {
     if (remoteId == null || model == null) return;
     final ok = data['ok'] == true;
     final completer = _pendingModelSet.remove('$remoteId::$model');
+    if (completer != null && !completer.isCompleted) completer.complete(ok);
+  }
+
+  /// Fetch upstream session modes (`agent.modes.list` relay). Returns empty
+  /// list on failure/timeout. [sessionId] scopes to a synced session.
+  Future<PeerModesList> fetchModes({
+    required String peerId,
+    required String remoteAgentId,
+    String? sessionId,
+  }) async {
+    if (_pendingModes.containsKey(remoteAgentId)) {
+      return _pendingModes[remoteAgentId]!.future;
+    }
+    final completer = Completer<PeerModesList>();
+    _pendingModes[remoteAgentId] = completer;
+    final payload = <String, dynamic>{
+      'type': 'agent_modes_req',
+      'agent_id': remoteAgentId,
+    };
+    if (sessionId != null && sessionId.isNotEmpty) {
+      payload['session_id'] = sessionId;
+    }
+    final sent = await PeerConnectionManager.instance.sendControl(peerId, payload);
+    if (!sent) {
+      _pendingModes.remove(remoteAgentId);
+      return const PeerModesList(modes: []);
+    }
+    return completer.future.timeout(const Duration(seconds: 15), onTimeout: () {
+      _pendingModes.remove(remoteAgentId);
+      return const PeerModesList(modes: []);
+    });
+  }
+
+  void _onModesResp(Map<String, dynamic> data) {
+    final remoteId = data['agent_id'] as String?;
+    if (remoteId == null) return;
+    final raw = (data['modes'] as List?) ?? const [];
+    final modes = raw
+        .whereType<Map<String, dynamic>>()
+        .map(PeerAgentMode.fromJson)
+        .whereType<PeerAgentMode>()
+        .toList();
+    final current = data['current'] as String?;
+    final completer = _pendingModes.remove(remoteId);
+    if (completer != null && !completer.isCompleted) {
+      completer.complete(PeerModesList(modes: modes, current: current));
+    }
+  }
+
+  /// Switch the upstream session mode (`agent.modes.setCurrent` relay).
+  Future<bool> setMode({
+    required String peerId,
+    required String remoteAgentId,
+    required String mode,
+    String? sessionId,
+  }) async {
+    final key = '$remoteAgentId::$mode';
+    if (_pendingModeSet.containsKey(key)) return _pendingModeSet[key]!.future;
+    final completer = Completer<bool>();
+    _pendingModeSet[key] = completer;
+    final payload = <String, dynamic>{
+      'type': 'agent_modes_set_req',
+      'agent_id': remoteAgentId,
+      'mode': mode,
+    };
+    if (sessionId != null && sessionId.isNotEmpty) {
+      payload['session_id'] = sessionId;
+    }
+    final sent = await PeerConnectionManager.instance.sendControl(peerId, payload);
+    if (!sent) {
+      _pendingModeSet.remove(key);
+      return false;
+    }
+    return completer.future.timeout(const Duration(seconds: 15), onTimeout: () {
+      _pendingModeSet.remove(key);
+      return false;
+    });
+  }
+
+  void _onModesSetResp(Map<String, dynamic> data) {
+    final remoteId = data['agent_id'] as String?;
+    final mode = data['mode'] as String?;
+    if (remoteId == null || mode == null) return;
+    final ok = data['ok'] == true;
+    final completer = _pendingModeSet.remove('$remoteId::$mode');
     if (completer != null && !completer.isCompleted) completer.complete(ok);
   }
 
@@ -2196,6 +2373,7 @@ class PeerAgentClientService {
     if (event.type == PeerConnectionEventType.connected) {
       _requestAgentList(event.peerId);
       unawaited(_resumeSuspendedTurns(event.peerId));
+      _flushReconcileHints(event.peerId);
     } else if (event.type == PeerConnectionEventType.disconnected) {
       _suspendPendingForPeer(event.peerId);
       unawaited(_markPeerAgentsOffline(event.peerId));
@@ -2297,6 +2475,7 @@ class PeerAgentClientService {
           'support turn resume',
           tag: 'PeerApproval',
         );
+        _markReconcileNeeded(requestId);
         cur.completer.completeError(
           Exception('对端不支持断点续传或任务已丢失，请重新发送'),
         );
@@ -2361,6 +2540,9 @@ class PeerAgentClientService {
         break;
       case 'lost':
       default:
+        // hub 已不认识这个 turn（重启或 TTL 过期）——但结果可能已落进
+        // 远端 transcript，登记 reconcile，由历史同步补回。
+        _markReconcileNeeded(requestId);
         _onError({
           'request_id': requestId,
           'message': data['message'] as String? ?? '对端任务已结束或丢失',

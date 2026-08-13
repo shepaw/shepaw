@@ -43,10 +43,10 @@ enum TurnWatchdogVerdict {
 /// - 挂起中（suspendedSince != null）：idle 计时冻结（断连期间对端本来
 ///   就不会有帧到达），但受 suspendWaitHardCap 约束；
 /// - 审批等待中（openApprovals > 0）：idle 计时冻结（用户读卡片的时间
-///   不计入），只受 hardCap 约束；
+///   不计入），且受 hardCap 约束 —— hub 会在 20 分钟时拒绝未裁决的审批
+///   并终结 turn，等下去没有意义；
 /// - 其余情况：距上次 agent 输出（或 turn 开始 / 审批结束）超过 chatTimeout
-///   → idleTimeout；
-/// - 无论何种状态：总时长超过 approvalWaitHardCap → hardCap（优先级最高）。
+///   → idleTimeout。持续流式输出的健康长任务不受总时长限制。
 TurnWatchdogVerdict evaluateTurnWatchdog({
   required DateTime now,
   required DateTime startedAt,
@@ -57,7 +57,8 @@ TurnWatchdogVerdict evaluateTurnWatchdog({
   required Duration suspendWaitHardCap,
   required Duration approvalWaitHardCap,
 }) {
-  if (now.difference(startedAt) > approvalWaitHardCap) {
+  if (openApprovals > 0 &&
+      now.difference(startedAt) > approvalWaitHardCap) {
     return TurnWatchdogVerdict.hardCap;
   }
   final suspended = suspendedSince;

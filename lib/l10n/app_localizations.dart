@@ -2288,6 +2288,12 @@ abstract class AppLocalizations {
   /// **'模型'**
   String get agentDetail_model;
 
+  /// No description provided for @agentDetail_mode.
+  ///
+  /// In zh, this message translates to:
+  /// **'模式'**
+  String get agentDetail_mode;
+
   /// No description provided for @agentDetail_lastActive.
   ///
   /// In zh, this message translates to:
@@ -8065,6 +8071,42 @@ abstract class AppLocalizations {
   /// In zh, this message translates to:
   /// **'暂无可用模型'**
   String get agentDetail_noModels;
+
+  /// No description provided for @agentDetail_modeSwitchUnsupported.
+  ///
+  /// In zh, this message translates to:
+  /// **'该 agent 暂不支持切换模式'**
+  String get agentDetail_modeSwitchUnsupported;
+
+  /// No description provided for @agentDetail_modeSwitched.
+  ///
+  /// In zh, this message translates to:
+  /// **'已切换模式'**
+  String get agentDetail_modeSwitched;
+
+  /// No description provided for @agentDetail_modeSwitchFailed.
+  ///
+  /// In zh, this message translates to:
+  /// **'切换模式失败'**
+  String get agentDetail_modeSwitchFailed;
+
+  /// No description provided for @agentDetail_refreshModes.
+  ///
+  /// In zh, this message translates to:
+  /// **'刷新模式列表'**
+  String get agentDetail_refreshModes;
+
+  /// No description provided for @agentDetail_switchModeHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'切换远端 agent 的会话模式（作用于当前及后续对话）'**
+  String get agentDetail_switchModeHint;
+
+  /// No description provided for @agentDetail_noModes.
+  ///
+  /// In zh, this message translates to:
+  /// **'暂无可用模式'**
+  String get agentDetail_noModes;
 
   /// No description provided for @agentDetail_noAiModel.
   ///

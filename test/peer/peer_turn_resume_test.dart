@@ -173,5 +173,43 @@ void main() {
         TurnWatchdogVerdict.hardCap,
       );
     });
+
+    test('无审批的健康长任务不受 hardCap 限制（持续输出 30 分钟）', () {
+      // hardCap 只兜底审批等待（hub 20 分钟拒绝未裁决审批）；持续流式输出
+      // 的 turn 由 idleTimeout 约束，跑多久都不判死。
+      final lastOutput = startedAt.add(const Duration(minutes: 29, seconds: 30));
+      final now = startedAt.add(const Duration(minutes: 30));
+      expect(
+        evaluateTurnWatchdog(
+          now: now,
+          startedAt: startedAt,
+          idleSince: lastOutput,
+          suspendedSince: null,
+          openApprovals: 0,
+          chatTimeout: chatTimeout,
+          suspendWaitHardCap: suspendCap,
+          approvalWaitHardCap: hardCap,
+        ),
+        TurnWatchdogVerdict.none,
+      );
+    });
+
+    test('无审批的挂起 turn 只受 suspendCap 约束（总时长超 hardCap 但挂起未超）', () {
+      final suspendedAt = startedAt.add(const Duration(minutes: 24));
+      final now = suspendedAt.add(const Duration(minutes: 2));
+      expect(
+        evaluateTurnWatchdog(
+          now: now,
+          startedAt: startedAt,
+          idleSince: startedAt,
+          suspendedSince: suspendedAt,
+          openApprovals: 0,
+          chatTimeout: chatTimeout,
+          suspendWaitHardCap: suspendCap,
+          approvalWaitHardCap: hardCap,
+        ),
+        TurnWatchdogVerdict.none,
+      );
+    });
   });
 }

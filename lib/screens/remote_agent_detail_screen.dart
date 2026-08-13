@@ -80,6 +80,13 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
   bool _peerModelSetting = false;
   String? _peerModelsError;
 
+  /// Upstream session-mode list from the paired device's agent (peer agents only).
+  List<PeerAgentMode> _peerModes = const [];
+  String? _peerCurrentMode;
+  bool _peerModesLoading = false;
+  bool _peerModeSetting = false;
+  String? _peerModesError;
+
   // 编辑用的控制器
   late TextEditingController _nameController;
   late TextEditingController _bioController;
@@ -146,12 +153,16 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
         if (event.peerId != _agent.sourcePeerId || !mounted) return;
         if (event.type == PeerConnectionEventType.connected) {
           unawaited(_loadPeerModels());
+          unawaited(_loadPeerModes());
           unawaited(_loadSoul());
         }
         setState(() {});
       });
       _loadPeerSyncPref();
-      if (_isEditing) _loadPeerModels();
+      if (_isEditing) {
+        _loadPeerModels();
+        _loadPeerModes();
+      }
     }
   }
 
@@ -253,6 +264,70 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(ok ? l10n.agentDetail_modelSwitched : l10n.agentDetail_modelSwitchFailed),
+        duration: const Duration(seconds: 2),
+      ),
+    );
+  }
+
+  Future<void> _loadPeerModes() async {
+    final l10n = AppLocalizations.of(context);
+    if (!_agent.isPeerAgent) return;
+    final peerId = _agent.sourcePeerId;
+    final remoteId = _agent.remoteAgentId;
+    if (peerId == null || remoteId == null) return;
+    if (!PeerConnectionManager.instance.connectedPeerIds.contains(peerId)) {
+      if (mounted) {
+        setState(() {
+          _peerModes = const [];
+          _peerCurrentMode = null;
+          _peerModesError = l10n.agentDetail_peerOffline;
+          _peerModesLoading = false;
+        });
+      }
+      return;
+    }
+    if (mounted) {
+      setState(() {
+        _peerModesLoading = true;
+        _peerModesError = null;
+      });
+    }
+    final list = await PeerAgentClientService.instance.fetchModes(
+      peerId: peerId,
+      remoteAgentId: remoteId,
+    );
+    if (!mounted) return;
+    setState(() {
+      _peerModesLoading = false;
+      _peerModes = list.modes;
+      _peerCurrentMode = list.current;
+      if (list.modes.isEmpty) {
+        _peerModesError = l10n.agentDetail_modeSwitchUnsupported;
+      }
+    });
+  }
+
+  Future<void> _onPeerModeSelected(String? value) async {
+    final l10n = AppLocalizations.of(context);
+    if (value == null || value == _peerCurrentMode || _peerModeSetting) return;
+    final peerId = _agent.sourcePeerId;
+    final remoteId = _agent.remoteAgentId;
+    if (peerId == null || remoteId == null) return;
+    setState(() => _peerModeSetting = true);
+    final ok = await PeerAgentClientService.instance.setMode(
+      peerId: peerId,
+      remoteAgentId: remoteId,
+      mode: value,
+    );
+    if (!mounted) return;
+    setState(() {
+      _peerModeSetting = false;
+      if (ok) _peerCurrentMode = value;
+    });
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(ok ? l10n.agentDetail_modeSwitched : l10n.agentDetail_modeSwitchFailed),
         duration: const Duration(seconds: 2),
       ),
     );
@@ -378,6 +453,7 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
     unawaited(_loadSoul());
     if (_agent.isPeerAgent) {
       unawaited(_loadPeerModels());
+      unawaited(_loadPeerModes());
     }
   }
 
@@ -1250,6 +1326,128 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
     );
   }
 
+  /// Upstream session-mode picker — switches the remote agent's native mode
+  /// via `agent.modes.setCurrent` on the paired device.
+  Widget _buildPeerModePicker() {
+    final l10n = AppLocalizations.of(context);
+    final colorScheme = Theme.of(context).colorScheme;
+    final busy = _peerModesLoading || _peerModeSetting;
+    final effectiveCurrent = _peerCurrentMode ??
+        (_peerModes.length == 1 ? _peerModes.first.value : null);
+
+    return Container(
+      decoration: BoxDecoration(
+        color: colorScheme.surfaceContainerHighest.withValues(alpha: 0.4),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.tune_outlined, size: 18, color: colorScheme.primary),
+              const SizedBox(width: 8),
+              Text(
+                l10n.agentDetail_mode,
+                style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+              ),
+              const Spacer(),
+              if (busy)
+                SizedBox(
+                  width: 16,
+                  height: 16,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    color: colorScheme.primary,
+                  ),
+                )
+              else
+                IconButton(
+                  icon: const Icon(Icons.refresh, size: 18),
+                  tooltip: l10n.agentDetail_refreshModes,
+                  onPressed: _loadPeerModes,
+                  visualDensity: VisualDensity.compact,
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                ),
+            ],
+          ),
+          const SizedBox(height: 4),
+          Text(
+            l10n.agentDetail_switchModeHint,
+            style: TextStyle(fontSize: 12, color: colorScheme.onSurfaceVariant),
+          ),
+          const SizedBox(height: 10),
+          if (_peerModesError != null && _peerModes.isEmpty)
+            Text(
+              _peerModesError!,
+              style: TextStyle(fontSize: 12, color: colorScheme.error),
+            )
+          else if (_peerModes.isEmpty && _peerModesLoading)
+            const SizedBox.shrink()
+          else if (_peerModes.isEmpty)
+            Text(
+              l10n.agentDetail_noModes,
+              style: TextStyle(fontSize: 12, color: colorScheme.onSurfaceVariant),
+            )
+          else
+            DropdownButtonFormField<String>(
+              value: effectiveCurrent != null &&
+                      _peerModes.any((m) => m.value == effectiveCurrent)
+                  ? effectiveCurrent
+                  : null,
+              isExpanded: true,
+              decoration: InputDecoration(
+                isDense: true,
+                contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                filled: true,
+                fillColor: colorScheme.surface,
+              ),
+              hint: Text(l10n.agentDetail_mode),
+              selectedItemBuilder: (context) => _peerModes
+                  .map(
+                    (m) => Align(
+                      alignment: AlignmentDirectional.centerStart,
+                      child: Text(
+                        m.displayName,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  )
+                  .toList(),
+              items: _peerModes
+                  .map(
+                    (m) => DropdownMenuItem<String>(
+                      value: m.value,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(m.displayName, overflow: TextOverflow.ellipsis),
+                          if (m.description.isNotEmpty)
+                            Text(
+                              m.description,
+                              style: TextStyle(
+                                fontSize: 11,
+                                color: colorScheme.onSurfaceVariant,
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                        ],
+                      ),
+                    ),
+                  )
+                  .toList(),
+              onChanged: busy ? null : _onPeerModeSelected,
+            ),
+        ],
+      ),
+    );
+  }
+
   /// 来源标识：标记该 agent 来自某台配对设备（通过 P2P 隧道访问）。
   Widget _buildPeerSourceChip() {
     final l10n = AppLocalizations.of(context);
@@ -1997,6 +2195,8 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
           _buildPeerSyncToggle(),
           const SizedBox(height: 16),
           _buildPeerModelPicker(),
+          const SizedBox(height: 16),
+          _buildPeerModePicker(),
           const SizedBox(height: 16),
         ],
 

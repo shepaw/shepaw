@@ -582,12 +582,11 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
       }
     } else {
       // 流式回合进行中：onStreamChunk 正直接驱动 UI，全量替换会顶掉
-      // streaming 占位气泡导致流式中断。标记待办，回合结束时补 reconcile。
-      // 僵尸防护：服务侧任务已结束（回调被摘除 / 完成事件丢失）而 streaming
-      // 仍未 clear 时，继续推迟将永远等不到回合结束 —— 清掉占位立即刷新。
+      // streaming 占位气泡（以及贴在上面的审批卡）。标记待办，回合结束补 reconcile。
+      // 僵尸会话由 [_handleAgentTaskCompleted] 清掉，不在这里用「没有
+      // ActiveTask」误判回合一开始（任务还没登记）的 reload。
       final deferReload = ChatStreamingSession.shouldDeferReload(
         streamingActive: streaming.isActive,
-        hasLiveTask: chatService.getActiveTask(currentChannelId!) != null,
       );
       if (deferReload) {
         _dmReconcileAfterStreaming = true;

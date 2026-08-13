@@ -1,4 +1,5 @@
 import '../models/message.dart';
+import 'streaming_action_confirmation.dart';
 
 /// Result of reconciling in-memory group placeholders with DB rows.
 class GroupReconcileResult {
@@ -24,16 +25,19 @@ class ChatMessageReconciler {
       id.startsWith('group_peer_approval_') ||
       id.startsWith('temp_user_');
 
-  static bool isDmStreamingId(String id) => id.startsWith('streaming_');
+  static bool isDmStreamingId(String id) =>
+      id.startsWith('streaming_') || id.startsWith('peer_approval_');
 
   static bool hasVisibleAgentContent(Message m) {
     if (!m.from.isAgent) return false;
+    if (StreamingActionConfirmation.hasPendingCard(m.metadata)) return true;
     if (m.content.trim().isNotEmpty) return true;
     final progress = m.metadata?['progress_content'];
     return progress is String && progress.trim().isNotEmpty;
   }
 
   static bool hasVisibleTempContent(Message m) {
+    if (StreamingActionConfirmation.hasPendingCard(m.metadata)) return true;
     if (m.content.trim().isNotEmpty) return true;
     final progress = m.metadata?['progress_content'];
     return progress is String && progress.trim().isNotEmpty;

@@ -1226,6 +1226,9 @@ class AppLocalizationsEn extends AppLocalizations {
   String get agentDetail_model => 'Model';
 
   @override
+  String get agentDetail_mode => 'Mode';
+
+  @override
   String get agentDetail_lastActive => 'Last Active';
 
   @override
@@ -4563,6 +4566,26 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get agentDetail_noModels => 'No models available';
+
+  @override
+  String get agentDetail_modeSwitchUnsupported =>
+      'This agent does not support mode switching';
+
+  @override
+  String get agentDetail_modeSwitched => 'Mode switched';
+
+  @override
+  String get agentDetail_modeSwitchFailed => 'Failed to switch mode';
+
+  @override
+  String get agentDetail_refreshModes => 'Refresh mode list';
+
+  @override
+  String get agentDetail_switchModeHint =>
+      'Switch the remote agent\'s session mode (applies to the current and future chats)';
+
+  @override
+  String get agentDetail_noModes => 'No modes available';
 
   @override
   String get agentDetail_noAiModel => 'No AI model configured';

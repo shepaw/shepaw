@@ -96,6 +96,9 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   late final ChatController _controller;
   StreamSubscription<ChatEvent>? _eventSubscription;
 
+  /// 断连失败的 peer turn 在重连后的历史 reconcile 通知订阅。
+  StreamSubscription<String>? _reconcileSubscription;
+
   /// True while pulling this synced session's transcript from the remote,
   /// so the app bar can show a "同步远端…" indicator.
   bool _syncingPeerHistory = false;
@@ -208,6 +211,12 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     _checkAgentImageSupport();
     _maybeSyncPeerAgent();
     _ensurePeerSlashCommands();
+    // 断连期间被判死的 turn，其结果可能仍留在远端 —— 重连后 service 会发
+    // reconcile 通知，这里对当前 agent 做一次增量历史同步把结果补回。
+    _reconcileSubscription =
+        PeerAgentClientService.instance.reconcileRequests.listen((key) {
+      unawaited(_onPeerReconcileRequest(key));
+    });
   }
 
   @override
@@ -251,6 +260,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     });
 
     _eventSubscription?.cancel();
+    _reconcileSubscription?.cancel();
     _controller.removeListener(_onControllerChanged);
     _controller.dispose();
     _recordingSubscription?.cancel();
@@ -2528,6 +2538,26 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     }
   }
 
+  /// 断连期间被判死的 turn 可能已在远端跑完 —— service 重连后发来的
+  /// reconcile 通知（'peerId::remoteAgentId'）。匹配当前 agent 时做一次
+  /// 增量历史同步把结果补回对话；用户未表态过同步偏好时不弹窗打扰。
+  Future<void> _onPeerReconcileRequest(String key) async {
+    final agentId = widget.agentId;
+    if (agentId == null) return;
+    final sep = key.indexOf('::');
+    if (sep <= 0) return;
+    final peerId = key.substring(0, sep);
+    final remoteAgentId = key.substring(sep + 2);
+    final agent =
+        await _controller.localDatabaseService.getRemoteAgentById(agentId);
+    if (agent == null || !agent.isPeerAgent) return;
+    if (agent.sourcePeerId != peerId || agent.remoteAgentId != remoteAgentId) {
+      return;
+    }
+    if (!mounted) return;
+    await _maybeSyncPeerAgent(promptIfUndecided: false);
+  }
+
   /// On entry to a peer agent chat, incrementally sync remote sessions + dirty
   /// history — but only after the user has decided whether to sync.
   ///
@@ -2535,7 +2565,11 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   /// - `null` (undecided): prompt once when there are unsynced remote sessions
   /// - `false` (enabled): auto-sync silently; changeable in agent settings
   /// - `true` (disabled): skip; changeable in agent settings
-  Future<void> _maybeSyncPeerAgent() async {
+  ///
+  /// [promptIfUndecided] controls the undecided case: chat entry passes true
+  /// (the dialog is expected there); background paths (reconnect reconcile)
+  /// pass false and simply skip until the user decides on next entry.
+  Future<void> _maybeSyncPeerAgent({bool promptIfUndecided = true}) async {
     final agentId = widget.agentId;
     if (agentId == null) return;
     final agent = await _controller.localDatabaseService.getRemoteAgentById(agentId);
@@ -2554,6 +2588,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
 
     // Undecided — prompt only when there are remote sessions not yet mirrored.
     var showToastOnFirstLink = false;
+    if (syncDisabled == null && !promptIfUndecided) return;
     if (syncDisabled == null) {
       final sessions = await PeerAgentClientService.instance.fetchSessions(
         peerId: peerId,

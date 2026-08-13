@@ -11,6 +11,21 @@ class StreamingActionConfirmation {
     return prompt != null && prompt.isNotEmpty ? prompt : fallbackPrompt;
   }
 
+  /// Unanswered in-band card — must stay visible (not collapsed / not dropped
+  /// by an empty-content streaming reconcile).
+  static bool hasPendingCard(Map<String, dynamic>? metadata) {
+    if (metadata == null) return false;
+    final ac = metadata['action_confirmation'];
+    if (ac is Map && ac['selected_action_id'] == null) return true;
+    final plan = metadata['plan_approval'];
+    if (plan is Map &&
+        plan['_approved'] == null &&
+        metadata['plan_approval_responded'] == null) {
+      return true;
+    }
+    return false;
+  }
+
   /// Prefer [preferredId] when present in [messageIdMap]; else latest agent bubble.
   static String? resolveHostMessageId({
     required String? preferredId,
