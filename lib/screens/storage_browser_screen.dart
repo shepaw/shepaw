@@ -46,6 +46,7 @@ class StorageBrowserScreen extends StatefulWidget {
     this.peerId,
     this.readOnly = false,
     this.preferLocalCache = false,
+    this.manageLocalMirror = false,
     this.initialSpace,
     this.initialPath,
     this.title,
@@ -71,6 +72,9 @@ class StorageBrowserScreen extends StatefulWidget {
 
   /// 浏览本机磁盘上的他端 device 树（peer local_fallback 缓存），不走跨端 list。
   final bool preferLocalCache;
+
+  /// master 管理本机上的他端镜像：可删进回收站，不可代写上传。
+  final bool manageLocalMirror;
 
   /// 初始分区（仅影响「空间」Tab 起始位置）；远端默认 files。
   final String? initialSpace;
@@ -128,14 +132,23 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
   /// 当前分区内路径（无首尾 `/`）；空串 = 分区根。
   String _navPath = '';
 
+  bool get _preferLocal =>
+      widget.preferLocalCache || widget.manageLocalMirror;
+
   bool get _isRemote =>
-      !widget.preferLocalCache &&
+      !_preferLocal &&
       _targetId.isNotEmpty &&
       _selfId.isNotEmpty &&
       _targetId != _selfId;
 
   bool get _readOnly =>
-      widget.readOnly || _isRemote || widget.preferLocalCache;
+      widget.readOnly ||
+      _isRemote ||
+      (widget.preferLocalCache && !widget.manageLocalMirror);
+
+  bool get _canWrite => !_readOnly && !widget.manageLocalMirror;
+
+  bool get _canDelete => !_readOnly || widget.manageLocalMirror;
 
   PeerStoreShareAllowlist? _inboundShares;
 
@@ -167,7 +180,7 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
   bool _mobileMineWritable(BuildContext context) =>
       _isMobileLayout(context) &&
       _tabs.index == 1 &&
-      !_readOnly &&
+      _canWrite &&
       _navSpace != null;
 
   bool _isFolderMarkerPath(String path) => p.basename(path) == _folderMarker;
@@ -341,7 +354,7 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
             deviceId: _targetId,
             space: space,
             limit: _listLimit,
-            preferLocalCache: widget.preferLocalCache,
+            preferLocalCache: _preferLocal,
           );
           anyOk = true;
           for (final e in entries) {
@@ -440,7 +453,7 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
   }
 
   Future<void> _deleteFile(_BrowsedFile file) async {
-    if (_readOnly) {
+    if (!_canDelete) {
       _toast(AppLocalizations.of(context).storage_browserDeleteDenied);
       return;
     }
@@ -532,7 +545,7 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
         value: _EntryAction.manifest,
         child: Text(l10n.storage_browserManifest),
       ),
-      if (!_readOnly)
+      if (_canDelete)
         PopupMenuItem(
           value: _EntryAction.delete,
           child: Text(
@@ -1190,7 +1203,7 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
             tooltip: l10n.storage_browserSearchTitle,
           ),
         if (!_pickMode)
-          ..._buildMobileActions(l10n, includeCreate: !_readOnly),
+          ..._buildMobileActions(l10n, includeCreate: _canWrite),
       ],
     );
   }
@@ -1311,7 +1324,8 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
           icon: const Icon(Icons.search),
           tooltip: l10n.storage_browserSearchTitle,
         ),
-      PopupMenuButton<dynamic>(
+      if (includeCreate || widget.extraMenuItems != null)
+        PopupMenuButton<dynamic>(
         icon: const Icon(Icons.add_circle_outline),
         tooltip: l10n.storage_moreSettings,
         position: PopupMenuPosition.under,

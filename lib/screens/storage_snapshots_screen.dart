@@ -4,11 +4,20 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 
 import '../l10n/app_localizations.dart';
+import '../peer/services/peer_storage_service.dart';
 import '../services/vault_service.dart';
+import '../storage/device_identity.dart';
+import '../storage/local_store.dart';
 import '../storage/restore_service.dart';
 import '../storage/scheduled_snapshot_service.dart';
 import '../storage/snapshot_crypto.dart';
 import '../storage/snapshot_service.dart';
+import '../storage/store_protocol.dart';
+import '../storage/store_service.dart';
+import '../storage/sync_engine.dart';
+import '../widgets/storage/storage_mirrored_devices_card.dart';
+import '../widgets/storage/storage_pending_sync_card.dart';
+import 'storage_pending_sync_screen.dart';
 import 'storage_shared.dart';
 import 'vault_restore_screen.dart';
 
@@ -33,10 +42,26 @@ class _StorageSnapshotsScreenState extends State<StorageSnapshotsScreen> {
   ScheduledSnapshotStatus? _schedStatus;
   int _passwordChangedAtMs = 0;
 
+  StreamSubscription<SyncStatus>? _syncSub;
+  SyncStatus _syncStatus = SyncStatus.empty;
+  bool _isMaster = false;
+  List<MirroredDeviceRow> _mirrored = const [];
+
   @override
   void initState() {
     super.initState();
+    _syncStatus = SyncEngine.instance.latestStatus;
+    _syncSub = SyncEngine.instance.status.listen((s) {
+      if (mounted) setState(() => _syncStatus = s);
+    });
+    unawaited(SyncEngine.instance.currentStatus());
     _future = _load();
+  }
+
+  @override
+  void dispose() {
+    _syncSub?.cancel();
+    super.dispose();
   }
 
   Future<List<SnapshotInfo>> _load() async {
@@ -50,6 +75,21 @@ class _StorageSnapshotsScreenState extends State<StorageSnapshotsScreen> {
     _passwordChangedAtMs =
         await ScheduledSnapshotService.instance.passwordChangedAtMs();
     _vaultCount = (await _vaultService.listVaults()).length;
+
+    _isMaster = await StoreService.instance.isMaster();
+    if (_isMaster) {
+      final self = await DeviceIdentity.deviceId();
+      final store = await StoreService.instance.localStore();
+      final stats = await store.stats();
+      final peers = await PeerStorageService().loadAllPeers();
+      _mirrored = await loadMirroredDevices(
+        selfId: self,
+        peers: peers,
+        stats: stats,
+      );
+    } else {
+      _mirrored = const [];
+    }
     return list;
   }
 
@@ -231,6 +271,65 @@ class _StorageSnapshotsScreenState extends State<StorageSnapshotsScreen> {
     if (mounted) unawaited(_refresh());
   }
 
+  Future<void> _purgeMirror(MirroredDeviceRow device) async {
+    final l10n = AppLocalizations.of(context);
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(l10n.storage_purgeDeviceTitle),
+        content: Text(
+          l10n.storage_purgeDeviceConfirm(
+            device.name,
+            fmtStorageBytes(device.bytes),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: Text(l10n.common_cancel),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(
+                backgroundColor: Theme.of(ctx).colorScheme.error),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: Text(l10n.storage_purgeDevice),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+    setState(() => _busy = true);
+    try {
+      final freed =
+          await StoreService.instance.purgeMirroredDevice(device.deviceId);
+      await _refresh();
+      if (mounted) {
+        storageToast(
+          context,
+          l10n.storage_purgeDeviceDone(
+            device.name,
+            fmtStorageBytes(freed),
+          ),
+        );
+      }
+    } on StoreException catch (e) {
+      if (!mounted) return;
+      storageToast(
+        context,
+        e.code == StoreError.notMaster
+            ? l10n.storage_purgeDeviceMasterOnly
+            : l10n.storage_purgeDeviceFailed(
+                e.message.isEmpty ? e.code : e.message),
+      );
+    } catch (e) {
+      if (mounted) {
+        storageToast(context, l10n.storage_purgeDeviceFailed('$e'));
+      }
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
   // ------------------------------------------------------------ UI
 
   @override
@@ -248,6 +347,27 @@ class _StorageSnapshotsScreenState extends State<StorageSnapshotsScreen> {
                 padding: const EdgeInsets.all(16),
                 children: [
                   _buildAutoCard(l10n),
+                  if (_syncStatus.showPendingCard) ...[
+                    const SizedBox(height: 20),
+                    StoragePendingSyncCard(
+                      status: _syncStatus,
+                      onSeeAll: () {
+                        Navigator.of(context).push(
+                          MaterialPageRoute<void>(
+                            builder: (_) => const StoragePendingSyncScreen(),
+                          ),
+                        );
+                      },
+                    ),
+                  ],
+                  if (_isMaster) ...[
+                    const SizedBox(height: 20),
+                    StorageMirroredDevicesCard(
+                      devices: _mirrored,
+                      busy: _busy,
+                      onPurge: _purgeMirror,
+                    ),
+                  ],
                   const SizedBox(height: 20),
                   Row(
                     children: [

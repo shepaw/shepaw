@@ -364,4 +364,27 @@ void main() {
     expect(list.single.path, 'snap-1/db.sqlite.enc');
     expect(list.single.sha256, sha(content));
   });
+
+  test('status 流：入队后有待同步，syncNow 后清空', () async {
+    master.online = false;
+    final seen = <int>[];
+    final sub = engine.status.listen((s) => seen.add(s.pendingCount));
+
+    await clientCommit('s.txt', bytesOf('status'));
+    final queued = await engine.currentStatus();
+    expect(queued.pendingCount, greaterThan(0));
+    expect(queued.masterIsSelf, isFalse);
+    expect(queued.showPendingCard, isTrue);
+    expect(queued.items.single.path, 's.txt');
+
+    master.online = true;
+    await engine.syncNow();
+    final done = engine.latestStatus;
+    expect(done.pendingCount, 0);
+    expect(done.isSyncing, isFalse);
+    expect(done.uploadingSeq, isNull);
+    await sub.cancel();
+    expect(seen.any((n) => n > 0), isTrue);
+    expect(seen.last, 0);
+  });
 }

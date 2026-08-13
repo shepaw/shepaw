@@ -123,9 +123,19 @@ class StorageSpaceScreenState extends State<StorageSpaceScreen> {
     final sched = s?.schedStatus;
     final snapshotSubtitle = s == null
         ? ''
-        : '${sched != null && sched.enabled ? l10n.storage_autoShortOn : l10n.storage_autoShortOff}'
-            ' · ${l10n.storage_snapshotCount(s.snapshotCount)}'
-            '${sched != null && sched.lastSuccessMs > 0 ? ' · ${l10n.storage_lastSuccess(_fmtTime(sched.lastSuccessMs))}' : ''}';
+        : [
+            sched != null && sched.enabled
+                ? l10n.storage_autoShortOn
+                : l10n.storage_autoShortOff,
+            l10n.storage_snapshotCount(s.snapshotCount),
+            if (sched != null && sched.lastSuccessMs > 0)
+              l10n.storage_lastSuccess(_fmtTime(sched.lastSuccessMs)),
+            if (!s.isMaster && s.unsyncedCount > 0)
+              l10n.storage_unsynced(
+                  s.unsyncedCount, fmtStorageBytes(s.unsyncedBytes)),
+            if (s.isMaster && s.mirroredDeviceCount > 0)
+              l10n.storage_mirrorCount(s.mirroredDeviceCount),
+          ].join(' · ');
 
     final spaceSubtitle = s == null
         ? ''

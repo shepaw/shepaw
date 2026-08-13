@@ -75,6 +75,11 @@ class SyncJournal {
   /// 追加成功后的回调（SyncEngine 设为 poke，本地写后立即触发同步）。
   static void Function()? onAppended;
 
+  /// 队列或水位变化（append / dequeue / 清空）后的回调，供 UI 刷新。
+  static void Function()? onChanged;
+
+  static const pendingDisplayLimit = 200;
+
   Future<void>? _appendLock;
   List<SyncQueueEntry>? _queue;
   int? _changeSeq;
@@ -169,6 +174,7 @@ class SyncJournal {
       await _saveQueue();
       await _saveState();
       onAppended?.call();
+      onChanged?.call();
       return entry.seq;
     });
   }
@@ -190,6 +196,7 @@ class SyncJournal {
       await _saveQueue();
       await _saveState();
       onAppended?.call();
+      onChanged?.call();
       return entry.seq;
     });
   }
@@ -202,6 +209,7 @@ class SyncJournal {
       if (_ackSeq == null || seq > _ackSeq!) _ackSeq = seq;
       await _saveQueue();
       await _saveState();
+      onChanged?.call();
     });
   }
 
@@ -228,6 +236,7 @@ class SyncJournal {
       _queue = <SyncQueueEntry>[];
       await _saveQueue();
       await _saveState();
+      onChanged?.call();
     });
   }
 
@@ -249,4 +258,71 @@ class SyncJournal {
     }
     return total;
   }
+}
+
+/// 队列条目展开后的单文件/单路径行（commit 的 `files[]` 拆开，delete 一行）。
+class SyncPendingItem {
+  const SyncPendingItem({
+    required this.seq,
+    required this.kind,
+    required this.space,
+    required this.path,
+    required this.size,
+    required this.createdMs,
+  });
+
+  final int seq;
+
+  /// 'commit' | 'delete'
+  final String kind;
+  final String space;
+  final String path;
+  final int size;
+  final int createdMs;
+}
+
+/// 把 journal 条目展开成 UI 行；[limit] 默认 [SyncJournal.pendingDisplayLimit]。
+List<SyncPendingItem> expandSyncPending(
+  List<SyncQueueEntry> entries, {
+  int limit = SyncJournal.pendingDisplayLimit,
+}) {
+  final out = <SyncPendingItem>[];
+  for (final e in entries) {
+    if (e.kind == 'delete') {
+      out.add(SyncPendingItem(
+        seq: e.seq,
+        kind: 'delete',
+        space: e.space,
+        path: e.path ?? '',
+        size: 0,
+        createdMs: e.createdMs,
+      ));
+    } else {
+      for (final f in e.files ?? const <({String path, int size, String sha256})>[]) {
+        out.add(SyncPendingItem(
+          seq: e.seq,
+          kind: 'commit',
+          space: e.space,
+          path: f.path,
+          size: f.size,
+          createdMs: e.createdMs,
+        ));
+        if (out.length >= limit) return out;
+      }
+    }
+    if (out.length >= limit) return out;
+  }
+  return out;
+}
+
+int countExpandedPending(List<SyncQueueEntry> entries) {
+  var n = 0;
+  for (final e in entries) {
+    if (e.kind == 'delete') {
+      n++;
+    } else {
+      n += e.files?.length ?? 0;
+    }
+  }
+  return n;
 }

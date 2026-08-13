@@ -319,6 +319,18 @@ class StoreService {
   Future<bool> isMaster() async =>
       await masterDeviceId() == await DeviceIdentity.deviceId();
 
+  /// 仅 master 本机：永久删除他端镜像目录并清游标账。
+  Future<int> purgeMirroredDevice(String deviceId) async {
+    if (!await isMaster()) {
+      throw StoreException(StoreError.notMaster, 'not master');
+    }
+    final self = await DeviceIdentity.deviceId();
+    final store = await _localStore();
+    final bytes = await store.purgeDevice(deviceId, selfDeviceId: self);
+    await (await _deviceCursorStore()).remove(deviceId);
+    return bytes;
+  }
+
   // ────────────────────────────── 客户端调用 ──
 
   /// 客户端 API：向 master 发请求并等结果。master 是本机时走 loopback。

@@ -53,9 +53,10 @@ class DeviceCursorStore {
   }
 
   /// 删除某设备游标账（镜像目录被手动 purge 后）。
+  /// 先丢缓存再读盘，避免其它实例刚写过游标而本实例缓存过期。
   Future<void> remove(String deviceId) async {
+    _cache = null;
     final map = await _load();
-    if (!map.containsKey(deviceId)) return;
     map.remove(deviceId);
     await _persist(map);
   }

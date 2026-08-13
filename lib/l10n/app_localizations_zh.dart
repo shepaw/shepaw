@@ -5677,6 +5677,49 @@ class AppLocalizationsZh extends AppLocalizations {
   String get storage_sharedSyncNow => '立即同步';
 
   @override
+  String get storage_pendingToMaster => '待同步到 master';
+
+  @override
+  String get storage_pendingWaitingMaster => '等待 master 上线';
+
+  @override
+  String get storage_pendingUploading => '正在上传';
+
+  @override
+  String get storage_pendingKindCommit => '上传';
+
+  @override
+  String get storage_pendingKindDelete => '删除';
+
+  @override
+  String storage_pendingMore(int count) {
+    return '还有 $count 项';
+  }
+
+  @override
+  String get storage_pendingSeeAll => '查看全部';
+
+  @override
+  String get storage_pendingEmpty => '已与 master 同步';
+
+  @override
+  String get storage_mirroredDevicesHint => '配对设备把本机设为 master 后，其储物袋会镜像到这里。';
+
+  @override
+  String get storage_mirroredDevicesNote => '删除镜像只释放本机空间；源设备仍在时可能再次同步过来。';
+
+  @override
+  String get storage_mirroredBrowse => '浏览';
+
+  @override
+  String get storage_mirroredEmpty => '尚无他端镜像';
+
+  @override
+  String storage_mirrorCount(int count) {
+    return '$count 台镜像';
+  }
+
+  @override
   String get storage_masterBadge => 'master';
 
   @override

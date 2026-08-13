@@ -20,6 +20,38 @@ abstract class SyncTransport {
   Future<Map<String, dynamic>?> call(StoreFrame frame);
 }
 
+/// 待同步快照（备份与恢复页 / 清单 UI）。
+class SyncStatus {
+  const SyncStatus({
+    this.pending = const [],
+    this.pendingCount = 0,
+    this.pendingBytes = 0,
+    this.isSyncing = false,
+    this.uploadingSeq,
+    this.masterIsSelf = true,
+    this.masterOnline = true,
+  });
+
+  static const empty = SyncStatus();
+
+  final List<SyncQueueEntry> pending;
+  final int pendingCount;
+  final int pendingBytes;
+  final bool isSyncing;
+  final int? uploadingSeq;
+  final bool masterIsSelf;
+  final bool masterOnline;
+
+  bool get hasPending => pendingCount > 0;
+
+  /// 源设备：master 在远端且（有队列或正在传）时展示待同步卡。
+  bool get showPendingCard => !masterIsSelf && (hasPending || isSyncing);
+
+  List<SyncPendingItem> get items => expandSyncPending(pending);
+
+  int get expandedCount => countExpandedPending(pending);
+}
+
 /// 同步引擎（docs/storage_protocol_spec.md §6，M4）。
 ///
 /// 把本机 `<device_id>/*` 的变更（SyncJournal 队列）按 seq 顺序送达 master：
@@ -42,10 +74,17 @@ class SyncEngine {
   Timer? _timer;
   StreamSubscription<PeerConnectionEvent>? _eventSub;
   bool _syncing = false;
+  int? _uploadingSeq;
+  final _statusController = StreamController<SyncStatus>.broadcast();
+  SyncStatus _latestStatus = SyncStatus.empty;
 
   bool get started => _journal != null;
 
   SyncJournal? get journal => _journal;
+
+  Stream<SyncStatus> get status => _statusController.stream;
+
+  SyncStatus get latestStatus => _latestStatus;
 
   /// 待同步到 master 的队列条目数（未启动则为 0）。
   Future<int> pendingCount() async =>
@@ -54,6 +93,11 @@ class SyncEngine {
   /// 待同步字节估算。
   Future<int> pendingBytes() async =>
       (await _journal?.pendingBytes()) ?? 0;
+
+  Future<SyncStatus> currentStatus() async {
+    await _emitStatus();
+    return _latestStatus;
+  }
 
   /// 启动（app_bootstrap，StoreService.start 之后）。
   /// [autoSync] 为 false 时不自动触发同步（测试手动驱动 syncNow）。
@@ -73,6 +117,7 @@ class SyncEngine {
     // LocalStore 变更的唯一挂接点（覆盖快照等直写路径）
     LocalStore.syncJournal = _journal;
 
+    SyncJournal.onChanged = () => unawaited(_emitStatus());
     if (autoSync) {
       // 本地写后立即触发一轮同步（不等心跳）
       SyncJournal.onAppended = poke;
@@ -85,6 +130,7 @@ class SyncEngine {
       });
       unawaited(syncNow());
     }
+    unawaited(_emitStatus());
     _log.info('SyncEngine started', tag: _tag);
   }
 
@@ -95,6 +141,11 @@ class SyncEngine {
     _eventSub = null;
     LocalStore.syncJournal = null;
     SyncJournal.onAppended = null;
+    SyncJournal.onChanged = null;
+    _journal = null;
+    _syncing = false;
+    _uploadingSeq = null;
+    _latestStatus = SyncStatus.empty;
   }
 
   Future<void> _onPeerConnected(String peerId) async {
@@ -125,6 +176,41 @@ class SyncEngine {
   /// 追加后立即触发（本地写路径调用）。
   void poke() => unawaited(syncNow());
 
+  Future<void> _emitStatus() async {
+    final journal = _journal;
+    if (journal == null) {
+      _latestStatus = SyncStatus.empty;
+      if (!_statusController.isClosed) _statusController.add(_latestStatus);
+      return;
+    }
+    final pending = await journal.pending();
+    var bytes = 0;
+    for (final e in pending) {
+      if (e.files != null) {
+        for (final f in e.files!) {
+          bytes += f.size;
+        }
+      }
+    }
+    var masterIsSelf = true;
+    var masterOnline = true;
+    try {
+      final master = await _masterDeviceIdFn?.call();
+      masterIsSelf = master == null || master == _deviceId;
+      masterOnline = masterIsSelf || (await _transport?.isMasterOnline ?? false);
+    } catch (_) {}
+    _latestStatus = SyncStatus(
+      pending: pending,
+      pendingCount: pending.length,
+      pendingBytes: bytes,
+      isSyncing: _syncing,
+      uploadingSeq: _uploadingSeq,
+      masterIsSelf: masterIsSelf,
+      masterOnline: masterOnline,
+    );
+    if (!_statusController.isClosed) _statusController.add(_latestStatus);
+  }
+
   // ────────────────────────────── 上传主循环 ──
 
   /// 单航班同步：master 可达时按游标差量重放。
@@ -133,6 +219,8 @@ class SyncEngine {
     final transport = _transport;
     if (journal == null || transport == null || _syncing) return;
     _syncing = true;
+    _uploadingSeq = null;
+    await _emitStatus();
     try {
       // master 是本机：本地变更即已应用，直接按 change_seq 出队
       final master = await _masterDeviceIdFn!();
@@ -169,6 +257,8 @@ class SyncEngine {
           await journal.dequeueThrough(entry.seq);
           continue;
         }
+        _uploadingSeq = entry.seq;
+        await _emitStatus();
         final ok = entry.kind == 'commit'
             ? await _uploadCommit(entry)
             : await _uploadDelete(entry);
@@ -180,6 +270,8 @@ class SyncEngine {
       _log.debug('$st', tag: _tag);
     } finally {
       _syncing = false;
+      _uploadingSeq = null;
+      await _emitStatus();
     }
   }
 

@@ -2989,6 +2989,29 @@
   },
   "storage_sharedSyncPendingHint": "Mobile pouches can back up to a PC master",
   "storage_sharedSyncNow": "Sync now",
+  "storage_pendingToMaster": "Pending sync to master",
+  "storage_pendingWaitingMaster": "Waiting for master to come online",
+  "storage_pendingUploading": "Uploading",
+  "storage_pendingKindCommit": "Upload",
+  "storage_pendingKindDelete": "Delete",
+  "storage_pendingMore": "{count} more items",
+  "@storage_pendingMore": {
+    "placeholders": {
+      "count": {"type": "int"}
+    }
+  },
+  "storage_pendingSeeAll": "See all",
+  "storage_pendingEmpty": "Synced with master",
+  "storage_mirroredDevicesHint": "After a paired device sets this one as master, its pouch is mirrored here.",
+  "storage_mirroredDevicesNote": "Deleting a mirror only frees space on this device; the source may push the files again if it is still online.",
+  "storage_mirroredBrowse": "Browse",
+  "storage_mirroredEmpty": "No mirrored devices yet",
+  "storage_mirrorCount": "{count} mirrored devices",
+  "@storage_mirrorCount": {
+    "placeholders": {
+      "count": {"type": "int"}
+    }
+  },
   "storage_masterBadge": "master",
   "storage_importEntryHint": "Migrate snapshots and data from an old device",
   "storage_advancedEntryHint": "Folder export · WebDAV · Wipe",

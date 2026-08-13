@@ -90,6 +90,7 @@ class StorageOverviewSummary {
     required this.snapshotCount,
     required this.exchangeEnabled,
     required this.ownerPeerCount,
+    required this.isMaster,
   });
 
   final String selfId;
@@ -98,6 +99,7 @@ class StorageOverviewSummary {
   final int snapshotCount;
   final bool exchangeEnabled;
   final int ownerPeerCount;
+  final bool isMaster;
 
   /// 本机四分区用量合计。
   int get myTotalBytes {
@@ -125,6 +127,11 @@ class StorageOverviewSummary {
 
   int get unsyncedCount => stats?['unsynced_count'] as int? ?? 0;
   int get unsyncedBytes => stats?['unsynced_bytes'] as int? ?? 0;
+
+  int get mirroredDeviceCount {
+    final devices = (stats?['devices'] as Map?)?.cast<String, dynamic>() ?? {};
+    return devices.keys.where((k) => k != selfId).length;
+  }
 
   /// 与空间管理页一致的未同步告警阈值（200MB）。
   static const int unsyncedWarnBytes = 200 * 1024 * 1024;
@@ -157,6 +164,7 @@ Future<StorageOverviewSummary> loadStorageOverview() async {
   final peers = await PeerStorageService().loadAllPeers();
   final ownerPeerCount =
       peers.where((p) => p.trustLevel == TrustLevel.owner).length;
+  final masterId = await StoreService.instance.masterDeviceId();
 
   return StorageOverviewSummary(
     selfId: selfId,
@@ -165,5 +173,6 @@ Future<StorageOverviewSummary> loadStorageOverview() async {
     snapshotCount: snapshots.length,
     exchangeEnabled: exchange.enabled,
     ownerPeerCount: ownerPeerCount,
+    isMaster: masterId == selfId,
   );
 }

@@ -3474,6 +3474,29 @@
   },
   "storage_sharedSyncPendingHint": "手机等移动端可将储物袋备份到 PC master",
   "storage_sharedSyncNow": "立即同步",
+  "storage_pendingToMaster": "待同步到 master",
+  "storage_pendingWaitingMaster": "等待 master 上线",
+  "storage_pendingUploading": "正在上传",
+  "storage_pendingKindCommit": "上传",
+  "storage_pendingKindDelete": "删除",
+  "storage_pendingMore": "还有 {count} 项",
+  "@storage_pendingMore": {
+    "placeholders": {
+      "count": {"type": "int"}
+    }
+  },
+  "storage_pendingSeeAll": "查看全部",
+  "storage_pendingEmpty": "已与 master 同步",
+  "storage_mirroredDevicesHint": "配对设备把本机设为 master 后，其储物袋会镜像到这里。",
+  "storage_mirroredDevicesNote": "删除镜像只释放本机空间；源设备仍在时可能再次同步过来。",
+  "storage_mirroredBrowse": "浏览",
+  "storage_mirroredEmpty": "尚无他端镜像",
+  "storage_mirrorCount": "{count} 台镜像",
+  "@storage_mirrorCount": {
+    "placeholders": {
+      "count": {"type": "int"}
+    }
+  },
   "storage_masterBadge": "master",
   "storage_importEntryHint": "从旧设备迁入快照与数据",
   "storage_advancedEntryHint": "目录导出 · WebDAV · 抹除",

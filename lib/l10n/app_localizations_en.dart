@@ -5888,6 +5888,52 @@ class AppLocalizationsEn extends AppLocalizations {
   String get storage_sharedSyncNow => 'Sync now';
 
   @override
+  String get storage_pendingToMaster => 'Pending sync to master';
+
+  @override
+  String get storage_pendingWaitingMaster =>
+      'Waiting for master to come online';
+
+  @override
+  String get storage_pendingUploading => 'Uploading';
+
+  @override
+  String get storage_pendingKindCommit => 'Upload';
+
+  @override
+  String get storage_pendingKindDelete => 'Delete';
+
+  @override
+  String storage_pendingMore(int count) {
+    return '$count more items';
+  }
+
+  @override
+  String get storage_pendingSeeAll => 'See all';
+
+  @override
+  String get storage_pendingEmpty => 'Synced with master';
+
+  @override
+  String get storage_mirroredDevicesHint =>
+      'After a paired device sets this one as master, its pouch is mirrored here.';
+
+  @override
+  String get storage_mirroredDevicesNote =>
+      'Deleting a mirror only frees space on this device; the source may push the files again if it is still online.';
+
+  @override
+  String get storage_mirroredBrowse => 'Browse';
+
+  @override
+  String get storage_mirroredEmpty => 'No mirrored devices yet';
+
+  @override
+  String storage_mirrorCount(int count) {
+    return '$count mirrored devices';
+  }
+
+  @override
   String get storage_masterBadge => 'master';
 
   @override

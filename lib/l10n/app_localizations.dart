@@ -10280,6 +10280,84 @@ abstract class AppLocalizations {
   /// **'立即同步'**
   String get storage_sharedSyncNow;
 
+  /// No description provided for @storage_pendingToMaster.
+  ///
+  /// In zh, this message translates to:
+  /// **'待同步到 master'**
+  String get storage_pendingToMaster;
+
+  /// No description provided for @storage_pendingWaitingMaster.
+  ///
+  /// In zh, this message translates to:
+  /// **'等待 master 上线'**
+  String get storage_pendingWaitingMaster;
+
+  /// No description provided for @storage_pendingUploading.
+  ///
+  /// In zh, this message translates to:
+  /// **'正在上传'**
+  String get storage_pendingUploading;
+
+  /// No description provided for @storage_pendingKindCommit.
+  ///
+  /// In zh, this message translates to:
+  /// **'上传'**
+  String get storage_pendingKindCommit;
+
+  /// No description provided for @storage_pendingKindDelete.
+  ///
+  /// In zh, this message translates to:
+  /// **'删除'**
+  String get storage_pendingKindDelete;
+
+  /// No description provided for @storage_pendingMore.
+  ///
+  /// In zh, this message translates to:
+  /// **'还有 {count} 项'**
+  String storage_pendingMore(int count);
+
+  /// No description provided for @storage_pendingSeeAll.
+  ///
+  /// In zh, this message translates to:
+  /// **'查看全部'**
+  String get storage_pendingSeeAll;
+
+  /// No description provided for @storage_pendingEmpty.
+  ///
+  /// In zh, this message translates to:
+  /// **'已与 master 同步'**
+  String get storage_pendingEmpty;
+
+  /// No description provided for @storage_mirroredDevicesHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'配对设备把本机设为 master 后，其储物袋会镜像到这里。'**
+  String get storage_mirroredDevicesHint;
+
+  /// No description provided for @storage_mirroredDevicesNote.
+  ///
+  /// In zh, this message translates to:
+  /// **'删除镜像只释放本机空间；源设备仍在时可能再次同步过来。'**
+  String get storage_mirroredDevicesNote;
+
+  /// No description provided for @storage_mirroredBrowse.
+  ///
+  /// In zh, this message translates to:
+  /// **'浏览'**
+  String get storage_mirroredBrowse;
+
+  /// No description provided for @storage_mirroredEmpty.
+  ///
+  /// In zh, this message translates to:
+  /// **'尚无他端镜像'**
+  String get storage_mirroredEmpty;
+
+  /// No description provided for @storage_mirrorCount.
+  ///
+  /// In zh, this message translates to:
+  /// **'{count} 台镜像'**
+  String storage_mirrorCount(int count);
+
   /// No description provided for @storage_masterBadge.
   ///
   /// In zh, this message translates to:

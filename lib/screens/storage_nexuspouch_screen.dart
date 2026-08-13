@@ -15,6 +15,7 @@ import '../storage/store_service.dart';
 import '../storage/sync_engine.dart';
 import 'storage_browser_screen.dart';
 import 'storage_shared.dart';
+import 'storage_snapshots_screen.dart';
 
 /// 共享储物袋：配对设备互读 + 指定 master 备份 + LAN Nexuspouch 发现。
 class StorageNexuspouchScreen extends StatefulWidget {
@@ -30,6 +31,7 @@ class _StorageNexuspouchScreenState extends State<StorageNexuspouchScreen> {
   StreamSubscription<List<DiscoveredNexuspouch>>? _sub;
   StreamSubscription<dynamic>? _peerEventsSub;
   StreamSubscription<void>? _peerListSub;
+  StreamSubscription<SyncStatus>? _syncSub;
   List<DiscoveredNexuspouch> _peers = const [];
   List<PairedPeer> _paired = const [];
   String? _masterId;
@@ -53,6 +55,13 @@ class _StorageNexuspouchScreenState extends State<StorageNexuspouchScreen> {
     _peerListSub = PeerConnectionManager.instance.peerListChanged.listen((_) {
       unawaited(_loadPairedState());
     });
+    _syncSub = SyncEngine.instance.status.listen((s) {
+      if (!mounted) return;
+      setState(() {
+        _pendingCount = s.pendingCount;
+        _pendingBytes = s.pendingBytes;
+      });
+    });
     unawaited(_loadPairedState());
     unawaited(_scan());
   }
@@ -62,6 +71,7 @@ class _StorageNexuspouchScreenState extends State<StorageNexuspouchScreen> {
     _sub?.cancel();
     _peerEventsSub?.cancel();
     _peerListSub?.cancel();
+    _syncSub?.cancel();
     super.dispose();
   }
 
@@ -271,7 +281,14 @@ class _StorageNexuspouchScreenState extends State<StorageNexuspouchScreen> {
                   _pendingCount,
                   _fmtBytes(_pendingBytes),
                 )),
-                subtitle: Text(l10n.storage_sharedSyncPendingHint),
+                subtitle: Text(l10n.storage_pendingToMaster),
+                onTap: () {
+                  Navigator.of(context).push(
+                    MaterialPageRoute<void>(
+                      builder: (_) => const StorageSnapshotsScreen(),
+                    ),
+                  );
+                },
                 trailing: IconButton(
                   icon: const Icon(Icons.sync),
                   tooltip: l10n.storage_sharedSyncNow,

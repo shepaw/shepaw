@@ -6,8 +6,10 @@ import 'package:crypto/crypto.dart' as crypto;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
+import 'package:shepaw/storage/device_cursor_store.dart';
 import 'package:shepaw/storage/device_identity.dart';
 import 'package:shepaw/storage/import_auth_service.dart';
+import 'package:shepaw/storage/local_store.dart';
 import 'package:shepaw/storage/store_protocol.dart';
 import 'package:shepaw/storage/store_service.dart';
 
@@ -265,6 +267,49 @@ void main() {
         final res = await StoreService.instance.call(StoreFrame(
             op: StoreOp.stats, payload: {}));
         expect(res!['_error'], anyOf(StoreError.notPaired, StoreError.masterOffline));
+      } finally {
+        await StoreService.instance.setMasterDeviceId(self);
+      }
+    });
+  });
+
+  group('purgeMirroredDevice', () {
+    test('删他端目录并清游标', () async {
+      final self = await DeviceIdentity.deviceId();
+      await StoreService.instance.setMasterDeviceId(self);
+      const other = 'aaaaaaaaaaaaaaaa';
+      final store = await StoreService.instance.localStore();
+      final content = bytesOf('mirror-blob');
+      final (uid, _) = await store.writeBegin(
+        deviceId: other,
+        space: StoreSpace.files,
+        path: 'kept.txt',
+        size: content.length,
+        sha256: sha(content),
+      );
+      await store.writeChunk(other, StoreSpace.files, uid, 0, content);
+      await store.commit(other, StoreSpace.files, [uid]);
+      expect(await store.list(other, StoreSpace.files), isNotEmpty);
+
+      final cursors = DeviceCursorStore(storeRoot: store.root);
+      await cursors.advance(other, 9);
+
+      final freed = await StoreService.instance.purgeMirroredDevice(other);
+      expect(freed, greaterThan(0));
+      expect(await store.list(other, StoreSpace.files), isEmpty);
+      final after = DeviceCursorStore(storeRoot: store.root);
+      expect((await after.all()).containsKey(other), isFalse);
+    });
+
+    test('非 master 拒绝', () async {
+      final self = await DeviceIdentity.deviceId();
+      await StoreService.instance.setMasterDeviceId('bbbbbbbbbbbbbbbb');
+      try {
+        await expectLater(
+          StoreService.instance.purgeMirroredDevice('aaaaaaaaaaaaaaaa'),
+          throwsA(isA<StoreException>()
+              .having((e) => e.code, 'code', StoreError.notMaster)),
+        );
       } finally {
         await StoreService.instance.setMasterDeviceId(self);
       }
