@@ -2,6 +2,24 @@ import 'package:sqflite/sqflite.dart';
 import '../../models/channel.dart';
 import '../local_database_service.dart';
 
+/// In-flight streaming/partial flushes are not complete replies yet — exclude
+/// them from unread tallies until the turn finalizes into a normal message row.
+const _kSqlExcludeStreamingUnread = r'''
+  AND (
+    m.metadata IS NULL
+    OR json_extract(m.metadata, '$.status') IS NULL
+    OR json_extract(m.metadata, '$.status') NOT IN ('streaming', 'partial')
+  )
+''';
+
+const _kSqlExcludeStreamingUnreadBare = r'''
+  AND (
+    metadata IS NULL
+    OR json_extract(metadata, '$.status') IS NULL
+    OR json_extract(metadata, '$.status') NOT IN ('streaming', 'partial')
+  )
+''';
+
 /// Channel / 成员 / 会话相关的数据访问层。
 extension ChannelDao on LocalDatabaseService {
   /// 创建 Channel
@@ -393,6 +411,7 @@ extension ChannelDao on LocalDatabaseService {
         AND (c.source_group_channel_id IS NULL OR c.source_group_channel_id = '')
         AND (c.source_she_channel_id IS NULL OR c.source_she_channel_id = '')
         AND m.is_read = 0 AND m.sender_type != ?
+        $_kSqlExcludeStreamingUnread
     ''', [agentId, 'user']);
     return (result.first['count'] as int?) ?? 0;
   }
@@ -412,6 +431,7 @@ extension ChannelDao on LocalDatabaseService {
         AND (c.source_she_channel_id IS NULL OR c.source_she_channel_id = '')
         AND m.channel_id != ?
         AND m.is_read = 0 AND m.sender_type != ?
+        $_kSqlExcludeStreamingUnread
     ''', [agentId, excludeChannelId, 'user']);
     return (result.first['count'] as int?) ?? 0;
   }
@@ -429,6 +449,7 @@ extension ChannelDao on LocalDatabaseService {
         AND (c.id = ? OR c.parent_group_id = ?)
         AND m.channel_id != ?
         AND m.is_read = 0 AND m.sender_type != ?
+        $_kSqlExcludeStreamingUnread
     ''', [parentGroupId, parentGroupId, excludeChannelId, 'user']);
     return (result.first['count'] as int?) ?? 0;
   }
@@ -453,7 +474,9 @@ extension ChannelDao on LocalDatabaseService {
   Future<int> getUnreadCountByChannel(String channelId) async {
     final db = await database;
     final result = await db.rawQuery(
-      'SELECT COUNT(*) as count FROM messages WHERE channel_id = ? AND is_read = 0 AND sender_type != ?',
+      'SELECT COUNT(*) as count FROM messages '
+      'WHERE channel_id = ? AND is_read = 0 AND sender_type != ?'
+      '$_kSqlExcludeStreamingUnreadBare',
       [channelId, 'user'],
     );
     return (result.first['count'] as int?) ?? 0;

@@ -2134,9 +2134,25 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     final isDesktop = LayoutUtils.isDesktopLayout(context);
     final sessionActionsInMenu = !isDesktop;
     final buttonWidth = isDesktop ? 36.0 : 40.0;
+    final showUnreadDot = sessionActionsInMenu && _otherSessionsUnreadCount > 0;
     return PopupMenuButton<String>(
       tooltip: l10n.chat_moreActions,
-      icon: const Icon(Icons.more_vert),
+      icon: SizedBox(
+        width: 22,
+        height: 22,
+        child: Stack(
+          clipBehavior: Clip.none,
+          children: [
+            const Center(child: Icon(Icons.more_vert)),
+            if (showUnreadDot)
+              const Positioned(
+                right: -3,
+                top: -3,
+                child: SessionUnreadDot(),
+              ),
+          ],
+        ),
+      ),
       iconSize: 22,
       padding: EdgeInsets.zero,
       splashRadius: 20,
