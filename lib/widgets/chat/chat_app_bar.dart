@@ -211,8 +211,7 @@ class ChatGroupAppBarTitle extends StatelessWidget {
                     )
                   else
                     _MetaText(membersLabel, color: Colors.grey[500]),
-                  if (!isProcessing &&
-                      currentChannelId != null &&
+                  if (currentChannelId != null &&
                       groupChannel?.parentGroupId != null)
                     _MetaText(
                       SessionUtils.shortSessionId(
@@ -405,20 +404,17 @@ class _ChatAppBarMetaRow extends StatelessWidget {
   Widget build(BuildContext context) {
     return Row(
       children: [
-        Expanded(
-          child: Row(
-            children: [
-              for (var i = 0; i < children.length; i++) ...[
-                if (i > 0)
-                  Text(
-                    ' · ',
-                    style: TextStyle(fontSize: 11, color: Colors.grey[400]),
-                  ),
-                Flexible(child: children[i]),
-              ],
-            ],
+        for (var i = 0; i < children.length; i++) ...[
+          if (i > 0)
+            Text(
+              ' · ',
+              style: TextStyle(fontSize: 11, color: Colors.grey[400]),
+            ),
+          Flexible(
+            fit: FlexFit.loose,
+            child: children[i],
           ),
-        ),
+        ],
         if (trailing != null) ...[
           const SizedBox(width: 6),
           trailing!,
@@ -470,6 +466,7 @@ class _TypingMeta extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Row(
+      mainAxisSize: MainAxisSize.min,
       children: [
         SizedBox(
           width: 10,
@@ -480,7 +477,7 @@ class _TypingMeta extends StatelessWidget {
           ),
         ),
         const SizedBox(width: 6),
-        Expanded(
+        Flexible(
           child: Text(
             label,
             maxLines: 1,
@@ -507,6 +504,7 @@ class _SyncingMeta extends StatelessWidget {
   Widget build(BuildContext context) {
     final color = Theme.of(context).colorScheme.primary;
     return Row(
+      mainAxisSize: MainAxisSize.min,
       children: [
         SizedBox(
           width: 9,
@@ -517,7 +515,7 @@ class _SyncingMeta extends StatelessWidget {
           ),
         ),
         const SizedBox(width: 4),
-        Expanded(
+        Flexible(
           child: Text(
             label,
             maxLines: 1,
