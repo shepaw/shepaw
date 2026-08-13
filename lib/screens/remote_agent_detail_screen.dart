@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -570,15 +571,13 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
       fn();
       return;
     }
-    switch (SchedulerBinding.instance.schedulerPhase) {
-      case SchedulerPhase.idle:
-      case SchedulerPhase.postFrameCallbacks:
-        setState(fn);
-      case SchedulerPhase.transientCallbacks:
-      case SchedulerPhase.midFrameMicrotasks:
-      case SchedulerPhase.persistentCallbacks:
-        fn();
+    final phase = SchedulerBinding.instance.schedulerPhase;
+    if (phase == SchedulerPhase.idle ||
+        phase == SchedulerPhase.postFrameCallbacks) {
+      setState(fn);
+      return;
     }
+    fn();
   }
 
   Future<void> _persistChanges({bool showFeedback = false}) async {
