@@ -88,12 +88,13 @@ class ChatStreamingSession {
 
   /// DM 全量刷新（reloadMessagesFromDB）的推迟判定。
   ///
-  /// 流式会话存活且服务侧任务仍在运行时，全量替换会顶掉流式占位气泡，
-  /// 应推迟到回合结束；任务已不存在（回调被摘除 / 完成事件丢失）时，
-  /// 继续推迟会永远等不到回合结束 —— 必须立即刷新让 UI 自愈。
+  /// 流式会话存活时应推迟全量替换，避免顶掉流式占位气泡。
+  /// [hasLiveTask] 可选：能区分「任务仍在跑」与「僵尸会话」的调用方传入
+  /// `false` 可立即刷新自愈；省略时默认视为任务仍在（回合一开始任务
+  /// 可能尚未登记，不能用「没有 ActiveTask」误判）。
   static bool shouldDeferReload({
     required bool streamingActive,
-    required bool hasLiveTask,
+    bool hasLiveTask = true,
   }) =>
       streamingActive && hasLiveTask;
 
