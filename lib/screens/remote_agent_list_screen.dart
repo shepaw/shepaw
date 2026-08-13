@@ -6,6 +6,7 @@ import '../services/remote_agent_service.dart';
 import '../service_locator.dart' show getIt;
 import '../services/logger_service.dart';
 import 'add_remote_agent_screen.dart';
+import 'agent_discovery_screen.dart';
 import 'agent_token_display_screen.dart';
 
 /// 远端助手列表界面
@@ -207,6 +208,11 @@ class _RemoteAgentListScreenState extends State<RemoteAgentListScreen> {
         title: Text(l10n.remoteAgent_title),
         centerTitle: true,
         actions: [
+          IconButton(
+            icon: const Icon(Icons.travel_explore),
+            onPressed: _navigateToDiscovery,
+            tooltip: '发现公开 Agent',
+          ),
           IconButton(
             icon: const Icon(Icons.health_and_safety),
             onPressed: _checkAgentHealth,
@@ -512,6 +518,15 @@ class _RemoteAgentListScreenState extends State<RemoteAgentListScreen> {
       context,
       MaterialPageRoute(
         builder: (context) => const AddRemoteAgentScreen(),
+      ),
+    ).then((_) => _loadAgents());
+  }
+
+  void _navigateToDiscovery() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => const AgentDiscoveryScreen(),
       ),
     ).then((_) => _loadAgents());
   }
