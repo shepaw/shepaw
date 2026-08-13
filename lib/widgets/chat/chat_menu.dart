@@ -22,6 +22,8 @@ class ChatMenuHelper {
           Expanded(
             child: Text(
               label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
               style: const TextStyle(fontSize: 15),
             ),
           ),

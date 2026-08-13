@@ -2139,8 +2139,12 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
       icon: const Icon(Icons.more_vert),
       iconSize: 22,
       padding: EdgeInsets.zero,
-      constraints: BoxConstraints.tightFor(width: buttonWidth, height: 40),
       splashRadius: 20,
+      style: IconButton.styleFrom(
+        minimumSize: Size(buttonWidth, 40),
+        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+        padding: EdgeInsets.zero,
+      ),
       position: PopupMenuPosition.under,
       onSelected: _handleChatMenuSelected,
       itemBuilder: (ctx) => c.isGroupMode
