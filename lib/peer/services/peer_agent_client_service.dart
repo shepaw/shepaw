@@ -414,12 +414,18 @@ class PeerAgentMode {
   });
 
   static PeerAgentMode? fromJson(Map<String, dynamic> json) {
-    final value = json['value'] as String?;
-    if (value == null || value.isEmpty) return null;
+    final rawValue = json['value'] ?? json['id'];
+    final value = rawValue is String ? rawValue.trim() : '';
+    if (value.isEmpty) return null;
     final display = (json['display_name'] as String?)?.trim();
+    final name = (json['name'] as String?)?.trim();
     return PeerAgentMode(
       value: value,
-      displayName: (display != null && display.isNotEmpty) ? display : value,
+      displayName: (display != null && display.isNotEmpty)
+          ? display
+          : (name != null && name.isNotEmpty)
+              ? name
+              : value,
       description: (json['description'] as String?) ?? '',
     );
   }
@@ -1323,11 +1329,12 @@ class PeerAgentClientService {
     final remoteId = data['agent_id'] as String?;
     if (remoteId == null) return;
     final raw = (data['modes'] as List?) ?? const [];
-    final modes = raw
-        .whereType<Map<String, dynamic>>()
-        .map(PeerAgentMode.fromJson)
-        .whereType<PeerAgentMode>()
-        .toList();
+    final modes = <PeerAgentMode>[];
+    for (final item in raw) {
+      if (item is! Map) continue;
+      final parsed = PeerAgentMode.fromJson(Map<String, dynamic>.from(item));
+      if (parsed != null) modes.add(parsed);
+    }
     final current = data['current'] as String?;
     final completer = _pendingModes.remove(remoteId);
     if (completer != null && !completer.isCompleted) {

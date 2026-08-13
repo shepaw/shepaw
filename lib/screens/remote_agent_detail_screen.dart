@@ -10,6 +10,7 @@ import '../l10n/app_localizations.dart';
 import '../models/remote_agent.dart';
 import '../peer/services/peer_connection_manager.dart';
 import '../peer/services/peer_agent_client_service.dart';
+import '../peer/engine_session_modes.dart';
 import '../peer/services/peer_connection.dart' show PeerConnectionEvent, PeerConnectionEventType;
 import '../peer/models/paired_peer.dart' show PeerConnectionState;
 import '../services/remote_agent_service.dart';
@@ -275,12 +276,17 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
     final peerId = _agent.sourcePeerId;
     final remoteId = _agent.remoteAgentId;
     if (peerId == null || remoteId == null) return;
+    final catalog = catalogModesList(
+      _agent.metadata['engine'] as String?,
+    );
     if (!PeerConnectionManager.instance.connectedPeerIds.contains(peerId)) {
       if (mounted) {
         setState(() {
-          _peerModes = const [];
-          _peerCurrentMode = null;
-          _peerModesError = l10n.agentDetail_peerOffline;
+          _peerModes = catalog.modes;
+          _peerCurrentMode = catalog.current;
+          _peerModesError = catalog.modes.isEmpty
+              ? l10n.agentDetail_peerOffline
+              : null;
           _peerModesLoading = false;
         });
       }
@@ -290,6 +296,10 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
       setState(() {
         _peerModesLoading = true;
         _peerModesError = null;
+        if (catalog.modes.isNotEmpty) {
+          _peerModes = catalog.modes;
+          _peerCurrentMode = catalog.current;
+        }
       });
     }
     final list = await PeerAgentClientService.instance.fetchModes(
@@ -297,11 +307,12 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
       remoteAgentId: remoteId,
     );
     if (!mounted) return;
+    final live = list.modes.isNotEmpty ? list : catalog;
     setState(() {
       _peerModesLoading = false;
-      _peerModes = list.modes;
-      _peerCurrentMode = list.current;
-      if (list.modes.isEmpty) {
+      _peerModes = live.modes;
+      _peerCurrentMode = live.current;
+      if (live.modes.isEmpty) {
         _peerModesError = l10n.agentDetail_modeSwitchUnsupported;
       }
     });
