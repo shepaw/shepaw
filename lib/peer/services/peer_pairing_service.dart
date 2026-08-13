@@ -28,7 +28,6 @@ import '../../services/noise/noise_session.dart';
 import '../../services/noise/noise_envelope.dart';
 import '../../services/channel_tunnel_service.dart';
 import '../../services/logger_service.dart';
-import '../../storage/master_migration_service.dart';
 import '../../storage/store_protocol.dart' show TrustLevel;
 import '../../storage/store_service.dart';
 import '../models/paired_peer.dart';
@@ -481,36 +480,14 @@ class PeerPairingService {
       session.close();
       ws.sink.close();
 
-      // 扫码配对存储节点后，立即以对方为 store master（与 NAS「连接」路径一致）。
-      if (_looksLikeStoreNode(peer)) {
-        try {
-          await StoreService.instance.setMasterDeviceId(peer.fingerprint);
-        } catch (e) {
-          _log.warning('setMaster after pairing failed: $e', tag: _tag);
-        }
-      }
-
-      // 配对成功后通知 ConnectionManager 建立连接，并刷新会话/设备列表
+      // 配对 ≠ 指定 store master。master 由用户在储物袋显式设置
+      // （「设为 master」/ NAS「连接并设为 master」），避免新配对设备抢走备份目标。
       PeerConnectionManager.instance.notifyPeerListChanged();
       PeerConnectionManager.instance.connectToPeer(peer).then((_) async {
         try {
           await StoreService.instance.pushShareAnnounce(peer.id);
         } catch (e) {
           _log.warning('post-pairing share.announce failed: $e', tag: _tag);
-        }
-        if (!_looksLikeStoreNode(peer)) return;
-        try {
-          final q = await MasterMigrationService.instance
-              .queryPointer(peer.fingerprint);
-          if (q != null) {
-            await MasterMigrationService.instance.applyPointer(
-              masterId: q.master,
-              epoch: q.epoch,
-              fromDeviceId: peer.fingerprint,
-            );
-          }
-        } catch (e) {
-          _log.warning('post-pairing master query failed: $e', tag: _tag);
         }
       }).catchError((Object e) {
         _log.warning('Post-pairing connect failed: $e', tag: _tag);
@@ -641,13 +618,6 @@ class PeerPairingService {
       result |= a[i] ^ b[i];
     }
     return result == 0;
-  }
-
-  /// Nexuspouch / 存储节点会在配对响应里带 peer/ws 端点。
-  bool _looksLikeStoreNode(PairedPeer peer) {
-    final local = peer.localEndpoint ?? '';
-    final channel = peer.channelEndpoint ?? '';
-    return local.contains('/peer/ws') || channel.contains('/peer/ws');
   }
 
   /// 获取本设备名称（优先用户自定义，否则系统 hostname）

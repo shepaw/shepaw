@@ -85,6 +85,22 @@ void main() {
       expect(conflict, isFalse);
       expect(await StoreService.instance.masterDeviceId(), 'bbbbbbbbbbbbbbbb');
     });
+
+    test('epoch=0 指针不改指（即使本机仍是默认 master）', () async {
+      final self = await DeviceIdentity.deviceId();
+      await StoreService.instance.setMasterDeviceId(self);
+      await LocalDatabaseService()
+          .setUserValue(MasterMigrationService.epochKey, '0');
+
+      final applied = await MasterMigrationService.instance.applyPointer(
+        masterId: 'bbbbbbbbbbbbbbbb',
+        epoch: 0,
+        fromDeviceId: 'bbbbbbbbbbbbbbbb',
+      );
+      expect(applied, isFalse);
+      expect(await StoreService.instance.masterDeviceId(), self);
+      expect(await MasterMigrationService.instance.currentEpoch(), 0);
+    });
   });
 
   group('promoteSelf', () {
