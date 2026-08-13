@@ -29,6 +29,8 @@ import '../widgets/storage/storage_space_hub.dart';
 import '../utils/layout_utils.dart';
 import '../services/native_window_service.dart';
 import '../services/chat_navigation_service.dart';
+import '../services/update_service.dart';
+import '../widgets/update_settings_badge.dart';
 
 /// Desktop split-panel layout similar to WeChat desktop.
 /// Left: icon sidebar + conversation / contacts / storage list.
@@ -67,12 +69,14 @@ class _SidebarItemDef {
   final String tooltip;
   final Color Function(BuildContext) colorBuilder;
   final VoidCallback onTap;
+  final bool showUpdateBadge;
 
   const _SidebarItemDef({
     required this.icon,
     required this.tooltip,
     required this.colorBuilder,
     required this.onTap,
+    this.showUpdateBadge = false,
   });
 }
 
@@ -777,7 +781,11 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
         tooltip: l10n.drawer_settings,
         colorBuilder: (_) =>
             _rightPanel == _RightPanelView.settings ? activeColor : iconColor,
-        onTap: () => _showPanel(_RightPanelView.settings),
+        onTap: () {
+          UpdateService().dismissSettingsIconBadge();
+          _showPanel(_RightPanelView.settings);
+        },
+        showUpdateBadge: true,
       ),
     ];
 
@@ -804,12 +812,16 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
               .clamp(0.0, double.infinity);
 
           Widget buildItem(_SidebarItemDef item) {
-            return _SidebarIcon(
+            final icon = _SidebarIcon(
               icon: item.icon,
               tooltip: item.tooltip,
               color: item.colorBuilder(context),
               onTap: item.onTap,
             );
+            if (item.showUpdateBadge) {
+              return SettingsUpdateBadge(child: icon);
+            }
+            return icon;
           }
 
           return Column(

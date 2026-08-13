@@ -12,6 +12,7 @@ import '../l10n/app_localizations.dart';
 import '../models/update_model.dart';
 import 'logger_service.dart';
 import 'notification_service.dart';
+import 'update_service.dart';
 
 /// 负责更新通知流程的完整编排：
 ///
@@ -392,6 +393,7 @@ class UpdateNotificationService {
   Future<void> _declineVersion(String version) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_prefDeclinedVersion, version);
+    await UpdateService().loadBadgeState();
     _logger.info('Version $version permanently declined', tag: 'UpdateNotification');
   }
 

@@ -5,6 +5,7 @@ import 'dart:math' show min;
 import '../l10n/app_localizations.dart';
 import '../models/update_model.dart';
 import '../services/update_service.dart';
+import '../widgets/update_settings_badge.dart';
 import '../services/logger_service.dart';
 import 'update_download_dialog.dart';
 
@@ -264,9 +265,125 @@ class CheckForUpdatesListTile extends StatefulWidget {
 class _CheckForUpdatesListTileState extends State<CheckForUpdatesListTile> {
   _CheckState _state = _CheckState.idle;
   String? _latestVersion;
+  String? _checkUrl;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadCheckUrl();
+    UpdateService().addListener(_loadCheckUrl);
+  }
+
+  @override
+  void dispose() {
+    UpdateService().removeListener(_loadCheckUrl);
+    super.dispose();
+  }
+
+  Future<void> _loadCheckUrl() async {
+    final url = await UpdateService().getCheckUpdateUrl();
+    if (mounted) setState(() => _checkUrl = url);
+  }
+
+  Future<void> _editCheckUrl() async {
+    if (_state == _CheckState.checking) return;
+    final l10n = AppLocalizations.of(context);
+    final service = UpdateService();
+    final baseUrl = await service.getCheckUpdateBaseUrl();
+    final controller = TextEditingController(text: baseUrl);
+    final hasCustom = await service.hasCustomCheckUpdateBaseUrl();
+    if (!mounted) return;
+
+    final saved = await showDialog<bool>(
+      context: context,
+      builder: (ctx) {
+        String? errorText;
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            return AlertDialog(
+              title: Text(l10n.update_checkDomainTitle),
+              content: SizedBox(
+                width: 420,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    TextField(
+                      controller: controller,
+                      decoration: InputDecoration(
+                        hintText: l10n.update_checkDomainHint,
+                        errorText: errorText,
+                        border: const OutlineInputBorder(),
+                      ),
+                      keyboardType: TextInputType.url,
+                      autocorrect: false,
+                      autofocus: true,
+                    ),
+                    const SizedBox(height: 12),
+                    Text(
+                      l10n.update_checkUrlFixedPath(UpdateService.checkEndpoint),
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                            color: Theme.of(context)
+                                .colorScheme
+                                .onSurfaceVariant,
+                          ),
+                    ),
+                    if (hasCustom) ...[
+                      const SizedBox(height: 8),
+                      Align(
+                        alignment: Alignment.centerLeft,
+                        child: TextButton(
+                          onPressed: () {
+                            controller.text = UpdateService.defaultBaseUrl;
+                            setDialogState(() => errorText = null);
+                          },
+                          child: Text(l10n.update_checkUrlReset),
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(ctx).pop(false),
+                  child: Text(l10n.common_cancel),
+                ),
+                FilledButton(
+                  onPressed: () {
+                    final validated =
+                        service.validateCheckUpdateBaseUrl(controller.text);
+                    if (validated == null) {
+                      setDialogState(
+                        () => errorText = l10n.update_checkDomainInvalid,
+                      );
+                      return;
+                    }
+                    Navigator.of(ctx).pop(true);
+                  },
+                  child: Text(l10n.common_save),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+
+    if (saved == true) {
+      final validated = service.validateCheckUpdateBaseUrl(controller.text);
+      if (validated != null) {
+        final isDefault = validated == UpdateService.defaultBaseUrl;
+        await service.setCustomCheckUpdateBaseUrl(isDefault ? null : validated);
+      }
+    }
+    controller.dispose();
+  }
 
   Future<void> _check() async {
     if (_state == _CheckState.checking) return;
+
+    await UpdateService().dismissCheckUpdateNewBadge();
 
     setState(() {
       _state = _CheckState.checking;
@@ -322,11 +439,12 @@ class _CheckForUpdatesListTileState extends State<CheckForUpdatesListTile> {
             color: colorScheme.primary,
           ),
         );
-        subtitle = l10n.update_checking;
+        subtitle = _checkUrl != null
+            ? l10n.update_checkingFromUrl(_checkUrl!)
+            : l10n.update_checking;
         break;
       case _CheckState.upToDate:
         trailing = Icon(Icons.check_circle, color: Colors.green[600], size: 22);
-        // 将在 FutureBuilder 中显示当前版本
         subtitle = l10n.settings_checkForUpdatesSub;
         break;
       case _CheckState.updateAvailable:
@@ -340,17 +458,49 @@ class _CheckForUpdatesListTileState extends State<CheckForUpdatesListTile> {
         subtitle = l10n.update_checkFailed;
         break;
       case _CheckState.idle:
-        trailing = const Icon(Icons.chevron_right);
-        subtitle = l10n.settings_checkForUpdatesSub;
+        trailing = Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            IconButton(
+              icon: const Icon(Icons.edit_outlined, size: 20),
+              tooltip: l10n.update_editCheckDomain,
+              visualDensity: VisualDensity.compact,
+              onPressed: _editCheckUrl,
+            ),
+            const Icon(Icons.chevron_right),
+          ],
+        );
+        subtitle = _checkUrl != null
+            ? l10n.update_checkUrlSub(_checkUrl!)
+            : l10n.settings_checkForUpdatesSub;
         break;
     }
 
-    return ListTile(
-      leading: const Icon(Icons.system_update_alt),
-      title: Text(l10n.settings_checkForUpdates),
-      subtitle: Text(subtitle),
-      trailing: trailing,
-      onTap: _state == _CheckState.checking ? null : _check,
+    return ListenableBuilder(
+      listenable: UpdateService(),
+      builder: (context, _) {
+        final showNewBadge = UpdateService().showCheckUpdateNewBadge;
+
+        return ListTile(
+          leading: const Icon(Icons.system_update_alt),
+          title: Row(
+            children: [
+              Text(l10n.settings_checkForUpdates),
+              if (showNewBadge) ...[
+                const SizedBox(width: 8),
+                UpdateNewBadge(label: l10n.settings_checkForUpdatesNew),
+              ],
+            ],
+          ),
+          subtitle: Text(
+            subtitle ?? '',
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+          ),
+          trailing: trailing,
+          onTap: _state == _CheckState.checking ? null : _check,
+        );
+      },
     );
   }
 }

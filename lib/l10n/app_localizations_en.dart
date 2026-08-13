@@ -561,6 +561,40 @@ class AppLocalizationsEn extends AppLocalizations {
   String get settings_checkForUpdatesSub => 'Check for the latest version';
 
   @override
+  String get settings_checkForUpdatesNew => 'NEW';
+
+  @override
+  String update_checkUrlSub(String url) {
+    return 'Check URL: $url';
+  }
+
+  @override
+  String update_checkingFromUrl(String url) {
+    return 'Checking for updates from $url...';
+  }
+
+  @override
+  String get update_editCheckDomain => 'Edit update server';
+
+  @override
+  String get update_checkDomainTitle => 'Update Server Domain';
+
+  @override
+  String get update_checkDomainHint => 'release.shepaw.com';
+
+  @override
+  String get update_checkDomainInvalid =>
+      'Enter a valid domain or http/https URL';
+
+  @override
+  String update_checkUrlFixedPath(String path) {
+    return 'Check path: $path (fixed)';
+  }
+
+  @override
+  String get update_checkUrlReset => 'Reset to default';
+
+  @override
   String get update_checking => 'Checking for updates...';
 
   @override

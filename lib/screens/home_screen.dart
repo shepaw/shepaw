@@ -20,6 +20,8 @@ import '../widgets/agent_search_delegate.dart';
 import '../widgets/shepaw_search_page.dart';
 import '../widgets/avatar_image.dart';
 import '../widgets/chat/session_unread_badge.dart';
+import '../services/update_service.dart';
+import '../widgets/update_settings_badge.dart';
 import '../services/message_search_service.dart';
 import '../services/she_service.dart';
 import '../l10n/app_localizations.dart';
@@ -726,9 +728,12 @@ class HomeScreenState extends State<HomeScreen> {
                   ),
                   const Divider(),
                   ListTile(
-                    leading: const Icon(Icons.settings_outlined),
+                    leading: SettingsUpdateBadge(
+                      child: const Icon(Icons.settings_outlined),
+                    ),
                     title: Text(l10n.drawer_settings),
                     onTap: () {
+                      UpdateService().dismissSettingsIconBadge();
                       Navigator.pop(context);
                       Navigator.push(
                         context,

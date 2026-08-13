@@ -27,6 +27,7 @@ import '../services/logger_service.dart';
 import '../services/biometric_service.dart';
 import '../services/inference_log_service.dart';
 import '../widgets/update_dialog.dart';
+import '../services/update_service.dart';
 import '../widgets/model_icon.dart';
 import '../services/model_registry.dart';
 import '../services/skill_registry.dart';
@@ -51,6 +52,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   @override
   void initState() {
     super.initState();
+    UpdateService().dismissSettingsIconBadge();
     _loadBiometricState();
   }
 

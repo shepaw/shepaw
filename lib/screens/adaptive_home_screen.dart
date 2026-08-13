@@ -23,6 +23,7 @@ class _AdaptiveHomeScreenState extends State<AdaptiveHomeScreen> {
     super.initState();
     // 延迟到第一帧渲染完成后再检查，避免阻塞 UI 初始化
     WidgetsBinding.instance.addPostFrameCallback((_) async {
+      await UpdateService().loadBadgeState();
       // 1. 先检查是否有待安装包（上次下载完成但用户选择了「稍后」）
       if (mounted) {
         await UpdateNotificationService().checkAndInstallPending(context);

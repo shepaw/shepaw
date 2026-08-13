@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -45,7 +46,7 @@ import 'logger_service.dart';
 ///
 /// Response (204 No Content): 没有可用更新
 ///
-class UpdateService {
+class UpdateService extends ChangeNotifier {
   static final UpdateService _instance = UpdateService._internal();
   factory UpdateService() => _instance;
   UpdateService._internal();
@@ -62,6 +63,22 @@ class UpdateService {
   static const String _prefLastCheckTimeKey = 'update_last_check_time';
   static const String _prefSkippedVersionKey = 'update_skipped_version';
   static const String _prefCachedUpdateKey = 'update_cached_info';
+  static const String _prefSettingsBadgeDismissedVersionKey =
+      'update_settings_badge_dismissed_version';
+  static const String _prefCheckRowBadgeDismissedVersionKey =
+      'update_check_row_badge_dismissed_version';
+  static const String _prefDeclinedVersionKey = 'update_declined_version';
+  static const String _prefCustomBaseUrlKey = 'update_custom_base_url';
+  static const String _prefLegacyCustomCheckUrlKey = 'update_custom_check_url';
+
+  /// 默认更新服务器地址（可被用户自定义域名覆盖）
+  static String get defaultBaseUrl => _baseUrl;
+
+  /// 固定的更新检查路径
+  static String get checkEndpoint => _checkEndpoint;
+
+  /// 默认完整更新检查地址
+  static String get defaultCheckUpdateUrl => '$defaultBaseUrl$_checkEndpoint';
 
   /// 正常冷却间隔：成功或无更新后 6 小时内不重复请求
   static const Duration _minCheckInterval = Duration(hours: 6);
@@ -77,7 +94,115 @@ class UpdateService {
   /// 当前应用信息（懒加载缓存）
   PackageInfo? _packageInfo;
 
+  UpdateInfo? _availableUpdate;
+  String? _settingsBadgeDismissedVersion;
+  String? _checkRowBadgeDismissedVersion;
+
+  /// 设置入口是否显示红点（有新版本且用户尚未进入设置页）
+  bool get showSettingsRedDot =>
+      _availableUpdate != null &&
+      _settingsBadgeDismissedVersion != _availableUpdate!.version;
+
+  /// 「检查更新」行是否显示 NEW 标识（已进入设置但未点检查更新）
+  bool get showCheckUpdateNewBadge =>
+      _availableUpdate != null &&
+      _checkRowBadgeDismissedVersion != _availableUpdate!.version;
+
   // ==================== 公开 API ====================
+
+  /// 从本地缓存恢复更新徽章状态（启动时调用）
+  Future<void> loadBadgeState() async {
+    _availableUpdate = await _getCachedUpdateInfo();
+    if (_availableUpdate != null &&
+        await _isBadgeSuppressed(_availableUpdate!)) {
+      _availableUpdate = null;
+    }
+    final prefs = await SharedPreferences.getInstance();
+    _settingsBadgeDismissedVersion =
+        prefs.getString(_prefSettingsBadgeDismissedVersionKey);
+    _checkRowBadgeDismissedVersion =
+        prefs.getString(_prefCheckRowBadgeDismissedVersionKey);
+    notifyListeners();
+  }
+
+  /// 用户进入设置页后清除设置入口红点
+  Future<void> dismissSettingsIconBadge() async {
+    if (_availableUpdate == null) return;
+    _settingsBadgeDismissedVersion = _availableUpdate!.version;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(
+      _prefSettingsBadgeDismissedVersionKey,
+      _availableUpdate!.version,
+    );
+    notifyListeners();
+  }
+
+  /// 用户点击「检查更新」后清除 NEW 标识
+  Future<void> dismissCheckUpdateNewBadge() async {
+    if (_availableUpdate == null) return;
+    _checkRowBadgeDismissedVersion = _availableUpdate!.version;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(
+      _prefCheckRowBadgeDismissedVersionKey,
+      _availableUpdate!.version,
+    );
+    notifyListeners();
+  }
+
+  /// 当前生效的更新检查 URL（不含 query 参数）
+  Future<String> getCheckUpdateUrl() async {
+    final baseUrl = await getCheckUpdateBaseUrl();
+    return '$baseUrl$_checkEndpoint';
+  }
+
+  /// 当前生效的更新服务器地址（仅域名/origin，不含路径）
+  Future<String> getCheckUpdateBaseUrl() async {
+    final custom = await _readCustomBaseUrl();
+    return custom ?? defaultBaseUrl;
+  }
+
+  /// 是否使用了用户自定义的更新服务器域名
+  Future<bool> hasCustomCheckUpdateBaseUrl() async {
+    final custom = await _readCustomBaseUrl();
+    return custom != null;
+  }
+
+  /// 设置自定义更新服务器域名；传入 null 或空字符串则恢复默认
+  Future<void> setCustomCheckUpdateBaseUrl(String? baseUrl) async {
+    final prefs = await SharedPreferences.getInstance();
+    final trimmed = baseUrl?.trim();
+    if (trimmed == null ||
+        trimmed.isEmpty ||
+        trimmed == defaultBaseUrl) {
+      await prefs.remove(_prefCustomBaseUrlKey);
+      await prefs.remove(_prefLegacyCustomCheckUrlKey);
+    } else {
+      await prefs.setString(_prefCustomBaseUrlKey, trimmed);
+      await prefs.remove(_prefLegacyCustomCheckUrlKey);
+    }
+    await _clearCachedUpdateInfo();
+    await _setAvailableUpdate(null);
+    await prefs.remove(_prefLastCheckTimeKey);
+    notifyListeners();
+  }
+
+  /// 校验更新服务器域名，合法则返回规范化后的 origin，否则返回 null
+  String? validateCheckUpdateBaseUrl(String input) {
+    final trimmed = input.trim();
+    if (trimmed.isEmpty) return defaultBaseUrl;
+
+    final withScheme =
+        trimmed.contains('://') ? trimmed : 'https://$trimmed';
+    final uri = Uri.tryParse(withScheme);
+    if (uri == null ||
+        uri.host.isEmpty ||
+        (uri.scheme != 'http' && uri.scheme != 'https')) {
+      return null;
+    }
+
+    final portSuffix = uri.hasPort ? ':${uri.port}' : '';
+    return '${uri.scheme}://${uri.host}$portSuffix';
+  }
 
   /// 获取当前安装的版本信息
   Future<VersionInfo> getCurrentVersion() async {
@@ -104,6 +229,9 @@ class UpdateService {
               'Returning cached update info (cooldown: ${elapsed.inMinutes}min elapsed)',
               tag: 'UpdateService',
             );
+            if (!await _isBadgeSuppressed(cached)) {
+              await _setAvailableUpdate(cached);
+            }
             return UpdateCheckResult(
               hasUpdate: true,
               updateInfo: cached,
@@ -131,8 +259,11 @@ class UpdateService {
         return UpdateCheckResult(hasUpdate: false, timestamp: now);
       }
 
-      final uri = Uri.parse('$_baseUrl$_checkEndpoint').replace(
+      final checkUrl = await getCheckUpdateUrl();
+      final baseUri = Uri.parse(checkUrl);
+      final uri = baseUri.replace(
         queryParameters: {
+          ...baseUri.queryParameters,
           'platform': platform,
           'currentVersion': currentVersion.versionString,
           'buildNumber': currentVersion.buildNumber.toString(),
@@ -149,6 +280,7 @@ class UpdateService {
       if (response.statusCode == 204) {
         // 无可用更新
         await _clearCachedUpdateInfo();
+        await _setAvailableUpdate(null);
         _logger.info('No update available', tag: 'UpdateService');
         return UpdateCheckResult(hasUpdate: false, timestamp: now);
       }
@@ -178,10 +310,12 @@ class UpdateService {
               tag: 'UpdateService',
             );
             await _clearCachedUpdateInfo();
+            await _setAvailableUpdate(null);
             return UpdateCheckResult(hasUpdate: false, timestamp: now);
           }
 
           await _saveCachedUpdateInfo(updateInfo);
+          await _setAvailableUpdate(updateInfo);
           _logger.info(
             'Update available: ${latestVersion.versionString}',
             tag: 'UpdateService',
@@ -194,6 +328,7 @@ class UpdateService {
         } else {
           // 服务端版本不高于当前版本（可能是配置错误），视为无更新
           await _clearCachedUpdateInfo();
+          await _setAvailableUpdate(null);
           return UpdateCheckResult(hasUpdate: false, timestamp: now);
         }
       }
@@ -263,6 +398,10 @@ class UpdateService {
   Future<void> skipVersion(String version) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_prefSkippedVersionKey, version);
+    if (_availableUpdate?.version == version) {
+      await _setAvailableUpdate(null);
+      await _clearCachedUpdateInfo();
+    }
     _logger.info('User skipped version $version', tag: 'UpdateService');
   }
 
@@ -329,5 +468,36 @@ class UpdateService {
   Future<void> _clearCachedUpdateInfo() async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove(_prefCachedUpdateKey);
+  }
+
+  Future<void> _setAvailableUpdate(UpdateInfo? info) async {
+    _availableUpdate = info;
+    notifyListeners();
+  }
+
+  Future<bool> _isBadgeSuppressed(UpdateInfo update) async {
+    if (update.isMandatory) return false;
+    final skipped = await _getSkippedVersion();
+    if (skipped == update.version) return true;
+    final prefs = await SharedPreferences.getInstance();
+    final declined = prefs.getString(_prefDeclinedVersionKey);
+    return declined == update.version;
+  }
+
+  Future<String?> _readCustomBaseUrl() async {
+    final prefs = await SharedPreferences.getInstance();
+    final custom = prefs.getString(_prefCustomBaseUrlKey)?.trim();
+    if (custom != null && custom.isNotEmpty) return custom;
+
+    final legacy = prefs.getString(_prefLegacyCustomCheckUrlKey)?.trim();
+    if (legacy == null || legacy.isEmpty) return null;
+
+    final legacyUri = Uri.tryParse(legacy);
+    if (legacyUri == null || legacyUri.host.isEmpty) return null;
+
+    final migrated = legacyUri.origin;
+    await prefs.setString(_prefCustomBaseUrlKey, migrated);
+    await prefs.remove(_prefLegacyCustomCheckUrlKey);
+    return migrated;
   }
 }

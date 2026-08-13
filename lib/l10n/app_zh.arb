@@ -249,6 +249,36 @@
   "settings_aboutVersion": "版本 1.0.0",
   "settings_checkForUpdates": "检查更新",
   "settings_checkForUpdatesSub": "检查是否有最新版本",
+  "settings_checkForUpdatesNew": "新",
+  "update_checkUrlSub": "检查地址：{url}",
+  "@update_checkUrlSub": {
+    "placeholders": {
+      "url": {
+        "type": "String"
+      }
+    }
+  },
+  "update_checkingFromUrl": "正在从 {url} 检查更新...",
+  "@update_checkingFromUrl": {
+    "placeholders": {
+      "url": {
+        "type": "String"
+      }
+    }
+  },
+  "update_editCheckDomain": "修改更新服务器",
+  "update_checkDomainTitle": "更新服务器域名",
+  "update_checkDomainHint": "release.shepaw.com",
+  "update_checkDomainInvalid": "请输入有效的域名或 http/https 地址",
+  "update_checkUrlFixedPath": "检查路径：{path}（固定）",
+  "@update_checkUrlFixedPath": {
+    "placeholders": {
+      "path": {
+        "type": "String"
+      }
+    }
+  },
+  "update_checkUrlReset": "恢复默认",
   "update_checking": "正在检查更新...",
   "update_upToDate": "已是最新版本",
   "update_upToDateSub": "Paw {version} 已是最新版本。",

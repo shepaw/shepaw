@@ -535,6 +535,39 @@ class AppLocalizationsZh extends AppLocalizations {
   String get settings_checkForUpdatesSub => '检查是否有最新版本';
 
   @override
+  String get settings_checkForUpdatesNew => '新';
+
+  @override
+  String update_checkUrlSub(String url) {
+    return '检查地址：$url';
+  }
+
+  @override
+  String update_checkingFromUrl(String url) {
+    return '正在从 $url 检查更新...';
+  }
+
+  @override
+  String get update_editCheckDomain => '修改更新服务器';
+
+  @override
+  String get update_checkDomainTitle => '更新服务器域名';
+
+  @override
+  String get update_checkDomainHint => 'release.shepaw.com';
+
+  @override
+  String get update_checkDomainInvalid => '请输入有效的域名或 http/https 地址';
+
+  @override
+  String update_checkUrlFixedPath(String path) {
+    return '检查路径：$path（固定）';
+  }
+
+  @override
+  String get update_checkUrlReset => '恢复默认';
+
+  @override
   String get update_checking => '正在检查更新...';
 
   @override

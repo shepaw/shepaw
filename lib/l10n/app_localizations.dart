@@ -1100,6 +1100,60 @@ abstract class AppLocalizations {
   /// **'检查是否有最新版本'**
   String get settings_checkForUpdatesSub;
 
+  /// No description provided for @settings_checkForUpdatesNew.
+  ///
+  /// In zh, this message translates to:
+  /// **'新'**
+  String get settings_checkForUpdatesNew;
+
+  /// No description provided for @update_checkUrlSub.
+  ///
+  /// In zh, this message translates to:
+  /// **'检查地址：{url}'**
+  String update_checkUrlSub(String url);
+
+  /// No description provided for @update_checkingFromUrl.
+  ///
+  /// In zh, this message translates to:
+  /// **'正在从 {url} 检查更新...'**
+  String update_checkingFromUrl(String url);
+
+  /// No description provided for @update_editCheckDomain.
+  ///
+  /// In zh, this message translates to:
+  /// **'修改更新服务器'**
+  String get update_editCheckDomain;
+
+  /// No description provided for @update_checkDomainTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'更新服务器域名'**
+  String get update_checkDomainTitle;
+
+  /// No description provided for @update_checkDomainHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'release.shepaw.com'**
+  String get update_checkDomainHint;
+
+  /// No description provided for @update_checkDomainInvalid.
+  ///
+  /// In zh, this message translates to:
+  /// **'请输入有效的域名或 http/https 地址'**
+  String get update_checkDomainInvalid;
+
+  /// No description provided for @update_checkUrlFixedPath.
+  ///
+  /// In zh, this message translates to:
+  /// **'检查路径：{path}（固定）'**
+  String update_checkUrlFixedPath(String path);
+
+  /// No description provided for @update_checkUrlReset.
+  ///
+  /// In zh, this message translates to:
+  /// **'恢复默认'**
+  String get update_checkUrlReset;
+
   /// No description provided for @update_checking.
   ///
   /// In zh, this message translates to:
