@@ -38,6 +38,9 @@ import '../services/workflow/workflow_pending_approval_picker.dart';
 import '../services/workflow/workflow_plan_approval_sync.dart';
 import '../services/group/group_member_session_service.dart';
 import '../services/dispatch/she_relay_session_service.dart';
+import '../services/mailbox/channel_mailbox_service.dart';
+import '../services/mailbox/inbox_subscribe_service.dart';
+import '../services/noise_identity.dart';
 import 'chat_workflow_coordinator.dart';
 import 'chat_attachment_coordinator.dart';
 import 'chat_attachment_validator.dart';
@@ -179,6 +182,8 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
   /// immediately instead of waiting for the next full reconcile.
   StreamSubscription<List<Message>>? _channelUpdateSub;
   StreamSubscription<AgentTaskCompletion>? _agentTaskCompletionSub;
+  StreamSubscription<InboxMailReplyEvent>? _inboxPushSub;
+  String? _inboxSubscribeTargetId;
   VoidCallback? _typingListener;
 
   bool get isAppActive => lifecycle.isAppActive;
@@ -386,6 +391,11 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
     _peerConnSub?.cancel();
     _orphanApprovalSub?.cancel();
     _channelUpdateSub?.cancel();
+    _inboxPushSub?.cancel();
+    if (_inboxSubscribeTargetId != null) {
+      InboxSubscribeService.instance.unsubscribe(_inboxSubscribeTargetId!);
+      _inboxSubscribeTargetId = null;
+    }
     _agentTaskCompletionSub?.cancel();
     if (_typingListener != null) {
       chatService.typingChannelIds.removeListener(_typingListener!);

@@ -145,6 +145,7 @@ mixin _LoadOps on _ChatControllerBase {
 
       // 进页先收信：仅 channel 中继 agent 才拉信箱；内网直连跳过
       if (agentId != null && !isGroupMode) {
+        final agent = await localDatabaseService.getRemoteAgentById(agentId!);
         final mailboxMsgs = await chatService.fetchMailboxReplies(
           channelId: currentChannelId!,
           agentId: agentId!,
@@ -153,6 +154,9 @@ mixin _LoadOps on _ChatControllerBase {
         if (mailboxMsgs.isNotEmpty) {
           loadedMessages.addAll(mailboxMsgs);
           loadedMessages.sort((a, b) => a.timestampMs.compareTo(b.timestampMs));
+        }
+        if (agent != null) {
+          await _setupInboxPush(agent: agent, userId: userId);
         }
       }
 
@@ -332,5 +336,53 @@ mixin _LoadOps on _ChatControllerBase {
     } catch (_) {
       return const [];
     }
+  }
+
+  Future<void> _setupInboxPush({
+    required RemoteAgent agent,
+    required String userId,
+  }) async {
+    _inboxPushSub?.cancel();
+    if (_inboxSubscribeTargetId != null) {
+      InboxSubscribeService.instance.unsubscribe(_inboxSubscribeTargetId!);
+      _inboxSubscribeTargetId = null;
+    }
+
+    if (!ChannelMailboxService.agentHasChannelInbox(agent)) return;
+
+    final channelBase =
+        ChannelMailboxService.channelBaseFromEndpoint(agent.endpoint);
+    final acpAgentId = (agent.metadata['target_agent_id'] as String?) ??
+        ChannelMailboxService.resolveAgentId(
+          agent.endpoint,
+          fallback: agent.id,
+        );
+    if (channelBase == null || acpAgentId.isEmpty || agentId == null) return;
+
+    final identity = await NoiseIdentity.loadOrCreate();
+    await InboxSubscribeService.instance.ensureConnected(
+      channelBase: channelBase,
+      callerFp: identity.fingerprintHex,
+    );
+    InboxSubscribeService.instance.subscribe(acpAgentId);
+    _inboxSubscribeTargetId = acpAgentId;
+
+    _inboxPushSub = InboxSubscribeService.instance.onMailReply.listen(
+      (event) async {
+        if (event.targetId.isNotEmpty && event.targetId != acpAgentId) return;
+        final channelId = currentChannelId;
+        if (channelId == null) return;
+        final newMsgs = await chatService.fetchMailboxReplies(
+          channelId: channelId,
+          agentId: agentId!,
+          userId: userId,
+        );
+        if (newMsgs.isEmpty) return;
+        messages.addAll(newMsgs);
+        messages.sort((a, b) => a.timestampMs.compareTo(b.timestampMs));
+        rebuildMessageIdMap();
+        _notify();
+      },
+    );
   }
 }
