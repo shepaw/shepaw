@@ -2333,14 +2333,13 @@ $originalQuestion
 
           // 按 mailbox 条目 id 去重，避免重复收取
           final mailboxEntryId = reply.id;
-          final existingByEntry = await _databaseService.getMessagesByChannel(
+          final existingByEntry =
+              await _databaseService.getChannelMessagesByMetadataMatch(
             channelId,
-            limit: 500,
+            '"mailbox_entry_id":"$mailboxEntryId"',
+            limit: 1,
           );
-          final alreadyByEntry = existingByEntry.any(
-            (m) => m.metadata?['mailbox_entry_id'] == mailboxEntryId,
-          );
-          if (alreadyByEntry) {
+          if (existingByEntry.isNotEmpty) {
             ackIds.add(reply.id);
             continue;
           }
