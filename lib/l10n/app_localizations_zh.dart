@@ -15,11 +15,11 @@ class AppLocalizationsZh extends AppLocalizations {
   String get appVersion => 'ShePaw v1.0.0';
 
   @override
-  String get appDescription => '本地优先的 AI 伴侣与多 Agent 协作中枢';
+  String get appDescription => '专为 AI Agent 设计的即时通讯软件';
 
   @override
   String get about_content =>
-      '惜宝（ShePaw）是本地优先的 AI 伴侣与多 Agent 协作中枢。她可以是你的 AI 伴侣，也可以是你最忠实的闺蜜。相处越久，会越懂你。\n\n每个人都可以有多个 AI 助手，和一个「她」。数据默认留在本机，由你掌控。';
+      '惜宝（ShePaw）是一款专为 AI Agent 设计的即时通讯软件。她可以是你的 AI 伴侣，也可以是你最忠实的闺蜜。相处越久，会越懂你。\n\n每个人都可以有多个 AI 助手，和一个「她」。数据默认留在本机，由你掌控。';
 
   @override
   String get about_legalese => '© 2026 ShePaw Contributors。以 MIT 许可证发布。';
@@ -1168,6 +1168,27 @@ class AppLocalizationsZh extends AppLocalizations {
   String get log_total => '总计';
 
   @override
+  String get log_searchHint => '搜索消息、标签或错误';
+
+  @override
+  String get log_problemsOnly => '仅问题';
+
+  @override
+  String get log_copied => '已复制日志';
+
+  @override
+  String get log_cleared => '日志已清除';
+
+  @override
+  String get log_noMatch => '没有匹配的日志';
+
+  @override
+  String get log_noMatchHint => '试试清空搜索，或切换「仅问题」筛选';
+
+  @override
+  String get log_emptyHint => '应用运行后，错误、警告和系统事件会显示在这里';
+
+  @override
   String get log_filterByTag => '按标签筛选';
 
   @override
@@ -1186,28 +1207,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get log_levelError => 'Error';
 
   @override
-  String get log_searchHint => '搜索日志';
-
-  @override
-  String get log_problemsOnly => '仅问题';
-
-  @override
-  String get log_visible => '可见';
-
-  @override
-  String get log_noMatch => '没有匹配的日志';
-
-  @override
-  String get log_noMatchHint => '试试调整筛选条件或搜索关键词。';
-
-  @override
-  String get log_emptyHint => '运行过程中产生的系统日志会显示在这里。';
-
-  @override
-  String get log_cleared => '日志已清除';
-
-  @override
-  String get log_copied => '已复制到剪贴板';
+  String get log_visible => '当前';
 
   @override
   String get agentDetail_title => 'Agent 详情';
@@ -2155,7 +2155,7 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get terms_content =>
-      '服务条款\n\n最后更新：2026-08-15\n\n请在使用 ShePaw / 惜宝（以下简称“本应用”或“我们”）之前仔细阅读这些服务条款。访问或使用本应用，即表示您同意受这些条款以及配套《隐私政策》的约束。如果您不同意，请勿使用本应用。\n\n1. 服务描述\n\n惜宝是一款本地优先的 AI 伴侣与多 Agent 协作中枢，允许您：\n- 与本机或您配置的远端 AI Agent / 模型对话\n- 管理多个 Agent、技能包与系统工具\n- 在群组中编排多 Agent 协作\n- 在已配对设备之间同步消息，并按信任关系或显式分享读取储物袋内容\n- 在本机保存聊天、记忆、资料与文件\n\n本应用不提供强制云账号，也不运营代您托管聊天内容的云服务。功能可用性因平台、配置与您连接的第三方端点而异。\n\n2. 开源许可与知识产权\n\n本应用以 MIT 许可证发布，版权归 ShePaw Contributors 所有。您可以按照 LICENSE 的条款使用、复制、修改和分发本软件。第三方库、模型与服务仍受其各自许可与条款约束。\n\n您在本应用中创建或导入的内容（包括聊天、附件、记忆、资料与储物袋文件）归您所有。您授予本应用仅在设备本地（以及您主动启用的配对、导出或第三方端点范围内）处理这些内容所必需的有限权限。\n\nShePaw、惜宝及相关标识用于识别本应用；未经允许，请勿以引人误解的方式使用这些标识。\n\n3. 用户责任\n\n您同意：\n- 遵守所有适用法律使用本应用\n- 不将本应用用于任何非法、侵权或未经授权的目的\n- 不试图破坏、干扰或未经授权访问本应用及其他用户的设备\n- 自行保管本机应用锁、API Key、配对信息与设备安全\n- 对您发送、存储、分享或授权 Agent 处理的内容负责\n- 对您配置的第三方端点、技能包来源以及授权系统工具执行的操作负责\n- 仅与您信任的设备配对；分享储物袋或开启本地服务前，请确认对端与网络环境可信\n\n系统工具可能在您授权后读写本机文件、执行命令或获取系统信息，相关风险由您承担。\n\n4. 第三方服务与端点\n\n本应用允许您连接第三方 LLM、Agent、Hub、技能包地址或更新服务器。这些服务由相应提供方运营，我们不控制其内容、可用性、收费或数据处理，也不对其条款或损害负责。使用这些服务时，您还需遵守对方的条款与政策。\n\n5. 免责声明\n\n本应用按“原样”和“可用”提供，不提供任何明示或默示保证，包括适销性、特定用途适用性与不侵权。我们不保证本应用将不间断、及时、安全或无错误地运行，也不保证 AI 生成内容准确、完整或适合您的用途。\n\n6. 责任限制\n\n在适用法律允许的最大范围内，我们不对因使用或无法使用本应用而产生的任何间接、偶发、特殊、后果性或惩罚性损害承担责任，包括数据丢失、业务中断，或因第三方服务、已配对设备、系统工具或您自行配置的端点造成的损失。\n\n7. 儿童使用\n\n本应用不面向未满 14 周岁的儿童。如果您未满该年龄，请不要使用本应用。\n\n8. 条款变更\n\n我们可能会不时更新这些条款，并通过更新“最后更新”日期进行提示。您在变更后继续使用本应用，即表示接受更新后的条款。\n\n9. 联系我们\n\n如有疑问，请通过开源仓库 https://github.com/shepaw/shepaw 联系我们。';
+      '服务条款\n\n最后更新：2026-08-15\n\n请在使用 ShePaw / 惜宝（以下简称“本应用”或“我们”）之前仔细阅读这些服务条款。访问或使用本应用，即表示您同意受这些条款以及配套《隐私政策》的约束。如果您不同意，请勿使用本应用。\n\n1. 服务描述\n\n惜宝是一款专为 AI Agent 设计的即时通讯软件，允许您：\n- 与本机或您配置的远端 AI Agent / 模型对话\n- 管理多个 Agent、技能包与系统工具\n- 在群组中编排多 Agent 协作\n- 在已配对设备之间同步消息，并按信任关系或显式分享读取储物袋内容\n- 在本机保存聊天、记忆、资料与文件\n\n本应用不提供强制云账号，也不运营代您托管聊天内容的云服务。功能可用性因平台、配置与您连接的第三方端点而异。\n\n2. 开源许可与知识产权\n\n本应用以 MIT 许可证发布，版权归 ShePaw Contributors 所有。您可以按照 LICENSE 的条款使用、复制、修改和分发本软件。第三方库、模型与服务仍受其各自许可与条款约束。\n\n您在本应用中创建或导入的内容（包括聊天、附件、记忆、资料与储物袋文件）归您所有。您授予本应用仅在设备本地（以及您主动启用的配对、导出或第三方端点范围内）处理这些内容所必需的有限权限。\n\nShePaw、惜宝及相关标识用于识别本应用；未经允许，请勿以引人误解的方式使用这些标识。\n\n3. 用户责任\n\n您同意：\n- 遵守所有适用法律使用本应用\n- 不将本应用用于任何非法、侵权或未经授权的目的\n- 不试图破坏、干扰或未经授权访问本应用及其他用户的设备\n- 自行保管本机应用锁、API Key、配对信息与设备安全\n- 对您发送、存储、分享或授权 Agent 处理的内容负责\n- 对您配置的第三方端点、技能包来源以及授权系统工具执行的操作负责\n- 仅与您信任的设备配对；分享储物袋或开启本地服务前，请确认对端与网络环境可信\n\n系统工具可能在您授权后读写本机文件、执行命令或获取系统信息，相关风险由您承担。\n\n4. 第三方服务与端点\n\n本应用允许您连接第三方 LLM、Agent、Hub、技能包地址或更新服务器。这些服务由相应提供方运营，我们不控制其内容、可用性、收费或数据处理，也不对其条款或损害负责。使用这些服务时，您还需遵守对方的条款与政策。\n\n5. 免责声明\n\n本应用按“原样”和“可用”提供，不提供任何明示或默示保证，包括适销性、特定用途适用性与不侵权。我们不保证本应用将不间断、及时、安全或无错误地运行，也不保证 AI 生成内容准确、完整或适合您的用途。\n\n6. 责任限制\n\n在适用法律允许的最大范围内，我们不对因使用或无法使用本应用而产生的任何间接、偶发、特殊、后果性或惩罚性损害承担责任，包括数据丢失、业务中断，或因第三方服务、已配对设备、系统工具或您自行配置的端点造成的损失。\n\n7. 儿童使用\n\n本应用不面向未满 14 周岁的儿童。如果您未满该年龄，请不要使用本应用。\n\n8. 条款变更\n\n我们可能会不时更新这些条款，并通过更新“最后更新”日期进行提示。您在变更后继续使用本应用，即表示接受更新后的条款。\n\n9. 联系我们\n\n如有疑问，请通过开源仓库 https://github.com/shepaw/shepaw 联系我们。';
 
   @override
   String get notif_enableAll => '启用通知';
@@ -2386,13 +2386,13 @@ class AppLocalizationsZh extends AppLocalizations {
   String get settings_inferenceLog => '推理日志';
 
   @override
-  String get settings_inferenceLogSub => '查看 LLM 请求/响应详情';
+  String get settings_inferenceLogSub => '查看请求、工具调用与错误，便于定位对话问题';
 
   @override
   String get settings_systemLog => '系统日志';
 
   @override
-  String get settings_systemLogSub => '查看应用系统日志';
+  String get settings_systemLogSub => '查看错误、警告与运行日志，便于定位应用问题';
 
   @override
   String get inferenceLog_title => '推理日志';
@@ -2401,7 +2401,25 @@ class AppLocalizationsZh extends AppLocalizations {
   String get inferenceLog_empty => '暂无推理日志';
 
   @override
-  String get inferenceLog_emptyHint => '与本地 LLM Agent 对话后，日志将显示在这里';
+  String get inferenceLog_emptyHint => '与 Agent 对话后，推理过程会显示在这里（含本地、远程与群组）';
+
+  @override
+  String get inferenceLog_searchHint => '搜索 Agent、模型、用户消息或错误';
+
+  @override
+  String get inferenceLog_problemsOnly => '仅问题';
+
+  @override
+  String get inferenceLog_noMatch => '没有匹配的推理日志';
+
+  @override
+  String get inferenceLog_noMatchHint => '试试清空搜索，或切换「仅问题」筛选';
+
+  @override
+  String get inferenceLog_filterCancelled => '已取消';
+
+  @override
+  String get inferenceLog_persistedTraces => '持久化 Trace';
 
   @override
   String get inferenceLog_filterAll => '全部';

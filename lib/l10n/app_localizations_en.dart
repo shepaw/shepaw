@@ -15,12 +15,11 @@ class AppLocalizationsEn extends AppLocalizations {
   String get appVersion => 'ShePaw v1.0.0';
 
   @override
-  String get appDescription =>
-      'A local-first AI companion and multi-agent collaboration hub';
+  String get appDescription => 'Instant messaging designed for AI agents';
 
   @override
   String get about_content =>
-      'ShePaw is a local-first AI companion and multi-agent collaboration hub. She can be your AI companion, or your most loyal confidante. The longer you spend together, the better she understands you.\n\nEveryone deserves multiple AI assistants, and one ShePaw. Your data stays on your device by default, under your control.';
+      'ShePaw is an instant messaging app designed for AI agents. She can be your AI companion, or your most loyal confidante. The longer you spend together, the better she understands you.\n\nEveryone deserves multiple AI assistants, and one ShePaw. Your data stays on your device by default, under your control.';
 
   @override
   String get about_legalese =>
@@ -1212,6 +1211,29 @@ class AppLocalizationsEn extends AppLocalizations {
   String get log_total => 'Total';
 
   @override
+  String get log_searchHint => 'Search message, tag, or error';
+
+  @override
+  String get log_problemsOnly => 'Problems only';
+
+  @override
+  String get log_copied => 'Log copied';
+
+  @override
+  String get log_cleared => 'Logs cleared';
+
+  @override
+  String get log_noMatch => 'No matching logs';
+
+  @override
+  String get log_noMatchHint =>
+      'Clear the search or turn off the problems filter';
+
+  @override
+  String get log_emptyHint =>
+      'Errors, warnings, and system events will appear here after the app runs';
+
+  @override
   String get log_filterByTag => 'Filter by tag';
 
   @override
@@ -1230,28 +1252,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get log_levelError => 'Error';
 
   @override
-  String get log_searchHint => 'Search logs';
-
-  @override
-  String get log_problemsOnly => 'Problems only';
-
-  @override
   String get log_visible => 'Visible';
-
-  @override
-  String get log_noMatch => 'No matching logs';
-
-  @override
-  String get log_noMatchHint => 'Try a different filter or search term.';
-
-  @override
-  String get log_emptyHint => 'System logs from this session will appear here.';
-
-  @override
-  String get log_cleared => 'Logs cleared';
-
-  @override
-  String get log_copied => 'Copied to clipboard';
 
   @override
   String get agentDetail_title => 'Agent Details';
@@ -2231,7 +2232,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get terms_content =>
-      'Terms of Service\n\nLast updated: 2026-08-15\n\nPlease read these Terms of Service carefully before using ShePaw (the \"app\", \"we\", \"our\", or \"us\"). By accessing or using the app, you agree to these Terms and the accompanying Privacy Policy. If you do not agree, do not use the app.\n\n1. Description of Service\n\nShePaw is a local-first AI companion and multi-agent collaboration hub that lets you:\n- Chat with on-device or remotely configured AI agents / models\n- Manage agents, skill packages, and system tools\n- Orchestrate multi-agent collaboration in groups\n- Sync messages with paired devices, and read Store content according to trust relationships or explicit shares\n- Keep chats, memories, profile data, and files on your device\n\nThe app does not require a cloud account and does not operate a hosted chat backend. Available features depend on your platform, configuration, and the third-party endpoints you connect.\n\n2. Open Source License and Intellectual Property\n\nThe app is released under the MIT License, copyright ShePaw Contributors. You may use, copy, modify, and distribute the software under the terms of the LICENSE. Third-party libraries, models, and services remain subject to their own licenses and terms.\n\nContent you create or import in the app (including chats, attachments, memories, profile data, and Store files) belongs to you. You grant the app only the limited permission needed to process that content locally, and within pairing, export, or third-party endpoints you enable.\n\nShePaw and related marks identify the app. Do not use them in a misleading way.\n\n3. User Responsibilities\n\nYou agree to:\n- Use the app in compliance with all applicable laws\n- Not use the app for any illegal, infringing, or unauthorized purpose\n- Not attempt to disrupt, interfere with, or gain unauthorized access to the app or other users\' devices\n- Keep your app lock, API keys, pairing information, and device security under your control\n- Be responsible for content you send, store, share, or authorize agents to process\n- Be responsible for third-party endpoints you configure, skill-package sources, and actions you authorize OS Tools to perform\n- Pair only with devices you trust; confirm the peer and network are trusted before sharing Store content or enabling local services\n\nOS Tools may read or write local files, run commands, or read system information after you authorize them. You assume those risks.\n\n4. Third-Party Services and Endpoints\n\nThe app lets you connect to third-party LLMs, agents, hubs, skill-package URLs, or an update server. Those services are operated by their providers. We do not control their content, availability, fees, or data practices, and we are not responsible for their terms or damages. You must also follow their terms and policies.\n\n5. Disclaimer of Warranties\n\nThe app is provided \"as is\" and \"as available\", without warranties of any kind, express or implied, including merchantability, fitness for a particular purpose, and non-infringement. We do not warrant that the app will be uninterrupted, timely, secure, or error-free, or that AI-generated content will be accurate, complete, or suitable for your use.\n\n6. Limitation of Liability\n\nTo the maximum extent permitted by law, we are not liable for any indirect, incidental, special, consequential, or punitive damages arising from your use of or inability to use the app, including data loss, business interruption, or losses caused by third-party services, paired devices, OS Tools, or endpoints you configure.\n\n7. Children\'s Use\n\nThis app is not directed to children under 13. If you are under that age, do not use the app.\n\n8. Changes to Terms\n\nWe may update these Terms from time to time and will reflect changes by updating the \"Last updated\" date. Your continued use of the app after changes constitutes acceptance of the updated Terms.\n\n9. Contact\n\nQuestions can be raised via the open-source repository at https://github.com/shepaw/shepaw.';
+      'Terms of Service\n\nLast updated: 2026-08-15\n\nPlease read these Terms of Service carefully before using ShePaw (the \"app\", \"we\", \"our\", or \"us\"). By accessing or using the app, you agree to these Terms and the accompanying Privacy Policy. If you do not agree, do not use the app.\n\n1. Description of Service\n\nShePaw is an instant messaging app designed for AI agents that lets you:\n- Chat with on-device or remotely configured AI agents / models\n- Manage agents, skill packages, and system tools\n- Orchestrate multi-agent collaboration in groups\n- Sync messages with paired devices, and read Store content according to trust relationships or explicit shares\n- Keep chats, memories, profile data, and files on your device\n\nThe app does not require a cloud account and does not operate a hosted chat backend. Available features depend on your platform, configuration, and the third-party endpoints you connect.\n\n2. Open Source License and Intellectual Property\n\nThe app is released under the MIT License, copyright ShePaw Contributors. You may use, copy, modify, and distribute the software under the terms of the LICENSE. Third-party libraries, models, and services remain subject to their own licenses and terms.\n\nContent you create or import in the app (including chats, attachments, memories, profile data, and Store files) belongs to you. You grant the app only the limited permission needed to process that content locally, and within pairing, export, or third-party endpoints you enable.\n\nShePaw and related marks identify the app. Do not use them in a misleading way.\n\n3. User Responsibilities\n\nYou agree to:\n- Use the app in compliance with all applicable laws\n- Not use the app for any illegal, infringing, or unauthorized purpose\n- Not attempt to disrupt, interfere with, or gain unauthorized access to the app or other users\' devices\n- Keep your app lock, API keys, pairing information, and device security under your control\n- Be responsible for content you send, store, share, or authorize agents to process\n- Be responsible for third-party endpoints you configure, skill-package sources, and actions you authorize OS Tools to perform\n- Pair only with devices you trust; confirm the peer and network are trusted before sharing Store content or enabling local services\n\nOS Tools may read or write local files, run commands, or read system information after you authorize them. You assume those risks.\n\n4. Third-Party Services and Endpoints\n\nThe app lets you connect to third-party LLMs, agents, hubs, skill-package URLs, or an update server. Those services are operated by their providers. We do not control their content, availability, fees, or data practices, and we are not responsible for their terms or damages. You must also follow their terms and policies.\n\n5. Disclaimer of Warranties\n\nThe app is provided \"as is\" and \"as available\", without warranties of any kind, express or implied, including merchantability, fitness for a particular purpose, and non-infringement. We do not warrant that the app will be uninterrupted, timely, secure, or error-free, or that AI-generated content will be accurate, complete, or suitable for your use.\n\n6. Limitation of Liability\n\nTo the maximum extent permitted by law, we are not liable for any indirect, incidental, special, consequential, or punitive damages arising from your use of or inability to use the app, including data loss, business interruption, or losses caused by third-party services, paired devices, OS Tools, or endpoints you configure.\n\n7. Children\'s Use\n\nThis app is not directed to children under 13. If you are under that age, do not use the app.\n\n8. Changes to Terms\n\nWe may update these Terms from time to time and will reflect changes by updating the \"Last updated\" date. Your continued use of the app after changes constitutes acceptance of the updated Terms.\n\n9. Contact\n\nQuestions can be raised via the open-source repository at https://github.com/shepaw/shepaw.';
 
   @override
   String get notif_enableAll => 'Enable Notifications';
@@ -2472,13 +2473,15 @@ class AppLocalizationsEn extends AppLocalizations {
   String get settings_inferenceLog => 'Inference Logs';
 
   @override
-  String get settings_inferenceLogSub => 'Inspect LLM request/response details';
+  String get settings_inferenceLogSub =>
+      'Inspect requests, tool calls, and errors to diagnose chat issues';
 
   @override
   String get settings_systemLog => 'System Logs';
 
   @override
-  String get settings_systemLogSub => 'View application system logs';
+  String get settings_systemLogSub =>
+      'Inspect errors, warnings, and runtime logs to diagnose app issues';
 
   @override
   String get inferenceLog_title => 'Inference Logs';
@@ -2488,7 +2491,27 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get inferenceLog_emptyHint =>
-      'Logs will appear here after you chat with a local LLM agent';
+      'Inference sessions appear here after you chat with an agent (local, remote, or group)';
+
+  @override
+  String get inferenceLog_searchHint =>
+      'Search agent, model, user message, or error';
+
+  @override
+  String get inferenceLog_problemsOnly => 'Problems only';
+
+  @override
+  String get inferenceLog_noMatch => 'No matching inference logs';
+
+  @override
+  String get inferenceLog_noMatchHint =>
+      'Clear the search or turn off the problems filter';
+
+  @override
+  String get inferenceLog_filterCancelled => 'Cancelled';
+
+  @override
+  String get inferenceLog_persistedTraces => 'Persisted traces';
 
   @override
   String get inferenceLog_filterAll => 'All';
