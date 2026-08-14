@@ -116,6 +116,13 @@ class _ScheduledTasksManagementScreenState
         return Scaffold(
           appBar: AppBar(
             title: Text(l10n.scheduledTasks_title),
+            actions: [
+              IconButton(
+                icon: const Icon(Icons.add),
+                tooltip: l10n.scheduledTasks_createTask,
+                onPressed: _openCreateTask,
+              ),
+            ],
           ),
           body: Column(
             children: [
@@ -158,10 +165,6 @@ class _ScheduledTasksManagementScreenState
               ),
             ],
           ),
-          floatingActionButton: FloatingActionButton(
-            onPressed: _openCreateTask,
-            child: const Icon(Icons.add),
-          ),
         );
       },
     );
@@ -170,6 +173,11 @@ class _ScheduledTasksManagementScreenState
   Widget _buildAgentFilterBar(List<RemoteAgent> agents, AppLocalizations l10n) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
+    final selectedValue =
+        (_selectedAgentFilter != null &&
+            agents.any((a) => a.id == _selectedAgentFilter))
+        ? _selectedAgentFilter!
+        : '';
 
     return Container(
       decoration: BoxDecoration(
@@ -178,106 +186,44 @@ class _ScheduledTasksManagementScreenState
           bottom: BorderSide(color: colorScheme.outlineVariant, width: 0.5),
         ),
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+      padding: const EdgeInsets.fromLTRB(16, 4, 16, 4),
+      child: Row(
         children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 10, 16, 4),
-            child: Text(
-              l10n.scheduledTasks_filterByAgent,
-              style: theme.textTheme.labelSmall?.copyWith(
-                color: colorScheme.onSurfaceVariant,
-                letterSpacing: 0.5,
-              ),
+          Text(
+            l10n.scheduledTasks_filterByAgent,
+            style: theme.textTheme.labelMedium?.copyWith(
+              color: colorScheme.onSurfaceVariant,
             ),
           ),
-          SizedBox(
-            height: 44,
-            child: ListView(
-              scrollDirection: Axis.horizontal,
-              padding: const EdgeInsets.fromLTRB(12, 4, 12, 8),
-              children: [
-                // "All" chip
-                Padding(
-                  padding: const EdgeInsets.only(right: 8),
-                  child: FilterChip(
-                    selected: _selectedAgentFilter == null,
-                    label: Text(l10n.scheduledTasks_filterAll),
-                    avatar: _selectedAgentFilter == null
-                        ? null
-                        : const Icon(Icons.people_outline, size: 16),
-                    onSelected: (_) {
-                      setState(() => _selectedAgentFilter = null);
-                      _refresh();
-                    },
-                    showCheckmark: true,
-                    selectedColor: colorScheme.primaryContainer,
-                    labelStyle: TextStyle(
-                      color: _selectedAgentFilter == null
-                          ? colorScheme.onPrimaryContainer
-                          : colorScheme.onSurfaceVariant,
-                      fontWeight: _selectedAgentFilter == null
-                          ? FontWeight.w600
-                          : FontWeight.normal,
-                    ),
-                    side: BorderSide(
-                      color: _selectedAgentFilter == null
-                          ? colorScheme.primary
-                          : colorScheme.outlineVariant,
-                      width: _selectedAgentFilter == null ? 1.5 : 1,
+          const SizedBox(width: 12),
+          ConstrainedBox(
+            constraints: const BoxConstraints(minWidth: 120, maxWidth: 280),
+            child: DropdownButton<String>(
+              value: selectedValue,
+              isExpanded: true,
+              underline: const SizedBox.shrink(),
+              items: [
+                DropdownMenuItem(
+                  value: '',
+                  child: Text(l10n.scheduledTasks_filterAll),
+                ),
+                ...agents.map(
+                  (agent) => DropdownMenuItem(
+                    value: agent.id,
+                    child: Text(
+                      agent.name,
+                      overflow: TextOverflow.ellipsis,
                     ),
                   ),
                 ),
-                // One chip per agent
-                ...agents.map((agent) {
-                  final isSelected = _selectedAgentFilter == agent.id;
-                  return Padding(
-                    padding: const EdgeInsets.only(right: 8),
-                    child: FilterChip(
-                      selected: isSelected,
-                      avatar: CircleAvatar(
-                        radius: 10,
-                        backgroundColor: isSelected
-                            ? colorScheme.primary
-                            : colorScheme.surfaceContainerHighest,
-                        child: Text(
-                          agent.name.isNotEmpty
-                              ? agent.name[0].toUpperCase()
-                              : '?',
-                          style: TextStyle(
-                            fontSize: 10,
-                            fontWeight: FontWeight.bold,
-                            color: isSelected
-                                ? colorScheme.onPrimary
-                                : colorScheme.onSurfaceVariant,
-                          ),
-                        ),
-                      ),
-                      label: Text(agent.name),
-                      onSelected: (_) {
-                        setState(() => _selectedAgentFilter =
-                            isSelected ? null : agent.id);
-                        _refresh();
-                      },
-                      showCheckmark: false,
-                      selectedColor: colorScheme.primaryContainer,
-                      labelStyle: TextStyle(
-                        color: isSelected
-                            ? colorScheme.onPrimaryContainer
-                            : colorScheme.onSurfaceVariant,
-                        fontWeight:
-                            isSelected ? FontWeight.w600 : FontWeight.normal,
-                      ),
-                      side: BorderSide(
-                        color: isSelected
-                            ? colorScheme.primary
-                            : colorScheme.outlineVariant,
-                        width: isSelected ? 1.5 : 1,
-                      ),
-                    ),
-                  );
-                }),
               ],
+              onChanged: (value) {
+                setState(() {
+                  _selectedAgentFilter =
+                      (value == null || value.isEmpty) ? null : value;
+                });
+                _refresh();
+              },
             ),
           ),
         ],

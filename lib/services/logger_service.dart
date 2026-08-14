@@ -1,7 +1,9 @@
+import 'dart:async';
 import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:intl/intl.dart';
+import 'log_file_parser.dart';
 
 /// 日志级别
 enum LogLevel {
@@ -11,10 +13,26 @@ enum LogLevel {
   error,
 }
 
+extension LogLevelSeverity on LogLevel {
+  /// Higher means more severe. Used for "this level and above" filters.
+  int get severity {
+    switch (this) {
+      case LogLevel.debug:
+        return 0;
+      case LogLevel.info:
+        return 1;
+      case LogLevel.warning:
+        return 2;
+      case LogLevel.error:
+        return 3;
+    }
+  }
+}
+
 /// 本地日志服务
 ///
 /// P1: 日志记录和监控
-class LoggerService {
+class LoggerService extends ChangeNotifier {
   static final LoggerService _instance = LoggerService._internal();
   factory LoggerService() => _instance;
   LoggerService._internal();
@@ -25,6 +43,9 @@ class LoggerService {
   final List<LogEntry> _memoryLogs = [];
   static const int _maxMemoryLogs = 1000;
   static const int _maxLogFileSizeMB = 10;
+  static const int _maxDiskEntries = 2000;
+
+  Timer? _notifyTimer;
 
   /// 初始化日志服务
   Future<void> initialize() async {
@@ -92,14 +113,16 @@ class LoggerService {
       level: level,
       message: message,
       tag: tag,
-      error: error,
-      stackTrace: stackTrace,
+      error: error?.toString(),
+      stackTrace: stackTrace?.toString(),
     ));
 
     // 保持内存日志数量限制
     if (_memoryLogs.length > _maxMemoryLogs) {
       _memoryLogs.removeAt(0);
     }
+
+    _scheduleNotify();
 
     // debug 模式输出到控制台，release 模式只写文件
     if (kDebugMode) {
@@ -122,6 +145,11 @@ class LoggerService {
         if (kDebugMode) print('Failed to write log to file: $e');
       }
     }
+  }
+
+  void _scheduleNotify() {
+    _notifyTimer?.cancel();
+    _notifyTimer = Timer(const Duration(milliseconds: 200), notifyListeners);
   }
 
   /// Debug 日志
@@ -156,9 +184,65 @@ class LoggerService {
     return logs.toList();
   }
 
+  /// 读取磁盘日志（含子窗口场景：内存为空时仍能看到主进程写入的文件）。
+  Future<List<LogEntry>> readPersistedLogs({int maxEntries = _maxDiskEntries}) async {
+    try {
+      final logDir = await _resolveLogDir();
+      if (logDir == null || !await logDir.exists()) return const [];
+
+      final files = await logDir.list().toList();
+      final logFiles = files
+          .whereType<File>()
+          .where((f) => f.path.contains('.log'))
+          .toList()
+        ..sort((a, b) => a.path.compareTo(b.path));
+
+      final entries = <LogEntry>[];
+      for (final file in logFiles) {
+        try {
+          entries.addAll(LogFileParser.parse(await file.readAsString()));
+        } catch (e) {
+          if (kDebugMode) print('Failed to read log file ${file.path}: $e');
+        }
+      }
+
+      if (entries.length <= maxEntries) return entries;
+      return entries.sublist(entries.length - maxEntries);
+    } catch (e) {
+      if (kDebugMode) print('Failed to read persisted logs: $e');
+      return const [];
+    }
+  }
+
+  /// 内存 + 磁盘合并后的完整视图（新→旧）。
+  Future<List<LogEntry>> getDisplayLogs() async {
+    final disk = await readPersistedLogs();
+    return LogCatalog.mergeNewestFirst(_memoryLogs, disk);
+  }
+
+  Future<Directory?> _resolveLogDir() async {
+    if (_logFile != null) return _logFile!.parent;
+    try {
+      final dir = await getApplicationDocumentsDirectory();
+      return Directory('${dir.path}/logs');
+    } catch (_) {
+      return null;
+    }
+  }
+
   /// 获取所有已使用的 tag 列表
   List<String> getUsedTags() {
     return _memoryLogs
+        .where((log) => log.tag != null)
+        .map((log) => log.tag!)
+        .toSet()
+        .toList()
+      ..sort();
+  }
+
+  /// Tags from a log snapshot (memory or merged disk).
+  static List<String> tagsOf(Iterable<LogEntry> logs) {
+    return logs
         .where((log) => log.tag != null)
         .map((log) => log.tag!)
         .toSet()
@@ -190,6 +274,32 @@ class LoggerService {
     } catch (e) {
       error('Failed to clear old logs', tag: 'Logger', error: e);
     }
+  }
+
+  /// 清空内存日志与当前日志文件，供查看器「清除」使用。
+  Future<void> clearAllLogs() async {
+    _memoryLogs.clear();
+    try {
+      final logDir = await _resolveLogDir();
+      if (logDir != null && await logDir.exists()) {
+        final files = await logDir.list().toList();
+        for (final entity in files) {
+          if (entity is File && entity.path.contains('.log')) {
+            try {
+              await entity.delete();
+            } catch (e) {
+              if (kDebugMode) print('Failed to delete log file ${entity.path}: $e');
+            }
+          }
+        }
+      }
+      if (_logFile != null) {
+        await _logFile!.writeAsString('');
+      }
+    } catch (e) {
+      if (kDebugMode) print('Failed to clear all logs: $e');
+    }
+    notifyListeners();
   }
 
   /// 导出日志
@@ -230,8 +340,8 @@ class LogEntry {
   final LogLevel level;
   final String message;
   final String? tag;
-  final dynamic error;
-  final StackTrace? stackTrace;
+  final String? error;
+  final String? stackTrace;
 
   LogEntry({
     required this.timestamp,
@@ -244,5 +354,36 @@ class LogEntry {
 
   String get levelString => level.toString().split('.').last.toUpperCase();
 
-  String get timeString => DateFormat('HH:mm:ss').format(timestamp);
+  String get timeString {
+    final now = DateTime.now();
+    final sameDay = timestamp.year == now.year &&
+        timestamp.month == now.month &&
+        timestamp.day == now.day;
+    if (sameDay) {
+      return DateFormat('HH:mm:ss.SSS').format(timestamp);
+    }
+    return DateFormat('MM-dd HH:mm:ss').format(timestamp);
+  }
+
+  bool get hasDetails =>
+      (error != null && error!.isNotEmpty) ||
+      (stackTrace != null && stackTrace!.isNotEmpty);
+
+  String get dedupeKey {
+    final ms = timestamp.millisecondsSinceEpoch ~/ 10;
+    return '$ms|${level.name}|${tag ?? ''}|$message';
+  }
+
+  String get copyText {
+    final buffer = StringBuffer();
+    final tagLabel = tag != null ? ' [$tag]' : '';
+    buffer.write('[${DateFormat('yyyy-MM-dd HH:mm:ss.SSS').format(timestamp)}] [$levelString]$tagLabel $message');
+    if (error != null && error!.isNotEmpty) {
+      buffer.write('\nError: $error');
+    }
+    if (stackTrace != null && stackTrace!.isNotEmpty) {
+      buffer.write('\nStackTrace: $stackTrace');
+    }
+    return buffer.toString();
+  }
 }

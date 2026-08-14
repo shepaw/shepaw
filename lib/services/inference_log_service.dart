@@ -60,6 +60,8 @@ class InferenceLogService extends ChangeNotifier {
       channelId: channelId,
       provider: provider,
       model: model,
+      executionMode: executionMode,
+      traceRole: traceRole,
       userMessage: userMessage,
       systemPrompt: systemPrompt,
     );

@@ -84,6 +84,8 @@ class InferenceLogEntry {
   final String? channelId;
   final String? provider;
   final String? model;
+  final String? executionMode;
+  final String? traceRole;
 
   // Content
   final String userMessage;
@@ -113,6 +115,8 @@ class InferenceLogEntry {
     this.channelId,
     this.provider,
     this.model,
+    this.executionMode,
+    this.traceRole,
     required this.userMessage,
     this.systemPrompt,
   });
@@ -138,6 +142,8 @@ class InferenceLogEntry {
     'channelId': channelId,
     'provider': provider,
     'model': model,
+    'executionMode': executionMode,
+    'traceRole': traceRole,
     'userMessage': userMessage,
     'systemPrompt': systemPrompt,
     'rounds': rounds.map((r) => r.toJson()).toList(),
