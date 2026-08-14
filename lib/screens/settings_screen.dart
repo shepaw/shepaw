@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:provider/provider.dart';
 import 'package:share_plus/share_plus.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../l10n/app_localizations.dart';
 import '../providers/locale_provider.dart';
 import 'change_password_screen.dart';
@@ -445,8 +446,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
               if (!context.mounted) return;
               showAboutDialog(
                 context: context,
-                applicationName: 'Paw',
+                applicationName: l10n.appTitle,
                 applicationVersion: packageInfo.version,
+                applicationLegalese: l10n.about_legalese,
                 applicationIcon: ClipRRect(
                   borderRadius: BorderRadius.circular(12),
                   child: Image.asset(
@@ -456,7 +458,19 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   ),
                 ),
                 children: [
-                  Text(l10n.appDescription),
+                  const SizedBox(height: 12),
+                  Text(l10n.about_content),
+                  const SizedBox(height: 8),
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: TextButton(
+                      onPressed: () async {
+                        final uri = Uri.parse('https://github.com/shepaw/shepaw');
+                        await launchUrl(uri, mode: LaunchMode.externalApplication);
+                      },
+                      child: Text(l10n.about_sourceRepo),
+                    ),
+                  ),
                 ],
               );
             },
