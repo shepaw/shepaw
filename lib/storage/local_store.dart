@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
@@ -125,11 +126,6 @@ class _StagingMeta {
 /// .recycle/<yyyy-MM-dd>/<device_id>/<space>/...  回收站
 /// ```
 class LocalStore {
-  LocalStore({
-    required this.root,
-    this.versionCoalesceWindow = defaultVersionCoalesceWindow,
-  });
-
   /// store 根目录（…/shepaw/store）。
   final Directory root;
 
@@ -159,6 +155,21 @@ class LocalStore {
 
   /// sha256 内存缓存：path → (mtime, size, hash)。
   final Map<String, (int, int, String)> _hashCache = {};
+
+  final File _usageCacheFile;
+  Map<String, dynamic>? _usageCache;
+  Future<void>? _usageRefresh;
+  bool _usageDirty = false;
+  final StreamController<void> _usageTick = StreamController<void>.broadcast();
+
+  LocalStore({
+    required this.root,
+    this.versionCoalesceWindow = defaultVersionCoalesceWindow,
+  }) : _usageCacheFile =
+            File(p.join(root.path, '.system', 'usage_cache.json'));
+
+  /// 后台全量统计完成或增量更新后通知 UI。
+  Stream<void> get usageUpdates => _usageTick.stream;
 
   // ────────────────────────────── 路径解析（防逃逸，spec §4）──
 
@@ -222,18 +233,23 @@ class LocalStore {
   /// - [depth] 省略 / ≤0：递归列出全部文件（兼容同步；不含目录行）。
   /// - [depth] ≥1：从 [prefix] 目录起最多下钻 depth 层，含 `kind:dir`，
   ///   便于跨 agent（`agents/<uuid>/`）一层一层浏览。
+  /// - [computeHash] 为 false 时跳过 SHA-256（浏览/搜索用，避免打开即全量哈希）。
   Future<List<StoreEntry>> list(
     String deviceId,
     String space, {
     String? prefix,
     int limit = 1000,
     int? depth,
+    bool computeHash = true,
   }) async {
     final baseAbs = _spaceDir(deviceId, space);
     final base = Directory(baseAbs);
     if (!await base.exists()) return const [];
     final maxDepth = (depth != null && depth > 0) ? depth : 0;
     final entries = <StoreEntry>[];
+
+    Future<String> hashOf(File entity, FileStat stat) async =>
+        computeHash ? await _hashOf(entity, stat) : '';
 
     if (maxDepth > 0) {
       final startRel = (prefix ?? '').replaceAll(RegExp(r'^/+|/+$'), '');
@@ -269,7 +285,7 @@ class LocalStore {
             entries.add(StoreEntry(
               path: childRel.replaceAll(p.separator, '/'),
               size: stat.size,
-              sha256: await _hashOf(entity, stat),
+              sha256: await hashOf(entity, stat),
               mtimeMs: stat.modified.millisecondsSinceEpoch,
               kind: 'file',
             ));
@@ -291,7 +307,7 @@ class LocalStore {
       entries.add(StoreEntry(
         path: rel.replaceAll(p.separator, '/'),
         size: stat.size,
-        sha256: await _hashOf(entity, stat),
+        sha256: await hashOf(entity, stat),
         mtimeMs: stat.modified.millisecondsSinceEpoch,
       ));
       if (entries.length >= limit) break;
@@ -494,12 +510,15 @@ class LocalStore {
 
     // 阶段二：逐个转正（同卷 rename 原子；单文件失败其余继续）
     final committed = <({String path, int size, String sha256})>[];
+    var spaceDelta = 0;
     for (final (id, meta, partFile) in verified) {
       try {
         final finalAbs = _resolveInSpace(deviceId, space, meta.path);
         // 转正前检查目标路径（含父目录）无 symlink 逃逸
         await _checkNoSymlinkEscape(deviceId, space, finalAbs, meta.path);
+        var oldSize = 0;
         if (await File(finalAbs).exists()) {
+          oldSize = await File(finalAbs).length();
           // 被覆盖旧版本进 .versions（spec §1.5 / §2.6）
           await _archiveToVersions(deviceId, space, meta.path);
         }
@@ -517,6 +536,7 @@ class LocalStore {
         );
         committed.add(
             (path: meta.path, size: meta.size, sha256: meta.sha256));
+        spaceDelta += meta.size - oldSize;
       } catch (e) {
         failed.add('$id: promote failed: $e');
       }
@@ -524,6 +544,13 @@ class LocalStore {
     // 变更日志（spec §6.1）：本机设备目录 commit 入未同步队列
     if (committed.isNotEmpty && syncJournal != null) {
       await syncJournal!.appendCommit(deviceId, space, committed);
+    }
+    if (committed.isNotEmpty) {
+      await _applyUsageDeltas(
+        deviceId: deviceId,
+        space: space,
+        spaceDelta: spaceDelta,
+      );
     }
     if (committed.isNotEmpty && retention != null) {
       final policy = CommitRetention.tryParse(retention);
@@ -890,10 +917,19 @@ class LocalStore {
     }
     await _checkNoSymlinkEscape(targetDeviceId, space, abs, relPath);
     final normalized = normalizeStorePath(relPath);
+    final bytes = await _entitySize(
+      type == FileSystemEntityType.directory ? Directory(abs) : File(abs),
+    );
     final recycled = await _moveToRecycle(targetDeviceId, space, normalized);
     if (syncJournal != null) {
       await syncJournal!.appendDelete(targetDeviceId, space, normalized);
     }
+    await _applyUsageDeltas(
+      deviceId: targetDeviceId,
+      space: space,
+      spaceDelta: -bytes,
+      recycleDelta: bytes,
+    );
     return recycled;
   }
 
@@ -998,6 +1034,7 @@ class LocalStore {
         : await File(abs).rename(destAbs);
     // 空的日期目录顺手清理
     await _pruneEmptyRecycleDirs();
+    _markUsageDirty();
     return originRel;
   }
 
@@ -1010,41 +1047,34 @@ class LocalStore {
       if (entity is File) purged += await entity.length();
     }
     await recycleDir.delete(recursive: true);
+    await _applyUsageDeltas(recycleDelta: -purged);
     return purged;
   }
 
   // ────────────────────────────── stats / gc ──
 
   /// 用量统计（spec §2.9）。
-  Future<Map<String, dynamic>> stats() async {
-    final devices = <String, Map<String, int>>{};
-    if (await root.exists()) {
-      await for (final entity in root.list()) {
-        if (entity is! Directory) continue;
-        final deviceId = p.basename(entity.path);
-        if (!isValidDeviceId(deviceId)) continue;
-        final perSpace = <String, int>{};
-        for (final space in StoreSpace.all) {
-          perSpace[space] = await _dirSize(
-              Directory(p.join(entity.path, space)),
-              skipDotDirs: true);
-        }
-        devices[deviceId] = perSpace;
-      }
+  ///
+  /// [blocking] 为 true（默认）时：无完整缓存则当场全量扫描（单测 / 设置页）。
+  /// 为 false 时立即返回缓存或空值，并在后台全量刷新——打开本机空间不再卡住。
+  /// 完整缓存之后由 commit/delete 增量维护。
+  Future<Map<String, dynamic>> stats({bool blocking = true}) async {
+    await _loadUsageCache();
+    if (_usageComplete && !_usageDirty) {
+      return _publicUsageStats();
     }
-    var stagingBytes = 0;
-    for (final deviceId in devices.keys) {
-      for (final space in StoreSpace.all) {
-        stagingBytes += await _dirSize(
-            Directory(p.join(root.path, deviceId, space, '.staging')));
-      }
+    if (!blocking) {
+      unawaited(_scheduleUsageRefresh());
+      return _publicUsageStats();
     }
-    return <String, dynamic>{
-      'devices': devices,
-      'staging_bytes': stagingBytes,
-      'recycle_bytes':
-          await _dirSize(Directory(p.join(root.path, '.recycle'))),
-    };
+    await _scheduleUsageRefresh();
+    return _publicUsageStats();
+  }
+
+  /// 强制全量重算（下拉刷新）。
+  Future<Map<String, dynamic>> refreshStats() async {
+    await _recomputeUsageCache();
+    return _publicUsageStats();
   }
 
   /// 永久删除某设备目录（方案 §5.4 / §7.2：换机后旧镜像手删）。
@@ -1063,6 +1093,7 @@ class LocalStore {
     }
     final bytes = await _dirSize(dir);
     await dir.delete(recursive: true);
+    await _removeDeviceUsage(deviceId);
     return bytes;
   }
 
@@ -1078,6 +1109,7 @@ class LocalStore {
     await dir.delete(recursive: true);
     await dir.create(recursive: true);
     _hashCache.clear();
+    await _zeroDeviceUsage(selfDeviceId);
     return bytes;
   }
 
@@ -1116,6 +1148,7 @@ class LocalStore {
         }
       }
     }
+    if (removed > 0) _markUsageDirty();
     return removed;
   }
 
@@ -1154,7 +1187,233 @@ class LocalStore {
       await dateDir.delete(recursive: true);
     }
     await _pruneEmptyRecycleDirs();
+    if (purgedBytes > 0) {
+      await _applyUsageDeltas(recycleDelta: -purgedBytes);
+    }
     return purgedBytes;
+  }
+
+  // ────────────────────────────── 用量缓存 ──
+
+  bool get _usageComplete => _usageCache?['complete'] == true;
+
+  Map<String, dynamic> _emptyUsageStats() => <String, dynamic>{
+        'devices': <String, Map<String, int>>{},
+        'staging_bytes': 0,
+        'recycle_bytes': 0,
+        'complete': false,
+        'updated_ms': 0,
+      };
+
+  Map<String, dynamic> _publicUsageStats() {
+    final raw = _usageCache ?? _emptyUsageStats();
+    return <String, dynamic>{
+      'devices': raw['devices'] ?? <String, Map<String, int>>{},
+      'staging_bytes': _asInt(raw['staging_bytes']),
+      'recycle_bytes': _asInt(raw['recycle_bytes']),
+    };
+  }
+
+  int _asInt(dynamic v) {
+    if (v is int) return v;
+    if (v is num) return v.toInt();
+    return int.tryParse('$v') ?? 0;
+  }
+
+  Future<void> _loadUsageCache() async {
+    if (_usageCache != null) return;
+    if (!await _usageCacheFile.exists()) {
+      _usageCache = _emptyUsageStats();
+      return;
+    }
+    try {
+      final decoded = jsonDecode(await _usageCacheFile.readAsString());
+      if (decoded is! Map) {
+        _usageCache = _emptyUsageStats();
+        return;
+      }
+      _usageCache = _normalizeUsageCache(Map<String, dynamic>.from(decoded));
+    } catch (_) {
+      _usageCache = _emptyUsageStats();
+    }
+  }
+
+  Map<String, dynamic> _normalizeUsageCache(Map<String, dynamic> raw) {
+    final devices = <String, Map<String, int>>{};
+    final rawDevices = raw['devices'];
+    if (rawDevices is Map) {
+      for (final e in rawDevices.entries) {
+        final per = <String, int>{};
+        if (e.value is Map) {
+          for (final s in (e.value as Map).entries) {
+            per['${s.key}'] = _asInt(s.value);
+          }
+        }
+        devices['${e.key}'] = per;
+      }
+    }
+    return <String, dynamic>{
+      'devices': devices,
+      'staging_bytes': _asInt(raw['staging_bytes']),
+      'recycle_bytes': _asInt(raw['recycle_bytes']),
+      'complete': raw['complete'] == true,
+      'updated_ms': _asInt(raw['updated_ms']),
+    };
+  }
+
+  Future<void> _saveUsageCache() async {
+    final cache = _usageCache;
+    if (cache == null) return;
+    try {
+      await _usageCacheFile.parent.create(recursive: true);
+      final tmp = File(
+          '${_usageCacheFile.path}.${DateTime.now().microsecondsSinceEpoch}.tmp');
+      await tmp.writeAsString(jsonEncode(cache));
+      await tmp.rename(_usageCacheFile.path);
+    } on FileSystemException {
+      // store 根已被删（测试 tearDown / wipe）时忽略
+    }
+  }
+
+  void _notifyUsage() {
+    if (!_usageTick.isClosed) _usageTick.add(null);
+  }
+
+  Future<void> _scheduleUsageRefresh() {
+    return _usageRefresh ??= _recomputeUsageCache().whenComplete(() {
+      _usageRefresh = null;
+      if (_usageDirty) {
+        _usageDirty = false;
+        unawaited(_scheduleUsageRefresh());
+      }
+    });
+  }
+
+  void _markUsageDirty() {
+    _usageDirty = true;
+  }
+
+  Future<void> _recomputeUsageCache() async {
+    try {
+      final devices = <String, Map<String, int>>{};
+      if (await root.exists()) {
+        await for (final entity in root.list()) {
+          if (entity is! Directory) continue;
+          final deviceId = p.basename(entity.path);
+          if (!isValidDeviceId(deviceId)) continue;
+          final perSpace = <String, int>{};
+          for (final space in StoreSpace.all) {
+            perSpace[space] = await _dirSize(
+                Directory(p.join(entity.path, space)),
+                skipDotDirs: true);
+          }
+          devices[deviceId] = perSpace;
+        }
+      }
+      var stagingBytes = 0;
+      for (final deviceId in devices.keys) {
+        for (final space in StoreSpace.all) {
+          stagingBytes += await _dirSize(
+              Directory(p.join(root.path, deviceId, space, '.staging')));
+        }
+      }
+      _usageCache = <String, dynamic>{
+        'devices': devices,
+        'staging_bytes': stagingBytes,
+        'recycle_bytes':
+            await _dirSize(Directory(p.join(root.path, '.recycle'))),
+        'complete': true,
+        'updated_ms': DateTime.now().millisecondsSinceEpoch,
+      };
+      _usageDirty = false;
+      await _saveUsageCache();
+      _notifyUsage();
+    } catch (_) {
+      // 扫描期间目录被删（测试 tearDown / wipe）
+    }
+  }
+
+  Map<String, int> _deviceSpaceMap(String deviceId) {
+    final devices = _usageCache?['devices'];
+    if (devices is Map<String, Map<String, int>>) {
+      return devices.putIfAbsent(deviceId, () => <String, int>{});
+    }
+    if (devices is Map) {
+      final existing = devices[deviceId];
+      if (existing is Map<String, int>) return existing;
+      final per = <String, int>{};
+      if (existing is Map) {
+        for (final s in existing.entries) {
+          per['${s.key}'] = _asInt(s.value);
+        }
+      }
+      devices[deviceId] = per;
+      return per;
+    }
+    final fresh = <String, Map<String, int>>{deviceId: <String, int>{}};
+    _usageCache?['devices'] = fresh;
+    return fresh[deviceId]!;
+  }
+
+  Future<void> _applyUsageDeltas({
+    String? deviceId,
+    String? space,
+    int spaceDelta = 0,
+    int stagingDelta = 0,
+    int recycleDelta = 0,
+  }) async {
+    if (spaceDelta == 0 && stagingDelta == 0 && recycleDelta == 0) return;
+    await _loadUsageCache();
+    final cache = _usageCache;
+    if (cache == null || cache['complete'] != true) {
+      _markUsageDirty();
+      return;
+    }
+    if (deviceId != null && space != null && spaceDelta != 0) {
+      final per = _deviceSpaceMap(deviceId);
+      final next = (per[space] ?? 0) + spaceDelta;
+      per[space] = next < 0 ? 0 : next;
+    }
+    if (stagingDelta != 0) {
+      final next = _asInt(cache['staging_bytes']) + stagingDelta;
+      cache['staging_bytes'] = next < 0 ? 0 : next;
+    }
+    if (recycleDelta != 0) {
+      final next = _asInt(cache['recycle_bytes']) + recycleDelta;
+      cache['recycle_bytes'] = next < 0 ? 0 : next;
+    }
+    cache['updated_ms'] = DateTime.now().millisecondsSinceEpoch;
+    await _saveUsageCache();
+    _notifyUsage();
+  }
+
+  Future<void> _removeDeviceUsage(String deviceId) async {
+    await _loadUsageCache();
+    final cache = _usageCache;
+    if (cache == null || cache['complete'] != true) {
+      _markUsageDirty();
+      return;
+    }
+    final devices = cache['devices'];
+    if (devices is Map) devices.remove(deviceId);
+    cache['updated_ms'] = DateTime.now().millisecondsSinceEpoch;
+    await _saveUsageCache();
+    _notifyUsage();
+  }
+
+  Future<void> _zeroDeviceUsage(String deviceId) async {
+    await _loadUsageCache();
+    final cache = _usageCache;
+    if (cache == null || cache['complete'] != true) {
+      _markUsageDirty();
+      return;
+    }
+    _deviceSpaceMap(deviceId)
+      ..clear()
+      ..addEntries([for (final s in StoreSpace.all) MapEntry(s, 0)]);
+    cache['updated_ms'] = DateTime.now().millisecondsSinceEpoch;
+    await _saveUsageCache();
+    _notifyUsage();
   }
 
   // ────────────────────────────── 内部工具 ──
@@ -1180,7 +1439,11 @@ class LocalStore {
         final rel = p.relative(entity.path, from: dir.path);
         if (rel.split(p.separator).any((s) => s.startsWith('.'))) continue;
       }
-      total += await entity.length();
+      try {
+        total += await entity.length();
+      } on FileSystemException {
+        continue;
+      }
     }
     return total;
   }

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -19,8 +20,11 @@ import '../storage/store_file_visual.dart';
 import '../storage/store_protocol.dart';
 import '../storage/store_service.dart';
 import '../storage/store_uri_reader.dart';
+import '../storage/sync_engine.dart';
+import '../storage/sync_journal.dart';
 import '../utils/layout_utils.dart';
 import '../widgets/storage/store_file_list_avatar.dart';
+import 'storage_shared.dart';
 
 class _BrowsedFile {
   const _BrowsedFile({required this.space, required this.entry});
@@ -122,9 +126,15 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
   String _targetId = '';
   bool _busy = false;
   bool _loading = true;
+  bool _folderLoading = false;
   List<_BrowsedFile> _files = const [];
+  List<StoreEntry> _dirFolders = const [];
+  List<_BrowsedFile> _dirFiles = const [];
+  Map<String, int> _spaceBytes = {};
   String? _error;
   final Map<String, _BrowsedFile> _selectedFiles = {};
+  int _dirLoadGen = 0;
+  StreamSubscription<void>? _usageSub;
 
   /// 「空间」Tab：null = 分区根列表；非 null = 已进入某分区。
   String? _navSpace;
@@ -276,6 +286,7 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
 
   @override
   void dispose() {
+    _usageSub?.cancel();
     _tabs.dispose();
     super.dispose();
   }
@@ -336,6 +347,19 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
       }
     });
     await _reload();
+    if (!_isRemote) {
+      unawaited(_subscribeUsage());
+    }
+  }
+
+  Future<void> _subscribeUsage() async {
+    try {
+      final store = await StoreService.instance.localStore();
+      _usageSub?.cancel();
+      _usageSub = store.usageUpdates.listen((_) {
+        if (mounted) unawaited(_loadSpaceBytes());
+      });
+    } catch (_) {}
   }
 
   Future<void> _reload() async {
@@ -345,37 +369,78 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
       _error = null;
     });
     try {
+      await Future.wait([
+        _loadRecent(),
+        _loadSpaceBytes(),
+        if (_navSpace != null) _loadCurrentDir() else Future<void>.value(),
+      ]);
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _error = '$e';
+        _files = const [];
+        _loading = false;
+      });
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _loadRecent() async {
+    if (_targetId.isEmpty) return;
+    try {
       final all = <_BrowsedFile>[];
       Object? lastError;
       var anyOk = false;
-      for (final space in _spaces) {
-        try {
-          final entries = await StoreService.instance.listDevice(
-            deviceId: _targetId,
-            space: space,
-            limit: _listLimit,
-            preferLocalCache: _preferLocal,
-          );
-          anyOk = true;
-          for (final e in entries) {
-            all.add(_BrowsedFile(space: space, entry: e));
+      if (_isRemote) {
+        for (final space in _spaces) {
+          try {
+            final entries = await StoreService.instance.listDevice(
+              deviceId: _targetId,
+              space: space,
+              limit: 80,
+              depth: 1,
+              computeHash: false,
+              preferLocalCache: _preferLocal,
+            );
+            anyOk = true;
+            for (final e in entries) {
+              if (e.isDir || _isFolderMarkerPath(e.path)) continue;
+              all.add(_BrowsedFile(space: space, entry: e));
+            }
+          } on StoreException catch (e) {
+            if (e.code == StoreError.aclDenied ||
+                e.code == StoreError.untrusted) {
+              lastError = e;
+              continue;
+            }
+            rethrow;
           }
-        } on StoreException catch (e) {
-          // 单分区未分享 / 权限不足：跳过，避免整页被一个 acl_denied 打挂。
-          if (e.code == StoreError.aclDenied ||
-              e.code == StoreError.untrusted) {
-            lastError = e;
-            continue;
-          }
-          rethrow;
+        }
+        all.sort((a, b) => b.mtimeMs.compareTo(a.mtimeMs));
+      } else {
+        anyOk = true;
+        final journal = await _localJournal();
+        final allowed = _spaces.toSet();
+        for (final item in await journal.recent()) {
+          if (!allowed.contains(item.space)) continue;
+          if (_isFolderMarkerPath(item.path)) continue;
+          all.add(_BrowsedFile(
+            space: item.space,
+            entry: StoreEntry(
+              path: item.path,
+              size: item.size,
+              sha256: item.sha256,
+              mtimeMs: item.mtimeMs,
+            ),
+          ));
         }
       }
-      all.sort((a, b) => b.mtimeMs.compareTo(a.mtimeMs));
       if (!mounted) return;
       setState(() {
         _files = all;
         _loading = false;
-        if (!anyOk && lastError != null) {
+        if (_isRemote && !anyOk && lastError != null) {
           _error = '$lastError';
         }
       });
@@ -386,8 +451,80 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
         _files = const [];
         _loading = false;
       });
-    } finally {
-      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<SyncJournal> _localJournal() async {
+    final existing = SyncEngine.instance.journal;
+    if (existing != null) return existing;
+    final store = await StoreService.instance.localStore();
+    return SyncJournal(storeRoot: store.root, ownerDeviceId: _selfId);
+  }
+
+  Future<void> _loadSpaceBytes() async {
+    if (_isRemote && !_preferLocal) return;
+    try {
+      final store = await StoreService.instance.localStore();
+      final stats = await store.stats(blocking: false);
+      if (!mounted) return;
+      setState(() {
+        _spaceBytes = storageDeviceSpaceBytes(stats, _targetId);
+      });
+    } catch (_) {}
+  }
+
+  Future<void> _loadCurrentDir() async {
+    final space = _navSpace;
+    final path = _navPath;
+    if (space == null || _targetId.isEmpty) return;
+    final gen = ++_dirLoadGen;
+    if (mounted) setState(() => _folderLoading = true);
+    try {
+      final entries = await StoreService.instance.listDevice(
+        deviceId: _targetId,
+        space: space,
+        prefix: path.isEmpty ? null : path,
+        limit: 500,
+        depth: 1,
+        computeHash: false,
+        preferLocalCache: _preferLocal,
+      );
+      if (!mounted || gen != _dirLoadGen) return;
+      if (_navSpace != space || _navPath != path) return;
+      final folders = <StoreEntry>[];
+      final files = <_BrowsedFile>[];
+      for (final e in entries) {
+        if (e.isDir) {
+          folders.add(e);
+        } else if (!_isFolderMarkerPath(e.path)) {
+          files.add(_BrowsedFile(space: space, entry: e));
+        }
+      }
+      folders.sort((a, b) => b.mtimeMs.compareTo(a.mtimeMs));
+      files.sort((a, b) => b.mtimeMs.compareTo(a.mtimeMs));
+      setState(() {
+        _dirFolders = folders;
+        _dirFiles = files;
+        _folderLoading = false;
+      });
+    } on StoreException catch (e) {
+      if (!mounted || gen != _dirLoadGen) return;
+      setState(() {
+        _folderLoading = false;
+        if (e.code != StoreError.aclDenied && e.code != StoreError.untrusted) {
+          _error = '$e';
+        }
+        _dirFolders = const [];
+        _dirFiles = const [];
+      });
+    } catch (e) {
+      if (!mounted || gen != _dirLoadGen) return;
+      setState(() {
+        _folderLoading = false;
+        _error = '$e';
+        _dirFolders = const [];
+        _dirFiles = const [];
+      });
     }
   }
 
@@ -835,15 +972,54 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
         (onSpaceTab && _navSpace != null && _navPath.isNotEmpty)
             ? '$_navPath/'
             : '';
+    setState(() => _busy = true);
+    List<_BrowsedFile> corpus = _files;
+    try {
+      if (!_isRemote) {
+        corpus = await _listAllNames();
+      } else {
+        corpus = [..._files, ..._dirFiles];
+      }
+    } catch (_) {
+      corpus = [..._files, ..._dirFiles];
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+    if (!mounted) return;
     await showSearch<void>(
       context: context,
       delegate: _LocalFileSearchDelegate(
-        files: _files,
+        files: corpus,
         space: spaceFilter,
         pathPrefix: pathPrefix,
         onOpen: _pickMode ? _togglePick : _previewFile,
       ),
     );
+  }
+
+  Future<List<_BrowsedFile>> _listAllNames() async {
+    final all = <_BrowsedFile>[];
+    for (final space in _spaces) {
+      try {
+        final entries = await StoreService.instance.listDevice(
+          deviceId: _targetId,
+          space: space,
+          limit: _listLimit,
+          computeHash: false,
+          preferLocalCache: _preferLocal,
+        );
+        for (final e in entries) {
+          if (e.isDir || _isFolderMarkerPath(e.path)) continue;
+          all.add(_BrowsedFile(space: space, entry: e));
+        }
+      } on StoreException catch (e) {
+        if (e.code == StoreError.aclDenied || e.code == StoreError.untrusted) {
+          continue;
+        }
+        rethrow;
+      }
+    }
+    return all;
   }
 
   void _toast(String msg) {
@@ -967,10 +1143,11 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
   }
 
   String _uniqueBaseName(String base, String ext) {
-    final existing = _files
-        .where((f) => f.space == _mineSpace)
-        .map((f) => f.path)
-        .toSet();
+    final existing = {
+      for (final f in _dirFiles) f.path,
+      for (final f in _files)
+        if (f.space == _mineSpace) f.path,
+    };
     var i = 0;
     while (true) {
       final suffix = i == 0 ? '' : ' ($i)';
@@ -1030,6 +1207,11 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
     return '${(n / (1024 * 1024 * 1024)).toStringAsFixed(1)} GB';
   }
 
+  String? _spaceSubtitle(String space) {
+    if (!_spaceBytes.containsKey(space)) return null;
+    return _fmtBytes(_spaceBytes[space] ?? 0);
+  }
+
   String _fmtRecentAccess(int ms, AppLocalizations l10n) {
     final rel = _fmtRelativeTime(ms);
     if (rel.isEmpty) return '';
@@ -1059,13 +1241,19 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
     setState(() {
       _navSpace = space;
       _navPath = '';
+      _dirFolders = const [];
+      _dirFiles = const [];
     });
+    unawaited(_loadCurrentDir());
   }
 
   void _enterFolder(String name) {
     setState(() {
       _navPath = _navPath.isEmpty ? name : '$_navPath/$name';
+      _dirFolders = const [];
+      _dirFiles = const [];
     });
+    unawaited(_loadCurrentDir());
   }
 
   void _navUp() {
@@ -1073,10 +1261,13 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
       if (_navPath.isNotEmpty) {
         final i = _navPath.lastIndexOf('/');
         _navPath = i < 0 ? '' : _navPath.substring(0, i);
+        _dirFolders = const [];
+        _dirFiles = const [];
       } else {
         _navSpace = null;
       }
     });
+    if (_navSpace != null) unawaited(_loadCurrentDir());
   }
 
   void _navToRoot() {
@@ -1087,59 +1278,39 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
   }
 
   void _navToSpaceRoot() {
-    setState(() => _navPath = '');
+    setState(() {
+      _navPath = '';
+      _dirFolders = const [];
+      _dirFiles = const [];
+    });
+    unawaited(_loadCurrentDir());
   }
 
   void _navToPath(String path) {
-    setState(() => _navPath = path);
+    setState(() {
+      _navPath = path;
+      _dirFolders = const [];
+      _dirFiles = const [];
+    });
+    unawaited(_loadCurrentDir());
   }
 
   /// 当前目录下的子文件夹名（排序）与文件。
   ({List<String> folders, List<_BrowsedFile> files}) _folderChildren() {
-    final space = _effectiveNavSpace;
-    if (space == null) {
+    if (_effectiveNavSpace == null) {
       return (folders: const [], files: const []);
     }
-    final prefix = _navPath.isEmpty ? '' : '$_navPath/';
-    final folders = <String>{};
-    final files = <_BrowsedFile>[];
-    for (final f in _files) {
-      if (f.space != space) continue;
-      if (prefix.isEmpty) {
-        final slash = f.path.indexOf('/');
-        if (slash < 0) {
-          if (!_isFolderMarkerPath(f.path)) files.add(f);
-        } else {
-          folders.add(f.path.substring(0, slash));
-        }
-      } else {
-        if (!f.path.startsWith(prefix)) continue;
-        final rest = f.path.substring(prefix.length);
-        if (rest.isEmpty) continue;
-        final slash = rest.indexOf('/');
-        if (slash < 0) {
-          if (!_isFolderMarkerPath(f.path)) files.add(f);
-        } else {
-          folders.add(rest.substring(0, slash));
-        }
-      }
-    }
-    final folderList = folders.toList()
-      ..sort((a, b) => _folderMtimeMs(space, b).compareTo(_folderMtimeMs(space, a)));
-    files.sort((a, b) => b.mtimeMs.compareTo(a.mtimeMs));
-    return (folders: folderList, files: files);
+    final folders = [
+      for (final d in _dirFolders) p.basename(d.path),
+    ];
+    return (folders: folders, files: _dirFiles);
   }
 
   int _folderMtimeMs(String space, String folderName) {
-    final prefix = _navPath.isEmpty ? '$folderName/' : '$_navPath/$folderName/';
-    var maxMs = 0;
-    for (final f in _files) {
-      if (f.space != space) continue;
-      if (f.path.startsWith(prefix) && f.mtimeMs > maxMs) {
-        maxMs = f.mtimeMs;
-      }
+    for (final d in _dirFolders) {
+      if (p.basename(d.path) == folderName) return d.mtimeMs;
     }
-    return maxMs;
+    return 0;
   }
 
   String _currentFolderTitle() {
@@ -1166,15 +1337,13 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
                 ? _buildMobileFolderAppBar(l10n)
                 : _buildMobileAppBar(l10n))
             : _buildDesktopAppBar(l10n),
-        body: _loading && _files.isEmpty
-            ? const Center(child: CircularProgressIndicator())
-            : TabBarView(
-                controller: _tabs,
-                children: [
-                  _buildFlatTab(l10n, mobile: mobile),
-                  _buildSpaceTab(l10n, mobile: mobile),
-                ],
-              ),
+        body: TabBarView(
+          controller: _tabs,
+          children: [
+            _buildFlatTab(l10n, mobile: mobile),
+            _buildSpaceTab(l10n, mobile: mobile),
+          ],
+        ),
       ),
     );
   }
@@ -1542,6 +1711,9 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
         ),
       );
     }
+    if (_loading && _files.isEmpty) {
+      return const Center(child: CircularProgressIndicator());
+    }
     if (_files.isEmpty) {
       return Center(
         child: Text(l10n.storage_browserEmpty,
@@ -1578,6 +1750,9 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
 
     final children = _folderChildren();
     final empty = children.folders.isEmpty && children.files.isEmpty;
+    if (_folderLoading && empty) {
+      return const Center(child: CircularProgressIndicator());
+    }
 
     if (mobile) {
       if (empty) return _buildMobileFolderEmpty(l10n);
@@ -1661,8 +1836,7 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
         separatorBuilder: (_, __) => const SizedBox(height: 2),
         itemBuilder: (context, i) {
           final space = _spaces[i];
-          final count = _files.where((f) => f.space == space).length;
-          final subtitle = l10n.storage_browserCount(count);
+          final subtitle = _spaceSubtitle(space);
           return InkWell(
             onTap: _busy ? null : () => _enterSpace(space),
             onLongPress: _busy
@@ -1694,16 +1868,18 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
                                     height: 1.35,
                                   ),
                         ),
-                        const SizedBox(height: 6),
-                        Text(
-                          subtitle,
-                          style:
-                              Theme.of(context).textTheme.bodySmall?.copyWith(
-                                    color: Theme.of(context)
-                                        .colorScheme
-                                        .onSurfaceVariant,
-                                  ),
-                        ),
+                        if (subtitle != null) ...[
+                          const SizedBox(height: 6),
+                          Text(
+                            subtitle,
+                            style:
+                                Theme.of(context).textTheme.bodySmall?.copyWith(
+                                      color: Theme.of(context)
+                                          .colorScheme
+                                          .onSurfaceVariant,
+                                    ),
+                          ),
+                        ],
                       ],
                     ),
                   ),
@@ -1724,11 +1900,12 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
               child: Center(child: _buildFolderIcon()),
             ),
             title: Text(space),
-            subtitle: Text(
-              l10n.storage_browserCount(
-                  _files.where((f) => f.space == space).length),
-              style: Theme.of(context).textTheme.labelSmall,
-            ),
+            subtitle: _spaceSubtitle(space) == null
+                ? null
+                : Text(
+                    _spaceSubtitle(space)!,
+                    style: Theme.of(context).textTheme.labelSmall,
+                  ),
             trailing: Row(
               mainAxisSize: MainAxisSize.min,
               children: [

@@ -268,12 +268,17 @@ class StoreService {
     /// 为 true 时始终读本机磁盘上的 `<deviceId>/…`（peer 本地缓存 /
     /// local_fallback），不走跨端 store.list。
     bool preferLocalCache = false,
+    /// 浏览/搜索可关哈希；同步路径保持默认 true。
+    bool computeHash = true,
   }) async {
     final self = await DeviceIdentity.deviceId();
     if (deviceId == self || preferLocalCache) {
       final store = await _localStore();
       return store.list(deviceId, space,
-          prefix: prefix, limit: limit, depth: depth);
+          prefix: prefix,
+          limit: limit,
+          depth: depth,
+          computeHash: computeHash);
     }
     final server = await preferredReadServer(deviceId);
     final data = await callPeer(
@@ -286,6 +291,7 @@ class StoreService {
           if (prefix != null && prefix.isNotEmpty) 'path': prefix,
           'limit': limit,
           if (depth != null) 'depth': depth,
+          if (!computeHash) 'hash': false,
         },
       ),
     );
@@ -874,6 +880,7 @@ class StoreService {
             prefix: frame.payload['path'] as String?,
             limit: limit,
             depth: depth,
+            computeHash: frame.payload['hash'] != false,
           );
           // 跨端 list：按出站分享白名单过滤条目
           if (shareAllowlist != null &&
@@ -1036,7 +1043,7 @@ class StoreService {
           );
 
         case StoreOp.stats:
-          final base = await store.stats();
+          final base = await store.stats(blocking: false);
           // v3：本机未同步占用与游标水位（spec §6.1，管理页展示）
           final journal = SyncEngine.instance.journal;
           if (journal != null) {

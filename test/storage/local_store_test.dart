@@ -433,6 +433,31 @@ void main() {
       expect(stats['staging_bytes'], greaterThan(0));
     });
 
+    test('list 可跳过哈希；stats 缓存后 commit/delete 增量', () async {
+      final c = bytesOf('hello');
+      final (u, _) = await begin('s.txt', c);
+      await store.writeChunk(dev, 'files', u, 0, c);
+      await store.commit(dev, 'files', [u]);
+
+      final unnamed = await store.list(dev, 'files', computeHash: false);
+      expect(unnamed.single.sha256, isEmpty);
+      expect(unnamed.single.size, c.length);
+      expect((await store.list(dev, 'files')).single.sha256, sha(c));
+
+      await store.stats(); // 全量，标记 complete
+      final bigger = bytesOf('hello world!');
+      final (u2, _) = await begin('s.txt', bigger);
+      await store.writeChunk(dev, 'files', u2, 0, bigger);
+      await store.commit(dev, 'files', [u2]);
+
+      final cached = await store.stats(blocking: false);
+      expect((cached['devices'] as Map)[dev]['files'], bigger.length);
+
+      await store.delete(dev, 'files', 's.txt');
+      final afterDel = await store.stats(blocking: false);
+      expect((afterDel['devices'] as Map)[dev]['files'], 0);
+    });
+
     test('gcStaging 清理超期暂存', () async {
       final (u, _) = await begin('stale.txt', bytesOf('stale'));
       await store.writeChunk(dev, 'files', u, 0, bytesOf('st'));

@@ -81,6 +81,26 @@ class StorageBusyOverlay extends StatelessWidget {
   }
 }
 
+int storageDeviceUsedBytes(Map<String, dynamic>? stats, String deviceId) {
+  final devices = (stats?['devices'] as Map?)?.cast<String, dynamic>() ?? {};
+  final mine = (devices[deviceId] as Map?)?.cast<String, dynamic>() ?? {};
+  var total = 0;
+  for (final space in StoreSpace.all) {
+    total += (mine[space] as num?)?.toInt() ?? 0;
+  }
+  return total;
+}
+
+Map<String, int> storageDeviceSpaceBytes(
+    Map<String, dynamic>? stats, String deviceId) {
+  final devices = (stats?['devices'] as Map?)?.cast<String, dynamic>() ?? {};
+  final mine = (devices[deviceId] as Map?)?.cast<String, dynamic>() ?? {};
+  return {
+    for (final space in StoreSpace.all)
+      space: (mine[space] as num?)?.toInt() ?? 0,
+  };
+}
+
 /// 储物袋主页需要的轻量汇总（仅本机 App 数据；不含多设备镜像管理）。
 class StorageOverviewSummary {
   StorageOverviewSummary({
@@ -102,15 +122,7 @@ class StorageOverviewSummary {
   final bool isMaster;
 
   /// 本机四分区用量合计。
-  int get myTotalBytes {
-    final devices = (stats?['devices'] as Map?)?.cast<String, dynamic>() ?? {};
-    final mine = (devices[selfId] as Map?)?.cast<String, dynamic>() ?? {};
-    var total = 0;
-    for (final space in StoreSpace.all) {
-      total += mine[space] as int? ?? 0;
-    }
-    return total;
-  }
+  int get myTotalBytes => storageDeviceUsedBytes(stats, selfId);
 
   int get recycleBytes => stats?['recycle_bytes'] as int? ?? 0;
   int get stagingBytes => stats?['staging_bytes'] as int? ?? 0;
@@ -143,7 +155,7 @@ Future<StorageOverviewSummary> loadStorageOverview() async {
   final selfId = await DeviceIdentity.deviceId();
   final store = await StoreService.instance.localStore();
 
-  final stats = await store.stats();
+  final stats = await store.stats(blocking: false);
   final journal = SyncEngine.instance.journal;
   if (journal != null) {
     stats['unsynced_count'] = await journal.pendingCount();

@@ -12,7 +12,6 @@ import '../../screens/storage_shared.dart';
 import '../../screens/storage_snapshots_screen.dart';
 import '../../screens/storage_space_settings_screen.dart';
 import '../../storage/device_identity.dart';
-import '../../storage/store_protocol.dart';
 import '../../storage/store_service.dart';
 import '../../storage/sync_engine.dart';
 import '../../theme/app_theme.dart';
@@ -69,6 +68,7 @@ class StorageSpaceHubState extends State<StorageSpaceHub> {
   int? _usedBytes;
   StreamSubscription<dynamic>? _peerEventsSub;
   StreamSubscription<void>? _peerListSub;
+  StreamSubscription<void>? _usageSub;
 
   @override
   void initState() {
@@ -96,6 +96,7 @@ class StorageSpaceHubState extends State<StorageSpaceHub> {
   void dispose() {
     _peerEventsSub?.cancel();
     _peerListSub?.cancel();
+    _usageSub?.cancel();
     super.dispose();
   }
 
@@ -106,6 +107,7 @@ class StorageSpaceHubState extends State<StorageSpaceHub> {
       final master = await StoreService.instance.masterDeviceId();
       final self = await DeviceIdentity.deviceId();
       final used = widget.localUsedBytes ?? await _loadUsedBytes(self);
+      unawaited(_subscribeUsage());
       if (!mounted) return;
       setState(() {
         _peers = _sortedPeers(peers);
@@ -122,17 +124,23 @@ class StorageSpaceHubState extends State<StorageSpaceHub> {
   Future<int?> _loadUsedBytes(String selfId) async {
     try {
       final store = await StoreService.instance.localStore();
-      final stats = await store.stats();
-      final devices = (stats['devices'] as Map?)?.cast<String, dynamic>() ?? {};
-      final mine = (devices[selfId] as Map?)?.cast<String, dynamic>() ?? {};
-      var total = 0;
-      for (final space in StoreSpace.all) {
-        total += mine[space] as int? ?? 0;
-      }
-      return total;
+      final stats = await store.stats(blocking: false);
+      return storageDeviceUsedBytes(stats, selfId);
     } catch (_) {
       return null;
     }
+  }
+
+  Future<void> _subscribeUsage() async {
+    try {
+      final store = await StoreService.instance.localStore();
+      _usageSub?.cancel();
+      _usageSub = store.usageUpdates.listen((_) async {
+        if (!mounted || _selfId.isEmpty) return;
+        final used = await _loadUsedBytes(_selfId);
+        if (mounted) setState(() => _usedBytes = used);
+      });
+    } catch (_) {}
   }
 
   List<PairedPeer> _sortedPeers(List<PairedPeer> peers) {

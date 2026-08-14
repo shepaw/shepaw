@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import '../l10n/app_localizations.dart';
 import '../storage/handoff_notify_service.dart';
+import '../storage/store_service.dart';
 import 'storage_shared.dart';
 import 'storage_snapshots_screen.dart';
 import 'storage_space_manage_screen.dart';
@@ -37,6 +38,7 @@ class StorageSpaceScreen extends StatefulWidget {
 class StorageSpaceScreenState extends State<StorageSpaceScreen> {
   late Future<StorageOverviewSummary> _future;
   StreamSubscription<void>? _handoffSub;
+  StreamSubscription<void>? _usageSub;
 
   @override
   void initState() {
@@ -46,11 +48,22 @@ class StorageSpaceScreenState extends State<StorageSpaceScreen> {
     _handoffSub = HandoffNotifyService.instance.onChanged.listen((_) {
       if (mounted) setState(() {});
     });
+    unawaited(_listenUsage());
+  }
+
+  Future<void> _listenUsage() async {
+    try {
+      final store = await StoreService.instance.localStore();
+      _usageSub = store.usageUpdates.listen((_) {
+        if (mounted) unawaited(_refresh());
+      });
+    } catch (_) {}
   }
 
   @override
   void dispose() {
     _handoffSub?.cancel();
+    _usageSub?.cancel();
     super.dispose();
   }
 

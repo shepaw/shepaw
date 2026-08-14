@@ -1,12 +1,14 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../l10n/app_localizations.dart';
 import '../storage/device_identity.dart';
-import '../storage/store_protocol.dart';
 import '../storage/store_service.dart';
 import '../utils/layout_utils.dart';
 import '../widgets/storage/storage_space_hub.dart';
 import 'storage_browser_screen.dart';
+import 'storage_shared.dart';
 import 'storage_space_settings_screen.dart';
 
 /// 储物袋空间：移动端扁平展示本机 + 共享设备；桌面右侧为本机文件浏览器。
@@ -20,6 +22,7 @@ class StorageSpaceManageScreen extends StatefulWidget {
 
 class _StorageSpaceManageScreenState extends State<StorageSpaceManageScreen> {
   int? _usedBytes;
+  StreamSubscription<void>? _usageSub;
 
   @override
   void initState() {
@@ -27,17 +30,21 @@ class _StorageSpaceManageScreenState extends State<StorageSpaceManageScreen> {
     _loadUsedBytes();
   }
 
+  @override
+  void dispose() {
+    _usageSub?.cancel();
+    super.dispose();
+  }
+
   Future<void> _loadUsedBytes() async {
     try {
       final selfId = await DeviceIdentity.deviceId();
       final store = await StoreService.instance.localStore();
-      final stats = await store.stats();
-      final devices = (stats['devices'] as Map?)?.cast<String, dynamic>() ?? {};
-      final mine = (devices[selfId] as Map?)?.cast<String, dynamic>() ?? {};
-      var total = 0;
-      for (final space in StoreSpace.all) {
-        total += mine[space] as int? ?? 0;
-      }
+      _usageSub ??= store.usageUpdates.listen((_) {
+        if (mounted) unawaited(_loadUsedBytes());
+      });
+      final stats = await store.stats(blocking: false);
+      final total = storageDeviceUsedBytes(stats, selfId);
       if (!mounted) return;
       setState(() => _usedBytes = total);
     } catch (_) {

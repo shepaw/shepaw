@@ -66,11 +66,14 @@ class SyncQueueEntry {
 class SyncJournal {
   SyncJournal({required Directory storeRoot, required this.ownerDeviceId})
       : _queueFile = File(p.join(storeRoot.path, '.system', 'sync_queue.json')),
-        _stateFile = File(p.join(storeRoot.path, '.system', 'sync_state.json'));
+        _stateFile = File(p.join(storeRoot.path, '.system', 'sync_state.json')),
+        _recentFile =
+            File(p.join(storeRoot.path, '.system', 'sync_recent.json'));
 
   final String ownerDeviceId;
   final File _queueFile;
   final File _stateFile;
+  final File _recentFile;
 
   /// 追加成功后的回调（SyncEngine 设为 poke，本地写后立即触发同步）。
   static void Function()? onAppended;
@@ -80,10 +83,18 @@ class SyncJournal {
 
   static const pendingDisplayLimit = 200;
 
+  /// 「最近」Tab 保留的变更文件上限（出队后仍在）。
+  static const recentLimit = 200;
+
   Future<void>? _appendLock;
   List<SyncQueueEntry>? _queue;
   int? _changeSeq;
   int? _ackSeq;
+  List<SyncRecentFile>? _recent;
+
+  /// 是否已从磁盘读到过 `sync_recent.json`（缺文件时需从队列种子）。
+  bool _recentFromDisk = false;
+  bool _recentLoaded = false;
 
   // ────────────────────────────── 持久化 ──
 
@@ -139,6 +150,137 @@ class SyncJournal {
     await tmp.rename(_stateFile.path);
   }
 
+  Future<List<SyncRecentFile>> _loadRecent() async {
+    if (_recentLoaded) return _recent!;
+    _recentLoaded = true;
+    if (!await _recentFile.exists()) {
+      _recentFromDisk = false;
+      return _recent = <SyncRecentFile>[];
+    }
+    try {
+      final decoded = jsonDecode(await _recentFile.readAsString());
+      final raw = decoded is Map
+          ? decoded['files'] as List? ?? const []
+          : decoded is List
+              ? decoded
+              : const [];
+      _recentFromDisk = true;
+      return _recent = [
+        for (final e in raw)
+          if (e is Map)
+            SyncRecentFile.fromJson(Map<String, dynamic>.from(e)),
+      ];
+    } catch (_) {
+      _recentFromDisk = false;
+      return _recent = <SyncRecentFile>[];
+    }
+  }
+
+  Future<void> _saveRecent() async {
+    await _recentFile.parent.create(recursive: true);
+    final tmp = File('${_recentFile.path}.tmp');
+    await tmp.writeAsString(jsonEncode({
+      'files': [for (final e in _recent!) e.toJson()],
+    }));
+    await tmp.rename(_recentFile.path);
+    _recentFromDisk = true;
+  }
+
+  void _capRecent() {
+    final list = _recent;
+    if (list == null || list.length <= recentLimit) return;
+    _recent = list.sublist(0, recentLimit);
+  }
+
+  void _upsertRecent(String space, String path, int size, int mtimeMs,
+      {String sha256 = ''}) {
+    final list = _recent ??= <SyncRecentFile>[];
+    list.removeWhere((e) => e.space == space && e.path == path);
+    list.insert(
+      0,
+      SyncRecentFile(
+        space: space,
+        path: path,
+        size: size,
+        mtimeMs: mtimeMs,
+        sha256: sha256,
+      ),
+    );
+    _capRecent();
+  }
+
+  void _removeRecent(String space, String path) {
+    final list = _recent;
+    if (list == null || list.isEmpty) return;
+    list.removeWhere((e) =>
+        e.space == space && (e.path == path || e.path.startsWith('$path/')));
+  }
+
+  void _rebuildRecentFromQueue(List<SyncQueueEntry> entries) {
+    final byKey = <String, SyncRecentFile>{};
+    final order = <String>[];
+    String keyOf(String space, String path) => '$space\u0000$path';
+    for (final e in entries) {
+      if (e.kind == 'delete') {
+        final path = e.path ?? '';
+        final prefix = '$path/';
+        final drop = byKey.keys
+            .where((k) {
+              final sep = k.indexOf('\u0000');
+              if (sep < 0) return false;
+              if (k.substring(0, sep) != e.space) return false;
+              final pth = k.substring(sep + 1);
+              return pth == path || pth.startsWith(prefix);
+            })
+            .toList();
+        for (final k in drop) {
+          byKey.remove(k);
+          order.remove(k);
+        }
+      } else {
+        for (final f in e.files ??
+            const <({String path, int size, String sha256})>[]) {
+          final key = keyOf(e.space, f.path);
+          byKey[key] = SyncRecentFile(
+            space: e.space,
+            path: f.path,
+            size: f.size,
+            mtimeMs: e.createdMs,
+            sha256: f.sha256,
+          );
+          order.remove(key);
+          order.add(key);
+        }
+      }
+    }
+    _recent = [
+      for (final k in order.reversed)
+        if (byKey[k] != null) byKey[k]!,
+    ];
+    _capRecent();
+  }
+
+  Future<void> _syncRecentAfterAppendLocked({
+    required String kind,
+    required String space,
+    List<({String path, int size, String sha256})>? files,
+    String? path,
+    required int createdMs,
+  }) async {
+    await _loadRecent();
+    if (!_recentFromDisk) {
+      _rebuildRecentFromQueue(await _loadQueue());
+    } else if (kind == 'delete') {
+      _removeRecent(space, path ?? '');
+    } else {
+      for (final f
+          in files ?? const <({String path, int size, String sha256})>[]) {
+        _upsertRecent(space, f.path, f.size, createdMs, sha256: f.sha256);
+      }
+    }
+    await _saveRecent();
+  }
+
   /// 串行化 append（并发 commit/delete 的 seq 分配不竞争）。
   Future<T> _locked<T>(Future<T> Function() action) {
     final prev = _appendLock ?? Future.value();
@@ -173,6 +315,12 @@ class SyncJournal {
       (await _loadQueue()).add(entry);
       await _saveQueue();
       await _saveState();
+      await _syncRecentAfterAppendLocked(
+        kind: 'commit',
+        space: space,
+        files: entry.files,
+        createdMs: entry.createdMs,
+      );
       onAppended?.call();
       onChanged?.call();
       return entry.seq;
@@ -195,6 +343,12 @@ class SyncJournal {
       (await _loadQueue()).add(entry);
       await _saveQueue();
       await _saveState();
+      await _syncRecentAfterAppendLocked(
+        kind: 'delete',
+        space: space,
+        path: path,
+        createdMs: entry.createdMs,
+      );
       onAppended?.call();
       onChanged?.call();
       return entry.seq;
@@ -247,6 +401,22 @@ class SyncJournal {
 
   Future<int> pendingCount() async => (await _loadQueue()).length;
 
+  /// 最近变更的文件（commit 落盘即记，master 出队后仍保留；delete 会移除）。
+  ///
+  /// 若 `sync_recent.json` 尚不存在（升级前只写了队列），从当前 pending 队列种子。
+  Future<List<SyncRecentFile>> recent({int limit = recentLimit}) async {
+    return _locked(() async {
+      await _loadRecent();
+      if (!_recentFromDisk) {
+        _rebuildRecentFromQueue(await _loadQueue());
+        await _saveRecent();
+      }
+      final list = List<SyncRecentFile>.of(_recent ?? const []);
+      if (limit < list.length) return list.sublist(0, limit);
+      return list;
+    });
+  }
+
   Future<int> pendingBytes() async {
     var total = 0;
     for (final e in await _loadQueue()) {
@@ -258,6 +428,41 @@ class SyncJournal {
     }
     return total;
   }
+}
+
+/// 「最近」Tab 用的已落盘变更文件（不含 delete）。
+class SyncRecentFile {
+  const SyncRecentFile({
+    required this.space,
+    required this.path,
+    required this.size,
+    required this.mtimeMs,
+    this.sha256 = '',
+  });
+
+  final String space;
+  final String path;
+  final int size;
+  final int mtimeMs;
+  final String sha256;
+
+  Map<String, dynamic> toJson() => <String, dynamic>{
+        'space': space,
+        'path': path,
+        'size': size,
+        'mtime_ms': mtimeMs,
+        if (sha256.isNotEmpty) 'sha256': sha256,
+      };
+
+  static SyncRecentFile fromJson(Map<String, dynamic> json) => SyncRecentFile(
+        space: json['space'] as String? ?? '',
+        path: json['path'] as String? ?? '',
+        size: (json['size'] as num?)?.toInt() ?? 0,
+        mtimeMs: (json['mtime_ms'] as num?)?.toInt() ??
+            (json['created_ms'] as num?)?.toInt() ??
+            0,
+        sha256: json['sha256'] as String? ?? '',
+      );
 }
 
 /// 队列条目展开后的单文件/单路径行（commit 的 `files[]` 拆开，delete 一行）。
