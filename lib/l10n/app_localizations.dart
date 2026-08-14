@@ -2252,6 +2252,90 @@ abstract class AppLocalizations {
   /// **'总计'**
   String get log_total;
 
+  /// No description provided for @log_filterByTag.
+  ///
+  /// In zh, this message translates to:
+  /// **'按标签筛选'**
+  String get log_filterByTag;
+
+  /// No description provided for @log_allTags.
+  ///
+  /// In zh, this message translates to:
+  /// **'全部标签'**
+  String get log_allTags;
+
+  /// No description provided for @log_levelDebug.
+  ///
+  /// In zh, this message translates to:
+  /// **'Debug'**
+  String get log_levelDebug;
+
+  /// No description provided for @log_levelInfo.
+  ///
+  /// In zh, this message translates to:
+  /// **'Info'**
+  String get log_levelInfo;
+
+  /// No description provided for @log_levelWarning.
+  ///
+  /// In zh, this message translates to:
+  /// **'Warning'**
+  String get log_levelWarning;
+
+  /// No description provided for @log_levelError.
+  ///
+  /// In zh, this message translates to:
+  /// **'Error'**
+  String get log_levelError;
+
+  /// No description provided for @log_searchHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'搜索日志'**
+  String get log_searchHint;
+
+  /// No description provided for @log_problemsOnly.
+  ///
+  /// In zh, this message translates to:
+  /// **'仅问题'**
+  String get log_problemsOnly;
+
+  /// No description provided for @log_visible.
+  ///
+  /// In zh, this message translates to:
+  /// **'可见'**
+  String get log_visible;
+
+  /// No description provided for @log_noMatch.
+  ///
+  /// In zh, this message translates to:
+  /// **'没有匹配的日志'**
+  String get log_noMatch;
+
+  /// No description provided for @log_noMatchHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'试试调整筛选条件或搜索关键词。'**
+  String get log_noMatchHint;
+
+  /// No description provided for @log_emptyHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'运行过程中产生的系统日志会显示在这里。'**
+  String get log_emptyHint;
+
+  /// No description provided for @log_cleared.
+  ///
+  /// In zh, this message translates to:
+  /// **'日志已清除'**
+  String get log_cleared;
+
+  /// No description provided for @log_copied.
+  ///
+  /// In zh, this message translates to:
+  /// **'已复制到剪贴板'**
+  String get log_copied;
+
   /// No description provided for @agentDetail_title.
   ///
   /// In zh, this message translates to:

@@ -1212,6 +1212,48 @@ class AppLocalizationsEn extends AppLocalizations {
   String get log_total => 'Total';
 
   @override
+  String get log_filterByTag => 'Filter by tag';
+
+  @override
+  String get log_allTags => 'All tags';
+
+  @override
+  String get log_levelDebug => 'Debug';
+
+  @override
+  String get log_levelInfo => 'Info';
+
+  @override
+  String get log_levelWarning => 'Warning';
+
+  @override
+  String get log_levelError => 'Error';
+
+  @override
+  String get log_searchHint => 'Search logs';
+
+  @override
+  String get log_problemsOnly => 'Problems only';
+
+  @override
+  String get log_visible => 'Visible';
+
+  @override
+  String get log_noMatch => 'No matching logs';
+
+  @override
+  String get log_noMatchHint => 'Try a different filter or search term.';
+
+  @override
+  String get log_emptyHint => 'System logs from this session will appear here.';
+
+  @override
+  String get log_cleared => 'Logs cleared';
+
+  @override
+  String get log_copied => 'Copied to clipboard';
+
+  @override
   String get agentDetail_title => 'Agent Details';
 
   @override

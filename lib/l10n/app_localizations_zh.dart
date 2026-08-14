@@ -1168,6 +1168,48 @@ class AppLocalizationsZh extends AppLocalizations {
   String get log_total => '总计';
 
   @override
+  String get log_filterByTag => '按标签筛选';
+
+  @override
+  String get log_allTags => '全部标签';
+
+  @override
+  String get log_levelDebug => 'Debug';
+
+  @override
+  String get log_levelInfo => 'Info';
+
+  @override
+  String get log_levelWarning => 'Warning';
+
+  @override
+  String get log_levelError => 'Error';
+
+  @override
+  String get log_searchHint => '搜索日志';
+
+  @override
+  String get log_problemsOnly => '仅问题';
+
+  @override
+  String get log_visible => '可见';
+
+  @override
+  String get log_noMatch => '没有匹配的日志';
+
+  @override
+  String get log_noMatchHint => '试试调整筛选条件或搜索关键词。';
+
+  @override
+  String get log_emptyHint => '运行过程中产生的系统日志会显示在这里。';
+
+  @override
+  String get log_cleared => '日志已清除';
+
+  @override
+  String get log_copied => '已复制到剪贴板';
+
+  @override
   String get agentDetail_title => 'Agent 详情';
 
   @override
