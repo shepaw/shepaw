@@ -517,6 +517,10 @@ class ChatService {
     return _messageControllers[channelId]!.stream;
   }
 
+  /// Recreate ActiveTasks for peer turns that survived a process kill.
+  Future<void> restorePeerInflightTurns() =>
+      _agentMessagingService.restorePeerInflightTurns();
+
   /// Send message to agent and get response
   Future<Message?> sendMessageToAgent({
     required String content,

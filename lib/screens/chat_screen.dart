@@ -498,6 +498,8 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
         return l10n.chat_reconnectFailed;
       case 'chat_responseError':
         return l10n.chat_responseError(param);
+      case 'chat_peerTurnStillRunning':
+        return l10n.chat_peerTurnStillRunning;
       case 'chat_historyLoadFailed':
         return l10n.chat_historyLoadFailed(param);
       case 'chat_modalityNotSupported':

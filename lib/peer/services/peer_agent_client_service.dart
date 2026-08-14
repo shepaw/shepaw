@@ -31,9 +31,12 @@ import 'peer_connection.dart' show PeerConnectionEvent, PeerConnectionEventType;
 import '../peer_approval_payload.dart';
 import 'peer_agent_ids.dart';
 import 'peer_connection_manager.dart';
+import 'peer_inflight_turn.dart';
+import 'peer_storage_service.dart';
 import 'peer_turn_resume.dart';
 
 export 'peer_agent_ids.dart';
+export 'peer_inflight_turn.dart' show PeerTurnInFlightException;
 
 /// Resolve which local agent row id to use for a hub remote agent id.
 Future<String> resolvePeerAgentRowId(
@@ -523,9 +526,18 @@ class PeerAgentIncrementalSyncResult {
 
 class _PendingRequest {
   final String peerId;
-  final void Function(String chunk)? onChunk;
-  final void Function(Map<String, dynamic>)? onMetadata;
-  final void Function(Map<String, dynamic>)? onActionConfirmation;
+  final String remoteAgentId;
+  final String localAgentId;
+  final String channelId;
+  final String sessionId;
+  final String userMessageId;
+  final String userId;
+  final String userName;
+  final String agentName;
+  final int startedAtMs;
+  void Function(String chunk)? onChunk;
+  void Function(Map<String, dynamic>)? onMetadata;
+  void Function(Map<String, dynamic>)? onActionConfirmation;
   final Completer<PeerChatResult> completer = Completer<PeerChatResult>();
   /// In-flight tool approvals not yet submitted by the user.
   int openApprovals = 0;
@@ -540,18 +552,49 @@ class _PendingRequest {
   /// 已接收 chunk 内容的累计长度（UTF-16 码元，与 hub 的 accumulated 对齐）。
   /// resume_req 的 known_content_length 即取此值。
   int receivedLength = 0;
+  /// Answer text (progress stripped) for UI seed after a process restart.
+  String answerContent = '';
   /// 非 null 表示该 turn 因 peer 断连而挂起，等待重连续传。
   DateTime? suspendedSince;
   /// 是否已发出 resume_req 且尚未收到应答（防止重复发送）。
   bool resumeInFlight = false;
   /// 发出 resume_req 时的 receivedLength 基准，用于 delta 去重（drop-prefix）。
   int? resumeBaseLength;
-  _PendingRequest(
-    this.peerId,
+  _PendingRequest({
+    required this.peerId,
+    required this.remoteAgentId,
+    this.localAgentId = '',
+    this.channelId = '',
+    this.sessionId = '',
+    this.userMessageId = '',
+    this.userId = '',
+    this.userName = '',
+    this.agentName = '',
+    int? startedAtMs,
     this.onChunk,
-    this.onActionConfirmation, {
+    this.onActionConfirmation,
     this.onMetadata,
-  });
+  }) : startedAtMs = startedAtMs ?? DateTime.now().millisecondsSinceEpoch;
+
+  PeerInflightTurnRecord toRecord(String requestId) {
+    final now = DateTime.now().millisecondsSinceEpoch;
+    return PeerInflightTurnRecord(
+      requestId: requestId,
+      peerId: peerId,
+      remoteAgentId: remoteAgentId,
+      localAgentId: localAgentId,
+      channelId: channelId,
+      sessionId: sessionId,
+      userMessageId: userMessageId,
+      userId: userId,
+      userName: userName,
+      agentName: agentName,
+      receivedLength: receivedLength,
+      accumulatedContent: answerContent,
+      startedAtMs: startedAtMs,
+      updatedAtMs: now,
+    );
+  }
 }
 
 class _PendingFilePush {
@@ -593,11 +636,17 @@ class PeerAgentClientService {
 
   final _log = LoggerService();
   final _uuid = const Uuid();
+  final _storage = PeerStorageService();
+  final Map<String, Timer> _persistTimers = {};
 
   StreamSubscription<PeerControlEvent>? _controlSub;
   StreamSubscription<PeerConnectionEvent>? _eventSub;
   StreamSubscription<void>? _peerListSub;
   bool _running = false;
+  /// False until [resumeHydratedTurns] so a `connected` event during
+  /// bootstrap cannot complete a restored turn before ActiveTask handlers
+  /// are attached.
+  bool _handlersReadyForResume = false;
 
   /// 进行中的请求（requestId → pending）。
   final Map<String, _PendingRequest> _pending = {};
@@ -702,6 +751,10 @@ class PeerAgentClientService {
 
     // 对已连接的 peer 立即拉取一次列表，并清理已删除配对的残留 agent。
     await _reconcileDeletions();
+    await _hydratePersistedTurns();
+    if (_pending.isEmpty) {
+      _handlersReadyForResume = true;
+    }
     for (final peerId in PeerConnectionManager.instance.connectedPeerIds) {
       _requestAgentList(peerId);
     }
@@ -710,6 +763,7 @@ class PeerAgentClientService {
 
   void stop() {
     _running = false;
+    _handlersReadyForResume = false;
     PeerConnectionManager.instance.hasInFlightTurnForPeer = null;
     _controlSub?.cancel();
     _controlSub = null;
@@ -717,6 +771,10 @@ class PeerAgentClientService {
     _eventSub = null;
     _peerListSub?.cancel();
     _peerListSub = null;
+    for (final timer in _persistTimers.values) {
+      timer.cancel();
+    }
+    _persistTimers.clear();
     for (final p in _pending.values) {
       if (!p.completer.isCompleted) {
         p.completer.completeError(StateError('PeerAgentClientService stopped'));
@@ -756,6 +814,159 @@ class PeerAgentClientService {
     }
     _pendingManage.clear();
     _approvalToRequest.clear();
+  }
+
+  /// In-flight turns restored from disk (and live ones). Used by ChatService
+  /// to recreate [ActiveTask] so the UI can reattach after a process kill.
+  List<PeerInflightTurnRecord> snapshotInflightTurns() {
+    final out = <PeerInflightTurnRecord>[];
+    for (final entry in _pending.entries) {
+      final p = entry.value;
+      if (p.completer.isCompleted) continue;
+      out.add(p.toRecord(entry.key));
+    }
+    return out;
+  }
+
+  bool hasInflightForChannel(String channelId) {
+    if (channelId.isEmpty) return false;
+    for (final p in _pending.values) {
+      if (!p.completer.isCompleted && p.channelId == channelId) return true;
+    }
+    return false;
+  }
+
+  bool hasInflightForSession({
+    required String peerId,
+    required String remoteAgentId,
+    String? sessionId,
+  }) {
+    final sid = sessionId ?? '';
+    for (final p in _pending.values) {
+      if (p.completer.isCompleted) continue;
+      if (p.peerId != peerId || p.remoteAgentId != remoteAgentId) continue;
+      if ((p.sessionId) == sid) return true;
+    }
+    return false;
+  }
+
+  /// Rebind UI/persistence callbacks on a hydrated turn after process restart.
+  void attachPendingHandlers(
+    String requestId, {
+    void Function(String chunk)? onChunk,
+    void Function(Map<String, dynamic>)? onMetadata,
+    void Function(Map<String, dynamic>)? onActionConfirmation,
+  }) {
+    final p = _pending[requestId];
+    if (p == null) return;
+    p.onChunk = onChunk;
+    p.onMetadata = onMetadata;
+    p.onActionConfirmation = onActionConfirmation;
+  }
+
+  void noteInflightAnswer(String requestId, String answer) {
+    final p = _pending[requestId];
+    if (p == null) return;
+    p.answerContent = answer;
+    _schedulePersist(requestId);
+  }
+
+  Future<PeerChatResult> awaitPendingTurn(String requestId) {
+    final p = _pending[requestId];
+    if (p == null) {
+      return Future.error(StateError('no pending turn $requestId'));
+    }
+    return _awaitTurnCompletion(requestId, p, p.peerId);
+  }
+
+  /// Resume hydrated turns on already-connected peers. Call AFTER ChatService
+  /// has attached ActiveTask handlers so a fast `done` resume is not dropped.
+  void resumeHydratedTurns() {
+    _handlersReadyForResume = true;
+    for (final peerId in PeerConnectionManager.instance.connectedPeerIds) {
+      unawaited(_resumeSuspendedTurns(peerId));
+    }
+  }
+
+  Future<void> _hydratePersistedTurns() async {
+    List<PeerInflightTurnRecord> rows;
+    try {
+      rows = await _storage.loadAllInflightTurns();
+    } catch (e) {
+      _log.warning('load inflight turns failed: $e', tag: _tag, error: e);
+      return;
+    }
+    final now = DateTime.now();
+    for (final rec in rows) {
+      if (rec.requestId.isEmpty) {
+        await _storage.deleteInflightTurn(rec.requestId);
+        continue;
+      }
+      if (isPeerInflightTurnExpired(rec, now: now)) {
+        _log.info(
+          'dropping expired inflight turn ${rec.requestId}',
+          tag: _tag,
+        );
+        _requestAgents[rec.requestId] = (
+          peerId: rec.peerId,
+          remoteAgentId: rec.remoteAgentId,
+        );
+        _markReconcileNeeded(rec.requestId);
+        await _storage.deleteInflightTurn(rec.requestId);
+        continue;
+      }
+      if (_pending.containsKey(rec.requestId)) continue;
+      final pending = _PendingRequest(
+        peerId: rec.peerId,
+        remoteAgentId: rec.remoteAgentId,
+        localAgentId: rec.localAgentId,
+        channelId: rec.channelId,
+        sessionId: rec.sessionId,
+        userMessageId: rec.userMessageId,
+        userId: rec.userId,
+        userName: rec.userName,
+        agentName: rec.agentName,
+        startedAtMs: rec.startedAtMs,
+      );
+      pending.receivedLength = rec.receivedLength;
+      pending.answerContent = rec.accumulatedContent;
+      pending.suspendedSince =
+          DateTime.fromMillisecondsSinceEpoch(rec.updatedAtMs);
+      _pending[rec.requestId] = pending;
+      _requestAgents[rec.requestId] = (
+        peerId: rec.peerId,
+        remoteAgentId: rec.remoteAgentId,
+      );
+      _log.info(
+        'hydrated inflight turn ${rec.requestId} channel=${rec.channelId} '
+        'known=${rec.receivedLength}',
+        tag: _tag,
+      );
+    }
+  }
+
+  void _schedulePersist(String requestId) {
+    _persistTimers[requestId]?.cancel();
+    _persistTimers[requestId] = Timer(const Duration(seconds: 1), () {
+      _persistTimers.remove(requestId);
+      unawaited(_persistTurnNow(requestId));
+    });
+  }
+
+  Future<void> _persistTurnNow(String requestId) async {
+    final p = _pending[requestId];
+    if (p == null || p.completer.isCompleted) return;
+    if (p.channelId.isEmpty && p.localAgentId.isEmpty) return;
+    try {
+      await _storage.upsertInflightTurn(p.toRecord(requestId));
+    } catch (e) {
+      _log.warning('persist inflight $requestId failed: $e', tag: _tag, error: e);
+    }
+  }
+
+  void _clearPersistedTurn(String requestId) {
+    _persistTimers.remove(requestId)?.cancel();
+    unawaited(_storage.deleteInflightTurn(requestId));
   }
 
   // ── 发送（消费方 → 提供方） ────────────────────────────────────────────
@@ -873,6 +1084,12 @@ class PeerAgentClientService {
     /// Fired once [requestId] is allocated, before the control frame is sent.
     void Function(String requestId)? onRequestStarted,
     ACPCancellationToken? cancelToken,
+    String? localAgentId,
+    String? channelId,
+    String? userMessageId,
+    String? userId,
+    String? userName,
+    String? agentName,
   }) async {
     List<Map<String, dynamic>>? attachmentRefs;
     if (attachments != null && attachments.isNotEmpty) {
@@ -898,10 +1115,26 @@ class PeerAgentClientService {
     }
 
     final requestId = _uuid.v4();
+    final effectiveSessionId = sessionId ?? '';
+    if (hasInflightForSession(
+      peerId: peerId,
+      remoteAgentId: remoteAgentId,
+      sessionId: effectiveSessionId,
+    )) {
+      throw const PeerTurnInFlightException();
+    }
     final pending = _PendingRequest(
-      peerId,
-      onChunk,
-      onActionConfirmation,
+      peerId: peerId,
+      remoteAgentId: remoteAgentId,
+      localAgentId: localAgentId ?? '',
+      channelId: channelId ?? '',
+      sessionId: effectiveSessionId,
+      userMessageId: userMessageId ?? '',
+      userId: userId ?? '',
+      userName: userName ?? '',
+      agentName: agentName ?? '',
+      onChunk: onChunk,
+      onActionConfirmation: onActionConfirmation,
       onMetadata: onMetadata,
     );
     _pending[requestId] = pending;
@@ -910,6 +1143,7 @@ class PeerAgentClientService {
       _requestAgents.remove(_requestAgents.keys.first);
     }
     onRequestStarted?.call(requestId);
+    unawaited(_persistTurnNow(requestId));
 
     cancelToken?.addOnCancelled(() {
       unawaited(PeerConnectionManager.instance.sendControl(peerId, {
@@ -931,6 +1165,7 @@ class PeerAgentClientService {
         p.completer.complete(
           PeerChatResult(content: '[Stopped]', requestId: requestId),
         );
+        _clearPersistedTurn(requestId);
       }
     });
 
@@ -947,6 +1182,7 @@ class PeerAgentClientService {
 
     if (!sent) {
       _pending.remove(requestId);
+      _clearPersistedTurn(requestId);
       throw Exception('配对设备未连接，无法发送');
     }
 
@@ -1051,6 +1287,7 @@ class PeerAgentClientService {
   }) {
     final p = _pending.remove(requestId);
     if (p == null || p.completer.isCompleted) return;
+    _clearPersistedTurn(requestId);
     unawaited(PeerConnectionManager.instance.sendControl(peerId, {
       'type': 'agent_cancel',
       'request_id': requestId,
@@ -1786,6 +2023,20 @@ class PeerAgentClientService {
           psessExists: await _db.getChannelById(psessId) != null,
           legacyExists: await _db.getChannelById(legacyId) != null,
         );
+        if (hasInflightForChannel(channelId)) {
+          _log.info(
+            'skip history sync for $channelId — inflight turn in progress',
+            tag: _tag,
+          );
+          if (prioritizeSessionId != null &&
+              session.sessionId == prioritizeSessionId) {
+            prioritizedDone = true;
+            if (onPrioritizedChannelDone != null) {
+              await onPrioritizedChannelDone(0);
+            }
+          }
+          continue;
+        }
         final written = await syncHistory(
           peerId: peerId,
           remoteAgentId: remoteAgentId,
@@ -1930,11 +2181,13 @@ class PeerAgentClientService {
     }
 
     final remoteIds = <String>{};
+    final remoteRoleContentKeys = <String>{};
     for (var i = 0; i < history.length; i++) {
       final m = history[i];
       final isUser = m.role == 'user';
       final msgId = peerHistoryMessageId(m, channelId, i);
       remoteIds.add(msgId);
+      remoteRoleContentKeys.add(peerHistoryRoleContentKey(m.role, m.content));
       // Fold the reconstructed progress section (thinking/tools/plan) into the
       // same metadata shape the live stream produces — the bubble renders it
       // as one collapsible block above the answer.
@@ -1957,13 +2210,34 @@ class PeerAgentClientService {
       );
     }
 
-    // Drop local rows that are no longer in the remote transcript so the
-    // channel stays pull-authoritative without a full delete+rewrite wipe.
-    for (final row in existingAsc) {
-      final id = row['id'] as String?;
-      if (id != null && !remoteIds.contains(id)) {
-        await _db.deleteMessage(id);
+    // Drop stale remote-mirrored rows, but keep live local messages that the
+    // remote transcript does not yet contain (in-flight user send, streaming
+    // partials). Otherwise a sync mid-turn deletes the new uuid bubble and
+    // the previous assistant reply looks like the answer to the new message.
+    final preserveIds = <String>{};
+    for (final rec in snapshotInflightTurns()) {
+      if (rec.channelId != channelId) continue;
+      if (rec.userMessageId.isNotEmpty) preserveIds.add(rec.userMessageId);
+      if (rec.partialMessageId != null && rec.partialMessageId!.isNotEmpty) {
+        preserveIds.add(rec.partialMessageId!);
       }
+    }
+    final localRows = existingAsc.map((row) {
+      return PeerHistorySyncLocalRow(
+        id: row['id'] as String? ?? '',
+        senderType: row['sender_type'] as String? ?? '',
+        content: row['content'] as String? ?? '',
+        metadataJson: row['metadata'] as String?,
+      );
+    });
+    final toDelete = localMessageIdsToDeleteOnPeerHistorySync(
+      localRows: localRows,
+      remoteIds: remoteIds,
+      remoteRoleContentKeys: remoteRoleContentKeys,
+      preserveIds: preserveIds,
+    );
+    for (final id in toDelete) {
+      await _db.deleteMessage(id);
     }
 
     // User is actively viewing this channel — synced rows must not resurrect
@@ -2305,6 +2579,7 @@ class PeerAgentClientService {
       p.idleSince = DateTime.now();
     }
     p.onChunk?.call(content);
+    _schedulePersist(requestId);
   }
 
   void _onMetadata(Map<String, dynamic> data) {
@@ -2324,6 +2599,7 @@ class PeerAgentClientService {
   void _finishPending(String requestId, Map<String, dynamic> data) {
     final p = _pending.remove(requestId);
     if (p == null || p.completer.isCompleted) return;
+    _clearPersistedTurn(requestId);
     for (final entry in _approvalToRequest.entries.toList()) {
       if (entry.value == requestId) {
         _approvalToRequest.remove(entry.key);
@@ -2364,6 +2640,7 @@ class PeerAgentClientService {
     if (requestId == null) return;
     final p = _pending.remove(requestId);
     if (p == null || p.completer.isCompleted) return;
+    _clearPersistedTurn(requestId);
     for (final entry in _approvalToRequest.entries.toList()) {
       if (entry.value == requestId) {
         _approvalToRequest.remove(entry.key);
@@ -2379,7 +2656,9 @@ class PeerAgentClientService {
   void _onConnectionEvent(PeerConnectionEvent event) {
     if (event.type == PeerConnectionEventType.connected) {
       _requestAgentList(event.peerId);
-      unawaited(_resumeSuspendedTurns(event.peerId));
+      if (_handlersReadyForResume) {
+        unawaited(_resumeSuspendedTurns(event.peerId));
+      }
       _flushReconcileHints(event.peerId);
     } else if (event.type == PeerConnectionEventType.disconnected) {
       _suspendPendingForPeer(event.peerId);
@@ -2474,6 +2753,7 @@ class PeerAgentClientService {
         if (cur == null || cur.completer.isCompleted) return;
         if (!cur.resumeInFlight) return;
         _pending.remove(requestId);
+        _clearPersistedTurn(requestId);
         for (final e in _approvalToRequest.entries.toList()) {
           if (e.value == requestId) _approvalToRequest.remove(e.key);
         }

@@ -1516,6 +1516,7 @@
   },
   "chat_connectionInterrupted": "后台运行期间连接中断",
   "chat_connectionInterruptedRetry": "重试",
+  "chat_peerTurnStillRunning": "上一轮回复仍在继续，完成后即可发送",
   "chat_loopRoundLimitReached": "编排循环已达到最大轮次 {count} 次，已自动停止。",
   "@chat_loopRoundLimitReached": {
     "placeholders": {

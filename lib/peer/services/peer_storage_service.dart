@@ -6,6 +6,7 @@ import '../models/peer_store_share.dart';
 import '../../services/local_storage_service.dart';
 import '../../services/logger_service.dart';
 import '../../storage/store_protocol.dart' show StoreSpace, TrustLevel;
+import 'peer_inflight_turn.dart';
 
 /// P2P 配对设备和消息的持久化存储服务
 class PeerStorageService {
@@ -125,6 +126,28 @@ class PeerStorageService {
     ''');
     await db.execute(
       'CREATE INDEX IF NOT EXISTS idx_peer_hub_pending_status ON peer_hub_pending_approvals(status, created_at DESC)',
+    );
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS peer_inflight_turns (
+        request_id TEXT PRIMARY KEY,
+        peer_id TEXT NOT NULL,
+        remote_agent_id TEXT NOT NULL,
+        local_agent_id TEXT NOT NULL DEFAULT '',
+        channel_id TEXT NOT NULL DEFAULT '',
+        session_id TEXT NOT NULL DEFAULT '',
+        user_message_id TEXT NOT NULL DEFAULT '',
+        user_id TEXT NOT NULL DEFAULT '',
+        user_name TEXT NOT NULL DEFAULT '',
+        agent_name TEXT NOT NULL DEFAULT '',
+        received_length INTEGER NOT NULL DEFAULT 0,
+        accumulated_content TEXT NOT NULL DEFAULT '',
+        partial_message_id TEXT,
+        started_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL
+      )
+    ''');
+    await db.execute(
+      'CREATE INDEX IF NOT EXISTS idx_peer_inflight_turns_peer ON peer_inflight_turns(peer_id, updated_at DESC)',
     );
     await _migrateOwnerStoreSharesIfNeeded(db);
     _tablesReady = true;
@@ -798,6 +821,36 @@ class PeerStorageService {
       where: 'status = ? AND expires_at IS NOT NULL AND expires_at <= ?',
       whereArgs: ['pending', now],
     );
+  }
+
+  // ── In-flight peer agent turns (survive App process death) ──────────────
+
+  Future<void> upsertInflightTurn(PeerInflightTurnRecord record) async {
+    final db = await _db;
+    await db.insert(
+      'peer_inflight_turns',
+      record.toMap(),
+      conflictAlgorithm: ConflictAlgorithm.replace,
+    );
+  }
+
+  Future<void> deleteInflightTurn(String requestId) async {
+    if (requestId.isEmpty) return;
+    final db = await _db;
+    await db.delete(
+      'peer_inflight_turns',
+      where: 'request_id = ?',
+      whereArgs: [requestId],
+    );
+  }
+
+  Future<List<PeerInflightTurnRecord>> loadAllInflightTurns() async {
+    final db = await _db;
+    final rows = await db.query(
+      'peer_inflight_turns',
+      orderBy: 'updated_at ASC',
+    );
+    return rows.map(PeerInflightTurnRecord.fromMap).toList();
   }
 }
 

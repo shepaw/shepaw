@@ -915,6 +915,9 @@ class GroupAgentExecutor {
           sessionId: peerSessionId,
           attachments: attachments,
           cancelToken: acpCancellationToken,
+          localAgentId: agent.id,
+          channelId: channelId,
+          agentName: agent.name,
           onRequestStarted: (requestId) {
             final spanId = TraceService.instance.addSpan(
               traceId: groupTraceId,

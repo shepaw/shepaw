@@ -2488,6 +2488,9 @@ class AppLocalizationsZh extends AppLocalizations {
   String get chat_connectionInterruptedRetry => '重试';
 
   @override
+  String get chat_peerTurnStillRunning => '上一轮回复仍在继续，完成后即可发送';
+
+  @override
   String chat_loopRoundLimitReached(int count) {
     return '编排循环已达到最大轮次 $count 次，已自动停止。';
   }

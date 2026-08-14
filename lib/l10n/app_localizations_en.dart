@@ -2575,6 +2575,10 @@ class AppLocalizationsEn extends AppLocalizations {
   String get chat_connectionInterruptedRetry => 'Retry';
 
   @override
+  String get chat_peerTurnStillRunning =>
+      'The previous reply is still running. Please wait before sending.';
+
+  @override
   String chat_loopRoundLimitReached(int count) {
     return 'Orchestration loop reached the maximum of $count rounds and has been stopped.';
   }

@@ -300,6 +300,7 @@ class AppBootstrap {
       // 两侧都启动，使任意设备既可作提供方也可作消费方。
       PeerAgentHostService.instance.start();
       await PeerAgentClientService.instance.start();
+      await ChatService().restorePeerInflightTurns();
       // 存储空间（docs/storage_protocol_spec.md v1）：master 帧处理 + staging GC。
       await StoreService.instance.start();
       // 同步引擎（spec v3 §6）：未同步队列 + 变更游标 + 批量原子上传。

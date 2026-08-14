@@ -533,6 +533,18 @@ mixin _MessagingOps on _ChatControllerBase {
         throw Exception('Agent has no valid endpoint');
       }
 
+      if (remoteAgent.isPeerAgent && currentChannelId != null) {
+        final liveTask = chatService.getActiveTask(currentChannelId!);
+        final hydrated = PeerAgentClientService.instance
+            .hasInflightForChannel(currentChannelId!);
+        if ((liveTask != null && !liveTask.isComplete) || hydrated) {
+          reattachToActiveTask();
+          awaitingAsyncTask = liveTask != null && !liveTask.isComplete;
+          _emit(ShowSnackBarEvent('chat_peerTurnStillRunning'));
+          return;
+        }
+      }
+
       // 注意：不再在此做前置的 checkAgentHealth 探测。
       // AgentMessagingService 内部在建连阶段已带 3 次指数退避重试 +
       // checkAgentHealth 兜底，并通过 onReconnecting 回调把进度推给 UI。
@@ -690,7 +702,12 @@ mixin _MessagingOps on _ChatControllerBase {
       messageQueue.clear();
       await loadMessages();
       final err = e.toString();
-      if (err.contains('not reachable after')) {
+      if (e is PeerTurnInFlightException) {
+        reattachToActiveTask();
+        awaitingAsyncTask =
+            chatService.getActiveTask(currentChannelId ?? '') != null;
+        _emit(ShowSnackBarEvent('chat_peerTurnStillRunning'));
+      } else if (err.contains('not reachable after')) {
         _emit(ShowErrorSnackBarEvent('chat_reconnectFailed'));
       } else {
         _emit(ShowErrorSnackBarEvent('$e'));

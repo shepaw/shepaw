@@ -34,6 +34,7 @@ import '../session/history_compactor.dart';
 import '../session/history_compaction_cache_service.dart';
 import '../remote_agent_service.dart';
 import '../../peer/services/peer_agent_client_service.dart';
+import '../../peer/services/peer_inflight_turn.dart';
 import '../../peer/services/peer_agent_host_service.dart' show isPeerAgentChannel;
 import '../../models/peer_boundary_config.dart';
 import '../../service_locator.dart' show getIt;
@@ -123,6 +124,13 @@ class AgentMessagingService {
         _acpConnections = acpConnections,
         _activeTasks = activeTasks;
 
+  final Map<String, ({
+    PeerInflightTurnRecord rec,
+    RemoteAgent agent,
+    StreamContentSplitter splitter,
+    StreamingFlushHelper flushHelper,
+  })> _restoredPeerCtx = {};
+
   /// Channels whose DM task was finalized early by an explicit user stop.
   /// Guards background send / async-finalize paths against duplicate DB saves.
   final Set<String> _userStoppedChannels = {};
@@ -159,6 +167,190 @@ class AgentMessagingService {
   // ---------------------------------------------------------------------------
   // Public API
   // ---------------------------------------------------------------------------
+
+  /// Recreate [ActiveTask]s for peer turns hydrated after a process kill so
+  /// the chat UI can reattach and the resume path can persist the final
+  /// message. Safe to call more than once.
+  Future<void> restorePeerInflightTurns() async {
+    final client = PeerAgentClientService.instance;
+    final turns = client.snapshotInflightTurns();
+    try {
+      for (final rec in turns) {
+        if (rec.channelId.isEmpty || rec.localAgentId.isEmpty) continue;
+        if (_activeTasks.containsKey(rec.channelId)) continue;
+        await _prepareRestoredPeerTurn(rec);
+      }
+    } finally {
+      // Handlers must be attached before resume: a finished turn answers `done`
+      // immediately and would otherwise complete with nobody listening.
+      client.resumeHydratedTurns();
+    }
+    for (final rec in turns) {
+      if (_activeTasks[rec.channelId]?.taskId != rec.requestId) continue;
+      unawaited(_awaitRestoredPeerTurn(rec));
+    }
+  }
+
+  Future<void> _prepareRestoredPeerTurn(PeerInflightTurnRecord rec) async {
+    final agent = await _db.getRemoteAgentById(rec.localAgentId);
+    if (agent == null || !agent.isPeerAgent) {
+      LoggerService().warning(
+        'Cannot restore peer turn ${rec.requestId}: agent ${rec.localAgentId} missing',
+        tag: 'AgentMessagingService',
+      );
+      return;
+    }
+    final channel = await _db.getChannelById(rec.channelId);
+    if (channel != null && channel.isGroup) {
+      return;
+    }
+
+    final activeTask = ActiveTask(
+      taskId: rec.requestId,
+      agentId: agent.id,
+      agentName: rec.agentName.isNotEmpty ? rec.agentName : agent.name,
+      channelId: rec.channelId,
+      userMessageId: rec.userMessageId,
+      userId: rec.userId,
+      userName: rec.userName,
+    );
+    activeTask.accumulatedContent = rec.accumulatedContent;
+    activeTask.partialMessageId = rec.partialMessageId;
+    activeTask.metadata = {
+      'request_id': rec.requestId,
+      'peer_id': rec.peerId,
+      'remote_agent_id': rec.remoteAgentId,
+      'peer_session_id': rec.sessionId,
+      'user_message_id': rec.userMessageId,
+      'restored_inflight': true,
+    };
+    _activeTasks[rec.channelId] = activeTask;
+    updateTypingAgentIds();
+    ForegroundTaskService().acquireTask(activeTask.agentName);
+
+    final splitter = StreamContentSplitter();
+    splitter.answerContent = rec.accumulatedContent;
+    final flushHelper = StreamingFlushHelper.fromAgent(
+      db: _db,
+      activeTask: activeTask,
+      agent: agent,
+      channelId: rec.channelId,
+      replyToId: rec.userMessageId,
+      traceId: rec.requestId,
+    );
+    _restoredPeerCtx[rec.requestId] = (
+      rec: rec,
+      agent: agent,
+      splitter: splitter,
+      flushHelper: flushHelper,
+    );
+
+    PeerAgentClientService.instance.attachPendingHandlers(
+      rec.requestId,
+      onChunk: (chunk) {
+        final answerDelta = splitter.onChunk(chunk);
+        if (answerDelta.isNotEmpty) {
+          activeTask.accumulatedContent += answerDelta;
+          PeerAgentClientService.instance.noteInflightAnswer(
+            rec.requestId,
+            activeTask.accumulatedContent,
+          );
+          activeTask.onStreamChunk?.call(answerDelta);
+          flushHelper.schedule();
+        } else {
+          final progressMeta = splitter.progressMetadataDelta();
+          if (progressMeta != null) {
+            final merged = Map<String, dynamic>.from(activeTask.metadata ?? {});
+            merged.addAll(progressMeta);
+            activeTask.metadata = merged;
+            activeTask.onMessageMetadata?.call(progressMeta);
+          }
+        }
+      },
+      onMetadata: (data) {
+        final merged = Map<String, dynamic>.from(activeTask.metadata ?? {});
+        merged.addAll(splitter.onMetadata(data));
+        activeTask.metadata = merged;
+        activeTask.onMessageMetadata?.call(data);
+      },
+      onActionConfirmation: (data) {
+        final meta = Map<String, dynamic>.from(activeTask.metadata ?? {});
+        meta['action_confirmation'] = Map<String, dynamic>.from(data);
+        activeTask.metadata = meta;
+        activeTask.onActionConfirmation?.call(data);
+      },
+    );
+  }
+
+  Future<void> _awaitRestoredPeerTurn(PeerInflightTurnRecord rec) async {
+    final ctx = _restoredPeerCtx.remove(rec.requestId);
+    final activeTask = _activeTasks[rec.channelId];
+    if (ctx == null || activeTask == null) return;
+    final splitter = ctx.splitter;
+    final flushHelper = ctx.flushHelper;
+    final agent = ctx.agent;
+
+    try {
+      final result = await PeerAgentClientService.instance
+          .awaitPendingTurn(rec.requestId);
+      if (activeTask.isComplete) return;
+
+      activeTask.isComplete = true;
+      activeTask.onTaskFinished?.call();
+
+      final content = buildPeerFinalContent(
+        answerContent: splitter.answerContent,
+        progressContent: splitter.progressContent,
+        accumulatedContent: activeTask.accumulatedContent,
+        resultContent: result.content,
+        wasCancelled: result.content.contains('[Stopped]'),
+      );
+      final meta = Map<String, dynamic>.from(activeTask.metadata ?? {});
+      meta['request_id'] = rec.requestId;
+      if (result.metadata != null) meta.addAll(result.metadata!);
+      meta.addAll(splitter.finalProgressMetadata());
+      meta.remove('restored_inflight');
+
+      await flushHelper.deletePartial();
+      final msg = Message(
+        id: _uuid.v4(),
+        content: content,
+        timestampMs: DateTime.now().millisecondsSinceEpoch,
+        from: MessageFrom(id: agent.id, type: 'agent', name: agent.name),
+        to: MessageFrom(id: rec.userId, type: 'user', name: rec.userName),
+        type: MessageType.text,
+        replyTo: rec.userMessageId.isEmpty ? null : rec.userMessageId,
+        metadata: meta,
+      );
+      await saveMessageToChannel(msg, agent.id, channelId: rec.channelId);
+      _emitCompletion(
+        channelId: rec.channelId,
+        agent: agent,
+        outcome: AgentTaskOutcome.completed,
+        finalMessage: msg,
+      );
+    } catch (e, st) {
+      LoggerService().error(
+        'Restored peer turn ${rec.requestId} failed: $e',
+        tag: 'AgentMessagingService',
+        error: e,
+        stackTrace: st,
+      );
+      await flushHelper.deletePartial();
+      activeTask.isComplete = true;
+      activeTask.onTaskFinished?.call();
+    } finally {
+      flushHelper.cancel();
+      final removed = _activeTasks.remove(rec.channelId);
+      if (removed != null) {
+        updateTypingAgentIds();
+        releaseForegroundTask(removed.agentName);
+        if (!removed.dbSaveCompleter.isCompleted) {
+          removed.dbSaveCompleter.complete();
+        }
+      }
+    }
+  }
 
   /// Force-stop the in-flight 1:1 task for [channelId]: mark complete
   /// synchronously (prevents reattach), persist `[Stopped]` to DB, and
@@ -1346,6 +1538,12 @@ class AgentMessagingService {
         sessionId: peerSessionId,
         attachments: attachments,
         cancelToken: acpCancellationToken,
+        localAgentId: agent.id,
+        channelId: effectiveChannelId,
+        userMessageId: userMessage.id,
+        userId: userMessage.from.id,
+        userName: userMessage.from.name,
+        agentName: agent.name,
         onRequestStarted: (requestId) {
           peerRequestId = requestId;
           final spanId = TraceService.instance.addSpan(
@@ -1374,6 +1572,12 @@ class AgentMessagingService {
           final answerDelta = splitter.onChunk(chunk);
           if (answerDelta.isNotEmpty) {
             activeTask.accumulatedContent += answerDelta;
+            if (peerRequestId != null) {
+              PeerAgentClientService.instance.noteInflightAnswer(
+                peerRequestId!,
+                activeTask.accumulatedContent,
+              );
+            }
             activeTask.onStreamChunk?.call(answerDelta);
             flushHelper.schedule();
             infLogPeer.onTextChunk(traceId, answerDelta);

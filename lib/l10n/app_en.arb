@@ -1031,6 +1031,7 @@
   },
   "chat_connectionInterrupted": "Connection lost while in background",
   "chat_connectionInterruptedRetry": "Retry",
+  "chat_peerTurnStillRunning": "The previous reply is still running. Please wait before sending.",
   "chat_loopRoundLimitReached": "Orchestration loop reached the maximum of {count} rounds and has been stopped.",
   "@chat_loopRoundLimitReached": {
     "placeholders": {

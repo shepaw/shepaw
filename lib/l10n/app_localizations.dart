@@ -4574,6 +4574,12 @@ abstract class AppLocalizations {
   /// **'重试'**
   String get chat_connectionInterruptedRetry;
 
+  /// No description provided for @chat_peerTurnStillRunning.
+  ///
+  /// In zh, this message translates to:
+  /// **'上一轮回复仍在继续，完成后即可发送'**
+  String get chat_peerTurnStillRunning;
+
   /// No description provided for @chat_loopRoundLimitReached.
   ///
   /// In zh, this message translates to:
