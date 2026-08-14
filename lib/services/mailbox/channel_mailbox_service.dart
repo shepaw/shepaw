@@ -7,6 +7,8 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 
 import '../logger_service.dart';
+import '../peer_key_utils.dart';
+import '../../models/remote_agent.dart';
 
 class ChannelMailboxException implements Exception {
   ChannelMailboxException(this.message);
@@ -20,7 +22,11 @@ class MailboxReply {
     required this.id,
     required this.messageId,
     required this.replyTo,
+    required this.requestId,
     required this.sessionId,
+    required this.groupId,
+    required this.targetId,
+    required this.kind,
     required this.ciphertext,
     required this.createdAt,
   });
@@ -28,7 +34,11 @@ class MailboxReply {
   final String id;
   final String messageId;
   final String replyTo;
+  final String requestId;
   final String sessionId;
+  final String groupId;
+  final String targetId;
+  final String kind;
   final String ciphertext;
   final String createdAt;
 
@@ -36,7 +46,13 @@ class MailboxReply {
         id: j['id'] as String,
         messageId: j['message_id'] as String? ?? '',
         replyTo: j['reply_to'] as String? ?? '',
+        requestId: j['request_id'] as String? ?? '',
         sessionId: j['session_id'] as String? ?? '',
+        groupId: j['group_id'] as String? ?? '',
+        targetId: j['target_id'] as String? ??
+            j['agent_id'] as String? ??
+            '',
+        kind: j['kind'] as String? ?? 'chat',
         ciphertext: j['ciphertext'] as String,
         createdAt: j['created_at'] as String? ?? '',
       );
@@ -47,9 +63,21 @@ class ChannelMailboxService {
 
   final http.Client _client;
 
+  /// True when [agent] uses Channel relay and has a peer pubkey for seal-box.
+  static bool agentHasChannelInbox(RemoteAgent agent) {
+    if (!isChannelRelayEndpoint(agent.endpoint)) return false;
+    final pub = decodeCachedPeerPublicKey(
+      agent.metadata['cached_peer_static_public_key'],
+    );
+    if (pub == null) return false;
+    final acpId = resolveAgentId(
+      agent.endpoint,
+      fallback: agent.metadata['target_agent_id'] as String? ?? agent.id,
+    );
+    return acpId.isNotEmpty;
+  }
+
   /// True only for Channel Service relay URLs (`/proxy/<id>/…` or `/c/<alias>/…`).
-  /// LAN / loopback ACP endpoints (`ws://192.168.x.x:port/acp/ws`) must not
-  /// match — otherwise the app would hit a non-existent mailbox API and stall.
   static bool isChannelRelayEndpoint(String endpoint) {
     final trimmed = endpoint.trim();
     if (trimmed.isEmpty) return false;
@@ -66,9 +94,6 @@ class ChannelMailboxService {
     }
   }
 
-  /// Derive HTTPS channel base from an agent WS/HTTP endpoint.
-  /// Returns null for non-relay (LAN) endpoints so mailbox/access stay optional.
-  /// e.g. `wss://host/proxy/xxx/acp/ws` → `https://host`
   static String? channelBaseFromEndpoint(String endpoint) {
     if (!isChannelRelayEndpoint(endpoint)) return null;
     final trimmed = endpoint.trim();
@@ -84,7 +109,6 @@ class ChannelMailboxService {
     }
   }
 
-  /// Extract ACP agent id from endpoint query (`agentId=`) or return [fallback].
   static String resolveAgentId(String endpoint, {String? fallback}) {
     try {
       final uri = Uri.parse(endpoint);
@@ -99,22 +123,29 @@ class ChannelMailboxService {
     required String agentId,
     required String callerFp,
     required String messageId,
+    required String requestId,
     required String sessionId,
     required String ciphertext,
+    String? groupId,
   }) async {
     final uri = Uri.parse(
       '$channelBase/api/v1/mailbox/${Uri.encodeComponent(agentId)}/messages',
     );
+    final body = <String, dynamic>{
+      'caller_fp': callerFp,
+      'message_id': messageId,
+      'request_id': requestId,
+      'session_id': sessionId,
+      'ciphertext': ciphertext,
+    };
+    if (groupId != null && groupId.isNotEmpty) {
+      body['group_id'] = groupId;
+    }
     final resp = await _client
         .post(
           uri,
           headers: {'content-type': 'application/json'},
-          body: jsonEncode({
-            'caller_fp': callerFp,
-            'message_id': messageId,
-            'session_id': sessionId,
-            'ciphertext': ciphertext,
-          }),
+          body: jsonEncode(body),
         )
         .timeout(const Duration(seconds: 15));
     if (resp.statusCode != 201 && resp.statusCode != 200) {
@@ -141,6 +172,27 @@ class ChannelMailboxService {
     final uri = Uri.parse(
       '$channelBase/api/v1/mailbox/${Uri.encodeComponent(agentId)}/replies',
     ).replace(queryParameters: params);
+    return _getReplies(uri);
+  }
+
+  /// Cross-target inbox fetch (app startup / unified pull).
+  Future<List<MailboxReply>> fetchInboxReplies({
+    required String channelBase,
+    required String callerFp,
+    String? after,
+    int limit = 50,
+  }) async {
+    final params = <String, String>{
+      'caller_fp': callerFp,
+      'limit': '$limit',
+    };
+    if (after != null && after.isNotEmpty) params['after'] = after;
+    final uri = Uri.parse('$channelBase/api/v1/inbox/replies')
+        .replace(queryParameters: params);
+    return _getReplies(uri);
+  }
+
+  Future<List<MailboxReply>> _getReplies(Uri uri) async {
     final resp = await _client.get(uri).timeout(const Duration(seconds: 15));
     if (resp.statusCode != 200) {
       throw ChannelMailboxException(
@@ -165,6 +217,20 @@ class ChannelMailboxService {
     final uri = Uri.parse(
       '$channelBase/api/v1/mailbox/${Uri.encodeComponent(agentId)}/replies/ack',
     );
+    await _postAck(uri, callerFp, ids);
+  }
+
+  Future<void> ackInboxReplies({
+    required String channelBase,
+    required String callerFp,
+    required List<String> ids,
+  }) async {
+    if (ids.isEmpty) return;
+    final uri = Uri.parse('$channelBase/api/v1/inbox/replies/ack');
+    await _postAck(uri, callerFp, ids);
+  }
+
+  Future<void> _postAck(Uri uri, String callerFp, List<String> ids) async {
     final resp = await _client
         .post(
           uri,

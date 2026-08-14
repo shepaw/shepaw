@@ -2309,19 +2309,47 @@ $originalQuestion
 
       for (final reply in replies) {
         try {
+          // 流式片段只在活跃轮询中消费；进页拉取时跳过并 ack 掉 orphan chunk
+          if (reply.kind == 'stream') {
+            ackIds.add(reply.id);
+            continue;
+          }
+
           final payload = await mailboxOpenJson(
             reply.ciphertext,
             identity.privateKey,
           );
+          final payloadKind = payload['kind']?.toString() ?? reply.kind;
+          if (payloadKind == 'stream' && payload['is_final'] != true) {
+            ackIds.add(reply.id);
+            continue;
+          }
+
           final content = payload['content']?.toString() ?? '';
           if (content.isEmpty) {
             ackIds.add(reply.id);
             continue;
           }
-          final msgId = reply.messageId.isNotEmpty
-              ? reply.messageId
-              : const Uuid().v4();
-          // Skip if already persisted (idempotent)
+
+          // 按 mailbox 条目 id 去重，避免重复收取
+          final mailboxEntryId = reply.id;
+          final existingByEntry = await _databaseService.getMessagesByChannel(
+            channelId,
+            limit: 500,
+          );
+          final alreadyByEntry = existingByEntry.any(
+            (m) => m.metadata?['mailbox_entry_id'] == mailboxEntryId,
+          );
+          if (alreadyByEntry) {
+            ackIds.add(reply.id);
+            continue;
+          }
+
+          final msgId = reply.messageId.endsWith(':final')
+              ? 'inbox_${reply.replyTo}'
+              : (reply.messageId.isNotEmpty
+                  ? reply.messageId
+                  : 'inbox_$mailboxEntryId');
           final existing = await _databaseService.getMessageById(msgId);
           if (existing != null) {
             ackIds.add(reply.id);
@@ -2340,7 +2368,9 @@ $originalQuestion
             metadata: {
               'status': 'completed',
               'from_mailbox': true,
+              'mailbox_entry_id': mailboxEntryId,
               'session_id': reply.sessionId,
+              if (reply.requestId.isNotEmpty) 'request_id': reply.requestId,
             },
           );
           await _databaseService.createMessage(

@@ -28,6 +28,7 @@ import '../she_service.dart';
 import '../noise_identity.dart';
 import '../mailbox/mailbox_seal.dart';
 import '../mailbox/channel_mailbox_service.dart';
+import '../mailbox/mailbox_inbox_poller.dart';
 import '../../clis/shepaw/shepaw_cli.dart';
 import '../session/session_history_service.dart';
 import '../session/history_compactor.dart';
@@ -1179,10 +1180,7 @@ class AgentMessagingService {
           ? (chatResp.result as Map)['status']?.toString()
           : null;
       if (busyStatus == 'busy') {
-        flushHelper?.cancel();
-        flushHelper?.deletePartialUnawaited();
         connection.unregisterTaskCallbacks(effectiveTaskId);
-        activeTask.isComplete = true;
         if (!taskCompleter.isCompleted) {
           taskCompleter.complete();
         }
@@ -1191,8 +1189,18 @@ class AgentMessagingService {
           agent: agent,
           userMessage: userMessage,
           sessionId: sessionId ?? '',
+          requestId: effectiveTaskId,
           chatHistory: chatHistory,
+          onStreamChunk: (chunk) {
+            activeTask.accumulatedContent += chunk;
+            activeTask.onStreamChunk?.call(chunk);
+            flushHelper?.schedule();
+          },
         );
+
+        flushHelper?.cancel();
+        flushHelper?.deletePartialUnawaited();
+        activeTask.isComplete = true;
         return left;
       }
 
@@ -2694,12 +2702,14 @@ class AgentMessagingService {
     return '$y-$mo-$d $h:$mi:$s';
   }
 
-  /// Agent busy → seal message into channel mailbox; mark user msg as left_message.
+  /// Agent busy → seal message into channel inbox, poll for streamed reply.
   Future<Message> _leaveMailboxMessage({
     required RemoteAgent agent,
     required Message userMessage,
     required String sessionId,
+    required String requestId,
     List<Map<String, dynamic>>? chatHistory,
+    void Function(String chunk)? onStreamChunk,
   }) async {
     Message notice({required String content}) => Message(
           id: const Uuid().v4(),
@@ -2742,6 +2752,7 @@ class AgentMessagingService {
         {
           'message': userMessage.content,
           'message_id': userMessage.id,
+          'request_id': requestId,
           'session_id': sessionId,
           'history': chatHistory,
           'ts': DateTime.now().millisecondsSinceEpoch,
@@ -2755,6 +2766,7 @@ class AgentMessagingService {
         agentId: acpAgentId,
         callerFp: identity.fingerprintHex,
         messageId: userMessage.id,
+        requestId: requestId,
         sessionId: sessionId,
         ciphertext: ciphertext,
       );
@@ -2762,14 +2774,50 @@ class AgentMessagingService {
       await _db.updateMessageMetadata(userMessage.id, {
         ...?userMessage.metadata,
         'status': 'left_message',
+        'request_id': requestId,
         'mailbox_pending': pending,
       });
 
-      return notice(
-        content: pending > 0
-            ? '对方正忙，消息已留言（前面还有 ${pending - 1} 条）。下次进入聊天页时会自动收取回复。'
-            : '对方正忙，消息已留言。下次进入聊天页时会自动收取回复。',
-      );
+      try {
+        final result = await MailboxInboxPoller(mailbox: mailbox)
+            .pollUntilComplete(
+          channelBase: channelBase,
+          agentId: acpAgentId,
+          callerFp: identity.fingerprintHex,
+          userMessageId: userMessage.id,
+          requestId: requestId,
+          sessionId: sessionId,
+          onStreamChunk: onStreamChunk,
+        );
+
+        return Message(
+          id: 'inbox_${userMessage.id}',
+          content: result.content,
+          timestampMs: DateTime.now().millisecondsSinceEpoch,
+          from: MessageFrom(id: agent.id, type: 'agent', name: agent.name),
+          to: MessageFrom(
+            id: userMessage.from.id,
+            type: 'user',
+            name: userMessage.from.name,
+          ),
+          type: MessageType.text,
+          replyTo: userMessage.id,
+          metadata: {
+            'status': 'completed',
+            'from_mailbox': true,
+            'request_id': result.requestId,
+            'session_id': result.sessionId,
+            if (result.groupId != null && result.groupId!.isNotEmpty)
+              'group_id': result.groupId,
+          },
+        );
+      } on TimeoutException {
+        return notice(
+          content: pending > 0
+              ? '对方正忙，消息已留言（前面还有 ${pending - 1} 条）。稍后会继续收取回复。'
+              : '对方正忙，消息已留言。稍后会继续收取回复。',
+        );
+      }
     } catch (e, st) {
       LoggerService().error(
         'Leave mailbox failed: $e',
