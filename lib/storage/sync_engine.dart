@@ -30,6 +30,7 @@ class SyncStatus {
     this.uploadingSeq,
     this.masterIsSelf = true,
     this.masterOnline = true,
+    this.lastError,
   });
 
   static const empty = SyncStatus();
@@ -41,6 +42,9 @@ class SyncStatus {
   final int? uploadingSeq;
   final bool masterIsSelf;
   final bool masterOnline;
+
+  /// 最近一次 syncNow 失败原因（错误码或短句）；成功清空队列后为 null。
+  final String? lastError;
 
   bool get hasPending => pendingCount > 0;
 
@@ -64,6 +68,8 @@ class SyncEngine {
 
   static const _tag = 'SyncEngine';
   static const _heartbeat = Duration(seconds: 30);
+  /// 经 peer 控制帧上传时小于 LocalStore.maxReadChunk，避免 base64 后撑爆通道。
+  static const _syncChunk = 32 * 1024;
 
   final _log = LoggerService();
   SyncJournal? _journal;
@@ -75,6 +81,8 @@ class SyncEngine {
   StreamSubscription<PeerConnectionEvent>? _eventSub;
   bool _syncing = false;
   int? _uploadingSeq;
+  String? _lastError;
+  Future<void>? _syncFlight;
   final _statusController = StreamController<SyncStatus>.broadcast();
   SyncStatus _latestStatus = SyncStatus.empty;
 
@@ -145,6 +153,8 @@ class SyncEngine {
     _journal = null;
     _syncing = false;
     _uploadingSeq = null;
+    _lastError = null;
+    _syncFlight = null;
     _latestStatus = SyncStatus.empty;
   }
 
@@ -207,6 +217,7 @@ class SyncEngine {
       uploadingSeq: _uploadingSeq,
       masterIsSelf: masterIsSelf,
       masterOnline: masterOnline,
+      lastError: _lastError,
     );
     if (!_statusController.isClosed) _statusController.add(_latestStatus);
   }
@@ -214,10 +225,21 @@ class SyncEngine {
   // ────────────────────────────── 上传主循环 ──
 
   /// 单航班同步：master 可达时按游标差量重放。
-  Future<void> syncNow() async {
+  /// 已在同步中时加入当前航班（避免「立即同步」被静默丢掉）。
+  Future<void> syncNow() {
+    final flight = _syncFlight;
+    if (flight != null) return flight;
+    final started = _syncNowBody();
+    _syncFlight = started;
+    return started.whenComplete(() {
+      if (identical(_syncFlight, started)) _syncFlight = null;
+    });
+  }
+
+  Future<void> _syncNowBody() async {
     final journal = _journal;
     final transport = _transport;
-    if (journal == null || transport == null || _syncing) return;
+    if (journal == null || transport == null) return;
     _syncing = true;
     _uploadingSeq = null;
     await _emitStatus();
@@ -229,16 +251,25 @@ class SyncEngine {
         if (cursors.changeSeq > 0) {
           await journal.dequeueThrough(cursors.changeSeq);
         }
+        _lastError = null;
         return;
       }
-      if (!await transport.isMasterOnline) return;
+      if (!await transport.isMasterOnline) {
+        _lastError = StoreError.masterOffline;
+        _log.warning('syncNow skipped: master offline', tag: _tag);
+        return;
+      }
 
       // 对账（spec §6.2）
       final hello = await transport.call(StoreFrame(
           op: StoreOp.syncHello,
           payload: {'device': _deviceId}));
-      if (hello == null || hello.containsKey('_error')) return;
-      final applied = hello['applied_seq'] as int? ?? 0;
+      if (hello == null || hello.containsKey('_error')) {
+        _lastError = hello?['_error'] as String? ?? StoreError.masterOffline;
+        _log.warning('sync.hello failed: $_lastError', tag: _tag);
+        return;
+      }
+      final applied = _asInt(hello['applied_seq']) ?? 0;
       final local = await journal.cursors();
 
       // B2：master applied 落后于本地 ack → 回退 ack，并重推本地正式区差量
@@ -265,7 +296,11 @@ class SyncEngine {
         if (!ok) break; // 保序：失败留队，下轮重试
         await journal.dequeueThrough(entry.seq);
       }
+      if ((await journal.pendingCount()) == 0) {
+        _lastError = null;
+      }
     } catch (e, st) {
+      _lastError = '$e';
       _log.warning('syncNow failed: $e', tag: _tag);
       _log.debug('$st', tag: _tag);
     } finally {
@@ -296,16 +331,18 @@ class SyncEngine {
             'sha256': file.sha256,
           }));
       if (begin == null || begin.containsKey('_error')) {
-        _log.warning('write.begin failed for ${file.path}: ${begin?['_error']}',
+        _lastError = begin?['_error'] as String? ?? StoreError.internal;
+        _log.warning(
+            'write.begin failed for ${file.path}: $_lastError',
             tag: _tag);
         return false;
       }
       final uploadId = begin['upload_id'] as String;
-      var offset = begin['received'] as int? ?? 0;
+      var offset = _asInt(begin['received']) ?? 0;
       while (offset < local.length) {
-        final end = (offset + LocalStore.maxReadChunk) > local.length
+        final end = (offset + _syncChunk) > local.length
             ? local.length
-            : offset + LocalStore.maxReadChunk;
+            : offset + _syncChunk;
         final chunk = await transport.call(StoreFrame(
             op: StoreOp.writeChunk,
             payload: {
@@ -315,8 +352,14 @@ class SyncEngine {
               'data': base64Encode(
                   Uint8List.fromList(local.sublist(offset, end))),
             }));
-        if (chunk == null || chunk.containsKey('_error')) return false;
-        offset = chunk['received'] as int? ?? end;
+        if (chunk == null || chunk.containsKey('_error')) {
+          _lastError = chunk?['_error'] as String? ?? StoreError.internal;
+          _log.warning(
+              'write.chunk failed for ${file.path} offset=$offset: $_lastError',
+              tag: _tag);
+          return false;
+        }
+        offset = _asInt(chunk['received']) ?? end;
       }
       uploadIds.add(uploadId);
     }
@@ -328,12 +371,17 @@ class SyncEngine {
           'upload_ids': uploadIds,
           'upto_seq': entry.seq,
         }));
-    if (res == null || res.containsKey('_error')) return false;
+    if (res == null || res.containsKey('_error')) {
+      _lastError = res?['_error'] as String? ?? StoreError.internal;
+      return false;
+    }
     final failed = (res['failed'] as List?) ?? const [];
     if (failed.isNotEmpty) {
+      _lastError = 'commit failed: $failed';
       _log.warning('master commit failed: $failed', tag: _tag);
       return false;
     }
+    _lastError = null;
     return true;
   }
 
@@ -345,11 +393,22 @@ class SyncEngine {
           'path': entry.path,
           'upto_seq': entry.seq,
         }));
-    if (res == null) return false;
+    if (res == null) {
+      _lastError = StoreError.masterOffline;
+      return false;
+    }
     final err = res['_error'];
     // 幂等：已删除 / 本就不存在 → 视为成功（重放不死锁）
-    if (err == StoreError.notFound) return true;
-    return !res.containsKey('_error');
+    if (err == StoreError.notFound) {
+      _lastError = null;
+      return true;
+    }
+    if (res.containsKey('_error')) {
+      _lastError = err as String? ?? StoreError.internal;
+      return false;
+    }
+    _lastError = null;
+    return true;
   }
 
   /// master applied 落后时：按 hash 对账本机正式区并差量重推。
@@ -395,7 +454,7 @@ class SyncEngine {
       var offset = 0;
       while (offset < size) {
         final (chunk, _, eof) = await store.read(
-            deviceId, space, relPath, offset, LocalStore.maxReadChunk);
+            deviceId, space, relPath, offset, _syncChunk);
         if (chunk.isEmpty && size > 0) return null;
         builder.add(chunk);
         offset += chunk.length;
@@ -422,4 +481,10 @@ class StoreServiceTransport implements SyncTransport {
 
   @override
   Future<Map<String, dynamic>?> call(StoreFrame frame) => _callFn(frame);
+}
+
+int? _asInt(dynamic v) {
+  if (v is int) return v;
+  if (v is num) return v.toInt();
+  return null;
 }

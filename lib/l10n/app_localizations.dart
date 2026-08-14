@@ -10082,6 +10082,24 @@ abstract class AppLocalizations {
   /// **'备份与恢复'**
   String get storage_entrySnapshots;
 
+  /// No description provided for @storage_entrySnapshotsSub.
+  ///
+  /// In zh, this message translates to:
+  /// **'加密快照与全量恢复'**
+  String get storage_entrySnapshotsSub;
+
+  /// No description provided for @storage_createBackup.
+  ///
+  /// In zh, this message translates to:
+  /// **'备份当前数据'**
+  String get storage_createBackup;
+
+  /// No description provided for @storage_noSnapshotsHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'创建第一份加密快照，即可随时恢复本机数据。'**
+  String get storage_noSnapshotsHint;
+
   /// No description provided for @storage_entrySpace.
   ///
   /// In zh, this message translates to:
@@ -10303,6 +10321,18 @@ abstract class AppLocalizations {
   /// In zh, this message translates to:
   /// **'正在上传'**
   String get storage_pendingUploading;
+
+  /// No description provided for @storage_syncFailed.
+  ///
+  /// In zh, this message translates to:
+  /// **'同步失败：{error}'**
+  String storage_syncFailed(String error);
+
+  /// No description provided for @storage_syncStillPending.
+  ///
+  /// In zh, this message translates to:
+  /// **'同步结束，仍有 {count} 个文件待发送'**
+  String storage_syncStillPending(int count);
 
   /// No description provided for @storage_pendingKindCommit.
   ///

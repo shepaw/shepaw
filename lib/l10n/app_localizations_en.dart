@@ -5770,6 +5770,17 @@ class AppLocalizationsEn extends AppLocalizations {
   String get storage_entrySnapshots => 'Backup & Restore';
 
   @override
+  String get storage_entrySnapshotsSub =>
+      'Encrypted snapshots and full restore';
+
+  @override
+  String get storage_createBackup => 'Back up this device';
+
+  @override
+  String get storage_noSnapshotsHint =>
+      'Create your first encrypted snapshot so you can restore this device anytime.';
+
+  @override
   String get storage_entrySpace => 'Local Space';
 
   @override
@@ -5900,6 +5911,16 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get storage_pendingUploading => 'Uploading';
+
+  @override
+  String storage_syncFailed(String error) {
+    return 'Sync failed: $error';
+  }
+
+  @override
+  String storage_syncStillPending(int count) {
+    return 'Sync finished, $count files still pending';
+  }
 
   @override
   String get storage_pendingKindCommit => 'Upload';

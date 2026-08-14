@@ -5563,6 +5563,15 @@ class AppLocalizationsZh extends AppLocalizations {
   String get storage_entrySnapshots => '备份与恢复';
 
   @override
+  String get storage_entrySnapshotsSub => '加密快照与全量恢复';
+
+  @override
+  String get storage_createBackup => '备份当前数据';
+
+  @override
+  String get storage_noSnapshotsHint => '创建第一份加密快照，即可随时恢复本机数据。';
+
+  @override
   String get storage_entrySpace => '本机空间';
 
   @override
@@ -5687,6 +5696,16 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get storage_pendingUploading => '正在上传';
+
+  @override
+  String storage_syncFailed(String error) {
+    return '同步失败：$error';
+  }
+
+  @override
+  String storage_syncStillPending(int count) {
+    return '同步结束，仍有 $count 个文件待发送';
+  }
 
   @override
   String get storage_pendingKindCommit => '上传';

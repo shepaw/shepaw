@@ -472,9 +472,11 @@ class StoreService {
     try {
       final wire = StoreFrame(
           op: frame.op, reqId: reqId, v: frame.v, payload: frame.payload);
-      final ok = await _manager.sendControl(peerId, wire.toJson());
-      if (!ok) return _errorData(StoreError.masterOffline);
-      return await completer.future.timeout(_callTimeout,
+      return await () async {
+        final ok = await _manager.sendControl(peerId, wire.toJson());
+        if (!ok) return _errorData(StoreError.masterOffline);
+        return await completer.future;
+      }().timeout(_callTimeout,
           onTimeout: () => _errorData(StoreError.masterOffline));
     } finally {
       _pending.remove(reqId);

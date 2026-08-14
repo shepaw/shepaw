@@ -3,6 +3,7 @@ import 'package:path/path.dart' as p;
 
 import '../../l10n/app_localizations.dart';
 import '../../screens/storage_shared.dart';
+import '../../storage/store_protocol.dart';
 import '../../storage/sync_engine.dart';
 import '../../storage/sync_journal.dart';
 
@@ -51,7 +52,7 @@ class StoragePendingSyncCard extends StatelessWidget {
                     children: [
                       Text(
                         l10n.storage_sharedSyncPending(
-                          status.pendingCount,
+                          expanded,
                           fmtStorageBytes(status.pendingBytes),
                         ),
                         style: Theme.of(context).textTheme.titleSmall?.copyWith(
@@ -60,23 +61,30 @@ class StoragePendingSyncCard extends StatelessWidget {
                       ),
                       const SizedBox(height: 2),
                       Text(
-                        !status.masterOnline
-                            ? l10n.storage_pendingWaitingMaster
-                            : status.isSyncing
-                                ? l10n.storage_pendingUploading
-                                : l10n.storage_pendingToMaster,
+                        _subtitle(l10n, status),
                         style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                              color: Theme.of(context)
-                                  .colorScheme
-                                  .onSurfaceVariant,
+                              color: status.lastError != null &&
+                                      !status.isSyncing
+                                  ? Theme.of(context).colorScheme.error
+                                  : Theme.of(context)
+                                      .colorScheme
+                                      .onSurfaceVariant,
                             ),
                       ),
                     ],
                   ),
                 ),
                 TextButton(
-                  onPressed: () => SyncEngine.instance.syncNow(),
-                  child: Text(l10n.storage_sharedSyncNow),
+                  onPressed: status.isSyncing || !status.masterOnline
+                      ? null
+                      : () => _onSyncNow(context),
+                  child: status.isSyncing
+                      ? const SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : Text(l10n.storage_sharedSyncNow),
                 ),
               ],
             ),
@@ -100,6 +108,44 @@ class StoragePendingSyncCard extends StatelessWidget {
         ),
       ),
     );
+  }
+
+  String _subtitle(AppLocalizations l10n, SyncStatus status) {
+    if (status.isSyncing) return l10n.storage_pendingUploading;
+    if (!status.masterOnline) return l10n.storage_pendingWaitingMaster;
+    if (status.lastError != null && status.lastError!.isNotEmpty) {
+      return l10n.storage_syncFailed(_syncErrorLabel(l10n, status.lastError!));
+    }
+    return l10n.storage_pendingToMaster;
+  }
+
+  Future<void> _onSyncNow(BuildContext context) async {
+    final l10n = AppLocalizations.of(context);
+    final before = status.expandedCount;
+    await SyncEngine.instance.syncNow();
+    if (!context.mounted) return;
+    final after = SyncEngine.instance.latestStatus;
+    if (after.expandedCount == 0) return;
+    if (after.lastError != null && after.lastError!.isNotEmpty) {
+      storageToast(
+        context,
+        l10n.storage_syncFailed(_syncErrorLabel(l10n, after.lastError!)),
+      );
+    } else if (after.expandedCount >= before) {
+      storageToast(
+        context,
+        l10n.storage_syncStillPending(after.expandedCount),
+      );
+    }
+  }
+}
+
+String _syncErrorLabel(AppLocalizations l10n, String code) {
+  switch (code) {
+    case StoreError.masterOffline:
+      return l10n.storage_pendingWaitingMaster;
+    default:
+      return code;
   }
 }
 

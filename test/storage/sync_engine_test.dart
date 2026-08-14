@@ -383,8 +383,27 @@ void main() {
     expect(done.pendingCount, 0);
     expect(done.isSyncing, isFalse);
     expect(done.uploadingSeq, isNull);
+    expect(done.lastError, isNull);
     await sub.cancel();
     expect(seen.any((n) => n > 0), isTrue);
     expect(seen.last, 0);
+  });
+
+  test('master 离线时 syncNow 记录 lastError 且队列不变', () async {
+    master.online = false;
+    await clientCommit('offline.txt', bytesOf('x'));
+    await engine.syncNow();
+    final status = engine.latestStatus;
+    expect(status.pendingCount, 1);
+    expect(status.lastError, isNotNull);
+    expect(status.masterOnline, isFalse);
+  });
+
+  test('并发 syncNow 共用同一航班', () async {
+    await clientCommit('once.txt', bytesOf('y'));
+    final a = engine.syncNow();
+    final b = engine.syncNow();
+    await Future.wait([a, b]);
+    expect((await engine.journal!.pending()), isEmpty);
   });
 }

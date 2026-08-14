@@ -2925,6 +2925,9 @@
   "storage_recycleShowLess": "Show less",
   "storage_deletedAt": "deleted {time}",
   "storage_entrySnapshots": "Backup & Restore",
+  "storage_entrySnapshotsSub": "Encrypted snapshots and full restore",
+  "storage_createBackup": "Back up this device",
+  "storage_noSnapshotsHint": "Create your first encrypted snapshot so you can restore this device anytime.",
   "storage_entrySpace": "Local Space",
   "storage_moreSettings": "More settings",
   "storage_usedBadge": "{size} used",
@@ -2993,6 +2996,18 @@
   "storage_pendingToMaster": "Pending sync to master",
   "storage_pendingWaitingMaster": "Waiting for master to come online",
   "storage_pendingUploading": "Uploading",
+  "storage_syncFailed": "Sync failed: {error}",
+  "@storage_syncFailed": {
+    "placeholders": {
+      "error": {"type": "String"}
+    }
+  },
+  "storage_syncStillPending": "Sync finished, {count} files still pending",
+  "@storage_syncStillPending": {
+    "placeholders": {
+      "count": {"type": "int"}
+    }
+  },
   "storage_pendingKindCommit": "Upload",
   "storage_pendingKindDelete": "Delete",
   "storage_pendingMore": "{count} more items",

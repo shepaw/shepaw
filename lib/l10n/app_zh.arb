@@ -3410,6 +3410,9 @@
   "storage_recycleShowLess": "收起",
   "storage_deletedAt": "删除于 {time}",
   "storage_entrySnapshots": "备份与恢复",
+  "storage_entrySnapshotsSub": "加密快照与全量恢复",
+  "storage_createBackup": "备份当前数据",
+  "storage_noSnapshotsHint": "创建第一份加密快照，即可随时恢复本机数据。",
   "storage_entrySpace": "本机空间",
   "storage_moreSettings": "更多设置",
   "storage_usedBadge": "已使用 {size}",
@@ -3478,6 +3481,18 @@
   "storage_pendingToMaster": "待同步到 master",
   "storage_pendingWaitingMaster": "等待 master 上线",
   "storage_pendingUploading": "正在上传",
+  "storage_syncFailed": "同步失败：{error}",
+  "@storage_syncFailed": {
+    "placeholders": {
+      "error": {"type": "String"}
+    }
+  },
+  "storage_syncStillPending": "同步结束，仍有 {count} 个文件待发送",
+  "@storage_syncStillPending": {
+    "placeholders": {
+      "count": {"type": "int"}
+    }
+  },
   "storage_pendingKindCommit": "上传",
   "storage_pendingKindDelete": "删除",
   "storage_pendingMore": "还有 {count} 项",

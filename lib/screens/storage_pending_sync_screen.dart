@@ -13,80 +13,98 @@ class StoragePendingSyncScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
     final engine = SyncEngine.instance;
-    return Scaffold(
-      appBar: AppBar(
-        title: Text(l10n.storage_pendingToMaster),
-        actions: [
-          IconButton(
-            tooltip: l10n.storage_sharedSyncNow,
-            onPressed: () => engine.syncNow(),
-            icon: const Icon(Icons.sync),
-          ),
-        ],
-      ),
-      body: StreamBuilder<SyncStatus>(
-        stream: engine.status,
-        initialData: engine.latestStatus,
-        builder: (context, snap) {
-          final status = snap.data ?? SyncStatus.empty;
-          final items = status.items;
-          if (!status.hasPending && !status.isSyncing) {
-            return Center(
-              child: Text(
-                l10n.storage_pendingEmpty,
-                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                      color: Theme.of(context).colorScheme.onSurfaceVariant,
-                    ),
-              ),
-            );
-          }
-          final remaining = status.expandedCount > items.length
-              ? status.expandedCount - items.length
-              : 0;
-          return ListView(
-            padding: const EdgeInsets.all(16),
-            children: [
-              Text(
-                l10n.storage_sharedSyncPending(
-                  status.pendingCount,
-                  fmtStorageBytes(status.pendingBytes),
-                ),
-                style: Theme.of(context).textTheme.titleSmall,
-              ),
-              const SizedBox(height: 4),
-              Text(
-                !status.masterOnline
-                    ? l10n.storage_pendingWaitingMaster
-                    : status.isSyncing
-                        ? l10n.storage_pendingUploading
-                        : l10n.storage_pendingToMaster,
-                style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: Theme.of(context).colorScheme.onSurfaceVariant,
-                    ),
-              ),
-              const SizedBox(height: 12),
-              StoragePendingSyncList(
-                items: items,
-                uploadingSeq: status.uploadingSeq,
-                footer: remaining > 0
-                    ? Padding(
-                        padding: const EdgeInsets.only(top: 12),
-                        child: Text(
-                          l10n.storage_pendingMore(remaining),
-                          style:
-                              Theme.of(context).textTheme.bodySmall?.copyWith(
-                                    color: Theme.of(context)
-                                        .colorScheme
-                                        .onSurfaceVariant,
-                                  ),
-                        ),
+    return StreamBuilder<SyncStatus>(
+      stream: engine.status,
+      initialData: engine.latestStatus,
+      builder: (context, snap) {
+        final status = snap.data ?? SyncStatus.empty;
+        return Scaffold(
+          appBar: AppBar(
+            title: Text(l10n.storage_pendingToMaster),
+            actions: [
+              IconButton(
+                tooltip: l10n.storage_sharedSyncNow,
+                onPressed: status.isSyncing || !status.masterOnline
+                    ? null
+                    : () => engine.syncNow(),
+                icon: status.isSyncing
+                    ? const SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(strokeWidth: 2),
                       )
-                    : null,
+                    : const Icon(Icons.sync),
               ),
             ],
-          );
-        },
-      ),
+          ),
+          body: _buildBody(context, l10n, status),
+        );
+      },
+    );
+  }
+
+  Widget _buildBody(
+    BuildContext context,
+    AppLocalizations l10n,
+    SyncStatus status,
+  ) {
+    final items = status.items;
+    if (!status.hasPending && !status.isSyncing) {
+      return Center(
+        child: Text(
+          l10n.storage_pendingEmpty,
+          style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+              ),
+        ),
+      );
+    }
+    final remaining = status.expandedCount > items.length
+        ? status.expandedCount - items.length
+        : 0;
+    return ListView(
+      padding: const EdgeInsets.all(16),
+      children: [
+        Text(
+          l10n.storage_sharedSyncPending(
+            status.expandedCount,
+            fmtStorageBytes(status.pendingBytes),
+          ),
+          style: Theme.of(context).textTheme.titleSmall,
+        ),
+        const SizedBox(height: 4),
+        Text(
+          !status.masterOnline
+              ? l10n.storage_pendingWaitingMaster
+              : status.isSyncing
+                  ? l10n.storage_pendingUploading
+                  : (status.lastError != null && status.lastError!.isNotEmpty)
+                      ? l10n.storage_syncFailed(status.lastError!)
+                      : l10n.storage_pendingToMaster,
+          style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                color: status.lastError != null && !status.isSyncing
+                    ? Theme.of(context).colorScheme.error
+                    : Theme.of(context).colorScheme.onSurfaceVariant,
+              ),
+        ),
+        const SizedBox(height: 12),
+        StoragePendingSyncList(
+          items: items,
+          uploadingSeq: status.uploadingSeq,
+          footer: remaining > 0
+              ? Padding(
+                  padding: const EdgeInsets.only(top: 12),
+                  child: Text(
+                    l10n.storage_pendingMore(remaining),
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color:
+                              Theme.of(context).colorScheme.onSurfaceVariant,
+                        ),
+                  ),
+                )
+              : null,
+        ),
+      ],
     );
   }
 }

@@ -313,42 +313,43 @@ class StorageSpaceHubState extends State<StorageSpaceHub> {
     );
   }
 
-  Widget _buildLocalRow(AppLocalizations l10n) {
+  Widget _leadingIconBox(IconData icon) {
+    return Container(
+      width: _avatarSize,
+      height: _avatarSize,
+      decoration: BoxDecoration(
+        color: AppColors.primary.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      alignment: Alignment.center,
+      child: Icon(icon, size: 20, color: AppColors.primary),
+    );
+  }
+
+  Widget _hubRow({
+    required Widget leading,
+    required String title,
+    required String subtitle,
+    Color? subtitleColor,
+    Widget? titleBadge,
+    Widget? trailing,
+    bool selected = false,
+    VoidCallback? onTap,
+    VoidCallback? onLongPress,
+  }) {
     final colorScheme = Theme.of(context).colorScheme;
-    final used = _usedBytes;
-    final selected = widget.embedded && widget.localSelected;
     return Material(
       color: selected
           ? colorScheme.primary.withValues(alpha: 0.08)
           : Colors.transparent,
       child: InkWell(
-        onTap: _selfId.isEmpty ? null : _onLocalTap,
-        onLongPress: !_selfIsMaster && _selfId.isNotEmpty
-            ? () => _confirmSetMaster(
-                  deviceId: _selfId,
-                  name: l10n.storage_sharedThisDevice,
-                )
-            : null,
+        onTap: onTap,
+        onLongPress: onLongPress,
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
           child: Row(
             children: [
-              Container(
-                width: _avatarSize,
-                height: _avatarSize,
-                decoration: BoxDecoration(
-                  color: AppColors.primary.withValues(alpha: 0.12),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                alignment: Alignment.center,
-                child: Icon(
-                  widget.embedded
-                      ? Icons.computer_outlined
-                      : Icons.phone_android_outlined,
-                  size: 20,
-                  color: AppColors.primary,
-                ),
-              ),
+              leading,
               const SizedBox(width: 12),
               Expanded(
                 child: Column(
@@ -358,7 +359,7 @@ class StorageSpaceHubState extends State<StorageSpaceHub> {
                       children: [
                         Flexible(
                           child: Text(
-                            l10n.storage_sharedThisDevice,
+                            title,
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                             style: const TextStyle(
@@ -367,28 +368,56 @@ class StorageSpaceHubState extends State<StorageSpaceHub> {
                             ),
                           ),
                         ),
-                        if (_selfIsMaster) ...[
+                        if (titleBadge != null) ...[
                           const SizedBox(width: 6),
-                          _masterChip(l10n, colorScheme),
+                          titleBadge,
                         ],
                       ],
                     ),
                     Text(
-                      used != null
-                          ? fmtStorageBytes(used)
-                          : l10n.storage_sharedBrowseHint,
+                      subtitle,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: subtitleColor ?? Colors.grey[600],
+                      ),
                     ),
                   ],
                 ),
               ),
-              if (!widget.embedded) const Icon(Icons.chevron_right, size: 20),
+              if (trailing != null) trailing,
             ],
           ),
         ),
       ),
+    );
+  }
+
+  Widget _buildLocalRow(AppLocalizations l10n) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final used = _usedBytes;
+    return _hubRow(
+      leading: _leadingIconBox(
+        widget.embedded
+            ? Icons.computer_outlined
+            : Icons.phone_android_outlined,
+      ),
+      title: l10n.storage_sharedThisDevice,
+      subtitle: used != null
+          ? fmtStorageBytes(used)
+          : l10n.storage_sharedBrowseHint,
+      titleBadge: _selfIsMaster ? _masterChip(l10n, colorScheme) : null,
+      trailing:
+          widget.embedded ? null : const Icon(Icons.chevron_right, size: 20),
+      selected: widget.embedded && widget.localSelected,
+      onTap: _selfId.isEmpty ? null : _onLocalTap,
+      onLongPress: !_selfIsMaster && _selfId.isNotEmpty
+          ? () => _confirmSetMaster(
+                deviceId: _selfId,
+                name: l10n.storage_sharedThisDevice,
+              )
+          : null,
     );
   }
 
@@ -397,89 +426,48 @@ class StorageSpaceHubState extends State<StorageSpaceHub> {
     final isConnected = _isConnected(peer);
     final isMaster = _masterId == peer.fingerprint;
     final busy = _busyFp == peer.fingerprint;
-    final selected =
-        widget.embedded && widget.selectedPeerId == peer.id;
 
-    return Material(
-      color: selected
-          ? colorScheme.primary.withValues(alpha: 0.08)
-          : Colors.transparent,
-      child: InkWell(
-        onTap: busy ? null : () => _onPeerTap(peer),
-        onLongPress: busy ? null : () => _showPeerActions(peer),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-          child: Row(
-            children: [
-              Stack(
-                children: [
-                  PeerDeviceIcon(peer: peer, size: _avatarSize, borderRadius: 8),
-                  Positioned(
-                    right: 0,
-                    bottom: 0,
-                    child: Container(
-                      width: 10,
-                      height: 10,
-                      decoration: BoxDecoration(
-                        color: isConnected ? Colors.green : Colors.grey,
-                        shape: BoxShape.circle,
-                        border: Border.all(
-                          color: Theme.of(context).scaffoldBackgroundColor,
-                          width: 1.5,
-                        ),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        Flexible(
-                          child: Text(
-                            peer.deviceName,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(
-                              fontSize: 15,
-                              fontWeight: FontWeight.w500,
-                            ),
-                          ),
-                        ),
-                        if (isMaster) ...[
-                          const SizedBox(width: 6),
-                          _masterChip(l10n, colorScheme),
-                        ],
-                      ],
-                    ),
-                    Text(
-                      peer.state.listStatusLabel(l10n),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: isConnected ? Colors.green : Colors.grey,
-                      ),
-                    ),
-                  ],
+    Widget? trailing;
+    if (busy) {
+      trailing = const SizedBox(
+        width: 20,
+        height: 20,
+        child: CircularProgressIndicator(strokeWidth: 2),
+      );
+    } else if (!widget.embedded) {
+      trailing = const Icon(Icons.chevron_right, size: 20);
+    }
+
+    return _hubRow(
+      leading: Stack(
+        children: [
+          PeerDeviceIcon(peer: peer, size: _avatarSize, borderRadius: 8),
+          Positioned(
+            right: 0,
+            bottom: 0,
+            child: Container(
+              width: 10,
+              height: 10,
+              decoration: BoxDecoration(
+                color: isConnected ? Colors.green : Colors.grey,
+                shape: BoxShape.circle,
+                border: Border.all(
+                  color: Theme.of(context).scaffoldBackgroundColor,
+                  width: 1.5,
                 ),
               ),
-              if (busy)
-                const SizedBox(
-                  width: 20,
-                  height: 20,
-                  child: CircularProgressIndicator(strokeWidth: 2),
-                )
-              else if (!widget.embedded)
-                const Icon(Icons.chevron_right, size: 20),
-            ],
+            ),
           ),
-        ),
+        ],
       ),
+      title: peer.deviceName,
+      subtitle: peer.state.listStatusLabel(l10n),
+      subtitleColor: isConnected ? Colors.green : Colors.grey,
+      titleBadge: isMaster ? _masterChip(l10n, colorScheme) : null,
+      trailing: trailing,
+      selected: widget.embedded && widget.selectedPeerId == peer.id,
+      onTap: busy ? null : () => _onPeerTap(peer),
+      onLongPress: busy ? null : () => _showPeerActions(peer),
     );
   }
 
@@ -515,15 +503,13 @@ class StorageSpaceHubState extends State<StorageSpaceHub> {
   }
 
   Widget _buildSnapshotsTile(AppLocalizations l10n) {
-    final colorScheme = Theme.of(context).colorScheme;
-    final selected = widget.embedded && widget.snapshotsSelected;
-    return ListTile(
-      selected: selected,
-      selectedTileColor: colorScheme.primary.withValues(alpha: 0.08),
-      leading: Icon(Icons.backup_outlined, color: colorScheme.primary),
-      title: Text(l10n.storage_entrySnapshots),
+    return _hubRow(
+      leading: _leadingIconBox(Icons.backup_outlined),
+      title: l10n.storage_entrySnapshots,
+      subtitle: l10n.storage_entrySnapshotsSub,
       trailing:
           widget.embedded ? null : const Icon(Icons.chevron_right, size: 20),
+      selected: widget.embedded && widget.snapshotsSelected,
       onTap: _onSnapshotsTap,
     );
   }
@@ -543,7 +529,7 @@ class StorageSpaceHubState extends State<StorageSpaceHub> {
             _buildSharedEmpty(l10n)
           else
             for (final peer in _peers) _buildPeerRow(peer, l10n),
-          const SizedBox(height: 8),
+          const Divider(height: 16, indent: 64),
           _buildSnapshotsTile(l10n),
           ...widget.footer,
           const SizedBox(height: 24),
