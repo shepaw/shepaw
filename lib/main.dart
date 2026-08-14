@@ -117,7 +117,7 @@ Future<void> _runSubWindow(String rawArgs) async {
   final title = params['title'] as String? ?? '';
   final locale = params['locale'] as String?;
 
-  // For system log, initialize LoggerService so disk-persisted logs are available.
+  // Sub-windows read logs from disk / SQLite, not the main isolate's memory.
   if (key == 'system_log') {
     await LoggerService().initialize();
   }

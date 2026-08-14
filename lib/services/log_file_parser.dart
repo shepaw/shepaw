@@ -48,18 +48,19 @@ class LogFileParser {
         continue;
       }
 
-      if (current == null) continue;
+      final pending = current;
+      if (pending == null) continue;
 
       if (line.startsWith('Error: ')) {
-        current.error = line.substring(7);
+        pending.error = line.substring(7);
       } else if (line.startsWith('StackTrace: ')) {
-        current.stackTrace = line.substring(12);
-      } else if (current.stackTrace != null) {
-        current.stackTrace = '${current.stackTrace}\n$line';
-      } else if (current.error != null) {
-        current.error = '${current.error}\n$line';
+        pending.stackTrace = line.substring(12);
+      } else if (pending.stackTrace != null) {
+        pending.stackTrace = '${pending.stackTrace}\n$line';
+      } else if (pending.error != null) {
+        pending.error = '${pending.error}\n$line';
       } else {
-        current.message = '${current.message}\n$line';
+        pending.message = '${pending.message}\n$line';
       }
     }
 

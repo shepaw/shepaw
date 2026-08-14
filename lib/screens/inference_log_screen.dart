@@ -59,7 +59,21 @@ class _InferenceLogScreenState extends State<InferenceLogScreen> {
   Future<void> _loadPersisted() async {
     final traces = await _trace.queryTraces(limit: 200);
     if (!mounted) return;
+    if (_sameTraces(traces, _persisted)) return;
     setState(() => _persisted = traces);
+  }
+
+  bool _sameTraces(List<TraceEntry> a, List<TraceEntry> b) {
+    if (a.length != b.length) return false;
+    for (var i = 0; i < a.length; i++) {
+      if (a[i].id != b[i].id ||
+          a[i].status != b[i].status ||
+          a[i].errorMessage != b[i].errorMessage ||
+          a[i].durationMs != b[i].durationMs) {
+        return false;
+      }
+    }
+    return true;
   }
 
   List<InferenceLogRow> get _allRows => InferenceLogCatalog.merge(

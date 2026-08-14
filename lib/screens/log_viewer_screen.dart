@@ -27,6 +27,7 @@ class _LogViewerScreenState extends State<LogViewerScreen> {
   String? _selectedTag;
   bool _problemsOnly = false;
   bool _loading = true;
+  String _fingerprint = '';
   Timer? _diskPoll;
 
   @override
@@ -52,6 +53,13 @@ class _LogViewerScreenState extends State<LogViewerScreen> {
   Future<void> _loadLogs() async {
     final merged = await _logger.getDisplayLogs();
     if (!mounted) return;
+    final fingerprint = merged.isEmpty
+        ? '0'
+        : '${merged.length}:${merged.first.dedupeKey}:${merged.last.dedupeKey}';
+    if (fingerprint == _fingerprint && !_loading) {
+      return;
+    }
+    _fingerprint = fingerprint;
     setState(() {
       _allLogs = merged;
       _loading = false;

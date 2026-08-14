@@ -46,6 +46,8 @@ class LoggerService extends ChangeNotifier {
   static const int _maxDiskEntries = 2000;
 
   Timer? _notifyTimer;
+  List<LogEntry>? _diskCache;
+  DateTime? _diskCacheTime;
 
   /// 初始化日志服务
   Future<void> initialize() async {
@@ -186,6 +188,13 @@ class LoggerService extends ChangeNotifier {
 
   /// 读取磁盘日志（含子窗口场景：内存为空时仍能看到主进程写入的文件）。
   Future<List<LogEntry>> readPersistedLogs({int maxEntries = _maxDiskEntries}) async {
+    final cached = _diskCache;
+    final cachedAt = _diskCacheTime;
+    if (cached != null &&
+        cachedAt != null &&
+        DateTime.now().difference(cachedAt) < const Duration(seconds: 2)) {
+      return cached;
+    }
     try {
       final logDir = await _resolveLogDir();
       if (logDir == null || !await logDir.exists()) return const [];
@@ -206,8 +215,12 @@ class LoggerService extends ChangeNotifier {
         }
       }
 
-      if (entries.length <= maxEntries) return entries;
-      return entries.sublist(entries.length - maxEntries);
+      final result = entries.length <= maxEntries
+          ? entries
+          : entries.sublist(entries.length - maxEntries);
+      _diskCache = result;
+      _diskCacheTime = DateTime.now();
+      return result;
     } catch (e) {
       if (kDebugMode) print('Failed to read persisted logs: $e');
       return const [];
@@ -279,6 +292,8 @@ class LoggerService extends ChangeNotifier {
   /// 清空内存日志与当前日志文件，供查看器「清除」使用。
   Future<void> clearAllLogs() async {
     _memoryLogs.clear();
+    _diskCache = null;
+    _diskCacheTime = null;
     try {
       final logDir = await _resolveLogDir();
       if (logDir != null && await logDir.exists()) {
