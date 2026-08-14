@@ -1078,6 +1078,7 @@ class PeerAgentClientService {
     required String message,
     String? sessionId,
     List<AttachmentData>? attachments,
+    List<Map<String, dynamic>>? history,
     void Function(String chunk)? onChunk,
     void Function(Map<String, dynamic>)? onMetadata,
     void Function(Map<String, dynamic>)? onActionConfirmation,
@@ -1177,6 +1178,7 @@ class PeerAgentClientService {
       // 把本端会话 id 透传给对端，使对端按会话隔离历史：本端「新开会话」
       // 在对端也得到一条干净、无历史的新会话。
       if (sessionId != null && sessionId.isNotEmpty) 'session_id': sessionId,
+      if (history != null && history.isNotEmpty) 'history': history,
       if (attachmentRefs != null) 'attachments': attachmentRefs,
     });
 

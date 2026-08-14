@@ -1491,6 +1491,28 @@ class AgentMessagingService {
     final peerSessionId = boundRemoteSessionId ??
         (effectiveChannelId.isNotEmpty ? effectiveChannelId : null);
 
+    List<Map<String, dynamic>>? chatHistory;
+    if (effectiveChannelId.isNotEmpty) {
+      final messages = await loadChannelMessages(effectiveChannelId, limit: 40);
+      if (messages.isNotEmpty) {
+        chatHistory = messages
+            .where((m) =>
+                m.type != MessageType.system &&
+                m.type != MessageType.permissionAudit &&
+                m.id != userMessage.id)
+            .map((m) {
+              final isAgent = m.from.isAgent;
+              return <String, dynamic>{
+                'role': isAgent ? 'assistant' : 'user',
+                'content': m.content,
+              };
+            })
+            .where((e) => (e['content'] as String).trim().isNotEmpty)
+            .toList();
+        if (chatHistory.isEmpty) chatHistory = null;
+      }
+    }
+
     // Capture the latest approval so the final persisted message still carries
     // the card after sendChat completes and ChatController reloads from DB.
     Map<String, dynamic>? actionConfirmationData;
@@ -1544,6 +1566,7 @@ class AgentMessagingService {
           messageMetadata: userMessage.metadata,
         ),
         sessionId: peerSessionId,
+        history: chatHistory,
         attachments: attachments,
         cancelToken: acpCancellationToken,
         localAgentId: agent.id,
