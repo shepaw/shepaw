@@ -156,7 +156,7 @@ void main() {
       );
       expect(wire, startsWith('please summarize'));
       expect(wire, contains('[implicit]'));
-      expect(wire, contains('Nexuspouch'));
+      expect(wire, contains('Nexus Pouch'));
       expect(wire, contains('store://files/0123456789abcdef/docs/note.txt'));
     });
 

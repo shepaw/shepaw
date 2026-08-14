@@ -5599,13 +5599,13 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get storage_nasHint =>
-      '配对成功后即可浏览对方 files/artifacts。将 PC 等设备设为 master 后，本机变更会定期镜像备份到该端。下方还可发现局域网 Nexuspouch 节点。';
+      '配对成功后即可浏览对方 files/artifacts。将 PC 等设备设为 master 后，本机变更会定期镜像备份到该端。下方还可发现局域网 Nexus Pouch 节点。';
 
   @override
   String get storage_nasScanning => '正在扫描局域网…';
 
   @override
-  String get storage_nasEmpty => '未发现 Nexuspouch 节点。也可直接配对手机/电脑互相浏览储物袋。';
+  String get storage_nasEmpty => '未发现 Nexus Pouch 节点。也可直接配对手机/电脑互相浏览储物袋。';
 
   @override
   String get storage_nasConnect => '连接并设为 master';

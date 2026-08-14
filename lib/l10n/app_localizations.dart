@@ -10151,7 +10151,7 @@ abstract class AppLocalizations {
   /// No description provided for @storage_nasHint.
   ///
   /// In zh, this message translates to:
-  /// **'配对成功后即可浏览对方 files/artifacts。将 PC 等设备设为 master 后，本机变更会定期镜像备份到该端。下方还可发现局域网 Nexuspouch 节点。'**
+  /// **'配对成功后即可浏览对方 files/artifacts。将 PC 等设备设为 master 后，本机变更会定期镜像备份到该端。下方还可发现局域网 Nexus Pouch 节点。'**
   String get storage_nasHint;
 
   /// No description provided for @storage_nasScanning.
@@ -10163,7 +10163,7 @@ abstract class AppLocalizations {
   /// No description provided for @storage_nasEmpty.
   ///
   /// In zh, this message translates to:
-  /// **'未发现 Nexuspouch 节点。也可直接配对手机/电脑互相浏览储物袋。'**
+  /// **'未发现 Nexus Pouch 节点。也可直接配对手机/电脑互相浏览储物袋。'**
   String get storage_nasEmpty;
 
   /// No description provided for @storage_nasConnect.

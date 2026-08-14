@@ -3426,9 +3426,9 @@
   "storage_entryAdvanced": "高级与危险区",
   "storage_entryNas": "共享储物袋",
   "storage_nasEntryHint": "查看配对设备储物袋，并可指定 master 备份",
-  "storage_nasHint": "配对成功后即可浏览对方 files/artifacts。将 PC 等设备设为 master 后，本机变更会定期镜像备份到该端。下方还可发现局域网 Nexuspouch 节点。",
+  "storage_nasHint": "配对成功后即可浏览对方 files/artifacts。将 PC 等设备设为 master 后，本机变更会定期镜像备份到该端。下方还可发现局域网 Nexus Pouch 节点。",
   "storage_nasScanning": "正在扫描局域网…",
-  "storage_nasEmpty": "未发现 Nexuspouch 节点。也可直接配对手机/电脑互相浏览储物袋。",
+  "storage_nasEmpty": "未发现 Nexus Pouch 节点。也可直接配对手机/电脑互相浏览储物袋。",
   "storage_nasConnect": "连接并设为 master",
   "storage_nasConnected": "已连接 {name} 并设为 master",
   "@storage_nasConnected": {

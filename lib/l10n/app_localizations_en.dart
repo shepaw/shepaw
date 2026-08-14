@@ -1678,14 +1678,14 @@ class AppLocalizationsEn extends AppLocalizations {
   String get chat_file => 'File';
 
   @override
-  String get chat_storageBag => 'Storage Bag';
+  String get chat_storageBag => 'Nexus Pouch';
 
   @override
-  String get chat_storageFilePickerTitle => 'Pick from Storage Bag';
+  String get chat_storageFilePickerTitle => 'Pick from Nexus Pouch';
 
   @override
   String get chat_storageFilePickerHint =>
-      'Select files from your local storage bag to attach in chat.';
+      'Select files from your local Nexus Pouch to attach in chat.';
 
   @override
   String get chat_storageFilePickerConfirm => 'Add';
@@ -4979,7 +4979,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get peerPairing_trustLevelHint =>
-      'Choose Owner for your own devices (broader default pouch access). Choose Friend for others (nothing shared by default).';
+      'Choose Owner for your own devices (broader default Nexus Pouch access). Choose Friend for others (nothing shared by default).';
 
   @override
   String get peerPairing_trustOwner => 'Owner';
@@ -4988,7 +4988,8 @@ class AppLocalizationsEn extends AppLocalizations {
   String get peerPairing_trustFriend => 'Friend';
 
   @override
-  String get peerPairing_selectStoreSpaces => 'Select pouch spaces to share';
+  String get peerPairing_selectStoreSpaces =>
+      'Select Nexus Pouch spaces to share';
 
   @override
   String get peerPairing_selectStoreSpacesHint =>
@@ -5013,11 +5014,11 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
-  String get peerStoreShare_panelTitle => 'Pouch sharing';
+  String get peerStoreShare_panelTitle => 'Nexus Pouch sharing';
 
   @override
   String get peerStoreShare_panelHint =>
-      'Control which local pouch spaces this device can read';
+      'Control which local Nexus Pouch spaces this device can read';
 
   @override
   String get peerSettings_trustLevel => 'Trust level';
@@ -5166,7 +5167,7 @@ class AppLocalizationsEn extends AppLocalizations {
       'Run `<gateway> enroll` on the agent host to get a short code like XXX-XXX-XXX, paste it here to auto-authorize this device. Leave empty to use the \"Copy public key → peers add\" manual flow above.';
 
   @override
-  String get storage_title => 'Storage Bag';
+  String get storage_title => 'Nexus Pouch';
 
   @override
   String get storage_subtitle =>
@@ -5802,22 +5803,22 @@ class AppLocalizationsEn extends AppLocalizations {
   String get storage_entryAdvanced => 'Advanced & Danger Zone';
 
   @override
-  String get storage_entryNas => 'Shared Pouch';
+  String get storage_entryNas => 'Shared Nexus Pouch';
 
   @override
   String get storage_nasEntryHint =>
-      'Browse paired devices\' stores; set a master for backup';
+      'Browse paired devices\' Nexus Pouches; set a master for backup';
 
   @override
   String get storage_nasHint =>
-      'After pairing, browse each other\'s files/artifacts. Set a PC as master to mirror this device\'s pouch for backup. LAN Nexuspouch discovery remains below.';
+      'After pairing, browse each other\'s files/artifacts. Set a PC as master to mirror this device\'s Nexus Pouch for backup. LAN Nexus Pouch discovery remains below.';
 
   @override
   String get storage_nasScanning => 'Scanning LAN…';
 
   @override
   String get storage_nasEmpty =>
-      'No Nexuspouch nodes found. You can still pair phones/PCs to browse shared pouches.';
+      'No Nexus Pouch nodes found. You can still pair phones/PCs to browse shared Nexus Pouches.';
 
   @override
   String get storage_nasConnect => 'Connect & set master';
@@ -5858,7 +5859,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get storage_pairedEmpty =>
-      'No paired devices yet. Pair to read each other\'s pouches.';
+      'No paired devices yet. Pair to read each other\'s Nexus Pouches.';
 
   @override
   String get storage_discoveredSection => 'LAN discovery';
@@ -5870,7 +5871,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get storage_sharedThisDevice => 'This device';
 
   @override
-  String get storage_sharedBrowse => 'Browse pouch';
+  String get storage_sharedBrowse => 'Browse Nexus Pouch';
 
   @override
   String get storage_sharedBrowseHint =>
@@ -5881,13 +5882,13 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get storage_setMasterExplainBody =>
-      'When a device is set as the master storage node, changes to this device\'s files/artifacts pouch are mirrored to it on a schedule. When a device is offline, reads may fall back to the master mirror.';
+      'When a device is set as the master storage node, changes to this device\'s files/artifacts in the Nexus Pouch are mirrored to it on a schedule. When a device is offline, reads may fall back to the master mirror.';
 
   @override
-  String get storage_browseLocalSpace => 'Browse local pouch';
+  String get storage_browseLocalSpace => 'Browse local Nexus Pouch';
 
   @override
-  String get storage_peerSpaceEntry => 'Device pouch';
+  String get storage_peerSpaceEntry => 'Device Nexus Pouch';
 
   @override
   String storage_sharedMasterSet(String name) {
@@ -5901,7 +5902,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get storage_sharedSyncPendingHint =>
-      'Mobile pouches can back up to a PC master';
+      'Mobile Nexus Pouches can back up to a PC master';
 
   @override
   String get storage_sharedSyncNow => 'Sync now';
@@ -5945,7 +5946,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get storage_mirroredDevicesHint =>
-      'After a paired device sets this one as master, its pouch is mirrored here.';
+      'After a paired device sets this one as master, its Nexus Pouch is mirrored here.';
 
   @override
   String get storage_mirroredDevicesNote =>

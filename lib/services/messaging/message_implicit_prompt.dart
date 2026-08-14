@@ -201,7 +201,7 @@ class MessageImplicitPrompt {
       ..writeln(
           'store:// URIs are not OS paths; never read them as local files.')
       ..writeln(
-          'Across paired Nexuspouch devices the same URI is readable via store CLI.')
+          'Across paired Nexus Pouch devices the same URI is readable via store CLI.')
       ..writeln(
           'If a URI is only being discussed (not an actual reference), skip reading it.')
       ..writeln('URIs: ${list.join(', ')}')
