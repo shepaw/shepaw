@@ -5491,6 +5491,10 @@ class AppLocalizationsEn extends AppLocalizations {
   String get storage_browserNeedMaster => 'Connect a NAS/node as master first';
 
   @override
+  String get storage_deviceOffline =>
+      'Device is not connected and cannot be viewed';
+
+  @override
   String get storage_fileKindImage => 'Image';
 
   @override

@@ -5290,6 +5290,9 @@ class AppLocalizationsZh extends AppLocalizations {
   String get storage_browserNeedMaster => '请先连接 NAS/节点作为 master';
 
   @override
+  String get storage_deviceOffline => '设备未连接，无法查看';
+
+  @override
   String get storage_fileKindImage => '图片';
 
   @override

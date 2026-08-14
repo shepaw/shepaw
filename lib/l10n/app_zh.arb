@@ -3175,6 +3175,7 @@
     }
   },
   "storage_browserNeedMaster": "请先连接 NAS/节点作为 master",
+  "storage_deviceOffline": "设备未连接，无法查看",
   "storage_fileKindImage": "图片",
   "storage_fileKindAudio": "音频",
   "storage_fileKindVideo": "视频",

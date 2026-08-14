@@ -2669,6 +2669,7 @@
   "storage_browserSearchKeyword": "Keyword",
   "storage_browserSearchDegraded": "Degraded to keyword search",
   "storage_browserNeedMaster": "Connect a NAS/node as master first",
+  "storage_deviceOffline": "Device is not connected and cannot be viewed",
   "storage_fileKindImage": "Image",
   "storage_fileKindAudio": "Audio",
   "storage_fileKindVideo": "Video",

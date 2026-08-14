@@ -9632,6 +9632,12 @@ abstract class AppLocalizations {
   /// **'请先连接 NAS/节点作为 master'**
   String get storage_browserNeedMaster;
 
+  /// No description provided for @storage_deviceOffline.
+  ///
+  /// In zh, this message translates to:
+  /// **'设备未连接，无法查看'**
+  String get storage_deviceOffline;
+
   /// No description provided for @storage_fileKindImage.
   ///
   /// In zh, this message translates to:

@@ -369,6 +369,15 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
       _error = null;
     });
     try {
+      if (!await _canReachRemoteStore()) {
+        if (!mounted) return;
+        setState(() {
+          _error = AppLocalizations.of(context).storage_deviceOffline;
+          _files = const [];
+          _loading = false;
+        });
+        return;
+      }
       await Future.wait([
         _loadRecent(),
         _loadSpaceBytes(),
@@ -377,13 +386,47 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
     } catch (e) {
       if (!mounted) return;
       setState(() {
-        _error = '$e';
+        _error = _friendlyStoreError(e);
         _files = const [];
         _loading = false;
       });
     } finally {
       if (mounted) setState(() => _busy = false);
     }
+  }
+
+  /// 远端设备及其可读服务端（属主或 master）均不可达时，避免干等到超时。
+  Future<bool> _canReachRemoteStore() async {
+    if (!_isRemote || _preferLocal) return true;
+    final svc = StoreService.instance;
+    if (await svc.isDeviceOnline(_targetId)) return true;
+    final server = await svc.preferredReadServer(_targetId);
+    if (server == _selfId) return true;
+    if (server != _targetId && await svc.isDeviceOnline(server)) return true;
+    return false;
+  }
+
+  bool _isOfflineStoreError(Object e) {
+    if (e is StoreException) {
+      return e.code == StoreError.masterOffline ||
+          e.code == StoreError.notPaired;
+    }
+    final s = '$e'.toLowerCase();
+    return s.contains('master_offline') ||
+        s.contains('not_paired') ||
+        s.contains('timeout') ||
+        s.contains('timed out') ||
+        s.contains('not connected') ||
+        s.contains('offline');
+  }
+
+  String _friendlyStoreError(Object e) {
+    final l10n = AppLocalizations.of(context);
+    if (_isOfflineStoreError(e)) return l10n.storage_deviceOffline;
+    if (e is StoreException && e.message.trim().isNotEmpty) {
+      return e.message;
+    }
+    return l10n.storage_deviceOffline;
   }
 
   Future<void> _loadRecent() async {
@@ -441,13 +484,13 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
         _files = all;
         _loading = false;
         if (_isRemote && !anyOk && lastError != null) {
-          _error = '$lastError';
+          _error = _friendlyStoreError(lastError);
         }
       });
     } catch (e) {
       if (!mounted) return;
       setState(() {
-        _error = '$e';
+        _error = _friendlyStoreError(e);
         _files = const [];
         _loading = false;
       });
@@ -480,6 +523,16 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
     final gen = ++_dirLoadGen;
     if (mounted) setState(() => _folderLoading = true);
     try {
+      if (!await _canReachRemoteStore()) {
+        if (!mounted || gen != _dirLoadGen) return;
+        setState(() {
+          _folderLoading = false;
+          _error = AppLocalizations.of(context).storage_deviceOffline;
+          _dirFolders = const [];
+          _dirFiles = const [];
+        });
+        return;
+      }
       final entries = await StoreService.instance.listDevice(
         deviceId: _targetId,
         space: space,
@@ -512,7 +565,7 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
       setState(() {
         _folderLoading = false;
         if (e.code != StoreError.aclDenied && e.code != StoreError.untrusted) {
-          _error = '$e';
+          _error = _friendlyStoreError(e);
         }
         _dirFolders = const [];
         _dirFiles = const [];
@@ -521,7 +574,7 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
       if (!mounted || gen != _dirLoadGen) return;
       setState(() {
         _folderLoading = false;
-        _error = '$e';
+        _error = _friendlyStoreError(e);
         _dirFolders = const [];
         _dirFiles = const [];
       });
@@ -1706,8 +1759,13 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
       return Center(
         child: Padding(
           padding: const EdgeInsets.all(24),
-          child: Text(_error!,
-              style: TextStyle(color: Theme.of(context).colorScheme.error)),
+          child: Text(
+            _error!,
+            textAlign: TextAlign.center,
+            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                ),
+          ),
         ),
       );
     }
@@ -1737,8 +1795,13 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
       return Center(
         child: Padding(
           padding: const EdgeInsets.all(24),
-          child: Text(_error!,
-              style: TextStyle(color: Theme.of(context).colorScheme.error)),
+          child: Text(
+            _error!,
+            textAlign: TextAlign.center,
+            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                ),
+          ),
         ),
       );
     }
