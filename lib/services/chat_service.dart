@@ -38,6 +38,7 @@ import 'she_service.dart';
 import 'noise_identity.dart';
 import 'mailbox/mailbox_seal.dart';
 import 'mailbox/channel_mailbox_service.dart';
+import 'mailbox/mailbox_reply_router.dart';
 import 'dispatch/she_relay_session_service.dart';
 import '../clis/shepaw/os/os_executor.dart' as os_exec;
 import 'local_llm_agent_service.dart';
@@ -282,7 +283,8 @@ class ChatService {
     await drainAllMailboxReplies();
   }
 
-  /// Cross-agent inbox pull: persist sealed finals into each agent's latest DM.
+  /// Cross-agent inbox pull: persist sealed finals into the destination
+  /// channel (`group_id` when present, otherwise the agent's latest unbound DM).
   /// Best-effort; used on resume and app start so replies are not stuck until
   /// the user opens that chat.
   Future<int> drainAllMailboxReplies({String userId = 'user'}) async {
@@ -292,9 +294,16 @@ class ChatService {
       for (final agent in agents) {
         if (!ChannelMailboxService.agentHasChannelInbox(agent)) continue;
         final dms = await _databaseService.getChannelsForAgent(agent.id);
-        if (dms.isEmpty) continue;
+        Channel? fallback;
+        for (final dm in dms) {
+          if (!dm.isGroupBoundMemberSession && !dm.isSheBoundSession) {
+            fallback = dm;
+            break;
+          }
+        }
+        fallback ??= dms.isEmpty ? null : dms.first;
         final msgs = await fetchMailboxReplies(
-          channelId: dms.first.id,
+          channelId: fallback?.id,
           agentId: agent.id,
           userId: userId,
         );
@@ -2309,8 +2318,11 @@ $originalQuestion
 
   /// Pull sealed replies from channel mailbox, decrypt, persist as assistant
   /// messages. Returns newly inserted messages (may be empty). Best-effort.
+  ///
+  /// [channelId] is the fallback DM when a reply has no `group_id`. Group
+  /// replies are written to that group channel and never fall back here.
   Future<List<Message>> fetchMailboxReplies({
-    required String channelId,
+    String? channelId,
     required String agentId,
     required String userId,
   }) async {
@@ -2338,6 +2350,16 @@ $originalQuestion
 
       final inserted = <Message>[];
       final ackIds = <String>[];
+      final groupExistsCache = <String, bool>{};
+
+      Future<bool> groupExists(String id) async {
+        final cached = groupExistsCache[id];
+        if (cached != null) return cached;
+        final ch = await _databaseService.getChannelById(id);
+        final ok = ch != null;
+        groupExistsCache[id] = ok;
+        return ok;
+      }
 
       for (final reply in replies) {
         try {
@@ -2363,11 +2385,28 @@ $originalQuestion
             continue;
           }
 
+          final groupId = mailboxReplyGroupId(
+            replyGroupId: reply.groupId,
+            payload: payload,
+          );
+          if (groupId.isNotEmpty) {
+            await groupExists(groupId);
+          }
+          final destChannelId = resolveMailboxReplyDestination(
+            groupId: groupId,
+            fallbackChannelId: channelId,
+            groupChannelExists: (id) => groupExistsCache[id] == true,
+          );
+          if (destChannelId == null || destChannelId.isEmpty) {
+            // No destination yet (group missing, or no fallback DM) — don't ack.
+            continue;
+          }
+
           // 按 mailbox 条目 id 去重，避免重复收取
           final mailboxEntryId = reply.id;
           final existingByEntry =
               await _databaseService.getChannelMessagesByMetadataMatch(
-            channelId,
+            destChannelId,
             '"mailbox_entry_id":"$mailboxEntryId"',
             limit: 1,
           );
@@ -2383,13 +2422,20 @@ $originalQuestion
                   : 'inbox_$mailboxEntryId');
           final existing = await _databaseService.getMessageById(msgId);
           if (existing != null) {
+            final existingChannel = existing['channel_id'] as String? ?? '';
+            if (existingChannel.isNotEmpty && existingChannel != destChannelId) {
+              LoggerService().warning(
+                'mailbox reply $msgId already in $existingChannel, not $destChannelId',
+                tag: 'ChatService',
+              );
+            }
             ackIds.add(reply.id);
             continue;
           }
 
           final msg = Message(
             id: msgId,
-            channelId: channelId,
+            channelId: destChannelId,
             content: content,
             timestampMs: DateTime.now().millisecondsSinceEpoch,
             from: MessageFrom(id: agent.id, type: 'agent', name: agent.name),
@@ -2402,11 +2448,12 @@ $originalQuestion
               'mailbox_entry_id': mailboxEntryId,
               'session_id': reply.sessionId,
               if (reply.requestId.isNotEmpty) 'request_id': reply.requestId,
+              if (groupId.isNotEmpty) 'group_id': groupId,
             },
           );
           await _databaseService.createMessage(
             id: msg.id,
-            channelId: channelId,
+            channelId: destChannelId,
             senderId: msg.from.id,
             senderType: msg.from.type,
             senderName: msg.from.name,
@@ -2416,6 +2463,7 @@ $originalQuestion
             metadata: msg.metadata,
             conflictAlgorithm: ConflictAlgorithm.ignore,
           );
+          _notifyChannelUpdate(destChannelId);
           inserted.add(msg);
           ackIds.add(reply.id);
         } catch (e) {

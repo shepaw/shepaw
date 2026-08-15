@@ -184,8 +184,17 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
   StreamSubscription<List<Message>>? _channelUpdateSub;
   StreamSubscription<AgentTaskCompletion>? _agentTaskCompletionSub;
   StreamSubscription<InboxMailReplyEvent>? _inboxPushSub;
-  String? _inboxSubscribeTargetId;
+  final List<String> _inboxSubscribeTargetIds = [];
   VoidCallback? _typingListener;
+
+  void _clearInboxPush() {
+    _inboxPushSub?.cancel();
+    _inboxPushSub = null;
+    for (final id in _inboxSubscribeTargetIds) {
+      InboxSubscribeService.instance.unsubscribe(id);
+    }
+    _inboxSubscribeTargetIds.clear();
+  }
 
   bool get isAppActive => lifecycle.isAppActive;
 
@@ -414,11 +423,7 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
     _peerConnSub?.cancel();
     _orphanApprovalSub?.cancel();
     _channelUpdateSub?.cancel();
-    _inboxPushSub?.cancel();
-    if (_inboxSubscribeTargetId != null) {
-      InboxSubscribeService.instance.unsubscribe(_inboxSubscribeTargetId!);
-      _inboxSubscribeTargetId = null;
-    }
+    _clearInboxPush();
     _agentTaskCompletionSub?.cancel();
     if (_typingListener != null) {
       chatService.typingChannelIds.removeListener(_typingListener!);
