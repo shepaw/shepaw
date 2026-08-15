@@ -30,6 +30,7 @@ import '../mailbox/mailbox_seal.dart';
 import '../mailbox/channel_mailbox_service.dart';
 import '../mailbox/mailbox_inbox_poller.dart';
 import '../../clis/shepaw/shepaw_cli.dart';
+import '../group/group_orchestration_tools.dart';
 import '../session/session_history_service.dart';
 import '../session/history_compactor.dart';
 import '../session/history_compaction_cache_service.dart';
@@ -468,6 +469,8 @@ class AgentMessagingService {
     /// `metadata.progress_content` and only the answer is streamed as content.
     /// Peer host relay must set false so the phone client can split once.
     bool foldProgressContent = true,
+    /// Extra OpenAI/Claude tool defs (e.g. group_dispatch for peer-hosted admin).
+    List<Map<String, dynamic>>? extraTools,
   }) async {
     LoggerService().debug('sendMessageToAgent: agentId=${agent.id}, name=${agent.name}, protocol=${agent.protocol}, status=${agent.status}, endpoint=${agent.endpoint}', tag: 'AgentMessagingService');
 
@@ -497,6 +500,7 @@ class AgentMessagingService {
           acpCancellationToken: acpCancellationToken,
           attachments: attachments,
           existingUserMessage: existingUserMessage,
+          extraTools: extraTools,
         );
       }
 
@@ -749,10 +753,51 @@ class AgentMessagingService {
 
     try {
       // Get or create connection for this agent (with retry + backoff + health fallback)
-      connection = await _getOrCreateACPConnectionWithRetry(
-        agent,
-        onReconnecting: onReconnecting,
-      );
+      try {
+        connection = await _getOrCreateACPConnectionWithRetry(
+          agent,
+          onReconnecting: onReconnecting,
+        );
+      } catch (e) {
+        if (ChannelMailboxService.agentHasChannelInbox(agent) &&
+            isRetriableConnectionError(e)) {
+          LoggerService().info(
+            'ACP unreachable after retries; leaving mailbox: $e',
+            tag: 'AgentMessagingService',
+          );
+          List<Map<String, dynamic>>? history;
+          if (sessionId != null) {
+            final messages = await loadChannelMessages(sessionId, limit: 40);
+            if (messages.isNotEmpty) {
+              history = messages
+                  .where((m) =>
+                      m.type != MessageType.system &&
+                      m.type != MessageType.permissionAudit &&
+                      m.id != userMessage.id)
+                  .map((m) {
+                final isAgent = m.from.isAgent;
+                final rawContent = isAgent
+                    ? m.content
+                    : '[${_formatTimestamp(m.timestampMs)}] ${m.content}';
+                return <String, dynamic>{
+                  'role': isAgent ? 'assistant' : 'user',
+                  'content':
+                      LocalLLMHelpers.enrichHistoryContent(m, rawContent),
+                };
+              }).toList();
+            }
+          }
+          return leaveMailboxAndCollect(
+            agent: agent,
+            userMessage: userMessage,
+            sessionId: sessionId ?? '',
+            requestId: _uuid.v4(),
+            chatHistory: history,
+            onStreamChunk: onStreamChunk,
+          );
+        }
+        rethrow;
+      }
 
       // Create task ID
       taskId = _uuid.v4();
@@ -1185,7 +1230,7 @@ class AgentMessagingService {
           taskCompleter.complete();
         }
 
-        final left = await _leaveMailboxMessage(
+        final left = await leaveMailboxAndCollect(
           agent: agent,
           userMessage: userMessage,
           sessionId: sessionId ?? '',
@@ -1783,6 +1828,7 @@ class AgentMessagingService {
     ACPCancellationToken? acpCancellationToken,
     List<AttachmentData>? attachments,
     Message? existingUserMessage,
+    List<Map<String, dynamic>>? extraTools,
   }) async {
     LoggerService().info('Starting local LLM chat', tag: 'AgentMessagingService');
 
@@ -1881,6 +1927,7 @@ class AgentMessagingService {
           // She-only data-access prompt copy is gated separately in AgentPromptBuilder.
           if (includeShepawCli) ShepawCLI.instance.claudeTool(),
           LocalLLMHelpers.getToolResultClaude(),
+          if (extraTools != null) ...extraTools,
         ];
       } else {
         combinedTools = [
@@ -1890,6 +1937,7 @@ class AgentMessagingService {
           if (hasToolModels && promptConfig.tools.includeToolModels) ...toolModelRegistry.openAITools(enabledToolModels: enabledToolModels, scenarioOverrides: toolModelScenarios),
           if (includeShepawCli) ShepawCLI.instance.openAITool(),
           LocalLLMHelpers.getToolResultOpenAI(),
+          if (extraTools != null) ...extraTools,
         ];
       }
 
@@ -2126,9 +2174,12 @@ class AgentMessagingService {
         final toolModelCalls = <LLMToolCallEvent>[];
         final pawToolCalls = <LLMToolCallEvent>[];
         final getToolResultCalls = <LLMToolCallEvent>[];
+        final orchToolCalls = <LLMToolCallEvent>[];
         for (final tc in toolCallEvents) {
           if (tc.name == LocalLLMHelpers.kGetToolResult) {
             getToolResultCalls.add(tc);
+          } else if (GroupOrchestrationTools.names.contains(tc.name)) {
+            orchToolCalls.add(tc);
           } else if (LocalLLMHelpers.isUiTool(tc.name)) {
             uiToolCalls.add(tc);
           } else if (skillRegistry.isSkillTool(tc.name)) {
@@ -2137,6 +2188,35 @@ class AgentMessagingService {
             toolModelCalls.add(tc);
           } else if (ShepawCLI.instance.isPawTool(tc.name)) {
             pawToolCalls.add(tc);
+          }
+        }
+
+        // Peer-hosted group admin: serialize orchestration tools as the
+        // legacy ```json``` block so the client parser can dispatch.
+        // Run before UI-tool break so a mixed round still carries the plan.
+        final orchResults = <Map<String, dynamic>>[];
+        if (orchToolCalls.isNotEmpty) {
+          for (final tc in orchToolCalls) {
+            final encoded = GroupOrchestrationTools.legacyJsonBlock(
+              tc.name,
+              tc.arguments,
+            );
+            final block = '\n\n```json\n$encoded\n```\n';
+            responseBuffer.write(block);
+            activeTask.accumulatedContent += block;
+            activeTask.onStreamChunk?.call(block);
+            final ok = jsonEncode({'ok': true, 'tool': tc.name});
+            orchResults.add({
+              'tool_call_id': tc.id,
+              'name': tc.name,
+              'result': ok,
+            });
+            infLog.onToolResult(
+              activeTask.taskId,
+              toolCallId: tc.id,
+              name: tc.name,
+              result: ok,
+            );
           }
         }
 
@@ -2224,9 +2304,14 @@ class AgentMessagingService {
         }
 
         // Handle skill tool calls, tool model calls, and paw tool calls (execute and feed results back)
-        final executableToolCalls = [...skillToolCalls, ...toolModelCalls, ...pawToolCalls];
+        final executableToolCalls = [
+          ...orchToolCalls,
+          ...skillToolCalls,
+          ...toolModelCalls,
+          ...pawToolCalls,
+        ];
         if (executableToolCalls.isNotEmpty && doneEvent?.rawAssistantMessage != null) {
-          final toolResults = <Map<String, dynamic>>[];
+          final toolResults = <Map<String, dynamic>>[...orchResults];
 
           for (final tc in executableToolCalls) {
             // Check if this is a tool model call
@@ -2725,14 +2810,19 @@ class AgentMessagingService {
     return '$y-$mo-$d $h:$mi:$s';
   }
 
-  /// Agent busy → seal message into channel inbox, poll for streamed reply.
-  Future<Message> _leaveMailboxMessage({
+  /// Agent busy / unreachable → seal message into channel inbox, poll for reply.
+  ///
+  /// [groupId] is recorded on the inbound so the agent can attribute a group
+  /// turn. History is omitted or truncated so ciphertext stays under quota.
+  Future<Message> leaveMailboxAndCollect({
     required RemoteAgent agent,
     required Message userMessage,
     required String sessionId,
     required String requestId,
     List<Map<String, dynamic>>? chatHistory,
     void Function(String chunk)? onStreamChunk,
+    String? groupId,
+    bool persistLeaveMetadata = true,
   }) async {
     Message notice({required String content}) => Message(
           id: const Uuid().v4(),
@@ -2771,13 +2861,16 @@ class AgentMessagingService {
       }
 
       final identity = await NoiseIdentity.loadOrCreate();
+      final trimmedHistory = _trimMailboxHistory(chatHistory);
       final ciphertext = await mailboxSealJson(
         {
           'message': userMessage.content,
           'message_id': userMessage.id,
           'request_id': requestId,
           'session_id': sessionId,
-          'history': chatHistory,
+          if (groupId != null && groupId.isNotEmpty) 'group_id': groupId,
+          if (trimmedHistory != null) 'history': trimmedHistory,
+          'caller_pubkey': base64Encode(identity.publicKey),
           'ts': DateTime.now().millisecondsSinceEpoch,
         },
         agentPub,
@@ -2792,14 +2885,24 @@ class AgentMessagingService {
         requestId: requestId,
         sessionId: sessionId,
         ciphertext: ciphertext,
+        groupId: groupId,
       );
 
-      await _db.updateMessageMetadata(userMessage.id, {
-        ...?userMessage.metadata,
-        'status': 'left_message',
-        'request_id': requestId,
-        'mailbox_pending': pending,
-      });
+      if (persistLeaveMetadata) {
+        try {
+          await _db.updateMessageMetadata(userMessage.id, {
+            ...?userMessage.metadata,
+            'status': 'left_message',
+            'request_id': requestId,
+            'mailbox_pending': pending,
+          });
+        } catch (e) {
+          LoggerService().warning(
+            'Mailbox leave metadata update skipped: $e',
+            tag: 'AgentMessagingService',
+          );
+        }
+      }
 
       try {
         final result = await MailboxInboxPoller(mailbox: mailbox)
@@ -2850,5 +2953,22 @@ class AgentMessagingService {
       );
       return notice(content: '对方正忙，留言失败：$e');
     }
+  }
+
+  /// Keep mailbox ciphertext well under [MailboxMaxCipherBytes] (32KB).
+  /// Session resume is the primary history source; this is a first-contact hint.
+  static const _mailboxHistoryBudgetBytes = 8 * 1024;
+
+  static List<Map<String, dynamic>>? _trimMailboxHistory(
+    List<Map<String, dynamic>>? history,
+  ) {
+    if (history == null || history.isEmpty) return null;
+    var trimmed = List<Map<String, dynamic>>.from(history);
+    while (trimmed.isNotEmpty) {
+      final bytes = utf8.encode(jsonEncode(trimmed)).length;
+      if (bytes <= _mailboxHistoryBudgetBytes) return trimmed;
+      trimmed.removeAt(0);
+    }
+    return null;
   }
 }

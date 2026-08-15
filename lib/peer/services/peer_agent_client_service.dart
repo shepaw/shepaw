@@ -1087,6 +1087,7 @@ class PeerAgentClientService {
     String? sessionId,
     List<AttachmentData>? attachments,
     List<Map<String, dynamic>>? history,
+    List<Map<String, dynamic>>? extraTools,
     void Function(String chunk)? onChunk,
     void Function(Map<String, dynamic>)? onMetadata,
     void Function(Map<String, dynamic>)? onActionConfirmation,
@@ -1188,6 +1189,7 @@ class PeerAgentClientService {
       if (sessionId != null && sessionId.isNotEmpty) 'session_id': sessionId,
       if (history != null && history.isNotEmpty) 'history': history,
       if (attachmentRefs != null) 'attachments': attachmentRefs,
+      if (extraTools != null && extraTools.isNotEmpty) 'extra_tools': extraTools,
     });
 
     if (!sent) {
@@ -2489,6 +2491,13 @@ class PeerAgentClientService {
       'delivered=${pending?.onActionConfirmation != null}',
       tag: 'PeerApproval',
     );
+  }
+
+  /// True when [approvalId] was already submitted (channel switch / timeout
+  /// must not auto-deny a verdict the user already sent).
+  bool hasSubmittedApproval(String approvalId) {
+    if (approvalId.isEmpty) return false;
+    return _submittedApprovals.containsKey(approvalId);
   }
 
   /// Submit the user's tool-call decision back to the hub.

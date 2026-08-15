@@ -142,6 +142,7 @@ class ChatService {
     notifyChannelUpdate: _notifyChannelUpdate,
     updateTypingAgentIds: _updateTypingAgentIds,
     getOrCreateACPConnection: _agentMessagingService.getOrCreateACPConnection,
+    leaveMailboxAndCollect: _agentMessagingService.leaveMailboxAndCollect,
   );
 
   /// Sub-service: 1:1 agent messaging (sendMessageToAgent + ACP + local LLM)
@@ -277,6 +278,35 @@ class ChatService {
     for (final channelId in tasksToCleanup) {
       await _markTaskInterrupted(channelId);
     }
+
+    await drainAllMailboxReplies();
+  }
+
+  /// Cross-agent inbox pull: persist sealed finals into each agent's latest DM.
+  /// Best-effort; used on resume and app start so replies are not stuck until
+  /// the user opens that chat.
+  Future<int> drainAllMailboxReplies({String userId = 'user'}) async {
+    var inserted = 0;
+    try {
+      final agents = await _databaseService.getAllRemoteAgents();
+      for (final agent in agents) {
+        if (!ChannelMailboxService.agentHasChannelInbox(agent)) continue;
+        final dms = await _databaseService.getChannelsForAgent(agent.id);
+        if (dms.isEmpty) continue;
+        final msgs = await fetchMailboxReplies(
+          channelId: dms.first.id,
+          agentId: agent.id,
+          userId: userId,
+        );
+        inserted += msgs.length;
+      }
+    } catch (e) {
+      LoggerService().warning(
+        'drainAllMailboxReplies failed: $e',
+        tag: 'ChatService',
+      );
+    }
+    return inserted;
   }
 
   /// Mark an active task as interrupted by background, save partial content
@@ -550,6 +580,7 @@ class ChatService {
     void Function(int attempt, int total)? onReconnecting,
     /// See [AgentMessagingService.sendMessageToAgent].
     bool foldProgressContent = true,
+    List<Map<String, dynamic>>? extraTools,
   }) => _agentMessagingService.sendMessageToAgent(
     content: content,
     agent: agent,
@@ -574,6 +605,7 @@ class ChatService {
     existingUserMessage: existingUserMessage,
     onReconnecting: onReconnecting,
     foldProgressContent: foldProgressContent,
+    extraTools: extraTools,
   );
 
   /// Returns the active ACP connection for [agentId], or null.

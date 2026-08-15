@@ -789,6 +789,7 @@ class ACPAgentConnection implements AcpInteractiveConnection {
     String? systemPrompt,
     Map<String, dynamic>? groupContext,
     List<Map<String, dynamic>>? attachments,
+    List<Map<String, dynamic>>? tools,
   }) async {
     final params = <String, dynamic>{
       'task_id': taskId,
@@ -828,6 +829,10 @@ class ACPAgentConnection implements AcpInteractiveConnection {
 
     if (attachments != null && attachments.isNotEmpty) {
       params['attachments'] = attachments;
+    }
+
+    if (tools != null && tools.isNotEmpty) {
+      params['tools'] = tools;
     }
 
     return await sendRequest(ACPMethod.agentChat, params: params);

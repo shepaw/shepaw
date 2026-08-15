@@ -332,10 +332,12 @@ class GroupOrchestrationService {
           final cascadeHistory = await loadAndTruncateHistory(channelId, excludeMessageId: userMessage.id);
 
           final newMentionedIds = <String>{};
+          final cascadeSteps = <DispatchStep>[];
           for (final msg in cascadeHistory.reversed) {
             if (!msg.from.isAgent) continue;
             if (!respondedAgentIds.contains(msg.from.id)) continue;
             final dispatch = _dispatchParser.parseStructuredDispatch(msg.content, nonAdminAgentsForCascade);
+            cascadeSteps.addAll(dispatch.steps);
             for (final mentionId in dispatch.steps.expand((s) => s.agentIds)) {
               if (!respondedAgentIds.contains(mentionId) && mentionId != adminAgentId) {
                 newMentionedIds.add(mentionId);
@@ -360,7 +362,11 @@ class GroupOrchestrationService {
               _executor.processGroupAgent(
                 agent: agent,
                 channelId: channelId,
-                content: effectiveContent,
+                content: GroupDispatchParser.taskContentForAgent(
+                  agentId: agent.id,
+                  steps: cascadeSteps,
+                  fallback: effectiveContent,
+                ),
                 attachments: attachments,
                 userId: userId,
                 userName: userName,
@@ -603,7 +609,8 @@ class GroupOrchestrationService {
             content: text,
             steps: parsed.steps,
             wantsContinue: parsed.wantsContinue,
-            isDone: parsed.steps.isEmpty && !parsed.wantsContinue,
+            isDone: parsed.isDone || parsed.isPause || (parsed.steps.isEmpty && !parsed.wantsContinue),
+            isPause: parsed.isPause,
             unresolvedNames: parsed.unresolvedNames,
           );
         }
@@ -1032,7 +1039,8 @@ class GroupOrchestrationService {
                 channelMembers: channelMembers,
                 customSystemPrompt: customSystemPrompt,
                 mentionMode: mentionMode,
-                  acpCancellationToken: acpCancellationToken,
+                failedAgentNames: List.unmodifiable(failedAgentNames),
+                acpCancellationToken: acpCancellationToken,
                 onStreamChunk: (agentId, agentName, chunk) {
                   adminResponseContent += chunk;
                   onStreamChunk?.call(agentId, agentName, chunk);
@@ -1109,7 +1117,7 @@ class GroupOrchestrationService {
                   _executor.processGroupAgent(
                     agent: agent,
                     channelId: channelId,
-                    content: effectiveContent,
+                    content: step.contentOr(effectiveContent),
                     attachments: attachments,
                     userId: userId,
                     userName: userName,
@@ -1152,7 +1160,11 @@ class GroupOrchestrationService {
                 _executor.processGroupAgent(
                   agent: agent,
                   channelId: channelId,
-                  content: effectiveContent,
+                  content: GroupDispatchParser.taskContentForAgent(
+                    agentId: agent.id,
+                    steps: dispatch.steps,
+                    fallback: effectiveContent,
+                  ),
                   attachments: attachments,
                   userId: userId,
                   userName: userName,
@@ -1196,10 +1208,12 @@ class GroupOrchestrationService {
 
               // Find messages from recently-responded agents and parse structured dispatch
               final newMentionedIds = <String>{};
+              final cascadeSteps = <DispatchStep>[];
               for (final msg in cascadeHistory.reversed) {
                 if (!msg.from.isAgent) continue;
                 if (!respondedAgentIds.contains(msg.from.id)) continue;
                 final dispatch = _dispatchParser.parseStructuredDispatch(msg.content, nonAdminAgents);
+                cascadeSteps.addAll(dispatch.steps);
                 for (final mentionId in dispatch.steps.expand((s) => s.agentIds)) {
                   if (!respondedAgentIds.contains(mentionId) && mentionId != adminAgentId) {
                     newMentionedIds.add(mentionId);
@@ -1226,7 +1240,11 @@ class GroupOrchestrationService {
                   _executor.processGroupAgent(
                     agent: agent,
                     channelId: channelId,
-                    content: effectiveContent,
+                    content: GroupDispatchParser.taskContentForAgent(
+                      agentId: agent.id,
+                      steps: cascadeSteps,
+                      fallback: effectiveContent,
+                    ),
                     attachments: attachments,
                     userId: userId,
                     userName: userName,
@@ -1247,6 +1265,7 @@ class GroupOrchestrationService {
                     onInteractionRequest: onInteractionRequest,
                   ).catchError((e) {
                     LoggerService().error('Cascade agent ${agent.name} uncaught error', tag: 'GroupOrchestrationService', error: e);
+                    failedAgentNames.add(agent.name);
                     onAgentDone?.call(agent.id, agent.name, true);
                     return const GroupTurnResult();
                   }),
@@ -1334,6 +1353,7 @@ class GroupOrchestrationService {
               channelMembers: channelMembers,
               customSystemPrompt: customSystemPrompt,
               mentionMode: mentionMode,
+              failedAgentNames: List.unmodifiable(failedAgentNames),
               acpCancellationToken: acpCancellationToken,
               onStreamChunk: (agentId, agentName, chunk) {
                 adminResponseContent += chunk;

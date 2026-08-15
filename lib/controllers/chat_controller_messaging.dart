@@ -1158,6 +1158,14 @@ mixin _MessagingOps on _ChatControllerBase {
       LoggerService().debug('processGroupMessage ABORTED: channelId=$currentChannelId, groupAgents=${groupAgents.length}', tag: 'ChatController');
       return;
     }
+    if (isProcessing) {
+      LoggerService().debug(
+        'processGroupMessage queued (already processing): ${content.length} chars',
+        tag: 'ChatController',
+      );
+      messageQueue.add(content);
+      return;
+    }
     LoggerService().debug('processGroupMessage: channelId=$currentChannelId, agents=${groupAgents.map((a) => a.name).toList()}, adminId=$groupAdminAgentId', tag: 'ChatController');
 
     final userId = getUserId();

@@ -17,6 +17,12 @@ class DispatchStep {
     required this.task,
     required this.mode,
   });
+
+  /// Member-facing brief for this step; empty task falls back to [fallback].
+  String contentOr(String fallback) {
+    final trimmed = task.trim();
+    return trimmed.isNotEmpty ? trimmed : fallback;
+  }
 }
 
 /// Pure parsing/utility functions for group chat dispatch.
@@ -67,6 +73,21 @@ class GroupDispatchParser {
     return agentIds;
   }
 
+  /// Look up the dispatch brief for [agentId]. Concurrent rounds may have
+  /// several steps; the first matching non-empty [DispatchStep.task] wins.
+  static String taskContentForAgent({
+    required String agentId,
+    required List<DispatchStep> steps,
+    required String fallback,
+  }) {
+    for (final step in steps) {
+      if (step.agentIds.contains(agentId)) {
+        return step.contentOr(fallback);
+      }
+    }
+    return fallback;
+  }
+
   /// Parse @mentions from an agent's response content, returning matching agent IDs.
   List<String> parseAgentMentions(String content, List<RemoteAgent> agents) {
     if (content.contains('@all')) {
@@ -94,13 +115,13 @@ class GroupDispatchParser {
   ///   "done": false
   /// }
   /// ```
-  ({List<DispatchStep> steps, bool wantsContinue, bool isDone, String? parseError, List<String> unresolvedNames})
+  ({List<DispatchStep> steps, bool wantsContinue, bool isDone, bool isPause, String? parseError, List<String> unresolvedNames})
       parseStructuredDispatch(String content, List<RemoteAgent> agents) {
     const noError = null;
     const noUnresolved = <String>[];
     final match = RegExp(r'```json\s*([\s\S]*?)\s*```', caseSensitive: false).firstMatch(content);
     if (match == null) {
-      return (steps: [], wantsContinue: false, isDone: true, parseError: noError, unresolvedNames: noUnresolved);
+      return (steps: [], wantsContinue: false, isDone: true, isPause: false, parseError: noError, unresolvedNames: noUnresolved);
     }
 
     Map<String, dynamic> parsed;
@@ -111,6 +132,7 @@ class GroupDispatchParser {
           steps: [],
           wantsContinue: false,
           isDone: true,
+          isPause: false,
           parseError: 'dispatch JSON root is not an object',
           unresolvedNames: noUnresolved,
         );
@@ -121,18 +143,27 @@ class GroupDispatchParser {
         steps: [],
         wantsContinue: false,
         isDone: true,
+        isPause: false,
         parseError: 'invalid dispatch JSON: $e',
         unresolvedNames: noUnresolved,
       );
     }
 
-    final isDone = parsed['done'] == true;
+    final isPause = parsed['pause'] == true;
+    final isDone = parsed['done'] == true || isPause;
     final wantsContinue = parsed['continue'] == true;
     final rawDispatch = parsed['dispatch'];
     final dispatchData = rawDispatch is Map ? rawDispatch : null;
 
     if (dispatchData == null || isDone) {
-      return (steps: [], wantsContinue: wantsContinue, isDone: isDone, parseError: noError, unresolvedNames: noUnresolved);
+      return (
+        steps: [],
+        wantsContinue: wantsContinue,
+        isDone: isDone,
+        isPause: isPause,
+        parseError: noError,
+        unresolvedNames: noUnresolved,
+      );
     }
 
     final rawMode = dispatchData['mode'];
@@ -203,7 +234,7 @@ class GroupDispatchParser {
       }
     }
 
-    return (steps: steps, wantsContinue: wantsContinue, isDone: false, parseError: parseError, unresolvedNames: unresolved);
+    return (steps: steps, wantsContinue: wantsContinue, isDone: false, isPause: false, parseError: parseError, unresolvedNames: unresolved);
   }
 
   /// Convert structured dispatch steps into a [FlowPlan] for workflow tracking.

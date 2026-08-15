@@ -110,13 +110,8 @@ class MailboxInboxPoller {
       InboxSubscribeService.instance.unsubscribe(agentId);
     }
 
-    if (ackIds.isNotEmpty) {
-      await _mailbox.ackInboxReplies(
-        channelBase: channelBase,
-        callerFp: callerFp,
-        ids: ackIds,
-      );
-    }
+    // Do not ack stream chunks on timeout — a later page load / resume drain
+    // still needs them (or the final) in the inbox.
     throw TimeoutException('Inbox reply timed out for request $requestId');
   }
 

@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import '../../models/remote_agent.dart';
 import 'group_dispatch_parser.dart';
 
@@ -217,5 +219,27 @@ class GroupOrchestrationTools {
       return action;
     }
     return null;
+  }
+
+  /// Encode a tool call as the legacy ```json``` block so remote/peer
+  /// admins that cannot receive extraTools still parse via text fallback.
+  static String legacyJsonBlock(String name, Map<String, dynamic> args) {
+    if (name == dispatchName) {
+      return jsonEncode({
+        'dispatch': {
+          'mode': args['mode'] ?? 'concurrent',
+          'steps': args['steps'] ?? [],
+        },
+        'continue': false,
+        'done': false,
+      });
+    }
+    if (name == finishName) {
+      final action = parseFinishAction(args);
+      if (action == 'continue') return jsonEncode({'continue': true});
+      if (action == 'pause') return jsonEncode({'pause': true});
+      return jsonEncode({'done': true});
+    }
+    return jsonEncode({'done': true});
   }
 }

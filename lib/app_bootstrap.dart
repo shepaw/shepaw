@@ -1,4 +1,5 @@
 import 'dart:io' show Platform;
+import 'dart:async';
 import 'package:flutter/widgets.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:uuid/uuid.dart';
@@ -303,6 +304,7 @@ class AppBootstrap {
       PeerAgentHostService.instance.start();
       await PeerAgentClientService.instance.start();
       await ChatService().restorePeerInflightTurns();
+      unawaited(ChatService().drainAllMailboxReplies());
       // 存储空间（docs/storage_protocol_spec.md v1）：master 帧处理 + staging GC。
       await StoreService.instance.start();
       // 同步引擎（spec v3 §6）：未同步队列 + 变更游标 + 批量原子上传。

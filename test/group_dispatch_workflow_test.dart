@@ -99,4 +99,57 @@ void main() {
     expect(plan.stages[0].steps.single.agent, 'Coder');
     expect(plan.stages[1].steps.single.agent, 'Reviewer');
   });
+
+  test('taskContentForAgent uses DispatchStep.task instead of user fallback', () {
+    final steps = [
+      const DispatchStep(
+        step: 1,
+        agentIds: ['a1'],
+        task: '实现登录',
+        mode: 'concurrent',
+      ),
+      const DispatchStep(
+        step: 2,
+        agentIds: ['a2'],
+        task: '写测试',
+        mode: 'concurrent',
+      ),
+    ];
+    expect(
+      GroupDispatchParser.taskContentForAgent(
+        agentId: 'a1',
+        steps: steps,
+        fallback: '用户原文',
+      ),
+      '实现登录',
+    );
+    expect(
+      GroupDispatchParser.taskContentForAgent(
+        agentId: 'a2',
+        steps: steps,
+        fallback: '用户原文',
+      ),
+      '写测试',
+    );
+    expect(
+      GroupDispatchParser.taskContentForAgent(
+        agentId: 'missing',
+        steps: steps,
+        fallback: '用户原文',
+      ),
+      '用户原文',
+    );
+  });
+
+  test('parseStructuredDispatch recognizes pause', () {
+    final dispatch = parser.parseStructuredDispatch(
+      '''```json
+{"pause": true}
+```''',
+      agents,
+    );
+    expect(dispatch.isPause, isTrue);
+    expect(dispatch.isDone, isTrue);
+    expect(dispatch.steps, isEmpty);
+  });
 }

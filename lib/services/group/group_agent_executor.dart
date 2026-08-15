@@ -23,6 +23,8 @@ import '../trace_service.dart';
 import '../foreground_task_service.dart';
 import '../logger_service.dart';
 import '../task/task_models.dart';
+import '../mailbox/channel_mailbox_service.dart';
+import '../messaging/connection_retry_policy.dart';
 import 'group_dispatch_parser.dart';
 import 'group_orchestration_tools.dart';
 import 'group_prompt_builder.dart';
@@ -53,6 +55,16 @@ class GroupAgentExecutor {
   final void Function(String channelId) notifyChannelUpdate;
   final void Function() updateTypingAgentIds;
   final Future<ACPAgentConnection> Function(RemoteAgent agent) getOrCreateACPConnection;
+  final Future<Message> Function({
+    required RemoteAgent agent,
+    required Message userMessage,
+    required String sessionId,
+    required String requestId,
+    List<Map<String, dynamic>>? chatHistory,
+    void Function(String chunk)? onStreamChunk,
+    String? groupId,
+    bool persistLeaveMetadata,
+  })? leaveMailboxAndCollect;
   late final GroupMemberSessionService _memberSessions =
       GroupMemberSessionService(_db);
 
@@ -66,6 +78,7 @@ class GroupAgentExecutor {
     required this.notifyChannelUpdate,
     required this.updateTypingAgentIds,
     required this.getOrCreateACPConnection,
+    this.leaveMailboxAndCollect,
   })  : _db = db,
         _uuid = uuid,
         _acpConnections = acpConnections,
@@ -914,6 +927,7 @@ class GroupAgentExecutor {
           message: peerMessage,
           sessionId: peerSessionId,
           attachments: attachments,
+          extraTools: isAdmin ? adminExtraTools : null,
           cancelToken: acpCancellationToken,
           localAgentId: agent.id,
           channelId: channelId,
@@ -1104,9 +1118,60 @@ class GroupAgentExecutor {
       ACPAgentConnection? connection;
       String? taskId;
       final taskCompleter = Completer<void>();
+      var usedMailbox = false;
+
+      Future<void> fillFromMailbox(Object reason) async {
+        LoggerService().info(
+          'Group ACP mailbox fallback for ${agent.name}: $reason',
+          tag: 'GroupAgentExecutor',
+        );
+        final left = await _collectGroupMailboxReply(
+          agent: agent,
+          content: content,
+          userId: userId,
+          userName: userName,
+          sessionId: memberSessionId,
+          requestId: taskId ?? _uuid.v4(),
+          channelId: channelId,
+          chatHistory: acpHistoryEntries.isNotEmpty ? acpHistoryEntries : null,
+          onChunk: (chunk) {
+            streamingStarted = true;
+            responseBuffer.write(chunk);
+            groupTask.accumulatedContent += chunk;
+            groupTask.onStreamChunk?.call(chunk);
+            onStreamChunk?.call(agent.id, agent.name, chunk);
+            infLogGroup.onTextChunk(groupTraceId, chunk);
+          },
+        );
+        if (left.type == MessageType.system) {
+          throw Exception(left.content);
+        }
+        if (left.content.isNotEmpty && responseBuffer.isEmpty) {
+          streamingStarted = true;
+          responseBuffer.write(left.content);
+          onStreamChunk?.call(agent.id, agent.name, left.content);
+          infLogGroup.onTextChunk(groupTraceId, left.content);
+        }
+        usedMailbox = true;
+      }
 
       try {
-        connection = await getOrCreateACPConnection(agent);
+        try {
+          connection = await getOrCreateACPConnection(agent);
+        } catch (e) {
+          if (ChannelMailboxService.agentHasChannelInbox(agent) &&
+              isRetriableConnectionError(e) &&
+              leaveMailboxAndCollect != null) {
+            await fillFromMailbox(e);
+          } else {
+            rethrow;
+          }
+        }
+        if (usedMailbox) {
+          infLogGroup.beginRound(groupTraceId, requestSummary: 'Group mailbox fallback');
+          infLogGroup.endRound(groupTraceId, stopReason: 'stop');
+          infLogGroup.endSession(groupTraceId, InferenceStatus.completed);
+        } else {
         taskId = _uuid.v4();
 
         infLogGroup.beginRound(groupTraceId, requestSummary: 'Group ACP request');
@@ -1405,9 +1470,11 @@ class GroupAgentExecutor {
           'is_first_message': isFirstMessage,
           if (messageVersion != null)
             'message_version': messageVersion,
+          if (isAdmin && adminExtraTools != null)
+            'orchestration_tools': adminExtraTools,
         };
 
-        await effectiveConnection.sendChatMessage(
+        final chatResp = await effectiveConnection.sendChatMessage(
           taskId: effectiveTaskId,
           sessionId: memberSessionId,
           message: content,
@@ -1420,17 +1487,36 @@ class GroupAgentExecutor {
               ?.where((a) => !a.exceedsSizeLimit)
               .map((a) => a.toJson())
               .toList(),
+          tools: isAdmin ? adminExtraTools : null,
         );
 
-        await taskCompleter.future.timeout(
-          const Duration(seconds: 300),
-          onTimeout: () {
-            throw TimeoutException('ACP group task timed out for ${agent.name}');
-          },
-        );
+        final busyStatus = chatResp.result is Map
+            ? (chatResp.result as Map)['status']?.toString()
+            : null;
+        if (busyStatus == 'busy') {
+          effectiveConnection.unregisterTaskCallbacks(effectiveTaskId);
+          acpCancellationToken?.unbind(effectiveConnection, effectiveTaskId);
+          if (!taskCompleter.isCompleted) taskCompleter.complete();
+          if (leaveMailboxAndCollect != null &&
+              ChannelMailboxService.agentHasChannelInbox(agent)) {
+            await fillFromMailbox('status=busy');
+          } else {
+            throw Exception('Agent busy');
+          }
+        } else {
+          await taskCompleter.future.timeout(
+            const Duration(seconds: 300),
+            onTimeout: () {
+              throw TimeoutException('ACP group task timed out for ${agent.name}');
+            },
+          );
+        }
 
-        effectiveConnection.unregisterTaskCallbacks(effectiveTaskId);
-        acpCancellationToken?.unbind(effectiveConnection, effectiveTaskId);
+        if (!usedMailbox) {
+          effectiveConnection.unregisterTaskCallbacks(effectiveTaskId);
+          acpCancellationToken?.unbind(effectiveConnection, effectiveTaskId);
+        }
+        }
       } catch (e) {
         LoggerService().error('Group agent ${agent.name} ACP error', tag: 'GroupAgentExecutor', error: e);
         if (connection != null && taskId != null) {
@@ -1705,6 +1791,47 @@ class GroupAgentExecutor {
     return buf.toString();
   }
 
+  Future<Message> _collectGroupMailboxReply({
+    required RemoteAgent agent,
+    required String content,
+    required String userId,
+    required String userName,
+    required String sessionId,
+    required String requestId,
+    required String channelId,
+    List<Map<String, dynamic>>? chatHistory,
+    void Function(String chunk)? onChunk,
+  }) async {
+    final leave = leaveMailboxAndCollect;
+    if (leave == null) {
+      return Message(
+        id: _uuid.v4(),
+        content: '对方正忙，请稍后再试。',
+        timestampMs: DateTime.now().millisecondsSinceEpoch,
+        from: MessageFrom(id: agent.id, type: 'agent', name: agent.name),
+        type: MessageType.system,
+      );
+    }
+    final userMessage = Message(
+      id: _uuid.v4(),
+      content: content,
+      timestampMs: DateTime.now().millisecondsSinceEpoch,
+      from: MessageFrom(id: userId, type: 'user', name: userName),
+      to: MessageFrom(id: agent.id, type: 'agent', name: agent.name),
+      type: MessageType.text,
+    );
+    return leave(
+      agent: agent,
+      userMessage: userMessage,
+      sessionId: sessionId,
+      requestId: requestId,
+      chatHistory: chatHistory,
+      onStreamChunk: onChunk,
+      groupId: channelId,
+      persistLeaveMetadata: false,
+    );
+  }
+
   Future<void> _saveGroupAgentErrorMessage({
     required String channelId,
     required String agentName,
@@ -1858,6 +1985,17 @@ class GroupAgentExecutor {
           } else if (userResponse == null) {
             // Timeout / cancelled: still reply so the peer hub can unblock
             // (openApprovals would otherwise hold agent_done forever).
+            // Skip if the user already submitted via another controller
+            // (e.g. switched channels after tapping Allow).
+            final approvalId = data['confirmation_id'] as String? ?? '';
+            if (PeerAgentClientService.instance.hasSubmittedApproval(approvalId)) {
+              LoggerService().info(
+                'Peer workflow approval timed out for ${agent.name} but '
+                'verdict already submitted; skipping auto-deny '
+                'confirmationId=$approvalId',
+                tag: 'GroupAgentExecutor',
+              );
+            } else {
             final deny = <String, dynamic>{
               'selected_action_id': 'deny',
               'selected_action_label': '拒绝',
@@ -1876,6 +2014,7 @@ class GroupAgentExecutor {
                 tag: 'GroupAgentExecutor',
                 error: e,
               );
+            }
             }
           }
         }

@@ -812,6 +812,14 @@ class PeerAgentHostService {
         );
       }
 
+      final extraToolsRaw = data['extra_tools'];
+      final extraTools = extraToolsRaw is List
+          ? extraToolsRaw
+              .whereType<Map>()
+              .map((e) => Map<String, dynamic>.from(e))
+              .toList()
+          : null;
+
       var response = await _chat.sendMessageToAgent(
         content: wireContent,
         agent: agent,
@@ -821,6 +829,7 @@ class PeerAgentHostService {
         acpCancellationToken: token,
         attachments: attachments,
         existingUserMessage: existingUserMessage,
+        extraTools: extraTools != null && extraTools.isNotEmpty ? extraTools : null,
         // Relay raw stream; the phone client folds progress once.
         foldProgressContent: false,
         onStreamChunk: (chunk) {
