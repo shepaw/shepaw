@@ -514,7 +514,7 @@ class RemoteAgent {
 
   /// 对端挂载的储物袋工作区（`store://workspaces/…`）。
   String? get workspaceUri {
-    final v = metadata['workspace_uri'];
+    final v = metadata['workspace_uri'] ?? metadata['workspaceUri'];
     if (v is String && v.startsWith('store://')) return v;
     return null;
   }

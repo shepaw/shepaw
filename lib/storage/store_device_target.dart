@@ -31,12 +31,15 @@ class StoreDeviceResolver {
   /// [deviceId] 先对本机 fingerprint，再对配对设备 fingerprint / device_id。
   static Future<StoreDeviceTarget> resolve(String deviceId) async {
     final self = await DeviceIdentity.deviceId();
-    if (deviceId == self) {
-      return StoreDeviceTarget(deviceId: deviceId, isLocal: true);
+    final key = deviceId.toLowerCase();
+    if (deviceId == self || key == self.toLowerCase()) {
+      return StoreDeviceTarget(deviceId: self, isLocal: true);
     }
 
     final peers = PeerStorageService();
-    final peer = await peers.getPeerByFingerprint(deviceId) ??
+    final peer = await peers.getPeerByFingerprint(key) ??
+        await peers.getPeerByFingerprint(deviceId) ??
+        await peers.getPeerByDeviceId(key) ??
         await peers.getPeerByDeviceId(deviceId);
     if (peer != null) {
       return _fromPeer(deviceId, peer);

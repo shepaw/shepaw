@@ -3,22 +3,50 @@ import 'device_identity.dart';
 import 'store_protocol.dart';
 import 'workspace_binding_service.dart';
 
+final _deviceFirstWorkspace = RegExp(
+  r'^store://([a-f0-9]{16})/workspaces(?:/(.*))?$',
+  caseSensitive: false,
+);
+
+/// Normalize a Hub/App workspace URI to space-first `store://workspaces/<device>/…`.
+///
+/// Also accepts the on-disk device-first form `store://<device>/workspaces/…`
+/// that some UIs copy from the store tree.
+String? canonicalizeStoreWorkspaceUri(String raw) {
+  final uri = raw.trim();
+  if (!uri.startsWith('store://')) return null;
+  final deviceFirst = _deviceFirstWorkspace.firstMatch(uri);
+  if (deviceFirst != null) {
+    final device = deviceFirst.group(1)!.toLowerCase();
+    final rest = (deviceFirst.group(2) ?? '').replaceAll(RegExp(r'/+$'), '');
+    return rest.isEmpty
+        ? 'store://workspaces/$device/'
+        : 'store://workspaces/$device/$rest/';
+  }
+  return uri.endsWith('/') ? uri : '$uri/';
+}
+
+String? _workspaceUriFromValue(Object? value) {
+  if (value is! String) return null;
+  return canonicalizeStoreWorkspaceUri(value);
+}
+
 /// Collect unique `store://workspaces/…` roots advertised on [metadata].
 List<String> workspaceUrisFromMetadata(Map<String, dynamic> metadata) {
   final out = <String>[];
   final seen = <String>{};
 
   void add(Object? value) {
-    if (value is! String) return;
-    final uri = value.trim();
-    if (!uri.startsWith('store://')) return;
+    final uri = _workspaceUriFromValue(value);
+    if (uri == null) return;
     final key = uri.replaceAll(RegExp(r'/+$'), '');
     if (key.isEmpty || !seen.add(key)) return;
-    out.add(uri.endsWith('/') ? uri : '$uri/');
+    out.add(uri);
   }
 
   add(metadata['workspace_uri']);
-  final list = metadata['workspace_uris'];
+  add(metadata['workspaceUri']);
+  final list = metadata['workspace_uris'] ?? metadata['workspaceUris'];
   if (list is List) {
     for (final item in list) {
       add(item);

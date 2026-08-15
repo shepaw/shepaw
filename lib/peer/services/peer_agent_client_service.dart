@@ -34,6 +34,7 @@ import 'peer_connection_manager.dart';
 import 'peer_inflight_turn.dart';
 import 'peer_storage_service.dart';
 import 'peer_turn_resume.dart';
+import '../../storage/agent_workspace_uris.dart';
 
 export 'peer_agent_ids.dart';
 export 'peer_inflight_turn.dart' show PeerTurnInFlightException;
@@ -642,6 +643,7 @@ class PeerAgentClientService {
   StreamSubscription<PeerControlEvent>? _controlSub;
   StreamSubscription<PeerConnectionEvent>? _eventSub;
   StreamSubscription<void>? _peerListSub;
+  final Map<String, List<Completer<void>>> _agentListWaiters = {};
   bool _running = false;
   /// False until [resumeHydratedTurns] so a `connected` event during
   /// bootstrap cannot complete a restored turn before ActiveTask handlers
@@ -771,6 +773,12 @@ class PeerAgentClientService {
     _eventSub = null;
     _peerListSub?.cancel();
     _peerListSub = null;
+    for (final waiters in _agentListWaiters.values) {
+      for (final c in waiters) {
+        if (!c.isCompleted) c.complete();
+      }
+    }
+    _agentListWaiters.clear();
     for (final timer in _persistTimers.values) {
       timer.cancel();
     }
@@ -2856,6 +2864,44 @@ class PeerAgentClientService {
     }));
   }
 
+  /// Re-fetch the peer's agent catalog and wait until it is written to SQLite.
+  ///
+  /// Used by agent detail "view workspace" so a stale in-memory [RemoteAgent]
+  /// (opened from chat before the latest `agent_list_resp`) still picks up
+  /// `workspace_uri`. Times out quietly if the peer never replies.
+  Future<void> refreshAgentList(
+    String peerId, {
+    Duration timeout = const Duration(seconds: 8),
+  }) async {
+    if (!PeerConnectionManager.instance.connectedPeerIds.contains(peerId)) {
+      return;
+    }
+    final completer = Completer<void>();
+    _agentListWaiters.putIfAbsent(peerId, () => []).add(completer);
+    _requestAgentList(peerId);
+    try {
+      await completer.future.timeout(timeout);
+    } on TimeoutException {
+      _agentListWaiters[peerId]?.remove(completer);
+    }
+  }
+
+  void _completeAgentListWaiters(String peerId) {
+    final waiters = _agentListWaiters.remove(peerId);
+    if (waiters == null) return;
+    for (final c in waiters) {
+      if (!c.isCompleted) c.complete();
+    }
+  }
+
+  String? _workspaceUriFromAgentListEntry(Map raw) {
+    final a = raw['workspace_uri'];
+    final b = raw['workspaceUri'];
+    final s = a is String ? a : (b is String ? b : null);
+    if (s == null || !s.startsWith('store://')) return null;
+    return canonicalizeStoreWorkspaceUri(s) ?? s;
+  }
+
   Future<void> _onAgentList(String peerId, Map<String, dynamic> data) async {
     final list = (data['agents'] as List?) ?? const [];
     final now = DateTime.now().millisecondsSinceEpoch;
@@ -2882,6 +2928,10 @@ class PeerAgentClientService {
         final enabled = raw['enabled'] != false;
         final running = raw['running'] == true;
         final online = !manageable || (enabled && running);
+        final workspaceUri = _workspaceUriFromAgentListEntry(raw);
+        final workspaceUris = raw['workspace_uris'] is List
+            ? raw['workspace_uris']
+            : (raw['workspaceUris'] is List ? raw['workspaceUris'] : null);
 
         final agent = RemoteAgent(
           id: localId,
@@ -2911,15 +2961,12 @@ class PeerAgentClientService {
             // 本机「是否在此 App 显示」由用户在设备详情里控制，同步时不得覆盖。
             if (existing?.metadata['hidden_on_this_app'] == true)
               'hidden_on_this_app': true,
-            if (raw['workspace_uri'] is String &&
-                (raw['workspace_uri'] as String).startsWith('store://'))
-              'workspace_uri': raw['workspace_uri'],
-            if (raw['workspace_uris'] is List)
-              'workspace_uris': raw['workspace_uris'],
-            if (raw['workspace_uri'] is! String &&
+            if (workspaceUri != null) 'workspace_uri': workspaceUri,
+            if (workspaceUris is List) 'workspace_uris': workspaceUris,
+            if (workspaceUri == null &&
                 existing?.metadata['workspace_uri'] is String)
               'workspace_uri': existing!.metadata['workspace_uri'],
-            if (raw['workspace_uris'] is! List &&
+            if (workspaceUris is! List &&
                 existing?.metadata['workspace_uris'] is List)
               'workspace_uris': existing!.metadata['workspace_uris'],
           },
@@ -2939,6 +2986,7 @@ class PeerAgentClientService {
 
       _log.debug('Injected ${seenRemoteIds.length} peer agents from $peerId', tag: _tag);
       PeerConnectionManager.instance.notifyPeerListChanged();
+      _completeAgentListWaiters(peerId);
 
       // Prefetch each agent's slash commands so the '/' palette works for
       // peer agents (which have no ACP connection to read them from).
@@ -2947,6 +2995,7 @@ class PeerAgentClientService {
       }
     } catch (e) {
       _log.warning('Failed to inject peer agents: $e', tag: _tag);
+      _completeAgentListWaiters(peerId);
     }
   }
 

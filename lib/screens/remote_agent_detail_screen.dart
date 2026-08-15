@@ -37,8 +37,8 @@ import 'agent_runtime_context_screen.dart';
 import 'agent_soul_edit_screen.dart';
 import 'workspace_binding_screen.dart';
 import 'storage_directory_opener.dart';
-import '../services/store_open_service.dart';
 import '../storage/agent_workspace_uris.dart';
+import '../storage/store_protocol.dart';
 
 /// 远端 Agent 详情页面（从聊天页进入）
 class RemoteAgentDetailScreen extends StatefulWidget {
@@ -164,11 +164,20 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
         setState(() {});
       });
       _loadPeerSyncPref();
+      unawaited(_refreshPeerAgentRow());
       if (_isEditing) {
         _loadPeerModels();
         _loadPeerModes();
       }
     }
+  }
+
+  Future<void> _refreshPeerAgentRow() async {
+    try {
+      final latest = await getIt<RemoteAgentService>().getAgentById(_agent.id);
+      if (!mounted || latest == null) return;
+      setState(() => _agent = latest);
+    } catch (_) {}
   }
 
   Future<void> _loadSoul() async {
@@ -1546,10 +1555,33 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
 
   Future<void> _openAgentWorkspace() async {
     final zh = Localizations.localeOf(context).languageCode.startsWith('zh');
-    final uris = await collectAgentWorkspaceUris(_agent);
-    final uri = primaryWorkspaceUri(uris);
+    var agent = _agent;
+    try {
+      final latest = await getIt<RemoteAgentService>().getAgentById(agent.id);
+      if (latest != null) agent = latest;
+    } catch (_) {}
+
+    var uris = await collectAgentWorkspaceUris(agent);
+    final peerId = agent.sourcePeerId;
+    if (primaryWorkspaceUri(uris) == null &&
+        agent.isPeerAgent &&
+        peerId != null &&
+        PeerConnectionManager.instance.connectedPeerIds.contains(peerId)) {
+      await PeerAgentClientService.instance.refreshAgentList(peerId);
+      if (!mounted) return;
+      try {
+        final latest = await getIt<RemoteAgentService>().getAgentById(agent.id);
+        if (latest != null) agent = latest;
+      } catch (_) {}
+      uris = await collectAgentWorkspaceUris(agent);
+    }
+    if (mounted && agent.id == _agent.id) {
+      setState(() => _agent = agent);
+    }
+
+    final rawUri = primaryWorkspaceUri(uris);
     if (!mounted) return;
-    if (uri == null) {
+    if (rawUri == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(zh ? '该 Agent 还没有挂载工作区' : 'This agent has no mounted workspace'),
@@ -1557,8 +1589,25 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
       );
       return;
     }
-    registerStorageDirectoryOpener();
-    await StoreOpenService.instance.openStoreUri(context, uri);
+    final uri = canonicalizeStoreWorkspaceUri(rawUri) ?? rawUri;
+    try {
+      final parsed = parseStoreUri(uri, allowEmptyPath: true);
+      registerStorageDirectoryOpener();
+      await openStorageDirectoryInBrowser(
+        context,
+        space: parsed.space,
+        deviceId: parsed.device,
+        path: parsed.path,
+        peerIdHint: agent.sourcePeerId,
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(zh ? '无法打开工作区：$e' : 'Cannot open workspace: $e'),
+        ),
+      );
+    }
   }
 
   /// 绑定 workspaces → runtime/workspace.md

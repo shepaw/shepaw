@@ -163,14 +163,25 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
   PeerStoreShareAllowlist? _inboundShares;
 
   List<String> get _spaces {
-    if (!_isRemote) return StoreSpace.browserSpaces;
-    final inbound = _inboundShares;
-    if (inbound != null && !inbound.isEmpty) {
-      final spaces = inbound.spaces.toList()..sort();
-      return spaces;
+    List<String> base;
+    if (!_isRemote) {
+      base = List<String>.from(StoreSpace.browserSpaces);
+    } else {
+      final inbound = _inboundShares;
+      if (inbound != null && !inbound.isEmpty) {
+        base = inbound.spaces.toList()..sort();
+      } else {
+        // 尚未收到 announce 时回退到内置共享分区（ACL 仍会拦截未分享路径）
+        base = List<String>.from(StoreSpace.sharedReadable);
+      }
     }
-    // 尚未收到 announce 时回退到内置共享分区（ACL 仍会拦截未分享路径）
-    return StoreSpace.sharedReadable;
+    // Explicit URI navigation (agent "view workspace") must keep its space
+    // even when inbound announce omitted workspaces.
+    final initial = widget.initialSpace;
+    if (initial != null && initial.isNotEmpty && !base.contains(initial)) {
+      base = [...base, initial];
+    }
+    return base;
   }
 
   /// 当前已进入的分区；根目录（分区列表）时为 null。
@@ -341,7 +352,8 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
       _inboundShares = inbound;
       if (_isRemote &&
           _navSpace != null &&
-          !_spaces.contains(_navSpace)) {
+          !_spaces.contains(_navSpace) &&
+          (widget.initialSpace == null || widget.initialSpace!.isEmpty)) {
         _navSpace = _spaces.isNotEmpty ? _spaces.first : StoreSpace.files;
         _navPath = '';
       }

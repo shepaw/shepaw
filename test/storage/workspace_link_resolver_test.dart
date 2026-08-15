@@ -21,6 +21,21 @@ void main() {
     );
   });
 
+  test('device-first store URI is rewritten to space-first', () {
+    expect(
+      canonicalizeStoreWorkspaceUri(
+        'store://aaaaaaaaaaaaaaaa/workspaces/Users/foo/proj',
+      ),
+      'store://workspaces/aaaaaaaaaaaaaaaa/Users/foo/proj/',
+    );
+    expect(
+      canonicalizeStoreWorkspaceUri(
+        'store://workspaces/aaaaaaaaaaaaaaaa/Users/foo/proj',
+      ),
+      'store://workspaces/aaaaaaaaaaaaaaaa/Users/foo/proj/',
+    );
+  });
+
   test('store:// hrefs pass through; http is left to the browser', () {
     expect(
       resolveWorkspaceHref('store://workspaces/aaaaaaaaaaaaaaaa/other.md', [root]),
@@ -36,6 +51,12 @@ void main() {
         'workspace_uri': 'store://workspaces/aaaaaaaaaaaaaaaa/Users/foo/proj',
       }),
       ['store://workspaces/aaaaaaaaaaaaaaaa/Users/foo/proj/'],
+    );
+    expect(
+      workspaceUrisFromMetadata({
+        'workspaceUri': 'store://bbbbbbbbbbbbbbbb/workspaces/Users/foo/proj',
+      }),
+      ['store://workspaces/bbbbbbbbbbbbbbbb/Users/foo/proj/'],
     );
   });
 }
