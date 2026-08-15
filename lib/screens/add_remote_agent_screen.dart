@@ -18,6 +18,10 @@ import 'agent_pairing_scanner_screen.dart';
 import 'skill_select_screen.dart';
 import '../widgets/agent_model_config_card.dart';
 
+/// Gateway / ACP remote-connect UI. Hidden while onboarding is peer-only;
+/// keep the connect-mode implementation so it can be re-enabled later.
+const bool kShowRemoteAgentConnectMode = false;
+
 /// 添加远端助手界面
 class AddRemoteAgentScreen extends StatefulWidget {
   /// Optional callback used in desktop embedded mode.
@@ -599,9 +603,10 @@ class _AddRemoteAgentScreenState extends State<AddRemoteAgentScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    // 模式切换 - SegmentedButton
-                    _buildModeSwitch(colorScheme),
-                    const SizedBox(height: 20),
+                    if (kShowRemoteAgentConnectMode) ...[
+                      _buildModeSwitch(colorScheme),
+                      const SizedBox(height: 20),
+                    ],
 
                     // 头像区域 - 渐变背景
                     _buildAvatarSection(colorScheme),
