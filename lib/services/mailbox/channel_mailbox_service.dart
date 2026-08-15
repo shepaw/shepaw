@@ -17,6 +17,40 @@ class ChannelMailboxException implements Exception {
   String toString() => 'ChannelMailboxException: $message';
 }
 
+/// Result of `GET /api/v1/agents/:id/presence` for an approved caller.
+class AgentChannelPresence {
+  AgentChannelPresence({
+    required this.online,
+    required this.busy,
+    required this.authorized,
+    this.activeCount = 0,
+    this.capacity = 5,
+  });
+
+  final bool online;
+  final bool busy;
+  final bool authorized;
+  final int activeCount;
+  final int capacity;
+
+  /// Offline or at capacity → skip the live tunnel body, use inbox.
+  bool get useInbox => authorized && (!online || busy);
+
+  factory AgentChannelPresence.fromJson(Map<String, dynamic> j) {
+    final authorized = j.containsKey('last_seen_at');
+    final capacity = (j['capacity'] as num?)?.toInt() ?? 5;
+    final active = (j['active_count'] as num?)?.toInt() ?? 0;
+    final busyFlag = j['busy'] as bool?;
+    return AgentChannelPresence(
+      online: j['online'] as bool? ?? false,
+      busy: busyFlag ?? (capacity > 0 && active >= capacity),
+      authorized: authorized,
+      activeCount: active,
+      capacity: capacity,
+    );
+  }
+}
+
 class MailboxReply {
   MailboxReply({
     required this.id,
@@ -75,6 +109,31 @@ class ChannelMailboxService {
       fallback: agent.metadata['target_agent_id'] as String? ?? agent.id,
     );
     return acpId.isNotEmpty;
+  }
+
+  /// Approved-caller presence probe. Returns null on network/HTTP failure.
+  /// Unauthorized callers get `{online:false}` without `last_seen_at`.
+  Future<AgentChannelPresence?> probePresence({
+    required String channelBase,
+    required String agentId,
+    required String callerFp,
+  }) async {
+    final uri = Uri.parse(
+      '$channelBase/api/v1/agents/${Uri.encodeComponent(agentId)}/presence',
+    ).replace(queryParameters: {'caller_fp': callerFp});
+    try {
+      final resp = await _client.get(uri).timeout(const Duration(seconds: 5));
+      if (resp.statusCode != 200) return null;
+      final data = jsonDecode(resp.body);
+      if (data is! Map<String, dynamic>) return null;
+      return AgentChannelPresence.fromJson(data);
+    } catch (e) {
+      LoggerService().debug(
+        'probePresence failed: $e',
+        tag: 'ChannelMailboxService',
+      );
+      return null;
+    }
   }
 
   /// True only for Channel Service relay URLs (`/proxy/<id>/…` or `/c/<alias>/…`).

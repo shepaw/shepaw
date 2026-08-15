@@ -580,7 +580,18 @@ class AgentMessagingService {
       Message? agentResponse;
       LoggerService().debug('Preparing to send message via ${agent.protocol} protocol', tag: 'AgentMessagingService');
 
-      if (agent.protocol == ProtocolType.peer) {
+      // Channel 接入后：离线或繁忙不把全文塞进设备级 tunnel，只投收件箱；
+      // 元信息由 channel 经 tunnel `mail_waiting` 推给接收端，回复同样走 inbox。
+      if (ChannelMailboxService.agentHasChannelInbox(agent)) {
+        agentResponse = await _tryChannelInboxRoute(
+          agent: agent,
+          userMessage: messageToSend,
+          sessionId: channelId,
+          onStreamChunk: onStreamChunk,
+        );
+      }
+
+      if (agentResponse == null && agent.protocol == ProtocolType.peer) {
         LoggerService().debug('Using peer protocol', tag: 'AgentMessagingService');
         agentResponse = await _sendViaPeerProtocol(
           messageToSend, agent,
@@ -591,7 +602,7 @@ class AgentMessagingService {
           acpCancellationToken: acpCancellationToken,
           attachments: attachments,
         );
-      } else if (agent.protocol == ProtocolType.acp) {
+      } else if (agentResponse == null && agent.protocol == ProtocolType.acp) {
         LoggerService().debug('Using ACP protocol', tag: 'AgentMessagingService');
         agentResponse = await _sendViaACPProtocol(
           messageToSend, agent,
@@ -611,7 +622,7 @@ class AgentMessagingService {
           onReconnecting: onReconnecting,
           foldProgressContent: foldProgressContent,
         );
-      } else {
+      } else if (agentResponse == null) {
         // For other protocols, use generic HTTP POST
         LoggerService().debug('Using generic protocol', tag: 'AgentMessagingService');
         agentResponse = await _sendViaGenericProtocol(messageToSend, agent);
@@ -765,34 +776,15 @@ class AgentMessagingService {
             'ACP unreachable after retries; leaving mailbox: $e',
             tag: 'AgentMessagingService',
           );
-          List<Map<String, dynamic>>? history;
-          if (sessionId != null) {
-            final messages = await loadChannelMessages(sessionId, limit: 40);
-            if (messages.isNotEmpty) {
-              history = messages
-                  .where((m) =>
-                      m.type != MessageType.system &&
-                      m.type != MessageType.permissionAudit &&
-                      m.id != userMessage.id)
-                  .map((m) {
-                final isAgent = m.from.isAgent;
-                final rawContent = isAgent
-                    ? m.content
-                    : '[${_formatTimestamp(m.timestampMs)}] ${m.content}';
-                return <String, dynamic>{
-                  'role': isAgent ? 'assistant' : 'user',
-                  'content':
-                      LocalLLMHelpers.enrichHistoryContent(m, rawContent),
-                };
-              }).toList();
-            }
-          }
           return leaveMailboxAndCollect(
             agent: agent,
             userMessage: userMessage,
             sessionId: sessionId ?? '',
             requestId: _uuid.v4(),
-            chatHistory: history,
+            chatHistory: await _mailboxHistoryForSession(
+              sessionId,
+              excludeMessageId: userMessage.id,
+            ),
             onStreamChunk: onStreamChunk,
           );
         }
@@ -2808,6 +2800,80 @@ class AgentMessagingService {
     final mi = dt.minute.toString().padLeft(2, '0');
     final s = dt.second.toString().padLeft(2, '0');
     return '$y-$mo-$d $h:$mi:$s';
+  }
+
+  Future<List<Map<String, dynamic>>?> _mailboxHistoryForSession(
+    String? sessionId, {
+    String? excludeMessageId,
+  }) async {
+    if (sessionId == null || sessionId.isEmpty) return null;
+    final messages = await loadChannelMessages(sessionId, limit: 40);
+    if (messages.isEmpty) return null;
+    return messages
+        .where((m) =>
+            m.type != MessageType.system &&
+            m.type != MessageType.permissionAudit &&
+            m.id != excludeMessageId)
+        .map((m) {
+      final isAgent = m.from.isAgent;
+      final rawContent = isAgent
+          ? m.content
+          : '[${_formatTimestamp(m.timestampMs)}] ${m.content}';
+      return <String, dynamic>{
+        'role': isAgent ? 'assistant' : 'user',
+        'content': LocalLLMHelpers.enrichHistoryContent(m, rawContent),
+      };
+    }).toList();
+  }
+
+  /// Probe channel presence. Offline / busy → inbox only (no full body on tunnel).
+  Future<Message?> _tryChannelInboxRoute({
+    required RemoteAgent agent,
+    required Message userMessage,
+    String? sessionId,
+    void Function(String chunk)? onStreamChunk,
+  }) async {
+    try {
+      final channelBase =
+          ChannelMailboxService.channelBaseFromEndpoint(agent.endpoint);
+      final acpAgentId = (agent.metadata['target_agent_id'] as String?) ??
+          ChannelMailboxService.resolveAgentId(
+            agent.endpoint,
+            fallback: agent.id,
+          );
+      if (channelBase == null || acpAgentId.isEmpty) return null;
+
+      final identity = await NoiseIdentity.loadOrCreate();
+      final presence = await ChannelMailboxService().probePresence(
+        channelBase: channelBase,
+        agentId: acpAgentId,
+        callerFp: identity.fingerprintHex,
+      );
+      if (presence == null || !presence.useInbox) return null;
+
+      LoggerService().info(
+        'Channel inbox route: online=${presence.online} busy=${presence.busy} '
+        'active=${presence.activeCount}/${presence.capacity}',
+        tag: 'AgentMessagingService',
+      );
+      return leaveMailboxAndCollect(
+        agent: agent,
+        userMessage: userMessage,
+        sessionId: sessionId ?? '',
+        requestId: _uuid.v4(),
+        chatHistory: await _mailboxHistoryForSession(
+          sessionId,
+          excludeMessageId: userMessage.id,
+        ),
+        onStreamChunk: onStreamChunk,
+      );
+    } catch (e) {
+      LoggerService().debug(
+        'Channel inbox route skipped: $e',
+        tag: 'AgentMessagingService',
+      );
+      return null;
+    }
   }
 
   /// Agent busy / unreachable → seal message into channel inbox, poll for reply.
