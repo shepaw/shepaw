@@ -671,7 +671,7 @@ abstract class AppLocalizations {
   /// No description provided for @home_addAgent.
   ///
   /// In zh, this message translates to:
-  /// **'添加 Agent'**
+  /// **'添加智能体'**
   String get home_addAgent;
 
   /// No description provided for @home_createGroup.
@@ -9440,6 +9440,36 @@ abstract class AppLocalizations {
   /// **'删除失败：{error}'**
   String storage_wipeSelfFailed(String error);
 
+  /// No description provided for @storage_clearAllData.
+  ///
+  /// In zh, this message translates to:
+  /// **'清除所有应用数据'**
+  String get storage_clearAllData;
+
+  /// No description provided for @storage_clearAllDataSub.
+  ///
+  /// In zh, this message translates to:
+  /// **'删除聊天、Agent、记忆与储物袋文件。建议先创建并导出快照。'**
+  String get storage_clearAllDataSub;
+
+  /// No description provided for @storage_clearAllDataContent.
+  ///
+  /// In zh, this message translates to:
+  /// **'这将删除：\n\n• 所有 Agent 配置与聊天记录\n• 用户档案与 Agent 记忆\n• 储物袋中的本机文件与快照\n\n不会删除应用锁密码与设备身份。\n\n此操作不可恢复。请输入 DELETE 确认。'**
+  String get storage_clearAllDataContent;
+
+  /// No description provided for @storage_clearAllDataSuccess.
+  ///
+  /// In zh, this message translates to:
+  /// **'所有应用数据已清除'**
+  String get storage_clearAllDataSuccess;
+
+  /// No description provided for @storage_clearAllDataFailed.
+  ///
+  /// In zh, this message translates to:
+  /// **'清除数据失败：{error}'**
+  String storage_clearAllDataFailed(String error);
+
   /// No description provided for @storage_browseFiles.
   ///
   /// In zh, this message translates to:
@@ -10247,7 +10277,7 @@ abstract class AppLocalizations {
   /// No description provided for @storage_entrySnapshotsSub.
   ///
   /// In zh, this message translates to:
-  /// **'加密快照与全量恢复'**
+  /// **'加密快照、全量恢复与清除数据'**
   String get storage_entrySnapshotsSub;
 
   /// No description provided for @storage_createBackup.

@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:provider/provider.dart';
-import 'package:share_plus/share_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../l10n/app_localizations.dart';
 import '../providers/locale_provider.dart';
@@ -12,21 +11,12 @@ import 'language_settings_screen.dart';
 import 'inference_log_screen.dart';
 import 'log_viewer_screen.dart';
 import 'user_profile_settings_screen.dart';
-import 'agent_memory_management_screen.dart';
 import 'model_management_screen.dart';
 import 'skill_management_screen.dart';
 import 'cli_config_management_screen.dart';
 import '../task/screens/scheduled_tasks_management_screen.dart';
 import '../utils/layout_utils.dart';
-import '../services/local_database_service.dart';
-import '../services/cognition_service.dart';
-import '../services/she_memory_db_service.dart';
-import '../services/agent_memory_store_service.dart';
-import '../services/local_file_storage_service.dart';
-import '../services/data_export_import_service.dart';
-import '../services/logger_service.dart';
 import '../services/biometric_service.dart';
-import '../services/inference_log_service.dart';
 import '../widgets/update_dialog.dart';
 import '../services/update_service.dart';
 import '../widgets/model_icon.dart';
@@ -190,6 +180,23 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ),
 
           ListTile(
+            leading: const Icon(Icons.person),
+            title: Text(l10n.settings_userProfile),
+            subtitle: Text(l10n.settings_userProfileSub),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => const UserProfileSettingsScreen(),
+                ),
+              );
+            },
+          ),
+
+          const Divider(),
+
+          ListTile(
             leading: const Icon(Icons.notifications),
             title: Text(l10n.settings_notifications),
             subtitle: Text(l10n.settings_notificationsSub),
@@ -303,72 +310,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 const ScheduledTasksManagementScreen(),
               ),
             ),
-
-          const Divider(height: 32),
-
-          // Data management section
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-            child: Text(
-              l10n.settings_dataManagement,
-              style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                color: Colors.grey[600],
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-          ),
-
-          ListTile(
-            leading: const Icon(Icons.person),
-            title: Text(l10n.settings_userProfile),
-            subtitle: Text(l10n.settings_userProfileSub),
-            trailing: const Icon(Icons.chevron_right),
-            onTap: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (context) => const UserProfileSettingsScreen(),
-                ),
-              );
-            },
-          ),
-
-          const Divider(),
-
-          ListTile(
-            leading: const Icon(Icons.memory),
-            title: Text(l10n.settings_agentMemories),
-            subtitle: Text(l10n.settings_agentMemoriesSub),
-            trailing: const Icon(Icons.chevron_right),
-            onTap: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (context) => const AgentMemoryManagementScreen(),
-                ),
-              );
-            },
-          ),
-
-          const Divider(),
-
-          ListTile(
-            leading: const Icon(Icons.file_download_outlined),
-            title: Text(l10n.settings_exportData),
-            subtitle: Text(l10n.settings_exportDataSub),
-            trailing: const Icon(Icons.chevron_right),
-            onTap: () => _showExportDataDialog(context),
-          ),
-
-          const Divider(),
-
-          ListTile(
-            leading: const Icon(Icons.delete_forever, color: Colors.red),
-            title: Text(l10n.settings_clearAllData),
-            subtitle: Text(l10n.settings_clearAllDataSub),
-            trailing: const Icon(Icons.chevron_right),
-            onTap: () => _showClearAllDataDialog(context),
-          ),
 
           const Divider(height: 32),
 
@@ -551,193 +492,5 @@ class _SettingsScreenState extends State<SettingsScreen> {
         ],
       ),
     );
-  }
-
-  // ── Export / Clear data ───────────────────────────────────────────────────
-
-  /// 显示导出数据确认对话框
-  void _showExportDataDialog(BuildContext context) {
-    showDialog(
-      context: context,
-      builder: (context) {
-        final dialogL10n = AppLocalizations.of(context);
-        return AlertDialog(
-          title: Text(dialogL10n.settings_exportDataTitle),
-          content: Text(dialogL10n.settings_exportDataContent),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: Text(dialogL10n.common_cancel),
-            ),
-            TextButton(
-              onPressed: () async {
-                Navigator.pop(context);
-                await _exportData(context);
-              },
-              child: Text(dialogL10n.settings_exportData),
-            ),
-          ],
-        );
-      },
-    );
-  }
-
-  /// 导出所有数据
-  Future<void> _exportData(BuildContext context) async {
-    final l10n = AppLocalizations.of(context);
-    try {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Row(
-            children: [
-              const SizedBox(
-                width: 16,
-                height: 16,
-                child: CircularProgressIndicator(
-                  strokeWidth: 2,
-                  valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
-                ),
-              ),
-              const SizedBox(width: 12),
-              Text(l10n.settings_exportingData),
-            ],
-          ),
-          duration: const Duration(seconds: 10),
-        ),
-      );
-
-      final exportService = DataExportImportService(
-        LocalDatabaseService(),
-        LocalFileStorageService(),
-        LoggerService(),
-      );
-
-      final zipPath = await exportService.exportAllData();
-
-      if (!context.mounted) return;
-      ScaffoldMessenger.of(context).hideCurrentSnackBar();
-
-      if (zipPath != null) {
-        await Share.shareXFiles([XFile(zipPath)]);
-        if (context.mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(l10n.settings_exportSuccess),
-              backgroundColor: Colors.green,
-            ),
-          );
-        }
-      } else {
-        if (context.mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(l10n.settings_exportFailed('Unknown error')),
-              backgroundColor: Colors.red,
-            ),
-          );
-        }
-      }
-    } catch (e) {
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).hideCurrentSnackBar();
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(l10n.settings_exportFailed('$e')),
-            backgroundColor: Colors.red,
-          ),
-        );
-      }
-    }
-  }
-
-  /// 显示清除所有数据确认对话框
-  void _showClearAllDataDialog(BuildContext context) {
-    showDialog(
-      context: context,
-      builder: (context) {
-        final dialogL10n = AppLocalizations.of(context);
-        return AlertDialog(
-          title: Text(dialogL10n.settings_clearAllDataTitle),
-          content: Text(dialogL10n.settings_clearAllDataContent),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: Text(dialogL10n.common_cancel),
-            ),
-            TextButton(
-              onPressed: () async {
-                Navigator.pop(context);
-                await _clearAllData(context);
-              },
-              child: Text(
-                dialogL10n.settings_clearAllDataButton,
-                style: const TextStyle(color: Colors.red),
-              ),
-            ),
-          ],
-        );
-      },
-    );
-  }
-
-  /// 清除所有数据
-  Future<void> _clearAllData(BuildContext context) async {
-    final l10n = AppLocalizations.of(context);
-    try {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Row(
-            children: [
-              const SizedBox(
-                width: 16,
-                height: 16,
-                child: CircularProgressIndicator(
-                  strokeWidth: 2,
-                  valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
-                ),
-              ),
-              const SizedBox(width: 12),
-              Text(l10n.settings_clearingAllData),
-            ],
-          ),
-          duration: const Duration(seconds: 5),
-        ),
-      );
-
-      final db = LocalDatabaseService();
-      await db.clearAllData();
-
-      await CognitionService.instance.clearAll();
-
-      // She 的记忆（soul / long_term_memory / self_notes 等）与各 Agent 的
-      // 储物袋 memory 空间也属于「全部数据」，一并清除。
-      await SheMemoryDbService().clearSheMemory();
-      await AgentMemoryStoreService.deleteAllAgentMemories();
-
-      InferenceLogService.instance.clearAll();
-
-      final fileStorage = LocalFileStorageService();
-      await fileStorage.clearAllResources();
-
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).hideCurrentSnackBar();
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(l10n.settings_clearAllDataSuccess),
-            backgroundColor: Colors.green,
-          ),
-        );
-      }
-    } catch (e) {
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).hideCurrentSnackBar();
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(l10n.settings_clearAllDataFailed('$e')),
-            backgroundColor: Colors.red,
-          ),
-        );
-      }
-    }
   }
 }

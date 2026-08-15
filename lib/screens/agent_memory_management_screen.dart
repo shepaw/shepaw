@@ -8,10 +8,10 @@ import '../theme/app_theme.dart';
 import '../widgets/avatar_image.dart';
 import 'agent_memory_detail_screen.dart';
 
-/// Agent 记忆管理列表页面（新版本）
-/// 
-/// 显示所有 Remote Agent 的列表，用户可以点击每个 Agent 查看和管理其记忆。
-/// 支持 pull-to-refresh 实时更新记忆计数。
+/// Agent 记忆管理列表：按 Agent 查看结构化记忆。
+///
+/// 产品入口在各 Agent 详情的「记忆 · Soul · 产物 · 附件」，
+/// 本页可作为全量总览单独打开。
 class AgentMemoryManagementScreen extends StatefulWidget {
   const AgentMemoryManagementScreen({Key? key}) : super(key: key);
 

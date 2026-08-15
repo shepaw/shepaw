@@ -34,7 +34,7 @@ class AgentMemoryStoreService {
     _instances.clear();
   }
 
-  /// 清除全部 Agent 的 memory 空间目录（设置「清除数据」用）。
+  /// 清除全部 Agent 的 memory 空间目录（储物袋「清除所有应用数据」用）。
   static Future<void> deleteAllAgentMemories() async {
     await closeAll();
     try {

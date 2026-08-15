@@ -137,7 +137,7 @@
   "home_weekFri": "周五",
   "home_weekSat": "周六",
   "home_weekSun": "周日",
-  "home_addAgent": "添加 Agent",
+  "home_addAgent": "添加智能体",
   "home_createGroup": "创建群组",
   "home_addDevice": "设备配对",
   "home_scanConnect": "扫码连接",
@@ -3077,6 +3077,16 @@
   "storage_wipeSelfTypeHint": "输入 DELETE",
   "storage_wipeSelfDone": "已清空本机存储（释放 {size}）",
   "storage_wipeSelfFailed": "删除失败：{error}",
+  "storage_clearAllData": "清除所有应用数据",
+  "storage_clearAllDataSub": "删除聊天、Agent、记忆与储物袋文件。建议先创建并导出快照。",
+  "storage_clearAllDataContent": "这将删除：\n\n• 所有 Agent 配置与聊天记录\n• 用户档案与 Agent 记忆\n• 储物袋中的本机文件与快照\n\n不会删除应用锁密码与设备身份。\n\n此操作不可恢复。请输入 DELETE 确认。",
+  "storage_clearAllDataSuccess": "所有应用数据已清除",
+  "storage_clearAllDataFailed": "清除数据失败：{error}",
+  "@storage_clearAllDataFailed": {
+    "placeholders": {
+      "error": { "type": "String" }
+    }
+  },
   "storage_browseFiles": "浏览文件",
   "storage_browserTitle": "存储文件",
   "storage_browserHint": "浏览本机 store 正式文件（删除后进入回收站）。多设备镜像请在同步节点管理。",
@@ -3437,7 +3447,7 @@
   "storage_recycleShowLess": "收起",
   "storage_deletedAt": "删除于 {time}",
   "storage_entrySnapshots": "备份与恢复",
-  "storage_entrySnapshotsSub": "加密快照与全量恢复",
+  "storage_entrySnapshotsSub": "加密快照、全量恢复与清除数据",
   "storage_createBackup": "备份当前数据",
   "storage_noSnapshotsHint": "创建第一份加密快照，即可随时恢复本机数据。",
   "storage_entrySpace": "本机空间",

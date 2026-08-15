@@ -282,19 +282,17 @@ All data is stored on your device by default:
 
 ### 3. Data Export & Backup
 
-#### 3.1 Exporting Data
-1. Go to **Settings** → **Data Management** → **Export Data**
-2. Choose a format:
-   - **JSON** — Full backup of all data
-   - **CSV** — Chat history only
-3. Tap **"Export"**
-4. Choose a save location
+Backup lives in **Nexus Pouch → Backup & Restore** (encrypted snapshots), not in Settings.
 
-#### 3.2 Importing a Backup
-1. Go to **Settings** → **Data Management** → **Import Data**
-2. Select your backup file (JSON format)
-3. Tap **"Import"**
-4. The app will restore all data from the backup
+#### 3.1 Create a snapshot
+1. Go to **Nexus Pouch** → **Backup & Restore**
+2. Tap **"Snapshot now"** and enter your master password
+3. On a snapshot row, tap **"Export"** to save it to a local folder
+
+#### 3.2 Restore from a snapshot
+1. Go to **Nexus Pouch** → **Backup & Restore**
+2. Choose a verified snapshot and tap **"Restore"**
+3. Enter the password; restore fully replaces current data (no merge)
 
 ---
 
@@ -304,11 +302,12 @@ All data is stored on your device by default:
 - Long-press a conversation in the list
 - Select **"Delete"**
 
-#### 4.2 Delete All Data
-1. Go to **Settings** → **Data Management** → **Clear All Data**
-2. Enter your confirmation password
-3. Tap **"Confirm Delete"**
-4. **Warning: This action is irreversible**
+#### 4.2 Delete all app data
+1. Go to **Nexus Pouch** → **Backup & Restore**
+2. Create and export a snapshot first
+3. In **Danger zone**, tap **"Clear all app data"**
+4. Type `DELETE` to confirm
+5. **Warning: This cannot be undone.** App lock password and device identity are kept.
 
 ---
 

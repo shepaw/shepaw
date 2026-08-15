@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 
 import '../l10n/app_localizations.dart';
 import '../peer/services/peer_storage_service.dart';
+import '../services/app_data_reset_service.dart';
 import '../services/vault_service.dart';
 import '../storage/device_identity.dart';
 import '../storage/local_store.dart';
@@ -22,8 +23,7 @@ import 'storage_shared.dart';
 import 'vault_restore_screen.dart';
 
 /// 备份与恢复子页（储物袋重构 §子页）：自动快照设置 + 本机快照列表 +
-/// 历史数据保险库入口（自设置页迁入，同属加密备份恢复）。
-/// 业务逻辑与原 storage_space_screen.dart M1/M3 区块一致。
+/// 历史数据保险库入口 + 清除应用数据（自设置页迁入）。
 class StorageSnapshotsScreen extends StatefulWidget {
   const StorageSnapshotsScreen({super.key});
 
@@ -273,6 +273,83 @@ class _StorageSnapshotsScreenState extends State<StorageSnapshotsScreen> {
     if (mounted) unawaited(_refresh());
   }
 
+  Future<void> _confirmClearAllData() async {
+    final l10n = AppLocalizations.of(context);
+    final controller = TextEditingController();
+    try {
+      final confirmed = await showDialog<bool>(
+        context: context,
+        builder: (ctx) {
+          final scheme = Theme.of(ctx).colorScheme;
+          return StatefulBuilder(
+            builder: (ctx, setLocal) {
+              final ok = controller.text.trim() == 'DELETE';
+              return AlertDialog(
+                icon: Icon(Icons.warning_amber_rounded,
+                    color: scheme.error, size: 36),
+                title: Text(l10n.storage_clearAllData),
+                content: SingleChildScrollView(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(l10n.storage_clearAllDataContent),
+                      const SizedBox(height: 16),
+                      TextField(
+                        controller: controller,
+                        autocorrect: false,
+                        enableSuggestions: false,
+                        decoration: InputDecoration(
+                          hintText: l10n.storage_wipeSelfTypeHint,
+                          border: const OutlineInputBorder(),
+                        ),
+                        onChanged: (_) => setLocal(() {}),
+                      ),
+                    ],
+                  ),
+                ),
+                actions: [
+                  TextButton(
+                    onPressed: () => Navigator.pop(ctx, false),
+                    child: Text(l10n.common_cancel),
+                  ),
+                  FilledButton(
+                    style: FilledButton.styleFrom(
+                      backgroundColor: scheme.error,
+                    ),
+                    onPressed: ok ? () => Navigator.pop(ctx, true) : null,
+                    child: Text(l10n.storage_clearAllData),
+                  ),
+                ],
+              );
+            },
+          );
+        },
+      );
+      if (confirmed == true && mounted) {
+        await _clearAllData();
+      }
+    } finally {
+      controller.dispose();
+    }
+  }
+
+  Future<void> _clearAllData() async {
+    final l10n = AppLocalizations.of(context);
+    setState(() => _busy = true);
+    try {
+      await AppDataResetService().clearAllAppData();
+      await _refresh();
+      if (mounted) storageToast(context, l10n.storage_clearAllDataSuccess);
+    } catch (e) {
+      if (mounted) {
+        storageToast(context, l10n.storage_clearAllDataFailed('$e'));
+      }
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
   Future<void> _purgeMirror(MirroredDeviceRow device) async {
     final l10n = AppLocalizations.of(context);
     final confirmed = await showDialog<bool>(
@@ -418,6 +495,9 @@ class _StorageSnapshotsScreenState extends State<StorageSnapshotsScreen> {
                       ],
                     const SizedBox(height: 20),
                     _buildVaultTile(l10n),
+                    const SizedBox(height: 20),
+                    _sectionLabel(l10n.storage_dangerZone),
+                    _buildDangerZone(l10n),
                   ],
                 ),
               );
@@ -495,6 +575,61 @@ class _StorageSnapshotsScreenState extends State<StorageSnapshotsScreen> {
         ),
         trailing: const Icon(Icons.chevron_right, size: 20),
         onTap: _busy ? null : () => unawaited(_openVault()),
+      ),
+    );
+  }
+
+  Widget _buildDangerZone(AppLocalizations l10n) {
+    final scheme = Theme.of(context).colorScheme;
+    return Card(
+      clipBehavior: Clip.antiAlias,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _iconBox(Icons.delete_forever, color: scheme.error),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        l10n.storage_clearAllData,
+                        style: const TextStyle(
+                          fontSize: 15,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        l10n.storage_clearAllDataSub,
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                              color: scheme.onSurfaceVariant,
+                            ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            SizedBox(
+              width: double.infinity,
+              child: OutlinedButton(
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: scheme.error,
+                  side: BorderSide(color: scheme.error),
+                ),
+                onPressed: _busy ? null : () => unawaited(_confirmClearAllData()),
+                child: Text(l10n.storage_clearAllData),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

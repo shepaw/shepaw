@@ -17,8 +17,8 @@ import '../storage/device_identity.dart';
 import '../storage/store_protocol.dart';
 import '../storage/store_service.dart';
 
-/// 数据导入导出服务
-/// 
+/// 数据导入导出服务（遗留 ZIP 路径；产品入口已改为储物袋加密快照）。
+///
 /// P2: 支持数据备份、恢复和迁移
 class DataExportImportService {
   final LocalDatabaseService _dbService;

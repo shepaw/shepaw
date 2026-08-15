@@ -308,7 +308,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get home_weekSun => '周日';
 
   @override
-  String get home_addAgent => '添加 Agent';
+  String get home_addAgent => '添加智能体';
 
   @override
   String get home_createGroup => '创建群组';
@@ -5164,6 +5164,24 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
+  String get storage_clearAllData => '清除所有应用数据';
+
+  @override
+  String get storage_clearAllDataSub => '删除聊天、Agent、记忆与储物袋文件。建议先创建并导出快照。';
+
+  @override
+  String get storage_clearAllDataContent =>
+      '这将删除：\n\n• 所有 Agent 配置与聊天记录\n• 用户档案与 Agent 记忆\n• 储物袋中的本机文件与快照\n\n不会删除应用锁密码与设备身份。\n\n此操作不可恢复。请输入 DELETE 确认。';
+
+  @override
+  String get storage_clearAllDataSuccess => '所有应用数据已清除';
+
+  @override
+  String storage_clearAllDataFailed(String error) {
+    return '清除数据失败：$error';
+  }
+
+  @override
   String get storage_browseFiles => '浏览文件';
 
   @override
@@ -5646,7 +5664,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get storage_entrySnapshots => '备份与恢复';
 
   @override
-  String get storage_entrySnapshotsSub => '加密快照与全量恢复';
+  String get storage_entrySnapshotsSub => '加密快照、全量恢复与清除数据';
 
   @override
   String get storage_createBackup => '备份当前数据';

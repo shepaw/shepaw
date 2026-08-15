@@ -5370,6 +5370,25 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
+  String get storage_clearAllData => 'Clear all app data';
+
+  @override
+  String get storage_clearAllDataSub =>
+      'Deletes chats, agents, memories, and pouch files. Create and export a snapshot first.';
+
+  @override
+  String get storage_clearAllDataContent =>
+      'This will delete:\n\n• All agent configurations and chat history\n• Your profile and agent memories\n• Local pouch files and snapshots\n\nApp lock password and device identity are kept.\n\nThis cannot be undone. Type DELETE to confirm.';
+
+  @override
+  String get storage_clearAllDataSuccess => 'All app data has been cleared';
+
+  @override
+  String storage_clearAllDataFailed(String error) {
+    return 'Failed to clear data: $error';
+  }
+
+  @override
   String get storage_browseFiles => 'Browse files';
 
   @override
@@ -5863,7 +5882,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get storage_entrySnapshotsSub =>
-      'Encrypted snapshots and full restore';
+      'Encrypted snapshots, restore, and clear data';
 
   @override
   String get storage_createBackup => 'Back up this device';
