@@ -82,7 +82,7 @@ class _CreateGroupScreenState extends State<CreateGroupScreen> {
       final agents = await _apiService.getAgents();
       if (mounted) {
         setState(() {
-          _agents = agents;
+          _agents = agents.where((a) => !a.hiddenOnThisApp).toList();
           _isLoading = false;
           _preselectSheAsAdmin();
         });

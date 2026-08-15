@@ -71,7 +71,8 @@ class _PeerAgentListPanelState extends State<PeerAgentListPanel>
       final mine = all
           .where((a) =>
               a.protocol == ProtocolType.peer &&
-              a.sourcePeerId == widget.peerId)
+              a.sourcePeerId == widget.peerId &&
+              !a.hiddenOnThisApp)
           .toList()
         ..sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
       if (mounted) {

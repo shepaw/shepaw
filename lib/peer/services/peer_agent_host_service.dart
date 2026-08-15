@@ -219,6 +219,8 @@ class PeerAgentHostService {
   Future<void> _handleManageReq(String peerId, Map<String, dynamic> data) async {
     final requestId = data['request_id'] as String? ?? '';
     final op = data['op'] as String? ?? '';
+    // Lifecycle (start / stop / set_enabled) is owned by this hub locally.
+    // Paired apps may only list shared agents.
     if (op != 'list') {
       await PeerConnectionManager.instance.sendControl(peerId, {
         'type': 'agent_manage_resp',

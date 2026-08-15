@@ -512,14 +512,17 @@ class RemoteAgent {
   /// 来源配对设备的显示名（仅 [isPeerAgent] 有意义）。
   String? get sourcePeerName => metadata['source_peer_name'] as String?;
 
-  /// 对端是否允许远程启停（Hub 实例）。
+  /// 对端是否把该实例标为可远程启停（Hub 上报，只读）。App 不得据此改远端生命周期。
   bool get peerAgentManageable => metadata['manageable'] == true;
 
-  /// 对端实例是否启用。未标注时视为启用。
+  /// 对端实例是否启用（Hub 上报，只读）。未标注时视为启用。
   bool get peerAgentEnabled => metadata['enabled'] != false;
 
-  /// 对端实例进程是否在跑。仅 [peerAgentManageable] 有意义。
+  /// 对端实例进程是否在跑（Hub 上报，只读）。仅 [peerAgentManageable] 有意义。
   bool get peerAgentRunning => metadata['running'] == true;
+
+  /// 本 App 是否隐藏该配对设备上的 agent。不影响远端 Hub 的启停 / 启用。
+  bool get hiddenOnThisApp => metadata['hidden_on_this_app'] == true;
 
   /// 获取连接类型显示名称
   String get connectionTypeName {

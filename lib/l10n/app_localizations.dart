@@ -7208,6 +7208,24 @@ abstract class AppLocalizations {
   /// **'Agent 管理'**
   String get peerSettings_sectionAgents;
 
+  /// No description provided for @peerSettings_agentVisibilityHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'只控制本 App 是否展示该 Agent，不会在远端 Hub 上停用或下线。'**
+  String get peerSettings_agentVisibilityHint;
+
+  /// No description provided for @peerSettings_agentShowOnApp.
+  ///
+  /// In zh, this message translates to:
+  /// **'在本机显示'**
+  String get peerSettings_agentShowOnApp;
+
+  /// No description provided for @peerSettings_agentHiddenOnApp.
+  ///
+  /// In zh, this message translates to:
+  /// **'本机已隐藏'**
+  String get peerSettings_agentHiddenOnApp;
+
   /// No description provided for @peerSettings_agentEnabled.
   ///
   /// In zh, this message translates to:
@@ -7247,7 +7265,7 @@ abstract class AppLocalizations {
   /// No description provided for @peerSettings_agentManageOffline.
   ///
   /// In zh, this message translates to:
-  /// **'设备离线，无法管理 Agent'**
+  /// **'设备离线，暂无已同步的 Agent'**
   String get peerSettings_agentManageOffline;
 
   /// No description provided for @peerSettings_noManagedAgents.

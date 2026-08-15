@@ -145,6 +145,9 @@ class Agent {
   /// 来源配对设备的显示名（仅 [isPeerAgent] 有意义）。
   String? get sourcePeerName => metadata?['source_peer_name'] as String?;
 
+  /// 本 App 是否隐藏该配对设备上的 agent。不影响远端 Hub 的启停 / 启用。
+  bool get hiddenOnThisApp => metadata?['hidden_on_this_app'] == true;
+
   Agent copyWith({
     String? id,
     String? name,

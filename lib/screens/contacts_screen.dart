@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import '../l10n/app_localizations.dart';
 import '../models/agent.dart';
@@ -82,6 +84,8 @@ class ContactsScreenState extends State<ContactsScreen> {
   /// Peer ids whose nested agent list is expanded.
   final Set<String> _expandedPeerIds = {};
 
+  StreamSubscription<void>? _peerListSub;
+
   Future<void> reload() => _loadData();
 
   @override
@@ -94,10 +98,14 @@ class ContactsScreenState extends State<ContactsScreen> {
       }
     });
     _loadData();
+    _peerListSub = PeerConnectionManager.instance.peerListChanged.listen((_) {
+      _loadData(quiet: true);
+    });
   }
 
   @override
   void dispose() {
+    _peerListSub?.cancel();
     _searchController.dispose();
     super.dispose();
   }
@@ -114,8 +122,8 @@ class ContactsScreenState extends State<ContactsScreen> {
     }
   }
 
-  Future<void> _loadData() async {
-    setState(() => _isLoading = true);
+  Future<void> _loadData({bool quiet = false}) async {
+    if (!quiet && mounted) setState(() => _isLoading = true);
     try {
       final agents = await _apiService.getAgents();
       final allChannels = await _databaseService.getAllChannels();
@@ -152,7 +160,10 @@ class ContactsScreenState extends State<ContactsScreen> {
 
   List<Agent> _agentsForPeer(String peerId) {
     final list = _agents
-        .where((a) => a.isPeerAgent && a.sourcePeerId == peerId)
+        .where((a) =>
+            a.isPeerAgent &&
+            a.sourcePeerId == peerId &&
+            !a.hiddenOnThisApp)
         .toList();
     if (_query.isEmpty) return list;
     return list.where(_agentMatchesQuery).toList();
@@ -161,6 +172,7 @@ class ContactsScreenState extends State<ContactsScreen> {
   List<Agent> get _localAgents {
     final paired = _pairedPeerIds;
     final list = _agents.where((a) {
+      if (a.hiddenOnThisApp) return false;
       // 本机：非 peer agent；若 peer 已解配则暂挂在本机以免丢失入口。
       if (!a.isPeerAgent) return true;
       final src = a.sourcePeerId;

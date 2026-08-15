@@ -4049,6 +4049,16 @@ class AppLocalizationsEn extends AppLocalizations {
   String get peerSettings_sectionAgents => 'Agent Management';
 
   @override
+  String get peerSettings_agentVisibilityHint =>
+      'This only controls whether the agent appears in this app. It does not stop or disable the agent on the remote hub.';
+
+  @override
+  String get peerSettings_agentShowOnApp => 'Show on this app';
+
+  @override
+  String get peerSettings_agentHiddenOnApp => 'Hidden here';
+
+  @override
   String get peerSettings_agentEnabled => 'Enabled';
 
   @override
@@ -4068,7 +4078,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get peerSettings_agentManageOffline =>
-      'Device is offline. Agent management is unavailable.';
+      'Device is offline. No synced agents yet.';
 
   @override
   String get peerSettings_noManagedAgents => 'This device has no agents yet';

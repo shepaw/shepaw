@@ -1749,13 +1749,16 @@
     }
   },
   "peerSettings_sectionAgents": "Agent Management",
+  "peerSettings_agentVisibilityHint": "This only controls whether the agent appears in this app. It does not stop or disable the agent on the remote hub.",
+  "peerSettings_agentShowOnApp": "Show on this app",
+  "peerSettings_agentHiddenOnApp": "Hidden here",
   "peerSettings_agentEnabled": "Enabled",
   "peerSettings_agentDisabled": "Disabled",
   "peerSettings_agentStart": "Start",
   "peerSettings_agentStop": "Stop",
   "peerSettings_agentRunning": "Running",
   "peerSettings_agentStopped": "Stopped",
-  "peerSettings_agentManageOffline": "Device is offline. Agent management is unavailable.",
+  "peerSettings_agentManageOffline": "Device is offline. No synced agents yet.",
   "peerSettings_noManagedAgents": "This device has no agents yet",
   "peerSettings_agentOpFailed": "Operation failed: {error}",
   "@peerSettings_agentOpFailed": {

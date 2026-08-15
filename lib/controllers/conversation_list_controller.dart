@@ -223,7 +223,7 @@ class ConversationListController extends ChangeNotifier {
     }
 
     try {
-      final agents = await _apiService.getAgents();
+      final agents = _visibleOnThisApp(await _apiService.getAgents());
       await _loadAgentPreviews(agents);
 
       final allChannels = await _databaseService.getAllChannels();
@@ -423,7 +423,8 @@ class ConversationListController extends ChangeNotifier {
           timeout: const Duration(seconds: 3),
         );
         if (_disposed) return;
-        final freshAgents = await _apiService.getAgents();
+        final freshAgents =
+            _visibleOnThisApp(await _apiService.getAgents());
         if (_disposed) return;
         if (!_agentOnlineStatusChanged(freshAgents, _agents)) return;
 
@@ -451,6 +452,12 @@ class ConversationListController extends ChangeNotifier {
     }
     return false;
   }
+
+  /// Peer agents the user hid in device settings stay out of the home list.
+  static List<Agent> visibleOnThisApp(List<Agent> agents) =>
+      agents.where((a) => !a.hiddenOnThisApp).toList();
+
+  List<Agent> _visibleOnThisApp(List<Agent> agents) => visibleOnThisApp(agents);
 
   List<Agent> _applySearchFilter(List<Agent> agents) {
     final query = _searchQuery.toLowerCase();

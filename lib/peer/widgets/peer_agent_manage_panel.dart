@@ -7,11 +7,13 @@ import '../../models/remote_agent.dart';
 import '../../screens/chat_screen.dart';
 import '../../service_locator.dart' show getIt;
 import '../../services/local_database_service.dart';
+import '../../services/remote_agent_service.dart';
 import '../../widgets/avatar_image.dart';
 import '../services/peer_agent_client_service.dart';
 import '../services/peer_connection_manager.dart';
 
-/// Device-details section: list peer agents and (on Hub) enable / start / stop.
+/// Device-details section: list peer agents and toggle whether they appear
+/// in this app. Start / stop / disable stay on the remote hub.
 class PeerAgentManagePanel extends StatefulWidget {
   final String peerId;
   final bool isPeerConnected;
@@ -30,12 +32,9 @@ class _PeerAgentManagePanelState extends State<PeerAgentManagePanel> {
   List<PeerAgentManageEntry> _entries = const [];
   List<RemoteAgent> _localAgents = const [];
   bool _loading = true;
-  bool _unsupported = false;
   String? _error;
   String? _busyId;
   StreamSubscription<void>? _peerListSub;
-
-  bool get _manageable => _entries.any((e) => e.manageable);
 
   @override
   void initState() {
@@ -82,65 +81,61 @@ class _PeerAgentManagePanelState extends State<PeerAgentManagePanel> {
       _localAgents = mine;
       _loading = false;
       if (remote == null) {
-        _unsupported = false;
         _error = null;
-        _entries = mine
-            .map((a) => PeerAgentManageEntry(
-                  id: a.remoteAgentId ?? a.id,
-                  name: a.name,
-                  engine: (a.metadata['engine'] as String?) ?? '',
-                  running: a.peerAgentRunning,
-                  enabled: a.peerAgentEnabled,
-                  manageable: a.peerAgentManageable,
-                ))
-            .toList();
+        _entries = mine.map(_entryFromLocal).toList();
         return;
       }
-      _unsupported = remote.unsupported;
-      _error = remote.ok ? null : remote.error;
+      _error = remote.ok || remote.unsupported ? null : remote.error;
       if (remote.agents.isNotEmpty) {
         _entries = remote.agents;
       } else if (remote.ok || remote.unsupported) {
-        _entries = mine
-            .map((a) => PeerAgentManageEntry(
-                  id: a.remoteAgentId ?? a.id,
-                  name: a.name,
-                  engine: (a.metadata['engine'] as String?) ?? '',
-                  running: a.peerAgentRunning,
-                  enabled: a.peerAgentEnabled,
-                  manageable: a.peerAgentManageable,
-                ))
-            .toList();
+        _entries = mine.map(_entryFromLocal).toList();
       }
     });
   }
 
-  Future<void> _runOp({
-    required String op,
-    required String agentId,
-    bool? enabled,
-  }) async {
-    if (!widget.isPeerConnected) return;
-    setState(() => _busyId = agentId);
-    final result = await PeerAgentClientService.instance.manageAgents(
-      peerId: widget.peerId,
-      op: op,
-      agentId: agentId,
-      enabled: enabled,
+  PeerAgentManageEntry _entryFromLocal(RemoteAgent a) {
+    return PeerAgentManageEntry(
+      id: a.remoteAgentId ?? a.id,
+      name: a.name,
+      engine: (a.metadata['engine'] as String?) ?? '',
+      running: a.peerAgentRunning,
+      enabled: a.peerAgentEnabled,
+      manageable: a.peerAgentManageable,
     );
-    if (!mounted) return;
-    setState(() {
-      _busyId = null;
-      _error = result.ok ? null : result.error;
-      if (result.agents.isNotEmpty) _entries = result.agents;
-    });
   }
 
-  void _openChat(PeerAgentManageEntry entry) {
-    final local = _localAgents.cast<RemoteAgent?>().firstWhere(
+  RemoteAgent? _localFor(PeerAgentManageEntry entry) {
+    return _localAgents.cast<RemoteAgent?>().firstWhere(
           (a) => a!.remoteAgentId == entry.id || a.id == entry.id,
           orElse: () => null,
         );
+  }
+
+  Future<void> _setVisibleOnApp(RemoteAgent local, bool visible) async {
+    setState(() => _busyId = local.remoteAgentId ?? local.id);
+    try {
+      final latest =
+          await getIt<LocalDatabaseService>().getRemoteAgentById(local.id) ??
+              local;
+      final metadata = Map<String, dynamic>.from(latest.metadata);
+      if (visible) {
+        metadata.remove('hidden_on_this_app');
+      } else {
+        metadata['hidden_on_this_app'] = true;
+      }
+      await getIt<RemoteAgentService>().updateAgent(
+        latest.copyWith(metadata: metadata),
+      );
+      PeerConnectionManager.instance.notifyPeerListChanged();
+      await _load(quiet: true);
+    } finally {
+      if (mounted) setState(() => _busyId = null);
+    }
+  }
+
+  void _openChat(PeerAgentManageEntry entry) {
+    final local = _localFor(entry);
     if (local == null) return;
     Navigator.of(context).push(
       MaterialPageRoute(
@@ -170,6 +165,13 @@ class _PeerAgentManagePanelState extends State<PeerAgentManagePanel> {
                 ),
           ),
         ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+          child: Text(
+            l10n.peerSettings_agentVisibilityHint,
+            style: TextStyle(color: Colors.grey[600], fontSize: 12),
+          ),
+        ),
         if (_loading)
           const Padding(
             padding: EdgeInsets.symmetric(vertical: 16),
@@ -192,7 +194,7 @@ class _PeerAgentManagePanelState extends State<PeerAgentManagePanel> {
             ),
           )
         else
-          ..._entries.map((entry) => _buildTile(context, l10n, colorScheme, entry)),
+          ..._entries.map((entry) => _buildTile(l10n, entry)),
         if (_error != null && _error != 'timeout' && _error != 'offline')
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
@@ -206,27 +208,35 @@ class _PeerAgentManagePanelState extends State<PeerAgentManagePanel> {
   }
 
   Widget _buildTile(
-    BuildContext context,
     AppLocalizations l10n,
-    ColorScheme colorScheme,
     PeerAgentManageEntry entry,
   ) {
-    final local = _localAgents.cast<RemoteAgent?>().firstWhere(
-          (a) => a!.remoteAgentId == entry.id || a.id == entry.id,
-          orElse: () => null,
-        );
+    final local = _localFor(entry);
     final busy = _busyId == entry.id;
-    final canManage = _manageable && !_unsupported && widget.isPeerConnected;
-    final statusLabel = !entry.enabled
-        ? l10n.peerSettings_agentDisabled
-        : entry.running
-            ? l10n.peerSettings_agentRunning
-            : l10n.peerSettings_agentStopped;
-    final statusColor = !entry.enabled
-        ? Colors.grey
-        : entry.running
-            ? Colors.green
-            : Colors.orange;
+    final hidden = local?.hiddenOnThisApp ?? false;
+    final String statusLabel;
+    final Color statusColor;
+    if (hidden) {
+      statusLabel = l10n.peerSettings_agentHiddenOnApp;
+      statusColor = Colors.grey;
+    } else if (entry.manageable) {
+      if (!entry.enabled) {
+        statusLabel = l10n.peerSettings_agentDisabled;
+        statusColor = Colors.grey;
+      } else if (entry.running) {
+        statusLabel = l10n.peerSettings_agentRunning;
+        statusColor = Colors.green;
+      } else {
+        statusLabel = l10n.peerSettings_agentStopped;
+        statusColor = Colors.orange;
+      }
+    } else if (local?.isOnline == true) {
+      statusLabel = l10n.status_online;
+      statusColor = Colors.green;
+    } else {
+      statusLabel = l10n.status_offline;
+      statusColor = Colors.grey;
+    }
 
     return ListTile(
       leading: AvatarImage(
@@ -246,56 +256,37 @@ class _PeerAgentManagePanelState extends State<PeerAgentManagePanel> {
         style: TextStyle(color: statusColor, fontSize: 12),
       ),
       onTap: local == null ? null : () => _openChat(entry),
-      trailing: canManage
-          ? Row(
+      trailing: local == null
+          ? null
+          : Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                SizedBox(
-                  height: 28,
-                  child: FittedBox(
-                    fit: BoxFit.scaleDown,
-                    child: Switch(
-                      value: entry.enabled,
-                      onChanged: busy
-                          ? null
-                          : (v) => _runOp(
-                                op: 'set_enabled',
-                                agentId: entry.id,
-                                enabled: v,
-                              ),
+                if (busy)
+                  const Padding(
+                    padding: EdgeInsets.only(right: 8),
+                    child: SizedBox(
+                      width: 22,
+                      height: 22,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    ),
+                  ),
+                Tooltip(
+                  message: l10n.peerSettings_agentShowOnApp,
+                  child: SizedBox(
+                    height: 28,
+                    child: FittedBox(
+                      fit: BoxFit.scaleDown,
+                      child: Switch(
+                        value: !hidden,
+                        onChanged: busy
+                            ? null
+                            : (v) => _setVisibleOnApp(local, v),
+                      ),
                     ),
                   ),
                 ),
-                const SizedBox(width: 4),
-                if (busy)
-                  const SizedBox(
-                    width: 22,
-                    height: 22,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  )
-                else
-                  IconButton(
-                    tooltip: entry.running
-                        ? l10n.peerSettings_agentStop
-                        : l10n.peerSettings_agentStart,
-                    icon: Icon(
-                      entry.running ? Icons.stop_circle_outlined : Icons.play_circle_outline,
-                      color: entry.running
-                          ? colorScheme.error
-                          : (entry.enabled ? Colors.green : Colors.grey),
-                    ),
-                    onPressed: !entry.enabled
-                        ? null
-                        : () => _runOp(
-                              op: entry.running ? 'stop' : 'start',
-                              agentId: entry.id,
-                            ),
-                  ),
               ],
-            )
-          : (local != null
-              ? Icon(Icons.chevron_right, size: 18, color: Colors.grey[400])
-              : null),
+            ),
     );
   }
 }

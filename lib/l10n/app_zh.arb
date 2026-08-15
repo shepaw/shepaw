@@ -2234,13 +2234,16 @@
     }
   },
   "peerSettings_sectionAgents": "Agent 管理",
+  "peerSettings_agentVisibilityHint": "只控制本 App 是否展示该 Agent，不会在远端 Hub 上停用或下线。",
+  "peerSettings_agentShowOnApp": "在本机显示",
+  "peerSettings_agentHiddenOnApp": "本机已隐藏",
   "peerSettings_agentEnabled": "启用",
   "peerSettings_agentDisabled": "已禁用",
   "peerSettings_agentStart": "启动",
   "peerSettings_agentStop": "停止",
   "peerSettings_agentRunning": "运行中",
   "peerSettings_agentStopped": "已停止",
-  "peerSettings_agentManageOffline": "设备离线，无法管理 Agent",
+  "peerSettings_agentManageOffline": "设备离线，暂无已同步的 Agent",
   "peerSettings_noManagedAgents": "该设备上还没有 Agent",
   "peerSettings_agentOpFailed": "操作失败：{error}",
   "@peerSettings_agentOpFailed": {

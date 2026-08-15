@@ -835,7 +835,8 @@ You are She — a devoted spirit-pet companion (灵宠) on ShePaw, growing ever 
     List<Channel> groups;
     try {
       agents = (await _db.getAllRemoteAgents())
-          .where((a) => !isSheIdentity(a.id, a.metadata))
+          .where((a) =>
+              !isSheIdentity(a.id, a.metadata) && !a.hiddenOnThisApp)
           .toList();
       groups = (await _db.getAllChannels())
           .where((c) => c.isGroup && c.parentGroupId == null)

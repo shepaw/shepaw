@@ -210,6 +210,32 @@ void main() {
       expect(agent.peerAgentManageable, isTrue);
       expect(agent.peerAgentEnabled, isFalse);
       expect(agent.peerAgentRunning, isFalse);
+      expect(agent.hiddenOnThisApp, isFalse);
+    });
+
+    test('peer agent hiddenOnThisApp is local-only display flag', () {
+      final now = DateTime.now().millisecondsSinceEpoch;
+      final agent = RemoteAgent(
+        id: 'peer-agent',
+        name: 'Hub Agent',
+        token: '',
+        endpoint: 'peer://p1/a1',
+        protocol: ProtocolType.peer,
+        connectionType: ConnectionType.websocket,
+        status: AgentStatus.online,
+        createdAt: now,
+        updatedAt: now,
+        metadata: {
+          'source_peer_id': 'p1',
+          'remote_agent_id': 'a1',
+          'hidden_on_this_app': true,
+          'enabled': true,
+          'running': true,
+        },
+      );
+      expect(agent.hiddenOnThisApp, isTrue);
+      expect(agent.peerAgentEnabled, isTrue);
+      expect(agent.peerAgentRunning, isTrue);
     });
   });
 }

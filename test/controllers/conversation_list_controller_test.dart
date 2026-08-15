@@ -11,6 +11,7 @@ Agent _agent({
   required String name,
   bool isShe = false,
   String? sourcePeerId,
+  bool hiddenOnThisApp = false,
 }) {
   return Agent(
     id: id,
@@ -21,6 +22,7 @@ Agent _agent({
     metadata: {
       if (isShe) 'is_she': true,
       if (sourcePeerId != null) 'source_peer_id': sourcePeerId,
+      if (hiddenOnThisApp) 'hidden_on_this_app': true,
     },
   );
 }
@@ -220,6 +222,22 @@ void main() {
 
       expect(entries.first.group?.id, 'g-chatted');
       expect(entries[1].group?.id, 'g-fresh');
+    });
+  });
+
+  group('ConversationListController.visibleOnThisApp', () {
+    test('drops peer agents hidden on this app, keeps local agents', () {
+      final visible = ConversationListController.visibleOnThisApp([
+        _agent(id: 'local', name: 'Local'),
+        _agent(id: 'shown', name: 'Shown', sourcePeerId: 'p1'),
+        _agent(
+          id: 'hidden',
+          name: 'Hidden',
+          sourcePeerId: 'p1',
+          hiddenOnThisApp: true,
+        ),
+      ]);
+      expect(visible.map((a) => a.id), ['local', 'shown']);
     });
   });
 }

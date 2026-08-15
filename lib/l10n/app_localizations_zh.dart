@@ -3894,6 +3894,16 @@ class AppLocalizationsZh extends AppLocalizations {
   String get peerSettings_sectionAgents => 'Agent 管理';
 
   @override
+  String get peerSettings_agentVisibilityHint =>
+      '只控制本 App 是否展示该 Agent，不会在远端 Hub 上停用或下线。';
+
+  @override
+  String get peerSettings_agentShowOnApp => '在本机显示';
+
+  @override
+  String get peerSettings_agentHiddenOnApp => '本机已隐藏';
+
+  @override
   String get peerSettings_agentEnabled => '启用';
 
   @override
@@ -3912,7 +3922,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get peerSettings_agentStopped => '已停止';
 
   @override
-  String get peerSettings_agentManageOffline => '设备离线，无法管理 Agent';
+  String get peerSettings_agentManageOffline => '设备离线，暂无已同步的 Agent';
 
   @override
   String get peerSettings_noManagedAgents => '该设备上还没有 Agent';

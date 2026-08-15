@@ -1705,13 +1705,23 @@ class PeerAgentClientService {
     if (completer != null && !completer.isCompleted) completer.complete(ok);
   }
 
-  /// Remote instance control: list / start / stop / set_enabled.
+  /// Query remote agent roster / status. App may only `list`.
+  ///
+  /// Start / stop / set_enabled belong to the hub itself; this client
+  /// refuses to send those ops even if a hub still advertises them.
   Future<PeerAgentManageResult> manageAgents({
     required String peerId,
     required String op,
     String? agentId,
     bool? enabled,
   }) async {
+    if (op != 'list') {
+      _log.warning(
+        'Rejected remote agent lifecycle op "$op"; hub owns start/stop/enable',
+        tag: _tag,
+      );
+      return const PeerAgentManageResult(ok: false, error: 'unsupported');
+    }
     final requestId = _uuid.v4();
     final completer = Completer<PeerAgentManageResult>();
     _pendingManage[requestId] = completer;
@@ -2898,6 +2908,9 @@ class PeerAgentClientService {
             // 保留本地头像自定义标记，使其在每次同步后依然生效。
             if (existing?.metadata['avatar_overridden'] == true)
               'avatar_overridden': true,
+            // 本机「是否在此 App 显示」由用户在设备详情里控制，同步时不得覆盖。
+            if (existing?.metadata['hidden_on_this_app'] == true)
+              'hidden_on_this_app': true,
           },
           createdAt: existing?.createdAt ?? now,
           updatedAt: now,
