@@ -354,6 +354,27 @@ class LocalStore {
     };
   }
 
+  /// 轻量判断路径是文件还是目录（不列清单）。
+  ///
+  /// 返回 `'file'` 或 `'dir'`；不存在抛 [StoreException] `not_found`。
+  Future<String> entityKind(
+      String deviceId, String space, String relPath) async {
+    if (relPath.isEmpty) {
+      final dir = Directory(_spaceDir(deviceId, space));
+      if (!await dir.exists()) {
+        throw StoreException(StoreError.notFound, space);
+      }
+      return 'dir';
+    }
+    final abs = _resolveInSpace(deviceId, space, relPath);
+    final type = await FileSystemEntity.type(abs, followLinks: false);
+    if (type == FileSystemEntityType.notFound) {
+      throw StoreException(StoreError.notFound, relPath);
+    }
+    await _checkNoSymlinkEscape(deviceId, space, abs, relPath);
+    return type == FileSystemEntityType.file ? 'file' : 'dir';
+  }
+
   /// 读文件块（≤64KB，spec §2.3）。
   Future<(Uint8List, int, bool)> read(String deviceId, String space,
       String relPath, int offset, int length) async {

@@ -237,6 +237,10 @@ void main() {
       final dirMeta = await store.meta(dev, 'files', 'd');
       expect(dirMeta['kind'], 'dir');
       expect((dirMeta['files'] as List).length, 2);
+
+      expect(await store.entityKind(dev, 'files', 'd/f1.txt'), 'file');
+      expect(await store.entityKind(dev, 'files', 'd'), 'dir');
+      expect(await store.entityKind(dev, 'files', ''), 'dir');
     });
   });
 

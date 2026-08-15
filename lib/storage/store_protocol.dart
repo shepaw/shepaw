@@ -289,14 +289,20 @@ class StoreUriRef {
 /// 解析 store:// URI（含可选 `@ref` / `?ref=`），返回 space/device/path/ref。
 /// 与 Rust `src/uri.rs` 对齐：畸形引用 → [FormatException](bad_uri)；
 /// 点段/穿越 → [BadPathException]。
+///
+/// [allowEmptyPath] 为 true 时允许分区根 `store://<space>/<device>`（浏览/list）；
+/// 读文件仍应保持默认（必须带 path）。
 ({String space, String device, String path, StoreUriRef ref}) parseStoreUri(
-    String raw) {
+    String raw, {bool allowEmptyPath = false}) {
   final withoutQuery = raw.split('?').first;
   final rest =
       withoutQuery.startsWith('store://') ? withoutQuery.substring(8) : raw;
   final segments = rest.split('/').where((s) => s.isNotEmpty).toList();
-  if (segments.length < 3) {
-    throw FormatException('bad_uri: missing space/device/path');
+  if (segments.length < 2 ||
+      (!allowEmptyPath && segments.length < 3)) {
+    throw FormatException(allowEmptyPath
+        ? 'bad_uri: missing space/device'
+        : 'bad_uri: missing space/device/path');
   }
   final space = segments[0];
   // 自定义空间：语法合法即可（属性/ACL 由服务端 space registry 裁定）。
@@ -315,6 +321,7 @@ class StoreUriRef {
 
   // 点前缀段保留（.staging/.recycle/.versions/.nexuspouch 系统目录）。
   for (final seg in rel.split('/')) {
+    if (seg.isEmpty) continue;
     if (seg.startsWith('.')) throw BadPathException('dot segment: $seg');
     if (seg == '..') throw BadPathException('path traversal');
   }

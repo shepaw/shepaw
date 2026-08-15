@@ -367,6 +367,16 @@ void main() {
       expect(
           parseStoreUri('store://files/aaaaaaaaaaaaaaaa/contact@home.txt').path,
           'contact@home.txt');
+      final root = parseStoreUri(
+          'store://workspaces/aaaaaaaaaaaaaaaa',
+          allowEmptyPath: true);
+      expect(root.space, 'workspaces');
+      expect(root.device, 'aaaaaaaaaaaaaaaa');
+      expect(root.path, isEmpty);
+      expect(
+        () => parseStoreUri('store://workspaces/aaaaaaaaaaaaaaaa'),
+        throwsFormatException,
+      );
     });
 
     test('parseStoreUri 解码 Markdown 百分号编码的中文路径', () {

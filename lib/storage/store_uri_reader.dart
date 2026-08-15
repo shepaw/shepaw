@@ -8,6 +8,9 @@ import 'remote_read_service.dart';
 import 'store_protocol.dart';
 import 'store_service.dart';
 
+/// `store://` 指向的是文件还是目录。
+enum StoreUriKind { file, directory }
+
 /// 按 `store://` URI 读取内容（Agent CLI / 附件引用共用）。
 ///
 /// - `workspaces` / `files` / `public`（及 legacy `artifacts`）：本机直读；他端优先直连属主，属主离线再走 master 镜像；
@@ -65,6 +68,55 @@ class StoreUriReader {
       }
       rethrow;
     }
+  }
+
+  /// 轻量判断 URI 是文件还是目录（本机 `entityKind`；他端先看本地镜像再 meta）。
+  Future<StoreUriKind> kindOf(String uriString) async {
+    final parsed = parseStoreUri(uriString, allowEmptyPath: true);
+    if (!parsed.ref.isLatest) {
+      throw ArgumentError(
+          'versioned store URI not supported yet: $uriString');
+    }
+    if (parsed.path.isEmpty) return StoreUriKind.directory;
+
+    final self = await DeviceIdentity.deviceId();
+    _assertReadable(parsed.space, parsed.device, self);
+
+    final store = await StoreService.instance.localStore();
+    try {
+      final kind =
+          await store.entityKind(parsed.device, parsed.space, parsed.path);
+      return kind == 'dir' ? StoreUriKind.directory : StoreUriKind.file;
+    } on StoreException catch (e) {
+      if (e.code != StoreError.notFound) rethrow;
+      if (parsed.device == self) rethrow;
+    }
+
+    final server =
+        await StoreService.instance.preferredReadServer(parsed.device);
+    final metaRes = await StoreService.instance.callPeer(
+      server,
+      StoreFrame(op: StoreOp.meta, payload: {
+        'space': parsed.space,
+        'device': parsed.device,
+        'path': parsed.path,
+      }),
+    );
+    if (metaRes == null ||
+        metaRes['_error'] == StoreError.masterOffline ||
+        metaRes['_error'] == StoreError.notPaired) {
+      throw StateError('master_offline');
+    }
+    if (metaRes.containsKey('_error')) {
+      final code = metaRes['_error'] as String;
+      if (code == StoreError.notFound) {
+        throw StoreException(StoreError.notFound, parsed.path);
+      }
+      throw StateError('meta failed: $code');
+    }
+    return metaRes['kind'] == 'dir'
+        ? StoreUriKind.directory
+        : StoreUriKind.file;
   }
 
   /// 仅查文件大小（本机 `stat` / 远端 meta，不拉内容）。

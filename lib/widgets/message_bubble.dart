@@ -698,7 +698,7 @@ class MessageBubble extends StatelessWidget {
   /// Replace cc-only mention tokens with an annotated form.
   /// For mentions with notify:false, appends "(cc)" so readers can
   /// tell at a glance that the mentioned agent was not triggered.
-  /// Open store:// (files / artifacts) via StoreUriReader → preview or temp.
+  /// Open store:// files (preview) or folders (storage browser).
   Future<void> _openStoreLink(BuildContext context, String uriString) async {
     await StoreOpenService.instance.openStoreUri(context, uriString);
   }

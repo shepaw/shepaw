@@ -10,6 +10,9 @@ import 'package:path_provider/path_provider.dart';
 import '../l10n/app_localizations.dart';
 import '../models/attachment_data.dart';
 import '../models/store_attachment_ref.dart';
+import '../peer/services/peer_storage_service.dart';
+import '../screens/storage_browser_screen.dart';
+import '../storage/device_identity.dart';
 import '../storage/local_store.dart';
 import '../storage/store_protocol.dart';
 import '../storage/store_uri_reader.dart';
@@ -17,9 +20,10 @@ import '../storage/store_file_visual.dart';
 import '../widgets/store_file_preview.dart';
 import 'logger_service.dart';
 
-/// Opens / previews `store://` files for chat UI.
+/// Opens / previews `store://` files for chat UI, and opens directories
+/// in the storage browser.
 ///
-/// Size tiers:
+/// Size tiers (files):
 /// - within preview caps → in-app image/text preview
 /// - above [_confirmMaterializeBytes] → confirm, then materialize with progress
 /// - above [_hardLimitBytes] → refuse (no auto copy / download)
@@ -38,9 +42,23 @@ class StoreOpenService {
   final _log = LoggerService();
 
   /// Open a `store://…` URI from a markdown link or attachment metadata.
+  ///
+  /// Directories open the storage browser at that folder; files preview / open.
   Future<void> openStoreUri(BuildContext context, String uriString) async {
     try {
-      final parsed = parseStoreUri(uriString);
+      final parsed = parseStoreUri(uriString, allowEmptyPath: true);
+      final uriKind = await StoreUriReader.instance.kindOf(uriString);
+      if (uriKind == StoreUriKind.directory) {
+        if (!context.mounted) return;
+        await openDirectoryInBrowser(
+          context,
+          space: parsed.space,
+          deviceId: parsed.device,
+          path: parsed.path,
+        );
+        return;
+      }
+
       final name = p.basename(parsed.path);
       var kind = await _resolvePreviewKind(uriString, parsed.path, name);
       final size = await StoreUriReader.instance.sizeOf(uriString);
@@ -128,6 +146,41 @@ class StoreOpenService {
         SnackBar(content: Text('No store:// URI for $name')),
       );
     }
+  }
+
+  /// Jump to the storage browser at [space]/[path] on [deviceId].
+  Future<void> openDirectoryInBrowser(
+    BuildContext context, {
+    required String space,
+    required String deviceId,
+    required String path,
+  }) async {
+    final self = await DeviceIdentity.deviceId();
+    final isOwn = deviceId == self;
+    String? peerId;
+    String? deviceName;
+    var preferLocalCache = false;
+    if (!isOwn) {
+      final peer =
+          await PeerStorageService().getPeerByFingerprint(deviceId);
+      peerId = peer?.id;
+      deviceName = peer?.deviceName;
+      preferLocalCache = peer == null;
+    }
+    if (!context.mounted) return;
+    await Navigator.of(context).push<void>(
+      MaterialPageRoute<void>(
+        builder: (_) => StorageBrowserScreen(
+          deviceId: deviceId,
+          deviceName: deviceName,
+          peerId: peerId,
+          readOnly: !isOwn,
+          preferLocalCache: preferLocalCache,
+          initialSpace: space,
+          initialPath: path.isEmpty ? null : path,
+        ),
+      ),
+    );
   }
 
   Future<void> _presentLocal(

@@ -36,6 +36,51 @@ void main() {
     expect(utf8.decode(back), 'pouch note');
   });
 
+  test('StoreUriReader.kindOf 区分文件与目录', () async {
+    final store = await StoreService.instance.localStore();
+    final deviceId = await DeviceIdentity.deviceId();
+    final content = Uint8List.fromList(utf8.encode('kind check'));
+    const relPath = 'docs/kind-check.txt';
+    final (uploadId, _) = await store.writeBegin(
+      deviceId: deviceId,
+      space: StoreSpace.files,
+      path: relPath,
+      size: content.length,
+      sha256: crypto.sha256.convert(content).toString(),
+    );
+    await store.writeChunk(deviceId, StoreSpace.files, uploadId, 0, content);
+    await store.commit(deviceId, StoreSpace.files, [uploadId]);
+
+    final fileUri = storeUriWithRef(StoreSpace.files, deviceId, relPath);
+    final dirUri = storeUriWithRef(StoreSpace.files, deviceId, 'docs');
+    final spaceUri = 'store://${StoreSpace.files}/$deviceId';
+    expect(await StoreUriReader.instance.kindOf(fileUri), StoreUriKind.file);
+    expect(
+        await StoreUriReader.instance.kindOf(dirUri), StoreUriKind.directory);
+    expect(
+        await StoreUriReader.instance.kindOf(spaceUri), StoreUriKind.directory);
+
+    const wsRel = 'Users/edenzou/workspace/shepaw/channel/cmd/note.txt';
+    final (wsId, _) = await store.writeBegin(
+      deviceId: deviceId,
+      space: StoreSpace.workspaces,
+      path: wsRel,
+      size: content.length,
+      sha256: crypto.sha256.convert(content).toString(),
+    );
+    await store.writeChunk(deviceId, StoreSpace.workspaces, wsId, 0, content);
+    await store.commit(deviceId, StoreSpace.workspaces, [wsId]);
+    final folderUri = storeUriWithRef(
+      StoreSpace.workspaces,
+      deviceId,
+      'Users/edenzou/workspace/shepaw/channel/cmd',
+    );
+    expect(
+      await StoreUriReader.instance.kindOf(folderUri),
+      StoreUriKind.directory,
+    );
+  });
+
   test('StoreUriReader 拒绝他端私有分区', () async {
     const other = 'bbbbbbbbbbbbbbbb';
     final uri = storeUriWithRef(StoreSpace.attachments, other, 'deadbeef');
