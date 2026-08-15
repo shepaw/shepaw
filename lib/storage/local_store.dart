@@ -356,6 +356,7 @@ class LocalStore {
 
   /// 轻量判断路径是文件还是目录（不列清单）。
   ///
+  /// 跟随符号链接，与 [list] `depth≥1` 一致；导航/探测用，不做写路径逃逸校验。
   /// 返回 `'file'` 或 `'dir'`；不存在抛 [StoreException] `not_found`。
   Future<String> entityKind(
       String deviceId, String space, String relPath) async {
@@ -367,11 +368,11 @@ class LocalStore {
       return 'dir';
     }
     final abs = _resolveInSpace(deviceId, space, relPath);
-    final type = await FileSystemEntity.type(abs, followLinks: false);
-    if (type == FileSystemEntityType.notFound) {
+    final type = await FileSystemEntity.type(abs, followLinks: true);
+    if (type == FileSystemEntityType.notFound ||
+        type == FileSystemEntityType.link) {
       throw StoreException(StoreError.notFound, relPath);
     }
-    await _checkNoSymlinkEscape(deviceId, space, abs, relPath);
     return type == FileSystemEntityType.file ? 'file' : 'dir';
   }
 

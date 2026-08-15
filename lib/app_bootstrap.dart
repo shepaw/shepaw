@@ -35,6 +35,7 @@ import 'services/approval/pending_approval_hub.dart';
 import 'services/approval/pending_approval_item.dart';
 import 'services/approval/approval_reachability_notifier.dart';
 import 'services/chat_navigation_service.dart';
+import 'screens/storage_directory_opener.dart';
 import 'services/composer_draft_service.dart';
 import 'services/task/plan_approval_service.dart';
 import 'she_network/memory_exchange_service.dart';
@@ -116,6 +117,7 @@ class AppBootstrap {
     await NotificationService().init();
     UpdateNotificationService().init(navigatorKey: navigatorKey);
     ChatNavigationService.instance.init(navigatorKey: navigatorKey);
+    registerStorageDirectoryOpener();
     _wirePlanApprovalReachability();
     if (getIt.isRegistered<ComposerDraftService>()) {
       await getIt<ComposerDraftService>().restoreFromDisk();

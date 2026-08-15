@@ -36,6 +36,9 @@ import '../storage/runtime_share_service.dart';
 import 'agent_runtime_context_screen.dart';
 import 'agent_soul_edit_screen.dart';
 import 'workspace_binding_screen.dart';
+import 'storage_directory_opener.dart';
+import '../services/store_open_service.dart';
+import '../storage/agent_workspace_uris.dart';
 
 /// 远端 Agent 详情页面（从聊天页进入）
 class RemoteAgentDetailScreen extends StatefulWidget {
@@ -1107,6 +1110,8 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
         const SizedBox(height: 16),
         _buildRuntimeContextEntry(),
         const SizedBox(height: 16),
+        _buildWorkspaceViewEntry(),
+        const SizedBox(height: 16),
         _buildWorkspaceBindingEntry(),
         if (_agent.isShe && !_agent.isPeerAgent) ...[
           const SizedBox(height: 16),
@@ -1510,6 +1515,50 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
         ],
       ),
     );
+  }
+
+  /// 打开该 Agent 已挂载 / 已绑定的储物袋工作区。
+  Widget _buildWorkspaceViewEntry() {
+    final colorScheme = Theme.of(context).colorScheme;
+    final zh = Localizations.localeOf(context).languageCode.startsWith('zh');
+    return Card(
+      elevation: 0,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12),
+        side: BorderSide(color: colorScheme.outlineVariant),
+      ),
+      child: ListTile(
+        leading: Icon(Icons.folder_open_outlined, color: colorScheme.primary),
+        title: Text(zh ? '查看工作区' : 'View workspace'),
+        subtitle: Text(
+          zh
+              ? '在储物袋中打开该 Agent 挂载的工作目录'
+              : 'Open this agent\'s mounted working directory in Nexus Pouch',
+          maxLines: 2,
+          overflow: TextOverflow.ellipsis,
+          style: TextStyle(color: colorScheme.onSurfaceVariant),
+        ),
+        trailing: const Icon(Icons.chevron_right),
+        onTap: _openAgentWorkspace,
+      ),
+    );
+  }
+
+  Future<void> _openAgentWorkspace() async {
+    final zh = Localizations.localeOf(context).languageCode.startsWith('zh');
+    final uris = await collectAgentWorkspaceUris(_agent);
+    final uri = primaryWorkspaceUri(uris);
+    if (!mounted) return;
+    if (uri == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(zh ? '该 Agent 还没有挂载工作区' : 'This agent has no mounted workspace'),
+        ),
+      );
+      return;
+    }
+    registerStorageDirectoryOpener();
+    await StoreOpenService.instance.openStoreUri(context, uri);
   }
 
   /// 绑定 workspaces → runtime/workspace.md

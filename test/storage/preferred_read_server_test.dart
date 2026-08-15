@@ -32,13 +32,15 @@ void main() {
     );
   });
 
-  test('listDevice：本机 files 可列', () async {
+  test('fallbackReadServer：本机且自己是 master 时无需回退', () async {
     final self = await DeviceIdentity.deviceId();
-    final entries = await StoreService.instance.listDevice(
-      deviceId: self,
-      space: 'files',
-      limit: 10,
-    );
-    expect(entries, isA<List>());
+    expect(await StoreService.instance.masterDeviceId(), self);
+    expect(await StoreService.instance.fallbackReadServer(self), isNull);
+  });
+
+  test('fallbackReadServer：他端走 preferredReadServer', () async {
+    const other = 'ffffffffffffffff';
+    final server = await StoreService.instance.fallbackReadServer(other);
+    expect(server, await StoreService.instance.preferredReadServer(other));
   });
 }

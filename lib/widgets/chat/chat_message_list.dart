@@ -55,6 +55,12 @@ class ChatMessageList extends StatefulWidget {
   /// down into each [MessageBubble].
   final bool isAgentOffline;
 
+  /// Default workspace roots (DM agent / group fallback) for relative links.
+  final List<String> defaultWorkspaceUris;
+
+  /// Per-sender workspace roots so group replies open the right cwd.
+  final Map<String, List<String>> workspaceUrisByAgentId;
+
   const ChatMessageList({
     super.key,
     required this.messages,
@@ -82,6 +88,8 @@ class ChatMessageList extends StatefulWidget {
     this.onViewTrace,
     this.agentAvatarMap = const {},
     this.isAgentOffline = false,
+    this.defaultWorkspaceUris = const [],
+    this.workspaceUrisByAgentId = const {},
   });
 
   @override
@@ -360,6 +368,10 @@ class _ChatMessageListState extends State<ChatMessageList> {
                           : null,
                       senderAvatar: agentAvatarMap[message.from.id],
                       isAgentOffline: isAgentOffline,
+                      workspaceUris: message.from.isAgent
+                          ? (widget.workspaceUrisByAgentId[message.from.id] ??
+                              widget.defaultWorkspaceUris)
+                          : widget.defaultWorkspaceUris,
                     ),
                   ),
                 ),

@@ -104,6 +104,7 @@ mixin _GroupMemberOps on _ChatControllerBase {
     groupAgents = agents;
     groupChannel = channel;
     groupAdminAgentId = channel?.adminAgentId;
+    await _refreshWorkspaceUris();
     _notify();
   }
 

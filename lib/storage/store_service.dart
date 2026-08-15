@@ -255,10 +255,10 @@ class StoreService {
     return masterDeviceId();
   }
 
-  /// 列出某设备某分区目录（本机直列；他端经 [preferredReadServer]）。
+  /// 列出某设备某分区目录。
   ///
-  /// [depth] ≥1 时只下钻指定层（含目录行），便于跨 agent 一层层浏览；
-  /// 省略则递归列全部文件（同步/用量统计兼容）。
+  /// URI 里的 [deviceId] 先匹配本机或对端：本机直列；他端经
+  /// [preferredReadServer]（属主在线直读，否则 master 镜像）。
   Future<List<StoreEntry>> listDevice({
     required String deviceId,
     required String space,
@@ -280,9 +280,28 @@ class StoreService {
           depth: depth,
           computeHash: computeHash);
     }
-    final server = await preferredReadServer(deviceId);
+    return _listViaServer(
+      serverId: await preferredReadServer(deviceId),
+      deviceId: deviceId,
+      space: space,
+      prefix: prefix,
+      limit: limit,
+      depth: depth,
+      computeHash: computeHash,
+    );
+  }
+
+  Future<List<StoreEntry>> _listViaServer({
+    required String serverId,
+    required String deviceId,
+    required String space,
+    String? prefix,
+    required int limit,
+    int? depth,
+    required bool computeHash,
+  }) async {
     final data = await callPeer(
-      server,
+      serverId,
       StoreFrame(
         op: StoreOp.list,
         payload: <String, dynamic>{
@@ -305,6 +324,13 @@ class StoreService {
         if (e is Map)
           StoreEntry.fromJson(Map<String, dynamic>.from(e)),
     ];
+  }
+
+  /// 非本机 device：属主在线直读，否则 master。本机没有跨端回退。
+  Future<String?> fallbackReadServer(String deviceId) async {
+    final self = await DeviceIdentity.deviceId();
+    if (deviceId == self) return null;
+    return preferredReadServer(deviceId);
   }
 
   // ────────────────────────────── master 指针 ──

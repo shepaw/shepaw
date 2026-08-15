@@ -40,6 +40,7 @@ import '../../services/logger_service.dart';
 import '../../services/task/task_models.dart';
 import '../../service_locator.dart' show getIt;
 import '../../storage/attachment_store_writer.dart';
+import '../../storage/agent_workspace_uris.dart';
 import '../models/peer_hub_pending_approval.dart';
 import 'peer_connection_manager.dart';
 import 'peer_connection.dart' show PeerConnectionEvent, PeerConnectionEventType;
@@ -291,6 +292,13 @@ class PeerAgentHostService {
               if (m != ModalityType.audio && a.supportsModality(m)) m.name,
           ],
         };
+        final workspaceUris = await collectAgentWorkspaceUris(a);
+        if (workspaceUris.isNotEmpty) {
+          entry['workspace_uri'] = workspaceUris.first;
+          if (workspaceUris.length > 1) {
+            entry['workspace_uris'] = workspaceUris;
+          }
+        }
         // 头像若为本机文件（用户上传的自定义图片），对端无法访问该路径，
         // 故把图片字节一并打包发送，由对端落地为本地文件后展示。
         avatarBudget -= await _attachAvatarData(a.avatar, entry, avatarBudget);

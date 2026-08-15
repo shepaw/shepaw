@@ -241,6 +241,10 @@ void main() {
       expect(await store.entityKind(dev, 'files', 'd/f1.txt'), 'file');
       expect(await store.entityKind(dev, 'files', 'd'), 'dir');
       expect(await store.entityKind(dev, 'files', ''), 'dir');
+
+      final alias = Link(p.join(tmp.path, dev, 'files', 'alias'));
+      await alias.create(p.join(tmp.path, dev, 'files', 'd'));
+      expect(await store.entityKind(dev, 'files', 'alias'), 'dir');
     });
   });
 

@@ -70,7 +70,10 @@ class StoreUriReader {
     }
   }
 
-  /// 轻量判断 URI 是文件还是目录（本机 `entityKind`；他端先看本地镜像再 meta）。
+  /// 轻量判断 URI 是文件还是目录。
+  ///
+  /// 本机 device → 本地树；他端 device → [preferredReadServer]（属主/master），
+  /// 不把对端在本机的空 cache 当成权威。
   Future<StoreUriKind> kindOf(String uriString) async {
     final parsed = parseStoreUri(uriString, allowEmptyPath: true);
     if (!parsed.ref.isLatest) {
@@ -82,14 +85,11 @@ class StoreUriReader {
     final self = await DeviceIdentity.deviceId();
     _assertReadable(parsed.space, parsed.device, self);
 
-    final store = await StoreService.instance.localStore();
-    try {
+    if (parsed.device == self) {
+      final store = await StoreService.instance.localStore();
       final kind =
           await store.entityKind(parsed.device, parsed.space, parsed.path);
       return kind == 'dir' ? StoreUriKind.directory : StoreUriKind.file;
-    } on StoreException catch (e) {
-      if (e.code != StoreError.notFound) rethrow;
-      if (parsed.device == self) rethrow;
     }
 
     final server =
@@ -117,6 +117,50 @@ class StoreUriReader {
     return metaRes['kind'] == 'dir'
         ? StoreUriKind.directory
         : StoreUriKind.file;
+  }
+
+  /// 最长已存在的目录前缀。
+  ///
+  /// 共享分区本机 miss 时保留原始 path，由浏览器向 master/属主 list，
+  /// 不要把远端工作空间裁成空的本机分区根。
+  Future<String> existingDirectoryPrefix(String uriString) async {
+    final parsed = parseStoreUri(uriString, allowEmptyPath: true);
+    final original = parsed.path;
+    if (original.isEmpty) return '';
+    final store = await StoreService.instance.localStore();
+    try {
+      final kind =
+          await store.entityKind(parsed.device, parsed.space, original);
+      if (kind == 'dir') return original;
+      return _parentStorePath(original);
+    } on StoreException catch (e) {
+      if (e.code != StoreError.notFound && e.code != StoreError.badPath) {
+        rethrow;
+      }
+      if (StoreSpace.sharedReadable.contains(parsed.space)) return original;
+    } catch (_) {
+      if (StoreSpace.sharedReadable.contains(parsed.space)) return original;
+    }
+    var current = _parentStorePath(original);
+    while (true) {
+      try {
+        final kind =
+            await store.entityKind(parsed.device, parsed.space, current);
+        if (kind == 'dir') return current;
+      } on StoreException catch (e) {
+        if (e.code != StoreError.notFound && e.code != StoreError.badPath) {
+          rethrow;
+        }
+      } catch (_) {}
+      if (current.isEmpty) return '';
+      current = _parentStorePath(current);
+    }
+  }
+
+  static String _parentStorePath(String path) {
+    if (path.isEmpty) return '';
+    final i = path.lastIndexOf('/');
+    return i < 0 ? '' : path.substring(0, i);
   }
 
   /// 仅查文件大小（本机 `stat` / 远端 meta，不拉内容）。

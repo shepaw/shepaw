@@ -2358,6 +2358,8 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                                   ? {c.agentId!: c.agentAvatar!}
                                   : const {}),
                           isAgentOffline: !c.isAgentOnline,
+                          defaultWorkspaceUris: c.defaultWorkspaceUris,
+                          workspaceUrisByAgentId: c.workspaceUrisByAgentId,
                         ),
                       ),
                 if (_isUserScrolledUp)

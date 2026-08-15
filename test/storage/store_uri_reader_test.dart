@@ -79,6 +79,32 @@ void main() {
       await StoreUriReader.instance.kindOf(folderUri),
       StoreUriKind.directory,
     );
+    expect(
+      await StoreUriReader.instance.existingDirectoryPrefix(folderUri),
+      'Users/edenzou/workspace/shepaw/channel/cmd',
+    );
+    final missingLeaf = storeUriWithRef(
+      StoreSpace.workspaces,
+      deviceId,
+      'Users/edenzou/workspace/shepaw/channel/cmd/no-such-child',
+    );
+    expect(
+      await StoreUriReader.instance.existingDirectoryPrefix(missingLeaf),
+      'Users/edenzou/workspace/shepaw/channel/cmd/no-such-child',
+    );
+    expect(
+      await StoreUriReader.instance.existingDirectoryPrefix(fileUri),
+      'docs',
+    );
+    final ghost = storeUriWithRef(
+      StoreSpace.workspaces,
+      deviceId,
+      'no/such/remote-folder',
+    );
+    expect(
+      await StoreUriReader.instance.existingDirectoryPrefix(ghost),
+      'no/such/remote-folder',
+    );
   });
 
   test('StoreUriReader 拒绝他端私有分区', () async {

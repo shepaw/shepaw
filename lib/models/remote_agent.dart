@@ -512,6 +512,13 @@ class RemoteAgent {
   /// 来源配对设备的显示名（仅 [isPeerAgent] 有意义）。
   String? get sourcePeerName => metadata['source_peer_name'] as String?;
 
+  /// 对端挂载的储物袋工作区（`store://workspaces/…`）。
+  String? get workspaceUri {
+    final v = metadata['workspace_uri'];
+    if (v is String && v.startsWith('store://')) return v;
+    return null;
+  }
+
   /// 对端是否把该实例标为可远程启停（Hub 上报，只读）。App 不得据此改远端生命周期。
   bool get peerAgentManageable => metadata['manageable'] == true;
 

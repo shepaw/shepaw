@@ -59,6 +59,7 @@ import 'inbound_file_message_parser.dart';
 import 'peer_approval_completer_resolver.dart';
 import 'chat_events.dart';
 import 'chat_message_window.dart';
+import '../storage/agent_workspace_uris.dart';
 
 // ChatEvent 及其全部子类已拆分到 chat_events.dart，这里重新导出，
 // 使现有 `import '../controllers/chat_controller.dart'` 的调用方无需改动。
@@ -211,6 +212,28 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
   /// 用于解除工作流面板/恢复逻辑的群聊门控。
   bool dmWorkflowEnabled = false;
   List<RemoteAgent> groupAgents = [];
+
+  /// agentId → 储物袋工作区 URI，供消息内相对路径链接打开。
+  Map<String, List<String>> workspaceUrisByAgentId = const {};
+
+  List<String> get defaultWorkspaceUris {
+    final id = agentId;
+    if (id == null) return const [];
+    return workspaceUrisByAgentId[id] ?? const [];
+  }
+
+  Future<void> _refreshWorkspaceUris() async {
+    final agents = <RemoteAgent>[...groupAgents];
+    if (agentId != null && !agents.any((a) => a.id == agentId)) {
+      final agent = await localDatabaseService.getRemoteAgentById(agentId!);
+      if (agent != null) agents.add(agent);
+    }
+    final map = <String, List<String>>{};
+    for (final agent in agents) {
+      map[agent.id] = await collectAgentWorkspaceUris(agent);
+    }
+    workspaceUrisByAgentId = map;
+  }
   Set<String> respondingAgentNames = {};
   bool mentionOnlyMode = false;
   String? groupAdminAgentId;

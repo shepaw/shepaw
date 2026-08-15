@@ -138,6 +138,8 @@ mixin _LoadOps on _ChatControllerBase {
         }
       }
 
+      await _refreshWorkspaceUris();
+
       var loadedMessages = List<Message>.from(await chatService.loadChannelMessages(
         currentChannelId!,
         limit: ChatMessageWindow.initialLimit,

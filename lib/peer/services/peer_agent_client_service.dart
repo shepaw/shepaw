@@ -2911,6 +2911,17 @@ class PeerAgentClientService {
             // 本机「是否在此 App 显示」由用户在设备详情里控制，同步时不得覆盖。
             if (existing?.metadata['hidden_on_this_app'] == true)
               'hidden_on_this_app': true,
+            if (raw['workspace_uri'] is String &&
+                (raw['workspace_uri'] as String).startsWith('store://'))
+              'workspace_uri': raw['workspace_uri'],
+            if (raw['workspace_uris'] is List)
+              'workspace_uris': raw['workspace_uris'],
+            if (raw['workspace_uri'] is! String &&
+                existing?.metadata['workspace_uri'] is String)
+              'workspace_uri': existing!.metadata['workspace_uri'],
+            if (raw['workspace_uris'] is! List &&
+                existing?.metadata['workspace_uris'] is List)
+              'workspace_uris': existing!.metadata['workspace_uris'],
           },
           createdAt: existing?.createdAt ?? now,
           updatedAt: now,

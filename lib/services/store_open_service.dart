@@ -10,9 +10,6 @@ import 'package:path_provider/path_provider.dart';
 import '../l10n/app_localizations.dart';
 import '../models/attachment_data.dart';
 import '../models/store_attachment_ref.dart';
-import '../peer/services/peer_storage_service.dart';
-import '../screens/storage_browser_screen.dart';
-import '../storage/device_identity.dart';
 import '../storage/local_store.dart';
 import '../storage/store_protocol.dart';
 import '../storage/store_uri_reader.dart';
@@ -41,77 +38,60 @@ class StoreOpenService {
 
   final _log = LoggerService();
 
+  /// Chat / preview jumps to the pouch browser. Set at app start
+  /// ([registerStorageDirectoryOpener]) so this service does not import UI.
+  Future<void> Function(
+    BuildContext context, {
+    required String space,
+    required String deviceId,
+    required String path,
+  })? openDirectory;
+
   /// Open a `store://…` URI from a markdown link or attachment metadata.
   ///
   /// Directories open the storage browser at that folder; files preview / open.
+  /// If kind probe fails, still jump to the nearest existing pouch folder.
   Future<void> openStoreUri(BuildContext context, String uriString) async {
     try {
       final parsed = parseStoreUri(uriString, allowEmptyPath: true);
-      final uriKind = await StoreUriReader.instance.kindOf(uriString);
-      if (uriKind == StoreUriKind.directory) {
+      StoreUriKind? uriKind;
+      try {
+        uriKind = await StoreUriReader.instance.kindOf(uriString);
+      } catch (e) {
+        _log.warning('kindOf failed, falling back to browser: $e',
+            tag: _tag, error: e);
+      }
+
+      if (uriKind != StoreUriKind.file) {
         if (!context.mounted) return;
-        await openDirectoryInBrowser(
+        await _openDirectoryOrThrow(
           context,
+          uriString: uriString,
           space: parsed.space,
           deviceId: parsed.device,
           path: parsed.path,
+          // Keep the URI path so workspaces can list from master/owner.
+          resolvePrefix: false,
         );
         return;
       }
-
-      final name = p.basename(parsed.path);
-      var kind = await _resolvePreviewKind(uriString, parsed.path, name);
-      final size = await StoreUriReader.instance.sizeOf(uriString);
 
       if (!context.mounted) return;
-
-      if (size > hardLimitBytes) {
-        await _showTooLarge(context, name, size);
-        return;
-      }
-
-      final canPreview = (kind == _PreviewKind.image &&
-              size <= _maxImagePreviewBytes) ||
-          (kind == _PreviewKind.text && size <= _maxTextPreviewBytes);
-
-      if (canPreview) {
-        final local = await StoreAttachmentRef.fileFromStoreUri(uriString);
+      try {
+        await _openAsFile(context, uriString, parsed.path);
+      } catch (e) {
+        _log.warning('file open failed, falling back to browser: $e',
+            tag: _tag, error: e);
         if (!context.mounted) return;
-        if (local != null) {
-          await _presentLocal(
-            context,
-            fileName: name,
-            file: local,
-            kind: kind,
-            storeUri: uriString,
-          );
-          return;
-        }
-        final bytes = await StoreUriReader.instance.read(uriString);
-        if (!context.mounted) return;
-        await _presentBytes(
+        await _openDirectoryOrThrow(
           context,
-          fileName: name,
-          bytes: bytes,
-          kind: kind,
-          storeUri: uriString,
+          uriString: uriString,
+          space: parsed.space,
+          deviceId: parsed.device,
+          path: parsed.path,
+          resolvePrefix: true,
         );
-        return;
       }
-
-      // Materialize path (system open).
-      if (size >= confirmMaterializeBytes) {
-        final ok = await _confirmLargeOpen(context, name, size);
-        if (!ok || !context.mounted) return;
-      }
-
-      await materializeUriAndOpen(
-        context,
-        uriString,
-        name,
-        size: size,
-        showProgress: size >= confirmMaterializeBytes,
-      );
     } on StoreException catch (e) {
       _log.warning('openStoreUri failed: $e', tag: _tag, error: e);
       if (context.mounted) {
@@ -128,6 +108,65 @@ class StoreOpenService {
         );
       }
     }
+  }
+
+  Future<void> _openAsFile(
+    BuildContext context,
+    String uriString,
+    String storePath,
+  ) async {
+    final name = p.basename(storePath);
+    final kind = await _resolvePreviewKind(uriString, storePath, name);
+    final size = await StoreUriReader.instance.sizeOf(uriString);
+
+    if (!context.mounted) return;
+
+    if (size > hardLimitBytes) {
+      await _showTooLarge(context, name, size);
+      return;
+    }
+
+    final canPreview = (kind == _PreviewKind.image &&
+            size <= _maxImagePreviewBytes) ||
+        (kind == _PreviewKind.text && size <= _maxTextPreviewBytes);
+
+    if (canPreview) {
+      final local = await StoreAttachmentRef.fileFromStoreUri(uriString);
+      if (!context.mounted) return;
+      if (local != null) {
+        await _presentLocal(
+          context,
+          fileName: name,
+          file: local,
+          kind: kind,
+          storeUri: uriString,
+        );
+        return;
+      }
+      final bytes = await StoreUriReader.instance.read(uriString);
+      if (!context.mounted) return;
+      await _presentBytes(
+        context,
+        fileName: name,
+        bytes: bytes,
+        kind: kind,
+        storeUri: uriString,
+      );
+      return;
+    }
+
+    if (size >= confirmMaterializeBytes) {
+      final ok = await _confirmLargeOpen(context, name, size);
+      if (!ok || !context.mounted) return;
+    }
+
+    await materializeUriAndOpen(
+      context,
+      uriString,
+      name,
+      size: size,
+      showProgress: size >= confirmMaterializeBytes,
+    );
   }
 
   /// Open from chat attachment metadata (`store_uri` preferred).
@@ -155,31 +194,44 @@ class StoreOpenService {
     required String deviceId,
     required String path,
   }) async {
-    final self = await DeviceIdentity.deviceId();
-    final isOwn = deviceId == self;
-    String? peerId;
-    String? deviceName;
-    var preferLocalCache = false;
-    if (!isOwn) {
-      final peer =
-          await PeerStorageService().getPeerByFingerprint(deviceId);
-      peerId = peer?.id;
-      deviceName = peer?.deviceName;
-      preferLocalCache = peer == null;
+    await _openDirectoryOrThrow(
+      context,
+      uriString: storeUriWithRef(space, deviceId, path),
+      space: space,
+      deviceId: deviceId,
+      path: path,
+      resolvePrefix: true,
+    );
+  }
+
+  Future<void> _openDirectoryOrThrow(
+    BuildContext context, {
+    required String uriString,
+    required String space,
+    required String deviceId,
+    required String path,
+    required bool resolvePrefix,
+  }) async {
+    final opener = openDirectory;
+    if (opener == null) {
+      throw StateError('storage directory opener not registered');
+    }
+    var target = path;
+    if (resolvePrefix) {
+      try {
+        target =
+            await StoreUriReader.instance.existingDirectoryPrefix(uriString);
+      } catch (e) {
+        _log.warning('existingDirectoryPrefix failed: $e', tag: _tag, error: e);
+        target = path;
+      }
     }
     if (!context.mounted) return;
-    await Navigator.of(context).push<void>(
-      MaterialPageRoute<void>(
-        builder: (_) => StorageBrowserScreen(
-          deviceId: deviceId,
-          deviceName: deviceName,
-          peerId: peerId,
-          readOnly: !isOwn,
-          preferLocalCache: preferLocalCache,
-          initialSpace: space,
-          initialPath: path.isEmpty ? null : path,
-        ),
-      ),
+    await opener(
+      context,
+      space: space,
+      deviceId: deviceId,
+      path: target,
     );
   }
 

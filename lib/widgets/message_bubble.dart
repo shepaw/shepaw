@@ -7,6 +7,8 @@ import '../models/llm_token_usage.dart';
 import '../models/message.dart';
 import '../controllers/chat_message_window.dart';
 import '../services/store_open_service.dart';
+import '../screens/storage_directory_opener.dart';
+import '../storage/workspace_link_resolver.dart';
 import '../theme/app_theme.dart';
 import 'voice_message_bubble.dart';
 import 'image_message_bubble.dart';
@@ -86,6 +88,10 @@ class MessageBubble extends StatelessWidget {
   /// message's visible area while scrolling.
   final bool stickySenderName;
 
+  /// Store workspace roots used to resolve relative markdown links
+  /// like `[docs/good.md](docs/good.md)`.
+  final List<String> workspaceUris;
+
   /// Group-chat: hide the bubble body (user preference).
   final bool bodyCollapsed;
 
@@ -128,6 +134,7 @@ class MessageBubble extends StatelessWidget {
     this.showAvatar = true,
     this.reserveAvatarSpace = false,
     this.stickySenderName = false,
+    this.workspaceUris = const [],
     this.bodyCollapsed = false,
     this.onToggleBodyCollapse,
     this.stickyScrollListenables = const [],
@@ -700,7 +707,29 @@ class MessageBubble extends StatelessWidget {
   /// tell at a glance that the mentioned agent was not triggered.
   /// Open store:// files (preview) or folders (storage browser).
   Future<void> _openStoreLink(BuildContext context, String uriString) async {
+    registerStorageDirectoryOpener();
     await StoreOpenService.instance.openStoreUri(context, uriString);
+  }
+
+  Future<void> _handleTapLink(BuildContext context, String href) async {
+    final resolved = resolveWorkspaceHref(href, workspaceUris) ??
+        (href.startsWith('store://') ? href : null);
+    if (resolved != null && resolved.startsWith('store://')) {
+      await _openStoreLink(context, resolved);
+      return;
+    }
+    final uri = Uri.tryParse(href);
+    if (uri == null) return;
+    if (!await launchUrl(uri, mode: LaunchMode.externalApplication)) {
+      if (context.mounted) {
+        showTopToast(
+          context,
+          AppLocalizations.of(context).widget_cannotOpenLink(href),
+          icon: Icons.error_outline,
+          color: Colors.red.shade400,
+        );
+      }
+    }
   }
 
   String _processContentWithMentions(String content, Map<String, dynamic>? metadata) {
@@ -755,25 +784,7 @@ class MessageBubble extends StatelessWidget {
           extensionSet: md.ExtensionSet.gitHubWeb,
           onTapLink: (text, href, title) async {
             if (href == null) return;
-            // Markdown percent-encodes non-ASCII; openStoreUri/parseStoreUri
-            // decode path segments. Prefer prefix check — Uri.tryParse can
-            // still succeed with scheme=store.
-            if (href.startsWith('store://')) {
-              await _openStoreLink(context, href);
-              return;
-            }
-            final uri = Uri.tryParse(href);
-            if (uri == null) return;
-            if (!await launchUrl(uri, mode: LaunchMode.externalApplication)) {
-              if (context.mounted) {
-                showTopToast(
-                  context,
-                  AppLocalizations.of(context).widget_cannotOpenLink(href),
-                  icon: Icons.error_outline,
-                  color: Colors.red.shade400,
-                );
-              }
-            }
+            await _handleTapLink(context, href);
           },
           styleSheet: styleSheet,
         );
@@ -863,22 +874,7 @@ class MessageBubble extends StatelessWidget {
       extensionSet: md.ExtensionSet.gitHubWeb,
       onTapLink: (text, href, title) async {
         if (href == null) return;
-        if (href.startsWith('store://')) {
-          await _openStoreLink(context, href);
-          return;
-        }
-        final uri = Uri.tryParse(href);
-        if (uri == null) return;
-        if (!await launchUrl(uri, mode: LaunchMode.externalApplication)) {
-          if (context.mounted) {
-            showTopToast(
-              context,
-              AppLocalizations.of(context).widget_cannotOpenLink(href),
-              icon: Icons.error_outline,
-              color: Colors.red.shade400,
-            );
-          }
-        }
+        await _handleTapLink(context, href);
       },
       styleSheet: styleSheet,
     );
