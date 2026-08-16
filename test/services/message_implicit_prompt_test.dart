@@ -188,6 +188,22 @@ void main() {
       expect(MessageImplicitPrompt.appendHint(wire, again), wire);
     });
 
+    test('urisFromMessage reads metadata and content', () {
+      final m = Message(
+        id: 'm1',
+        content: 'see store://files/0123456789abcdef/docs/b.txt',
+        type: MessageType.text,
+        from: MessageFrom(id: 'u', type: 'user', name: 'U'),
+        timestampMs: 1,
+        metadata: {
+          'store_uri': 'store://files/0123456789abcdef/docs/a.txt',
+        },
+      );
+      final uris = MessageImplicitPrompt.urisFromMessage(m);
+      expect(uris, contains('store://files/0123456789abcdef/docs/a.txt'));
+      expect(uris, contains('store://files/0123456789abcdef/docs/b.txt'));
+    });
+
     test('stripImplicitBlocks removes hint for UI persistence', () {
       final att = AttachmentData(
         fileName: 'note.txt',

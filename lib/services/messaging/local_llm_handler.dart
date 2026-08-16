@@ -1,6 +1,7 @@
 import '../../models/message.dart';
 import '../../models/attachment_data.dart';
 import '../../models/llm_stream_event.dart';
+import '../../storage/scope_card.dart';
 import '../skill_registry.dart';
 import '../model_registry.dart';
 import '../ui_component_registry.dart';
@@ -173,19 +174,17 @@ class LocalLLMHelpers {
 
   /// Append LLM-only hints so historical attachments stay actionable.
   ///
-  /// Store:// refs get a per-message `[implicit]` block (not system-prompt
-  /// bloat). Non-store attachments keep the `chat message get` fetch hint.
+  /// Store:// refs are folded into the current-turn Scope Card volatile
+  /// section ([buildUserMessageContent]); history only keeps a short
+  /// `chat message get` hint for non-text attachments.
   static String enrichHistoryContent(Message m, String baseContent) {
     if (m.type == MessageType.system ||
         m.type == MessageType.permissionAudit) {
       return baseContent;
     }
 
-    var content = baseContent;
-    final storeHint = MessageImplicitPrompt.forHistoryMessage(m);
-    if (storeHint != null) {
-      content = MessageImplicitPrompt.appendHint(content, storeHint);
-    }
+    // Strip per-message [implicit] — URIs are collected into Scope Card.
+    var content = MessageImplicitPrompt.stripImplicitBlocks(baseContent);
 
     if (m.type == MessageType.text) {
       return content;
@@ -204,22 +203,36 @@ class LocalLLMHelpers {
   /// - Audio is embedded as OpenAI `input_audio` for non-Claude providers.
   ///   Claude Messages API has no stable audio-input block, so audio becomes a
   ///   text description there (same as other non-image files).
-  /// - store:// pouch refs get a per-message `[implicit]` read hint (LLM-only).
+  /// - store:// refs are folded into a single Scope Card · 本轮 URI section
+  ///   ([additionalStoreUris] + current turn); long `[implicit]` blocks are
+  ///   stripped / not appended.
   static Map<String, dynamic> buildUserMessageContent(
     String text,
     List<AttachmentData>? attachments,
-    bool isClaude,
-  ) {
-    final implicit = MessageImplicitPrompt.forCurrentTurn(
-      text: text,
-      attachments: attachments,
-    );
+    bool isClaude, {
+    Iterable<String>? additionalStoreUris,
+    Iterable<Message>? historyMessages,
+    Iterable<Map<String, dynamic>>? historyChatMaps,
+  }) {
+    final foldedUris = ScopeCard.dedupeUris([
+      ...?additionalStoreUris,
+      if (historyMessages != null)
+        ...MessageImplicitPrompt.collectUrisFromMessages(historyMessages),
+      if (historyChatMaps != null)
+        ...MessageImplicitPrompt.collectUrisFromChatMaps(historyChatMaps),
+      ...MessageImplicitPrompt.collectUris(
+        text: text,
+        attachments: attachments,
+      ),
+    ]);
+    final scopeVol = ScopeCard.volatileUrisMarkdown(foldedUris);
 
     if (attachments == null || attachments.isEmpty) {
-      return {
-        'role': 'user',
-        'content': MessageImplicitPrompt.appendHint(text, implicit),
-      };
+      var body = MessageImplicitPrompt.stripImplicitBlocks(text);
+      if (scopeVol.isNotEmpty) {
+        body = MessageImplicitPrompt.appendHint(body, scopeVol);
+      }
+      return {'role': 'user', 'content': body};
     }
 
     final imageAttachments =
@@ -234,13 +247,16 @@ class LocalLLMHelpers {
       return true;
     }).toList();
 
-    var effectiveText = text;
+    var effectiveText = MessageImplicitPrompt.stripImplicitBlocks(text);
     if (textOnlyAttachments.isNotEmpty) {
       final descriptions =
           textOnlyAttachments.map((a) => a.textDescription).join('\n');
       effectiveText = '$descriptions\n\n$effectiveText';
     }
-    effectiveText = MessageImplicitPrompt.appendHint(effectiveText, implicit);
+    if (scopeVol.isNotEmpty) {
+      effectiveText =
+          MessageImplicitPrompt.appendHint(effectiveText, scopeVol);
+    }
 
     final embedAudio = !isClaude && audioAttachments.isNotEmpty;
     if (imageAttachments.isEmpty && !embedAudio) {

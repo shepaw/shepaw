@@ -436,28 +436,64 @@ class ScopeCard {
         'extra_uris': extraUris,
       };
 
-  /// 简单 URI 归一化键（P0：去 @ref / query；完整前缀折叠留 P2）。
+  /// URI 归一化键：去掉 `@ref` / query。
   static String normalizeUriKey(String uri) {
     var u = uri.trim();
     final q = u.indexOf('?');
     if (q >= 0) u = u.substring(0, q);
     final at = u.indexOf('@');
     if (at >= 0) u = u.substring(0, at);
-    if (u.endsWith('/') && u.split('/').length > 4) {
-      // keep trailing slash for roots
-    }
     return u;
   }
 
-  static List<String> dedupeUris(Iterable<String> uris) {
-    final seen = <String>{};
-    final out = <String>[];
+  /// [ancestor] 是否为 [descendant] 的目录前缀（同 space/device 路径树）。
+  static bool isAncestorStoreUri(String ancestor, String descendant) {
+    final a = normalizeUriKey(ancestor);
+    final d = normalizeUriKey(descendant);
+    if (a.isEmpty || d.isEmpty || a == d) return false;
+    final prefix = a.endsWith('/') ? a : '$a/';
+    return d.startsWith(prefix);
+  }
+
+  /// 去重 + 前缀折叠：有文件级 URI 时去掉其祖先根 URI。
+  ///
+  /// 保留原始字符串（优先较短展示形式的第一次出现）。
+  static List<String> dedupeUris(
+    Iterable<String> uris, {
+    int maxCount = 40,
+  }) {
+    final byKey = <String, String>{};
     for (final raw in uris) {
-      if (raw.isEmpty || !raw.startsWith('store://')) continue;
-      final key = normalizeUriKey(raw);
-      if (seen.add(key)) out.add(raw.trim());
+      final t = raw.trim();
+      if (t.isEmpty || !t.startsWith('store://')) continue;
+      final key = normalizeUriKey(t);
+      byKey.putIfAbsent(key, () => t);
     }
-    out.sort();
+    final keys = byKey.keys.toList()..sort();
+    final drop = <String>{};
+    for (final a in keys) {
+      for (final b in keys) {
+        if (a == b) continue;
+        if (isAncestorStoreUri(a, b)) drop.add(a);
+      }
+    }
+    final kept = keys.where((k) => !drop.contains(k)).toList()..sort();
+    final out = [for (final k in kept) byKey[k]!];
+    if (out.length > maxCount) return out.sublist(out.length - maxCount);
     return out;
+  }
+
+  /// 仅本轮 URI 列表的 volatile 段（不依赖完整 ScopeCard 实例）。
+  static String volatileUrisMarkdown(Iterable<String> uris) {
+    final list = dedupeUris(uris);
+    if (list.isEmpty) return '';
+    final buf = StringBuffer()
+      ..writeln('## 当前储物袋作用域 · 本轮')
+      ..writeln('- 本轮/近期 store URI（已归一化；需要内容时 `shepaw store read --uri …`）:')
+      ..writeln('- 勿用 os.file 读 store://；历史消息不再重复长读法教程');
+    for (final u in list) {
+      buf.writeln('  - `$u`');
+    }
+    return buf.toString().trimRight();
   }
 }

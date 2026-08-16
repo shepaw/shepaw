@@ -435,6 +435,7 @@ class LocalLLMAgentService {
       message,
       attachments,
       isClaude,
+      historyChatMaps: history,
     ));
 
     final url = _buildNonSSEUrl(resolved);
@@ -804,6 +805,7 @@ class LocalLLMAgentService {
       message,
       attachments,
       false,
+      historyChatMaps: history,
     );
     final userContent = userMsg['content'];
     final hasMultimodal = userContent is List;
@@ -910,6 +912,7 @@ class LocalLLMAgentService {
       message,
       attachments,
       true,
+      historyChatMaps: history,
     ));
 
     final url = apiBase.endsWith('/')

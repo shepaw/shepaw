@@ -107,12 +107,20 @@ class MessageImplicitPrompt {
   }
 
   /// Hint for a history [Message]: prefer persisted metadata, else synthesize.
+  ///
+  /// Prefer [urisFromMessage] + Scope Card fold for LLM turns; this long form
+  /// remains for peer wire / metadata persistence.
   static String? forHistoryMessage(Message m) {
     final stored = fromMetadata(m.metadata);
     if (stored != null) return stored;
     if (containsImplicitBlock(m.content)) {
       return extractImplicitBlock(m.content);
     }
+    return renderStoreReadHint(urisFromMessage(m));
+  }
+
+  /// Structured + inline store URIs on a single message (no long hint render).
+  static Set<String> urisFromMessage(Message m) {
     final uris = <String>{};
     final metaUri = m.metadata?['store_uri'] as String?;
     if (metaUri != null && metaUri.isNotEmpty) uris.add(metaUri);
@@ -122,11 +130,47 @@ class MessageImplicitPrompt {
         if (item is String && item.isNotEmpty) uris.add(item);
       }
     }
+    final fromHint = fromMetadata(m.metadata);
+    if (fromHint != null) uris.addAll(extractStoreUris(fromHint));
     uris.addAll(extractStoreUris(m.content));
-    return renderStoreReadHint(uris);
+    return uris;
   }
 
-  /// Scan free-form user text for store:// links.
+  /// Collect store URIs across history messages.
+  static Set<String> collectUrisFromMessages(Iterable<Message> messages) {
+    final out = <String>{};
+    for (final m in messages) {
+      out.addAll(urisFromMessage(m));
+    }
+    return out;
+  }
+
+  /// Scan chat-map history (role/content) for store:// after enrich/strip.
+  static Set<String> collectUrisFromChatMaps(
+    Iterable<Map<String, dynamic>> messages,
+  ) {
+    final out = <String>{};
+    for (final m in messages) {
+      final c = m['content'];
+      if (c is String) {
+        out.addAll(extractStoreUris(c));
+      } else if (c is List) {
+        for (final part in c) {
+          if (part is Map && part['text'] is String) {
+            out.addAll(extractStoreUris(part['text'] as String));
+          }
+        }
+      }
+      final info = m['attachment_info'];
+      if (info is Map && info['store_uri'] is String) {
+        final u = info['store_uri'] as String;
+        if (u.isNotEmpty) out.add(u);
+      }
+    }
+    return out;
+  }
+
+  /// Build store-read hint from current-turn attachments, or null if none.
   static String? forUserText(String text) {
     if (containsImplicitBlock(text)) return extractImplicitBlock(text);
     return renderStoreReadHint(extractStoreUris(text));

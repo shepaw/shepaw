@@ -197,18 +197,24 @@ class ContextBundleService {
     required String ownerId,
     String? channelId,
     List<String> extraRefTexts = const [],
+    List<String> extraUris = const [],
     bool expandUris = false,
     bool isGroup = false,
   }) async {
     final withArts = ArtifactService.instance
         .wrapWithArtifactSection(text, extraRefTexts: extraRefTexts);
     try {
-      final section = await buildLocalContextSection(
+      final card = await buildLocalScopeCard(
         ownerId: ownerId,
         channelId: channelId,
         expandUris: expandUris,
         isGroup: isGroup,
       );
+      final merged = card.copyWith(
+        extraUris: ScopeCard.dedupeUris([...card.extraUris, ...extraUris]),
+      );
+      final section = merged.toVolatileMarkdown();
+      if (section.isEmpty) return withArts;
       if (withArts.contains('## 当前储物袋作用域')) return withArts;
       if (withArts.contains('## 可用上下文')) return withArts;
       return '$withArts\n\n$section';

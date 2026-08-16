@@ -486,7 +486,12 @@ class GroupAgentExecutor {
       // Build the full message list for multi-turn tool calling
       final roundMessages = <Map<String, dynamic>>[
         ...chatHistory,
-        LocalLLMHelpers.buildUserMessageContent(content, attachments, isClaude),
+        LocalLLMHelpers.buildUserMessageContent(
+          content,
+          attachments,
+          isClaude,
+          historyMessages: effectiveHistory,
+        ),
       ];
       final maxToolRounds =
           (agent.metadata['max_tool_rounds'] as num?)?.toInt() ?? 100;

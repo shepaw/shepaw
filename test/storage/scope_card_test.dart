@@ -68,4 +68,36 @@ void main() {
     ]);
     expect(out.length, 1);
   });
+
+  test('dedupeUris folds ancestor roots under file URIs', () {
+    final out = ScopeCard.dedupeUris([
+      'store://runtime/aaaaaaaaaaaaaaaa/agent1/',
+      'store://runtime/aaaaaaaaaaaaaaaa/agent1/ch/artifacts/t/a.md',
+      'store://cognition/aaaaaaaaaaaaaaaa/agent1/soul.md',
+    ]);
+    expect(
+      out,
+      contains('store://runtime/aaaaaaaaaaaaaaaa/agent1/ch/artifacts/t/a.md'),
+    );
+    expect(
+      out,
+      contains('store://cognition/aaaaaaaaaaaaaaaa/agent1/soul.md'),
+    );
+    expect(
+      out.any((u) =>
+          ScopeCard.normalizeUriKey(u) ==
+          'store://runtime/aaaaaaaaaaaaaaaa/agent1/'),
+      isFalse,
+    );
+  });
+
+  test('volatileUrisMarkdown lists folded URIs once', () {
+    final md = ScopeCard.volatileUrisMarkdown([
+      'store://files/0123456789abcdef/a.txt',
+      'store://files/0123456789abcdef/a.txt@deadbeef',
+    ]);
+    expect(md, contains('当前储物袋作用域 · 本轮'));
+    expect(md, contains('store://files/0123456789abcdef/a.txt'));
+    expect('[implicit]'.allMatches(md).length, 0);
+  });
 }
