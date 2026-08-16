@@ -340,12 +340,15 @@ class AgentMessagingService {
         replyTo: rec.userMessageId.isEmpty ? null : rec.userMessageId,
         metadata: meta,
       );
-      await saveMessageToChannel(msg, agent.id, channelId: rec.channelId);
+      final toSave = await _dedupeAgainstSyncedTranscript(msg, rec.channelId);
+      if (toSave != null) {
+        await saveMessageToChannel(toSave, agent.id, channelId: rec.channelId);
+      }
       _emitCompletion(
         channelId: rec.channelId,
         agent: agent,
         outcome: AgentTaskOutcome.completed,
-        finalMessage: msg,
+        finalMessage: toSave,
       );
     } catch (e, st) {
       LoggerService().error(
@@ -761,6 +764,62 @@ class AgentMessagingService {
   // ---------------------------------------------------------------------------
   // Private helpers
   // ---------------------------------------------------------------------------
+
+  /// Race guard for peer DM turns finalizing concurrently with a history sync.
+  ///
+  /// The sync's per-channel inflight guard lapses the moment the turn leaves
+  /// `PeerAgentClientService._pending`, which is before this side persists the
+  /// final message. A sync landing in that window upserts remote-owned
+  /// `peerhist_*` rows and deletes the local user message (content match) —
+  /// then saving [msg] would duplicate the reply and leave its replyTo
+  /// dangling ("原消息不可用" quote header).
+  ///
+  /// Resolution: when the anchor user message no longer exists, the turn was
+  /// superseded by a sync. If an equivalent remote-owned agent row already
+  /// exists in the channel, suppress the save (return null). Otherwise keep
+  /// the local message but strip the dangling replyTo.
+  Future<Message?> _dedupeAgainstSyncedTranscript(
+    Message msg,
+    String channelId,
+  ) async {
+    final anchorId = msg.replyTo;
+    if (channelId.isEmpty || anchorId == null || anchorId.isEmpty) return msg;
+    try {
+      final anchor = await getMessageById(anchorId);
+      if (anchor != null) return msg; // no sync interference
+      final recent = await loadChannelMessages(channelId, limit: 50);
+      for (final m in recent) {
+        if (!m.from.isAgent || !m.id.startsWith('peerhist_')) continue;
+        if (peerSyncedRowCoversFinalContent(m.content, msg.content)) {
+          LoggerService().info(
+            'Suppressed local final save in $channelId — turn already mirrored '
+            'by synced row ${m.id}',
+            tag: 'AgentMessagingService',
+          );
+          return null;
+        }
+      }
+      // Keep the local reply (remote transcript lacks it) but drop the
+      // dangling quote reference.
+      return Message(
+        id: msg.id,
+        content: msg.content,
+        timestampMs: msg.timestampMs,
+        from: msg.from,
+        to: msg.to,
+        type: msg.type,
+        channelId: msg.channelId,
+        metadata: msg.metadata,
+      );
+    } catch (e) {
+      LoggerService().warning(
+        'Synced-transcript dedupe failed for $channelId: $e',
+        tag: 'AgentMessagingService',
+        error: e,
+      );
+      return msg;
+    }
+  }
 
   /// Send message via ACP WebSocket protocol
   Future<Message?> _sendViaACPProtocol(Message userMessage, RemoteAgent agent, {
@@ -1776,7 +1835,7 @@ class AgentMessagingService {
 
       await flushHelper.deletePartial();
 
-      return Message(
+      final finalMsg = Message(
         id: _uuid.v4(),
         content: content,
         timestampMs: DateTime.now().millisecondsSinceEpoch,
@@ -1790,6 +1849,9 @@ class AgentMessagingService {
         replyTo: userMessage.id,
         metadata: meta.isEmpty ? null : meta,
       );
+      // A history sync may have mirrored this turn while it finalized —
+      // suppress (or de-quote) the local copy instead of duplicating it.
+      return _dedupeAgainstSyncedTranscript(finalMsg, effectiveChannelId);
     } catch (e) {
       await flushHelper.deletePartial();
       infLogPeer.endRound(traceId, stopReason: 'error');

@@ -218,6 +218,180 @@ void main() {
       );
       expect(deleted, isEmpty);
     });
+
+    test('content match tolerates trailing whitespace drift', () {
+      final deleted = localMessageIdsToDeleteOnPeerHistorySync(
+        localRows: const [
+          PeerHistorySyncLocalRow(
+            id: 'uuid-old',
+            senderType: 'user',
+            content: 'hi\n',
+          ),
+        ],
+        remoteIds: remote,
+        remoteRoleContentKeys: remoteKeys,
+        preserveIds: const {},
+      );
+      expect(deleted, {'uuid-old'});
+    });
+  });
+
+  group('turn-linkage deletion (resume ↔ sync race)', () {
+    // Remote transcript: prompt + answer. Local mirrors the prompt as a uuid
+    // row and the reply as a uuid row whose content drifted from the remote.
+    const transcript = [
+      PeerHistoryRemoteEntry(role: 'user', content: 'hi'),
+      PeerHistoryRemoteEntry(role: 'agent', content: 'Hello there!'),
+    ];
+    final keys = {
+      peerHistoryRoleContentKey('user', 'hi'),
+      peerHistoryRoleContentKey('agent', 'Hello there!'),
+    };
+    const remoteIds = {'peerhist_u', 'peerhist_a'};
+
+    test('deletes local user prompt and its drifted local agent reply', () {
+      final deleted = localMessageIdsToDeleteOnPeerHistorySync(
+        localRows: const [
+          PeerHistorySyncLocalRow(id: 'u1', senderType: 'user', content: 'hi'),
+          PeerHistorySyncLocalRow(
+            id: 'a1',
+            senderType: 'agent',
+            content: 'Hello there!\n', // drifted — exact key would miss
+            replyToId: 'u1',
+          ),
+        ],
+        remoteIds: remoteIds,
+        remoteRoleContentKeys: keys,
+        preserveIds: const {},
+        remoteTranscript: transcript,
+      );
+      expect(deleted, containsAll(['u1', 'a1']));
+    });
+
+    test('deletes linked agent reply even when content matches nothing remote', () {
+      final deleted = localMessageIdsToDeleteOnPeerHistorySync(
+        localRows: const [
+          PeerHistorySyncLocalRow(id: 'u1', senderType: 'user', content: 'hi'),
+          PeerHistorySyncLocalRow(
+            id: 'a1',
+            senderType: 'agent',
+            content: 'totally different local formatting',
+            replyToId: 'u1',
+          ),
+        ],
+        remoteIds: remoteIds,
+        remoteRoleContentKeys: keys,
+        preserveIds: const {},
+        remoteTranscript: transcript,
+      );
+      expect(deleted, containsAll(['u1', 'a1']));
+    });
+
+    test('keeps agent reply when remote never answered the prompt', () {
+      final deleted = localMessageIdsToDeleteOnPeerHistorySync(
+        localRows: const [
+          PeerHistorySyncLocalRow(id: 'u1', senderType: 'user', content: 'hi'),
+          PeerHistorySyncLocalRow(
+            id: 'a1',
+            senderType: 'agent',
+            content: 'local-only reply',
+            replyToId: 'u1',
+          ),
+        ],
+        remoteIds: const {'peerhist_u'},
+        remoteRoleContentKeys: {peerHistoryRoleContentKey('user', 'hi')},
+        preserveIds: const {},
+        remoteTranscript: const [
+          PeerHistoryRemoteEntry(role: 'user', content: 'hi'),
+        ],
+      );
+      expect(deleted, {'u1'});
+    });
+
+    test('keeps agent reply anchored to a preserved (inflight) user message', () {
+      final deleted = localMessageIdsToDeleteOnPeerHistorySync(
+        localRows: const [
+          PeerHistorySyncLocalRow(id: 'u1', senderType: 'user', content: 'hi'),
+          PeerHistorySyncLocalRow(
+            id: 'a1',
+            senderType: 'agent',
+            content: 'inflight answer so far',
+            replyToId: 'u1',
+          ),
+        ],
+        remoteIds: remoteIds,
+        remoteRoleContentKeys: keys,
+        preserveIds: const {'u1', 'a1'},
+        remoteTranscript: transcript,
+      );
+      expect(deleted, isEmpty);
+    });
+
+    test('deletes linked streaming row even when prefix match fails', () {
+      final deleted = localMessageIdsToDeleteOnPeerHistorySync(
+        localRows: const [
+          PeerHistorySyncLocalRow(id: 'u1', senderType: 'user', content: 'hi'),
+          PeerHistorySyncLocalRow(
+            id: 'a1',
+            senderType: 'agent',
+            content: '⟳ thinking…', // splitter artifact, not a prefix
+            metadataJson: '{"status":"streaming"}',
+            replyToId: 'u1',
+          ),
+        ],
+        remoteIds: remoteIds,
+        remoteRoleContentKeys: keys,
+        preserveIds: const {},
+        remoteAgentContents: const ['Hello there!'],
+        remoteTranscript: transcript,
+      );
+      expect(deleted, containsAll(['u1', 'a1']));
+    });
+
+    test('does not link agent rows whose anchor is not the superseded prompt', () {
+      final deleted = localMessageIdsToDeleteOnPeerHistorySync(
+        localRows: const [
+          PeerHistorySyncLocalRow(id: 'u1', senderType: 'user', content: 'hi'),
+          PeerHistorySyncLocalRow(
+            id: 'a1',
+            senderType: 'agent',
+            content: 'reply to something else',
+            replyToId: 'some-other-message',
+          ),
+        ],
+        remoteIds: remoteIds,
+        remoteRoleContentKeys: keys,
+        preserveIds: const {},
+        remoteTranscript: transcript,
+      );
+      expect(deleted, {'u1'});
+    });
+  });
+
+  group('peerSyncedRowCoversFinalContent', () {
+    test('equal after trim', () {
+      expect(peerSyncedRowCoversFinalContent('Hello\n', 'Hello'), isTrue);
+    });
+
+    test('remote covers local (clipped resume delta)', () {
+      expect(peerSyncedRowCoversFinalContent('Hello world', 'Hello'), isTrue);
+    });
+
+    test('local covers remote (Stopped suffix)', () {
+      expect(
+        peerSyncedRowCoversFinalContent('Hello', 'Hello\n\n[Stopped]'),
+        isTrue,
+      );
+    });
+
+    test('empty on either side never matches', () {
+      expect(peerSyncedRowCoversFinalContent('', 'Hello'), isFalse);
+      expect(peerSyncedRowCoversFinalContent('Hello', ''), isFalse);
+    });
+
+    test('unrelated content does not match', () {
+      expect(peerSyncedRowCoversFinalContent('Bye', 'Hello'), isFalse);
+    });
   });
 
   group('PeerInflightTurnRecord map roundtrip', () {

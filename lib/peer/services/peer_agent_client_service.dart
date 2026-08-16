@@ -2471,6 +2471,7 @@ class PeerAgentClientService {
         senderType: row['sender_type'] as String? ?? '',
         content: row['content'] as String? ?? '',
         metadataJson: row['metadata'] as String?,
+        replyToId: row['reply_to_id'] as String?,
       );
     });
     final toDelete = localMessageIdsToDeleteOnPeerHistorySync(
@@ -2479,6 +2480,10 @@ class PeerAgentClientService {
       remoteRoleContentKeys: remoteRoleContentKeys,
       preserveIds: preserveIds,
       remoteAgentContents: remoteAgentContents,
+      remoteTranscript: [
+        for (final m in history)
+          PeerHistoryRemoteEntry(role: m.role, content: m.content),
+      ],
     );
     for (final id in toDelete) {
       await _db.deleteMessage(id);

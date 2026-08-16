@@ -141,15 +141,42 @@ class PeerHistorySyncLocalRow {
   final String content;
   final String? metadataJson;
 
+  /// `reply_to_id` of the row, when any. Lets the sync deletion pass find
+  /// local agent replies whose user-prompt anchor is being replaced by a
+  /// remote-owned `peerhist_*` row.
+  final String? replyToId;
+
   const PeerHistorySyncLocalRow({
     required this.id,
     required this.senderType,
     required this.content,
     this.metadataJson,
+    this.replyToId,
   });
 }
 
-String peerHistoryRoleContentKey(String role, String content) => '$role\n$content';
+/// One ordered entry of the remote transcript, used by turn-linkage analysis.
+class PeerHistoryRemoteEntry {
+  final String role;
+  final String content;
+
+  const PeerHistoryRemoteEntry({required this.role, required this.content});
+}
+
+String peerHistoryRoleContentKey(String role, String content) =>
+    '$role\n${content.trim()}';
+
+/// Whether a synced (remote-owned) row's content can stand in for a locally
+/// produced final message. Either-direction prefix after trim, so trailing
+/// drift (a clipped resume delta, a "[Stopped]" suffix) still counts as the
+/// same turn's content. Empty final content never matches — progress-only
+/// replies must be kept.
+bool peerSyncedRowCoversFinalContent(String rowContent, String finalContent) {
+  final remote = rowContent.trim();
+  final local = finalContent.trim();
+  if (local.isEmpty || remote.isEmpty) return false;
+  return remote == local || remote.startsWith(local) || local.startsWith(remote);
+}
 
 bool peerHistorySyncRowIsStreaming(String? metadataJson) {
   if (metadataJson == null || metadataJson.isEmpty) return false;
@@ -166,14 +193,22 @@ bool peerHistorySyncRowIsStreaming(String? metadataJson) {
 /// - it is a `status: streaming` flush row whose content is NOT yet covered
 ///   by the remote transcript (a live turn still ahead of the remote);
 /// - it is a non-`peerhist_*` row whose role+content is not in the remote
-///   transcript (a message the phone created that the agent has not
-///   committed yet).
+///   transcript AND which is not turn-linked to a replaced user prompt (a
+///   message the phone created that the agent has not committed yet).
 ///
-/// A `status: streaming` row outside [preserveIds] belongs to a dead turn
-/// (process kill + resume lost/expired, etc.). Once the remote transcript
-/// contains an agent message covering its content (prefix match), the orphan
-/// must be deleted — otherwise it survives forever next to the `peerhist_*`
-/// full message, showing "half reply + full reply" as two bubbles.
+/// Deletion rules beyond the plain content match:
+/// - A `status: streaming` row outside [preserveIds] belongs to a dead turn
+///   (process kill + resume lost/expired, etc.). Once the remote transcript
+///   contains an agent message covering its content (prefix match), the orphan
+///   must be deleted — otherwise it survives forever next to the `peerhist_*`
+///   full message, showing "half reply + full reply" as two bubbles.
+/// - Turn linkage: when a local user row is deleted because the remote
+///   transcript owns that prompt AND the remote has an answer for it, local
+///   agent rows replying to that prompt ([PeerHistorySyncLocalRow.replyToId])
+///   are the same turn's local copy — delete them even when their content
+///   drifted from the remote answer (whitespace, progress folding). Otherwise
+///   the local copy lingers next to the `peerhist_*` row with a dangling
+///   replyTo ("原消息不可用" quote header).
 Set<String> localMessageIdsToDeleteOnPeerHistorySync({
   required Iterable<PeerHistorySyncLocalRow> localRows,
   required Set<String> remoteIds,
@@ -183,23 +218,66 @@ Set<String> localMessageIdsToDeleteOnPeerHistorySync({
   /// whether an orphan streaming row is already covered by a fuller remote
   /// version.
   Iterable<String> remoteAgentContents = const [],
+  /// Ordered remote transcript (oldest → newest) for turn-linkage analysis.
+  Iterable<PeerHistoryRemoteEntry> remoteTranscript = const [],
 }) {
+  final rows = localRows.toList();
+  final transcript = remoteTranscript.toList();
+
+  // Remote user prompts the transcript has answered: an agent message exists
+  // after the prompt's last occurrence.
+  final lastUserIndexByContent = <String, int>{};
+  var lastAgentIndex = -1;
+  for (var i = 0; i < transcript.length; i++) {
+    final e = transcript[i];
+    if (e.role == 'user') {
+      lastUserIndexByContent[e.content.trim()] = i;
+    } else {
+      lastAgentIndex = i;
+    }
+  }
+  final answeredUserContents = <String>{
+    for (final entry in lastUserIndexByContent.entries)
+      if (entry.value < lastAgentIndex) entry.key,
+  };
+
+  // Local user rows being superseded by the remote transcript: content matches
+  // a remote prompt that the remote has answered. Their ids anchor the local
+  // agent replies of the same turn.
+  final supersedingUserIds = <String>{};
+  for (final row in rows) {
+    if (row.id.isEmpty || row.id.startsWith('peerhist_')) continue;
+    if (row.senderType != 'user') continue;
+    if (remoteIds.contains(row.id) || preserveIds.contains(row.id)) continue;
+    if (!answeredUserContents.contains(row.content.trim())) continue;
+    final key = peerHistoryRoleContentKey('user', row.content);
+    if (remoteRoleContentKeys.contains(key)) supersedingUserIds.add(row.id);
+  }
+
+  bool turnLinkedToSupersededPrompt(PeerHistorySyncLocalRow row) {
+    final anchor = row.replyToId;
+    return anchor != null && supersedingUserIds.contains(anchor);
+  }
+
   final toDelete = <String>{};
-  for (final row in localRows) {
+  for (final row in rows) {
     if (row.id.isEmpty) continue;
     if (remoteIds.contains(row.id)) continue;
     if (preserveIds.contains(row.id)) continue;
     if (peerHistorySyncRowIsStreaming(row.metadataJson)) {
       final covered = row.content.isNotEmpty &&
           remoteAgentContents.any((c) => c.startsWith(row.content));
-      if (!covered) continue;
+      if (!covered && !turnLinkedToSupersededPrompt(row)) continue;
       toDelete.add(row.id);
       continue;
     }
     if (!row.id.startsWith('peerhist_')) {
       final role = row.senderType == 'user' ? 'user' : 'agent';
       final key = peerHistoryRoleContentKey(role, row.content);
-      if (!remoteRoleContentKeys.contains(key)) continue;
+      if (!remoteRoleContentKeys.contains(key) &&
+          !(role == 'agent' && turnLinkedToSupersededPrompt(row))) {
+        continue;
+      }
     }
     toDelete.add(row.id);
   }
