@@ -11,6 +11,7 @@ library;
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'package:flutter/foundation.dart';
 
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:sqflite/sqflite.dart';
@@ -844,6 +845,100 @@ class PeerAgentClientService {
     return false;
   }
 
+  /// Cancel every in-flight turn bound to [channelId], regardless of which
+  /// [ACPCancellationToken] (if any) the turn was started with.
+  ///
+  /// User stop must not depend on the controller's token identity: after a
+  /// chat-page reattach or a process restart (hydrated turns), the token that
+  /// started the turn is gone, and cancelling the controller's fresh token
+  /// would leave both the peer's turn and our inflight guard running —
+  /// blocking the next send with "上一轮回复仍在继续" until the idle watchdog
+  /// fires. Called from the DM/group stop funnels.
+  Future<void> cancelInflightTurnsForChannel(String channelId) async {
+    if (channelId.isEmpty) return;
+    final requestIds = <String>[
+      for (final entry in _pending.entries)
+        if (!entry.value.completer.isCompleted &&
+            entry.value.channelId == channelId)
+          entry.key,
+    ];
+    for (final requestId in requestIds) {
+      _abortPendingTurn(requestId);
+    }
+  }
+
+  /// Abort a pending turn locally and notify the peer: remove it from
+  /// [_pending], complete its completer with `[Stopped]`, clear persisted
+  /// state, and best-effort send `agent_cancel` so the host interrupts its
+  /// side. Suspended turns are registered in [_cancelledWhileSuspended] so a
+  /// reconnect re-sends cancel instead of resuming (see [_resumeSuspendedTurns]).
+  void _abortPendingTurn(String requestId) {
+    final p = _pending.remove(requestId);
+    if (p == null || p.completer.isCompleted) return;
+    // 断连挂起期间的取消：下面的 sendControl 大概率发不出去（连接已断），
+    // 登记下来，重连后补发 cancel 而不是 resume（见 _resumeSuspendedTurns）。
+    if (p.suspendedSince != null) {
+      _cancelledWhileSuspended[requestId] = p.peerId;
+      if (_cancelledWhileSuspended.length > 100) {
+        _cancelledWhileSuspended.remove(_cancelledWhileSuspended.keys.first);
+      }
+    }
+    for (final entry in _approvalToRequest.entries.toList()) {
+      if (entry.value == requestId) {
+        _approvalToRequest.remove(entry.key);
+      }
+    }
+    _clearPersistedTurn(requestId);
+    p.completer.complete(
+      PeerChatResult(content: '[Stopped]', requestId: requestId),
+    );
+    final sendControl =
+        debugSendControlOverride ?? PeerConnectionManager.instance.sendControl;
+    unawaited(sendControl(p.peerId, {
+      'type': 'agent_cancel',
+      'request_id': requestId,
+    }));
+  }
+
+  // ── Test seams ─────────────────────────────────────────────────────────
+
+  /// Test seam: when set, [_abortPendingTurn] routes its `agent_cancel`
+  /// control frame here instead of [PeerConnectionManager], letting unit
+  /// tests capture frames without a live peer connection.
+  @visibleForTesting
+  Future<bool> Function(String peerId, Map<String, dynamic> json)?
+      debugSendControlOverride;
+
+  /// Test seam: register a synthetic in-flight turn (as [sendChat] would)
+  /// and return its completion future, so cancel logic can be exercised
+  /// without a peer connection.
+  @visibleForTesting
+  Future<PeerChatResult> debugSeedPendingTurn({
+    required String requestId,
+    required String peerId,
+    String remoteAgentId = 'remote-agent',
+    String channelId = '',
+    String sessionId = '',
+    bool suspended = false,
+  }) {
+    final p = _PendingRequest(
+      peerId: peerId,
+      remoteAgentId: remoteAgentId,
+      channelId: channelId,
+      sessionId: sessionId,
+    );
+    if (suspended) {
+      p.suspendedSince = DateTime.now();
+    }
+    _pending[requestId] = p;
+    return p.completer.future;
+  }
+
+  /// Test seam: read-only view of [_cancelledWhileSuspended].
+  @visibleForTesting
+  Map<String, String> get debugCancelledWhileSuspended =>
+      Map.unmodifiable(_cancelledWhileSuspended);
+
   bool hasInflightForSession({
     required String peerId,
     required String remoteAgentId,
@@ -974,7 +1069,10 @@ class PeerAgentClientService {
 
   void _clearPersistedTurn(String requestId) {
     _persistTimers.remove(requestId)?.cancel();
-    unawaited(_storage.deleteInflightTurn(requestId));
+    unawaited(_storage.deleteInflightTurn(requestId).catchError((Object e) {
+      // 与 _persistTurnNow 对齐：持久化清理失败不影响内存态已完成的取消。
+      _log.debug('clear persisted inflight $requestId failed: $e', tag: _tag);
+    }));
   }
 
   // ── 发送（消费方 → 提供方） ────────────────────────────────────────────
@@ -1155,29 +1253,7 @@ class PeerAgentClientService {
     onRequestStarted?.call(requestId);
     unawaited(_persistTurnNow(requestId));
 
-    cancelToken?.addOnCancelled(() {
-      unawaited(PeerConnectionManager.instance.sendControl(peerId, {
-        'type': 'agent_cancel',
-        'request_id': requestId,
-      }));
-      final p = _pending.remove(requestId);
-      if (p != null && !p.completer.isCompleted) {
-        // 断连挂起期间的取消：上面的 sendControl 大概率发不出去（连接已断），
-        // 登记下来，重连后补发 cancel 而不是 resume（见 _resumeSuspendedTurns）。
-        if (p.suspendedSince != null) {
-          _cancelledWhileSuspended[requestId] = peerId;
-          if (_cancelledWhileSuspended.length > 100) {
-            _cancelledWhileSuspended.remove(
-              _cancelledWhileSuspended.keys.first,
-            );
-          }
-        }
-        p.completer.complete(
-          PeerChatResult(content: '[Stopped]', requestId: requestId),
-        );
-        _clearPersistedTurn(requestId);
-      }
-    });
+    cancelToken?.addOnCancelled(() => _abortPendingTurn(requestId));
 
     final sent = await PeerConnectionManager.instance.sendControl(peerId, {
       'type': 'agent_chat',

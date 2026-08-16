@@ -26,6 +26,7 @@ import 'workflow/workflow_service.dart';
 import 'workflow/workflow_step_agent_resolver.dart';
 import '../models/workflow_models.dart';
 import 'messaging/agent_messaging_service.dart';
+import '../peer/services/peer_agent_client_service.dart';
 import 'group/group_session_service.dart';
 import 'session/session_history_service.dart';
 import '../storage/artifact_service.dart';
@@ -494,6 +495,11 @@ class ChatService {
   /// Called when the user stops group streaming to clean up typing indicators
   /// and prevent reattach from resuming cancelled tasks.
   void cancelActiveGroupTasks(String channelId) {
+    // 中断组内 peer agent 仍在运行的 turn 并解除 inflight 拦截（群组 peer
+    // 发送以群 channelId 绑定 inflight；restored/失联 token 场景下同 DM）。
+    unawaited(
+      PeerAgentClientService.instance.cancelInflightTurnsForChannel(channelId),
+    );
     final agentMap = _activeGroupTasks[channelId];
     if (agentMap == null) return;
     for (final task in agentMap.values) {
