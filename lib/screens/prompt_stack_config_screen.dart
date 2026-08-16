@@ -108,14 +108,58 @@ class _PromptStackConfigScreenState extends State<PromptStackConfigScreen> {
                     _switch(
                       title: _tr('轻量模式', 'Lightweight mode'),
                       subtitle: _tr(
-                        '首轮等场景减少记忆/认知注入以省 token',
-                        'Skip heavy memory/cognition blocks to save tokens',
+                        '强制 Soul/记忆为仅 URI，并减少认知块以省 token',
+                        'Force Soul/memory to URI-only and skip heavy blocks',
                       ),
                       value: _config.lightweightMode,
                       onChanged: (v) => setState(
                         () => _config = _config.copyWith(lightweightMode: v),
                       ),
                     ),
+                    if (!widget.isShe) ...[
+                      _dropdown(
+                        label: _tr('Soul 注入', 'Soul inject'),
+                        value: _config.soulInjectMode,
+                        items: {
+                          CognitionInjectMode.full: _tr(
+                            '全文内嵌（默认）',
+                            'Embed full text (default)',
+                          ),
+                          CognitionInjectMode.uriOnly: _tr(
+                            '仅 URI（按需 store read）',
+                            'URI only (store read on demand)',
+                          ),
+                        },
+                        onChanged: (v) {
+                          if (v == null) return;
+                          setState(
+                            () => _config =
+                                _config.copyWith(soulInjectMode: v),
+                          );
+                        },
+                      ),
+                      _dropdown(
+                        label: _tr('记忆注入', 'Memory inject'),
+                        value: _config.memoryInjectMode,
+                        items: {
+                          CognitionInjectMode.full: _tr(
+                            '内嵌最近 N 条（默认）',
+                            'Embed recent N (default)',
+                          ),
+                          CognitionInjectMode.uriOnly: _tr(
+                            '仅 URI（按需读取）',
+                            'URI only (read on demand)',
+                          ),
+                        },
+                        onChanged: (v) {
+                          if (v == null) return;
+                          setState(
+                            () => _config =
+                                _config.copyWith(memoryInjectMode: v),
+                          );
+                        },
+                      ),
+                    ],
                   ],
                 ),
                 const SizedBox(height: 12),

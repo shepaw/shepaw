@@ -6,6 +6,26 @@
 ///
 /// She-specific sections are grouped under [SheStackConfig] and are
 /// silently ignored when the agent is not She.
+library;
+
+/// How cognition (Soul / structured memory) is presented in the prompt.
+///
+/// - [full]: embed text in the system prompt (default).
+/// - [uriOnly]: do not embed; agent reads via Scope Card `store://` + CLI.
+class CognitionInjectMode {
+  CognitionInjectMode._();
+
+  static const full = 'full';
+  static const uriOnly = 'uri_only';
+
+  static const values = <String>[full, uriOnly];
+
+  static String normalize(String? raw, {String fallback = full}) {
+    final v = (raw ?? '').trim();
+    if (values.contains(v)) return v;
+    return fallback;
+  }
+}
 
 // ── Tools layer ───────────────────────────────────────────────────────────────
 
@@ -422,13 +442,23 @@ class PromptStackConfig {
   ///
   /// When `true`:
   /// - Tool description level is forced to `'summary'` (overrides [tools.toolDescriptionLevel]).
+  /// - [soulInjectMode] / [memoryInjectMode] are forced to [CognitionInjectMode.uriOnly].
   /// - For non-She agents: agent memories, self-cognition, and user-cognition
-  ///   blocks are skipped.
+  ///   blocks are skipped (same as uri_only memory + related flags).
   /// - For She: the user-cognition block is skipped.
   ///
   /// Useful for the first message of a conversation where full context is
   /// not yet needed.  Default: `false`.
   final bool lightweightMode;
+
+  /// Non-She Soul (`cognition/.../soul.md`) inject mode: [CognitionInjectMode.full]
+  /// or [CognitionInjectMode.uriOnly]. She core-identity is always embedded when
+  /// [includeDescription] is true. Forced to uri_only when [lightweightMode].
+  final String soulInjectMode;
+
+  /// Structured memory entries inject mode. Forced to uri_only when
+  /// [lightweightMode]. Requires [AgentStackConfig.includeAgentMemory].
+  final String memoryInjectMode;
 
   const PromptStackConfig({
     this.includeIdentity = true,
@@ -438,7 +468,29 @@ class PromptStackConfig {
     this.she = const SheStackConfig(),
     this.agent = const AgentStackConfig(),
     this.lightweightMode = false,
+    this.soulInjectMode = CognitionInjectMode.full,
+    this.memoryInjectMode = CognitionInjectMode.full,
   });
+
+  /// Effective Soul mode after lightweight override.
+  String get effectiveSoulInjectMode => lightweightMode
+      ? CognitionInjectMode.uriOnly
+      : CognitionInjectMode.normalize(soulInjectMode);
+
+  /// Effective memory mode after lightweight override.
+  String get effectiveMemoryInjectMode => lightweightMode
+      ? CognitionInjectMode.uriOnly
+      : CognitionInjectMode.normalize(memoryInjectMode);
+
+  /// Whether non-She Soul text should be embedded this turn.
+  bool get embedSoulText =>
+      includeDescription &&
+      effectiveSoulInjectMode == CognitionInjectMode.full;
+
+  /// Whether structured memory entries should be embedded this turn.
+  bool get embedMemoryEntries =>
+      agent.includeAgentMemory &&
+      effectiveMemoryInjectMode == CognitionInjectMode.full;
 
   /// Full configuration for She — companion stack active, including
   /// user-understanding strategy and profile snapshot.
@@ -475,6 +527,12 @@ class PromptStackConfig {
             ? AgentStackConfig.fromJson(json['agent'] as Map<String, dynamic>)
             : const AgentStackConfig(),
         lightweightMode: json['lightweight_mode'] as bool? ?? false,
+        soulInjectMode: CognitionInjectMode.normalize(
+          json['soul_inject_mode'] as String?,
+        ),
+        memoryInjectMode: CognitionInjectMode.normalize(
+          json['memory_inject_mode'] as String?,
+        ),
       );
 
   Map<String, dynamic> toJson() => {
@@ -485,6 +543,8 @@ class PromptStackConfig {
         'she': she.toJson(),
         'agent': agent.toJson(),
         'lightweight_mode': lightweightMode,
+        'soul_inject_mode': soulInjectMode,
+        'memory_inject_mode': memoryInjectMode,
       };
 
   PromptStackConfig copyWith({
@@ -495,6 +555,8 @@ class PromptStackConfig {
     SheStackConfig? she,
     AgentStackConfig? agent,
     bool? lightweightMode,
+    String? soulInjectMode,
+    String? memoryInjectMode,
   }) =>
       PromptStackConfig(
         includeIdentity: includeIdentity ?? this.includeIdentity,
@@ -504,5 +566,7 @@ class PromptStackConfig {
         she: she ?? this.she,
         agent: agent ?? this.agent,
         lightweightMode: lightweightMode ?? this.lightweightMode,
+        soulInjectMode: soulInjectMode ?? this.soulInjectMode,
+        memoryInjectMode: memoryInjectMode ?? this.memoryInjectMode,
       );
 }

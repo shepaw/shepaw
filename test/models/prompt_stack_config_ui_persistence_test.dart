@@ -46,6 +46,8 @@ void main() {
           includeAgentMemory: false,
           memoryLimit: 3,
         ),
+        soulInjectMode: CognitionInjectMode.uriOnly,
+        memoryInjectMode: CognitionInjectMode.uriOnly,
       );
 
       final restored = PromptStackConfig.fromJson(edited.toJson());
@@ -54,8 +56,32 @@ void main() {
       expect(restored.tools.osToolsMode, 'expanded');
       expect(restored.agent.includeAgentMemory, isFalse);
       expect(restored.agent.memoryLimit, 3);
+      expect(restored.soulInjectMode, CognitionInjectMode.uriOnly);
+      expect(restored.memoryInjectMode, CognitionInjectMode.uriOnly);
       // She section stays disabled preset for other agents.
       expect(restored.she.includeSheMemory, isFalse);
+    });
+
+    test('lightweight forces effective inject modes to uri_only', () {
+      final cfg = PromptStackConfig.forOtherAgent.copyWith(
+        lightweightMode: true,
+        soulInjectMode: CognitionInjectMode.full,
+        memoryInjectMode: CognitionInjectMode.full,
+      );
+      expect(cfg.effectiveSoulInjectMode, CognitionInjectMode.uriOnly);
+      expect(cfg.effectiveMemoryInjectMode, CognitionInjectMode.uriOnly);
+      expect(cfg.embedSoulText, isFalse);
+      expect(cfg.embedMemoryEntries, isFalse);
+    });
+
+    test('uri_only without lightweight skips embed helpers', () {
+      final cfg = PromptStackConfig.forOtherAgent.copyWith(
+        soulInjectMode: CognitionInjectMode.uriOnly,
+        memoryInjectMode: CognitionInjectMode.uriOnly,
+      );
+      expect(cfg.effectiveSoulInjectMode, CognitionInjectMode.uriOnly);
+      expect(cfg.embedSoulText, isFalse);
+      expect(cfg.embedMemoryEntries, isFalse);
     });
 
     test('reset targets match factory presets', () {

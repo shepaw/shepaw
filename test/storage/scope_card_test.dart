@@ -17,6 +17,16 @@ void main() {
     expect(md, isNot(contains('--owner')));
   });
 
+  test('uri_only notes tell agent to store read', () {
+    final md = ScopeCard.forAgentDm(
+      agentId: 'agent_uri',
+      deviceId: 'aaaaaaaaaaaaaaaa',
+      injected: const ScopeCardInjected(),
+    ).toStableMarkdown();
+    expect(md, contains('未内嵌'));
+    expect(md, contains('store read'));
+  });
+
   test('Group card: no personal cognition URI, no memory write', () {
     final md = ScopeCard.forGroup(
       groupId: 'group_1',

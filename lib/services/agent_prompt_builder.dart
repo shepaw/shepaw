@@ -97,8 +97,11 @@ class AgentPromptBuilder {
 
     // ② Description
     if (config.includeDescription) {
-      final desc = await _buildDescriptionBlock();
-      if (desc.isNotEmpty) parts.add(desc);
+      if (agent.isShe || config.embedSoulText) {
+        final desc = await _buildDescriptionBlock();
+        if (desc.isNotEmpty) parts.add(desc);
+      }
+      // Non-She uri_only: Soul 不内嵌，靠 Scope Card soul_uri + store read
     }
 
     // ③ Tools documentation
@@ -222,8 +225,8 @@ class AgentPromptBuilder {
     }
 
     // ⑧''' Non-She: agent's own recent memories.
-    // Skipped in lightweight mode.
-    if (!config.lightweightMode && config.agent.includeAgentMemory) {
+    // Skipped when memory inject mode is uri_only (incl. lightweight).
+    if (!agent.isShe && config.embedMemoryEntries) {
       final memoriesBlock =
           await _buildAgentMemoriesBlock(config.agent.memoryLimit);
       if (memoriesBlock.isNotEmpty) parts.add(memoriesBlock);
@@ -257,11 +260,12 @@ class AgentPromptBuilder {
   Future<String> _buildStableScopeCard(PromptStackConfig config) async {
     try {
       final deviceId = await DeviceIdentity.deviceId();
-      final soulInjected = config.includeDescription
+      final soulInjected = !agent.isShe &&
+              config.includeDescription &&
+              config.embedSoulText
           ? ScopeInjectLevel.full
           : ScopeInjectLevel.none;
-      final memInjected = !config.lightweightMode &&
-              config.agent.includeAgentMemory
+      final memInjected = !agent.isShe && config.embedMemoryEntries
           ? ScopeInjectLevel.topN
           : ScopeInjectLevel.none;
       final injected = ScopeCardInjected(

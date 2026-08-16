@@ -304,13 +304,15 @@ class ScopeCard {
             ? '（soul 本轮已内嵌全文，勿再 store read）'
             : injected.soul == ScopeInjectLevel.summary
                 ? '（soul 本轮已内嵌摘要）'
-                : '';
+                : '（未内嵌；需要时 `shepaw store read --uri` 本 URI）';
         buf.writeln('- soul: `$soulUri`$soulNote');
       }
       if (memoryEntriesUri != null) {
         final memNote = mode == ScopeCardMode.peer
             ? '（读范围：peer 子树；禁止 memory-write）'
-            : '';
+            : injected.memoryEntries == ScopeInjectLevel.topN
+                ? '（本轮已内嵌最近条目）'
+                : '（未内嵌；需要时 list/read 本 URI 或 memory-write 查询 CLI）';
         buf.writeln('- memory entries: `$memoryEntriesUri`$memNote');
       }
     }
