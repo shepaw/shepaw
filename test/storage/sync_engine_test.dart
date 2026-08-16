@@ -365,6 +365,30 @@ void main() {
     expect(list.single.sha256, sha(content));
   });
 
+  test('队列哈希过期时按实际文件内容上传，避免 hash_mismatch 卡死', () async {
+    master.online = true;
+    final oldContent = bytesOf('OLD!'); // 4 bytes
+    final newContent = bytesOf('NEW!'); // same size, different hash
+    await clientCommit('stale.txt', oldContent);
+
+    // 入队后直接覆盖正式区，不经 LocalStore（模拟绑定同步/外部写入）
+    final prev = LocalStore.syncJournal;
+    LocalStore.syncJournal = null;
+    final abs = File(p.join(clientRoot.path, selfId, 'files', 'stale.txt'));
+    await abs.writeAsBytes(newContent, flush: true);
+    LocalStore.syncJournal = prev;
+
+    final pending = await engine.journal!.pending();
+    expect(pending.single.files!.single.sha256, sha(oldContent));
+
+    await engine.syncNow();
+    expect(engine.latestStatus.lastError, isNull);
+    expect((await engine.journal!.pending()), isEmpty);
+    expect(await masterReadAll('stale.txt', newContent.length), newContent);
+    expect((await masterStore.list(selfId, 'files')).single.sha256,
+        sha(newContent));
+  });
+
   test('status 流：入队后有待同步，syncNow 后清空', () async {
     master.online = false;
     final seen = <int>[];

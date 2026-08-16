@@ -3,6 +3,8 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
+import 'package:crypto/crypto.dart' as crypto;
+
 import '../peer/services/peer_connection.dart'
     show PeerConnectionEvent, PeerConnectionEventType;
 import '../peer/services/peer_connection_manager.dart';
@@ -315,20 +317,31 @@ class SyncEngine {
     final transport = _transport!;
     final uploadIds = <String>[];
     for (final file in entry.files!) {
-      // 读本地正式区内容上传
-      final local = await _readLocalAll(entry.space, file.path, file.size);
+      // 读本地正式区当前内容上传。声明哈希必须与实际上传字节一致：
+      // 队列里的 sha256/size 可能已过期（入队后文件被覆盖/GFS/绑定同步等），
+      // 若仍按旧声明上传，master commit 会稳定返回 hash_mismatch 并卡死队列。
+      final local = await _readLocalAll(entry.space, file.path);
       if (local == null) {
         // 本地已被清理（如 GFS 剪掉的快照，随后的 delete 条目会覆盖）→ 跳过
         _log.warning('local file gone, skip upload: ${file.path}', tag: _tag);
         continue;
+      }
+      final sha = crypto.sha256.convert(local).toString();
+      if (sha != file.sha256 || local.length != file.size) {
+        _log.warning(
+          'stale journal meta for ${file.path}: '
+          'queued size=${file.size} sha=${file.sha256} → '
+          'actual size=${local.length} sha=$sha',
+          tag: _tag,
+        );
       }
       final begin = await transport.call(StoreFrame(
           op: StoreOp.writeBegin,
           payload: {
             'space': entry.space,
             'path': file.path,
-            'size': file.size,
-            'sha256': file.sha256,
+            'size': local.length,
+            'sha256': sha,
           }));
       if (begin == null || begin.containsKey('_error')) {
         _lastError = begin?['_error'] as String? ?? StoreError.internal;
@@ -445,24 +458,25 @@ class SyncEngine {
     }
   }
 
-  Future<Uint8List?> _readLocalAll(
-      String space, String relPath, int size) async {
+  /// 读本地正式区当前全文（不依赖队列里可能过期的 size）。
+  Future<Uint8List?> _readLocalAll(String space, String relPath) async {
     final store = _store!;
     final deviceId = _deviceId!;
     try {
       final builder = BytesBuilder(copy: false);
       var offset = 0;
-      while (offset < size) {
+      while (true) {
         final (chunk, _, eof) = await store.read(
             deviceId, space, relPath, offset, _syncChunk);
-        if (chunk.isEmpty && size > 0) return null;
+        if (chunk.isEmpty) {
+          if (offset == 0 && !eof) return null;
+          break;
+        }
         builder.add(chunk);
         offset += chunk.length;
         if (eof) break;
       }
-      final bytes = builder.toBytes();
-      if (bytes.length != size) return null;
-      return bytes;
+      return builder.toBytes();
     } catch (_) {
       return null;
     }
