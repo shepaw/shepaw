@@ -33,7 +33,9 @@ import '../../models/model_routing_config.dart';
 import '../../models/remote_agent.dart';
 import '../../models/store_attachment_ref.dart';
 import '../../services/acp_agent_connection.dart';
+import '../../services/agent_memory_store_service.dart';
 import '../../services/agent_soul_service.dart';
+import '../../models/agent_memory_entry.dart';
 import '../../services/chat_service.dart';
 import '../../services/local_database_service.dart';
 import '../../services/logger_service.dart';
@@ -206,6 +208,9 @@ class PeerAgentHostService {
         break;
       case 'agent_soul_set_req':
         unawaited(_handleSoulSet(event.peerId, event.data));
+        break;
+      case 'agent_memory_req':
+        unawaited(_handleMemoryReq(event.peerId, event.data));
         break;
       case 'agent_manage_req':
         unawaited(_handleManageReq(event.peerId, event.data));
@@ -398,6 +403,214 @@ class PeerAgentHostService {
       _log.warning('agent_soul_set_req failed: $e', tag: _tag);
       await PeerConnectionManager.instance.sendControl(peerId, {
         'type': 'agent_soul_set_resp',
+        'agent_id': agentId,
+        'ok': false,
+        'error': e.toString(),
+      });
+    }
+  }
+
+  /// Peer 记忆中继：权威在宿主
+  /// `cognition/<agentId>/peers/<peerId>/entries/`（按配对设备隔离）。
+  Future<void> _handleMemoryReq(String peerId, Map<String, dynamic> data) async {
+    final requestId = data['request_id'] as String? ?? '';
+    final agentId = data['agent_id'] as String?;
+    final op = data['op'] as String? ?? 'list';
+    if (agentId == null || agentId.isEmpty) {
+      await PeerConnectionManager.instance.sendControl(peerId, {
+        'type': 'agent_memory_resp',
+        'request_id': requestId,
+        'ok': false,
+        'error': 'missing_agent_id',
+      });
+      return;
+    }
+    try {
+      final agent = await _resolveSharedAgent(peerId, agentId);
+      if (agent == null) {
+        await PeerConnectionManager.instance.sendControl(peerId, {
+          'type': 'agent_memory_resp',
+          'request_id': requestId,
+          'agent_id': agentId,
+          'ok': false,
+          'error': 'not_available',
+        });
+        return;
+      }
+      final editable = agent.peerBoundaryConfig.allowPeerMemoryEdit;
+      final store = AgentMemoryStoreService.forAgent(
+        agent.id,
+        peerClientId: peerId,
+      );
+
+      Future<void> deny() async {
+        await PeerConnectionManager.instance.sendControl(peerId, {
+          'type': 'agent_memory_resp',
+          'request_id': requestId,
+          'agent_id': agentId,
+          'ok': false,
+          'editable': editable,
+          'error': 'denied',
+        });
+      }
+
+      switch (op) {
+        case 'list':
+          final typeName = data['type'] as String?;
+          final type = typeName != null && typeName.isNotEmpty
+              ? MemoryType.fromString(typeName)
+              : null;
+          final limit = (data['limit'] as num?)?.toInt() ?? 200;
+          final memories = await store.getAllMemories(type: type, limit: limit);
+          await PeerConnectionManager.instance.sendControl(peerId, {
+            'type': 'agent_memory_resp',
+            'request_id': requestId,
+            'agent_id': agentId,
+            'ok': true,
+            'editable': editable,
+            'memories': [for (final m in memories) m.toJson()],
+          });
+          return;
+        case 'query':
+          final keyword = (data['keyword'] as String? ?? '').trim();
+          final limit = (data['limit'] as num?)?.toInt() ?? 50;
+          final memories = keyword.isEmpty
+              ? await store.getAllMemories(limit: limit)
+              : await store.queryByKeyword(keyword, limit: limit);
+          await PeerConnectionManager.instance.sendControl(peerId, {
+            'type': 'agent_memory_resp',
+            'request_id': requestId,
+            'agent_id': agentId,
+            'ok': true,
+            'editable': editable,
+            'memories': [for (final m in memories) m.toJson()],
+          });
+          return;
+        case 'add':
+          if (!editable) return deny();
+          final entryJson = data['entry'];
+          if (entryJson is! Map) {
+            await PeerConnectionManager.instance.sendControl(peerId, {
+              'type': 'agent_memory_resp',
+              'request_id': requestId,
+              'agent_id': agentId,
+              'ok': false,
+              'editable': editable,
+              'error': 'invalid_entry',
+            });
+            return;
+          }
+          final entry = AgentMemoryEntry.fromJson(
+            Map<String, dynamic>.from(entryJson),
+          );
+          final id = await store.addMemory(
+            AgentMemoryEntry(
+              memoryId: null,
+              memoryContent: entry.memoryContent,
+              memoryTime: entry.memoryTime,
+              memoryType: entry.memoryType,
+              memoryKeywords: entry.memoryKeywords,
+              sourceType: entry.sourceType,
+              sourceId: entry.sourceId,
+              createdAt: entry.createdAt,
+              updatedAt: entry.updatedAt,
+            ),
+          );
+          await PeerConnectionManager.instance.sendControl(peerId, {
+            'type': 'agent_memory_resp',
+            'request_id': requestId,
+            'agent_id': agentId,
+            'ok': true,
+            'editable': editable,
+            'memory_id': id,
+          });
+          return;
+        case 'update':
+          if (!editable) return deny();
+          final entryJson = data['entry'];
+          if (entryJson is! Map) {
+            await PeerConnectionManager.instance.sendControl(peerId, {
+              'type': 'agent_memory_resp',
+              'request_id': requestId,
+              'agent_id': agentId,
+              'ok': false,
+              'editable': editable,
+              'error': 'invalid_entry',
+            });
+            return;
+          }
+          final entry = AgentMemoryEntry.fromJson(
+            Map<String, dynamic>.from(entryJson),
+          );
+          if (entry.memoryId == null) {
+            await PeerConnectionManager.instance.sendControl(peerId, {
+              'type': 'agent_memory_resp',
+              'request_id': requestId,
+              'agent_id': agentId,
+              'ok': false,
+              'editable': editable,
+              'error': 'missing_memory_id',
+            });
+            return;
+          }
+          await store.updateMemory(entry);
+          await PeerConnectionManager.instance.sendControl(peerId, {
+            'type': 'agent_memory_resp',
+            'request_id': requestId,
+            'agent_id': agentId,
+            'ok': true,
+            'editable': editable,
+          });
+          return;
+        case 'delete':
+          if (!editable) return deny();
+          final memoryId = (data['memory_id'] as num?)?.toInt();
+          if (memoryId == null) {
+            await PeerConnectionManager.instance.sendControl(peerId, {
+              'type': 'agent_memory_resp',
+              'request_id': requestId,
+              'agent_id': agentId,
+              'ok': false,
+              'editable': editable,
+              'error': 'missing_memory_id',
+            });
+            return;
+          }
+          await store.deleteMemory(memoryId);
+          await PeerConnectionManager.instance.sendControl(peerId, {
+            'type': 'agent_memory_resp',
+            'request_id': requestId,
+            'agent_id': agentId,
+            'ok': true,
+            'editable': editable,
+          });
+          return;
+        case 'clear':
+          if (!editable) return deny();
+          await store.clearAllMemories();
+          await PeerConnectionManager.instance.sendControl(peerId, {
+            'type': 'agent_memory_resp',
+            'request_id': requestId,
+            'agent_id': agentId,
+            'ok': true,
+            'editable': editable,
+          });
+          return;
+        default:
+          await PeerConnectionManager.instance.sendControl(peerId, {
+            'type': 'agent_memory_resp',
+            'request_id': requestId,
+            'agent_id': agentId,
+            'ok': false,
+            'editable': editable,
+            'error': 'unsupported',
+          });
+      }
+    } catch (e) {
+      _log.warning('agent_memory_req failed: $e', tag: _tag);
+      await PeerConnectionManager.instance.sendControl(peerId, {
+        'type': 'agent_memory_resp',
+        'request_id': requestId,
         'agent_id': agentId,
         'ok': false,
         'error': e.toString(),

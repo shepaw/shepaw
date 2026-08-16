@@ -3169,6 +3169,17 @@ class AppLocalizationsEn extends AppLocalizations {
       'When enabled, paired devices that have access to this agent can read and update its Soul remotely';
 
   @override
+  String get agent_allowPeerMemoryEdit => 'Allow Paired Devices to Edit Memory';
+
+  @override
+  String get agent_allowPeerMemoryEditDesc =>
+      'When enabled, paired devices can view and add/remove this agent\'s structured memories remotely';
+
+  @override
+  String get agent_memoryReadOnlyPeer =>
+      'Paired devices can view memory only (editing not allowed)';
+
+  @override
   String get agent_externalAccessPeerEnabled =>
       'Enabled: paired devices can see and chat with this agent in their conversation list';
 

@@ -8,13 +8,13 @@
 | 数据 | 本机权威（读 / 搜 / UI） | runtime 镜像（非权威） |
 |------|--------------------------|------------------------|
 | 会话消息 | `shepaw.db` `messages` | `runtime/<owner>/<channel>/sessions/session.json`（可滚动 archive） |
-| Agent 结构化记忆 | **`memory/<agentId>/entries/*.json`** | `runtime/<owner>/memory.md`（人读摘要） |
-| Soul | **`memory/<agentId>/soul.md`** | `runtime/<owner>/soul.md` |
+| Agent 结构化记忆 | **`cognition/<agentId>/entries/*.json`** | `runtime/<owner>/memory.md`（人读摘要） |
+| Soul | **`cognition/<agentId>/soul.md`** | `runtime/<owner>/soul.md` |
 
 **硬性约定**
 
 - App 聊天消息与搜索 **只信 SQLite**；永不把 session 镜像当主库。
-- Agent **结构化记忆与 Soul 权威在储物袋 `memory/`**；旧 SQLite 仅作一次性迁移源。
+- Agent **结构化记忆与 Soul 权威在储物袋 `cognition/`**（旧 `memory/` 只读兼容）；旧 SQLite 仅作一次性迁移源。
 - runtime 镜像为 **单向**（debounce 覆盖写）；`memory.md` / `soul.md`（runtime 下）**禁止**回灌权威。
 - 镜像用途：人可读浏览、`store://` **分享**、跨设备 **只读上下文**。
 - 灾难恢复权威仍是 `backups/` 加密快照。
@@ -24,10 +24,12 @@
 ```
 <device_id>/
 ├── workspaces/<workspace_id>/...     # owner 可读可写（含跨 device）
-├── memory/<agent_id>/                # Agent 记忆 + Soul 权威
+├── cognition/<agent_id>/             # Agent 记忆 + Soul 权威
 │   ├── meta.json                     # next_id / migrated flags
 │   ├── soul.md                       # Soul 权威正文
-│   └── entries/<id>.json
+│   ├── entries/<id>.json
+│   └── peers/<peer_id>/entries/…     # 配对设备子记忆
+├── memory/<agent_id>/                # legacy（只读兼容，迁移后可空）
 ├── runtime/<agent_id|group_id>/
 │   ├── memory.md                     # 记忆摘要镜像（非权威）
 │   ├── soul.md                       # Soul 镜像（非权威）
@@ -57,7 +59,8 @@ URI：`store://<space>/<device_id>/<relpath>`。
 |-------|------------|-----|
 | `workspaces` | shared | **所有 owner 可写任意 owner 的该区** |
 | `runtime` | private（可按前缀分享只读） | 仅属主 |
-| `memory` | private | 仅本端（Agent 记忆 + Soul 权威） |
+| `cognition` | private | 仅本端（Agent 记忆 + Soul 权威） |
+| `memory` | private（legacy） | 只读兼容；新写入走 `cognition` |
 | `files` / `public` | shared | 仅本端 |
 | `backups` | private | 仅本端 |
 | `artifacts` / `attachments` | legacy | 旧数据可读；新写入走 runtime |
@@ -86,8 +89,8 @@ URI：`store://<space>/<device_id>/<relpath>`。
   "owner_id": "<agent_or_group_id>",
   "source_device": "<device_id>",
   "updated_at": "ISO-8601",
-  "soul_uri": "store://memory/<device>/<agent>/soul.md",
-  "memory_uri": "store://memory/<device>/<agent>/entries/",
+  "soul_uri": "store://cognition/<device>/<agent>/soul.md",
+  "memory_uri": "store://cognition/<device>/<agent>/entries/",
   "workspace_refs": ["store://workspaces/<device>/<workspace_id>/"],
   "channels": {
     "<channel_id>": {
@@ -120,7 +123,7 @@ URI：`store://<space>/<device_id>/<relpath>`。
 
 附件只存 `store_uri`，不内嵌字节。滚动阈值：≥200 条或序列化 ≥256KB 时归档全量并保留最近 100 条。
 
-`memory.md` / `soul.md`（runtime 下）：UTF-8 人读镜像；权威见 `memory/` 空间。
+`memory.md` / `soul.md`（runtime 下）：UTF-8 人读镜像；权威见 `cognition/` 空间。
 
 ## 6. 引用不复制
 

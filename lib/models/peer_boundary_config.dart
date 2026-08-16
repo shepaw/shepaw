@@ -25,6 +25,9 @@ class PeerBoundaryConfig {
   /// Allow paired devices to read/write this agent's soul over P2P.
   final bool allowPeerSoulEdit;
 
+  /// Allow paired devices to read/write this agent's structured memory over P2P.
+  final bool allowPeerMemoryEdit;
+
   const PeerBoundaryConfig({
     this.injectExternalPreamble = true,
     this.stripHostUserContext = true,
@@ -32,6 +35,7 @@ class PeerBoundaryConfig {
     this.disableMemoryWrites = true,
     this.disableSessionEndWrites = true,
     this.allowPeerSoulEdit = false,
+    this.allowPeerMemoryEdit = false,
   });
 
   /// Shipping defaults for external serving (privacy-first).
@@ -45,6 +49,7 @@ class PeerBoundaryConfig {
     disableMemoryWrites: false,
     disableSessionEndWrites: false,
     allowPeerSoulEdit: true,
+    allowPeerMemoryEdit: true,
   );
 
   factory PeerBoundaryConfig.fromJson(Map<String, dynamic> json) {
@@ -61,6 +66,8 @@ class PeerBoundaryConfig {
           flag('disable_session_end_writes', defaults.disableSessionEndWrites),
       allowPeerSoulEdit:
           flag('allow_peer_soul_edit', defaults.allowPeerSoulEdit),
+      allowPeerMemoryEdit:
+          flag('allow_peer_memory_edit', defaults.allowPeerMemoryEdit),
     );
   }
 
@@ -71,6 +78,7 @@ class PeerBoundaryConfig {
         'disable_memory_writes': disableMemoryWrites,
         'disable_session_end_writes': disableSessionEndWrites,
         'allow_peer_soul_edit': allowPeerSoulEdit,
+        'allow_peer_memory_edit': allowPeerMemoryEdit,
       };
 
   PeerBoundaryConfig copyWith({
@@ -80,6 +88,7 @@ class PeerBoundaryConfig {
     bool? disableMemoryWrites,
     bool? disableSessionEndWrites,
     bool? allowPeerSoulEdit,
+    bool? allowPeerMemoryEdit,
   }) {
     return PeerBoundaryConfig(
       injectExternalPreamble:
@@ -90,6 +99,7 @@ class PeerBoundaryConfig {
       disableSessionEndWrites:
           disableSessionEndWrites ?? this.disableSessionEndWrites,
       allowPeerSoulEdit: allowPeerSoulEdit ?? this.allowPeerSoulEdit,
+      allowPeerMemoryEdit: allowPeerMemoryEdit ?? this.allowPeerMemoryEdit,
     );
   }
 

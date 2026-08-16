@@ -292,7 +292,7 @@ class GroupAgentExecutor {
       userId: userId,
     );
 
-    final systemPrompt = _promptBuilder.buildGroupSystemPrompt(
+    final systemPrompt = await _promptBuilder.buildGroupSystemPrompt(
       groupName: groupName,
       groupDescription: groupDescription,
       allAgents: allAgents,

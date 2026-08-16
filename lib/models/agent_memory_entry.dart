@@ -45,11 +45,12 @@ class MemorySourceType {
 
 /// Agent 记忆条目
 ///
-/// 表示一个 Agent 的单条结构化记忆，权威存储在储物袋
-/// `store://memory/<device>/<agentId>/entries/<id>.json`。
+/// 表示一个 Agent 的单条结构化记忆，权威存储在储物袋：
+/// - 本机：`store://cognition/<device>/<agentId>/entries/<id>.json`
+/// - Peer 子记忆：`store://cognition/<device>/<agentId>/peers/<peerId>/entries/<id>.json`
 ///
 /// ### 字段说明
-/// - [memoryId]       整数主键（由 memory/meta.json 的 next_id 分配）
+/// - [memoryId]       整数主键（由 cognition/meta.json 的 next_id 分配）
 /// - [memoryContent]  记忆内容（自由文本）
 /// - [memoryTime]     记忆时间戳（毫秒），表示记忆发生的时间
 /// - [memoryType]     记忆分类（[MemoryType] 枚举）

@@ -25,6 +25,7 @@ import '../foreground_task_service.dart';
 import '../logger_service.dart';
 import '../peer_key_utils.dart';
 import '../she_service.dart';
+import '../agent_soul_service.dart';
 import '../noise_identity.dart';
 import '../mailbox/mailbox_seal.dart';
 import '../mailbox/channel_mailbox_service.dart';
@@ -1292,7 +1293,8 @@ class AgentMessagingService {
         messageId: userMessage.id,
         history: chatHistory,
         totalMessageCount: totalMessageCount,
-        systemPrompt: dmSystemPrompt ?? agent.metadata['system_prompt'] as String?,
+        systemPrompt: dmSystemPrompt ??
+            await AgentSoulService.instance.getSoul(agent),
         attachments: serializedAttachments,
       );
 

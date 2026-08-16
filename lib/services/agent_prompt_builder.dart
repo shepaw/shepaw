@@ -1,6 +1,7 @@
 import '../models/prompt_stack_config.dart';
 import '../models/remote_agent.dart';
 import 'agent_memory_store_service.dart';
+import 'agent_soul_service.dart';
 import 'cognition_service.dart';
 import 'logger_service.dart';
 import 'she_service.dart';
@@ -16,7 +17,7 @@ import 'model_registry.dart';
 ///
 /// ```
 ///  ①   Identity block          ← agent's name (non-She only; She's name is in ②)
-///  ②   Description block       ← She: core identity; others: system_prompt
+///  ②   Description block       ← She: core identity; others: soul.md
 ///  ③   Tools block             ← UI / OS / Skills / ToolModels
 ///  ③.5 She data-access CLI     ← [She-only] shepaw CLI data-access reference
 ///  ③'  Shepaw guidance         ← tool-discovery + web-search guidance (all agents,
@@ -254,19 +255,13 @@ class AgentPromptBuilder {
     if (agent.isShe) {
       return SheService.instance.buildCoreIdentityBlock();
     }
-    // Soul (memory/<agent>/soul.md) is canonical for local agents; remote
-    // agents keep legacy metadata system_prompt until migrated.
-    if (agent.isLocal) {
-      try {
-        final soul = await CognitionService.instance.getAgentSoul(agent.id);
-        if (soul != null && soul.trim().isNotEmpty) {
-          return soul.trim();
-        }
-      } catch (_) {
-        // Store unavailable (e.g. unit tests) — fall back to metadata.
-      }
+    try {
+      final soul = await AgentSoulService.instance.getSoul(agent);
+      if (soul.trim().isNotEmpty) return soul.trim();
+    } catch (_) {
+      // Store / peer unavailable (e.g. unit tests).
     }
-    return agent.metadata['system_prompt'] as String? ?? '';
+    return '';
   }
 
   /// Resolve the custom prompt for non-She agents: DM override takes priority.
@@ -283,13 +278,11 @@ class AgentPromptBuilder {
 
   /// Build the agent's self-cognition block (soul) from minds.db.
   Future<String> _buildAgentSelfCognitionBlock() async {
-    // When soul file is authoritative it is already injected in block ②.
-    if (agent.isLocal) {
-      try {
-        final fileSoul = await CognitionService.instance.getAgentSoul(agent.id);
-        if (fileSoul != null && fileSoul.trim().isNotEmpty) return '';
-      } catch (_) {}
-    }
+    // When soul.md is authoritative it is already injected in block ②.
+    try {
+      final fileSoul = await AgentSoulService.instance.getSoul(agent);
+      if (fileSoul.trim().isNotEmpty) return '';
+    } catch (_) {}
 
     final self = await CognitionService.instance.getSelfCognition(agent.id);
     if (self == null || self.soul.isEmpty) return '';

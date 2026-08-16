@@ -131,12 +131,12 @@ class RuntimeMirrorService {
       await _writeTextIfAbsent(
         device,
         RuntimePaths.soulMd(ownerId),
-        '<!-- mirrored soul; authoritative store is memory/<agent>/soul.md -->\n',
+        '<!-- mirrored soul; authoritative store is cognition/<agent>/soul.md -->\n',
       );
       await _writeTextIfAbsent(
         device,
         RuntimePaths.memoryMd(ownerId),
-        '<!-- mirrored memory summary; authoritative store is memory/<agent>/entries -->\n',
+        '<!-- mirrored memory summary; authoritative store is cognition/<agent>/entries -->\n',
       );
     }
     await _writeTextIfAbsent(

@@ -5612,6 +5612,24 @@ abstract class AppLocalizations {
   /// **'开启后，已分享该 agent 的配对设备可远程读取并修改其 Soul'**
   String get agent_allowPeerSoulEditDesc;
 
+  /// No description provided for @agent_allowPeerMemoryEdit.
+  ///
+  /// In zh, this message translates to:
+  /// **'允许配对设备修改记忆'**
+  String get agent_allowPeerMemoryEdit;
+
+  /// No description provided for @agent_allowPeerMemoryEditDesc.
+  ///
+  /// In zh, this message translates to:
+  /// **'开启后，已分享该 agent 的配对设备可远程查看并增删其结构化记忆'**
+  String get agent_allowPeerMemoryEditDesc;
+
+  /// No description provided for @agent_memoryReadOnlyPeer.
+  ///
+  /// In zh, this message translates to:
+  /// **'配对设备仅可查看记忆（未开放编辑）'**
+  String get agent_memoryReadOnlyPeer;
+
   /// No description provided for @agent_externalAccessPeerEnabled.
   ///
   /// In zh, this message translates to:

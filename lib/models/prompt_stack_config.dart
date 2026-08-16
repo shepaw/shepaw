@@ -403,7 +403,7 @@ class PromptStackConfig {
   final bool includeIdentity;
 
   /// Include the agent's description block.
-  /// She → core-identity prompt; others → `metadata['system_prompt']`.
+  /// She → core-identity prompt; others → `cognition/<agent>/soul.md`.
   final bool includeDescription;
 
   /// Append the DM-channel / user-supplied custom prompt.

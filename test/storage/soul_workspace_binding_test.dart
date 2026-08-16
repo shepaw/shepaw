@@ -21,7 +21,7 @@ void main() {
     await AgentMemoryStoreService.forAgent('agent-soul-ws').deleteAll();
   });
 
-  test('soul 权威写入 memory/<agent>/soul.md', () async {
+  test('soul 权威写入 cognition/<agent>/soul.md', () async {
     await CognitionService.instance
         .updateAgentSoul('agent-soul-ws', 'I am a pouch soul.');
     final got = await CognitionService.instance.getAgentSoul('agent-soul-ws');
@@ -31,7 +31,7 @@ void main() {
     final store = await StoreService.instance.localStore();
     final meta = await store.meta(
       deviceId,
-      StoreSpace.memory,
+      StoreSpace.cognition,
       MemoryPaths.soulMd('agent-soul-ws'),
     );
     expect(meta['size'] as int, greaterThan(0));

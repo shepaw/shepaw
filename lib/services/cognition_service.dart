@@ -47,18 +47,14 @@ class CognitionService {
   // Self cognition — Soul & SelfNotes
   // ---------------------------------------------------------------------------
 
-  /// 读取指定 Agent 的 soul（权威：储物袋 memory/<agent>/soul.md）
+  /// 读取指定 Agent 的 soul（权威：储物袋 cognition/<agent>/soul.md）
   Future<String?> getAgentSoul(String agentId) async {
     return AgentMemoryStoreService.forAgent(agentId).getSoul();
   }
 
-  /// 写入指定 Agent 的 soul（储物袋权威 + runtime 镜像）
+  /// 写入指定 Agent 的 soul（储物袋权威 + runtime 镜像；不再双写 minds DB）
   Future<void> updateAgentSoul(String agentId, String soul) async {
     await AgentMemoryStoreService.forAgent(agentId).setSoul(soul);
-    // 兼容：仍写一份到 minds，便于未迁完的旁路读
-    try {
-      await _db.updateSoul(agentId, soul);
-    } catch (_) {}
     LoggerService().info('Soul updated for agent=$agentId', tag: 'CognitionService');
   }
 

@@ -39,12 +39,15 @@ class _AgentSoulEditScreenState extends State<AgentSoulEditScreen> {
     final l10n = AppLocalizations.of(context);
     final agent = widget.agent;
     var readOnly = false;
+    var soul = '';
 
     try {
       if (agent.isPeerAgent) {
         final peerId = agent.sourcePeerId;
         final remoteId = agent.remoteAgentId;
-        if (peerId == null || remoteId == null) {
+        if (peerId == null ||
+            remoteId == null ||
+            !PeerConnectionManager.instance.connectedPeerIds.contains(peerId)) {
           if (mounted) {
             setState(() {
               _loadError = l10n.agentDetail_peerOffline;
@@ -53,23 +56,26 @@ class _AgentSoulEditScreenState extends State<AgentSoulEditScreen> {
           }
           return;
         }
-        if (!PeerConnectionManager.instance.connectedPeerIds.contains(peerId)) {
-          if (mounted) {
-            setState(() {
-              _loadError = l10n.agentDetail_peerOffline;
-              _loading = false;
-            });
-          }
-          return;
-        }
+        // 单次拉取：正文 + 可编辑标记，避免再调 getSoul 触发第二次 peer req。
         final info = await PeerAgentClientService.instance.fetchSoulInfo(
           peerId: peerId,
           remoteAgentId: remoteId,
         );
-        readOnly = !(info?.editable ?? false);
+        if (info == null) {
+          if (mounted) {
+            setState(() {
+              _loadError = l10n.agentDetail_peerOffline;
+              _loading = false;
+            });
+          }
+          return;
+        }
+        soul = info.soul;
+        readOnly = !info.editable;
+      } else {
+        soul = await AgentSoulService.instance.getSoul(agent);
       }
 
-      final soul = await AgentSoulService.instance.getSoul(agent);
       if (!mounted) return;
       setState(() {
         _initialSoul = soul;
@@ -93,6 +99,15 @@ class _AgentSoulEditScreenState extends State<AgentSoulEditScreen> {
     if (!ok && agent.isPeerAgent) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(l10n.chat_soulDenied)),
+      );
+      return false;
+    }
+    if (!ok) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(l10n.agentDetail_saveFailed('')),
+          backgroundColor: Colors.red,
+        ),
       );
       return false;
     }

@@ -78,6 +78,7 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
 
   /// Local agent: allow paired devices to edit soul.
   bool _allowPeerSoulEdit = false;
+  bool _allowPeerMemoryEdit = false;
 
   /// Upstream model list from the paired device's agent (peer agents only).
   List<PeerAgentModel> _peerModels = const [];
@@ -163,6 +164,7 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
     _agent = widget.agent;
     _isEditing = widget.initialEditMode;
     _allowPeerSoulEdit = _agent.peerBoundaryConfig.allowPeerSoulEdit;
+    _allowPeerMemoryEdit = _agent.peerBoundaryConfig.allowPeerMemoryEdit;
     _initEditingControllers();
     unawaited(_loadSoul());
 
@@ -219,9 +221,8 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
           });
           return;
         }
-      } else if (AgentSoulService.instance.usesSoulFile(_agent)) {
-        await AgentSoulService.instance.migrateLegacySystemPromptIfNeeded(_agent);
       }
+
       final soul = await AgentSoulService.instance.getSoul(_agent);
       if (!mounted) return;
       setState(() {
@@ -401,9 +402,7 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
     _nameController = TextEditingController(text: _agent.name);
     _bioController = TextEditingController(text: _agent.bio ?? '');
     _endpointController = TextEditingController(text: _agent.endpoint);
-    _systemPromptController = TextEditingController(
-      text: _agent.metadata['system_prompt'] as String? ?? '',
-    );
+    _systemPromptController = TextEditingController(text: '');
     _remoteAgentIdController = TextEditingController(
       text: (_agent.metadata['target_agent_id'] as String?) ?? '',
     );
@@ -419,6 +418,7 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
     _editingConnectionType = _agent.connectionType;
     _editingAllowExternalAccess = _agent.allowExternalAccess;
     _allowPeerSoulEdit = _agent.peerBoundaryConfig.allowPeerSoulEdit;
+    _allowPeerMemoryEdit = _agent.peerBoundaryConfig.allowPeerMemoryEdit;
 
     // Load skills from metadata
     _enabledSkills = _agent.enabledSkills;
@@ -560,6 +560,7 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
     _editingConnectionType = _agent.connectionType;
     _editingAllowExternalAccess = _agent.allowExternalAccess;
     _allowPeerSoulEdit = _agent.peerBoundaryConfig.allowPeerSoulEdit;
+    _allowPeerMemoryEdit = _agent.peerBoundaryConfig.allowPeerMemoryEdit;
     _enabledSkills = _agent.enabledSkills;
     _enabledCliCommands = _agent.enabledCliCommands;
     _promptStackConfig = _agent.promptStackConfig;
@@ -671,13 +672,16 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
         metadata['avatar_overridden'] = true;
       }
 
-      // Soul is persisted via [AgentSoulService] after the agent row update.
+      // Soul 权威在储物袋 cognition/<agent>/soul.md；agent 行不再携带 system_prompt。
       metadata.remove('system_prompt');
 
       // Peer-inbound boundary (local agents shared over P2P).
       if (_isLocalMode) {
         metadata['peer_boundary'] = _agent.peerBoundaryConfig
-            .copyWith(allowPeerSoulEdit: _allowPeerSoulEdit)
+            .copyWith(
+              allowPeerSoulEdit: _allowPeerSoulEdit,
+              allowPeerMemoryEdit: _allowPeerMemoryEdit,
+            )
             .toJson();
       }
 
@@ -2503,6 +2507,7 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
     final theme = Theme.of(context);
     final isEnabled = _agent.allowExternalAccess;
     final soulEditEnabled = _agent.peerBoundaryConfig.allowPeerSoulEdit;
+    final memoryEditEnabled = _agent.peerBoundaryConfig.allowPeerMemoryEdit;
 
     return Card(
       elevation: 0,
@@ -2575,6 +2580,35 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
                   ),
                 ],
               ),
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  Icon(
+                    Icons.auto_stories_outlined,
+                    size: 16,
+                    color: colorScheme.onSurfaceVariant,
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      memoryEditEnabled
+                          ? l10n.agent_allowPeerMemoryEdit
+                          : l10n.agent_memoryReadOnlyPeer,
+                      style: TextStyle(
+                        fontSize: 13,
+                        color: colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ),
+                  Icon(
+                    memoryEditEnabled ? Icons.check_circle : Icons.cancel,
+                    size: 16,
+                    color: memoryEditEnabled
+                        ? Colors.green
+                        : colorScheme.onSurfaceVariant,
+                  ),
+                ],
+              ),
             ],
           ],
         ),
@@ -2629,6 +2663,26 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
               value: _allowPeerSoulEdit,
               onChanged: (value) {
                 setState(() => _allowPeerSoulEdit = value);
+                _scheduleAutoSave();
+              },
+            ),
+            const Divider(height: 1),
+            SwitchListTile(
+              contentPadding:
+                  const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+              secondary:
+                  Icon(Icons.auto_stories_outlined, color: colorScheme.primary),
+              title: Text(
+                l10n.agent_allowPeerMemoryEdit,
+                style: const TextStyle(fontWeight: FontWeight.w600),
+              ),
+              subtitle: Text(
+                l10n.agent_allowPeerMemoryEditDesc,
+                style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+              ),
+              value: _allowPeerMemoryEdit,
+              onChanged: (value) {
+                setState(() => _allowPeerMemoryEdit = value);
                 _scheduleAutoSave();
               },
             ),

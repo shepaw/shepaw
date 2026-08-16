@@ -2,12 +2,13 @@ import '../../models/remote_agent.dart';
 import '../../models/channel.dart';
 import '../../models/message.dart';
 import '../../models/model_routing_config.dart';
+import '../agent_soul_service.dart';
 
 /// Builds system prompts for group chat agents (admin and member roles).
 class GroupPromptBuilder {
   const GroupPromptBuilder();
 
-  String buildGroupSystemPrompt({
+  Future<String> buildGroupSystemPrompt({
     required String groupName,
     required String groupDescription,
     required List<RemoteAgent> allAgents,
@@ -24,7 +25,16 @@ class GroupPromptBuilder {
     List<String> failedAgentNames = const [],
     bool isFlowMode = false,
     bool isClosingSummary = false,
-  }) {
+  }) async {
+    final soulById = <String, String>{};
+    for (final a in allAgents) {
+      try {
+        soulById[a.id] = await AgentSoulService.instance.getSoul(a);
+      } catch (_) {
+        soulById[a.id] = '';
+      }
+    }
+
     final memberList = allAgents.map((a) {
       final channelMember = channelMembers.where((m) => m.id == a.id).firstOrNull;
       final groupBio = channelMember?.groupBio;
@@ -36,7 +46,7 @@ class GroupPromptBuilder {
       final capabilitiesText = a.capabilities.isNotEmpty
           ? a.capabilities.join(', ')
           : '未指定';
-      final systemPrompt = a.metadata['system_prompt'] as String? ?? '';
+      final systemPrompt = soulById[a.id] ?? '';
       final specialtyText = systemPrompt.isNotEmpty
           ? (systemPrompt.length > 200 ? '${systemPrompt.substring(0, 200)}...' : systemPrompt)
           : '未指定';
@@ -47,7 +57,7 @@ class GroupPromptBuilder {
           '  专长: $specialtyText';
     }).join('\n');
 
-    final agentSystemPrompt = currentAgent.metadata['system_prompt'] as String? ?? '';
+    final agentSystemPrompt = soulById[currentAgent.id] ?? '';
     final currentMember = channelMembers.where((m) => m.id == currentAgent.id).firstOrNull;
     final currentGroupBio = currentMember?.groupBio;
     final agentIdentity = currentGroupBio ?? (agentSystemPrompt.isNotEmpty ? agentSystemPrompt : (currentAgent.bio ?? ''));
@@ -203,7 +213,7 @@ $memberList
 - **写入**：直接 `shepaw store write --filename <名> --content "..."`（系统已绑定本群，不要传你自己的 agent id 或个人 channel）
 - **浏览**：对任务里 ContextBundle 给出的群 runtime 根目录执行 `shepaw store list --uri <uri> --depth 1`
 - **读取**：`shepaw store read --uri <store://…>`，URI 必须来自 write 返回值、list 结果或消息里的链接；禁止编造
-- **禁止**把群产出写到 `runtime/<你的agentId>/` 或 `memory/<你的agentId>/`
+- **禁止**把群产出写到 `runtime/<你的agentId>/` 或 `cognition/<你的agentId>/`
 - 本群没有 soul.md；你在本群的岗位看【你的身份】/群职责，人格在你自己的 Agent 储物袋''';
 
   /// Shepaw CLI guidance for group admin — historical attachments are metadata only.

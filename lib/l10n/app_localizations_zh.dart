@@ -3047,6 +3047,16 @@ class AppLocalizationsZh extends AppLocalizations {
       '开启后，已分享该 agent 的配对设备可远程读取并修改其 Soul';
 
   @override
+  String get agent_allowPeerMemoryEdit => '允许配对设备修改记忆';
+
+  @override
+  String get agent_allowPeerMemoryEditDesc =>
+      '开启后，已分享该 agent 的配对设备可远程查看并增删其结构化记忆';
+
+  @override
+  String get agent_memoryReadOnlyPeer => '配对设备仅可查看记忆（未开放编辑）';
+
+  @override
   String get agent_externalAccessPeerEnabled =>
       '已开启：已配对的设备可在会话列表中看到并与该 agent 对话';
 

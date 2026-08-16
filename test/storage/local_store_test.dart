@@ -528,7 +528,8 @@ void main() {
               e is StoreException &&
               e.code == StoreError.badOp &&
               e.message == 'invalid space')));
-      // 合法自定义空间（如 memory）可 list，目录不存在时返回空
+      // 合法自定义空间（如 cognition / legacy memory）可 list，目录不存在时返回空
+      expect(await store.list(dev, StoreSpace.cognition), isEmpty);
       expect(await store.list(dev, StoreSpace.memory), isEmpty);
     });
 

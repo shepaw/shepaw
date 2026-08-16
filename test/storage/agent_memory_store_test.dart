@@ -18,7 +18,7 @@ void main() {
     await AgentMemoryStoreService.forAgent('agent-mem-test').deleteAll();
   });
 
-  test('add / get / query 走 memory 空间', () async {
+  test('add / get / query 走 cognition 空间', () async {
     final svc = AgentMemoryStoreService.forAgent('agent-mem-test');
     final now = DateTime.now().millisecondsSinceEpoch;
     final id = await svc.addMemory(AgentMemoryEntry(
@@ -41,7 +41,7 @@ void main() {
     final store = await StoreService.instance.localStore();
     final meta = await store.meta(
       deviceId,
-      StoreSpace.memory,
+      StoreSpace.cognition,
       MemoryPaths.entryJson('agent-mem-test', id),
     );
     expect(meta['size'] as int, greaterThan(0));
@@ -52,7 +52,7 @@ void main() {
     expect(MemoryPaths.entryJson('agent1', 3), 'agent1/entries/3.json');
     expect(
       MemoryPaths.uri(deviceId: 'aaaaaaaaaaaaaaaa', relPath: 'agent1/meta.json'),
-      'store://memory/aaaaaaaaaaaaaaaa/agent1/meta.json',
+      'store://cognition/aaaaaaaaaaaaaaaa/agent1/meta.json',
     );
   });
 }

@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 import '../l10n/app_localizations.dart';
 import '../l10n/l10n_helpers.dart';
@@ -34,6 +36,8 @@ class _AgentMemoryDetailScreenState extends State<AgentMemoryDetailScreen>
 
   List<AgentMemoryEntry> _memories = [];
   bool _isLoading = true;
+  bool _editable = true;
+  String? _loadError;
   String? _filterKeyword;
   MemoryType? _filterType;
 
@@ -52,14 +56,18 @@ class _AgentMemoryDetailScreenState extends State<AgentMemoryDetailScreen>
 
   Future<void> _loadMemories({String? keyword, MemoryType? type}) async {
     try {
-      final memories = keyword != null && keyword.isNotEmpty
-          ? await _memoryService.queryByKeyword(widget.agent.id, keyword)
-          : await _memoryService.getAllMemories(widget.agent.id, type: type);
-      
+      final result = await _memoryService.listForAgent(
+        widget.agent,
+        keyword: keyword,
+        type: type,
+      );
+
       if (mounted) {
         setState(() {
-          _memories = memories;
+          _memories = result.memories;
+          _editable = result.editable;
           _isLoading = false;
+          _loadError = null;
           _filterKeyword = keyword;
           _filterType = type;
         });
@@ -71,7 +79,10 @@ class _AgentMemoryDetailScreenState extends State<AgentMemoryDetailScreen>
         error: e,
       );
       if (mounted) {
-        setState(() => _isLoading = false);
+        setState(() {
+          _isLoading = false;
+          _loadError = '$e';
+        });
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Failed to load memories')),
         );
@@ -80,6 +91,7 @@ class _AgentMemoryDetailScreenState extends State<AgentMemoryDetailScreen>
   }
 
   Future<void> _addMemory() async {
+    if (!_editable) return;
     final contentController = TextEditingController();
     MemoryType selectedType = MemoryType.conversation;
     final keywordsController = TextEditingController();
@@ -178,8 +190,8 @@ class _AgentMemoryDetailScreenState extends State<AgentMemoryDetailScreen>
 
     if (result != null) {
       try {
-        await _memoryService.addMemory(
-          agentId: widget.agent.id,
+        await _memoryService.addMemoryForAgent(
+          widget.agent,
           content: result['content'] as String,
           type: result['type'] as MemoryType,
           keywords: result['keywords'] as List<String>?,
@@ -210,6 +222,7 @@ class _AgentMemoryDetailScreenState extends State<AgentMemoryDetailScreen>
   }
 
   Future<void> _deleteMemory(int memoryId) async {
+    if (!_editable) return;
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
@@ -232,7 +245,7 @@ class _AgentMemoryDetailScreenState extends State<AgentMemoryDetailScreen>
     if (confirmed != true) return;
 
     try {
-      await _memoryService.deleteMemory(widget.agent.id, memoryId);
+      await _memoryService.deleteMemoryForAgent(widget.agent, memoryId);
       await _loadMemories();
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -249,6 +262,7 @@ class _AgentMemoryDetailScreenState extends State<AgentMemoryDetailScreen>
   }
 
   Future<void> _clearAllMemories() async {
+    if (!_editable) return;
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
@@ -273,7 +287,7 @@ class _AgentMemoryDetailScreenState extends State<AgentMemoryDetailScreen>
     if (confirmed != true) return;
 
     try {
-      await _memoryService.clearAllMemories(widget.agent.id);
+      await _memoryService.clearMemoriesForAgent(widget.agent);
       await _loadMemories();
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -292,8 +306,12 @@ class _AgentMemoryDetailScreenState extends State<AgentMemoryDetailScreen>
   Future<void> _exportMemories(String format) async {
     try {
       final content = format == 'json'
-          ? await _memoryService.exportAsJson(widget.agent.id)
-          : await _memoryService.exportAsMarkdown(widget.agent.id);
+          ? (widget.agent.isPeerAgent
+              ? _exportLoadedJson()
+              : await _memoryService.exportAsJson(widget.agent.id))
+          : (widget.agent.isPeerAgent
+              ? _exportLoadedMarkdown()
+              : await _memoryService.exportAsMarkdown(widget.agent.id));
 
       if (mounted) {
         showDialog(
@@ -326,6 +344,37 @@ class _AgentMemoryDetailScreenState extends State<AgentMemoryDetailScreen>
     }
   }
 
+  String _exportLoadedJson() {
+    return jsonEncode({
+      'agentId': widget.agent.remoteAgentId ?? widget.agent.id,
+      'exportedAt': DateTime.now().toIso8601String(),
+      'count': _memories.length,
+      'memories': [for (final m in _memories) m.toJson()],
+    });
+  }
+
+  String _exportLoadedMarkdown() {
+    final buffer = StringBuffer();
+    buffer.writeln('# Agent Memory Export');
+    buffer.writeln();
+    buffer.writeln(
+        '**Agent ID:** `${widget.agent.remoteAgentId ?? widget.agent.id}`');
+    buffer.writeln('**Exported At:** ${DateTime.now().toLocal()}');
+    buffer.writeln('**Total Memories:** ${_memories.length}');
+    buffer.writeln();
+    for (final memory in _memories) {
+      buffer.writeln('## Memory #${memory.memoryId}');
+      buffer.writeln();
+      buffer.writeln('**Type:** ${memory.memoryType.name}');
+      buffer.writeln();
+      buffer.writeln(memory.memoryContent);
+      buffer.writeln();
+      buffer.writeln('---');
+      buffer.writeln();
+    }
+    return buffer.toString();
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -342,8 +391,51 @@ class _AgentMemoryDetailScreenState extends State<AgentMemoryDetailScreen>
       ),
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
-          : Column(
+          : _loadError != null && _memories.isEmpty
+              ? Center(
+                  child: Padding(
+                    padding: const EdgeInsets.all(24),
+                    child: Text(
+                      _loadError!,
+                      textAlign: TextAlign.center,
+                    ),
+                  ),
+                )
+              : Column(
               children: [
+                if (!_editable)
+                  Material(
+                    color: Theme.of(context)
+                        .colorScheme
+                        .surfaceContainerHighest
+                        .withValues(alpha: 0.6),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 16, vertical: 8),
+                      child: Row(
+                        children: [
+                          Icon(
+                            Icons.lock_outline,
+                            size: 16,
+                            color: Theme.of(context).colorScheme.onSurfaceVariant,
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              AppLocalizations.of(context)
+                                  .agent_memoryReadOnlyPeer,
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: Theme.of(context)
+                                    .colorScheme
+                                    .onSurfaceVariant,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
                 // 搜索栏
                 Padding(
                   padding: const EdgeInsets.all(8),
@@ -371,11 +463,13 @@ class _AgentMemoryDetailScreenState extends State<AgentMemoryDetailScreen>
                 ),
               ],
             ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: _addMemory,
-        tooltip: 'Add Memory',
-        child: const Icon(Icons.add),
-      ),
+      floatingActionButton: _editable
+          ? FloatingActionButton(
+              onPressed: _addMemory,
+              tooltip: 'Add Memory',
+              child: const Icon(Icons.add),
+            )
+          : null,
       bottomNavigationBar: Container(
         padding: const EdgeInsets.all(8),
         decoration: BoxDecoration(
@@ -396,7 +490,7 @@ class _AgentMemoryDetailScreenState extends State<AgentMemoryDetailScreen>
                 label: const Text('Markdown'),
               ),
               TextButton.icon(
-                onPressed: _clearAllMemories,
+                onPressed: _editable ? _clearAllMemories : null,
                 icon: const Icon(Icons.delete_forever, color: Colors.red),
                 label: const Text('Clear All'),
               ),
@@ -552,11 +646,12 @@ class _AgentMemoryDetailScreenState extends State<AgentMemoryDetailScreen>
                       icon: const Icon(Icons.visibility),
                       label: const Text('View'),
                     ),
-                    TextButton.icon(
-                      onPressed: () => _deleteMemory(memory.memoryId!),
-                      icon: const Icon(Icons.delete, color: Colors.red),
-                      label: const Text('Delete'),
-                    ),
+                    if (_editable)
+                      TextButton.icon(
+                        onPressed: () => _deleteMemory(memory.memoryId!),
+                        icon: const Icon(Icons.delete, color: Colors.red),
+                        label: const Text('Delete'),
+                      ),
                   ],
                 ),
               ],
@@ -580,10 +675,12 @@ class _AgentMemoryDetailScreenState extends State<AgentMemoryDetailScreen>
           maxLines: 2,
           overflow: TextOverflow.ellipsis,
         ),
-        trailing: IconButton(
-          icon: const Icon(Icons.delete, color: Colors.red),
-          onPressed: () => _deleteMemory(memory.memoryId!),
-        ),
+        trailing: _editable
+            ? IconButton(
+                icon: const Icon(Icons.delete, color: Colors.red),
+                onPressed: () => _deleteMemory(memory.memoryId!),
+              )
+            : null,
         onTap: () => _showMemoryDetail(memory),
       ),
     );

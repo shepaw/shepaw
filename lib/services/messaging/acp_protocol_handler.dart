@@ -12,6 +12,7 @@ import '../inference_log_service.dart';
 import '../foreground_task_service.dart';
 import '../logger_service.dart';
 import '../peer_key_utils.dart';
+import '../agent_soul_service.dart';
 import '../task/task_models.dart';
 
 /// Callbacks used to bridge the ACPProtocolHandler with ChatService state.
@@ -211,7 +212,7 @@ class ACPProtocolHandler {
         messageId: userMessage.id,
         history: chatHistory,
         totalMessageCount: totalMessageCount,
-        systemPrompt: agent.metadata['system_prompt'] as String?,
+        systemPrompt: await AgentSoulService.instance.getSoul(agent),
         attachments: serializedAttachments,
       );
 

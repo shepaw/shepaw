@@ -2,6 +2,7 @@ import 'dart:async';
 import '../models/remote_agent.dart';
 import '../models/message.dart';
 import 'acp_agent_connection.dart';
+import 'agent_soul_service.dart';
 import 'peer_key_utils.dart';
 
 /// 协议路由器
@@ -91,7 +92,7 @@ class ProtocolRouter {
         message: message.content,
         userId: message.from.id,
         messageId: message.id,
-        systemPrompt: agent.metadata['system_prompt'] as String?,
+        systemPrompt: await AgentSoulService.instance.getSoul(agent),
       );
     } catch (e) {
       throw Exception('ACP message routing failed: $e');
@@ -131,7 +132,7 @@ class ProtocolRouter {
           message: message.content,
           userId: message.from.id,
           messageId: message.id,
-          systemPrompt: agent.metadata['system_prompt'] as String?,
+          systemPrompt: await AgentSoulService.instance.getSoul(agent),
         );
 
         final responseContent = await responseCompleter.future;

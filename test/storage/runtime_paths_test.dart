@@ -126,17 +126,20 @@ void main() {
         StoreSpace.files,
         StoreSpace.public_,
         StoreSpace.backups,
+        StoreSpace.cognition,
         StoreSpace.memory,
         StoreSpace.artifacts,
         StoreSpace.attachments,
       ]));
       expect(StoreSpace.sharedReadable, isNot(contains(StoreSpace.runtime)));
+      expect(StoreSpace.sharedReadable, isNot(contains(StoreSpace.cognition)));
       expect(StoreSpace.sharedReadable, isNot(contains(StoreSpace.memory)));
       expect(StoreSpace.isOwnerCrossWritable(StoreSpace.workspaces), isTrue);
       expect(StoreSpace.isOwnerCrossWritable(StoreSpace.runtime), isFalse);
       expect(StoreSpace.browserSpaces, contains(StoreSpace.workspaces));
       expect(StoreSpace.browserSpaces, contains(StoreSpace.public_));
-      expect(StoreSpace.browserSpaces, contains(StoreSpace.memory));
+      expect(StoreSpace.browserSpaces, contains(StoreSpace.cognition));
+      expect(StoreSpace.browserSpaces, isNot(contains(StoreSpace.memory)));
     });
   });
 }

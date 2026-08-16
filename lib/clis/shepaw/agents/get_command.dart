@@ -2,6 +2,7 @@ import '../../cli_base.dart';
 import '../../../models/agent_scenario_models.dart';
 import '../../../models/model_routing_config.dart';
 import '../../../services/agent_memory_store_service.dart';
+import '../../../services/agent_soul_service.dart';
 import '../../../services/chat_service.dart';
 import '../../../services/local_database_service.dart';
 import '../../../services/logger_service.dart';
@@ -78,7 +79,7 @@ class GetCommand extends CliCommand {
       'effective_routes': diagnostics['effective_routes'],
       'created_at': agent.createdAt,
       // ── 派发决策画像（She 按需获取，不进默认 prompt）──
-      'specialty': (metadata['system_prompt'] as String? ?? ''),
+      'specialty': await AgentSoulService.instance.getSoul(agent),
       'capabilities': agent.capabilities,
       'skills': agent.enabledSkills.toList(),
       'os_tools': agent.enabledOsTools.toList(),

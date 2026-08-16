@@ -106,8 +106,17 @@ class StoreSpace {
 
   /// Legacy chat uploads under `files/chat/<sha256>`（旧 URI 兼容）。
   static const chatAttachmentPrefix = 'chat';
-  /// Agent 结构化记忆权威空间（`memory/<agentId>/entries/*.json`）。
+
+  /// Agent 认知权威空间（soul + 结构化记忆）：
+  /// `cognition/<agentId>/soul.md`、`…/entries/*.json`、`…/peers/<peerId>/…`。
+  static const cognition = 'cognition';
+
+  /// Legacy：旧认知空间名（只读兼容；新写入走 [cognition]）。
   static const memory = 'memory';
+
+  /// 预留：技能包 / CLI 清单等（尚未落盘，勿写入）。
+  /// 预期：`tools/<agentId>/skills/…`、`tools/<agentId>/cli/…`
+  static const tools = 'tools';
 
   /// 同步/导出枚举：新内置 + legacy（旧树仍需镜像）。
   static const all = <String>[
@@ -116,7 +125,8 @@ class StoreSpace {
     files,
     public_,
     backups,
-    memory,
+    cognition,
+    memory, // legacy
     artifacts,
     attachments,
   ];
@@ -127,11 +137,11 @@ class StoreSpace {
     runtime,
     files,
     public_,
-    memory,
+    cognition,
     artifacts,
   ];
 
-  /// Owner 端默认可跨端读的分区（不含 private 的 runtime / memory）。
+  /// Owner 端默认可跨端读的分区（不含 private 的 runtime / cognition）。
   static const sharedReadable = <String>[
     workspaces,
     files,
@@ -143,6 +153,15 @@ class StoreSpace {
   static const ownerCrossWritable = <String>[workspaces];
 
   static bool isValid(String s) => all.contains(s);
+
+  /// 认知读写应使用的权威 space（新写入一律 cognition）。
+  static String get cognitionCanonical => cognition;
+
+  /// 认知相关 space（权威 + legacy），用于兼容读。
+  static const cognitionAliases = <String>[cognition, memory];
+
+  static bool isCognitionSpace(String s) =>
+      s == cognition || s == memory;
 
   static bool isOwnerCrossWritable(String s) => ownerCrossWritable.contains(s);
 
@@ -439,6 +458,8 @@ bool? _builtinVisibility(String space) => switch (space) {
       StoreSpace.artifacts =>
         true,
       StoreSpace.runtime ||
+      StoreSpace.cognition ||
+      StoreSpace.memory ||
       StoreSpace.attachments ||
       StoreSpace.backups =>
         false,

@@ -124,6 +124,8 @@ class PeerConnection {
     'agent_soul_resp',
     'agent_soul_set_req',
     'agent_soul_set_resp',
+    'agent_memory_req',
+    'agent_memory_resp',
     'agent_file_begin',
     'agent_file_chunk',
     'agent_file_end',

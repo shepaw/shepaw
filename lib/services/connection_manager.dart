@@ -3,6 +3,7 @@ import '../models/remote_agent.dart';
 import '../models/message.dart';
 import 'remote_agent_service.dart';
 import 'acp_agent_connection.dart';
+import 'agent_soul_service.dart';
 import 'logger_service.dart';
 import 'peer_key_utils.dart';
 
@@ -209,7 +210,7 @@ class ConnectionManager {
         message: message.content,
         userId: message.from.id,
         messageId: message.id,
-        systemPrompt: agent.metadata['system_prompt'] as String?,
+        systemPrompt: await AgentSoulService.instance.getSoul(agent),
       );
     } catch (e) {
       await _agentService.markAgentError(agentId);

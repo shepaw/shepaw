@@ -260,7 +260,7 @@ class DataExportImportService {
       _logger.warning('Failed to export cognitions', error: e);
     }
 
-    // Agent 记忆：权威在储物袋 memory/；兼扫遗留 agent_memory_*.db
+    // Agent 记忆：权威在储物袋 cognition/；兼扫遗留 agent_memory_*.db
     try {
       final memDir = Directory('${dataDir.path}/agent_memory');
       await memDir.create(recursive: true);
@@ -269,15 +269,19 @@ class DataExportImportService {
       try {
         final deviceId = await DeviceIdentity.deviceId();
         final store = await StoreService.instance.localStore();
-        final roots = await store.list(
-          deviceId,
-          StoreSpace.memory,
-          depth: 1,
-          limit: 5000,
-        );
-        for (final e in roots) {
-          if (!e.isDir) continue;
-          final agentId = e.path;
+        final roots = <String>{};
+        for (final space in StoreSpace.cognitionAliases) {
+          final listed = await store.list(
+            deviceId,
+            space,
+            depth: 1,
+            limit: 5000,
+          );
+          for (final e in listed) {
+            if (e.isDir) roots.add(e.path);
+          }
+        }
+        for (final agentId in roots) {
           final memories = await AgentMemoryStoreService.forAgent(agentId)
               .getAllMemories(limit: 100000);
           if (memories.isEmpty) continue;

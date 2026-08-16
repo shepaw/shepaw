@@ -58,6 +58,7 @@ class _AddRemoteAgentScreenState extends State<AddRemoteAgentScreen> {
   bool _isCreating = false;
   bool _allowExternalAccess = false;
   bool _allowPeerSoulEdit = false;
+  bool _allowPeerMemoryEdit = false;
   String? _localAvatarPath; // 本地图片相对路径
 
   final ImagePicker _imagePicker = ImagePicker();
@@ -270,18 +271,17 @@ class _AddRemoteAgentScreenState extends State<AddRemoteAgentScreen> {
           // Save allow_external_access
           metadata['allow_external_access'] = _allowExternalAccess;
           metadata['peer_boundary'] = PeerBoundaryConfig.defaults
-              .copyWith(allowPeerSoulEdit: _allowPeerSoulEdit)
+              .copyWith(
+                allowPeerSoulEdit: _allowPeerSoulEdit,
+                allowPeerMemoryEdit: _allowPeerMemoryEdit,
+              )
               .toJson();
 
           _applyScenarioModelsMetadata(metadata);
         }
       }
-      // Soul: local agents → soul.md; remote-only → metadata (handled above).
+      // Soul: 一律写入储物袋 cognition/<agent>/soul.md，不进 metadata。
       final soulText = _systemPromptController.text.trim();
-      final isLocalCreate = metadata['llm_provider'] != null;
-      if (soulText.isNotEmpty && !isLocalCreate) {
-        metadata['system_prompt'] = soulText;
-      }
 
       final created = await _agentService.createAgent(
         name: _nameController.text.trim(),
@@ -296,7 +296,7 @@ class _AddRemoteAgentScreenState extends State<AddRemoteAgentScreen> {
         initialStatus: initialStatus,
       );
 
-      if (soulText.isNotEmpty && created.isLocal) {
+      if (soulText.isNotEmpty) {
         await AgentSoulService.instance.updateSoul(created, soulText);
       }
 
@@ -1391,6 +1391,25 @@ class _AddRemoteAgentScreenState extends State<AddRemoteAgentScreen> {
               value: _allowPeerSoulEdit,
               onChanged: (value) {
                 setState(() => _allowPeerSoulEdit = value);
+              },
+            ),
+            const Divider(height: 1),
+            SwitchListTile(
+              contentPadding:
+                  const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+              secondary:
+                  Icon(Icons.auto_stories_outlined, color: colorScheme.primary),
+              title: Text(
+                l10n.agent_allowPeerMemoryEdit,
+                style: const TextStyle(fontWeight: FontWeight.w600),
+              ),
+              subtitle: Text(
+                l10n.agent_allowPeerMemoryEditDesc,
+                style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+              ),
+              value: _allowPeerMemoryEdit,
+              onChanged: (value) {
+                setState(() => _allowPeerMemoryEdit = value);
               },
             ),
           ],

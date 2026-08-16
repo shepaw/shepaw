@@ -8,7 +8,7 @@ import '../storage/runtime_mirror_service.dart';
 
 /// Agent 独立记忆数据库服务（**遗留**）。
 ///
-/// 新权威为储物袋 [AgentMemoryStoreService]（`memory/<agentId>/entries/`）。
+/// 新权威为储物袋 [AgentMemoryStoreService]（`cognition/<agentId>/entries/`）。
 /// 本类仅保留供一次性迁移与旧备份扫描；业务请走 [AgentMemoryBizService]。
 class AgentMemoryDbService {
   // ---------------------------------------------------------------------------

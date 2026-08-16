@@ -20,6 +20,7 @@ import 'package:uuid/uuid.dart';
 import '../../models/attachment_data.dart';
 import '../../models/channel.dart';
 import '../../models/remote_agent.dart';
+import '../../models/agent_memory_entry.dart';
 import '../../models/acp_protocol.dart';
 import '../../services/acp_agent_connection.dart';
 import '../../services/app_lifecycle_service.dart';
@@ -452,6 +453,23 @@ class PeerSoulInfo {
   const PeerSoulInfo({required this.soul, required this.editable});
 }
 
+/// Structured memory relay result from `agent_memory_resp`.
+class PeerMemoryResult {
+  final bool ok;
+  final bool editable;
+  final List<AgentMemoryEntry> memories;
+  final int? memoryId;
+  final String? error;
+
+  const PeerMemoryResult({
+    required this.ok,
+    this.editable = false,
+    this.memories = const [],
+    this.memoryId,
+    this.error,
+  });
+}
+
 /// One hub instance as returned by `agent_manage_resp`.
 class PeerAgentManageEntry {
   final String id;
@@ -715,6 +733,9 @@ class PeerAgentClientService {
 
   /// Outstanding agent_soul_set_req per remote agent id.
   final Map<String, Completer<bool>> _pendingSoulSet = {};
+
+  /// Outstanding agent_memory_req keyed by request_id.
+  final Map<String, Completer<PeerMemoryResult>> _pendingMemory = {};
 
   /// Outstanding agent_manage_req keyed by request_id.
   final Map<String, Completer<PeerAgentManageResult>> _pendingManage = {};
@@ -1500,6 +1521,9 @@ class PeerAgentClientService {
       case 'agent_soul_set_resp':
         _onSoulSetResp(event.data);
         break;
+      case 'agent_memory_resp':
+        _onMemoryResp(event.data);
+        break;
       case 'agent_manage_resp':
         _onManageResp(event.data);
         break;
@@ -1769,7 +1793,10 @@ class PeerAgentClientService {
       return null;
     }
     return completer.future.timeout(const Duration(seconds: 15), onTimeout: () {
-      _pendingSoulGet.remove(remoteAgentId);
+      final pending = _pendingSoulGet.remove(remoteAgentId);
+      if (pending != null && !pending.isCompleted) {
+        pending.complete(null);
+      }
       return null;
     });
   }
@@ -1822,7 +1849,10 @@ class PeerAgentClientService {
       return false;
     }
     return completer.future.timeout(const Duration(seconds: 15), onTimeout: () {
-      _pendingSoulSet.remove(remoteAgentId);
+      final pending = _pendingSoulSet.remove(remoteAgentId);
+      if (pending != null && !pending.isCompleted) {
+        pending.complete(false);
+      }
       return false;
     });
   }
@@ -1833,6 +1863,70 @@ class PeerAgentClientService {
     final ok = data['ok'] == true;
     final completer = _pendingSoulSet.remove(remoteId);
     if (completer != null && !completer.isCompleted) completer.complete(ok);
+  }
+
+  /// Relay structured memory CRUD to the host agent's store directory.
+  Future<PeerMemoryResult> memoryOp({
+    required String peerId,
+    required String remoteAgentId,
+    required String op,
+    MemoryType? type,
+    String? keyword,
+    int? limit,
+    AgentMemoryEntry? entry,
+    int? memoryId,
+  }) async {
+    final requestId = _uuid.v4();
+    final completer = Completer<PeerMemoryResult>();
+    _pendingMemory[requestId] = completer;
+    final payload = <String, dynamic>{
+      'type': 'agent_memory_req',
+      'request_id': requestId,
+      'agent_id': remoteAgentId,
+      'op': op,
+      if (type != null) 'type': type.name,
+      if (keyword != null) 'keyword': keyword,
+      if (limit != null) 'limit': limit,
+      if (entry != null) 'entry': entry.toJson(),
+      if (memoryId != null) 'memory_id': memoryId,
+    };
+    final sent = await PeerConnectionManager.instance.sendControl(peerId, payload);
+    if (!sent) {
+      _pendingMemory.remove(requestId);
+      return const PeerMemoryResult(ok: false, error: 'offline');
+    }
+    return completer.future.timeout(const Duration(seconds: 20), onTimeout: () {
+      final pending = _pendingMemory.remove(requestId);
+      if (pending != null && !pending.isCompleted) {
+        pending.complete(const PeerMemoryResult(ok: false, error: 'timeout'));
+      }
+      return const PeerMemoryResult(ok: false, error: 'timeout');
+    });
+  }
+
+  void _onMemoryResp(Map<String, dynamic> data) {
+    final requestId = data['request_id'] as String?;
+    if (requestId == null) return;
+    final completer = _pendingMemory.remove(requestId);
+    if (completer == null || completer.isCompleted) return;
+    final rawList = data['memories'];
+    final memories = <AgentMemoryEntry>[];
+    if (rawList is List) {
+      for (final item in rawList) {
+        if (item is Map) {
+          memories.add(
+            AgentMemoryEntry.fromJson(Map<String, dynamic>.from(item)),
+          );
+        }
+      }
+    }
+    completer.complete(PeerMemoryResult(
+      ok: data['ok'] == true,
+      editable: data['editable'] == true,
+      memories: memories,
+      memoryId: (data['memory_id'] as num?)?.toInt(),
+      error: data['error'] as String?,
+    ));
   }
 
   /// Query remote agent roster / status, or mutate hub-owned fields.

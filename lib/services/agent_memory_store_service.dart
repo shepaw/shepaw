@@ -15,18 +15,43 @@ import 'logger_service.dart';
 import 'minds_database_service.dart';
 import 'she_memory_db_service.dart';
 
-/// Agent 结构化记忆：权威落在储物袋 `memory/<agentId>/entries/*.json`。
+/// Agent 结构化记忆：权威落在储物袋 `cognition/<agentId>/…`。
 ///
-/// 首次访问若发现旧 `agent_memory_*.db` 且 store 为空，会一次性迁移后标记。
+/// - 本机会话：`cognition/<agentId>/entries/*.json`
+/// - Peer 中继（按配对设备隔离）：`cognition/<agentId>/peers/<peerId>/entries/*.json`
+/// - Legacy：旧 `memory/` 空间只读兼容；写入一律 [StoreSpace.cognition]
+///
+/// 首次访问若发现旧 `agent_memory_*.db` 且 store 为空，会一次性迁移后标记
+///（仅本机根目录；peer 子树不做 SQLite 迁移）。
 class AgentMemoryStoreService {
-  AgentMemoryStoreService._(this._agentId);
+  AgentMemoryStoreService._(this._agentId, {String? peerClientId})
+      : _peerClientId = _normalizePeer(peerClientId);
 
   static final Map<String, AgentMemoryStoreService> _instances = {};
+  /// 已从 legacy `memory/` 拷到 `cognition/` 的 agent（进程内去重）。
+  static final Set<String> _legacySpaceMigrated = {};
 
-  static AgentMemoryStoreService forAgent(String agentId) {
+  static String? _normalizePeer(String? peerClientId) {
+    final p = peerClientId?.trim();
+    if (p == null || p.isEmpty) return null;
+    return p;
+  }
+
+  static String _instanceKey(String agentId, String? peerClientId) {
+    final peer = _normalizePeer(peerClientId);
+    if (peer == null) return agentId;
+    return '$agentId::peer::$peer';
+  }
+
+  /// [peerClientId]：配对客户端的 peerId；非空时读写 peers 子目录。
+  static AgentMemoryStoreService forAgent(
+    String agentId, {
+    String? peerClientId,
+  }) {
+    final key = _instanceKey(agentId, peerClientId);
     return _instances.putIfAbsent(
-      agentId,
-      () => AgentMemoryStoreService._(agentId),
+      key,
+      () => AgentMemoryStoreService._(agentId, peerClientId: peerClientId),
     );
   }
 
@@ -34,23 +59,25 @@ class AgentMemoryStoreService {
     _instances.clear();
   }
 
-  /// 清除全部 Agent 的 memory 空间目录（储物袋「清除所有应用数据」用）。
+  /// 清除全部 Agent 的 cognition（及 legacy memory）目录。
   static Future<void> deleteAllAgentMemories() async {
     await closeAll();
     try {
       final deviceId = await DeviceIdentity.deviceId();
       final store = await StoreService.instance.localStore();
-      final roots = await store.list(
-        deviceId,
-        StoreSpace.memory,
-        depth: 1,
-        limit: 5000,
-      );
-      for (final e in roots) {
-        if (!e.isDir) continue;
-        try {
-          await store.delete(deviceId, StoreSpace.memory, e.path);
-        } catch (_) {}
+      for (final space in StoreSpace.cognitionAliases) {
+        final roots = await store.list(
+          deviceId,
+          space,
+          depth: 1,
+          limit: 5000,
+        );
+        for (final e in roots) {
+          if (!e.isDir) continue;
+          try {
+            await store.delete(deviceId, space, e.path);
+          } catch (_) {}
+        }
       }
       // 顺带清遗留 SQLite
       await AgentMemoryDbService.deleteAllDatabases();
@@ -64,17 +91,27 @@ class AgentMemoryStoreService {
   }
 
   final String _agentId;
+  /// 非空表示这是某配对设备的子记忆命名空间。
+  final String? _peerClientId;
   static const _tag = 'AgentMemoryStore';
   final _log = LoggerService();
 
   bool _ensured = false;
 
   String get agentId => _agentId;
+  String? get peerClientId => _peerClientId;
+  bool get _isPeerScoped => _peerClientId != null;
+
+  String get _scopeTag =>
+      _isPeerScoped ? '$_agentId/peers/$_peerClientId' : _agentId;
 
   Future<void> _ensure() async {
     if (_ensured) return;
-    await _migrateFromSqliteIfNeeded();
-    await _migrateSoulFromSqliteIfNeeded();
+    await _migrateLegacyMemorySpaceIfNeeded();
+    if (!_isPeerScoped) {
+      await _migrateFromSqliteIfNeeded();
+      await _migrateSoulFromSqliteIfNeeded();
+    }
     _ensured = true;
   }
 
@@ -82,14 +119,69 @@ class AgentMemoryStoreService {
 
   Future<String> _deviceId() => DeviceIdentity.deviceId();
 
-  Future<void> _writeBytes(String relPath, Uint8List content) async {
+  /// 将 legacy `memory/<agent>/…` 拷入 `cognition/`（已存在的路径不覆盖）。
+  Future<void> _migrateLegacyMemorySpaceIfNeeded() async {
+    if (_legacySpaceMigrated.contains(_agentId)) return;
+    _legacySpaceMigrated.add(_agentId);
+    try {
+      final deviceId = await _deviceId();
+      final store = await _store();
+      final root = MemoryPaths.agentRoot(_agentId);
+      final legacy = await store.list(
+        deviceId,
+        StoreSpace.memory,
+        prefix: '$root/',
+        limit: 10000,
+        computeHash: false,
+      );
+      if (legacy.isEmpty) return;
+      var copied = 0;
+      for (final e in legacy) {
+        if (e.isDir) continue;
+        try {
+          await store.meta(deviceId, StoreSpace.cognition, e.path);
+          continue; // cognition 已有
+        } on StoreException catch (err) {
+          if (err.code != StoreError.notFound) rethrow;
+        }
+        final bytes = await _readAllBytes(StoreSpace.memory, e.path);
+        if (bytes == null) continue;
+        await _writeBytesTo(StoreSpace.cognition, e.path, bytes);
+        copied++;
+      }
+      if (copied > 0) {
+        _log.info(
+          'migrated $copied files memory → cognition for $_agentId',
+          tag: _tag,
+        );
+      }
+      // 整棵 agent 树已在 cognition 后，回收 legacy 根（失败可忽略，读路径仍会 fallback）
+      try {
+        await store.delete(deviceId, StoreSpace.memory, root);
+      } catch (_) {}
+    } catch (e) {
+      _log.warning(
+        'legacy memory→cognition migrate skipped: $e',
+        tag: '$_tag[$_agentId]',
+      );
+    }
+  }
+
+  Future<void> _writeBytes(String relPath, Uint8List content) =>
+      _writeBytesTo(StoreSpace.cognition, relPath, content);
+
+  Future<void> _writeBytesTo(
+    String space,
+    String relPath,
+    Uint8List content,
+  ) async {
     final deviceId = await _deviceId();
     final store = await _store();
     final path = normalizeStorePath(relPath);
     final hash = crypto.sha256.convert(content).toString();
     final (uploadId, _) = await store.writeBegin(
       deviceId: deviceId,
-      space: StoreSpace.memory,
+      space: space,
       path: path,
       size: content.length,
       sha256: hash,
@@ -101,17 +193,16 @@ class AgentMemoryStoreService {
           : offset + LocalStore.maxReadChunk;
       await store.writeChunk(
         deviceId,
-        StoreSpace.memory,
+        space,
         uploadId,
         offset,
         content.sublist(offset, end),
       );
       offset = end;
     }
-    final (ok, failed) =
-        await store.commit(deviceId, StoreSpace.memory, [uploadId]);
+    final (ok, failed) = await store.commit(deviceId, space, [uploadId]);
     if (failed.isNotEmpty || ok.isEmpty) {
-      throw StateError('memory write failed: $failed');
+      throw StateError('cognition write failed: $failed');
     }
   }
 
@@ -122,7 +213,7 @@ class AgentMemoryStoreService {
     await _writeBytes(relPath, bytes);
   }
 
-  Future<Map<String, dynamic>?> _readJson(String relPath) async {
+  Future<Uint8List?> _readAllBytes(String space, String relPath) async {
     try {
       final deviceId = await _deviceId();
       final store = await _store();
@@ -131,7 +222,7 @@ class AgentMemoryStoreService {
       while (true) {
         final (chunk, size, eof) = await store.read(
           deviceId,
-          StoreSpace.memory,
+          space,
           relPath,
           offset,
           LocalStore.maxReadChunk,
@@ -141,12 +232,23 @@ class AgentMemoryStoreService {
         if (eof || offset >= size) break;
       }
       final bytes = buf.takeBytes();
-      if (bytes.isEmpty) return null;
-      return jsonDecode(utf8.decode(bytes)) as Map<String, dynamic>;
+      return bytes.isEmpty ? null : bytes;
     } on StoreException catch (e) {
       if (e.code == StoreError.notFound) return null;
       rethrow;
     }
+  }
+
+  /// cognition 优先，legacy memory fallback。
+  Future<Uint8List?> _readBytes(String relPath) async {
+    return await _readAllBytes(StoreSpace.cognition, relPath) ??
+        await _readAllBytes(StoreSpace.memory, relPath);
+  }
+
+  Future<Map<String, dynamic>?> _readJson(String relPath) async {
+    final bytes = await _readBytes(relPath);
+    if (bytes == null) return null;
+    return jsonDecode(utf8.decode(bytes)) as Map<String, dynamic>;
   }
 
   Future<void> _writeText(String relPath, String text) async {
@@ -154,34 +256,15 @@ class AgentMemoryStoreService {
   }
 
   Future<String?> _readText(String relPath) async {
-    try {
-      final deviceId = await _deviceId();
-      final store = await _store();
-      final buf = BytesBuilder(copy: false);
-      var offset = 0;
-      while (true) {
-        final (chunk, size, eof) = await store.read(
-          deviceId,
-          StoreSpace.memory,
-          relPath,
-          offset,
-          LocalStore.maxReadChunk,
-        );
-        if (chunk.isNotEmpty) buf.add(chunk);
-        offset += chunk.length;
-        if (eof || offset >= size) break;
-      }
-      final bytes = buf.takeBytes();
-      if (bytes.isEmpty) return null;
-      return utf8.decode(bytes);
-    } on StoreException catch (e) {
-      if (e.code == StoreError.notFound) return null;
-      rethrow;
-    }
+    final bytes = await _readBytes(relPath);
+    if (bytes == null) return null;
+    return utf8.decode(bytes);
   }
 
   Future<_MemoryMeta> _loadMeta() async {
-    final raw = await _readJson(MemoryPaths.metaJson(_agentId));
+    final raw = await _readJson(
+      MemoryPaths.metaJson(_agentId, peerClientId: _peerClientId),
+    );
     if (raw == null) {
       return const _MemoryMeta(
         nextId: 1,
@@ -198,7 +281,10 @@ class AgentMemoryStoreService {
   }
 
   Future<void> _saveMeta(_MemoryMeta meta) async {
-    await _writeJson(MemoryPaths.metaJson(_agentId), meta.toJson());
+    await _writeJson(
+      MemoryPaths.metaJson(_agentId, peerClientId: _peerClientId),
+      meta.toJson(),
+    );
   }
 
   Future<int> _allocId() async {
@@ -234,7 +320,7 @@ class AgentMemoryStoreService {
         if (id == null) continue;
         if (id > maxId) maxId = id;
         await _writeJson(
-          MemoryPaths.entryJson(_agentId, id),
+          MemoryPaths.entryJson(_agentId, id, peerClientId: _peerClientId),
           e.toJson(),
         );
       }
@@ -246,12 +332,12 @@ class AgentMemoryStoreService {
       await db.close();
       _log.info(
         'migrated ${rows.length} memories from SQLite → store',
-        tag: '$_tag[$_agentId]',
+        tag: '$_tag[$_scopeTag]',
       );
     } catch (e) {
       _log.warning(
         'sqlite migrate skipped/failed: $e',
-        tag: '$_tag[$_agentId]',
+        tag: '$_tag[$_scopeTag]',
       );
       // 仍标记，避免每次打开重试失败迁移阻塞
       await _saveMeta(meta.copyWith(migratedFromSqlite: true));
@@ -261,27 +347,37 @@ class AgentMemoryStoreService {
   Future<List<StoreEntry>> _listEntryFiles({int limit = 5000}) async {
     final deviceId = await _deviceId();
     final store = await _store();
-    final prefix = '${MemoryPaths.entriesDir(_agentId)}/';
-    final entries = await store.list(
-      deviceId,
-      StoreSpace.memory,
-      prefix: prefix,
-      limit: limit,
-    );
-    return [
-      for (final e in entries)
-        if (!e.isDir && e.path.endsWith('.json')) e,
-    ];
+    final prefix =
+        '${MemoryPaths.entriesDir(_agentId, peerClientId: _peerClientId)}/';
+    // legacy 先扫，cognition 后写覆盖同名 path
+    final byPath = <String, StoreEntry>{};
+    for (final space in StoreSpace.cognitionAliases.reversed) {
+      final entries = await store.list(
+        deviceId,
+        space,
+        prefix: prefix,
+        limit: limit,
+      );
+      for (final e in entries) {
+        if (!e.isDir && e.path.endsWith('.json')) {
+          byPath[e.path] = e;
+        }
+      }
+    }
+    return byPath.values.toList();
   }
 
   Future<AgentMemoryEntry?> _readEntry(int memoryId) async {
     final json =
-        await _readJson(MemoryPaths.entryJson(_agentId, memoryId));
+        await _readJson(
+          MemoryPaths.entryJson(_agentId, memoryId, peerClientId: _peerClientId),
+        );
     if (json == null) return null;
     return AgentMemoryEntry.fromJson(json);
   }
 
   Future<void> _exportMemoryMarkdown() async {
+    if (_isPeerScoped) return; // peer 子记忆不镜像到宿主 runtime/memory.md
     try {
       final entries = await getAllMemories(limit: 200);
       final buf = StringBuffer('# Memory export\n\n');
@@ -291,7 +387,15 @@ class AgentMemoryStoreService {
       await RuntimeMirrorService.instance
           .mirrorMemory(_agentId, buf.toString());
     } catch (e) {
-      _log.warning('memory.md export failed: $e', tag: '$_tag[$_agentId]');
+      _log.warning('memory.md export failed: $e', tag: '$_tag[$_scopeTag]');
+    }
+  }
+
+  void _afterMutation() {
+    if (!_isPeerScoped) {
+      RuntimeMirrorService.instance.scheduleMemoryMirror(_agentId);
+      // ignore: unawaited_futures
+      _exportMemoryMarkdown();
     }
   }
 
@@ -307,13 +411,11 @@ class AgentMemoryStoreService {
       updatedAt: now,
     );
     await _writeJson(
-      MemoryPaths.entryJson(_agentId, id),
+      MemoryPaths.entryJson(_agentId, id, peerClientId: _peerClientId),
       effective.toJson(),
     );
-    _log.info('Memory added: #$id', tag: '$_tag[$_agentId]');
-    RuntimeMirrorService.instance.scheduleMemoryMirror(_agentId);
-    // ignore: unawaited_futures
-    _exportMemoryMarkdown();
+    _log.info('Memory added: #$id', tag: '$_tag[$_scopeTag]');
+    _afterMutation();
     return id;
   }
 
@@ -332,7 +434,7 @@ class AgentMemoryStoreService {
       updatedAt: now,
     );
     await _writeJson(
-      MemoryPaths.entryJson(_agentId, id),
+      MemoryPaths.entryJson(_agentId, id, peerClientId: _peerClientId),
       effective.toJson(),
     );
     final meta = await _loadMeta();
@@ -378,47 +480,41 @@ class AgentMemoryStoreService {
     final now = DateTime.now().millisecondsSinceEpoch;
     final effective = entry.copyWith(updatedAt: now);
     await _writeJson(
-      MemoryPaths.entryJson(_agentId, id),
+      MemoryPaths.entryJson(_agentId, id, peerClientId: _peerClientId),
       effective.toJson(),
     );
-    RuntimeMirrorService.instance.scheduleMemoryMirror(_agentId);
-    // ignore: unawaited_futures
-    _exportMemoryMarkdown();
+    _afterMutation();
+  }
+
+  Future<void> _deletePathBothSpaces(String relPath) async {
+    final deviceId = await _deviceId();
+    final store = await _store();
+    for (final space in StoreSpace.cognitionAliases) {
+      try {
+        await store.delete(deviceId, space, relPath);
+      } on StoreException catch (e) {
+        if (e.code != StoreError.notFound) rethrow;
+      }
+    }
   }
 
   Future<void> deleteMemory(int memoryId) async {
     await _ensure();
-    final deviceId = await _deviceId();
-    final store = await _store();
-    try {
-      await store.delete(
-        deviceId,
-        StoreSpace.memory,
-        MemoryPaths.entryJson(_agentId, memoryId),
-      );
-    } on StoreException catch (e) {
-      if (e.code != StoreError.notFound) rethrow;
-    }
-    RuntimeMirrorService.instance.scheduleMemoryMirror(_agentId);
-    // ignore: unawaited_futures
-    _exportMemoryMarkdown();
+    await _deletePathBothSpaces(
+      MemoryPaths.entryJson(_agentId, memoryId, peerClientId: _peerClientId),
+    );
+    _afterMutation();
   }
 
   Future<void> clearAllMemories() async {
     await _ensure();
-    final deviceId = await _deviceId();
-    final store = await _store();
     final files = await _listEntryFiles();
     for (final f in files) {
-      try {
-        await store.delete(deviceId, StoreSpace.memory, f.path);
-      } catch (_) {}
+      await _deletePathBothSpaces(f.path);
     }
     final meta = await _loadMeta();
     await _saveMeta(meta.copyWith(nextId: 1));
-    RuntimeMirrorService.instance.scheduleMemoryMirror(_agentId);
-    // ignore: unawaited_futures
-    _exportMemoryMarkdown();
+    _afterMutation();
   }
 
   Future<List<AgentMemoryEntry>> queryByKeyword(
@@ -467,13 +563,13 @@ class AgentMemoryStoreService {
   }
 
   Future<void> close() async {
-    _instances.remove(_agentId);
+    _instances.remove(_instanceKey(_agentId, _peerClientId));
     _ensured = false;
   }
 
   // ── Soul ──────────────────────────────────────────────────────────────
 
-  /// 读取 Soul 权威（`memory/<agent>/soul.md`）。
+  /// 读取 Soul 权威（`cognition/<agent>/soul.md`）。
   Future<String?> getSoul() async {
     await _ensure();
     final text = await _readText(MemoryPaths.soulMd(_agentId));
@@ -540,23 +636,23 @@ class AgentMemoryStoreService {
     return null;
   }
 
-  /// 删除该 Agent 在 memory 空间下的整棵目录（含 meta + entries + soul）。
+  /// 删除该作用域在 cognition（及 legacy memory）下的目录。
+  /// 本机根：整棵 `<agentId>/`（含 soul）；peer 子树：仅 `…/peers/<peerId>/`。
   Future<void> deleteAll() async {
     await close();
     try {
-      final deviceId = await _deviceId();
-      final store = await _store();
-      final root = MemoryPaths.agentRoot(_agentId);
-      try {
-        await store.delete(deviceId, StoreSpace.memory, root);
-      } on StoreException catch (e) {
-        if (e.code != StoreError.notFound) rethrow;
+      final root = MemoryPaths.scopedRoot(
+        _agentId,
+        peerClientId: _peerClientId,
+      );
+      await _deletePathBothSpaces(root);
+      if (!_isPeerScoped) {
+        _legacySpaceMigrated.remove(_agentId);
+        try {
+          await AgentMemoryDbService.forAgent(_agentId).deleteDatabase();
+        } catch (_) {}
       }
-      // 清理遗留 SQLite
-      try {
-        await AgentMemoryDbService.forAgent(_agentId).deleteDatabase();
-      } catch (_) {}
-      _log.info('Memory store deleted for $_agentId', tag: _tag);
+      _log.info('Memory store deleted for $_scopeTag', tag: _tag);
     } catch (e) {
       _log.error('Failed to delete memory store', tag: _tag, error: e);
     }
