@@ -4,6 +4,7 @@ import '../services/logger_service.dart';
 import 'artifact_service.dart';
 import 'device_identity.dart';
 import 'runtime_paths.dart';
+import 'scope_card.dart';
 import 'store_uri_reader.dart';
 
 /// ContextBundle：runtime 上下文清单（docs/CLIENT_PROFILES.md）。
@@ -71,7 +72,7 @@ class ContextBundle {
         },
       };
 
-  /// 注入用的全部 store://（soul/memory/session/workspace）。
+  /// 注入用的 store://（默认 omitPersona：群不收个人 cognition）。
   List<String> collectUris({
     String? preferChannelId,
     bool omitPersona = false,
@@ -93,7 +94,7 @@ class ContextBundle {
   }
 }
 
-/// 读写 ContextBundle，并生成多 agent 注入片段。
+/// 读写 ContextBundle，并生成多 agent 注入片段（Scope Card）。
 class ContextBundleService {
   ContextBundleService._();
   static final ContextBundleService instance = ContextBundleService._();
@@ -130,78 +131,67 @@ class ContextBundleService {
     }
   }
 
-  /// 组装 `## 可用上下文` 注入块（URI 列表，不贴全文）。
-  String buildContextSection({
-    required String ownerId,
-    String? channelId,
-    required List<String> uris,
-    bool isGroup = false,
-  }) {
-    final unique = uris.where((u) => u.isNotEmpty).toSet().toList()..sort();
-    final buf = StringBuffer('## 可用上下文（ContextBundle）\n');
-    buf.writeln('owner: `$ownerId`');
-    if (channelId != null && channelId.isNotEmpty) {
-      buf.writeln('channel: `$channelId`');
-    }
-    if (isGroup) {
-      buf.writeln(
-        '这是**本群储物袋**（不是你个人的 runtime/<你的agentId>/）。'
-        '`shepaw store write` 已绑定本群，产物会进该 owner。'
-        '浏览：`shepaw store list --uri <runtime根> --depth 1`；'
-        '读取：`shepaw store read --uri …`。本群无 soul/memory 文件。',
-      );
-    } else {
-      buf.writeln(
-        '先 `shepaw store read` 拉取 **context.manifest.json**，再按需读取其中的 soul/memory/session/workspace URI；勿假设已内嵌全文。',
-      );
-    }
-    if (unique.isEmpty) {
-      buf.writeln('- （暂无 URI；可先 list `runtime/$ownerId/`）');
-    } else {
-      for (final u in unique) {
-        buf.writeln('- `$u`');
-      }
-    }
-    return buf.toString();
-  }
-
-  /// 读取本机 bundle 并生成注入段。
+  /// 组装本轮 Scope Card（volatile 为主；含 manifest / runtime 根）。
   ///
-  /// 默认只注入 **manifest URI**（瘦身）；[expandUris]=true 时附带 collectUris。
-  Future<String> buildLocalContextSection({
+  /// 稳定说明书应已在 system prompt；此处避免再贴完整 stable，只给本轮 URI。
+  /// 若调用方需要单段完整卡（无 system 卡时），设 [includeStable]=true。
+  Future<ScopeCard> buildLocalScopeCard({
     required String ownerId,
     String? channelId,
     bool expandUris = false,
     bool isGroup = false,
   }) async {
     final deviceId = await DeviceIdentity.deviceId();
-    final manifestUri = RuntimePaths.uri(
-      deviceId: deviceId,
-      relPath: RuntimePaths.contextManifest(ownerId),
-    );
-    final runtimeRootUri = RuntimePaths.uri(
-      deviceId: deviceId,
-      relPath: RuntimePaths.runtimeRoot(ownerId),
-    );
-    final uris = <String>[manifestUri, runtimeRootUri];
+    final extras = <String>[];
     if (expandUris) {
       final bundle = await loadLocal(ownerId);
       if (bundle != null) {
-        uris.addAll(bundle.collectUris(
+        extras.addAll(bundle.collectUris(
           preferChannelId: channelId,
           omitPersona: isGroup,
         ));
       }
     }
-    return buildContextSection(
-      ownerId: ownerId,
+    if (isGroup) {
+      return ScopeCard.forGroup(
+        groupId: ownerId,
+        deviceId: deviceId,
+        channelId: channelId,
+        extraUris: ScopeCard.dedupeUris(extras),
+      );
+    }
+    return ScopeCard.forAgentDm(
+      agentId: ownerId,
+      deviceId: deviceId,
       channelId: channelId,
-      uris: uris,
-      isGroup: isGroup,
-    );
+    ).copyWith(extraUris: ScopeCard.dedupeUris(extras));
   }
 
-  /// 在任务文本后追加产物引用 + ContextBundle（默认只挂 manifest URI）。
+  /// @Deprecated 兼容旧测试名；返回 volatile（或完整）Markdown。
+  Future<String> buildLocalContextSection({
+    required String ownerId,
+    String? channelId,
+    bool expandUris = false,
+    bool isGroup = false,
+    bool includeStable = false,
+  }) async {
+    final card = await buildLocalScopeCard(
+      ownerId: ownerId,
+      channelId: channelId,
+      expandUris: expandUris,
+      isGroup: isGroup,
+    );
+    if (includeStable) return card.toMarkdown();
+    final vol = card.toVolatileMarkdown();
+    if (vol.isNotEmpty) return vol;
+    // 无 URI 时仍给短提示，避免空白
+    return includeStable
+        ? card.toStableMarkdown()
+        : '${card.toStableMarkdown()}\n\n'
+            '（本轮暂无额外 URI；可 list runtime 根）';
+  }
+
+  /// 在任务文本后追加产物引用 + Scope Card 本轮段。
   Future<String> wrapWithContextBundle(
     String text, {
     required String ownerId,
@@ -219,6 +209,7 @@ class ContextBundleService {
         expandUris: expandUris,
         isGroup: isGroup,
       );
+      if (withArts.contains('## 当前储物袋作用域')) return withArts;
       if (withArts.contains('## 可用上下文')) return withArts;
       return '$withArts\n\n$section';
     } catch (e) {

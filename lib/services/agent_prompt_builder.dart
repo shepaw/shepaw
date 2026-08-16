@@ -1,14 +1,16 @@
+import '../clis/shepaw/os/os_tool_registry.dart';
 import '../models/prompt_stack_config.dart';
 import '../models/remote_agent.dart';
+import '../storage/device_identity.dart';
+import '../storage/scope_card.dart';
 import 'agent_memory_store_service.dart';
 import 'agent_soul_service.dart';
 import 'cognition_service.dart';
 import 'logger_service.dart';
-import 'she_service.dart';
-import 'ui_component_registry.dart';
-import '../clis/shepaw/os/os_tool_registry.dart';
-import 'skill_registry.dart';
 import 'model_registry.dart';
+import 'she_service.dart';
+import 'skill_registry.dart';
+import 'ui_component_registry.dart';
 
 /// Builds the complete system prompt for any Agent — She or others — using a
 /// unified, configurable layering approach.
@@ -115,10 +117,18 @@ class AgentPromptBuilder {
       parts.add(SheService.buildShepawGuidanceBlock(agent));
     }
 
-    // ③'' DM workflow playbook — She DM only (skip when ephemeral room/group
-    // context is provided; those prompts already carry delegation rules).
+    // Ephemeral room/group context — also gates Scope Card / DM playbooks.
     final hasEphemeral =
         ephemeralContext != null && ephemeralContext!.trim().isNotEmpty;
+
+    // Scope Card（stable）— 群 ephemeral 由 GroupPromptBuilder 注入，此处跳过。
+    if (!hasEphemeral) {
+      final scope = await _buildStableScopeCard(config);
+      if (scope.isNotEmpty) parts.add(scope);
+    }
+
+    // ③'' DM workflow playbook — She DM only (skip when ephemeral room/group
+    // context is provided; those prompts already carry delegation rules).
     if (agent.isShe && config.she.includeMetaCognition && !hasEphemeral) {
       parts.add(SheService.buildDmWorkflowPlaybookBlock());
       parts.add(SheService.buildDmGroupManagementPlaybookBlock());
@@ -243,6 +253,47 @@ class AgentPromptBuilder {
 
   // ── Private helpers ────────────────────────────────────────────────────────
 
+  /// Stable Scope Card for system prompt（不含本轮 URI）。
+  Future<String> _buildStableScopeCard(PromptStackConfig config) async {
+    try {
+      final deviceId = await DeviceIdentity.deviceId();
+      final soulInjected = config.includeDescription
+          ? ScopeInjectLevel.full
+          : ScopeInjectLevel.none;
+      final memInjected = !config.lightweightMode &&
+              config.agent.includeAgentMemory
+          ? ScopeInjectLevel.topN
+          : ScopeInjectLevel.none;
+      final injected = ScopeCardInjected(
+        soul: soulInjected,
+        memoryEntries: memInjected,
+      );
+      if (agent.isPeerAgent) {
+        final peerId = agent.sourcePeerId?.trim();
+        if (peerId != null && peerId.isNotEmpty) {
+          return ScopeCard.forPeerAgent(
+            agentId: agent.id,
+            deviceId: deviceId,
+            peerClientId: peerId,
+            injected: injected,
+          ).toStableMarkdown();
+        }
+      }
+      return ScopeCard.forAgentDm(
+        agentId: agent.id,
+        deviceId: deviceId,
+        injected: injected,
+        writeMemory: !agent.isPeerAgent,
+      ).toStableMarkdown();
+    } catch (e) {
+      LoggerService().warning(
+        'Scope Card skipped: $e',
+        tag: 'PromptBuilder',
+      );
+      return '';
+    }
+  }
+
   /// A one-line identity declaration so the model knows its own name.
   /// This is intentionally minimal — She's full core identity comes in ②.
   String _buildIdentityBlock() {
@@ -354,7 +405,12 @@ ${lines.join('\n')}''';
           m.memoryKeywords.isNotEmpty ? ' [${m.memoryKeywords.join(', ')}]' : '';
       buffer.writeln('- [$timeStr]$keywords ${m.memoryContent}');
     }
-    buffer.write('\nWhen you learn new things about the user or have new observations, use `shepaw context agents.memory-write --id ${agent.id}` to record them.');
+    buffer.write(
+      agent.isPeerAgent
+          ? '\nPeer session: do not call memory-write; memory is host-managed.'
+          : '\nWhen you learn new things about the user or have new observations, '
+              'use `shepaw context agents.memory-write --id ${agent.id}` to record them.',
+    );
     return buffer.toString();
   }
 

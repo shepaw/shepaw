@@ -309,6 +309,8 @@ class GroupAgentExecutor {
       failedAgentNames: failedAgentNames,
       isFlowMode: isFlowMode,
       isClosingSummary: isClosingSummary,
+      groupId: channelId,
+      channelId: channelId,
     );
 
     // Build chat history: pack the entire group conversation into a single

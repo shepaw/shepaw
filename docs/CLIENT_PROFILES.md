@@ -53,6 +53,15 @@
 
 URI：`store://<space>/<device_id>/<relpath>`。
 
+### Scope Card（Agent 感知）
+
+每轮 LLM 请求注入一张 **当前储物袋作用域** 卡（`schema_version: 1`）：
+
+- **stable**（system / ACP 会话首包）：owner、spaces、commands、rules  
+- **volatile**（任务消息）：本轮 URI、已注入摘要  
+
+写产物不要传 `agent_id`/`owner`（`ChatAgentScope` 隐式绑定）。群卡不含个人 `cognition/`。ACP bridge 可通过 `SHEPAW_SCOPE_CARD` 透传宿主卡，避免双份说明书。
+
 ### ACL 摘要
 
 | space | visibility | 写 |

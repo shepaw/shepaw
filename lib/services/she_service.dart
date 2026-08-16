@@ -435,13 +435,10 @@ class SheService {
   /// Section ①: She's core identity (immutable).
   String buildCoreIdentityBlock() => _coreIdentityPrompt();
 
-  /// Shared store preference (She + non-She guidance) — keep short.
-  /// Detailed store:// read instructions are per-message `[implicit]` hints.
+  /// Shared store preference (She + non-She) — details live in Scope Card.
   static const String _artifactStorePreferenceSection = '''
-### Store (prefer store write; read via per-message hints)
-
-- **Produce**: prefer `shepaw store write --filename <name> --content "..."`; cite returned `store://` as-is — never invent URIs. Use `os.file.write` only when the user names an OS path.
-- **Read**: when a message includes `store://` or an `[implicit]` store block, follow that message's instructions (`shepaw store read --uri …`). Do not put store-read procedures in your own memory of the system prompt.''';
+### Store
+See **当前储物袋作用域** (Scope Card) for read/write commands. Do not invent `store://` URIs; do not pass `agent_id`/`owner` on `store write`.''';
 
   /// Meta-cognition block: tells She what capabilities she has and how to
   /// discover them on demand via the shepaw CLI.
@@ -482,12 +479,8 @@ When the user asks about a **past** image/file/audio ("这张图说了什么", "
 - `shepaw tools web.search --query "..."` — search the internet
 - `shepaw tools web.fetch --url "..."` — fetch a webpage
 
-### Store
-- `shepaw store read --uri store://…` — read pouch files / artifacts (any `store://` link)
-- `shepaw store write --filename … --content "…"` — write shareable artifacts
-
 ### OS (local system)
-- Prefer store for produced artifacts; follow per-message `[implicit]` for `store://`. Use OS file tools only for real OS paths the user named.
+- Prefer store for produced artifacts. Use OS file tools only for real OS paths the user named.
 - `shepaw os --help` — list all available OS tools
 - `shepaw os file.{read,write,delete,list}` / `os command.exec` / `os clipboard.{read,write}`
 
@@ -657,12 +650,8 @@ $_artifactStorePreferenceSection
 - `shepaw tools web.search --query "..."` — search the internet
 - `shepaw tools web.fetch --url "..."` — fetch a webpage
 
-### Store
-- `shepaw store read --uri store://…` — read pouch files / artifacts (any `store://` link)
-- `shepaw store write --filename … --content "…"` — write shareable artifacts
-
 ### OS (local system)
-- Prefer store for produced artifacts; follow per-message `[implicit]` for `store://`. Use OS file tools only for real OS paths the user named.
+- Prefer store for produced artifacts. Use OS file tools only for real OS paths the user named.
 - `shepaw os --help` — list all available OS tools
 - `shepaw os file.{read,write,delete,list}` / `os command.exec` / `os clipboard.{read,write}`
 

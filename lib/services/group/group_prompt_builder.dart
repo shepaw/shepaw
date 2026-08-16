@@ -2,6 +2,8 @@ import '../../models/remote_agent.dart';
 import '../../models/channel.dart';
 import '../../models/message.dart';
 import '../../models/model_routing_config.dart';
+import '../../storage/device_identity.dart';
+import '../../storage/scope_card.dart';
 import '../agent_soul_service.dart';
 
 /// Builds system prompts for group chat agents (admin and member roles).
@@ -25,6 +27,8 @@ class GroupPromptBuilder {
     List<String> failedAgentNames = const [],
     bool isFlowMode = false,
     bool isClosingSummary = false,
+    String? groupId,
+    String? channelId,
   }) async {
     final soulById = <String, String>{};
     for (final a in allAgents) {
@@ -61,6 +65,14 @@ class GroupPromptBuilder {
     final currentMember = channelMembers.where((m) => m.id == currentAgent.id).firstOrNull;
     final currentGroupBio = currentMember?.groupBio;
     final agentIdentity = currentGroupBio ?? (agentSystemPrompt.isNotEmpty ? agentSystemPrompt : (currentAgent.bio ?? ''));
+
+    final scopeOwner = (groupId != null && groupId.isNotEmpty)
+        ? groupId
+        : groupName;
+    final groupScopeSection = await _buildGroupScopeCardSection(
+      groupId: scopeOwner,
+      channelId: channelId,
+    );
 
     if (isAdmin) {
       final customPromptSection = (customSystemPrompt != null && customSystemPrompt.isNotEmpty)
@@ -140,7 +152,7 @@ $dispatchMemberNameSection
 【行为准则】
 - 直接回复内容即可，不要在回复前加上你的名字前缀（如"[${currentAgent.name}]: "），系统会自动显示你的身份
 - 当子Agent在执行任务时需要确认或选择，系统会自动询问你来代替用户做决策。请根据上下文做出合理判断，如果不确定请回复 [ASK_USER]
-- **产物优先写入 store**：需要持久化/可分享的文件产出时，优先用 `shepaw store write`，在回复中原样引用返回的 `store://` URI；不要默认写 `/tmp`。读 `store://` 时遵循该消息的 `[implicit]` 提示（`shepaw store read`），勿用 `os.file.read`
+- **产物优先写入 store**：需要持久化/可分享的文件产出时，优先用 `shepaw store write`，在回复中原样引用返回的 `store://` URI；不要默认写 `/tmp`；**不要**传 agent_id/owner。读法见作用域卡片，勿用 `os.file.read`
 
 【循环编排】
 - 委派成员后，系统会在成员完成后再次调用你
@@ -166,7 +178,9 @@ $dispatchMemberNameSection
 - **警惕重复失败**：如果同一个任务已经被委派给成员执行了 2 次以上仍未成功，必须停下来重新评估
 - **换思路而非重试**：当某个方案反复失败时，应该考虑：换一个成员来处理、换一种方法或策略、简化任务目标、或者向用户说明困难并请求指导
 - **及时止损**：如果经过多轮尝试后问题仍无法解决，应诚实地向用户汇报当前情况和遇到的困难，而不是继续无意义的循环
-- **关注进展而非次数**：每轮审视结果时，判断是否有实质性进展。如果连续多轮没有任何进展，果断终止并反馈$attachmentSection$loopSummarizeSection$planningSection$groupMgmtSection${_buildGroupStoreSection()}''';
+- **关注进展而非次数**：每轮审视结果时，判断是否有实质性进展。如果连续多轮没有任何进展，果断终止并反馈$attachmentSection$loopSummarizeSection$planningSection$groupMgmtSection
+
+$groupScopeSection''';
     }
 
     final mentionNotice = isMentioned
@@ -201,20 +215,32 @@ $memberList
 6. 直接回复内容即可，不要在回复前加上你的名字前缀（如"[${currentAgent.name}]: "），系统会自动显示你的身份
 7. 如果你发现自己在重复执行相同的任务且反复失败，应主动换一种方法或策略，而不是用同样的方式继续重试。如果确实无法完成，请如实说明遇到的困难
 8. 如果任务执行过程中需要用户确认信息或做出选择，请用**文字描述**所有选项和所需信息，不要调用 form、action_confirmation、single_select、multi_select 等 UI 工具。管理员会读取你的描述并做出决策。
-9. **产物优先写入 store**：需要持久化/可分享的文件产出时，**必须**调用 `shepaw store write --filename <名> --content "..."`（可选 `--task` / `--desc`），并在回复中**原样**引用返回的 `[filename](store://...)`；禁止编造 URI。读 `store://` 时遵循该消息的 `[implicit]` 提示。仅用户明确指定 OS 路径时才用 `os.file.write`
-10. 在每次回复的**最后一行**，必须输出任务状态标注，格式为：\n   - 任务已完成（且已写入 store 并引用 URI，或确实无文件产出）：`[TASK_STATUS: done]`\n   - 任务未完成或需要更多信息：`[TASK_STATUS: pending] 原因：<简要说明>`\n管理员会根据此标注决定下一步安排。$mentionNotice$allMembersMentionSection${_buildGroupStoreSection()}''';
+9. **产物优先写入 store**：需要持久化/可分享的文件产出时，**必须**调用 `shepaw store write --filename <名> --content "..."`（可选 `--task` / `--desc`），并在回复中**原样**引用返回的 `[filename](store://...)`；禁止编造 URI；**不要**传 agent_id/owner。读法见下方作用域卡片。仅用户明确指定 OS 路径时才用 `os.file.write`
+10. 在每次回复的**最后一行**，必须输出任务状态标注，格式为：\n   - 任务已完成（且已写入 store 并引用 URI，或确实无文件产出）：`[TASK_STATUS: done]`\n   - 任务未完成或需要更多信息：`[TASK_STATUS: pending] 原因：<简要说明>`\n管理员会根据此标注决定下一步安排。$mentionNotice$allMembersMentionSection
+
+$groupScopeSection''';
   }
 
-  /// Group pouch is shared; members must not write to their personal runtime.
-  String _buildGroupStoreSection() => '''
-
-【本群储物袋】
-本群的产物和附件在**群 runtime**，不是你个人的储物袋。
-- **写入**：直接 `shepaw store write --filename <名> --content "..."`（系统已绑定本群，不要传你自己的 agent id 或个人 channel）
-- **浏览**：对任务里 ContextBundle 给出的群 runtime 根目录执行 `shepaw store list --uri <uri> --depth 1`
-- **读取**：`shepaw store read --uri <store://…>`，URI 必须来自 write 返回值、list 结果或消息里的链接；禁止编造
-- **禁止**把群产出写到 `runtime/<你的agentId>/` 或 `cognition/<你的agentId>/`
-- 本群没有 soul.md；你在本群的岗位看【你的身份】/群职责，人格在你自己的 Agent 储物袋''';
+  /// 群 Scope Card（替换旧「本群储物袋」段，不叠加）。
+  Future<String> _buildGroupScopeCardSection({
+    required String groupId,
+    String? channelId,
+  }) async {
+    try {
+      final deviceId = await DeviceIdentity.deviceId();
+      return ScopeCard.forGroup(
+        groupId: groupId,
+        deviceId: deviceId,
+        channelId: channelId,
+      ).toStableMarkdown();
+    } catch (_) {
+      return ScopeCard.forGroup(
+        groupId: groupId,
+        deviceId: 'unknown',
+        channelId: channelId,
+      ).toStableMarkdown();
+    }
+  }
 
   /// Shepaw CLI guidance for group admin — historical attachments are metadata only.
   String _buildAdminAttachmentSection() => '''

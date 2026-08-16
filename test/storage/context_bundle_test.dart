@@ -36,7 +36,7 @@ void main() {
     expect(uris.any((u) => u.contains('ch1')), isTrue);
   });
 
-  test('wrapWithContextBundle 追加可用上下文段', () async {
+  test('wrapWithContextBundle 追加 Scope Card 本轮段', () async {
     final mirror = RuntimeMirrorService.instance;
     mirror.debounce = Duration.zero;
     await mirror.ensureRuntimeScaffold('agent-bundle');
@@ -47,7 +47,7 @@ void main() {
       channelId: 'ch-1',
     );
     expect(out, contains('## 可用产物'));
-    expect(out, contains('## 可用上下文'));
+    expect(out, contains('当前储物袋作用域'));
     expect(out, contains('agent-bundle'));
 
     final deviceId = await DeviceIdentity.deviceId();
@@ -63,16 +63,16 @@ void main() {
     expect(json['owner_id'], 'agent-bundle');
   });
 
-  test('wrapWithContextBundle 群上下文不含 soul 说明', () async {
+  test('wrapWithContextBundle 群上下文不含个人 cognition 指引', () async {
     final out = await ContextBundleService.instance.wrapWithContextBundle(
       'do group work',
       ownerId: 'group-bundle',
       channelId: 'ch-g',
       isGroup: true,
     );
-    expect(out, contains('本群储物袋'));
-    expect(out, contains('不是你个人的 runtime'));
-    expect(out, contains('store list'));
+    expect(out, contains('当前储物袋作用域'));
+    expect(out, contains('group-bundle'));
+    expect(out, contains('非个人 cognition'));
     expect(out, isNot(contains('soul/memory/session/workspace')));
   });
 }
