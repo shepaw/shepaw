@@ -66,14 +66,20 @@ class RestoreService {
   }) async {
     // 1. 当前状态安全快照（§5.3：恢复前自动留存本机安全快照）
     // 优先当前主密码缓存，避免「用旧密码恢复」污染自动快照密钥。
+    // 跳过 commit 时 GFS：恢复源快照若与本快照同日，会被「同日只留最新」
+    // 清掉——用户刚选择用于恢复的快照不应在恢复过程中消失；统一交给每日
+    // pruneGfs 按 manifest 逻辑创建时间清理。
     try {
       final cached = safetyPasswordHash ??
           await SnapshotCrypto.cachedPasswordHash();
       if (cached != null) {
-        await SnapshotService.instance.createSnapshot(passwordHash: cached);
+        await SnapshotService.instance.createSnapshot(
+            passwordHash: cached, applyCommitRetention: false);
       } else {
         await SnapshotService.instance.createSnapshot(
-            password: password, cachePassword: false);
+            password: password,
+            cachePassword: false,
+            applyCommitRetention: false);
       }
     } catch (e) {
       _log.warning('safety snapshot failed, abort restore: $e', tag: _tag);

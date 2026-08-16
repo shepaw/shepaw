@@ -193,12 +193,16 @@ class SnapshotService {
   /// 密钥来源二选一：[password]（慢路径）或 [passwordHash]（快路径，
   /// 定期快照用缓存的 H）。[cachePassword] 为 true 且走 password 慢路径时，
   /// 顺带刷新自动快照缓存；恢复安全快照等场景应传 false，避免旧密码污染缓存。
+  /// [applyCommitRetention] 为 false 时跳过本次 commit 的 GFS 清理——恢复前的
+  /// 安全快照不应顺手删掉「用户刚选择用于恢复」的那份同日快照；后续清理由
+  /// 每日 [ScheduledSnapshotService.pruneGfs] 按逻辑创建时间统一执行。
   /// 离开本机前必须已加密（§5.2）；最终三文件经 store staging 转正（§5.1/§6.1）。
   /// 失败抛异常。
   Future<SnapshotInfo> createSnapshot(
       {String? password,
       Uint8List? passwordHash,
-      bool cachePassword = true}) async {
+      bool cachePassword = true,
+      bool applyCommitRetention = true}) async {
     final h = passwordHash ??
         (password != null
             ? await SnapshotCrypto.hashPassword(password)
@@ -265,6 +269,7 @@ class SnapshotService {
       await _commitSnapshotFiles(
         deviceId: deviceId,
         snapshotId: finalId,
+        applyRetention: applyCommitRetention,
         files: {
           SnapshotManifest.fileDbEnc: dbEnc,
           SnapshotManifest.fileIdentityEnc: identityEnc,
@@ -308,6 +313,7 @@ class SnapshotService {
     required String deviceId,
     required String snapshotId,
     required Map<String, Uint8List> files,
+    bool applyRetention = true,
   }) async {
     final store = await _openLocalStore();
     const space = 'backups';
@@ -336,9 +342,11 @@ class SnapshotService {
       deviceId,
       space,
       uploadIds,
-      retention: const GfsRetentionPolicy(
-        excludePrefix: 'reprotect-',
-      ).toJson(),
+      retention: applyRetention
+          ? const GfsRetentionPolicy(
+              excludePrefix: 'reprotect-',
+            ).toJson()
+          : null,
     );
     if (failed.isNotEmpty) {
       for (final f in committed) {

@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:path/path.dart' as p;
@@ -73,7 +74,7 @@ class CommitRetention {
         :final monthly,
       ) =>
         selectGfs(
-          [for (final e in filtered) (e.id, e.mtimeMs)],
+          [for (final e in filtered) (e.id, e.createdMs)],
           dailyWindow: daily,
           weeklyWindow: weekly,
           monthlyWindow: monthly,
@@ -142,9 +143,12 @@ final class GfsRetentionPolicy extends CommitRetentionPolicy {
 }
 
 class _TopEntry {
-  _TopEntry(this.id, this.mtimeMs);
+  _TopEntry(this.id, this.createdMs);
   final String id;
-  final int mtimeMs;
+
+  /// 快照年龄基准：优先 manifest.created_at（逻辑创建时间，与
+  /// [ScheduledSnapshotService.pruneGfs] 一致）；无 manifest 时回退目录 mtime。
+  final int createdMs;
 }
 
 Future<List<_TopEntry>> _listTopLevel(
@@ -156,11 +160,29 @@ Future<List<_TopEntry>> _listTopLevel(
     if (entity is! Directory) continue;
     final id = p.basename(entity.path);
     if (id.startsWith('.')) continue;
+    // 目录 mtime 会被同步 / 再保护 / 恢复等操作触碰，不代表快照真实年龄。
+    final logical = await _manifestCreatedAtMs(entity);
     final stat = await entity.stat();
-    out.add(_TopEntry(id, stat.modified.millisecondsSinceEpoch));
+    out.add(
+        _TopEntry(id, logical ?? stat.modified.millisecondsSinceEpoch));
   }
-  out.sort((a, b) => b.mtimeMs.compareTo(a.mtimeMs));
+  out.sort((a, b) => b.createdMs.compareTo(a.createdMs));
   return out;
+}
+
+/// 读取顶层目录内 manifest.json 的 `created_at`；不存在或不可读返回 null。
+Future<int?> _manifestCreatedAtMs(Directory dir) async {
+  try {
+    final f = File(p.join(dir.path, 'manifest.json'));
+    if (!await f.exists()) return null;
+    final json = jsonDecode(await f.readAsString());
+    if (json is Map && json['created_at'] is num) {
+      return (json['created_at'] as num).toInt();
+    }
+  } catch (_) {
+    // 回退由调用方处理
+  }
+  return null;
 }
 
 List<String> _selectKeepLast(List<_TopEntry> newestFirst, int keep) {
