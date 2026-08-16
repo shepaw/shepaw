@@ -29,7 +29,11 @@ import '../widgets/storage/storage_space_hub.dart';
 import '../utils/layout_utils.dart';
 import '../services/native_window_service.dart';
 import '../services/chat_navigation_service.dart';
+import '../services/chat_service.dart';
+import '../services/local_database_service.dart';
+import '../services/she_service.dart';
 import '../services/update_service.dart';
+import '../service_locator.dart' show getIt;
 import '../widgets/update_settings_badge.dart';
 
 /// Desktop split-panel layout similar to WeChat desktop.
@@ -365,6 +369,32 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
       _rightPanel = _RightPanelView.empty;
       _navGeneration++;
     });
+  }
+
+  /// Open the built-in She (惜宝) DM from the sidebar brand icon.
+  Future<void> _openSheChat() async {
+    final l10n = AppLocalizations.of(context);
+    final db = getIt<LocalDatabaseService>();
+    final chatService = getIt<ChatService>();
+    final agent = await db.getRemoteAgentById(SheService.sheId);
+    if (!mounted) return;
+
+    const userId = 'user';
+    final activeChannelId =
+        await chatService.getLatestActiveChannelId(userId, SheService.sheId);
+    final channelId = activeChannelId ??
+        chatService.generateChannelId(userId, SheService.sheId);
+    await db.touchChannelUpdatedAt(channelId);
+    if (!mounted) return;
+
+    _onConversationSelected(ConversationSelection(
+      agentId: SheService.sheId,
+      agentName: agent != null
+          ? SheService.resolveDisplayName(agent.name, l10n.she_name)
+          : l10n.she_name,
+      agentAvatar: agent?.avatar ?? SheService.sheAvatar,
+      channelId: channelId,
+    ));
   }
 
   void _showContacts() {
@@ -827,14 +857,23 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
           return Column(
             children: [
               const SizedBox(height: 12),
-              Padding(
-                padding: const EdgeInsets.symmetric(vertical: 8),
-                child: ClipRRect(
+              Tooltip(
+                message: l10n.she_name,
+                preferBelow: false,
+                waitDuration: const Duration(milliseconds: 400),
+                child: InkWell(
+                  onTap: _openSheChat,
                   borderRadius: BorderRadius.circular(10),
-                  child: Image.asset(
-                    'assets/images/shepaw_icon.png',
-                    width: 36,
-                    height: 36,
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 8),
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(10),
+                      child: Image.asset(
+                        'assets/images/shepaw_icon.png',
+                        width: 36,
+                        height: 36,
+                      ),
+                    ),
                   ),
                 ),
               ),
