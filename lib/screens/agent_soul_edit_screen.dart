@@ -10,89 +10,171 @@ import '../services/agent_soul_service.dart';
 import '../widgets/chat/soul_panel.dart';
 
 /// Full-screen Soul editor for agent edit flow.
+///
+/// [prefetchedSoul] / [prefetchedEditable]：详情页已拉到的结果，可跳过二次中继。
+/// [prefetchFailed]：详情页已确认拉取失败时直接展示错误（仍可重试）。
 class AgentSoulEditScreen extends StatefulWidget {
   final RemoteAgent agent;
+  final String? prefetchedSoul;
+  final bool? prefetchedEditable;
+  final bool prefetchFailed;
 
-  const AgentSoulEditScreen({super.key, required this.agent});
+  const AgentSoulEditScreen({
+    super.key,
+    required this.agent,
+    this.prefetchedSoul,
+    this.prefetchedEditable,
+    this.prefetchFailed = false,
+  });
 
   @override
   State<AgentSoulEditScreen> createState() => _AgentSoulEditScreenState();
 }
 
 class _AgentSoulEditScreenState extends State<AgentSoulEditScreen> {
+  static const _uiLoadTimeout = Duration(seconds: 12);
+
   bool _loading = true;
-  bool _startedLoad = false;
   String _initialSoul = '';
   bool _readOnly = false;
   String? _loadError;
   bool _soulMissing = false;
+  Timer? _uiTimeout;
+  /// 重试时忽略详情页预取，强制重新中继。
+  bool _usePrefetch = true;
 
   @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    // AppLocalizations.of(context) needs InheritedWidget; cannot run in initState.
-    if (_startedLoad) return;
-    _startedLoad = true;
-    unawaited(_load());
+  void initState() {
+    super.initState();
+    // 页面级硬超时：即使中继 Future 异常卡住，也必须结束转圈。
+    _uiTimeout = Timer(_uiLoadTimeout, () {
+      if (!mounted || !_loading) return;
+      final l10n = AppLocalizations.of(context);
+      setState(() {
+        _loadError = l10n.chat_soulFetchFailed;
+        _loading = false;
+      });
+    });
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) unawaited(_load());
+    });
+  }
+
+  @override
+  void dispose() {
+    _uiTimeout?.cancel();
+    super.dispose();
+  }
+
+  void _finishLoad({
+    required String soul,
+    required bool readOnly,
+    String? error,
+  }) {
+    if (!mounted) return;
+    _uiTimeout?.cancel();
+    setState(() {
+      if (error != null) {
+        _loadError = error;
+        _loading = false;
+        return;
+      }
+      _initialSoul = soul;
+      _readOnly = readOnly;
+      _soulMissing = soul.trim().isEmpty;
+      _loadError = null;
+      _loading = false;
+    });
   }
 
   Future<void> _load() async {
     final l10n = AppLocalizations.of(context);
     final agent = widget.agent;
-    var readOnly = false;
-    var soul = '';
-    var missing = false;
 
     try {
+      // 详情页已有确定结果时，不再二次中继（editable=false 也不影响查看）。
+      if (_usePrefetch && widget.prefetchFailed) {
+        _finishLoad(soul: '', readOnly: true, error: l10n.chat_soulFetchFailed);
+        return;
+      }
+      if (_usePrefetch && widget.prefetchedSoul != null) {
+        final editable = widget.prefetchedEditable ?? !agent.isPeerAgent;
+        _finishLoad(
+          soul: widget.prefetchedSoul!,
+          readOnly: agent.isPeerAgent ? !editable : false,
+        );
+        return;
+      }
+
       if (agent.isPeerAgent) {
         final peerId = agent.sourcePeerId;
         final remoteId = agent.remoteAgentId;
         if (peerId == null ||
             remoteId == null ||
             !PeerConnectionManager.instance.connectedPeerIds.contains(peerId)) {
-          if (mounted) {
-            setState(() {
-              _loadError = l10n.agentDetail_peerOffline;
-              _loading = false;
-            });
-          }
+          _finishLoad(
+            soul: '',
+            readOnly: true,
+            error: l10n.agentDetail_peerOffline,
+          );
           return;
         }
-        // 单次拉取：正文 + 可编辑标记，避免再调 getSoul 触发第二次 peer req。
-        final info = await PeerAgentClientService.instance.fetchSoulInfo(
-          peerId: peerId,
-          remoteAgentId: remoteId,
-        );
+        // editable 仅决定只读展示；allowPeerSoulEdit=false 时仍应返回正文。
+        final info = await PeerAgentClientService.instance
+            .fetchSoulInfo(peerId: peerId, remoteAgentId: remoteId)
+            .timeout(_uiLoadTimeout);
         if (info == null) {
-          if (mounted) {
-            setState(() {
-              _loadError = l10n.chat_soulFetchFailed;
-              _loading = false;
-            });
-          }
+          _finishLoad(
+            soul: '',
+            readOnly: true,
+            error: l10n.chat_soulFetchFailed,
+          );
           return;
         }
-        soul = info.soul;
-        readOnly = !info.editable;
-        missing = soul.trim().isEmpty;
-      } else {
-        soul = await AgentSoulService.instance.getSoul(agent);
-        missing = soul.trim().isEmpty;
+        if (!info.isOk) {
+          _finishLoad(
+            soul: '',
+            readOnly: true,
+            error: _soulErrorMessage(l10n, info.error),
+          );
+          return;
+        }
+        _finishLoad(soul: info.soul, readOnly: !info.editable);
+        return;
       }
 
-      if (!mounted) return;
-      setState(() {
-        _initialSoul = soul;
-        _readOnly = readOnly;
-        _soulMissing = missing;
-        _loading = false;
-      });
+      final soul = await AgentSoulService.instance
+          .getSoul(agent)
+          .timeout(_uiLoadTimeout);
+      _finishLoad(soul: soul, readOnly: false);
+    } on TimeoutException {
+      _finishLoad(
+        soul: '',
+        readOnly: true,
+        error: l10n.chat_soulFetchFailed,
+      );
     } catch (e) {
-      if (!mounted) return;
-      setState(() {
-        _loadError = l10n.agentDetail_saveFailed('$e');
-        _loading = false;
-      });
+      _finishLoad(
+        soul: '',
+        readOnly: true,
+        error: l10n.agentDetail_saveFailed('$e'),
+      );
+    }
+  }
+
+  String _soulErrorMessage(AppLocalizations l10n, String? code) {
+    switch (code) {
+      case 'not_available':
+        return l10n.chat_soulFetchFailed;
+      case 'timeout':
+        return l10n.chat_soulFetchFailed;
+      case 'missing_agent_id':
+        return l10n.chat_soulFetchFailed;
+      default:
+        if (code != null && code.isNotEmpty) {
+          return '${l10n.chat_soulFetchFailed}\n($code)';
+        }
+        return l10n.chat_soulFetchFailed;
     }
   }
 
@@ -163,6 +245,16 @@ class _AgentSoulEditScreenState extends State<AgentSoulEditScreen> {
                             setState(() {
                               _loading = true;
                               _loadError = null;
+                              _usePrefetch = false;
+                            });
+                            _uiTimeout?.cancel();
+                            _uiTimeout = Timer(_uiLoadTimeout, () {
+                              if (!mounted || !_loading) return;
+                              setState(() {
+                                _loadError =
+                                    AppLocalizations.of(context).chat_soulFetchFailed;
+                                _loading = false;
+                              });
                             });
                             unawaited(_load());
                           },

@@ -449,8 +449,22 @@ class PeerModesList {
 class PeerSoulInfo {
   final String soul;
   final bool editable;
+  /// 非空表示宿主明确拒绝 / 出错（与超时、未发出区分）。
+  final String? error;
 
-  const PeerSoulInfo({required this.soul, required this.editable});
+  const PeerSoulInfo({
+    required this.soul,
+    required this.editable,
+    this.error,
+  });
+
+  bool get isOk => error == null;
+
+  factory PeerSoulInfo.ok({required String soul, required bool editable}) =>
+      PeerSoulInfo(soul: soul, editable: editable);
+
+  factory PeerSoulInfo.fail(String error) =>
+      PeerSoulInfo(soul: '', editable: false, error: error);
 }
 
 /// Structured memory relay result from `agent_memory_resp`.
@@ -728,10 +742,13 @@ class PeerAgentClientService {
   /// Outstanding agent_modes_set_req per "agentId::mode" key.
   final Map<String, Completer<bool>> _pendingModeSet = {};
 
-  /// Outstanding agent_soul_req per remote agent id.
+  /// Outstanding agent_soul_req keyed by request_id.
   final Map<String, Completer<PeerSoulInfo?>> _pendingSoulGet = {};
 
-  /// Outstanding agent_soul_set_req per remote agent id.
+  /// request_id 索引：agent_id → 最新 request_id（兼容旧宿主只回 agent_id）。
+  final Map<String, String> _soulGetRequestByAgent = {};
+
+  /// Outstanding agent_soul_set_req keyed by request_id.
   final Map<String, Completer<bool>> _pendingSoulSet = {};
 
   /// Outstanding agent_memory_req keyed by request_id.
@@ -1774,57 +1791,54 @@ class PeerAgentClientService {
     if (completer != null && !completer.isCompleted) completer.complete(ok);
   }
 
-  static const _soulRelayTimeout = Duration(seconds: 15);
+  static const _soulRelayTimeout = Duration(seconds: 12);
 
-  void _failPendingSoulGet(String remoteAgentId) {
-    final pending = _pendingSoulGet.remove(remoteAgentId);
+  void _completeSoulGet(String requestId, PeerSoulInfo? info) {
+    final pending = _pendingSoulGet.remove(requestId);
     if (pending != null && !pending.isCompleted) {
-      pending.complete(null);
+      pending.complete(info);
     }
+    _soulGetRequestByAgent.removeWhere((_, id) => id == requestId);
   }
 
   /// Fetch soul from a shared peer agent (`agent_soul_req` relay).
   ///
-  /// 整段请求（含 sendControl / 并发复用）都有超时，避免挂在发送锁或
-  /// 无 timeout 的 pending future 上一直转圈。
+  /// 成功：`isOk == true`；宿主拒绝：`error` 有值；超时/未发出：返回 `null`。
   Future<PeerSoulInfo?> fetchSoulInfo({
     required String peerId,
     required String remoteAgentId,
   }) async {
-    final existing = _pendingSoulGet[remoteAgentId];
-    if (existing != null) {
-      try {
-        return await existing.future.timeout(_soulRelayTimeout);
-      } on TimeoutException {
-        _failPendingSoulGet(remoteAgentId);
-        return null;
-      }
-    }
-
+    final requestId = _uuid.v4();
     final completer = Completer<PeerSoulInfo?>();
-    _pendingSoulGet[remoteAgentId] = completer;
+    _pendingSoulGet[requestId] = completer;
+    _soulGetRequestByAgent[remoteAgentId] = requestId;
+    _log.info(
+      'agent_soul_req peer=$peerId agent=$remoteAgentId req=$requestId',
+      tag: _tag,
+    );
     try {
       final sent = await PeerConnectionManager.instance
           .sendControl(peerId, {
             'type': 'agent_soul_req',
             'agent_id': remoteAgentId,
+            'request_id': requestId,
           })
           .timeout(const Duration(seconds: 5));
       if (!sent) {
-        _failPendingSoulGet(remoteAgentId);
+        _completeSoulGet(requestId, null);
         return null;
       }
       return await completer.future.timeout(_soulRelayTimeout);
     } on TimeoutException {
       _log.warning(
-        'agent_soul_req timeout peer=$peerId agent=$remoteAgentId',
+        'agent_soul_req timeout peer=$peerId agent=$remoteAgentId req=$requestId',
         tag: _tag,
       );
-      _failPendingSoulGet(remoteAgentId);
+      _completeSoulGet(requestId, null);
       return null;
     } catch (e) {
       _log.warning('agent_soul_req failed: $e', tag: _tag);
-      _failPendingSoulGet(remoteAgentId);
+      _completeSoulGet(requestId, null);
       return null;
     }
   }
@@ -1838,32 +1852,54 @@ class PeerAgentClientService {
       peerId: peerId,
       remoteAgentId: remoteAgentId,
     );
-    return info?.soul;
+    if (info == null || !info.isOk) return null;
+    return info.soul;
   }
 
   void _onSoulResp(Map<String, dynamic> data) {
-    final remoteId = data['agent_id']?.toString();
-    if (remoteId == null || remoteId.isEmpty) return;
-    final completer = _pendingSoulGet.remove(remoteId);
-    if (completer == null || completer.isCompleted) return;
-    if (data['ok'] != true) {
-      _log.warning(
-        'agent_soul_resp ok=false agent=$remoteId error=${data['error']}',
-        tag: _tag,
-      );
-      completer.complete(null);
-      return;
+    try {
+      final requestId = data['request_id']?.toString();
+      final remoteId = data['agent_id']?.toString();
+      final PeerSoulInfo info;
+      if (data['ok'] == true) {
+        info = PeerSoulInfo.ok(
+          soul: data['soul'] as String? ?? '',
+          editable: data['editable'] == true,
+        );
+      } else {
+        final err = data['error']?.toString() ?? 'unknown';
+        _log.warning(
+          'agent_soul_resp ok=false agent=$remoteId error=$err req=$requestId',
+          tag: _tag,
+        );
+        info = PeerSoulInfo.fail(err);
+      }
+
+      if (requestId != null && requestId.isNotEmpty) {
+        _completeSoulGet(requestId, info);
+        return;
+      }
+      // 旧宿主无 request_id：按 agent_id 找回对应请求。
+      if (remoteId != null && remoteId.isNotEmpty) {
+        final mapped = _soulGetRequestByAgent.remove(remoteId);
+        if (mapped != null) {
+          _completeSoulGet(mapped, info);
+          return;
+        }
+      }
+      final match = _pendingSoulGet.entries.toList();
+      if (match.isNotEmpty) {
+        _completeSoulGet(match.first.key, info);
+      }
+    } catch (e) {
+      _log.warning('agent_soul_resp parse failed: $e', tag: _tag);
     }
-    completer.complete(PeerSoulInfo(
-      soul: data['soul'] as String? ?? '',
-      editable: data['editable'] == true,
-    ));
   }
 
-  void _failPendingSoulSet(String remoteAgentId) {
-    final pending = _pendingSoulSet.remove(remoteAgentId);
+  void _completeSoulSet(String requestId, bool ok) {
+    final pending = _pendingSoulSet.remove(requestId);
     if (pending != null && !pending.isCompleted) {
-      pending.complete(false);
+      pending.complete(ok);
     }
   }
 
@@ -1873,46 +1909,45 @@ class PeerAgentClientService {
     required String remoteAgentId,
     required String soul,
   }) async {
-    final existing = _pendingSoulSet[remoteAgentId];
-    if (existing != null) {
-      try {
-        return await existing.future.timeout(_soulRelayTimeout);
-      } on TimeoutException {
-        _failPendingSoulSet(remoteAgentId);
-        return false;
-      }
-    }
+    final requestId = _uuid.v4();
     final completer = Completer<bool>();
-    _pendingSoulSet[remoteAgentId] = completer;
+    _pendingSoulSet[requestId] = completer;
     try {
       final sent = await PeerConnectionManager.instance
           .sendControl(peerId, {
             'type': 'agent_soul_set_req',
             'agent_id': remoteAgentId,
             'soul': soul,
+            'request_id': requestId,
           })
           .timeout(const Duration(seconds: 5));
       if (!sent) {
-        _failPendingSoulSet(remoteAgentId);
+        _completeSoulSet(requestId, false);
         return false;
       }
       return await completer.future.timeout(_soulRelayTimeout);
     } on TimeoutException {
-      _failPendingSoulSet(remoteAgentId);
+      _completeSoulSet(requestId, false);
       return false;
     } catch (e) {
       _log.warning('agent_soul_set_req failed: $e', tag: _tag);
-      _failPendingSoulSet(remoteAgentId);
+      _completeSoulSet(requestId, false);
       return false;
     }
   }
 
   void _onSoulSetResp(Map<String, dynamic> data) {
-    final remoteId = data['agent_id']?.toString();
-    if (remoteId == null || remoteId.isEmpty) return;
+    final requestId = data['request_id']?.toString();
     final ok = data['ok'] == true;
-    final completer = _pendingSoulSet.remove(remoteId);
-    if (completer != null && !completer.isCompleted) completer.complete(ok);
+    if (requestId != null && requestId.isNotEmpty) {
+      _completeSoulSet(requestId, ok);
+      return;
+    }
+    final match = _pendingSoulSet.entries.toList();
+    for (final e in match) {
+      _completeSoulSet(e.key, ok);
+      break;
+    }
   }
 
   /// Relay structured memory CRUD to the host agent's store directory.

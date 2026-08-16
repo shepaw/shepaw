@@ -327,16 +327,45 @@ class PeerAgentHostService {
 
   /// Returns the local agent if [peerId] may access it; otherwise null.
   Future<RemoteAgent?> _resolveSharedAgent(String peerId, String agentId) async {
-    final agent = await _db.getRemoteAgentById(agentId);
-    if (agent == null || !agent.isLocal || !agent.allowExternalAccess) {
-      return null;
-    }
-    final sharedIds = await PeerStorageService().getSharedAgentIds(peerId);
-    if (!sharedIds.contains(agentId)) return null;
-    return agent;
+    final denied = await _sharedAgentDenyReason(peerId, agentId);
+    if (denied != null) return null;
+    return _db.getRemoteAgentById(agentId);
   }
 
-  static const _soulHostTimeout = Duration(seconds: 10);
+  /// null = allowed；否则为拒绝原因码（写入 agent_soul_resp.error）。
+  Future<String?> _sharedAgentDenyReason(String peerId, String agentId) async {
+    final agent = await _db.getRemoteAgentById(agentId);
+    if (agent == null) {
+      _log.warning('resolveSharedAgent: not found id=$agentId', tag: _tag);
+      return 'not_found';
+    }
+    if (!agent.isLocal) {
+      _log.warning(
+        'resolveSharedAgent: not local id=$agentId protocol=${agent.protocol}',
+        tag: _tag,
+      );
+      return 'not_local';
+    }
+    if (!agent.allowExternalAccess) {
+      _log.warning(
+        'resolveSharedAgent: external access off id=$agentId',
+        tag: _tag,
+      );
+      return 'external_off';
+    }
+    final sharedIds = await PeerStorageService().getSharedAgentIds(peerId);
+    if (!sharedIds.contains(agentId)) {
+      _log.warning(
+        'resolveSharedAgent: not shared with peer=$peerId id=$agentId '
+        'shared=${sharedIds.length}',
+        tag: _tag,
+      );
+      return 'not_shared';
+    }
+    return null;
+  }
+
+  static const _soulHostTimeout = Duration(seconds: 8);
 
   Future<void> _replySoulGet(
     String peerId,
@@ -345,11 +374,13 @@ class PeerAgentHostService {
     String soul = '',
     bool editable = false,
     String? error,
+    String? requestId,
   }) async {
     await PeerConnectionManager.instance.sendControl(peerId, {
       'type': 'agent_soul_resp',
       'agent_id': agentId,
       'ok': ok,
+      if (requestId != null && requestId.isNotEmpty) 'request_id': requestId,
       if (ok) 'soul': soul,
       if (ok) 'editable': editable,
       if (!ok && error != null) 'error': error,
@@ -358,50 +389,99 @@ class PeerAgentHostService {
 
   Future<void> _handleSoulGet(String peerId, Map<String, dynamic> data) async {
     final agentId = data['agent_id']?.toString();
+    final requestId = data['request_id']?.toString();
+    _log.info(
+      'agent_soul_req from=$peerId agent=$agentId req=$requestId',
+      tag: _tag,
+    );
     if (agentId == null || agentId.isEmpty) {
       _log.warning('agent_soul_req missing agent_id from $peerId', tag: _tag);
-      await _replySoulGet(peerId, '', ok: false, error: 'missing_agent_id');
+      await _replySoulGet(
+        peerId,
+        '',
+        ok: false,
+        error: 'missing_agent_id',
+        requestId: requestId,
+      );
       return;
     }
     try {
-      final agent = await _resolveSharedAgent(peerId, agentId);
-      if (agent == null) {
-        await _replySoulGet(peerId, agentId, ok: false, error: 'not_available');
+      final deny = await _sharedAgentDenyReason(peerId, agentId);
+      if (deny != null) {
+        await _replySoulGet(
+          peerId,
+          agentId,
+          ok: false,
+          error: deny,
+          requestId: requestId,
+        );
         return;
       }
-      // 直读本机储物袋，避开 AgentSoulService 的 peer 分支；迁移/读盘加超时，
-      // 避免宿主卡住导致客户端一直等 resp。
-      final soul = await () async {
-        await AgentSoulService.instance.migrateLegacySystemPromptIfNeeded(agent);
-        return (await AgentMemoryStoreService.forAgent(agent.id).getSoul())
-                ?.trim() ??
-            '';
-      }().timeout(_soulHostTimeout);
+      final agent = await _db.getRemoteAgentById(agentId);
+      if (agent == null) {
+        await _replySoulGet(
+          peerId,
+          agentId,
+          ok: false,
+          error: 'not_found',
+          requestId: requestId,
+        );
+        return;
+      }
+      // 快速路径：只读 soul.md，不做 legacy 迁移（迁移后台跑，避免卡死不回包）。
+      // editable 仅影响对端能否改，不影响本次读取。
+      var soul = await AgentMemoryStoreService.forAgent(agent.id)
+          .peekSoul()
+          .timeout(_soulHostTimeout);
+      if (soul == null || soul.trim().isEmpty) {
+        // soul.md 尚未落盘时，先回 legacy metadata，避免对端以为中继失败。
+        final legacy =
+            (agent.metadata['system_prompt'] as String?)?.trim() ?? '';
+        if (legacy.isNotEmpty) soul = legacy;
+      }
+      unawaited(
+        AgentSoulService.instance.migrateLegacySystemPromptIfNeeded(agent),
+      );
       await _replySoulGet(
         peerId,
         agentId,
         ok: true,
-        soul: soul,
+        soul: (soul ?? '').trim(),
         editable: agent.peerBoundaryConfig.allowPeerSoulEdit,
+        requestId: requestId,
       );
     } on TimeoutException {
       _log.warning('agent_soul_req timeout agent=$agentId', tag: _tag);
-      await _replySoulGet(peerId, agentId, ok: false, error: 'timeout');
+      await _replySoulGet(
+        peerId,
+        agentId,
+        ok: false,
+        error: 'timeout',
+        requestId: requestId,
+      );
     } catch (e) {
       _log.warning('agent_soul_req failed: $e', tag: _tag);
-      await _replySoulGet(peerId, agentId, ok: false, error: e.toString());
+      await _replySoulGet(
+        peerId,
+        agentId,
+        ok: false,
+        error: e.toString(),
+        requestId: requestId,
+      );
     }
   }
 
   Future<void> _handleSoulSet(String peerId, Map<String, dynamic> data) async {
     final agentId = data['agent_id']?.toString();
     final soul = data['soul'] as String? ?? '';
+    final requestId = data['request_id']?.toString();
     if (agentId == null || agentId.isEmpty) {
       await PeerConnectionManager.instance.sendControl(peerId, {
         'type': 'agent_soul_set_resp',
         'agent_id': '',
         'ok': false,
         'error': 'missing_agent_id',
+        if (requestId != null) 'request_id': requestId,
       });
       return;
     }
@@ -413,6 +493,7 @@ class PeerAgentHostService {
           'agent_id': agentId,
           'ok': false,
           'error': 'not_available',
+          if (requestId != null) 'request_id': requestId,
         });
         return;
       }
@@ -422,6 +503,7 @@ class PeerAgentHostService {
           'agent_id': agentId,
           'ok': false,
           'error': 'denied',
+          if (requestId != null) 'request_id': requestId,
         });
         return;
       }
@@ -432,6 +514,7 @@ class PeerAgentHostService {
         'type': 'agent_soul_set_resp',
         'agent_id': agentId,
         'ok': ok,
+        if (requestId != null) 'request_id': requestId,
       });
     } on TimeoutException {
       _log.warning('agent_soul_set_req timeout agent=$agentId', tag: _tag);
@@ -440,6 +523,7 @@ class PeerAgentHostService {
         'agent_id': agentId,
         'ok': false,
         'error': 'timeout',
+        if (requestId != null) 'request_id': requestId,
       });
     } catch (e) {
       _log.warning('agent_soul_set_req failed: $e', tag: _tag);
@@ -448,6 +532,7 @@ class PeerAgentHostService {
         'agent_id': agentId,
         'ok': false,
         'error': e.toString(),
+        if (requestId != null) 'request_id': requestId,
       });
     }
   }

@@ -228,11 +228,12 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
           remoteAgentId: remoteId,
         );
         if (!mounted) return;
+        final ok = info != null && info.isOk;
         setState(() {
-          _displaySoul = info?.soul ?? '';
-          _peerSoulEditable = info?.editable ?? false;
+          _displaySoul = ok ? info.soul : '';
+          _peerSoulEditable = ok ? info.editable : false;
           _systemPromptController.text = _displaySoul;
-          _soulFetchFailed = info == null;
+          _soulFetchFailed = !ok;
           _soulLoading = false;
         });
         return;
@@ -528,10 +529,18 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
   /// 始终进入页面：离线 / 拉取失败 / 空 Soul 由编辑页展示提示。
   Future<void> _openSoulDetail({required bool requireEditable}) async {
     if (requireEditable && !_canEditSoul) return;
+    // 详情已拉完则带给编辑页，避免再挂一次中继；仍在 loading 时由编辑页自拉。
+    final prefetchReady = !_soulLoading;
     await Navigator.push<void>(
       context,
       MaterialPageRoute(
-        builder: (_) => AgentSoulEditScreen(agent: _agent),
+        builder: (_) => AgentSoulEditScreen(
+          agent: _agent,
+          prefetchedSoul:
+              prefetchReady && !_soulFetchFailed ? _displaySoul : null,
+          prefetchedEditable: _peerSoulEditable,
+          prefetchFailed: prefetchReady && _soulFetchFailed,
+        ),
       ),
     );
     if (mounted) unawaited(_loadSoul());

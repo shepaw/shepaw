@@ -572,6 +572,11 @@ class AgentMemoryStoreService {
   /// 读取 Soul 权威（`cognition/<agent>/soul.md`）。
   Future<String?> getSoul() async {
     await _ensure();
+    return peekSoul();
+  }
+
+  /// 只读 `soul.md`，不做 legacy 迁移。Peer 中继用，避免 `_ensure` 卡死不回包。
+  Future<String?> peekSoul() async {
     final text = await _readText(MemoryPaths.soulMd(_agentId));
     if (text == null) return null;
     // Strip optional HTML comment header from mirrored exports.
