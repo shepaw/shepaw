@@ -36,7 +36,6 @@ import '../models/prompt_stack_config.dart';
 import '../storage/runtime_share_service.dart';
 import 'agent_runtime_context_screen.dart';
 import 'agent_soul_edit_screen.dart';
-import 'workspace_binding_screen.dart';
 import 'storage_directory_opener.dart';
 import '../storage/agent_workspace_uris.dart';
 import '../storage/store_protocol.dart';
@@ -1121,8 +1120,6 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
         _buildRuntimeContextEntry(),
         const SizedBox(height: 16),
         _buildWorkspaceViewEntry(),
-        const SizedBox(height: 16),
-        _buildWorkspaceBindingEntry(),
         if (_agent.isShe && !_agent.isPeerAgent) ...[
           const SizedBox(height: 16),
           _buildSheCircleEntry(),
@@ -1527,12 +1524,12 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
     );
   }
 
-  /// 打开该 Agent 已挂载 / 已绑定的储物袋工作区（主 + 附加）。
-  /// Hub 可管理实例支持增删附加工作区。
+  /// 打开该 Agent 已挂载的储物袋工作区（主 + 附加）。
+  /// Hub 可管理实例支持设置主工作区、增删附加工作区。
   Widget _buildWorkspaceViewEntry() {
     final colorScheme = Theme.of(context).colorScheme;
     final zh = Localizations.localeOf(context).languageCode.startsWith('zh');
-    final canEditAdditional = _agent.isPeerAgent &&
+    final canEditWorkspace = _agent.isPeerAgent &&
         _agent.peerAgentManageable &&
         _agent.sourcePeerId != null &&
         _agent.remoteAgentId != null;
@@ -1540,7 +1537,8 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
       future: collectAgentWorkspaceUris(_agent),
       builder: (context, snapshot) {
         final uris = snapshot.data ?? const <String>[];
-        if (uris.isEmpty && !canEditAdditional) {
+        final hasPrimary = uris.isNotEmpty;
+        if (uris.isEmpty && !canEditWorkspace) {
           return Card(
             elevation: 0,
             shape: RoundedRectangleBorder(
@@ -1578,8 +1576,12 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
                   title: Text(zh ? '暂无挂载工作区' : 'No mounted workspace'),
                   subtitle: Text(
                     zh
-                        ? '可添加 Hub 主机上的绝对路径作为附加工作区'
-                        : 'Add an absolute path on the Hub host as an additional workspace',
+                        ? (canEditWorkspace
+                            ? '可设置 Hub 主机上的绝对路径作为主工作区'
+                            : '该 Agent 尚未挂载工作目录')
+                        : (canEditWorkspace
+                            ? 'Set an absolute path on the Hub host as the primary workspace'
+                            : 'This agent has no mounted working directory'),
                     style: TextStyle(color: colorScheme.onSurfaceVariant),
                   ),
                 ),
@@ -1608,7 +1610,7 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
                   trailing: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      if (canEditAdditional && i > 0)
+                      if (canEditWorkspace && i > 0)
                         IconButton(
                           tooltip: zh ? '移除附加工作区' : 'Remove additional workspace',
                           icon: Icon(Icons.remove_circle_outline, color: colorScheme.error),
@@ -1620,21 +1622,35 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
                   onTap: () => _openAgentWorkspace(preferredUri: uris[i]),
                 ),
               ],
-              if (canEditAdditional) ...[
+              if (canEditWorkspace) ...[
                 if (uris.isNotEmpty)
                   Divider(height: 1, color: colorScheme.outlineVariant),
-                ListTile(
-                  leading: Icon(Icons.create_new_folder_outlined, color: colorScheme.primary),
-                  title: Text(zh ? '添加附加工作区' : 'Add additional workspace'),
-                  subtitle: Text(
-                    zh
-                        ? '填写 Hub 主机上的绝对路径；运行中实例会自动重启'
-                        : 'Enter an absolute path on the Hub host; a running instance will restart',
-                    style: TextStyle(color: colorScheme.onSurfaceVariant, fontSize: 12),
+                if (!hasPrimary)
+                  ListTile(
+                    leading: Icon(Icons.create_new_folder_outlined, color: colorScheme.primary),
+                    title: Text(zh ? '设置主工作区' : 'Set primary workspace'),
+                    subtitle: Text(
+                      zh
+                          ? '填写 Hub 主机上的绝对路径；运行中实例会自动重启'
+                          : 'Enter an absolute path on the Hub host; a running instance will restart',
+                      style: TextStyle(color: colorScheme.onSurfaceVariant, fontSize: 12),
+                    ),
+                    trailing: const Icon(Icons.add),
+                    onTap: _setPrimaryWorkspace,
+                  )
+                else
+                  ListTile(
+                    leading: Icon(Icons.create_new_folder_outlined, color: colorScheme.primary),
+                    title: Text(zh ? '添加附加工作区' : 'Add additional workspace'),
+                    subtitle: Text(
+                      zh
+                          ? '填写 Hub 主机上的绝对路径；运行中实例会自动重启'
+                          : 'Enter an absolute path on the Hub host; a running instance will restart',
+                      style: TextStyle(color: colorScheme.onSurfaceVariant, fontSize: 12),
+                    ),
+                    trailing: const Icon(Icons.add),
+                    onTap: _addAdditionalWorkspace,
                   ),
-                  trailing: const Icon(Icons.add),
-                  onTap: _addAdditionalWorkspace,
-                ),
               ],
             ],
           ),
@@ -1655,26 +1671,25 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
     return out;
   }
 
-  Future<void> _addAdditionalWorkspace() async {
+  Future<String?> _promptHubAbsoluteDirectory({
+    required String titleZh,
+    required String titleEn,
+  }) async {
     final zh = Localizations.localeOf(context).languageCode.startsWith('zh');
-    final peerId = _agent.sourcePeerId;
-    final remoteId = _agent.remoteAgentId;
-    if (peerId == null || remoteId == null) return;
-
     final controller = TextEditingController();
     final path = await showDialog<String>(
       context: context,
       builder: (ctx) {
         return AlertDialog(
-          title: Text(zh ? '添加附加工作区' : 'Add additional workspace'),
+          title: Text(zh ? titleZh : titleEn),
           content: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               Text(
                 zh
-                    ? '路径必须是 Hub 所在机器上的绝对目录（例如 /Users/me/shared-lib）。'
-                    : 'Path must be an absolute directory on the Hub host (e.g. /Users/me/shared-lib).',
+                    ? '路径必须是 Hub 所在机器上的绝对目录（例如 /Users/me/project）。'
+                    : 'Path must be an absolute directory on the Hub host (e.g. /Users/me/project).',
                 style: Theme.of(ctx).textTheme.bodySmall,
               ),
               const SizedBox(height: 12),
@@ -1711,14 +1726,33 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
             ),
             FilledButton(
               onPressed: () => Navigator.of(ctx).pop(controller.text.trim()),
-              child: Text(zh ? '添加' : 'Add'),
+              child: Text(zh ? '确定' : 'OK'),
             ),
           ],
         );
       },
     );
     controller.dispose();
-    if (path == null || path.isEmpty || !mounted) return;
+    if (path == null || path.isEmpty) return null;
+    return path;
+  }
+
+  Future<void> _setPrimaryWorkspace() async {
+    final path = await _promptHubAbsoluteDirectory(
+      titleZh: '设置主工作区',
+      titleEn: 'Set primary workspace',
+    );
+    if (path == null || !mounted) return;
+    await _applyCwd(path);
+  }
+
+  Future<void> _addAdditionalWorkspace() async {
+    final zh = Localizations.localeOf(context).languageCode.startsWith('zh');
+    final path = await _promptHubAbsoluteDirectory(
+      titleZh: '添加附加工作区',
+      titleEn: 'Add additional workspace',
+    );
+    if (path == null || !mounted) return;
 
     final current = await _currentAdditionalDirectories();
     if (current.contains(path)) {
@@ -1760,6 +1794,63 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
     final current = await _currentAdditionalDirectories();
     await _applyAdditionalDirectories(
       current.where((p) => p != path).toList(),
+    );
+  }
+
+  Future<void> _applyCwd(String cwd) async {
+    final zh = Localizations.localeOf(context).languageCode.startsWith('zh');
+    final peerId = _agent.sourcePeerId;
+    final remoteId = _agent.remoteAgentId;
+    if (peerId == null || remoteId == null) return;
+
+    if (!PeerConnectionManager.instance.connectedPeerIds.contains(peerId)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(zh ? '设备未连接' : 'Device offline')),
+      );
+      return;
+    }
+
+    showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => const Center(child: CircularProgressIndicator()),
+    );
+
+    final result = await PeerAgentClientService.instance.setCwd(
+      peerId: peerId,
+      remoteAgentId: remoteId,
+      cwd: cwd,
+    );
+
+    if (mounted) Navigator.of(context, rootNavigator: true).pop();
+    if (!mounted) return;
+
+    if (!result.ok) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            zh
+                ? '设置失败：${result.error ?? "unknown"}'
+                : 'Update failed: ${result.error ?? "unknown"}',
+          ),
+        ),
+      );
+      return;
+    }
+
+    await PeerAgentClientService.instance.refreshAgentList(peerId);
+    try {
+      final latest = await getIt<RemoteAgentService>().getAgentById(_agent.id);
+      if (latest != null && mounted) {
+        setState(() => _agent = latest);
+      }
+    } catch (_) {}
+
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(zh ? '主工作区已更新' : 'Primary workspace updated'),
+      ),
     );
   }
 
@@ -1904,42 +1995,6 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
         ),
       );
     }
-  }
-
-  /// 绑定 workspaces → runtime/workspace.md
-  Widget _buildWorkspaceBindingEntry() {
-    final colorScheme = Theme.of(context).colorScheme;
-    final zh = Localizations.localeOf(context).languageCode.startsWith('zh');
-    return Card(
-      elevation: 0,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(12),
-        side: BorderSide(color: colorScheme.outlineVariant),
-      ),
-      child: ListTile(
-        leading: Icon(Icons.folder_special_outlined, color: colorScheme.primary),
-        title: Text(zh ? '绑定工作区' : 'Bind workspaces'),
-        subtitle: Text(
-          zh
-              ? '写入 runtime/workspace.md，供 ContextBundle 引用'
-              : 'Write runtime/workspace.md for ContextBundle refs',
-          maxLines: 2,
-          overflow: TextOverflow.ellipsis,
-          style: TextStyle(color: colorScheme.onSurfaceVariant),
-        ),
-        trailing: const Icon(Icons.chevron_right),
-        onTap: () {
-          Navigator.of(context).push(
-            MaterialPageRoute<void>(
-              builder: (_) => WorkspaceBindingScreen(
-                ownerId: _agent.id,
-                displayName: _agent.name,
-              ),
-            ),
-          );
-        },
-      ),
-    );
   }
 
   /// 记忆 / Soul / 产物 / 附件（SQLite 权威 + runtime 文件）。

@@ -1795,6 +1795,7 @@ class PeerAgentClientService {
   ///
   /// Allowed ops from the app:
   /// - `list`
+  /// - `set_cwd` (primary workspace absolute path on the hub host)
   /// - `set_additional_directories` (full-replace absolute paths on the hub host)
   ///
   /// Start / stop / set_enabled stay hub-owned; this client refuses them.
@@ -1803,9 +1804,10 @@ class PeerAgentClientService {
     required String op,
     String? agentId,
     bool? enabled,
+    String? cwd,
     List<String>? additionalDirectories,
   }) async {
-    const allowed = {'list', 'set_additional_directories'};
+    const allowed = {'list', 'set_cwd', 'set_additional_directories'};
     if (!allowed.contains(op)) {
       _log.warning(
         'Rejected remote agent lifecycle op "$op"; hub owns start/stop/enable',
@@ -1822,6 +1824,7 @@ class PeerAgentClientService {
       'op': op,
       if (agentId != null) 'agent_id': agentId,
       if (enabled != null) 'enabled': enabled,
+      if (cwd != null) 'cwd': cwd,
       if (additionalDirectories != null)
         'additional_directories': additionalDirectories,
     };
@@ -1838,6 +1841,20 @@ class PeerAgentClientService {
         error: 'timeout',
       );
     });
+  }
+
+  /// Set the hub instance's primary workspace root (absolute path).
+  Future<PeerAgentManageResult> setCwd({
+    required String peerId,
+    required String remoteAgentId,
+    required String cwd,
+  }) {
+    return manageAgents(
+      peerId: peerId,
+      op: 'set_cwd',
+      agentId: remoteAgentId,
+      cwd: cwd,
+    );
   }
 
   /// Replace the hub instance's additional workspace roots (absolute paths).

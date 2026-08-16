@@ -53,6 +53,7 @@ class StorageBrowserScreen extends StatefulWidget {
     this.manageLocalMirror = false,
     this.initialSpace,
     this.initialPath,
+    this.lockToInitialEntry = false,
     this.title,
     this.extraActions,
     this.extraMenuItems,
@@ -85,6 +86,10 @@ class StorageBrowserScreen extends StatefulWidget {
 
   /// 「空间」Tab 内初始相对路径（无首尾 `/`）；需配合 [initialSpace]。
   final String? initialPath;
+
+  /// 从外部深链进入（如 Agent 工作区）时：返回键在入口路径即 pop，
+  /// 不会退到储物袋分区根 / 空间列表。
+  final bool lockToInitialEntry;
 
   /// 覆盖 AppBar 标题；null 时用默认「存储文件」文案。
   final String? title;
@@ -196,6 +201,27 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
   /// 移动端：已进入某分区（含分区根），可返回上级 / store 根。
   bool _mobileInFolder(BuildContext context) =>
       _isMobileLayout(context) && _tabs.index == 1 && _navSpace != null;
+
+  bool get _hasNavFloor =>
+      widget.lockToInitialEntry &&
+      widget.initialSpace != null &&
+      widget.initialSpace!.isNotEmpty;
+
+  String get _navFloorSpace => widget.initialSpace ?? '';
+
+  String get _navFloorPath =>
+      (widget.initialPath ?? '').replaceAll(RegExp(r'^/+|/+$'), '');
+
+  bool get _atNavFloor =>
+      _hasNavFloor &&
+      _navSpace == _navFloorSpace &&
+      _navPath == _navFloorPath;
+
+  bool _isPathAtOrUnderFloor(String path) {
+    if (!_hasNavFloor) return true;
+    if (_navFloorPath.isEmpty) return true;
+    return path == _navFloorPath || path.startsWith('$_navFloorPath/');
+  }
 
   /// 移动端：仅在已进入分区且可写时展示新建/上传。
   bool _mobileMineWritable(BuildContext context) =>
@@ -1322,20 +1348,40 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
   }
 
   void _navUp() {
-    setState(() {
-      if (_navPath.isNotEmpty) {
-        final i = _navPath.lastIndexOf('/');
-        _navPath = i < 0 ? '' : _navPath.substring(0, i);
+    if (_hasNavFloor && _atNavFloor) {
+      Navigator.of(context).maybePop();
+      return;
+    }
+    if (_navPath.isNotEmpty) {
+      final i = _navPath.lastIndexOf('/');
+      final parent = i < 0 ? '' : _navPath.substring(0, i);
+      if (_hasNavFloor &&
+          (_navSpace != _navFloorSpace || !_isPathAtOrUnderFloor(parent))) {
+        Navigator.of(context).maybePop();
+        return;
+      }
+      setState(() {
+        _navPath = parent;
         _dirFolders = const [];
         _dirFiles = const [];
-      } else {
-        _navSpace = null;
-      }
+      });
+      unawaited(_loadCurrentDir());
+      return;
+    }
+    if (_hasNavFloor) {
+      Navigator.of(context).maybePop();
+      return;
+    }
+    setState(() {
+      _navSpace = null;
     });
-    if (_navSpace != null) unawaited(_loadCurrentDir());
   }
 
   void _navToRoot() {
+    if (_hasNavFloor) {
+      Navigator.of(context).maybePop();
+      return;
+    }
     setState(() {
       _navSpace = null;
       _navPath = '';
@@ -1343,6 +1389,15 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
   }
 
   void _navToSpaceRoot() {
+    if (_hasNavFloor) {
+      setState(() {
+        _navPath = _navFloorPath;
+        _dirFolders = const [];
+        _dirFiles = const [];
+      });
+      unawaited(_loadCurrentDir());
+      return;
+    }
     setState(() {
       _navPath = '';
       _dirFolders = const [];
@@ -1352,6 +1407,9 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
   }
 
   void _navToPath(String path) {
+    if (_hasNavFloor && !_isPathAtOrUnderFloor(path)) {
+      return;
+    }
     setState(() {
       _navPath = path;
       _dirFolders = const [];
@@ -1392,7 +1450,8 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
     final mobile = _isMobileLayout(context);
 
     return PopScope(
-      canPop: !_mobileInFolder(context),
+      // 锁定入口时：在 floor 允许直接 pop；更深路径先 _navUp。
+      canPop: !_mobileInFolder(context) || (_hasNavFloor && _atNavFloor),
       onPopInvokedWithResult: (didPop, result) {
         if (!didPop && _mobileInFolder(context)) _navUp();
       },
@@ -2004,18 +2063,31 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
 
   Widget _buildBreadcrumb() {
     final l10n = AppLocalizations.of(context);
-    final segments = <({String label, VoidCallback? onTap})>[
-      (
-        label: l10n.storage_browserHome,
-        onTap: _navSpace == null && _navPath.isEmpty ? null : _navToRoot,
-      ),
-    ];
-    if (_navSpace != null) {
+    final segments = <({String label, VoidCallback? onTap})>[];
+    if (_hasNavFloor && _navSpace == _navFloorSpace) {
+      final floorLabel = _navFloorPath.isEmpty
+          ? _navFloorSpace
+          : p.basename(_navFloorPath);
       segments.add((
-        label: _navSpace!,
-        onTap: _navPath.isEmpty ? null : _navToSpaceRoot,
+        label: floorLabel,
+        onTap: _atNavFloor ? null : () => _navToPath(_navFloorPath),
       ));
-      if (_navPath.isNotEmpty) {
+      if (_navPath.isNotEmpty &&
+          _navFloorPath.isNotEmpty &&
+          _navPath.startsWith('$_navFloorPath/')) {
+        final rest = _navPath.substring(_navFloorPath.length + 1);
+        final parts = rest.split('/');
+        var acc = _navFloorPath;
+        for (var i = 0; i < parts.length; i++) {
+          acc = '$acc/${parts[i]}';
+          final target = acc;
+          final isLast = i == parts.length - 1;
+          segments.add((
+            label: parts[i],
+            onTap: isLast ? null : () => _navToPath(target),
+          ));
+        }
+      } else if (_navFloorPath.isEmpty && _navPath.isNotEmpty) {
         final parts = _navPath.split('/');
         var acc = '';
         for (var i = 0; i < parts.length; i++) {
@@ -2026,6 +2098,30 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
             label: parts[i],
             onTap: isLast ? null : () => _navToPath(target),
           ));
+        }
+      }
+    } else {
+      segments.add((
+        label: l10n.storage_browserHome,
+        onTap: _navSpace == null && _navPath.isEmpty ? null : _navToRoot,
+      ));
+      if (_navSpace != null) {
+        segments.add((
+          label: _navSpace!,
+          onTap: _navPath.isEmpty ? null : _navToSpaceRoot,
+        ));
+        if (_navPath.isNotEmpty) {
+          final parts = _navPath.split('/');
+          var acc = '';
+          for (var i = 0; i < parts.length; i++) {
+            acc = acc.isEmpty ? parts[i] : '$acc/${parts[i]}';
+            final target = acc;
+            final isLast = i == parts.length - 1;
+            segments.add((
+              label: parts[i],
+              onTap: isLast ? null : () => _navToPath(target),
+            ));
+          }
         }
       }
     }

@@ -57,6 +57,7 @@ Future<void> openStorageDirectoryInBrowser(
         preferLocalCache: false,
         initialSpace: space,
         initialPath: path.isEmpty ? null : path,
+        lockToInitialEntry: true,
       ),
     ),
   );
