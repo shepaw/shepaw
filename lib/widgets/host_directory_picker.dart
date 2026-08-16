@@ -330,6 +330,10 @@ class _HostDirectoryPickerDialogState extends State<_HostDirectoryPickerDialog> 
           onPressed: () => Navigator.of(context).pop(),
           child: Text(_zh ? '取消' : 'Cancel'),
         ),
+        TextButton(
+          onPressed: () => unawaited(_enterPathManually()),
+          child: Text(_zh ? '手动输入' : 'Type path'),
+        ),
         FilledButton(
           onPressed: canConfirm ? _confirm : null,
           child: Text(_zh ? '选择此目录' : 'Select'),
