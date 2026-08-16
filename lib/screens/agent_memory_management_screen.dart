@@ -10,7 +10,7 @@ import 'agent_memory_detail_screen.dart';
 
 /// Agent 记忆管理列表：按 Agent 查看结构化记忆。
 ///
-/// 产品入口在各 Agent 详情的「记忆 · Soul · 产物 · 附件」，
+/// 产品入口在各 Agent 详情的「记忆」项；
 /// 本页可作为全量总览单独打开。
 class AgentMemoryManagementScreen extends StatefulWidget {
   const AgentMemoryManagementScreen({Key? key}) : super(key: key);

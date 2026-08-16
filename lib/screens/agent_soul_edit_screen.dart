@@ -21,13 +21,17 @@ class AgentSoulEditScreen extends StatefulWidget {
 
 class _AgentSoulEditScreenState extends State<AgentSoulEditScreen> {
   bool _loading = true;
+  bool _startedLoad = false;
   String _initialSoul = '';
   bool _readOnly = false;
   String? _loadError;
 
   @override
-  void initState() {
-    super.initState();
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // AppLocalizations.of(context) needs InheritedWidget; cannot run in initState.
+    if (_startedLoad) return;
+    _startedLoad = true;
     unawaited(_load());
   }
 
@@ -107,7 +111,7 @@ class _AgentSoulEditScreenState extends State<AgentSoulEditScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: Text(l10n.chat_soulTitle),
+        title: Text(_readOnly ? l10n.agentDetail_systemPrompt : l10n.chat_soulTitle),
         centerTitle: true,
       ),
       body: _loading

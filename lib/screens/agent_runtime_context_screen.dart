@@ -3,11 +3,8 @@ import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 import 'package:share_plus/share_plus.dart';
 
-import '../models/agent_memory_entry.dart';
 import '../models/remote_agent.dart';
 import '../peer/services/peer_attachment_placement.dart';
-import '../services/agent_memory_biz_service.dart';
-import '../services/cognition_service.dart';
 import '../services/logger_service.dart';
 import '../services/store_open_service.dart';
 import '../storage/device_identity.dart';
@@ -16,13 +13,11 @@ import '../storage/store_protocol.dart';
 import '../storage/store_service.dart';
 import '../utils/layout_utils.dart';
 import '../widgets/storage/store_file_list_avatar.dart';
-import 'agent_memory_detail_screen.dart';
 import 'storage_browser_screen.dart';
 
-/// Agent / Group 运行时上下文。
+/// Agent / Group 运行时上下文：产物与附件。
 ///
-/// Agent：记忆、Soul、产物、附件。
-/// Group：仅产物与附件（群没有 soul；人格在各成员自己的储物袋）。
+/// Soul / 记忆已拆到 Agent 详情的独立入口（可查看与修改）。
 class AgentRuntimeContextScreen extends StatefulWidget {
   const AgentRuntimeContextScreen({
     super.key,
@@ -36,7 +31,7 @@ class AgentRuntimeContextScreen extends StatefulWidget {
 
   final String displayName;
 
-  /// 非空时「记忆」Tab 可读结构化记忆库。
+  /// 非空时用于解析 peer agent 的本机缓存路径。
   final RemoteAgent? agent;
 
   @override
@@ -51,10 +46,6 @@ class _AgentRuntimeContextScreenState extends State<AgentRuntimeContextScreen>
   late final TabController _tabs;
   final _log = LoggerService();
 
-  String? _soul;
-  bool _soulLoading = true;
-  List<AgentMemoryEntry> _memories = const [];
-  bool _memoryLoading = true;
   List<_RuntimeFile> _artifacts = const [];
   List<_RuntimeFile> _attachments = const [];
   bool _filesLoading = true;
@@ -71,75 +62,17 @@ class _AgentRuntimeContextScreenState extends State<AgentRuntimeContextScreen>
   String get _effectiveOwnerId =>
       _runtimeOwnerId.isNotEmpty ? _runtimeOwnerId : widget.ownerId;
 
-  bool get _isGroupContext => widget.agent == null;
-
   @override
   void initState() {
     super.initState();
-    _tabs = TabController(length: _isGroupContext ? 2 : 4, vsync: this);
-    _loadAll();
+    _tabs = TabController(length: 2, vsync: this);
+    _loadFiles();
   }
 
   @override
   void dispose() {
     _tabs.dispose();
     super.dispose();
-  }
-
-  Future<void> _loadAll() async {
-    if (_isGroupContext) {
-      await _loadFiles();
-      return;
-    }
-    await Future.wait([_loadSoul(), _loadMemories(), _loadFiles()]);
-  }
-
-  Future<void> _loadSoul() async {
-    setState(() => _soulLoading = true);
-    try {
-      final text =
-          await CognitionService.instance.getAgentSoul(widget.ownerId);
-      if (!mounted) return;
-      setState(() {
-        _soul = text;
-        _soulLoading = false;
-      });
-    } catch (e) {
-      _log.warning('load soul failed: $e', tag: _tag);
-      if (!mounted) return;
-      setState(() {
-        _soul = null;
-        _soulLoading = false;
-      });
-    }
-  }
-
-  Future<void> _loadMemories() async {
-    final agent = widget.agent;
-    if (agent == null) {
-      setState(() {
-        _memories = const [];
-        _memoryLoading = false;
-      });
-      return;
-    }
-    setState(() => _memoryLoading = true);
-    try {
-      final list =
-          await AgentMemoryBizService().getAllMemories(agent.id);
-      if (!mounted) return;
-      setState(() {
-        _memories = list;
-        _memoryLoading = false;
-      });
-    } catch (e) {
-      _log.warning('load memories failed: $e', tag: _tag);
-      if (!mounted) return;
-      setState(() {
-        _memories = const [];
-        _memoryLoading = false;
-      });
-    }
   }
 
   Future<void> _loadFiles() async {
@@ -211,16 +144,6 @@ class _AgentRuntimeContextScreenState extends State<AgentRuntimeContextScreen>
         _filesError = '$e';
       });
     }
-  }
-
-  void _openMemoryDetail() {
-    final agent = widget.agent;
-    if (agent == null) return;
-    Navigator.of(context).push(
-      MaterialPageRoute<void>(
-        builder: (_) => AgentMemoryDetailScreen(agent: agent),
-      ),
-    );
   }
 
   void _openRuntimeBrowser() {
@@ -315,8 +238,8 @@ class _AgentRuntimeContextScreenState extends State<AgentRuntimeContextScreen>
     return Scaffold(
       appBar: AppBar(
         title: Text(_zh
-            ? '${widget.displayName} · 上下文'
-            : '${widget.displayName} · Context'),
+            ? '${widget.displayName} · 产物与附件'
+            : '${widget.displayName} · Artifacts'),
         actions: [
           IconButton(
             tooltip: _zh ? '在储物袋中打开' : 'Open in storage browser',
@@ -326,15 +249,12 @@ class _AgentRuntimeContextScreenState extends State<AgentRuntimeContextScreen>
           IconButton(
             tooltip: _zh ? '刷新' : 'Refresh',
             icon: const Icon(Icons.refresh),
-            onPressed: _loadAll,
+            onPressed: _loadFiles,
           ),
         ],
         bottom: TabBar(
           controller: _tabs,
-          isScrollable: true,
           tabs: [
-            if (!_isGroupContext) Tab(text: _zh ? '记忆' : 'Memory'),
-            if (!_isGroupContext) const Tab(text: 'Soul'),
             Tab(text: _zh ? '产物' : 'Artifacts'),
             Tab(text: _zh ? '附件' : 'Attachments'),
           ],
@@ -343,8 +263,6 @@ class _AgentRuntimeContextScreenState extends State<AgentRuntimeContextScreen>
       body: TabBarView(
         controller: _tabs,
         children: [
-          if (!_isGroupContext) _buildMemoryTab(colorScheme),
-          if (!_isGroupContext) _buildSoulTab(colorScheme),
           _buildFilesTab(
             colorScheme,
             files: _artifacts,
@@ -356,115 +274,6 @@ class _AgentRuntimeContextScreenState extends State<AgentRuntimeContextScreen>
             files: _attachments,
             emptyZh: '暂无附件（写入 runtime/…/attachments/）',
             emptyEn: 'No attachments yet',
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildMemoryTab(ColorScheme colorScheme) {
-    if (widget.agent == null) {
-      return _emptyBody(
-        _zh ? '此上下文无关联 Agent，无法读取结构化记忆库' : 'No agent bound for memory DB',
-      );
-    }
-    if (_memoryLoading) {
-      return const Center(child: CircularProgressIndicator());
-    }
-    return RefreshIndicator(
-      onRefresh: _loadMemories,
-      child: ListView(
-        padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
-        children: [
-          ListTile(
-            contentPadding: EdgeInsets.zero,
-            leading: Icon(Icons.psychology_outlined, color: colorScheme.primary),
-            title: Text(_zh ? '完整记忆管理' : 'Full memory manager'),
-            subtitle: Text(
-              _zh
-                  ? '共 ${_memories.length} 条 · 权威在储物袋 memory/'
-                  : '${_memories.length} entries · pouch memory/ is authoritative',
-            ),
-            trailing: const Icon(Icons.chevron_right),
-            onTap: _openMemoryDetail,
-          ),
-          const Divider(),
-          if (_memories.isEmpty)
-            Padding(
-              padding: const EdgeInsets.only(top: 48),
-              child: _emptyBody(_zh ? '暂无记忆' : 'No memories yet'),
-            )
-          else
-            ..._memories.take(50).map((m) {
-              final when = DateFormat.yMMMd().add_Hm().format(
-                    DateTime.fromMillisecondsSinceEpoch(m.createdAt),
-                  );
-              return Card(
-                margin: const EdgeInsets.only(bottom: 8),
-                elevation: 0,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12),
-                  side: BorderSide(color: colorScheme.outlineVariant),
-                ),
-                child: ListTile(
-                  title: Text(
-                    m.memoryContent,
-                    maxLines: 3,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                  subtitle: Text(
-                    '${m.memoryType.name} · $when',
-                    style: TextStyle(
-                      color: colorScheme.onSurfaceVariant,
-                      fontSize: 12,
-                    ),
-                  ),
-                  onTap: _openMemoryDetail,
-                ),
-              );
-            }),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildSoulTab(ColorScheme colorScheme) {
-    if (_soulLoading) {
-      return const Center(child: CircularProgressIndicator());
-    }
-    final text = (_soul ?? '').trim();
-    if (text.isEmpty) {
-      return RefreshIndicator(
-        onRefresh: _loadSoul,
-        child: ListView(
-          physics: const AlwaysScrollableScrollPhysics(),
-          children: [
-            SizedBox(
-              height: MediaQuery.sizeOf(context).height * 0.4,
-              child: _emptyBody(_zh ? '尚未写入 Soul' : 'Soul is empty'),
-            ),
-          ],
-        ),
-      );
-    }
-    return RefreshIndicator(
-      onRefresh: _loadSoul,
-      child: ListView(
-        padding: const EdgeInsets.all(16),
-        children: [
-          Text(
-            _zh
-                ? '来自储物袋 memory/<agent>/soul.md；runtime/soul.md 为镜像'
-                : 'From pouch memory/<agent>/soul.md; runtime/soul.md is a mirror',
-            style: TextStyle(
-              fontSize: 12,
-              color: colorScheme.onSurfaceVariant,
-            ),
-          ),
-          const SizedBox(height: 12),
-          SelectableText(
-            text,
-            style: const TextStyle(fontSize: 15, height: 1.5),
           ),
         ],
       ),

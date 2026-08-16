@@ -33,6 +33,7 @@ import 'she_circle_screen.dart';
 import '../utils/layout_utils.dart';
 import '../models/prompt_stack_config.dart';
 import '../storage/runtime_share_service.dart';
+import 'agent_memory_detail_screen.dart';
 import 'agent_runtime_context_screen.dart';
 import 'agent_soul_edit_screen.dart';
 import 'storage_directory_opener.dart';
@@ -504,9 +505,10 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
     });
   }
 
-  Future<void> _openSoulEditor() async {
+  /// 打开 Soul 详情（可查看；无编辑权时页面内只读）。
+  Future<void> _openSoulDetail({required bool requireEditable}) async {
     final l10n = AppLocalizations.of(context);
-    if (!_canEditSoul) return;
+    if (requireEditable && !_canEditSoul) return;
     if (_agent.isPeerAgent) {
       final peerId = _agent.sourcePeerId;
       if (peerId == null ||
@@ -526,6 +528,16 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
       ),
     );
     if (mounted) unawaited(_loadSoul());
+  }
+
+  Future<void> _openSoulEditor() => _openSoulDetail(requireEditable: true);
+
+  Future<void> _openMemoryDetail() async {
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => AgentMemoryDetailScreen(agent: _agent),
+      ),
+    );
   }
 
   void _syncControllersFromAgent() {
@@ -1131,6 +1143,10 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
         _buildHeader(),
         const SizedBox(height: 24),
         _buildInfoCard(),
+        const SizedBox(height: 16),
+        _buildSoulEntry(),
+        const SizedBox(height: 16),
+        _buildMemoryEntry(),
         const SizedBox(height: 16),
         _buildRuntimeContextEntry(),
         const SizedBox(height: 16),
@@ -1996,7 +2012,67 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
     }
   }
 
-  /// 记忆 / Soul / 产物 / 附件（SQLite 权威 + runtime 文件）。
+  /// Soul：独立入口，点进查看 / 修改。
+  Widget _buildSoulEntry() {
+    final l10n = AppLocalizations.of(context);
+    final colorScheme = Theme.of(context).colorScheme;
+    final zh = Localizations.localeOf(context).languageCode.startsWith('zh');
+    final preview = _displaySoul.trim();
+    final subtitle = _soulLoading
+        ? (zh ? '加载中…' : 'Loading…')
+        : preview.isEmpty
+            ? (zh ? '定义 Agent 的身份、角色与原则' : 'Define identity, role, and principles')
+            : (preview.length > 80 ? '${preview.substring(0, 80)}…' : preview);
+
+    return Card(
+      elevation: 0,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12),
+        side: BorderSide(color: colorScheme.outlineVariant),
+      ),
+      child: ListTile(
+        leading: Icon(Icons.psychology_outlined, color: colorScheme.primary),
+        title: Text(l10n.agentDetail_systemPrompt),
+        subtitle: Text(
+          subtitle,
+          maxLines: 2,
+          overflow: TextOverflow.ellipsis,
+          style: TextStyle(color: colorScheme.onSurfaceVariant),
+        ),
+        trailing: const Icon(Icons.chevron_right),
+        onTap: _soulLoading
+            ? null
+            : () => unawaited(_openSoulDetail(requireEditable: false)),
+      ),
+    );
+  }
+
+  /// 记忆：独立入口，点进查看 / 管理。
+  Widget _buildMemoryEntry() {
+    final colorScheme = Theme.of(context).colorScheme;
+    final zh = Localizations.localeOf(context).languageCode.startsWith('zh');
+    return Card(
+      elevation: 0,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12),
+        side: BorderSide(color: colorScheme.outlineVariant),
+      ),
+      child: ListTile(
+        leading: Icon(Icons.auto_stories_outlined, color: colorScheme.primary),
+        title: Text(zh ? '记忆' : 'Memory'),
+        subtitle: Text(
+          zh ? '查看与管理该 Agent 的结构化记忆' : 'Browse and manage structured memories',
+          maxLines: 2,
+          overflow: TextOverflow.ellipsis,
+          style: TextStyle(color: colorScheme.onSurfaceVariant),
+        ),
+        trailing: const Icon(Icons.chevron_right),
+        onTap: () => unawaited(_openMemoryDetail()),
+      ),
+    );
+  }
+
+  /// 产物 / 附件（runtime 文件）。
   Widget _buildRuntimeContextEntry() {
     final colorScheme = Theme.of(context).colorScheme;
     final zh = Localizations.localeOf(context).languageCode.startsWith('zh');
@@ -2008,11 +2084,11 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
       ),
       child: ListTile(
         leading: Icon(Icons.inventory_2_outlined, color: colorScheme.primary),
-        title: Text(zh ? '记忆 · Soul · 产物 · 附件' : 'Memory · Soul · Artifacts · Attachments'),
+        title: Text(zh ? '产物 · 附件' : 'Artifacts · Attachments'),
         subtitle: Text(
           zh
-              ? '查看该 Agent 的认知与 runtime 文件'
-              : 'Browse cognition and runtime files for this agent',
+              ? '查看该 Agent 的 runtime 产物与附件'
+              : 'Browse runtime artifacts and attachments',
           maxLines: 2,
           overflow: TextOverflow.ellipsis,
           style: TextStyle(color: colorScheme.onSurfaceVariant),
@@ -2066,9 +2142,6 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
 
   Widget _buildInfoCard() {
     final l10n = AppLocalizations.of(context);
-    final systemPrompt = _displaySoul.trim().isNotEmpty
-        ? _displaySoul
-        : (_agent.metadata['system_prompt'] as String?);
     final llmProviderType = _agent.metadata['llm_provider'] as String?;
     final llmModel = _agent.metadata['llm_model'] as String?;
     final llmApiBase = _agent.metadata['llm_api_base'] as String?;
@@ -2149,13 +2222,6 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
             if (_agent.capabilities.isNotEmpty) ...[
               const SizedBox(height: 8),
               _buildInfoRow(l10n.agentDetail_capabilities, _agent.capabilities.join(', ')),
-            ],
-            if (systemPrompt != null && systemPrompt.isNotEmpty) ...[
-              if (!_isLocalMode) const SizedBox(height: 8),
-              _buildInfoRow(l10n.agentDetail_systemPrompt, systemPrompt),
-            ] else if (_soulLoading) ...[
-              if (!_isLocalMode) const SizedBox(height: 8),
-              const LinearProgressIndicator(),
             ],
             if (llmProvider != null) ...[
               if (_isLocalMode) const SizedBox(height: 0) else const Divider(height: 24),
