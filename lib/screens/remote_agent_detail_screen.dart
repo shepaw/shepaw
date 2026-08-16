@@ -141,6 +141,21 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
 
   bool get _canEditSoul => !_agent.isPeerAgent || _peerSoulEditable;
 
+  /// Keep first occurrence for each [keyOf] — DropdownButton requires unique values.
+  static List<T> _uniqueByValue<T>(
+    Iterable<T> items,
+    String Function(T item) keyOf,
+  ) {
+    final seen = <String>{};
+    final out = <T>[];
+    for (final item in items) {
+      final key = keyOf(item);
+      if (key.isEmpty || !seen.add(key)) continue;
+      out.add(item);
+    }
+    return out;
+  }
+
   @override
   void initState() {
     super.initState();
@@ -249,9 +264,9 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
     if (!mounted) return;
     setState(() {
       _peerModelsLoading = false;
-      _peerModels = list.models;
+      _peerModels = _uniqueByValue(list.models, (m) => m.value);
       _peerCurrentModel = list.current;
-      if (list.models.isEmpty) {
+      if (_peerModels.isEmpty) {
         _peerModelsError = l10n.agentDetail_modelSwitchUnsupported;
       }
     });
@@ -295,7 +310,7 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
     if (!PeerConnectionManager.instance.connectedPeerIds.contains(peerId)) {
       if (mounted) {
         setState(() {
-          _peerModes = catalog.modes;
+          _peerModes = _uniqueByValue(catalog.modes, (m) => m.value);
           _peerCurrentMode = catalog.current;
           _peerModesError = catalog.modes.isEmpty
               ? l10n.agentDetail_peerOffline
@@ -310,7 +325,7 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
         _peerModesLoading = true;
         _peerModesError = null;
         if (catalog.modes.isNotEmpty) {
-          _peerModes = catalog.modes;
+          _peerModes = _uniqueByValue(catalog.modes, (m) => m.value);
           _peerCurrentMode = catalog.current;
         }
       });
@@ -323,7 +338,7 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
     final live = list.modes.isNotEmpty ? list : catalog;
     setState(() {
       _peerModesLoading = false;
-      _peerModes = live.modes;
+      _peerModes = _uniqueByValue(live.modes, (m) => m.value);
       _peerCurrentMode = live.current;
       if (live.modes.isEmpty) {
         _peerModesError = l10n.agentDetail_modeSwitchUnsupported;
@@ -1257,8 +1272,13 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
     final l10n = AppLocalizations.of(context);
     final colorScheme = Theme.of(context).colorScheme;
     final busy = _peerModelsLoading || _peerModelSetting;
+    final models = _uniqueByValue(_peerModels, (m) => m.value);
     final effectiveCurrent = _peerCurrentModel ??
-        (_peerModels.length == 1 ? _peerModels.first.value : null);
+        (models.length == 1 ? models.first.value : null);
+    final dropdownValue = effectiveCurrent != null &&
+            models.any((m) => m.value == effectiveCurrent)
+        ? effectiveCurrent
+        : null;
 
     return Container(
       decoration: BoxDecoration(
@@ -1304,24 +1324,21 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
             style: TextStyle(fontSize: 12, color: colorScheme.onSurfaceVariant),
           ),
           const SizedBox(height: 10),
-          if (_peerModelsError != null && _peerModels.isEmpty)
+          if (_peerModelsError != null && models.isEmpty)
             Text(
               _peerModelsError!,
               style: TextStyle(fontSize: 12, color: colorScheme.error),
             )
-          else if (_peerModels.isEmpty && _peerModelsLoading)
+          else if (models.isEmpty && _peerModelsLoading)
             const SizedBox.shrink()
-          else if (_peerModels.isEmpty)
+          else if (models.isEmpty)
             Text(
               l10n.agentDetail_noModels,
               style: TextStyle(fontSize: 12, color: colorScheme.onSurfaceVariant),
             )
           else
             DropdownButtonFormField<String>(
-              value: effectiveCurrent != null &&
-                      _peerModels.any((m) => m.value == effectiveCurrent)
-                  ? effectiveCurrent
-                  : null,
+              value: dropdownValue,
               isExpanded: true,
               decoration: InputDecoration(
                 isDense: true,
@@ -1331,7 +1348,7 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
                 fillColor: colorScheme.surface,
               ),
               hint: Text(l10n.addAgent_selectModel),
-              selectedItemBuilder: (context) => _peerModels
+              selectedItemBuilder: (context) => models
                   .map(
                     (m) => Align(
                       alignment: AlignmentDirectional.centerStart,
@@ -1342,30 +1359,29 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
                     ),
                   )
                   .toList(),
-              items: _peerModels
-                  .map(
-                    (m) => DropdownMenuItem<String>(
-                      value: m.value,
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Text(m.displayName, overflow: TextOverflow.ellipsis),
-                          if (m.description.isNotEmpty)
-                            Text(
-                              m.description,
-                              style: TextStyle(
-                                fontSize: 11,
-                                color: colorScheme.onSurfaceVariant,
-                              ),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
+              items: [
+                for (final m in models)
+                  DropdownMenuItem<String>(
+                    value: m.value,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(m.displayName, overflow: TextOverflow.ellipsis),
+                        if (m.description.isNotEmpty)
+                          Text(
+                            m.description,
+                            style: TextStyle(
+                              fontSize: 11,
+                              color: colorScheme.onSurfaceVariant,
                             ),
-                        ],
-                      ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                      ],
                     ),
-                  )
-                  .toList(),
+                  ),
+              ],
               onChanged: busy ? null : _onPeerModelSelected,
             ),
         ],
@@ -1379,8 +1395,13 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
     final l10n = AppLocalizations.of(context);
     final colorScheme = Theme.of(context).colorScheme;
     final busy = _peerModesLoading || _peerModeSetting;
+    final modes = _uniqueByValue(_peerModes, (m) => m.value);
     final effectiveCurrent = _peerCurrentMode ??
-        (_peerModes.length == 1 ? _peerModes.first.value : null);
+        (modes.length == 1 ? modes.first.value : null);
+    final dropdownValue = effectiveCurrent != null &&
+            modes.any((m) => m.value == effectiveCurrent)
+        ? effectiveCurrent
+        : null;
 
     return Container(
       decoration: BoxDecoration(
@@ -1426,24 +1447,21 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
             style: TextStyle(fontSize: 12, color: colorScheme.onSurfaceVariant),
           ),
           const SizedBox(height: 10),
-          if (_peerModesError != null && _peerModes.isEmpty)
+          if (_peerModesError != null && modes.isEmpty)
             Text(
               _peerModesError!,
               style: TextStyle(fontSize: 12, color: colorScheme.error),
             )
-          else if (_peerModes.isEmpty && _peerModesLoading)
+          else if (modes.isEmpty && _peerModesLoading)
             const SizedBox.shrink()
-          else if (_peerModes.isEmpty)
+          else if (modes.isEmpty)
             Text(
               l10n.agentDetail_noModes,
               style: TextStyle(fontSize: 12, color: colorScheme.onSurfaceVariant),
             )
           else
             DropdownButtonFormField<String>(
-              value: effectiveCurrent != null &&
-                      _peerModes.any((m) => m.value == effectiveCurrent)
-                  ? effectiveCurrent
-                  : null,
+              value: dropdownValue,
               isExpanded: true,
               decoration: InputDecoration(
                 isDense: true,
@@ -1453,7 +1471,7 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
                 fillColor: colorScheme.surface,
               ),
               hint: Text(l10n.agentDetail_mode),
-              selectedItemBuilder: (context) => _peerModes
+              selectedItemBuilder: (context) => modes
                   .map(
                     (m) => Align(
                       alignment: AlignmentDirectional.centerStart,
@@ -1464,30 +1482,29 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
                     ),
                   )
                   .toList(),
-              items: _peerModes
-                  .map(
-                    (m) => DropdownMenuItem<String>(
-                      value: m.value,
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Text(m.displayName, overflow: TextOverflow.ellipsis),
-                          if (m.description.isNotEmpty)
-                            Text(
-                              m.description,
-                              style: TextStyle(
-                                fontSize: 11,
-                                color: colorScheme.onSurfaceVariant,
-                              ),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
+              items: [
+                for (final m in modes)
+                  DropdownMenuItem<String>(
+                    value: m.value,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(m.displayName, overflow: TextOverflow.ellipsis),
+                        if (m.description.isNotEmpty)
+                          Text(
+                            m.description,
+                            style: TextStyle(
+                              fontSize: 11,
+                              color: colorScheme.onSurfaceVariant,
                             ),
-                        ],
-                      ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                      ],
                     ),
-                  )
-                  .toList(),
+                  ),
+              ],
               onChanged: busy ? null : _onPeerModeSelected,
             ),
         ],
@@ -1694,8 +1711,8 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
           if (result.unsupported || err == 'timeout') {
             throw Exception(
               zh
-                  ? 'Hub 未响应目录浏览。请升级并重启 Hub 后重试，或手动输入路径。'
-                  : 'Hub did not answer directory browse. Upgrade/restart Hub, or enter a path manually.',
+                  ? 'Hub 未响应目录浏览。请升级并重启 peer 服务后重试。'
+                  : 'Hub did not answer directory browse. Upgrade and restart the peer service, then retry.',
             );
           }
           throw Exception(err);

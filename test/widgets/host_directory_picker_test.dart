@@ -14,6 +14,22 @@ void main() {
     expect(resolveLocalBrowsePath('~'), home);
   });
 
+  test('splitHostPathQuery splits parent and prefix', () {
+    expect(
+      splitHostPathQuery('/Users/me/pro'),
+      (parent: '/Users/me', prefix: 'pro'),
+    );
+    expect(
+      splitHostPathQuery('/Users/me/'),
+      (parent: '/Users/me', prefix: ''),
+    );
+    expect(splitHostPathQuery('/'), (parent: '/', prefix: ''));
+    expect(
+      splitHostPathQuery('relative'),
+      (parent: '', prefix: 'relative'),
+    );
+  });
+
   test('browseLocalDirectory lists only directories under home', () async {
     final result = await browseLocalDirectory(null);
     expect(result.path, isNotEmpty);

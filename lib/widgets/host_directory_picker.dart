@@ -1,7 +1,9 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:path/path.dart' as p;
 
 /// One subdirectory from a host filesystem browse.
@@ -87,10 +89,37 @@ Future<HostFsBrowseResult> browseLocalDirectory(String? rawPath) async {
   );
 }
 
+/// Split a typed path into directory parent + name prefix (Hub CwdPathInput).
+({String parent, String prefix}) splitHostPathQuery(String value) {
+  final idx = math.max(value.lastIndexOf('/'), value.lastIndexOf('\\'));
+  if (idx < 0) return (parent: '', prefix: value);
+  final parent = value.substring(0, idx);
+  return (
+    parent: parent.isNotEmpty ? parent : value.substring(0, 1),
+    prefix: value.substring(idx + 1),
+  );
+}
+
+bool _looksBrowsablePath(String parent) {
+  if (parent.startsWith('/') || parent.startsWith('~')) return true;
+  return RegExp(r'^[A-Za-z]:[\\/]').hasMatch(parent);
+}
+
+String _normalizePathKey(String path) {
+  var s = path.trim();
+  while (s.length > 1 && (s.endsWith('/') || s.endsWith('\\'))) {
+    s = s.substring(0, s.length - 1);
+  }
+  return s;
+}
+
 typedef HostFsBrowseFn = Future<HostFsBrowseResult> Function(String? path);
 
 /// Directory picker matching Hub `DirectoryPickerModal`: list dirs, up/home,
 /// confirm current path. Empty start path browses the user home.
+///
+/// The address bar is editable: typing filters the listing by name prefix and
+/// debounced-browses the parent directory when the path changes.
 Future<String?> showHostDirectoryPicker({
   required BuildContext context,
   required HostFsBrowseFn browse,
@@ -125,13 +154,29 @@ class _HostDirectoryPickerDialog extends StatefulWidget {
 }
 
 class _HostDirectoryPickerDialogState extends State<_HostDirectoryPickerDialog> {
+  final _pathController = TextEditingController();
+  final _pathFocus = FocusNode();
+
   HostFsBrowseResult? _result;
   String? _error;
   String? _notice;
   bool _loading = true;
+  String _nameFilter = '';
+  Timer? _pathDebounce;
+  int _loadGen = 0;
 
   bool get _zh =>
       Localizations.localeOf(context).languageCode.startsWith('zh');
+
+  List<HostFsBrowseEntry> get _visibleEntries {
+    final entries = _result?.entries ?? const <HostFsBrowseEntry>[];
+    if (_nameFilter.isEmpty) return entries;
+    final pref = _nameFilter.toLowerCase();
+    return [
+      for (final e in entries)
+        if (e.name.toLowerCase().startsWith(pref)) e,
+    ];
+  }
 
   @override
   void initState() {
@@ -145,7 +190,31 @@ class _HostDirectoryPickerDialogState extends State<_HostDirectoryPickerDialog> 
     );
   }
 
-  Future<void> _load(String? path, {bool softFallback = false}) async {
+  @override
+  void dispose() {
+    _pathDebounce?.cancel();
+    _pathController.dispose();
+    _pathFocus.dispose();
+    super.dispose();
+  }
+
+  void _setPathField(String path, {String nameFilter = ''}) {
+    if (_pathController.text != path) {
+      _pathController.value = TextEditingValue(
+        text: path,
+        selection: TextSelection.collapsed(offset: path.length),
+      );
+    }
+    _nameFilter = nameFilter;
+  }
+
+  Future<void> _load(
+    String? path, {
+    bool softFallback = false,
+    bool syncPathField = true,
+    String? keepFilter,
+  }) async {
+    final gen = ++_loadGen;
     setState(() {
       _loading = true;
       _error = null;
@@ -153,26 +222,32 @@ class _HostDirectoryPickerDialogState extends State<_HostDirectoryPickerDialog> 
     });
     try {
       final data = await widget.browse(path);
-      if (!mounted) return;
+      if (!mounted || gen != _loadGen) return;
       setState(() {
         _result = data;
         _loading = false;
+        if (syncPathField) {
+          _setPathField(data.path, nameFilter: keepFilter ?? '');
+        } else if (keepFilter != null) {
+          _nameFilter = keepFilter;
+        }
       });
     } catch (e) {
       if (softFallback && path != null && path.trim().isNotEmpty) {
         try {
           final data = await widget.browse(null);
-          if (!mounted) return;
+          if (!mounted || gen != _loadGen) return;
           setState(() {
             _result = data;
             _notice = _zh
                 ? '路径不存在，已回到用户目录：$path'
                 : 'Path missing; fell back to home: $path';
             _loading = false;
+            if (syncPathField) _setPathField(data.path);
           });
           return;
         } catch (homeErr) {
-          if (!mounted) return;
+          if (!mounted || gen != _loadGen) return;
           setState(() {
             _result = null;
             _error = homeErr.toString();
@@ -181,13 +256,70 @@ class _HostDirectoryPickerDialogState extends State<_HostDirectoryPickerDialog> 
           return;
         }
       }
-      if (!mounted) return;
+      if (!mounted || gen != _loadGen) return;
       setState(() {
         _result = null;
         _error = e.toString();
         _loading = false;
       });
     }
+  }
+
+  void _onPathTextChanged(String value) {
+    final split = splitHostPathQuery(value);
+    setState(() => _nameFilter = split.prefix);
+
+    _pathDebounce?.cancel();
+    _pathDebounce = Timer(const Duration(milliseconds: 180), () {
+      unawaited(_applyTypedPath(value));
+    });
+  }
+
+  Future<void> _applyTypedPath(String value) async {
+    final trimmed = value.trimRight();
+    if (trimmed.isEmpty) return;
+
+    // Trailing separator → treat as "enter this directory".
+    if (trimmed.endsWith('/') || trimmed.endsWith('\\')) {
+      final dir = _normalizePathKey(trimmed);
+      if (dir.isEmpty || !_looksBrowsablePath(dir)) return;
+      if (_result != null &&
+          _normalizePathKey(_result!.path) == _normalizePathKey(dir)) {
+        setState(() => _nameFilter = '');
+        return;
+      }
+      await _load(dir, syncPathField: false, keepFilter: '');
+      return;
+    }
+
+    final split = splitHostPathQuery(trimmed);
+    if (!_looksBrowsablePath(split.parent)) return;
+
+    final parentKey = _normalizePathKey(split.parent);
+    final currentKey =
+        _result == null ? null : _normalizePathKey(_result!.path);
+    if (currentKey == parentKey) {
+      // Already listing this parent; filter only.
+      if (mounted) setState(() => _nameFilter = split.prefix);
+      return;
+    }
+
+    await _load(
+      split.parent,
+      syncPathField: false,
+      keepFilter: split.prefix,
+    );
+  }
+
+  void _submitPathField() {
+    _pathDebounce?.cancel();
+    final raw = _pathController.text.trim();
+    if (raw.isEmpty) {
+      unawaited(_load(null));
+      return;
+    }
+    final target = _normalizePathKey(raw);
+    unawaited(_load(target, softFallback: true));
   }
 
   void _enter(HostFsBrowseEntry entry) => unawaited(_load(entry.path));
@@ -198,47 +330,6 @@ class _HostDirectoryPickerDialogState extends State<_HostDirectoryPickerDialog> 
   }
 
   void _goHome() => unawaited(_load(null));
-
-  Future<void> _enterPathManually() async {
-    final controller = TextEditingController(text: _result?.path ?? '');
-    final path = await showDialog<String>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text(_zh ? '手动输入路径' : 'Enter path'),
-        content: TextField(
-          controller: controller,
-          autofocus: true,
-          decoration: InputDecoration(
-            labelText: _zh ? '绝对路径' : 'Absolute path',
-            hintText: _zh ? '/Users/me/project' : '/Users/me/project',
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(),
-            child: Text(_zh ? '取消' : 'Cancel'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.of(ctx).pop(controller.text.trim()),
-            child: Text(_zh ? '确定' : 'OK'),
-          ),
-        ],
-      ),
-    );
-    controller.dispose();
-    if (!mounted) return;
-    if (path == null || path.isEmpty) return;
-    // Try to open it in the browser; if that fails, still return the typed path.
-    try {
-      await _load(path, softFallback: false);
-      if (!mounted) return;
-      if (_result != null && _error == null) return;
-    } catch (_) {
-      /* fall through */
-    }
-    if (!mounted) return;
-    Navigator.of(context).pop(path);
-  }
 
   void _confirm() {
     final path = _result?.path;
@@ -274,25 +365,39 @@ class _HostDirectoryPickerDialogState extends State<_HostDirectoryPickerDialog> 
                 ),
                 const SizedBox(width: 4),
                 Expanded(
-                  child: Container(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                    decoration: BoxDecoration(
-                      color: colorScheme.surfaceContainerHighest,
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border.all(color: colorScheme.outlineVariant),
+                  child: TextField(
+                    controller: _pathController,
+                    focusNode: _pathFocus,
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          fontFamily: 'monospace',
+                        ),
+                    decoration: InputDecoration(
+                      isDense: true,
+                      hintText: _zh ? '输入路径…' : 'Type a path…',
+                      contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 10,
+                      ),
+                      filled: true,
+                      fillColor: colorScheme.surfaceContainerHighest,
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(8),
+                        borderSide:
+                            BorderSide(color: colorScheme.outlineVariant),
+                      ),
+                      enabledBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(8),
+                        borderSide:
+                            BorderSide(color: colorScheme.outlineVariant),
+                      ),
                     ),
-                    child: Text(
-                      _result?.path ??
-                          (_loading
-                              ? (_zh ? '加载中…' : 'Loading…')
-                              : '—'),
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                            fontFamily: 'monospace',
-                          ),
-                    ),
+                    onChanged: _onPathTextChanged,
+                    onSubmitted: (_) => _submitPathField(),
+                    textInputAction: TextInputAction.go,
+                    inputFormatters: [
+                      // Allow Enter to submit without inserting a newline.
+                      FilteringTextInputFormatter.deny(RegExp(r'[\n\r]')),
+                    ],
                   ),
                 ),
               ],
@@ -316,8 +421,8 @@ class _HostDirectoryPickerDialogState extends State<_HostDirectoryPickerDialog> 
             const SizedBox(height: 8),
             Text(
               _zh
-                  ? '点击子目录进入；确认将选择当前路径。'
-                  : 'Tap a folder to enter; confirm selects the current path.',
+                  ? '可编辑路径并即时过滤；回车进入该目录；确认选择当前路径。'
+                  : 'Edit the path to filter; Enter opens it; confirm selects the current folder.',
               style: Theme.of(context).textTheme.bodySmall?.copyWith(
                     color: colorScheme.onSurfaceVariant,
                   ),
@@ -329,10 +434,6 @@ class _HostDirectoryPickerDialogState extends State<_HostDirectoryPickerDialog> 
         TextButton(
           onPressed: () => Navigator.of(context).pop(),
           child: Text(_zh ? '取消' : 'Cancel'),
-        ),
-        TextButton(
-          onPressed: () => unawaited(_enterPathManually()),
-          child: Text(_zh ? '手动输入' : 'Type path'),
         ),
         FilledButton(
           onPressed: canConfirm ? _confirm : null,
@@ -354,40 +455,32 @@ class _HostDirectoryPickerDialogState extends State<_HostDirectoryPickerDialog> 
           children: [
             Text(_error!, style: TextStyle(color: colorScheme.error)),
             const SizedBox(height: 8),
-            Wrap(
-              spacing: 8,
-              runSpacing: 4,
-              children: [
-                TextButton(
-                  onPressed: _goHome,
-                  child: Text(_zh ? '回到用户目录' : 'Back to home'),
-                ),
-                TextButton(
-                  onPressed: () => unawaited(_enterPathManually()),
-                  child: Text(_zh ? '手动输入路径' : 'Enter path manually'),
-                ),
-              ],
+            TextButton(
+              onPressed: _goHome,
+              child: Text(_zh ? '回到用户目录' : 'Back to home'),
             ),
           ],
         ),
       );
     }
-    final result = _result;
-    if (result == null) return const SizedBox.shrink();
-    if (result.entries.isEmpty) {
+    if (_result == null) return const SizedBox.shrink();
+    final visible = _visibleEntries;
+    if (visible.isEmpty) {
       return Center(
         child: Text(
-          _zh ? '没有子目录' : 'No subdirectories',
+          _nameFilter.isEmpty
+              ? (_zh ? '没有子目录' : 'No subdirectories')
+              : (_zh ? '无匹配「$_nameFilter」' : 'No match for "$_nameFilter"'),
           style: TextStyle(color: colorScheme.onSurfaceVariant),
         ),
       );
     }
     return ListView.separated(
-      itemCount: result.entries.length,
+      itemCount: visible.length,
       separatorBuilder: (_, __) =>
           Divider(height: 1, color: colorScheme.outlineVariant),
       itemBuilder: (context, index) {
-        final entry = result.entries[index];
+        final entry = visible[index];
         return ListTile(
           dense: true,
           leading: Icon(Icons.folder_outlined, color: colorScheme.primary),
