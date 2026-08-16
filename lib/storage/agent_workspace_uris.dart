@@ -82,3 +82,39 @@ String? primaryWorkspaceUri(Iterable<String> uris) {
   }
   return null;
 }
+
+/// Decode a `store://workspaces/<device>/…` URI back to a host absolute path.
+///
+/// Hub encodes `/Users/foo` → `Users/foo` and `C:/Users/foo` → `C/Users/foo`.
+String? absolutePathFromWorkspaceUri(String rawUri) {
+  final uri = canonicalizeStoreWorkspaceUri(rawUri);
+  if (uri == null) return null;
+  try {
+    final parsed = parseStoreUri(uri, allowEmptyPath: true);
+    if (parsed.space != StoreSpace.workspaces) return null;
+    var path = parsed.path.replaceAll(RegExp(r'/+$'), '');
+    if (path.isEmpty) return null;
+    if (RegExp(r'^[A-Za-z]/').hasMatch(path)) {
+      return '${path[0]}:${path.substring(1)}';
+    }
+    return '/$path';
+  } catch (_) {
+    return null;
+  }
+}
+
+/// Absolute additional roots from agent metadata (hub-advertised).
+List<String> additionalDirectoriesFromMetadata(Map<String, dynamic> metadata) {
+  final raw =
+      metadata['additional_directories'] ?? metadata['additionalDirectories'];
+  if (raw is! List) return const [];
+  final out = <String>[];
+  final seen = <String>{};
+  for (final item in raw) {
+    if (item is! String) continue;
+    final path = item.trim();
+    if (path.isEmpty || !seen.add(path)) continue;
+    out.add(path);
+  }
+  return out;
+}

@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:io';
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
@@ -1527,14 +1528,19 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
   }
 
   /// 打开该 Agent 已挂载 / 已绑定的储物袋工作区（主 + 附加）。
+  /// Hub 可管理实例支持增删附加工作区。
   Widget _buildWorkspaceViewEntry() {
     final colorScheme = Theme.of(context).colorScheme;
     final zh = Localizations.localeOf(context).languageCode.startsWith('zh');
+    final canEditAdditional = _agent.isPeerAgent &&
+        _agent.peerAgentManageable &&
+        _agent.sourcePeerId != null &&
+        _agent.remoteAgentId != null;
     return FutureBuilder<List<String>>(
       future: collectAgentWorkspaceUris(_agent),
       builder: (context, snapshot) {
         final uris = snapshot.data ?? const <String>[];
-        if (uris.isEmpty) {
+        if (uris.isEmpty && !canEditAdditional) {
           return Card(
             elevation: 0,
             shape: RoundedRectangleBorder(
@@ -1566,6 +1572,17 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
+              if (uris.isEmpty)
+                ListTile(
+                  leading: Icon(Icons.folder_off_outlined, color: colorScheme.onSurfaceVariant),
+                  title: Text(zh ? '暂无挂载工作区' : 'No mounted workspace'),
+                  subtitle: Text(
+                    zh
+                        ? '可添加 Hub 主机上的绝对路径作为附加工作区'
+                        : 'Add an absolute path on the Hub host as an additional workspace',
+                    style: TextStyle(color: colorScheme.onSurfaceVariant),
+                  ),
+                ),
               for (var i = 0; i < uris.length; i++) ...[
                 if (i > 0) Divider(height: 1, color: colorScheme.outlineVariant),
                 ListTile(
@@ -1588,14 +1605,220 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
                       fontSize: 12,
                     ),
                   ),
-                  trailing: const Icon(Icons.chevron_right),
+                  trailing: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      if (canEditAdditional && i > 0)
+                        IconButton(
+                          tooltip: zh ? '移除附加工作区' : 'Remove additional workspace',
+                          icon: Icon(Icons.remove_circle_outline, color: colorScheme.error),
+                          onPressed: () => _removeAdditionalWorkspace(uris[i]),
+                        ),
+                      const Icon(Icons.chevron_right),
+                    ],
+                  ),
                   onTap: () => _openAgentWorkspace(preferredUri: uris[i]),
+                ),
+              ],
+              if (canEditAdditional) ...[
+                if (uris.isNotEmpty)
+                  Divider(height: 1, color: colorScheme.outlineVariant),
+                ListTile(
+                  leading: Icon(Icons.create_new_folder_outlined, color: colorScheme.primary),
+                  title: Text(zh ? '添加附加工作区' : 'Add additional workspace'),
+                  subtitle: Text(
+                    zh
+                        ? '填写 Hub 主机上的绝对路径；运行中实例会自动重启'
+                        : 'Enter an absolute path on the Hub host; a running instance will restart',
+                    style: TextStyle(color: colorScheme.onSurfaceVariant, fontSize: 12),
+                  ),
+                  trailing: const Icon(Icons.add),
+                  onTap: _addAdditionalWorkspace,
                 ),
               ],
             ],
           ),
         );
       },
+    );
+  }
+
+  Future<List<String>> _currentAdditionalDirectories() async {
+    final fromMeta = additionalDirectoriesFromMetadata(_agent.metadata);
+    if (fromMeta.isNotEmpty) return fromMeta;
+    final uris = await collectAgentWorkspaceUris(_agent);
+    final out = <String>[];
+    for (var i = 1; i < uris.length; i++) {
+      final path = absolutePathFromWorkspaceUri(uris[i]);
+      if (path != null) out.add(path);
+    }
+    return out;
+  }
+
+  Future<void> _addAdditionalWorkspace() async {
+    final zh = Localizations.localeOf(context).languageCode.startsWith('zh');
+    final peerId = _agent.sourcePeerId;
+    final remoteId = _agent.remoteAgentId;
+    if (peerId == null || remoteId == null) return;
+
+    final controller = TextEditingController();
+    final path = await showDialog<String>(
+      context: context,
+      builder: (ctx) {
+        return AlertDialog(
+          title: Text(zh ? '添加附加工作区' : 'Add additional workspace'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text(
+                zh
+                    ? '路径必须是 Hub 所在机器上的绝对目录（例如 /Users/me/shared-lib）。'
+                    : 'Path must be an absolute directory on the Hub host (e.g. /Users/me/shared-lib).',
+                style: Theme.of(ctx).textTheme.bodySmall,
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: controller,
+                autofocus: true,
+                decoration: InputDecoration(
+                  labelText: zh ? '绝对路径' : 'Absolute path',
+                  hintText: '/path/to/dir',
+                ),
+              ),
+              const SizedBox(height: 8),
+              Align(
+                alignment: Alignment.centerLeft,
+                child: TextButton.icon(
+                  onPressed: () async {
+                    final picked = await FilePicker.platform.getDirectoryPath(
+                      dialogTitle: zh ? '选择本机目录' : 'Pick a local folder',
+                    );
+                    if (picked != null && picked.isNotEmpty) {
+                      controller.text = picked;
+                    }
+                  },
+                  icon: const Icon(Icons.folder_open, size: 18),
+                  label: Text(zh ? '浏览本机目录' : 'Browse local folder'),
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(),
+              child: Text(zh ? '取消' : 'Cancel'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(ctx).pop(controller.text.trim()),
+              child: Text(zh ? '添加' : 'Add'),
+            ),
+          ],
+        );
+      },
+    );
+    controller.dispose();
+    if (path == null || path.isEmpty || !mounted) return;
+
+    final current = await _currentAdditionalDirectories();
+    if (current.contains(path)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(zh ? '该目录已在附加工作区中' : 'Directory already added')),
+      );
+      return;
+    }
+    await _applyAdditionalDirectories([...current, path]);
+  }
+
+  Future<void> _removeAdditionalWorkspace(String uri) async {
+    final zh = Localizations.localeOf(context).languageCode.startsWith('zh');
+    final path = absolutePathFromWorkspaceUri(uri);
+    if (path == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(zh ? '无法解析该工作区路径' : 'Cannot resolve workspace path')),
+      );
+      return;
+    }
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(zh ? '移除附加工作区' : 'Remove additional workspace'),
+        content: Text(zh ? '确定移除：\n$path' : 'Remove:\n$path'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: Text(zh ? '取消' : 'Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: Text(zh ? '移除' : 'Remove'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    final current = await _currentAdditionalDirectories();
+    await _applyAdditionalDirectories(
+      current.where((p) => p != path).toList(),
+    );
+  }
+
+  Future<void> _applyAdditionalDirectories(List<String> directories) async {
+    final zh = Localizations.localeOf(context).languageCode.startsWith('zh');
+    final peerId = _agent.sourcePeerId;
+    final remoteId = _agent.remoteAgentId;
+    if (peerId == null || remoteId == null) return;
+
+    if (!PeerConnectionManager.instance.connectedPeerIds.contains(peerId)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(zh ? '设备未连接' : 'Device offline')),
+      );
+      return;
+    }
+
+    showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => const Center(child: CircularProgressIndicator()),
+    );
+
+    final result = await PeerAgentClientService.instance.setAdditionalDirectories(
+      peerId: peerId,
+      remoteAgentId: remoteId,
+      directories: directories,
+    );
+
+    if (mounted) Navigator.of(context, rootNavigator: true).pop();
+    if (!mounted) return;
+
+    if (!result.ok) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            zh
+                ? '更新失败：${result.error ?? "unknown"}'
+                : 'Update failed: ${result.error ?? "unknown"}',
+          ),
+        ),
+      );
+      return;
+    }
+
+    await PeerAgentClientService.instance.refreshAgentList(peerId);
+    try {
+      final latest = await getIt<RemoteAgentService>().getAgentById(_agent.id);
+      if (latest != null && mounted) {
+        setState(() => _agent = latest);
+      }
+    } catch (_) {}
+
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          zh ? '附加工作区已更新' : 'Additional workspaces updated',
+        ),
+      ),
     );
   }
 

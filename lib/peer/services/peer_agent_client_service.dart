@@ -1791,17 +1791,22 @@ class PeerAgentClientService {
     if (completer != null && !completer.isCompleted) completer.complete(ok);
   }
 
-  /// Query remote agent roster / status. App may only `list`.
+  /// Query remote agent roster / status, or mutate hub-owned fields.
   ///
-  /// Start / stop / set_enabled belong to the hub itself; this client
-  /// refuses to send those ops even if a hub still advertises them.
+  /// Allowed ops from the app:
+  /// - `list`
+  /// - `set_additional_directories` (full-replace absolute paths on the hub host)
+  ///
+  /// Start / stop / set_enabled stay hub-owned; this client refuses them.
   Future<PeerAgentManageResult> manageAgents({
     required String peerId,
     required String op,
     String? agentId,
     bool? enabled,
+    List<String>? additionalDirectories,
   }) async {
-    if (op != 'list') {
+    const allowed = {'list', 'set_additional_directories'};
+    if (!allowed.contains(op)) {
       _log.warning(
         'Rejected remote agent lifecycle op "$op"; hub owns start/stop/enable',
         tag: _tag,
@@ -1817,13 +1822,15 @@ class PeerAgentClientService {
       'op': op,
       if (agentId != null) 'agent_id': agentId,
       if (enabled != null) 'enabled': enabled,
+      if (additionalDirectories != null)
+        'additional_directories': additionalDirectories,
     };
     final sent = await PeerConnectionManager.instance.sendControl(peerId, payload);
     if (!sent) {
       _pendingManage.remove(requestId);
       return const PeerAgentManageResult(ok: false, error: 'offline');
     }
-    return completer.future.timeout(const Duration(seconds: 20), onTimeout: () {
+    return completer.future.timeout(const Duration(seconds: 30), onTimeout: () {
       _pendingManage.remove(requestId);
       return const PeerAgentManageResult(
         ok: false,
@@ -1831,6 +1838,20 @@ class PeerAgentClientService {
         error: 'timeout',
       );
     });
+  }
+
+  /// Replace the hub instance's additional workspace roots (absolute paths).
+  Future<PeerAgentManageResult> setAdditionalDirectories({
+    required String peerId,
+    required String remoteAgentId,
+    required List<String> directories,
+  }) {
+    return manageAgents(
+      peerId: peerId,
+      op: 'set_additional_directories',
+      agentId: remoteAgentId,
+      additionalDirectories: directories,
+    );
   }
 
   void _onManageResp(Map<String, dynamic> data) {
@@ -3017,6 +3038,12 @@ class PeerAgentClientService {
         final workspaceUris = raw['workspace_uris'] is List
             ? raw['workspace_uris']
             : (raw['workspaceUris'] is List ? raw['workspaceUris'] : null);
+        final cwd = raw['cwd'] as String?;
+        final additionalDirectories = raw['additional_directories'] is List
+            ? raw['additional_directories']
+            : (raw['additionalDirectories'] is List
+                ? raw['additionalDirectories']
+                : null);
 
         final agent = RemoteAgent(
           id: localId,
@@ -3046,14 +3073,26 @@ class PeerAgentClientService {
             // 本机「是否在此 App 显示」由用户在设备详情里控制，同步时不得覆盖。
             if (existing?.metadata['hidden_on_this_app'] == true)
               'hidden_on_this_app': true,
-            if (workspaceUri != null) 'workspace_uri': workspaceUri,
-            if (workspaceUris is List) 'workspace_uris': workspaceUris,
-            if (workspaceUri == null &&
-                existing?.metadata['workspace_uri'] is String)
+            if (workspaceUri != null)
+              'workspace_uri': workspaceUri
+            else if (existing?.metadata['workspace_uri'] is String)
               'workspace_uri': existing!.metadata['workspace_uri'],
-            if (workspaceUris is! List &&
-                existing?.metadata['workspace_uris'] is List)
+            if (workspaceUris is List)
+              'workspace_uris': workspaceUris
+            else if (manageable && workspaceUri != null)
+              // Hub sent only primary — clear any stale multi-root list.
+              'workspace_uris': [workspaceUri]
+            else if (existing?.metadata['workspace_uris'] is List)
               'workspace_uris': existing!.metadata['workspace_uris'],
+            if (cwd != null && cwd.isNotEmpty) 'cwd': cwd,
+            if (additionalDirectories is List)
+              'additional_directories': additionalDirectories
+            else if (manageable)
+              // Hub omitted the field → extras cleared.
+              'additional_directories': const <String>[]
+            else if (existing?.metadata['additional_directories'] is List)
+              'additional_directories':
+                  existing!.metadata['additional_directories'],
           },
           createdAt: existing?.createdAt ?? now,
           updatedAt: now,
