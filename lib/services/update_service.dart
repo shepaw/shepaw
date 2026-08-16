@@ -53,7 +53,7 @@ class UpdateService extends ChangeNotifier {
 
   static const String _baseUrl = String.fromEnvironment(
     'UPDATE_BASE_URL',
-    defaultValue: 'http://release.shepaw.com',
+    defaultValue: 'https://release.shepaw.com',
   );
   static const String _checkEndpoint = String.fromEnvironment(
     'UPDATE_CHECK_ENDPOINT',
@@ -487,7 +487,17 @@ class UpdateService extends ChangeNotifier {
   Future<String?> _readCustomBaseUrl() async {
     final prefs = await SharedPreferences.getInstance();
     final custom = prefs.getString(_prefCustomBaseUrlKey)?.trim();
-    if (custom != null && custom.isNotEmpty) return custom;
+    if (custom != null && custom.isNotEmpty) {
+      // 旧版默认曾是 http://release.shepaw.com，用户可能把它存成「自定义」；
+      // 与当前默认等价时清掉，统一走 https。
+      if (custom == 'http://release.shepaw.com' ||
+          custom == defaultBaseUrl) {
+        await prefs.remove(_prefCustomBaseUrlKey);
+        await prefs.remove(_prefLegacyCustomCheckUrlKey);
+        return null;
+      }
+      return custom;
+    }
 
     final legacy = prefs.getString(_prefLegacyCustomCheckUrlKey)?.trim();
     if (legacy == null || legacy.isEmpty) return null;
@@ -496,6 +506,12 @@ class UpdateService extends ChangeNotifier {
     if (legacyUri == null || legacyUri.host.isEmpty) return null;
 
     final migrated = legacyUri.origin;
+    if (migrated == 'http://release.shepaw.com' ||
+        migrated == defaultBaseUrl) {
+      await prefs.remove(_prefCustomBaseUrlKey);
+      await prefs.remove(_prefLegacyCustomCheckUrlKey);
+      return null;
+    }
     await prefs.setString(_prefCustomBaseUrlKey, migrated);
     await prefs.remove(_prefLegacyCustomCheckUrlKey);
     return migrated;
