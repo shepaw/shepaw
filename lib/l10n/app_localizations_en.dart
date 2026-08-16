@@ -1956,6 +1956,17 @@ class AppLocalizationsEn extends AppLocalizations {
       'Read-only: host has not enabled peer Soul editing';
 
   @override
+  String get chat_soulEmpty => 'No Soul yet';
+
+  @override
+  String get chat_soulEmptyDesc =>
+      'The host has not written a Soul for this agent (cognition/soul.md). Edit it on the host to view it here.';
+
+  @override
+  String get chat_soulFetchFailed =>
+      'Could not fetch Soul from the paired device. Check the connection and try again.';
+
+  @override
   String get chat_moreActions => 'More Actions';
 
   @override

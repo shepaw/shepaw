@@ -72,6 +72,8 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
   /// Cached soul text for view mode (loaded from file / peer / metadata).
   String _displaySoul = '';
   bool _soulLoading = false;
+  /// Peer soul 中继失败（超时 / 对端未回包），与「空 Soul」区分。
+  bool _soulFetchFailed = false;
 
   /// Peer agent: host allows remote soul edit.
   bool _peerSoulEditable = false;
@@ -200,27 +202,40 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
 
   Future<void> _loadSoul() async {
     if (!mounted) return;
-    setState(() => _soulLoading = true);
+    setState(() {
+      _soulLoading = true;
+      _soulFetchFailed = false;
+    });
     try {
       if (_agent.isPeerAgent) {
         final peerId = _agent.sourcePeerId;
         final remoteId = _agent.remoteAgentId;
-        if (peerId != null &&
-            remoteId != null &&
-            PeerConnectionManager.instance.connectedPeerIds.contains(peerId)) {
-          final info = await PeerAgentClientService.instance.fetchSoulInfo(
-            peerId: peerId,
-            remoteAgentId: remoteId,
-          );
+        if (peerId == null ||
+            remoteId == null ||
+            !PeerConnectionManager.instance.connectedPeerIds.contains(peerId)) {
           if (!mounted) return;
           setState(() {
-            _displaySoul = info?.soul ?? '';
-            _peerSoulEditable = info?.editable ?? false;
-            _systemPromptController.text = _displaySoul;
+            _displaySoul = '';
+            _peerSoulEditable = false;
+            _systemPromptController.text = '';
+            _soulFetchFailed = false;
             _soulLoading = false;
           });
           return;
         }
+        final info = await PeerAgentClientService.instance.fetchSoulInfo(
+          peerId: peerId,
+          remoteAgentId: remoteId,
+        );
+        if (!mounted) return;
+        setState(() {
+          _displaySoul = info?.soul ?? '';
+          _peerSoulEditable = info?.editable ?? false;
+          _systemPromptController.text = _displaySoul;
+          _soulFetchFailed = info == null;
+          _soulLoading = false;
+        });
+        return;
       }
 
       final soul = await AgentSoulService.instance.getSoul(_agent);
@@ -228,11 +243,15 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
       setState(() {
         _displaySoul = soul;
         _systemPromptController.text = soul;
+        _soulFetchFailed = false;
         _soulLoading = false;
       });
     } catch (_) {
       if (!mounted) return;
-      setState(() => _soulLoading = false);
+      setState(() {
+        _soulFetchFailed = _agent.isPeerAgent;
+        _soulLoading = false;
+      });
     }
   }
 
@@ -506,21 +525,9 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
   }
 
   /// 打开 Soul 详情（可查看；无编辑权时页面内只读）。
+  /// 始终进入页面：离线 / 拉取失败 / 空 Soul 由编辑页展示提示。
   Future<void> _openSoulDetail({required bool requireEditable}) async {
-    final l10n = AppLocalizations.of(context);
     if (requireEditable && !_canEditSoul) return;
-    if (_agent.isPeerAgent) {
-      final peerId = _agent.sourcePeerId;
-      if (peerId == null ||
-          !PeerConnectionManager.instance.connectedPeerIds.contains(peerId)) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text(l10n.agentDetail_peerOffline)),
-          );
-        }
-        return;
-      }
-    }
     await Navigator.push<void>(
       context,
       MaterialPageRoute(
@@ -2020,13 +2027,16 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
   Widget _buildSoulEntry() {
     final l10n = AppLocalizations.of(context);
     final colorScheme = Theme.of(context).colorScheme;
-    final zh = Localizations.localeOf(context).languageCode.startsWith('zh');
     final preview = _displaySoul.trim();
     final subtitle = _soulLoading
-        ? (zh ? '加载中…' : 'Loading…')
-        : preview.isEmpty
-            ? (zh ? '定义 Agent 的身份、角色与原则' : 'Define identity, role, and principles')
-            : (preview.length > 80 ? '${preview.substring(0, 80)}…' : preview);
+        ? l10n.common_loading
+        : _soulFetchFailed
+            ? l10n.chat_soulFetchFailed
+            : preview.isEmpty
+                ? l10n.chat_soulEmpty
+                : (preview.length > 80
+                    ? '${preview.substring(0, 80)}…'
+                    : preview);
 
     return Card(
       elevation: 0,
@@ -2044,9 +2054,8 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
           style: TextStyle(color: colorScheme.onSurfaceVariant),
         ),
         trailing: const Icon(Icons.chevron_right),
-        onTap: _soulLoading
-            ? null
-            : () => unawaited(_openSoulDetail(requireEditable: false)),
+        // 加载中也可点进详情页自行拉取，避免卡在「无法点击」
+        onTap: () => unawaited(_openSoulDetail(requireEditable: false)),
       ),
     );
   }
@@ -2713,13 +2722,15 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
           style: const TextStyle(fontWeight: FontWeight.w600),
         ),
         subtitle: Text(
-          _soulLoading ? '…' : subtitle,
+          _soulLoading
+              ? l10n.common_loading
+              : (preview.isEmpty ? l10n.chat_soulEmpty : subtitle),
           maxLines: 2,
           overflow: TextOverflow.ellipsis,
           style: TextStyle(fontSize: 12, color: Colors.grey[600]),
         ),
         trailing: const Icon(Icons.chevron_right),
-        onTap: _soulLoading ? null : _openSoulEditor,
+        onTap: _openSoulEditor,
       ),
     );
   }

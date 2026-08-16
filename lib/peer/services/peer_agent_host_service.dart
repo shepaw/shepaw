@@ -336,43 +336,75 @@ class PeerAgentHostService {
     return agent;
   }
 
+  static const _soulHostTimeout = Duration(seconds: 10);
+
+  Future<void> _replySoulGet(
+    String peerId,
+    String agentId, {
+    required bool ok,
+    String soul = '',
+    bool editable = false,
+    String? error,
+  }) async {
+    await PeerConnectionManager.instance.sendControl(peerId, {
+      'type': 'agent_soul_resp',
+      'agent_id': agentId,
+      'ok': ok,
+      if (ok) 'soul': soul,
+      if (ok) 'editable': editable,
+      if (!ok && error != null) 'error': error,
+    });
+  }
+
   Future<void> _handleSoulGet(String peerId, Map<String, dynamic> data) async {
-    final agentId = data['agent_id'] as String?;
-    if (agentId == null) return;
+    final agentId = data['agent_id']?.toString();
+    if (agentId == null || agentId.isEmpty) {
+      _log.warning('agent_soul_req missing agent_id from $peerId', tag: _tag);
+      await _replySoulGet(peerId, '', ok: false, error: 'missing_agent_id');
+      return;
+    }
     try {
       final agent = await _resolveSharedAgent(peerId, agentId);
       if (agent == null) {
-        await PeerConnectionManager.instance.sendControl(peerId, {
-          'type': 'agent_soul_resp',
-          'agent_id': agentId,
-          'ok': false,
-          'error': 'not_available',
-        });
+        await _replySoulGet(peerId, agentId, ok: false, error: 'not_available');
         return;
       }
-      final soul = await AgentSoulService.instance.getSoul(agent);
-      await PeerConnectionManager.instance.sendControl(peerId, {
-        'type': 'agent_soul_resp',
-        'agent_id': agentId,
-        'ok': true,
-        'soul': soul,
-        'editable': agent.peerBoundaryConfig.allowPeerSoulEdit,
-      });
+      // 直读本机储物袋，避开 AgentSoulService 的 peer 分支；迁移/读盘加超时，
+      // 避免宿主卡住导致客户端一直等 resp。
+      final soul = await () async {
+        await AgentSoulService.instance.migrateLegacySystemPromptIfNeeded(agent);
+        return (await AgentMemoryStoreService.forAgent(agent.id).getSoul())
+                ?.trim() ??
+            '';
+      }().timeout(_soulHostTimeout);
+      await _replySoulGet(
+        peerId,
+        agentId,
+        ok: true,
+        soul: soul,
+        editable: agent.peerBoundaryConfig.allowPeerSoulEdit,
+      );
+    } on TimeoutException {
+      _log.warning('agent_soul_req timeout agent=$agentId', tag: _tag);
+      await _replySoulGet(peerId, agentId, ok: false, error: 'timeout');
     } catch (e) {
       _log.warning('agent_soul_req failed: $e', tag: _tag);
-      await PeerConnectionManager.instance.sendControl(peerId, {
-        'type': 'agent_soul_resp',
-        'agent_id': agentId,
-        'ok': false,
-        'error': e.toString(),
-      });
+      await _replySoulGet(peerId, agentId, ok: false, error: e.toString());
     }
   }
 
   Future<void> _handleSoulSet(String peerId, Map<String, dynamic> data) async {
-    final agentId = data['agent_id'] as String?;
+    final agentId = data['agent_id']?.toString();
     final soul = data['soul'] as String? ?? '';
-    if (agentId == null) return;
+    if (agentId == null || agentId.isEmpty) {
+      await PeerConnectionManager.instance.sendControl(peerId, {
+        'type': 'agent_soul_set_resp',
+        'agent_id': '',
+        'ok': false,
+        'error': 'missing_agent_id',
+      });
+      return;
+    }
     try {
       final agent = await _resolveSharedAgent(peerId, agentId);
       if (agent == null) {
@@ -393,11 +425,21 @@ class PeerAgentHostService {
         });
         return;
       }
-      final ok = await AgentSoulService.instance.updateSoul(agent, soul);
+      final ok = await AgentSoulService.instance
+          .updateSoul(agent, soul)
+          .timeout(_soulHostTimeout);
       await PeerConnectionManager.instance.sendControl(peerId, {
         'type': 'agent_soul_set_resp',
         'agent_id': agentId,
         'ok': ok,
+      });
+    } on TimeoutException {
+      _log.warning('agent_soul_set_req timeout agent=$agentId', tag: _tag);
+      await PeerConnectionManager.instance.sendControl(peerId, {
+        'type': 'agent_soul_set_resp',
+        'agent_id': agentId,
+        'ok': false,
+        'error': 'timeout',
       });
     } catch (e) {
       _log.warning('agent_soul_set_req failed: $e', tag: _tag);

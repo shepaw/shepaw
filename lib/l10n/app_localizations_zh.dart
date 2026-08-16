@@ -1888,6 +1888,16 @@ class AppLocalizationsZh extends AppLocalizations {
   String get chat_soulReadOnlyPeer => '只读：宿主未开启配对设备修改 Soul';
 
   @override
+  String get chat_soulEmpty => '尚未设置 Soul';
+
+  @override
+  String get chat_soulEmptyDesc =>
+      '宿主端还没有为该 Agent 写入 Soul（cognition/soul.md）。可在宿主详情页编辑后同步查看。';
+
+  @override
+  String get chat_soulFetchFailed => '无法从配对设备获取 Soul，请确认已连接后重试';
+
+  @override
   String get chat_moreActions => '更多操作';
 
   @override

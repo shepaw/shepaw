@@ -25,6 +25,7 @@ class _AgentSoulEditScreenState extends State<AgentSoulEditScreen> {
   String _initialSoul = '';
   bool _readOnly = false;
   String? _loadError;
+  bool _soulMissing = false;
 
   @override
   void didChangeDependencies() {
@@ -40,6 +41,7 @@ class _AgentSoulEditScreenState extends State<AgentSoulEditScreen> {
     final agent = widget.agent;
     var readOnly = false;
     var soul = '';
+    var missing = false;
 
     try {
       if (agent.isPeerAgent) {
@@ -64,7 +66,7 @@ class _AgentSoulEditScreenState extends State<AgentSoulEditScreen> {
         if (info == null) {
           if (mounted) {
             setState(() {
-              _loadError = l10n.agentDetail_peerOffline;
+              _loadError = l10n.chat_soulFetchFailed;
               _loading = false;
             });
           }
@@ -72,14 +74,17 @@ class _AgentSoulEditScreenState extends State<AgentSoulEditScreen> {
         }
         soul = info.soul;
         readOnly = !info.editable;
+        missing = soul.trim().isEmpty;
       } else {
         soul = await AgentSoulService.instance.getSoul(agent);
+        missing = soul.trim().isEmpty;
       }
 
       if (!mounted) return;
       setState(() {
         _initialSoul = soul;
         _readOnly = readOnly;
+        _soulMissing = missing;
         _loading = false;
       });
     } catch (e) {
@@ -123,10 +128,13 @@ class _AgentSoulEditScreenState extends State<AgentSoulEditScreen> {
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
+    final colorScheme = Theme.of(context).colorScheme;
 
     return Scaffold(
       appBar: AppBar(
-        title: Text(_readOnly ? l10n.agentDetail_systemPrompt : l10n.chat_soulTitle),
+        title: Text(
+          _readOnly ? l10n.agentDetail_systemPrompt : l10n.chat_soulTitle,
+        ),
         centerTitle: true,
       ),
       body: _loading
@@ -135,18 +143,75 @@ class _AgentSoulEditScreenState extends State<AgentSoulEditScreen> {
               ? Center(
                   child: Padding(
                     padding: const EdgeInsets.all(24),
-                    child: Text(
-                      _loadError!,
-                      textAlign: TextAlign.center,
-                      style: TextStyle(color: Theme.of(context).colorScheme.error),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          Icons.cloud_off_outlined,
+                          size: 48,
+                          color: colorScheme.error,
+                        ),
+                        const SizedBox(height: 16),
+                        Text(
+                          _loadError!,
+                          textAlign: TextAlign.center,
+                          style: TextStyle(color: colorScheme.error),
+                        ),
+                        const SizedBox(height: 24),
+                        FilledButton.tonal(
+                          onPressed: () {
+                            setState(() {
+                              _loading = true;
+                              _loadError = null;
+                            });
+                            unawaited(_load());
+                          },
+                          child: Text(l10n.common_retry),
+                        ),
+                      ],
                     ),
                   ),
                 )
-              : SoulPanel(
-                  initialSoul: _initialSoul,
-                  readOnly: _readOnly,
-                  onSave: _save,
-                ),
+              : _soulMissing && _readOnly
+                  ? Center(
+                      child: Padding(
+                        padding: const EdgeInsets.all(24),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(
+                              Icons.psychology_outlined,
+                              size: 48,
+                              color: colorScheme.onSurfaceVariant,
+                            ),
+                            const SizedBox(height: 16),
+                            Text(
+                              l10n.chat_soulEmpty,
+                              style: Theme.of(context).textTheme.titleMedium,
+                              textAlign: TextAlign.center,
+                            ),
+                            const SizedBox(height: 8),
+                            Text(
+                              l10n.chat_soulEmptyDesc,
+                              textAlign: TextAlign.center,
+                              style: TextStyle(
+                                color: colorScheme.onSurfaceVariant,
+                              ),
+                            ),
+                            const SizedBox(height: 24),
+                            TextButton(
+                              onPressed: () => Navigator.of(context).pop(),
+                              child: Text(l10n.common_close),
+                            ),
+                          ],
+                        ),
+                      ),
+                    )
+                  : SoulPanel(
+                      initialSoul: _initialSoul,
+                      readOnly: _readOnly,
+                      onSave: _save,
+                    ),
     );
   }
 }

@@ -1774,31 +1774,59 @@ class PeerAgentClientService {
     if (completer != null && !completer.isCompleted) completer.complete(ok);
   }
 
+  static const _soulRelayTimeout = Duration(seconds: 15);
+
+  void _failPendingSoulGet(String remoteAgentId) {
+    final pending = _pendingSoulGet.remove(remoteAgentId);
+    if (pending != null && !pending.isCompleted) {
+      pending.complete(null);
+    }
+  }
+
   /// Fetch soul from a shared peer agent (`agent_soul_req` relay).
+  ///
+  /// 整段请求（含 sendControl / 并发复用）都有超时，避免挂在发送锁或
+  /// 无 timeout 的 pending future 上一直转圈。
   Future<PeerSoulInfo?> fetchSoulInfo({
     required String peerId,
     required String remoteAgentId,
   }) async {
-    if (_pendingSoulGet.containsKey(remoteAgentId)) {
-      return _pendingSoulGet[remoteAgentId]!.future;
+    final existing = _pendingSoulGet[remoteAgentId];
+    if (existing != null) {
+      try {
+        return await existing.future.timeout(_soulRelayTimeout);
+      } on TimeoutException {
+        _failPendingSoulGet(remoteAgentId);
+        return null;
+      }
     }
+
     final completer = Completer<PeerSoulInfo?>();
     _pendingSoulGet[remoteAgentId] = completer;
-    final sent = await PeerConnectionManager.instance.sendControl(peerId, {
-      'type': 'agent_soul_req',
-      'agent_id': remoteAgentId,
-    });
-    if (!sent) {
-      _pendingSoulGet.remove(remoteAgentId);
+    try {
+      final sent = await PeerConnectionManager.instance
+          .sendControl(peerId, {
+            'type': 'agent_soul_req',
+            'agent_id': remoteAgentId,
+          })
+          .timeout(const Duration(seconds: 5));
+      if (!sent) {
+        _failPendingSoulGet(remoteAgentId);
+        return null;
+      }
+      return await completer.future.timeout(_soulRelayTimeout);
+    } on TimeoutException {
+      _log.warning(
+        'agent_soul_req timeout peer=$peerId agent=$remoteAgentId',
+        tag: _tag,
+      );
+      _failPendingSoulGet(remoteAgentId);
+      return null;
+    } catch (e) {
+      _log.warning('agent_soul_req failed: $e', tag: _tag);
+      _failPendingSoulGet(remoteAgentId);
       return null;
     }
-    return completer.future.timeout(const Duration(seconds: 15), onTimeout: () {
-      final pending = _pendingSoulGet.remove(remoteAgentId);
-      if (pending != null && !pending.isCompleted) {
-        pending.complete(null);
-      }
-      return null;
-    });
   }
 
   /// Convenience: soul text only (empty string when missing).
@@ -1814,11 +1842,15 @@ class PeerAgentClientService {
   }
 
   void _onSoulResp(Map<String, dynamic> data) {
-    final remoteId = data['agent_id'] as String?;
-    if (remoteId == null) return;
+    final remoteId = data['agent_id']?.toString();
+    if (remoteId == null || remoteId.isEmpty) return;
     final completer = _pendingSoulGet.remove(remoteId);
     if (completer == null || completer.isCompleted) return;
     if (data['ok'] != true) {
+      _log.warning(
+        'agent_soul_resp ok=false agent=$remoteId error=${data['error']}',
+        tag: _tag,
+      );
       completer.complete(null);
       return;
     }
@@ -1828,38 +1860,56 @@ class PeerAgentClientService {
     ));
   }
 
+  void _failPendingSoulSet(String remoteAgentId) {
+    final pending = _pendingSoulSet.remove(remoteAgentId);
+    if (pending != null && !pending.isCompleted) {
+      pending.complete(false);
+    }
+  }
+
   /// Update soul on a shared peer agent when host allows it.
   Future<bool> setSoul({
     required String peerId,
     required String remoteAgentId,
     required String soul,
   }) async {
-    if (_pendingSoulSet.containsKey(remoteAgentId)) {
-      return _pendingSoulSet[remoteAgentId]!.future;
+    final existing = _pendingSoulSet[remoteAgentId];
+    if (existing != null) {
+      try {
+        return await existing.future.timeout(_soulRelayTimeout);
+      } on TimeoutException {
+        _failPendingSoulSet(remoteAgentId);
+        return false;
+      }
     }
     final completer = Completer<bool>();
     _pendingSoulSet[remoteAgentId] = completer;
-    final sent = await PeerConnectionManager.instance.sendControl(peerId, {
-      'type': 'agent_soul_set_req',
-      'agent_id': remoteAgentId,
-      'soul': soul,
-    });
-    if (!sent) {
-      _pendingSoulSet.remove(remoteAgentId);
+    try {
+      final sent = await PeerConnectionManager.instance
+          .sendControl(peerId, {
+            'type': 'agent_soul_set_req',
+            'agent_id': remoteAgentId,
+            'soul': soul,
+          })
+          .timeout(const Duration(seconds: 5));
+      if (!sent) {
+        _failPendingSoulSet(remoteAgentId);
+        return false;
+      }
+      return await completer.future.timeout(_soulRelayTimeout);
+    } on TimeoutException {
+      _failPendingSoulSet(remoteAgentId);
+      return false;
+    } catch (e) {
+      _log.warning('agent_soul_set_req failed: $e', tag: _tag);
+      _failPendingSoulSet(remoteAgentId);
       return false;
     }
-    return completer.future.timeout(const Duration(seconds: 15), onTimeout: () {
-      final pending = _pendingSoulSet.remove(remoteAgentId);
-      if (pending != null && !pending.isCompleted) {
-        pending.complete(false);
-      }
-      return false;
-    });
   }
 
   void _onSoulSetResp(Map<String, dynamic> data) {
-    final remoteId = data['agent_id'] as String?;
-    if (remoteId == null) return;
+    final remoteId = data['agent_id']?.toString();
+    if (remoteId == null || remoteId.isEmpty) return;
     final ok = data['ok'] == true;
     final completer = _pendingSoulSet.remove(remoteId);
     if (completer != null && !completer.isCompleted) completer.complete(ok);

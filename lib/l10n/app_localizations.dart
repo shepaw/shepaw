@@ -3560,6 +3560,24 @@ abstract class AppLocalizations {
   /// **'只读：宿主未开启配对设备修改 Soul'**
   String get chat_soulReadOnlyPeer;
 
+  /// No description provided for @chat_soulEmpty.
+  ///
+  /// In zh, this message translates to:
+  /// **'尚未设置 Soul'**
+  String get chat_soulEmpty;
+
+  /// No description provided for @chat_soulEmptyDesc.
+  ///
+  /// In zh, this message translates to:
+  /// **'宿主端还没有为该 Agent 写入 Soul（cognition/soul.md）。可在宿主详情页编辑后同步查看。'**
+  String get chat_soulEmptyDesc;
+
+  /// No description provided for @chat_soulFetchFailed.
+  ///
+  /// In zh, this message translates to:
+  /// **'无法从配对设备获取 Soul，请确认已连接后重试'**
+  String get chat_soulFetchFailed;
+
   /// No description provided for @chat_moreActions.
   ///
   /// In zh, this message translates to:
