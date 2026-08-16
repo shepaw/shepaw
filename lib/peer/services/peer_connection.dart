@@ -94,6 +94,8 @@ class PeerConnection {
     'agent_list_resp',
     'agent_manage_req',
     'agent_manage_resp',
+    'fs_browse_req',
+    'fs_browse_resp',
     'agent_chat',
     'agent_chunk',
     'agent_metadata',

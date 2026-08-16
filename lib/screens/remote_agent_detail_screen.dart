@@ -1,6 +1,5 @@
 import 'dart:async';
 import 'dart:io';
-import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
@@ -39,6 +38,7 @@ import 'agent_soul_edit_screen.dart';
 import 'storage_directory_opener.dart';
 import '../storage/agent_workspace_uris.dart';
 import '../storage/store_protocol.dart';
+import '../widgets/host_directory_picker.dart';
 
 /// 远端 Agent 详情页面（从聊天页进入）
 class RemoteAgentDetailScreen extends StatefulWidget {
@@ -1631,8 +1631,8 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
                     title: Text(zh ? '设置主工作区' : 'Set primary workspace'),
                     subtitle: Text(
                       zh
-                          ? '填写 Hub 主机上的绝对路径；运行中实例会自动重启'
-                          : 'Enter an absolute path on the Hub host; a running instance will restart',
+                          ? '浏览选择目录（默认用户主目录）；运行中实例会自动重启'
+                          : 'Browse to pick a folder (defaults to home); a running instance will restart',
                       style: TextStyle(color: colorScheme.onSurfaceVariant, fontSize: 12),
                     ),
                     trailing: const Icon(Icons.add),
@@ -1644,8 +1644,8 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
                     title: Text(zh ? '添加附加工作区' : 'Add additional workspace'),
                     subtitle: Text(
                       zh
-                          ? '填写 Hub 主机上的绝对路径；运行中实例会自动重启'
-                          : 'Enter an absolute path on the Hub host; a running instance will restart',
+                          ? '浏览选择目录（默认用户主目录）；运行中实例会自动重启'
+                          : 'Browse to pick a folder (defaults to home); a running instance will restart',
                       style: TextStyle(color: colorScheme.onSurfaceVariant, fontSize: 12),
                     ),
                     trailing: const Icon(Icons.add),
@@ -1671,74 +1671,56 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
     return out;
   }
 
-  Future<String?> _promptHubAbsoluteDirectory({
+  Future<String?> _promptAbsoluteDirectory({
     required String titleZh,
     required String titleEn,
   }) async {
     final zh = Localizations.localeOf(context).languageCode.startsWith('zh');
-    final controller = TextEditingController();
-    final path = await showDialog<String>(
-      context: context,
-      builder: (ctx) {
-        return AlertDialog(
-          title: Text(zh ? titleZh : titleEn),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Text(
-                zh
-                    ? '路径必须是 Hub 所在机器上的绝对目录（例如 /Users/me/project）。'
-                    : 'Path must be an absolute directory on the Hub host (e.g. /Users/me/project).',
-                style: Theme.of(ctx).textTheme.bodySmall,
-              ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: controller,
-                autofocus: true,
-                decoration: InputDecoration(
-                  labelText: zh ? '绝对路径' : 'Absolute path',
-                  hintText: '/path/to/dir',
-                ),
-              ),
-              const SizedBox(height: 8),
-              Align(
-                alignment: Alignment.centerLeft,
-                child: TextButton.icon(
-                  onPressed: () async {
-                    final picked = await FilePicker.platform.getDirectoryPath(
-                      dialogTitle: zh ? '选择本机目录' : 'Pick a local folder',
-                    );
-                    if (picked != null && picked.isNotEmpty) {
-                      controller.text = picked;
-                    }
-                  },
-                  icon: const Icon(Icons.folder_open, size: 18),
-                  label: Text(zh ? '浏览本机目录' : 'Browse local folder'),
-                ),
-              ),
-            ],
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(ctx).pop(),
-              child: Text(zh ? '取消' : 'Cancel'),
-            ),
-            FilledButton(
-              onPressed: () => Navigator.of(ctx).pop(controller.text.trim()),
-              child: Text(zh ? '确定' : 'OK'),
-            ),
+    final peerId = _agent.sourcePeerId;
+    final useRemoteBrowse = _agent.isPeerAgent;
+
+    Future<HostFsBrowseResult> browse(String? path) async {
+      if (useRemoteBrowse) {
+        if (peerId == null ||
+            !PeerConnectionManager.instance.connectedPeerIds.contains(peerId)) {
+          throw Exception(zh ? '设备未连接' : 'Device offline');
+        }
+        final result = await PeerAgentClientService.instance.browseRemoteFs(
+          peerId: peerId,
+          path: path,
+        );
+        if (!result.ok) {
+          final err = result.error ?? 'browse failed';
+          if (result.unsupported || err == 'timeout') {
+            throw Exception(
+              zh
+                  ? 'Hub 未响应目录浏览。请升级并重启 Hub 后重试，或手动输入路径。'
+                  : 'Hub did not answer directory browse. Upgrade/restart Hub, or enter a path manually.',
+            );
+          }
+          throw Exception(err);
+        }
+        return HostFsBrowseResult(
+          path: result.path,
+          parent: result.parent,
+          entries: [
+            for (final e in result.entries)
+              HostFsBrowseEntry(name: e.name, path: e.path),
           ],
         );
-      },
+      }
+      return browseLocalDirectory(path);
+    }
+
+    return showHostDirectoryPicker(
+      context: context,
+      browse: browse,
+      title: zh ? titleZh : titleEn,
     );
-    controller.dispose();
-    if (path == null || path.isEmpty) return null;
-    return path;
   }
 
   Future<void> _setPrimaryWorkspace() async {
-    final path = await _promptHubAbsoluteDirectory(
+    final path = await _promptAbsoluteDirectory(
       titleZh: '设置主工作区',
       titleEn: 'Set primary workspace',
     );
@@ -1748,7 +1730,7 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
 
   Future<void> _addAdditionalWorkspace() async {
     final zh = Localizations.localeOf(context).languageCode.startsWith('zh');
-    final path = await _promptHubAbsoluteDirectory(
+    final path = await _promptAbsoluteDirectory(
       titleZh: '添加附加工作区',
       titleEn: 'Add additional workspace',
     );

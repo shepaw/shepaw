@@ -496,6 +496,25 @@ class PeerAgentManageResult {
   });
 }
 
+/// Hub host directory listing from `fs_browse_resp`.
+class PeerFsBrowseResult {
+  final bool ok;
+  final String? error;
+  final String path;
+  final String? parent;
+  final List<({String name, String path})> entries;
+  final bool unsupported;
+
+  const PeerFsBrowseResult({
+    required this.ok,
+    this.error,
+    this.path = '',
+    this.parent,
+    this.entries = const [],
+    this.unsupported = false,
+  });
+}
+
 /// Result of [PeerAgentClientService.syncAgentIncremental].
 class PeerAgentIncrementalSyncResult {
   /// Channels linked/repaired by [PeerAgentClientService.syncSessions].
@@ -556,6 +575,11 @@ class _PendingRequest {
   int receivedLength = 0;
   /// Answer text (progress stripped) for UI seed after a process restart.
   String answerContent = '';
+  /// SQLite id of the streaming-flush partial row backing this turn. Bridged
+  /// in via [PeerAgentClientService.noteInflightPartialMessageId] so the
+  /// persisted record lets a post-process-kill restore delete/reuse that exact
+  /// row instead of leaving a stale half-reply next to the final message.
+  String? partialMessageId;
   /// 非 null 表示该 turn 因 peer 断连而挂起，等待重连续传。
   DateTime? suspendedSince;
   /// 是否已发出 resume_req 且尚未收到应答（防止重复发送）。
@@ -593,6 +617,7 @@ class _PendingRequest {
       agentName: agentName,
       receivedLength: receivedLength,
       accumulatedContent: answerContent,
+      partialMessageId: partialMessageId,
       startedAtMs: startedAtMs,
       updatedAtMs: now,
     );
@@ -693,6 +718,9 @@ class PeerAgentClientService {
 
   /// Outstanding agent_manage_req keyed by request_id.
   final Map<String, Completer<PeerAgentManageResult>> _pendingManage = {};
+
+  /// Outstanding fs_browse_req keyed by request_id.
+  final Map<String, Completer<PeerFsBrowseResult>> _pendingFsBrowse = {};
 
   /// Maps hub approval_id → agent_chat request_id for deferred completion.
   final Map<String, String> _approvalToRequest = {};
@@ -974,6 +1002,18 @@ class PeerAgentClientService {
     _schedulePersist(requestId);
   }
 
+  /// Bridge from [StreamingFlushHelper.onFlushed]: record the SQLite id of the
+  /// streaming partial row so it survives process kill via the persisted
+  /// inflight record (without this the field is always null after restore and
+  /// the stale half-reply row can never be deleted on completion).
+  void noteInflightPartialMessageId(String requestId, String messageId) {
+    final p = _pending[requestId];
+    if (p == null || p.completer.isCompleted) return;
+    if (p.partialMessageId == messageId) return;
+    p.partialMessageId = messageId;
+    _schedulePersist(requestId);
+  }
+
   Future<PeerChatResult> awaitPendingTurn(String requestId) {
     final p = _pending[requestId];
     if (p == null) {
@@ -1033,6 +1073,7 @@ class PeerAgentClientService {
       );
       pending.receivedLength = rec.receivedLength;
       pending.answerContent = rec.accumulatedContent;
+      pending.partialMessageId = rec.partialMessageId;
       pending.suspendedSince =
           DateTime.fromMillisecondsSinceEpoch(rec.updatedAtMs);
       _pending[rec.requestId] = pending;
@@ -1462,6 +1503,9 @@ class PeerAgentClientService {
       case 'agent_manage_resp':
         _onManageResp(event.data);
         break;
+      case 'fs_browse_resp':
+        _onFsBrowseResp(event.data);
+        break;
       case 'agent_file_ack':
         _onFileAck(event.data);
         break;
@@ -1869,6 +1913,67 @@ class PeerAgentClientService {
       agentId: remoteAgentId,
       additionalDirectories: directories,
     );
+  }
+
+  /// List directories on the Hub host (empty [path] → user home).
+  Future<PeerFsBrowseResult> browseRemoteFs({
+    required String peerId,
+    String? path,
+  }) async {
+    if (!PeerConnectionManager.instance.connectedPeerIds.contains(peerId)) {
+      return const PeerFsBrowseResult(ok: false, error: 'offline');
+    }
+    final requestId = _uuid.v4();
+    final completer = Completer<PeerFsBrowseResult>();
+    _pendingFsBrowse[requestId] = completer;
+    final payload = <String, dynamic>{
+      'type': 'fs_browse_req',
+      'request_id': requestId,
+      if (path != null) 'path': path,
+    };
+    final sent =
+        await PeerConnectionManager.instance.sendControl(peerId, payload);
+    if (!sent) {
+      _pendingFsBrowse.remove(requestId);
+      return const PeerFsBrowseResult(ok: false, error: 'offline');
+    }
+    return completer.future.timeout(const Duration(seconds: 8), onTimeout: () {
+      _pendingFsBrowse.remove(requestId);
+      return const PeerFsBrowseResult(
+        ok: false,
+        error: 'timeout',
+        unsupported: true,
+      );
+    });
+  }
+
+  void _onFsBrowseResp(Map<String, dynamic> data) {
+    final requestId = data['request_id'] as String?;
+    if (requestId == null) return;
+    final completer = _pendingFsBrowse.remove(requestId);
+    if (completer == null || completer.isCompleted) return;
+    if (data['ok'] != true) {
+      completer.complete(PeerFsBrowseResult(
+        ok: false,
+        error: data['error'] as String? ?? 'browse failed',
+      ));
+      return;
+    }
+    final rawEntries = (data['entries'] as List?) ?? const [];
+    final entries = <({String name, String path})>[];
+    for (final item in rawEntries) {
+      if (item is! Map) continue;
+      final name = item['name'] as String?;
+      final path = item['path'] as String?;
+      if (name == null || path == null) continue;
+      entries.add((name: name, path: path));
+    }
+    completer.complete(PeerFsBrowseResult(
+      ok: true,
+      path: data['path'] as String? ?? '',
+      parent: data['parent'] as String?,
+      entries: entries,
+    ));
   }
 
   void _onManageResp(Map<String, dynamic> data) {
@@ -2318,12 +2423,14 @@ class PeerAgentClientService {
 
     final remoteIds = <String>{};
     final remoteRoleContentKeys = <String>{};
+    final remoteAgentContents = <String>[];
     for (var i = 0; i < history.length; i++) {
       final m = history[i];
       final isUser = m.role == 'user';
       final msgId = peerHistoryMessageId(m, channelId, i);
       remoteIds.add(msgId);
       remoteRoleContentKeys.add(peerHistoryRoleContentKey(m.role, m.content));
+      if (!isUser) remoteAgentContents.add(m.content);
       // Fold the reconstructed progress section (thinking/tools/plan) into the
       // same metadata shape the live stream produces — the bubble renders it
       // as one collapsible block above the answer.
@@ -2371,6 +2478,7 @@ class PeerAgentClientService {
       remoteIds: remoteIds,
       remoteRoleContentKeys: remoteRoleContentKeys,
       preserveIds: preserveIds,
+      remoteAgentContents: remoteAgentContents,
     );
     for (final id in toDelete) {
       await _db.deleteMessage(id);
