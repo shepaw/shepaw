@@ -1526,34 +1526,92 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
     );
   }
 
-  /// 打开该 Agent 已挂载 / 已绑定的储物袋工作区。
+  /// 打开该 Agent 已挂载 / 已绑定的储物袋工作区（主 + 附加）。
   Widget _buildWorkspaceViewEntry() {
     final colorScheme = Theme.of(context).colorScheme;
     final zh = Localizations.localeOf(context).languageCode.startsWith('zh');
-    return Card(
-      elevation: 0,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(12),
-        side: BorderSide(color: colorScheme.outlineVariant),
-      ),
-      child: ListTile(
-        leading: Icon(Icons.folder_open_outlined, color: colorScheme.primary),
-        title: Text(zh ? '查看工作区' : 'View workspace'),
-        subtitle: Text(
-          zh
-              ? '在储物袋中打开该 Agent 挂载的工作目录'
-              : 'Open this agent\'s mounted working directory in Nexus Pouch',
-          maxLines: 2,
-          overflow: TextOverflow.ellipsis,
-          style: TextStyle(color: colorScheme.onSurfaceVariant),
-        ),
-        trailing: const Icon(Icons.chevron_right),
-        onTap: _openAgentWorkspace,
-      ),
+    return FutureBuilder<List<String>>(
+      future: collectAgentWorkspaceUris(_agent),
+      builder: (context, snapshot) {
+        final uris = snapshot.data ?? const <String>[];
+        if (uris.isEmpty) {
+          return Card(
+            elevation: 0,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+              side: BorderSide(color: colorScheme.outlineVariant),
+            ),
+            child: ListTile(
+              leading: Icon(Icons.folder_open_outlined, color: colorScheme.primary),
+              title: Text(zh ? '查看工作区' : 'View workspace'),
+              subtitle: Text(
+                zh
+                    ? '在储物袋中打开该 Agent 挂载的工作目录'
+                    : 'Open this agent\'s mounted working directory in Nexus Pouch',
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(color: colorScheme.onSurfaceVariant),
+              ),
+              trailing: const Icon(Icons.chevron_right),
+              onTap: () => _openAgentWorkspace(),
+            ),
+          );
+        }
+        return Card(
+          elevation: 0,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+            side: BorderSide(color: colorScheme.outlineVariant),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              for (var i = 0; i < uris.length; i++) ...[
+                if (i > 0) Divider(height: 1, color: colorScheme.outlineVariant),
+                ListTile(
+                  leading: Icon(
+                    i == 0 ? Icons.folder_special_outlined : Icons.folder_open_outlined,
+                    color: colorScheme.primary,
+                  ),
+                  title: Text(
+                    i == 0
+                        ? (zh ? '主工作区' : 'Primary workspace')
+                        : (zh ? '附加工作区 $i' : 'Additional workspace $i'),
+                  ),
+                  subtitle: Text(
+                    _workspaceDisplayName(uris[i]),
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: colorScheme.onSurfaceVariant,
+                      fontFamily: 'monospace',
+                      fontSize: 12,
+                    ),
+                  ),
+                  trailing: const Icon(Icons.chevron_right),
+                  onTap: () => _openAgentWorkspace(preferredUri: uris[i]),
+                ),
+              ],
+            ],
+          ),
+        );
+      },
     );
   }
 
-  Future<void> _openAgentWorkspace() async {
+  String _workspaceDisplayName(String rawUri) {
+    final uri = canonicalizeStoreWorkspaceUri(rawUri) ?? rawUri;
+    try {
+      final parsed = parseStoreUri(uri, allowEmptyPath: true);
+      final path = parsed.path.replaceAll(RegExp(r'/+$'), '');
+      if (path.isEmpty) return uri;
+      return '/$path';
+    } catch (_) {
+      return uri;
+    }
+  }
+
+  Future<void> _openAgentWorkspace({String? preferredUri}) async {
     final zh = Localizations.localeOf(context).languageCode.startsWith('zh');
     var agent = _agent;
     try {
@@ -1579,7 +1637,22 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
       setState(() => _agent = agent);
     }
 
-    final rawUri = primaryWorkspaceUri(uris);
+    final preferred = preferredUri == null
+        ? null
+        : (canonicalizeStoreWorkspaceUri(preferredUri) ?? preferredUri);
+    String? rawUri;
+    if (preferred != null) {
+      final preferredKey = preferred.replaceAll(RegExp(r'/+$'), '');
+      for (final u in uris) {
+        final key = (canonicalizeStoreWorkspaceUri(u) ?? u).replaceAll(RegExp(r'/+$'), '');
+        if (key == preferredKey) {
+          rawUri = u;
+          break;
+        }
+      }
+      rawUri ??= preferred;
+    }
+    rawUri ??= primaryWorkspaceUri(uris);
     if (!mounted) return;
     if (rawUri == null) {
       ScaffoldMessenger.of(context).showSnackBar(
