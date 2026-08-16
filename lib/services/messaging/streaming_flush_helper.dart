@@ -26,6 +26,7 @@ class StreamingFlushHelper {
     this.flushInterval = const Duration(milliseconds: kDefaultFlushIntervalMs),
     this.contentThreshold = kDefaultContentThreshold,
     this.enabled = true,
+    this.onFlushed,
   }) : _db = db;
 
   factory StreamingFlushHelper.fromAgent({
@@ -35,6 +36,7 @@ class StreamingFlushHelper {
     required String channelId,
     required String replyToId,
     required String traceId,
+    void Function(String messageId)? onFlushed,
   }) {
     final flushInterval = Duration(
       milliseconds:
@@ -55,6 +57,7 @@ class StreamingFlushHelper {
       flushInterval: flushInterval,
       contentThreshold: contentThreshold,
       enabled: enabled && channelId.isNotEmpty,
+      onFlushed: onFlushed,
     );
   }
 
@@ -67,6 +70,11 @@ class StreamingFlushHelper {
   final Duration flushInterval;
   final int contentThreshold;
   final bool enabled;
+
+  /// Fired after a partial row was successfully written, with its message id.
+  /// Peer turns use this to persist the id into the inflight-turn record so a
+  /// process-kill restore can delete/reuse that exact row.
+  final void Function(String messageId)? onFlushed;
 
   Timer? _timer;
   bool _scheduled = false;
@@ -121,6 +129,7 @@ class StreamingFlushHelper {
       );
 
       activeTask.recordFlush(partialMessageId);
+      onFlushed?.call(partialMessageId);
 
       LoggerService().debug(
         'Flushed streaming content: ${activeTask.accumulatedContent.length} '

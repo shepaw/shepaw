@@ -129,7 +129,7 @@ void main() {
       expect(deleted, isEmpty);
     });
 
-    test('keeps streaming flush rows', () {
+    test('keeps streaming flush rows whose content is not covered remotely', () {
       final deleted = localMessageIdsToDeleteOnPeerHistorySync(
         localRows: const [
           PeerHistorySyncLocalRow(
@@ -142,6 +142,79 @@ void main() {
         remoteIds: remote,
         remoteRoleContentKeys: remoteKeys,
         preserveIds: const {},
+        remoteAgentContents: const ['old answer'],
+      );
+      expect(deleted, isEmpty);
+    });
+
+    test('keeps preserved streaming row even when remote covers its content', () {
+      final deleted = localMessageIdsToDeleteOnPeerHistorySync(
+        localRows: const [
+          PeerHistorySyncLocalRow(
+            id: 'partial-live',
+            senderType: 'agent',
+            content: 'Hello',
+            metadataJson: '{"status":"streaming"}',
+          ),
+        ],
+        remoteIds: remote,
+        remoteRoleContentKeys: remoteKeys,
+        preserveIds: const {'partial-live'},
+        remoteAgentContents: const ['Hello world, full answer'],
+      );
+      expect(deleted, isEmpty);
+    });
+
+    test('deletes orphan streaming row covered by a remote agent message', () {
+      final deleted = localMessageIdsToDeleteOnPeerHistorySync(
+        localRows: const [
+          PeerHistorySyncLocalRow(
+            id: 'partial-orphan',
+            senderType: 'agent',
+            content: 'Hello wor',
+            metadataJson: '{"status":"streaming"}',
+          ),
+        ],
+        remoteIds: remote,
+        remoteRoleContentKeys: remoteKeys,
+        preserveIds: const {},
+        remoteAgentContents: const ['Hello world, full answer'],
+      );
+      expect(deleted, {'partial-orphan'});
+    });
+
+    test('deletes orphan streaming row whose content exactly equals remote', () {
+      final deleted = localMessageIdsToDeleteOnPeerHistorySync(
+        localRows: const [
+          PeerHistorySyncLocalRow(
+            id: 'partial-eq',
+            senderType: 'agent',
+            content: 'old answer',
+            metadataJson: '{"status": "streaming"}',
+          ),
+        ],
+        remoteIds: remote,
+        remoteRoleContentKeys: remoteKeys,
+        preserveIds: const {},
+        remoteAgentContents: const ['old answer'],
+      );
+      expect(deleted, {'partial-eq'});
+    });
+
+    test('keeps empty-content streaming row (nothing to match against)', () {
+      final deleted = localMessageIdsToDeleteOnPeerHistorySync(
+        localRows: const [
+          PeerHistorySyncLocalRow(
+            id: 'partial-empty',
+            senderType: 'agent',
+            content: '',
+            metadataJson: '{"status":"streaming"}',
+          ),
+        ],
+        remoteIds: remote,
+        remoteRoleContentKeys: remoteKeys,
+        preserveIds: const {},
+        remoteAgentContents: const ['old answer'],
       );
       expect(deleted, isEmpty);
     });

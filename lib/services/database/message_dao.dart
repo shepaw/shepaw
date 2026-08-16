@@ -302,6 +302,32 @@ extension MessageDao on LocalDatabaseService {
     return messageId;
   }
 
+  /// 查找某 channel 内某 sender 最近一条 `status: streaming` 的半成品行 id。
+  ///
+  /// 进程被杀后恢复 peer turn 时用于收养杀进程前 flush 落库的 partial 行：
+  /// 恢复出的 ActiveTask 认领该 id 后，后续 flush 继续更新同一行，turn 完成
+  /// 时 deletePartial 能把它删掉——否则 DB 里会残留一条半成品消息，与随后
+  /// 落库的完整消息并存（界面上表现为两条回复）。metadata 的两种 LIKE 形态
+  /// 与 peer_inflight_turn.dart 的 peerHistorySyncRowIsStreaming 对齐。
+  Future<String?> findLatestStreamingPartialMessageId({
+    required String channelId,
+    required String senderId,
+  }) async {
+    final db = await database;
+    final rows = await db.query(
+      'messages',
+      columns: ['id'],
+      where: "channel_id = ? AND sender_id = ? AND sender_type = 'agent' AND "
+          '(metadata LIKE \'%"status":"streaming"%\' OR '
+          'metadata LIKE \'%"status": "streaming"%\')',
+      whereArgs: [channelId, senderId],
+      orderBy: 'created_at DESC',
+      limit: 1,
+    );
+    if (rows.isEmpty) return null;
+    return rows.first['id'] as String?;
+  }
+
   /// Mark a message as interrupted.
   /// 
   /// Updates the message status to 'partial' and records the interruption reason

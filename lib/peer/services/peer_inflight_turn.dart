@@ -163,22 +163,39 @@ bool peerHistorySyncRowIsStreaming(String? metadataJson) {
 /// Keep a local row when:
 /// - its id is already in [remoteIds] (just upserted);
 /// - it is listed in [preserveIds] (inflight user / partial);
-/// - it is a `status: streaming` flush row;
+/// - it is a `status: streaming` flush row whose content is NOT yet covered
+///   by the remote transcript (a live turn still ahead of the remote);
 /// - it is a non-`peerhist_*` row whose role+content is not in the remote
 ///   transcript (a message the phone created that the agent has not
 ///   committed yet).
+///
+/// A `status: streaming` row outside [preserveIds] belongs to a dead turn
+/// (process kill + resume lost/expired, etc.). Once the remote transcript
+/// contains an agent message covering its content (prefix match), the orphan
+/// must be deleted — otherwise it survives forever next to the `peerhist_*`
+/// full message, showing "half reply + full reply" as two bubbles.
 Set<String> localMessageIdsToDeleteOnPeerHistorySync({
   required Iterable<PeerHistorySyncLocalRow> localRows,
   required Set<String> remoteIds,
   required Set<String> remoteRoleContentKeys,
   required Set<String> preserveIds,
+  /// Raw contents of the remote transcript's agent messages, used to decide
+  /// whether an orphan streaming row is already covered by a fuller remote
+  /// version.
+  Iterable<String> remoteAgentContents = const [],
 }) {
   final toDelete = <String>{};
   for (final row in localRows) {
     if (row.id.isEmpty) continue;
     if (remoteIds.contains(row.id)) continue;
     if (preserveIds.contains(row.id)) continue;
-    if (peerHistorySyncRowIsStreaming(row.metadataJson)) continue;
+    if (peerHistorySyncRowIsStreaming(row.metadataJson)) {
+      final covered = row.content.isNotEmpty &&
+          remoteAgentContents.any((c) => c.startsWith(row.content));
+      if (!covered) continue;
+      toDelete.add(row.id);
+      continue;
+    }
     if (!row.id.startsWith('peerhist_')) {
       final role = row.senderType == 'user' ? 'user' : 'agent';
       final key = peerHistoryRoleContentKey(role, row.content);

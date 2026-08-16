@@ -217,7 +217,19 @@ class AgentMessagingService {
       userName: rec.userName,
     );
     activeTask.accumulatedContent = rec.accumulatedContent;
-    activeTask.partialMessageId = rec.partialMessageId;
+    var partialMessageId = rec.partialMessageId;
+    if (partialMessageId == null || partialMessageId.isEmpty) {
+      // 记录里没带 partial id（老版本写入的 inflight 行、或 flush 恰好还没
+      // 跑过）：收养同会话同 agent 最近的 streaming 半成品行。DM 会话同一
+      // channel 只可能存在一个在途 turn（PeerTurnInFlightException 保证），
+      // 收养是安全的；完成时 deletePartial 才能删掉杀进程前那行，避免
+      // 「半成品 + 完整消息」两条并存。
+      partialMessageId = await _db.findLatestStreamingPartialMessageId(
+        channelId: rec.channelId,
+        senderId: agent.id,
+      );
+    }
+    activeTask.partialMessageId = partialMessageId;
     activeTask.metadata = {
       'request_id': rec.requestId,
       'peer_id': rec.peerId,
@@ -239,6 +251,10 @@ class AgentMessagingService {
       channelId: rec.channelId,
       replyToId: rec.userMessageId,
       traceId: rec.requestId,
+      onFlushed: (messageId) {
+        PeerAgentClientService.instance
+            .noteInflightPartialMessageId(rec.requestId, messageId);
+      },
     );
     _restoredPeerCtx[rec.requestId] = (
       rec: rec,
@@ -1520,6 +1536,11 @@ class AgentMessagingService {
     }
     ForegroundTaskService().acquireTask(agent.name);
 
+    // Declared before the flush helper so its onFlushed closure can bridge the
+    // partial row id into the persisted inflight record. Flush only fires after
+    // the first chunk, which always follows onRequestStarted — peerRequestId is
+    // non-null by then.
+    String? peerRequestId;
     final flushHelper = StreamingFlushHelper.fromAgent(
       db: _db,
       activeTask: activeTask,
@@ -1527,6 +1548,12 @@ class AgentMessagingService {
       channelId: effectiveChannelId,
       replyToId: userMessage.id,
       traceId: activeTask.taskId,
+      onFlushed: (messageId) {
+        final rid = peerRequestId;
+        if (rid == null) return;
+        PeerAgentClientService.instance
+            .noteInflightPartialMessageId(rid, messageId);
+      },
     );
 
     // For a synced remote session the local channelId is `psess_<remoteSessionId>`.
@@ -1565,7 +1592,6 @@ class AgentMessagingService {
     final splitter = StreamContentSplitter();
     final infLogPeer = InferenceLogService.instance;
     final traceId = activeTask.taskId;
-    String? peerRequestId;
     infLogPeer.beginSession(
       sessionId: traceId,
       agentId: agent.id,
