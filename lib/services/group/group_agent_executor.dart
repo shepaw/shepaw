@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'package:sqflite/sqflite.dart' show ConflictAlgorithm;
 import 'package:uuid/uuid.dart';
 import '../../models/message.dart';
 import '../../models/remote_agent.dart';
@@ -26,6 +27,7 @@ import '../task/task_models.dart';
 import '../mailbox/channel_mailbox_service.dart';
 import '../messaging/connection_retry_policy.dart';
 import 'group_dispatch_parser.dart';
+import 'group_mailbox_save_plan.dart';
 import 'group_orchestration_tools.dart';
 import 'group_prompt_builder.dart';
 import 'group_turn_result.dart';
@@ -402,6 +404,9 @@ class GroupAgentExecutor {
 
     final responseBuffer = StringBuffer();
     bool streamingStarted = false;
+    /// 信箱轮次收到的回复消息：保存时复用其确定性 id 与来源元数据，
+    /// 与推送拉取路径（fetchMailboxReplies）的去重对齐。
+    Message? mailboxReply;
     // Capture UI tool call data for interactive components
     Map<String, dynamic>? actionConfirmationData;
     Map<String, dynamic>? singleSelectData;
@@ -1153,6 +1158,7 @@ class GroupAgentExecutor {
         if (left.type == MessageType.system) {
           throw Exception(left.content);
         }
+        mailboxReply = left;
         if (left.content.isNotEmpty && responseBuffer.isEmpty) {
           streamingStarted = true;
           responseBuffer.write(left.content);
@@ -1610,6 +1616,10 @@ class GroupAgentExecutor {
     if (multiSelectData != null) meta['multi_select'] = multiSelectData;
     if (fileUploadData != null) meta['file_upload'] = fileUploadData;
     if (formDataCapture != null) meta['form'] = formDataCapture;
+    // Mailbox 轮次的回复必须携带信箱来源元数据（from_mailbox /
+    // mailbox_entry_id 等），fetchMailboxReplies 的去重才认得出它——
+    // 否则推送拉取与轮询保存双通道会把同一回复插入两次。
+    GroupMailboxSavePlan.mergeMetadata(meta, mailboxReply);
     final messageMetadata = meta;
 
     // Detect active interaction type for blocking (priority: form > action_confirmation > ...)
@@ -1636,7 +1646,7 @@ class GroupAgentExecutor {
     String? savedMessageId;
     try {
       final agentResponse = Message(
-        id: _uuid.v4(),
+        id: GroupMailboxSavePlan.messageIdFor(mailboxReply, _uuid.v4()),
         content: responseContent,
         timestampMs: DateTime.now().millisecondsSinceEpoch,
         from: MessageFrom(id: agent.id, type: 'agent', name: agent.name),
@@ -1655,6 +1665,9 @@ class GroupAgentExecutor {
         content: responseContent,
         messageType: 'text',
         metadata: messageMetadata,
+        // 信箱回复的确定性 id 可能与推送拉取路径已插入的行冲突——ignore
+        // 保留先到者（内容相同），且不能中断后续的已读标记/通知/镜像。
+        conflictAlgorithm: ConflictAlgorithm.ignore,
       );
       // Mark as read immediately — the user is actively viewing this chat
       await _db.markMessageAsRead(agentResponse.id);

@@ -30,6 +30,7 @@ import '../noise_identity.dart';
 import '../mailbox/mailbox_seal.dart';
 import '../mailbox/channel_mailbox_service.dart';
 import '../mailbox/mailbox_inbox_poller.dart';
+import '../mailbox/mailbox_turn_claims.dart';
 import '../../clis/shepaw/shepaw_cli.dart';
 import '../group/group_orchestration_tools.dart';
 import '../session/session_history_service.dart';
@@ -3015,11 +3016,7 @@ class AgentMessagingService {
       final agentPub = decodeCachedPeerPublicKey(
         agent.metadata['cached_peer_static_public_key'],
       );
-      final acpAgentId = (agent.metadata['target_agent_id'] as String?) ??
-          ChannelMailboxService.resolveAgentId(
-            agent.endpoint,
-            fallback: agent.id,
-          );
+      final acpAgentId = ChannelMailboxService.acpAgentIdFor(agent);
 
       if (channelBase == null || agentPub == null || acpAgentId.isEmpty) {
         LoggerService().warning(
@@ -3046,73 +3043,82 @@ class AgentMessagingService {
         agentPub,
       );
 
-      final mailbox = ChannelMailboxService();
-      final pending = await mailbox.depositMessage(
-        channelBase: channelBase,
-        agentId: acpAgentId,
-        callerFp: identity.fingerprintHex,
-        messageId: userMessage.id,
-        requestId: requestId,
-        sessionId: sessionId,
-        ciphertext: ciphertext,
-        groupId: groupId,
-      );
-
-      if (persistLeaveMetadata) {
-        try {
-          await _db.updateMessageMetadata(userMessage.id, {
-            ...?userMessage.metadata,
-            'status': 'left_message',
-            'request_id': requestId,
-            'mailbox_pending': pending,
-          });
-        } catch (e) {
-          LoggerService().warning(
-            'Mailbox leave metadata update skipped: $e',
-            tag: 'AgentMessagingService',
-          );
-        }
-      }
-
+      // Claim the turn BEFORE depositing: a fast reply push would otherwise
+      // let the controller's inbox listener fetch+ack the reply before the
+      // poller below starts, and the poller would wait out its full timeout.
+      MailboxTurnClaims.instance.claim(acpAgentId, requestId, userMessage.id);
       try {
-        final result = await MailboxInboxPoller(mailbox: mailbox)
-            .pollUntilComplete(
+        final mailbox = ChannelMailboxService();
+        final pending = await mailbox.depositMessage(
           channelBase: channelBase,
           agentId: acpAgentId,
           callerFp: identity.fingerprintHex,
-          userMessageId: userMessage.id,
+          messageId: userMessage.id,
           requestId: requestId,
           sessionId: sessionId,
-          onStreamChunk: onStreamChunk,
+          ciphertext: ciphertext,
+          groupId: groupId,
         );
 
-        return Message(
-          id: 'inbox_${userMessage.id}',
-          content: result.content,
-          timestampMs: DateTime.now().millisecondsSinceEpoch,
-          from: MessageFrom(id: agent.id, type: 'agent', name: agent.name),
-          to: MessageFrom(
-            id: userMessage.from.id,
-            type: 'user',
-            name: userMessage.from.name,
-          ),
-          type: MessageType.text,
-          replyTo: userMessage.id,
-          metadata: {
-            'status': 'completed',
-            'from_mailbox': true,
-            'request_id': result.requestId,
-            'session_id': result.sessionId,
-            if (result.groupId != null && result.groupId!.isNotEmpty)
-              'group_id': result.groupId,
-          },
-        );
-      } on TimeoutException {
-        return notice(
-          content: pending > 0
-              ? '对方正忙，消息已留言（前面还有 ${pending - 1} 条）。稍后会继续收取回复。'
-              : '对方正忙，消息已留言。稍后会继续收取回复。',
-        );
+        if (persistLeaveMetadata) {
+          try {
+            await _db.updateMessageMetadata(userMessage.id, {
+              ...?userMessage.metadata,
+              'status': 'left_message',
+              'request_id': requestId,
+              'mailbox_pending': pending,
+            });
+          } catch (e) {
+            LoggerService().warning(
+              'Mailbox leave metadata update skipped: $e',
+              tag: 'AgentMessagingService',
+            );
+          }
+        }
+
+        try {
+          final result = await MailboxInboxPoller(mailbox: mailbox)
+              .pollUntilComplete(
+            channelBase: channelBase,
+            agentId: acpAgentId,
+            callerFp: identity.fingerprintHex,
+            userMessageId: userMessage.id,
+            requestId: requestId,
+            sessionId: sessionId,
+            onStreamChunk: onStreamChunk,
+          );
+
+          return Message(
+            id: 'inbox_${userMessage.id}',
+            content: result.content,
+            timestampMs: DateTime.now().millisecondsSinceEpoch,
+            from: MessageFrom(id: agent.id, type: 'agent', name: agent.name),
+            to: MessageFrom(
+              id: userMessage.from.id,
+              type: 'user',
+              name: userMessage.from.name,
+            ),
+            type: MessageType.text,
+            replyTo: userMessage.id,
+            metadata: {
+              'status': 'completed',
+              'from_mailbox': true,
+              'mailbox_entry_id': result.entryId,
+              'request_id': result.requestId,
+              'session_id': result.sessionId,
+              if (result.groupId != null && result.groupId!.isNotEmpty)
+                'group_id': result.groupId,
+            },
+          );
+        } on TimeoutException {
+          return notice(
+            content: pending > 0
+                ? '对方正忙，消息已留言（前面还有 ${pending - 1} 条）。稍后会继续收取回复。'
+                : '对方正忙，消息已留言。稍后会继续收取回复。',
+          );
+        }
+      } finally {
+        MailboxTurnClaims.instance.release(acpAgentId, requestId, userMessage.id);
       }
     } catch (e, st) {
       LoggerService().error(

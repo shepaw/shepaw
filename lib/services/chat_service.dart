@@ -40,6 +40,7 @@ import 'noise_identity.dart';
 import 'mailbox/mailbox_seal.dart';
 import 'mailbox/channel_mailbox_service.dart';
 import 'mailbox/mailbox_reply_router.dart';
+import 'mailbox/mailbox_turn_claims.dart';
 import 'dispatch/she_relay_session_service.dart';
 import '../clis/shepaw/os/os_executor.dart' as os_exec;
 import 'local_llm_agent_service.dart';
@@ -2338,11 +2339,7 @@ $originalQuestion
 
       final channelBase =
           ChannelMailboxService.channelBaseFromEndpoint(agent.endpoint);
-      final acpAgentId = (agent.metadata['target_agent_id'] as String?) ??
-          ChannelMailboxService.resolveAgentId(
-            agent.endpoint,
-            fallback: '',
-          );
+      final acpAgentId = ChannelMailboxService.acpAgentIdFor(agent);
       if (channelBase == null || acpAgentId.isEmpty) return const [];
 
       final identity = await NoiseIdentity.loadOrCreate();
@@ -2369,8 +2366,19 @@ $originalQuestion
 
       for (final reply in replies) {
         try {
+          // 必须先于 orphan-stream 分支检查认领：活跃 poller 拥有的轮次
+          // 跳过且不 ack，留给 poller 消费（否则 poller 会干等到超时，把
+          // 已到达的回复误判为成员失败）。
+          final prefilter = MailboxReplyPrefilter.classify(
+            reply,
+            acpAgentId,
+            MailboxTurnClaims.instance,
+          );
+          if (prefilter == MailboxReplyAction.claimedSkip) {
+            continue;
+          }
           // 流式片段只在活跃轮询中消费；进页拉取时跳过并 ack 掉 orphan chunk
-          if (reply.kind == 'stream') {
+          if (prefilter == MailboxReplyAction.orphanStreamAck) {
             ackIds.add(reply.id);
             continue;
           }

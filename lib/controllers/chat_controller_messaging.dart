@@ -356,6 +356,10 @@ mixin _MessagingOps on _ChatControllerBase {
   /// so that the next queued message can be processed.
   void stopCurrentGroupMessageOnly() {
     LoggerService().debug('Stopping current group messages only (queue preserved)', tag: 'ChatController');
+    // Supersede the running orchestration turn: its abort-summarize keeps
+    // running to completion by design, but its callbacks and finally-cleanup
+    // must no longer touch the shared state of the next turn.
+    groupTurnGate.invalidate();
 
     // Mark all active group streaming messages with [Stopped]
     for (final sid in groupStreamingMessageIds) {
@@ -403,6 +407,9 @@ mixin _MessagingOps on _ChatControllerBase {
 
   void stopStreaming() {
     LoggerService().debug('Stopping streaming', tag: 'ChatController');
+    // Defensive: UI routes this to DM mode today, but cancelling the shared
+    // token without superseding the group epoch would revive the overlap bug.
+    groupTurnGate.invalidate();
 
     if (streamingMessageId != null) {
       final stoppedId = streamingMessageId!;
@@ -438,6 +445,7 @@ mixin _MessagingOps on _ChatControllerBase {
 
   void stopGroupStreaming() {
     LoggerService().debug('Stopping group streaming', tag: 'ChatController');
+    groupTurnGate.invalidate();
 
     // Mark all active group streaming messages with [Stopped]
     for (final sid in groupStreamingMessageIds) {
@@ -1173,6 +1181,7 @@ mixin _MessagingOps on _ChatControllerBase {
 
     isProcessing = true;
     acpCancellationToken = ACPCancellationToken();
+    final epoch = groupTurnGate.beginTurn();
     _notify();
 
     final userMessage = GroupInteractionPlanner.buildOptimisticUserMessage(
@@ -1216,6 +1225,7 @@ mixin _MessagingOps on _ChatControllerBase {
         userMessageMetadata: userMsgMetadata,
         attachments: attachments,
         onAgentStart: (aid, anm) {
+          if (!groupTurnGate.isCurrent(epoch)) return;
           final sid = GroupInteractionPlanner.groupStreamingId(aid);
           turn.begin(aid, sid);
           final sm = GroupInteractionPlanner.buildAgentStreamingPlaceholder(
@@ -1233,6 +1243,7 @@ mixin _MessagingOps on _ChatControllerBase {
           _emit(RequestScrollToBottomEvent(force: true));
         },
         onStreamChunk: (aid, anm, chunk) {
+          if (!groupTurnGate.isCurrent(epoch)) return;
           if (turn.appendAndApply(aid, chunk, messages, messageIdMap) == null) {
             return;
           }
@@ -1240,6 +1251,7 @@ mixin _MessagingOps on _ChatControllerBase {
           scheduleStreamingScrollToBottom();
         },
         onAgentDone: (aid, anm, skipped) {
+          if (!groupTurnGate.isCurrent(epoch)) return;
           final sid = turn.idFor(aid);
           if (GroupInteractionPlanner.shouldDropSkippedPlaceholder(
             skipped: skipped,
@@ -1256,35 +1268,46 @@ mixin _MessagingOps on _ChatControllerBase {
           _notify();
         },
         onAllDone: () {},
-        onActiveWorkflowChanged: (workflowId) => setActiveWorkflowId(workflowId),
-        onInteractionRequest: (agentId, agentName, interactionType, data) =>
-            _handleProcessGroupInteractionRequest(
-          turn: turn,
-          agentId: agentId,
-          agentName: agentName,
-          interactionType: interactionType,
-          data: data,
-        ),
+        onActiveWorkflowChanged: (workflowId) {
+          if (!groupTurnGate.isCurrent(epoch)) return;
+          setActiveWorkflowId(workflowId);
+        },
+        onInteractionRequest: (agentId, agentName, interactionType, data) async {
+          if (!groupTurnGate.isCurrent(epoch)) return null;
+          return _handleProcessGroupInteractionRequest(
+            turn: turn,
+            agentId: agentId,
+            agentName: agentName,
+            interactionType: interactionType,
+            data: data,
+          );
+        },
       );
 
-      await reconcileGroupMessages();
-      markMessagesAsReadIfAtBottom();
+      if (groupTurnGate.isCurrent(epoch)) {
+        await reconcileGroupMessages();
+        markMessagesAsReadIfAtBottom();
+      }
     } catch (e, stackTrace) {
       LoggerService().error('processGroupMessage error: $e', tag: 'ChatController', error: e, stackTrace: stackTrace);
-      _emit(ShowErrorSnackBarEvent('chat_groupChatError:$e'));
-    } finally {
-      acpCancellationToken = null;
-      streaming.clear();
-      turn.clear();
-      for (final e in pendingGroupInteractions.values) {
-        if (!e.result.isCompleted) e.result.complete(null);
+      if (groupTurnGate.isCurrent(epoch)) {
+        _emit(ShowErrorSnackBarEvent('chat_groupChatError:$e'));
       }
-      pendingGroupInteractions.clear();
-      isProcessing = false;
-      respondingAgentNames.clear();
-      groupStreamingMessageIds.clear();
-      _notify();
-      processNextInQueue();
+    } finally {
+      turn.clear();
+      if (groupTurnGate.isCurrent(epoch)) {
+        acpCancellationToken = null;
+        streaming.clear();
+        for (final e in pendingGroupInteractions.values) {
+          if (!e.result.isCompleted) e.result.complete(null);
+        }
+        pendingGroupInteractions.clear();
+        isProcessing = false;
+        respondingAgentNames.clear();
+        groupStreamingMessageIds.clear();
+        _notify();
+        processNextInQueue();
+      }
     }
   }
 

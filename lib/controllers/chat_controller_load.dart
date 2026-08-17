@@ -368,11 +368,7 @@ mixin _LoadOps on _ChatControllerBase {
     for (final agent in inboxAgents) {
       final channelBase =
           ChannelMailboxService.channelBaseFromEndpoint(agent.endpoint);
-      final acpAgentId = (agent.metadata['target_agent_id'] as String?) ??
-          ChannelMailboxService.resolveAgentId(
-            agent.endpoint,
-            fallback: agent.id,
-          );
+      final acpAgentId = ChannelMailboxService.acpAgentIdFor(agent);
       if (channelBase == null || acpAgentId.isEmpty) continue;
       if (acpIdToAgent.containsKey(acpAgentId)) continue;
 

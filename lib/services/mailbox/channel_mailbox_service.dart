@@ -97,6 +97,16 @@ class ChannelMailboxService {
 
   final http.Client _client;
 
+  /// Unified ACP agent id for all mailbox addressing (claim keys, fetch,
+  /// subscribe): metadata `target_agent_id` wins, then the endpoint's
+  /// `?agentId=` query, then the local agent id. Every derivation must go
+  /// through this helper so poller claims and fetch-side checks agree.
+  static String acpAgentIdFor(RemoteAgent agent) {
+    final fromMeta = agent.metadata['target_agent_id'] as String?;
+    if (fromMeta != null && fromMeta.isNotEmpty) return fromMeta;
+    return resolveAgentId(agent.endpoint, fallback: agent.id);
+  }
+
   /// True when [agent] uses Channel relay and has a peer pubkey for seal-box.
   static bool agentHasChannelInbox(RemoteAgent agent) {
     if (!isChannelRelayEndpoint(agent.endpoint)) return false;
@@ -104,11 +114,7 @@ class ChannelMailboxService {
       agent.metadata['cached_peer_static_public_key'],
     );
     if (pub == null) return false;
-    final acpId = resolveAgentId(
-      agent.endpoint,
-      fallback: agent.metadata['target_agent_id'] as String? ?? agent.id,
-    );
-    return acpId.isNotEmpty;
+    return acpAgentIdFor(agent).isNotEmpty;
   }
 
   /// Approved-caller presence probe. Returns null on network/HTTP failure.

@@ -15,12 +15,17 @@ class MailboxInboxTurnResult {
     required this.content,
     required this.requestId,
     required this.sessionId,
+    required this.entryId,
     this.groupId,
   });
 
   final String content;
   final String requestId;
   final String sessionId;
+
+  /// The final reply's mailbox entry id — persisted as `mailbox_entry_id`
+  /// metadata so fetch-based dedupe recognises this turn's saved message.
+  final String entryId;
   final String? groupId;
 }
 
@@ -189,6 +194,7 @@ class MailboxInboxPoller {
             requestId: payload['request_id']?.toString() ?? requestId,
             sessionId: payload['session_id']?.toString() ??
                 reply.sessionId.ifEmpty(sessionId),
+            entryId: reply.id,
             groupId: payload['group_id']?.toString() ?? reply.groupId,
           );
         }
@@ -208,6 +214,7 @@ class MailboxInboxPoller {
           content: buffer.toString(),
           requestId: requestId,
           sessionId: reply.sessionId.ifEmpty(sessionId),
+          entryId: reply.id,
           groupId: reply.groupId,
         );
       } catch (e) {

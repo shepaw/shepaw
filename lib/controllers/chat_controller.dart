@@ -47,6 +47,7 @@ import 'chat_attachment_validator.dart';
 import 'chat_streaming_text.dart';
 import 'chat_lifecycle_coordinator.dart';
 import 'chat_group_streaming_tracker.dart';
+import 'chat_group_turn_gate.dart';
 import 'group_mention_resolver.dart';
 import 'chat_message_reconciler.dart';
 import 'chat_send_planner.dart';
@@ -148,6 +149,10 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
   bool isProcessing = false;
   ACPCancellationToken? acpCancellationToken;
   List<String> messageQueue = [];
+
+  /// 群编排代际守卫：stop 后旧编排的 abort-summarize 会跑完（设计上不带
+  /// 取消令牌），其 finally/流式回调不得再触碰新轮共享状态。
+  final GroupTurnGate groupTurnGate = GroupTurnGate();
 
   // ---- Agent health state ----
   bool isAgentOnline = false;
