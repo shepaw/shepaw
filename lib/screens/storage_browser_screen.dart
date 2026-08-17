@@ -1489,12 +1489,7 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
       ),
       actions: [
         if (_pickMode) ..._pickModeActions(l10n),
-        if (!_pickMode && !_isRemote)
-          IconButton(
-            onPressed: _busy ? null : _openSearch,
-            icon: const Icon(Icons.search),
-            tooltip: l10n.storage_browserSearchTitle,
-          ),
+        // 搜索按钮由 _buildMobileActions 统一提供，这里不再重复添加。
         if (!_pickMode)
           ..._buildMobileActions(l10n, includeCreate: _canWrite),
       ],
