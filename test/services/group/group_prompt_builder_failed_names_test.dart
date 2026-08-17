@@ -19,8 +19,8 @@ void main() {
   final admin = _agent('admin', 'PM');
   final coder = _agent('coder', 'Coder');
 
-  test('loop summarize prompt includes failedAgentNames', () {
-    final prompt = builder.buildGroupSystemPrompt(
+  test('loop summarize prompt includes failedAgentNames', () async {
+    final prompt = await builder.buildGroupSystemPrompt(
       groupName: '项目群',
       groupDescription: '',
       allAgents: [admin, coder],
@@ -35,8 +35,9 @@ void main() {
     expect(prompt, contains('不得宣称全部完成'));
   });
 
-  test('loop summarize prompt omits failure clause when nobody failed', () {
-    final prompt = builder.buildGroupSystemPrompt(
+  test('loop summarize prompt omits failure clause when nobody failed',
+      () async {
+    final prompt = await builder.buildGroupSystemPrompt(
       groupName: '项目群',
       groupDescription: '',
       allAgents: [admin, coder],

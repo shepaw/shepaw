@@ -7,8 +7,8 @@ import 'package:shepaw/models/message.dart';
 import 'package:shepaw/services/messaging/local_llm_handler.dart';
 
 void main() {
-  group('LocalLLMHelpers store implicit prompt', () {
-    test('buildUserMessageContent appends [implicit] for store_uri attachment',
+  group('LocalLLMHelpers store Scope Card folding', () {
+    test('buildUserMessageContent folds store_uri attachment into Scope Card',
         () {
       final att = AttachmentData(
         fileName: 'note.txt',
@@ -26,15 +26,16 @@ void main() {
         false,
       );
       final text = msg['content'] as String;
-      expect(text, contains('[implicit]'));
+      // store:// refs fold into the Scope Card volatile section — no
+      // per-message [implicit] block anymore.
+      expect(text, contains('当前储物袋作用域'));
       expect(text, contains('shepaw store read'));
       expect(text, contains('store://files/0123456789abcdef/docs/note.txt'));
       expect(text, contains('summarize this'));
-      // Surface description stays short (no CLI lecture in textDescription).
-      expect(text, isNot(contains('do NOT use os.file.read / OS paths for store:// URIs)')));
+      expect(text, isNot(contains('[implicit]')));
     });
 
-    test('enrichHistoryContent uses implicit block for store attachment', () {
+    test('enrichHistoryContent keeps fetch hint for store attachment', () {
       final m = Message(
         id: 'msg-1',
         from: MessageFrom(id: 'u', type: 'user', name: 'U'),
@@ -47,13 +48,14 @@ void main() {
         },
       );
       final enriched = LocalLLMHelpers.enrichHistoryContent(m, m.content);
-      expect(enriched, contains('[implicit]'));
-      expect(enriched, contains('store://files/aaaaaaaaaaaaaaaa/note.txt'));
+      // History keeps only the message_id fetch hint; the store URI is
+      // collected into the current-turn Scope Card instead.
+      expect(enriched, isNot(contains('[implicit]')));
       expect(enriched, contains('message_id=msg-1'));
       expect(enriched, contains('chat message get'));
     });
 
-    test('enrichHistoryContent text with store:// gets implicit only', () {
+    test('enrichHistoryContent text with store:// stays untouched', () {
       final m = Message(
         id: 'msg-2',
         from: MessageFrom(id: 'u', type: 'user', name: 'U'),
@@ -62,7 +64,8 @@ void main() {
         timestampMs: 0,
       );
       final enriched = LocalLLMHelpers.enrichHistoryContent(m, m.content);
-      expect(enriched, contains('[implicit]'));
+      expect(enriched, contains('store://files/aaaaaaaaaaaaaaaa/a.txt'));
+      expect(enriched, isNot(contains('[implicit]')));
       expect(enriched, isNot(contains('chat message get')));
     });
   });

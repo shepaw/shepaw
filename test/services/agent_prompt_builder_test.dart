@@ -65,13 +65,17 @@ void main() {
       expect(block, contains('soul'));
     });
 
-    test('buildMetaCognitionBlock prefers store write; read via per-message hints', () {
+    test('buildMetaCognitionBlock points store usage at the Scope Card', () {
       final block = SheService.buildMetaCognitionBlock();
-      expect(block, contains('shepaw store write'));
-      expect(block, contains('prefer store write'));
-      expect(block, contains('store://'));
-      expect(block, contains('[implicit]'));
-      expect(block, contains('shepaw store read'));
+      // Detailed store read/write commands live in the Scope Card (当前储物袋
+      // 作用域), which is the single pouch manual; the system prompt only
+      // points at it and pins the two hard rules.
+      expect(block, contains('### Store'));
+      expect(block, contains('当前储物袋作用域'));
+      expect(block, contains('Scope Card'));
+      expect(block, contains('Do not invent `store://` URIs'));
+      expect(block, contains('store write'));
+      expect(block, isNot(contains('[implicit]')));
       // Detailed MUST/Do-NOT store-read lecture moved off the system prompt.
       expect(block, isNot(contains('MUST** read/operate via store CLI')));
     });
@@ -86,8 +90,10 @@ void main() {
 
       expect(prompt, contains('Your name is Coder.'));
       expect(prompt, contains('Tool Discovery'));
-      expect(prompt, contains('shepaw store write'));
-      expect(prompt, contains('prefer store'));
+      // Store guidance is a pointer to the Scope Card, not a CLI lecture.
+      expect(prompt, contains('### Store'));
+      expect(prompt, contains('Scope Card'));
+      expect(prompt, isNot(contains('[implicit]')));
       expect(prompt, isNot(contains('shepaw CLI — Data Access')));
       expect(prompt, isNot(contains('buildDmWorkflowPlaybookBlock')));
     });
