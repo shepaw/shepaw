@@ -49,7 +49,6 @@ void main() {
     final startedAt = DateTime(2026, 7, 20, 12, 0, 0);
     const chatTimeout = Duration(seconds: 300);
     const suspendCap = Duration(minutes: 10);
-    const hardCap = Duration(minutes: 25);
 
     test('正常活动 → none', () {
       final now = startedAt.add(const Duration(seconds: 60));
@@ -62,7 +61,6 @@ void main() {
           openApprovals: 0,
           chatTimeout: chatTimeout,
           suspendWaitHardCap: suspendCap,
-          approvalWaitHardCap: hardCap,
         ),
         TurnWatchdogVerdict.none,
       );
@@ -80,7 +78,6 @@ void main() {
           openApprovals: 0,
           chatTimeout: chatTimeout,
           suspendWaitHardCap: suspendCap,
-          approvalWaitHardCap: hardCap,
         ),
         TurnWatchdogVerdict.none,
       );
@@ -97,7 +94,6 @@ void main() {
           openApprovals: 0,
           chatTimeout: chatTimeout,
           suspendWaitHardCap: suspendCap,
-          approvalWaitHardCap: hardCap,
         ),
         TurnWatchdogVerdict.idleTimeout,
       );
@@ -114,7 +110,6 @@ void main() {
           openApprovals: 1,
           chatTimeout: chatTimeout,
           suspendWaitHardCap: suspendCap,
-          approvalWaitHardCap: hardCap,
         ),
         TurnWatchdogVerdict.none,
       );
@@ -132,7 +127,6 @@ void main() {
           openApprovals: 0,
           chatTimeout: chatTimeout,
           suspendWaitHardCap: suspendCap,
-          approvalWaitHardCap: hardCap,
         ),
         TurnWatchdogVerdict.none,
       );
@@ -150,33 +144,30 @@ void main() {
           openApprovals: 0,
           chatTimeout: chatTimeout,
           suspendWaitHardCap: suspendCap,
-          approvalWaitHardCap: hardCap,
         ),
         TurnWatchdogVerdict.suspendCap,
       );
     });
 
-    test('hardCap 优先级最高（suspended 未超 suspendCap 但超 hardCap）', () {
-      final suspendedAt = startedAt.add(const Duration(minutes: 20));
-      final now = startedAt.add(const Duration(minutes: 26));
+    test('审批等待不设硬上限（远超原 hardCap 仍 none）', () {
+      // 审批等待无超时：用户何时裁决由用户决定，idle 计时全程冻结。
+      final now = startedAt.add(const Duration(hours: 5));
       expect(
         evaluateTurnWatchdog(
           now: now,
           startedAt: startedAt,
           idleSince: startedAt,
-          suspendedSince: suspendedAt,
+          suspendedSince: null,
           openApprovals: 1,
           chatTimeout: chatTimeout,
           suspendWaitHardCap: suspendCap,
-          approvalWaitHardCap: hardCap,
         ),
-        TurnWatchdogVerdict.hardCap,
+        TurnWatchdogVerdict.none,
       );
     });
 
-    test('无审批的健康长任务不受 hardCap 限制（持续输出 30 分钟）', () {
-      // hardCap 只兜底审批等待（hub 20 分钟拒绝未裁决审批）；持续流式输出
-      // 的 turn 由 idleTimeout 约束，跑多久都不判死。
+    test('无审批的健康长任务不受总时长限制（持续输出 30 分钟）', () {
+      // 持续流式输出的 turn 由 idleTimeout 约束，跑多久都不判死。
       final lastOutput = startedAt.add(const Duration(minutes: 29, seconds: 30));
       final now = startedAt.add(const Duration(minutes: 30));
       expect(
@@ -188,13 +179,12 @@ void main() {
           openApprovals: 0,
           chatTimeout: chatTimeout,
           suspendWaitHardCap: suspendCap,
-          approvalWaitHardCap: hardCap,
         ),
         TurnWatchdogVerdict.none,
       );
     });
 
-    test('无审批的挂起 turn 只受 suspendCap 约束（总时长超 hardCap 但挂起未超）', () {
+    test('无审批的挂起 turn 只受 suspendCap 约束（挂起未超时不判死）', () {
       final suspendedAt = startedAt.add(const Duration(minutes: 24));
       final now = suspendedAt.add(const Duration(minutes: 2));
       expect(
@@ -206,7 +196,6 @@ void main() {
           openApprovals: 0,
           chatTimeout: chatTimeout,
           suspendWaitHardCap: suspendCap,
-          approvalWaitHardCap: hardCap,
         ),
         TurnWatchdogVerdict.none,
       );

@@ -4586,13 +4586,13 @@ class AppLocalizationsZh extends AppLocalizations {
   String get agentDetail_taskTimeoutSeconds => '任务超时时间（秒）';
 
   @override
-  String get agentDetail_taskTimeoutDefault => '默认 600';
+  String get agentDetail_taskTimeoutDefault => '默认 10800';
 
   @override
-  String get agentDetail_taskTimeoutHelper => '单次任务的最长等待时间（60–3600 秒）';
+  String get agentDetail_taskTimeoutHelper => '单次任务的最长等待时间（60–10800 秒）';
 
   @override
-  String get agentDetail_taskTimeoutInvalid => '请输入 60 到 3600 之间的整数';
+  String get agentDetail_taskTimeoutInvalid => '请输入 60 到 10800 之间的整数';
 
   @override
   String agentDetail_fromSource(String name) {

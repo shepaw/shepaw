@@ -1356,7 +1356,7 @@ class AgentMessagingService {
       }
 
       // Wait for task.completed, task.error, or local cancellation
-      final taskTimeoutSeconds = (agent.metadata?['task_timeout_seconds'] as num?)?.toInt() ?? 600;
+      final taskTimeoutSeconds = (agent.metadata?['task_timeout_seconds'] as num?)?.toInt() ?? 10800;
       await taskCompleter.future.timeout(
         Duration(seconds: taskTimeoutSeconds),
         onTimeout: () {

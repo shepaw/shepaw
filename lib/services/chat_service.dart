@@ -919,7 +919,7 @@ $originalQuestion
       originalQuestion: originalQuestion,
     );
 
-    await taskCompleter.future.timeout(const Duration(seconds: 300));
+    await taskCompleter.future.timeout(const Duration(hours: 3));
 
     connection.unregisterTaskCallbacks(taskId);
 

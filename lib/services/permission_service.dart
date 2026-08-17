@@ -294,13 +294,15 @@ class PermissionService {
   }
 
   /// 强制请求权限并等待用户审核（不检查缓存，每次都弹窗）
+  ///
+  /// [timeout] 为空时不设超时 —— 审批等待由用户决定何时完成。
   Future<PermissionResult> requestFreshPermissionAndWait({
     required String agentId,
     required String agentName,
     required PermissionType permissionType,
     required String reason,
     Map<String, dynamic>? metadata,
-    Duration timeout = const Duration(minutes: 2),
+    Duration? timeout,
   }) async {
     // 1. 总是创建新的 PermissionRequest（不检查缓存）
     final request = PermissionRequest(

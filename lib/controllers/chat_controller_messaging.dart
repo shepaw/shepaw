@@ -1400,10 +1400,8 @@ mixin _MessagingOps on _ChatControllerBase {
     }
 
     try {
-      return await event.result.future.timeout(
-        const Duration(minutes: 5),
-        onTimeout: () => null,
-      );
+      // 审批等待不设超时：用户何时处理审批卡片由用户决定。
+      return await event.result.future;
     } finally {
       pendingGroupInteractions.remove(pendingKey);
       _notify();

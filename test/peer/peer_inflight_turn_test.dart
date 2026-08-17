@@ -42,7 +42,7 @@ void main() {
 
     test('older than TTL is expired', () {
       final now = DateTime.utc(2026, 8, 14, 8);
-      final old = now.subtract(const Duration(minutes: 26));
+      final old = now.subtract(kPeerInflightTurnTtl + const Duration(minutes: 1));
       expect(
         isPeerInflightTurnExpired(
           rec(updatedAtMs: old.millisecondsSinceEpoch),

@@ -669,25 +669,16 @@ class PeerAgentClientService {
   static const _tag = 'PeerAgentClient';
 
   /// Upper bound for a single peer agent chat request when the agent produces
-  /// no output. Aligned with the ACP group task timeout (300s) so a peer that
-  /// stays connected but never answers cannot hang a group orchestration
-  /// forever. Each streaming chunk/metadata resets the idle clock; approval
-  /// waits are excluded — see [approvalWaitHardCap].
-  static const Duration chatTimeout = Duration(seconds: 300);
-
-  /// Hard upper bound for a turn WHILE an approval is open. The bridge
-  /// denies an unanswered approval after 20 min (agent-hub
-  /// APPROVAL_TIMEOUT_MS), which also ends the turn — waiting past 25 min
-  /// means the verdict path is gone for good. Turns without open approvals
-  /// are not capped: a healthy long-running task may stream arbitrarily long
-  /// (idle chunks reset the clock; a dead one trips [chatTimeout]).
-  static const Duration approvalWaitHardCap = Duration(minutes: 25);
+  /// no output. A peer that stays connected but never answers must not hang a
+  /// group orchestration forever. Each streaming chunk/metadata resets the
+  /// idle clock; approval waits are uncapped — see [_awaitTurnCompletion].
+  static const Duration chatTimeout = Duration(minutes: 30);
 
   /// 断连挂起（等待重连续传）的最长时长。挂起期间 idle 计时冻结（对端本来
   /// 就不可能有帧到达），超过该时长说明重连无望，判 turn 失败。
-  /// 与 hub 侧 TURN_RESULT_TTL_MS（25min，终态结果的可回放窗口）对齐：
+  /// 略长于 hub 侧 TURN_RESULT_TTL_MS（25min，终态结果的可回放窗口）——
   /// app 先于 hub 放弃会让「hub 还留着结果、app 已判死」的窗口白白浪费。
-  static const Duration suspendWaitHardCap = Duration(minutes: 25);
+  static const Duration suspendWaitHardCap = Duration(minutes: 30);
 
   /// resume_req 发出后对端无应答的容忍时长（旧版本 hub 不支持续传时
   /// 不会回复），超时按「对端不支持续传」失败，避免无限悬挂。
@@ -1373,7 +1364,8 @@ class PeerAgentClientService {
   /// [chatTimeout] only runs while no approval card is open and the agent has
   /// produced no output for that duration: streaming chunks/metadata reset the
   /// idle clock, and the time the user spends reading a tool approval must not
-  /// count against the turn — the bridge allows 20 minutes per approval.
+  /// count against the turn. Approval waits are uncapped — the turn stays
+  /// open until the user decides (or the remote side closes it).
   ///
   /// Suspended turns (peer disconnected, waiting for resume) freeze the idle
   /// clock too — the remote can't possibly send frames while the link is
@@ -1397,7 +1389,6 @@ class PeerAgentClientService {
         openApprovals: pending.openApprovals,
         chatTimeout: chatTimeout,
         suspendWaitHardCap: suspendWaitHardCap,
-        approvalWaitHardCap: approvalWaitHardCap,
       );
       if (verdict != TurnWatchdogVerdict.none) {
         timer.cancel();

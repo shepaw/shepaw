@@ -2271,9 +2271,9 @@
   "agentDetail_maxToolRoundsHelper": "Max tool-call rounds per conversation (1–500)",
   "agentDetail_maxToolRoundsInvalid": "Enter an integer between 1 and 500",
   "agentDetail_taskTimeoutSeconds": "Task timeout (seconds)",
-  "agentDetail_taskTimeoutDefault": "Default 600",
-  "agentDetail_taskTimeoutHelper": "Max wait time per task (60–3600 seconds)",
-  "agentDetail_taskTimeoutInvalid": "Enter an integer between 60 and 3600",
+  "agentDetail_taskTimeoutDefault": "Default 10800",
+  "agentDetail_taskTimeoutHelper": "Max wait time per task (60–10800 seconds)",
+  "agentDetail_taskTimeoutInvalid": "Enter an integer between 60 and 10800",
   "agentDetail_fromSource": "From {name}",
   "@agentDetail_fromSource": {
     "placeholders": {

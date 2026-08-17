@@ -1,0 +1,40 @@
+name: Create GitHub Release
+
+on:
+  push:
+    tags:
+      - '1.0.*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag to release (e.g. 1.0.20)'
+        required: true
+        default: '1.0.20'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Create release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+          name: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+          generate_release_notes: true
+          make_latest: true
+          body: |
+            ## ShePaw ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+
+            ### Highlights
+            - Peer Soul 中继：按 request_id 匹配、宿主快速 peekSoul、页面硬超时
+            - Scope Card / cognition 储物袋：Soul 与记忆权威路径、注入模式
+            - 其他近期 peer / storage / chat 稳定性修复
+
+            ### Artifacts
+            本地签名包请用 `gh release upload` 上传到本 Release：
+            - `shepaw-*-android-release.apk` / `.aab`
+            - `shepaw-*-macos-release.tar.gz`
+            - `shepaw-*-ios-release.tar.gz`（未签名）

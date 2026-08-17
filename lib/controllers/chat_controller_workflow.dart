@@ -544,10 +544,8 @@ mixin _WorkflowOps on _ChatControllerBase {
     }
 
     try {
-      return await event.result.future.timeout(
-        const Duration(minutes: 30),
-        onTimeout: () => null,
-      );
+      // 审批等待不设超时：用户何时处理审批卡片由用户决定。
+      return await event.result.future;
     } finally {
       pendingGroupInteractions.remove(pendingKey);
       if (interactionType == 'action_confirmation' &&

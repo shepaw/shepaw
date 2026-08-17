@@ -430,7 +430,7 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
       text: (_agent.metadata['max_tool_rounds'] as num? ?? 100).toString(),
     );
     _taskTimeoutController = TextEditingController(
-      text: (_agent.metadata['task_timeout_seconds'] as num? ?? 600).toString(),
+      text: (_agent.metadata['task_timeout_seconds'] as num? ?? 10800).toString(),
     );
     _editingAvatar = _agent.avatar;
     _localAvatarPath = null;
@@ -569,7 +569,7 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
     _maxToolRoundsController.text =
         (_agent.metadata['max_tool_rounds'] as num? ?? 100).toString();
     _taskTimeoutController.text =
-        (_agent.metadata['task_timeout_seconds'] as num? ?? 600).toString();
+        (_agent.metadata['task_timeout_seconds'] as num? ?? 10800).toString();
     _editingAvatar = _agent.avatar;
     _localAvatarPath = null;
     _editingProtocol = _agent.protocol;
@@ -784,10 +784,10 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
         }
       }
       final taskTimeout = int.tryParse(taskTimeoutText);
-      if (taskTimeout != null && taskTimeout >= 60 && taskTimeout <= 3600) {
+      if (taskTimeout != null && taskTimeout >= 60 && taskTimeout <= 10800) {
         metadata['task_timeout_seconds'] = taskTimeout;
       } else {
-        metadata['task_timeout_seconds'] = 600;
+        metadata['task_timeout_seconds'] = 10800;
       }
 
       final updatedAgent = _agent.copyWith(
@@ -2287,7 +2287,7 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
               const SizedBox(height: 8),
             ],
             _buildInfoRow(l10n.agentDetail_taskTimeout,
-                l10n.agentDetail_taskTimeoutValue((_agent.metadata['task_timeout_seconds'] as num? ?? 600).toInt())),
+                l10n.agentDetail_taskTimeoutValue((_agent.metadata['task_timeout_seconds'] as num? ?? 10800).toInt())),
             // 本地 / peer agent 的 Agent ID 放在底部信息区（远端 agent 已在连接区展示）
             if (_isLocalMode || _agent.isPeerAgent) ...[
               const SizedBox(height: 8),
@@ -2972,7 +2972,7 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
               validator: (value) {
                 if (value == null || value.trim().isEmpty) return null;
                 final n = int.tryParse(value.trim());
-                if (n == null || n < 60 || n > 3600) return l10n.agentDetail_taskTimeoutInvalid;
+                if (n == null || n < 60 || n > 10800) return l10n.agentDetail_taskTimeoutInvalid;
                 return null;
               },
             ),

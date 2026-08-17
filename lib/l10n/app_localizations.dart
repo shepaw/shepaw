@@ -8417,19 +8417,19 @@ abstract class AppLocalizations {
   /// No description provided for @agentDetail_taskTimeoutDefault.
   ///
   /// In zh, this message translates to:
-  /// **'默认 600'**
+  /// **'默认 10800'**
   String get agentDetail_taskTimeoutDefault;
 
   /// No description provided for @agentDetail_taskTimeoutHelper.
   ///
   /// In zh, this message translates to:
-  /// **'单次任务的最长等待时间（60–3600 秒）'**
+  /// **'单次任务的最长等待时间（60–10800 秒）'**
   String get agentDetail_taskTimeoutHelper;
 
   /// No description provided for @agentDetail_taskTimeoutInvalid.
   ///
   /// In zh, this message translates to:
-  /// **'请输入 60 到 3600 之间的整数'**
+  /// **'请输入 60 到 10800 之间的整数'**
   String get agentDetail_taskTimeoutInvalid;
 
   /// No description provided for @agentDetail_fromSource.

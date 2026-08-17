@@ -1518,7 +1518,7 @@ class GroupAgentExecutor {
           }
         } else {
           await taskCompleter.future.timeout(
-            const Duration(seconds: 300),
+            const Duration(hours: 3),
             onTimeout: () {
               throw TimeoutException('ACP group task timed out for ${agent.name}');
             },

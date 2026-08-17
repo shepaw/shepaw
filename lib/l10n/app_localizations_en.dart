@@ -4768,15 +4768,15 @@ class AppLocalizationsEn extends AppLocalizations {
   String get agentDetail_taskTimeoutSeconds => 'Task timeout (seconds)';
 
   @override
-  String get agentDetail_taskTimeoutDefault => 'Default 600';
+  String get agentDetail_taskTimeoutDefault => 'Default 10800';
 
   @override
   String get agentDetail_taskTimeoutHelper =>
-      'Max wait time per task (60–3600 seconds)';
+      'Max wait time per task (60–10800 seconds)';
 
   @override
   String get agentDetail_taskTimeoutInvalid =>
-      'Enter an integer between 60 and 3600';
+      'Enter an integer between 60 and 10800';
 
   @override
   String agentDetail_fromSource(String name) {

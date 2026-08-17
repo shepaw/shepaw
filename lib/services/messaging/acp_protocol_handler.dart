@@ -217,7 +217,7 @@ class ACPProtocolHandler {
       );
 
       await taskCompleter.future.timeout(
-        const Duration(seconds: 300),
+        const Duration(hours: 3),
         onTimeout: () {
           throw TimeoutException('ACP task timed out');
         },
