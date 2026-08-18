@@ -721,6 +721,15 @@
   "chat_waitingForAction": "is waiting for your action",
   "chat_searchMessages": "Search Messages",
   "chat_searchSessions": "Search Sessions",
+  "chat_messageResults": "Messages",
+  "chat_messageMatchesCount": "{count} matches",
+  "@chat_messageMatchesCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
   "chat_workflow": "Workflow",
   "chat_newSession": "New Session",
   "chat_sessionList": "Session List",

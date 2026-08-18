@@ -23,6 +23,7 @@ class SessionListPanel extends StatelessWidget {
   final String? agentAvatar;
   final String? agentId;
   final VoidCallback? onShowTraces;
+  final VoidCallback? onResetSession;
   final VoidCallback? onAllSessionsMarkedRead;
 
   const SessionListPanel({
@@ -37,6 +38,7 @@ class SessionListPanel extends StatelessWidget {
     this.agentAvatar,
     this.agentId,
     this.onShowTraces,
+    this.onResetSession,
     this.onAllSessionsMarkedRead,
   });
 
@@ -50,6 +52,7 @@ class SessionListPanel extends StatelessWidget {
       onSwitchSession: onSwitchSession,
       onBatchDelete: onBatchDelete,
       onShowTraces: onShowTraces,
+      onResetSession: onResetSession,
       onAllSessionsMarkedRead: onAllSessionsMarkedRead,
     );
   }
@@ -66,6 +69,7 @@ class _SessionListContent extends StatefulWidget {
   final ValueChanged<String> onSwitchSession;
   final ValueChanged<List<String>> onBatchDelete;
   final VoidCallback? onShowTraces;
+  final VoidCallback? onResetSession;
   final VoidCallback? onAllSessionsMarkedRead;
 
   const _SessionListContent({
@@ -76,6 +80,7 @@ class _SessionListContent extends StatefulWidget {
     required this.onSwitchSession,
     required this.onBatchDelete,
     this.onShowTraces,
+    this.onResetSession,
     this.onAllSessionsMarkedRead,
   });
 
@@ -129,7 +134,8 @@ class _SessionListContentState extends State<_SessionListContent> {
                 ),
                 Text(
                   l10n.chat_selectSessions,
-                  style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                  style: const TextStyle(
+                      fontSize: 16, fontWeight: FontWeight.bold),
                 ),
                 const Spacer(),
                 TextButton(
@@ -190,6 +196,7 @@ class _SessionListContentState extends State<_SessionListContent> {
             listRefreshTick: _listRefreshTick,
             onMarkAll: _markAllSessionsRead,
             onShowTraces: widget.onShowTraces,
+            onResetSession: widget.onResetSession,
             onEnterSelectionMode: widget.sessions.length > 1
                 ? () => setState(() => _isSelectionMode = true)
                 : null,
@@ -305,7 +312,8 @@ class _SessionListContentState extends State<_SessionListContent> {
         final dt = DateTime.parse(createdAtStr);
         final now = DateTime.now();
         if (dt.year == now.year && dt.month == now.month && dt.day == now.day) {
-          timeText = '${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';
+          timeText =
+              '${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';
         } else {
           timeText = '${dt.month}/${dt.day}';
         }

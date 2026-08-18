@@ -1052,6 +1052,15 @@
   "chat_waitingForAction": "等待你的操作",
   "chat_searchMessages": "搜索消息",
   "chat_searchSessions": "搜索会话",
+  "chat_messageResults": "消息",
+  "chat_messageMatchesCount": "{count} 条匹配",
+  "@chat_messageMatchesCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
   "chat_workflow": "工作流",
   "chat_newSession": "新建会话",
   "chat_sessionList": "会话列表",

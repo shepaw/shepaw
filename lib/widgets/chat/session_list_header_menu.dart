@@ -4,13 +4,16 @@ import '../../l10n/app_localizations.dart';
 import '../../models/channel.dart';
 import '../../services/local_database_service.dart';
 
-/// 会话列表标题栏右上角「更多」菜单（全部已读 / Trace / 批量选择）。
+/// 会话列表标题栏右上角「更多」菜单（全部已读 / Trace / 重置会话 / 批量选择）。
 class SessionListHeaderMoreButton extends StatelessWidget {
   final List<Channel> sessions;
   final LocalDatabaseService databaseService;
   final int listRefreshTick;
   final Future<void> Function() onMarkAll;
   final VoidCallback? onShowTraces;
+
+  /// 重置当前会话（对当前正在查看的会话生效）。
+  final VoidCallback? onResetSession;
   final VoidCallback? onEnterSelectionMode;
 
   const SessionListHeaderMoreButton({
@@ -20,6 +23,7 @@ class SessionListHeaderMoreButton extends StatelessWidget {
     required this.listRefreshTick,
     required this.onMarkAll,
     this.onShowTraces,
+    this.onResetSession,
     this.onEnterSelectionMode,
   });
 
@@ -67,6 +71,21 @@ class SessionListHeaderMoreButton extends StatelessWidget {
         ),
       );
     }
+    if (onResetSession != null) {
+      items.add(
+        PopupMenuItem<String>(
+          value: 'reset',
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(Icons.refresh, size: 20),
+              const SizedBox(width: 12),
+              Text(l10n.chat_resetSession),
+            ],
+          ),
+        ),
+      );
+    }
     if (onEnterSelectionMode != null && sessions.length > 1) {
       items.add(
         PopupMenuItem<String>(
@@ -87,7 +106,8 @@ class SessionListHeaderMoreButton extends StatelessWidget {
     final box = context.findRenderObject() as RenderBox?;
     if (box == null || !box.hasSize) return;
     final overlay = Overlay.of(context).context.findRenderObject() as RenderBox;
-    final topRight = box.localToGlobal(box.size.topRight(Offset.zero), ancestor: overlay);
+    final topRight =
+        box.localToGlobal(box.size.topRight(Offset.zero), ancestor: overlay);
     final position = RelativeRect.fromLTRB(
       topRight.dx - 200,
       topRight.dy,
@@ -107,6 +127,8 @@ class SessionListHeaderMoreButton extends StatelessWidget {
         await onMarkAll();
       case 'traces':
         onShowTraces?.call();
+      case 'reset':
+        onResetSession?.call();
       case 'select':
         onEnterSelectionMode?.call();
     }
@@ -116,6 +138,7 @@ class SessionListHeaderMoreButton extends StatelessWidget {
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
     final hasMenu = onShowTraces != null ||
+        onResetSession != null ||
         (onEnterSelectionMode != null && sessions.length > 1);
 
     return FutureBuilder<int>(

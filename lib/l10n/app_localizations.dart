@@ -3428,6 +3428,18 @@ abstract class AppLocalizations {
   /// **'搜索会话'**
   String get chat_searchSessions;
 
+  /// No description provided for @chat_messageResults.
+  ///
+  /// In zh, this message translates to:
+  /// **'消息'**
+  String get chat_messageResults;
+
+  /// No description provided for @chat_messageMatchesCount.
+  ///
+  /// In zh, this message translates to:
+  /// **'{count} 条匹配'**
+  String chat_messageMatchesCount(int count);
+
   /// No description provided for @chat_workflow.
   ///
   /// In zh, this message translates to:

@@ -9,6 +9,7 @@ import 'package:emoji_picker_flutter/emoji_picker_flutter.dart';
 import 'package:scrollable_positioned_list/scrollable_positioned_list.dart';
 import '../services/local_user_identity.dart';
 import '../models/channel.dart';
+import '../models/message.dart';
 import '../models/pending_attachment.dart';
 import '../models/remote_agent.dart';
 import '../models/model_routing_config.dart';
@@ -31,11 +32,11 @@ import '../widgets/chat/chat_message_list.dart';
 import '../widgets/chat/chat_reply_preview.dart';
 import '../widgets/chat/session_list_panel.dart';
 import '../widgets/chat/group_session_list_panel.dart';
+import '../widgets/chat/session_search_results.dart';
 import '../widgets/chat/session_unread_badge.dart';
 import '../widgets/chat/group_members_panel.dart';
 import '../widgets/chat/add_group_member_panel.dart';
 import '../widgets/avatar_image.dart';
-import '../widgets/message_search_delegate.dart';
 import '../widgets/voice_record_overlay.dart';
 import 'remote_agent_detail_screen.dart';
 import 'group_detail_screen.dart';
@@ -1447,8 +1448,10 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     if (_isChatDrawerOpen) return;
     _isChatDrawerOpen = true;
     try {
-      final sessions = await _controller.chatService
-          .getAgentSessions(agentId: widget.agentId!);
+      final sessions = await _sortSessionsByLatestMessage(
+        await _controller.chatService
+            .getAgentSessions(agentId: widget.agentId!),
+      );
       if (!mounted) return;
 
       final l10n = AppLocalizations.of(context);
@@ -1462,39 +1465,30 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
         onHeaderTrailing: _navigateToAgentDetailForEdit,
         searchHint: l10n.chat_searchSessions,
         bodyBuilder: (context, query) {
-          final filtered = _filterSessionsByName(sessions, query);
-          if (filtered.isEmpty && query.trim().isNotEmpty) {
-            return _buildDrawerSearchEmpty(l10n);
+          if (query.trim().isNotEmpty) {
+            return SessionSearchResults(
+              query: query.trim(),
+              sessions: sessions,
+              searchService: c.searchService,
+              onSwitchSession: _openDrawerSession,
+              onLocateMessage: _locateSearchMessage,
+            );
           }
           return SessionListPanel(
-            sessions: filtered,
+            sessions: sessions,
             currentChannelId: c.currentChannelId,
             controller: c,
             onNewSession: () => c.createNewSession(),
-            onSwitchSession: (channelId) async {
-              // Stay in the agent DM chat — group-bound sessions are view-only here.
-              await c.localDatabaseService.touchChannelUpdatedAt(channelId);
-              if (!mounted) return;
-              if (widget.embedded) {
-                widget.onSwitchChannel?.call(channelId);
-              } else {
-                Navigator.pushReplacement(
-                  context,
-                  MaterialPageRoute(
-                    builder: (context) => ChatScreen(
-                      agentId: widget.agentId,
-                      agentName: c.agentName,
-                      agentAvatar: c.agentAvatar,
-                      channelId: channelId,
-                    ),
-                  ),
-                );
-              }
-            },
+            onSwitchSession: _openDrawerSession,
             onBatchDelete: (ids) => c.batchDeleteSessions(ids, isGroup: false),
             onShowTraces: () {
               Navigator.pop(context);
               _showChannelTraces();
+            },
+            onResetSession: () {
+              Navigator.pop(context);
+              _messageController.text = '/reset';
+              _sendMessage();
             },
             onAllSessionsMarkedRead: () {
               unawaited(_refreshOtherSessionsUnread());
@@ -1514,14 +1508,6 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
               label: l10n.chat_workflow,
               onTap: _showGroupWorkflow,
             ),
-          ChatDrawerAction(
-            icon: Icons.refresh,
-            label: l10n.chat_resetSession,
-            onTap: () {
-              _messageController.text = '/reset';
-              _sendMessage();
-            },
-          ),
         ],
       );
 
@@ -1550,8 +1536,10 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     _isChatDrawerOpen = true;
     try {
       final parentGroupId = _controller.groupChannel!.groupFamilyId;
-      final sessions = await _controller.chatService
-          .getGroupSessions(parentGroupId: parentGroupId);
+      final sessions = await _sortSessionsByLatestMessage(
+        await _controller.chatService
+            .getGroupSessions(parentGroupId: parentGroupId),
+      );
       if (!mounted) return;
 
       final l10n = AppLocalizations.of(context);
@@ -1602,29 +1590,22 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
         onHeaderTrailing: _showGroupMembersPanel,
         searchHint: l10n.chat_searchSessions,
         bodyBuilder: (context, query) {
-          final filtered = _filterSessionsByName(sessions, query);
-          if (filtered.isEmpty && query.trim().isNotEmpty) {
-            return _buildDrawerSearchEmpty(l10n);
+          if (query.trim().isNotEmpty) {
+            return SessionSearchResults(
+              query: query.trim(),
+              sessions: sessions,
+              searchService: c.searchService,
+              groupChannel: c.groupChannel,
+              onSwitchSession: _openDrawerSession,
+              onLocateMessage: _locateSearchMessage,
+            );
           }
           return GroupSessionListPanel(
-            sessions: filtered,
+            sessions: sessions,
             currentChannelId: c.currentChannelId,
             controller: c,
             onNewSession: () => c.createNewGroupSession(),
-            onSwitchSession: (channelId) async {
-              await c.localDatabaseService.touchChannelUpdatedAt(channelId);
-              if (!mounted) return;
-              if (widget.embedded) {
-                widget.onSwitchChannel?.call(channelId);
-              } else {
-                Navigator.pushReplacement(
-                  context,
-                  MaterialPageRoute(
-                    builder: (context) => ChatScreen(channelId: channelId),
-                  ),
-                );
-              }
-            },
+            onSwitchSession: _openDrawerSession,
             onBatchDelete: (ids) => c.batchDeleteSessions(ids, isGroup: true),
             onShowTraces: () {
               Navigator.pop(context);
@@ -1678,21 +1659,76 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   // Session drawer search
   // ---------------------------------------------------------------------------
 
-  /// 抽屉内搜索：按会话名称过滤（大小写不敏感）。空查询返回全部。
-  List<Channel> _filterSessionsByName(List<Channel> sessions, String query) {
-    final q = query.trim().toLowerCase();
-    if (q.isEmpty) return sessions;
-    return sessions.where((s) => s.name.toLowerCase().contains(q)).toList();
+  /// 按最新消息时间排序会话（无消息时回退到会话创建时间）。
+  ///
+  /// 点击进入会刷新 updated_at（供主页「最近打开」恢复会话用），但列表排序
+  /// 不依赖它，因此进入会话不会改变列表位置——顺序只随消息活跃变化。
+  Future<List<Channel>> _sortSessionsByLatestMessage(
+    List<Channel> sessions,
+  ) async {
+    final times = <String, DateTime>{};
+    await Future.wait(sessions.map((s) async {
+      final latest =
+          await _controller.localDatabaseService.getLatestChannelMessage(s.id);
+      final created = latest?['created_at'] as String?;
+      if (created != null) {
+        final t = DateTime.tryParse(created);
+        if (t != null) times[s.id] = t;
+      }
+    }));
+    final sorted = [...sessions];
+    sorted.sort((a, b) {
+      final ta = times[a.id] ?? DateTime.fromMillisecondsSinceEpoch(a.createdAt);
+      final tb = times[b.id] ?? DateTime.fromMillisecondsSinceEpoch(b.createdAt);
+      return tb.compareTo(ta);
+    });
+    return sorted;
   }
 
-  /// 抽屉内搜索无结果时的占位提示。
-  Widget _buildDrawerSearchEmpty(AppLocalizations l10n) {
-    return Center(
-      child: Text(
-        l10n.home_searchNoResults,
-        style: TextStyle(fontSize: 14, color: Colors.grey[500]),
-      ),
-    );
+  /// 抽屉内切换会话：touch updated_at（主页恢复最近打开用），随后原地替换
+  /// 聊天页（嵌入模式走 [onSwitchChannel]）。
+  Future<void> _openDrawerSession(
+    String channelId, {
+    String? highlightMessageId,
+  }) async {
+    await _controller.localDatabaseService.touchChannelUpdatedAt(channelId);
+    if (!mounted) return;
+    if (widget.embedded) {
+      widget.onSwitchChannel?.call(
+        channelId,
+        highlightMessageId: highlightMessageId,
+      );
+    } else {
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(
+          builder: (context) => _controller.isGroupMode
+              ? ChatScreen(
+                  channelId: channelId,
+                  highlightMessageId: highlightMessageId,
+                  showBackButton: highlightMessageId != null,
+                )
+              : ChatScreen(
+                  agentId: widget.agentId,
+                  agentName: _controller.agentName,
+                  agentAvatar: _controller.agentAvatar,
+                  channelId: channelId,
+                  highlightMessageId: highlightMessageId,
+                  showBackButton: highlightMessageId != null,
+                ),
+        ),
+      );
+    }
+  }
+
+  /// 抽屉内搜索点击消息结果 → 定位：同会话滚动到该消息；
+  /// 跨会话则切换会话并高亮该消息。
+  void _locateSearchMessage(Message message, String? channelId) {
+    if (channelId == null || channelId == _controller.currentChannelId) {
+      _scrollToMessage(message.id);
+      return;
+    }
+    _openDrawerSession(channelId, highlightMessageId: message.id);
   }
 
   // ---------------------------------------------------------------------------

@@ -1822,6 +1822,14 @@ class AppLocalizationsZh extends AppLocalizations {
   String get chat_searchSessions => '搜索会话';
 
   @override
+  String get chat_messageResults => '消息';
+
+  @override
+  String chat_messageMatchesCount(int count) {
+    return '$count 条匹配';
+  }
+
+  @override
   String get chat_workflow => '工作流';
 
   @override

@@ -1887,6 +1887,14 @@ class AppLocalizationsEn extends AppLocalizations {
   String get chat_searchSessions => 'Search Sessions';
 
   @override
+  String get chat_messageResults => 'Messages';
+
+  @override
+  String chat_messageMatchesCount(int count) {
+    return '$count matches';
+  }
+
+  @override
   String get chat_workflow => 'Workflow';
 
   @override
