@@ -522,7 +522,9 @@ When the user asks about a **past** image/file/audio ("这张图说了什么", "
 
   /// Section ③: shepaw CLI tool reference, filtered by [SheStackConfig].
   ///
-  /// Passing `null` returns the full table (backwards-compat for tests).
+  /// Passing `null` uses the default config (summary mode on — "When to use"
+  /// prose dropped); the full prose is only included when
+  /// [SheStackConfig.shepawCliSummaryMode] is off.
   String buildShepawCliBlock([SheStackConfig? config]) =>
       _pawCliPrompt(config ?? const SheStackConfig());
 
@@ -697,7 +699,7 @@ If there is any doubt about whether your knowledge is current, search first.
 
 '''
           : '';
-      parts.add('${whenToUseWeb}### Web\n${webLines.join('\n')}');
+      parts.add('$whenToUseWeb### Web\n${webLines.join('\n')}');
     }
 
     if (allowed('store')) {

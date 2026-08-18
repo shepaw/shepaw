@@ -22,8 +22,9 @@ import '../../../services/workflow/workflow_service.dart';
 ///
 /// 创建后系统会向用户展示审批卡片。
 /// 命令立即返回 workflow_id 和 pending_approval 状态。
-/// 群聊 Flow Mode 下 Admin 等待用户审批后再调用 `workflow dispatch`；
-/// She 的 1:1 私聊中审批通过后由系统自动开始执行，无需再调 dispatch。
+/// 群聊 Flow Mode 与 She 的 1:1 私聊一致：审批通过后由系统自动执行
+/// 全部阶段（ChatService.executeWorkflowSteps），无需再调 dispatch；
+/// `workflow dispatch` 仅用于手动重试某一阶段。
 class WorkflowCreateCommand extends CliCommand {
   @override
   String get name => 'create';
