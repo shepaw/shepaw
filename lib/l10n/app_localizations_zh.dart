@@ -1819,6 +1819,9 @@ class AppLocalizationsZh extends AppLocalizations {
   String get chat_searchMessages => '搜索消息';
 
   @override
+  String get chat_searchSessions => '搜索会话';
+
+  @override
   String get chat_workflow => '工作流';
 
   @override

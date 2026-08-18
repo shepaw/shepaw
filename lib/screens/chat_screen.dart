@@ -36,7 +36,6 @@ import '../widgets/chat/group_members_panel.dart';
 import '../widgets/chat/add_group_member_panel.dart';
 import '../widgets/avatar_image.dart';
 import '../widgets/message_search_delegate.dart';
-import '../widgets/shepaw_search_page.dart';
 import '../widgets/voice_record_overlay.dart';
 import 'remote_agent_detail_screen.dart';
 import 'group_detail_screen.dart';
@@ -1461,43 +1460,48 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
         headerTrailingIcon: Icons.edit_outlined,
         headerTrailingTooltip: l10n.chat_editAgent,
         onHeaderTrailing: _navigateToAgentDetailForEdit,
-        searchHint: l10n.chat_searchMessages,
-        onSearch: _showSearchDialog,
-        body: SessionListPanel(
-          sessions: sessions,
-          currentChannelId: c.currentChannelId,
-          controller: c,
-          onNewSession: () => c.createNewSession(),
-          onSwitchSession: (channelId) async {
-            // Stay in the agent DM chat — group-bound sessions are view-only here.
-            await c.localDatabaseService.touchChannelUpdatedAt(channelId);
-            if (!mounted) return;
-            if (widget.embedded) {
-              widget.onSwitchChannel?.call(channelId);
-            } else {
-              Navigator.pushReplacement(
-                context,
-                MaterialPageRoute(
-                  builder: (context) => ChatScreen(
-                    agentId: widget.agentId,
-                    agentName: c.agentName,
-                    agentAvatar: c.agentAvatar,
-                    channelId: channelId,
+        searchHint: l10n.chat_searchSessions,
+        bodyBuilder: (context, query) {
+          final filtered = _filterSessionsByName(sessions, query);
+          if (filtered.isEmpty && query.trim().isNotEmpty) {
+            return _buildDrawerSearchEmpty(l10n);
+          }
+          return SessionListPanel(
+            sessions: filtered,
+            currentChannelId: c.currentChannelId,
+            controller: c,
+            onNewSession: () => c.createNewSession(),
+            onSwitchSession: (channelId) async {
+              // Stay in the agent DM chat — group-bound sessions are view-only here.
+              await c.localDatabaseService.touchChannelUpdatedAt(channelId);
+              if (!mounted) return;
+              if (widget.embedded) {
+                widget.onSwitchChannel?.call(channelId);
+              } else {
+                Navigator.pushReplacement(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => ChatScreen(
+                      agentId: widget.agentId,
+                      agentName: c.agentName,
+                      agentAvatar: c.agentAvatar,
+                      channelId: channelId,
+                    ),
                   ),
-                ),
-              );
-            }
-          },
-          onBatchDelete: (ids) => c.batchDeleteSessions(ids, isGroup: false),
-          onShowTraces: () {
-            Navigator.pop(context);
-            _showChannelTraces();
-          },
-          onAllSessionsMarkedRead: () {
-            unawaited(_refreshOtherSessionsUnread());
-            unawaited(c.markMessagesAsReadIfAtBottom());
-          },
-        ),
+                );
+              }
+            },
+            onBatchDelete: (ids) => c.batchDeleteSessions(ids, isGroup: false),
+            onShowTraces: () {
+              Navigator.pop(context);
+              _showChannelTraces();
+            },
+            onAllSessionsMarkedRead: () {
+              unawaited(_refreshOtherSessionsUnread());
+              unawaited(c.markMessagesAsReadIfAtBottom());
+            },
+          );
+        },
         footerActions: [
           ChatDrawerAction(
             icon: Icons.inventory_2_outlined,
@@ -1596,37 +1600,42 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
         headerTrailingIcon: Icons.group_outlined,
         headerTrailingTooltip: l10n.chat_groupMembers,
         onHeaderTrailing: _showGroupMembersPanel,
-        searchHint: l10n.chat_searchMessages,
-        onSearch: _showSearchDialog,
-        body: GroupSessionListPanel(
-          sessions: sessions,
-          currentChannelId: c.currentChannelId,
-          controller: c,
-          onNewSession: () => c.createNewGroupSession(),
-          onSwitchSession: (channelId) async {
-            await c.localDatabaseService.touchChannelUpdatedAt(channelId);
-            if (!mounted) return;
-            if (widget.embedded) {
-              widget.onSwitchChannel?.call(channelId);
-            } else {
-              Navigator.pushReplacement(
-                context,
-                MaterialPageRoute(
-                  builder: (context) => ChatScreen(channelId: channelId),
-                ),
-              );
-            }
-          },
-          onBatchDelete: (ids) => c.batchDeleteSessions(ids, isGroup: true),
-          onShowTraces: () {
-            Navigator.pop(context);
-            _showChannelTraces();
-          },
-          onAllSessionsMarkedRead: () {
-            unawaited(_refreshOtherSessionsUnread());
-            unawaited(c.markMessagesAsReadIfAtBottom());
-          },
-        ),
+        searchHint: l10n.chat_searchSessions,
+        bodyBuilder: (context, query) {
+          final filtered = _filterSessionsByName(sessions, query);
+          if (filtered.isEmpty && query.trim().isNotEmpty) {
+            return _buildDrawerSearchEmpty(l10n);
+          }
+          return GroupSessionListPanel(
+            sessions: filtered,
+            currentChannelId: c.currentChannelId,
+            controller: c,
+            onNewSession: () => c.createNewGroupSession(),
+            onSwitchSession: (channelId) async {
+              await c.localDatabaseService.touchChannelUpdatedAt(channelId);
+              if (!mounted) return;
+              if (widget.embedded) {
+                widget.onSwitchChannel?.call(channelId);
+              } else {
+                Navigator.pushReplacement(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => ChatScreen(channelId: channelId),
+                  ),
+                );
+              }
+            },
+            onBatchDelete: (ids) => c.batchDeleteSessions(ids, isGroup: true),
+            onShowTraces: () {
+              Navigator.pop(context);
+              _showChannelTraces();
+            },
+            onAllSessionsMarkedRead: () {
+              unawaited(_refreshOtherSessionsUnread());
+              unawaited(c.markMessagesAsReadIfAtBottom());
+            },
+          );
+        },
         footerActions: [
           ChatDrawerAction(
             icon: Icons.inventory_2_outlined,
@@ -1666,54 +1675,22 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   }
 
   // ---------------------------------------------------------------------------
-  // Search
+  // Session drawer search
   // ---------------------------------------------------------------------------
 
-  void _showSearchDialog() async {
-    List<String>? agentChannelIds;
-    if (_controller.isGroupMode && _controller.currentChannelId != null) {
-      agentChannelIds = [_controller.currentChannelId!];
-    } else if (widget.agentId != null) {
-      try {
-        final channels = await _controller.localDatabaseService
-            .getChannelsForAgent(widget.agentId!);
-        agentChannelIds = channels.map((c) => c.id).toList();
-      } catch (_) {}
-    }
+  /// 抽屉内搜索：按会话名称过滤（大小写不敏感）。空查询返回全部。
+  List<Channel> _filterSessionsByName(List<Channel> sessions, String query) {
+    final q = query.trim().toLowerCase();
+    if (q.isEmpty) return sessions;
+    return sessions.where((s) => s.name.toLowerCase().contains(q)).toList();
+  }
 
-    if (!mounted) return;
-
-    showShepawSearch(
-      context: context,
-      delegate: MessageSearchDelegate(
-        searchService: _controller.searchService,
-        channelIds: agentChannelIds,
-        onResultTap: (message, channelId) {
-          if (channelId != null && channelId != _controller.currentChannelId) {
-            if (widget.embedded) {
-              widget.onSwitchChannel?.call(
-                channelId,
-                highlightMessageId: message.id,
-              );
-            } else {
-              Navigator.pushReplacement(
-                context,
-                MaterialPageRoute(
-                  builder: (context) => ChatScreen(
-                    agentId: widget.agentId,
-                    agentName: _controller.agentName,
-                    agentAvatar: _controller.agentAvatar,
-                    channelId: channelId,
-                    highlightMessageId: message.id,
-                    showBackButton: true,
-                  ),
-                ),
-              );
-            }
-          } else {
-            _scrollToMessage(message.id);
-          }
-        },
+  /// 抽屉内搜索无结果时的占位提示。
+  Widget _buildDrawerSearchEmpty(AppLocalizations l10n) {
+    return Center(
+      child: Text(
+        l10n.home_searchNoResults,
+        style: TextStyle(fontSize: 14, color: Colors.grey[500]),
       ),
     );
   }

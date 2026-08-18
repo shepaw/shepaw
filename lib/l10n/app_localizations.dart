@@ -3422,6 +3422,12 @@ abstract class AppLocalizations {
   /// **'搜索消息'**
   String get chat_searchMessages;
 
+  /// No description provided for @chat_searchSessions.
+  ///
+  /// In zh, this message translates to:
+  /// **'搜索会话'**
+  String get chat_searchSessions;
+
   /// No description provided for @chat_workflow.
   ///
   /// In zh, this message translates to:

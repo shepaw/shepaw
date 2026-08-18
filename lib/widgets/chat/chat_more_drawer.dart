@@ -18,13 +18,14 @@ class ChatDrawerAction {
 
 /// 群聊 / 单聊「更多」右侧抽屉（豆包风格）。
 ///
-/// 纯布局组件，不感知群聊/单聊模式：调用方（ChatScreen）构造 header、
-/// 搜索入口和底部操作，body 直接嵌入会话列表面板
-/// （[SessionListPanel] / [GroupSessionListPanel]），从而「更多」一点即见会话列表。
+/// 纯布局组件，不感知群聊/单聊模式：调用方（ChatScreen）构造 header 和
+/// 底部操作；搜索框为真实输入框，输入实时回调 [bodyBuilder]，由调用方
+/// 按 query 过滤会话列表并返回面板
+/// （[SessionListPanel] / [GroupSessionListPanel]），搜索不出抽屉。
 ///
-/// 所有点击（关闭、header、搜索栏、底部操作）统一先 pop 抽屉再执行回调，
-/// 避免调用方持有 ChatScreen 的 context 误 pop 掉聊天页路由。
-class ChatMoreDrawer extends StatelessWidget {
+/// 除搜索输入外，所有点击（关闭、header、底部操作）统一先 pop 抽屉再执行
+/// 回调，避免调用方持有 ChatScreen 的 context 误 pop 掉聊天页路由。
+class ChatMoreDrawer extends StatefulWidget {
   /// 头像 + 名称行（调用方构造），点击整个区域触发 [headerOnTap]。
   final Widget header;
 
@@ -37,13 +38,12 @@ class ChatMoreDrawer extends StatelessWidget {
   final String? headerTrailingTooltip;
   final VoidCallback? onHeaderTrailing;
 
-  /// 搜索栏提示文案，点击打开消息搜索页。
+  /// 搜索框提示文案。
   final String searchHint;
 
-  final VoidCallback onSearch;
-
-  /// 会话列表面板（drawer 主体，直接展示会话列表）。
-  final Widget body;
+  /// 搜索输入变化时重建 body：调用方按 query 过滤会话列表。
+  /// 空查询也会调用一次，此时应返回完整列表。
+  final Widget Function(BuildContext context, String query) bodyBuilder;
 
   final List<ChatDrawerAction> footerActions;
 
@@ -55,10 +55,23 @@ class ChatMoreDrawer extends StatelessWidget {
     this.headerTrailingTooltip,
     this.onHeaderTrailing,
     required this.searchHint,
-    required this.onSearch,
-    required this.body,
+    required this.bodyBuilder,
     this.footerActions = const [],
   });
+
+  @override
+  State<ChatMoreDrawer> createState() => _ChatMoreDrawerState();
+}
+
+class _ChatMoreDrawerState extends State<ChatMoreDrawer> {
+  final _searchController = TextEditingController();
+  String _query = '';
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
 
   void _popThen(BuildContext context, VoidCallback? action) {
     Navigator.of(context).pop();
@@ -68,6 +81,7 @@ class ChatMoreDrawer extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
+    final theme = Theme.of(context);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -79,24 +93,24 @@ class ChatMoreDrawer extends StatelessWidget {
             children: [
               Expanded(
                 child: GestureDetector(
-                  onTap: headerOnTap == null
+                  onTap: widget.headerOnTap == null
                       ? null
-                      : () => _popThen(context, headerOnTap),
+                      : () => _popThen(context, widget.headerOnTap),
                   behavior: HitTestBehavior.opaque,
-                  child: header,
+                  child: widget.header,
                 ),
               ),
-              if (headerTrailingIcon != null)
+              if (widget.headerTrailingIcon != null)
                 IconButton(
-                  icon: Icon(headerTrailingIcon, size: 20),
+                  icon: Icon(widget.headerTrailingIcon, size: 20),
                   padding: EdgeInsets.zero,
                   constraints:
                       const BoxConstraints.tightFor(width: 36, height: 36),
                   visualDensity: VisualDensity.compact,
-                  tooltip: headerTrailingTooltip,
-                  onPressed: onHeaderTrailing == null
+                  tooltip: widget.headerTrailingTooltip,
+                  onPressed: widget.onHeaderTrailing == null
                       ? null
-                      : () => _popThen(context, onHeaderTrailing),
+                      : () => _popThen(context, widget.onHeaderTrailing),
                 ),
               IconButton(
                 icon: const Icon(Icons.close, size: 20),
@@ -110,53 +124,67 @@ class ChatMoreDrawer extends StatelessWidget {
             ],
           ),
         ),
-        // ── 搜索栏 ──
+        // ── 搜索栏：输入即过滤 body ──
         Padding(
           padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
-          child: Material(
-            color: Colors.transparent,
-            child: InkWell(
+          child: Container(
+            height: 38,
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            decoration: BoxDecoration(
+              color: theme.colorScheme.surfaceContainerHighest,
               borderRadius: BorderRadius.circular(10),
-              onTap: () => _popThen(context, onSearch),
-              child: Container(
-                height: 38,
-                padding: const EdgeInsets.symmetric(horizontal: 12),
-                decoration: BoxDecoration(
-                  color: Theme.of(context).colorScheme.surfaceContainerHighest,
-                  borderRadius: BorderRadius.circular(10),
+            ),
+            child: Row(
+              children: [
+                Icon(
+                  Icons.search,
+                  size: 20,
+                  color: theme.colorScheme.onSurfaceVariant,
                 ),
-                child: Row(
-                  children: [
-                    Icon(
-                      Icons.search,
-                      size: 20,
-                      color: Theme.of(context).colorScheme.onSurfaceVariant,
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        searchHint,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          fontSize: 14,
-                          color: Theme.of(context).colorScheme.onSurfaceVariant,
-                        ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: TextField(
+                    controller: _searchController,
+                    onChanged: (value) => setState(() => _query = value),
+                    textInputAction: TextInputAction.search,
+                    style: const TextStyle(fontSize: 14),
+                    decoration: InputDecoration(
+                      hintText: widget.searchHint,
+                      hintStyle: TextStyle(
+                        fontSize: 14,
+                        color: theme.colorScheme.onSurfaceVariant,
                       ),
+                      isDense: true,
+                      border: InputBorder.none,
                     ),
-                  ],
+                  ),
                 ),
-              ),
+                if (_query.isNotEmpty)
+                  IconButton(
+                    icon: const Icon(Icons.clear, size: 18),
+                    padding: EdgeInsets.zero,
+                    constraints:
+                        const BoxConstraints.tightFor(width: 28, height: 28),
+                    visualDensity: VisualDensity.compact,
+                    tooltip: l10n.common_clear,
+                    onPressed: () {
+                      _searchController.clear();
+                      setState(() => _query = '');
+                    },
+                  ),
+              ],
             ),
           ),
         ),
         const Divider(height: 1),
-        // ── 会话列表 ──
-        Expanded(child: body),
+        // ── 会话列表（按搜索词实时过滤）──
+        Expanded(
+          child: widget.bodyBuilder(context, _query),
+        ),
         // ── 底部操作 ──
-        if (footerActions.isNotEmpty) ...[
+        if (widget.footerActions.isNotEmpty) ...[
           const Divider(height: 1),
-          for (final action in footerActions)
+          for (final action in widget.footerActions)
             ListTile(
               dense: true,
               contentPadding: const EdgeInsets.symmetric(horizontal: 16),
