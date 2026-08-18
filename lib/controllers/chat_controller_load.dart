@@ -180,6 +180,9 @@ mixin _LoadOps on _ChatControllerBase {
         _mergeDmStreamingPlaceholders(loadedMessages);
       }
       rebuildMessageIdMap();
+      // 占位若被 merge 折叠进 DB 行（id 改名），立即回指锚点，恢复
+      // streaming 标记与后续 chunk 的应用目标。
+      streaming.repointAnchor(messages);
       await _refreshHasMoreOlderMessages();
       _reapplyStashedPlanApprovalResponses();
       await PendingApprovalHub.instance.reconcileForChannel(

@@ -34,13 +34,28 @@ class ChatGroupStreamingTracker {
   }
 
   /// Apply accumulated content onto the message list/map. Preserves metadata.
+  ///
+  /// 自愈：reconcileGroupMessages 回合中途会把 `group_streaming_*` 占位
+  /// 折叠进 DB 行（占位 id 被改名）。锚点失效时回退到同发送者的在途宿主
+  /// （flush 部分行 / 残余占位）并改指，避免后续 chunk 被静默丢弃。
   Message? applyContent(
     String agentId,
     List<Message> messages,
     Map<String, Message> messageIdMap,
   ) {
-    final sid = streamingIds[agentId];
+    var sid = streamingIds[agentId];
     if (sid == null) return null;
+    final existing = messageIdMap[sid];
+    if (existing == null || messages.indexOf(existing) == -1) {
+      final host = ChatStreamingText.findStreamingHost(
+        messages,
+        fromId: agentId,
+        group: true,
+      );
+      if (host == null) return null;
+      streamingIds[agentId] = host.id;
+      sid = host.id;
+    }
     return applyContentById(
       sid,
       contentFor(agentId),

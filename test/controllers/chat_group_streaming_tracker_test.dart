@@ -47,6 +47,36 @@ void main() {
       expect(messages.first.metadata?['progress_content'], '…');
     });
 
+    test('applyContent 自愈：占位被 reconcile 折叠进 DB 行后改指', () {
+      final tracker = ChatGroupStreamingTracker()..begin('a1', 'group_streaming_1');
+      var messages = [_msg('group_streaming_1')];
+      var map = <String, Message>{'group_streaming_1': messages.first};
+      tracker.appendAndApply('a1', 'Hi', messages, map);
+      expect(messages.first.content, 'Hi');
+
+      // 模拟回合中途 reconcileGroupMessages：占位折叠进 DB 行 db1
+      // （id 改名、messageIdMap 重建），旧 sid 从 map 中消失。
+      messages = [
+        _msg('user_1', content: 'hi'),
+        _msg('db1', content: 'Hi', metadata: {'status': 'streaming'}),
+      ];
+      map = {for (final m in messages) m.id: m};
+
+      tracker.appendAndApply('a1', '!', messages, map);
+      expect(messages.last.content, 'Hi!');
+      expect(tracker.idFor('a1'), 'db1'); // sid 已改指
+    });
+
+    test('applyContent 无宿主存活时不改指、返回 null', () {
+      final tracker = ChatGroupStreamingTracker()..begin('a1', 'group_streaming_1');
+      tracker.append('a1', 'x');
+      final messages = [_msg('user_1', content: 'hi')];
+      final map = {for (final m in messages) m.id: m};
+
+      expect(tracker.applyContent('a1', messages, map), isNull);
+      expect(tracker.idFor('a1'), 'group_streaming_1');
+    });
+
     test('putMetadataKey merges nested interaction payload', () {
       final messages = [_msg('sid-1', metadata: {'k': 1})];
       final map = <String, Message>{'sid-1': messages.first};

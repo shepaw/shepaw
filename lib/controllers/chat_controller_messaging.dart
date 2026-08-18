@@ -30,7 +30,7 @@ mixin _MessagingOps on _ChatControllerBase {
     final hostId = reusable?.id ??
         'streaming_reattach_${DateTime.now().millisecondsSinceEpoch}';
 
-    streaming.begin(hostId);
+    streaming.begin(hostId, fromId: activeTask.agentId);
     streaming.content = activeTask.accumulatedContent;
 
     var seeded = reusable != null
@@ -566,7 +566,7 @@ mixin _MessagingOps on _ChatControllerBase {
         agentName: remoteAgent.name,
         replyToId: replyToId,
       );
-      streaming.begin(optimistic.streaming.id);
+      streaming.begin(optimistic.streaming.id, fromId: remoteAgent.id);
       messages.add(optimistic.user);
       messages.add(optimistic.streaming);
       messageIdMap[optimistic.user.id] = optimistic.user;
@@ -769,6 +769,7 @@ mixin _MessagingOps on _ChatControllerBase {
 
     streaming.begin(
       'streaming_reanswer_${DateTime.now().millisecondsSinceEpoch}',
+      fromId: remoteAgent.id,
     );
     acpCancellationToken = ACPCancellationToken();
 

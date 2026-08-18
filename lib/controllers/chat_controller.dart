@@ -668,8 +668,15 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
         messageId,
       );
       if (!loadedMessages.any((m) => m.id == messageId)) return false;
-      messages = loadedMessages;
+      if (isGroupMode) {
+        messages = loadedMessages;
+      } else {
+        // 与 loadMessages 一致：保留在途流式占位，避免点击引用跳转后
+        // 顶掉正在流式的气泡（applyContentTo 找不到目标会静默中断）。
+        _mergeDmStreamingPlaceholders(loadedMessages);
+      }
       rebuildMessageIdMap();
+      streaming.repointAnchor(messages);
       unawaited(_refreshHasMoreOlderMessages());
       _notify();
       return true;
@@ -887,6 +894,18 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
       if (pendingGroupInteractions.containsKey(entry.key)) {
         pendingGroupInteractions[entry.value] =
             pendingGroupInteractions.remove(entry.key)!;
+      }
+      // 流式占位被折叠进 DB 行后 id 已改名：同步改指停止按钮集合与
+      // workflow streaming 映射，否则该回合后续 chunk/停止操作都找不到
+      // 目标气泡（配合 tracker.applyContent 的兜底自愈）。
+      if (groupStreamingMessageIds.contains(entry.key)) {
+        groupStreamingMessageIds.remove(entry.key);
+        groupStreamingMessageIds.add(entry.value);
+      }
+      for (final e in _workflowStreamingIds.entries) {
+        if (e.value == entry.key) {
+          _workflowStreamingIds[e.key] = entry.value;
+        }
       }
       // Persist interaction cards folded from temp hosts onto DB rows
       // (orphan peer approvals that raced past agent_done).

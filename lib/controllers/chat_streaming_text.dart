@@ -73,12 +73,42 @@ class ChatStreamingText {
       metadata: metadata,
     );
   }
+
+  /// Find the newest in-flight streaming host bubble for [fromId].
+  ///
+  /// Used to self-heal when a mid-turn reload folded/dropped the `streaming_*`
+  /// temp bubble: the accumulated content is then applied onto the flushed
+  /// partial row (`status: streaming`) or a surviving temp instead of being
+  /// silently discarded. `group: true` also matches `group_streaming_*` /
+  /// `wf_streaming_*` temps used by group/workflow turns.
+  static Message? findStreamingHost(
+    List<Message> messages, {
+    String? fromId,
+    bool group = false,
+  }) {
+    for (var i = messages.length - 1; i >= 0; i--) {
+      final m = messages[i];
+      if (!m.from.isAgent) continue;
+      if (fromId != null && fromId.isNotEmpty && m.from.id != fromId) continue;
+      if (m.metadata?['status'] == 'streaming') return m;
+      final id = m.id;
+      final matches = group
+          ? (id.startsWith('group_streaming_') || id.startsWith('wf_streaming_'))
+          : id.startsWith('streaming_');
+      if (matches) return m;
+    }
+    return null;
+  }
 }
 
 /// Tracks the active DM streaming bubble id + accumulated content.
 class ChatStreamingSession {
   String? messageId;
   String content = '';
+
+  /// 流式回合的发送方 agent id。自愈查找（[repointAnchor]）用它限定
+  /// 同发送者的气泡，避免 reload 折叠占位后 chunk 被静默丢弃。
+  String? fromId;
 
   /// 回合（或占位会话）结束时触发一次。控制器用它补做流式期间被推迟的
   /// DB reconcile（见 ChatController._dmReconcileAfterStreaming）。
@@ -98,9 +128,10 @@ class ChatStreamingSession {
   }) =>
       streamingActive && hasLiveTask;
 
-  void begin(String id) {
+  void begin(String id, {String? fromId}) {
     messageId = id;
     content = '';
+    this.fromId = fromId;
   }
 
   void append(String chunk) {
@@ -111,22 +142,45 @@ class ChatStreamingSession {
     final wasActive = messageId != null;
     messageId = null;
     content = '';
+    fromId = null;
     if (wasActive) onClear?.call();
+  }
+
+  /// 若当前锚点气泡已不在 [messages] 中（回合中途 reload 折叠/丢弃了
+  /// 占位），把锚点改指到同发送者的在途宿主（flush 部分行或残余占位）。
+  /// 命中后返回 true。用于应用 chunk 前自愈，以及 reload 后立即恢复
+  /// streaming 标记。
+  bool repointAnchor(List<Message> messages) {
+    final id = messageId;
+    if (id == null) return false;
+    if (messages.any((m) => m.id == id)) return false;
+    final host = ChatStreamingText.findStreamingHost(messages, fromId: fromId);
+    if (host == null) return false;
+    messageId = host.id;
+    return true;
   }
 
   /// Apply accumulated [content] onto the matching message in [messages].
   /// Returns the updated message, or null if not found.
+  ///
+  /// 找不到锚点时先尝试 [repointAnchor] 自愈——否则 reload 折叠占位后
+  /// 本回合剩余 chunk 会被静默丢弃（UI 一直卡在等待状态）。
   Message? applyContentTo(
     List<Message> messages,
     Map<String, Message> messageIdMap,
   ) {
     final id = messageId;
     if (id == null) return null;
-    final idx = messages.indexWhere((m) => m.id == id);
+    repointAnchor(messages);
+    final idx = messages.indexWhere((m) => m.id == messageId);
     if (idx == -1) return null;
     final updated = ChatStreamingText.withUpdatedContent(messages[idx], content);
     messages[idx] = updated;
     messageIdMap[updated.id] = updated;
+    if (messageId != id) {
+      // 锚点被改指：旧的占位 id 已被 reload 顶掉，清掉残留映射。
+      messageIdMap.remove(id);
+    }
     return updated;
   }
 
@@ -138,11 +192,15 @@ class ChatStreamingSession {
   ) {
     final id = messageId;
     if (id == null) return null;
-    final idx = messages.indexWhere((m) => m.id == id);
+    repointAnchor(messages);
+    final idx = messages.indexWhere((m) => m.id == messageId);
     if (idx == -1) return null;
     final updated = ChatStreamingText.withMergedMetadata(messages[idx], patch);
     messages[idx] = updated;
     messageIdMap[updated.id] = updated;
+    if (messageId != id) {
+      messageIdMap.remove(id);
+    }
     return updated;
   }
 }
