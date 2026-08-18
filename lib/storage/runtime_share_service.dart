@@ -6,7 +6,13 @@ import 'store_service.dart';
 
 /// 将某 agent/group 的 `runtime/<owner>/` 前缀分享给 owner 级配对设备（只读）。
 ///
-/// 不整区开放 runtime；默认关闭，需显式调用。
+/// 不整区开放 runtime；默认关闭，需显式调用。可读范围由
+/// [RuntimeSharePolicy] 收窄到附件/产物文件（soul/memory 镜像、上下文清单
+/// 与会话记录不可见也不可读），目录保持可导航。
+///
+/// 限制：分享是各设备本地声明（`peer_store_shares` 本机行），master 不回放
+/// 对端分享行——属主在线直读可用，属主离线经 master 镜像的 runtime 回退读
+/// 仍会拒绝。
 class RuntimeShareService {
   RuntimeShareService._();
   static final RuntimeShareService instance = RuntimeShareService._();

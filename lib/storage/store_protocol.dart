@@ -588,10 +588,10 @@ StoreAcl checkStoreAclWith(
         return StoreAcl.denyBadOp;
       }
       final targetOwn = device == null || device == callerDeviceId;
+      final path = frame.op == StoreOp.list
+          ? (frame.payload['path'] as String?)
+          : frame.path;
       if (!targetOwn && shared(space)) {
-        final path = frame.op == StoreOp.list
-            ? (frame.payload['path'] as String?)
-            : frame.path;
         final cross = _crossSharedAccess(
           trustLevel: trustLevel,
           space: space,
@@ -600,6 +600,11 @@ StoreAcl checkStoreAclWith(
         );
         if (cross != StoreAcl.allow) return cross;
       } else if (!targetOwn && !shared(space)) {
+        // 显式分享（白名单命中）的私有分区前缀可跨端读（如 runtime 分享；
+        // 文件级细粒度策略由服务侧执行，见 store_service._dispatch）
+        if (shareAllowed != null && shareAllowed(space, path)) {
+          return StoreAcl.allow;
+        }
         // seed:true：ACL 粗放行；运行时由 SeedAuthorization 收敛为迁移窗口
         final seed = frame.payload['seed'] == true;
         if (seed) {

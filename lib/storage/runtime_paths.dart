@@ -229,3 +229,42 @@ class RuntimePaths {
   }) =>
       storeUriWithRef(StoreSpace.runtime, deviceId, relPath);
 }
+
+/// runtime 分享给配对设备时，文件级放行策略。
+///
+/// share 行仅记 owner 前缀（见 `RuntimeShareService`）；本策略把可读范围
+/// 收窄到聊天附件与产物。目录始终可导航（服务端按 `entityKind` / list 的
+/// `isDir` 判定），不经过这里。
+///
+/// 会话记录（`sessions/`）与 soul/memory/workspace 镜像、上下文清单
+/// （owner 根下）不属于分享范围。
+class RuntimeSharePolicy {
+  RuntimeSharePolicy._();
+
+  /// owner 根下的敏感镜像/清单文件名。
+  static const _sensitiveRootFiles = {
+    'soul.md',
+    'memory.md',
+    'workspace.md',
+    'context.manifest.json',
+  };
+
+  /// 客户端快速失败预过滤：命中敏感清单（owner 根文件或任意 `sessions` 段）
+  /// → true。非敏感路径放行到服务端，由 [allowsFileRead] 严格判定。
+  static bool isSensitivePath(String relPath) {
+    final parts = relPath.split('/');
+    if (parts.length == 2 && _sensitiveRootFiles.contains(parts[1])) {
+      return true;
+    }
+    return parts.contains('sessions');
+  }
+
+  /// 服务端严格判定：仅放行含 `attachments` / `artifacts` 段的文件。
+  ///
+  /// 目录由调用方按 `entityKind` 放行（可导航）；未知文件一律不放行。
+  static bool allowsFileRead(String relPath) {
+    if (relPath.isEmpty) return false;
+    final parts = relPath.split('/');
+    return parts.contains('attachments') || parts.contains('artifacts');
+  }
+}

@@ -23,6 +23,7 @@ import 'import_auth_service.dart';
 import 'local_store.dart';
 import 'master_migration_service.dart';
 import 'mirror_hash_gate.dart';
+import 'runtime_paths.dart';
 import 'seed_authorization.dart';
 import 'store_protocol.dart';
 import 'sync_engine.dart';
@@ -854,7 +855,8 @@ class StoreService {
 
     final store = await _localStore();
     try {
-      // 私有分区跨端读取：校验导入授权实体（spec §5.4）；
+      // 私有分区跨端读取：显式分享（白名单命中）直接放行（runtime 另有
+      // 文件级细粒度策略）；否则校验导入授权实体（spec §5.4）；
       // 升主种子拷贝（seed: true）须经 SeedAuthorization（sync.cursors 开启）。
       if ((frame.op == StoreOp.list ||
               frame.op == StoreOp.meta ||
@@ -862,28 +864,46 @@ class StoreService {
           frame.device != null &&
           frame.device != callerDeviceId &&
           !StoreSpace.sharedReadable.contains(frame.space)) {
-        if (frame.payload['seed'] == true) {
-          if (!loopback && !seedAuth.isAuthorized(callerDeviceId)) {
-            _log.warning(
-                'seed denied (no migrate window) caller=$callerDeviceId '
-                '${frame.device}/${frame.space}',
-                tag: _auditTag);
-            return _errorData(StoreError.aclDenied, 'seed not authorized');
+        final shareHit = shareAllowlist != null &&
+            shareAllowlist.allows(
+              frame.space!,
+              frame.op == StoreOp.list
+                  ? (frame.payload['path'] as String?)
+                  : frame.path,
+            );
+        if (!shareHit) {
+          if (frame.payload['seed'] == true) {
+            if (!loopback && !seedAuth.isAuthorized(callerDeviceId)) {
+              _log.warning(
+                  'seed denied (no migrate window) caller=$callerDeviceId '
+                  '${frame.device}/${frame.space}',
+                  tag: _auditTag);
+              return _errorData(StoreError.aclDenied, 'seed not authorized');
+            }
+          } else {
+            final grantId = frame.payload['grant'] as String?;
+            final auth = await _importAuthService();
+            final ok = grantId != null &&
+                await auth.validate(grantId,
+                    oldDevice: frame.device!,
+                    newDevice: callerDeviceId,
+                    space: frame.space!);
+            if (!ok) {
+              _log.warning(
+                  'invalid import grant from $callerDeviceId for ${frame.device}/${frame.space}',
+                  tag: _auditTag);
+              return _errorData(StoreError.aclDenied, 'invalid import grant');
+            }
           }
-        } else {
-          final grantId = frame.payload['grant'] as String?;
-          final auth = await _importAuthService();
-          final ok = grantId != null &&
-              await auth.validate(grantId,
-                  oldDevice: frame.device!,
-                  newDevice: callerDeviceId,
-                  space: frame.space!);
-          if (!ok) {
-            _log.warning(
-                'invalid import grant from $callerDeviceId for ${frame.device}/${frame.space}',
-                tag: _auditTag);
-            return _errorData(StoreError.aclDenied, 'invalid import grant');
-          }
+        } else if (frame.op != StoreOp.list &&
+            frame.space == StoreSpace.runtime &&
+            !await _runtimeShareAllowsFile(store, frame)) {
+          _log.warning(
+              'runtime share denied: ${frame.op} caller=$callerDeviceId '
+              '${frame.device}/${frame.path}',
+              tag: _auditTag);
+          return _errorData(
+              StoreError.aclDenied, 'runtime share: attachments/artifacts only');
         }
       }
 
@@ -908,13 +928,18 @@ class StoreService {
             depth: depth,
             computeHash: frame.payload['hash'] != false,
           );
-          // 跨端 list：按出站分享白名单过滤条目
+          // 跨端 list：按出站分享白名单过滤条目（runtime 分享再收窄到
+          // 附件/产物文件；目录保持可见以导航）
           if (shareAllowlist != null &&
               device != callerDeviceId &&
               !shareAllowlist.isWholeSpace(frame.space!)) {
             entries = [
               for (final e in entries)
-                if (shareAllowlist.allowsListedPath(frame.space!, e.path)) e
+                if (shareAllowlist.allowsListedPath(frame.space!, e.path) &&
+                    (frame.space != StoreSpace.runtime ||
+                        e.isDir ||
+                        RuntimeSharePolicy.allowsFileRead(e.path)))
+                  e
             ];
           }
           return <String, dynamic>{
@@ -923,8 +948,18 @@ class StoreService {
           };
 
         case StoreOp.meta:
-          return await store.meta(
+          final meta = await store.meta(
               frame.device ?? callerDeviceId, frame.space!, frame.path!);
+          // 分享下的 runtime 目录 meta 不随附子清单（文件列表走 list + 白名单）
+          if (meta['kind'] == 'dir' &&
+              frame.space == StoreSpace.runtime &&
+              frame.device != null &&
+              frame.device != callerDeviceId &&
+              shareAllowlist != null &&
+              shareAllowlist.allows(frame.space!, frame.path)) {
+            return <String, dynamic>{'kind': 'dir'};
+          }
+          return meta;
 
         case StoreOp.read:
           final (data, size, eof) = await store.read(
@@ -1197,6 +1232,19 @@ class StoreService {
     } catch (e) {
       _log.error('dispatch ${frame.op} failed', tag: _tag, error: e);
       return _errorData(StoreError.internal, '$e');
+    }
+  }
+
+  /// runtime 分享细粒度判定：目录可导航；非目录文件仅放行附件/产物。
+  /// 不存在/坏路径一律拒绝（不向未授权方泄露存在性）。
+  Future<bool> _runtimeShareAllowsFile(
+      LocalStore store, StoreFrame frame) async {
+    try {
+      final kind =
+          await store.entityKind(frame.device!, frame.space!, frame.path!);
+      return kind == 'dir' || RuntimeSharePolicy.allowsFileRead(frame.path!);
+    } on StoreException {
+      return false;
     }
   }
 

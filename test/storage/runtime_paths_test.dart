@@ -142,4 +142,59 @@ void main() {
       expect(StoreSpace.browserSpaces, isNot(contains(StoreSpace.memory)));
     });
   });
+
+  group('RuntimeSharePolicy', () {
+    test('allowsFileRead：仅放行 attachments/artifacts 段下的文件', () {
+      expect(
+        RuntimeSharePolicy.allowsFileRead(
+            'agent_1/ch_1/attachments/aaaaaaaa'),
+        isTrue,
+      );
+      expect(
+        RuntimeSharePolicy.allowsFileRead(
+            'agent_1/ch_1/artifacts/task_1/out.txt'),
+        isTrue,
+      );
+      // workflow scope 内的附件同样放行
+      expect(
+        RuntimeSharePolicy.allowsFileRead(
+            'agent_1/ch_1/wf_w1__step_1/attachments/bbbbbbbb'),
+        isTrue,
+      );
+      expect(RuntimeSharePolicy.allowsFileRead('agent_1/soul.md'), isFalse);
+      expect(
+        RuntimeSharePolicy.allowsFileRead(
+            'agent_1/ch_1/sessions/session.json'),
+        isFalse,
+      );
+      // channel 根下未知文件不放行
+      expect(
+        RuntimeSharePolicy.allowsFileRead('agent_1/ch_1/session.md'),
+        isFalse,
+      );
+      expect(RuntimeSharePolicy.allowsFileRead(''), isFalse);
+    });
+
+    test('isSensitivePath：根镜像/清单与会话段命中', () {
+      expect(RuntimeSharePolicy.isSensitivePath('agent_1/soul.md'), isTrue);
+      expect(RuntimeSharePolicy.isSensitivePath('agent_1/memory.md'), isTrue);
+      expect(RuntimeSharePolicy.isSensitivePath('agent_1/workspace.md'), isTrue);
+      expect(
+        RuntimeSharePolicy.isSensitivePath('agent_1/context.manifest.json'),
+        isTrue,
+      );
+      expect(
+        RuntimeSharePolicy.isSensitivePath(
+            'agent_1/ch_1/sessions/session.json'),
+        isTrue,
+      );
+      // 附件/目录非敏感，由服务端 allowsFileRead 严格把关
+      expect(
+        RuntimeSharePolicy.isSensitivePath(
+            'agent_1/ch_1/attachments/aaaaaaaa'),
+        isFalse,
+      );
+      expect(RuntimeSharePolicy.isSensitivePath('agent_1/ch_1'), isFalse);
+    });
+  });
 }

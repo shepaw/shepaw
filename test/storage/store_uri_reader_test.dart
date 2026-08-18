@@ -4,6 +4,9 @@ import 'dart:typed_data';
 
 import 'package:crypto/crypto.dart' as crypto;
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shepaw/peer/models/paired_peer.dart';
+import 'package:shepaw/peer/models/peer_store_share.dart';
+import 'package:shepaw/peer/services/peer_storage_service.dart';
 import 'package:shepaw/storage/device_identity.dart';
 import 'package:shepaw/storage/store_protocol.dart';
 import 'package:shepaw/storage/store_service.dart';
@@ -164,6 +167,71 @@ void main() {
     expect(
       () => StoreUriReader.instance.read(uri),
       throwsA(isA<ArgumentError>()),
+    );
+  });
+
+  test('入站分享放行判定：runtime 附件/产物放行，soul/会话拒绝', () async {
+    const other = 'ffffffffffffffff';
+    final peerStorage = PeerStorageService();
+    await peerStorage.savePeer(PairedPeer(
+      id: 'peer-runtime-1',
+      deviceName: 'runtime-peer',
+      deviceId: other,
+      publicKey: Uint8List.fromList([1, 2, 3]),
+      fingerprint: other,
+      pairedAt: DateTime.now().millisecondsSinceEpoch,
+    ));
+    await peerStorage.replaceInboundStoreShares(
+      'peer-runtime-1',
+      deviceId: other,
+      entries: const [
+        PeerStoreShareEntry(space: StoreSpace.runtime, path: 'agent_1'),
+      ],
+    );
+
+    const hash =
+        'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
+    expect(
+      await StoreUriReader.instance.inboundShareAllows(
+        space: StoreSpace.runtime,
+        device: other,
+        path: 'agent_1/ch_1/attachments/$hash',
+      ),
+      isTrue,
+    );
+    expect(
+      await StoreUriReader.instance.inboundShareAllows(
+        space: StoreSpace.runtime,
+        device: other,
+        path: 'agent_1/ch_1/artifacts/task_1/out.txt',
+      ),
+      isTrue,
+    );
+    // 敏感清单快速失败
+    expect(
+      await StoreUriReader.instance.inboundShareAllows(
+        space: StoreSpace.runtime,
+        device: other,
+        path: 'agent_1/soul.md',
+      ),
+      isFalse,
+    );
+    expect(
+      await StoreUriReader.instance.inboundShareAllows(
+        space: StoreSpace.runtime,
+        device: other,
+        path: 'agent_1/ch_1/sessions/session.json',
+      ),
+      isFalse,
+    );
+    // 无配对 peer 的设备仍拒绝
+    expect(
+      await StoreUriReader.instance.inboundShareAllows(
+        space: StoreSpace.runtime,
+        device: 'eeeeeeeeeeeeeeee',
+        path: 'agent_1/ch_1/attachments/$hash',
+      ),
+      isFalse,
     );
   });
 }

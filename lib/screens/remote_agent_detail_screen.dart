@@ -3129,8 +3129,10 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
             ),
             subtitle: Text(
               Localizations.localeOf(context).languageCode.startsWith('zh')
-                  ? '将 runtime/${_agent.id}/ 只读分享给 Owner 配对设备'
-                  : 'Share runtime/${_agent.id}/ read-only with Owner peers',
+                  ? '将 runtime/${_agent.id}/ 的附件与产物只读分享给 Owner 配对设备（会话与记忆不分享）'
+                  : 'Share runtime/${_agent.id}/ attachments & artifacts '
+                      'read-only with Owner peers (sessions & memories stay '
+                      'private)',
               style: TextStyle(color: colorScheme.onSurfaceVariant),
             ),
             trailing: const Icon(Icons.chevron_right),

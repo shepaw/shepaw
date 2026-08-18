@@ -6,6 +6,7 @@ import 'package:crypto/crypto.dart' as crypto;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
+import 'package:shepaw/peer/models/peer_store_share.dart';
 import 'package:shepaw/storage/device_cursor_store.dart';
 import 'package:shepaw/storage/device_identity.dart';
 import 'package:shepaw/storage/import_auth_service.dart';
@@ -313,6 +314,173 @@ void main() {
       } finally {
         await StoreService.instance.setMasterDeviceId(self);
       }
+    });
+  });
+
+  group('runtime 分享（shareAllowlist）', () {
+    const other = '9999999999999999';
+    const hash =
+        'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
+
+    final allowlist = PeerStoreShareAllowlist.fromEntries(const [
+      PeerStoreShareEntry(space: StoreSpace.runtime, path: 'agent_1'),
+    ]);
+
+    setUpAll(() async {
+      final docs = await getApplicationDocumentsDirectory();
+      final storeRoot = Directory(p.join(docs.path, 'shepaw', 'store'));
+      final runtimeRoot =
+          Directory(p.join(storeRoot.path, other, 'runtime', 'agent_1'));
+      final attachDir =
+          Directory(p.join(runtimeRoot.path, 'ch_1', 'attachments'));
+      await attachDir.create(recursive: true);
+      await File(p.join(attachDir.path, hash))
+          .writeAsBytes(utf8.encode('attach-bytes'));
+      final artifactDir =
+          Directory(p.join(runtimeRoot.path, 'ch_1', 'artifacts', 'task_1'));
+      await artifactDir.create(recursive: true);
+      await File(p.join(artifactDir.path, 'out.txt'))
+          .writeAsString('artifact-out');
+      await File(p.join(runtimeRoot.path, 'soul.md')).writeAsString('# soul');
+      final sessionDir =
+          Directory(p.join(runtimeRoot.path, 'ch_1', 'sessions'));
+      await sessionDir.create(recursive: true);
+      await File(p.join(sessionDir.path, 'session.json')).writeAsString('{}');
+    });
+
+    test('附件/产物可跨端 read/meta，soul/会话/未知文件拒绝', () async {
+      final self = await DeviceIdentity.deviceId();
+      final readRes = await StoreService.instance.dispatchForTest(
+        StoreFrame(op: StoreOp.read, payload: {
+          'space': StoreSpace.runtime,
+          'device': other,
+          'path': 'agent_1/ch_1/attachments/$hash',
+          'offset': 0,
+        }),
+        callerDeviceId: self,
+        trustLevel: TrustLevel.owner,
+        shareAllowlist: allowlist,
+      );
+      expect(readRes.containsKey('_error'), isFalse);
+      expect(
+        utf8.decode(base64Decode(readRes['data'] as String)),
+        'attach-bytes',
+      );
+
+      final artifactMeta = await StoreService.instance.dispatchForTest(
+        StoreFrame(op: StoreOp.meta, payload: {
+          'space': StoreSpace.runtime,
+          'device': other,
+          'path': 'agent_1/ch_1/artifacts/task_1/out.txt',
+        }),
+        callerDeviceId: self,
+        trustLevel: TrustLevel.owner,
+        shareAllowlist: allowlist,
+      );
+      expect(artifactMeta['kind'], 'file');
+      expect(artifactMeta['size'], 'artifact-out'.length);
+
+      // 目录可导航；不随附子清单（防 session.json 经目录 meta 泄露）
+      final dirMeta = await StoreService.instance.dispatchForTest(
+        StoreFrame(op: StoreOp.meta, payload: {
+          'space': StoreSpace.runtime,
+          'device': other,
+          'path': 'agent_1/ch_1',
+        }),
+        callerDeviceId: self,
+        trustLevel: TrustLevel.owner,
+        shareAllowlist: allowlist,
+      );
+      expect(dirMeta['kind'], 'dir');
+      expect(dirMeta.containsKey('files'), isFalse);
+
+      for (final deniedPath in [
+        'agent_1/soul.md',
+        'agent_1/ch_1/sessions/session.json',
+        'agent_1/ch_1/session.md', // channel 根未知文件
+      ]) {
+        final denied = await StoreService.instance.dispatchForTest(
+          StoreFrame(op: StoreOp.meta, payload: {
+            'space': StoreSpace.runtime,
+            'device': other,
+            'path': deniedPath,
+          }),
+          callerDeviceId: self,
+          trustLevel: TrustLevel.owner,
+          shareAllowlist: allowlist,
+        );
+        expect(denied['_error'], StoreError.aclDenied, reason: deniedPath);
+      }
+    });
+
+    test('list 过滤：目录/附件/产物可见，soul/会话文件不可见', () async {
+      final self = await DeviceIdentity.deviceId();
+      // 有限 depth：目录出现且可导航，soul.md 等根文件被过滤
+      final shallow = await StoreService.instance.dispatchForTest(
+        StoreFrame(op: StoreOp.list, payload: {
+          'space': StoreSpace.runtime,
+          'device': other,
+          'path': 'agent_1',
+          'depth': 1,
+        }),
+        callerDeviceId: self,
+        trustLevel: TrustLevel.owner,
+        shareAllowlist: allowlist,
+      );
+      expect(shallow.containsKey('_error'), isFalse);
+      final shallowPaths = (shallow['entries'] as List)
+          .map((e) => (e as Map)['path'] as String)
+          .toList();
+      expect(shallowPaths, contains('agent_1/ch_1')); // 目录可导航
+      expect(shallowPaths, isNot(contains('agent_1/soul.md')));
+
+      // 全深度：附件/产物文件可见，会话文件被过滤
+      final deep = await StoreService.instance.dispatchForTest(
+        StoreFrame(op: StoreOp.list, payload: {
+          'space': StoreSpace.runtime,
+          'device': other,
+          'path': 'agent_1',
+        }),
+        callerDeviceId: self,
+        trustLevel: TrustLevel.owner,
+        shareAllowlist: allowlist,
+      );
+      expect(deep.containsKey('_error'), isFalse);
+      final deepPaths = (deep['entries'] as List)
+          .map((e) => (e as Map)['path'] as String)
+          .toList();
+      expect(deepPaths, contains('agent_1/ch_1/attachments/$hash'));
+      expect(deepPaths, contains('agent_1/ch_1/artifacts/task_1/out.txt'));
+      expect(deepPaths, isNot(contains('agent_1/ch_1/sessions/session.json')));
+    });
+
+    test('无白名单（null）：分享路径仍拒绝（grant 闸门回归）', () async {
+      final self = await DeviceIdentity.deviceId();
+      final denied = await StoreService.instance.dispatchForTest(
+        StoreFrame(op: StoreOp.meta, payload: {
+          'space': StoreSpace.runtime,
+          'device': other,
+          'path': 'agent_1/ch_1/attachments/$hash',
+        }),
+        callerDeviceId: self,
+        trustLevel: TrustLevel.owner,
+      );
+      expect(denied['_error'], StoreError.aclDenied);
+    });
+
+    test('白名单未覆盖的 owner 前缀仍拒绝', () async {
+      final self = await DeviceIdentity.deviceId();
+      final denied = await StoreService.instance.dispatchForTest(
+        StoreFrame(op: StoreOp.meta, payload: {
+          'space': StoreSpace.runtime,
+          'device': other,
+          'path': 'other_owner/ch_9/attachments/$hash',
+        }),
+        callerDeviceId: self,
+        trustLevel: TrustLevel.owner,
+        shareAllowlist: allowlist,
+      );
+      expect(denied['_error'], StoreError.aclDenied);
     });
   });
 }

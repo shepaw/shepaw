@@ -1,10 +1,14 @@
 import 'dart:io';
 import 'dart:typed_data';
 
+import 'package:flutter/foundation.dart' show visibleForTesting;
+
 import '../models/store_attachment_ref.dart';
+import '../peer/services/peer_storage_service.dart';
 import 'device_identity.dart';
 import 'local_store.dart';
 import 'remote_read_service.dart';
+import 'runtime_paths.dart';
 import 'store_protocol.dart';
 import 'store_service.dart';
 
@@ -38,8 +42,7 @@ class StoreUriReader {
       final local =
           await _localCacheHit(space: space, device: device, path: path);
       if (local != null) return local.readAsBytes();
-      throw ArgumentError(
-          'acl_denied: space "$space" is only readable for own device');
+      await _assertReadable(space, device, path, self);
     }
 
     if (isOwn) {
@@ -90,7 +93,7 @@ class StoreUriReader {
         space: parsed.space, device: parsed.device, path: parsed.path);
     if (localHit != null) return StoreUriKind.file;
     final self = await DeviceIdentity.deviceId();
-    _assertReadable(parsed.space, parsed.device, self);
+    await _assertReadable(parsed.space, parsed.device, parsed.path, self);
 
     if (parsed.device == self) {
       final store = await StoreService.instance.localStore();
@@ -177,7 +180,7 @@ class StoreUriReader {
         space: parsed.space, device: parsed.device, path: parsed.path);
     if (localHit != null) return localHit.length();
     final self = await DeviceIdentity.deviceId();
-    _assertReadable(parsed.space, parsed.device, self);
+    await _assertReadable(parsed.space, parsed.device, parsed.path, self);
 
     if (parsed.device == self) {
       final local = await StoreAttachmentRef.fileFromStoreUri(uriString);
@@ -229,7 +232,7 @@ class StoreUriReader {
       return;
     }
 
-    _assertReadable(parsed.space, parsed.device, self);
+    await _assertReadable(parsed.space, parsed.device, parsed.path, self);
 
     if (parsed.device == self) {
       final store = await StoreService.instance.localStore();
@@ -335,13 +338,39 @@ class StoreUriReader {
     return local;
   }
 
-  static void _assertReadable(String space, String device, String self) {
+  /// 私有分区 + 他端 device：本机缓存未命中时，仅当对端显式分享（入站
+  /// 白名单命中，runtime 另有敏感清单预过滤）才放行远端读。服务端仍按
+  /// share 行 + 细粒度策略做权威判定。
+  Future<void> _assertReadable(
+      String space, String device, String path, String self) async {
     final isOwn = device == self;
     final isShared = StoreSpace.sharedReadable.contains(space);
-    if (!isOwn && !isShared) {
-      throw ArgumentError(
-          'acl_denied: space "$space" is only readable for own device');
+    if (isOwn || isShared) return;
+    if (await inboundShareAllows(space: space, device: device, path: path)) {
+      return;
     }
+    throw ArgumentError(
+        'acl_denied: space "$space" is only readable for own device');
+  }
+
+  /// 对端是否已把 [space]/[path] 前缀分享给本机（入站 announce 缓存）。
+  ///
+  /// 客户端只做快速失败预过滤；实际读由服务端分享行 + 细粒度策略把关。
+  @visibleForTesting
+  Future<bool> inboundShareAllows({
+    required String space,
+    required String device,
+    required String path,
+  }) async {
+    final peerStorage = PeerStorageService();
+    final peer = await peerStorage.getPeerByDeviceId(device);
+    if (peer == null) return false;
+    final allowlist = await peerStorage.getInboundStoreAllowlist(peer.id);
+    if (!allowlist.allows(space, path)) return false;
+    if (space == StoreSpace.runtime) {
+      return !RuntimeSharePolicy.isSensitivePath(path);
+    }
+    return true;
   }
 
   static Future<void> _copyFileWithProgress(
