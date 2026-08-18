@@ -41,6 +41,7 @@ class GroupSessionListPanel extends StatelessWidget {
       sessions: sessions,
       currentChannelId: currentChannelId,
       groupChannel: controller.groupChannel,
+      controller: controller,
       onNewSession: onNewSession,
       onSwitchSession: onSwitchSession,
       onBatchDelete: onBatchDelete,
@@ -54,6 +55,10 @@ class _GroupSessionListContent extends StatefulWidget {
   final List<Channel> sessions;
   final String? currentChannelId;
   final Channel? groupChannel;
+
+  /// 用于读取 [ChatService.typingChannelIds] 以显示会话的「输入中」状态。
+  final ChatController controller;
+
   final VoidCallback onNewSession;
   final ValueChanged<String> onSwitchSession;
   final ValueChanged<List<String>> onBatchDelete;
@@ -64,6 +69,7 @@ class _GroupSessionListContent extends StatefulWidget {
     required this.sessions,
     this.currentChannelId,
     this.groupChannel,
+    required this.controller,
     required this.onNewSession,
     required this.onSwitchSession,
     required this.onBatchDelete,
@@ -381,14 +387,34 @@ class _GroupSessionListContentState extends State<_GroupSessionListContent> {
             ),
         ],
       ),
-      subtitle: Text(
-        preview,
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
-        style: TextStyle(
-          fontSize: 13,
-          color: Colors.grey[600],
-        ),
+      // 活跃会话（群内 agent 正在该会话处理任务）显示「输入中」，样式与
+      // 主页对话列表一致；监听 typingChannelIds 实时更新。
+      subtitle: ValueListenableBuilder<Set<String>>(
+        valueListenable: widget.controller.chatService.typingChannelIds,
+        builder: (context, typingChannelIds, _) {
+          final isTyping = typingChannelIds.contains(session.id);
+          if (isTyping) {
+            return Text(
+              AppLocalizations.of(context).home_typing,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                fontSize: 13,
+                color: Colors.green[600],
+                fontStyle: FontStyle.italic,
+              ),
+            );
+          }
+          return Text(
+            preview,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              fontSize: 13,
+              color: Colors.grey[600],
+            ),
+          );
+        },
       ),
       trailing: timeText.isNotEmpty
           ? Text(

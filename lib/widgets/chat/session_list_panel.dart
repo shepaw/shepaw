@@ -45,6 +45,7 @@ class SessionListPanel extends StatelessWidget {
     return _SessionListContent(
       sessions: sessions,
       currentChannelId: currentChannelId,
+      controller: controller,
       onNewSession: onNewSession,
       onSwitchSession: onSwitchSession,
       onBatchDelete: onBatchDelete,
@@ -57,6 +58,10 @@ class SessionListPanel extends StatelessWidget {
 class _SessionListContent extends StatefulWidget {
   final List<Channel> sessions;
   final String? currentChannelId;
+
+  /// 用于读取 [ChatService.typingChannelIds] 以显示会话的「输入中」状态。
+  final ChatController controller;
+
   final VoidCallback onNewSession;
   final ValueChanged<String> onSwitchSession;
   final ValueChanged<List<String>> onBatchDelete;
@@ -66,6 +71,7 @@ class _SessionListContent extends StatefulWidget {
   const _SessionListContent({
     required this.sessions,
     this.currentChannelId,
+    required this.controller,
     required this.onNewSession,
     required this.onSwitchSession,
     required this.onBatchDelete,
@@ -427,16 +433,36 @@ class _SessionListContentState extends State<_SessionListContent> {
             ),
         ],
       ),
-      subtitle: Text(
-        preview.isNotEmpty
-            ? preview
-            : (isGroupBound ? 'Group-bound session' : 'No messages'),
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
-        style: TextStyle(
-          fontSize: 13,
-          color: Colors.grey[600],
-        ),
+      // 活跃会话（agent 正在该会话处理任务）显示「输入中」，样式与主页
+      // 对话列表一致；监听 typingChannelIds 实时更新，不触发整条重查库。
+      subtitle: ValueListenableBuilder<Set<String>>(
+        valueListenable: widget.controller.chatService.typingChannelIds,
+        builder: (context, typingChannelIds, _) {
+          final isTyping = typingChannelIds.contains(session.id);
+          if (isTyping) {
+            return Text(
+              AppLocalizations.of(context).home_typing,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                fontSize: 13,
+                color: Colors.green[600],
+                fontStyle: FontStyle.italic,
+              ),
+            );
+          }
+          return Text(
+            preview.isNotEmpty
+                ? preview
+                : (isGroupBound ? 'Group-bound session' : 'No messages'),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              fontSize: 13,
+              color: Colors.grey[600],
+            ),
+          );
+        },
       ),
       trailing: timeText.isNotEmpty
           ? Text(
