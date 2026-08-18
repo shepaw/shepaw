@@ -14,7 +14,8 @@ enum StoreUriKind { file, directory }
 /// 按 `store://` URI 读取内容（Agent CLI / 附件引用共用）。
 ///
 /// - `workspaces` / `files` / `public`（及 legacy `artifacts`）：本机直读；他端优先直连属主，属主离线再走 master 镜像；
-/// - 私有分区（`runtime` / `attachments` / `backups` 等）：仅本机自身 device 可读（或显式分享/授权）。
+/// - 私有分区（`runtime` / `attachments` / `backups` 等）：仅本机自身 device 可读（或显式分享/授权）；
+///   但 peer 隧道附件在本机留有同 URI 缓存（device=对端），读取/预览前先命中该本地文件，未命中再按 ACL 拒绝。
 /// - 当前仅支持 latest（无 `@ref`）；版本引用后续扩展。
 class StoreUriReader {
   StoreUriReader._();
@@ -34,6 +35,9 @@ class StoreUriReader {
     final isShared = StoreSpace.sharedReadable.contains(space);
 
     if (!isOwn && !isShared) {
+      final local =
+          await _localCacheHit(space: space, device: device, path: path);
+      if (local != null) return local.readAsBytes();
       throw ArgumentError(
           'acl_denied: space "$space" is only readable for own device');
     }
@@ -82,6 +86,9 @@ class StoreUriReader {
     }
     if (parsed.path.isEmpty) return StoreUriKind.directory;
 
+    final localHit = await _localCacheHit(
+        space: parsed.space, device: parsed.device, path: parsed.path);
+    if (localHit != null) return StoreUriKind.file;
     final self = await DeviceIdentity.deviceId();
     _assertReadable(parsed.space, parsed.device, self);
 
@@ -166,6 +173,9 @@ class StoreUriReader {
   /// 仅查文件大小（本机 `stat` / 远端 meta，不拉内容）。
   Future<int> sizeOf(String uriString) async {
     final parsed = _parseLatest(uriString);
+    final localHit = await _localCacheHit(
+        space: parsed.space, device: parsed.device, path: parsed.path);
+    if (localHit != null) return localHit.length();
     final self = await DeviceIdentity.deviceId();
     _assertReadable(parsed.space, parsed.device, self);
 
@@ -200,8 +210,8 @@ class StoreUriReader {
   }) async {
     final parsed = _parseLatest(uriString);
     final self = await DeviceIdentity.deviceId();
-    _assertReadable(parsed.space, parsed.device, self);
 
+    // 本地文件（含 peer 隧道本机缓存）先命中，未命中再走 ACL/远端。
     final local = await StoreAttachmentRef.fileFromStoreUri(uriString);
     if (local != null) {
       final size = await local.length();
@@ -218,6 +228,8 @@ class StoreUriReader {
       await _copyFileWithProgress(local, dest, size, onProgress);
       return;
     }
+
+    _assertReadable(parsed.space, parsed.device, self);
 
     if (parsed.device == self) {
       final store = await StoreService.instance.localStore();
@@ -292,6 +304,35 @@ class StoreUriReader {
           'versioned store URI not supported yet: $uriString');
     }
     return parsed;
+  }
+
+  /// 私有分区 + 他端 device 的 URI：本机缓存命中时返回本地 [File]。
+  ///
+  /// Peer 隧道附件在本机留有与宿主权威同 URI 的缓存
+  /// （`AttachmentStoreWriter` 写入对端 device 目录，见
+  /// `peer_attachment_placement.dart`），因此跨端私有 URI 的字节可能就在
+  /// 本机。共享分区（workspaces/files/…）保持远端校验读，不回退本地镜像，
+  /// 避免绕过 hash 校验读到旧版本。
+  Future<File?> _localCacheHit({
+    required String space,
+    required String device,
+    required String path,
+  }) async {
+    if (path.isEmpty) return null;
+    final self = await DeviceIdentity.deviceId();
+    if (device == self) return null;
+    if (StoreSpace.sharedReadable.contains(space)) return null;
+    final local =
+        await StoreAttachmentRef.fileFromStoreUri(storeUriWithRef(
+      space,
+      device,
+      path,
+    ));
+    if (local == null) return null;
+    if (await local.stat().then((s) => s.type == FileSystemEntityType.directory)) {
+      return null;
+    }
+    return local;
   }
 
   static void _assertReadable(String space, String device, String self) {

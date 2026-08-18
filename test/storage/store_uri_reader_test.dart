@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:crypto/crypto.dart' as crypto;
@@ -11,8 +12,10 @@ import 'package:shepaw/storage/store_uri_reader.dart';
 import 'test_harness.dart';
 
 void main() {
+  late Directory tmp;
+
   setUpAll(() async {
-    await StorageTestHarness.init();
+    tmp = await StorageTestHarness.init();
     await StoreService.instance.start();
   });
 
@@ -110,6 +113,54 @@ void main() {
   test('StoreUriReader 拒绝他端私有分区', () async {
     const other = 'bbbbbbbbbbbbbbbb';
     final uri = storeUriWithRef(StoreSpace.attachments, other, 'deadbeef');
+    expect(
+      () => StoreUriReader.instance.read(uri),
+      throwsA(isA<ArgumentError>()),
+    );
+  });
+
+  test('他端私有分区本机缓存命中（peer 隧道附件共用 URI）', () async {
+    final store = await StoreService.instance.localStore();
+    const other = 'dddddddddddddddd';
+    final bytes =
+        Uint8List.fromList(utf8.encode('peer cached attachment bytes'));
+    final hash = crypto.sha256.convert(bytes).toString();
+    final relPath = 'agent_1/peer__peer_1__agent_1/attachments/$hash';
+
+    final (uploadId, _) = await store.writeBegin(
+      deviceId: other,
+      space: StoreSpace.runtime,
+      path: relPath,
+      size: bytes.length,
+      sha256: hash,
+    );
+    await store.writeChunk(other, StoreSpace.runtime, uploadId, 0, bytes);
+    await store.commit(other, StoreSpace.runtime, [uploadId]);
+
+    final uri = storeUriWithRef(StoreSpace.runtime, other, relPath);
+    expect(await StoreUriReader.instance.kindOf(uri), StoreUriKind.file);
+    expect(await StoreUriReader.instance.sizeOf(uri), bytes.length);
+    expect(
+      utf8.decode(await StoreUriReader.instance.read(uri)),
+      'peer cached attachment bytes',
+    );
+
+    final dest = File('${tmp.path}/peer_uri_copy.bin');
+    await StoreUriReader.instance.copyTo(uri, dest);
+    expect(
+      utf8.decode(await dest.readAsBytes()),
+      'peer cached attachment bytes',
+    );
+  });
+
+  test('他端私有分区无本机缓存仍拒绝（不误放行）', () async {
+    const other = 'eeeeeeeeeeeeeeee';
+    final uri = storeUriWithRef(
+      StoreSpace.runtime,
+      other,
+      'agent_1/channel_1/attachments/'
+      '1111111111111111111111111111111111111111111111111111111111111111',
+    );
     expect(
       () => StoreUriReader.instance.read(uri),
       throwsA(isA<ArgumentError>()),
