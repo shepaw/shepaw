@@ -10,22 +10,34 @@ enum DrawerSwipeDecision {
   /// Movement is vertical-dominant; yield so list scrolling can win.
   rejectAsVertical,
 
-  /// Movement is a clear rightward open gesture.
+  /// Movement is a clear open gesture in the configured direction.
   acceptOpen,
 
-  /// Movement is clearly horizontal but not a rightward open (e.g. left swipe).
+  /// Movement is clearly horizontal but not an open swipe in the
+  /// configured direction.
   rejectAsHorizontal,
+}
+
+/// 抽屉打开滑动方向：主页左侧抽屉向右滑，聊天页右侧抽屉向左滑。
+enum DrawerSwipeDirection {
+  /// 向右滑打开（主页左侧抽屉）。
+  leftToRight,
+
+  /// 向左滑打开（聊天页右侧抽屉）。
+  rightToLeft,
 }
 
 /// Pure disambiguation used by [_DrawerOpenSwipeRecognizer].
 ///
 /// Vertical scrolling wins as soon as movement is vertical-dominant past
 /// [touchSlop]. A drawer open is accepted only when the swipe is clearly
-/// rightward past [minOpenDistance].
+/// directional (rightward for [DrawerSwipeDirection.leftToRight], leftward
+/// for [DrawerSwipeDirection.rightToLeft]) past [minOpenDistance].
 @visibleForTesting
 DrawerSwipeDecision decideDrawerSwipe({
   required double dx,
   required double dy,
+  DrawerSwipeDirection direction = DrawerSwipeDirection.leftToRight,
   double touchSlop = kTouchSlop,
   double horizontalDominance = 1.25,
   double minOpenDistance = 36,
@@ -42,17 +54,19 @@ DrawerSwipeDecision decideDrawerSwipe({
     return DrawerSwipeDecision.rejectAsVertical;
   }
 
-  // Clearly leftward — not an open gesture.
-  if (dx <= 0) {
+  // Movement along the open direction (right for left drawer, left for
+  // right drawer); opposite direction is not an open gesture.
+  final openDx = direction == DrawerSwipeDirection.leftToRight ? dx : -dx;
+  if (openDx <= 0) {
     return DrawerSwipeDecision.rejectAsHorizontal;
   }
 
   // Need a clear horizontal bias before claiming the arena.
-  if (dx < absDy * horizontalDominance) {
+  if (openDx < absDy * horizontalDominance) {
     return DrawerSwipeDecision.wait;
   }
 
-  if (dx >= minOpenDistance) {
+  if (openDx >= minOpenDistance) {
     return DrawerSwipeDecision.acceptOpen;
   }
 
@@ -78,6 +92,7 @@ class DrawerSwipeDetector extends StatelessWidget {
     required this.child,
     this.enabled = true,
     this.onOpenDrawer,
+    this.direction = DrawerSwipeDirection.leftToRight,
     this.verticalScrollSlop = 18,
     this.blockLeadingEdgeDrawerGesture = false,
     this.leadingEdgeBlockWidth,
@@ -89,8 +104,13 @@ class DrawerSwipeDetector extends StatelessWidget {
   final Widget child;
   final bool enabled;
 
-  /// Opens the scaffold drawer when a clear rightward swipe is recognized.
+  /// Opens the drawer when a clear swipe in [direction] is recognized.
+  /// Defaults to rightward (home's left drawer); chat pages pass
+  /// [DrawerSwipeDirection.rightToLeft] for the right-side drawer.
   final VoidCallback? onOpenDrawer;
+
+  /// 打开抽屉的滑动方向：主页左侧抽屉右滑，聊天页右侧抽屉左滑。
+  final DrawerSwipeDirection direction;
 
   /// Vertical travel required before descendant scroll views start dragging.
   /// Keep near [kTouchSlop] so list motion feels immediate after winning.
@@ -136,6 +156,7 @@ class DrawerSwipeDetector extends StatelessWidget {
           _DrawerOpenSwipeRecognizer:
               GestureRecognizerFactoryWithHandlers<_DrawerOpenSwipeRecognizer>(
             () => _DrawerOpenSwipeRecognizer(
+              direction: direction,
               touchSlop: touchSlop,
               horizontalDominance: horizontalDominance,
               minOpenDistance: minOpenDistance,
@@ -161,12 +182,14 @@ class DrawerSwipeDetector extends StatelessWidget {
 
 class _DrawerOpenSwipeRecognizer extends OneSequenceGestureRecognizer {
   _DrawerOpenSwipeRecognizer({
+    required this.direction,
     required this.touchSlop,
     required this.horizontalDominance,
     required this.minOpenDistance,
     required this.blockedLeadingWidth,
   });
 
+  final DrawerSwipeDirection direction;
   final double touchSlop;
   final double horizontalDominance;
   final double minOpenDistance;
@@ -195,6 +218,7 @@ class _DrawerOpenSwipeRecognizer extends OneSequenceGestureRecognizer {
       switch (decideDrawerSwipe(
         dx: _offset.dx,
         dy: _offset.dy,
+        direction: direction,
         touchSlop: touchSlop,
         horizontalDominance: horizontalDominance,
         minOpenDistance: minOpenDistance,

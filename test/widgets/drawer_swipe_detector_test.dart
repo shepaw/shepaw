@@ -68,4 +68,56 @@ void main() {
       );
     });
   });
+
+  group('decideDrawerSwipe rightToLeft (chat right drawer)', () {
+    test('accepts clear leftward open swipes', () {
+      expect(
+        decideDrawerSwipe(
+          dx: -40,
+          dy: 8,
+          touchSlop: 18,
+          direction: DrawerSwipeDirection.rightToLeft,
+        ),
+        DrawerSwipeDecision.acceptOpen,
+      );
+    });
+
+    test('rejects rightward swipes in rightToLeft mode', () {
+      expect(
+        decideDrawerSwipe(
+          dx: 40,
+          dy: 4,
+          touchSlop: 18,
+          direction: DrawerSwipeDirection.rightToLeft,
+        ),
+        DrawerSwipeDecision.rejectAsHorizontal,
+      );
+    });
+
+    test('waits when leftward but short of open distance', () {
+      expect(
+        decideDrawerSwipe(
+          dx: -24,
+          dy: 4,
+          touchSlop: 18,
+          horizontalDominance: 1.25,
+          minOpenDistance: 36,
+          direction: DrawerSwipeDirection.rightToLeft,
+        ),
+        DrawerSwipeDecision.wait,
+      );
+    });
+
+    test('vertical-dominant scrolls still win in rightToLeft mode', () {
+      expect(
+        decideDrawerSwipe(
+          dx: -10,
+          dy: 30,
+          touchSlop: 18,
+          direction: DrawerSwipeDirection.rightToLeft,
+        ),
+        DrawerSwipeDecision.rejectAsVertical,
+      );
+    });
+  });
 }

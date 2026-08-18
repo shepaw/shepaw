@@ -9,7 +9,6 @@ import 'package:emoji_picker_flutter/emoji_picker_flutter.dart';
 import 'package:scrollable_positioned_list/scrollable_positioned_list.dart';
 import '../services/local_user_identity.dart';
 import '../models/channel.dart';
-import '../models/mention_entry.dart';
 import '../models/pending_attachment.dart';
 import '../models/remote_agent.dart';
 import '../models/model_routing_config.dart';
@@ -18,6 +17,7 @@ import '../services/composer_draft_service.dart';
 import '../services/local_database_service.dart';
 import '../services/group/group_member_session_service.dart';
 import '../utils/layout_utils.dart';
+import '../widgets/drawer_swipe_detector.dart';
 import '../l10n/app_localizations.dart';
 import '../controllers/chat_controller.dart';
 import '../controllers/chat_attachment_coordinator.dart';
@@ -25,7 +25,7 @@ import '../theme/app_theme.dart';
 import '../widgets/chat/chat_app_bar.dart';
 import '../models/store_attachment_ref.dart';
 import '../widgets/chat/storage_file_picker_screen.dart';
-import '../widgets/chat/chat_menu.dart';
+import '../widgets/chat/chat_more_drawer.dart';
 import '../widgets/chat/chat_input_area.dart';
 import '../widgets/chat/chat_message_list.dart';
 import '../widgets/chat/chat_reply_preview.dart';
@@ -147,6 +147,9 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   /// Unread agent/group messages in sessions other than the one being viewed.
   int _otherSessionsUnreadCount = 0;
   int _trackedMessageCount = 0;
+
+  /// 防止会话抽屉重复打开（会话加载是异步的，连点会叠出两个抽屉）。
+  bool _isChatDrawerOpen = false;
 
   // Pending highlight from search navigation
   String? _pendingHighlightMessageId;
@@ -1442,64 +1445,87 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
 
   Future<void> _showSessionList() async {
     if (widget.agentId == null) return;
+    if (_isChatDrawerOpen) return;
+    _isChatDrawerOpen = true;
     try {
       final sessions = await _controller.chatService
           .getAgentSessions(agentId: widget.agentId!);
       if (!mounted) return;
 
-      final content = SessionListPanel(
-        sessions: sessions,
-        currentChannelId: _controller.currentChannelId,
-        controller: _controller,
-        onNewSession: () => _controller.createNewSession(),
-        onSwitchSession: (channelId) async {
-          // Stay in the agent DM chat — group-bound sessions are view-only here.
-          await _controller.localDatabaseService
-              .touchChannelUpdatedAt(channelId);
-          if (!mounted) return;
-          if (widget.embedded) {
-            widget.onSwitchChannel?.call(channelId);
-          } else {
-            Navigator.pushReplacement(
-              context,
-              MaterialPageRoute(
-                builder: (context) => ChatScreen(
-                  agentId: widget.agentId,
-                  agentName: _controller.agentName,
-                  agentAvatar: _controller.agentAvatar,
-                  channelId: channelId,
+      final l10n = AppLocalizations.of(context);
+      final c = _controller;
+
+      final drawer = ChatMoreDrawer(
+        header: _buildDmDrawerHeader(l10n),
+        headerOnTap: _navigateToAgentDetail,
+        headerTrailingIcon: Icons.edit_outlined,
+        headerTrailingTooltip: l10n.chat_editAgent,
+        onHeaderTrailing: _navigateToAgentDetailForEdit,
+        searchHint: l10n.chat_searchMessages,
+        onSearch: _showSearchDialog,
+        body: SessionListPanel(
+          sessions: sessions,
+          currentChannelId: c.currentChannelId,
+          controller: c,
+          onNewSession: () => c.createNewSession(),
+          onSwitchSession: (channelId) async {
+            // Stay in the agent DM chat — group-bound sessions are view-only here.
+            await c.localDatabaseService.touchChannelUpdatedAt(channelId);
+            if (!mounted) return;
+            if (widget.embedded) {
+              widget.onSwitchChannel?.call(channelId);
+            } else {
+              Navigator.pushReplacement(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => ChatScreen(
+                    agentId: widget.agentId,
+                    agentName: c.agentName,
+                    agentAvatar: c.agentAvatar,
+                    channelId: channelId,
+                  ),
                 ),
-              ),
-            );
-          }
-        },
-        onBatchDelete: (ids) =>
-            _controller.batchDeleteSessions(ids, isGroup: false),
-        onShowTraces: () {
-          Navigator.pop(context);
-          _showChannelTraces();
-        },
-        onAllSessionsMarkedRead: () {
-          unawaited(_refreshOtherSessionsUnread());
-          unawaited(_controller.markMessagesAsReadIfAtBottom());
-        },
+              );
+            }
+          },
+          onBatchDelete: (ids) => c.batchDeleteSessions(ids, isGroup: false),
+          onShowTraces: () {
+            Navigator.pop(context);
+            _showChannelTraces();
+          },
+          onAllSessionsMarkedRead: () {
+            unawaited(_refreshOtherSessionsUnread());
+            unawaited(c.markMessagesAsReadIfAtBottom());
+          },
+        ),
+        footerActions: [
+          ChatDrawerAction(
+            icon: Icons.inventory_2_outlined,
+            label: l10n.chat_storageSpace,
+            onTap: _navigateToStorageSpace,
+          ),
+          if (c.dmWorkflowEnabled)
+            ChatDrawerAction(
+              icon: Icons.account_tree_outlined,
+              label: l10n.chat_workflow,
+              onTap: _showGroupWorkflow,
+            ),
+          ChatDrawerAction(
+            icon: Icons.refresh,
+            label: l10n.chat_resetSession,
+            onTap: () {
+              _messageController.text = '/reset';
+              _sendMessage();
+            },
+          ),
+        ],
       );
 
-      if (LayoutUtils.isDesktopLayout(context)) {
-        LayoutUtils.showRightDrawer(context: context, builder: (_) => content);
-      } else {
-        Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder: (context) => Scaffold(
-              appBar: AppBar(
-                  title: Text(AppLocalizations.of(context).chat_sessionList),
-                  elevation: 1),
-              body: content,
-            ),
-          ),
-        );
-      }
+      await LayoutUtils.showRightDrawer(
+        context: context,
+        builder: (_) => drawer,
+        width: _chatDrawerWidth(context),
+      );
     } catch (e) {
       if (mounted) {
         showTopToast(
@@ -1509,64 +1535,122 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
           color: Colors.red.shade400,
         );
       }
+    } finally {
+      _isChatDrawerOpen = false;
     }
   }
 
   Future<void> _showGroupSessionList() async {
     if (_controller.groupChannel == null) return;
+    if (_isChatDrawerOpen) return;
+    _isChatDrawerOpen = true;
     try {
       final parentGroupId = _controller.groupChannel!.groupFamilyId;
       final sessions = await _controller.chatService
           .getGroupSessions(parentGroupId: parentGroupId);
       if (!mounted) return;
 
-      final content = GroupSessionListPanel(
-        sessions: sessions,
-        currentChannelId: _controller.currentChannelId,
-        controller: _controller,
-        onNewSession: () => _controller.createNewGroupSession(),
-        onSwitchSession: (channelId) async {
-          await _controller.localDatabaseService
-              .touchChannelUpdatedAt(channelId);
-          if (!mounted) return;
-          if (widget.embedded) {
-            widget.onSwitchChannel?.call(channelId);
-          } else {
-            Navigator.pushReplacement(
-              context,
-              MaterialPageRoute(
-                builder: (context) => ChatScreen(channelId: channelId),
-              ),
-            );
-          }
-        },
-        onBatchDelete: (ids) =>
-            _controller.batchDeleteSessions(ids, isGroup: true),
-        onShowTraces: () {
-          Navigator.pop(context);
-          _showChannelTraces();
-        },
-        onAllSessionsMarkedRead: () {
-          unawaited(_refreshOtherSessionsUnread());
-          unawaited(_controller.markMessagesAsReadIfAtBottom());
-        },
-      );
+      final l10n = AppLocalizations.of(context);
+      final c = _controller;
+      final groupName = c.groupChannel?.name ?? 'Group';
 
-      if (LayoutUtils.isDesktopLayout(context)) {
-        LayoutUtils.showRightDrawer(context: context, builder: (_) => content);
-      } else {
-        Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder: (context) => Scaffold(
-              appBar: AppBar(
-                  title: Text(AppLocalizations.of(context).chat_sessionList),
-                  elevation: 1),
-              body: content,
+      final header = Row(
+        children: [
+          Container(
+            width: 40,
+            height: 40,
+            decoration: BoxDecoration(
+              color: AppColors.primaryContainer,
+              borderRadius: BorderRadius.circular(10),
+            ),
+            alignment: Alignment.center,
+            child: const Icon(Icons.group, size: 22, color: AppColors.primary),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  groupName,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                      fontSize: 16, fontWeight: FontWeight.w600),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  l10n.chat_groupMembersCount(c.groupAgents.length),
+                  style: TextStyle(fontSize: 12, color: Colors.grey[500]),
+                ),
+              ],
             ),
           ),
-        );
-      }
+        ],
+      );
+
+      final drawer = ChatMoreDrawer(
+        header: header,
+        headerOnTap: _navigateToGroupDetail,
+        headerTrailingIcon: Icons.group_outlined,
+        headerTrailingTooltip: l10n.chat_groupMembers,
+        onHeaderTrailing: _showGroupMembersPanel,
+        searchHint: l10n.chat_searchMessages,
+        onSearch: _showSearchDialog,
+        body: GroupSessionListPanel(
+          sessions: sessions,
+          currentChannelId: c.currentChannelId,
+          controller: c,
+          onNewSession: () => c.createNewGroupSession(),
+          onSwitchSession: (channelId) async {
+            await c.localDatabaseService.touchChannelUpdatedAt(channelId);
+            if (!mounted) return;
+            if (widget.embedded) {
+              widget.onSwitchChannel?.call(channelId);
+            } else {
+              Navigator.pushReplacement(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => ChatScreen(channelId: channelId),
+                ),
+              );
+            }
+          },
+          onBatchDelete: (ids) => c.batchDeleteSessions(ids, isGroup: true),
+          onShowTraces: () {
+            Navigator.pop(context);
+            _showChannelTraces();
+          },
+          onAllSessionsMarkedRead: () {
+            unawaited(_refreshOtherSessionsUnread());
+            unawaited(c.markMessagesAsReadIfAtBottom());
+          },
+        ),
+        footerActions: [
+          ChatDrawerAction(
+            icon: Icons.inventory_2_outlined,
+            label: l10n.chat_storageSpace,
+            onTap: _navigateToStorageSpace,
+          ),
+          ChatDrawerAction(
+            icon: Icons.account_tree_outlined,
+            label: l10n.chat_workflow,
+            onTap: _showGroupWorkflow,
+          ),
+          ChatDrawerAction(
+            icon: Icons.edit_outlined,
+            label: l10n.chat_editGroupInfo,
+            onTap: _editGroupInfo,
+          ),
+        ],
+      );
+
+      await LayoutUtils.showRightDrawer(
+        context: context,
+        builder: (_) => drawer,
+        width: _chatDrawerWidth(context),
+      );
     } catch (e) {
       if (mounted) {
         showTopToast(
@@ -1576,24 +1660,8 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
           color: Colors.red.shade400,
         );
       }
-    }
-  }
-
-  void _createNewSessionFromMenu() {
-    final c = _controller;
-    if (c.isGroupMode) {
-      unawaited(c.createNewGroupSession());
-    } else {
-      unawaited(c.createNewSession());
-    }
-  }
-
-  void _showSessionHistoryFromMenu() {
-    final c = _controller;
-    if (c.isGroupMode) {
-      unawaited(_showGroupSessionList());
-    } else {
-      unawaited(_showSessionList());
+    } finally {
+      _isChatDrawerOpen = false;
     }
   }
 
@@ -2100,44 +2168,81 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   // Build
   // ---------------------------------------------------------------------------
 
-  void _handleChatMenuSelected(String value) {
-    final c = _controller;
-    if (c.isGroupMode) {
-      ChatMenuHelper.handleGroupMenuSelection(
-        value,
-        onEditGroup: _editGroupInfo,
-        onShowMembers: _showGroupMembersPanel,
-        onNewSession: _createNewSessionFromMenu,
-        onSessionHistory: _showSessionHistoryFromMenu,
-        onStorageSpace: _navigateToStorageSpace,
-        onSearch: _showSearchDialog,
-        onWorkflow: _showGroupWorkflow,
-      );
-    } else {
-      ChatMenuHelper.handleAgentMenuSelection(
-        value,
-        onReset: () {
-          _messageController.text = '/reset';
-          _sendMessage();
-        },
-        onNewSession: _createNewSessionFromMenu,
-        onSessionHistory: _showSessionHistoryFromMenu,
-        onViewDetails: _navigateToAgentDetail,
-        onStorageSpace: _navigateToStorageSpace,
-        onEdit: _navigateToAgentDetailForEdit,
-        onSearch: _showSearchDialog,
-        onWorkflow: c.dmWorkflowEnabled ? _showGroupWorkflow : null,
-      );
-    }
+  /// 抽屉在移动端的宽度：近全宽（92%），clamp 到 [240, 360]；桌面固定 360。
+  double _chatDrawerWidth(BuildContext context) {
+    if (LayoutUtils.isDesktopLayout(context)) return 360;
+    return (MediaQuery.sizeOf(context).width * 0.92).clamp(240.0, 360.0);
   }
 
-  Widget _buildChatMenuButton(AppLocalizations l10n) {
+  /// 单聊抽屉 header：头像 + 名称 + 在线/离线状态。
+  Widget _buildDmDrawerHeader(AppLocalizations l10n) {
     final c = _controller;
+    final displayName = c.agentName == null
+        ? null
+        : SheService.resolveDisplayName(c.agentName, l10n.she_name);
+    final avatar = c.agentAvatar != null && c.agentAvatar!.length > 2
+        ? AvatarImage(
+            avatar: c.agentAvatar!,
+            size: 40,
+            borderRadius: 10,
+            fallback: Text(
+              displayName?.isNotEmpty == true ? displayName![0] : 'A',
+              style: const TextStyle(fontSize: 18),
+            ),
+          )
+        : Text(
+            c.agentAvatar ??
+                (displayName?.isNotEmpty == true ? displayName![0] : 'A'),
+            style: const TextStyle(fontSize: 18),
+          );
+
+    return Row(
+      children: [
+        Container(
+          width: 40,
+          height: 40,
+          decoration: BoxDecoration(
+            color: Colors.grey[200],
+            borderRadius: BorderRadius.circular(10),
+          ),
+          alignment: Alignment.center,
+          clipBehavior: Clip.antiAlias,
+          child: avatar,
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                displayName ?? 'AI Agent',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style:
+                    const TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+              ),
+              const SizedBox(height: 2),
+              Text(
+                c.isAgentOnline ? l10n.status_online : l10n.status_offline,
+                style: TextStyle(
+                  fontSize: 12,
+                  color:
+                      c.isAgentOnline ? const Color(0xFF34C759) : Colors.grey,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  /// 「更多」按钮：点击从右侧滑出抽屉，抽屉主体即会话列表。
+  /// 未读角标全平台显示（其他会话有未读消息时）。
+  Widget _buildChatMoreButton(AppLocalizations l10n) {
     final isDesktop = LayoutUtils.isDesktopLayout(context);
-    final sessionActionsInMenu = !isDesktop;
-    final buttonWidth = isDesktop ? 36.0 : 40.0;
-    final showUnreadDot = sessionActionsInMenu && _otherSessionsUnreadCount > 0;
-    return PopupMenuButton<String>(
+    return IconButton(
       tooltip: l10n.chat_moreActions,
       icon: SizedBox(
         width: 22,
@@ -2146,51 +2251,6 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
           clipBehavior: Clip.none,
           children: [
             const Center(child: Icon(Icons.more_vert)),
-            if (showUnreadDot)
-              const Positioned(
-                right: -3,
-                top: -3,
-                child: SessionUnreadDot(),
-              ),
-          ],
-        ),
-      ),
-      iconSize: 22,
-      padding: EdgeInsets.zero,
-      splashRadius: 20,
-      style: IconButton.styleFrom(
-        minimumSize: Size(buttonWidth, 40),
-        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-        padding: EdgeInsets.zero,
-      ),
-      position: PopupMenuPosition.under,
-      onSelected: _handleChatMenuSelected,
-      itemBuilder: (ctx) => c.isGroupMode
-          ? ChatMenuHelper.groupMenuItems(
-              ctx,
-              sessionActionsInMenu: sessionActionsInMenu,
-              sessionUnreadCount: _otherSessionsUnreadCount,
-              onWorkflow: _showGroupWorkflow,
-            )
-          : ChatMenuHelper.agentMenuItems(
-              ctx,
-              sessionActionsInMenu: sessionActionsInMenu,
-              sessionUnreadCount: _otherSessionsUnreadCount,
-              onEdit: _navigateToAgentDetailForEdit,
-              onWorkflow: c.dmWorkflowEnabled ? _showGroupWorkflow : null,
-            ),
-    );
-  }
-
-  Widget _buildDesktopSessionHistoryButton() {
-    return IconButton(
-      icon: SizedBox(
-        width: 22,
-        height: 22,
-        child: Stack(
-          clipBehavior: Clip.none,
-          children: [
-            const Center(child: Icon(Icons.history, size: 22)),
             if (_otherSessionsUnreadCount > 0)
               const Positioned(
                 right: -3,
@@ -2202,9 +2262,8 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
       ),
       iconSize: 22,
       padding: EdgeInsets.zero,
-      constraints: const BoxConstraints.tightFor(width: 36, height: 40),
-      visualDensity: VisualDensity.compact,
-      tooltip: AppLocalizations.of(context).chat_sessionList,
+      constraints:
+          BoxConstraints.tightFor(width: isDesktop ? 36.0 : 40.0, height: 40),
       onPressed:
           _controller.isGroupMode ? _showGroupSessionList : _showSessionList,
     );
@@ -2263,294 +2322,305 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
         ),
         actionsPadding: const EdgeInsets.only(right: 8),
         actions: [
-          if (isDesktop) _buildDesktopSessionHistoryButton(),
-          _buildChatMenuButton(l10n),
+          _buildChatMoreButton(l10n),
         ],
       ),
-      body: Column(
-        children: [
-          // She config banner — shown when She has no LLM model configured
-          if (_sheNeedsConfig) _buildSheConfigBanner(),
+      // 触屏设备全区域左滑（向右边缘滑）打开右侧抽屉；垂直主导的滑动
+      // 让位给消息列表滚动，不影响上下滑动（与主页左侧抽屉同款手势逻辑）。
+      // 桌面端保留按钮入口，避免鼠标拖选文本误触；emoji 面板打开时禁用，
+      // 防止横向滑分类误开抽屉。
+      body: DrawerSwipeDetector(
+        enabled: !LayoutUtils.isDesktopLayout(context) && !_showEmojiPicker,
+        direction: DrawerSwipeDirection.rightToLeft,
+        onOpenDrawer:
+            _controller.isGroupMode ? _showGroupSessionList : _showSessionList,
+        child: Column(
+          children: [
+            // She config banner — shown when She has no LLM model configured
+            if (_sheNeedsConfig) _buildSheConfigBanner(),
 
-          // Message list
-          Expanded(
-            child: Stack(
-              children: [
-                c.messages.isEmpty && !c.isLoading
-                    ? (_sheNeedsConfig
-                        ? _buildSheWelcomeState()
-                        : _buildEmptyState())
-                    : NotificationListener<ScrollNotification>(
-                        onNotification: (notification) {
-                          if (notification is UserScrollNotification) {
-                            _onUserScroll(notification.direction);
-                          } else if (notification is ScrollEndNotification) {
-                            _onScrollEnd(notification.metrics);
-                          }
-                          return false;
-                        },
-                        child: ChatMessageList(
-                          messages: c.messages,
-                          messageIdMap: c.messageIdMap,
-                          streamingMessageId: c.streamingMessageId,
-                          groupStreamingMessageIds: c.groupStreamingMessageIds,
-                          isGroupMode: c.isGroupMode,
-                          channelId: c.currentChannelId,
-                          itemScrollController: _itemScrollController,
-                          itemPositionsListener: _itemPositionsListener,
-                          onStopStreaming: () => c.isGroupMode
-                              ? c.stopCurrentGroupMessageOnly()
-                              : c.stopCurrentMessageOnly(),
-                          onActionSelected: (msg, cid, aid, alabel,
-                              {confirmationContext}) {
-                            c.handleActionSelected(msg, cid, aid, alabel,
-                                confirmationContext: confirmationContext);
-                          },
-                          onSingleSelectSubmitted: (msg, sid, oid, olabel) {
-                            c.handleSingleSelectSubmitted(
-                                msg, sid, oid, olabel);
-                          },
-                          onMultiSelectSubmitted: (msg, sid, oids, summary) {
-                            c.handleMultiSelectSubmitted(
-                                msg, sid, oids, summary);
-                          },
-                          onFileUploadSubmitted: (msg, uid, files, summary) {
-                            c.handleFileUploadSubmitted(
-                                msg, uid, files, summary);
-                          },
-                          onFormSubmitted: (msg, fid, values, summary) {
-                            c.handleFormSubmitted(msg, fid, values, summary);
-                          },
-                          onPlanApprovalResponded: (msg, approved,
-                                  {feedback, skippedTaskIds}) =>
-                              c.handlePlanApprovalResponded(msg, approved,
-                                  feedback: feedback,
-                                  skippedTaskIds: skippedTaskIds),
-                          onReply: (msg) => c.startReply(msg),
-                          onRollback: (msg) => c.rollbackMessage(msg),
-                          onRollbackReEdit: (msg, {bool reEdit = false}) =>
-                              c.rollbackMessage(msg, reEdit: reEdit),
-                          onDelete: (msg) => c.deleteMessage(msg),
-                          onAgentAvatarTap: _navigateToAgentDetailById,
-                          onScrollToMessage: _scrollToMessage,
-                          highlightedMessageId: c.highlightedMessageId,
-                          onViewTrace: (message) {
-                            final traceId =
-                                message.metadata?['trace_id'] as String?;
-                            if (traceId != null) {
-                              Navigator.push(
-                                context,
-                                MaterialPageRoute(
-                                  builder: (_) =>
-                                      TraceDetailScreen(traceId: traceId),
-                                ),
-                              );
+            // Message list
+            Expanded(
+              child: Stack(
+                children: [
+                  c.messages.isEmpty && !c.isLoading
+                      ? (_sheNeedsConfig
+                          ? _buildSheWelcomeState()
+                          : _buildEmptyState())
+                      : NotificationListener<ScrollNotification>(
+                          onNotification: (notification) {
+                            if (notification is UserScrollNotification) {
+                              _onUserScroll(notification.direction);
+                            } else if (notification is ScrollEndNotification) {
+                              _onScrollEnd(notification.metrics);
                             }
+                            return false;
                           },
-                          agentAvatarMap: c.isGroupMode
-                              ? {
-                                  for (final a in c.groupAgents)
-                                    if (a.avatar.isNotEmpty) a.id: a.avatar,
-                                }
-                              : (c.agentId != null &&
-                                      c.agentAvatar != null &&
-                                      c.agentAvatar!.isNotEmpty
-                                  ? {c.agentId!: c.agentAvatar!}
-                                  : const {}),
-                          isAgentOffline: !c.isAgentOnline,
-                          defaultWorkspaceUris: c.defaultWorkspaceUris,
-                          workspaceUrisByAgentId: c.workspaceUrisByAgentId,
-                        ),
-                      ),
-                if (_isUserScrolledUp)
-                  Positioned(
-                    right: 16,
-                    bottom: 12,
-                    child: _buildScrollToBottomButton(),
-                  ),
-                if (_controller.isLoadingOlderMessages)
-                  const Positioned(
-                    top: 8,
-                    left: 0,
-                    right: 0,
-                    child: Center(
-                      child: SizedBox(
-                        width: 22,
-                        height: 22,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      ),
-                    ),
-                  ),
-              ],
-            ),
-          ),
-
-          // Workflow progress panel (floating above input)
-          if ((c.isGroupMode || c.dmWorkflowEnabled) &&
-              c.workflowNeedsPanelAttention)
-            Material(
-              color: Colors.blue.shade50,
-              child: InkWell(
-                onTap: c.reopenWorkflowPanel,
-                child: Padding(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-                  child: Row(
-                    children: [
-                      Icon(Icons.playlist_play,
-                          size: 18, color: Colors.blue.shade700),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: Text(
-                          l10n.workflow_inProgressBanner,
-                          style: TextStyle(
-                            fontSize: 12,
-                            fontWeight: FontWeight.w600,
-                            color: Colors.blue.shade800,
+                          child: ChatMessageList(
+                            messages: c.messages,
+                            messageIdMap: c.messageIdMap,
+                            streamingMessageId: c.streamingMessageId,
+                            groupStreamingMessageIds:
+                                c.groupStreamingMessageIds,
+                            isGroupMode: c.isGroupMode,
+                            channelId: c.currentChannelId,
+                            itemScrollController: _itemScrollController,
+                            itemPositionsListener: _itemPositionsListener,
+                            onStopStreaming: () => c.isGroupMode
+                                ? c.stopCurrentGroupMessageOnly()
+                                : c.stopCurrentMessageOnly(),
+                            onActionSelected: (msg, cid, aid, alabel,
+                                {confirmationContext}) {
+                              c.handleActionSelected(msg, cid, aid, alabel,
+                                  confirmationContext: confirmationContext);
+                            },
+                            onSingleSelectSubmitted: (msg, sid, oid, olabel) {
+                              c.handleSingleSelectSubmitted(
+                                  msg, sid, oid, olabel);
+                            },
+                            onMultiSelectSubmitted: (msg, sid, oids, summary) {
+                              c.handleMultiSelectSubmitted(
+                                  msg, sid, oids, summary);
+                            },
+                            onFileUploadSubmitted: (msg, uid, files, summary) {
+                              c.handleFileUploadSubmitted(
+                                  msg, uid, files, summary);
+                            },
+                            onFormSubmitted: (msg, fid, values, summary) {
+                              c.handleFormSubmitted(msg, fid, values, summary);
+                            },
+                            onPlanApprovalResponded: (msg, approved,
+                                    {feedback, skippedTaskIds}) =>
+                                c.handlePlanApprovalResponded(msg, approved,
+                                    feedback: feedback,
+                                    skippedTaskIds: skippedTaskIds),
+                            onReply: (msg) => c.startReply(msg),
+                            onRollback: (msg) => c.rollbackMessage(msg),
+                            onRollbackReEdit: (msg, {bool reEdit = false}) =>
+                                c.rollbackMessage(msg, reEdit: reEdit),
+                            onDelete: (msg) => c.deleteMessage(msg),
+                            onAgentAvatarTap: _navigateToAgentDetailById,
+                            onScrollToMessage: _scrollToMessage,
+                            highlightedMessageId: c.highlightedMessageId,
+                            onViewTrace: (message) {
+                              final traceId =
+                                  message.metadata?['trace_id'] as String?;
+                              if (traceId != null) {
+                                Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (_) =>
+                                        TraceDetailScreen(traceId: traceId),
+                                  ),
+                                );
+                              }
+                            },
+                            agentAvatarMap: c.isGroupMode
+                                ? {
+                                    for (final a in c.groupAgents)
+                                      if (a.avatar.isNotEmpty) a.id: a.avatar,
+                                  }
+                                : (c.agentId != null &&
+                                        c.agentAvatar != null &&
+                                        c.agentAvatar!.isNotEmpty
+                                    ? {c.agentId!: c.agentAvatar!}
+                                    : const {}),
+                            isAgentOffline: !c.isAgentOnline,
+                            defaultWorkspaceUris: c.defaultWorkspaceUris,
+                            workspaceUrisByAgentId: c.workspaceUrisByAgentId,
                           ),
                         ),
+                  if (_isUserScrolledUp)
+                    Positioned(
+                      right: 16,
+                      bottom: 12,
+                      child: _buildScrollToBottomButton(),
+                    ),
+                  if (_controller.isLoadingOlderMessages)
+                    const Positioned(
+                      top: 8,
+                      left: 0,
+                      right: 0,
+                      child: Center(
+                        child: SizedBox(
+                          width: 22,
+                          height: 22,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        ),
                       ),
-                      Icon(Icons.expand_less,
-                          size: 18, color: Colors.blue.shade700),
-                    ],
+                    ),
+                ],
+              ),
+            ),
+
+            // Workflow progress panel (floating above input)
+            if ((c.isGroupMode || c.dmWorkflowEnabled) &&
+                c.workflowNeedsPanelAttention)
+              Material(
+                color: Colors.blue.shade50,
+                child: InkWell(
+                  onTap: c.reopenWorkflowPanel,
+                  child: Padding(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                    child: Row(
+                      children: [
+                        Icon(Icons.playlist_play,
+                            size: 18, color: Colors.blue.shade700),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            l10n.workflow_inProgressBanner,
+                            style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                              color: Colors.blue.shade800,
+                            ),
+                          ),
+                        ),
+                        Icon(Icons.expand_less,
+                            size: 18, color: Colors.blue.shade700),
+                      ],
+                    ),
                   ),
                 ),
               ),
-            ),
-          if ((c.isGroupMode || c.dmWorkflowEnabled) &&
-              c.showWorkflowProgressPanel)
-            WorkflowProgressPanel(
-              workflowId: c.activeWorkflowId!,
-              pendingPeerApproval: c.workflowPeerApprovalPending,
-              onScrollToApproval: _scrollToMessage,
-              onPeerApprovalAction: (confirmationId, actionId, actionLabel) {
-                c.handleWorkflowPeerApprovalAction(
-                  confirmationId,
-                  actionId,
-                  actionLabel,
-                );
-              },
-              onDismiss: () => c.dismissWorkflowPanel(),
-              onApprovalResponse: (approved, {feedback}) {
-                c.handleWorkflowApproval(approved, feedback: feedback);
-              },
-            ),
+            if ((c.isGroupMode || c.dmWorkflowEnabled) &&
+                c.showWorkflowProgressPanel)
+              WorkflowProgressPanel(
+                workflowId: c.activeWorkflowId!,
+                pendingPeerApproval: c.workflowPeerApprovalPending,
+                onScrollToApproval: _scrollToMessage,
+                onPeerApprovalAction: (confirmationId, actionId, actionLabel) {
+                  c.handleWorkflowPeerApprovalAction(
+                    confirmationId,
+                    actionId,
+                    actionLabel,
+                  );
+                },
+                onDismiss: () => c.dismissWorkflowPanel(),
+                onApprovalResponse: (approved, {feedback}) {
+                  c.handleWorkflowApproval(approved, feedback: feedback);
+                },
+              ),
 
-          // Voice record overlay
-          if (_isRecording)
-            VoiceRecordOverlay(
-              elapsed: _recordingElapsed,
-              amplitude: _recordingAmplitude,
-              isCancelZone: _isCancelZone,
-            ),
+            // Voice record overlay
+            if (_isRecording)
+              VoiceRecordOverlay(
+                elapsed: _recordingElapsed,
+                amplitude: _recordingAmplitude,
+                isCancelZone: _isCancelZone,
+              ),
 
-          // Reply preview bar
-          if (c.replyingToMessage != null &&
-              !c.isViewingGroupBoundMemberSession &&
-              !c.isViewingSheBoundSession)
-            ChatReplyPreview(
-              replyingTo: c.replyingToMessage!,
-              onCancel: () => c.cancelReply(),
-            ),
+            // Reply preview bar
+            if (c.replyingToMessage != null &&
+                !c.isViewingGroupBoundMemberSession &&
+                !c.isViewingSheBoundSession)
+              ChatReplyPreview(
+                replyingTo: c.replyingToMessage!,
+                onCancel: () => c.cancelReply(),
+              ),
 
-          // Queue indicator
-          if (!c.isViewingGroupBoundMemberSession &&
-              !c.isViewingSheBoundSession)
-            _buildQueueIndicator(),
+            // Queue indicator
+            if (!c.isViewingGroupBoundMemberSession &&
+                !c.isViewingSheBoundSession)
+              _buildQueueIndicator(),
 
-          // Bound sessions (group member / She relay): input disabled +
-          // jump to the linked source conversation.
-          if (c.isViewingGroupBoundMemberSession)
-            _buildGroupBoundSessionBar(c)
-          else if (c.isViewingSheBoundSession)
-            _buildSheBoundSessionBar(c)
-          else
-            ChatInputArea(
-              key: _chatInputKey,
-              messageController: _messageController,
-              textFieldFocusNode: _textFieldFocusNode,
-              isLoading: c.isLoading,
-              isGroupMode: c.isGroupMode,
-              pendingAttachments: _pendingAttachments,
-              groupAgents: c.groupAgents,
-              audioRecordingService: _audioRecordingService,
-              isRecording: _isRecording,
-              isCancelZone: _isCancelZone,
-              onSend: _sendMessage,
-              onToggleEmojiPicker: _toggleEmojiPicker,
-              onShowAttachmentOptions: _showAttachmentOptions,
-              onPickFile: _pickAndStageFile,
-              onPickFromStorageBag: _pickFromStorageBag,
-              onSendVoice: _sendVoiceMessage,
-              showEmojiPicker: _showEmojiPicker,
-              onRemoveAttachment: _removePendingAttachment,
-              onMentionPickerChanged: () {
-                if (mounted) setState(() {});
-              },
-              onDesktopPaste: _handleDesktopPaste,
-              hasAudioModel: _agentSupportsAudio,
-              slashCommands: c.agentId == null
-                  ? const []
-                  : (c.chatService
-                          .getACPConnection(c.agentId!)
-                          ?.slashCommands ??
-                      c.chatService.getSlashCommandsSnapshot(c.agentId!)),
-              slashCommandsStream: c.agentId == null
-                  ? null
-                  : (c.chatService
-                          .getACPConnection(c.agentId!)
-                          ?.slashCommandsStream ??
-                      PeerAgentClientService.instance
-                          .slashCommandsStream(c.agentId!)),
-              // Live resolver: read the current snapshot on every keystroke.
-              // Falls back to the process-wide snapshot cache (populated by
-              // any past ACP connection — including the short-lived
-              // health-check connection) when no persistent connection is
-              // active yet. This is what lets the "/" palette work before
-              // the user has sent their first message.
-              slashCommandsResolver: () {
-                if (c.agentId == null) return const [];
-                final conn = c.chatService.getACPConnection(c.agentId!);
-                final live = conn?.slashCommands ?? const [];
-                if (live.isNotEmpty) return live;
-                final snap = c.chatService.getSlashCommandsSnapshot(c.agentId!);
-                if (snap.isNotEmpty) return snap;
-                // Peer agents have no ACP connection — use the prefetched
-                // slash-command cache from PeerAgentClientService.
-                return PeerAgentClientService.instance
-                    .getSlashCommands(c.agentId!);
-              },
-            ),
+            // Bound sessions (group member / She relay): input disabled +
+            // jump to the linked source conversation.
+            if (c.isViewingGroupBoundMemberSession)
+              _buildGroupBoundSessionBar(c)
+            else if (c.isViewingSheBoundSession)
+              _buildSheBoundSessionBar(c)
+            else
+              ChatInputArea(
+                key: _chatInputKey,
+                messageController: _messageController,
+                textFieldFocusNode: _textFieldFocusNode,
+                isLoading: c.isLoading,
+                isGroupMode: c.isGroupMode,
+                pendingAttachments: _pendingAttachments,
+                groupAgents: c.groupAgents,
+                audioRecordingService: _audioRecordingService,
+                isRecording: _isRecording,
+                isCancelZone: _isCancelZone,
+                onSend: _sendMessage,
+                onToggleEmojiPicker: _toggleEmojiPicker,
+                onShowAttachmentOptions: _showAttachmentOptions,
+                onPickFile: _pickAndStageFile,
+                onPickFromStorageBag: _pickFromStorageBag,
+                onSendVoice: _sendVoiceMessage,
+                showEmojiPicker: _showEmojiPicker,
+                onRemoveAttachment: _removePendingAttachment,
+                onMentionPickerChanged: () {
+                  if (mounted) setState(() {});
+                },
+                onDesktopPaste: _handleDesktopPaste,
+                hasAudioModel: _agentSupportsAudio,
+                slashCommands: c.agentId == null
+                    ? const []
+                    : (c.chatService
+                            .getACPConnection(c.agentId!)
+                            ?.slashCommands ??
+                        c.chatService.getSlashCommandsSnapshot(c.agentId!)),
+                slashCommandsStream: c.agentId == null
+                    ? null
+                    : (c.chatService
+                            .getACPConnection(c.agentId!)
+                            ?.slashCommandsStream ??
+                        PeerAgentClientService.instance
+                            .slashCommandsStream(c.agentId!)),
+                // Live resolver: read the current snapshot on every keystroke.
+                // Falls back to the process-wide snapshot cache (populated by
+                // any past ACP connection — including the short-lived
+                // health-check connection) when no persistent connection is
+                // active yet. This is what lets the "/" palette work before
+                // the user has sent their first message.
+                slashCommandsResolver: () {
+                  if (c.agentId == null) return const [];
+                  final conn = c.chatService.getACPConnection(c.agentId!);
+                  final live = conn?.slashCommands ?? const [];
+                  if (live.isNotEmpty) return live;
+                  final snap =
+                      c.chatService.getSlashCommandsSnapshot(c.agentId!);
+                  if (snap.isNotEmpty) return snap;
+                  // Peer agents have no ACP connection — use the prefetched
+                  // slash-command cache from PeerAgentClientService.
+                  return PeerAgentClientService.instance
+                      .getSlashCommands(c.agentId!);
+                },
+              ),
 
-          // Mobile emoji picker panel (desktop uses a floating popover
-          // anchored to the emoji button inside ChatInputArea).
-          if (_showEmojiPicker &&
-              !LayoutUtils.isDesktopLayout(context) &&
-              !c.isViewingGroupBoundMemberSession &&
-              !c.isViewingSheBoundSession)
-            SizedBox(
-              height: 250,
-              child: EmojiPicker(
-                onEmojiSelected: _onEmojiSelected,
-                onBackspacePressed: _onBackspacePressed,
-                config: Config(
-                  height: 250,
-                  emojiViewConfig: EmojiViewConfig(
-                    emojiSizeMax: 28 * (Platform.isIOS ? 1.30 : 1.0),
-                    backgroundColor: Colors.white,
+            // Mobile emoji picker panel (desktop uses a floating popover
+            // anchored to the emoji button inside ChatInputArea).
+            if (_showEmojiPicker &&
+                !LayoutUtils.isDesktopLayout(context) &&
+                !c.isViewingGroupBoundMemberSession &&
+                !c.isViewingSheBoundSession)
+              SizedBox(
+                height: 250,
+                child: EmojiPicker(
+                  onEmojiSelected: _onEmojiSelected,
+                  onBackspacePressed: _onBackspacePressed,
+                  config: Config(
+                    height: 250,
+                    emojiViewConfig: EmojiViewConfig(
+                      emojiSizeMax: 28 * (Platform.isIOS ? 1.30 : 1.0),
+                      backgroundColor: Colors.white,
+                    ),
+                    categoryViewConfig: CategoryViewConfig(
+                      indicatorColor: Theme.of(context).primaryColor,
+                      iconColorSelected: Theme.of(context).primaryColor,
+                      backgroundColor: Colors.white,
+                    ),
+                    searchViewConfig: const SearchViewConfig(),
+                    bottomActionBarConfig:
+                        const BottomActionBarConfig(enabled: false),
                   ),
-                  categoryViewConfig: CategoryViewConfig(
-                    indicatorColor: Theme.of(context).primaryColor,
-                    iconColorSelected: Theme.of(context).primaryColor,
-                    backgroundColor: Colors.white,
-                  ),
-                  searchViewConfig: const SearchViewConfig(),
-                  bottomActionBarConfig:
-                      const BottomActionBarConfig(enabled: false),
                 ),
               ),
-            ),
-        ],
+          ],
+        ),
       ),
     );
   }

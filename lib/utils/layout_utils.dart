@@ -37,11 +37,16 @@ class LayoutUtils {
   }
 
   /// Shows a panel that slides in from the right side of the screen.
-  /// Fixed width of 360px with a slide animation from right to left.
+  /// Defaults to a fixed width of 360px (clamped to screen width) with a
+  /// slide animation from right to left; pass [width] to customize
+  /// (e.g. near-full-width on mobile).
   static Future<T?> showRightDrawer<T>({
     required BuildContext context,
     required WidgetBuilder builder,
+    double? width,
   }) {
+    final screenWidth = MediaQuery.of(context).size.width;
+    final drawerWidth = (width ?? 360.0).clamp(0.0, screenWidth).toDouble();
     return showGeneralDialog<T>(
       context: context,
       barrierDismissible: true,
@@ -54,7 +59,7 @@ class LayoutUtils {
           child: Material(
             elevation: 16,
             child: SizedBox(
-              width: 360,
+              width: drawerWidth,
               height: MediaQuery.of(context).size.height,
               child: SafeArea(
                 child: builder(context),
