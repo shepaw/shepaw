@@ -533,7 +533,10 @@ class GroupAgentExecutor {
             history: toolRound == 0
                 ? (chatHistory.isNotEmpty ? chatHistory : null)
                 : roundMessages,
-            enableUITools: true,
+            // Members must not surface interactive UI widgets inside the group
+            // flow (their prompt forbids form/action_confirmation etc. — P1-2);
+            // only the admin gets the full UI surface.
+            enableUITools: isAdmin,
             includeShepawCli: agent.isLocal,
             systemPromptOverride: systemPrompt,
             attachments: toolRound == 0 ? attachments : null,

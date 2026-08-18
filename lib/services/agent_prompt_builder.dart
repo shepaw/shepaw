@@ -117,7 +117,7 @@ class AgentPromptBuilder {
         ? config.she.includeMetaCognition
         : effectiveTools.includeShepawMetaCli;
     if (wantsShepawGuidance) {
-      parts.add(SheService.buildShepawGuidanceBlock(agent));
+      parts.add(await SheService.buildShepawGuidanceBlock(agent));
     }
 
     // Ephemeral room/group context — also gates Scope Card / DM playbooks.
@@ -476,7 +476,9 @@ ${lines.join('\n')}''';
     // shepaw data-access CLI copy — She-exclusive (_pawCliPrompt).
     // Non-She agents still get the shepaw *tool* when includeShepawCli is true,
     // but their prompt docs come from buildShepawGuidanceBlock (meta CLI).
-    if (agent.isShe && tools.includeShepawCli) {
+    // When meta-cognition is on it already carries the command guidance, so the
+    // full data-access copy is skipped to avoid ~60% duplication (P2-2).
+    if (agent.isShe && tools.includeShepawCli && !she.includeMetaCognition) {
       final cliBlock = SheService.instance.buildShepawCliBlock(she);
       if (cliBlock.isNotEmpty) result.add(cliBlock);
     }

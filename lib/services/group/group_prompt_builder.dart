@@ -64,7 +64,14 @@ class GroupPromptBuilder {
     final agentSystemPrompt = soulById[currentAgent.id] ?? '';
     final currentMember = channelMembers.where((m) => m.id == currentAgent.id).firstOrNull;
     final currentGroupBio = currentMember?.groupBio;
-    final agentIdentity = currentGroupBio ?? (agentSystemPrompt.isNotEmpty ? agentSystemPrompt : (currentAgent.bio ?? ''));
+    // 身份块只取 soul 前 1500 字符：完整 soul 会塞进每个成员的提示词，
+    // 大 soul（数千字符）会让群提示词膨胀（P3-2）。
+    final ownSoul = agentSystemPrompt.isNotEmpty
+        ? (agentSystemPrompt.length > 1500
+            ? '${agentSystemPrompt.substring(0, 1500)}…(soul 已截断)'
+            : agentSystemPrompt)
+        : (currentAgent.bio ?? '');
+    final agentIdentity = currentGroupBio ?? ownSoul;
 
     final scopeOwner = (groupId != null && groupId.isNotEmpty)
         ? groupId
@@ -300,6 +307,11 @@ $registeredNames
   }
 
   /// Build the workflow CLI usage section for Admin's system prompt.
+  ///
+  /// Mirrors She's DM playbook (SheService.buildDmWorkflowPlaybookBlock):
+  /// `workflow create` ends the turn pending approval; approval triggers
+  /// automatic execution of all stages by the system (ChatService
+  /// executeWorkflowSteps), so per-stage manual dispatch is NOT the normal path.
   String _buildWorkflowCliSection(List<RemoteAgent> delegateableAgents) {
     final agentNamesHint = delegateableAgents.isEmpty
         ? '（当前无可委派成员）'
@@ -312,18 +324,18 @@ $registeredNames
 
 **流程：**
 1. 分析用户需求，设计阶段化执行计划
-2. 调用 `shepaw workflow create` 创建工作流（用户会审批）
-3. 审批通过后，逐阶段调用 `shepaw workflow dispatch` 执行
-4. 每个阶段完成后审视结果，决定是否继续下一阶段
-5. 全部完成后调用 `shepaw workflow complete` 结束
+2. 调用 `shepaw workflow create` 创建工作流（用户会看到审批卡片）
+3. **立即结束本轮回复，等待用户审批**——审批通过前不要调用 `workflow dispatch` / `complete` / `fail`，也不要自行开始执行
+4. 审批通过后，**系统会自动按阶段执行**所有步骤（阶段内并行、阶段间串行），无需你手动 dispatch；全部执行完后你会再次被唤起做最终总结
+5. 若用户拒绝并给出修改意见，你会收到反馈——据此修改计划后再次调用 `workflow create`
 
 **可用命令：**
 - `shepaw workflow create --title "标题" --stages '[{"label":"阶段名","steps":[{"agent":"成员注册名","instruction":"指令"}]}]'`
   创建工作流并提交审批。`agent` 必须是下列注册名之一：$agentNamesHint
-- `shepaw workflow dispatch --workflow_id <id> --stage_index <n>`
-  执行指定阶段的所有步骤（并行）。完成后返回各步骤结果。
 - `shepaw workflow status --workflow_id <id>`
   查看工作流当前状态。
+- `shepaw workflow dispatch --workflow_id <id> --stage_index <n>`
+  手动执行指定阶段的所有步骤（并行）。正常流程不需要——审批通过后系统自动执行，仅在需要手动重试某阶段时使用。
 - `shepaw workflow complete --workflow_id <id> --summary "完成摘要"`
   标记工作流完成。
 - `shepaw workflow fail --workflow_id <id> --reason "原因"`
@@ -334,7 +346,8 @@ $registeredNames
 **注意：**
 - 只有在任务需要多步骤协调时才使用工作流，简单任务直接委派即可
 - 每个阶段内的步骤会并行执行，不同阶段串行推进
-- dispatch 返回后请审视结果，根据实际情况决定继续、重试或终止''';
+- 步骤执行期间（消息带 `[Workflow ...]` 前缀）**禁止**调用 `workflow create/complete/fail/cancel`
+- 取消工作流是用户在 UI 上的操作，不是你''';
   }
 
   /// Detect the most significant non-text modality in recent history messages.

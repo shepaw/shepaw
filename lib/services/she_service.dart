@@ -1,10 +1,12 @@
 import 'package:uuid/uuid.dart';
 import '../models/channel.dart';
+import '../models/cli_command_config.dart';
 import '../models/cognition.dart';
 import '../models/prompt_stack_config.dart';
 import '../models/remote_agent.dart';
 import '../peer/services/peer_agent_ids.dart';
 import '../she_network/external_memory_store.dart';
+import 'cli_command_config_service.dart';
 import 'local_database_service.dart';
 import 'she_memory_db_service.dart';
 import 'cognition_service.dart';
@@ -490,7 +492,14 @@ When the user asks about a **past** image/file/audio ("这张图说了什么", "
 
 ### Chat & Skills
 - `shepaw chat.channels` / `chat.messages` / `chat.message.get` (full message & image analysis)
-- `shepaw skills list`''';
+- `shepaw skills list`
+
+**⚠️ Action commands must be tool calls, not text**
+- Master asks you to "send a message to an agent" → call `shepaw context agents.chat --id <id> --message "..."` — text alone does nothing. The agent's reply returns automatically as an `[Agent Reply]` message that re-invokes you: decide then whether to relay your next message or report to your master. Consecutive relays without new input from your master are capped (5 turns) — when the budget runs out, summarize for your master instead of relaying again
+- Master's request clearly fits a connected agent → call `shepaw context agents.dispatch --id <id> --task "..."`, then tell master you'll report back when it finishes
+- Master asks you to "remember something" → call `shepaw context memory.append` (your memory) or `shepaw context profile.write` (user profile)
+- When you learn something important about an agent → call `shepaw context agents.memory-write --id <id>`
+- Only a tool call returning `ok: true` means the operation succeeded''';
 
   /// Section ②: She's soul (self-awareness, grows over time).
   /// Reads the current soul value from the database (or from [data] when
@@ -499,13 +508,16 @@ When the user asks about a **past** image/file/audio ("这张图说了什么", "
     final soul = data?.soul ?? await _getSoulForPrompt();
     if (soul.length > 4000) {
       LoggerService().warning(
-        'She soul is ${soul.length} chars (>4000) — prompt size risk',
+        'She soul is ${soul.length} chars (>4000) — truncating tail for prompt injection',
         tag: 'She',
       );
     }
+    // Hard truncate: an oversized soul must not bloat (and dilute) the prompt.
+    // Recent entries are kept (truncateTail keeps the tail), and the stored
+    // soul in the DB is left untouched — this is a prompt-view limit only.
     // Deliberately omit long_term_memory / userInfo / heartbeat here;
     // they are included in the profile snapshot block to avoid duplication.
-    return _soulPrompt(soul);
+    return _soulPrompt(truncateTail(soul, 4000));
   }
 
   /// Section ③: shepaw CLI tool reference, filtered by [SheStackConfig].
@@ -603,9 +615,11 @@ ${parts.join('\n')}''';
   /// Unified shepaw CLI guidance block for any agent.
   ///
   /// - **She**: returns the full capability-discovery guide ([buildMetaCognitionBlock]).
-  /// - **Non-She**: returns a permission-scoped version ([_nonSheMetaCliBlock])
-  ///   covering only the namespaces those agents can actually call.
-  static String buildShepawGuidanceBlock(RemoteAgent agent) {
+  /// - **Non-She**: returns a permission-filtered version ([_nonSheMetaCliBlock])
+  ///   covering only the namespaces those agents can actually call — commands
+  ///   globally disabled or marked She-only are omitted so the guidance never
+  ///   points at calls that would be rejected at execution time.
+  static Future<String> buildShepawGuidanceBlock(RemoteAgent agent) async {
     if (agent.isShe) return buildMetaCognitionBlock();
     return _nonSheMetaCliBlock(agent.id);
   }
@@ -621,16 +635,56 @@ ${parts.join('\n')}''';
     return _nonSheSessionEndBlock(agentId);
   }
 
-  /// Permission-scoped meta CLI guidance for non-She agents.
-  /// Mirrors [buildMetaCognitionBlock] in structure but limits commands to those
-  /// non-She agents have access to (no profile.*, agents.list/chat, chat.*, skills).
-  static String _nonSheMetaCliBlock(String agentId) => '''
-## Tool Discovery & Proactive Use
+  /// Permission-filtered meta CLI guidance for non-She agents.
+  ///
+  /// Mirrors [buildMetaCognitionBlock] in structure, but every command line is
+  /// gated on [CliCommandConfigService] (globalEnabled / sheOnly) so a
+  /// locked-down agent is never told to call commands that will be rejected at
+  /// execution time. Missing configs default to allow — the same semantics as
+  /// [CliCommandConfigService.checkPermission].
+  static Future<String> _nonSheMetaCliBlock(String agentId) async {
+    Map<String, CliCommandConfig> configs;
+    try {
+      configs = await CliCommandConfigService.instance.getAllConfigsMap();
+    } catch (_) {
+      configs = const {}; // DB unavailable (e.g. unit tests) — default allow.
+    }
 
-You have a `shepaw` CLI tool. **Query before you assume** — never invent context.
-Unknown commands or parameters? → `shepaw help` or `shepaw <namespace> --help`
+    // commandId → allowed for this (non-She) agent.
+    bool allowed(String commandId) {
+      final segments = commandId.split('.');
+      for (var i = 1; i <= segments.length; i++) {
+        final cfg = configs[segments.take(i).join('.')];
+        if (cfg != null && (!cfg.globalEnabled || cfg.sheOnly)) return false;
+      }
+      return true;
+    }
 
-### When to Use Web Search (use FIRST, not as fallback)
+    final canWebSearch = allowed('tools.web.search');
+    final canWebFetch = allowed('tools.web.fetch');
+    final canMemoryQuery = allowed('context.memory.query');
+    final canMemoryWrite = allowed('context.memory.write');
+    final canMemoryAppend = allowed('context.memory.append');
+    final canAgentMemoryWrite = allowed('context.agents.memory-write');
+    final canAgentCognitionWrite = allowed('context.agents.cognition-write');
+    final canOs = allowed('os');
+    final canMeta = allowed('meta.datetime') || allowed('meta.system.info');
+
+    final parts = <String>[
+      '## Tool Discovery & Proactive Use\n\n'
+      'You have a `shepaw` CLI tool. **Query before you assume** — never invent context.\n'
+      'Unknown commands or parameters? → `shepaw help` or `shepaw <namespace> --help`',
+    ];
+
+    if (canWebSearch || canWebFetch) {
+      final webLines = <String>[
+        if (canWebSearch)
+          '- `shepaw tools web.search --query "..."` — search the internet',
+        if (canWebFetch)
+          '- `shepaw tools web.fetch --url "..."` — fetch a webpage',
+      ];
+      final whenToUseWeb = canWebSearch
+          ? '''### When to Use Web Search (use FIRST, not as fallback)
 
 Call `shepaw tools web.search --query "..."` **immediately** when the question requires information that:
 - May have changed since your training cutoff
@@ -641,30 +695,63 @@ Call `shepaw tools web.search --query "..."` **immediately** when the question r
 **Do NOT try to answer from training knowledge first for real-time topics.**
 If there is any doubt about whether your knowledge is current, search first.
 
-$_artifactStorePreferenceSection
+'''
+          : '';
+      parts.add('${whenToUseWeb}### Web\n${webLines.join('\n')}');
+    }
 
-### Your Data & Context
-- `shepaw context memory.query --keys soul,self_notes` / `memory.write --key soul/self_notes --value "..."` / `memory.append --key self_notes --value "..."`
+    if (allowed('store')) {
+      parts.add(_artifactStorePreferenceSection);
+    }
 
-### Web
-- `shepaw tools web.search --query "..."` — search the internet
-- `shepaw tools web.fetch --url "..."` — fetch a webpage
+    // 记忆路径与非 She session-end 块保持一致：soul/self_notes 走
+    // memory.*，长期观察与印象走 agents.memory-write / cognition-write。
+    if (canMemoryQuery ||
+        canMemoryWrite ||
+        canMemoryAppend ||
+        canAgentMemoryWrite ||
+        canAgentCognitionWrite) {
+      final dataLines = <String>[
+        if (canMemoryQuery || canMemoryWrite || canMemoryAppend)
+          '- Your soul / self-notes → `shepaw context memory.query --keys soul,self_notes` / `memory.write --key soul --value "..."` / `memory.append --key self_notes --value "..."`',
+        if (canAgentMemoryWrite)
+          '- Long-term observations about the user → `shepaw context agents.memory-write --id $agentId --content "..." --keywords "tag1,tag2"`',
+        if (canAgentCognitionWrite)
+          '- Deeper impression of the user → `shepaw context agents.cognition-write --id $agentId --type user --field impression --value "..."`',
+      ];
+      parts.add('### Your Data & Context\n${dataLines.join('\n')}');
+    }
 
-### OS (local system)
+    if (canOs) {
+      parts.add('''### OS (local system)
 - Prefer store for produced artifacts. Use OS file tools only for real OS paths the user named.
 - `shepaw os --help` — list all available OS tools
-- `shepaw os file.{read,write,delete,list}` / `os command.exec` / `os clipboard.{read,write}`
+- `shepaw os file.{read,write,delete,list}` / `os command.exec` / `os clipboard.{read,write}`''');
+    }
 
-### Meta
+    if (canMeta) {
+      parts.add('''### Meta
 - `shepaw meta datetime` — current date/time
-- `shepaw meta system.info` — system overview
+- `shepaw meta system.info` — system overview''');
+    }
 
-**⚠️ Action commands must be tool calls, not text**
-- When you learn something important about the user → call `shepaw context agents.memory-write --id $agentId` — text alone does nothing
-- Need your soul/self-notes → `shepaw context memory.query --keys soul,self_notes`
-- Only a tool call returning `ok: true` means the operation succeeded
+    final actionLines = <String>[
+      if (canAgentMemoryWrite)
+        '- When you learn something important about the user → call `shepaw context agents.memory-write --id $agentId` — text alone does nothing',
+      if (canMemoryQuery)
+        '- Need your soul/self-notes → `shepaw context memory.query --keys soul,self_notes`',
+      '- Only a tool call returning `ok: true` means the operation succeeded',
+    ];
+    if (actionLines.isNotEmpty) {
+      parts.add('''**⚠️ Action commands must be tool calls, not text**
+${actionLines.join('\n')}''');
+    }
 
-> Full reference: `shepaw help` or `shepaw <namespace>.<subcommand> --help`''';
+    parts.add(
+        '> Full reference: `shepaw help` or `shepaw <namespace>.<subcommand> --help`');
+
+    return parts.join('\n\n');
+  }
 
   /// Session-end guidance for non-She agents.
   /// Covers the subset of write commands those agents are permitted to call.
@@ -781,10 +868,17 @@ If you learned something new, record it silently:
   }
 
   /// Detect soul polluted by group/room-specific prompts that must not persist globally.
+  ///
+  /// Matches template markers from the group-admin prompt (group_prompt_builder)
+  /// rather than bare command names (`group_dispatch` etc.) — command names can
+  /// legitimately appear in a custom soul, and a false positive here would
+  /// reset the user's custom soul to default (data loss).
   static bool _isRoomContextPollution(String soul) {
     if (soul.isEmpty || soul == _defaultSoul) return false;
     return soul.contains('你当前处于一个群聊环境中') ||
         soul.contains('【群聊名称】') ||
+        soul.contains('【群聊描述】') ||
+        soul.contains('【群成员列表】') ||
         soul.contains('【委派机制');
   }
 
@@ -898,7 +992,7 @@ Delegate work to a connected agent via:
 `shepaw context agents.memory-write --id <agent> --type knowledge --keywords dispatch --content "<one factual line, dated>"`
 e.g. "擅长 Dart 重构；大仓库全量扫描会超时 (2026-07)". It surfaces as 经验 in `agents.get` next time.
 
-(In group chats this command is blocked — use the group's ```json dispatch``` mechanism instead.)''';
+(In group chats this command is blocked — as that group's admin you orchestrate via the `group_dispatch` / `group_finish` tools instead, never by writing a ```json dispatch block.)''';
 
   /// She's workflow playbook for 1:1 conversations — plan complex requests
   /// as staged workflows that the master approves before execution.
@@ -1022,6 +1116,21 @@ Soul is global across all conversations — only update it with identity/self-aw
     actionWarnings.add('- Only a tool call returning `ok: true` means the operation succeeded');
     final warnings = actionWarnings.join('\n');
 
+    // Summary mode (shepawCliSummaryMode): drop the "When to use" prose.
+    // This block is only injected when meta-cognition is off (see
+    // _buildToolsBlocks), so the prose is this block's usage guidance; summary
+    // mode trades that guidance for ~60% fewer tokens, leaving the key-command
+    // list plus the `shepaw help` pointer for discovery.
+    final whenToUse = config.shepawCliSummaryMode
+        ? ''
+        : '''
+**When to use**:
+- Before referencing master's info → `shepaw context profile.query` first
+- Master reveals personal info → immediately `shepaw context profile.write --field x --value y`
+- Need your memories/soul → `shepaw context memory.query --keys soul,long_term_memory`
+- User asks about a past image/file → `shepaw chat message get --id <message_id> --analyze "..."` (use attachment_info.message_id from history)
+''';
+
     return '''
 ## shepaw CLI — Data Access
 
@@ -1032,12 +1141,7 @@ Enabled: ${groups.join('; ')}
 - Memory: `shepaw context memory.query --keys soul,long_term_memory` / `shepaw context memory.write --key soul --value "..."`
 - Append: `shepaw context memory.append --key long_term_memory --value "..."`
 
-**When to use**:
-- Before referencing master's info → `shepaw context profile.query` first
-- Master reveals personal info → immediately `shepaw context profile.write --field x --value y`
-- Need your memories/soul → `shepaw context memory.query --keys soul,long_term_memory`
-- User asks about a past image/file → `shepaw chat message get --id <message_id> --analyze "..."` (use attachment_info.message_id from history)
-
+$whenToUse
 **⚠️ Action commands must be tool calls, not text**
 $warnings
 
