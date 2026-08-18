@@ -21,11 +21,8 @@ import 'group_detail_screen.dart';
 import 'remote_agent_detail_screen.dart';
 import 'settings_screen.dart';
 import 'contacts_screen.dart';
-import 'storage_space_screen.dart';
-import 'storage_snapshots_screen.dart';
 import 'storage_space_manage_screen.dart';
-import 'storage_browser_screen.dart';
-import '../widgets/storage/storage_space_hub.dart';
+import '../widgets/storage/storage_space_list_panel.dart';
 import '../utils/layout_utils.dart';
 import '../services/native_window_service.dart';
 import '../services/chat_navigation_service.dart';
@@ -62,9 +59,7 @@ enum _RightPanelView {
   contactPeer,
   traces,
   groupWorkflow,
-  storageSnapshots,
   storageSpaceManage,
-  storagePeerBrowse,
 }
 
 /// Describes one item in the icon sidebar.
@@ -107,7 +102,6 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
         PeerConnectionManager.instance.peerListChanged.listen((_) {
       _resetIfSelectedPeerRemoved(_selected?.peerId);
       _resetIfContactPeerRemoved();
-      _resetIfStoragePeerRemoved();
     });
   }
 
@@ -140,21 +134,6 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
     });
   }
 
-  void _resetIfStoragePeerRemoved() {
-    final peerId = _storagePeer?.id;
-    if (peerId == null || _rightPanel != _RightPanelView.storagePeerBrowse) {
-      return;
-    }
-    PeerConnectionManager.instance.getAllPeers().then((peers) {
-      if (mounted &&
-          _storagePeer?.id == peerId &&
-          !peers.any((p) => p.id == peerId)) {
-        _showStorage();
-        _reloadStorage();
-      }
-    });
-  }
-
   @override
   void dispose() {
     ChatNavigationService.instance.setDesktopHandler(null);
@@ -170,8 +149,8 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
   final GlobalKey<HomeScreenState> _homeKey = GlobalKey<HomeScreenState>();
   final GlobalKey<ContactsScreenState> _contactsKey =
       GlobalKey<ContactsScreenState>();
-  final GlobalKey<StorageSpaceHubState> _storageKey =
-      GlobalKey<StorageSpaceHubState>();
+  final GlobalKey<StorageSpaceListPanelState> _storageKey =
+      GlobalKey<StorageSpaceListPanelState>();
 
   _LeftPanelMode _leftMode = _LeftPanelMode.conversations;
   _RightPanelView _rightPanel = _RightPanelView.empty;
@@ -179,7 +158,7 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
   RemoteAgent? _contactAgent;
   Channel? _contactGroup;
   PairedPeer? _contactPeer;
-  PairedPeer? _storagePeer;
+  String? _storageSpace;
 
   String? get _selectedContactId {
     switch (_rightPanel) {
@@ -220,22 +199,12 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
   bool get _isUtilityPanel => _rightPanel == _RightPanelView.settings;
 
   bool get _isStorageDetailPanel =>
-      _rightPanel == _RightPanelView.storageSnapshots ||
-      _rightPanel == _RightPanelView.storageSpaceManage ||
-      _rightPanel == _RightPanelView.storagePeerBrowse;
-
-  bool get _storageLocalSelected =>
-      _leftMode == _LeftPanelMode.storage &&
       _rightPanel == _RightPanelView.storageSpaceManage;
 
-  bool get _storageSnapshotsSelected =>
+  bool get _storageRecentSelected =>
       _leftMode == _LeftPanelMode.storage &&
-      _rightPanel == _RightPanelView.storageSnapshots;
-
-  String? get _storageSelectedPeerId =>
-      _rightPanel == _RightPanelView.storagePeerBrowse
-          ? _storagePeer?.id
-          : null;
+      _rightPanel == _RightPanelView.storageSpaceManage &&
+      _storageSpace == null;
 
   bool get _isContactDetailPanel =>
       _rightPanel == _RightPanelView.contactAgent ||
@@ -248,7 +217,6 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
       _previousPanel = null;
       _selected = selection;
       _clearContactSelectionFields();
-      _storagePeer = null;
       _rightPanel = _RightPanelView.chat;
       _navGeneration++;
     });
@@ -364,7 +332,6 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
     setState(() {
       _leftMode = _LeftPanelMode.conversations;
       _clearContactSelectionFields();
-      _storagePeer = null;
       _selected = null;
       _rightPanel = _RightPanelView.empty;
       _navGeneration++;
@@ -402,7 +369,6 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
       _leftMode = _LeftPanelMode.contacts;
       _selected = null;
       _clearContactSelectionFields();
-      _storagePeer = null;
       _rightPanel = _RightPanelView.empty;
       _navGeneration++;
     });
@@ -413,8 +379,8 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
       _leftMode = _LeftPanelMode.storage;
       _selected = null;
       _clearContactSelectionFields();
-      // 默认选中本机，与移动端「本机置顶」对齐。
-      _storagePeer = null;
+      // 储物袋点击后直接进入「最近」文件列表。
+      _storageSpace = null;
       _rightPanel = _RightPanelView.storageSpaceManage;
       _navGeneration++;
     });
@@ -430,16 +396,13 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
       if (!_isContactDetailPanel) {
         _clearContactSelectionFields();
       }
-      if (!_isStorageDetailPanel) {
-        _storagePeer = null;
-      }
       _navGeneration++;
     });
   }
 
-  void _onStorageLocalSelected() {
+  void _onStorageRecentSelected() {
     setState(() {
-      _storagePeer = null;
+      _storageSpace = null;
       _selected = null;
       _clearContactSelectionFields();
       _rightPanel = _RightPanelView.storageSpaceManage;
@@ -447,25 +410,12 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
     });
   }
 
-  void _onStoragePeerSelected(PairedPeer peer) {
+  void _onStorageSpaceSelected(String space) {
     setState(() {
-      _storagePeer = peer;
+      _storageSpace = space;
       _selected = null;
       _clearContactSelectionFields();
-      _rightPanel = _RightPanelView.storagePeerBrowse;
-      _navGeneration++;
-    });
-  }
-
-  void _onStorageEntrySelected(StorageBagEntry entry) {
-    setState(() {
-      _storagePeer = null;
-      _selected = null;
-      _clearContactSelectionFields();
-      _rightPanel = switch (entry) {
-        StorageBagEntry.snapshots => _RightPanelView.storageSnapshots,
-        StorageBagEntry.space => _RightPanelView.storageSpaceManage,
-      };
+      _rightPanel = _RightPanelView.storageSpaceManage;
       _navGeneration++;
     });
   }
@@ -475,7 +425,6 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
       _contactAgent = agent;
       _contactGroup = null;
       _contactPeer = null;
-      _storagePeer = null;
       _selected = null;
       _rightPanel = _RightPanelView.contactAgent;
       _navGeneration++;
@@ -487,7 +436,6 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
       _contactGroup = group;
       _contactAgent = null;
       _contactPeer = null;
-      _storagePeer = null;
       _selected = null;
       _rightPanel = _RightPanelView.contactGroup;
       _navGeneration++;
@@ -499,7 +447,6 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
       _contactPeer = peer;
       _contactAgent = null;
       _contactGroup = null;
-      _storagePeer = null;
       _selected = null;
       _rightPanel = _RightPanelView.contactPeer;
       _navGeneration++;
@@ -538,16 +485,12 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
                   onCreateGroup: () => _showPanel(_RightPanelView.createGroup),
                   onPairDevice: () => _showPanel(_RightPanelView.pairDevice),
                 ),
-              _LeftPanelMode.storage => StorageSpaceHub(
+              _LeftPanelMode.storage => StorageSpaceListPanel(
                   key: _storageKey,
-                  embedded: true,
-                  localSelected: _storageLocalSelected,
-                  selectedPeerId: _storageSelectedPeerId,
-                  snapshotsSelected: _storageSnapshotsSelected,
-                  onLocalSelected: _onStorageLocalSelected,
-                  onPeerSelected: _onStoragePeerSelected,
-                  onSnapshotsSelected: () =>
-                      _onStorageEntrySelected(StorageBagEntry.snapshots),
+                  recentSelected: _storageRecentSelected,
+                  selectedSpace: _storageSpace,
+                  onRecentSelected: _onStorageRecentSelected,
+                  onSpaceSelected: _onStorageSpaceSelected,
                 ),
             },
           ),
@@ -732,22 +675,8 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
           onBack: _onGroupWorkflowBack,
         );
 
-      case _RightPanelView.storageSnapshots:
-        return const StorageSnapshotsScreen();
-
       case _RightPanelView.storageSpaceManage:
-        return const StorageSpaceManageScreen();
-
-      case _RightPanelView.storagePeerBrowse:
-        final peer = _storagePeer;
-        if (peer == null) return _buildEmptyState();
-        return StorageBrowserScreen(
-          key: ValueKey('storage_peer_${peer.id}'),
-          deviceId: peer.fingerprint,
-          deviceName: peer.deviceName,
-          peerId: peer.id,
-          readOnly: true,
-        );
+        return StorageSpaceManageScreen(initialSpace: _storageSpace);
 
       case _RightPanelView.empty:
         return _buildEmptyState();

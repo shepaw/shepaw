@@ -19,6 +19,26 @@ String fmtStorageBytes(int bytes) {
   return '${(bytes / 1024 / 1024).toStringAsFixed(1)} MB';
 }
 
+/// 储物袋分区显示名（工作/运行时/文件/公开/认知/产物）。
+String storageSpaceLabel(AppLocalizations l10n, String space) {
+  switch (space) {
+    case StoreSpace.workspaces:
+      return l10n.storage_spaceWorkspaces;
+    case StoreSpace.runtime:
+      return l10n.storage_spaceRuntime;
+    case StoreSpace.files:
+      return l10n.storage_spaceFiles;
+    case StoreSpace.public_:
+      return l10n.storage_spacePublic;
+    case StoreSpace.cognition:
+      return l10n.storage_spaceCognition;
+    case StoreSpace.artifacts:
+      return l10n.storage_spaceArtifacts;
+    default:
+      return space;
+  }
+}
+
 /// 密码输入对话框；返回密码或 null（取消）。
 Future<String?> askStoragePassword(BuildContext context, {String? title}) async {
   final l10n = AppLocalizations.of(context);

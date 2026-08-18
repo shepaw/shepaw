@@ -680,7 +680,13 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
     }
   }
 
-  Future<void> _deleteFile(_BrowsedFile file) async {
+  Future<void> _deleteFile(_BrowsedFile file) =>
+      _deletePath(space: file.space, relPath: file.path);
+
+  Future<void> _deletePath({
+    required String space,
+    required String relPath,
+  }) async {
     if (!_canDelete) {
       _toast(AppLocalizations.of(context).storage_browserDeleteDenied);
       return;
@@ -690,7 +696,7 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
       context: context,
       builder: (ctx) => AlertDialog(
         title: Text(l10n.storage_browserDeleteTitle),
-        content: Text(l10n.storage_browserDeleteConfirm(file.path)),
+        content: Text(l10n.storage_browserDeleteConfirm(relPath)),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(false),
@@ -709,8 +715,8 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
     setState(() => _busy = true);
     try {
       final store = await StoreService.instance.localStore();
-      await store.delete(_targetId, file.space, file.path);
-      _toast(l10n.storage_browserDeleted(file.path));
+      await store.delete(_targetId, space, relPath);
+      _toast(l10n.storage_browserDeleted(relPath));
       await _reload();
     } on StoreException catch (e) {
       _toast(l10n.storage_browserDeleteFailed(
@@ -797,16 +803,37 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
     ];
   }
 
+  List<PopupMenuEntry<Object>> _folderActionItems(AppLocalizations l10n) {
+    final errorColor = Theme.of(context).colorScheme.error;
+    return [
+      ..._pathActionItems(l10n),
+      if (_canDelete)
+        PopupMenuItem(
+          value: _EntryAction.delete,
+          child: Text(
+            l10n.storage_browserDelete,
+            style: TextStyle(color: errorColor),
+          ),
+        ),
+    ];
+  }
+
   void _handlePathAction({
     required String displayName,
     required String uri,
     Object? action,
+    String? space,
+    String? relPath,
   }) {
     switch (action) {
       case _EntryAction.copyPath:
         _copyPathText(uri);
       case _EntryAction.shareLink:
         _shareMarkdownLink(displayName: displayName, uri: uri);
+      case _EntryAction.delete:
+        if (space != null && relPath != null) {
+          unawaited(_deletePath(space: space, relPath: relPath));
+        }
       default:
         break;
     }
@@ -815,6 +842,9 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
   Widget _buildPathMoreButton({
     required String displayName,
     required String uri,
+    bool deletable = false,
+    String? space,
+    String? relPath,
   }) {
     final l10n = AppLocalizations.of(context);
     return PopupMenuButton<Object>(
@@ -825,8 +855,11 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
         displayName: displayName,
         uri: uri,
         action: action,
+        space: space,
+        relPath: relPath,
       ),
-      itemBuilder: (_) => _pathActionItems(l10n),
+      itemBuilder: (_) =>
+          deletable ? _folderActionItems(l10n) : _pathActionItems(l10n),
     );
   }
 
@@ -834,8 +867,13 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
     required String title,
     required String displayName,
     required String uri,
+    bool deletable = false,
+    String? space,
+    String? relPath,
   }) async {
     final l10n = AppLocalizations.of(context);
+    final items =
+        deletable ? _folderActionItems(l10n) : _pathActionItems(l10n);
     await showModalBottomSheet<void>(
       context: context,
       builder: (ctx) => SafeArea(
@@ -847,7 +885,7 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
               subtitle: Text(uri, maxLines: 2, overflow: TextOverflow.ellipsis),
             ),
             const Divider(height: 1),
-            for (final item in _pathActionItems(l10n))
+            for (final item in items)
               if (item is PopupMenuItem<Object>)
                 ListTile(
                   title: item.child,
@@ -857,6 +895,8 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
                       displayName: displayName,
                       uri: uri,
                       action: item.value,
+                      space: space,
+                      relPath: relPath,
                     );
                   },
                 ),
@@ -1275,7 +1315,15 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
   }
 
   void _handleMobileMoreSelected(dynamic value) {
-    switch (value) {
+    if (value is _CreateMenuAction) {
+      _handleCreateAction(value);
+      return;
+    }
+    widget.onExtraMenuSelected?.call(value);
+  }
+
+  void _handleCreateAction(_CreateMenuAction action) {
+    switch (action) {
       case _CreateMenuAction.newFolder:
         _promptNewFolder();
       case _CreateMenuAction.uploadLocal:
@@ -1284,8 +1332,6 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
         _createNewDocument(spreadsheet: false);
       case _CreateMenuAction.newSpreadsheet:
         _createNewDocument(spreadsheet: true);
-      default:
-        widget.onExtraMenuSelected?.call(value);
     }
   }
 
@@ -1441,7 +1487,9 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
       final parts = _navPath.split('/');
       return parts.isNotEmpty ? parts.last : _navPath;
     }
-    return _navSpace ?? '';
+    return _navSpace == null
+        ? ''
+        : storageSpaceLabel(AppLocalizations.of(context), _navSpace!);
   }
 
   @override
@@ -1530,6 +1578,14 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
             ),
           ),
         if (_pickMode) ..._pickModeActions(l10n),
+        if (!_pickMode && _canWrite)
+          PopupMenuButton<_CreateMenuAction>(
+            icon: const Icon(Icons.add_circle_outline),
+            tooltip: l10n.storage_browserCreate,
+            position: PopupMenuPosition.under,
+            onSelected: _handleCreateAction,
+            itemBuilder: (ctx) => _createMenuItems(l10n),
+          ),
         if (!_pickMode && !_isRemote)
           IconButton(
             onPressed: _busy ? null : _openSearch,
@@ -1604,7 +1660,6 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
     AppLocalizations l10n, {
     required bool includeCreate,
   }) {
-    final muted = Theme.of(context).colorScheme.onSurfaceVariant;
     return [
       if (!_isRemote)
         IconButton(
@@ -1619,50 +1674,57 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
         position: PopupMenuPosition.under,
         onSelected: _handleMobileMoreSelected,
         itemBuilder: (ctx) => [
-          if (includeCreate) ...[
-            PopupMenuItem(
-              value: _CreateMenuAction.newFolder,
-              child: Row(
-                children: [
-                  Icon(Icons.create_new_folder_outlined, size: 20, color: muted),
-                  const SizedBox(width: 12),
-                  Expanded(child: Text(l10n.storage_browserNewFolder)),
-                ],
-              ),
-            ),
-            PopupMenuItem(
-              value: _CreateMenuAction.uploadLocal,
-              child: Row(
-                children: [
-                  Icon(Icons.file_upload_outlined, size: 20, color: muted),
-                  const SizedBox(width: 12),
-                  Expanded(child: Text(l10n.storage_browserUploadLocal)),
-                ],
-              ),
-            ),
-            PopupMenuItem(
-              value: _CreateMenuAction.newDocument,
-              child: Row(
-                children: [
-                  Icon(Icons.note_add_outlined, size: 20, color: muted),
-                  const SizedBox(width: 12),
-                  Expanded(child: Text(l10n.storage_browserNewDocument)),
-                ],
-              ),
-            ),
-            PopupMenuItem(
-              value: _CreateMenuAction.newSpreadsheet,
-              child: Row(
-                children: [
-                  Icon(Icons.grid_on_outlined, size: 20, color: muted),
-                  const SizedBox(width: 12),
-                  Expanded(child: Text(l10n.storage_browserNewSpreadsheet)),
-                ],
-              ),
-            ),
-          ],
+          if (includeCreate) ..._createMenuItems(l10n),
           ...?widget.extraMenuItems?.call(ctx),
         ],
+      ),
+    ];
+  }
+
+  List<PopupMenuEntry<_CreateMenuAction>> _createMenuItems(
+    AppLocalizations l10n,
+  ) {
+    final muted = Theme.of(context).colorScheme.onSurfaceVariant;
+    return [
+      PopupMenuItem(
+        value: _CreateMenuAction.newFolder,
+        child: Row(
+          children: [
+            Icon(Icons.create_new_folder_outlined, size: 20, color: muted),
+            const SizedBox(width: 12),
+            Expanded(child: Text(l10n.storage_browserNewFolder)),
+          ],
+        ),
+      ),
+      PopupMenuItem(
+        value: _CreateMenuAction.uploadLocal,
+        child: Row(
+          children: [
+            Icon(Icons.file_upload_outlined, size: 20, color: muted),
+            const SizedBox(width: 12),
+            Expanded(child: Text(l10n.storage_browserUploadLocal)),
+          ],
+        ),
+      ),
+      PopupMenuItem(
+        value: _CreateMenuAction.newDocument,
+        child: Row(
+          children: [
+            Icon(Icons.note_add_outlined, size: 20, color: muted),
+            const SizedBox(width: 12),
+            Expanded(child: Text(l10n.storage_browserNewDocument)),
+          ],
+        ),
+      ),
+      PopupMenuItem(
+        value: _CreateMenuAction.newSpreadsheet,
+        child: Row(
+          children: [
+            Icon(Icons.grid_on_outlined, size: 20, color: muted),
+            const SizedBox(width: 12),
+            Expanded(child: Text(l10n.storage_browserNewSpreadsheet)),
+          ],
+        ),
       ),
     ];
   }
@@ -1685,9 +1747,12 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
       onLongPress: _busy
           ? null
           : () => _showPathActions(
-                title: '$space/$rel',
+                title: '${storageSpaceLabel(l10n, space)}/$rel',
                 displayName: name,
                 uri: uri,
+                deletable: true,
+                space: space,
+                relPath: rel,
               ),
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
@@ -1929,18 +1994,25 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
                                 _navSpace!,
                                 _folderRelPath(name),
                               ),
+                              deletable: true,
+                              space: _navSpace!,
+                              relPath: _folderRelPath(name),
                             ),
                             const Icon(Icons.chevron_right, size: 20),
                           ],
                         ),
                         onTap: () => _enterFolder(name),
                         onLongPress: () => _showPathActions(
-                          title: '$_navSpace/${_folderRelPath(name)}',
+                          title:
+                              '${storageSpaceLabel(l10n, _navSpace!)}/${_folderRelPath(name)}',
                           displayName: name,
                           uri: _uriForFolderPath(
                             _navSpace!,
                             _folderRelPath(name),
                           ),
+                          deletable: true,
+                          space: _navSpace!,
+                          relPath: _folderRelPath(name),
                         ),
                       ),
                     for (final f in children.files)
@@ -1971,7 +2043,7 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
             onLongPress: _busy
                 ? null
                 : () => _showPathActions(
-                      title: space,
+                      title: storageSpaceLabel(l10n, space),
                       displayName: space,
                       uri: _uriForFolderPath(space, ''),
                     ),
@@ -1988,7 +2060,7 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          space,
+                          storageSpaceLabel(l10n, space),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style:
@@ -2028,7 +2100,7 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
               width: 42,
               child: Center(child: _buildFolderIcon()),
             ),
-            title: Text(space),
+            title: Text(storageSpaceLabel(l10n, space)),
             subtitle: _spaceSubtitle(space) == null
                 ? null
                 : Text(
@@ -2047,7 +2119,7 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
             ),
             onTap: () => _enterSpace(space),
             onLongPress: () => _showPathActions(
-              title: space,
+              title: storageSpaceLabel(l10n, space),
               displayName: space,
               uri: _uriForFolderPath(space, ''),
             ),
@@ -2061,7 +2133,7 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
     final segments = <({String label, VoidCallback? onTap})>[];
     if (_hasNavFloor && _navSpace == _navFloorSpace) {
       final floorLabel = _navFloorPath.isEmpty
-          ? _navFloorSpace
+          ? storageSpaceLabel(l10n, _navFloorSpace)
           : p.basename(_navFloorPath);
       segments.add((
         label: floorLabel,
@@ -2102,7 +2174,7 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
       ));
       if (_navSpace != null) {
         segments.add((
-          label: _navSpace!,
+          label: storageSpaceLabel(l10n, _navSpace!),
           onTap: _navPath.isEmpty ? null : _navToSpaceRoot,
         ));
         if (_navPath.isNotEmpty) {

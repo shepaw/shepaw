@@ -9596,6 +9596,48 @@ abstract class AppLocalizations {
   /// **'我的'**
   String get storage_browserTabMine;
 
+  /// No description provided for @storage_spaceRecent.
+  ///
+  /// In zh, this message translates to:
+  /// **'最近'**
+  String get storage_spaceRecent;
+
+  /// No description provided for @storage_spaceWorkspaces.
+  ///
+  /// In zh, this message translates to:
+  /// **'工作'**
+  String get storage_spaceWorkspaces;
+
+  /// No description provided for @storage_spaceRuntime.
+  ///
+  /// In zh, this message translates to:
+  /// **'运行时'**
+  String get storage_spaceRuntime;
+
+  /// No description provided for @storage_spaceFiles.
+  ///
+  /// In zh, this message translates to:
+  /// **'文件'**
+  String get storage_spaceFiles;
+
+  /// No description provided for @storage_spacePublic.
+  ///
+  /// In zh, this message translates to:
+  /// **'公开'**
+  String get storage_spacePublic;
+
+  /// No description provided for @storage_spaceCognition.
+  ///
+  /// In zh, this message translates to:
+  /// **'认知'**
+  String get storage_spaceCognition;
+
+  /// No description provided for @storage_spaceArtifacts.
+  ///
+  /// In zh, this message translates to:
+  /// **'产物'**
+  String get storage_spaceArtifacts;
+
   /// No description provided for @storage_browserLastAccessed.
   ///
   /// In zh, this message translates to:
@@ -9619,6 +9661,12 @@ abstract class AppLocalizations {
   /// In zh, this message translates to:
   /// **'新建文件夹'**
   String get storage_browserNewFolder;
+
+  /// No description provided for @storage_browserCreate.
+  ///
+  /// In zh, this message translates to:
+  /// **'新建'**
+  String get storage_browserCreate;
 
   /// No description provided for @storage_browserUploadLocal.
   ///

@@ -5249,6 +5249,27 @@ class AppLocalizationsZh extends AppLocalizations {
   String get storage_browserTabMine => '我的';
 
   @override
+  String get storage_spaceRecent => '最近';
+
+  @override
+  String get storage_spaceWorkspaces => '工作';
+
+  @override
+  String get storage_spaceRuntime => '运行时';
+
+  @override
+  String get storage_spaceFiles => '文件';
+
+  @override
+  String get storage_spacePublic => '公开';
+
+  @override
+  String get storage_spaceCognition => '认知';
+
+  @override
+  String get storage_spaceArtifacts => '产物';
+
+  @override
   String storage_browserLastAccessed(String time) {
     return '最近访问于 $time';
   }
@@ -5263,6 +5284,9 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get storage_browserNewFolder => '新建文件夹';
+
+  @override
+  String get storage_browserCreate => '新建';
 
   @override
   String get storage_browserUploadLocal => '上传本地文件';

@@ -5459,6 +5459,27 @@ class AppLocalizationsEn extends AppLocalizations {
   String get storage_browserTabMine => 'Mine';
 
   @override
+  String get storage_spaceRecent => 'Recent';
+
+  @override
+  String get storage_spaceWorkspaces => 'Workspaces';
+
+  @override
+  String get storage_spaceRuntime => 'Runtime';
+
+  @override
+  String get storage_spaceFiles => 'Files';
+
+  @override
+  String get storage_spacePublic => 'Public';
+
+  @override
+  String get storage_spaceCognition => 'Cognition';
+
+  @override
+  String get storage_spaceArtifacts => 'Artifacts';
+
+  @override
   String storage_browserLastAccessed(String time) {
     return 'Last accessed $time';
   }
@@ -5473,6 +5494,9 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get storage_browserNewFolder => 'New folder';
+
+  @override
+  String get storage_browserCreate => 'New';
 
   @override
   String get storage_browserUploadLocal => 'Upload local file';

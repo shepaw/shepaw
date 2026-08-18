@@ -13,9 +13,7 @@ import 'create_group_screen.dart';
 import 'chat_screen.dart';
 import 'settings_screen.dart';
 import 'contacts_screen.dart';
-import 'storage_space_screen.dart';
 import 'storage_space_manage_screen.dart';
-import '../utils/layout_utils.dart';
 import '../widgets/agent_search_delegate.dart';
 import '../widgets/shepaw_search_page.dart';
 import '../widgets/avatar_image.dart';
@@ -714,14 +712,10 @@ class HomeScreenState extends State<HomeScreen> {
                     subtitle: Text(l10n.storage_subtitle),
                     onTap: () {
                       Navigator.pop(context);
-                      final useMobileBrowser =
-                          !LayoutUtils.isDesktopLayout(context);
                       Navigator.push(
                         context,
                         MaterialPageRoute(
-                          builder: (context) => useMobileBrowser
-                              ? const StorageSpaceManageScreen()
-                              : const StorageSpaceScreen(),
+                          builder: (context) => const StorageSpaceManageScreen(),
                         ),
                       );
                     },
