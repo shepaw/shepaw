@@ -1,4 +1,5 @@
 import 'dart:convert';
+import '../../models/mention_entry.dart';
 import '../../models/planning_models.dart';
 import '../../models/remote_agent.dart';
 import '../local_database_service.dart';
@@ -31,24 +32,87 @@ class GroupDispatchParser {
 
   GroupDispatchParser(this._db);
 
-  /// Whether [requestedName] matches [agent]'s registered group display name.
-  static bool matchesAgentName(RemoteAgent agent, String requestedName) {
-    final requested = requestedName.trim();
-    if (requested.isEmpty) return false;
-    return agent.name == requested ||
-        agent.name.toLowerCase() == requested.toLowerCase();
+  /// Normalize a mention/dispatch label for comparison: trim, collapse inner
+  /// whitespace, map full-width punctuation to half-width and strip common
+  /// decorative brackets/quotes the model may wrap names in.
+  static String normalizeMentionName(String raw) {
+    var s = raw.trim();
+    s = s.replaceAll('＠', '@');
+    s = s.replaceAll('：', ':').replaceAll('，', ',').replaceAll('；', ';')
+        .replaceAll('。', '.').replaceAll('？', '?').replaceAll('！', '!');
+    s = s.replaceAll('（', '(').replaceAll('）', ')').replaceAll('【', '[')
+        .replaceAll('】', ']').replaceAll('「', '"').replaceAll('」', '"')
+        .replaceAll('『', '"').replaceAll('』', '"');
+    s = s.replaceAll(RegExp(r'\s+'), ' ');
+    return s;
   }
 
-  /// Resolve a dispatch/workflow agent label to a group member (case-insensitive).
+  /// Strip leading/trailing quote-ish decorations a model may add around a
+  /// name inside JSON (e.g. `"张三"` → `张三`, `'Tom'` → `Tom`).
+  static String stripQuoteDecorations(String raw) {
+    var s = raw.trim();
+    s = s.replaceAll(_leadingNameDecorations, '');
+    s = s.replaceAll(_trailingNameDecorations, '');
+    return s.trim();
+  }
+
+  static final RegExp _leadingNameDecorations =
+      RegExp('^["\\\'“”‘’「」『』【】\\[\\]]+');
+  static final RegExp _trailingNameDecorations =
+      RegExp('["\\\'“”‘’「」『』【】\\[\\]]+\$');
+
+  /// Whether [requestedName] matches [agent]'s registered group display name.
+  ///
+  /// Match tiers, in order:
+  /// 1. exact (after normalization),
+  /// 2. case-insensitive,
+  /// 3. agent id,
+  /// 4. unique substring (>= 2 chars) — resolved by the caller against the
+  ///    full member list so a common prefix like "app" never matches alone.
+  static bool matchesAgentName(RemoteAgent agent, String requestedName) {
+    final requested = stripQuoteDecorations(normalizeMentionName(requestedName));
+    if (requested.isEmpty) return false;
+    final name = normalizeMentionName(agent.name);
+    if (name == requested) return true;
+    if (name.toLowerCase() == requested.toLowerCase()) return true;
+    if (requested == agent.id) return true;
+    // Substring tier is intentionally NOT applied here — it needs the whole
+    // member list for uniqueness; see [findAgentByDispatchName].
+    return false;
+  }
+
+  /// Resolve a dispatch/workflow agent label to a group member.
+  ///
+  /// Tier order: exact/case-insensitive/id match first; then a unique
+  /// substring match (>= 2 chars, case-insensitive) so "张" still resolves
+  /// to "张三" when no other member shares that fragment.
   static RemoteAgent? findAgentByDispatchName(
     List<RemoteAgent> agents,
     String requestedName,
   ) {
+    final requested = stripQuoteDecorations(normalizeMentionName(requestedName));
+    if (requested.isEmpty) return null;
+
+    // Tier 1: exact / case-insensitive / id.
     for (final agent in agents) {
-      if (matchesAgentName(agent, requestedName)) return agent;
+      if (matchesAgentName(agent, requested)) return agent;
+    }
+
+    // Tier 2: unique substring across the member list.
+    // Guard: >= 2 chars, or a single CJK Han char (信息量远大于单个拉丁字母，
+    // 如「@张」应能解析到「张三」，但「@R」不该匹配「Reviewer」）。
+    final isSingleHan = requested.length == 1 && _hanChar.hasMatch(requested);
+    if (requested.length >= 2 || isSingleHan) {
+      final lower = requested.toLowerCase();
+      final candidates = agents
+          .where((a) => normalizeMentionName(a.name).toLowerCase().contains(lower))
+          .toList();
+      if (candidates.length == 1) return candidates.first;
     }
     return null;
   }
+
+  static final RegExp _hanChar = RegExp(r'\p{Script=Han}', unicode: true);
 
   static List<String> resolveAgentIdsForDispatchNames(
     List<RemoteAgent> agents,
@@ -88,18 +152,97 @@ class GroupDispatchParser {
     return fallback;
   }
 
-  /// Parse @mentions from an agent's response content, returning matching agent IDs.
-  List<String> parseAgentMentions(String content, List<RemoteAgent> agents) {
-    if (content.contains('@all')) {
-      return agents.map((a) => a.id).toList();
+  /// Resolve structured mention declarations into [MentionEntry]s.
+  ///
+  /// Mentions are declared structurally — never parsed from chat text, so a
+  /// `@` inside an email, code snippet or quote can never mis-activate a
+  /// member. [rawDeclarations] accepts either shape:
+  /// - tool-args shape (`group_mention` call): `{'mentions': [{'name',
+  ///   'notify', 'reason'}]}`,
+  /// - metadata shape (reply metadata / persisted `meta['mentions']`):
+  ///   a single `{'name', 'notify', 'reason'}` entry.
+  ///
+  /// `name` is resolved via [findAgentByDispatchName] (exact → case-insensitive
+  /// → id → unique substring), or `"all"` (case-insensitive, expanded to every
+  /// member). `notify` defaults to true; `reason` is trimmed and carried.
+  /// Entries are deduped by agent id — first occurrence wins (including its
+  /// notify/reason). Names matching no member are reported in [unresolved].
+  /// Non-map items and empty names are skipped.
+  static ({List<MentionEntry> mentions, List<String> unresolved})
+      resolveMentionDeclarations(
+    List<dynamic>? rawDeclarations,
+    List<RemoteAgent> agents,
+  ) {
+    if (rawDeclarations == null || rawDeclarations.isEmpty || agents.isEmpty) {
+      return (mentions: const [], unresolved: const []);
     }
-    final mentioned = <String>[];
-    for (final agent in agents) {
-      if (content.contains('@${agent.name}')) {
-        mentioned.add(agent.id);
+    final mentions = <MentionEntry>[];
+    final unresolved = <String>[];
+    final seen = <String>{};
+
+    void addEntry({
+      required String requestedName,
+      required bool notify,
+      String? reason,
+    }) {
+      final agent = findAgentByDispatchName(agents, requestedName);
+      if (agent == null) {
+        if (!unresolved.contains(requestedName)) unresolved.add(requestedName);
+        return;
+      }
+      if (seen.contains(agent.id)) return;
+      seen.add(agent.id);
+      mentions.add(MentionEntry(
+        id: agent.id,
+        name: agent.name,
+        notify: notify,
+        reason: (reason == null || reason.isEmpty) ? null : reason,
+      ));
+    }
+
+    void handleName({
+      required String name,
+      required bool notify,
+      String? reason,
+    }) {
+      if (normalizeMentionName(name).toLowerCase() == 'all') {
+        for (final a in agents) {
+          addEntry(requestedName: a.name, notify: notify, reason: reason);
+        }
+      } else {
+        addEntry(requestedName: name, notify: notify, reason: reason);
       }
     }
-    return mentioned;
+
+    for (final raw in rawDeclarations) {
+      if (raw is! Map) continue;
+      final map = Map<String, dynamic>.from(raw);
+      final inner = map['mentions'];
+      if (inner is List) {
+        // group_mention tool-args shape.
+        for (final item in inner) {
+          if (item is! Map) continue;
+          final m = Map<String, dynamic>.from(item);
+          final name = (m['name'] as String?)?.trim() ?? '';
+          if (name.isEmpty) continue;
+          handleName(
+            name: name,
+            notify: m['notify'] as bool? ?? true,
+            reason: (m['reason'] as String?)?.trim(),
+          );
+        }
+      } else {
+        // Metadata entry shape.
+        final name = (map['name'] as String?)?.trim() ?? '';
+        if (name.isEmpty) continue;
+        handleName(
+          name: name,
+          notify: map['notify'] as bool? ?? true,
+          reason: (map['reason'] as String?)?.trim(),
+        );
+      }
+    }
+    return (mentions: mentions, unresolved: unresolved);
   }
 
   /// Parse Admin's structured JSON dispatch block.
@@ -314,6 +457,20 @@ class GroupDispatchParser {
     return flowSteps;
   }
 
+  /// Matches ```json … ``` dispatch blocks (case-insensitive, multi-line).
+  /// Leading whitespace is `[ \t]*` (not `\s*`) so a newline right before the
+  /// fence survives stripping — text keeps its line breaks.
+  static final RegExp dispatchJsonBlockPattern = RegExp(
+    r'[ \t]*```json\s*[\s\S]*?```\s*',
+    multiLine: true,
+    caseSensitive: false,
+  );
+
+  /// Remove every ```json … ``` dispatch block from [content] so raw machine
+  /// syntax never reaches the persisted chat text.
+  static String stripDispatchJsonBlocks(String content) =>
+      content.replaceAll(dispatchJsonBlockPattern, '').trimRight();
+
   /// Strip the ```json … ``` dispatch block from the last Admin message in
   /// [channelId] so that the raw JSON is never shown to the user.
   Future<void> stripDispatchJsonFromLastMessage(
@@ -322,14 +479,12 @@ class GroupDispatchParser {
   ) async {
     try {
       final messages = await _db.getChannelMessages(channelId, limit: 10);
-      final jsonBlockPattern =
-          RegExp(r'\s*```json\s*[\s\S]*?```\s*', multiLine: true);
       for (final m in messages) {
         if (m['sender_id'] == agentId &&
             m['content'] != null &&
-            jsonBlockPattern.hasMatch(m['content'] as String)) {
+            dispatchJsonBlockPattern.hasMatch(m['content'] as String)) {
           final cleaned =
-              (m['content'] as String).replaceAll(jsonBlockPattern, '').trimRight();
+              (m['content'] as String).replaceAll(dispatchJsonBlockPattern, '').trimRight();
           await _db.updateMessage(messageId: m['id'] as String, content: cleaned);
           break;
         }

@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:sqflite/sqflite.dart' show ConflictAlgorithm;
 import 'package:uuid/uuid.dart';
 import '../../models/message.dart';
+import '../../models/mention_entry.dart';
 import '../../models/remote_agent.dart';
 import '../../models/channel.dart';
 import '../../models/attachment_data.dart';
@@ -69,6 +70,7 @@ class GroupAgentExecutor {
   })? leaveMailboxAndCollect;
   late final GroupMemberSessionService _memberSessions =
       GroupMemberSessionService(_db);
+  late final GroupDispatchParser _dispatchParser = GroupDispatchParser(_db);
 
   GroupAgentExecutor({
     required LocalDatabaseService db,
@@ -414,6 +416,9 @@ class GroupAgentExecutor {
     Map<String, dynamic>? fileUploadData;
     Map<String, dynamic>? formDataCapture;
     Map<String, dynamic>? messageMetadataExtra;
+    /// Raw `group_mention` tool args (local members), accumulated across tool
+    /// rounds; resolved into structured mentions in the unified capture block.
+    List<Map<String, dynamic>>? mentionToolDeclarations;
     // Token usage for the final message bubble: summed across local tool
     // rounds, or self-reported by a remote agent in `task.completed`.
     var turnTokenUsage = const LlmTokenUsage();
@@ -435,6 +440,16 @@ class GroupAgentExecutor {
         ? (LocalLLMAgentService.instance.resolveProviderType(agent) == 'claude'
             ? GroupOrchestrationTools.claudeTools(agentNames: delegateableNames)
             : GroupOrchestrationTools.openAITools(agentNames: delegateableNames))
+        : null;
+    // Members get the structured mention tool only when the group allows
+    // member-to-member activation; in adminOnly mode the tool would only
+    // produce no-op "ok" feedback.
+    final memberExtraTools = (!isAdmin && mentionMode == 'allMembers')
+        ? (LocalLLMAgentService.instance.resolveProviderType(agent) == 'claude'
+            ? GroupOrchestrationTools.claudeMentionTools(
+                agentNames: delegateableNames)
+            : GroupOrchestrationTools.openAIMentionTools(
+                agentNames: delegateableNames))
         : null;
 
     Future<void>? peerApprovalInFlight;
@@ -540,7 +555,7 @@ class GroupAgentExecutor {
             includeShepawCli: agent.isLocal,
             systemPromptOverride: systemPrompt,
             attachments: toolRound == 0 ? attachments : null,
-            extraTools: adminExtraTools,
+            extraTools: isAdmin ? adminExtraTools : memberExtraTools,
             excludeUIToolNames: GroupOrchestrationTools.excludedUiToolNames,
           )) {
             if (acpCancellationToken?.isCancelled == true) break;
@@ -583,6 +598,37 @@ class GroupAgentExecutor {
                     break;
                   case 'message_metadata':
                     messageMetadataExtra = Map<String, dynamic>.from(event.arguments);
+                    break;
+                  case GroupOrchestrationTools.mentionName:
+                    mentionToolDeclarations = [
+                      ...?mentionToolDeclarations,
+                      Map<String, dynamic>.from(event.arguments),
+                    ];
+                    final mentionParsed = GroupOrchestrationTools.parseMentionArgs(
+                      event.arguments,
+                      allAgents,
+                    );
+                    final mentionFeedback = jsonEncode({
+                      'ok': mentionParsed.mentions.isNotEmpty,
+                      'mention_count': mentionParsed.mentions.length,
+                      if (mentionParsed.unresolvedNames.isNotEmpty)
+                        'unresolved_names': mentionParsed.unresolvedNames,
+                      if (mentionParsed.mentions.isEmpty &&
+                          mentionParsed.unresolvedNames.isEmpty)
+                        'error': 'no members matched',
+                    });
+                    pawToolCalls.add(event);
+                    pawToolResults.add({
+                      'tool_call_id': event.id,
+                      'name': event.name,
+                      'result': mentionFeedback,
+                    });
+                    infLogGroup.onToolResult(
+                      groupTraceId,
+                      toolCallId: event.id,
+                      name: event.name,
+                      result: mentionFeedback,
+                    );
                     break;
                   case GroupOrchestrationTools.dispatchName:
                     orchHasSignal = true;
@@ -1467,6 +1513,16 @@ class GroupAgentExecutor {
               userName: userName,
             );
           },
+          onMessageMetadata: (data) {
+            // Remote ACP members declare structured mentions via
+            // `ui.messageMetadata` notifications; params arrive as
+            // {'task_id': ..., ...metadata}. Merge into messageMetadataExtra
+            // so the unified capture block resolves them.
+            final meta = Map<String, dynamic>.from(data)..remove('task_id');
+            messageMetadataExtra = Map<String, dynamic>.from(
+              messageMetadataExtra ?? {},
+            )..addAll(meta);
+          },
         ));
 
         // Build group_context for remote agents
@@ -1607,10 +1663,75 @@ class GroupAgentExecutor {
           actionConfirmationData!['prompt'] as String? ?? '需要您的确认';
     }
 
+    // ── Unified structured mention capture ────────────────────────────────
+    // Agent-to-agent activation is declared structurally, never parsed from
+    // text (a `@` inside an email, code snippet or quote can never mis-activate
+    // a member): (1) `group_mention` tool args (local members), (2) a
+    // `mentions` key in reply metadata (remote/peer members + universal
+    // fallback), and (3) legacy ```json``` dispatch blocks (members only,
+    // unchanged). Text `@name` in a reply is display-only.
+    var agentMentions = <MentionEntry>[];
+    var unresolvedMentionNames = <String>[];
+    final legacySteps = <DispatchStep>[];
+    final rawDeclarations = <dynamic>[
+      ...?mentionToolDeclarations,
+      ...(messageMetadataExtra?['mentions'] as List<dynamic>? ?? const []),
+    ];
+    if (!isAdmin) {
+      final resolved = GroupDispatchParser.resolveMentionDeclarations(
+        rawDeclarations,
+        allAgents,
+      );
+      agentMentions = resolved.mentions;
+      unresolvedMentionNames = resolved.unresolved;
+      final legacy = _dispatchParser.parseStructuredDispatch(responseContent, allAgents);
+      legacySteps.addAll(legacy.steps);
+      for (final s in legacy.steps) {
+        for (final id in s.agentIds) {
+          final agent = allAgents.where((a) => a.id == id).firstOrNull;
+          if (agent == null) continue;
+          if (!agentMentions.any((m) => m.id == id)) {
+            agentMentions
+                .add(MentionEntry(id: id, name: agent.name, notify: true));
+          }
+        }
+      }
+      // adminOnly mode: a member's dispatch intent must not vanish silently —
+      // the block is stripped but the user is told nothing was activated.
+      if (mentionMode == 'adminOnly' &&
+          (legacy.steps.isNotEmpty || legacy.parseError != null)) {
+        await _saveMemberDispatchDeniedHint(
+          channelId: channelId,
+          agentName: agent.name,
+        );
+      }
+    } else {
+      // Admin: structured mentions are display-only — activation stays
+      // tool-first (group_dispatch). Resolve tool/metadata declarations so
+      // the bubble highlight stays consistent; text @ is plain text now.
+      final resolved = GroupDispatchParser.resolveMentionDeclarations(
+        rawDeclarations,
+        allAgents,
+      );
+      agentMentions = resolved.mentions;
+      unresolvedMentionNames = resolved.unresolved;
+    }
+    if (GroupDispatchParser.dispatchJsonBlockPattern.hasMatch(responseContent)) {
+      responseContent =
+          GroupDispatchParser.stripDispatchJsonBlocks(responseContent);
+    }
+
     // Build metadata from captured UI tool calls
     final meta = <String, dynamic>{};
     meta['trace_id'] = groupTraceId;
     if (messageMetadataExtra != null) meta.addAll(messageMetadataExtra!);
+    if (agentMentions.isNotEmpty) {
+      meta['mentions'] = [for (final m in agentMentions) m.toJson()];
+    } else {
+      // Drop raw metadata mentions that failed resolution so stale or
+      // unresolved declarations never drive bubble highlight.
+      meta.remove('mentions');
+    }
     if (turnTokenUsage.hasAny) {
       meta[LlmTokenUsage.metadataKey] = turnTokenUsage.toJson();
     }
@@ -1783,14 +1904,41 @@ class GroupAgentExecutor {
     onAgentDone?.call(agent.id, agent.name, false);
     return GroupTurnResult(
       content: responseContent,
-      steps: orchSteps,
+      steps: [...orchSteps, ...legacySteps],
       wantsContinue: orchWantsContinue,
       isDone: orchIsDone,
       isPause: orchIsPause,
       parseError: orchParseError,
       unresolvedNames: orchUnresolved,
+      mentions: agentMentions,
+      unresolvedMentionNames: unresolvedMentionNames,
       hasOrchestrationSignal: orchHasSignal,
     );
+  }
+
+  /// Surface a member's dispatch attempt that adminOnly mode refused, so the
+  /// stripped JSON block never reads as a silent no-op.
+  Future<void> _saveMemberDispatchDeniedHint({
+    required String channelId,
+    required String agentName,
+  }) async {
+    try {
+      final msgId = _uuid.v4();
+      await _db.createMessage(
+        id: msgId,
+        channelId: channelId,
+        senderId: 'system',
+        senderType: 'system',
+        senderName: 'System',
+        content: '⚠️ 成员「$agentName」尝试派发其他成员，但当前群为「仅管理员」提及模式，未激活任何成员。',
+        messageType: 'system',
+      );
+      await _db.markMessageAsRead(msgId);
+      notifyChannelUpdate(channelId);
+    } catch (e) {
+      LoggerService().warning('Failed to save member dispatch denied hint',
+          tag: 'GroupAgentExecutor', error: e);
+    }
   }
 
   /// Compose a single text payload for peer relay: system prompt + history + turn.

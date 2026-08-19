@@ -275,9 +275,133 @@ class GroupOrchestrationService {
       }
     }
 
+    // allMembers member-to-member cascade: turns whose replies declare
+    // mentions (structured `group_mention` tool args / reply metadata, or a
+    // legacy JSON dispatch block) activate them, up to [maxCascadeDepth] extra
+    // rounds. Driven entirely by the executor's unified mention capture — no
+    // DB re-read, no JSON-in-chat syntax required. Unresolved mention names
+    // surface as a system message instead of failing silently.
+    const maxCascadeDepth = 3;
+    final adminForCascade = adminAgentId != null
+        ? agents.where((a) => a.id == adminAgentId).firstOrNull
+        : null;
+    Future<void> runMentionCascade({
+      required Map<String, GroupTurnResult> initialTurns,
+      required Set<String> respondedAgentIds,
+      List<String>? failedAgentNames,
+    }) async {
+      var turns = Map<String, GroupTurnResult>.from(initialTurns);
+      for (int cascadeRound = 0; cascadeRound < maxCascadeDepth; cascadeRound++) {
+        if (acpCancellationToken?.isCancelled == true) break;
+
+        final newMentionedIds = <String>{};
+        final cascadeSteps = <DispatchStep>[];
+        final unresolvedHints = <String>[];
+        for (final entry in turns.entries) {
+          final aid = entry.key;
+          final turn = entry.value;
+          if (!respondedAgentIds.contains(aid)) continue;
+          cascadeSteps.addAll(turn.steps);
+          for (final m in turn.mentions) {
+            if (!m.notify) continue;
+            // Admin is never activated by a member; already-responded agents
+            // (including the mentioner itself) are skipped to prevent loops.
+            if (m.id == adminAgentId || respondedAgentIds.contains(m.id)) {
+              continue;
+            }
+            newMentionedIds.add(m.id);
+          }
+          for (final name in turn.unresolvedMentionNames) {
+            if (!unresolvedHints.contains(name)) unresolvedHints.add(name);
+          }
+        }
+
+        if (newMentionedIds.isEmpty) {
+          if (unresolvedHints.isNotEmpty) {
+            await _saveOrchestrationSystemMessage(
+              channelId,
+              '⚠️ 群成员提及了不存在的成员：${unresolvedHints.join('、')}（已忽略）',
+            );
+          }
+          break;
+        }
+
+        // Structured declaration reasons are forwarded to the mentioned agent
+        // so it knows why it was asked for help.
+        final mentionReasonById = <String, String>{};
+        for (final turn in turns.values) {
+          for (final m in turn.mentions) {
+            if (!m.notify || m.reason == null) continue;
+            mentionReasonById.putIfAbsent(m.id, () => m.reason!);
+          }
+        }
+
+        LoggerService().debug(
+          'allMembers cascade round ${cascadeRound + 1}: dispatching ${newMentionedIds.length} newly-mentioned agents',
+          tag: 'GroupOrchestrationService',
+        );
+
+        final cascadeHistory = await loadAndTruncateHistory(channelId, excludeMessageId: userMessage.id);
+        final cascadeFutures = <({String agentId, Future<GroupTurnResult> future})>[];
+        for (final agent in agents) {
+          if (!newMentionedIds.contains(agent.id)) continue;
+          onAgentStart?.call(agent.id, agent.name);
+          final isFirst = !agentIdsWithHistory.contains(agent.id);
+          cascadeFutures.add((
+            agentId: agent.id,
+            future: _executor.processGroupAgent(
+              agent: agent,
+              channelId: channelId,
+              content: () {
+                final baseContent = GroupDispatchParser.taskContentForAgent(
+                  agentId: agent.id,
+                  steps: cascadeSteps,
+                  fallback: effectiveContent,
+                );
+                final reason = mentionReasonById[agent.id];
+                return reason != null
+                    ? '【成员提及】$reason\n\n$baseContent'
+                    : baseContent;
+              }(),
+              attachments: attachments,
+              userId: userId,
+              userName: userName,
+              groupName: groupName,
+              groupDescription: groupDescription,
+              allAgents: agents,
+              historyMessages: cascadeHistory,
+              mentionedAgentIds: newMentionedIds.toList(),
+              isFirstMessage: isFirst,
+              messageVersion: messageVersion,
+              channelMembers: channelMembers,
+              adminAgent: adminForCascade,
+              customSystemPrompt: customSystemPrompt,
+              mentionMode: mentionMode,
+              acpCancellationToken: acpCancellationToken,
+              onStreamChunk: onStreamChunk,
+              onAgentDone: onAgentDone,
+              onInteractionRequest: onInteractionRequest,
+              orchestrationTraceId: orchTraceId,
+            ).catchError((e) {
+              LoggerService().error('Cascade agent ${agent.name} uncaught error', tag: 'GroupOrchestrationService', error: e);
+              failedAgentNames?.add(agent.name);
+              onAgentDone?.call(agent.id, agent.name, true);
+              return const GroupTurnResult();
+            }),
+          ));
+        }
+        final newTurns = <String, GroupTurnResult>{};
+        for (final t in cascadeFutures) {
+          newTurns[t.agentId] = await t.future;
+        }
+        respondedAgentIds.addAll(newMentionedIds);
+        turns = newTurns;
+      }
+    }
+
     if (effectiveMentionedAgentIds.isNotEmpty) {
       // 5a. User explicitly @mentioned agents — those agents respond directly
-      final futures = <Future<void>>[];
+      final turnFutures = <({String agentId, Future<GroupTurnResult> future})>[];
       for (final agent in agents) {
         if (!effectiveMentionedAgentIds.contains(agent.id)) {
           onAgentDone?.call(agent.id, agent.name, true);
@@ -285,8 +409,9 @@ class GroupOrchestrationService {
         }
         onAgentStart?.call(agent.id, agent.name);
         final isFirstMessage = !agentIdsWithHistory.contains(agent.id);
-        futures.add(
-          _executor.processGroupAgent(
+        turnFutures.add((
+          agentId: agent.id,
+          future: _executor.processGroupAgent(
             agent: agent,
             channelId: channelId,
             content: effectiveContent,
@@ -313,88 +438,21 @@ class GroupOrchestrationService {
             onAgentDone?.call(agent.id, agent.name, true);
             return const GroupTurnResult();
           }),
-        );
+        ));
       }
-      await Future.wait(futures);
+      final turnResults = <String, GroupTurnResult>{};
+      for (final t in turnFutures) {
+        turnResults[t.agentId] = await t.future;
+      }
+      final respondedAgentIds = <String>{...turnResults.keys};
 
-      // allMembers cascading for Path 5a: after mentioned agents respond,
-      // check if any of them dispatched other agents via structured JSON.
+      // allMembers cascading for Path 5a: members mentioning other members in
+      // their replies (text @ or legacy JSON) activate them.
       if (mentionMode == 'allMembers') {
-        const maxCascadeDepth = 3;
-        final respondedAgentIds = <String>{...effectiveMentionedAgentIds};
-        final nonAdminAgentsForCascade = adminAgentId != null
-            ? agents.where((a) => a.id != adminAgentId).toList()
-            : agents;
-
-        for (int cascadeRound = 0; cascadeRound < maxCascadeDepth; cascadeRound++) {
-          if (acpCancellationToken?.isCancelled == true) break;
-
-          final cascadeHistory = await loadAndTruncateHistory(channelId, excludeMessageId: userMessage.id);
-
-          final newMentionedIds = <String>{};
-          final cascadeSteps = <DispatchStep>[];
-          for (final msg in cascadeHistory.reversed) {
-            if (!msg.from.isAgent) continue;
-            if (!respondedAgentIds.contains(msg.from.id)) continue;
-            final dispatch = _dispatchParser.parseStructuredDispatch(msg.content, nonAdminAgentsForCascade);
-            cascadeSteps.addAll(dispatch.steps);
-            for (final mentionId in dispatch.steps.expand((s) => s.agentIds)) {
-              if (!respondedAgentIds.contains(mentionId) && mentionId != adminAgentId) {
-                newMentionedIds.add(mentionId);
-              }
-            }
-            if (dispatch.steps.isNotEmpty) {
-              await _dispatchParser.stripDispatchJsonFromLastMessage(channelId, msg.from.id);
-            }
-          }
-
-          if (newMentionedIds.isEmpty) break;
-
-          LoggerService().debug('allMembers cascade (5a) round ${cascadeRound + 1}: dispatching ${newMentionedIds.length} newly-mentioned agents', tag: 'GroupOrchestrationService');
-
-          final cascadeFutures = <Future<void>>[];
-          final cascadeHistoryForAgents = await loadAndTruncateHistory(channelId, excludeMessageId: userMessage.id);
-          for (final agent in agents) {
-            if (!newMentionedIds.contains(agent.id)) continue;
-            onAgentStart?.call(agent.id, agent.name);
-            final isFirst = !agentIdsWithHistory.contains(agent.id);
-            cascadeFutures.add(
-              _executor.processGroupAgent(
-                agent: agent,
-                channelId: channelId,
-                content: GroupDispatchParser.taskContentForAgent(
-                  agentId: agent.id,
-                  steps: cascadeSteps,
-                  fallback: effectiveContent,
-                ),
-                attachments: attachments,
-                userId: userId,
-                userName: userName,
-                groupName: groupName,
-                groupDescription: groupDescription,
-                allAgents: agents,
-                historyMessages: cascadeHistoryForAgents,
-                mentionedAgentIds: newMentionedIds.toList(),
-                isFirstMessage: isFirst,
-                messageVersion: messageVersion,
-                channelMembers: channelMembers,
-                customSystemPrompt: customSystemPrompt,
-                mentionMode: mentionMode,
-                acpCancellationToken: acpCancellationToken,
-                onStreamChunk: onStreamChunk,
-                onAgentDone: onAgentDone,
-                onInteractionRequest: onInteractionRequest,
-                orchestrationTraceId: orchTraceId,
-              ).catchError((e) {
-                LoggerService().error('Cascade agent (5a) ${agent.name} uncaught error', tag: 'GroupOrchestrationService', error: e);
-                onAgentDone?.call(agent.id, agent.name, true);
-                return const GroupTurnResult();
-              }),
-            );
-          }
-          await Future.wait(cascadeFutures);
-          respondedAgentIds.addAll(newMentionedIds);
-        }
+        await runMentionCascade(
+          initialTurns: turnResults,
+          respondedAgentIds: respondedAgentIds,
+        );
       }
 
       await endOrchTrace(InferenceStatus.completed);
@@ -1094,7 +1152,10 @@ class GroupOrchestrationService {
           // Reset failed-agent tracking for this delegation round
           failedAgentNames.clear();
 
-          // Execute delegated agents based on dispatch mode
+          // Execute delegated agents based on dispatch mode. Turn results are
+          // captured per agent so the allMembers cascade below can activate
+          // members mentioned in their replies without re-reading the DB.
+          final delegatedTurnResults = <String, GroupTurnResult>{};
           final isSequential = dispatch.steps.isNotEmpty &&
               dispatch.steps.first.mode == 'sequential';
 
@@ -1113,8 +1174,8 @@ class GroupOrchestrationService {
                 if (!stepAgentIds.contains(agent.id)) continue;
                 onAgentStart?.call(agent.id, agent.name);
                 final isFirst = !agentIdsWithHistory.contains(agent.id);
-                stepFutures.add(
-                  _executor.processGroupAgent(
+                stepFutures.add(() async {
+                  final result = await _executor.processGroupAgent(
                     agent: agent,
                     channelId: channelId,
                     content: step.contentOr(effectiveContent),
@@ -1141,8 +1202,9 @@ class GroupOrchestrationService {
                     failedAgentNames.add(agent.name);
                     onAgentDone?.call(agent.id, agent.name, true);
                     return const GroupTurnResult();
-                  }),
-                );
+                  });
+                  delegatedTurnResults[agent.id] = result;
+                }());
               }
               await Future.wait(stepFutures);
 
@@ -1156,8 +1218,8 @@ class GroupOrchestrationService {
               if (!delegatedIds.contains(agent.id)) continue;
               onAgentStart?.call(agent.id, agent.name);
               final isFirst = !agentIdsWithHistory.contains(agent.id);
-              delegatedFutures.add(
-                _executor.processGroupAgent(
+              delegatedFutures.add(() async {
+                final result = await _executor.processGroupAgent(
                   agent: agent,
                   channelId: channelId,
                   content: GroupDispatchParser.taskContentForAgent(
@@ -1188,92 +1250,22 @@ class GroupOrchestrationService {
                   failedAgentNames.add(agent.name);
                   onAgentDone?.call(agent.id, agent.name, true);
                   return const GroupTurnResult();
-                }),
-              );
+                });
+                delegatedTurnResults[agent.id] = result;
+              }());
             }
             await Future.wait(delegatedFutures);
           }
 
-          // allMembers cascading: after delegated agents respond, check if
-          // any of them dispatched other agents via structured JSON. Cascade up to 3 extra rounds.
+          // allMembers cascading: after delegated agents respond, members
+          // mentioning other members (text @ or legacy JSON) activate them.
+          // Turn results carry the unified mentions — no DB re-read.
           if (mentionMode == 'allMembers') {
-            const maxCascadeDepth = 3;
-            final respondedAgentIds = <String>{...delegatedIds};
-
-            for (int cascadeRound = 0; cascadeRound < maxCascadeDepth; cascadeRound++) {
-              if (acpCancellationToken?.isCancelled == true) break;
-
-              // Reload history to capture the latest agent messages
-              final cascadeHistory = await loadAndTruncateHistory(channelId, excludeMessageId: userMessage.id);
-
-              // Find messages from recently-responded agents and parse structured dispatch
-              final newMentionedIds = <String>{};
-              final cascadeSteps = <DispatchStep>[];
-              for (final msg in cascadeHistory.reversed) {
-                if (!msg.from.isAgent) continue;
-                if (!respondedAgentIds.contains(msg.from.id)) continue;
-                final dispatch = _dispatchParser.parseStructuredDispatch(msg.content, nonAdminAgents);
-                cascadeSteps.addAll(dispatch.steps);
-                for (final mentionId in dispatch.steps.expand((s) => s.agentIds)) {
-                  if (!respondedAgentIds.contains(mentionId) && mentionId != adminAgentId) {
-                    newMentionedIds.add(mentionId);
-                  }
-                }
-                // Strip the dispatch JSON block from the member's message
-                if (dispatch.steps.isNotEmpty) {
-                  await _dispatchParser.stripDispatchJsonFromLastMessage(channelId, msg.from.id);
-                }
-              }
-
-              if (newMentionedIds.isEmpty) break;
-
-              LoggerService().debug('allMembers cascade round ${cascadeRound + 1}: dispatching ${newMentionedIds.length} newly-mentioned agents', tag: 'GroupOrchestrationService');
-
-              // Dispatch newly-mentioned agents
-              final cascadeFutures = <Future<void>>[];
-              final cascadeHistoryForAgents = await loadAndTruncateHistory(channelId, excludeMessageId: userMessage.id);
-              for (final agent in agents) {
-                if (!newMentionedIds.contains(agent.id)) continue;
-                onAgentStart?.call(agent.id, agent.name);
-                final isFirst = !agentIdsWithHistory.contains(agent.id);
-                cascadeFutures.add(
-                  _executor.processGroupAgent(
-                    agent: agent,
-                    channelId: channelId,
-                    content: GroupDispatchParser.taskContentForAgent(
-                      agentId: agent.id,
-                      steps: cascadeSteps,
-                      fallback: effectiveContent,
-                    ),
-                    attachments: attachments,
-                    userId: userId,
-                    userName: userName,
-                    groupName: groupName,
-                    groupDescription: groupDescription,
-                    allAgents: agents,
-                    historyMessages: cascadeHistoryForAgents,
-                    mentionedAgentIds: newMentionedIds.toList(),
-                    isFirstMessage: isFirst,
-                    messageVersion: messageVersion,
-                    channelMembers: channelMembers,
-                    adminAgent: adminAgent,
-                    customSystemPrompt: customSystemPrompt,
-                    mentionMode: mentionMode,
-                    acpCancellationToken: acpCancellationToken,
-                    onStreamChunk: onStreamChunk,
-                    onAgentDone: onAgentDone,
-                    onInteractionRequest: onInteractionRequest,
-                  ).catchError((e) {
-                    LoggerService().error('Cascade agent ${agent.name} uncaught error', tag: 'GroupOrchestrationService', error: e);
-                    failedAgentNames.add(agent.name);
-                    onAgentDone?.call(agent.id, agent.name, true);
-                    return const GroupTurnResult();
-                  }),
-                );
-              }
-              await Future.wait(cascadeFutures);
-              respondedAgentIds.addAll(newMentionedIds);
-            }
+            await runMentionCascade(
+              initialTurns: delegatedTurnResults,
+              respondedAgentIds: {...delegatedIds},
+              failedAgentNames: failedAgentNames,
+            );
           }
 
           // Check cancellation after member execution.

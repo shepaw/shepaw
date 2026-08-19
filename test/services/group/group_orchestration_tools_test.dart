@@ -133,4 +133,78 @@ void main() {
       expect((agentsSchema['items'] as Map)['enum'], ['Coder', 'Reviewer']);
     });
   });
+
+  group('GroupOrchestrationTools.parseMentionArgs', () {
+    test('parses valid entries with notify default true', () {
+      final parsed = GroupOrchestrationTools.parseMentionArgs(
+        {
+          'mentions': [
+            {'name': 'Coder'},
+            {'name': 'Reviewer', 'notify': false},
+          ],
+        },
+        agents,
+      );
+      expect(parsed.mentions.map((m) => m.id), ['a1', 'a2']);
+      expect(parsed.mentions.first.notify, isTrue);
+      expect(parsed.mentions.last.notify, isFalse);
+      expect(parsed.unresolvedNames, isEmpty);
+    });
+
+    test('expands "all" to every member', () {
+      final parsed = GroupOrchestrationTools.parseMentionArgs(
+        {
+          'mentions': [
+            {'name': 'all'},
+          ],
+        },
+        agents,
+      );
+      expect(parsed.mentions.map((m) => m.id), ['a1', 'a2']);
+    });
+
+    test('reports unresolved names and tolerates missing mentions key', () {
+      final parsed = GroupOrchestrationTools.parseMentionArgs(
+        {
+          'mentions': [
+            {'name': 'Nobody'},
+          ],
+        },
+        agents,
+      );
+      expect(parsed.mentions, isEmpty);
+      expect(parsed.unresolvedNames, ['Nobody']);
+
+      final empty = GroupOrchestrationTools.parseMentionArgs({}, agents);
+      expect(empty.mentions, isEmpty);
+      expect(empty.unresolvedNames, isEmpty);
+    });
+  });
+
+  group('group_mention tool schemas', () {
+    test('claude format: single tool with name enum incl. "all"', () {
+      final tools = GroupOrchestrationTools.claudeMentionTools(
+        agentNames: ['Coder', 'Reviewer'],
+      );
+      expect(tools.length, 1);
+      expect(tools.single['name'], GroupOrchestrationTools.mentionName);
+      final nameEnum = ((((tools.single['input_schema'] as Map)['properties']
+              as Map)['mentions'] as Map)['items'] as Map)['properties'] as Map;
+      final nameSchema = nameEnum['name'] as Map;
+      expect(nameSchema['enum'], ['Coder', 'Reviewer', 'all']);
+    });
+
+    test('openAI format mirrors claude schema', () {
+      final tools = GroupOrchestrationTools.openAIMentionTools(
+        agentNames: ['Coder'],
+      );
+      expect(tools.length, 1);
+      final fn = tools.single['function'] as Map;
+      expect(fn['name'], GroupOrchestrationTools.mentionName);
+      final nameEnum = ((((fn['parameters'] as Map)['properties'] as Map)[
+                  'mentions'] as Map)['items'] as Map)['properties'] as Map;
+      final nameSchema = nameEnum['name'] as Map;
+      expect(nameSchema['enum'], ['Coder', 'all']);
+    });
+  });
 }

@@ -198,8 +198,25 @@ $groupScopeSection''';
         ? '\n\n【用户自定义约束】\n$customSystemPrompt'
         : '';
 
+    final collaboratorName = allAgents
+        .where((a) => a.id != currentAgent.id)
+        .map((a) => a.name)
+        .firstOrNull;
     final allMembersMentionSection = mentionMode == 'allMembers'
-        ? '\n\n【协作提及】\n- 如果你需要请求其他成员协助，在回复**末尾**输出以下结构化 JSON 块（系统会自动隐藏它）：\n```json\n{"dispatch": {"mode": "concurrent", "steps": [{"step": 1, "agents": ["成员名"], "task": "具体任务描述"}]}}\n```\n- 仅在确实需要其他成员的专业能力时才使用此功能，不要滥用'
+        ? () {
+            final example = collaboratorName != null ? collaboratorName : '成员名';
+            final declareHint = currentAgent.isLocal
+                ? '调用 `group_mention` 工具，参数：`{"mentions": [{"name": "成员注册名", "notify": true, "reason": "为什么需要对方"}]}`'
+                : '通过 `ui.messageMetadata` 通知在回复元数据中附带 `mentions` 声明：`{"mentions": [{"name": "成员注册名", "notify": true, "reason": "为什么需要对方"}]}`';
+            return '\n\n【协作提及（结构化声明）】\n'
+                '- 需要其他成员协助时，**必须通过结构化声明**；系统只认声明，不解析正文文本\n'
+                '- $declareHint\n'
+                '- `name` 必须是「群成员列表」中的注册名（如 `$example`），或 `"all"` 表示全体成员\n'
+                '- `notify` 默认 `true`（激活对方）；传 `false` 仅告知（cc），不激活\n'
+                '- `reason` 可选：简要说明为何需要对方，会展示给被提及的成员\n'
+                '- **正文中的 `@名字` 只是展示文本，不会被系统识别为提及**；不要为了激活成员而在正文写 @\n'
+                '- 仅在确实需要其他成员的专业能力时才提及，不要滥用';
+          }()
         : '';
 
     return '''你当前处于一个群聊环境中。

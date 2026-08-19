@@ -732,19 +732,35 @@ class MessageBubble extends StatelessWidget {
     }
   }
 
+  /// Annotate mention tokens in [content] from persisted mention metadata:
+  /// `@名字` is bolded for readability; cc-only mentions (notify: false) get
+  /// an explicit "(cc)" suffix so readers can tell the target was not
+  /// activated. Boundary-aware: "@Tommy" is never treated as a mention of
+  /// member "Tom".
   String _processContentWithMentions(String content, Map<String, dynamic>? metadata) {
     final mentionsRaw = metadata?['mentions'] as List<dynamic>? ?? [];
     if (mentionsRaw.isEmpty) return content;
-    var result = content;
+
+    final notifyByName = <String, bool>{};
+    final names = <String>[];
     for (final raw in mentionsRaw) {
       final m = raw as Map<String, dynamic>;
       final name = m['name'] as String? ?? '';
-      final notify = m['notify'] as bool? ?? true;
-      if (!notify && name.isNotEmpty) {
-        result = result.replaceAll('@$name', '@$name(cc)');
-      }
+      if (name.isEmpty) continue;
+      notifyByName[name] = m['notify'] as bool? ?? true;
+      if (!names.contains(name)) names.add(name);
     }
-    return result;
+    if (names.isEmpty) return content;
+
+    final pattern = RegExp(
+      '@(${names.map(RegExp.escape).join('|')})(?![\\p{L}\\p{N}·-])',
+      unicode: true,
+    );
+    return content.replaceAllMapped(pattern, (match) {
+      final name = match.group(1)!;
+      final notify = notifyByName[name] ?? true;
+      return notify ? '**@$name**' : '**@$name(cc)**';
+    });
   }
 
   Widget _buildMessageContent(BuildContext context) {

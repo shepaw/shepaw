@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import '../../models/mention_entry.dart';
 import '../../models/remote_agent.dart';
 import 'group_dispatch_parser.dart';
 
@@ -12,6 +13,12 @@ class GroupOrchestrationTools {
 
   static const dispatchName = 'group_dispatch';
   static const finishName = 'group_finish';
+
+  /// Member-to-member mention declaration tool. Deliberately NOT in [names]:
+  /// [names] tools are encoded as legacy JSON blocks for peer-hosted admins
+  /// (agent_messaging_service), and group_mention is never offered to remote
+  /// agents — they use the reply-metadata convention instead.
+  static const mentionName = 'group_mention';
 
   static const Set<String> names = {dispatchName, finishName};
 
@@ -71,6 +78,95 @@ class GroupOrchestrationTools {
         'input_schema': _finishSchema(),
       },
     ];
+  }
+
+  /// `group_mention` tool (Claude format) for LOCAL group members —
+  /// the structured way to request another member's help.
+  static List<Map<String, dynamic>> claudeMentionTools({
+    required List<String> agentNames,
+  }) {
+    return [
+      {
+        'name': mentionName,
+        'description':
+            'Declare that you are mentioning/activating group members for '
+            'assistance. Call this instead of writing @name in chat text — '
+            'text @ is display-only and never parsed. Also reply to the user '
+            'in natural language.',
+        'input_schema': _mentionSchema(agentNames),
+      },
+    ];
+  }
+
+  /// `group_mention` tool (OpenAI format) for LOCAL group members.
+  static List<Map<String, dynamic>> openAIMentionTools({
+    required List<String> agentNames,
+  }) {
+    return [
+      {
+        'type': 'function',
+        'function': {
+          'name': mentionName,
+          'description':
+              'Declare that you are mentioning/activating group members for '
+              'assistance. Call this instead of writing @name in chat text — '
+              'text @ is display-only and never parsed. Also reply to the user '
+              'in natural language.',
+          'parameters': _mentionSchema(agentNames),
+        },
+      },
+    ];
+  }
+
+  static Map<String, dynamic> _mentionSchema(List<String> agentNames) {
+    final nameItems = <String, dynamic>{
+      'type': 'string',
+      'description':
+          'Registered group member display name, or "all" for every member',
+    };
+    if (agentNames.isNotEmpty) {
+      nameItems['enum'] = [...agentNames, 'all'];
+    }
+    return {
+      'type': 'object',
+      'properties': {
+        'mentions': {
+          'type': 'array',
+          'description': 'Members to mention/activate',
+          'items': {
+            'type': 'object',
+            'properties': {
+              'name': nameItems,
+              'notify': {
+                'type': 'boolean',
+                'description':
+                    'true = activate the member (default); false = cc only (display, no activation)',
+              },
+              'reason': {
+                'type': 'string',
+                'description':
+                    'Optional brief reason the member is being asked for help',
+              },
+            },
+            'required': ['name'],
+          },
+        },
+      },
+      'required': ['mentions'],
+    };
+  }
+
+  /// Parse `group_mention` tool arguments into structured mention entries.
+  /// Delegates to [GroupDispatchParser.resolveMentionDeclarations] so tool
+  /// feedback and the unified capture share one resolution path.
+  static ({List<MentionEntry> mentions, List<String> unresolvedNames})
+      parseMentionArgs(Map<String, dynamic> args, List<RemoteAgent> agents) {
+    final resolved =
+        GroupDispatchParser.resolveMentionDeclarations([args], agents);
+    return (
+      mentions: resolved.mentions,
+      unresolvedNames: resolved.unresolved,
+    );
   }
 
   static Map<String, dynamic> _dispatchSchema(List<String> agentNames) {
