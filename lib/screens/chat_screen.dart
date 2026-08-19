@@ -32,6 +32,7 @@ import '../widgets/chat/chat_message_list.dart';
 import '../widgets/chat/chat_reply_preview.dart';
 import '../widgets/chat/session_list_panel.dart';
 import '../widgets/chat/group_session_list_panel.dart';
+import '../widgets/chat/session_list_header_menu.dart';
 import '../widgets/chat/session_search_results.dart';
 import '../widgets/chat/session_unread_badge.dart';
 import '../widgets/chat/group_members_panel.dart';
@@ -1456,6 +1457,8 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
 
       final l10n = AppLocalizations.of(context);
       final c = _controller;
+      final refreshTick = ValueNotifier<int>(0);
+      final selectionModeRequest = ValueNotifier<int>(0);
 
       final drawer = ChatMoreDrawer(
         header: _buildDmDrawerHeader(l10n),
@@ -1464,6 +1467,23 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
         headerTrailingTooltip: l10n.chat_editAgent,
         onHeaderTrailing: _navigateToAgentDetailForEdit,
         searchHint: l10n.chat_searchSessions,
+        searchTrailing: SessionListHeaderMoreButton(
+          sessions: sessions,
+          databaseService: c.localDatabaseService,
+          refreshTick: refreshTick,
+          onMarkAll: () => _markAllDrawerSessionsRead(sessions, refreshTick),
+          onShowTraces: () {
+            Navigator.pop(context);
+            _showChannelTraces();
+          },
+          onResetSession: () {
+            Navigator.pop(context);
+            _messageController.text = '/reset';
+            _sendMessage();
+          },
+          onEnterSelectionMode:
+              sessions.length > 1 ? () => selectionModeRequest.value++ : null,
+        ),
         bodyBuilder: (context, query) {
           if (query.trim().isNotEmpty) {
             return SessionSearchResults(
@@ -1481,19 +1501,8 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
             onNewSession: () => c.createNewSession(),
             onSwitchSession: _openDrawerSession,
             onBatchDelete: (ids) => c.batchDeleteSessions(ids, isGroup: false),
-            onShowTraces: () {
-              Navigator.pop(context);
-              _showChannelTraces();
-            },
-            onResetSession: () {
-              Navigator.pop(context);
-              _messageController.text = '/reset';
-              _sendMessage();
-            },
-            onAllSessionsMarkedRead: () {
-              unawaited(_refreshOtherSessionsUnread());
-              unawaited(c.markMessagesAsReadIfAtBottom());
-            },
+            listRefreshTick: refreshTick,
+            selectionModeRequest: selectionModeRequest,
           );
         },
         footerActions: [
@@ -1516,6 +1525,9 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
         builder: (_) => drawer,
         width: _chatDrawerWidth(context),
       );
+
+      refreshTick.dispose();
+      selectionModeRequest.dispose();
     } catch (e) {
       if (mounted) {
         showTopToast(
@@ -1582,6 +1594,9 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
         ],
       );
 
+      final refreshTick = ValueNotifier<int>(0);
+      final selectionModeRequest = ValueNotifier<int>(0);
+
       final drawer = ChatMoreDrawer(
         header: header,
         headerOnTap: _navigateToGroupDetail,
@@ -1589,6 +1604,18 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
         headerTrailingTooltip: l10n.chat_groupMembers,
         onHeaderTrailing: _showGroupMembersPanel,
         searchHint: l10n.chat_searchSessions,
+        searchTrailing: SessionListHeaderMoreButton(
+          sessions: sessions,
+          databaseService: c.localDatabaseService,
+          refreshTick: refreshTick,
+          onMarkAll: () => _markAllDrawerSessionsRead(sessions, refreshTick),
+          onShowTraces: () {
+            Navigator.pop(context);
+            _showChannelTraces();
+          },
+          onEnterSelectionMode:
+              sessions.length > 1 ? () => selectionModeRequest.value++ : null,
+        ),
         bodyBuilder: (context, query) {
           if (query.trim().isNotEmpty) {
             return SessionSearchResults(
@@ -1607,14 +1634,8 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
             onNewSession: () => c.createNewGroupSession(),
             onSwitchSession: _openDrawerSession,
             onBatchDelete: (ids) => c.batchDeleteSessions(ids, isGroup: true),
-            onShowTraces: () {
-              Navigator.pop(context);
-              _showChannelTraces();
-            },
-            onAllSessionsMarkedRead: () {
-              unawaited(_refreshOtherSessionsUnread());
-              unawaited(c.markMessagesAsReadIfAtBottom());
-            },
+            listRefreshTick: refreshTick,
+            selectionModeRequest: selectionModeRequest,
           );
         },
         footerActions: [
@@ -1641,6 +1662,9 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
         builder: (_) => drawer,
         width: _chatDrawerWidth(context),
       );
+
+      refreshTick.dispose();
+      selectionModeRequest.dispose();
     } catch (e) {
       if (mounted) {
         showTopToast(
@@ -1678,8 +1702,10 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     }));
     final sorted = [...sessions];
     sorted.sort((a, b) {
-      final ta = times[a.id] ?? DateTime.fromMillisecondsSinceEpoch(a.createdAt);
-      final tb = times[b.id] ?? DateTime.fromMillisecondsSinceEpoch(b.createdAt);
+      final ta =
+          times[a.id] ?? DateTime.fromMillisecondsSinceEpoch(a.createdAt);
+      final tb =
+          times[b.id] ?? DateTime.fromMillisecondsSinceEpoch(b.createdAt);
       return tb.compareTo(ta);
     });
     return sorted;
@@ -1729,6 +1755,21 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
       return;
     }
     _openDrawerSession(channelId, highlightMessageId: message.id);
+  }
+
+  /// 抽屉内「全部已读」：标记后自增 [refreshTick] 刷新列表未读角标，
+  /// 并同步主页会话列表与当前聊天的未读状态。
+  Future<void> _markAllDrawerSessionsRead(
+    List<Channel> sessions,
+    ValueNotifier<int> refreshTick,
+  ) async {
+    for (final s in sessions) {
+      await _controller.localDatabaseService.markChannelMessagesAsRead(s.id);
+    }
+    refreshTick.value++;
+    if (!mounted) return;
+    unawaited(_refreshOtherSessionsUnread());
+    unawaited(_controller.markMessagesAsReadIfAtBottom());
   }
 
   // ---------------------------------------------------------------------------

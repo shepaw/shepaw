@@ -1974,9 +1974,6 @@ class AppLocalizationsZh extends AppLocalizations {
   String get chat_noAdminSet => '未设置管理员';
 
   @override
-  String get chat_groupSessions => '群组会话';
-
-  @override
   String get chat_groupBoundInputDisabled => '此会话由群聊产生，不能在此直接对话';
 
   @override
@@ -1995,11 +1992,6 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get chat_sessions => '会话';
-
-  @override
-  String chat_sessionsCount(int count) {
-    return '$count 个会话';
-  }
 
   @override
   String get chat_markAllSessionsRead => '全部已读';

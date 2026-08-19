@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import '../../controllers/chat_controller.dart';
 import '../../models/channel.dart';
@@ -13,6 +14,9 @@ import 'session_list_header_menu.dart';
 /// - Creating new group sessions
 /// - Switching between sessions
 /// - Batch selection & deletion
+///
+/// 标题栏已并入抽屉搜索栏（[SessionListHeaderMoreButton] 由调用方放在
+/// 搜索栏右侧），本组件只负责列表本身与批量选择 UI。
 class GroupSessionListPanel extends StatelessWidget {
   final List<Channel> sessions;
   final String? currentChannelId;
@@ -20,8 +24,12 @@ class GroupSessionListPanel extends StatelessWidget {
   final VoidCallback onNewSession;
   final ValueChanged<String> onSwitchSession;
   final ValueChanged<List<String>> onBatchDelete;
-  final VoidCallback? onShowTraces;
-  final VoidCallback? onAllSessionsMarkedRead;
+
+  /// 外部驱动的列表刷新（全部已读后自增，未读角标与预览随之刷新）。
+  final ValueListenable<int> listRefreshTick;
+
+  /// 外部驱动的批量选择进入（「更多」菜单点批量选择后自增）。
+  final ValueListenable<int> selectionModeRequest;
 
   const GroupSessionListPanel({
     super.key,
@@ -31,8 +39,8 @@ class GroupSessionListPanel extends StatelessWidget {
     required this.onNewSession,
     required this.onSwitchSession,
     required this.onBatchDelete,
-    this.onShowTraces,
-    this.onAllSessionsMarkedRead,
+    required this.listRefreshTick,
+    required this.selectionModeRequest,
   });
 
   @override
@@ -45,8 +53,8 @@ class GroupSessionListPanel extends StatelessWidget {
       onNewSession: onNewSession,
       onSwitchSession: onSwitchSession,
       onBatchDelete: onBatchDelete,
-      onShowTraces: onShowTraces,
-      onAllSessionsMarkedRead: onAllSessionsMarkedRead,
+      listRefreshTick: listRefreshTick,
+      selectionModeRequest: selectionModeRequest,
     );
   }
 }
@@ -62,8 +70,8 @@ class _GroupSessionListContent extends StatefulWidget {
   final VoidCallback onNewSession;
   final ValueChanged<String> onSwitchSession;
   final ValueChanged<List<String>> onBatchDelete;
-  final VoidCallback? onShowTraces;
-  final VoidCallback? onAllSessionsMarkedRead;
+  final ValueListenable<int> listRefreshTick;
+  final ValueListenable<int> selectionModeRequest;
 
   const _GroupSessionListContent({
     required this.sessions,
@@ -73,19 +81,39 @@ class _GroupSessionListContent extends StatefulWidget {
     required this.onNewSession,
     required this.onSwitchSession,
     required this.onBatchDelete,
-    this.onShowTraces,
-    this.onAllSessionsMarkedRead,
+    required this.listRefreshTick,
+    required this.selectionModeRequest,
   });
 
   @override
-  State<_GroupSessionListContent> createState() => _GroupSessionListContentState();
+  State<_GroupSessionListContent> createState() =>
+      _GroupSessionListContentState();
 }
 
 class _GroupSessionListContentState extends State<_GroupSessionListContent> {
   bool _isSelectionMode = false;
   Set<String> _selectedIds = {};
-  int _listRefreshTick = 0;
   final _databaseService = LocalDatabaseService();
+
+  @override
+  void initState() {
+    super.initState();
+    widget.selectionModeRequest.addListener(_onSelectionModeRequested);
+  }
+
+  @override
+  void dispose() {
+    widget.selectionModeRequest.removeListener(_onSelectionModeRequested);
+    super.dispose();
+  }
+
+  void _onSelectionModeRequested() {
+    if (!mounted) return;
+    setState(() {
+      _isSelectionMode = true;
+      _selectedIds.clear();
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -93,112 +121,81 @@ class _GroupSessionListContentState extends State<_GroupSessionListContent> {
 
     return Column(
       children: [
-        _buildHeader(l10n),
-        const Divider(height: 1),
-        Expanded(child: _buildList(l10n)),
+        if (_isSelectionMode) _buildSelectionHeader(l10n),
+        Expanded(
+          child: ValueListenableBuilder<int>(
+            valueListenable: widget.listRefreshTick,
+            builder: (context, tick, _) => _buildList(l10n, tick),
+          ),
+        ),
         if (_isSelectionMode) _buildBottomBar(l10n),
       ],
     );
   }
 
-  Future<void> _markAllSessionsRead() async {
-    for (final session in widget.sessions) {
-      await _databaseService.markChannelMessagesAsRead(session.id);
-    }
-    if (!mounted) return;
-    setState(() => _listRefreshTick++);
-    widget.onAllSessionsMarkedRead?.call();
-  }
-
-  Widget _buildHeader(AppLocalizations l10n) {
-    if (_isSelectionMode) {
-      return Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
-        child: Column(
-          children: [
-            Row(
-              children: [
-                IconButton(
-                  icon: const Icon(Icons.close),
-                  onPressed: () => setState(() {
-                    _isSelectionMode = false;
-                    _selectedIds.clear();
-                  }),
-                ),
-                Text(
-                  l10n.chat_selectSessions,
-                  style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-                ),
-                const Spacer(),
-                TextButton(
-                  onPressed: () => setState(() {
-                    _selectedIds = widget.sessions
-                        .where((s) => s.id != widget.currentChannelId && s.parentGroupId != null)
-                        .map((s) => s.id)
-                        .toSet();
-                  }),
-                  child: Text(l10n.osTool_selectAll),
-                ),
-                TextButton(
-                  onPressed: () => setState(() {
-                    final newSet = <String>{};
-                    for (final s in widget.sessions) {
-                      if (s.id == widget.currentChannelId) continue;
-                      if (s.parentGroupId == null) continue; // skip parent group
-                      if (!_selectedIds.contains(s.id)) {
-                        newSet.add(s.id);
-                      }
+  Widget _buildSelectionHeader(AppLocalizations l10n) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+      child: Column(
+        children: [
+          Row(
+            children: [
+              IconButton(
+                icon: const Icon(Icons.close),
+                onPressed: () => setState(() {
+                  _isSelectionMode = false;
+                  _selectedIds.clear();
+                }),
+              ),
+              Text(
+                l10n.chat_selectSessions,
+                style:
+                    const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+              ),
+              const Spacer(),
+              TextButton(
+                onPressed: () => setState(() {
+                  _selectedIds = widget.sessions
+                      .where((s) =>
+                          s.id != widget.currentChannelId &&
+                          s.parentGroupId != null)
+                      .map((s) => s.id)
+                      .toSet();
+                }),
+                child: Text(l10n.osTool_selectAll),
+              ),
+              TextButton(
+                onPressed: () => setState(() {
+                  final newSet = <String>{};
+                  for (final s in widget.sessions) {
+                    if (s.id == widget.currentChannelId) continue;
+                    if (s.parentGroupId == null) continue; // skip parent group
+                    if (!_selectedIds.contains(s.id)) {
+                      newSet.add(s.id);
                     }
-                    _selectedIds = newSet;
-                  }),
-                  child: Text(l10n.chat_invertSelection),
-                ),
-              ],
-            ),
-            Padding(
-              padding: const EdgeInsets.only(left: 16, bottom: 4),
-              child: Align(
-                alignment: Alignment.centerLeft,
-                child: Text(
-                  l10n.chat_selectedCount(_selectedIds.length),
-                  style: TextStyle(fontSize: 13, color: Colors.grey[600]),
-                ),
+                  }
+                  _selectedIds = newSet;
+                }),
+                child: Text(l10n.chat_invertSelection),
+              ),
+            ],
+          ),
+          Padding(
+            padding: const EdgeInsets.only(left: 16, bottom: 4),
+            child: Align(
+              alignment: Alignment.centerLeft,
+              child: Text(
+                l10n.chat_selectedCount(_selectedIds.length),
+                style: TextStyle(fontSize: 13, color: Colors.grey[600]),
               ),
             ),
-          ],
-        ),
-      );
-    }
-
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
-      child: Row(
-        children: [
-          Text(
-            l10n.chat_groupSessions,
-            style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-          ),
-          const Spacer(),
-          Text(
-            l10n.chat_sessionsCount(widget.sessions.length),
-            style: TextStyle(fontSize: 14, color: Colors.grey[600]),
-          ),
-          SessionListHeaderMoreButton(
-            sessions: widget.sessions,
-            databaseService: _databaseService,
-            listRefreshTick: _listRefreshTick,
-            onMarkAll: _markAllSessionsRead,
-            onShowTraces: widget.onShowTraces,
-            onEnterSelectionMode: widget.sessions.length > 1
-                ? () => setState(() => _isSelectionMode = true)
-                : null,
           ),
         ],
       ),
     );
   }
 
-  Widget _buildList(AppLocalizations l10n) {
+  Widget _buildList(AppLocalizations l10n, int listRefreshTick) {
     return ListView.builder(
       itemCount: widget.sessions.length + 1,
       itemBuilder: (context, index) {
@@ -211,7 +208,7 @@ class _GroupSessionListContentState extends State<_GroupSessionListContent> {
         final isParent = session.parentGroupId == null;
         final isDisabled = isCurrent || isParent;
         return FutureBuilder<(Map<String, dynamic>?, int)>(
-          key: ValueKey('${session.id}_$_listRefreshTick'),
+          key: ValueKey('${session.id}_$listRefreshTick'),
           future: _loadSessionPreview(session.id, isCurrent),
           builder: (context, snapshot) {
             final latestMessage = snapshot.data?.$1;
@@ -302,7 +299,8 @@ class _GroupSessionListContentState extends State<_GroupSessionListContent> {
         final dt = DateTime.parse(createdAtStr);
         final now = DateTime.now();
         if (dt.year == now.year && dt.month == now.month && dt.day == now.day) {
-          timeText = '${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';
+          timeText =
+              '${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';
         } else {
           timeText = '${dt.month}/${dt.day}';
         }
@@ -312,7 +310,8 @@ class _GroupSessionListContentState extends State<_GroupSessionListContent> {
     final isParent = session.parentGroupId == null;
     final label = isParent
         ? '#default'
-        : SessionUtils.shortSessionId(session.id, groupChannel: widget.groupChannel);
+        : SessionUtils.shortSessionId(session.id,
+            groupChannel: widget.groupChannel);
 
     final avatar = Stack(
       clipBehavior: Clip.none,

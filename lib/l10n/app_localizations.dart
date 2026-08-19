@@ -3710,12 +3710,6 @@ abstract class AppLocalizations {
   /// **'未设置管理员'**
   String get chat_noAdminSet;
 
-  /// No description provided for @chat_groupSessions.
-  ///
-  /// In zh, this message translates to:
-  /// **'群组会话'**
-  String get chat_groupSessions;
-
   /// No description provided for @chat_groupBoundInputDisabled.
   ///
   /// In zh, this message translates to:
@@ -3751,12 +3745,6 @@ abstract class AppLocalizations {
   /// In zh, this message translates to:
   /// **'会话'**
   String get chat_sessions;
-
-  /// No description provided for @chat_sessionsCount.
-  ///
-  /// In zh, this message translates to:
-  /// **'{count} 个会话'**
-  String chat_sessionsCount(int count);
 
   /// No description provided for @chat_markAllSessionsRead.
   ///

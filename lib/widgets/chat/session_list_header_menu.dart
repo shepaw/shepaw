@@ -1,14 +1,21 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import '../../l10n/app_localizations.dart';
 import '../../models/channel.dart';
 import '../../services/local_database_service.dart';
 
-/// 会话列表标题栏右上角「更多」菜单（全部已读 / Trace / 重置会话 / 批量选择）。
+/// 会话列表「更多」菜单按钮（全部已读 / Trace / 重置会话 / 批量选择）。
+///
+/// 渲染在抽屉搜索栏右侧（见 [ChatMoreDrawer.searchTrailing]），不再占用
+/// 列表标题栏空间。未读数变化后由 [refreshTick] 驱动重新查询。
 class SessionListHeaderMoreButton extends StatelessWidget {
   final List<Channel> sessions;
   final LocalDatabaseService databaseService;
-  final int listRefreshTick;
+
+  /// 全部已读后调用方自增，按钮据此重新查询未读数（与列表刷新共用）。
+  final ValueListenable<int> refreshTick;
+
   final Future<void> Function() onMarkAll;
   final VoidCallback? onShowTraces;
 
@@ -20,7 +27,7 @@ class SessionListHeaderMoreButton extends StatelessWidget {
     super.key,
     required this.sessions,
     required this.databaseService,
-    required this.listRefreshTick,
+    required this.refreshTick,
     required this.onMarkAll,
     this.onShowTraces,
     this.onResetSession,
@@ -141,21 +148,30 @@ class SessionListHeaderMoreButton extends StatelessWidget {
         onResetSession != null ||
         (onEnterSelectionMode != null && sessions.length > 1);
 
-    return FutureBuilder<int>(
-      key: ValueKey(listRefreshTick),
-      future: _totalUnread(),
-      builder: (context, snapshot) {
-        final totalUnread = snapshot.data ?? 0;
-        if (!hasMenu && totalUnread <= 0) {
-          return const SizedBox.shrink();
-        }
+    return ValueListenableBuilder<int>(
+      valueListenable: refreshTick,
+      builder: (context, tick, _) {
+        return FutureBuilder<int>(
+          key: ValueKey(tick),
+          future: _totalUnread(),
+          builder: (context, snapshot) {
+            final totalUnread = snapshot.data ?? 0;
+            if (!hasMenu && totalUnread <= 0) {
+              return const SizedBox.shrink();
+            }
 
-        return Builder(
-          builder: (buttonContext) {
-            return IconButton(
-              icon: const Icon(Icons.more_vert, size: 20),
-              tooltip: l10n.common_more,
-              onPressed: () => _showMenu(buttonContext),
+            return Builder(
+              builder: (buttonContext) {
+                return IconButton(
+                  icon: const Icon(Icons.more_vert, size: 20),
+                  padding: EdgeInsets.zero,
+                  constraints:
+                      const BoxConstraints.tightFor(width: 36, height: 36),
+                  visualDensity: VisualDensity.compact,
+                  tooltip: l10n.common_more,
+                  onPressed: () => _showMenu(buttonContext),
+                );
+              },
             );
           },
         );

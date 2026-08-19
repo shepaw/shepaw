@@ -2045,9 +2045,6 @@ class AppLocalizationsEn extends AppLocalizations {
   String get chat_noAdminSet => 'No admin set';
 
   @override
-  String get chat_groupSessions => 'Group Sessions';
-
-  @override
   String get chat_groupBoundInputDisabled =>
       'This session was created by a group chat and cannot be used for direct messaging';
 
@@ -2068,11 +2065,6 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get chat_sessions => 'Sessions';
-
-  @override
-  String chat_sessionsCount(int count) {
-    return '$count sessions';
-  }
 
   @override
   String get chat_markAllSessionsRead => 'Mark all read';

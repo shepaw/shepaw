@@ -172,7 +172,9 @@
   "vault_count": "{count} backups",
   "@vault_count": {
     "placeholders": {
-      "count": { "type": "int" }
+      "count": {
+        "type": "int"
+      }
     }
   },
   "settings_biometric": "Biometric Authentication",
@@ -775,7 +777,6 @@
   "chat_clearingGroupSession": "Clearing group session...",
   "chat_clearingAllGroupSessions": "Clearing all group sessions...",
   "chat_noAdminSet": "No admin set",
-  "chat_groupSessions": "Group Sessions",
   "chat_groupBoundInputDisabled": "This session was created by a group chat and cannot be used for direct messaging",
   "chat_openLinkedGroup": "Open group chat",
   "chat_openLinkedGroupNamed": "Open group 「{name}」",
@@ -789,7 +790,6 @@
   "chat_sheBoundInputDisabled": "This session was created by She and cannot be used for direct messaging",
   "chat_openLinkedShe": "Open She chat",
   "chat_sessions": "Sessions",
-  "chat_sessionsCount": "{count} sessions",
   "chat_markAllSessionsRead": "Mark all read",
   "chat_mentionAll": "All",
   "chat_mentionAllSub": "Mention all {count} agents",
@@ -2615,7 +2615,9 @@
   "storage_clearAllDataFailed": "Failed to clear data: {error}",
   "@storage_clearAllDataFailed": {
     "placeholders": {
-      "error": { "type": "String" }
+      "error": {
+        "type": "String"
+      }
     }
   },
   "storage_browseFiles": "Browse files",
@@ -2743,8 +2745,12 @@
   "storage_chatAttachmentLabel": "Chat {kind} · {hash}",
   "@storage_chatAttachmentLabel": {
     "placeholders": {
-      "kind": {"type": "String"},
-      "hash": {"type": "String"}
+      "kind": {
+        "type": "String"
+      },
+      "hash": {
+        "type": "String"
+      }
     }
   },
   "storage_alertHandoffs": "{count} handoff notifications",
@@ -2830,86 +2836,134 @@
   },
   "@storage_exportTreeDone": {
     "placeholders": {
-      "path": { "type": "String" },
-      "count": { "type": "int" },
-      "size": { "type": "String" }
+      "path": {
+        "type": "String"
+      },
+      "count": {
+        "type": "int"
+      },
+      "size": {
+        "type": "String"
+      }
     }
   },
   "@storage_exportTreeFailed": {
     "placeholders": {
-      "error": { "type": "String" }
+      "error": {
+        "type": "String"
+      }
     }
   },
   "@storage_exportWebdavDone": {
     "placeholders": {
-      "path": { "type": "String" },
-      "count": { "type": "int" },
-      "size": { "type": "String" }
+      "path": {
+        "type": "String"
+      },
+      "count": {
+        "type": "int"
+      },
+      "size": {
+        "type": "String"
+      }
     }
   },
   "@storage_exportWebdavFailed": {
     "placeholders": {
-      "error": { "type": "String" }
+      "error": {
+        "type": "String"
+      }
     }
   },
   "@storage_wipeSelfDone": {
     "placeholders": {
-      "size": { "type": "String" }
+      "size": {
+        "type": "String"
+      }
     }
   },
   "@storage_wipeSelfFailed": {
     "placeholders": {
-      "error": { "type": "String" }
+      "error": {
+        "type": "String"
+      }
     }
   },
   "@storage_browserCount": {
     "placeholders": {
-      "count": { "type": "int" }
+      "count": {
+        "type": "int"
+      }
     }
   },
   "@storage_browserDeleteConfirm": {
     "placeholders": {
-      "path": { "type": "String" }
+      "path": {
+        "type": "String"
+      }
     }
   },
   "@storage_browserDeleted": {
     "placeholders": {
-      "path": { "type": "String" }
+      "path": {
+        "type": "String"
+      }
     }
   },
   "@storage_browserDeleteFailed": {
     "placeholders": {
-      "error": { "type": "String" }
+      "error": {
+        "type": "String"
+      }
     }
   },
   "@storage_purgeDeviceConfirm": {
     "placeholders": {
-      "deviceId": { "type": "String" },
-      "size": { "type": "String" }
+      "deviceId": {
+        "type": "String"
+      },
+      "size": {
+        "type": "String"
+      }
     }
   },
   "@storage_purgeDeviceDone": {
     "placeholders": {
-      "deviceId": { "type": "String" },
-      "size": { "type": "String" }
+      "deviceId": {
+        "type": "String"
+      },
+      "size": {
+        "type": "String"
+      }
     }
   },
   "@storage_purgeDeviceFailed": {
     "placeholders": {
-      "error": { "type": "String" }
+      "error": {
+        "type": "String"
+      }
     }
   },
   "@storage_exportDoneWithAttachments": {
     "placeholders": {
-      "path": { "type": "String" },
-      "count": { "type": "int" }
+      "path": {
+        "type": "String"
+      },
+      "count": {
+        "type": "int"
+      }
     }
   },
   "@storage_exportDonePartial": {
     "placeholders": {
-      "path": { "type": "String" },
-      "packed": { "type": "int" },
-      "missing": { "type": "int" }
+      "path": {
+        "type": "String"
+      },
+      "packed": {
+        "type": "int"
+      },
+      "missing": {
+        "type": "int"
+      }
     }
   },
   "storage_spaceSection": "Storage space",
@@ -2929,33 +2983,47 @@
   "storage_reprotectSkipped": "Reprotect skipped (must be master with cached password)",
   "@storage_migrateConfirm": {
     "placeholders": {
-      "device": { "type": "String" }
+      "device": {
+        "type": "String"
+      }
     }
   },
   "@storage_migrateDone": {
     "placeholders": {
-      "epoch": { "type": "int" }
+      "epoch": {
+        "type": "int"
+      }
     }
   },
   "@storage_migrateDoneGap": {
     "placeholders": {
-      "epoch": { "type": "int" }
+      "epoch": {
+        "type": "int"
+      }
     }
   },
   "@storage_migrateDoneHashMismatch": {
     "placeholders": {
-      "epoch": { "type": "int" },
-      "count": { "type": "int" }
+      "epoch": {
+        "type": "int"
+      },
+      "count": {
+        "type": "int"
+      }
     }
   },
   "@storage_migrateFailed": {
     "placeholders": {
-      "error": { "type": "String" }
+      "error": {
+        "type": "String"
+      }
     }
   },
   "@storage_reprotectDone": {
     "placeholders": {
-      "id": { "type": "String" }
+      "id": {
+        "type": "String"
+      }
     }
   },
   "storage_usageTitle": "Usage",
@@ -2963,13 +3031,19 @@
   "storage_volumeWarning": "Storage volume is about {percent}% full (≥80%). Free space or empty the recycle bin to avoid sync/snapshot failures.",
   "@storage_volumeFree": {
     "placeholders": {
-      "free": { "type": "String" },
-      "total": { "type": "String" }
+      "free": {
+        "type": "String"
+      },
+      "total": {
+        "type": "String"
+      }
     }
   },
   "@storage_volumeWarning": {
     "placeholders": {
-      "percent": { "type": "int" }
+      "percent": {
+        "type": "int"
+      }
     }
   },
   "storage_recycleSection": "Recycle bin",
@@ -2994,7 +3068,9 @@
   "storage_usedBadge": "{size} used",
   "@storage_usedBadge": {
     "placeholders": {
-      "size": {"type": "String"}
+      "size": {
+        "type": "String"
+      }
     }
   },
   "storage_bindingsSection": "Folder bindings",
@@ -3008,13 +3084,17 @@
   "storage_nasConnected": "Connected to {name} and set as master",
   "@storage_nasConnected": {
     "placeholders": {
-      "name": {"type": "String"}
+      "name": {
+        "type": "String"
+      }
     }
   },
   "storage_nasConnectFailed": "Connect failed: {error}",
   "@storage_nasConnectFailed": {
     "placeholders": {
-      "error": {"type": "String"}
+      "error": {
+        "type": "String"
+      }
     }
   },
   "storage_nasMissingFingerprint": "Discovery result has no fingerprint; pair via QR instead.",
@@ -3022,7 +3102,9 @@
   "storage_nasNotPairedBody": "{name} is on the LAN but not paired with this app. Scan the node QR to pair first.",
   "@storage_nasNotPairedBody": {
     "placeholders": {
-      "name": {"type": "String"}
+      "name": {
+        "type": "String"
+      }
     }
   },
   "storage_nasOpenPairing": "Open pairing",
@@ -3042,14 +3124,20 @@
   "storage_sharedMasterSet": "Set {name} as master; this device will start mirroring",
   "@storage_sharedMasterSet": {
     "placeholders": {
-      "name": {"type": "String"}
+      "name": {
+        "type": "String"
+      }
     }
   },
   "storage_sharedSyncPending": "Pending sync to master: {count} items (~{bytes})",
   "@storage_sharedSyncPending": {
     "placeholders": {
-      "count": {"type": "int"},
-      "bytes": {"type": "String"}
+      "count": {
+        "type": "int"
+      },
+      "bytes": {
+        "type": "String"
+      }
     }
   },
   "storage_sharedSyncPendingHint": "Mobile Nexus Pouches can back up to a PC master",
@@ -3060,13 +3148,17 @@
   "storage_syncFailed": "Sync failed: {error}",
   "@storage_syncFailed": {
     "placeholders": {
-      "error": {"type": "String"}
+      "error": {
+        "type": "String"
+      }
     }
   },
   "storage_syncStillPending": "Sync finished, {count} files still pending",
   "@storage_syncStillPending": {
     "placeholders": {
-      "count": {"type": "int"}
+      "count": {
+        "type": "int"
+      }
     }
   },
   "storage_pendingKindCommit": "Upload",
@@ -3074,7 +3166,9 @@
   "storage_pendingMore": "{count} more items",
   "@storage_pendingMore": {
     "placeholders": {
-      "count": {"type": "int"}
+      "count": {
+        "type": "int"
+      }
     }
   },
   "storage_pendingSeeAll": "See all",
@@ -3086,7 +3180,9 @@
   "storage_mirrorCount": "{count} mirrored devices",
   "@storage_mirrorCount": {
     "placeholders": {
-      "count": {"type": "int"}
+      "count": {
+        "type": "int"
+      }
     }
   },
   "storage_masterBadge": "master",
@@ -3101,32 +3197,44 @@
   "storage_autoShortOff": "Auto off",
   "@storage_snapshotCount": {
     "placeholders": {
-      "count": { "type": "int" }
+      "count": {
+        "type": "int"
+      }
     }
   },
   "@storage_alertPendingImports": {
     "placeholders": {
-      "count": { "type": "int" }
+      "count": {
+        "type": "int"
+      }
     }
   },
   "@storage_ownerPeerCount": {
     "placeholders": {
-      "count": { "type": "int" }
+      "count": {
+        "type": "int"
+      }
     }
   },
   "@storage_recycleRestoreFailed": {
     "placeholders": {
-      "error": { "type": "String" }
+      "error": {
+        "type": "String"
+      }
     }
   },
   "@storage_recyclePurgeFailed": {
     "placeholders": {
-      "error": { "type": "String" }
+      "error": {
+        "type": "String"
+      }
     }
   },
   "@storage_recycleShowMore": {
     "placeholders": {
-      "count": { "type": "int" }
+      "count": {
+        "type": "int"
+      }
     }
   },
   "@storage_recyclePurged": {
@@ -3145,7 +3253,9 @@
   },
   "@storage_decryptCheckFailed": {
     "placeholders": {
-      "error": { "type": "String" }
+      "error": {
+        "type": "String"
+      }
     }
   },
   "storage_autoSnapshot": "Auto daily snapshot",
@@ -3205,12 +3315,16 @@
   },
   "@storage_importRequestNotifyBody": {
     "placeholders": {
-      "device": { "type": "String" }
+      "device": {
+        "type": "String"
+      }
     }
   },
   "@storage_importGrantNotifyBody": {
     "placeholders": {
-      "device": { "type": "String" }
+      "device": {
+        "type": "String"
+      }
     }
   },
   "@storage_importFailed": {
@@ -3267,13 +3381,17 @@
   "storage_peerTrust": "Trust: {level}",
   "@storage_peerTrust": {
     "placeholders": {
-      "level": { "type": "String" }
+      "level": {
+        "type": "String"
+      }
     }
   },
   "storage_externalMemories": "{count} digests received",
   "@storage_externalMemories": {
     "placeholders": {
-      "count": { "type": "int" }
+      "count": {
+        "type": "int"
+      }
     }
   },
   "storage_presenceOffline": "No online presence yet",
@@ -3283,7 +3401,9 @@
   "storage_presenceAgents": "Agents: {names}",
   "@storage_presenceAgents": {
     "placeholders": {
-      "names": { "type": "String" }
+      "names": {
+        "type": "String"
+      }
     }
   },
   "storage_pickDelegateAgent": "Pick an agent to delegate"

@@ -221,7 +221,9 @@
   "vault_count": "{count} 个备份",
   "@vault_count": {
     "placeholders": {
-      "count": { "type": "int" }
+      "count": {
+        "type": "int"
+      }
     }
   },
   "settings_biometric": "生物识别认证",
@@ -1127,7 +1129,6 @@
   "chat_clearingGroupSession": "正在清除群组会话...",
   "chat_clearingAllGroupSessions": "正在清除所有群组会话...",
   "chat_noAdminSet": "未设置管理员",
-  "chat_groupSessions": "群组会话",
   "chat_groupBoundInputDisabled": "此会话由群聊产生，不能在此直接对话",
   "chat_openLinkedGroup": "打开群聊",
   "chat_openLinkedGroupNamed": "打开群聊「{name}」",
@@ -1141,14 +1142,6 @@
   "chat_sheBoundInputDisabled": "此会话来自 She 与助手的对话，不能在此直接发消息",
   "chat_openLinkedShe": "打开 She 会话",
   "chat_sessions": "会话",
-  "chat_sessionsCount": "{count} 个会话",
-  "@chat_sessionsCount": {
-    "placeholders": {
-      "count": {
-        "type": "int"
-      }
-    }
-  },
   "chat_markAllSessionsRead": "全部已读",
   "chat_mentionAll": "全部",
   "chat_mentionAllSub": "提及全部 {count} 个 Agent",
@@ -3100,7 +3093,9 @@
   "storage_clearAllDataFailed": "清除数据失败：{error}",
   "@storage_clearAllDataFailed": {
     "placeholders": {
-      "error": { "type": "String" }
+      "error": {
+        "type": "String"
+      }
     }
   },
   "storage_browseFiles": "浏览文件",
@@ -3249,8 +3244,12 @@
   "storage_chatAttachmentLabel": "聊天{kind} · {hash}",
   "@storage_chatAttachmentLabel": {
     "placeholders": {
-      "kind": {"type": "String"},
-      "hash": {"type": "String"}
+      "kind": {
+        "type": "String"
+      },
+      "hash": {
+        "type": "String"
+      }
     }
   },
   "storage_alertHandoffs": "有 {count} 条交接通知",
@@ -3315,86 +3314,134 @@
   },
   "@storage_exportTreeDone": {
     "placeholders": {
-      "path": { "type": "String" },
-      "count": { "type": "int" },
-      "size": { "type": "String" }
+      "path": {
+        "type": "String"
+      },
+      "count": {
+        "type": "int"
+      },
+      "size": {
+        "type": "String"
+      }
     }
   },
   "@storage_exportTreeFailed": {
     "placeholders": {
-      "error": { "type": "String" }
+      "error": {
+        "type": "String"
+      }
     }
   },
   "@storage_exportWebdavDone": {
     "placeholders": {
-      "path": { "type": "String" },
-      "count": { "type": "int" },
-      "size": { "type": "String" }
+      "path": {
+        "type": "String"
+      },
+      "count": {
+        "type": "int"
+      },
+      "size": {
+        "type": "String"
+      }
     }
   },
   "@storage_exportWebdavFailed": {
     "placeholders": {
-      "error": { "type": "String" }
+      "error": {
+        "type": "String"
+      }
     }
   },
   "@storage_wipeSelfDone": {
     "placeholders": {
-      "size": { "type": "String" }
+      "size": {
+        "type": "String"
+      }
     }
   },
   "@storage_wipeSelfFailed": {
     "placeholders": {
-      "error": { "type": "String" }
+      "error": {
+        "type": "String"
+      }
     }
   },
   "@storage_browserCount": {
     "placeholders": {
-      "count": { "type": "int" }
+      "count": {
+        "type": "int"
+      }
     }
   },
   "@storage_browserDeleteConfirm": {
     "placeholders": {
-      "path": { "type": "String" }
+      "path": {
+        "type": "String"
+      }
     }
   },
   "@storage_browserDeleted": {
     "placeholders": {
-      "path": { "type": "String" }
+      "path": {
+        "type": "String"
+      }
     }
   },
   "@storage_browserDeleteFailed": {
     "placeholders": {
-      "error": { "type": "String" }
+      "error": {
+        "type": "String"
+      }
     }
   },
   "@storage_purgeDeviceConfirm": {
     "placeholders": {
-      "deviceId": { "type": "String" },
-      "size": { "type": "String" }
+      "deviceId": {
+        "type": "String"
+      },
+      "size": {
+        "type": "String"
+      }
     }
   },
   "@storage_purgeDeviceDone": {
     "placeholders": {
-      "deviceId": { "type": "String" },
-      "size": { "type": "String" }
+      "deviceId": {
+        "type": "String"
+      },
+      "size": {
+        "type": "String"
+      }
     }
   },
   "@storage_purgeDeviceFailed": {
     "placeholders": {
-      "error": { "type": "String" }
+      "error": {
+        "type": "String"
+      }
     }
   },
   "@storage_exportDoneWithAttachments": {
     "placeholders": {
-      "path": { "type": "String" },
-      "count": { "type": "int" }
+      "path": {
+        "type": "String"
+      },
+      "count": {
+        "type": "int"
+      }
     }
   },
   "@storage_exportDonePartial": {
     "placeholders": {
-      "path": { "type": "String" },
-      "packed": { "type": "int" },
-      "missing": { "type": "int" }
+      "path": {
+        "type": "String"
+      },
+      "packed": {
+        "type": "int"
+      },
+      "missing": {
+        "type": "int"
+      }
     }
   },
   "storage_spaceSection": "存储空间",
@@ -3414,33 +3461,47 @@
   "storage_reprotectSkipped": "再保护跳过（需本机为 Master 且已缓存密码）",
   "@storage_migrateConfirm": {
     "placeholders": {
-      "device": { "type": "String" }
+      "device": {
+        "type": "String"
+      }
     }
   },
   "@storage_migrateDone": {
     "placeholders": {
-      "epoch": { "type": "int" }
+      "epoch": {
+        "type": "int"
+      }
     }
   },
   "@storage_migrateDoneGap": {
     "placeholders": {
-      "epoch": { "type": "int" }
+      "epoch": {
+        "type": "int"
+      }
     }
   },
   "@storage_migrateDoneHashMismatch": {
     "placeholders": {
-      "epoch": { "type": "int" },
-      "count": { "type": "int" }
+      "epoch": {
+        "type": "int"
+      },
+      "count": {
+        "type": "int"
+      }
     }
   },
   "@storage_migrateFailed": {
     "placeholders": {
-      "error": { "type": "String" }
+      "error": {
+        "type": "String"
+      }
     }
   },
   "@storage_reprotectDone": {
     "placeholders": {
-      "id": { "type": "String" }
+      "id": {
+        "type": "String"
+      }
     }
   },
   "storage_usageTitle": "用量",
@@ -3448,13 +3509,19 @@
   "storage_volumeWarning": "存储卷已用约 {percent}%（≥80%）。请清理文件或回收站，避免同步与快照失败。",
   "@storage_volumeFree": {
     "placeholders": {
-      "free": { "type": "String" },
-      "total": { "type": "String" }
+      "free": {
+        "type": "String"
+      },
+      "total": {
+        "type": "String"
+      }
     }
   },
   "@storage_volumeWarning": {
     "placeholders": {
-      "percent": { "type": "int" }
+      "percent": {
+        "type": "int"
+      }
     }
   },
   "storage_recycleSection": "回收站",
@@ -3479,7 +3546,9 @@
   "storage_usedBadge": "已使用 {size}",
   "@storage_usedBadge": {
     "placeholders": {
-      "size": {"type": "String"}
+      "size": {
+        "type": "String"
+      }
     }
   },
   "storage_bindingsSection": "目录绑定",
@@ -3493,13 +3562,17 @@
   "storage_nasConnected": "已连接 {name} 并设为 master",
   "@storage_nasConnected": {
     "placeholders": {
-      "name": {"type": "String"}
+      "name": {
+        "type": "String"
+      }
     }
   },
   "storage_nasConnectFailed": "连接失败：{error}",
   "@storage_nasConnectFailed": {
     "placeholders": {
-      "error": {"type": "String"}
+      "error": {
+        "type": "String"
+      }
     }
   },
   "storage_nasMissingFingerprint": "发现结果缺少指纹，请改用扫码配对。",
@@ -3507,7 +3580,9 @@
   "storage_nasNotPairedBody": "{name} 在局域网中，但尚未与本 App 配对。请先扫描节点二维码完成配对。",
   "@storage_nasNotPairedBody": {
     "placeholders": {
-      "name": {"type": "String"}
+      "name": {
+        "type": "String"
+      }
     }
   },
   "storage_nasOpenPairing": "打开配对",
@@ -3527,14 +3602,20 @@
   "storage_sharedMasterSet": "已将 {name} 设为 master，本机将开始镜像备份",
   "@storage_sharedMasterSet": {
     "placeholders": {
-      "name": {"type": "String"}
+      "name": {
+        "type": "String"
+      }
     }
   },
   "storage_sharedSyncPending": "待同步到 master：{count} 项（约 {bytes}）",
   "@storage_sharedSyncPending": {
     "placeholders": {
-      "count": {"type": "int"},
-      "bytes": {"type": "String"}
+      "count": {
+        "type": "int"
+      },
+      "bytes": {
+        "type": "String"
+      }
     }
   },
   "storage_sharedSyncPendingHint": "手机等移动端可将储物袋备份到 PC master",
@@ -3545,13 +3626,17 @@
   "storage_syncFailed": "同步失败：{error}",
   "@storage_syncFailed": {
     "placeholders": {
-      "error": {"type": "String"}
+      "error": {
+        "type": "String"
+      }
     }
   },
   "storage_syncStillPending": "同步结束，仍有 {count} 个文件待发送",
   "@storage_syncStillPending": {
     "placeholders": {
-      "count": {"type": "int"}
+      "count": {
+        "type": "int"
+      }
     }
   },
   "storage_pendingKindCommit": "上传",
@@ -3559,7 +3644,9 @@
   "storage_pendingMore": "还有 {count} 项",
   "@storage_pendingMore": {
     "placeholders": {
-      "count": {"type": "int"}
+      "count": {
+        "type": "int"
+      }
     }
   },
   "storage_pendingSeeAll": "查看全部",
@@ -3571,7 +3658,9 @@
   "storage_mirrorCount": "{count} 台镜像",
   "@storage_mirrorCount": {
     "placeholders": {
-      "count": {"type": "int"}
+      "count": {
+        "type": "int"
+      }
     }
   },
   "storage_masterBadge": "master",
@@ -3586,32 +3675,44 @@
   "storage_autoShortOff": "自动关",
   "@storage_snapshotCount": {
     "placeholders": {
-      "count": { "type": "int" }
+      "count": {
+        "type": "int"
+      }
     }
   },
   "@storage_alertPendingImports": {
     "placeholders": {
-      "count": { "type": "int" }
+      "count": {
+        "type": "int"
+      }
     }
   },
   "@storage_ownerPeerCount": {
     "placeholders": {
-      "count": { "type": "int" }
+      "count": {
+        "type": "int"
+      }
     }
   },
   "@storage_recycleRestoreFailed": {
     "placeholders": {
-      "error": { "type": "String" }
+      "error": {
+        "type": "String"
+      }
     }
   },
   "@storage_recyclePurgeFailed": {
     "placeholders": {
-      "error": { "type": "String" }
+      "error": {
+        "type": "String"
+      }
     }
   },
   "@storage_recycleShowMore": {
     "placeholders": {
-      "count": { "type": "int" }
+      "count": {
+        "type": "int"
+      }
     }
   },
   "@storage_recyclePurged": {
@@ -3630,7 +3731,9 @@
   },
   "@storage_decryptCheckFailed": {
     "placeholders": {
-      "error": { "type": "String" }
+      "error": {
+        "type": "String"
+      }
     }
   },
   "storage_autoSnapshot": "每日自动快照",
@@ -3690,12 +3793,16 @@
   },
   "@storage_importRequestNotifyBody": {
     "placeholders": {
-      "device": { "type": "String" }
+      "device": {
+        "type": "String"
+      }
     }
   },
   "@storage_importGrantNotifyBody": {
     "placeholders": {
-      "device": { "type": "String" }
+      "device": {
+        "type": "String"
+      }
     }
   },
   "@storage_importFailed": {
@@ -3752,13 +3859,17 @@
   "storage_peerTrust": "信任：{level}",
   "@storage_peerTrust": {
     "placeholders": {
-      "level": { "type": "String" }
+      "level": {
+        "type": "String"
+      }
     }
   },
   "storage_externalMemories": "已收摘要 {count} 条",
   "@storage_externalMemories": {
     "placeholders": {
-      "count": { "type": "int" }
+      "count": {
+        "type": "int"
+      }
     }
   },
   "storage_presenceOffline": "暂无在线画像",
@@ -3768,7 +3879,9 @@
   "storage_presenceAgents": "Agent：{names}",
   "@storage_presenceAgents": {
     "placeholders": {
-      "names": { "type": "String" }
+      "names": {
+        "type": "String"
+      }
     }
   },
   "storage_pickDelegateAgent": "选择委托 Agent"
