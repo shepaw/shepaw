@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/locale_provider.dart';
 import '../services/native_window_service.dart';
+import '../widgets/right_drawer_route.dart';
 
 class LayoutUtils {
   LayoutUtils._();
@@ -40,49 +41,32 @@ class LayoutUtils {
   /// Defaults to a fixed width of 360px (clamped to screen width) with a
   /// slide animation from right to left; pass [width] to customize
   /// (e.g. near-full-width on mobile).
+  ///
+  /// 支持在抽屉/遮罩上右滑关闭；传 [handle] 时进入手势模式：推入不自动
+  /// 播放动画，由打开手势（[DrawerSwipeDetector] 跟手回调）驱动进度，
+  /// [initialProgress] 为推入瞬间的初始进度（手指已拖过的距离 / 宽度）。
+  ///
+  /// 传 [sharedController] 时，路由复用该控制器（不自行创建/销毁），调用方
+  /// 可把同一控制器交给 [RightDrawerLinkedPage] 实现页面联动。
   static Future<T?> showRightDrawer<T>({
     required BuildContext context,
     required WidgetBuilder builder,
     double? width,
+    RightDrawerHandle? handle,
+    double initialProgress = 0,
+    AnimationController? sharedController,
   }) {
-    final screenWidth = MediaQuery.of(context).size.width;
+    final screenWidth = MediaQuery.sizeOf(context).width;
     final drawerWidth = (width ?? 360.0).clamp(0.0, screenWidth).toDouble();
-    return showGeneralDialog<T>(
-      context: context,
-      barrierDismissible: true,
+    final route = RightDrawerRoute<T>(
+      builder: builder,
+      width: drawerWidth,
+      handle: handle,
+      initialProgress: initialProgress,
+      sharedController: sharedController,
       barrierLabel: MaterialLocalizations.of(context).modalBarrierDismissLabel,
-      barrierColor: Colors.black54,
-      transitionDuration: const Duration(milliseconds: 250),
-      pageBuilder: (context, animation, secondaryAnimation) {
-        return Align(
-          alignment: Alignment.centerRight,
-          child: Material(
-            elevation: 16,
-            child: SizedBox(
-              width: drawerWidth,
-              height: MediaQuery.of(context).size.height,
-              child: SafeArea(
-                child: builder(context),
-              ),
-            ),
-          ),
-        );
-      },
-      transitionBuilder: (context, animation, secondaryAnimation, child) {
-        final offsetAnimation = Tween<Offset>(
-          begin: const Offset(1.0, 0.0),
-          end: Offset.zero,
-        ).animate(CurvedAnimation(
-          parent: animation,
-          curve: Curves.easeOutCubic,
-          reverseCurve: Curves.easeInCubic,
-        ));
-        return SlideTransition(
-          position: offsetAnimation,
-          child: child,
-        );
-      },
     );
+    return Navigator.of(context, rootNavigator: true).push<T>(route);
   }
 
   /// Opens a floating panel on desktop, or a full-screen route on mobile.

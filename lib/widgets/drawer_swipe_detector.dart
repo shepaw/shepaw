@@ -1,5 +1,7 @@
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart'
+    show RenderAbstractViewport, RenderEditable, RenderViewportBase;
 
 /// Decision for a candidate drawer-open swipe while a pointer is moving.
 @visibleForTesting
@@ -83,6 +85,17 @@ DrawerSwipeDecision decideDrawerSwipe({
 /// Pair with [Scaffold.drawerEnableOpenDragGesture] set to false, and provide
 /// [onOpenDrawer] (typically `() => scaffoldKey.currentState?.openDrawer()`).
 ///
+/// 跟手模式：提供 [onOpenGestureStart] 时，识别成功后不再触发 [onOpenDrawer]，
+/// 而是持续上报打开方向上的位移（[onOpenGestureUpdate]）直到抬手
+/// （[onOpenGestureEnd] 带甩动速度），调用方用其驱动抽屉路由的进度
+/// （见 `RightDrawerRoute`），实现抽屉与页面跟随手指。
+///
+/// 与气泡/输入框共存：聊天页把 [touchSlop]/[minOpenDistance] 压到
+/// SelectionArea 的 touchSlop（18px）之下，气泡上的左滑即可打开抽屉；同时
+/// down 时命中横向可滚动区或可编辑文本会自动让位（见
+/// [_DrawerOpenSwipeRecognizer._hasOwnedHorizontalGestureAt]），横向滚动与
+/// 拖选不受影响。
+///
 /// When [blockLeadingEdgeDrawerGesture] is true, pointers that begin inside
 /// the system-back edge strip are ignored so iOS/Android back gestures are
 /// not contested.
@@ -92,6 +105,9 @@ class DrawerSwipeDetector extends StatelessWidget {
     required this.child,
     this.enabled = true,
     this.onOpenDrawer,
+    this.onOpenGestureStart,
+    this.onOpenGestureUpdate,
+    this.onOpenGestureEnd,
     this.direction = DrawerSwipeDirection.leftToRight,
     this.verticalScrollSlop = 18,
     this.blockLeadingEdgeDrawerGesture = false,
@@ -108,6 +124,17 @@ class DrawerSwipeDetector extends StatelessWidget {
   /// Defaults to rightward (home's left drawer); chat pages pass
   /// [DrawerSwipeDirection.rightToLeft] for the right-side drawer.
   final VoidCallback? onOpenDrawer;
+
+  /// 跟手打开模式的入口：提供时识别成功后不再触发 [onOpenDrawer]，
+  /// 改以 [onOpenGestureStart] / [onOpenGestureUpdate] / [onOpenGestureEnd]
+  /// 持续上报打开方向上的累计位移（px，左滑打开时为正值）直到抬手。
+  final ValueChanged<double>? onOpenGestureStart;
+
+  /// 识别成功后逐帧上报的打开位移（px）。
+  final ValueChanged<double>? onOpenGestureUpdate;
+
+  /// 抬手瞬间：横向速度（px/s，向右为正）与最终打开位移（px）。
+  final void Function(double velocityDx, double openDx)? onOpenGestureEnd;
 
   /// 打开抽屉的滑动方向：主页左侧抽屉右滑，聊天页右侧抽屉左滑。
   final DrawerSwipeDirection direction;
@@ -150,7 +177,7 @@ class DrawerSwipeDetector extends StatelessWidget {
 
     Widget result = child;
 
-    if (onOpenDrawer != null) {
+    if (onOpenDrawer != null || onOpenGestureStart != null) {
       result = RawGestureDetector(
         gestures: <Type, GestureRecognizerFactory>{
           _DrawerOpenSwipeRecognizer:
@@ -161,6 +188,9 @@ class DrawerSwipeDetector extends StatelessWidget {
               horizontalDominance: horizontalDominance,
               minOpenDistance: minOpenDistance,
               blockedLeadingWidth: leadingBlock,
+              onOpenGestureStart: onOpenGestureStart,
+              onOpenGestureUpdate: onOpenGestureUpdate,
+              onOpenGestureEnd: onOpenGestureEnd,
             ),
             (_DrawerOpenSwipeRecognizer instance) {
               instance.onOpen = onOpenDrawer;
@@ -187,6 +217,9 @@ class _DrawerOpenSwipeRecognizer extends OneSequenceGestureRecognizer {
     required this.horizontalDominance,
     required this.minOpenDistance,
     required this.blockedLeadingWidth,
+    this.onOpenGestureStart,
+    this.onOpenGestureUpdate,
+    this.onOpenGestureEnd,
   });
 
   final DrawerSwipeDirection direction;
@@ -197,24 +230,93 @@ class _DrawerOpenSwipeRecognizer extends OneSequenceGestureRecognizer {
 
   VoidCallback? onOpen;
 
+  final ValueChanged<double>? onOpenGestureStart;
+  final ValueChanged<double>? onOpenGestureUpdate;
+  final void Function(double velocityDx, double openDx)? onOpenGestureEnd;
+
+  /// 跟手模式：识别成功后持续上报位移，直到抬手。
+  bool get _gestureMode => onOpenGestureStart != null;
+
+  /// 打开方向上的累计位移（左滑打开时为正值）。
+  double get _openDx =>
+      direction == DrawerSwipeDirection.leftToRight ? _offset.dx : -_offset.dx;
+
   Offset _offset = Offset.zero;
+
+  /// 已作出判定（接受或拒绝）：不再继续裁决。
   bool _resolved = false;
+
+  /// 判定为打开手势并正在跟手上报（仅手势模式为 true）。
+  bool _accepted = false;
+
+  /// 手指速度估算（PointerMoveEvent 不带 velocity，抬手时用它算甩动方向）。
+  late VelocityTracker _velocityTracker;
 
   @override
   void addAllowedPointer(PointerDownEvent event) {
     if (blockedLeadingWidth > 0 && event.position.dx <= blockedLeadingWidth) {
       return;
     }
+    // 手指落在「自带横向手势」的控件（横向可滚动区、可编辑文本）上时直接
+    // 让位：它们的拖拽识别器在 touchSlop(18px) 就无条件接受竞技场（见
+    // tap_and_drag.dart 的 _hasSufficientGlobalDistanceToAccept）。若不先让位，
+    // 气泡内代码块的横向滚动、输入框的拖选会被抢先接受的抽屉手势抢走。
+    if (_hasOwnedHorizontalGestureAt(event.position, event.viewId)) {
+      return;
+    }
     _offset = Offset.zero;
     _resolved = false;
+    _accepted = false;
+    _velocityTracker = VelocityTracker.withKind(event.kind)
+      ..addPosition(event.timeStamp, event.position);
     startTrackingPointer(event.pointer, event.transform);
   }
+
+  /// 手指下方是否命中「自带横向手势」的控件：横向可滚动区域或可编辑文本。
+  ///
+  /// 在 down 时（竞技场未分胜负前）独立 hit test 一次。命中则本识别器不
+  /// 加入竞技场，把指针完整让给下方控件 —— 气泡内代码块的横向滚动、输入
+  /// 框的拖选等永远优先于抽屉打开手势；正因如此，聊天页才能把识别阈值
+  /// 压到 SelectionArea 的 18px 之下（见 chat_screen 的 touchSlop/minOpenDistance）。
+  bool _hasOwnedHorizontalGestureAt(Offset position, int viewId) {
+    final result = HitTestResult();
+    GestureBinding.instance.hitTestInView(result, position, viewId);
+    for (final entry in result.path) {
+      final target = entry.target;
+      if (target is RenderEditable) {
+        return true;
+      }
+      // ListView / PageView / 横向附件条等：RenderViewportBase 公开 axisDirection。
+      if (target is RenderViewportBase && _isHorizontalAxis(target.axisDirection)) {
+        return true;
+      }
+      // SingleChildScrollView 的 _RenderSingleChildViewport 是私有类，但公开
+      // 实现 RenderAbstractViewport 接口且带公开的 axisDirection getter，
+      // 借 dynamic 读取（命中此分支的只可能是它）。
+      if (target is RenderBox && target is RenderAbstractViewport) {
+        final direction = (target as dynamic).axisDirection as AxisDirection;
+        if (_isHorizontalAxis(direction)) return true;
+      }
+    }
+    return false;
+  }
+
+  static bool _isHorizontalAxis(AxisDirection direction) =>
+      direction == AxisDirection.left || direction == AxisDirection.right;
 
   @override
   void handleEvent(PointerEvent event) {
     if (event is PointerMoveEvent) {
-      if (_resolved) return;
       _offset += event.delta;
+      _velocityTracker.addPosition(event.timeStamp, event.position);
+      if (_resolved) {
+        // 已判定：只有接受为打开手势才继续上报位移，让抽屉跟随手指；
+        // 拒绝（让位给列表滚动等）后不再上报。
+        if (_accepted) {
+          onOpenGestureUpdate?.call(_openDx);
+        }
+        return;
+      }
       switch (decideDrawerSwipe(
         dx: _offset.dx,
         dy: _offset.dy,
@@ -229,16 +331,31 @@ class _DrawerOpenSwipeRecognizer extends OneSequenceGestureRecognizer {
         case DrawerSwipeDecision.rejectAsHorizontal:
           _resolved = true;
           resolve(GestureDisposition.rejected);
+          break;
         case DrawerSwipeDecision.acceptOpen:
           _resolved = true;
+          _accepted = true;
           resolve(GestureDisposition.accepted);
-          onOpen?.call();
+          if (_gestureMode) {
+            onOpenGestureStart?.call(_openDx);
+          } else {
+            onOpen?.call();
+          }
+          break;
       }
       return;
     }
 
     if (event is PointerUpEvent || event is PointerCancelEvent) {
-      if (!_resolved) {
+      if (_resolved) {
+        if (_accepted && _gestureMode) {
+          // PointerUpEvent 不带 velocity：用 VelocityTracker 估算；cancel 视为 0。
+          final velocity = event is PointerUpEvent
+              ? _velocityTracker.getVelocity().pixelsPerSecond.dx
+              : 0.0;
+          onOpenGestureEnd?.call(velocity, _openDx);
+        }
+      } else {
         _resolved = true;
         resolve(GestureDisposition.rejected);
       }
