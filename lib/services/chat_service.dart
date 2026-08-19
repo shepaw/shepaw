@@ -96,6 +96,11 @@ class ChatService {
   // Active group tasks: channelId -> { agentId -> GroupActiveTask }
   final Map<String, Map<String, GroupActiveTask>> _activeGroupTasks = {};
 
+  // Pending send queues (keyed by channelId) — survive UI detach/reattach so
+  // messages queued behind an in-flight turn are not lost when the user
+  // leaves and re-enters the chat.
+  final Map<String, List<String>> _pendingSendQueues = {};
+
   /// Sub-service: group session management (create/list/clear sessions)
   late final GroupSessionService _groupSessionService = GroupSessionService(
     db: _databaseService,
@@ -389,6 +394,12 @@ class ChatService {
   void clearInterruptedTaskInfo(String channelId) {
     _lastInterruptedTasks.remove(channelId);
   }
+
+  /// Live pending-send queue for [channelId] (created lazily). Callers may
+  /// add / removeAt(0) / clear directly; the list survives ChatController
+  /// disposal so re-entering the chat resumes the queue.
+  List<String> pendingSendQueue(String channelId) =>
+      _pendingSendQueues.putIfAbsent(channelId, () => []);
 
   /// Query whether there is an in-progress task for [channelId].
   ActiveTask? getActiveTask(String channelId) {

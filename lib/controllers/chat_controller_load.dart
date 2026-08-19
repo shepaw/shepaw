@@ -210,6 +210,12 @@ mixin _LoadOps on _ChatControllerBase {
         // 消息 metadata 持久化，无 Completer 需要重挂。
         await _restoreWorkflowContext();
       }
+      // 排队消息存活于 ChatService 侧（退出页面不丢）；重进时若无在途回合
+      // 接管（reattach 置 isProcessing=true），立即恢复发送；有在途回合则
+      // 由其 onTaskFinished 的 processNextInQueue 排空。
+      if (messageQueue.isNotEmpty && !isProcessing) {
+        unawaited(processNextInQueue());
+      }
       await _flushAllStashedPlanApprovalResponses();
     } catch (e) {
       isLoading = false;

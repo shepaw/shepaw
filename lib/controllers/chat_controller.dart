@@ -148,7 +148,11 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
   // ---- Processing / queue ----
   bool isProcessing = false;
   ACPCancellationToken? acpCancellationToken;
-  List<String> messageQueue = [];
+
+  /// 待发送队列：按频道存放在 ChatService 侧（跨 Controller 生命周期存活）。
+  /// 退出聊天页后队列不随 dispose 丢失，重进时由 loadMessages 重新接管发送。
+  List<String> get messageQueue =>
+      chatService.pendingSendQueue(currentChannelId ?? '');
 
   /// 群编排代际守卫：stop 后旧编排的 abort-summarize 会跑完（设计上不带
   /// 取消令牌），其 finally/流式回调不得再触碰新轮共享状态。
@@ -423,7 +427,8 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
       chatService.detachWorkflowExecutionUI(wfId);
     }
     workflow.detachOnDispose();
-    messageQueue.clear();
+    // 注意：不要在这里清空 messageQueue —— 队列按频道存放在 ChatService 侧，
+    // 必须跨页面存活，重进后由 loadMessages 恢复发送。
     _healthCheckTimer?.cancel();
     _peerConnSub?.cancel();
     _orphanApprovalSub?.cancel();

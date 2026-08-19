@@ -499,9 +499,17 @@ mixin _MessagingOps on _ChatControllerBase {
 
   @override
   Future<void> processNextInQueue() async {
-    if (messageQueue.isEmpty) return;
+    // 页面已离开：不再于已销毁的 Controller 上后台排空——队列保留在
+    // ChatService 侧，重进后由 loadMessages 恢复发送（避免死 Controller
+    // 与重进的新 Controller 并发出队）。
+    if (!isMounted) return;
 
-    final nextContent = messageQueue.removeAt(0);
+    final channelId = currentChannelId;
+    if (channelId == null) return;
+    final queue = chatService.pendingSendQueue(channelId);
+    if (queue.isEmpty) return;
+
+    final nextContent = queue.removeAt(0);
     _notify();
     if (isGroupMode) {
       await processGroupMessage(nextContent);
