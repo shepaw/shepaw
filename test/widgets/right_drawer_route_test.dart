@@ -87,6 +87,64 @@ void main() {
     expect(find.byKey(_drawerKey), findsNothing);
   });
 
+  testWidgets('dismissed completes only after route disposal, not at pop',
+      (tester) async {
+    final controller = _makeController();
+    late RightDrawerRoute<void> route;
+    var dismissedCount = 0;
+    var poppedCount = 0;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Builder(
+          builder: (context) {
+            return Scaffold(
+              body: Center(
+                child: Builder(
+                  builder: (context) {
+                    return ElevatedButton(
+                      onPressed: () {
+                        route = LayoutUtils.showRightDrawer<void>(
+                          context: context,
+                          width: _drawerWidth,
+                          sharedController: controller,
+                          builder: (_) =>
+                              Container(key: _drawerKey, color: Colors.white),
+                        );
+                        route.dismissed.then((_) => dismissedCount++);
+                        route.popped.then((_) => poppedCount++);
+                      },
+                      child: const Text('open'),
+                    );
+                  },
+                ),
+              ),
+            );
+          },
+        ),
+      ),
+    );
+
+    await tester.tap(find.text('open'));
+    await tester.pumpAndSettle();
+    expect(find.byKey(_drawerKey), findsOneWidget);
+    expect(dismissedCount, 0);
+    expect(poppedCount, 0);
+
+    // pop 瞬间：popped 立刻完成，但路由还在退场动画中，dismissed 未完成。
+    Navigator.of(tester.element(find.byKey(_drawerKey)),
+            rootNavigator: true)
+        .pop();
+    await tester.pump();
+    expect(poppedCount, 1);
+    expect(dismissedCount, 0);
+    expect(find.byKey(_drawerKey), findsOneWidget);
+
+    // 退场动画结束、路由销毁后 dismissed 才完成。
+    await tester.pumpAndSettle();
+    expect(dismissedCount, 1);
+    expect(find.byKey(_drawerKey), findsNothing);
+  });
+
   testWidgets('entrance animation keeps drawer and page in lockstep',
       (tester) async {
     final controller = _makeController();

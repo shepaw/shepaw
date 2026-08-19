@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 /// 右侧抽屉路由（替代 showGeneralDialog 实现聊天页「更多」侧滑菜单）。
@@ -63,6 +65,18 @@ class RightDrawerRoute<T> extends RawDialogRoute<T> {
   /// 调用方把它同时交给 [RightDrawerLinkedPage]，抽屉动画与页面平移严格同源。
   final AnimationController? sharedController;
 
+  /// 路由完全销毁（退场动画结束、overlay 移除）后完成的 future。
+  ///
+  /// 与 `popped`（pop 瞬间即完成）不同：pop 只代表开始退场，路由要等
+  /// 退场动画播完、overlay 条目移除后才会 dispose。需要「抽屉彻底关闭」
+  /// 的调用方应 await 它 —— 例如聊天页切换会话前：切换会销毁持有共享
+  /// 动画控制器的页面（`sharedController` 随之 dispose），若抽屉还在退场
+  /// 动画中就切换，退场永远无法完成，路由永不销毁，冻结在屏幕上。
+  final Completer<void> _dismissedCompleter = Completer<void>();
+
+  /// 见 [_dismissedCompleter] 注释。
+  Future<void> get dismissed => _dismissedCompleter.future;
+
   /// 抽屉面板内容（由调用方构造，如 ChatMoreDrawer）。
   final WidgetBuilder builder;
 
@@ -99,6 +113,9 @@ class RightDrawerRoute<T> extends RawDialogRoute<T> {
   @override
   void dispose() {
     handle?.detach();
+    if (!_dismissedCompleter.isCompleted) {
+      _dismissedCompleter.complete();
+    }
     super.dispose();
   }
 

@@ -41,6 +41,7 @@ import '../services/dispatch/she_relay_session_service.dart';
 import '../services/mailbox/channel_mailbox_service.dart';
 import '../services/mailbox/inbox_subscribe_service.dart';
 import '../services/noise_identity.dart';
+import '../utils/session_utils.dart';
 import 'chat_workflow_coordinator.dart';
 import 'chat_attachment_coordinator.dart';
 import 'chat_attachment_validator.dart';

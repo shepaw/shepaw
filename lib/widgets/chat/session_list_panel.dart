@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../controllers/chat_controller.dart';
 import '../../models/channel.dart';
 import '../../services/local_database_service.dart';
+import '../../utils/session_utils.dart';
 import '../../l10n/app_localizations.dart';
 import 'session_unread_badge.dart';
 import 'session_list_header_menu.dart';
@@ -214,16 +215,18 @@ class _SessionListContentState extends State<_SessionListContent> {
         }
         final session = widget.sessions[index - 1];
         final isCurrent = session.id == widget.currentChannelId;
-        return FutureBuilder<(Map<String, dynamic>?, int)>(
+        return FutureBuilder<(Map<String, dynamic>?, Map<String, dynamic>?, int)>(
           key: ValueKey('${session.id}_$listRefreshTick'),
           future: _loadSessionPreview(session.id, isCurrent),
           builder: (context, snapshot) {
-            final latestMessage = snapshot.data?.$1;
-            final unreadCount = snapshot.data?.$2 ?? 0;
+            final firstMessage = snapshot.data?.$1;
+            final latestMessage = snapshot.data?.$2;
+            final unreadCount = snapshot.data?.$3 ?? 0;
             final tile = _buildSessionTile(
               context,
               session,
               isCurrent,
+              firstMessage,
               latestMessage,
               unreadCount: unreadCount,
               selectionMode: _isSelectionMode,
@@ -279,21 +282,22 @@ class _SessionListContentState extends State<_SessionListContent> {
     );
   }
 
-  Future<(Map<String, dynamic>?, int)> _loadSessionPreview(
-    String channelId,
-    bool isCurrent,
-  ) async {
+  Future<(Map<String, dynamic>?, Map<String, dynamic>?, int)>
+      _loadSessionPreview(String channelId, bool isCurrent) async {
+    final firstMessage =
+        await _databaseService.getFirstChannelMessage(channelId);
     final latestMessage =
         await _databaseService.getLatestChannelMessage(channelId);
     var unreadCount = await _databaseService.getUnreadCountByChannel(channelId);
     if (isCurrent) unreadCount = 0;
-    return (latestMessage, unreadCount);
+    return (firstMessage, latestMessage, unreadCount);
   }
 
   Widget _buildSessionTile(
     BuildContext context,
     Channel session,
     bool isCurrentSession,
+    Map<String, dynamic>? firstMessage,
     Map<String, dynamic>? latestMessage, {
     int unreadCount = 0,
     bool selectionMode = false,
@@ -304,8 +308,28 @@ class _SessionListContentState extends State<_SessionListContent> {
     final isGroupBound = session.isGroupBoundMemberSession;
     final isSheBound = session.isSheBoundSession;
     final isBound = isGroupBound || isSheBound;
-    final preview = latestMessage?['content'] as String? ??
-        (isBound ? (session.description ?? '') : 'No messages');
+    // 第一行 = 会话第一条消息的第一句（会话标题就是第一句话，不再用
+    // 各会话雷同的固定名称占位）；没有消息时退回名称。
+    final firstContent = firstMessage?['content'] as String?;
+    final titleText = firstContent != null && firstContent.trim().isNotEmpty
+        ? SessionUtils.splitFirstSentence(firstContent).first
+        : session.name;
+    // 第二行 = 首条消息的剩余部分；首句即整条（无剩余）时回落到最新消息。
+    final firstRest = firstContent == null
+        ? ''
+        : SessionUtils.splitFirstSentence(firstContent).rest;
+    final latestContent = latestMessage?['content'] as String? ?? '';
+    final isSameMessage = firstMessage != null &&
+        latestMessage != null &&
+        firstMessage['id'] == latestMessage['id'];
+    final preview = firstRest.isNotEmpty
+        ? firstRest
+        : (isSameMessage ? '' : latestContent);
+    // 无消息时的兜底：绑定会话优先显示描述，其余显示占位文案（与旧行为一致）。
+    final boundDesc = isBound ? (session.description ?? '').trim() : '';
+    final fallbackPreview = boundDesc.isNotEmpty
+        ? boundDesc
+        : (isGroupBound ? 'Group-bound session' : 'No messages');
     final createdAtStr = latestMessage?['created_at'] as String?;
     String timeText = '';
     if (createdAtStr != null) {
@@ -321,6 +345,8 @@ class _SessionListContentState extends State<_SessionListContent> {
       } catch (_) {}
     }
 
+    // 当前会话：图标变橘、头像底色淡橘（与 She 样式同款），整行淡橘背景，
+    // 不再需要 Current 文字徽标。
     final avatar = Stack(
       clipBehavior: Clip.none,
       children: [
@@ -328,13 +354,11 @@ class _SessionListContentState extends State<_SessionListContent> {
           width: 40,
           height: 40,
           decoration: BoxDecoration(
-            color: isCurrentSession
-                ? Theme.of(context).primaryColor
-                : isSheBound
-                    ? Colors.orange.withOpacity(0.15)
-                    : isGroupBound
-                        ? Colors.teal.withOpacity(0.15)
-                        : Colors.grey[300],
+            color: isCurrentSession || isSheBound
+                ? Colors.orange.withOpacity(0.15)
+                : isGroupBound
+                    ? Colors.teal.withOpacity(0.15)
+                    : Colors.grey[300],
             borderRadius: BorderRadius.circular(10),
           ),
           alignment: Alignment.center,
@@ -344,13 +368,11 @@ class _SessionListContentState extends State<_SessionListContent> {
                 : isGroupBound
                     ? Icons.groups_outlined
                     : Icons.chat_bubble_outline,
-            color: isCurrentSession
-                ? Colors.white
-                : isSheBound
-                    ? Colors.orange[700]
-                    : isGroupBound
-                        ? Colors.teal[700]
-                        : Colors.grey[600],
+            color: isCurrentSession || isSheBound
+                ? Colors.orange[700]
+                : isGroupBound
+                    ? Colors.teal[700]
+                    : Colors.grey[600],
             size: 20,
           ),
         ),
@@ -359,6 +381,7 @@ class _SessionListContentState extends State<_SessionListContent> {
     );
 
     return ListTile(
+      tileColor: isCurrentSession ? Colors.orange.withOpacity(0.08) : null,
       contentPadding: selectionMode
           ? const EdgeInsets.fromLTRB(8, 0, 16, 0)
           : const EdgeInsets.symmetric(horizontal: 16),
@@ -384,9 +407,11 @@ class _SessionListContentState extends State<_SessionListContent> {
         children: [
           Expanded(
             child: Text(
-              session.name,
+              titleText,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
+              // 标题就是会话的第一句话，与第二行同字号，不再按「标题」加重。
+              style: const TextStyle(fontSize: 14),
             ),
           ),
           if (isGroupBound)
@@ -423,23 +448,6 @@ class _SessionListContentState extends State<_SessionListContent> {
                 ),
               ),
             ),
-          if (isCurrentSession)
-            Container(
-              margin: const EdgeInsets.only(left: 8),
-              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-              decoration: BoxDecoration(
-                color: Theme.of(context).primaryColor.withOpacity(0.1),
-                borderRadius: BorderRadius.circular(4),
-              ),
-              child: Text(
-                'Current',
-                style: TextStyle(
-                  fontSize: 10,
-                  color: Theme.of(context).primaryColor,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ),
         ],
       ),
       // 活跃会话（agent 正在该会话处理任务）显示「输入中」，样式与主页
@@ -454,20 +462,19 @@ class _SessionListContentState extends State<_SessionListContent> {
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: TextStyle(
-                fontSize: 13,
+                fontSize: 14,
                 color: Colors.green[600],
                 fontStyle: FontStyle.italic,
               ),
             );
           }
           return Text(
-            preview.isNotEmpty
-                ? preview
-                : (isGroupBound ? 'Group-bound session' : 'No messages'),
-            maxLines: 1,
+            preview.isNotEmpty ? preview : fallbackPreview,
+            // 两行同尺寸：第二行给到两行高度，多显示一些内容。
+            maxLines: 2,
             overflow: TextOverflow.ellipsis,
             style: TextStyle(
-              fontSize: 13,
+              fontSize: 14,
               color: Colors.grey[600],
             ),
           );

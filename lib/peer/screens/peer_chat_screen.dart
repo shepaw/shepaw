@@ -369,7 +369,7 @@ class _PeerChatScreenState extends State<PeerChatScreen> {
 
     if (LayoutUtils.isDesktopLayout(context)) {
       await LayoutUtils.showRightDrawer(
-          context: context, builder: (_) => content);
+          context: context, builder: (_) => content).popped;
     } else {
       await Navigator.push(
         context,

@@ -169,6 +169,14 @@ class _ChatScreenState extends State<ChatScreen>
   /// 跟手模式下打开的抽屉句柄；null 表示当前抽屉为按钮打开或未打开。
   RightDrawerHandle? _drawerHandle;
 
+  /// 当前抽屉路由（按钮 / 手势两种打开方式都有）。
+  ///
+  /// 注意：pop 只会让 `popped` future 完成，路由要等退场动画结束才
+  /// dispose。本字段在路由销毁后才清空（见 [_showSessionList]），这样
+  /// 退场动画期间再次切换会话（`_openDrawerSession`）仍能拿到
+  /// `dismissed`，保证切换前一定等抽屉彻底关闭。
+  RightDrawerRoute? _drawerRoute;
+
   // Pending highlight from search navigation
   String? _pendingHighlightMessageId;
 
@@ -1588,7 +1596,7 @@ class _ChatScreenState extends State<ChatScreen>
       final width = _chatDrawerWidth(context);
       final handle = gestureMode ? RightDrawerHandle(width: width) : null;
       _drawerHandle = handle;
-      final future = LayoutUtils.showRightDrawer(
+      final route = LayoutUtils.showRightDrawer(
         context: context,
         builder: (_) => drawer,
         width: width,
@@ -1598,12 +1606,18 @@ class _ChatScreenState extends State<ChatScreen>
             : 0,
         sharedController: _drawerController,
       );
+      // 路由销毁（退场动画结束）后再清引用：pop 只完成 popped future，
+      // 退场期间 _openDrawerSession 仍要拿 dismissed（见该处注释）。
+      _drawerRoute = route;
+      unawaited(route.dismissed.then((_) {
+        if (_drawerRoute == route) _drawerRoute = null;
+      }));
       // 打开手势可能在会话加载完成前已抬手：push 后立即按最终速度收尾。
       final endVelocity = _drawerGestureEndVelocity;
       if (gestureMode && endVelocity != null && handle != null) {
         handle.settle(velocityDx: endVelocity);
       }
-      await future;
+      await route.popped;
 
       refreshTick.dispose();
       selectionModeRequest.dispose();
@@ -1742,7 +1756,7 @@ class _ChatScreenState extends State<ChatScreen>
       final width = _chatDrawerWidth(context);
       final handle = gestureMode ? RightDrawerHandle(width: width) : null;
       _drawerHandle = handle;
-      final future = LayoutUtils.showRightDrawer(
+      final route = LayoutUtils.showRightDrawer(
         context: context,
         builder: (_) => drawer,
         width: width,
@@ -1752,12 +1766,18 @@ class _ChatScreenState extends State<ChatScreen>
             : 0,
         sharedController: _drawerController,
       );
+      // 路由销毁（退场动画结束）后再清引用：pop 只完成 popped future，
+      // 退场期间 _openDrawerSession 仍要拿 dismissed（见该处注释）。
+      _drawerRoute = route;
+      unawaited(route.dismissed.then((_) {
+        if (_drawerRoute == route) _drawerRoute = null;
+      }));
       // 打开手势可能在会话加载完成前已抬手：push 后立即按最终速度收尾。
       final endVelocity = _drawerGestureEndVelocity;
       if (gestureMode && endVelocity != null && handle != null) {
         handle.settle(velocityDx: endVelocity);
       }
-      await future;
+      await route.popped;
 
       refreshTick.dispose();
       selectionModeRequest.dispose();
@@ -1810,12 +1830,33 @@ class _ChatScreenState extends State<ChatScreen>
 
   /// 抽屉内切换会话：touch updated_at（主页恢复最近打开用），随后原地替换
   /// 聊天页（嵌入模式走 [onSwitchChannel]）。
+  ///
+  /// 切换前必须等抽屉彻底销毁：嵌入模式切换会重建右栏 Navigator（换 key）、
+  /// 非嵌入模式 pushReplacement，两者都会销毁当前 ChatScreen，其持有的
+  /// 抽屉共享动画控制器随之 dispose。若抽屉还在退场动画中就切换，退场
+  /// 永远无法完成，抽屉路由永不销毁 —— 冻结在屏幕上并挡住一切点击。
   Future<void> _openDrawerSession(
     String channelId, {
     String? highlightMessageId,
   }) async {
+    // 在首个 await 前同步捕获抽屉路由：pop 会立刻完成 _showSessionList
+    // 的 future，其 finally 会把 _drawerHandle 置空；_drawerRoute 也要
+    // 等路由销毁才清空，此处取的 dismissed 与后续切换严格对应。
+    final drawerRoute = _drawerRoute;
+    final drawerDismissed = drawerRoute?.dismissed;
+    // 离开当前会话：若它是「新建会话」留下的空会话，自动删除，避免误点击
+    // 「新建会话」产生空会话。
+    await _controller.pruneEmptySessionBeforeSwitch(nextChannelId: channelId);
     await _controller.localDatabaseService.touchChannelUpdatedAt(channelId);
     if (!mounted) return;
+    if (drawerRoute != null && drawerRoute.isCurrent) {
+      // 防御：入口若未先关抽屉（理论上所有入口都已 pop），这里兜底关闭。
+      Navigator.of(context, rootNavigator: true).pop();
+    }
+    if (drawerDismissed != null) {
+      await drawerDismissed;
+      if (!mounted) return;
+    }
     if (widget.embedded) {
       widget.onSwitchChannel?.call(
         channelId,
@@ -2134,7 +2175,7 @@ class _ChatScreenState extends State<ChatScreen>
 
     if (LayoutUtils.isDesktopLayout(context)) {
       await LayoutUtils.showRightDrawer(
-          context: context, builder: (_) => content);
+          context: context, builder: (_) => content).popped;
     } else {
       await Navigator.push(
         context,
@@ -2173,7 +2214,7 @@ class _ChatScreenState extends State<ChatScreen>
       return LayoutUtils.showRightDrawer<List<RemoteAgent>>(
         context: navigationContext,
         builder: (_) => AddGroupMemberPicker(availableAgents: available),
-      );
+      ).popped;
     }
 
     return Navigator.push<List<RemoteAgent>>(

@@ -218,16 +218,18 @@ class _GroupSessionListContentState extends State<_GroupSessionListContent> {
         final isCurrent = session.id == widget.currentChannelId;
         final isParent = session.parentGroupId == null;
         final isDisabled = isCurrent || isParent;
-        return FutureBuilder<(Map<String, dynamic>?, int)>(
+        return FutureBuilder<(Map<String, dynamic>?, Map<String, dynamic>?, int)>(
           key: ValueKey('${session.id}_$listRefreshTick'),
           future: _loadSessionPreview(session.id, isCurrent),
           builder: (context, snapshot) {
-            final latestMessage = snapshot.data?.$1;
-            final unreadCount = snapshot.data?.$2 ?? 0;
+            final firstMessage = snapshot.data?.$1;
+            final latestMessage = snapshot.data?.$2;
+            final unreadCount = snapshot.data?.$3 ?? 0;
             final tile = _buildGroupSessionTile(
               context,
               session,
               isCurrent,
+              firstMessage,
               latestMessage,
               unreadCount: unreadCount,
               selectionMode: _isSelectionMode,
@@ -283,21 +285,22 @@ class _GroupSessionListContentState extends State<_GroupSessionListContent> {
     );
   }
 
-  Future<(Map<String, dynamic>?, int)> _loadSessionPreview(
-    String channelId,
-    bool isCurrent,
-  ) async {
+  Future<(Map<String, dynamic>?, Map<String, dynamic>?, int)>
+      _loadSessionPreview(String channelId, bool isCurrent) async {
+    final firstMessage =
+        await _databaseService.getFirstChannelMessage(channelId);
     final latestMessage =
         await _databaseService.getLatestChannelMessage(channelId);
     var unreadCount = await _databaseService.getUnreadCountByChannel(channelId);
     if (isCurrent) unreadCount = 0;
-    return (latestMessage, unreadCount);
+    return (firstMessage, latestMessage, unreadCount);
   }
 
   Widget _buildGroupSessionTile(
     BuildContext context,
     Channel session,
     bool isCurrentSession,
+    Map<String, dynamic>? firstMessage,
     Map<String, dynamic>? latestMessage, {
     int unreadCount = 0,
     bool selectionMode = false,
@@ -305,7 +308,29 @@ class _GroupSessionListContentState extends State<_GroupSessionListContent> {
     bool selectionEnabled = true,
     VoidCallback? onSelectionToggle,
   }) {
-    final preview = latestMessage?['content'] as String? ?? 'No messages';
+    final isParent = session.parentGroupId == null;
+    final label = isParent
+        ? '#default'
+        : SessionUtils.shortSessionId(session.id,
+            groupChannel: widget.groupChannel);
+
+    // 第一行 = 会话第一条消息的第一句（会话标题就是第一句话），没有消息时
+    // 退回「群名 (#id)」；会话编号 #label 仍以小徽标跟在后面。
+    final firstContent = firstMessage?['content'] as String?;
+    final titleText = firstContent != null && firstContent.trim().isNotEmpty
+        ? SessionUtils.splitFirstSentence(firstContent).first
+        : '${session.name} ($label)';
+    // 第二行 = 首条消息的剩余部分；首句即整条（无剩余）时回落到最新消息。
+    final firstRest = firstContent == null
+        ? ''
+        : SessionUtils.splitFirstSentence(firstContent).rest;
+    final latestContent = latestMessage?['content'] as String? ?? '';
+    final isSameMessage = firstMessage != null &&
+        latestMessage != null &&
+        firstMessage['id'] == latestMessage['id'];
+    final preview = firstRest.isNotEmpty
+        ? firstRest
+        : (isSameMessage ? '' : latestContent);
     final createdAtStr = latestMessage?['created_at'] as String?;
     String timeText = '';
     if (createdAtStr != null) {
@@ -321,12 +346,7 @@ class _GroupSessionListContentState extends State<_GroupSessionListContent> {
       } catch (_) {}
     }
 
-    final isParent = session.parentGroupId == null;
-    final label = isParent
-        ? '#default'
-        : SessionUtils.shortSessionId(session.id,
-            groupChannel: widget.groupChannel);
-
+    // 当前会话：图标变橘、头像底色淡橘，整行淡橘背景，不再需要 Current 徽标。
     final avatar = Stack(
       clipBehavior: Clip.none,
       children: [
@@ -335,14 +355,14 @@ class _GroupSessionListContentState extends State<_GroupSessionListContent> {
           height: 40,
           decoration: BoxDecoration(
             color: isCurrentSession
-                ? Theme.of(context).primaryColor
+                ? Colors.orange.withOpacity(0.15)
                 : Colors.grey[300],
             borderRadius: BorderRadius.circular(10),
           ),
           alignment: Alignment.center,
           child: Icon(
             Icons.group,
-            color: isCurrentSession ? Colors.white : Colors.grey[600],
+            color: isCurrentSession ? Colors.orange[700] : Colors.grey[600],
             size: 20,
           ),
         ),
@@ -351,6 +371,7 @@ class _GroupSessionListContentState extends State<_GroupSessionListContent> {
     );
 
     return ListTile(
+      tileColor: isCurrentSession ? Colors.orange.withOpacity(0.08) : null,
       contentPadding: selectionMode
           ? const EdgeInsets.fromLTRB(8, 0, 16, 0)
           : const EdgeInsets.symmetric(horizontal: 16),
@@ -376,28 +397,30 @@ class _GroupSessionListContentState extends State<_GroupSessionListContent> {
         children: [
           Expanded(
             child: Text(
-              '${session.name} ($label)',
+              titleText,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
+              // 标题就是会话的第一句话，与第二行同字号，不再按「标题」加重。
+              style: const TextStyle(fontSize: 14),
             ),
           ),
-          if (isCurrentSession)
-            Container(
-              margin: const EdgeInsets.only(left: 8),
-              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-              decoration: BoxDecoration(
-                color: Theme.of(context).primaryColor.withOpacity(0.1),
-                borderRadius: BorderRadius.circular(4),
-              ),
-              child: Text(
-                'Current',
-                style: TextStyle(
-                  fontSize: 10,
-                  color: Theme.of(context).primaryColor,
-                  fontWeight: FontWeight.w600,
-                ),
+          // 会话编号徽标（#abc123），仍跟在首句标题后。
+          Container(
+            margin: const EdgeInsets.only(left: 8),
+            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+            decoration: BoxDecoration(
+              color: Colors.grey.withOpacity(0.15),
+              borderRadius: BorderRadius.circular(4),
+            ),
+            child: Text(
+              label,
+              style: TextStyle(
+                fontSize: 10,
+                color: Colors.grey[700],
+                fontWeight: FontWeight.w600,
               ),
             ),
+          ),
         ],
       ),
       // 活跃会话（群内 agent 正在该会话处理任务）显示「输入中」，样式与
@@ -412,18 +435,19 @@ class _GroupSessionListContentState extends State<_GroupSessionListContent> {
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: TextStyle(
-                fontSize: 13,
+                fontSize: 14,
                 color: Colors.green[600],
                 fontStyle: FontStyle.italic,
               ),
             );
           }
           return Text(
-            preview,
-            maxLines: 1,
+            preview.isNotEmpty ? preview : 'No messages',
+            // 两行同尺寸：第二行给到两行高度，多显示一些内容。
+            maxLines: 2,
             overflow: TextOverflow.ellipsis,
             style: TextStyle(
-              fontSize: 13,
+              fontSize: 14,
               color: Colors.grey[600],
             ),
           );

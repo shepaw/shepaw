@@ -14,6 +14,42 @@ mixin _SessionOps on _ChatControllerBase {
     // The UI will call sendMessage
   }
 
+  /// 切换/新建会话离开当前会话前，自动删除「新建会话」产生的空会话。
+  ///
+  /// 判定见 [SessionUtils.shouldPruneEmptySessionOnSwitch]；此处再补充两个
+  /// 「非空」条件：有待发送队列（离线排队中的消息）或已有落库消息。删除时
+  /// 与批量删除一致，级联清理群成员 DM / She 中转会话。
+  Future<void> pruneEmptySessionBeforeSwitch({String? nextChannelId}) async {
+    final currentId = currentChannelId;
+    if (currentId == null) return;
+
+    final shouldPrune = SessionUtils.shouldPruneEmptySessionOnSwitch(
+      currentChannelId: currentId,
+      nextChannelId: nextChannelId,
+      isGroupMode: isGroupMode,
+      groupFamilyId: groupChannel?.groupFamilyId,
+      defaultDmChannelId: agentId == null
+          ? null
+          : chatService.generateChannelId(getUserId(), agentId!),
+    );
+    if (!shouldPrune) return;
+
+    // 有待发送队列（离线排队中的消息）或已有消息：不算空会话，保留。
+    if (chatService.pendingSendQueue(currentId).isNotEmpty) return;
+    final count = await localDatabaseService.countChannelMessages(currentId);
+    if (count > 0) return;
+
+    if (isGroupMode) {
+      await GroupMemberSessionService(localDatabaseService)
+          .deleteMemberSessionsForGroupChannel(currentId);
+    } else {
+      await SheRelaySessionService(localDatabaseService)
+          .deleteRelaySessionsForSheChannel(currentId);
+    }
+    await localDatabaseService.deleteChannelMessages(currentId);
+    await localDatabaseService.deleteChannel(currentId);
+  }
+
   Future<void> createNewSession() async {
     if (agentId == null) return;
 
@@ -50,6 +86,9 @@ mixin _SessionOps on _ChatControllerBase {
 
       await localDatabaseService.touchChannelUpdatedAt(newChannelId);
 
+      // 离开当前会话：若它是「新建会话」留下的空会话，自动删除。
+      await pruneEmptySessionBeforeSwitch(nextChannelId: newChannelId);
+
       _emit(NavigateToSessionEvent(
         channelId: newChannelId,
         agentId: agentId,
@@ -74,6 +113,9 @@ mixin _SessionOps on _ChatControllerBase {
       );
 
       await localDatabaseService.touchChannelUpdatedAt(newChannelId);
+
+      // 离开当前会话：若它是「新建会话」留下的空会话，自动删除。
+      await pruneEmptySessionBeforeSwitch(nextChannelId: newChannelId);
 
       _emit(NavigateToSessionEvent(
         channelId: newChannelId,

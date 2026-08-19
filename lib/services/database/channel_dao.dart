@@ -384,6 +384,19 @@ extension ChannelDao on LocalDatabaseService {
     return results.isEmpty ? null : results.first;
   }
 
+  /// 获取 channel 第一条消息（会话列表用首句作标题）
+  Future<Map<String, dynamic>?> getFirstChannelMessage(String channelId) async {
+    final db = await database;
+    final results = await db.query(
+      'messages',
+      where: 'channel_id = ?',
+      whereArgs: [channelId],
+      orderBy: 'created_at ASC',
+      limit: 1,
+    );
+    return results.isEmpty ? null : results.first;
+  }
+
   /// Agent 所有 DM 会话中最新一条消息（跨会话，用于列表排序/预览）。
   Future<Map<String, dynamic>?> getLatestMessageForAgent(String agentId) async {
     final db = await database;

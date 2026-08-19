@@ -26,7 +26,7 @@ class LayoutUtils {
     ShapeBorder? shape,
   }) {
     if (isDesktopLayout(context)) {
-      return showRightDrawer<T>(context: context, builder: builder);
+      return showRightDrawer<T>(context: context, builder: builder).popped;
     } else {
       return showModalBottomSheet<T>(
         context: context,
@@ -48,7 +48,11 @@ class LayoutUtils {
   ///
   /// 传 [sharedController] 时，路由复用该控制器（不自行创建/销毁），调用方
   /// 可把同一控制器交给 [RightDrawerLinkedPage] 实现页面联动。
-  static Future<T?> showRightDrawer<T>({
+  ///
+  /// 返回推入的路由本身：需要「抽屉关闭」语义的调用方用 `route.popped`
+  /// （pop 瞬间完成），需要「抽屉彻底销毁」语义（退场动画结束）的用
+  /// `route.dismissed`（见 [RightDrawerRoute.dismissed]）。
+  static RightDrawerRoute<T> showRightDrawer<T>({
     required BuildContext context,
     required WidgetBuilder builder,
     double? width,
@@ -66,7 +70,8 @@ class LayoutUtils {
       sharedController: sharedController,
       barrierLabel: MaterialLocalizations.of(context).modalBarrierDismissLabel,
     );
-    return Navigator.of(context, rootNavigator: true).push<T>(route);
+    Navigator.of(context, rootNavigator: true).push<T>(route);
+    return route;
   }
 
   /// Opens a floating panel on desktop, or a full-screen route on mobile.
