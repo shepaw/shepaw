@@ -2536,13 +2536,19 @@ class _ChatScreenState extends State<ChatScreen>
           // 先处理事件），默认 36px 的阈值永远等不到机会。降到 8px 后，只要
           // 单帧位移不到 ~10px（60Hz 下约 660px/s 以内的正常滑动）就能抢先
           // 接受，气泡上左滑即可打开抽屉。代价是阈值低了滚动起始容易误触，
-          // 故把横向主导系数提到 1.5（更窄的 33.7° 锥），纵向滚动依旧让位
-          // （dy ≥ dx 即拒）。长按选择不受影响（长按无位移，由长按识别器
-          // 接管）；横向滚动/输入框被识别器在 down 时让位（见
-          // drawer_swipe_detector.dart 的 _hasOwnedHorizontalGestureAt）。
+          // 故用 verticalDominance 2.0 保留纵向让位（dy > 2×dx 即拒，约 63°
+          // 以上的真实滚动瞬间让给列表）；45°~63° 斜向滑动保持 wait，自然
+          // 输给列表（36px）或 SelectionArea（|dx|>18）。horizontalDominance
+          // 降到 1.0（45° 锥）：真实手指/模拟器拖动几乎不可能完全水平，旧值
+          // 1.5（33.7° 锥）会把 dy/dx 略大的打开手势全部误杀（Android 上被
+          // SelectionArea 抢先、iOS 上被列表 36px 抢先，抽屉基本滑不出来）。
+          // 长按选择不受影响（长按无位移，由长按识别器接管）；横向滚动/输入
+          // 框被识别器在 down 时让位（见 drawer_swipe_detector.dart 的
+          // _hasOwnedHorizontalGestureAt）。
           touchSlop: 8,
           minOpenDistance: 8,
-          horizontalDominance: 1.5,
+          horizontalDominance: 1.0,
+          verticalDominance: 2.0,
           direction: DrawerSwipeDirection.rightToLeft,
           onOpenGestureStart: _onOpenGestureStart,
           onOpenGestureUpdate: _onOpenGestureUpdate,

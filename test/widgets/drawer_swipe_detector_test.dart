@@ -12,14 +12,29 @@ void main() {
       );
     });
 
-    test('rejects vertical-dominant scrolls so list can win', () {
+    test('rejects clearly vertical-dominant scrolls so list can win', () {
       expect(
         decideDrawerSwipe(dx: 10, dy: 30, touchSlop: 18),
         DrawerSwipeDecision.rejectAsVertical,
       );
+      // dy > 2×dx（约 63° 以上）才算「明显垂直」。
+      expect(
+        decideDrawerSwipe(dx: 20, dy: 41, touchSlop: 18),
+        DrawerSwipeDecision.rejectAsVertical,
+      );
+    });
+
+    test('45° diagonal waits instead of instantly dying (real swipes carry '
+        'vertical drift)', () {
+      // dy == dx（45°）：不再立即拒绝，保持 wait 让列表 36px 阈值自然接管。
       expect(
         decideDrawerSwipe(dx: 20, dy: 20, touchSlop: 18),
-        DrawerSwipeDecision.rejectAsVertical,
+        DrawerSwipeDecision.wait,
+      );
+      // 45°~63° 斜向滑动同样 wait。
+      expect(
+        decideDrawerSwipe(dx: 30, dy: 40, touchSlop: 18),
+        DrawerSwipeDecision.wait,
       );
     });
 
@@ -130,6 +145,7 @@ void main() {
       double touchSlop = kTouchSlop,
       double minOpenDistance = 36,
       double horizontalDominance = 1.25,
+      double verticalDominance = 2.0,
     }) async {
       final events = <(String, double)>[];
       await tester.pumpWidget(
@@ -140,6 +156,7 @@ void main() {
               touchSlop: touchSlop,
               minOpenDistance: minOpenDistance,
               horizontalDominance: horizontalDominance,
+              verticalDominance: verticalDominance,
               onOpenGestureStart: (dx) => events.add(('start', dx)),
               onOpenGestureUpdate: (dx) => events.add(('update', dx)),
               onOpenGestureEnd: (velocity, dx) => events.add(('end', dx)),
@@ -206,7 +223,7 @@ void main() {
     });
   });
 
-  group('气泡共存（聊天页阈值 8/8/1.5，SelectionArea 在 |dx|>18 接受竞技场）', () {
+  group('气泡共存（聊天页阈值 8/8/1.0/2.0，SelectionArea 在 |dx|>18 接受竞技场）', () {
     /// 模拟文本气泡：内容被 SelectionArea 包裹（message_bubble.dart 的做法），
     /// 其 TapAndDrag 识别器在 touchSlop(18px) 接受竞技场。
     Widget selectionBubble() {
@@ -344,6 +361,78 @@ void main() {
         ),
       );
       expect(events, isEmpty);
+    });
+
+    testWidgets('带垂直分量的斜滑（39°，dy/dx=0.8）在气泡上 → 抽屉胜出（移动端复现）',
+        (tester) async {
+      // 真实手指/模拟器拖动几乎不可能完全水平。旧配置 horizontalDominance
+      // 1.5（33.7° 锥）+「dy ≥ dx 即拒」会让 dy/dx=0.8 的手势永远等不到接受：
+      // Android 上 SelectionArea 在 |dx|>18 抢先、iOS 上列表在 36px 抢先，
+      // 抽屉基本滑不出来（用户实测）。horizontalDominance 降到 1.0（45° 锥）
+      // 后，该角度在 8px 位移即接受，仍先于 SelectionArea 的 18px。
+      final events = await runGesture(
+        tester,
+        const [
+          Offset(-5, -4), // 累计 (-5,-4)：未过 touchSlop 8，wait
+          Offset(-5, -4), // 累计 (-10,-8)：distance 12.8 ≥ 8，10 ≥ 8*1.0 → accept
+          Offset(-5, -4),
+          Offset(-5, -4),
+          Offset(-5, -4),
+          Offset(-5, -4), // 累计 (-30,-24)：accept 后继续上报
+        ],
+        touchSlop: 8,
+        minOpenDistance: 8,
+        horizontalDominance: 1.0,
+        verticalDominance: 2.0,
+        child: selectionBubble(),
+      );
+
+      expect(
+        events.where((e) => e.$1 == 'start').length,
+        1,
+        reason: '识别瞬间只回调一次 start',
+      );
+      expect(events.first.$2, closeTo(10, 1),
+          reason: 'start 携带识别瞬间累计位移（10px，先于选区的 18px）');
+      expect(events.last.$1, 'end');
+      expect(events.last.$2, closeTo(30, 1));
+    });
+
+    testWidgets('45°~63° 斜滑在真实垂直列表上 → 让位给滚动', (tester) async {
+      // dy/dx=1.6（58°）：drawer 判定永远 wait（openDx < dy×1.0），列表的
+      // VerticalDrag 在 36px（18 hitSlop + 18 dragStartDistanceMotionThreshold）
+      // 接管竞技场 → 滚动生效、抽屉不触发。真实垂直滚动通常 dy >> dx，不受影响。
+      final events = await runGesture(
+        tester,
+        const [
+          Offset(-5, -8),
+          Offset(-5, -8),
+          Offset(-5, -8),
+          Offset(-5, -8),
+          Offset(-5, -8),
+          Offset(-5, -8),
+        ],
+        touchSlop: 8,
+        minOpenDistance: 8,
+        horizontalDominance: 1.0,
+        verticalDominance: 2.0,
+        child: Container(
+          width: 400,
+          height: 400,
+          color: Colors.white,
+          child: ListView.builder(
+            itemCount: 50,
+            itemExtent: 80,
+            itemBuilder: (_, index) => Container(color: Colors.blue),
+          ),
+        ),
+      );
+
+      expect(events, isEmpty, reason: '斜滑让位给列表滚动，抽屉不触发');
+      final scrollable = tester
+          .state<ScrollableState>(find.byType(Scrollable).first);
+      expect(scrollable.position.pixels, greaterThan(0),
+          reason: '列表确实滚动了');
     });
   });
 }

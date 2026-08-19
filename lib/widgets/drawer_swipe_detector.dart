@@ -9,7 +9,8 @@ enum DrawerSwipeDecision {
   /// Not enough movement yet, or still ambiguous.
   wait,
 
-  /// Movement is vertical-dominant; yield so list scrolling can win.
+  /// Movement is clearly vertical-dominant (dy well above dx, default
+  /// > 2×dx); yield immediately so list scrolling can win.
   rejectAsVertical,
 
   /// Movement is a clear open gesture in the configured direction.
@@ -31,10 +32,17 @@ enum DrawerSwipeDirection {
 
 /// Pure disambiguation used by [_DrawerOpenSwipeRecognizer].
 ///
-/// Vertical scrolling wins as soon as movement is vertical-dominant past
-/// [touchSlop]. A drawer open is accepted only when the swipe is clearly
-/// directional (rightward for [DrawerSwipeDirection.leftToRight], leftward
-/// for [DrawerSwipeDirection.rightToLeft]) past [minOpenDistance].
+/// List scrolling wins when movement is clearly vertical past [touchSlop]
+/// (dy > [verticalDominance]×dx, i.e. steeper than ~63°). A drawer open is
+/// accepted when the swipe is directional (rightward for
+/// [DrawerSwipeDirection.leftToRight], leftward for
+/// [DrawerSwipeDirection.rightToLeft]) past [minOpenDistance].
+///
+/// 45°–63° 的斜向滑动既不立即拒绝也不接受（`wait`）：最终让位给列表滚动
+/// （36px）或 SelectionArea（|dx|>18），避免把真实手指/模拟器上带垂直分量
+/// 的打开手势误杀 —— 真实滑动几乎不可能完全水平，旧的「dy ≥ dx 即拒」
+/// 会让 dy/dx 略大于 1 的手势在 Android 上被 SelectionArea 抢先、iOS 上
+/// 被列表 36px 阈值抢先，抽屉基本滑不出来。
 @visibleForTesting
 DrawerSwipeDecision decideDrawerSwipe({
   required double dx,
@@ -42,6 +50,7 @@ DrawerSwipeDecision decideDrawerSwipe({
   DrawerSwipeDirection direction = DrawerSwipeDirection.leftToRight,
   double touchSlop = kTouchSlop,
   double horizontalDominance = 1.25,
+  double verticalDominance = 2.0,
   double minOpenDistance = 36,
 }) {
   final absDx = dx.abs();
@@ -51,16 +60,18 @@ DrawerSwipeDecision decideDrawerSwipe({
     return DrawerSwipeDecision.wait;
   }
 
-  // Vertical priority: as soon as up/down dominates, give up.
-  if (absDy >= absDx) {
-    return DrawerSwipeDecision.rejectAsVertical;
-  }
-
   // Movement along the open direction (right for left drawer, left for
   // right drawer); opposite direction is not an open gesture.
   final openDx = direction == DrawerSwipeDirection.leftToRight ? dx : -dx;
   if (openDx <= 0) {
     return DrawerSwipeDecision.rejectAsHorizontal;
+  }
+
+  // Vertical priority: as soon as up/down clearly dominates (not just
+  // slightly — real open swipes carry vertical drift), give up so list
+  // scrolling wins instantly.
+  if (absDy > absDx * verticalDominance) {
+    return DrawerSwipeDecision.rejectAsVertical;
   }
 
   // Need a clear horizontal bias before claiming the arena.
@@ -114,6 +125,7 @@ class DrawerSwipeDetector extends StatelessWidget {
     this.leadingEdgeBlockWidth,
     this.touchSlop = kTouchSlop,
     this.horizontalDominance = 1.25,
+    this.verticalDominance = 2.0,
     this.minOpenDistance = 36,
   });
 
@@ -152,6 +164,7 @@ class DrawerSwipeDetector extends StatelessWidget {
 
   final double touchSlop;
   final double horizontalDominance;
+  final double verticalDominance;
   final double minOpenDistance;
 
   static double resolveLeadingEdgeBlockWidth(
@@ -186,6 +199,7 @@ class DrawerSwipeDetector extends StatelessWidget {
               direction: direction,
               touchSlop: touchSlop,
               horizontalDominance: horizontalDominance,
+              verticalDominance: verticalDominance,
               minOpenDistance: minOpenDistance,
               blockedLeadingWidth: leadingBlock,
               onOpenGestureStart: onOpenGestureStart,
@@ -215,6 +229,7 @@ class _DrawerOpenSwipeRecognizer extends OneSequenceGestureRecognizer {
     required this.direction,
     required this.touchSlop,
     required this.horizontalDominance,
+    required this.verticalDominance,
     required this.minOpenDistance,
     required this.blockedLeadingWidth,
     this.onOpenGestureStart,
@@ -225,6 +240,7 @@ class _DrawerOpenSwipeRecognizer extends OneSequenceGestureRecognizer {
   final DrawerSwipeDirection direction;
   final double touchSlop;
   final double horizontalDominance;
+  final double verticalDominance;
   final double minOpenDistance;
   final double blockedLeadingWidth;
 
@@ -323,6 +339,7 @@ class _DrawerOpenSwipeRecognizer extends OneSequenceGestureRecognizer {
         direction: direction,
         touchSlop: touchSlop,
         horizontalDominance: horizontalDominance,
+        verticalDominance: verticalDominance,
         minOpenDistance: minOpenDistance,
       )) {
         case DrawerSwipeDecision.wait:
