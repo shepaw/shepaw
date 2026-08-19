@@ -45,9 +45,6 @@ class ChatMoreDrawer extends StatefulWidget {
   /// 空查询也会调用一次，此时应返回完整列表。
   final Widget Function(BuildContext context, String query) bodyBuilder;
 
-  /// 搜索栏右侧的附加操作（会话列表「更多」按钮）。
-  final Widget? searchTrailing;
-
   final List<ChatDrawerAction> footerActions;
 
   const ChatMoreDrawer({
@@ -59,7 +56,6 @@ class ChatMoreDrawer extends StatefulWidget {
     this.onHeaderTrailing,
     required this.searchHint,
     required this.bodyBuilder,
-    this.searchTrailing,
     this.footerActions = const [],
   });
 
@@ -176,15 +172,6 @@ class _ChatMoreDrawerState extends State<ChatMoreDrawer> {
                       setState(() => _query = '');
                     },
                   ),
-                if (widget.searchTrailing != null) ...[
-                  Container(
-                    width: 1,
-                    height: 20,
-                    margin: const EdgeInsets.only(left: 4, right: 4),
-                    color: theme.colorScheme.outlineVariant,
-                  ),
-                  widget.searchTrailing!,
-                ],
               ],
             ),
           ),

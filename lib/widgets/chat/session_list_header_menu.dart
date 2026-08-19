@@ -7,8 +7,9 @@ import '../../services/local_database_service.dart';
 
 /// 会话列表「更多」菜单按钮（全部已读 / Trace / 重置会话 / 批量选择）。
 ///
-/// 渲染在抽屉搜索栏右侧（见 [ChatMoreDrawer.searchTrailing]），不再占用
-/// 列表标题栏空间。未读数变化后由 [refreshTick] 驱动重新查询。
+/// 由调用方作为 `moreButton` 传入 [SessionListPanel] /
+/// [GroupSessionListPanel]，渲染在「新建会话」行右侧；搜索栏只保留输入。
+/// 未读数变化后由 [refreshTick] 驱动重新查询。
 class SessionListHeaderMoreButton extends StatelessWidget {
   final List<Channel> sessions;
   final LocalDatabaseService databaseService;

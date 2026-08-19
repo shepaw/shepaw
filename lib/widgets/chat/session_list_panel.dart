@@ -14,8 +14,9 @@ import 'session_list_header_menu.dart';
 /// - Switching between sessions
 /// - Batch selection & deletion
 ///
-/// 标题栏已并入抽屉搜索栏（[SessionListHeaderMoreButton] 由调用方放在
-/// 搜索栏右侧），本组件只负责列表本身与批量选择 UI。
+/// 标题栏已并入抽屉搜索栏，本组件只负责列表本身与批量选择 UI。
+/// 「更多」按钮（[SessionListHeaderMoreButton]）由调用方传入，渲染在
+/// 「新建会话」行右侧。
 class SessionListPanel extends StatelessWidget {
   final List<Channel> sessions;
   final String? currentChannelId;
@@ -33,6 +34,10 @@ class SessionListPanel extends StatelessWidget {
   /// 外部驱动的批量选择进入（「更多」菜单点批量选择后自增）。
   final ValueListenable<int> selectionModeRequest;
 
+  /// 会话列表「更多」按钮（[SessionListHeaderMoreButton]），渲染在
+  /// 「新建会话」行右侧；为空则整行保持纯新建入口。
+  final Widget? moreButton;
+
   const SessionListPanel({
     super.key,
     required this.sessions,
@@ -46,6 +51,7 @@ class SessionListPanel extends StatelessWidget {
     this.agentId,
     required this.listRefreshTick,
     required this.selectionModeRequest,
+    this.moreButton,
   });
 
   @override
@@ -59,6 +65,7 @@ class SessionListPanel extends StatelessWidget {
       onBatchDelete: onBatchDelete,
       listRefreshTick: listRefreshTick,
       selectionModeRequest: selectionModeRequest,
+      moreButton: moreButton,
     );
   }
 }
@@ -76,6 +83,9 @@ class _SessionListContent extends StatefulWidget {
   final ValueListenable<int> listRefreshTick;
   final ValueListenable<int> selectionModeRequest;
 
+  /// 会话列表「更多」按钮，渲染在「新建会话」行右侧。
+  final Widget? moreButton;
+
   const _SessionListContent({
     required this.sessions,
     this.currentChannelId,
@@ -85,6 +95,7 @@ class _SessionListContent extends StatefulWidget {
     required this.onBatchDelete,
     required this.listRefreshTick,
     required this.selectionModeRequest,
+    this.moreButton,
   });
 
   @override
@@ -258,6 +269,9 @@ class _SessionListContentState extends State<_SessionListContent> {
           fontWeight: FontWeight.w500,
         ),
       ),
+      // 「更多」按钮放新建会话行的右侧：搜索栏只留输入，按钮与「新建会话」
+      // 同属列表一级操作，视觉上成组。
+      trailing: widget.moreButton,
       onTap: () {
         Navigator.pop(context);
         widget.onNewSession();

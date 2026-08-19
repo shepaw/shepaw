@@ -1531,23 +1531,6 @@ class _ChatScreenState extends State<ChatScreen>
         headerTrailingTooltip: l10n.chat_editAgent,
         onHeaderTrailing: _navigateToAgentDetailForEdit,
         searchHint: l10n.chat_searchSessions,
-        searchTrailing: SessionListHeaderMoreButton(
-          sessions: sessions,
-          databaseService: c.localDatabaseService,
-          refreshTick: refreshTick,
-          onMarkAll: () => _markAllDrawerSessionsRead(sessions, refreshTick),
-          onShowTraces: () {
-            Navigator.pop(context);
-            _showChannelTraces();
-          },
-          onResetSession: () {
-            Navigator.pop(context);
-            _messageController.text = '/reset';
-            _sendMessage();
-          },
-          onEnterSelectionMode:
-              sessions.length > 1 ? () => selectionModeRequest.value++ : null,
-        ),
         bodyBuilder: (context, query) {
           if (query.trim().isNotEmpty) {
             return SessionSearchResults(
@@ -1567,6 +1550,24 @@ class _ChatScreenState extends State<ChatScreen>
             onBatchDelete: (ids) => c.batchDeleteSessions(ids, isGroup: false),
             listRefreshTick: refreshTick,
             selectionModeRequest: selectionModeRequest,
+            // 「更多」按钮放「新建会话」行右侧，搜索栏只保留输入。
+            moreButton: SessionListHeaderMoreButton(
+              sessions: sessions,
+              databaseService: c.localDatabaseService,
+              refreshTick: refreshTick,
+              onMarkAll: () => _markAllDrawerSessionsRead(sessions, refreshTick),
+              onShowTraces: () {
+                Navigator.pop(context);
+                _showChannelTraces();
+              },
+              onResetSession: () {
+                Navigator.pop(context);
+                _messageController.text = '/reset';
+                _sendMessage();
+              },
+              onEnterSelectionMode:
+                  sessions.length > 1 ? () => selectionModeRequest.value++ : null,
+            ),
           );
         },
         footerActions: [
@@ -1684,18 +1685,6 @@ class _ChatScreenState extends State<ChatScreen>
         headerTrailingTooltip: l10n.chat_groupMembers,
         onHeaderTrailing: _showGroupMembersPanel,
         searchHint: l10n.chat_searchSessions,
-        searchTrailing: SessionListHeaderMoreButton(
-          sessions: sessions,
-          databaseService: c.localDatabaseService,
-          refreshTick: refreshTick,
-          onMarkAll: () => _markAllDrawerSessionsRead(sessions, refreshTick),
-          onShowTraces: () {
-            Navigator.pop(context);
-            _showChannelTraces();
-          },
-          onEnterSelectionMode:
-              sessions.length > 1 ? () => selectionModeRequest.value++ : null,
-        ),
         bodyBuilder: (context, query) {
           if (query.trim().isNotEmpty) {
             return SessionSearchResults(
@@ -1716,6 +1705,19 @@ class _ChatScreenState extends State<ChatScreen>
             onBatchDelete: (ids) => c.batchDeleteSessions(ids, isGroup: true),
             listRefreshTick: refreshTick,
             selectionModeRequest: selectionModeRequest,
+            // 「更多」按钮放「新建会话」行右侧，搜索栏只保留输入。
+            moreButton: SessionListHeaderMoreButton(
+              sessions: sessions,
+              databaseService: c.localDatabaseService,
+              refreshTick: refreshTick,
+              onMarkAll: () => _markAllDrawerSessionsRead(sessions, refreshTick),
+              onShowTraces: () {
+                Navigator.pop(context);
+                _showChannelTraces();
+              },
+              onEnterSelectionMode:
+                  sessions.length > 1 ? () => selectionModeRequest.value++ : null,
+            ),
           );
         },
         footerActions: [
