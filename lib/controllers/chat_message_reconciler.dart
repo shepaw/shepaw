@@ -47,6 +47,23 @@ class ChatMessageReconciler {
   static bool isFlushedStreamingPartial(Message m) =>
       m.from.isAgent && m.metadata?['status'] == 'streaming';
 
+  /// 判断 [dbMessages] 中是否已出现 [turnBeganAtMs] 之后、本回合的 flush
+  /// 回复行（`status: streaming`）。用于解除「活回合 + 回复已落库」的
+  /// streaming defer：回复已通过 flush 旁路落库而终态事件（task.completed
+  /// / agent_done）丢失时，直接 merge 让回复渲染——占位折叠进 flush 行，
+  /// 后续 chunk 经 repointAnchor 继续应用，不再干等终态事件。
+  static bool dbHasTurnReply({
+    required List<Message> dbMessages,
+    required int? turnBeganAtMs,
+  }) {
+    final began = turnBeganAtMs;
+    if (began == null) return false;
+    return dbMessages.any((m) =>
+        m.from.isAgent &&
+        m.timestampMs >= began &&
+        isFlushedStreamingPartial(m));
+  }
+
   /// Fold pending interactive metadata from a temp host onto the DB row that
   /// replaces it. Critical for orphan peer approvals: pass-2 sender matching
   /// would otherwise drop `action_confirmation` when the saved turn message

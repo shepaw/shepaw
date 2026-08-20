@@ -373,19 +373,19 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
     unawaited(reloadMessagesFromDB());
   }
 
-  /// 为 [_dmReconcileAfterStreaming] 安排一次性兜底：回合终态事件丢失导致
+  /// 为 [_dmReconcileAfterStreaming] 安排兜底：回合终态事件丢失导致
   /// streaming.clear() 永不执行时，被 defer 的 reload 会永久挂起（UI 一直
-  /// 停在「等待回复中」，重进才恢复）。30s 后检查：任务已不在（僵尸会话）
-  /// → 清掉占位补做 reload；任务仍存活 → 不动，终态事件会负责清理。
+  /// 停在「等待回复中」，重进才恢复）。30s 后：任务已不在（僵尸会话）→
+  /// 清掉占位补做 reload；任务仍存活 → 轮询 DB，本回合回复已落库则强制
+  /// reconcile 渲染，未落库则保留占位等下一轮（回合结束仍由终态事件清理）。
   void _scheduleDmReconcileFallback() {
     if (_dmReconcileFallbackTimer?.isActive ?? false) return;
     _dmReconcileFallbackTimer = Timer(const Duration(seconds: 30), () {
       _dmReconcileFallbackTimer = null;
       if (!_dmReconcileAfterStreaming) return;
       final cid = currentChannelId;
-      if (streaming.isActive &&
-          cid != null &&
-          chatService.getActiveTask(cid) != null) {
+      if (cid != null && chatService.getActiveTask(cid) != null) {
+        unawaited(_forceDmReconcileWithLiveTask(cid));
         return;
       }
       if (streaming.isActive) {
@@ -396,6 +396,27 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
         unawaited(reloadMessagesFromDB());
       }
     });
+  }
+
+  /// 活回合兜底：DB 已出现本回合的回复行（flush 旁路落库、终态事件丢失）
+  /// → 强制 reconcile，回复立即渲染（占位折叠进 flush 行，chunk 继续应用）。
+  /// 回复未落库 → 回合仍在进行，保留占位，恢复 defer 标志等下一轮兜底。
+  Future<void> _forceDmReconcileWithLiveTask(String cid) async {
+    final dbMessages = await chatService.loadChannelMessages(
+      cid,
+      limit: ChatMessageWindow.initialLimit,
+    );
+    if (streaming.isActive &&
+        !ChatMessageReconciler.dbHasTurnReply(
+          dbMessages: dbMessages,
+          turnBeganAtMs: streaming.beganAtMs,
+        )) {
+      _dmReconcileAfterStreaming = true;
+      _scheduleDmReconcileFallback();
+      return;
+    }
+    _dmReconcileAfterStreaming = false;
+    await reloadMessagesFromDB();
   }
 
   /// Initialize the controller. Call this after constructing.
@@ -664,22 +685,45 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
       }
     } else {
       // 流式回合进行中：onStreamChunk 正直接驱动 UI，全量替换会顶掉
-      // streaming 占位气泡（以及贴在上面的审批卡）。标记待办，回合结束补 reconcile。
-      // 僵尸会话由 [_handleAgentTaskCompleted] 清掉，不在这里用「没有
-      // ActiveTask」误判回合一开始（任务还没登记）的 reload。
+      // streaming 占位气泡（以及贴在上面的审批卡）。默认标记待办、回合
+      // 结束补 reconcile；但 DB 已出现本回合的回复行（flush 旁路落库而
+      // 终态事件丢失）时直接 merge——占位折叠进 flush 行、锚点改指，
+      // 回复立即渲染，chunk 继续应用，不再干等终态事件。
+      final hasLiveTask = chatService.getActiveTask(currentChannelId!) != null;
+      // 回合一开始任务可能尚未登记（登记在发送流程内）——会话「新鲜」
+      // 时按活跃处理，不能凭「没有 ActiveTask」把刚开始的回合当僵尸清掉。
+      final turnFresh = streaming.beganWithin(const Duration(seconds: 10));
       final deferReload = ChatStreamingSession.shouldDeferReload(
         streamingActive: streaming.isActive,
+        hasLiveTask: hasLiveTask || turnFresh,
       );
-      if (deferReload) {
+      if (deferReload &&
+          !ChatMessageReconciler.dbHasTurnReply(
+            dbMessages: dbMessages,
+            turnBeganAtMs: streaming.beganAtMs,
+          )) {
         _dmReconcileAfterStreaming = true;
         // 兜底：回合终态事件丢失时 streaming.clear() 永不执行，被 defer 的
-        // reload 会永久挂起（UI 卡「等待回复」，重进才恢复）。定时器强制自愈。
+        // reload 会永久挂起（UI 卡「等待回复」，重进才恢复）。定时器轮询
+        // DB：回复落库即强制 reconcile；回合正常结束仍由终态事件清理。
         _scheduleDmReconcileFallback();
         return;
       }
-      if (streaming.isActive) streaming.clear();
+      if (streaming.isActive) {
+        // 提前复位标志：onClear 不再重入 reload（本函数随后自行 merge）。
+        _dmReconcileAfterStreaming = false;
+        if (!hasLiveTask) {
+          // 僵尸会话：无任务、占位已无宿主，直接清掉。
+          streaming.clear();
+        }
+      }
       _mergeDmStreamingPlaceholders(dbMessages);
       rebuildMessageIdMap();
+      // 活回合占位被 merge 折叠进 flush 行（id 改名）→ 改指锚点，后续
+      // chunk 继续应用。
+      if (streaming.isActive) {
+        streaming.repointAnchor(messages);
+      }
       if (chatService.getActiveTask(currentChannelId!) == null) {
         isProcessing = false;
         acpCancellationToken = null;

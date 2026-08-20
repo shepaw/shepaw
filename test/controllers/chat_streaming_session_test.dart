@@ -212,4 +212,31 @@ void main() {
       expect(s.isOrphan(messages: messages, hasLiveTask: false), isFalse);
     });
   });
+
+  group('ChatStreamingSession 回合新鲜度', () {
+    test('begin 记录开始时间，窗口内 beganWithin 为 true', () {
+      final s = ChatStreamingSession()..begin('streaming_1');
+      expect(s.beganAtMs, isNotNull);
+      expect(s.beganWithin(const Duration(seconds: 10)), isTrue);
+    });
+
+    test('超过窗口后 beganWithin 为 false', () {
+      final s = ChatStreamingSession()..begin('streaming_1');
+      s.beganAtMs = DateTime.now().millisecondsSinceEpoch - 60000;
+      expect(s.beganWithin(const Duration(seconds: 10)), isFalse);
+    });
+
+    test('clear 后 beganAtMs 清空，beganWithin 为 false', () {
+      final s = ChatStreamingSession()..begin('streaming_1');
+      s.clear();
+      expect(s.beganAtMs, isNull);
+      expect(s.beganWithin(const Duration(seconds: 10)), isFalse);
+    });
+
+    test('未 begin 的会话 beganWithin 为 false', () {
+      final s = ChatStreamingSession();
+      expect(s.beganAtMs, isNull);
+      expect(s.beganWithin(const Duration(seconds: 10)), isFalse);
+    });
+  });
 }

@@ -110,6 +110,11 @@ class ChatStreamingSession {
   /// 同发送者的气泡，避免 reload 折叠占位后 chunk 被静默丢弃。
   String? fromId;
 
+  /// 会话开始时间戳（[begin] 设置、[clear] 清空）。用于区分「回合刚
+  /// 开始、任务还没登记」与「僵尸会话」，以及判断 DB 中是否已出现本
+  /// 回合的回复行（见 ChatMessageReconciler.dbHasTurnReply）。
+  int? beganAtMs;
+
   /// 回合（或占位会话）结束时触发一次。控制器用它补做流式期间被推迟的
   /// DB reconcile（见 ChatController._dmReconcileAfterStreaming）。
   void Function()? onClear;
@@ -132,6 +137,7 @@ class ChatStreamingSession {
     messageId = id;
     content = '';
     this.fromId = fromId;
+    beganAtMs = DateTime.now().millisecondsSinceEpoch;
   }
 
   void append(String chunk) {
@@ -143,7 +149,15 @@ class ChatStreamingSession {
     messageId = null;
     content = '';
     fromId = null;
+    beganAtMs = null;
     if (wasActive) onClear?.call();
+  }
+
+  /// 会话是否在 [window] 内刚刚开始（任务尚未登记也按活跃处理）。
+  bool beganWithin(Duration window) {
+    final t = beganAtMs;
+    return t != null &&
+        DateTime.now().millisecondsSinceEpoch - t <= window.inMilliseconds;
   }
 
   /// 会话是否已沦为「僵尸」：锚点气泡已不在 [messages] 中（reload 折叠/

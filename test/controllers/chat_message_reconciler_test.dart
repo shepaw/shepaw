@@ -348,4 +348,92 @@ void main() {
       );
     });
   });
+
+  group('ChatMessageReconciler.dbHasTurnReply', () {
+    test('本回合 flush 行（时间戳在回合开始后）→ true', () {
+      final db = [
+        _agent(
+          'old_partial',
+          agentId: 'a1',
+          content: 'old',
+          ts: 5,
+          metadata: {'status': 'streaming'},
+        ),
+        _agent(
+          'msg_p1',
+          agentId: 'a1',
+          content: 'Hello',
+          ts: 20,
+          metadata: {'status': 'streaming'},
+        ),
+      ];
+      expect(
+        ChatMessageReconciler.dbHasTurnReply(
+          dbMessages: db,
+          turnBeganAtMs: 10,
+        ),
+        isTrue,
+      );
+    });
+
+    test('只有回合开始前的旧 flush 行 → false', () {
+      final db = [
+        _agent(
+          'old_partial',
+          agentId: 'a1',
+          content: 'old',
+          ts: 5,
+          metadata: {'status': 'streaming'},
+        ),
+      ];
+      expect(
+        ChatMessageReconciler.dbHasTurnReply(
+          dbMessages: db,
+          turnBeganAtMs: 10,
+        ),
+        isFalse,
+      );
+    });
+
+    test('终态行（无 status: streaming）不算回复 → false', () {
+      final db = [_agent('db_reply', agentId: 'a1', content: 'done', ts: 20)];
+      expect(
+        ChatMessageReconciler.dbHasTurnReply(
+          dbMessages: db,
+          turnBeganAtMs: 10,
+        ),
+        isFalse,
+      );
+    });
+
+    test('用户消息不算回复 → false', () {
+      final db = [_user('user_1', ts: 20)];
+      expect(
+        ChatMessageReconciler.dbHasTurnReply(
+          dbMessages: db,
+          turnBeganAtMs: 10,
+        ),
+        isFalse,
+      );
+    });
+
+    test('回合开始时间为 null（无流式会话）→ false', () {
+      final db = [
+        _agent(
+          'msg_p1',
+          agentId: 'a1',
+          content: 'Hello',
+          ts: 20,
+          metadata: {'status': 'streaming'},
+        ),
+      ];
+      expect(
+        ChatMessageReconciler.dbHasTurnReply(
+          dbMessages: db,
+          turnBeganAtMs: null,
+        ),
+        isFalse,
+      );
+    });
+  });
 }
