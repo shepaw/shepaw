@@ -1596,6 +1596,14 @@ class _ChatScreenState extends State<ChatScreen>
       }
       await route.popped;
 
+      // 抽屉子树在退场动画期间仍存活（overlay 条目要等路由销毁才移除）：
+      // 若在 popped（pop 瞬间）就 dispose，退场期间新挂载的子组件会对已
+      // 销毁的 notifier addListener —— 移动端短滑跟手关闭时（抬手早于会话
+      // 加载完成，handle.settle 在 push 后同步 pop）面板首帧才挂载，必现
+      // "A ValueNotifier<int> was used after being disposed"。
+      // 必须等路由彻底销毁再 dispose。
+      await route.dismissed;
+
       refreshTick.dispose();
       selectionModeRequest.dispose();
     } catch (e) {
@@ -1755,6 +1763,14 @@ class _ChatScreenState extends State<ChatScreen>
         handle.settle(velocityDx: endVelocity);
       }
       await route.popped;
+
+      // 抽屉子树在退场动画期间仍存活（overlay 条目要等路由销毁才移除）：
+      // 若在 popped（pop 瞬间）就 dispose，退场期间新挂载的子组件会对已
+      // 销毁的 notifier addListener —— 移动端短滑跟手关闭时（抬手早于会话
+      // 加载完成，handle.settle 在 push 后同步 pop）面板首帧才挂载，必现
+      // "A ValueNotifier<int> was used after being disposed"。
+      // 必须等路由彻底销毁再 dispose。
+      await route.dismissed;
 
       refreshTick.dispose();
       selectionModeRequest.dispose();
