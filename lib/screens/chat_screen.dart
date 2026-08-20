@@ -396,40 +396,17 @@ class _ChatScreenState extends State<ChatScreen>
           :final agentAvatar,
           :final embedded
         ):
-        if (embedded && widget.onSwitchChannel != null) {
-          widget.onSwitchChannel!(channelId);
-        } else {
-          Navigator.pushReplacement(
-            context,
-            PageRouteBuilder(
-              pageBuilder: (context, animation, secondaryAnimation) =>
-                  ChatScreen(
-                agentId: agentId ?? widget.agentId,
-                agentName: agentName ?? _controller.agentName,
-                agentAvatar: agentAvatar ?? _controller.agentAvatar,
-                channelId: channelId,
-                embedded: widget.embedded,
-                onClose: widget.onClose,
-                onSwitchChannel: widget.onSwitchChannel,
-              ),
-              transitionsBuilder:
-                  (context, animation, secondaryAnimation, child) {
-                return FadeTransition(
-                  opacity: animation,
-                  child: SlideTransition(
-                    position: Tween<Offset>(
-                      begin: const Offset(0.0, 0.05),
-                      end: Offset.zero,
-                    ).animate(CurvedAnimation(
-                        parent: animation, curve: Curves.easeOut)),
-                    child: child,
-                  ),
-                );
-              },
-              transitionDuration: const Duration(milliseconds: 350),
-            ),
-          );
-        }
+        // 新建/切换会话（createNewSession 等）会导航替换当前页：必须先关抽屉
+        // 并等它彻底销毁，否则共享动画控制器随本页 dispose，抽屉冻结在屏幕
+        // 上（见 _closeDrawerAndWait 注释）。_handleNavigateToSession 内部
+        // 先 await 再导航，这里异步调度。
+        unawaited(_handleNavigateToSession(
+          channelId: channelId,
+          agentId: agentId,
+          agentName: agentName,
+          agentAvatar: agentAvatar,
+          embedded: embedded,
+        ));
       case ShowLoadingOverlayEvent(:final message):
         _showClearingOverlay(message);
       case DismissOverlayEvent():
@@ -1828,6 +1805,68 @@ class _ChatScreenState extends State<ChatScreen>
     return sorted;
   }
 
+  /// 关闭右侧抽屉并等待其彻底销毁（退场动画结束、路由 dispose）。
+  ///
+  /// 任何会销毁当前 ChatScreen 的导航（切换/新建会话）前都必须等待：导航
+  /// 会 dispose 本页持有的抽屉共享动画控制器（见 dispose()），若抽屉还在
+  /// 退场动画中，退场永远无法完成，抽屉路由永不销毁 —— 冻结在屏幕上并挡
+  /// 住一切点击。与 `popped`（pop 瞬间完成）不同，这里必须等 `dismissed`。
+  Future<void> _closeDrawerAndWait() async {
+    final drawerRoute = _drawerRoute;
+    if (drawerRoute == null) return;
+    if (drawerRoute.isCurrent) {
+      // 防御：入口若未先关抽屉（理论上入口都已 pop），这里兜底关闭。
+      Navigator.of(context, rootNavigator: true).pop();
+    }
+    await drawerRoute.dismissed;
+  }
+
+  /// [NavigateToSessionEvent] 处理器：先关抽屉并等它彻底销毁，再原地替换
+  /// 聊天页（嵌入模式走 [onSwitchChannel]），避免共享动画控制器被 dispose
+  /// 导致抽屉冻结（见 [_closeDrawerAndWait]）。
+  Future<void> _handleNavigateToSession({
+    required String channelId,
+    String? agentId,
+    String? agentName,
+    String? agentAvatar,
+    bool embedded = false,
+  }) async {
+    await _closeDrawerAndWait();
+    if (!mounted) return;
+    if (embedded && widget.onSwitchChannel != null) {
+      widget.onSwitchChannel!(channelId);
+      return;
+    }
+    Navigator.pushReplacement(
+      context,
+      PageRouteBuilder(
+        pageBuilder: (context, animation, secondaryAnimation) => ChatScreen(
+          agentId: agentId ?? widget.agentId,
+          agentName: agentName ?? _controller.agentName,
+          agentAvatar: agentAvatar ?? _controller.agentAvatar,
+          channelId: channelId,
+          embedded: widget.embedded,
+          onClose: widget.onClose,
+          onSwitchChannel: widget.onSwitchChannel,
+        ),
+        transitionsBuilder: (context, animation, secondaryAnimation, child) {
+          return FadeTransition(
+            opacity: animation,
+            child: SlideTransition(
+              position: Tween<Offset>(
+                begin: const Offset(0.0, 0.05),
+                end: Offset.zero,
+              ).animate(CurvedAnimation(
+                  parent: animation, curve: Curves.easeOut)),
+              child: child,
+            ),
+          );
+        },
+        transitionDuration: const Duration(milliseconds: 350),
+      ),
+    );
+  }
+
   /// 抽屉内切换会话：touch updated_at（主页恢复最近打开用），随后原地替换
   /// 聊天页（嵌入模式走 [onSwitchChannel]）。
   ///
@@ -1839,24 +1878,13 @@ class _ChatScreenState extends State<ChatScreen>
     String channelId, {
     String? highlightMessageId,
   }) async {
-    // 在首个 await 前同步捕获抽屉路由：pop 会立刻完成 _showSessionList
-    // 的 future，其 finally 会把 _drawerHandle 置空；_drawerRoute 也要
-    // 等路由销毁才清空，此处取的 dismissed 与后续切换严格对应。
-    final drawerRoute = _drawerRoute;
-    final drawerDismissed = drawerRoute?.dismissed;
     // 离开当前会话：若它是「新建会话」留下的空会话，自动删除，避免误点击
     // 「新建会话」产生空会话。
     await _controller.pruneEmptySessionBeforeSwitch(nextChannelId: channelId);
     await _controller.localDatabaseService.touchChannelUpdatedAt(channelId);
     if (!mounted) return;
-    if (drawerRoute != null && drawerRoute.isCurrent) {
-      // 防御：入口若未先关抽屉（理论上所有入口都已 pop），这里兜底关闭。
-      Navigator.of(context, rootNavigator: true).pop();
-    }
-    if (drawerDismissed != null) {
-      await drawerDismissed;
-      if (!mounted) return;
-    }
+    await _closeDrawerAndWait();
+    if (!mounted) return;
     if (widget.embedded) {
       widget.onSwitchChannel?.call(
         channelId,
