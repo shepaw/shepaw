@@ -171,4 +171,45 @@ void main() {
       );
     });
   });
+
+  group('ChatStreamingSession.isOrphan', () {
+    test('锚点不在 messages 且无存活任务 → 孤儿', () {
+      final s = ChatStreamingSession()..begin('streaming_1', fromId: 'a1');
+      final messages = [
+        _msg('user_1', content: 'hi'),
+        _msg('db_agent_reply', content: '已落库的回复'),
+      ];
+      expect(s.isOrphan(messages: messages, hasLiveTask: false), isTrue);
+    });
+
+    test('锚点仍在 messages 中 → 不是孤儿（即使无任务）', () {
+      final s = ChatStreamingSession()..begin('streaming_1', fromId: 'a1');
+      final messages = [
+        _msg('user_1', content: 'hi'),
+        _msg('streaming_1', content: ''),
+      ];
+      expect(s.isOrphan(messages: messages, hasLiveTask: false), isFalse);
+    });
+
+    test('有存活任务 → 不是孤儿（reattach 会接管）', () {
+      final s = ChatStreamingSession()..begin('streaming_1', fromId: 'a1');
+      final messages = [_msg('user_1', content: 'hi')];
+      expect(s.isOrphan(messages: messages, hasLiveTask: true), isFalse);
+    });
+
+    test('未激活的会话不是孤儿', () {
+      final s = ChatStreamingSession();
+      expect(s.isOrphan(messages: [], hasLiveTask: false), isFalse);
+    });
+
+    test('repointAnchor 已改指到宿主后不再是孤儿', () {
+      final s = ChatStreamingSession()..begin('streaming_1', fromId: 'a1');
+      final messages = [
+        _msg('user_1', content: 'hi'),
+        _msg('msg_p1', content: 'Hel', metadata: {'status': 'streaming'}),
+      ];
+      expect(s.repointAnchor(messages), isTrue);
+      expect(s.isOrphan(messages: messages, hasLiveTask: false), isFalse);
+    });
+  });
 }

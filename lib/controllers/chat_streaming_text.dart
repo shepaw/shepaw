@@ -146,6 +146,23 @@ class ChatStreamingSession {
     if (wasActive) onClear?.call();
   }
 
+  /// 会话是否已沦为「僵尸」：锚点气泡已不在 [messages] 中（reload 折叠/
+  /// 替换占位后无宿主可回指，[repointAnchor] 也失败）且没有存活任务。
+  ///
+  /// 僵尸会话的 streaming.clear() 永远等不到回合终态（任务已不在），
+  /// streaming.isActive 永久为 true → 后续 reloadMessagesFromDB 全部被
+  /// defer（UI 卡「等待回复」，重进才恢复）。调用方应在加载完成后检查
+  /// 并强制清理（活回合由 reattach 重新 begin，不受影响）。
+  bool isOrphan({
+    required List<Message> messages,
+    required bool hasLiveTask,
+  }) {
+    if (!isActive) return false;
+    if (hasLiveTask) return false;
+    if (messages.any((m) => m.id == messageId)) return false;
+    return true;
+  }
+
   /// 若当前锚点气泡已不在 [messages] 中（回合中途 reload 折叠/丢弃了
   /// 占位），把锚点改指到同发送者的在途宿主（flush 部分行或残余占位）。
   /// 命中后返回 true。用于应用 chunk 前自愈，以及 reload 后立即恢复

@@ -130,6 +130,12 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
   /// （streaming.clear 触发 onClear）后补一次 reconcile。
   bool _dmReconcileAfterStreaming = false;
 
+  /// 僵尸 streaming 会话的兜底定时器：回合终态事件丢失（onTaskCompleted /
+  /// onTaskError 未达、peer 挂起等）时 streaming.clear() 永不执行，被 defer
+  /// 的 DB reconcile 会永久挂起。定时器强制自愈：无存活任务时清掉僵尸占位
+  /// 并补做 reload；任务仍存活时不动（终态事件会负责清理，避免顶掉流式占位）。
+  Timer? _dmReconcileFallbackTimer;
+
   @override
   String? get streamingMessageId => streaming.messageId;
   @override
@@ -363,7 +369,33 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
   void _onStreamingSessionCleared() {
     if (!_dmReconcileAfterStreaming) return;
     _dmReconcileAfterStreaming = false;
+    _dmReconcileFallbackTimer?.cancel();
     unawaited(reloadMessagesFromDB());
+  }
+
+  /// 为 [_dmReconcileAfterStreaming] 安排一次性兜底：回合终态事件丢失导致
+  /// streaming.clear() 永不执行时，被 defer 的 reload 会永久挂起（UI 一直
+  /// 停在「等待回复中」，重进才恢复）。30s 后检查：任务已不在（僵尸会话）
+  /// → 清掉占位补做 reload；任务仍存活 → 不动，终态事件会负责清理。
+  void _scheduleDmReconcileFallback() {
+    if (_dmReconcileFallbackTimer?.isActive ?? false) return;
+    _dmReconcileFallbackTimer = Timer(const Duration(seconds: 30), () {
+      _dmReconcileFallbackTimer = null;
+      if (!_dmReconcileAfterStreaming) return;
+      final cid = currentChannelId;
+      if (streaming.isActive &&
+          cid != null &&
+          chatService.getActiveTask(cid) != null) {
+        return;
+      }
+      if (streaming.isActive) {
+        // 僵尸占位：clear 触发 onClear → 补做被 defer 的 reload。
+        streaming.clear();
+      } else {
+        _dmReconcileAfterStreaming = false;
+        unawaited(reloadMessagesFromDB());
+      }
+    });
   }
 
   /// Initialize the controller. Call this after constructing.
@@ -431,6 +463,7 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
     // 注意：不要在这里清空 messageQueue —— 队列按频道存放在 ChatService 侧，
     // 必须跨页面存活，重进后由 loadMessages 恢复发送。
     _healthCheckTimer?.cancel();
+    _dmReconcileFallbackTimer?.cancel();
     _peerConnSub?.cancel();
     _orphanApprovalSub?.cancel();
     _channelUpdateSub?.cancel();
@@ -639,6 +672,9 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
       );
       if (deferReload) {
         _dmReconcileAfterStreaming = true;
+        // 兜底：回合终态事件丢失时 streaming.clear() 永不执行，被 defer 的
+        // reload 会永久挂起（UI 卡「等待回复」，重进才恢复）。定时器强制自愈。
+        _scheduleDmReconcileFallback();
         return;
       }
       if (streaming.isActive) streaming.clear();
@@ -976,6 +1012,7 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
     if (currentChannelId != event.channelId) return;
 
     _dmReconcileAfterStreaming = false;
+    _dmReconcileFallbackTimer?.cancel();
 
     if (streaming.isActive &&
         chatService.getActiveTask(event.channelId) == null) {

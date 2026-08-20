@@ -183,6 +183,16 @@ mixin _LoadOps on _ChatControllerBase {
       // 占位若被 merge 折叠进 DB 行（id 改名），立即回指锚点，恢复
       // streaming 标记与后续 chunk 的应用目标。
       streaming.repointAnchor(messages);
+      // 锚点已不在 messages（占位被替换且无宿主可回指）且没有存活任务 →
+      // 孤儿 streaming 会话。留着会让 streaming.isActive 永远为 true，
+      // 后续 reloadMessagesFromDB 全部被 defer（UI 卡「等待回复」，
+      // 重进才恢复）。活回合由后面的 reattachToActiveTask 重新 begin。
+      if (streaming.isOrphan(
+        messages: messages,
+        hasLiveTask: chatService.getActiveTask(currentChannelId!) != null,
+      )) {
+        streaming.clear();
+      }
       await _refreshHasMoreOlderMessages();
       _reapplyStashedPlanApprovalResponses();
       await PendingApprovalHub.instance.reconcileForChannel(
