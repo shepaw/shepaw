@@ -140,11 +140,21 @@ class RightDrawerRoute<T> extends RawDialogRoute<T> {
   ///
   /// 明显向右甩（>400px/s）→ 关闭；明显向左甩（<-400px/s）→ 回弹打开；
   /// 其余按进度：过半打开，否则 pop（didPop 会从当前值 reverse 退出）。
-  void settleGesture({double velocityDx = 0}) {
+  ///
+  /// [opening] 表示本次手势是打开手势（聊天页左滑，经
+  /// [RightDrawerHandle.settle] 收尾）而非关闭手势（抽屉/遮罩上右滑）：
+  /// 打开手势已被识别器接受（位移超过最小打开距离），默认继续打开，仅在
+  /// 明显反向甩动（向右 >400px/s）或几乎没拖动（进度 <10% 且无向左甩动，
+  /// 属误触级微滑）时关闭。若沿用关闭手势的「进度 ≤ 半宽即关」判断，普通
+  /// 左滑（位移通常只有抽屉宽度的 10%~40%，且抬手前手指已减速、速度远够
+  /// 不到 400px/s）会在部分进度处被立即 pop —— 正是「闪一下又回去了」。
+  void settleGesture({double velocityDx = 0, bool opening = false}) {
     final c = controller;
     if (c == null) return;
     final bool close;
-    if (velocityDx > 400) {
+    if (opening) {
+      close = velocityDx > 400 || (c.value < 0.1 && velocityDx > -400);
+    } else if (velocityDx > 400) {
       close = true; // 明显向右甩 → 关闭
     } else if (velocityDx < -400) {
       close = false; // 明显向左甩 → 继续打开
@@ -212,8 +222,11 @@ class RightDrawerHandle {
   void setProgress(double progress) => _route?.setGestureProgress(progress);
 
   /// 抬手收尾：按当前进度与甩动速度决定回弹打开或关闭。
+  ///
+  /// 打开手势的收尾与关闭手势相反：默认继续打开，只有明显向右甩（反悔）
+  /// 或误触级微滑才关闭（见 [RightDrawerRoute.settleGesture] 的 `opening`）。
   void settle({double velocityDx = 0}) =>
-      _route?.settleGesture(velocityDx: velocityDx);
+      _route?.settleGesture(velocityDx: velocityDx, opening: true);
 }
 
 /// 让页面随其上方的右侧抽屉路由联动：抽屉打开/关闭动画与手指拖动期间，

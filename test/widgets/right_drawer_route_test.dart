@@ -268,6 +268,172 @@ void main() {
     expect(find.byKey(_drawerKey), findsNothing);
   });
 
+  testWidgets('open-gesture settle: partial progress with no flick stays open',
+      (tester) async {
+    // 回归：打开手势（handle.settle）曾沿用关闭手势的「进度 ≤ 半宽即关」，
+    // 普通左滑（位移 10%~40% 宽度、抬手前已减速）推入后立即被 pop，
+    // 表现为「闪一下又回去了」。
+    final controller = _makeController();
+    late RightDrawerHandle handle;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: Center(
+            child: Builder(
+              builder: (context) {
+                return ElevatedButton(
+                  onPressed: () {
+                    handle = RightDrawerHandle(width: _drawerWidth);
+                    LayoutUtils.showRightDrawer<void>(
+                      context: context,
+                      width: _drawerWidth,
+                      handle: handle,
+                      initialProgress: 0.5,
+                      sharedController: controller,
+                      builder: (_) =>
+                          Container(key: _drawerKey, color: Colors.white),
+                    );
+                  },
+                  child: const Text('open'),
+                );
+              },
+            ),
+          ),
+        ),
+      ),
+    );
+
+    await tester.tap(find.text('open'));
+    await tester.pump();
+
+    // 半进度、无甩动速度：旧逻辑 c.value <= 0.5 → pop（闪一下），新逻辑打开。
+    handle.settle(velocityDx: 0);
+    await tester.pumpAndSettle();
+    expect(find.byKey(_drawerKey), findsOneWidget);
+    expect(handle.progress, closeTo(1.0, 0.001));
+  });
+
+  testWidgets('open-gesture settle: low progress with no flick opens',
+      (tester) async {
+    // 常见左滑：只拖了 20% 宽度、抬手前手指减速到 ~0 速度 → 应回弹打开。
+    final controller = _makeController();
+    late RightDrawerHandle handle;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: Center(
+            child: Builder(
+              builder: (context) {
+                return ElevatedButton(
+                  onPressed: () {
+                    handle = RightDrawerHandle(width: _drawerWidth);
+                    LayoutUtils.showRightDrawer<void>(
+                      context: context,
+                      width: _drawerWidth,
+                      handle: handle,
+                      initialProgress: 0.2,
+                      sharedController: controller,
+                      builder: (_) =>
+                          Container(key: _drawerKey, color: Colors.white),
+                    );
+                  },
+                  child: const Text('open'),
+                );
+              },
+            ),
+          ),
+        ),
+      ),
+    );
+
+    await tester.tap(find.text('open'));
+    await tester.pump();
+    handle.settle(velocityDx: 0);
+    await tester.pumpAndSettle();
+    expect(find.byKey(_drawerKey), findsOneWidget);
+    expect(handle.progress, closeTo(1.0, 0.001));
+  });
+
+  testWidgets('open-gesture settle: rightward reversal flick closes',
+      (tester) async {
+    // 左滑后明显向右甩（>400px/s，反悔）→ 关闭。
+    final controller = _makeController();
+    late RightDrawerHandle handle;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: Center(
+            child: Builder(
+              builder: (context) {
+                return ElevatedButton(
+                  onPressed: () {
+                    handle = RightDrawerHandle(width: _drawerWidth);
+                    LayoutUtils.showRightDrawer<void>(
+                      context: context,
+                      width: _drawerWidth,
+                      handle: handle,
+                      initialProgress: 0.6,
+                      sharedController: controller,
+                      builder: (_) =>
+                          Container(key: _drawerKey, color: Colors.white),
+                    );
+                  },
+                  child: const Text('open'),
+                );
+              },
+            ),
+          ),
+        ),
+      ),
+    );
+
+    await tester.tap(find.text('open'));
+    await tester.pump();
+    handle.settle(velocityDx: 500);
+    await tester.pumpAndSettle();
+    expect(find.byKey(_drawerKey), findsNothing);
+  });
+
+  testWidgets('open-gesture settle: micro swipe (no progress, no flick) closes',
+      (tester) async {
+    // 误触级微滑（<10% 宽度、无甩动）仍关闭，避免 8px 起始即全开。
+    final controller = _makeController();
+    late RightDrawerHandle handle;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: Center(
+            child: Builder(
+              builder: (context) {
+                return ElevatedButton(
+                  onPressed: () {
+                    handle = RightDrawerHandle(width: _drawerWidth);
+                    LayoutUtils.showRightDrawer<void>(
+                      context: context,
+                      width: _drawerWidth,
+                      handle: handle,
+                      initialProgress: 0.05,
+                      sharedController: controller,
+                      builder: (_) =>
+                          Container(key: _drawerKey, color: Colors.white),
+                    );
+                  },
+                  child: const Text('open'),
+                );
+              },
+            ),
+          ),
+        ),
+      ),
+    );
+
+    await tester.tap(find.text('open'));
+    await tester.pump();
+    handle.settle(velocityDx: 0);
+    await tester.pumpAndSettle();
+    expect(find.byKey(_drawerKey), findsNothing);
+  });
+
   testWidgets('linked page tracks handle progress directly', (tester) async {
     final controller = _makeController();
     late RightDrawerHandle handle;
