@@ -192,6 +192,10 @@ class DrawerSwipeDetector extends StatelessWidget {
 
     if (onOpenDrawer != null || onOpenGestureStart != null) {
       result = RawGestureDetector(
+        // opaque：识别器全区域参与竞技场。默认 deferToChild 下，指针落在
+        // 无可命中子组件的区域（如空聊天页的空白处、内容间的空隙）时路径里
+        // 没有本监听器，识别器根本收不到 down 事件，左滑无响应。
+        behavior: HitTestBehavior.opaque,
         gestures: <Type, GestureRecognizerFactory>{
           _DrawerOpenSwipeRecognizer:
               GestureRecognizerFactoryWithHandlers<_DrawerOpenSwipeRecognizer>(

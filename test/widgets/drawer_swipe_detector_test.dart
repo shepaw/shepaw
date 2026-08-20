@@ -142,6 +142,7 @@ void main() {
       WidgetTester tester,
       List<Offset> moves, {
       Widget? child,
+      Offset startOffset = const Offset(300, 200),
       double touchSlop = kTouchSlop,
       double minOpenDistance = 36,
       double horizontalDominance = 1.25,
@@ -160,8 +161,8 @@ void main() {
               onOpenGestureStart: (dx) => events.add(('start', dx)),
               onOpenGestureUpdate: (dx) => events.add(('update', dx)),
               onOpenGestureEnd: (velocity, dx) => events.add(('end', dx)),
-              // 注意：子组件必须可命中（纯 SizedBox 的 hitTestSelf 为 false，
-              // 指针事件不会沿路径送达识别器）。
+              // 注意：识别器已用 HitTestBehavior.opaque 全区域参与竞技场，
+              // 不再依赖子组件命中。
               child: child ??
                   Container(
                     width: 400,
@@ -173,7 +174,7 @@ void main() {
         ),
       );
 
-      final gesture = await tester.startGesture(const Offset(300, 200));
+      final gesture = await tester.startGesture(startOffset);
       for (final move in moves) {
         await gesture.moveBy(move);
         await tester.pump(const Duration(milliseconds: 16));
@@ -349,6 +350,8 @@ void main() {
       final events = await runGesture(
         tester,
         const [Offset(-10, 0), Offset(-60, 0)],
+        // 从输入框内起手（Center 内 300x48 的 TextField 位于 250..550, 276..324）。
+        startOffset: const Offset(400, 300),
         touchSlop: 8,
         minOpenDistance: 8,
         horizontalDominance: 1.5,
@@ -360,7 +363,7 @@ void main() {
           ),
         ),
       );
-      expect(events, isEmpty);
+      expect(events, isEmpty, reason: 'down 命中可编辑文本，识别器让位');
     });
 
     testWidgets('带垂直分量的斜滑（39°，dy/dx=0.8）在气泡上 → 抽屉胜出（移动端复现）',
@@ -396,6 +399,45 @@ void main() {
           reason: 'start 携带识别瞬间累计位移（10px，先于选区的 18px）');
       expect(events.last.$1, 'end');
       expect(events.last.$2, closeTo(30, 1));
+    });
+
+    testWidgets('空聊天页（无消息、无滚动列表）空白区域左滑 → 抽屉手势仍生效',
+        (tester) async {
+      // 空状态内容不铺满全屏：Center 里只有一个窄 Column，周边大片区域没有
+      // 可命中控件。RawGestureDetector 默认 deferToChild，指针落在空白处时
+      // 识别器根本不加入竞技场 → 左滑无响应（用户实测「刚新建的空聊天页面
+      // 无法左滑」）。测试从内容列上方的空白区（300,200）起手，opaque 后
+      // 全区域可命中，识别器总是参与竞技场。
+      final events = await runGesture(
+        tester,
+        const [
+          Offset(-6, 0), // 累计 -6：未过 touchSlop 8，wait
+          Offset(-10, 0), // 累计 -16 → accept
+          Offset(-60, 0),
+        ],
+        touchSlop: 8,
+        minOpenDistance: 8,
+        horizontalDominance: 1.0,
+        verticalDominance: 2.0,
+        child: const Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              SizedBox(width: 80, height: 80), // 头像占位
+              SizedBox(height: 16),
+              Text('AI Agent'),
+              SizedBox(height: 8),
+              Text('Send a message to start chatting'),
+            ],
+          ),
+        ),
+      );
+
+      expect(
+        events.where((e) => e.$1 == 'start').length,
+        1,
+        reason: '空白区域左滑也能触发抽屉',
+      );
     });
 
     testWidgets('45°~63° 斜滑在真实垂直列表上 → 让位给滚动', (tester) async {
