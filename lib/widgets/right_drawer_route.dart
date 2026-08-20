@@ -258,10 +258,14 @@ class RightDrawerLinkedPage extends StatelessWidget {
     return AnimatedBuilder(
       animation: animation,
       builder: (context, child) {
-        final value = animation.value;
-        if (value <= 0) return child!;
+        // 恒包一层 Transform（value=0 时位移为 0，纯 paint 无开销）：
+        // 若按 value 是否 >0 切换 child ↔ Transform(child) 两种树形，抽屉
+        // 推入/关闭（共享控制器跨过 0）会改变 builder 输出形状，整个页面
+        // 子树被卸载重挂 —— ChatMessageList 持有的 GlobalKey 是 state 内
+        // 新实例，旧滚动视口无法复取，视口从 initialScrollIndex 0 重建，
+        // reverse 列表直接跳回最底部（侧滑时聊天滚动条重置）。
         return Transform.translate(
-          offset: Offset(-width * value, 0),
+          offset: Offset(-width * animation.value, 0),
           child: child,
         );
       },

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:scrollable_positioned_list/scrollable_positioned_list.dart';
 import 'package:shepaw/utils/layout_utils.dart';
 import 'package:shepaw/widgets/right_drawer_route.dart';
 
@@ -62,6 +63,34 @@ Widget _buildApp({
       },
     ),
   );
+}
+
+/// 镜像 ChatMessageList 的结构：State 持有 GlobalKey 包住滚动视口。
+/// 若宿主页面树被重挂（state 重建），此 key 是新的实例，旧视口无法被
+/// 复取，滚动位置随之归零（reverse 列表即回到最底部）。
+class _ProbeStatefulList extends StatefulWidget {
+  const _ProbeStatefulList({required this.onInit, required this.child});
+
+  final VoidCallback onInit;
+  final Widget child;
+
+  @override
+  State<_ProbeStatefulList> createState() => _ProbeStatefulListState();
+}
+
+class _ProbeStatefulListState extends State<_ProbeStatefulList> {
+  final GlobalKey _innerKey = GlobalKey();
+
+  @override
+  void initState() {
+    super.initState();
+    widget.onInit();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return KeyedSubtree(key: _innerKey, child: widget.child);
+  }
 }
 
 void main() {
@@ -432,6 +461,63 @@ void main() {
     handle.settle(velocityDx: 0);
     await tester.pumpAndSettle();
     expect(find.byKey(_drawerKey), findsNothing);
+  });
+
+  testWidgets('drawer open (animation crossing 0) keeps list scroll position',
+      (tester) async {
+    // 回归：RightDrawerLinkedPage 旧实现按 value 是否 >0 切换
+    // child ↔ Transform(child) 两种树形，抽屉推入（共享控制器 0→0.3→1）
+    // 时整个页面子树被重挂：ChatMessageList state 重建（其持有的 GlobalKey
+    // 是新实例，旧视口无法复取），滚动视口从 initialScrollIndex 0 重建，
+    // reverse 列表直接跳回最底部 —— 侧滑时聊天滚动条重置的根因。
+    final controller = _makeController();
+    final itemScrollController = ItemScrollController();
+    final itemPositionsListener = ItemPositionsListener.create();
+    var initCount = 0;
+
+    Widget page = Scaffold(
+      body: _ProbeStatefulList(
+        onInit: () => initCount++,
+        child: ScrollablePositionedList.builder(
+          reverse: true,
+          itemScrollController: itemScrollController,
+          itemPositionsListener: itemPositionsListener,
+          itemCount: 20,
+          itemBuilder: (context, index) => SizedBox(
+            height: 50,
+            child: Center(child: Text('msg $index')),
+          ),
+        ),
+      ),
+    );
+    page = RightDrawerLinkedPage(
+      width: _drawerWidth,
+      animation: controller,
+      child: page,
+    );
+    await tester.pumpWidget(MaterialApp(home: page));
+    expect(initCount, 1);
+
+    // 先滚离底部（index 10），模拟用户翻阅历史消息后的状态。
+    itemScrollController.jumpTo(index: 10);
+    await tester.pumpAndSettle();
+    final visibleBefore =
+        itemPositionsListener.itemPositions.value.map((p) => p.index).toSet();
+    expect(visibleBefore, contains(10));
+
+    // 抽屉推入：手势模式 didPush 直接把共享控制器从 0 设为部分进度，
+    // settle 再动画到全开（与聊天页打开抽屉一致）。
+    controller.value = 0.3;
+    await tester.pump();
+    controller.animateTo(1.0, duration: const Duration(milliseconds: 250));
+    await tester.pumpAndSettle();
+
+    // 页面树不得重挂：列表 state 与滚动位置都必须保持。
+    expect(initCount, 1, reason: 'linked page must not remount the page subtree');
+    final visibleAfter =
+        itemPositionsListener.itemPositions.value.map((p) => p.index).toSet();
+    expect(visibleAfter, contains(10),
+        reason: 'drawer open must not reset the chat scroll position');
   });
 
   testWidgets('linked page tracks handle progress directly', (tester) async {
