@@ -423,9 +423,14 @@ void main() {
     expect(find.byKey(_drawerKey), findsNothing);
   });
 
-  testWidgets('open-gesture settle: micro swipe (no progress, no flick) closes',
+  testWidgets('open-gesture settle: micro swipe (no progress, no flick) opens',
       (tester) async {
-    // 误触级微滑（<10% 宽度、无甩动）仍关闭，避免 8px 起始即全开。
+    // 回归：低进度 + 零速度（旧逻辑「进度 <10% 且无左甩即关」）必须打开。
+    // 识别器接受手势（位移超过 touchSlop/minOpenDistance 且横向主导）本身就
+    // 是误触过滤；settle 的微滑判断只会误伤真实手势 —— 会话加载完成时 push
+    // 抽屉路由触发 Navigator._cancelActivePointers，在途手指被取消（速度强制
+    // 归零），任何加载完成于手势前段的真实短滑（边缘轻扫通常只有抽屉宽度
+    // 的 3%~10%）都会命中「微滑」而被立即 pop，正是「闪一下又回去了」。
     final controller = _makeController();
     late RightDrawerHandle handle;
     await tester.pumpWidget(
@@ -460,7 +465,8 @@ void main() {
     await tester.pump();
     handle.settle(velocityDx: 0);
     await tester.pumpAndSettle();
-    expect(find.byKey(_drawerKey), findsNothing);
+    expect(find.byKey(_drawerKey), findsOneWidget);
+    expect(handle.progress, closeTo(1.0, 0.001));
   });
 
   testWidgets('drawer open (animation crossing 0) keeps list scroll position',

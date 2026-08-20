@@ -143,17 +143,21 @@ class RightDrawerRoute<T> extends RawDialogRoute<T> {
   ///
   /// [opening] 表示本次手势是打开手势（聊天页左滑，经
   /// [RightDrawerHandle.settle] 收尾）而非关闭手势（抽屉/遮罩上右滑）：
-  /// 打开手势已被识别器接受（位移超过最小打开距离），默认继续打开，仅在
-  /// 明显反向甩动（向右 >400px/s）或几乎没拖动（进度 <10% 且无向左甩动，
-  /// 属误触级微滑）时关闭。若沿用关闭手势的「进度 ≤ 半宽即关」判断，普通
-  /// 左滑（位移通常只有抽屉宽度的 10%~40%，且抬手前手指已减速、速度远够
-  /// 不到 400px/s）会在部分进度处被立即 pop —— 正是「闪一下又回去了」。
+  /// 打开手势已被识别器接受（位移超过最小打开距离，见
+  /// DrawerSwipeDetector 的 minOpenDistance/touchSlop 裁决），默认继续打开，
+  /// 仅在明显反向甩动（向右 >400px/s，用户反悔）时关闭。这里**不能**再用
+  /// 「进度 <10% 且无向左甩动即关」的误触级微滑判断：会话加载完成时
+  /// push 抽屉路由会触发 Navigator._cancelActivePointers，把在途手指变成
+  /// PointerCancelEvent（速度强制归零），任何加载完成于手势前段的真实短滑
+  /// （边缘轻扫通常只有抽屉宽度的 3%~10%）都会被误判为微滑而立即 pop ——
+  /// 正是「闪一下又回去了」。识别器接受手势本身就是微滑过滤（位移不足
+  /// 8px 或非横向主导根本进不到这里），无需二次判断。
   void settleGesture({double velocityDx = 0, bool opening = false}) {
     final c = controller;
     if (c == null) return;
     final bool close;
     if (opening) {
-      close = velocityDx > 400 || (c.value < 0.1 && velocityDx > -400);
+      close = velocityDx > 400;
     } else if (velocityDx > 400) {
       close = true; // 明显向右甩 → 关闭
     } else if (velocityDx < -400) {
@@ -224,7 +228,9 @@ class RightDrawerHandle {
   /// 抬手收尾：按当前进度与甩动速度决定回弹打开或关闭。
   ///
   /// 打开手势的收尾与关闭手势相反：默认继续打开，只有明显向右甩（反悔）
-  /// 或误触级微滑才关闭（见 [RightDrawerRoute.settleGesture] 的 `opening`）。
+  /// 才关闭（见 [RightDrawerRoute.settleGesture] 的 `opening`）。注意 push
+  /// 引发的 PointerCancel 也会经此收尾（速度 0），此时继续打开正是想要的
+  /// 行为 —— 手势已被识别器接受，抽屉应打开而不是闪退。
   void settle({double velocityDx = 0}) =>
       _route?.settleGesture(velocityDx: velocityDx, opening: true);
 }
