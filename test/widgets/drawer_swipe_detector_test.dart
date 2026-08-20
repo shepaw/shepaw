@@ -147,6 +147,8 @@ void main() {
       double minOpenDistance = 36,
       double horizontalDominance = 1.25,
       double verticalDominance = 2.0,
+      bool blockTrailingEdgeDrawerGesture = false,
+      double? trailingEdgeBlockWidth,
     }) async {
       final events = <(String, double)>[];
       await tester.pumpWidget(
@@ -158,6 +160,8 @@ void main() {
               minOpenDistance: minOpenDistance,
               horizontalDominance: horizontalDominance,
               verticalDominance: verticalDominance,
+              blockTrailingEdgeDrawerGesture: blockTrailingEdgeDrawerGesture,
+              trailingEdgeBlockWidth: trailingEdgeBlockWidth,
               onOpenGestureStart: (dx) => events.add(('start', dx)),
               onOpenGestureUpdate: (dx) => events.add(('update', dx)),
               onOpenGestureEnd: (velocity, dx) => events.add(('end', dx)),
@@ -475,6 +479,59 @@ void main() {
           .state<ScrollableState>(find.byType(Scrollable).first);
       expect(scrollable.position.pixels, greaterThan(0),
           reason: '列表确实滚动了');
+    });
+
+    testWidgets('右边缘系统手势区内的左滑 → 让位给系统返回', (tester) async {
+      // Android 手势返回 = 右边缘向左滑，与右抽屉打开手势同方向。
+      // blockTrailingEdgeDrawerGesture 生效时，down 在 [宽-40, 宽) 区内
+      // 的指针整体让出（不加入竞技场），系统返回不被抢。
+      // 默认测试表面宽 800：区带为 [760, 800)。
+      final events = await runGesture(
+        tester,
+        const [
+          Offset(-10, 0),
+          Offset(-60, 0),
+        ],
+        touchSlop: 8,
+        minOpenDistance: 8,
+        horizontalDominance: 1.0,
+        verticalDominance: 2.0,
+        blockTrailingEdgeDrawerGesture: true,
+        trailingEdgeBlockWidth: 40,
+        startOffset: const Offset(780, 200),
+        // 识别器边界随子组件尺寸：必须铺满全屏，区带测试才真正经过识别器
+        // 的 addAllowedPointer（而非指针落在组件外根本没进竞技场）。
+        child: const SizedBox.expand(),
+      );
+
+      expect(events, isEmpty, reason: '右边缘系统手势区内的左滑不应触发抽屉');
+    });
+
+    testWidgets('右边缘系统手势区外（40px 以内之外）左滑照常打开',
+        (tester) async {
+      // 区带外（<760）不受影响：从 750 起手，抽屉正常识别。
+      final events = await runGesture(
+        tester,
+        const [
+          Offset(-10, 0),
+          Offset(-60, 0),
+        ],
+        touchSlop: 8,
+        minOpenDistance: 8,
+        horizontalDominance: 1.0,
+        verticalDominance: 2.0,
+        blockTrailingEdgeDrawerGesture: true,
+        trailingEdgeBlockWidth: 40,
+        startOffset: const Offset(750, 200),
+        // 铺满全屏：见区带测试的说明。
+        child: const SizedBox.expand(),
+      );
+
+      expect(
+        events.where((e) => e.$1 == 'start').length,
+        1,
+        reason: '区带外左滑正常打开抽屉',
+      );
     });
   });
 }

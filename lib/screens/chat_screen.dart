@@ -2574,6 +2574,11 @@ class _ChatScreenState extends State<ChatScreen>
         // 防止横向滑分类误开抽屉。
         body: DrawerSwipeDetector(
           enabled: !LayoutUtils.isDesktopLayout(context) && !_showEmojiPicker,
+          // Android 手势返回 = 右边缘向左滑，与右抽屉打开手势同方向：把
+          // 右边缘系统手势区（systemGestureInsets.right，通常 ~34px）让给
+          // 系统返回，避免抢事件 —— 用户滑返回时抽屉被误打开。主页左侧
+          // 抽屉对应的左边缘由 blockLeadingEdgeDrawerGesture 处理。
+          blockTrailingEdgeDrawerGesture: true,
           // 阈值必须压到 SelectionArea 的 touchSlop（18px）之下：气泡内容被
           // SelectionArea 包裹，其 TapAndHorizontalDrag 识别器在 Android 上
           // eagerVictoryOnDrag=true、|dx|>18 就抢走竞技场（且路径更内层，

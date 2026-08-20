@@ -108,8 +108,9 @@ DrawerSwipeDecision decideDrawerSwipe({
 /// 拖选不受影响。
 ///
 /// When [blockLeadingEdgeDrawerGesture] is true, pointers that begin inside
-/// the system-back edge strip are ignored so iOS/Android back gestures are
-/// not contested.
+/// the left system-back edge strip are ignored so iOS/Android back gestures
+/// are not contested. [blockTrailingEdgeDrawerGesture] does the same for the
+/// right edge (Android 手势返回，与右抽屉的左滑打开手势同方向 —— 聊天页用）。
 class DrawerSwipeDetector extends StatelessWidget {
   const DrawerSwipeDetector({
     super.key,
@@ -123,6 +124,8 @@ class DrawerSwipeDetector extends StatelessWidget {
     this.verticalScrollSlop = 18,
     this.blockLeadingEdgeDrawerGesture = false,
     this.leadingEdgeBlockWidth,
+    this.blockTrailingEdgeDrawerGesture = false,
+    this.trailingEdgeBlockWidth,
     this.touchSlop = kTouchSlop,
     this.horizontalDominance = 1.25,
     this.verticalDominance = 2.0,
@@ -162,6 +165,14 @@ class DrawerSwipeDetector extends StatelessWidget {
   /// [MediaQuery.systemGestureInsets] with a small buffer.
   final double? leadingEdgeBlockWidth;
 
+  /// When true, ignore open-swipes that start on the right system-gesture
+  /// edge (Android 手势返回区，与右抽屉左滑打开手势同方向)。
+  final bool blockTrailingEdgeDrawerGesture;
+
+  /// Width of the right edge strip that ignores open-swipes. When null, uses
+  /// [MediaQuery.systemGestureInsets] with a small buffer.
+  final double? trailingEdgeBlockWidth;
+
   final double touchSlop;
   final double horizontalDominance;
   final double verticalDominance;
@@ -177,6 +188,18 @@ class DrawerSwipeDetector extends StatelessWidget {
     return 20;
   }
 
+  /// 右边缘系统手势区宽度（Android 手势返回）。镜像左边缘：优先取系统上报
+  /// 的手势区（通常 ~34px），无上报（三键导航/iOS）时退回 20px 缓冲。
+  static double resolveTrailingEdgeBlockWidth(
+    BuildContext context, {
+    double? override,
+  }) {
+    if (override != null) return override;
+    final systemInset = MediaQuery.systemGestureInsetsOf(context).right;
+    if (systemInset > 0) return systemInset + 4;
+    return 20;
+  }
+
   @override
   Widget build(BuildContext context) {
     if (!enabled) return child;
@@ -187,6 +210,13 @@ class DrawerSwipeDetector extends StatelessWidget {
             override: leadingEdgeBlockWidth,
           )
         : 0.0;
+    final trailingBlock = blockTrailingEdgeDrawerGesture
+        ? resolveTrailingEdgeBlockWidth(
+            context,
+            override: trailingEdgeBlockWidth,
+          )
+        : 0.0;
+    final viewWidth = MediaQuery.sizeOf(context).width;
 
     Widget result = child;
 
@@ -206,12 +236,20 @@ class DrawerSwipeDetector extends StatelessWidget {
               verticalDominance: verticalDominance,
               minOpenDistance: minOpenDistance,
               blockedLeadingWidth: leadingBlock,
+              blockedTrailingWidth: trailingBlock,
+              viewWidth: viewWidth,
               onOpenGestureStart: onOpenGestureStart,
               onOpenGestureUpdate: onOpenGestureUpdate,
               onOpenGestureEnd: onOpenGestureEnd,
             ),
             (_DrawerOpenSwipeRecognizer instance) {
               instance.onOpen = onOpenDrawer;
+              // 识别器实例跨重建复用（RawGestureDetector._syncAll 同类型
+              // 复用并走 update），边缘区宽度/屏宽随 MediaQuery 变化刷新。
+              instance
+                ..blockedLeadingWidth = leadingBlock
+                ..blockedTrailingWidth = trailingBlock
+                ..viewWidth = viewWidth;
             },
           ),
         },
@@ -235,7 +273,9 @@ class _DrawerOpenSwipeRecognizer extends OneSequenceGestureRecognizer {
     required this.horizontalDominance,
     required this.verticalDominance,
     required this.minOpenDistance,
-    required this.blockedLeadingWidth,
+    this.blockedLeadingWidth = 0,
+    this.blockedTrailingWidth = 0,
+    this.viewWidth = 0,
     this.onOpenGestureStart,
     this.onOpenGestureUpdate,
     this.onOpenGestureEnd,
@@ -246,7 +286,12 @@ class _DrawerOpenSwipeRecognizer extends OneSequenceGestureRecognizer {
   final double horizontalDominance;
   final double verticalDominance;
   final double minOpenDistance;
-  final double blockedLeadingWidth;
+
+  /// 左/右边缘系统手势区宽度与屏幕逻辑宽度。实例跨重建复用，由
+  /// DrawerSwipeDetector.build 的 update 闭包随 MediaQuery 刷新。
+  double blockedLeadingWidth;
+  double blockedTrailingWidth;
+  double viewWidth;
 
   VoidCallback? onOpen;
 
@@ -275,6 +320,13 @@ class _DrawerOpenSwipeRecognizer extends OneSequenceGestureRecognizer {
   @override
   void addAllowedPointer(PointerDownEvent event) {
     if (blockedLeadingWidth > 0 && event.position.dx <= blockedLeadingWidth) {
+      return;
+    }
+    // 右边缘系统手势区（Android 手势返回 = 右边缘左滑，与右抽屉打开手势
+    // 同方向）：down 在此区内的指针整体让给系统返回，不加入竞技场。
+    if (blockedTrailingWidth > 0 &&
+        viewWidth > 0 &&
+        event.position.dx >= viewWidth - blockedTrailingWidth) {
       return;
     }
     // 手指落在「自带横向手势」的控件（横向可滚动区、可编辑文本）上时直接

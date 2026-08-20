@@ -56,9 +56,11 @@ void main() {
     required String agentId,
     int messageCount = 30,
   }) async {
+    // 同文件内多个用例共享同一个 ffi 数据库文件，消息 id 必须带用例前缀，
+    // 否则跨用例重复（UNIQUE constraint failed: messages.id）。
     for (var i = 0; i < messageCount; i++) {
       await db.createMessage(
-        id: 'msg-$i',
+        id: '$channelId-msg-$i',
         channelId: channelId,
         senderId: i.isEven ? 'user' : agentId,
         senderType: i.isEven ? 'user' : 'agent',
@@ -173,5 +175,28 @@ void main() {
         startDx: 360, distance: 150, dy: 400);
 
     expect(drawerVisible(tester), isTrue, reason: '新会话：左滑后抽屉应打开');
+  });
+
+  testWidgets('right-edge swipe (system back zone) does not open drawer',
+      (tester) async {
+    usePhoneSurface(tester);
+    final db = LocalDatabaseService();
+    final suffix = DateTime.now().microsecondsSinceEpoch;
+    final agentId = 'agent-edge-$suffix';
+    final channelId = 'dm_user_$agentId-$suffix';
+    await tester.runAsync(() async {
+      await createChannel(db, channelId: channelId, name: 'Edge', agentId: agentId);
+      await seedHistory(db, channelId: channelId, agentId: agentId);
+    });
+
+    await pumpChatScreen(tester, agentId: agentId, channelId: channelId);
+
+    // Android 手势返回 = 右边缘左滑，应让给系统返回。390 宽表面、测试环境
+    // 无 systemGestureInsets（0 → 兜底 20px）：区带为 [370, 390)。
+    await swipeLeftWithMidGesturePush(tester,
+        startDx: 385, distance: 100, dy: 400);
+
+    expect(drawerVisible(tester), isFalse,
+        reason: '右边缘系统手势区内的左滑应让给系统返回，不打开抽屉');
   });
 }
