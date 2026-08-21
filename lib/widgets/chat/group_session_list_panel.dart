@@ -328,9 +328,11 @@ class _GroupSessionListContentState extends State<_GroupSessionListContent> {
     final isSameMessage = firstMessage != null &&
         latestMessage != null &&
         firstMessage['id'] == latestMessage['id'];
+    // 没有首条真实消息时，最新消息可能是系统消息：不拿它做预览，
+    // 回落到下方的 fallbackPreview。
     final preview = firstRest.isNotEmpty
         ? firstRest
-        : (isSameMessage ? '' : latestContent);
+        : (firstMessage == null || isSameMessage ? '' : latestContent);
     final createdAtStr = latestMessage?['created_at'] as String?;
     String timeText = '';
     if (createdAtStr != null) {

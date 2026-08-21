@@ -384,13 +384,18 @@ extension ChannelDao on LocalDatabaseService {
     return results.isEmpty ? null : results.first;
   }
 
-  /// 获取 channel 第一条消息（会话列表用首句作标题）
+  /// 获取 channel 第一条**非系统**消息（会话列表用首句作标题）。
+  ///
+  /// 跳过 system / permission_audit 等辅助消息——群聊绑定成员会话（gmd_）
+  /// 创建时写入的说明系统消息会占据「第一条」，直接取会令列表标题显示
+  /// 系统文案而非真实内容。全部为系统消息时返回 null，由调用方回退到
+  /// 会话名/描述。
   Future<Map<String, dynamic>?> getFirstChannelMessage(String channelId) async {
     final db = await database;
     final results = await db.query(
       'messages',
-      where: 'channel_id = ?',
-      whereArgs: [channelId],
+      where: 'channel_id = ? AND message_type NOT IN (?, ?)',
+      whereArgs: [channelId, 'system', 'permission_audit'],
       orderBy: 'created_at ASC',
       limit: 1,
     );

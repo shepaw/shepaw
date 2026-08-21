@@ -322,9 +322,11 @@ class _SessionListContentState extends State<_SessionListContent> {
     final isSameMessage = firstMessage != null &&
         latestMessage != null &&
         firstMessage['id'] == latestMessage['id'];
+    // 没有首条真实消息（如 gmd 成员会话只有创建时的系统说明）时，最新
+    // 消息同样可能是系统消息：不拿它做预览，回落到下方的 fallbackPreview。
     final preview = firstRest.isNotEmpty
         ? firstRest
-        : (isSameMessage ? '' : latestContent);
+        : (firstMessage == null || isSameMessage ? '' : latestContent);
     // 无消息时的兜底：绑定会话优先显示描述，其余显示占位文案（与旧行为一致）。
     final boundDesc = isBound ? (session.description ?? '').trim() : '';
     final fallbackPreview = boundDesc.isNotEmpty
