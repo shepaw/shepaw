@@ -357,6 +357,40 @@ class GroupWorkspaceService {
     );
   }
 
+  /// 读取指定轮次的 dispatch 决定（解析后结构）；不存在返回 null。
+  Future<Map<String, dynamic>?> readRoundDispatch({
+    required String groupId,
+    required String sessionId,
+    required int round,
+  }) async {
+    final meta = await loadMeta(groupId);
+    if (meta == null) return null;
+    return _readJson(
+      'store://workspaces/${meta.homeDevice}/'
+      '${roundDir(groupId, sessionId, round)}/dispatch.json',
+    );
+  }
+
+  /// 整轮摘要：state + dispatch 合并（编排状态详情面板用）。
+  Future<Map<String, dynamic>?> readRoundSummary({
+    required String groupId,
+    required String sessionId,
+    required int round,
+  }) async {
+    final state = await readRoundState(
+      groupId: groupId,
+      sessionId: sessionId,
+      round: round,
+    );
+    if (state == null) return null;
+    final dispatch = await readRoundDispatch(
+      groupId: groupId,
+      sessionId: sessionId,
+      round: round,
+    );
+    return {...state, if (dispatch != null) 'dispatch': dispatch};
+  }
+
   /// 读取最新轮次指针（恢复入口）；不存在返回 null。
   Future<Map<String, dynamic>?> readLatestOrchestration({
     required String groupId,
@@ -368,6 +402,27 @@ class GroupWorkspaceService {
       'store://workspaces/${meta.homeDevice}/'
       '${orchestrationRoot(groupId, sessionId)}/latest.json',
     );
+  }
+
+  /// 读取最新群记忆（`shared/memory/latest.md`，纯文本）；无内容返回 null。
+  Future<String?> readSharedMemoryLatest(String groupId) async {
+    final meta = await loadMeta(groupId);
+    if (meta == null) return null;
+    final root = workspaceRoot(groupId);
+    try {
+      final bytes = await StoreUriReader.instance.read(
+        'store://workspaces/${meta.homeDevice}/'
+        '$root/shared/memory/latest.md',
+      );
+      final text = utf8.decode(bytes).trim();
+      return text.isEmpty ? null : text;
+    } catch (e) {
+      LoggerService().debug(
+        'group memory latest read failed: $e',
+        tag: 'GroupWorkspaceService',
+      );
+      return null;
+    }
   }
 
   /// 写入群记忆蒸馏摘要（任务完成时由编排器调用）。

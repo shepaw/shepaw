@@ -130,6 +130,48 @@ void main() {
       );
     });
 
+    test('readRoundSummary 合并 state + dispatch', () async {
+      await ws.ensureGroupWorkspace(
+        groupId: 'group_test3',
+        members: [(agentId: 'she', role: 'admin')],
+      );
+      await ws.writeRoundState(
+        groupId: 'group_test3',
+        sessionId: 'group_session1',
+        round: 1,
+        payload: {
+          'status': 'round_complete',
+          'round': 1,
+          'admin_summary': '已完成基础架构',
+        },
+      );
+      await ws.writeRoundDispatch(
+        groupId: 'group_test3',
+        sessionId: 'group_session1',
+        round: 1,
+        payload: {
+          'status': 'dispatched',
+          'steps': [
+            {
+              'step': 1,
+              'agents': ['agent-b'],
+              'task': '实现功能',
+              'mode': 'concurrent',
+            },
+          ],
+        },
+      );
+      final summary = await ws.readRoundSummary(
+        groupId: 'group_test3',
+        sessionId: 'group_session1',
+        round: 1,
+      );
+      expect(summary!['status'], 'round_complete');
+      expect(summary['admin_summary'], '已完成基础架构');
+      final steps = (summary['dispatch'] as Map<String, dynamic>)['steps'] as List;
+      expect(steps.single['task'], '实现功能');
+    });
+
     test('writeRoundDispatch 写 dispatch.json，与 state 同轮共存', () async {
       await ws.ensureGroupWorkspace(
         groupId: 'group_test3',

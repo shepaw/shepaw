@@ -19,6 +19,7 @@ import 'group_member_session_service.dart';
 import 'group_turn_result.dart';
 import 'planning_helpers.dart';
 import '../../storage/context_bundle.dart';
+import '../../storage/group_workspace_service.dart';
 
 class GroupOrchestrationService {
   final LocalDatabaseService _db;
@@ -253,6 +254,17 @@ class GroupOrchestrationService {
       channelId: channelId,
       isGroup: true,
     );
+
+    // 群记忆主动注入：任务开始时把最新群记忆（shared/memory/latest.md，
+    // 上一个任务的蒸馏总结）带进 admin 上下文，跨任务共享结论。
+    final groupMemory =
+        await GroupWorkspaceService.instance.readSharedMemoryLatest(
+      groupOwnerId,
+    );
+    if (groupMemory != null) {
+      effectiveContent = '$effectiveContent\n\n'
+          '[群历史任务总结（shared/memory/latest.md）]\n$groupMemory';
+    }
 
     // 5. Route to the appropriate flow based on admin setting and @mentions
     LoggerService().debug('Routing: mentions=${mentionedAgentIds.length}, admin=$adminAgentId, agents=${agents.map((a) => a.name).toList()}', tag: 'GroupOrchestrationService');

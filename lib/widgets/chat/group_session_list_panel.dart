@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../controllers/chat_controller.dart';
 import '../../models/channel.dart';
 import '../../services/local_database_service.dart';
+import '../../storage/group_workspace_service.dart';
 import '../../utils/session_utils.dart';
 import '../../l10n/app_localizations.dart';
 import 'session_unread_badge.dart';
@@ -218,13 +219,16 @@ class _GroupSessionListContentState extends State<_GroupSessionListContent> {
         final isCurrent = session.id == widget.currentChannelId;
         final isParent = session.parentGroupId == null;
         final isDisabled = isCurrent || isParent;
-        return FutureBuilder<(Map<String, dynamic>?, Map<String, dynamic>?, int)>(
+        return FutureBuilder<
+            (Map<String, dynamic>?, Map<String, dynamic>?, int,
+                Map<String, dynamic>?)>(
           key: ValueKey('${session.id}_$listRefreshTick'),
-          future: _loadSessionPreview(session.id, isCurrent),
+          future: _loadSessionPreview(session.id, isCurrent, session),
           builder: (context, snapshot) {
             final firstMessage = snapshot.data?.$1;
             final latestMessage = snapshot.data?.$2;
             final unreadCount = snapshot.data?.$3 ?? 0;
+            final orchestration = snapshot.data?.$4;
             final tile = _buildGroupSessionTile(
               context,
               session,
@@ -232,6 +236,7 @@ class _GroupSessionListContentState extends State<_GroupSessionListContent> {
               firstMessage,
               latestMessage,
               unreadCount: unreadCount,
+              orchestration: orchestration,
               selectionMode: _isSelectionMode,
               selected: _selectedIds.contains(session.id),
               selectionEnabled: !isDisabled,
@@ -285,15 +290,156 @@ class _GroupSessionListContentState extends State<_GroupSessionListContent> {
     );
   }
 
-  Future<(Map<String, dynamic>?, Map<String, dynamic>?, int)>
-      _loadSessionPreview(String channelId, bool isCurrent) async {
+  /// 任务编排状态详情面板：最新 round 的 dispatch 决定 / 成员结果 /
+  /// 管理员总结（shared/orchestration 轮次快照可视化）。
+  void _showOrchestrationSheet(
+    BuildContext context,
+    Channel session,
+    Map<String, dynamic> orchestration,
+  ) {
+    final round = orchestration['round'] as int? ?? 0;
+    showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      builder: (sheetContext) {
+        return FutureBuilder<Map<String, dynamic>?>(
+          future: GroupWorkspaceService.instance.readRoundSummary(
+            groupId: session.groupFamilyId,
+            sessionId: session.id,
+            round: round,
+          ),
+          builder: (context, snapshot) {
+            final summary = snapshot.data ?? orchestration;
+            return _buildOrchestrationSheetBody(context, summary, round);
+          },
+        );
+      },
+    );
+  }
+
+  Widget _buildOrchestrationSheetBody(
+    BuildContext context,
+    Map<String, dynamic> summary,
+    int round,
+  ) {
+    final status = summary['status'] as String? ?? '';
+    final steps =
+        (summary['dispatch'] as Map<String, dynamic>?)?['steps'] as List? ??
+            const [];
+    final memberResults =
+        summary['member_results'] as Map<String, dynamic>? ?? const {};
+    final adminSummary = summary['admin_summary'] as String? ?? '';
+    final statusLabel = switch (status) {
+      'finished' => '✅ 已完成',
+      'members_done' => '🔄 成员回复完成，等待汇总',
+      'round_complete' => '🔄 轮次完成',
+      'dispatched' => '🔄 已派发',
+      _ => '🔄 编排进行中',
+    };
+
+    return SafeArea(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(20, 0, 20, 24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('任务编排状态 · 第 $round 轮',
+                style: const TextStyle(
+                    fontSize: 16, fontWeight: FontWeight.bold)),
+            const SizedBox(height: 4),
+            Text(statusLabel,
+                style: TextStyle(
+                    fontSize: 13, color: Colors.orange[800])),
+            if (steps.isNotEmpty) ...[
+              const SizedBox(height: 12),
+              Text('本轮派发',
+                  style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                      color: Colors.grey[700])),
+              const SizedBox(height: 4),
+              for (final s in steps.cast<Map<String, dynamic>>())
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 3),
+                  child: Text(
+                    '步骤${s['step']} → ${(s['agents'] as List).join('、')}'
+                    '${(s['task'] as String? ?? '').isNotEmpty ? '：${s['task']}' : ''}',
+                    style: const TextStyle(fontSize: 13),
+                  ),
+                ),
+            ],
+            if (memberResults.isNotEmpty) ...[
+              const SizedBox(height: 12),
+              Text('成员结果',
+                  style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                      color: Colors.grey[700])),
+              const SizedBox(height: 4),
+              for (final e in memberResults.entries)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 3),
+                  child: Text(
+                    '${e.key}：${_truncate(e.value?['content'] as String? ?? '')}',
+                    style: const TextStyle(fontSize: 13),
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+            ],
+            if (adminSummary.isNotEmpty) ...[
+              const SizedBox(height: 12),
+              Text('管理员总结',
+                  style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                      color: Colors.grey[700])),
+              const SizedBox(height: 4),
+              Text(adminSummary,
+                  style: const TextStyle(fontSize: 13),
+                  maxLines: 4,
+                  overflow: TextOverflow.ellipsis),
+            ],
+            if (steps.isEmpty &&
+                memberResults.isEmpty &&
+                adminSummary.isEmpty)
+              Padding(
+                padding: const EdgeInsets.only(top: 12),
+                child: Text('暂无该轮编排快照',
+                    style: TextStyle(fontSize: 13, color: Colors.grey[500])),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  static String _truncate(String s, [int max = 60]) =>
+      s.length <= max ? s : '${s.substring(0, max)}…';
+
+  Future<(Map<String, dynamic>?, Map<String, dynamic>?, int,
+          Map<String, dynamic>?)>
+      _loadSessionPreview(
+          String channelId, bool isCurrent, Channel session) async {
     final firstMessage =
         await _databaseService.getFirstChannelMessage(channelId);
     final latestMessage =
         await _databaseService.getLatestChannelMessage(channelId);
     var unreadCount = await _databaseService.getUnreadCountByChannel(channelId);
     if (isCurrent) unreadCount = 0;
-    return (firstMessage, latestMessage, unreadCount);
+    // 任务编排状态（latest.json；不存在 = 从未编排，返回 null）。
+    Map<String, dynamic>? orchestration;
+    try {
+      orchestration =
+          await GroupWorkspaceService.instance.readLatestOrchestration(
+        groupId: session.groupFamilyId,
+        sessionId: channelId,
+      );
+    } catch (_) {
+      orchestration = null;
+    }
+    return (firstMessage, latestMessage, unreadCount, orchestration);
   }
 
   Widget _buildGroupSessionTile(
@@ -303,6 +449,7 @@ class _GroupSessionListContentState extends State<_GroupSessionListContent> {
     Map<String, dynamic>? firstMessage,
     Map<String, dynamic>? latestMessage, {
     int unreadCount = 0,
+    Map<String, dynamic>? orchestration,
     bool selectionMode = false,
     bool selected = false,
     bool selectionEnabled = true,
@@ -313,6 +460,13 @@ class _GroupSessionListContentState extends State<_GroupSessionListContent> {
         ? '#default'
         : SessionUtils.shortSessionId(session.id,
             groupChannel: widget.groupChannel);
+
+    // 任务编排状态角标：latest.json 非终态（running/dispatched/members_done/
+    // round_complete）显示「第 N 轮 🔄」；finished 安静（消息日志即结论）。
+    final orchestrationStatus = orchestration?['status'] as String? ?? '';
+    final isOrchestrating =
+        orchestrationStatus.isNotEmpty && orchestrationStatus != 'finished';
+    final orchestrationRound = orchestration?['round'] as int? ?? 0;
 
     // 第一行 = 会话第一条消息的第一句（会话标题就是第一句话），没有消息时
     // 退回「群名 (#id)」；会话编号 #label 仍以小徽标跟在后面。
@@ -455,13 +609,57 @@ class _GroupSessionListContentState extends State<_GroupSessionListContent> {
           );
         },
       ),
-      trailing: timeText.isNotEmpty
-          ? Text(
-              timeText,
-              style: TextStyle(
-                fontSize: 12,
-                color: Colors.grey[500],
-              ),
+      trailing: (timeText.isNotEmpty || isOrchestrating)
+          ? Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                if (isOrchestrating)
+                  InkWell(
+                    onTap: orchestration == null
+                        ? null
+                        : () => _showOrchestrationSheet(
+                              context,
+                              session,
+                              orchestration,
+                            ),
+                    borderRadius: BorderRadius.circular(8),
+                    child: Padding(
+                      padding:
+                          const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const SizedBox(
+                            width: 9,
+                            height: 9,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 1.6,
+                              color: Colors.orange,
+                            ),
+                          ),
+                          const SizedBox(width: 4),
+                          Text(
+                            '第$orchestrationRound轮',
+                            style: TextStyle(
+                              fontSize: 11,
+                              color: Colors.orange[800],
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                if (timeText.isNotEmpty)
+                  Text(
+                    timeText,
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: Colors.grey[500],
+                    ),
+                  ),
+              ],
             )
           : null,
       onTap: selectionMode
