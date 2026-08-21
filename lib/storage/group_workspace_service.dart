@@ -370,6 +370,46 @@ class GroupWorkspaceService {
     );
   }
 
+  /// 写入群记忆蒸馏摘要（任务完成时由编排器调用）。
+  ///
+  /// 内容 = 编排 finish 轮的 admin 总结（零额外 LLM 调用）；落
+  /// `shared/memory/<sessionId>.md` 并按任务完成顺序覆盖 `latest.md`
+  /// （最新任务结论，跨任务共享注入点）。返回 latest 的 store URI。
+  Future<String?> writeSharedMemory({
+    required String groupId,
+    required String sessionId,
+    required String content,
+  }) async {
+    final meta = await loadMeta(groupId);
+    if (meta == null) return null;
+    final home = meta.homeDevice;
+    final root = workspaceRoot(groupId);
+    final bytes = Uint8List.fromList(utf8.encode(content));
+    final sessionRel =
+        '$root/shared/memory/${RuntimePaths.sanitizeSegment(sessionId)}.md';
+    final latestRel = '$root/shared/memory/latest.md';
+    try {
+      await StoreService.instance.writeWorkspaceFile(
+        homeDeviceId: home,
+        relPath: sessionRel,
+        content: bytes,
+      );
+      await StoreService.instance.writeWorkspaceFile(
+        homeDeviceId: home,
+        relPath: latestRel,
+        content: bytes,
+      );
+      return 'store://workspaces/$home/$latestRel';
+    } catch (e) {
+      LoggerService().error(
+        'group workspace memory write failed: $groupId',
+        tag: 'GroupWorkspaceService',
+        error: e,
+      );
+      return null;
+    }
+  }
+
   /// 校验 agent 是否为群成员（store CLI 路径权限依据）。
   Future<bool> isMember(String groupId, String agentId) async {
     final meta = await loadMeta(groupId);

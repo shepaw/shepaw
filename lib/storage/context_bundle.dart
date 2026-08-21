@@ -3,6 +3,7 @@ import 'dart:convert';
 import '../services/logger_service.dart';
 import 'artifact_service.dart';
 import 'device_identity.dart';
+import 'group_workspace_service.dart';
 import 'runtime_paths.dart';
 import 'scope_card.dart';
 import 'store_uri_reader.dart';
@@ -153,6 +154,12 @@ class ContextBundleService {
       }
     }
     if (isGroup) {
+      // 群工作空间共享面（shared/：群记忆 latest.md、编排状态、共享产物）
+      // 作为成员可见 URI 注入——agent 经 store 工具按需读。
+      final meta = await GroupWorkspaceService.instance.loadMeta(ownerId);
+      final home = meta?.homeDevice ?? deviceId;
+      extras.add('store://workspaces/$home/'
+          '${GroupWorkspaceService.instance.workspaceRoot(ownerId)}/shared');
       return ScopeCard.forGroup(
         groupId: ownerId,
         deviceId: deviceId,

@@ -1479,6 +1479,9 @@ class GroupOrchestrationService {
             'rounds': currentRound,
             'cancelled': acpCancellationToken?.isCancelled == true,
             'finished_at': DateTime.now().toIso8601String(),
+            // 最后一次 summarize 的 admin 总结 → 群记忆蒸馏素材
+            // （shared/memory/，零额外 LLM 调用）。
+            'final_summary': adminResponseContent,
           },
         );
 

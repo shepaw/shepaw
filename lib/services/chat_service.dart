@@ -231,6 +231,17 @@ class ChatService {
         round: round,
         payload: payload,
       );
+      // 任务完成：把最终 admin 总结蒸馏到群共享记忆（latest.md 覆盖式）。
+      if (kind == 'finish') {
+        final finalSummary = payload['final_summary'] as String? ?? '';
+        if (finalSummary.trim().isNotEmpty) {
+          await ws.writeSharedMemory(
+            groupId: channel.groupFamilyId,
+            sessionId: channelId,
+            content: finalSummary.trim(),
+          );
+        }
+      }
     } catch (e) {
       LoggerService().error(
         'persist orchestration round failed ($kind)',
@@ -1690,6 +1701,9 @@ $originalQuestion
         'round_complete' => '第 $round 轮已完成',
         _ => '编排进行中',
       };
+      // 历史清空守卫：上下文都在消息日志里，「发消息继续」依赖 admin 的
+      // 既有回复仍在。历史被清空时提示改为无法恢复，避免误导。
+      final hasAgentContext = recent.any((m) => m.from.isAgent);
       final msgId = _uuid.v4();
       await _databaseService.createMessage(
         id: msgId,
@@ -1697,9 +1711,11 @@ $originalQuestion
         senderId: 'system',
         senderType: 'system',
         senderName: 'System',
-        content:
-            '⚠️ 上次任务编排在「$statusLabel」时被中断（应用退出）。'
-            '直接发消息即可让管理员从当前进度继续。',
+        content: hasAgentContext
+            ? '⚠️ 上次任务编排在「$statusLabel」时被中断（应用退出）。'
+                '直接发消息即可让管理员从当前进度继续。'
+            : '⚠️ 上次任务编排在「$statusLabel」时被中断（应用退出），'
+                '且聊天历史已清空，之前的任务上下文可能无法恢复。',
         messageType: 'system',
         metadata: {'orchestration_interrupt': round},
       );

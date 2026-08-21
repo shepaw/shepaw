@@ -208,6 +208,39 @@ void main() {
     });
   });
 
+  group('群记忆蒸馏 (writeSharedMemory)', () {
+    test('写 session 文件 + latest.md 覆盖，返回 latest URI 可读回', () async {
+      await ws.ensureGroupWorkspace(
+        groupId: 'group_mem',
+        members: [(agentId: 'she', role: 'admin')],
+      );
+
+      final uri1 = await ws.writeSharedMemory(
+        groupId: 'group_mem',
+        sessionId: 'group_session_a',
+        content: '任务 A 结论：完成基础架构。',
+      );
+      expect(uri1, isNotNull);
+      expect(uri1, contains('group_group_mem/shared/memory/latest.md'));
+
+      // 第二个任务覆盖 latest，session 文件保留
+      await ws.writeSharedMemory(
+        groupId: 'group_mem',
+        sessionId: 'group_session_b',
+        content: '任务 B 结论：修复了调度 bug。',
+      );
+      final latestBytes =
+          await StoreUriReader.instance.read(uri1!);
+      expect(utf8.decode(latestBytes), '任务 B 结论：修复了调度 bug。');
+
+      final sessionABytes = await StoreUriReader.instance.read(
+        'store://workspaces/${(await ws.loadMeta('group_mem'))!.homeDevice}/'
+        'group_group_mem/shared/memory/group_session_a.md',
+      );
+      expect(utf8.decode(sessionABytes), '任务 A 结论：完成基础架构。');
+    });
+  });
+
   group('跨设备 ACL (grantPeerAccess)', () {
     test('friend 设备追加成员目录与 shared 白名单；owner 设备不动；幂等',
         () async {
