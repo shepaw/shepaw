@@ -42,6 +42,7 @@ import '../messaging/stream_content_splitter.dart';
 import 'group_member_session_service.dart';
 import '../session/history_compactor.dart';
 import '../session/history_compaction_cache_service.dart';
+import '../../storage/group_workspace_service.dart';
 import '../../storage/runtime_paths.dart';
 
 /// Executes a single agent's response turn within a group chat.
@@ -1525,6 +1526,22 @@ class GroupAgentExecutor {
           },
         ));
 
+        // 群工作空间共享面 URI（外接 agent 感知群记忆/共享产物；
+        // 群空间未初始化或读取失败时省略）。
+        String? groupWorkspaceUri;
+        try {
+          final groupChannel = await _db.getChannelById(channelId);
+          if (groupChannel != null) {
+            final meta = await GroupWorkspaceService.instance
+                .loadMeta(groupChannel.groupFamilyId);
+            if (meta != null) {
+              groupWorkspaceUri = 'store://workspaces/${meta.homeDevice}/'
+                  '${GroupWorkspaceService.instance.workspaceRoot(groupChannel.groupFamilyId)}'
+                  '/shared';
+            }
+          }
+        } catch (_) {}
+
         // Build group_context for remote agents
         final groupContext = <String, dynamic>{
           'group_id': channelId,
@@ -1544,6 +1561,9 @@ class GroupAgentExecutor {
             'message_version': messageVersion,
           if (isAdmin && adminExtraTools != null)
             'orchestration_tools': adminExtraTools,
+          // 群工作空间共享面 URI（外接 agent 经 acp-proxy 可见群记忆/
+          // 编排状态/共享产物；读取失败则省略）。
+          if (groupWorkspaceUri != null) 'workspace_uri': groupWorkspaceUri,
         };
 
         final chatResp = await effectiveConnection.sendChatMessage(
