@@ -5,11 +5,42 @@ import '../../cli_base.dart';
 import '../chat/chat_agent_scope.dart';
 import '../../../services/local_database_service.dart';
 import '../../../storage/artifact_service.dart';
+import '../../../storage/device_identity.dart';
+import '../../../storage/group_workspace_service.dart';
 import '../../../storage/public_store_service.dart';
 import '../../../storage/runtime_paths.dart';
 import '../../../storage/store_protocol.dart';
 import '../../../storage/store_service.dart';
 import '../../../storage/store_uri_reader.dart';
+
+/// 校验对群工作空间（`store://workspaces/<device>/group_<gid>/…`）的访问：
+/// 执行者（[ChatAgentScope.agentId]）必须是群成员。非群工作空间 URI 返回
+/// null（放行）。返回错误文案时调用方应拒绝。
+Future<String?> groupWorkspaceAccessError(String uri) async {
+  final parsed = parseStoreUriLoose(uri);
+  if (parsed.space != StoreSpace.workspaces) return null;
+  final segs = parsed.path.split('/').where((s) => s.isNotEmpty).toList();
+  if (segs.isEmpty || !segs.first.startsWith('group_')) return null;
+  final gid = segs.first.substring('group_'.length);
+  if (gid.isEmpty) return null;
+  final agentId = ChatAgentScope.agentId.trim();
+  if (agentId.isEmpty) return 'unknown executor agent id';
+  final isMember = await GroupWorkspaceService.instance.isMember(gid, agentId);
+  if (!isMember) return 'not a member of group workspace (group_$gid)';
+  return null;
+}
+
+/// 允许相对子路径，拒绝 `..` 与点段（防路径穿越；群工作空间成员落点）。
+String? sanitizeMemberRelPath(String raw) {
+  final s = raw.trim().replaceAll(RegExp(r'/+$'), '');
+  if (s.isEmpty) return null;
+  for (final seg in s.split('/')) {
+    if (seg.isEmpty) continue;
+    if (seg == '..') return null;
+    if (seg.startsWith('.')) return null;
+  }
+  return s;
+}
 
 /// [TOOLING 层] store 命名空间 - 存储空间产物/文件读写
 ///
@@ -85,6 +116,59 @@ class StoreWriteCommand extends CliCommand {
           'uri': uri,
           'space': StoreSpace.public_,
           'note': '已写入 public/；可用 store:// 引用。',
+        };
+      } catch (e) {
+        return {'success': false, 'error': '$e'};
+      }
+    }
+    // 群工作空间：`--space workspaces --group <gid>` → 成员自己的
+    // `members/<agentId>/` 子目录。只有群成员可写，且只能写自己的前缀。
+    if (space == StoreSpace.workspaces) {
+      final group = (flags['group'] ?? flags['gid'] ?? '').trim();
+      if (group.isEmpty) {
+        return {
+          'success': false,
+          'error':
+              'missing --group (workspaces write needs the group id)',
+        };
+      }
+      final ws = GroupWorkspaceService.instance;
+      final executorId =
+          (flags['agent_id'] ?? flags['owner'] ?? ChatAgentScope.agentId)
+              .trim();
+      if (executorId.isEmpty) {
+        return {'success': false, 'error': 'unknown executor agent id'};
+      }
+      if (!await ws.isMember(group, executorId)) {
+        return {
+          'success': false,
+          'error':
+              'not a member of this group workspace (group_$group)',
+        };
+      }
+      final meta = await ws.loadMeta(group);
+      final home = meta?.homeDevice ?? await DeviceIdentity.deviceId();
+      final safeRel = sanitizeMemberRelPath(filename);
+      if (safeRel == null) {
+        return {
+          'success': false,
+          'error': 'bad --filename: path traversal not allowed',
+        };
+      }
+      try {
+        final rel = '${ws.membersDir(group, executorId)}/$safeRel';
+        final uri = await StoreService.instance.writeWorkspaceFile(
+          homeDeviceId: home,
+          relPath: rel,
+          content: Uint8List.fromList(utf8.encode(contentText)),
+        );
+        return {
+          'success': true,
+          'uri': uri,
+          'space': StoreSpace.workspaces,
+          'group': group,
+          'note':
+              '已写入群工作空间成员目录 members/$executorId/（仅群成员可读）。',
         };
       } catch (e) {
         return {'success': false, 'error': '$e'};
@@ -191,6 +275,8 @@ class StoreReadCommand extends CliCommand {
     if (uri == null || uri.isEmpty) {
       return {'success': false, 'error': 'missing --uri'};
     }
+    final accessErr = await groupWorkspaceAccessError(uri);
+    if (accessErr != null) return {'success': false, 'error': accessErr};
     try {
       final bytes = await StoreUriReader.instance.read(uri);
       // 文本优先直接返回；二进制给 base64
@@ -237,6 +323,8 @@ class StoreListCommand extends CliCommand {
       return {'success': false, 'error': 'missing --uri'};
     }
     final depth = int.tryParse(flags['depth'] ?? '1') ?? 1;
+    final accessErr = await groupWorkspaceAccessError(uri);
+    if (accessErr != null) return {'success': false, 'error': accessErr};
     try {
       final parsed = parseStoreUriLoose(uri);
       final entries = await StoreService.instance.listDevice(
@@ -266,7 +354,7 @@ class StoreListCommand extends CliCommand {
       withoutQuery.startsWith('store://') ? withoutQuery.substring(8) : raw;
   final segments = rest.split('/').where((s) => s.isNotEmpty).toList();
   if (segments.length < 2) {
-    throw FormatException('bad_uri: missing space/device');
+    throw const FormatException('bad_uri: missing space/device');
   }
   final space = segments[0];
   final device = segments[1];
@@ -275,8 +363,8 @@ class StoreListCommand extends CliCommand {
       : segments.sublist(2).join('/').replaceAll(RegExp(r'/+$'), '');
   for (final seg in path.split('/')) {
     if (seg.isEmpty) continue;
-    if (seg.startsWith('.')) throw FormatException('bad_path: dot segment');
-    if (seg == '..') throw FormatException('bad_path: path traversal');
+    if (seg.startsWith('.')) throw const FormatException('bad_path: dot segment');
+    if (seg == '..') throw const FormatException('bad_path: path traversal');
   }
   return (space: space, device: device, path: path);
 }

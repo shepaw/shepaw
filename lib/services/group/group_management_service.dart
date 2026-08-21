@@ -9,6 +9,7 @@ import '../local_database_service.dart';
 import '../local_user_identity.dart';
 import '../logger_service.dart';
 import '../she_service.dart';
+import '../../storage/group_workspace_service.dart';
 import 'group_admin_gate.dart';
 import 'group_member_session_service.dart';
 import 'she_group_approval_bridge.dart';
@@ -196,6 +197,25 @@ class GroupManagementService {
       groupChannel: channel,
       userId: userId,
     );
+    // 初始化群工作空间（骨架 + 成员表；She 恒为 admin）。
+    await GroupWorkspaceService.instance.ensureGroupWorkspace(
+      groupId: channelId,
+      members: [
+        for (final m in memberAgents)
+          (agentId: m.id, role: m.id == SheService.sheId ? 'admin' : 'member'),
+      ],
+    );
+    // 跨设备 ACL：peer 来源成员设备自动获得群工作空间访问白名单。
+    for (final m in memberAgents) {
+      final peerId = m.sourcePeerId;
+      if (peerId != null && peerId.isNotEmpty) {
+        await GroupWorkspaceService.instance.grantPeerAccess(
+          groupId: channelId,
+          agentId: m.id,
+          peerId: peerId,
+        );
+      }
+    }
     _chat.notifyChannelUpdate(channelId);
 
     LoggerService().info(
@@ -260,6 +280,22 @@ class GroupManagementService {
       );
     }
 
+    // 新成员进入群工作空间成员表（空间按群家族归属）。
+    await GroupWorkspaceService.instance.upsertMember(
+      groupId: channel.groupFamilyId,
+      agentId: agent.id,
+      role: 'member',
+    );
+    // 跨设备 ACL：peer 来源成员设备自动获得群工作空间访问白名单。
+    final peerId = agent.sourcePeerId;
+    if (peerId != null && peerId.isNotEmpty) {
+      await GroupWorkspaceService.instance.grantPeerAccess(
+        groupId: channel.groupFamilyId,
+        agentId: agent.id,
+        peerId: peerId,
+      );
+    }
+
     await _chat.notifyGroupMembershipChange(
       channelId,
       agent.id,
@@ -307,6 +343,12 @@ class GroupManagementService {
     await _db.removeChannelMember(channelId, agent.id);
     await GroupMemberSessionService(_db).deleteMemberSession(
       groupChannelId: channelId,
+      agentId: agent.id,
+    );
+
+    // 移出群工作空间成员表（只更新元数据，不删成员文件）。
+    await GroupWorkspaceService.instance.removeMember(
+      groupId: channel.groupFamilyId,
       agentId: agent.id,
     );
 

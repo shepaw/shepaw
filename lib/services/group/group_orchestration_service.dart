@@ -39,6 +39,16 @@ class GroupOrchestrationService {
   final Future<List<Message>> Function(String channelId, {int limit}) loadChannelMessages;
   final Future<Message?> Function(String messageId) getMessageById;
 
+  /// 群工作空间编排落盘回调（kind: round_start / dispatch_decision /
+  /// members_done / round_complete / finish）。null 时为空操作，不破坏
+  /// 现有调用方与测试。
+  final Future<void> Function({
+    required String channelId,
+    required int round,
+    required String kind,
+    required Map<String, dynamic> payload,
+  })? onOrchestrationRound;
+
   GroupOrchestrationService({
     required LocalDatabaseService db,
     required Uuid uuid,
@@ -51,12 +61,39 @@ class GroupOrchestrationService {
     required this.awaitPlanApproval,
     required this.loadChannelMessages,
     required this.getMessageById,
+    this.onOrchestrationRound,
   })  : _db = db,
         _uuid = uuid,
         _executor = executor,
         _dispatchParser = dispatchParser,
         _planningHelpers = planningHelpers,
         _workflowService = workflowService;
+
+  /// Emit one orchestration state snapshot to the group workspace (best-effort;
+  /// failures are logged, never fatal to the loop).
+  Future<void> _emitOrchestrationRound({
+    required String channelId,
+    required int round,
+    required String kind,
+    required Map<String, dynamic> payload,
+  }) async {
+    final cb = onOrchestrationRound;
+    if (cb == null) return;
+    try {
+      await cb(
+        channelId: channelId,
+        round: round,
+        kind: kind,
+        payload: payload,
+      );
+    } catch (e) {
+      LoggerService().error(
+        'orchestration round emit failed ($kind at round $round)',
+        tag: 'GroupOrchestrationService',
+        error: e,
+      );
+    }
+  }
 
   /// Persist a user-visible system message in the group channel so
   /// orchestration-level failures are never silent in the chat.
@@ -766,6 +803,17 @@ class GroupOrchestrationService {
         // into the summarize round to let the admin remember its own plan.
         String? lastDispatchNote;
         while (true) {
+          await _emitOrchestrationRound(
+            channelId: channelId,
+            round: currentRound,
+            kind: 'round_start',
+            payload: {
+              'status': 'running',
+              'channel_id': channelId,
+              'message_id': userMessage.id,
+              'started_at': DateTime.now().toIso8601String(),
+            },
+          );
           // If admin sent a form/file_upload in the previous round, exit immediately
           // so the user can fill it in (forms are non-blocking).
           if (adminTriggeredNonBlockingInteraction) {
@@ -1013,6 +1061,29 @@ class GroupOrchestrationService {
             );
             TraceService.instance.endSpan(dSpanId, status: 'completed');
           }
+
+          // Record the parsed dispatch decision into the group workspace
+          // (解析后结构，非原始 JSON 块；供恢复与跨端共享)。
+          await _emitOrchestrationRound(
+            channelId: channelId,
+            round: currentRound,
+            kind: 'dispatch_decision',
+            payload: {
+              'status': 'dispatched',
+              'round': currentRound,
+              'steps': dispatch.steps
+                  .map((s) => {
+                        'step': s.step,
+                        'agents': s.agentIds,
+                        'task': s.task,
+                        'mode': s.mode,
+                      })
+                  .toList(),
+              'wants_continue': adminWantsContinue,
+              'unresolved_names': dispatch.unresolvedNames,
+              'parse_error': dispatch.parseError,
+            },
+          );
 
           if (delegatedIds.isEmpty && !adminWantsContinue) {
             // No dispatch and no continue — orchestration complete. Strip the
@@ -1317,6 +1388,28 @@ class GroupOrchestrationService {
             break;
           }
 
+          // Members finished — snapshot their structured outcomes before the
+          // summarize round re-reads history from the DB.
+          await _emitOrchestrationRound(
+            channelId: channelId,
+            round: currentRound,
+            kind: 'members_done',
+            payload: {
+              'status': 'members_done',
+              'round': currentRound,
+              'member_results': {
+                for (final e in delegatedTurnResults.entries)
+                  e.key: {
+                    'content': e.value.content,
+                    'wants_continue': e.value.wantsContinue,
+                    'is_done': e.value.isDone,
+                    'has_dispatch': e.value.hasDispatch,
+                  },
+              },
+              'failed_agents': failedAgentNames,
+            },
+          );
+
           // Reload history (now includes member replies) and call admin again to summarize
           final loopHistory = await loadAndTruncateHistory(channelId, excludeMessageId: userMessage.id);
 
@@ -1360,10 +1453,34 @@ class GroupOrchestrationService {
             onAgentDone?.call(adminAgent.id, adminAgent.name, adminResponseContent.trim().isEmpty);
             break;
           }
+          await _emitOrchestrationRound(
+            channelId: channelId,
+            round: currentRound,
+            kind: 'round_complete',
+            payload: {
+              'status': 'round_complete',
+              'round': currentRound,
+              'admin_summary': adminResponseContent,
+              'wants_continue': adminTurn.wantsContinue,
+              'is_done': adminTurn.isDone,
+            },
+          );
           currentRound++;
           adminTurn = resolveAdminDecision(adminTurn);
 
         }
+
+        await _emitOrchestrationRound(
+          channelId: channelId,
+          round: currentRound,
+          kind: 'finish',
+          payload: {
+            'status': 'finished',
+            'rounds': currentRound,
+            'cancelled': acpCancellationToken?.isCancelled == true,
+            'finished_at': DateTime.now().toIso8601String(),
+          },
+        );
 
         await endOrchTrace(InferenceStatus.completed);
         onAllDone?.call();

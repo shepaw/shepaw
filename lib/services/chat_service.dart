@@ -22,6 +22,7 @@ import 'group/group_interaction_handler.dart';
 import 'group/planning_helpers.dart';
 import 'group/group_agent_executor.dart';
 import 'group/group_orchestration_service.dart';
+import '../storage/group_workspace_service.dart';
 import 'workflow/workflow_service.dart';
 import 'workflow/workflow_step_agent_resolver.dart';
 import '../models/workflow_models.dart';
@@ -193,7 +194,51 @@ class ChatService {
     ),
     loadChannelMessages: (channelId, {int limit = 100}) => loadChannelMessages(channelId, limit: limit),
     getMessageById: (id) => getMessageById(id),
+    onOrchestrationRound: _persistOrchestrationRound,
   );
+
+  /// 群工作空间编排落盘适配：按 kind 写 round 状态或 dispatch 决定。
+  /// 空间按群家族归属（幂等补缺）；失败仅记录，不阻断编排循环。
+  Future<void> _persistOrchestrationRound({
+    required String channelId,
+    required int round,
+    required String kind,
+    required Map<String, dynamic> payload,
+  }) async {
+    try {
+      final channel = await _databaseService.getChannelById(channelId);
+      if (channel == null || !channel.isGroup) return;
+      final ws = GroupWorkspaceService.instance;
+      await ws.ensureGroupWorkspace(
+        groupId: channel.groupFamilyId,
+        members: [
+          for (final m in channel.members)
+            if (m.isAgent) (agentId: m.id, role: m.role),
+        ],
+      );
+      if (kind == 'dispatch_decision') {
+        await ws.writeRoundDispatch(
+          groupId: channel.groupFamilyId,
+          sessionId: channelId,
+          round: round,
+          payload: payload,
+        );
+        return;
+      }
+      await ws.writeRoundState(
+        groupId: channel.groupFamilyId,
+        sessionId: channelId,
+        round: round,
+        payload: payload,
+      );
+    } catch (e) {
+      LoggerService().error(
+        'persist orchestration round failed ($kind)',
+        tag: 'ChatService',
+        error: e,
+      );
+    }
+  }
 
   /// Notifier that emits the set of agent IDs currently typing in 1:1 chats.
   final ValueNotifier<Set<String>> typingAgentIds = ValueNotifier<Set<String>>({});
@@ -1609,6 +1654,65 @@ $originalQuestion
       _notifyChannelUpdate(channelId);
     } catch (e) {
       LoggerService().error('Failed to save workflow failure message', tag: 'ChatService', error: e);
+    }
+  }
+
+  /// 检查群会话的编排恢复状态（`latest.json` 非终态 → 提示中断）。
+  ///
+  /// 进程被杀重启后，内存编排循环已消亡，但 `shared/orchestration/
+  /// <sessionId>/latest.json` 停在非终态。此时发一条系统消息告知用户
+  /// 「发消息即可从当前进度继续」——编排上下文都在消息日志里，新一轮
+  /// sendMessageToGroup 天然从断点延续。幂等：同一轮次只提示一次
+  /// （metadata `orchestration_interrupt` 标记）。
+  Future<bool> maybeNotifyInterruptedOrchestration(String channelId) async {
+    try {
+      final channel = await _databaseService.getChannelById(channelId);
+      if (channel == null || !channel.isGroup) return false;
+      final ws = GroupWorkspaceService.instance;
+      final latest = await ws.readLatestOrchestration(
+        groupId: channel.groupFamilyId,
+        sessionId: channelId,
+      );
+      if (latest == null) return false;
+      final status = latest['status'] as String? ?? '';
+      if (status == 'finished') return false;
+      final round = latest['round'] as int? ?? 0;
+
+      // 幂等：最近消息已有同轮次提示则跳过（重启重进不重复打扰）。
+      final recent = await loadChannelMessages(channelId, limit: 60);
+      final alreadyNotified = recent.any((m) =>
+          m.from.isSystem &&
+          m.metadata?['orchestration_interrupt'] == round);
+      if (alreadyNotified) return false;
+
+      final statusLabel = switch (status) {
+        'members_done' => '成员回复已完成、等待管理员汇总',
+        'round_complete' => '第 $round 轮已完成',
+        _ => '编排进行中',
+      };
+      final msgId = _uuid.v4();
+      await _databaseService.createMessage(
+        id: msgId,
+        channelId: channelId,
+        senderId: 'system',
+        senderType: 'system',
+        senderName: 'System',
+        content:
+            '⚠️ 上次任务编排在「$statusLabel」时被中断（应用退出）。'
+            '直接发消息即可让管理员从当前进度继续。',
+        messageType: 'system',
+        metadata: {'orchestration_interrupt': round},
+      );
+      await _databaseService.markMessageAsRead(msgId);
+      _notifyChannelUpdate(channelId);
+      return true;
+    } catch (e) {
+      LoggerService().error(
+        'Failed to check interrupted orchestration',
+        tag: 'ChatService',
+        error: e,
+      );
+      return false;
     }
   }
 

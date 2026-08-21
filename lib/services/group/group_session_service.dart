@@ -1,5 +1,6 @@
 import 'package:uuid/uuid.dart';
 import '../../models/channel.dart';
+import '../../storage/group_workspace_service.dart';
 import '../local_database_service.dart';
 import '../acp_agent_connection.dart';
 import '../inference_log_service.dart';
@@ -57,6 +58,14 @@ class GroupSessionService {
     await _memberSessions.ensureMemberSessionsForGroup(
       groupChannel: channel,
       userId: userId,
+    );
+    // 群工作空间按群家族归属（幂等补缺：父群已建则复用，子会话共享同一空间根）。
+    await GroupWorkspaceService.instance.ensureGroupWorkspace(
+      groupId: parentGroupId,
+      members: [
+        for (final m in channel.members)
+          if (m.isAgent) (agentId: m.id, role: m.role),
+      ],
     );
     notifyChannelUpdate(newChannelId);
     return newChannelId;
