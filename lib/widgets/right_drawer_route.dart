@@ -142,22 +142,34 @@ class RightDrawerRoute<T> extends RawDialogRoute<T> {
   /// 其余按进度：过半打开，否则 pop（didPop 会从当前值 reverse 退出）。
   ///
   /// [opening] 表示本次手势是打开手势（聊天页左滑，经
-  /// [RightDrawerHandle.settle] 收尾）而非关闭手势（抽屉/遮罩上右滑）：
-  /// 打开手势已被识别器接受（位移超过最小打开距离，见
-  /// DrawerSwipeDetector 的 minOpenDistance/touchSlop 裁决），默认继续打开，
-  /// 仅在明显反向甩动（向右 >400px/s，用户反悔）时关闭。这里**不能**再用
-  /// 「进度 <10% 且无向左甩动即关」的误触级微滑判断：会话加载完成时
-  /// push 抽屉路由会触发 Navigator._cancelActivePointers，把在途手指变成
-  /// PointerCancelEvent（速度强制归零），任何加载完成于手势前段的真实短滑
-  /// （边缘轻扫通常只有抽屉宽度的 3%~10%）都会被误判为微滑而立即 pop ——
-  /// 正是「闪一下又回去了」。识别器接受手势本身就是微滑过滤（位移不足
-  /// 8px 或非横向主导根本进不到这里），无需二次判断。
-  void settleGesture({double velocityDx = 0, bool opening = false}) {
+  /// [RightDrawerHandle.settle] 收尾）而非关闭手势（抽屉/遮罩上右滑）。
+  /// 打开手势已被识别器接受（左滑位移超过触发阈值，见
+  /// DrawerSwipeDetector 的 minOpenDistance 裁决），收尾以「手指是否仍越过
+  /// 触发阈值」为准：
+  /// - 明显向右甩（>400px/s，用户反悔）→ 关闭；
+  /// - 明显向左甩（<-400px/s）→ 回弹打开；
+  /// - 慢速抬手：[openDx] 已缩回 [openThreshold] 之下（手指滑回去了，
+  ///   抽屉跟随回位）→ 关闭；仍越过阈值（手指继续左滑后松手）→ 完全打开。
+  ///
+  /// 这里**不能**退化成「进度 <10% 且无向左甩动即关」的微滑判断：会话
+  /// 加载完成时 push 抽屉路由会触发 Navigator._cancelActivePointers，把在途
+  /// 手指变成 PointerCancelEvent（速度强制归零）。此时手指仍停在触发阈值
+  /// 之上（识别器接受手势时必然 ≥ 阈值），按阈值规则继续打开 —— 若按进度
+  /// 判断，加载完成于手势前段的真实短滑会被误判为微滑而立即 pop，正是
+  /// 「闪一下又回去了」。识别器接受手势本身就是微滑过滤（左滑不足阈值或
+  /// 非横向主导根本进不到这里），无需二次判断。
+  void settleGesture({
+    double velocityDx = 0,
+    double openDx = 0,
+    double openThreshold = 0,
+    bool opening = false,
+  }) {
     final c = controller;
     if (c == null) return;
     final bool close;
     if (opening) {
-      close = velocityDx > 400;
+      close = velocityDx > 400 ||
+          (velocityDx > -400 && openDx < openThreshold);
     } else if (velocityDx > 400) {
       close = true; // 明显向右甩 → 关闭
     } else if (velocityDx < -400) {
@@ -208,10 +220,15 @@ class RightDrawerRoute<T> extends RawDialogRoute<T> {
 /// 调用方在打开手势开始时创建并随 [showRightDrawer] 传入；路由推入后
 /// attach。手势期间通过 [setProgress] 驱动抽屉进度，抬手时用 [settle] 收尾。
 class RightDrawerHandle {
-  RightDrawerHandle({required this.width});
+  RightDrawerHandle({required this.width, required this.openThreshold});
 
   /// 抽屉宽度（px），用于把手指位移换算为进度。
   final double width;
+
+  /// 打开手势的触发阈值（px，与 DrawerSwipeDetector 的 minOpenDistance
+  /// 一致）：抬手时手指位移已缩回该阈值之下视为「滑回去了」→ 关闭；
+  /// 仍越过阈值视为「继续左滑后松手」→ 完全打开。
+  final double openThreshold;
 
   RightDrawerRoute? _route;
 
@@ -225,14 +242,22 @@ class RightDrawerHandle {
   /// 手指位移 → 进度：`位移 / width`，由路由 clamp 到 0~1。
   void setProgress(double progress) => _route?.setGestureProgress(progress);
 
-  /// 抬手收尾：按当前进度与甩动速度决定回弹打开或关闭。
+  /// 抬手收尾：按当前位移与甩动速度决定回弹打开或关闭。
   ///
   /// 打开手势的收尾与关闭手势相反：默认继续打开，只有明显向右甩（反悔）
-  /// 才关闭（见 [RightDrawerRoute.settleGesture] 的 `opening`）。注意 push
-  /// 引发的 PointerCancel 也会经此收尾（速度 0），此时继续打开正是想要的
-  /// 行为 —— 手势已被识别器接受，抽屉应打开而不是闪退。
-  void settle({double velocityDx = 0}) =>
-      _route?.settleGesture(velocityDx: velocityDx, opening: true);
+  /// 或手指已缩回触发阈值之下（滑回去了，抽屉跟随回位）才关闭（见
+  /// [RightDrawerRoute.settleGesture] 的 `opening`）。[openDx] 为抬手瞬间
+  /// 打开方向上的位移（px），由识别器的 onOpenGestureEnd 上报。注意 push
+  /// 引发的 PointerCancel 也会经此收尾（速度 0、openDx 不变），此时 openDx
+  /// 仍越过阈值、继续打开正是想要的行为 —— 手势已被识别器接受，抽屉应
+  /// 打开而不是闪退。
+  void settle({double velocityDx = 0, double openDx = 0}) => _route
+      ?.settleGesture(
+        velocityDx: velocityDx,
+        openDx: openDx,
+        openThreshold: openThreshold,
+        opening: true,
+      );
 }
 
 /// 让页面随其上方的右侧抽屉路由联动：抽屉打开/关闭动画与手指拖动期间，

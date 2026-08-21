@@ -58,6 +58,15 @@ import '../service_locator.dart' show getIt;
 /// Both choices are persisted; the dialog is only shown while undecided.
 enum _PeerSyncChoice { sync, disable }
 
+/// 聊天页抽屉打开手势的触发阈值（px）：左滑位移达到该距离才判定为打开
+/// 手势，抽屉开始跟随手指。必须明显大于 SelectionArea 的 18px touchSlop，
+/// 否则上下滚动时手指带出的轻微横向漂移（旧配置 8px 在 dy/dx<1 的起手
+/// 瞬间即接受）会误开抽屉 —— 滚动中 dy 早在 18px 就交给消息列表（见
+/// verticalScrollSlop），抽屉根本等不到 8px 阈值以下的机会。
+/// 代价（框架竞技场限制）：起点落在文本气泡上的左滑会被选区拖拽识别器
+/// 在 |dx|>18px 抢先，让位给文字拖选，气泡上打不开抽屉（见 build 注释）。
+const double _chatDrawerOpenSwipeThreshold = 30;
+
 class ChatScreen extends StatefulWidget {
   final String? agentId;
   final String? agentName;
@@ -1438,9 +1447,10 @@ class _ChatScreenState extends State<ChatScreen>
     _drawerGestureOpenDx = openDx;
     final handle = _drawerHandle;
     if (handle != null) {
-      handle.settle(velocityDx: velocityDx);
+      handle.settle(velocityDx: velocityDx, openDx: openDx);
     } else {
-      // 会话还在加载中：记下速度，push 后由加载流程补一次 settle。
+      // 会话还在加载中：记下速度，push 后由加载流程补一次 settle
+      // （openDx 已累计在 _drawerGestureOpenDx）。
       _drawerGestureEndVelocity = velocityDx;
     }
   }
@@ -1571,7 +1581,10 @@ class _ChatScreenState extends State<ChatScreen>
       );
 
       final width = _chatDrawerWidth(context);
-      final handle = gestureMode ? RightDrawerHandle(width: width) : null;
+      final handle = gestureMode
+          ? RightDrawerHandle(
+              width: width, openThreshold: _chatDrawerOpenSwipeThreshold)
+          : null;
       _drawerHandle = handle;
       final route = LayoutUtils.showRightDrawer(
         context: context,
@@ -1589,10 +1602,14 @@ class _ChatScreenState extends State<ChatScreen>
       unawaited(route.dismissed.then((_) {
         if (_drawerRoute == route) _drawerRoute = null;
       }));
-      // 打开手势可能在会话加载完成前已抬手：push 后立即按最终速度收尾。
+      // 打开手势可能在会话加载完成前已抬手：push 后立即按抬手瞬间的速度
+      // 与位移收尾（openDx 已在 _drawerGestureOpenDx 累计）。
       final endVelocity = _drawerGestureEndVelocity;
       if (gestureMode && endVelocity != null && handle != null) {
-        handle.settle(velocityDx: endVelocity);
+        handle.settle(
+          velocityDx: endVelocity,
+          openDx: _drawerGestureOpenDx,
+        );
       }
       await route.popped;
 
@@ -1739,7 +1756,10 @@ class _ChatScreenState extends State<ChatScreen>
       );
 
       final width = _chatDrawerWidth(context);
-      final handle = gestureMode ? RightDrawerHandle(width: width) : null;
+      final handle = gestureMode
+          ? RightDrawerHandle(
+              width: width, openThreshold: _chatDrawerOpenSwipeThreshold)
+          : null;
       _drawerHandle = handle;
       final route = LayoutUtils.showRightDrawer(
         context: context,
@@ -1757,10 +1777,14 @@ class _ChatScreenState extends State<ChatScreen>
       unawaited(route.dismissed.then((_) {
         if (_drawerRoute == route) _drawerRoute = null;
       }));
-      // 打开手势可能在会话加载完成前已抬手：push 后立即按最终速度收尾。
+      // 打开手势可能在会话加载完成前已抬手：push 后立即按抬手瞬间的速度
+      // 与位移收尾（openDx 已在 _drawerGestureOpenDx 累计）。
       final endVelocity = _drawerGestureEndVelocity;
       if (gestureMode && endVelocity != null && handle != null) {
-        handle.settle(velocityDx: endVelocity);
+        handle.settle(
+          velocityDx: endVelocity,
+          openDx: _drawerGestureOpenDx,
+        );
       }
       await route.popped;
 
@@ -2579,23 +2603,25 @@ class _ChatScreenState extends State<ChatScreen>
           // 系统返回，避免抢事件 —— 用户滑返回时抽屉被误打开。主页左侧
           // 抽屉对应的左边缘由 blockLeadingEdgeDrawerGesture 处理。
           blockTrailingEdgeDrawerGesture: true,
-          // 阈值必须压到 SelectionArea 的 touchSlop（18px）之下：气泡内容被
-          // SelectionArea 包裹，其 TapAndHorizontalDrag 识别器在 Android 上
-          // eagerVictoryOnDrag=true、|dx|>18 就抢走竞技场（且路径更内层，
-          // 先处理事件），默认 36px 的阈值永远等不到机会。降到 8px 后，只要
-          // 单帧位移不到 ~10px（60Hz 下约 660px/s 以内的正常滑动）就能抢先
-          // 接受，气泡上左滑即可打开抽屉。代价是阈值低了滚动起始容易误触，
-          // 故用 verticalDominance 2.0 保留纵向让位（dy > 2×dx 即拒，约 63°
-          // 以上的真实滚动瞬间让给列表）；45°~63° 斜向滑动保持 wait，自然
-          // 输给列表（36px）或 SelectionArea（|dx|>18）。horizontalDominance
-          // 降到 1.0（45° 锥）：真实手指/模拟器拖动几乎不可能完全水平，旧值
-          // 1.5（33.7° 锥）会把 dy/dx 略大的打开手势全部误杀（Android 上被
-          // SelectionArea 抢先、iOS 上被列表 36px 抢先，抽屉基本滑不出来）。
-          // 长按选择不受影响（长按无位移，由长按识别器接管）；横向滚动/输入
-          // 框被识别器在 down 时让位（见 drawer_swipe_detector.dart 的
+          // 触发阈值 = 30px 的真实横向滑动距离（见
+          // _chatDrawerOpenSwipeThreshold）：上下滚动时手指带出的轻微横向
+          // 漂移在到达 30px 之前，列表已在 dy ≥ 18px（verticalScrollSlop）
+          // 接管竞技场，滚动正常、抽屉不触发；只有刻意左滑超过 30px 才
+          // 开始打开（跟手：抽屉只出来手指拖过的距离）。
+          // 代价（框架竞技场限制）：气泡内容被 SelectionArea 包裹，其拖拽
+          // 识别器在 |dx|>18px 抢先接受（eagerVictoryOnDrag），起点落在文本
+          // 气泡上的左滑会让位给文字拖选，抽屉从气泡上起手打不开 —— 这是
+          // 阈值高于 18px 的必然结果；消息间隙、空白处、空状态页等非气泡
+          // 区域左滑 30px 照常打开。verticalDominance 2.0 保留纵向让位
+          // （dy > 2×dx 即拒，约 63° 以上的真实滚动瞬间让给列表）；
+          // 45°~63° 斜向滑动保持 wait，自然输给列表。horizontalDominance
+          // 1.0（45° 锥）：真实手指/模拟器拖动几乎不可能完全水平，旧值
+          // 1.5（33.7° 锥）会把 dy/dx 略大的打开手势全部误杀。长按选择
+          // 不受影响（长按无位移，由长按识别器接管）；横向滚动/输入框被
+          // 识别器在 down 时让位（见 drawer_swipe_detector.dart 的
           // _hasOwnedHorizontalGestureAt）。
           touchSlop: 8,
-          minOpenDistance: 8,
+          minOpenDistance: _chatDrawerOpenSwipeThreshold,
           horizontalDominance: 1.0,
           verticalDominance: 2.0,
           direction: DrawerSwipeDirection.rightToLeft,

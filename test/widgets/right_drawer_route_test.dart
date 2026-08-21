@@ -12,6 +12,9 @@ const _openButtonKey = Key('open-drawer');
 const _drawerWidth = 300.0;
 const _screenWidth = 800.0;
 
+/// 与 chat_screen 的 _chatDrawerOpenSwipeThreshold 一致的触发阈值。
+const _openThreshold = 30.0;
+
 /// 测试用共享控制器：与真实聊天页一致，同一控制器同时驱动抽屉路由
 /// （showRightDrawer 的 sharedController，路由不销毁它）与页面联动
 /// （RightDrawerLinkedPage）。
@@ -256,7 +259,10 @@ void main() {
               builder: (context) {
                 return ElevatedButton(
                   onPressed: () {
-                    handle = RightDrawerHandle(width: _drawerWidth);
+                    handle = RightDrawerHandle(
+                      width: _drawerWidth,
+                      openThreshold: _openThreshold,
+                    );
                     LayoutUtils.showRightDrawer<void>(
                       context: context,
                       width: _drawerWidth,
@@ -312,7 +318,10 @@ void main() {
               builder: (context) {
                 return ElevatedButton(
                   onPressed: () {
-                    handle = RightDrawerHandle(width: _drawerWidth);
+                    handle = RightDrawerHandle(
+                      width: _drawerWidth,
+                      openThreshold: _openThreshold,
+                    );
                     LayoutUtils.showRightDrawer<void>(
                       context: context,
                       width: _drawerWidth,
@@ -335,8 +344,9 @@ void main() {
     await tester.tap(find.text('open'));
     await tester.pump();
 
-    // 半进度、无甩动速度：旧逻辑 c.value <= 0.5 → pop（闪一下），新逻辑打开。
-    handle.settle(velocityDx: 0);
+    // 半进度、无甩动速度、openDx 仍越过触发阈值：旧逻辑 c.value <= 0.5 →
+    // pop（闪一下），新逻辑按「openDx ≥ 阈值」打开。
+    handle.settle(velocityDx: 0, openDx: _drawerWidth * 0.5);
     await tester.pumpAndSettle();
     expect(find.byKey(_drawerKey), findsOneWidget);
     expect(handle.progress, closeTo(1.0, 0.001));
@@ -355,7 +365,10 @@ void main() {
               builder: (context) {
                 return ElevatedButton(
                   onPressed: () {
-                    handle = RightDrawerHandle(width: _drawerWidth);
+                    handle = RightDrawerHandle(
+                      width: _drawerWidth,
+                      openThreshold: _openThreshold,
+                    );
                     LayoutUtils.showRightDrawer<void>(
                       context: context,
                       width: _drawerWidth,
@@ -377,7 +390,9 @@ void main() {
 
     await tester.tap(find.text('open'));
     await tester.pump();
-    handle.settle(velocityDx: 0);
+    // 常见左滑：只拖了 20% 宽度（openDx=60 ≥ 阈值）、抬手前手指减速到 ~0
+    // 速度 → 应回弹打开。
+    handle.settle(velocityDx: 0, openDx: _drawerWidth * 0.2);
     await tester.pumpAndSettle();
     expect(find.byKey(_drawerKey), findsOneWidget);
     expect(handle.progress, closeTo(1.0, 0.001));
@@ -396,7 +411,10 @@ void main() {
               builder: (context) {
                 return ElevatedButton(
                   onPressed: () {
-                    handle = RightDrawerHandle(width: _drawerWidth);
+                    handle = RightDrawerHandle(
+                      width: _drawerWidth,
+                      openThreshold: _openThreshold,
+                    );
                     LayoutUtils.showRightDrawer<void>(
                       context: context,
                       width: _drawerWidth,
@@ -423,14 +441,10 @@ void main() {
     expect(find.byKey(_drawerKey), findsNothing);
   });
 
-  testWidgets('open-gesture settle: micro swipe (no progress, no flick) opens',
+  testWidgets('open-gesture settle: openDx below threshold with no flick closes',
       (tester) async {
-    // 回归：低进度 + 零速度（旧逻辑「进度 <10% 且无左甩即关」）必须打开。
-    // 识别器接受手势（位移超过 touchSlop/minOpenDistance 且横向主导）本身就
-    // 是误触过滤；settle 的微滑判断只会误伤真实手势 —— 会话加载完成时 push
-    // 抽屉路由触发 Navigator._cancelActivePointers，在途手指被取消（速度强制
-    // 归零），任何加载完成于手势前段的真实短滑（边缘轻扫通常只有抽屉宽度
-    // 的 3%~10%）都会命中「微滑」而被立即 pop，正是「闪一下又回去了」。
+    // 手指已向右滑回（openDx 缩回触发阈值之下，如 300px 宽抽屉上的 15px）
+    // 后抬手、无甩动 → 关闭：抽屉跟随手指回位后松手，不应默认打开。
     final controller = _makeController();
     late RightDrawerHandle handle;
     await tester.pumpWidget(
@@ -441,7 +455,10 @@ void main() {
               builder: (context) {
                 return ElevatedButton(
                   onPressed: () {
-                    handle = RightDrawerHandle(width: _drawerWidth);
+                    handle = RightDrawerHandle(
+                      width: _drawerWidth,
+                      openThreshold: _openThreshold,
+                    );
                     LayoutUtils.showRightDrawer<void>(
                       context: context,
                       width: _drawerWidth,
@@ -463,7 +480,53 @@ void main() {
 
     await tester.tap(find.text('open'));
     await tester.pump();
-    handle.settle(velocityDx: 0);
+    handle.settle(velocityDx: 0, openDx: 15); // 15 < 30 阈值 → 关闭
+    await tester.pumpAndSettle();
+    expect(find.byKey(_drawerKey), findsNothing);
+  });
+
+  testWidgets('open-gesture settle: openDx at threshold with no flick opens',
+      (tester) async {
+    // 回归锚点：会话加载完成时 push 抽屉路由触发 Navigator._cancelActivePointers，
+    // 在途手指被取消（速度强制归零），但 openDx 仍 ≥ 触发阈值（识别器接受
+    // 手势时必然 ≥ 阈值）→ 必须继续打开；若按进度判断，加载完成于手势前段
+    // 的真实短滑会被误判为微滑而立即 pop，正是「闪一下又回去了」。
+    final controller = _makeController();
+    late RightDrawerHandle handle;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: Center(
+            child: Builder(
+              builder: (context) {
+                return ElevatedButton(
+                  onPressed: () {
+                    handle = RightDrawerHandle(
+                      width: _drawerWidth,
+                      openThreshold: _openThreshold,
+                    );
+                    LayoutUtils.showRightDrawer<void>(
+                      context: context,
+                      width: _drawerWidth,
+                      handle: handle,
+                      initialProgress: 0.1,
+                      sharedController: controller,
+                      builder: (_) =>
+                          Container(key: _drawerKey, color: Colors.white),
+                    );
+                  },
+                  child: const Text('open'),
+                );
+              },
+            ),
+          ),
+        ),
+      ),
+    );
+
+    await tester.tap(find.text('open'));
+    await tester.pump();
+    handle.settle(velocityDx: 0, openDx: _openThreshold); // 30 ≥ 30 → 打开
     await tester.pumpAndSettle();
     expect(find.byKey(_drawerKey), findsOneWidget);
     expect(handle.progress, closeTo(1.0, 0.001));
@@ -540,7 +603,10 @@ void main() {
                   builder: (context) {
                     return ElevatedButton(
                       onPressed: () {
-                        handle = RightDrawerHandle(width: _drawerWidth);
+                        handle = RightDrawerHandle(
+                      width: _drawerWidth,
+                      openThreshold: _openThreshold,
+                    );
                         LayoutUtils.showRightDrawer<void>(
                           context: context,
                           width: _drawerWidth,

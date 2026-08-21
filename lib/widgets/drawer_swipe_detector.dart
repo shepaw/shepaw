@@ -101,9 +101,12 @@ DrawerSwipeDecision decideDrawerSwipe({
 /// （[onOpenGestureEnd] 带甩动速度），调用方用其驱动抽屉路由的进度
 /// （见 `RightDrawerRoute`），实现抽屉与页面跟随手指。
 ///
-/// 与气泡/输入框共存：聊天页把 [touchSlop]/[minOpenDistance] 压到
-/// SelectionArea 的 touchSlop（18px）之下，气泡上的左滑即可打开抽屉；同时
-/// down 时命中横向可滚动区或可编辑文本会自动让位（见
+/// 与气泡/输入框共存：聊天页把 [minOpenDistance] 设为 30px 的真实横向
+/// 滑动距离，上下滚动的轻微横向漂移（旧 8px 阈值的误触来源）在到阈值前
+/// 就输给列表的 18px 纵向阈值，滚动正常、抽屉不触发。起点落在
+/// SelectionArea 包裹的文本气泡上时，选区的拖拽识别器在 |dx|>18px 抢先
+/// 接受（框架竞技场限制），气泡上的左滑让位给文字拖选，非气泡区域照常
+/// 打开；同时 down 时命中横向可滚动区或可编辑文本会自动让位（见
 /// [_DrawerOpenSwipeRecognizer._hasOwnedHorizontalGestureAt]），横向滚动与
 /// 拖选不受影响。
 ///
@@ -348,8 +351,7 @@ class _DrawerOpenSwipeRecognizer extends OneSequenceGestureRecognizer {
   ///
   /// 在 down 时（竞技场未分胜负前）独立 hit test 一次。命中则本识别器不
   /// 加入竞技场，把指针完整让给下方控件 —— 气泡内代码块的横向滚动、输入
-  /// 框的拖选等永远优先于抽屉打开手势；正因如此，聊天页才能把识别阈值
-  /// 压到 SelectionArea 的 18px 之下（见 chat_screen 的 touchSlop/minOpenDistance）。
+  /// 框的拖选等永远优先于抽屉打开手势（见 chat_screen 的配置）。
   bool _hasOwnedHorizontalGestureAt(Offset position, int viewId) {
     final result = HitTestResult();
     GestureBinding.instance.hitTestInView(result, position, viewId);

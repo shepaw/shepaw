@@ -228,9 +228,9 @@ void main() {
     });
   });
 
-  group('气泡共存（聊天页阈值 8/8/1.0/2.0，SelectionArea 在 |dx|>18 接受竞技场）', () {
+  group('聊天页配置（阈值 30/8/1.0/2.0，SelectionArea 在 |dx|>18 抢先）', () {
     /// 模拟文本气泡：内容被 SelectionArea 包裹（message_bubble.dart 的做法），
-    /// 其 TapAndDrag 识别器在 touchSlop(18px) 接受竞技场。
+    /// 其 TapAndDrag 识别器在 |dx| > touchSlop(18px) 抢先接受竞技场。
     Widget selectionBubble() {
       return Container(
         width: 400,
@@ -251,18 +251,58 @@ void main() {
       );
     }
 
-    testWidgets('气泡上左滑（SelectionArea 包裹）→ 抽屉手势胜出', (tester) async {
+    testWidgets('气泡上左滑 → 让位给选区拖拽（阈值 30 > 选区的 18px）',
+        (tester) async {
+      // 触发阈值 30px 高于 SelectionArea 的 18px touchSlop：起点落在文本
+      // 气泡上时，选区的拖拽识别器在 |dx|>18 抢先接受，抽屉手势等不到
+      // 30px 的机会 —— 这是「阈值 >18px」的必然代价，气泡上的左滑交给
+      // 文字拖选（长按选择不受影响）。
       final events = await runGesture(
         tester,
         const [
           Offset(-6, 0), // 累计 -6：未过 touchSlop 8，wait
-          Offset(-10, 0), // 累计 -16：8px 阈值接受，且仍在 SelectionArea 的 18px 之前
-          Offset(-60, 0), // 累计 -76：accept 后继续上报
+          Offset(-10, 0), // 累计 -16：仍低于 18px 与 30px，wait
+          Offset(-60, 0), // 累计 -76：|dx|>18 时选区已抢先接受
         ],
         touchSlop: 8,
-        minOpenDistance: 8,
-        horizontalDominance: 1.5,
+        minOpenDistance: 30,
+        horizontalDominance: 1.0,
+        verticalDominance: 2.0,
         child: selectionBubble(),
+      );
+      expect(events, isEmpty,
+          reason: 'SelectionArea 在 |dx|>18 接受，30px 阈值的抽屉等不到机会');
+    });
+
+    testWidgets('单帧大位移（极快滑动）→ 竞技场归 SelectionArea（已知边界）',
+        (tester) async {
+      final events = await runGesture(
+        tester,
+        const [Offset(-40, 0)], // 单帧跳过阈值直达 40px
+        touchSlop: 8,
+        minOpenDistance: 30,
+        horizontalDominance: 1.0,
+        verticalDominance: 2.0,
+        child: selectionBubble(),
+      );
+      expect(events, isEmpty,
+          reason: 'SelectionArea 路径更内层、先处理事件：|dx|>18 抢先接受，'
+              '单帧大位移的极快滑动仍会被它抢走（框架竞技场限制）');
+    });
+
+    testWidgets('非气泡区域左滑 30px → 抽屉打开并跟手', (tester) async {
+      final events = await runGesture(
+        tester,
+        const [
+          Offset(-10, 0), // 累计 -10：未达 30px，wait
+          Offset(-10, 0), // 累计 -20：wait
+          Offset(-10, 0), // 累计 -30：达到触发阈值 → accept
+          Offset(-10, 0), // 累计 -40：accept 后继续上报
+        ],
+        touchSlop: 8,
+        minOpenDistance: 30,
+        horizontalDominance: 1.0,
+        verticalDominance: 2.0,
       );
 
       expect(
@@ -270,36 +310,115 @@ void main() {
         1,
         reason: '识别瞬间只回调一次 start',
       );
-      expect(events.first.$2, closeTo(16, 1),
-          reason: 'start 携带识别瞬间累计位移（16px，先于选区的 18px）');
+      expect(events.first.$2, closeTo(30, 1),
+          reason: 'start 携带识别瞬间累计位移（30px，即触发阈值）');
       expect(events.last.$1, 'end');
-      expect(events.last.$2, closeTo(76, 1));
+      expect(events.last.$2, closeTo(40, 1));
     });
 
-    testWidgets('单帧大位移（极快滑动）→ 竞技场归 SelectionArea（已知边界）',
+    testWidgets('带垂直分量的斜滑（39°，dy/dx=0.8）非气泡区域 → 30px 后打开',
+        (tester) async {
+      // 真实手指/模拟器拖动几乎不可能完全水平：horizontalDominance 1.0
+      //（45° 锥）+ verticalDominance 2.0 下，dy/dx=0.8 的手势在 30px 位移
+      // 即接受（旧值 1.5（33.7° 锥）会把这类手势全部误杀）。
+      final events = await runGesture(
+        tester,
+        const [
+          Offset(-5, -4), // 累计 (-5,-4)：未过 touchSlop 8，wait
+          Offset(-5, -4), // 累计 (-10,-8)：distance 12.8 ≥ 8，未达 30px，wait
+          Offset(-5, -4),
+          Offset(-5, -4),
+          Offset(-5, -4),
+          Offset(-5, -4), // 累计 (-30,-24)：30px ≥ 阈值 → accept
+        ],
+        touchSlop: 8,
+        minOpenDistance: 30,
+        horizontalDominance: 1.0,
+        verticalDominance: 2.0,
+      );
+
+      expect(
+        events.where((e) => e.$1 == 'start').length,
+        1,
+        reason: '识别瞬间只回调一次 start',
+      );
+      expect(events.first.$2, closeTo(30, 1),
+          reason: 'start 携带识别瞬间累计位移（30px）');
+      expect(events.last.$1, 'end');
+      expect(events.last.$2, closeTo(30, 1));
+    });
+
+    testWidgets('滚动误触回归：左向漂移起手后转垂直 → 让位给列表，抽屉不触发',
+        (tester) async {
+      // 旧配置（阈值 8px）下，滚动起手时 dy/dx<1 的轻微左向漂移在 ~10px
+      // 就接受打开手势，抽屉跟着滚动被误开。30px 阈值下，漂移段（累计
+      // (-15,-12)）仍在 wait，随后纵向主导（dy > 2×dx）立即拒绝，列表在
+      // dy ≥ 18px 接管滚动 —— 上下滑动完全不受影响。
+      final events = await runGesture(
+        tester,
+        const [
+          Offset(-5, -4),
+          Offset(-5, -4),
+          Offset(-5, -4), // 累计 (-15,-12)：左向主导但未达 30px，wait
+          Offset(-2, -30), // 累计 (-17,-42)：dy 42 > 2×17 → 拒绝，列表接管
+          Offset(0, -20), // 拒绝后指针归列表：滚动继续生效
+          Offset(0, -20),
+        ],
+        touchSlop: 8,
+        minOpenDistance: 30,
+        horizontalDominance: 1.0,
+        verticalDominance: 2.0,
+        child: Container(
+          width: 400,
+          height: 400,
+          color: Colors.white,
+          child: ListView.builder(
+            itemCount: 50,
+            itemExtent: 80,
+            itemBuilder: (_, index) => Container(color: Colors.blue),
+          ),
+        ),
+      );
+
+      expect(events, isEmpty, reason: '滚动漂移不应触发抽屉');
+      final scrollable = tester
+          .state<ScrollableState>(find.byType(Scrollable).first);
+      expect(scrollable.position.pixels, greaterThan(0),
+          reason: '列表确实滚动了');
+    });
+
+    testWidgets('跟手回滑：accept 后向左继续上报、向右回滑递减，抬手带最终位移',
         (tester) async {
       final events = await runGesture(
         tester,
-        const [Offset(-40, 0)], // 单帧跳过 8px 阈值直达 40px
+        const [
+          Offset(-10, 0), // 累计 -10：wait
+          Offset(-10, 0), // 累计 -20：wait
+          Offset(-10, 0), // 累计 -30 → accept
+          Offset(-10, 0), // 累计 -40：继续左滑，update(40)
+          Offset(4, 0), // 累计 -36
+          Offset(4, 0), // 累计 -32
+          Offset(4, 0), // 累计 -28：缩回 30px 阈值之下
+          Offset(4, 0),
+          Offset(4, 0),
+          Offset(4, 0),
+          Offset(4, 0),
+          Offset(4, 0), // 累计 -8：继续回滑
+        ],
         touchSlop: 8,
-        minOpenDistance: 8,
-        horizontalDominance: 1.5,
-        child: selectionBubble(),
+        minOpenDistance: 30,
+        horizontalDominance: 1.0,
+        verticalDominance: 2.0,
       );
-      expect(events, isEmpty,
-          reason: 'SelectionArea 路径更内层、先处理事件：|dx|>18 抢先接受，'
-              '单帧位移 ≥10px 的极快滑动仍会被它抢走（框架竞技场限制，'
-              '60Hz 下约 660px/s 以上的甩动才会触发）');
-    });
 
-    testWidgets('默认 36px 阈值在气泡上无法胜出（回归锚点）', (tester) async {
-      final events = await runGesture(
-        tester,
-        const [Offset(-40, 0), Offset(-40, 0)],
-        child: selectionBubble(),
-      );
-      expect(events, isEmpty,
-          reason: 'SelectionArea 在 18px 接受，36px 阈值的抽屉永远等不到机会');
+      expect(events.first.$1, 'start');
+      expect(events.first.$2, closeTo(30, 1));
+      final updates = events.where((e) => e.$1 == 'update').map((e) => e.$2).toList();
+      expect(updates.first, closeTo(40, 1), reason: '回滑前上报最大位移');
+      expect(updates.last, closeTo(8, 1), reason: '回滑后递减到最终位移');
+      expect(events.last.$1, 'end');
+      expect(events.last.$2, closeTo(8, 1),
+          reason: '抬手携带最终位移（已缩回阈值之下 → 收尾应关闭）');
     });
 
     testWidgets('横向 SingleChildScrollView 上左滑 → 让位且滚动生效', (tester) async {
@@ -307,8 +426,9 @@ void main() {
         tester,
         const [Offset(-10, 0), Offset(-60, 0)],
         touchSlop: 8,
-        minOpenDistance: 8,
-        horizontalDominance: 1.5,
+        minOpenDistance: 30,
+        horizontalDominance: 1.0,
+        verticalDominance: 2.0,
         child: Container(
           width: 400,
           height: 400,
@@ -332,8 +452,9 @@ void main() {
         tester,
         const [Offset(-10, 0), Offset(-60, 0)],
         touchSlop: 8,
-        minOpenDistance: 8,
-        horizontalDominance: 1.5,
+        minOpenDistance: 30,
+        horizontalDominance: 1.0,
+        verticalDominance: 2.0,
         child: Container(
           width: 400,
           height: 400,
@@ -357,8 +478,9 @@ void main() {
         // 从输入框内起手（Center 内 300x48 的 TextField 位于 250..550, 276..324）。
         startOffset: const Offset(400, 300),
         touchSlop: 8,
-        minOpenDistance: 8,
-        horizontalDominance: 1.5,
+        minOpenDistance: 30,
+        horizontalDominance: 1.0,
+        verticalDominance: 2.0,
         child: const Center(
           child: SizedBox(
             width: 300,
@@ -368,41 +490,6 @@ void main() {
         ),
       );
       expect(events, isEmpty, reason: 'down 命中可编辑文本，识别器让位');
-    });
-
-    testWidgets('带垂直分量的斜滑（39°，dy/dx=0.8）在气泡上 → 抽屉胜出（移动端复现）',
-        (tester) async {
-      // 真实手指/模拟器拖动几乎不可能完全水平。旧配置 horizontalDominance
-      // 1.5（33.7° 锥）+「dy ≥ dx 即拒」会让 dy/dx=0.8 的手势永远等不到接受：
-      // Android 上 SelectionArea 在 |dx|>18 抢先、iOS 上列表在 36px 抢先，
-      // 抽屉基本滑不出来（用户实测）。horizontalDominance 降到 1.0（45° 锥）
-      // 后，该角度在 8px 位移即接受，仍先于 SelectionArea 的 18px。
-      final events = await runGesture(
-        tester,
-        const [
-          Offset(-5, -4), // 累计 (-5,-4)：未过 touchSlop 8，wait
-          Offset(-5, -4), // 累计 (-10,-8)：distance 12.8 ≥ 8，10 ≥ 8*1.0 → accept
-          Offset(-5, -4),
-          Offset(-5, -4),
-          Offset(-5, -4),
-          Offset(-5, -4), // 累计 (-30,-24)：accept 后继续上报
-        ],
-        touchSlop: 8,
-        minOpenDistance: 8,
-        horizontalDominance: 1.0,
-        verticalDominance: 2.0,
-        child: selectionBubble(),
-      );
-
-      expect(
-        events.where((e) => e.$1 == 'start').length,
-        1,
-        reason: '识别瞬间只回调一次 start',
-      );
-      expect(events.first.$2, closeTo(10, 1),
-          reason: 'start 携带识别瞬间累计位移（10px，先于选区的 18px）');
-      expect(events.last.$1, 'end');
-      expect(events.last.$2, closeTo(30, 1));
     });
 
     testWidgets('空聊天页（无消息、无滚动列表）空白区域左滑 → 抽屉手势仍生效',
@@ -416,11 +503,11 @@ void main() {
         tester,
         const [
           Offset(-6, 0), // 累计 -6：未过 touchSlop 8，wait
-          Offset(-10, 0), // 累计 -16 → accept
-          Offset(-60, 0),
+          Offset(-10, 0), // 累计 -16：未达 30px，wait
+          Offset(-60, 0), // 累计 -76 ≥ 30 → accept
         ],
         touchSlop: 8,
-        minOpenDistance: 8,
+        minOpenDistance: 30,
         horizontalDominance: 1.0,
         verticalDominance: 2.0,
         child: const Center(
@@ -445,9 +532,9 @@ void main() {
     });
 
     testWidgets('45°~63° 斜滑在真实垂直列表上 → 让位给滚动', (tester) async {
-      // dy/dx=1.6（58°）：drawer 判定永远 wait（openDx < dy×1.0），列表的
-      // VerticalDrag 在 36px（18 hitSlop + 18 dragStartDistanceMotionThreshold）
-      // 接管竞技场 → 滚动生效、抽屉不触发。真实垂直滚动通常 dy >> dx，不受影响。
+      // dy/dx=1.6（58°）：drawer 判定永远 wait（openDx < dy×1.0），随后
+      // dy > 2×dx 拒绝让位，列表在 dy ≥ 18px（verticalScrollSlop）接管
+      // 竞技场 → 滚动生效、抽屉不触发。真实垂直滚动通常 dy >> dx，不受影响。
       final events = await runGesture(
         tester,
         const [
@@ -456,10 +543,10 @@ void main() {
           Offset(-5, -8),
           Offset(-5, -8),
           Offset(-5, -8),
-          Offset(-5, -8),
+          Offset(-5, -8), // 累计 (-30,-48)：dy > 2×30 → 拒绝，列表接管
         ],
         touchSlop: 8,
-        minOpenDistance: 8,
+        minOpenDistance: 30,
         horizontalDominance: 1.0,
         verticalDominance: 2.0,
         child: Container(
@@ -490,10 +577,10 @@ void main() {
         tester,
         const [
           Offset(-10, 0),
-          Offset(-60, 0),
+          Offset(-60, 0), // 累计 -70：即使越过 30px 阈值，区带内也不触发
         ],
         touchSlop: 8,
-        minOpenDistance: 8,
+        minOpenDistance: 30,
         horizontalDominance: 1.0,
         verticalDominance: 2.0,
         blockTrailingEdgeDrawerGesture: true,
@@ -514,10 +601,10 @@ void main() {
         tester,
         const [
           Offset(-10, 0),
-          Offset(-60, 0),
+          Offset(-60, 0), // 累计 -70 ≥ 30 → accept
         ],
         touchSlop: 8,
-        minOpenDistance: 8,
+        minOpenDistance: 30,
         horizontalDominance: 1.0,
         verticalDominance: 2.0,
         blockTrailingEdgeDrawerGesture: true,

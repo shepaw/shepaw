@@ -18,6 +18,9 @@ import 'package:shepaw/widgets/right_drawer_route.dart';
 const _drawerKey = Key('drawer-content');
 const _drawerWidth = 300.0;
 
+/// 与 chat_screen 的 _chatDrawerOpenSwipeThreshold 一致的触发阈值。
+const _openThreshold = 30.0;
+
 class _ReproLog {
   final List<String> entries = <String>[];
   void add(String e) => entries.add(e);
@@ -69,7 +72,10 @@ class _HostState extends State<_Host> with SingleTickerProviderStateMixin {
     await Future<void>.delayed(widget.openDelay); // 模拟会话加载
     if (!mounted) return;
     widget.log.add('push(openDx=${_drawerGestureOpenDx.value})');
-    final handle = RightDrawerHandle(width: _drawerWidth);
+    final handle = RightDrawerHandle(
+      width: _drawerWidth,
+      openThreshold: _openThreshold,
+    );
     _drawerHandle = handle;
     final route = LayoutUtils.showRightDrawer<void>(
       context: context,
@@ -83,7 +89,10 @@ class _HostState extends State<_Host> with SingleTickerProviderStateMixin {
     final endVelocity = _drawerGestureEndVelocity;
     if (endVelocity != null) {
       widget.log.add('settle(stored v=$endVelocity)');
-      handle.settle(velocityDx: endVelocity);
+      handle.settle(
+        velocityDx: endVelocity,
+        openDx: _drawerGestureOpenDx.value,
+      );
       _drawerGestureEndVelocity = null;
     }
     await route.dismissed;
@@ -110,8 +119,8 @@ class _HostState extends State<_Host> with SingleTickerProviderStateMixin {
     _drawerGestureOpenDx.value = openDx;
     final handle = _drawerHandle;
     if (handle != null) {
-      widget.log.add('settle(live v=$velocityDx)');
-      handle.settle(velocityDx: velocityDx);
+      widget.log.add('settle(live v=$velocityDx, dx=$openDx)');
+      handle.settle(velocityDx: velocityDx, openDx: openDx);
     } else {
       _drawerGestureEndVelocity = velocityDx;
     }
@@ -126,7 +135,7 @@ class _HostState extends State<_Host> with SingleTickerProviderStateMixin {
         body: DrawerSwipeDetector(
           enabled: true,
           touchSlop: 8,
-          minOpenDistance: 8,
+          minOpenDistance: _openThreshold,
           horizontalDominance: 1.0,
           verticalDominance: 2.0,
           direction: DrawerSwipeDirection.rightToLeft,
@@ -252,9 +261,10 @@ void main() {
         reason: '抬手早于加载完成：用抬手速度 settle，应打开\n$log');
   });
 
-  // 场景 D：短滑（进度 <10%）。历史上出现过「闪一下又回去」：
-  // 无论快慢，只要 push 时进度 <10% 且无向左甩动速度就 pop。
-  testWidgets('D: short swipe — drawer stays open (no flash)', (tester) async {
+  // 场景 D：短滑（20px < 触发阈值 30px）。旧配置 8px 阈值会接受这种短滑
+  // 并「闪一下又回去」；新阈值下识别器根本不会接受，抽屉不出现。
+  testWidgets('D: below-threshold swipe never opens the drawer',
+      (tester) async {
     final log = _ReproLog();
     await _pumpHost(
       tester,
@@ -264,12 +274,63 @@ void main() {
     );
 
     final gesture = await _swipe(tester,
-        startDx: 320, endDx: 300, dy: 400);
+        startDx: 360, endDx: 340, dy: 400);
+    await tester.pump(const Duration(milliseconds: 150));
+    await gesture.up();
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(_drawerKey), findsNothing,
+        reason: '低于触发阈值的短滑不应触发抽屉\n$log');
+  });
+
+  // 场景 E：越过阈值（40px）的慢速短滑。加载完成 push 打断在途手指
+  // （PointerCancel，速度归零），但 openDx 仍 ≥ 阈值 → 继续打开，
+  // 「闪一下又回去」不再复现（9f306a0 的回归锚点，阈值改为 30px 后）。
+  testWidgets('E: threshold-crossing slow swipe — drawer stays open (no flash)',
+      (tester) async {
+    final log = _ReproLog();
+    await _pumpHost(
+      tester,
+      openDelay: const Duration(milliseconds: 100),
+      withMessageList: true,
+      log: log,
+    );
+
+    final gesture = await _swipe(tester,
+        startDx: 360, endDx: 320, dy: 400);
     await tester.pump(const Duration(milliseconds: 150));
     await gesture.up();
     await tester.pumpAndSettle();
 
     expect(find.byKey(_drawerKey), findsOneWidget,
-        reason: '短滑（进度 <10%）不应闪退\n$log');
+        reason: '越过阈值后被 push 打断的短滑不应闪退\n$log');
+  });
+
+  // 场景 F：打开手势后手指向右滑回（openDx 缩回 30px 阈值之下），抽屉
+  // 跟随回位；加载完成 push 打断在途手指时按阈值规则关闭（不是默认打开）。
+  testWidgets('F: slide back below threshold — drawer follows back and closes',
+      (tester) async {
+    final log = _ReproLog();
+    await _pumpHost(
+      tester,
+      openDelay: const Duration(milliseconds: 400),
+      withMessageList: true,
+      log: log,
+    );
+
+    final gesture = await _swipe(tester,
+        startDx: 360, endDx: 300, dy: 400); // 左滑 60px → 越过阈值
+    // 向右回滑 40px（慢速，速度 < 400px/s）：openDx = 20 < 阈值。
+    for (var i = 1; i <= 4; i++) {
+      await gesture.moveTo(Offset(300 + i * 10, 400));
+      await tester.pump(const Duration(milliseconds: 32));
+    }
+    // 等加载完成：push 打断在途手指时 openDx 已缩回阈值之下 → 关闭。
+    await tester.pump(const Duration(milliseconds: 450));
+    await gesture.up();
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(_drawerKey), findsNothing,
+        reason: '滑回去后抽屉应跟着回去并关闭\n$log');
   });
 }
