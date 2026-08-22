@@ -49,4 +49,19 @@ void main() {
 
     expect(prompt, isNot(contains('以下成员执行失败')));
   });
+
+  test('initial admin prompt instructs requirement clarification', () async {
+    final prompt = await builder.buildGroupSystemPrompt(
+      groupName: '项目群',
+      groupDescription: '',
+      allAgents: [admin, coder],
+      currentAgent: admin,
+      isAdmin: true,
+    );
+
+    expect(prompt, contains('需求澄清'));
+    expect(prompt, contains('group_finish'));
+    expect(prompt, contains('pause'));
+    expect(prompt, contains('凭猜测直接派活'));
+  });
 }

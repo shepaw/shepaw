@@ -917,7 +917,11 @@ class GroupOrchestrationService {
           adminTurn = await _executor.processGroupAgent(
             agent: adminAgent,
             channelId: channelId,
-            content: effectiveContent,
+            content:
+                '$effectiveContent\n\n'
+                '[SYSTEM] 需求澄清：若用户需求不明确或信息不足，请先调用 '
+                '`group_finish`（action=`pause`）向用户澄清，确认后再 '
+                '`group_dispatch`，不要凭猜测派活。',
             attachments: attachments,
             userId: userId,
             userName: userName,
