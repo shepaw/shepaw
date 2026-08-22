@@ -341,6 +341,66 @@ class GroupSetBioCommand extends CliCommand {
   }
 }
 
+/// shepaw chat group set-description — set/clear the group description (admin only).
+class GroupSetDescriptionCommand extends CliCommand {
+  GroupSetDescriptionCommand({GroupManagementService? service})
+      : _service = service ?? GroupManagementService();
+
+  final GroupManagementService _service;
+
+  @override
+  String get name => 'set-description';
+
+  @override
+  String get description =>
+      'Set or clear this group\'s description (admin only — non-admins are denied)';
+
+  @override
+  String get usage =>
+      'shepaw chat group set-description --channel <id> --description "..."';
+
+  @override
+  Map<String, dynamic> getHelp() {
+    final base = super.getHelp();
+    base['flags'] = {
+      'channel': {
+        'description':
+            'Group channel id (or rely on injected channel_id when already in that group)',
+        'required': false,
+        'type': 'string',
+      },
+      'description': {
+        'description':
+            'New group description; omit or pass empty to clear it',
+        'required': false,
+        'type': 'string',
+      },
+    };
+    return base;
+  }
+
+  @override
+  Future<Map<String, dynamic>> execute(Map<String, String> flags) async {
+    final channelId = GroupManagementService.resolveChannelId(flags);
+    if (channelId == null) {
+      return {
+        'error':
+            'Missing --channel. List groups with `shepaw chat channels --type group`.',
+      };
+    }
+    final description = flags['description'] ?? '';
+    final actorId = ChatAgentScope.agentId.isNotEmpty
+        ? ChatAgentScope.agentId
+        : SheService.sheId;
+    final result = await _service.setGroupDescription(
+      channelId: channelId,
+      description: description,
+      actorId: actorId,
+    );
+    return result.toJson();
+  }
+}
+
 /// shepaw chat group send — post into a She-bound group session (admin only).
 class GroupSendCommand extends CliCommand {
   GroupSendCommand({GroupManagementService? service})

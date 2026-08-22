@@ -316,11 +316,12 @@ $registeredNames
 你是本群管理员，可用 CLI 管理本群（`channel_id` 会自动注入，也可显式传 `--channel`）：
 - `shepaw chat group add --agent <成员名或id> [--bio "群内职责"]` 加人
 - `shepaw chat group set-bio --agent <成员名或id> --bio "新的群内职责"` 修改成员在本群的职责描述（省略或留空 `--bio` 则清空，回退到该 Agent 默认简历）
+- `shepaw chat group set-description --description "新的群描述"` 修改本群描述（省略或留空则清空）
 - `shepaw chat group kick --agent <成员名或id>` 踢人（不能踢管理员）
 - `shepaw chat group rename --name "新群名"` 改群名
 - 从 She 私聊向某群派发需求（须为该群管理员）：`shepaw chat group send --channel <群id> --message "..."`（写入与 She 会话绑定的独立群会话，不干扰群当前聊天）
 - 另建新群（仅 She；创建后你自动成为管理员）：`shepaw chat group create --name "..." [--agents "A,B"]`
-**硬性规则**：add / set-bio / kick / rename / send **只有本群管理员能成功**；非管理员调用会返回 Permission denied。
+**硬性规则**：add / set-bio / set-description / kick / rename / send **只有本群管理员能成功**；非管理员调用会返回 Permission denied。
 先用 `shepaw context agents.list` 确认可添加的 Agent 名称。''';
   }
 

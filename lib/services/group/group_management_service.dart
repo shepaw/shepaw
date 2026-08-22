@@ -417,6 +417,33 @@ class GroupManagementService {
     });
   }
 
+  /// Set (or clear) a group's description. Admin only.
+  ///
+  /// [description] empty / null clears the group description.
+  Future<GroupManagementResult> setGroupDescription({
+    required String channelId,
+    required String description,
+    required String actorId,
+  }) async {
+    final trimmed = description.trim();
+    final gate = await _requireAdminGroup(channelId, actorId);
+    if (gate.error != null) {
+      return GroupManagementResult.failure(gate.error!);
+    }
+    final channel = gate.channel!;
+
+    final updated = channel.copyWith(
+      description: trimmed.isEmpty ? null : trimmed,
+    );
+    await _db.updateChannel(updated);
+    _chat.notifyChannelUpdate(channelId);
+
+    return GroupManagementResult.success({
+      'channel_id': channelId,
+      'description': updated.description ?? '',
+    });
+  }
+
   Future<GroupManagementResult> renameGroup({
     required String channelId,
     required String name,

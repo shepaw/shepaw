@@ -154,6 +154,12 @@ void main() {
       expect(missingName['error'], contains('--name'));
     });
 
+    test('set-description requires --channel', () async {
+      final missingChannel = await GroupSetDescriptionCommand()
+          .execute({'description': 'New desc'});
+      expect(missingChannel['error'], contains('--channel'));
+    });
+
     test('send requires --channel, --message, and She channel_id', () async {
       final missingChannel = await GroupSendCommand().execute({
         'message': 'do the thing',
