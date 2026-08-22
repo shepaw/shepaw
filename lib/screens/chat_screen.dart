@@ -42,6 +42,7 @@ import '../widgets/avatar_image.dart';
 import '../widgets/voice_record_overlay.dart';
 import 'remote_agent_detail_screen.dart';
 import 'group_detail_screen.dart';
+import 'group_member_detail_screen.dart';
 import 'agent_runtime_context_screen.dart';
 import '../services/logger_service.dart';
 import '../services/error_handler_service.dart';
@@ -2240,6 +2241,7 @@ class _ChatScreenState extends State<ChatScreen>
         Navigator.of(context).pop();
         _chatInputKey.currentState?.insertMentionForAgent(agent);
       },
+      onOpenMemberDetail: (agent) => _openGroupMemberDetail(agent),
     );
 
     if (LayoutUtils.isDesktopLayout(context)) {
@@ -2259,6 +2261,29 @@ class _ChatScreenState extends State<ChatScreen>
         ),
       );
     }
+  }
+
+  /// 打开群成员详情。先关闭成员面板（面板持有成员快照，返回后再打开会重新加载），
+  /// 返回后刷新成员列表，保证群职责 / 管理员变更立即生效。
+  Future<void> _openGroupMemberDetail(RemoteAgent agent) async {
+    final channel = _controller.groupChannel;
+    if (channel == null) return;
+
+    if (mounted) Navigator.of(context).pop();
+
+    await Navigator.of(context).push<void>(
+      MaterialPageRoute(
+        builder: (_) => GroupMemberDetailScreen(
+          agent: agent,
+          groupChannel: channel,
+          onMentionAgent: (target) {
+            _chatInputKey.currentState?.insertMentionForAgent(target);
+          },
+        ),
+      ),
+    );
+
+    if (mounted) await _controller.refreshGroupMembers();
   }
 
   Future<GroupMembersPanelSnapshot?> _addGroupMemberFromPanel(

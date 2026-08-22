@@ -809,11 +809,11 @@ class AppLocalizationsEn extends AppLocalizations {
   String get addAgent_agentNameRequired => 'Please enter agent name';
 
   @override
-  String get addAgent_agentBio => 'Description (optional)';
+  String get addAgent_agentBio => 'Agent Resume';
 
   @override
   String get addAgent_agentBioHint =>
-      'Briefly describe the agent\'s capabilities';
+      'Describe this agent\'s role, specialties, and working style. Others see this as its resume; the agent can also update it during chat.';
 
   @override
   String get addAgent_systemPrompt => 'Soul (optional)';
@@ -2933,6 +2933,40 @@ class AppLocalizationsEn extends AppLocalizations {
   String groupDetail_deleteFailed(String error) {
     return 'Failed to delete group: $error';
   }
+
+  @override
+  String get groupMemberDetail_title => 'Member Details';
+
+  @override
+  String get groupMemberDetail_groupRole => 'Role in This Group';
+
+  @override
+  String get groupMemberDetail_groupRoleHint =>
+      'Describe this member\'s role in the group; leave empty to use the agent\'s default description';
+
+  @override
+  String get groupMemberDetail_groupRoleEmpty => 'Not set';
+
+  @override
+  String get groupMemberDetail_resume => 'Agent Resume';
+
+  @override
+  String get groupMemberDetail_bioEmpty => 'No description set';
+
+  @override
+  String get groupMemberDetail_role => 'Group Role';
+
+  @override
+  String get groupMemberDetail_mention => 'Mention in group';
+
+  @override
+  String get groupMemberDetail_viewSoul => 'View Soul';
+
+  @override
+  String get groupMemberDetail_saved => 'Saved';
+
+  @override
+  String get groupMemberDetail_keepAdmin => 'At least one admin is required';
 
   @override
   String get drawer_contacts => 'Contacts';

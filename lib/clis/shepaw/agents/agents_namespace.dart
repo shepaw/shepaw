@@ -9,6 +9,8 @@ import 'memory_query_command.dart';
 import 'memory_write_command.dart';
 import 'cognition_query_command.dart';
 import 'cognition_write_command.dart';
+import 'resume_get_command.dart';
+import 'resume_set_command.dart';
 
 /// agents 命名空间 - 已添加的 AI 助手管理
 class AgentsNamespace extends CliNamespace {
@@ -33,5 +35,7 @@ class AgentsNamespace extends CliNamespace {
         'memory-write': MemoryWriteCommand(),
         'cognition-query': CognitionQueryCommand(),
         'cognition-write': CognitionWriteCommand(),
+        'resume-get': ResumeGetCommand(),
+        'resume-set': ResumeSetCommand(),
       };
 }

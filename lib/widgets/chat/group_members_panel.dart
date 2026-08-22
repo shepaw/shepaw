@@ -6,6 +6,7 @@ import '../../models/remote_agent.dart';
 import '../../peer/widgets/peer_source_badge.dart';
 import '../../theme/app_theme.dart';
 import '../../utils/layout_utils.dart';
+import '../avatar_image.dart';
 
 /// Snapshot returned after adding a group member so the panel can refresh.
 class GroupMembersPanelSnapshot {
@@ -32,6 +33,8 @@ class GroupMembersPanel extends StatefulWidget {
   final Future<List<ChannelMember>> Function(RemoteAgent agent, String? newGroupBio) onSaveGroupBio;
   final Future<void> Function(RemoteAgent agent) onChangeAdmin;
   final void Function(RemoteAgent agent) onMentionAgent;
+  /// 点击成员条目打开成员详情；为 null 时点击行为回退为 [onMentionAgent]。
+  final void Function(RemoteAgent agent)? onOpenMemberDetail;
 
   const GroupMembersPanel({
     super.key,
@@ -44,6 +47,7 @@ class GroupMembersPanel extends StatefulWidget {
     required this.onSaveGroupBio,
     required this.onChangeAdmin,
     required this.onMentionAgent,
+    this.onOpenMemberDetail,
   });
 
   @override
@@ -399,25 +403,36 @@ class _GroupMembersPanelState extends State<GroupMembersPanel> {
         tooltip: 'Edit group role',
         onPressed: () => _startEditing(agent),
       ),
-      onTap: () => widget.onMentionAgent(agent),
+      onTap: () {
+        if (widget.onOpenMemberDetail != null) {
+          widget.onOpenMemberDetail!(agent);
+        } else {
+          widget.onMentionAgent(agent);
+        }
+      },
     );
   }
 
   Widget _buildAgentAvatar(RemoteAgent agent, {double size = 40, double fontSize = 14}) {
-    return Container(
-      width: size,
-      height: size,
-      decoration: BoxDecoration(
-        color: AppColors.primaryContainer,
-        borderRadius: BorderRadius.circular(size <= 32 ? 8 : 10),
-      ),
-      alignment: Alignment.center,
-      child: Text(
-        agent.name.isNotEmpty ? agent.name[0].toUpperCase() : '?',
-        style: TextStyle(
-          color: AppColors.primaryDark,
-          fontWeight: FontWeight.bold,
-          fontSize: fontSize,
+    return AvatarImage(
+      avatar: agent.avatar.isNotEmpty ? agent.avatar : '🤖',
+      size: size,
+      borderRadius: size <= 32 ? 8 : 10,
+      fallback: Container(
+        width: size,
+        height: size,
+        decoration: BoxDecoration(
+          color: AppColors.primaryContainer,
+          borderRadius: BorderRadius.circular(size <= 32 ? 8 : 10),
+        ),
+        alignment: Alignment.center,
+        child: Text(
+          agent.name.isNotEmpty ? agent.name[0].toUpperCase() : '?',
+          style: TextStyle(
+            color: AppColors.primaryDark,
+            fontWeight: FontWeight.bold,
+            fontSize: fontSize,
+          ),
         ),
       ),
     );

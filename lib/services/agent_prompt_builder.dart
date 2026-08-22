@@ -95,6 +95,13 @@ class AgentPromptBuilder {
       if (id.isNotEmpty) parts.add(id);
     }
 
+    // ①.5 Resume — non-She / non-peer agents see their own resume (bio) and
+    //   are told how to update it during chat via agents.resume-set.
+    if (!agent.isShe && !agent.isPeerAgent && config.includeIdentity) {
+      final resume = _buildResumeBlock();
+      if (resume.isNotEmpty) parts.add(resume);
+    }
+
     // ② Description
     if (config.includeDescription) {
       if (agent.isShe || config.embedSoulText) {
@@ -303,6 +310,19 @@ class AgentPromptBuilder {
   String _buildIdentityBlock() {
     if (agent.isShe) return ''; // She's name is in the core identity block (②)
     return 'Your name is ${agent.name}.';
+  }
+
+  /// The agent's own resume (bio) — what others see about it. The agent can
+  /// refine this during chat via `agents.resume-set`.
+  String _buildResumeBlock() {
+    final bio = agent.bio?.trim() ?? '';
+    final resumeText = bio.isNotEmpty ? bio : '（未设置 / Not set）';
+    return '''
+## Your Resume
+$resumeText
+
+Others see this as your resume. If your capabilities or role change, update it with:
+`shepaw context agents.resume-set --id ${agent.id} --text "(your updated resume)"`''';
   }
 
   /// The main description / persona block.

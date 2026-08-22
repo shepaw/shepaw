@@ -374,6 +374,49 @@ class GroupManagementService {
     });
   }
 
+  /// Set (or clear) a member's group-specific role description (groupBio)
+  /// across every session in the group family. Admin only.
+  ///
+  /// [groupBio] empty / null clears the member's role description, falling back
+  /// to the agent's own default bio. Mirrors the UI path
+  /// `saveMemberGroupBio` in `chat_controller_group_members.dart`.
+  Future<GroupManagementResult> setMemberGroupBio({
+    required String channelId,
+    required String agentRef,
+    required String actorId,
+    String? groupBio,
+  }) async {
+    final gate = await _requireAdminGroup(channelId, actorId);
+    if (gate.error != null) {
+      return GroupManagementResult.failure(gate.error!);
+    }
+    final channel = gate.channel!;
+
+    final agent = await resolveAgent(agentRef);
+    if (agent == null) {
+      return GroupManagementResult.failure('Agent not found: $agentRef');
+    }
+    if (!channel.agentIds.contains(agent.id)) {
+      return GroupManagementResult.failure(
+        '${agent.name} is not a member of this group.',
+      );
+    }
+
+    final bio = groupBio?.trim().isNotEmpty == true ? groupBio!.trim() : null;
+    final sessions = await _db.getGroupSessions(channel.groupFamilyId);
+    for (final session in sessions) {
+      await _db.updateChannelMemberGroupBio(session.id, agent.id, bio);
+    }
+    _chat.notifyChannelUpdate(channelId);
+
+    return GroupManagementResult.success({
+      'channel_id': channelId,
+      'group_family_id': channel.groupFamilyId,
+      'agent': {'id': agent.id, 'name': agent.name},
+      'group_bio': bio ?? '',
+    });
+  }
+
   Future<GroupManagementResult> renameGroup({
     required String channelId,
     required String name,

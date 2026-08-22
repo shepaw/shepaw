@@ -270,6 +270,77 @@ class GroupRenameCommand extends CliCommand {
   }
 }
 
+/// shepaw chat group set-bio — set/clear a member's role description (admin only).
+class GroupSetBioCommand extends CliCommand {
+  GroupSetBioCommand({GroupManagementService? service})
+      : _service = service ?? GroupManagementService();
+
+  final GroupManagementService _service;
+
+  @override
+  String get name => 'set-bio';
+
+  @override
+  String get description =>
+      'Set or clear a member\'s role description in this group (admin only — '
+      'non-admins are denied)';
+
+  @override
+  String get usage =>
+      'shepaw chat group set-bio --channel <id> --agent <name|id> --bio "..."';
+
+  @override
+  Map<String, dynamic> getHelp() {
+    final base = super.getHelp();
+    base['flags'] = {
+      'channel': {
+        'description':
+            'Group channel id (or rely on injected channel_id when already in that group)',
+        'required': false,
+        'type': 'string',
+      },
+      'agent': {
+        'description': 'Agent name or id whose role description to update',
+        'required': true,
+        'type': 'string',
+      },
+      'bio': {
+        'description':
+            'New group-specific role description; omit or pass empty to clear '
+            '(falls back to the agent\'s default bio)',
+        'required': false,
+        'type': 'string',
+      },
+    };
+    return base;
+  }
+
+  @override
+  Future<Map<String, dynamic>> execute(Map<String, String> flags) async {
+    final channelId = GroupManagementService.resolveChannelId(flags);
+    if (channelId == null) {
+      return {
+        'error':
+            'Missing --channel. List groups with `shepaw chat channels --type group`.',
+      };
+    }
+    final agent = flags['agent']?.trim();
+    if (agent == null || agent.isEmpty) {
+      return {'error': 'Missing required flag: --agent'};
+    }
+    final actorId = ChatAgentScope.agentId.isNotEmpty
+        ? ChatAgentScope.agentId
+        : SheService.sheId;
+    final result = await _service.setMemberGroupBio(
+      channelId: channelId,
+      agentRef: agent,
+      actorId: actorId,
+      groupBio: flags['bio'],
+    );
+    return result.toJson();
+  }
+}
+
 /// shepaw chat group send — post into a She-bound group session (admin only).
 class GroupSendCommand extends CliCommand {
   GroupSendCommand({GroupManagementService? service})

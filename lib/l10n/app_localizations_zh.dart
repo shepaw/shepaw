@@ -780,10 +780,11 @@ class AppLocalizationsZh extends AppLocalizations {
   String get addAgent_agentNameRequired => '请输入助手名称';
 
   @override
-  String get addAgent_agentBio => '助手描述（可选）';
+  String get addAgent_agentBio => 'Agent 简历';
 
   @override
-  String get addAgent_agentBioHint => '简单描述这个助手的功能';
+  String get addAgent_agentBioHint =>
+      '介绍这个 Agent 的定位、擅长领域与工作方式；其他成员会看到它，聊天中 Agent 也可自行修改';
 
   @override
   String get addAgent_systemPrompt => 'Soul（可选）';
@@ -2829,6 +2830,39 @@ class AppLocalizationsZh extends AppLocalizations {
   String groupDetail_deleteFailed(String error) {
     return '删除群组失败: $error';
   }
+
+  @override
+  String get groupMemberDetail_title => '群成员详情';
+
+  @override
+  String get groupMemberDetail_groupRole => '本群职责';
+
+  @override
+  String get groupMemberDetail_groupRoleHint => '描述该成员在本群的职责，留空则使用 Agent 默认描述';
+
+  @override
+  String get groupMemberDetail_groupRoleEmpty => '未设置';
+
+  @override
+  String get groupMemberDetail_resume => 'Agent 简历';
+
+  @override
+  String get groupMemberDetail_bioEmpty => '未填写描述';
+
+  @override
+  String get groupMemberDetail_role => '群内角色';
+
+  @override
+  String get groupMemberDetail_mention => '在群聊中提及';
+
+  @override
+  String get groupMemberDetail_viewSoul => '查看 Soul';
+
+  @override
+  String get groupMemberDetail_saved => '已保存';
+
+  @override
+  String get groupMemberDetail_keepAdmin => '至少保留一位管理员';
 
   @override
   String get drawer_contacts => '通讯录';

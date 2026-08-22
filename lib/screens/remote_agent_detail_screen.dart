@@ -2932,8 +2932,10 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
                 hintText: l10n.addAgent_agentBioHint,
                 border: const OutlineInputBorder(),
                 prefixIcon: const Icon(Icons.description),
+                alignLabelWithHint: true,
               ),
-              maxLines: 2,
+              maxLines: 3,
+              minLines: 2,
               onChanged: (_) => _scheduleAutoSave(),
             ),
             if (!_agent.isPeerAgent) ...[

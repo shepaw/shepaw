@@ -16,6 +16,7 @@ import '../widgets/avatar_image.dart';
 import 'agent_runtime_context_screen.dart';
 import 'workspace_binding_screen.dart';
 import 'chat_screen.dart';
+import 'group_member_detail_screen.dart';
 
 /// Group detail screen, similar to RemoteAgentDetailScreen but for groups.
 /// Supports an optional [startInEditMode] to open directly in edit mode.
@@ -744,31 +745,19 @@ class _GroupDetailScreenState extends State<GroupDetailScreen> {
     final remoteAgent = _remoteAgentMap[member.id];
     final displayName = remoteAgent?.name ?? agent?.name ?? member.id;
     final isAdmin = member.role == 'admin';
+    final avatarStr = remoteAgent?.avatar ?? agent?.avatar ?? '🤖';
 
     return ListTile(
-      leading: remoteAgent != null
-          ? Container(
-              width: 40,
-              height: 40,
-              decoration: BoxDecoration(
-                color: Colors.grey[200],
-                borderRadius: BorderRadius.circular(10),
-              ),
-              alignment: Alignment.center,
-              child: Text(
-                remoteAgent.name.isNotEmpty ? remoteAgent.name[0] : '?',
-                style: const TextStyle(fontSize: 18),
-              ),
-            )
-          : AvatarImage(
-              avatar: agent?.avatar.isNotEmpty == true ? agent!.avatar : '🤖',
-              size: 40,
-              borderRadius: 10,
-              fallback: Text(
-                agent?.name.isNotEmpty == true ? agent!.name[0] : '?',
-                style: const TextStyle(fontSize: 18),
-              ),
-            ),
+      leading: AvatarImage(
+        avatar: avatarStr.isNotEmpty ? avatarStr : '🤖',
+        size: 40,
+        borderRadius: 10,
+        fallback: Text(
+          displayName.isNotEmpty ? displayName[0] : '?',
+          style: const TextStyle(fontSize: 18),
+        ),
+      ),
+      onTap: remoteAgent != null ? () => _openMemberDetail(remoteAgent) : null,
       title: Row(
         children: [
           Flexible(
@@ -828,6 +817,24 @@ class _GroupDetailScreenState extends State<GroupDetailScreen> {
               style: TextStyle(fontSize: 11, color: Colors.grey[400]),
             ),
     );
+  }
+
+  /// 打开群成员详情；详情页可能修改本群职责 / 管理员，返回后重载群信息与成员。
+  Future<void> _openMemberDetail(RemoteAgent remoteAgent) async {
+    await Navigator.of(context).push<void>(
+      MaterialPageRoute(
+        builder: (_) => GroupMemberDetailScreen(
+          agent: remoteAgent,
+          groupChannel: _channel,
+        ),
+      ),
+    );
+    if (!mounted) return;
+    final refreshed = await _databaseService.getChannelById(_channel.id);
+    if (refreshed != null) {
+      setState(() => _channel = refreshed);
+    }
+    await _loadAgents();
   }
 
   Future<void> _startChat() async {

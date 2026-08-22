@@ -372,6 +372,40 @@ class RemoteAgentService {
     await _databaseService.updateRemoteAgentStatus(agentId, 'error');
   }
 
+  /// 从 ACP `agent.getCard` 同步外部 agent 的自述简历到本地 `RemoteAgent.bio`。
+  ///
+  /// 仅当本地简历为空时写入（不覆盖用户在表单填写的简历）。best-effort：
+  /// 网关不支持 getCard / 超时 / 无 description 均静默跳过，不影响调用方。
+  Future<void> _syncResumeFromCard(
+    ACPAgentConnection connection,
+    RemoteAgent agent,
+  ) async {
+    if (agent.bio?.trim().isNotEmpty == true) return;
+    try {
+      final card = await connection
+          .getAgentCard()
+          .timeout(const Duration(seconds: 3));
+      if (!card.isSuccess) return;
+      final result = card.result;
+      if (result is! Map) return;
+      final desc = (result['bio'] as String?) ??
+          (result['description'] as String?);
+      if (desc == null || desc.trim().isEmpty) return;
+      await _databaseService.updateRemoteAgent(
+        agent.copyWith(bio: desc.trim()),
+      );
+      LoggerService().info(
+        'Synced resume from agent card for ${agent.id}',
+        tag: 'RemoteAgent',
+      );
+    } catch (e) {
+      LoggerService().debug(
+        'Sync resume from card skipped for ${agent.id}: $e',
+        tag: 'RemoteAgent',
+      );
+    }
+  }
+
   /// 重置助手为离线状态（从错误恢复）
   Future<void> resetAgentStatus(String agentId) async {
     await _databaseService.updateRemoteAgentStatus(agentId, 'offline');
@@ -548,6 +582,8 @@ class RemoteAgentService {
           );
 
           await _databaseService.updateRemoteAgent(updatedAgent);
+          // 外部 agent 接入时同步自述简历（仅当本地简历为空时）。
+          await _syncResumeFromCard(connection, updatedAgent);
           return true;
         } else {
           LoggerService().error('健康检查失败 (ping error)', tag: 'RemoteAgent');

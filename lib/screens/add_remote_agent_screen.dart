@@ -808,8 +808,10 @@ class _AddRemoteAgentScreenState extends State<AddRemoteAgentScreen> {
                 hintText: l10n.addAgent_agentBioHint,
                 border: const OutlineInputBorder(),
                 prefixIcon: const Icon(Icons.description),
+                alignLabelWithHint: true,
               ),
-              maxLines: 2,
+              maxLines: 3,
+              minLines: 2,
             ),
             const SizedBox(height: 12),
             TextFormField(

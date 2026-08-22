@@ -1523,13 +1523,13 @@ abstract class AppLocalizations {
   /// No description provided for @addAgent_agentBio.
   ///
   /// In zh, this message translates to:
-  /// **'助手描述（可选）'**
+  /// **'Agent 简历'**
   String get addAgent_agentBio;
 
   /// No description provided for @addAgent_agentBioHint.
   ///
   /// In zh, this message translates to:
-  /// **'简单描述这个助手的功能'**
+  /// **'介绍这个 Agent 的定位、擅长领域与工作方式；其他成员会看到它，聊天中 Agent 也可自行修改'**
   String get addAgent_agentBioHint;
 
   /// No description provided for @addAgent_systemPrompt.
@@ -5203,6 +5203,72 @@ abstract class AppLocalizations {
   /// In zh, this message translates to:
   /// **'删除群组失败: {error}'**
   String groupDetail_deleteFailed(String error);
+
+  /// No description provided for @groupMemberDetail_title.
+  ///
+  /// In zh, this message translates to:
+  /// **'群成员详情'**
+  String get groupMemberDetail_title;
+
+  /// No description provided for @groupMemberDetail_groupRole.
+  ///
+  /// In zh, this message translates to:
+  /// **'本群职责'**
+  String get groupMemberDetail_groupRole;
+
+  /// No description provided for @groupMemberDetail_groupRoleHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'描述该成员在本群的职责，留空则使用 Agent 默认描述'**
+  String get groupMemberDetail_groupRoleHint;
+
+  /// No description provided for @groupMemberDetail_groupRoleEmpty.
+  ///
+  /// In zh, this message translates to:
+  /// **'未设置'**
+  String get groupMemberDetail_groupRoleEmpty;
+
+  /// No description provided for @groupMemberDetail_resume.
+  ///
+  /// In zh, this message translates to:
+  /// **'Agent 简历'**
+  String get groupMemberDetail_resume;
+
+  /// No description provided for @groupMemberDetail_bioEmpty.
+  ///
+  /// In zh, this message translates to:
+  /// **'未填写描述'**
+  String get groupMemberDetail_bioEmpty;
+
+  /// No description provided for @groupMemberDetail_role.
+  ///
+  /// In zh, this message translates to:
+  /// **'群内角色'**
+  String get groupMemberDetail_role;
+
+  /// No description provided for @groupMemberDetail_mention.
+  ///
+  /// In zh, this message translates to:
+  /// **'在群聊中提及'**
+  String get groupMemberDetail_mention;
+
+  /// No description provided for @groupMemberDetail_viewSoul.
+  ///
+  /// In zh, this message translates to:
+  /// **'查看 Soul'**
+  String get groupMemberDetail_viewSoul;
+
+  /// No description provided for @groupMemberDetail_saved.
+  ///
+  /// In zh, this message translates to:
+  /// **'已保存'**
+  String get groupMemberDetail_saved;
+
+  /// No description provided for @groupMemberDetail_keepAdmin.
+  ///
+  /// In zh, this message translates to:
+  /// **'至少保留一位管理员'**
+  String get groupMemberDetail_keepAdmin;
 
   /// No description provided for @drawer_contacts.
   ///

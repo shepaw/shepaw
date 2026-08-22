@@ -5,6 +5,7 @@ import '../../models/remote_agent.dart';
 import '../../peer/widgets/peer_source_badge.dart';
 import '../../theme/app_theme.dart';
 import '../../utils/layout_utils.dart';
+import '../avatar_image.dart';
 
 /// Multi-select agent picker for adding members to a group chat.
 ///
@@ -220,21 +221,26 @@ class _AddGroupMemberPickerState extends State<AddGroupMemberPicker> {
                       return CheckboxListTile(
                         value: selected,
                         onChanged: (_) => _toggleAgent(agent),
-                        secondary: Container(
-                          width: 40,
-                          height: 40,
-                          decoration: BoxDecoration(
-                            color: AppColors.primaryContainer,
-                            borderRadius: BorderRadius.circular(10),
-                          ),
-                          alignment: Alignment.center,
-                          child: Text(
-                            agent.name.isNotEmpty
-                                ? agent.name[0].toUpperCase()
-                                : '?',
-                            style: const TextStyle(
-                              color: AppColors.primaryDark,
-                              fontWeight: FontWeight.bold,
+                        secondary: AvatarImage(
+                          avatar: agent.avatar.isNotEmpty ? agent.avatar : '🤖',
+                          size: 40,
+                          borderRadius: 10,
+                          fallback: Container(
+                            width: 40,
+                            height: 40,
+                            decoration: BoxDecoration(
+                              color: AppColors.primaryContainer,
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                            alignment: Alignment.center,
+                            child: Text(
+                              agent.name.isNotEmpty
+                                  ? agent.name[0].toUpperCase()
+                                  : '?',
+                              style: const TextStyle(
+                                color: AppColors.primaryDark,
+                                fontWeight: FontWeight.bold,
+                              ),
                             ),
                           ),
                         ),
