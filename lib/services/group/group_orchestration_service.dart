@@ -72,6 +72,51 @@ class GroupOrchestrationService {
         _planningHelpers = planningHelpers,
         _workflowService = workflowService;
 
+  /// Matches `store://<space>/<device>/<path>…` tokens in free text, stopping
+  /// at whitespace / markdown closers / CJK punctuation.
+  static final RegExp _storeUriPattern = RegExp(r'store://[^\s\]\[\)\},，;]+');
+
+  /// Extract unique `store://…` artifact URIs referenced in a member reply.
+  static List<String> extractStoreUris(String text) {
+    final uris = <String>[];
+    for (final m in _storeUriPattern.allMatches(text)) {
+      var uri = m.group(0)!.trim();
+      while (uri.isNotEmpty &&
+          (uri.endsWith(')') ||
+              uri.endsWith(']') ||
+              uri.endsWith('}') ||
+              uri.endsWith(',') ||
+              uri.endsWith('，') ||
+              uri.endsWith('。') ||
+              uri.endsWith(';') ||
+              uri.endsWith('.') ||
+              uri.endsWith('：'))) {
+        uri = uri.substring(0, uri.length - 1);
+      }
+      if (uri.isNotEmpty && !uris.contains(uri)) uris.add(uri);
+    }
+    return uris;
+  }
+
+  /// Build the 【成员产物】 block for the admin's summarize turn: each member's
+  /// produced store:// links. Empty when no member referenced an artifact.
+  static String buildMemberArtifactsBlock(
+    Map<String, GroupTurnResult> results,
+    List<RemoteAgent> agents,
+  ) {
+    final lines = <String>[];
+    for (final entry in results.entries) {
+      final agent = agents.where((a) => a.id == entry.key).firstOrNull;
+      final name = agent?.name ?? entry.key;
+      final uris = extractStoreUris(entry.value.content);
+      if (uris.isEmpty) continue;
+      lines.add('- $name: ${uris.join('  ')}');
+    }
+    if (lines.isEmpty) return '';
+    return '\n\n【成员产物】本轮成员产出并引用的 store:// 链接（若成员未在回复中列出，可能未写文件）：\n'
+        '${lines.join('\n')}';
+  }
+
   /// Emit one orchestration state snapshot to the group workspace (best-effort;
   /// failures are logged, never fatal to the loop).
   Future<void> _emitOrchestrationRound({
@@ -1593,6 +1638,8 @@ class GroupOrchestrationService {
                     'wants_continue': e.value.wantsContinue,
                     'is_done': e.value.isDone,
                     'has_dispatch': e.value.hasDispatch,
+                    // 成员回复中引用的产物 store:// URI，落盘供审计/恢复。
+                    'artifacts': extractStoreUris(e.value.content),
                   },
               },
               'failed_agents': failedAgentNames,
@@ -1608,9 +1655,11 @@ class GroupOrchestrationService {
             adminTurn = await _executor.processGroupAgent(
               agent: adminAgent,
               channelId: channelId,
-              content: lastDispatchNote != null
-                  ? '$effectiveContent\n\n[SYSTEM] 你上一轮的派发记录（该 JSON 已从你的消息中隐藏，仅供核对）：$lastDispatchNote'
-                  : effectiveContent,
+              content:
+                  '${lastDispatchNote != null
+                      ? '$effectiveContent\n\n[SYSTEM] 你上一轮的派发记录（该 JSON 已从你的消息中隐藏，仅供核对）：$lastDispatchNote'
+                      : effectiveContent}'
+                  '${buildMemberArtifactsBlock(delegatedTurnResults, agents)}',
               attachments: attachments,
               userId: userId,
               userName: userName,

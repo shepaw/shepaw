@@ -1,6 +1,8 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shepaw/models/remote_agent.dart';
 import 'package:shepaw/services/group/group_dispatch_parser.dart';
+import 'package:shepaw/services/group/group_orchestration_service.dart';
+import 'package:shepaw/services/group/group_turn_result.dart';
 import 'package:shepaw/services/local_database_service.dart';
 
 void main() {
@@ -163,6 +165,43 @@ void main() {
     expect(content, isNot(contains('【你的任务】')));
     expect('用户完整需求原文'.allMatches(content).length, 1);
     expect(content, contains('群记忆'));
+  });
+
+  test('extractStoreUris pulls unique store URIs and trims punctuation', () {
+    const reply = '完成，产物见 [a](store://workspaces/dev/group_1/shared/a.md)。'
+        '以及 store://workspaces/dev/group_1/shared/b.md, '
+        '重复的 store://workspaces/dev/group_1/shared/a.md';
+    final uris = GroupOrchestrationService.extractStoreUris(reply);
+    expect(uris, [
+      'store://workspaces/dev/group_1/shared/a.md',
+      'store://workspaces/dev/group_1/shared/b.md',
+    ]);
+    expect(GroupOrchestrationService.extractStoreUris('没有产物'), isEmpty);
+  });
+
+  test('buildMemberArtifactsBlock lists member artifacts', () {
+    final results = <String, GroupTurnResult>{
+      'a1': const GroupTurnResult(
+        content: '产物：store://workspaces/dev/group_1/shared/c.md',
+      ),
+      'a2': const GroupTurnResult(content: '纯文本回复'),
+    };
+    final block = GroupOrchestrationService.buildMemberArtifactsBlock(
+      results,
+      agents,
+    );
+    expect(block, contains('【成员产物】'));
+    expect(block, contains('Coder'));
+    expect(block, contains('store://workspaces/dev/group_1/shared/c.md'));
+    expect(block, isNot(contains('Reviewer')));
+
+    expect(
+      GroupOrchestrationService.buildMemberArtifactsBlock(
+        const {'a1': GroupTurnResult(content: '无产物')},
+        agents,
+      ),
+      isEmpty,
+    );
   });
 
   test('parseStructuredDispatch recognizes pause', () {
