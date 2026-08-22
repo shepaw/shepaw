@@ -689,16 +689,20 @@ class MessageBubble extends StatelessWidget {
   }
 
   Widget _wrapWithTextSelection(Widget child, {bool useSharedSelectionKey = true}) {
-    final content = textSelectionEnabled
-        ? child
-        : SelectionContainer.disabled(child: child);
+    // 空闲时不包 SelectionArea：其横向拖拽识别器在 |dx|>18px 抢先接受竞技场
+    //（eagerVictoryOnDrag），会抢走聊天页抽屉打开手势 —— 而空闲时文本本就不
+    // 可选中（原实现用 SelectionContainer.disabled，选区内无 Selectable 注册，
+    // 拖选是 no-op），包上 SelectionArea 只会让抽屉在气泡上起手失灵。
+    // 长按选中（MessageLongPressHandler 把 textSelectionEnabled 置 true）后
+    // 才挂载 SelectionArea，此时选区内拖拽/手柄优先，抽屉让位。
+    if (!textSelectionEnabled) return child;
     return SelectionArea(
       key: useSharedSelectionKey ? selectionAreaKey : null,
       focusNode: useSharedSelectionKey ? selectionFocusNode : null,
       contextMenuBuilder: (context, selectableRegionState) {
         return const SizedBox.shrink();
       },
-      child: content,
+      child: child,
     );
   }
 
