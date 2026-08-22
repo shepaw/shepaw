@@ -138,19 +138,21 @@ void main() {
   });
 
   /// 记录识别后的事件：('start'|'update'|'end', openDx)。
-  Future<List<(String, double)>> runGesture(
+  /// start 事件额外记录第三元组值：实际生效的打开阈值（文本上可能更低）。
+  Future<List<(String, double, double?)>> runGesture(
       WidgetTester tester,
       List<Offset> moves, {
       Widget? child,
       Offset startOffset = const Offset(300, 200),
       double touchSlop = kTouchSlop,
       double minOpenDistance = 36,
+      double? minOpenDistanceOnSelectableText,
       double horizontalDominance = 1.25,
       double verticalDominance = 2.0,
       bool blockTrailingEdgeDrawerGesture = false,
       double? trailingEdgeBlockWidth,
     }) async {
-      final events = <(String, double)>[];
+      final events = <(String, double, double?)>[];
       await tester.pumpWidget(
         MaterialApp(
           home: Scaffold(
@@ -158,13 +160,15 @@ void main() {
               direction: DrawerSwipeDirection.rightToLeft,
               touchSlop: touchSlop,
               minOpenDistance: minOpenDistance,
+              minOpenDistanceOnSelectableText: minOpenDistanceOnSelectableText,
               horizontalDominance: horizontalDominance,
               verticalDominance: verticalDominance,
               blockTrailingEdgeDrawerGesture: blockTrailingEdgeDrawerGesture,
               trailingEdgeBlockWidth: trailingEdgeBlockWidth,
-              onOpenGestureStart: (dx) => events.add(('start', dx)),
-              onOpenGestureUpdate: (dx) => events.add(('update', dx)),
-              onOpenGestureEnd: (velocity, dx) => events.add(('end', dx)),
+              onOpenGestureStart: (dx, threshold) =>
+                  events.add(('start', dx, threshold)),
+              onOpenGestureUpdate: (dx) => events.add(('update', dx, null)),
+              onOpenGestureEnd: (velocity, dx) => events.add(('end', dx, null)),
               // 注意：识别器已用 HitTestBehavior.opaque 全区域参与竞技场，
               // 不再依赖子组件命中。
               child: child ??
@@ -251,12 +255,11 @@ void main() {
       );
     }
 
-    testWidgets('气泡上左滑 → 让位给选区拖拽（阈值 30 > 选区的 18px）',
+    testWidgets('气泡上左滑（未配置文本阈值）→ 让位给选区拖拽，保持旧行为',
         (tester) async {
-      // 触发阈值 30px 高于 SelectionArea 的 18px touchSlop：起点落在文本
-      // 气泡上时，选区的拖拽识别器在 |dx|>18 抢先接受，抽屉手势等不到
-      // 30px 的机会 —— 这是「阈值 >18px」的必然代价，气泡上的左滑交给
-      // 文字拖选（长按选择不受影响）。
+      // 未配置 minOpenDistanceOnSelectableText 时，文本与普通区域同一阈值
+      // 30px：SelectionArea 的横向拖拽识别器在 |dx|>18 抢先接受，抽屉手势
+      // 等不到 30px —— 气泡上的左滑仍交给文字拖选（长按选择不受影响）。
       final events = await runGesture(
         tester,
         const [
@@ -271,23 +274,83 @@ void main() {
         child: selectionBubble(),
       );
       expect(events, isEmpty,
-          reason: 'SelectionArea 在 |dx|>18 接受，30px 阈值的抽屉等不到机会');
+          reason: '未配置文本阈值时，SelectionArea 在 |dx|>18 接受，抽屉等不到 30px');
     });
 
-    testWidgets('单帧大位移（极快滑动）→ 竞技场归 SelectionArea（已知边界）',
-        (tester) async {
+    testWidgets('气泡上左滑（文本阈值 16 < 选区的 18）→ 抽屉打开', (tester) async {
+      // down 命中 RenderParagraph（气泡文字，从 (400,300) 文字中心起手）→
+      // 改用 16px 阈值，抢在选区的 |dx|>18 之前接受竞技场。累计 -16 即
+      // accept，而选区此刻 |dx|=16<18 还未接受 —— 气泡上的左滑也能打开抽屉。
       final events = await runGesture(
         tester,
-        const [Offset(-40, 0)], // 单帧跳过阈值直达 40px
+        const [
+          Offset(-6, 0), // 累计 -6：未过 touchSlop 8，wait
+          Offset(-10, 0), // 累计 -16：达文本阈值 16 → accept
+        ],
+        startOffset: const Offset(300, 200),
         touchSlop: 8,
         minOpenDistance: 30,
+        minOpenDistanceOnSelectableText: 16,
+        horizontalDominance: 1.0,
+        verticalDominance: 2.0,
+        child: selectionBubble(),
+      );
+
+      expect(events.where((e) => e.$1 == 'start').length, 1,
+          reason: '气泡上左滑超过 16px 应打开抽屉');
+      expect(events.first.$2, closeTo(16, 1),
+          reason: 'start 携带识别瞬间累计位移（16px）');
+      expect(events.first.$3, 16,
+          reason: 'start 上报实际生效的文本阈值 16（而非 30）');
+      expect(events.last.$1, 'end');
+      expect(events.last.$2, closeTo(16, 1));
+    });
+
+    testWidgets('气泡上斜滑（dy>dx，>45°）→ 不触发抽屉，保持 wait 让位',
+        (tester) async {
+      // dy/dx=1.6（58°）在文本上：openDx < dy×1.0 永远 wait，drawer 不
+      // 接受；选区的横向拖拽在 |dx|>18 后照常接管文字拖选 —— 只有横向主导
+      // （<45°）的左滑才打开抽屉。
+      final events = await runGesture(
+        tester,
+        const [
+          Offset(-5, -8),
+          Offset(-5, -8),
+          Offset(-5, -8),
+          Offset(-5, -8),
+          Offset(-5, -8),
+          Offset(-5, -8), // 累计 (-30,-48)：纵向主导，wait / 拒绝
+        ],
+        startOffset: const Offset(300, 200),
+        touchSlop: 8,
+        minOpenDistance: 30,
+        minOpenDistanceOnSelectableText: 16,
         horizontalDominance: 1.0,
         verticalDominance: 2.0,
         child: selectionBubble(),
       );
       expect(events, isEmpty,
-          reason: 'SelectionArea 路径更内层、先处理事件：|dx|>18 抢先接受，'
-              '单帧大位移的极快滑动仍会被它抢走（框架竞技场限制）');
+          reason: '文本上 dy>dx 的斜滑不应打开抽屉（纵向让位/选区接管）');
+    });
+
+    testWidgets('气泡上单帧大位移（极快滑动）→ 竞技场归 SelectionArea（已知边界）',
+        (tester) async {
+      // 单帧直接从 0 跳到 -40：SelectionArea 路径更内层、先处理事件，
+      // |dx|=40>18 抢先接受，抽屉的 16px 阈值在此帧内没有机会 —— 极快
+      // 滑动仍会被选区抢走（框架竞技场限制，与阈值配置无关）。
+      final events = await runGesture(
+        tester,
+        const [Offset(-40, 0)],
+        startOffset: const Offset(300, 200),
+        touchSlop: 8,
+        minOpenDistance: 30,
+        minOpenDistanceOnSelectableText: 16,
+        horizontalDominance: 1.0,
+        verticalDominance: 2.0,
+        child: selectionBubble(),
+      );
+      expect(events, isEmpty,
+          reason: '单帧大位移的极快滑动仍会被 SelectionArea 抢走');
     });
 
     testWidgets('非气泡区域左滑 30px → 抽屉打开并跟手', (tester) async {

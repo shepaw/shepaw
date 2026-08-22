@@ -100,7 +100,7 @@ class _HostState extends State<_Host> with SingleTickerProviderStateMixin {
     _opening = false;
   }
 
-  void _onOpenGestureStart(double openDx) {
+  void _onOpenGestureStart(double openDx, double openThreshold) {
     _drawerGestureOpenDx.value = openDx;
     _drawerGestureEndVelocity = null;
     unawaited(_startOpenDrawer(openDx));

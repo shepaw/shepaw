@@ -1,7 +1,11 @@
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart'
-    show RenderAbstractViewport, RenderEditable, RenderViewportBase;
+    show
+        RenderAbstractViewport,
+        RenderEditable,
+        RenderParagraph,
+        RenderViewportBase;
 
 /// Decision for a candidate drawer-open swipe while a pointer is moving.
 @visibleForTesting
@@ -103,12 +107,17 @@ DrawerSwipeDecision decideDrawerSwipe({
 ///
 /// 与气泡/输入框共存：聊天页把 [minOpenDistance] 设为 30px 的真实横向
 /// 滑动距离，上下滚动的轻微横向漂移（旧 8px 阈值的误触来源）在到阈值前
-/// 就输给列表的 18px 纵向阈值，滚动正常、抽屉不触发。起点落在
-/// SelectionArea 包裹的文本气泡上时，选区的拖拽识别器在 |dx|>18px 抢先
-/// 接受（框架竞技场限制），气泡上的左滑让位给文字拖选，非气泡区域照常
-/// 打开；同时 down 时命中横向可滚动区或可编辑文本会自动让位（见
-/// [_DrawerOpenSwipeRecognizer._hasOwnedHorizontalGestureAt]），横向滚动与
-/// 拖选不受影响。
+/// 就输给列表的 18px 纵向阈值，滚动正常、抽屉不触发。非气泡区域照常
+/// 30px 打开。起点落在 SelectionArea 包裹的文本气泡上时，选区的横向拖拽
+/// 识别器在 |dx|>18px 抢先接受（框架竞技场限制）—— 因此聊天页把
+/// [minOpenDistanceOnSelectableText] 设为一个低于 18px 的值（16px）：
+/// 识别器在 down 时命中 [RenderParagraph]（气泡文字 / 时间戳等文本）即
+/// 认定「起点在文本上」，改用该更小阈值，在选区的 18px 之前先接受，
+/// 气泡上的左滑也能打开抽屉（以 45° 锥的横向主导为前提，纵向滚动仍让给
+/// 列表）。未配置该参数时文本上与普通区域同一阈值（默认 30px），保持
+/// 旧行为。同时 down 时命中横向可滚动区或可编辑文本会自动让位（见
+/// [_DrawerOpenSwipeRecognizer._classifyPointerTarget]），横向滚动与
+/// 输入框拖选不受影响。
 ///
 /// When [blockLeadingEdgeDrawerGesture] is true, pointers that begin inside
 /// the left system-back edge strip are ignored so iOS/Android back gestures
@@ -133,6 +142,7 @@ class DrawerSwipeDetector extends StatelessWidget {
     this.horizontalDominance = 1.25,
     this.verticalDominance = 2.0,
     this.minOpenDistance = 36,
+    this.minOpenDistanceOnSelectableText,
   });
 
   final Widget child;
@@ -146,7 +156,9 @@ class DrawerSwipeDetector extends StatelessWidget {
   /// 跟手打开模式的入口：提供时识别成功后不再触发 [onOpenDrawer]，
   /// 改以 [onOpenGestureStart] / [onOpenGestureUpdate] / [onOpenGestureEnd]
   /// 持续上报打开方向上的累计位移（px，左滑打开时为正值）直到抬手。
-  final ValueChanged<double>? onOpenGestureStart;
+  /// [openThreshold] 是本次手势实际采用的打开阈值（文本上与普通区域可能
+  /// 不同），调用方用于抽屉收尾（如 RightDrawerHandle 的 openThreshold）。
+  final void Function(double openDx, double openThreshold)? onOpenGestureStart;
 
   /// 识别成功后逐帧上报的打开位移（px）。
   final ValueChanged<double>? onOpenGestureUpdate;
@@ -180,6 +192,14 @@ class DrawerSwipeDetector extends StatelessWidget {
   final double horizontalDominance;
   final double verticalDominance;
   final double minOpenDistance;
+
+  /// 起点落在文本（[RenderParagraph]，如 SelectionArea 包裹的气泡文字 /
+  /// 时间戳）上时使用的打开阈值。默认 null → 与 [minOpenDistance] 相同。
+  ///
+  /// 聊天页设为一个低于 SelectionArea 横向拖拽识别器阈值（|dx|>18px）的
+  /// 值（16px），让抽屉手势在气泡文字上先于选区接受竞技场；普通区域仍用
+  /// [minOpenDistance]（30px），滚动误触保护不变。
+  final double? minOpenDistanceOnSelectableText;
 
   static double resolveLeadingEdgeBlockWidth(
     BuildContext context, {
@@ -238,6 +258,7 @@ class DrawerSwipeDetector extends StatelessWidget {
               horizontalDominance: horizontalDominance,
               verticalDominance: verticalDominance,
               minOpenDistance: minOpenDistance,
+              minOpenDistanceOnSelectableText: minOpenDistanceOnSelectableText,
               blockedLeadingWidth: leadingBlock,
               blockedTrailingWidth: trailingBlock,
               viewWidth: viewWidth,
@@ -269,6 +290,21 @@ class DrawerSwipeDetector extends StatelessWidget {
   }
 }
 
+/// 手指下方命中控件的分类（见 [_DrawerOpenSwipeRecognizer._classifyPointerTarget]）。
+enum _PointerTarget {
+  /// 自带横向手势：横向可滚动区域或可编辑文本。本识别器不加入竞技场，
+  /// 把指针完整让给下方控件 —— 气泡内代码块的横向滚动、输入框的拖选等
+  /// 永远优先于抽屉打开手势（见 chat_screen 的配置）。
+  ownedHorizontalGesture,
+
+  /// 文本（[RenderParagraph]）：SelectionArea 包裹的气泡文字、时间戳、
+  /// 名称等。抽屉加入竞技场，并改用 [minOpenDistanceOnSelectableText]。
+  selectableText,
+
+  /// 其余区域：按普通 [minOpenDistance] 打开。
+  plain,
+}
+
 class _DrawerOpenSwipeRecognizer extends OneSequenceGestureRecognizer {
   _DrawerOpenSwipeRecognizer({
     required this.direction,
@@ -276,6 +312,7 @@ class _DrawerOpenSwipeRecognizer extends OneSequenceGestureRecognizer {
     required this.horizontalDominance,
     required this.verticalDominance,
     required this.minOpenDistance,
+    this.minOpenDistanceOnSelectableText,
     this.blockedLeadingWidth = 0,
     this.blockedTrailingWidth = 0,
     this.viewWidth = 0,
@@ -290,6 +327,9 @@ class _DrawerOpenSwipeRecognizer extends OneSequenceGestureRecognizer {
   final double verticalDominance;
   final double minOpenDistance;
 
+  /// 起点落在文本上时使用的打开阈值；null → 等同 [minOpenDistance]。
+  final double? minOpenDistanceOnSelectableText;
+
   /// 左/右边缘系统手势区宽度与屏幕逻辑宽度。实例跨重建复用，由
   /// DrawerSwipeDetector.build 的 update 闭包随 MediaQuery 刷新。
   double blockedLeadingWidth;
@@ -298,7 +338,7 @@ class _DrawerOpenSwipeRecognizer extends OneSequenceGestureRecognizer {
 
   VoidCallback? onOpen;
 
-  final ValueChanged<double>? onOpenGestureStart;
+  final void Function(double openDx, double openThreshold)? onOpenGestureStart;
   final ValueChanged<double>? onOpenGestureUpdate;
   final void Function(double velocityDx, double openDx)? onOpenGestureEnd;
 
@@ -308,6 +348,15 @@ class _DrawerOpenSwipeRecognizer extends OneSequenceGestureRecognizer {
   /// 打开方向上的累计位移（左滑打开时为正值）。
   double get _openDx =>
       direction == DrawerSwipeDirection.leftToRight ? _offset.dx : -_offset.dx;
+
+  /// 本次手势起点是否落在文本（[RenderParagraph]）上。
+  bool _onSelectableText = false;
+
+  /// 按起点位置生效的打开阈值：文本上且配置了更低阈值时用该值，否则
+  /// [minOpenDistance]。down 时由 [_classifyPointerTarget] 决定。
+  double get _effectiveMinOpenDistance => _onSelectableText
+      ? (minOpenDistanceOnSelectableText ?? minOpenDistance)
+      : minOpenDistance;
 
   Offset _offset = Offset.zero;
 
@@ -332,12 +381,18 @@ class _DrawerOpenSwipeRecognizer extends OneSequenceGestureRecognizer {
         event.position.dx >= viewWidth - blockedTrailingWidth) {
       return;
     }
-    // 手指落在「自带横向手势」的控件（横向可滚动区、可编辑文本）上时直接
-    // 让位：它们的拖拽识别器在 touchSlop(18px) 就无条件接受竞技场（见
-    // tap_and_drag.dart 的 _hasSufficientGlobalDistanceToAccept）。若不先让位，
-    // 气泡内代码块的横向滚动、输入框的拖选会被抢先接受的抽屉手势抢走。
-    if (_hasOwnedHorizontalGestureAt(event.position, event.viewId)) {
-      return;
+    // 分类手指下方的控件：横向可滚动区/可编辑文本 → 让位（不加入竞技场）；
+    // 文本（气泡/时间戳等 RenderParagraph）→ 加入竞技场但用更低的打开阈值，
+    // 抢在 SelectionArea 的横向拖拽识别器（|dx|>18px 抢先接受）之前赢下。
+    switch (_classifyPointerTarget(event.position, event.viewId)) {
+      case _PointerTarget.ownedHorizontalGesture:
+        return;
+      case _PointerTarget.selectableText:
+        _onSelectableText = true;
+        break;
+      case _PointerTarget.plain:
+        _onSelectableText = false;
+        break;
     }
     _offset = Offset.zero;
     _resolved = false;
@@ -347,32 +402,38 @@ class _DrawerOpenSwipeRecognizer extends OneSequenceGestureRecognizer {
     startTrackingPointer(event.pointer, event.transform);
   }
 
-  /// 手指下方是否命中「自带横向手势」的控件：横向可滚动区域或可编辑文本。
-  ///
-  /// 在 down 时（竞技场未分胜负前）独立 hit test 一次。命中则本识别器不
-  /// 加入竞技场，把指针完整让给下方控件 —— 气泡内代码块的横向滚动、输入
-  /// 框的拖选等永远优先于抽屉打开手势（见 chat_screen 的配置）。
-  bool _hasOwnedHorizontalGestureAt(Offset position, int viewId) {
+  /// 分类手指下方的控件（见 [_PointerTarget]）。down 时（竞技场未分胜负前）
+  /// 独立 hit test 一次。
+  _PointerTarget _classifyPointerTarget(Offset position, int viewId) {
     final result = HitTestResult();
     GestureBinding.instance.hitTestInView(result, position, viewId);
     for (final entry in result.path) {
       final target = entry.target;
       if (target is RenderEditable) {
-        return true;
+        return _PointerTarget.ownedHorizontalGesture;
       }
       // ListView / PageView / 横向附件条等：RenderViewportBase 公开 axisDirection。
-      if (target is RenderViewportBase && _isHorizontalAxis(target.axisDirection)) {
-        return true;
+      if (target is RenderViewportBase &&
+          _isHorizontalAxis(target.axisDirection)) {
+        return _PointerTarget.ownedHorizontalGesture;
       }
       // SingleChildScrollView 的 _RenderSingleChildViewport 是私有类，但公开
       // 实现 RenderAbstractViewport 接口且带公开的 axisDirection getter，
       // 借 dynamic 读取（命中此分支的只可能是它）。
       if (target is RenderBox && target is RenderAbstractViewport) {
         final direction = (target as dynamic).axisDirection as AxisDirection;
-        if (_isHorizontalAxis(direction)) return true;
+        if (_isHorizontalAxis(direction)) {
+          return _PointerTarget.ownedHorizontalGesture;
+        }
       }
     }
-    return false;
+    // 第二遍再认文本：RenderEditable（输入框）不在此列，前面已让位。
+    for (final entry in result.path) {
+      if (entry.target is RenderParagraph) {
+        return _PointerTarget.selectableText;
+      }
+    }
+    return _PointerTarget.plain;
   }
 
   static bool _isHorizontalAxis(AxisDirection direction) =>
@@ -398,7 +459,7 @@ class _DrawerOpenSwipeRecognizer extends OneSequenceGestureRecognizer {
         touchSlop: touchSlop,
         horizontalDominance: horizontalDominance,
         verticalDominance: verticalDominance,
-        minOpenDistance: minOpenDistance,
+        minOpenDistance: _effectiveMinOpenDistance,
       )) {
         case DrawerSwipeDecision.wait:
           break;
@@ -412,7 +473,10 @@ class _DrawerOpenSwipeRecognizer extends OneSequenceGestureRecognizer {
           _accepted = true;
           resolve(GestureDisposition.accepted);
           if (_gestureMode) {
-            onOpenGestureStart?.call(_openDx);
+            // 带上实际生效的打开阈值（文本上可能是更低的那档）：调用方用它
+            // 驱动抽屉收尾（RightDrawerHandle.openThreshold），避免气泡上
+            // 16px 就接受的手势按 30px 收尾导致「开一下又回去」。
+            onOpenGestureStart?.call(_openDx, _effectiveMinOpenDistance);
           } else {
             onOpen?.call();
           }
