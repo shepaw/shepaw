@@ -139,6 +139,26 @@ class GroupWorkspaceMember {
   }
 }
 
+/// 外接 agent MCP 群工具在群工作空间 inbox 写入的编排决定。
+///
+/// 字段与 `group-mcp.ts`（agent-bridge）写入的 payload 对应：
+/// - [dispatch]：`{issued_at, kind: 'dispatch', mode, steps: [{step, agents, task}]}`
+/// - [finish]：`{issued_at, kind: 'finish', action: done|continue|pause}`
+/// - [mentions]：`{issued_at, kind: 'mention', mentions: [{name, notify?, reason?}]}`
+class OrchestrationInbox {
+  const OrchestrationInbox({
+    this.dispatch,
+    this.finish,
+    this.mentions,
+  });
+
+  final Map<String, dynamic>? dispatch;
+  final Map<String, dynamic>? finish;
+  final Map<String, dynamic>? mentions;
+
+  bool get isEmpty => dispatch == null && finish == null && mentions == null;
+}
+
 /// 群工作空间服务。
 ///
 /// 空间布局：
@@ -182,6 +202,11 @@ class GroupWorkspaceService {
   String roundDir(String groupId, String sessionId, int round) =>
       '${orchestrationRoot(groupId, sessionId)}/'
       'round-${round.toString().padLeft(4, '0')}';
+
+  /// 外接 agent（group MCP 工具）写入的 inbox 目录：
+  /// `…/orchestration/<sessionId>/inbox`。
+  String inboxDir(String groupId, String sessionId) =>
+      '${orchestrationRoot(groupId, sessionId)}/inbox';
 
   /// 幂等创建群工作空间骨架 + 元数据。已存在时补缺成员，返回空间根。
   ///
@@ -368,6 +393,41 @@ class GroupWorkspaceService {
     return _readJson(
       'store://workspaces/${meta.homeDevice}/'
       '${roundDir(groupId, sessionId, round)}/dispatch.json',
+    );
+  }
+
+  /// 外接 agent MCP 群工具写入的编排决定（inbox 文件）。
+  ///
+  /// [homeDevice] 为外接 agent 的 hub 设备（从其 metadata workspace_uri
+  /// 解析）；经 [StoreUriReader] 跨设备读（workspaces 是 shared 分区）。
+  /// 只返回 `issued_at` 晚于 [since] 的文件——宿主编排循环每轮记录
+  /// 本轮开始时间，只消费本轮内新写入的决定（不删除、无并发问题）。
+  Future<OrchestrationInbox> readOrchestrationInbox({
+    required String groupId,
+    required String sessionId,
+    required DateTime since,
+    String? homeDevice,
+  }) async {
+    if (homeDevice == null || homeDevice.isEmpty) {
+      return const OrchestrationInbox();
+    }
+    final dir = inboxDir(groupId, sessionId);
+    final sinceIso = since.toUtc().toIso8601String();
+
+    Future<Map<String, dynamic>?> readIfFresh(String file) async {
+      final data = await _readJson(
+        'store://workspaces/$homeDevice/$dir/$file',
+      );
+      if (data == null) return null;
+      final issued = data['issued_at'] as String?;
+      if (issued == null || issued.compareTo(sinceIso) <= 0) return null;
+      return data;
+    }
+
+    return OrchestrationInbox(
+      dispatch: await readIfFresh('dispatch.json'),
+      finish: await readIfFresh('finish.json'),
+      mentions: await readIfFresh('mentions.json'),
     );
   }
 

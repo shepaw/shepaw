@@ -283,6 +283,70 @@ void main() {
     });
   });
 
+  group('编排 inbox 读取 (readOrchestrationInbox)', () {
+    test('since 过滤：只消费 issued_at 晚于本轮开始的文件', () async {
+      await ws.ensureGroupWorkspace(
+        groupId: 'group_inbox',
+        members: [(agentId: 'she', role: 'admin')],
+      );
+      final home = (await ws.loadMeta('group_inbox'))!.homeDevice;
+      final inboxDir = ws.inboxDir('group_inbox', 'group_session_x');
+      final writeInbox = (String file, Map<String, dynamic> payload) =>
+          StoreService.instance.writeWorkspaceFile(
+        homeDeviceId: home,
+        relPath: '$inboxDir/$file',
+        content: Uint8List.fromList(
+          utf8.encode(jsonEncode(payload)),
+        ),
+      );
+
+      // 旧决定（本轮开始前写入）→ 不消费
+      await writeInbox('dispatch.json', {
+        'issued_at': DateTime.now().subtract(const Duration(minutes: 5)).toUtc().toIso8601String(),
+        'kind': 'dispatch',
+        'mode': 'concurrent',
+        'steps': [{'step': 1, 'agents': ['Coder'], 'task': '旧任务'}],
+      });
+      // 新决定（本轮开始后写入）→ 消费
+      await writeInbox('finish.json', {
+        'issued_at': DateTime.now().add(const Duration(seconds: 1)).toUtc().toIso8601String(),
+        'kind': 'finish',
+        'action': 'done',
+      });
+      await writeInbox('mentions.json', {
+        'issued_at': DateTime.now().add(const Duration(seconds: 2)).toUtc().toIso8601String(),
+        'kind': 'mention',
+        'mentions': [{'name': 'Coder', 'notify': true, 'reason': '协助'}],
+      });
+
+      final inbox = await ws.readOrchestrationInbox(
+        groupId: 'group_inbox',
+        sessionId: 'group_session_x',
+        since: DateTime.now(),
+        homeDevice: home,
+      );
+      expect(inbox.dispatch, isNull); // 旧文件被过滤
+      expect(inbox.finish!['action'], 'done');
+      final mentions = inbox.mentions!['mentions'] as List;
+      expect(mentions.single['name'], 'Coder');
+      expect(inbox.isEmpty, isFalse);
+    });
+
+    test('homeDevice 为空或不存在的空间 → 空 inbox', () async {
+      await ws.ensureGroupWorkspace(
+        groupId: 'group_inbox2',
+        members: [(agentId: 'she', role: 'admin')],
+      );
+      final inbox = await ws.readOrchestrationInbox(
+        groupId: 'group_inbox2',
+        sessionId: 's',
+        since: DateTime.now(),
+        homeDevice: '',
+      );
+      expect(inbox.isEmpty, isTrue);
+    });
+  });
+
   group('跨设备 ACL (grantPeerAccess)', () {
     test('friend 设备追加成员目录与 shared 白名单；owner 设备不动；幂等',
         () async {

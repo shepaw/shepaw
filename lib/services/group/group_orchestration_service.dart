@@ -18,8 +18,10 @@ import 'group_prompt_builder.dart';
 import 'group_member_session_service.dart';
 import 'group_turn_result.dart';
 import 'planning_helpers.dart';
+import '../../models/mention_entry.dart';
 import '../../storage/context_bundle.dart';
 import '../../storage/group_workspace_service.dart';
+import 'group_orchestration_tools.dart';
 
 class GroupOrchestrationService {
   final LocalDatabaseService _db;
@@ -248,6 +250,70 @@ class GroupOrchestrationService {
     final groupOwnerId = (channel?.parentGroupId?.isNotEmpty == true)
         ? channel!.parentGroupId!
         : channelId;
+
+    // 外接 agent（group MCP 工具）编排决定的 inbox 读取基准：
+    // 本轮开始时间 + 外接 agent 宿主 hub 设备（从 metadata workspace_uri
+    // 解析；解析不到则跳过 inbox 读取，优雅降级为文本约定）。
+    var roundStartTime = DateTime.now();
+    String? groupHubDevice;
+    for (final a in agents) {
+      final ws = a.metadata['workspace_uri'] as String?;
+      if (ws != null && ws.startsWith('store://workspaces/')) {
+        final rest = ws.substring('store://workspaces/'.length);
+        final device = rest.split('/').first.trim();
+        if (device.isNotEmpty) {
+          groupHubDevice = device;
+          break;
+        }
+      }
+    }
+
+    /// 读取外接 agent 本轮内经 MCP 写入的编排决定（dispatch/finish）。
+    Future<OrchestrationInbox> _readRoundInbox() async {
+      final hub = groupHubDevice;
+      if (hub == null) return const OrchestrationInbox();
+      try {
+        return await GroupWorkspaceService.instance.readOrchestrationInbox(
+          groupId: groupOwnerId,
+          sessionId: channelId,
+          since: roundStartTime,
+          homeDevice: hub,
+        );
+      } catch (e) {
+        LoggerService().debug(
+          'orchestration inbox read failed: $e',
+          tag: 'GroupOrchestrationService',
+        );
+        return const OrchestrationInbox();
+      }
+    }
+
+    /// 读取外接 agent 本轮内经 MCP 声明的成员提及（视为 admin 声明）。
+    Future<List<MentionEntry>> _readInboxMentions() async {
+      final hub = groupHubDevice;
+      if (hub == null) return const [];
+      try {
+        final inbox = await GroupWorkspaceService.instance
+            .readOrchestrationInbox(
+          groupId: groupOwnerId,
+          sessionId: channelId,
+          since: roundStartTime,
+          homeDevice: hub,
+        );
+        final raw = inbox.mentions?['mentions'];
+        if (raw is! List || raw.isEmpty) return const [];
+        return GroupDispatchParser.resolveMentionDeclarations(
+          [inbox.mentions!],
+          agents,
+        ).mentions;
+      } catch (e) {
+        LoggerService().debug(
+          'orchestration inbox mentions read failed: $e',
+          tag: 'GroupOrchestrationService',
+        );
+        return const [];
+      }
+    }
     effectiveContent = await ContextBundleService.instance.wrapWithContextBundle(
       effectiveContent,
       ownerId: groupOwnerId,
@@ -338,8 +404,15 @@ class GroupOrchestrationService {
       required Map<String, GroupTurnResult> initialTurns,
       required Set<String> respondedAgentIds,
       List<String>? failedAgentNames,
+      List<MentionEntry> inboxMentions = const [],
     }) async {
       var turns = Map<String, GroupTurnResult>.from(initialTurns);
+      // 外接 agent MCP 群工具声明的提及（视为 admin 的声明；admin 自身
+      // 不会被激活）。挂成 admin 的虚拟 turn 复用现有 cascade 逻辑。
+      if (inboxMentions.isNotEmpty && adminAgentId != null) {
+        turns[adminAgentId] = GroupTurnResult(mentions: inboxMentions);
+        respondedAgentIds = {...respondedAgentIds, adminAgentId};
+      }
       for (int cascadeRound = 0; cascadeRound < maxCascadeDepth; cascadeRound++) {
         if (acpCancellationToken?.isCancelled == true) break;
 
@@ -501,6 +574,7 @@ class GroupOrchestrationService {
         await runMentionCascade(
           initialTurns: turnResults,
           respondedAgentIds: respondedAgentIds,
+          inboxMentions: await _readInboxMentions(),
         );
       }
 
@@ -688,7 +762,11 @@ class GroupOrchestrationService {
         String adminResponseContent = '';
         var adminTurn = const GroupTurnResult();
 
-        GroupTurnResult resolveAdminDecision(GroupTurnResult toolTurn) {
+        GroupTurnResult resolveAdminDecision(
+          GroupTurnResult toolTurn, {
+          Map<String, dynamic>? inboxDispatch,
+          Map<String, dynamic>? inboxFinish,
+        }) {
           final text = adminResponseContent;
           if (toolTurn.hasOrchestrationSignal) {
             return GroupTurnResult(
@@ -701,6 +779,48 @@ class GroupOrchestrationService {
               unresolvedNames: toolTurn.unresolvedNames,
               hasOrchestrationSignal: true,
             );
+          }
+          // 外接 agent MCP 工具写入的编排决定（inbox 优先于文本 JSON 约定）。
+          if (inboxDispatch != null) {
+            final parsed = GroupOrchestrationTools.parseDispatchArgs(
+              inboxDispatch,
+              nonAdminAgents,
+            );
+            if (parsed.parseError == null || parsed.steps.isNotEmpty) {
+              return GroupTurnResult(
+                content: text,
+                steps: parsed.steps,
+                wantsContinue: parsed.steps.isNotEmpty,
+                isDone: parsed.steps.isEmpty,
+                unresolvedNames: parsed.unresolvedNames,
+                hasOrchestrationSignal: true,
+              );
+            }
+          }
+          if (inboxFinish != null) {
+            final action = inboxFinish['action'] as String?;
+            if (action == 'continue') {
+              return GroupTurnResult(
+                content: text,
+                wantsContinue: true,
+                hasOrchestrationSignal: true,
+              );
+            }
+            if (action == 'pause') {
+              return GroupTurnResult(
+                content: text,
+                isPause: true,
+                isDone: true,
+                hasOrchestrationSignal: true,
+              );
+            }
+            if (action == 'done') {
+              return GroupTurnResult(
+                content: text,
+                isDone: true,
+                hasOrchestrationSignal: true,
+              );
+            }
           }
           // Legacy fallback: ```json``` dispatch block in chat text.
           final parsed =
@@ -760,7 +880,12 @@ class GroupOrchestrationService {
           onAgentDone?.call(adminAgent.id, adminAgent.name, adminResponseContent.trim().isEmpty);
         }
         currentRound++;
-        adminTurn = resolveAdminDecision(adminTurn);
+        final firstInbox = await _readRoundInbox();
+        adminTurn = resolveAdminDecision(
+          adminTurn,
+          inboxDispatch: firstInbox.dispatch,
+          inboxFinish: firstInbox.finish,
+        );
 
         // If the first admin reply already contains a plan or dispatch, create a workflow
         // before entering the delegation loop.
@@ -815,6 +940,8 @@ class GroupOrchestrationService {
         // into the summarize round to let the admin remember its own plan.
         String? lastDispatchNote;
         while (true) {
+          // 新一轮开始：刷新 inbox 新鲜度基准（只消费本轮内 MCP 写入的决定）。
+          roundStartTime = DateTime.now();
           await _emitOrchestrationRound(
             channelId: channelId,
             round: currentRound,
@@ -823,7 +950,7 @@ class GroupOrchestrationService {
               'status': 'running',
               'channel_id': channelId,
               'message_id': userMessage.id,
-              'started_at': DateTime.now().toIso8601String(),
+              'started_at': roundStartTime.toIso8601String(),
             },
           );
           // If admin sent a form/file_upload in the previous round, exit immediately
@@ -948,7 +1075,12 @@ class GroupOrchestrationService {
           }
 
           // Prefer tool-first orchestration; fall back to legacy text JSON.
-          final dispatch = resolveAdminDecision(adminTurn);
+          final roundInbox = await _readRoundInbox();
+          final dispatch = resolveAdminDecision(
+            adminTurn,
+            inboxDispatch: roundInbox.dispatch,
+            inboxFinish: roundInbox.finish,
+          );
           adminTurn = dispatch;
           final adminWantsContinue = dispatch.wantsContinue;
           final delegatedIds = dispatch.steps
@@ -1020,7 +1152,12 @@ class GroupOrchestrationService {
                 break;
               }
               currentRound++;
-              adminTurn = resolveAdminDecision(adminTurn);
+              final nudgeInbox = await _readRoundInbox();
+              adminTurn = resolveAdminDecision(
+                adminTurn,
+                inboxDispatch: nudgeInbox.dispatch,
+                inboxFinish: nudgeInbox.finish,
+              );
               if (adminResponseContent.trim().isEmpty &&
                   !adminTurn.hasOrchestrationSignal) {
                 LoggerService().warning('Admin nudge produced empty response at round $currentRound, stopping', tag: 'GroupOrchestrationService');
@@ -1196,7 +1333,12 @@ class GroupOrchestrationService {
               break;
             }
             currentRound++;
-            adminTurn = resolveAdminDecision(adminTurn);
+            final continueInbox = await _readRoundInbox();
+            adminTurn = resolveAdminDecision(
+              adminTurn,
+              inboxDispatch: continueInbox.dispatch,
+              inboxFinish: continueInbox.finish,
+            );
 
             // Guard against empty responses to prevent stuck loops
             if (adminResponseContent.trim().isEmpty &&
@@ -1348,6 +1490,7 @@ class GroupOrchestrationService {
               initialTurns: delegatedTurnResults,
               respondedAgentIds: {...delegatedIds},
               failedAgentNames: failedAgentNames,
+              inboxMentions: await _readInboxMentions(),
             );
           }
 
@@ -1478,7 +1621,12 @@ class GroupOrchestrationService {
             },
           );
           currentRound++;
-          adminTurn = resolveAdminDecision(adminTurn);
+          final summarizeInbox = await _readRoundInbox();
+          adminTurn = resolveAdminDecision(
+            adminTurn,
+            inboxDispatch: summarizeInbox.dispatch,
+            inboxFinish: summarizeInbox.finish,
+          );
 
         }
 
