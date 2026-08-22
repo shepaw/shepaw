@@ -1335,15 +1335,6 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
     }
   }
 
-  String _fmtBytes(int n) {
-    if (n < 1024) return '$n B';
-    if (n < 1024 * 1024) return '${(n / 1024).toStringAsFixed(1)} KB';
-    if (n < 1024 * 1024 * 1024) {
-      return '${(n / (1024 * 1024)).toStringAsFixed(1)} MB';
-    }
-    return '${(n / (1024 * 1024 * 1024)).toStringAsFixed(1)} GB';
-  }
-
   String? _spaceSubtitle(String space) {
     if (!_spaceBytes.containsKey(space)) return null;
     return _fmtBytes(_spaceBytes[space] ?? 0);
@@ -1826,9 +1817,13 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
     bool useModified = false,
     bool showMoreButton = false,
   }) {
-    final subtitle = useModified
+    final timeText = useModified
         ? _fmtLastModified(file.mtimeMs, l10n)
         : _fmtRecentAccess(file.mtimeMs, l10n);
+    final subtitle = [
+      _fmtBytes(file.size),
+      if (timeText.isNotEmpty) timeText,
+    ].join(' · ');
     final picked = _isPicked(file);
     final disabled = _pickMode && !picked && _atPickLimit;
     final scheme = Theme.of(context).colorScheme;
@@ -2369,7 +2364,10 @@ class _LocalFileSearchDelegate extends SearchDelegate<void> {
         return ListTile(
           title: Text(name, overflow: TextOverflow.ellipsis),
           subtitle: Text(
-            '${f.space}/${f.path}',
+            [
+              _fmtBytes(f.size),
+              '${f.space}/${f.path}',
+            ].join(' · '),
             maxLines: 2,
             overflow: TextOverflow.ellipsis,
           ),
@@ -2398,4 +2396,14 @@ enum _EntryAction {
   versions,
   manifest,
   delete,
+}
+
+/// 文件大小格式化（本文件列表行 / 搜索 / 长按菜单共用）。
+String _fmtBytes(int n) {
+  if (n < 1024) return '$n B';
+  if (n < 1024 * 1024) return '${(n / 1024).toStringAsFixed(1)} KB';
+  if (n < 1024 * 1024 * 1024) {
+    return '${(n / (1024 * 1024)).toStringAsFixed(1)} MB';
+  }
+  return '${(n / (1024 * 1024 * 1024)).toStringAsFixed(1)} GB';
 }
