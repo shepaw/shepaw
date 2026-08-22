@@ -269,14 +269,29 @@ class GroupOrchestrationService {
     }
 
     /// 读取外接 agent 本轮内经 MCP 写入的编排决定（dispatch/finish）。
+    ///
+    /// 新鲜度基准：优先「最后消费时间」（latest.json 的 consumed_at，由
+    /// dispatch_decision 落盘写入）——崩溃重启后，重启前写入但未消费的
+    /// 决定仍会被消费；无消费记录时回退本轮开始时间。
     Future<OrchestrationInbox> _readRoundInbox() async {
       final hub = groupHubDevice;
       if (hub == null) return const OrchestrationInbox();
       try {
+        DateTime since = roundStartTime;
+        final latest = await GroupWorkspaceService.instance
+            .readLatestOrchestration(
+          groupId: groupOwnerId,
+          sessionId: channelId,
+        );
+        final consumedAt = latest?['consumed_at'] as String?;
+        if (consumedAt != null && consumedAt.isNotEmpty) {
+          final parsed = DateTime.tryParse(consumedAt);
+          if (parsed != null) since = parsed;
+        }
         return await GroupWorkspaceService.instance.readOrchestrationInbox(
           groupId: groupOwnerId,
           sessionId: channelId,
-          since: roundStartTime,
+          since: since,
           homeDevice: hub,
         );
       } catch (e) {
@@ -331,6 +346,12 @@ class GroupOrchestrationService {
       effectiveContent = '$effectiveContent\n\n'
           '[群历史任务总结（shared/memory/latest.md）]\n$groupMemory';
     }
+    // 被派发的成员也带截断版群历史总结（全文只在 admin 上下文；成员
+    // 只需要要点，避免每个成员每轮膨胀 token）。
+    final memberMemoryNote = groupMemory != null
+        ? '\n\n[群历史任务总结（截断）]\n'
+            '${groupMemory.length <= 600 ? groupMemory : '${groupMemory.substring(0, 600)}…'}'
+        : '';
 
     // 5. Route to the appropriate flow based on admin setting and @mentions
     LoggerService().debug('Routing: mentions=${mentionedAgentIds.length}, admin=$adminAgentId, agents=${agents.map((a) => a.name).toList()}', tag: 'GroupOrchestrationService');
@@ -481,9 +502,10 @@ class GroupOrchestrationService {
                   fallback: effectiveContent,
                 );
                 final reason = mentionReasonById[agent.id];
-                return reason != null
+                final content = reason != null
                     ? '【成员提及】$reason\n\n$baseContent'
                     : baseContent;
+                return '$content$memberMemoryNote';
               }(),
               attachments: attachments,
               userId: userId,
@@ -1399,11 +1421,15 @@ class GroupOrchestrationService {
                 if (!stepAgentIds.contains(agent.id)) continue;
                 onAgentStart?.call(agent.id, agent.name);
                 final isFirst = !agentIdsWithHistory.contains(agent.id);
+                final stepTask = step.task.trim();
                 stepFutures.add(() async {
                   final result = await _executor.processGroupAgent(
                     agent: agent,
                     channelId: channelId,
-                    content: step.contentOr(effectiveContent),
+                    // 任务 brief 非空时补截断版群历史（fallback 已含全文记忆）。
+                    content: stepTask.isNotEmpty
+                        ? '${step.contentOr(effectiveContent)}$memberMemoryNote'
+                        : step.contentOr(effectiveContent),
                     attachments: attachments,
                     userId: userId,
                     userName: userName,
@@ -1444,14 +1470,16 @@ class GroupOrchestrationService {
               onAgentStart?.call(agent.id, agent.name);
               final isFirst = !agentIdsWithHistory.contains(agent.id);
               delegatedFutures.add(() async {
+                // 成员 brief 后补截断版群历史（跨任务共享结论）。
+                final memberBrief = GroupDispatchParser.taskContentForAgent(
+                  agentId: agent.id,
+                  steps: dispatch.steps,
+                  fallback: effectiveContent,
+                );
                 final result = await _executor.processGroupAgent(
                   agent: agent,
                   channelId: channelId,
-                  content: GroupDispatchParser.taskContentForAgent(
-                    agentId: agent.id,
-                    steps: dispatch.steps,
-                    fallback: effectiveContent,
-                  ),
+                  content: '$memberBrief$memberMemoryNote',
                   attachments: attachments,
                   userId: userId,
                   userName: userName,

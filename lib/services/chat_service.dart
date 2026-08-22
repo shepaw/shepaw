@@ -223,6 +223,18 @@ class ChatService {
           round: round,
           payload: payload,
         );
+        // 记录消费时间：inbox 读取基准用「最后消费时间」而非本轮开始——
+        // 崩溃重启后，重启前未消费的外接 agent 决定仍会被消费。
+        await ws.writeRoundState(
+          groupId: channel.groupFamilyId,
+          sessionId: channelId,
+          round: round,
+          payload: {
+            'status': 'dispatched',
+            'round': round,
+            'consumed_at': DateTime.now().toUtc().toIso8601String(),
+          },
+        );
         return;
       }
       await ws.writeRoundState(

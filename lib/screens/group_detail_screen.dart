@@ -9,6 +9,7 @@ import '../services/local_api_service.dart';
 import '../services/local_database_service.dart';
 import '../services/group/group_member_session_service.dart';
 import '../services/logger_service.dart';
+import '../storage/group_workspace_service.dart';
 import '../storage/runtime_share_service.dart';
 import '../widgets/form_bottom_bar.dart';
 import '../widgets/avatar_image.dart';
@@ -184,6 +185,88 @@ class _GroupDetailScreenState extends State<GroupDetailScreen> {
     }
   }
 
+  /// 群工作空间详情：初始化状态、home device、成员表（角色）、共享面 URI。
+  void _showGroupWorkspaceSheet(
+    BuildContext context,
+    GroupWorkspaceMeta? meta,
+  ) {
+    final zh = Localizations.localeOf(context).languageCode.startsWith('zh');
+    showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      builder: (sheetContext) {
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(20, 0, 20, 24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  zh ? '群工作空间' : 'Group workspace',
+                  style: const TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                if (meta == null) ...[
+                  Text(
+                    zh ? '未初始化——群聊发消息后自动创建。' : 'Not initialized — created on first group message.',
+                    style: TextStyle(fontSize: 13, color: Colors.grey[600]),
+                  ),
+                ] else ...[
+                  Text(
+                    zh ? '状态：已就绪' : 'Status: ready',
+                    style: TextStyle(fontSize: 13, color: Colors.green[700]),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    zh ? 'home device：${meta.homeDevice}' : 'home device: ${meta.homeDevice}',
+                    style: TextStyle(fontSize: 13, color: Colors.grey[600]),
+                  ),
+                  const SizedBox(height: 12),
+                  Text(
+                    zh ? '成员（${meta.members.length}）' : 'Members (${meta.members.length})',
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                      color: Colors.grey[700],
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  for (final m in meta.members.values)
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 2),
+                      child: Text(
+                        '${m.agentId}  ·  ${m.role == 'admin' ? (zh ? '管理员' : 'admin') : (zh ? '成员' : 'member')}',
+                        style: const TextStyle(fontSize: 13),
+                      ),
+                    ),
+                  const SizedBox(height: 12),
+                  Text(
+                    zh ? '共享面：' : 'Shared area: ',
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                      color: Colors.grey[700],
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  SelectableText(
+                    'store://workspaces/${meta.homeDevice}/'
+                    '${GroupWorkspaceService.instance.workspaceRoot(meta.groupId)}/shared',
+                    style: const TextStyle(fontSize: 12),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
@@ -236,6 +319,10 @@ class _GroupDetailScreenState extends State<GroupDetailScreen> {
   }
 
   Widget _buildDetailBody(AppLocalizations l10n) {
+    // 群工作空间按群家族归属（与「绑定工作区」同一 owner 解析）。
+    final ownerId = _channel.parentGroupId?.isNotEmpty == true
+        ? _channel.parentGroupId!
+        : _channel.id;
     final colorScheme = Theme.of(context).colorScheme;
     final memberCount = _channel.members.where((m) => m.id != 'user').length;
 
@@ -358,6 +445,40 @@ class _GroupDetailScreenState extends State<GroupDetailScreen> {
         ),
         const Divider(height: 1),
 
+        // 群工作空间（储物袋 workspaces/group_<gid>/）：状态 + 成员表 + 共享面。
+        FutureBuilder<GroupWorkspaceMeta?>(
+          future: GroupWorkspaceService.instance.loadMeta(ownerId),
+          builder: (context, snapshot) {
+            final meta = snapshot.data;
+            final ready = meta != null;
+            return ListTile(
+              leading: Icon(
+                ready ? Icons.groups_outlined : Icons.groups,
+                color: colorScheme.primary,
+              ),
+              title: Text(
+                Localizations.localeOf(context).languageCode.startsWith('zh')
+                    ? '群工作空间'
+                    : 'Group workspace',
+              ),
+              subtitle: Text(
+                !ready
+                    ? (Localizations.localeOf(context).languageCode
+                            .startsWith('zh')
+                        ? '未初始化（群聊发消息后自动创建）'
+                        : 'Not initialized (created on first group message)')
+                    : '${Localizations.localeOf(context).languageCode.startsWith('zh') ? '已就绪' : 'Ready'} · '
+                        '${meta.members.length} '
+                        '${Localizations.localeOf(context).languageCode.startsWith('zh') ? '名成员' : 'members'}',
+                style: TextStyle(color: colorScheme.onSurfaceVariant),
+              ),
+              trailing: const Icon(Icons.chevron_right),
+              onTap: () => _showGroupWorkspaceSheet(context, meta),
+            );
+          },
+        ),
+        const Divider(height: 1),
+
         ListTile(
           leading: Icon(Icons.folder_special_outlined, color: colorScheme.primary),
           title: Text(
@@ -373,9 +494,6 @@ class _GroupDetailScreenState extends State<GroupDetailScreen> {
           ),
           trailing: const Icon(Icons.chevron_right),
           onTap: () {
-            final ownerId = _channel.parentGroupId?.isNotEmpty == true
-                ? _channel.parentGroupId!
-                : _channel.id;
             Navigator.of(context).push(
               MaterialPageRoute<void>(
                 builder: (_) => WorkspaceBindingScreen(
