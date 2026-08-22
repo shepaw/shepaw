@@ -2984,7 +2984,11 @@ class AgentMessagingService {
   /// Agent busy / unreachable → seal message into channel inbox, poll for reply.
   ///
   /// [groupId] is recorded on the inbound so the agent can attribute a group
-  /// turn. History is omitted or truncated so ciphertext stays under quota.
+  /// turn. [groupContext] (group name / member roster / workspace URI) is
+  /// sealed into the ciphertext payload so the agent's mailbox path can
+  /// reconstruct a full `group_context` (group tools + shared workspace stay
+  /// usable while the app is offline). History is omitted or truncated so
+  /// ciphertext stays under quota.
   Future<Message> leaveMailboxAndCollect({
     required RemoteAgent agent,
     required Message userMessage,
@@ -2993,6 +2997,7 @@ class AgentMessagingService {
     List<Map<String, dynamic>>? chatHistory,
     void Function(String chunk)? onStreamChunk,
     String? groupId,
+    Map<String, dynamic>? groupContext,
     bool persistLeaveMetadata = true,
   }) async {
     Message notice({required String content}) => Message(
@@ -3036,6 +3041,8 @@ class AgentMessagingService {
           'request_id': requestId,
           'session_id': sessionId,
           if (groupId != null && groupId.isNotEmpty) 'group_id': groupId,
+          if (groupContext != null && groupContext.isNotEmpty)
+            'group_context': groupContext,
           if (trimmedHistory != null) 'history': trimmedHistory,
           'caller_pubkey': base64Encode(identity.publicKey),
           'ts': DateTime.now().millisecondsSinceEpoch,

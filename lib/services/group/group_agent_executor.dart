@@ -67,6 +67,7 @@ class GroupAgentExecutor {
     List<Map<String, dynamic>>? chatHistory,
     void Function(String chunk)? onStreamChunk,
     String? groupId,
+    Map<String, dynamic>? groupContext,
     bool persistLeaveMetadata,
   })? leaveMailboxAndCollect;
   late final GroupMemberSessionService _memberSessions =
@@ -1181,12 +1182,30 @@ class GroupAgentExecutor {
       String? taskId;
       final taskCompleter = Completer<void>();
       var usedMailbox = false;
+      // 群工作空间共享面 URI（mailbox 兜底时可能尚未赋值 → 传 null 即可）。
+      String? groupWorkspaceUri;
 
       Future<void> fillFromMailbox(Object reason) async {
         LoggerService().info(
           'Group ACP mailbox fallback for ${agent.name}: $reason',
           tag: 'GroupAgentExecutor',
         );
+        // Mailbox 兜底也带完整群上下文（离线恢复后群工具/共享空间仍可用）。
+        final mailboxGroupContext = <String, dynamic>{
+          'group_id': channelId,
+          'group_name': groupName,
+          'group_description': groupDescription,
+          'member_count': allAgents.length,
+          'members': allAgents.map((a) => <String, dynamic>{
+            'id': a.id,
+            'name': a.name,
+            'type': 'agent',
+            'bio': a.bio ?? '',
+            'capabilities': a.capabilities,
+            'status': a.isOnline ? 'online' : 'offline',
+          }).toList(),
+          if (groupWorkspaceUri != null) 'workspace_uri': groupWorkspaceUri,
+        };
         final left = await _collectGroupMailboxReply(
           agent: agent,
           content: content,
@@ -1196,6 +1215,7 @@ class GroupAgentExecutor {
           requestId: taskId ?? _uuid.v4(),
           channelId: channelId,
           chatHistory: acpHistoryEntries.isNotEmpty ? acpHistoryEntries : null,
+          groupContext: mailboxGroupContext,
           onChunk: (chunk) {
             streamingStarted = true;
             responseBuffer.write(chunk);
@@ -1528,7 +1548,6 @@ class GroupAgentExecutor {
 
         // 群工作空间共享面 URI（外接 agent 感知群记忆/共享产物；
         // 群空间未初始化或读取失败时省略）。
-        String? groupWorkspaceUri;
         try {
           final groupChannel = await _db.getChannelById(channelId);
           if (groupChannel != null) {
@@ -1991,6 +2010,7 @@ class GroupAgentExecutor {
     required String requestId,
     required String channelId,
     List<Map<String, dynamic>>? chatHistory,
+    Map<String, dynamic>? groupContext,
     void Function(String chunk)? onChunk,
   }) async {
     final leave = leaveMailboxAndCollect;
@@ -2019,6 +2039,7 @@ class GroupAgentExecutor {
       chatHistory: chatHistory,
       onStreamChunk: onChunk,
       groupId: channelId,
+      groupContext: groupContext,
       persistLeaveMetadata: false,
     );
   }
