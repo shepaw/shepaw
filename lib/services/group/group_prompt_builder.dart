@@ -242,6 +242,9 @@ $memberList
 9. **产物优先写入 store**：需要持久化/可分享的文件产出时，**必须**调用 `shepaw store write --filename <名> --content "..."`（可选 `--task` / `--desc`），并在回复中**原样**引用返回的 `[filename](store://...)`；禁止编造 URI；**不要**传 agent_id/owner。读法见下方作用域卡片。仅用户明确指定 OS 路径时才用 `os.file.write`
 10. 在每次回复的**最后一行**，必须输出任务状态标注，格式为：\n   - 任务已完成（且已写入 store 并引用 URI，或确实无文件产出）：`[TASK_STATUS: done]`\n   - 任务未完成或需要更多信息：`[TASK_STATUS: pending] 原因：<简要说明>`\n管理员会根据此标注决定下一步安排。$mentionNotice$allMembersMentionSection
 
+【自我简介】
+你可以更新自己在群里的职责描述（只影响本群展示）：`shepaw chat group set-bio --agent ${currentAgent.name} --bio "新的职责"`。**只能修改自己的**；管理员与 She 可修改所有成员。
+
 $groupScopeSection''';
   }
 

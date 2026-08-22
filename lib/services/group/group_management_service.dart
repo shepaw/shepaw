@@ -375,7 +375,10 @@ class GroupManagementService {
   }
 
   /// Set (or clear) a member's group-specific role description (groupBio)
-  /// across every session in the group family. Admin only.
+  /// across every session in the group family.
+  ///
+  /// Permission model: the group admin and She may update any member; a regular
+  /// member may update only their own role description.
   ///
   /// [groupBio] empty / null clears the member's role description, falling back
   /// to the agent's own default bio. Mirrors the UI path
@@ -386,11 +389,10 @@ class GroupManagementService {
     required String actorId,
     String? groupBio,
   }) async {
-    final gate = await _requireAdminGroup(channelId, actorId);
-    if (gate.error != null) {
-      return GroupManagementResult.failure(gate.error!);
+    final channel = await _db.getChannelById(channelId);
+    if (channel == null) {
+      return GroupManagementResult.failure('Channel not found: $channelId');
     }
-    final channel = gate.channel!;
 
     final agent = await resolveAgent(agentRef);
     if (agent == null) {
@@ -400,6 +402,21 @@ class GroupManagementService {
       return GroupManagementResult.failure(
         '${agent.name} is not a member of this group.',
       );
+    }
+
+    // 权限：管理员/She 可改任意成员；普通成员只能改自己的。
+    final denied = GroupAdminGate.denyReasonForMemberBio(
+      channel: channel,
+      channelId: channelId,
+      actorId: actorId,
+      targetAgentId: agent.id,
+    );
+    if (denied != null) {
+      LoggerService().warning(
+        'setMemberGroupBio denied for actor=$actorId target=${agent.id}: $denied',
+        tag: _tag,
+      );
+      return GroupManagementResult.failure(denied);
     }
 
     final bio = groupBio?.trim().isNotEmpty == true ? groupBio!.trim() : null;

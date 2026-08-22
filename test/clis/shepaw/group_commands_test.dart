@@ -77,6 +77,89 @@ void main() {
       expect(GroupAdminGate.canMutate(channel: channel, actorId: 'coder-1'), isFalse);
     });
 
+    test('She has full permissions even when she is not the admin', () {
+      final channel = _group(
+        adminId: 'some-admin',
+        memberIds: const ['coder-1'],
+      );
+      expect(
+        GroupAdminGate.hasFullPermissions(channel, SheService.sheId),
+        isTrue,
+      );
+      expect(
+        GroupAdminGate.denyReason(
+          channel: channel,
+          channelId: channel.id,
+          actorId: SheService.sheId,
+        ),
+        isNull,
+      );
+      expect(
+        GroupAdminGate.canMutate(channel: channel, actorId: SheService.sheId),
+        isTrue,
+      );
+    });
+
+    test('regular member may update only their own group role description', () {
+      final channel = _group(
+        adminId: SheService.sheId,
+        memberIds: const ['coder-1', 'other-2'],
+      );
+
+      // Self-edit allowed.
+      expect(
+        GroupAdminGate.denyReasonForMemberBio(
+          channel: channel,
+          channelId: channel.id,
+          actorId: 'coder-1',
+          targetAgentId: 'coder-1',
+        ),
+        isNull,
+      );
+      expect(
+        GroupAdminGate.canMutateMemberBio(
+          channel: channel,
+          actorId: 'coder-1',
+          targetAgentId: 'coder-1',
+        ),
+        isTrue,
+      );
+
+      // Editing someone else denied for a regular member.
+      final denied = GroupAdminGate.denyReasonForMemberBio(
+        channel: channel,
+        channelId: channel.id,
+        actorId: 'coder-1',
+        targetAgentId: 'other-2',
+      );
+      expect(denied, contains('Permission denied'));
+      expect(denied, contains('only update your own'));
+
+      // Admin / She may update anyone.
+      expect(
+        GroupAdminGate.denyReasonForMemberBio(
+          channel: channel,
+          channelId: channel.id,
+          actorId: SheService.sheId,
+          targetAgentId: 'other-2',
+        ),
+        isNull,
+      );
+      final adminLed = _group(
+        adminId: 'some-admin',
+        memberIds: const ['coder-1'],
+      );
+      expect(
+        GroupAdminGate.denyReasonForMemberBio(
+          channel: adminLed,
+          channelId: adminLed.id,
+          actorId: 'some-admin',
+          targetAgentId: 'coder-1',
+        ),
+        isNull,
+      );
+    });
+
     test('denies missing channel, non-group, and empty actor', () {
       expect(
         GroupAdminGate.denyReason(
