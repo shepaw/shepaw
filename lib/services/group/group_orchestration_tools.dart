@@ -206,8 +206,9 @@ class GroupOrchestrationTools {
               'task': {
                 'type': 'string',
                 'description':
-                    'Full task brief: background, goal, acceptance criteria. '
-                    'Members may not see the user message.',
+                    'This member\'s local objective + acceptance criteria. '
+                    'The user\'s full requirement is auto-injected as 全局需求 '
+                    'for every member — focus this on what THIS member must do.',
               },
             },
             'required': ['agents', 'task'],

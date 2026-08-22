@@ -152,6 +152,27 @@ class GroupDispatchParser {
     return fallback;
   }
 
+  /// Build the member-facing turn content for a delegated task: a first-class
+  /// 【全局需求】 block (the user's full message) followed by the member's
+  /// 【你的任务】 local brief.
+  ///
+  /// When [memberBrief] is empty or equals [globalRequirement] (the step had no
+  /// task and fell back to the global message), only the global requirement is
+  /// returned — no duplication. [memoryNote] (a short group-history summary) is
+  /// always appended.
+  static String buildMemberTurnContent({
+    required String memberBrief,
+    required String globalRequirement,
+    required String memoryNote,
+  }) {
+    final global = globalRequirement.trim();
+    final brief = memberBrief.trim();
+    if (brief.isEmpty || brief == global) {
+      return '$global$memoryNote';
+    }
+    return '【全局需求】\n$global\n\n【你的任务】\n$brief$memoryNote';
+  }
+
   /// Resolve structured mention declarations into [MentionEntry]s.
   ///
   /// Mentions are declared structurally — never parsed from chat text, so a

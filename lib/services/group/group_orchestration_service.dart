@@ -1421,15 +1421,17 @@ class GroupOrchestrationService {
                 if (!stepAgentIds.contains(agent.id)) continue;
                 onAgentStart?.call(agent.id, agent.name);
                 final isFirst = !agentIdsWithHistory.contains(agent.id);
-                final stepTask = step.task.trim();
+                final memberBrief = step.contentOr(effectiveContent);
                 stepFutures.add(() async {
                   final result = await _executor.processGroupAgent(
                     agent: agent,
                     channelId: channelId,
-                    // 任务 brief 非空时补截断版群历史（fallback 已含全文记忆）。
-                    content: stepTask.isNotEmpty
-                        ? '${step.contentOr(effectiveContent)}$memberMemoryNote'
-                        : step.contentOr(effectiveContent),
+                    // 成员先看【全局需求】（用户完整消息），再看【你的任务】（局部 brief）。
+                    content: GroupDispatchParser.buildMemberTurnContent(
+                      memberBrief: memberBrief,
+                      globalRequirement: effectiveContent,
+                      memoryNote: memberMemoryNote,
+                    ),
                     attachments: attachments,
                     userId: userId,
                     userName: userName,
@@ -1470,7 +1472,7 @@ class GroupOrchestrationService {
               onAgentStart?.call(agent.id, agent.name);
               final isFirst = !agentIdsWithHistory.contains(agent.id);
               delegatedFutures.add(() async {
-                // 成员 brief 后补截断版群历史（跨任务共享结论）。
+                // 成员先看【全局需求】（用户完整消息），再看【你的任务】（局部 brief）。
                 final memberBrief = GroupDispatchParser.taskContentForAgent(
                   agentId: agent.id,
                   steps: dispatch.steps,
@@ -1479,7 +1481,11 @@ class GroupOrchestrationService {
                 final result = await _executor.processGroupAgent(
                   agent: agent,
                   channelId: channelId,
-                  content: '$memberBrief$memberMemoryNote',
+                  content: GroupDispatchParser.buildMemberTurnContent(
+                    memberBrief: memberBrief,
+                    globalRequirement: effectiveContent,
+                    memoryNote: memberMemoryNote,
+                  ),
                   attachments: attachments,
                   userId: userId,
                   userName: userName,

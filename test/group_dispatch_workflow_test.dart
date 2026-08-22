@@ -141,6 +141,30 @@ void main() {
     );
   });
 
+  test('buildMemberTurnContent injects global requirement plus local task', () {
+    final content = GroupDispatchParser.buildMemberTurnContent(
+      memberBrief: '实现登录',
+      globalRequirement: '用户完整需求原文',
+      memoryNote: '\n[群记忆] 摘要',
+    );
+    expect(content, contains('【全局需求】'));
+    expect(content, contains('用户完整需求原文'));
+    expect(content, contains('【你的任务】'));
+    expect(content, contains('实现登录'));
+    expect(content, contains('群记忆'));
+  });
+
+  test('buildMemberTurnContent avoids duplicating when brief is the fallback', () {
+    final content = GroupDispatchParser.buildMemberTurnContent(
+      memberBrief: '用户完整需求原文',
+      globalRequirement: '用户完整需求原文',
+      memoryNote: '\n[群记忆] 摘要',
+    );
+    expect(content, isNot(contains('【你的任务】')));
+    expect('用户完整需求原文'.allMatches(content).length, 1);
+    expect(content, contains('群记忆'));
+  });
+
   test('parseStructuredDispatch recognizes pause', () {
     final dispatch = parser.parseStructuredDispatch(
       '''```json
