@@ -405,5 +405,39 @@ void main() {
           .toList();
       expect(again.length, 2);
     });
+
+    test('revokePeerAccess 移除成员目录条目，保留 shared', () async {
+      await ws.ensureGroupWorkspace(
+        groupId: 'group_acl2',
+        members: [(agentId: 'agent-peer', role: 'member')],
+      );
+      final ps = PeerStorageService();
+      await ps.savePeer(PairedPeer(
+        id: 'peer-friend2',
+        deviceName: 'dev',
+        deviceId: 'peer-friend2',
+        publicKey: Uint8List.fromList(List.generate(32, (i) => i)),
+        fingerprint: 'fp2',
+        pairedAt: DateTime.now().millisecondsSinceEpoch,
+        trustLevel: 'friend',
+      ));
+      await ws.grantPeerAccess(
+        groupId: 'group_acl2',
+        agentId: 'agent-peer',
+        peerId: 'peer-friend2',
+      );
+
+      await ws.revokePeerAccess(
+        groupId: 'group_acl2',
+        agentId: 'agent-peer',
+        peerId: 'peer-friend2',
+      );
+      final paths = (await ps.getSharedStoreEntries('peer-friend2'))
+          .where((e) => e.space == 'workspaces')
+          .map((e) => e.path)
+          .toList();
+      expect(paths, isNot(contains('group_group_acl2/members/agent-peer')));
+      expect(paths, contains('group_group_acl2/shared')); // shared 保留
+    });
   });
 }

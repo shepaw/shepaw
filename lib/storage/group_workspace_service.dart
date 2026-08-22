@@ -531,6 +531,36 @@ class GroupWorkspaceService {
     return meta?.isMember(agentId) ?? false;
   }
 
+  /// 回收 peer 成员设备的群工作空间访问（踢成员时调用）。
+  ///
+  /// 移除 `members/<agentId>/` 白名单条目；`shared` 前缀保留（其他成员
+  /// 仍需要读共享面）。失败仅记录（成员表已移除，CLI 层 isMember 校验
+  /// 仍会拒绝）。
+  Future<void> revokePeerAccess({
+    required String groupId,
+    required String agentId,
+    required String peerId,
+  }) async {
+    try {
+      final existing =
+          await PeerStorageService().getSharedStoreEntries(peerId);
+      final memberPrefix =
+          '${workspaceRoot(groupId)}/members/'
+          '${RuntimePaths.sanitizeSegment(agentId)}';
+      final kept = existing.where(
+        (e) =>
+            !(e.space == StoreSpace.workspaces && e.path == memberPrefix),
+      );
+      await StoreService.instance.setOutboundStoreShares(peerId, kept);
+    } catch (e) {
+      LoggerService().error(
+        'revoke peer group workspace access failed: $peerId',
+        tag: 'GroupWorkspaceService',
+        error: e,
+      );
+    }
+  }
+
   /// 向 peer 成员设备自动下发群工作空间访问白名单（跨设备 ACL）。
   ///
   /// - owner 级设备：默认整区开放（[PeerStorageService.effectiveOutboundAllowlist]

@@ -351,6 +351,15 @@ class GroupManagementService {
       groupId: channel.groupFamilyId,
       agentId: agent.id,
     );
+    // 回收 peer 成员设备的群工作空间访问（members/<agentId>/ 条目）。
+    final peerId = agent.sourcePeerId;
+    if (peerId != null && peerId.isNotEmpty) {
+      await GroupWorkspaceService.instance.revokePeerAccess(
+        groupId: channel.groupFamilyId,
+        agentId: agent.id,
+        peerId: peerId,
+      );
+    }
 
     await _chat.notifyGroupMembershipChange(
       channelId,
