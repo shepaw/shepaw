@@ -3,7 +3,6 @@
 library;
 
 import 'dart:async';
-import 'package:sqflite/sqflite.dart';
 import 'local_storage_service.dart';
 /// 权限请求状态
 enum PermissionStatus {

@@ -3,7 +3,6 @@ import 'package:uuid/uuid.dart';
 import '../../models/message.dart';
 import '../../models/remote_agent.dart';
 import '../../models/attachment_data.dart';
-import '../../models/acp_protocol.dart';
 import '../../models/inference_log_entry.dart';
 import '../../models/llm_token_usage.dart';
 import '../acp_agent_connection.dart';

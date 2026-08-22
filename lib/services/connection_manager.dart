@@ -232,32 +232,6 @@ class ConnectionManager {
     return controller.stream;
   }
 
-  // ==================== 连接错误处理 ====================
-
-  /// 处理连接错误
-  void _handleConnectionError(String agentId, dynamic error) {
-    // 标记助手为错误状态
-    _agentService.markAgentError(agentId);
-
-    // 尝试重连
-    reconnectAgent(agentId).catchError((e) {
-      // 重连失败，忽略错误
-    });
-  }
-
-  /// 处理连接关闭
-  void _handleConnectionClosed(String agentId) {
-    // 断开连接
-    disconnectAgent(agentId).catchError((e) {
-      // 断开失败，忽略错误
-    });
-
-    // 尝试重连
-    reconnectAgent(agentId).catchError((e) {
-      // 重连失败，忽略错误
-    });
-  }
-
   // ==================== 心跳监控 ====================
 
   /// 启动心跳监控

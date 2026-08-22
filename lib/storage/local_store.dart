@@ -320,7 +320,6 @@ class LocalStore {
   Future<Map<String, dynamic>> meta(
       String deviceId, String space, String relPath) async {
     final abs = _resolveInSpace(deviceId, space, relPath);
-    final baseAbs = _spaceDir(deviceId, space);
     final type = await FileSystemEntity.type(abs, followLinks: false);
     if (type == FileSystemEntityType.notFound) {
       throw StoreException(StoreError.notFound, relPath);

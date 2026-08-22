@@ -11,7 +11,6 @@ import '../../models/attachment_data.dart';
 import '../../models/llm_stream_event.dart';
 import '../../models/llm_token_usage.dart';
 import '../../models/inference_log_entry.dart';
-import '../../models/planning_models.dart';
 import '../../clis/shepaw/shepaw_cli.dart';
 import '../../clis/shepaw/workflow/workflow_namespace.dart';
 import '../../clis/shepaw/workflow/workflow_dispatch_command.dart';
@@ -52,7 +51,6 @@ import '../../storage/runtime_paths.dart';
 class GroupAgentExecutor {
   final LocalDatabaseService _db;
   final Uuid _uuid;
-  final Map<String, ACPAgentConnection> _acpConnections;
   final Map<String, Map<String, GroupActiveTask>> _activeGroupTasks;
   final GroupPromptBuilder _promptBuilder;
   final GroupInteractionHandler _interactionHandler;
@@ -77,7 +75,6 @@ class GroupAgentExecutor {
   GroupAgentExecutor({
     required LocalDatabaseService db,
     required Uuid uuid,
-    required Map<String, ACPAgentConnection> acpConnections,
     required Map<String, Map<String, GroupActiveTask>> activeGroupTasks,
     required GroupPromptBuilder promptBuilder,
     required GroupInteractionHandler interactionHandler,
@@ -87,7 +84,6 @@ class GroupAgentExecutor {
     this.leaveMailboxAndCollect,
   })  : _db = db,
         _uuid = uuid,
-        _acpConnections = acpConnections,
         _activeGroupTasks = activeGroupTasks,
         _promptBuilder = promptBuilder,
         _interactionHandler = interactionHandler;
@@ -821,7 +817,7 @@ class GroupAgentExecutor {
                           final workflowId = cliJson['workflow_id'] as String?;
                           final planDataRaw = cliJson['_plan_data'] as Map<String, dynamic>?;
                           if (workflowId != null && planDataRaw != null && onInteractionRequest != null) {
-                            await onInteractionRequest?.call(
+                            await onInteractionRequest.call(
                               agent.id, agent.name, 'plan_approval',
                               {...planDataRaw, '_workflowId': workflowId, '_non_blocking': true},
                             );
@@ -1263,7 +1259,7 @@ class GroupAgentExecutor {
         // multi-binding: concurrent group members each register their own
         // binding/callback instead of overwriting each other.
         if (acpCancellationToken != null) {
-          acpCancellationToken.bind(connection!, taskId!);
+          acpCancellationToken.bind(connection!, taskId);
           acpCancellationToken.addOnCancelled(() {
             if (!taskCompleter.isCompleted) {
               taskCompleter.complete();
@@ -1271,7 +1267,7 @@ class GroupAgentExecutor {
           });
         }
 
-        final effectiveTaskId = taskId!;
+        final effectiveTaskId = taskId;
         final effectiveConnection = connection!;
         effectiveConnection.registerTaskCallbacks(effectiveTaskId, TaskCallbacks(
           onTextContent: (data) {
@@ -1631,8 +1627,8 @@ class GroupAgentExecutor {
       } catch (e) {
         LoggerService().error('Group agent ${agent.name} ACP error', tag: 'GroupAgentExecutor', error: e);
         if (connection != null && taskId != null) {
-          connection!.unregisterTaskCallbacks(taskId!);
-          acpCancellationToken?.unbind(connection!, taskId!);
+          connection.unregisterTaskCallbacks(taskId);
+          acpCancellationToken?.unbind(connection, taskId);
         }
         if (!streamingStarted || responseBuffer.isEmpty) {
           // Keep behavior consistent with the local/peer paths: surface a
@@ -1790,19 +1786,19 @@ class GroupAgentExecutor {
     Map<String, dynamic>? _activeInteractionData;
     if (formDataCapture != null) {
       _activeInteractionType = 'form';
-      _activeInteractionData = Map<String, dynamic>.from(formDataCapture!);
+      _activeInteractionData = Map<String, dynamic>.from(formDataCapture);
     } else if (actionConfirmationData != null) {
       _activeInteractionType = 'action_confirmation';
       _activeInteractionData = Map<String, dynamic>.from(actionConfirmationData!);
     } else if (singleSelectData != null) {
       _activeInteractionType = 'single_select';
-      _activeInteractionData = Map<String, dynamic>.from(singleSelectData!);
+      _activeInteractionData = Map<String, dynamic>.from(singleSelectData);
     } else if (multiSelectData != null) {
       _activeInteractionType = 'multi_select';
-      _activeInteractionData = Map<String, dynamic>.from(multiSelectData!);
+      _activeInteractionData = Map<String, dynamic>.from(multiSelectData);
     } else if (fileUploadData != null) {
       _activeInteractionType = 'file_upload';
-      _activeInteractionData = Map<String, dynamic>.from(fileUploadData!);
+      _activeInteractionData = Map<String, dynamic>.from(fileUploadData);
     }
 
     // Save to DB — failure here should NOT remove the already-displayed message
@@ -1872,15 +1868,15 @@ class GroupAgentExecutor {
         onInteractionRequest != null) {
       // Inject _savedMessageId so controller can key pendingGroupInteractions
       // on the correct DB message ID (see chat_controller.dart line 1542)
-      final dataForController = Map<String, dynamic>.from(_activeInteractionData!);
+      final dataForController = Map<String, dynamic>.from(_activeInteractionData);
       dataForController['_savedMessageId'] = savedMessageId;
 
       // Block here: controller creates a GroupInteractionRequestEvent,
       // user fills in the form, handleFormSubmitted completes the Completer
-      final userResponse = await onInteractionRequest!(
+      final userResponse = await onInteractionRequest(
         agent.id,
         agent.name,
-        _activeInteractionType!,
+        _activeInteractionType,
         dataForController,
       );
 
@@ -1892,27 +1888,26 @@ class GroupAgentExecutor {
         // Fallback for non-form types: pick default option on timeout (null response)
         final resolvedResponse = userResponse ??
             (_activeInteractionType != 'form' && _activeInteractionType != 'file_upload'
-                ? _interactionHandler.pickDefaultOption(_activeInteractionType!, _activeInteractionData!)
+                ? _interactionHandler.pickDefaultOption(_activeInteractionType, _activeInteractionData)
                 : null);
 
         // Persist responded state to DB for consistency (survives navigation)
         if (resolvedResponse != null) {
           try {
             final respondedKey = '${_activeInteractionType}_responded';
-            final mergedMeta = Map<String, dynamic>.from(messageMetadata ?? {});
+            final mergedMeta = Map<String, dynamic>.from(messageMetadata);
             mergedMeta[respondedKey] = resolvedResponse;
             // Also stamp the selection onto the interactive section itself so
             // message bubbles render the post-approval (selected) visual state.
             final section = Map<String, dynamic>.from(
-              mergedMeta[_activeInteractionType!] as Map<String, dynamic>? ??
-                  _activeInteractionData ??
-                  {},
+              mergedMeta[_activeInteractionType] as Map<String, dynamic>? ??
+                  _activeInteractionData,
             );
             section.addAll(resolvedResponse);
             section['selected_at'] =
                 DateTime.now().millisecondsSinceEpoch;
-            mergedMeta[_activeInteractionType!] = section;
-            await _db.updateMessageMetadata(savedMessageId!, mergedMeta);
+            mergedMeta[_activeInteractionType] = section;
+            await _db.updateMessageMetadata(savedMessageId, mergedMeta);
           } catch (e) {
             LoggerService().error('Failed to persist responded state for ${agent.name}',
                 tag: 'GroupAgentExecutor', error: e);
@@ -1923,7 +1918,7 @@ class GroupAgentExecutor {
         _interactionHandler.saveUserInteractionResultMessage(
           channelId: channelId,
           subAgentName: agent.name,
-          interactionType: _activeInteractionType!,
+          interactionType: _activeInteractionType,
           responseData: resolvedResponse,
         );
       }
@@ -2112,7 +2107,7 @@ class GroupAgentExecutor {
         final responseData = await _interactionHandler.resolveInteractionViaAdmin(
           interactionType: 'action_confirmation',
           data: data,
-          adminAgent: adminAgent!,
+          adminAgent: adminAgent,
           channelId: channelId,
           subAgentName: agent.name,
         );
@@ -2156,8 +2151,8 @@ class GroupAgentExecutor {
           await WorkflowService.instance.savePendingApproval(
             WorkflowPendingApproval(
               id: confirmationId,
-              workflowId: workflowId!,
-              stepId: workflowStepId!,
+              workflowId: workflowId,
+              stepId: workflowStepId,
               channelId: channelId,
               agentId: agent.id,
               agentName: agent.name,

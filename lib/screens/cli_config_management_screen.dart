@@ -384,7 +384,7 @@ class _RootNsTileState extends State<_RootNsTile> {
 
 class _NsPage extends StatefulWidget {
   final _NsDef def;
-  const _NsPage({super.key, required this.def});
+  const _NsPage({required this.def});
 
   @override
   State<_NsPage> createState() => _NsPageState();
@@ -726,7 +726,6 @@ class _SubNsPage extends StatefulWidget {
   final VoidCallback onRefresh;
 
   const _SubNsPage({
-    super.key,
     required this.parentKey,
     required this.subKey,
     required this.subNs,
@@ -1046,7 +1045,7 @@ class _CommandTileState extends State<_CommandTile> {
               if (toolDef == null && !hasCmdSchema && hasFlags) ...[
                 const SizedBox(width: 4),
                 Tooltip(
-                  message: 'Has ${flags?.length} flag(s)',
+                  message: 'Has ${flags.length} flag(s)',
                   child: Icon(Icons.flag_outlined,
                       size: 12, color: _cliSecondaryForeground(colorScheme)),
                 ),
@@ -1144,7 +1143,7 @@ class _CommandTileState extends State<_CommandTile> {
                           tooltip: 'Configure',
                           visualDensity: VisualDensity.compact,
                           onPressed: () =>
-                              _openCliCommandConfigSheet(context, schema!),
+                              _openCliCommandConfigSheet(context, schema),
                         ),
                       ],
                     )
@@ -2180,8 +2179,6 @@ class _CliDetailSheetState extends State<_CliDetailSheet> {
     ]);
   }
 
-  Widget _buildToolToggleRow(ColorScheme cs) => const SizedBox.shrink();
-
   Future<void> _run() async {
     setState(() { _running = true; _result = null; });
     try {
@@ -2312,7 +2309,7 @@ class _CliDetailSheetState extends State<_CliDetailSheet> {
                 if (hasFlags) ...[
                   const Spacer(),
                   Text(
-                    '${flags!.length} flag(s) available',
+                    '${flags.length} flag(s) available',
                     style: TextStyle(fontSize: 10, color: _cliSecondaryForeground(cs)),
                   ),
                 ],
@@ -2326,7 +2323,7 @@ class _CliDetailSheetState extends State<_CliDetailSheet> {
               style: const TextStyle(fontSize: 12, fontFamily: 'monospace'),
               decoration: InputDecoration(
                 hintText: hasFlags
-                    ? '--${flags!.keys.first} value\n--flag2 value2'
+                    ? '--${flags.keys.first} value\n--flag2 value2'
                     : 'No flags available for this command',
                 hintStyle: TextStyle(fontSize: 11, color: _cliSecondaryForeground(cs)),
                 filled: true,

@@ -46,9 +46,6 @@ mixin _WorkflowOps on _ChatControllerBase {
       workflow.peerApprovalPending;
 
   /// Cancellation token for the currently executing workflow.
-  @override
-  WorkflowCancellationToken? get _workflowCancelToken => workflow.cancelToken;
-  @override
   set _workflowCancelToken(WorkflowCancellationToken? value) =>
       workflow.adoptCancelToken(value);
 

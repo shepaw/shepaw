@@ -827,7 +827,7 @@ class LocalLLMAgentService {
       }
     } else if (hasMultimodal) {
       final contentParts = List<Map<String, dynamic>>.from(
-        (userContent as List).map((e) => Map<String, dynamic>.from(e as Map)),
+        userContent.map((e) => Map<String, dynamic>.from(e as Map)),
       );
       if (lastIsUser) {
         final prev = messages.last;

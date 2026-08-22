@@ -14,7 +14,6 @@ import '../services/local_database_service.dart';
 import '../services/attachment_service.dart';
 import '../services/message_search_service.dart';
 import '../services/acp_agent_connection.dart';
-import '../services/local_llm_agent_service.dart';
 import '../services/app_lifecycle_service.dart';
 import '../services/notification_service.dart';
 import '../services/interactive_response_handler.dart';
@@ -24,7 +23,6 @@ import '../services/workflow/workflow_service.dart';
 import '../services/approval/pending_approval_hub.dart';
 import '../services/approval/pending_approval_item.dart';
 import '../models/workflow_models.dart';
-import '../models/workflow_pending_approval.dart';
 import '../peer/services/peer_agent_client_service.dart';
 import '../peer/services/peer_agent_host_service.dart' show isPeerAgentChannel;
 import '../peer/services/peer_storage_service.dart';
@@ -310,8 +308,6 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
   // ---- Workflow / load hooks (implemented by mixins) ----
   void reopenWorkflowPanel();
   WorkflowPeerApprovalPending? get workflowPeerApprovalPending;
-  WorkflowCancellationToken? get _workflowCancelToken;
-  set _workflowCancelToken(WorkflowCancellationToken? value);
   void setActiveWorkflowId(String? id);
   void setWorkflowPeerApprovalPending(WorkflowPeerApprovalPending? pending);
   void dismissWorkflowPanel();

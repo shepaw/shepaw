@@ -1,12 +1,12 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:crypto/crypto.dart' as crypto;
 import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as p;
 
 import '../services/logger_service.dart';
-import 'device_identity.dart';
 import 'local_store.dart';
 import 'snapshot_service.dart';
 import 'store_protocol.dart';
@@ -83,7 +83,6 @@ class SnapshotImportService {
     if (entries.isEmpty) throw StateError('snapshot not found');
 
     // 2. 下载到本地 backups/<ts>（重名加 -import 后缀）
-    final self = await DeviceIdentity.deviceId();
     final backupsRoot = await SnapshotService.instance.deviceStoreRoot();
     var localId = snapshotId;
     var destDir = Directory(p.join(backupsRoot.path, 'backups', localId));

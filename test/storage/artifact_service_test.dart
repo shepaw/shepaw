@@ -3,7 +3,6 @@ import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shepaw/storage/artifact_service.dart';
-import 'package:shepaw/storage/device_identity.dart';
 import 'package:shepaw/storage/store_protocol.dart';
 import 'package:shepaw/storage/store_service.dart';
 

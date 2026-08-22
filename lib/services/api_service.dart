@@ -1,5 +1,4 @@
 import 'dart:convert';
-import 'package:http/http.dart' as http;
 import '../models/user.dart';
 import '../models/agent.dart';
 import '../models/channel.dart';
@@ -7,7 +6,6 @@ import '../models/message.dart';
 import '../models/agent_conversation_request.dart';
 import '../config/app_config.dart';
 import '../utils/http_client.dart';
-import '../utils/exceptions.dart';
 
 class ApiService {
   final String baseUrl;

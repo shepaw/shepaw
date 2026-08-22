@@ -106,7 +106,6 @@ class _ScheduledTasksManagementScreenState
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
-    if (l10n == null) return const SizedBox.shrink();
 
     return FutureBuilder<List<RemoteAgent>>(
       future: _agentsFuture,

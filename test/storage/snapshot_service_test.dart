@@ -4,7 +4,6 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:path/path.dart' as p;
 import 'package:shepaw/services/local_database_service.dart';
-import 'package:shepaw/services/noise_identity.dart';
 import 'package:shepaw/services/password_service.dart';
 import 'package:shepaw/storage/device_identity.dart';
 import 'package:shepaw/storage/restore_service.dart';

@@ -1,6 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shepaw/models/peer_boundary_config.dart';
-import 'package:shepaw/models/prompt_stack_config.dart';
 import 'package:shepaw/models/remote_agent.dart';
 
 RemoteAgent _agent({

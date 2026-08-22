@@ -10,7 +10,6 @@ import 'package:shepaw/storage/device_identity.dart';
 import 'package:shepaw/storage/local_store.dart';
 import 'package:shepaw/storage/store_protocol.dart';
 import 'package:shepaw/storage/sync_engine.dart';
-import 'package:shepaw/storage/sync_journal.dart';
 
 import 'test_harness.dart';
 

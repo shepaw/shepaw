@@ -1,10 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:shepaw/clis/cli_base.dart';
-import 'package:shepaw/clis/shepaw/shepaw_cli.dart';
 import 'package:shepaw/clis/shepaw/context/context_namespace.dart';
 import 'package:shepaw/clis/shepaw/chat/chat_namespace.dart';
 import 'package:shepaw/clis/shepaw/profile/profile_namespace.dart';
-import 'package:shepaw/clis/shepaw/memory/memory_namespace.dart';
 
 /// Test suite for CLI help flag functionality across all CLI levels.
 ///

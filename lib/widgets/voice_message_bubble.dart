@@ -3,7 +3,6 @@ import 'package:flutter/material.dart';
 import '../models/message.dart';
 import '../services/attachment_service.dart';
 import '../services/audio_playback_service.dart';
-import '../services/local_file_storage_service.dart';
 
 /// 语音消息气泡内容组件
 class VoiceMessageBubble extends StatefulWidget {

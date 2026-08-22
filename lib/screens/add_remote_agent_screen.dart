@@ -226,7 +226,6 @@ class _AddRemoteAgentScreenState extends State<AddRemoteAgentScreen> {
   }
 
   Future<void> _createAgent() async {
-    final l10n = AppLocalizations.of(context);
     if (!_formKey.currentState!.validate()) {
       return;
     }

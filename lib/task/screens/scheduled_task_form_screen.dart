@@ -450,7 +450,6 @@ class _ScheduledTaskFormScreenState extends State<ScheduledTaskFormScreen> {
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
-    if (l10n == null) return const SizedBox.shrink();
 
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;

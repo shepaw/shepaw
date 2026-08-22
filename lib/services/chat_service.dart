@@ -144,7 +144,6 @@ class ChatService {
   late final GroupAgentExecutor _groupAgentExecutor = GroupAgentExecutor(
     db: _databaseService,
     uuid: _uuid,
-    acpConnections: _acpConnections,
     activeGroupTasks: _activeGroupTasks,
     promptBuilder: _groupPromptBuilder,
     interactionHandler: _groupInteractionHandler,

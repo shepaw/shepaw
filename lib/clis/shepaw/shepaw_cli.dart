@@ -235,7 +235,7 @@ class ShepawCLI {
       }
       if (ns is WorkflowNamespace) {
         final chId = flags['channel_id'];
-        if (chId != null && agentId != null) {
+        if (chId != null) {
           ns.setContext(chId, agentId);
         }
       }

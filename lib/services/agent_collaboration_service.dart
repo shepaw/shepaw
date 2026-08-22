@@ -1,6 +1,5 @@
 import 'dart:async';
 import '../models/agent.dart';
-import '../models/channel.dart';
 import '../services/local_api_service.dart';
 import '../services/logger_service.dart';
 
@@ -9,10 +8,9 @@ import '../services/logger_service.dart';
 /// 实验性功能：支持 Agent 间协作和任务编排
 /// 当前使用模拟响应，后续版本将集成实际 Agent 调用
 class AgentCollaborationService {
-  final LocalApiService _apiService;
   final LoggerService _logger;
 
-  AgentCollaborationService(this._apiService, this._logger);
+  AgentCollaborationService(LocalApiService _apiService, this._logger);
 
   /// 创建协作任务
   /// 
@@ -170,22 +168,20 @@ class AgentCollaborationService {
   ) async {
     final results = <String, String>{};
     final stages = <String>[];
-    String currentMessage = message;
 
     for (var i = 0; i < task.agentIds.length; i++) {
       final agentId = task.agentIds[i];
       final stage = 'Stage ${i + 1}';
-      
+
       try {
         _logger.debug('Pipeline $stage: Agent $agentId processing');
 
         // 模拟 Agent 响应（实验性功能）
         await Future.delayed(const Duration(milliseconds: 500));
         final response = '$stage result from $agentId';
-        
+
         results[agentId] = response;
         stages.add(response);
-        currentMessage = response;
       } catch (e) {
         _logger.warning('Agent $agentId failed in pipeline $stage', error: e);
         results[agentId] = 'Error: $e';

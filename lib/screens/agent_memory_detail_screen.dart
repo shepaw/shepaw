@@ -39,7 +39,6 @@ class _AgentMemoryDetailScreenState extends State<AgentMemoryDetailScreen>
   bool _editable = true;
   String? _loadError;
   String? _filterKeyword;
-  MemoryType? _filterType;
 
   @override
   void initState() {
@@ -69,7 +68,6 @@ class _AgentMemoryDetailScreenState extends State<AgentMemoryDetailScreen>
           _isLoading = false;
           _loadError = null;
           _filterKeyword = keyword;
-          _filterType = type;
         });
       }
     } catch (e) {

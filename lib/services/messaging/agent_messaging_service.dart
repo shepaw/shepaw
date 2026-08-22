@@ -1322,8 +1322,8 @@ class AgentMessagingService {
           },
         );
 
-        flushHelper?.cancel();
-        flushHelper?.deletePartialUnawaited();
+        flushHelper.cancel();
+        flushHelper.deletePartialUnawaited();
         activeTask.isComplete = true;
         return left;
       }
@@ -1356,7 +1356,7 @@ class AgentMessagingService {
       }
 
       // Wait for task.completed, task.error, or local cancellation
-      final taskTimeoutSeconds = (agent.metadata?['task_timeout_seconds'] as num?)?.toInt() ?? 10800;
+      final taskTimeoutSeconds = (agent.metadata['task_timeout_seconds'] as num?)?.toInt() ?? 10800;
       await taskCompleter.future.timeout(
         Duration(seconds: taskTimeoutSeconds),
         onTimeout: () {
@@ -1379,7 +1379,7 @@ class AgentMessagingService {
       activeTask.metadata = finalMessage.metadata;
       
       // Delete partial message — the outer sendMessageToAgent will save finalMessage
-      flushHelper?.deletePartialUnawaited();
+      flushHelper.deletePartialUnawaited();
 
       return finalMessage;
     } catch (e, stackTrace) {
@@ -2203,7 +2203,7 @@ class AgentMessagingService {
       // metadata so the bubble can show per-message token cost.
       var turnTokenUsage = const LlmTokenUsage();
 
-      final maxToolRounds = (agent.metadata?['max_tool_rounds'] as num?)?.toInt() ?? 100;
+      final maxToolRounds = (agent.metadata['max_tool_rounds'] as num?)?.toInt() ?? 100;
 
       for (int round = 0; round < maxToolRounds; round++) {
         if (acpCancellationToken?.isCancelled == true) break;

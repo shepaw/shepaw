@@ -302,7 +302,7 @@ class _WorkflowProgressPanelState extends State<WorkflowProgressPanel>
             if (hasInlineActions) ...[
               const SizedBox(height: 8),
               ActionConfirmationButtons(
-                actionData: approvalData!,
+                actionData: approvalData,
                 onActionSelected: (confirmationId, actionId, actionLabel) {
                   widget.onPeerApprovalAction?.call(
                     confirmationId,

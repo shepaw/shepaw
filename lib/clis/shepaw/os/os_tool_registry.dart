@@ -498,7 +498,10 @@ class OsToolRegistry {
       systemPromptSuffixLayered(enabledTools, 'summary');
 
   String systemPromptSuffixLayered(Set<String> enabledTools, String level) {
+    // 有意禁用：工具列表提示已由 Scope Card / ContextBundle 注入，不再拼
+    // 进 system prompt。保留实现以备将来启用。
     return '';
+    // ignore: dead_code
     final filtered = _filteredTools(enabledTools);
     if (filtered.isEmpty) return '';
     final toolLines = filtered.map((t) {

@@ -63,9 +63,13 @@ enum _PeerSyncChoice { sync, disable }
 /// 否则上下滚动时手指带出的轻微横向漂移（旧配置 8px 在 dy/dx<1 的起手
 /// 瞬间即接受）会误开抽屉 —— 滚动中 dy 早在 18px 就交给消息列表（见
 /// verticalScrollSlop），抽屉根本等不到 8px 阈值以下的机会。
-/// 代价（框架竞技场限制）：起点落在文本气泡上的左滑会被选区拖拽识别器
-/// 在 |dx|>18px 抢先，让位给文字拖选，气泡上打不开抽屉（见 build 注释）。
 const double _chatDrawerOpenSwipeThreshold = 30;
+
+/// 起点落在文本（气泡文字 / 时间戳等 RenderParagraph）上时的打开阈值（px）。
+/// 必须严格小于 SelectionArea 横向拖拽识别器的 18px touchSlop（实际按
+/// |dx|>18 抢先接受竞技场）：只有更低，抽屉手势才能在气泡上先于选区赢下，
+/// 气泡上的左滑也能打开抽屉。普通区域仍用 30px 阈值，滚动误触保护不变。
+const double _chatDrawerOpenSwipeOnTextThreshold = 16;
 
 class ChatScreen extends StatefulWidget {
   final String? agentId;
@@ -174,6 +178,12 @@ class _ChatScreenState extends State<ChatScreen>
 
   /// 打开手势在会话加载完成前已抬手时记录的速度（px/s）；null 表示手势未结束。
   double? _drawerGestureEndVelocity;
+
+  /// 本次打开手势实际生效的触发阈值（px）：起点在文本上时是 16px（见
+  /// _chatDrawerOpenSwipeOnTextThreshold），普通区域 30px。创建
+  /// RightDrawerHandle 时用它作 openThreshold，气泡上 16px 就接受的
+  /// 手势不会按 30px 收尾而「开一下又回去」。
+  double? _drawerGestureOpenThreshold;
 
   /// 跟手模式下打开的抽屉句柄；null 表示当前抽屉为按钮打开或未打开。
   RightDrawerHandle? _drawerHandle;
@@ -1429,8 +1439,9 @@ class _ChatScreenState extends State<ChatScreen>
   // 打开手势与抽屉内右滑关闭手势共用同一个 RightDrawerHandle：加载会话
   // 期间手指继续移动的位移先累计，push 后直接驱动抽屉进度。
 
-  void _onOpenGestureStart(double openDx) {
+  void _onOpenGestureStart(double openDx, double openThreshold) {
     _drawerGestureOpenDx = openDx;
+    _drawerGestureOpenThreshold = openThreshold;
     _drawerGestureEndVelocity = null;
     _startOpenDrawer(gestureDx: openDx);
   }
@@ -1583,7 +1594,10 @@ class _ChatScreenState extends State<ChatScreen>
       final width = _chatDrawerWidth(context);
       final handle = gestureMode
           ? RightDrawerHandle(
-              width: width, openThreshold: _chatDrawerOpenSwipeThreshold)
+              width: width,
+              openThreshold:
+                  _drawerGestureOpenThreshold ?? _chatDrawerOpenSwipeThreshold,
+            )
           : null;
       _drawerHandle = handle;
       final route = LayoutUtils.showRightDrawer(
@@ -1758,7 +1772,10 @@ class _ChatScreenState extends State<ChatScreen>
       final width = _chatDrawerWidth(context);
       final handle = gestureMode
           ? RightDrawerHandle(
-              width: width, openThreshold: _chatDrawerOpenSwipeThreshold)
+              width: width,
+              openThreshold:
+                  _drawerGestureOpenThreshold ?? _chatDrawerOpenSwipeThreshold,
+            )
           : null;
       _drawerHandle = handle;
       final route = LayoutUtils.showRightDrawer(
@@ -2608,20 +2625,22 @@ class _ChatScreenState extends State<ChatScreen>
           // 漂移在到达 30px 之前，列表已在 dy ≥ 18px（verticalScrollSlop）
           // 接管竞技场，滚动正常、抽屉不触发；只有刻意左滑超过 30px 才
           // 开始打开（跟手：抽屉只出来手指拖过的距离）。
-          // 代价（框架竞技场限制）：气泡内容被 SelectionArea 包裹，其拖拽
-          // 识别器在 |dx|>18px 抢先接受（eagerVictoryOnDrag），起点落在文本
-          // 气泡上的左滑会让位给文字拖选，抽屉从气泡上起手打不开 —— 这是
-          // 阈值高于 18px 的必然结果；消息间隙、空白处、空状态页等非气泡
-          // 区域左滑 30px 照常打开。verticalDominance 2.0 保留纵向让位
-          // （dy > 2×dx 即拒，约 63° 以上的真实滚动瞬间让给列表）；
+          // 气泡共存：气泡内容被 SelectionArea 包裹，其横向拖拽识别器在
+          // |dx|>18px 抢先接受（eagerVictoryOnDrag）。为让气泡上的左滑也能
+          // 打开抽屉，minOpenDistanceOnSelectableText 设为一个低于 18px 的
+          // 阈值（16px）：识别器在 down 时命中 RenderParagraph（气泡文字、
+          // 时间戳等文本）即改用 16px，抢在选区接受之前赢下竞技场；普通
+          // 区域（消息间隙、空白处）仍 30px。verticalDominance 2.0 保留
+          // 纵向让位（dy > 2×dx 即拒，约 63° 以上的真实滚动瞬间让给列表）；
           // 45°~63° 斜向滑动保持 wait，自然输给列表。horizontalDominance
           // 1.0（45° 锥）：真实手指/模拟器拖动几乎不可能完全水平，旧值
           // 1.5（33.7° 锥）会把 dy/dx 略大的打开手势全部误杀。长按选择
           // 不受影响（长按无位移，由长按识别器接管）；横向滚动/输入框被
           // 识别器在 down 时让位（见 drawer_swipe_detector.dart 的
-          // _hasOwnedHorizontalGestureAt）。
+          // _classifyPointerTarget）。
           touchSlop: 8,
           minOpenDistance: _chatDrawerOpenSwipeThreshold,
+          minOpenDistanceOnSelectableText: _chatDrawerOpenSwipeOnTextThreshold,
           horizontalDominance: 1.0,
           verticalDominance: 2.0,
           direction: DrawerSwipeDirection.rightToLeft,

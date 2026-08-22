@@ -523,7 +523,7 @@ class ChannelTunnelService {
       (data) {
         // dart:io WebSocket delivers String (text) or Uint8List (binary)
         final isText = data is String;
-        final bytes = isText ? utf8.encode(data as String) : Uint8List.fromList(data as List<int>);
+        final bytes = isText ? utf8.encode(data) : Uint8List.fromList(data as List<int>);
         _sendMessage(_TunnelMessage(
           type: 'ws_data',
           streamId: req.streamId,

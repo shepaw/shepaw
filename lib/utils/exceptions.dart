@@ -111,7 +111,6 @@ class AgentException extends AppException {
       case AgentErrorType.executionError:
         return 'Agent 执行任务失败: $message';
       case AgentErrorType.unknown:
-      default:
         return 'Agent 错误: $message';
     }
   }
@@ -170,7 +169,6 @@ class DatabaseException extends AppException {
       case DatabaseErrorType.connectionError:
         return '数据库连接失败';
       case DatabaseErrorType.unknown:
-      default:
         return '数据库错误: $message';
     }
   }

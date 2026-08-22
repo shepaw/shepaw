@@ -6,7 +6,6 @@ import 'package:crypto/crypto.dart' as crypto;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:path/path.dart' as p;
 import 'package:shepaw/storage/device_identity.dart';
-import 'package:shepaw/storage/local_store.dart';
 import 'package:shepaw/storage/store_export_service.dart';
 import 'package:shepaw/storage/store_protocol.dart';
 import 'package:shepaw/storage/store_service.dart';
