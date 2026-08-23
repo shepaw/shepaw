@@ -5,7 +5,7 @@ import '../../l10n/app_localizations.dart';
 import '../../models/channel.dart';
 import '../../services/local_database_service.dart';
 
-/// 会话列表「更多」菜单按钮（全部已读 / Trace / 重置会话 / 批量选择）。
+/// 会话列表「更多」菜单按钮（编辑 / 全部已读）。
 ///
 /// 由调用方作为 `moreButton` 传入 [SessionListPanel] /
 /// [GroupSessionListPanel]，渲染在「新建会话」行右侧；搜索栏只保留输入。
@@ -18,10 +18,8 @@ class SessionListHeaderMoreButton extends StatelessWidget {
   final ValueListenable<int> refreshTick;
 
   final Future<void> Function() onMarkAll;
-  final VoidCallback? onShowTraces;
 
-  /// 重置当前会话（对当前正在查看的会话生效）。
-  final VoidCallback? onResetSession;
+  /// 进入批量选择（编辑）模式；空则菜单不显示「编辑」项。
   final VoidCallback? onEnterSelectionMode;
 
   const SessionListHeaderMoreButton({
@@ -30,8 +28,6 @@ class SessionListHeaderMoreButton extends StatelessWidget {
     required this.databaseService,
     required this.refreshTick,
     required this.onMarkAll,
-    this.onShowTraces,
-    this.onResetSession,
     this.onEnterSelectionMode,
   });
 
@@ -49,6 +45,21 @@ class SessionListHeaderMoreButton extends StatelessWidget {
     if (!context.mounted) return;
 
     final items = <PopupMenuEntry<String>>[];
+    if (onEnterSelectionMode != null && sessions.length > 1) {
+      items.add(
+        PopupMenuItem<String>(
+          value: 'edit',
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(Icons.edit_outlined, size: 20),
+              const SizedBox(width: 12),
+              Text(l10n.common_edit),
+            ],
+          ),
+        ),
+      );
+    }
     if (totalUnread > 0) {
       items.add(
         PopupMenuItem<String>(
@@ -59,51 +70,6 @@ class SessionListHeaderMoreButton extends StatelessWidget {
               const Icon(Icons.done_all, size: 20),
               const SizedBox(width: 12),
               Text(l10n.chat_markAllSessionsRead),
-            ],
-          ),
-        ),
-      );
-    }
-    if (onShowTraces != null) {
-      items.add(
-        PopupMenuItem<String>(
-          value: 'traces',
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Icon(Icons.psychology_outlined, size: 20),
-              const SizedBox(width: 12),
-              Text(l10n.chat_viewTrace),
-            ],
-          ),
-        ),
-      );
-    }
-    if (onResetSession != null) {
-      items.add(
-        PopupMenuItem<String>(
-          value: 'reset',
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Icon(Icons.refresh, size: 20),
-              const SizedBox(width: 12),
-              Text(l10n.chat_resetSession),
-            ],
-          ),
-        ),
-      );
-    }
-    if (onEnterSelectionMode != null && sessions.length > 1) {
-      items.add(
-        PopupMenuItem<String>(
-          value: 'select',
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Icon(Icons.edit_outlined, size: 20),
-              const SizedBox(width: 12),
-              Text(l10n.chat_selectSessions),
             ],
           ),
         ),
@@ -131,22 +97,17 @@ class SessionListHeaderMoreButton extends StatelessWidget {
     if (!context.mounted || action == null) return;
 
     switch (action) {
+      case 'edit':
+        onEnterSelectionMode?.call();
       case 'markAll':
         await onMarkAll();
-      case 'traces':
-        onShowTraces?.call();
-      case 'reset':
-        onResetSession?.call();
-      case 'select':
-        onEnterSelectionMode?.call();
     }
   }
 
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
-    final hasMenu = onShowTraces != null ||
-        onResetSession != null ||
+    final hasMenu =
         (onEnterSelectionMode != null && sessions.length > 1);
 
     return ValueListenableBuilder<int>(

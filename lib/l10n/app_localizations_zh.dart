@@ -3031,6 +3031,18 @@ class AppLocalizationsZh extends AppLocalizations {
   String get chat_viewTrace => '查看 Trace';
 
   @override
+  String get chat_viewSession => '查看会话';
+
+  @override
+  String get chat_forkSession => '分叉';
+
+  @override
+  String get chat_forkingSession => '正在分叉会话…';
+
+  @override
+  String chat_forkSessionFailed(String error) => '分叉会话失败：$error';
+
+  @override
   String get modelType_sectionLabel => '模型类型';
 
   @override

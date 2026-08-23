@@ -3151,6 +3151,18 @@ class AppLocalizationsEn extends AppLocalizations {
   String get chat_viewTrace => 'View Trace';
 
   @override
+  String get chat_viewSession => 'View Session';
+
+  @override
+  String get chat_forkSession => 'Fork';
+
+  @override
+  String get chat_forkingSession => 'Forking session…';
+
+  @override
+  String chat_forkSessionFailed(String error) => 'Fork session failed: $error';
+
+  @override
   String get modelType_sectionLabel => 'Model Types';
 
   @override

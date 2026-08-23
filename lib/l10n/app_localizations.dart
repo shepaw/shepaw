@@ -5582,6 +5582,30 @@ abstract class AppLocalizations {
   /// **'查看 Trace'**
   String get chat_viewTrace;
 
+  /// No description provided for @chat_viewSession.
+  ///
+  /// In zh, this message translates to:
+  /// **'查看会话'**
+  String get chat_viewSession;
+
+  /// No description provided for @chat_forkSession.
+  ///
+  /// In zh, this message translates to:
+  /// **'分叉'**
+  String get chat_forkSession;
+
+  /// No description provided for @chat_forkingSession.
+  ///
+  /// In zh, this message translates to:
+  /// **'正在分叉会话…'**
+  String get chat_forkingSession;
+
+  /// No description provided for @chat_forkSessionFailed.
+  ///
+  /// In zh, this message translates to:
+  /// **'分叉会话失败：$error'**
+  String chat_forkSessionFailed(String error);
+
   /// No description provided for @modelType_sectionLabel.
   ///
   /// In zh, this message translates to:

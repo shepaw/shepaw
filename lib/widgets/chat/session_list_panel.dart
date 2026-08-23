@@ -7,6 +7,7 @@ import '../../utils/session_utils.dart';
 import '../../l10n/app_localizations.dart';
 import 'session_unread_badge.dart';
 import 'session_list_header_menu.dart';
+import 'session_row_menu.dart';
 
 /// Session list panel for DM (1-on-1) chat sessions.
 ///
@@ -32,12 +33,21 @@ class SessionListPanel extends StatelessWidget {
   /// 外部驱动的列表刷新（全部已读后自增，未读角标与预览随之刷新）。
   final ValueListenable<int> listRefreshTick;
 
-  /// 外部驱动的批量选择进入（「更多」菜单点批量选择后自增）。
+  /// 外部驱动的批量选择进入（「更多」菜单点编辑后自增）。
   final ValueListenable<int> selectionModeRequest;
 
   /// 会话列表「更多」按钮（[SessionListHeaderMoreButton]），渲染在
   /// 「新建会话」行右侧；为空则整行保持纯新建入口。
   final Widget? moreButton;
+
+  /// 每会话底部菜单「查看 Trace」回调（按该会话过滤）。
+  final void Function(String channelId, String channelName)? onViewTrace;
+
+  /// 每会话底部菜单「分叉」回调。
+  final void Function(Channel session)? onForkSession;
+
+  /// 每会话底部菜单「重置会话」回调（仅当前会话行显示）。
+  final VoidCallback? onResetSession;
 
   const SessionListPanel({
     super.key,
@@ -53,6 +63,9 @@ class SessionListPanel extends StatelessWidget {
     required this.listRefreshTick,
     required this.selectionModeRequest,
     this.moreButton,
+    this.onViewTrace,
+    this.onForkSession,
+    this.onResetSession,
   });
 
   @override
@@ -67,6 +80,9 @@ class SessionListPanel extends StatelessWidget {
       listRefreshTick: listRefreshTick,
       selectionModeRequest: selectionModeRequest,
       moreButton: moreButton,
+      onViewTrace: onViewTrace,
+      onForkSession: onForkSession,
+      onResetSession: onResetSession,
     );
   }
 }
@@ -87,6 +103,15 @@ class _SessionListContent extends StatefulWidget {
   /// 会话列表「更多」按钮，渲染在「新建会话」行右侧。
   final Widget? moreButton;
 
+  /// 每会话底部菜单「查看 Trace」回调（按该会话过滤）。
+  final void Function(String channelId, String channelName)? onViewTrace;
+
+  /// 每会话底部菜单「分叉」回调。
+  final void Function(Channel session)? onForkSession;
+
+  /// 每会话底部菜单「重置会话」回调（仅当前会话行显示）。
+  final VoidCallback? onResetSession;
+
   const _SessionListContent({
     required this.sessions,
     this.currentChannelId,
@@ -97,6 +122,9 @@ class _SessionListContent extends StatefulWidget {
     required this.listRefreshTick,
     required this.selectionModeRequest,
     this.moreButton,
+    this.onViewTrace,
+    this.onForkSession,
+    this.onResetSession,
   });
 
   @override
@@ -382,6 +410,17 @@ class _SessionListContentState extends State<_SessionListContent> {
       ],
     );
 
+    // 每会话底部菜单回调（查看会话仅非当前会话；重置仅当前会话）。
+    final viewSession =
+        isCurrentSession ? null : () => widget.onSwitchSession(session.id);
+    final viewTrace = widget.onViewTrace == null
+        ? null
+        : () => widget.onViewTrace!(session.id, session.name);
+    final forkSession = widget.onForkSession == null
+        ? null
+        : () => widget.onForkSession!(session);
+    final resetSession = isCurrentSession ? widget.onResetSession : null;
+
     return ListTile(
       tileColor: isCurrentSession ? Colors.orange.withOpacity(0.08) : null,
       contentPadding: selectionMode
@@ -499,6 +538,17 @@ class _SessionListContentState extends State<_SessionListContent> {
                   Navigator.of(context).pop();
                   widget.onSwitchSession(session.id);
                 },
+      onLongPress: selectionMode
+          ? null
+          : () => showSessionRowMenu(
+                context,
+                session: session,
+                isCurrentSession: isCurrentSession,
+                onViewSession: viewSession,
+                onViewTrace: viewTrace,
+                onForkSession: forkSession,
+                onResetSession: resetSession,
+              ),
     );
   }
 

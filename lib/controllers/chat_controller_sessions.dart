@@ -126,6 +126,38 @@ mixin _SessionOps on _ChatControllerBase {
     }
   }
 
+  /// 分叉会话：把 [session] 复制为一个新会话（消息 + 工具执行历史），并跳转过去。
+  ///
+  /// 达到「会话分叉」的目的：从该会话的历史继续一条新分支，原会话保持不变。
+  Future<void> forkSession(Channel session, {required bool isGroup}) async {
+    _emit(ShowLoadingOverlayEvent('chat_forkingSession'));
+    try {
+      final newChannelId = await chatService.forkSession(
+        sourceChannelId: session.id,
+        userId: getUserId(),
+        userName: getUserName(),
+        agentId: agentId,
+        agentName: agentName,
+        isGroup: isGroup,
+      );
+
+      await localDatabaseService.touchChannelUpdatedAt(newChannelId);
+      await pruneEmptySessionBeforeSwitch(nextChannelId: newChannelId);
+
+      _emit(DismissOverlayEvent());
+      _emit(NavigateToSessionEvent(
+        channelId: newChannelId,
+        agentId: isGroup ? null : agentId,
+        agentName: isGroup ? null : agentName,
+        agentAvatar: isGroup ? null : agentAvatar,
+        embedded: embedded,
+      ));
+    } catch (e) {
+      _emit(DismissOverlayEvent());
+      _emit(ShowErrorSnackBarEvent('chat_forkSessionFailed:$e'));
+    }
+  }
+
   Future<void> clearCurrentSessionHistory() async {
     if (agentId == null) return;
 

@@ -8,6 +8,7 @@ import '../../utils/session_utils.dart';
 import '../../l10n/app_localizations.dart';
 import 'session_unread_badge.dart';
 import 'session_list_header_menu.dart';
+import 'session_row_menu.dart';
 
 /// Session list panel for group chat sessions.
 ///
@@ -37,6 +38,15 @@ class GroupSessionListPanel extends StatelessWidget {
   /// 「新建会话」行右侧；为空则整行保持纯新建入口。
   final Widget? moreButton;
 
+  /// 每会话底部菜单「查看 Trace」回调（按该会话过滤）。
+  final void Function(String channelId, String channelName)? onViewTrace;
+
+  /// 每会话底部菜单「分叉」回调。
+  final void Function(Channel session)? onForkSession;
+
+  /// 每会话底部菜单「重置会话」回调（仅当前会话行显示）。
+  final VoidCallback? onResetSession;
+
   const GroupSessionListPanel({
     super.key,
     required this.sessions,
@@ -48,6 +58,9 @@ class GroupSessionListPanel extends StatelessWidget {
     required this.listRefreshTick,
     required this.selectionModeRequest,
     this.moreButton,
+    this.onViewTrace,
+    this.onForkSession,
+    this.onResetSession,
   });
 
   @override
@@ -63,6 +76,9 @@ class GroupSessionListPanel extends StatelessWidget {
       listRefreshTick: listRefreshTick,
       selectionModeRequest: selectionModeRequest,
       moreButton: moreButton,
+      onViewTrace: onViewTrace,
+      onForkSession: onForkSession,
+      onResetSession: onResetSession,
     );
   }
 }
@@ -84,6 +100,15 @@ class _GroupSessionListContent extends StatefulWidget {
   /// 会话列表「更多」按钮，渲染在「新建会话」行右侧。
   final Widget? moreButton;
 
+  /// 每会话底部菜单「查看 Trace」回调（按该会话过滤）。
+  final void Function(String channelId, String channelName)? onViewTrace;
+
+  /// 每会话底部菜单「分叉」回调。
+  final void Function(Channel session)? onForkSession;
+
+  /// 每会话底部菜单「重置会话」回调（仅当前会话行显示）。
+  final VoidCallback? onResetSession;
+
   const _GroupSessionListContent({
     required this.sessions,
     this.currentChannelId,
@@ -95,6 +120,9 @@ class _GroupSessionListContent extends StatefulWidget {
     required this.listRefreshTick,
     required this.selectionModeRequest,
     this.moreButton,
+    this.onViewTrace,
+    this.onForkSession,
+    this.onResetSession,
   });
 
   @override
@@ -526,6 +554,17 @@ class _GroupSessionListContentState extends State<_GroupSessionListContent> {
       ],
     );
 
+    // 每会话底部菜单回调（查看会话仅非当前会话；重置仅当前会话）。
+    final viewSession =
+        isCurrentSession ? null : () => widget.onSwitchSession(session.id);
+    final viewTrace = widget.onViewTrace == null
+        ? null
+        : () => widget.onViewTrace!(session.id, session.name);
+    final forkSession = widget.onForkSession == null
+        ? null
+        : () => widget.onForkSession!(session);
+    final resetSession = isCurrentSession ? widget.onResetSession : null;
+
     return ListTile(
       tileColor: isCurrentSession ? Colors.orange.withOpacity(0.08) : null,
       contentPadding: selectionMode
@@ -670,6 +709,17 @@ class _GroupSessionListContentState extends State<_GroupSessionListContent> {
                   Navigator.of(context).pop();
                   widget.onSwitchSession(session.id);
                 },
+      onLongPress: selectionMode
+          ? null
+          : () => showSessionRowMenu(
+                context,
+                session: session,
+                isCurrentSession: isCurrentSession,
+                onViewSession: viewSession,
+                onViewTrace: viewTrace,
+                onForkSession: forkSession,
+                onResetSession: resetSession,
+              ),
     );
   }
 

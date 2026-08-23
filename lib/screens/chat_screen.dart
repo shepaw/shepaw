@@ -1465,8 +1465,9 @@ class _ChatScreenState extends State<ChatScreen>
     }
   }
 
-  void _showChannelTraces() {
-    final channelId = _controller.currentChannelId;
+  /// 查看指定会话的 Trace。桌面端走 [widget.onShowTraces] 面板切换，
+  /// 其余平台直接推 [ChannelTraceScreen] 路由。
+  void _showSessionTraces(String channelId, String channelName) {
     if (widget.onShowTraces != null) {
       widget.onShowTraces!(channelId);
       return;
@@ -1475,7 +1476,7 @@ class _ChatScreenState extends State<ChatScreen>
       MaterialPageRoute(
         builder: (_) => ChannelTraceScreen(
           channelId: channelId,
-          channelName: widget.agentName,
+          channelName: channelName,
         ),
       ),
     );
@@ -1547,21 +1548,20 @@ class _ChatScreenState extends State<ChatScreen>
             onBatchDelete: (ids) => c.batchDeleteSessions(ids, isGroup: false),
             listRefreshTick: refreshTick,
             selectionModeRequest: selectionModeRequest,
+            onViewTrace: (channelId, channelName) async {
+              await _closeDrawerAndWait();
+              if (!mounted) return;
+              _showSessionTraces(channelId, channelName);
+            },
+            onForkSession: (session) =>
+                _forkDrawerSession(session, isGroup: false),
+            onResetSession: () => _resetDrawerSession(isGroup: false),
             // 「更多」按钮放「新建会话」行右侧，搜索栏只保留输入。
             moreButton: SessionListHeaderMoreButton(
               sessions: sessions,
               databaseService: c.localDatabaseService,
               refreshTick: refreshTick,
               onMarkAll: () => _markAllDrawerSessionsRead(sessions, refreshTick),
-              onShowTraces: () {
-                Navigator.pop(context);
-                _showChannelTraces();
-              },
-              onResetSession: () {
-                Navigator.pop(context);
-                _messageController.text = '/reset';
-                _sendMessage();
-              },
               onEnterSelectionMode:
                   sessions.length > 1 ? () => selectionModeRequest.value++ : null,
             ),
@@ -1723,16 +1723,20 @@ class _ChatScreenState extends State<ChatScreen>
             onBatchDelete: (ids) => c.batchDeleteSessions(ids, isGroup: true),
             listRefreshTick: refreshTick,
             selectionModeRequest: selectionModeRequest,
+            onViewTrace: (channelId, channelName) async {
+              await _closeDrawerAndWait();
+              if (!mounted) return;
+              _showSessionTraces(channelId, channelName);
+            },
+            onForkSession: (session) =>
+                _forkDrawerSession(session, isGroup: true),
+            onResetSession: () => _resetDrawerSession(isGroup: true),
             // 「更多」按钮放「新建会话」行右侧，搜索栏只保留输入。
             moreButton: SessionListHeaderMoreButton(
               sessions: sessions,
               databaseService: c.localDatabaseService,
               refreshTick: refreshTick,
               onMarkAll: () => _markAllDrawerSessionsRead(sessions, refreshTick),
-              onShowTraces: () {
-                Navigator.pop(context);
-                _showChannelTraces();
-              },
               onEnterSelectionMode:
                   sessions.length > 1 ? () => selectionModeRequest.value++ : null,
             ),
@@ -1952,6 +1956,27 @@ class _ChatScreenState extends State<ChatScreen>
                 ),
         ),
       );
+    }
+  }
+
+  /// 抽屉内「分叉」：等抽屉彻底销毁后再执行分叉并跳转，避免共享动画
+  /// 控制器随本页 dispose 导致抽屉冻结（与切换会话同理）。
+  Future<void> _forkDrawerSession(Channel session,
+      {required bool isGroup}) async {
+    await _closeDrawerAndWait();
+    if (!mounted) return;
+    unawaited(_controller.forkSession(session, isGroup: isGroup));
+  }
+
+  /// 抽屉内「重置会话」：等抽屉销毁后对当前会话执行重置。
+  Future<void> _resetDrawerSession({required bool isGroup}) async {
+    await _closeDrawerAndWait();
+    if (!mounted) return;
+    if (isGroup) {
+      _controller.clearGroupSessionHistory();
+    } else {
+      _messageController.text = '/reset';
+      _sendMessage();
     }
   }
 

@@ -1515,6 +1515,148 @@ $originalQuestion
     agentName: agentName,
   );
 
+  /// 分叉会话：复制 [sourceChannelId] 的全部消息与工具执行历史到新会话，
+  /// 返回新会话 channelId。
+  ///
+  /// - DM：生成一个独立的新会话（解除 group/She 绑定，避免继承只读语义）。
+  /// - 群组：复用 [GroupSessionService.createNewGroupSession] 生成新子会话
+  ///   （自动创建成员 DM 与群工作空间），再复制群 channel 自身消息。
+  Future<String> forkSession({
+    required String sourceChannelId,
+    required String userId,
+    required String userName,
+    String? agentId,
+    String? agentName,
+    bool isGroup = false,
+  }) async {
+    final source = await _databaseService.getChannelById(sourceChannelId);
+    if (source == null) throw Exception('Channel not found: $sourceChannelId');
+
+    final newChannelId = isGroup
+        ? await _groupSessionService.createNewGroupSession(
+            channelId: sourceChannelId,
+            userId: userId,
+          )
+        : await _forkDmChannel(source, userId, agentId);
+
+    await _copyChannelData(
+      sourceChannelId: sourceChannelId,
+      newChannelId: newChannelId,
+    );
+    return newChannelId;
+  }
+
+  /// DM 分叉：按 createNewSession 的时间戳 id 规则生成新 channel。
+  Future<String> _forkDmChannel(
+    Channel source,
+    String userId,
+    String? agentId,
+  ) async {
+    final agentIdForId =
+        (source.agentIds.isNotEmpty ? source.agentIds.first : null) ??
+            agentId ??
+            '';
+    final ids = [userId, agentIdForId]..sort();
+    final newChannelId =
+        'dm_${ids.join('_')}_${DateTime.now().millisecondsSinceEpoch}';
+
+    final channel = Channel(
+      id: newChannelId,
+      name: source.name,
+      type: 'dm',
+      members: source.members,
+      description: source.description,
+      isPrivate: true,
+      // 分叉后独立成普通 DM：解除 group/She 绑定，避免继承只读绑定语义。
+    );
+    await _databaseService.createChannel(channel, userId);
+    return newChannelId;
+  }
+
+  /// 复制 channel 的消息与工具执行历史（重写 message_id / tool_call_id）。
+  ///
+  /// 注意：`messages` 在主库（shepaw.db），`tool_executions` 在独立库
+  /// （tool_results.db），需分别用各自的 Database 批量写入。
+  Future<void> _copyChannelData({
+    required String sourceChannelId,
+    required String newChannelId,
+  }) async {
+    final db = await _databaseService.database;
+
+    final messageRows = await db.query(
+      'messages',
+      where: 'channel_id = ?',
+      whereArgs: [sourceChannelId],
+      orderBy: 'created_at ASC',
+    );
+    if (messageRows.isEmpty) return;
+
+    // 旧消息 id → 新消息 id：messages.id 是全局主键，复制必须换新；
+    // reply_to_id 用映射重写到新会话内的对应消息。
+    final messageIdMap = <String, String>{
+      for (final row in messageRows) row['id'] as String: _uuid.v4(),
+    };
+
+    final batch = db.batch();
+    for (final row in messageRows) {
+      final oldReplyTo = row['reply_to_id'] as String?;
+      batch.insert(
+        'messages',
+        {
+          'id': messageIdMap[row['id'] as String]!,
+          'channel_id': newChannelId,
+          'sender_id': row['sender_id'],
+          'sender_type': row['sender_type'],
+          'sender_name': row['sender_name'],
+          'content': row['content'],
+          'message_type': row['message_type'] ?? 'text',
+          'metadata': row['metadata'],
+          'reply_to_id': oldReplyTo != null ? messageIdMap[oldReplyTo] : null,
+          'created_at': row['created_at'],
+          'is_read': 1,
+        },
+        conflictAlgorithm: ConflictAlgorithm.abort,
+      );
+    }
+    await batch.commit(noResult: true);
+
+    // 工具执行历史：独立库单独批量复制。
+    final toolDb = await _toolResultService.database;
+    final toolRows = await toolDb.query(
+      'tool_executions',
+      where: 'channel_id = ?',
+      whereArgs: [sourceChannelId],
+    );
+    if (toolRows.isEmpty) return;
+
+    // tool_call_id 全局唯一（幂等写入用），复制后也要换新。
+    final toolCallIdMap = <String, String>{
+      for (final row in toolRows) row['tool_call_id'] as String: _uuid.v4(),
+    };
+    final toolBatch = toolDb.batch();
+    for (final row in toolRows) {
+      final oldMessageId = row['message_id'] as String;
+      toolBatch.insert(
+        'tool_executions',
+        {
+          'id': _uuid.v4(),
+          'message_id': messageIdMap[oldMessageId] ?? newChannelId,
+          'channel_id': newChannelId,
+          'tool_call_id': toolCallIdMap[row['tool_call_id'] as String]!,
+          'tool_name': row['tool_name'],
+          'arguments': row['arguments'],
+          'result_type': row['result_type'],
+          'summary': row['summary'],
+          'full_result': row['full_result'],
+          'status': row['status'],
+          'executed_at': row['executed_at'],
+        },
+        conflictAlgorithm: ConflictAlgorithm.ignore,
+      );
+    }
+    await toolBatch.commit(noResult: true);
+  }
+
   /// Get the most recently active channel ID for a user-agent pair
   Future<String?> getLatestActiveChannelId(String userId, String agentId) =>
       _sessionService.getLatestActiveChannelId(userId, agentId);
