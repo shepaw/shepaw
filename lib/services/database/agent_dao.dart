@@ -101,7 +101,7 @@ Agent _agentFromMap(Map<String, dynamic> map) {
       lastHeartbeat: map['last_heartbeat'],
     ),
     capabilities: map['capabilities'] != null
-        ? List<String>.from(jsonDecode(map['capabilities']))
+        ? List<String>.from(jsonDecode(map['capabilities']) ?? const [])
         : [],
     metadata: metadata,
   );

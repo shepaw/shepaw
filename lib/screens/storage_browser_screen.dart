@@ -20,9 +20,11 @@ import '../storage/store_file_visual.dart';
 import '../storage/store_protocol.dart';
 import '../storage/store_service.dart';
 import '../storage/store_uri_reader.dart';
+import '../storage/storage_folder_label.dart';
 import '../storage/sync_engine.dart';
 import '../storage/sync_journal.dart';
 import '../utils/layout_utils.dart';
+import '../widgets/avatar_image.dart';
 import '../widgets/storage/store_file_list_avatar.dart';
 import 'storage_shared.dart';
 
@@ -140,6 +142,9 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
   final Map<String, _BrowsedFile> _selectedFiles = {};
   int _dirLoadGen = 0;
   StreamSubscription<void>? _usageSub;
+
+  /// 目录名 → 可读标签缓存，key 为 `'$space:$name'`；同一 (space, name) 只解析一次。
+  final Map<String, StorageFolderLabel> _folderLabelCache = {};
 
   /// 「空间」Tab：null = 分区根列表；非 null = 已进入某分区。
   String? _navSpace;
@@ -569,6 +574,7 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
           _dirFolders = const [];
           _dirFiles = const [];
         });
+        unawaited(_refreshFolderLabels(space, path, const []));
         return;
       }
       final entries = await StoreService.instance.listDevice(
@@ -593,6 +599,11 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
       }
       folders.sort((a, b) => b.mtimeMs.compareTo(a.mtimeMs));
       files.sort((a, b) => b.mtimeMs.compareTo(a.mtimeMs));
+      await _refreshFolderLabels(space, path, [
+        for (final d in folders) p.basename(d.path),
+      ]);
+      if (!mounted || gen != _dirLoadGen) return;
+      if (_navSpace != space || _navPath != path) return;
       setState(() {
         _dirFolders = folders;
         _dirFiles = files;
@@ -608,6 +619,7 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
         _dirFolders = const [];
         _dirFiles = const [];
       });
+      unawaited(_refreshFolderLabels(space, path, const []));
     } catch (e) {
       if (!mounted || gen != _dirLoadGen) return;
       setState(() {
@@ -616,6 +628,7 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
         _dirFolders = const [];
         _dirFiles = const [];
       });
+      unawaited(_refreshFolderLabels(space, path, const []));
     }
   }
 
@@ -1455,6 +1468,42 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
     unawaited(_loadCurrentDir());
   }
 
+  StorageFolderLabel _folderLabelFor(String space, String name) {
+    if (name.isEmpty) return StorageFolderLabel.unresolved(name);
+    return _folderLabelCache['$space:$name'] ??
+        StorageFolderLabel.unresolved(name);
+  }
+
+  /// 解析 [folderNames] 与 [path] 各段到标签缓存（只写缓存，不 setState；
+  /// 调用方随后 setState 统一重绘）。单次解析失败不影响目录浏览。
+  Future<void> _refreshFolderLabels(
+    String space,
+    String path,
+    Iterable<String> folderNames,
+  ) async {
+    final names = <String>{
+      ...folderNames,
+      ...path.split('/').where((s) => s.isNotEmpty),
+    };
+    final missing = names
+        .where((n) => !_folderLabelCache.containsKey('$space:$n'))
+        .toList();
+    if (missing.isEmpty) return;
+
+    Future<StorageFolderLabel> safe(String n) async {
+      try {
+        return await resolveStorageFolderLabel(space, n);
+      } catch (_) {
+        return StorageFolderLabel.unresolved(n);
+      }
+    }
+
+    final results = await Future.wait([for (final n in missing) safe(n)]);
+    for (var i = 0; i < missing.length; i++) {
+      _folderLabelCache['$space:${missing[i]}'] = results[i];
+    }
+  }
+
   /// 当前目录下的子文件夹名（排序）与文件。
   ({List<String> folders, List<_BrowsedFile> files}) _folderChildren() {
     if (_effectiveNavSpace == null) {
@@ -1476,7 +1525,13 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
   String _currentFolderTitle() {
     if (_navPath.isNotEmpty) {
       final parts = _navPath.split('/');
-      return parts.isNotEmpty ? parts.last : _navPath;
+      final last = parts.isNotEmpty ? parts.last : _navPath;
+      final space = _navSpace;
+      if (space != null) {
+        final label = _folderLabelFor(space, last);
+        if (label.resolved) return label.label;
+      }
+      return last;
     }
     return _navSpace == null
         ? ''
@@ -1728,8 +1783,48 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
     );
   }
 
+  /// 文件夹行 leading：已解析为 Agent/群时显示头像；否则保留原文件夹图标。
+  Widget _buildFolderLeading(StorageFolderLabel label) {
+    const box = 42.0;
+    if (!label.resolved) {
+      return SizedBox(width: box, child: Center(child: _buildFolderIcon()));
+    }
+    final scheme = Theme.of(context).colorScheme;
+    if (label.avatar.isNotEmpty) {
+      return SizedBox(
+        width: box,
+        height: box,
+        child: AvatarImage(
+          avatar: label.avatar,
+          size: box,
+          borderRadius: 10,
+          fallback: Text(
+            label.label.isNotEmpty ? label.label[0] : '?',
+            style: TextStyle(fontSize: 18, color: scheme.onSurfaceVariant),
+          ),
+        ),
+      );
+    }
+    return Container(
+      width: box,
+      height: box,
+      decoration: BoxDecoration(
+        color: scheme.primaryContainer,
+        borderRadius: BorderRadius.circular(10),
+      ),
+      alignment: Alignment.center,
+      child: label.isGroup
+          ? Icon(Icons.group, size: 22, color: scheme.onPrimaryContainer)
+          : Text(
+              label.label.isNotEmpty ? label.label[0] : '?',
+              style: TextStyle(fontSize: 18, color: scheme.onPrimaryContainer),
+            ),
+    );
+  }
+
   Widget _buildMobileFolderRow(String name, AppLocalizations l10n) {
     final space = _mineSpace;
+    final label = _folderLabelFor(space, name);
     final modified = _fmtLastModified(_folderMtimeMs(space, name), l10n);
     final rel = _folderRelPath(name);
     final uri = _uriForFolderPath(space, rel);
@@ -1739,7 +1834,7 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
           ? null
           : () => _showPathActions(
                 title: '${storageSpaceLabel(l10n, space)}/$rel',
-                displayName: name,
+                displayName: label.label,
                 uri: uri,
                 deletable: true,
                 space: space,
@@ -1750,14 +1845,14 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            SizedBox(width: 42, child: Center(child: _buildFolderIcon())),
+            _buildFolderLeading(label),
             const SizedBox(width: 14),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    name,
+                    label.label,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: Theme.of(context).textTheme.titleSmall?.copyWith(
@@ -1973,18 +2068,16 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
               : ListView(
                   padding: const EdgeInsets.only(top: 4, bottom: 16),
                   children: [
-                    for (final name in children.folders)
-                      ListTile(
-                        leading: SizedBox(
-                          width: 42,
-                          child: Center(child: _buildFolderIcon()),
-                        ),
-                        title: Text(name),
+                    ...children.folders.map((name) {
+                      final label = _folderLabelFor(_navSpace!, name);
+                      return ListTile(
+                        leading: _buildFolderLeading(label),
+                        title: Text(label.label),
                         trailing: Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
                             _buildPathMoreButton(
-                              displayName: name,
+                              displayName: label.label,
                               uri: _uriForFolderPath(
                                 _navSpace!,
                                 _folderRelPath(name),
@@ -2000,7 +2093,7 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
                         onLongPress: () => _showPathActions(
                           title:
                               '${storageSpaceLabel(l10n, _navSpace!)}/${_folderRelPath(name)}',
-                          displayName: name,
+                          displayName: label.label,
                           uri: _uriForFolderPath(
                             _navSpace!,
                             _folderRelPath(name),
@@ -2009,7 +2102,8 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
                           space: _navSpace!,
                           relPath: _folderRelPath(name),
                         ),
-                      ),
+                      );
+                    }),
                     for (final f in children.files)
                       _buildFileRow(
                         f,
@@ -2123,13 +2217,19 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
     );
   }
 
+  /// 面包屑单段展示名：已解析为 Agent/群时用友好名，否则保留原始段。
+  String _breadcrumbLabel(String space, String segment) {
+    final label = _folderLabelFor(space, segment);
+    return label.resolved ? label.label : segment;
+  }
+
   Widget _buildBreadcrumb() {
     final l10n = AppLocalizations.of(context);
     final segments = <({String label, VoidCallback? onTap})>[];
     if (_hasNavFloor && _navSpace == _navFloorSpace) {
       final floorLabel = _navFloorPath.isEmpty
           ? storageSpaceLabel(l10n, _navFloorSpace)
-          : p.basename(_navFloorPath);
+          : _breadcrumbLabel(_navFloorSpace, p.basename(_navFloorPath));
       segments.add((
         label: floorLabel,
         onTap: _atNavFloor ? null : () => _navToPath(_navFloorPath),
@@ -2145,7 +2245,7 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
           final target = acc;
           final isLast = i == parts.length - 1;
           segments.add((
-            label: parts[i],
+            label: _breadcrumbLabel(_navFloorSpace, parts[i]),
             onTap: isLast ? null : () => _navToPath(target),
           ));
         }
@@ -2157,7 +2257,7 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
           final target = acc;
           final isLast = i == parts.length - 1;
           segments.add((
-            label: parts[i],
+            label: _breadcrumbLabel(_navFloorSpace, parts[i]),
             onTap: isLast ? null : () => _navToPath(target),
           ));
         }
@@ -2180,7 +2280,7 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
             final target = acc;
             final isLast = i == parts.length - 1;
             segments.add((
-              label: parts[i],
+              label: _breadcrumbLabel(_navSpace!, parts[i]),
               onTap: isLast ? null : () => _navToPath(target),
             ));
           }
