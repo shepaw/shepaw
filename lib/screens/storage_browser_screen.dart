@@ -1785,40 +1785,55 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
 
   /// 文件夹行 leading：已解析为 Agent/群时显示头像；否则保留原文件夹图标。
   Widget _buildFolderLeading(StorageFolderLabel label) {
-    const box = 42.0;
+    const leadingBox = 42.0;
+    const avatarSize = 34.0;
     if (!label.resolved) {
-      return SizedBox(width: box, child: Center(child: _buildFolderIcon()));
+      return SizedBox(
+        width: leadingBox,
+        child: Center(child: _buildFolderIcon()),
+      );
     }
     final scheme = Theme.of(context).colorScheme;
     if (label.avatar.isNotEmpty) {
       return SizedBox(
-        width: box,
-        height: box,
-        child: AvatarImage(
-          avatar: label.avatar,
-          size: box,
-          borderRadius: 10,
-          fallback: Text(
-            label.label.isNotEmpty ? label.label[0] : '?',
-            style: TextStyle(fontSize: 18, color: scheme.onSurfaceVariant),
+        width: leadingBox,
+        height: leadingBox,
+        child: Center(
+          child: AvatarImage(
+            avatar: label.avatar,
+            size: avatarSize,
+            borderRadius: 8,
+            fallback: Text(
+              label.label.isNotEmpty ? label.label[0] : '?',
+              style: TextStyle(fontSize: 16, color: scheme.onSurfaceVariant),
+            ),
           ),
         ),
       );
     }
-    return Container(
-      width: box,
-      height: box,
-      decoration: BoxDecoration(
-        color: scheme.primaryContainer,
-        borderRadius: BorderRadius.circular(10),
+    return SizedBox(
+      width: leadingBox,
+      height: leadingBox,
+      child: Center(
+        child: Container(
+          width: avatarSize,
+          height: avatarSize,
+          decoration: BoxDecoration(
+            color: scheme.primaryContainer,
+            borderRadius: BorderRadius.circular(8),
+          ),
+          alignment: Alignment.center,
+          child: label.isGroup
+              ? Icon(Icons.group, size: 20, color: scheme.onPrimaryContainer)
+              : Text(
+                  label.label.isNotEmpty ? label.label[0] : '?',
+                  style: TextStyle(
+                    fontSize: 16,
+                    color: scheme.onPrimaryContainer,
+                  ),
+                ),
+        ),
       ),
-      alignment: Alignment.center,
-      child: label.isGroup
-          ? Icon(Icons.group, size: 22, color: scheme.onPrimaryContainer)
-          : Text(
-              label.label.isNotEmpty ? label.label[0] : '?',
-              style: TextStyle(fontSize: 18, color: scheme.onPrimaryContainer),
-            ),
     );
   }
 
