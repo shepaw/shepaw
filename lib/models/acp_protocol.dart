@@ -205,6 +205,9 @@ class ACPMethod {
   /// 获取 Agent 卡片
   static const String agentGetCard = 'agent.getCard';
 
+  /// 重建 Agent 简历（workspace resume），返回最新 AgentCard
+  static const String agentResumeRebuild = 'agent.resume.rebuild';
+
   /// 获取 agent 支持的 slash 指令（用于聊天输入框 "/" 弹出列表）
   static const String agentCommandsList = 'agent.commands.list';
 

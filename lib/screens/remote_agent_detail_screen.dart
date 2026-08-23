@@ -66,6 +66,9 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
   bool _isSaving = false;
   Timer? _autoSaveDebounce;
 
+  /// 正在请求远端网关重新生成简历。
+  bool _regeneratingResume = false;
+
   /// Whether remote-session sync is enabled for this peer agent (default on).
   bool _peerSyncEnabled = true;
 
@@ -835,6 +838,55 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
         return Colors.orange;
       case AgentStatus.error:
         return Colors.red;
+    }
+  }
+
+  /// 手动请求远端网关重新生成工作区简历，并覆盖本地描述。
+  Future<void> _regenerateResume() async {
+    final l10n = AppLocalizations.of(context);
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text(l10n.agentDetail_regenerateResume),
+        content: Text(l10n.agentDetail_regenerateResumeConfirm),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: Text(l10n.common_cancel),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: Text(l10n.common_confirm),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+
+    setState(() => _regeneratingResume = true);
+    try {
+      final newBio =
+          await getIt<RemoteAgentService>().regenerateResume(_agent.id);
+      if (!mounted) return;
+      setState(() {
+        _bioController.text = newBio;
+        _agent = _agent.copyWith(bio: newBio);
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(l10n.agentDetail_regenerateResumeSuccess)),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(l10n.agentDetail_regenerateResumeFailed('$e')),
+          backgroundColor: Colors.red,
+        ),
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _regeneratingResume = false);
+      }
     }
   }
 
@@ -2938,6 +2990,29 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
               minLines: 2,
               onChanged: (_) => _scheduleAutoSave(),
             ),
+            if (!_agent.isPeerAgent) ...[
+              const SizedBox(height: 8),
+              Align(
+                alignment: Alignment.centerLeft,
+                child: TextButton.icon(
+                  onPressed: _regeneratingResume
+                      ? null
+                      : () => _regenerateResume(),
+                  icon: _regeneratingResume
+                      ? const SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.refresh, size: 18),
+                  label: Text(
+                    _regeneratingResume
+                        ? l10n.agentDetail_regeneratingResume
+                        : l10n.agentDetail_regenerateResume,
+                  ),
+                ),
+              ),
+            ],
             if (!_agent.isPeerAgent) ...[
               const SizedBox(height: 12),
               TextFormField(

@@ -1321,6 +1321,24 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
+  String get agentDetail_regenerateResume => '重新生成简历';
+
+  @override
+  String get agentDetail_regeneratingResume => '正在重新生成…';
+
+  @override
+  String get agentDetail_regenerateResumeConfirm =>
+      '将调用远端 agent 重新扫描工作区并生成简历，然后覆盖本地的描述。继续？';
+
+  @override
+  String get agentDetail_regenerateResumeSuccess => '简历已更新';
+
+  @override
+  String agentDetail_regenerateResumeFailed(String error) {
+    return '重新生成简历失败: $error';
+  }
+
+  @override
   String get agentDetail_changeAvatar => '更换头像';
 
   @override

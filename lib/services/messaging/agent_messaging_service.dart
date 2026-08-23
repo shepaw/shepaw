@@ -1426,6 +1426,19 @@ class AgentMessagingService {
       }
     };
 
+    // 每次建连/重连成功拿到 AgentCard 后，自动把网关自述简历同步到本地
+    //（仅当本地简历为空，不覆盖用户手动填写）。best-effort。
+    connection.onAgentCardFetched = (card) {
+      getIt<RemoteAgentService>()
+          .syncResumeFromCardData(agent.id, card)
+          .catchError((Object e) {
+        LoggerService().debug(
+          'Sync resume from card skipped for ${agent.id}: $e',
+          tag: 'AgentMessagingService',
+        );
+      });
+    };
+
     // Build the WebSocket URL
     String wsUrl;
     if (agent.endpoint.startsWith('ws://') || agent.endpoint.startsWith('wss://')) {

@@ -558,6 +558,18 @@
   "agentDetail_tokenHint": "Paste the token provided by the remote agent",
   "agentDetail_saveSuccess": "Saved successfully",
   "agentDetail_saveFailed": "Save failed: {error}",
+  "agentDetail_regenerateResume": "Regenerate resume",
+  "agentDetail_regeneratingResume": "Regenerating…",
+  "agentDetail_regenerateResumeConfirm": "This will ask the remote agent to re-scan its workspace, regenerate its resume, and overwrite the local description. Continue?",
+  "agentDetail_regenerateResumeSuccess": "Resume updated",
+  "agentDetail_regenerateResumeFailed": "Failed to regenerate resume: {error}",
+  "@agentDetail_regenerateResumeFailed": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
   "agentDetail_changeAvatar": "Change Avatar",
   "agentDetail_selectBuiltinAvatar": "Select Built-in Icon",
   "agentDetail_selectFromGallery": "Choose from Gallery",

@@ -711,6 +711,18 @@
       }
     }
   },
+  "agentDetail_regenerateResume": "重新生成简历",
+  "agentDetail_regeneratingResume": "正在重新生成…",
+  "agentDetail_regenerateResumeConfirm": "将调用远端 agent 重新扫描工作区并生成简历，然后覆盖本地的描述。继续？",
+  "agentDetail_regenerateResumeSuccess": "简历已更新",
+  "agentDetail_regenerateResumeFailed": "重新生成简历失败: {error}",
+  "@agentDetail_regenerateResumeFailed": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
   "agentDetail_changeAvatar": "更换头像",
   "agentDetail_selectBuiltinAvatar": "选择内置图标",
   "agentDetail_selectFromGallery": "从相册选择",

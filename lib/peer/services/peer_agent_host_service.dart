@@ -319,6 +319,26 @@ class PeerAgentHostService {
     }
   }
 
+  /// 本地 agent 元数据（名称/头像/简历等）变更后，把最新列表推送给
+  /// 所有「已连接且共享了该 agent」的对端，让对端的 peer agent 即时更新。
+  ///
+  /// best-effort：无连接对端时为空操作，单 peer 推送失败不影响其余。
+  Future<void> pushAgentListToSharingPeers(String agentId) async {
+    for (final peerId in PeerConnectionManager.instance.connectedPeerIds) {
+      try {
+        final sharedIds = await PeerStorageService().getSharedAgentIds(peerId);
+        if (sharedIds.contains(agentId)) {
+          await pushAgentList(peerId);
+        }
+      } catch (e) {
+        _log.debug(
+          'pushAgentListToSharingPeers skipped for $peerId: $e',
+          tag: _tag,
+        );
+      }
+    }
+  }
+
   /// 本机所有「本地且允许外部访问」的 agent —— 可被分享的候选集。
   Future<List<RemoteAgent>> _eligibleAgents() async {
     final agents = await _db.getAllRemoteAgents();

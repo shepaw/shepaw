@@ -2540,6 +2540,36 @@ abstract class AppLocalizations {
   /// **'保存失败: {error}'**
   String agentDetail_saveFailed(String error);
 
+  /// No description provided for @agentDetail_regenerateResume.
+  ///
+  /// In zh, this message translates to:
+  /// **'重新生成简历'**
+  String get agentDetail_regenerateResume;
+
+  /// No description provided for @agentDetail_regeneratingResume.
+  ///
+  /// In zh, this message translates to:
+  /// **'正在重新生成…'**
+  String get agentDetail_regeneratingResume;
+
+  /// No description provided for @agentDetail_regenerateResumeConfirm.
+  ///
+  /// In zh, this message translates to:
+  /// **'将调用远端 agent 重新扫描工作区并生成简历，然后覆盖本地的描述。继续？'**
+  String get agentDetail_regenerateResumeConfirm;
+
+  /// No description provided for @agentDetail_regenerateResumeSuccess.
+  ///
+  /// In zh, this message translates to:
+  /// **'简历已更新'**
+  String get agentDetail_regenerateResumeSuccess;
+
+  /// No description provided for @agentDetail_regenerateResumeFailed.
+  ///
+  /// In zh, this message translates to:
+  /// **'重新生成简历失败: {error}'**
+  String agentDetail_regenerateResumeFailed(String error);
+
   /// No description provided for @agentDetail_changeAvatar.
   ///
   /// In zh, this message translates to:

@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:uuid/uuid.dart';
 import '../models/remote_agent.dart';
 import '../peer/models/paired_peer.dart' show PeerConnectionState;
+import '../peer/services/peer_agent_host_service.dart';
 import '../peer/services/peer_connection_manager.dart';
 import 'local_database_service.dart';
 import 'logger_service.dart';
@@ -198,6 +199,19 @@ class RemoteAgentService {
     );
     await _databaseService.updateRemoteAgent(updatedAgent);
     notifyAgentsChanged();
+
+    // 本地 agent 元数据（名称/头像/简历等）变更后，把最新列表推送给
+    // 已连接且共享该 agent 的对端，让对端的 peer agent 即时同步。
+    // best-effort：无对端 / 推送失败均不影响本次保存。
+    try {
+      await PeerAgentHostService.instance
+          .pushAgentListToSharingPeers(agent.id);
+    } catch (e) {
+      LoggerService().debug(
+        'Push agent list to peers skipped after update ${agent.id}: $e',
+        tag: 'RemoteAgent',
+      );
+    }
   }
 
   /// 删除远端助手
@@ -388,21 +402,118 @@ class RemoteAgentService {
       if (!card.isSuccess) return;
       final result = card.result;
       if (result is! Map) return;
-      final desc = (result['bio'] as String?) ??
-          (result['description'] as String?);
-      if (desc == null || desc.trim().isEmpty) return;
-      await _databaseService.updateRemoteAgent(
-        agent.copyWith(bio: desc.trim()),
-      );
-      LoggerService().info(
-        'Synced resume from agent card for ${agent.id}',
-        tag: 'RemoteAgent',
-      );
+      await syncResumeFromCardData(agent.id, result);
     } catch (e) {
       LoggerService().debug(
         'Sync resume from card skipped for ${agent.id}: $e',
         tag: 'RemoteAgent',
       );
+    }
+  }
+
+  /// 从已获取的 AgentCard 数据同步外部 agent 的自述简历到本地 `RemoteAgent.bio`。
+  ///
+  /// 供连接层在每次建连拿到新鲜卡片时调用（见 `ACPAgentConnection
+  /// .onAgentCardFetched`）。仅当本地简历为空时写入——用户手动填写的简历
+  /// 优先保留；peer agent / 无 description 静默跳过。best-effort。
+  Future<void> syncResumeFromCardData(String agentId, Map card) async {
+    try {
+      final agent = await getAgentById(agentId);
+      if (agent == null || agent.isPeerAgent) return;
+      if (agent.bio?.trim().isNotEmpty == true) return;
+      final desc = (card['bio'] as String?) ??
+          (card['description'] as String?);
+      if (desc == null || desc.trim().isEmpty) return;
+      // 通过 updateAgent 落库并通知，同时把最新简历推送给已共享该 agent 的对端。
+      await updateAgent(agent.copyWith(bio: desc.trim()));
+      LoggerService().info(
+        'Synced resume from agent card for $agentId',
+        tag: 'RemoteAgent',
+      );
+    } catch (e) {
+      LoggerService().debug(
+        'Sync resume from card skipped for $agentId: $e',
+        tag: 'RemoteAgent',
+      );
+    }
+  }
+
+  /// 手动触发远端网关重新生成工作区简历（`agent.resume.rebuild`），
+  /// 并把返回的 `bio ?? description` **覆盖**写入本地 `RemoteAgent.bio`。
+  ///
+  /// 返回覆盖后的新简历文本。连接失败 / 网关不支持 / 超时 / 无简历内容
+  /// 均抛出异常，由调用方（详情页按钮）展示错误。
+  ///
+  /// 仅适用于 ACP WebSocket 接入的远端 agent；peer agent（P2P 隧道）
+  /// 不适用，直接抛错。
+  Future<String> regenerateResume(String agentId) async {
+    final agent = await getAgentById(agentId);
+    if (agent == null) {
+      throw StateError('Agent not found: $agentId');
+    }
+    if (agent.isPeerAgent) {
+      throw StateError('Peer agent 经 P2P 隧道访问，不支持远程重建简历');
+    }
+    if (agent.endpoint.trim().isEmpty) {
+      throw StateError('Agent 缺少 endpoint，无法连接');
+    }
+
+    // 与 checkAgentHealth 相同的临时连接构建方式：v2.1 Noise 握手 + 配对元数据。
+    String wsUrl;
+    final endpoint = agent.endpoint.trim();
+    if (endpoint.startsWith('ws://') || endpoint.startsWith('wss://')) {
+      wsUrl = endpoint;
+    } else {
+      wsUrl = endpoint
+          .replaceFirst('https://', 'wss://')
+          .replaceFirst('http://', 'ws://');
+      if (!wsUrl.contains('/acp/ws')) {
+        wsUrl = wsUrl.endsWith('/') ? '${wsUrl}acp/ws' : '$wsUrl/acp/ws';
+      }
+    }
+
+    final targetAgentId = agent.metadata['target_agent_id'] as String?;
+    final pinnedFp = (agent.metadata['noise_peer_fp'] as String?) ?? '';
+
+    final connection = ACPAgentConnection(
+      agentId: agent.id,
+      autoReconnect: false,
+    );
+    try {
+      await connection.connect(
+        wsUrl,
+        agent.token,
+        targetAgentId: targetAgentId,
+        pinnedFingerprint: pinnedFp,
+        cachedPeerStaticPublicKey: decodeCachedPeerPublicKey(
+          agent.metadata['cached_peer_static_public_key'],
+        ),
+      );
+
+      final response = await connection
+          .resumeRebuild()
+          .timeout(const Duration(seconds: 15));
+      if (!response.isSuccess) {
+        throw StateError(
+          'agent.resume.rebuild 失败: ${response.error?.message}',
+        );
+      }
+      final card = response.result;
+      if (card is! Map) {
+        throw StateError('返回的 AgentCard 格式异常');
+      }
+      final desc = (card['bio'] as String?) ??
+          (card['description'] as String?);
+      if (desc == null || desc.trim().isEmpty) {
+        throw StateError('网关未返回简历内容');
+      }
+      final newBio = desc.trim();
+
+      // 通过 updateAgent 落库并通知，同时把最新简历推送给已共享该 agent 的对端。
+      await updateAgent(agent.copyWith(bio: newBio));
+      return newBio;
+    } finally {
+      connection.dispose();
     }
   }
 

@@ -20,7 +20,8 @@ extension AgentDao on LocalDatabaseService {
         'id': agent.id,
         'name': agent.name,
         'avatar': agent.avatar,
-        'bio': agent.description,
+        // 简历统一落 `bio` 列：优先 `bio`，兼容旧代码只填 `description` 的情况。
+        'bio': agent.bio ?? agent.description,
         'token': agent.metadata?['token'] ?? const Uuid().v4(),
         'endpoint': agent.metadata?['endpoint'] ?? '',
         'protocol': agent.metadata?['protocol'] ?? 'a2a',
@@ -57,7 +58,8 @@ extension AgentDao on LocalDatabaseService {
       {
         'name': agent.name,
         'avatar': agent.avatar,
-        'bio': agent.description,
+        // 简历统一落 `bio` 列：优先 `bio`，兼容旧代码只填 `description` 的情况。
+        'bio': agent.bio ?? agent.description,
         'status': agent.status.state,
         'capabilities': jsonEncode(agent.capabilities ?? []),
         'metadata': jsonEncode(agent.metadata ?? {}),
@@ -84,6 +86,9 @@ Agent _agentFromMap(Map<String, dynamic> map) {
     id: map['id'] ?? '',
     name: map['name'] ?? 'Unknown Agent',
     avatar: map['avatar'] ?? '🤖',
+    // `agents.bio` 列同时映射到 `bio`（联系人/群成员列表用的简历字段）与
+    // `description`（home 等界面沿用的旧字段），与 `Agent.fromJson` 一致。
+    bio: map['bio'],
     description: map['bio'],
     model: metadata['model'],
     systemPrompt: metadata['system_prompt'],

@@ -1366,6 +1366,24 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
+  String get agentDetail_regenerateResume => 'Regenerate resume';
+
+  @override
+  String get agentDetail_regeneratingResume => 'Regenerating…';
+
+  @override
+  String get agentDetail_regenerateResumeConfirm =>
+      'This will ask the remote agent to re-scan its workspace, regenerate its resume, and overwrite the local description. Continue?';
+
+  @override
+  String get agentDetail_regenerateResumeSuccess => 'Resume updated';
+
+  @override
+  String agentDetail_regenerateResumeFailed(String error) {
+    return 'Failed to regenerate resume: $error';
+  }
+
+  @override
   String get agentDetail_changeAvatar => 'Change Avatar';
 
   @override

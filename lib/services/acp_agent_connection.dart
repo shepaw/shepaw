@@ -291,6 +291,12 @@ class ACPAgentConnection implements AcpInteractiveConnection {
   @override
   bool get supportsAsyncConfirmation => _supportsAsyncConfirmation;
 
+  /// 每次连接/重连成功拉到 AgentCard 后回调（fire-and-forget）。
+  ///
+  /// 卡片包含网关的自述简历 `bio` / `description`，连接所有者（如
+  /// [AgentMessagingService]）可借此在每次建连时把简历同步到本地 DB。
+  void Function(Map<String, dynamic> card)? onAgentCardFetched;
+
   /// Peer static public key learned during the Noise handshake. Null until
   /// [connect] completes successfully. Callers may persist this in their
   /// remote-agent record so the fingerprint can be re-verified on reconnect
@@ -882,6 +888,14 @@ class ACPAgentConnection implements AcpInteractiveConnection {
     return await sendRequest(ACPMethod.agentGetCard);
   }
 
+  /// 请求网关重新生成工作区简历（`agent.resume.rebuild`）。
+  ///
+  /// 网关会重新扫描工作区，返回的 AgentCard 中 `bio` / `description`
+  /// 即为最新的自述简历。不支持该方法的网关会返回 method-not-found。
+  Future<ACPResponse> resumeRebuild() async {
+    return await sendRequest(ACPMethod.agentResumeRebuild);
+  }
+
   /// Fetch the agent card after connect and parse its `capabilities` array
   /// to populate connection-level flags like [supportsAsyncConfirmation].
   ///
@@ -896,6 +910,9 @@ class ACPAgentConnection implements AcpInteractiveConnection {
       if (!response.isSuccess) return;
       final result = response.result;
       if (result is! Map) return;
+      // 让连接所有者（如 AgentMessagingService）拿到新鲜卡片，用于同步简历等。
+      // 即使 capabilities 解析失败也照常回调——卡片本身仍然是有效的。
+      onAgentCardFetched?.call(Map<String, dynamic>.from(result));
       final caps = result['capabilities'];
       if (caps is! List) return;
       final capsSet = caps.whereType<String>().toSet();
