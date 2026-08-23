@@ -3160,7 +3160,9 @@ class AppLocalizationsEn extends AppLocalizations {
   String get chat_forkingSession => 'Forking session…';
 
   @override
-  String chat_forkSessionFailed(String error) => 'Fork session failed: $error';
+  String chat_forkSessionFailed(String error) {
+    return 'Fork session failed: $error';
+  }
 
   @override
   String get modelType_sectionLabel => 'Model Types';

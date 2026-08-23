@@ -1798,6 +1798,17 @@
   "chat_flowMode": "Flow 模式",
   "chat_flowModeDesc": "Admin 生成阶段化 FlowPlan，各阶段串行、阶段内步骤并行执行",
   "chat_viewTrace": "查看 Trace",
+  "chat_viewSession": "查看会话",
+  "chat_forkSession": "分叉",
+  "chat_forkingSession": "正在分叉会话…",
+  "chat_forkSessionFailed": "分叉会话失败：{error}",
+  "@chat_forkSessionFailed": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
   "modelType_sectionLabel": "模型类型",
   "modelType_sectionHint": "选择此模型支持的能力类型（可多选）",
   "modelType_text": "文本",

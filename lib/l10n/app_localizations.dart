@@ -5603,7 +5603,7 @@ abstract class AppLocalizations {
   /// No description provided for @chat_forkSessionFailed.
   ///
   /// In zh, this message translates to:
-  /// **'分叉会话失败：$error'**
+  /// **'分叉会话失败：{error}'**
   String chat_forkSessionFailed(String error);
 
   /// No description provided for @modelType_sectionLabel.

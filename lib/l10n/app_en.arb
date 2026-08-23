@@ -1320,6 +1320,17 @@
   "chat_flowMode": "Flow Mode",
   "chat_flowModeDesc": "Admin generates a staged FlowPlan; executor drives stages serially, steps in parallel",
   "chat_viewTrace": "View Trace",
+  "chat_viewSession": "View Session",
+  "chat_forkSession": "Fork",
+  "chat_forkingSession": "Forking session…",
+  "chat_forkSessionFailed": "Fork session failed: {error}",
+  "@chat_forkSessionFailed": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
   "modelType_sectionLabel": "Model Types",
   "modelType_sectionHint": "Select the capability types this model supports (multi-select)",
   "modelType_text": "Text",

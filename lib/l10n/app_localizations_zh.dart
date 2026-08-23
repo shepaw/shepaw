@@ -3040,7 +3040,9 @@ class AppLocalizationsZh extends AppLocalizations {
   String get chat_forkingSession => '正在分叉会话…';
 
   @override
-  String chat_forkSessionFailed(String error) => '分叉会话失败：$error';
+  String chat_forkSessionFailed(String error) {
+    return '分叉会话失败：$error';
+  }
 
   @override
   String get modelType_sectionLabel => '模型类型';
