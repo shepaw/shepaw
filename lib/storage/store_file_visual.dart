@@ -282,4 +282,69 @@ class StoreFileVisual {
       shortHash,
     );
   }
+
+  /// 是否为「内部记账/镜像」文件：默认在「最近」隐藏。
+  ///
+  /// 用户可见文件（聊天附件、产物、工作区实际文件、普通文件）返回 false。
+  /// 覆盖：owner 根镜像（soul/memory/workspace/context.manifest）、`sessions/*`、
+  /// 群工作区元数据与 `members/*`、群编排 `orchestration/*`、`.keep` 占位。
+  static bool isInternalStoreFile(String space, String path) {
+    final leaf = p.basename(path);
+    if (leaf == '.keep') return true;
+    if (RuntimeSharePolicy.isSensitivePath(path)) return true;
+    if (leaf == 'group-workspace.json') return true;
+    final parts = path.split('/');
+    if (parts.contains('members') && space == StoreSpace.workspaces) return true;
+    if (parts.contains('orchestration')) return true;
+    return false;
+  }
+
+  /// 从 store 相对路径提取归属 owner 段（agent/群 id）；无法确定时返回 null。
+  static String? ownerSegmentOf(String space, String path) {
+    final parts = path.split('/');
+    if (parts.isEmpty || parts.first.isEmpty) return null;
+    switch (space) {
+      case StoreSpace.runtime:
+      case StoreSpace.cognition:
+      case StoreSpace.workspaces:
+      case StoreSpace.artifacts:
+        return parts.first;
+      default:
+        return null;
+    }
+  }
+
+  /// 已知内部文件的友好标题；其余回退到 [displayName]。
+  static String displayFriendlyName(
+    AppLocalizations l10n,
+    String space,
+    String path, {
+    StoreFileVisualKind? kind,
+  }) {
+    final leaf = p.basename(path);
+    final friendly = _friendlyLeaf(l10n, path, leaf);
+    if (friendly != null) return friendly;
+    return displayName(l10n, path, kind: kind);
+  }
+
+  static String? _friendlyLeaf(
+    AppLocalizations l10n,
+    String path,
+    String leaf,
+  ) {
+    if (leaf == 'soul.md') return l10n.storage_fileSoul;
+    if (leaf == 'memory.md') return l10n.storage_fileMemory;
+    if (leaf == 'workspace.md') return l10n.storage_fileWorkspace;
+    if (leaf == 'context.manifest.json') return l10n.storage_fileContextManifest;
+    if (leaf == 'group-workspace.json') return l10n.storage_fileGroupWorkspace;
+    if (leaf == 'session.json') return l10n.storage_fileSessionRecord;
+    if (leaf == 'dispatch.json') return l10n.storage_fileDispatch;
+    if (leaf.startsWith('archive-') && leaf.endsWith('.json')) {
+      return l10n.storage_fileSessionArchive;
+    }
+    if (leaf == 'state.json' && path.split('/').contains('orchestration')) {
+      return l10n.storage_fileOrchestrationState;
+    }
+    return null;
+  }
 }

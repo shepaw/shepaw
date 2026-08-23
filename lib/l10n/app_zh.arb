@@ -3274,6 +3274,17 @@
       }
     }
   },
+  "storage_fileSoul": "灵魂设定",
+  "storage_fileMemory": "长期记忆",
+  "storage_fileWorkspace": "工作区说明",
+  "storage_fileContextManifest": "上下文清单",
+  "storage_fileGroupWorkspace": "群工作区元数据",
+  "storage_fileSessionRecord": "会话记录",
+  "storage_fileSessionArchive": "会话归档",
+  "storage_fileDispatch": "任务分派",
+  "storage_fileOrchestrationState": "编排状态",
+  "storage_recentHideInternal": "隐藏内部文件",
+  "storage_recentAllHidden": "最近均为内部文件，已隐藏。关闭上方开关即可查看。",
   "storage_alertHandoffs": "有 {count} 条交接通知",
   "@storage_alertHandoffs": {
     "placeholders": {

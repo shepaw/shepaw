@@ -146,6 +146,12 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
   /// 目录名 → 可读标签缓存，key 为 `'$space:$name'`；同一 (space, name) 只解析一次。
   final Map<String, StorageFolderLabel> _folderLabelCache = {};
 
+  /// 「最近」是否隐藏内部记账文件（默认隐藏，用户可开关）。
+  bool _hideInternalFiles = true;
+
+  /// 最近文件的归属 owner 标签缓存，key 为 `'$space:$owner'`。
+  final Map<String, StorageFolderLabel> _recentOwnerLabels = {};
+
   /// 「空间」Tab：null = 分区根列表；非 null = 已进入某分区。
   String? _navSpace;
 
@@ -522,6 +528,7 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
           ));
         }
       }
+      await _refreshRecentOwnerLabels(all);
       if (!mounted) return;
       setState(() {
         _files = all;
@@ -1366,7 +1373,7 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
   }
 
   String _displayFileName(AppLocalizations l10n, _BrowsedFile file) {
-    return StoreFileVisual.displayName(l10n, file.path);
+    return StoreFileVisual.displayFriendlyName(l10n, file.space, file.path);
   }
 
   Widget _buildFileAvatar(_BrowsedFile file) {
@@ -1502,6 +1509,47 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
     for (var i = 0; i < missing.length; i++) {
       _folderLabelCache['$space:${missing[i]}'] = results[i];
     }
+  }
+
+  /// 解析「最近」文件各自的归属 owner 标签（只写缓存，不 setState）。
+  Future<void> _refreshRecentOwnerLabels(List<_BrowsedFile> files) async {
+    final keys = <String>{};
+    for (final f in files) {
+      final owner = StoreFileVisual.ownerSegmentOf(f.space, f.path);
+      if (owner != null && owner.isNotEmpty) keys.add('${f.space}:$owner');
+    }
+    final missing =
+        keys.where((k) => !_recentOwnerLabels.containsKey(k)).toList();
+    if (missing.isEmpty) return;
+
+    Future<void> safe(String key) async {
+      final i = key.indexOf(':');
+      final space = key.substring(0, i);
+      final owner = key.substring(i + 1);
+      try {
+        _recentOwnerLabels[key] =
+            await resolveStorageFolderLabel(space, owner);
+      } catch (_) {
+        _recentOwnerLabels[key] = StorageFolderLabel.unresolved(owner);
+      }
+    }
+
+    await Future.wait([for (final k in missing) safe(k)]);
+  }
+
+  /// 「最近」行副标题：归属（Agent/群名）· 分区 · 大小 · 时间。
+  String _recentFileContext(AppLocalizations l10n, _BrowsedFile file) {
+    final parts = <String>[];
+    final owner = StoreFileVisual.ownerSegmentOf(file.space, file.path);
+    if (owner != null) {
+      final label = _recentOwnerLabels['${file.space}:$owner'];
+      if (label != null && label.resolved) parts.add(label.label);
+    }
+    parts.add(storageSpaceLabel(l10n, file.space));
+    parts.add(_fmtBytes(file.size));
+    final time = _fmtRecentAccess(file.mtimeMs, l10n);
+    if (time.isNotEmpty) parts.add(time);
+    return parts.join(' · ');
   }
 
   /// 当前目录下的子文件夹名（排序）与文件。
@@ -1926,14 +1974,16 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
     AppLocalizations l10n, {
     bool useModified = false,
     bool showMoreButton = false,
+    String? contextSubtitle,
   }) {
     final timeText = useModified
         ? _fmtLastModified(file.mtimeMs, l10n)
         : _fmtRecentAccess(file.mtimeMs, l10n);
-    final subtitle = [
-      _fmtBytes(file.size),
-      if (timeText.isNotEmpty) timeText,
-    ].join(' · ');
+    final subtitle = contextSubtitle ??
+        [
+          _fmtBytes(file.size),
+          if (timeText.isNotEmpty) timeText,
+        ].join(' · ');
     final picked = _isPicked(file);
     final disabled = _pickMode && !picked && _atPickLimit;
     final scheme = Theme.of(context).colorScheme;
@@ -2014,14 +2064,59 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
             style: Theme.of(context).textTheme.bodySmall),
       );
     }
-    return ListView.separated(
-      padding: const EdgeInsets.only(top: 4, bottom: 16),
-      itemCount: _files.length,
-      separatorBuilder: (_, __) => const SizedBox(height: 2),
-      itemBuilder: (context, i) => _buildFileRow(
-        _files[i],
-        l10n,
-        showMoreButton: !mobile && !_pickMode,
+    final visible = _hideInternalFiles
+        ? _files
+            .where(
+                (f) => !StoreFileVisual.isInternalStoreFile(f.space, f.path))
+            .toList()
+        : _files;
+    return Column(
+      children: [
+        _buildRecentFilterChip(l10n),
+        Expanded(
+          child: visible.isEmpty
+              ? Center(
+                  child: Padding(
+                    padding: const EdgeInsets.all(32),
+                    child: Text(
+                      l10n.storage_recentAllHidden,
+                      textAlign: TextAlign.center,
+                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                            color: Theme.of(context)
+                                .colorScheme
+                                .onSurfaceVariant,
+                          ),
+                    ),
+                  ),
+                )
+              : ListView.separated(
+                  padding: const EdgeInsets.only(top: 4, bottom: 16),
+                  itemCount: visible.length,
+                  separatorBuilder: (_, __) => const SizedBox(height: 2),
+                  itemBuilder: (context, i) => _buildFileRow(
+                    visible[i],
+                    l10n,
+                    showMoreButton: !mobile && !_pickMode,
+                    contextSubtitle: _recentFileContext(l10n, visible[i]),
+                  ),
+                ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildRecentFilterChip(AppLocalizations l10n) {
+    return Align(
+      alignment: Alignment.centerRight,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 8, 8, 0),
+        child: FilterChip(
+          label: Text(l10n.storage_recentHideInternal),
+          selected: _hideInternalFiles,
+          onSelected: (v) => setState(() => _hideInternalFiles = v),
+          visualDensity: VisualDensity.compact,
+          materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+        ),
       ),
     );
   }

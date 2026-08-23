@@ -5521,6 +5521,39 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
+  String get storage_fileSoul => '灵魂设定';
+
+  @override
+  String get storage_fileMemory => '长期记忆';
+
+  @override
+  String get storage_fileWorkspace => '工作区说明';
+
+  @override
+  String get storage_fileContextManifest => '上下文清单';
+
+  @override
+  String get storage_fileGroupWorkspace => '群工作区元数据';
+
+  @override
+  String get storage_fileSessionRecord => '会话记录';
+
+  @override
+  String get storage_fileSessionArchive => '会话归档';
+
+  @override
+  String get storage_fileDispatch => '任务分派';
+
+  @override
+  String get storage_fileOrchestrationState => '编排状态';
+
+  @override
+  String get storage_recentHideInternal => '隐藏内部文件';
+
+  @override
+  String get storage_recentAllHidden => '最近均为内部文件，已隐藏。关闭上方开关即可查看。';
+
+  @override
   String storage_alertHandoffs(int count) {
     return '有 $count 条交接通知';
   }

@@ -2775,6 +2775,17 @@
       }
     }
   },
+  "storage_fileSoul": "Soul",
+  "storage_fileMemory": "Memory",
+  "storage_fileWorkspace": "Workspace",
+  "storage_fileContextManifest": "Context manifest",
+  "storage_fileGroupWorkspace": "Group workspace",
+  "storage_fileSessionRecord": "Session record",
+  "storage_fileSessionArchive": "Session archive",
+  "storage_fileDispatch": "Dispatch",
+  "storage_fileOrchestrationState": "Orchestration state",
+  "storage_recentHideInternal": "Hide internal files",
+  "storage_recentAllHidden": "Recent files are all internal and hidden. Turn off the switch above to view.",
   "storage_alertHandoffs": "{count} handoff notifications",
   "@storage_alertHandoffs": {
     "placeholders": {

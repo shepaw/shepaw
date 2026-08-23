@@ -5734,6 +5734,40 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
+  String get storage_fileSoul => 'Soul';
+
+  @override
+  String get storage_fileMemory => 'Memory';
+
+  @override
+  String get storage_fileWorkspace => 'Workspace';
+
+  @override
+  String get storage_fileContextManifest => 'Context manifest';
+
+  @override
+  String get storage_fileGroupWorkspace => 'Group workspace';
+
+  @override
+  String get storage_fileSessionRecord => 'Session record';
+
+  @override
+  String get storage_fileSessionArchive => 'Session archive';
+
+  @override
+  String get storage_fileDispatch => 'Dispatch';
+
+  @override
+  String get storage_fileOrchestrationState => 'Orchestration state';
+
+  @override
+  String get storage_recentHideInternal => 'Hide internal files';
+
+  @override
+  String get storage_recentAllHidden =>
+      'Recent files are all internal and hidden. Turn off the switch above to view.';
+
+  @override
   String storage_alertHandoffs(int count) {
     return '$count handoff notifications';
   }

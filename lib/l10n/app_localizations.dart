@@ -10070,6 +10070,72 @@ abstract class AppLocalizations {
   /// **'聊天{kind} · {hash}'**
   String storage_chatAttachmentLabel(String kind, String hash);
 
+  /// No description provided for @storage_fileSoul.
+  ///
+  /// In zh, this message translates to:
+  /// **'灵魂设定'**
+  String get storage_fileSoul;
+
+  /// No description provided for @storage_fileMemory.
+  ///
+  /// In zh, this message translates to:
+  /// **'长期记忆'**
+  String get storage_fileMemory;
+
+  /// No description provided for @storage_fileWorkspace.
+  ///
+  /// In zh, this message translates to:
+  /// **'工作区说明'**
+  String get storage_fileWorkspace;
+
+  /// No description provided for @storage_fileContextManifest.
+  ///
+  /// In zh, this message translates to:
+  /// **'上下文清单'**
+  String get storage_fileContextManifest;
+
+  /// No description provided for @storage_fileGroupWorkspace.
+  ///
+  /// In zh, this message translates to:
+  /// **'群工作区元数据'**
+  String get storage_fileGroupWorkspace;
+
+  /// No description provided for @storage_fileSessionRecord.
+  ///
+  /// In zh, this message translates to:
+  /// **'会话记录'**
+  String get storage_fileSessionRecord;
+
+  /// No description provided for @storage_fileSessionArchive.
+  ///
+  /// In zh, this message translates to:
+  /// **'会话归档'**
+  String get storage_fileSessionArchive;
+
+  /// No description provided for @storage_fileDispatch.
+  ///
+  /// In zh, this message translates to:
+  /// **'任务分派'**
+  String get storage_fileDispatch;
+
+  /// No description provided for @storage_fileOrchestrationState.
+  ///
+  /// In zh, this message translates to:
+  /// **'编排状态'**
+  String get storage_fileOrchestrationState;
+
+  /// No description provided for @storage_recentHideInternal.
+  ///
+  /// In zh, this message translates to:
+  /// **'隐藏内部文件'**
+  String get storage_recentHideInternal;
+
+  /// No description provided for @storage_recentAllHidden.
+  ///
+  /// In zh, this message translates to:
+  /// **'最近均为内部文件，已隐藏。关闭上方开关即可查看。'**
+  String get storage_recentAllHidden;
+
   /// No description provided for @storage_alertHandoffs.
   ///
   /// In zh, this message translates to:
