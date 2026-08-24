@@ -57,6 +57,25 @@ void main() {
           isTrue);
     });
 
+    test('认知记忆记账 meta.json 识别为内部文件', () {
+      // 用户报告路径：cognition/<device>/<agentId>/meta.json
+      expect(StoreFileVisual.isInternalStoreFile(
+              StoreSpace.cognition, 'she-builtin-agent-001/meta.json'),
+          isTrue);
+      // peer 子记忆记账
+      expect(StoreFileVisual.isInternalStoreFile(
+              StoreSpace.cognition, 'agent_1/peers/peer_2/meta.json'),
+          isTrue);
+      // legacy memory 空间同样覆盖
+      expect(StoreFileVisual.isInternalStoreFile(
+              StoreSpace.memory, 'agent_1/meta.json'),
+          isTrue);
+      // 其他空间的同名文件不受影响（用户实际文件）
+      expect(StoreFileVisual.isInternalStoreFile(
+              StoreSpace.files, 'docs/meta.json'),
+          isFalse);
+    });
+
     test('.keep 占位识别为内部文件', () {
       expect(StoreFileVisual.isInternalStoreFile(StoreSpace.files, 'docs/.keep'),
           isTrue);
