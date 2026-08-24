@@ -122,7 +122,7 @@ class LocalLLMAgentService {
   /// Model selection uses [RemoteAgent.scenarioModels] and [main_model_id]
   /// via [_resolveModelConfig].
   ///
-  /// For She, the full companion memory stack is layered onto the system
+  /// For She, the full spirit-pet memory stack is layered onto the system
   /// prompt by default via [AgentPromptBuilder]. Pure-task callers (group-admin
   /// decisions, image analysis) should pass [skipSheMemoryStack] to use their
   /// override as-is.
@@ -148,7 +148,7 @@ class LocalLLMAgentService {
 
     final String systemPrompt;
     if (skipSheMemoryStack) {
-      // Pure-task path: use override (or empty) without companion / persona stack.
+      // Pure-task path: use override (or empty) without spirit-pet / persona stack.
       systemPrompt = systemPromptOverride ?? '';
     } else if (systemPromptOverride != null && !agent.isShe) {
       // Non-She group/room prompts from GroupPromptBuilder are already complete.

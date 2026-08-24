@@ -113,7 +113,7 @@ void main() {
   });
 
   group('eval: prompt stack defaults', () {
-    test('forShe enables companion profile/strategy; forOther keeps shepaw tool',
+    test('forShe enables spirit-pet profile/strategy; forOther keeps shepaw tool',
         () {
       expect(PromptStackConfig.forShe.she.includeUserStrategy, isTrue);
       expect(PromptStackConfig.forShe.she.includeProfileSnapshot, isTrue);

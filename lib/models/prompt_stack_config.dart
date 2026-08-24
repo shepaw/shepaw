@@ -414,7 +414,7 @@ class SheStackConfig {
 /// Persisted as `RemoteAgent.metadata['prompt_stack_config']`.
 ///
 /// Default factory constructors:
-/// - [PromptStackConfig.forShe] — She companion sections (memory, meta, strategy,
+/// - [PromptStackConfig.forShe] — She spirit-pet sections (memory, meta, strategy,
 ///   profile snapshot, session-end, …); agent sections off
 /// - [PromptStackConfig.forOtherAgent] — She sections disabled; shepaw tool on
 class PromptStackConfig {
@@ -492,7 +492,7 @@ class PromptStackConfig {
       agent.includeAgentMemory &&
       effectiveMemoryInjectMode == CognitionInjectMode.full;
 
-  /// Full configuration for She — companion stack active, including
+  /// Full configuration for She — spirit-pet stack active, including
   /// user-understanding strategy and profile snapshot.
   static const PromptStackConfig forShe = PromptStackConfig(
     agent: AgentStackConfig.disabled,

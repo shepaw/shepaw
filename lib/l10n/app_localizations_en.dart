@@ -19,7 +19,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get about_content =>
-      'ShePaw is an instant messaging app designed for AI agents. She can be your AI companion, or your most loyal confidante. The longer you spend together, the better she understands you.\n\nEveryone deserves multiple AI assistants, and one ShePaw. Your data stays on your device by default, under your control.';
+      'ShePaw is an instant messaging app designed for AI agents. She can be your AI spirit pet, or your most loyal confidante. The longer you spend together, the better she understands you.\n\nEveryone deserves multiple AI assistants, and one ShePaw. Your data stays on your device by default, under your control.';
 
   @override
   String get about_legalese =>
@@ -3273,7 +3273,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get she_name => 'She';
 
   @override
-  String get she_bio => 'Your master\'s devoted spirit companion';
+  String get she_bio => 'Your master\'s devoted spirit pet';
 
   @override
   String get settings_userProfile => 'Personal Profile';
@@ -4574,7 +4574,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get chat_sheTagline =>
-      'Your personal companion that learns you over time';
+      'Your personal spirit pet that learns you over time';
 
   @override
   String get chat_sheConfigModelCta =>

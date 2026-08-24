@@ -17,7 +17,7 @@ void main() {
   });
 
   group('PromptStackConfig.forShe', () {
-    test('keeps shepaw CLI and enables companion profile/strategy', () {
+    test('keeps shepaw CLI and enables spirit-pet profile/strategy', () {
       expect(PromptStackConfig.forShe.tools.includeShepawCli, isTrue);
       expect(PromptStackConfig.forShe.she.includeSheMemory, isTrue);
       expect(PromptStackConfig.forShe.she.includeMetaCognition, isTrue);

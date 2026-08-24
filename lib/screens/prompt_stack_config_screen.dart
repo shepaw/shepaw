@@ -276,7 +276,7 @@ class _PromptStackConfigScreenState extends State<PromptStackConfigScreen> {
                 if (widget.isShe) ...[
                   const SizedBox(height: 12),
                   _sectionCard(
-                    title: _tr('She 伴侣层', 'She companion'),
+                    title: _tr('She 灵宠层', 'She spirit pet'),
                     children: [
                       _switch(
                         title: _tr('She 记忆', 'She memory'),
