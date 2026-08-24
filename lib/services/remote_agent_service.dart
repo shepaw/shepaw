@@ -1,10 +1,14 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:uuid/uuid.dart';
 import '../models/remote_agent.dart';
 import '../peer/models/paired_peer.dart' show PeerConnectionState;
 import '../peer/services/peer_agent_host_service.dart';
 import '../peer/services/peer_connection_manager.dart';
+import '../storage/device_identity.dart';
+import '../storage/store_protocol.dart';
+import '../storage/store_uri_reader.dart';
 import 'local_database_service.dart';
 import 'logger_service.dart';
 import 'token_service.dart';
@@ -522,6 +526,48 @@ class RemoteAgentService {
     await _databaseService.updateRemoteAgentStatus(agentId, 'offline');
   }
 
+  // ==================== 储物袋简历（resume.md） ====================
+
+  /// Agent 简历在储物袋的固定位置：
+  /// `store://files/<device_id>/<agent_id>/resume.md`。
+  ///
+  /// 网关首次推导与每次重建（`agent.resume.rebuild`）都会把完整简历写到这个
+  /// 位置；agent 可用 `store read` / `store write` 工具读写同一 URI。
+  Future<String> resumeStoreUriFor(String agentId) async {
+    final device = await DeviceIdentity.deviceId();
+    return storeUriWithRef(StoreSpace.files, device, '$agentId/resume.md');
+  }
+
+  /// 读取储物袋里的简历全文（resume.md）。文件不存在 / 读失败返回 null。
+  Future<String?> readResumeMarkdownFromStore(String agentId) async {
+    try {
+      final uri = await resumeStoreUriFor(agentId);
+      final bytes = await StoreUriReader.instance.read(uri);
+      if (bytes.isEmpty) return null;
+      return utf8.decode(bytes);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// 详情页打开时刷新：读储物袋 resume.md 全文供预览；若本地 `bio` 为空，
+  /// 用 resume.md 的 `## Summary` 章节兜底填充（不覆盖用户已填写的简历）。
+  /// 返回完整 resume.md，文件缺失返回 null。
+  Future<String?> refreshResumeFromStore(String agentId) async {
+    final md = await readResumeMarkdownFromStore(agentId);
+    if (md == null || md.trim().isEmpty) return null;
+    final agent = await getAgentById(agentId);
+    if (agent != null &&
+        !agent.isPeerAgent &&
+        (agent.bio?.trim().isEmpty ?? true)) {
+      final summary = extractResumeSummaryFromMarkdown(md);
+      if (summary != null && summary.isNotEmpty) {
+        await updateAgent(agent.copyWith(bio: summary));
+      }
+    }
+    return md;
+  }
+
   // ==================== 心跳监控 ====================
 
   /// 检查 Agent 的健康状态
@@ -842,4 +888,17 @@ class RemoteAgentService {
 
   /// 确保内置守护 Agent She 存在（代理到 SheService）
   Future<void> ensureSheExists() => SheService.instance.ensureSheExists();
+}
+
+/// 从 resume.md 提取 `## Summary` 章节正文（到下一个 `## ` 标题为止）。
+/// 无该章节或内容为空返回 null。纯函数，便于单元测试。
+String? extractResumeSummaryFromMarkdown(String md) {
+  const marker = '## Summary';
+  final start = md.indexOf(marker);
+  if (start < 0) return null;
+  final bodyStart = start + marker.length;
+  final nextHeading = md.indexOf('\n## ', bodyStart);
+  final end = nextHeading < 0 ? md.length : nextHeading;
+  final body = md.substring(bodyStart, end).trim();
+  return body.isEmpty ? null : body;
 }

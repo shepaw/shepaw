@@ -3,6 +3,7 @@ import '../models/prompt_stack_config.dart';
 import '../models/remote_agent.dart';
 import '../storage/device_identity.dart';
 import '../storage/scope_card.dart';
+import '../storage/store_protocol.dart';
 import 'agent_memory_store_service.dart';
 import 'agent_soul_service.dart';
 import 'cognition_service.dart';
@@ -98,7 +99,7 @@ class AgentPromptBuilder {
     // ①.5 Resume — non-She / non-peer agents see their own resume (bio) and
     //   are told how to update it during chat via agents.resume-set.
     if (!agent.isShe && !agent.isPeerAgent && config.includeIdentity) {
-      final resume = _buildResumeBlock();
+      final resume = await _buildResumeBlock();
       if (resume.isNotEmpty) parts.add(resume);
     }
 
@@ -313,16 +314,46 @@ class AgentPromptBuilder {
   }
 
   /// The agent's own resume (bio) — what others see about it. The agent can
-  /// refine this during chat via `agents.resume-set`.
-  String _buildResumeBlock() {
+  /// refine this during chat via `agents.resume-set`, and ACP agents keep the
+  /// authoritative copy in the pouch at a fixed store URI (`store read/write`).
+  Future<String> _buildResumeBlock() async {
     final bio = agent.bio?.trim() ?? '';
     final resumeText = bio.isNotEmpty ? bio : '（未设置 / Not set）';
-    return '''
-## Your Resume
-$resumeText
+    final storeLine = await _resumeStoreLine();
+    final lines = <String>[
+      '## Your Resume',
+      resumeText,
+    ];
+    if (storeLine.isNotEmpty) {
+      lines
+        ..add('')
+        ..add(storeLine);
+    }
+    lines.addAll([
+      '',
+      'Others see this as your resume. If your capabilities or role change, update it with:',
+      '`shepaw context agents.resume-set --id ${agent.id} --text "(your updated resume)"`',
+    ]);
+    return lines.join('\n');
+  }
 
-Others see this as your resume. If your capabilities or role change, update it with:
-`shepaw context agents.resume-set --id ${agent.id} --text "(your updated resume)"`''';
+  /// One-line pointer to the agent's resume in the pouch, when resolvable.
+  /// Best-effort: device identity failures (e.g. plugin-less tests) yield ''.
+  Future<String> _resumeStoreLine() async {
+    try {
+      final device = await DeviceIdentity.deviceId();
+      if (device.trim().isEmpty) return '';
+      final uri =
+          storeUriWithRef(StoreSpace.files, device, '${agent.id}/resume.md');
+      return 'Your resume is also stored at: `$uri`\n'
+          'Read/update it with: `shepaw store read --uri $uri` · '
+          '`shepaw store write --space files --task ${agent.id} '
+          '--filename resume.md --content "..."` '
+          '(auto sections regenerate on rebuild; keep durable notes in the '
+          '`## 自我补充 / Self Notes` section).';
+    } catch (_) {
+      return '';
+    }
   }
 
   /// The main description / persona block.
