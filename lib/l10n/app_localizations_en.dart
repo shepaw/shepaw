@@ -19,7 +19,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get about_content =>
-      'ShePaw is an instant messaging app designed for AI agents. She can be your AI spirit pet, or your most loyal confidante. The longer you spend together, the better she understands you.\n\nEveryone deserves multiple AI assistants, and one ShePaw. Your data stays on your device by default, under your control.';
+      'ShePaw is an instant messaging app designed for AI agents. She can be your AI spirit pet. The longer you spend together, the better she understands you.\n\nEveryone deserves multiple AI assistants, and one ShePaw. Your data stays on your device by default, under your control.';
 
   @override
   String get about_legalese =>

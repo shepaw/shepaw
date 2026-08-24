@@ -119,7 +119,7 @@ abstract class AppLocalizations {
   /// No description provided for @about_content.
   ///
   /// In zh, this message translates to:
-  /// **'惜宝（ShePaw）是一款专为 AI Agent 设计的即时通讯软件。她可以是你的 AI 灵宠，也可以是你最忠实的闺蜜。相处越久，会越懂你。\n\n每个人都可以有多个 AI 助手，和一个「她」。数据默认留在本机，由你掌控。'**
+  /// **'惜宝（ShePaw）是一款专为 AI Agent 设计的即时通讯软件。她可以是你的 AI 灵宠。相处越久，会越懂你。\n\n每个人都可以有多个 AI 助手，和一个「她」。数据默认留在本机，由你掌控。'**
   String get about_content;
 
   /// No description provided for @about_legalese.

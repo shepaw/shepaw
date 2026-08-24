@@ -15,7 +15,7 @@
   <img src="assets/images/shepaw_icon.png" width="120" alt="ShePaw Logo" />
 </p>
 
-> She can be your AI spirit pet, or your most loyal confidante. The longer you spend together, the better she understands you — and the more you can trust her.
+> She can be your AI spirit pet. The longer you spend together, the better she understands you — and the more you can trust her.
 > Everyone deserves multiple AI assistants, and one ShePaw.
 
 ShePaw is a cross-platform hub for interacting and collaborating with your AI assistants — but **she** is the one who helps you navigate the world of AI.

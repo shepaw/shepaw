@@ -1,6 +1,6 @@
 # Shepaw User Guide
 
-> She can be your AI spirit pet, or your most loyal confidante. The longer you spend together, the better she understands you — and the more you can trust her.
+> She can be your AI spirit pet. The longer you spend together, the better she understands you — and the more you can trust her.
 > Everyone deserves multiple AI assistants, and one Shepaw.
 > **Shepaw — she helps you navigate the world of AI.**
 
