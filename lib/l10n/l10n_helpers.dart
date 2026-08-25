@@ -95,6 +95,8 @@ extension StepExecutionStatusL10n on StepExecutionStatus {
         return l10n.workflow_stepFailed;
       case StepExecutionStatus.skipped:
         return l10n.workflow_stepSkipped;
+      case StepExecutionStatus.cancelled:
+        return l10n.workflow_statusCancelled;
     }
   }
 }

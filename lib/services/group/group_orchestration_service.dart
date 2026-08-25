@@ -1027,6 +1027,24 @@ class GroupOrchestrationService {
         // from the admin's message (user-facing), so this note is re-injected
         // into the summarize round to let the admin remember its own plan.
         String? lastDispatchNote;
+
+        // M4：发一轮结束事件。正常派发路径在 summarize 后发（见下），但中断/
+        // 取消/无派发等退出路径之前不发，导致下一轮成员感知断裂。此处统一
+        // 封装，供各退出路径补发。
+        void emitRoundEnd({
+          List<String>? delegatedAgentNames,
+          List<String>? failed = const [],
+          String summary = '',
+        }) {
+          onGroupEvent?.call(GroupEvent.loopRoundCompleted(
+            channelId: channelId,
+            round: currentRound,
+            delegatedAgentNames: delegatedAgentNames,
+            failedAgentNames: failed,
+            summary: summary,
+          ));
+        }
+
         while (true) {
           // 新一轮开始：刷新 inbox 新鲜度基准（只消费本轮内 MCP 写入的决定）。
           roundStartTime = DateTime.now();
@@ -1045,6 +1063,7 @@ class GroupOrchestrationService {
           // so the user can fill it in (forms are non-blocking).
           if (adminTriggeredNonBlockingInteraction) {
             LoggerService().debug('Loop orchestration ended: admin triggered non-blocking interaction', tag: 'GroupOrchestrationService');
+            emitRoundEnd(summary: '管理员触发表单/文件交互，本轮暂停等待用户填写');
             break;
           }
           // Check cancellation — run abort-summarize before exiting if we have
@@ -1093,11 +1112,13 @@ class GroupOrchestrationService {
               // Hide the closing {"done": true} JSON block from the user.
               await _dispatchParser.stripDispatchJsonFromLastMessage(channelId, adminAgent.id);
             }
+            emitRoundEnd(summary: '编排在第 $currentRound 轮被取消');
             break;
           }
 
-          // Check round limit
-          if (currentRound >= maxRounds) {
+          // Check round limit. currentRound 是「当前正要执行的第 N 轮」（首轮
+          // 派发后 +1），故跑满 maxRounds 轮须用 `>` 而非 `>=`（M5 off-by-one）。
+          if (currentRound > maxRounds) {
             LoggerService().info('Loop orchestration reached max rounds ($maxRounds)', tag: 'GroupOrchestrationService');
             final limitMsg = Message(
               id: _uuid.v4(),
@@ -1159,6 +1180,11 @@ class GroupOrchestrationService {
             }
             // Hide the closing {"done": true} JSON block from the user.
             await _dispatchParser.stripDispatchJsonFromLastMessage(channelId, adminAgent.id);
+            emitRoundEnd(
+              summary: adminResponseContent.trim().isEmpty
+                  ? '编排达到最大轮次 $maxRounds 自动停止'
+                  : '编排达到最大轮次 $maxRounds 自动停止：$adminResponseContent',
+            );
             break;
           }
 
@@ -1249,6 +1275,7 @@ class GroupOrchestrationService {
               if (adminResponseContent.trim().isEmpty &&
                   !adminTurn.hasOrchestrationSignal) {
                 LoggerService().warning('Admin nudge produced empty response at round $currentRound, stopping', tag: 'GroupOrchestrationService');
+                emitRoundEnd(summary: '管理员多次未产出有效派发，流程停止');
                 break;
               }
               continue;
@@ -1259,6 +1286,7 @@ class GroupOrchestrationService {
               channelId,
               '⚠️ 管理员的派发指令多次无法解析（${dispatch.parseError}），流程已停止，请重新描述需求再试。',
             );
+            emitRoundEnd(summary: '管理员派发指令多次无法解析（${dispatch.parseError}），流程停止');
             break;
           }
 
@@ -1327,6 +1355,7 @@ class GroupOrchestrationService {
             // closing {"done": true} JSON block so the user never sees it.
             LoggerService().debug('Loop orchestration ended: no dispatch at round $currentRound', tag: 'GroupOrchestrationService');
             await _dispatchParser.stripDispatchJsonFromLastMessage(channelId, adminAgent.id);
+            emitRoundEnd(summary: adminResponseContent);
             break;
           }
 
@@ -1375,6 +1404,7 @@ class GroupOrchestrationService {
                 LoggerService().error('Admin abort-summarize (continue cancel) error', tag: 'GroupOrchestrationService', error: e);
                 onAgentDone?.call(adminAgent.id, adminAgent.name, adminResponseContent.trim().isEmpty);
               }
+              emitRoundEnd(summary: '管理员继续处理在第 $currentRound 轮被取消');
               break;
             }
 
@@ -1497,6 +1527,10 @@ class GroupOrchestrationService {
                       memberBrief: memberBrief,
                       globalRequirement: effectiveContent,
                       memoryNote: memberMemoryNote,
+                      dispatchPlanNote: GroupDispatchParser.buildDispatchPlanNote(
+                        steps: dispatch.steps,
+                        agents: agents,
+                      ),
                       loopEventNote: _buildLoopEventNote(channelId),
                     ),
                     attachments: attachments,
@@ -1552,6 +1586,10 @@ class GroupOrchestrationService {
                     memberBrief: memberBrief,
                     globalRequirement: effectiveContent,
                     memoryNote: memberMemoryNote,
+                    dispatchPlanNote: GroupDispatchParser.buildDispatchPlanNote(
+                      steps: dispatch.steps,
+                      agents: agents,
+                    ),
                     loopEventNote: _buildLoopEventNote(channelId),
                   ),
                   attachments: attachments,
@@ -1642,6 +1680,14 @@ class GroupOrchestrationService {
             }
             // Hide the closing {"done": true} JSON block from the user.
             await _dispatchParser.stripDispatchJsonFromLastMessage(channelId, adminAgent.id);
+            emitRoundEnd(
+              delegatedAgentNames: delegatedTurnResults.keys
+                  .map((id) =>
+                      agents.where((a) => a.id == id).firstOrNull?.name ?? id)
+                  .toList(),
+              failed: List.unmodifiable(failedAgentNames),
+              summary: '编排在成员执行后被取消',
+            );
             break;
           }
 

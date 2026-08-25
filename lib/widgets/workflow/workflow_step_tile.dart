@@ -158,6 +158,8 @@ class WorkflowStepTile extends StatelessWidget {
         return Icon(Icons.error, size: 16, color: Colors.red.shade600);
       case StepExecutionStatus.skipped:
         return Icon(Icons.skip_next, size: 16, color: Colors.grey.shade500);
+      case StepExecutionStatus.cancelled:
+        return Icon(Icons.cancel_outlined, size: 16, color: Colors.grey.shade600);
     }
   }
 

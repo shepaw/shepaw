@@ -159,12 +159,14 @@ class GroupDispatchParser {
   /// When [memberBrief] is empty or equals [globalRequirement] (the step had no
   /// task and fell back to the global message), only the global requirement is
   /// returned — no duplication. [memoryNote] (a short group-history summary) is
-  /// always appended. [loopEventNote] (上一轮编排事件的被动感知行，M5) 追加为
-  /// 【上轮事件】块，非空时拼接。
+  /// always appended. [dispatchPlanNote]（本轮完整派发计划，M3：并发轮内成员
+  /// 不再彼此盲）追加为【本轮派发计划】块。[loopEventNote]（上一轮编排事件
+  /// 的被动感知行，M5）追加为【上轮事件】块，非空时拼接。
   static String buildMemberTurnContent({
     required String memberBrief,
     required String globalRequirement,
     required String memoryNote,
+    String dispatchPlanNote = '',
     String loopEventNote = '',
   }) {
     final global = globalRequirement.trim();
@@ -172,9 +174,31 @@ class GroupDispatchParser {
     final base = (brief.isEmpty || brief == global)
         ? '$global$memoryNote'
         : '【全局需求】\n$global\n\n【你的任务】\n$brief$memoryNote';
+    final plan = dispatchPlanNote.trim();
+    final withPlan = plan.isEmpty ? base : '$base\n\n$plan';
     final note = loopEventNote.trim();
-    if (note.isEmpty) return base;
-    return '$base\n\n【上轮事件】\n$note';
+    if (note.isEmpty) return withPlan;
+    return '$withPlan\n\n【上轮事件】\n$note';
+  }
+
+  /// 构建【本轮派发计划】块：列出本轮所有被派发成员与各自任务，供同轮成员
+  /// 感知全貌——并发轮内成员知道「还有谁在做、各自做什么」，避免重复劳动或
+  /// 目标不一致（M3）。无派发步骤返回空串。
+  static String buildDispatchPlanNote({
+    required List<DispatchStep> steps,
+    required List<RemoteAgent> agents,
+  }) {
+    final lines = <String>[];
+    for (final step in steps) {
+      if (step.agentIds.isEmpty) continue;
+      final names = step.agentIds
+          .map((id) => agents.where((a) => a.id == id).firstOrNull?.name ?? id)
+          .join('、');
+      final task = step.task.trim();
+      lines.add(task.isEmpty ? '- $names：执行用户需求' : '- $names：$task');
+    }
+    if (lines.isEmpty) return '';
+    return '【本轮派发计划】\n${lines.join('\n')}';
   }
 
   /// Resolve structured mention declarations into [MentionEntry]s.

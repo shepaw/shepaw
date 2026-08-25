@@ -191,6 +191,56 @@ void main() {
     expect(content, isNot(contains('【上轮事件】')));
   });
 
+  test('buildMemberTurnContent appends dispatch plan note (M3) when provided', () {
+    final content = GroupDispatchParser.buildMemberTurnContent(
+      memberBrief: '实现登录',
+      globalRequirement: '用户完整需求原文',
+      memoryNote: '\n[群记忆] 摘要',
+      dispatchPlanNote: '【本轮派发计划】\n- Agent B：实现登录\n- Agent C：写测试',
+    );
+    expect(content, contains('【本轮派发计划】'));
+    expect(content, contains('Agent C：写测试'));
+    expect(content, contains('【你的任务】'));
+  });
+
+  test('buildDispatchPlanNote lists all delegated members and their tasks (M3)', () {
+    const steps = [
+      DispatchStep(step: 1, agentIds: ['a1'], task: '实现登录', mode: 'concurrent'),
+      DispatchStep(step: 2, agentIds: ['a2', 'a3'], task: '写测试', mode: 'concurrent'),
+      DispatchStep(step: 3, agentIds: ['a4'], task: '   ', mode: 'concurrent'),
+    ];
+    RemoteAgent agent(String id, String name) => RemoteAgent(
+          id: id,
+          name: name,
+          avatar: '🤖',
+          token: '',
+          endpoint: '',
+          protocol: ProtocolType.acp,
+          connectionType: ConnectionType.http,
+          createdAt: 0,
+          updatedAt: 0,
+        );
+    final agents = [
+      agent('a1', 'Agent B'),
+      agent('a2', 'Agent C'),
+      agent('a3', 'Agent D'),
+      agent('a4', 'Agent E'),
+    ];
+    final note = GroupDispatchParser.buildDispatchPlanNote(
+      steps: steps,
+      agents: agents,
+    );
+    expect(note, contains('【本轮派发计划】'));
+    expect(note, contains('- Agent B：实现登录'));
+    expect(note, contains('- Agent C、Agent D：写测试'));
+    // 空任务步骤回退为「执行用户需求」，且仍列出成员。
+    expect(note, contains('- Agent E：执行用户需求'));
+  });
+
+  test('buildDispatchPlanNote returns empty for no steps', () {
+    expect(GroupDispatchParser.buildDispatchPlanNote(steps: const [], agents: const []), isEmpty);
+  });
+
   test('extractStoreUris pulls unique store URIs and trims punctuation', () {
     const reply = '完成，产物见 [a](store://workspaces/dev/group_1/shared/a.md)。'
         '以及 store://workspaces/dev/group_1/shared/b.md, '

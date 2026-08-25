@@ -53,7 +53,10 @@ enum StepExecutionStatus {
   running,
   completed,
   failed,
-  skipped;
+  skipped,
+  /// 工作流被取消时，正在执行的步骤标记为 cancelled（区别于失败，避免污染
+  /// 失败统计/复盘）。M11。
+  cancelled;
 
   String get dbValue => name;
 
@@ -67,6 +70,8 @@ enum StepExecutionStatus {
         return StepExecutionStatus.failed;
       case 'skipped':
         return StepExecutionStatus.skipped;
+      case 'cancelled':
+        return StepExecutionStatus.cancelled;
       default:
         return StepExecutionStatus.pending;
     }
@@ -183,13 +188,14 @@ class WorkflowExecution {
   int get failedSteps =>
       steps.where((s) => s.status == StepExecutionStatus.failed).length;
 
-  /// True when every step is terminal (completed / skipped / failed).
+  /// True when every step is terminal (completed / skipped / failed / cancelled).
   bool get allStepsTerminal =>
       steps.isNotEmpty &&
       steps.every((s) =>
           s.status == StepExecutionStatus.completed ||
           s.status == StepExecutionStatus.skipped ||
-          s.status == StepExecutionStatus.failed);
+          s.status == StepExecutionStatus.failed ||
+          s.status == StepExecutionStatus.cancelled);
 
   /// True when every step finished successfully (completed or skipped).
   bool get allStepsSucceeded =>

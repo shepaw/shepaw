@@ -322,10 +322,11 @@ class WorkflowService {
       whereArgs: [workflowId],
     );
     // H3: Cascade — mark running steps as cancelled, pending steps as skipped
+    // (M11: 用 cancelled 而非 failed，取消不等于失败，避免污染失败统计/复盘)
     await db.update(
       'workflow_step_executions',
       {
-        'status': StepExecutionStatus.failed.dbValue,
+        'status': StepExecutionStatus.cancelled.dbValue,
         'completed_at': DateTime.now().millisecondsSinceEpoch,
         'error_message': 'Workflow cancelled',
       },
@@ -394,6 +395,27 @@ class WorkflowService {
         'status': StepExecutionStatus.failed.dbValue,
         'completed_at': DateTime.now().millisecondsSinceEpoch,
         'error_message': errorMessage,
+      },
+      where: 'id = ?',
+      whereArgs: [stepId],
+    );
+    final workflowId = await _getWorkflowIdForStep(stepId);
+    if (workflowId != null) _notify(workflowId);
+  }
+
+  /// 阶段门闸 reassign 后把失败步骤重置为 pending，清掉失败痕迹（M10 换人
+  /// 重跑）。可选换执行人；重置后状态需经 [startStep] 再次进入 running。
+  Future<void> resetStep(String stepId, {String? agentName}) async {
+    final db = await _db.database;
+    await db.update(
+      'workflow_step_executions',
+      {
+        'status': StepExecutionStatus.pending.dbValue,
+        'started_at': null,
+        'completed_at': null,
+        'error_message': null,
+        'output_summary': null,
+        if (agentName != null) 'agent_name': agentName,
       },
       where: 'id = ?',
       whereArgs: [stepId],

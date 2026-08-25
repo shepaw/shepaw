@@ -2440,8 +2440,9 @@ $originalQuestion
       }
       final stageIndices = stageMap.keys.toList()..sort();
 
-      // Load history once
-      final historyMessages = await loadChannelMessages(channelId, limit: 50);
+      // Load history. M2：不再只加载一次——每个阶段开始时刷新，让后续阶段
+      // 成员看到上一阶段的聊天输出（而不只依赖 artifact URI + 事件 digest）。
+      var historyMessages = await loadChannelMessages(channelId, limit: 50);
 
       // §6.3：工作流跨步骤累积 store:// 引用，注入后续步骤 instruction。
       final workflowArtifactLines = <String>[];
@@ -2818,6 +2819,9 @@ $originalQuestion
 
         final steps = stageMap[stageIdx]!;
 
+        // M2：阶段开始前刷新历史快照，后续阶段成员能看到已执行阶段的聊天输出。
+        historyMessages = await loadChannelMessages(channelId, limit: 50);
+
         // 被动事件：成员感知「工作流进入新阶段」（不唤醒管理员，仅注入上下文）。
         _emitWorkflowMacroEvent(
           channelId: channelId,
@@ -2915,25 +2919,63 @@ $originalQuestion
           }
 
           if (decision.isReassign && decision.reassignTarget != null) {
-            // 换人：重写后续所有未开始步骤的执行人（DB + 内存 step 对象，
-            // 后者供后续 executeGroupStage 读取）。目标非当前成员时忽略并继续。
+            // 换人：重置当前阶段失败步骤（pending + 换人重跑，M10）+ 重写
+            // 后续所有未开始步骤的执行人（DB + 内存 step 对象，后者供
+            // executeGroupStage 读取）。目标非当前成员时忽略并继续。
             final target = decision.reassignTarget!.trim();
-            final targetAgent = agents.cast<RemoteAgent?>().firstWhere(
-                  (a) => a!.name == target,
-                  orElse: () => null,
-                );
+            // 宽松匹配：全名精确（忽略大小写）优先；其次包含匹配（≥2 字符，
+            // 防单字符误配）。比旧实现的 exact-name 更健壮。
+            RemoteAgent? matchAgent(String name) {
+              final norm = name.toLowerCase();
+              RemoteAgent? exact;
+              RemoteAgent? fuzzy;
+              for (final a in agents) {
+                final cn = a.name.trim().toLowerCase();
+                if (cn == norm) {
+                  exact = a;
+                  break;
+                }
+                if (norm.length >= 2 && (cn.contains(norm) || norm.contains(cn))) {
+                  fuzzy ??= a;
+                }
+              }
+              return exact ?? fuzzy;
+            }
+
+            final targetAgent = matchAgent(target);
             if (targetAgent != null) {
+              final resolvedName = targetAgent.name;
+              // 当前阶段失败的步骤：重置为 pending 并换执行人 → 本阶段重跑。
+              var reassignedRetry = false;
+              for (final s in effectiveWorkflow.steps) {
+                if (s.stageIndex == stageIdx &&
+                    s.status == StepExecutionStatus.failed) {
+                  await _workflowService.resetStep(s.id, agentName: resolvedName);
+                  s
+                    ..status = StepExecutionStatus.pending
+                    ..agentName = resolvedName
+                    ..errorMessage = null;
+                  reassignedRetry = true;
+                }
+              }
+              // 后续阶段未开始的步骤：改派执行人。
               for (final s in effectiveWorkflow.steps) {
                 if (s.stageIndex > stageIdx &&
                     s.status == StepExecutionStatus.pending) {
-                  await _workflowService.updateStepAgentName(s.id, target);
-                  s.agentName = target;
+                  await _workflowService.updateStepAgentName(s.id, resolvedName);
+                  s.agentName = resolvedName;
                 }
               }
               await _saveWorkflowSystemMessage(
                 channelId: channelId,
-                content: '🔄 管理员决定将后续步骤的执行人改派为「$target」。',
+                content: '🔄 管理员决定将执行人改派为「$resolvedName」'
+                    '${reassignedRetry ? '，并重新执行本阶段失败的步骤' : ''}。',
               );
+              // M10：重跑被重置的本阶段失败步骤（executeGroupStage 只跑 pending，
+              // 已完成步骤不受影响）。
+              if (reassignedRetry) {
+                await executeGroupStage(steps);
+              }
             } else {
               LoggerService().warning(
                 'stageGate: reassign target "$target" is not a current member, '
