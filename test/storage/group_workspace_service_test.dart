@@ -265,16 +265,29 @@ void main() {
       const member = 'agent-member';
       const stranger = 'agent-stranger';
 
-      ChatAgentScope.agentId = member;
-      expect(await groupWorkspaceAccessError('$root/shared/orchestration/x/state.json'),
-          isNull);
-      expect(await groupWorkspaceAccessError('$root/members/agent-member/f.md'),
-          isNull);
+      await ChatAgentScope.runScoped(
+        agentId: member,
+        body: () async {
+          expect(
+              await groupWorkspaceAccessError(
+                  '$root/shared/orchestration/x/state.json'),
+              isNull);
+          expect(
+              await groupWorkspaceAccessError(
+                  '$root/members/agent-member/f.md'),
+              isNull);
+        },
+      );
 
-      ChatAgentScope.agentId = stranger;
-      expect(
-        await groupWorkspaceAccessError('$root/shared/orchestration/x/state.json'),
-        contains('not a member'),
+      await ChatAgentScope.runScoped(
+        agentId: stranger,
+        body: () async {
+          expect(
+            await groupWorkspaceAccessError(
+                '$root/shared/orchestration/x/state.json'),
+            contains('not a member'),
+          );
+        },
       );
 
       // 非群空间（files / runtime）不校验

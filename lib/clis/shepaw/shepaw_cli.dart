@@ -221,26 +221,33 @@ class ShepawCLI {
         }
       }
 
-      // 透传当前执行者的 agentId / channelId / 群 runtime owner（store write 等依赖）
-      ChatAgentScope.agentId = agentId;
+      // 透传当前执行者的 agentId / channelId / 群 runtime owner（store write 等
+      // 依赖）。并发成员工具调用必须在各自 Zone 内执行：读取点优先取 Zone 值，
+      // 避免原先静态全局被并发覆盖的串号竞态。
       final flagChannel =
           (flags['channel_id'] ?? flags['channel'] ?? '').trim();
-      ChatAgentScope.channelId = flagChannel.isNotEmpty
+      final scopedChannel = flagChannel.isNotEmpty
           ? flagChannel
           : (channelId ?? '').trim();
-      ChatAgentScope.runtimeOwnerId = (runtimeOwnerId ?? '').trim();
-      if (ns is ContextNamespace) ns.agentId = agentId;
-      if (ns is ChatNamespace) {
-        ns.agentId = agentId;
-      }
-      if (ns is WorkflowNamespace) {
-        final chId = flags['channel_id'];
-        if (chId != null) {
-          ns.setContext(chId, agentId);
-        }
-      }
-
-      final result = await ns.execute(subcommand, flags);
+      final scopedOwner = (runtimeOwnerId ?? '').trim();
+      final result = await ChatAgentScope.runScoped<Map<String, dynamic>>(
+        agentId: agentId,
+        channelId: scopedChannel,
+        runtimeOwnerId: scopedOwner,
+        body: () async {
+          if (ns is ContextNamespace) ns.agentId = agentId;
+          if (ns is ChatNamespace) {
+            ns.agentId = agentId;
+          }
+          if (ns is WorkflowNamespace) {
+            final chId = flags['channel_id'];
+            if (chId != null) {
+              ns.setContext(chId, agentId);
+            }
+          }
+          return ns.execute(subcommand, flags);
+        },
+      );
       return jsonEncode(result);
     } catch (e) {
       return jsonEncode({'error': e.toString()});

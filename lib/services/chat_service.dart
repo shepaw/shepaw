@@ -2832,10 +2832,31 @@ $originalQuestion
         }
       }
 
-      // All stages completed — invoke Admin for final summary
-      await runClosingSummary('[SYSTEM] 工作流全部阶段已执行完毕，请对执行结果做最终总结，向用户汇报成果。');
-
-      await _workflowService.completeWorkflow(workflowId, summary: '所有阶段执行完毕');
+      // All stages completed — invoke Admin for final summary. When any step
+      // failed (gate enabled + admin proceeded / auto-continued), the run is
+      // NOT a clean success: surface the failure to the user and mark the
+      // workflow failed instead of silently recording "所有阶段执行完毕".
+      final failedSteps = effectiveWorkflow.steps
+          .where((s) => s.status == StepExecutionStatus.failed)
+          .toList();
+      if (failedSteps.isNotEmpty) {
+        final failedNames = failedSteps.map((s) => s.agentName).join('、');
+        await _workflowService.failWorkflow(
+          workflowId,
+          '部分步骤失败：$failedNames',
+        );
+        await _saveWorkflowFailureMessage(
+          channelId: channelId,
+          content: '⚠️ 工作流结束但存在失败步骤：$failedNames。',
+        );
+        await runClosingSummary(
+          '[SYSTEM] 工作流所有阶段已执行完毕，但以下成员的任务失败：$failedNames。'
+          '请在总结中向用户如实说明失败部分、已完成成果与补救建议，不要汇报为完全成功。',
+        );
+      } else {
+        await runClosingSummary('[SYSTEM] 工作流全部阶段已执行完毕，请对执行结果做最终总结，向用户汇报成果。');
+        await _workflowService.completeWorkflow(workflowId, summary: '所有阶段执行完毕');
+      }
       reachedTerminalState = true;
     } catch (e, stack) {
       // C4: Ensure workflow reaches terminal state on any unhandled error

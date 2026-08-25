@@ -223,8 +223,34 @@ class WorkflowService {
   }
 
   /// Mark workflow as completed.
+  ///
+  /// Safety net: if any step ended in `failed`, the run is NOT a clean
+  /// success — degrade to [failWorkflow] (with the failed members in
+  /// [errorMessage]) so a partially-failed workflow is never surfaced as
+  /// completed. Callers that want a degraded-complete outcome must resolve or
+  /// retry the failed steps first.
   Future<void> completeWorkflow(String workflowId, {String? summary}) async {
     final db = await _db.database;
+
+    // Never record a workflow with failed steps as completed.
+    final failedRows = await db.query(
+      'workflow_step_executions',
+      columns: ['agent_name'],
+      where: 'workflow_execution_id = ? AND status = ?',
+      whereArgs: [workflowId, StepExecutionStatus.failed.dbValue],
+    );
+    if (failedRows.isNotEmpty) {
+      final failedNames = failedRows
+          .map((r) => r['agent_name'] as String? ?? '')
+          .where((n) => n.isNotEmpty)
+          .toList();
+      final message = failedNames.isEmpty
+          ? '存在失败步骤，工作流降级为失败'
+          : '部分步骤失败：${failedNames.join('、')}';
+      await failWorkflow(workflowId, message);
+      return;
+    }
+
     final updates = <String, dynamic>{
       'status': WorkflowStatus.completed.dbValue,
       'completed_at': DateTime.now().millisecondsSinceEpoch,
