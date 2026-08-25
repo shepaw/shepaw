@@ -436,6 +436,78 @@ void main() {
       ));
       expect(persisted, [('a', 1), ('b', 2)]);
     });
+
+    test('restore rebuilds memory state and advances seq (crash recovery)', () {
+      final store = GroupEventStore();
+      store.restore('g', [
+        (seq: 1, event: GroupEvent.stepCompleted(id: 'a', channelId: 'g', stageIndex: 0, stepIndex: 0)),
+        (seq: 2, event: GroupEvent.stepFailed(id: 'b', channelId: 'g', stageIndex: 0, stepIndex: 1, agentName: 'B')),
+        (seq: 3, event: GroupEvent.loopRoundCompleted(id: 'c', channelId: 'g', round: 1, delegatedAgentNames: ['B'])),
+      ]);
+      final recent = store.recent('g', limit: 100);
+      expect(recent.map((e) => e.id), ['a', 'b', 'c']);
+      expect(recent.last.round, 1);
+      // 新事件 seq 从恢复的最大 seq 继续。
+      var persistedSeq = 0;
+      final s2 = GroupEventStore(onPersist: (event, seq) async {
+        persistedSeq = seq;
+      });
+      s2.restore('g', [(seq: 3, event: GroupEvent.stepCompleted(id: 'c', channelId: 'g', stageIndex: 0, stepIndex: 0))]);
+      s2.record(GroupEvent.stepCompleted(id: 'd', channelId: 'g', stageIndex: 0, stepIndex: 1));
+      expect(persistedSeq, 4);
+    });
+
+    test('restore is idempotent within a process', () {
+      final store = GroupEventStore();
+      store.restore('g', [
+        (seq: 1, event: GroupEvent.stepCompleted(id: 'a', channelId: 'g', stageIndex: 0, stepIndex: 0)),
+      ]);
+      store.restore('g', [
+        (seq: 1, event: GroupEvent.stepCompleted(id: 'a', channelId: 'g', stageIndex: 0, stepIndex: 0)),
+        (seq: 2, event: GroupEvent.stepCompleted(id: 'b', channelId: 'g', stageIndex: 0, stepIndex: 1)),
+      ]);
+      final recent = store.recent('g', limit: 100);
+      expect(recent.map((e) => e.id), ['a']);
+    });
+
+    test('restore caps at ring-buffer max (50)', () {
+      final store = GroupEventStore();
+      final entries = <({int seq, GroupEvent event})>[
+        for (var i = 0; i < 60; i++)
+          (seq: i + 1, event: GroupEvent.stepCompleted(id: 'e$i', channelId: 'g', stageIndex: 0, stepIndex: i)),
+      ];
+      store.restore('g', entries);
+      expect(store.recent('g', limit: 100), hasLength(50));
+      expect(store.recent('g', limit: 100).first.id, 'e10');
+    });
+  });
+
+  group('GroupEvent.fromPersisted', () {
+    test('reconstructs fields including round/payload for loop events', () {
+      final e = GroupEvent.fromPersisted({
+        'id': 'x',
+        'type': 'loopRoundCompleted',
+        'stage': null,
+        'step': null,
+        'round': 2,
+        'agent_id': null,
+        'agent': null,
+        'summary': '第2轮完成',
+        'payload': {'round': 2, 'delegated': ['B', 'C']},
+        'ts': '2026-08-01T00:00:00.000Z',
+      }, channelId: 'g');
+      expect(e, isNotNull);
+      expect(e!.type, GroupEventType.loopRoundCompleted);
+      expect(e.channelId, 'g');
+      expect(e.round, 2);
+      expect(e.payload['delegated'], ['B', 'C']);
+      expect(renderEventLine(e), contains('执行:B、C'));
+    });
+
+    test('returns null for unknown type / missing type', () {
+      expect(GroupEvent.fromPersisted({'type': 'noSuchType'}, channelId: 'g'), isNull);
+      expect(GroupEvent.fromPersisted({'stage': 0}, channelId: 'g'), isNull);
+    });
   });
 
   group('buildGenericPerceptionPrompt', () {

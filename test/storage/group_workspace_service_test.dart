@@ -331,6 +331,78 @@ void main() {
     });
   });
 
+  group('事件日志读写 (writeEventLog / readEventLogs)', () {
+    test('写入后按 seq 升序读回，损坏条目被忽略', () async {
+      await ws.ensureGroupWorkspace(
+        groupId: 'group_events',
+        members: [(agentId: 'she', role: 'admin')],
+      );
+      final home = (await ws.loadMeta('group_events'))!.homeDevice;
+      final eventsDir = ws.eventsDir('group_events', 'group_session_ev');
+      final writeLog = (String file, Map<String, dynamic> payload) =>
+          StoreService.instance.writeWorkspaceFile(
+        homeDeviceId: home,
+        relPath: '$eventsDir/$file',
+        content: Uint8List.fromList(utf8.encode(jsonEncode(payload))),
+      );
+
+      // 乱序写入（seq 编号决定顺序），并混入一条不可解析的 JSON。
+      await writeLog('000003.json', {
+        'kind': 'group_event',
+        'id': 'c',
+        'type': 'stepCompleted',
+        'stage': 0,
+        'step': 2,
+        'agent_id': 'b',
+        'agent': 'B',
+        'summary': '产出',
+        'ts': '2026-08-01T00:00:00.000Z',
+      });
+      await writeLog('000001.json', {
+        'kind': 'group_event',
+        'id': 'a',
+        'type': 'stepCompleted',
+        'stage': 0,
+        'step': 0,
+        'agent_id': 'b',
+        'agent': 'B',
+        'summary': '产出',
+        'ts': '2026-08-01T00:00:00.000Z',
+      });
+      await writeLog('000002.json', {
+        'kind': 'group_event',
+        'id': 'b',
+        'type': 'stepFailed',
+        'stage': 0,
+        'step': 1,
+        'agent_id': 'b',
+        'agent': 'B',
+        'summary': '失败',
+        'ts': '2026-08-01T00:00:00.000Z',
+      });
+      // 非 JSON 文件（模拟损坏/残留）→ 应被忽略。
+      await StoreService.instance.writeWorkspaceFile(
+        homeDeviceId: home,
+        relPath: '$eventsDir/not-json.json',
+        content: Uint8List.fromList(utf8.encode('broken')), // 不是 JSON 对象
+      );
+
+      final logs = await ws.readEventLogs(
+        groupId: 'group_events',
+        sessionId: 'group_session_ev',
+      );
+      expect(logs.map((l) => l.seq), [1, 2, 3]);
+      expect(logs.map((l) => l.payload['id']), ['a', 'b', 'c']);
+
+      // 不存在的目录 → 空列表。
+      final empty = await ws.readEventLogs(
+        groupId: 'group_events',
+        sessionId: 'no_such_session',
+      );
+      expect(empty, isEmpty);
+    });
+  });
+
   group('编排 inbox 读取 (readOrchestrationInbox)', () {
     test('since 过滤：只消费 issued_at 晚于本轮开始的文件', () async {
       await ws.ensureGroupWorkspace(

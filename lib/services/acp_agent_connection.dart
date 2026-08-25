@@ -19,6 +19,15 @@ import 'noise/noise_session.dart';
 import 'noise_identity.dart';
 import 'ui_component_registry.dart';
 
+/// 兜底超时：远端 ACP agent 单回合任务的等待上限。
+///
+/// 半开/失活连接由 30s 心跳（[ACPAgentConnection._sendHeartbeat]）在秒级
+/// 发现并断开，断开时会 `_failInFlightTasks` 立即解阻塞等待方；此常量只是
+/// 「连接存活但某任务永不完成」的后备保险。原先 3h 会让用户在编排循环 /
+/// 门闸 / 收尾总结里干等半天。正常远端回合（含流式）远小于此值；超时抛
+/// [TimeoutException] 由调用方按失败处理。
+const Duration acpTaskTimeout = Duration(minutes: 10);
+
 /// Cancellation token for ACP protocol operations.
 /// Sends `agent.cancelTask` to every bound remote Agent task when cancelled,
 /// and invokes all registered cancel callbacks so every waiting

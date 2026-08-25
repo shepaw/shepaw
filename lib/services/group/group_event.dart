@@ -156,6 +156,28 @@ class GroupEvent {
     );
   }
 
+  /// 从工作空间持久化 payload 重建事件（崩溃恢复回放）。字段缺失/类型
+  /// 不合法返回 null——回放是 best-effort，单条损坏不应拖垮整批恢复。
+  static GroupEvent? fromPersisted(Map<String, dynamic> json, {String? channelId}) {
+    final typeName = json['type'] as String?;
+    if (typeName == null) return null;
+    final type = GroupEventType.values.asNameMap()[typeName];
+    if (type == null) return null;
+    return GroupEvent(
+      id: json['id'] as String? ?? _newId(),
+      type: type,
+      channelId: channelId ?? (json['channel_id'] as String? ?? ''),
+      stageIndex: (json['stage'] as num?)?.toInt(),
+      stepIndex: (json['step'] as num?)?.toInt(),
+      round: (json['round'] as num?)?.toInt(),
+      agentId: json['agent_id'] as String?,
+      agentName: json['agent'] as String?,
+      summary: json['summary'] as String? ?? '',
+      payload: (json['payload'] as Map?)?.cast<String, dynamic>() ?? const {},
+      createdAt: DateTime.tryParse(json['ts'] as String? ?? '') ?? DateTime.now(),
+    );
+  }
+
   static String _newId() => const Uuid().v4();
 }
 

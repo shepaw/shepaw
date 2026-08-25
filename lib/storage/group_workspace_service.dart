@@ -5,6 +5,7 @@ import '../peer/models/peer_store_share.dart';
 import '../peer/services/peer_storage_service.dart';
 import '../services/logger_service.dart';
 import 'device_identity.dart';
+import 'local_store.dart';
 import 'runtime_paths.dart';
 import 'store_protocol.dart';
 import 'store_service.dart';
@@ -373,6 +374,49 @@ class GroupWorkspaceService {
           '${eventsDir(groupId, sessionId)}/${seq.toString().padLeft(6, '0')}.json',
       payload: payload,
     );
+  }
+
+  /// 读取某会话事件日志目录中的全部事件（崩溃恢复回放用），按 seq 升序返回。
+  ///
+  /// 目录不存在返回空列表；单条文件缺失/损坏忽略（best-effort，与写入一致）。
+  Future<List<({int seq, Map<String, dynamic> payload})>> readEventLogs({
+    required String groupId,
+    required String sessionId,
+  }) async {
+    final meta = await loadMeta(groupId);
+    if (meta == null) return const [];
+    final home = meta.homeDevice;
+    final dir = eventsDir(groupId, sessionId);
+    final List<StoreEntry> entries;
+    try {
+      entries = await StoreService.instance.listDevice(
+        deviceId: home,
+        space: StoreSpace.workspaces,
+        prefix: dir,
+        depth: 1,
+        computeHash: false,
+      );
+    } catch (e) {
+      LoggerService().debug(
+        'group event log list failed: $dir — $e',
+        tag: 'GroupWorkspaceService',
+      );
+      return const [];
+    }
+
+    final results = <({int seq, Map<String, dynamic> payload})>[];
+    for (final e in entries) {
+      if (e.isDir) continue;
+      final name = e.path.split('/').last;
+      if (!name.endsWith('.json')) continue;
+      final seq = int.tryParse(name.substring(0, name.length - 5));
+      if (seq == null) continue;
+      final payload = await _readJson('store://workspaces/$home/${e.path}');
+      if (payload == null) continue;
+      results.add((seq: seq, payload: payload));
+    }
+    results.sort((a, b) => a.seq.compareTo(b.seq));
+    return results;
   }
 
   /// 写一回合的 dispatch 决定（解析后结构，非原始 JSON 块）。

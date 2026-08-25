@@ -35,6 +35,27 @@ class GroupEventStore {
     return List.unmodifiable(list.sublist(list.length - limit));
   }
 
+  /// 崩溃重启后从工作空间持久化日志回放 [channelId] 的最近事件，恢复上下文
+  /// 注入与感知回合所需的内存态。
+  ///
+  /// 幂等：该频道已有内存事件时跳过（防止同进程内重复回放/追加重复）。
+  /// [entries] 需按 seq 升序；超过 [_maxPerChannel] 时只保留尾部。
+  void restore(String channelId, List<({int seq, GroupEvent event})> entries) {
+    if (entries.isEmpty) return;
+    final existing = _recent[channelId];
+    if (existing != null && existing.isNotEmpty) return;
+    final list = entries.map((e) => e.event).toList();
+    if (list.length > _maxPerChannel) {
+      list.removeRange(0, list.length - _maxPerChannel);
+    }
+    _recent[channelId] = list;
+    var maxSeq = 0;
+    for (final e in entries) {
+      if (e.seq > maxSeq) maxSeq = e.seq;
+    }
+    _seq[channelId] = maxSeq;
+  }
+
   /// Record an event in memory and fire the persistence hook (best-effort).
   void record(GroupEvent event) {
     final list = _recent.putIfAbsent(event.channelId, () => []);

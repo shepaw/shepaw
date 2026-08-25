@@ -93,6 +93,13 @@ class GroupEventPerceptionScheduler {
   /// `processGroupAgent` calls for the same channel.
   final Set<String> _running = {};
 
+  /// Per-channel generation counter. `cancelPendingForChannel` bumps it so a
+  /// superseded in-flight turn aborts before writing its admin message.
+  final Map<String, int> _epoch = {};
+
+  /// In-flight turn cancellation tokens, keyed by channel.
+  final Map<String, ACPCancellationToken> _turnTokens = {};
+
   /// Record an event. Synchronous and non-blocking.
   ///
   /// Every event is written to the event store (passive awareness); only
@@ -113,6 +120,11 @@ class GroupEventPerceptionScheduler {
   void cancelPendingForChannel(String channelId) {
     _pending.remove(channelId);
     _timers.remove(channelId)?.cancel();
+    // Bump the epoch and cancel any in-flight turn: the workflow failure path /
+    // stage gate already replies to the admin, so a superseded perception turn
+    // must not produce a redundant second admin message.
+    _epoch[channelId] = (_epoch[channelId] ?? 0) + 1;
+    _turnTokens.remove(channelId)?.cancel();
   }
 
   void _arm(String channelId) {
@@ -134,14 +146,25 @@ class GroupEventPerceptionScheduler {
     if (events == null || events.isEmpty) return;
 
     _running.add(channelId);
+    final token = ACPCancellationToken();
+    final epoch = _epoch[channelId] ?? 0;
+    _turnTokens[channelId] = token;
     try {
-      await _runTurn(channelId, events);
+      await _runTurn(channelId, events, token, epoch);
     } finally {
+      if (identical(_turnTokens[channelId], token)) {
+        _turnTokens.remove(channelId);
+      }
       _running.remove(channelId);
     }
   }
 
-  Future<void> _runTurn(String channelId, List<GroupEvent> events) async {
+  Future<void> _runTurn(
+    String channelId,
+    List<GroupEvent> events,
+    ACPCancellationToken token,
+    int epoch,
+  ) async {
     try {
       final channel = await _db.getChannelById(channelId);
       final adminId = channel?.adminAgentId;
@@ -201,6 +224,11 @@ class GroupEventPerceptionScheduler {
         currentMembers: allAgents,
       );
 
+      // Re-check cancellation right before writing: the workflow failure path /
+      // stage gate may have superseded this turn (cancelPendingForChannel bumps
+      // the epoch). A superseded turn must not emit a redundant admin message.
+      if (token.isCancelled || epoch != (_epoch[channelId] ?? 0)) return;
+
       await _executor.processGroupAgent(
         agent: adminAgent,
         channelId: channelId,
@@ -219,6 +247,7 @@ class GroupEventPerceptionScheduler {
         adminAgent: adminAgent,
         isFlowMode: false,
         messageVersion: null,
+        acpCancellationToken: token,
       );
 
       // Safety net: a perception turn must never leave a raw dispatch JSON

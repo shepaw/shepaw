@@ -30,6 +30,10 @@ class WorkflowService {
   /// H4: Cache workflowId → channelId to avoid unnecessary cross-channel queries.
   final Map<String, String> _workflowChannelCache = {};
 
+  /// 可选回调：步骤被显式跳过时触发（由 ChatService 注入事件系统发射
+  /// stepSkipped 事件）。仅当 [skipStep] 被调用且能解析出频道时触发。
+  void Function(WorkflowStepExecution step, String channelId)? onStepSkipped;
+
   WorkflowService._({required LocalDatabaseService db}) : _db = db;
 
   /// Constructor for dependency injection (delegates to singleton in practice).
@@ -409,6 +413,41 @@ class WorkflowService {
     );
     final workflowId = await _getWorkflowIdForStep(stepId);
     if (workflowId != null) _notify(workflowId);
+
+    // 通知事件系统（stepSkipped 是被动事件，不唤醒管理员）。
+    final cb = onStepSkipped;
+    if (cb != null && workflowId != null) {
+      final rows = await db.query(
+        'workflow_step_executions',
+        where: 'id = ?',
+        whereArgs: [stepId],
+        limit: 1,
+      );
+      if (rows.isNotEmpty) {
+        final channelId = await getChannelIdForWorkflow(workflowId);
+        if (channelId != null) {
+          cb(WorkflowStepExecution.fromMap(rows.first), channelId);
+        }
+      }
+    }
+  }
+
+  /// Channel id a workflow execution belongs to (cache first, then DB).
+  Future<String?> getChannelIdForWorkflow(String workflowId) async {
+    final cached = _workflowChannelCache[workflowId];
+    if (cached != null) return cached;
+    final db = await _db.database;
+    final rows = await db.query(
+      'workflow_executions',
+      columns: ['channel_id'],
+      where: 'id = ?',
+      whereArgs: [workflowId],
+      limit: 1,
+    );
+    if (rows.isEmpty) return null;
+    final channelId = rows.first['channel_id'] as String?;
+    if (channelId != null) _workflowChannelCache[workflowId] = channelId;
+    return channelId;
   }
 
   /// Rewrite the executing agent of a step — used by the stage gate's

@@ -328,12 +328,15 @@ class ChatService {
         seq: seq,
         payload: {
           'kind': 'group_event',
+          'id': event.id,
           'type': event.type.name,
           'stage': event.stageIndex,
           'step': event.stepIndex,
+          'round': event.round,
           'agent_id': event.agentId,
           'agent': event.agentName,
           'summary': event.summary,
+          'payload': event.payload,
           'ts': event.createdAt.toUtc().toIso8601String(),
         },
       );
@@ -342,6 +345,39 @@ class ChatService {
         'persist group event failed',
         tag: 'ChatService',
         error: e,
+      );
+    }
+  }
+
+  /// 崩溃重启后回放该频道工作空间里的持久化事件日志，重建事件 store 内存态
+  /// （上下文注入 / 感知回合因此能感知重启前的节点成败）。best-effort。
+  Future<void> _restoreGroupEvents(String channelId) async {
+    try {
+      final channel = await _databaseService.getChannelById(channelId);
+      if (channel == null || !channel.isGroup) return;
+      final ws = GroupWorkspaceService.instance;
+      final logs = await ws.readEventLogs(
+        groupId: channel.groupFamilyId,
+        sessionId: channelId,
+      );
+      if (logs.isEmpty) return;
+      final entries = <({int seq, GroupEvent event})>[];
+      for (final log in logs) {
+        final event = GroupEvent.fromPersisted(log.payload, channelId: channelId);
+        if (event != null) {
+          entries.add((seq: log.seq, event: event));
+        }
+      }
+      if (entries.isEmpty) return;
+      _groupEventStore.restore(channelId, entries);
+      LoggerService().info(
+        'restored ${entries.length} group events for $channelId',
+        tag: 'ChatService',
+      );
+    } catch (e) {
+      LoggerService().debug(
+        'group event restore failed for $channelId: $e',
+        tag: 'ChatService',
       );
     }
   }
@@ -371,6 +407,24 @@ class ChatService {
     ));
   }
 
+  /// 发射工作流宏观被动事件（workflowStageStarted / workflowCompleted /
+  /// workflowFailed）。仅记入事件存储并注入成员上下文，不唤醒管理员
+  /// （不在 EventPerceptionPolicy.activeNotifyTypes 中）。
+  void _emitWorkflowMacroEvent({
+    required String channelId,
+    required GroupEventType type,
+    required String summary,
+    int? stageIndex,
+  }) {
+    _groupEventPerceptionScheduler.schedule(GroupEvent(
+      id: _uuid.v4(),
+      type: type,
+      channelId: channelId,
+      stageIndex: stageIndex,
+      summary: summary,
+    ));
+  }
+
   /// Notifier that emits the set of agent IDs currently typing in 1:1 chats.
   final ValueNotifier<Set<String>> typingAgentIds = ValueNotifier<Set<String>>({});
 
@@ -385,6 +439,19 @@ class ChatService {
     // commands seen during short-lived health-check connections, even
     // though those connections are disposed before the chat screen opens.
     ACPAgentConnection.slashCommandsSnapshotHook = cacheSlashCommandsSnapshot;
+    // 步骤被显式跳过 → 发射 stepSkipped 事件（被动，不唤醒管理员）。
+    // 闭包内才访问 _groupEventPerceptionScheduler，避免在构造期提前初始化。
+    WorkflowService.instance.onStepSkipped = (step, channelId) {
+      _groupEventPerceptionScheduler.schedule(GroupEvent(
+        id: _uuid.v4(),
+        type: GroupEventType.stepSkipped,
+        channelId: channelId,
+        stageIndex: step.stageIndex,
+        stepIndex: step.stepIndex,
+        agentName: step.agentName,
+        summary: '步骤被跳过',
+      ));
+    };
   }
 
   /// Notification provider, injected from the widget layer.
@@ -1106,7 +1173,7 @@ $originalQuestion
       originalQuestion: originalQuestion,
     );
 
-    await taskCompleter.future.timeout(const Duration(hours: 3));
+    await taskCompleter.future.timeout(acpTaskTimeout);
 
     connection.unregisterTaskCallbacks(taskId);
 
@@ -1844,27 +1911,32 @@ $originalQuestion
       String agentId, String agentName, String interactionType, Map<String, dynamic> data,
     )? onInteractionRequest,
     void Function(String? workflowId)? onActiveWorkflowChanged,
-  }) => _groupOrchestrationService.sendMessageToGroup(
-    channelId: channelId,
-    content: content,
-    userId: userId,
-    userName: userName,
-    agentIds: agentIds,
-    mentionedAgentIds: mentionedAgentIds,
-    mentionOnlyMode: mentionOnlyMode,
-    adminAgentId: adminAgentId,
-    replyToId: replyToId,
-    flowMode: flowMode,
-    userMessageMetadata: userMessageMetadata,
-    attachments: attachments,
-    acpCancellationToken: acpCancellationToken,
-    onStreamChunk: onStreamChunk,
-    onAgentStart: onAgentStart,
-    onAgentDone: onAgentDone,
-    onAllDone: onAllDone,
-    onActiveWorkflowChanged: onActiveWorkflowChanged,
-    onInteractionRequest: onInteractionRequest,
-  );
+  }) async {
+    // H3: 崩溃重启后回放持久化事件，让本轮编排/成员上下文感知重启前的节点
+    // 成败与 loop 轮次（best-effort，失败不阻断编排）。
+    await _restoreGroupEvents(channelId);
+    return _groupOrchestrationService.sendMessageToGroup(
+      channelId: channelId,
+      content: content,
+      userId: userId,
+      userName: userName,
+      agentIds: agentIds,
+      mentionedAgentIds: mentionedAgentIds,
+      mentionOnlyMode: mentionOnlyMode,
+      adminAgentId: adminAgentId,
+      replyToId: replyToId,
+      flowMode: flowMode,
+      userMessageMetadata: userMessageMetadata,
+      attachments: attachments,
+      acpCancellationToken: acpCancellationToken,
+      onStreamChunk: onStreamChunk,
+      onAgentStart: onAgentStart,
+      onAgentDone: onAgentDone,
+      onAllDone: onAllDone,
+      onActiveWorkflowChanged: onActiveWorkflowChanged,
+      onInteractionRequest: onInteractionRequest,
+    );
+  }
 
   /// Track which workflows are currently being executed to prevent concurrent runs.
   final Map<String, ActiveWorkflowExecution> _activeWorkflowExecutions = {};
@@ -2057,6 +2129,10 @@ $originalQuestion
     bool reachedTerminalState = false;
 
     try {
+      // H3: 崩溃重启后回放持久化事件，让后续节点上下文/感知回合感知重启前
+      // 的节点成败（best-effort，失败不阻断执行）。
+      await _restoreGroupEvents(channelId);
+
       final workflow = await _workflowService.getWorkflowExecutionWithSteps(workflowId);
       if (workflow == null) {
         reachedTerminalState = true; // nothing to do
@@ -2076,6 +2152,11 @@ $originalQuestion
       // All steps already terminal — finalize without re-running agents.
       if (workflow.allStepsSucceeded) {
         await _workflowService.completeWorkflow(workflowId, summary: '所有阶段执行完毕');
+        _emitWorkflowMacroEvent(
+          channelId: channelId,
+          type: GroupEventType.workflowCompleted,
+          summary: '工作流所有阶段执行完毕',
+        );
         reachedTerminalState = true;
         return;
       }
@@ -2083,6 +2164,11 @@ $originalQuestion
         await _workflowService.failWorkflow(
           workflowId,
           'Workflow has failed steps and no remaining work',
+        );
+        _emitWorkflowMacroEvent(
+          channelId: channelId,
+          type: GroupEventType.workflowFailed,
+          summary: '工作流存在失败步骤且无剩余工作',
         );
         reachedTerminalState = true;
         return;
@@ -2324,6 +2410,11 @@ $originalQuestion
             workflowId,
             summary: '所有阶段执行完毕',
           );
+          _emitWorkflowMacroEvent(
+            channelId: channelId,
+            type: GroupEventType.workflowCompleted,
+            summary: '工作流所有阶段执行完毕',
+          );
           reachedTerminalState = true;
           return;
         }
@@ -2331,6 +2422,11 @@ $originalQuestion
           await _workflowService.failWorkflow(
             workflowId,
             'Workflow has failed steps and no remaining work',
+          );
+          _emitWorkflowMacroEvent(
+            channelId: channelId,
+            type: GroupEventType.workflowFailed,
+            summary: '工作流存在失败步骤且无剩余工作',
           );
           reachedTerminalState = true;
           return;
@@ -2722,6 +2818,14 @@ $originalQuestion
 
         final steps = stageMap[stageIdx]!;
 
+        // 被动事件：成员感知「工作流进入新阶段」（不唤醒管理员，仅注入上下文）。
+        _emitWorkflowMacroEvent(
+          channelId: channelId,
+          type: GroupEventType.workflowStageStarted,
+          stageIndex: stageIdx,
+          summary: '工作流进入阶段 ${stageIdx + 1}',
+        );
+
         // 按频道类型分支：群聊步骤并行（群聊执行器）；DM 同阶段不同 agent
         // 并行、同 agent 串行（见 executeDmStage）。
         if (isDmWorkflow) {
@@ -2753,6 +2857,11 @@ $originalQuestion
               .map((s) => s.agentName)
               .join('、');
           await _workflowService.failWorkflow(workflowId, 'Stage ${stageIdx + 1} has failed steps');
+          _emitWorkflowMacroEvent(
+            channelId: channelId,
+            type: GroupEventType.workflowFailed,
+            summary: '阶段 ${stageIdx + 1} 存在失败步骤，工作流终止',
+          );
           // 收尾总结已承担失败时的管理员响应：取消 stepFailed 触发的待决感知
           // 回合，避免管理员对同一失败连续输出两条消息。
           _groupEventPerceptionScheduler.cancelPendingForChannel(channelId);
@@ -2788,6 +2897,11 @@ $originalQuestion
             await _workflowService.failWorkflow(
               workflowId,
               '管理员在阶段 ${stageIdx + 1} 决定中止工作流',
+            );
+            _emitWorkflowMacroEvent(
+              channelId: channelId,
+              type: GroupEventType.workflowFailed,
+              summary: '管理员决定中止工作流',
             );
             await _saveWorkflowFailureMessage(
               channelId: channelId,
@@ -2845,6 +2959,11 @@ $originalQuestion
           workflowId,
           '部分步骤失败：$failedNames',
         );
+        _emitWorkflowMacroEvent(
+          channelId: channelId,
+          type: GroupEventType.workflowFailed,
+          summary: '工作流结束：部分步骤失败（$failedNames）',
+        );
         await _saveWorkflowFailureMessage(
           channelId: channelId,
           content: '⚠️ 工作流结束但存在失败步骤：$failedNames。',
@@ -2856,6 +2975,11 @@ $originalQuestion
       } else {
         await runClosingSummary('[SYSTEM] 工作流全部阶段已执行完毕，请对执行结果做最终总结，向用户汇报成果。');
         await _workflowService.completeWorkflow(workflowId, summary: '所有阶段执行完毕');
+        _emitWorkflowMacroEvent(
+          channelId: channelId,
+          type: GroupEventType.workflowCompleted,
+          summary: '工作流所有阶段执行完毕',
+        );
       }
       reachedTerminalState = true;
     } catch (e, stack) {
@@ -2866,6 +2990,11 @@ $originalQuestion
       );
       try {
         await _workflowService.failWorkflow(workflowId, 'Unexpected error: $e');
+        _emitWorkflowMacroEvent(
+          channelId: channelId,
+          type: GroupEventType.workflowFailed,
+          summary: '工作流执行出错：$e',
+        );
       } catch (_) {}
       await _saveWorkflowFailureMessage(
         channelId: channelId,
@@ -2877,6 +3006,11 @@ $originalQuestion
       if (!reachedTerminalState) {
         try {
           await _workflowService.failWorkflow(workflowId, 'Execution ended without terminal state');
+          _emitWorkflowMacroEvent(
+            channelId: channelId,
+            type: GroupEventType.workflowFailed,
+            summary: '工作流未进入终态',
+          );
         } catch (_) {}
       }
       final finished = _activeWorkflowExecutions.remove(workflowId);
