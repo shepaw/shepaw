@@ -26,6 +26,7 @@ import 'group/group_membership_perception.dart';
 import 'group/group_event.dart';
 import 'group/group_event_store.dart';
 import 'group/group_event_perception.dart';
+import 'group/group_stage_gate.dart';
 import '../storage/group_workspace_service.dart';
 import 'workflow/workflow_service.dart';
 import 'workflow/workflow_step_agent_resolver.dart';
@@ -1912,6 +1913,13 @@ $originalQuestion
   Future<void> _saveWorkflowFailureMessage({
     required String channelId,
     required String content,
+  }) =>
+      _saveWorkflowSystemMessage(channelId: channelId, content: content);
+
+  /// 写入一条系统消息（工作流失败/中止/门闸改派通知共用）。
+  Future<void> _saveWorkflowSystemMessage({
+    required String channelId,
+    required String content,
   }) async {
     try {
       final msgId = _uuid.v4();
@@ -1927,7 +1935,7 @@ $originalQuestion
       await _databaseService.markMessageAsRead(msgId);
       _notifyChannelUpdate(channelId);
     } catch (e) {
-      LoggerService().error('Failed to save workflow failure message', tag: 'ChatService', error: e);
+      LoggerService().error('Failed to save workflow system message', tag: 'ChatService', error: e);
     }
   }
 
@@ -2182,6 +2190,96 @@ $originalQuestion
       // 收尾总结分发：群聊走 admin 成员，DM 走 She。
       Future<void> runClosingSummary(String prompt) =>
           isDmWorkflow ? runDmClosingSummary(prompt) : runAdminClosingSummary(prompt);
+
+      // 阶段门闸（stageGate）：阶段边界阻塞一次管理员回合，管理员输出
+      // [GATE_DECISION: continue/abort/reassign:名字] 后工作流才进下一阶段。
+      // 任何异常/管理员不可用/无可解析决策 → 自动按「继续」放行，绝不阻塞。
+      Future<StageGateDecision> runStageGate({
+        required List<WorkflowStepExecution> stageSteps,
+        required int stageIdx,
+        required String nextStageName,
+      }) async {
+        final admin = workflowAdminAgent;
+        if (admin == null ||
+            !GroupEventPerceptionScheduler.canAdminExecuteTurn(
+              adminAgent: admin,
+              acpConnections: _acpConnections,
+            )) {
+          LoggerService().warning(
+            'stageGate: admin unavailable for channel $channelId, auto-continue',
+            tag: 'ChatService',
+          );
+          return StageGateDecision.proceed;
+        }
+
+        final resultLines = stageSteps.map(renderStageGateStepLine).toList();
+        final prompt = buildStageGatePrompt(
+          groupName: groupName,
+          stageIndex: stageIdx + 1,
+          stageName: stageSteps.firstOrNull?.stageName ?? '',
+          nextStageName: nextStageName,
+          resultLines: resultLines,
+          currentMembers: agents,
+        );
+
+        activeExec.onAgentStart?.call(admin.id, admin.name);
+        try {
+          final history = await loadChannelMessages(channelId, limit: 50);
+          final result = await _groupAgentExecutor.processGroupAgent(
+            agent: admin,
+            channelId: channelId,
+            content: prompt,
+            userId: userId,
+            userName: userName,
+            groupName: groupName,
+            groupDescription: groupDescription,
+            allAgents: agents,
+            historyMessages: history,
+            mentionedAgentIds: const [],
+            isFirstMessage: false,
+            isAdmin: true,
+            customSystemPrompt: stageGateSystemPrompt,
+            channelMembers: channelMembers,
+            adminAgent: admin,
+            mentionMode: mentionMode,
+            onStreamChunk: (aid, anm, chunk) {
+              activeExec.onStreamChunk?.call(aid, anm, chunk);
+            },
+            onAgentDone: (aid, anm, skipped) {
+              activeExec.onAgentDone?.call(aid, anm, skipped);
+            },
+          );
+
+          // 安全网：门闸回合绝不残留派发块（这里不跑任何编排循环）。
+          await _groupDispatchParser
+              .stripDispatchJsonFromLastMessage(channelId, admin.id);
+
+          var reply = result.content;
+          if (reply.trim().isEmpty) {
+            // 兜底：回合落库消息里读取管理员回复（部分远程路径不返回 content）。
+            final msgs = await loadChannelMessages(channelId, limit: 5);
+            reply = msgs.where((m) => m.senderId == admin.id).firstOrNull?.content ?? '';
+          }
+          final decision = parseGateDecision(reply);
+          if (decision == null) {
+            LoggerService().warning(
+              'stageGate: no parseable [GATE_DECISION] from admin, auto-continue',
+              tag: 'ChatService',
+            );
+            return StageGateDecision.proceed;
+          }
+          return decision;
+        } catch (e, st) {
+          LoggerService().error(
+            'stageGate turn failed for $channelId, auto-continue',
+            tag: 'ChatService',
+            error: e,
+            stackTrace: st,
+          );
+          activeExec.onAgentDone?.call(admin.id, admin.name, true);
+          return StageGateDecision.proceed;
+        }
+      }
 
       // Heal orphaned `running` steps left by a previous interrupted loop
       // before evaluating remaining work.
@@ -2630,7 +2728,14 @@ $originalQuestion
         // Check if any step in this stage failed
         final updatedWorkflow = await _workflowService.getWorkflowExecutionWithSteps(workflowId);
         final stageSteps = updatedWorkflow?.steps.where((s) => s.stageIndex == stageIdx) ?? [];
-        if (stageSteps.any((s) => s.status == StepExecutionStatus.failed)) {
+        final isLastStage = stageIdx == stageIndices.last;
+        // 阶段门闸：仅群聊工作流、频道开启且还有后续阶段时启用。开启后阶段
+        // 失败不再立刻终止工作流——交给管理员把关（继续/中止/换人）。
+        final gateEnabled =
+            !isDmWorkflow && channel.enableStageGate && !isLastStage;
+
+        if (stageSteps.any((s) => s.status == StepExecutionStatus.failed) &&
+            !gateEnabled) {
           final failedStepNames = stageSteps
               .where((s) => s.status == StepExecutionStatus.failed)
               .map((s) => s.agentName)
@@ -2650,6 +2755,68 @@ $originalQuestion
           );
           reachedTerminalState = true;
           return;
+        }
+
+        if (gateEnabled) {
+          // 门闸回合前取消 stepFailed 触发的待决感知回合，避免管理员同时收到
+          // 感知通知与门闸决策两轮消息。
+          _groupEventPerceptionScheduler.cancelPendingForChannel(channelId);
+          final nextStageIdx = stageIndices[stageIndices.indexOf(stageIdx) + 1];
+          final nextStageSteps = stageMap[nextStageIdx] ?? const <dynamic>[];
+          final nextStageName = nextStageSteps.isEmpty
+              ? ''
+              : (nextStageSteps.first as WorkflowStepExecution).stageName;
+          final decision = await runStageGate(
+            stageSteps: stageSteps.cast<WorkflowStepExecution>().toList(),
+            stageIdx: stageIdx,
+            nextStageName: nextStageName,
+          );
+
+          if (decision.isAbort) {
+            await _workflowService.failWorkflow(
+              workflowId,
+              '管理员在阶段 ${stageIdx + 1} 决定中止工作流',
+            );
+            await _saveWorkflowFailureMessage(
+              channelId: channelId,
+              content: '⏹ 管理员决定在阶段 ${stageIdx + 1} 中止工作流。',
+            );
+            await runClosingSummary(
+              '[SYSTEM] 管理员决定在阶段 ${stageIdx + 1} 中止工作流。请向用户总结已完成的部分成果、中止原因与后续建议。',
+            );
+            reachedTerminalState = true;
+            return;
+          }
+
+          if (decision.isReassign && decision.reassignTarget != null) {
+            // 换人：重写后续所有未开始步骤的执行人（DB + 内存 step 对象，
+            // 后者供后续 executeGroupStage 读取）。目标非当前成员时忽略并继续。
+            final target = decision.reassignTarget!.trim();
+            final targetAgent = agents.cast<RemoteAgent?>().firstWhere(
+                  (a) => a!.name == target,
+                  orElse: () => null,
+                );
+            if (targetAgent != null) {
+              for (final s in effectiveWorkflow.steps) {
+                if (s.stageIndex > stageIdx &&
+                    s.status == StepExecutionStatus.pending) {
+                  await _workflowService.updateStepAgentName(s.id, target);
+                  s.agentName = target;
+                }
+              }
+              await _saveWorkflowSystemMessage(
+                channelId: channelId,
+                content: '🔄 管理员决定将后续步骤的执行人改派为「$target」。',
+              );
+            } else {
+              LoggerService().warning(
+                'stageGate: reassign target "$target" is not a current member, '
+                'ignored and continuing',
+                tag: 'ChatService',
+              );
+            }
+          }
+          // proceed（或降级）：继续下一阶段。
         }
       }
 

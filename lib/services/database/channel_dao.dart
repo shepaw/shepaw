@@ -44,6 +44,7 @@ extension ChannelDao on LocalDatabaseService {
         'mention_mode': channel.mentionMode,
         'planning_mode': 0, // deprecated, kept for migration compatibility
         'flow_mode': channel.flowMode ? 1 : 0,
+        'enable_stage_gate': channel.enableStageGate ? 1 : 0,
         'created_at': now,
         'updated_at': now,
         'created_by': createdBy,
@@ -98,6 +99,7 @@ extension ChannelDao on LocalDatabaseService {
         'mention_mode': channel.mentionMode,
         'planning_mode': 0, // deprecated, kept for migration compatibility
         'flow_mode': channel.flowMode ? 1 : 0,
+        'enable_stage_gate': channel.enableStageGate ? 1 : 0,
         'updated_at': DateTime.now().toIso8601String(),
       },
       where: 'id = ?',
@@ -532,5 +534,6 @@ Channel _channelFromMap(Map<String, dynamic> map, List<ChannelMember> members) {
     mentionMode: map['mention_mode'] as String?,
     // planning_mode column kept for migration compatibility but no longer used
     flowMode: (map['flow_mode'] as int?) == 1,
+    enableStageGate: (map['enable_stage_gate'] as int?) == 1,
   );
 }

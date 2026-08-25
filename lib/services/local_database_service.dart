@@ -45,7 +45,7 @@ class LocalDatabaseService {
     final path = join(directory.path, 'shepaw.db');
     return await openDatabase(
       path,
-      version: 30,
+      version: 31,
       onCreate: _onCreate,
       onUpgrade: _onUpgrade,
     );
@@ -136,6 +136,7 @@ class LocalDatabaseService {
         mention_mode TEXT,
         planning_mode INTEGER DEFAULT 0,
         flow_mode INTEGER DEFAULT 0,
+        enable_stage_gate INTEGER DEFAULT 0,
         created_at TEXT NOT NULL,
         updated_at TEXT NOT NULL,
         created_by TEXT NOT NULL
@@ -814,6 +815,20 @@ class LocalDatabaseService {
       } catch (e) {
         LoggerService().error(
           'Failed to create external_memories (v30)',
+          tag: 'Migration',
+          error: e,
+        );
+      }
+    }
+
+    if (oldVersion < 31) {
+      // 版本 30 -> 31: channels 表增加 enable_stage_gate（阶段门闸开关，默认关）
+      try {
+        await db.execute(
+          'ALTER TABLE channels ADD COLUMN enable_stage_gate INTEGER DEFAULT 0');
+      } catch (e) {
+        LoggerService().error(
+          'Failed to add enable_stage_gate (v31)',
           tag: 'Migration',
           error: e,
         );

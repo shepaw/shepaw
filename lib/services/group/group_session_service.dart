@@ -52,6 +52,7 @@ class GroupSessionService {
       maxLoopRounds: currentChannel.maxLoopRounds,
       mentionMode: currentChannel.mentionMode,
       flowMode: currentChannel.flowMode,
+      enableStageGate: currentChannel.enableStageGate,
     );
     await _db.createChannel(channel, userId);
     // Each member gets a fresh bound DM for this new group session.

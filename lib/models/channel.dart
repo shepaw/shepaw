@@ -69,6 +69,8 @@ class Channel {
   final String? mentionMode;
   /// Flow 模式：Admin 生成阶段化 FlowPlan，由 FlowExecutor 主动驱动执行
   final bool flowMode;
+  /// 阶段门闸：工作流每个阶段结束后阻塞，管理员决策「继续/中止/换人」后才进下一阶段
+  final bool enableStageGate;
 
   /// 获取有效的最大循环轮次，默认 50
   int get effectiveMaxLoopRounds => maxLoopRounds ?? 50;
@@ -99,6 +101,7 @@ class Channel {
     this.maxLoopRounds,
     this.mentionMode,
     this.flowMode = false,
+    this.enableStageGate = false,
   });
 
   /// Returns the ID that links all sessions of the same group together.
@@ -136,6 +139,7 @@ class Channel {
     int? maxLoopRounds,
     String? mentionMode,
     bool flowMode = false,
+    bool enableStageGate = false,
   }) {
     return Channel(
       id: id,
@@ -162,6 +166,7 @@ class Channel {
       maxLoopRounds: maxLoopRounds,
       mentionMode: mentionMode,
       flowMode: flowMode,
+      enableStageGate: enableStageGate,
     );
   }
 
@@ -214,6 +219,7 @@ class Channel {
       maxLoopRounds: json['metadata']?['max_loop_rounds'] as int?,
       mentionMode: json['metadata']?['mention_mode'],
       flowMode: json['flow_mode'] as bool? ?? false,
+      enableStageGate: json['enable_stage_gate'] as bool? ?? false,
     );
   }
 
@@ -237,6 +243,7 @@ class Channel {
     int? maxLoopRounds,
     String? mentionMode,
     bool? flowMode,
+    bool? enableStageGate,
   }) {
     return Channel(
       id: id ?? this.id,
@@ -258,6 +265,7 @@ class Channel {
       maxLoopRounds: maxLoopRounds ?? this.maxLoopRounds,
       mentionMode: mentionMode ?? this.mentionMode,
       flowMode: flowMode ?? this.flowMode,
+      enableStageGate: enableStageGate ?? this.enableStageGate,
     );
   }
 
@@ -278,6 +286,7 @@ class Channel {
       },
       'is_private': isPrivate,
       if (flowMode) 'flow_mode': true,
+      if (enableStageGate) 'enable_stage_gate': true,
       if (unreadCount != null) 'unread_count': unreadCount,
       if (parentGroupId != null) 'parent_group_id': parentGroupId,
       if (sourceGroupChannelId != null)

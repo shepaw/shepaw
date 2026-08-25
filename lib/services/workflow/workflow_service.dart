@@ -385,6 +385,21 @@ class WorkflowService {
     if (workflowId != null) _notify(workflowId);
   }
 
+  /// Rewrite the executing agent of a step — used by the stage gate's
+  /// `reassign:名字` decision to hand subsequent pending steps to another
+  /// member. Only meaningful for steps that have not started yet.
+  Future<void> updateStepAgentName(String stepId, String agentName) async {
+    final db = await _db.database;
+    await db.update(
+      'workflow_step_executions',
+      {'agent_name': agentName},
+      where: 'id = ?',
+      whereArgs: [stepId],
+    );
+    final workflowId = await _getWorkflowIdForStep(stepId);
+    if (workflowId != null) _notify(workflowId);
+  }
+
   // ===========================================================================
   // Reactive Streams
   // ===========================================================================

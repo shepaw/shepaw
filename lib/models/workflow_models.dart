@@ -260,7 +260,8 @@ class WorkflowStepExecution {
   final int stageIndex;
   final int stepIndex;
   final String stageName;
-  final String agentName;
+  /// 执行成员名；阶段门闸 reassign 决策可改写后续待执行步骤的执行人。
+  String agentName;
   final String instruction;
   StepExecutionStatus status;
   DateTime? startedAt;
