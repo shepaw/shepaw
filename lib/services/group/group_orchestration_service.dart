@@ -61,6 +61,11 @@ class GroupOrchestrationService {
   /// null 或空列表时不注入。以 channelId 为参数以便按频道读取事件日志。
   final List<String> Function(String channelId)? loopEventLines;
 
+  /// L1/L2 近期事件感知行：为 mention-direct / broadcast / cascade / 工作流与
+  /// loop 的 admin 收尾等回合返回要注入的【近期事件】文本行。null 或空列表
+  /// 时不注入。以 channelId 为参数以便按频道读取事件日志。
+  final List<String> Function(String channelId)? eventDigestLines;
+
   GroupOrchestrationService({
     required LocalDatabaseService db,
     required Uuid uuid,
@@ -76,6 +81,7 @@ class GroupOrchestrationService {
     this.onOrchestrationRound,
     this.onGroupEvent,
     this.loopEventLines,
+    this.eventDigestLines,
   })  : _db = db,
         _uuid = uuid,
         _executor = executor,
@@ -88,6 +94,18 @@ class GroupOrchestrationService {
     final lines = loopEventLines?.call(channelId) ?? const <String>[];
     return lines.join('\n');
   }
+
+  /// 汇总 [eventDigestLines]（若提供）为近期事件感知行（L1/L2）。供
+  /// mention-direct / broadcast / cascade / admin 收尾等回合注入。
+  List<String> _buildEventDigestLines(String channelId) =>
+      eventDigestLines?.call(channelId) ?? const <String>[];
+
+  /// 把近期事件块附加到 [content] 尾部；无事件行时原样返回，不注入空标签。
+  String _withEventDigest(String content, String channelId) =>
+      GroupDispatchParser.withEventDigestNote(
+        content,
+        _buildEventDigestLines(channelId),
+      );
 
   /// Matches `store://<space>/<device>/<path>…` tokens in free text, stopping
   /// at whitespace / markdown closers / CJK punctuation.
@@ -574,7 +592,8 @@ class GroupOrchestrationService {
                 final content = reason != null
                     ? '【成员提及】$reason\n\n$baseContent'
                     : baseContent;
-                return '$content$memberMemoryNote';
+                // L2：cascade 成员回合也注入近期事件感知行。
+                return _withEventDigest('$content$memberMemoryNote', channelId);
               }(),
               attachments: attachments,
               userId: userId,
@@ -630,7 +649,7 @@ class GroupOrchestrationService {
           future: _executor.processGroupAgent(
             agent: agent,
             channelId: channelId,
-            content: effectiveContent,
+            content: _withEventDigest(effectiveContent, channelId),
             attachments: attachments,
             userId: userId,
             userName: userName,
@@ -722,7 +741,7 @@ class GroupOrchestrationService {
         }) => _executor.processGroupAgent(
           agent: agent,
           channelId: channelId,
-          content: effectiveContent,
+          content: _withEventDigest(effectiveContent, channelId),
           attachments: attachments,
           userId: userId,
           userName: userName,
@@ -1091,7 +1110,7 @@ class GroupOrchestrationService {
                 await _executor.processGroupAgent(
                   agent: adminAgent,
                   channelId: channelId,
-                  content: effectiveContent,
+                  content: _withEventDigest(effectiveContent, channelId),
                   attachments: attachments,
                   userId: userId,
                   userName: userName,
@@ -1160,7 +1179,7 @@ class GroupOrchestrationService {
               await _executor.processGroupAgent(
                 agent: adminAgent,
                 channelId: channelId,
-                content: effectiveContent,
+                content: _withEventDigest(effectiveContent, channelId),
                 attachments: attachments,
                 userId: userId,
                 userName: userName,
@@ -1386,7 +1405,7 @@ class GroupOrchestrationService {
                 await _executor.processGroupAgent(
                   agent: adminAgent,
                   channelId: channelId,
-                  content: effectiveContent,
+                  content: _withEventDigest(effectiveContent, channelId),
                   attachments: attachments,
                   userId: userId,
                   userName: userName,
@@ -1431,7 +1450,7 @@ class GroupOrchestrationService {
               adminTurn = await _executor.processGroupAgent(
                 agent: adminAgent,
                 channelId: channelId,
-                content: effectiveContent,
+                content: _withEventDigest(effectiveContent, channelId),
                 attachments: attachments,
                 userId: userId,
                 userName: userName,
@@ -1670,7 +1689,7 @@ class GroupOrchestrationService {
               await _executor.processGroupAgent(
                 agent: adminAgent,
                 channelId: channelId,
-                content: effectiveContent,
+                content: _withEventDigest(effectiveContent, channelId),
                 attachments: attachments,
                 userId: userId,
                 userName: userName,
@@ -1855,7 +1874,7 @@ class GroupOrchestrationService {
           _executor.processGroupAgent(
             agent: agent,
             channelId: channelId,
-            content: effectiveContent,
+            content: _withEventDigest(effectiveContent, channelId),
             attachments: attachments,
             userId: userId,
             userName: userName,

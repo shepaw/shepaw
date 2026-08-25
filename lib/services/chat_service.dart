@@ -211,6 +211,22 @@ class ChatService {
           events.length <= 3 ? events : events.sublist(events.length - 3);
       return tail.map(renderEventLine).toList();
     },
+    // L1/L2：mention-direct / broadcast / cascade / admin 收尾回合注入近期
+    // 事件感知行（工作流节点成败 + loop 轮次）。loop 派发成员回合已有
+    // loopEventLines（上轮事件），这里给其余回合补上事件 digest。
+    eventDigestLines: (channelId) {
+      final events = _groupEventStore
+          .recent(channelId, limit: 30)
+          .where(
+            (e) =>
+                isWorkflowStepEvent(e) ||
+                e.type == GroupEventType.loopRoundCompleted,
+          )
+          .toList();
+      final tail =
+          events.length <= 5 ? events : events.sublist(events.length - 5);
+      return tail.map(renderEventLine).toList();
+    },
   );
 
   /// Sub-service: coalesced admin perception turn after member enter/leave.

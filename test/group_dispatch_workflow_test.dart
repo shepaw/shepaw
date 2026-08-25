@@ -289,4 +289,42 @@ void main() {
     expect(dispatch.isDone, isTrue);
     expect(dispatch.steps, isEmpty);
   });
+
+  group('withEventDigestNote (L1/L2)', () {
+    test('returns content unchanged when there are no event lines', () {
+      const content = '你的任务：实现功能';
+      expect(
+        GroupDispatchParser.withEventDigestNote(content, const []),
+        content,
+      );
+      expect(
+        GroupDispatchParser.withEventDigestNote(
+          content,
+          const ['  ', '', '  '],
+        ),
+        content,
+      );
+    });
+
+    test('appends a labeled 近期事件 block when lines are present', () {
+      final out = GroupDispatchParser.withEventDigestNote(
+        '你的任务：实现功能',
+        const ['✅ 步骤 1 完成', '❌ 步骤 2 失败'],
+      );
+      expect(out, contains('你的任务：实现功能'));
+      expect(out, contains('【近期事件】'));
+      expect(out, contains('✅ 步骤 1 完成'));
+      expect(out, contains('❌ 步骤 2 失败'));
+    });
+
+    test('drops blank lines inside the digest block', () {
+      final out = GroupDispatchParser.withEventDigestNote(
+        'base',
+        const ['line-a', '', 'line-b'],
+      );
+      // 事件行之间不留空行（空行被过滤），但标签前的分隔符 \n\n 保留。
+      expect(out, contains('【近期事件】\nline-a\nline-b'));
+      expect(out, isNot(contains('line-a\n\nline-b')));
+    });
+  });
 }

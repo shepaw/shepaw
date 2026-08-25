@@ -201,6 +201,20 @@ class GroupDispatchParser {
     return '【本轮派发计划】\n${lines.join('\n')}';
   }
 
+  /// 构建【近期事件】块并附加到 [content] 尾部（L1/L2）。
+  ///
+  /// [eventLines] 为空或全空行时原样返回 [content]，不注入空标签——保证
+  /// 无事件可感知的回合内容不变。有事件行时以「近期事件」标签引出，供
+  /// mention-direct / broadcast / cascade / admin 收尾等回合感知最近节点成败。
+  static String withEventDigestNote(String content, List<String> eventLines) {
+    final lines = eventLines
+        .map((l) => l.trim())
+        .where((l) => l.isNotEmpty)
+        .toList();
+    if (lines.isEmpty) return content;
+    return '$content\n\n【近期事件】\n${lines.join('\n')}';
+  }
+
   /// Resolve structured mention declarations into [MentionEntry]s.
   ///
   /// Mentions are declared structurally — never parsed from chat text, so a
