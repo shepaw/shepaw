@@ -61,6 +61,8 @@ class StorageBrowserScreen extends StatefulWidget {
     this.extraMenuItems,
     this.onExtraMenuSelected,
     this.usedBytes,
+    this.hideInternalFiles,
+    this.onHideInternalFilesChanged,
     this.pickForAttachment = false,
     this.maxPickCount = 9,
   });
@@ -109,6 +111,15 @@ class StorageBrowserScreen extends StatefulWidget {
   /// 非 null 时在 AppBar 展示「已使用 xxx」轻量 badge。
   final int? usedBytes;
 
+  /// 「最近」是否隐藏内部记账文件（受控）。
+  ///
+  /// 非 null 时由父级持有开关状态（如储物袋「更多」菜单），
+  /// 列表中不再展示 [FilterChip]；null 时内部自管理并显示开关。
+  final bool? hideInternalFiles;
+
+  /// [hideInternalFiles] 变化回调；仅在受控模式下使用。
+  final ValueChanged<bool>? onHideInternalFilesChanged;
+
   /// 聊天附件选择：复用浏览排版，多选后 pop [StoreAttachmentRef] 列表。
   final bool pickForAttachment;
 
@@ -146,8 +157,12 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
   /// 目录名 → 可读标签缓存，key 为 `'$space:$name'`；同一 (space, name) 只解析一次。
   final Map<String, StorageFolderLabel> _folderLabelCache = {};
 
+  /// 「最近」内部自管理的隐藏状态；受控时以 [StorageBrowserScreen.hideInternalFiles] 为准。
+  bool _internalHideInternalFiles = true;
+
   /// 「最近」是否隐藏内部记账文件（默认隐藏，用户可开关）。
-  bool _hideInternalFiles = true;
+  bool get _hideInternalFiles =>
+      widget.hideInternalFiles ?? _internalHideInternalFiles;
 
   /// 最近文件的归属 owner 标签缓存，key 为 `'$space:$owner'`。
   final Map<String, StorageFolderLabel> _recentOwnerLabels = {};
@@ -2106,6 +2121,10 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
   }
 
   Widget _buildRecentFilterChip(AppLocalizations l10n) {
+    // 受控模式：开关收进储物袋「更多」菜单，列表中不再重复展示。
+    if (widget.hideInternalFiles != null) {
+      return const SizedBox.shrink();
+    }
     return Align(
       alignment: Alignment.centerRight,
       child: Padding(
@@ -2113,7 +2132,8 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
         child: FilterChip(
           label: Text(l10n.storage_recentHideInternal),
           selected: _hideInternalFiles,
-          onSelected: (v) => setState(() => _hideInternalFiles = v),
+          onSelected: (v) =>
+              setState(() => _internalHideInternalFiles = v),
           visualDensity: VisualDensity.compact,
           materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
         ),

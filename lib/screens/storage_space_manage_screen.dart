@@ -12,17 +12,24 @@ import 'storage_space_settings_screen.dart';
 
 /// 储物袋本机浏览页「更多」菜单动作。
 enum StorageMoreAction {
+  hideInternal,
   usage,
   bindings,
   recycle,
   snapshots,
 }
 
-/// 储物袋「更多」菜单：用量 / 目录绑定 / 回收站 / 备份与恢复。
+/// 储物袋「更多」菜单：隐藏内部文件 / 用量 / 目录绑定 / 回收站 / 备份与恢复。
 List<PopupMenuEntry<StorageMoreAction>> storageMoreMenuItems(
-  AppLocalizations l10n,
-) {
+  AppLocalizations l10n, {
+  bool hideInternalSelected = false,
+}) {
   return [
+    CheckedPopupMenuItem(
+      value: StorageMoreAction.hideInternal,
+      checked: hideInternalSelected,
+      child: Text(l10n.storage_recentHideInternal),
+    ),
     PopupMenuItem(
       value: StorageMoreAction.usage,
       child: Text(l10n.storage_usageTitle),
@@ -48,6 +55,9 @@ Future<void> openStorageMoreAction(
   StorageMoreAction action,
 ) async {
   switch (action) {
+    case StorageMoreAction.hideInternal:
+      // 视图开关，由持有状态的页面处理，不打开新页面。
+      return;
     case StorageMoreAction.usage:
     case StorageMoreAction.bindings:
     case StorageMoreAction.recycle:
@@ -87,6 +97,18 @@ class _StorageSpaceManageScreenState extends State<StorageSpaceManageScreen> {
   int? _usedBytes;
   StreamSubscription<void>? _usageSub;
 
+  /// 「最近」是否隐藏内部记账文件；由本页「更多」菜单持有并下发给浏览页。
+  bool _hideInternalFiles = true;
+
+  /// 「更多」菜单选中：隐藏内部文件为开关，其余打开对应页面。
+  void _handleMoreAction(StorageMoreAction action) {
+    if (action == StorageMoreAction.hideInternal) {
+      setState(() => _hideInternalFiles = !_hideInternalFiles);
+      return;
+    }
+    unawaited(openStorageMoreAction(context, action));
+  }
+
   @override
   void initState() {
     super.initState();
@@ -121,20 +143,28 @@ class _StorageSpaceManageScreenState extends State<StorageSpaceManageScreen> {
     return StorageBrowserScreen(
       usedBytes: _usedBytes,
       initialSpace: widget.initialSpace,
+      hideInternalFiles: _hideInternalFiles,
+      onHideInternalFilesChanged: (v) =>
+          setState(() => _hideInternalFiles = v),
       extraActions: [
         PopupMenuButton<StorageMoreAction>(
           tooltip: l10n.storage_moreSettings,
           icon: const Icon(Icons.more_horiz),
           position: PopupMenuPosition.under,
-          onSelected: (action) =>
-              unawaited(openStorageMoreAction(context, action)),
-          itemBuilder: (ctx) => storageMoreMenuItems(l10n),
+          onSelected: _handleMoreAction,
+          itemBuilder: (ctx) => storageMoreMenuItems(
+            l10n,
+            hideInternalSelected: _hideInternalFiles,
+          ),
         ),
       ],
-      extraMenuItems: (ctx) => storageMoreMenuItems(l10n),
+      extraMenuItems: (ctx) => storageMoreMenuItems(
+        l10n,
+        hideInternalSelected: _hideInternalFiles,
+      ),
       onExtraMenuSelected: (value) {
         if (value is StorageMoreAction) {
-          unawaited(openStorageMoreAction(context, value));
+          _handleMoreAction(value);
         }
       },
     );
