@@ -23,6 +23,9 @@ import 'group/planning_helpers.dart';
 import 'group/group_agent_executor.dart';
 import 'group/group_orchestration_service.dart';
 import 'group/group_membership_perception.dart';
+import 'group/group_event.dart';
+import 'group/group_event_store.dart';
+import 'group/group_event_perception.dart';
 import '../storage/group_workspace_service.dart';
 import 'workflow/workflow_service.dart';
 import 'workflow/workflow_step_agent_resolver.dart';
@@ -208,6 +211,24 @@ class ChatService {
     dispatchParser: _groupDispatchParser,
   );
 
+  /// Sub-service: group event log (passive awareness + workspace persistence).
+  late final GroupEventStore _groupEventStore = GroupEventStore(
+    onPersist: _persistGroupEvent,
+  );
+
+  /// Sub-service: coalesced admin perception turns for active-notify group
+  /// events (workflow step failures, …).
+  late final GroupEventPerceptionScheduler _groupEventPerceptionScheduler =
+      GroupEventPerceptionScheduler(
+    db: _databaseService,
+    executor: _groupAgentExecutor,
+    acpConnections: _acpConnections,
+    loadChannelMessages: (channelId, {int limit = 100}) =>
+        loadChannelMessages(channelId, limit: limit),
+    dispatchParser: _groupDispatchParser,
+    eventStore: _groupEventStore,
+  );
+
   /// 群工作空间编排落盘适配：按 kind 写 round 状态或 dispatch 决定。
   /// 空间按群家族归属（幂等补缺）；失败仅记录，不阻断编排循环。
   Future<void> _persistOrchestrationRound({
@@ -272,6 +293,69 @@ class ChatService {
         error: e,
       );
     }
+  }
+
+  /// Best-effort workspace persistence of one group event (mutual-perception
+  /// event log). Failures are logged and swallowed.
+  Future<void> _persistGroupEvent(GroupEvent event, int seq) async {
+    try {
+      final channel = await _databaseService.getChannelById(event.channelId);
+      if (channel == null || !channel.isGroup) return;
+      final ws = GroupWorkspaceService.instance;
+      await ws.ensureGroupWorkspace(
+        groupId: channel.groupFamilyId,
+        members: [
+          for (final m in channel.members)
+            if (m.isAgent) (agentId: m.id, role: m.role),
+        ],
+      );
+      await ws.writeEventLog(
+        groupId: channel.groupFamilyId,
+        sessionId: event.channelId,
+        seq: seq,
+        payload: {
+          'kind': 'group_event',
+          'type': event.type.name,
+          'stage': event.stageIndex,
+          'step': event.stepIndex,
+          'agent_id': event.agentId,
+          'agent': event.agentName,
+          'summary': event.summary,
+          'ts': event.createdAt.toUtc().toIso8601String(),
+        },
+      );
+    } catch (e) {
+      LoggerService().error(
+        'persist group event failed',
+        tag: 'ChatService',
+        error: e,
+      );
+    }
+  }
+
+  /// Fire-and-forget workflow step event → perception scheduler + event log.
+  /// Synchronous, never blocks the workflow step.
+  void _emitWorkflowStepEvent({
+    required String channelId,
+    required GroupEventType type,
+    required int stageIndex,
+    required int stepIndex,
+    String? agentId,
+    String? agentName,
+    String summary = '',
+    Map<String, dynamic> payload = const {},
+  }) {
+    _groupEventPerceptionScheduler.schedule(GroupEvent(
+      id: _uuid.v4(),
+      type: type,
+      channelId: channelId,
+      stageIndex: stageIndex,
+      stepIndex: stepIndex,
+      agentId: agentId,
+      agentName: agentName,
+      summary: summary,
+      payload: payload,
+    ));
   }
 
   /// Notifier that emits the set of agent IDs currently typing in 1:1 chats.
@@ -2169,9 +2253,22 @@ $originalQuestion
         historyMessages.map((m) => m.content).join('\n'),
       );
 
+      // §7.6 互相感知事件系统：把最近的工作流节点事件以结构化行注入后续步骤
+      // 的 ContextBundle，让后续成员感知上一节点的成功/失败/产出。
+      List<String> workflowEventLines() {
+        final events = _groupEventStore
+            .recent(channelId, limit: 20)
+            .where(isWorkflowStepEvent)
+            .toList();
+        final tail =
+            events.length <= 5 ? events : events.sublist(events.length - 5);
+        return tail.map(renderEventLine).toList();
+      }
+
       List<String> workflowArtifactExtras() => [
             ...workflowArtifactLines,
             for (final m in historyMessages.take(20)) m.content,
+            ...workflowEventLines(),
           ];
 
       void absorbWorkflowArtifacts(String output) {
@@ -2220,6 +2317,14 @@ $originalQuestion
           );
           if (agent == null) {
             await _workflowService.failStep(step.id, 'Agent "${step.agentName}" not found');
+            _emitWorkflowStepEvent(
+              channelId: channelId,
+              type: GroupEventType.stepFailed,
+              stageIndex: step.stageIndex ?? 0,
+              stepIndex: step.stepIndex ?? 0,
+              agentName: step.agentName as String?,
+              summary: '未找到成员 ${step.agentName}',
+            );
             return;
           }
 
@@ -2277,8 +2382,28 @@ $originalQuestion
               step.id,
               outputSummary: ArtifactService.instance.truncateStepSummary(output),
             );
+            _emitWorkflowStepEvent(
+              channelId: channelId,
+              type: GroupEventType.stepCompleted,
+              stageIndex: step.stageIndex ?? 0,
+              stepIndex: step.stepIndex ?? 0,
+              agentId: agent.id,
+              agentName: agent.name,
+              summary:
+                  ArtifactService.instance.truncateStepSummary(output),
+            );
           } catch (e) {
             await _workflowService.failStep(step.id, e.toString());
+            _emitWorkflowStepEvent(
+              channelId: channelId,
+              type: GroupEventType.stepFailed,
+              stageIndex: step.stageIndex ?? 0,
+              stepIndex: step.stepIndex ?? 0,
+              agentId: agent.id,
+              agentName: agent.name,
+              summary: e.toString(),
+              payload: {'error': e.toString()},
+            );
             activeExec.onAgentDone?.call(agent.id, agent.name, false);
           }
         });
@@ -2314,6 +2439,14 @@ $originalQuestion
               'Agent "${step.agentName}" not found. '
               'Use agents.list and match the exact name.',
             );
+            _emitWorkflowStepEvent(
+              channelId: channelId,
+              type: GroupEventType.stepFailed,
+              stageIndex: step.stageIndex,
+              stepIndex: step.stepIndex,
+              agentName: step.agentName,
+              summary: '未找到成员 ${step.agentName}',
+            );
             return;
           }
 
@@ -2332,6 +2465,15 @@ $originalQuestion
               await _workflowService.failStep(
                 step.id,
                 'Failed to open relay session for "${agent.name}": $e',
+              );
+              _emitWorkflowStepEvent(
+                channelId: channelId,
+                type: GroupEventType.stepFailed,
+                stageIndex: step.stageIndex,
+                stepIndex: step.stepIndex,
+                agentId: agent.id,
+                agentName: agent.name,
+                summary: '中转会话建立失败：$e',
               );
               return;
             }
@@ -2422,8 +2564,28 @@ $originalQuestion
               step.id,
               outputSummary: ArtifactService.instance.truncateStepSummary(output),
             );
+            _emitWorkflowStepEvent(
+              channelId: channelId,
+              type: GroupEventType.stepCompleted,
+              stageIndex: step.stageIndex,
+              stepIndex: step.stepIndex,
+              agentId: agent.id,
+              agentName: agent.name,
+              summary:
+                  ArtifactService.instance.truncateStepSummary(output),
+            );
           } catch (e) {
             await _workflowService.failStep(step.id, e.toString());
+            _emitWorkflowStepEvent(
+              channelId: channelId,
+              type: GroupEventType.stepFailed,
+              stageIndex: step.stageIndex,
+              stepIndex: step.stepIndex,
+              agentId: agent.id,
+              agentName: agent.name,
+              summary: e.toString(),
+              payload: {'error': e.toString()},
+            );
           } finally {
             activeExec.onAgentDone?.call(agent.id, agent.name, false);
           }
@@ -2474,6 +2636,9 @@ $originalQuestion
               .map((s) => s.agentName)
               .join('、');
           await _workflowService.failWorkflow(workflowId, 'Stage ${stageIdx + 1} has failed steps');
+          // 收尾总结已承担失败时的管理员响应：取消 stepFailed 触发的待决感知
+          // 回合，避免管理员对同一失败连续输出两条消息。
+          _groupEventPerceptionScheduler.cancelPendingForChannel(channelId);
           // Surface the failure in chat and let the admin give a closing
           // review — a failed workflow must never end in silence.
           await _saveWorkflowFailureMessage(

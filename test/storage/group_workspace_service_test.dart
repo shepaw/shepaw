@@ -204,6 +204,41 @@ void main() {
       final steps = json['steps'] as List;
       expect(steps.single['task'], '实现功能');
     });
+
+    test('writeEventLog 写 events/<seq>.json，与轮次目录隔离', () async {
+      await ws.ensureGroupWorkspace(
+        groupId: 'group_test4',
+        members: [(agentId: 'she', role: 'admin')],
+      );
+      await ws.writeEventLog(
+        groupId: 'group_test4',
+        sessionId: 'session_event',
+        seq: 1,
+        payload: {'kind': 'group_event', 'type': 'stepFailed', 'summary': 'boom'},
+      );
+      await ws.writeEventLog(
+        groupId: 'group_test4',
+        sessionId: 'session_event',
+        seq: 2,
+        payload: {'kind': 'group_event', 'type': 'stepCompleted'},
+      );
+
+      // 目录结构与轮次隔离
+      expect(
+        ws.eventsDir('group_test4', 'session_event'),
+        'group_group_test4/shared/orchestration/session_event/events',
+      );
+
+      // 可经 URI 读回（补零 6 位序号）
+      final home = (await ws.loadMeta('group_test4'))!.homeDevice;
+      final bytes = await StoreUriReader.instance.read(
+        'store://workspaces/$home/group_group_test4/shared/orchestration/'
+        'session_event/events/000002.json',
+      );
+      final json = jsonDecode(utf8.decode(bytes)) as Map<String, dynamic>;
+      expect(json['kind'], 'group_event');
+      expect(json['type'], 'stepCompleted');
+    });
   });
 
   group('store CLI 群空间权限', () {

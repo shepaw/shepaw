@@ -203,6 +203,11 @@ class GroupWorkspaceService {
       '${orchestrationRoot(groupId, sessionId)}/'
       'round-${round.toString().padLeft(4, '0')}';
 
+  /// 群事件日志目录：`…/orchestration/<sessionId>/events`（互相感知事件系统，
+  /// 与轮次目录隔离，避免与编排轮 state.json 冲突）。
+  String eventsDir(String groupId, String sessionId) =>
+      '${orchestrationRoot(groupId, sessionId)}/events';
+
   /// 外接 agent（group MCP 工具）写入的 inbox 目录：
   /// `…/orchestration/<sessionId>/inbox`。
   String inboxDir(String groupId, String sessionId) =>
@@ -348,6 +353,25 @@ class GroupWorkspaceService {
         'status': payload['status'],
         'updated_at': DateTime.now().toIso8601String(),
       },
+    );
+  }
+
+  /// 写一条群事件日志（互相感知事件系统）。写在专用 `events/` 目录，
+  /// 按 [seq] 顺序编号，供跨重启恢复最近事件。失败不影响调用方（best-effort）。
+  Future<void> writeEventLog({
+    required String groupId,
+    required String sessionId,
+    required int seq,
+    required Map<String, dynamic> payload,
+  }) async {
+    final meta = await loadMeta(groupId);
+    final home = meta?.homeDevice ?? await DeviceIdentity.deviceId();
+    await _writeJson(
+      groupId: groupId,
+      homeDeviceId: home,
+      relPath:
+          '${eventsDir(groupId, sessionId)}/${seq.toString().padLeft(6, '0')}.json',
+      payload: payload,
     );
   }
 

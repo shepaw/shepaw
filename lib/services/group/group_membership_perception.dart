@@ -1,13 +1,11 @@
-import 'dart:async';
-
 import '../../models/message.dart';
 import '../../models/remote_agent.dart';
 import '../acp_agent_connection.dart';
 import '../local_database_service.dart';
-import '../local_user_identity.dart';
-import '../logger_service.dart';
 import 'group_agent_executor.dart';
 import 'group_dispatch_parser.dart';
+import 'group_event.dart';
+import 'group_event_perception.dart';
 
 /// One roster change (join / leave) that should reach the group admin's
 /// awareness.
@@ -32,24 +30,12 @@ class MembershipChangeEvent {
 /// and triggers one admin turn via [GroupAgentExecutor.processGroupAgent] so
 /// the admin acknowledges the change and can note task reallocation.
 ///
-/// All scheduling is fire-and-forget: [schedule] never throws and never blocks
-/// the membership operation itself. LLM failures are logged and swallowed.
+/// This class is now a thin facade over [GroupEventPerceptionScheduler] with a
+/// membership-specific prompt builder; all debounce/guard/merge mechanics live
+/// in the generic engine. All scheduling is fire-and-forget: [schedule] never
+/// throws and never blocks the membership operation itself.
 class GroupMembershipPerceptionScheduler {
-  final LocalDatabaseService _db;
-  final GroupAgentExecutor _executor;
-  final Map<String, ACPAgentConnection> _acpConnections;
-  final Future<List<Message>> Function(String channelId, {int limit})
-      _loadChannelMessages;
-  final GroupDispatchParser _dispatchParser;
-  final Duration _debounce;
-
-  /// Pending changes per channel, coalesced within the debounce window.
-  final Map<String, List<MembershipChangeEvent>> _pending = {};
-  final Map<String, Timer> _timers = {};
-
-  /// Channels with an in-flight perception turn — prevents overlapping
-  /// `processGroupAgent` calls for the same channel.
-  final Set<String> _running = {};
+  final GroupEventPerceptionScheduler _inner;
 
   GroupMembershipPerceptionScheduler({
     required LocalDatabaseService db,
@@ -59,12 +45,16 @@ class GroupMembershipPerceptionScheduler {
         loadChannelMessages,
     GroupDispatchParser? dispatchParser,
     Duration debounce = const Duration(seconds: 3),
-  })  : _db = db,
-        _executor = executor,
-        _acpConnections = acpConnections,
-        _loadChannelMessages = loadChannelMessages,
-        _dispatchParser = dispatchParser ?? GroupDispatchParser(db),
-        _debounce = debounce;
+  }) : _inner = GroupEventPerceptionScheduler(
+          db: db,
+          executor: executor,
+          acpConnections: acpConnections,
+          loadChannelMessages: loadChannelMessages,
+          dispatchParser: dispatchParser,
+          debounce: debounce,
+          promptBuilder: _buildMembershipPrompt,
+          customSystemPrompt: perceptionSystemPrompt,
+        );
 
   /// Record a membership change. Synchronous and non-blocking.
   void schedule({
@@ -73,119 +63,31 @@ class GroupMembershipPerceptionScheduler {
     required String memberName,
     required bool isJoin,
   }) {
-    _pending.putIfAbsent(channelId, () => []).add(MembershipChangeEvent(
-          memberId: memberId,
-          memberName: memberName,
-          isJoin: isJoin,
-        ));
-    _arm(channelId);
+    _inner.schedule(GroupEvent.memberChange(
+      channelId: channelId,
+      memberId: memberId,
+      memberName: memberName,
+      isJoin: isJoin,
+    ));
   }
 
-  void _arm(String channelId) {
-    _timers[channelId]?.cancel();
-    _timers[channelId] = Timer(_debounce, () {
-      _timers.remove(channelId);
-      unawaited(_drain(channelId));
-    });
-  }
-
-  Future<void> _drain(String channelId) async {
-    if (_running.contains(channelId)) {
-      // A turn is already in flight; keep the changes pending and re-arm so
-      // they are picked up once the current turn settles.
-      _arm(channelId);
-      return;
-    }
-    final changes = _pending.remove(channelId);
-    if (changes == null || changes.isEmpty) return;
-
-    _running.add(channelId);
-    try {
-      await _runTurn(channelId, changes);
-    } finally {
-      _running.remove(channelId);
-    }
-  }
-
-  Future<void> _runTurn(
-    String channelId,
-    List<MembershipChangeEvent> changes,
-  ) async {
-    try {
-      final channel = await _db.getChannelById(channelId);
-      final adminId = channel?.adminAgentId;
-      if (channel == null || adminId == null) return;
-
-      // Never notify the admin about its own join/leave.
-      final filtered =
-          changes.where((c) => c.memberId != adminId).toList();
-      if (filtered.isEmpty) return;
-
-      final adminAgent = await _db.getRemoteAgentById(adminId);
-      if (adminAgent == null) return;
-      if (!canAdminExecuteTurn(
-        adminAgent: adminAgent,
-        acpConnections: _acpConnections,
-      )) {
-        return;
-      }
-
-      // Current member agents — used both for the prompt and the executor's
-      // `allAgents` so the admin sees the up-to-date roster.
-      final memberIds = await _db.getChannelMemberIds(channelId);
-      final allAgents = <RemoteAgent>[];
-      for (final id in memberIds) {
-        final a = await _db.getRemoteAgentById(id);
-        if (a != null) allAgents.add(a);
-      }
-
-      // Snapshot history, mirroring orchestration's non-system filter. The
-      // roster-change details come from the content prompt below.
-      final raw = await _loadChannelMessages(channelId, limit: 50);
-      final history = raw
-          .where((m) =>
-              m.type != MessageType.system &&
-              m.type != MessageType.permissionAudit)
-          .toList();
-
-      final content = buildMembershipChangePrompt(
-        changes: filtered,
-        currentMembers: allAgents,
-        groupName: channel.name,
-      );
-
-      await _executor.processGroupAgent(
-        agent: adminAgent,
-        channelId: channelId,
-        content: content,
-        userId: LocalUserIdentity.id,
-        userName: LocalUserIdentity.displayName,
-        groupName: channel.name,
-        groupDescription: channel.description ?? '',
-        allAgents: allAgents,
-        historyMessages: history,
-        mentionedAgentIds: const [],
-        isFirstMessage: false,
-        isAdmin: true,
-        customSystemPrompt: perceptionSystemPrompt,
-        channelMembers: channel.members,
-        adminAgent: adminAgent,
-        isFlowMode: false,
-        messageVersion: null,
-      );
-
-      // Safety net: a perception turn must never leave a raw dispatch JSON
-      // block in the channel message (no orchestration loop runs here).
-      await _dispatchParser
-          .stripDispatchJsonFromLastMessage(channelId, adminAgent.id);
-    } catch (e, st) {
-      LoggerService().error(
-        'Group membership perception turn failed for $channelId',
-        tag: 'GroupMembershipPerception',
-        error: e,
-        stackTrace: st,
-      );
-    }
+  /// Adapt the generic event list back to the membership prompt shape so the
+  /// admin sees the familiar 加入/离开/当前成员 rendering.
+  static String _buildMembershipPrompt({
+    required String groupName,
+    required List<GroupEvent> events,
+    required List<RemoteAgent> currentMembers,
+  }) {
+    final changes = events.map((e) => MembershipChangeEvent(
+          memberId: e.agentId ?? '',
+          memberName: e.agentName ?? '',
+          isJoin: e.type == GroupEventType.memberJoined,
+        )).toList();
+    return buildMembershipChangePrompt(
+      changes: changes,
+      currentMembers: currentMembers,
+      groupName: groupName,
+    );
   }
 
   /// Whether a perception turn can execute for [adminAgent] right now.
@@ -196,9 +98,10 @@ class GroupMembershipPerceptionScheduler {
     required RemoteAgent adminAgent,
     required Map<String, ACPAgentConnection> acpConnections,
   }) {
-    if (adminAgent.isLocal) return true;
-    if (adminAgent.isPeerAgent) return true;
-    return acpConnections[adminAgent.id]?.isConnected == true;
+    return GroupEventPerceptionScheduler.canAdminExecuteTurn(
+      adminAgent: adminAgent,
+      acpConnections: acpConnections,
+    );
   }
 
   /// Build the perception prompt that reaches the admin as its turn content.
