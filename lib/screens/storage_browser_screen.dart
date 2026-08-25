@@ -189,6 +189,9 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
 
   bool get _canWrite => !_readOnly && !widget.manageLocalMirror;
 
+  /// 可新建/上传：分区根不允许新建空间，仅进入具体分区后可写时展示。
+  bool get _canCreate => _canWrite && _navSpace != null;
+
   bool get _canDelete => !_readOnly || widget.manageLocalMirror;
 
   PeerStoreShareAllowlist? _inboundShares;
@@ -249,12 +252,9 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
     return path == _navFloorPath || path.startsWith('$_navFloorPath/');
   }
 
-  /// 移动端：仅在已进入分区且可写时展示新建/上传。
+  /// 移动端：仅在空间 Tab 且已进入分区时可新建/上传。
   bool _mobileMineWritable(BuildContext context) =>
-      _isMobileLayout(context) &&
-      _tabs.index == 1 &&
-      _canWrite &&
-      _navSpace != null;
+      _isMobileLayout(context) && _tabs.index == 1 && _canCreate;
 
   bool _isFolderMarkerPath(String path) => p.basename(path) == _folderMarker;
 
@@ -1578,6 +1578,27 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
     return (folders: folders, files: _dirFiles);
   }
 
+  /// 「空间」Tab 文件夹列表；开启隐藏内部文件时同步过滤目录与文件。
+  ({List<String> folders, List<_BrowsedFile> files}) _visibleSpaceChildren() {
+    final children = _folderChildren();
+    if (!_hideInternalFiles || _navSpace == null) return children;
+    final space = _navSpace!;
+    return (
+      folders: [
+        for (final name in children.folders)
+          if (!StoreFileVisual.isInternalStoreFile(
+            space,
+            _folderRelPath(name),
+          ))
+            name,
+      ],
+      files: [
+        for (final f in children.files)
+          if (!StoreFileVisual.isInternalStoreFile(f.space, f.path)) f,
+      ],
+    );
+  }
+
   int _folderMtimeMs(String space, String folderName) {
     for (final d in _dirFolders) {
       if (p.basename(d.path) == folderName) return d.mtimeMs;
@@ -1648,7 +1669,7 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
         if (_pickMode) ..._pickModeActions(l10n),
         // 搜索按钮由 _buildMobileActions 统一提供，这里不再重复添加。
         if (!_pickMode)
-          ..._buildMobileActions(l10n, includeCreate: _canWrite),
+          ..._buildMobileActions(l10n, includeCreate: _canCreate),
       ],
     );
   }
@@ -1687,7 +1708,7 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
             ),
           ),
         if (_pickMode) ..._pickModeActions(l10n),
-        if (!_pickMode && _canWrite)
+        if (!_pickMode && _canCreate)
           PopupMenuButton<_CreateMenuAction>(
             icon: const Icon(Icons.add_circle_outline),
             tooltip: l10n.storage_browserCreate,
@@ -2162,7 +2183,7 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
       return _buildSpaceRootList(l10n, mobile: mobile);
     }
 
-    final children = _folderChildren();
+    final children = _visibleSpaceChildren();
     final empty = children.folders.isEmpty && children.files.isEmpty;
     if (_folderLoading && empty) {
       return const Center(child: CircularProgressIndicator());

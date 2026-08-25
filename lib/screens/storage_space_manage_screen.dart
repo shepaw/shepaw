@@ -21,14 +21,25 @@ enum StorageMoreAction {
 
 /// 储物袋「更多」菜单：隐藏内部文件 / 用量 / 目录绑定 / 回收站 / 备份与恢复。
 List<PopupMenuEntry<StorageMoreAction>> storageMoreMenuItems(
+  BuildContext context,
   AppLocalizations l10n, {
   bool hideInternalSelected = false,
 }) {
+  final muted = Theme.of(context).colorScheme.onSurfaceVariant;
   return [
-    CheckedPopupMenuItem(
+    PopupMenuItem(
       value: StorageMoreAction.hideInternal,
-      checked: hideInternalSelected,
-      child: Text(l10n.storage_recentHideInternal),
+      child: Row(
+        mainAxisSize: MainAxisSize.max,
+        children: [
+          Expanded(child: Text(l10n.storage_recentHideInternal)),
+          if (hideInternalSelected)
+            Padding(
+              padding: const EdgeInsets.only(left: 12),
+              child: Icon(Icons.check, size: 18, color: muted),
+            ),
+        ],
+      ),
     ),
     PopupMenuItem(
       value: StorageMoreAction.usage,
@@ -153,12 +164,14 @@ class _StorageSpaceManageScreenState extends State<StorageSpaceManageScreen> {
           position: PopupMenuPosition.under,
           onSelected: _handleMoreAction,
           itemBuilder: (ctx) => storageMoreMenuItems(
+            ctx,
             l10n,
             hideInternalSelected: _hideInternalFiles,
           ),
         ),
       ],
       extraMenuItems: (ctx) => storageMoreMenuItems(
+        ctx,
         l10n,
         hideInternalSelected: _hideInternalFiles,
       ),
