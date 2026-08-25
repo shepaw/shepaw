@@ -488,13 +488,20 @@ class GroupOrchestrationService {
       required Set<String> respondedAgentIds,
       List<String>? failedAgentNames,
       List<MentionEntry> inboxMentions = const [],
+      // M7: 收集所有 cascade 轮的成员回合（初始 + 每轮新激活），供 admin 汇总
+      // 时把级联子任务产物也纳入【成员产物】块。不传则只保留原行为。
+      Map<String, GroupTurnResult>? allTurnsCollector,
     }) async {
       var turns = Map<String, GroupTurnResult>.from(initialTurns);
+      if (allTurnsCollector != null) allTurnsCollector.addAll(turns);
       // 外接 agent MCP 群工具声明的提及（视为 admin 的声明；admin 自身
       // 不会被激活）。挂成 admin 的虚拟 turn 复用现有 cascade 逻辑。
       if (inboxMentions.isNotEmpty && adminAgentId != null) {
         turns[adminAgentId] = GroupTurnResult(mentions: inboxMentions);
         respondedAgentIds = {...respondedAgentIds, adminAgentId};
+        if (allTurnsCollector != null) {
+          allTurnsCollector[adminAgentId] = turns[adminAgentId]!;
+        }
       }
       for (int cascadeRound = 0; cascadeRound < maxCascadeDepth; cascadeRound++) {
         if (acpCancellationToken?.isCancelled == true) break;
@@ -602,6 +609,9 @@ class GroupOrchestrationService {
         }
         respondedAgentIds.addAll(newMentionedIds);
         turns = newTurns;
+        if (allTurnsCollector != null) {
+          allTurnsCollector.addAll(newTurns);
+        }
       }
     }
 
@@ -845,6 +855,9 @@ class GroupOrchestrationService {
         int currentRound = 0;
         String adminResponseContent = '';
         var adminTurn = const GroupTurnResult();
+        // M8: 跨轮累积本轮全部成员（含 cascade）引用的产物 store:// URI，
+        // finish 轮随 final_summary 一起蒸馏进群记忆，供后续轮次成员直接引用。
+        final roundArtifactUris = <String>{};
 
         GroupTurnResult resolveAdminDecision(
           GroupTurnResult toolTurn, {
@@ -1622,6 +1635,11 @@ class GroupOrchestrationService {
             await Future.wait(delegatedFutures);
           }
 
+          // M7: 汇总用回合集合 = 本轮派发成员 + cascade 级联激活的成员，
+          // 保证 admin 收尾汇总能列出级联子任务的产物 URI。
+          final memberTurnResults =
+              Map<String, GroupTurnResult>.from(delegatedTurnResults);
+
           // allMembers cascading: after delegated agents respond, members
           // mentioning other members (text @ or legacy JSON) activate them.
           // Turn results carry the unified mentions — no DB re-read.
@@ -1631,7 +1649,13 @@ class GroupOrchestrationService {
               respondedAgentIds: {...delegatedIds},
               failedAgentNames: failedAgentNames,
               inboxMentions: await _readInboxMentions(),
+              allTurnsCollector: memberTurnResults,
             );
+          }
+
+          // M8: 跨轮累积全部成员回合（含 cascade 级联成员）引用的产物 URI。
+          for (final r in memberTurnResults.values) {
+            roundArtifactUris.addAll(extractStoreUris(r.content));
           }
 
           // Check cancellation after member execution.
@@ -1701,13 +1725,14 @@ class GroupOrchestrationService {
               'status': 'members_done',
               'round': currentRound,
               'member_results': {
-                for (final e in delegatedTurnResults.entries)
+                for (final e in memberTurnResults.entries)
                   e.key: {
                     'content': e.value.content,
                     'wants_continue': e.value.wantsContinue,
                     'is_done': e.value.isDone,
                     'has_dispatch': e.value.hasDispatch,
-                    // 成员回复中引用的产物 store:// URI，落盘供审计/恢复。
+                    // 成员回复中引用的产物 store:// URI，落盘供审计/恢复
+                    // （含 cascade 级联成员，M7）。
                     'artifacts': extractStoreUris(e.value.content),
                   },
               },
@@ -1728,7 +1753,7 @@ class GroupOrchestrationService {
                   '${lastDispatchNote != null
                       ? '$effectiveContent\n\n[SYSTEM] 你上一轮的派发记录（该 JSON 已从你的消息中隐藏，仅供核对）：$lastDispatchNote'
                       : effectiveContent}'
-                  '${buildMemberArtifactsBlock(delegatedTurnResults, agents)}',
+                  '${buildMemberArtifactsBlock(memberTurnResults, agents)}',
               attachments: attachments,
               userId: userId,
               userName: userName,
@@ -1809,6 +1834,8 @@ class GroupOrchestrationService {
             // 最后一次 summarize 的 admin 总结 → 群记忆蒸馏素材
             // （shared/memory/，零额外 LLM 调用）。
             'final_summary': adminResponseContent,
+            // M8: 跨轮累积的成员产物 URI，随记忆一起落盘供后续轮次引用。
+            'artifact_uris': roundArtifactUris.toList(),
           },
         );
 

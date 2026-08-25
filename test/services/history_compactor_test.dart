@@ -133,4 +133,36 @@ void main() {
       );
     });
   });
+
+  group('HistoryCompactor.rollupNote (M6)', () {
+    test('returns empty for no dropped messages', () {
+      expect(HistoryCompactor.rollupNote(const []), isEmpty);
+    });
+
+    test('lists dropped count and distinct senders', () {
+      final dropped = [
+        _msg(id: '1', content: 'a' * 500, isAgent: true, name: 'Alice'),
+        _msg(id: '2', content: 'b' * 500, isAgent: true, name: 'Bob'),
+        _msg(id: '3', content: 'c' * 500, isAgent: false, name: 'User'),
+        _msg(id: '4', content: 'd' * 500, isAgent: true, name: 'Alice'),
+      ];
+      final note = HistoryCompactor.rollupNote(dropped);
+      expect(note, contains('4 条群消息'));
+      expect(note, contains('发送者：Alice、Bob、User'));
+      expect(note, contains('2000 字符'));
+      // 去重：Alice 只出现一次。
+      expect('Alice'.allMatches(note).length, 1);
+    });
+
+    test('dedupes sender names that repeat', () {
+      final dropped = List.generate(
+        10,
+        (i) => _msg(id: '$i', content: 'x' * 100, isAgent: true, name: 'Same'),
+      );
+      final note = HistoryCompactor.rollupNote(dropped);
+      expect(note, contains('10 条群消息'));
+      expect(note, contains('发送者：Same'));
+      expect('Same'.allMatches(note).length, 1);
+    });
+  });
 }

@@ -4,6 +4,7 @@ import 'dart:typed_data';
 import '../../cli_base.dart';
 import '../chat/chat_agent_scope.dart';
 import '../../../services/local_database_service.dart';
+import '../../../services/logger_service.dart';
 import '../../../storage/artifact_service.dart';
 import '../../../storage/device_identity.dart';
 import '../../../storage/group_workspace_service.dart';
@@ -132,48 +133,53 @@ class StoreWriteCommand extends CliCommand {
               'missing --group (workspaces write needs the group id)',
         };
       }
-      final ws = GroupWorkspaceService.instance;
       final executorId =
           (flags['agent_id'] ?? flags['owner'] ?? ChatAgentScope.agentId)
               .trim();
       if (executorId.isEmpty) {
         return {'success': false, 'error': 'unknown executor agent id'};
       }
-      if (!await ws.isMember(group, executorId)) {
+      if (!await GroupWorkspaceService.instance.isMember(group, executorId)) {
         return {
           'success': false,
           'error':
               'not a member of this group workspace (group_$group)',
         };
       }
-      final meta = await ws.loadMeta(group);
-      final home = meta?.homeDevice ?? await DeviceIdentity.deviceId();
-      final safeRel = sanitizeMemberRelPath(filename);
-      if (safeRel == null) {
-        return {
-          'success': false,
-          'error': 'bad --filename: path traversal not allowed',
-        };
-      }
-      try {
-        final rel = '${ws.membersDir(group, executorId)}/$safeRel';
-        final uri = await StoreService.instance.writeWorkspaceFile(
-          homeDeviceId: home,
-          relPath: rel,
-          content: Uint8List.fromList(utf8.encode(contentText)),
+      return _writeGroupWorkspace(
+        group: group,
+        executorId: executorId,
+        filename: filename,
+        contentText: contentText,
+      );
+    }
+    // M9: 群成员默认写共享空间——无 --space 时，群执行上下文（runtimeOwnerId
+    // 非空）的产物落群工作空间 members/<agentId>/ 子目录（跨设备可见），
+    // 而不是本地私有 runtime。群空间未初始化 / 非成员时回退原 runtime 路径。
+    if (space.isEmpty) {
+      final groupOwner = ChatAgentScope.runtimeOwnerId.trim();
+      if (groupOwner.isNotEmpty) {
+        final executorId =
+            (flags['agent_id'] ?? flags['owner'] ?? ChatAgentScope.agentId)
+                .trim();
+        final ws = GroupWorkspaceService.instance;
+        if (executorId.isNotEmpty &&
+            await ws.isMember(groupOwner, executorId)) {
+          return _writeGroupWorkspace(
+            group: groupOwner,
+            executorId: executorId,
+            filename: filename,
+            contentText: contentText,
+          );
+        }
+        LoggerService().info(
+          'store write: group member $executorId not routed to workspace '
+          '(space uninitialized or not a member), falling back to runtime',
+          tag: 'StoreNamespace',
         );
-        return {
-          'success': true,
-          'uri': uri,
-          'space': StoreSpace.workspaces,
-          'group': group,
-          'note':
-              '已写入群工作空间成员目录 members/$executorId/（仅群成员可读）。',
-        };
-      } catch (e) {
-        return {'success': false, 'error': '$e'};
       }
     }
+
     final taskId = flags['task'] ?? 'general';
     final desc = flags['desc'];
     final agentId = (flags['agent_id'] ?? flags['owner'] ?? ChatAgentScope.agentId)
@@ -214,6 +220,45 @@ class StoreWriteCommand extends CliCommand {
         'note': isGroupBag
             ? '已写入本群储物袋 runtime/${target.ownerId}/（不是你个人的储物袋）。引用时原样使用 reference 单行。'
             : '已写入 runtime/${target.ownerId}/。引用时原样使用 reference 单行。',
+      };
+    } catch (e) {
+      return {'success': false, 'error': '$e'};
+    }
+  }
+
+  /// 把内容写入群工作空间成员目录 `members/<executorId>/`（跨设备可见，
+  /// 仅群成员可读）。调用方负责先校验群存在与成员资格；这里只处理路径
+  /// 校验与落盘。`--space workspaces` 显式路径与 M9 群成员默认路径共用。
+  Future<Map<String, dynamic>> _writeGroupWorkspace({
+    required String group,
+    required String executorId,
+    required String filename,
+    required String contentText,
+  }) async {
+    final ws = GroupWorkspaceService.instance;
+    final meta = await ws.loadMeta(group);
+    final home = meta?.homeDevice ?? await DeviceIdentity.deviceId();
+    final safeRel = sanitizeMemberRelPath(filename);
+    if (safeRel == null) {
+      return {
+        'success': false,
+        'error': 'bad --filename: path traversal not allowed',
+      };
+    }
+    try {
+      final rel = '${ws.membersDir(group, executorId)}/$safeRel';
+      final uri = await StoreService.instance.writeWorkspaceFile(
+        homeDeviceId: home,
+        relPath: rel,
+        content: Uint8List.fromList(utf8.encode(contentText)),
+      );
+      return {
+        'success': true,
+        'uri': uri,
+        'space': StoreSpace.workspaces,
+        'group': group,
+        'note':
+            '已写入群工作空间成员目录 members/$executorId/（跨设备可见，仅群成员可读）。',
       };
     } catch (e) {
       return {'success': false, 'error': '$e'};

@@ -294,6 +294,12 @@ class GroupAgentExecutor {
       userId: userId,
     );
 
+    // M6：群清空时该成员断线，`/reset` 未送达。消费待补发标记；若本次走 ACP
+    // 路径则在任务前补发，清掉远端会话的陈旧上下文。本地成员（无远端 session）
+    // 也会消费标记，避免集合残留。
+    final pendingResetFlush = GroupMemberSessionService
+        .consumePendingRemoteReset(memberSessionId);
+
     final systemPrompt = await _promptBuilder.buildGroupSystemPrompt(
       groupName: groupName,
       groupDescription: groupDescription,
@@ -322,6 +328,20 @@ class GroupAgentExecutor {
     const maxHistoryChars = 60000;
     var effectiveHistory = List<Message>.from(historyMessages);
     String? earlierSummary;
+    // M6: 无 LLM 摘要时的截断提示（远端成员 / 摘要失败兜底），区别于 LLM 摘要，
+    // 直接用原文插入，避免再套一层 summaryMessage 包装。
+    String? truncationNote;
+
+    // FIFO 截断到字符预算，并对被丢弃的旧消息生成回滚提示（谁参与了、省略了多少）。
+    List<Message> truncateWithNote(List<Message> msgs) {
+      final kept = HistoryCompactor.fifoTruncate(msgs, maxHistoryChars);
+      if (kept.length < msgs.length) {
+        truncationNote = HistoryCompactor.rollupNote(
+          msgs.sublist(0, msgs.length - kept.length),
+        );
+      }
+      return kept;
+    }
 
     if (agent.isLocal) {
       final plan = HistoryCompactor.plan(
@@ -364,10 +384,7 @@ class GroupAgentExecutor {
             );
           } else {
             earlierSummary = null;
-            effectiveHistory = HistoryCompactor.fifoTruncate(
-              historyMessages,
-              maxHistoryChars,
-            );
+            effectiveHistory = truncateWithNote(historyMessages);
           }
         } catch (e) {
           LoggerService().warning(
@@ -376,20 +393,20 @@ class GroupAgentExecutor {
             tag: 'GroupAgentExecutor',
           );
           earlierSummary = null;
-          effectiveHistory = HistoryCompactor.fifoTruncate(
-            historyMessages,
-            maxHistoryChars,
-          );
+          effectiveHistory = truncateWithNote(historyMessages);
         }
       }
     } else {
-      effectiveHistory = HistoryCompactor.fifoTruncate(
-        historyMessages,
-        maxHistoryChars,
-      );
+      // Remote ACP members have no local LLM summarizer (they lack llm_* model
+      // config on this device), so a plain FIFO drop would silently erase early
+      // decisions. Keep the same 60k-char recent tail but surface the omission
+      // with a rollup note (M6) so the agent knows what was dropped and who
+      // participated earlier.
+      effectiveHistory = truncateWithNote(historyMessages);
     }
 
     final historyLines = [
+      if (truncationNote?.isNotEmpty == true) truncationNote!,
       if (earlierSummary != null && earlierSummary.isNotEmpty)
         HistoryCompactor.summaryMessage(earlierSummary)['content'] as String,
       ...effectiveHistory.map((m) {
@@ -1269,6 +1286,21 @@ class GroupAgentExecutor {
 
         final effectiveTaskId = taskId;
         final effectiveConnection = connection!;
+
+        // M6：群清空时断线未送达的远端 `/reset` 在此回合任务前补发
+        // （best-effort；失败吞掉不阻塞主任务）。
+        if (pendingResetFlush && effectiveConnection.isConnected) {
+          try {
+            await effectiveConnection.sendChatMessage(
+              taskId: _uuid.v4(),
+              sessionId: memberSessionId,
+              message: '/reset',
+              userId: 'user',
+              messageId: _uuid.v4(),
+            );
+          } catch (_) {}
+        }
+
         effectiveConnection.registerTaskCallbacks(effectiveTaskId, TaskCallbacks(
           onTextContent: (data) {
             final chunk = data['content'] as String? ?? '';

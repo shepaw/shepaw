@@ -17,6 +17,16 @@ class GroupMemberSessionService {
 
   static const _tag = 'GroupMemberSession';
 
+  /// 群聊清空时远端 agent 断线，`/reset` 未能送达 → 记录待补发。
+  ///
+  /// 键为成员会话 id（[memberSessionId]）；群执行器在下次该成员回合开始前
+  /// 消费（best-effort，见 `GroupAgentExecutor`），避免远端会话残留陈旧上下文。
+  static final Set<String> pendingRemoteResets = <String>{};
+
+  /// 消费一个待补发的远端 reset（存在则移除并返回 true）。
+  static bool consumePendingRemoteReset(String memberSessionId) =>
+      pendingRemoteResets.remove(memberSessionId);
+
   /// Deterministic channel id for the (group session, agent) pair.
   static String memberSessionId(String groupChannelId, String agentId) =>
       'gmd_${groupChannelId}__$agentId';

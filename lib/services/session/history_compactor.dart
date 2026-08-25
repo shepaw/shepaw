@@ -136,6 +136,30 @@ class HistoryCompactor {
     return result;
   }
 
+  /// Compact note describing [dropped] messages that were omitted from the
+  /// in-context replay (used when no LLM summarizer is available — e.g. remote
+  /// ACP members — so the loss is surfaced instead of silent).
+  ///
+  /// Lists how many messages and which distinct senders were dropped, so the
+  /// agent knows early participants existed and can ask for details / consult
+  /// the group workspace if those turns still matter.
+  static String rollupNote(List<Message> dropped) {
+    if (dropped.isEmpty) return '';
+    final senders = <String>{};
+    var totalChars = 0;
+    for (final m in dropped) {
+      final name = m.from.name.trim();
+      if (name.isNotEmpty) senders.add(name);
+      totalChars += m.content.length;
+    }
+    final senderList = senders.take(8).join('、');
+    final more = senders.length > 8 ? ' 等 ${senders.length} 位' : '';
+    return '[更早的 ${dropped.length} 条群消息已省略'
+        '（约 $totalChars 字符；发送者：$senderList$more）'
+        '以控制上下文长度。如需早期讨论细节，请查阅群工作空间共享产物'
+        '或直接询问对应成员。]';
+  }
+
   /// Wrap a summary as a synthetic user context message for the LLM.
   static Map<String, dynamic> summaryMessage(String summary) {
     final clipped = summary.length <= defaultSummaryMaxChars

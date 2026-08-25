@@ -153,6 +153,10 @@ class GroupSessionService {
             messageId: _uuid.v4(),
           );
         } catch (_) {}
+      } else {
+        // M6：远端 agent 断线时 `/reset` 未能送达，标记待补发；
+        // 下次该成员回合前由群执行器消费，避免远端 session 残留。
+        GroupMemberSessionService.pendingRemoteResets.add(memberSessionId);
       }
     }
 
@@ -184,6 +188,10 @@ class GroupSessionService {
             messageId: _uuid.v4(),
           );
         } catch (_) {}
+      } else {
+        // M6：断线成员 `/reset-all` 未送达；父群会话重建的成员 DM 复用同一
+        // 确定性 session id，下次回合前补发 reset，清掉远端陈旧上下文。
+        GroupMemberSessionService.pendingRemoteResets.add(memberSessionId);
       }
     }
 

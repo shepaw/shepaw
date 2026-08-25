@@ -174,4 +174,80 @@ void main() {
       expect(stageGateSystemPrompt, contains('不要调用任何 UI 工具'));
     });
   });
+
+  group('stageGateBypassWarning (M1)', () {
+    test('returns null when the stage has no failures', () {
+      expect(
+        stageGateBypassWarning(
+          stageIdx: 1,
+          reason: '管理员不可用',
+          stageSteps: [
+            _step(
+              stage: 0,
+              step: 0,
+              status: StepExecutionStatus.completed,
+              outputSummary: '完成',
+            ),
+          ],
+        ),
+        isNull,
+      );
+    });
+
+    test('returns null for empty stage', () {
+      expect(
+        stageGateBypassWarning(
+          stageIdx: 1,
+          reason: '管理员不可用',
+          stageSteps: const [],
+        ),
+        isNull,
+      );
+    });
+
+    test('names failed members and the bypass reason', () {
+      final warning = stageGateBypassWarning(
+        stageIdx: 2,
+        reason: '管理员回复无可解析的 [GATE_DECISION]',
+        stageSteps: [
+          _step(stage: 1, step: 0, status: StepExecutionStatus.completed),
+          _step(
+            stage: 1,
+            step: 1,
+            agentName: 'Agent B',
+            status: StepExecutionStatus.failed,
+            errorMessage: '超时',
+          ),
+        ],
+      );
+      expect(warning, isNotNull);
+      expect(warning, contains('阶段 3')); // stageIdx 是 0-based → 显示 +1
+      expect(warning, contains('Agent B'));
+      expect(warning, contains('GATE_DECISION'));
+      expect(warning, contains('继续'));
+    });
+
+    test('deduplicates failed member names', () {
+      final warning = stageGateBypassWarning(
+        stageIdx: 0,
+        reason: '门闸回合执行异常',
+        stageSteps: [
+          _step(
+            stage: 0,
+            step: 0,
+            agentName: 'Agent B',
+            status: StepExecutionStatus.failed,
+          ),
+          _step(
+            stage: 0,
+            step: 1,
+            agentName: 'Agent B',
+            status: StepExecutionStatus.failed,
+          ),
+        ],
+      );
+      expect(warning, isNotNull);
+      expect('Agent B'.allMatches(warning!).length, 1);
+    });
+  });
 }

@@ -7,6 +7,7 @@ import 'package:shepaw/clis/shepaw/store/store_namespace.dart';
 import 'package:shepaw/peer/models/paired_peer.dart';
 import 'package:shepaw/peer/services/peer_storage_service.dart';
 import 'package:shepaw/storage/group_workspace_service.dart';
+import 'package:shepaw/storage/store_protocol.dart';
 import 'package:shepaw/storage/store_service.dart';
 import 'package:shepaw/storage/store_uri_reader.dart';
 
@@ -558,6 +559,61 @@ void main() {
           .toList();
       expect(paths, isNot(contains('group_group_acl2/members/agent-peer')));
       expect(paths, contains('group_group_acl2/shared')); // shared 保留
+    });
+  });
+
+  group('M9: 群成员 store write 默认落共享空间', () {
+    test('无 --space 时群执行上下文 write 落到 members/<agentId>/', () async {
+      await ws.ensureGroupWorkspace(
+        groupId: 'group_m9',
+        members: [(agentId: 'agent-member', role: 'member')],
+      );
+      final meta = await ws.loadMeta('group_m9');
+      expect(meta, isNotNull);
+
+      final writeCmd = StoreNamespace.instance.commands['write']!;
+      Map<String, dynamic>? result;
+      await ChatAgentScope.runScoped(
+        agentId: 'agent-member',
+        runtimeOwnerId: 'group_m9',
+        body: () async {
+          result = await writeCmd.execute({
+            'filename': 'report.md',
+            'content': 'M9 产物',
+          });
+        },
+      );
+
+      expect(result, isNotNull);
+      expect(result!['success'], isTrue, reason: '$result');
+      expect(result!['space'], StoreSpace.workspaces);
+      expect(result!['group'], 'group_m9');
+      expect(
+        result!['uri'],
+        contains('group_group_m9/members/agent-member/report.md'),
+      );
+
+      final bytes =
+          await StoreUriReader.instance.read(result!['uri'] as String);
+      expect(utf8.decode(bytes), 'M9 产物');
+    });
+
+    test('非群执行上下文（runtimeOwnerId 空）仍走 runtime 路径', () async {
+      final writeCmd = StoreNamespace.instance.commands['write']!;
+      Map<String, dynamic>? result;
+      await ChatAgentScope.runScoped(
+        agentId: 'agent-standalone',
+        body: () async {
+          result = await writeCmd.execute({
+            'filename': 'note.txt',
+            'content': '单聊产物',
+          });
+        },
+      );
+      expect(result, isNotNull);
+      expect(result!['success'], isTrue, reason: '$result');
+      expect(result!['space'], isNot(StoreSpace.workspaces));
+      expect(result!['uri'], isNot(contains('group_group_m9')));
     });
   });
 }

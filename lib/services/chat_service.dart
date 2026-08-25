@@ -292,10 +292,24 @@ class ChatService {
       if (kind == 'finish') {
         final finalSummary = payload['final_summary'] as String? ?? '';
         if (finalSummary.trim().isNotEmpty) {
+          // M8: 把跨轮成员产物 URI 追加进群记忆，后续轮次成员可直接引用
+          // 历史产物，而不是只看到一段文本摘要。
+          final artifactUris = (payload['artifact_uris'] as List?)
+                  ?.whereType<String>()
+                  .where((u) => u.trim().isNotEmpty)
+                  .toList() ??
+              const <String>[];
+          final memoryContent = StringBuffer(finalSummary.trim());
+          if (artifactUris.isNotEmpty) {
+            memoryContent
+              ..write('\n\n【相关产物】')
+              ..writeln()
+              ..write(artifactUris.join('\n'));
+          }
           await ws.writeSharedMemory(
             groupId: channel.groupFamilyId,
             sessionId: channelId,
-            content: finalSummary.trim(),
+            content: memoryContent.toString(),
           );
         }
       }
@@ -2292,22 +2306,40 @@ $originalQuestion
       // 阶段门闸（stageGate）：阶段边界阻塞一次管理员回合，管理员输出
       // [GATE_DECISION: continue/abort/reassign:名字] 后工作流才进下一阶段。
       // 任何异常/管理员不可用/无可解析决策 → 自动按「继续」放行，绝不阻塞。
+      // M1：放行不再静默——本阶段存在失败步骤时，向频道写入可见告警，
+      // 让「无人把关」显式暴露给用户，而不是假装门闸正常履职。
       Future<StageGateDecision> runStageGate({
         required List<WorkflowStepExecution> stageSteps,
         required int stageIdx,
         required String nextStageName,
       }) async {
         final admin = workflowAdminAgent;
+
+        Future<StageGateDecision> autoContinue(String reason) async {
+          LoggerService().warning(
+            'stageGate: $reason for channel $channelId, auto-continue',
+            tag: 'ChatService',
+          );
+          final warning = stageGateBypassWarning(
+            stageIdx: stageIdx,
+            reason: reason,
+            stageSteps: stageSteps,
+          );
+          if (warning != null) {
+            await _saveWorkflowSystemMessage(
+              channelId: channelId,
+              content: warning,
+            );
+          }
+          return StageGateDecision.proceed;
+        }
+
         if (admin == null ||
             !GroupEventPerceptionScheduler.canAdminExecuteTurn(
               adminAgent: admin,
               acpConnections: _acpConnections,
             )) {
-          LoggerService().warning(
-            'stageGate: admin unavailable for channel $channelId, auto-continue',
-            tag: 'ChatService',
-          );
-          return StageGateDecision.proceed;
+          return autoContinue('管理员不可用');
         }
 
         final resultLines = stageSteps.map(renderStageGateStepLine).toList();
@@ -2360,11 +2392,7 @@ $originalQuestion
           }
           final decision = parseGateDecision(reply);
           if (decision == null) {
-            LoggerService().warning(
-              'stageGate: no parseable [GATE_DECISION] from admin, auto-continue',
-              tag: 'ChatService',
-            );
-            return StageGateDecision.proceed;
+            return autoContinue('管理员回复无可解析的 [GATE_DECISION]');
           }
           return decision;
         } catch (e, st) {
@@ -2375,7 +2403,7 @@ $originalQuestion
             stackTrace: st,
           );
           activeExec.onAgentDone?.call(admin.id, admin.name, true);
-          return StageGateDecision.proceed;
+          return autoContinue('门闸回合执行异常');
         }
       }
 
@@ -2849,10 +2877,15 @@ $originalQuestion
         final updatedWorkflow = await _workflowService.getWorkflowExecutionWithSteps(workflowId);
         final stageSteps = updatedWorkflow?.steps.where((s) => s.stageIndex == stageIdx) ?? [];
         final isLastStage = stageIdx == stageIndices.last;
-        // 阶段门闸：仅群聊工作流、频道开启且还有后续阶段时启用。开启后阶段
-        // 失败不再立刻终止工作流——交给管理员把关（继续/中止/换人）。
-        final gateEnabled =
-            !isDmWorkflow && channel.enableStageGate && !isLastStage;
+        // 阶段门闸：仅群聊工作流、频道开启、还有后续阶段、且存在可解析的管理员
+        // 时启用。开启后阶段失败不再立刻终止工作流——交给管理员把关（继续/中止/
+        // 换人）。M1：频道未配置管理员（adminAgentId 缺失或已不在成员列表）时
+        // 门闸无法把关，视为关闭——本阶段失败走下方 failWorkflow，全成功则直接
+        // 进入下一阶段，杜绝「无人把关却静默放行」。
+        final gateEnabled = !isDmWorkflow &&
+            channel.enableStageGate &&
+            !isLastStage &&
+            workflowAdminAgent != null;
 
         if (stageSteps.any((s) => s.status == StepExecutionStatus.failed) &&
             !gateEnabled) {

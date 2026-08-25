@@ -61,6 +61,33 @@ StageGateDecision? parseGateDecision(String text) {
   }
 }
 
+/// 门闸降级放行的可见告警文案（M1）。
+///
+/// 门闸无法获得管理员真实决策而自动按「继续」放行时调用。仅当本阶段存在
+/// 失败步骤（有风险待把关）时返回应写入频道的告警文案；全部成功时返回
+/// null（无风险可把关，静默放行）。让「无人把关」显式暴露给用户，而不是
+/// 假装门闸正常履职。
+String? stageGateBypassWarning({
+  required int stageIdx,
+  required String reason,
+  required List<WorkflowStepExecution> stageSteps,
+}) {
+  final failedSteps = stageSteps
+      .where((s) => s.status == StepExecutionStatus.failed)
+      .toList();
+  if (failedSteps.isEmpty) return null;
+  // 同名成员多步失败时去重（保持出现顺序），避免「A、A」式噪音。
+  final failedNames = <String>{};
+  for (final s in failedSteps) {
+    final name = s.agentName.trim();
+    if (name.isNotEmpty) failedNames.add(name);
+  }
+  final names = failedNames.join('、');
+  return '⚠️ 阶段 ${stageIdx + 1} 门闸把关被跳过（$reason）。'
+      '本阶段存在失败步骤（成员「$names」），管理员未审阅，'
+      '已按默认「继续」放行，请人工关注失败项。';
+}
+
 /// Renders one step's outcome for the gate prompt.
 String renderStageGateStepLine(WorkflowStepExecution step) {
   final idx = '阶段${step.stageIndex + 1}/步骤${step.stepIndex + 1}';
