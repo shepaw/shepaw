@@ -22,6 +22,7 @@ import 'group/group_interaction_handler.dart';
 import 'group/planning_helpers.dart';
 import 'group/group_agent_executor.dart';
 import 'group/group_orchestration_service.dart';
+import 'group/group_membership_perception.dart';
 import '../storage/group_workspace_service.dart';
 import 'workflow/workflow_service.dart';
 import 'workflow/workflow_step_agent_resolver.dart';
@@ -194,6 +195,17 @@ class ChatService {
     loadChannelMessages: (channelId, {int limit = 100}) => loadChannelMessages(channelId, limit: limit),
     getMessageById: (id) => getMessageById(id),
     onOrchestrationRound: _persistOrchestrationRound,
+  );
+
+  /// Sub-service: coalesced admin perception turn after member enter/leave.
+  late final GroupMembershipPerceptionScheduler _groupMembershipPerceptionScheduler =
+      GroupMembershipPerceptionScheduler(
+    db: _databaseService,
+    executor: _groupAgentExecutor,
+    acpConnections: _acpConnections,
+    loadChannelMessages: (channelId, {int limit = 100}) =>
+        loadChannelMessages(channelId, limit: limit),
+    dispatchParser: _groupDispatchParser,
   );
 
   /// 群工作空间编排落盘适配：按 kind 写 round 状态或 dispatch 决定。
@@ -1684,14 +1696,28 @@ $originalQuestion
   /// Persists a system message, refreshes the UI stream, and sends an ACP
   /// push notification to every connected remote agent still in the group.
   /// Returns the system [Message] so the caller can insert it into the UI.
+  ///
+  /// After the notification is persisted, a fire-and-forget admin perception
+  /// turn is scheduled so the group admin (She) becomes aware of the roster
+  /// change and can adjust task allocation. This never blocks or breaks the
+  /// membership operation itself.
   Future<Message> notifyGroupMembershipChange(
     String channelId,
     String memberId,
     String memberName, {
     required bool isJoin,
-  }) => _groupInteractionHandler.notifyGroupMembershipChange(
-    channelId, memberId, memberName, isJoin: isJoin,
-  );
+  }) async {
+    final systemMessage = await _groupInteractionHandler.notifyGroupMembershipChange(
+      channelId, memberId, memberName, isJoin: isJoin,
+    );
+    _groupMembershipPerceptionScheduler.schedule(
+      channelId: channelId,
+      memberId: memberId,
+      memberName: memberName,
+      isJoin: isJoin,
+    );
+    return systemMessage;
+  }
 
   /// Send a message to a group channel, orchestrating agent responses.
   ///
