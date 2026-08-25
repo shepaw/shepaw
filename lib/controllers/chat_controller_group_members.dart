@@ -57,8 +57,13 @@ mixin _GroupMemberOps on _ChatControllerBase {
       agent.name,
       isJoin: true,
     );
-    messages.add(systemMsg);
-    messageIdMap[systemMsg.id] = systemMsg;
+    // notifyGroupMembershipChange 内部已触发 notifyChannelUpdate → 群模式会
+    // reconcile（messages 被 DB 列表整体替换）。若 reconcile 先于这里的
+    // 手动插入完成，systemMsg 已在列表里，再 add 会多出重复气泡——按 id 去重。
+    if (!messageIdMap.containsKey(systemMsg.id)) {
+      messages.add(systemMsg);
+      messageIdMap[systemMsg.id] = systemMsg;
+    }
     _notify();
     _emit(RequestScrollToBottomEvent());
 
@@ -80,8 +85,12 @@ mixin _GroupMemberOps on _ChatControllerBase {
       agent.name,
       isJoin: false,
     );
-    messages.add(systemMsg);
-    messageIdMap[systemMsg.id] = systemMsg;
+    // 与 addGroupMember 同理：notifyChannelUpdate 触发的 reconcile 可能已把
+    // systemMsg 并入列表，按 id 去重避免重复气泡。
+    if (!messageIdMap.containsKey(systemMsg.id)) {
+      messages.add(systemMsg);
+      messageIdMap[systemMsg.id] = systemMsg;
+    }
     _notify();
     _emit(RequestScrollToBottomEvent());
 
