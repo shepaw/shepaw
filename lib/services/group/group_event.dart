@@ -41,6 +41,8 @@ class GroupEvent {
   final String channelId;
   final int? stageIndex;
   final int? stepIndex;
+  /// 编排循环轮次（loop 模式，M5）。
+  final int? round;
   final String? agentId;
   final String? agentName;
   final String summary;
@@ -53,6 +55,7 @@ class GroupEvent {
     required this.channelId,
     this.stageIndex,
     this.stepIndex,
+    this.round,
     this.agentId,
     this.agentName,
     this.summary = '',
@@ -124,6 +127,35 @@ class GroupEvent {
     );
   }
 
+  /// 编排循环一轮完成（loop 模式，被动事件）：记录本轮派发的成员、失败
+  /// 成员与管理员总结，供下一轮成员感知上一轮「谁做了什么、谁失败了」。
+  factory GroupEvent.loopRoundCompleted({
+    required String channelId,
+    required int round,
+    List<String>? delegatedAgentNames,
+    List<String>? failedAgentNames,
+    String summary = '',
+    Map<String, dynamic> payload = const {},
+    String? id,
+  }) {
+    return GroupEvent(
+      id: id ?? _newId(),
+      type: GroupEventType.loopRoundCompleted,
+      channelId: channelId,
+      round: round,
+      agentName: null,
+      summary: summary,
+      payload: {
+        'round': round,
+        if (delegatedAgentNames != null && delegatedAgentNames.isNotEmpty)
+          'delegated': delegatedAgentNames,
+        if (failedAgentNames != null && failedAgentNames.isNotEmpty)
+          'failed': failedAgentNames,
+        ...payload,
+      },
+    );
+  }
+
   static String _newId() => const Uuid().v4();
 }
 
@@ -159,6 +191,19 @@ String renderEventLine(GroupEvent e) {
     case GroupEventType.workflowFailed:
       return '工作流执行失败：${e.summary}';
     case GroupEventType.loopRoundCompleted:
-      return '本轮编排循环完成';
+      final round = e.round != null ? '第${e.round}轮' : '';
+      final delegated = (e.payload['delegated'] as List?)?.cast<String>();
+      final failed = (e.payload['failed'] as List?)?.cast<String>();
+      final parts = <String>['编排$round完成'];
+      if (delegated != null && delegated.isNotEmpty) {
+        parts.add('执行:${delegated.join('、')}');
+      }
+      if (failed != null && failed.isNotEmpty) {
+        parts.add('失败:${failed.join('、')}');
+      }
+      if (e.summary.trim().isNotEmpty) {
+        parts.add(e.summary.trim().replaceAll('\n', ' '));
+      }
+      return parts.join(' · ');
   }
 }

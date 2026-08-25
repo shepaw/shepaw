@@ -167,6 +167,30 @@ void main() {
     expect(content, contains('群记忆'));
   });
 
+  test('buildMemberTurnContent appends loop event note (M5) when non-empty', () {
+    final content = GroupDispatchParser.buildMemberTurnContent(
+      memberBrief: '实现登录',
+      globalRequirement: '用户完整需求原文',
+      memoryNote: '\n[群记忆] 摘要',
+      loopEventNote: '编排第1轮完成 · 执行:Agent B · 失败:Agent C',
+    );
+    expect(content, contains('【全局需求】'));
+    expect(content, contains('实现登录'));
+    expect(content, contains('【上轮事件】'));
+    expect(content, contains('编排第1轮完成'));
+    expect(content, contains('失败:Agent C'));
+  });
+
+  test('buildMemberTurnContent omits loop event block when empty', () {
+    final content = GroupDispatchParser.buildMemberTurnContent(
+      memberBrief: '实现登录',
+      globalRequirement: '用户完整需求原文',
+      memoryNote: '\n[群记忆] 摘要',
+      loopEventNote: '',
+    );
+    expect(content, isNot(contains('【上轮事件】')));
+  });
+
   test('extractStoreUris pulls unique store URIs and trims punctuation', () {
     const reply = '完成，产物见 [a](store://workspaces/dev/group_1/shared/a.md)。'
         '以及 store://workspaces/dev/group_1/shared/b.md, '

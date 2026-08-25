@@ -303,6 +303,59 @@ void main() {
         contains('成员离开：甲'),
       );
     });
+
+    test('loopRoundCompleted factory fills round/delegated/failed payload', () {
+      final e = GroupEvent.loopRoundCompleted(
+        id: 'r1',
+        channelId: 'g',
+        round: 2,
+        delegatedAgentNames: const ['Agent B', 'Agent C'],
+        failedAgentNames: const ['Agent C'],
+        summary: '完成初稿',
+      );
+      expect(e.type, GroupEventType.loopRoundCompleted);
+      expect(e.round, 2);
+      expect(e.payload['round'], 2);
+      expect(e.payload['delegated'], ['Agent B', 'Agent C']);
+      expect(e.payload['failed'], ['Agent C']);
+      expect(e.summary, '完成初稿');
+    });
+
+    test('loopRoundCompleted omits empty delegated/failed lists', () {
+      final e = GroupEvent.loopRoundCompleted(
+        id: 'r2',
+        channelId: 'g',
+        round: 1,
+      );
+      expect(e.payload.containsKey('delegated'), isFalse);
+      expect(e.payload.containsKey('failed'), isFalse);
+    });
+
+    test('renders loop round line with round, executors, failures and summary', () {
+      final e = GroupEvent.loopRoundCompleted(
+        id: 'r3',
+        channelId: 'g',
+        round: 3,
+        delegatedAgentNames: const ['Agent B', 'Agent C'],
+        failedAgentNames: const ['Agent C'],
+        summary: '第一轮产出已整理',
+      );
+      final line = renderEventLine(e);
+      expect(line, contains('第3轮'));
+      expect(line, contains('执行:Agent B、Agent C'));
+      expect(line, contains('失败:Agent C'));
+      expect(line, contains('第一轮产出已整理'));
+    });
+
+    test('renders loop round line minimal when nothing delegated/failed', () {
+      final e = GroupEvent.loopRoundCompleted(
+        id: 'r4',
+        channelId: 'g',
+        round: 1,
+      );
+      final line = renderEventLine(e);
+      expect(line, '编排第1轮完成');
+    });
   });
 
   group('isWorkflowStepEvent', () {

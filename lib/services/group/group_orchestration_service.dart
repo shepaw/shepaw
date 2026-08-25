@@ -14,6 +14,7 @@ import '../acp_agent_connection.dart';
 import '../workflow/workflow_service.dart';
 import 'group_dispatch_parser.dart';
 import 'group_agent_executor.dart';
+import 'group_event.dart';
 import 'group_prompt_builder.dart';
 import 'group_member_session_service.dart';
 import 'group_turn_result.dart';
@@ -52,6 +53,14 @@ class GroupOrchestrationService {
     required Map<String, dynamic> payload,
   })? onOrchestrationRound;
 
+  /// M5 群事件记录：每轮编排完成后发一个 `loopRoundCompleted` 被动事件。
+  /// null 时为空操作（不破坏现有调用方/测试）。
+  final void Function(GroupEvent event)? onGroupEvent;
+
+  /// M5 上一轮事件感知行：为下一轮成员返回要注入的【上轮事件】文本行。
+  /// null 或空列表时不注入。以 channelId 为参数以便按频道读取事件日志。
+  final List<String> Function(String channelId)? loopEventLines;
+
   GroupOrchestrationService({
     required LocalDatabaseService db,
     required Uuid uuid,
@@ -65,12 +74,20 @@ class GroupOrchestrationService {
     required this.loadChannelMessages,
     required this.getMessageById,
     this.onOrchestrationRound,
+    this.onGroupEvent,
+    this.loopEventLines,
   })  : _db = db,
         _uuid = uuid,
         _executor = executor,
         _dispatchParser = dispatchParser,
         _planningHelpers = planningHelpers,
         _workflowService = workflowService;
+
+  /// 汇总 [loopEventLines]（若提供）为一条「上轮事件」文本块，供成员任务注入。
+  String _buildLoopEventNote(String channelId) {
+    final lines = loopEventLines?.call(channelId) ?? const <String>[];
+    return lines.join('\n');
+  }
 
   /// Matches `store://<space>/<device>/<path>…` tokens in free text, stopping
   /// at whitespace / markdown closers / CJK punctuation.
@@ -1480,6 +1497,7 @@ class GroupOrchestrationService {
                       memberBrief: memberBrief,
                       globalRequirement: effectiveContent,
                       memoryNote: memberMemoryNote,
+                      loopEventNote: _buildLoopEventNote(channelId),
                     ),
                     attachments: attachments,
                     userId: userId,
@@ -1534,6 +1552,7 @@ class GroupOrchestrationService {
                     memberBrief: memberBrief,
                     globalRequirement: effectiveContent,
                     memoryNote: memberMemoryNote,
+                    loopEventNote: _buildLoopEventNote(channelId),
                   ),
                   attachments: attachments,
                   userId: userId,
@@ -1707,6 +1726,21 @@ class GroupOrchestrationService {
               'is_done': adminTurn.isDone,
             },
           );
+
+          // M5：本轮编排完成 → 发被动 loopRoundCompleted 事件，供下一轮成员
+          // 感知上一轮「谁做了什么、谁失败了」。被动事件只入事件日志，不触发
+          // 管理员主动回合（不新增 LLM 调用）。
+          onGroupEvent?.call(GroupEvent.loopRoundCompleted(
+            channelId: channelId,
+            round: currentRound,
+            delegatedAgentNames: delegatedTurnResults.keys
+                .map((id) =>
+                    agents.where((a) => a.id == id).firstOrNull?.name ?? id)
+                .toList(),
+            failedAgentNames: List.unmodifiable(failedAgentNames),
+            summary: adminResponseContent,
+          ));
+
           currentRound++;
           final summarizeInbox = await _readRoundInbox();
           adminTurn = resolveAdminDecision(

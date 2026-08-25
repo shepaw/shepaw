@@ -159,18 +159,22 @@ class GroupDispatchParser {
   /// When [memberBrief] is empty or equals [globalRequirement] (the step had no
   /// task and fell back to the global message), only the global requirement is
   /// returned — no duplication. [memoryNote] (a short group-history summary) is
-  /// always appended.
+  /// always appended. [loopEventNote] (上一轮编排事件的被动感知行，M5) 追加为
+  /// 【上轮事件】块，非空时拼接。
   static String buildMemberTurnContent({
     required String memberBrief,
     required String globalRequirement,
     required String memoryNote,
+    String loopEventNote = '',
   }) {
     final global = globalRequirement.trim();
     final brief = memberBrief.trim();
-    if (brief.isEmpty || brief == global) {
-      return '$global$memoryNote';
-    }
-    return '【全局需求】\n$global\n\n【你的任务】\n$brief$memoryNote';
+    final base = (brief.isEmpty || brief == global)
+        ? '$global$memoryNote'
+        : '【全局需求】\n$global\n\n【你的任务】\n$brief$memoryNote';
+    final note = loopEventNote.trim();
+    if (note.isEmpty) return base;
+    return '$base\n\n【上轮事件】\n$note';
   }
 
   /// Resolve structured mention declarations into [MentionEntry]s.

@@ -199,6 +199,18 @@ class ChatService {
     loadChannelMessages: (channelId, {int limit = 100}) => loadChannelMessages(channelId, limit: limit),
     getMessageById: (id) => getMessageById(id),
     onOrchestrationRound: _persistOrchestrationRound,
+    // M5：loop 模式每轮完成 → 记入事件日志（被动，不触发管理员回合）。
+    onGroupEvent: _groupEventPerceptionScheduler.schedule,
+    // M5：下一轮成员上下文注入最近几轮 loopRoundCompleted 事件行。
+    loopEventLines: (channelId) {
+      final events = _groupEventStore
+          .recent(channelId, limit: 20)
+          .where((e) => e.type == GroupEventType.loopRoundCompleted)
+          .toList();
+      final tail =
+          events.length <= 3 ? events : events.sublist(events.length - 3);
+      return tail.map(renderEventLine).toList();
+    },
   );
 
   /// Sub-service: coalesced admin perception turn after member enter/leave.
