@@ -115,6 +115,18 @@ void main() {
       expect(joined.length, greaterThan(4000),
           reason: '拼接全文应有足够内容支撑 She 教用户使用系统');
 
+      // 新产品面：认人 CLI + 界面入口地图 + UI-only 边界（She 不能虚构命令）
+      expect(joined, contains('shepaw vision'),
+          reason: '技能应覆盖 vision 命名空间，否则 She 无法教用户认人');
+      expect(joined, contains('2.0 界面入口地图'),
+          reason: '技能应含侧栏/设置/详情入口地图');
+      expect(joined, contains('2.10 认人与参考相册'),
+          reason: '技能应含认人操作层（无独立设置页）');
+      expect(joined, contains('只能指路'),
+          reason: '技能应标明无 CLI、只能指路的功能');
+      expect(joined, contains('engine.is_debug'),
+          reason: '技能应警告 Debug 引擎不可当作真人脸');
+
       // 每个 references 文件以对应层级标题开头（02→第 2 层 … 06→第 6 层）
       final layerHeadings = [
         '## 2. 用户操作层',

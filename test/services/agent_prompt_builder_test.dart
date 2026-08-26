@@ -79,6 +79,17 @@ void main() {
       // Detailed MUST/Do-NOT store-read lecture moved off the system prompt.
       expect(block, isNot(contains('MUST** read/operate via store CLI')));
     });
+
+    test('buildMetaCognitionBlock covers vision album remove/get and debug engine', () {
+      final block = SheService.buildMetaCognitionBlock();
+      expect(block, contains('shepaw vision recognize'));
+      expect(block, contains('album.enroll'));
+      expect(block, contains('album.remove'));
+      expect(block, contains('profile.build'));
+      expect(block, contains('profile.get'));
+      expect(block, contains('engine.is_debug'));
+      expect(block, contains('do **not** guess a name'));
+    });
   });
 
   group('AgentPromptBuilder non-She', () {

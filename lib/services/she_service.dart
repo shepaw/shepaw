@@ -84,7 +84,9 @@ class SheService {
   /// Initial capabilities index (stored in she_memory for on-demand lookup)
   static const String _defaultCapabilities =
       'user_profile (master profile) | she_memory (soul/self_notes/long_term_memory/heartbeat)'
-      '| agents (AI assistant list) | messages (conversation history) | skills (skills) | os_tools (system tools)';
+      '| agents (AI assistant list) | messages (conversation history) | skills (skills)'
+      '| os_tools (system tools) | store (store:// pouch) | workflow (1:1 staged plans)'
+      '| vision (on-device face album & visual profiles)';
 
   /// Core profile fields: always injected, foundation for She to know the user
   static const List<String> _coreProfileKeys = [
@@ -474,13 +476,15 @@ When the user asks about a **past** image/file/audio ("这张图说了什么", "
 
 ### Face & Person Recognition (on-device, privacy-first)
 
-- User asks "这是谁 / 照片里的人是谁" → `shepaw vision recognize --image <path>` (或 `--message_id <id>`)
-- Register/label a person → `shepaw vision album.enroll --person "<name>" --image <path>` (或 `--message_id <id>`)
-- Build/refresh a person's visual profile → `shepaw vision profile.build --person "<name>"`
-- List registered people → `shepaw vision album.list`; engine/album status → `shepaw vision status`
-Recognition is **embedding-based and runs locally** (no cloud). If the result is
-`unknown`/`ambiguous`, say you are not sure — do **not** guess a name. A person is only
-"recognized" above the high threshold.
+No dedicated settings page — do this in conversation.
+
+- Identify people → `shepaw vision recognize --image <path>` (或 `--message_id <id>`)
+- Register/label → `shepaw vision album.enroll --person "<name>" --image <path>` (或 `--message_id <id>`) `[--relationship] [--caption]`
+- List / remove → `shepaw vision album.list` / `album.remove --person "<name|id>"`
+- Visual profile → `shepaw vision profile.build --person "<name>"` / `profile.get --person "<name>"`
+- Engine/album status → `shepaw vision status` — if `engine.is_debug` is true, matches are **not** real identity; tell the user
+Recognition is **embedding-based and local**. A person is only "recognized" above the high threshold.
+If `unknown`/`ambiguous`, say you are not sure — do **not** guess a name.
 
 ### Your Data & Context
 - `shepaw context profile.query` / `profile.write --field x --value y`
@@ -502,7 +506,8 @@ Recognition is **embedding-based and runs locally** (no cloud). If the result is
 
 ### Chat & Skills
 - `shepaw chat.channels` / `chat.messages` / `chat.message.get` (full message & image analysis)
-- `shepaw skills list`
+- `shepaw skills list` / `skills detail --name <skill>` (e.g. app-usage-guide for UI how-tos)
+- Face recognition: `shepaw vision --help`
 
 **⚠️ Action commands must be tool calls, not text**
 - Master asks you to "send a message to an agent" → call `shepaw context agents.chat --id <id> --message "..."` — text alone does nothing. The agent's reply returns automatically as an `[Agent Reply]` message that re-invokes you: decide then whether to relay your next message or report to your master. Consecutive relays without new input from your master are capped (5 turns) — when the budget runs out, summarize for your master instead of relaying again
@@ -714,6 +719,14 @@ If there is any doubt about whether your knowledge is current, search first.
 
     if (allowed('store')) {
       parts.add(_artifactStorePreferenceSection);
+    }
+
+    if (allowed('vision')) {
+      parts.add('''### Face & Person Recognition (on-device)
+- Identify → `shepaw vision recognize --image <path>` (或 `--message_id <id>`)
+- Album → `shepaw vision album.enroll|list|remove`; profile → `profile.build|get`
+- Status → `shepaw vision status` — if `engine.is_debug` is true, do not treat matches as real identity
+unknown/ambiguous → say you are not sure; do not guess a name.''');
     }
 
     // 记忆路径与非 She session-end 块保持一致：soul/self_notes 走

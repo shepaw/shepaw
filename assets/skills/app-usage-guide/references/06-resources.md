@@ -3,6 +3,7 @@
 | 主题 | 文档 |
 |------|------|
 | 用户操作全量指南 | `docs/USER_GUIDE.md`（中文）/ `docs/USER_GUIDE_EN.md`（English） |
+| 设备端人脸识别 | `docs/face_recognition_guide.md` |
 | 群组聊天流程 | `docs/gorup_chat_flow.md` |
 | Store 协议规范 | `docs/storage_protocol_spec.md`、`docs/storage_space_plan.md` |
 | 工具模型架构 | `docs/tool_model_architecture.md` |

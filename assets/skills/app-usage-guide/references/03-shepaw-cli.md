@@ -19,6 +19,7 @@ She 与其他 Agent 通过 `shepaw <namespace> <subcommand> [--flag value ...]` 
                 os         直接操作系统工具（command / file / app / clipboard / process / macos）
                 workflow   工作流编排（create / dispatch / status / complete / fail / cancel）
                 store      储物袋 store:// 读写（write / read / list）
+                vision     设备端人脸识别（status / recognize / album.* / profile.*）
 ℹ️ META 层       meta       系统信息与时间（datetime；system.info / system.tools-list /
                            system.tools-detail / system.capabilities；cli-tools 外部工具管理）
                 help       顶层帮助
@@ -36,6 +37,7 @@ She 与其他 Agent 通过 `shepaw <namespace> <subcommand> [--flag value ...]` 
 | `os` | `file.*` · `command.*` · `app.*` · `clipboard.*` · `process.*`（平台相关） |
 | `workflow` | `create` · `dispatch` · `status` · `complete` · `fail` · `cancel`（群 Admin 或 She 1:1 DM） |
 | `store` | `write --filename <name> --content <text> [--task] [--space public/workspaces --group <gid>]` · `read --uri <store://...>` · `list --uri <store://...> --depth 1` |
+| `vision` | `status` · `recognize --image <path>\|--message_id <id>` · `album.enroll/list/remove` · `profile.build/get`（无独立设置页，对话里调用） |
 | `meta` | `datetime` · `system.info` · `system.tools-list` · `system.tools-detail --name <tool>` · `system.capabilities` · `cli-tools.list/install/uninstall/rescan` |
 
 **使用纪律：**
@@ -44,4 +46,6 @@ She 与其他 Agent 通过 `shepaw <namespace> <subcommand> [--flag value ...]` 
 2. 产物优先 `shepaw store write`（拿到可分享的 URI），不要用 `os.file.write` 写报告/代码/文档。
 3. 群聊执行上下文里 `store write` 默认落到**群工作空间成员目录**（`members/<agentId>/`，跨设备可见），不是本地私有 runtime。
 4. 命令执行有**权限检查**（`CliCommandConfigService`）：UI 操作跳过；Agent 主动调用按配置放行或拒绝。
-5. 读聊天记录里历史图片：`shepaw chat message.get --id <message_id> --analyze "<问题>"`（图片是元数据，不会自动进上下文）。
+5. 读聊天记录里历史图片：`shepaw chat message.get --id <message_id> --analyze "<问题>"`（图片是元数据，不会自动进上下文）。认人用 `shepaw vision recognize --message_id <id>`，不要靠占位文字猜是谁。
+6. `vision status` 里 `engine.is_debug = true` 时，匹配结果不可当作真实身份。
+7. **没有 CLI、只能指路的功能**：定时任务、模型管理/官方目录导入、技能 ZIP 导入、设备配对、备份快照、提示词栈、CLI 权限开关、主密码/生物识别。用户问这些时给第 2 层入口，不要虚构一条 `shepaw` 命令。

@@ -18,4 +18,8 @@
 - **Q：支持离线吗？** 本地 Agent（Ollama）完全离线；云端 Agent 需网络；看历史聊天与设置无需网络。
 - **Q：怎么删 Agent？** Agent 列表长按 → 删除（聊天记录保留）。
 - **Q：群组里 Admin 干嘛的？** 分析需求、生成计划（Planning/Flow）、协调成员、整合结果。
+- **Q：Planning、Flow 和 1:1 的 workflow 有什么区别？** Planning/Flow 是**群编排**；`shepaw workflow create` 是**与 She 私聊**里的分阶段计划（用户批准后执行）。整件事交给一个 Agent、无需分阶段 → `agents.dispatch`。
+- **Q：怎么认人 / 给家人建档？** 没有独立设置页。在与 She 的对话里发照片（或指出历史图片），由 She 调用 `shepaw vision …`。先 `vision status`；`is_debug = true` 时不要把结果当真人脸。`unknown`/`ambiguous` 时 She 应说不确定，不猜名字。
+- **Q：定时任务在哪？** 仅桌面 **设置 → 定时任务**。手机设置里没有这项；She 也没有创建定时任务的 CLI，只能指路。
+- **Q：个人档案 / 通讯录 / 她的朋友圈在哪？** 档案：设置 → 个人档案（She 也可用 `context profile.*` 读写）。通讯录：侧栏 → 通讯录。她的朋友圈：本机 She 详情页（不在储物袋里）。
 - **Q：API Key 安全吗？** 主密码加密存本地安全存储；别分享主密码或备份文件；定期更换 Key。
