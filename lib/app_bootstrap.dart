@@ -1,5 +1,6 @@
 import 'dart:io' show Platform;
 import 'dart:async';
+import 'package:flutter/services.dart' show rootBundle;
 import 'package:flutter/widgets.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:uuid/uuid.dart';
@@ -135,6 +136,9 @@ class AppBootstrap {
 
     // 初始化技能注册表
     await SkillRegistry.instance.initialize();
+
+    // seed 内置技能（ShePaw App Usage Guide），并确保 She 已启用该技能
+    await _seedBuiltinSkills();
 
     // 初始化外部 CLI 工具注册表并加载进 ShepawCLI
     await CliToolRegistry.instance.initialize();
@@ -346,6 +350,46 @@ class AppBootstrap {
       }
     } catch (e) {
       _log.error('Channel tunnel auto-start failed', tag: 'App', error: e);
+    }
+  }
+
+  /// Seed 内置技能「ShePaw App Usage Guide」到技能目录，并确保 She 已启用。
+  ///
+  /// 幂等：技能已存在则跳过（不覆盖用户修改）；She 已启用则跳过。
+  /// 单步失败只记日志，绝不阻断启动。
+  static const String _builtinAppGuideSkillTool =
+      'skill_shepaw_app_usage_guide';
+  static const String _builtinAppGuideAsset =
+      'assets/skills/app-usage-guide/SKILL.md';
+
+  static Future<void> _seedBuiltinSkills() async {
+    try {
+      // 1. 技能不存在时从 assets seed 进技能目录（importSkillMd 会写入
+      //    <skillsDir>/shepaw_app_usage_guide/SKILL.md 并 rescan）
+      if (SkillRegistry.instance.getDefinition(_builtinAppGuideSkillTool) ==
+          null) {
+        final content = await rootBundle.loadString(_builtinAppGuideAsset);
+        await SkillRegistry.instance.importSkillMd(content, 'app-usage-guide');
+        _log.info('Seeded built-in skill $_builtinAppGuideSkillTool', tag: 'App');
+      }
+
+      // 2. 确保 She 已启用该技能——enabled_skills 决定 She 的 prompt 里的
+      //    技能列表与其可调用的技能工具
+      final she =
+          await LocalDatabaseService().getRemoteAgentById(SheService.sheId);
+      if (she != null && !she.enabledSkills.contains(_builtinAppGuideSkillTool)) {
+        final skills = {...she.enabledSkills, _builtinAppGuideSkillTool}.toList();
+        final metadata = Map<String, dynamic>.from(she.metadata);
+        metadata['enabled_skills'] = skills;
+        await LocalDatabaseService()
+            .updateRemoteAgent(she.copyWith(metadata: metadata));
+        _log.info(
+          'Enabled built-in skill $_builtinAppGuideSkillTool for She',
+          tag: 'App',
+        );
+      }
+    } catch (e) {
+      _log.error('Seed built-in skill failed', tag: 'App', error: e);
     }
   }
 }
