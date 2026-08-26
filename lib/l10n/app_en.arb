@@ -1868,6 +1868,21 @@
   "toolModel_fetchOllamaFailed": "Failed to fetch Ollama models",
   "toolModel_fetchOllamaList": "Fetch Ollama local model list",
   "toolModel_fetchOpenRouterList": "Fetch OpenRouter model list",
+  "toolModel_catalogAvailable": "{count} models available",
+  "@toolModel_catalogAvailable": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "toolModel_catalogEmpty": "The official model catalog is empty",
+  "toolModel_catalogImportSuccess": "Imported from official catalog",
+  "toolModel_catalogTitle": "Official Model Catalog",
+  "toolModel_enterApiKey": "Please enter your API Key",
+  "toolModel_importFromCatalog": "Import from official catalog",
+  "toolModel_noApiKeyTag": "No Key",
+  "toolModel_selectCatalogModel": "Select a model from the catalog",
   "toolModel_searchHint": "Search model name or ID...",
   "toolModel_noMatch": "No matching models",
   "toolModel_fetchFailed": "Failed to fetch models: {error}",

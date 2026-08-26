@@ -4277,6 +4277,30 @@ class AppLocalizationsEn extends AppLocalizations {
   String get toolModel_fetchOpenRouterList => 'Fetch OpenRouter model list';
 
   @override
+  String toolModel_catalogAvailable(int count) => '$count models available';
+
+  @override
+  String get toolModel_catalogEmpty => 'The official model catalog is empty';
+
+  @override
+  String get toolModel_catalogImportSuccess => 'Imported from official catalog';
+
+  @override
+  String get toolModel_catalogTitle => 'Official Model Catalog';
+
+  @override
+  String get toolModel_enterApiKey => 'Please enter your API Key';
+
+  @override
+  String get toolModel_importFromCatalog => 'Import from official catalog';
+
+  @override
+  String get toolModel_noApiKeyTag => 'No Key';
+
+  @override
+  String get toolModel_selectCatalogModel => 'Select a model from the catalog';
+
+  @override
   String get toolModel_searchHint => 'Search model name or ID...';
 
   @override

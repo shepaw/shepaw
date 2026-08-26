@@ -2,10 +2,12 @@ import 'package:flutter/material.dart';
 import 'package:uuid/uuid.dart';
 import '../l10n/app_localizations.dart';
 import '../widgets/model_icon.dart';
+import '../models/catalog_model.dart';
 import '../models/llm_provider_config.dart';
 import '../models/model_definition.dart';
 import '../models/model_routing_config.dart';
 import '../models/remote_agent.dart' show repairUtf16Garbled;
+import '../services/model_catalog_service.dart';
 import '../services/model_registry.dart';
 import '../services/ollama_service.dart';
 import '../services/openrouter_service.dart';
@@ -25,6 +27,28 @@ class ModelManagementScreen extends StatefulWidget {
 
 class _ModelManagementScreenState
     extends State<ModelManagementScreen> {
+  final ModelCatalogService _catalogService = ModelCatalogService.shared;
+  List<CatalogModel> _catalogModels = [];
+
+  @override
+  void initState() {
+    super.initState();
+    _prefetchCatalog();
+  }
+
+  /// 进入页面时自动拉取官方模型目录（共享缓存，1 小时内不重复请求）。
+  Future<void> _prefetchCatalog() async {
+    try {
+      final models = await _catalogService.fetchModels();
+      if (!mounted) return;
+      setState(() {
+        _catalogModels = models;
+      });
+    } catch (_) {
+      // 拉取失败静默处理：保留手动入口（空态按钮 / 编辑页按钮）
+    }
+  }
+
   // ---------------------------------------------------------------------------
   // Add / Edit
   // ---------------------------------------------------------------------------
@@ -92,6 +116,84 @@ class _ModelManagementScreenState
   }
 
   // ---------------------------------------------------------------------------
+  // Import from official catalog
+  // ---------------------------------------------------------------------------
+
+  Future<void> _importFromCatalog() async {
+    final l10n = AppLocalizations.of(context);
+    try {
+      final models = await _catalogService.fetchModels(forceRefresh: true);
+      if (!mounted) return;
+      if (models.isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(l10n.toolModel_catalogEmpty)),
+        );
+        return;
+      }
+      _showCatalogPicker(models);
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(ExceptionHandler.getUserMessage(e))),
+      );
+    }
+  }
+
+  /// 弹出目录模型选择框（列表页横幅 / 空态按钮共用）。
+  void _showCatalogPicker(List<CatalogModel> models) {
+    final l10n = AppLocalizations.of(context);
+    showDialog<void>(
+      context: context,
+      builder: (ctx) => _ModelPickerDialog(
+        title: l10n.toolModel_selectCatalogModel,
+        models: models
+            .map(
+              (m) => _PickableModel(
+                id: m.name,
+                name: m.displayName.isNotEmpty ? m.displayName : m.name,
+                subtitle: '${m.providerLabel} · ${m.name}',
+                tag: m.requiresApiKey ? null : l10n.toolModel_noApiKeyTag,
+              ),
+            )
+            .toList(),
+        onSelected: (picked) {
+          final m = models.firstWhere((x) => x.name == picked.id);
+          _applyCatalogToRegistry(m);
+        },
+      ),
+    );
+  }
+
+  /// 将目录模型直接写入 ModelRegistry（API Key 留空，待用户在编辑页补填）。
+  Future<void> _applyCatalogToRegistry(CatalogModel m) async {
+    final l10n = AppLocalizations.of(context);
+    await ModelRegistry.instance.add(
+      displayName: m.displayName.isNotEmpty ? m.displayName : m.name,
+      description: m.description,
+      route: ModelRouteConfig(
+        provider: m.provider,
+        model: m.name,
+        apiBase: m.apiBase,
+        apiKey: null,
+        stream: m.stream,
+        apiPath: m.apiPath,
+        requestBodyTemplate: m.requestBodyTemplate,
+        responseBodyPath: m.responseBodyPath,
+      ),
+      modelTypes: m.modelTypes,
+    );
+    if (mounted) {
+      setState(() {});
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(l10n.toolModel_catalogImportSuccess),
+          backgroundColor: Colors.green,
+        ),
+      );
+    }
+  }
+
+  // ---------------------------------------------------------------------------
   // Build
   // ---------------------------------------------------------------------------
 
@@ -113,6 +215,8 @@ class _ModelManagementScreenState
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
+          if (_catalogModels.isNotEmpty)
+            _buildCatalogBanner(colorScheme, l10n),
           if (defs.isEmpty)
             _buildEmptyState(colorScheme, l10n)
           else ...[
@@ -161,7 +265,66 @@ class _ModelManagementScreenState
               color: colorScheme.onSurfaceVariant.withValues(alpha: 0.7),
             ),
           ),
+          // 横幅已提供目录入口时，空态不再重复展示导入按钮
+          if (_catalogModels.isEmpty) ...[
+            const SizedBox(height: 24),
+            FilledButton.icon(
+              onPressed: _importFromCatalog,
+              icon: const Icon(Icons.inventory_2),
+              label: Text(l10n.toolModel_importFromCatalog),
+            ),
+          ],
         ],
+      ),
+    );
+  }
+
+  /// 顶部「官方模型目录」横幅：进入页面自动拉取到数据后展示，点击进目录选择。
+  Widget _buildCatalogBanner(ColorScheme colorScheme, AppLocalizations l10n) {
+    return Card(
+      elevation: 0,
+      margin: const EdgeInsets.only(bottom: 12),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12),
+        side: BorderSide(color: colorScheme.primary.withValues(alpha: 0.4)),
+      ),
+      color: colorScheme.primaryContainer.withValues(alpha: 0.35),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(12),
+        onTap: () => _showCatalogPicker(_catalogModels),
+        child: Padding(
+          padding: const EdgeInsets.all(12),
+          child: Row(
+            children: [
+              Icon(Icons.inventory_2, color: colorScheme.primary),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      l10n.toolModel_catalogTitle,
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w600,
+                        fontSize: 14,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      l10n.toolModel_catalogAvailable(_catalogModels.length),
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Icon(Icons.chevron_right,
+                  size: 20, color: colorScheme.onSurfaceVariant),
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -332,6 +495,11 @@ class _ModelEditScreenState extends State<ModelEditScreen> {
   bool _testingOllamaConnection = false;
   String? _modelsError;
 
+  // ── 官方模型目录相关 ──────────────────────────────────
+  final ModelCatalogService _catalogService = ModelCatalogService.shared;
+  bool _loadingCatalog = false;
+  String? _catalogError;
+
   // ── Provider API Key 缓存 ─────────────────────────────
   /// Secure storage key 前缀由 [SecureKeyManager.providerApiKeyStorageKey] 管理
 
@@ -340,6 +508,8 @@ class _ModelEditScreenState extends State<ModelEditScreen> {
     super.initState();
     _openRouterService = OpenRouterService();
     _ollamaService = OllamaService();
+    // 进入编辑页即预热官方目录缓存（走 channel 后台，无第三方费用）
+    _prefetchCatalog();
 
     final e = widget.existing;
     _displayNameController = TextEditingController(text: e?.displayName ?? '');
@@ -633,6 +803,144 @@ class _ModelEditScreenState extends State<ModelEditScreen> {
     );
   }
 
+  /// 进入编辑页时预热目录缓存（共享缓存，1 小时内不重复请求）。
+  Future<void> _prefetchCatalog() async {
+    try {
+      await _catalogService.fetchModels();
+    } catch (_) {
+      // 预热失败静默：点「从官方目录导入」时会再尝试
+    }
+  }
+
+  /// 拉取官方模型目录并按当前选中服务商过滤，弹出选择框
+  Future<void> _fetchCatalogModels() async {
+    final l10n = AppLocalizations.of(context);
+    setState(() {
+      _loadingCatalog = true;
+      _catalogError = null;
+    });
+    try {
+      // 优先用共享缓存（进入页面时已自动预取），秒开且不与预取重复请求
+      final models = await _catalogService.fetchModels();
+      if (!mounted) return;
+
+      // 命中选中服务商：先按 ProviderLabel 精确匹配，再兜底 providerType
+      List<CatalogModel> filtered;
+      if (_selectedProviderIndex >= 0) {
+        final provider = llmProviders[_selectedProviderIndex];
+        filtered = models
+            .where((m) =>
+                m.providerLabel == provider.name ||
+                m.provider == provider.providerType)
+            .toList();
+      } else {
+        filtered = models;
+      }
+
+      setState(() => _loadingCatalog = false);
+
+      if (filtered.isEmpty) {
+        setState(() {
+          _catalogError = l10n.toolModel_catalogEmpty;
+        });
+        return;
+      }
+
+      if (mounted) {
+        _showCatalogPicker(filtered);
+      }
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _catalogError = _formatModelFetchError(e, AppLocalizations.of(context));
+        _loadingCatalog = false;
+      });
+      LoggerService().error('Failed to fetch model catalog',
+          tag: 'ModelEdit', error: e);
+    }
+  }
+
+  void _showCatalogPicker(List<CatalogModel> models) {
+    final l10n = AppLocalizations.of(context);
+    showDialog(
+      context: context,
+      builder: (context) => _ModelPickerDialog(
+        title: l10n.toolModel_selectCatalogModel,
+        models: models
+            .map(
+              (m) => _PickableModel(
+                id: m.name,
+                name: m.displayName.isNotEmpty ? m.displayName : m.name,
+                subtitle: '${m.providerLabel} · ${m.name}',
+                tag: m.requiresApiKey ? null : l10n.toolModel_noApiKeyTag,
+              ),
+            )
+            .toList(),
+        onSelected: (picked) {
+          final m = models.firstWhere((x) => x.name == picked.id);
+          _applyCatalogModel(m);
+        },
+      ),
+    );
+  }
+
+  /// 将目录模型填充到编辑表单
+  void _applyCatalogModel(CatalogModel m) {
+    final l10n = AppLocalizations.of(context);
+    setState(() {
+      // 命中服务商预设（ProviderLabel 优先，providerType 兜底），自动带出 apiBase
+      int providerIndex = -1;
+      for (int i = 0; i < llmProviders.length; i++) {
+        if (llmProviders[i].name == m.providerLabel) {
+          providerIndex = i;
+          break;
+        }
+      }
+      if (providerIndex == -1) {
+        for (int i = 0; i < llmProviders.length; i++) {
+          if (llmProviders[i].providerType == m.provider) {
+            providerIndex = i;
+            break;
+          }
+        }
+      }
+      if (providerIndex >= 0) {
+        _selectedProviderIndex = providerIndex;
+        _providerController.text = llmProviders[providerIndex].providerType;
+        _apiBaseController.text = llmProviders[providerIndex].defaultApiBase;
+      } else {
+        _selectedProviderIndex = -1;
+        _providerController.text = m.provider;
+        _apiBaseController.text = m.apiBase;
+      }
+
+      _displayNameController.text =
+          m.displayName.isNotEmpty ? m.displayName : m.name;
+      _modelController.text = m.name;
+      _apiKeyController.clear();
+      _selectedModelTypes = Set<ModelType>.from(m.modelTypes);
+      if (_selectedModelTypes.isEmpty) {
+        _selectedModelTypes.add(ModelType.text);
+      }
+      _streamEnabled = m.stream;
+      _requestBodyTemplateController.text = m.requestBodyTemplate ?? '';
+      _responseBodyPathController.text = m.responseBodyPath ?? '';
+      _modelsError = null;
+      _catalogError = null;
+    });
+
+    // 需要 Key 的模型：待对话框关闭后提示补填
+    if (m.requiresApiKey) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text(l10n.toolModel_enterApiKey)),
+          );
+        }
+      });
+    }
+  }
+
   @override
   void dispose() {
     _apiKeyController.removeListener(_repairApiKeyIfGarbled);
@@ -755,6 +1063,34 @@ class _ModelEditScreenState extends State<ModelEditScreen> {
                   );
                 }),
               ),
+              const SizedBox(height: 12),
+
+              // ── 官方模型目录导入 ────────────────────────────────────
+              OutlinedButton.icon(
+                onPressed: _loadingCatalog ? null : _fetchCatalogModels,
+                icon: _loadingCatalog
+                    ? SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          valueColor:
+                              AlwaysStoppedAnimation(colorScheme.primary),
+                        ),
+                      )
+                    : const Icon(Icons.inventory_2),
+                label: Text(l10n.toolModel_importFromCatalog),
+              ),
+              if (_catalogError != null)
+                Padding(
+                  padding: const EdgeInsets.only(top: 8),
+                  child: Text(
+                    _catalogError!,
+                    style: TextStyle(fontSize: 12, color: colorScheme.error),
+                    maxLines: 3,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
               const SizedBox(height: 16),
               const Divider(),
               const SizedBox(height: 12),

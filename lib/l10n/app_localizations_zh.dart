@@ -4116,6 +4116,30 @@ class AppLocalizationsZh extends AppLocalizations {
   String get toolModel_fetchOpenRouterList => '获取 OpenRouter 模型列表';
 
   @override
+  String toolModel_catalogAvailable(int count) => '发现 $count 个可用模型';
+
+  @override
+  String get toolModel_catalogEmpty => '官方模型目录暂无可用模型';
+
+  @override
+  String get toolModel_catalogImportSuccess => '已从官方目录导入';
+
+  @override
+  String get toolModel_catalogTitle => '官方模型目录';
+
+  @override
+  String get toolModel_enterApiKey => '请填入你的 API Key';
+
+  @override
+  String get toolModel_importFromCatalog => '从官方目录导入';
+
+  @override
+  String get toolModel_noApiKeyTag => '无需Key';
+
+  @override
+  String get toolModel_selectCatalogModel => '选择官方目录模型';
+
+  @override
   String get toolModel_searchHint => '搜索模型名称或 ID...';
 
   @override

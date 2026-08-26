@@ -7616,6 +7616,54 @@ abstract class AppLocalizations {
   /// **'获取 OpenRouter 模型列表'**
   String get toolModel_fetchOpenRouterList;
 
+  /// No description provided for @toolModel_catalogAvailable.
+  ///
+  /// In zh, this message translates to:
+  /// **'发现 {count} 个可用模型'**
+  String toolModel_catalogAvailable(int count);
+
+  /// No description provided for @toolModel_catalogEmpty.
+  ///
+  /// In zh, this message translates to:
+  /// **'官方模型目录暂无可用模型'**
+  String get toolModel_catalogEmpty;
+
+  /// No description provided for @toolModel_catalogImportSuccess.
+  ///
+  /// In zh, this message translates to:
+  /// **'已从官方目录导入'**
+  String get toolModel_catalogImportSuccess;
+
+  /// No description provided for @toolModel_catalogTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'官方模型目录'**
+  String get toolModel_catalogTitle;
+
+  /// No description provided for @toolModel_enterApiKey.
+  ///
+  /// In zh, this message translates to:
+  /// **'请填入你的 API Key'**
+  String get toolModel_enterApiKey;
+
+  /// No description provided for @toolModel_importFromCatalog.
+  ///
+  /// In zh, this message translates to:
+  /// **'从官方目录导入'**
+  String get toolModel_importFromCatalog;
+
+  /// No description provided for @toolModel_noApiKeyTag.
+  ///
+  /// In zh, this message translates to:
+  /// **'无需Key'**
+  String get toolModel_noApiKeyTag;
+
+  /// No description provided for @toolModel_selectCatalogModel.
+  ///
+  /// In zh, this message translates to:
+  /// **'选择官方目录模型'**
+  String get toolModel_selectCatalogModel;
+
   /// No description provided for @toolModel_searchHint.
   ///
   /// In zh, this message translates to:

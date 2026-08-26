@@ -2346,6 +2346,21 @@
   "toolModel_fetchOllamaFailed": "获取 Ollama 模型失败",
   "toolModel_fetchOllamaList": "获取 Ollama 本地模型列表",
   "toolModel_fetchOpenRouterList": "获取 OpenRouter 模型列表",
+  "toolModel_catalogAvailable": "发现 {count} 个可用模型",
+  "@toolModel_catalogAvailable": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "toolModel_catalogEmpty": "官方模型目录暂无可用模型",
+  "toolModel_catalogImportSuccess": "已从官方目录导入",
+  "toolModel_catalogTitle": "官方模型目录",
+  "toolModel_enterApiKey": "请填入你的 API Key",
+  "toolModel_importFromCatalog": "从官方目录导入",
+  "toolModel_noApiKeyTag": "无需Key",
+  "toolModel_selectCatalogModel": "选择官方目录模型",
   "toolModel_searchHint": "搜索模型名称或 ID...",
   "toolModel_noMatch": "无匹配模型",
   "toolModel_fetchFailed": "获取模型失败: {error}",
