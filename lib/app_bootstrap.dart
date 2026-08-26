@@ -355,8 +355,9 @@ class AppBootstrap {
 
   /// Seed 内置技能「ShePaw App Usage Guide」到技能目录，并确保 She 已启用。
   ///
-  /// 幂等：技能已存在则跳过（不覆盖用户修改）；She 已启用则跳过。
-  /// 单步失败只记日志，绝不阻断启动。
+  /// 预发布阶段：每次启动都从 assets 覆盖同步内置技能（改 assets 里的
+  /// SKILL.md 重启即生效）。发布后如需保护用户改动，再改为「仅缺失时写入」。
+  /// She 启用是幂等的：已启用则跳过。单步失败只记日志，绝不阻断启动。
   static const String _builtinAppGuideSkillTool =
       'skill_shepaw_app_usage_guide';
   static const String _builtinAppGuideAsset =
@@ -364,14 +365,12 @@ class AppBootstrap {
 
   static Future<void> _seedBuiltinSkills() async {
     try {
-      // 1. 技能不存在时从 assets seed 进技能目录（importSkillMd 会写入
+      // 1. 从 assets 覆盖同步内置技能（importSkillMd overwrite 会重写
       //    <skillsDir>/shepaw_app_usage_guide/SKILL.md 并 rescan）
-      if (SkillRegistry.instance.getDefinition(_builtinAppGuideSkillTool) ==
-          null) {
-        final content = await rootBundle.loadString(_builtinAppGuideAsset);
-        await SkillRegistry.instance.importSkillMd(content, 'app-usage-guide');
-        _log.info('Seeded built-in skill $_builtinAppGuideSkillTool', tag: 'App');
-      }
+      final content = await rootBundle.loadString(_builtinAppGuideAsset);
+      await SkillRegistry.instance
+          .importSkillMd(content, 'app-usage-guide', overwrite: true);
+      _log.info('Seeded built-in skill $_builtinAppGuideSkillTool', tag: 'App');
 
       // 2. 确保 She 已启用该技能——enabled_skills 决定 She 的 prompt 里的
       //    技能列表与其可调用的技能工具
