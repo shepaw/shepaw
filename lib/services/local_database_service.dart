@@ -8,6 +8,7 @@ import 'minds_database_service.dart';
 import 'agent_memory_db_service.dart';
 import 'agent_memory_store_service.dart';
 import 'logger_service.dart';
+import 'database/face_album_schema.dart';
 
 // 各业务领域的数据访问层（DAO）以 extension 形式拆分到 database/ 目录下，
 // 通过 export 重新导出，调用方只需 import 'local_database_service.dart' 即可
@@ -20,6 +21,7 @@ export 'database/config_dao.dart';
 export 'database/scheduled_task_dao.dart';
 export 'database/dispatch_task_dao.dart';
 export 'database/history_compaction_cache_dao.dart';
+export 'database/face_album_dao.dart';
 
 /// 本地数据库服务 - 使用 SQLite 存储所有数据
 ///
@@ -45,7 +47,7 @@ class LocalDatabaseService {
     final path = join(directory.path, 'shepaw.db');
     return await openDatabase(
       path,
-      version: 31,
+      version: 32,
       onCreate: _onCreate,
       onUpgrade: _onUpgrade,
     );
@@ -417,6 +419,9 @@ class LocalDatabaseService {
     await db.execute(
         'CREATE INDEX IF NOT EXISTS idx_external_memories_from '
         'ON external_memories(from_device, received_at DESC)');
+
+    // 人脸相册（v32）
+    await createFaceAlbumTables(db);
 
   }
 
@@ -829,6 +834,19 @@ class LocalDatabaseService {
       } catch (e) {
         LoggerService().error(
           'Failed to add enable_stage_gate (v31)',
+          tag: 'Migration',
+          error: e,
+        );
+      }
+    }
+
+    if (oldVersion < 32) {
+      // 版本 31 -> 32: 人脸相册表（face_persons / face_photos）
+      try {
+        await createFaceAlbumTables(db);
+      } catch (e) {
+        LoggerService().error(
+          'Failed to create face album tables (v32)',
           tag: 'Migration',
           error: e,
         );

@@ -12,6 +12,7 @@ import 'meta/meta_namespace.dart';
 import 'help_namespace.dart';
 import 'external_cli_namespace.dart';
 import 'store/store_namespace.dart';
+import 'vision/vision_namespace.dart';
 import '../../services/logger_service.dart';
 import '../../services/cli_command_config_service.dart';
 import '../../services/cli_tool_registry.dart';
@@ -68,6 +69,8 @@ class ShepawCLI {
     'workflow': WorkflowNamespace.instance,
     // 存储空间产物读写（docs/storage_space_plan.md §6.3）
     'store': StoreNamespace.instance,
+    // 设备端人脸识别（参考相册 + 结构化视觉档案）
+    'vision': VisionNamespace.instance,
 
     // ── ℹ️ META 层 - 系统元信息和诊断 ───────────────────────────────────────────
     'meta': MetaNamespace.instance,
@@ -123,7 +126,10 @@ class ShepawCLI {
       'Use dot notation for nested commands (e.g. "shepaw context profile.query"). '
       'Add flags={"help":""} for detailed usage. '
       'IMPORTANT: chat history images are metadata-only — to read/analyze a past image, '
-      'call namespace=chat subcommand=message.get with flags id=<message_id> analyze=<question>.';
+      'call namespace=chat subcommand=message.get with flags id=<message_id> analyze=<question>. '
+      'Face/person recognition runs on-device: namespace=vision subcommand=album.enroll '
+      '(flags person=, image=|message_id=) to register a person, recognize (flags image=|message_id=) '
+      'to identify faces, album.list / profile.build / profile.get to manage profiles.';
 
   /// 动态生成工具描述（包含外部工具信息）
   String _buildToolDescription() {

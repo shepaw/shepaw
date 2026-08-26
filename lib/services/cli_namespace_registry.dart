@@ -4,6 +4,7 @@ import '../clis/shepaw/tools/tools_namespace.dart';
 import '../clis/shepaw/skills_namespace.dart';
 import '../clis/shepaw/meta/meta_namespace.dart';
 import '../clis/shepaw/help_namespace.dart';
+import '../clis/shepaw/vision/vision_namespace.dart';
 
 /// 定义 CLI 命名空间的元数据
 class CliNamespaceInfo {
@@ -95,6 +96,15 @@ class CliNamespaceRegistry {
         commands: _getAllCommandsInNamespace(
           'help',
           HelpNamespace.instance,
+        ),
+      ),
+      'vision': CliNamespaceInfo(
+        id: 'vision',
+        label: 'Vision',
+        description: 'On-device face recognition — reference album & visual profiles',
+        commands: _getAllCommandsInNamespace(
+          'vision',
+          VisionNamespace.instance,
         ),
       ),
     };

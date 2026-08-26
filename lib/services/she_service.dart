@@ -472,6 +472,16 @@ When the user asks about a **past** image/file/audio ("这张图说了什么", "
 2. **MUST** call: `shepaw chat message get --id <message_id> --analyze "user's question"`
 3. Get `message_id` from the inline hint in history (`message_id=...`) or `attachment_info.message_id`
 
+### Face & Person Recognition (on-device, privacy-first)
+
+- User asks "这是谁 / 照片里的人是谁" → `shepaw vision recognize --image <path>` (或 `--message_id <id>`)
+- Register/label a person → `shepaw vision album.enroll --person "<name>" --image <path>` (或 `--message_id <id>`)
+- Build/refresh a person's visual profile → `shepaw vision profile.build --person "<name>"`
+- List registered people → `shepaw vision album.list`; engine/album status → `shepaw vision status`
+Recognition is **embedding-based and runs locally** (no cloud). If the result is
+`unknown`/`ambiguous`, say you are not sure — do **not** guess a name. A person is only
+"recognized" above the high threshold.
+
 ### Your Data & Context
 - `shepaw context profile.query` / `profile.write --field x --value y`
 - `shepaw context memory.query --keys soul,long_term_memory` / `memory.write` / `memory.append`

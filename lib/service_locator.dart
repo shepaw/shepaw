@@ -9,6 +9,7 @@ import 'services/token_service.dart';
 import 'services/remote_agent_service.dart';
 import 'services/message_collapse_preference.dart';
 import 'services/composer_draft_service.dart';
+import 'services/vision/reference_album_service.dart';
 
 /// 全局服务定位器（依赖注入容器）。
 ///
@@ -47,6 +48,11 @@ void setupServiceLocator() {
   );
   getIt.registerLazySingleton<ComposerDraftService>(
     () => ComposerDraftService(),
+  );
+
+  // 人脸参考相册：CLI / UI 共用同一实例（embedding 向量库懒加载）。
+  getIt.registerLazySingleton<ReferenceAlbumService>(
+    () => ReferenceAlbumService(),
   );
 }
 
