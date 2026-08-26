@@ -9920,6 +9920,12 @@ abstract class AppLocalizations {
   /// **'分享链接已复制'**
   String get storage_browserLinkCopied;
 
+  /// No description provided for @storage_browserReveal.
+  ///
+  /// In zh, this message translates to:
+  /// **'在储物袋中显示'**
+  String get storage_browserReveal;
+
   /// No description provided for @storage_browserExport.
   ///
   /// In zh, this message translates to:

@@ -2730,6 +2730,7 @@
   "storage_browserShareLink": "Share link",
   "storage_browserPathCopied": "Path copied",
   "storage_browserLinkCopied": "Share link copied",
+  "storage_browserReveal": "Show in storage bag",
   "storage_browserExport": "Export to…",
   "storage_browserExportDone": "Exported to {path}",
   "@storage_browserExportDone": {

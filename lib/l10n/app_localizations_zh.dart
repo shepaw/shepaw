@@ -5431,6 +5431,9 @@ class AppLocalizationsZh extends AppLocalizations {
   String get storage_browserLinkCopied => '分享链接已复制';
 
   @override
+  String get storage_browserReveal => '在储物袋中显示';
+
+  @override
   String get storage_browserExport => '导出到…';
 
   @override

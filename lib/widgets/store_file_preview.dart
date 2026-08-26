@@ -10,6 +10,8 @@ import 'package:share_plus/share_plus.dart';
 
 import '../l10n/app_localizations.dart';
 import '../models/attachment_data.dart';
+import '../screens/storage_directory_opener.dart';
+import '../services/store_open_service.dart';
 import '../storage/store_protocol.dart';
 import '../utils/layout_utils.dart';
 
@@ -172,6 +174,28 @@ class StoreFilePreviewPage extends StatelessWidget {
     await Share.share(md, subject: fileName);
   }
 
+  /// 跳到储物袋中该文件所在的目录。
+  Future<void> _revealInStorageBag(BuildContext context) async {
+    final uri = storeUri;
+    if (uri == null || uri.isEmpty) return;
+    try {
+      final parsed = parseStoreUri(uri);
+      registerStorageDirectoryOpener();
+      final parent = p.dirname(parsed.path);
+      await StoreOpenService.instance.openDirectoryInBrowser(
+        context,
+        space: parsed.space,
+        deviceId: parsed.device,
+        path: parent == '.' ? '' : parent,
+      );
+    } catch (_) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('无法定位: $uri')),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final desktop = LayoutUtils.isDesktopLayout(context);
@@ -196,6 +220,11 @@ class StoreFilePreviewPage extends StatelessWidget {
               tooltip: l10n.storage_browserShareLink,
               icon: const Icon(Icons.ios_share_outlined),
               onPressed: () => _shareLink(context),
+            ),
+            IconButton(
+              tooltip: l10n.storage_browserReveal,
+              icon: const Icon(Icons.folder_open_outlined),
+              onPressed: () => _revealInStorageBag(context),
             ),
           ],
           IconButton(
