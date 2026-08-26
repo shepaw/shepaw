@@ -1118,6 +1118,11 @@ class GroupOrchestrationService {
         final failedAgentNames = <String>[];
         var dispatchNudgeCount = 0;
         const maxDispatchNudges = 2;
+
+        // L3: 连续全失败轮计数器——成员全部失败时管理员反复重派只会空耗
+        // （ACP 单轮最长 3h × maxRounds 50），连续 N 轮全失败即提前停止。
+        var consecutiveAllFailedRounds = 0;
+        const maxConsecutiveAllFailedRounds = 3;
         // Compact record of the last dispatch. The dispatch JSON is stripped
         // from the admin's message (user-facing), so this note is re-injected
         // into the summarize round to let the admin remember its own plan.
@@ -1146,6 +1151,18 @@ class GroupOrchestrationService {
         while (true) {
           // 新一轮开始：刷新 inbox 新鲜度基准（只消费本轮内 MCP 写入的决定）。
           roundStartTime = DateTime.now();
+          // If admin sent a form/file_upload in the previous round, exit immediately
+          // so the user can fill it in (forms are non-blocking).
+          if (adminTriggeredNonBlockingInteraction) {
+            LoggerService().debug(
+                'Loop orchestration ended: admin triggered non-blocking interaction',
+                tag: 'GroupOrchestrationService');
+            // L1：本轮并不实际执行，先不落盘 round_start，避免 latest.json 留下
+            // 一轮从未运行的「running」幽灵状态（随后 finish 的 rounds 计数对不上）。
+            emitRoundEnd(summary: '管理员触发表单/文件交互，本轮暂停等待用户填写');
+            break;
+          }
+          // 确认本轮确实要执行后才落盘 round_start（L1：早退路径不留下幽灵 running）。
           await _emitOrchestrationRound(
             channelId: channelId,
             round: currentRound,
@@ -1157,15 +1174,6 @@ class GroupOrchestrationService {
               'started_at': roundStartTime.toIso8601String(),
             },
           );
-          // If admin sent a form/file_upload in the previous round, exit immediately
-          // so the user can fill it in (forms are non-blocking).
-          if (adminTriggeredNonBlockingInteraction) {
-            LoggerService().debug(
-                'Loop orchestration ended: admin triggered non-blocking interaction',
-                tag: 'GroupOrchestrationService');
-            emitRoundEnd(summary: '管理员触发表单/文件交互，本轮暂停等待用户填写');
-            break;
-          }
           // Check cancellation — run abort-summarize before exiting if we have
           // already done at least one round (i.e. Admin has produced content).
           if (acpCancellationToken?.isCancelled == true) {
@@ -1801,6 +1809,42 @@ class GroupOrchestrationService {
           // M8: 跨轮累积全部成员回合（含 cascade 级联成员）引用的产物 URI。
           for (final r in memberTurnResults.values) {
             roundArtifactUris.addAll(extractStoreUris(r.content));
+          }
+
+          // L3: 连续全失败轮提前终止。本轮派发成员全部失败（超时/抛错/空回复
+          // 均计入 failedAgentNames）时，管理员再重派同一批成员只会继续空耗；
+          // 连续 maxConsecutiveAllFailedRounds 轮全失败即停止并告知用户。
+          if (delegatedIds.isNotEmpty) {
+            final delegatedNames = delegatedIds.map((id) =>
+                agents.where((a) => a.id == id).firstOrNull?.name ?? id);
+            final allDelegatedFailed =
+                delegatedNames.every(failedAgentNames.contains);
+            if (allDelegatedFailed) {
+              consecutiveAllFailedRounds++;
+            } else {
+              consecutiveAllFailedRounds = 0;
+            }
+            if (consecutiveAllFailedRounds >= maxConsecutiveAllFailedRounds) {
+              LoggerService().warning(
+                'Loop orchestration stopped: $consecutiveAllFailedRounds '
+                'consecutive all-failed delegation rounds at round $currentRound',
+                tag: 'GroupOrchestrationService',
+              );
+              await _saveOrchestrationSystemMessage(
+                channelId,
+                '⚠️ 连续 $consecutiveAllFailedRounds 轮所有成员均执行失败，'
+                '流程已自动停止。请检查成员连接与任务配置后重试。',
+              );
+              emitRoundEnd(
+                delegatedAgentNames: delegatedTurnResults.keys
+                    .map((id) =>
+                        agents.where((a) => a.id == id).firstOrNull?.name ?? id)
+                    .toList(),
+                failed: List.unmodifiable(failedAgentNames),
+                summary: '连续 $consecutiveAllFailedRounds 轮成员全部执行失败，自动停止',
+              );
+              break;
+            }
           }
 
           // Check cancellation after member execution.

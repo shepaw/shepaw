@@ -373,7 +373,17 @@ class GroupDispatchParser {
     }
 
     final rawMode = dispatchData['mode'];
-    final mode = (rawMode is String && rawMode.isNotEmpty) ? rawMode : 'concurrent';
+    // L11: 校验 mode，非法值不再静默按 concurrent 处理——记告警（步骤仍按
+    // concurrent 执行，避免整轮作废），但明确暴露给日志。
+    const validModes = {'concurrent', 'sequential'};
+    if (rawMode is String && rawMode.isNotEmpty && !validModes.contains(rawMode)) {
+      LoggerService().warning(
+        'Dispatch mode "$rawMode" is not supported; falling back to concurrent',
+        tag: 'GroupDispatchParser',
+      );
+    }
+    final mode =
+        (rawMode is String && validModes.contains(rawMode)) ? rawMode : 'concurrent';
     final rawStepsValue = dispatchData['steps'];
     final rawSteps = rawStepsValue is List ? rawStepsValue : const [];
 
@@ -428,6 +438,25 @@ class GroupDispatchParser {
     }
 
     steps.sort((a, b) => a.step.compareTo(b.step));
+
+    // L11: 重复 step 编号会让 sequential 顺序出现歧义（执行仍按列表序，编号仅
+    // 用于展示/排序）。检测到重复时记告警，便于发现模型输出异常。
+    var prevStep = -1;
+    var sawDuplicateStep = false;
+    for (final s in steps) {
+      if (s.step <= prevStep) {
+        sawDuplicateStep = true;
+        break;
+      }
+      prevStep = s.step;
+    }
+    if (sawDuplicateStep) {
+      LoggerService().warning(
+        'Dispatch steps contain duplicate/out-of-order step numbers; '
+        'execution order follows list order',
+        tag: 'GroupDispatchParser',
+      );
+    }
 
     // A dispatch block that yielded no usable step at all is a parse failure
     // the caller may want to nudge the admin about — not a silent "done".

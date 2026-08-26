@@ -1,5 +1,8 @@
 import 'dart:convert';
 
+import 'package:sqflite/sqflite.dart' show ConflictAlgorithm;
+import 'package:uuid/uuid.dart';
+
 import '../../models/channel.dart';
 import '../local_database_service.dart';
 import '../logger_service.dart';
@@ -16,6 +19,8 @@ class GroupMemberSessionService {
   GroupMemberSessionService(this._db);
 
   static const _tag = 'GroupMemberSession';
+
+  static const _uuid = Uuid();
 
   /// 群聊清空时远端 agent 断线，`/reset` 未能送达 → 记录待补发。
   ///
@@ -115,8 +120,10 @@ class GroupMemberSessionService {
 
     try {
       await _db.createChannel(channel, userId);
+      // L10: 引导消息用确定性 id + ConflictAlgorithm.ignore——并发 ensure
+      // 时两个调用同时走到这里，第二个插入幂等跳过，不再重复引导系统消息。
       await _db.createMessage(
-        id: 'sys_gmd_${sessionId}_${DateTime.now().millisecondsSinceEpoch}',
+        id: 'sys_gmd_$sessionId',
         channelId: sessionId,
         senderId: 'system',
         senderType: 'system',
@@ -125,6 +132,7 @@ class GroupMemberSessionService {
             '本会话由群聊「${groupChannel.name}」自动创建，与该群会话一一对应。'
             '此处记录对该成员的每次调用（请求与回复），不会影响普通单聊上下文。',
         messageType: 'system',
+        conflictAlgorithm: ConflictAlgorithm.ignore,
       );
       LoggerService().debug(
         'Created group-bound member session $sessionId for agent $agentId',
@@ -223,8 +231,9 @@ class GroupMemberSessionService {
     final existing = await _db.getChannelById(memberSessionId);
     if (existing == null) return;
 
-    final turnKey = sourceMessageId ??
-        '${DateTime.now().microsecondsSinceEpoch}';
+    // L12: sourceMessageId 缺失（非回填镜像路径）时用 uuid 兜底——微秒时间戳在
+    // 同微秒两次镜像（并发成员回合）时冲突，后一条 createMessage 被静默丢弃。
+    final turnKey = sourceMessageId ?? _uuid.v4();
     final baseMeta = <String, dynamic>{
       'mirrored_from_group': groupChannelId,
       if (sourceMessageId != null) 'source_message_id': sourceMessageId,

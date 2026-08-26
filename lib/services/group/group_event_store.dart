@@ -1,5 +1,7 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
+
 import '../logger_service.dart';
 import 'group_event.dart';
 
@@ -15,6 +17,11 @@ class GroupEventStore {
   }) : _onPersist = onPersist;
 
   static const int _maxPerChannel = 50;
+
+  /// L16: 内存事件缓存覆盖的频道数上限。每频道列表已截断到 [_maxPerChannel]，
+  /// 但频道键本身随新建群会话无限增长——超限时按插入序淘汰最旧频道（事件已
+  /// 落盘 workspace，崩溃恢复可回放，内存里只留热频道）。
+  static const int _maxChannels = 100;
 
   /// Optional persistence hook (wired by ChatService to GroupWorkspaceService).
   /// Failures are logged and swallowed — never fatal to the caller.
@@ -63,19 +70,48 @@ class GroupEventStore {
     if (list.length > _maxPerChannel) {
       list.removeRange(0, list.length - _maxPerChannel);
     }
+    _evictIfNeeded(event.channelId);
     final seq = (_seq[event.channelId] ?? 0) + 1;
     _seq[event.channelId] = seq;
 
     final persist = _onPersist;
     if (persist != null) {
-      unawaited(persist(event, seq).catchError((Object e, StackTrace st) {
+      // L18: 防御同步抛错——persist 若在返回 Future 前同步 throw（非 async
+      // 接线），`.catchError` 接不到；显式 try/catch 兜底，绝不波及调用方。
+      try {
+        unawaited(persist(event, seq).catchError((Object e, StackTrace st) {
+          LoggerService().error(
+            'group event persist failed for ${event.channelId}: $e',
+            tag: 'GroupEventStore',
+            error: e,
+            stackTrace: st,
+          );
+        }));
+      } catch (e, st) {
         LoggerService().error(
-          'group event persist failed for ${event.channelId}: $e',
+          'group event persist threw synchronously for ${event.channelId}: $e',
           tag: 'GroupEventStore',
           error: e,
           stackTrace: st,
         );
-      }));
+      }
+    }
+  }
+
+  /// 当前覆盖的频道数（L16 上限断言用）。
+  @visibleForTesting
+  int get channelCountForTest => _recent.length;
+
+  /// 频道键超限时按插入序淘汰最旧频道（Map 保持插入序，keys.first 即最旧）。
+  void _evictIfNeeded(String activeChannelId) {
+    while (_recent.length > _maxChannels) {
+      final oldest = _recent.keys.first;
+      _recent.remove(oldest);
+      _seq.remove(oldest);
+      if (oldest == activeChannelId) {
+        // 刚插入的频道被淘汰说明上限小于 1——防御性停止，避免死循环。
+        break;
+      }
     }
   }
 }

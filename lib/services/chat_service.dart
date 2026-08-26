@@ -260,6 +260,8 @@ class ChatService {
     loadChannelMessages: (channelId, {int limit = 100}) =>
         loadChannelMessages(channelId, limit: limit),
     dispatchParser: _groupDispatchParser,
+    // L14: 成员进出也写入共享事件日志（被动感知 + workspace 持久化）。
+    eventStore: _groupEventStore,
     // M2: 编排 loop 进行中，感知回合让位（drop）。
     isChannelOrchestrating: (channelId) =>
         _groupOrchestratingChannels.contains(channelId),
@@ -2628,7 +2630,14 @@ $originalQuestion
 
       // Load history. M2：不再只加载一次——每个阶段开始时刷新，让后续阶段
       // 成员看到上一阶段的聊天输出（而不只依赖 artifact URI + 事件 digest）。
-      var historyMessages = await loadChannelMessages(channelId, limit: 50);
+      // L6：与编排路径一致过滤 system/permissionAudit，避免成员上下文把
+      // 「X 加入了群聊」等系统消息错标为 [System(User)]。
+      var historyMessages =
+          (await loadChannelMessages(channelId, limit: 50))
+              .where((m) =>
+                  m.type != MessageType.system &&
+                  m.type != MessageType.permissionAudit)
+              .toList();
 
       // §6.3：工作流跨步骤累积 store:// 引用，注入后续步骤 instruction。
       final workflowArtifactLines = <String>[];
@@ -3012,7 +3021,13 @@ $originalQuestion
         final steps = stageMap[stageIdx]!;
 
         // M2：阶段开始前刷新历史快照，后续阶段成员能看到已执行阶段的聊天输出。
-        historyMessages = await loadChannelMessages(channelId, limit: 50);
+        // L6：同样过滤 system/permissionAudit（与上方初始加载一致）。
+        historyMessages =
+            (await loadChannelMessages(channelId, limit: 50))
+                .where((m) =>
+                    m.type != MessageType.system &&
+                    m.type != MessageType.permissionAudit)
+                .toList();
 
         // 被动事件：成员感知「工作流进入新阶段」（不唤醒管理员，仅注入上下文）。
         _emitWorkflowMacroEvent(
@@ -3378,6 +3393,10 @@ $originalQuestion
   /// 完整清理（App 退出时调用）
   void dispose() {
     detachUI();
+
+    // L15: 释放感知 scheduler 的 debounce timer，避免一次性实例泄漏。
+    _groupMembershipPerceptionScheduler.dispose();
+    _groupEventPerceptionScheduler.dispose();
 
     // Clean up ACP connections
     for (final connection in _acpConnections.values) {

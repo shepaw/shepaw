@@ -252,8 +252,14 @@ class GroupSessionService {
         members: firstSession.members,
         description: firstSession.description,
         isPrivate: firstSession.isPrivate,
+        // L9：重建父群补齐全部字段，家族链/门闸/循环等配置不因清空会话丢失。
+        parentGroupId: firstSession.parentGroupId,
+        sourceSheChannelId: firstSession.sourceSheChannelId,
         systemPrompt: firstSession.systemPrompt,
         maxLoopRounds: firstSession.maxLoopRounds,
+        mentionMode: firstSession.mentionMode,
+        flowMode: firstSession.flowMode,
+        enableStageGate: firstSession.enableStageGate,
       );
       await _db.createChannel(channel, 'user');
     }

@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import '../../models/mention_entry.dart';
 import '../../models/remote_agent.dart';
+import '../logger_service.dart';
 import 'group_dispatch_parser.dart';
 
 /// First-class tools for group-admin orchestration (tool-first dispatch).
@@ -243,7 +244,16 @@ class GroupOrchestrationTools {
     List<RemoteAgent> agents,
   ) {
     final rawMode = args['mode'];
-    final mode = (rawMode is String && rawMode.isNotEmpty) ? rawMode : 'concurrent';
+    // L11: 校验 mode，非法值不再静默按 concurrent 处理（记告警，步骤仍执行）。
+    const validModes = {'concurrent', 'sequential'};
+    if (rawMode is String && rawMode.isNotEmpty && !validModes.contains(rawMode)) {
+      LoggerService().warning(
+        'group_dispatch mode "$rawMode" is not supported; falling back to concurrent',
+        tag: 'GroupOrchestrationTools',
+      );
+    }
+    final mode =
+        (rawMode is String && validModes.contains(rawMode)) ? rawMode : 'concurrent';
     final rawSteps = args['steps'];
     if (rawSteps is! List || rawSteps.isEmpty) {
       return (

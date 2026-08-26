@@ -445,6 +445,11 @@ class GroupAgentExecutor {
     Message? mailboxReply;
     // Capture UI tool call data for interactive components
     Map<String, dynamic>? actionConfirmationData;
+
+    /// L7: 同一回合多个 peer 审批时逐张累积（[actionConfirmationData] 只保留
+    /// 最后一张用于 active 交互判定）。全部卡片数据落盘 `action_confirmations`，
+    /// 避免前序卡片的状态在元数据里被覆盖丢失。
+    List<Map<String, dynamic>>? actionConfirmations;
     Map<String, dynamic>? singleSelectData;
     Map<String, dynamic>? multiSelectData;
     Map<String, dynamic>? fileUploadData;
@@ -1159,6 +1164,8 @@ class GroupAgentExecutor {
             // overwriting peerApprovalInFlight orphans the previous wait and
             // leaves the step hung with openApprovals > 0.
             actionConfirmationData = Map<String, dynamic>.from(data);
+            // L7: 逐张累积，全部卡片进元数据，active 交互判定仍取最后一张。
+            (actionConfirmations ??= []).add(actionConfirmationData!);
             final next = _handlePeerGroupActionConfirmation(
               agent: agent,
               peerId: peerId,
@@ -2013,6 +2020,9 @@ class GroupAgentExecutor {
     }
     if (actionConfirmationData != null)
       meta['action_confirmation'] = actionConfirmationData;
+    if (actionConfirmations != null && actionConfirmations!.isNotEmpty) {
+      meta['action_confirmations'] = actionConfirmations;
+    }
     if (singleSelectData != null) meta['single_select'] = singleSelectData;
     if (multiSelectData != null) meta['multi_select'] = multiSelectData;
     if (fileUploadData != null) meta['file_upload'] = fileUploadData;

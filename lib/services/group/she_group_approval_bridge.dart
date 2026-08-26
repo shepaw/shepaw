@@ -29,6 +29,11 @@ class SheGroupApprovalBridge {
   final PlanApprovalService _planApprovals;
   static const _tag = 'SheGroupApprovalBridge';
 
+  /// L13: 同一消息上的 metadata read-modify-write 串行化。并发 handleInteraction
+  /// 对同一气泡分别读-改-写会互相覆盖（丢失前一个交互的 key）——用 per-message
+  /// future 链把读+合并+写压成原子序列，后到者基于最新已提交状态合并。
+  final Map<String, Future<void>> _metadataTail = {};
+
   /// Metadata key on the She-DM system message (rendered as jump card).
   static const bridgeMetaKey = 'group_approval_bridge';
 
@@ -62,31 +67,15 @@ class SheGroupApprovalBridge {
     }
 
     if (savedMessageId != null) {
-      try {
-        final row = await _db.getMessageById(savedMessageId);
-        Map<String, dynamic>? existing;
-        final raw = row?['metadata'];
-        if (raw is String && raw.isNotEmpty) {
-          try {
-            existing = Map<String, dynamic>.from(jsonDecode(raw) as Map);
-          } catch (_) {}
-        } else if (raw is Map) {
-          existing = Map<String, dynamic>.from(raw);
-        }
-        await _db.updateMessageMetadata(
-          savedMessageId,
-          GroupInteractionPlanner.metadataForPersist(
-            existing: existing,
-            interactionType: interactionType,
-            data: payload,
-          ),
-        );
-      } catch (e) {
-        LoggerService().warning(
-          'Failed to persist $interactionType on $savedMessageId: $e',
-          tag: _tag,
-        );
-      }
+      // L13: 读-改-写压进 per-message 串行链，避免并发交互互相覆盖。
+      await _mergeMessageMetadataSerialized(
+        savedMessageId,
+        (existing) => GroupInteractionPlanner.metadataForPersist(
+          existing: existing,
+          interactionType: interactionType,
+          data: payload,
+        ),
+      );
     }
 
     if (interactionType == 'plan_approval' && savedMessageId != null) {
@@ -123,6 +112,42 @@ class SheGroupApprovalBridge {
     );
 
     return GroupInteractionPlanner.nonBlockingResult();
+  }
+
+  /// Per-message 串行的 metadata read-modify-write（L13）。
+  ///
+  /// [merge] 在链内基于「最新已提交」的 metadata 计算新值，再落库；同一消息
+  /// 的并发调用按到达顺序排队，前一个写完成前不读 DB。
+  Future<void> _mergeMessageMetadataSerialized(
+    String messageId,
+    Map<String, dynamic> Function(Map<String, dynamic>? existing) merge,
+  ) {
+    final prev = _metadataTail[messageId] ?? Future.value();
+    final next = prev
+        .catchError((Object _) {})
+        .then((_) async {
+          try {
+            final row = await _db.getMessageById(messageId);
+            Map<String, dynamic>? existing;
+            final raw = row?['metadata'];
+            if (raw is String && raw.isNotEmpty) {
+              try {
+                existing = Map<String, dynamic>.from(jsonDecode(raw) as Map);
+              } catch (_) {}
+            } else if (raw is Map) {
+              existing = Map<String, dynamic>.from(raw);
+            }
+            await _db.updateMessageMetadata(messageId, merge(existing));
+          } catch (e) {
+            LoggerService().warning(
+              'Failed to persist interaction metadata on $messageId: $e',
+              tag: _tag,
+            );
+          }
+        });
+    // 链尾吞错，避免后续调用被前一个失败连带卡住。
+    _metadataTail[messageId] = next.catchError((Object _) {});
+    return next;
   }
 
   /// Create a dedicated peer-approval host in the bound group when headless

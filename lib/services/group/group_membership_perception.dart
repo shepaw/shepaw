@@ -6,6 +6,7 @@ import 'group_agent_executor.dart';
 import 'group_dispatch_parser.dart';
 import 'group_event.dart';
 import 'group_event_perception.dart';
+import 'group_event_store.dart';
 
 /// One roster change (join / leave) that should reach the group admin's
 /// awareness.
@@ -44,6 +45,10 @@ class GroupMembershipPerceptionScheduler {
     required Future<List<Message>> Function(String channelId, {int limit})
         loadChannelMessages,
     GroupDispatchParser? dispatchParser,
+
+    /// L14: 共享事件日志——成员进出也 record 进 [GroupEventStore]，后续感知
+    /// 回合/事件 digest 能合并成员变动，不再绕过被动感知。
+    GroupEventStore? eventStore,
     Duration debounce = const Duration(seconds: 3),
 
     /// 该频道是否正在运行编排 loop（M2）——透传给底层 scheduler。
@@ -54,6 +59,7 @@ class GroupMembershipPerceptionScheduler {
           acpConnections: acpConnections,
           loadChannelMessages: loadChannelMessages,
           dispatchParser: dispatchParser,
+          eventStore: eventStore,
           debounce: debounce,
           promptBuilder: _buildMembershipPrompt,
           customSystemPrompt: perceptionSystemPrompt,
@@ -74,6 +80,9 @@ class GroupMembershipPerceptionScheduler {
       isJoin: isJoin,
     ));
   }
+
+  /// 释放底层 scheduler 的 debounce timer（L15）。
+  void dispose() => _inner.dispose();
 
   /// Adapt the generic event list back to the membership prompt shape so the
   /// admin sees the familiar 加入/离开/当前成员 rendering.

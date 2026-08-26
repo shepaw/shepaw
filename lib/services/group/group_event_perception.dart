@@ -99,6 +99,10 @@ class GroupEventPerceptionScheduler {
   /// `processGroupAgent` calls for the same channel.
   final Set<String> _running = {};
 
+  /// L17: 回合 in-flight 期间有事件到达且 drain 已被调用时置位，等当前回合
+  /// finally 收尾后再补一次 drain——避免 3s 轮询式 re-arm 一直空转。
+  final Set<String> _needsDrain = {};
+
   /// 全局管理员回合互斥（M2）。
   ///
   /// 两个 scheduler 实例（event / membership）各自持有 `_running`，互不知晓；
@@ -182,13 +186,27 @@ class GroupEventPerceptionScheduler {
     });
   }
 
+  /// 释放全部 debounce timer（L15）。App 退出 / ChatService.dispose 时调用，
+  /// 避免一次性实例泄漏 Timer（当前实现里每个 timer 回调后自清理，但 in-flight
+  /// 期间的 re-arm 循环可能残留一个待触发的 timer）。
+  void dispose() {
+    for (final timer in _timers.values) {
+      timer.cancel();
+    }
+    _timers.clear();
+    _pending.clear();
+    _needsDrain.clear();
+  }
+
   Future<void> _drain(String channelId) async {
     if (_running.contains(channelId)) {
-      // A turn is already in flight; keep the events pending and re-arm so
-      // they are picked up once the current turn settles.
-      _arm(channelId);
+      // A turn is already in flight; record that a drain is still needed and
+      // let the running turn's `finally` re-arm once. L17：不再在 in-flight
+      // 期间每 3s 重新 arm 空转（长回合会一直轮询），事件在收尾后统一补拾。
+      _needsDrain.add(channelId);
       return;
     }
+    _needsDrain.remove(channelId);
     final events = _pending.remove(channelId);
     if (events == null || events.isEmpty) return;
 
@@ -203,6 +221,11 @@ class GroupEventPerceptionScheduler {
         _turnTokens.remove(channelId);
       }
       _running.remove(channelId);
+      if (_needsDrain.remove(channelId)) {
+        // 回合进行中到达的事件：补一次 drain（debounce 后统一处理），
+        // 而不是让它们在 `_pending` 里无限等待。
+        _arm(channelId);
+      }
     }
   }
 
