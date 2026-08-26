@@ -56,7 +56,8 @@ class GroupAgentExecutor {
   final GroupInteractionHandler _interactionHandler;
   final void Function(String channelId) notifyChannelUpdate;
   final void Function() updateTypingAgentIds;
-  final Future<ACPAgentConnection> Function(RemoteAgent agent) getOrCreateACPConnection;
+  final Future<ACPAgentConnection> Function(RemoteAgent agent)
+      getOrCreateACPConnection;
   final Future<Message> Function({
     required RemoteAgent agent,
     required Message userMessage,
@@ -90,7 +91,8 @@ class GroupAgentExecutor {
 
   List<Map<String, dynamic>> buildGroupChatHistoryWithImages({
     required String historyText,
-    required List<({AttachmentData attachment, String senderName})> imageEntries,
+    required List<({AttachmentData attachment, String senderName})>
+        imageEntries,
     required bool isClaude,
   }) {
     if (historyText.isEmpty && imageEntries.isEmpty) {
@@ -158,7 +160,9 @@ class GroupAgentExecutor {
       final thumbnailBase64 = fileData['thumbnail_base64'] as String?;
 
       if (url == null || url.isEmpty) {
-        LoggerService().warning('Group file_message missing url from $agentName', tag: 'GroupAgentExecutor');
+        LoggerService().warning(
+            'Group file_message missing url from $agentName',
+            tag: 'GroupAgentExecutor');
         return;
       }
 
@@ -166,7 +170,8 @@ class GroupAgentExecutor {
       // user doesn't need to manually "download" it (local LLM agents produce files
       // that live on the same device and are accessible directly).
       String? copiedRelativePath;
-      final isLocalPath = !url.startsWith('http://') && !url.startsWith('https://');
+      final isLocalPath =
+          !url.startsWith('http://') && !url.startsWith('https://');
       if (isLocalPath) {
         try {
           final result = await FileDownloadService().downloadAndSave(
@@ -177,7 +182,8 @@ class GroupAgentExecutor {
           copiedRelativePath = result.relativePath;
           size ??= result.fileSize;
         } catch (e) {
-          LoggerService().warning('Could not pre-copy local file from $url: $e', tag: 'GroupAgentExecutor');
+          LoggerService().warning('Could not pre-copy local file from $url: $e',
+              tag: 'GroupAgentExecutor');
         }
       }
 
@@ -238,9 +244,12 @@ class GroupAgentExecutor {
       await _db.markMessageAsRead(messageId);
       notifyChannelUpdate(channelId);
 
-      LoggerService().info('Group file_message saved: ${filename ?? "file"} from $agentName', tag: 'GroupAgentExecutor');
+      LoggerService().info(
+          'Group file_message saved: ${filename ?? "file"} from $agentName',
+          tag: 'GroupAgentExecutor');
     } catch (e) {
-      LoggerService().error('Group file_message save error from $agentName', tag: 'GroupAgentExecutor', error: e);
+      LoggerService().error('Group file_message save error from $agentName',
+          tag: 'GroupAgentExecutor', error: e);
     }
   }
 
@@ -269,10 +278,14 @@ class GroupAgentExecutor {
     List<String> failedAgentNames = const [],
     List<AttachmentData>? attachments,
     ACPCancellationToken? acpCancellationToken,
-    void Function(String agentId, String agentName, String chunk)? onStreamChunk,
+    void Function(String agentId, String agentName, String chunk)?
+        onStreamChunk,
     void Function(String agentId, String agentName, bool skipped)? onAgentDone,
     Future<Map<String, dynamic>?> Function(
-      String agentId, String agentName, String interactionType, Map<String, dynamic> data,
+      String agentId,
+      String agentName,
+      String interactionType,
+      Map<String, dynamic> data,
     )? onInteractionRequest,
     bool isFlowMode = false,
     bool isClosingSummary = false,
@@ -297,8 +310,8 @@ class GroupAgentExecutor {
     // M6：群清空时该成员断线，`/reset` 未送达。消费待补发标记；若本次走 ACP
     // 路径则在任务前补发，清掉远端会话的陈旧上下文。本地成员（无远端 session）
     // 也会消费标记，避免集合残留。
-    final pendingResetFlush = GroupMemberSessionService
-        .consumePendingRemoteReset(memberSessionId);
+    final pendingResetFlush =
+        GroupMemberSessionService.consumePendingRemoteReset(memberSessionId);
 
     final systemPrompt = await _promptBuilder.buildGroupSystemPrompt(
       groupName: groupName,
@@ -350,8 +363,7 @@ class GroupAgentExecutor {
         keepRecentCount: 24,
         keepRecentChars: 24000,
       );
-      if (plan.needsCompaction &&
-          acpCancellationToken?.isCancelled != true) {
+      if (plan.needsCompaction && acpCancellationToken?.isCancelled != true) {
         try {
           final cancelKey = 'group_compact_${agent.id}_${_uuid.v4()}';
           acpCancellationToken?.addOnCancelled(() {
@@ -421,6 +433,11 @@ class GroupAgentExecutor {
 
     final responseBuffer = StringBuffer();
     bool streamingStarted = false;
+
+    /// H2: 流式已开始后中途失败（本地/peer/ACP 三路 catch 记录），
+    /// 在成功落库前统一按「输出被中断」失败处理，阻止半截内容按成功入库。
+    Object? midStreamError;
+
     /// 信箱轮次收到的回复消息：保存时复用其确定性 id 与来源元数据，
     /// 与推送拉取路径（fetchMailboxReplies）的去重对齐。
     Message? mailboxReply;
@@ -431,6 +448,7 @@ class GroupAgentExecutor {
     Map<String, dynamic>? fileUploadData;
     Map<String, dynamic>? formDataCapture;
     Map<String, dynamic>? messageMetadataExtra;
+
     /// Raw `group_mention` tool args (local members), accumulated across tool
     /// rounds; resolved into structured mentions in the unified capture block.
     List<Map<String, dynamic>>? mentionToolDeclarations;
@@ -447,14 +465,13 @@ class GroupAgentExecutor {
     var orchIsDone = false;
     var orchIsPause = false;
 
-    final delegateableNames = allAgents
-        .where((a) => a.id != agent.id)
-        .map((a) => a.name)
-        .toList();
+    final delegateableNames =
+        allAgents.where((a) => a.id != agent.id).map((a) => a.name).toList();
     final adminExtraTools = isAdmin
         ? (LocalLLMAgentService.instance.resolveProviderType(agent) == 'claude'
             ? GroupOrchestrationTools.claudeTools(agentNames: delegateableNames)
-            : GroupOrchestrationTools.openAITools(agentNames: delegateableNames))
+            : GroupOrchestrationTools.openAITools(
+                agentNames: delegateableNames))
         : null;
     // Members get the structured mention tool only when the group allows
     // member-to-member activation; in adminOnly mode the tool would only
@@ -504,9 +521,8 @@ class GroupAgentExecutor {
     if (agent.isLocal) {
       // ── Local LLM agent path ──
       // Determine provider type so we can build the correct multimodal format.
-      final isClaude = LocalLLMAgentService.instance
-              .resolveProviderType(agent) ==
-          'claude';
+      final isClaude =
+          LocalLLMAgentService.instance.resolveProviderType(agent) == 'claude';
 
       // Do NOT load history image bytes for group chat. Embedding historical
       // images would force vision on every turn; text placeholders in
@@ -559,7 +575,9 @@ class GroupAgentExecutor {
 
           await for (final event in LocalLLMAgentService.instance.chat(
             agent: agent,
-            message: toolRound == 0 ? content : '', // Only first round has original message
+            message: toolRound == 0
+                ? content
+                : '', // Only first round has original message
             history: toolRound == 0
                 ? (chatHistory.isNotEmpty ? chatHistory : null)
                 : roundMessages,
@@ -584,7 +602,8 @@ class GroupAgentExecutor {
                 infLogGroup.onTextChunk(groupTraceId, event.text);
                 break;
               case LLMToolCallEvent():
-                infLogGroup.onToolCall(groupTraceId, id: event.id, name: event.name, arguments: event.arguments);
+                infLogGroup.onToolCall(groupTraceId,
+                    id: event.id, name: event.name, arguments: event.arguments);
                 switch (event.name) {
                   case 'file_message':
                     await saveGroupFileMessage(
@@ -597,29 +616,35 @@ class GroupAgentExecutor {
                     );
                     break;
                   case 'action_confirmation':
-                    actionConfirmationData = Map<String, dynamic>.from(event.arguments);
+                    actionConfirmationData =
+                        Map<String, dynamic>.from(event.arguments);
                     break;
                   case 'single_select':
-                    singleSelectData = Map<String, dynamic>.from(event.arguments);
+                    singleSelectData =
+                        Map<String, dynamic>.from(event.arguments);
                     break;
                   case 'multi_select':
-                    multiSelectData = Map<String, dynamic>.from(event.arguments);
+                    multiSelectData =
+                        Map<String, dynamic>.from(event.arguments);
                     break;
                   case 'file_upload':
                     fileUploadData = Map<String, dynamic>.from(event.arguments);
                     break;
                   case 'form':
-                    formDataCapture = Map<String, dynamic>.from(event.arguments);
+                    formDataCapture =
+                        Map<String, dynamic>.from(event.arguments);
                     break;
                   case 'message_metadata':
-                    messageMetadataExtra = Map<String, dynamic>.from(event.arguments);
+                    messageMetadataExtra =
+                        Map<String, dynamic>.from(event.arguments);
                     break;
                   case GroupOrchestrationTools.mentionName:
                     mentionToolDeclarations = [
                       ...?mentionToolDeclarations,
                       Map<String, dynamic>.from(event.arguments),
                     ];
-                    final mentionParsed = GroupOrchestrationTools.parseMentionArgs(
+                    final mentionParsed =
+                        GroupOrchestrationTools.parseMentionArgs(
                       event.arguments,
                       allAgents,
                     );
@@ -668,7 +693,8 @@ class GroupAgentExecutor {
                           })
                         : jsonEncode({
                             'ok': false,
-                            'error': parsed.parseError ?? 'invalid group_dispatch',
+                            'error':
+                                parsed.parseError ?? 'invalid group_dispatch',
                             if (parsed.unresolvedNames.isNotEmpty)
                               'unresolved_names': parsed.unresolvedNames,
                           });
@@ -687,8 +713,8 @@ class GroupAgentExecutor {
                     break;
                   case GroupOrchestrationTools.finishName:
                     orchHasSignal = true;
-                    final action =
-                        GroupOrchestrationTools.parseFinishAction(event.arguments);
+                    final action = GroupOrchestrationTools.parseFinishAction(
+                        event.arguments);
                     if (action == null) {
                       orchParseError =
                           'group_finish.action must be done|continue|pause';
@@ -759,11 +785,14 @@ class GroupAgentExecutor {
                       args['flags'] = flags;
 
                       // Set workflow namespace context (per-channel for C1 safety)
-                      WorkflowNamespace.instance.setContext(channelId, agent.id);
+                      WorkflowNamespace.instance
+                          .setContext(channelId, agent.id);
 
                       // Wire up dispatch command's step execution callback (per-channel)
-                      WorkflowDispatchCommand.setExecuteStepFn(channelId, (agentName, instruction, chId) async {
-                        final targetAgent = GroupDispatchParser.findAgentByDispatchName(
+                      WorkflowDispatchCommand.setExecuteStepFn(channelId,
+                          (agentName, instruction, chId) async {
+                        final targetAgent =
+                            GroupDispatchParser.findAgentByDispatchName(
                           allAgents,
                           agentName,
                         );
@@ -817,7 +846,10 @@ class GroupAgentExecutor {
                         'CLI result (${args['namespace']} ${args['subcommand'] ?? ''}): ${cliResult.length > 200 ? '${cliResult.substring(0, 200)}...' : cliResult}',
                         tag: 'GroupAgentExecutor',
                       );
-                      infLogGroup.onToolResult(groupTraceId, toolCallId: event.id, name: event.name, result: cliResult);
+                      infLogGroup.onToolResult(groupTraceId,
+                          toolCallId: event.id,
+                          name: event.name,
+                          result: cliResult);
 
                       // Collect for multi-turn
                       pawToolCalls.add(event);
@@ -829,19 +861,32 @@ class GroupAgentExecutor {
 
                       // Handle workflow create approval flow
                       try {
-                        final cliJson = json.decode(cliResult) as Map<String, dynamic>?;
-                        if (cliJson != null && cliJson['status'] == 'pending_approval') {
+                        final cliJson =
+                            json.decode(cliResult) as Map<String, dynamic>?;
+                        if (cliJson != null &&
+                            cliJson['status'] == 'pending_approval') {
                           final workflowId = cliJson['workflow_id'] as String?;
-                          final planDataRaw = cliJson['_plan_data'] as Map<String, dynamic>?;
-                          if (workflowId != null && planDataRaw != null && onInteractionRequest != null) {
+                          final planDataRaw =
+                              cliJson['_plan_data'] as Map<String, dynamic>?;
+                          if (workflowId != null &&
+                              planDataRaw != null &&
+                              onInteractionRequest != null) {
                             await onInteractionRequest.call(
-                              agent.id, agent.name, 'plan_approval',
-                              {...planDataRaw, '_workflowId': workflowId, '_non_blocking': true},
+                              agent.id,
+                              agent.name,
+                              'plan_approval',
+                              {
+                                ...planDataRaw,
+                                '_workflowId': workflowId,
+                                '_non_blocking': true
+                              },
                             );
                           }
                         }
                       } catch (e) {
-                        LoggerService().warning('Workflow approval flow error: $e', tag: 'GroupAgentExecutor');
+                        LoggerService().warning(
+                            'Workflow approval flow error: $e',
+                            tag: 'GroupAgentExecutor');
                       }
                     }
                     break;
@@ -874,10 +919,16 @@ class GroupAgentExecutor {
             );
             if (isClaude) {
               LocalLLMHelpers.appendToolRoundClaude(
-                  roundMessages, doneEvent!.rawAssistantMessage!, pawToolCalls, pawToolResults);
+                  roundMessages,
+                  doneEvent!.rawAssistantMessage!,
+                  pawToolCalls,
+                  pawToolResults);
             } else {
               LocalLLMHelpers.appendToolRoundOpenAI(
-                  roundMessages, doneEvent!.rawAssistantMessage!, pawToolCalls, pawToolResults);
+                  roundMessages,
+                  doneEvent!.rawAssistantMessage!,
+                  pawToolCalls,
+                  pawToolResults);
             }
             if (toolRound + 1 < maxToolRounds) {
               continue; // Next round
@@ -890,8 +941,7 @@ class GroupAgentExecutor {
             );
             roundMessages.add({
               'role': 'user',
-              'content':
-                  '[SYSTEM] 工具调用轮次已达上限。请根据已有工具结果和群聊历史，'
+              'content': '[SYSTEM] 工具调用轮次已达上限。请根据已有工具结果和群聊历史，'
                   '直接向用户输出完整总结，不要再调用任何工具。',
             });
             allowOneFinalRound = true;
@@ -902,9 +952,11 @@ class GroupAgentExecutor {
           break;
         }
       } catch (e) {
-        LoggerService().error('Group agent ${agent.name} stream error', tag: 'GroupAgentExecutor', error: e);
+        LoggerService().error('Group agent ${agent.name} stream error',
+            tag: 'GroupAgentExecutor', error: e);
         infLogGroup.endRound(groupTraceId, stopReason: 'error');
-        infLogGroup.endSession(groupTraceId, InferenceStatus.error, error: '$e');
+        infLogGroup.endSession(groupTraceId, InferenceStatus.error,
+            error: '$e');
         if (!streamingStarted || responseBuffer.isEmpty) {
           // Insert a visible error message so the user knows which agent failed.
           final errorMsg = Message(
@@ -940,6 +992,10 @@ class GroupAgentExecutor {
           // review/summarize round must know the member failed.
           rethrow;
         }
+        // H2: streaming already started with buffered content — remember the
+        // failure and fail the turn below instead of silently persisting a
+        // truncated reply as a successful message.
+        midStreamError = e;
       }
     } else if (agent.isPeerAgent) {
       // ── Peer agent path (P2P relay to paired device's local agent) ──
@@ -975,7 +1031,8 @@ class GroupAgentExecutor {
         content: content,
       );
 
-      infLogGroup.beginRound(groupTraceId, requestSummary: 'Group peer request');
+      infLogGroup.beginRound(groupTraceId,
+          requestSummary: 'Group peer request');
 
       final peerSessionId = PeerApprovalPolicy.workflowSessionId(
             channelId: memberSessionId,
@@ -1143,7 +1200,8 @@ class GroupAgentExecutor {
           error: e,
         );
         infLogGroup.endRound(groupTraceId, stopReason: 'error');
-        infLogGroup.endSession(groupTraceId, InferenceStatus.error, error: '$e');
+        infLogGroup.endSession(groupTraceId, InferenceStatus.error,
+            error: '$e');
         if (!streamingStarted || responseBuffer.isEmpty) {
           await _saveGroupAgentErrorMessage(
             channelId: channelId,
@@ -1163,6 +1221,9 @@ class GroupAgentExecutor {
           // steps hit failStep (same contract as the local path).
           rethrow;
         }
+        // H2: same as the local path — a mid-stream peer failure must not
+        // persist a truncated reply as a successful message.
+        midStreamError = e;
       }
     } else {
       // ── Remote ACP agent path ──
@@ -1209,14 +1270,16 @@ class GroupAgentExecutor {
           'group_name': groupName,
           'group_description': groupDescription,
           'member_count': allAgents.length,
-          'members': allAgents.map((a) => <String, dynamic>{
-            'id': a.id,
-            'name': a.name,
-            'type': 'agent',
-            'bio': a.bio ?? '',
-            'capabilities': a.capabilities,
-            'status': a.isOnline ? 'online' : 'offline',
-          }).toList(),
+          'members': allAgents
+              .map((a) => <String, dynamic>{
+                    'id': a.id,
+                    'name': a.name,
+                    'type': 'agent',
+                    'bio': a.bio ?? '',
+                    'capabilities': a.capabilities,
+                    'status': a.isOnline ? 'online' : 'offline',
+                  })
+              .toList(),
           if (groupWorkspaceUri != null) 'workspace_uri': groupWorkspaceUri,
         };
         final left = await _collectGroupMailboxReply(
@@ -1264,400 +1327,449 @@ class GroupAgentExecutor {
           }
         }
         if (usedMailbox) {
-          infLogGroup.beginRound(groupTraceId, requestSummary: 'Group mailbox fallback');
+          infLogGroup.beginRound(groupTraceId,
+              requestSummary: 'Group mailbox fallback');
           infLogGroup.endRound(groupTraceId, stopReason: 'stop');
           infLogGroup.endSession(groupTraceId, InferenceStatus.completed);
         } else {
-        taskId = _uuid.v4();
+          taskId = _uuid.v4();
 
-        infLogGroup.beginRound(groupTraceId, requestSummary: 'Group ACP request');
+          infLogGroup.beginRound(groupTraceId,
+              requestSummary: 'Group ACP request');
 
-        // Bind cancellation token so the UI can stop this agent. The token is
-        // multi-binding: concurrent group members each register their own
-        // binding/callback instead of overwriting each other.
-        if (acpCancellationToken != null) {
-          acpCancellationToken.bind(connection!, taskId);
-          acpCancellationToken.addOnCancelled(() {
-            if (!taskCompleter.isCompleted) {
-              taskCompleter.complete();
-            }
-          });
-        }
+          // Bind cancellation token so the UI can stop this agent. The token is
+          // multi-binding: concurrent group members each register their own
+          // binding/callback instead of overwriting each other.
+          if (acpCancellationToken != null) {
+            acpCancellationToken.bind(connection!, taskId);
+            acpCancellationToken.addOnCancelled(() {
+              if (!taskCompleter.isCompleted) {
+                taskCompleter.complete();
+              }
+            });
+          }
 
-        final effectiveTaskId = taskId;
-        final effectiveConnection = connection!;
+          final effectiveTaskId = taskId;
+          final effectiveConnection = connection!;
 
-        // M6：群清空时断线未送达的远端 `/reset` 在此回合任务前补发
-        // （best-effort；失败吞掉不阻塞主任务）。
-        if (pendingResetFlush && effectiveConnection.isConnected) {
+          // M6：群清空时断线未送达的远端 `/reset` 在此回合任务前补发
+          // （best-effort；失败吞掉不阻塞主任务）。
+          if (pendingResetFlush && effectiveConnection.isConnected) {
+            try {
+              await effectiveConnection.sendChatMessage(
+                taskId: _uuid.v4(),
+                sessionId: memberSessionId,
+                message: '/reset',
+                userId: 'user',
+                messageId: _uuid.v4(),
+              );
+            } catch (_) {}
+          }
+
+          effectiveConnection.registerTaskCallbacks(
+              effectiveTaskId,
+              TaskCallbacks(
+                onTextContent: (data) {
+                  final chunk = data['content'] as String? ?? '';
+                  streamingStarted = true;
+                  responseBuffer.write(chunk);
+                  groupTask.accumulatedContent += chunk;
+                  groupTask.onStreamChunk?.call(chunk);
+                  onStreamChunk?.call(agent.id, agent.name, chunk);
+                  infLogGroup.onTextChunk(groupTraceId, chunk);
+                },
+                onTaskCompleted: (data) {
+                  turnTokenUsage = turnTokenUsage
+                      .plus(LlmTokenUsage.fromJson(data['usage']));
+                  infLogGroup.endRound(groupTraceId, stopReason: 'stop');
+                  infLogGroup.endSession(
+                      groupTraceId, InferenceStatus.completed);
+                  if (!taskCompleter.isCompleted) {
+                    taskCompleter.complete();
+                  }
+                },
+                onTaskError: (data) {
+                  final errorMsg = data['message'] as String? ?? 'Task error';
+                  infLogGroup.endRound(groupTraceId, stopReason: 'error');
+                  infLogGroup.endSession(groupTraceId, InferenceStatus.error,
+                      error: errorMsg);
+                  if (!taskCompleter.isCompleted) {
+                    taskCompleter.completeError(
+                      Exception(data['message'] ?? 'Task error'),
+                    );
+                  }
+                },
+                onActionConfirmation: (data) async {
+                  // Capture into the outer mutable map so admin/user resolution can
+                  // stamp selected_action_id before the final message is saved.
+                  actionConfirmationData = Map<String, dynamic>.from(data);
+                  if (adminAgent != null) {
+                    try {
+                      var responseData =
+                          await _interactionHandler.resolveInteractionViaAdmin(
+                        interactionType: 'action_confirmation',
+                        data: actionConfirmationData!,
+                        adminAgent: adminAgent,
+                        channelId: channelId,
+                        subAgentName: agent.name,
+                      );
+                      if (responseData != null) {
+                        await effectiveConnection.submitResponse(
+                          taskId: effectiveTaskId,
+                          responseType: 'action_confirmation',
+                          responseData: responseData,
+                        );
+                        _applyActionConfirmationSelection(
+                          actionConfirmationData!,
+                          responseData,
+                        );
+                        _interactionHandler.saveAdminDecisionMessage(
+                          channelId: channelId,
+                          subAgentName: agent.name,
+                          interactionType: 'action_confirmation',
+                          chosenLabel: responseData['selected_action_label']
+                                  as String? ??
+                              '',
+                        );
+                        return;
+                      }
+                    } catch (e) {
+                      LoggerService().error(
+                          'Admin decision error (action_confirmation)',
+                          tag: 'GroupAgentExecutor',
+                          error: e);
+                    }
+                  }
+                  // No admin or admin returned null (ASK_USER) — escalate to user
+                  if (onInteractionRequest != null) {
+                    final userResponse = await onInteractionRequest(
+                        agent.id,
+                        agent.name,
+                        'action_confirmation',
+                        actionConfirmationData!);
+                    if (userResponse != null &&
+                        userResponse['_non_blocking'] != true) {
+                      try {
+                        await effectiveConnection.submitResponse(
+                          taskId: effectiveTaskId,
+                          responseType: 'action_confirmation',
+                          responseData: userResponse,
+                        );
+                      } catch (_) {}
+                      _applyActionConfirmationSelection(
+                        actionConfirmationData!,
+                        userResponse,
+                      );
+                      return;
+                    }
+                  }
+                  // Fallback to default option
+                  final fallback = _interactionHandler.pickDefaultOption(
+                      'action_confirmation', actionConfirmationData!);
+                  if (fallback != null) {
+                    try {
+                      await effectiveConnection.submitResponse(
+                        taskId: effectiveTaskId,
+                        responseType: 'action_confirmation',
+                        responseData: fallback,
+                      );
+                    } catch (_) {}
+                    _applyActionConfirmationSelection(
+                      actionConfirmationData!,
+                      fallback,
+                    );
+                  }
+                },
+                onSingleSelect: (data) async {
+                  if (adminAgent != null) {
+                    try {
+                      var responseData =
+                          await _interactionHandler.resolveInteractionViaAdmin(
+                        interactionType: 'single_select',
+                        data: data,
+                        adminAgent: adminAgent,
+                        channelId: channelId,
+                        subAgentName: agent.name,
+                      );
+                      if (responseData != null) {
+                        await effectiveConnection.submitResponse(
+                          taskId: effectiveTaskId,
+                          responseType: 'single_select',
+                          responseData: responseData,
+                        );
+                        _interactionHandler.saveAdminDecisionMessage(
+                          channelId: channelId,
+                          subAgentName: agent.name,
+                          interactionType: 'single_select',
+                          chosenLabel: responseData['selected_option_label']
+                                  as String? ??
+                              '',
+                        );
+                        return;
+                      }
+                    } catch (e) {
+                      LoggerService().error(
+                          'Admin decision error (single_select)',
+                          tag: 'GroupAgentExecutor',
+                          error: e);
+                    }
+                  }
+                  // No admin or admin returned null (ASK_USER) — escalate to user
+                  if (onInteractionRequest != null) {
+                    final userResponse = await onInteractionRequest(
+                        agent.id, agent.name, 'single_select', data);
+                    if (userResponse != null &&
+                        userResponse['_non_blocking'] != true) {
+                      try {
+                        await effectiveConnection.submitResponse(
+                          taskId: effectiveTaskId,
+                          responseType: 'single_select',
+                          responseData: userResponse,
+                        );
+                      } catch (_) {}
+                      return;
+                    }
+                  }
+                  // Fallback to default option
+                  final fallback = _interactionHandler.pickDefaultOption(
+                      'single_select', data);
+                  if (fallback != null) {
+                    try {
+                      await effectiveConnection.submitResponse(
+                        taskId: effectiveTaskId,
+                        responseType: 'single_select',
+                        responseData: fallback,
+                      );
+                    } catch (_) {}
+                  }
+                },
+                onMultiSelect: (data) async {
+                  if (adminAgent != null) {
+                    try {
+                      var responseData =
+                          await _interactionHandler.resolveInteractionViaAdmin(
+                        interactionType: 'multi_select',
+                        data: data,
+                        adminAgent: adminAgent,
+                        channelId: channelId,
+                        subAgentName: agent.name,
+                      );
+                      if (responseData != null) {
+                        await effectiveConnection.submitResponse(
+                          taskId: effectiveTaskId,
+                          responseType: 'multi_select',
+                          responseData: responseData,
+                        );
+                        final ids = responseData['selected_option_ids']
+                                as List<dynamic>? ??
+                            [];
+                        _interactionHandler.saveAdminDecisionMessage(
+                          channelId: channelId,
+                          subAgentName: agent.name,
+                          interactionType: 'multi_select',
+                          chosenLabel: ids.join(', '),
+                        );
+                        return;
+                      }
+                    } catch (e) {
+                      LoggerService().error(
+                          'Admin decision error (multi_select)',
+                          tag: 'GroupAgentExecutor',
+                          error: e);
+                    }
+                  }
+                  // No admin or admin returned null (ASK_USER) — escalate to user
+                  if (onInteractionRequest != null) {
+                    final userResponse = await onInteractionRequest(
+                        agent.id, agent.name, 'multi_select', data);
+                    if (userResponse != null &&
+                        userResponse['_non_blocking'] != true) {
+                      try {
+                        await effectiveConnection.submitResponse(
+                          taskId: effectiveTaskId,
+                          responseType: 'multi_select',
+                          responseData: userResponse,
+                        );
+                      } catch (_) {}
+                      return;
+                    }
+                  }
+                  // Fallback to default option
+                  final fallback = _interactionHandler.pickDefaultOption(
+                      'multi_select', data);
+                  if (fallback != null) {
+                    try {
+                      await effectiveConnection.submitResponse(
+                        taskId: effectiveTaskId,
+                        responseType: 'multi_select',
+                        responseData: fallback,
+                      );
+                    } catch (_) {}
+                  }
+                },
+                onForm: (data) async {
+                  // Forms are too complex for auto-decision; escalate to user
+                  if (onInteractionRequest != null) {
+                    final userResponse = await onInteractionRequest(
+                        agent.id, agent.name, 'form', data);
+                    if (userResponse != null &&
+                        userResponse['_non_blocking'] != true) {
+                      try {
+                        await effectiveConnection.submitResponse(
+                          taskId: effectiveTaskId,
+                          responseType: 'form',
+                          responseData: userResponse,
+                        );
+                      } catch (_) {}
+                      return;
+                    }
+                  }
+                  LoggerService().debug(
+                      'Form interaction from ${agent.name} — non-blocking, user will submit next turn',
+                      tag: 'GroupAgentExecutor');
+                  final fallback =
+                      _interactionHandler.pickDefaultOption('form', data);
+                  if (fallback != null) {
+                    try {
+                      await effectiveConnection.submitResponse(
+                        taskId: effectiveTaskId,
+                        responseType: 'form',
+                        responseData: fallback,
+                      );
+                    } catch (_) {}
+                  }
+                },
+                onFileUpload: (data) async {
+                  // File uploads cannot be auto-decided; escalate to user
+                  if (onInteractionRequest != null) {
+                    final userResponse = await onInteractionRequest(
+                        agent.id, agent.name, 'file_upload', data);
+                    if (userResponse != null &&
+                        userResponse['_non_blocking'] != true) {
+                      try {
+                        await effectiveConnection.submitResponse(
+                          taskId: effectiveTaskId,
+                          responseType: 'file_upload',
+                          responseData: userResponse,
+                        );
+                      } catch (_) {}
+                      return;
+                    }
+                  }
+                  LoggerService().debug(
+                      'File upload interaction from ${agent.name} — non-blocking, user will submit next turn',
+                      tag: 'GroupAgentExecutor');
+                },
+                onFileMessage: (data) async {
+                  await saveGroupFileMessage(
+                    fileData: data,
+                    agentId: agent.id,
+                    agentName: agent.name,
+                    channelId: channelId,
+                    userId: userId,
+                    userName: userName,
+                  );
+                },
+                onMessageMetadata: (data) {
+                  // Remote ACP members declare structured mentions via
+                  // `ui.messageMetadata` notifications; params arrive as
+                  // {'task_id': ..., ...metadata}. Merge into messageMetadataExtra
+                  // so the unified capture block resolves them.
+                  final meta = Map<String, dynamic>.from(data)
+                    ..remove('task_id');
+                  messageMetadataExtra = Map<String, dynamic>.from(
+                    messageMetadataExtra ?? {},
+                  )..addAll(meta);
+                },
+              ));
+
+          // 群工作空间共享面 URI（外接 agent 感知群记忆/共享产物；
+          // 群空间未初始化或读取失败时省略）。
           try {
-            await effectiveConnection.sendChatMessage(
-              taskId: _uuid.v4(),
-              sessionId: memberSessionId,
-              message: '/reset',
-              userId: 'user',
-              messageId: _uuid.v4(),
-            );
+            final groupChannel = await _db.getChannelById(channelId);
+            if (groupChannel != null) {
+              final meta = await GroupWorkspaceService.instance
+                  .loadMeta(groupChannel.groupFamilyId);
+              if (meta != null) {
+                groupWorkspaceUri = 'store://workspaces/${meta.homeDevice}/'
+                    '${GroupWorkspaceService.instance.workspaceRoot(groupChannel.groupFamilyId)}'
+                    '/shared';
+              }
+            }
           } catch (_) {}
-        }
 
-        effectiveConnection.registerTaskCallbacks(effectiveTaskId, TaskCallbacks(
-          onTextContent: (data) {
-            final chunk = data['content'] as String? ?? '';
-            streamingStarted = true;
-            responseBuffer.write(chunk);
-            groupTask.accumulatedContent += chunk;
-            groupTask.onStreamChunk?.call(chunk);
-            onStreamChunk?.call(agent.id, agent.name, chunk);
-            infLogGroup.onTextChunk(groupTraceId, chunk);
-          },
-          onTaskCompleted: (data) {
-            turnTokenUsage =
-                turnTokenUsage.plus(LlmTokenUsage.fromJson(data['usage']));
-            infLogGroup.endRound(groupTraceId, stopReason: 'stop');
-            infLogGroup.endSession(groupTraceId, InferenceStatus.completed);
-            if (!taskCompleter.isCompleted) {
-              taskCompleter.complete();
-            }
-          },
-          onTaskError: (data) {
-            final errorMsg = data['message'] as String? ?? 'Task error';
-            infLogGroup.endRound(groupTraceId, stopReason: 'error');
-            infLogGroup.endSession(groupTraceId, InferenceStatus.error, error: errorMsg);
-            if (!taskCompleter.isCompleted) {
-              taskCompleter.completeError(
-                Exception(data['message'] ?? 'Task error'),
-              );
-            }
-          },
-          onActionConfirmation: (data) async {
-            // Capture into the outer mutable map so admin/user resolution can
-            // stamp selected_action_id before the final message is saved.
-            actionConfirmationData = Map<String, dynamic>.from(data);
-            if (adminAgent != null) {
-              try {
-                var responseData = await _interactionHandler.resolveInteractionViaAdmin(
-                  interactionType: 'action_confirmation',
-                  data: actionConfirmationData!,
-                  adminAgent: adminAgent,
-                  channelId: channelId,
-                  subAgentName: agent.name,
-                );
-                if (responseData != null) {
-                  await effectiveConnection.submitResponse(
-                    taskId: effectiveTaskId,
-                    responseType: 'action_confirmation',
-                    responseData: responseData,
-                  );
-                  _applyActionConfirmationSelection(
-                    actionConfirmationData!,
-                    responseData,
-                  );
-                  _interactionHandler.saveAdminDecisionMessage(
-                    channelId: channelId,
-                    subAgentName: agent.name,
-                    interactionType: 'action_confirmation',
-                    chosenLabel: responseData['selected_action_label'] as String? ?? '',
-                  );
-                  return;
-                }
-              } catch (e) {
-                LoggerService().error('Admin decision error (action_confirmation)', tag: 'GroupAgentExecutor', error: e);
-              }
-            }
-            // No admin or admin returned null (ASK_USER) — escalate to user
-            if (onInteractionRequest != null) {
-              final userResponse = await onInteractionRequest(agent.id, agent.name, 'action_confirmation', actionConfirmationData!);
-              if (userResponse != null && userResponse['_non_blocking'] != true) {
-                try {
-                  await effectiveConnection.submitResponse(
-                    taskId: effectiveTaskId,
-                    responseType: 'action_confirmation',
-                    responseData: userResponse,
-                  );
-                } catch (_) {}
-                _applyActionConfirmationSelection(
-                  actionConfirmationData!,
-                  userResponse,
-                );
-                return;
-              }
-            }
-            // Fallback to default option
-            final fallback = _interactionHandler.pickDefaultOption('action_confirmation', actionConfirmationData!);
-            if (fallback != null) {
-              try {
-                await effectiveConnection.submitResponse(
-                  taskId: effectiveTaskId,
-                  responseType: 'action_confirmation',
-                  responseData: fallback,
-                );
-              } catch (_) {}
-              _applyActionConfirmationSelection(
-                actionConfirmationData!,
-                fallback,
-              );
-            }
-          },
-          onSingleSelect: (data) async {
-            if (adminAgent != null) {
-              try {
-                var responseData = await _interactionHandler.resolveInteractionViaAdmin(
-                  interactionType: 'single_select',
-                  data: data,
-                  adminAgent: adminAgent,
-                  channelId: channelId,
-                  subAgentName: agent.name,
-                );
-                if (responseData != null) {
-                  await effectiveConnection.submitResponse(
-                    taskId: effectiveTaskId,
-                    responseType: 'single_select',
-                    responseData: responseData,
-                  );
-                  _interactionHandler.saveAdminDecisionMessage(
-                    channelId: channelId,
-                    subAgentName: agent.name,
-                    interactionType: 'single_select',
-                    chosenLabel: responseData['selected_option_label'] as String? ?? '',
-                  );
-                  return;
-                }
-              } catch (e) {
-                LoggerService().error('Admin decision error (single_select)', tag: 'GroupAgentExecutor', error: e);
-              }
-            }
-            // No admin or admin returned null (ASK_USER) — escalate to user
-            if (onInteractionRequest != null) {
-              final userResponse = await onInteractionRequest(agent.id, agent.name, 'single_select', data);
-              if (userResponse != null && userResponse['_non_blocking'] != true) {
-                try {
-                  await effectiveConnection.submitResponse(
-                    taskId: effectiveTaskId,
-                    responseType: 'single_select',
-                    responseData: userResponse,
-                  );
-                } catch (_) {}
-                return;
-              }
-            }
-            // Fallback to default option
-            final fallback = _interactionHandler.pickDefaultOption('single_select', data);
-            if (fallback != null) {
-              try {
-                await effectiveConnection.submitResponse(
-                  taskId: effectiveTaskId,
-                  responseType: 'single_select',
-                  responseData: fallback,
-                );
-              } catch (_) {}
-            }
-          },
-          onMultiSelect: (data) async {
-            if (adminAgent != null) {
-              try {
-                var responseData = await _interactionHandler.resolveInteractionViaAdmin(
-                  interactionType: 'multi_select',
-                  data: data,
-                  adminAgent: adminAgent,
-                  channelId: channelId,
-                  subAgentName: agent.name,
-                );
-                if (responseData != null) {
-                  await effectiveConnection.submitResponse(
-                    taskId: effectiveTaskId,
-                    responseType: 'multi_select',
-                    responseData: responseData,
-                  );
-                  final ids = responseData['selected_option_ids'] as List<dynamic>? ?? [];
-                  _interactionHandler.saveAdminDecisionMessage(
-                    channelId: channelId,
-                    subAgentName: agent.name,
-                    interactionType: 'multi_select',
-                    chosenLabel: ids.join(', '),
-                  );
-                  return;
-                }
-              } catch (e) {
-                LoggerService().error('Admin decision error (multi_select)', tag: 'GroupAgentExecutor', error: e);
-              }
-            }
-            // No admin or admin returned null (ASK_USER) — escalate to user
-            if (onInteractionRequest != null) {
-              final userResponse = await onInteractionRequest(agent.id, agent.name, 'multi_select', data);
-              if (userResponse != null && userResponse['_non_blocking'] != true) {
-                try {
-                  await effectiveConnection.submitResponse(
-                    taskId: effectiveTaskId,
-                    responseType: 'multi_select',
-                    responseData: userResponse,
-                  );
-                } catch (_) {}
-                return;
-              }
-            }
-            // Fallback to default option
-            final fallback = _interactionHandler.pickDefaultOption('multi_select', data);
-            if (fallback != null) {
-              try {
-                await effectiveConnection.submitResponse(
-                  taskId: effectiveTaskId,
-                  responseType: 'multi_select',
-                  responseData: fallback,
-                );
-              } catch (_) {}
-            }
-          },
-          onForm: (data) async {
-            // Forms are too complex for auto-decision; escalate to user
-            if (onInteractionRequest != null) {
-              final userResponse = await onInteractionRequest(agent.id, agent.name, 'form', data);
-              if (userResponse != null && userResponse['_non_blocking'] != true) {
-                try {
-                  await effectiveConnection.submitResponse(
-                    taskId: effectiveTaskId,
-                    responseType: 'form',
-                    responseData: userResponse,
-                  );
-                } catch (_) {}
-                return;
-              }
-            }
-            LoggerService().debug('Form interaction from ${agent.name} — non-blocking, user will submit next turn', tag: 'GroupAgentExecutor');
-            final fallback = _interactionHandler.pickDefaultOption('form', data);
-            if (fallback != null) {
-              try {
-                await effectiveConnection.submitResponse(
-                  taskId: effectiveTaskId,
-                  responseType: 'form',
-                  responseData: fallback,
-                );
-              } catch (_) {}
-            }
-          },
-          onFileUpload: (data) async {
-            // File uploads cannot be auto-decided; escalate to user
-            if (onInteractionRequest != null) {
-              final userResponse = await onInteractionRequest(agent.id, agent.name, 'file_upload', data);
-              if (userResponse != null && userResponse['_non_blocking'] != true) {
-                try {
-                  await effectiveConnection.submitResponse(
-                    taskId: effectiveTaskId,
-                    responseType: 'file_upload',
-                    responseData: userResponse,
-                  );
-                } catch (_) {}
-                return;
-              }
-            }
-            LoggerService().debug('File upload interaction from ${agent.name} — non-blocking, user will submit next turn', tag: 'GroupAgentExecutor');
-          },
-          onFileMessage: (data) async {
-            await saveGroupFileMessage(
-              fileData: data,
-              agentId: agent.id,
-              agentName: agent.name,
-              channelId: channelId,
-              userId: userId,
-              userName: userName,
-            );
-          },
-          onMessageMetadata: (data) {
-            // Remote ACP members declare structured mentions via
-            // `ui.messageMetadata` notifications; params arrive as
-            // {'task_id': ..., ...metadata}. Merge into messageMetadataExtra
-            // so the unified capture block resolves them.
-            final meta = Map<String, dynamic>.from(data)..remove('task_id');
-            messageMetadataExtra = Map<String, dynamic>.from(
-              messageMetadataExtra ?? {},
-            )..addAll(meta);
-          },
-        ));
+          // Build group_context for remote agents
+          final groupContext = <String, dynamic>{
+            'group_id': channelId,
+            'group_name': groupName,
+            'group_description': groupDescription,
+            'member_count': allAgents.length,
+            'members': allAgents
+                .map((a) => <String, dynamic>{
+                      'id': a.id,
+                      'name': a.name,
+                      'type': 'agent',
+                      'bio': a.bio ?? '',
+                      'capabilities': a.capabilities,
+                      'status': a.isOnline ? 'online' : 'offline',
+                    })
+                .toList(),
+            'is_first_message': isFirstMessage,
+            if (messageVersion != null) 'message_version': messageVersion,
+            if (isAdmin && adminExtraTools != null)
+              'orchestration_tools': adminExtraTools,
+            // 群工作空间共享面 URI（外接 agent 经 acp-proxy 可见群记忆/
+            // 编排状态/共享产物；读取失败则省略）。
+            if (groupWorkspaceUri != null) 'workspace_uri': groupWorkspaceUri,
+          };
 
-        // 群工作空间共享面 URI（外接 agent 感知群记忆/共享产物；
-        // 群空间未初始化或读取失败时省略）。
-        try {
-          final groupChannel = await _db.getChannelById(channelId);
-          if (groupChannel != null) {
-            final meta = await GroupWorkspaceService.instance
-                .loadMeta(groupChannel.groupFamilyId);
-            if (meta != null) {
-              groupWorkspaceUri = 'store://workspaces/${meta.homeDevice}/'
-                  '${GroupWorkspaceService.instance.workspaceRoot(groupChannel.groupFamilyId)}'
-                  '/shared';
-            }
-          }
-        } catch (_) {}
-
-        // Build group_context for remote agents
-        final groupContext = <String, dynamic>{
-          'group_id': channelId,
-          'group_name': groupName,
-          'group_description': groupDescription,
-          'member_count': allAgents.length,
-          'members': allAgents.map((a) => <String, dynamic>{
-            'id': a.id,
-            'name': a.name,
-            'type': 'agent',
-            'bio': a.bio ?? '',
-            'capabilities': a.capabilities,
-            'status': a.isOnline ? 'online' : 'offline',
-          }).toList(),
-          'is_first_message': isFirstMessage,
-          if (messageVersion != null)
-            'message_version': messageVersion,
-          if (isAdmin && adminExtraTools != null)
-            'orchestration_tools': adminExtraTools,
-          // 群工作空间共享面 URI（外接 agent 经 acp-proxy 可见群记忆/
-          // 编排状态/共享产物；读取失败则省略）。
-          if (groupWorkspaceUri != null) 'workspace_uri': groupWorkspaceUri,
-        };
-
-        final chatResp = await effectiveConnection.sendChatMessage(
-          taskId: effectiveTaskId,
-          sessionId: memberSessionId,
-          message: content,
-          userId: userId,
-          messageId: _uuid.v4(),
-          history: acpHistoryEntries.isNotEmpty ? acpHistoryEntries : null,
-          systemPrompt: systemPrompt,
-          groupContext: groupContext,
-          attachments: attachments
-              ?.where((a) => !a.exceedsSizeLimit)
-              .map((a) => a.toJson())
-              .toList(),
-          tools: isAdmin ? adminExtraTools : null,
-        );
-
-        final busyStatus = chatResp.result is Map
-            ? (chatResp.result as Map)['status']?.toString()
-            : null;
-        if (busyStatus == 'busy') {
-          effectiveConnection.unregisterTaskCallbacks(effectiveTaskId);
-          acpCancellationToken?.unbind(effectiveConnection, effectiveTaskId);
-          if (!taskCompleter.isCompleted) taskCompleter.complete();
-          if (leaveMailboxAndCollect != null &&
-              ChannelMailboxService.agentHasChannelInbox(agent)) {
-            await fillFromMailbox('status=busy');
-          } else {
-            throw Exception('Agent busy');
-          }
-        } else {
-          await taskCompleter.future.timeout(
-            acpTaskTimeout,
-            onTimeout: () {
-              throw TimeoutException('ACP group task timed out for ${agent.name}');
-            },
+          final chatResp = await effectiveConnection.sendChatMessage(
+            taskId: effectiveTaskId,
+            sessionId: memberSessionId,
+            message: content,
+            userId: userId,
+            messageId: _uuid.v4(),
+            history: acpHistoryEntries.isNotEmpty ? acpHistoryEntries : null,
+            systemPrompt: systemPrompt,
+            groupContext: groupContext,
+            attachments: attachments
+                ?.where((a) => !a.exceedsSizeLimit)
+                .map((a) => a.toJson())
+                .toList(),
+            tools: isAdmin ? adminExtraTools : null,
           );
-        }
 
-        if (!usedMailbox) {
-          effectiveConnection.unregisterTaskCallbacks(effectiveTaskId);
-          acpCancellationToken?.unbind(effectiveConnection, effectiveTaskId);
-        }
+          final busyStatus = chatResp.result is Map
+              ? (chatResp.result as Map)['status']?.toString()
+              : null;
+          if (busyStatus == 'busy') {
+            effectiveConnection.unregisterTaskCallbacks(effectiveTaskId);
+            acpCancellationToken?.unbind(effectiveConnection, effectiveTaskId);
+            if (!taskCompleter.isCompleted) taskCompleter.complete();
+            if (leaveMailboxAndCollect != null &&
+                ChannelMailboxService.agentHasChannelInbox(agent)) {
+              await fillFromMailbox('status=busy');
+            } else {
+              throw Exception('Agent busy');
+            }
+          } else {
+            await taskCompleter.future.timeout(
+              acpTaskTimeout,
+              onTimeout: () {
+                throw TimeoutException(
+                    'ACP group task timed out for ${agent.name}');
+              },
+            );
+          }
+
+          if (!usedMailbox) {
+            effectiveConnection.unregisterTaskCallbacks(effectiveTaskId);
+            acpCancellationToken?.unbind(effectiveConnection, effectiveTaskId);
+          }
         }
       } catch (e) {
-        LoggerService().error('Group agent ${agent.name} ACP error', tag: 'GroupAgentExecutor', error: e);
+        LoggerService().error('Group agent ${agent.name} ACP error',
+            tag: 'GroupAgentExecutor', error: e);
         if (connection != null && taskId != null) {
           connection.unregisterTaskCallbacks(taskId);
           acpCancellationToken?.unbind(connection, taskId);
@@ -1684,32 +1796,79 @@ class GroupAgentExecutor {
           // steps hit failStep (same contract as the local/peer paths).
           rethrow;
         }
+        // H2: same as the local/peer paths — a mid-stream ACP failure must
+        // not persist a truncated reply as a successful message.
+        midStreamError = e;
       }
     }
 
     // End session for local LLM path (remote ACP ends in onTaskCompleted/onTaskError callbacks)
     if (agent.isLocal) {
       final wasCancelled = acpCancellationToken?.isCancelled == true;
-      infLogGroup.endSession(groupTraceId, wasCancelled ? InferenceStatus.cancelled : InferenceStatus.completed);
+      infLogGroup.endSession(groupTraceId,
+          wasCancelled ? InferenceStatus.cancelled : InferenceStatus.completed);
     }
 
     var responseContent = responseBuffer.toString().trim();
 
     // Strip redundant agent name prefix that LLMs sometimes echo from chat history
     // e.g. "[local1]: 你好" or "[local1(Agent)]: 你好" → "你好"
-    final prefixPattern = RegExp(r'^\[' + RegExp.escape(agent.name) + r'(?:\(Agent\))?\]\s*[:：]\s*');
+    final prefixPattern = RegExp(
+        r'^\[' + RegExp.escape(agent.name) + r'(?:\(Agent\))?\]\s*[:：]\s*');
     responseContent = responseContent.replaceFirst(prefixPattern, '');
+
+    // H2: streaming started then failed mid-way (three catch paths recorded
+    // midStreamError). Persist an interruption notice instead of the truncated
+    // buffer, clean up the task, report failure, and re-raise so the
+    // orchestration layer records this member in failedAgentNames / workflow
+    // steps hit failStep — exactly like a pre-stream failure.
+    if (midStreamError != null) {
+      final interruptMsg = Message(
+        id: _uuid.v4(),
+        content: '⚠️ Agent「${agent.name}」输出被中断：$midStreamError',
+        timestampMs: DateTime.now().millisecondsSinceEpoch,
+        from: MessageFrom(id: 'system', type: 'system', name: 'System'),
+        type: MessageType.system,
+      );
+      await _db.createMessage(
+        id: interruptMsg.id,
+        channelId: channelId,
+        senderId: 'system',
+        senderType: 'system',
+        senderName: 'System',
+        content: interruptMsg.content,
+        messageType: 'system',
+      );
+      await _db.markMessageAsRead(interruptMsg.id);
+      notifyChannelUpdate(channelId);
+
+      groupTask.isComplete = true;
+      groupTask.onTaskFinished?.call();
+      _activeGroupTasks[channelId]?.remove(agent.id);
+      if (_activeGroupTasks[channelId]?.isEmpty == true) {
+        _activeGroupTasks.remove(channelId);
+      }
+      updateTypingAgentIds();
+      ForegroundTaskService().releaseTask(agent.name);
+      onAgentDone?.call(agent.id, agent.name, true);
+      // Not inside a catch context here — throw the original error so the
+      // orchestration layer records failedAgentNames / workflow failStep.
+      throw midStreamError;
+    }
 
     final hasPeerApprovalCard = actionConfirmationData != null &&
         actionConfirmationData!['confirmation_context'] == 'peer';
     final hasProgressContent =
-        (messageMetadataExtra?['progress_content'] as String?)?.trim().isNotEmpty ==
+        (messageMetadataExtra?['progress_content'] as String?)
+                ?.trim()
+                .isNotEmpty ==
             true;
 
     if ((responseContent.isEmpty || responseContent.contains('[SKIP]')) &&
         !hasPeerApprovalCard &&
         !hasProgressContent) {
-      LoggerService().debug('Agent ${agent.name} skipped', tag: 'GroupAgentExecutor');
+      LoggerService()
+          .debug('Agent ${agent.name} skipped', tag: 'GroupAgentExecutor');
       groupTask.isComplete = true;
       groupTask.onTaskFinished?.call();
       _activeGroupTasks[channelId]?.remove(agent.id);
@@ -1751,7 +1910,8 @@ class GroupAgentExecutor {
       );
       agentMentions = resolved.mentions;
       unresolvedMentionNames = resolved.unresolved;
-      final legacy = _dispatchParser.parseStructuredDispatch(responseContent, allAgents);
+      final legacy =
+          _dispatchParser.parseStructuredDispatch(responseContent, allAgents);
       legacySteps.addAll(legacy.steps);
       for (final s in legacy.steps) {
         for (final id in s.agentIds) {
@@ -1783,7 +1943,8 @@ class GroupAgentExecutor {
       agentMentions = resolved.mentions;
       unresolvedMentionNames = resolved.unresolved;
     }
-    if (GroupDispatchParser.dispatchJsonBlockPattern.hasMatch(responseContent)) {
+    if (GroupDispatchParser.dispatchJsonBlockPattern
+        .hasMatch(responseContent)) {
       responseContent =
           GroupDispatchParser.stripDispatchJsonBlocks(responseContent);
     }
@@ -1802,7 +1963,8 @@ class GroupAgentExecutor {
     if (turnTokenUsage.hasAny) {
       meta[LlmTokenUsage.metadataKey] = turnTokenUsage.toJson();
     }
-    if (actionConfirmationData != null) meta['action_confirmation'] = actionConfirmationData;
+    if (actionConfirmationData != null)
+      meta['action_confirmation'] = actionConfirmationData;
     if (singleSelectData != null) meta['single_select'] = singleSelectData;
     if (multiSelectData != null) meta['multi_select'] = multiSelectData;
     if (fileUploadData != null) meta['file_upload'] = fileUploadData;
@@ -1821,7 +1983,8 @@ class GroupAgentExecutor {
       _activeInteractionData = Map<String, dynamic>.from(formDataCapture);
     } else if (actionConfirmationData != null) {
       _activeInteractionType = 'action_confirmation';
-      _activeInteractionData = Map<String, dynamic>.from(actionConfirmationData!);
+      _activeInteractionData =
+          Map<String, dynamic>.from(actionConfirmationData!);
     } else if (singleSelectData != null) {
       _activeInteractionType = 'single_select';
       _activeInteractionData = Map<String, dynamic>.from(singleSelectData);
@@ -1879,7 +2042,8 @@ class GroupAgentExecutor {
         sourceMessageId: agentResponse.id,
       );
     } catch (e) {
-      LoggerService().error('Group agent ${agent.name} DB save error', tag: 'GroupAgentExecutor', error: e);
+      LoggerService().error('Group agent ${agent.name} DB save error',
+          tag: 'GroupAgentExecutor', error: e);
       // DB save failed, but the message is already in the UI — keep it
     }
 
@@ -1887,11 +2051,13 @@ class GroupAgentExecutor {
     // (mirrors the remote ACP path's onForm/onActionConfirmation blocking behavior).
     // Peer in-band approvals are resolved during sendChat — skip post-save wait.
     // Already-selected cards (admin auto / panel) also skip — nothing left to ask.
-    final skipPostSavePeerApproval = _activeInteractionType == 'action_confirmation' &&
+    final skipPostSavePeerApproval = _activeInteractionType ==
+            'action_confirmation' &&
         (_activeInteractionData?['confirmation_context'] as String?) == 'peer';
-    final alreadyResolved = _activeInteractionData?['selected_action_id'] != null ||
-        _activeInteractionData?['selected_option_id'] != null ||
-        _activeInteractionData?['selected_option_ids'] != null;
+    final alreadyResolved =
+        _activeInteractionData?['selected_action_id'] != null ||
+            _activeInteractionData?['selected_option_id'] != null ||
+            _activeInteractionData?['selected_option_ids'] != null;
     if (!skipPostSavePeerApproval &&
         !alreadyResolved &&
         _activeInteractionType != null &&
@@ -1900,7 +2066,8 @@ class GroupAgentExecutor {
         onInteractionRequest != null) {
       // Inject _savedMessageId so controller can key pendingGroupInteractions
       // on the correct DB message ID (see chat_controller.dart line 1542)
-      final dataForController = Map<String, dynamic>.from(_activeInteractionData);
+      final dataForController =
+          Map<String, dynamic>.from(_activeInteractionData);
       dataForController['_savedMessageId'] = savedMessageId;
 
       // Block here: controller creates a GroupInteractionRequestEvent,
@@ -1919,8 +2086,10 @@ class GroupAgentExecutor {
       if (!isNonBlocking) {
         // Fallback for non-form types: pick default option on timeout (null response)
         final resolvedResponse = userResponse ??
-            (_activeInteractionType != 'form' && _activeInteractionType != 'file_upload'
-                ? _interactionHandler.pickDefaultOption(_activeInteractionType, _activeInteractionData)
+            (_activeInteractionType != 'form' &&
+                    _activeInteractionType != 'file_upload'
+                ? _interactionHandler.pickDefaultOption(
+                    _activeInteractionType, _activeInteractionData)
                 : null);
 
         // Persist responded state to DB for consistency (survives navigation)
@@ -1936,13 +2105,14 @@ class GroupAgentExecutor {
                   _activeInteractionData,
             );
             section.addAll(resolvedResponse);
-            section['selected_at'] =
-                DateTime.now().millisecondsSinceEpoch;
+            section['selected_at'] = DateTime.now().millisecondsSinceEpoch;
             mergedMeta[_activeInteractionType] = section;
             await _db.updateMessageMetadata(savedMessageId, mergedMeta);
           } catch (e) {
-            LoggerService().error('Failed to persist responded state for ${agent.name}',
-                tag: 'GroupAgentExecutor', error: e);
+            LoggerService().error(
+                'Failed to persist responded state for ${agent.name}',
+                tag: 'GroupAgentExecutor',
+                error: e);
           }
         }
 
@@ -1966,7 +2136,9 @@ class GroupAgentExecutor {
     updateTypingAgentIds();
     ForegroundTaskService().releaseTask(agent.name);
 
-    LoggerService().debug('_processGroupAgent DONE: ${agent.name}, contentLen=${responseContent.length}', tag: 'GroupAgentExecutor');
+    LoggerService().debug(
+        '_processGroupAgent DONE: ${agent.name}, contentLen=${responseContent.length}',
+        tag: 'GroupAgentExecutor');
     onAgentDone?.call(agent.id, agent.name, false);
     return GroupTurnResult(
       content: responseContent,
@@ -2136,7 +2308,8 @@ class GroupAgentExecutor {
       final allowAdminAuto =
           adminAgent != null && PeerApprovalPolicy.allowAdminAutoResolve(data);
       if (allowAdminAuto) {
-        final responseData = await _interactionHandler.resolveInteractionViaAdmin(
+        final responseData =
+            await _interactionHandler.resolveInteractionViaAdmin(
           interactionType: 'action_confirmation',
           data: data,
           adminAgent: adminAgent,
@@ -2151,8 +2324,7 @@ class GroupAgentExecutor {
             if (cid != null && cid.isNotEmpty) {
               await WorkflowService.instance.markPendingApprovalSubmitted(
                 cid,
-                selectedActionId:
-                    responseData['selected_action_id'] as String?,
+                selectedActionId: responseData['selected_action_id'] as String?,
               );
             }
           }
@@ -2227,7 +2399,8 @@ class GroupAgentExecutor {
             // Skip if the user already submitted via another controller
             // (e.g. switched channels after tapping Allow).
             final approvalId = data['confirmation_id'] as String? ?? '';
-            if (PeerAgentClientService.instance.hasSubmittedApproval(approvalId)) {
+            if (PeerAgentClientService.instance
+                .hasSubmittedApproval(approvalId)) {
               LoggerService().info(
                 'Peer workflow approval timed out for ${agent.name} but '
                 'verdict already submitted; skipping auto-deny '
@@ -2235,25 +2408,25 @@ class GroupAgentExecutor {
                 tag: 'GroupAgentExecutor',
               );
             } else {
-            final deny = <String, dynamic>{
-              'selected_action_id': 'deny',
-              'selected_action_label': '拒绝',
-            };
-            LoggerService().warning(
-              'Peer workflow approval timed out for ${agent.name}; '
-              'auto-denying confirmationId=${data['confirmation_id']}',
-              tag: 'GroupAgentExecutor',
-            );
-            try {
-              await submit(deny);
-              _applyActionConfirmationSelection(data, deny);
-            } catch (e) {
-              LoggerService().error(
-                'Failed to auto-deny timed-out peer approval',
+              final deny = <String, dynamic>{
+                'selected_action_id': 'deny',
+                'selected_action_label': '拒绝',
+              };
+              LoggerService().warning(
+                'Peer workflow approval timed out for ${agent.name}; '
+                'auto-denying confirmationId=${data['confirmation_id']}',
                 tag: 'GroupAgentExecutor',
-                error: e,
               );
-            }
+              try {
+                await submit(deny);
+                _applyActionConfirmationSelection(data, deny);
+              } catch (e) {
+                LoggerService().error(
+                  'Failed to auto-deny timed-out peer approval',
+                  tag: 'GroupAgentExecutor',
+                  error: e,
+                );
+              }
             }
           }
         }
@@ -2297,8 +2470,7 @@ class GroupAgentExecutor {
       if (namespace != 'store' && namespace != 'help') {
         return jsonEncode({
           'ok': false,
-          'error':
-              '群成员仅可使用 store 与 help 命名空间。产出请用 shepaw store write，'
+          'error': '群成员仅可使用 store 与 help 命名空间。产出请用 shepaw store write，'
               '读取请用 shepaw store read --uri <store://...>。'
               '产物写入本群储物袋，不是你个人的 runtime。',
           'allowed_namespaces': ['store', 'help'],

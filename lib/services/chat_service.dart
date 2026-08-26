@@ -58,6 +58,7 @@ import '../models/llm_token_usage.dart';
 class HistorySupplementResult {
   final Message message;
   final int actualSentCount;
+
   /// Non-null when the agent asked for even more history during this supplement.
   final Map<String, dynamic>? pendingHistoryRequest;
   const HistorySupplementResult({
@@ -73,7 +74,8 @@ class HistorySupplementResult {
 /// Chat Service
 /// Handles message sending and receiving with agents
 class ChatService {
-  static final ChatService _instance = ChatService._internal(LocalDatabaseService(), ToolResultDatabaseService());
+  static final ChatService _instance = ChatService._internal(
+      LocalDatabaseService(), ToolResultDatabaseService());
   factory ChatService([LocalDatabaseService? db]) => _instance;
 
   final LocalDatabaseService _databaseService;
@@ -96,6 +98,11 @@ class ChatService {
   // Active tasks (keyed by channelId) — survives UI detach/reattach
   final Map<String, ActiveTask> _activeTasks = {};
 
+  // H1: per-channel in-flight guard for group orchestration loops. A channel
+  // with an entry is currently running `sendMessageToGroup`; a duplicate send
+  // is rejected with a visible notice instead of starting a second loop.
+  final Set<String> _groupOrchestratingChannels = {};
+
   // Pending plan_approvals: managed by PlanApprovalService
   final PlanApprovalService _planApprovalService = PlanApprovalService.instance;
 
@@ -116,27 +123,32 @@ class ChatService {
   );
 
   /// Sub-service: group dispatch parsing (structured JSON dispatch blocks)
-  late final GroupDispatchParser _groupDispatchParser = GroupDispatchParser(_databaseService);
+  late final GroupDispatchParser _groupDispatchParser =
+      GroupDispatchParser(_databaseService);
 
   /// Sub-service: workflow execution persistence
-  late final WorkflowService _workflowService = WorkflowService(db: _databaseService);
+  late final WorkflowService _workflowService =
+      WorkflowService(db: _databaseService);
 
   /// Sub-service: session management (create/list DM sessions)
   late final SessionService _sessionService = SessionService(_databaseService);
 
   /// Sub-service: message history (load/delete/rollback)
-  late final HistoryService _historyService = HistoryService(_databaseService, _toolResultService);
+  late final HistoryService _historyService =
+      HistoryService(_databaseService, _toolResultService);
 
   /// Sub-service: group system prompt and modality detection
   final GroupPromptBuilder _groupPromptBuilder = const GroupPromptBuilder();
 
   /// Sub-service: admin interaction decisions and group system messages
-  late final GroupInteractionHandler _groupInteractionHandler = GroupInteractionHandler(
+  late final GroupInteractionHandler _groupInteractionHandler =
+      GroupInteractionHandler(
     db: _databaseService,
     uuid: _uuid,
     acpConnections: _acpConnections,
     notifyChannelUpdate: _notifyChannelUpdate,
-    loadChannelMessages: (channelId, {int limit = 100}) => loadChannelMessages(channelId, limit: limit),
+    loadChannelMessages: (channelId, {int limit = 100}) =>
+        loadChannelMessages(channelId, limit: limit),
   );
 
   /// Sub-service: flow-mode helpers (strip blocks)
@@ -159,7 +171,8 @@ class ChatService {
   );
 
   /// Sub-service: 1:1 agent messaging (sendMessageToAgent + ACP + local LLM)
-  late final AgentMessagingService _agentMessagingService = AgentMessagingService(
+  late final AgentMessagingService _agentMessagingService =
+      AgentMessagingService(
     db: _databaseService,
     toolResultDb: _toolResultService,
     uuid: _uuid,
@@ -168,13 +181,16 @@ class ChatService {
     saveMessageToChannel: (message, agentId, {String? channelId}) =>
         _saveMessageToChannel(message, agentId, channelId: channelId),
     updateTypingAgentIds: _updateTypingAgentIds,
-    releaseForegroundTask: (agentName) => ForegroundTaskService().releaseTask(agentName),
-    loadChannelMessages: (channelId, {int limit = 100}) => loadChannelMessages(channelId, limit: limit),
+    releaseForegroundTask: (agentName) =>
+        ForegroundTaskService().releaseTask(agentName),
+    loadChannelMessages: (channelId, {int limit = 100}) =>
+        loadChannelMessages(channelId, limit: limit),
     getMessageById: (id) => getMessageById(id),
   );
 
   /// Sub-service: group message orchestration (sendMessageToGroup routing)
-  late final GroupOrchestrationService _groupOrchestrationService = GroupOrchestrationService(
+  late final GroupOrchestrationService _groupOrchestrationService =
+      GroupOrchestrationService(
     db: _databaseService,
     uuid: _uuid,
     executor: _groupAgentExecutor,
@@ -189,23 +205,29 @@ class ChatService {
       required String agentName,
       required Map<String, dynamic> planData,
       required String messageId,
-    }) => awaitPlanApproval(
+    }) =>
+        awaitPlanApproval(
       channelId: channelId,
       agentId: agentId,
       agentName: agentName,
       planData: planData,
       messageId: messageId,
     ),
-    loadChannelMessages: (channelId, {int limit = 100}) => loadChannelMessages(channelId, limit: limit),
+    loadChannelMessages: (channelId, {int limit = 100}) =>
+        loadChannelMessages(channelId, limit: limit),
     getMessageById: (id) => getMessageById(id),
     onOrchestrationRound: _persistOrchestrationRound,
     // M5：loop 模式每轮完成 → 记入事件日志（被动，不触发管理员回合）。
     onGroupEvent: _groupEventPerceptionScheduler.schedule,
     // M5：下一轮成员上下文注入最近几轮 loopRoundCompleted 事件行。
-    loopEventLines: (channelId) {
+    // M4：只取当前编排会话（触发用户消息 id）的事件——同一 channel 连续两次
+    // 任务时，避免把上一任务第 3/4/5 轮事件注入本任务第 1 轮成员上下文。
+    loopEventLines: (channelId, {String? orchestrationId}) {
       final events = _groupEventStore
           .recent(channelId, limit: 20)
           .where((e) => e.type == GroupEventType.loopRoundCompleted)
+          .where((e) =>
+              orchestrationId == null || e.orchestrationId == orchestrationId)
           .toList();
       final tail =
           events.length <= 3 ? events : events.sublist(events.length - 3);
@@ -230,14 +252,17 @@ class ChatService {
   );
 
   /// Sub-service: coalesced admin perception turn after member enter/leave.
-  late final GroupMembershipPerceptionScheduler _groupMembershipPerceptionScheduler =
-      GroupMembershipPerceptionScheduler(
+  late final GroupMembershipPerceptionScheduler
+      _groupMembershipPerceptionScheduler = GroupMembershipPerceptionScheduler(
     db: _databaseService,
     executor: _groupAgentExecutor,
     acpConnections: _acpConnections,
     loadChannelMessages: (channelId, {int limit = 100}) =>
         loadChannelMessages(channelId, limit: limit),
     dispatchParser: _groupDispatchParser,
+    // M2: 编排 loop 进行中，感知回合让位（drop）。
+    isChannelOrchestrating: (channelId) =>
+        _groupOrchestratingChannels.contains(channelId),
   );
 
   /// Sub-service: group event log (passive awareness + workspace persistence).
@@ -256,6 +281,9 @@ class ChatService {
         loadChannelMessages(channelId, limit: limit),
     dispatchParser: _groupDispatchParser,
     eventStore: _groupEventStore,
+    // M2: 编排 loop 进行中，感知回合让位（drop）。
+    isChannelOrchestrating: (channelId) =>
+        _groupOrchestratingChannels.contains(channelId),
   );
 
   /// 群工作空间编排落盘适配：按 kind 写 round 状态或 dispatch 决定。
@@ -393,7 +421,8 @@ class ChatService {
       if (logs.isEmpty) return;
       final entries = <({int seq, GroupEvent event})>[];
       for (final log in logs) {
-        final event = GroupEvent.fromPersisted(log.payload, channelId: channelId);
+        final event =
+            GroupEvent.fromPersisted(log.payload, channelId: channelId);
         if (event != null) {
           entries.add((seq: log.seq, event: event));
         }
@@ -456,12 +485,14 @@ class ChatService {
   }
 
   /// Notifier that emits the set of agent IDs currently typing in 1:1 chats.
-  final ValueNotifier<Set<String>> typingAgentIds = ValueNotifier<Set<String>>({});
+  final ValueNotifier<Set<String>> typingAgentIds =
+      ValueNotifier<Set<String>>({});
 
   /// Notifier that emits the set of channel IDs that have typing activity
   /// (either 1:1 or group). Used by the conversation list to show typing
   /// indicators on the correct conversation tile.
-  final ValueNotifier<Set<String>> typingChannelIds = ValueNotifier<Set<String>>({});
+  final ValueNotifier<Set<String>> typingChannelIds =
+      ValueNotifier<Set<String>>({});
 
   ChatService._internal(this._databaseService, this._toolResultService) {
     // Wire every ACPAgentConnection's slash-command updates back into our
@@ -630,7 +661,8 @@ class ChatService {
       replyTo: task.userMessageId,
     );
 
-    await _saveMessageToChannel(partialMessage, task.agentId, channelId: channelId);
+    await _saveMessageToChannel(partialMessage, task.agentId,
+        channelId: channelId);
 
     // Complete the DB save completer so any awaiting code resolves
     if (!task.dbSaveCompleter.isCompleted) {
@@ -747,7 +779,8 @@ class ChatService {
   /// Returns a map of agentId -> accumulated content so far.
   Map<String, String> attachGroupTaskUI(
     String channelId, {
-    void Function(String agentId, String agentName, String chunk)? onStreamChunk,
+    void Function(String agentId, String agentName, String chunk)?
+        onStreamChunk,
     void Function(String agentId, String agentName)? onTaskFinished,
   }) {
     final agentMap = _activeGroupTasks[channelId];
@@ -819,13 +852,14 @@ class ChatService {
     required String agentName,
     required Map<String, dynamic> planData,
     required String messageId,
-  }) => _planApprovalService.awaitPlanApproval(
-    channelId: channelId,
-    agentId: agentId,
-    agentName: agentName,
-    planData: planData,
-    messageId: messageId,
-  );
+  }) =>
+      _planApprovalService.awaitPlanApproval(
+        channelId: channelId,
+        agentId: agentId,
+        agentName: agentName,
+        planData: planData,
+        messageId: messageId,
+      );
 
   /// Returns the pending plan_approval handle for [channelId], or null.
   PlanApprovalHandle? getPendingPlanApproval(String channelId) =>
@@ -842,7 +876,8 @@ class ChatService {
   /// Get message stream for a channel
   Stream<List<Message>> getMessageStream(String channelId) {
     if (!_messageControllers.containsKey(channelId)) {
-      _messageControllers[channelId] = StreamController<List<Message>>.broadcast();
+      _messageControllers[channelId] =
+          StreamController<List<Message>>.broadcast();
     }
     return _messageControllers[channelId]!.stream;
   }
@@ -869,44 +904,51 @@ class ChatService {
     Future<void> Function(Map<String, dynamic> fileData)? onFileMessage,
     void Function(Map<String, dynamic> metadata)? onMessageMetadata,
     void Function(Map<String, dynamic> historyRequestData)? onRequestHistory,
-    Future<bool> Function(String toolName, Map<String, dynamic> args, os_exec.RiskLevel risk)? onOsToolConfirmation,
+    Future<bool> Function(
+            String toolName, Map<String, dynamic> args, os_exec.RiskLevel risk)?
+        onOsToolConfirmation,
+
     /// 工作流计划创建回调（She 在 DM 中调用 `shepaw workflow create` 成功后触发）。
-    void Function(String workflowId, Map<String, dynamic> planData)? onWorkflowPlanCreated,
+    void Function(String workflowId, Map<String, dynamic> planData)?
+        onWorkflowPlanCreated,
     ACPCancellationToken? acpCancellationToken,
     List<AttachmentData>? attachments,
     Message? existingUserMessage,
+
     /// 主动重连进度回调：`(attempt, total)`。`attempt>0` 正在重连第几次；
     /// `attempt==0` 重连流程结束（成功或失败）。仅 ACP 协议触发。
     void Function(int attempt, int total)? onReconnecting,
+
     /// See [AgentMessagingService.sendMessageToAgent].
     bool foldProgressContent = true,
     List<Map<String, dynamic>>? extraTools,
-  }) => _agentMessagingService.sendMessageToAgent(
-    content: content,
-    agent: agent,
-    userId: userId,
-    userName: userName,
-    channelId: channelId,
-    replyToId: replyToId,
-    dmSystemPrompt: dmSystemPrompt,
-    onStreamChunk: onStreamChunk,
-    onActionConfirmation: onActionConfirmation,
-    onSingleSelect: onSingleSelect,
-    onMultiSelect: onMultiSelect,
-    onFileUpload: onFileUpload,
-    onForm: onForm,
-    onFileMessage: onFileMessage,
-    onMessageMetadata: onMessageMetadata,
-    onRequestHistory: onRequestHistory,
-    onOsToolConfirmation: onOsToolConfirmation,
-    onWorkflowPlanCreated: onWorkflowPlanCreated,
-    acpCancellationToken: acpCancellationToken,
-    attachments: attachments,
-    existingUserMessage: existingUserMessage,
-    onReconnecting: onReconnecting,
-    foldProgressContent: foldProgressContent,
-    extraTools: extraTools,
-  );
+  }) =>
+      _agentMessagingService.sendMessageToAgent(
+        content: content,
+        agent: agent,
+        userId: userId,
+        userName: userName,
+        channelId: channelId,
+        replyToId: replyToId,
+        dmSystemPrompt: dmSystemPrompt,
+        onStreamChunk: onStreamChunk,
+        onActionConfirmation: onActionConfirmation,
+        onSingleSelect: onSingleSelect,
+        onMultiSelect: onMultiSelect,
+        onFileUpload: onFileUpload,
+        onForm: onForm,
+        onFileMessage: onFileMessage,
+        onMessageMetadata: onMessageMetadata,
+        onRequestHistory: onRequestHistory,
+        onOsToolConfirmation: onOsToolConfirmation,
+        onWorkflowPlanCreated: onWorkflowPlanCreated,
+        acpCancellationToken: acpCancellationToken,
+        attachments: attachments,
+        existingUserMessage: existingUserMessage,
+        onReconnecting: onReconnecting,
+        foldProgressContent: foldProgressContent,
+        extraTools: extraTools,
+      );
 
   /// Returns the active ACP connection for [agentId], or null.
   ACPAgentConnection? getACPConnection(String agentId) =>
@@ -939,7 +981,8 @@ class ChatService {
   /// screen. The `/` palette can read from here via
   /// [getSlashCommandsSnapshot] to populate before the persistent
   /// connection is established.
-  void cacheSlashCommandsSnapshot(String agentId, List<SlashCommandInfo> commands) {
+  void cacheSlashCommandsSnapshot(
+      String agentId, List<SlashCommandInfo> commands) {
     _slashCommandsSnapshot[agentId] = List.unmodifiable(commands);
   }
 
@@ -965,7 +1008,8 @@ class ChatService {
     // 1. Load ALL messages from DB so we can slice correctly.
     //    `offset` = number of most-recent messages already sent to agent.
     //    We want the `batchSize` messages right before those.
-    final allMessages = await loadChannelMessages(sessionId, limit: offset + batchSize);
+    final allMessages =
+        await loadChannelMessages(sessionId, limit: offset + batchSize);
     // allMessages is sorted by time ascending
     final total = allMessages.length;
 
@@ -978,15 +1022,13 @@ class ChatService {
     if (newStart >= newEnd) return null; // no more history
 
     final additionalMessages = allMessages.sublist(newStart, newEnd);
-    final chatHistory = additionalMessages
-        .where((m) => m.type == MessageType.text)
-        .map((m) {
-          return {
-            'role': m.from.isAgent ? 'assistant' : 'user',
-            'content': m.content,
-          };
-        })
-        .toList();
+    final chatHistory =
+        additionalMessages.where((m) => m.type == MessageType.text).map((m) {
+      return {
+        'role': m.from.isAgent ? 'assistant' : 'user',
+        'content': m.content,
+      };
+    }).toList();
 
     if (chatHistory.isEmpty) return null;
 
@@ -1029,9 +1071,8 @@ class ChatService {
       LocalLLMAgentService.instance.abort(cancelKey);
     });
 
-    final historyBlock = chatHistory
-        .map((e) => '${e['role']}: ${e['content']}')
-        .join('\n');
+    final historyBlock =
+        chatHistory.map((e) => '${e['role']}: ${e['content']}').join('\n');
     final userMessage = '''
 [HISTORY_SUPPLEMENT]
 Older messages that were missing from your previous context:
@@ -1105,7 +1146,8 @@ $originalQuestion
         metadata: tokenUsageMeta,
       );
       if (responseContent.isNotEmpty) {
-        await _saveMessageToChannel(responseMessage, agent.id, channelId: sessionId);
+        await _saveMessageToChannel(responseMessage, agent.id,
+            channelId: sessionId);
       }
       return HistorySupplementResult(
         message: responseMessage,
@@ -1135,7 +1177,8 @@ $originalQuestion
       type: MessageType.text,
       metadata: tokenUsageMeta,
     );
-    await _saveMessageToChannel(responseMessage, agent.id, channelId: sessionId);
+    await _saveMessageToChannel(responseMessage, agent.id,
+        channelId: sessionId);
 
     return HistorySupplementResult(
       message: responseMessage,
@@ -1155,7 +1198,8 @@ $originalQuestion
     void Function(Map<String, dynamic>)? onRequestHistory,
     ACPCancellationToken? acpCancellationToken,
   }) async {
-    final connection = await _agentMessagingService.getOrCreateACPConnection(agent);
+    final connection =
+        await _agentMessagingService.getOrCreateACPConnection(agent);
     final taskId = _uuid.v4();
     acpCancellationToken?.bind(connection, taskId);
 
@@ -1171,26 +1215,29 @@ $originalQuestion
       }
     });
 
-    connection.registerTaskCallbacks(taskId, TaskCallbacks(
-      onTextContent: (data) {
-        final content = data['content'] as String? ?? '';
-        responseContent += content;
-        onStreamChunk?.call(content);
-      },
-      onRequestHistory: (data) {
-        capturedHistoryRequest = Map<String, dynamic>.from(data);
-        onRequestHistory?.call(data);
-      },
-      onTaskCompleted: (data) {
-        remoteTokenUsage = LlmTokenUsage.fromJson(data['usage']);
-        if (!taskCompleter.isCompleted) taskCompleter.complete();
-      },
-      onTaskError: (data) {
-        if (!taskCompleter.isCompleted) {
-          taskCompleter.completeError(Exception(data['message'] ?? 'Task error'));
-        }
-      },
-    ));
+    connection.registerTaskCallbacks(
+        taskId,
+        TaskCallbacks(
+          onTextContent: (data) {
+            final content = data['content'] as String? ?? '';
+            responseContent += content;
+            onStreamChunk?.call(content);
+          },
+          onRequestHistory: (data) {
+            capturedHistoryRequest = Map<String, dynamic>.from(data);
+            onRequestHistory?.call(data);
+          },
+          onTaskCompleted: (data) {
+            remoteTokenUsage = LlmTokenUsage.fromJson(data['usage']);
+            if (!taskCompleter.isCompleted) taskCompleter.complete();
+          },
+          onTaskError: (data) {
+            if (!taskCompleter.isCompleted) {
+              taskCompleter
+                  .completeError(Exception(data['message'] ?? 'Task error'));
+            }
+          },
+        ));
 
     await connection.sendChatMessage(
       taskId: taskId,
@@ -1223,7 +1270,8 @@ $originalQuestion
         metadata: tokenUsageMeta,
       );
       if (responseContent.isNotEmpty) {
-        await _saveMessageToChannel(responseMessage, agent.id, channelId: sessionId);
+        await _saveMessageToChannel(responseMessage, agent.id,
+            channelId: sessionId);
       }
       return HistorySupplementResult(
         message: responseMessage,
@@ -1256,7 +1304,8 @@ $originalQuestion
       metadata: tokenUsageMeta,
     );
 
-    await _saveMessageToChannel(responseMessage, agent.id, channelId: sessionId);
+    await _saveMessageToChannel(responseMessage, agent.id,
+        channelId: sessionId);
 
     return HistorySupplementResult(
       message: responseMessage,
@@ -1282,7 +1331,9 @@ $originalQuestion
     void Function(String chunk)? onStreamChunk,
     ACPCancellationToken? acpCancellationToken,
   }) async {
-    LoggerService().debug('Submitting action confirmation: id=$confirmationId, action=$selectedActionId ($selectedActionLabel), context=$confirmationContext', tag: 'ChatService');
+    LoggerService().debug(
+        'Submitting action confirmation: id=$confirmationId, action=$selectedActionId ($selectedActionLabel), context=$confirmationContext',
+        tag: 'ChatService');
     if (confirmationContext == 'peer') {
       LoggerService().info(
         'submitActionConfirmationResponse (peer): confirmationId=$confirmationId '
@@ -1293,7 +1344,8 @@ $originalQuestion
     }
 
     // Update original message's metadata in DB
-    final updatedMetadata = Map<String, dynamic>.from(originalMessage.metadata ?? {});
+    final updatedMetadata =
+        Map<String, dynamic>.from(originalMessage.metadata ?? {});
     final actionConfirmation = Map<String, dynamic>.from(
       updatedMetadata['action_confirmation'] as Map<String, dynamic>? ?? {},
     );
@@ -1326,7 +1378,8 @@ $originalQuestion
     final connection = getInteractiveConnection(agent);
     final isAsyncAgent = connection?.supportsAsyncConfirmation ?? false;
 
-    if (connection != null && !isAsyncAgent &&
+    if (connection != null &&
+        !isAsyncAgent &&
         (connection.isConnected || agent.isPeerAgent)) {
       // Legacy blocking agents (and peer-relayed approvals, which are also
       // in-band): keep the in-band submitResponse path so the single
@@ -1404,10 +1457,13 @@ $originalQuestion
     void Function(String chunk)? onStreamChunk,
     ACPCancellationToken? acpCancellationToken,
   }) async {
-    LoggerService().debug('Submitting select response ($metadataKey): $responseText', tag: 'ChatService');
+    LoggerService().debug(
+        'Submitting select response ($metadataKey): $responseText',
+        tag: 'ChatService');
 
     // Update original message's metadata in DB
-    final updatedMetadata = Map<String, dynamic>.from(originalMessage.metadata ?? {});
+    final updatedMetadata =
+        Map<String, dynamic>.from(originalMessage.metadata ?? {});
     final selectMeta = Map<String, dynamic>.from(
       updatedMetadata[metadataKey] as Map<String, dynamic>? ?? {},
     );
@@ -1438,25 +1494,32 @@ $originalQuestion
   /// [channelId] should always be provided to ensure messages are saved to the
   /// correct session. The deterministic fallback is only used as a last resort
   /// for backward compatibility.
-  Future<void> _saveMessageToChannel(Message message, String agentId, {String? channelId}) async {
+  Future<void> _saveMessageToChannel(Message message, String agentId,
+      {String? channelId}) async {
     // Use provided channelId; fall back to the active session for this
     // user-agent pair so we don't accidentally save into the wrong session.
-    final effectiveChannelId = channelId ?? await (() async {
-      final otherPartyId = message.from.id == agentId ? (message.to?.id ?? message.from.id) : message.from.id;
-      // Prefer the most recently active session over the deterministic channel
-      final activeChannel = await getLatestActiveChannelId(otherPartyId, agentId);
-      if (activeChannel != null) return activeChannel;
-      return generateChannelId(otherPartyId, agentId);
-    })();
+    final effectiveChannelId = channelId ??
+        await (() async {
+          final otherPartyId = message.from.id == agentId
+              ? (message.to?.id ?? message.from.id)
+              : message.from.id;
+          // Prefer the most recently active session over the deterministic channel
+          final activeChannel =
+              await getLatestActiveChannelId(otherPartyId, agentId);
+          if (activeChannel != null) return activeChannel;
+          return generateChannelId(otherPartyId, agentId);
+        })();
 
     // Check if channel exists
-    final existingChannel = await _databaseService.getChannelById(effectiveChannelId);
+    final existingChannel =
+        await _databaseService.getChannelById(effectiveChannelId);
 
     if (existingChannel == null) {
       // Create channel if it doesn't exist
       final channel = Channel.withMemberIds(
         id: effectiveChannelId,
-        name: 'Chat with ${message.from.type == 'user' ? agentId : message.from.name}',
+        name:
+            'Chat with ${message.from.type == 'user' ? agentId : message.from.name}',
         type: 'dm',
         memberIds: [message.from.id, agentId],
         isPrivate: true,
@@ -1506,10 +1569,13 @@ $originalQuestion
     required String agentId,
     required String userId,
     int limit = 100,
-  }) => _historyService.loadMessageHistory(agentId: agentId, userId: userId, limit: limit);
+  }) =>
+      _historyService.loadMessageHistory(
+          agentId: agentId, userId: userId, limit: limit);
 
   /// Load messages from a channel
-  Future<List<Message>> loadChannelMessages(String channelId, {int limit = 100}) =>
+  Future<List<Message>> loadChannelMessages(String channelId,
+          {int limit = 100}) =>
       _historyService.loadChannelMessages(channelId, limit: limit);
 
   /// Load messages older than [beforeCreatedAt] for upward pagination.
@@ -1563,7 +1629,8 @@ $originalQuestion
       _agentMessagingService.completionStream;
 
   /// 保存本地生成的消息（如派发状态/结果消息）并通知频道监听者。
-  Future<void> saveLocalMessage(Message message, String agentId, {String? channelId}) =>
+  Future<void> saveLocalMessage(Message message, String agentId,
+          {String? channelId}) =>
       _saveMessageToChannel(message, agentId, channelId: channelId);
 
   /// 该频道当前是否有未完成的 1:1 任务（用于编排方避让并发冲突）。
@@ -1649,7 +1716,8 @@ $originalQuestion
         tag: 'ChatService',
       );
     } catch (e) {
-      LoggerService().error('Failed to handle inbound file message', tag: 'ChatService', error: e);
+      LoggerService().error('Failed to handle inbound file message',
+          tag: 'ChatService', error: e);
     }
   }
 
@@ -1679,7 +1747,8 @@ $originalQuestion
   Future<void> deleteChatHistory({
     required String agentId,
     required String userId,
-  }) => _historyService.deleteChatHistory(agentId: agentId, userId: userId);
+  }) =>
+      _historyService.deleteChatHistory(agentId: agentId, userId: userId);
 
   /// Rollback from a specific message: delete it and all subsequent messages,
   /// then notify the remote agent.
@@ -1696,10 +1765,12 @@ $originalQuestion
 
     final connection = _acpConnections[agent.id];
     if (connection != null && connection.isConnected) {
-      connection.rollback(
-        sessionId: channelId,
-        messageId: messageId,
-      ).catchError((_) => ACPResponse(jsonrpc: '2.0', id: 0));
+      connection
+          .rollback(
+            sessionId: channelId,
+            messageId: messageId,
+          )
+          .catchError((_) => ACPResponse(jsonrpc: '2.0', id: 0));
     }
     _notifyChannelUpdate(channelId);
   }
@@ -1714,12 +1785,13 @@ $originalQuestion
     required String userName,
     required String agentId,
     required String agentName,
-  }) => _sessionService.createNewSession(
-    userId: userId,
-    userName: userName,
-    agentId: agentId,
-    agentName: agentName,
-  );
+  }) =>
+      _sessionService.createNewSession(
+        userId: userId,
+        userName: userName,
+        agentId: agentId,
+        agentName: agentName,
+      );
 
   /// 分叉会话：复制 [sourceChannelId] 的全部消息与工具执行历史到新会话，
   /// 返回新会话 channelId。
@@ -1882,8 +1954,10 @@ $originalQuestion
   /// to stay under [maxChars] total characters. If [excludeMessageId] is
   /// provided, that message is removed from the result (useful when the
   /// message will be sent separately as the direct content parameter).
-  Future<List<Message>> _loadAndTruncateHistory(String channelId, {int maxChars = 60000, int limit = 100, String? excludeMessageId}) =>
-      _historyService.loadAndTruncateHistory(channelId, maxChars: maxChars, limit: limit, excludeMessageId: excludeMessageId);
+  Future<List<Message>> _loadAndTruncateHistory(String channelId,
+          {int maxChars = 60000, int limit = 100, String? excludeMessageId}) =>
+      _historyService.loadAndTruncateHistory(channelId,
+          maxChars: maxChars, limit: limit, excludeMessageId: excludeMessageId);
 
   /// Notify group members about a membership change (join/leave).
   ///
@@ -1901,8 +1975,12 @@ $originalQuestion
     String memberName, {
     required bool isJoin,
   }) async {
-    final systemMessage = await _groupInteractionHandler.notifyGroupMembershipChange(
-      channelId, memberId, memberName, isJoin: isJoin,
+    final systemMessage =
+        await _groupInteractionHandler.notifyGroupMembershipChange(
+      channelId,
+      memberId,
+      memberName,
+      isJoin: isJoin,
     );
     _groupMembershipPerceptionScheduler.schedule(
       channelId: channelId,
@@ -1933,39 +2011,73 @@ $originalQuestion
     Map<String, dynamic>? userMessageMetadata,
     List<AttachmentData>? attachments,
     ACPCancellationToken? acpCancellationToken,
-    void Function(String agentId, String agentName, String chunk)? onStreamChunk,
+    void Function(String agentId, String agentName, String chunk)?
+        onStreamChunk,
     void Function(String agentId, String agentName)? onAgentStart,
     void Function(String agentId, String agentName, bool skipped)? onAgentDone,
     void Function()? onAllDone,
     Future<Map<String, dynamic>?> Function(
-      String agentId, String agentName, String interactionType, Map<String, dynamic> data,
+      String agentId,
+      String agentName,
+      String interactionType,
+      Map<String, dynamic> data,
     )? onInteractionRequest,
     void Function(String? workflowId)? onActiveWorkflowChanged,
   }) async {
-    // H3: 崩溃重启后回放持久化事件，让本轮编排/成员上下文感知重启前的节点
-    // 成败与 loop 轮次（best-effort，失败不阻断编排）。
-    await _restoreGroupEvents(channelId);
-    return _groupOrchestrationService.sendMessageToGroup(
-      channelId: channelId,
-      content: content,
-      userId: userId,
-      userName: userName,
-      agentIds: agentIds,
-      mentionedAgentIds: mentionedAgentIds,
-      mentionOnlyMode: mentionOnlyMode,
-      adminAgentId: adminAgentId,
-      replyToId: replyToId,
-      flowMode: flowMode,
-      userMessageMetadata: userMessageMetadata,
-      attachments: attachments,
-      acpCancellationToken: acpCancellationToken,
-      onStreamChunk: onStreamChunk,
-      onAgentStart: onAgentStart,
-      onAgentDone: onAgentDone,
-      onAllDone: onAllDone,
-      onActiveWorkflowChanged: onActiveWorkflowChanged,
-      onInteractionRequest: onInteractionRequest,
-    );
+    // H1: per-channel in-flight 守卫。控制器路径已被 `isProcessing` 串行化，
+    // 但 CLI `group send`（group_management_service，unawaited）与定时任务
+    // （group_task_executor）会绕过它——若无守卫，同一 channel 可并发跑两套
+    // `while(true)` 编排循环：管理员双回合、成员重复派发、_activeGroupTasks
+    // 互相覆盖、重复 loopRoundCompleted。后到的请求以可见系统消息拒绝。
+    if (_groupOrchestratingChannels.contains(channelId)) {
+      LoggerService().warning(
+        'sendMessageToGroup: channel $channelId already orchestrating; '
+        'ignoring duplicate request',
+        tag: 'ChatService',
+      );
+      final noticeId = _uuid.v4();
+      await _databaseService.createMessage(
+        id: noticeId,
+        channelId: channelId,
+        senderId: 'system',
+        senderType: 'system',
+        senderName: 'System',
+        content: '⚠️ 群聊正在处理上一条消息，本次输入已忽略，请稍后再试。',
+        messageType: 'system',
+      );
+      await _databaseService.markMessageAsRead(noticeId);
+      notifyChannelUpdate(channelId);
+      return;
+    }
+    _groupOrchestratingChannels.add(channelId);
+    try {
+      // H3: 崩溃重启后回放持久化事件，让本轮编排/成员上下文感知重启前的节点
+      // 成败与 loop 轮次（best-effort，失败不阻断编排）。
+      await _restoreGroupEvents(channelId);
+      return await _groupOrchestrationService.sendMessageToGroup(
+        channelId: channelId,
+        content: content,
+        userId: userId,
+        userName: userName,
+        agentIds: agentIds,
+        mentionedAgentIds: mentionedAgentIds,
+        mentionOnlyMode: mentionOnlyMode,
+        adminAgentId: adminAgentId,
+        replyToId: replyToId,
+        flowMode: flowMode,
+        userMessageMetadata: userMessageMetadata,
+        attachments: attachments,
+        acpCancellationToken: acpCancellationToken,
+        onStreamChunk: onStreamChunk,
+        onAgentStart: onAgentStart,
+        onAgentDone: onAgentDone,
+        onAllDone: onAllDone,
+        onActiveWorkflowChanged: onActiveWorkflowChanged,
+        onInteractionRequest: onInteractionRequest,
+      );
+    } finally {
+      _groupOrchestratingChannels.remove(channelId);
+    }
   }
 
   /// Track which workflows are currently being executed to prevent concurrent runs.
@@ -1989,7 +2101,8 @@ $originalQuestion
   ActiveWorkflowExecution? attachWorkflowExecutionUI(
     String workflowId, {
     void Function(String agentId, String agentName)? onAgentStart,
-    void Function(String agentId, String agentName, String chunk)? onStreamChunk,
+    void Function(String agentId, String agentName, String chunk)?
+        onStreamChunk,
     void Function(String agentId, String agentName, bool skipped)? onAgentDone,
     Future<Map<String, dynamic>?> Function(
       String agentId,
@@ -2049,7 +2162,8 @@ $originalQuestion
       await _databaseService.markMessageAsRead(msgId);
       _notifyChannelUpdate(channelId);
     } catch (e) {
-      LoggerService().error('Failed to save workflow system message', tag: 'ChatService', error: e);
+      LoggerService().error('Failed to save workflow system message',
+          tag: 'ChatService', error: e);
     }
   }
 
@@ -2077,8 +2191,7 @@ $originalQuestion
       // 幂等：最近消息已有同轮次提示则跳过（重启重进不重复打扰）。
       final recent = await loadChannelMessages(channelId, limit: 60);
       final alreadyNotified = recent.any((m) =>
-          m.from.isSystem &&
-          m.metadata?['orchestration_interrupt'] == round);
+          m.from.isSystem && m.metadata?['orchestration_interrupt'] == round);
       if (alreadyNotified) return false;
 
       final statusLabel = switch (status) {
@@ -2122,17 +2235,24 @@ $originalQuestion
     required String channelId,
     required String userId,
     required String userName,
-    void Function(String agentId, String agentName, String chunk)? onStreamChunk,
+    void Function(String agentId, String agentName, String chunk)?
+        onStreamChunk,
     void Function(String agentId, String agentName)? onAgentStart,
     void Function(String agentId, String agentName, bool skipped)? onAgentDone,
     Future<Map<String, dynamic>?> Function(
-      String agentId, String agentName, String interactionType, Map<String, dynamic> data,
+      String agentId,
+      String agentName,
+      String interactionType,
+      Map<String, dynamic> data,
     )? onInteractionRequest,
     void Function()? onExecutionFinished,
     WorkflowCancellationToken? cancelToken,
+
     /// OS 工具风险确认（DM 工作流步骤执行 She 的本地工具循环时可能需要）。
     /// 由控制器接线到与 processMessage 相同的确认对话框。
-    Future<bool> Function(String toolName, Map<String, dynamic> args, os_exec.RiskLevel risk)? onOsToolConfirmation,
+    Future<bool> Function(
+            String toolName, Map<String, dynamic> args, os_exec.RiskLevel risk)?
+        onOsToolConfirmation,
   }) async {
     // H1: Concurrency guard — prevent multiple executions of same workflow
     if (_activeWorkflowExecutions.containsKey(workflowId)) {
@@ -2163,7 +2283,8 @@ $originalQuestion
       // 的节点成败（best-effort，失败不阻断执行）。
       await _restoreGroupEvents(channelId);
 
-      final workflow = await _workflowService.getWorkflowExecutionWithSteps(workflowId);
+      final workflow =
+          await _workflowService.getWorkflowExecutionWithSteps(workflowId);
       if (workflow == null) {
         reachedTerminalState = true; // nothing to do
         return;
@@ -2181,7 +2302,8 @@ $originalQuestion
 
       // All steps already terminal — finalize without re-running agents.
       if (workflow.allStepsSucceeded) {
-        await _workflowService.completeWorkflow(workflowId, summary: '所有阶段执行完毕');
+        await _workflowService.completeWorkflow(workflowId,
+            summary: '所有阶段执行完毕');
         _emitWorkflowMacroEvent(
           channelId: channelId,
           type: GroupEventType.workflowCompleted,
@@ -2222,15 +2344,15 @@ $originalQuestion
         if (agent != null) agents.add(agent);
       }
       if (agents.isEmpty) {
-        await _workflowService.failWorkflow(workflowId, 'No agents found in channel');
+        await _workflowService.failWorkflow(
+            workflowId, 'No agents found in channel');
         reachedTerminalState = true;
         return;
       }
 
       // DM 多 agent 步骤：除频道成员外，还按名字从全局 agent 表解析。
-      final allAgentsForResolve = isDmWorkflow
-          ? await _databaseService.getAllRemoteAgents()
-          : agents;
+      final allAgentsForResolve =
+          isDmWorkflow ? await _databaseService.getAllRemoteAgents() : agents;
 
       final groupName = channel.name;
       final groupDescription = channel.description ?? '';
@@ -2241,23 +2363,29 @@ $originalQuestion
       RemoteAgent? workflowAdminAgent;
       final adminId = channel.adminAgentId;
       if (adminId != null) {
-        workflowAdminAgent =
-            agents.cast<RemoteAgent?>().firstWhere(
-                  (a) => a!.id == adminId,
-                  orElse: () => null,
-                );
+        workflowAdminAgent = agents.cast<RemoteAgent?>().firstWhere(
+              (a) => a!.id == adminId,
+              orElse: () => null,
+            );
       }
 
       // Shared helper: invoke the admin agent for a closing summary. Used by
       // both the all-success path and the failure path so a failed workflow
       // still ends with a visible review instead of silence.
       Future<void> runAdminClosingSummary(String prompt) async {
-        final adminAgent = agents.where((a) =>
-            channel.members.any((m) => m.id == a.id && m.role == 'admin')).firstOrNull;
+        final adminAgent = agents
+            .where((a) =>
+                channel.members.any((m) => m.id == a.id && m.role == 'admin'))
+            .firstOrNull;
         if (adminAgent == null) return;
+        // M2: 占用该 admin 的全局回合锁（抢占），让后台感知回合让位。
+        final holderId =
+            GroupEventPerceptionScheduler.beginExplicitAdminTurn(
+                adminAgent.id);
         activeExec.onAgentStart?.call(adminAgent.id, adminAgent.name);
         try {
-          final summaryHistory = await loadChannelMessages(channelId, limit: 50);
+          final summaryHistory =
+              await loadChannelMessages(channelId, limit: 50);
           await _groupAgentExecutor.processGroupAgent(
             agent: adminAgent,
             channelId: channelId,
@@ -2283,8 +2411,11 @@ $originalQuestion
             },
           );
         } catch (e) {
-          LoggerService().error('Workflow closing summary error', tag: 'ChatService', error: e);
+          LoggerService().error('Workflow closing summary error',
+              tag: 'ChatService', error: e);
           activeExec.onAgentDone?.call(adminAgent.id, adminAgent.name, true);
+        } finally {
+          GroupEventPerceptionScheduler.endAdminTurn(adminAgent.id, holderId);
         }
       }
 
@@ -2309,15 +2440,17 @@ $originalQuestion
             },
           );
         } catch (e) {
-          LoggerService().error('DM workflow closing summary error', tag: 'ChatService', error: e);
+          LoggerService().error('DM workflow closing summary error',
+              tag: 'ChatService', error: e);
         } finally {
           activeExec.onAgentDone?.call(she.id, she.name, true);
         }
       }
 
       // 收尾总结分发：群聊走 admin 成员，DM 走 She。
-      Future<void> runClosingSummary(String prompt) =>
-          isDmWorkflow ? runDmClosingSummary(prompt) : runAdminClosingSummary(prompt);
+      Future<void> runClosingSummary(String prompt) => isDmWorkflow
+          ? runDmClosingSummary(prompt)
+          : runAdminClosingSummary(prompt);
 
       // 阶段门闸（stageGate）：阶段边界阻塞一次管理员回合，管理员输出
       // [GATE_DECISION: continue/abort/reassign:名字] 后工作流才进下一阶段。
@@ -2368,6 +2501,9 @@ $originalQuestion
           currentMembers: agents,
         );
 
+        // M2: 占用该 admin 的全局回合锁（抢占），让后台感知回合让位。
+        final gateHolderId =
+            GroupEventPerceptionScheduler.beginExplicitAdminTurn(admin.id);
         activeExec.onAgentStart?.call(admin.id, admin.name);
         try {
           final history = await loadChannelMessages(channelId, limit: 50);
@@ -2397,14 +2533,18 @@ $originalQuestion
           );
 
           // 安全网：门闸回合绝不残留派发块（这里不跑任何编排循环）。
-          await _groupDispatchParser
-              .stripDispatchJsonFromLastMessage(channelId, admin.id);
+          await _groupDispatchParser.stripDispatchJsonFromLastMessage(
+              channelId, admin.id);
 
           var reply = result.content;
           if (reply.trim().isEmpty) {
             // 兜底：回合落库消息里读取管理员回复（部分远程路径不返回 content）。
             final msgs = await loadChannelMessages(channelId, limit: 5);
-            reply = msgs.where((m) => m.senderId == admin.id).firstOrNull?.content ?? '';
+            reply = msgs
+                    .where((m) => m.senderId == admin.id)
+                    .firstOrNull
+                    ?.content ??
+                '';
           }
           final decision = parseGateDecision(reply);
           if (decision == null) {
@@ -2420,6 +2560,8 @@ $originalQuestion
           );
           activeExec.onAgentDone?.call(admin.id, admin.name, true);
           return autoContinue('门闸回合执行异常');
+        } finally {
+          GroupEventPerceptionScheduler.endAdminTurn(admin.id, gateHolderId);
         }
       }
 
@@ -2523,16 +2665,21 @@ $originalQuestion
           ];
 
       void absorbWorkflowArtifacts(String output) {
-        ArtifactService.instance.mergeReferenceLines(workflowArtifactLines, output);
+        ArtifactService.instance
+            .mergeReferenceLines(workflowArtifactLines, output);
       }
 
       // H5: Serialize user interactions within a stage to prevent starvation.
       // When multiple parallel steps need user input, they queue through this lock.
       Completer<void>? _interactionLock;
       Future<Map<String, dynamic>?> Function(
-        String agentId, String agentName, String interactionType, Map<String, dynamic> data,
+        String agentId,
+        String agentName,
+        String interactionType,
+        Map<String, dynamic> data,
       )? serializedInteractionRequest;
-      serializedInteractionRequest = (agentId, agentName, interactionType, data) async {
+      serializedInteractionRequest =
+          (agentId, agentName, interactionType, data) async {
         // Wait for any previous interaction to finish
         while (_interactionLock != null && !_interactionLock!.isCompleted) {
           await _interactionLock!.future;
@@ -2563,11 +2710,12 @@ $originalQuestion
 
           // Find the agent
           final agent = agents.cast<RemoteAgent?>().firstWhere(
-            (a) => a!.name == step.agentName,
-            orElse: () => null,
-          );
+                (a) => a!.name == step.agentName,
+                orElse: () => null,
+              );
           if (agent == null) {
-            await _workflowService.failStep(step.id, 'Agent "${step.agentName}" not found');
+            await _workflowService.failStep(
+                step.id, 'Agent "${step.agentName}" not found');
             _emitWorkflowStepEvent(
               channelId: channelId,
               type: GroupEventType.stepFailed,
@@ -2631,7 +2779,8 @@ $originalQuestion
             absorbWorkflowArtifacts(output);
             await _workflowService.completeStep(
               step.id,
-              outputSummary: ArtifactService.instance.truncateStepSummary(output),
+              outputSummary:
+                  ArtifactService.instance.truncateStepSummary(output),
             );
             _emitWorkflowStepEvent(
               channelId: channelId,
@@ -2640,8 +2789,7 @@ $originalQuestion
               stepIndex: step.stepIndex ?? 0,
               agentId: agent.id,
               agentName: agent.name,
-              summary:
-                  ArtifactService.instance.truncateStepSummary(output),
+              summary: ArtifactService.instance.truncateStepSummary(output),
             );
           } catch (e) {
             await _workflowService.failStep(step.id, e.toString());
@@ -2766,7 +2914,8 @@ $originalQuestion
               extraRefTexts: workflowArtifactExtras(),
             );
             final response = await _agentMessagingService.sendMessageToAgent(
-              content: '[Workflow "${workflow.title}" — Stage ${step.stageIndex + 1}]\n'
+              content:
+                  '[Workflow "${workflow.title}" — Stage ${step.stageIndex + 1}]\n'
                   // §6.3 + ContextBundle：DM 工作流步骤注入
                   '$stepPrompt\n\n'
                   '立即执行该步骤，你的回复将作为步骤结果记录。'
@@ -2788,10 +2937,8 @@ $originalQuestion
               ),
               onSingleSelect: (d) =>
                   fireAndForgetInteraction('single_select', d),
-              onMultiSelect: (d) =>
-                  fireAndForgetInteraction('multi_select', d),
-              onFileUpload: (d) =>
-                  fireAndForgetInteraction('file_upload', d),
+              onMultiSelect: (d) => fireAndForgetInteraction('multi_select', d),
+              onFileUpload: (d) => fireAndForgetInteraction('file_upload', d),
               onForm: (d) => fireAndForgetInteraction('form', d),
               onFileMessage: (d) => _groupAgentExecutor.saveGroupFileMessage(
                 fileData: d,
@@ -2813,7 +2960,8 @@ $originalQuestion
             absorbWorkflowArtifacts(output);
             await _workflowService.completeStep(
               step.id,
-              outputSummary: ArtifactService.instance.truncateStepSummary(output),
+              outputSummary:
+                  ArtifactService.instance.truncateStepSummary(output),
             );
             _emitWorkflowStepEvent(
               channelId: channelId,
@@ -2822,8 +2970,7 @@ $originalQuestion
               stepIndex: step.stepIndex,
               agentId: agent.id,
               agentName: agent.name,
-              summary:
-                  ArtifactService.instance.truncateStepSummary(output),
+              summary: ArtifactService.instance.truncateStepSummary(output),
             );
           } catch (e) {
             await _workflowService.failStep(step.id, e.toString());
@@ -2890,8 +3037,10 @@ $originalQuestion
         }
 
         // Check if any step in this stage failed
-        final updatedWorkflow = await _workflowService.getWorkflowExecutionWithSteps(workflowId);
-        final stageSteps = updatedWorkflow?.steps.where((s) => s.stageIndex == stageIdx) ?? [];
+        final updatedWorkflow =
+            await _workflowService.getWorkflowExecutionWithSteps(workflowId);
+        final stageSteps =
+            updatedWorkflow?.steps.where((s) => s.stageIndex == stageIdx) ?? [];
         final isLastStage = stageIdx == stageIndices.last;
         // 阶段门闸：仅群聊工作流、频道开启、还有后续阶段、且存在可解析的管理员
         // 时启用。开启后阶段失败不再立刻终止工作流——交给管理员把关（继续/中止/
@@ -2909,7 +3058,8 @@ $originalQuestion
               .where((s) => s.status == StepExecutionStatus.failed)
               .map((s) => s.agentName)
               .join('、');
-          await _workflowService.failWorkflow(workflowId, 'Stage ${stageIdx + 1} has failed steps');
+          await _workflowService.failWorkflow(
+              workflowId, 'Stage ${stageIdx + 1} has failed steps');
           _emitWorkflowMacroEvent(
             channelId: channelId,
             type: GroupEventType.workflowFailed,
@@ -2922,7 +3072,8 @@ $originalQuestion
           // review — a failed workflow must never end in silence.
           await _saveWorkflowFailureMessage(
             channelId: channelId,
-            content: '⚠️ 工作流执行失败：阶段 ${stageIdx + 1} 中成员「$failedStepNames」的任务未能完成。',
+            content:
+                '⚠️ 工作流执行失败：阶段 ${stageIdx + 1} 中成员「$failedStepNames」的任务未能完成。',
           );
           await runClosingSummary(
             '[SYSTEM] 工作流执行失败：阶段 ${stageIdx + 1} 中成员「$failedStepNames」的任务失败。请向用户说明失败情况、已完成的部分成果，以及建议的补救措施。',
@@ -2984,7 +3135,8 @@ $originalQuestion
                   exact = a;
                   break;
                 }
-                if (norm.length >= 2 && (cn.contains(norm) || norm.contains(cn))) {
+                if (norm.length >= 2 &&
+                    (cn.contains(norm) || norm.contains(cn))) {
                   fuzzy ??= a;
                 }
               }
@@ -2999,7 +3151,8 @@ $originalQuestion
               for (final s in effectiveWorkflow.steps) {
                 if (s.stageIndex == stageIdx &&
                     s.status == StepExecutionStatus.failed) {
-                  await _workflowService.resetStep(s.id, agentName: resolvedName);
+                  await _workflowService.resetStep(s.id,
+                      agentName: resolvedName);
                   s
                     ..status = StepExecutionStatus.pending
                     ..agentName = resolvedName
@@ -3011,7 +3164,8 @@ $originalQuestion
               for (final s in effectiveWorkflow.steps) {
                 if (s.stageIndex > stageIdx &&
                     s.status == StepExecutionStatus.pending) {
-                  await _workflowService.updateStepAgentName(s.id, resolvedName);
+                  await _workflowService.updateStepAgentName(
+                      s.id, resolvedName);
                   s.agentName = resolvedName;
                 }
               }
@@ -3065,7 +3219,8 @@ $originalQuestion
         );
       } else {
         await runClosingSummary('[SYSTEM] 工作流全部阶段已执行完毕，请对执行结果做最终总结，向用户汇报成果。');
-        await _workflowService.completeWorkflow(workflowId, summary: '所有阶段执行完毕');
+        await _workflowService.completeWorkflow(workflowId,
+            summary: '所有阶段执行完毕');
         _emitWorkflowMacroEvent(
           channelId: channelId,
           type: GroupEventType.workflowCompleted,
@@ -3077,7 +3232,9 @@ $originalQuestion
       // C4: Ensure workflow reaches terminal state on any unhandled error
       LoggerService().error(
         'executeWorkflowSteps unhandled error for workflow $workflowId',
-        tag: 'ChatService', error: e, stackTrace: stack,
+        tag: 'ChatService',
+        error: e,
+        stackTrace: stack,
       );
       try {
         await _workflowService.failWorkflow(workflowId, 'Unexpected error: $e');
@@ -3096,7 +3253,8 @@ $originalQuestion
       // C4: Last resort — if no terminal state was set, mark as failed
       if (!reachedTerminalState) {
         try {
-          await _workflowService.failWorkflow(workflowId, 'Execution ended without terminal state');
+          await _workflowService.failWorkflow(
+              workflowId, 'Execution ended without terminal state');
           _emitWorkflowMacroEvent(
             channelId: channelId,
             type: GroupEventType.workflowFailed,
@@ -3124,7 +3282,8 @@ $originalQuestion
     required String channelId,
     required String userId,
     String? sourceSheChannelId,
-  }) => _groupSessionService.createNewGroupSession(
+  }) =>
+      _groupSessionService.createNewGroupSession(
         channelId: channelId,
         userId: userId,
         sourceSheChannelId: sourceSheChannelId,
@@ -3162,18 +3321,21 @@ $originalQuestion
   Future<void> clearGroupSessionHistory({
     required String channelId,
     required List<String> agentIds,
-  }) => _groupSessionService.clearGroupSessionHistory(channelId: channelId, agentIds: agentIds);
+  }) =>
+      _groupSessionService.clearGroupSessionHistory(
+          channelId: channelId, agentIds: agentIds);
 
   /// Clear all group sessions: send /reset to all connected agents, delete all session messages.
   Future<void> clearAllGroupSessions({
     required String parentGroupId,
     required String currentChannelId,
     required List<String> agentIds,
-  }) => _groupSessionService.clearAllGroupSessions(
-    parentGroupId: parentGroupId,
-    currentChannelId: currentChannelId,
-    agentIds: agentIds,
-  );
+  }) =>
+      _groupSessionService.clearAllGroupSessions(
+        parentGroupId: parentGroupId,
+        currentChannelId: currentChannelId,
+        agentIds: agentIds,
+      );
 
   /// 页面退出时调用，仅关闭 UI 流，ACP 连接保持存活
   void detachUI() {
@@ -3337,7 +3499,8 @@ $originalQuestion
           final existing = await _databaseService.getMessageById(msgId);
           if (existing != null) {
             final existingChannel = existing['channel_id'] as String? ?? '';
-            if (existingChannel.isNotEmpty && existingChannel != destChannelId) {
+            if (existingChannel.isNotEmpty &&
+                existingChannel != destChannelId) {
               LoggerService().warning(
                 'mailbox reply $msgId already in $existingChannel, not $destChannelId',
                 tag: 'ChatService',
@@ -3406,5 +3569,4 @@ $originalQuestion
       return const [];
     }
   }
-
 }

@@ -45,6 +45,9 @@ class GroupMembershipPerceptionScheduler {
         loadChannelMessages,
     GroupDispatchParser? dispatchParser,
     Duration debounce = const Duration(seconds: 3),
+
+    /// 该频道是否正在运行编排 loop（M2）——透传给底层 scheduler。
+    bool Function(String channelId)? isChannelOrchestrating,
   }) : _inner = GroupEventPerceptionScheduler(
           db: db,
           executor: executor,
@@ -54,6 +57,7 @@ class GroupMembershipPerceptionScheduler {
           debounce: debounce,
           promptBuilder: _buildMembershipPrompt,
           customSystemPrompt: perceptionSystemPrompt,
+          isChannelOrchestrating: isChannelOrchestrating,
         );
 
   /// Record a membership change. Synchronous and non-blocking.

@@ -49,6 +49,13 @@ class GroupEvent {
   final Map<String, dynamic> payload;
   final DateTime createdAt;
 
+  /// 所属编排会话 id（触发该次编排的用户消息 id）。
+  ///
+  /// 仅 `loopRoundCompleted` 事件设置；null 表示未绑定会话（工作流/成员
+  /// 事件、或历史回放）。loop 成员回合用它过滤「只取当前任务」的轮次事件，
+  /// 避免同一 channel 连续两次任务时注入上一任务的轮次结论（M4）。
+  String? get orchestrationId => payload['orchestration_id'] as String?;
+
   GroupEvent({
     required this.id,
     required this.type,
@@ -129,6 +136,10 @@ class GroupEvent {
 
   /// 编排循环一轮完成（loop 模式，被动事件）：记录本轮派发的成员、失败
   /// 成员与管理员总结，供下一轮成员感知上一轮「谁做了什么、谁失败了」。
+  ///
+  /// [orchestrationId] 为触发本次编排的用户消息 id：同一 channel 连续两次
+  /// 任务时，靠它把 loop 事件绑定到当前会话，避免下一任务第 1 轮误注入上一
+  /// 任务的轮次事件（M4）。
   factory GroupEvent.loopRoundCompleted({
     required String channelId,
     required int round,
@@ -137,6 +148,7 @@ class GroupEvent {
     String summary = '',
     Map<String, dynamic> payload = const {},
     String? id,
+    String? orchestrationId,
   }) {
     return GroupEvent(
       id: id ?? _newId(),
@@ -151,6 +163,8 @@ class GroupEvent {
           'delegated': delegatedAgentNames,
         if (failedAgentNames != null && failedAgentNames.isNotEmpty)
           'failed': failedAgentNames,
+        if (orchestrationId != null && orchestrationId.isNotEmpty)
+          'orchestration_id': orchestrationId,
         ...payload,
       },
     );

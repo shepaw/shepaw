@@ -32,7 +32,8 @@ class GroupOrchestrationService {
   final PlanningHelpers _planningHelpers;
   final WorkflowService _workflowService;
   final void Function(String channelId) notifyChannelUpdate;
-  final Future<List<Message>> Function(String channelId, {int limit, String? excludeMessageId}) loadAndTruncateHistory;
+  final Future<List<Message>> Function(String channelId,
+      {int limit, String? excludeMessageId}) loadAndTruncateHistory;
   final Future<Map<String, dynamic>?> Function({
     required String channelId,
     required String agentId,
@@ -40,7 +41,8 @@ class GroupOrchestrationService {
     required Map<String, dynamic> planData,
     required String messageId,
   }) awaitPlanApproval;
-  final Future<List<Message>> Function(String channelId, {int limit}) loadChannelMessages;
+  final Future<List<Message>> Function(String channelId, {int limit})
+      loadChannelMessages;
   final Future<Message?> Function(String messageId) getMessageById;
 
   /// 群工作空间编排落盘回调（kind: round_start / dispatch_decision /
@@ -59,7 +61,8 @@ class GroupOrchestrationService {
 
   /// M5 上一轮事件感知行：为下一轮成员返回要注入的【上轮事件】文本行。
   /// null 或空列表时不注入。以 channelId 为参数以便按频道读取事件日志。
-  final List<String> Function(String channelId)? loopEventLines;
+  final List<String> Function(String channelId, {String? orchestrationId})?
+      loopEventLines;
 
   /// L1/L2 近期事件感知行：为 mention-direct / broadcast / cascade / 工作流与
   /// loop 的 admin 收尾等回合返回要注入的【近期事件】文本行。null 或空列表
@@ -90,8 +93,13 @@ class GroupOrchestrationService {
         _workflowService = workflowService;
 
   /// 汇总 [loopEventLines]（若提供）为一条「上轮事件」文本块，供成员任务注入。
-  String _buildLoopEventNote(String channelId) {
-    final lines = loopEventLines?.call(channelId) ?? const <String>[];
+  ///
+  /// [orchestrationId] 为本次编排的用户消息 id，传给回调以过滤「只取当前
+  /// 会话」的轮次事件（M4：避免连续两次任务时注入上一任务的轮次结论）。
+  String _buildLoopEventNote(String channelId, {String? orchestrationId}) {
+    final lines =
+        loopEventLines?.call(channelId, orchestrationId: orchestrationId) ??
+            const <String>[];
     return lines.join('\n');
   }
 
@@ -180,7 +188,8 @@ class GroupOrchestrationService {
 
   /// Persist a user-visible system message in the group channel so
   /// orchestration-level failures are never silent in the chat.
-  Future<void> _saveOrchestrationSystemMessage(String channelId, String content) async {
+  Future<void> _saveOrchestrationSystemMessage(
+      String channelId, String content) async {
     try {
       final msgId = _uuid.v4();
       await _db.createMessage(
@@ -195,7 +204,8 @@ class GroupOrchestrationService {
       await _db.markMessageAsRead(msgId);
       notifyChannelUpdate(channelId);
     } catch (e) {
-      LoggerService().error('Failed to save orchestration system message', tag: 'GroupOrchestrationService', error: e);
+      LoggerService().error('Failed to save orchestration system message',
+          tag: 'GroupOrchestrationService', error: e);
     }
   }
 
@@ -213,16 +223,22 @@ class GroupOrchestrationService {
     Map<String, dynamic>? userMessageMetadata,
     List<AttachmentData>? attachments,
     ACPCancellationToken? acpCancellationToken,
-    void Function(String agentId, String agentName, String chunk)? onStreamChunk,
+    void Function(String agentId, String agentName, String chunk)?
+        onStreamChunk,
     void Function(String agentId, String agentName)? onAgentStart,
     void Function(String agentId, String agentName, bool skipped)? onAgentDone,
     void Function()? onAllDone,
     void Function(String? workflowId)? onActiveWorkflowChanged,
     Future<Map<String, dynamic>?> Function(
-      String agentId, String agentName, String interactionType, Map<String, dynamic> data,
+      String agentId,
+      String agentName,
+      String interactionType,
+      Map<String, dynamic> data,
     )? onInteractionRequest,
   }) async {
-    LoggerService().info('sendMessageToGroup: $channelId, agents: $agentIds, admin: $adminAgentId', tag: 'GroupOrchestrationService');
+    LoggerService().info(
+        'sendMessageToGroup: $channelId, agents: $agentIds, admin: $adminAgentId',
+        tag: 'GroupOrchestrationService');
 
     // 1. Save user message to the group channel
     final userMessage = Message(
@@ -275,7 +291,9 @@ class GroupOrchestrationService {
     }
 
     if (agents.isEmpty) {
-      LoggerService().warning('No valid agents found for group, agentIds=$agentIds', tag: 'GroupOrchestrationService');
+      LoggerService().warning(
+          'No valid agents found for group, agentIds=$agentIds',
+          tag: 'GroupOrchestrationService');
       onAllDone?.call();
       return;
     }
@@ -286,7 +304,9 @@ class GroupOrchestrationService {
     // Include all non-system messages (text + attachment summaries) so agents
     // have context about shared files/images without loading raw content.
     final eligibleMessages = allMessages
-        .where((m) => m.type != MessageType.system && m.type != MessageType.permissionAudit)
+        .where((m) =>
+            m.type != MessageType.system &&
+            m.type != MessageType.permissionAudit)
         .toList();
 
     // Determine which agents have prior messages in the channel
@@ -303,7 +323,8 @@ class GroupOrchestrationService {
 
     // Remove the current user message from history — it will be sent
     // separately as the 'message' parameter to avoid duplication.
-    if (historyMessages.isNotEmpty && historyMessages.last.id == userMessage.id) {
+    if (historyMessages.isNotEmpty &&
+        historyMessages.last.id == userMessage.id) {
       historyMessages = historyMessages.sublist(0, historyMessages.length - 1);
     }
 
@@ -315,7 +336,8 @@ class GroupOrchestrationService {
     final messageVersion = <String, dynamic>{
       'total_count': allMessages.length,
       'latest_message_id': allMessages.isNotEmpty ? allMessages.last.id : null,
-      'latest_timestamp': allMessages.isNotEmpty ? allMessages.last.timestampMs : null,
+      'latest_timestamp':
+          allMessages.isNotEmpty ? allMessages.last.timestampMs : null,
     };
 
     // Resolve quoted message content so agents understand reply context
@@ -323,7 +345,8 @@ class GroupOrchestrationService {
     if (replyToId != null) {
       final quotedMessage = await getMessageById(replyToId);
       if (quotedMessage != null) {
-        effectiveContent = '[引用 ${quotedMessage.from.name} 的消息: "${quotedMessage.content}"]\n\n$content';
+        effectiveContent =
+            '[引用 ${quotedMessage.from.name} 的消息: "${quotedMessage.content}"]\n\n$content';
       }
     }
     // §6.3 + ContextBundle：群编排委派注入产物 URI + runtime 上下文清单
@@ -358,8 +381,8 @@ class GroupOrchestrationService {
       if (hub == null) return const OrchestrationInbox();
       try {
         DateTime since = roundStartTime;
-        final latest = await GroupWorkspaceService.instance
-            .readLatestOrchestration(
+        final latest =
+            await GroupWorkspaceService.instance.readLatestOrchestration(
           groupId: groupOwnerId,
           sessionId: channelId,
         );
@@ -388,8 +411,8 @@ class GroupOrchestrationService {
       final hub = groupHubDevice;
       if (hub == null) return const [];
       try {
-        final inbox = await GroupWorkspaceService.instance
-            .readOrchestrationInbox(
+        final inbox =
+            await GroupWorkspaceService.instance.readOrchestrationInbox(
           groupId: groupOwnerId,
           sessionId: channelId,
           since: roundStartTime,
@@ -409,7 +432,9 @@ class GroupOrchestrationService {
         return const [];
       }
     }
-    effectiveContent = await ContextBundleService.instance.wrapWithContextBundle(
+
+    effectiveContent =
+        await ContextBundleService.instance.wrapWithContextBundle(
       effectiveContent,
       ownerId: groupOwnerId,
       channelId: channelId,
@@ -434,7 +459,9 @@ class GroupOrchestrationService {
         : '';
 
     // 5. Route to the appropriate flow based on admin setting and @mentions
-    LoggerService().debug('Routing: mentions=${mentionedAgentIds.length}, admin=$adminAgentId, agents=${agents.map((a) => a.name).toList()}', tag: 'GroupOrchestrationService');
+    LoggerService().debug(
+        'Routing: mentions=${mentionedAgentIds.length}, admin=$adminAgentId, agents=${agents.map((a) => a.name).toList()}',
+        tag: 'GroupOrchestrationService');
 
     // If the only @mentioned agent is the admin itself, treat this as an
     // admin-first flow (path 5b) so that:
@@ -521,7 +548,9 @@ class GroupOrchestrationService {
           allTurnsCollector[adminAgentId] = turns[adminAgentId]!;
         }
       }
-      for (int cascadeRound = 0; cascadeRound < maxCascadeDepth; cascadeRound++) {
+      for (int cascadeRound = 0;
+          cascadeRound < maxCascadeDepth;
+          cascadeRound++) {
         if (acpCancellationToken?.isCancelled == true) break;
 
         final newMentionedIds = <String>{};
@@ -571,15 +600,18 @@ class GroupOrchestrationService {
           tag: 'GroupOrchestrationService',
         );
 
-        final cascadeHistory = await loadAndTruncateHistory(channelId, excludeMessageId: userMessage.id);
-        final cascadeFutures = <({String agentId, Future<GroupTurnResult> future})>[];
+        final cascadeHistory = await loadAndTruncateHistory(channelId,
+            excludeMessageId: userMessage.id);
+        final cascadeFutures =
+            <({String agentId, Future<GroupTurnResult> future})>[];
         for (final agent in agents) {
           if (!newMentionedIds.contains(agent.id)) continue;
           onAgentStart?.call(agent.id, agent.name);
           final isFirst = !agentIdsWithHistory.contains(agent.id);
           cascadeFutures.add((
             agentId: agent.id,
-            future: _executor.processGroupAgent(
+            future: _executor
+                .processGroupAgent(
               agent: agent,
               channelId: channelId,
               content: () {
@@ -614,8 +646,12 @@ class GroupOrchestrationService {
               onAgentDone: onAgentDone,
               onInteractionRequest: onInteractionRequest,
               orchestrationTraceId: orchTraceId,
-            ).catchError((e) {
-              LoggerService().error('Cascade agent ${agent.name} uncaught error', tag: 'GroupOrchestrationService', error: e);
+            )
+                .catchError((e) {
+              LoggerService().error(
+                  'Cascade agent ${agent.name} uncaught error',
+                  tag: 'GroupOrchestrationService',
+                  error: e);
               failedAgentNames?.add(agent.name);
               onAgentDone?.call(agent.id, agent.name, true);
               return const GroupTurnResult();
@@ -636,7 +672,8 @@ class GroupOrchestrationService {
 
     if (effectiveMentionedAgentIds.isNotEmpty) {
       // 5a. User explicitly @mentioned agents — those agents respond directly
-      final turnFutures = <({String agentId, Future<GroupTurnResult> future})>[];
+      final turnFutures =
+          <({String agentId, Future<GroupTurnResult> future})>[];
       for (final agent in agents) {
         if (!effectiveMentionedAgentIds.contains(agent.id)) {
           onAgentDone?.call(agent.id, agent.name, true);
@@ -646,7 +683,8 @@ class GroupOrchestrationService {
         final isFirstMessage = !agentIdsWithHistory.contains(agent.id);
         turnFutures.add((
           agentId: agent.id,
-          future: _executor.processGroupAgent(
+          future: _executor
+              .processGroupAgent(
             agent: agent,
             channelId: channelId,
             content: _withEventDigest(effectiveContent, channelId),
@@ -668,8 +706,10 @@ class GroupOrchestrationService {
             onAgentDone: onAgentDone,
             onInteractionRequest: onInteractionRequest,
             orchestrationTraceId: orchTraceId,
-          ).catchError((e) {
-            LoggerService().error('Group agent ${agent.name} uncaught error', tag: 'GroupOrchestrationService', error: e);
+          )
+              .catchError((e) {
+            LoggerService().error('Group agent ${agent.name} uncaught error',
+                tag: 'GroupOrchestrationService', error: e);
             onAgentDone?.call(agent.id, agent.name, true);
             return const GroupTurnResult();
           }),
@@ -698,7 +738,9 @@ class GroupOrchestrationService {
       // 5b. Admin-first flow: only admin responds, then delegates via @mentions
       final adminAgent = agents.where((a) => a.id == adminAgentId).firstOrNull;
       if (adminAgent == null) {
-        LoggerService().warning('Admin agent $adminAgentId not found, falling back to all-agents mode', tag: 'GroupOrchestrationService');
+        LoggerService().warning(
+            'Admin agent $adminAgentId not found, falling back to all-agents mode',
+            tag: 'GroupOrchestrationService');
       }
       if (adminAgent != null) {
         // Skip non-admin agents immediately
@@ -708,7 +750,8 @@ class GroupOrchestrationService {
           }
         }
 
-        final nonAdminAgents = agents.where((a) => a.id != adminAgentId).toList();
+        final nonAdminAgents =
+            agents.where((a) => a.id != adminAgentId).toList();
 
         // Flag: set when the admin agent itself triggers a non-blocking interaction
         // (form / file_upload / action_confirmation in non-flow mode) so the
@@ -716,9 +759,13 @@ class GroupOrchestrationService {
         // the next conversation turn.
         bool adminTriggeredNonBlockingInteraction = false;
         Future<Map<String, dynamic>?> onInteractionRequestForAdmin(
-          String agentId, String agentName, String interactionType, Map<String, dynamic> data,
+          String agentId,
+          String agentName,
+          String interactionType,
+          Map<String, dynamic> data,
         ) async {
-          final result = await onInteractionRequest?.call(agentId, agentName, interactionType, data);
+          final result = await onInteractionRequest?.call(
+              agentId, agentName, interactionType, data);
           if (result?['_non_blocking'] == true && agentId == adminAgent.id) {
             adminTriggeredNonBlockingInteraction = true;
           }
@@ -738,59 +785,64 @@ class GroupOrchestrationService {
           int? loopRound,
           List<String> failedAgentNames = const [],
           bool isFlowMode = false,
-        }) => _executor.processGroupAgent(
-          agent: agent,
-          channelId: channelId,
-          content: _withEventDigest(effectiveContent, channelId),
-          attachments: attachments,
-          userId: userId,
-          userName: userName,
-          groupName: groupName,
-          groupDescription: groupDescription,
-          allAgents: agents,
-          historyMessages: historyMessages,
-          mentionedAgentIds: mentionedAgentIds,
-          isFirstMessage: isFirstMessage,
-          isAdmin: isAdmin,
-          messageVersion: messageVersion,
-          channelMembers: channelMembers,
-          adminAgent: adminAgent,
-          customSystemPrompt: customSystemPrompt,
-          isLoopSummarize: isLoopSummarize,
-          isAbortSummarize: isAbortSummarize,
-          loopRound: loopRound,
-          mentionMode: mentionMode,
-          failedAgentNames: failedAgentNames,
-          acpCancellationToken: acpCancellationToken,
-          isFlowMode: isFlowMode,
-          onStreamChunk: onStreamChunk,
-          onAgentDone: onAgentDone,
-          onInteractionRequest: onInteractionRequest,
-          orchestrationTraceId: orchTraceId,
-        );
+        }) =>
+            _executor.processGroupAgent(
+              agent: agent,
+              channelId: channelId,
+              content: _withEventDigest(effectiveContent, channelId),
+              attachments: attachments,
+              userId: userId,
+              userName: userName,
+              groupName: groupName,
+              groupDescription: groupDescription,
+              allAgents: agents,
+              historyMessages: historyMessages,
+              mentionedAgentIds: mentionedAgentIds,
+              isFirstMessage: isFirstMessage,
+              isAdmin: isAdmin,
+              messageVersion: messageVersion,
+              channelMembers: channelMembers,
+              adminAgent: adminAgent,
+              customSystemPrompt: customSystemPrompt,
+              isLoopSummarize: isLoopSummarize,
+              isAbortSummarize: isAbortSummarize,
+              loopRound: loopRound,
+              mentionMode: mentionMode,
+              failedAgentNames: failedAgentNames,
+              acpCancellationToken: acpCancellationToken,
+              isFlowMode: isFlowMode,
+              onStreamChunk: onStreamChunk,
+              onAgentDone: onAgentDone,
+              onInteractionRequest: onInteractionRequest,
+              orchestrationTraceId: orchTraceId,
+            );
 
         // Detect non-text modality in recent history (e.g. images sent by user)
-        final detectedModality = const GroupPromptBuilder().detectRecentAttachmentModality(historyMessages);
+        final detectedModality = const GroupPromptBuilder()
+            .detectRecentAttachmentModality(historyMessages);
 
         // If admin cannot handle the detected modality, auto-delegate instead
         // of calling the LLM (which would fail with a 400 error).
         if (detectedModality != ModalityType.text &&
             !adminAgent.supportsModality(detectedModality)) {
-          LoggerService().info('Admin ${adminAgent.name} does not support $detectedModality, auto-delegating', tag: 'GroupOrchestrationService');
+          LoggerService().info(
+              'Admin ${adminAgent.name} does not support $detectedModality, auto-delegating',
+              tag: 'GroupOrchestrationService');
 
           // Find a capable agent among non-admin members
           final capableAgent = nonAdminAgents.cast<RemoteAgent?>().firstWhere(
-            (a) => a!.supportsModality(detectedModality),
-            orElse: () => null,
-          );
+                (a) => a!.supportsModality(detectedModality),
+                orElse: () => null,
+              );
 
           if (capableAgent != null) {
             // Generate a delegation message from admin
             final modalityLabel = {
-              ModalityType.image: '图片',
-              ModalityType.audio: '音频',
-              ModalityType.video: '视频',
-            }[detectedModality] ?? '多模态';
+                  ModalityType.image: '图片',
+                  ModalityType.audio: '音频',
+                  ModalityType.video: '视频',
+                }[detectedModality] ??
+                '多模态';
 
             final delegationText =
                 '这条消息包含${modalityLabel}内容，我无法直接处理，@${capableAgent.name} 请协助处理。';
@@ -819,7 +871,8 @@ class GroupOrchestrationService {
             final isFirst = !agentIdsWithHistory.contains(capableAgent.id);
 
             // Reload history so the delegated agent sees admin's delegation message
-            final updatedHistory = await loadAndTruncateHistory(channelId, excludeMessageId: userMessage.id);
+            final updatedHistory = await loadAndTruncateHistory(channelId,
+                excludeMessageId: userMessage.id);
 
             try {
               await callGroupAgent(
@@ -830,16 +883,20 @@ class GroupOrchestrationService {
                 adminAgent: adminAgent,
               );
             } catch (e) {
-              LoggerService().error('Delegated agent ${capableAgent.name} uncaught error', tag: 'GroupOrchestrationService', error: e);
+              LoggerService().error(
+                  'Delegated agent ${capableAgent.name} uncaught error',
+                  tag: 'GroupOrchestrationService',
+                  error: e);
               onAgentDone?.call(capableAgent.id, capableAgent.name, true);
             }
           } else {
             // No agent in the group can handle this modality
             final modalityLabel = {
-              ModalityType.image: '图片',
-              ModalityType.audio: '音频',
-              ModalityType.video: '视频',
-            }[detectedModality] ?? '多模态';
+                  ModalityType.image: '图片',
+                  ModalityType.audio: '音频',
+                  ModalityType.video: '视频',
+                }[detectedModality] ??
+                '多模态';
 
             final hintMsg = Message(
               id: _uuid.v4(),
@@ -952,7 +1009,9 @@ class GroupOrchestrationService {
             content: text,
             steps: parsed.steps,
             wantsContinue: parsed.wantsContinue,
-            isDone: parsed.isDone || parsed.isPause || (parsed.steps.isEmpty && !parsed.wantsContinue),
+            isDone: parsed.isDone ||
+                parsed.isPause ||
+                (parsed.steps.isEmpty && !parsed.wantsContinue),
             isPause: parsed.isPause,
             unresolvedNames: parsed.unresolvedNames,
           );
@@ -966,8 +1025,7 @@ class GroupOrchestrationService {
           adminTurn = await _executor.processGroupAgent(
             agent: adminAgent,
             channelId: channelId,
-            content:
-                '$effectiveContent\n\n'
+            content: '$effectiveContent\n\n'
                 '[SYSTEM] 需求澄清：若用户需求不明确或信息不足，请先调用 '
                 '`group_finish`（action=`pause`）向用户澄清，确认后再 '
                 '`group_dispatch`，不要凭猜测派活。',
@@ -996,8 +1054,10 @@ class GroupOrchestrationService {
             orchestrationTraceId: orchTraceId,
           );
         } catch (e) {
-          LoggerService().error('Admin agent ${adminAgent.name} uncaught error', tag: 'GroupOrchestrationService', error: e);
-          onAgentDone?.call(adminAgent.id, adminAgent.name, adminResponseContent.trim().isEmpty);
+          LoggerService().error('Admin agent ${adminAgent.name} uncaught error',
+              tag: 'GroupOrchestrationService', error: e);
+          onAgentDone?.call(adminAgent.id, adminAgent.name,
+              adminResponseContent.trim().isEmpty);
         }
         currentRound++;
         final firstInbox = await _readRoundInbox();
@@ -1012,7 +1072,8 @@ class GroupOrchestrationService {
         final earlyFlowPlan = FlowPlan.tryParse(adminResponseContent);
         if (earlyFlowPlan != null &&
             earlyFlowPlan.stages.any((s) => s.steps.isNotEmpty)) {
-          await _planningHelpers.stripFlowPlanBlockFromLastMessage(channelId, adminAgent.id);
+          await _planningHelpers.stripFlowPlanBlockFromLastMessage(
+              channelId, adminAgent.id);
           if (await _offerWorkflowFromPlan(
             channelId: channelId,
             adminAgent: adminAgent,
@@ -1029,7 +1090,8 @@ class GroupOrchestrationService {
 
         final firstDispatch = adminTurn;
         if (firstDispatch.steps.isNotEmpty) {
-          await _dispatchParser.stripDispatchJsonFromLastMessage(channelId, adminAgent.id);
+          await _dispatchParser.stripDispatchJsonFromLastMessage(
+              channelId, adminAgent.id);
           final dispatchPlan = _dispatchParser.buildFlowPlanFromDispatch(
             steps: firstDispatch.steps,
             mode: firstDispatch.steps.first.mode,
@@ -1074,6 +1136,9 @@ class GroupOrchestrationService {
             delegatedAgentNames: delegatedAgentNames,
             failedAgentNames: failed,
             summary: summary,
+            // M4：绑定本次编排会话（触发用户消息 id），下一轮成员只感知本
+            // 任务的事件，避免连续两次任务时注入上一任务的轮次结论。
+            orchestrationId: userMessage.id,
           ));
         }
 
@@ -1094,16 +1159,21 @@ class GroupOrchestrationService {
           // If admin sent a form/file_upload in the previous round, exit immediately
           // so the user can fill it in (forms are non-blocking).
           if (adminTriggeredNonBlockingInteraction) {
-            LoggerService().debug('Loop orchestration ended: admin triggered non-blocking interaction', tag: 'GroupOrchestrationService');
+            LoggerService().debug(
+                'Loop orchestration ended: admin triggered non-blocking interaction',
+                tag: 'GroupOrchestrationService');
             emitRoundEnd(summary: '管理员触发表单/文件交互，本轮暂停等待用户填写');
             break;
           }
           // Check cancellation — run abort-summarize before exiting if we have
           // already done at least one round (i.e. Admin has produced content).
           if (acpCancellationToken?.isCancelled == true) {
-            LoggerService().info('Loop orchestration cancelled at round $currentRound', tag: 'GroupOrchestrationService');
+            LoggerService().info(
+                'Loop orchestration cancelled at round $currentRound',
+                tag: 'GroupOrchestrationService');
             if (adminResponseContent.trim().isNotEmpty) {
-              final abortHistory = await loadAndTruncateHistory(channelId, excludeMessageId: userMessage.id);
+              final abortHistory = await loadAndTruncateHistory(channelId,
+                  excludeMessageId: userMessage.id);
               adminResponseContent = '';
               onAgentStart?.call(adminAgent.id, adminAgent.name);
               try {
@@ -1128,7 +1198,7 @@ class GroupOrchestrationService {
                   channelMembers: channelMembers,
                   customSystemPrompt: customSystemPrompt,
                   mentionMode: mentionMode,
-                    failedAgentNames: List.unmodifiable(failedAgentNames),
+                  failedAgentNames: List.unmodifiable(failedAgentNames),
                   onStreamChunk: (agentId, agentName, chunk) {
                     adminResponseContent += chunk;
                     onStreamChunk?.call(agentId, agentName, chunk);
@@ -1138,11 +1208,16 @@ class GroupOrchestrationService {
                   orchestrationTraceId: orchTraceId,
                 );
               } catch (e) {
-                LoggerService().error('Admin abort-summarize (loop-start cancel) error', tag: 'GroupOrchestrationService', error: e);
-                onAgentDone?.call(adminAgent.id, adminAgent.name, adminResponseContent.trim().isEmpty);
+                LoggerService().error(
+                    'Admin abort-summarize (loop-start cancel) error',
+                    tag: 'GroupOrchestrationService',
+                    error: e);
+                onAgentDone?.call(adminAgent.id, adminAgent.name,
+                    adminResponseContent.trim().isEmpty);
               }
               // Hide the closing {"done": true} JSON block from the user.
-              await _dispatchParser.stripDispatchJsonFromLastMessage(channelId, adminAgent.id);
+              await _dispatchParser.stripDispatchJsonFromLastMessage(
+                  channelId, adminAgent.id);
             }
             emitRoundEnd(summary: '编排在第 $currentRound 轮被取消');
             break;
@@ -1151,7 +1226,9 @@ class GroupOrchestrationService {
           // Check round limit. currentRound 是「当前正要执行的第 N 轮」（首轮
           // 派发后 +1），故跑满 maxRounds 轮须用 `>` 而非 `>=`（M5 off-by-one）。
           if (currentRound > maxRounds) {
-            LoggerService().info('Loop orchestration reached max rounds ($maxRounds)', tag: 'GroupOrchestrationService');
+            LoggerService().info(
+                'Loop orchestration reached max rounds ($maxRounds)',
+                tag: 'GroupOrchestrationService');
             final limitMsg = Message(
               id: _uuid.v4(),
               content: '编排循环已达到最大轮次 $maxRounds 次，已自动停止。',
@@ -1172,7 +1249,8 @@ class GroupOrchestrationService {
             notifyChannelUpdate(channelId);
 
             // Run abort-summarize so Admin can wrap up what was accomplished
-            final maxRoundsHistory = await loadAndTruncateHistory(channelId, excludeMessageId: userMessage.id);
+            final maxRoundsHistory = await loadAndTruncateHistory(channelId,
+                excludeMessageId: userMessage.id);
             adminResponseContent = '';
             onAgentStart?.call(adminAgent.id, adminAgent.name);
             try {
@@ -1197,7 +1275,7 @@ class GroupOrchestrationService {
                 channelMembers: channelMembers,
                 customSystemPrompt: customSystemPrompt,
                 mentionMode: mentionMode,
-                  failedAgentNames: List.unmodifiable(failedAgentNames),
+                failedAgentNames: List.unmodifiable(failedAgentNames),
                 onStreamChunk: (agentId, agentName, chunk) {
                   adminResponseContent += chunk;
                   onStreamChunk?.call(agentId, agentName, chunk);
@@ -1207,11 +1285,14 @@ class GroupOrchestrationService {
                 orchestrationTraceId: orchTraceId,
               );
             } catch (e) {
-              LoggerService().error('Admin abort-summarize (maxRounds) error', tag: 'GroupOrchestrationService', error: e);
-              onAgentDone?.call(adminAgent.id, adminAgent.name, adminResponseContent.trim().isEmpty);
+              LoggerService().error('Admin abort-summarize (maxRounds) error',
+                  tag: 'GroupOrchestrationService', error: e);
+              onAgentDone?.call(adminAgent.id, adminAgent.name,
+                  adminResponseContent.trim().isEmpty);
             }
             // Hide the closing {"done": true} JSON block from the user.
-            await _dispatchParser.stripDispatchJsonFromLastMessage(channelId, adminAgent.id);
+            await _dispatchParser.stripDispatchJsonFromLastMessage(
+                channelId, adminAgent.id);
             emitRoundEnd(
               summary: adminResponseContent.trim().isEmpty
                   ? '编排达到最大轮次 $maxRounds 自动停止'
@@ -1229,15 +1310,14 @@ class GroupOrchestrationService {
           );
           adminTurn = dispatch;
           final adminWantsContinue = dispatch.wantsContinue;
-          final delegatedIds = dispatch.steps
-              .expand((s) => s.agentIds)
-              .toSet()
-              .toList();
+          final delegatedIds =
+              dispatch.steps.expand((s) => s.agentIds).toSet().toList();
 
           final flowPlanInRound = FlowPlan.tryParse(adminResponseContent);
           if (flowPlanInRound != null &&
               flowPlanInRound.stages.any((s) => s.steps.isNotEmpty)) {
-            await _planningHelpers.stripFlowPlanBlockFromLastMessage(channelId, adminAgent.id);
+            await _planningHelpers.stripFlowPlanBlockFromLastMessage(
+                channelId, adminAgent.id);
             if (await _offerWorkflowFromPlan(
               channelId: channelId,
               adminAgent: adminAgent,
@@ -1258,15 +1338,18 @@ class GroupOrchestrationService {
                 'Dispatch failed at round $currentRound (${dispatch.parseError}); nudging admin ($dispatchNudgeCount/$maxDispatchNudges)',
                 tag: 'GroupOrchestrationService',
               );
-              await _dispatchParser.stripDispatchJsonFromLastMessage(channelId, adminAgent.id);
-              final nudgeHistory = await loadAndTruncateHistory(channelId, excludeMessageId: userMessage.id);
+              await _dispatchParser.stripDispatchJsonFromLastMessage(
+                  channelId, adminAgent.id);
+              final nudgeHistory = await loadAndTruncateHistory(channelId,
+                  excludeMessageId: userMessage.id);
               adminResponseContent = '';
               onAgentStart?.call(adminAgent.id, adminAgent.name);
               try {
                 adminTurn = await _executor.processGroupAgent(
                   agent: adminAgent,
                   channelId: channelId,
-                  content: '$effectiveContent\n\n[SYSTEM] 你上一条回复中的派发指令无法执行：${dispatch.parseError}。请调用 `group_dispatch` 重新派活（agents 必须用注册名），或调用 `group_finish`（done/continue/pause）；若无需派发请直接给出最终答复并 finish。',
+                  content:
+                      '$effectiveContent\n\n[SYSTEM] 你上一条回复中的派发指令无法执行：${dispatch.parseError}。请调用 `group_dispatch` 重新派活（agents 必须用注册名），或调用 `group_finish`（done/continue/pause）；若无需派发请直接给出最终答复并 finish。',
                   attachments: attachments,
                   userId: userId,
                   userName: userName,
@@ -1293,8 +1376,12 @@ class GroupOrchestrationService {
                   orchestrationTraceId: orchTraceId,
                 );
               } catch (e) {
-                LoggerService().error('Admin nudge error at round $currentRound', tag: 'GroupOrchestrationService', error: e);
-                onAgentDone?.call(adminAgent.id, adminAgent.name, adminResponseContent.trim().isEmpty);
+                LoggerService().error(
+                    'Admin nudge error at round $currentRound',
+                    tag: 'GroupOrchestrationService',
+                    error: e);
+                onAgentDone?.call(adminAgent.id, adminAgent.name,
+                    adminResponseContent.trim().isEmpty);
                 break;
               }
               currentRound++;
@@ -1306,14 +1393,17 @@ class GroupOrchestrationService {
               );
               if (adminResponseContent.trim().isEmpty &&
                   !adminTurn.hasOrchestrationSignal) {
-                LoggerService().warning('Admin nudge produced empty response at round $currentRound, stopping', tag: 'GroupOrchestrationService');
+                LoggerService().warning(
+                    'Admin nudge produced empty response at round $currentRound, stopping',
+                    tag: 'GroupOrchestrationService');
                 emitRoundEnd(summary: '管理员多次未产出有效派发，流程停止');
                 break;
               }
               continue;
             }
             // Nudge budget exhausted — surface the failure and stop.
-            await _dispatchParser.stripDispatchJsonFromLastMessage(channelId, adminAgent.id);
+            await _dispatchParser.stripDispatchJsonFromLastMessage(
+                channelId, adminAgent.id);
             await _saveOrchestrationSystemMessage(
               channelId,
               '⚠️ 管理员的派发指令多次无法解析（${dispatch.parseError}），流程已停止，请重新描述需求再试。',
@@ -1385,8 +1475,11 @@ class GroupOrchestrationService {
           if (delegatedIds.isEmpty && !adminWantsContinue) {
             // No dispatch and no continue — orchestration complete. Strip the
             // closing {"done": true} JSON block so the user never sees it.
-            LoggerService().debug('Loop orchestration ended: no dispatch at round $currentRound', tag: 'GroupOrchestrationService');
-            await _dispatchParser.stripDispatchJsonFromLastMessage(channelId, adminAgent.id);
+            LoggerService().debug(
+                'Loop orchestration ended: no dispatch at round $currentRound',
+                tag: 'GroupOrchestrationService');
+            await _dispatchParser.stripDispatchJsonFromLastMessage(
+                channelId, adminAgent.id);
             emitRoundEnd(summary: adminResponseContent);
             break;
           }
@@ -1396,9 +1489,13 @@ class GroupOrchestrationService {
           if (delegatedIds.isEmpty && adminWantsContinue) {
             // Check cancellation before re-invoking admin — run abort-summarize first
             if (acpCancellationToken?.isCancelled == true) {
-              LoggerService().info('Admin continue cancelled at round $currentRound', tag: 'GroupOrchestrationService');
-              await _dispatchParser.stripDispatchJsonFromLastMessage(channelId, adminAgent.id);
-              final abortHistory = await loadAndTruncateHistory(channelId, excludeMessageId: userMessage.id);
+              LoggerService().info(
+                  'Admin continue cancelled at round $currentRound',
+                  tag: 'GroupOrchestrationService');
+              await _dispatchParser.stripDispatchJsonFromLastMessage(
+                  channelId, adminAgent.id);
+              final abortHistory = await loadAndTruncateHistory(channelId,
+                  excludeMessageId: userMessage.id);
               adminResponseContent = '';
               onAgentStart?.call(adminAgent.id, adminAgent.name);
               try {
@@ -1423,7 +1520,7 @@ class GroupOrchestrationService {
                   channelMembers: channelMembers,
                   customSystemPrompt: customSystemPrompt,
                   mentionMode: mentionMode,
-                    failedAgentNames: List.unmodifiable(failedAgentNames),
+                  failedAgentNames: List.unmodifiable(failedAgentNames),
                   onStreamChunk: (agentId, agentName, chunk) {
                     adminResponseContent += chunk;
                     onStreamChunk?.call(agentId, agentName, chunk);
@@ -1433,17 +1530,25 @@ class GroupOrchestrationService {
                   orchestrationTraceId: orchTraceId,
                 );
               } catch (e) {
-                LoggerService().error('Admin abort-summarize (continue cancel) error', tag: 'GroupOrchestrationService', error: e);
-                onAgentDone?.call(adminAgent.id, adminAgent.name, adminResponseContent.trim().isEmpty);
+                LoggerService().error(
+                    'Admin abort-summarize (continue cancel) error',
+                    tag: 'GroupOrchestrationService',
+                    error: e);
+                onAgentDone?.call(adminAgent.id, adminAgent.name,
+                    adminResponseContent.trim().isEmpty);
               }
               emitRoundEnd(summary: '管理员继续处理在第 $currentRound 轮被取消');
               break;
             }
 
-            LoggerService().debug('Admin continue at round $currentRound, re-invoking admin', tag: 'GroupOrchestrationService');
-            await _dispatchParser.stripDispatchJsonFromLastMessage(channelId, adminAgent.id);
+            LoggerService().debug(
+                'Admin continue at round $currentRound, re-invoking admin',
+                tag: 'GroupOrchestrationService');
+            await _dispatchParser.stripDispatchJsonFromLastMessage(
+                channelId, adminAgent.id);
 
-            final continueHistory = await loadAndTruncateHistory(channelId, excludeMessageId: userMessage.id);
+            final continueHistory = await loadAndTruncateHistory(channelId,
+                excludeMessageId: userMessage.id);
             adminResponseContent = '';
             onAgentStart?.call(adminAgent.id, adminAgent.name);
             try {
@@ -1478,8 +1583,12 @@ class GroupOrchestrationService {
                 orchestrationTraceId: orchTraceId,
               );
             } catch (e) {
-              LoggerService().error('Admin continue error at round $currentRound', tag: 'GroupOrchestrationService', error: e);
-              onAgentDone?.call(adminAgent.id, adminAgent.name, adminResponseContent.trim().isEmpty);
+              LoggerService().error(
+                  'Admin continue error at round $currentRound',
+                  tag: 'GroupOrchestrationService',
+                  error: e);
+              onAgentDone?.call(adminAgent.id, adminAgent.name,
+                  adminResponseContent.trim().isEmpty);
               break;
             }
             currentRound++;
@@ -1493,19 +1602,23 @@ class GroupOrchestrationService {
             // Guard against empty responses to prevent stuck loops
             if (adminResponseContent.trim().isEmpty &&
                 !adminTurn.hasOrchestrationSignal) {
-              LoggerService().warning('Admin continue produced empty response at round $currentRound, stopping', tag: 'GroupOrchestrationService');
+              LoggerService().warning(
+                  'Admin continue produced empty response at round $currentRound, stopping',
+                  tag: 'GroupOrchestrationService');
               break;
             }
             continue;
           }
 
           // Strip dispatch JSON from saved message before delegating
-          await _dispatchParser.stripDispatchJsonFromLastMessage(channelId, adminAgent.id);
+          await _dispatchParser.stripDispatchJsonFromLastMessage(
+              channelId, adminAgent.id);
 
           // Structured task dispatch → create workflow + approval card instead of
           // running inline delegation (execution starts after user approval).
           if (dispatch.steps.isNotEmpty) {
-            final flowPlanFromDispatch = _dispatchParser.buildFlowPlanFromDispatch(
+            final flowPlanFromDispatch =
+                _dispatchParser.buildFlowPlanFromDispatch(
               steps: dispatch.steps,
               mode: dispatch.steps.first.mode,
               agents: agents,
@@ -1541,7 +1654,8 @@ class GroupOrchestrationService {
               final stepAgentIds = step.agentIds;
 
               // Reload history before each step so agents see previous steps' output
-              final stepHistory = await loadAndTruncateHistory(channelId, excludeMessageId: userMessage.id);
+              final stepHistory = await loadAndTruncateHistory(channelId,
+                  excludeMessageId: userMessage.id);
 
               // Launch all agents within this step concurrently
               final stepFutures = <Future<void>>[];
@@ -1551,7 +1665,8 @@ class GroupOrchestrationService {
                 final isFirst = !agentIdsWithHistory.contains(agent.id);
                 final memberBrief = step.contentOr(effectiveContent);
                 stepFutures.add(() async {
-                  final result = await _executor.processGroupAgent(
+                  final result = await _executor
+                      .processGroupAgent(
                     agent: agent,
                     channelId: channelId,
                     // 成员先看【全局需求】（用户完整消息），再看【你的任务】（局部 brief）。
@@ -1559,11 +1674,12 @@ class GroupOrchestrationService {
                       memberBrief: memberBrief,
                       globalRequirement: effectiveContent,
                       memoryNote: memberMemoryNote,
-                      dispatchPlanNote: GroupDispatchParser.buildDispatchPlanNote(
+                      dispatchPlanNote:
+                          GroupDispatchParser.buildDispatchPlanNote(
                         steps: dispatch.steps,
                         agents: agents,
                       ),
-                      loopEventNote: _buildLoopEventNote(channelId),
+                      loopEventNote: _buildLoopEventNote(channelId, orchestrationId: userMessage.id),
                     ),
                     attachments: attachments,
                     userId: userId,
@@ -1583,8 +1699,12 @@ class GroupOrchestrationService {
                     onStreamChunk: onStreamChunk,
                     onAgentDone: onAgentDone,
                     onInteractionRequest: onInteractionRequest,
-                  ).catchError((e) {
-                    LoggerService().error('Step ${step.step} agent ${agent.name} uncaught error', tag: 'GroupOrchestrationService', error: e);
+                  )
+                      .catchError((e) {
+                    LoggerService().error(
+                        'Step ${step.step} agent ${agent.name} uncaught error',
+                        tag: 'GroupOrchestrationService',
+                        error: e);
                     failedAgentNames.add(agent.name);
                     onAgentDone?.call(agent.id, agent.name, true);
                     return const GroupTurnResult();
@@ -1593,11 +1713,11 @@ class GroupOrchestrationService {
                 }());
               }
               await Future.wait(stepFutures);
-
             }
           } else {
             // Concurrent execution (default)
-            final updatedHistory = await loadAndTruncateHistory(channelId, excludeMessageId: userMessage.id);
+            final updatedHistory = await loadAndTruncateHistory(channelId,
+                excludeMessageId: userMessage.id);
 
             final delegatedFutures = <Future<void>>[];
             for (final agent in agents) {
@@ -1611,7 +1731,8 @@ class GroupOrchestrationService {
                   steps: dispatch.steps,
                   fallback: effectiveContent,
                 );
-                final result = await _executor.processGroupAgent(
+                final result = await _executor
+                    .processGroupAgent(
                   agent: agent,
                   channelId: channelId,
                   content: GroupDispatchParser.buildMemberTurnContent(
@@ -1622,7 +1743,7 @@ class GroupOrchestrationService {
                       steps: dispatch.steps,
                       agents: agents,
                     ),
-                    loopEventNote: _buildLoopEventNote(channelId),
+                    loopEventNote: _buildLoopEventNote(channelId, orchestrationId: userMessage.id),
                   ),
                   attachments: attachments,
                   userId: userId,
@@ -1642,8 +1763,12 @@ class GroupOrchestrationService {
                   onStreamChunk: onStreamChunk,
                   onAgentDone: onAgentDone,
                   onInteractionRequest: onInteractionRequest,
-                ).catchError((e) {
-                  LoggerService().error('Delegated agent ${agent.name} uncaught error', tag: 'GroupOrchestrationService', error: e);
+                )
+                    .catchError((e) {
+                  LoggerService().error(
+                      'Delegated agent ${agent.name} uncaught error',
+                      tag: 'GroupOrchestrationService',
+                      error: e);
                   failedAgentNames.add(agent.name);
                   onAgentDone?.call(agent.id, agent.name, true);
                   return const GroupTurnResult();
@@ -1681,8 +1806,11 @@ class GroupOrchestrationService {
           // Even when cancelled, run one final abort-summarize so Admin can
           // summarise the work already done before the loop exits.
           if (acpCancellationToken?.isCancelled == true) {
-            LoggerService().info('Loop orchestration cancelled after member execution at round $currentRound — running abort-summarize', tag: 'GroupOrchestrationService');
-            final abortHistory = await loadAndTruncateHistory(channelId, excludeMessageId: userMessage.id);
+            LoggerService().info(
+                'Loop orchestration cancelled after member execution at round $currentRound — running abort-summarize',
+                tag: 'GroupOrchestrationService');
+            final abortHistory = await loadAndTruncateHistory(channelId,
+                excludeMessageId: userMessage.id);
             adminResponseContent = '';
             onAgentStart?.call(adminAgent.id, adminAgent.name);
             try {
@@ -1707,7 +1835,7 @@ class GroupOrchestrationService {
                 channelMembers: channelMembers,
                 customSystemPrompt: customSystemPrompt,
                 mentionMode: mentionMode,
-                  failedAgentNames: List.unmodifiable(failedAgentNames),
+                failedAgentNames: List.unmodifiable(failedAgentNames),
                 // Do NOT pass acpCancellationToken — this final summary must run to completion.
                 onStreamChunk: (agentId, agentName, chunk) {
                   adminResponseContent += chunk;
@@ -1718,11 +1846,14 @@ class GroupOrchestrationService {
                 orchestrationTraceId: orchTraceId,
               );
             } catch (e) {
-              LoggerService().error('Admin abort-summarize error', tag: 'GroupOrchestrationService', error: e);
-              onAgentDone?.call(adminAgent.id, adminAgent.name, adminResponseContent.trim().isEmpty);
+              LoggerService().error('Admin abort-summarize error',
+                  tag: 'GroupOrchestrationService', error: e);
+              onAgentDone?.call(adminAgent.id, adminAgent.name,
+                  adminResponseContent.trim().isEmpty);
             }
             // Hide the closing {"done": true} JSON block from the user.
-            await _dispatchParser.stripDispatchJsonFromLastMessage(channelId, adminAgent.id);
+            await _dispatchParser.stripDispatchJsonFromLastMessage(
+                channelId, adminAgent.id);
             emitRoundEnd(
               delegatedAgentNames: delegatedTurnResults.keys
                   .map((id) =>
@@ -1760,7 +1891,8 @@ class GroupOrchestrationService {
           );
 
           // Reload history (now includes member replies) and call admin again to summarize
-          final loopHistory = await loadAndTruncateHistory(channelId, excludeMessageId: userMessage.id);
+          final loopHistory = await loadAndTruncateHistory(channelId,
+              excludeMessageId: userMessage.id);
 
           adminResponseContent = '';
           onAgentStart?.call(adminAgent.id, adminAgent.name);
@@ -1769,9 +1901,7 @@ class GroupOrchestrationService {
               agent: adminAgent,
               channelId: channelId,
               content:
-                  '${lastDispatchNote != null
-                      ? '$effectiveContent\n\n[SYSTEM] 你上一轮的派发记录（该 JSON 已从你的消息中隐藏，仅供核对）：$lastDispatchNote'
-                      : effectiveContent}'
+                  '${lastDispatchNote != null ? '$effectiveContent\n\n[SYSTEM] 你上一轮的派发记录（该 JSON 已从你的消息中隐藏，仅供核对）：$lastDispatchNote' : effectiveContent}'
                   '${buildMemberArtifactsBlock(memberTurnResults, agents)}',
               attachments: attachments,
               userId: userId,
@@ -1800,8 +1930,12 @@ class GroupOrchestrationService {
               orchestrationTraceId: orchTraceId,
             );
           } catch (e) {
-            LoggerService().error('Admin summarize error at round $currentRound', tag: 'GroupOrchestrationService', error: e);
-            onAgentDone?.call(adminAgent.id, adminAgent.name, adminResponseContent.trim().isEmpty);
+            LoggerService().error(
+                'Admin summarize error at round $currentRound',
+                tag: 'GroupOrchestrationService',
+                error: e);
+            onAgentDone?.call(adminAgent.id, adminAgent.name,
+                adminResponseContent.trim().isEmpty);
             break;
           }
           await _emitOrchestrationRound(
@@ -1829,6 +1963,8 @@ class GroupOrchestrationService {
                 .toList(),
             failedAgentNames: List.unmodifiable(failedAgentNames),
             summary: adminResponseContent,
+            // M4：绑定本次编排会话（触发用户消息 id）。
+            orchestrationId: userMessage.id,
           ));
 
           currentRound++;
@@ -1838,7 +1974,6 @@ class GroupOrchestrationService {
             inboxDispatch: summarizeInbox.dispatch,
             inboxFinish: summarizeInbox.finish,
           );
-
         }
 
         await _emitOrchestrationRound(
@@ -1871,7 +2006,8 @@ class GroupOrchestrationService {
         onAgentStart?.call(agent.id, agent.name);
         final isFirstMessage = !agentIdsWithHistory.contains(agent.id);
         futures.add(
-          _executor.processGroupAgent(
+          _executor
+              .processGroupAgent(
             agent: agent,
             channelId: channelId,
             content: _withEventDigest(effectiveContent, channelId),
@@ -1893,8 +2029,10 @@ class GroupOrchestrationService {
             onAgentDone: onAgentDone,
             onInteractionRequest: onInteractionRequest,
             orchestrationTraceId: orchTraceId,
-          ).catchError((e) {
-            LoggerService().error('Group agent ${agent.name} uncaught error', tag: 'GroupOrchestrationService', error: e);
+          )
+              .catchError((e) {
+            LoggerService().error('Group agent ${agent.name} uncaught error',
+                tag: 'GroupOrchestrationService', error: e);
             onAgentDone?.call(agent.id, agent.name, true);
             return const GroupTurnResult();
           }),

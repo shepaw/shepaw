@@ -196,6 +196,11 @@ extension ChannelDao on LocalDatabaseService {
   }
 
   /// 获取 Channel 成员（包含角色信息）
+  ///
+  /// `channel_members` 表无 type 列，历史写入把本地用户也当普通成员落库。
+  /// 重载时按「agent_id 是否存在于 agents 表」判定类型：存在即 agent，否则
+  /// 为 user（本地用户）。避免本地用户被误判成 agent 后：建自聊幽灵 DM、
+  /// 进空间成员表、被当作 agent 派发、绕过「最后一个 agent」守卫。
   Future<List<ChannelMember>> getChannelMembers(String channelId) async {
     final db = await database;
     final results = await db.query(
@@ -204,9 +209,18 @@ extension ChannelDao on LocalDatabaseService {
       where: 'channel_id = ?',
       whereArgs: [channelId],
     );
+    if (results.isEmpty) return const [];
+    final memberIds = results.map((r) => r['agent_id'] as String).toList();
+    final agentRows = await db.query(
+      'agents',
+      columns: ['id'],
+      where: 'id IN (${List.filled(memberIds.length, '?').join(',')})',
+      whereArgs: memberIds,
+    );
+    final agentIdSet = agentRows.map((r) => r['id'] as String).toSet();
     return results.map((r) => ChannelMember(
       id: r['agent_id'] as String,
-      type: 'agent',
+      type: agentIdSet.contains(r['agent_id'] as String) ? 'agent' : 'user',
       role: r['role'] as String? ?? 'member',
       groupBio: r['group_bio'] as String?,
       joinedAt: DateTime.tryParse(r['joined_at'] as String? ?? '')

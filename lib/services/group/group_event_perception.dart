@@ -60,6 +60,10 @@ class GroupEventPerceptionScheduler {
     GroupEventPromptBuilder? promptBuilder,
     String? customSystemPrompt,
     Duration debounce = const Duration(seconds: 3),
+
+    /// 该频道是否正在运行编排 loop（M2）。感知回合是后台通知，编排 loop 正在
+    /// 处理用户消息时让位（drop），避免与编排 admin 回合交错。
+    bool Function(String channelId)? isChannelOrchestrating,
   })  : _db = db,
         _executor = executor,
         _acpConnections = acpConnections,
@@ -70,7 +74,8 @@ class GroupEventPerceptionScheduler {
         _promptBuilder = promptBuilder ?? buildGenericPerceptionPrompt,
         _customSystemPrompt =
             customSystemPrompt ?? genericPerceptionSystemPrompt,
-        _debounce = debounce;
+        _debounce = debounce,
+        _isChannelOrchestrating = isChannelOrchestrating;
 
   final LocalDatabaseService _db;
   final GroupAgentExecutor _executor;
@@ -83,6 +88,7 @@ class GroupEventPerceptionScheduler {
   final GroupEventPromptBuilder _promptBuilder;
   final String _customSystemPrompt;
   final Duration _debounce;
+  final bool Function(String channelId)? _isChannelOrchestrating;
 
   /// Pending active-notify events per channel, coalesced in the debounce
   /// window and drained into a single admin turn.
@@ -92,6 +98,47 @@ class GroupEventPerceptionScheduler {
   /// Channels with an in-flight perception turn — prevents overlapping
   /// `processGroupAgent` calls for the same channel.
   final Set<String> _running = {};
+
+  /// 全局管理员回合互斥（M2）。
+  ///
+  /// 两个 scheduler 实例（event / membership）各自持有 `_running`，互不知晓；
+  /// 且门闸/收尾/编排 loop 会直接 `processGroupAgent`，同样不受 `_running`
+  /// 约束。这里提供「同一 admin 同时只能有一个进行中的 LLM 回合」的共享锁：
+  /// - 感知回合（后台通知）用 [tryBeginAdminTurn]：admin 已被占用时让位（drop）。
+  /// - 显式回合（门闸/收尾/编排 admin）用 [forceBeginAdminTurn]：抢占，使
+  ///   被抢占的感知回合在写盘前发现 holder 已变更而中止（配合预写 re-check）。
+  ///
+  /// value 为当前持有者标识；[endAdminTurn] 仅当仍是自己持有时才释放，避免
+  /// 抢占方把被抢占方的 `finally` 释放误判为自己的释放（double-release）。
+  static final Map<String, String> _adminTurnHolder = {};
+  static int _adminTurnSeq = 0;
+
+  static String _nextHolderId() => 'admin-turn-${_adminTurnSeq++}';
+
+  static bool tryBeginAdminTurn(String adminId, String holderId) {
+    final existing = _adminTurnHolder[adminId];
+    if (existing != null && existing != holderId) return false;
+    _adminTurnHolder[adminId] = holderId;
+    return true;
+  }
+
+  static void forceBeginAdminTurn(String adminId, String holderId) {
+    _adminTurnHolder[adminId] = holderId;
+  }
+
+  /// 显式回合（门闸/收尾/编排 admin）开始：生成唯一 holder 并抢占全局锁。
+  /// 返回 holderId，供 [endAdminTurn] 对称释放。
+  static String beginExplicitAdminTurn(String adminId) {
+    final holderId = _nextHolderId();
+    forceBeginAdminTurn(adminId, holderId);
+    return holderId;
+  }
+
+  static void endAdminTurn(String adminId, String holderId) {
+    if (_adminTurnHolder[adminId] == holderId) {
+      _adminTurnHolder.remove(adminId);
+    }
+  }
 
   /// Per-channel generation counter. `cancelPendingForChannel` bumps it so a
   /// superseded in-flight turn aborts before writing its admin message.
@@ -200,6 +247,16 @@ class GroupEventPerceptionScheduler {
         return;
       }
 
+      // M2: 编排 loop 正在处理该频道用户消息时，感知回合让位（drop），避免
+      // 与编排 admin 回合交错（编排 admin 回合不被 `_running`/互斥覆盖）。
+      if (_isChannelOrchestrating?.call(channelId) == true) {
+        LoggerService().debug(
+          'Perception turn dropped: channel $channelId is orchestrating',
+          tag: 'GroupEventPerception',
+        );
+        return;
+      }
+
       // Current member agents — used both for the prompt and the executor's
       // `allAgents` so the admin sees the up-to-date roster.
       final memberIds = await _db.getChannelMemberIds(channelId);
@@ -229,31 +286,53 @@ class GroupEventPerceptionScheduler {
       // the epoch). A superseded turn must not emit a redundant admin message.
       if (token.isCancelled || epoch != (_epoch[channelId] ?? 0)) return;
 
-      await _executor.processGroupAgent(
-        agent: adminAgent,
-        channelId: channelId,
-        content: content,
-        userId: LocalUserIdentity.id,
-        userName: LocalUserIdentity.displayName,
-        groupName: channel.name,
-        groupDescription: channel.description ?? '',
-        allAgents: allAgents,
-        historyMessages: history,
-        mentionedAgentIds: const [],
-        isFirstMessage: false,
-        isAdmin: true,
-        customSystemPrompt: _customSystemPrompt,
-        channelMembers: channel.members,
-        adminAgent: adminAgent,
-        isFlowMode: false,
-        messageVersion: null,
-        acpCancellationToken: token,
-      );
+      // M2: 全局管理员回合互斥 —— 感知回合是后台通知。另一 scheduler 实例或
+      // 门闸/收尾/编排 loop 已占用该 admin 时，本次感知让位（drop，不排队，
+      // 避免与显式回合交错或经「Agent busy」被静默吞掉）。
+      final holderId = _nextHolderId();
+      if (!tryBeginAdminTurn(adminId, holderId)) {
+        LoggerService().debug(
+          'Perception turn dropped: admin ${adminAgent.name} already in a turn',
+          tag: 'GroupEventPerception',
+        );
+        return;
+      }
+      try {
+        // 被抢占（门闸/收尾 forceBegin 换 holder）后在写盘前中止：避免被
+        // 抢占的感知回合仍输出冗余管理员消息。
+        if (token.isCancelled ||
+            epoch != (_epoch[channelId] ?? 0) ||
+            _adminTurnHolder[adminId] != holderId) {
+          return;
+        }
+        await _executor.processGroupAgent(
+          agent: adminAgent,
+          channelId: channelId,
+          content: content,
+          userId: LocalUserIdentity.id,
+          userName: LocalUserIdentity.displayName,
+          groupName: channel.name,
+          groupDescription: channel.description ?? '',
+          allAgents: allAgents,
+          historyMessages: history,
+          mentionedAgentIds: const [],
+          isFirstMessage: false,
+          isAdmin: true,
+          customSystemPrompt: _customSystemPrompt,
+          channelMembers: channel.members,
+          adminAgent: adminAgent,
+          isFlowMode: false,
+          messageVersion: null,
+          acpCancellationToken: token,
+        );
 
-      // Safety net: a perception turn must never leave a raw dispatch JSON
-      // block in the channel message (no orchestration loop runs here).
-      await _dispatchParser
-          .stripDispatchJsonFromLastMessage(channelId, adminAgent.id);
+        // Safety net: a perception turn must never leave a raw dispatch JSON
+        // block in the channel message (no orchestration loop runs here).
+        await _dispatchParser
+            .stripDispatchJsonFromLastMessage(channelId, adminAgent.id);
+      } finally {
+        endAdminTurn(adminId, holderId);
+      }
     } catch (e, st) {
       LoggerService().error(
         'Group event perception turn failed for $channelId',
