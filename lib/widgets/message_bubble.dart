@@ -10,6 +10,7 @@ import '../services/store_open_service.dart';
 import '../screens/storage_directory_opener.dart';
 import '../storage/workspace_link_resolver.dart';
 import '../theme/app_theme.dart';
+import 'store_uri_link_syntax.dart';
 import 'voice_message_bubble.dart';
 import 'image_message_bubble.dart';
 import 'image_grid_bubble.dart';
@@ -802,6 +803,7 @@ class MessageBubble extends StatelessWidget {
           data: content,
           selectable: false,
           extensionSet: md.ExtensionSet.gitHubWeb,
+          inlineSyntaxes: [StoreUriLinkSyntax()],
           onTapLink: (text, href, title) async {
             if (href == null) return;
             await _handleTapLink(context, href);
@@ -892,6 +894,7 @@ class MessageBubble extends StatelessWidget {
       data: progressContent,
       selectable: false,
       extensionSet: md.ExtensionSet.gitHubWeb,
+      inlineSyntaxes: [StoreUriLinkSyntax()],
       onTapLink: (text, href, title) async {
         if (href == null) return;
         await _handleTapLink(context, href);
