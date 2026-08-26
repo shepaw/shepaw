@@ -4116,7 +4116,9 @@ class AppLocalizationsZh extends AppLocalizations {
   String get toolModel_fetchOpenRouterList => '获取 OpenRouter 模型列表';
 
   @override
-  String toolModel_catalogAvailable(int count) => '发现 $count 个可用模型';
+  String toolModel_catalogAvailable(int count) {
+    return '发现 $count 个可用模型';
+  }
 
   @override
   String get toolModel_catalogEmpty => '官方模型目录暂无可用模型';
