@@ -5063,6 +5063,15 @@ class AppLocalizationsEn extends AppLocalizations {
   String get group_approvalKindUpload => 'file upload';
 
   @override
+  String get group_taskStatusDone => 'Done';
+
+  @override
+  String get group_taskStatusPending => 'Pending';
+
+  @override
+  String get group_taskStatusUnmarked => 'Unmarked';
+
+  @override
   String dispatch_title(String agentName) {
     return 'Dispatch · $agentName';
   }

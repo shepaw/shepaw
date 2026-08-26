@@ -4875,6 +4875,15 @@ class AppLocalizationsZh extends AppLocalizations {
   String get group_approvalKindUpload => '文件上传';
 
   @override
+  String get group_taskStatusDone => '已完成';
+
+  @override
+  String get group_taskStatusPending => '未完成';
+
+  @override
+  String get group_taskStatusUnmarked => '未标注';
+
+  @override
   String dispatch_title(String agentName) {
     return '任务派发 · $agentName';
   }

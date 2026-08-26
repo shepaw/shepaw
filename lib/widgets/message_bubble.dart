@@ -29,6 +29,7 @@ import 'avatar_image.dart';
 import 'chat/sticky_in_view_header.dart';
 import '../services/she_service.dart';
 import '../services/error_handler_service.dart';
+import '../services/group/group_task_status.dart';
 
 class MessageBubble extends StatelessWidget {
   static const double avatarSize = 32;
@@ -325,6 +326,49 @@ class MessageBubble extends StatelessWidget {
     return message.from.name;
   }
 
+  Widget? _buildTaskStatusChip(BuildContext context) {
+    if (isMyMessage || !message.from.isAgent) return null;
+    final info = GroupTaskStatusParser.displayInfo(
+      content: message.content,
+      metadata: message.metadata,
+    );
+    if (info == null) return null;
+
+    final l10n = AppLocalizations.of(context);
+    final (label, color) = switch (info.status) {
+      GroupMemberTaskStatus.done => (
+          l10n.group_taskStatusDone,
+          Colors.green,
+        ),
+      GroupMemberTaskStatus.pending => (
+          l10n.group_taskStatusPending,
+          Colors.orange,
+        ),
+      GroupMemberTaskStatus.missing => (
+          l10n.group_taskStatusUnmarked,
+          Colors.grey,
+        ),
+    };
+    final chip = Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Text(
+        label,
+        style: TextStyle(
+          fontSize: 10,
+          fontWeight: FontWeight.w600,
+          color: color is MaterialColor ? color[800] : color,
+        ),
+      ),
+    );
+    final reason = info.reason;
+    if (reason == null || reason.isEmpty) return chip;
+    return Tooltip(message: reason, child: chip);
+  }
+
   /// Collapsed body: home conversation-list style; tap row to expand.
   Widget _buildCollapsedListTile(BuildContext context) {
     final onToggle = onToggleBodyCollapse;
@@ -347,14 +391,25 @@ class MessageBubble extends StatelessWidget {
                     Row(
                       children: [
                         Expanded(
-                          child: Text(
-                            _senderDisplayName(context),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(
-                              fontSize: 14,
-                              fontWeight: FontWeight.w500,
-                            ),
+                          child: Row(
+                            children: [
+                              Flexible(
+                                child: Text(
+                                  _senderDisplayName(context),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.w500,
+                                  ),
+                                ),
+                              ),
+                              if (_buildTaskStatusChip(context)
+                                  case final chip?) ...[
+                                const SizedBox(width: 6),
+                                chip,
+                              ],
+                            ],
                           ),
                         ),
                         const SizedBox(width: 8),
@@ -405,8 +460,9 @@ class MessageBubble extends StatelessWidget {
       case MessageType.audio:
         return '🎤';
       default:
-        final text =
-            message.content.replaceAll(RegExp(r'\s+'), ' ').trim();
+        final text = GroupTaskStatusParser.strip(message.content)
+            .replaceAll(RegExp(r'\s+'), ' ')
+            .trim();
         return text.isEmpty ? '…' : text;
     }
   }
@@ -462,6 +518,10 @@ class MessageBubble extends StatelessWidget {
                   ),
                 ),
               ),
+              if (_buildTaskStatusChip(context) case final chip?) ...[
+                const SizedBox(width: 6),
+                chip,
+              ],
               if (isStreaming) ...[
                 const SizedBox(width: 4),
                 Text(
@@ -796,8 +856,12 @@ class MessageBubble extends StatelessWidget {
           isMyMessage: isMyMessage,
         );
       default:
-        final rawContent = message.content.isEmpty ? '...' : message.content;
-        final content = _processContentWithMentions(rawContent, message.metadata);
+        final displayText = GroupTaskStatusParser.strip(message.content);
+        final rawContent = displayText.isEmpty && message.content.isEmpty
+            ? '...'
+            : displayText;
+        final content =
+            _processContentWithMentions(rawContent, message.metadata);
         final styleSheet = _getStyleSheet(isMyMessage, Theme.of(context).primaryColor);
         final markdownBody = MarkdownBody(
           data: content,
@@ -811,7 +875,7 @@ class MessageBubble extends StatelessWidget {
           styleSheet: styleSheet,
         );
         final markdownWidget = _wrapWithTextSelection(markdownBody);
-        final hasAnswer = message.content.trim().isNotEmpty;
+        final hasAnswer = displayText.trim().isNotEmpty;
 
         final progressSection = _buildProgressCollapsibleSection(
           context,

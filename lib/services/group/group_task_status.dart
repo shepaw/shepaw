@@ -40,10 +40,55 @@ class GroupPendingMember {
 class GroupTaskStatusParser {
   GroupTaskStatusParser._();
 
+  static const metadataStatusKey = 'task_status';
+  static const metadataReasonKey = 'task_status_reason';
+
   static final RegExp _statusTag = RegExp(
     r'\[TASK_STATUS:\s*(done|pending)\s*\](?:\s*(?:原因|reason)\s*[:：]\s*(.*))?',
     caseSensitive: false,
   );
+
+  /// Remove every `[TASK_STATUS]` annotation so bubbles / clipboard stay clean.
+  static String strip(String content) {
+    if (content.isEmpty || !_statusTag.hasMatch(content)) return content;
+    var out = content.replaceAll(_statusTag, '');
+    out = out.replaceAll(RegExp(r'[ \t]+\n'), '\n');
+    out = out.replaceAll(RegExp(r'\n{3,}'), '\n\n');
+    return out.trim();
+  }
+
+  /// Status to render on a member bubble. Prefers persisted metadata; falls
+  /// back to a tag still sitting in [content] (streaming / older rows).
+  ///
+  /// Returns null when there is nothing to show: empty / `[SKIP]`, or a
+  /// historical reply with neither metadata nor a tag (do not badge every
+  /// pre-gate member message as unmarked).
+  static GroupMemberTaskStatusInfo? displayInfo({
+    required String content,
+    Map<String, dynamic>? metadata,
+  }) {
+    final raw = metadata?[metadataStatusKey];
+    if (raw is String) {
+      final status = switch (raw) {
+        'done' => GroupMemberTaskStatus.done,
+        'pending' => GroupMemberTaskStatus.pending,
+        'missing' => GroupMemberTaskStatus.missing,
+        _ => null,
+      };
+      if (status != null) {
+        final reason = metadata?[metadataReasonKey] as String?;
+        final trimmed = reason?.trim();
+        return GroupMemberTaskStatusInfo(
+          status: status,
+          reason: (trimmed != null && trimmed.isNotEmpty) ? trimmed : null,
+        );
+      }
+    }
+    final parsed = parse(content);
+    if (!parsed.applicable) return null;
+    if (parsed.status == GroupMemberTaskStatus.missing) return null;
+    return parsed;
+  }
 
   /// Parse the last `[TASK_STATUS]` tag in [content]. Empty / `[SKIP]` replies
   /// are not a status at all — callers should not treat them as blocking.

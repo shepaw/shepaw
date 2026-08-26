@@ -133,6 +133,71 @@ void main() {
     });
   });
 
+  group('GroupTaskStatusParser.strip', () {
+    test('removes last-line tag and reason', () {
+      expect(
+        GroupTaskStatusParser.strip('写完了报告\n[TASK_STATUS: done]'),
+        '写完了报告',
+      );
+      expect(
+        GroupTaskStatusParser.strip('还差图\n[TASK_STATUS: pending] 原因：缺图'),
+        '还差图',
+      );
+    });
+
+    test('strips every tag when several are present', () {
+      expect(
+        GroupTaskStatusParser.strip(
+          '[TASK_STATUS: done]\n中间说明\n[TASK_STATUS: pending] 原因：还要改',
+        ),
+        '中间说明',
+      );
+    });
+
+    test('is a no-op when there is no tag', () {
+      expect(GroupTaskStatusParser.strip('普通回复'), '普通回复');
+      expect(GroupTaskStatusParser.strip(''), '');
+    });
+  });
+
+  group('GroupTaskStatusParser.displayInfo', () {
+    test('prefers metadata over leftover content tag', () {
+      final info = GroupTaskStatusParser.displayInfo(
+        content: '正文\n[TASK_STATUS: pending] 原因：旧',
+        metadata: {
+          GroupTaskStatusParser.metadataStatusKey: 'done',
+        },
+      );
+      expect(info?.status, GroupMemberTaskStatus.done);
+      expect(info?.reason, isNull);
+    });
+
+    test('falls back to content tag when metadata is absent', () {
+      final info = GroupTaskStatusParser.displayInfo(
+        content: '还差图\n[TASK_STATUS: pending] 原因：缺图',
+      );
+      expect(info?.status, GroupMemberTaskStatus.pending);
+      expect(info?.reason, '缺图');
+    });
+
+    test('does not badge a historical reply with neither metadata nor tag', () {
+      expect(
+        GroupTaskStatusParser.displayInfo(content: '很久以前的成员回复'),
+        isNull,
+      );
+    });
+
+    test('metadata missing is shown as unmarked', () {
+      final info = GroupTaskStatusParser.displayInfo(
+        content: '忘了标注',
+        metadata: {
+          GroupTaskStatusParser.metadataStatusKey: 'missing',
+        },
+      );
+      expect(info?.status, GroupMemberTaskStatus.missing);
+    });
+  });
+
   group('GroupBackgroundInterrupt', () {
     test('only channels with a dead ACP in-flight task are selected', () {
       final tasks = <String, Map<String, GroupActiveTask>>{

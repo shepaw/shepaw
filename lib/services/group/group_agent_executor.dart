@@ -2029,9 +2029,9 @@ class GroupAgentExecutor {
       meta[LlmTokenUsage.metadataKey] = turnTokenUsage.toJson();
     }
     if (memberStatus != null && memberStatus.applicable) {
-      meta['task_status'] = memberStatus.status.name;
+      meta[GroupTaskStatusParser.metadataStatusKey] = memberStatus.status.name;
       if (memberStatus.reason != null) {
-        meta['task_status_reason'] = memberStatus.reason;
+        meta[GroupTaskStatusParser.metadataReasonKey] = memberStatus.reason;
       }
     }
     if (actionConfirmationData != null)
@@ -2072,10 +2072,15 @@ class GroupAgentExecutor {
 
     // Save to DB — failure here should NOT remove the already-displayed message
     String? savedMessageId;
+    // Keep the annotation on GroupTurnResult so the orchestration gate can
+    // still parse it; persist a clean body so bubbles / copy don't show the tag.
+    final persistedContent = isAdmin
+        ? responseContent
+        : GroupTaskStatusParser.strip(responseContent);
     try {
       final agentResponse = Message(
         id: GroupMailboxSavePlan.messageIdFor(mailboxReply, _uuid.v4()),
-        content: responseContent,
+        content: persistedContent,
         timestampMs: DateTime.now().millisecondsSinceEpoch,
         from: MessageFrom(id: agent.id, type: 'agent', name: agent.name),
         to: MessageFrom(id: userId, type: 'user', name: userName),
@@ -2090,7 +2095,7 @@ class GroupAgentExecutor {
         senderId: agent.id,
         senderType: 'agent',
         senderName: agent.name,
-        content: responseContent,
+        content: persistedContent,
         messageType: 'text',
         metadata: messageMetadata,
         // 信箱回复的确定性 id 可能与推送拉取路径已插入的行冲突——ignore
@@ -2111,7 +2116,7 @@ class GroupAgentExecutor {
         inboundContent: content,
         agentId: agent.id,
         agentName: agent.name,
-        replyContent: responseContent,
+        replyContent: persistedContent,
         replyMetadata: messageMetadata,
         sourceMessageId: agentResponse.id,
       );

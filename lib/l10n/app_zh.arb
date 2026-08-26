@@ -2918,6 +2918,9 @@
   "group_approvalKindForm": "表单填写",
   "group_approvalKindSelect": "选项确认",
   "group_approvalKindUpload": "文件上传",
+  "group_taskStatusDone": "已完成",
+  "group_taskStatusPending": "未完成",
+  "group_taskStatusUnmarked": "未标注",
   "dispatch_title": "任务派发 · {agentName}",
   "@dispatch_title": {
     "placeholders": {

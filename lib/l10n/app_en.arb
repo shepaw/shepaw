@@ -2440,6 +2440,9 @@
   "group_approvalKindForm": "form input",
   "group_approvalKindSelect": "selection",
   "group_approvalKindUpload": "file upload",
+  "group_taskStatusDone": "Done",
+  "group_taskStatusPending": "Pending",
+  "group_taskStatusUnmarked": "Unmarked",
   "dispatch_title": "Dispatch · {agentName}",
   "@dispatch_title": {
     "placeholders": {

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../../models/message.dart';
+import '../../services/group/group_task_status.dart';
 import '../../services/local_user_identity.dart';
 import '../../utils/message_utils.dart';
 import '../../l10n/app_localizations.dart';
@@ -53,7 +54,9 @@ OverlayEntry showMessageContextMenu(
     // no-ops when the selection is empty (common on mobile before Markdown
     // selectables finish registering / selectAll races), which looked like a
     // successful Copy with nothing pasted.
-    Clipboard.setData(ClipboardData(text: message.content));
+    Clipboard.setData(ClipboardData(
+      text: GroupTaskStatusParser.strip(message.content),
+    ));
     showTopToast(
       context,
       menuL10n.chat_copiedToClipboard,

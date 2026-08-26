@@ -8936,6 +8936,24 @@ abstract class AppLocalizations {
   /// **'文件上传'**
   String get group_approvalKindUpload;
 
+  /// No description provided for @group_taskStatusDone.
+  ///
+  /// In zh, this message translates to:
+  /// **'已完成'**
+  String get group_taskStatusDone;
+
+  /// No description provided for @group_taskStatusPending.
+  ///
+  /// In zh, this message translates to:
+  /// **'未完成'**
+  String get group_taskStatusPending;
+
+  /// No description provided for @group_taskStatusUnmarked.
+  ///
+  /// In zh, this message translates to:
+  /// **'未标注'**
+  String get group_taskStatusUnmarked;
+
   /// No description provided for @dispatch_title.
   ///
   /// In zh, this message translates to:
