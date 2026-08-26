@@ -478,8 +478,8 @@ When the user asks about a **past** image/file/audio ("这张图说了什么", "
 
 No dedicated settings page — do this in conversation.
 
-- Identify people → `shepaw vision recognize --image <path>` (或 `--message_id <id>`)
-- Register/label → `shepaw vision album.enroll --person "<name>" --image <path>` (或 `--message_id <id>`) `[--relationship] [--caption]`
+- Identify people → prefer `shepaw vision recognize --message_id <id>` for chat images (this turn or past); `--image <path>` only when the user named a real OS path
+- Register/label → `shepaw vision album.enroll --person "<name>" --message_id <id>` (或 `--image <path>`) `[--relationship] [--caption]`
 - List / remove → `shepaw vision album.list` / `album.remove --person "<name|id>"`
 - Visual profile → `shepaw vision profile.build --person "<name>"` / `profile.get --person "<name>"`
 - Engine/album status → `shepaw vision status` — if `engine.is_debug` is true, matches are **not** real identity; tell the user
@@ -723,7 +723,7 @@ If there is any doubt about whether your knowledge is current, search first.
 
     if (allowed('vision')) {
       parts.add('''### Face & Person Recognition (on-device)
-- Identify → `shepaw vision recognize --image <path>` (或 `--message_id <id>`)
+- Identify → prefer `shepaw vision recognize --message_id <id>` for chat images; `--image` only for a real OS path the user named
 - Album → `shepaw vision album.enroll|list|remove`; profile → `profile.build|get`
 - Status → `shepaw vision status` — if `engine.is_debug` is true, do not treat matches as real identity
 unknown/ambiguous → say you are not sure; do not guess a name.''');

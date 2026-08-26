@@ -126,6 +126,14 @@ void main() {
           reason: '技能应标明无 CLI、只能指路的功能');
       expect(joined, contains('engine.is_debug'),
           reason: '技能应警告 Debug 引擎不可当作真人脸');
+      expect(joined, contains('我的二维码'),
+          reason: '隧道入口在配对页「我的二维码」，不是设置');
+      expect(joined, contains('shepaw://pair'),
+          reason: '远端 Agent 应走扫码/配对码，而不是共享 Token');
+      expect(joined, contains('没有「和这台手机/电脑当聊天对象」'),
+          reason: '设备对人聊天已关闭，不能教用户去点设备会话');
+      expect(joined, contains('### 2.12 灵魂、记忆、认知与个人档案'),
+          reason: '应能用人话区分档案/灵魂/记忆/认知');
 
       // 每个 references 文件以对应层级标题开头（02→第 2 层 … 06→第 6 层）
       final layerHeadings = [

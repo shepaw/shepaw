@@ -13,7 +13,7 @@ description: 当用户询问 ShePaw 应用或 She 生态系统的使用方法、
 
 | 用户问什么 | 看哪一层 |
 |-----------|---------|
-| 界面入口在哪、怎么添加/配置 Agent、模型管理、聊天、群组、1:1 工作流、储物袋、配对、她的朋友圈、备份、安全、认人/人脸/参考相册 | **第 2 层** 用户操作层（`references/02-user-operations.md`） |
+| 界面入口在哪、怎么添加/配置 Agent、扫码接入、模型管理、聊天、群组、1:1 工作流、储物袋、配对/隧道、她的朋友圈、备份、安全、认人/人脸/参考相册、灵魂/记忆/档案 | **第 2 层** 用户操作层（`references/02-user-operations.md`） |
 | 你自己（She）有哪些工具、`shepaw` CLI 怎么用、哪些事只能指路不能代劳 | **第 3 层** 工具能力层（`references/03-shepaw-cli.md`） |
 | Channel 收件箱/隧道是干嘛的、外部 Agent（agent-bridge）怎么接入 | **第 4 层** 基础设施层（`references/04-ecosystem-infra.md`） |
 | 连接失败、功能异常、认人不准、常见问题 | **第 5 层** 排障与 FAQ（`references/05-troubleshooting.md`） |
