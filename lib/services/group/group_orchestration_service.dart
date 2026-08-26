@@ -1056,8 +1056,9 @@ class GroupOrchestrationService {
         } catch (e) {
           LoggerService().error('Admin agent ${adminAgent.name} uncaught error',
               tag: 'GroupOrchestrationService', error: e);
-          onAgentDone?.call(adminAgent.id, adminAgent.name,
-              adminResponseContent.trim().isEmpty);
+          // M1: 执行器错误路径已不回调 onAgentDone，这里作为唯一上报方；回合
+          // 失败一律按 skipped 上报（true），避免半截回复被当作正常完成。
+          onAgentDone?.call(adminAgent.id, adminAgent.name, true);
         }
         currentRound++;
         final firstInbox = await _readRoundInbox();
@@ -1212,8 +1213,8 @@ class GroupOrchestrationService {
                     'Admin abort-summarize (loop-start cancel) error',
                     tag: 'GroupOrchestrationService',
                     error: e);
-                onAgentDone?.call(adminAgent.id, adminAgent.name,
-                    adminResponseContent.trim().isEmpty);
+                // M1: 唯一上报方；失败一律 skipped。
+                onAgentDone?.call(adminAgent.id, adminAgent.name, true);
               }
               // Hide the closing {"done": true} JSON block from the user.
               await _dispatchParser.stripDispatchJsonFromLastMessage(
@@ -1287,8 +1288,8 @@ class GroupOrchestrationService {
             } catch (e) {
               LoggerService().error('Admin abort-summarize (maxRounds) error',
                   tag: 'GroupOrchestrationService', error: e);
-              onAgentDone?.call(adminAgent.id, adminAgent.name,
-                  adminResponseContent.trim().isEmpty);
+              // M1: 唯一上报方；失败一律 skipped。
+              onAgentDone?.call(adminAgent.id, adminAgent.name, true);
             }
             // Hide the closing {"done": true} JSON block from the user.
             await _dispatchParser.stripDispatchJsonFromLastMessage(
@@ -1380,8 +1381,8 @@ class GroupOrchestrationService {
                     'Admin nudge error at round $currentRound',
                     tag: 'GroupOrchestrationService',
                     error: e);
-                onAgentDone?.call(adminAgent.id, adminAgent.name,
-                    adminResponseContent.trim().isEmpty);
+                // M1: 唯一上报方；失败一律 skipped。
+                onAgentDone?.call(adminAgent.id, adminAgent.name, true);
                 break;
               }
               currentRound++;
@@ -1534,8 +1535,8 @@ class GroupOrchestrationService {
                     'Admin abort-summarize (continue cancel) error',
                     tag: 'GroupOrchestrationService',
                     error: e);
-                onAgentDone?.call(adminAgent.id, adminAgent.name,
-                    adminResponseContent.trim().isEmpty);
+                // M1: 唯一上报方；失败一律 skipped。
+                onAgentDone?.call(adminAgent.id, adminAgent.name, true);
               }
               emitRoundEnd(summary: '管理员继续处理在第 $currentRound 轮被取消');
               break;
@@ -1587,8 +1588,8 @@ class GroupOrchestrationService {
                   'Admin continue error at round $currentRound',
                   tag: 'GroupOrchestrationService',
                   error: e);
-              onAgentDone?.call(adminAgent.id, adminAgent.name,
-                  adminResponseContent.trim().isEmpty);
+              // M1: 唯一上报方；失败一律 skipped。
+              onAgentDone?.call(adminAgent.id, adminAgent.name, true);
               break;
             }
             currentRound++;
@@ -1848,8 +1849,8 @@ class GroupOrchestrationService {
             } catch (e) {
               LoggerService().error('Admin abort-summarize error',
                   tag: 'GroupOrchestrationService', error: e);
-              onAgentDone?.call(adminAgent.id, adminAgent.name,
-                  adminResponseContent.trim().isEmpty);
+              // M1: 唯一上报方；失败一律 skipped。
+              onAgentDone?.call(adminAgent.id, adminAgent.name, true);
             }
             // Hide the closing {"done": true} JSON block from the user.
             await _dispatchParser.stripDispatchJsonFromLastMessage(
@@ -1934,8 +1935,8 @@ class GroupOrchestrationService {
                 'Admin summarize error at round $currentRound',
                 tag: 'GroupOrchestrationService',
                 error: e);
-            onAgentDone?.call(adminAgent.id, adminAgent.name,
-                adminResponseContent.trim().isEmpty);
+            // M1: 唯一上报方；失败一律 skipped。
+            onAgentDone?.call(adminAgent.id, adminAgent.name, true);
             break;
           }
           await _emitOrchestrationRound(

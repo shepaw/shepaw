@@ -2803,7 +2803,8 @@ $originalQuestion
               summary: e.toString(),
               payload: {'error': e.toString()},
             );
-            activeExec.onAgentDone?.call(agent.id, agent.name, false);
+            // M1: 步骤失败按 skipped 上报（true），不再是 false。
+            activeExec.onAgentDone?.call(agent.id, agent.name, true);
           }
         });
 

@@ -228,7 +228,9 @@ class GroupAgentExecutor {
         metadata['file_id'] = fileId;
       }
 
-      final messageId = 'file_${DateTime.now().millisecondsSinceEpoch}';
+      // M10: 毫秒时间戳 id 在同毫秒两条文件消息时冲突（ConflictAlgorithm.abort
+      // + try/catch 吞异常 → 第二条静默丢失）。改用 uuid 保证唯一。
+      final messageId = 'file_${_uuid.v4()}';
       await _db.createMessage(
         id: messageId,
         channelId: channelId,
@@ -485,6 +487,21 @@ class GroupAgentExecutor {
         : null;
 
     Future<void>? peerApprovalInFlight;
+
+    // M5: 同一 (channel, agent) 已有进行中的回合时，并发重复派发（如同一阶段
+    // 两条 step 指向同一 agent，或 cascade 与 @提及重叠）会覆盖 map 项，且先
+    // 完成者会把后者的任务一并 remove 掉，破坏 typing/reattach；本地 agent
+    // 还会并发跑两次 LLM 回合。这里直接跳过本次调用，让第一个回合独占该 agent。
+    final existingTask = _activeGroupTasks[channelId]?[agent.id];
+    if (existingTask != null && !existingTask.isComplete) {
+      LoggerService().debug(
+        'Agent ${agent.name} already active in channel $channelId; '
+        'skipping duplicate turn',
+        tag: 'GroupAgentExecutor',
+      );
+      onAgentDone?.call(agent.id, agent.name, true);
+      return const GroupTurnResult();
+    }
 
     // Register a GroupActiveTask so the UI can reattach after navigating away
     final groupTask = GroupActiveTask(
@@ -813,10 +830,18 @@ class GroupAgentExecutor {
                             historyMessages: historyMessages,
                             mentionedAgentIds: [targetAgent.id],
                             isFirstMessage: false,
+                            // M9: 递归 step 执行补齐上下文——目标为 admin 时启用
+                            // 管理工具；失败进入 failedAgentNames；peer 审批注册
+                            // workflow；trace 树挂在当前回合（groupTraceId）下。
+                            isAdmin: adminAgent != null && targetAgent.id == adminAgent.id,
                             messageVersion: messageVersion,
                             channelMembers: channelMembers,
                             customSystemPrompt: customSystemPrompt,
                             mentionMode: mentionMode,
+                            failedAgentNames: failedAgentNames,
+                            isWorkflowStep: isWorkflowStep,
+                            workflowId: workflowId,
+                            workflowStepId: workflowStepId,
                             acpCancellationToken: acpCancellationToken,
                             onStreamChunk: (aid, anm, chunk) {
                               stepBuffer.write(chunk);
@@ -824,6 +849,7 @@ class GroupAgentExecutor {
                             },
                             onAgentDone: onAgentDone,
                             onInteractionRequest: onInteractionRequest,
+                            orchestrationTraceId: groupTraceId,
                           );
                         } catch (e) {
                           // processGroupAgent rethrows member failures so the
@@ -836,12 +862,19 @@ class GroupAgentExecutor {
                       });
 
                       // Execute CLI command (members: store + help only)
-                      final cliResult = await _executeShepawCliForGroup(
-                        args: args,
-                        agent: agent,
-                        isAdmin: isAdmin,
-                        channelId: channelId,
-                      );
+                      final String cliResult;
+                      try {
+                        cliResult = await _executeShepawCliForGroup(
+                          args: args,
+                          agent: agent,
+                          isAdmin: isAdmin,
+                          channelId: channelId,
+                        );
+                      } finally {
+                        // M9: per-channel step 执行回调注册后必须清理，
+                        // 避免闭包捕获跨轮残留（下次使用前会重新注册）。
+                        WorkflowDispatchCommand.clearExecuteStepFn(channelId);
+                      }
                       LoggerService().info(
                         'CLI result (${args['namespace']} ${args['subcommand'] ?? ''}): ${cliResult.length > 200 ? '${cliResult.substring(0, 200)}...' : cliResult}',
                         tag: 'GroupAgentExecutor',
@@ -986,7 +1019,8 @@ class GroupAgentExecutor {
           }
           updateTypingAgentIds();
           ForegroundTaskService().releaseTask(agent.name);
-          onAgentDone?.call(agent.id, agent.name, true);
+          // M1: 不在执行器错误路径上报 onAgentDone——调用方（编排 .catchError /
+          // 工作流 catch）持有该 turn 的上报权，rethrow 后由调用方统一回调一次。
           // Propagate so the orchestration layer records this member in
           // failedAgentNames (and workflow steps hit failStep) — the admin's
           // review/summarize round must know the member failed.
@@ -1216,7 +1250,7 @@ class GroupAgentExecutor {
           }
           updateTypingAgentIds();
           ForegroundTaskService().releaseTask(agent.name);
-          onAgentDone?.call(agent.id, agent.name, true);
+          // M1: 调用方 catch 统一上报 onAgentDone，执行器仅负责清理 + rethrow。
           // Propagate so orchestration records failedAgentNames / workflow
           // steps hit failStep (same contract as the local path).
           rethrow;
@@ -1770,6 +1804,13 @@ class GroupAgentExecutor {
       } catch (e) {
         LoggerService().error('Group agent ${agent.name} ACP error',
             tag: 'GroupAgentExecutor', error: e);
+        // M11: ACP 错误路径泄漏推理会话——非重试连接异常、sendChatMessage 抛错、
+        // Agent busy、3h 超时、mailbox 兜底异常都不走 onTaskError（远程任务未
+        // 启动或仍在挂起），groupTraceId 会话会停在 running。这里统一收尾；
+        // 若 onTaskError 已先收尾，endRound/endSession 对已移除的会话是 no-op。
+        infLogGroup.endRound(groupTraceId, stopReason: 'error');
+        infLogGroup.endSession(groupTraceId, InferenceStatus.error,
+            error: '$e');
         if (connection != null && taskId != null) {
           connection.unregisterTaskCallbacks(taskId);
           acpCancellationToken?.unbind(connection, taskId);
@@ -1791,7 +1832,7 @@ class GroupAgentExecutor {
           }
           updateTypingAgentIds();
           ForegroundTaskService().releaseTask(agent.name);
-          onAgentDone?.call(agent.id, agent.name, true);
+          // M1: 调用方 catch 统一上报 onAgentDone，执行器仅负责清理 + rethrow。
           // Propagate so orchestration records failedAgentNames / workflow
           // steps hit failStep (same contract as the local/peer paths).
           rethrow;
@@ -1850,7 +1891,7 @@ class GroupAgentExecutor {
       }
       updateTypingAgentIds();
       ForegroundTaskService().releaseTask(agent.name);
-      onAgentDone?.call(agent.id, agent.name, true);
+      // M1: 调用方 catch 统一上报 onAgentDone，执行器仅负责清理 + throw。
       // Not inside a catch context here — throw the original error so the
       // orchestration layer records failedAgentNames / workflow failStep.
       throw midStreamError;
@@ -1863,23 +1904,6 @@ class GroupAgentExecutor {
                 ?.trim()
                 .isNotEmpty ==
             true;
-
-    if ((responseContent.isEmpty || responseContent.contains('[SKIP]')) &&
-        !hasPeerApprovalCard &&
-        !hasProgressContent) {
-      LoggerService()
-          .debug('Agent ${agent.name} skipped', tag: 'GroupAgentExecutor');
-      groupTask.isComplete = true;
-      groupTask.onTaskFinished?.call();
-      _activeGroupTasks[channelId]?.remove(agent.id);
-      if (_activeGroupTasks[channelId]?.isEmpty == true) {
-        _activeGroupTasks.remove(channelId);
-      }
-      updateTypingAgentIds();
-      ForegroundTaskService().releaseTask(agent.name);
-      onAgentDone?.call(agent.id, agent.name, true);
-      return GroupTurnResult(content: responseContent);
-    }
 
     if (responseContent.isEmpty && hasPeerApprovalCard) {
       // Keep a visible bubble for peer approvals even when the agent emitted
@@ -1947,6 +1971,30 @@ class GroupAgentExecutor {
         .hasMatch(responseContent)) {
       responseContent =
           GroupDispatchParser.stripDispatchJsonBlocks(responseContent);
+    }
+
+    // M12: 空响应/[SKIP] 早退必须发生在统一提及捕获（上方）之后——成员可能在
+    // 这轮只声明了 group_mention 而未输出正文，提前 return 会丢激活意图，
+    // runMentionCascade 就无法唤醒被提及者。这里返回已解析的 mentions。
+    if ((responseContent.isEmpty || responseContent.contains('[SKIP]')) &&
+        !hasPeerApprovalCard &&
+        !hasProgressContent) {
+      LoggerService()
+          .debug('Agent ${agent.name} skipped', tag: 'GroupAgentExecutor');
+      groupTask.isComplete = true;
+      groupTask.onTaskFinished?.call();
+      _activeGroupTasks[channelId]?.remove(agent.id);
+      if (_activeGroupTasks[channelId]?.isEmpty == true) {
+        _activeGroupTasks.remove(channelId);
+      }
+      updateTypingAgentIds();
+      ForegroundTaskService().releaseTask(agent.name);
+      onAgentDone?.call(agent.id, agent.name, true);
+      return GroupTurnResult(
+        content: responseContent,
+        mentions: agentMentions,
+        unresolvedMentionNames: unresolvedMentionNames,
+      );
     }
 
     // Build metadata from captured UI tool calls
