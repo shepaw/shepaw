@@ -1,4 +1,3 @@
-import 'dart:io';
 import '../../cli_base.dart';
 import '../../../services/skill_registry.dart';
 
@@ -46,10 +45,10 @@ class SkillsDetailCommand extends CliCommand {
       };
     }
 
-    // 读取 SKILL.md 的完整内容
+    // 读取技能全文（package 技能为 SKILL.md + references/*.md 的拼接）
     String? content;
     try {
-      content = await File(skill.filePath).readAsString();
+      content = await SkillRegistry.instance.readSkillContent(skill.toolName);
     } catch (_) {
       content = null;
     }

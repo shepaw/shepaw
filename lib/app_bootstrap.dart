@@ -1,7 +1,8 @@
-import 'dart:io' show Platform;
+import 'dart:io' show Platform, Directory, File;
 import 'dart:async';
-import 'package:flutter/services.dart' show rootBundle;
+import 'package:flutter/services.dart' show rootBundle, AssetManifest;
 import 'package:flutter/widgets.dart';
+import 'package:path/path.dart' as p;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:uuid/uuid.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
@@ -356,20 +357,46 @@ class AppBootstrap {
   /// Seed 内置技能「ShePaw App Usage Guide」到技能目录，并确保 She 已启用。
   ///
   /// 预发布阶段：每次启动都从 assets 覆盖同步内置技能（改 assets 里的
-  /// SKILL.md 重启即生效）。发布后如需保护用户改动，再改为「仅缺失时写入」。
+  /// SKILL.md / references/*.md 重启即生效）。发布后如需保护用户改动，
+  /// 再改为「仅缺失时写入」。
   /// She 启用是幂等的：已启用则跳过。单步失败只记日志，绝不阻断启动。
   static const String _builtinAppGuideSkillTool =
       'skill_shepaw_app_usage_guide';
-  static const String _builtinAppGuideAsset =
-      'assets/skills/app-usage-guide/SKILL.md';
+  static const String _builtinAppGuideAssetDir =
+      'assets/skills/app-usage-guide';
 
   static Future<void> _seedBuiltinSkills() async {
+    final Directory tempDir =
+        await Directory.systemTemp.createTemp('shepaw_builtin_skill_');
     try {
-      // 1. 从 assets 覆盖同步内置技能（importSkillMd overwrite 会重写
-      //    <skillsDir>/shepaw_app_usage_guide/SKILL.md 并 rescan）
-      final content = await rootBundle.loadString(_builtinAppGuideAsset);
+      // 1. 枚举 assets 下内置技能目录的全部文件（SKILL.md + references/*.md），
+      //    物化到临时目录后以「目录包」形式导入，保留 SKILL.md 与 references/
+      //    的相对结构——readSkillContent 会按 SKILL.md 在前、其余按路径排序拼接。
+      final manifest = await AssetManifest.loadFromAssetBundle(rootBundle);
+      final assetKeys = manifest
+          .listAssets()
+          .where((k) => k.startsWith('$_builtinAppGuideAssetDir/'))
+          .toList();
+      if (assetKeys.isEmpty) {
+        _log.warning(
+          'No assets found under $_builtinAppGuideAssetDir/, skip seeding',
+          tag: 'App',
+        );
+        return;
+      }
+      final sourceDir = Directory(p.join(tempDir.path, 'app-usage-guide'));
+      for (final key in assetKeys) {
+        final rel = key.substring(_builtinAppGuideAssetDir.length + 1);
+        final target = File(p.join(sourceDir.path, rel));
+        await target.parent.create(recursive: true);
+        final data = await rootBundle.load(key);
+        await target.writeAsBytes(
+          data.buffer.asUint8List(data.offsetInBytes, data.lengthInBytes),
+        );
+      }
+
       await SkillRegistry.instance
-          .importSkillMd(content, 'app-usage-guide', overwrite: true);
+          .importSkillDirectory(sourceDir.path, overwrite: true);
       _log.info('Seeded built-in skill $_builtinAppGuideSkillTool', tag: 'App');
 
       // 2. 确保 She 已启用该技能——enabled_skills 决定 She 的 prompt 里的
@@ -389,6 +416,10 @@ class AppBootstrap {
       }
     } catch (e) {
       _log.error('Seed built-in skill failed', tag: 'App', error: e);
+    } finally {
+      if (await tempDir.exists()) {
+        await tempDir.delete(recursive: true);
+      }
     }
   }
 }

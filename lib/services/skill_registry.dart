@@ -55,6 +55,11 @@ class SkillDefinition {
   /// Total number of files in the skill directory.
   final int fileCount;
 
+  /// Whether this skill was discovered as a package — a dedicated subdirectory
+  /// whose content may span multiple markdown files — as opposed to a legacy
+  /// single-file skill. Package skills concatenate all `.md` files on read.
+  final bool isPackage;
+
   const SkillDefinition({
     required this.toolName,
     required this.displayName,
@@ -62,6 +67,7 @@ class SkillDefinition {
     required this.filePath,
     required this.directoryPath,
     required this.fileCount,
+    this.isPackage = false,
   });
 }
 
@@ -213,49 +219,9 @@ class SkillRegistry {
         }
       }
 
-      // 2. Recursively find the first SKILL.md (BFS by directory depth)
-      final skillMd = await _findSkillMd(tempDir);
-      if (skillMd == null) {
-        throw Exception('No SKILL.md found in the ZIP archive');
-      }
-
-      // 3. Parse front matter for name
-      final content = await skillMd.readAsString();
-      final fm = _parseFrontMatter(content);
-      final displayName = (fm.name != null && fm.name!.isNotEmpty)
-          ? fm.name!
-          : _extractHeadingName(content);
-      if (displayName == null || displayName.isEmpty) {
-        throw Exception(
-            'SKILL.md has no "name" in front matter and no # heading');
-      }
-
-      // 4. Conflict check
-      final toolName = 'skill_${_sanitizeName(displayName)}';
-      final existing = getDefinition(toolName);
-      if (existing != null && !overwrite) {
-        throw SkillImportConflictException(toolName, displayName);
-      }
-
-      // 5. Destination: <skillsDir>/<sanitized_name>/
-      final destName = _sanitizeName(displayName);
-      final destDir = Directory(p.join(_directoryPath, destName));
-      if (await destDir.exists()) {
-        await destDir.delete(recursive: true);
-      }
-      await destDir.create(recursive: true);
-
-      // 6. Copy SKILL.md, all siblings, and subdirectories recursively
-      final sourceDir = skillMd.parent;
-      await _copyDirectory(sourceDir, destDir);
-
-      // 7. Rescan and return
-      await rescan();
-      final newDef = getDefinition(toolName);
-      if (newDef == null) {
-        throw Exception('Imported skill not found after rescan');
-      }
-      return newDef;
+      // 2. Reuse importSkillDirectory: parses front matter, copies the
+      //    directory containing SKILL.md (incl. siblings & subdirs), rescans.
+      return await importSkillDirectory(tempDir.path, overwrite: overwrite);
     } finally {
       try {
         await tempDir.delete(recursive: true);
@@ -408,6 +374,70 @@ class SkillRegistry {
     return newDef;
   }
 
+  /// Imports a skill from a source directory that contains a `SKILL.md`.
+  ///
+  /// Storage layout: `<skillsDir>/<sanitized_name>/` — the whole source
+  /// directory (SKILL.md, sibling markdown files, subdirectories) is copied, so
+  /// package skills keep their `references/*.md` structure.
+  ///
+  /// The `name` field in `SKILL.md`'s YAML front matter is used as the skill
+  /// name, falling back to the first `# ` heading.
+  ///
+  /// Throws [SkillImportConflictException] on name conflict when overwrite=false.
+  Future<SkillDefinition> importSkillDirectory(
+    String sourceDirPath, {
+    bool overwrite = false,
+  }) async {
+    if (_directoryPath.isEmpty) {
+      throw Exception('Skill registry not initialized');
+    }
+    final sourceDir = Directory(sourceDirPath);
+    if (!await sourceDir.exists()) {
+      throw Exception('源目录不存在: $sourceDirPath');
+    }
+
+    // Resolve display name from SKILL.md front matter / heading
+    final skillMd = await _findSkillMd(sourceDir);
+    if (skillMd == null) {
+      throw Exception('No SKILL.md found in the source directory');
+    }
+    final content = await skillMd.readAsString();
+    final fm = _parseFrontMatter(content);
+    final displayName = (fm.name != null && fm.name!.isNotEmpty)
+        ? fm.name!
+        : _extractHeadingName(content);
+    if (displayName == null || displayName.isEmpty) {
+      throw Exception(
+          'SKILL.md has no "name" in front matter and no # heading');
+    }
+
+    // Conflict check
+    final toolName = 'skill_${_sanitizeName(displayName)}';
+    final existing = getDefinition(toolName);
+    if (existing != null && !overwrite) {
+      throw SkillImportConflictException(toolName, displayName);
+    }
+
+    // Destination: <skillsDir>/<sanitized_name>/
+    final destName = _sanitizeName(displayName);
+    final destDir = Directory(p.join(_directoryPath, destName));
+    if (await destDir.exists()) {
+      await destDir.delete(recursive: true);
+    }
+    await destDir.create(recursive: true);
+
+    // Copy the whole directory containing SKILL.md (incl. siblings & subdirs)
+    await _copyDirectory(skillMd.parent, destDir);
+
+    await rescan();
+
+    final newDef = getDefinition(toolName);
+    if (newDef == null) {
+      throw Exception('Imported skill not found after rescan');
+    }
+    return newDef;
+  }
+
   /// Deletes a skill by removing its directory and rescanning.
   Future<void> deleteSkill(String toolName) async {
     final def = getDefinition(toolName);
@@ -441,12 +471,34 @@ class SkillRegistry {
   // ---------------------------------------------------------------------------
 
   /// Reads the full markdown content of a skill at call time (not cached).
+  ///
+  /// Package skills (a dedicated subdirectory) return the concatenation of all
+  /// markdown files under the skill directory, `SKILL.md` first, then remaining
+  /// files sorted by relative path — so the top-level `SKILL.md` can serve as an
+  /// entry/index while detail lives in sibling `references/*.md`. Legacy single
+  /// file skills return just that file.
   Future<String> readSkillContent(String toolName) async {
     final def = getDefinition(toolName);
     if (def == null) return 'Error: skill "$toolName" not found.';
     try {
-      final file = File(def.filePath);
-      return await file.readAsString();
+      if (!def.isPackage) {
+        return await File(def.filePath).readAsString();
+      }
+      final files = await _skillMarkdownFiles(def.directoryPath);
+      if (files.isEmpty) {
+        return 'Error: no markdown files found for skill "$toolName".';
+      }
+      final parts = <String>[];
+      for (var i = 0; i < files.length; i++) {
+        final content = await File(files[i].path).readAsString();
+        if (i == 0) {
+          parts.add(content);
+        } else {
+          final rel = p.relative(files[i].path, from: def.directoryPath);
+          parts.add('<!-- ===== $rel ===== -->\n$content');
+        }
+      }
+      return parts.join('\n\n');
     } catch (e) {
       return 'Error reading skill file: $e';
     }
@@ -547,6 +599,27 @@ $skillLines''';
     return null;
   }
 
+  /// Returns all markdown files under [dirPath], with the top-level `SKILL.md`
+  /// first (case-insensitive), then remaining files sorted by absolute path for
+  /// deterministic concatenation across platforms.
+  Future<List<File>> _skillMarkdownFiles(String dirPath) async {
+    final dir = Directory(dirPath);
+    if (!await dir.exists()) return const [];
+    final files = dir
+        .listSync(recursive: true)
+        .whereType<File>()
+        .where((f) => f.path.toLowerCase().endsWith('.md'))
+        .toList();
+    files.sort((a, b) => a.path.compareTo(b.path));
+    final skillMdIndex =
+        files.indexWhere((f) => p.basename(f.path).toLowerCase() == 'skill.md');
+    if (skillMdIndex > 0) {
+      final skillMd = files.removeAt(skillMdIndex);
+      files.insert(0, skillMd);
+    }
+    return files;
+  }
+
   /// Parses a skill subdirectory into a [SkillDefinition].
   ///
   /// Looks for `SKILL.md` at the top level first; falls back to any `.md`
@@ -601,6 +674,7 @@ $skillLines''';
         filePath: mainFile.path,
         directoryPath: dir.path,
         fileCount: fileCount,
+        isPackage: true,
       );
     } catch (e) {
       return null;
@@ -636,6 +710,7 @@ $skillLines''';
         filePath: file.path,
         directoryPath: file.parent.path,
         fileCount: 1,
+        isPackage: false,
       );
     } catch (e) {
       return null;
