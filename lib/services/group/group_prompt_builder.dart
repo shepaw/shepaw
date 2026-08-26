@@ -22,6 +22,7 @@ class GroupPromptBuilder {
     bool isLoopSummarize = false,
     bool isAbortSummarize = false,
     bool isDispatchNudge = false,
+    bool isPendingStatusNudge = false,
     int? loopRound,
     String mentionMode = 'adminOnly',
     List<String> failedAgentNames = const [],
@@ -99,6 +100,8 @@ class GroupPromptBuilder {
                   : '';
               return '\n\n【当前状态】任务执行被中断（用户手动停止或超时）。$failedSection成员已完成了部分工作，请对已完成的工作做最终总结，向用户说明当前进度和结果。**请调用 `group_finish` 且 action=`done`，不要再委派任何成员。**';
             }()
+          : isPendingStatusNudge
+          ? '\n\n【当前状态】本轮仍有成员任务未完成（pending 或未标注 `[TASK_STATUS]`）。**禁止**调用 `group_finish`（action=`done`）。请立刻 `group_dispatch` 让他们补做，或 `group_finish`（action=`pause`）向用户说明并等待输入。不要调用 request_history，群聊历史已注入。'
           : isDispatchNudge
           ? '\n\n【当前状态】上一轮派发未成功（工具参数无效、未调用工具、或旧版文本 JSON 无法解析）。**尚未有任何成员被委派。**请立刻调用 `group_dispatch` 重新派活，或调用 `group_finish`（done/continue/pause）。不要调用 request_history，群聊历史已注入。'
           : isLoopSummarize
@@ -153,6 +156,7 @@ $memberList
 
 **硬性规则：**
 - 决定委派就必须调用 `group_dispatch`——只在自然语言中承诺「我来安排」而不调工具，系统不会派活
+- 系统会拦截：若本轮仍有成员标注 pending 或未标注任务状态，调用 `group_finish`（done）不会结束编排，你会收到纠正提示
 - **禁止**用 `shepaw context agents.chat` 向本群成员派活（那会发到私聊）
 - 群聊历史已注入上下文，**不要**调用 `request_history`
 $dispatchMemberNameSection

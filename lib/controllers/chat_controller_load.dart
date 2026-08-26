@@ -217,6 +217,17 @@ mixin _LoadOps on _ChatControllerBase {
         // 进程被杀后内存编排循环消亡：检查群工作空间最新编排状态，
         // 非终态时提示用户「发消息即可从断点继续」（幂等，同一轮次只提示一次）。
         await chatService.maybeNotifyInterruptedOrchestration(currentChannelId!);
+        final interruptedInfo =
+            chatService.getInterruptedTaskInfo(currentChannelId!);
+        if (interruptedInfo != null) {
+          chatService.clearInterruptedTaskInfo(currentChannelId!);
+          await reloadMessagesFromDB();
+          _emit(ShowRetrySnackBarEvent(
+            'chat_connectionInterrupted',
+            'chat_connectionInterruptedRetry',
+            interruptedInfo,
+          ));
+        }
       } else if (dmWorkflowEnabled) {
         // DM 工作流恢复：愈合孤儿步骤/续跑/重挂执行 UI（决策表频道无关）。
         // _reattachPendingPlanApproval 保持群聊专属——DM 审批卡片靠

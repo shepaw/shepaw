@@ -18,6 +18,7 @@ import 'group_event.dart';
 import 'group_prompt_builder.dart';
 import 'group_member_session_service.dart';
 import 'group_turn_result.dart';
+import 'group_task_status.dart';
 import 'planning_helpers.dart';
 import '../../models/mention_entry.dart';
 import '../../storage/context_bundle.dart';
@@ -1119,6 +1120,11 @@ class GroupOrchestrationService {
         var dispatchNudgeCount = 0;
         const maxDispatchNudges = 2;
 
+        // TASK_STATUS 硬门闩：成员 pending / 未标注时拒绝 group_finish(done)。
+        var pendingNudgeCount = 0;
+        const maxPendingNudges = 2;
+        var pendingFromLastRound = const <GroupPendingMember>[];
+
         // L3: 连续全失败轮计数器——成员全部失败时管理员反复重派只会空耗
         // （ACP 单轮最长 3h × maxRounds 50），连续 N 轮全失败即提前停止。
         var consecutiveAllFailedRounds = 0;
@@ -1482,6 +1488,88 @@ class GroupOrchestrationService {
           );
 
           if (delegatedIds.isEmpty && !adminWantsContinue) {
+            // Pause is the correct response to pending members — let it exit.
+            // Done / implicit-done while members are still pending is the
+            // false-completion hole: nudge (up to maxPendingNudges) then
+            // allow finish with a visible warning.
+            final finishingWithoutPause = !dispatch.isPause;
+            if (finishingWithoutPause && pendingFromLastRound.isNotEmpty) {
+              if (pendingNudgeCount < maxPendingNudges) {
+                pendingNudgeCount++;
+                LoggerService().warning(
+                  'Admin tried to finish at round $currentRound with pending members; nudging ($pendingNudgeCount/$maxPendingNudges)',
+                  tag: 'GroupOrchestrationService',
+                );
+                await _dispatchParser.stripDispatchJsonFromLastMessage(
+                    channelId, adminAgent.id);
+                final nudgeHistory = await loadAndTruncateHistory(channelId,
+                    excludeMessageId: userMessage.id);
+                adminResponseContent = '';
+                onAgentStart?.call(adminAgent.id, adminAgent.name);
+                try {
+                  adminTurn = await _executor.processGroupAgent(
+                    agent: adminAgent,
+                    channelId: channelId,
+                    content:
+                        '$effectiveContent\n\n${GroupTaskStatusParser.nudgeSystemContent(pendingFromLastRound)}',
+                    attachments: attachments,
+                    userId: userId,
+                    userName: userName,
+                    groupName: groupName,
+                    groupDescription: groupDescription,
+                    allAgents: agents,
+                    historyMessages: nudgeHistory,
+                    mentionedAgentIds: const [],
+                    isFirstMessage: false,
+                    isAdmin: true,
+                    isPendingStatusNudge: true,
+                    loopRound: currentRound + 1,
+                    messageVersion: messageVersion,
+                    channelMembers: channelMembers,
+                    customSystemPrompt: customSystemPrompt,
+                    mentionMode: mentionMode,
+                    acpCancellationToken: acpCancellationToken,
+                    onStreamChunk: (agentId, agentName, chunk) {
+                      adminResponseContent += chunk;
+                      onStreamChunk?.call(agentId, agentName, chunk);
+                    },
+                    onAgentDone: onAgentDone,
+                    onInteractionRequest: onInteractionRequestForAdmin,
+                    orchestrationTraceId: orchTraceId,
+                  );
+                } catch (e) {
+                  LoggerService().error(
+                      'Admin pending-status nudge error at round $currentRound',
+                      tag: 'GroupOrchestrationService',
+                      error: e);
+                  onAgentDone?.call(adminAgent.id, adminAgent.name, true);
+                  break;
+                }
+                final pendingInbox = await _readRoundInbox();
+                adminTurn = resolveAdminDecision(
+                  adminTurn,
+                  inboxDispatch: pendingInbox.dispatch,
+                  inboxFinish: pendingInbox.finish,
+                );
+                if (adminResponseContent.trim().isEmpty &&
+                    !adminTurn.hasOrchestrationSignal) {
+                  LoggerService().warning(
+                      'Admin pending-status nudge produced empty response at round $currentRound, stopping',
+                      tag: 'GroupOrchestrationService');
+                  await _saveOrchestrationSystemMessage(
+                    channelId,
+                    GroupTaskStatusParser.exhaustedWarning(pendingFromLastRound),
+                  );
+                  emitRoundEnd(summary: '管理员未处理未完成成员即结束编排');
+                  break;
+                }
+                continue;
+              }
+              await _saveOrchestrationSystemMessage(
+                channelId,
+                GroupTaskStatusParser.exhaustedWarning(pendingFromLastRound),
+              );
+            }
             // No dispatch and no continue — orchestration complete. Strip the
             // closing {"done": true} JSON block so the user never sees it.
             LoggerService().debug(
@@ -1811,6 +1899,11 @@ class GroupOrchestrationService {
             roundArtifactUris.addAll(extractStoreUris(r.content));
           }
 
+          pendingFromLastRound = GroupTaskStatusParser.blockingMembers(
+            turns: memberTurnResults,
+            agents: agents,
+          );
+
           // L3: 连续全失败轮提前终止。本轮派发成员全部失败（超时/抛错/空回复
           // 均计入 failedAgentNames）时，管理员再重派同一批成员只会继续空耗；
           // 连续 maxConsecutiveAllFailedRounds 轮全失败即停止并告知用户。
@@ -1929,6 +2022,8 @@ class GroupOrchestrationService {
                     // 成员回复中引用的产物 store:// URI，落盘供审计/恢复
                     // （含 cascade 级联成员，M7）。
                     'artifacts': extractStoreUris(e.value.content),
+                    'task_status': e.value.taskStatusInfo?.status.name,
+                    'task_status_reason': e.value.taskStatusReason,
                   },
               },
               'failed_agents': failedAgentNames,
@@ -1947,7 +2042,8 @@ class GroupOrchestrationService {
               channelId: channelId,
               content:
                   '${lastDispatchNote != null ? '$effectiveContent\n\n[SYSTEM] 你上一轮的派发记录（该 JSON 已从你的消息中隐藏，仅供核对）：$lastDispatchNote' : effectiveContent}'
-                  '${buildMemberArtifactsBlock(memberTurnResults, agents)}',
+                  '${buildMemberArtifactsBlock(memberTurnResults, agents)}'
+                  '${pendingFromLastRound.isNotEmpty ? '\n\n${GroupTaskStatusParser.adminNote(pendingFromLastRound)}' : ''}',
               attachments: attachments,
               userId: userId,
               userName: userName,

@@ -63,5 +63,22 @@ void main() {
     expect(prompt, contains('group_finish'));
     expect(prompt, contains('pause'));
     expect(prompt, contains('凭猜测直接派活'));
+    expect(prompt, contains('系统会拦截'));
+  });
+
+  test('pending-status nudge prompt forbids group_finish done', () async {
+    final prompt = await builder.buildGroupSystemPrompt(
+      groupName: '项目群',
+      groupDescription: '',
+      allAgents: [admin, coder],
+      currentAgent: admin,
+      isAdmin: true,
+      isPendingStatusNudge: true,
+    );
+
+    expect(prompt, contains('pending'));
+    expect(prompt, contains('禁止'));
+    expect(prompt, contains('group_finish'));
+    expect(prompt, contains('pause'));
   });
 }

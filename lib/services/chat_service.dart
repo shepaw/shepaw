@@ -27,6 +27,7 @@ import 'group/group_event.dart';
 import 'group/group_event_store.dart';
 import 'group/group_event_perception.dart';
 import 'group/group_stage_gate.dart';
+import 'group/group_background_interrupt.dart';
 import '../storage/group_workspace_service.dart';
 import 'workflow/workflow_service.dart';
 import 'workflow/workflow_step_agent_resolver.dart';
@@ -102,6 +103,14 @@ class ChatService {
   // with an entry is currently running `sendMessageToGroup`; a duplicate send
   // is rejected with a visible notice instead of starting a second loop.
   final Set<String> _groupOrchestratingChannels = {};
+
+  /// Per-channel cancel token for the in-flight group orchestration loop.
+  /// Survives controller dispose so [handleAppResumed] can unblock ACP waits.
+  final Map<String, ACPCancellationToken> _groupOrchestrationTokens = {};
+
+  /// Original user message for an in-flight group orchestration (content /
+  /// userId / userName). Used to populate retry info when ACP dies in background.
+  final Map<String, Map<String, String>> _groupOrchestrationOrigins = {};
 
   // Pending plan_approvals: managed by PlanApprovalService
   final PlanApprovalService _planApprovalService = PlanApprovalService.instance;
@@ -593,6 +602,8 @@ class ChatService {
       await _markTaskInterrupted(channelId);
     }
 
+    await _interruptDeadGroupAcpChannels();
+
     await drainAllMailboxReplies();
   }
 
@@ -683,6 +694,81 @@ class ChatService {
     _activeTasks.remove(channelId);
     _updateTypingAgentIds();
     _releaseForegroundTask(task.agentName);
+  }
+
+  /// After background resume: interrupt group channels whose in-flight ACP
+  /// members lost the connection (mirrors [_markTaskInterrupted] for 1:1).
+  Future<void> _interruptDeadGroupAcpChannels() async {
+    final candidates = GroupBackgroundInterrupt.deadAcpChannelIds(
+      activeGroupTasks: _activeGroupTasks,
+      hasAcpConnection: (agentId) => _acpConnections.containsKey(agentId),
+      isConnected: (agentId) => _acpConnections[agentId]?.isConnected == true,
+    );
+    for (final channelId in candidates) {
+      // Same as 1:1: try reconnect, then interrupt anyway — the remote task
+      // is almost certainly gone after a transport drop.
+      final agentMap = _activeGroupTasks[channelId];
+      if (agentMap != null) {
+        for (final task in agentMap.values) {
+          if (task.isComplete) continue;
+          final conn = _acpConnections[task.agentId];
+          if (conn != null && !conn.isConnected) {
+            await conn.tryReconnectNow();
+          }
+        }
+      }
+      await _markGroupChannelInterrupted(channelId);
+    }
+  }
+
+  /// Cancel in-flight group orchestration on [channelId], persist a visible
+  /// interrupt notice, and stash retry info (original user content).
+  Future<void> _markGroupChannelInterrupted(String channelId) async {
+    final origin = _groupOrchestrationOrigins[channelId];
+    _groupOrchestrationTokens[channelId]?.cancel();
+
+    final agentMap = _activeGroupTasks[channelId];
+    final interruptedNames = <String>[];
+    if (agentMap != null) {
+      for (final task in List.of(agentMap.values)) {
+        if (task.isComplete) continue;
+        interruptedNames.add(task.agentName);
+      }
+    }
+
+    cancelActiveGroupTasks(channelId);
+
+    try {
+      final names = interruptedNames.isEmpty
+          ? '远端成员'
+          : interruptedNames.map((n) => '「$n」').join('、');
+      final msgId = _uuid.v4();
+      await _databaseService.createMessage(
+        id: msgId,
+        channelId: channelId,
+        senderId: 'system',
+        senderType: 'system',
+        senderName: 'System',
+        content: '⚠️ 群聊$names在后台运行期间连接中断，本轮任务已停止。可点击重试。',
+        messageType: 'system',
+        metadata: {'group_connection_interrupt': true},
+      );
+      await _databaseService.markMessageAsRead(msgId);
+      _notifyChannelUpdate(channelId);
+    } catch (e) {
+      LoggerService().error(
+        'Failed to save group interrupt notice',
+        tag: 'ChatService',
+        error: e,
+      );
+    }
+
+    _lastInterruptedTasks[channelId] = {
+      'agentId': '',
+      'partialContent': '',
+      'userMessageId': '',
+      if (origin != null) ...origin,
+    };
   }
 
   /// Returns info about an interrupted task for the given channel, or null.
@@ -2052,6 +2138,14 @@ $originalQuestion
       return;
     }
     _groupOrchestratingChannels.add(channelId);
+    _groupOrchestrationOrigins[channelId] = {
+      'content': content,
+      'userId': userId,
+      'userName': userName,
+    };
+    if (acpCancellationToken != null) {
+      _groupOrchestrationTokens[channelId] = acpCancellationToken;
+    }
     try {
       // H3: 崩溃重启后回放持久化事件，让本轮编排/成员上下文感知重启前的节点
       // 成败与 loop 轮次（best-effort，失败不阻断编排）。
@@ -2079,6 +2173,8 @@ $originalQuestion
       );
     } finally {
       _groupOrchestratingChannels.remove(channelId);
+      _groupOrchestrationTokens.remove(channelId);
+      _groupOrchestrationOrigins.remove(channelId);
     }
   }
 
@@ -2193,7 +2289,9 @@ $originalQuestion
       // 幂等：最近消息已有同轮次提示则跳过（重启重进不重复打扰）。
       final recent = await loadChannelMessages(channelId, limit: 60);
       final alreadyNotified = recent.any((m) =>
-          m.from.isSystem && m.metadata?['orchestration_interrupt'] == round);
+          m.from.isSystem &&
+          (m.metadata?['orchestration_interrupt'] == round ||
+              m.metadata?['group_connection_interrupt'] == true));
       if (alreadyNotified) return false;
 
       final statusLabel = switch (status) {
@@ -2221,6 +2319,27 @@ $originalQuestion
       );
       await _databaseService.markMessageAsRead(msgId);
       _notifyChannelUpdate(channelId);
+
+      // Align with 1:1 retry snackbar: stash the last user message so the
+      // controller can offer 「重试」instead of only a static system notice.
+      if (hasAgentContext) {
+        Message? lastUser;
+        for (final m in recent.reversed) {
+          if (m.from.isUser) {
+            lastUser = m;
+            break;
+          }
+        }
+        if (lastUser != null && lastUser.content.trim().isNotEmpty) {
+          _lastInterruptedTasks[channelId] = {
+            'agentId': '',
+            'partialContent': '',
+            'userMessageId': lastUser.id,
+            'content': lastUser.content,
+          };
+        }
+      }
+
       return true;
     } catch (e) {
       LoggerService().error(

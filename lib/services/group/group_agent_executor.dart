@@ -31,6 +31,7 @@ import 'group_mailbox_save_plan.dart';
 import 'group_orchestration_tools.dart';
 import 'group_prompt_builder.dart';
 import 'group_turn_result.dart';
+import 'group_task_status.dart';
 import 'group_interaction_handler.dart';
 import '../../peer/services/peer_agent_client_service.dart';
 import '../../peer/peer_approval_selection.dart';
@@ -275,6 +276,7 @@ class GroupAgentExecutor {
     bool isLoopSummarize = false,
     bool isAbortSummarize = false,
     bool isDispatchNudge = false,
+    bool isPendingStatusNudge = false,
     int? loopRound,
     String mentionMode = 'adminOnly',
     List<String> failedAgentNames = const [],
@@ -327,6 +329,7 @@ class GroupAgentExecutor {
       isLoopSummarize: isLoopSummarize,
       isAbortSummarize: isAbortSummarize,
       isDispatchNudge: isDispatchNudge,
+      isPendingStatusNudge: isPendingStatusNudge,
       loopRound: loopRound,
       mentionMode: mentionMode,
       failedAgentNames: failedAgentNames,
@@ -1980,6 +1983,12 @@ class GroupAgentExecutor {
           GroupDispatchParser.stripDispatchJsonBlocks(responseContent);
     }
 
+    // Member task-status contract: parse before skip early-return so a
+    // pending annotation on an otherwise empty-looking reply still survives
+    // into GroupTurnResult (M12-style: capture before bail).
+    final memberStatus =
+        isAdmin ? null : GroupTaskStatusParser.parse(responseContent);
+
     // M12: 空响应/[SKIP] 早退必须发生在统一提及捕获（上方）之后——成员可能在
     // 这轮只声明了 group_mention 而未输出正文，提前 return 会丢激活意图，
     // runMentionCascade 就无法唤醒被提及者。这里返回已解析的 mentions。
@@ -2001,6 +2010,7 @@ class GroupAgentExecutor {
         content: responseContent,
         mentions: agentMentions,
         unresolvedMentionNames: unresolvedMentionNames,
+        taskStatusInfo: memberStatus,
       );
     }
 
@@ -2017,6 +2027,12 @@ class GroupAgentExecutor {
     }
     if (turnTokenUsage.hasAny) {
       meta[LlmTokenUsage.metadataKey] = turnTokenUsage.toJson();
+    }
+    if (memberStatus != null && memberStatus.applicable) {
+      meta['task_status'] = memberStatus.status.name;
+      if (memberStatus.reason != null) {
+        meta['task_status_reason'] = memberStatus.reason;
+      }
     }
     if (actionConfirmationData != null)
       meta['action_confirmation'] = actionConfirmationData;
@@ -2209,6 +2225,7 @@ class GroupAgentExecutor {
       mentions: agentMentions,
       unresolvedMentionNames: unresolvedMentionNames,
       hasOrchestrationSignal: orchHasSignal,
+      taskStatusInfo: memberStatus,
     );
   }
 

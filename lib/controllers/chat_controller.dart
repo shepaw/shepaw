@@ -603,26 +603,27 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
   Future<void> retryLastUserMessage(Map<String, String> interruptedInfo) async {
     if (currentChannelId == null) return;
 
-    final userMsgId = interruptedInfo['userMessageId'];
-    if (userMsgId == null) return;
-
-    String? messageContent;
-    for (final msg in messages.reversed) {
-      if (msg.id == userMsgId) {
-        messageContent = msg.content;
-        break;
-      }
-    }
-
-    if (messageContent == null) {
-      final dbMessages = await chatService.loadChannelMessages(
-        currentChannelId!,
-        limit: ChatMessageWindow.maxCached,
-      );
-      for (final msg in dbMessages.reversed) {
-        if (msg.id == userMsgId) {
-          messageContent = msg.content;
-          break;
+    String? messageContent = interruptedInfo['content'];
+    if (messageContent == null || messageContent.isEmpty) {
+      final userMsgId = interruptedInfo['userMessageId'];
+      if (userMsgId != null && userMsgId.isNotEmpty) {
+        for (final msg in messages.reversed) {
+          if (msg.id == userMsgId) {
+            messageContent = msg.content;
+            break;
+          }
+        }
+        if (messageContent == null || messageContent.isEmpty) {
+          final dbMessages = await chatService.loadChannelMessages(
+            currentChannelId!,
+            limit: ChatMessageWindow.maxCached,
+          );
+          for (final msg in dbMessages.reversed) {
+            if (msg.id == userMsgId) {
+              messageContent = msg.content;
+              break;
+            }
+          }
         }
       }
     }

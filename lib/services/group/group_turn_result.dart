@@ -1,5 +1,6 @@
 import '../../models/mention_entry.dart';
 import 'group_dispatch_parser.dart';
+import 'group_task_status.dart';
 
 /// Structured outcome of one group-agent turn (especially admin orchestration).
 ///
@@ -27,6 +28,10 @@ class GroupTurnResult {
   /// True when the model called `group_dispatch` or `group_finish`.
   final bool hasOrchestrationSignal;
 
+  /// Parsed `[TASK_STATUS]` from a member reply. Null for admin turns and
+  /// skipped / empty replies that are not a real status.
+  final GroupMemberTaskStatusInfo? taskStatusInfo;
+
   const GroupTurnResult({
     this.content = '',
     this.steps = const [],
@@ -38,7 +43,10 @@ class GroupTurnResult {
     this.mentions = const [],
     this.unresolvedMentionNames = const [],
     this.hasOrchestrationSignal = false,
+    this.taskStatusInfo,
   });
+
+  String? get taskStatusReason => taskStatusInfo?.reason;
 
   bool get hasDispatch => steps.isNotEmpty;
 
