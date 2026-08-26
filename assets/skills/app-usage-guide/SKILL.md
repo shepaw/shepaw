@@ -1,6 +1,6 @@
 ---
 name: ShePaw App Usage Guide
-description: 当用户询问 ShePaw 应用或 She 生态系统的使用方法、功能原理、配置步骤或常见问题（添加 Agent、聊天、群组编排、储物袋、设备配对、安全备份、系统工具、技能包、定时任务、多模态路由、Channel 收件箱与隧道、agent-bridge 接入）时，调用本技能获取完整的分层使用指南。
+description: 当用户询问 ShePaw 应用或 She 生态系统的使用方法、功能原理、配置步骤或常见问题（添加 Agent、模型管理与官方模型目录、聊天、群组编排、储物袋、设备配对、安全备份、系统工具、技能包、定时任务、多模态路由、Channel 收件箱与隧道、agent-bridge 接入）时，调用本技能获取完整的分层使用指南。
 ---
 
 # ShePaw 应用使用指南（She 内置技能）
@@ -13,7 +13,7 @@ description: 当用户询问 ShePaw 应用或 She 生态系统的使用方法、
 
 | 用户问什么 | 看哪一层 |
 |-----------|---------|
-| 怎么添加/配置 Agent、聊天、群组、储物袋、配对、备份、安全设置 | **第 2 层** 用户操作层（`references/02-user-operations.md`） |
+| 怎么添加/配置 Agent、怎么配置/管理模型、聊天、群组、储物袋、配对、备份、安全设置 | **第 2 层** 用户操作层（`references/02-user-operations.md`） |
 | 你自己（She）有哪些工具、`shepaw` CLI 怎么用 | **第 3 层** 工具能力层（`references/03-shepaw-cli.md`） |
 | Channel 收件箱/隧道是干嘛的、外部 Agent（agent-bridge）怎么接入 | **第 4 层** 基础设施层（`references/04-ecosystem-infra.md`） |
 | 连接失败、功能异常、常见问题 | **第 5 层** 排障与 FAQ（`references/05-troubleshooting.md`） |
