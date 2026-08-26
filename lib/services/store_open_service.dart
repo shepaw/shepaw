@@ -523,6 +523,9 @@ class StoreOpenService {
     String storePath,
     String fileName,
   ) async {
+    // 网页文件（.html/.htm）：直接物化后交系统浏览器，不显示源码。
+    if (StoreFileVisual.isWebPage(fileName)) return _PreviewKind.other;
+
     final ext = p.extension(fileName).toLowerCase();
     if (ext.isNotEmpty && !StoreFileVisual.isChatAttachmentPath(storePath)) {
       return _mapPreviewKind(StoreFileVisual.previewKind(storePath));

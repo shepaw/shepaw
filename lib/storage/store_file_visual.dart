@@ -45,6 +45,12 @@ class StoreFileVisual {
     return RuntimePaths.isRuntimeAttachmentPath(path);
   }
 
+  /// 网页类文件：聊天/预览打开时直接交系统浏览器，不显示源码。
+  static bool isWebPage(String fileName) {
+    final ext = p.extension(fileName).toLowerCase();
+    return ext == '.html' || ext == '.htm';
+  }
+
   static StoreFileVisualKind resolveKind({
     required String path,
     List<int>? head,

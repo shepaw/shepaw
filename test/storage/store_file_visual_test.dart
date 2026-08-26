@@ -171,4 +171,19 @@ void main() {
       expect(name, contains(sha.substring(0, 8)));
     });
   });
+
+  group('isWebPage', () {
+    test('.html / .htm（含大写）识别为网页文件', () {
+      expect(StoreFileVisual.isWebPage('snake-game.html'), isTrue);
+      expect(StoreFileVisual.isWebPage('index.HTM'), isTrue);
+      expect(StoreFileVisual.isWebPage('docs/page.htm'), isTrue);
+    });
+
+    test('非网页扩展不误判', () {
+      expect(StoreFileVisual.isWebPage('plan.md'), isFalse);
+      expect(StoreFileVisual.isWebPage('note.txt'), isFalse);
+      expect(StoreFileVisual.isWebPage('report.pdf'), isFalse);
+      expect(StoreFileVisual.isWebPage('no_extension'), isFalse);
+    });
+  });
 }
