@@ -23,6 +23,7 @@
 
 - `WS /tunnel/connect` 长连接、`HTTP /proxy/<channelId>/*` 反向代理，让 agent-bridge 在 NAT 后保持可达。
 - **隧道不是身份**：Agent 身份由 `agent_id` + Noise 白名单决定，隧道只是 NAT 穿透。
+- **用户侧开关不在系统设置。** 配对页 → **我的二维码** →「外网连接」（见 [2.6](02-user-operations.md#26-设备配对与-p2p--she-网络)）。Agent Hub 在 Channel 已配置时会自动起隧道路由器。
 
 **部署要点**：Go 服务，默认端口 8080，SQLite（或 Postgres），可选 Redis 降级内存模式；Docker Compose 一键起。
 
@@ -48,7 +49,7 @@ Shepaw app → Shepaw ACP v2.1 → AcpProxyAgent → @agentclientprotocol/sdk �
 - 本机安装：`npm install -g shepaw-acp-proxy-gateway`（单 Agent）或 `shepaw-agent-hub`（多项目，含网关）。
 - 起网关：`shepaw-acp-proxy serve --engine claude-code --cwd ~/your-project --host 0.0.0.0`。
 - 打印配对二维码：`shepaw-acp-proxy pair`。
-- 手机上：**添加 Agent → 扫二维码** 即可对话。
+- 手机上：**添加 Agent → 扫二维码**（URL 栏扫码图标，扫 `shepaw://pair`）即可对话。细节见 [2.2](02-user-operations.md#22-添加和管理-agent)。无共享 Token。
 - 支持的 `--engine`：`claude-code`、`codebuddy`、`codex`、`opencode`、`openclaw`、`cursor`、`hermes`、`kimi`、`zcode`、`deepseek-harness`、`qwen-code`。
 
 **Agent Hub（多项目宿主）**：一个 CLI + Web 仪表盘（默认 `:4000`），按项目各起一个网关进程，每项目独立身份/会话存储/授权对等列表。常用：`shepaw-hub quickstart`（交互式）、`init`、`instance add --engine … --cwd …`、`start <id>`、`status`、`pair`、`doctor`、`version`。

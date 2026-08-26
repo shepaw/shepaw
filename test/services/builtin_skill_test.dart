@@ -134,6 +134,8 @@ void main() {
           reason: '设备对人聊天已关闭，不能教用户去点设备会话');
       expect(joined, contains('### 2.12 灵魂、记忆、认知与个人档案'),
           reason: '应能用人话区分档案/灵魂/记忆/认知');
+      expect(joined, contains('以本技能第 2~5 层为准'),
+          reason: '第 6 层应声明技能正文优先于可能落后的 USER_GUIDE');
 
       // 每个 references 文件以对应层级标题开头（02→第 2 层 … 06→第 6 层）
       final layerHeadings = [

@@ -44,8 +44,9 @@ Shepaw is a local-first AI Agent Hub that helps you collaborate with multiple AI
    - This lets you unlock the app without typing your password each time
 
 3. **Add Your First Agent**
-   - Go to the home screen and tap **"Add Agent"**
-   - Choose between a **Local LLM Agent** or a **Remote Agent** (see below)
+   - Sidebar: **Contacts** (agents / groups / paired devices), **Store** (backups), **Settings**
+   - From home or Contacts, tap **"Add Agent"**
+   - Choose a **Local LLM Agent** or a **Remote Agent** (see below)
 
 ---
 
@@ -73,16 +74,14 @@ A local agent runs AI models directly on your device without requiring a network
 6. Tap **"Save"**
 
 #### 1.2 Remote Agent (via ACP Protocol)
-A remote agent runs on a remote server and communicates with your device via the ACP protocol.
+A remote agent runs on a remote server and talks to your device over ACP v2.1 (WebSocket + Noise, **no shared Token**).
 
 **Setup Steps:**
 1. Tap **"+ Add Agent"** → **"Remote Agent"**
-2. Enter the connection details:
-   - **Agent ID** — Unique identifier
-   - **Server URL** — Agent server address (e.g., `ws://192.168.1.100:8080`)
-   - **Token** — Authentication token provided by the server
-3. Tap **"Test Connection"** to verify
-4. Tap **"Save"**
+2. **Recommended:** tap the QR icon in the endpoint URL field and scan the `shepaw://pair` code from `shepaw-acp-proxy pair` / `shepaw-hub pair`
+3. Or paste the short pairing code from gateway `enroll`; or fill a `ws://` / `wss://` endpoint and have the operator `peers add` this device's public key
+4. **Agent ID** is optional
+5. Tap **"Save"**
 
 **Advantages of Remote Agents:**
 - Access to system tools (file operations, process execution, etc.)
@@ -176,13 +175,9 @@ Group chat lets you collaborate with multiple agents simultaneously.
 Automatically route different content types to the most capable AI model.
 
 **Configuration:**
-1. Go to **Settings** → **Multimodal Config**
-2. Assign an agent for each content type:
-   - **Text** — e.g., GPT-4
-   - **Images** — e.g., GPT-4 Vision or Claude Vision
-   - **Audio** — a supported speech model
-   - **Video** — a supported multimodal model
-3. When you send a message containing one of these types, the system routes it automatically
+1. Go to **Settings** → **Model Management** to create or import global model definitions
+2. On each agent's detail page, assign those definitions per modality (text / image / audio / video)
+3. When you send a message of that type, the router picks the assigned model
 
 ---
 
@@ -203,13 +198,9 @@ Remote agents can invoke local system tools:
 Skill packages are custom bundles that extend an agent's capabilities.
 
 **Import a Skill Package:**
-1. Open Agent Details → **"Skill Packages"** tab
-2. Tap **"Import Skill Package"**
-3. Choose a source:
-   - **Local File** — Upload a ZIP file from your device
-   - **URL** — Enter a remote skill package URL
-4. Tap **"Import"**
-5. The agent automatically gains the new skills after import
+1. Go to **Settings** → **Skill Management** and import from a local ZIP or URL
+2. Then open Agent Details → **"Skill Packages"** and enable the skills that agent should use
+3. Skills that are not checked are not injected
 
 ---
 
@@ -222,17 +213,13 @@ Shepaw applies permission controls to all sensitive operations.
 - **WARNING** — Operations requiring user confirmation
 - **DANGEROUS** — High-risk operations requiring explicit approval
 
-#### 3.2 Viewing Permission History
-1. Go to **Settings** → **Permissions & Audit** → **Permission History**
-2. Browse all operation requests made by agents
-3. Each record shows:
-   - Operation description
-   - Agent name
-   - Timestamp
-   - Approval status (Approved / Denied)
+#### 3.2 Permissions & CLI Toggles
+- When an agent calls a tool, the approval record appears **in the chat** (there is no Settings → Permissions & Audit page)
+- Global CLI / OS tools: **Settings** → **CLI Management**
+- Per agent: Details → **CLI Commands**
 
 #### 3.3 Inference Logs
-1. Go to **Settings** → **Inference Log Audit**
+1. Go to **Settings** → **Inference Log**
 2. Review AI call statistics:
    - Token usage
    - Average response time
@@ -380,9 +367,9 @@ The Admin Agent is responsible for:
 ### Q10: What should I do if an agent fails to connect?
 **A:**
 1. Check your network connection (remote agent) or service status (Ollama)
-2. Verify that the Server URL and Token are correct
+2. Verify the endpoint URL, pairing code, or public-key whitelist (ACP v2.1 has **no shared Token**)
 3. Tap **"Test Connection"** to diagnose the issue
-4. Review the app logs for detailed error information
+4. Check **Settings → System Log / Inference Log**
 
 ---
 
