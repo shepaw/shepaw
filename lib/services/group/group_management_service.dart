@@ -64,6 +64,26 @@ class GroupManagementService {
   final SheGroupApprovalBridge _approvalBridge;
   static const _tag = 'GroupManagement';
 
+  /// M13d: 每频道成员变更尾随链——addMember/kickMember 的 read-modify-write
+  /// 序列（channel_members → 工作空间成员表 → peer ACL）并发交错会留下幽灵
+  /// 成员（例如 add 的 grantPeerAccess 晚于 kick 的 revokePeerAccess）。用
+  /// 同一频道的 future 链串行化，任何时刻该频道最多一个成员变更在跑。
+  final Map<String, Future<GroupManagementResult>> _memberMutationTail = {};
+
+  /// 串行执行一次成员变更；失败不打断链（下一条照常排队）。
+  Future<GroupManagementResult> _runSerializedMemberMutation(
+    String channelId,
+    Future<GroupManagementResult> Function() action,
+  ) {
+    final prev = _memberMutationTail[channelId] ??
+        Future.value(GroupManagementResult.success());
+    final next = prev.then((_) => action());
+    _memberMutationTail[channelId] = next.catchError(
+      (_) => GroupManagementResult.failure('group mutation chain error'),
+    );
+    return next;
+  }
+
   /// Resolve `--channel` / `--channel_id` (injected when already in a group).
   static String? resolveChannelId(Map<String, String> flags) {
     final explicit = flags['channel']?.trim();
@@ -192,29 +212,49 @@ class GroupManagementService {
       );
     }
 
-    await _db.createChannel(channel, userId);
-    await GroupMemberSessionService(_db).ensureMemberSessionsForGroup(
-      groupChannel: channel,
-      userId: userId,
-    );
-    // 初始化群工作空间（骨架 + 成员表；She 恒为 admin）。
-    await GroupWorkspaceService.instance.ensureGroupWorkspace(
-      groupId: channelId,
-      members: [
-        for (final m in memberAgents)
-          (agentId: m.id, role: m.id == SheService.sheId ? 'admin' : 'member'),
-      ],
-    );
-    // 跨设备 ACL：peer 来源成员设备自动获得群工作空间访问白名单。
-    for (final m in memberAgents) {
-      final peerId = m.sourcePeerId;
-      if (peerId != null && peerId.isNotEmpty) {
-        await GroupWorkspaceService.instance.grantPeerAccess(
-          groupId: channelId,
-          agentId: m.id,
-          peerId: peerId,
+    try {
+      await _db.createChannel(channel, userId);
+      await GroupMemberSessionService(_db).ensureMemberSessionsForGroup(
+        groupChannel: channel,
+        userId: userId,
+      );
+      // 初始化群工作空间（骨架 + 成员表；She 恒为 admin）。
+      await GroupWorkspaceService.instance.ensureGroupWorkspace(
+        groupId: channelId,
+        members: [
+          for (final m in memberAgents)
+            (agentId: m.id,
+                role: m.id == SheService.sheId ? 'admin' : 'member'),
+        ],
+      );
+      // 跨设备 ACL：peer 来源成员设备自动获得群工作空间访问白名单。
+      for (final m in memberAgents) {
+        final peerId = m.sourcePeerId;
+        if (peerId != null && peerId.isNotEmpty) {
+          await GroupWorkspaceService.instance.grantPeerAccess(
+            groupId: channelId,
+            agentId: m.id,
+            peerId: peerId,
+          );
+        }
+      }
+    } catch (e) {
+      // M13e: 中途失败删除已建 channel 与成员会话，不把半成品群当成功返回。
+      try {
+        await _db.deleteChannel(channelId);
+        await GroupMemberSessionService(_db)
+            .deleteMemberSessionsForGroupChannel(channelId);
+      } catch (rollbackErr) {
+        LoggerService().warning(
+          'createGroup rollback incomplete: $rollbackErr',
+          tag: _tag,
         );
       }
+      LoggerService().error(
+        'createGroup failed, rolled back: $e',
+        tag: _tag,
+      );
+      return GroupManagementResult.failure('创建群失败：$e');
     }
     _chat.notifyChannelUpdate(channelId);
 
@@ -246,131 +286,213 @@ class GroupManagementService {
     required String actorId,
     String? groupBio,
     String userId = LocalUserIdentity.id,
-  }) async {
-    final gate = await _requireAdminGroup(channelId, actorId);
-    if (gate.error != null) {
-      return GroupManagementResult.failure(gate.error!);
-    }
-    final channel = gate.channel!;
+  }) {
+    return _runSerializedMemberMutation(channelId, () async {
+      final gate = await _requireAdminGroup(channelId, actorId);
+      if (gate.error != null) {
+        return GroupManagementResult.failure(gate.error!);
+      }
+      final channel = gate.channel!;
 
-    final agent = await resolveAgent(agentRef);
-    if (agent == null) {
-      return GroupManagementResult.failure('Agent not found: $agentRef');
-    }
-    if (channel.agentIds.contains(agent.id)) {
-      return GroupManagementResult.failure(
-        '${agent.name} is already a member of this group.',
+      final agent = await resolveAgent(agentRef);
+      if (agent == null) {
+        return GroupManagementResult.failure('Agent not found: $agentRef');
+      }
+      if (channel.agentIds.contains(agent.id)) {
+        return GroupManagementResult.failure(
+          '${agent.name} is already a member of this group.',
+        );
+      }
+
+      // New members are never admin; admin cannot be granted via add.
+      try {
+        await _db.addChannelMember(
+          channelId,
+          agent.id,
+          role: 'member',
+          groupBio:
+              groupBio?.trim().isNotEmpty == true ? groupBio!.trim() : null,
+        );
+
+        final refreshed = await _db.getChannelById(channelId);
+        if (refreshed != null) {
+          await GroupMemberSessionService(_db).ensureMemberSession(
+            groupChannel: refreshed,
+            agentId: agent.id,
+            userId: userId,
+          );
+        }
+
+        // 新成员进入群工作空间成员表（空间按群家族归属）。
+        await GroupWorkspaceService.instance.upsertMember(
+          groupId: channel.groupFamilyId,
+          agentId: agent.id,
+          role: 'member',
+        );
+        // 跨设备 ACL：peer 来源成员设备自动获得群工作空间访问白名单。
+        final peerId = agent.sourcePeerId;
+        if (peerId != null && peerId.isNotEmpty) {
+          await GroupWorkspaceService.instance.grantPeerAccess(
+            groupId: channel.groupFamilyId,
+            agentId: agent.id,
+            peerId: peerId,
+          );
+        }
+      } catch (e) {
+        // M13e: 中途失败回滚 channel_members / workspace / ACL，不留半成品
+        //（例如 channel 已加成员但 workspace 未加）。
+        await _rollbackAddMember(
+          channelId: channelId,
+          agentId: agent.id,
+          familyId: channel.groupFamilyId,
+          peerId: agent.sourcePeerId,
+        );
+        LoggerService().error(
+          'addMember(${agent.name}) failed, rolled back: $e',
+          tag: _tag,
+        );
+        return GroupManagementResult.failure('添加成员失败：$e');
+      }
+
+      await _chat.notifyGroupMembershipChange(
+        channelId,
+        agent.id,
+        agent.name,
+        isJoin: true,
       );
-    }
 
-    // New members are never admin; admin cannot be granted via add.
-    await _db.addChannelMember(
-      channelId,
-      agent.id,
-      role: 'member',
-      groupBio: groupBio?.trim().isNotEmpty == true ? groupBio!.trim() : null,
-    );
-
-    final refreshed = await _db.getChannelById(channelId);
-    if (refreshed != null) {
-      await GroupMemberSessionService(_db).ensureMemberSession(
-        groupChannel: refreshed,
-        agentId: agent.id,
-        userId: userId,
-      );
-    }
-
-    // 新成员进入群工作空间成员表（空间按群家族归属）。
-    await GroupWorkspaceService.instance.upsertMember(
-      groupId: channel.groupFamilyId,
-      agentId: agent.id,
-      role: 'member',
-    );
-    // 跨设备 ACL：peer 来源成员设备自动获得群工作空间访问白名单。
-    final peerId = agent.sourcePeerId;
-    if (peerId != null && peerId.isNotEmpty) {
-      await GroupWorkspaceService.instance.grantPeerAccess(
-        groupId: channel.groupFamilyId,
-        agentId: agent.id,
-        peerId: peerId,
-      );
-    }
-
-    await _chat.notifyGroupMembershipChange(
-      channelId,
-      agent.id,
-      agent.name,
-      isJoin: true,
-    );
-
-    return GroupManagementResult.success({
-      'channel_id': channelId,
-      'added': {'id': agent.id, 'name': agent.name, 'role': 'member'},
+      return GroupManagementResult.success({
+        'channel_id': channelId,
+        'added': {'id': agent.id, 'name': agent.name, 'role': 'member'},
+      });
     });
+  }
+
+  /// M13e: addMember 失败后的补偿——把已写入的 channel_members 行、工作空间
+  /// 成员项和 peer ACL 条目一并撤掉。各步骤幂等，重复调用安全。
+  Future<void> _rollbackAddMember({
+    required String channelId,
+    required String agentId,
+    required String familyId,
+    String? peerId,
+  }) async {
+    try {
+      await _db.removeChannelMember(channelId, agentId);
+      await GroupWorkspaceService.instance.removeMember(
+        groupId: familyId,
+        agentId: agentId,
+      );
+      if (peerId != null && peerId.isNotEmpty) {
+        await GroupWorkspaceService.instance.revokePeerAccess(
+          groupId: familyId,
+          agentId: agentId,
+          peerId: peerId,
+        );
+      }
+    } catch (rollbackErr) {
+      LoggerService().warning(
+        'addMember rollback incomplete: $rollbackErr',
+        tag: _tag,
+      );
+    }
   }
 
   Future<GroupManagementResult> kickMember({
     required String channelId,
     required String agentRef,
     required String actorId,
-  }) async {
-    final gate = await _requireAdminGroup(channelId, actorId);
-    if (gate.error != null) {
-      return GroupManagementResult.failure(gate.error!);
-    }
-    final channel = gate.channel!;
+  }) {
+    return _runSerializedMemberMutation(channelId, () async {
+      final gate = await _requireAdminGroup(channelId, actorId);
+      if (gate.error != null) {
+        return GroupManagementResult.failure(gate.error!);
+      }
+      final channel = gate.channel!;
 
-    final agent = await resolveAgent(agentRef);
-    if (agent == null) {
-      return GroupManagementResult.failure('Agent not found: $agentRef');
-    }
-    if (!channel.agentIds.contains(agent.id)) {
-      return GroupManagementResult.failure(
-        '${agent.name} is not a member of this group.',
+      final agent = await resolveAgent(agentRef);
+      if (agent == null) {
+        return GroupManagementResult.failure('Agent not found: $agentRef');
+      }
+      if (!channel.agentIds.contains(agent.id)) {
+        return GroupManagementResult.failure(
+          '${agent.name} is not a member of this group.',
+        );
+      }
+      if (agent.id == actorId || channel.isAdmin(agent.id)) {
+        return GroupManagementResult.failure(
+          'Cannot kick the group admin. Transfer admin first or leave via UI.',
+        );
+      }
+      if (channel.agentIds.length <= 1) {
+        return GroupManagementResult.failure(
+          'Cannot remove the last agent from the group.',
+        );
+      }
+
+      // 保留原成员角色/bio 以便中途失败时恢复。
+      ChannelMember? member;
+      for (final m in channel.members) {
+        if (m.id == agent.id) {
+          member = m;
+          break;
+        }
+      }
+
+      try {
+        await _db.removeChannelMember(channelId, agent.id);
+        await GroupMemberSessionService(_db).deleteMemberSession(
+          groupChannelId: channelId,
+          agentId: agent.id,
+        );
+
+        // 移出群工作空间成员表（只更新元数据，不删成员文件）。
+        await GroupWorkspaceService.instance.removeMember(
+          groupId: channel.groupFamilyId,
+          agentId: agent.id,
+        );
+        // 回收 peer 成员设备的群工作空间访问（members/<agentId>/ 条目）。
+        final peerId = agent.sourcePeerId;
+        if (peerId != null && peerId.isNotEmpty) {
+          await GroupWorkspaceService.instance.revokePeerAccess(
+            groupId: channel.groupFamilyId,
+            agentId: agent.id,
+            peerId: peerId,
+          );
+        }
+      } catch (e) {
+        // M13e: 中途失败恢复 channel_members（工作空间/ACL 步骤幂等，下一次
+        // add/kick 会重新对齐），不把「已移除但失败」当成成功返回。
+        try {
+          await _db.addChannelMember(
+            channelId,
+            agent.id,
+            role: member?.role ?? 'member',
+            groupBio: member?.groupBio,
+          );
+        } catch (restoreErr) {
+          LoggerService().warning(
+            'kickMember restore failed: $restoreErr',
+            tag: _tag,
+          );
+        }
+        LoggerService().error(
+          'kickMember(${agent.name}) failed, restored: $e',
+          tag: _tag,
+        );
+        return GroupManagementResult.failure('移除成员失败：$e');
+      }
+
+      await _chat.notifyGroupMembershipChange(
+        channelId,
+        agent.id,
+        agent.name,
+        isJoin: false,
       );
-    }
-    if (agent.id == actorId || channel.isAdmin(agent.id)) {
-      return GroupManagementResult.failure(
-        'Cannot kick the group admin. Transfer admin first or leave via UI.',
-      );
-    }
-    if (channel.agentIds.length <= 1) {
-      return GroupManagementResult.failure(
-        'Cannot remove the last agent from the group.',
-      );
-    }
 
-    await _db.removeChannelMember(channelId, agent.id);
-    await GroupMemberSessionService(_db).deleteMemberSession(
-      groupChannelId: channelId,
-      agentId: agent.id,
-    );
-
-    // 移出群工作空间成员表（只更新元数据，不删成员文件）。
-    await GroupWorkspaceService.instance.removeMember(
-      groupId: channel.groupFamilyId,
-      agentId: agent.id,
-    );
-    // 回收 peer 成员设备的群工作空间访问（members/<agentId>/ 条目）。
-    final peerId = agent.sourcePeerId;
-    if (peerId != null && peerId.isNotEmpty) {
-      await GroupWorkspaceService.instance.revokePeerAccess(
-        groupId: channel.groupFamilyId,
-        agentId: agent.id,
-        peerId: peerId,
-      );
-    }
-
-    await _chat.notifyGroupMembershipChange(
-      channelId,
-      agent.id,
-      agent.name,
-      isJoin: false,
-    );
-
-    return GroupManagementResult.success({
-      'channel_id': channelId,
-      'removed': {'id': agent.id, 'name': agent.name},
+      return GroupManagementResult.success({
+        'channel_id': channelId,
+        'removed': {'id': agent.id, 'name': agent.name},
+      });
     });
   }
 

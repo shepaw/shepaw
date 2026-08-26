@@ -1,7 +1,5 @@
 import 'dart:convert';
 
-import 'package:uuid/uuid.dart';
-
 import '../../controllers/group_interaction_planner.dart';
 import '../../models/message.dart';
 import '../chat_service.dart';
@@ -30,7 +28,6 @@ class SheGroupApprovalBridge {
   final ChatService _chat;
   final PlanApprovalService _planApprovals;
   static const _tag = 'SheGroupApprovalBridge';
-  static const _uuid = Uuid();
 
   /// Metadata key on the She-DM system message (rendered as jump card).
   static const bridgeMetaKey = 'group_approval_bridge';
@@ -122,6 +119,7 @@ class SheGroupApprovalBridge {
       groupName: groupName,
       interactionType: interactionType,
       agentName: agentName,
+      data: payload,
     );
 
     return GroupInteractionPlanner.nonBlockingResult();
@@ -183,23 +181,47 @@ class SheGroupApprovalBridge {
     required String groupName,
     required String interactionType,
     required String agentName,
+    Map<String, dynamic>? data,
   }) async {
     final label = _labelFor(interactionType);
+    final id = _bridgeNoticeId(
+      groupChannelId: groupChannelId,
+      interactionType: interactionType,
+      agentName: agentName,
+      data: data,
+    );
+    final bridgeMeta = {
+      'group_channel_id': groupChannelId,
+      'group_name': groupName,
+      'interaction_type': interactionType,
+      'agent_name': agentName,
+      'status': 'pending',
+    };
+    final existing = await _db.getMessageById(id);
+    if (existing != null) {
+      // M13b: 同一审批的重复回调（重连/幂等重放）只更新已有通知卡，
+      // 不再向 She DM 堆叠第二条「待审核」系统消息。
+      final raw = existing['metadata'];
+      Map<String, dynamic>? meta;
+      if (raw is String && raw.isNotEmpty) {
+        try {
+          meta = Map<String, dynamic>.from(jsonDecode(raw) as Map);
+        } catch (_) {}
+      } else if (raw is Map) {
+        meta = Map<String, dynamic>.from(raw);
+      }
+      meta ??= <String, dynamic>{};
+      meta[bridgeMetaKey] = bridgeMeta;
+      await _db.updateMessageMetadata(id, meta);
+      return;
+    }
     final msg = Message(
-      id: _uuid.v4(),
+      id: id,
       content: '群「$groupName」有待你审核的操作（$label），请前往绑定群会话处理。',
       timestampMs: DateTime.now().millisecondsSinceEpoch,
       from: MessageFrom(id: 'system', type: 'system', name: 'System'),
       type: MessageType.system,
-      metadata: {
-        bridgeMetaKey: {
-          'group_channel_id': groupChannelId,
-          'group_name': groupName,
-          'interaction_type': interactionType,
-          'agent_name': agentName,
-          'status': 'pending',
-        },
-      },
+      metadata: {bridgeMetaKey: bridgeMeta},
     );
     await _chat.saveLocalMessage(
       msg,
@@ -213,6 +235,30 @@ class SheGroupApprovalBridge {
     );
   }
 
+  /// 幂等通知 id：同一审批（同群 + 类型 + 审批 id）的重复回调定位同一张卡。
+  /// 优先用载荷里的 confirmation_id / select_id / 通用 id / 工作流 id；
+  /// 无稳定 id 时按 (群, 类型, agent) 折叠，避免重复通知堆叠。
+  static String _bridgeNoticeId({
+    required String groupChannelId,
+    required String interactionType,
+    required String agentName,
+    Map<String, dynamic>? data,
+  }) {
+    final stable = (data?['confirmation_id'] as String?) ??
+        (data?['select_id'] as String?) ??
+        (data?['id'] as String?) ??
+        (data?['_workflowId'] as String?);
+    if (stable != null && stable.isNotEmpty) {
+      return 'bridge_${groupChannelId}_${interactionType}_$stable';
+    }
+    return 'bridge_${groupChannelId}_${interactionType}_$agentName';
+  }
+
+  /// 最近 30 条消息里该 agent 最新一条的 id（审批卡片挂靠的气泡）。
+  ///
+  /// 注意：`loadChannelMessages` 内部经 `_mapsToMessages` 重排为升序
+  /// （旧→新），因此 `messages.reversed` 恰好是新的在前——第一个命中即
+  /// 最新一条。不要按 DAO 的 `created_at DESC` 反向“修正”这里的顺序。
   Future<String?> _lastAgentMessageId(String channelId, String agentId) async {
     final messages = await _chat.loadChannelMessages(channelId, limit: 30);
     for (final m in messages.reversed) {

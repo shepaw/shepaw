@@ -15,6 +15,11 @@ class GroupSessionService {
   late final GroupMemberSessionService _memberSessions =
       GroupMemberSessionService(_db);
 
+  /// M13c: 防止并发 `ensureSheBoundGroupSession` 对同一 (sheChannelId, familyId)
+  /// 重复 fork 绑定会话——第一个调用者开始创建后，后续调用者直接 await 同一
+  /// future，创建完成/失败后清除条目。
+  final Map<String, Future<String>> _boundSessionInflight = {};
+
   GroupSessionService({
     required LocalDatabaseService db,
     required Uuid uuid,
@@ -92,11 +97,43 @@ class GroupSessionService {
     );
     if (existing != null) return existing.id;
 
-    return createNewGroupSession(
-      channelId: familyId,
+    // NUL 分隔保证 sheChannelId/familyId 任何合法字符都不会误拼键。
+    final key = '$sheChannelId\u0000$familyId';
+    final inflight = _boundSessionInflight[key];
+    if (inflight != null) return inflight;
+
+    final future = _createSheBoundGroupSession(
+      sheChannelId: sheChannelId,
+      familyId: familyId,
       userId: userId,
-      sourceSheChannelId: sheChannelId,
+      key: key,
     );
+    _boundSessionInflight[key] = future;
+    return future;
+  }
+
+  /// 单飞（single-flight）创建体：获得 in-flight 槽位后仍复查一次 DB，
+  /// 兜底竞态窗口；完成后清除槽位，失败时后续调用者可重试。
+  Future<String> _createSheBoundGroupSession({
+    required String sheChannelId,
+    required String familyId,
+    required String userId,
+    required String key,
+  }) async {
+    try {
+      final existing = await _db.findSheBoundGroupSession(
+        sheChannelId: sheChannelId,
+        groupFamilyId: familyId,
+      );
+      if (existing != null) return existing.id;
+      return createNewGroupSession(
+        channelId: familyId,
+        userId: userId,
+        sourceSheChannelId: sheChannelId,
+      );
+    } finally {
+      _boundSessionInflight.remove(key);
+    }
   }
 
   /// When She opens a new DM session, fork a new bound group session for each
