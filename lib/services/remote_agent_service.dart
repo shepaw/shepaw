@@ -588,7 +588,7 @@ class RemoteAgentService {
 
     final agent = await getAgentById(agentId);
     if (agent == null) {
-      LoggerService().error('Agent($agentId) 不存在', tag: 'RemoteAgent');
+      LoggerService().warning('Agent($agentId) 不存在', tag: 'RemoteAgent');
       return false;
     }
 
@@ -602,7 +602,7 @@ class RemoteAgentService {
     if (agent.protocol == ProtocolType.peer) {
       final peerId = agent.sourcePeerId;
       if (peerId == null || peerId.isEmpty) {
-        LoggerService().error(
+        LoggerService().warning(
           'Peer agent 缺少 source_peer_id，跳过健康检查',
           tag: 'RemoteAgent',
         );
@@ -617,23 +617,12 @@ class RemoteAgentService {
         connectedAt: connected ? (agent.connectedAt ?? now) : agent.connectedAt,
         updatedAt: now,
       ));
-      if (connected) {
-        LoggerService().info(
-          '健康检查成功 (peer 设备在线: $peerId)',
-          tag: 'RemoteAgent',
-        );
-      } else {
-        LoggerService().info(
-          '健康检查: peer 设备离线 ($peerId)',
-          tag: 'RemoteAgent',
-        );
-      }
       return connected;
     }
 
     // 检查 endpoint 是否有效
     if (agent.endpoint.trim().isEmpty) {
-      LoggerService().error('Endpoint 为空，跳过健康检查', tag: 'RemoteAgent');
+      LoggerService().warning('Endpoint 为空，跳过健康检查', tag: 'RemoteAgent');
       return false;
     }
 
@@ -642,7 +631,6 @@ class RemoteAgentService {
     if (agent.isOnline &&
         agent.lastHeartbeat != null &&
         now - agent.lastHeartbeat! < 60000) {
-      LoggerService().info('Agent 已在线且心跳有效 (最近心跳: ${DateTime.fromMillisecondsSinceEpoch(agent.lastHeartbeat!)})', tag: 'RemoteAgent');
       return true;
     }
 
@@ -652,7 +640,6 @@ class RemoteAgentService {
       final chatService = ChatService();
       final alive = await chatService.pingAgent(agentId);
       if (alive) {
-        LoggerService().info('健康检查成功 (existing connection ping)', tag: 'RemoteAgent');
         final now = DateTime.now().millisecondsSinceEpoch;
         final updatedAgent = agent.copyWith(
           status: AgentStatus.online,
@@ -686,9 +673,6 @@ class RemoteAgentService {
       // v2.1: pinned peer fingerprint from pairing. Required for Noise
       // handshake to pin the agent's static public key.
       final pinnedFp = (agent.metadata['noise_peer_fp'] as String?) ?? '';
-
-      LoggerService().debug('WebSocket URL: $wsUrl', tag: 'RemoteAgent');
-      LoggerService().info('通过临时 WebSocket ping 检查健康状态...', tag: 'RemoteAgent');
 
       final connection = ACPAgentConnection(
         agentId: agent.id,
@@ -728,8 +712,6 @@ class RemoteAgentService {
         }).timeout(timeout);
 
         if (healthy) {
-          LoggerService().info('健康检查成功 (temporary ping)', tag: 'RemoteAgent');
-
           final now = DateTime.now().millisecondsSinceEpoch;
           final updatedAgent = agent.copyWith(
             status: AgentStatus.online,
@@ -743,7 +725,6 @@ class RemoteAgentService {
           await _syncResumeFromCard(connection, updatedAgent);
           return true;
         } else {
-          LoggerService().error('健康检查失败 (ping error)', tag: 'RemoteAgent');
           await disconnectAgent(agentId);
           return false;
         }
@@ -758,13 +739,8 @@ class RemoteAgentService {
       final msg = e.toString();
       if (msg.contains('503') || msg.contains('502') ||
           msg.contains('ServiceUnavailable') || msg.contains('not upgraded')) {
-        LoggerService().warning(
-          '健康检查跳过 (隧道未就绪，保留当前状态): ${agent.name}',
-          tag: 'RemoteAgent',
-        );
         return agent.isOnline; // keep whatever the last known status was
       }
-      LoggerService().error('健康检查失败 (${agent.name})', tag: 'RemoteAgent', error: e);
       await disconnectAgent(agentId);
       return false;
     }
