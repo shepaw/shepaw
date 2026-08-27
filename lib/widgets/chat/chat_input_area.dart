@@ -291,7 +291,7 @@ class ChatInputAreaState extends State<ChatInputArea> {
         constraints: BoxConstraints(maxHeight: maxHeight),
         margin: const EdgeInsets.symmetric(horizontal: 8),
         decoration: BoxDecoration(
-          color: Colors.white,
+          color: Theme.of(context).colorScheme.surface,
           borderRadius: BorderRadius.circular(12),
           boxShadow: [
             BoxShadow(
@@ -400,7 +400,9 @@ class ChatInputAreaState extends State<ChatInputArea> {
             width: 32,
             height: 32,
             decoration: BoxDecoration(
-              color: isSelected ? AppColors.primaryLight : AppColors.primaryContainer,
+              color: isSelected
+                  ? AppColors.primaryLight
+                  : Theme.of(context).colorScheme.primaryContainer,
               borderRadius: BorderRadius.circular(8),
             ),
             alignment: Alignment.center,
@@ -582,13 +584,14 @@ class ChatInputAreaState extends State<ChatInputArea> {
     // WeChat-style desktop composer:
     // text area on top; attachment icons + Send share one bottom toolbar.
     final l10n = AppLocalizations.of(context);
-    const iconColor = Color(0xFF4C4C4C);
+    final colorScheme = Theme.of(context).colorScheme;
+    final iconColor = colorScheme.onSurfaceVariant;
 
     return Container(
-      decoration: const BoxDecoration(
-        color: Color(0xFFF5F5F5),
+      decoration: BoxDecoration(
+        color: colorScheme.surfaceContainer,
         border: Border(
-          top: BorderSide(color: Color(0xFFE7E7E7), width: 1),
+          top: BorderSide(color: colorScheme.outline, width: 1),
         ),
       ),
       child: TapRegion(
@@ -647,10 +650,10 @@ class ChatInputAreaState extends State<ChatInputArea> {
                       child: TextField(
                         controller: widget.messageController,
                         focusNode: widget.textFieldFocusNode,
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontSize: 14,
                           height: 1.5,
-                          color: AppColors.textPrimary,
+                          color: Theme.of(context).colorScheme.onSurface,
                         ),
                         decoration: InputDecoration(
                           hintText: l10n.chat_messageHint,
@@ -735,8 +738,9 @@ class ChatInputAreaState extends State<ChatInputArea> {
   Widget _buildDesktopSendButton(String label) {
     final enabled = _canSend;
     final primary = Theme.of(context).primaryColor;
+    final colorScheme = Theme.of(context).colorScheme;
     return Material(
-      color: Colors.white,
+      color: colorScheme.surface,
       borderRadius: BorderRadius.circular(4),
       child: InkWell(
         onTap: enabled
@@ -753,7 +757,7 @@ class ChatInputAreaState extends State<ChatInputArea> {
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(4),
             border: Border.all(
-              color: const Color(0xFFE0E0E0),
+              color: colorScheme.outline,
               width: 1,
             ),
           ),
@@ -820,6 +824,8 @@ class ChatInputAreaState extends State<ChatInputArea> {
         (buttonCenterX - left - caretSize.width / 2).clamp(8.0, popoverWidth - 22.0);
 
     final primary = Theme.of(context).primaryColor;
+    final surface = Theme.of(context).colorScheme.surface;
+    final outline = Theme.of(context).colorScheme.outline;
 
     _emojiOverlay = OverlayEntry(
       builder: (context) {
@@ -839,7 +845,7 @@ class ChatInputAreaState extends State<ChatInputArea> {
                     width: popoverWidth,
                     height: popoverHeight,
                     decoration: BoxDecoration(
-                      color: Colors.white,
+                      color: surface,
                       borderRadius: BorderRadius.circular(8),
                       boxShadow: [
                         BoxShadow(
@@ -857,22 +863,22 @@ class ChatInputAreaState extends State<ChatInputArea> {
                       config: Config(
                         height: popoverHeight,
                         checkPlatformCompatibility: true,
-                        emojiViewConfig: const EmojiViewConfig(
+                        emojiViewConfig: EmojiViewConfig(
                           emojiSizeMax: 28,
-                          backgroundColor: Colors.white,
+                          backgroundColor: surface,
                           columns: 8,
                         ),
                         categoryViewConfig: CategoryViewConfig(
                           indicatorColor: primary,
                           iconColorSelected: primary,
-                          backgroundColor: Colors.white,
-                          dividerColor: const Color(0xFFE7E7E7),
+                          backgroundColor: surface,
+                          dividerColor: outline,
                         ),
                         bottomActionBarConfig: const BottomActionBarConfig(
                           enabled: false,
                         ),
-                        searchViewConfig: const SearchViewConfig(
-                          backgroundColor: Colors.white,
+                        searchViewConfig: SearchViewConfig(
+                          backgroundColor: surface,
                         ),
                       ),
                     ),
@@ -884,7 +890,7 @@ class ChatInputAreaState extends State<ChatInputArea> {
                       padding: EdgeInsets.only(left: caretLeft),
                       child: CustomPaint(
                         size: caretSize,
-                        painter: _PopoverCaretPainter(),
+                        painter: _PopoverCaretPainter(color: surface),
                       ),
                     ),
                   ),
@@ -979,7 +985,9 @@ class ChatInputAreaState extends State<ChatInputArea> {
     );
 
     final l10n = AppLocalizations.of(context);
-    final iconColor = Colors.grey[700]!;
+    final colorScheme = Theme.of(context).colorScheme;
+    final iconColor = colorScheme.onSurfaceVariant;
+    final surface = colorScheme.surface;
 
     // Fixed height matching two menu rows (+ padding).
     const itemHeight = 44.0;
@@ -1017,7 +1025,7 @@ class ChatInputAreaState extends State<ChatInputArea> {
                   Container(
                     width: popoverWidth,
                     decoration: BoxDecoration(
-                      color: Colors.white,
+                      color: surface,
                       borderRadius: BorderRadius.circular(8),
                       boxShadow: [
                         BoxShadow(
@@ -1055,7 +1063,7 @@ class ChatInputAreaState extends State<ChatInputArea> {
                       padding: EdgeInsets.only(left: caretLeft),
                       child: CustomPaint(
                         size: caretSize,
-                        painter: _PopoverCaretPainter(),
+                        painter: _PopoverCaretPainter(color: surface),
                       ),
                     ),
                   ),
@@ -1090,9 +1098,9 @@ class ChatInputAreaState extends State<ChatInputArea> {
               Expanded(
                 child: Text(
                   label,
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 14,
-                    color: AppColors.textPrimary,
+                    color: Theme.of(context).colorScheme.onSurface,
                   ),
                 ),
               ),
@@ -1118,10 +1126,11 @@ class ChatInputAreaState extends State<ChatInputArea> {
 
   Widget _buildMobileInputArea() {
     final hasPendingAttachments = widget.pendingAttachments.isNotEmpty;
+    final colorScheme = Theme.of(context).colorScheme;
     return Container(
       padding: const EdgeInsets.all(8),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: colorScheme.surface,
         boxShadow: [
           BoxShadow(
             color: Colors.black.withOpacity(0.05),
@@ -1166,7 +1175,7 @@ class ChatInputAreaState extends State<ChatInputArea> {
                       ? _buildHoldToTalkButton()
                       : Container(
                           decoration: BoxDecoration(
-                            color: Colors.grey[100],
+                            color: colorScheme.surfaceContainerHighest,
                             borderRadius: BorderRadius.circular(24),
                           ),
                           child: Focus(
@@ -1265,10 +1274,12 @@ class ChatInputAreaState extends State<ChatInputArea> {
       child: Container(
         height: 48,
         decoration: BoxDecoration(
-          color: widget.isRecording ? Colors.grey[300] : Colors.grey[100],
+          color: widget.isRecording
+              ? Theme.of(context).colorScheme.surfaceContainerHigh
+              : Theme.of(context).colorScheme.surfaceContainerHighest,
           borderRadius: BorderRadius.circular(24),
           border: Border.all(
-            color: Colors.grey[300]!,
+            color: Theme.of(context).colorScheme.outline,
             width: 0.5,
           ),
         ),
@@ -1282,7 +1293,7 @@ class ChatInputAreaState extends State<ChatInputArea> {
           style: TextStyle(
             fontSize: 16,
             fontWeight: FontWeight.w500,
-            color: Colors.grey[700],
+            color: Theme.of(context).colorScheme.onSurfaceVariant,
           ),
         ),
       ),
@@ -1300,7 +1311,10 @@ class ChatInputAreaState extends State<ChatInputArea> {
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
       decoration: BoxDecoration(
         border: Border(
-          bottom: BorderSide(color: Colors.grey[200]!, width: 0.5),
+          bottom: BorderSide(
+            color: Theme.of(context).colorScheme.outline,
+            width: 0.5,
+          ),
         ),
       ),
       child: SizedBox(
@@ -1371,9 +1385,9 @@ class ChatInputAreaState extends State<ChatInputArea> {
           height: 80,
           padding: const EdgeInsets.all(8),
           decoration: BoxDecoration(
-            color: Colors.grey[100],
+            color: Theme.of(context).colorScheme.surfaceContainerHighest,
             borderRadius: BorderRadius.circular(8),
-            border: Border.all(color: Colors.grey[300]!),
+            border: Border.all(color: Theme.of(context).colorScheme.outline),
           ),
           child: Row(
             children: [
@@ -1885,10 +1899,14 @@ class ChatInputAreaState extends State<ChatInputArea> {
 
 /// Downward-pointing caret under desktop toolbar popovers (WeChat style).
 class _PopoverCaretPainter extends CustomPainter {
+  _PopoverCaretPainter({required this.color});
+
+  final Color color;
+
   @override
   void paint(Canvas canvas, Size size) {
     final paint = Paint()
-      ..color = Colors.white
+      ..color = color
       ..style = PaintingStyle.fill;
     final path = Path()
       ..moveTo(0, 0)
@@ -1901,5 +1919,6 @@ class _PopoverCaretPainter extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
+  bool shouldRepaint(covariant _PopoverCaretPainter oldDelegate) =>
+      oldDelegate.color != color;
 }

@@ -693,7 +693,9 @@ unknown/ambiguous → say you are not sure; do not guess a name.''');
       parts.add('''### OS (local system)
 - Prefer store for produced artifacts. Use OS file tools only for real OS paths the user named.
 - `shepaw os --help` — list all available OS tools
-- `shepaw os file.{read,write,delete,list}` / `os command.exec` / `os clipboard.{read,write}`''');
+- `shepaw os file.{read,write,delete,list}` / `os command.exec` / `os clipboard.{read,write}`
+- `shepaw os location.get` — current device location (permission required; not background tracking)
+- `shepaw os location.status` — whether location permission/services are available''');
     }
 
     if (canMeta) {

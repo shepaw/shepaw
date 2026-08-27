@@ -1058,6 +1058,18 @@ abstract class AppLocalizations {
   /// **'关闭后可减少后台任务被系统中断'**
   String get settings_batteryOptimizationSub;
 
+  /// No description provided for @settings_batteryOptimizationIgnored.
+  ///
+  /// In zh, this message translates to:
+  /// **'已关闭，后台任务不易被系统中断'**
+  String get settings_batteryOptimizationIgnored;
+
+  /// No description provided for @settings_batteryOptimizationError.
+  ///
+  /// In zh, this message translates to:
+  /// **'无法打开系统电池优化设置'**
+  String get settings_batteryOptimizationError;
+
   /// No description provided for @settings_skillsSub.
   ///
   /// In zh, this message translates to:
@@ -1405,6 +1417,36 @@ abstract class AppLocalizations {
   /// In zh, this message translates to:
   /// **'选择语言'**
   String get settings_languageDialogTitle;
+
+  /// No description provided for @settings_appearance.
+  ///
+  /// In zh, this message translates to:
+  /// **'外观'**
+  String get settings_appearance;
+
+  /// No description provided for @settings_appearanceSub.
+  ///
+  /// In zh, this message translates to:
+  /// **'浅色、深色或跟随系统'**
+  String get settings_appearanceSub;
+
+  /// No description provided for @settings_appearanceLight.
+  ///
+  /// In zh, this message translates to:
+  /// **'浅色'**
+  String get settings_appearanceLight;
+
+  /// No description provided for @settings_appearanceDark.
+  ///
+  /// In zh, this message translates to:
+  /// **'深色'**
+  String get settings_appearanceDark;
+
+  /// No description provided for @settings_appearanceDialogTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'选择外观'**
+  String get settings_appearanceDialogTitle;
 
   /// No description provided for @settings_exportDataTitle.
   ///
@@ -4061,7 +4103,7 @@ abstract class AppLocalizations {
   /// No description provided for @privacy_content.
   ///
   /// In zh, this message translates to:
-  /// **'隐私政策\n\n最后更新：2026-08-15\n\nShePaw / 惜宝（以下简称“我们”）致力于保护您的隐私。本应用采用本地优先设计：我们不运营收集用户数据的云后端，不内置广告或追踪分析，也不会在未经您配置的情况下上传您的个人数据。您的应用数据默认保留在本机，由您掌控。\n\n1. 本机存储的数据\n\n本应用不设强制云账号，也不运营自有的用户数据服务器。使用过程中产生的数据默认仅保存在您的设备上，可能包括：\n- 本地身份、设备配对与信任关系\n- Agent / 模型配置、技能包\n- 聊天消息、附件与对话历史\n- 用户资料、She 记忆与 Agent 记忆\n- 储物袋（Store）中的文件、工作区与产物\n- 推理日志、系统日志等诊断信息\n- 应用锁相关的密码哈希与生物识别偏好\n\n我们无法也不会访问这些本地数据，也不会出售您的个人数据。\n\n2. 何时数据会离开本机\n\n仅在您主动使用相关功能时，数据才会离开本机：\n- 您配置的 LLM、Agent 或 Hub 端点：消息、附件以及您授权的上下文会直接发往该端点\n- 设备配对与群组：按您的配对与授权，在设备间同步消息；储物袋中按信任关系或您显式分享的内容，可被已配对设备读取\n- 检查更新：应用可能向更新服务器（默认 release.shepaw.com，可自定义）发送平台类型、当前版本号与构建号，不含聊天内容或身份数据\n- 从 URL 导入技能包：会向您指定的地址发起下载请求\n\n我们不对第三方服务的数据处理行为负责。请只连接您信任的端点。\n\n3. 设备权限与本地能力\n\n按功能需要，应用可能请求：\n- 相机 / 相册：拍摄、选择或保存聊天图片\n- 麦克风：录制语音消息\n- 通知：Agent 消息与待审核提醒\n- 生物识别：解锁应用\n- 本地网络与后台：局域网 ACP、设备配对与本地服务（需您在设置中开启）\n\n系统工具（OS Tools）仅在您授权时访问本机文件、进程或系统信息。\n\n4. 数据安全（与实现对齐）\n\n- API Key、Noise 身份私钥等敏感凭证：优先使用平台安全存储（如 Keychain / Keystore）保管主密钥\n- 聊天记录、储物袋与一般业务数据：默认以本机 SQLite / 文件形式存储，当前不提供全库静态加密；设备备份、越狱/Root 或他人获得本机文件系统访问权时，可能读到这些内容\n- 可选应用锁（密码 / 生物识别）用于限制打开应用\n- 与远端 Agent / LLM 通信时，请使用您信任的端点；生产路径要求有效 TLS 证书\n\n5. 您的权利\n\n由于核心数据默认在本机，您可以随时：\n- 在应用内查看与管理资料、记忆、储物袋与聊天数据\n- 使用应用内导出功能备份数据\n- 通过清除应用数据或卸载应用删除本地数据\n- 解除设备配对，以停止与对端的同步及储物袋共享\n\n6. 儿童隐私\n\n本应用不面向未满 14 周岁的儿童，也不会故意收集儿童的个人信息。\n\n7. 政策变更\n\n我们可能会不时更新本隐私政策，并通过更新“最后更新”日期进行提示。如有疑问，请通过开源仓库 https://github.com/shepaw/shepaw 联系我们。'**
+  /// **'隐私政策\n\n最后更新：2026-08-28\n\nShePaw / 惜宝（以下简称“我们”）致力于保护您的隐私。本应用采用本地优先设计：我们不运营收集用户数据的云后端，不内置广告或追踪分析，也不会在未经您配置的情况下上传您的个人数据。您的应用数据默认保留在本机，由您掌控。\n\n1. 本机存储的数据\n\n本应用不设强制云账号，也不运营自有的用户数据服务器。使用过程中产生的数据默认仅保存在您的设备上，可能包括：\n- 本地身份、设备配对与信任关系\n- Agent / 模型配置、技能包\n- 聊天消息、附件与对话历史\n- 用户资料、She 记忆与 Agent 记忆\n- 储物袋（Store）中的文件、工作区与产物\n- 推理日志、系统日志等诊断信息\n- 应用锁相关的密码哈希与生物识别偏好\n\n我们无法也不会访问这些本地数据，也不会出售您的个人数据。\n\n2. 何时数据会离开本机\n\n仅在您主动使用相关功能时，数据才会离开本机：\n- 您配置的 LLM、Agent 或 Hub 端点：消息、附件以及您授权的上下文会直接发往该端点\n- 设备配对与群组：按您的配对与授权，在设备间同步消息；储物袋中按信任关系或您显式分享的内容，可被已配对设备读取\n- 检查更新：应用可能向更新服务器（默认 release.shepaw.com，可自定义）发送平台类型、当前版本号与构建号，不含聊天内容或身份数据\n- 从 URL 导入技能包：会向您指定的地址发起下载请求\n\n我们不对第三方服务的数据处理行为负责。请只连接您信任的端点。\n\n3. 设备权限与本地能力\n\n按功能需要，应用可能请求：\n- 相机 / 相册：拍摄、选择或保存聊天图片\n- 麦克风：录制语音消息\n- 通知：Agent 消息与待审核提醒\n- 生物识别：解锁应用\n- 本地网络与后台：局域网 ACP、设备配对与本地服务（需您在设置中开启）\n- 位置：仅在 Agent 查询当前位置时请求，不持续后台追踪\n\n系统工具（OS Tools）仅在您授权时访问本机文件、进程或系统信息。\n\n4. 数据安全（与实现对齐）\n\n- API Key、Noise 身份私钥等敏感凭证：优先使用平台安全存储（如 Keychain / Keystore）保管主密钥\n- 聊天记录、储物袋与一般业务数据：默认以本机 SQLite / 文件形式存储，当前不提供全库静态加密；设备备份、越狱/Root 或他人获得本机文件系统访问权时，可能读到这些内容\n- 可选应用锁（密码 / 生物识别）用于限制打开应用\n- 与远端 Agent / LLM 通信时，请使用您信任的端点；生产路径要求有效 TLS 证书\n\n5. 您的权利\n\n由于核心数据默认在本机，您可以随时：\n- 在应用内查看与管理资料、记忆、储物袋与聊天数据\n- 使用应用内导出功能备份数据\n- 通过清除应用数据或卸载应用删除本地数据\n- 解除设备配对，以停止与对端的同步及储物袋共享\n\n6. 儿童隐私\n\n本应用不面向未满 14 周岁的儿童，也不会故意收集儿童的个人信息。\n\n7. 政策变更\n\n我们可能会不时更新本隐私政策，并通过更新“最后更新”日期进行提示。如有疑问，请通过开源仓库 https://github.com/shepaw/shepaw 联系我们。'**
   String get privacy_content;
 
   /// No description provided for @terms_title.
@@ -4195,6 +4237,12 @@ abstract class AppLocalizations {
   /// In zh, this message translates to:
   /// **'剪贴板'**
   String get osTool_catClipboard;
+
+  /// No description provided for @osTool_catLocation.
+  ///
+  /// In zh, this message translates to:
+  /// **'地理位置'**
+  String get osTool_catLocation;
 
   /// No description provided for @osTool_catMacos.
   ///

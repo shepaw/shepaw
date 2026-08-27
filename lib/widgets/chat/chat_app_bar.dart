@@ -177,7 +177,7 @@ class ChatGroupAppBarTitle extends StatelessWidget {
           size: metrics.avatarSize,
           borderRadius: metrics.avatarRadius,
           onTap: onAvatarTap,
-          backgroundColor: AppColors.primaryContainer,
+          backgroundColor: Theme.of(context).colorScheme.primaryContainer,
           child: Icon(
             Icons.group,
             size: metrics.groupIconSize,

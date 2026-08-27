@@ -4,6 +4,7 @@ import 'command/command_namespace.dart';
 import 'file/file_namespace.dart';
 import 'app/app_namespace.dart';
 import 'clipboard/clipboard_namespace.dart';
+import 'location/location_namespace.dart';
 import 'macos/macos_namespace.dart';
 import 'process/process_namespace.dart';
 
@@ -22,6 +23,8 @@ import 'process/process_namespace.dart';
 ///   shepaw os app.screenshot
 ///   shepaw os clipboard.read
 ///   shepaw os clipboard.write --text "copied text"
+///   shepaw os location.get [--accuracy high]
+///   shepaw os location.status
 ///   shepaw os process.list --sort_by cpu --limit 10
 ///   shepaw os process.kill --pid 1234
 ///   shepaw os macos.exec --script 'display dialog "Hello"'
@@ -36,7 +39,7 @@ class OsCliNamespace extends CliNamespace {
 
   @override
   String get description =>
-      'Local OS tools — command, file, app, clipboard, process, system';
+      'Local OS tools — command, file, app, clipboard, location, process, system';
 
   @override
   String get usage => 'shepaw os <category>.<command> [flags]';
@@ -52,6 +55,7 @@ class OsCliNamespace extends CliNamespace {
       FileNamespace.instance,
       AppNamespace.instance,
       ClipboardNamespace.instance,
+      LocationNamespace.instance,
       MacosNamespace.instance,
       ProcessNamespace.instance,
     ];

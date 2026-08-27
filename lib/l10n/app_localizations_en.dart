@@ -541,6 +541,14 @@ class AppLocalizationsEn extends AppLocalizations {
       'Disable to keep agent tasks running in the background';
 
   @override
+  String get settings_batteryOptimizationIgnored =>
+      'Disabled. Background tasks are less likely to be interrupted';
+
+  @override
+  String get settings_batteryOptimizationError =>
+      'Could not open battery optimization settings';
+
+  @override
   String get settings_skillsSub => 'Import and manage agent skill packs';
 
   @override
@@ -744,6 +752,21 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get settings_languageDialogTitle => 'Select Language';
+
+  @override
+  String get settings_appearance => 'Appearance';
+
+  @override
+  String get settings_appearanceSub => 'Light, dark, or follow system';
+
+  @override
+  String get settings_appearanceLight => 'Light';
+
+  @override
+  String get settings_appearanceDark => 'Dark';
+
+  @override
+  String get settings_appearanceDialogTitle => 'Choose appearance';
 
   @override
   String get settings_exportDataTitle => 'Export Data';
@@ -2257,7 +2280,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get privacy_content =>
-      'Privacy Policy\n\nLast updated: 2026-08-15\n\nShePaw (\"we\", \"our\", or \"us\") is committed to protecting your privacy. The app is local-first: we do not operate a cloud backend that collects your personal data, we do not include ads or tracking analytics, and we do not upload your data unless you configure a destination. App data stays on your device by default and remains under your control.\n\n1. Data Stored on Your Device\n\nShePaw does not require a cloud account or our own user-data servers. Data created while you use the app is stored on your device by default and may include:\n- Local identity, device pairing, and trust relationships\n- Agent / model configuration and skill packages\n- Chat messages, attachments, and conversation history\n- User profile, She memory, and agent memories\n- Files, workspaces, and artifacts in Store\n- Inference logs and other diagnostic logs\n- App-lock password hashes and biometric preferences\n\nWe cannot and will not access this local data, and we do not sell your personal data.\n\n2. When Data Leaves Your Device\n\nData leaves your device only when you use related features:\n- LLM, agent, or Hub endpoints you configure: messages, attachments, and authorized context are sent directly to that endpoint\n- Device pairing and groups: messages sync according to your pairing and authorization; Store content that is shared by trust relationship or explicit share can be read by paired devices\n- Update checks: the app may send platform, current version, and build number to the update server (default release.shepaw.com, which you can customize). This does not include chat content or identity data\n- Importing a skill package from a URL: the app downloads from the address you provide\n\nWe are not responsible for third-party data practices. Connect only to endpoints you trust.\n\n3. Device Permissions and Local Capabilities\n\nDepending on features you use, the app may request:\n- Camera / photos: capture, pick, or save images in conversations\n- Microphone: record voice messages\n- Notifications: agent messages and review reminders\n- Biometrics: unlock the app\n- Local network and background: LAN ACP, device pairing, and local services (enabled in Settings)\n\nOS Tools access local files, processes, or system information only when you authorize them.\n\n4. Data Security (aligned with the implementation)\n\n- Sensitive credentials such as API keys and Noise identity private keys: the master key is preferentially kept in platform secure storage (Keychain / Keystore)\n- Chat history, Store, and general app data: stored locally (SQLite / files) without full-database encryption at rest by default; device backups, jailbreak/root, or filesystem access may expose this content\n- Optional app lock (password / biometrics) can restrict opening the app\n- When talking to remote agents / LLMs, use endpoints you trust; production paths require valid TLS certificates\n\n5. Your Rights\n\nBecause core data stays on-device by default, you can at any time:\n- View and manage profile, memories, Store, and chat data in the app\n- Export data using in-app backup features\n- Delete local data by clearing app data or uninstalling\n- Unpair devices to stop sync and Store sharing with those peers\n\n6. Children\'s Privacy\n\nThis app is not directed to children under 13, and we do not knowingly collect personal information from children.\n\n7. Changes to This Policy\n\nWe may update this Privacy Policy from time to time and will reflect changes by updating the \"Last updated\" date. Questions can be raised via the open-source repository at https://github.com/shepaw/shepaw.';
+      'Privacy Policy\n\nLast updated: 2026-08-28\n\nShePaw (\"we\", \"our\", or \"us\") is committed to protecting your privacy. The app is local-first: we do not operate a cloud backend that collects your personal data, we do not include ads or tracking analytics, and we do not upload your data unless you configure a destination. App data stays on your device by default and remains under your control.\n\n1. Data Stored on Your Device\n\nShePaw does not require a cloud account or our own user-data servers. Data created while you use the app is stored on your device by default and may include:\n- Local identity, device pairing, and trust relationships\n- Agent / model configuration and skill packages\n- Chat messages, attachments, and conversation history\n- User profile, She memory, and agent memories\n- Files, workspaces, and artifacts in Store\n- Inference logs and other diagnostic logs\n- App-lock password hashes and biometric preferences\n\nWe cannot and will not access this local data, and we do not sell your personal data.\n\n2. When Data Leaves Your Device\n\nData leaves your device only when you use related features:\n- LLM, agent, or Hub endpoints you configure: messages, attachments, and authorized context are sent directly to that endpoint\n- Device pairing and groups: messages sync according to your pairing and authorization; Store content that is shared by trust relationship or explicit share can be read by paired devices\n- Update checks: the app may send platform, current version, and build number to the update server (default release.shepaw.com, which you can customize). This does not include chat content or identity data\n- Importing a skill package from a URL: the app downloads from the address you provide\n\nWe are not responsible for third-party data practices. Connect only to endpoints you trust.\n\n3. Device Permissions and Local Capabilities\n\nDepending on features you use, the app may request:\n- Camera / photos: capture, pick, or save images in conversations\n- Microphone: record voice messages\n- Notifications: agent messages and review reminders\n- Biometrics: unlock the app\n- Local network and background: LAN ACP, device pairing, and local services (enabled in Settings)\n- Location: requested only when an agent queries the current position; not tracked in the background\n\nOS Tools access local files, processes, or system information only when you authorize them.\n\n4. Data Security (aligned with the implementation)\n\n- Sensitive credentials such as API keys and Noise identity private keys: the master key is preferentially kept in platform secure storage (Keychain / Keystore)\n- Chat history, Store, and general app data: stored locally (SQLite / files) without full-database encryption at rest by default; device backups, jailbreak/root, or filesystem access may expose this content\n- Optional app lock (password / biometrics) can restrict opening the app\n- When talking to remote agents / LLMs, use endpoints you trust; production paths require valid TLS certificates\n\n5. Your Rights\n\nBecause core data stays on-device by default, you can at any time:\n- View and manage profile, memories, Store, and chat data in the app\n- Export data using in-app backup features\n- Delete local data by clearing app data or uninstalling\n- Unpair devices to stop sync and Store sharing with those peers\n\n6. Children\'s Privacy\n\nThis app is not directed to children under 13, and we do not knowingly collect personal information from children.\n\n7. Changes to This Policy\n\nWe may update this Privacy Policy from time to time and will reflect changes by updating the \"Last updated\" date. Questions can be raised via the open-source repository at https://github.com/shepaw/shepaw.';
 
   @override
   String get terms_title => 'Terms of Service';
@@ -2330,6 +2353,9 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get osTool_catClipboard => 'Clipboard';
+
+  @override
+  String get osTool_catLocation => 'Location';
 
   @override
   String get osTool_catMacos => 'macOS Only';

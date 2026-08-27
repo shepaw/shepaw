@@ -24,11 +24,13 @@ class NativeWindowService {
   ///
   /// [title] is informational only (used by the sub-window app bar).
   /// [locale] is the language code to pass to the sub-window (e.g. 'zh', 'en').
+  /// [themeMode] is `system`, `light`, or `dark`.
   /// [width] and [height] set the initial window size.
   Future<void> openPanel({
     required String key,
     required String title,
     String? locale,
+    String? themeMode,
     double width = 800,
     double height = 600,
   }) async {
@@ -70,6 +72,7 @@ class NativeWindowService {
       'key': key,
       'title': title,
       'locale': locale,
+      'themeMode': themeMode,
     });
 
     final controller = await WindowController.create(

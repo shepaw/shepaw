@@ -146,28 +146,37 @@ class MessageBubble extends StatelessWidget {
   static MarkdownStyleSheet? _cachedMyStyleSheet;
   static MarkdownStyleSheet? _cachedOtherStyleSheet;
   static Color? _cachedPrimaryColor;
+  static Brightness? _cachedBrightness;
   // Bump when other-message typography/colors change so hot reload refreshes.
-  static const int _styleSheetVersion = 2;
+  static const int _styleSheetVersion = 3;
   static int? _cachedStyleSheetVersion;
 
-  static MarkdownStyleSheet _getStyleSheet(bool isMyMessage, Color primaryColor) {
-    if (_cachedPrimaryColor != primaryColor ||
+  static MarkdownStyleSheet _getStyleSheet(
+    bool isMyMessage,
+    ColorScheme colorScheme,
+  ) {
+    if (_cachedPrimaryColor != colorScheme.primary ||
+        _cachedBrightness != colorScheme.brightness ||
         _cachedStyleSheetVersion != _styleSheetVersion) {
       _cachedMyStyleSheet = null;
       _cachedOtherStyleSheet = null;
-      _cachedPrimaryColor = primaryColor;
+      _cachedPrimaryColor = colorScheme.primary;
+      _cachedBrightness = colorScheme.brightness;
       _cachedStyleSheetVersion = _styleSheetVersion;
     }
     if (isMyMessage) {
-      return _cachedMyStyleSheet ??= _buildStyleSheet(true);
+      return _cachedMyStyleSheet ??= _buildStyleSheet(true, colorScheme);
     } else {
-      return _cachedOtherStyleSheet ??= _buildStyleSheet(false);
+      return _cachedOtherStyleSheet ??= _buildStyleSheet(false, colorScheme);
     }
   }
 
-  static MarkdownStyleSheet _buildStyleSheet(bool isMyMessage) {
+  static MarkdownStyleSheet _buildStyleSheet(
+    bool isMyMessage,
+    ColorScheme colorScheme,
+  ) {
     final textColor =
-        isMyMessage ? Colors.white : AppColors.textPrimary;
+        isMyMessage ? Colors.white : colorScheme.onSurface;
     return MarkdownStyleSheet(
       p: TextStyle(color: textColor, fontSize: 15, height: 1.5),
       h1: TextStyle(color: textColor, fontSize: 22, fontWeight: FontWeight.bold),
@@ -180,22 +189,22 @@ class MessageBubble extends StatelessWidget {
       strong: TextStyle(color: textColor, fontWeight: FontWeight.bold),
       a: TextStyle(color: isMyMessage ? Colors.lightBlueAccent : Colors.blue, decoration: TextDecoration.underline),
       code: TextStyle(
-        color: isMyMessage ? Colors.white : AppColors.textPrimary,
+        color: isMyMessage ? Colors.white : colorScheme.onSurface,
         backgroundColor: isMyMessage
             ? Colors.white24
-            : AppColors.outline.withValues(alpha: 0.45),
+            : colorScheme.outline.withValues(alpha: 0.45),
         fontFamily: 'monospace',
         fontSize: 13,
       ),
       codeblockDecoration: BoxDecoration(
-        color: isMyMessage ? Colors.white12 : AppColors.background,
+        color: isMyMessage ? Colors.white12 : colorScheme.surface,
         borderRadius: BorderRadius.circular(8),
       ),
       codeblockPadding: const EdgeInsets.all(10),
       blockquoteDecoration: BoxDecoration(
         border: Border(
           left: BorderSide(
-            color: isMyMessage ? Colors.white54 : AppColors.outline,
+            color: isMyMessage ? Colors.white54 : colorScheme.outline,
             width: 3,
           ),
         ),
@@ -205,13 +214,13 @@ class MessageBubble extends StatelessWidget {
       tableHead: TextStyle(color: textColor, fontWeight: FontWeight.bold),
       tableBody: TextStyle(color: textColor),
       tableBorder: TableBorder.all(
-        color: isMyMessage ? Colors.white38 : AppColors.outline,
+        color: isMyMessage ? Colors.white38 : colorScheme.outline,
         width: 1,
       ),
       horizontalRuleDecoration: BoxDecoration(
         border: Border(
           top: BorderSide(
-            color: isMyMessage ? Colors.white38 : AppColors.outline,
+            color: isMyMessage ? Colors.white38 : colorScheme.outline,
             width: 1,
           ),
         ),
@@ -583,7 +592,9 @@ class MessageBubble extends StatelessWidget {
         width: avatarSize,
         height: avatarSize,
         decoration: BoxDecoration(
-          color: isStreaming ? AppColors.primaryContainer : null,
+          color: isStreaming
+              ? Theme.of(context).colorScheme.primaryContainer
+              : null,
           borderRadius: BorderRadius.circular(8),
         ),
         alignment: Alignment.center,
@@ -642,8 +653,10 @@ class MessageBubble extends StatelessWidget {
                   color: isMyMessage
                       ? Theme.of(context).primaryColor
                       : (isStreaming
-                          ? AppColors.primaryContainer
-                          : AppColors.surfaceMuted),
+                          ? Theme.of(context).colorScheme.primaryContainer
+                          : Theme.of(context)
+                              .colorScheme
+                              .surfaceContainerHighest),
                   borderRadius: BorderRadius.circular(16),
                   border: isStreaming
                       ? Border.all(
@@ -862,7 +875,8 @@ class MessageBubble extends StatelessWidget {
             : displayText;
         final content =
             _processContentWithMentions(rawContent, message.metadata);
-        final styleSheet = _getStyleSheet(isMyMessage, Theme.of(context).primaryColor);
+        final styleSheet =
+            _getStyleSheet(isMyMessage, Theme.of(context).colorScheme);
         final markdownBody = _StableMarkdownBody(
           data: content,
           styleSheet: styleSheet,
@@ -1046,7 +1060,9 @@ class MessageBubble extends StatelessWidget {
     final quoted = quotedMessage!;
     final accentColor = isMyMessage ? Colors.white70 : Theme.of(context).primaryColor;
     final nameColor = isMyMessage ? Colors.white : Theme.of(context).primaryColor;
-    final contentColor = isMyMessage ? Colors.white70 : Colors.black54;
+    final contentColor = isMyMessage
+        ? Colors.white70
+        : Theme.of(context).colorScheme.onSurfaceVariant;
     final bgColor = isMyMessage ? Colors.white.withOpacity(0.15) : Theme.of(context).primaryColor.withOpacity(0.08);
 
     final previewText = quoted.content.length > 60
@@ -1102,9 +1118,12 @@ class MessageBubble extends StatelessWidget {
   }
 
   Widget _buildDeletedQuoteBlock(BuildContext context) {
-    final accentColor = isMyMessage ? Colors.white38 : Colors.grey[400]!;
-    final textColor = isMyMessage ? Colors.white54 : Colors.grey;
-    final bgColor = isMyMessage ? Colors.white.withOpacity(0.08) : Colors.grey.withOpacity(0.08);
+    final scheme = Theme.of(context).colorScheme;
+    final accentColor = isMyMessage ? Colors.white38 : scheme.outline;
+    final textColor = isMyMessage ? Colors.white54 : scheme.onSurfaceVariant;
+    final bgColor = isMyMessage
+        ? Colors.white.withOpacity(0.08)
+        : scheme.onSurface.withOpacity(0.08);
 
     return Container(
       margin: const EdgeInsets.only(bottom: 6),

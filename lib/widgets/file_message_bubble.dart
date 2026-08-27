@@ -370,14 +370,15 @@ class _FileMessageBubbleState extends State<FileMessageBubble> {
 
   @override
   Widget build(BuildContext context) {
-    // 自己发送的消息气泡为橘色：附件卡片用白底深字，避免与气泡背景融为一体。
+    // 自己发送的消息气泡为橘色：附件卡片用表面色深字，避免与气泡背景融为一体。
+    final colorScheme = Theme.of(context).colorScheme;
     final bgColor = widget.isMyMessage
-        ? Colors.white
-        : Colors.black.withValues(alpha: 0.05);
-    final textColor =
-        widget.isMyMessage ? AppColors.textPrimary : Colors.black87;
-    final subtitleColor =
-        widget.isMyMessage ? AppColors.textSecondary : Colors.black54;
+        ? colorScheme.surface
+        : colorScheme.onSurface.withValues(alpha: 0.08);
+    final textColor = widget.isMyMessage
+        ? colorScheme.onSurface
+        : colorScheme.onSurface;
+    final subtitleColor = colorScheme.onSurfaceVariant;
     final trailingColor =
         widget.isMyMessage ? AppColors.primary : Colors.blueGrey;
 

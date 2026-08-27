@@ -20,5 +20,7 @@
 	<true/>
 	<key>com.apple.security.assets.pictures.read-only</key>
 	<true/>
+	<key>com.apple.security.personal-information.location</key>
+	<true/>
 </dict>
 </plist>

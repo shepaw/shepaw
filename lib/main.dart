@@ -17,6 +17,7 @@ import 'theme/app_theme.dart';
 
 import 'providers/locale_provider.dart';
 import 'providers/notification_provider.dart';
+import 'providers/theme_provider.dart';
 import 'screens/password_setup_screen.dart';
 import 'screens/login_screen.dart';
 import 'screens/adaptive_home_screen.dart';
@@ -116,6 +117,7 @@ Future<void> _runSubWindow(String rawArgs) async {
   final key = params['key'] as String? ?? '';
   final title = params['title'] as String? ?? '';
   final locale = params['locale'] as String?;
+  final themeMode = params['themeMode'] as String?;
 
   // Sub-windows read logs from disk / SQLite, not the main isolate's memory.
   if (key == 'system_log') {
@@ -126,6 +128,7 @@ Future<void> _runSubWindow(String rawArgs) async {
     windowKey: key,
     title: title,
     localeCode: locale,
+    themeMode: themeMode,
   ));
 }
 
@@ -244,11 +247,14 @@ class _MyAppState extends State<MyApp> {
           create: (_) => LocaleProvider(),
         ),
         ChangeNotifierProvider(
+          create: (_) => ThemeProvider(),
+        ),
+        ChangeNotifierProvider(
           create: (_) => NotificationProvider(),
         ),
       ],
-      child: Consumer<LocaleProvider>(
-        builder: (context, localeProvider, _) {
+      child: Consumer2<LocaleProvider, ThemeProvider>(
+        builder: (context, localeProvider, themeProvider, _) {
           final l10n = lookupAppLocalizations(
             _resolveAppLocale(localeProvider.locale),
           );
@@ -269,6 +275,8 @@ class _MyAppState extends State<MyApp> {
                 return const Locale('zh');
               },
               theme: AppTheme.light,
+              darkTheme: AppTheme.dark,
+              themeMode: themeProvider.themeMode,
               builder: (context, child) => WindowTitleSync(
                 child: PendingApprovalBanner(
                   child: child ?? const SizedBox.shrink(),

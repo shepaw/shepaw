@@ -2,6 +2,7 @@ import 'dart:io' show Platform;
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/locale_provider.dart';
+import '../providers/theme_provider.dart';
 import '../services/native_window_service.dart';
 import '../widgets/right_drawer_route.dart';
 
@@ -93,10 +94,13 @@ class LayoutUtils {
             Provider.of<LocaleProvider>(context, listen: false);
         final localeCode = localeProvider.locale?.languageCode ??
             Localizations.maybeLocaleOf(context)?.languageCode;
+        final themeMode =
+            Provider.of<ThemeProvider>(context, listen: false).encodedMode;
         NativeWindowService.instance.openPanel(
           key: key,
           title: title,
           locale: localeCode,
+          themeMode: themeMode,
         );
       } else {
         FloatingPanelManager.instance.open(

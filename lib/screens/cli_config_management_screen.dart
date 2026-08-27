@@ -20,10 +20,9 @@ import '../models/tool_config.dart';
 import '../services/cli_command_config_service.dart';
 import '../clis/shepaw/os/os_tool_registry.dart';
 import '../services/tool_config_service.dart';
-import '../theme/app_theme.dart';
 
-/// CLI 管理页内容区背景：纯白底，避免灰底影响文档/代码可读性。
-Color _cliContentBg(ColorScheme _) => AppColors.surface;
+/// CLI 管理页内容区背景：跟随主题表面色。
+Color _cliContentBg(ColorScheme cs) => cs.surface;
 
 /// 带浅灰描边的内容区装饰，用于在白底页面上区分区块。
 BoxDecoration _cliPanelDecoration(
@@ -169,7 +168,7 @@ Future<void> _showHelpSheet({
     context: context,
     isScrollControlled: true,
     useSafeArea: true,
-    backgroundColor: AppColors.surface,
+    backgroundColor: Theme.of(context).colorScheme.surface,
     shape: const RoundedRectangleBorder(
       borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
     ),
@@ -1187,7 +1186,7 @@ class _CommandTileState extends State<_CommandTile> {
       context: context,
       isScrollControlled: true,
       useSafeArea: true,
-      backgroundColor: AppColors.surface,
+      backgroundColor: Theme.of(context).colorScheme.surface,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
@@ -1212,7 +1211,7 @@ class _CommandTileState extends State<_CommandTile> {
       context: context,
       isScrollControlled: true,
       useSafeArea: true,
-      backgroundColor: AppColors.surface,
+      backgroundColor: Theme.of(context).colorScheme.surface,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
@@ -1382,7 +1381,7 @@ class _NsConfigSheet extends StatefulWidget {
       context: context,
       isScrollControlled: true,
       useSafeArea: true,
-      backgroundColor: AppColors.surface,
+      backgroundColor: Theme.of(context).colorScheme.surface,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
@@ -1644,7 +1643,7 @@ class _CliDetailSheet extends StatefulWidget {
       context: context,
       isScrollControlled: true,
       useSafeArea: true,
-      backgroundColor: AppColors.surface,
+      backgroundColor: Theme.of(context).colorScheme.surface,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
@@ -1682,7 +1681,7 @@ class _CliDetailSheet extends StatefulWidget {
       context: context,
       isScrollControlled: true,
       useSafeArea: true,
-      backgroundColor: AppColors.surface,
+      backgroundColor: Theme.of(context).colorScheme.surface,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),

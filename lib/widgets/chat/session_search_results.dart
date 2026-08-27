@@ -177,7 +177,7 @@ class SessionSearchResults extends StatelessWidget {
         height: 36,
         decoration: BoxDecoration(
           color: _isGroupMode
-              ? AppColors.primaryContainer
+              ? Theme.of(context).colorScheme.primaryContainer
               : Theme.of(context).primaryColor.withOpacity(0.1),
           borderRadius: BorderRadius.circular(9),
         ),

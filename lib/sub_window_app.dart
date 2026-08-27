@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'l10n/app_localizations.dart';
+import 'providers/theme_provider.dart';
 import 'screens/inference_log_screen.dart';
 import 'screens/log_viewer_screen.dart';
 import 'theme/app_theme.dart';
@@ -22,11 +23,15 @@ class SubWindowApp extends StatelessWidget {
   /// The locale to use (e.g. 'zh', 'en'). If null, follows system.
   final String? localeCode;
 
+  /// Appearance preference: `system`, `light`, or `dark`.
+  final String? themeMode;
+
   const SubWindowApp({
     Key? key,
     required this.windowKey,
     required this.title,
     this.localeCode,
+    this.themeMode,
   }) : super(key: key);
 
   @override
@@ -48,6 +53,8 @@ class SubWindowApp extends StatelessWidget {
         return const Locale('zh');
       },
       theme: AppTheme.light,
+      darkTheme: AppTheme.dark,
+      themeMode: ThemeProvider.parseMode(themeMode),
       home: _buildScreen(),
     );
   }

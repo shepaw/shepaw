@@ -72,6 +72,10 @@ dependencies:
   # 权限
   permission_handler: ^11.2.0
 
+  # 地理位置（Agent 按需查询，不后台追踪）
+  geolocator: ^13.0.4
+  geocoding: ^3.0.0
+
   # 二维码扫描（v2.1 shepaw://pair 配对）
   mobile_scanner: ^5.2.0
   # 二维码生成（P2P 配对 QR 展示）

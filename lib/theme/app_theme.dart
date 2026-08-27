@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 /// 品牌配色：取自橘猫 logo。
 ///
@@ -47,6 +48,30 @@ class AppColors {
 
   /// 次要文字色（与会话列表预览等 UI 中的 grey[500] 一致）。
   static const Color textSecondary = Color(0xFF9E9E9E);
+
+  /// 深色模式：页面底色。
+  static const Color darkBackground = Color(0xFF111318);
+
+  /// 深色模式：卡片/AppBar/输入栏表面。
+  static const Color darkSurface = Color(0xFF1A1C20);
+
+  /// 深色模式：次级表面（对方气泡、输入框填充）。
+  static const Color darkSurfaceMuted = Color(0xFF2C2E34);
+
+  /// 深色模式：分隔/边框。
+  static const Color darkOutline = Color(0xFF3E4148);
+
+  /// 深色模式：橘色容器填充。
+  static const Color darkPrimaryContainer = Color(0xFF5C3A14);
+
+  /// 深色模式：粉色容器填充。
+  static const Color darkAccentContainer = Color(0xFF4A2A38);
+
+  /// 深色模式：主要文字。
+  static const Color darkTextPrimary = Color(0xFFE8EAED);
+
+  /// 深色模式：次要文字。
+  static const Color darkTextSecondary = Color(0xFF9AA0A6);
 }
 
 /// 应用主题。统一从 [AppColors] 派生，保证全局风格一致。
@@ -61,6 +86,7 @@ class AppTheme {
       primary: AppColors.primary,
       onPrimary: AppColors.onPrimary,
       primaryContainer: AppColors.primaryContainer,
+      onPrimaryContainer: AppColors.primaryDark,
       secondary: AppColors.accent,
       secondaryContainer: AppColors.accentContainer,
       // 表面与背景统一为纯净的中性白/灰，去掉橘色种子带来的暖色调。
@@ -72,53 +98,88 @@ class AppTheme {
       surfaceContainer: const Color(0xFFF5F6F8),
       surfaceContainerHigh: const Color(0xFFF2F3F5),
       surfaceContainerHighest: AppColors.surfaceMuted,
-      surfaceVariant: AppColors.surfaceMuted,
       outline: AppColors.outline,
       outlineVariant: const Color(0xFFEDEEF0),
       // 去掉 M3 海拔叠加的橘色染色。
       surfaceTint: Colors.transparent,
     );
 
+    return _fromScheme(scheme, scaffoldBackground: AppColors.background);
+  }
+
+  static ThemeData get dark {
+    final scheme = ColorScheme.fromSeed(
+      seedColor: AppColors.primary,
+      brightness: Brightness.dark,
+    ).copyWith(
+      primary: AppColors.primary,
+      onPrimary: AppColors.onPrimary,
+      primaryContainer: AppColors.darkPrimaryContainer,
+      onPrimaryContainer: AppColors.primaryLight,
+      secondary: AppColors.accent,
+      secondaryContainer: AppColors.darkAccentContainer,
+      surface: AppColors.darkSurface,
+      onSurface: AppColors.darkTextPrimary,
+      onSurfaceVariant: AppColors.darkTextSecondary,
+      surfaceContainerLowest: AppColors.darkBackground,
+      surfaceContainerLow: const Color(0xFF16181C),
+      surfaceContainer: const Color(0xFF1F2126),
+      surfaceContainerHigh: const Color(0xFF26282E),
+      surfaceContainerHighest: AppColors.darkSurfaceMuted,
+      outline: AppColors.darkOutline,
+      outlineVariant: const Color(0xFF2E3138),
+      surfaceTint: Colors.transparent,
+    );
+
+    return _fromScheme(scheme, scaffoldBackground: AppColors.darkBackground);
+  }
+
+  static ThemeData _fromScheme(
+    ColorScheme scheme, {
+    required Color scaffoldBackground,
+  }) {
+    final isDark = scheme.brightness == Brightness.dark;
     return ThemeData(
       useMaterial3: true,
+      brightness: scheme.brightness,
       colorScheme: scheme,
       primaryColor: AppColors.primary,
-      scaffoldBackgroundColor: AppColors.background,
-      // 全局禁用 M3 表面海拔叠加的橘色染色，保持纯净。
-      appBarTheme: const AppBarTheme(
-        backgroundColor: AppColors.surface,
-        foregroundColor: AppColors.textPrimary,
+      scaffoldBackgroundColor: scaffoldBackground,
+      appBarTheme: AppBarTheme(
+        backgroundColor: scheme.surface,
+        foregroundColor: scheme.onSurface,
         surfaceTintColor: Colors.transparent,
         scrolledUnderElevation: 0,
         elevation: 0,
+        systemOverlayStyle:
+            isDark ? SystemUiOverlayStyle.light : SystemUiOverlayStyle.dark,
       ),
       cardTheme: const CardThemeData(
         surfaceTintColor: Colors.transparent,
       ),
-      dialogTheme: const DialogThemeData(
+      dialogTheme: DialogThemeData(
         surfaceTintColor: Colors.transparent,
-        backgroundColor: AppColors.surface,
+        backgroundColor: scheme.surface,
       ),
-      bottomSheetTheme: const BottomSheetThemeData(
+      bottomSheetTheme: BottomSheetThemeData(
         surfaceTintColor: Colors.transparent,
-        backgroundColor: AppColors.surface,
+        backgroundColor: scheme.surface,
       ),
-      popupMenuTheme: const PopupMenuThemeData(
+      popupMenuTheme: PopupMenuThemeData(
         surfaceTintColor: Colors.transparent,
-        color: AppColors.surface,
+        color: scheme.surface,
       ),
-      navigationBarTheme: const NavigationBarThemeData(
+      navigationBarTheme: NavigationBarThemeData(
         surfaceTintColor: Colors.transparent,
-        backgroundColor: AppColors.surface,
+        backgroundColor: scheme.surface,
       ),
-      drawerTheme: const DrawerThemeData(
+      drawerTheme: DrawerThemeData(
         surfaceTintColor: Colors.transparent,
-        backgroundColor: AppColors.surface,
+        backgroundColor: scheme.surface,
       ),
-      dividerTheme: const DividerThemeData(
-        color: AppColors.outline,
+      dividerTheme: DividerThemeData(
+        color: scheme.outline,
       ),
-      // 暖色波纹/选中态
       switchTheme: SwitchThemeData(
         thumbColor: WidgetStateProperty.resolveWith(
           (states) => states.contains(WidgetState.selected)

@@ -2987,12 +2987,14 @@ class _ChatScreenState extends State<ChatScreen>
                       height: 250,
                       emojiViewConfig: EmojiViewConfig(
                         emojiSizeMax: 28 * (Platform.isIOS ? 1.30 : 1.0),
-                        backgroundColor: Colors.white,
+                        backgroundColor:
+                            Theme.of(context).colorScheme.surface,
                       ),
                       categoryViewConfig: CategoryViewConfig(
                         indicatorColor: Theme.of(context).primaryColor,
                         iconColorSelected: Theme.of(context).primaryColor,
-                        backgroundColor: Colors.white,
+                        backgroundColor:
+                            Theme.of(context).colorScheme.surface,
                       ),
                       searchViewConfig: const SearchViewConfig(),
                       bottomActionBarConfig:
@@ -3548,7 +3550,7 @@ class _ChatScreenState extends State<ChatScreen>
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
         decoration: BoxDecoration(
-          color: Colors.white,
+          color: Theme.of(context).colorScheme.surface,
           borderRadius: BorderRadius.circular(20),
           boxShadow: [
             BoxShadow(
@@ -3576,7 +3578,9 @@ class _ChatScreenState extends State<ChatScreen>
               ),
               const SizedBox(width: 4),
             ],
-            Icon(Icons.keyboard_arrow_down, size: 20, color: Colors.grey[700]),
+            Icon(Icons.keyboard_arrow_down,
+                size: 20,
+                color: Theme.of(context).colorScheme.onSurfaceVariant),
           ],
         ),
       ),
@@ -3591,10 +3595,11 @@ class _ChatScreenState extends State<ChatScreen>
         ? '${_controller.messageQueue.first.substring(0, 40)}...'
         : _controller.messageQueue.first;
 
+    final colorScheme = Theme.of(context).colorScheme;
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       decoration: BoxDecoration(
-        color: AppColors.primaryContainer,
+        color: colorScheme.primaryContainer,
         border: const Border(
             top: BorderSide(color: AppColors.primaryLight, width: 1)),
       ),
@@ -3609,10 +3614,10 @@ class _ChatScreenState extends State<ChatScreen>
               children: [
                 Text(
                   count == 1 ? '1 message queued' : '$count messages queued',
-                  style: const TextStyle(
+                  style: TextStyle(
                       fontSize: 12,
                       fontWeight: FontWeight.w500,
-                      color: AppColors.primaryDark),
+                      color: colorScheme.onPrimaryContainer),
                 ),
                 Text(preview,
                     style:

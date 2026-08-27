@@ -311,6 +311,51 @@ class OsToolRegistry {
       category: 'clipboard',
     ),
 
+    // ── Location ─────────────────────────────────────────────────────────────
+    OsToolDefinition(
+      name: 'location_get',
+      cliPath: 'os.location.get',
+      description:
+          'Get the device current geographic location (latitude/longitude) and, '
+          'when available, a reverse-geocoded place name (city, region, country). '
+          'Requires user permission. Use when the user asks where they are, for '
+          'local weather, nearby places, or time-zone/locale grounded answers. '
+          'Does not track location in the background.',
+      parameterSchema: {
+        'type': 'object',
+        'properties': {
+          'accuracy': {
+            'type': 'string',
+            'enum': ['lowest', 'low', 'medium', 'high', 'best'],
+            'description': "GPS accuracy (default: 'high')",
+          },
+          'reverse_geocode': {
+            'type': 'boolean',
+            'description':
+                'If true, also resolve coordinates to a place name (default: true)',
+          },
+          'timeout': {
+            'type': 'integer',
+            'description': 'Timeout in seconds (default: 15, max: 60)',
+          },
+        },
+      },
+      defaultRiskLevel: 'lowRisk',
+      supportedPlatforms: _all,
+      category: 'location',
+    ),
+    OsToolDefinition(
+      name: 'location_status',
+      cliPath: 'os.location.status',
+      description:
+          'Check whether location services and permission are available. '
+          'Does not read GPS coordinates.',
+      parameterSchema: {'type': 'object', 'properties': {}},
+      defaultRiskLevel: 'safe',
+      supportedPlatforms: _all,
+      category: 'location',
+    ),
+
     // ── macOS Only ───────────────────────────────────────────────────────────
     OsToolDefinition(
       name: 'applescript_exec',
@@ -552,6 +597,7 @@ IMPORTANT: These tools execute real actions on the user's device. Always confirm
     'file': 'File Operations',
     'app': 'App & Browser',
     'clipboard': 'Clipboard',
+    'location': 'Location',
     'macos': 'macOS Only',
     'process': 'Process Management',
   };

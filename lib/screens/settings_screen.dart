@@ -4,10 +4,12 @@ import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../l10n/app_localizations.dart';
 import '../providers/locale_provider.dart';
+import '../providers/theme_provider.dart';
 import 'change_password_screen.dart';
 import 'privacy_policy_screen.dart';
 import 'notification_settings_screen.dart';
 import 'language_settings_screen.dart';
+import 'appearance_settings_screen.dart';
 import 'inference_log_screen.dart';
 import 'log_viewer_screen.dart';
 import 'user_profile_settings_screen.dart';
@@ -39,12 +41,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
   bool _biometricEnabled = false;
   bool _biometricSupported = false;
   bool _biometricLoading = true;
+  bool _batteryOptIgnored = false;
 
   @override
   void initState() {
     super.initState();
     UpdateService().dismissSettingsIconBadge();
     _loadBiometricState();
+    _loadBatteryOptimizationState();
   }
 
   Future<void> _loadBiometricState() async {
@@ -90,6 +94,44 @@ class _SettingsScreenState extends State<SettingsScreen> {
             value ? l10n.settings_biometricEnabled : l10n.settings_biometricDisabled,
           ),
         ),
+      );
+    }
+  }
+
+  Future<void> _loadBatteryOptimizationState() async {
+    if (!Platform.isAndroid) return;
+    try {
+      final ignored =
+          await FlutterForegroundTask.isIgnoringBatteryOptimizations;
+      if (mounted) {
+        setState(() => _batteryOptIgnored = ignored);
+      }
+    } catch (_) {}
+  }
+
+  Future<void> _onBatteryOptimizationTap() async {
+    final l10n = AppLocalizations.of(context);
+    try {
+      bool ignored;
+      if (_batteryOptIgnored) {
+        ignored =
+            await FlutterForegroundTask.openIgnoreBatteryOptimizationSettings();
+      } else {
+        try {
+          ignored =
+              await FlutterForegroundTask.requestIgnoreBatteryOptimization();
+        } catch (_) {
+          ignored = await FlutterForegroundTask
+              .openIgnoreBatteryOptimizationSettings();
+        }
+      }
+      if (mounted) {
+        setState(() => _batteryOptIgnored = ignored);
+      }
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(l10n.settings_batteryOptimizationError)),
       );
     }
   }
@@ -228,17 +270,36 @@ class _SettingsScreenState extends State<SettingsScreen> {
             },
           ),
 
+          const Divider(),
+
+          ListTile(
+            leading: const Icon(Icons.dark_mode_outlined),
+            title: Text(l10n.settings_appearance),
+            subtitle: Text(context.watch<ThemeProvider>().currentLabel(context)),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => const AppearanceSettingsScreen(),
+                ),
+              );
+            },
+          ),
+
           // Battery optimization (Android only)
           if (Platform.isAndroid) ...[
             const Divider(),
             ListTile(
               leading: const Icon(Icons.battery_saver),
               title: Text(l10n.settings_batteryOptimization),
-              subtitle: Text(l10n.settings_batteryOptimizationSub),
+              subtitle: Text(
+                _batteryOptIgnored
+                    ? l10n.settings_batteryOptimizationIgnored
+                    : l10n.settings_batteryOptimizationSub,
+              ),
               trailing: const Icon(Icons.chevron_right),
-              onTap: () {
-                FlutterForegroundTask.requestIgnoreBatteryOptimization();
-              },
+              onTap: _onBatteryOptimizationTap,
             ),
           ],
 

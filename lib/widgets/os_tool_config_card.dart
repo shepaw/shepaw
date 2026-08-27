@@ -223,6 +223,8 @@ class OsToolConfigCard extends StatelessWidget {
         return l10n.osTool_catApp;
       case 'clipboard':
         return l10n.osTool_catClipboard;
+      case 'location':
+        return l10n.osTool_catLocation;
       case 'macos':
         return l10n.osTool_catMacos;
       case 'process':
@@ -268,6 +270,10 @@ class OsToolConfigCard extends StatelessWidget {
         return Icons.analytics;
       case 'network_connections':
         return Icons.lan;
+      case 'location_get':
+        return Icons.my_location;
+      case 'location_status':
+        return Icons.location_searching;
       default:
         return Icons.build;
     }

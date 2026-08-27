@@ -51,6 +51,10 @@
 	<string>ShePaw needs camera access to take photos for sharing with agents.</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>ShePaw needs microphone access to record voice messages.</string>
+	<key>NSLocationUsageDescription</key>
+	<string>ShePaw uses your location when an agent needs the current place (for example local weather or nearby info). Location is not tracked in the background.</string>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>ShePaw uses your location when an agent needs the current place (for example local weather or nearby info). Location is not tracked in the background.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>ShePaw needs photo library access to select images for sharing with agents.</string>
 	<key>NSBonjourServices</key>

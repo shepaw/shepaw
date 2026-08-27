@@ -13,6 +13,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../../../services/tool_config_service.dart';
 import '../../../services/network/network_service.dart';
 import '../../../services/logger_service.dart';
+import '../../../services/location_service.dart';
 import 'os_sandbox_policy.dart';
 import 'os_shell_isolator.dart';
 
@@ -148,6 +149,10 @@ RiskLevel classifyRisk(String toolName, Map<String, dynamic> args) {
       return RiskLevel.safe;
     case 'network_connections':
       return RiskLevel.safe;
+    case 'location_get':
+      return RiskLevel.lowRisk;
+    case 'location_status':
+      return RiskLevel.safe;
     default:
       return RiskLevel.highRisk;
   }
@@ -215,6 +220,8 @@ String getRiskDescription(RiskLevel risk, String toolName, Map<String, dynamic> 
       final pid = args['pid'] ?? '';
       final force = args['force'] == true;
       return 'Kill process PID $pid${force ? ' (SIGKILL / force)' : ' (SIGTERM)'}';
+    case 'location_get':
+      return 'Read current device location';
     default:
       final argStr = jsonEncode(args);
       final truncated = argStr.length > 200 ? '${argStr.substring(0, 200)}...' : argStr;
@@ -295,6 +302,10 @@ Future<Map<String, dynamic>> runTool(
         return await _execProcessDetail(resolvedArgs);
       case 'network_connections':
         return await _execNetworkConnections(resolvedArgs);
+      case 'location_get':
+        return await _execLocationGet(resolvedArgs);
+      case 'location_status':
+        return await LocationService.instance.status();
       case 'web_search':
         final query = resolvedArgs['query'] as String? ?? '';
         final limit = (resolvedArgs['limit'] as int?) ?? 10;
@@ -1313,6 +1324,30 @@ List<Map<String, dynamic>> _parseWindowsNetJson(String jsonStr) {
   } catch (_) {
     return [];
   }
+}
+
+// ---------------------------------------------------------------------------
+// location_get
+// ---------------------------------------------------------------------------
+
+Future<Map<String, dynamic>> _execLocationGet(Map<String, dynamic> args) async {
+  final accuracy = args['accuracy'] as String? ?? 'high';
+  final reverseRaw = args['reverse_geocode'];
+  final reverseGeocode = reverseRaw == null
+      ? true
+      : reverseRaw == true || reverseRaw == 'true' || reverseRaw == '1';
+  final timeoutRaw = args['timeout'];
+  var timeout = 15;
+  if (timeoutRaw is int) {
+    timeout = timeoutRaw;
+  } else if (timeoutRaw is String) {
+    timeout = int.tryParse(timeoutRaw) ?? 15;
+  }
+  return LocationService.instance.getCurrent(
+    accuracy: accuracy,
+    reverseGeocode: reverseGeocode,
+    timeoutSeconds: timeout,
+  );
 }
 
 // ============================================================================

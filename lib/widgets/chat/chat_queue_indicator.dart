@@ -16,7 +16,7 @@ class ChatQueueIndicator extends StatelessWidget {
 
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-      color: AppColors.primaryContainer,
+      color: Theme.of(context).colorScheme.primaryContainer,
       child: Row(
         children: [
           const SizedBox(
@@ -30,9 +30,9 @@ class ChatQueueIndicator extends StatelessWidget {
           const SizedBox(width: 8),
           Text(
             queueLength == 1 ? '1 message queued' : '$queueLength messages queued',
-            style: const TextStyle(
+            style: TextStyle(
               fontSize: 12,
-              color: AppColors.primaryDark,
+              color: Theme.of(context).colorScheme.onPrimaryContainer,
             ),
           ),
         ],

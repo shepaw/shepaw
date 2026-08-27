@@ -774,7 +774,7 @@ class _PeerMessageBubble extends StatelessWidget {
                 decoration: BoxDecoration(
                   color: isMyMessage
                       ? Theme.of(context).primaryColor
-                      : AppColors.surfaceMuted,
+                      : Theme.of(context).colorScheme.surfaceContainerHighest,
                   borderRadius: BorderRadius.circular(16),
                   border: highlighted
                       ? Border.all(
@@ -788,7 +788,9 @@ class _PeerMessageBubble extends StatelessWidget {
                   style: TextStyle(
                     fontSize: 15,
                     height: 1.5,
-                    color: isMyMessage ? Colors.white : AppColors.textPrimary,
+                    color: isMyMessage
+                        ? Colors.white
+                        : Theme.of(context).colorScheme.onSurface,
                   ),
                 ),
               ),
