@@ -249,10 +249,12 @@ class ConversationListController extends ChangeNotifier {
       _rebuildEntries();
       _isLoading = false;
       notifyListeners();
-      LoggerService().info(
-        'Loaded ${agents.length} agents, ${groups.length} groups',
-        tag: 'ConversationList',
-      );
+      if (!silent) {
+        LoggerService().debug(
+          'Loaded ${agents.length} agents, ${groups.length} groups',
+          tag: 'ConversationList',
+        );
+      }
       _runHealthCheckInBackground();
     } catch (e) {
       LoggerService().error(
