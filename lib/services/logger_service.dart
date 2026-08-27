@@ -49,6 +49,13 @@ class LoggerService extends ChangeNotifier {
   List<LogEntry>? _diskCache;
   DateTime? _diskCacheTime;
 
+  /// Debug is console-only in debug builds; release/profile skip it entirely
+  /// (no memory, no disk). Info and above always record.
+  static bool recordsLevel(LogLevel level, {bool? debugMode}) {
+    final debug = debugMode ?? kDebugMode;
+    return level != LogLevel.debug || debug;
+  }
+
   /// 初始化日志服务
   Future<void> initialize() async {
     if (_initialized) return;
@@ -95,6 +102,8 @@ class LoggerService extends ChangeNotifier {
 
   /// 写入日志
   Future<void> _writeLog(LogLevel level, String message, {String? tag, dynamic error, StackTrace? stackTrace}) async {
+    if (!recordsLevel(level)) return;
+
     final timestamp = DateFormat('yyyy-MM-dd HH:mm:ss.SSS').format(DateTime.now());
     final levelStr = level.toString().split('.').last.toUpperCase();
     final tagStr = tag != null ? ' [$tag]' : '';
@@ -126,7 +135,7 @@ class LoggerService extends ChangeNotifier {
 
     _scheduleNotify();
 
-    // debug 模式输出到控制台，release 模式只写文件
+    // debug 构建同时打控制台；release 只写文件（且不含 debug 级）
     if (kDebugMode) {
       print(logMessage);
     }

@@ -180,4 +180,24 @@ StackTrace: #0 AgentMessagingService.send
       expect(merged.map((e) => e.id), ['llm']);
     });
   });
+
+  group('LoggerService.recordsLevel', () {
+    test('debug is recorded only in debug builds', () {
+      expect(
+        LoggerService.recordsLevel(LogLevel.debug, debugMode: true),
+        isTrue,
+      );
+      expect(
+        LoggerService.recordsLevel(LogLevel.debug, debugMode: false),
+        isFalse,
+      );
+    });
+
+    test('info and above are always recorded', () {
+      for (final level in [LogLevel.info, LogLevel.warning, LogLevel.error]) {
+        expect(LoggerService.recordsLevel(level, debugMode: false), isTrue);
+        expect(LoggerService.recordsLevel(level, debugMode: true), isTrue);
+      }
+    });
+  });
 }

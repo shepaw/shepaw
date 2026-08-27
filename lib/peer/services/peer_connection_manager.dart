@@ -1163,11 +1163,12 @@ class PeerConnectionManager {
     });
   }
 
-  /// 对端离线会无限重试：只在首次和每 10 次记 warning，避免刷屏。
+  /// 对端离线会无限重试：只在首次和每 10 次记 debug，避免刷屏。
+  /// 在线状态已有 UI；release 不落 debug，不必再升 warning。
   void _logConnectFailure(PairedPeer peer, Object e) {
     final attempts = _reconnectAttempts[peer.id] ?? 0;
     if (attempts == 0 || attempts % 10 == 0) {
-      _log.warning(
+      _log.debug(
         attempts == 0
             ? 'Failed to connect to ${peer.deviceName}: $e'
             : 'Still unreachable: ${peer.deviceName} (retry $attempts): $e',
