@@ -189,6 +189,53 @@ void main() {
     });
   });
 
+  group('AgentPromptBuilder.sheRoomContext', () {
+    test('keeps layered split so online/loop stay out of the static dump', () {
+      const layered = BuiltSystemPrompt(
+        staticPrefix: '【群聊名称】Team\n你是管理员',
+        dynamicSuffix: '【成员在线】\nCoder：在线\n\n【当前状态】这是第 2 轮',
+      );
+      final room = AgentPromptBuilder.sheRoomContext(
+        layered: layered,
+        fallback: layered.full,
+      );
+      expect(room.staticCtx, '【群聊名称】Team\n你是管理员');
+      expect(room.dynamicCtx, contains('【成员在线】'));
+      expect(room.dynamicCtx, contains('第 2 轮'));
+      expect(room.staticCtx, isNot(contains('【成员在线】')));
+    });
+
+    test('legacy full blob falls back into the static prefix', () {
+      final room = AgentPromptBuilder.sheRoomContext(
+        fallback: '【群聊名称】Team\n【成员在线】\nCoder：在线',
+      );
+      expect(room.staticCtx, contains('【成员在线】'));
+      expect(room.dynamicCtx, isNull);
+    });
+  });
+
+  group('AgentPromptBuilder ephemeral dynamic suffix', () {
+    test('room rules stay static; online/loop stay in the suffix before time',
+        () async {
+      final agent = _localAgent(id: 'local-coder', name: 'Coder');
+      final built = await AgentPromptBuilder(
+        agent: agent,
+        ephemeralContext: '【群聊名称】Team\n你是本群的管理员。',
+        ephemeralDynamicSuffix: '【成员在线】\nCoder：在线',
+      ).build();
+
+      expect(built.staticPrefix, contains('Current Room Context'));
+      expect(built.staticPrefix, contains('【群聊名称】Team'));
+      expect(built.staticPrefix, isNot(contains('【成员在线】')));
+      expect(built.dynamicSuffix, contains('【成员在线】'));
+      expect(built.dynamicSuffix, contains('## Current Time'));
+      expect(
+        built.dynamicSuffix.indexOf('【成员在线】'),
+        lessThan(built.dynamicSuffix.indexOf('## Current Time')),
+      );
+    });
+  });
+
   group('AgentPromptBuilder She ephemeralContext', () {
     // Prefetch touches minds/she_memory DBs (path_provider).
     test(

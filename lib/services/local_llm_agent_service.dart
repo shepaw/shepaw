@@ -136,8 +136,10 @@ class LocalLLMAgentService {
     bool enableUITools = true,
     bool? includeShepawCli,
     String? systemPromptOverride,
-    /// Pre-split group/room prompt for Claude cache. When set (and the agent
-    /// is not She), used instead of [AgentPromptBuilder].
+    /// Pre-split group/room prompt for Claude cache. Non-She agents use it
+    /// as the full system prompt. She merges it into her persona stack:
+    /// static room rules stay in the cached prefix, online/loop go in the
+    /// dynamic suffix.
     BuiltSystemPrompt? layeredSystemPrompt,
     List<AttachmentData>? attachments,
     bool skipSheMemoryStack = false,
@@ -164,9 +166,18 @@ class LocalLLMAgentService {
     } else {
       // She (with optional ephemeral room context) and bare non-She chats:
       // single AgentPromptBuilder path — no buildSystemPromptWithMemory fork.
+      // Group layered prompts keep their static/dynamic split so online/loop
+      // state does not bust She's cached persona prefix.
+      final room = agent.isShe
+          ? AgentPromptBuilder.sheRoomContext(
+              layered: layeredSystemPrompt,
+              fallback: systemPromptOverride,
+            )
+          : (staticCtx: null, dynamicCtx: null);
       layered = await AgentPromptBuilder(
         agent: agent,
-        ephemeralContext: agent.isShe ? systemPromptOverride : null,
+        ephemeralContext: room.staticCtx,
+        ephemeralDynamicSuffix: room.dynamicCtx,
       ).build();
       systemPrompt = layered.full;
     }

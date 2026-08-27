@@ -26,12 +26,13 @@ export 'prompt_cache.dart' show BuiltSystemPrompt;
 ///  ③   Tools docs + shepaw guidance
 ///  ③'  Scope Card + optional DM playbooks
 ///  ④   She soul
-///  ⑤   Custom / ephemeral
+///  ⑤   Custom / ephemeral room **static** (rules, roster bios)
 ///  ⑨   Session-end
 /// ```
 ///
 /// Dynamic (per-turn — profile, roster, time last so the prefix can cache):
 /// ```
+///  ⑤'  Ephemeral room **dynamic** (online / loop / nudge)
 ///  ⑥   User-strategy / profile / cognition / first-meeting
 ///  ⑥'  Agents roster / external digests (She 1:1)
 ///  ③.6 Current time            ← always last
@@ -54,10 +55,17 @@ class AgentPromptBuilder {
   /// replaces the agent's default `system_prompt` metadata value.
   final String? dmSystemPromptOverride;
 
-  /// Ephemeral room/group context (e.g. [GroupPromptBuilder] output). Injected
-  /// as a temporary room block for She — never used as soul seed. When set,
+  /// Ephemeral room/group **static** context (rules, identity, roster bios).
+  /// Injected as a temporary room block — never used as soul seed. When set,
   /// DM-only sections (workflow playbook) are skipped.
+  ///
+  /// Prefer [sheRoomContext] so group online/loop state goes into
+  /// [ephemeralDynamicSuffix] instead of busting the static prefix cache.
   final String? ephemeralContext;
+
+  /// Per-turn room/group state (online status, loop/nudge). Stays in the
+  /// dynamic suffix so a member flipping online cannot miss the cached prefix.
+  final String? ephemeralDynamicSuffix;
 
   /// Optional prompt-stack override (e.g. peer-inbound stripped config).
   final PromptStackConfig? configOverride;
@@ -66,8 +74,28 @@ class AgentPromptBuilder {
     required this.agent,
     this.dmSystemPromptOverride,
     this.ephemeralContext,
+    this.ephemeralDynamicSuffix,
     this.configOverride,
   });
+
+  /// Split a group/room prompt so She's stacked persona can cache.
+  ///
+  /// When [layered] is present, keep its static/dynamic split. Otherwise dump
+  /// [fallback] (legacy full blob / peer preamble) into the static prefix.
+  static ({String? staticCtx, String? dynamicCtx}) sheRoomContext({
+    BuiltSystemPrompt? layered,
+    String? fallback,
+  }) {
+    if (layered != null && layered.isNotEmpty) {
+      final staticCtx = layered.staticPrefix.trim();
+      final dynamicCtx = layered.dynamicSuffix.trim();
+      return (
+        staticCtx: staticCtx.isEmpty ? null : layered.staticPrefix,
+        dynamicCtx: dynamicCtx.isEmpty ? null : layered.dynamicSuffix,
+      );
+    }
+    return (staticCtx: fallback, dynamicCtx: null);
+  }
 
   /// Build the complete system prompt according to the agent's [PromptStackConfig].
   Future<String> buildSystemPrompt() async => (await build()).full;
@@ -129,8 +157,10 @@ class AgentPromptBuilder {
     }
 
     // Ephemeral room/group context — also gates Scope Card / DM playbooks.
+    final ephemeralStatic = ephemeralContext?.trim() ?? '';
+    final ephemeralDynamic = ephemeralDynamicSuffix?.trim() ?? '';
     final hasEphemeral =
-        ephemeralContext != null && ephemeralContext!.trim().isNotEmpty;
+        ephemeralStatic.isNotEmpty || ephemeralDynamic.isNotEmpty;
 
     // Scope Card（stable）— 群 ephemeral 由 GroupPromptBuilder 注入，此处跳过。
     if (!hasEphemeral) {
@@ -163,16 +193,14 @@ class AgentPromptBuilder {
       if (userSetPrompt.isNotEmpty) {
         await SheService.instance.seedSoulFromUserPrompt(userSetPrompt);
       }
-      if (hasEphemeral) {
-        staticParts.add(
-            SheService.wrapEphemeralContextPrompt(ephemeralContext!.trim()));
+      if (ephemeralStatic.isNotEmpty) {
+        staticParts.add(SheService.wrapEphemeralContextPrompt(ephemeralStatic));
       } else if (dmSystemPromptOverride != null &&
           dmSystemPromptOverride!.isNotEmpty) {
         staticParts.add(SheService.wrapCustomPrompt(dmSystemPromptOverride!));
       }
-    } else if (hasEphemeral) {
-      staticParts.add(
-          SheService.wrapEphemeralContextPrompt(ephemeralContext!.trim()));
+    } else if (ephemeralStatic.isNotEmpty) {
+      staticParts.add(SheService.wrapEphemeralContextPrompt(ephemeralStatic));
     } else if (config.includeCustomPrompt) {
       final custom = _resolveCustomPrompt();
       if (custom.isNotEmpty) {
@@ -192,6 +220,11 @@ class AgentPromptBuilder {
     }
 
     // ── Dynamic suffix (profile / roster / time) ─────────────────────────
+
+    // ⑤' Room/group per-turn state — before profile so time can stay last.
+    if (ephemeralDynamic.isNotEmpty) {
+      dynamicParts.add(ephemeralDynamic);
+    }
 
     // ⑥ User-understanding strategy — She-only via config flag.
     if (config.she.includeUserStrategy) {

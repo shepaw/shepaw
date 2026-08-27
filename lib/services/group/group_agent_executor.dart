@@ -575,7 +575,9 @@ class GroupAgentExecutor {
             enableUITools: isAdmin,
             includeShepawCli: agent.isLocal,
             systemPromptOverride: systemPrompt,
-            layeredSystemPrompt: agent.isShe ? null : layeredSystemPrompt,
+            // She also gets the split: AgentPromptBuilder stacks persona as
+            // the cache-stable prefix and keeps online/loop in the suffix.
+            layeredSystemPrompt: layeredSystemPrompt,
             attachments: toolRound == 0 ? attachments : null,
             extraTools: isAdmin ? adminExtraTools : memberExtraTools,
             excludeUIToolNames: GroupOrchestrationTools.excludedUiToolNames,
