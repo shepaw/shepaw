@@ -2073,7 +2073,6 @@ class AgentMessagingService {
       const historyLoadLimit = 100;
       final historyService = HistoryService(_db, _toolResultDb);
       final List<Map<String, dynamic>> chatHistory = [];
-      List<Message> storeFoldMessages = const [];
       if (channelId != null) {
         // Load a wider window than the budget so compaction has material to summarize.
         final loaded = await historyService.loadChannelMessages(
@@ -2159,7 +2158,6 @@ class AgentMessagingService {
           }
           chatHistory.add(entry);
         }
-        storeFoldMessages = recentMessages;
       }
 
       // Build initial message list
@@ -2181,7 +2179,6 @@ class AgentMessagingService {
         effectiveContent,
         attachments,
         isClaude,
-        historyMessages: storeFoldMessages,
       ));
 
       // ======= Multi-round tool calling loop =======

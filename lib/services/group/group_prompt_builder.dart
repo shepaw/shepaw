@@ -5,10 +5,26 @@ import '../../models/model_routing_config.dart';
 import '../../storage/device_identity.dart';
 import '../../storage/scope_card.dart';
 import '../agent_soul_service.dart';
+import '../prompt_cache.dart';
 
 /// Builds system prompts for group chat agents (admin and member roles).
 class GroupPromptBuilder {
   const GroupPromptBuilder();
+
+  static const int maxRoleChars = 80;
+  static const int maxOwnSoulChars = 1500;
+
+  /// One-line group role for rosters / ACP `groupContext` (group bio, else agent bio).
+  static String oneLineRole(
+    RemoteAgent agent, {
+    List<ChannelMember> channelMembers = const [],
+    int maxChars = maxRoleChars,
+  }) {
+    final cm = channelMembers.where((m) => m.id == agent.id).firstOrNull;
+    final raw = (cm?.groupBio ?? agent.bio ?? '').trim();
+    if (raw.isEmpty) return '';
+    return raw.length <= maxChars ? raw : '${raw.substring(0, maxChars)}…';
+  }
 
   Future<String> buildGroupSystemPrompt({
     required String groupName,
@@ -31,45 +47,82 @@ class GroupPromptBuilder {
     String? groupId,
     String? channelId,
   }) async {
-    final soulById = <String, String>{};
-    for (final a in allAgents) {
+    final layered = await buildLayeredGroupSystemPrompt(
+      groupName: groupName,
+      groupDescription: groupDescription,
+      allAgents: allAgents,
+      currentAgent: currentAgent,
+      channelMembers: channelMembers,
+      isMentioned: isMentioned,
+      isAdmin: isAdmin,
+      customSystemPrompt: customSystemPrompt,
+      isLoopSummarize: isLoopSummarize,
+      isAbortSummarize: isAbortSummarize,
+      isDispatchNudge: isDispatchNudge,
+      isPendingStatusNudge: isPendingStatusNudge,
+      loopRound: loopRound,
+      mentionMode: mentionMode,
+      failedAgentNames: failedAgentNames,
+      isFlowMode: isFlowMode,
+      isClosingSummary: isClosingSummary,
+      groupId: groupId,
+      channelId: channelId,
+    );
+    return layered.full;
+  }
+
+  /// Static prefix (rules, identity, scope, roster bios) + per-turn suffix
+  /// (online status, @ notice, loop/nudge state) for Claude prompt cache.
+  Future<BuiltSystemPrompt> buildLayeredGroupSystemPrompt({
+    required String groupName,
+    required String groupDescription,
+    required List<RemoteAgent> allAgents,
+    required RemoteAgent currentAgent,
+    List<ChannelMember> channelMembers = const [],
+    bool isMentioned = false,
+    bool isAdmin = false,
+    String? customSystemPrompt,
+    bool isLoopSummarize = false,
+    bool isAbortSummarize = false,
+    bool isDispatchNudge = false,
+    bool isPendingStatusNudge = false,
+    int? loopRound,
+    String mentionMode = 'adminOnly',
+    List<String> failedAgentNames = const [],
+    bool isFlowMode = false,
+    bool isClosingSummary = false,
+    String? groupId,
+    String? channelId,
+  }) async {
+    Future<String> loadSoul(RemoteAgent a) async {
       try {
-        soulById[a.id] = await AgentSoulService.instance.getSoul(a);
+        return await AgentSoulService.instance.getSoul(a);
       } catch (_) {
-        soulById[a.id] = '';
+        return '';
       }
     }
 
-    final memberList = allAgents.map((a) {
-      final channelMember = channelMembers.where((m) => m.id == a.id).firstOrNull;
-      final groupBio = channelMember?.groupBio;
-      final bio = groupBio ?? a.bio ?? '';
-      final statusText = a.isOnline ? '在线' : '离线';
-      final selfNote = isAdmin && a.id == currentAgent.id
-          ? ' ← 这是你（管理员），不可委派给自己'
-          : '';
-      final capabilitiesText = a.capabilities.isNotEmpty
-          ? a.capabilities.join(', ')
-          : '未指定';
-      final systemPrompt = soulById[a.id] ?? '';
-      final specialtyText = systemPrompt.isNotEmpty
-          ? (systemPrompt.length > 200 ? '${systemPrompt.substring(0, 200)}...' : systemPrompt)
-          : '未指定';
+    final ownSoulRaw = await loadSoul(currentAgent);
 
-      return '- ${a.name} ($statusText)$selfNote\n'
-          '  描述: ${bio.isNotEmpty ? bio : '无'}\n'
-          '  能力: $capabilitiesText\n'
-          '  专长: $specialtyText';
-    }).join('\n');
+    final memberList = isAdmin
+        ? _adminRoster(
+            allAgents: allAgents,
+            currentAgent: currentAgent,
+            channelMembers: channelMembers,
+          )
+        : _memberRoster(
+            allAgents: allAgents,
+            channelMembers: channelMembers,
+          );
 
-    final agentSystemPrompt = soulById[currentAgent.id] ?? '';
+    final agentSystemPrompt = ownSoulRaw;
     final currentMember = channelMembers.where((m) => m.id == currentAgent.id).firstOrNull;
     final currentGroupBio = currentMember?.groupBio;
-    // 身份块只取 soul 前 1500 字符：完整 soul 会塞进每个成员的提示词，
+    // 身份块只取 soul 前 maxOwnSoulChars 字符：完整 soul 会塞进每个成员的提示词，
     // 大 soul（数千字符）会让群提示词膨胀（P3-2）。
     final ownSoul = agentSystemPrompt.isNotEmpty
-        ? (agentSystemPrompt.length > 1500
-            ? '${agentSystemPrompt.substring(0, 1500)}…(soul 已截断)'
+        ? (agentSystemPrompt.length > maxOwnSoulChars
+            ? '${agentSystemPrompt.substring(0, maxOwnSoulChars)}…(soul 已截断)'
             : agentSystemPrompt)
         : (currentAgent.bio ?? '');
     final agentIdentity = currentGroupBio ?? ownSoul;
@@ -124,7 +177,7 @@ class GroupPromptBuilder {
 
       final attachmentSection = _buildAdminAttachmentSection();
 
-      return '''你当前处于一个群聊环境中，你是本群的**管理员**。
+      final staticPrefix = '''你当前处于一个群聊环境中，你是本群的**管理员**。
 
 【群聊名称】$groupName
 【群聊描述】${groupDescription.isNotEmpty ? groupDescription : '通用讨论'}
@@ -132,6 +185,9 @@ class GroupPromptBuilder {
 
 【群成员列表】
 $memberList
+
+【查阅成员详情】
+花名册只含本群职责，不是完整能力画像。职责足以选人时直接委派；拿不准、任务关键或准备换人时，再调用 `shepaw context agents.get --id <id>`（id 见上表）查看专长、能力与技能。日常派活不必每次都查。
 
 【你的身份】你是 ${currentAgent.name}（管理员）。$agentIdentity$customPromptSection
 
@@ -190,13 +246,21 @@ $dispatchMemberNameSection
 - **警惕重复失败**：如果同一个任务已经被委派给成员执行了 2 次以上仍未成功，必须停下来重新评估
 - **换思路而非重试**：当某个方案反复失败时，应该考虑：换一个成员来处理、换一种方法或策略、简化任务目标、或者向用户说明困难并请求指导
 - **及时止损**：如果经过多轮尝试后问题仍无法解决，应诚实地向用户汇报当前情况和遇到的困难，而不是继续无意义的循环
-- **关注进展而非次数**：每轮审视结果时，判断是否有实质性进展。如果连续多轮没有任何进展，果断终止并反馈$attachmentSection$loopSummarizeSection$planningSection$groupMgmtSection
+- **关注进展而非次数**：每轮审视结果时，判断是否有实质性进展。如果连续多轮没有任何进展，果断终止并反馈$attachmentSection$planningSection$groupMgmtSection
 
 $groupScopeSection''';
+
+      return BuiltSystemPrompt(
+        staticPrefix: staticPrefix,
+        dynamicSuffix: [
+          _onlineStatusBlock(allAgents),
+          loopSummarizeSection.trim(),
+        ].where((s) => s.isNotEmpty).join('\n\n'),
+      );
     }
 
     final mentionNotice = isMentioned
-        ? '\n\n【注意】你被 @提到了，请务必回复，不要回复 [SKIP]'
+        ? '【注意】你被 @提到了，请务必回复，不要回复 [SKIP]'
         : '';
 
     final customPromptSection = (customSystemPrompt != null && customSystemPrompt.isNotEmpty)
@@ -224,7 +288,7 @@ $groupScopeSection''';
           }()
         : '';
 
-    return '''你当前处于一个群聊环境中。
+    final staticPrefix = '''你当前处于一个群聊环境中。
 
 【群聊名称】$groupName
 【群聊描述】${groupDescription.isNotEmpty ? groupDescription : '通用讨论'}
@@ -245,12 +309,57 @@ $memberList
 7. 如果你发现自己在重复执行相同的任务且反复失败，应主动换一种方法或策略，而不是用同样的方式继续重试。如果确实无法完成，请如实说明遇到的困难
 8. 如果任务执行过程中需要用户确认信息或做出选择，请用**文字描述**所有选项和所需信息，不要调用 form、action_confirmation、single_select、multi_select 等 UI 工具。管理员会读取你的描述并做出决策。
 9. **产物优先写入 store**：需要持久化/可分享的文件产出时，**必须**调用 `shepaw store write --filename <名> --content "..."`（可选 `--task` / `--desc`），并在回复中**原样**引用返回的 `[filename](store://...)`；禁止编造 URI；**不要**传 agent_id/owner。读法见下方作用域卡片。仅用户明确指定 OS 路径时才用 `os.file.write`
-10. 在每次回复的**最后一行**，必须输出任务状态标注，格式为：\n   - 任务已完成（且已写入 store 并引用 URI，或确实无文件产出）：`[TASK_STATUS: done]`\n   - 任务未完成或需要更多信息：`[TASK_STATUS: pending] 原因：<简要说明>`\n管理员会根据此标注决定下一步安排。$mentionNotice$allMembersMentionSection
+10. 在每次回复的**最后一行**，必须输出任务状态标注，格式为：\n   - 任务已完成（且已写入 store 并引用 URI，或确实无文件产出）：`[TASK_STATUS: done]`\n   - 任务未完成或需要更多信息：`[TASK_STATUS: pending] 原因：<简要说明>`\n管理员会根据此标注决定下一步安排。$allMembersMentionSection
 
 【自我简介】
 你可以更新自己在群里的职责描述（只影响本群展示）：`shepaw chat group set-bio --agent ${currentAgent.name} --bio "新的职责"`。**只能修改自己的**；管理员与 She 可修改所有成员。
 
 $groupScopeSection''';
+
+    return BuiltSystemPrompt(
+      staticPrefix: staticPrefix,
+      dynamicSuffix: [
+        _onlineStatusBlock(allAgents),
+        mentionNotice,
+      ].where((s) => s.isNotEmpty).join('\n\n'),
+    );
+  }
+
+  /// Admin roster: name, id, one-line role. Soul / capabilities are on-demand
+  /// via `shepaw context agents.get`. Online status lives in the dynamic suffix.
+  String _adminRoster({
+    required List<RemoteAgent> allAgents,
+    required RemoteAgent currentAgent,
+    required List<ChannelMember> channelMembers,
+  }) {
+    return allAgents.map((a) {
+      final role = oneLineRole(a, channelMembers: channelMembers);
+      final selfNote = a.id == currentAgent.id
+          ? ' ← 这是你（管理员），不可委派给自己'
+          : '';
+      final head = '- ${a.name} (`${a.id}`)$selfNote';
+      if (role.isEmpty) return head;
+      return '$head\n  职责: $role';
+    }).join('\n');
+  }
+
+  /// Member roster: name + one-line role only. No soul / capabilities dump.
+  String _memberRoster({
+    required List<RemoteAgent> allAgents,
+    required List<ChannelMember> channelMembers,
+  }) {
+    return allAgents.map((a) {
+      final role = oneLineRole(a, channelMembers: channelMembers);
+      if (role.isEmpty) return '- ${a.name}';
+      return '- ${a.name}\n  职责: $role';
+    }).join('\n');
+  }
+
+  String _onlineStatusBlock(List<RemoteAgent> allAgents) {
+    final lines = allAgents
+        .map((a) => '${a.name}：${a.isOnline ? '在线' : '离线'}')
+        .join('\n');
+    return '【成员在线】\n$lines';
   }
 
   /// 群 Scope Card（替换旧「本群储物袋」段，不叠加）。

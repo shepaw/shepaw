@@ -319,7 +319,8 @@ class GroupAgentExecutor {
     final pendingResetFlush =
         GroupMemberSessionService.consumePendingRemoteReset(memberSessionId);
 
-    final systemPrompt = await _promptBuilder.buildGroupSystemPrompt(
+    final layeredSystemPrompt =
+        await _promptBuilder.buildLayeredGroupSystemPrompt(
       groupName: groupName,
       groupDescription: groupDescription,
       allAgents: allAgents,
@@ -340,6 +341,7 @@ class GroupAgentExecutor {
       groupId: channelId,
       channelId: channelId,
     );
+    final systemPrompt = layeredSystemPrompt.full;
 
     // Build chat history: pack conversation into a single 'user' message so
     // the LLM's identity comes solely from the system prompt. Members get a
@@ -505,7 +507,6 @@ class GroupAgentExecutor {
           content,
           attachments,
           isClaude,
-          historyMessages: effectiveHistory,
         ),
       ];
       final maxToolRounds =
@@ -551,6 +552,7 @@ class GroupAgentExecutor {
             enableUITools: isAdmin,
             includeShepawCli: agent.isLocal,
             systemPromptOverride: systemPrompt,
+            layeredSystemPrompt: agent.isShe ? null : layeredSystemPrompt,
             attachments: toolRound == 0 ? attachments : null,
             extraTools: isAdmin ? adminExtraTools : memberExtraTools,
             excludeUIToolNames: GroupOrchestrationTools.excludedUiToolNames,
@@ -1200,7 +1202,10 @@ class GroupAgentExecutor {
                     'id': a.id,
                     'name': a.name,
                     'type': 'agent',
-                    'bio': a.bio ?? '',
+                    'bio': GroupPromptBuilder.oneLineRole(
+                      a,
+                      channelMembers: channelMembers,
+                    ),
                     'capabilities': a.capabilities,
                     'status': a.isOnline ? 'online' : 'offline',
                   })
@@ -1634,7 +1639,10 @@ class GroupAgentExecutor {
                       'id': a.id,
                       'name': a.name,
                       'type': 'agent',
-                      'bio': a.bio ?? '',
+                      'bio': GroupPromptBuilder.oneLineRole(
+                        a,
+                        channelMembers: channelMembers,
+                      ),
                       'capabilities': a.capabilities,
                       'status': a.isOnline ? 'online' : 'offline',
                     })

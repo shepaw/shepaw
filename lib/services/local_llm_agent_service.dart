@@ -136,6 +136,9 @@ class LocalLLMAgentService {
     bool enableUITools = true,
     bool? includeShepawCli,
     String? systemPromptOverride,
+    /// Pre-split group/room prompt for Claude cache. When set (and the agent
+    /// is not She), used instead of [AgentPromptBuilder].
+    BuiltSystemPrompt? layeredSystemPrompt,
     List<AttachmentData>? attachments,
     bool skipSheMemoryStack = false,
     /// Extra OpenAI/Claude tool defs merged into the request (e.g. group_dispatch).
@@ -147,22 +150,25 @@ class LocalLLMAgentService {
     final effectiveIncludeShepawCli =
         includeShepawCli ?? agent.promptStackConfig.tools.includeShepawCli;
 
-    BuiltSystemPrompt? layeredSystemPrompt;
+    var layered = layeredSystemPrompt;
     final String systemPrompt;
     if (skipSheMemoryStack) {
       // Pure-task path: use override (or empty) without spirit-pet / persona stack.
       systemPrompt = systemPromptOverride ?? '';
+      layered = null;
+    } else if (layered != null && layered.isNotEmpty && !agent.isShe) {
+      systemPrompt = layered.full;
     } else if (systemPromptOverride != null && !agent.isShe) {
       // Non-She group/room prompts from GroupPromptBuilder are already complete.
       systemPrompt = systemPromptOverride;
     } else {
       // She (with optional ephemeral room context) and bare non-She chats:
       // single AgentPromptBuilder path — no buildSystemPromptWithMemory fork.
-      layeredSystemPrompt = await AgentPromptBuilder(
+      layered = await AgentPromptBuilder(
         agent: agent,
         ephemeralContext: agent.isShe ? systemPromptOverride : null,
       ).build();
-      systemPrompt = layeredSystemPrompt.full;
+      systemPrompt = layered.full;
     }
 
     if (resolved.apiBase.isEmpty) {
@@ -196,7 +202,7 @@ class LocalLLMAgentService {
           model: resolved.model,
           message: message,
           systemPrompt: systemPrompt,
-          layeredSystemPrompt: layeredSystemPrompt,
+          layeredSystemPrompt: layered,
           history: history,
           enableUITools: enableUITools,
           includeShepawCli: effectiveIncludeShepawCli,
@@ -462,7 +468,6 @@ class LocalLLMAgentService {
       message,
       attachments,
       isClaude,
-      historyChatMaps: history,
     ));
 
     final url = _buildNonSSEUrl(resolved);
@@ -830,7 +835,6 @@ class LocalLLMAgentService {
       message,
       attachments,
       false,
-      historyChatMaps: history,
     );
     final userContent = userMsg['content'];
     final hasMultimodal = userContent is List;
@@ -934,7 +938,6 @@ class LocalLLMAgentService {
       message,
       attachments,
       true,
-      historyChatMaps: history,
     ));
 
     final url = apiBase.endsWith('/')

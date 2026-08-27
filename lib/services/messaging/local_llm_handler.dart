@@ -203,23 +203,20 @@ class LocalLLMHelpers {
   /// - Audio is embedded as OpenAI `input_audio` for non-Claude providers.
   ///   Claude Messages API has no stable audio-input block, so audio becomes a
   ///   text description there (same as other non-image files).
-  /// - store:// refs are folded into a single Scope Card · 本轮 URI section
-  ///   ([additionalStoreUris] + current turn); long `[implicit]` blocks are
-  ///   stripped / not appended.
+  /// - store:// refs **from this turn** fold into a Scope Card · 本轮 URI
+  ///   section ([additionalStoreUris] + current text/attachments). History
+  ///   URIs stay in their original messages (already visible) so we do not
+  ///   re-append the card on every follow-up — that would bust prefix cache
+  ///   when the turn moves into history without the card.
+  ///   Long `[implicit]` blocks are stripped / not appended.
   static Map<String, dynamic> buildUserMessageContent(
     String text,
     List<AttachmentData>? attachments,
     bool isClaude, {
     Iterable<String>? additionalStoreUris,
-    Iterable<Message>? historyMessages,
-    Iterable<Map<String, dynamic>>? historyChatMaps,
   }) {
     final foldedUris = ScopeCard.dedupeUris([
       ...?additionalStoreUris,
-      if (historyMessages != null)
-        ...MessageImplicitPrompt.collectUrisFromMessages(historyMessages),
-      if (historyChatMaps != null)
-        ...MessageImplicitPrompt.collectUrisFromChatMaps(historyChatMaps),
       ...MessageImplicitPrompt.collectUris(
         text: text,
         attachments: attachments,
