@@ -28,6 +28,7 @@ import 'group/group_event_store.dart';
 import 'group/group_event_perception.dart';
 import 'group/group_stage_gate.dart';
 import 'group/group_background_interrupt.dart';
+import 'group/group_channel_busy_exception.dart';
 import '../storage/group_workspace_service.dart';
 import 'workflow/workflow_service.dart';
 import 'workflow/workflow_step_agent_resolver.dart';
@@ -2111,6 +2112,7 @@ $originalQuestion
       Map<String, dynamic> data,
     )? onInteractionRequest,
     void Function(String? workflowId)? onActiveWorkflowChanged,
+    bool throwIfBusy = false,
   }) async {
     // H1: per-channel in-flight 守卫。控制器路径已被 `isProcessing` 串行化，
     // 但 CLI `group send`（group_management_service，unawaited）与定时任务
@@ -2135,6 +2137,9 @@ $originalQuestion
       );
       await _databaseService.markMessageAsRead(noticeId);
       notifyChannelUpdate(channelId);
+      if (throwIfBusy) {
+        throw GroupChannelBusyException(channelId);
+      }
       return;
     }
     _groupOrchestratingChannels.add(channelId);

@@ -37,10 +37,13 @@ class SheGroupApprovalBridge {
   /// Metadata key on the She-DM system message (rendered as jump card).
   static const bridgeMetaKey = 'group_approval_bridge';
 
-  Future<Map<String, dynamic>?> handleInteraction({
-    required String sheChannelId,
+  /// Persist an approval/interaction onto the group session without a live
+  /// [ChatController]: attach card metadata, register plan-approval reattach,
+  /// and upsert [PendingApprovalHub]. Used by scheduled group tasks.
+  ///
+  /// Does **not** inject a She-DM jump notice — see [handleInteraction].
+  Future<Map<String, dynamic>?> persistHeadlessInteraction({
     required String groupChannelId,
-    required String groupName,
     required String agentId,
     required String agentName,
     required String interactionType,
@@ -102,16 +105,34 @@ class SheGroupApprovalBridge {
       PendingApprovalHub.instance.upsert(hubItem);
     }
 
+    return GroupInteractionPlanner.nonBlockingResult();
+  }
+
+  Future<Map<String, dynamic>?> handleInteraction({
+    required String sheChannelId,
+    required String groupChannelId,
+    required String groupName,
+    required String agentId,
+    required String agentName,
+    required String interactionType,
+    required Map<String, dynamic> data,
+  }) async {
+    final result = await persistHeadlessInteraction(
+      groupChannelId: groupChannelId,
+      agentId: agentId,
+      agentName: agentName,
+      interactionType: interactionType,
+      data: data,
+    );
     await injectBridgeNotice(
       sheChannelId: sheChannelId,
       groupChannelId: groupChannelId,
       groupName: groupName,
       interactionType: interactionType,
       agentName: agentName,
-      data: payload,
+      data: data,
     );
-
-    return GroupInteractionPlanner.nonBlockingResult();
+    return result;
   }
 
   /// Per-message 串行的 metadata read-modify-write（L13）。

@@ -7,6 +7,7 @@ import '../../services/local_database_service.dart';
 import '../../services/logger_service.dart';
 import 'agent_task_executor.dart';
 import 'group_task_executor.dart';
+import 'scheduled_task_notifier.dart';
 
 /// Manages scheduled task execution with support for cron and interval schedules.
 /// 
@@ -77,6 +78,7 @@ class ScheduledTaskService {
     if (_initialized) return;
     _initialized = true;
     _running = true;
+    ScheduledTaskNotifier.ensureInitialized();
 
     LoggerService().info('Starting scheduled task service', tag: 'ScheduledTasks');
 
@@ -603,6 +605,16 @@ class ScheduledTaskService {
         tag: 'ScheduledTasks',
         error: execError,
       );
+      if (task.executionTarget == ScheduledTask.targetGroup) {
+        final channel = task.channelId == null
+            ? null
+            : await _db.getChannelById(task.channelId!);
+        await ScheduledTaskNotifier.notifyFailed(
+          task: task,
+          error: execError,
+          groupName: channel?.name ?? task.description,
+        );
+      }
     }
   }
 
