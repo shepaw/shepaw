@@ -117,6 +117,24 @@ class GroupOrchestrationService {
         _buildEventDigestLines(channelId),
       );
 
+  /// Visible warning when a path without `group_finish` still has pending
+  /// members (@-mention / all-agents).
+  Future<void> _warnIfMembersPending({
+    required String channelId,
+    required Map<String, GroupTurnResult> turns,
+    required List<RemoteAgent> agents,
+  }) async {
+    final pending = GroupTaskStatusParser.blockingMembers(
+      turns: turns,
+      agents: agents,
+    );
+    if (pending.isEmpty) return;
+    await _saveOrchestrationSystemMessage(
+      channelId,
+      GroupTaskStatusParser.mentionPathWarning(pending),
+    );
+  }
+
   /// Matches `store://<space>/<device>/<path>…` tokens in free text, stopping
   /// at whitespace / markdown closers / CJK punctuation.
   static final RegExp _storeUriPattern = RegExp(r'store://[^\s\]\[\)\},，;]+');
@@ -730,8 +748,15 @@ class GroupOrchestrationService {
           initialTurns: turnResults,
           respondedAgentIds: respondedAgentIds,
           inboxMentions: await _readInboxMentions(),
+          allTurnsCollector: turnResults,
         );
       }
+
+      await _warnIfMembersPending(
+        channelId: channelId,
+        turns: turnResults,
+        agents: agents,
+      );
 
       await endOrchTrace(InferenceStatus.completed);
       onAllDone?.call();
@@ -1741,10 +1766,14 @@ class GroupOrchestrationService {
             adminResponseContent = '';
             onAgentStart?.call(adminAgent.id, adminAgent.name);
             try {
+              final pendingNote = pendingFromLastRound.isEmpty
+                  ? ''
+                  : '\n\n${GroupTaskStatusParser.adminNote(pendingFromLastRound)}';
               adminTurn = await _executor.processGroupAgent(
                 agent: adminAgent,
                 channelId: channelId,
-                content: _withEventDigest(effectiveContent, channelId),
+                content: _withEventDigest(
+                    '$effectiveContent$pendingNote', channelId),
                 attachments: attachments,
                 userId: userId,
                 userName: userName,
@@ -2234,12 +2263,13 @@ class GroupOrchestrationService {
 
     // 5c. No admin set, admin not found, or no @mentions — all agents respond
     if (effectiveMentionedAgentIds.isEmpty) {
+      final turnResults = <String, GroupTurnResult>{};
       final futures = <Future<void>>[];
       for (final agent in agents) {
         onAgentStart?.call(agent.id, agent.name);
         final isFirstMessage = !agentIdsWithHistory.contains(agent.id);
-        futures.add(
-          _executor
+        futures.add(() async {
+          turnResults[agent.id] = await _executor
               .processGroupAgent(
             agent: agent,
             channelId: channelId,
@@ -2268,10 +2298,15 @@ class GroupOrchestrationService {
                 tag: 'GroupOrchestrationService', error: e);
             onAgentDone?.call(agent.id, agent.name, true);
             return const GroupTurnResult();
-          }),
-        );
+          });
+        }());
       }
       await Future.wait(futures);
+      await _warnIfMembersPending(
+        channelId: channelId,
+        turns: turnResults,
+        agents: agents,
+      );
     }
 
     await endOrchTrace(InferenceStatus.completed);

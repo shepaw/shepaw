@@ -162,6 +162,14 @@ class GroupTaskStatusParser {
     final names = pending.map((p) => p.display).join('、');
     return '⚠️ 以下成员任务仍未完成，管理员已结束编排：$names。';
   }
+
+  /// @-mention / all-agents paths have no admin finish gate — surface the
+  /// same pending names so the user can follow up.
+  static String mentionPathWarning(List<GroupPendingMember> pending) {
+    if (pending.isEmpty) return '';
+    final names = pending.map((p) => p.display).join('、');
+    return '⚠️ 以下成员任务仍未完成：$names。可再次 @ 他们补做，或让管理员跟进。';
+  }
 }
 
 class GroupMemberTaskStatusInfo {

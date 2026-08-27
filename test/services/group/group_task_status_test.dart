@@ -130,6 +130,10 @@ void main() {
       expect(GroupTaskStatusParser.nudgeSystemContent(members), contains('禁止'));
       expect(GroupTaskStatusParser.exhaustedWarning(members), contains('Coder（缺图）'));
       expect(GroupTaskStatusParser.adminNote(members), contains('group_finish'));
+      expect(
+        GroupTaskStatusParser.mentionPathWarning(members),
+        contains('可再次 @ 他们补做'),
+      );
     });
   });
 
