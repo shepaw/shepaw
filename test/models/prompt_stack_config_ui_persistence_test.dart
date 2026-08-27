@@ -17,6 +17,7 @@ void main() {
           includeUserStrategy: false,
           includeProfileSnapshot: true,
           profileSnapshotLevel: 'core',
+          includeDmPlaybooks: true,
         ),
       );
 
@@ -33,6 +34,7 @@ void main() {
       expect(restored.she.includeUserStrategy, isFalse);
       expect(restored.she.includeProfileSnapshot, isTrue);
       expect(restored.she.profileSnapshotLevel, 'core');
+      expect(restored.she.includeDmPlaybooks, isTrue);
     });
 
     test('non-She agent edits survive metadata json', () {

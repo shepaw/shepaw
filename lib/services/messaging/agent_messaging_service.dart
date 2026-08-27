@@ -2052,12 +2052,13 @@ class AgentMessagingService {
       final peerPreamble = isPeerInbound && peerBoundary.injectExternalPreamble
           ? PeerBoundaryPrompt.buildPreamble(peerDisplayName: userName)
           : null;
-      final systemPrompt = await AgentPromptBuilder(
+      final builtPrompt = await AgentPromptBuilder(
         agent: agent,
         dmSystemPromptOverride: dmSystemPrompt,
         ephemeralContext: peerPreamble,
         configOverride: isPeerInbound ? promptConfig : null,
-      ).buildSystemPrompt();
+      ).build();
+      final systemPrompt = builtPrompt.full;
 
       // Hook cancellation early so compaction LLM calls can also be aborted.
       final cancelKey = activeTask.taskId;
@@ -2238,6 +2239,7 @@ class AgentMessagingService {
             messages: roundMessages,
             tools: combinedTools,
             systemPrompt: isClaude ? systemPrompt : null,
+            layeredSystemPrompt: isClaude ? builtPrompt : null,
             attachments: round == 0 ? attachments : null,
           ),
         )) {

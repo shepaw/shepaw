@@ -464,6 +464,12 @@ class RemoteAgent {
         includeFirstMeeting: boundary.stripHostUserContext
             ? false
             : base.she.includeFirstMeeting,
+        includeAgentsRoster: boundary.stripHostUserContext
+            ? false
+            : base.she.includeAgentsRoster,
+        includeExternalDigests: boundary.stripHostUserContext
+            ? false
+            : base.she.includeExternalDigests,
         includeSessionEnd: boundary.disableSessionEndWrites
             ? false
             : base.she.includeSessionEnd,

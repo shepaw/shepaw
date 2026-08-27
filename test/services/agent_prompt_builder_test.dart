@@ -90,6 +90,15 @@ void main() {
       expect(block, contains('engine.is_debug'));
       expect(block, contains('do **not** guess a name'));
     });
+
+    test('buildMetaCognitionBlock stays compact and defers playbooks to CLI help', () {
+      final block = SheService.buildMetaCognitionBlock();
+      expect(block.length, lessThan(2800));
+      expect(block, isNot(contains('use FIRST')));
+      expect(block, contains('shepaw workflow --help'));
+      expect(block, contains('shepaw chat group --help'));
+      expect(block, isNot(contains('pending_approval')));
+    });
   });
 
   group('AgentPromptBuilder non-She', () {
@@ -107,6 +116,17 @@ void main() {
       expect(prompt, isNot(contains('[implicit]')));
       expect(prompt, isNot(contains('shepaw CLI — Data Access')));
       expect(prompt, isNot(contains('buildDmWorkflowPlaybookBlock')));
+    });
+
+    test('puts current time in the dynamic suffix so the static prefix can cache',
+        () async {
+      final agent = _localAgent(id: 'local-coder', name: 'Coder');
+      final built = await AgentPromptBuilder(agent: agent).build();
+
+      expect(built.dynamicSuffix, contains('## Current Time'));
+      expect(built.staticPrefix, isNot(contains('## Current Time')));
+      expect(built.staticPrefix, contains('Your name is Coder.'));
+      expect(built.full.endsWith(built.dynamicSuffix.trim()), isTrue);
     });
 
     test('DM custom prompt is wrapped as Master custom settings', () async {

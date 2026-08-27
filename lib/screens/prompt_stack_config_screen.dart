@@ -372,6 +372,38 @@ class _PromptStackConfigScreenState extends State<PromptStackConfigScreen> {
                         ),
                       ),
                       _switch(
+                        title: _tr('1:1 工作流/建群 playbook', 'DM playbooks'),
+                        subtitle: _tr(
+                          '默认关闭；复杂请求用 shepaw workflow / group --help',
+                          'Off by default; discover via shepaw workflow / group --help',
+                        ),
+                        value: _config.she.includeDmPlaybooks,
+                        onChanged: (v) => setState(
+                          () => _config = _config.copyWith(
+                            she: _config.she.copyWith(includeDmPlaybooks: v),
+                          ),
+                        ),
+                      ),
+                      _switch(
+                        title: _tr('Agent 花名册', 'Agents roster'),
+                        value: _config.she.includeAgentsRoster,
+                        onChanged: (v) => setState(
+                          () => _config = _config.copyWith(
+                            she: _config.she.copyWith(includeAgentsRoster: v),
+                          ),
+                        ),
+                      ),
+                      _switch(
+                        title: _tr('跨设备摘要', 'Paired-device digests'),
+                        value: _config.she.includeExternalDigests,
+                        onChanged: (v) => setState(
+                          () => _config = _config.copyWith(
+                            she:
+                                _config.she.copyWith(includeExternalDigests: v),
+                          ),
+                        ),
+                      ),
+                      _switch(
                         title: _tr('CLI 摘要模式', 'CLI summary mode'),
                         value: _config.she.shepawCliSummaryMode,
                         onChanged: (v) => setState(

@@ -8,6 +8,7 @@ import '../models/attachment_data.dart';
 import '../models/model_routing_config.dart';
 import '../models/agent_scenario_models.dart';
 import 'agent_prompt_builder.dart';
+import 'prompt_cache.dart';
 import 'model_registry.dart';
 import 'ui_component_registry.dart';
 import 'logger_service.dart';
@@ -146,6 +147,7 @@ class LocalLLMAgentService {
     final effectiveIncludeShepawCli =
         includeShepawCli ?? agent.promptStackConfig.tools.includeShepawCli;
 
+    BuiltSystemPrompt? layeredSystemPrompt;
     final String systemPrompt;
     if (skipSheMemoryStack) {
       // Pure-task path: use override (or empty) without spirit-pet / persona stack.
@@ -156,10 +158,11 @@ class LocalLLMAgentService {
     } else {
       // She (with optional ephemeral room context) and bare non-She chats:
       // single AgentPromptBuilder path — no buildSystemPromptWithMemory fork.
-      systemPrompt = await AgentPromptBuilder(
+      layeredSystemPrompt = await AgentPromptBuilder(
         agent: agent,
         ephemeralContext: agent.isShe ? systemPromptOverride : null,
-      ).buildSystemPrompt();
+      ).build();
+      systemPrompt = layeredSystemPrompt.full;
     }
 
     if (resolved.apiBase.isEmpty) {
@@ -193,6 +196,7 @@ class LocalLLMAgentService {
           model: resolved.model,
           message: message,
           systemPrompt: systemPrompt,
+          layeredSystemPrompt: layeredSystemPrompt,
           history: history,
           enableUITools: enableUITools,
           includeShepawCli: effectiveIncludeShepawCli,
@@ -254,6 +258,21 @@ class LocalLLMAgentService {
     return tools;
   }
 
+  /// Claude `system` field: layered cache blocks when available, else a
+  /// single cached blob so tool-calling rounds still hit the prefix cache.
+  static Object? _claudeSystemPayload({
+    BuiltSystemPrompt? layered,
+    String? fallback,
+  }) {
+    if (layered != null && layered.isNotEmpty) {
+      return layered.toClaudeSystem();
+    }
+    if (fallback != null && fallback.trim().isNotEmpty) {
+      return PromptCache.claudeSystemBlob(fallback);
+    }
+    return null;
+  }
+
   // =========================================================================
   // chatRound — multi-round tool calling support
   // =========================================================================
@@ -271,6 +290,7 @@ class LocalLLMAgentService {
     required List<Map<String, dynamic>> messages,
     required List<Map<String, dynamic>> tools,
     String? systemPrompt,
+    BuiltSystemPrompt? layeredSystemPrompt,
     List<AttachmentData>? attachments,
   }) {
     final resolved = _resolveModelConfig(agent, attachments);
@@ -301,6 +321,7 @@ class LocalLLMAgentService {
           messages: messages,
           tools: tools,
           systemPrompt: systemPrompt,
+          layeredSystemPrompt: layeredSystemPrompt,
         );
       case 'glm':
       case 'openai':
@@ -369,6 +390,7 @@ class LocalLLMAgentService {
     required List<Map<String, dynamic>> messages,
     required List<Map<String, dynamic>> tools,
     String? systemPrompt,
+    BuiltSystemPrompt? layeredSystemPrompt,
   }) async* {
     final url = apiBase.endsWith('/')
         ? '${apiBase}messages'
@@ -380,17 +402,22 @@ class LocalLLMAgentService {
       'stream': true,
       'max_tokens': 4096,
     };
-    if (systemPrompt != null && systemPrompt.isNotEmpty) {
-      requestBody['system'] = systemPrompt;
+    final claudeSystem = _claudeSystemPayload(
+      layered: layeredSystemPrompt,
+      fallback: systemPrompt,
+    );
+    if (claudeSystem != null) {
+      requestBody['system'] = claudeSystem;
     }
     if (tools.isNotEmpty) {
-      requestBody['tools'] = tools;
+      requestBody['tools'] = PromptCache.markLastTool(tools);
     }
 
     final headers = {
       'Content-Type': 'application/json',
       'x-api-key': apiKey,
       'anthropic-version': '2023-06-01',
+      'anthropic-beta': PromptCache.anthropicBetaHeader,
     };
     final body = jsonEncode(requestBody);
 
@@ -788,9 +815,7 @@ class LocalLLMAgentService {
     List<Map<String, dynamic>>? extraTools,
     Set<String> excludeUIToolNames = const {},
   }) async* {
-    final effectiveSystemPrompt = enableUITools
-        ? '$systemPrompt${UIComponentRegistry.instance.systemPromptSuffix}'
-        : systemPrompt;
+    final effectiveSystemPrompt = systemPrompt;
 
     final messages = <Map<String, dynamic>>[];
     if (effectiveSystemPrompt.isNotEmpty) {
@@ -892,6 +917,7 @@ class LocalLLMAgentService {
     required String model,
     required String message,
     required String systemPrompt,
+    BuiltSystemPrompt? layeredSystemPrompt,
     List<Map<String, dynamic>>? history,
     bool enableUITools = true,
     bool includeShepawCli = false,
@@ -899,10 +925,6 @@ class LocalLLMAgentService {
     List<Map<String, dynamic>>? extraTools,
     Set<String> excludeUIToolNames = const {},
   }) async* {
-    final effectiveSystemPrompt = enableUITools
-        ? '$systemPrompt${UIComponentRegistry.instance.systemPromptSuffix}'
-        : systemPrompt;
-
     final messages = <Map<String, dynamic>>[];
     if (history != null) {
       messages.addAll(history);
@@ -925,8 +947,12 @@ class LocalLLMAgentService {
       'stream': true,
       'max_tokens': 4096,
     };
-    if (effectiveSystemPrompt.isNotEmpty) {
-      requestBody['system'] = effectiveSystemPrompt;
+    final claudeSystem = _claudeSystemPayload(
+      layered: layeredSystemPrompt,
+      fallback: systemPrompt,
+    );
+    if (claudeSystem != null) {
+      requestBody['system'] = claudeSystem;
     }
     final tools = _buildChatTools(
       isClaude: true,
@@ -936,7 +962,7 @@ class LocalLLMAgentService {
       excludeUIToolNames: excludeUIToolNames,
     );
     if (tools.isNotEmpty) {
-      requestBody['tools'] = tools;
+      requestBody['tools'] = PromptCache.markLastTool(tools);
     }
 
     final body = jsonEncode(requestBody);
@@ -945,6 +971,7 @@ class LocalLLMAgentService {
       'Content-Type': 'application/json',
       'x-api-key': apiKey,
       'anthropic-version': '2023-06-01',
+      'anthropic-beta': PromptCache.anthropicBetaHeader,
     };
 
     yield* _streamWithMultimodalFallback(

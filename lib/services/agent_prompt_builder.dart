@@ -9,35 +9,33 @@ import 'agent_soul_service.dart';
 import 'cognition_service.dart';
 import 'logger_service.dart';
 import 'model_registry.dart';
+import 'prompt_cache.dart';
 import 'she_service.dart';
 import 'skill_registry.dart';
 import 'ui_component_registry.dart';
 
+export 'prompt_cache.dart' show BuiltSystemPrompt;
+
 /// Builds the complete system prompt for any Agent — She or others — using a
 /// unified, configurable layering approach.
 ///
-/// ## Layering order
+/// ## Layering order (static prefix, then dynamic suffix)
 ///
+/// Static (cache-stable — identity, tools, meta, scope, soul, custom, session-end):
 /// ```
-///  ①   Identity block          ← agent's name (non-She only; She's name is in ②)
-///  ②   Description block       ← She: core identity; others: soul.md
-///  ③   Tools block             ← UI / OS / Skills / ToolModels
-///  ③.5 She data-access CLI     ← [She-only] shepaw CLI data-access reference
-///  ③'  Shepaw guidance         ← tool-discovery + web-search guidance (all agents,
-///                                 content scoped to each agent's actual permissions)
-///  ④   She memory context      ← soul  [She-only via config.she.includeSheMemory]
-///  ③.6 Current time            ← injected for all agents
-///  ⑤   Custom / ephemeral      ← DM override, or ephemeral room/group context
-///  ⑥   User-strategy block     ← [She-only via config.she.includeUserStrategy]
-///  ⑦   Profile snapshot        ← [She-only via config.she.includeProfileSnapshot]
-///  ⑦'  She self-cognition      ← [She-only via config.she.includeSheSelfCognition]
-///  ⑦'' She user-cognition      ← [She-only via config.she.includeUserCognition]
-///  ⑦'''Non-She user profile    ← [non-She via config.agent.includeUserProfile]
-///  ⑧   First-meeting block     ← [She-only via config.she.includeFirstMeeting]
-///  ⑧'  Non-She self-cognition  ← [non-She via config.agent.includeAgentSelfCognition]
-///  ⑧'' Non-She user-cognition  ← [non-She via config.agent.includeAgentUserCognition]
-///  ⑧'''Non-She agent memories  ← [non-She via config.agent.includeAgentMemory]
-///  ⑨   Session-end block       ← all agents (She: guarded by config.she.includeSessionEnd)
+///  ①   Identity / resume / description
+///  ③   Tools docs + shepaw guidance
+///  ③'  Scope Card + optional DM playbooks
+///  ④   She soul
+///  ⑤   Custom / ephemeral
+///  ⑨   Session-end
+/// ```
+///
+/// Dynamic (per-turn — profile, roster, time last so the prefix can cache):
+/// ```
+///  ⑥   User-strategy / profile / cognition / first-meeting
+///  ⑥'  Agents roster / external digests (She 1:1)
+///  ③.6 Current time            ← always last
 /// ```
 ///
 /// The only remaining `agent.isShe` checks are in the three spots where the
@@ -73,7 +71,10 @@ class AgentPromptBuilder {
   });
 
   /// Build the complete system prompt according to the agent's [PromptStackConfig].
-  Future<String> buildSystemPrompt() async {
+  Future<String> buildSystemPrompt() async => (await build()).full;
+
+  /// Layered system prompt: cache-stable prefix + per-turn suffix (time last).
+  Future<BuiltSystemPrompt> build() async {
     final config = configOverride ?? agent.promptStackConfig;
 
     // In lightweight mode we force tool descriptions to 'summary' and skip
@@ -82,7 +83,8 @@ class AgentPromptBuilder {
     final effectiveTools = config.lightweightMode
         ? config.tools.copyWith(toolDescriptionLevel: 'summary')
         : config.tools;
-    final parts = <String>[];
+    final staticParts = <String>[];
+    final dynamicParts = <String>[];
 
     // Prefetch She's DB-backed prompt inputs in one parallel batch — avoids
     // the duplicate serial reads (profile ×3, soul ×2) across block builders.
@@ -93,28 +95,27 @@ class AgentPromptBuilder {
     //   when quoted messages refer to itself.
     if (config.includeIdentity) {
       final id = _buildIdentityBlock();
-      if (id.isNotEmpty) parts.add(id);
+      if (id.isNotEmpty) staticParts.add(id);
     }
 
     // ①.5 Resume — non-She / non-peer agents see their own resume (bio) and
     //   are told how to update it during chat via agents.resume-set.
     if (!agent.isShe && !agent.isPeerAgent && config.includeIdentity) {
       final resume = await _buildResumeBlock();
-      if (resume.isNotEmpty) parts.add(resume);
+      if (resume.isNotEmpty) staticParts.add(resume);
     }
 
     // ② Description
     if (config.includeDescription) {
       if (agent.isShe || config.embedSoulText) {
         final desc = await _buildDescriptionBlock();
-        if (desc.isNotEmpty) parts.add(desc);
+        if (desc.isNotEmpty) staticParts.add(desc);
       }
       // Non-She uri_only: Soul 不内嵌，靠 Scope Card soul_uri + store read
     }
 
     // ③ Tools documentation
-    final toolParts = _buildToolsBlocks(effectiveTools, config.she);
-    parts.addAll(toolParts);
+    staticParts.addAll(_buildToolsBlocks(effectiveTools, config.she));
 
     // ③' Shepaw guidance — unified for She and non-She.
     // For She:     full meta-cognition block (config.she.includeMetaCognition).
@@ -125,7 +126,7 @@ class AgentPromptBuilder {
         ? config.she.includeMetaCognition
         : effectiveTools.includeShepawMetaCli;
     if (wantsShepawGuidance) {
-      parts.add(await SheService.buildShepawGuidanceBlock(agent));
+      staticParts.add(await SheService.buildShepawGuidanceBlock(agent));
     }
 
     // Ephemeral room/group context — also gates Scope Card / DM playbooks.
@@ -135,25 +136,24 @@ class AgentPromptBuilder {
     // Scope Card（stable）— 群 ephemeral 由 GroupPromptBuilder 注入，此处跳过。
     if (!hasEphemeral) {
       final scope = await _buildStableScopeCard(config);
-      if (scope.isNotEmpty) parts.add(scope);
+      if (scope.isNotEmpty) staticParts.add(scope);
     }
 
-    // ③'' DM workflow playbook — She DM only (skip when ephemeral room/group
-    // context is provided; those prompts already carry delegation rules).
-    if (agent.isShe && config.she.includeMetaCognition && !hasEphemeral) {
-      parts.add(SheService.buildDmWorkflowPlaybookBlock());
-      parts.add(SheService.buildDmGroupManagementPlaybookBlock());
+    // ③'' DM workflow / group playbooks — opt-in; skipped in ephemeral rooms.
+    if (agent.isShe &&
+        config.she.includeDmPlaybooks &&
+        !hasEphemeral) {
+      staticParts.add(SheService.buildDmWorkflowPlaybookBlock());
+      staticParts.add(SheService.buildDmGroupManagementPlaybookBlock());
+      staticParts.add(SheService.buildDmDispatchPlaybookBlock());
     }
 
     // ④ She memory context (soul) — guarded by SheStackConfig flag.
     // Non-She agents have SheStackConfig.disabled so this is always false for them.
     if (config.she.includeSheMemory) {
       final mem = await SheService.instance.buildMemoryContextBlock(data: sheData);
-      if (mem.isNotEmpty) parts.add(mem);
+      if (mem.isNotEmpty) staticParts.add(mem);
     }
-
-    // ③.6 Current time — injected for all agents so they have accurate temporal context.
-    parts.add(SheService.instance.buildCurrentTimeBlock());
 
     // ⑤ Custom / DM / ephemeral context
     // For She: metadata system_prompt is soul seed only (never shown as custom
@@ -165,102 +165,126 @@ class AgentPromptBuilder {
         await SheService.instance.seedSoulFromUserPrompt(userSetPrompt);
       }
       if (hasEphemeral) {
-        parts.add(SheService.wrapEphemeralContextPrompt(ephemeralContext!.trim()));
+        staticParts.add(
+            SheService.wrapEphemeralContextPrompt(ephemeralContext!.trim()));
       } else if (dmSystemPromptOverride != null &&
           dmSystemPromptOverride!.isNotEmpty) {
-        parts.add(SheService.wrapCustomPrompt(dmSystemPromptOverride!));
+        staticParts.add(SheService.wrapCustomPrompt(dmSystemPromptOverride!));
       }
     } else if (hasEphemeral) {
-      parts.add(SheService.wrapEphemeralContextPrompt(ephemeralContext!.trim()));
+      staticParts.add(
+          SheService.wrapEphemeralContextPrompt(ephemeralContext!.trim()));
     } else if (config.includeCustomPrompt) {
       final custom = _resolveCustomPrompt();
       if (custom.isNotEmpty) {
-        parts.add(SheService.wrapCustomPrompt(custom));
+        staticParts.add(SheService.wrapCustomPrompt(custom));
       }
     }
 
+    // ⑨ Session-end — in the static prefix so it can cache. She: guarded by
+    // config.she.includeSessionEnd; ephemeral rooms use a lighter variant.
+    // Non-She: always injected.
+    if (hasEphemeral && agent.isShe) {
+      staticParts.add(SheService.buildEphemeralSessionEndBlock());
+    } else if (config.she.includeSessionEnd || !agent.isShe) {
+      staticParts.add(SheService.instance.buildSessionEndBlockFor(agent.id));
+    }
+
+    // ── Dynamic suffix (profile / roster / time) ─────────────────────────
+
     // ⑥ User-understanding strategy — She-only via config flag.
     if (config.she.includeUserStrategy) {
-      final strategy = await SheService.instance.buildUserStrategyBlock(data: sheData);
-      if (strategy.isNotEmpty) parts.add(strategy);
+      final strategy =
+          await SheService.instance.buildUserStrategyBlock(data: sheData);
+      if (strategy.isNotEmpty) dynamicParts.add(strategy);
     }
 
     // ⑦ User-profile snapshot — She-only via config flag.
     if (config.she.includeProfileSnapshot) {
-      final snapshot = await SheService.instance
-          .buildProfileSnapshotBlock(level: config.she.profileSnapshotLevel, data: sheData);
-      if (snapshot.isNotEmpty) parts.add(snapshot);
+      final snapshot = await SheService.instance.buildProfileSnapshotBlock(
+          level: config.she.profileSnapshotLevel, data: sheData);
+      if (snapshot.isNotEmpty) dynamicParts.add(snapshot);
     }
 
     // ⑦' She self-cognition (self_notes) — She-only via config flag.
     if (config.she.includeSheSelfCognition) {
-      final selfCog = await SheService.instance.buildSheSelfCognitionBlock(data: sheData);
-      if (selfCog.isNotEmpty) parts.add(selfCog);
+      final selfCog =
+          await SheService.instance.buildSheSelfCognitionBlock(data: sheData);
+      if (selfCog.isNotEmpty) dynamicParts.add(selfCog);
     }
 
     // ⑦'' She user-cognition (impression/notes from minds.db).
     // Skipped in lightweight mode — She can query on demand.
     if (!config.lightweightMode && config.she.includeUserCognition) {
-      final userCog = await SheService.instance.buildUserCognitionBlock(data: sheData);
-      if (userCog.isNotEmpty) parts.add(userCog);
+      final userCog =
+          await SheService.instance.buildUserCognitionBlock(data: sheData);
+      if (userCog.isNotEmpty) dynamicParts.add(userCog);
     }
 
     // ⑦''' Non-She: brief user profile (core fields only).
-    // Non-She configs have AgentStackConfig enabled; She has AgentStackConfig.disabled.
     if (config.agent.includeUserProfile) {
       final profileBlock = await _buildAgentUserProfileBlock();
-      if (profileBlock.isNotEmpty) parts.add(profileBlock);
+      if (profileBlock.isNotEmpty) dynamicParts.add(profileBlock);
     }
 
     // ⑧ First-meeting instruction — She-only via config flag.
     if (config.she.includeFirstMeeting) {
       final isFirst = await SheService.instance.isFirstMeeting(data: sheData);
-      if (isFirst) parts.add(SheService.instance.buildFirstMeetingBlock());
+      if (isFirst) {
+        dynamicParts.add(SheService.instance.buildFirstMeetingBlock());
+      }
     }
 
     // ⑧' Non-She: agent's own soul (self-cognition from minds.db).
-    // Skipped in lightweight mode.
     if (!config.lightweightMode && config.agent.includeAgentSelfCognition) {
       final selfCog = await _buildAgentSelfCognitionBlock();
-      if (selfCog.isNotEmpty) parts.add(selfCog);
+      if (selfCog.isNotEmpty) dynamicParts.add(selfCog);
     }
 
     // ⑧'' Non-She: agent's user-cognition (impression/notes from minds.db).
-    // Skipped in lightweight mode.
     if (!config.lightweightMode && config.agent.includeAgentUserCognition) {
       final userCog = await _buildAgentUserCognitionBlock();
-      if (userCog.isNotEmpty) parts.add(userCog);
+      if (userCog.isNotEmpty) dynamicParts.add(userCog);
     }
 
     // ⑧''' Non-She: agent's own recent memories.
-    // Skipped when memory inject mode is uri_only (incl. lightweight).
     if (!agent.isShe && config.embedMemoryEntries) {
       final memoriesBlock =
           await _buildAgentMemoriesBlock(config.agent.memoryLimit);
-      if (memoriesBlock.isNotEmpty) parts.add(memoriesBlock);
+      if (memoriesBlock.isNotEmpty) dynamicParts.add(memoriesBlock);
     }
 
-    // ⑨ Session-end — unified for all agents via SheService.buildSessionEndBlockFor().
-    // She: guarded by config.she.includeSessionEnd; ephemeral rooms use a
-    // lighter "do not write room roles into soul" variant.
-    // Non-She: always injected (config.she.includeSessionEnd is false for them,
-    //          but !agent.isShe ensures they still get the lighter version).
-    if (hasEphemeral && agent.isShe) {
-      parts.add(SheService.buildEphemeralSessionEndBlock());
-    } else if (config.she.includeSessionEnd || !agent.isShe) {
-      parts.add(SheService.instance.buildSessionEndBlockFor(agent.id));
+    // She 1:1 roster + paired-device digests (skip in ephemeral/group).
+    if (agent.isShe && !hasEphemeral) {
+      if (config.she.includeAgentsRoster) {
+        final roster = await SheService.instance.buildAgentsOverviewBlock();
+        if (roster.isNotEmpty) dynamicParts.add(roster);
+      }
+      if (config.she.includeExternalDigests) {
+        final digests = await SheService.instance.buildExternalMemoriesBlock();
+        if (digests.isNotEmpty) dynamicParts.add(digests);
+      }
     }
 
-    final prompt = parts.where((s) => s.trim().isNotEmpty).join('\n\n');
-    if (prompt.length > 12000) {
+    // ③.6 Current time — always last so a clock tick cannot bust the prefix cache.
+    dynamicParts.add(SheService.instance.buildCurrentTimeBlock());
+
+    final built = BuiltSystemPrompt(
+      staticPrefix: _joinBlocks(staticParts),
+      dynamicSuffix: _joinBlocks(dynamicParts),
+    );
+    if (built.full.length > 12000) {
       LoggerService().warning(
-        'System prompt for agent=${agent.id} is ${prompt.length} chars '
-        '(block sizes: ${parts.map((p) => p.length).join(', ')})',
+        'System prompt for agent=${agent.id} is ${built.full.length} chars '
+        '(static=${built.staticPrefix.length}, dynamic=${built.dynamicSuffix.length})',
         tag: 'PromptBuilder',
       );
     }
-    return prompt;
+    return built;
   }
+
+  static String _joinBlocks(List<String> parts) =>
+      parts.where((s) => s.trim().isNotEmpty).join('\n\n');
 
   // ── Private helpers ────────────────────────────────────────────────────────
 
@@ -510,8 +534,10 @@ ${lines.join('\n')}''';
     }
 
     if (tools.includeSkills && agent.enabledSkills.isNotEmpty) {
+      // Names only in the system prompt — full skill description already lives
+      // in the tool schema; duplicating it here busts both caches when it changes.
       final suffix = SkillRegistry.instance
-          .systemPromptSuffixLayered(agent.enabledSkills, level);
+          .systemPromptSuffixLayered(agent.enabledSkills, 'names_only');
       if (suffix.isNotEmpty) result.add(suffix);
     }
 

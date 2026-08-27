@@ -97,6 +97,8 @@ void main() {
       expect(inbound.she.includeUserStrategy, isFalse);
       expect(inbound.she.includeFirstMeeting, isFalse);
       expect(inbound.she.includeSessionEnd, isFalse);
+      expect(inbound.she.includeAgentsRoster, isFalse);
+      expect(inbound.she.includeExternalDigests, isFalse);
       expect(inbound.she.includeSheMemory, isTrue);
     });
 

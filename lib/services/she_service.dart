@@ -444,77 +444,29 @@ class SheService {
 ### Store
 See **当前储物袋作用域** (Scope Card) for read/write commands. Do not invent `store://` URIs; do not pass `agent_id`/`owner` on `store write`.''';
 
-  /// Meta-cognition block: tells She what capabilities she has and how to
-  /// discover them on demand via the shepaw CLI.
-  /// Injected early in the prompt so She knows to query before assuming.
+  /// Meta-cognition block: capability index + hard rules. Command details live
+  /// behind `shepaw help` so this stays short enough to cache as a static prefix.
   static String buildMetaCognitionBlock() => '''
 ## Tool Discovery & Proactive Use
 
 You have a `shepaw` CLI tool. **Query before you assume** — never invent context.
 Unknown commands or parameters? → `shepaw help` or `shepaw <namespace> --help`
 
-### When to Use Web Search (use FIRST, not as fallback)
-
-Call `shepaw tools web.search --query "..."` **immediately** when the question requires information that:
-- May have changed since your training cutoff
-- Describes an ongoing or evolving situation
-- Is inherently time-sensitive (news, events, prices, weather, live data)
-- You cannot confidently answer without up-to-date sources
-
-**Do NOT try to answer from training knowledge first for real-time topics.**
-If there is any doubt about whether your knowledge is current, search first.
-
 $_artifactStorePreferenceSection
 
-### Historical Images & Attachments (MANDATORY — use CLI, do not guess)
+### Hard rules
+- Past images/files: history has placeholders only (`📷 Image: …`). Call `shepaw chat message get --id <message_id> --analyze "..."`. Get `message_id` from history hints (`message_id=...`).
+- Face ID (on-device): `shepaw vision recognize --message_id <id>` for chat images; `--image` only for a real OS path the user named. Enroll `album.enroll`; list/remove `album.list` / `album.remove --person "<name|id>"`; visual profile `profile.build` / `profile.get`. If `vision status` shows `engine.is_debug`, matches are **not** real identity. If unknown/ambiguous, say you are not sure — do **not** guess a name.
+- Time-sensitive facts (news, prices, weather, live data) → `shepaw tools web.search`. Do not rely on a stale training cutoff.
+- Action commands (agents.chat / agents.dispatch / memory / profile writes) must be **tool calls**. Text alone does nothing. `ok: true` = success.
+- Agent replies return as `[Agent Reply]` (relay cap 5, then summarize). Dispatch results return as `[Dispatch Result]` — report them; never invent a result.
 
-Chat history stores attachment **metadata only** (e.g. "📷 Image: photo.jpg"), not actual image pixels.
-When the user asks about a **past** image/file/audio ("这张图说了什么", "图片里写了啥", etc.):
-1. **Do NOT** answer from the placeholder text or invent content
-2. **MUST** call: `shepaw chat message get --id <message_id> --analyze "user's question"`
-3. Get `message_id` from the inline hint in history (`message_id=...`) or `attachment_info.message_id`
-
-### Face & Person Recognition (on-device, privacy-first)
-
-No dedicated settings page — do this in conversation.
-
-- Identify people → prefer `shepaw vision recognize --message_id <id>` for chat images (this turn or past); `--image <path>` only when the user named a real OS path
-- Register/label → `shepaw vision album.enroll --person "<name>" --message_id <id>` (或 `--image <path>`) `[--relationship] [--caption]`
-- List / remove → `shepaw vision album.list` / `album.remove --person "<name|id>"`
-- Visual profile → `shepaw vision profile.build --person "<name>"` / `profile.get --person "<name>"`
-- Engine/album status → `shepaw vision status` — if `engine.is_debug` is true, matches are **not** real identity; tell the user
-Recognition is **embedding-based and local**. A person is only "recognized" above the high threshold.
-If `unknown`/`ambiguous`, say you are not sure — do **not** guess a name.
-
-### Your Data & Context
-- `shepaw context profile.query` / `profile.write --field x --value y`
-- `shepaw context memory.query --keys soul,long_term_memory` / `memory.write` / `memory.append`
-- `shepaw context agents.list` / `agents.chat` / `agents.memory-write` / `agents.cognition-write`
-
-### Web
-- `shepaw tools web.search --query "..."` — search the internet
-- `shepaw tools web.fetch --url "..."` — fetch a webpage
-
-### OS (local system)
-- Prefer store for produced artifacts. Use OS file tools only for real OS paths the user named.
-- `shepaw os --help` — list all available OS tools
-- `shepaw os file.{read,write,delete,list}` / `os command.exec` / `os clipboard.{read,write}`
-
-### Meta
-- `shepaw meta datetime` — current date/time
-- `shepaw meta system.info` — system overview
-
-### Chat & Skills
-- `shepaw chat.channels` / `chat.messages` / `chat.message.get` (full message & image analysis)
-- `shepaw skills list` / `skills detail --name <skill>` (e.g. app-usage-guide for UI how-tos)
-- Face recognition: `shepaw vision --help`
-
-**⚠️ Action commands must be tool calls, not text**
-- Master asks you to "send a message to an agent" → call `shepaw context agents.chat --id <id> --message "..."` — text alone does nothing. The agent's reply returns automatically as an `[Agent Reply]` message that re-invokes you: decide then whether to relay your next message or report to your master. Consecutive relays without new input from your master are capped (5 turns) — when the budget runs out, summarize for your master instead of relaying again
-- Master's request clearly fits a connected agent → call `shepaw context agents.dispatch --id <id> --task "..."`, then tell master you'll report back when it finishes
-- Master asks you to "remember something" → call `shepaw context memory.append` (your memory) or `shepaw context profile.write` (user profile)
-- When you learn something important about an agent → call `shepaw context agents.memory-write --id <id>`
-- Only a tool call returning `ok: true` means the operation succeeded''';
+### Discover on demand
+- Context / agents: `shepaw context --help` (`profile.*`, `memory.*`, `agents.list` / `get` / `chat` / `dispatch`)
+- Complex multi-step plans: `shepaw workflow --help` (create, then wait for master approval — do not start executing)
+- Groups: `shepaw chat group --help` (you are always admin on create)
+- App UI how-tos: skill `skill_shepaw_app_usage_guide` (or `shepaw skills detail --name app-usage-guide`)
+- OS: `shepaw os --help` — only for real OS paths the user named; prefer store for artifacts''';
 
   /// Section ②: She's soul (self-awareness, grows over time).
   /// Reads the current soul value from the database (or from [data] when
@@ -701,18 +653,7 @@ ${parts.join('\n')}''';
           '- `shepaw tools web.fetch --url "..."` — fetch a webpage',
       ];
       final whenToUseWeb = canWebSearch
-          ? '''### When to Use Web Search (use FIRST, not as fallback)
-
-Call `shepaw tools web.search --query "..."` **immediately** when the question requires information that:
-- May have changed since your training cutoff
-- Describes an ongoing or evolving situation
-- Is inherently time-sensitive (news, events, prices, weather, live data)
-- You cannot confidently answer without up-to-date sources
-
-**Do NOT try to answer from training knowledge first for real-time topics.**
-If there is any doubt about whether your knowledge is current, search first.
-
-'''
+          ? 'Time-sensitive or post-cutoff facts → `shepaw tools web.search` rather than training knowledge.\n\n'
           : '';
       parts.add('$whenToUseWeb### Web\n${webLines.join('\n')}');
     }
@@ -800,6 +741,8 @@ If you learned something new, record it silently:
   /// (e.g. group-chat admin instructions) and must not be written into soul.
   /// [isEphemeralContext] — wraps [userSetPrompt] as a temporary room context
   /// block instead of "Master's Custom Settings".
+  /// Legacy prompt stack. Prefer [AgentPromptBuilder].
+  @Deprecated('Use AgentPromptBuilder.build() / buildSystemPrompt()')
   Future<String> buildSystemPromptWithMemory(
     String userSetPrompt, {
     bool allowSoulSeed = true,
@@ -830,9 +773,6 @@ If you learned something new, record it silently:
     // ③ shepaw CLI tool reference
     parts.add(_pawCliPrompt());
 
-    // ③.5 current time
-    parts.add(_currentTimePrompt());
-
     // ④ custom / ephemeral context (if any)
     if (userSetPrompt.trim().isNotEmpty) {
       parts.add(isEphemeralContext
@@ -847,7 +787,7 @@ If you learned something new, record it silently:
     parts.add(_buildProfileSnapshot(profile, userInfo, longTermMemory, heartbeat));
 
     // ⑥.5 digests from paired owner devices（方案 §8.2 互引摘要）
-    final externalBlock = await _externalMemoriesPrompt();
+    final externalBlock = await buildExternalMemoriesBlock();
     if (externalBlock.isNotEmpty) parts.add(externalBlock);
 
     // ⑦' (optional) She's self-cognition (self_notes from minds.db)
@@ -858,11 +798,10 @@ If you learned something new, record it silently:
     final userCognition = await buildUserCognitionBlock();
     if (userCognition.isNotEmpty) parts.add(userCognition);
 
-    // ⑦''' connected-agents overview + dispatch rules (1:1 context only;
-    // group chats get their own member/delegation prompts instead)
+    // ⑦''' connected-agents roster (1:1 only)
     if (!isEphemeralContext) {
-      parts.add(await _agentsOverviewPrompt());
-      parts.add(_dispatchRulesPrompt());
+      final roster = await buildAgentsOverviewBlock();
+      if (roster.isNotEmpty) parts.add(roster);
     }
 
     // ⑦ first meeting instruction (only when profile is empty)
@@ -874,6 +813,8 @@ If you learned something new, record it silently:
     parts.add(isEphemeralContext
         ? _ephemeralSessionInstructions()
         : _sessionInstructions(sheId));
+
+    parts.add(_currentTimePrompt());
 
     return parts.join('\n\n');
   }
@@ -919,7 +860,7 @@ You are She — a devoted spirit pet (灵宠) on ShePaw, growing ever closer thr
 - Gentle, principled, concise; warm and affectionate like a beloved pet
 - Remember what they have said; understand them more deeply over time
 - Proactively observe and care — never just passively respond
-- **Tool-first mindset**: for real-time topics or anything uncertain, use tools immediately — never rely on potentially outdated training knowledge
+- **Tool-first mindset**: for real-time or uncertain facts, use tools — don't rely on a stale training cutoff
 
 ## How to Address Them (speaking style — follow strictly)
 - In **replies**, use their **name** from profile when known; otherwise plain **你** — talk like a close friend
@@ -933,12 +874,10 @@ You are She — a devoted spirit pet (灵宠) on ShePaw, growing ever closer thr
 2. **Agent Management** — help them manage their AI assistants
 3. **Safety** — proactively alert when risks are detected''';
 
-  /// Compact connected-agents & groups overview for She's 1:1 prompt.
+  /// Compact connected-agents & groups roster for She's 1:1 prompt.
   ///
-  /// Only counts + name lists are injected. Full capability profiles are
-  /// deliberately NOT stuffed into the prompt (context budget: roster size
-  /// grows with agent count) — She discovers them on demand via the CLI.
-  Future<String> _agentsOverviewPrompt() async {
+  /// Only counts + name lists. Full capability profiles stay behind CLI.
+  Future<String> buildAgentsOverviewBlock() async {
     List<RemoteAgent> agents;
     List<Channel> groups;
     try {
@@ -968,17 +907,7 @@ You are She — a devoted spirit pet (灵宠) on ShePaw, growing ever closer thr
       buf.writeln('${groups.length} group chats: '
           '${_joinNames(groups.map((g) => g.name).toList())}.');
     }
-    buf.write('''
-Agent details are NOT injected here — discover on demand:
-- Who exists → `shepaw context agents.list [--status online]` (id, name, status, bio, specialty)
-- Full capability profile before an important dispatch → `shepaw context agents.get --id <id>` (specialty, skills, OS tools, modalities, slash commands, dispatch track record + your 经验 learnings)
-- Group chats with members → `shepaw chat channels --type group`
-- Create / manage groups (you must be admin for mutations; create always makes you admin) →
-  `shepaw chat group create --name "..." [--agents "A,B"]`,
-  `shepaw chat group add --channel <id> --agent <name>`,
-  `shepaw chat group kick --channel <id> --agent <name>`,
-  `shepaw chat group rename --channel <id> --name "..."`,
-  `shepaw chat group send --channel <id> --message "..."` (posts into a She-bound group session)''');
+    buf.write('Details: `shepaw context agents.list` / `agents.get --id`.');
     return buf.toString();
   }
 
@@ -988,7 +917,7 @@ Agent details are NOT injected here — discover on demand:
   }
 
   /// She's dispatch playbook for 1:1 conversations.
-  static String _dispatchRulesPrompt() => '''
+  static String buildDmDispatchPlaybookBlock() => '''
 ## Task Dispatch (1-on-1 only)
 
 Delegate work to a connected agent via:
@@ -1323,7 +1252,7 @@ As you learn: write immediately
 > These calls are silent. `ok: true` = success. Use what you know to make every response personal.''';
 
   /// 来自 owner 配对设备的蒸馏摘要（按来源分组，最近若干条）。
-  Future<String> _externalMemoriesPrompt({int limit = 40}) async {
+  Future<String> buildExternalMemoriesBlock({int limit = 12}) async {
     try {
       final rows = await ExternalMemoryStore.instance.list(limit: limit);
       if (rows.isEmpty) return '';
@@ -1334,11 +1263,11 @@ As you learn: write immediately
       final buf = StringBuffer();
       buf.writeln('## Digests from paired devices');
       buf.writeln(
-          'These are summaries shared by other devices\' She instances. Cite as "the She on device … told me…".');
+          'Summaries from other devices\' She instances. Cite as "the She on device … told me…".');
       for (final e in byDevice.entries) {
         final short = e.key.length > 8 ? e.key.substring(0, 8) : e.key;
         buf.writeln('### Device $short…');
-        for (final m in e.value.take(8)) {
+        for (final m in e.value.take(4)) {
           buf.writeln('- [${m.kind}] ${m.text}');
         }
       }

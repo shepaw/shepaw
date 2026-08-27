@@ -23,6 +23,9 @@ void main() {
       expect(PromptStackConfig.forShe.she.includeMetaCognition, isTrue);
       expect(PromptStackConfig.forShe.she.includeUserStrategy, isTrue);
       expect(PromptStackConfig.forShe.she.includeProfileSnapshot, isTrue);
+      expect(PromptStackConfig.forShe.she.includeDmPlaybooks, isFalse);
+      expect(PromptStackConfig.forShe.she.includeAgentsRoster, isTrue);
+      expect(PromptStackConfig.forShe.she.includeExternalDigests, isTrue);
       expect(PromptStackConfig.forShe.agent.includeUserProfile, isFalse);
     });
   });

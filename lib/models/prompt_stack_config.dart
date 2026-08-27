@@ -281,6 +281,20 @@ class SheStackConfig {
   /// Replaces the old expanded CLI command list with a concise capability index.
   final bool includeMetaCognition;
 
+  /// Inject the full 1:1 workflow + group-management playbooks.
+  ///
+  /// Default false: those ~4k chars are rarely needed for casual chat; She
+  /// discovers commands via `shepaw workflow --help` / `shepaw chat group --help`.
+  final bool includeDmPlaybooks;
+
+  /// Inject a short connected-agents/groups roster (names + online counts).
+  /// Dynamic: online status changes. Default true for She.
+  final bool includeAgentsRoster;
+
+  /// Inject distilled memories from paired-owner devices (她的朋友圈).
+  /// Dynamic. Default true for She; empty when none exist.
+  final bool includeExternalDigests;
+
   /// When true, the shepaw CLI block uses a compact one-liner-per-command format
   /// instead of the full Markdown table.  She can call
   /// `shepaw system tools-detail --name <command>` to retrieve full parameter
@@ -303,6 +317,9 @@ class SheStackConfig {
     this.includeFirstMeeting = true,
     this.includeSessionEnd = true,
     this.includeMetaCognition = true,
+    this.includeDmPlaybooks = false,
+    this.includeAgentsRoster = true,
+    this.includeExternalDigests = true,
     this.enableProfileCommand = true,
     this.enableMemoryCommand = true,
     this.enableAgentChatCommand = true,
@@ -321,6 +338,9 @@ class SheStackConfig {
     includeFirstMeeting: false,
     includeSessionEnd: false,
     includeMetaCognition: false,
+    includeDmPlaybooks: false,
+    includeAgentsRoster: false,
+    includeExternalDigests: false,
     enableProfileCommand: false,
     enableMemoryCommand: false,
     enableAgentChatCommand: false,
@@ -339,6 +359,10 @@ class SheStackConfig {
         includeFirstMeeting: json['include_first_meeting'] as bool? ?? true,
         includeSessionEnd: json['include_session_end'] as bool? ?? true,
         includeMetaCognition: json['include_meta_cognition'] as bool? ?? true,
+        includeDmPlaybooks: json['include_dm_playbooks'] as bool? ?? false,
+        includeAgentsRoster: json['include_agents_roster'] as bool? ?? true,
+        includeExternalDigests:
+            json['include_external_digests'] as bool? ?? true,
         enableProfileCommand: json['enable_profile_command'] as bool? ?? true,
         enableMemoryCommand: json['enable_memory_command'] as bool? ?? true,
         enableAgentChatCommand:
@@ -360,6 +384,9 @@ class SheStackConfig {
         'include_first_meeting': includeFirstMeeting,
         'include_session_end': includeSessionEnd,
         'include_meta_cognition': includeMetaCognition,
+        'include_dm_playbooks': includeDmPlaybooks,
+        'include_agents_roster': includeAgentsRoster,
+        'include_external_digests': includeExternalDigests,
         'enable_profile_command': enableProfileCommand,
         'enable_memory_command': enableMemoryCommand,
         'enable_agent_chat_command': enableAgentChatCommand,
@@ -377,6 +404,9 @@ class SheStackConfig {
     bool? includeFirstMeeting,
     bool? includeSessionEnd,
     bool? includeMetaCognition,
+    bool? includeDmPlaybooks,
+    bool? includeAgentsRoster,
+    bool? includeExternalDigests,
     bool? enableProfileCommand,
     bool? enableMemoryCommand,
     bool? enableAgentChatCommand,
@@ -394,6 +424,10 @@ class SheStackConfig {
         includeFirstMeeting: includeFirstMeeting ?? this.includeFirstMeeting,
         includeSessionEnd: includeSessionEnd ?? this.includeSessionEnd,
         includeMetaCognition: includeMetaCognition ?? this.includeMetaCognition,
+        includeDmPlaybooks: includeDmPlaybooks ?? this.includeDmPlaybooks,
+        includeAgentsRoster: includeAgentsRoster ?? this.includeAgentsRoster,
+        includeExternalDigests:
+            includeExternalDigests ?? this.includeExternalDigests,
         enableProfileCommand:
             enableProfileCommand ?? this.enableProfileCommand,
         enableMemoryCommand: enableMemoryCommand ?? this.enableMemoryCommand,
