@@ -141,5 +141,43 @@ StackTrace: #0 AgentMessagingService.send
       final query = InferenceLogCatalog.filter(merged, query: 'summarize');
       expect(query.single.id, 's2');
     });
+
+    test('merge skips peer connection and delivery traces', () {
+      final persisted = [
+        TraceEntry(
+          id: 'llm',
+          agentName: 'She',
+          userMessage: 'hello',
+          startTime: DateTime(2026, 8, 28, 0, 14),
+          createdAt: DateTime(2026, 8, 28, 0, 14),
+        ),
+        TraceEntry(
+          id: 'peer-conn',
+          agentName: '家里的 Windows',
+          userMessage: 'Connect 家里的 Windows',
+          executionMode: 'peer_noise_handshake',
+          traceRole: 'peer_connection',
+          status: InferenceStatus.error,
+          errorMessage: 'Bad state: No available endpoint for 家里的 Windows',
+          startTime: DateTime(2026, 8, 28, 0, 14, 10),
+          createdAt: DateTime(2026, 8, 28, 0, 14, 10),
+        ),
+        TraceEntry(
+          id: 'peer-dm',
+          agentName: 'peer_device',
+          userMessage: 'hi',
+          executionMode: 'peer_human_dm',
+          traceRole: 'peer_message_delivery',
+          startTime: DateTime(2026, 8, 28, 0, 13),
+          createdAt: DateTime(2026, 8, 28, 0, 13),
+        ),
+      ];
+
+      final merged = InferenceLogCatalog.merge(
+        live: const [],
+        persisted: persisted,
+      );
+      expect(merged.map((e) => e.id), ['llm']);
+    });
   });
 }

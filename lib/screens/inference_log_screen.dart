@@ -57,7 +57,10 @@ class _InferenceLogScreenState extends State<InferenceLogScreen> {
   }
 
   Future<void> _loadPersisted() async {
-    final traces = await _trace.queryTraces(limit: 200);
+    final traces = await _trace.queryTraces(
+      limit: 200,
+      excludeTraceRoles: InferenceLogCatalog.nonInferenceTraceRoles,
+    );
     if (!mounted) return;
     if (_sameTraces(traces, _persisted)) return;
     setState(() => _persisted = traces);

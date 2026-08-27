@@ -238,6 +238,7 @@ class TraceService extends ChangeNotifier {
     String? channelId,
     String? agentId,
     InferenceStatus? status,
+    Iterable<String>? excludeTraceRoles,
     int limit = 50,
     int offset = 0,
   }) async {
@@ -258,6 +259,14 @@ class TraceService extends ChangeNotifier {
       if (status != null) {
         conditions.add('status = ?');
         args.add(status.name);
+      }
+      final excluded = excludeTraceRoles?.where((r) => r.isNotEmpty).toList();
+      if (excluded != null && excluded.isNotEmpty) {
+        final placeholders = List.filled(excluded.length, '?').join(', ');
+        conditions.add(
+          '(trace_role IS NULL OR trace_role NOT IN ($placeholders))',
+        );
+        args.addAll(excluded);
       }
 
       final where = conditions.isNotEmpty ? conditions.join(' AND ') : null;

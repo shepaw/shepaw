@@ -103,16 +103,29 @@ class InferenceLogRow {
 class InferenceLogCatalog {
   InferenceLogCatalog._();
 
+  /// Peer delivery/handshake rows share the traces table but are not LLM runs.
+  /// They belong on the device chat trace page, not 推理日志.
+  static const Set<String> nonInferenceTraceRoles = {
+    'peer_connection',
+    'peer_message_delivery',
+  };
+
+  static bool isAgentInferenceRole(String? traceRole) =>
+      traceRole == null || !nonInferenceTraceRoles.contains(traceRole);
+
   /// Live sessions overlay persisted traces (same id keeps the live copy).
+  /// Peer connection / DM delivery traces are omitted.
   static List<InferenceLogRow> merge({
     required List<InferenceLogEntry> live,
     required List<TraceEntry> persisted,
   }) {
     final byId = <String, InferenceLogRow>{};
     for (final trace in persisted) {
+      if (!isAgentInferenceRole(trace.traceRole)) continue;
       byId[trace.id] = InferenceLogRow.fromTrace(trace);
     }
     for (final entry in live) {
+      if (!isAgentInferenceRole(entry.traceRole)) continue;
       byId[entry.id] = InferenceLogRow.fromLive(entry);
     }
     final rows = byId.values.toList()

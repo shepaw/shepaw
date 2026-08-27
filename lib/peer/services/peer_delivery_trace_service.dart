@@ -9,7 +9,9 @@ import '../models/peer_message.dart';
 /// Structured traces for human peer-to-peer chat delivery and Noise connections.
 ///
 /// Channel id convention: `peer_device__{peerId}` — used by [ChannelTraceScreen]
-/// on device chat pages.
+/// on device chat pages. These rows share the traces table with LLM inference
+/// but use `traceRole` `peer_connection` / `peer_message_delivery` so the
+/// global 推理日志 can exclude them.
 class PeerDeliveryTraceService {
   PeerDeliveryTraceService._();
   static final PeerDeliveryTraceService instance = PeerDeliveryTraceService._();

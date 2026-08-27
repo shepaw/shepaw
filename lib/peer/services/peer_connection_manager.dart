@@ -298,7 +298,7 @@ class PeerConnectionManager {
       return; // 已连接
     }
 
-    await _doConnect(peer);
+    await _doConnect(peer, connectionTraceTrigger: 'user');
 
     final conn = _connections[peer.id];
     if (conn == null || conn.state != PeerConnectionState.connected) {
@@ -902,8 +902,15 @@ class PeerConnectionManager {
     return myFingerprint.compareTo(peerFingerprint) < 0;
   }
 
-  /// 执行连接（优先内网直连，失败后回退 Channel）
-  Future<void> _doConnect(PairedPeer peer, {bool ignoreTieBreak = false}) async {
+  /// 执行连接（优先内网直连，失败后回退 Channel）。
+  ///
+  /// [connectionTraceTrigger] 非空时才写入 traces。后台 scheduled / fallback
+  /// 重连失败是设备离线常态，不记；否则会刷满推理错误日志。
+  Future<void> _doConnect(
+    PairedPeer peer, {
+    bool ignoreTieBreak = false,
+    String? connectionTraceTrigger,
+  }) async {
     // 使用存储中的最新端点：localEndpoint 可能已被入站连接学习并刷新为对端
     // 当前 IP，避免一直用换网前的旧地址反复超时。
     final fresh = await _storage.getPeerById(peer.id);
@@ -954,12 +961,14 @@ class PeerConnectionManager {
     if (_connecting.contains(peer.id)) return;
     _connecting.add(peer.id);
 
-    PeerDeliveryTraceService.instance.beginConnectionAttempt(
-      peerId: peer.id,
-      deviceName: peer.deviceName,
-      role: 'initiator',
-      trigger: ignoreTieBreak ? 'fallback' : 'scheduled',
-    );
+    if (connectionTraceTrigger != null) {
+      PeerDeliveryTraceService.instance.beginConnectionAttempt(
+        peerId: peer.id,
+        deviceName: peer.deviceName,
+        role: 'initiator',
+        trigger: connectionTraceTrigger,
+      );
+    }
 
     PeerConnection? conn;
     String? connectedTransport;
