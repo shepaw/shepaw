@@ -24,7 +24,7 @@ Message _msg({
 
 void main() {
   group('GroupMemberHistory.needsFullHistory', () {
-    test('only admin and summarize/abort/close turns keep the 60k window', () {
+    test('only admin and summarize/abort/close turns keep the full window', () {
       expect(
         GroupMemberHistory.needsFullHistory(
           isAdmin: true,

@@ -25,25 +25,37 @@ class HistoryCompactionPlan {
 class HistoryCompactor {
   HistoryCompactor._();
 
-  /// Default DM budget (matches local multi-round path).
-  static const int defaultMaxChars = 20000;
+  /// Default DM budget (summary + recent tail). Lowered so long 1:1 chats
+  /// don't dwarf the system prompt.
+  static const int defaultMaxChars = 10000;
 
   /// Keep at least this many recent messages as raw context.
-  static const int defaultKeepRecentCount = 16;
+  static const int defaultKeepRecentCount = 8;
 
   /// Reserve roughly this many chars for the recent tail before summarizing.
-  static const int defaultKeepRecentChars = 8000;
+  static const int defaultKeepRecentChars = 4000;
+
+  /// Don't call the summarizer for a tiny older remainder (wait for more).
+  static const int minOlderCharsToSummarize = 1200;
 
   /// Max chars fed into the summarizer (older transcript may be truncated).
-  static const int defaultSummaryInputMaxChars = 24000;
+  static const int defaultSummaryInputMaxChars = 12000;
 
   /// Max chars allowed for the produced summary block.
-  static const int defaultSummaryMaxChars = 2500;
+  static const int defaultSummaryMaxChars = 1200;
+
+  /// Per-message cap when injecting / summarizing, so one dump cannot fill
+  /// the whole recent window.
+  static const int defaultMaxMessageChars = 2500;
+
+  /// Minimum raw turns to keep after a summary is prepended.
+  static const int minRecentAfterSummary = 4;
 
   /// Decide which messages to summarize vs keep.
   ///
-  /// When [totalChars] ≤ [maxChars], [older] is empty and [recent] is the full list.
-  /// Otherwise keep a recent tail (by count and char budget) and put the rest in [older].
+  /// Compacts when over [maxChars], or when the conversation already fills a
+  /// recent window **and** the older remainder is large enough to be worth
+  /// summarizing ([minOlderCharsToSummarize]).
   static HistoryCompactionPlan plan({
     required List<Message> messages,
     int maxChars = defaultMaxChars,
@@ -51,7 +63,14 @@ class HistoryCompactor {
     int keepRecentChars = defaultKeepRecentChars,
   }) {
     final totalChars = messages.fold<int>(0, (sum, m) => sum + m.content.length);
-    if (messages.isEmpty || totalChars <= maxChars) {
+    if (messages.isEmpty ||
+        !shouldCompact(
+          totalChars: totalChars,
+          messageCount: messages.length,
+          maxChars: maxChars,
+          keepRecentCount: keepRecentCount,
+          keepRecentChars: keepRecentChars,
+        )) {
       return HistoryCompactionPlan(
         older: const [],
         recent: List<Message>.from(messages),
@@ -86,11 +105,69 @@ class HistoryCompactor {
       );
     }
 
+    // Tiny older remainder is not worth an LLM call — keep it raw.
+    final olderChars = older.fold<int>(0, (s, m) => s + m.content.length);
+    if (olderChars < minOlderCharsToSummarize && totalChars <= maxChars) {
+      return HistoryCompactionPlan(
+        older: const [],
+        recent: List<Message>.from(messages),
+        totalChars: totalChars,
+      );
+    }
+
     return HistoryCompactionPlan(
       older: older,
       recent: recent,
       totalChars: totalChars,
     );
+  }
+
+  /// Whether [plan] should split off an older window to summarize.
+  static bool shouldCompact({
+    required int totalChars,
+    required int messageCount,
+    int maxChars = defaultMaxChars,
+    int keepRecentCount = defaultKeepRecentCount,
+    int keepRecentChars = defaultKeepRecentChars,
+  }) {
+    if (totalChars > maxChars) return true;
+    if (messageCount <= keepRecentCount) return false;
+    return totalChars > keepRecentChars + minOlderCharsToSummarize;
+  }
+
+  /// Clip a single message so one dump cannot consume the whole budget.
+  static String clipContent(
+    String content, {
+    int maxChars = defaultMaxMessageChars,
+  }) {
+    if (content.length <= maxChars) return content;
+    return '${content.substring(0, maxChars)}… [${content.length} chars clipped]';
+  }
+
+  /// Drop oldest recent turns until content fits [maxChars], keeping at least
+  /// [minCount] messages (the latest ones).
+  static List<Message> trimRecentToBudget(
+    List<Message> recent, {
+    required int maxChars,
+    int minCount = minRecentAfterSummary,
+  }) {
+    var result = List<Message>.from(recent);
+    while (result.length > minCount &&
+        result.fold<int>(0, (s, m) => s + m.content.length) > maxChars) {
+      result = result.sublist(1);
+    }
+    return result;
+  }
+
+  /// Recent-window budget once a summary block is taking [summaryChars].
+  static int recentBudgetAfterSummary({
+    required int summaryChars,
+    int maxChars = defaultMaxChars,
+    int keepRecentChars = defaultKeepRecentChars,
+  }) {
+    final leftover = maxChars - summaryChars;
+    if (leftover < keepRecentChars) return leftover < 0 ? 0 : leftover;
+    return keepRecentChars;
   }
 
   /// Linear transcript for the summarizer (oldest → newest).
@@ -107,7 +184,8 @@ class HistoryCompactor {
     var total = 0;
     for (final m in messages) {
       final role = m.from.isAgent ? 'Assistant' : 'User';
-      lines.add('$role (${m.from.name}): ${m.content}');
+      final body = clipContent(m.content);
+      lines.add('$role (${m.from.name}): $body');
       total += lines.last.length + 1;
     }
 
@@ -175,7 +253,7 @@ class HistoryCompactor {
   /// System prompt for the compaction LLM call.
   static const summarizerSystemPrompt = '''
 You compress earlier turns of a conversation for another AI assistant.
-Preserve: decisions, names, preferences, open tasks, facts the user stated, file/tool outcomes that still matter.
-Omit: chit-chat, repeated acknowledgements, tool-call boilerplate.
+Preserve: decisions, names, how they want to be addressed, preferences, open tasks, facts the user stated, file/image message_ids, agent ids, and tool outcomes that still matter.
+Omit: chit-chat, repeated acknowledgements, tool-call boilerplate, full file dumps.
 Output concise plain prose only. No tools, no markdown headings, no preamble.''';
 }

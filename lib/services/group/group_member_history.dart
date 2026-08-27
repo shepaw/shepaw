@@ -28,24 +28,24 @@ class GroupMemberHistoryPack {
 }
 
 /// Slims group history for **members**. Admin / summarize / abort turns keep
-/// the full [adminMaxChars] window in the executor.
+/// the [adminMaxChars] window in the executor.
 ///
 /// Members already receive this-round brief, dispatch plan, and event digest
-/// in the user turn. Replaying ~60k chars of the whole group per member is
-/// the dominant token cost; this pack keeps:
+/// in the user turn. Replaying tens of thousands of chars of the whole group
+/// per member is the dominant token cost; this pack keeps:
 /// - a short recent tail (sibling / previous-step output)
 /// - the member's own recent replies (so they remember what they already did)
 /// - `store://` URIs referenced in omitted turns
 class GroupMemberHistory {
   GroupMemberHistory._();
 
-  static const int adminMaxChars = 60000;
-  static const int adminKeepRecentCount = 24;
-  static const int adminKeepRecentChars = 24000;
+  static const int adminMaxChars = 24000;
+  static const int adminKeepRecentCount = 16;
+  static const int adminKeepRecentChars = 10000;
 
   static const int memberMaxChars = 12000;
   static const int memberKeepRecentCount = 8;
-  static const int memberKeepRecentChars = 6000;
+  static const int memberKeepRecentChars = 4000;
   static const int memberKeepOwnCount = 6;
   static const int maxOmittedUris = 12;
 

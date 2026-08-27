@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shepaw/models/message.dart';
+import 'package:shepaw/services/group/group_member_history.dart';
 import 'package:shepaw/services/session/history_compactor.dart';
 
 Message _msg({
@@ -59,6 +60,31 @@ void main() {
         messages.sublist(messages.length - plan.recent.length).map((m) => m.id),
       );
     });
+
+    test('does not compact a short conversation under the default window', () {
+      final messages = List.generate(
+        9,
+        (i) => _msg(id: '$i', content: 'n' * 50, isAgent: i.isEven),
+      );
+      final plan = HistoryCompactor.plan(messages: messages);
+      expect(plan.needsCompaction, isFalse);
+      expect(plan.recent, hasLength(9));
+    });
+
+    test('compacts when over keepRecent window plus min older remainder', () {
+      final messages = List.generate(
+        20,
+        (i) => _msg(id: '$i', content: 'n' * 300, isAgent: i.isEven),
+      );
+      // 20 * 300 = 6000 > 4000 + 1200, count > 8.
+      final plan = HistoryCompactor.plan(messages: messages);
+      expect(plan.needsCompaction, isTrue);
+      expect(plan.recent.length, lessThanOrEqualTo(8));
+      expect(
+        plan.older.fold<int>(0, (s, m) => s + m.content.length),
+        greaterThanOrEqualTo(HistoryCompactor.minOlderCharsToSummarize),
+      );
+    });
   });
 
   group('HistoryCompactor.buildTranscript', () {
@@ -76,6 +102,15 @@ void main() {
       expect(clipped, contains('[earlier omitted]'));
       expect(clipped, contains('CCCC'));
     });
+
+    test('clips oversized message bodies before joining', () {
+      final messages = [
+        _msg(id: '1', content: 'Z' * 4000, isAgent: false, name: 'U'),
+      ];
+      final text = HistoryCompactor.buildTranscript(messages);
+      expect(text, contains('chars clipped'));
+      expect(text.length, lessThan(4000));
+    });
   });
 
   group('HistoryCompactor.summaryMessage', () {
@@ -84,6 +119,59 @@ void main() {
       expect(msg['role'], 'user');
       expect(msg['content'], contains('Earlier conversation summary'));
       expect(msg['content'], contains('User prefers dark mode.'));
+    });
+  });
+
+  group('HistoryCompactor.clipContent', () {
+    test('leaves short content unchanged', () {
+      expect(HistoryCompactor.clipContent('hello'), 'hello');
+    });
+
+    test('clips long dumps and records original length', () {
+      final long = 'x' * 4000;
+      final clipped = HistoryCompactor.clipContent(long, maxChars: 100);
+      expect(clipped.startsWith('x' * 100), isTrue);
+      expect(clipped, contains('4000 chars clipped'));
+      expect(clipped.length, lessThan(long.length));
+    });
+  });
+
+  group('HistoryCompactor.trimRecentToBudget', () {
+    test('drops oldest until under budget but keeps a minimum tail', () {
+      final messages = List.generate(
+        6,
+        (i) => _msg(id: '$i', content: 'a' * 100, isAgent: false),
+      );
+      final kept = HistoryCompactor.trimRecentToBudget(
+        messages,
+        maxChars: 250,
+        minCount: 2,
+      );
+      expect(kept.map((m) => m.id), ['4', '5']);
+    });
+  });
+
+  group('HistoryCompactor.recentBudgetAfterSummary', () {
+    test('uses keepRecentChars when leftover is larger', () {
+      expect(
+        HistoryCompactor.recentBudgetAfterSummary(
+          summaryChars: 500,
+          maxChars: 10000,
+          keepRecentChars: 4000,
+        ),
+        4000,
+      );
+    });
+
+    test('shrinks to leftover when summary ate most of the budget', () {
+      expect(
+        HistoryCompactor.recentBudgetAfterSummary(
+          summaryChars: 9000,
+          maxChars: 10000,
+          keepRecentChars: 4000,
+        ),
+        1000,
+      );
     });
   });
 
@@ -121,15 +209,18 @@ void main() {
       );
       final plan = HistoryCompactor.plan(
         messages: messages,
-        maxChars: 60000,
-        keepRecentCount: 24,
-        keepRecentChars: 24000,
+        maxChars: GroupMemberHistory.adminMaxChars,
+        keepRecentCount: GroupMemberHistory.adminKeepRecentCount,
+        keepRecentChars: GroupMemberHistory.adminKeepRecentChars,
       );
       expect(plan.needsCompaction, isTrue);
-      expect(plan.recent.length, lessThanOrEqualTo(24));
+      expect(
+        plan.recent.length,
+        lessThanOrEqualTo(GroupMemberHistory.adminKeepRecentCount),
+      );
       expect(
         plan.recent.fold<int>(0, (s, m) => s + m.content.length),
-        lessThanOrEqualTo(24000),
+        lessThanOrEqualTo(GroupMemberHistory.adminKeepRecentChars),
       );
     });
   });

@@ -344,7 +344,7 @@ class GroupAgentExecutor {
     // Build chat history: pack conversation into a single 'user' message so
     // the LLM's identity comes solely from the system prompt. Members get a
     // slim slice (brief/plan/events already live in [content]); admin /
-    // summarize turns keep the full 60k window.
+    // summarize turns keep the admin window (compacted).
     final prepared = await _prepareGroupHistory(
       agent: agent,
       channelId: channelId,
@@ -364,7 +364,9 @@ class GroupAgentExecutor {
       if (earlierSummary != null && earlierSummary.isNotEmpty)
         HistoryCompactor.summaryMessage(earlierSummary)['content'] as String,
       ...effectiveHistory.map((m) {
-        final content = LocalLLMHelpers.enrichHistoryContent(m, m.content);
+        final content = HistoryCompactor.clipContent(
+          LocalLLMHelpers.enrichHistoryContent(m, m.content),
+        );
         if (m.from.isAgent && m.from.id == agent.id) {
           return '[${m.from.name}(我)]: $content';
         }
@@ -2479,7 +2481,7 @@ class GroupAgentExecutor {
   ///
   /// Members get a slim slice (recent tail + own replies + omitted-URI
   /// index, plus a peeked compaction cache if one exists). Admin / summarize
-  /// / abort / closing turns keep the 60k window and may trigger LLM
+  /// / abort / closing turns keep the admin window and may trigger LLM
   /// compaction for local agents.
   Future<
       ({
@@ -2571,13 +2573,14 @@ class GroupAgentExecutor {
           effectiveHistory = plan.recent;
           if (earlierSummary.isNotEmpty) {
             final summaryCost = earlierSummary.length + 80;
-            var budgetLeft = maxHistoryChars - summaryCost;
-            while (effectiveHistory.isNotEmpty &&
-                effectiveHistory.fold<int>(0, (s, m) => s + m.content.length) >
-                    budgetLeft &&
-                effectiveHistory.length > 4) {
-              effectiveHistory = effectiveHistory.sublist(1);
-            }
+            effectiveHistory = HistoryCompactor.trimRecentToBudget(
+              effectiveHistory,
+              maxChars: HistoryCompactor.recentBudgetAfterSummary(
+                summaryChars: summaryCost,
+                maxChars: maxHistoryChars,
+                keepRecentChars: GroupMemberHistory.adminKeepRecentChars,
+              ),
+            );
             LoggerService().info(
               'Group history compacted for ${agent.name}: '
               '${plan.older.length} older → ${earlierSummary.length} chars; '
@@ -2600,7 +2603,7 @@ class GroupAgentExecutor {
       }
     } else {
       // Remote ACP admin / summarize turns have no local LLM summarizer.
-      // Keep the 60k-char recent tail and surface the omission with a rollup.
+      // Keep the admin-char recent tail and surface the omission with a rollup.
       effectiveHistory = truncateWithNote(historyMessages);
     }
 

@@ -2107,16 +2107,14 @@ class AgentMessagingService {
             );
             if (summary.isNotEmpty) {
               chatHistory.add(HistoryCompactor.summaryMessage(summary));
-              // Keep recent tail within remaining budget after the summary block.
-              final summaryCost = (chatHistory.last['content'] as String).length;
-              var budgetLeft = historyMaxChars - summaryCost;
-              while (recentMessages.isNotEmpty &&
-                  recentMessages.fold<int>(
-                          0, (s, m) => s + m.content.length) >
-                      budgetLeft &&
-                  recentMessages.length > 4) {
-                recentMessages = recentMessages.sublist(1);
-              }
+              final summaryCost =
+                  (chatHistory.last['content'] as String).length;
+              recentMessages = HistoryCompactor.trimRecentToBudget(
+                recentMessages,
+                maxChars: HistoryCompactor.recentBudgetAfterSummary(
+                  summaryChars: summaryCost,
+                ),
+              );
               LoggerService().info(
                 'History compacted: ${plan.older.length} older msgs → '
                 '${summary.length} char summary; keeping ${recentMessages.length} recent',
@@ -2152,7 +2150,9 @@ class AgentMessagingService {
               : '[${_formatTimestamp(m.timestampMs)}] ${m.content}';
           final entry = <String, dynamic>{
             'role': isAgent ? 'assistant' : 'user',
-            'content': LocalLLMHelpers.enrichHistoryContent(m, rawContent),
+            'content': HistoryCompactor.clipContent(
+              LocalLLMHelpers.enrichHistoryContent(m, rawContent),
+            ),
           };
           if (m.type != MessageType.text && m.type != MessageType.system) {
             entry['attachment_info'] = LocalLLMHelpers.buildAttachmentInfo(m);
