@@ -122,6 +122,8 @@ void main() {
       expect(PromptStackConfig.forShe.agent.includeUserProfile, isFalse);
       expect(PromptStackConfig.forOtherAgent.tools.includeShepawCli, isTrue);
       expect(PromptStackConfig.forOtherAgent.she.includeSheMemory, isFalse);
+      expect(PromptStackConfig.forOtherAgent.embedMemoryEntries, isFalse);
+      expect(PromptStackConfig.forOtherAgent.agent.includeSessionEnd, isFalse);
     });
   });
 

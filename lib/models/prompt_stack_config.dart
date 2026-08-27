@@ -163,28 +163,42 @@ class ToolsStackConfig {
 /// Controls context-injection sections that apply to **all non-She agents**.
 ///
 /// These sections are silently ignored when the agent is She (`isShe == true`).
+///
+/// Defaults stay lean: keep the user's core profile, skip embedding
+/// memories / extra cognition (those are `uri_only` / on-demand via CLI),
+/// and do not nag session-end writes every turn.
 class AgentStackConfig {
   /// Inject a condensed user-profile block (core fields only: name, age,
   /// gender, occupation, city). Omitted when all core fields are empty.
   final bool includeUserProfile;
 
-  /// Inject the agent's own recent memories (sorted by `memory_time` desc).
+  /// Allow the agent's own recent memories in the prompt stack.
+  /// Actual embedding still requires [PromptStackConfig.embedMemoryEntries]
+  /// (`memoryInjectMode == full`). Default on so Scope Card / CLI can point
+  /// at memory URIs; [PromptStackConfig.forOtherAgent] uses uri_only.
   final bool includeAgentMemory;
 
   /// Inject the agent's self-cognition (soul) from minds.db.
+  /// Off by default — `soul.md` already lives in the description block.
   final bool includeAgentSelfCognition;
 
   /// Inject the agent's user-cognition (impression/notes) from minds.db.
+  /// Off by default; the agent can query via CLI when needed.
   final bool includeAgentUserCognition;
 
-  /// Maximum number of recent memories to inject.
+  /// Append non-She session-end write instructions (memory / soul / cognition).
+  /// Off by default so coding agents are not pushed into empty tool calls.
+  final bool includeSessionEnd;
+
+  /// Maximum number of recent memories to inject when embedding is on.
   final int memoryLimit;
 
   const AgentStackConfig({
     this.includeUserProfile = true,
     this.includeAgentMemory = true,
-    this.includeAgentSelfCognition = true,
-    this.includeAgentUserCognition = true,
+    this.includeAgentSelfCognition = false,
+    this.includeAgentUserCognition = false,
+    this.includeSessionEnd = false,
     this.memoryLimit = 10,
   });
 
@@ -194,14 +208,18 @@ class AgentStackConfig {
     includeAgentMemory: false,
     includeAgentSelfCognition: false,
     includeAgentUserCognition: false,
+    includeSessionEnd: false,
   );
 
   factory AgentStackConfig.fromJson(Map<String, dynamic> json) =>
       AgentStackConfig(
         includeUserProfile: json['include_user_profile'] as bool? ?? true,
         includeAgentMemory: json['include_agent_memory'] as bool? ?? true,
-        includeAgentSelfCognition: json['include_agent_self_cognition'] as bool? ?? true,
-        includeAgentUserCognition: json['include_agent_user_cognition'] as bool? ?? true,
+        includeAgentSelfCognition:
+            json['include_agent_self_cognition'] as bool? ?? false,
+        includeAgentUserCognition:
+            json['include_agent_user_cognition'] as bool? ?? false,
+        includeSessionEnd: json['include_session_end'] as bool? ?? false,
         memoryLimit: json['memory_limit'] as int? ?? 10,
       );
 
@@ -210,6 +228,7 @@ class AgentStackConfig {
         'include_agent_memory': includeAgentMemory,
         'include_agent_self_cognition': includeAgentSelfCognition,
         'include_agent_user_cognition': includeAgentUserCognition,
+        'include_session_end': includeSessionEnd,
         'memory_limit': memoryLimit,
       };
 
@@ -218,13 +237,17 @@ class AgentStackConfig {
     bool? includeAgentMemory,
     bool? includeAgentSelfCognition,
     bool? includeAgentUserCognition,
+    bool? includeSessionEnd,
     int? memoryLimit,
   }) =>
       AgentStackConfig(
         includeUserProfile: includeUserProfile ?? this.includeUserProfile,
         includeAgentMemory: includeAgentMemory ?? this.includeAgentMemory,
-        includeAgentSelfCognition: includeAgentSelfCognition ?? this.includeAgentSelfCognition,
-        includeAgentUserCognition: includeAgentUserCognition ?? this.includeAgentUserCognition,
+        includeAgentSelfCognition:
+            includeAgentSelfCognition ?? this.includeAgentSelfCognition,
+        includeAgentUserCognition:
+            includeAgentUserCognition ?? this.includeAgentUserCognition,
+        includeSessionEnd: includeSessionEnd ?? this.includeSessionEnd,
         memoryLimit: memoryLimit ?? this.memoryLimit,
       );
 }
@@ -538,11 +561,15 @@ class PromptStackConfig {
 
   /// Standard configuration for non-She agents — She sections silently off.
   ///
-  /// `includeShepawCli` is enabled so the shepaw function tool is available
-  /// (aligned with `includeShepawMetaCli` guidance). She's data-access prompt
-  /// block (`_pawCliPrompt`) stays She-only via `agent.isShe` in the builder.
+  /// Lean by default: memories are URI-only (read via CLI / store), extra
+  /// cognition is off, UI/tool docs stay names-only. `includeShepawCli` is
+  /// on so the shepaw function tool is available (aligned with
+  /// `includeShepawMetaCli`). She's data-access prompt block (`_pawCliPrompt`)
+  /// stays She-only via `agent.isShe` in the builder.
   static const PromptStackConfig forOtherAgent = PromptStackConfig(
     she: SheStackConfig.disabled,
+    tools: ToolsStackConfig(toolDescriptionLevel: 'names_only'),
+    memoryInjectMode: CognitionInjectMode.uriOnly,
   );
 
   factory PromptStackConfig.fromJson(Map<String, dynamic> json) =>

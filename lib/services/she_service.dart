@@ -597,7 +597,8 @@ ${parts.join('\n')}''';
   ///
   /// - **She** (guarded by `config.she.includeSessionEnd` in the builder):
   ///   full instructions (heartbeat, profile, long_term_memory, soul, cognition).
-  /// - **Non-She**: lighter version covering soul, self_notes, episodic memories,
+  /// - **Non-She** (guarded by `config.agent.includeSessionEnd`, off by default):
+  ///   lighter version covering soul, self_notes, episodic memories,
   ///   and cognition writes that those agents can actually perform.
   String buildSessionEndBlockFor(String agentId) {
     if (agentId == sheId) return buildSessionEndBlock();

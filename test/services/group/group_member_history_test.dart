@@ -208,4 +208,45 @@ void main() {
       expect(pack.dropped.map((m) => m.id), ['other']);
     });
   });
+
+  group('GroupChatHistory.toRoleMessages', () {
+    test('maps self turns to assistant and others to tagged user', () {
+      final messages = [
+        _msg(id: '1', content: 'hi', fromId: 'user', isAgent: false, name: 'U'),
+        _msg(id: '2', content: 'hello', fromId: 'coder', name: 'Coder'),
+        _msg(id: '3', content: 'next', fromId: 'other', name: 'Other'),
+      ];
+      final rows = GroupChatHistory.toRoleMessages(
+        messages: messages,
+        selfAgentId: 'coder',
+      );
+      expect(rows, [
+        {'role': 'user', 'content': '[U(User)]: hi'},
+        {'role': 'assistant', 'content': 'hello'},
+        {'role': 'user', 'content': '[Other(Agent)]: next'},
+      ]);
+    });
+
+    test('merges consecutive same-role turns and prefixes notes', () {
+      final messages = [
+        _msg(id: '1', content: 'a', fromId: 'user', isAgent: false, name: 'U'),
+        _msg(id: '2', content: 'b', fromId: 'other', name: 'Other'),
+        _msg(id: '3', content: 'c', fromId: 'coder', name: 'Coder'),
+        _msg(id: '4', content: 'd', fromId: 'coder', name: 'Coder'),
+      ];
+      final rows = GroupChatHistory.toRoleMessages(
+        messages: messages,
+        selfAgentId: 'coder',
+        truncationNote: '[省略 2 条]',
+        earlierSummary: 'old plan',
+      );
+      expect(rows.length, 2);
+      expect(rows[0]['role'], 'user');
+      expect(rows[0]['content'], contains('[省略 2 条]'));
+      expect(rows[0]['content'], contains('Earlier conversation summary'));
+      expect(rows[0]['content'], contains('[U(User)]: a'));
+      expect(rows[0]['content'], contains('[Other(Agent)]: b'));
+      expect(rows[1], {'role': 'assistant', 'content': 'c\n\nd'});
+    });
+  });
 }

@@ -93,29 +93,42 @@ class GroupAgentExecutor {
         _interactionHandler = interactionHandler;
 
   List<Map<String, dynamic>> buildGroupChatHistoryWithImages({
-    required String historyText,
+    required List<Map<String, dynamic>> historyMessages,
     required List<({AttachmentData attachment, String senderName})>
         imageEntries,
     required bool isClaude,
   }) {
-    if (historyText.isEmpty && imageEntries.isEmpty) {
+    if (historyMessages.isEmpty && imageEntries.isEmpty) {
       return <Map<String, dynamic>>[];
     }
 
     if (imageEntries.isEmpty) {
-      // Plain text fallback — same as before.
-      return [
-        {'role': 'user', 'content': '以下是群聊的历史记录：\n\n$historyText'},
-      ];
+      return List<Map<String, dynamic>>.from(historyMessages);
     }
 
-    // Build multimodal content array.
+    // Attach historical images to the last user row (or a new one).
+    final messages = List<Map<String, dynamic>>.from(historyMessages);
     final contentParts = <Map<String, dynamic>>[];
+    if (messages.isNotEmpty && messages.last['role'] == 'user') {
+      final prev = messages.last['content'];
+      if (prev is String && prev.isNotEmpty) {
+        contentParts.add({'type': 'text', 'text': prev});
+      } else if (prev is List) {
+        for (final part in prev) {
+          if (part is Map<String, dynamic>) {
+            contentParts.add(Map<String, dynamic>.from(part));
+          }
+        }
+      }
+      messages.removeLast();
+    } else if (messages.isNotEmpty) {
+      // Last row is assistant — keep a text recap as the image caption.
+      contentParts.add({
+        'type': 'text',
+        'text': '以下是群聊历史中的图片：',
+      });
+    }
 
-    // Leading text.
-    contentParts.add({'type': 'text', 'text': '以下是群聊的历史记录：\n\n$historyText'});
-
-    // Append each image with sender annotation.
     for (final entry in imageEntries) {
       contentParts.add({
         'type': 'text',
@@ -142,9 +155,8 @@ class GroupAgentExecutor {
       }
     }
 
-    return [
-      {'role': 'user', 'content': contentParts},
-    ];
+    messages.add({'role': 'user', 'content': contentParts});
+    return messages;
   }
 
   Future<void> saveGroupFileMessage({
@@ -343,10 +355,6 @@ class GroupAgentExecutor {
     );
     final systemPrompt = layeredSystemPrompt.full;
 
-    // Build chat history: pack conversation into a single 'user' message so
-    // the LLM's identity comes solely from the system prompt. Members get a
-    // slim slice (brief/plan/events already live in [content]); admin /
-    // summarize turns keep the admin window (compacted).
     final prepared = await _prepareGroupHistory(
       agent: agent,
       channelId: channelId,
@@ -361,21 +369,36 @@ class GroupAgentExecutor {
     final earlierSummary = prepared.earlierSummary;
     final truncationNote = prepared.truncationNote;
 
+    // Local LLM: role-attributed history so this agent's own turns stay
+    // `assistant` and later rounds can reuse the prefix cache. Peer / ACP
+    // still get a packed transcript (those transports are a single blob).
+    String formatLine(Message m) {
+      final content = HistoryCompactor.clipContent(
+        LocalLLMHelpers.enrichHistoryContent(m, m.content),
+      );
+      if (m.from.isAgent && m.from.id == agent.id) {
+        return '[${m.from.name}(我)]: $content';
+      }
+      final tag = m.from.isAgent ? 'Agent' : 'User';
+      return '[${m.from.name}($tag)]: $content';
+    }
+
     final historyLines = [
       if (truncationNote?.isNotEmpty == true) truncationNote!,
       if (earlierSummary != null && earlierSummary.isNotEmpty)
         HistoryCompactor.summaryMessage(earlierSummary)['content'] as String,
-      ...effectiveHistory.map((m) {
-        final content = HistoryCompactor.clipContent(
-          LocalLLMHelpers.enrichHistoryContent(m, m.content),
-        );
-        if (m.from.isAgent && m.from.id == agent.id) {
-          return '[${m.from.name}(我)]: $content';
-        }
-        final tag = m.from.isAgent ? 'Agent' : 'User';
-        return '[${m.from.name}($tag)]: $content';
-      }),
+      ...effectiveHistory.map(formatLine),
     ].join('\n\n');
+
+    final roleHistory = GroupChatHistory.toRoleMessages(
+      messages: effectiveHistory,
+      selfAgentId: agent.id,
+      truncationNote: truncationNote,
+      earlierSummary: earlierSummary,
+      formatContent: (m) => HistoryCompactor.clipContent(
+        LocalLLMHelpers.enrichHistoryContent(m, m.content),
+      ),
+    );
 
     final responseBuffer = StringBuffer();
     bool streamingStarted = false;
@@ -492,10 +515,10 @@ class GroupAgentExecutor {
 
       // Do NOT load history image bytes for group chat. Embedding historical
       // images would force vision on every turn; text placeholders in
-      // historyLines already provide context. Current-turn [attachments] are
+      // roleHistory already provide context. Current-turn [attachments] are
       // passed separately for multimodal understanding.
       final chatHistory = buildGroupChatHistoryWithImages(
-        historyText: historyLines,
+        historyMessages: roleHistory,
         imageEntries: const [],
         isClaude: isClaude,
       );

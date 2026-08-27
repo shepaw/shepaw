@@ -122,8 +122,8 @@ class _PromptStackConfigScreenState extends State<PromptStackConfigScreen> {
                         value: _config.soulInjectMode,
                         items: {
                           CognitionInjectMode.full: _tr(
-                            '全文内嵌（默认）',
-                            'Embed full text (default)',
+                            '全文内嵌',
+                            'Embed full text',
                           ),
                           CognitionInjectMode.uriOnly: _tr(
                             '仅 URI（按需 store read）',
@@ -143,12 +143,12 @@ class _PromptStackConfigScreenState extends State<PromptStackConfigScreen> {
                         value: _config.memoryInjectMode,
                         items: {
                           CognitionInjectMode.full: _tr(
-                            '内嵌最近 N 条（默认）',
-                            'Embed recent N (default)',
+                            '内嵌最近 N 条',
+                            'Embed recent N',
                           ),
                           CognitionInjectMode.uriOnly: _tr(
-                            '仅 URI（按需读取）',
-                            'URI only (read on demand)',
+                            '仅 URI（默认，按需读取）',
+                            'URI only (default, read on demand)',
                           ),
                         },
                         onChanged: (v) {
@@ -500,6 +500,20 @@ class _PromptStackConfigScreenState extends State<PromptStackConfigScreen> {
                           () => _config = _config.copyWith(
                             agent: _config.agent
                                 .copyWith(includeAgentUserCognition: v),
+                          ),
+                        ),
+                      ),
+                      _switch(
+                        title: _tr('会话结束写回', 'Session-end writeback'),
+                        subtitle: _tr(
+                          '每轮催记忆/认知写入；编码 Agent 建议关闭',
+                          'Nudge memory/cognition writes each turn; keep off for coding agents',
+                        ),
+                        value: _config.agent.includeSessionEnd,
+                        onChanged: (v) => setState(
+                          () => _config = _config.copyWith(
+                            agent:
+                                _config.agent.copyWith(includeSessionEnd: v),
                           ),
                         ),
                       ),

@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shepaw/models/remote_agent.dart';
+import 'package:shepaw/models/prompt_stack_config.dart';
 import 'package:shepaw/services/agent_prompt_builder.dart';
 import 'package:shepaw/services/she_service.dart';
 
@@ -138,6 +139,53 @@ void main() {
 
       expect(prompt, contains("Master's Custom Settings"));
       expect(prompt, contains('Be terse'));
+    });
+
+    test('resume block skips store read/write lecture', () async {
+      final agent = _localAgent(id: 'local-coder', name: 'Coder');
+      final prompt = await AgentPromptBuilder(agent: agent).buildSystemPrompt();
+
+      expect(prompt, contains('## Your Resume'));
+      expect(prompt, contains('agents.resume-set'));
+      expect(prompt, isNot(contains('store write --space files')));
+      expect(prompt, isNot(contains('Before This Conversation Ends')));
+    });
+
+    test('opt-in session-end writes for non-She', () async {
+      final agent = _localAgent(
+        id: 'local-coder',
+        name: 'Coder',
+        metadata: {
+          'prompt_stack_config': PromptStackConfig.forOtherAgent
+              .copyWith(
+                tools: PromptStackConfig.forOtherAgent.tools.copyWith(
+                  includeUI: false,
+                  includeOsTools: false,
+                  includeSkills: false,
+                  includeToolModels: false,
+                ),
+                agent: PromptStackConfig.forOtherAgent.agent.copyWith(
+                  includeUserProfile: false,
+                  includeSessionEnd: true,
+                ),
+              )
+              .toJson(),
+        },
+      );
+      final prompt = await AgentPromptBuilder(agent: agent).buildSystemPrompt();
+      expect(prompt, contains('Before This Conversation Ends'));
+      expect(prompt, contains('agents.memory-write'));
+    });
+  });
+
+  group('AgentPromptBuilder.clipSoulForPrompt', () {
+    test('keeps short souls and tails long ones', () {
+      expect(AgentPromptBuilder.clipSoulForPrompt('hello'), 'hello');
+      final long = 'x' * 5000;
+      final clipped = AgentPromptBuilder.clipSoulForPrompt(long);
+      expect(clipped.length, lessThan(long.length));
+      expect(clipped, contains('[older entries omitted]'));
+      expect(clipped.endsWith('x' * AgentPromptBuilder.soulPromptMaxChars), isTrue);
     });
   });
 

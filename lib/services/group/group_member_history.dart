@@ -176,3 +176,52 @@ class GroupMemberHistory {
     return '[省略消息中引用的产物：$shown]';
   }
 }
+
+/// Converts a group transcript into role-attributed LLM messages so later
+/// turns can reuse the prefix cache. This agent's own turns are `assistant`;
+/// everyone else (user / sibling agents / system) is `user`. Consecutive
+/// same-role turns are merged — some providers reject two user rows in a row.
+class GroupChatHistory {
+  GroupChatHistory._();
+
+  static List<Map<String, dynamic>> toRoleMessages({
+    required List<Message> messages,
+    required String selfAgentId,
+    String? truncationNote,
+    String? earlierSummary,
+    String Function(Message m)? formatContent,
+  }) {
+    final out = <Map<String, dynamic>>[];
+
+    void append(String role, String content) {
+      final text = content.trim();
+      if (text.isEmpty) return;
+      if (out.isNotEmpty && out.last['role'] == role) {
+        out.last['content'] = '${out.last['content']}\n\n$text';
+      } else {
+        out.add({'role': role, 'content': text});
+      }
+    }
+
+    final prefixParts = <String>[
+      if (truncationNote != null && truncationNote.trim().isNotEmpty)
+        truncationNote.trim(),
+      if (earlierSummary != null && earlierSummary.trim().isNotEmpty)
+        HistoryCompactor.summaryMessage(earlierSummary)['content'] as String,
+    ];
+    if (prefixParts.isNotEmpty) {
+      append('user', prefixParts.join('\n\n'));
+    }
+
+    for (final m in messages) {
+      final raw = formatContent?.call(m) ?? m.content;
+      if (m.from.isAgent && m.from.id == selfAgentId) {
+        append('assistant', raw);
+      } else {
+        final tag = m.from.isAgent ? 'Agent' : 'User';
+        append('user', '[${m.from.name}($tag)]: $raw');
+      }
+    }
+    return out;
+  }
+}

@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shepaw/models/peer_boundary_config.dart';
+import 'package:shepaw/models/prompt_stack_config.dart';
 import 'package:shepaw/models/remote_agent.dart';
 
 RemoteAgent _agent({
@@ -114,6 +115,22 @@ void main() {
       final inbound = agent.promptStackConfigForPeerInbound();
       expect(inbound.she.includeProfileSnapshot, isTrue);
       expect(inbound.she.includeSessionEnd, isTrue);
+    });
+
+    test('non-She inbound also strips opted-in session-end writes', () {
+      final agent = _agent(metadata: {
+        'llm_provider': 'openai',
+        'prompt_stack_config': PromptStackConfig.forOtherAgent
+            .copyWith(
+              agent: PromptStackConfig.forOtherAgent.agent.copyWith(
+                includeSessionEnd: true,
+              ),
+            )
+            .toJson(),
+      });
+      expect(agent.promptStackConfig.agent.includeSessionEnd, isTrue);
+      final inbound = agent.promptStackConfigForPeerInbound();
+      expect(inbound.agent.includeSessionEnd, isFalse);
     });
   });
 }

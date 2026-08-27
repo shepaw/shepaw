@@ -14,6 +14,19 @@ void main() {
       expect(she.includeMetaCognition, isFalse);
       expect(she.includeSessionEnd, isFalse);
     });
+
+    test('stays lean: uri_only memory, no extra cognition or session-end', () {
+      final cfg = PromptStackConfig.forOtherAgent;
+      expect(cfg.agent.includeUserProfile, isTrue);
+      expect(cfg.agent.includeAgentMemory, isTrue);
+      expect(cfg.agent.includeAgentSelfCognition, isFalse);
+      expect(cfg.agent.includeAgentUserCognition, isFalse);
+      expect(cfg.agent.includeSessionEnd, isFalse);
+      expect(cfg.memoryInjectMode, CognitionInjectMode.uriOnly);
+      expect(cfg.embedMemoryEntries, isFalse);
+      expect(cfg.soulInjectMode, CognitionInjectMode.full);
+      expect(cfg.tools.toolDescriptionLevel, 'names_only');
+    });
   });
 
   group('PromptStackConfig.forShe', () {

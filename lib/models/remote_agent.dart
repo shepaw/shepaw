@@ -484,6 +484,9 @@ class RemoteAgent {
         includeAgentMemory: boundary.stripHostUserContext
             ? false
             : base.agent.includeAgentMemory,
+        includeSessionEnd: boundary.disableSessionEndWrites
+            ? false
+            : base.agent.includeSessionEnd,
       ),
     );
   }

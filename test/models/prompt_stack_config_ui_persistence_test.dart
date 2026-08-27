@@ -46,6 +46,7 @@ void main() {
         ),
         agent: PromptStackConfig.forOtherAgent.agent.copyWith(
           includeAgentMemory: false,
+          includeSessionEnd: true,
           memoryLimit: 3,
         ),
         soulInjectMode: CognitionInjectMode.uriOnly,
@@ -57,6 +58,7 @@ void main() {
       expect(restored.tools.includeOsTools, isFalse);
       expect(restored.tools.osToolsMode, 'expanded');
       expect(restored.agent.includeAgentMemory, isFalse);
+      expect(restored.agent.includeSessionEnd, isTrue);
       expect(restored.agent.memoryLimit, 3);
       expect(restored.soulInjectMode, CognitionInjectMode.uriOnly);
       expect(restored.memoryInjectMode, CognitionInjectMode.uriOnly);
@@ -98,6 +100,11 @@ void main() {
             .tools
             .includeShepawCli,
         isTrue,
+      );
+      expect(
+        PromptStackConfig.fromJson(PromptStackConfig.forOtherAgent.toJson())
+            .memoryInjectMode,
+        CognitionInjectMode.uriOnly,
       );
     });
   });

@@ -3,7 +3,6 @@ import '../models/prompt_stack_config.dart';
 import '../models/remote_agent.dart';
 import '../storage/device_identity.dart';
 import '../storage/scope_card.dart';
-import '../storage/store_protocol.dart';
 import 'agent_memory_store_service.dart';
 import 'agent_soul_service.dart';
 import 'cognition_service.dart';
@@ -183,10 +182,12 @@ class AgentPromptBuilder {
 
     // ⑨ Session-end — in the static prefix so it can cache. She: guarded by
     // config.she.includeSessionEnd; ephemeral rooms use a lighter variant.
-    // Non-She: always injected.
+    // Non-She: guarded by config.agent.includeSessionEnd (off by default).
     if (hasEphemeral && agent.isShe) {
       staticParts.add(SheService.buildEphemeralSessionEndBlock());
-    } else if (config.she.includeSessionEnd || !agent.isShe) {
+    } else if (agent.isShe
+        ? config.she.includeSessionEnd
+        : config.agent.includeSessionEnd) {
       staticParts.add(SheService.instance.buildSessionEndBlockFor(agent.id));
     }
 
@@ -337,47 +338,33 @@ class AgentPromptBuilder {
     return 'Your name is ${agent.name}.';
   }
 
-  /// The agent's own resume (bio) — what others see about it. The agent can
-  /// refine this during chat via `agents.resume-set`, and ACP agents keep the
-  /// authoritative copy in the pouch at a fixed store URI (`store read/write`).
+  /// The agent's own resume (bio) — what others see about it.
+  /// Store read/write details live in the Scope Card; do not duplicate them here.
   Future<String> _buildResumeBlock() async {
     final bio = agent.bio?.trim() ?? '';
     final resumeText = bio.isNotEmpty ? bio : '（未设置 / Not set）';
-    final storeLine = await _resumeStoreLine();
-    final lines = <String>[
+    return [
       '## Your Resume',
       resumeText,
-    ];
-    if (storeLine.isNotEmpty) {
-      lines
-        ..add('')
-        ..add(storeLine);
-    }
-    lines.addAll([
       '',
       'Others see this as your resume. If your capabilities or role change, update it with:',
       '`shepaw context agents.resume-set --id ${agent.id} --text "(your updated resume)"`',
-    ]);
-    return lines.join('\n');
+    ].join('\n');
   }
 
-  /// One-line pointer to the agent's resume in the pouch, when resolvable.
-  /// Best-effort: device identity failures (e.g. plugin-less tests) yield ''.
-  Future<String> _resumeStoreLine() async {
-    try {
-      final device = await DeviceIdentity.deviceId();
-      if (device.trim().isEmpty) return '';
-      final uri =
-          storeUriWithRef(StoreSpace.files, device, '${agent.id}/resume.md');
-      return 'Your resume is also stored at: `$uri`\n'
-          'Read/update it with: `shepaw store read --uri $uri` · '
-          '`shepaw store write --space files --task ${agent.id} '
-          '--filename resume.md --content "..."` '
-          '(auto sections regenerate on rebuild; keep durable notes in the '
-          '`## 自我补充 / Self Notes` section).';
-    } catch (_) {
-      return '';
-    }
+  /// Prompt-view cap for non-She `soul.md` (same budget as She's soul block).
+  static const int soulPromptMaxChars = 4000;
+
+  /// Keep the tail of a soul so a long file cannot bloat the static prefix.
+  static String clipSoulForPrompt(String soul) {
+    final trimmed = soul.trim();
+    if (trimmed.length <= soulPromptMaxChars) return trimmed;
+    LoggerService().warning(
+      'Agent soul is ${trimmed.length} chars (>$soulPromptMaxChars) — '
+      'truncating tail for prompt injection',
+      tag: 'PromptBuilder',
+    );
+    return SheService.truncateTail(trimmed, soulPromptMaxChars);
   }
 
   /// The main description / persona block.
@@ -387,7 +374,7 @@ class AgentPromptBuilder {
     }
     try {
       final soul = await AgentSoulService.instance.getSoul(agent);
-      if (soul.trim().isNotEmpty) return soul.trim();
+      if (soul.trim().isNotEmpty) return clipSoulForPrompt(soul);
     } catch (_) {
       // Store / peer unavailable (e.g. unit tests).
     }
@@ -419,7 +406,7 @@ class AgentPromptBuilder {
 
     return '''
 ## Your Core Purpose & Principles
-${self.soul}
+${clipSoulForPrompt(self.soul)}
 
 This grows over time. When you gain new self-awareness, call:
 `shepaw context memory.write --key soul --value "(complete updated soul)"`''';
