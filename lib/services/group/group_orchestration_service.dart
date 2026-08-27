@@ -19,6 +19,7 @@ import 'group_prompt_builder.dart';
 import 'group_member_session_service.dart';
 import 'group_turn_result.dart';
 import 'group_task_status.dart';
+import 'group_verbal_dispatch.dart';
 import 'planning_helpers.dart';
 import '../../models/mention_entry.dart';
 import '../../storage/context_bundle.dart';
@@ -1119,6 +1120,8 @@ class GroupOrchestrationService {
         final failedAgentNames = <String>[];
         var dispatchNudgeCount = 0;
         const maxDispatchNudges = 2;
+        var verbalDispatchNudgeCount = 0;
+        const maxVerbalDispatchNudges = 2;
 
         // TASK_STATUS 硬门闩：成员 pending / 未标注时拒绝 group_finish(done)。
         var pendingNudgeCount = 0;
@@ -1318,6 +1321,7 @@ class GroupOrchestrationService {
 
           // Prefer tool-first orchestration; fall back to legacy text JSON.
           final roundInbox = await _readRoundInbox();
+          final adminMentionsThisRound = adminTurn.mentions;
           final dispatch = resolveAdminDecision(
             adminTurn,
             inboxDispatch: roundInbox.dispatch,
@@ -1425,6 +1429,94 @@ class GroupOrchestrationService {
             );
             emitRoundEnd(summary: '管理员派发指令多次无法解析（${dispatch.parseError}），流程停止');
             break;
+          }
+
+          // Verbal assign without group_dispatch: "我让小明去做" does not
+          // actually dispatch. Pause is allowed (waiting on the user).
+          if (delegatedIds.isEmpty && !dispatch.isPause) {
+            final promised = GroupVerbalDispatchDetector.promisedNames(
+              content: adminResponseContent,
+              members: nonAdminAgents,
+              mentions: adminMentionsThisRound,
+            );
+            if (promised.isNotEmpty) {
+              if (verbalDispatchNudgeCount < maxVerbalDispatchNudges) {
+                verbalDispatchNudgeCount++;
+                LoggerService().warning(
+                  'Admin named ${promised.join(', ')} without group_dispatch; nudging ($verbalDispatchNudgeCount/$maxVerbalDispatchNudges)',
+                  tag: 'GroupOrchestrationService',
+                );
+                await _dispatchParser.stripDispatchJsonFromLastMessage(
+                    channelId, adminAgent.id);
+                final nudgeHistory = await loadAndTruncateHistory(channelId,
+                    excludeMessageId: userMessage.id);
+                adminResponseContent = '';
+                onAgentStart?.call(adminAgent.id, adminAgent.name);
+                try {
+                  adminTurn = await _executor.processGroupAgent(
+                    agent: adminAgent,
+                    channelId: channelId,
+                    content:
+                        '$effectiveContent\n\n${GroupVerbalDispatchDetector.nudgeSystemContent(promised)}',
+                    attachments: attachments,
+                    userId: userId,
+                    userName: userName,
+                    groupName: groupName,
+                    groupDescription: groupDescription,
+                    allAgents: agents,
+                    historyMessages: nudgeHistory,
+                    mentionedAgentIds: const [],
+                    isFirstMessage: false,
+                    isAdmin: true,
+                    isDispatchNudge: true,
+                    loopRound: currentRound + 1,
+                    messageVersion: messageVersion,
+                    channelMembers: channelMembers,
+                    customSystemPrompt: customSystemPrompt,
+                    mentionMode: mentionMode,
+                    acpCancellationToken: acpCancellationToken,
+                    onStreamChunk: (agentId, agentName, chunk) {
+                      adminResponseContent += chunk;
+                      onStreamChunk?.call(agentId, agentName, chunk);
+                    },
+                    onAgentDone: onAgentDone,
+                    onInteractionRequest: onInteractionRequestForAdmin,
+                    orchestrationTraceId: orchTraceId,
+                  );
+                } catch (e) {
+                  LoggerService().error(
+                      'Admin verbal-dispatch nudge error at round $currentRound',
+                      tag: 'GroupOrchestrationService',
+                      error: e);
+                  onAgentDone?.call(adminAgent.id, adminAgent.name, true);
+                  break;
+                }
+                currentRound++;
+                final verbalInbox = await _readRoundInbox();
+                adminTurn = resolveAdminDecision(
+                  adminTurn,
+                  inboxDispatch: verbalInbox.dispatch,
+                  inboxFinish: verbalInbox.finish,
+                );
+                if (adminResponseContent.trim().isEmpty &&
+                    !adminTurn.hasOrchestrationSignal) {
+                  LoggerService().warning(
+                      'Admin verbal-dispatch nudge produced empty response at round $currentRound, stopping',
+                      tag: 'GroupOrchestrationService');
+                  await _saveOrchestrationSystemMessage(
+                    channelId,
+                    GroupVerbalDispatchDetector.exhaustedWarning(promised),
+                  );
+                  emitRoundEnd(summary: '管理员口头派活后未产出有效编排信号，流程停止');
+                  break;
+                }
+                continue;
+              }
+              await _saveOrchestrationSystemMessage(
+                channelId,
+                GroupVerbalDispatchDetector.exhaustedWarning(promised),
+              );
+            }
           }
 
           // Some dispatched names did not match any member — keep going with
