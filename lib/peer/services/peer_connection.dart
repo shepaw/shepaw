@@ -227,14 +227,15 @@ class PeerConnection {
           if (!handshakeCompleter.isCompleted) {
             handshakeCompleter.completeError(e);
           }
-          _log.warning('WebSocket error: $e', tag: _tag);
+          // 对端离线时每次重连都会走到这里，不能打 warning/error。
+          _log.debug('WebSocket error during connect: $e', tag: _tag);
           _setState(PeerConnectionState.disconnected);
         },
         onDone: () {
           if (!handshakeCompleter.isCompleted) {
             handshakeCompleter.completeError(StateError('WebSocket closed during handshake'));
           }
-          _log.info('WebSocket closed for ${peer.deviceName}', tag: _tag);
+          _log.debug('WebSocket closed during connect for ${peer.deviceName}', tag: _tag);
           _setState(PeerConnectionState.disconnected);
         },
       );
@@ -254,7 +255,8 @@ class PeerConnection {
       }
       earlyFrames.clear();
     } catch (e) {
-      _log.error('Connection failed to ${peer.deviceName}', tag: _tag, error: e);
+      // 对端离线是常态，由 PeerConnectionManager 节流汇总；这里只留 debug。
+      _log.debug('Connection failed to ${peer.deviceName}: $e', tag: _tag);
       _incomingSub?.cancel();
       _incomingSub = null;
       _setState(PeerConnectionState.disconnected);

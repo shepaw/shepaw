@@ -782,24 +782,30 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
     try {
       final agent = await localDatabaseService.getAgentById(agentId!);
       if (agent != null) {
+        final bool nextOnline;
         if (agent.isPeerAgent) {
           // peer agent 通过 P2P 隧道访问对端本地 agent，其可用性完全取决于来源
           // 配对设备是否在线，因此在线状态直接跟随该设备的连接状态。
           _agentSourcePeerId = agent.sourcePeerId;
           final peerId = agent.sourcePeerId;
-          isAgentOnline = peerId != null &&
+          nextOnline = peerId != null &&
               PeerConnectionManager.instance.getPeerState(peerId) ==
                   PeerConnectionState.connected;
         } else {
           _agentSourcePeerId = null;
-          isAgentOnline = agent.status.isOnline;
+          nextOnline = agent.status.isOnline;
         }
+        final changed = isAgentOnline != nextOnline || isCheckingHealth;
+        isAgentOnline = nextOnline;
+        isCheckingHealth = false;
+        // 10s 轮询即使状态没变也会 _notify，整页 Markdown 重布局，滑动会突然变钝。
+        if (changed) _notify();
+      }
+    } catch (_) {
+      if (isCheckingHealth) {
         isCheckingHealth = false;
         _notify();
       }
-    } catch (_) {
-      isCheckingHealth = false;
-      _notify();
     }
   }
 

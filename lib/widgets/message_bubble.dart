@@ -863,16 +863,13 @@ class MessageBubble extends StatelessWidget {
         final content =
             _processContentWithMentions(rawContent, message.metadata);
         final styleSheet = _getStyleSheet(isMyMessage, Theme.of(context).primaryColor);
-        final markdownBody = MarkdownBody(
+        final markdownBody = _StableMarkdownBody(
           data: content,
-          selectable: false,
-          extensionSet: md.ExtensionSet.gitHubWeb,
-          inlineSyntaxes: [StoreUriLinkSyntax()],
+          styleSheet: styleSheet,
           onTapLink: (text, href, title) async {
             if (href == null) return;
             await _handleTapLink(context, href);
           },
-          styleSheet: styleSheet,
         );
         final markdownWidget = _wrapWithTextSelection(markdownBody);
         final hasAnswer = displayText.trim().isNotEmpty;
@@ -954,16 +951,13 @@ class MessageBubble extends StatelessWidget {
 
     final progressTitle = message.metadata?['collapsible_title'] as String?;
     final autoCollapse = message.metadata?['auto_collapse'] != false;
-    final progressBody = MarkdownBody(
+    final progressBody = _StableMarkdownBody(
       data: progressContent,
-      selectable: false,
-      extensionSet: md.ExtensionSet.gitHubWeb,
-      inlineSyntaxes: [StoreUriLinkSyntax()],
+      styleSheet: styleSheet,
       onTapLink: (text, href, title) async {
         if (href == null) return;
         await _handleTapLink(context, href);
       },
-      styleSheet: styleSheet,
     );
     return CollapsibleMessageBubble(
       title: progressTitle ?? AppLocalizations.of(context).widget_details,
@@ -1245,5 +1239,52 @@ class MessageBubble extends StatelessWidget {
         style: const TextStyle(fontSize: 24),
       ),
     );
+  }
+}
+
+/// Reuse the same [MarkdownBody] instance when the source text is unchanged.
+///
+/// ChatScreen rebuilds the whole list on streaming chunks / status ticks.
+/// flutter_markdown re-parses on every build; skipping that for settled
+/// bubbles keeps scrolling responsive in long sessions.
+class _StableMarkdownBody extends StatefulWidget {
+  final String data;
+  final MarkdownStyleSheet styleSheet;
+  final void Function(String text, String? href, String? title)? onTapLink;
+
+  const _StableMarkdownBody({
+    required this.data,
+    required this.styleSheet,
+    this.onTapLink,
+  });
+
+  @override
+  State<_StableMarkdownBody> createState() => _StableMarkdownBodyState();
+}
+
+class _StableMarkdownBodyState extends State<_StableMarkdownBody> {
+  Widget? _cached;
+  String? _cachedData;
+  MarkdownStyleSheet? _cachedStyle;
+
+  @override
+  Widget build(BuildContext context) {
+    if (_cached != null &&
+        _cachedData == widget.data &&
+        identical(_cachedStyle, widget.styleSheet)) {
+      return _cached!;
+    }
+    _cachedData = widget.data;
+    _cachedStyle = widget.styleSheet;
+    _cached = MarkdownBody(
+      data: widget.data,
+      selectable: false,
+      extensionSet: md.ExtensionSet.gitHubWeb,
+      inlineSyntaxes: [StoreUriLinkSyntax()],
+      onTapLink: (text, href, title) =>
+          widget.onTapLink?.call(text, href, title),
+      styleSheet: widget.styleSheet,
+    );
+    return _cached!;
   }
 }

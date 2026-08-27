@@ -188,6 +188,10 @@ class _ChatScreenState extends State<ChatScreen>
   /// `dismissed`，保证切换前一定等抽屉彻底关闭。
   RightDrawerRoute? _drawerRoute;
 
+  /// 清空会话等不可关闭 overlay 是否仍在栈上。Dismiss 必须对上这次 show，
+  /// 否则会 pop 掉聊天页或抽屉。
+  bool _clearingOverlayOpen = false;
+
   // Pending highlight from search navigation
   String? _pendingHighlightMessageId;
 
@@ -319,6 +323,10 @@ class _ChatScreenState extends State<ChatScreen>
     _audioRecordingService.dispose();
     _messageController.dispose();
     _textFieldFocusNode.dispose();
+    // 抽屉挂在 root Navigator 上、动画控制器却由本页持有。任何未先
+    // await dismissed 的拆页（工作流、通知跳转、CloseScreen）都会把
+    // 退场卡死，遮罩冻在全屏。dispose 时立刻卸路由，不能再播退场。
+    _forceRemoveDrawerRoute();
     // 先停再释放：mixin 的 ticker 在 super.dispose() 里才释放，直接 dispose
     // 仍处于 active 状态的控制器会触发 ticker 断言。
     _drawerController.stop();
@@ -421,7 +429,7 @@ class _ChatScreenState extends State<ChatScreen>
       case ShowLoadingOverlayEvent(:final message):
         _showClearingOverlay(message);
       case DismissOverlayEvent():
-        Navigator.of(context).pop();
+        _dismissClearingOverlay();
       case RequestScrollToBottomEvent(:final force):
         if (_pendingHighlightMessageId != null) {
           final mid = _pendingHighlightMessageId!;
@@ -455,11 +463,7 @@ class _ChatScreenState extends State<ChatScreen>
           if (!result.isCompleted) result.complete(approved);
         });
       case CloseScreenEvent():
-        if (widget.embedded) {
-          widget.onClose?.call();
-        } else {
-          Navigator.pop(context);
-        }
+        unawaited(_closeDrawerThenLeave());
       case AgentInfoUpdatedEvent():
         // Already handled via notifyListeners
         break;
@@ -1388,6 +1392,8 @@ class _ChatScreenState extends State<ChatScreen>
   }
 
   Future<void> _navigateToStorageSpace() async {
+    await _closeDrawerAndWait();
+    if (!mounted) return;
     final c = _controller;
     if (c.isGroupMode) {
       final channel = c.groupChannel;
@@ -1482,7 +1488,9 @@ class _ChatScreenState extends State<ChatScreen>
     );
   }
 
-  void _showGroupWorkflow() {
+  Future<void> _showGroupWorkflow() async {
+    await _closeDrawerAndWait();
+    if (!mounted) return;
     final channelId = _controller.currentChannelId;
     if (channelId == null) return;
     final l10n = AppLocalizations.of(context);
@@ -1865,6 +1873,27 @@ class _ChatScreenState extends State<ChatScreen>
       Navigator.of(context, rootNavigator: true).pop();
     }
     await drawerRoute.dismissed;
+  }
+
+  /// 不等退场、立刻从 root Navigator 卸掉抽屉。dispose / 拆页兜底用。
+  void _forceRemoveDrawerRoute() {
+    final drawer = _drawerRoute;
+    _drawerRoute = null;
+    final nav = drawer?.navigator;
+    if (drawer == null || nav == null) return;
+    try {
+      nav.removeRoute(drawer);
+    } catch (_) {}
+  }
+
+  Future<void> _closeDrawerThenLeave() async {
+    await _closeDrawerAndWait();
+    if (!mounted) return;
+    if (widget.embedded) {
+      widget.onClose?.call();
+    } else {
+      Navigator.pop(context);
+    }
   }
 
   /// [NavigateToSessionEvent] 处理器：先关抽屉并等它彻底销毁，再原地替换
@@ -2449,6 +2478,8 @@ class _ChatScreenState extends State<ChatScreen>
   }
 
   void _showClearingOverlay(String message) {
+    if (_clearingOverlayOpen) return;
+    _clearingOverlayOpen = true;
     showDialog(
       context: context,
       barrierDismissible: false,
@@ -2473,6 +2504,13 @@ class _ChatScreenState extends State<ChatScreen>
         ),
       ),
     );
+  }
+
+  void _dismissClearingOverlay() {
+    if (!_clearingOverlayOpen) return;
+    _clearingOverlayOpen = false;
+    if (!mounted) return;
+    Navigator.of(context).pop();
   }
 
   // ---------------------------------------------------------------------------
@@ -3032,6 +3070,8 @@ class _ChatScreenState extends State<ChatScreen>
     // sourceGroupChannelId is the exact group session this member DM is bound to.
     await c.localDatabaseService.touchChannelUpdatedAt(groupChannelId);
     if (!mounted) return;
+    await _closeDrawerAndWait();
+    if (!mounted) return;
 
     if (widget.embedded) {
       widget.onSwitchChannel?.call(groupChannelId);
@@ -3100,6 +3140,8 @@ class _ChatScreenState extends State<ChatScreen>
 
     // sourceSheChannelId 是本中转会话绑定的 She↔用户 会话。
     await c.localDatabaseService.touchChannelUpdatedAt(sheChannelId);
+    if (!mounted) return;
+    await _closeDrawerAndWait();
     if (!mounted) return;
 
     if (widget.embedded) {

@@ -790,13 +790,19 @@ class PeerConnectionManager {
 
   /// 连接建立后的副作用：重置重连状态、广播 connected 事件、更新 lastSeen、补发离线消息。
   void _onConnected(PairedPeer peer) {
-    _reconnectAttempts.remove(peer.id);
+    final retries = _reconnectAttempts.remove(peer.id) ?? 0;
     // 连接已建立，取消遗留的重连/回退定时器，避免再触发多余的 _doConnect
     // 而产生重复连接（glare）。
     _reconnectTimers[peer.id]?.cancel();
     _reconnectTimers.remove(peer.id);
     _fallbackTimers[peer.id]?.cancel();
     _fallbackTimers.remove(peer.id);
+    if (retries > 0) {
+      _log.info(
+        'Reconnected to ${peer.deviceName} after $retries retries',
+        tag: _tag,
+      );
+    }
     _eventController.add(PeerConnectionEvent(
       peerId: peer.id,
       type: PeerConnectionEventType.connected,
@@ -1091,7 +1097,7 @@ class PeerConnectionManager {
       );
 
     } catch (e) {
-      _log.warning('Failed to connect to ${peer.deviceName}: $e', tag: _tag);
+      _logConnectFailure(peer, e);
       PeerDeliveryTraceService.instance.recordConnectionFailure(
         peerId: peer.id,
         stage: 'connect',
@@ -1144,9 +1150,21 @@ class PeerConnectionManager {
     _reconnectTimers[peer.id] = Timer(actualDelay, () async {
       if (!_running) return;
       _reconnectAttempts[peer.id] = attempts + 1;
-      _log.debug('Reconnecting to ${peer.deviceName} (attempt ${attempts + 1})', tag: _tag);
       await _doConnect(peer);
     });
+  }
+
+  /// 对端离线会无限重试：只在首次和每 10 次记 warning，避免刷屏。
+  void _logConnectFailure(PairedPeer peer, Object e) {
+    final attempts = _reconnectAttempts[peer.id] ?? 0;
+    if (attempts == 0 || attempts % 10 == 0) {
+      _log.warning(
+        attempts == 0
+            ? 'Failed to connect to ${peer.deviceName}: $e'
+            : 'Still unreachable: ${peer.deviceName} (retry $attempts): $e',
+        tag: _tag,
+      );
+    }
   }
 
   /// 发送离线消息队列
