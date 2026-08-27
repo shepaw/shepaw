@@ -249,18 +249,42 @@ class NotificationService {
       macOS: darwinDetails,
     );
 
-    await _plugin.show(id, title, body, details, payload: payload);
+    try {
+      await _plugin.show(id, title, body, details, payload: payload);
+    } catch (e) {
+      LoggerService().warning(
+        'showNotification failed',
+        tag: 'Notification',
+        error: e,
+      );
+    }
   }
 
   /// Cancel a specific notification by id.
   Future<void> cancelNotification(int id) async {
     if (!_initialized || !_platformSupported) return;
-    await _plugin.cancel(id);
+    try {
+      await _plugin.cancel(id);
+    } catch (e) {
+      LoggerService().warning(
+        'cancelNotification failed',
+        tag: 'Notification',
+        error: e,
+      );
+    }
   }
 
   /// Cancel all notifications.
   Future<void> cancelAll() async {
     if (!_initialized || !_platformSupported) return;
-    await _plugin.cancelAll();
+    try {
+      await _plugin.cancelAll();
+    } catch (e) {
+      LoggerService().warning(
+        'cancelAll failed',
+        tag: 'Notification',
+        error: e,
+      );
+    }
   }
 }
