@@ -31,6 +31,7 @@ import 'group_mailbox_save_plan.dart';
 import 'group_orchestration_tools.dart';
 import 'group_prompt_builder.dart';
 import 'group_turn_result.dart';
+import 'group_turn_outcome.dart';
 import 'group_task_status.dart';
 import 'group_interaction_handler.dart';
 import '../../peer/services/peer_agent_client_service.dart';
@@ -928,51 +929,18 @@ class GroupAgentExecutor {
           // No tool calls or stream done — exit loop
           break;
         }
-      } catch (e) {
-        LoggerService().error('Group agent ${agent.name} stream error',
-            tag: 'GroupAgentExecutor', error: e);
-        infLogGroup.endRound(groupTraceId, stopReason: 'error');
-        infLogGroup.endSession(groupTraceId, InferenceStatus.error,
-            error: '$e');
-        if (!streamingStarted || responseBuffer.isEmpty) {
-          // Insert a visible error message so the user knows which agent failed.
-          final errorMsg = Message(
-            id: _uuid.v4(),
-            content: '⚠️ Agent「${agent.name}」调用失败：$e',
-            timestampMs: DateTime.now().millisecondsSinceEpoch,
-            from: MessageFrom(id: 'system', type: 'system', name: 'System'),
-            type: MessageType.system,
-          );
-          await _db.createMessage(
-            id: errorMsg.id,
-            channelId: channelId,
-            senderId: 'system',
-            senderType: 'system',
-            senderName: 'System',
-            content: errorMsg.content,
-            messageType: 'system',
-          );
-          await _db.markMessageAsRead(errorMsg.id);
-          notifyChannelUpdate(channelId);
-
-          groupTask.isComplete = true;
-          groupTask.onTaskFinished?.call();
-          _activeGroupTasks[channelId]?.remove(agent.id);
-          if (_activeGroupTasks[channelId]?.isEmpty == true) {
-            _activeGroupTasks.remove(channelId);
-          }
-          updateTypingAgentIds();
-          ForegroundTaskService().releaseTask(agent.name);
-          // M1: 不在执行器错误路径上报 onAgentDone——调用方（编排 .catchError /
-          // 工作流 catch）持有该 turn 的上报权，rethrow 后由调用方统一回调一次。
-          // Propagate so the orchestration layer records this member in
-          // failedAgentNames (and workflow steps hit failStep) — the admin's
-          // review/summarize round must know the member failed.
-          rethrow;
-        }
-        // H2: streaming already started with buffered content — remember the
-        // failure and fail the turn below instead of silently persisting a
-        // truncated reply as a successful message.
+      } catch (e, st) {
+        await _handleExecutionPathError(
+          e,
+          st,
+          agent: agent,
+          channelId: channelId,
+          groupTask: groupTask,
+          groupTraceId: groupTraceId,
+          streamingStarted: streamingStarted,
+          responseBuffer: responseBuffer,
+          pathLabel: 'stream',
+        );
         midStreamError = e;
       }
     } else if (agent.isPeerAgent) {
@@ -989,14 +957,7 @@ class GroupAgentExecutor {
           agentName: agent.name,
           error: 'Peer agent 配置不完整（缺少 source_peer_id 或 remote_agent_id）',
         );
-        groupTask.isComplete = true;
-        groupTask.onTaskFinished?.call();
-        _activeGroupTasks[channelId]?.remove(agent.id);
-        if (_activeGroupTasks[channelId]?.isEmpty == true) {
-          _activeGroupTasks.remove(channelId);
-        }
-        updateTypingAgentIds();
-        ForegroundTaskService().releaseTask(agent.name);
+        _releaseGroupTurn(channelId, agent, groupTask);
         infLogGroup.endSession(groupTraceId, InferenceStatus.error,
             error: 'missing peer metadata');
         onAgentDone?.call(agent.id, agent.name, true);
@@ -1173,36 +1134,18 @@ class GroupAgentExecutor {
             actionConfirmationData!['confirmation_context'] ??= 'peer';
           }
         }
-      } catch (e) {
-        LoggerService().error(
-          'Group agent ${agent.name} peer error',
-          tag: 'GroupAgentExecutor',
-          error: e,
+      } catch (e, st) {
+        await _handleExecutionPathError(
+          e,
+          st,
+          agent: agent,
+          channelId: channelId,
+          groupTask: groupTask,
+          groupTraceId: groupTraceId,
+          streamingStarted: streamingStarted,
+          responseBuffer: responseBuffer,
+          pathLabel: 'peer',
         );
-        infLogGroup.endRound(groupTraceId, stopReason: 'error');
-        infLogGroup.endSession(groupTraceId, InferenceStatus.error,
-            error: '$e');
-        if (!streamingStarted || responseBuffer.isEmpty) {
-          await _saveGroupAgentErrorMessage(
-            channelId: channelId,
-            agentName: agent.name,
-            error: e,
-          );
-          groupTask.isComplete = true;
-          groupTask.onTaskFinished?.call();
-          _activeGroupTasks[channelId]?.remove(agent.id);
-          if (_activeGroupTasks[channelId]?.isEmpty == true) {
-            _activeGroupTasks.remove(channelId);
-          }
-          updateTypingAgentIds();
-          ForegroundTaskService().releaseTask(agent.name);
-          // M1: 调用方 catch 统一上报 onAgentDone，执行器仅负责清理 + rethrow。
-          // Propagate so orchestration records failedAgentNames / workflow
-          // steps hit failStep (same contract as the local path).
-          rethrow;
-        }
-        // H2: same as the local path — a mid-stream peer failure must not
-        // persist a truncated reply as a successful message.
         midStreamError = e;
       }
     } else {
@@ -1747,44 +1690,21 @@ class GroupAgentExecutor {
             acpCancellationToken?.unbind(effectiveConnection, effectiveTaskId);
           }
         }
-      } catch (e) {
-        LoggerService().error('Group agent ${agent.name} ACP error',
-            tag: 'GroupAgentExecutor', error: e);
-        // M11: ACP 错误路径泄漏推理会话——非重试连接异常、sendChatMessage 抛错、
-        // Agent busy、3h 超时、mailbox 兜底异常都不走 onTaskError（远程任务未
-        // 启动或仍在挂起），groupTraceId 会话会停在 running。这里统一收尾；
-        // 若 onTaskError 已先收尾，endRound/endSession 对已移除的会话是 no-op。
-        infLogGroup.endRound(groupTraceId, stopReason: 'error');
-        infLogGroup.endSession(groupTraceId, InferenceStatus.error,
-            error: '$e');
-        if (connection != null && taskId != null) {
-          connection.unregisterTaskCallbacks(taskId);
-          acpCancellationToken?.unbind(connection, taskId);
-        }
-        if (!streamingStarted || responseBuffer.isEmpty) {
-          // Keep behavior consistent with the local/peer paths: surface a
-          // visible error message so the user knows which agent failed
-          // instead of the placeholder bubble silently disappearing.
-          await _saveGroupAgentErrorMessage(
-            channelId: channelId,
-            agentName: agent.name,
-            error: e,
-          );
-          groupTask.isComplete = true;
-          groupTask.onTaskFinished?.call();
-          _activeGroupTasks[channelId]?.remove(agent.id);
-          if (_activeGroupTasks[channelId]?.isEmpty == true) {
-            _activeGroupTasks.remove(channelId);
-          }
-          updateTypingAgentIds();
-          ForegroundTaskService().releaseTask(agent.name);
-          // M1: 调用方 catch 统一上报 onAgentDone，执行器仅负责清理 + rethrow。
-          // Propagate so orchestration records failedAgentNames / workflow
-          // steps hit failStep (same contract as the local/peer paths).
-          rethrow;
-        }
-        // H2: same as the local/peer paths — a mid-stream ACP failure must
-        // not persist a truncated reply as a successful message.
+      } catch (e, st) {
+        await _handleExecutionPathError(
+          e,
+          st,
+          agent: agent,
+          channelId: channelId,
+          groupTask: groupTask,
+          groupTraceId: groupTraceId,
+          streamingStarted: streamingStarted,
+          responseBuffer: responseBuffer,
+          pathLabel: 'ACP',
+          connection: connection,
+          taskId: taskId,
+          acpCancellationToken: acpCancellationToken,
+        );
         midStreamError = e;
       }
     }
@@ -1804,42 +1724,20 @@ class GroupAgentExecutor {
         r'^\[' + RegExp.escape(agent.name) + r'(?:\(Agent\))?\]\s*[:：]\s*');
     responseContent = responseContent.replaceFirst(prefixPattern, '');
 
-    // H2: streaming started then failed mid-way (three catch paths recorded
-    // midStreamError). Persist an interruption notice instead of the truncated
-    // buffer, clean up the task, report failure, and re-raise so the
-    // orchestration layer records this member in failedAgentNames / workflow
-    // steps hit failStep — exactly like a pre-stream failure.
+    // H2: streaming started then failed mid-way. Persist an interruption
+    // notice instead of the truncated buffer (same as a pre-stream failure
+    // as far as orchestration / workflow failStep is concerned).
     if (midStreamError != null) {
-      final interruptMsg = Message(
-        id: _uuid.v4(),
-        content: '⚠️ Agent「${agent.name}」输出被中断：$midStreamError',
-        timestampMs: DateTime.now().millisecondsSinceEpoch,
-        from: MessageFrom(id: 'system', type: 'system', name: 'System'),
-        type: MessageType.system,
-      );
-      await _db.createMessage(
-        id: interruptMsg.id,
+      await _saveGroupSystemNotice(
         channelId: channelId,
-        senderId: 'system',
-        senderType: 'system',
-        senderName: 'System',
-        content: interruptMsg.content,
-        messageType: 'system',
+        content: GroupTurnOutcome.failureNotice(
+          agentName: agent.name,
+          error: midStreamError,
+          phase: GroupTurnFailurePhase.midStream,
+        ),
       );
-      await _db.markMessageAsRead(interruptMsg.id);
-      notifyChannelUpdate(channelId);
-
-      groupTask.isComplete = true;
-      groupTask.onTaskFinished?.call();
-      _activeGroupTasks[channelId]?.remove(agent.id);
-      if (_activeGroupTasks[channelId]?.isEmpty == true) {
-        _activeGroupTasks.remove(channelId);
-      }
-      updateTypingAgentIds();
-      ForegroundTaskService().releaseTask(agent.name);
+      _releaseGroupTurn(channelId, agent, groupTask);
       // M1: 调用方 catch 统一上报 onAgentDone，执行器仅负责清理 + throw。
-      // Not inside a catch context here — throw the original error so the
-      // orchestration layer records failedAgentNames / workflow failStep.
       throw midStreamError;
     }
 
@@ -1933,14 +1831,7 @@ class GroupAgentExecutor {
         !hasProgressContent) {
       LoggerService()
           .debug('Agent ${agent.name} skipped', tag: 'GroupAgentExecutor');
-      groupTask.isComplete = true;
-      groupTask.onTaskFinished?.call();
-      _activeGroupTasks[channelId]?.remove(agent.id);
-      if (_activeGroupTasks[channelId]?.isEmpty == true) {
-        _activeGroupTasks.remove(channelId);
-      }
-      updateTypingAgentIds();
-      ForegroundTaskService().releaseTask(agent.name);
+      _releaseGroupTurn(channelId, agent, groupTask);
       onAgentDone?.call(agent.id, agent.name, true);
       return GroupTurnResult(
         content: responseContent,
@@ -2142,14 +2033,7 @@ class GroupAgentExecutor {
     }
 
     // Mark group task complete and clean up
-    groupTask.isComplete = true;
-    groupTask.onTaskFinished?.call();
-    _activeGroupTasks[channelId]?.remove(agent.id);
-    if (_activeGroupTasks[channelId]?.isEmpty == true) {
-      _activeGroupTasks.remove(channelId);
-    }
-    updateTypingAgentIds();
-    ForegroundTaskService().releaseTask(agent.name);
+    _releaseGroupTurn(channelId, agent, groupTask);
 
     LoggerService().debug(
         '_processGroupAgent DONE: ${agent.name}, contentLen=${responseContent.length}',
@@ -2259,30 +2143,107 @@ class GroupAgentExecutor {
     );
   }
 
-  Future<void> _saveGroupAgentErrorMessage({
+  /// Local / peer / ACP catch: classify, log, unbind ACP, then either persist
+  /// a pre-stream failure and throw, or return so the caller records
+  /// mid-stream [error] (H2).
+  ///
+  /// M1: 不在执行器错误路径上报 onAgentDone——调用方 catch 持有该 turn 的
+  /// 上报权。M11: ACP 错误路径统一 endRound/endSession，避免会话停在 running。
+  Future<void> _handleExecutionPathError(
+    Object error,
+    StackTrace stackTrace, {
+    required RemoteAgent agent,
     required String channelId,
-    required String agentName,
-    required Object error,
+    required GroupActiveTask groupTask,
+    required String groupTraceId,
+    required bool streamingStarted,
+    required StringBuffer responseBuffer,
+    required String pathLabel,
+    ACPAgentConnection? connection,
+    String? taskId,
+    ACPCancellationToken? acpCancellationToken,
   }) async {
-    final errorMsg = Message(
+    LoggerService().error(
+      'Group agent ${agent.name} $pathLabel error',
+      tag: 'GroupAgentExecutor',
+      error: error,
+    );
+    final infLog = InferenceLogService.instance;
+    infLog.endRound(groupTraceId, stopReason: 'error');
+    infLog.endSession(groupTraceId, InferenceStatus.error, error: '$error');
+    if (connection != null && taskId != null) {
+      connection.unregisterTaskCallbacks(taskId);
+      acpCancellationToken?.unbind(connection, taskId);
+    }
+    final phase = GroupTurnOutcome.classifyFailure(
+      streamingStarted: streamingStarted,
+      responseBuffer: responseBuffer,
+    );
+    if (phase != GroupTurnFailurePhase.beforeStream) return;
+    await _saveGroupSystemNotice(
+      channelId: channelId,
+      content: GroupTurnOutcome.failureNotice(
+        agentName: agent.name,
+        error: error,
+        phase: phase,
+      ),
+    );
+    _releaseGroupTurn(channelId, agent, groupTask);
+    Error.throwWithStackTrace(error, stackTrace);
+  }
+
+  void _releaseGroupTurn(
+    String channelId,
+    RemoteAgent agent,
+    GroupActiveTask groupTask,
+  ) {
+    groupTask.isComplete = true;
+    groupTask.onTaskFinished?.call();
+    _activeGroupTasks[channelId]?.remove(agent.id);
+    if (_activeGroupTasks[channelId]?.isEmpty == true) {
+      _activeGroupTasks.remove(channelId);
+    }
+    updateTypingAgentIds();
+    ForegroundTaskService().releaseTask(agent.name);
+  }
+
+  Future<void> _saveGroupSystemNotice({
+    required String channelId,
+    required String content,
+  }) async {
+    final msg = Message(
       id: _uuid.v4(),
-      content: '⚠️ Agent「$agentName」调用失败：$error',
+      content: content,
       timestampMs: DateTime.now().millisecondsSinceEpoch,
       from: MessageFrom(id: 'system', type: 'system', name: 'System'),
       type: MessageType.system,
     );
     await _db.createMessage(
-      id: errorMsg.id,
+      id: msg.id,
       channelId: channelId,
       senderId: 'system',
       senderType: 'system',
       senderName: 'System',
-      content: errorMsg.content,
+      content: msg.content,
       messageType: 'system',
     );
-    await _db.markMessageAsRead(errorMsg.id);
+    await _db.markMessageAsRead(msg.id);
     notifyChannelUpdate(channelId);
   }
+
+  Future<void> _saveGroupAgentErrorMessage({
+    required String channelId,
+    required String agentName,
+    required Object error,
+  }) =>
+      _saveGroupSystemNotice(
+        channelId: channelId,
+        content: GroupTurnOutcome.failureNotice(
+          agentName: agentName,
+          error: error,
+          phase: GroupTurnFailurePhase.beforeStream,
+        ),
+      );
 
   /// Apply a resolved approval onto [data] so the final saved message
   /// metadata (and any UI bound to it) shows the selected state.
