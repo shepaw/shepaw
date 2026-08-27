@@ -40,6 +40,7 @@ import '../workflow/workflow_service.dart';
 import '../../models/workflow_pending_approval.dart';
 import '../messaging/stream_content_splitter.dart';
 import 'group_member_session_service.dart';
+import 'group_member_history.dart';
 import '../session/history_compactor.dart';
 import '../session/history_compaction_cache_service.dart';
 import '../../storage/group_workspace_service.dart';
@@ -339,88 +340,23 @@ class GroupAgentExecutor {
       channelId: channelId,
     );
 
-    // Build chat history: pack the entire group conversation into a single
-    // 'user' message so the LLM's identity comes solely from the system prompt.
-    // Each line is tagged with the sender name so the agent can see who said
-    // what, while "(我)" marks its own prior messages.
-    const maxHistoryChars = 60000;
-    var effectiveHistory = List<Message>.from(historyMessages);
-    String? earlierSummary;
-    // M6: 无 LLM 摘要时的截断提示（远端成员 / 摘要失败兜底），区别于 LLM 摘要，
-    // 直接用原文插入，避免再套一层 summaryMessage 包装。
-    String? truncationNote;
-
-    // FIFO 截断到字符预算，并对被丢弃的旧消息生成回滚提示（谁参与了、省略了多少）。
-    List<Message> truncateWithNote(List<Message> msgs) {
-      final kept = HistoryCompactor.fifoTruncate(msgs, maxHistoryChars);
-      if (kept.length < msgs.length) {
-        truncationNote = HistoryCompactor.rollupNote(
-          msgs.sublist(0, msgs.length - kept.length),
-        );
-      }
-      return kept;
-    }
-
-    if (agent.isLocal) {
-      final plan = HistoryCompactor.plan(
-        messages: effectiveHistory,
-        maxChars: maxHistoryChars,
-        keepRecentCount: 24,
-        keepRecentChars: 24000,
-      );
-      if (plan.needsCompaction && acpCancellationToken?.isCancelled != true) {
-        try {
-          final cancelKey = 'group_compact_${agent.id}_${_uuid.v4()}';
-          acpCancellationToken?.addOnCancelled(() {
-            LocalLLMAgentService.instance.abort(cancelKey);
-          });
-          earlierSummary = await HistoryCompactionCacheService.obtainSummary(
-            channelId: channelId,
-            older: plan.older,
-            summarize: (transcript) => _summarizeHistoryForCompaction(
-              agent: agent,
-              transcript: transcript,
-              cancelKey: cancelKey,
-            ),
-          );
-          effectiveHistory = plan.recent;
-          if (earlierSummary.isNotEmpty) {
-            final summaryCost = earlierSummary.length + 80;
-            var budgetLeft = maxHistoryChars - summaryCost;
-            while (effectiveHistory.isNotEmpty &&
-                effectiveHistory.fold<int>(0, (s, m) => s + m.content.length) >
-                    budgetLeft &&
-                effectiveHistory.length > 4) {
-              effectiveHistory = effectiveHistory.sublist(1);
-            }
-            LoggerService().info(
-              'Group history compacted for ${agent.name}: '
-              '${plan.older.length} older → ${earlierSummary.length} chars; '
-              'keeping ${effectiveHistory.length} recent',
-              tag: 'GroupAgentExecutor',
-            );
-          } else {
-            earlierSummary = null;
-            effectiveHistory = truncateWithNote(historyMessages);
-          }
-        } catch (e) {
-          LoggerService().warning(
-            'Group history compaction failed for ${agent.name}, '
-            'falling back to truncate: $e',
-            tag: 'GroupAgentExecutor',
-          );
-          earlierSummary = null;
-          effectiveHistory = truncateWithNote(historyMessages);
-        }
-      }
-    } else {
-      // Remote ACP members have no local LLM summarizer (they lack llm_* model
-      // config on this device), so a plain FIFO drop would silently erase early
-      // decisions. Keep the same 60k-char recent tail but surface the omission
-      // with a rollup note (M6) so the agent knows what was dropped and who
-      // participated earlier.
-      effectiveHistory = truncateWithNote(historyMessages);
-    }
+    // Build chat history: pack conversation into a single 'user' message so
+    // the LLM's identity comes solely from the system prompt. Members get a
+    // slim slice (brief/plan/events already live in [content]); admin /
+    // summarize turns keep the full 60k window.
+    final prepared = await _prepareGroupHistory(
+      agent: agent,
+      channelId: channelId,
+      historyMessages: historyMessages,
+      isAdmin: isAdmin,
+      isLoopSummarize: isLoopSummarize,
+      isAbortSummarize: isAbortSummarize,
+      isClosingSummary: isClosingSummary,
+      acpCancellationToken: acpCancellationToken,
+    );
+    final effectiveHistory = prepared.effectiveHistory;
+    final earlierSummary = prepared.earlierSummary;
+    final truncationNote = prepared.truncationNote;
 
     final historyLines = [
       if (truncationNote?.isNotEmpty == true) truncationNote!,
@@ -2575,6 +2511,142 @@ class GroupAgentExecutor {
       agentId: agent.id,
       channelId: channelId,
       runtimeOwnerId: runtimeOwnerId,
+    );
+  }
+
+  /// Pack group transcript for this turn.
+  ///
+  /// Members get a slim slice (recent tail + own replies + omitted-URI
+  /// index, plus a peeked compaction cache if one exists). Admin / summarize
+  /// / abort / closing turns keep the 60k window and may trigger LLM
+  /// compaction for local agents.
+  Future<
+      ({
+        List<Message> effectiveHistory,
+        String? earlierSummary,
+        String? truncationNote,
+      })> _prepareGroupHistory({
+    required RemoteAgent agent,
+    required String channelId,
+    required List<Message> historyMessages,
+    required bool isAdmin,
+    required bool isLoopSummarize,
+    required bool isAbortSummarize,
+    required bool isClosingSummary,
+    ACPCancellationToken? acpCancellationToken,
+  }) async {
+    final useFullHistory = GroupMemberHistory.needsFullHistory(
+      isAdmin: isAdmin,
+      isLoopSummarize: isLoopSummarize,
+      isAbortSummarize: isAbortSummarize,
+      isClosingSummary: isClosingSummary,
+    );
+
+    if (!useFullHistory) {
+      final pack = GroupMemberHistory.pack(
+        messages: historyMessages,
+        memberId: agent.id,
+      );
+      String? earlierSummary;
+      if (pack.droppedAny) {
+        final peeked =
+            await HistoryCompactionCacheService.peekSummary(channelId);
+        if (peeked.isNotEmpty) earlierSummary = peeked;
+        LoggerService().info(
+          'Group member history slimmed for ${agent.name}: '
+          'kept ${pack.kept.length}/${historyMessages.length} msgs '
+          '(${pack.kept.fold<int>(0, (s, m) => s + m.content.length)} chars)',
+          tag: 'GroupAgentExecutor',
+        );
+      }
+      return (
+        effectiveHistory: pack.kept,
+        earlierSummary: earlierSummary,
+        truncationNote: pack.truncationPrefix.isEmpty
+            ? null
+            : pack.truncationPrefix,
+      );
+    }
+
+    const maxHistoryChars = GroupMemberHistory.adminMaxChars;
+    var effectiveHistory = List<Message>.from(historyMessages);
+    String? earlierSummary;
+    // M6: 无 LLM 摘要时的截断提示（远端成员 / 摘要失败兜底），区别于 LLM 摘要，
+    // 直接用原文插入，避免再套一层 summaryMessage 包装。
+    String? truncationNote;
+
+    List<Message> truncateWithNote(List<Message> msgs) {
+      final kept = HistoryCompactor.fifoTruncate(msgs, maxHistoryChars);
+      if (kept.length < msgs.length) {
+        truncationNote = HistoryCompactor.rollupNote(
+          msgs.sublist(0, msgs.length - kept.length),
+        );
+      }
+      return kept;
+    }
+
+    if (agent.isLocal) {
+      final plan = HistoryCompactor.plan(
+        messages: effectiveHistory,
+        maxChars: maxHistoryChars,
+        keepRecentCount: GroupMemberHistory.adminKeepRecentCount,
+        keepRecentChars: GroupMemberHistory.adminKeepRecentChars,
+      );
+      if (plan.needsCompaction && acpCancellationToken?.isCancelled != true) {
+        try {
+          final cancelKey = 'group_compact_${agent.id}_${_uuid.v4()}';
+          acpCancellationToken?.addOnCancelled(() {
+            LocalLLMAgentService.instance.abort(cancelKey);
+          });
+          earlierSummary = await HistoryCompactionCacheService.obtainSummary(
+            channelId: channelId,
+            older: plan.older,
+            summarize: (transcript) => _summarizeHistoryForCompaction(
+              agent: agent,
+              transcript: transcript,
+              cancelKey: cancelKey,
+            ),
+          );
+          effectiveHistory = plan.recent;
+          if (earlierSummary.isNotEmpty) {
+            final summaryCost = earlierSummary.length + 80;
+            var budgetLeft = maxHistoryChars - summaryCost;
+            while (effectiveHistory.isNotEmpty &&
+                effectiveHistory.fold<int>(0, (s, m) => s + m.content.length) >
+                    budgetLeft &&
+                effectiveHistory.length > 4) {
+              effectiveHistory = effectiveHistory.sublist(1);
+            }
+            LoggerService().info(
+              'Group history compacted for ${agent.name}: '
+              '${plan.older.length} older → ${earlierSummary.length} chars; '
+              'keeping ${effectiveHistory.length} recent',
+              tag: 'GroupAgentExecutor',
+            );
+          } else {
+            earlierSummary = null;
+            effectiveHistory = truncateWithNote(historyMessages);
+          }
+        } catch (e) {
+          LoggerService().warning(
+            'Group history compaction failed for ${agent.name}, '
+            'falling back to truncate: $e',
+            tag: 'GroupAgentExecutor',
+          );
+          earlierSummary = null;
+          effectiveHistory = truncateWithNote(historyMessages);
+        }
+      }
+    } else {
+      // Remote ACP admin / summarize turns have no local LLM summarizer.
+      // Keep the 60k-char recent tail and surface the omission with a rollup.
+      effectiveHistory = truncateWithNote(historyMessages);
+    }
+
+    return (
+      effectiveHistory: effectiveHistory,
+      earlierSummary: earlierSummary,
+      truncationNote: truncationNote,
     );
   }
 

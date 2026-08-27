@@ -11,6 +11,23 @@ class HistoryCompactionCacheService {
 
   static final _db = LocalDatabaseService();
 
+  /// Best-effort read of a previously stored summary. Does not call the LLM.
+  ///
+  /// Group **members** use this so they can share an admin/local compaction
+  /// without each triggering their own summarize turn.
+  static Future<String> peekSummary(String channelId) async {
+    try {
+      final cached = await _db.getHistoryCompactionCache(channelId);
+      return cached?.summary.trim() ?? '';
+    } catch (e) {
+      LoggerService().warning(
+        'History compaction cache peek failed: $e',
+        tag: 'HistoryCompactionCache',
+      );
+      return '';
+    }
+  }
+
   /// Return a summary for [older], using cache when possible.
   ///
   /// [summarize] runs an LLM call on the provided transcript.
